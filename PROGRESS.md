@@ -1,5 +1,80 @@
 # Zyl Progress Tracker
 
+## Current Session (2026-09-23) — a first-class REPL, stages 3 and 4: values, types, and state that survives
+
+**A result prints as the value it is, `:type` and `:time` answer
+questions about an expression, and a session in a directory picks up
+where the last one there left off.**
+
+### Values print structurally
+
+```
+zyl> (Cons 1 (Cons 2 Nil))
+=> (Cons 1 (Cons 2 Nil))
+zyl> (Some "hi")
+=> (Some "hi")
+zyl> (make-P 3 4)
+=> (P 3 4)
+```
+
+The interpreter's blocks carry their constructor's name and the kinds of
+their fields in hidden words ahead of the payload, so the payload stays
+byte-identical to what compiled code builds (zyl_variant_eq and
+zyl_variant_field read it unchanged) while the REPL can render the value
+exactly. Names are interned in the runtime rather than copied per
+construction: the name comes from an ICNF node in the arena that entry
+compiled into, and the value may outlive it. Nesting is bounded at six
+levels and twenty-four fields.
+
+Spec §5.6's derivable `Show` is still not implemented, so `print` of a
+struct in a *compiled* program still shows a pointer. The REPL is ahead
+of the compiler here, not instead of it.
+
+### `:type` and `:time`
+
+`:type` runs the front end and type inference and reports what inference
+knows. Literals, structs and annotated functions come back with their
+type; many applications come back *unresolved*, because several of
+`type_inference.zyl`'s own name lookups compare strings with `=` --
+pointer comparison, so a builtin operator is never recognized by name.
+That bug and why fixing it is its own project are documented in
+`stdlib/lsp/compiler_bridge.zyl`'s header; `:type` reports honestly
+rather than guessing around it. The REPL renders types with its own
+function: `type-to-string` feeds monomorphization's specialized symbol
+names, so its output is part of the fixed point and was left alone.
+
+`:time` reads a monotonic clock either side of an entry (`zyl_now_ms`).
+
+### State that survives
+
+A session starts from three places, in order: the default modules,
+`~/.zyl/replrc` (or `$ZYL_REPLRC`), and `.zyl-session` in the directory
+it was started in. The session file is written after every entry that
+changes the session, and holds the modules, the definitions as entered,
+and a `(def ...)` per binding -- ordinary Zyl source, editable by hand,
+loadable with `:load`. Restoring replays those entries through the
+ordinary path, so nothing in a saved session can do what a typed entry
+could not; `:reset` clears both the session and the file.
+
+A binding therefore carries the text that produced it as well as its
+value, and the session carries the directory it belongs to -- which is
+not the working directory by the time the REPL runs, since compiling
+requires being in the bundle. `zyl repl` and the standalone binary both
+capture it before the chdir.
+
+A piped session restores nothing: a script should do the same thing on
+every machine, whatever is saved next to it. History stays global
+(`~/.zyl/repl_history`): what you typed is worth keeping across
+projects, what you defined is not.
+
+### Also
+
+- Meta commands work in both modes now: `:defs` typed at a prompt and
+  `:defs` piped in from a file go through the same code.
+- `print` of a computed String prints the pointer (codegen's `kind-of`
+  has no return-type inference), so the REPL writes its own output with
+  `term-write` throughout.
+
 ## Current Session (2026-09-23) — a first-class REPL, stage 2: the ICNF interpreter
 
 **A binding entered at the prompt is now a live value, not a line of

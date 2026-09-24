@@ -439,7 +439,9 @@
   ; same way a compile does -- drv-run-subcommand has already chdir'd
   ; there by the time this is reached.
   (if (> (str-eq cmd "repl") 0)
-    (repl-run arena)
+    ; `cwd` is the user's directory, captured before the chdir to the
+    ; bundle: a saved session belongs to the project, not the compiler.
+    (repl-run-in arena cwd)
   (if (> (str-eq cmd "eval") 0)
     (drv-eval arena cwd)
     (drv-usage))))))))))))))

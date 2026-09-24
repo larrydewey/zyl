@@ -126,10 +126,76 @@ the file stays one entry per line.
 | `:history` | entries from this and earlier sessions |
 | `:defs` | the modules, bindings and definitions in scope |
 | `:doc NAME` | documentation for a built-in or special form |
+| `:type EXPR` | the type of an expression, without evaluating it |
+| `:time EXPR` | evaluate it and say how long it took |
 | `:load PATH` | read a file's modules and definitions into the session |
 | `:save PATH` | write the session's definitions to a file |
-| `:reset` | forget everything and start over |
+| `:reset` | forget everything, here and on disk, and start over |
 | `:clear` | clear the screen |
+
+The same commands work when input is piped, so a script can end with
+`:defs` or start with `:load`.
+
+`:type` reports what type inference knows. For a literal, a struct or an
+annotated function that is the type; for many applications it says
+*unresolved*, because inference has no evidence there — several of
+`type_inference.zyl`'s own name lookups compare strings with `=`, which
+is pointer comparison, so a builtin operator is never recognized by
+name. `stdlib/lsp/compiler_bridge.zyl`'s header documents that bug and
+why fixing it is its own project; `:type` reports honestly rather than
+guessing around it.
+
+## What carries over between sessions
+
+Three things, in the order they are applied when a session starts:
+
+1. **The default modules** — `core/core`, `core/list`, `core/option`,
+   `core/result`, `allocator/allocator`.
+2. **`~/.zyl/replrc`** (or `$ZYL_REPLRC`), if it exists: ordinary Zyl
+   source, one form per entry, replayed through the normal path. This is
+   where a `(use ...)` you always want, or a helper you always reach
+   for, belongs.
+3. **`.zyl-session` in the directory you started in**, written after
+   every entry that changes the session. It holds the modules, the
+   definitions as entered, and a `(def ...)` per binding — ordinary Zyl
+   source, editable by hand and loadable with `:load`.
+
+So a terminal session picks up where the last one in that directory left
+off. Because restoring replays the entries, a `def` whose expression had
+an effect has that effect again; `:reset` clears the session and the
+file, and deleting the file says the same thing.
+
+A piped session does not restore anything: a script should do the same
+thing on every machine, whatever happens to be saved next to it.
+
+History is separate and global (`~/.zyl/repl_history`): what you typed
+is worth keeping across projects, what you defined is not.
+
+## How a value prints
+
+A result prints as the value it is, not as an address:
+
+```
+zyl> (Cons 1 (Cons 2 Nil))
+=> (Cons 1 (Cons 2 Nil))
+zyl> (Some "hi")
+=> (Some "hi")
+zyl> (defstruct P (x) (y))
+defined P
+zyl> (make-P 3 4)
+=> (P 3 4)
+```
+
+The interpreter's blocks carry their constructor's name and the kinds of
+their fields in hidden words ahead of the payload, which is what makes
+this possible without a `Show` instance and without changing the layout
+compiled code reads. Nesting is bounded at six levels and twenty-four
+fields per level, because a result line is not the place to print ten
+thousand elements.
+
+Compiled code cannot do this yet: `print` of a struct in a compiled
+program still shows a pointer, and spec §5.6's derivable `Show` is not
+implemented. The REPL is ahead of the compiler here, not instead of it.
 
 ## `zyl eval`
 

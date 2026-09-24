@@ -38,18 +38,54 @@
 ; keystroke. It is reset at every prompt, so a session that runs for a
 ; day costs the same as one that runs for a minute. Evaluation does not
 ; use it -- each entry compiles into an arena of its own (repl/eval).
-(defn repl-run (_arena)
+(defn repl-run (arena)
+  (repl-run-in arena (ffi-call "zyl_getcwd" 0)))
+
+; `dir` is the directory the user started in, which is not the working
+; directory by the time this runs: the REPL compiles code, so it has
+; already moved to the bundle (stdlib/ and actor_runtime.c live there).
+; The saved session belongs to the user's directory, not the compiler's.
+;
+; A terminal session picks up where the last one in that directory left
+; off. A piped one does not: a script should do the same thing on every
+; machine, whatever happens to be saved next to it.
+(defn repl-run-in (_arena dir)
   (let arena (arena-create 1048576)
     (if (= (term-is-tty 0) 1)
-      (repl-interactive arena)
-      (repl-scripted))))
+      (repl-interactive arena (repl-start-session dir))
+      (repl-scripted (session-new dir)))))
 
-(defn repl-interactive (arena)
+; A session starts from three places, in this order: the modules every
+; session begins with, the startup file (~/.zyl/replrc), and whatever
+; the last session in this directory left behind. Each is replayed
+; entry by entry through the ordinary path, so nothing in a saved
+; session can do what a typed entry could not.
+(defn repl-start-session (dir)
+  (match (session-load-rc (session-new dir))
+    (Restored sess1 nrc
+      (match (session-restore sess1)
+        (Restored sess2 n
+          (begin
+            (repl-announce-restore nrc n)
+            sess2))))))
+
+(defn repl-announce-restore (nrc n)
+  (begin
+    (if (> nrc 0) (repl-note (str-concat "replrc: " (str-concat (repl-int nrc) " entries"))) 0)
+    (if (> n 0)
+      (repl-note (str-concat "restored " (str-concat (repl-int n)
+                    " entries from .zyl-session — :reset to start clean")))
+      0)))
+
+(defn repl-int (n)
+  (ffi-call "zyl_int_text" n 1000))
+
+(defn repl-interactive (arena sess)
   (let entries (hist-load)
     (begin
       (repl-banner)
       (term-write (ansi-paste-on))
-      (let code (repl-loop arena (es-new entries) (session-new))
+      (let code (repl-loop arena (es-new entries) sess)
         (begin
           (term-write (ansi-paste-off))
           (term-raw-off)
@@ -107,7 +143,7 @@
 (defn repl-meta-interactive (arena st sess text)
   (match (repl-meta-apply sess (Hist.entries (ES.hist st)) text)
     (MetaQuit (repl-goodbye))
-    (MetaDone sess2 (repl-loop arena st sess2))))
+    (MetaDone sess2 (repl-loop arena st (repl-persist sess2)))))
 
 (defn repl-remember (st entry)
   (begin
@@ -118,7 +154,15 @@
   (let outcome (eval-entry sess text)
     (begin
       (repl-report (EvalOutcome.result outcome))
-      (repl-loop arena st (EvalOutcome.session outcome)))))
+      (repl-loop arena st (repl-persist (EvalOutcome.session outcome))))))
+
+; The session writes itself out after every entry rather than at exit:
+; a session that is killed, or that ends with the machine, should still
+; be there tomorrow. The file is small and the write is one syscall.
+(defn repl-persist (sess)
+  (begin
+    (session-save sess)
+    sess))
 
 (defn repl-report (result)
   (match result
@@ -193,12 +237,14 @@
   (if (= (repl-cmd-p cmd "h" "help") 1) (repl-kept sess (repl-help))
   (if (= (repl-cmd-p cmd "history" "hist") 1) (repl-kept sess (repl-show-history entries))
   (if (= (repl-cmd-p cmd "clear" "cls") 1) (repl-kept sess (term-write (ansi-clear-screen)))
-  (if (= (repl-cmd-p cmd "reset" "r") 1) (repl-kept (session-reset sess) (repl-note "session reset"))
+  (if (= (repl-cmd-p cmd "reset" "r") 1) (repl-do-reset sess)
   (if (= (repl-cmd-p cmd "load" "l") 1) (repl-do-load sess rest)
   (if (= (repl-cmd-p cmd "save" "s") 1) (repl-kept sess (repl-do-save sess rest))
   (if (= (repl-cmd-p cmd "doc" "d") 1) (repl-kept sess (repl-do-doc rest))
+  (if (= (repl-cmd-p cmd "t" "type") 1) (repl-kept sess (repl-do-type sess rest))
+  (if (= (repl-cmd-p cmd "time" "tm") 1) (repl-do-time sess rest)
   (if (= (repl-cmd-p cmd "defs" "browse") 1) (repl-kept sess (repl-show-defs sess))
-  (repl-kept sess (repl-unknown cmd))))))))))))
+  (repl-kept sess (repl-unknown cmd))))))))))))))
 
 (defn repl-cmd-p (cmd short long)
   (if (> (str-eq cmd short) 0) 1 (if (> (str-eq cmd long) 0) 1 0)))
@@ -219,6 +265,8 @@
     (print "  :history           entries from this and earlier sessions")
     (print "  :defs              definitions in scope")
     (print "  :doc NAME          documentation for a built-in or special form")
+    (print "  :type EXPR         the type of an expression, without running it")
+    (print "  :time EXPR         evaluate it and say how long it took")
     (print "  :load PATH         read a file's definitions into the session")
     (print "  :save PATH         write the session's definitions to a file")
     (print "  :reset             forget every definition")
@@ -277,6 +325,14 @@
       (term-write (hl-colorize defs))
       (term-write "\n")
       0)))
+
+; :reset forgets the session and the file it was saved to, so that the
+; next session in this directory starts clean too.
+(defn repl-do-reset (sess)
+  (let fresh (session-reset sess)
+    (begin
+      (session-save fresh)
+      (repl-kept fresh (repl-note "session reset")))))
 
 ; :load reads a file and adds its modules and definitions to the
 ; session, so a project's code can be brought in and poked at.
@@ -373,6 +429,35 @@
 
 ; :doc answers from the same table the editor's hover uses, so the two
 ; never disagree.
+; :time runs an expression and reports how long it took. The clock is
+; monotonic and read either side of the entry, so what it measures is
+; the whole entry -- compiling it included, since at the prompt that is
+; part of what you waited for.
+(defn repl-do-time (sess text)
+  (if (= (str-length text) 0)
+    (repl-kept sess (repl-note ":time needs an expression"))
+    (let start (ffi-call "zyl_now_ms" 0)
+      (let outcome (eval-entry sess text)
+        (let elapsed (- (ffi-call "zyl_now_ms" 0) start)
+          (begin
+            (repl-report (EvalOutcome.result outcome))
+            (repl-note (str-concat (repl-int elapsed) " ms"))
+            (MetaDone (EvalOutcome.session outcome))))))))
+
+; :type says what an expression's type is without evaluating it.
+(defn repl-do-type (sess text)
+  (if (= (str-length text) 0)
+    (repl-note ":type needs an expression")
+    (match (eval-type-of sess text)
+      (Err msg (repl-error msg))
+      (Ok t (repl-typed text t)))))
+
+(defn repl-typed (text t)
+  (begin
+    (term-write (hl-colorize text))
+    (term-write (str-concat "\e[38;5;244m : \e[0m" (str-concat t "\n")))
+    0))
+
 (defn repl-do-doc (name)
   (if (= (str-length name) 0)
     (repl-note ":doc needs a name")
@@ -473,8 +558,8 @@
 ; Input that is not a terminal: read entries as whole lines, evaluate
 ; each, print nothing but what the entries themselves produce. Multi-
 ; line forms still work -- lines accumulate until the form is complete.
-(defn repl-scripted ()
-  (repl-script-loop (session-new) "" ""))
+(defn repl-scripted (sess)
+  (repl-script-loop sess "" ""))
 
 (defn repl-script-loop (sess pending acc)
   (match (repl-script-line pending)
@@ -564,9 +649,11 @@
 ; Everything a session needs, from any entry point: `zyl repl`, the
 ; standalone binary, or a test harness.
 (defn repl-main (arena)
-  (begin
-    (let argv0 (ffi-call "zyl_arg_str" 0 1000)
-      (ffi-call "zyl_chdir"
-                (repl-resolve-bundledir (ffi-call "zyl_dirname_cstr" argv0 1000))
-                1000))
-    (repl-run arena)))
+  (let dir (ffi-call "zyl_getcwd" 0)
+    (let home (str-concat dir "")
+      (begin
+        (let argv0 (ffi-call "zyl_arg_str" 0 1000)
+          (ffi-call "zyl_chdir"
+                    (repl-resolve-bundledir (ffi-call "zyl_dirname_cstr" argv0 1000))
+                    1000))
+        (repl-run-in arena home)))))

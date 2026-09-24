@@ -272480,6 +272480,8 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dalloc_x2Dblock:
     mov [rbp-8], rdi
     mov [rbp-16], rsi
     mov [rbp-24], rdx
+    mov [rbp-32], rcx
+    sub rsp, 8
     mov rax, [rbp-16]
     push rax
     mov rax, 1
@@ -272491,15 +272493,28 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dalloc_x2Dblock:
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
-    mov rsi, [rsp+0]
-    mov rdi, [rsp+8]
+    sub rsp, 8
+    mov rax, [rbp-32]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+    mov r12, rsp
+    and rsp, -16
+call zyl_intern_name
+    mov rsp, r12
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdx, [rsp+0]
+    mov rsi, [rsp+8]
+    mov rdi, [rsp+16]
     mov r12, rsp
     and rsp, -16
 call zyl_val_alloc
     mov rsp, r12
-    add rsp, 16
-    mov [rbp-32], rax
-    mov rax, [rbp-32]
+    add rsp, 32
+    mov [rbp-40], rax
+    mov rax, [rbp-40]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-8]
@@ -272509,7 +272524,7 @@ call zyl_val_alloc
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__alloc_x2Dwrite_x2Dint
     add rsp, 16
-    mov rax, [rbp-32]
+    mov rax, [rbp-40]
     mov rsp, rbp
     pop rbp
     ret
@@ -272607,7 +272622,6 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dmake_x2Dfun:
     mov rbp, rsp
     sub rsp, 104
     mov [rbp-8], rdi
-    sub rsp, 8
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfun_x2Dtag
     add rsp, 0
     sub rsp, 8
@@ -272618,9 +272632,13 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfun_x2Dtag
     mov rax, 1
     sub rsp, 8
     mov [rsp], rax
-    mov rdx, [rsp+0]
-    mov rsi, [rsp+8]
-    mov rdi, [rsp+16]
+    lea rax, [rip+.L12109]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rcx, [rsp+0]
+    mov rdx, [rsp+8]
+    mov rsi, [rsp+16]
+    mov rdi, [rsp+24]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dalloc_x2Dblock
     add rsp, 32
     mov [rbp-16], rax
@@ -272636,7 +272654,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dalloc_x2Dblock
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
-call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dword_x2Dof_x2Dstr
+    mov r12, rsp
+    and rsp, -16
+call zyl_intern_name
+    mov rsp, r12
     add rsp, 16
     sub rsp, 8
     mov [rsp], rax
@@ -272716,10 +272737,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dblock_x2Dp
     sete al
     movzx rax, al
     test rax, rax
-    je .L12109
+    je .L12110
     mov rax, 0
-    jmp .L12110
-.L12109:
+    jmp .L12111
+.L12110:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -272736,13 +272757,13 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfun_x2Dtag
     sete al
     movzx rax, al
     test rax, rax
-    je .L12111
+    je .L12112
     mov rax, 1
-    jmp .L12112
-.L12111:
-    mov rax, 0
+    jmp .L12113
 .L12112:
-.L12110:
+    mov rax, 0
+.L12113:
+.L12111:
     mov rsp, rbp
     pop rbp
     ret
@@ -272753,13 +272774,13 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfail:
     mov [rbp-8], rdi
     mov [rbp-16], rsi
     sub rsp, 8
-    lea rax, [rip+.L12113]
+    lea rax, [rip+.L12114]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12114]
+    lea rax, [rip+.L12115]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-16]
@@ -272827,7 +272848,7 @@ call zyl_fnmap_get
     sete al
     movzx rax, al
     test rax, rax
-    je .L12115
+    je .L12116
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -272838,8 +272859,8 @@ call zyl_fnmap_get
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dscan_x2Dfn
     add rsp, 16
-    jmp .L12116
-.L12115:
+    jmp .L12117
+.L12116:
     sub rsp, 8
     mov rax, [rbp-24]
     sub rsp, 8
@@ -272858,7 +272879,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfn_x2Dof_x2Dword
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-.L12116:
+.L12117:
     mov rsp, rbp
     pop rbp
     ret
@@ -272873,7 +272894,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dscan_x2Dfn:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12119
+    jne .L12120
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -272883,12 +272904,12 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dscan_x2Dfn:
     mov qword ptr [rbx], 1
     mov rax, rbx
     mov [rsp], rax
-    jmp .L12117
-.L12119:
+    jmp .L12118
+.L12120:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12118
+    jne .L12119
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -272919,7 +272940,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     setg al
     movzx rax, al
     test rax, rax
-    je .L12120
+    je .L12121
     mov rax, [rbp-24]
     push rax
     mov r12, rsp
@@ -272932,8 +272953,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L12121
-.L12120:
+    jmp .L12122
+.L12121:
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
@@ -272944,12 +272965,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dscan_x2Dfn
     add rsp, 16
-.L12121:
+.L12122:
     mov [rsp], rax
-    jmp .L12117
-.L12118:
+    jmp .L12118
+.L12119:
     mov qword ptr [rsp], 0
-.L12117:
+.L12118:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -272984,15 +273005,15 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dindex_x2Dloop:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12124
+    jne .L12125
     mov rax, 0
     mov [rsp], rax
-    jmp .L12122
-.L12124:
+    jmp .L12123
+.L12125:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12123
+    jne .L12124
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -273032,10 +273053,10 @@ call zyl_fnmap_put
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dindex_x2Dloop
     add rsp, 16
     mov [rsp], rax
-    jmp .L12122
-.L12123:
+    jmp .L12123
+.L12124:
     mov qword ptr [rsp], 0
-.L12122:
+.L12123:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -273086,7 +273107,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfn_x2Dname:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 15
-    jne .L12127
+    jne .L12128
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -273098,14 +273119,14 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfn_x2Dname:
     mov rax, [rax+32]
     mov rax, [rbp-16]
     mov [rsp], rax
-    jmp .L12125
-.L12127:
-    lea rax, [rip+.L12128]
+    jmp .L12126
+.L12128:
+    lea rax, [rip+.L12129]
     mov [rsp], rax
-    jmp .L12125
-.L12126:
+    jmp .L12126
+.L12127:
     mov qword ptr [rsp], 0
-.L12125:
+.L12126:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -273120,7 +273141,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfn_x2Dparams:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 15
-    jne .L12131
+    jne .L12132
     mov rax, [rsp]
     mov rax, [rax+8]
     mov rax, [rsp]
@@ -273132,15 +273153,15 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfn_x2Dparams:
     mov rax, [rax+32]
     mov rax, [rbp-16]
     mov [rsp], rax
-    jmp .L12129
-.L12131:
+    jmp .L12130
+.L12132:
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__no_x2Dstrs
     add rsp, 0
     mov [rsp], rax
-    jmp .L12129
-.L12130:
+    jmp .L12130
+.L12131:
     mov qword ptr [rsp], 0
-.L12129:
+.L12130:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -273155,7 +273176,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfn_x2Dbody:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 15
-    jne .L12134
+    jne .L12135
     mov rax, [rsp]
     mov rax, [rax+8]
     mov rax, [rsp]
@@ -273167,8 +273188,8 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfn_x2Dbody:
     mov rax, [rax+32]
     mov rax, [rbp-16]
     mov [rsp], rax
-    jmp .L12132
-.L12134:
+    jmp .L12133
+.L12135:
     mov rax, 0
     push rax
     mov r12, rsp
@@ -273182,10 +273203,10 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfn_x2Dbody:
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L12132
-.L12133:
+    jmp .L12133
+.L12134:
     mov qword ptr [rsp], 0
-.L12132:
+.L12133:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -273193,7 +273214,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfn_x2Dbody:
 zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Deval:
     push rbp
     mov rbp, rsp
-    sub rsp, 392
+    sub rsp, 408
     mov [rbp-8], rdi
     mov [rbp-16], rsi
     mov [rbp-24], rdx
@@ -273202,7 +273223,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Deval:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12137
+    jne .L12138
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -273219,12 +273240,12 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Deval:
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L12135
-.L12137:
+    jmp .L12136
+.L12138:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12138
+    jne .L12139
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -273247,12 +273268,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dword_x2Dof_x2Dstr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L12135
-.L12138:
+    jmp .L12136
+.L12139:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 2
-    jne .L12139
+    jne .L12140
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-48], rax
@@ -273278,12 +273299,12 @@ call zyl_f_parse
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L12135
-.L12139:
+    jmp .L12136
+.L12140:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 3
-    jne .L12140
+    jne .L12141
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-56], rax
@@ -273303,12 +273324,12 @@ call zyl_f_parse
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dload
     add rsp, 32
     mov [rsp], rax
-    jmp .L12135
-.L12140:
+    jmp .L12136
+.L12141:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 4
-    jne .L12141
+    jne .L12142
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-64], rax
@@ -273342,12 +273363,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dload
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dbinop_x2Deval
     add rsp, 48
     mov [rsp], rax
-    jmp .L12135
-.L12141:
+    jmp .L12136
+.L12142:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 5
-    jne .L12142
+    jne .L12143
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-88], rax
@@ -273373,12 +273394,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dbinop_x2Deval
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dcall
     add rsp, 32
     mov [rsp], rax
-    jmp .L12135
-.L12142:
+    jmp .L12136
+.L12143:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 6
-    jne .L12143
+    jne .L12144
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-104], rax
@@ -273404,12 +273425,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dcall
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dffi
     add rsp, 32
     mov [rsp], rax
-    jmp .L12135
-.L12143:
+    jmp .L12136
+.L12144:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 7
-    jne .L12144
+    jne .L12145
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-120], rax
@@ -273429,12 +273450,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dffi
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dprint
     add rsp, 32
     mov [rsp], rax
-    jmp .L12135
-.L12144:
+    jmp .L12136
+.L12145:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 8
-    jne .L12145
+    jne .L12146
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-128], rax
@@ -273468,12 +273489,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dprint
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dif
     add rsp, 48
     mov [rsp], rax
-    jmp .L12135
-.L12145:
+    jmp .L12136
+.L12146:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 9
-    jne .L12146
+    jne .L12147
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-152], rax
@@ -273499,12 +273520,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dif
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dwhile
     add rsp, 32
     mov [rsp], rax
-    jmp .L12135
-.L12146:
+    jmp .L12136
+.L12147:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 10
-    jne .L12147
+    jne .L12148
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-168], rax
@@ -273530,12 +273551,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dwhile
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dset_x2Deval
     add rsp, 32
     mov [rsp], rax
-    jmp .L12135
-.L12147:
+    jmp .L12136
+.L12148:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 11
-    jne .L12148
+    jne .L12149
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-184], rax
@@ -273569,12 +273590,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dset_x2Deval
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dlet
     add rsp, 48
     mov [rsp], rax
-    jmp .L12135
-.L12148:
+    jmp .L12136
+.L12149:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 12
-    jne .L12149
+    jne .L12150
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-208], rax
@@ -273608,20 +273629,22 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dlet
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dseq
     add rsp, 32
     mov [rsp], rax
-    jmp .L12135
-.L12149:
+    jmp .L12136
+.L12150:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 13
-    jne .L12150
+    jne .L12151
     mov rax, [rsp]
     mov rax, [rax+8]
-    mov rax, [rsp]
-    mov rax, [rax+16]
     mov [rbp-216], rax
     mov rax, [rsp]
-    mov rax, [rax+24]
+    mov rax, [rax+16]
     mov [rbp-224], rax
+    mov rax, [rsp]
+    mov rax, [rax+24]
+    mov [rbp-232], rax
+    sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -273634,68 +273657,78 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dseq
     mov rax, [rbp-224]
     sub rsp, 8
     mov [rsp], rax
-    mov rcx, [rsp+0]
-    mov rdx, [rsp+8]
-    mov rsi, [rsp+16]
-    mov rdi, [rsp+24]
-call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dvariant
-    add rsp, 32
-    mov [rsp], rax
-    jmp .L12135
-.L12150:
-    mov rax, [rsp]
-    mov rax, [rax]
-    cmp rax, 18
-    jne .L12151
-    mov rax, [rsp]
-    mov rax, [rax+8]
-    mov rax, [rsp]
-    mov rax, [rax+16]
-    mov [rbp-232], rax
-    mov rax, [rsp]
-    mov rax, [rax+24]
-    mov [rbp-240], rax
-    mov rax, [rbp-8]
-    sub rsp, 8
-    mov [rsp], rax
-    mov rax, [rbp-16]
-    sub rsp, 8
-    mov [rsp], rax
     mov rax, [rbp-232]
     sub rsp, 8
     mov [rsp], rax
-    mov rax, [rbp-240]
-    sub rsp, 8
-    mov [rsp], rax
-    mov rcx, [rsp+0]
-    mov rdx, [rsp+8]
-    mov rsi, [rsp+16]
-    mov rdi, [rsp+24]
+    mov r8, [rsp+0]
+    mov rcx, [rsp+8]
+    mov rdx, [rsp+16]
+    mov rsi, [rsp+24]
+    mov rdi, [rsp+32]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dvariant
-    add rsp, 32
+    add rsp, 48
     mov [rsp], rax
-    jmp .L12135
+    jmp .L12136
 .L12151:
     mov rax, [rsp]
     mov rax, [rax]
-    cmp rax, 14
+    cmp rax, 18
     jne .L12152
     mov rax, [rsp]
     mov rax, [rax+8]
-    mov [rbp-248], rax
+    mov [rbp-240], rax
     mov rax, [rsp]
     mov rax, [rax+16]
+    mov [rbp-248], rax
+    mov rax, [rsp]
+    mov rax, [rax+24]
     mov [rbp-256], rax
+    sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-240]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-248]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-256]
+    sub rsp, 8
+    mov [rsp], rax
+    mov r8, [rsp+0]
+    mov rcx, [rsp+8]
+    mov rdx, [rsp+16]
+    mov rsi, [rsp+24]
+    mov rdi, [rsp+32]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dvariant
+    add rsp, 48
+    mov [rsp], rax
+    jmp .L12136
+.L12152:
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 14
+    jne .L12153
+    mov rax, [rsp]
+    mov rax, [rax+8]
+    mov [rbp-264], rax
+    mov rax, [rsp]
+    mov rax, [rax+16]
+    mov [rbp-272], rax
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-264]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-272]
     sub rsp, 8
     mov [rsp], rax
     mov rcx, [rsp+0]
@@ -273705,15 +273738,15 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dvariant
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dmatch
     add rsp, 32
     mov [rsp], rax
-    jmp .L12135
-.L12152:
+    jmp .L12136
+.L12153:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 15
-    jne .L12153
+    jne .L12154
     mov rax, [rsp]
     mov rax, [rax+8]
-    mov [rbp-264], rax
+    mov [rbp-280], rax
     mov rax, [rsp]
     mov rax, [rax+16]
     mov rax, [rsp]
@@ -273721,60 +273754,25 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dmatch
     mov rax, [rsp]
     mov rax, [rax+32]
     sub rsp, 8
-    mov rax, [rbp-264]
+    mov rax, [rbp-280]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dmake_x2Dfun
     add rsp, 16
     mov [rsp], rax
-    jmp .L12135
-.L12153:
-    mov rax, [rsp]
-    mov rax, [rax]
-    cmp rax, 16
-    jne .L12154
-    mov rax, [rsp]
-    mov rax, [rax+8]
-    mov [rbp-272], rax
-    mov rax, [rsp]
-    mov rax, [rax+16]
-    mov [rbp-280], rax
-    mov rax, [rbp-8]
-    sub rsp, 8
-    mov [rsp], rax
-    mov rax, [rbp-16]
-    sub rsp, 8
-    mov [rsp], rax
-    mov rax, [rbp-272]
-    sub rsp, 8
-    mov [rsp], rax
-    mov rax, [rbp-280]
-    sub rsp, 8
-    mov [rsp], rax
-    mov rcx, [rsp+0]
-    mov rdx, [rsp+8]
-    mov rsi, [rsp+16]
-    mov rdi, [rsp+24]
-call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dcall_x2Dclosure
-    add rsp, 32
-    mov [rsp], rax
-    jmp .L12135
+    jmp .L12136
 .L12154:
     mov rax, [rsp]
     mov rax, [rax]
-    cmp rax, 17
-    jne .L12136
+    cmp rax, 16
+    jne .L12155
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-288], rax
     mov rax, [rsp]
     mov rax, [rax+16]
     mov [rbp-296], rax
-    mov rax, [rsp]
-    mov rax, [rax+24]
-    mov [rbp-304], rax
-    sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -273787,7 +273785,42 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dcall_x2Dclosure
     mov rax, [rbp-296]
     sub rsp, 8
     mov [rsp], rax
+    mov rcx, [rsp+0]
+    mov rdx, [rsp+8]
+    mov rsi, [rsp+16]
+    mov rdi, [rsp+24]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dcall_x2Dclosure
+    add rsp, 32
+    mov [rsp], rax
+    jmp .L12136
+.L12155:
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 17
+    jne .L12137
+    mov rax, [rsp]
+    mov rax, [rax+8]
+    mov [rbp-304], rax
+    mov rax, [rsp]
+    mov rax, [rax+16]
+    mov [rbp-312], rax
+    mov rax, [rsp]
+    mov rax, [rax+24]
+    mov [rbp-320], rax
+    sub rsp, 8
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
     mov rax, [rbp-304]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-312]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-320]
     sub rsp, 8
     mov [rsp], rax
     mov r8, [rsp+0]
@@ -273798,10 +273831,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dcall_x2Dclosure
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dtry
     add rsp, 48
     mov [rsp], rax
-    jmp .L12135
-.L12136:
+    jmp .L12136
+.L12137:
     mov qword ptr [rsp], 0
-.L12135:
+.L12136:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -273827,18 +273860,18 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dlookup
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12157
+    jne .L12158
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
     mov rax, [rbp-32]
     mov [rsp], rax
-    jmp .L12155
-.L12157:
+    jmp .L12156
+.L12158:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12156
+    jne .L12157
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -273853,7 +273886,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfind_x2Dfn
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12160
+    jne .L12161
     mov rax, [rsp]
     mov rax, [rax+8]
     sub rsp, 8
@@ -273864,22 +273897,22 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfind_x2Dfn
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dmake_x2Dfun
     add rsp, 16
     mov [rsp], rax
-    jmp .L12158
-.L12160:
+    jmp .L12159
+.L12161:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12159
-    lea rax, [rip+.L12161]
+    jne .L12160
+    lea rax, [rip+.L12162]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12162]
+    lea rax, [rip+.L12163]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12163]
+    lea rax, [rip+.L12164]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -273916,16 +273949,16 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfail
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L12158
-.L12159:
+    jmp .L12159
+.L12160:
     mov qword ptr [rsp], 0
-.L12158:
+.L12159:
     pop rax
     mov [rsp], rax
-    jmp .L12155
-.L12156:
+    jmp .L12156
+.L12157:
     mov qword ptr [rsp], 0
-.L12155:
+.L12156:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -274012,7 +274045,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfloat_x2Dpair
     sete al
     movzx rax, al
     test rax, rax
-    je .L12164
+    je .L12165
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -274028,8 +274061,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfloat_x2Dpair
     mov rdi, [rsp+16]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfloat_x2Dop
     add rsp, 32
-    jmp .L12165
-.L12164:
+    jmp .L12166
+.L12165:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -274053,7 +274086,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dstring_x2Dcompare_x2Dp
     sete al
     movzx rax, al
     test rax, rax
-    je .L12166
+    je .L12167
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -274069,8 +274102,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dstring_x2Dcompare_x2Dp
     mov rdi, [rsp+16]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dstring_x2Deq
     add rsp, 32
-    jmp .L12167
-.L12166:
+    jmp .L12168
+.L12167:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -274094,7 +274127,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dblock_x2Dcompare_x2Dp
     sete al
     movzx rax, al
     test rax, rax
-    je .L12168
+    je .L12169
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -274110,8 +274143,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dblock_x2Dcompare_x2Dp
     mov rdi, [rsp+16]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dblock_x2Dcompare
     add rsp, 32
-    jmp .L12169
-.L12168:
+    jmp .L12170
+.L12169:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -274139,9 +274172,9 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__val_x2Dword
     mov rdi, [rsp+16]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dint_x2Dop
     add rsp, 32
-.L12169:
-.L12167:
-.L12165:
+.L12170:
+.L12168:
+.L12166:
     mov rsp, rbp
     pop rbp
     ret
@@ -274161,90 +274194,90 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dblock_x2Dcompare_x2Dp:
     setg al
     movzx rax, al
     test rax, rax
-    je .L12170
+    je .L12171
     mov rax, 0
-    jmp .L12171
-.L12170:
-    sub rsp, 8
-    mov rax, [rbp-16]
-    sub rsp, 8
-    mov [rsp], rax
-    mov rdi, [rsp+0]
-call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dis_x2Dptr
-    add rsp, 16
-    push rax
-    mov rax, 1
-    mov rcx, rax
-    pop rax
-    cmp rax, rcx
-    sete al
-    movzx rax, al
-    test rax, rax
-    je .L12172
-    sub rsp, 8
-    mov rax, [rbp-24]
-    sub rsp, 8
-    mov [rsp], rax
-    mov rdi, [rsp+0]
-call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dis_x2Dptr
-    add rsp, 16
-    push rax
-    mov rax, 1
-    mov rcx, rax
-    pop rax
-    cmp rax, rcx
-    sete al
-    movzx rax, al
-    test rax, rax
-    je .L12174
-    sub rsp, 8
-    sub rsp, 8
-    mov rax, [rbp-16]
-    sub rsp, 8
-    mov [rsp], rax
-    mov rdi, [rsp+0]
-call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__val_x2Dword
-    add rsp, 16
-    sub rsp, 8
-    mov [rsp], rax
-    mov rdi, [rsp+0]
-call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dblock_x2Dp
-    add rsp, 16
-    push rax
-    mov rax, 1
-    mov rcx, rax
-    pop rax
-    cmp rax, rcx
-    sete al
-    movzx rax, al
-    test rax, rax
-    je .L12176
-    sub rsp, 8
-    sub rsp, 8
-    mov rax, [rbp-24]
-    sub rsp, 8
-    mov [rsp], rax
-    mov rdi, [rsp+0]
-call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__val_x2Dword
-    add rsp, 16
-    sub rsp, 8
-    mov [rsp], rax
-    mov rdi, [rsp+0]
-call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dblock_x2Dp
-    add rsp, 16
-    jmp .L12177
-.L12176:
-    mov rax, 0
-.L12177:
-    jmp .L12175
-.L12174:
-    mov rax, 0
-.L12175:
-    jmp .L12173
-.L12172:
-    mov rax, 0
-.L12173:
+    jmp .L12172
 .L12171:
+    sub rsp, 8
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dis_x2Dptr
+    add rsp, 16
+    push rax
+    mov rax, 1
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    sete al
+    movzx rax, al
+    test rax, rax
+    je .L12173
+    sub rsp, 8
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dis_x2Dptr
+    add rsp, 16
+    push rax
+    mov rax, 1
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    sete al
+    movzx rax, al
+    test rax, rax
+    je .L12175
+    sub rsp, 8
+    sub rsp, 8
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__val_x2Dword
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dblock_x2Dp
+    add rsp, 16
+    push rax
+    mov rax, 1
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    sete al
+    movzx rax, al
+    test rax, rax
+    je .L12177
+    sub rsp, 8
+    sub rsp, 8
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__val_x2Dword
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dblock_x2Dp
+    add rsp, 16
+    jmp .L12178
+.L12177:
+    mov rax, 0
+.L12178:
+    jmp .L12176
+.L12175:
+    mov rax, 0
+.L12176:
+    jmp .L12174
+.L12173:
+    mov rax, 0
+.L12174:
+.L12172:
     mov rsp, rbp
     pop rbp
     ret
@@ -274258,19 +274291,19 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dis_x2Dptr:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 3
-    jne .L12180
+    jne .L12181
     mov rax, [rsp]
     mov rax, [rax+8]
     mov rax, 1
     mov [rsp], rax
-    jmp .L12178
-.L12180:
+    jmp .L12179
+.L12181:
     mov rax, 0
     mov [rsp], rax
-    jmp .L12178
-.L12179:
+    jmp .L12179
+.L12180:
     mov qword ptr [rsp], 0
-.L12178:
+.L12179:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -274291,7 +274324,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dblock_x2Dcompare:
     sete al
     movzx rax, al
     test rax, rax
-    je .L12181
+    je .L12182
     sub rsp, 8
     mov rax, [rbp-16]
     sub rsp, 8
@@ -274328,8 +274361,8 @@ call zyl_variant_eq
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L12182
-.L12181:
+    jmp .L12183
+.L12182:
     mov rax, [rbp-8]
     push rax
     mov rax, 10
@@ -274339,7 +274372,7 @@ call zyl_variant_eq
     sete al
     movzx rax, al
     test rax, rax
-    je .L12183
+    je .L12184
     sub rsp, 8
     mov rax, [rbp-16]
     sub rsp, 8
@@ -274373,12 +274406,12 @@ call zyl_variant_eq
     setg al
     movzx rax, al
     test rax, rax
-    je .L12185
+    je .L12186
     mov rax, 0
-    jmp .L12186
-.L12185:
-    mov rax, 1
+    jmp .L12187
 .L12186:
+    mov rax, 1
+.L12187:
     push rax
     mov r12, rsp
     and rsp, -16
@@ -274390,8 +274423,8 @@ call zyl_variant_eq
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L12184
-.L12183:
+    jmp .L12185
+.L12184:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -274426,8 +274459,8 @@ call zyl_variant_cmp
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dint_x2Dcompare_x2Dof
     add rsp, 16
-.L12184:
-.L12182:
+.L12185:
+.L12183:
     mov rsp, rbp
     pop rbp
     ret
@@ -274446,7 +274479,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dint_x2Dcompare_x2Dof:
     sete al
     movzx rax, al
     test rax, rax
-    je .L12187
+    je .L12188
     mov rax, [rbp-16]
     push rax
     mov rax, -1
@@ -274456,12 +274489,12 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dint_x2Dcompare_x2Dof:
     sete al
     movzx rax, al
     test rax, rax
-    je .L12189
+    je .L12190
     mov rax, 1
-    jmp .L12190
-.L12189:
-    mov rax, 0
+    jmp .L12191
 .L12190:
+    mov rax, 0
+.L12191:
     push rax
     mov r12, rsp
     and rsp, -16
@@ -274473,8 +274506,8 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dint_x2Dcompare_x2Dof:
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L12188
-.L12187:
+    jmp .L12189
+.L12188:
     mov rax, [rbp-8]
     push rax
     mov rax, 6
@@ -274484,7 +274517,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dint_x2Dcompare_x2Dof:
     sete al
     movzx rax, al
     test rax, rax
-    je .L12191
+    je .L12192
     mov rax, [rbp-16]
     push rax
     mov rax, 1
@@ -274494,12 +274527,12 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dint_x2Dcompare_x2Dof:
     sete al
     movzx rax, al
     test rax, rax
-    je .L12193
+    je .L12194
     mov rax, 1
-    jmp .L12194
-.L12193:
-    mov rax, 0
+    jmp .L12195
 .L12194:
+    mov rax, 0
+.L12195:
     push rax
     mov r12, rsp
     and rsp, -16
@@ -274511,8 +274544,8 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dint_x2Dcompare_x2Dof:
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L12192
-.L12191:
+    jmp .L12193
+.L12192:
     mov rax, [rbp-8]
     push rax
     mov rax, 7
@@ -274522,7 +274555,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dint_x2Dcompare_x2Dof:
     sete al
     movzx rax, al
     test rax, rax
-    je .L12195
+    je .L12196
     mov rax, [rbp-16]
     push rax
     mov rax, 1
@@ -274532,12 +274565,12 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dint_x2Dcompare_x2Dof:
     sete al
     movzx rax, al
     test rax, rax
-    je .L12197
+    je .L12198
     mov rax, 0
-    jmp .L12198
-.L12197:
-    mov rax, 1
+    jmp .L12199
 .L12198:
+    mov rax, 1
+.L12199:
     push rax
     mov r12, rsp
     and rsp, -16
@@ -274549,8 +274582,8 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dint_x2Dcompare_x2Dof:
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L12196
-.L12195:
+    jmp .L12197
+.L12196:
     mov rax, [rbp-8]
     push rax
     mov rax, 8
@@ -274560,7 +274593,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dint_x2Dcompare_x2Dof:
     sete al
     movzx rax, al
     test rax, rax
-    je .L12199
+    je .L12200
     mov rax, [rbp-16]
     push rax
     mov rax, -1
@@ -274570,12 +274603,12 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dint_x2Dcompare_x2Dof:
     sete al
     movzx rax, al
     test rax, rax
-    je .L12201
+    je .L12202
     mov rax, 0
-    jmp .L12202
-.L12201:
-    mov rax, 1
+    jmp .L12203
 .L12202:
+    mov rax, 1
+.L12203:
     push rax
     mov r12, rsp
     and rsp, -16
@@ -274587,8 +274620,8 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dint_x2Dcompare_x2Dof:
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L12200
-.L12199:
+    jmp .L12201
+.L12200:
     mov rax, 0
     push rax
     mov r12, rsp
@@ -274601,10 +274634,10 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dint_x2Dcompare_x2Dof:
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-.L12200:
-.L12196:
-.L12192:
-.L12188:
+.L12201:
+.L12197:
+.L12193:
+.L12189:
     mov rsp, rbp
     pop rbp
     ret
@@ -274630,7 +274663,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dis_x2Dstr
     sete al
     movzx rax, al
     test rax, rax
-    je .L12203
+    je .L12204
     sub rsp, 8
     mov rax, [rbp-24]
     sub rsp, 8
@@ -274646,7 +274679,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dis_x2Dstr
     sete al
     movzx rax, al
     test rax, rax
-    je .L12205
+    je .L12206
     mov rax, [rbp-8]
     push rax
     mov rax, 9
@@ -274656,10 +274689,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dis_x2Dstr
     sete al
     movzx rax, al
     test rax, rax
-    je .L12207
+    je .L12208
     mov rax, 1
-    jmp .L12208
-.L12207:
+    jmp .L12209
+.L12208:
     mov rax, [rbp-8]
     push rax
     mov rax, 10
@@ -274669,21 +274702,21 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dis_x2Dstr
     sete al
     movzx rax, al
     test rax, rax
-    je .L12209
+    je .L12210
     mov rax, 1
-    jmp .L12210
-.L12209:
-    mov rax, 0
+    jmp .L12211
 .L12210:
-.L12208:
-    jmp .L12206
-.L12205:
     mov rax, 0
+.L12211:
+.L12209:
+    jmp .L12207
 .L12206:
-    jmp .L12204
-.L12203:
     mov rax, 0
+.L12207:
+    jmp .L12205
 .L12204:
+    mov rax, 0
+.L12205:
     mov rsp, rbp
     pop rbp
     ret
@@ -274697,19 +274730,19 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dis_x2Dstr:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 2
-    jne .L12213
+    jne .L12214
     mov rax, [rsp]
     mov rax, [rax+8]
     mov rax, 1
     mov [rsp], rax
-    jmp .L12211
-.L12213:
+    jmp .L12212
+.L12214:
     mov rax, 0
     mov [rsp], rax
-    jmp .L12211
-.L12212:
+    jmp .L12212
+.L12213:
     mov qword ptr [rsp], 0
-.L12211:
+.L12212:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -274756,7 +274789,7 @@ call zyl_cstr_eq
     sete al
     movzx rax, al
     test rax, rax
-    je .L12214
+    je .L12215
     mov rax, [rbp-32]
     push rax
     mov r12, rsp
@@ -274769,8 +274802,8 @@ call zyl_cstr_eq
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L12215
-.L12214:
+    jmp .L12216
+.L12215:
     mov rax, [rbp-32]
     push rax
     mov rax, 0
@@ -274780,12 +274813,12 @@ call zyl_cstr_eq
     setg al
     movzx rax, al
     test rax, rax
-    je .L12216
+    je .L12217
     mov rax, 0
-    jmp .L12217
-.L12216:
-    mov rax, 1
+    jmp .L12218
 .L12217:
+    mov rax, 1
+.L12218:
     push rax
     mov r12, rsp
     and rsp, -16
@@ -274797,7 +274830,7 @@ call zyl_cstr_eq
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-.L12215:
+.L12216:
     mov rsp, rbp
     pop rbp
     ret
@@ -274822,10 +274855,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dis_x2Dfloat
     sete al
     movzx rax, al
     test rax, rax
-    je .L12218
+    je .L12219
     mov rax, 1
-    jmp .L12219
-.L12218:
+    jmp .L12220
+.L12219:
     sub rsp, 8
     mov rax, [rbp-16]
     sub rsp, 8
@@ -274833,7 +274866,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dis_x2Dfloat
     mov rdi, [rsp+0]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dis_x2Dfloat
     add rsp, 16
-.L12219:
+.L12220:
     mov rsp, rbp
     pop rbp
     ret
@@ -274847,19 +274880,19 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dis_x2Dfloat:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12222
+    jne .L12223
     mov rax, [rsp]
     mov rax, [rax+8]
     mov rax, 1
     mov [rsp], rax
-    jmp .L12220
-.L12222:
+    jmp .L12221
+.L12223:
     mov rax, 0
     mov [rsp], rax
-    jmp .L12220
-.L12221:
+    jmp .L12221
+.L12222:
     mov qword ptr [rsp], 0
-.L12220:
+.L12221:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -274874,14 +274907,14 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Das_x2Dfloat_x2Dbits:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12225
+    jne .L12226
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
     mov rax, [rbp-16]
     mov [rsp], rax
-    jmp .L12223
-.L12225:
+    jmp .L12224
+.L12226:
     sub rsp, 8
     sub rsp, 8
     mov rax, [rbp-8]
@@ -274899,10 +274932,10 @@ call zyl_f_of_int
     mov rsp, r12
     add rsp, 16
     mov [rsp], rax
-    jmp .L12223
-.L12224:
+    jmp .L12224
+.L12225:
     mov qword ptr [rsp], 0
-.L12223:
+.L12224:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -274939,7 +274972,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Das_x2Dfloat_x2Dbits
     setl al
     movzx rax, al
     test rax, rax
-    je .L12226
+    je .L12227
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -274966,8 +274999,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfloat_x2Darith
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L12227
-.L12226:
+    jmp .L12228
+.L12227:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -274994,7 +275027,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfloat_x2Dcompare
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-.L12227:
+.L12228:
     mov rsp, rbp
     pop rbp
     ret
@@ -275014,7 +275047,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfloat_x2Darith:
     sete al
     movzx rax, al
     test rax, rax
-    je .L12228
+    je .L12229
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
@@ -275028,8 +275061,8 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfloat_x2Darith:
 call zyl_f_add
     mov rsp, r12
     add rsp, 16
-    jmp .L12229
-.L12228:
+    jmp .L12230
+.L12229:
     mov rax, [rbp-8]
     push rax
     mov rax, 1
@@ -275039,7 +275072,7 @@ call zyl_f_add
     sete al
     movzx rax, al
     test rax, rax
-    je .L12230
+    je .L12231
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
@@ -275053,8 +275086,8 @@ call zyl_f_add
 call zyl_f_sub
     mov rsp, r12
     add rsp, 16
-    jmp .L12231
-.L12230:
+    jmp .L12232
+.L12231:
     mov rax, [rbp-8]
     push rax
     mov rax, 2
@@ -275064,7 +275097,7 @@ call zyl_f_sub
     sete al
     movzx rax, al
     test rax, rax
-    je .L12232
+    je .L12233
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
@@ -275078,8 +275111,8 @@ call zyl_f_sub
 call zyl_f_mul
     mov rsp, r12
     add rsp, 16
-    jmp .L12233
-.L12232:
+    jmp .L12234
+.L12233:
     mov rax, [rbp-8]
     push rax
     mov rax, 3
@@ -275089,7 +275122,7 @@ call zyl_f_mul
     sete al
     movzx rax, al
     test rax, rax
-    je .L12234
+    je .L12235
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
@@ -275103,8 +275136,8 @@ call zyl_f_mul
 call zyl_f_div
     mov rsp, r12
     add rsp, 16
-    jmp .L12235
-.L12234:
+    jmp .L12236
+.L12235:
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
@@ -275118,10 +275151,10 @@ call zyl_f_div
 call zyl_f_rem
     mov rsp, r12
     add rsp, 16
-.L12235:
-.L12233:
-.L12231:
-.L12229:
+.L12236:
+.L12234:
+.L12232:
+.L12230:
     mov rsp, rbp
     pop rbp
     ret
@@ -275155,7 +275188,7 @@ call zyl_f_cmp
     sete al
     movzx rax, al
     test rax, rax
-    je .L12236
+    je .L12237
     mov rax, [rbp-32]
     push rax
     mov rax, -1
@@ -275165,14 +275198,14 @@ call zyl_f_cmp
     sete al
     movzx rax, al
     test rax, rax
-    je .L12238
+    je .L12239
     mov rax, 1
-    jmp .L12239
-.L12238:
-    mov rax, 0
+    jmp .L12240
 .L12239:
-    jmp .L12237
-.L12236:
+    mov rax, 0
+.L12240:
+    jmp .L12238
+.L12237:
     mov rax, [rbp-8]
     push rax
     mov rax, 6
@@ -275182,7 +275215,7 @@ call zyl_f_cmp
     sete al
     movzx rax, al
     test rax, rax
-    je .L12240
+    je .L12241
     mov rax, [rbp-32]
     push rax
     mov rax, 1
@@ -275192,14 +275225,14 @@ call zyl_f_cmp
     sete al
     movzx rax, al
     test rax, rax
-    je .L12242
+    je .L12243
     mov rax, 1
-    jmp .L12243
-.L12242:
-    mov rax, 0
+    jmp .L12244
 .L12243:
-    jmp .L12241
-.L12240:
+    mov rax, 0
+.L12244:
+    jmp .L12242
+.L12241:
     mov rax, [rbp-8]
     push rax
     mov rax, 7
@@ -275209,7 +275242,7 @@ call zyl_f_cmp
     sete al
     movzx rax, al
     test rax, rax
-    je .L12244
+    je .L12245
     mov rax, [rbp-32]
     push rax
     mov rax, -1
@@ -275219,10 +275252,10 @@ call zyl_f_cmp
     sete al
     movzx rax, al
     test rax, rax
-    je .L12246
+    je .L12247
     mov rax, 1
-    jmp .L12247
-.L12246:
+    jmp .L12248
+.L12247:
     mov rax, [rbp-32]
     push rax
     mov rax, 0
@@ -275232,15 +275265,15 @@ call zyl_f_cmp
     sete al
     movzx rax, al
     test rax, rax
-    je .L12248
+    je .L12249
     mov rax, 1
-    jmp .L12249
-.L12248:
-    mov rax, 0
+    jmp .L12250
 .L12249:
-.L12247:
-    jmp .L12245
-.L12244:
+    mov rax, 0
+.L12250:
+.L12248:
+    jmp .L12246
+.L12245:
     mov rax, [rbp-8]
     push rax
     mov rax, 8
@@ -275250,7 +275283,7 @@ call zyl_f_cmp
     sete al
     movzx rax, al
     test rax, rax
-    je .L12250
+    je .L12251
     mov rax, [rbp-32]
     push rax
     mov rax, 1
@@ -275260,28 +275293,28 @@ call zyl_f_cmp
     sete al
     movzx rax, al
     test rax, rax
-    je .L12252
+    je .L12253
     mov rax, 1
-    jmp .L12253
-.L12252:
-    mov rax, [rbp-32]
-    push rax
-    mov rax, 0
-    mov rcx, rax
-    pop rax
-    cmp rax, rcx
-    sete al
-    movzx rax, al
-    test rax, rax
-    je .L12254
-    mov rax, 1
-    jmp .L12255
-.L12254:
-    mov rax, 0
-.L12255:
+    jmp .L12254
 .L12253:
-    jmp .L12251
-.L12250:
+    mov rax, [rbp-32]
+    push rax
+    mov rax, 0
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    sete al
+    movzx rax, al
+    test rax, rax
+    je .L12255
+    mov rax, 1
+    jmp .L12256
+.L12255:
+    mov rax, 0
+.L12256:
+.L12254:
+    jmp .L12252
+.L12251:
     mov rax, [rbp-8]
     push rax
     mov rax, 9
@@ -275291,7 +275324,7 @@ call zyl_f_cmp
     sete al
     movzx rax, al
     test rax, rax
-    je .L12256
+    je .L12257
     mov rax, [rbp-32]
     push rax
     mov rax, 0
@@ -275301,14 +275334,14 @@ call zyl_f_cmp
     sete al
     movzx rax, al
     test rax, rax
-    je .L12258
+    je .L12259
     mov rax, 1
-    jmp .L12259
-.L12258:
-    mov rax, 0
+    jmp .L12260
 .L12259:
-    jmp .L12257
-.L12256:
+    mov rax, 0
+.L12260:
+    jmp .L12258
+.L12257:
     mov rax, [rbp-8]
     push rax
     mov rax, 10
@@ -275318,7 +275351,7 @@ call zyl_f_cmp
     sete al
     movzx rax, al
     test rax, rax
-    je .L12260
+    je .L12261
     mov rax, [rbp-32]
     push rax
     mov rax, 0
@@ -275328,21 +275361,21 @@ call zyl_f_cmp
     sete al
     movzx rax, al
     test rax, rax
-    je .L12262
+    je .L12263
     mov rax, 0
-    jmp .L12263
-.L12262:
-    mov rax, 1
+    jmp .L12264
 .L12263:
-    jmp .L12261
-.L12260:
-    mov rax, 0
+    mov rax, 1
+.L12264:
+    jmp .L12262
 .L12261:
-.L12257:
-.L12251:
-.L12245:
-.L12241:
-.L12237:
+    mov rax, 0
+.L12262:
+.L12258:
+.L12252:
+.L12246:
+.L12242:
+.L12238:
     mov rsp, rbp
     pop rbp
     ret
@@ -275362,7 +275395,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dint_x2Dop:
     setl al
     movzx rax, al
     test rax, rax
-    je .L12264
+    je .L12265
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -275389,8 +275422,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dint_x2Darith
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L12265
-.L12264:
+    jmp .L12266
+.L12265:
     mov rax, [rbp-8]
     push rax
     mov rax, 11
@@ -275400,7 +275433,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dint_x2Darith
     setl al
     movzx rax, al
     test rax, rax
-    je .L12266
+    je .L12267
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -275427,8 +275460,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dint_x2Dcompare
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L12267
-.L12266:
+    jmp .L12268
+.L12267:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -275455,8 +275488,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dint_x2Dbits
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-.L12267:
-.L12265:
+.L12268:
+.L12266:
     mov rsp, rbp
     pop rbp
     ret
@@ -275476,15 +275509,15 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dint_x2Darith:
     sete al
     movzx rax, al
     test rax, rax
-    je .L12268
+    je .L12269
     mov rax, [rbp-16]
     push rax
     mov rax, [rbp-24]
     mov rcx, rax
     pop rax
     add rax, rcx
-    jmp .L12269
-.L12268:
+    jmp .L12270
+.L12269:
     mov rax, [rbp-8]
     push rax
     mov rax, 1
@@ -275494,15 +275527,15 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dint_x2Darith:
     sete al
     movzx rax, al
     test rax, rax
-    je .L12270
+    je .L12271
     mov rax, [rbp-16]
     push rax
     mov rax, [rbp-24]
     mov rcx, rax
     pop rax
     sub rax, rcx
-    jmp .L12271
-.L12270:
+    jmp .L12272
+.L12271:
     mov rax, [rbp-8]
     push rax
     mov rax, 2
@@ -275512,15 +275545,15 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dint_x2Darith:
     sete al
     movzx rax, al
     test rax, rax
-    je .L12272
+    je .L12273
     mov rax, [rbp-16]
     push rax
     mov rax, [rbp-24]
     mov rcx, rax
     pop rax
     imul rax, rcx
-    jmp .L12273
-.L12272:
+    jmp .L12274
+.L12273:
     mov rax, [rbp-8]
     push rax
     mov rax, 3
@@ -275530,7 +275563,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dint_x2Darith:
     sete al
     movzx rax, al
     test rax, rax
-    je .L12274
+    je .L12275
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
@@ -275541,8 +275574,8 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dint_x2Darith:
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dint_x2Ddiv
     add rsp, 16
-    jmp .L12275
-.L12274:
+    jmp .L12276
+.L12275:
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
@@ -275553,10 +275586,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dint_x2Ddiv
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dint_x2Drem
     add rsp, 16
-.L12275:
-.L12273:
-.L12271:
-.L12269:
+.L12276:
+.L12274:
+.L12272:
+.L12270:
     mov rsp, rbp
     pop rbp
     ret
@@ -275575,19 +275608,19 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dint_x2Ddiv:
     sete al
     movzx rax, al
     test rax, rax
-    je .L12276
-    lea rax, [rip+.L12278]
+    je .L12277
+    lea rax, [rip+.L12279]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12279]
+    lea rax, [rip+.L12280]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfail
     add rsp, 16
-    jmp .L12277
-.L12276:
+    jmp .L12278
+.L12277:
     mov rax, [rbp-8]
     push rax
     mov rax, [rbp-16]
@@ -275595,7 +275628,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfail
     pop rax
     cqo
     idiv rcx
-.L12277:
+.L12278:
     mov rsp, rbp
     pop rbp
     ret
@@ -275614,19 +275647,19 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dint_x2Drem:
     sete al
     movzx rax, al
     test rax, rax
-    je .L12280
-    lea rax, [rip+.L12282]
+    je .L12281
+    lea rax, [rip+.L12283]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12283]
+    lea rax, [rip+.L12284]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfail
     add rsp, 16
-    jmp .L12281
-.L12280:
+    jmp .L12282
+.L12281:
     mov rax, [rbp-8]
     push rax
     mov rax, [rbp-16]
@@ -275635,7 +275668,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfail
     cqo
     idiv rcx
     mov rax, rdx
-.L12281:
+.L12282:
     mov rsp, rbp
     pop rbp
     ret
@@ -275655,7 +275688,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dint_x2Dcompare:
     sete al
     movzx rax, al
     test rax, rax
-    je .L12284
+    je .L12285
     mov rax, [rbp-16]
     push rax
     mov rax, [rbp-24]
@@ -275665,14 +275698,14 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dint_x2Dcompare:
     setl al
     movzx rax, al
     test rax, rax
-    je .L12286
+    je .L12287
     mov rax, 1
-    jmp .L12287
-.L12286:
-    mov rax, 0
+    jmp .L12288
 .L12287:
-    jmp .L12285
-.L12284:
+    mov rax, 0
+.L12288:
+    jmp .L12286
+.L12285:
     mov rax, [rbp-8]
     push rax
     mov rax, 6
@@ -275682,7 +275715,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dint_x2Dcompare:
     sete al
     movzx rax, al
     test rax, rax
-    je .L12288
+    je .L12289
     mov rax, [rbp-16]
     push rax
     mov rax, [rbp-24]
@@ -275692,14 +275725,14 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dint_x2Dcompare:
     setg al
     movzx rax, al
     test rax, rax
-    je .L12290
+    je .L12291
     mov rax, 1
-    jmp .L12291
-.L12290:
-    mov rax, 0
+    jmp .L12292
 .L12291:
-    jmp .L12289
-.L12288:
+    mov rax, 0
+.L12292:
+    jmp .L12290
+.L12289:
     mov rax, [rbp-8]
     push rax
     mov rax, 7
@@ -275709,7 +275742,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dint_x2Dcompare:
     sete al
     movzx rax, al
     test rax, rax
-    je .L12292
+    je .L12293
     mov rax, [rbp-16]
     push rax
     mov rax, [rbp-24]
@@ -275719,14 +275752,14 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dint_x2Dcompare:
     setle al
     movzx rax, al
     test rax, rax
-    je .L12294
+    je .L12295
     mov rax, 1
-    jmp .L12295
-.L12294:
-    mov rax, 0
+    jmp .L12296
 .L12295:
-    jmp .L12293
-.L12292:
+    mov rax, 0
+.L12296:
+    jmp .L12294
+.L12293:
     mov rax, [rbp-8]
     push rax
     mov rax, 8
@@ -275736,7 +275769,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dint_x2Dcompare:
     sete al
     movzx rax, al
     test rax, rax
-    je .L12296
+    je .L12297
     mov rax, [rbp-16]
     push rax
     mov rax, [rbp-24]
@@ -275746,14 +275779,14 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dint_x2Dcompare:
     setge al
     movzx rax, al
     test rax, rax
-    je .L12298
+    je .L12299
     mov rax, 1
-    jmp .L12299
-.L12298:
-    mov rax, 0
+    jmp .L12300
 .L12299:
-    jmp .L12297
-.L12296:
+    mov rax, 0
+.L12300:
+    jmp .L12298
+.L12297:
     mov rax, [rbp-8]
     push rax
     mov rax, 9
@@ -275763,7 +275796,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dint_x2Dcompare:
     sete al
     movzx rax, al
     test rax, rax
-    je .L12300
+    je .L12301
     mov rax, [rbp-16]
     push rax
     mov rax, [rbp-24]
@@ -275773,14 +275806,14 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dint_x2Dcompare:
     sete al
     movzx rax, al
     test rax, rax
-    je .L12302
+    je .L12303
     mov rax, 1
-    jmp .L12303
-.L12302:
-    mov rax, 0
+    jmp .L12304
 .L12303:
-    jmp .L12301
-.L12300:
+    mov rax, 0
+.L12304:
+    jmp .L12302
+.L12301:
     mov rax, [rbp-16]
     push rax
     mov rax, [rbp-24]
@@ -275790,17 +275823,17 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dint_x2Dcompare:
     sete al
     movzx rax, al
     test rax, rax
-    je .L12304
+    je .L12305
     mov rax, 0
-    jmp .L12305
-.L12304:
-    mov rax, 1
+    jmp .L12306
 .L12305:
-.L12301:
-.L12297:
-.L12293:
-.L12289:
-.L12285:
+    mov rax, 1
+.L12306:
+.L12302:
+.L12298:
+.L12294:
+.L12290:
+.L12286:
     mov rsp, rbp
     pop rbp
     ret
@@ -275820,15 +275853,15 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dint_x2Dbits:
     sete al
     movzx rax, al
     test rax, rax
-    je .L12306
+    je .L12307
     mov rax, [rbp-16]
     push rax
     mov rax, [rbp-24]
     mov rcx, rax
     pop rax
     and rax, rcx
-    jmp .L12307
-.L12306:
+    jmp .L12308
+.L12307:
     mov rax, [rbp-8]
     push rax
     mov rax, 12
@@ -275838,15 +275871,15 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dint_x2Dbits:
     sete al
     movzx rax, al
     test rax, rax
-    je .L12308
+    je .L12309
     mov rax, [rbp-16]
     push rax
     mov rax, [rbp-24]
     mov rcx, rax
     pop rax
     or rax, rcx
-    jmp .L12309
-.L12308:
+    jmp .L12310
+.L12309:
     mov rax, [rbp-8]
     push rax
     mov rax, 13
@@ -275856,15 +275889,15 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dint_x2Dbits:
     sete al
     movzx rax, al
     test rax, rax
-    je .L12310
+    je .L12311
     mov rax, [rbp-16]
     push rax
     mov rax, [rbp-24]
     mov rcx, rax
     pop rax
     xor rax, rcx
-    jmp .L12311
-.L12310:
+    jmp .L12312
+.L12311:
     mov rax, [rbp-8]
     push rax
     mov rax, 14
@@ -275874,7 +275907,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dint_x2Dbits:
     sete al
     movzx rax, al
     test rax, rax
-    je .L12312
+    je .L12313
     mov rax, [rbp-16]
     push rax
     mov rax, [rbp-24]
@@ -275885,8 +275918,8 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dint_x2Dbits:
     cmp rdx, 64
     sbb rdx, rdx
     and rax, rdx
-    jmp .L12313
-.L12312:
+    jmp .L12314
+.L12313:
     mov rax, [rbp-8]
     push rax
     mov rax, 15
@@ -275896,7 +275929,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dint_x2Dbits:
     sete al
     movzx rax, al
     test rax, rax
-    je .L12314
+    je .L12315
     mov rax, [rbp-16]
     push rax
     mov rax, [rbp-24]
@@ -275907,8 +275940,8 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dint_x2Dbits:
     cmp rdx, 64
     sbb rdx, rdx
     and rax, rdx
-    jmp .L12315
-.L12314:
+    jmp .L12316
+.L12315:
     mov rax, [rbp-16]
     push rax
     mov rax, [rbp-24]
@@ -275918,11 +275951,11 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dint_x2Dbits:
     cmp rcx, 64
     cmovae rcx, rdx
     sar rax, cl
-.L12315:
-.L12313:
-.L12311:
-.L12309:
-.L12307:
+.L12316:
+.L12314:
+.L12312:
+.L12310:
+.L12308:
     mov rsp, rbp
     pop rbp
     ret
@@ -275964,7 +275997,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__val_x2Dtruthy
     sete al
     movzx rax, al
     test rax, rax
-    je .L12316
+    je .L12317
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -275980,8 +276013,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__val_x2Dtruthy
     mov rdi, [rsp+16]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Deval
     add rsp, 32
-    jmp .L12317
-.L12316:
+    jmp .L12318
+.L12317:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -275997,7 +276030,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Deval
     mov rdi, [rsp+16]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Deval
     add rsp, 32
-.L12317:
+.L12318:
     mov rsp, rbp
     pop rbp
     ret
@@ -276084,7 +276117,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__val_x2Dtruthy
     sete al
     movzx rax, al
     test rax, rax
-    je .L12318
+    je .L12319
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -276122,10 +276155,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Deval
     mov rdi, [rsp+32]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dwhile_x2Dstep
     add rsp, 48
-    jmp .L12319
-.L12318:
-    mov rax, [rbp-40]
+    jmp .L12320
 .L12319:
+    mov rax, [rbp-40]
+.L12320:
     mov rsp, rbp
     pop rbp
     ret
@@ -276142,15 +276175,15 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dseq:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12322
+    jne .L12323
     mov rax, [rbp-32]
     mov [rsp], rax
-    jmp .L12320
-.L12322:
+    jmp .L12321
+.L12323:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12321
+    jne .L12322
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -276190,10 +276223,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Deval
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dseq
     add rsp, 32
     mov [rsp], rax
-    jmp .L12320
-.L12321:
+    jmp .L12321
+.L12322:
     mov qword ptr [rsp], 0
-.L12320:
+.L12321:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -276297,17 +276330,17 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dlookup_x2Dcell
     sete al
     movzx rax, al
     test rax, rax
-    je .L12323
-    lea rax, [rip+.L12325]
+    je .L12324
+    lea rax, [rip+.L12326]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12326]
+    lea rax, [rip+.L12327]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12327]
+    lea rax, [rip+.L12328]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -276343,8 +276376,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfail
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L12324
-.L12323:
+    jmp .L12325
+.L12324:
     mov rax, [rbp-48]
     sub rsp, 8
     mov [rsp], rax
@@ -276356,7 +276389,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfail
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dcell_x2Dset
     add rsp, 16
     mov rax, [rbp-40]
-.L12324:
+.L12325:
     mov rsp, rbp
     pop rbp
     ret
@@ -276380,7 +276413,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dtry:
     call setjmp
     mov rsp, r12
     cmp rax, 0
-    jne .L12330
+    jne .L12331
     pop rax
     sub rsp, 8
     mov rax, [rbp-8]
@@ -276414,8 +276447,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Deval
     call zyl_try_pop
     mov rsp, r12
     pop rax
-    jmp .L12331
-.L12330:
+    jmp .L12332
+.L12331:
     pop rax
     mov rdi, rax
     mov r12, rsp
@@ -276435,23 +276468,23 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Deval
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-.L12331:
+.L12332:
     push rax
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12332
+    jne .L12333
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-56], rax
     mov rax, [rbp-56]
     mov [rsp], rax
-    jmp .L12328
-.L12332:
+    jmp .L12329
+.L12333:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12329
+    jne .L12330
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-64], rax
@@ -276502,10 +276535,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dbind
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Deval
     add rsp, 32
     mov [rsp], rax
-    jmp .L12328
-.L12329:
+    jmp .L12329
+.L12330:
     mov qword ptr [rsp], 0
-.L12328:
+.L12329:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -276518,7 +276551,12 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dvariant:
     mov [rbp-16], rsi
     mov [rbp-24], rdx
     mov [rbp-32], rcx
+    mov [rbp-40], r8
+    sub rsp, 8
     mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
     sub rsp, 8
@@ -276528,7 +276566,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dvariant:
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    mov rax, [rbp-32]
+    mov rax, [rbp-40]
     sub rsp, 8
     mov [rsp], rax
     mov rdx, [rsp+0]
@@ -276538,25 +276576,26 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dargs_x2Deval
     add rsp, 32
     sub rsp, 8
     mov [rsp], rax
-    mov rsi, [rsp+0]
-    mov rdi, [rsp+8]
+    mov rdx, [rsp+0]
+    mov rsi, [rsp+8]
+    mov rdi, [rsp+16]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dbuild_x2Dblock
-    add rsp, 16
+    add rsp, 32
     mov rsp, rbp
     pop rbp
     ret
 zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dbuild_x2Dblock:
     push rbp
     mov rbp, rsp
-    sub rsp, 104
+    sub rsp, 120
     mov [rbp-8], rdi
     mov [rbp-16], rsi
-    sub rsp, 8
-    mov rax, [rbp-8]
+    mov [rbp-24], rdx
+    mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
     sub rsp, 8
-    mov rax, [rbp-16]
+    mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
@@ -276565,7 +276604,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__list_x2Dlength
     sub rsp, 8
     mov [rsp], rax
     sub rsp, 8
-    mov rax, [rbp-16]
+    mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
     mov rax, 0
@@ -276581,17 +276620,21 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dkind_x2Dbits
     add rsp, 32
     sub rsp, 8
     mov [rsp], rax
-    mov rdx, [rsp+0]
-    mov rsi, [rsp+8]
-    mov rdi, [rsp+16]
-call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dalloc_x2Dblock
-    add rsp, 32
-    mov [rbp-24], rax
-    sub rsp, 8
-    mov rax, [rbp-24]
+    mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    mov rax, [rbp-16]
+    mov rcx, [rsp+0]
+    mov rdx, [rsp+8]
+    mov rsi, [rsp+16]
+    mov rdi, [rsp+24]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dalloc_x2Dblock
+    add rsp, 32
+    mov [rbp-32], rax
+    sub rsp, 8
+    mov rax, [rbp-32]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
     mov rax, 0
@@ -276602,7 +276645,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dalloc_x2Dblock
     mov rdi, [rsp+16]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dstore_x2Dfields
     add rsp, 32
-    mov rax, [rbp-24]
+    mov rax, [rbp-32]
     push rax
     mov r12, rsp
     and rsp, -16
@@ -276629,15 +276672,15 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dstore_x2Dfields:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12335
+    jne .L12336
     mov rax, 0
     mov [rsp], rax
-    jmp .L12333
-.L12335:
+    jmp .L12334
+.L12336:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12334
+    jne .L12335
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -276692,10 +276735,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dblock_x2Dset
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dstore_x2Dfields
     add rsp, 32
     mov [rsp], rax
-    jmp .L12333
-.L12334:
+    jmp .L12334
+.L12335:
     mov qword ptr [rsp], 0
-.L12333:
+.L12334:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -276710,12 +276753,12 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Down_x2Dvalue:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 2
-    jne .L12338
+    jne .L12339
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
     sub rsp, 8
-    lea rax, [rip+.L12339]
+    lea rax, [rip+.L12340]
     sub rsp, 8
     mov [rsp], rax
     sub rsp, 8
@@ -276751,14 +276794,14 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dword_x2Dof_x2Dstr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L12336
-.L12338:
+    jmp .L12337
+.L12339:
     mov rax, [rbp-8]
     mov [rsp], rax
-    jmp .L12336
-.L12337:
+    jmp .L12337
+.L12338:
     mov qword ptr [rsp], 0
-.L12336:
+.L12337:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -276775,15 +276818,15 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dkind_x2Dbits:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12342
+    jne .L12343
     mov rax, [rbp-24]
     mov [rsp], rax
-    jmp .L12340
-.L12342:
+    jmp .L12341
+.L12343:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12341
+    jne .L12342
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -276799,10 +276842,10 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dkind_x2Dbits:
     setge al
     movzx rax, al
     test rax, rax
-    je .L12343
+    je .L12344
     mov rax, [rbp-24]
-    jmp .L12344
-.L12343:
+    jmp .L12345
+.L12344:
     sub rsp, 8
     mov rax, [rbp-40]
     sub rsp, 8
@@ -276848,12 +276891,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dkind_x2Dof_x2Dval
     mov rdi, [rsp+16]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dkind_x2Dbits
     add rsp, 32
-.L12344:
+.L12345:
     mov [rsp], rax
-    jmp .L12340
-.L12341:
+    jmp .L12341
+.L12342:
     mov qword ptr [rsp], 0
-.L12340:
+.L12341:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -276911,7 +276954,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dblock_x2Dp
     sete al
     movzx rax, al
     test rax, rax
-    je .L12345
+    je .L12346
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -276936,8 +276979,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dno_x2Dtag
     mov rdi, [rsp+32]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dmatch_x2Darm
     add rsp, 48
-    jmp .L12346
-.L12345:
+    jmp .L12347
+.L12346:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -276967,7 +277010,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dblock_x2Dtag
     mov rdi, [rsp+32]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dmatch_x2Darm
     add rsp, 48
-.L12346:
+.L12347:
     mov rsp, rbp
     pop rbp
     ret
@@ -276985,11 +277028,11 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dmatch_x2Darm:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12349
-    lea rax, [rip+.L12350]
+    jne .L12350
+    lea rax, [rip+.L12351]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12351]
+    lea rax, [rip+.L12352]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -277008,12 +277051,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfail
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L12347
-.L12349:
+    jmp .L12348
+.L12350:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12348
+    jne .L12349
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-48], rax
@@ -277025,7 +277068,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfail
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12353
+    jne .L12354
     mov rax, [rsp]
     mov rax, [rax+8]
     mov rax, [rsp]
@@ -277046,7 +277089,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfail
     sete al
     movzx rax, al
     test rax, rax
-    je .L12354
+    je .L12355
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -277070,8 +277113,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfail
     mov rdi, [rsp+32]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Drun_x2Darm
     add rsp, 48
-    jmp .L12355
-.L12354:
+    jmp .L12356
+.L12355:
     mov rax, [rbp-64]
     push rax
     mov rax, [rbp-32]
@@ -277081,7 +277124,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Drun_x2Darm
     sete al
     movzx rax, al
     test rax, rax
-    je .L12356
+    je .L12357
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -277105,8 +277148,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Drun_x2Darm
     mov rdi, [rsp+32]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Drun_x2Darm
     add rsp, 48
-    jmp .L12357
-.L12356:
+    jmp .L12358
+.L12357:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -277130,19 +277173,19 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Drun_x2Darm
     mov rdi, [rsp+32]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dmatch_x2Darm
     add rsp, 48
-.L12357:
-.L12355:
+.L12358:
+.L12356:
     mov [rsp], rax
-    jmp .L12352
-.L12353:
+    jmp .L12353
+.L12354:
     mov qword ptr [rsp], 0
-.L12352:
+.L12353:
     pop rax
     mov [rsp], rax
-    jmp .L12347
-.L12348:
+    jmp .L12348
+.L12349:
     mov qword ptr [rsp], 0
-.L12347:
+.L12348:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -277204,15 +277247,15 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dbind_x2Dfields:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12360
+    jne .L12361
     mov rax, [rbp-8]
     mov [rsp], rax
-    jmp .L12358
-.L12360:
+    jmp .L12359
+.L12361:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12359
+    jne .L12360
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -277266,10 +277309,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dbind
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dbind_x2Dfields
     add rsp, 32
     mov [rsp], rax
-    jmp .L12358
-.L12359:
+    jmp .L12359
+.L12360:
     mov qword ptr [rsp], 0
-.L12358:
+.L12359:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -277348,7 +277391,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dval_x2Dof_x2Dkind:
     sete al
     movzx rax, al
     test rax, rax
-    je .L12361
+    je .L12362
     mov rax, [rbp-8]
     push rax
     mov r12, rsp
@@ -277361,8 +277404,8 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dval_x2Dof_x2Dkind:
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L12362
-.L12361:
+    jmp .L12363
+.L12362:
     mov rax, [rbp-16]
     push rax
     mov rax, 2
@@ -277372,7 +277415,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dval_x2Dof_x2Dkind:
     sete al
     movzx rax, al
     test rax, rax
-    je .L12363
+    je .L12364
     mov rax, [rbp-8]
     push rax
     mov r12, rsp
@@ -277385,8 +277428,8 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dval_x2Dof_x2Dkind:
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L12364
-.L12363:
+    jmp .L12365
+.L12364:
     mov rax, [rbp-16]
     push rax
     mov rax, 3
@@ -277396,7 +277439,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dval_x2Dof_x2Dkind:
     sete al
     movzx rax, al
     test rax, rax
-    je .L12365
+    je .L12366
     mov rax, [rbp-8]
     push rax
     mov r12, rsp
@@ -277409,8 +277452,8 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dval_x2Dof_x2Dkind:
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L12366
-.L12365:
+    jmp .L12367
+.L12366:
     mov rax, [rbp-8]
     push rax
     mov r12, rsp
@@ -277423,9 +277466,9 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dval_x2Dof_x2Dkind:
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-.L12366:
-.L12364:
-.L12362:
+.L12367:
+.L12365:
+.L12363:
     mov rsp, rbp
     pop rbp
     ret
@@ -277439,45 +277482,45 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dkind_x2Dof_x2Dval:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12369
+    jne .L12370
     mov rax, [rsp]
     mov rax, [rax+8]
     mov rax, 0
     mov [rsp], rax
-    jmp .L12367
-.L12369:
+    jmp .L12368
+.L12370:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 2
-    jne .L12370
+    jne .L12371
     mov rax, [rsp]
     mov rax, [rax+8]
     mov rax, 1
     mov [rsp], rax
-    jmp .L12367
-.L12370:
+    jmp .L12368
+.L12371:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12371
+    jne .L12372
     mov rax, [rsp]
     mov rax, [rax+8]
     mov rax, 2
     mov [rsp], rax
-    jmp .L12367
-.L12371:
+    jmp .L12368
+.L12372:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 3
-    jne .L12368
+    jne .L12369
     mov rax, [rsp]
     mov rax, [rax+8]
     mov rax, 3
     mov [rsp], rax
-    jmp .L12367
-.L12368:
+    jmp .L12368
+.L12369:
     mov qword ptr [rsp], 0
-.L12367:
+.L12368:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -277494,7 +277537,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dargs_x2Deval:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12374
+    jne .L12375
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -277504,12 +277547,12 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dargs_x2Deval:
     mov qword ptr [rbx], 1
     mov rax, rbx
     mov [rsp], rax
-    jmp .L12372
-.L12374:
+    jmp .L12373
+.L12375:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12373
+    jne .L12374
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -277563,10 +277606,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dargs_x2Deval
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L12372
-.L12373:
+    jmp .L12373
+.L12374:
     mov qword ptr [rsp], 0
-.L12372:
+.L12373:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -277593,7 +277636,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dlookup
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12377
+    jne .L12378
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -277616,12 +277659,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dlookup
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dcall_x2Dvalue
     add rsp, 32
     mov [rsp], rax
-    jmp .L12375
-.L12377:
+    jmp .L12376
+.L12378:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12376
+    jne .L12377
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -277641,10 +277684,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dcall_x2Dvalue
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dcall_x2Dnamed
     add rsp, 32
     mov [rsp], rax
-    jmp .L12375
-.L12376:
+    jmp .L12376
+.L12377:
     mov qword ptr [rsp], 0
-.L12375:
+.L12376:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -277671,7 +277714,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfind_x2Dfn
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12380
+    jne .L12381
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -277706,22 +277749,22 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfind_x2Dfn
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dapply
     add rsp, 48
     mov [rsp], rax
-    jmp .L12378
-.L12380:
+    jmp .L12379
+.L12381:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12379
-    lea rax, [rip+.L12381]
+    jne .L12380
+    lea rax, [rip+.L12382]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12382]
+    lea rax, [rip+.L12383]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12383]
+    lea rax, [rip+.L12384]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -277758,10 +277801,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfail
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L12378
-.L12379:
+    jmp .L12379
+.L12380:
     mov qword ptr [rsp], 0
-.L12378:
+.L12379:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -277791,11 +277834,11 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__val_x2Dword
     sete al
     movzx rax, al
     test rax, rax
-    je .L12384
-    lea rax, [rip+.L12386]
+    je .L12385
+    lea rax, [rip+.L12387]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12387]
+    lea rax, [rip+.L12388]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -277813,8 +277856,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfail
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L12385
-.L12384:
+    jmp .L12386
+.L12385:
     sub rsp, 8
     mov rax, [rbp-40]
     sub rsp, 8
@@ -277830,7 +277873,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dis_x2Dfun
     sete al
     movzx rax, al
     test rax, rax
-    je .L12388
+    je .L12389
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -277861,8 +277904,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dstr_x2Dof_x2Dword
     mov rdi, [rsp+24]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dcall_x2Dnamed
     add rsp, 32
-    jmp .L12389
-.L12388:
+    jmp .L12390
+.L12389:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -277881,8 +277924,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dcall_x2Dnamed
     mov rdi, [rsp+24]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dclosure_x2Dtriple
     add rsp, 32
-.L12389:
-.L12385:
+.L12390:
+.L12386:
     mov rsp, rbp
     pop rbp
     ret
@@ -277961,15 +278004,15 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dargs_x2Dappend:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12392
+    jne .L12393
     mov rax, [rbp-32]
     mov [rsp], rax
-    jmp .L12390
-.L12392:
+    jmp .L12391
+.L12393:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12391
+    jne .L12392
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -278026,10 +278069,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dargs_x2Dappend
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L12390
-.L12391:
+    jmp .L12391
+.L12392:
     mov qword ptr [rsp], 0
-.L12390:
+.L12391:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -278070,7 +278113,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__list_x2Dlength
     sete al
     movzx rax, al
     test rax, rax
-    je .L12393
+    je .L12394
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -278113,12 +278156,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfn_x2Dbody
     mov rdi, [rsp+16]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Deval
     add rsp, 32
-    jmp .L12394
-.L12393:
-    lea rax, [rip+.L12395]
+    jmp .L12395
+.L12394:
+    lea rax, [rip+.L12396]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12396]
+    lea rax, [rip+.L12397]
     sub rsp, 8
     mov [rsp], rax
     sub rsp, 8
@@ -278130,7 +278173,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfn_x2Dname
     add rsp, 16
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12397]
+    lea rax, [rip+.L12398]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -278166,7 +278209,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfail
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-.L12394:
+.L12395:
     mov rsp, rbp
     pop rbp
     ret
@@ -278182,15 +278225,15 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dframe:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12400
+    jne .L12401
     mov rax, [rbp-24]
     mov [rsp], rax
-    jmp .L12398
-.L12400:
+    jmp .L12399
+.L12401:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12399
+    jne .L12400
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -278202,15 +278245,15 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dframe:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12403
+    jne .L12404
     mov rax, [rbp-24]
     mov [rsp], rax
-    jmp .L12401
-.L12403:
+    jmp .L12402
+.L12404:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12402
+    jne .L12403
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-48], rax
@@ -278269,16 +278312,16 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dcell_x2Dnew
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dframe
     add rsp, 32
     mov [rsp], rax
-    jmp .L12401
-.L12402:
+    jmp .L12402
+.L12403:
     mov qword ptr [rsp], 0
-.L12401:
+.L12402:
     pop rax
     mov [rsp], rax
-    jmp .L12398
-.L12399:
+    jmp .L12399
+.L12400:
     mov qword ptr [rsp], 0
-.L12398:
+.L12399:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -278305,17 +278348,17 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dlookup
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12406
-    lea rax, [rip+.L12407]
+    jne .L12407
+    lea rax, [rip+.L12408]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12408]
+    lea rax, [rip+.L12409]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12409]
+    lea rax, [rip+.L12410]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -278352,12 +278395,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfail
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L12404
-.L12406:
+    jmp .L12405
+.L12407:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12405
+    jne .L12406
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -278380,10 +278423,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfail
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dclosure_x2Dapply
     add rsp, 32
     mov [rsp], rax
-    jmp .L12404
-.L12405:
+    jmp .L12405
+.L12406:
     mov qword ptr [rsp], 0
-.L12404:
+.L12405:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -278413,11 +278456,11 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__val_x2Dword
     sete al
     movzx rax, al
     test rax, rax
-    je .L12410
-    lea rax, [rip+.L12412]
+    je .L12411
+    lea rax, [rip+.L12413]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12413]
+    lea rax, [rip+.L12414]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -278435,8 +278478,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfail
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L12411
-.L12410:
+    jmp .L12412
+.L12411:
     sub rsp, 8
     mov rax, [rbp-40]
     sub rsp, 8
@@ -278452,7 +278495,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dis_x2Dfun
     sete al
     movzx rax, al
     test rax, rax
-    je .L12414
+    je .L12415
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -278483,8 +278526,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dstr_x2Dof_x2Dword
     mov rdi, [rsp+24]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dcall_x2Dnamed
     add rsp, 32
-    jmp .L12415
-.L12414:
+    jmp .L12416
+.L12415:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -278503,8 +278546,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dcall_x2Dnamed
     mov rdi, [rsp+24]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dclosure_x2Dtriple
     add rsp, 32
-.L12415:
-.L12411:
+.L12416:
+.L12412:
     mov rsp, rbp
     pop rbp
     ret
@@ -278531,11 +278574,11 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dblock_x2Dp
     sete al
     movzx rax, al
     test rax, rax
-    je .L12416
-    lea rax, [rip+.L12418]
+    je .L12417
+    lea rax, [rip+.L12419]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12419]
+    lea rax, [rip+.L12420]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -278553,8 +278596,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfail
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L12417
-.L12416:
+    jmp .L12418
+.L12417:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -278573,7 +278616,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfail
     mov rdi, [rsp+24]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dclosure_x2Dfields
     add rsp, 32
-.L12417:
+.L12418:
     mov rsp, rbp
     pop rbp
     ret
@@ -278622,7 +278665,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dis_x2Dfun
     sete al
     movzx rax, al
     test rax, rax
-    je .L12420
+    je .L12421
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -278658,12 +278701,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dstr_x2Dof_x2Dword
     mov rdi, [rsp+32]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dclosure_x2Dinvoke
     add rsp, 48
-    jmp .L12421
-.L12420:
-    lea rax, [rip+.L12422]
+    jmp .L12422
+.L12421:
+    lea rax, [rip+.L12423]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12423]
+    lea rax, [rip+.L12424]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -278681,7 +278724,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfail
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-.L12421:
+.L12422:
     mov rsp, rbp
     pop rbp
     ret
@@ -278708,17 +278751,17 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfind_x2Dfn
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12426
-    lea rax, [rip+.L12427]
+    jne .L12427
+    lea rax, [rip+.L12428]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12428]
+    lea rax, [rip+.L12429]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12429]
+    lea rax, [rip+.L12430]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -278755,12 +278798,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfail
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L12424
-.L12426:
+    jmp .L12425
+.L12427:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12425
+    jne .L12426
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-48], rax
@@ -278821,10 +278864,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfail
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dapply
     add rsp, 48
     mov [rsp], rax
-    jmp .L12424
-.L12425:
+    jmp .L12425
+.L12426:
     mov qword ptr [rsp], 0
-.L12424:
+.L12425:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -278840,7 +278883,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dffi:
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12432]
+    lea rax, [rip+.L12433]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -278855,7 +278898,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     setg al
     movzx rax, al
     test rax, rax
-    je .L12430
+    je .L12431
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -278871,12 +278914,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     mov rdi, [rsp+16]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dregister_x2Dtest
     add rsp, 32
-    jmp .L12431
-.L12430:
+    jmp .L12432
+.L12431:
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12435]
+    lea rax, [rip+.L12436]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -278891,7 +278934,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     setg al
     movzx rax, al
     test rax, rax
-    je .L12433
+    je .L12434
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -278899,8 +278942,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     mov rdi, [rsp+0]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Drun_x2Dtests
     add rsp, 16
-    jmp .L12434
-.L12433:
+    jmp .L12435
+.L12434:
     sub rsp, 8
     mov rax, [rbp-24]
     sub rsp, 8
@@ -278916,11 +278959,11 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dactor_x2Dsym_x2Dp
     sete al
     movzx rax, al
     test rax, rax
-    je .L12436
-    lea rax, [rip+.L12438]
+    je .L12437
+    lea rax, [rip+.L12439]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12439]
+    lea rax, [rip+.L12440]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -278938,8 +278981,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfail
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L12437
-.L12436:
+    jmp .L12438
+.L12437:
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
@@ -278964,9 +279007,9 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dargs_x2Deval
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dffi_x2Dcall
     add rsp, 16
-.L12437:
-.L12434:
-.L12431:
+.L12438:
+.L12435:
+.L12432:
     mov rsp, rbp
     pop rbp
     ret
@@ -278978,7 +279021,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dactor_x2Dsym_x2Dp:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12442]
+    lea rax, [rip+.L12443]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -278993,14 +279036,14 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     setg al
     movzx rax, al
     test rax, rax
-    je .L12440
+    je .L12441
     mov rax, 1
-    jmp .L12441
-.L12440:
+    jmp .L12442
+.L12441:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12445]
+    lea rax, [rip+.L12446]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -279015,13 +279058,13 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     setg al
     movzx rax, al
     test rax, rax
-    je .L12443
+    je .L12444
     mov rax, 1
-    jmp .L12444
-.L12443:
-    mov rax, 0
+    jmp .L12445
 .L12444:
-.L12441:
+    mov rax, 0
+.L12445:
+.L12442:
     mov rsp, rbp
     pop rbp
     ret
@@ -279117,7 +279160,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dnth_x2Dval:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12448
+    jne .L12449
     mov rax, 0
     push rax
     mov r12, rsp
@@ -279131,12 +279174,12 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dnth_x2Dval:
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L12446
-.L12448:
+    jmp .L12447
+.L12449:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12447
+    jne .L12448
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -279152,10 +279195,10 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dnth_x2Dval:
     setle al
     movzx rax, al
     test rax, rax
-    je .L12449
+    je .L12450
     mov rax, [rbp-24]
-    jmp .L12450
-.L12449:
+    jmp .L12451
+.L12450:
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
@@ -279171,12 +279214,12 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dnth_x2Dval:
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dnth_x2Dval
     add rsp, 16
-.L12450:
+.L12451:
     mov [rsp], rax
-    jmp .L12446
-.L12447:
+    jmp .L12447
+.L12448:
     mov qword ptr [rsp], 0
-.L12446:
+.L12447:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -279243,12 +279286,12 @@ call zyl_itest_reset
     setg al
     movzx rax, al
     test rax, rax
-    je .L12451
+    je .L12452
     mov rax, 1
-    jmp .L12452
-.L12451:
-    mov rax, 0
+    jmp .L12453
 .L12452:
+    mov rax, 0
+.L12453:
     push rax
     mov r12, rsp
     and rsp, -16
@@ -279280,10 +279323,10 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Drun_x2Dtest_x2Dloop:
     setge al
     movzx rax, al
     test rax, rax
-    je .L12453
+    je .L12454
     mov rax, [rbp-32]
-    jmp .L12454
-.L12453:
+    jmp .L12455
+.L12454:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -279318,17 +279361,17 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Drun_x2Done_x2Dtest
     sete al
     movzx rax, al
     test rax, rax
-    je .L12455
+    je .L12456
     mov rax, [rbp-32]
-    jmp .L12456
-.L12455:
+    jmp .L12457
+.L12456:
     mov rax, [rbp-32]
     push rax
     mov rax, 1
     mov rcx, rax
     pop rax
     add rax, rcx
-.L12456:
+.L12457:
     sub rsp, 8
     mov [rsp], rax
     mov rcx, [rsp+0]
@@ -279337,7 +279380,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Drun_x2Done_x2Dtest
     mov rdi, [rsp+24]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Drun_x2Dtest_x2Dloop
     add rsp, 32
-.L12454:
+.L12455:
     mov rsp, rbp
     pop rbp
     ret
@@ -279377,7 +279420,7 @@ call zyl_itest_start
     call setjmp
     mov rsp, r12
     cmp rax, 0
-    jne .L12457
+    jne .L12458
     pop rax
     mov rax, [rbp-8]
     sub rsp, 8
@@ -279448,8 +279491,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dcall_x2Dvalue
     call zyl_try_pop
     mov rsp, r12
     pop rax
-    jmp .L12458
-.L12457:
+    jmp .L12459
+.L12458:
     pop rax
     mov rdi, rax
     mov r12, rsp
@@ -279469,7 +279512,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dcall_x2Dvalue
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-.L12458:
+.L12459:
     mov [rbp-24], rax
     sub rsp, 8
     mov rax, [rbp-24]
@@ -279503,17 +279546,17 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dtest_x2Dok:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12461
+    jne .L12462
     mov rax, [rsp]
     mov rax, [rax+8]
     mov rax, 0
     mov [rsp], rax
-    jmp .L12459
-.L12461:
+    jmp .L12460
+.L12462:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12460
+    jne .L12461
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -279532,17 +279575,17 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__val_x2Dword
     sete al
     movzx rax, al
     test rax, rax
-    je .L12462
+    je .L12463
     mov rax, 1
-    jmp .L12463
-.L12462:
-    mov rax, 0
+    jmp .L12464
 .L12463:
+    mov rax, 0
+.L12464:
     mov [rsp], rax
-    jmp .L12459
-.L12460:
+    jmp .L12460
+.L12461:
     mov qword ptr [rsp], 0
-.L12459:
+.L12460:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -279573,11 +279616,11 @@ call zyl_ffi_lookup
     sete al
     movzx rax, al
     test rax, rax
-    je .L12464
-    lea rax, [rip+.L12466]
+    je .L12465
+    lea rax, [rip+.L12467]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12467]
+    lea rax, [rip+.L12468]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-8]
@@ -279607,8 +279650,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfail
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L12465
-.L12464:
+    jmp .L12466
+.L12465:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -279648,7 +279691,7 @@ call zyl_call_argv
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dffi_x2Dresult
     add rsp, 16
-.L12465:
+.L12466:
     mov rsp, rbp
     pop rbp
     ret
@@ -279717,15 +279760,15 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dargv_x2Dfill:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12470
+    jne .L12471
     mov rax, 0
     mov [rsp], rax
-    jmp .L12468
-.L12470:
+    jmp .L12469
+.L12471:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12469
+    jne .L12470
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -279779,10 +279822,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__alloc_x2Dwrite_x2Dint
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dargv_x2Dfill
     add rsp, 32
     mov [rsp], rax
-    jmp .L12468
-.L12469:
+    jmp .L12469
+.L12470:
     mov qword ptr [rsp], 0
-.L12468:
+.L12469:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -279840,7 +279883,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dprint_x2Dval:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12473
+    jne .L12474
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -279855,12 +279898,12 @@ call zyl_print_int
     mov rsp, r12
     add rsp, 16
     mov [rsp], rax
-    jmp .L12471
-.L12473:
+    jmp .L12472
+.L12474:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12474
+    jne .L12475
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -279875,12 +279918,12 @@ call zyl_print_float
     mov rsp, r12
     add rsp, 16
     mov [rsp], rax
-    jmp .L12471
-.L12474:
+    jmp .L12472
+.L12475:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 2
-    jne .L12475
+    jne .L12476
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -279895,12 +279938,12 @@ call zyl_print_str
     mov rsp, r12
     add rsp, 16
     mov [rsp], rax
-    jmp .L12471
-.L12475:
+    jmp .L12472
+.L12476:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 3
-    jne .L12472
+    jne .L12473
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -279915,10 +279958,10 @@ call zyl_print_int
     mov rsp, r12
     add rsp, 16
     mov [rsp], rax
-    jmp .L12471
-.L12472:
+    jmp .L12472
+.L12473:
     mov qword ptr [rsp], 0
-.L12471:
+.L12472:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -279944,7 +279987,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dffi_x2Dreturns_x2Dstr
     sete al
     movzx rax, al
     test rax, rax
-    je .L12476
+    je .L12477
     mov rax, [rbp-16]
     push rax
     mov r12, rsp
@@ -279957,8 +280000,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dffi_x2Dreturns_x2Dstr
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L12477
-.L12476:
+    jmp .L12478
+.L12477:
     mov rax, [rbp-16]
     push rax
     mov r12, rsp
@@ -279971,7 +280014,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dffi_x2Dreturns_x2Dstr
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-.L12477:
+.L12478:
     mov rsp, rbp
     pop rbp
     ret
@@ -279983,7 +280026,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dffi_x2Dreturns_x2Dstr:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12480]
+    lea rax, [rip+.L12481]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -279998,472 +280041,472 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     setg al
     movzx rax, al
     test rax, rax
-    je .L12478
+    je .L12479
     mov rax, 1
-    jmp .L12479
-.L12478:
-    mov rax, [rbp-8]
-    sub rsp, 8
-    mov [rsp], rax
-    lea rax, [rip+.L12483]
-    sub rsp, 8
-    mov [rsp], rax
-    mov rsi, [rsp+0]
-    mov rdi, [rsp+8]
-call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
-    add rsp, 16
-    push rax
-    mov rax, 0
-    mov rcx, rax
-    pop rax
-    cmp rax, rcx
-    setg al
-    movzx rax, al
-    test rax, rax
-    je .L12481
-    mov rax, 1
-    jmp .L12482
-.L12481:
-    mov rax, [rbp-8]
-    sub rsp, 8
-    mov [rsp], rax
-    lea rax, [rip+.L12486]
-    sub rsp, 8
-    mov [rsp], rax
-    mov rsi, [rsp+0]
-    mov rdi, [rsp+8]
-call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
-    add rsp, 16
-    push rax
-    mov rax, 0
-    mov rcx, rax
-    pop rax
-    cmp rax, rcx
-    setg al
-    movzx rax, al
-    test rax, rax
-    je .L12484
-    mov rax, 1
-    jmp .L12485
-.L12484:
-    mov rax, [rbp-8]
-    sub rsp, 8
-    mov [rsp], rax
-    lea rax, [rip+.L12489]
-    sub rsp, 8
-    mov [rsp], rax
-    mov rsi, [rsp+0]
-    mov rdi, [rsp+8]
-call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
-    add rsp, 16
-    push rax
-    mov rax, 0
-    mov rcx, rax
-    pop rax
-    cmp rax, rcx
-    setg al
-    movzx rax, al
-    test rax, rax
-    je .L12487
-    mov rax, 1
-    jmp .L12488
-.L12487:
-    mov rax, [rbp-8]
-    sub rsp, 8
-    mov [rsp], rax
-    lea rax, [rip+.L12492]
-    sub rsp, 8
-    mov [rsp], rax
-    mov rsi, [rsp+0]
-    mov rdi, [rsp+8]
-call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
-    add rsp, 16
-    push rax
-    mov rax, 0
-    mov rcx, rax
-    pop rax
-    cmp rax, rcx
-    setg al
-    movzx rax, al
-    test rax, rax
-    je .L12490
-    mov rax, 1
-    jmp .L12491
-.L12490:
-    mov rax, [rbp-8]
-    sub rsp, 8
-    mov [rsp], rax
-    lea rax, [rip+.L12495]
-    sub rsp, 8
-    mov [rsp], rax
-    mov rsi, [rsp+0]
-    mov rdi, [rsp+8]
-call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
-    add rsp, 16
-    push rax
-    mov rax, 0
-    mov rcx, rax
-    pop rax
-    cmp rax, rcx
-    setg al
-    movzx rax, al
-    test rax, rax
-    je .L12493
-    mov rax, 1
-    jmp .L12494
-.L12493:
-    mov rax, [rbp-8]
-    sub rsp, 8
-    mov [rsp], rax
-    lea rax, [rip+.L12498]
-    sub rsp, 8
-    mov [rsp], rax
-    mov rsi, [rsp+0]
-    mov rdi, [rsp+8]
-call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
-    add rsp, 16
-    push rax
-    mov rax, 0
-    mov rcx, rax
-    pop rax
-    cmp rax, rcx
-    setg al
-    movzx rax, al
-    test rax, rax
-    je .L12496
-    mov rax, 1
-    jmp .L12497
-.L12496:
-    mov rax, [rbp-8]
-    sub rsp, 8
-    mov [rsp], rax
-    lea rax, [rip+.L12501]
-    sub rsp, 8
-    mov [rsp], rax
-    mov rsi, [rsp+0]
-    mov rdi, [rsp+8]
-call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
-    add rsp, 16
-    push rax
-    mov rax, 0
-    mov rcx, rax
-    pop rax
-    cmp rax, rcx
-    setg al
-    movzx rax, al
-    test rax, rax
-    je .L12499
-    mov rax, 1
-    jmp .L12500
-.L12499:
-    mov rax, [rbp-8]
-    sub rsp, 8
-    mov [rsp], rax
-    lea rax, [rip+.L12504]
-    sub rsp, 8
-    mov [rsp], rax
-    mov rsi, [rsp+0]
-    mov rdi, [rsp+8]
-call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
-    add rsp, 16
-    push rax
-    mov rax, 0
-    mov rcx, rax
-    pop rax
-    cmp rax, rcx
-    setg al
-    movzx rax, al
-    test rax, rax
-    je .L12502
-    mov rax, 1
-    jmp .L12503
-.L12502:
-    mov rax, [rbp-8]
-    sub rsp, 8
-    mov [rsp], rax
-    lea rax, [rip+.L12507]
-    sub rsp, 8
-    mov [rsp], rax
-    mov rsi, [rsp+0]
-    mov rdi, [rsp+8]
-call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
-    add rsp, 16
-    push rax
-    mov rax, 0
-    mov rcx, rax
-    pop rax
-    cmp rax, rcx
-    setg al
-    movzx rax, al
-    test rax, rax
-    je .L12505
-    mov rax, 1
-    jmp .L12506
-.L12505:
-    mov rax, [rbp-8]
-    sub rsp, 8
-    mov [rsp], rax
-    lea rax, [rip+.L12510]
-    sub rsp, 8
-    mov [rsp], rax
-    mov rsi, [rsp+0]
-    mov rdi, [rsp+8]
-call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
-    add rsp, 16
-    push rax
-    mov rax, 0
-    mov rcx, rax
-    pop rax
-    cmp rax, rcx
-    setg al
-    movzx rax, al
-    test rax, rax
-    je .L12508
-    mov rax, 1
-    jmp .L12509
-.L12508:
-    mov rax, [rbp-8]
-    sub rsp, 8
-    mov [rsp], rax
-    lea rax, [rip+.L12513]
-    sub rsp, 8
-    mov [rsp], rax
-    mov rsi, [rsp+0]
-    mov rdi, [rsp+8]
-call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
-    add rsp, 16
-    push rax
-    mov rax, 0
-    mov rcx, rax
-    pop rax
-    cmp rax, rcx
-    setg al
-    movzx rax, al
-    test rax, rax
-    je .L12511
-    mov rax, 1
-    jmp .L12512
-.L12511:
-    mov rax, [rbp-8]
-    sub rsp, 8
-    mov [rsp], rax
-    lea rax, [rip+.L12516]
-    sub rsp, 8
-    mov [rsp], rax
-    mov rsi, [rsp+0]
-    mov rdi, [rsp+8]
-call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
-    add rsp, 16
-    push rax
-    mov rax, 0
-    mov rcx, rax
-    pop rax
-    cmp rax, rcx
-    setg al
-    movzx rax, al
-    test rax, rax
-    je .L12514
-    mov rax, 1
-    jmp .L12515
-.L12514:
-    mov rax, [rbp-8]
-    sub rsp, 8
-    mov [rsp], rax
-    lea rax, [rip+.L12519]
-    sub rsp, 8
-    mov [rsp], rax
-    mov rsi, [rsp+0]
-    mov rdi, [rsp+8]
-call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
-    add rsp, 16
-    push rax
-    mov rax, 0
-    mov rcx, rax
-    pop rax
-    cmp rax, rcx
-    setg al
-    movzx rax, al
-    test rax, rax
-    je .L12517
-    mov rax, 1
-    jmp .L12518
-.L12517:
-    mov rax, [rbp-8]
-    sub rsp, 8
-    mov [rsp], rax
-    lea rax, [rip+.L12522]
-    sub rsp, 8
-    mov [rsp], rax
-    mov rsi, [rsp+0]
-    mov rdi, [rsp+8]
-call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
-    add rsp, 16
-    push rax
-    mov rax, 0
-    mov rcx, rax
-    pop rax
-    cmp rax, rcx
-    setg al
-    movzx rax, al
-    test rax, rax
-    je .L12520
-    mov rax, 1
-    jmp .L12521
-.L12520:
-    mov rax, [rbp-8]
-    sub rsp, 8
-    mov [rsp], rax
-    lea rax, [rip+.L12525]
-    sub rsp, 8
-    mov [rsp], rax
-    mov rsi, [rsp+0]
-    mov rdi, [rsp+8]
-call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
-    add rsp, 16
-    push rax
-    mov rax, 0
-    mov rcx, rax
-    pop rax
-    cmp rax, rcx
-    setg al
-    movzx rax, al
-    test rax, rax
-    je .L12523
-    mov rax, 1
-    jmp .L12524
-.L12523:
-    mov rax, [rbp-8]
-    sub rsp, 8
-    mov [rsp], rax
-    lea rax, [rip+.L12528]
-    sub rsp, 8
-    mov [rsp], rax
-    mov rsi, [rsp+0]
-    mov rdi, [rsp+8]
-call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
-    add rsp, 16
-    push rax
-    mov rax, 0
-    mov rcx, rax
-    pop rax
-    cmp rax, rcx
-    setg al
-    movzx rax, al
-    test rax, rax
-    je .L12526
-    mov rax, 1
-    jmp .L12527
-.L12526:
-    mov rax, [rbp-8]
-    sub rsp, 8
-    mov [rsp], rax
-    lea rax, [rip+.L12531]
-    sub rsp, 8
-    mov [rsp], rax
-    mov rsi, [rsp+0]
-    mov rdi, [rsp+8]
-call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
-    add rsp, 16
-    push rax
-    mov rax, 0
-    mov rcx, rax
-    pop rax
-    cmp rax, rcx
-    setg al
-    movzx rax, al
-    test rax, rax
-    je .L12529
-    mov rax, 1
-    jmp .L12530
-.L12529:
-    mov rax, [rbp-8]
-    sub rsp, 8
-    mov [rsp], rax
-    lea rax, [rip+.L12534]
-    sub rsp, 8
-    mov [rsp], rax
-    mov rsi, [rsp+0]
-    mov rdi, [rsp+8]
-call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
-    add rsp, 16
-    push rax
-    mov rax, 0
-    mov rcx, rax
-    pop rax
-    cmp rax, rcx
-    setg al
-    movzx rax, al
-    test rax, rax
-    je .L12532
-    mov rax, 1
-    jmp .L12533
-.L12532:
-    mov rax, [rbp-8]
-    sub rsp, 8
-    mov [rsp], rax
-    lea rax, [rip+.L12537]
-    sub rsp, 8
-    mov [rsp], rax
-    mov rsi, [rsp+0]
-    mov rdi, [rsp+8]
-call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
-    add rsp, 16
-    push rax
-    mov rax, 0
-    mov rcx, rax
-    pop rax
-    cmp rax, rcx
-    setg al
-    movzx rax, al
-    test rax, rax
-    je .L12535
-    mov rax, 1
-    jmp .L12536
-.L12535:
-    mov rax, [rbp-8]
-    sub rsp, 8
-    mov [rsp], rax
-    lea rax, [rip+.L12540]
-    sub rsp, 8
-    mov [rsp], rax
-    mov rsi, [rsp+0]
-    mov rdi, [rsp+8]
-call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
-    add rsp, 16
-    push rax
-    mov rax, 0
-    mov rcx, rax
-    pop rax
-    cmp rax, rcx
-    setg al
-    movzx rax, al
-    test rax, rax
-    je .L12538
-    mov rax, 1
-    jmp .L12539
-.L12538:
-    mov rax, 0
-.L12539:
-.L12536:
-.L12533:
-.L12530:
-.L12527:
-.L12524:
-.L12521:
-.L12518:
-.L12515:
-.L12512:
-.L12509:
-.L12506:
-.L12503:
-.L12500:
-.L12497:
-.L12494:
-.L12491:
-.L12488:
-.L12485:
-.L12482:
+    jmp .L12480
 .L12479:
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L12484]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
+    add rsp, 16
+    push rax
+    mov rax, 0
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    setg al
+    movzx rax, al
+    test rax, rax
+    je .L12482
+    mov rax, 1
+    jmp .L12483
+.L12482:
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L12487]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
+    add rsp, 16
+    push rax
+    mov rax, 0
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    setg al
+    movzx rax, al
+    test rax, rax
+    je .L12485
+    mov rax, 1
+    jmp .L12486
+.L12485:
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L12490]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
+    add rsp, 16
+    push rax
+    mov rax, 0
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    setg al
+    movzx rax, al
+    test rax, rax
+    je .L12488
+    mov rax, 1
+    jmp .L12489
+.L12488:
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L12493]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
+    add rsp, 16
+    push rax
+    mov rax, 0
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    setg al
+    movzx rax, al
+    test rax, rax
+    je .L12491
+    mov rax, 1
+    jmp .L12492
+.L12491:
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L12496]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
+    add rsp, 16
+    push rax
+    mov rax, 0
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    setg al
+    movzx rax, al
+    test rax, rax
+    je .L12494
+    mov rax, 1
+    jmp .L12495
+.L12494:
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L12499]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
+    add rsp, 16
+    push rax
+    mov rax, 0
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    setg al
+    movzx rax, al
+    test rax, rax
+    je .L12497
+    mov rax, 1
+    jmp .L12498
+.L12497:
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L12502]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
+    add rsp, 16
+    push rax
+    mov rax, 0
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    setg al
+    movzx rax, al
+    test rax, rax
+    je .L12500
+    mov rax, 1
+    jmp .L12501
+.L12500:
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L12505]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
+    add rsp, 16
+    push rax
+    mov rax, 0
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    setg al
+    movzx rax, al
+    test rax, rax
+    je .L12503
+    mov rax, 1
+    jmp .L12504
+.L12503:
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L12508]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
+    add rsp, 16
+    push rax
+    mov rax, 0
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    setg al
+    movzx rax, al
+    test rax, rax
+    je .L12506
+    mov rax, 1
+    jmp .L12507
+.L12506:
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L12511]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
+    add rsp, 16
+    push rax
+    mov rax, 0
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    setg al
+    movzx rax, al
+    test rax, rax
+    je .L12509
+    mov rax, 1
+    jmp .L12510
+.L12509:
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L12514]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
+    add rsp, 16
+    push rax
+    mov rax, 0
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    setg al
+    movzx rax, al
+    test rax, rax
+    je .L12512
+    mov rax, 1
+    jmp .L12513
+.L12512:
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L12517]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
+    add rsp, 16
+    push rax
+    mov rax, 0
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    setg al
+    movzx rax, al
+    test rax, rax
+    je .L12515
+    mov rax, 1
+    jmp .L12516
+.L12515:
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L12520]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
+    add rsp, 16
+    push rax
+    mov rax, 0
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    setg al
+    movzx rax, al
+    test rax, rax
+    je .L12518
+    mov rax, 1
+    jmp .L12519
+.L12518:
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L12523]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
+    add rsp, 16
+    push rax
+    mov rax, 0
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    setg al
+    movzx rax, al
+    test rax, rax
+    je .L12521
+    mov rax, 1
+    jmp .L12522
+.L12521:
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L12526]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
+    add rsp, 16
+    push rax
+    mov rax, 0
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    setg al
+    movzx rax, al
+    test rax, rax
+    je .L12524
+    mov rax, 1
+    jmp .L12525
+.L12524:
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L12529]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
+    add rsp, 16
+    push rax
+    mov rax, 0
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    setg al
+    movzx rax, al
+    test rax, rax
+    je .L12527
+    mov rax, 1
+    jmp .L12528
+.L12527:
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L12532]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
+    add rsp, 16
+    push rax
+    mov rax, 0
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    setg al
+    movzx rax, al
+    test rax, rax
+    je .L12530
+    mov rax, 1
+    jmp .L12531
+.L12530:
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L12535]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
+    add rsp, 16
+    push rax
+    mov rax, 0
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    setg al
+    movzx rax, al
+    test rax, rax
+    je .L12533
+    mov rax, 1
+    jmp .L12534
+.L12533:
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L12538]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
+    add rsp, 16
+    push rax
+    mov rax, 0
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    setg al
+    movzx rax, al
+    test rax, rax
+    je .L12536
+    mov rax, 1
+    jmp .L12537
+.L12536:
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L12541]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
+    add rsp, 16
+    push rax
+    mov rax, 0
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    setg al
+    movzx rax, al
+    test rax, rax
+    je .L12539
+    mov rax, 1
+    jmp .L12540
+.L12539:
+    mov rax, 0
+.L12540:
+.L12537:
+.L12534:
+.L12531:
+.L12528:
+.L12525:
+.L12522:
+.L12519:
+.L12516:
+.L12513:
+.L12510:
+.L12507:
+.L12504:
+.L12501:
+.L12498:
+.L12495:
+.L12492:
+.L12489:
+.L12486:
+.L12483:
+.L12480:
     mov rsp, rbp
     pop rbp
     ret
@@ -280520,7 +280563,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfind_x2Dfn
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12543
+    jne .L12544
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -280540,22 +280583,22 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfind_x2Dfn
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dinvoke
     add rsp, 32
     mov [rsp], rax
-    jmp .L12541
-.L12543:
+    jmp .L12542
+.L12544:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12542
-    lea rax, [rip+.L12544]
+    jne .L12543
+    lea rax, [rip+.L12545]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12545]
+    lea rax, [rip+.L12546]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12546]
+    lea rax, [rip+.L12547]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -280592,10 +280635,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfail
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L12541
-.L12542:
+    jmp .L12542
+.L12543:
     mov qword ptr [rsp], 0
-.L12541:
+.L12542:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -280603,33 +280646,48 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfail
 zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dval_x2Dtext:
     push rbp
     mov rbp, rsp
-    sub rsp, 120
+    sub rsp, 88
     mov [rbp-8], rdi
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, 0
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dshow
+    add rsp, 16
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dshow_x2Ddepth:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 88
+    mov rax, 6
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dshow_x2Dwidth:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 88
+    mov rax, 24
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dshow:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 136
+    mov [rbp-8], rdi
+    mov [rbp-16], rsi
     mov rax, [rbp-8]
     push rax
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12549
-    mov rax, [rsp]
-    mov rax, [rax+8]
-    mov [rbp-16], rax
-    sub rsp, 8
-    mov rax, [rbp-16]
-    sub rsp, 8
-    mov [rsp], rax
-    mov rdi, [rsp+0]
-    mov r12, rsp
-    and rsp, -16
-call zyl_int_text
-    mov rsp, r12
-    add rsp, 16
-    mov [rsp], rax
-    jmp .L12547
-.L12549:
-    mov rax, [rsp]
-    mov rax, [rax]
-    cmp rax, 1
     jne .L12550
     mov rax, [rsp]
     mov rax, [rax+8]
@@ -280641,15 +280699,15 @@ call zyl_int_text
     mov rdi, [rsp+0]
     mov r12, rsp
     and rsp, -16
-call zyl_f_text
+call zyl_int_text
     mov rsp, r12
     add rsp, 16
     mov [rsp], rax
-    jmp .L12547
+    jmp .L12548
 .L12550:
     mov rax, [rsp]
     mov rax, [rax]
-    cmp rax, 2
+    cmp rax, 1
     jne .L12551
     mov rax, [rsp]
     mov rax, [rax+8]
@@ -280659,15 +280717,18 @@ call zyl_f_text
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
-call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dquote_x2Dstr
+    mov r12, rsp
+    and rsp, -16
+call zyl_f_text
+    mov rsp, r12
     add rsp, 16
     mov [rsp], rax
-    jmp .L12547
+    jmp .L12548
 .L12551:
     mov rax, [rsp]
     mov rax, [rax]
-    cmp rax, 3
-    jne .L12548
+    cmp rax, 2
+    jne .L12552
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -280676,13 +280737,33 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dquote_x2Dstr
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
-call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dblock_x2Dtext
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dquote_x2Dstr
     add rsp, 16
     mov [rsp], rax
-    jmp .L12547
-.L12548:
+    jmp .L12548
+.L12552:
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 3
+    jne .L12549
+    mov rax, [rsp]
+    mov rax, [rax+8]
+    mov [rbp-48], rax
+    mov rax, [rbp-48]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dshow_x2Dblock
+    add rsp, 16
+    mov [rsp], rax
+    jmp .L12548
+.L12549:
     mov qword ptr [rsp], 0
-.L12547:
+.L12548:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -280692,7 +280773,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dquote_x2Dstr:
     mov rbp, rsp
     sub rsp, 88
     mov [rbp-8], rdi
-    lea rax, [rip+.L12552]
+    lea rax, [rip+.L12553]
     sub rsp, 8
     mov [rsp], rax
     sub rsp, 8
@@ -280704,7 +280785,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dstr_x2Dof_x2Dword
     add rsp, 16
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12553]
+    lea rax, [rip+.L12554]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -280726,11 +280807,64 @@ call zyl_cstr_concat
     mov rsp, rbp
     pop rbp
     ret
-zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dblock_x2Dtext:
+zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dshow_x2Dblock:
     push rbp
     mov rbp, rsp
-    sub rsp, 88
+    sub rsp, 104
     mov [rbp-8], rdi
+    mov [rbp-16], rsi
+    sub rsp, 8
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dblock_x2Dp
+    add rsp, 16
+    push rax
+    mov rax, 0
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    sete al
+    movzx rax, al
+    test rax, rax
+    je .L12555
+    lea rax, [rip+.L12557]
+    sub rsp, 8
+    mov [rsp], rax
+    sub rsp, 8
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+    mov r12, rsp
+    and rsp, -16
+call zyl_int_text
+    mov rsp, r12
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L12558]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_concat
+    mov rsp, r12
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_concat
+    mov rsp, r12
+    add rsp, 16
+    jmp .L12556
+.L12555:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -280746,7 +280880,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dis_x2Dfun
     sete al
     movzx rax, al
     test rax, rax
-    je .L12554
+    je .L12559
     sub rsp, 8
     sub rsp, 8
     mov rax, [rbp-8]
@@ -280760,8 +280894,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfun_x2Dname_x2Dof
     mov rdi, [rsp+0]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfn_x2Dtext
     add rsp, 16
-    jmp .L12555
-.L12554:
+    jmp .L12560
+.L12559:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -280777,7 +280911,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dis_x2Dclosure
     sete al
     movzx rax, al
     test rax, rax
-    je .L12556
+    je .L12561
     sub rsp, 8
     sub rsp, 8
     mov rax, [rbp-8]
@@ -280800,83 +280934,21 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfun_x2Dname_x2Dof
     mov rdi, [rsp+0]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfn_x2Dtext
     add rsp, 16
-    jmp .L12557
+    jmp .L12562
+.L12561:
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dshow_x2Dvariant
+    add rsp, 16
+.L12562:
+.L12560:
 .L12556:
-    lea rax, [rip+.L12558]
-    sub rsp, 8
-    mov [rsp], rax
-    sub rsp, 8
-    sub rsp, 8
-    mov rax, [rbp-8]
-    sub rsp, 8
-    mov [rsp], rax
-    mov rdi, [rsp+0]
-call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dblock_x2Dtag
-    add rsp, 16
-    sub rsp, 8
-    mov [rsp], rax
-    mov rdi, [rsp+0]
-    mov r12, rsp
-    and rsp, -16
-call zyl_int_text
-    mov rsp, r12
-    add rsp, 16
-    sub rsp, 8
-    mov [rsp], rax
-    lea rax, [rip+.L12559]
-    sub rsp, 8
-    mov [rsp], rax
-    sub rsp, 8
-    mov rax, [rbp-8]
-    sub rsp, 8
-    mov [rsp], rax
-    mov rdi, [rsp+0]
-    mov r12, rsp
-    and rsp, -16
-call zyl_int_text
-    mov rsp, r12
-    add rsp, 16
-    sub rsp, 8
-    mov [rsp], rax
-    lea rax, [rip+.L12560]
-    sub rsp, 8
-    mov [rsp], rax
-    mov rsi, [rsp+0]
-    mov rdi, [rsp+8]
-    mov r12, rsp
-    and rsp, -16
-call zyl_cstr_concat
-    mov rsp, r12
-    add rsp, 16
-    sub rsp, 8
-    mov [rsp], rax
-    mov rsi, [rsp+0]
-    mov rdi, [rsp+8]
-    mov r12, rsp
-    and rsp, -16
-call zyl_cstr_concat
-    mov rsp, r12
-    add rsp, 16
-    sub rsp, 8
-    mov [rsp], rax
-    mov rsi, [rsp+0]
-    mov rdi, [rsp+8]
-    mov r12, rsp
-    and rsp, -16
-call zyl_cstr_concat
-    mov rsp, r12
-    add rsp, 16
-    sub rsp, 8
-    mov [rsp], rax
-    mov rsi, [rsp+0]
-    mov rdi, [rsp+8]
-    mov r12, rsp
-    and rsp, -16
-call zyl_cstr_concat
-    mov rsp, r12
-    add rsp, 16
-.L12557:
-.L12555:
     mov rsp, rbp
     pop rbp
     ret
@@ -280885,9 +280957,10 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfn_x2Dtext:
     mov rbp, rsp
     sub rsp, 88
     mov [rbp-8], rdi
-    lea rax, [rip+.L12561]
+    lea rax, [rip+.L12563]
     sub rsp, 8
     mov [rsp], rax
+    sub rsp, 8
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -280897,7 +280970,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dstr_x2Dof_x2Dword
     add rsp, 16
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12562]
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dshort_x2Dname
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L12564]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -280914,6 +280992,220 @@ call zyl_cstr_concat
     mov r12, rsp
     and rsp, -16
 call zyl_cstr_concat
+    mov rsp, r12
+    add rsp, 16
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dshort_x2Dname:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 104
+    mov [rbp-8], rdi
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    sub rsp, 8
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_len
+    mov rsp, r12
+    add rsp, 16
+    push rax
+    mov rax, 2
+    mov rcx, rax
+    pop rax
+    sub rax, rcx
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dlast_x2Dsep
+    add rsp, 16
+    mov [rbp-16], rax
+    mov rax, [rbp-16]
+    push rax
+    mov rax, 0
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    setl al
+    movzx rax, al
+    test rax, rax
+    je .L12565
+    mov rax, [rbp-8]
+    jmp .L12566
+.L12565:
+    sub rsp, 8
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-16]
+    push rax
+    mov rax, 2
+    mov rcx, rax
+    pop rax
+    add rax, rcx
+    sub rsp, 8
+    mov [rsp], rax
+    sub rsp, 8
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_len
+    mov rsp, r12
+    add rsp, 16
+    push rax
+    mov rax, [rbp-16]
+    push rax
+    mov rax, 2
+    mov rcx, rax
+    pop rax
+    add rax, rcx
+    mov rcx, rax
+    pop rax
+    sub rax, rcx
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdx, [rsp+0]
+    mov rsi, [rsp+8]
+    mov rdi, [rsp+16]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_substr
+    mov rsp, r12
+    add rsp, 32
+.L12566:
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dlast_x2Dsep:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 104
+    mov [rbp-8], rdi
+    mov [rbp-16], rsi
+    mov rax, [rbp-16]
+    push rax
+    mov rax, 0
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    setl al
+    movzx rax, al
+    test rax, rax
+    je .L12567
+    mov rax, -1
+    jmp .L12568
+.L12567:
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__term_x2Dbyte_x2Dat_x2Dname
+    add rsp, 16
+    push rax
+    mov rax, 58
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    sete al
+    movzx rax, al
+    test rax, rax
+    je .L12569
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-16]
+    push rax
+    mov rax, 1
+    mov rcx, rax
+    pop rax
+    add rax, rcx
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__term_x2Dbyte_x2Dat_x2Dname
+    add rsp, 16
+    push rax
+    mov rax, 58
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    sete al
+    movzx rax, al
+    test rax, rax
+    je .L12571
+    mov rax, [rbp-16]
+    jmp .L12572
+.L12571:
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-16]
+    push rax
+    mov rax, 1
+    mov rcx, rax
+    pop rax
+    sub rax, rcx
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dlast_x2Dsep
+    add rsp, 16
+.L12572:
+    jmp .L12570
+.L12569:
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-16]
+    push rax
+    mov rax, 1
+    mov rcx, rax
+    pop rax
+    sub rax, rcx
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dlast_x2Dsep
+    add rsp, 16
+.L12570:
+.L12568:
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__term_x2Dbyte_x2Dat_x2Dname:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 104
+    mov [rbp-8], rdi
+    mov [rbp-16], rsi
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_byte_at
     mov rsp, r12
     add rsp, 16
     mov rsp, rbp
@@ -280939,10 +281231,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dblock_x2Dp
     sete al
     movzx rax, al
     test rax, rax
-    je .L12563
+    je .L12573
     mov rax, 0
-    jmp .L12564
-.L12563:
+    jmp .L12574
+.L12573:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -280959,7 +281251,344 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dblock_x2Dfield
     mov rdi, [rsp+0]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dis_x2Dfun
     add rsp, 16
-.L12564:
+.L12574:
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dshow_x2Dvariant:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 104
+    mov [rbp-8], rdi
+    mov [rbp-16], rsi
+    sub rsp, 8
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+    mov r12, rsp
+    and rsp, -16
+call zyl_val_name
+    mov rsp, r12
+    add rsp, 16
+    mov [rbp-24], rax
+    mov rax, [rbp-24]
+    push rax
+    mov rax, 0
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    sete al
+    movzx rax, al
+    test rax, rax
+    je .L12575
+    lea rax, [rip+.L12577]
+    sub rsp, 8
+    mov [rsp], rax
+    sub rsp, 8
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+    mov r12, rsp
+    and rsp, -16
+call zyl_int_text
+    mov rsp, r12
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L12578]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_concat
+    mov rsp, r12
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_concat
+    mov rsp, r12
+    add rsp, 16
+    jmp .L12576
+.L12575:
+    sub rsp, 8
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    sub rsp, 8
+    sub rsp, 8
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dstr_x2Dof_x2Dword
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dshort_x2Dname
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdx, [rsp+0]
+    mov rsi, [rsp+8]
+    mov rdi, [rsp+16]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dshow_x2Dnamed
+    add rsp, 32
+.L12576:
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dshow_x2Dnamed:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 120
+    mov [rbp-8], rdi
+    mov [rbp-16], rsi
+    mov [rbp-24], rdx
+    sub rsp, 8
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+    mov r12, rsp
+    and rsp, -16
+call zyl_val_arity
+    mov rsp, r12
+    add rsp, 16
+    push rax
+    mov rax, 1
+    mov rcx, rax
+    pop rax
+    sub rax, rcx
+    mov [rbp-32], rax
+    mov rax, [rbp-32]
+    push rax
+    mov rax, 0
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    setle al
+    movzx rax, al
+    test rax, rax
+    je .L12579
+    mov rax, [rbp-24]
+    jmp .L12580
+.L12579:
+    mov rax, [rbp-16]
+    push rax
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dshow_x2Ddepth
+    add rsp, 0
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    setge al
+    movzx rax, al
+    test rax, rax
+    je .L12581
+    lea rax, [rip+.L12583]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L12584]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_concat
+    mov rsp, r12
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_concat
+    mov rsp, r12
+    add rsp, 16
+    jmp .L12582
+.L12581:
+    lea rax, [rip+.L12585]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-32]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, 0
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-16]
+    push rax
+    mov rax, 1
+    mov rcx, rax
+    pop rax
+    add rax, rcx
+    sub rsp, 8
+    mov [rsp], rax
+    mov rcx, [rsp+0]
+    mov rdx, [rsp+8]
+    mov rsi, [rsp+16]
+    mov rdi, [rsp+24]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dshow_x2Dfields
+    add rsp, 32
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L12586]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_concat
+    mov rsp, r12
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_concat
+    mov rsp, r12
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_concat
+    mov rsp, r12
+    add rsp, 16
+.L12582:
+.L12580:
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dshow_x2Dfields:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 120
+    mov [rbp-8], rdi
+    mov [rbp-16], rsi
+    mov [rbp-24], rdx
+    mov [rbp-32], rcx
+    mov rax, [rbp-24]
+    push rax
+    mov rax, [rbp-16]
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    setge al
+    movzx rax, al
+    test rax, rax
+    je .L12587
+    lea rax, [rip+.L12589]
+    jmp .L12588
+.L12587:
+    mov rax, [rbp-24]
+    push rax
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dshow_x2Dwidth
+    add rsp, 0
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    setge al
+    movzx rax, al
+    test rax, rax
+    je .L12590
+    lea rax, [rip+.L12592]
+    jmp .L12591
+.L12590:
+    lea rax, [rip+.L12593]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfield_x2Dval
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-32]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dshow
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    push rax
+    mov rax, 1
+    mov rcx, rax
+    pop rax
+    add rax, rcx
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-32]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rcx, [rsp+0]
+    mov rdx, [rsp+8]
+    mov rsi, [rsp+16]
+    mov rdi, [rsp+24]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dshow_x2Dfields
+    add rsp, 32
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_concat
+    mov rsp, r12
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_concat
+    mov rsp, r12
+    add rsp, 16
+.L12591:
+.L12588:
     mov rsp, rbp
     pop rbp
     ret
@@ -280979,11 +281608,11 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dmain_x2Dname
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12567
-    lea rax, [rip+.L12568]
+    jne .L12596
+    lea rax, [rip+.L12597]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12569]
+    lea rax, [rip+.L12598]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -280991,12 +281620,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dmain_x2Dname
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dfail
     add rsp, 16
     mov [rsp], rax
-    jmp .L12565
-.L12567:
+    jmp .L12594
+.L12596:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12566
+    jne .L12595
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -281029,10 +281658,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dcall_x2Dfn
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__val_x2Dword
     add rsp, 16
     mov [rsp], rax
-    jmp .L12565
-.L12566:
+    jmp .L12594
+.L12595:
     mov qword ptr [rsp], 0
-.L12565:
+.L12594:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -281047,7 +281676,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dmain_x2Dname:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12572
+    jne .L12601
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -281057,12 +281686,12 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dmain_x2Dname:
     mov qword ptr [rbx], 1
     mov rax, rbx
     mov [rsp], rax
-    jmp .L12570
-.L12572:
+    jmp .L12599
+.L12601:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12571
+    jne .L12600
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -281092,7 +281721,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dname_x2Dis_x2Dmain
     sete al
     movzx rax, al
     test rax, rax
-    je .L12573
+    je .L12602
     mov rax, [rbp-32]
     push rax
     mov r12, rsp
@@ -281105,8 +281734,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dname_x2Dis_x2Dmain
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L12574
-.L12573:
+    jmp .L12603
+.L12602:
     sub rsp, 8
     mov rax, [rbp-24]
     sub rsp, 8
@@ -281114,12 +281743,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dname_x2Dis_x2Dmain
     mov rdi, [rsp+0]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dmain_x2Dname
     add rsp, 16
-.L12574:
+.L12603:
     mov [rsp], rax
-    jmp .L12570
-.L12571:
+    jmp .L12599
+.L12600:
     mov qword ptr [rsp], 0
-.L12570:
+.L12599:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -281132,7 +281761,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dname_x2Dis_x2Dmain:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12577]
+    lea rax, [rip+.L12606]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -281147,21 +281776,21 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     setg al
     movzx rax, al
     test rax, rax
-    je .L12575
+    je .L12604
     mov rax, 1
-    jmp .L12576
-.L12575:
+    jmp .L12605
+.L12604:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12578]
+    lea rax, [rip+.L12607]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dends_x2Dwith
     add rsp, 16
-.L12576:
+.L12605:
     mov rsp, rbp
     pop rbp
     ret
@@ -281202,10 +281831,10 @@ call zyl_cstr_len
     setl al
     movzx rax, al
     test rax, rax
-    je .L12579
+    je .L12608
     mov rax, 0
-    jmp .L12580
-.L12579:
+    jmp .L12609
+.L12608:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -281238,7 +281867,91 @@ call zyl_cstr_substr
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     add rsp, 16
-.L12580:
+.L12609:
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__Global_x2Ename:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 104
+    mov [rbp-8], rdi
+    mov rax, [rbp-8]
+    push rax
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 0
+    jne .L12611
+    mov rax, [rsp]
+    mov rax, [rax+8]
+    mov [rbp-16], rax
+    mov rax, [rsp]
+    mov rax, [rax+16]
+    mov rax, [rsp]
+    mov rax, [rax+24]
+    mov rax, [rbp-16]
+    mov [rsp], rax
+    jmp .L12610
+.L12611:
+    mov qword ptr [rsp], 0
+.L12610:
+    pop rax
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__Global_x2Evalue:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 104
+    mov [rbp-8], rdi
+    mov rax, [rbp-8]
+    push rax
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 0
+    jne .L12613
+    mov rax, [rsp]
+    mov rax, [rax+8]
+    mov rax, [rsp]
+    mov rax, [rax+16]
+    mov [rbp-16], rax
+    mov rax, [rsp]
+    mov rax, [rax+24]
+    mov rax, [rbp-16]
+    mov [rsp], rax
+    jmp .L12612
+.L12613:
+    mov qword ptr [rsp], 0
+.L12612:
+    pop rax
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__Global_x2Esource:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 104
+    mov [rbp-8], rdi
+    mov rax, [rbp-8]
+    push rax
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 0
+    jne .L12615
+    mov rax, [rsp]
+    mov rax, [rax+8]
+    mov rax, [rsp]
+    mov rax, [rax+16]
+    mov rax, [rsp]
+    mov rax, [rax+24]
+    mov [rbp-16], rax
+    mov rax, [rbp-16]
+    mov [rsp], rax
+    jmp .L12614
+.L12615:
+    mov qword ptr [rsp], 0
+.L12614:
+    pop rax
     mov rsp, rbp
     pop rbp
     ret
@@ -281252,7 +281965,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__Session_x2Euses:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12582
+    jne .L12617
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -281264,12 +281977,14 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__Session_x2Euses:
     mov rax, [rax+32]
     mov rax, [rsp]
     mov rax, [rax+40]
+    mov rax, [rsp]
+    mov rax, [rax+48]
     mov rax, [rbp-16]
     mov [rsp], rax
-    jmp .L12581
-.L12582:
+    jmp .L12616
+.L12617:
     mov qword ptr [rsp], 0
-.L12581:
+.L12616:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -281284,7 +281999,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__Session_x2Edefs:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12584
+    jne .L12619
     mov rax, [rsp]
     mov rax, [rax+8]
     mov rax, [rsp]
@@ -281296,12 +282011,14 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__Session_x2Edefs:
     mov rax, [rax+32]
     mov rax, [rsp]
     mov rax, [rax+40]
+    mov rax, [rsp]
+    mov rax, [rax+48]
     mov rax, [rbp-16]
     mov [rsp], rax
-    jmp .L12583
-.L12584:
+    jmp .L12618
+.L12619:
     mov qword ptr [rsp], 0
-.L12583:
+.L12618:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -281316,7 +282033,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__Session_x2Eglobals:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12586
+    jne .L12621
     mov rax, [rsp]
     mov rax, [rax+8]
     mov rax, [rsp]
@@ -281328,12 +282045,14 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__Session_x2Eglobals:
     mov rax, [rax+32]
     mov rax, [rsp]
     mov rax, [rax+40]
+    mov rax, [rsp]
+    mov rax, [rax+48]
     mov rax, [rbp-16]
     mov [rsp], rax
-    jmp .L12585
-.L12586:
+    jmp .L12620
+.L12621:
     mov qword ptr [rsp], 0
-.L12585:
+.L12620:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -281348,7 +282067,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__Session_x2Elifted:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12588
+    jne .L12623
     mov rax, [rsp]
     mov rax, [rax+8]
     mov rax, [rsp]
@@ -281360,12 +282079,14 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__Session_x2Elifted:
     mov [rbp-16], rax
     mov rax, [rsp]
     mov rax, [rax+40]
+    mov rax, [rsp]
+    mov rax, [rax+48]
     mov rax, [rbp-16]
     mov [rsp], rax
-    jmp .L12587
-.L12588:
+    jmp .L12622
+.L12623:
     mov qword ptr [rsp], 0
-.L12587:
+.L12622:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -281380,7 +282101,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__Session_x2Ecount:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12590
+    jne .L12625
     mov rax, [rsp]
     mov rax, [rax+8]
     mov rax, [rsp]
@@ -281392,12 +282113,48 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__Session_x2Ecount:
     mov rax, [rsp]
     mov rax, [rax+40]
     mov [rbp-16], rax
+    mov rax, [rsp]
+    mov rax, [rax+48]
     mov rax, [rbp-16]
     mov [rsp], rax
-    jmp .L12589
-.L12590:
+    jmp .L12624
+.L12625:
     mov qword ptr [rsp], 0
-.L12589:
+.L12624:
+    pop rax
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__Session_x2Edir:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 104
+    mov [rbp-8], rdi
+    mov rax, [rbp-8]
+    push rax
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 0
+    jne .L12627
+    mov rax, [rsp]
+    mov rax, [rax+8]
+    mov rax, [rsp]
+    mov rax, [rax+16]
+    mov rax, [rsp]
+    mov rax, [rax+24]
+    mov rax, [rsp]
+    mov rax, [rax+32]
+    mov rax, [rsp]
+    mov rax, [rax+40]
+    mov rax, [rsp]
+    mov rax, [rax+48]
+    mov [rbp-16], rax
+    mov rax, [rbp-16]
+    mov [rsp], rax
+    jmp .L12626
+.L12627:
+    mov qword ptr [rsp], 0
+.L12626:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -281406,15 +282163,15 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Ddefault_x2Duses:
     push rbp
     mov rbp, rsp
     sub rsp, 88
-    lea rax, [rip+.L12591]
+    lea rax, [rip+.L12628]
     push rax
-    lea rax, [rip+.L12592]
+    lea rax, [rip+.L12629]
     push rax
-    lea rax, [rip+.L12593]
+    lea rax, [rip+.L12630]
     push rax
-    lea rax, [rip+.L12594]
+    lea rax, [rip+.L12631]
     push rax
-    lea rax, [rip+.L12595]
+    lea rax, [rip+.L12632]
     push rax
     mov r12, rsp
     and rsp, -16
@@ -281496,10 +282253,11 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dnew:
     push rbp
     mov rbp, rsp
     sub rsp, 88
+    mov [rbp-8], rdi
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Ddefault_x2Duses
     add rsp, 0
     push rax
-    lea rax, [rip+.L12596]
+    lea rax, [rip+.L12633]
     push rax
     mov r12, rsp
     and rsp, -16
@@ -281521,13 +282279,17 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Ddefault_x2Duses
     push rax
     mov rax, 0
     push rax
+    mov rax, [rbp-8]
+    push rax
     mov r12, rsp
     and rsp, -16
-    mov rdi, 48
+    mov rdi, 56
     call zyl_heap_alloc
     mov rsp, r12
     mov rbx, rax
     mov qword ptr [rbx], 0
+    pop rax
+    mov [rbx+48], rax
     pop rax
     mov [rbx+40], rax
     pop rax
@@ -281550,7 +282312,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dreset:
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Ddefault_x2Duses
     add rsp, 0
     push rax
-    lea rax, [rip+.L12597]
+    lea rax, [rip+.L12634]
     push rax
     mov r12, rsp
     and rsp, -16
@@ -281578,13 +282340,23 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Ddefault_x2Duses
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__Session_x2Ecount
     add rsp, 16
     push rax
+    sub rsp, 8
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__Session_x2Edir
+    add rsp, 16
+    push rax
     mov r12, rsp
     and rsp, -16
-    mov rdi, 48
+    mov rdi, 56
     call zyl_heap_alloc
     mov rsp, r12
     mov rbx, rax
     mov qword ptr [rbx], 0
+    pop rax
+    mov [rbx+48], rax
     pop rax
     mov [rbx+40], rax
     pop rax
@@ -281622,7 +282394,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__Session_x2Edefs
     add rsp, 16
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12598]
+    lea rax, [rip+.L12635]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-16]
@@ -281674,13 +282446,23 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__Session_x2Ecount
     pop rax
     add rax, rcx
     push rax
+    sub rsp, 8
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__Session_x2Edir
+    add rsp, 16
+    push rax
     mov r12, rsp
     and rsp, -16
-    mov rdi, 48
+    mov rdi, 56
     call zyl_heap_alloc
     mov rsp, r12
     mov rbx, rax
     mov qword ptr [rbx], 0
+    pop rax
+    mov [rbx+48], rax
     pop rax
     mov [rbx+40], rax
     pop rax
@@ -281777,13 +282559,23 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__Session_x2Ecount
     pop rax
     add rax, rcx
     push rax
+    sub rsp, 8
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__Session_x2Edir
+    add rsp, 16
+    push rax
     mov r12, rsp
     and rsp, -16
-    mov rdi, 48
+    mov rdi, 56
     call zyl_heap_alloc
     mov rsp, r12
     mov rbx, rax
     mov qword ptr [rbx], 0
+    pop rax
+    mov [rbx+48], rax
     pop rax
     mov [rbx+40], rax
     pop rax
@@ -281801,10 +282593,11 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__Session_x2Ecount
 zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dwith_x2Dglobal:
     push rbp
     mov rbp, rsp
-    sub rsp, 104
+    sub rsp, 120
     mov [rbp-8], rdi
     mov [rbp-16], rsi
     mov [rbp-24], rdx
+    mov [rbp-32], rcx
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -281820,23 +282613,6 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__Session_x2Euses
     mov rdi, [rsp+0]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__Session_x2Edefs
     add rsp, 16
-    push rax
-    mov rax, [rbp-16]
-    push rax
-    mov rax, [rbp-24]
-    push rax
-    mov r12, rsp
-    and rsp, -16
-    mov rdi, 24
-    call zyl_heap_alloc
-    mov rsp, r12
-    mov rbx, rax
-    mov qword ptr [rbx], 0
-    pop rax
-    mov [rbx+16], rax
-    pop rax
-    mov [rbx+8], rax
-    mov rax, rbx
     push rax
     sub rsp, 8
     mov rax, [rbp-8]
@@ -281854,6 +282630,37 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__Session_x2Eglobals
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Ddrop_x2Dglobal
     add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-16]
+    push rax
+    mov rax, [rbp-24]
+    push rax
+    mov rax, [rbp-32]
+    push rax
+    mov r12, rsp
+    and rsp, -16
+    mov rdi, 32
+    call zyl_heap_alloc
+    mov rsp, r12
+    mov rbx, rax
+    mov qword ptr [rbx], 0
+    pop rax
+    mov [rbx+24], rax
+    pop rax
+    mov [rbx+16], rax
+    pop rax
+    mov [rbx+8], rax
+    mov rax, rbx
+    push rax
+    mov r12, rsp
+    and rsp, -16
+    mov rdi, 8
+    call zyl_heap_alloc
+    mov rsp, r12
+    mov rbx, rax
+    mov qword ptr [rbx], 1
+    mov rax, rbx
     push rax
     mov r12, rsp
     and rsp, -16
@@ -281867,6 +282674,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Ddrop_x2Dglobal
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__list_x2Dappend
+    add rsp, 16
     push rax
     sub rsp, 8
     mov rax, [rbp-8]
@@ -281889,13 +282702,23 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__Session_x2Ecount
     pop rax
     add rax, rcx
     push rax
+    sub rsp, 8
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__Session_x2Edir
+    add rsp, 16
+    push rax
     mov r12, rsp
     and rsp, -16
-    mov rdi, 48
+    mov rdi, 56
     call zyl_heap_alloc
     mov rsp, r12
     mov rbx, rax
     mov qword ptr [rbx], 0
+    pop rax
+    mov [rbx+48], rax
     pop rax
     mov [rbx+40], rax
     pop rax
@@ -281971,13 +282794,23 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__list_x2Dappend
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__Session_x2Ecount
     add rsp, 16
     push rax
+    sub rsp, 8
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__Session_x2Edir
+    add rsp, 16
+    push rax
     mov r12, rsp
     and rsp, -16
-    mov rdi, 48
+    mov rdi, 56
     call zyl_heap_alloc
     mov rsp, r12
     mov rbx, rax
     mov qword ptr [rbx], 0
+    pop rax
+    mov [rbx+48], rax
     pop rax
     mov [rbx+40], rax
     pop rax
@@ -282002,25 +282835,25 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__is_x2Dnil_x2Dlist:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12601
+    jne .L12638
     mov rax, 1
     mov [rsp], rax
-    jmp .L12599
-.L12601:
+    jmp .L12636
+.L12638:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12600
+    jne .L12637
     mov rax, [rsp]
     mov rax, [rax+8]
     mov rax, [rsp]
     mov rax, [rax+16]
     mov rax, 0
     mov [rsp], rax
-    jmp .L12599
-.L12600:
+    jmp .L12636
+.L12637:
     mov qword ptr [rsp], 0
-.L12599:
+.L12636:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -282035,7 +282868,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dlifted_x2Dof:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12604
+    jne .L12641
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -282045,12 +282878,12 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dlifted_x2Dof:
     mov qword ptr [rbx], 1
     mov rax, rbx
     mov [rsp], rax
-    jmp .L12602
-.L12604:
+    jmp .L12639
+.L12641:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12603
+    jne .L12640
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -282078,7 +282911,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dlambda_x2Dname_x2Dp
     sete al
     movzx rax, al
     test rax, rax
-    je .L12605
+    je .L12642
     mov rax, [rbp-16]
     push rax
     sub rsp, 8
@@ -282101,8 +282934,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dlifted_x2Dof
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L12606
-.L12605:
+    jmp .L12643
+.L12642:
     sub rsp, 8
     mov rax, [rbp-24]
     sub rsp, 8
@@ -282110,12 +282943,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dlifted_x2Dof
     mov rdi, [rsp+0]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dlifted_x2Dof
     add rsp, 16
-.L12606:
+.L12643:
     mov [rsp], rax
-    jmp .L12602
-.L12603:
+    jmp .L12639
+.L12640:
     mov qword ptr [rsp], 0
-.L12602:
+.L12639:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -282128,7 +282961,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dlambda_x2Dname_x2Dp:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12607]
+    lea rax, [rip+.L12644]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -282201,10 +283034,10 @@ call zyl_cstr_len
     setg al
     movzx rax, al
     test rax, rax
-    je .L12608
+    je .L12645
     mov rax, 0
-    jmp .L12609
-.L12608:
+    jmp .L12646
+.L12645:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -282249,10 +283082,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     setg al
     movzx rax, al
     test rax, rax
-    je .L12610
+    je .L12647
     mov rax, 1
-    jmp .L12611
-.L12610:
+    jmp .L12648
+.L12647:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -282273,8 +283106,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     mov rdi, [rsp+16]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dcontains_x2Dat
     add rsp, 32
-.L12611:
-.L12609:
+.L12648:
+.L12646:
     mov rsp, rbp
     pop rbp
     ret
@@ -282289,7 +283122,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Ddrop_x2Dglobal:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12614
+    jne .L12651
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -282299,30 +283132,25 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Ddrop_x2Dglobal:
     mov qword ptr [rbx], 1
     mov rax, rbx
     mov [rsp], rax
-    jmp .L12612
-.L12614:
+    jmp .L12649
+.L12651:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12613
+    jne .L12650
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
     mov rax, [rsp]
     mov rax, [rax+16]
     mov [rbp-32], rax
+    sub rsp, 8
     mov rax, [rbp-24]
-    push rax
-    mov rax, [rsp]
-    mov rax, [rax]
-    cmp rax, 0
-    jne .L12616
-    mov rax, [rsp]
-    mov rax, [rax+8]
-    mov [rbp-40], rax
-    mov rax, [rsp]
-    mov rax, [rax+16]
-    mov rax, [rbp-40]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__Global_x2Ename
+    add rsp, 16
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-16]
@@ -282340,7 +283168,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     setg al
     movzx rax, al
     test rax, rax
-    je .L12617
+    je .L12652
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
@@ -282351,8 +283179,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Ddrop_x2Dglobal
     add rsp, 16
-    jmp .L12618
-.L12617:
+    jmp .L12653
+.L12652:
     mov rax, [rbp-24]
     push rax
     mov rax, [rbp-32]
@@ -282378,18 +283206,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Ddrop_x2Dglobal
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-.L12618:
+.L12653:
     mov [rsp], rax
-    jmp .L12615
-.L12616:
+    jmp .L12649
+.L12650:
     mov qword ptr [rsp], 0
-.L12615:
-    pop rax
-    mov [rsp], rax
-    jmp .L12612
-.L12613:
-    mov qword ptr [rsp], 0
-.L12612:
+.L12649:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -282444,13 +283266,23 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__Session_x2Ecount
     pop rax
     add rax, rcx
     push rax
+    sub rsp, 8
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__Session_x2Edir
+    add rsp, 16
+    push rax
     mov r12, rsp
     and rsp, -16
-    mov rdi, 48
+    mov rdi, 56
     call zyl_heap_alloc
     mov rsp, r12
     mov rbx, rax
     mov qword ptr [rbx], 0
+    pop rax
+    mov [rbx+48], rax
     pop rax
     mov [rbx+40], rax
     pop rax
@@ -282506,10 +283338,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dskip_x2Dspace
     setge al
     movzx rax, al
     test rax, rax
-    je .L12619
-    lea rax, [rip+.L12621]
-    jmp .L12620
-.L12619:
+    je .L12654
+    lea rax, [rip+.L12656]
+    jmp .L12655
+.L12654:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -282528,7 +283360,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__term_x2Dbyte_x2Dat
     sete al
     movzx rax, al
     test rax, rax
-    je .L12622
+    je .L12657
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -282587,11 +283419,11 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dsymbol_x2Dend
 call zyl_cstr_substr
     mov rsp, r12
     add rsp, 32
-    jmp .L12623
-.L12622:
-    lea rax, [rip+.L12624]
-.L12623:
-.L12620:
+    jmp .L12658
+.L12657:
+    lea rax, [rip+.L12659]
+.L12658:
+.L12655:
     mov rsp, rbp
     pop rbp
     ret
@@ -282611,10 +283443,10 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dskip_x2Dspace:
     setge al
     movzx rax, al
     test rax, rax
-    je .L12625
+    je .L12660
     mov rax, [rbp-16]
-    jmp .L12626
-.L12625:
+    jmp .L12661
+.L12660:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -282639,7 +283471,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dspace_x2Dp
     sete al
     movzx rax, al
     test rax, rax
-    je .L12627
+    je .L12662
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -282660,11 +283492,11 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dspace_x2Dp
     mov rdi, [rsp+16]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dskip_x2Dspace
     add rsp, 32
-    jmp .L12628
-.L12627:
+    jmp .L12663
+.L12662:
     mov rax, [rbp-16]
-.L12628:
-.L12626:
+.L12663:
+.L12661:
     mov rsp, rbp
     pop rbp
     ret
@@ -282682,10 +283514,10 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dspace_x2Dp:
     sete al
     movzx rax, al
     test rax, rax
-    je .L12629
+    je .L12664
     mov rax, 1
-    jmp .L12630
-.L12629:
+    jmp .L12665
+.L12664:
     mov rax, [rbp-8]
     push rax
     mov rax, 9
@@ -282695,10 +283527,10 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dspace_x2Dp:
     sete al
     movzx rax, al
     test rax, rax
-    je .L12631
+    je .L12666
     mov rax, 1
-    jmp .L12632
-.L12631:
+    jmp .L12667
+.L12666:
     mov rax, [rbp-8]
     push rax
     mov rax, 10
@@ -282708,10 +283540,10 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dspace_x2Dp:
     sete al
     movzx rax, al
     test rax, rax
-    je .L12633
+    je .L12668
     mov rax, 1
-    jmp .L12634
-.L12633:
+    jmp .L12669
+.L12668:
     mov rax, [rbp-8]
     push rax
     mov rax, 13
@@ -282721,15 +283553,15 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dspace_x2Dp:
     sete al
     movzx rax, al
     test rax, rax
-    je .L12635
+    je .L12670
     mov rax, 1
-    jmp .L12636
-.L12635:
+    jmp .L12671
+.L12670:
     mov rax, 0
-.L12636:
-.L12634:
-.L12632:
-.L12630:
+.L12671:
+.L12669:
+.L12667:
+.L12665:
     mov rsp, rbp
     pop rbp
     ret
@@ -282749,10 +283581,10 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dsymbol_x2Dend:
     setge al
     movzx rax, al
     test rax, rax
-    je .L12637
+    je .L12672
     mov rax, [rbp-24]
-    jmp .L12638
-.L12637:
+    jmp .L12673
+.L12672:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -282779,10 +283611,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dspace_x2Dp
     sete al
     movzx rax, al
     test rax, rax
-    je .L12639
+    je .L12674
     mov rax, [rbp-16]
-    jmp .L12640
-.L12639:
+    jmp .L12675
+.L12674:
     mov rax, [rbp-32]
     push rax
     mov rax, 40
@@ -282792,10 +283624,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dspace_x2Dp
     sete al
     movzx rax, al
     test rax, rax
-    je .L12641
+    je .L12676
     mov rax, [rbp-16]
-    jmp .L12642
-.L12641:
+    jmp .L12677
+.L12676:
     mov rax, [rbp-32]
     push rax
     mov rax, 41
@@ -282805,10 +283637,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dspace_x2Dp
     sete al
     movzx rax, al
     test rax, rax
-    je .L12643
+    je .L12678
     mov rax, [rbp-16]
-    jmp .L12644
-.L12643:
+    jmp .L12679
+.L12678:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -282829,10 +283661,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dspace_x2Dp
     mov rdi, [rsp+16]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dsymbol_x2Dend
     add rsp, 32
-.L12644:
-.L12642:
-.L12640:
-.L12638:
+.L12679:
+.L12677:
+.L12675:
+.L12673:
     mov rsp, rbp
     pop rbp
     ret
@@ -282975,7 +283807,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dhead
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12647]
+    lea rax, [rip+.L12682]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -282990,14 +283822,14 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     setg al
     movzx rax, al
     test rax, rax
-    je .L12645
+    je .L12680
     mov rax, 1
-    jmp .L12646
-.L12645:
+    jmp .L12681
+.L12680:
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12650]
+    lea rax, [rip+.L12685]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -283012,14 +283844,14 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     setg al
     movzx rax, al
     test rax, rax
-    je .L12648
+    je .L12683
     mov rax, 1
-    jmp .L12649
-.L12648:
+    jmp .L12684
+.L12683:
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12653]
+    lea rax, [rip+.L12688]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -283034,14 +283866,14 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     setg al
     movzx rax, al
     test rax, rax
-    je .L12651
+    je .L12686
     mov rax, 1
-    jmp .L12652
-.L12651:
+    jmp .L12687
+.L12686:
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12656]
+    lea rax, [rip+.L12691]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -283056,14 +283888,14 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     setg al
     movzx rax, al
     test rax, rax
-    je .L12654
+    je .L12689
     mov rax, 1
-    jmp .L12655
-.L12654:
+    jmp .L12690
+.L12689:
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12659]
+    lea rax, [rip+.L12694]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -283078,14 +283910,14 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     setg al
     movzx rax, al
     test rax, rax
-    je .L12657
+    je .L12692
     mov rax, 1
-    jmp .L12658
-.L12657:
+    jmp .L12693
+.L12692:
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12662]
+    lea rax, [rip+.L12697]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -283100,14 +283932,14 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     setg al
     movzx rax, al
     test rax, rax
-    je .L12660
+    je .L12695
     mov rax, 1
-    jmp .L12661
-.L12660:
+    jmp .L12696
+.L12695:
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12665]
+    lea rax, [rip+.L12700]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -283122,18 +283954,18 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     setg al
     movzx rax, al
     test rax, rax
-    je .L12663
+    je .L12698
     mov rax, 1
-    jmp .L12664
-.L12663:
+    jmp .L12699
+.L12698:
     mov rax, 0
-.L12664:
-.L12661:
-.L12658:
-.L12655:
-.L12652:
-.L12649:
-.L12646:
+.L12699:
+.L12696:
+.L12693:
+.L12690:
+.L12687:
+.L12684:
+.L12681:
     mov rsp, rbp
     pop rbp
     ret
@@ -283147,28 +283979,28 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Duse_x2Dlines:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12668
-    lea rax, [rip+.L12669]
+    jne .L12703
+    lea rax, [rip+.L12704]
     mov [rsp], rax
-    jmp .L12666
-.L12668:
+    jmp .L12701
+.L12703:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12667
+    jne .L12702
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
     mov rax, [rsp]
     mov rax, [rax+16]
     mov [rbp-24], rax
-    lea rax, [rip+.L12670]
+    lea rax, [rip+.L12705]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12671]
+    lea rax, [rip+.L12706]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -283206,10 +284038,10 @@ call zyl_cstr_concat
     mov rsp, r12
     add rsp, 16
     mov [rsp], rax
-    jmp .L12666
-.L12667:
+    jmp .L12701
+.L12702:
     mov qword ptr [rsp], 0
-.L12666:
+.L12701:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -283218,7 +284050,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dentry_x2Dname:
     push rbp
     mov rbp, rsp
     sub rsp, 88
-    lea rax, [rip+.L12672]
+    lea rax, [rip+.L12707]
     mov rsp, rbp
     pop rbp
     ret
@@ -283233,7 +284065,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dused_x2Dglobals:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12675
+    jne .L12710
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -283243,33 +284075,28 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dused_x2Dglobals:
     mov qword ptr [rbx], 1
     mov rax, rbx
     mov [rsp], rax
-    jmp .L12673
-.L12675:
+    jmp .L12708
+.L12710:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12674
+    jne .L12709
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
     mov rax, [rsp]
     mov rax, [rax+16]
     mov [rbp-32], rax
-    mov rax, [rbp-24]
-    push rax
-    mov rax, [rsp]
-    mov rax, [rax]
-    cmp rax, 0
-    jne .L12677
-    mov rax, [rsp]
-    mov rax, [rax+8]
-    mov [rbp-40], rax
-    mov rax, [rsp]
-    mov rax, [rax+16]
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    mov rax, [rbp-40]
+    sub rsp, 8
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__Global_x2Ename
+    add rsp, 16
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -283284,7 +284111,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dmentions
     sete al
     movzx rax, al
     test rax, rax
-    je .L12678
+    je .L12711
     mov rax, [rbp-24]
     push rax
     mov rax, [rbp-32]
@@ -283310,8 +284137,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dused_x2Dglobals
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L12679
-.L12678:
+    jmp .L12712
+.L12711:
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
@@ -283322,18 +284149,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dused_x2Dglobals
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dused_x2Dglobals
     add rsp, 16
-.L12679:
+.L12712:
     mov [rsp], rax
-    jmp .L12676
-.L12677:
+    jmp .L12708
+.L12709:
     mov qword ptr [rsp], 0
-.L12676:
-    pop rax
-    mov [rsp], rax
-    jmp .L12673
-.L12674:
-    mov qword ptr [rsp], 0
-.L12673:
+.L12708:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -283403,10 +284224,10 @@ call zyl_cstr_len
     setg al
     movzx rax, al
     test rax, rax
-    je .L12680
+    je .L12713
     mov rax, 0
-    jmp .L12681
-.L12680:
+    jmp .L12714
+.L12713:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -283433,10 +284254,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dtoken_x2Dmatch
     sete al
     movzx rax, al
     test rax, rax
-    je .L12682
+    je .L12715
     mov rax, 1
-    jmp .L12683
-.L12682:
+    jmp .L12716
+.L12715:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -283457,8 +284278,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dtoken_x2Dmatch
     mov rdi, [rsp+16]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dmentions_x2Dat
     add rsp, 32
-.L12683:
-.L12681:
+.L12716:
+.L12714:
     mov rsp, rbp
     pop rbp
     ret
@@ -283505,7 +284326,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     setg al
     movzx rax, al
     test rax, rax
-    je .L12684
+    je .L12717
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -283529,7 +284350,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dboundary_x2Dp
     sete al
     movzx rax, al
     test rax, rax
-    je .L12686
+    je .L12719
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -283545,14 +284366,14 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dboundary_x2Dp
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dboundary_x2Dp
     add rsp, 16
-    jmp .L12687
-.L12686:
+    jmp .L12720
+.L12719:
     mov rax, 0
-.L12687:
-    jmp .L12685
-.L12684:
+.L12720:
+    jmp .L12718
+.L12717:
     mov rax, 0
-.L12685:
+.L12718:
     mov rsp, rbp
     pop rbp
     ret
@@ -283571,10 +284392,10 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dboundary_x2Dp:
     setl al
     movzx rax, al
     test rax, rax
-    je .L12688
+    je .L12721
     mov rax, 1
-    jmp .L12689
-.L12688:
+    jmp .L12722
+.L12721:
     mov rax, [rbp-16]
     push rax
     sub rsp, 8
@@ -283593,10 +284414,10 @@ call zyl_cstr_len
     setge al
     movzx rax, al
     test rax, rax
-    je .L12690
+    je .L12723
     mov rax, 1
-    jmp .L12691
-.L12690:
+    jmp .L12724
+.L12723:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -283613,8 +284434,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__term_x2Dbyte_x2Dat
     mov rdi, [rsp+0]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Ddelimiter_x2Dp
     add rsp, 16
-.L12691:
-.L12689:
+.L12724:
+.L12722:
     mov rsp, rbp
     pop rbp
     ret
@@ -283638,10 +284459,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dspace_x2Dp
     sete al
     movzx rax, al
     test rax, rax
-    je .L12692
+    je .L12725
     mov rax, 1
-    jmp .L12693
-.L12692:
+    jmp .L12726
+.L12725:
     mov rax, [rbp-8]
     push rax
     mov rax, 40
@@ -283651,10 +284472,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dspace_x2Dp
     sete al
     movzx rax, al
     test rax, rax
-    je .L12694
+    je .L12727
     mov rax, 1
-    jmp .L12695
-.L12694:
+    jmp .L12728
+.L12727:
     mov rax, [rbp-8]
     push rax
     mov rax, 41
@@ -283664,10 +284485,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dspace_x2Dp
     sete al
     movzx rax, al
     test rax, rax
-    je .L12696
+    je .L12729
     mov rax, 1
-    jmp .L12697
-.L12696:
+    jmp .L12730
+.L12729:
     mov rax, [rbp-8]
     push rax
     mov rax, 34
@@ -283677,10 +284498,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dspace_x2Dp
     sete al
     movzx rax, al
     test rax, rax
-    je .L12698
+    je .L12731
     mov rax, 1
-    jmp .L12699
-.L12698:
+    jmp .L12732
+.L12731:
     mov rax, [rbp-8]
     push rax
     mov rax, 39
@@ -283690,59 +284511,54 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dspace_x2Dp
     sete al
     movzx rax, al
     test rax, rax
-    je .L12700
+    je .L12733
     mov rax, 1
-    jmp .L12701
-.L12700:
+    jmp .L12734
+.L12733:
     mov rax, 0
-.L12701:
-.L12699:
-.L12697:
-.L12695:
-.L12693:
+.L12734:
+.L12732:
+.L12730:
+.L12728:
+.L12726:
     mov rsp, rbp
     pop rbp
     ret
 zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dparam_x2Dlist:
     push rbp
     mov rbp, rsp
-    sub rsp, 120
+    sub rsp, 104
     mov [rbp-8], rdi
     mov rax, [rbp-8]
     push rax
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12704
-    lea rax, [rip+.L12705]
+    jne .L12737
+    lea rax, [rip+.L12738]
     mov [rsp], rax
-    jmp .L12702
-.L12704:
+    jmp .L12735
+.L12737:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12703
+    jne .L12736
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
     mov rax, [rsp]
     mov rax, [rax+16]
     mov [rbp-24], rax
+    sub rsp, 8
     mov rax, [rbp-16]
-    push rax
-    mov rax, [rsp]
-    mov rax, [rax]
-    cmp rax, 0
-    jne .L12707
-    mov rax, [rsp]
-    mov rax, [rax+8]
-    mov [rbp-32], rax
-    mov rax, [rsp]
-    mov rax, [rax+16]
-    mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12708]
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__Global_x2Ename
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L12739]
     sub rsp, 8
     mov [rsp], rax
     sub rsp, 8
@@ -283771,16 +284587,10 @@ call zyl_cstr_concat
     mov rsp, r12
     add rsp, 16
     mov [rsp], rax
-    jmp .L12706
-.L12707:
+    jmp .L12735
+.L12736:
     mov qword ptr [rsp], 0
-.L12706:
-    pop rax
-    mov [rsp], rax
-    jmp .L12702
-.L12703:
-    mov qword ptr [rsp], 0
-.L12702:
+.L12735:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -283788,14 +284598,14 @@ call zyl_cstr_concat
 zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dglobal_x2Dvalues:
     push rbp
     mov rbp, rsp
-    sub rsp, 120
+    sub rsp, 104
     mov [rbp-8], rdi
     mov rax, [rbp-8]
     push rax
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12711
+    jne .L12742
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -283805,30 +284615,25 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dglobal_x2Dvalues:
     mov qword ptr [rbx], 1
     mov rax, rbx
     mov [rsp], rax
-    jmp .L12709
-.L12711:
+    jmp .L12740
+.L12742:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12710
+    jne .L12741
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
     mov rax, [rsp]
     mov rax, [rax+16]
     mov [rbp-24], rax
+    sub rsp, 8
     mov rax, [rbp-16]
-    push rax
-    mov rax, [rsp]
-    mov rax, [rax]
-    cmp rax, 0
-    jne .L12713
-    mov rax, [rsp]
-    mov rax, [rax+8]
-    mov rax, [rsp]
-    mov rax, [rax+16]
-    mov [rbp-32], rax
-    mov rax, [rbp-32]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__Global_x2Evalue
+    add rsp, 16
     push rax
     sub rsp, 8
     mov rax, [rbp-24]
@@ -283851,16 +284656,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dglobal_x2Dvalues
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L12712
-.L12713:
+    jmp .L12740
+.L12741:
     mov qword ptr [rsp], 0
-.L12712:
-    pop rax
-    mov [rsp], rax
-    jmp .L12709
-.L12710:
-    mov qword ptr [rsp], 0
-.L12709:
+.L12740:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -283896,14 +284695,14 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__Session_x2Edefs
     add rsp, 16
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12714]
+    lea rax, [rip+.L12743]
     sub rsp, 8
     mov [rsp], rax
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dentry_x2Dname
     add rsp, 0
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12715]
+    lea rax, [rip+.L12744]
     sub rsp, 8
     mov [rsp], rax
     sub rsp, 8
@@ -283915,13 +284714,13 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dparam_x2Dlist
     add rsp, 16
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12716]
+    lea rax, [rip+.L12745]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12717]
+    lea rax, [rip+.L12746]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -284027,20 +284826,20 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__Session_x2Edefs
     add rsp, 16
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12718]
+    lea rax, [rip+.L12747]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12719]
+    lea rax, [rip+.L12748]
     sub rsp, 8
     mov [rsp], rax
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dentry_x2Dname
     add rsp, 0
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12720]
+    lea rax, [rip+.L12749]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -284115,7 +284914,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dlower:
     call setjmp
     mov rsp, r12
     cmp rax, 0
-    jne .L12721
+    jne .L12750
     pop rax
     sub rsp, 8
     mov rax, [rbp-8]
@@ -284124,7 +284923,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dlower:
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12723]
+    lea rax, [rip+.L12752]
     sub rsp, 8
     mov [rsp], rax
     mov rdx, [rsp+0]
@@ -284149,8 +284948,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__compile_x2Dto_x2Dfns
     call zyl_try_pop
     mov rsp, r12
     pop rax
-    jmp .L12722
-.L12721:
+    jmp .L12751
+.L12750:
     pop rax
     mov rdi, rax
     mov r12, rsp
@@ -284170,7 +284969,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__compile_x2Dto_x2Dfns
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-.L12722:
+.L12751:
     mov rsp, rbp
     pop rbp
     ret
@@ -284192,7 +284991,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dinterpret:
     call setjmp
     mov rsp, r12
     cmp rax, 0
-    jne .L12724
+    jne .L12753
     pop rax
     sub rsp, 8
     mov rax, [rbp-8]
@@ -284226,8 +285025,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dcall_x2Dfn
     call zyl_try_pop
     mov rsp, r12
     pop rax
-    jmp .L12725
-.L12724:
+    jmp .L12754
+.L12753:
     pop rax
     mov rdi, rax
     mov r12, rsp
@@ -284247,7 +285046,993 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dcall_x2Dfn
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-.L12725:
+.L12754:
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dtype_x2Dof:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 136
+    mov [rbp-8], rdi
+    mov [rbp-16], rsi
+    sub rsp, 8
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__Session_x2Eglobals
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dused_x2Dglobals
+    add rsp, 16
+    mov [rbp-24], rax
+    sub rsp, 8
+    mov rax, 8388608
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__arena_x2Dcreate
+    add rsp, 16
+    mov [rbp-32], rax
+    sub rsp, 8
+    mov rax, [rbp-32]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dheap_x2Dswap
+    add rsp, 16
+    mov [rbp-40], rax
+    mov rax, [rbp-32]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rcx, [rsp+0]
+    mov rdx, [rsp+8]
+    mov rsi, [rsp+16]
+    mov rdi, [rsp+24]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dtype_x2Drun
+    add rsp, 32
+    mov [rbp-48], rax
+    sub rsp, 8
+    mov rax, [rbp-40]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dheap_x2Dswap
+    add rsp, 16
+    sub rsp, 8
+    mov rax, [rbp-48]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dcopy_x2Dtype
+    add rsp, 16
+    mov [rbp-56], rax
+    sub rsp, 8
+    mov rax, [rbp-32]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__arena_x2Ddestroy
+    add rsp, 16
+    mov rax, [rbp-56]
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dcopy_x2Dtype:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 104
+    mov [rbp-8], rdi
+    mov rax, [rbp-8]
+    push rax
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 1
+    jne .L12757
+    mov rax, [rsp]
+    mov rax, [rax+8]
+    mov [rbp-16], rax
+    sub rsp, 8
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dcopy_x2Dstr
+    add rsp, 16
+    push rax
+    mov r12, rsp
+    and rsp, -16
+    mov rdi, 16
+    call zyl_heap_alloc
+    mov rsp, r12
+    mov rbx, rax
+    mov qword ptr [rbx], 1
+    pop rax
+    mov [rbx+8], rax
+    mov rax, rbx
+    mov [rsp], rax
+    jmp .L12755
+.L12757:
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 0
+    jne .L12756
+    mov rax, [rsp]
+    mov rax, [rax+8]
+    mov [rbp-24], rax
+    sub rsp, 8
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dcopy_x2Dstr
+    add rsp, 16
+    push rax
+    mov r12, rsp
+    and rsp, -16
+    mov rdi, 16
+    call zyl_heap_alloc
+    mov rsp, r12
+    mov rbx, rax
+    mov qword ptr [rbx], 0
+    pop rax
+    mov [rbx+8], rax
+    mov rax, rbx
+    mov [rsp], rax
+    jmp .L12755
+.L12756:
+    mov qword ptr [rsp], 0
+.L12755:
+    pop rax
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dtype_x2Drun:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 136
+    mov [rbp-8], rdi
+    mov [rbp-16], rsi
+    mov [rbp-24], rdx
+    mov [rbp-32], rcx
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dentry_x2Darena
+    add rsp, 0
+    mov [rbp-40], rax
+    mov r12, rsp
+    and rsp, -16
+    call zyl_try_push
+    mov rsp, r12
+    push rax
+    mov rdi, rax
+    mov r12, rsp
+    and rsp, -16
+    call setjmp
+    mov rsp, r12
+    cmp rax, 0
+    jne .L12758
+    pop rax
+    mov rax, [rbp-40]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-32]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rcx, [rsp+0]
+    mov rdx, [rsp+8]
+    mov rsi, [rsp+16]
+    mov rdi, [rsp+24]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dtype_x2Dinfer
+    add rsp, 32
+    push rax
+    mov r12, rsp
+    and rsp, -16
+    mov rdi, 16
+    call zyl_heap_alloc
+    mov rsp, r12
+    mov rbx, rax
+    mov qword ptr [rbx], 0
+    pop rax
+    mov [rbx+8], rax
+    mov rax, rbx
+    push rax
+    mov r12, rsp
+    and rsp, -16
+    call zyl_try_pop
+    mov rsp, r12
+    pop rax
+    jmp .L12759
+.L12758:
+    pop rax
+    mov rdi, rax
+    mov r12, rsp
+    and rsp, -16
+    call zyl_try_frame_msg
+    mov rsp, r12
+    mov [rbp-56], rax
+    mov rax, [rbp-56]
+    push rax
+    mov r12, rsp
+    and rsp, -16
+    mov rdi, 16
+    call zyl_heap_alloc
+    mov rsp, r12
+    mov rbx, rax
+    mov qword ptr [rbx], 1
+    pop rax
+    mov [rbx+8], rax
+    mov rax, rbx
+.L12759:
+    mov [rbp-48], rax
+    sub rsp, 8
+    mov rax, [rbp-40]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__arena_x2Ddestroy
+    add rsp, 16
+    mov rax, [rbp-48]
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dtype_x2Dinfer:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 136
+    mov [rbp-8], rdi
+    mov [rbp-16], rsi
+    mov [rbp-24], rdx
+    mov [rbp-32], rcx
+    sub rsp, 8
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    sub rsp, 8
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-32]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdx, [rsp+0]
+    mov rsi, [rsp+8]
+    mov rdi, [rsp+16]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dprogram_x2Dexpr
+    add rsp, 32
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L12760]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdx, [rsp+0]
+    mov rsi, [rsp+8]
+    mov rdi, [rsp+16]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__compile_x2Dto_x2Dexprs
+    add rsp, 32
+    mov [rbp-40], rax
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__inferer_x2Dnew
+    add rsp, 0
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-40]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__collect_x2Ddefinitions
+    add rsp, 16
+    mov [rbp-48], rax
+    sub rsp, 8
+    mov rax, [rbp-40]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dentry_x2Dbody
+    add rsp, 16
+    push rax
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 1
+    jne .L12763
+    lea rax, [rip+.L12764]
+    mov [rsp], rax
+    jmp .L12761
+.L12763:
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 0
+    jne .L12762
+    mov rax, [rsp]
+    mov rax, [rax+8]
+    mov [rbp-56], rax
+    sub rsp, 8
+    mov rax, [rbp-48]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-56]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__infer_x2Dexpr
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dtype_x2Dtext
+    add rsp, 16
+    mov [rsp], rax
+    jmp .L12761
+.L12762:
+    mov qword ptr [rsp], 0
+.L12761:
+    pop rax
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dtype_x2Dtext:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 168
+    mov [rbp-8], rdi
+    mov rax, [rbp-8]
+    push rax
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 0
+    jne .L12767
+    lea rax, [rip+.L12768]
+    mov [rsp], rax
+    jmp .L12765
+.L12767:
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 1
+    jne .L12769
+    lea rax, [rip+.L12770]
+    mov [rsp], rax
+    jmp .L12765
+.L12769:
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 2
+    jne .L12771
+    lea rax, [rip+.L12772]
+    mov [rsp], rax
+    jmp .L12765
+.L12771:
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 3
+    jne .L12773
+    lea rax, [rip+.L12774]
+    mov [rsp], rax
+    jmp .L12765
+.L12773:
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 4
+    jne .L12775
+    lea rax, [rip+.L12776]
+    mov [rsp], rax
+    jmp .L12765
+.L12775:
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 5
+    jne .L12777
+    lea rax, [rip+.L12778]
+    mov [rsp], rax
+    jmp .L12765
+.L12777:
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 6
+    jne .L12779
+    mov rax, [rsp]
+    mov rax, [rax+8]
+    lea rax, [rip+.L12780]
+    mov [rsp], rax
+    jmp .L12765
+.L12779:
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 7
+    jne .L12781
+    mov rax, [rsp]
+    mov rax, [rax+8]
+    lea rax, [rip+.L12782]
+    mov [rsp], rax
+    jmp .L12765
+.L12781:
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 8
+    jne .L12783
+    mov rax, [rsp]
+    mov rax, [rax+8]
+    mov [rbp-16], rax
+    lea rax, [rip+.L12784]
+    sub rsp, 8
+    mov [rsp], rax
+    sub rsp, 8
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dtype_x2Dlist
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L12785]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_concat
+    mov rsp, r12
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_concat
+    mov rsp, r12
+    add rsp, 16
+    mov [rsp], rax
+    jmp .L12765
+.L12783:
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 9
+    jne .L12786
+    mov rax, [rsp]
+    mov rax, [rax+8]
+    mov [rbp-24], rax
+    lea rax, [rip+.L12787]
+    sub rsp, 8
+    mov [rsp], rax
+    sub rsp, 8
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dtype_x2Dlist
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L12788]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_concat
+    mov rsp, r12
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_concat
+    mov rsp, r12
+    add rsp, 16
+    mov [rsp], rax
+    jmp .L12765
+.L12786:
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 10
+    jne .L12789
+    mov rax, [rsp]
+    mov rax, [rax+8]
+    mov [rbp-32], rax
+    mov rax, [rsp]
+    mov rax, [rax+16]
+    lea rax, [rip+.L12790]
+    sub rsp, 8
+    mov [rsp], rax
+    sub rsp, 8
+    mov rax, [rbp-32]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dtype_x2Dtext
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L12791]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_concat
+    mov rsp, r12
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_concat
+    mov rsp, r12
+    add rsp, 16
+    mov [rsp], rax
+    jmp .L12765
+.L12789:
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 11
+    jne .L12792
+    mov rax, [rsp]
+    mov rax, [rax+8]
+    mov rax, [rsp]
+    mov rax, [rax+16]
+    mov [rbp-40], rax
+    lea rax, [rip+.L12793]
+    sub rsp, 8
+    mov [rsp], rax
+    sub rsp, 8
+    mov rax, [rbp-40]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dtype_x2Dtext
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L12794]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_concat
+    mov rsp, r12
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_concat
+    mov rsp, r12
+    add rsp, 16
+    mov [rsp], rax
+    jmp .L12765
+.L12792:
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 12
+    jne .L12795
+    mov rax, [rsp]
+    mov rax, [rax+8]
+    mov [rbp-48], rax
+    mov rax, [rsp]
+    mov rax, [rax+16]
+    mov rax, [rbp-48]
+    mov [rsp], rax
+    jmp .L12765
+.L12795:
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 13
+    jne .L12796
+    mov rax, [rsp]
+    mov rax, [rax+8]
+    mov rax, [rsp]
+    mov rax, [rax+16]
+    lea rax, [rip+.L12797]
+    mov [rsp], rax
+    jmp .L12765
+.L12796:
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 14
+    jne .L12798
+    mov rax, [rsp]
+    mov rax, [rax+8]
+    mov [rbp-56], rax
+    mov rax, [rsp]
+    mov rax, [rax+16]
+    mov [rbp-64], rax
+    lea rax, [rip+.L12799]
+    sub rsp, 8
+    mov [rsp], rax
+    sub rsp, 8
+    mov rax, [rbp-56]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dtype_x2Dtext
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L12800]
+    sub rsp, 8
+    mov [rsp], rax
+    sub rsp, 8
+    mov rax, [rbp-64]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dtype_x2Dtext
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L12801]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_concat
+    mov rsp, r12
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_concat
+    mov rsp, r12
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_concat
+    mov rsp, r12
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_concat
+    mov rsp, r12
+    add rsp, 16
+    mov [rsp], rax
+    jmp .L12765
+.L12798:
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 15
+    jne .L12766
+    mov rax, [rsp]
+    mov rax, [rax+8]
+    mov [rbp-72], rax
+    mov rax, [rsp]
+    mov rax, [rax+16]
+    mov [rbp-80], rax
+    lea rax, [rip+.L12802]
+    sub rsp, 8
+    mov [rsp], rax
+    sub rsp, 8
+    mov rax, [rbp-72]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dtype_x2Dtext
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L12803]
+    sub rsp, 8
+    mov [rsp], rax
+    sub rsp, 8
+    mov rax, [rbp-80]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dtype_x2Dtext
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L12804]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_concat
+    mov rsp, r12
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_concat
+    mov rsp, r12
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_concat
+    mov rsp, r12
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_concat
+    mov rsp, r12
+    add rsp, 16
+    mov [rsp], rax
+    jmp .L12765
+.L12766:
+    mov qword ptr [rsp], 0
+.L12765:
+    pop rax
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dtype_x2Dlist:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 104
+    mov [rbp-8], rdi
+    mov rax, [rbp-8]
+    push rax
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 1
+    jne .L12807
+    lea rax, [rip+.L12808]
+    mov [rsp], rax
+    jmp .L12805
+.L12807:
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 0
+    jne .L12806
+    mov rax, [rsp]
+    mov rax, [rax+8]
+    mov [rbp-16], rax
+    mov rax, [rsp]
+    mov rax, [rax+16]
+    mov [rbp-24], rax
+    mov rax, [rbp-24]
+    push rax
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 1
+    jne .L12811
+    sub rsp, 8
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dtype_x2Dtext
+    add rsp, 16
+    mov [rsp], rax
+    jmp .L12809
+.L12811:
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 0
+    jne .L12810
+    mov rax, [rsp]
+    mov rax, [rax+8]
+    mov rax, [rsp]
+    mov rax, [rax+16]
+    sub rsp, 8
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dtype_x2Dtext
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L12812]
+    sub rsp, 8
+    mov [rsp], rax
+    sub rsp, 8
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dtype_x2Dlist
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_concat
+    mov rsp, r12
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_concat
+    mov rsp, r12
+    add rsp, 16
+    mov [rsp], rax
+    jmp .L12809
+.L12810:
+    mov qword ptr [rsp], 0
+.L12809:
+    pop rax
+    mov [rsp], rax
+    jmp .L12805
+.L12806:
+    mov qword ptr [rsp], 0
+.L12805:
+    pop rax
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dentry_x2Dbody:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 120
+    mov [rbp-8], rdi
+    mov rax, [rbp-8]
+    push rax
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 1
+    jne .L12815
+    mov r12, rsp
+    and rsp, -16
+    mov rdi, 8
+    call zyl_heap_alloc
+    mov rsp, r12
+    mov rbx, rax
+    mov qword ptr [rbx], 1
+    mov rax, rbx
+    mov [rsp], rax
+    jmp .L12813
+.L12815:
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 0
+    jne .L12814
+    mov rax, [rsp]
+    mov rax, [rax+8]
+    mov [rbp-16], rax
+    mov rax, [rsp]
+    mov rax, [rax+16]
+    mov [rbp-24], rax
+    sub rsp, 8
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__Expr_x2Einner
+    add rsp, 16
+    push rax
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 3
+    jne .L12818
+    mov rax, [rsp]
+    mov rax, [rax+8]
+    mov [rbp-32], rax
+    mov rax, [rsp]
+    mov rax, [rax+16]
+    mov rax, [rsp]
+    mov rax, [rax+24]
+    mov [rbp-40], rax
+    mov rax, [rbp-32]
+    sub rsp, 8
+    mov [rsp], rax
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dentry_x2Dname
+    add rsp, 0
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dends_x2Dwith
+    add rsp, 16
+    push rax
+    mov rax, 1
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    sete al
+    movzx rax, al
+    test rax, rax
+    je .L12819
+    mov rax, [rbp-40]
+    push rax
+    mov r12, rsp
+    and rsp, -16
+    mov rdi, 16
+    call zyl_heap_alloc
+    mov rsp, r12
+    mov rbx, rax
+    mov qword ptr [rbx], 0
+    pop rax
+    mov [rbx+8], rax
+    mov rax, rbx
+    jmp .L12820
+.L12819:
+    sub rsp, 8
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dentry_x2Dbody
+    add rsp, 16
+.L12820:
+    mov [rsp], rax
+    jmp .L12816
+.L12818:
+    sub rsp, 8
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dentry_x2Dbody
+    add rsp, 16
+    mov [rsp], rax
+    jmp .L12816
+.L12817:
+    mov qword ptr [rsp], 0
+.L12816:
+    pop rax
+    mov [rsp], rax
+    jmp .L12813
+.L12814:
+    mov qword ptr [rsp], 0
+.L12813:
+    pop rax
     mov rsp, rbp
     pop rbp
     ret
@@ -284261,7 +286046,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__EvalOutcome_x2Eresult:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12727
+    jne .L12822
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -284269,10 +286054,10 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__EvalOutcome_x2Eresult:
     mov rax, [rax+16]
     mov rax, [rbp-16]
     mov [rsp], rax
-    jmp .L12726
-.L12727:
+    jmp .L12821
+.L12822:
     mov qword ptr [rsp], 0
-.L12726:
+.L12821:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -284287,7 +286072,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__EvalOutcome_x2Esession:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12729
+    jne .L12824
     mov rax, [rsp]
     mov rax, [rax+8]
     mov rax, [rsp]
@@ -284295,10 +286080,10 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__EvalOutcome_x2Esession:
     mov [rbp-16], rax
     mov rax, [rbp-16]
     mov [rsp], rax
-    jmp .L12728
-.L12729:
+    jmp .L12823
+.L12824:
     mov qword ptr [rsp], 0
-.L12728:
+.L12823:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -284320,7 +286105,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dhead
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12732]
+    lea rax, [rip+.L12827]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -284335,7 +286120,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     setg al
     movzx rax, al
     test rax, rax
-    je .L12730
+    je .L12825
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -284346,12 +286131,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dadd_x2Duse
     add rsp, 16
-    jmp .L12731
-.L12730:
+    jmp .L12826
+.L12825:
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12735]
+    lea rax, [rip+.L12830]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -284366,7 +286151,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     setg al
     movzx rax, al
     test rax, rax
-    je .L12733
+    je .L12828
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -284377,8 +286162,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dadd_x2Dglobal
     add rsp, 16
-    jmp .L12734
-.L12733:
+    jmp .L12829
+.L12828:
     sub rsp, 8
     mov rax, [rbp-16]
     sub rsp, 8
@@ -284394,7 +286179,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Ddefinition_x2Dp
     sete al
     movzx rax, al
     test rax, rax
-    je .L12736
+    je .L12831
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -284405,8 +286190,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Ddefinition_x2Dp
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dadd_x2Ddefinition
     add rsp, 16
-    jmp .L12737
-.L12736:
+    jmp .L12832
+.L12831:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -284417,9 +286202,9 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dadd_x2Ddefinition
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dexpression
     add rsp, 16
-.L12737:
-.L12734:
-.L12731:
+.L12832:
+.L12829:
+.L12826:
     mov rsp, rbp
     pop rbp
     ret
@@ -284567,7 +286352,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dcopy_x2Dlower:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12740
+    jne .L12835
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -284590,12 +286375,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dcopy_x2Dstr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L12738
-.L12740:
+    jmp .L12833
+.L12835:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12739
+    jne .L12834
     mov rax, [rsp]
     mov rax, [rax+8]
     mov rax, 0
@@ -284611,10 +286396,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dcopy_x2Dstr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L12738
-.L12739:
+    jmp .L12833
+.L12834:
     mov qword ptr [rsp], 0
-.L12738:
+.L12833:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -284632,7 +286417,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Ddefinition_x2Dresult:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12743
+    jne .L12838
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -284664,12 +286449,12 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Ddefinition_x2Dresult:
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L12741
-.L12743:
+    jmp .L12836
+.L12838:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12742
+    jne .L12837
     mov rax, [rsp]
     mov rax, [rax+8]
     mov rax, [rbp-32]
@@ -284709,10 +286494,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dwith_x2Ddefs
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L12741
-.L12742:
+    jmp .L12836
+.L12837:
     mov qword ptr [rsp], 0
-.L12741:
+.L12836:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -284767,7 +286552,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dheap_x2Dswap
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12744]
+    lea rax, [rip+.L12839]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -284834,7 +286619,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Duse_x2Dresult:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12747
+    jne .L12842
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -284866,15 +286651,15 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Duse_x2Dresult:
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L12745
-.L12747:
+    jmp .L12840
+.L12842:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12746
+    jne .L12841
     mov rax, [rsp]
     mov rax, [rax+8]
-    lea rax, [rip+.L12748]
+    lea rax, [rip+.L12843]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-32]
@@ -284914,10 +286699,10 @@ call zyl_cstr_concat
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L12745
-.L12746:
+    jmp .L12840
+.L12841:
     mov qword ptr [rsp], 0
-.L12745:
+.L12840:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -284975,15 +286760,17 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dvalue_x2Dof
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12750
+    jne .L12845
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-48], rax
     mov rax, [rsp]
     mov rax, [rax+16]
     mov [rbp-56], rax
-    sub rsp, 8
     mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-48]
@@ -284992,9 +286779,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dvalue_x2Dof
     mov rax, [rbp-56]
     sub rsp, 8
     mov [rsp], rax
-    mov rdx, [rsp+0]
-    mov rsi, [rsp+8]
-    mov rdi, [rsp+16]
+    mov rcx, [rsp+0]
+    mov rdx, [rsp+8]
+    mov rsi, [rsp+16]
+    mov rdi, [rsp+24]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dbind_x2Dglobal
     add rsp, 32
     mov [rbp-64], rax
@@ -285007,10 +286795,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dheap_x2Dswap
     add rsp, 16
     mov rax, [rbp-64]
     mov [rsp], rax
-    jmp .L12749
-.L12750:
+    jmp .L12844
+.L12845:
     mov qword ptr [rsp], 0
-.L12749:
+.L12844:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -285018,20 +286806,21 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dheap_x2Dswap
 zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dbind_x2Dglobal:
     push rbp
     mov rbp, rsp
-    sub rsp, 120
+    sub rsp, 136
     mov [rbp-8], rdi
     mov [rbp-16], rsi
     mov [rbp-24], rdx
-    mov rax, [rbp-16]
+    mov [rbp-32], rcx
+    mov rax, [rbp-24]
     push rax
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12753
+    jne .L12848
     mov rax, [rsp]
     mov rax, [rax+8]
-    mov [rbp-32], rax
-    mov rax, [rbp-32]
+    mov [rbp-40], rax
+    mov rax, [rbp-40]
     push rax
     mov r12, rsp
     and rsp, -16
@@ -285044,7 +286833,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dbind_x2Dglobal:
     mov [rbx+8], rax
     mov rax, rbx
     push rax
-    mov rax, [rbp-24]
+    mov rax, [rbp-32]
     push rax
     mov r12, rsp
     and rsp, -16
@@ -285059,19 +286848,19 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dbind_x2Dglobal:
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L12751
-.L12753:
+    jmp .L12846
+.L12848:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12752
+    jne .L12847
     mov rax, [rsp]
     mov rax, [rax+8]
-    mov [rbp-40], rax
+    mov [rbp-48], rax
     mov rax, [rbp-8]
     push rax
     sub rsp, 8
-    mov rax, [rbp-40]
+    mov rax, [rbp-48]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
@@ -285091,19 +286880,22 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dval_x2Dtext
     mov [rbx+8], rax
     mov rax, rbx
     push rax
-    sub rsp, 8
-    mov rax, [rbp-24]
+    mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    mov rax, [rbp-40]
+    mov rax, [rbp-48]
     sub rsp, 8
     mov [rsp], rax
-    mov rdx, [rsp+0]
-    mov rsi, [rsp+8]
-    mov rdi, [rsp+16]
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rcx, [rsp+0]
+    mov rdx, [rsp+8]
+    mov rsi, [rsp+16]
+    mov rdi, [rsp+24]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dwith_x2Dglobal
     add rsp, 32
     push rax
@@ -285120,10 +286912,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dwith_x2Dglobal
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L12751
-.L12752:
+    jmp .L12846
+.L12847:
     mov qword ptr [rsp], 0
-.L12751:
+.L12846:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -285339,10 +287131,10 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dtrim_x2Dback:
     setl al
     movzx rax, al
     test rax, rax
-    je .L12754
+    je .L12849
     mov rax, 0
-    jmp .L12755
-.L12754:
+    jmp .L12850
+.L12849:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -285367,7 +287159,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dspace_x2Dp
     sete al
     movzx rax, al
     test rax, rax
-    je .L12756
+    je .L12851
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -285383,8 +287175,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dspace_x2Dp
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dtrim_x2Dback
     add rsp, 16
-    jmp .L12757
-.L12756:
+    jmp .L12852
+.L12851:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -285403,19 +287195,19 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__term_x2Dbyte_x2Dat
     sete al
     movzx rax, al
     test rax, rax
-    je .L12758
+    je .L12853
     mov rax, [rbp-16]
-    jmp .L12759
-.L12758:
+    jmp .L12854
+.L12853:
     mov rax, [rbp-16]
     push rax
     mov rax, 1
     mov rcx, rax
     pop rax
     add rax, rcx
-.L12759:
-.L12757:
-.L12755:
+.L12854:
+.L12852:
+.L12850:
     mov rsp, rbp
     pop rbp
     ret
@@ -285460,7 +287252,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dvalue_x2Dof
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12761
+    jne .L12856
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -285520,10 +287312,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dbump
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L12760
-.L12761:
+    jmp .L12855
+.L12856:
     mov qword ptr [rsp], 0
-.L12760:
+.L12855:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -285538,7 +287330,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dshown_x2Dof:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12764
+    jne .L12859
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -285555,12 +287347,12 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dshown_x2Dof:
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L12762
-.L12764:
+    jmp .L12857
+.L12859:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12763
+    jne .L12858
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -285572,10 +287364,10 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dshown_x2Dof:
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dresult_x2Dof
     add rsp, 16
     mov [rsp], rax
-    jmp .L12762
-.L12763:
+    jmp .L12857
+.L12858:
     mov qword ptr [rsp], 0
-.L12762:
+.L12857:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -285590,7 +287382,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dcopy_x2Dshown:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 5
-    jne .L12767
+    jne .L12862
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -285613,12 +287405,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dcopy_x2Dstr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L12765
-.L12767:
+    jmp .L12860
+.L12862:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12768
+    jne .L12863
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -285641,12 +287433,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dcopy_x2Dstr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L12765
-.L12768:
+    jmp .L12860
+.L12863:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12769
+    jne .L12864
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -285656,12 +287448,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dcopy_x2Dstr
     mov qword ptr [rbx], 1
     mov rax, rbx
     mov [rsp], rax
-    jmp .L12765
-.L12769:
+    jmp .L12860
+.L12864:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 4
-    jne .L12770
+    jne .L12865
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -285684,12 +287476,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dcopy_x2Dstr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L12765
-.L12770:
+    jmp .L12860
+.L12865:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 2
-    jne .L12771
+    jne .L12866
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -285712,12 +287504,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dcopy_x2Dstr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L12765
-.L12771:
+    jmp .L12860
+.L12866:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 3
-    jne .L12766
+    jne .L12861
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-48], rax
@@ -285753,10 +287545,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dcopy_x2Dstr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L12765
-.L12766:
+    jmp .L12860
+.L12861:
     mov qword ptr [rsp], 0
-.L12765:
+.L12860:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -285771,7 +287563,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dresult_x2Dof:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12774
+    jne .L12869
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -285784,7 +287576,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dresult_x2Dof:
     sete al
     movzx rax, al
     test rax, rax
-    je .L12775
+    je .L12870
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -285793,8 +287585,8 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dresult_x2Dof:
     mov rbx, rax
     mov qword ptr [rbx], 1
     mov rax, rbx
-    jmp .L12776
-.L12775:
+    jmp .L12871
+.L12870:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -285813,10 +287605,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dval_x2Dtext
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-.L12776:
+.L12871:
     mov [rsp], rax
-    jmp .L12772
-.L12774:
+    jmp .L12867
+.L12869:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -285836,10 +287628,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dval_x2Dtext
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L12772
-.L12773:
+    jmp .L12867
+.L12868:
     mov qword ptr [rsp], 0
-.L12772:
+.L12867:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -285893,7 +287685,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dcopy_x2Dstr:
     mov rbp, rsp
     sub rsp, 88
     mov [rbp-8], rdi
-    lea rax, [rip+.L12777]
+    lea rax, [rip+.L12872]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-8]
@@ -285964,7 +287756,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dlower
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12780
+    jne .L12875
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-48], rax
@@ -286005,12 +287797,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dlower
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Ddiscard
     add rsp, 16
     mov [rsp], rax
-    jmp .L12778
-.L12780:
+    jmp .L12873
+.L12875:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12779
+    jne .L12874
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-56], rax
@@ -286068,10 +287860,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Drun_x2Dentry
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dafter_x2Drun
     add rsp, 48
     mov [rsp], rax
-    jmp .L12778
-.L12779:
+    jmp .L12873
+.L12874:
     mov qword ptr [rsp], 0
-.L12778:
+.L12873:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -286102,7 +287894,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dlifted_x2Dof
     sete al
     movzx rax, al
     test rax, rax
-    je .L12781
+    je .L12876
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -286134,8 +287926,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dheapify
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Ddiscard
     add rsp, 16
-    jmp .L12782
-.L12781:
+    jmp .L12877
+.L12876:
     sub rsp, 8
     mov rax, [rbp-48]
     sub rsp, 8
@@ -286151,7 +287943,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__is_x2Dnil_x2Dlist
     sete al
     movzx rax, al
     test rax, rax
-    je .L12783
+    je .L12878
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -286183,8 +287975,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dheapify
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Ddiscard
     add rsp, 16
-    jmp .L12784
-.L12783:
+    jmp .L12879
+.L12878:
     mov rax, [rbp-40]
     push rax
     mov rax, [rbp-16]
@@ -286210,8 +288002,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dwith_x2Dlifted
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-.L12784:
-.L12782:
+.L12879:
+.L12877:
     mov rsp, rbp
     pop rbp
     ret
@@ -286225,7 +288017,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dheapify:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12787
+    jne .L12882
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -286248,12 +288040,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dcopy_x2Dstr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L12785
-.L12787:
+    jmp .L12880
+.L12882:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12786
+    jne .L12881
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -286276,10 +288068,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dheapify_x2Dval
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L12785
-.L12786:
+    jmp .L12880
+.L12881:
     mov qword ptr [rsp], 0
-.L12785:
+.L12880:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -286294,7 +288086,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dheapify_x2Dval:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 2
-    jne .L12790
+    jne .L12885
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -286329,14 +288121,14 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dword_x2Dof_x2Dstr
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L12788
-.L12790:
+    jmp .L12883
+.L12885:
     mov rax, [rbp-8]
     mov [rsp], rax
-    jmp .L12788
-.L12789:
+    jmp .L12883
+.L12884:
     mov qword ptr [rsp], 0
-.L12788:
+.L12883:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -286375,8 +288167,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dentry_x2Dfn
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12793
-    lea rax, [rip+.L12794]
+    jne .L12888
+    lea rax, [rip+.L12889]
     push rax
     mov r12, rsp
     and rsp, -16
@@ -286389,12 +288181,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dentry_x2Dfn
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L12791
-.L12793:
+    jmp .L12886
+.L12888:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12792
+    jne .L12887
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -286414,10 +288206,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dentry_x2Dfn
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dinterpret
     add rsp, 32
     mov [rsp], rax
-    jmp .L12791
-.L12792:
+    jmp .L12886
+.L12887:
     mov qword ptr [rsp], 0
-.L12791:
+.L12886:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -286432,7 +288224,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dentry_x2Dfn:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12797
+    jne .L12892
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -286442,12 +288234,12 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dentry_x2Dfn:
     mov qword ptr [rbx], 1
     mov rax, rbx
     mov [rsp], rax
-    jmp .L12795
-.L12797:
+    jmp .L12890
+.L12892:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12796
+    jne .L12891
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -286481,7 +288273,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dends_x2Dwith
     sete al
     movzx rax, al
     test rax, rax
-    je .L12798
+    je .L12893
     mov rax, [rbp-32]
     push rax
     mov r12, rsp
@@ -286494,8 +288286,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dends_x2Dwith
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L12799
-.L12798:
+    jmp .L12894
+.L12893:
     sub rsp, 8
     mov rax, [rbp-24]
     sub rsp, 8
@@ -286503,12 +288295,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dends_x2Dwith
     mov rdi, [rsp+0]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dentry_x2Dfn
     add rsp, 16
-.L12799:
+.L12894:
     mov [rsp], rax
-    jmp .L12795
-.L12796:
+    jmp .L12890
+.L12891:
     mov qword ptr [rsp], 0
-.L12795:
+.L12890:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -286550,10 +288342,10 @@ call zyl_cstr_len
     setl al
     movzx rax, al
     test rax, rax
-    je .L12800
+    je .L12895
     mov rax, 0
-    jmp .L12801
-.L12800:
+    jmp .L12896
+.L12895:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -286586,7 +288378,1588 @@ call zyl_cstr_substr
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     add rsp, 16
-.L12801:
+.L12896:
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dread_x2Dfile:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 104
+    mov [rbp-8], rdi
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L12897]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_file_open_c
+    mov rsp, r12
+    add rsp, 16
+    mov [rbp-16], rax
+    mov rax, [rbp-16]
+    push rax
+    mov rax, 0
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    setle al
+    movzx rax, al
+    test rax, rax
+    je .L12898
+    lea rax, [rip+.L12900]
+    jmp .L12899
+.L12898:
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, 4194304
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_file_read_c
+    mov rsp, r12
+    add rsp, 16
+    mov [rbp-24], rax
+    sub rsp, 8
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+    mov r12, rsp
+    and rsp, -16
+call zyl_file_close_c
+    mov rsp, r12
+    add rsp, 16
+    mov rax, [rbp-24]
+.L12899:
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dfile:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 88
+    mov [rbp-8], rdi
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L12901]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_concat
+    mov rsp, r12
+    add rsp, 16
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dsave:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 104
+    mov [rbp-8], rdi
+    sub rsp, 8
+    sub rsp, 8
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__Session_x2Edir
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dfile
+    add rsp, 16
+    mov [rbp-16], rax
+    sub rsp, 8
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dempty_x2Dp
+    add rsp, 16
+    push rax
+    mov rax, 1
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    sete al
+    movzx rax, al
+    test rax, rax
+    je .L12902
+    mov rax, 0
+    jmp .L12903
+.L12902:
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L12904]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_file_open_c
+    mov rsp, r12
+    add rsp, 16
+    mov [rbp-24], rax
+    mov rax, [rbp-24]
+    push rax
+    mov rax, 0
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    setle al
+    movzx rax, al
+    test rax, rax
+    je .L12905
+    mov rax, -1
+    jmp .L12906
+.L12905:
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    sub rsp, 8
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dtext
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_file_write_c
+    mov rsp, r12
+    add rsp, 16
+    sub rsp, 8
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+    mov r12, rsp
+    and rsp, -16
+call zyl_file_close_c
+    mov rsp, r12
+    add rsp, 16
+    mov rax, 0
+.L12906:
+.L12903:
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dempty_x2Dp:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 88
+    mov [rbp-8], rdi
+    sub rsp, 8
+    sub rsp, 8
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__Session_x2Edefs
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_len
+    mov rsp, r12
+    add rsp, 16
+    push rax
+    mov rax, 0
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    setg al
+    movzx rax, al
+    test rax, rax
+    je .L12907
+    mov rax, 0
+    jmp .L12908
+.L12907:
+    sub rsp, 8
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__Session_x2Eglobals
+    add rsp, 16
+    push rax
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 1
+    jne .L12911
+    sub rsp, 8
+    sub rsp, 8
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__Session_x2Euses
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__list_x2Dlength
+    add rsp, 16
+    push rax
+    sub rsp, 8
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Ddefault_x2Duses
+    add rsp, 0
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__list_x2Dlength
+    add rsp, 16
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    sete al
+    movzx rax, al
+    test rax, rax
+    je .L12912
+    mov rax, 1
+    jmp .L12913
+.L12912:
+    mov rax, 0
+.L12913:
+    mov [rsp], rax
+    jmp .L12909
+.L12911:
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 0
+    jne .L12910
+    mov rax, [rsp]
+    mov rax, [rax+8]
+    mov rax, [rsp]
+    mov rax, [rax+16]
+    mov rax, 0
+    mov [rsp], rax
+    jmp .L12909
+.L12910:
+    mov qword ptr [rsp], 0
+.L12909:
+    pop rax
+.L12908:
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dtext:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 88
+    mov [rbp-8], rdi
+    lea rax, [rip+.L12914]
+    sub rsp, 8
+    mov [rsp], rax
+    sub rsp, 8
+    sub rsp, 8
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__Session_x2Euses
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Duse_x2Dlines
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    sub rsp, 8
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__Session_x2Edefs
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L12915]
+    sub rsp, 8
+    mov [rsp], rax
+    sub rsp, 8
+    sub rsp, 8
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__Session_x2Eglobals
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dglobal_x2Dlines
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_concat
+    mov rsp, r12
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_concat
+    mov rsp, r12
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_concat
+    mov rsp, r12
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_concat
+    mov rsp, r12
+    add rsp, 16
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dglobal_x2Dlines:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 104
+    mov [rbp-8], rdi
+    mov rax, [rbp-8]
+    push rax
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 1
+    jne .L12918
+    lea rax, [rip+.L12919]
+    mov [rsp], rax
+    jmp .L12916
+.L12918:
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 0
+    jne .L12917
+    mov rax, [rsp]
+    mov rax, [rax+8]
+    mov [rbp-16], rax
+    mov rax, [rsp]
+    mov rax, [rax+16]
+    mov [rbp-24], rax
+    lea rax, [rip+.L12920]
+    sub rsp, 8
+    mov [rsp], rax
+    sub rsp, 8
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__Global_x2Ename
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L12921]
+    sub rsp, 8
+    mov [rsp], rax
+    sub rsp, 8
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__Global_x2Esource
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L12922]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_concat
+    mov rsp, r12
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_concat
+    mov rsp, r12
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_concat
+    mov rsp, r12
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_concat
+    mov rsp, r12
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    sub rsp, 8
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dglobal_x2Dlines
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_concat
+    mov rsp, r12
+    add rsp, 16
+    mov [rsp], rax
+    jmp .L12916
+.L12917:
+    mov qword ptr [rsp], 0
+.L12916:
+    pop rax
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__Restored_x2Esession:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 104
+    mov [rbp-8], rdi
+    mov rax, [rbp-8]
+    push rax
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 0
+    jne .L12924
+    mov rax, [rsp]
+    mov rax, [rax+8]
+    mov [rbp-16], rax
+    mov rax, [rsp]
+    mov rax, [rax+16]
+    mov rax, [rbp-16]
+    mov [rsp], rax
+    jmp .L12923
+.L12924:
+    mov qword ptr [rsp], 0
+.L12923:
+    pop rax
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__Restored_x2Ecount:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 104
+    mov [rbp-8], rdi
+    mov rax, [rbp-8]
+    push rax
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 0
+    jne .L12926
+    mov rax, [rsp]
+    mov rax, [rax+8]
+    mov rax, [rsp]
+    mov rax, [rax+16]
+    mov [rbp-16], rax
+    mov rax, [rbp-16]
+    mov [rsp], rax
+    jmp .L12925
+.L12926:
+    mov qword ptr [rsp], 0
+.L12925:
+    pop rax
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Drestore:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 104
+    mov [rbp-8], rdi
+    sub rsp, 8
+    sub rsp, 8
+    sub rsp, 8
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__Session_x2Edir
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dfile
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dread_x2Dfile
+    add rsp, 16
+    mov [rbp-16], rax
+    sub rsp, 8
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_len
+    mov rsp, r12
+    add rsp, 16
+    push rax
+    mov rax, 0
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    sete al
+    movzx rax, al
+    test rax, rax
+    je .L12927
+    mov rax, [rbp-8]
+    push rax
+    mov rax, 0
+    push rax
+    mov r12, rsp
+    and rsp, -16
+    mov rdi, 24
+    call zyl_heap_alloc
+    mov rsp, r12
+    mov rbx, rax
+    mov qword ptr [rbx], 0
+    pop rax
+    mov [rbx+16], rax
+    pop rax
+    mov [rbx+8], rax
+    mov rax, rbx
+    jmp .L12928
+.L12927:
+    sub rsp, 8
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    sub rsp, 8
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, 0
+    sub rsp, 8
+    mov [rsp], rax
+    sub rsp, 8
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_len
+    mov rsp, r12
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L12929]
+    sub rsp, 8
+    mov [rsp], rax
+    mov r12, rsp
+    and rsp, -16
+    mov rdi, 8
+    call zyl_heap_alloc
+    mov rsp, r12
+    mov rbx, rax
+    mov qword ptr [rbx], 1
+    mov rax, rbx
+    sub rsp, 8
+    mov [rsp], rax
+    mov r8, [rsp+0]
+    mov rcx, [rsp+8]
+    mov rdx, [rsp+16]
+    mov rsi, [rsp+24]
+    mov rdi, [rsp+32]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dforms
+    add rsp, 48
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, 0
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdx, [rsp+0]
+    mov rsi, [rsp+8]
+    mov rdi, [rsp+16]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dreplay
+    add rsp, 32
+.L12928:
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dreplay:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 136
+    mov [rbp-8], rdi
+    mov [rbp-16], rsi
+    mov [rbp-24], rdx
+    mov rax, [rbp-16]
+    push rax
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 1
+    jne .L12932
+    mov rax, [rbp-8]
+    push rax
+    mov rax, [rbp-24]
+    push rax
+    mov r12, rsp
+    and rsp, -16
+    mov rdi, 24
+    call zyl_heap_alloc
+    mov rsp, r12
+    mov rbx, rax
+    mov qword ptr [rbx], 0
+    pop rax
+    mov [rbx+16], rax
+    pop rax
+    mov [rbx+8], rax
+    mov rax, rbx
+    mov [rsp], rax
+    jmp .L12930
+.L12932:
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 0
+    jne .L12931
+    mov rax, [rsp]
+    mov rax, [rax+8]
+    mov [rbp-32], rax
+    mov rax, [rsp]
+    mov rax, [rax+16]
+    mov [rbp-40], rax
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-32]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dentry
+    add rsp, 16
+    mov [rbp-48], rax
+    sub rsp, 8
+    mov rax, [rbp-48]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__EvalOutcome_x2Eresult
+    add rsp, 16
+    push rax
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 5
+    jne .L12935
+    mov rax, [rsp]
+    mov rax, [rax+8]
+    sub rsp, 8
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-40]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdx, [rsp+0]
+    mov rsi, [rsp+8]
+    mov rdi, [rsp+16]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dreplay
+    add rsp, 32
+    mov [rsp], rax
+    jmp .L12933
+.L12935:
+    sub rsp, 8
+    sub rsp, 8
+    mov rax, [rbp-48]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__EvalOutcome_x2Esession
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-40]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    push rax
+    mov rax, 1
+    mov rcx, rax
+    pop rax
+    add rax, rcx
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdx, [rsp+0]
+    mov rsi, [rsp+8]
+    mov rdi, [rsp+16]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dreplay
+    add rsp, 32
+    mov [rsp], rax
+    jmp .L12933
+.L12934:
+    mov qword ptr [rsp], 0
+.L12933:
+    pop rax
+    mov [rsp], rax
+    jmp .L12930
+.L12931:
+    mov qword ptr [rsp], 0
+.L12930:
+    pop rax
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dforms:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 136
+    mov [rbp-8], rdi
+    mov [rbp-16], rsi
+    mov [rbp-24], rdx
+    mov [rbp-32], rcx
+    mov [rbp-40], r8
+    mov rax, [rbp-16]
+    push rax
+    mov rax, [rbp-24]
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    setge al
+    movzx rax, al
+    test rax, rax
+    je .L12936
+    sub rsp, 8
+    mov rax, [rbp-40]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__list_x2Dreverse
+    add rsp, 16
+    jmp .L12937
+.L12936:
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__term_x2Dbyte_x2Dat
+    add rsp, 16
+    mov [rbp-48], rax
+    mov rax, [rbp-48]
+    push rax
+    mov rax, 59
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    sete al
+    movzx rax, al
+    test rax, rax
+    je .L12938
+    sub rsp, 8
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    sub rsp, 8
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdx, [rsp+0]
+    mov rsi, [rsp+8]
+    mov rdi, [rsp+16]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dline_x2Dend
+    add rsp, 32
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-32]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-40]
+    sub rsp, 8
+    mov [rsp], rax
+    mov r8, [rsp+0]
+    mov rcx, [rsp+8]
+    mov rdx, [rsp+16]
+    mov rsi, [rsp+24]
+    mov rdi, [rsp+32]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dforms
+    add rsp, 48
+    jmp .L12939
+.L12938:
+    mov rax, [rbp-48]
+    push rax
+    mov rax, 40
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    sete al
+    movzx rax, al
+    test rax, rax
+    je .L12940
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, 0
+    sub rsp, 8
+    mov [rsp], rax
+    mov rcx, [rsp+0]
+    mov rdx, [rsp+8]
+    mov rsi, [rsp+16]
+    mov rdi, [rsp+24]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dform_x2Dend
+    add rsp, 32
+    mov [rbp-56], rax
+    sub rsp, 8
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-56]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-32]
+    sub rsp, 8
+    mov [rsp], rax
+    sub rsp, 8
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-56]
+    push rax
+    mov rax, [rbp-16]
+    mov rcx, rax
+    pop rax
+    sub rax, rcx
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdx, [rsp+0]
+    mov rsi, [rsp+8]
+    mov rdi, [rsp+16]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_substr
+    mov rsp, r12
+    add rsp, 32
+    push rax
+    mov rax, [rbp-40]
+    push rax
+    mov r12, rsp
+    and rsp, -16
+    mov rdi, 24
+    call zyl_heap_alloc
+    mov rsp, r12
+    mov rbx, rax
+    mov qword ptr [rbx], 0
+    pop rax
+    mov [rbx+16], rax
+    pop rax
+    mov [rbx+8], rax
+    mov rax, rbx
+    sub rsp, 8
+    mov [rsp], rax
+    mov r8, [rsp+0]
+    mov rcx, [rsp+8]
+    mov rdx, [rsp+16]
+    mov rsi, [rsp+24]
+    mov rdi, [rsp+32]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dforms
+    add rsp, 48
+    jmp .L12941
+.L12940:
+    sub rsp, 8
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-16]
+    push rax
+    mov rax, 1
+    mov rcx, rax
+    pop rax
+    add rax, rcx
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-32]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-40]
+    sub rsp, 8
+    mov [rsp], rax
+    mov r8, [rsp+0]
+    mov rcx, [rsp+8]
+    mov rdx, [rsp+16]
+    mov rsi, [rsp+24]
+    mov rdi, [rsp+32]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dforms
+    add rsp, 48
+.L12941:
+.L12939:
+.L12937:
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dline_x2Dend:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 104
+    mov [rbp-8], rdi
+    mov [rbp-16], rsi
+    mov [rbp-24], rdx
+    mov rax, [rbp-16]
+    push rax
+    mov rax, [rbp-24]
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    setge al
+    movzx rax, al
+    test rax, rax
+    je .L12942
+    mov rax, [rbp-24]
+    jmp .L12943
+.L12942:
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__term_x2Dbyte_x2Dat
+    add rsp, 16
+    push rax
+    mov rax, 10
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    sete al
+    movzx rax, al
+    test rax, rax
+    je .L12944
+    mov rax, [rbp-16]
+    push rax
+    mov rax, 1
+    mov rcx, rax
+    pop rax
+    add rax, rcx
+    jmp .L12945
+.L12944:
+    sub rsp, 8
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-16]
+    push rax
+    mov rax, 1
+    mov rcx, rax
+    pop rax
+    add rax, rcx
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdx, [rsp+0]
+    mov rsi, [rsp+8]
+    mov rdi, [rsp+16]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dline_x2Dend
+    add rsp, 32
+.L12945:
+.L12943:
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dform_x2Dend:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 120
+    mov [rbp-8], rdi
+    mov [rbp-16], rsi
+    mov [rbp-24], rdx
+    mov [rbp-32], rcx
+    mov rax, [rbp-16]
+    push rax
+    mov rax, [rbp-24]
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    setge al
+    movzx rax, al
+    test rax, rax
+    je .L12946
+    mov rax, [rbp-24]
+    jmp .L12947
+.L12946:
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__term_x2Dbyte_x2Dat
+    add rsp, 16
+    mov [rbp-40], rax
+    mov rax, [rbp-40]
+    push rax
+    mov rax, 34
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    sete al
+    movzx rax, al
+    test rax, rax
+    je .L12948
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    sub rsp, 8
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-16]
+    push rax
+    mov rax, 1
+    mov rcx, rax
+    pop rax
+    add rax, rcx
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdx, [rsp+0]
+    mov rsi, [rsp+8]
+    mov rdi, [rsp+16]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dstring_x2Dend
+    add rsp, 32
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-32]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rcx, [rsp+0]
+    mov rdx, [rsp+8]
+    mov rsi, [rsp+16]
+    mov rdi, [rsp+24]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dform_x2Dend
+    add rsp, 32
+    jmp .L12949
+.L12948:
+    mov rax, [rbp-40]
+    push rax
+    mov rax, 59
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    sete al
+    movzx rax, al
+    test rax, rax
+    je .L12950
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    sub rsp, 8
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdx, [rsp+0]
+    mov rsi, [rsp+8]
+    mov rdi, [rsp+16]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dline_x2Dend
+    add rsp, 32
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-32]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rcx, [rsp+0]
+    mov rdx, [rsp+8]
+    mov rsi, [rsp+16]
+    mov rdi, [rsp+24]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dform_x2Dend
+    add rsp, 32
+    jmp .L12951
+.L12950:
+    mov rax, [rbp-40]
+    push rax
+    mov rax, 40
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    sete al
+    movzx rax, al
+    test rax, rax
+    je .L12952
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-16]
+    push rax
+    mov rax, 1
+    mov rcx, rax
+    pop rax
+    add rax, rcx
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-32]
+    push rax
+    mov rax, 1
+    mov rcx, rax
+    pop rax
+    add rax, rcx
+    sub rsp, 8
+    mov [rsp], rax
+    mov rcx, [rsp+0]
+    mov rdx, [rsp+8]
+    mov rsi, [rsp+16]
+    mov rdi, [rsp+24]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dform_x2Dend
+    add rsp, 32
+    jmp .L12953
+.L12952:
+    mov rax, [rbp-40]
+    push rax
+    mov rax, 41
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    sete al
+    movzx rax, al
+    test rax, rax
+    je .L12954
+    mov rax, [rbp-32]
+    push rax
+    mov rax, 1
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    setle al
+    movzx rax, al
+    test rax, rax
+    je .L12956
+    mov rax, [rbp-16]
+    push rax
+    mov rax, 1
+    mov rcx, rax
+    pop rax
+    add rax, rcx
+    jmp .L12957
+.L12956:
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-16]
+    push rax
+    mov rax, 1
+    mov rcx, rax
+    pop rax
+    add rax, rcx
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-32]
+    push rax
+    mov rax, 1
+    mov rcx, rax
+    pop rax
+    sub rax, rcx
+    sub rsp, 8
+    mov [rsp], rax
+    mov rcx, [rsp+0]
+    mov rdx, [rsp+8]
+    mov rsi, [rsp+16]
+    mov rdi, [rsp+24]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dform_x2Dend
+    add rsp, 32
+.L12957:
+    jmp .L12955
+.L12954:
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-16]
+    push rax
+    mov rax, 1
+    mov rcx, rax
+    pop rax
+    add rax, rcx
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-32]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rcx, [rsp+0]
+    mov rdx, [rsp+8]
+    mov rsi, [rsp+16]
+    mov rdi, [rsp+24]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dform_x2Dend
+    add rsp, 32
+.L12955:
+.L12953:
+.L12951:
+.L12949:
+.L12947:
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dstring_x2Dend:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 120
+    mov [rbp-8], rdi
+    mov [rbp-16], rsi
+    mov [rbp-24], rdx
+    mov rax, [rbp-16]
+    push rax
+    mov rax, [rbp-24]
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    setge al
+    movzx rax, al
+    test rax, rax
+    je .L12958
+    mov rax, [rbp-24]
+    jmp .L12959
+.L12958:
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__term_x2Dbyte_x2Dat
+    add rsp, 16
+    mov [rbp-32], rax
+    mov rax, [rbp-32]
+    push rax
+    mov rax, 92
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    sete al
+    movzx rax, al
+    test rax, rax
+    je .L12960
+    sub rsp, 8
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-16]
+    push rax
+    mov rax, 2
+    mov rcx, rax
+    pop rax
+    add rax, rcx
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdx, [rsp+0]
+    mov rsi, [rsp+8]
+    mov rdi, [rsp+16]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dstring_x2Dend
+    add rsp, 32
+    jmp .L12961
+.L12960:
+    mov rax, [rbp-32]
+    push rax
+    mov rax, 34
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    sete al
+    movzx rax, al
+    test rax, rax
+    je .L12962
+    mov rax, [rbp-16]
+    push rax
+    mov rax, 1
+    mov rcx, rax
+    pop rax
+    add rax, rcx
+    jmp .L12963
+.L12962:
+    sub rsp, 8
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-16]
+    push rax
+    mov rax, 1
+    mov rcx, rax
+    pop rax
+    add rax, rcx
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdx, [rsp+0]
+    mov rsi, [rsp+8]
+    mov rdi, [rsp+16]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dstring_x2Dend
+    add rsp, 32
+.L12963:
+.L12961:
+.L12959:
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Drc_x2Dpath:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 88
+    sub rsp, 8
+    lea rax, [rip+.L12964]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+    mov r12, rsp
+    and rsp, -16
+call zyl_getenv
+    mov rsp, r12
+    add rsp, 16
+    mov [rbp-8], rax
+    mov rax, [rbp-8]
+    push rax
+    mov rax, 0
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    setg al
+    movzx rax, al
+    test rax, rax
+    je .L12965
+    mov rax, [rbp-8]
+    jmp .L12966
+.L12965:
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__hist_x2Ddir
+    add rsp, 0
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L12967]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_concat
+    mov rsp, r12
+    add rsp, 16
+.L12966:
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dload_x2Drc:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 104
+    mov [rbp-8], rdi
+    sub rsp, 8
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Drc_x2Dpath
+    add rsp, 0
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dread_x2Dfile
+    add rsp, 16
+    mov [rbp-16], rax
+    sub rsp, 8
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_len
+    mov rsp, r12
+    add rsp, 16
+    push rax
+    mov rax, 0
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    sete al
+    movzx rax, al
+    test rax, rax
+    je .L12968
+    mov rax, [rbp-8]
+    push rax
+    mov rax, 0
+    push rax
+    mov r12, rsp
+    and rsp, -16
+    mov rdi, 24
+    call zyl_heap_alloc
+    mov rsp, r12
+    mov rbx, rax
+    mov qword ptr [rbx], 0
+    pop rax
+    mov [rbx+16], rax
+    pop rax
+    mov [rbx+8], rax
+    mov rax, rbx
+    jmp .L12969
+.L12968:
+    sub rsp, 8
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    sub rsp, 8
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, 0
+    sub rsp, 8
+    mov [rsp], rax
+    sub rsp, 8
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_len
+    mov rsp, r12
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L12970]
+    sub rsp, 8
+    mov [rsp], rax
+    mov r12, rsp
+    and rsp, -16
+    mov rdi, 8
+    call zyl_heap_alloc
+    mov rsp, r12
+    mov rbx, rax
+    mov qword ptr [rbx], 1
+    mov rax, rbx
+    sub rsp, 8
+    mov [rsp], rax
+    mov r8, [rsp+0]
+    mov rcx, [rsp+8]
+    mov rdx, [rsp+16]
+    mov rsi, [rsp+24]
+    mov rdi, [rsp+32]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dforms
+    add rsp, 48
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, 0
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdx, [rsp+0]
+    mov rsi, [rsp+8]
+    mov rdi, [rsp+16]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dreplay
+    add rsp, 32
+.L12969:
     mov rsp, rbp
     pop rbp
     ret
@@ -286594,15 +289967,38 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dversion:
     push rbp
     mov rbp, rsp
     sub rsp, 88
-    lea rax, [rip+.L12802]
+    lea rax, [rip+.L12971]
     mov rsp, rbp
     pop rbp
     ret
 zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Drun:
     push rbp
     mov rbp, rsp
+    sub rsp, 88
+    mov [rbp-8], rdi
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov r12, rsp
+    and rsp, -16
+call zyl_getcwd
+    mov rsp, r12
+    add rsp, 0
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Drun_x2Din
+    add rsp, 16
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Drun_x2Din:
+    push rbp
+    mov rbp, rsp
     sub rsp, 104
     mov [rbp-8], rdi
+    mov [rbp-16], rsi
     sub rsp, 8
     mov rax, 1048576
     sub rsp, 8
@@ -286610,7 +290006,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Drun:
     mov rdi, [rsp+0]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__arena_x2Dcreate
     add rsp, 16
-    mov [rbp-16], rax
+    mov [rbp-24], rax
     sub rsp, 8
     mov rax, 0
     sub rsp, 8
@@ -286626,30 +290022,253 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__term_x2Dis_x2Dtty
     sete al
     movzx rax, al
     test rax, rax
-    je .L12803
+    je .L12972
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
     sub rsp, 8
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dstart_x2Dsession
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dinteractive
     add rsp, 16
-    jmp .L12804
-.L12803:
+    jmp .L12973
+.L12972:
+    sub rsp, 8
+    sub rsp, 8
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dnew
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dscripted
-    add rsp, 0
-.L12804:
+    add rsp, 16
+.L12973:
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dstart_x2Dsession:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 120
+    mov [rbp-8], rdi
+    sub rsp, 8
+    sub rsp, 8
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dnew
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dload_x2Drc
+    add rsp, 16
+    push rax
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 0
+    jne .L12975
+    mov rax, [rsp]
+    mov rax, [rax+8]
+    mov [rbp-16], rax
+    mov rax, [rsp]
+    mov rax, [rax+16]
+    mov [rbp-24], rax
+    sub rsp, 8
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Drestore
+    add rsp, 16
+    push rax
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 0
+    jne .L12977
+    mov rax, [rsp]
+    mov rax, [rax+8]
+    mov [rbp-32], rax
+    mov rax, [rsp]
+    mov rax, [rax+16]
+    mov [rbp-40], rax
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-40]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dannounce_x2Drestore
+    add rsp, 16
+    mov rax, [rbp-32]
+    mov [rsp], rax
+    jmp .L12976
+.L12977:
+    mov qword ptr [rsp], 0
+.L12976:
+    pop rax
+    mov [rsp], rax
+    jmp .L12974
+.L12975:
+    mov qword ptr [rsp], 0
+.L12974:
+    pop rax
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dannounce_x2Drestore:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 104
+    mov [rbp-8], rdi
+    mov [rbp-16], rsi
+    mov rax, [rbp-8]
+    push rax
+    mov rax, 0
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    setg al
+    movzx rax, al
+    test rax, rax
+    je .L12978
+    sub rsp, 8
+    lea rax, [rip+.L12980]
+    sub rsp, 8
+    mov [rsp], rax
+    sub rsp, 8
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dint
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L12981]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_concat
+    mov rsp, r12
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_concat
+    mov rsp, r12
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dnote
+    add rsp, 16
+    jmp .L12979
+.L12978:
+    mov rax, 0
+.L12979:
+    mov rax, [rbp-16]
+    push rax
+    mov rax, 0
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    setg al
+    movzx rax, al
+    test rax, rax
+    je .L12982
+    sub rsp, 8
+    lea rax, [rip+.L12984]
+    sub rsp, 8
+    mov [rsp], rax
+    sub rsp, 8
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dint
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L12985]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_concat
+    mov rsp, r12
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_concat
+    mov rsp, r12
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dnote
+    add rsp, 16
+    jmp .L12983
+.L12982:
+    mov rax, 0
+.L12983:
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dint:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 88
+    mov [rbp-8], rdi
+    sub rsp, 8
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+    mov r12, rsp
+    and rsp, -16
+call zyl_int_text
+    mov rsp, r12
+    add rsp, 16
     mov rsp, rbp
     pop rbp
     ret
 zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dinteractive:
     push rbp
     mov rbp, rsp
-    sub rsp, 104
+    sub rsp, 120
     mov [rbp-8], rdi
+    mov [rbp-16], rsi
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__hist_x2Dload
     add rsp, 0
-    mov [rbp-16], rax
+    mov [rbp-24], rax
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dbanner
     add rsp, 0
     sub rsp, 8
@@ -286665,7 +290284,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__term_x2Dwrite
     sub rsp, 8
     mov [rsp], rax
     sub rsp, 8
-    mov rax, [rbp-16]
+    mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
@@ -286673,8 +290292,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__es_x2Dnew
     add rsp, 16
     sub rsp, 8
     mov [rsp], rax
-call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dnew
-    add rsp, 0
+    mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
     mov rdx, [rsp+0]
@@ -286682,7 +290300,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dnew
     mov rdi, [rsp+16]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dloop
     add rsp, 32
-    mov [rbp-24], rax
+    mov [rbp-32], rax
     sub rsp, 8
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__ansi_x2Dpaste_x2Doff
     add rsp, 0
@@ -286693,7 +290311,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__term_x2Dwrite
     add rsp, 16
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__term_x2Draw_x2Doff
     add rsp, 0
-    mov rax, [rbp-24]
+    mov rax, [rbp-32]
     mov rsp, rbp
     pop rbp
     ret
@@ -286701,14 +290319,14 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dbanner:
     push rbp
     mov rbp, rsp
     sub rsp, 88
-    lea rax, [rip+.L12805]
+    lea rax, [rip+.L12986]
     sub rsp, 8
     mov [rsp], rax
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dversion
     add rsp, 0
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12806]
+    lea rax, [rip+.L12987]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -286745,7 +290363,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dprompt:
     push rbp
     mov rbp, rsp
     sub rsp, 88
-    lea rax, [rip+.L12807]
+    lea rax, [rip+.L12988]
     mov rsp, rbp
     pop rbp
     ret
@@ -286753,7 +290371,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dcprompt:
     push rbp
     mov rbp, rsp
     sub rsp, 88
-    lea rax, [rip+.L12808]
+    lea rax, [rip+.L12989]
     mov rsp, rbp
     pop rbp
     ret
@@ -286837,18 +290455,18 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dafter_x2Dread:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 2
-    jne .L12811
+    jne .L12992
     mov rax, [rsp]
     mov rax, [rax+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dgoodbye
     add rsp, 0
     mov [rsp], rax
-    jmp .L12809
-.L12811:
+    jmp .L12990
+.L12992:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12812
+    jne .L12993
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -286868,12 +290486,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dgoodbye
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dloop
     add rsp, 32
     mov [rsp], rax
-    jmp .L12809
-.L12812:
+    jmp .L12990
+.L12993:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12810
+    jne .L12991
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -286899,10 +290517,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dloop
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dhandle
     add rsp, 32
     mov [rsp], rax
-    jmp .L12809
-.L12810:
+    jmp .L12990
+.L12991:
     mov qword ptr [rsp], 0
-.L12809:
+.L12990:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -286911,7 +290529,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dgoodbye:
     push rbp
     mov rbp, rsp
     sub rsp, 88
-    lea rax, [rip+.L12813]
+    lea rax, [rip+.L12994]
     mov rsi, rax
     lea rdi, [rip+.Lfmts]
     xor eax, eax
@@ -286958,7 +290576,7 @@ call zyl_cstr_len
     sete al
     movzx rax, al
     test rax, rax
-    je .L12814
+    je .L12995
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -286974,8 +290592,8 @@ call zyl_cstr_len
     mov rdi, [rsp+16]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dloop
     add rsp, 32
-    jmp .L12815
-.L12814:
+    jmp .L12996
+.L12995:
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
@@ -287002,7 +290620,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dmeta_x2Dp
     sete al
     movzx rax, al
     test rax, rax
-    je .L12816
+    je .L12997
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -287021,8 +290639,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dmeta_x2Dp
     mov rdi, [rsp+24]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dmeta_x2Dinteractive
     add rsp, 32
-    jmp .L12817
-.L12816:
+    jmp .L12998
+.L12997:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -287041,8 +290659,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dmeta_x2Dinteractive
     mov rdi, [rsp+24]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Deval
     add rsp, 32
-.L12817:
-.L12815:
+.L12998:
+.L12996:
     mov rsp, rbp
     pop rbp
     ret
@@ -287085,16 +290703,16 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dmeta_x2Dapply
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12820
+    jne .L13001
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dgoodbye
     add rsp, 0
     mov [rsp], rax
-    jmp .L12818
-.L12820:
+    jmp .L12999
+.L13001:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12819
+    jne .L13000
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -287105,7 +290723,13 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dgoodbye
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
+    sub rsp, 8
     mov rax, [rbp-40]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dpersist
+    add rsp, 16
     sub rsp, 8
     mov [rsp], rax
     mov rdx, [rsp+0]
@@ -287114,10 +290738,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dgoodbye
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dloop
     add rsp, 32
     mov [rsp], rax
-    jmp .L12818
-.L12819:
+    jmp .L12999
+.L13000:
     mov qword ptr [rsp], 0
-.L12818:
+.L12999:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -287163,7 +290787,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__hist_x2Dpush
     push rax
     mov rax, -1
     push rax
-    lea rax, [rip+.L12821]
+    lea rax, [rip+.L13002]
     push rax
     mov r12, rsp
     and rsp, -16
@@ -287228,6 +290852,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dreport
     sub rsp, 8
     mov [rsp], rax
     sub rsp, 8
+    sub rsp, 8
     mov rax, [rbp-40]
     sub rsp, 8
     mov [rsp], rax
@@ -287236,11 +290861,32 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__EvalOutcome_x2Esession
     add rsp, 16
     sub rsp, 8
     mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dpersist
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
     mov rdx, [rsp+0]
     mov rsi, [rsp+8]
     mov rdi, [rsp+16]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dloop
     add rsp, 32
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dpersist:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 88
+    mov [rbp-8], rdi
+    sub rsp, 8
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dsave
+    add rsp, 16
+    mov rax, [rbp-8]
     mov rsp, rbp
     pop rbp
     ret
@@ -287254,7 +290900,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dreport:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12824
+    jne .L13005
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -287266,25 +290912,25 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dreport:
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dvalue
     add rsp, 16
     mov [rsp], rax
-    jmp .L12822
-.L12824:
+    jmp .L13003
+.L13005:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12825
+    jne .L13006
     mov rax, 0
     mov [rsp], rax
-    jmp .L12822
-.L12825:
+    jmp .L13003
+.L13006:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 2
-    jne .L12826
+    jne .L13007
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
     sub rsp, 8
-    lea rax, [rip+.L12827]
+    lea rax, [rip+.L13008]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-24]
@@ -287303,12 +290949,12 @@ call zyl_cstr_concat
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dnote
     add rsp, 16
     mov [rsp], rax
-    jmp .L12822
-.L12826:
+    jmp .L13003
+.L13007:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 3
-    jne .L12828
+    jne .L13009
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -287319,7 +290965,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dnote
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12829]
+    lea rax, [rip+.L13010]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-40]
@@ -287347,12 +290993,12 @@ call zyl_cstr_concat
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dnote
     add rsp, 16
     mov [rsp], rax
-    jmp .L12822
-.L12828:
+    jmp .L13003
+.L13009:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 4
-    jne .L12830
+    jne .L13011
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-48], rax
@@ -287364,12 +291010,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dnote
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dnote
     add rsp, 16
     mov [rsp], rax
-    jmp .L12822
-.L12830:
+    jmp .L13003
+.L13011:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 5
-    jne .L12823
+    jne .L13004
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-56], rax
@@ -287381,10 +291027,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dnote
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Derror
     add rsp, 16
     mov [rsp], rax
-    jmp .L12822
-.L12823:
+    jmp .L13003
+.L13004:
     mov qword ptr [rsp], 0
-.L12822:
+.L13003:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -287395,7 +291041,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dvalue:
     sub rsp, 88
     mov [rbp-8], rdi
     sub rsp, 8
-    lea rax, [rip+.L12831]
+    lea rax, [rip+.L13012]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
@@ -287409,7 +291055,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__term_x2Dwrite
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__term_x2Dwrite
     add rsp, 16
     sub rsp, 8
-    lea rax, [rip+.L12832]
+    lea rax, [rip+.L13013]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
@@ -287425,13 +291071,13 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dnote:
     sub rsp, 88
     mov [rbp-8], rdi
     sub rsp, 8
-    lea rax, [rip+.L12833]
+    lea rax, [rip+.L13014]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12834]
+    lea rax, [rip+.L13015]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -287472,7 +291118,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Derror:
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__term_x2Dwrite
     add rsp, 16
     sub rsp, 8
-    lea rax, [rip+.L12835]
+    lea rax, [rip+.L13016]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
@@ -287505,10 +291151,10 @@ call zyl_cstr_len
     sete al
     movzx rax, al
     test rax, rax
-    je .L12836
+    je .L13017
     mov rax, 0
-    jmp .L12837
-.L12836:
+    jmp .L13018
+.L13017:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -287527,13 +291173,13 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__term_x2Dbyte_x2Dat
     sete al
     movzx rax, al
     test rax, rax
-    je .L12838
+    je .L13019
     mov rax, 1
-    jmp .L12839
-.L12838:
+    jmp .L13020
+.L13019:
     mov rax, 0
-.L12839:
-.L12837:
+.L13020:
+.L13018:
     mov rsp, rbp
     pop rbp
     ret
@@ -287706,10 +291352,10 @@ call zyl_cstr_len
     setge al
     movzx rax, al
     test rax, rax
-    je .L12840
+    je .L13021
     mov rax, [rbp-24]
-    jmp .L12841
-.L12840:
+    jmp .L13022
+.L13021:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -287728,10 +291374,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__term_x2Dbyte_x2Dat
     sete al
     movzx rax, al
     test rax, rax
-    je .L12842
+    je .L13023
     mov rax, [rbp-16]
-    jmp .L12843
-.L12842:
+    jmp .L13024
+.L13023:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -287747,8 +291393,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__term_x2Dbyte_x2Dat
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dmeta_x2Dend
     add rsp, 16
-.L12843:
-.L12841:
+.L13024:
+.L13022:
     mov rsp, rbp
     pop rbp
     ret
@@ -287764,10 +291410,10 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dmeta_x2Drun:
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12846]
+    lea rax, [rip+.L13027]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12847]
+    lea rax, [rip+.L13028]
     sub rsp, 8
     mov [rsp], rax
     mov rdx, [rsp+0]
@@ -287783,7 +291429,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dcmd_x2Dp
     sete al
     movzx rax, al
     test rax, rax
-    je .L12844
+    je .L13025
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -287792,16 +291438,16 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dcmd_x2Dp
     mov rbx, rax
     mov qword ptr [rbx], 1
     mov rax, rbx
-    jmp .L12845
-.L12844:
+    jmp .L13026
+.L13025:
     sub rsp, 8
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12850]
+    lea rax, [rip+.L13031]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12851]
+    lea rax, [rip+.L13032]
     sub rsp, 8
     mov [rsp], rax
     mov rdx, [rsp+0]
@@ -287817,7 +291463,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dcmd_x2Dp
     sete al
     movzx rax, al
     test rax, rax
-    je .L12848
+    je .L13029
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -287829,16 +291475,16 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dhelp
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dkept
     add rsp, 16
-    jmp .L12849
-.L12848:
+    jmp .L13030
+.L13029:
     sub rsp, 8
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12854]
+    lea rax, [rip+.L13035]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12855]
+    lea rax, [rip+.L13036]
     sub rsp, 8
     mov [rsp], rax
     mov rdx, [rsp+0]
@@ -287854,7 +291500,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dcmd_x2Dp
     sete al
     movzx rax, al
     test rax, rax
-    je .L12852
+    je .L13033
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -287871,16 +291517,16 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dshow_x2Dhistory
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dkept
     add rsp, 16
-    jmp .L12853
-.L12852:
+    jmp .L13034
+.L13033:
     sub rsp, 8
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12858]
+    lea rax, [rip+.L13039]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12859]
+    lea rax, [rip+.L13040]
     sub rsp, 8
     mov [rsp], rax
     mov rdx, [rsp+0]
@@ -287896,7 +291542,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dcmd_x2Dp
     sete al
     movzx rax, al
     test rax, rax
-    je .L12856
+    je .L13037
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -287914,16 +291560,16 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__term_x2Dwrite
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dkept
     add rsp, 16
-    jmp .L12857
-.L12856:
+    jmp .L13038
+.L13037:
     sub rsp, 8
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12862]
+    lea rax, [rip+.L13043]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12863]
+    lea rax, [rip+.L13044]
     sub rsp, 8
     mov [rsp], rax
     mov rdx, [rsp+0]
@@ -287939,39 +291585,24 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dcmd_x2Dp
     sete al
     movzx rax, al
     test rax, rax
-    je .L12860
+    je .L13041
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
-call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dreset
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Ddo_x2Dreset
     add rsp, 16
-    sub rsp, 8
-    mov [rsp], rax
-    sub rsp, 8
-    lea rax, [rip+.L12864]
-    sub rsp, 8
-    mov [rsp], rax
-    mov rdi, [rsp+0]
-call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dnote
-    add rsp, 16
-    sub rsp, 8
-    mov [rsp], rax
-    mov rsi, [rsp+0]
-    mov rdi, [rsp+8]
-call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dkept
-    add rsp, 16
-    jmp .L12861
-.L12860:
+    jmp .L13042
+.L13041:
     sub rsp, 8
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12867]
+    lea rax, [rip+.L13047]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12868]
+    lea rax, [rip+.L13048]
     sub rsp, 8
     mov [rsp], rax
     mov rdx, [rsp+0]
@@ -287987,7 +291618,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dcmd_x2Dp
     sete al
     movzx rax, al
     test rax, rax
-    je .L12865
+    je .L13045
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -287998,16 +291629,16 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dcmd_x2Dp
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Ddo_x2Dload
     add rsp, 16
-    jmp .L12866
-.L12865:
+    jmp .L13046
+.L13045:
     sub rsp, 8
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12871]
+    lea rax, [rip+.L13051]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12872]
+    lea rax, [rip+.L13052]
     sub rsp, 8
     mov [rsp], rax
     mov rdx, [rsp+0]
@@ -288023,7 +291654,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dcmd_x2Dp
     sete al
     movzx rax, al
     test rax, rax
-    je .L12869
+    je .L13049
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -288043,16 +291674,16 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Ddo_x2Dsave
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dkept
     add rsp, 16
-    jmp .L12870
-.L12869:
+    jmp .L13050
+.L13049:
     sub rsp, 8
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12875]
+    lea rax, [rip+.L13055]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12876]
+    lea rax, [rip+.L13056]
     sub rsp, 8
     mov [rsp], rax
     mov rdx, [rsp+0]
@@ -288068,7 +291699,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dcmd_x2Dp
     sete al
     movzx rax, al
     test rax, rax
-    je .L12873
+    je .L13053
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -288085,16 +291716,16 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Ddo_x2Ddoc
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dkept
     add rsp, 16
-    jmp .L12874
-.L12873:
+    jmp .L13054
+.L13053:
     sub rsp, 8
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12879]
+    lea rax, [rip+.L13059]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12880]
+    lea rax, [rip+.L13060]
     sub rsp, 8
     mov [rsp], rax
     mov rdx, [rsp+0]
@@ -288110,7 +291741,88 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dcmd_x2Dp
     sete al
     movzx rax, al
     test rax, rax
-    je .L12877
+    je .L13057
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-32]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Ddo_x2Dtype
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dkept
+    add rsp, 16
+    jmp .L13058
+.L13057:
+    sub rsp, 8
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L13063]
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L13064]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdx, [rsp+0]
+    mov rsi, [rsp+8]
+    mov rdi, [rsp+16]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dcmd_x2Dp
+    add rsp, 32
+    push rax
+    mov rax, 1
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    sete al
+    movzx rax, al
+    test rax, rax
+    je .L13061
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-32]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Ddo_x2Dtime
+    add rsp, 16
+    jmp .L13062
+.L13061:
+    sub rsp, 8
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L13067]
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L13068]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdx, [rsp+0]
+    mov rsi, [rsp+8]
+    mov rdi, [rsp+16]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dcmd_x2Dp
+    add rsp, 32
+    push rax
+    mov rax, 1
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    sete al
+    movzx rax, al
+    test rax, rax
+    je .L13065
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -288127,8 +291839,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dshow_x2Ddefs
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dkept
     add rsp, 16
-    jmp .L12878
-.L12877:
+    jmp .L13066
+.L13065:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -288145,15 +291857,17 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dunknown
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dkept
     add rsp, 16
-.L12878:
-.L12874:
-.L12870:
-.L12866:
-.L12861:
-.L12857:
-.L12853:
-.L12849:
-.L12845:
+.L13066:
+.L13062:
+.L13058:
+.L13054:
+.L13050:
+.L13046:
+.L13042:
+.L13038:
+.L13034:
+.L13030:
+.L13026:
     mov rsp, rbp
     pop rbp
     ret
@@ -288182,10 +291896,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     setg al
     movzx rax, al
     test rax, rax
-    je .L12881
+    je .L13069
     mov rax, 1
-    jmp .L12882
-.L12881:
+    jmp .L13070
+.L13069:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -288204,13 +291918,13 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     setg al
     movzx rax, al
     test rax, rax
-    je .L12883
+    je .L13071
     mov rax, 1
-    jmp .L12884
-.L12883:
+    jmp .L13072
+.L13071:
     mov rax, 0
-.L12884:
-.L12882:
+.L13072:
+.L13070:
     mov rsp, rbp
     pop rbp
     ret
@@ -288241,13 +291955,13 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dunknown:
     sub rsp, 88
     mov [rbp-8], rdi
     sub rsp, 8
-    lea rax, [rip+.L12885]
+    lea rax, [rip+.L13073]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12886]
+    lea rax, [rip+.L13074]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -288278,7 +291992,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dhelp:
     push rbp
     mov rbp, rsp
     sub rsp, 88
-    lea rax, [rip+.L12887]
+    lea rax, [rip+.L13075]
     mov rsi, rax
     lea rdi, [rip+.Lfmts]
     xor eax, eax
@@ -288287,7 +292001,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dhelp:
     call printf
     mov rsp, r12
     xor eax, eax
-    lea rax, [rip+.L12888]
+    lea rax, [rip+.L13076]
     mov rsi, rax
     lea rdi, [rip+.Lfmts]
     xor eax, eax
@@ -288296,7 +292010,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dhelp:
     call printf
     mov rsp, r12
     xor eax, eax
-    lea rax, [rip+.L12889]
+    lea rax, [rip+.L13077]
     mov rsi, rax
     lea rdi, [rip+.Lfmts]
     xor eax, eax
@@ -288305,7 +292019,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dhelp:
     call printf
     mov rsp, r12
     xor eax, eax
-    lea rax, [rip+.L12890]
+    lea rax, [rip+.L13078]
     mov rsi, rax
     lea rdi, [rip+.Lfmts]
     xor eax, eax
@@ -288314,7 +292028,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dhelp:
     call printf
     mov rsp, r12
     xor eax, eax
-    lea rax, [rip+.L12891]
+    lea rax, [rip+.L13079]
     mov rsi, rax
     lea rdi, [rip+.Lfmts]
     xor eax, eax
@@ -288323,7 +292037,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dhelp:
     call printf
     mov rsp, r12
     xor eax, eax
-    lea rax, [rip+.L12892]
+    lea rax, [rip+.L13080]
     mov rsi, rax
     lea rdi, [rip+.Lfmts]
     xor eax, eax
@@ -288332,7 +292046,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dhelp:
     call printf
     mov rsp, r12
     xor eax, eax
-    lea rax, [rip+.L12893]
+    lea rax, [rip+.L13081]
     mov rsi, rax
     lea rdi, [rip+.Lfmts]
     xor eax, eax
@@ -288341,7 +292055,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dhelp:
     call printf
     mov rsp, r12
     xor eax, eax
-    lea rax, [rip+.L12894]
+    lea rax, [rip+.L13082]
     mov rsi, rax
     lea rdi, [rip+.Lfmts]
     xor eax, eax
@@ -288350,7 +292064,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dhelp:
     call printf
     mov rsp, r12
     xor eax, eax
-    lea rax, [rip+.L12895]
+    lea rax, [rip+.L13083]
     mov rsi, rax
     lea rdi, [rip+.Lfmts]
     xor eax, eax
@@ -288359,7 +292073,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dhelp:
     call printf
     mov rsp, r12
     xor eax, eax
-    lea rax, [rip+.L12896]
+    lea rax, [rip+.L13084]
     mov rsi, rax
     lea rdi, [rip+.Lfmts]
     xor eax, eax
@@ -288368,7 +292082,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dhelp:
     call printf
     mov rsp, r12
     xor eax, eax
-    lea rax, [rip+.L12897]
+    lea rax, [rip+.L13085]
     mov rsi, rax
     lea rdi, [rip+.Lfmts]
     xor eax, eax
@@ -288377,7 +292091,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dhelp:
     call printf
     mov rsp, r12
     xor eax, eax
-    lea rax, [rip+.L12898]
+    lea rax, [rip+.L13086]
     mov rsi, rax
     lea rdi, [rip+.Lfmts]
     xor eax, eax
@@ -288386,7 +292100,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dhelp:
     call printf
     mov rsp, r12
     xor eax, eax
-    lea rax, [rip+.L12899]
+    lea rax, [rip+.L13087]
     mov rsi, rax
     lea rdi, [rip+.Lfmts]
     xor eax, eax
@@ -288395,7 +292109,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dhelp:
     call printf
     mov rsp, r12
     xor eax, eax
-    lea rax, [rip+.L12900]
+    lea rax, [rip+.L13088]
     mov rsi, rax
     lea rdi, [rip+.Lfmts]
     xor eax, eax
@@ -288404,7 +292118,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dhelp:
     call printf
     mov rsp, r12
     xor eax, eax
-    lea rax, [rip+.L12901]
+    lea rax, [rip+.L13089]
     mov rsi, rax
     lea rdi, [rip+.Lfmts]
     xor eax, eax
@@ -288413,7 +292127,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dhelp:
     call printf
     mov rsp, r12
     xor eax, eax
-    lea rax, [rip+.L12902]
+    lea rax, [rip+.L13090]
     mov rsi, rax
     lea rdi, [rip+.Lfmts]
     xor eax, eax
@@ -288422,7 +292136,25 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dhelp:
     call printf
     mov rsp, r12
     xor eax, eax
-    lea rax, [rip+.L12903]
+    lea rax, [rip+.L13091]
+    mov rsi, rax
+    lea rdi, [rip+.Lfmts]
+    xor eax, eax
+    mov r12, rsp
+    and rsp, -16
+    call printf
+    mov rsp, r12
+    xor eax, eax
+    lea rax, [rip+.L13092]
+    mov rsi, rax
+    lea rdi, [rip+.Lfmts]
+    xor eax, eax
+    mov r12, rsp
+    and rsp, -16
+    call printf
+    mov rsp, r12
+    xor eax, eax
+    lea rax, [rip+.L13093]
     mov rsi, rax
     lea rdi, [rip+.Lfmts]
     xor eax, eax
@@ -288471,15 +292203,15 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dprint_x2Dhistory:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12906
+    jne .L13096
     mov rax, 0
     mov [rsp], rax
-    jmp .L12904
-.L12906:
+    jmp .L13094
+.L13096:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12905
+    jne .L13095
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -288487,13 +292219,13 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dprint_x2Dhistory:
     mov rax, [rax+16]
     mov [rbp-32], rax
     sub rsp, 8
-    lea rax, [rip+.L12907]
+    lea rax, [rip+.L13097]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12908]
+    lea rax, [rip+.L13098]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -288533,10 +292265,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__term_x2Dwrite
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dprint_x2Dhistory
     add rsp, 16
     mov [rsp], rax
-    jmp .L12904
-.L12905:
+    jmp .L13094
+.L13095:
     mov qword ptr [rsp], 0
-.L12904:
+.L13094:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -288598,15 +292330,15 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dshow_x2Duses:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12911
+    jne .L13101
     mov rax, 0
     mov [rsp], rax
-    jmp .L12909
-.L12911:
+    jmp .L13099
+.L13101:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12910
+    jne .L13100
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -288614,13 +292346,13 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dshow_x2Duses:
     mov rax, [rax+16]
     mov [rbp-24], rax
     sub rsp, 8
-    lea rax, [rip+.L12912]
+    lea rax, [rip+.L13102]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12913]
+    lea rax, [rip+.L13103]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -288652,10 +292384,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__term_x2Dwrite
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dshow_x2Duses
     add rsp, 16
     mov [rsp], rax
-    jmp .L12909
-.L12910:
+    jmp .L13099
+.L13100:
     mov qword ptr [rsp], 0
-.L12909:
+.L13099:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -288670,15 +292402,15 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dshow_x2Dglobals:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12916
+    jne .L13106
     mov rax, 0
     mov [rsp], rax
-    jmp .L12914
-.L12916:
+    jmp .L13104
+.L13106:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12915
+    jne .L13105
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -288690,7 +292422,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dshow_x2Dglobals:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12918
+    jne .L13108
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -288698,13 +292430,13 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dshow_x2Dglobals:
     mov rax, [rax+16]
     mov [rbp-40], rax
     sub rsp, 8
-    lea rax, [rip+.L12919]
+    lea rax, [rip+.L13109]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12920]
+    lea rax, [rip+.L13110]
     sub rsp, 8
     mov [rsp], rax
     sub rsp, 8
@@ -288716,7 +292448,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__in_x2Dval_x2Dtext
     add rsp, 16
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12921]
+    lea rax, [rip+.L13111]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -288766,16 +292498,16 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__term_x2Dwrite
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dshow_x2Dglobals
     add rsp, 16
     mov [rsp], rax
-    jmp .L12917
-.L12918:
+    jmp .L13107
+.L13108:
     mov qword ptr [rsp], 0
-.L12917:
+.L13107:
     pop rax
     mov [rsp], rax
-    jmp .L12914
-.L12915:
+    jmp .L13104
+.L13105:
     mov qword ptr [rsp], 0
-.L12914:
+.L13104:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -288809,10 +292541,10 @@ call zyl_cstr_len
     sete al
     movzx rax, al
     test rax, rax
-    je .L12922
+    je .L13112
     mov rax, 0
-    jmp .L12923
-.L12922:
+    jmp .L13113
+.L13112:
     sub rsp, 8
     sub rsp, 8
     mov rax, [rbp-8]
@@ -288827,14 +292559,53 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__hl_x2Dcolorize
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__term_x2Dwrite
     add rsp, 16
     sub rsp, 8
-    lea rax, [rip+.L12924]
+    lea rax, [rip+.L13114]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__term_x2Dwrite
     add rsp, 16
     mov rax, 0
-.L12923:
+.L13113:
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Ddo_x2Dreset:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 104
+    mov [rbp-8], rdi
+    sub rsp, 8
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dreset
+    add rsp, 16
+    mov [rbp-16], rax
+    sub rsp, 8
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dsave
+    add rsp, 16
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    sub rsp, 8
+    lea rax, [rip+.L13115]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dnote
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dkept
+    add rsp, 16
     mov rsp, rbp
     pop rbp
     ret
@@ -288847,7 +292618,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Ddo_x2Dload:
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12925]
+    lea rax, [rip+.L13116]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -288867,12 +292638,12 @@ call zyl_file_open_c
     setle al
     movzx rax, al
     test rax, rax
-    je .L12926
+    je .L13117
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
     sub rsp, 8
-    lea rax, [rip+.L12928]
+    lea rax, [rip+.L13119]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-16]
@@ -288896,8 +292667,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dnote
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dkept
     add rsp, 16
-    jmp .L12927
-.L12926:
+    jmp .L13118
+.L13117:
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
@@ -288937,7 +292708,7 @@ call zyl_file_close_c
     mov rdi, [rsp+16]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dload_x2Dtext
     add rsp, 32
-.L12927:
+.L13118:
     mov rsp, rbp
     pop rbp
     ret
@@ -288968,7 +292739,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dload_x2Duses
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12931
+    jne .L13122
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -288989,12 +292760,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Derror
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dkept
     add rsp, 16
     mov [rsp], rax
-    jmp .L12929
-.L12931:
+    jmp .L13120
+.L13122:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12930
+    jne .L13121
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -289020,10 +292791,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dstrip_x2Duses
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dload_x2Ddefs
     add rsp, 32
     mov [rsp], rax
-    jmp .L12929
-.L12930:
+    jmp .L13120
+.L13121:
     mov qword ptr [rsp], 0
-.L12929:
+.L13120:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -289039,7 +292810,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dload_x2Duses:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12934
+    jne .L13125
     mov rax, [rbp-8]
     push rax
     mov r12, rsp
@@ -289053,12 +292824,12 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dload_x2Duses:
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L12932
-.L12934:
+    jmp .L13123
+.L13125:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12933
+    jne .L13124
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -289068,13 +292839,13 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dload_x2Duses:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12935]
+    lea rax, [rip+.L13126]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12936]
+    lea rax, [rip+.L13127]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -289111,7 +292882,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__EvalOutcome_x2Eresult
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 5
-    jne .L12939
+    jne .L13130
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-48], rax
@@ -289128,8 +292899,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__EvalOutcome_x2Eresult
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L12937
-.L12939:
+    jmp .L13128
+.L13130:
     sub rsp, 8
     mov rax, [rbp-40]
     sub rsp, 8
@@ -289147,16 +292918,16 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__EvalOutcome_x2Esession
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dload_x2Duses
     add rsp, 16
     mov [rsp], rax
-    jmp .L12937
-.L12938:
+    jmp .L13128
+.L13129:
     mov qword ptr [rsp], 0
-.L12937:
+.L13128:
     pop rax
     mov [rsp], rax
-    jmp .L12932
-.L12933:
+    jmp .L13123
+.L13124:
     mov qword ptr [rsp], 0
-.L12932:
+.L13123:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -289192,7 +292963,7 @@ call zyl_cstr_len
     sete al
     movzx rax, al
     test rax, rax
-    je .L12940
+    je .L13131
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -289203,8 +292974,8 @@ call zyl_cstr_len
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dloaded
     add rsp, 16
-    jmp .L12941
-.L12940:
+    jmp .L13132
+.L13131:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -289227,7 +292998,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__EvalOutcome_x2Eresult
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 5
-    jne .L12944
+    jne .L13135
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -289248,8 +293019,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Derror
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dkept
     add rsp, 16
     mov [rsp], rax
-    jmp .L12942
-.L12944:
+    jmp .L13133
+.L13135:
     sub rsp, 8
     mov rax, [rbp-32]
     sub rsp, 8
@@ -289267,12 +293038,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__EvalOutcome_x2Esession
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dloaded
     add rsp, 16
     mov [rsp], rax
-    jmp .L12942
-.L12943:
+    jmp .L13133
+.L13134:
     mov qword ptr [rsp], 0
-.L12942:
+.L13133:
     pop rax
-.L12941:
+.L13132:
     mov rsp, rbp
     pop rbp
     ret
@@ -289286,7 +293057,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dloaded:
     sub rsp, 8
     mov [rsp], rax
     sub rsp, 8
-    lea rax, [rip+.L12945]
+    lea rax, [rip+.L13136]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-16]
@@ -289336,7 +293107,7 @@ call zyl_cstr_len
     add rsp, 16
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12946]
+    lea rax, [rip+.L13137]
     sub rsp, 8
     mov [rsp], rax
     mov rcx, [rsp+0]
@@ -289365,10 +293136,10 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dstrip_x2Dscan:
     setge al
     movzx rax, al
     test rax, rax
-    je .L12947
+    je .L13138
     mov rax, [rbp-32]
-    jmp .L12948
-.L12947:
+    jmp .L13139
+.L13138:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -289432,7 +293203,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__rd_x2Dtrim
     add rsp, 16
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12951]
+    lea rax, [rip+.L13142]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -289447,17 +293218,17 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__rd_x2Dstarts_x2Dwith
     sete al
     movzx rax, al
     test rax, rax
-    je .L12949
+    je .L13140
     mov rax, [rbp-32]
-    jmp .L12950
-.L12949:
+    jmp .L13141
+.L13140:
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-48]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12952]
+    lea rax, [rip+.L13143]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -289476,7 +293247,7 @@ call zyl_cstr_concat
 call zyl_cstr_concat
     mov rsp, r12
     add rsp, 16
-.L12950:
+.L13141:
     sub rsp, 8
     mov [rsp], rax
     mov rcx, [rsp+0]
@@ -289485,7 +293256,7 @@ call zyl_cstr_concat
     mov rdi, [rsp+24]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dstrip_x2Dscan
     add rsp, 32
-.L12948:
+.L13139:
     mov rsp, rbp
     pop rbp
     ret
@@ -289548,7 +293319,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Duses_x2Dscan:
     setge al
     movzx rax, al
     test rax, rax
-    je .L12953
+    je .L13144
     sub rsp, 8
     mov rax, [rbp-32]
     sub rsp, 8
@@ -289556,8 +293327,8 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Duses_x2Dscan:
     mov rdi, [rsp+0]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__list_x2Dreverse
     add rsp, 16
-    jmp .L12954
-.L12953:
+    jmp .L13145
+.L13144:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -289621,7 +293392,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__rd_x2Dtrim
     mov rax, [rbp-48]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12957]
+    lea rax, [rip+.L13148]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -289636,7 +293407,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__rd_x2Dstarts_x2Dwith
     sete al
     movzx rax, al
     test rax, rax
-    je .L12955
+    je .L13146
     sub rsp, 8
     mov rax, [rbp-48]
     sub rsp, 8
@@ -289659,10 +293430,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Duse_x2Dmodule
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L12956
-.L12955:
+    jmp .L13147
+.L13146:
     mov rax, [rbp-32]
-.L12956:
+.L13147:
     sub rsp, 8
     mov [rsp], rax
     mov rcx, [rsp+0]
@@ -289671,7 +293442,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Duse_x2Dmodule
     mov rdi, [rsp+24]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Duses_x2Dscan
     add rsp, 32
-.L12954:
+.L13145:
     mov rsp, rbp
     pop rbp
     ret
@@ -289743,10 +293514,10 @@ call zyl_cstr_len
     setge al
     movzx rax, al
     test rax, rax
-    je .L12958
+    je .L13149
     mov rax, [rbp-24]
-    jmp .L12959
-.L12958:
+    jmp .L13150
+.L13149:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -289765,10 +293536,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__term_x2Dbyte_x2Dat
     sete al
     movzx rax, al
     test rax, rax
-    je .L12960
+    je .L13151
     mov rax, [rbp-16]
-    jmp .L12961
-.L12960:
+    jmp .L13152
+.L13151:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -289784,8 +293555,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__term_x2Dbyte_x2Dat
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Duse_x2Dend
     add rsp, 16
-.L12961:
-.L12959:
+.L13152:
+.L13150:
     mov rsp, rbp
     pop rbp
     ret
@@ -289805,10 +293576,10 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dline_x2Dend:
     setge al
     movzx rax, al
     test rax, rax
-    je .L12962
+    je .L13153
     mov rax, [rbp-24]
-    jmp .L12963
-.L12962:
+    jmp .L13154
+.L13153:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -289827,10 +293598,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__term_x2Dbyte_x2Dat
     sete al
     movzx rax, al
     test rax, rax
-    je .L12964
+    je .L13155
     mov rax, [rbp-16]
-    jmp .L12965
-.L12964:
+    jmp .L13156
+.L13155:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -289851,8 +293622,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__term_x2Dbyte_x2Dat
     mov rdi, [rsp+16]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dline_x2Dend
     add rsp, 32
-.L12965:
-.L12963:
+.L13156:
+.L13154:
     mov rsp, rbp
     pop rbp
     ret
@@ -289880,20 +293651,20 @@ call zyl_cstr_len
     sete al
     movzx rax, al
     test rax, rax
-    je .L12966
+    je .L13157
     sub rsp, 8
-    lea rax, [rip+.L12968]
+    lea rax, [rip+.L13159]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dnote
     add rsp, 16
-    jmp .L12967
-.L12966:
+    jmp .L13158
+.L13157:
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12969]
+    lea rax, [rip+.L13160]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -289913,9 +293684,9 @@ call zyl_file_open_c
     setle al
     movzx rax, al
     test rax, rax
-    je .L12970
+    je .L13161
     sub rsp, 8
-    lea rax, [rip+.L12972]
+    lea rax, [rip+.L13163]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-16]
@@ -289933,8 +293704,8 @@ call zyl_cstr_concat
     mov rdi, [rsp+0]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dnote
     add rsp, 16
-    jmp .L12971
-.L12970:
+    jmp .L13162
+.L13161:
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
@@ -289965,7 +293736,7 @@ call zyl_file_close_c
     mov rsp, r12
     add rsp, 16
     sub rsp, 8
-    lea rax, [rip+.L12973]
+    lea rax, [rip+.L13164]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-16]
@@ -289983,8 +293754,282 @@ call zyl_cstr_concat
     mov rdi, [rsp+0]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dnote
     add rsp, 16
-.L12971:
-.L12967:
+.L13162:
+.L13158:
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Ddo_x2Dtime:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 120
+    mov [rbp-8], rdi
+    mov [rbp-16], rsi
+    sub rsp, 8
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_len
+    mov rsp, r12
+    add rsp, 16
+    push rax
+    mov rax, 0
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    sete al
+    movzx rax, al
+    test rax, rax
+    je .L13165
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    sub rsp, 8
+    lea rax, [rip+.L13167]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dnote
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dkept
+    add rsp, 16
+    jmp .L13166
+.L13165:
+    mov r12, rsp
+    and rsp, -16
+call zyl_now_ms
+    mov rsp, r12
+    add rsp, 0
+    mov [rbp-24], rax
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dentry
+    add rsp, 16
+    mov [rbp-32], rax
+    mov r12, rsp
+    and rsp, -16
+call zyl_now_ms
+    mov rsp, r12
+    add rsp, 0
+    push rax
+    mov rax, [rbp-24]
+    mov rcx, rax
+    pop rax
+    sub rax, rcx
+    mov [rbp-40], rax
+    sub rsp, 8
+    sub rsp, 8
+    mov rax, [rbp-32]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__EvalOutcome_x2Eresult
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dreport
+    add rsp, 16
+    sub rsp, 8
+    sub rsp, 8
+    mov rax, [rbp-40]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dint
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L13168]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_concat
+    mov rsp, r12
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dnote
+    add rsp, 16
+    sub rsp, 8
+    mov rax, [rbp-32]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__EvalOutcome_x2Esession
+    add rsp, 16
+    push rax
+    mov r12, rsp
+    and rsp, -16
+    mov rdi, 16
+    call zyl_heap_alloc
+    mov rsp, r12
+    mov rbx, rax
+    mov qword ptr [rbx], 0
+    pop rax
+    mov [rbx+8], rax
+    mov rax, rbx
+.L13166:
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Ddo_x2Dtype:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 120
+    mov [rbp-8], rdi
+    mov [rbp-16], rsi
+    sub rsp, 8
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_len
+    mov rsp, r12
+    add rsp, 16
+    push rax
+    mov rax, 0
+    mov rcx, rax
+    pop rax
+    cmp rax, rcx
+    sete al
+    movzx rax, al
+    test rax, rax
+    je .L13169
+    sub rsp, 8
+    lea rax, [rip+.L13171]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dnote
+    add rsp, 16
+    jmp .L13170
+.L13169:
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dtype_x2Dof
+    add rsp, 16
+    push rax
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 1
+    jne .L13174
+    mov rax, [rsp]
+    mov rax, [rax+8]
+    mov [rbp-24], rax
+    sub rsp, 8
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Derror
+    add rsp, 16
+    mov [rsp], rax
+    jmp .L13172
+.L13174:
+    mov rax, [rsp]
+    mov rax, [rax]
+    cmp rax, 0
+    jne .L13173
+    mov rax, [rsp]
+    mov rax, [rax+8]
+    mov [rbp-32], rax
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-32]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dtyped
+    add rsp, 16
+    mov [rsp], rax
+    jmp .L13172
+.L13173:
+    mov qword ptr [rsp], 0
+.L13172:
+    pop rax
+.L13170:
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dtyped:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 104
+    mov [rbp-8], rdi
+    mov [rbp-16], rsi
+    sub rsp, 8
+    sub rsp, 8
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__hl_x2Dcolorize
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__term_x2Dwrite
+    add rsp, 16
+    sub rsp, 8
+    lea rax, [rip+.L13175]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L13176]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_concat
+    mov rsp, r12
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_concat
+    mov rsp, r12
+    add rsp, 16
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__term_x2Dwrite
+    add rsp, 16
+    mov rax, 0
     mov rsp, rbp
     pop rbp
     ret
@@ -290011,16 +294056,16 @@ call zyl_cstr_len
     sete al
     movzx rax, al
     test rax, rax
-    je .L12974
+    je .L13177
     sub rsp, 8
-    lea rax, [rip+.L12976]
+    lea rax, [rip+.L13179]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dnote
     add rsp, 16
-    jmp .L12975
-.L12974:
+    jmp .L13178
+.L13177:
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__builtins_x2Dall
     add rsp, 0
     sub rsp, 8
@@ -290032,7 +294077,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__builtins_x2Dall
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Ddoc_x2Dfind
     add rsp, 16
-.L12975:
+.L13178:
     mov rsp, rbp
     pop rbp
     ret
@@ -290047,9 +294092,9 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Ddoc_x2Dfind:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12979
+    jne .L13182
     sub rsp, 8
-    lea rax, [rip+.L12980]
+    lea rax, [rip+.L13183]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-16]
@@ -290068,12 +294113,12 @@ call zyl_cstr_concat
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dnote
     add rsp, 16
     mov [rsp], rax
-    jmp .L12977
-.L12979:
+    jmp .L13180
+.L13182:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12978
+    jne .L13181
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -290104,7 +294149,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     setg al
     movzx rax, al
     test rax, rax
-    je .L12981
+    je .L13184
     sub rsp, 8
     mov rax, [rbp-24]
     sub rsp, 8
@@ -290112,8 +294157,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     mov rdi, [rsp+0]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Ddoc_x2Dprint
     add rsp, 16
-    jmp .L12982
-.L12981:
+    jmp .L13185
+.L13184:
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
@@ -290124,12 +294169,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Ddoc_x2Dprint
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Ddoc_x2Dfind
     add rsp, 16
-.L12982:
+.L13185:
     mov [rsp], rax
-    jmp .L12977
-.L12978:
+    jmp .L13180
+.L13181:
     mov qword ptr [rsp], 0
-.L12977:
+.L13180:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -290159,14 +294204,14 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__hl_x2Dcolorize
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__term_x2Dwrite
     add rsp, 16
     sub rsp, 8
-    lea rax, [rip+.L12983]
+    lea rax, [rip+.L13186]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__term_x2Dwrite
     add rsp, 16
     sub rsp, 8
-    lea rax, [rip+.L12984]
+    lea rax, [rip+.L13187]
     sub rsp, 8
     mov [rsp], rax
     sub rsp, 8
@@ -290178,7 +294223,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__ZB_x2Edoc
     add rsp, 16
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L12985]
+    lea rax, [rip+.L13188]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -290284,7 +294329,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dglobal_x2Dnames:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L12988
+    jne .L13191
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -290294,12 +294339,12 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dglobal_x2Dnames:
     mov qword ptr [rbx], 1
     mov rax, rbx
     mov [rsp], rax
-    jmp .L12986
-.L12988:
+    jmp .L13189
+.L13191:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12987
+    jne .L13190
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -290311,7 +294356,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dglobal_x2Dnames:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L12990
+    jne .L13193
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -290340,16 +294385,16 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dglobal_x2Dnames
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L12989
-.L12990:
+    jmp .L13192
+.L13193:
     mov qword ptr [rsp], 0
-.L12989:
+.L13192:
     pop rax
     mov [rsp], rax
-    jmp .L12986
-.L12987:
+    jmp .L13189
+.L13190:
     mov qword ptr [rsp], 0
-.L12986:
+.L13189:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -290358,23 +294403,23 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dmeta_x2Dnames:
     push rbp
     mov rbp, rsp
     sub rsp, 88
-    lea rax, [rip+.L12991]
+    lea rax, [rip+.L13194]
     push rax
-    lea rax, [rip+.L12992]
+    lea rax, [rip+.L13195]
     push rax
-    lea rax, [rip+.L12993]
+    lea rax, [rip+.L13196]
     push rax
-    lea rax, [rip+.L12994]
+    lea rax, [rip+.L13197]
     push rax
-    lea rax, [rip+.L12995]
+    lea rax, [rip+.L13198]
     push rax
-    lea rax, [rip+.L12996]
+    lea rax, [rip+.L13199]
     push rax
-    lea rax, [rip+.L12997]
+    lea rax, [rip+.L13200]
     push rax
-    lea rax, [rip+.L12998]
+    lea rax, [rip+.L13201]
     push rax
-    lea rax, [rip+.L12999]
+    lea rax, [rip+.L13202]
     push rax
     mov r12, rsp
     and rsp, -16
@@ -290514,7 +294559,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dbuiltin_x2Dnames:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L13002
+    jne .L13205
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -290524,12 +294569,12 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dbuiltin_x2Dnames:
     mov qword ptr [rbx], 1
     mov rax, rbx
     mov [rsp], rax
-    jmp .L13000
-.L13002:
+    jmp .L13203
+.L13205:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L13001
+    jne .L13204
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-16], rax
@@ -290565,10 +294610,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dbuiltin_x2Dnames
     mov [rbx+8], rax
     mov rax, rbx
     mov [rsp], rax
-    jmp .L13000
-.L13001:
+    jmp .L13203
+.L13204:
     mov qword ptr [rsp], 0
-.L13000:
+.L13203:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -290632,7 +294677,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dnames_x2Dscan:
     setge al
     movzx rax, al
     test rax, rax
-    je .L13003
+    je .L13206
     sub rsp, 8
     mov rax, [rbp-32]
     sub rsp, 8
@@ -290640,8 +294685,8 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dnames_x2Dscan:
     mov rdi, [rsp+0]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__list_x2Dreverse
     add rsp, 16
-    jmp .L13004
-.L13003:
+    jmp .L13207
+.L13206:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -290665,7 +294710,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Ddefn_x2Dstart
     sete al
     movzx rax, al
     test rax, rax
-    je .L13005
+    je .L13208
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -290786,8 +294831,8 @@ call zyl_cstr_substr
     mov rdi, [rsp+24]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dnames_x2Dscan
     add rsp, 32
-    jmp .L13006
-.L13005:
+    jmp .L13209
+.L13208:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -290811,8 +294856,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dnames_x2Dscan
     mov rdi, [rsp+24]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dnames_x2Dscan
     add rsp, 32
-.L13006:
-.L13004:
+.L13209:
+.L13207:
     mov rsp, rbp
     pop rbp
     ret
@@ -290841,7 +294886,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__term_x2Dbyte_x2Dat
     sete al
     movzx rax, al
     test rax, rax
-    je .L13007
+    je .L13210
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -290906,10 +294951,10 @@ call zyl_cstr_substr
     mov rdi, [rsp+0]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Ddef_x2Dword
     add rsp, 16
-    jmp .L13008
-.L13007:
+    jmp .L13211
+.L13210:
     mov rax, 0
-.L13008:
+.L13211:
     mov rsp, rbp
     pop rbp
     ret
@@ -290921,7 +294966,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Ddef_x2Dword:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13011]
+    lea rax, [rip+.L13214]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -290936,14 +294981,14 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     setg al
     movzx rax, al
     test rax, rax
-    je .L13009
+    je .L13212
     mov rax, 1
-    jmp .L13010
-.L13009:
+    jmp .L13213
+.L13212:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13014]
+    lea rax, [rip+.L13217]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -290958,14 +295003,14 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     setg al
     movzx rax, al
     test rax, rax
-    je .L13012
+    je .L13215
     mov rax, 1
-    jmp .L13013
-.L13012:
+    jmp .L13216
+.L13215:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13017]
+    lea rax, [rip+.L13220]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -290980,14 +295025,14 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     setg al
     movzx rax, al
     test rax, rax
-    je .L13015
+    je .L13218
     mov rax, 1
-    jmp .L13016
-.L13015:
+    jmp .L13219
+.L13218:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13020]
+    lea rax, [rip+.L13223]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -291002,14 +295047,14 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     setg al
     movzx rax, al
     test rax, rax
-    je .L13018
+    je .L13221
     mov rax, 1
-    jmp .L13019
-.L13018:
+    jmp .L13222
+.L13221:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13023]
+    lea rax, [rip+.L13226]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -291024,16 +295069,16 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     setg al
     movzx rax, al
     test rax, rax
-    je .L13021
+    je .L13224
     mov rax, 1
-    jmp .L13022
-.L13021:
+    jmp .L13225
+.L13224:
     mov rax, 0
-.L13022:
-.L13019:
-.L13016:
-.L13013:
-.L13010:
+.L13225:
+.L13222:
+.L13219:
+.L13216:
+.L13213:
     mov rsp, rbp
     pop rbp
     ret
@@ -291053,10 +295098,10 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dskip_x2Dword:
     setge al
     movzx rax, al
     test rax, rax
-    je .L13024
+    je .L13227
     mov rax, [rbp-24]
-    jmp .L13025
-.L13024:
+    jmp .L13228
+.L13227:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -291083,10 +295128,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dspace_x2Dp
     sete al
     movzx rax, al
     test rax, rax
-    je .L13026
+    je .L13229
     mov rax, [rbp-16]
-    jmp .L13027
-.L13026:
+    jmp .L13230
+.L13229:
     mov rax, [rbp-32]
     push rax
     mov rax, 40
@@ -291096,10 +295141,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dspace_x2Dp
     sete al
     movzx rax, al
     test rax, rax
-    je .L13028
+    je .L13231
     mov rax, [rbp-16]
-    jmp .L13029
-.L13028:
+    jmp .L13232
+.L13231:
     mov rax, [rbp-32]
     push rax
     mov rax, 41
@@ -291109,10 +295154,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dspace_x2Dp
     sete al
     movzx rax, al
     test rax, rax
-    je .L13030
+    je .L13233
     mov rax, [rbp-16]
-    jmp .L13031
-.L13030:
+    jmp .L13234
+.L13233:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -291133,10 +295178,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__eval_x2Dspace_x2Dp
     mov rdi, [rsp+16]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dskip_x2Dword
     add rsp, 32
-.L13031:
-.L13029:
-.L13027:
-.L13025:
+.L13234:
+.L13232:
+.L13230:
+.L13228:
     mov rsp, rbp
     pop rbp
     ret
@@ -291169,15 +295214,15 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dscripted:
     push rbp
     mov rbp, rsp
     sub rsp, 88
+    mov [rbp-8], rdi
     sub rsp, 8
-call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__session_x2Dnew
-    add rsp, 0
-    sub rsp, 8
-    mov [rsp], rax
-    lea rax, [rip+.L13032]
+    mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13033]
+    lea rax, [rip+.L13235]
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L13236]
     sub rsp, 8
     mov [rsp], rax
     mov rdx, [rsp+0]
@@ -291206,7 +295251,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dscript_x2Dline
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L13036
+    jne .L13239
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -291218,12 +295263,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dscript_x2Dline
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dscript_x2Dfinish
     add rsp, 16
     mov [rsp], rax
-    jmp .L13034
-.L13036:
+    jmp .L13237
+.L13239:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L13035
+    jne .L13238
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -291249,10 +295294,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dscript_x2Dfinish
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dscript_x2Dentry
     add rsp, 32
     mov [rsp], rax
-    jmp .L13034
-.L13035:
+    jmp .L13237
+.L13238:
     mov qword ptr [rsp], 0
-.L13034:
+.L13237:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -291296,7 +295341,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dfind_x2Dnl
     setge al
     movzx rax, al
     test rax, rax
-    je .L13037
+    je .L13240
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -291371,8 +295416,8 @@ call zyl_cstr_substr
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L13038
-.L13037:
+    jmp .L13241
+.L13240:
     mov rax, 0
     sub rsp, 8
     mov [rsp], rax
@@ -291405,7 +295450,7 @@ call zyl_cstr_len
     setg al
     movzx rax, al
     test rax, rax
-    je .L13039
+    je .L13242
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -291425,8 +295470,8 @@ call zyl_cstr_concat
     mov rdi, [rsp+0]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dscript_x2Dline
     add rsp, 16
-    jmp .L13040
-.L13039:
+    jmp .L13243
+.L13242:
     sub rsp, 8
     sub rsp, 8
     mov rax, [rbp-8]
@@ -291451,10 +295496,10 @@ call zyl_cstr_len
     setg al
     movzx rax, al
     test rax, rax
-    je .L13041
+    je .L13244
     mov rax, [rbp-8]
     push rax
-    lea rax, [rip+.L13043]
+    lea rax, [rip+.L13246]
     push rax
     mov r12, rsp
     and rsp, -16
@@ -291468,8 +295513,8 @@ call zyl_cstr_len
     pop rax
     mov [rbx+8], rax
     mov rax, rbx
-    jmp .L13042
-.L13041:
+    jmp .L13245
+.L13244:
     mov r12, rsp
     and rsp, -16
     mov rdi, 8
@@ -291478,9 +295523,9 @@ call zyl_cstr_len
     mov rbx, rax
     mov qword ptr [rbx], 1
     mov rax, rbx
-.L13042:
-.L13040:
-.L13038:
+.L13245:
+.L13243:
+.L13241:
     mov rsp, rbp
     pop rbp
     ret
@@ -291500,10 +295545,10 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dfind_x2Dnl:
     setge al
     movzx rax, al
     test rax, rax
-    je .L13044
+    je .L13247
     mov rax, -1
-    jmp .L13045
-.L13044:
+    jmp .L13248
+.L13247:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -291522,10 +295567,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__term_x2Dbyte_x2Dat
     sete al
     movzx rax, al
     test rax, rax
-    je .L13046
+    je .L13249
     mov rax, [rbp-16]
-    jmp .L13047
-.L13046:
+    jmp .L13250
+.L13249:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -291546,8 +295591,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__term_x2Dbyte_x2Dat
     mov rdi, [rsp+16]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dfind_x2Dnl
     add rsp, 32
-.L13047:
-.L13045:
+.L13250:
+.L13248:
     mov rsp, rbp
     pop rbp
     ret
@@ -291577,14 +295622,14 @@ call zyl_cstr_len
     sete al
     movzx rax, al
     test rax, rax
-    je .L13048
+    je .L13251
     mov rax, [rbp-16]
-    jmp .L13049
-.L13048:
+    jmp .L13252
+.L13251:
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13050]
+    lea rax, [rip+.L13253]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-16]
@@ -291606,7 +295651,7 @@ call zyl_cstr_concat
 call zyl_cstr_concat
     mov rsp, r12
     add rsp, 16
-.L13049:
+.L13252:
     mov [rbp-40], rax
     sub rsp, 8
     mov rax, [rbp-40]
@@ -291623,7 +295668,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__rd_x2Dcomplete_x2Dp
     sete al
     movzx rax, al
     test rax, rax
-    je .L13051
+    je .L13254
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -291639,8 +295684,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__rd_x2Dcomplete_x2Dp
     mov rdi, [rsp+16]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dscript_x2Deval
     add rsp, 32
-    jmp .L13052
-.L13051:
+    jmp .L13255
+.L13254:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -291656,7 +295701,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dscript_x2Deval
     mov rdi, [rsp+16]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dscript_x2Dloop
     add rsp, 32
-.L13052:
+.L13255:
     mov rsp, rbp
     pop rbp
     ret
@@ -291693,7 +295738,7 @@ call zyl_cstr_len
     sete al
     movzx rax, al
     test rax, rax
-    je .L13053
+    je .L13256
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -291701,7 +295746,7 @@ call zyl_cstr_len
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13055]
+    lea rax, [rip+.L13258]
     sub rsp, 8
     mov [rsp], rax
     mov rdx, [rsp+0]
@@ -291709,8 +295754,8 @@ call zyl_cstr_len
     mov rdi, [rsp+16]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dscript_x2Dloop
     add rsp, 32
-    jmp .L13054
-.L13053:
+    jmp .L13257
+.L13256:
     sub rsp, 8
     mov rax, [rbp-32]
     sub rsp, 8
@@ -291726,7 +295771,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dmeta_x2Dp
     sete al
     movzx rax, al
     test rax, rax
-    je .L13056
+    je .L13259
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -291742,8 +295787,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dmeta_x2Dp
     mov rdi, [rsp+16]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dscript_x2Dmeta
     add rsp, 32
-    jmp .L13057
-.L13056:
+    jmp .L13260
+.L13259:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -291781,7 +295826,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__EvalOutcome_x2Esession
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13058]
+    lea rax, [rip+.L13261]
     sub rsp, 8
     mov [rsp], rax
     mov rdx, [rsp+0]
@@ -291789,8 +295834,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__EvalOutcome_x2Esession
     mov rdi, [rsp+16]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dscript_x2Dloop
     add rsp, 32
-.L13057:
-.L13054:
+.L13260:
+.L13257:
     mov rsp, rbp
     pop rbp
     ret
@@ -291827,15 +295872,15 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dmeta_x2Dapply
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L13061
+    jne .L13264
     mov rax, 0
     mov [rsp], rax
-    jmp .L13059
-.L13061:
+    jmp .L13262
+.L13264:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L13060
+    jne .L13263
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -291846,7 +295891,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dmeta_x2Dapply
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13062]
+    lea rax, [rip+.L13265]
     sub rsp, 8
     mov [rsp], rax
     mov rdx, [rsp+0]
@@ -291855,10 +295900,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dmeta_x2Dapply
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dscript_x2Dloop
     add rsp, 32
     mov [rsp], rax
-    jmp .L13059
-.L13060:
+    jmp .L13262
+.L13263:
     mov qword ptr [rsp], 0
-.L13059:
+.L13262:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -291893,10 +295938,10 @@ call zyl_cstr_len
     sete al
     movzx rax, al
     test rax, rax
-    je .L13063
+    je .L13266
     mov rax, 0
-    jmp .L13064
-.L13063:
+    jmp .L13267
+.L13266:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -291928,7 +295973,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__EvalOutcome_x2Eresult
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dreport
     add rsp, 16
     mov rax, 0
-.L13064:
+.L13267:
     mov rsp, rbp
     pop rbp
     ret
@@ -291937,7 +295982,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dzyl_x2Dhome_x2Dcandidate:
     mov rbp, rsp
     sub rsp, 104
     sub rsp, 8
-    lea rax, [rip+.L13065]
+    lea rax, [rip+.L13268]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
@@ -291956,12 +296001,12 @@ call zyl_getenv
     setg al
     movzx rax, al
     test rax, rax
-    je .L13066
+    je .L13269
     mov rax, [rbp-8]
-    jmp .L13067
-.L13066:
+    jmp .L13270
+.L13269:
     sub rsp, 8
-    lea rax, [rip+.L13068]
+    lea rax, [rip+.L13271]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
@@ -291980,11 +296025,11 @@ call zyl_getenv
     setg al
     movzx rax, al
     test rax, rax
-    je .L13069
+    je .L13272
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13071]
+    lea rax, [rip+.L13274]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -291994,11 +296039,11 @@ call zyl_getenv
 call zyl_cstr_concat
     mov rsp, r12
     add rsp, 16
-    jmp .L13070
-.L13069:
-    lea rax, [rip+.L13072]
-.L13070:
-.L13067:
+    jmp .L13273
+.L13272:
+    lea rax, [rip+.L13275]
+.L13273:
+.L13270:
     mov rsp, rbp
     pop rbp
     ret
@@ -292028,12 +296073,12 @@ call zyl_cstr_len
     setg al
     movzx rax, al
     test rax, rax
-    je .L13073
+    je .L13276
     sub rsp, 8
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13077]
+    lea rax, [rip+.L13280]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -292059,24 +296104,44 @@ call zyl_path_exists
     setg al
     movzx rax, al
     test rax, rax
-    je .L13075
+    je .L13278
     mov rax, [rbp-16]
-    jmp .L13076
-.L13075:
+    jmp .L13279
+.L13278:
     mov rax, [rbp-8]
-.L13076:
-    jmp .L13074
-.L13073:
+.L13279:
+    jmp .L13277
+.L13276:
     mov rax, [rbp-8]
-.L13074:
+.L13277:
     mov rsp, rbp
     pop rbp
     ret
 zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dmain:
     push rbp
     mov rbp, rsp
-    sub rsp, 104
+    sub rsp, 120
     mov [rbp-8], rdi
+    mov r12, rsp
+    and rsp, -16
+call zyl_getcwd
+    mov rsp, r12
+    add rsp, 0
+    mov [rbp-16], rax
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L13281]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_cstr_concat
+    mov rsp, r12
+    add rsp, 16
+    mov [rbp-24], rax
     sub rsp, 8
     mov rax, 0
     sub rsp, 8
@@ -292087,11 +296152,11 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dmain:
 call zyl_arg_str
     mov rsp, r12
     add rsp, 16
-    mov [rbp-16], rax
+    mov [rbp-32], rax
     sub rsp, 8
     sub rsp, 8
     sub rsp, 8
-    mov rax, [rbp-16]
+    mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
@@ -292113,12 +296178,15 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Dresolve_x2Dbundledir
 call zyl_chdir
     mov rsp, r12
     add rsp, 16
-    sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    mov rdi, [rsp+0]
-call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Drun
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Drun_x2Din
     add rsp, 16
     mov rsp, rbp
     pop rbp
@@ -292161,7 +296229,7 @@ call zyl_file_close_c
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13078]
+    lea rax, [rip+.L13282]
     sub rsp, 8
     mov [rsp], rax
     mov rdx, [rsp+0]
@@ -292170,10 +296238,10 @@ call zyl_file_close_c
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__compile_x2Dto_x2Dasm
     add rsp, 32
     mov [rbp-40], rax
-    lea rax, [rip+.L13079]
+    lea rax, [rip+.L13283]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13080]
+    lea rax, [rip+.L13284]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -292218,10 +296286,10 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__boot_x2Drun_x2Dlegacy:
     mov rbp, rsp
     sub rsp, 104
     mov [rbp-8], rdi
-    lea rax, [rip+.L13081]
+    lea rax, [rip+.L13285]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13082]
+    lea rax, [rip+.L13286]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -292241,7 +296309,7 @@ call zyl_file_open_c
     setg al
     movzx rax, al
     test rax, rax
-    je .L13083
+    je .L13287
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -292252,17 +296320,17 @@ call zyl_file_open_c
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__boot_x2Drun
     add rsp, 16
-    jmp .L13084
-.L13083:
+    jmp .L13288
+.L13287:
     sub rsp, 8
-    lea rax, [rip+.L13085]
+    lea rax, [rip+.L13289]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__dbg_x2Dlog
     add rsp, 16
     mov rax, 1
-.L13084:
+.L13288:
     mov rsp, rbp
     pop rbp
     ret
@@ -292275,7 +296343,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__cli_x2Dwrite_x2Dfile:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13086]
+    lea rax, [rip+.L13290]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -292362,14 +296430,14 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__cli_x2Dis_x2Dabsolute
     setg al
     movzx rax, al
     test rax, rax
-    je .L13087
+    je .L13291
     mov rax, [rbp-16]
-    jmp .L13088
-.L13087:
+    jmp .L13292
+.L13291:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13089]
+    lea rax, [rip+.L13293]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-16]
@@ -292391,7 +296459,7 @@ call zyl_cstr_concat
 call zyl_cstr_concat
     mov rsp, r12
     add rsp, 16
-.L13088:
+.L13292:
     mov rsp, rbp
     pop rbp
     ret
@@ -292417,10 +296485,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Dlen
     setl al
     movzx rax, al
     test rax, rax
-    je .L13090
+    je .L13294
     mov rax, 0
-    jmp .L13091
-.L13090:
+    jmp .L13295
+.L13294:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -292446,14 +296514,14 @@ call zyl_cstr_substr
     add rsp, 32
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13092]
+    lea rax, [rip+.L13296]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     add rsp, 16
-.L13091:
+.L13295:
     mov rsp, rbp
     pop rbp
     ret
@@ -292477,7 +296545,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__cli_x2Dends_x2Dwith_x2Dzyl
     setg al
     movzx rax, al
     test rax, rax
-    je .L13093
+    je .L13297
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -292507,12 +296575,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Dlen
 call zyl_cstr_substr
     mov rsp, r12
     add rsp, 32
-    jmp .L13094
-.L13093:
+    jmp .L13298
+.L13297:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13095]
+    lea rax, [rip+.L13299]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -292522,7 +296590,7 @@ call zyl_cstr_substr
 call zyl_cstr_concat
     mov rsp, r12
     add rsp, 16
-.L13094:
+.L13298:
     mov rsp, rbp
     pop rbp
     ret
@@ -292542,10 +296610,10 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__cli_x2Dparse_x2Dopts:
     setge al
     movzx rax, al
     test rax, rax
-    je .L13096
+    je .L13300
     mov rax, [rbp-24]
-    jmp .L13097
-.L13096:
+    jmp .L13301
+.L13300:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -292560,7 +296628,7 @@ call zyl_arg_str
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13100]
+    lea rax, [rip+.L13304]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -292575,13 +296643,13 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     setg al
     movzx rax, al
     test rax, rax
-    je .L13098
+    je .L13302
     mov rax, [rbp-24]
     push rax
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L13102
+    jne .L13306
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -292623,17 +296691,17 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__cli_x2Dparse_x2Dopts
     add rsp, 32
     mov [rsp], rax
-    jmp .L13101
-.L13102:
+    jmp .L13305
+.L13306:
     mov qword ptr [rsp], 0
-.L13101:
+.L13305:
     pop rax
-    jmp .L13099
-.L13098:
+    jmp .L13303
+.L13302:
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13105]
+    lea rax, [rip+.L13309]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -292648,7 +296716,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     setg al
     movzx rax, al
     test rax, rax
-    je .L13103
+    je .L13307
     sub rsp, 8
     mov rax, [rbp-8]
     push rax
@@ -292670,7 +296738,7 @@ call zyl_arg_str
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L13107
+    jne .L13311
     mov rax, [rsp]
     mov rax, [rax+8]
     mov rax, [rsp]
@@ -292712,19 +296780,19 @@ call zyl_arg_str
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__cli_x2Dparse_x2Dopts
     add rsp, 32
     mov [rsp], rax
-    jmp .L13106
-.L13107:
+    jmp .L13310
+.L13311:
     mov qword ptr [rsp], 0
-.L13106:
+.L13310:
     pop rax
-    jmp .L13104
-.L13103:
+    jmp .L13308
+.L13307:
     mov rax, [rbp-24]
     push rax
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L13109
+    jne .L13313
     mov rax, [rsp]
     mov rax, [rax+8]
     mov rax, [rsp]
@@ -292766,14 +296834,14 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__cli_x2Dparse_x2Dopts
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__cli_x2Dparse_x2Dopts
     add rsp, 32
     mov [rsp], rax
-    jmp .L13108
-.L13109:
+    jmp .L13312
+.L13313:
     mov qword ptr [rsp], 0
-.L13108:
+.L13312:
     pop rax
-.L13104:
-.L13099:
-.L13097:
+.L13308:
+.L13303:
+.L13301:
     mov rsp, rbp
     pop rbp
     ret
@@ -292790,7 +296858,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__cli_x2Dlink:
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13110]
+    lea rax, [rip+.L13314]
     sub rsp, 8
     mov [rsp], rax
     mov rdx, [rsp+0]
@@ -292876,22 +296944,22 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__cli_x2Dlink_x2Dcommand:
     mov [rbp-8], rdi
     mov [rbp-16], rsi
     mov [rbp-24], rdx
-    lea rax, [rip+.L13111]
+    lea rax, [rip+.L13315]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13112]
+    lea rax, [rip+.L13316]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13113]
+    lea rax, [rip+.L13317]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13114]
+    lea rax, [rip+.L13318]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-24]
@@ -292957,7 +297025,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__cli_x2Dzyl_x2Dhome_x2Dcandidate:
     mov rbp, rsp
     sub rsp, 104
     sub rsp, 8
-    lea rax, [rip+.L13115]
+    lea rax, [rip+.L13319]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
@@ -292976,12 +297044,12 @@ call zyl_getenv
     setg al
     movzx rax, al
     test rax, rax
-    je .L13116
+    je .L13320
     mov rax, [rbp-8]
-    jmp .L13117
-.L13116:
+    jmp .L13321
+.L13320:
     sub rsp, 8
-    lea rax, [rip+.L13118]
+    lea rax, [rip+.L13322]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
@@ -293000,11 +297068,11 @@ call zyl_getenv
     setg al
     movzx rax, al
     test rax, rax
-    je .L13119
+    je .L13323
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13121]
+    lea rax, [rip+.L13325]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -293014,11 +297082,11 @@ call zyl_getenv
 call zyl_cstr_concat
     mov rsp, r12
     add rsp, 16
-    jmp .L13120
-.L13119:
-    lea rax, [rip+.L13122]
-.L13120:
-.L13117:
+    jmp .L13324
+.L13323:
+    lea rax, [rip+.L13326]
+.L13324:
+.L13321:
     mov rsp, rbp
     pop rbp
     ret
@@ -293048,12 +297116,12 @@ call zyl_cstr_len
     setg al
     movzx rax, al
     test rax, rax
-    je .L13123
+    je .L13327
     sub rsp, 8
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13127]
+    lea rax, [rip+.L13331]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -293079,16 +297147,16 @@ call zyl_path_exists
     setg al
     movzx rax, al
     test rax, rax
-    je .L13125
+    je .L13329
     mov rax, [rbp-16]
-    jmp .L13126
-.L13125:
+    jmp .L13330
+.L13329:
     mov rax, [rbp-8]
-.L13126:
-    jmp .L13124
-.L13123:
+.L13330:
+    jmp .L13328
+.L13327:
     mov rax, [rbp-8]
-.L13124:
+.L13328:
     mov rsp, rbp
     pop rbp
     ret
@@ -293166,7 +297234,7 @@ call zyl_argc
     mov rax, [rbp-56]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13128]
+    lea rax, [rip+.L13332]
     push rax
     mov rax, 0
     push rax
@@ -293195,7 +297263,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__cli_x2Dparse_x2Dopts
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L13130
+    jne .L13334
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-72], rax
@@ -293217,7 +297285,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Dlen
     setg al
     movzx rax, al
     test rax, rax
-    je .L13131
+    je .L13335
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
@@ -293228,8 +297296,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Dlen
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__cli_x2Dresolve_x2Dpath
     add rsp, 16
-    jmp .L13132
-.L13131:
+    jmp .L13336
+.L13335:
     sub rsp, 8
     mov rax, [rbp-48]
     sub rsp, 8
@@ -293237,7 +297305,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__cli_x2Dresolve_x2Dpath
     mov rdi, [rsp+0]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__cli_x2Ddefault_x2Dout
     add rsp, 16
-.L13132:
+.L13336:
     mov [rbp-88], rax
     sub rsp, 8
     mov rax, [rbp-32]
@@ -293253,7 +297321,7 @@ call zyl_chdir
     mov rax, [rbp-48]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13133]
+    lea rax, [rip+.L13337]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -293273,7 +297341,7 @@ call zyl_file_open_c
     setg al
     movzx rax, al
     test rax, rax
-    je .L13134
+    je .L13338
     mov rax, [rbp-104]
     sub rsp, 8
     mov [rsp], rax
@@ -293324,7 +297392,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__compile_x2Dto_x2Dasm
     setg al
     movzx rax, al
     test rax, rax
-    je .L13136
+    je .L13340
     mov rax, [rbp-88]
     sub rsp, 8
     mov [rsp], rax
@@ -293335,12 +297403,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__compile_x2Dto_x2Dasm
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__cli_x2Dwrite_x2Dfile
     add rsp, 16
-    jmp .L13137
-.L13136:
+    jmp .L13341
+.L13340:
     mov rax, [rbp-88]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13138]
+    lea rax, [rip+.L13342]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -293372,10 +297440,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__cli_x2Dwrite_x2Dfile
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__cli_x2Dlink
     add rsp, 16
-.L13137:
-    jmp .L13135
-.L13134:
-    lea rax, [rip+.L13139]
+.L13341:
+    jmp .L13339
+.L13338:
+    lea rax, [rip+.L13343]
     mov rsi, rax
     lea rdi, [rip+.Lfmts]
     xor eax, eax
@@ -293385,12 +297453,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__cli_x2Dlink
     mov rsp, r12
     xor eax, eax
     mov rax, 1
-.L13135:
+.L13339:
     mov [rsp], rax
-    jmp .L13129
-.L13130:
+    jmp .L13333
+.L13334:
     mov qword ptr [rsp], 0
-.L13129:
+.L13333:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -293421,7 +297489,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__cli_x2Dresolve_x2Dpath
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13140]
+    lea rax, [rip+.L13344]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -293441,8 +297509,8 @@ call zyl_file_open_c
     setl al
     movzx rax, al
     test rax, rax
-    je .L13141
-    lea rax, [rip+.L13143]
+    je .L13345
+    lea rax, [rip+.L13347]
     mov rsi, rax
     lea rdi, [rip+.Lfmts]
     xor eax, eax
@@ -293452,8 +297520,8 @@ call zyl_file_open_c
     mov rsp, r12
     xor eax, eax
     mov rax, 1
-    jmp .L13142
-.L13141:
+    jmp .L13346
+.L13345:
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
@@ -293493,7 +297561,7 @@ call zyl_file_close_c
     mov rdi, [rsp+16]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__drv_x2Deval_x2Dsrc
     add rsp, 32
-.L13142:
+.L13346:
     mov rsp, rbp
     pop rbp
     ret
@@ -293550,10 +297618,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__cli_x2Dends_x2Dwith_x2Dzyl
     setg al
     movzx rax, al
     test rax, rax
-    je .L13144
+    je .L13348
     mov rax, 0
-    jmp .L13145
-.L13144:
+    jmp .L13349
+.L13348:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -293575,13 +297643,13 @@ call zyl_cstr_byte_at
     sete al
     movzx rax, al
     test rax, rax
-    je .L13146
+    je .L13350
     mov rax, 0
-    jmp .L13147
-.L13146:
+    jmp .L13351
+.L13350:
     mov rax, 1
-.L13147:
-.L13145:
+.L13351:
+.L13349:
     mov rsp, rbp
     pop rbp
     ret
@@ -293605,7 +297673,7 @@ call zyl_argc
     setl al
     movzx rax, al
     test rax, rax
-    je .L13148
+    je .L13352
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -293616,10 +297684,10 @@ call zyl_argc
 call zyl_arg_str
     mov rsp, r12
     add rsp, 16
-    jmp .L13149
-.L13148:
-    lea rax, [rip+.L13150]
-.L13149:
+    jmp .L13353
+.L13352:
+    lea rax, [rip+.L13354]
+.L13353:
     mov rsp, rbp
     pop rbp
     ret
@@ -293642,10 +297710,10 @@ call zyl_argc
     setge al
     movzx rax, al
     test rax, rax
-    je .L13151
+    je .L13355
     mov rax, 0
-    jmp .L13152
-.L13151:
+    jmp .L13356
+.L13355:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -293670,10 +297738,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     setg al
     movzx rax, al
     test rax, rax
-    je .L13153
+    je .L13357
     mov rax, 1
-    jmp .L13154
-.L13153:
+    jmp .L13358
+.L13357:
     mov rax, [rbp-8]
     push rax
     mov rax, 1
@@ -293689,8 +297757,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__drv_x2Dhas_x2Dflag
     add rsp, 16
-.L13154:
-.L13152:
+.L13358:
+.L13356:
     mov rsp, rbp
     pop rbp
     ret
@@ -293704,7 +297772,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__drv_x2Dpackage_x2Ddir:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13157]
+    lea rax, [rip+.L13361]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -293730,10 +297798,10 @@ call zyl_path_exists
     setg al
     movzx rax, al
     test rax, rax
-    je .L13155
+    je .L13359
     mov rax, [rbp-8]
-    jmp .L13156
-.L13155:
+    jmp .L13360
+.L13359:
     mov rax, [rbp-16]
     push rax
     mov rax, 1
@@ -293743,9 +297811,9 @@ call zyl_path_exists
     setl al
     movzx rax, al
     test rax, rax
-    je .L13158
+    je .L13362
     sub rsp, 8
-    lea rax, [rip+.L13160]
+    lea rax, [rip+.L13364]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-8]
@@ -293766,8 +297834,8 @@ call zyl_cstr_concat
 call zyl_panic
     mov rsp, r12
     add rsp, 16
-    jmp .L13159
-.L13158:
+    jmp .L13363
+.L13362:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -293792,8 +297860,8 @@ call zyl_dirname_cstr
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__drv_x2Dpackage_x2Ddir
     add rsp, 16
-.L13159:
-.L13156:
+.L13363:
+.L13360:
     mov rsp, rbp
     pop rbp
     ret
@@ -293809,7 +297877,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__drv_x2Dentry_x2Dmodule:
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13161]
+    lea rax, [rip+.L13365]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -293829,7 +297897,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__pk_x2Dread_x2Dmanifest
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13162]
+    lea rax, [rip+.L13366]
     sub rsp, 8
     mov [rsp], rax
     sub rsp, 8
@@ -293847,7 +297915,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__pk_x2Dlast_x2Dsegment
     add rsp, 16
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13163]
+    lea rax, [rip+.L13367]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -293890,7 +297958,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__drv_x2Doutput_x2Dpath:
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13164]
+    lea rax, [rip+.L13368]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -293910,7 +297978,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__pk_x2Dread_x2Dmanifest
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13165]
+    lea rax, [rip+.L13369]
     sub rsp, 8
     mov [rsp], rax
     sub rsp, 8
@@ -293969,7 +298037,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__cli_x2Dread_x2Dlock
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L13168
+    jne .L13372
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-40], rax
@@ -294042,14 +298110,14 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__pk_x2Dcaps_x2Dunion
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__cc_x2Dcheck_x2Dgrowth
     add rsp, 16
     mov [rsp], rax
-    jmp .L13166
-.L13168:
+    jmp .L13370
+.L13372:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L13167
+    jne .L13371
     sub rsp, 8
-    lea rax, [rip+.L13169]
+    lea rax, [rip+.L13373]
     sub rsp, 8
     mov [rsp], rax
     mov rdi, [rsp+0]
@@ -294059,10 +298127,10 @@ call zyl_panic
     mov rsp, r12
     add rsp, 16
     mov [rsp], rax
-    jmp .L13166
-.L13167:
+    jmp .L13370
+.L13371:
     mov qword ptr [rsp], 0
-.L13166:
+.L13370:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -294079,15 +298147,15 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__drv_x2Dcheck_x2Dlock_x2Dentries:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L13172
+    jne .L13376
     mov rax, 1
     mov [rsp], rax
-    jmp .L13170
-.L13172:
+    jmp .L13374
+.L13376:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L13171
+    jne .L13375
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-32], rax
@@ -294114,7 +298182,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__lk_x2Dfind
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L13175
+    jne .L13379
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-48], rax
@@ -294142,14 +298210,14 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__lk_x2Dfind
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__drv_x2Dcheck_x2Dlock_x2Dversion
     add rsp, 48
     mov [rsp], rax
-    jmp .L13173
-.L13175:
+    jmp .L13377
+.L13379:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L13174
+    jne .L13378
     sub rsp, 8
-    lea rax, [rip+.L13176]
+    lea rax, [rip+.L13380]
     sub rsp, 8
     mov [rsp], rax
     sub rsp, 8
@@ -294161,7 +298229,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__mn_x2Dname
     add rsp, 16
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13177]
+    lea rax, [rip+.L13381]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -294189,16 +298257,16 @@ call zyl_panic
     mov rsp, r12
     add rsp, 16
     mov [rsp], rax
-    jmp .L13173
-.L13174:
+    jmp .L13377
+.L13378:
     mov qword ptr [rsp], 0
-.L13173:
+.L13377:
     pop rax
     mov [rsp], rax
-    jmp .L13170
-.L13171:
+    jmp .L13374
+.L13375:
     mov qword ptr [rsp], 0
-.L13170:
+.L13374:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -294242,7 +298310,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__pv_x2Dcmp
     sete al
     movzx rax, al
     test rax, rax
-    je .L13178
+    je .L13382
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -294258,10 +298326,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__pv_x2Dcmp
     mov rdi, [rsp+16]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__drv_x2Dcheck_x2Dlock_x2Dentries
     add rsp, 32
-    jmp .L13179
-.L13178:
+    jmp .L13383
+.L13382:
     sub rsp, 8
-    lea rax, [rip+.L13180]
+    lea rax, [rip+.L13384]
     sub rsp, 8
     mov [rsp], rax
     sub rsp, 8
@@ -294273,7 +298341,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__mn_x2Dname
     add rsp, 16
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13181]
+    lea rax, [rip+.L13385]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-8]
@@ -294294,7 +298362,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__pv_x2Dstr
     add rsp, 16
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13182]
+    lea rax, [rip+.L13386]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-8]
@@ -294366,7 +298434,7 @@ call zyl_cstr_concat
 call zyl_panic
     mov rsp, r12
     add rsp, 16
-.L13179:
+.L13383:
     mov rsp, rbp
     pop rbp
     ret
@@ -294441,10 +298509,10 @@ call zyl_cstr_len
     sete al
     movzx rax, al
     test rax, rax
-    je .L13183
+    je .L13387
     mov rax, 1
-    jmp .L13184
-.L13183:
+    jmp .L13388
+.L13387:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -294464,7 +298532,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__ws_x2Dread
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__ws_x2Dcheck_x2Dmember_x2Ddeps
     add rsp, 16
-.L13184:
+.L13388:
     mov rsp, rbp
     pop rbp
     ret
@@ -294481,7 +298549,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__drv_x2Dbuild_x2Dpackage:
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13185]
+    lea rax, [rip+.L13389]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -294540,7 +298608,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__mvs_x2Dresolve
     setg al
     movzx rax, al
     test rax, rax
-    je .L13186
+    je .L13390
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -294559,10 +298627,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__mvs_x2Dresolve
     mov rdi, [rsp+24]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__drv_x2Dcheck_x2Dlocked
     add rsp, 32
-    jmp .L13187
-.L13186:
+    jmp .L13391
+.L13390:
     mov rax, 1
-.L13187:
+.L13391:
     mov [rbp-48], rax
     mov rax, [rbp-8]
     sub rsp, 8
@@ -294618,7 +298686,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__drv_x2Dcompile_x2Dfile:
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13188]
+    lea rax, [rip+.L13392]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -294638,8 +298706,8 @@ call zyl_file_open_c
     setl al
     movzx rax, al
     test rax, rax
-    je .L13189
-    lea rax, [rip+.L13191]
+    je .L13393
+    lea rax, [rip+.L13395]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-16]
@@ -294661,8 +298729,8 @@ call zyl_cstr_concat
     mov rsp, r12
     xor eax, eax
     mov rax, 1
-    jmp .L13190
-.L13189:
+    jmp .L13394
+.L13393:
     mov rax, [rbp-40]
     sub rsp, 8
     mov [rsp], rax
@@ -294701,7 +298769,7 @@ call zyl_file_close_c
     mov rax, [rbp-32]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13192]
+    lea rax, [rip+.L13396]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -294744,7 +298812,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__compile_x2Dto_x2Dasm
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13193]
+    lea rax, [rip+.L13397]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -294802,7 +298870,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__drv_x2Dwrite_x2Dbuildinfo
     add rsp, 32
     mov [rbp-104], rax
     mov rax, [rbp-96]
-.L13190:
+.L13394:
     mov rsp, rbp
     pop rbp
     ret
@@ -294817,7 +298885,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__drv_x2Dwrite_x2Dbuildinfo:
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13194]
+    lea rax, [rip+.L13398]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -294831,7 +298899,7 @@ call zyl_cstr_concat
     mov rax, [rbp-40]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13195]
+    lea rax, [rip+.L13399]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -294890,7 +298958,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__drv_x2Dbuildinfo_x2Dtext:
     mov [rbp-8], rdi
     mov [rbp-16], rsi
     mov [rbp-24], rdx
-    lea rax, [rip+.L13196]
+    lea rax, [rip+.L13400]
     sub rsp, 8
     mov [rsp], rax
     sub rsp, 8
@@ -294902,7 +298970,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__lk_x2Dcompiler_x2Dself_x2Dha
     add rsp, 16
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13197]
+    lea rax, [rip+.L13401]
     sub rsp, 8
     mov [rsp], rax
     mov rax, [rbp-8]
@@ -294917,7 +298985,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__drv_x2Dgraph_x2Dhash
     add rsp, 16
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13198]
+    lea rax, [rip+.L13402]
     sub rsp, 8
     mov [rsp], rax
     sub rsp, 8
@@ -294940,7 +299008,7 @@ call zyl_blake3_file_hex
     add rsp, 32
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13199]
+    lea rax, [rip+.L13403]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -295018,7 +299086,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__cli_x2Dread_x2Dlock
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 0
-    jne .L13202
+    jne .L13406
     mov rax, [rsp]
     mov rax, [rax+8]
     mov [rbp-24], rax
@@ -295030,18 +299098,18 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__cli_x2Dread_x2Dlock
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__lk_x2Dgraph_x2Dhash
     add rsp, 16
     mov [rsp], rax
-    jmp .L13200
-.L13202:
+    jmp .L13404
+.L13406:
     mov rax, [rsp]
     mov rax, [rax]
     cmp rax, 1
-    jne .L13201
-    lea rax, [rip+.L13203]
+    jne .L13405
+    lea rax, [rip+.L13407]
     mov [rsp], rax
-    jmp .L13200
-.L13201:
+    jmp .L13404
+.L13405:
     mov qword ptr [rsp], 0
-.L13200:
+.L13404:
     pop rax
     mov rsp, rbp
     pop rbp
@@ -295069,7 +299137,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__drv_x2Dcheck_x2Dworkspace
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13204]
+    lea rax, [rip+.L13408]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -295165,7 +299233,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__drv_x2Dcompile_x2Dfile
     sete al
     movzx rax, al
     test rax, rax
-    je .L13205
+    je .L13409
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -295185,10 +299253,10 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__drv_x2Doutput_x2Dpath
 call zyl_run_bin
     mov rsp, r12
     add rsp, 16
-    jmp .L13206
-.L13205:
+    jmp .L13410
+.L13409:
     mov rax, [rbp-48]
-.L13206:
+.L13410:
     mov rsp, rbp
     pop rbp
     ret
@@ -295196,7 +299264,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__drv_x2Dusage:
     push rbp
     mov rbp, rsp
     sub rsp, 88
-    lea rax, [rip+.L13207]
+    lea rax, [rip+.L13411]
     mov rsi, rax
     lea rdi, [rip+.Lfmts]
     xor eax, eax
@@ -295205,7 +299273,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__drv_x2Dusage:
     call printf
     mov rsp, r12
     xor eax, eax
-    lea rax, [rip+.L13208]
+    lea rax, [rip+.L13412]
     mov rsi, rax
     lea rdi, [rip+.Lfmts]
     xor eax, eax
@@ -295214,7 +299282,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__drv_x2Dusage:
     call printf
     mov rsp, r12
     xor eax, eax
-    lea rax, [rip+.L13209]
+    lea rax, [rip+.L13413]
     mov rsi, rax
     lea rdi, [rip+.Lfmts]
     xor eax, eax
@@ -295223,7 +299291,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__drv_x2Dusage:
     call printf
     mov rsp, r12
     xor eax, eax
-    lea rax, [rip+.L13210]
+    lea rax, [rip+.L13414]
     mov rsi, rax
     lea rdi, [rip+.Lfmts]
     xor eax, eax
@@ -295232,7 +299300,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__drv_x2Dusage:
     call printf
     mov rsp, r12
     xor eax, eax
-    lea rax, [rip+.L13211]
+    lea rax, [rip+.L13415]
     mov rsi, rax
     lea rdi, [rip+.Lfmts]
     xor eax, eax
@@ -295241,7 +299309,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__drv_x2Dusage:
     call printf
     mov rsp, r12
     xor eax, eax
-    lea rax, [rip+.L13212]
+    lea rax, [rip+.L13416]
     mov rsi, rax
     lea rdi, [rip+.Lfmts]
     xor eax, eax
@@ -295250,7 +299318,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__drv_x2Dusage:
     call printf
     mov rsp, r12
     xor eax, eax
-    lea rax, [rip+.L13213]
+    lea rax, [rip+.L13417]
     mov rsi, rax
     lea rdi, [rip+.Lfmts]
     xor eax, eax
@@ -295259,7 +299327,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__drv_x2Dusage:
     call printf
     mov rsp, r12
     xor eax, eax
-    lea rax, [rip+.L13214]
+    lea rax, [rip+.L13418]
     mov rsi, rax
     lea rdi, [rip+.Lfmts]
     xor eax, eax
@@ -295268,7 +299336,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__drv_x2Dusage:
     call printf
     mov rsp, r12
     xor eax, eax
-    lea rax, [rip+.L13215]
+    lea rax, [rip+.L13419]
     mov rsi, rax
     lea rdi, [rip+.Lfmts]
     xor eax, eax
@@ -295277,7 +299345,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__drv_x2Dusage:
     call printf
     mov rsp, r12
     xor eax, eax
-    lea rax, [rip+.L13216]
+    lea rax, [rip+.L13420]
     mov rsi, rax
     lea rdi, [rip+.Lfmts]
     xor eax, eax
@@ -295286,7 +299354,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__drv_x2Dusage:
     call printf
     mov rsp, r12
     xor eax, eax
-    lea rax, [rip+.L13217]
+    lea rax, [rip+.L13421]
     mov rsi, rax
     lea rdi, [rip+.Lfmts]
     xor eax, eax
@@ -295295,7 +299363,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__drv_x2Dusage:
     call printf
     mov rsp, r12
     xor eax, eax
-    lea rax, [rip+.L13218]
+    lea rax, [rip+.L13422]
     mov rsi, rax
     lea rdi, [rip+.Lfmts]
     xor eax, eax
@@ -295304,7 +299372,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__drv_x2Dusage:
     call printf
     mov rsp, r12
     xor eax, eax
-    lea rax, [rip+.L13219]
+    lea rax, [rip+.L13423]
     mov rsi, rax
     lea rdi, [rip+.Lfmts]
     xor eax, eax
@@ -295327,7 +299395,7 @@ zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__drv_x2Dsubcommand:
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13222]
+    lea rax, [rip+.L13426]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -295342,7 +299410,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     setg al
     movzx rax, al
     test rax, rax
-    je .L13220
+    je .L13424
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -295364,12 +299432,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__drv_x2Darg
     mov rdi, [rsp+16]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__cli_x2Dnew
     add rsp, 32
-    jmp .L13221
-.L13220:
+    jmp .L13425
+.L13424:
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13225]
+    lea rax, [rip+.L13429]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -295384,7 +299452,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     setg al
     movzx rax, al
     test rax, rax
-    je .L13223
+    je .L13427
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -295424,12 +299492,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__drv_x2Darg
     mov rdi, [rsp+24]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__cli_x2Dadd
     add rsp, 32
-    jmp .L13224
-.L13223:
+    jmp .L13428
+.L13427:
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13228]
+    lea rax, [rip+.L13432]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -295444,7 +299512,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     setg al
     movzx rax, al
     test rax, rax
-    je .L13226
+    je .L13430
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -295464,12 +299532,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__drv_x2Dpackage_x2Ddir
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__cli_x2Dfetch
     add rsp, 16
-    jmp .L13227
-.L13226:
+    jmp .L13431
+.L13430:
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13231]
+    lea rax, [rip+.L13435]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -295484,7 +299552,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     setg al
     movzx rax, al
     test rax, rax
-    je .L13229
+    je .L13433
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -295504,12 +299572,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__drv_x2Dpackage_x2Ddir
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__cli_x2Dupdate
     add rsp, 16
-    jmp .L13230
-.L13229:
+    jmp .L13434
+.L13433:
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13234]
+    lea rax, [rip+.L13438]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -295524,7 +299592,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     setg al
     movzx rax, al
     test rax, rax
-    je .L13232
+    je .L13436
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -295544,12 +299612,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__drv_x2Dpackage_x2Ddir
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__cli_x2Dvendor
     add rsp, 16
-    jmp .L13233
-.L13232:
+    jmp .L13437
+.L13436:
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13237]
+    lea rax, [rip+.L13441]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -295564,7 +299632,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     setg al
     movzx rax, al
     test rax, rax
-    je .L13235
+    je .L13439
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -295584,12 +299652,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__drv_x2Dpackage_x2Ddir
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__cli_x2Daudit
     add rsp, 16
-    jmp .L13236
-.L13235:
+    jmp .L13440
+.L13439:
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13240]
+    lea rax, [rip+.L13444]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -295604,7 +299672,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     setg al
     movzx rax, al
     test rax, rax
-    je .L13238
+    je .L13442
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -295624,12 +299692,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__drv_x2Dpackage_x2Ddir
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__cli_x2Dpublish
     add rsp, 16
-    jmp .L13239
-.L13238:
+    jmp .L13443
+.L13442:
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13243]
+    lea rax, [rip+.L13447]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -295644,7 +299712,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     setg al
     movzx rax, al
     test rax, rax
-    je .L13241
+    je .L13445
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -295652,12 +299720,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     mov rdi, [rsp+0]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__cli_x2Dkey
     add rsp, 16
-    jmp .L13242
-.L13241:
+    jmp .L13446
+.L13445:
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13246]
+    lea rax, [rip+.L13450]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -295672,7 +299740,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     setg al
     movzx rax, al
     test rax, rax
-    je .L13244
+    je .L13448
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -295692,7 +299760,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__drv_x2Dpackage_x2Ddir
     mov rax, 2
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13247]
+    lea rax, [rip+.L13451]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -295706,12 +299774,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__drv_x2Dhas_x2Dflag
     mov rdi, [rsp+16]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__drv_x2Dbuild
     add rsp, 32
-    jmp .L13245
-.L13244:
+    jmp .L13449
+.L13448:
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13250]
+    lea rax, [rip+.L13454]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -295726,7 +299794,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     setg al
     movzx rax, al
     test rax, rax
-    je .L13248
+    je .L13452
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -295746,12 +299814,12 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__drv_x2Dpackage_x2Ddir
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__drv_x2Dtest
     add rsp, 16
-    jmp .L13249
-.L13248:
+    jmp .L13453
+.L13452:
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13253]
+    lea rax, [rip+.L13457]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -295766,20 +299834,23 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     setg al
     movzx rax, al
     test rax, rax
-    je .L13251
-    sub rsp, 8
+    je .L13455
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
-    mov rdi, [rsp+0]
-call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Drun
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__repl_x2Drun_x2Din
     add rsp, 16
-    jmp .L13252
-.L13251:
+    jmp .L13456
+.L13455:
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L13256]
+    lea rax, [rip+.L13460]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -295794,7 +299865,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     setg al
     movzx rax, al
     test rax, rax
-    je .L13254
+    je .L13458
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -295805,22 +299876,22 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__str_x2Deq
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__drv_x2Deval
     add rsp, 16
-    jmp .L13255
-.L13254:
+    jmp .L13459
+.L13458:
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__drv_x2Dusage
     add rsp, 0
-.L13255:
-.L13252:
-.L13249:
-.L13245:
-.L13242:
-.L13239:
-.L13236:
-.L13233:
-.L13230:
-.L13227:
-.L13224:
-.L13221:
+.L13459:
+.L13456:
+.L13453:
+.L13449:
+.L13446:
+.L13443:
+.L13440:
+.L13437:
+.L13434:
+.L13431:
+.L13428:
+.L13425:
     mov rsp, rbp
     pop rbp
     ret
@@ -295851,7 +299922,7 @@ call zyl_argc
     setl al
     movzx rax, al
     test rax, rax
-    je .L13257
+    je .L13461
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -295859,8 +299930,8 @@ call zyl_argc
     mov rdi, [rsp+0]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__boot_x2Drun_x2Dlegacy
     add rsp, 16
-    jmp .L13258
-.L13257:
+    jmp .L13462
+.L13461:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -295868,7 +299939,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__boot_x2Drun_x2Dlegacy
     mov rdi, [rsp+0]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__drv_x2Dmain_x2Darg
     add rsp, 16
-.L13258:
+.L13462:
     mov rsp, rbp
     pop rbp
     ret
@@ -295903,7 +299974,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__drv_x2Dis_x2Dsubcommand
     setg al
     movzx rax, al
     test rax, rax
-    je .L13259
+    je .L13463
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -295914,8 +299985,8 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__drv_x2Dis_x2Dsubcommand
     mov rdi, [rsp+8]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__drv_x2Drun_x2Dsubcommand
     add rsp, 16
-    jmp .L13260
-.L13259:
+    jmp .L13464
+.L13463:
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -295923,7 +299994,7 @@ call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__drv_x2Drun_x2Dsubcommand
     mov rdi, [rsp+0]
 call zy_local_x2Fmain_0__zyl_5Fselfhost_5Fcompiler__cli_x2Drun
     add rsp, 16
-.L13260:
+.L13464:
     mov rsp, rbp
     pop rbp
     ret
@@ -301524,607 +305595,739 @@ main:
     .string "\\n"
 .L12080:
     .string "\\\\"
-.L12113:
-    .string "error["
+.L12109:
+    .string "fn"
 .L12114:
+    .string "error["
+.L12115:
     .string "]: "
-.L12128:
+.L12129:
     .string ""
-.L12161:
-    .string "E_UNBOUND_VARIABLE"
 .L12162:
-    .string "unbound identifier `"
+    .string "E_UNBOUND_VARIABLE"
 .L12163:
+    .string "unbound identifier `"
+.L12164:
     .string "`"
-.L12278:
-    .string "E_DIVISION_BY_ZERO"
 .L12279:
-    .string "division by zero"
-.L12282:
     .string "E_DIVISION_BY_ZERO"
+.L12280:
+    .string "division by zero"
 .L12283:
+    .string "E_DIVISION_BY_ZERO"
+.L12284:
     .string "remainder by zero"
-.L12325:
-    .string "E_UNBOUND_VARIABLE"
 .L12326:
-    .string "set! on unbound `"
-.L12327:
-    .string "`"
-.L12339:
-    .string ""
-.L12350:
-    .string "E_MATCH_NONEXHAUSTIVE"
-.L12351:
-    .string "no arm of this match covers the value"
-.L12381:
-    .string "E_UNDEFINED_FUNCTION"
-.L12382:
-    .string "no function named `"
-.L12383:
-    .string "`"
-.L12386:
-    .string "E_NOT_CALLABLE"
-.L12387:
-    .string "this value is not a function"
-.L12395:
-    .string "E_ARITY_MISMATCH"
-.L12396:
-    .string "wrong number of arguments for `"
-.L12397:
-    .string "`"
-.L12407:
     .string "E_UNBOUND_VARIABLE"
-.L12408:
-    .string "unbound closure `"
-.L12409:
+.L12327:
+    .string "set! on unbound `"
+.L12328:
     .string "`"
-.L12412:
-    .string "E_NOT_CALLABLE"
-.L12413:
-    .string "this value is not a closure"
-.L12418:
-    .string "E_NOT_CALLABLE"
-.L12419:
-    .string "this value is not a function"
-.L12422:
-    .string "E_NOT_CALLABLE"
-.L12423:
-    .string "closure has no callable code field"
-.L12427:
+.L12340:
+    .string ""
+.L12351:
+    .string "E_MATCH_NONEXHAUSTIVE"
+.L12352:
+    .string "no arm of this match covers the value"
+.L12382:
     .string "E_UNDEFINED_FUNCTION"
-.L12428:
-    .string "closure names no function `"
-.L12429:
-    .string "`"
-.L12432:
-    .string "zyl_register_test"
-.L12435:
-    .string "zyl_run_tests"
-.L12438:
-    .string "E_UNSUPPORTED_INTERPRETED"
-.L12439:
-    .string "spawning an actor needs compiled code: the entry point is a native function pointer, which an interpreted function does not have. Compile this program with `zyl <file>` and run the binary."
-.L12442:
-    .string "zyl_actor_spawn"
-.L12445:
-    .string "zyl_actor_send_closure"
-.L12466:
-    .string "E_FFI_SYMBOL_NOT_FOUND"
-.L12467:
-    .string "no such FFI symbol: "
-.L12480:
-    .string "zyl_cstr_concat"
-.L12483:
-    .string "zyl_cstr_substr"
-.L12486:
-    .string "zyl_cstr_sub"
-.L12489:
-    .string "zyl_cstr_from_int"
-.L12492:
-    .string "zyl_cstr_from_byte"
-.L12495:
-    .string "zyl_cstr_sanitize"
-.L12498:
-    .string "zyl_cstr_decode"
-.L12501:
-    .string "zyl_file_read_c"
-.L12504:
-    .string "zyl_str_append"
-.L12507:
-    .string "zyl_str_append_capped"
-.L12510:
-    .string "zyl_getcwd"
-.L12513:
-    .string "zyl_getenv"
-.L12516:
-    .string "zyl_dirname_cstr"
-.L12519:
-    .string "zyl_arg_str"
-.L12522:
-    .string "zyl_f_text"
-.L12525:
-    .string "zyl_sym_escape"
-.L12528:
-    .string "zyl_mangle_key"
-.L12531:
-    .string "zyl_span_line_text"
-.L12534:
-    .string "zyl_source_path"
-.L12537:
-    .string "zyl_blake3_hex"
-.L12540:
-    .string "zyl_blake3_file_hex"
-.L12544:
-    .string "E_UNDEFINED_FUNCTION"
-.L12545:
+.L12383:
     .string "no function named `"
-.L12546:
+.L12384:
     .string "`"
-.L12552:
-    .string "\""
+.L12387:
+    .string "E_NOT_CALLABLE"
+.L12388:
+    .string "this value is not a function"
+.L12396:
+    .string "E_ARITY_MISMATCH"
+.L12397:
+    .string "wrong number of arguments for `"
+.L12398:
+    .string "`"
+.L12408:
+    .string "E_UNBOUND_VARIABLE"
+.L12409:
+    .string "unbound closure `"
+.L12410:
+    .string "`"
+.L12413:
+    .string "E_NOT_CALLABLE"
+.L12414:
+    .string "this value is not a closure"
+.L12419:
+    .string "E_NOT_CALLABLE"
+.L12420:
+    .string "this value is not a function"
+.L12423:
+    .string "E_NOT_CALLABLE"
+.L12424:
+    .string "closure has no callable code field"
+.L12428:
+    .string "E_UNDEFINED_FUNCTION"
+.L12429:
+    .string "closure names no function `"
+.L12430:
+    .string "`"
+.L12433:
+    .string "zyl_register_test"
+.L12436:
+    .string "zyl_run_tests"
+.L12439:
+    .string "E_UNSUPPORTED_INTERPRETED"
+.L12440:
+    .string "spawning an actor needs compiled code: the entry point is a native function pointer, which an interpreted function does not have. Compile this program with `zyl <file>` and run the binary."
+.L12443:
+    .string "zyl_actor_spawn"
+.L12446:
+    .string "zyl_actor_send_closure"
+.L12467:
+    .string "E_FFI_SYMBOL_NOT_FOUND"
+.L12468:
+    .string "no such FFI symbol: "
+.L12481:
+    .string "zyl_cstr_concat"
+.L12484:
+    .string "zyl_cstr_substr"
+.L12487:
+    .string "zyl_cstr_sub"
+.L12490:
+    .string "zyl_cstr_from_int"
+.L12493:
+    .string "zyl_cstr_from_byte"
+.L12496:
+    .string "zyl_cstr_sanitize"
+.L12499:
+    .string "zyl_cstr_decode"
+.L12502:
+    .string "zyl_file_read_c"
+.L12505:
+    .string "zyl_str_append"
+.L12508:
+    .string "zyl_str_append_capped"
+.L12511:
+    .string "zyl_getcwd"
+.L12514:
+    .string "zyl_getenv"
+.L12517:
+    .string "zyl_dirname_cstr"
+.L12520:
+    .string "zyl_arg_str"
+.L12523:
+    .string "zyl_f_text"
+.L12526:
+    .string "zyl_sym_escape"
+.L12529:
+    .string "zyl_mangle_key"
+.L12532:
+    .string "zyl_span_line_text"
+.L12535:
+    .string "zyl_source_path"
+.L12538:
+    .string "zyl_blake3_hex"
+.L12541:
+    .string "zyl_blake3_file_hex"
+.L12545:
+    .string "E_UNDEFINED_FUNCTION"
+.L12546:
+    .string "no function named `"
+.L12547:
+    .string "`"
 .L12553:
     .string "\""
+.L12554:
+    .string "\""
+.L12557:
+    .string "#<0x"
 .L12558:
-    .string "#<variant tag="
-.L12559:
-    .string " at "
-.L12560:
     .string ">"
-.L12561:
+.L12563:
     .string "#<fn "
-.L12562:
+.L12564:
     .string ">"
-.L12568:
-    .string "E_NO_MAIN"
-.L12569:
-    .string "this program defines no main"
 .L12577:
-    .string "main"
+    .string "#<block "
 .L12578:
-    .string "::main"
-.L12591:
-    .string "core/core"
-.L12592:
-    .string "core/list"
-.L12593:
-    .string "core/option"
-.L12594:
-    .string "core/result"
-.L12595:
-    .string "allocator/allocator"
-.L12596:
-    .string ""
-.L12597:
-    .string ""
-.L12598:
-    .string "\n"
-.L12607:
-    .string "_lambda_"
-.L12621:
-    .string ""
-.L12624:
-    .string ""
-.L12647:
-    .string "defn"
-.L12650:
-    .string "deftype"
-.L12653:
-    .string "defstruct"
-.L12656:
-    .string "defstruct+"
-.L12659:
-    .string "defmacro"
-.L12662:
-    .string "trait"
-.L12665:
-    .string "impl"
-.L12669:
-    .string ""
-.L12670:
-    .string "(use "
-.L12671:
-    .string ")\n"
-.L12672:
-    .string "__zyl_repl_entry"
-.L12705:
-    .string ""
-.L12708:
-    .string " "
-.L12714:
-    .string "\n(defn "
-.L12715:
-    .string " ("
-.L12716:
-    .string ") "
-.L12717:
-    .string ")\n"
-.L12718:
-    .string "\n"
-.L12719:
-    .string "\n(defn "
-.L12720:
-    .string " () 0)\n"
-.L12723:
-    .string "<repl>"
-.L12732:
-    .string "use"
-.L12735:
-    .string "def"
-.L12744:
-    .string ""
-.L12748:
-    .string "using "
-.L12777:
-    .string ""
-.L12794:
-    .string "error[E_INTERNAL]: the entry did not survive lowering"
-.L12802:
-    .string "0.1"
-.L12805:
-    .string "Zyl REPL "
-.L12806:
-    .string " — :help for commands, :q to quit"
-.L12807:
-    .string "[38;5;75mzyl>[0m "
-.L12808:
-    .string "[38;5;244m····[0m "
-.L12813:
-    .string "Goodbye!"
-.L12821:
-    .string ""
-.L12827:
-    .string "defined "
-.L12829:
-    .string " = "
-.L12831:
-    .string "[38;5;71m=>[0m "
-.L12832:
-    .string "\n"
-.L12833:
-    .string "[38;5;244m"
-.L12834:
-    .string "[0m\n"
-.L12835:
-    .string "\n"
-.L12846:
-    .string "q"
-.L12847:
-    .string "quit"
-.L12850:
-    .string "h"
-.L12851:
-    .string "help"
-.L12854:
-    .string "history"
-.L12855:
-    .string "hist"
-.L12858:
-    .string "clear"
-.L12859:
-    .string "cls"
-.L12862:
-    .string "reset"
-.L12863:
-    .string "r"
-.L12864:
-    .string "session reset"
-.L12867:
-    .string "load"
-.L12868:
-    .string "l"
-.L12871:
-    .string "save"
-.L12872:
-    .string "s"
-.L12875:
-    .string "doc"
-.L12876:
-    .string "d"
-.L12879:
-    .string "defs"
-.L12880:
-    .string "browse"
-.L12885:
-    .string "unknown command :"
-.L12886:
-    .string " — :help lists them"
-.L12887:
-    .string "Commands"
-.L12888:
-    .string "  :help              this list"
-.L12889:
-    .string "  :quit              leave the session"
-.L12890:
-    .string "  :history           entries from this and earlier sessions"
-.L12891:
-    .string "  :defs              definitions in scope"
-.L12892:
-    .string "  :doc NAME          documentation for a built-in or special form"
-.L12893:
-    .string "  :load PATH         read a file's definitions into the session"
-.L12894:
-    .string "  :save PATH         write the session's definitions to a file"
-.L12895:
-    .string "  :reset             forget every definition"
-.L12896:
-    .string "  :clear             clear the screen"
-.L12897:
-    .string "Editing"
-.L12898:
-    .string "  Enter              evaluate, or continue an unfinished form"
-.L12899:
-    .string "  Up/Down            move within an entry, then through history"
-.L12900:
-    .string "  Tab                complete a name"
-.L12901:
-    .string "  Ctrl-R             search history"
-.L12902:
-    .string "  Ctrl-A/E  Ctrl-K/U/W  Ctrl-Y   line editing and yank"
-.L12903:
-    .string "  Ctrl-C             abandon this entry    Ctrl-D  leave"
-.L12907:
-    .string "  "
-.L12908:
-    .string "\n"
-.L12912:
-    .string "  (use "
-.L12913:
-    .string ")\n"
-.L12919:
-    .string "  "
-.L12920:
-    .string " = "
-.L12921:
-    .string "\n"
-.L12924:
-    .string "\n"
-.L12925:
-    .string "r"
-.L12928:
-    .string "cannot read "
-.L12935:
-    .string "(use "
-.L12936:
+    .string ">"
+.L12583:
+    .string "("
+.L12584:
+    .string " ...)"
+.L12585:
+    .string "("
+.L12586:
     .string ")"
-.L12945:
-    .string "loaded "
-.L12946:
+.L12589:
     .string ""
-.L12951:
-    .string "(use "
-.L12952:
+.L12592:
+    .string " ..."
+.L12593:
+    .string " "
+.L12597:
+    .string "E_NO_MAIN"
+.L12598:
+    .string "this program defines no main"
+.L12606:
+    .string "main"
+.L12607:
+    .string "::main"
+.L12628:
+    .string "core/core"
+.L12629:
+    .string "core/list"
+.L12630:
+    .string "core/option"
+.L12631:
+    .string "core/result"
+.L12632:
+    .string "allocator/allocator"
+.L12633:
+    .string ""
+.L12634:
+    .string ""
+.L12635:
     .string "\n"
-.L12957:
-    .string "(use "
-.L12968:
-    .string ":save needs a path"
-.L12969:
-    .string "w"
-.L12972:
-    .string "cannot write "
-.L12973:
-    .string "saved to "
-.L12976:
-    .string ":doc needs a name"
-.L12980:
-    .string "no documentation for "
-.L12983:
-    .string "\n"
-.L12984:
-    .string "  "
-.L12985:
-    .string "\n"
-.L12991:
-    .string ":help"
-.L12992:
-    .string ":quit"
-.L12993:
-    .string ":history"
-.L12994:
-    .string ":defs"
-.L12995:
-    .string ":doc"
-.L12996:
-    .string ":load"
-.L12997:
-    .string ":save"
-.L12998:
-    .string ":reset"
-.L12999:
-    .string ":clear"
-.L13011:
+.L12644:
+    .string "_lambda_"
+.L12656:
+    .string ""
+.L12659:
+    .string ""
+.L12682:
     .string "defn"
-.L13014:
-    .string "def"
-.L13017:
+.L12685:
     .string "deftype"
-.L13020:
+.L12688:
     .string "defstruct"
-.L13023:
+.L12691:
+    .string "defstruct+"
+.L12694:
     .string "defmacro"
-.L13032:
+.L12697:
+    .string "trait"
+.L12700:
+    .string "impl"
+.L12704:
     .string ""
-.L13033:
+.L12705:
+    .string "(use "
+.L12706:
+    .string ")\n"
+.L12707:
+    .string "__zyl_repl_entry"
+.L12738:
     .string ""
-.L13043:
-    .string ""
-.L13050:
+.L12739:
+    .string " "
+.L12743:
+    .string "\n(defn "
+.L12744:
+    .string " ("
+.L12745:
+    .string ") "
+.L12746:
+    .string ")\n"
+.L12747:
     .string "\n"
+.L12748:
+    .string "\n(defn "
+.L12749:
+    .string " () 0)\n"
+.L12752:
+    .string "<repl>"
+.L12760:
+    .string "<repl>"
+.L12764:
+    .string "?"
+.L12768:
+    .string "Int"
+.L12770:
+    .string "Float"
+.L12772:
+    .string "Bool"
+.L12774:
+    .string "String"
+.L12776:
+    .string "Unit"
+.L12778:
+    .string "Byte"
+.L12780:
+    .string "ByteSlice"
+.L12782:
+    .string "ByteBuf"
+.L12784:
+    .string "Fn("
+.L12785:
+    .string ")"
+.L12787:
+    .string "List<"
+.L12788:
+    .string ">"
+.L12790:
+    .string "Array<"
+.L12791:
+    .string ">"
+.L12793:
+    .string "Cap<"
+.L12794:
+    .string ">"
+.L12797:
+    .string "unresolved — inference had no evidence for this expression"
+.L12799:
+    .string "Map<"
+.L12800:
+    .string ", "
+.L12801:
+    .string ">"
+.L12802:
+    .string "Result<"
+.L12803:
+    .string ", "
+.L12804:
+    .string ">"
+.L12808:
+    .string ""
+.L12812:
+    .string ", "
+.L12827:
+    .string "use"
+.L12830:
+    .string "def"
+.L12839:
+    .string ""
+.L12843:
+    .string "using "
+.L12872:
+    .string ""
+.L12889:
+    .string "error[E_INTERNAL]: the entry did not survive lowering"
+.L12897:
+    .string "r"
+.L12900:
+    .string ""
+.L12901:
+    .string "/.zyl-session"
+.L12904:
+    .string "w"
+.L12914:
+    .string "; Zyl REPL session state. Loaded when a session starts here.\n"
+.L12915:
+    .string "\n"
+.L12919:
+    .string ""
+.L12920:
+    .string "(def "
+.L12921:
+    .string " "
+.L12922:
+    .string ")\n"
+.L12929:
+    .string ""
+.L12964:
+    .string "ZYL_REPLRC"
+.L12967:
+    .string "/replrc"
+.L12970:
+    .string ""
+.L12971:
+    .string "0.1"
+.L12980:
+    .string "replrc: "
+.L12981:
+    .string " entries"
+.L12984:
+    .string "restored "
+.L12985:
+    .string " entries from .zyl-session — :reset to start clean"
+.L12986:
+    .string "Zyl REPL "
+.L12987:
+    .string " — :help for commands, :q to quit"
+.L12988:
+    .string "[38;5;75mzyl>[0m "
+.L12989:
+    .string "[38;5;244m····[0m "
+.L12994:
+    .string "Goodbye!"
+.L13002:
+    .string ""
+.L13008:
+    .string "defined "
+.L13010:
+    .string " = "
+.L13012:
+    .string "[38;5;71m=>[0m "
+.L13013:
+    .string "\n"
+.L13014:
+    .string "[38;5;244m"
+.L13015:
+    .string "[0m\n"
+.L13016:
+    .string "\n"
+.L13027:
+    .string "q"
+.L13028:
+    .string "quit"
+.L13031:
+    .string "h"
+.L13032:
+    .string "help"
+.L13035:
+    .string "history"
+.L13036:
+    .string "hist"
+.L13039:
+    .string "clear"
+.L13040:
+    .string "cls"
+.L13043:
+    .string "reset"
+.L13044:
+    .string "r"
+.L13047:
+    .string "load"
+.L13048:
+    .string "l"
+.L13051:
+    .string "save"
+.L13052:
+    .string "s"
 .L13055:
-    .string ""
-.L13058:
-    .string ""
-.L13062:
-    .string ""
-.L13065:
-    .string "ZYL_HOME"
+    .string "doc"
+.L13056:
+    .string "d"
+.L13059:
+    .string "t"
+.L13060:
+    .string "type"
+.L13063:
+    .string "time"
+.L13064:
+    .string "tm"
+.L13067:
+    .string "defs"
 .L13068:
-    .string "HOME"
-.L13071:
-    .string "/.zyl"
-.L13072:
-    .string ""
+    .string "browse"
+.L13073:
+    .string "unknown command :"
+.L13074:
+    .string " — :help lists them"
+.L13075:
+    .string "Commands"
+.L13076:
+    .string "  :help              this list"
 .L13077:
-    .string "/stdlib"
+    .string "  :quit              leave the session"
 .L13078:
-    .string "/tmp/zyl_boot_in.zyl"
+    .string "  :history           entries from this and earlier sessions"
 .L13079:
-    .string "/tmp/zyl_boot_out.s"
+    .string "  :defs              definitions in scope"
 .L13080:
-    .string "w"
+    .string "  :doc NAME          documentation for a built-in or special form"
 .L13081:
-    .string "/tmp/zyl_boot_in.zyl"
+    .string "  :type EXPR         the type of an expression, without running it"
 .L13082:
-    .string "r"
+    .string "  :time EXPR         evaluate it and say how long it took"
+.L13083:
+    .string "  :load PATH         read a file's definitions into the session"
+.L13084:
+    .string "  :save PATH         write the session's definitions to a file"
 .L13085:
-    .string "no input\n"
+    .string "  :reset             forget every definition"
 .L13086:
-    .string "w"
+    .string "  :clear             clear the screen"
+.L13087:
+    .string "Editing"
+.L13088:
+    .string "  Enter              evaluate, or continue an unfinished form"
 .L13089:
-    .string "/"
+    .string "  Up/Down            move within an entry, then through history"
+.L13090:
+    .string "  Tab                complete a name"
+.L13091:
+    .string "  Ctrl-R             search history"
 .L13092:
-    .string ".zyl"
-.L13095:
-    .string ".out"
-.L13100:
-    .string "--emit-asm"
-.L13105:
-    .string "-o"
+    .string "  Ctrl-A/E  Ctrl-K/U/W  Ctrl-Y   line editing and yank"
+.L13093:
+    .string "  Ctrl-C             abandon this entry    Ctrl-D  leave"
+.L13097:
+    .string "  "
+.L13098:
+    .string "\n"
+.L13102:
+    .string "  (use "
+.L13103:
+    .string ")\n"
+.L13109:
+    .string "  "
 .L13110:
-    .string ""
+    .string " = "
 .L13111:
-    .string "cc "
-.L13112:
-    .string "-no-pie "
-.L13113:
-    .string " actor_runtime.c -o "
+    .string "\n"
 .L13114:
-    .string " -lpthread"
+    .string "\n"
 .L13115:
-    .string "ZYL_HOME"
-.L13118:
-    .string "HOME"
-.L13121:
-    .string "/.zyl"
-.L13122:
-    .string ""
+    .string "session reset"
+.L13116:
+    .string "r"
+.L13119:
+    .string "cannot read "
+.L13126:
+    .string "(use "
 .L13127:
-    .string "/stdlib"
-.L13128:
+    .string ")"
+.L13136:
+    .string "loaded "
+.L13137:
     .string ""
-.L13133:
-    .string "r"
-.L13138:
-    .string ".s"
-.L13139:
-    .string "zyl: error: cannot open source file"
-.L13140:
-    .string "r"
+.L13142:
+    .string "(use "
 .L13143:
-    .string "zyl: error: cannot open source file"
-.L13150:
-    .string ""
-.L13157:
-    .string "/zyl.pkg"
+    .string "\n"
+.L13148:
+    .string "(use "
+.L13159:
+    .string ":save needs a path"
 .L13160:
-    .string "E_MANIFEST_NOT_FOUND: package: no zyl.pkg at or above "
-.L13161:
-    .string "/zyl.pkg"
-.L13162:
-    .string "/"
-.L13163:
-    .string ".zyl"
-.L13164:
-    .string "/zyl.pkg"
-.L13165:
-    .string "/"
-.L13169:
-    .string "E_PKG_LOCK_STALE: package: --locked was given but there is no zyl.lock"
-.L13176:
-    .string "E_PKG_LOCK_STALE: package: "
-.L13177:
-    .string " is required but absent from zyl.lock"
-.L13180:
-    .string "E_PKG_LOCK_STALE: package: "
-.L13181:
-    .string " resolves to "
-.L13182:
-    .string " but zyl.lock records "
-.L13185:
-    .string "/zyl.pkg"
-.L13188:
-    .string "r"
-.L13191:
-    .string "zyl: error: cannot open "
-.L13192:
-    .string "/zyl.pkg"
-.L13193:
-    .string ".s"
-.L13194:
-    .string ".buildinfo"
-.L13195:
     .string "w"
+.L13163:
+    .string "cannot write "
+.L13164:
+    .string "saved to "
+.L13167:
+    .string ":time needs an expression"
+.L13168:
+    .string " ms"
+.L13171:
+    .string ":type needs an expression"
+.L13175:
+    .string "[38;5;244m : [0m"
+.L13176:
+    .string "\n"
+.L13179:
+    .string ":doc needs a name"
+.L13183:
+    .string "no documentation for "
+.L13186:
+    .string "\n"
+.L13187:
+    .string "  "
+.L13188:
+    .string "\n"
+.L13194:
+    .string ":help"
+.L13195:
+    .string ":quit"
 .L13196:
-    .string "(buildinfo\n  (compiler-hash \""
+    .string ":history"
 .L13197:
-    .string "\")\n  (graph-hash \""
+    .string ":defs"
 .L13198:
-    .string "\")\n  (native-objects)\n  (asm-hash \"blake3:"
+    .string ":doc"
 .L13199:
-    .string "\"))\n"
-.L13203:
-    .string ""
-.L13204:
-    .string "/zyl.pkg"
-.L13207:
-    .string "zyl <file.zyl> [-o out] [--emit-asm]   compile one file"
-.L13208:
-    .string "zyl new <name>                         create a package"
-.L13209:
-    .string "zyl add <name> [version]               add a dependency"
-.L13210:
-    .string "zyl fetch                              resolve, verify and populate the store"
-.L13211:
-    .string "zyl build [--locked]                   compile this package"
-.L13212:
-    .string "zyl test                               compile and run this package"
-.L13213:
-    .string "zyl update                             re-resolve and rewrite zyl.lock"
+    .string ":load"
+.L13200:
+    .string ":save"
+.L13201:
+    .string ":reset"
+.L13202:
+    .string ":clear"
 .L13214:
-    .string "zyl vendor                             copy the graph into ./vendor"
-.L13215:
-    .string "zyl audit                              report capabilities per package"
-.L13216:
-    .string "zyl publish                            archive, hash and sign this package"
+    .string "defn"
 .L13217:
-    .string "zyl key                                show or create the publisher key"
-.L13218:
-    .string "zyl repl                               start an interactive session"
-.L13219:
-    .string "zyl eval <file.zyl>                    run a program without building one"
-.L13222:
-    .string "new"
-.L13225:
-    .string "add"
-.L13228:
-    .string "fetch"
-.L13231:
-    .string "update"
-.L13234:
-    .string "vendor"
-.L13237:
-    .string "audit"
-.L13240:
-    .string "publish"
-.L13243:
-    .string "key"
+    .string "def"
+.L13220:
+    .string "deftype"
+.L13223:
+    .string "defstruct"
+.L13226:
+    .string "defmacro"
+.L13235:
+    .string ""
+.L13236:
+    .string ""
 .L13246:
-    .string "build"
-.L13247:
-    .string "--locked"
-.L13250:
-    .string "test"
+    .string ""
 .L13253:
+    .string "\n"
+.L13258:
+    .string ""
+.L13261:
+    .string ""
+.L13265:
+    .string ""
+.L13268:
+    .string "ZYL_HOME"
+.L13271:
+    .string "HOME"
+.L13274:
+    .string "/.zyl"
+.L13275:
+    .string ""
+.L13280:
+    .string "/stdlib"
+.L13281:
+    .string ""
+.L13282:
+    .string "/tmp/zyl_boot_in.zyl"
+.L13283:
+    .string "/tmp/zyl_boot_out.s"
+.L13284:
+    .string "w"
+.L13285:
+    .string "/tmp/zyl_boot_in.zyl"
+.L13286:
+    .string "r"
+.L13289:
+    .string "no input\n"
+.L13290:
+    .string "w"
+.L13293:
+    .string "/"
+.L13296:
+    .string ".zyl"
+.L13299:
+    .string ".out"
+.L13304:
+    .string "--emit-asm"
+.L13309:
+    .string "-o"
+.L13314:
+    .string ""
+.L13315:
+    .string "cc "
+.L13316:
+    .string "-no-pie "
+.L13317:
+    .string " actor_runtime.c -o "
+.L13318:
+    .string " -lpthread"
+.L13319:
+    .string "ZYL_HOME"
+.L13322:
+    .string "HOME"
+.L13325:
+    .string "/.zyl"
+.L13326:
+    .string ""
+.L13331:
+    .string "/stdlib"
+.L13332:
+    .string ""
+.L13337:
+    .string "r"
+.L13342:
+    .string ".s"
+.L13343:
+    .string "zyl: error: cannot open source file"
+.L13344:
+    .string "r"
+.L13347:
+    .string "zyl: error: cannot open source file"
+.L13354:
+    .string ""
+.L13361:
+    .string "/zyl.pkg"
+.L13364:
+    .string "E_MANIFEST_NOT_FOUND: package: no zyl.pkg at or above "
+.L13365:
+    .string "/zyl.pkg"
+.L13366:
+    .string "/"
+.L13367:
+    .string ".zyl"
+.L13368:
+    .string "/zyl.pkg"
+.L13369:
+    .string "/"
+.L13373:
+    .string "E_PKG_LOCK_STALE: package: --locked was given but there is no zyl.lock"
+.L13380:
+    .string "E_PKG_LOCK_STALE: package: "
+.L13381:
+    .string " is required but absent from zyl.lock"
+.L13384:
+    .string "E_PKG_LOCK_STALE: package: "
+.L13385:
+    .string " resolves to "
+.L13386:
+    .string " but zyl.lock records "
+.L13389:
+    .string "/zyl.pkg"
+.L13392:
+    .string "r"
+.L13395:
+    .string "zyl: error: cannot open "
+.L13396:
+    .string "/zyl.pkg"
+.L13397:
+    .string ".s"
+.L13398:
+    .string ".buildinfo"
+.L13399:
+    .string "w"
+.L13400:
+    .string "(buildinfo\n  (compiler-hash \""
+.L13401:
+    .string "\")\n  (graph-hash \""
+.L13402:
+    .string "\")\n  (native-objects)\n  (asm-hash \"blake3:"
+.L13403:
+    .string "\"))\n"
+.L13407:
+    .string ""
+.L13408:
+    .string "/zyl.pkg"
+.L13411:
+    .string "zyl <file.zyl> [-o out] [--emit-asm]   compile one file"
+.L13412:
+    .string "zyl new <name>                         create a package"
+.L13413:
+    .string "zyl add <name> [version]               add a dependency"
+.L13414:
+    .string "zyl fetch                              resolve, verify and populate the store"
+.L13415:
+    .string "zyl build [--locked]                   compile this package"
+.L13416:
+    .string "zyl test                               compile and run this package"
+.L13417:
+    .string "zyl update                             re-resolve and rewrite zyl.lock"
+.L13418:
+    .string "zyl vendor                             copy the graph into ./vendor"
+.L13419:
+    .string "zyl audit                              report capabilities per package"
+.L13420:
+    .string "zyl publish                            archive, hash and sign this package"
+.L13421:
+    .string "zyl key                                show or create the publisher key"
+.L13422:
+    .string "zyl repl                               start an interactive session"
+.L13423:
+    .string "zyl eval <file.zyl>                    run a program without building one"
+.L13426:
+    .string "new"
+.L13429:
+    .string "add"
+.L13432:
+    .string "fetch"
+.L13435:
+    .string "update"
+.L13438:
+    .string "vendor"
+.L13441:
+    .string "audit"
+.L13444:
+    .string "publish"
+.L13447:
+    .string "key"
+.L13450:
+    .string "build"
+.L13451:
+    .string "--locked"
+.L13454:
+    .string "test"
+.L13457:
     .string "repl"
-.L13256:
+.L13460:
     .string "eval"

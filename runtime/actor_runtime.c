@@ -3279,18 +3279,20 @@ long long zyl_fnmap_get(long long name) {
    its fields read back as Int exactly as before. */
 #define ZYL_KINDS_MAGIC 0x5A4B4E44LL   /* 'ZKND' */
 
-long long zyl_val_alloc(long long nwords, long long kinds) {
+long long zyl_val_alloc(long long nwords, long long kinds, long long name) {
     if (nwords < 0) nwords = 0;
     if (nwords > (1LL << 20)) return 0;
-    /* Two extra words in front of the payload: the kinds record, and a
-       second copy of the qword count where zyl_variant_eq expects to
-       find it (immediately before the pointer that is handed out). */
-    long long raw = zyl_heap_alloc((nwords + 2) * 8);
+    /* Three extra words in front of the payload: the constructor's name,
+       the kinds record, and a second copy of the qword count where
+       zyl_variant_eq expects to find it (immediately before the pointer
+       that is handed out). */
+    long long raw = zyl_heap_alloc((nwords + 3) * 8);
     if (!raw) return 0;
     long long* w = (long long*)(size_t)raw;
-    w[0] = (ZYL_KINDS_MAGIC << 32) | (kinds & 0xFFFFFFFFLL);
-    w[1] = nwords;
-    return raw + 16;
+    w[0] = name;
+    w[1] = (ZYL_KINDS_MAGIC << 32) | (kinds & 0xFFFFFFFFLL);
+    w[2] = nwords;
+    return raw + 24;
 }
 
 /* The kind of field `i` of `p`, or 0 (Int) when `p` was not built here. */
@@ -3300,6 +3302,73 @@ long long zyl_val_kind(long long p, long long i) {
     long long w = *(long long*)(size_t)(p - 16);
     if ((w >> 32) != ZYL_KINDS_MAGIC) return 0;
     return (w >> (2 * i)) & 3;
+}
+
+/* The constructor's name, or 0 when `p` was not built by the
+   interpreter. This is what lets a value print as `(Cons 1 Nil)`
+   instead of as an address: the tag alone cannot say, since every ADT
+   numbers its own variants from zero. */
+long long zyl_val_name(long long p) {
+    if (!p) return 0;
+    if (!zyl_heap_block_p(p - 16)) return 0;
+    long long w = *(long long*)(size_t)(p - 16);
+    if ((w >> 32) != ZYL_KINDS_MAGIC) return 0;
+    return *(long long*)(size_t)(p - 24);
+}
+
+/* Number of fields in a block built here (or handed out by
+   zyl_heap_alloc, whose header this reads). */
+long long zyl_val_arity(long long p) {
+    if (!p || !zyl_heap_block_p(p - 8)) return 0;
+    return *(long long*)(size_t)(p - 8);
+}
+
+/* A stable copy of a constructor's name, deduplicated by content.
+
+   The name the interpreter gets comes from an ICNF node, which lives in
+   the arena that entry compiled into -- and that arena is released when
+   the entry finishes, while the value it built may outlive it in a
+   session binding. Copying the name per construction would put a
+   `strlen` and an allocation on the hot path of every `Cons`; interning
+   it puts them on the first one only.
+
+   The table never shrinks, which is what "stable" requires: something
+   is still pointing at every entry. Names are few -- one per
+   constructor in the program. */
+#define ZYL_NAMES_CAP 4096
+static struct { char* text; } g_names[ZYL_NAMES_CAP];
+static long long g_names_used = 0;
+
+long long zyl_intern_name(long long s) {
+    const char* n = (const char*)(size_t)s;
+    if (!n) return 0;
+    size_t i = zyl_str_hash(n) & (ZYL_NAMES_CAP - 1);
+    for (size_t probe = 0; probe < ZYL_NAMES_CAP; probe++) {
+        size_t j = (i + probe) & (ZYL_NAMES_CAP - 1);
+        if (!g_names[j].text) {
+            if (g_names_used >= ZYL_NAMES_CAP / 2) return 0;
+            size_t len = strlen(n);
+            char* copy = (char*)malloc(len + 1);
+            if (!copy) return 0;
+            memcpy(copy, n, len + 1);
+            g_names[j].text = copy;
+            g_names_used++;
+            return (long long)(size_t)copy;
+        }
+        if (strcmp(g_names[j].text, n) == 0) return (long long)(size_t)g_names[j].text;
+    }
+    return 0;
+}
+
+/* Milliseconds on a monotonic clock. The REPL's `:time` uses it; it is
+   deliberately not available to a compiled program's determinism-
+   sensitive paths through any other name, and nothing in the compiler
+   calls it. */
+#include <time.h>
+long long zyl_now_ms(void) {
+    struct timespec ts;
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) return 0;
+    return (long long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
 }
 
 long long zyl_fresh_id(void) {

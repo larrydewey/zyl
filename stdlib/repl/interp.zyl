@@ -129,8 +129,11 @@
 ; byte-identical to what compiled code builds, so zyl_variant_eq and
 ; zyl_variant_field read it exactly as they read theirs; only the
 ; interpreter knows the extra word is there.
-(defn in-alloc-block (tag n kinds)
-  (let p (ffi-call "zyl_val_alloc" (+ n 1) kinds 1000)
+; The name is interned rather than stored as it arrived: it comes from
+; an ICNF node in the arena this entry compiled into, and the value may
+; outlive that arena.
+(defn in-alloc-block (tag n kinds name)
+  (let p (ffi-call "zyl_val_alloc" (+ n 1) kinds (ffi-call "zyl_intern_name" name 1000) 1000)
     (begin
       (alloc-write-int p tag)
       p)))
@@ -150,9 +153,9 @@
 (defn in-fun-tag () 2004318071)
 
 (defn in-make-fun (name)
-  (let p (in-alloc-block (in-fun-tag) 1 1)
+  (let p (in-alloc-block (in-fun-tag) 1 1 "fn")
     (begin
-      (in-block-set p 0 (in-word-of-str name))
+      (in-block-set p 0 (ffi-call "zyl_intern_name" name 1000))
       (VPtr p))))
 
 (defn in-fun-name-of (p)
@@ -265,8 +268,8 @@
     (ISet name v (in-set-eval fns env name v))
     (ILet name v body (in-let fns env name v body))
     (ISeq xs (in-seq fns env xs (VInt 0)))
-    (IVariant _ tag fields (in-variant fns env tag fields))
-    (IStackVariant _ tag fields (in-variant fns env tag fields))
+    (IVariant name tag fields (in-variant fns env name tag fields))
+    (IStackVariant name tag fields (in-variant fns env name tag fields))
     (IMatch scrut arms (in-match fns env scrut arms))
     (IFn name _ _ _ (in-make-fun name))
     (ICallClosure name args (in-call-closure fns env name args))
@@ -490,11 +493,15 @@
 ; after -- the same order cg-variant emits (push each field, then call
 ; zyl_heap_alloc), and the order that lets the block record what kind
 ; each field turned out to be.
-(defn in-variant (fns env tag fields)
-  (in-build-block tag (in-args-eval fns env fields)))
+(defn in-variant (fns env name tag fields)
+  (in-build-block name tag (in-args-eval fns env fields)))
 
-(defn in-build-block (tag vals)
-  (let p (in-alloc-block tag (list-length vals) (in-kind-bits vals 0 0))
+; The constructor's name travels with the value. Nothing in the payload
+; changes -- it goes in a hidden word ahead of the block -- and it is
+; what lets a REPL result print as `(Cons 1 Nil)` rather than as an
+; address, since a tag alone cannot say which type it belongs to.
+(defn in-build-block (name tag vals)
+  (let p (in-alloc-block tag (list-length vals) (in-kind-bits vals 0 0) name)
     (begin
       (in-store-fields p vals 0)
       (VPtr p))))
@@ -865,35 +872,87 @@
     (None (VInt (in-fail "E_UNDEFINED_FUNCTION"
                          (str-concat "no function named `" (str-concat name "`")))))))
 
-; Text of a value, for the REPL's result line.
+; Text of a value, for the REPL's result line. A variant or struct
+; prints as the constructor and its fields -- `(Cons 1 (Cons 2 Nil))`,
+; `(P 3 4)` -- because the value carries its constructor's name and the
+; kinds of its fields. Nesting is bounded: a cyclic structure is not
+; expressible in this language, but a long list still is, and a result
+; line is not the place to print ten thousand elements.
 (defn in-val-text (v)
+  (in-show v 0))
+
+(defn in-show-depth () 6)
+(defn in-show-width () 24)
+
+(defn in-show (v depth)
   (match v
     (VInt n (ffi-call "zyl_int_text" n 1000))
     (VFlt b (ffi-call "zyl_f_text" b 1000))
     (VStr p (in-quote-str p))
-    (VPtr p (in-block-text p))))
+    (VPtr p (in-show-block p depth))))
 
 (defn in-quote-str (p)
   (str-concat "\"" (str-concat (in-str-of-word p) "\"")))
 
-; A block prints as its tag and address until there is a derivable Show
-; to ask instead. A function value says so rather than showing a number.
-(defn in-block-text (p)
-  (if (= (in-is-fun p) 1)
-    (in-fn-text (in-fun-name-of p))
-    (if (= (in-is-closure p) 1)
-      (in-fn-text (in-fun-name-of (in-block-field p 0)))
-      (str-concat "#<variant tag="
-        (str-concat (ffi-call "zyl_int_text" (in-block-tag p) 1000)
-          (str-concat " at " (str-concat (ffi-call "zyl_int_text" p 1000) ">")))))))
+(defn in-show-block (p depth)
+  (if (= (in-block-p p) 0)
+    (str-concat "#<0x" (str-concat (ffi-call "zyl_int_text" p 1000) ">"))
+    (if (= (in-is-fun p) 1)
+      (in-fn-text (in-fun-name-of p))
+      (if (= (in-is-closure p) 1)
+        (in-fn-text (in-fun-name-of (in-block-field p 0)))
+        (in-show-variant p depth)))))
 
 (defn in-fn-text (w)
-  (str-concat "#<fn " (str-concat (in-str-of-word w) ">")))
+  (str-concat "#<fn " (str-concat (in-short-name (in-str-of-word w)) ">")))
+
+; Names carry their canonical key by the time they reach here --
+; `zyl/std@5::core/list::Cons` -- which is what makes them unique and
+; not what anyone wants to read. The last segment is the name as it was
+; written.
+(defn in-short-name (name)
+  (let i (in-last-sep name (- (str-length name) 2))
+    (if (< i 0)
+      name
+      (str-substring name (+ i 2) (- (str-length name) (+ i 2))))))
+
+(defn in-last-sep (name i)
+  (if (< i 0)
+    -1
+    (if (= (term-byte-at-name name i) 58)
+      (if (= (term-byte-at-name name (+ i 1)) 58) i (in-last-sep name (- i 1)))
+      (in-last-sep name (- i 1)))))
+
+(defn term-byte-at-name (s i)
+  (ffi-call "zyl_cstr_byte_at" s i 1000))
 
 ; A closure is the [tag][code][env] triple whose code field is itself a
 ; function cell.
 (defn in-is-closure (p)
   (if (= (in-block-p p) 0) 0 (in-is-fun (in-block-field p 0))))
+
+(defn in-show-variant (p depth)
+  (let name (ffi-call "zyl_val_name" p 1000)
+    (if (= name 0)
+      (str-concat "#<block " (str-concat (ffi-call "zyl_int_text" p 1000) ">"))
+      (in-show-named p depth (in-short-name (in-str-of-word name))))))
+
+; Arity is the block's own word count minus the tag.
+(defn in-show-named (p depth name)
+  (let n (- (ffi-call "zyl_val_arity" p 1000) 1)
+    (if (<= n 0)
+      name
+      (if (>= depth (in-show-depth))
+        (str-concat "(" (str-concat name " ...)"))
+        (str-concat "(" (str-concat name (str-concat (in-show-fields p n 0 (+ depth 1)) ")")))))))
+
+(defn in-show-fields (p n i depth)
+  (if (>= i n)
+    ""
+    (if (>= i (in-show-width))
+      " ..."
+      (str-concat " " (str-concat (in-show (in-field-val p i) depth)
+                                  (in-show-fields p n (+ i 1) depth))))))
 
 ; Run a lowered program's `main`, the way a compiled binary would: the
 ; entry point takes no arguments and its value is the process's result.

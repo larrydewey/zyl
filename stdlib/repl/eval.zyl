@@ -31,7 +31,11 @@
 (use core/result)
 (use compiler/pipeline)
 (use compiler/icnf)
+(use compiler/expr_inner)
+(use compiler/type_inference)
+(use compiler/type_system)
 (use repl/terminal)
+(use repl/history)
 (use repl/interp)
 
 ; What an entry did.
@@ -49,15 +53,30 @@
 ; entry that created it: every entry re-lowers the session's text, and a
 ; lambda is given a fresh name each time. Keeping the lifted bodies is
 ; what lets a closure made three entries ago still be callable now. The
-; names cannot collide -- ic-fresh-id counts bytes used in the session's
-; one compile arena, so it never repeats while the session lives.
-(deftype Session (Session (List String) String (List Bind) (List Icnf) Int))
+; names cannot collide -- ic-fresh-id is a process-lifetime counter, so
+; it never repeats while the session lives.
+;
+; A binding the session keeps carries its name, its value, and the text
+; that produced it. The text is what makes the binding restorable in a
+; later session: a value cannot be written to a file, but the expression
+; that built it can.
+(deftype Global (Global String Val String))
 
-(defn Session.uses (s) (match s (Session u _ _ _ _ u)))
-(defn Session.defs (s) (match s (Session _ d _ _ _ d)))
-(defn Session.globals (s) (match s (Session _ _ g _ _ g)))
-(defn Session.lifted (s) (match s (Session _ _ _ l _ l)))
-(defn Session.count (s) (match s (Session _ _ _ _ n n)))
+(defn Global.name (g) (match g (Global n _ _ n)))
+(defn Global.value (g) (match g (Global _ v _ v)))
+(defn Global.source (g) (match g (Global _ _ s s)))
+
+(deftype Session (Session (List String) String (List Global) (List Icnf) Int String))
+
+(defn Session.uses (s) (match s (Session u _ _ _ _ _ u)))
+(defn Session.defs (s) (match s (Session _ d _ _ _ _ d)))
+(defn Session.globals (s) (match s (Session _ _ g _ _ _ g)))
+(defn Session.lifted (s) (match s (Session _ _ _ l _ _ l)))
+(defn Session.count (s) (match s (Session _ _ _ _ n _ n)))
+
+; The directory the session was started in: where its saved state
+; lives, which is what makes that state per project rather than global.
+(defn Session.dir (s) (match s (Session _ _ _ _ _ d d)))
 
 ; The modules a session starts with. Deliberately small and additive:
 ; `(use collections/vec)` at the prompt extends it, and a module that
@@ -70,29 +89,34 @@
         (Cons "core/result"
           (Cons "allocator/allocator" Nil))))))
 
-(defn session-new ()
-  (Session (session-default-uses) "" Nil Nil 0))
+(defn session-new (dir)
+  (Session (session-default-uses) "" Nil Nil 0 dir))
 
 (defn session-reset (s)
-  (Session (session-default-uses) "" Nil Nil (Session.count s)))
+  (Session (session-default-uses) "" Nil Nil (Session.count s) (Session.dir s)))
 
 (defn session-with-defs (s text)
   (Session (Session.uses s) (str-concat (Session.defs s) (str-concat "\n" text))
-           (Session.globals s) (Session.lifted s) (+ (Session.count s) 1)))
+           (Session.globals s) (Session.lifted s) (+ (Session.count s) 1)
+           (Session.dir s)))
 
 (defn session-with-use (s module)
   (Session (list-append (Session.uses s) (Cons module Nil)) (Session.defs s)
-           (Session.globals s) (Session.lifted s) (+ (Session.count s) 1)))
+           (Session.globals s) (Session.lifted s) (+ (Session.count s) 1)
+           (Session.dir s)))
 
-(defn session-with-global (s name v)
+; Newest last: a session's bindings are replayed in the order they were
+; made, and one may well be built from another.
+(defn session-with-global (s name v src)
   (Session (Session.uses s) (Session.defs s)
-           (Cons (Bind name v) (session-drop-global (Session.globals s) name))
-           (Session.lifted s) (+ (Session.count s) 1)))
+           (list-append (session-drop-global (Session.globals s) name)
+                        (Cons (Global name v src) Nil))
+           (Session.lifted s) (+ (Session.count s) 1) (Session.dir s)))
 
 (defn session-with-lifted (s fns)
   (Session (Session.uses s) (Session.defs s) (Session.globals s)
            (list-append (eval-lifted-of fns) (Session.lifted s))
-           (Session.count s)))
+           (Session.count s) (Session.dir s)))
 
 (defn is-nil-list (xs) (match xs (Nil 1) (Cons _ _ 0)))
 
@@ -122,14 +146,14 @@
 (defn session-drop-global (gs name)
   (match gs
     (Nil Nil)
-    (Cons b rest
-      (match b
-        (Bind n _ (if (> (str-eq n name) 0) (session-drop-global rest name)
-                    (Cons b (session-drop-global rest name))))))))
+    (Cons g rest
+      (if (> (str-eq (Global.name g) name) 0)
+        (session-drop-global rest name)
+        (Cons g (session-drop-global rest name))))))
 
 (defn session-bump (s)
   (Session (Session.uses s) (Session.defs s) (Session.globals s)
-           (Session.lifted s) (+ (Session.count s) 1)))
+           (Session.lifted s) (+ (Session.count s) 1) (Session.dir s)))
 
 ; ===========================================================================
 ; READING AN ENTRY
@@ -205,12 +229,10 @@
 (defn eval-used-globals (globals text)
   (match globals
     (Nil Nil)
-    (Cons b rest
-      (match b
-        (Bind n _
-          (if (= (eval-mentions text n) 1)
-            (Cons b (eval-used-globals rest text))
-            (eval-used-globals rest text)))))))
+    (Cons g rest
+      (if (= (eval-mentions text (Global.name g)) 1)
+        (Cons g (eval-used-globals rest text))
+        (eval-used-globals rest text)))))
 
 ; A whole-token occurrence of `name` in `text`: `x` does not match
 ; inside `xs` or `max`.
@@ -252,14 +274,12 @@
 (defn eval-param-list (gs)
   (match gs
     (Nil "")
-    (Cons b rest
-      (match b
-        (Bind n _ (str-concat n (str-concat " " (eval-param-list rest))))))))
+    (Cons g rest (str-concat (Global.name g) (str-concat " " (eval-param-list rest))))))
 
 (defn eval-global-values (gs)
   (match gs
     (Nil Nil)
-    (Cons b rest (match b (Bind _ v (Cons v (eval-global-values rest)))))))
+    (Cons g rest (Cons (Global.value g) (eval-global-values rest)))))
 
 ; The program for evaluating one expression: the session's modules, its
 ; definitions, and the expression wrapped in a function that takes the
@@ -297,6 +317,93 @@
 ; Returns: Result(Val, String)
 (defn eval-interpret (fns name vals)
   (try (Ok (in-call-fn fns name vals)) (catch e (Err e))))
+
+; ===========================================================================
+; TYPES
+; ===========================================================================
+
+; The type of an expression, without running it: the front end and type
+; inference, then the entry function's own body inferred against the
+; result. Inference is whole-program here exactly as it is for a file,
+; so a name defined three entries ago is typed the way the compiler
+; types it.
+; Returns: Result(String, String)
+(defn eval-type-of (sess text)
+  (let gs (eval-used-globals (Session.globals sess) text)
+    (let scratch (arena-create 8388608)
+      (let saved (eval-heap-swap scratch)
+        (let res (eval-type-run scratch sess text gs)
+          (begin
+            (eval-heap-swap saved)
+            (let copied (eval-copy-type res)
+              (begin
+                (arena-destroy scratch)
+                copied))))))))
+
+(defn eval-copy-type (res)
+  (match res
+    (Err msg (Err (eval-copy-str msg)))
+    (Ok text (Ok (eval-copy-str text)))))
+
+(defn eval-type-run (scratch sess text gs)
+  (let arena (eval-entry-arena)
+    (let out (try (Ok (eval-type-infer arena sess text gs)) (catch e (Err e)))
+      (begin
+        (arena-destroy arena)
+        out))))
+
+(defn eval-type-infer (arena sess text gs)
+  (let exprs (compile-to-exprs arena (eval-program-expr sess text gs) "<repl>")
+    (let inferer (collect-definitions (inferer-new) exprs)
+      (match (eval-entry-body exprs)
+        (None "?")
+        (Some body (eval-type-text (infer-expr inferer body)))))))
+
+; The REPL's own rendering of a Type. compiler/type_system's
+; type-to-string is deliberately left alone: monomorphization builds
+; specialized function names out of it, so its output is part of the
+; generated symbol names and therefore of the self-hosting fixed point.
+; This one exists to be read.
+(defn eval-type-text (t)
+  (match t
+    (TInt "Int")
+    (TFloat "Float")
+    (TBool "Bool")
+    (TString "String")
+    (TUnit "Unit")
+    (TByte "Byte")
+    (TByteSlice _ "ByteSlice")
+    (TByteBuf _ "ByteBuf")
+    (TFun ts (str-concat "Fn(" (str-concat (eval-type-list ts) ")")))
+    (TList ts (str-concat "List<" (str-concat (eval-type-list ts) ">")))
+    (TArray el _ (str-concat "Array<" (str-concat (eval-type-text el) ">")))
+    (TCap _ inner (str-concat "Cap<" (str-concat (eval-type-text inner) ">")))
+    (TStruct n _ n)
+    (TVar _ _ "unresolved — inference had no evidence for this expression")
+    (TMap k v (str-concat "Map<" (str-concat (eval-type-text k)
+                  (str-concat ", " (str-concat (eval-type-text v) ">")))))
+    (TResult o e (str-concat "Result<" (str-concat (eval-type-text o)
+                    (str-concat ", " (str-concat (eval-type-text e) ">")))))))
+
+(defn eval-type-list (ts)
+  (match ts
+    (Nil "")
+    (Cons h t
+      (match t
+        (Nil (eval-type-text h))
+        (Cons _ _ (str-concat (eval-type-text h) (str-concat ", " (eval-type-list t))))))))
+
+; The body of the function the entry was wrapped in.
+(defn eval-entry-body (exprs)
+  (match exprs
+    (Nil None)
+    (Cons e rest
+      (match (Expr.inner e)
+        (EDefn name _ body
+          (if (= (eval-ends-with name (eval-entry-name)) 1)
+            (Some body)
+            (eval-entry-body rest)))
+        (_ (eval-entry-body rest))))))
 
 (deftype EvalOutcome (EvalOutcome EvalResult Session))
 
@@ -376,16 +483,16 @@
       (let saved (eval-heap-swap (eval-session-heap))
         (match (eval-value-of sess body 1)
           (Outcome res sess2
-            (let bound (eval-bind-global name res sess2)
+            (let bound (eval-bind-global name body res sess2)
               (begin
                 (eval-heap-swap saved)
                 bound))))))))
 
-(defn eval-bind-global (name res sess)
+(defn eval-bind-global (name src res sess)
   (match res
     (Err msg (EvalOutcome (EvalFailed msg) sess))
     (Ok v (EvalOutcome (EvalBound name (in-val-text v))
-                       (session-with-global sess name v)))))
+                       (session-with-global sess name v src)))))
 
 ; The expression inside `(def name <expr>)`, with the trailing paren of
 ; the `def` form removed.
@@ -559,3 +666,148 @@
       (if (< ns nf)
         0
         (str-eq (str-substring s (- ns nf) nf) suffix)))))
+
+; ===========================================================================
+; SAVED SESSIONS
+; ===========================================================================
+
+; A file's whole contents, or "" if it cannot be read -- a missing
+; session file or rc file is a first run, not an error.
+(defn eval-read-file (path)
+  (let fd (file-open path "r")
+    (if (<= fd 0)
+      ""
+      (let text (file-read fd 4194304)
+        (begin
+          (file-close fd)
+          text)))))
+
+; A session writes itself to `.zyl-session` in the directory it was
+; started in, and reads it back the next time a session starts there.
+; That is what makes the state per project: two checkouts do not share
+; definitions, and neither does a session started in /tmp.
+;
+; The file is ordinary Zyl source -- `(use ...)` lines, the definitions
+; as entered, and a `(def ...)` per binding -- so it can be read, edited
+; by hand, and loaded with `:load` like any other file. Restoring it
+; replays those entries, which means a `def` whose expression had an
+; effect has that effect again; `:reset` starts clean, and deleting the
+; file is the other way to say the same thing.
+(defn session-file (dir)
+  (str-concat dir "/.zyl-session"))
+
+(defn session-save (sess)
+  (let path (session-file (Session.dir sess))
+    (if (= (session-empty-p sess) 1)
+      0
+      (let fd (file-open path "w")
+        (if (<= fd 0)
+          -1
+          (begin
+            (file-write fd (session-text sess))
+            (file-close fd)
+            0))))))
+
+(defn session-empty-p (sess)
+  (if (> (str-length (Session.defs sess)) 0)
+    0
+    (match (Session.globals sess)
+      (Nil (if (= (list-length (Session.uses sess))
+                  (list-length (session-default-uses))) 1 0))
+      (Cons _ _ 0))))
+
+(defn session-text (sess)
+  (str-concat "; Zyl REPL session state. Loaded when a session starts here.\n"
+    (str-concat (eval-use-lines (Session.uses sess))
+      (str-concat (Session.defs sess)
+        (str-concat "\n" (session-global-lines (Session.globals sess)))))))
+
+(defn session-global-lines (gs)
+  (match gs
+    (Nil "")
+    (Cons g rest
+      (str-concat (str-concat "(def " (str-concat (Global.name g)
+                    (str-concat " " (str-concat (Global.source g) ")\n"))))
+                  (session-global-lines rest)))))
+
+; Read the saved session back, entry by entry, so that each one goes
+; through exactly the path it would have taken if it had been typed.
+; Returns the session, and how many entries were restored.
+(deftype Restored (Restored Session Int))
+
+(defn Restored.session (r) (match r (Restored s _ s)))
+(defn Restored.count (r) (match r (Restored _ n n)))
+
+(defn session-restore (sess)
+  (let text (eval-read-file (session-file (Session.dir sess)))
+    (if (= (str-length text) 0)
+      (Restored sess 0)
+      (session-replay sess (session-forms text 0 (str-length text) "" Nil) 0))))
+
+(defn session-replay (sess forms n)
+  (match forms
+    (Nil (Restored sess n))
+    (Cons f rest
+      (let outcome (eval-entry sess f)
+        (match (EvalOutcome.result outcome)
+          (EvalFailed _ (session-replay sess rest n))
+          (_ (session-replay (EvalOutcome.session outcome) rest (+ n 1))))))))
+
+; Split a file into top-level forms: everything between a '(' at depth 0
+; and the ')' that closes it, with comments and strings respected.
+(defn session-forms (text i n acc out)
+  (if (>= i n)
+    (list-reverse out)
+    (let b (term-byte-at text i)
+      (if (= b 59)
+        (session-forms text (session-line-end text i n) n acc out)
+        (if (= b 40)
+          (let e (session-form-end text i n 0)
+            (session-forms text e n acc (Cons (str-substring text i (- e i)) out)))
+          (session-forms text (+ i 1) n acc out))))))
+
+(defn session-line-end (text i n)
+  (if (>= i n)
+    n
+    (if (= (term-byte-at text i) 10) (+ i 1) (session-line-end text (+ i 1) n))))
+
+; The index just past the form that starts at `i`.
+(defn session-form-end (text i n depth)
+  (if (>= i n)
+    n
+    (let b (term-byte-at text i)
+      (if (= b 34)
+        (session-form-end text (session-string-end text (+ i 1) n) n depth)
+        (if (= b 59)
+          (session-form-end text (session-line-end text i n) n depth)
+          (if (= b 40)
+            (session-form-end text (+ i 1) n (+ depth 1))
+            (if (= b 41)
+              (if (<= depth 1) (+ i 1) (session-form-end text (+ i 1) n (- depth 1)))
+              (session-form-end text (+ i 1) n depth))))))))
+
+(defn session-string-end (text i n)
+  (if (>= i n)
+    n
+    (let b (term-byte-at text i)
+      (if (= b 92)
+        (session-string-end text (+ i 2) n)
+        (if (= b 34) (+ i 1) (session-string-end text (+ i 1) n))))))
+
+; ===========================================================================
+; STARTUP FILE
+; ===========================================================================
+
+; ~/.zyl/replrc (or $ZYL_REPLRC) is read before the first prompt, and is
+; the same thing as a saved session: Zyl source, one form per entry.
+; This is where a `(use ...)` you always want, or a helper you always
+; reach for, belongs.
+(defn eval-rc-path ()
+  (let p (ffi-call "zyl_getenv" "ZYL_REPLRC" 1000)
+    (if (> p 0) p (str-concat (hist-dir) "/replrc"))))
+
+(defn session-load-rc (sess)
+  (let text (eval-read-file (eval-rc-path))
+    (if (= (str-length text) 0)
+      (Restored sess 0)
+      (session-replay sess (session-forms text 0 (str-length text) "" Nil) 0))))
