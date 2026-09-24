@@ -92,7 +92,8 @@ history, or a probe compile with `build/boot/zyl-self` on 2026-09-23.
   `build/boot/zyl-lsp`. VS Code extension 0.3.0 in `editors/vscode/`.
   `install.sh` installs the compiler, REPL and server into `~/.zyl` (or
   `$ZYL_HOME`); `--with-vscode` adds the extension; `uninstall.sh`
-  removes it.
+  removes what it installed and keeps the store, keys and REPL files
+  (`--purge` removes everything).
 - Standard library directories: actor, allocator, atomic, collections,
   compiler, core, ffi, io, lsp, math (bits, words, bignum, hashes,
   symmetric and asymmetric cryptography, KDFs, RNG, secret), mlib, repl,

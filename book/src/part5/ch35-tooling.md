@@ -12,7 +12,8 @@ cannot disagree about whether a program is valid.
 ./boot.sh                  # build and verify the compiler, build the server
 ./install.sh               # install compiler, REPL and server into ~/.zyl
 ./install.sh --with-vscode # the above, plus the VS Code extension
-./uninstall.sh             # remove ~/.zyl
+./uninstall.sh             # remove what install.sh installed
+./uninstall.sh --purge     # remove all of ~/.zyl, keys and store included
 ```
 
 `./boot.sh` leaves the compiler at `build/boot/stage2.bin`, a wrapper
@@ -38,11 +39,15 @@ server one real `initialize` request and reports whether it answered,
 so a broken install is visible immediately rather than the first time
 you open an editor.
 
-`./uninstall.sh` removes the whole install directory. That directory
-is also where the package store (`store/`), your publisher key
-(`keys/publisher.seed`), the REPL history and `replrc` live by default,
-so uninstalling deletes those too. Copy the key out first if you
-publish packages. The VS Code extension, if installed, is not removed.
+`./uninstall.sh` removes only what `install.sh` put in the install
+directory: the programs in `bin/`, `stdlib/`, the runtime sources and
+the `env` files. The same directory is also where the package store
+(`store/`), your publisher key (`keys/publisher.seed`), the REPL history
+and `replrc` live by default; those are kept, and the script lists
+them. `./uninstall.sh --purge` deletes the whole directory, including
+the key, after printing what it is about to delete and asking you to
+type `purge` (`--yes` skips the question). The VS Code extension, if
+installed, is not removed.
 
 ## 35.2 The Command Line
 

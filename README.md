@@ -130,9 +130,12 @@ cd /anywhere
 zyl hello.zyl -o hello && ./hello
 ```
 
-To remove it, `./uninstall.sh` — `install.sh` only ever writes inside
-that one directory, so this is a plain `rm -rf` of it and nothing else
-(any `PATH` line you added yourself is left for you to remove by hand).
+To remove it, `./uninstall.sh`. It deletes only what `install.sh`
+installed (`bin/`, `stdlib/`, the runtime sources and the `env` files)
+and lists what it keeps: the package store, your publisher keys, the REPL
+history and `replrc`. `./uninstall.sh --purge` deletes the whole
+directory, after a warning and a confirmation. Any `PATH` line you added
+yourself is left for you to remove by hand.
 
 ## REPL
 

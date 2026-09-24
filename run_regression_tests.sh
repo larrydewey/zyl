@@ -383,6 +383,27 @@ if [ "$MODE" = "full" ]; then
     done
 fi
 
+# Script tests: shell checks of the repository's own scripts (install,
+# uninstall, ...). Each runs against scratch directories and must exit 0.
+if [ "$MODE" = "full" ]; then
+    for f in "${TESTS_DIR}"/scripts/*.sh; do
+        [ -f "$f" ] || continue
+        local_name=$(basename "$f" .sh)
+        if [ -z "$FILTER" ] || echo "scripts ${local_name}" | grep -qi -- "$FILTER"; then
+            dry_listed "scripts/${local_name}" && continue
+            TOTAL=$((TOTAL + 1))
+            if TMPDIR="$RUN_TMP" bash "$f" > "$RUN_TMP/zyl_script.log" 2>&1; then
+                PASS=$((PASS + 1))
+                echo -e "  ${GREEN}✓${NC} scripts/${local_name}"
+            else
+                FAIL=$((FAIL + 1))
+                echo -e "  ${RED}✗${NC} scripts/${local_name}"
+                sed 's/^/      /' "$RUN_TMP/zyl_script.log"
+            fi
+        fi
+    done
+fi
+
 # Language-server protocol tests. Real JSON-RPC over stdio against
 # build/boot/zyl-lsp -- the same transport an editor uses -- so a pass
 # means an editor sees what the assertions describe. Cheap (a handful of

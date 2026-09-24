@@ -72,8 +72,9 @@ it starts the REPL), `zyl-repl`, and `zyl-lsp` (the language server,
 which editors start for you). The installer compiles the REPL from
 `tools/repl.zyl` as part of the install; `boot.sh` does not build a
 standalone REPL. `./install.sh --with-vscode` also builds and installs
-the VS Code extension. `./uninstall.sh` removes the lot; it touches
-nothing outside `~/.zyl` (or `$ZYL_HOME`, if you set it).
+the VS Code extension. `./uninstall.sh` removes what the installer put
+in `~/.zyl` (or `$ZYL_HOME`, if you set it) and keeps your own files
+there; `--purge` removes the whole directory.
 
 In the rest of this book, `zyl` means either the installed command or
 `build/boot/zyl-self` in a checkout — they take the same arguments.
