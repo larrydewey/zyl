@@ -338,9 +338,64 @@
       (let _ (if (> locked 0) (drv-check-locked arena dir m nodes) 1)
         (let src (drv-entry-module arena dir)
           (let out (drv-output-path arena dir)
-            (drv-compile-file arena src out dir)))))))
+            (drv-compile-file arena src out dir nodes)))))))
 
-(defn drv-compile-file (arena src out dir)
+;; Build cache (spec 31.4): a build whose inputs hash to a key already in
+;; ~/.zyl/cache is copied from there. The key covers the compiler, the
+;; contract profile, the lock, and every .zyl/.c/.h/zyl.pkg file of the
+;; package, of each package in the graph and of the stdlib; compilation is
+;; deterministic (spec 27), so equal keys mean equal binaries.
+;; ZYL_NO_BUILD_CACHE=1 skips it.
+(defn drv-compile-file (arena src out dir nodes)
+  (if (> (ffi-call "zyl_getenv" "ZYL_NO_BUILD_CACHE" 1000) 0)
+    (drv-compile-uncached arena src out dir)
+    (let cdir (str-concat (store-home) (str-concat "/cache/" (drv-cache-key arena dir nodes)))
+      (if (> (ffi-call "zyl_path_exists" (str-concat cdir "/bin") 1000) 0)
+        (drv-cache-copy (str-concat cdir "/bin") out (str-concat cdir "/buildinfo") (str-concat out ".buildinfo"))
+        (let rc (drv-compile-uncached arena src out dir)
+          (begin
+            (if (= rc 0)
+              (begin
+                (store-mkdir cdir)
+                (drv-cache-copy out (str-concat cdir "/bin") (str-concat out ".buildinfo") (str-concat cdir "/buildinfo")))
+              0)
+            rc))))))
+
+(defn drv-cache-copy (bin-from bin-to info-from info-to)
+  (if (= (store-run (str-concat "cp -p '" (str-concat bin-from (str-concat "' '" (str-concat bin-to
+        (str-concat "' && cp '" (str-concat info-from (str-concat "' '" (str-concat info-to "'"))))))))) 0)
+    0
+    1))
+
+(defn drv-cache-key (arena dir nodes)
+  (let prof (ffi-call "zyl_smap_get" (ffi-call "zyl_smap_global" 6 1000) "profile" 1000)
+    (let text (str-concat (lk-compiler-self-hash arena)
+                (str-concat "\n" (str-concat (if (= prof 0) "strict" prof)
+                  (str-concat "\n" (str-concat (drv-graph-hash arena dir)
+                    (str-concat "\n" (str-concat (drv-tree-hash arena dir)
+                      (str-concat "\n" (str-concat (drv-tree-hash arena "stdlib")
+                        (drv-node-hashes arena nodes))))))))))
+      (ffi-call "zyl_blake3_hex" arena text -1 32 1000))))
+
+(defn drv-node-hashes (arena nodes)
+  (match nodes
+    (Nil "")
+    (Cons n rest (str-concat "\n" (str-concat (mn-name n) (str-concat " " (str-concat (drv-tree-hash arena (mn-root n)) (drv-node-hashes arena rest))))))))
+
+; BLAKE3 over `path:hash` for each source file under `root`, sorted.
+(defn drv-tree-hash (arena root)
+  (let list (ffi-call "zyl_list_files" root ".zyl .c .h .pkg" 1000)
+    (ffi-call "zyl_blake3_hex" arena (drv-tree-lines arena root list 0) -1 32 1000)))
+
+(defn drv-tree-lines (arena root list i)
+  (let j (doc-line-end list i)
+    (if (>= i j)
+      ""
+      (let rel (str-substring list i (- j i))
+        (str-concat rel (str-concat ":" (str-concat (ffi-call "zyl_blake3_file_hex" arena (str-concat root (str-concat "/" rel)) 32 1000)
+          (str-concat "\n" (drv-tree-lines arena root list (+ j 1))))))))))
+
+(defn drv-compile-uncached (arena src out dir)
   (let fd (file-open src "r")
     (if (< fd 1)
       (begin
@@ -443,9 +498,9 @@
     (let m (pk-read-manifest arena (str-concat dir "/zyl.pkg"))
       ; Resolved for the check, not for a value: a dev-dependency that
       ; cannot be resolved is an error before anything is compiled.
-      (let _ (mvs-resolve-with-dev arena (cli-ctx-offline arena dir m) m dir)
+      (let nodes (mvs-resolve-with-dev arena (cli-ctx-offline arena dir m) m dir)
         (let rc (drv-compile-file arena (drv-entry-module arena dir)
-                                  (drv-output-path arena dir) dir)
+                                  (drv-output-path arena dir) dir nodes)
           (if (= rc 0)
             (ffi-call "zyl_run_bin" (drv-output-path arena dir) 1000)
             rc))))))

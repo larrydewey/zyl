@@ -1869,6 +1869,41 @@ static void zyl_pl_push(ZylPathList* l, const char* s) {
     l->v[l->n++] = strdup(s);
 }
 
+static int zyl_has_suffix(const char* s, const char* suffixes) {
+    /* `suffixes` is a space-separated list, e.g. ".c .h". */
+    size_t n = strlen(s);
+    const char* p = suffixes;
+    while (*p) {
+        while (*p == ' ') p++;
+        const char* q = p;
+        while (*q && *q != ' ') q++;
+        size_t k = (size_t)(q - p);
+        if (k > 0 && n > k && strncmp(s + n - k, p, k) == 0) return 1;
+        p = q;
+    }
+    return 0;
+}
+
+static void zyl_walk_suffix(const char* root, const char* rel, const char* suffixes, ZylPathList* out) {
+    char path[4096];
+    snprintf(path, sizeof path, "%s%s%s", root, rel[0] ? "/" : "", rel);
+    DIR* d = opendir(path);
+    if (!d) return;
+    struct dirent* e;
+    while ((e = readdir(d)) != NULL) {
+        if (e->d_name[0] == '.') continue;
+        char sub[4096];
+        snprintf(sub, sizeof sub, "%s%s%s", rel, rel[0] ? "/" : "", e->d_name);
+        char full[8200];
+        snprintf(full, sizeof full, "%s/%s", root, sub);
+        struct stat st;
+        if (stat(full, &st) != 0) continue;
+        if (S_ISDIR(st.st_mode)) zyl_walk_suffix(root, sub, suffixes, out);
+        else if (zyl_has_suffix(sub, suffixes)) zyl_pl_push(out, sub);
+    }
+    closedir(d);
+}
+
 static void zyl_walk_zyl(const char* root, const char* rel, ZylPathList* out) {
     char path[4096];
     snprintf(path, sizeof path, "%s%s%s", root, rel[0] ? "/" : "", rel);
@@ -1896,9 +1931,22 @@ static int zyl_pl_cmp(const void* a, const void* b) {
     return strcmp(*(char* const*)a, *(char* const*)b);
 }
 
+static long long zyl_pl_join(ZylPathList l);
+
 long long zyl_list_zyl_files(long long dir) {
     ZylPathList l = {0};
     if (dir) zyl_walk_zyl((const char*)(size_t)dir, "", &l);
+    return zyl_pl_join(l);
+}
+
+/* Like zyl_list_zyl_files, for any of the space-separated `suffixes`. */
+long long zyl_list_files(long long dir, long long suffixes) {
+    ZylPathList l = {0};
+    if (dir && suffixes) zyl_walk_suffix((const char*)(size_t)dir, "", (const char*)(size_t)suffixes, &l);
+    return zyl_pl_join(l);
+}
+
+static long long zyl_pl_join(ZylPathList l) {
     qsort(l.v, l.n, sizeof(char*), zyl_pl_cmp);
     size_t total = 1;
     for (size_t i = 0; i < l.n; i++) total += strlen(l.v[i]) + 1;
@@ -4100,7 +4148,7 @@ long long zyl_int_text(long long n) {
     X(zyl_file_open_c) X(zyl_file_read_c) X(zyl_file_write_c) \
     X(zyl_fnmap_get) X(zyl_fnmap_put) X(zyl_fnmap_reset) \
     X(zyl_fresh_id) X(zyl_getcwd) X(zyl_getenv) \
-    X(zyl_contract_warn) X(zyl_err_is) X(zyl_list_zyl_files) \
+    X(zyl_contract_warn) X(zyl_err_is) X(zyl_list_zyl_files) X(zyl_list_files) \
     X(zyl_load_n) X(zyl_load_n_signed) X(zyl_store_n) \
     X(zyl_global_get) X(zyl_global_put) X(zyl_global_ready) \
     X(zyl_heap_alloc) X(zyl_heap_block_p) X(zyl_heap_swap) \

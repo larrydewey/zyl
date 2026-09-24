@@ -507,7 +507,7 @@ Notes on the current state:
 - `graph-hash` is empty until `zyl fetch` has written a lock.
 - Without `--index`, `zyl publish` leaves the archive in `~/.zyl/tmp/` and prints the entry with `(url "https://REPLACE-ME")` for you to fill in.
 - Nothing reads `./vendor` yet: `zyl vendor` copies the graph, but builds still resolve from paths and the store.
-- There is no build cache: every build recompiles the whole graph.
+- `zyl build` and `zyl test` reuse a previous build whose inputs are unchanged: the key is BLAKE3 over the compiler hash, the contract profile, the lock, and every `.zyl`, `.c`, `.h` and `zyl.pkg` file of the package, of each package in the graph and of the stdlib; a hit copies the binary and `.buildinfo` from `~/.zyl/cache/<key>/` without compiling. Compilation is deterministic (§27), so a hit is the same bytes a rebuild would give. `ZYL_NO_BUILD_CACHE=1` bypasses it.
 
 ## 25.16 Trait Coherence Across Packages
 

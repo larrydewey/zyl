@@ -28,7 +28,7 @@ history, or a probe compile with `build/boot/zyl-self` on 2026-09-23.
   prints no warnings (swept 2026-09-24).
 - `./run_regression_tests.sh --full --no-boot` passes **168/168**
   (updated 2026-09-24): regression 64, interpreter 43, compile-fail 35,
-  integration 7, packages-fail 7, stress 4, scripts 5, packages 2,
+  integration 7, packages-fail 7, stress 4, scripts 6, packages 2,
   packages-build 1, lsp 1, unit_test 1. The interpreter category runs the regression and smoke
   tests both through the ICNF interpreter and as compiled binaries and
   diffs the output.
@@ -173,7 +173,8 @@ Package system:
   yet. `ZYL_INDEX` selects any git index (URL or local path), and `zyl
   publish --index DIR` adds signed versions to one;
   `tests/scripts/package-index.sh` covers publish, fetch and build.
-- No build cache (§31.4): every build recompiles the whole graph.
+- Build cache (§31.4): `~/.zyl/cache/<key>`, keyed by every build input
+  (`drv-cache-key`); `ZYL_NO_BUILD_CACHE=1` bypasses it.
 - `deny-capabilities` and the capability pass apply only to packages that
   have a manifest.
 - Paths and URLs containing characters outside `store-safe`'s set (a
@@ -257,8 +258,7 @@ by recent sessions. The completed roadmap items are kept, annotated, under
 ### P4: Tooling and packages
 
 - [x] A `zyl doc` generator over the stdlib's doc-comment convention (`;|` takes precedence).
-- [ ] A real package index; a build cache keyed by content hash;
-      rejection of a nested `feature-gate`.
+- [x] A package index (`ZYL_INDEX`, `zyl publish --index`), a build cache keyed by content hash, and nested `feature-gate` rejected.
 - [ ] Unused-binding warnings in the language server (the check must
       return them instead of printing them).
 - [ ] Bundle the VS Code extension; add a problem matcher.
@@ -368,7 +368,17 @@ as recorded below.
 
 # Session log (newest first)
 
-## Session (2026-09-24, latest) — a working package index
+## Session (2026-09-24, latest) — build cache
+
+`drv-compile-file` (package builds) now checks `~/.zyl/cache/<key>`, the
+key a BLAKE3 over the compiler hash, contract profile, lock graph hash and
+a tree hash (`drv-tree-hash`: every `.zyl`/`.c`/`.h`/`zyl.pkg` file, via
+the new runtime `zyl_list_files`) of the package, each graph node's root
+and the stdlib. A hit copies the binary and `.buildinfo`; a miss compiles
+and stores them. `ZYL_NO_BUILD_CACHE=1` bypasses it. Test:
+`tests/scripts/build-cache.sh`.
+
+## Session (2026-09-24, earlier) — a working package index
 
 `ZYL_INDEX` (`idx-url`) selects the index: a git URL or a local path
 (cloned as `file://`). `zyl publish --index DIR [--url-base URL]`

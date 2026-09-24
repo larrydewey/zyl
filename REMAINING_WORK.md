@@ -39,7 +39,7 @@
 - [x] `zyl doc` generator (`compiler/doc.zyl`): module headers, item docs from the comment block above each definition, `;|` precedence, pub-only in packages
 - [x] Reject nested `feature-gate` (`E_PKG_FEATURE_NESTED`)
 - [x] Package index: `ZYL_INDEX` (git URL or local path), `zyl publish --index DIR`, `file://` archives; tested end to end (open: hosting the default index repository)
-- [ ] Content-hash build cache (spec 31.4)
+- [x] Content-hash build cache (spec 31.4): `~/.zyl/cache/<key>`, `ZYL_NO_BUILD_CACHE=1` to bypass
 - [ ] LSP: return unused-binding warnings instead of printing them
 - [ ] Bundle VS Code extension with problem matcher
 - [ ] REPL: let definitions at prompt capture `def` bindings

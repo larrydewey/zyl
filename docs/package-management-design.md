@@ -904,7 +904,7 @@ found by reading the modules.
   `-fno-strict-aliasing`, `-fwrapv`, `-fstack-protector-strong`,
   `-fno-omit-frame-pointer`; include directories come from
   `include-dirs`.
-- **No build cache**; every build recompiles the whole graph.
+- **Build cache**: keyed by the content hash of every build input (`drv-cache-key`), under `~/.zyl/cache/`; `ZYL_NO_BUILD_CACHE=1` bypasses it.
 - **The default index URL** (`https://github.com/zyl-lang/index`) is not
   hosted yet; `ZYL_INDEX` selects another, and the registry path is tested
   end to end against a local git index (`tests/scripts/package-index.sh`). A `git` dependency is cloned, archived,
