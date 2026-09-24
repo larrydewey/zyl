@@ -400,11 +400,9 @@ available in every program without a `use`:
 
 Note the argument order: the Option or Result comes first, the function
 second. And note `option-some` and `result-ok` inside the two `fn`s:
-they are the core library's function spellings of `Some` and `Ok`. A
-`fn` whose body applies a constructor directly, such as
-`(fn (x) (Some x))`, currently hits the same problem as a capturing
-closure (Chapter 3, §3.3): passed to another function, it hangs the
-program. A named function works too. `option-to-result`, `result-to-option` and friends (in
+they are the core library's function spellings of `Some` and `Ok`.
+Applying the constructor directly, `(fn (x) (Some x))`, works the same
+way, and so does a named function. `option-to-result`, `result-to-option` and friends (in
 `core/core`) convert between the two.
 
 ## 4.5 Tuples

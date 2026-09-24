@@ -21,7 +21,15 @@ There is **no shorthand**. The spec rejects `((x) (* x x))`; you must write:
 (lambda (x) (* x x))     ; correct
 ```
 
-> **Current compiler:** instead of reporting a diagnostic for the `((x) body)` shorthand, the compiler currently crashes. Treat it as an error either way.
+The compiler reads `((x) (* x x))` as a call whose head `(x)` is itself a call to `x`, so unless `x` is a function in scope it reports a located error:
+
+```
+PANIC: error[E_UNBOUND_VARIABLE]: call to undefined function `x`
+  --> sq.zyl:1:24
+   = help: define it, or bind it with `let`; an anonymous function is written (fn (params) body) -- ((params) body) is not lambda syntax (spec 7.1)
+```
+
+A head that is an expression computing a function is ordinary application, not shorthand: `((make-adder 10) 5)` calls the closure `make-adder` returns.
 
 ## 8.2 Basic Usage
 
@@ -84,10 +92,9 @@ In the current compiler, captures are **by value**: when the closure is created,
     (print (m 4))))        ; 13
 ```
 
-**Mutated captures are not supported yet.** A closure that `set!`s a captured `let-mut` variable compiles, but crashes when it is called:
+**A closure cannot `set!` a captured variable.** Because the closure holds a copy, a `set!` inside it could only change the copy, never the binding the program named. The compiler rejects it:
 
 ```lisp
-;; Compiles today, but segfaults at run time: do not rely on it yet
 (defn main ()
   (let-mut count 0
     (let bump (fn () (set! count (+ count 1)))
@@ -96,24 +103,32 @@ In the current compiler, captures are **by value**: when the closure is created,
         (print count)))))
 ```
 
+```
+PANIC: error[E_MUT_CONFLICT]: set! target `count` is a let-mut of an enclosing scope, captured by value by this closure
+  --> bump.zyl:3:22
+   = help: closures capture by value (spec 7); return the new value from the closure and set! it at the binding's own scope
+```
+
+A closure may `set!` its own `let-mut` locals freely. Pitfall 2 in §8.10 shows the rewrite.
+
 Across an actor boundary, the check does exist: a spawned closure that captures a `let-mut` variable is rejected at compile time with `E_CAPABILITY_LEAK` (see §8.6).
 
 ## 8.4 What Works Today
 
-The code generator builds a real closure (a heap-allocated code-plus-environment pair) only for lambda bodies made of a limited set of forms: literals, the lambda's own parameters, captured variables, calls to top-level `defn` functions and constructors, operators, `let`, `let-mut`, `if`, `while`, `begin`, `print`, `struct-get`, the `assert-*` forms, nested `fn`, and `set!` on the lambda's own locals. A lambda whose body uses anything else, such as `match` or a call to a captured function value, is silently compiled to a null function and crashes when called.
+A closure is a first-class value. Any lambda body the compiler accepts elsewhere is accepted in a lambda, including `match`, `try`, nested lambdas and calls to captured function values, and a lambda may take any number of parameters.
 
 | Shape | Status |
 |-------|--------|
-| Non-capturing lambda: bind, call, pass as argument, store in a list | Works |
-| Capturing lambda, called directly where it is bound | Works |
-| Capturing lambda returned from a function (`make-adder`) and called through a `let` | Works |
-| Capturing lambda **passed as an argument** to another function | Crashes |
-| Lambda that **calls a captured function value** (`compose`, `partial`) | Crashes |
-| Lambda that `set!`s a captured variable | Crashes |
-| Lambda whose body contains `match` | Crashes; move the `match` into a `defn` |
+| Non-capturing lambda: bind, call, pass as argument, store in a data structure | Works |
+| Capturing lambda: call where bound, pass as an argument, store, return, capture in another lambda | Works |
+| Lambda that calls a captured function value (`compose`, `partial`) | Works |
+| Lambda whose body contains `match` | Works |
+| Call through a computed function value, `((make-adder 10) 5)` | Works |
+| Lambda that `set!`s a captured variable | Compile error, `E_MUT_CONFLICT` (§8.3) |
 | Recursive lambda | Not supported; use `defn` |
+| Capturing lambda handed to `spawn` | Crashes (§8.6) |
 
-The workaround for the last few rows is the same: put the logic in a named top-level function and have the lambda call it, or pass the functions and their arguments together instead of returning a combined closure (§8.5).
+One code-generation gap remains, and it is not specific to closures: the code generator picks string or float handling for `print`, `=` and arithmetic from annotations and literals only. An unannotated parameter, a captured variable and the result of a call through a function value are all treated as integers there, so `(let s "hi" (let g (fn () (print s)) (g)))` prints the string's address, and a captured `Float` in arithmetic is added as an integer. Passing such values to functions (`str-concat`, a `defn` with a `String` parameter) works; print or compare them where their kind is known.
 
 ## 8.5 Higher-Order Function Patterns
 
@@ -164,18 +179,19 @@ The textbook versions of these combinators return a new closure that calls the c
   (fn (y) (f x y)))        ; the lambda calls captured f
 ```
 
-`core/core` ships exactly this `compose`, and a user program can define `partial` the same way. Both compile, but calling the closure they return **crashes today**, because a lambda cannot yet call a captured function value (§8.4). Until that lands, apply the functions directly instead of building a combined closure:
+`core/core` ships exactly this `compose`, and a user program can define `partial` the same way:
 
 ```lisp
-(defn compose-apply (f g x)
-  (f (g x)))
+(defn partial2 (f x)
+  (fn (y) (f x y)))
 
 (defn main ()
   (let add1 (fn (x) (+ x 1))
   (let mul2 (fn (x) (* x 2))
   (let sub (fn (a b) (- a b))
     (begin
-      (print (compose-apply mul2 add1 5))   ; 12 = (5+1)*2
+      (print ((compose mul2 add1) 5))       ; 12 = (5+1)*2
+      (print ((partial2 sub 10) 3))         ; 7  = 10 - 3
       (print (flip sub 3 10)))))))           ; 7  = 10 - 3
 ```
 
@@ -215,16 +231,7 @@ A lambda cannot refer to itself, and there is no `TBox` or named-`let` form for 
 
 ## 8.9 Closure Inlining
 
-The compiler has a dedicated closure-inlining pass (`stdlib/compiler/closure_inline.zyl`) that runs before ICNF lowering. It handles `(let name (fn params body) rest)` when `name` is only ever called directly inside `rest` (never stored, passed, or returned): each call `(name arg ...)` is beta-reduced in place, with the parameters bound to the arguments by `let` and the body spliced in. The closure then costs nothing at run time.
-
-```lisp
-(defn main ()
-  (let k 3
-    (let times-k (fn (x) (* x k))
-      (print (times-k 5)))))      ; 15; times-k is inlined, no closure is built
-```
-
-Anything the pass does not recognize (the lambda escapes, is passed, or is recursive) is left unchanged for the normal closure path.
+Earlier compilers beta-reduced a let-bound capturing lambda into its call sites (`stdlib/compiler/closure_inline.zyl`), a stopgap from before closures were values. The pass is now an identity step: splicing a lambda body into its callers is not hygienic in general, and every lambda is compiled as described in §8.4.
 
 ## 8.10 Common Pitfalls
 
@@ -234,7 +241,7 @@ Captures are copied when the closure is created. A closure built inside a loop s
 
 ### Pitfall 2: Mutating a Captured Variable
 
-Spec §10 allows exactly one `TMut` reference, so two closures that both `set!` the same captured variable are an aliasing error by design. In the current compiler, even one closure that mutates a capture crashes (§8.3). Restructure the code so the closure returns a new value and the caller rebinds it:
+Spec §10 allows exactly one `TMut` reference, and a closure's capture is a copy, so a closure that `set!`s a captured variable is rejected with `E_MUT_CONFLICT` (§8.3). Restructure the code so the closure returns a new value and the caller rebinds it:
 
 ```lisp
 (defn main ()
@@ -246,29 +253,13 @@ Spec §10 allows exactly one `TMut` reference, so two closures that both `set!` 
         (print count)))))         ; 2
 ```
 
-### Pitfall 3: Complex Lambda Bodies
-
-A lambda whose body uses `match` (or another form outside the list in §8.4) compiles to a null function. Keep lambda bodies small and move the real logic into a `defn`:
-
-```lisp
-(defn apply1 (f x) (f x))
-
-(defn or-zero (o)
-  (match o
-    (Some v v)
-    (None 0)))
-
-(defn main ()
-  (print (apply1 (fn (o) (or-zero o)) (Some 7))))   ; 7
-```
-
 ## 8.11 Performance Notes
 
 | Aspect | Cost |
 |--------|------|
-| Let-bound lambda called directly | Inlined by `closure_inline` (no call, no allocation) |
-| Non-capturing lambda | Lifted to an ordinary top-level function; direct call |
-| Capturing closure | One heap allocation for the closure and one for its environment at creation; indirect call |
+| Non-capturing lambda | Lifted to an ordinary top-level function; its value is the function's address |
+| Capturing closure | One allocation for the closure and one for its environment at creation |
+| Call through a function value | Indirect call plus a tag test that tells a closure from a plain address |
 | Capture | Copied by value into the environment |
 
 **Tip**: prefer non-capturing lambdas passed as arguments, and named `defn` helpers for anything larger than a line.
@@ -279,12 +270,10 @@ A lambda whose body uses `match` (or another form outside the list in §8.4) com
 
 ### Closure Representation
 
-Lowering (`ic-lambda` in `stdlib/compiler/icnf.zyl`) first checks the lambda body against the safe-form list in §8.4 (`ic-safe-expr`). A body that fails the check is lowered to the constant 0, which is why calling such a closure crashes. For a body that passes, the compiler collects its free variables (`ic-free-vars`):
+Lowering (`ic-lambda` in `stdlib/compiler/icnf.zyl`) lowers the lambda body first, then reads its free variables off the lowered ICNF tree (`ic-lambda-free`): every name it loads or calls that is not a parameter, not bound inside the body, and not a top-level function.
 
 - **No free variables**: the lambda is hoisted to a plain top-level function, and the closure value is that function's address.
-- **Free variables**: the compiler builds a heap `[tag, code, env]` triple (the same layout as an ADT variant). `code` is the hoisted function; `env` is a second heap block holding one field per captured name, evaluated in the enclosing scope, which makes captures by value. The hoisted function gets one extra trailing parameter, `_clos_env`, and its body starts with a `let` per captured name that reads the field back out.
-
-Because the environment takes one argument register, a capturing lambda may declare at most 5 parameters.
+- **Free variables**: the compiler builds a `[tag, code, env]` triple (the same layout as an ADT variant) whose tag is a fixed marker (`ic-closure-magic`). `code` is the hoisted function; `env` is a second block holding one field per captured name, evaluated in the enclosing scope, which makes captures by value. The hoisted function gets one extra trailing parameter, `_clos_env`, and its body starts with a `let` per captured name that reads the field back out.
 
 ### Capture Analysis (Specification)
 
@@ -301,7 +290,7 @@ The specification's region-inference phase (Phase 4) assigns captures as follows
 
 ### Call Sites
 
-A call through a value the compiler knows is a closure (for example, a `let` bound to the result of a function that returns one) is lowered to `ICallClosure`, which loads the code pointer from the triple and passes the environment as the extra argument. A call through a plain parameter is lowered as an indirect call to a bare function pointer. That mismatch is the reason a capturing closure passed as an argument crashes today: the callee has no way to know it received a triple rather than a code address.
+A call to a top-level function is a direct call. A call through a local holding a function value (a parameter, a `let`, a captured name, or the temporary holding a computed callee) goes through `cg-call-indirect` in `stdlib/compiler/codegen.zyl`, which reads the value's first word: the closure tag means "load the code and the environment from the triple", anything else is a plain code address. The call always passes one argument more than the source wrote, the environment or 0; a plain function ignores it, because in the SysV convention the caller owns every argument slot. So the callee never needs to know which kind of function value it was handed.
 
 ---
 

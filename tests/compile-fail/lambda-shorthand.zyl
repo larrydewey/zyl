@@ -1,0 +1,5 @@
+; Compile-fail: ((params) body) is not lambda syntax (spec 7.1); its
+; head (x) is a call to an undefined function x. Must be rejected with a
+; located E_UNBOUND_VARIABLE (codegen.zyl cg-call-user), not a link error.
+
+(defn main () (print (((x) (* x x)) 3)))

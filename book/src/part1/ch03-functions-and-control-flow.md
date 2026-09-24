@@ -149,11 +149,8 @@ no shorter syntax. To call one, bind it first:
 `make-adder` returns a closure that carries `n` with it; `add5` is then
 called like any function.
 
-**A current limitation:** a closure that *captures* variables can be
-called by the function that holds it, as above, but it cannot yet be
-passed as an argument to another function and called there — the
-receiving function calls it as a plain function, and the program hangs
-or crashes. A `fn` that captures nothing can be passed freely (§3.9).
+A closure, capturing or not, is an ordinary value: it can be passed to
+another function and called there, stored, or returned again (§3.9).
 Chapter 8 covers closures in depth.
 
 ## 3.4 Conditionals
@@ -425,8 +422,8 @@ Functions are values. Pass them around:
   (print (apply-twice (fn (x) (* x 2)) 3))) ; 12
 ```
 
-A named function and a non-capturing `fn` are both fine as arguments.
-(Remember the closure limitation in §3.3.)
+A named function, a non-capturing `fn` and a capturing closure are all
+fine as arguments.
 
 ### Common Patterns
 
@@ -553,13 +550,12 @@ which is what makes deep recursion practical today.
 
 - A `fn` that captures nothing is lifted to an ordinary top-level
   function; passing it passes the function's address.
-- A `fn` bound with `let` and only called directly in that `let`'s body
-  is inlined at each call site (`stdlib/compiler/closure_inline.zyl`).
-- A capturing `fn` that escapes becomes a heap block holding a tag, the
-  code pointer and the environment. A call through a local known to hold
-  one passes the environment as an extra trailing argument. A call
-  through a *parameter* does not yet know to do this — the source of the
-  limitation in §3.3.
+- A capturing `fn` becomes a block holding a tag, the code pointer and
+  the environment (its captured values, copied when it is created).
+- A call through any local holding a function value tests the tag: for
+  a closure it calls the code with the environment as an extra trailing
+  argument, for a plain address it calls the address (with a 0 in that
+  slot, which the function ignores).
 
 ### Region Interaction
 

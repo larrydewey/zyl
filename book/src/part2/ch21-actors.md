@@ -226,7 +226,7 @@ This example depends on actor ids: it works because the server has the lower id.
 
 ## 21.5 Waiting for Actors
 
-There is no `wait_all` form; `(wait_all a)` fails at link time with `undefined reference to _ZYL_wait_all`. The available operations are:
+There is no `wait_all` form; `(wait_all a)` is rejected with `E_UNBOUND_VARIABLE: call to undefined function`. The available operations are:
 
 | Operation | Effect |
 |-----------|--------|

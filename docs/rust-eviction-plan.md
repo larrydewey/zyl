@@ -82,6 +82,19 @@ argument, capped at 5 declared params (env needs its own SysV register,
 and this compiler's call staging has no path for a register-exhausted
 7th argument today).
 
+**Superseded (2026-09-23).** The name marks below only ever reached
+call sites the lowering could see; a closure passed as an argument,
+stored in a variant or captured by another lambda was still called as a
+bare code address and crashed, and `ic-safe-expr`'s shape list turned
+any lambda using `match`, a captured callee or a constructor call into
+`IConst 0`. Now the free names are read off the lowered ICNF tree
+(`ic-lambda-free`, every shape covered), the closure's tag word is a
+fixed marker, and every call through a local is `cg-call-indirect`,
+which tests the tag at run time and always passes the env (or 0) as an
+extra trailing argument, so there is no parameter cap and no marks;
+`VTClosureFn`/`VTClosureReturn` are no longer produced and
+`closure_inline.zyl` is an identity pass.
+
 Two independent VTable marks decide which names need the new call form,
 since they answer genuinely different questions: `VTClosureFn` ("this
 name's own value is a closure triple") and `VTClosureReturn` ("calling

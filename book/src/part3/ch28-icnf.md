@@ -54,7 +54,7 @@ The whole representation is two ADTs:
   (IVariant String Int (List Icnf))     ; constructor name, tag, fields
   (IMatch Icnf (List IArm))
   (IFn String (List String) Icnf (List Int))  ; name, params, body, param kinds
-  (ICallClosure String (List Icnf))     ; call a local holding a closure
+  (ICallClosure String (List Icnf))     ; no longer produced; codegen treats it as ICall
   (ITryCatch Icnf String Icnf)          ; try body, catch variable, handler
   (IStackVariant String Int (List Icnf)))
 
@@ -134,21 +134,24 @@ process-lifetime counter: deterministic for a fresh process compiling
 a fixed source (so the fixed point holds), and never repeated within a
 REPL session.
 
-A lambda whose body references only its own parameters, literals and
-known top-level names lifts to a plain function. One that captures
-names from an enclosing scope becomes a closure value: a heap block
-`[tag, code, env]`, where `env` is a second block holding one captured
-value per field, captured by value when the closure is built. The
-lifted function takes the environment as one extra trailing parameter
-(`_clos_env`) and reads each capture back with `zyl_variant_field`. A
-call through a name known to hold such a value is an `ICallClosure`.
-Closure lambdas are limited to five declared parameters, because the
-environment needs its own argument register.
+`ic-lambda` lowers the lambda body first and reads its free names off
+the lowered tree (`ic-lambda-free`): every `ILoad` or call head that is
+not a parameter, not bound inside the body (`ILet`, match-arm binds,
+the catch variable) and not a top-level function. A lambda with none
+lifts to a plain function. One that captures becomes a closure value: a
+block `[tag, code, env]` whose tag is `ic-closure-magic`, where `env` is
+a second block holding one captured value per field, captured by value
+when the closure is built. The lifted function takes the environment as
+one extra trailing parameter (`_clos_env`) and reads each capture back
+with `zyl_variant_field`.
 
-Before lowering, `closure_inline.zyl` handles the commonest capturing
-case without any closure at all: a `(let name (fn ...) body)` where
-`name` is only ever called directly inside `body` is beta-reduced in
-place.
+A call through a local is an ordinary `ICall`; codegen sees the name
+bound to a slot and emits an indirect call that handles both kinds of
+function value (Chapter 29). A call whose head is itself an expression,
+`((make-adder 10) 5)`, binds the head to a fresh `_callee_N` local
+first. `ICallClosure` is no longer produced. `closure_inline.zyl`,
+which used to beta-reduce let-bound capturing lambdas before closures
+were values, is now an identity pass.
 
 ## 28.5 Regions in ICNF
 

@@ -1,0 +1,37 @@
+; Closure Regression Tests: core/core's higher-order helpers.
+;
+; compose returns a lambda that calls two CAPTURED function values, and
+; option-flatmap / result-and-then call a lambda handed to them as an
+; argument. Each of these used to crash or hang: the lambda either
+; lowered to a null function (a constructor call or a captured callee
+; in its body was "unsafe"), or a closure reached a call site that
+; called it as a bare code address.
+
+(use core/core)
+
+(defn cc-inc (x) (+ x 1))
+(defn cc-dbl (x) (* x 2))
+
+(test "compose-two-functions"
+  (assert-equal ((compose cc-inc cc-dbl) 5) 11))
+
+(test "compose-let-bound"
+  (let h (compose cc-inc cc-dbl)
+    (assert-equal (h 10) 21)))
+
+(test "compose-of-closures"
+  (let k 3
+    (let h (compose (fn (x) (+ x k)) (fn (x) (* x k)))
+      (assert-equal (h 2) 9))))
+
+(test "option-flatmap-constructor-lambda"
+  (assert-equal (option-unwrap-or (option-flatmap (Some 3) (fn (x) (Some x))) 0) 3))
+
+(test "option-flatmap-capturing-lambda"
+  (let k 10
+    (assert-equal (option-unwrap-or (option-flatmap (Some 3) (fn (x) (Some (+ x k)))) 0) 13)))
+
+(test "result-and-then-constructor-lambda"
+  (assert-equal (result-unwrap-or (result-and-then (Ok 3) (fn (x) (Ok (* x 10)))) 0) 30))
+
+(run-tests)

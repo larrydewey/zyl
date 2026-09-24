@@ -106,7 +106,7 @@ in `docs/compiler-pipeline.md`.
 | `type_inference.zyl` | Best-effort HM inference: `collect-definitions` records signatures and return types |
 | `monomorphization.zyl` | Generic instantiation with sorted canonical names; lifts impl bodies to `Trait.method_Type` |
 | `trait_dispatch.zyl` | Rewrites `(Trait.method recv ...)` into a match on the receiver's runtime tag |
-| `closure_inline.zyl` | Beta-reduces a let-bound lambda that is only ever called directly |
+| `closure_inline.zyl` | Retired closure-inlining pass, now an identity step (closures are real values) |
 | `assert_lowering.zyl` | Rewrites `assert-equal` on ADT/struct values to a `zyl_variant_eq` call |
 | `icnf.zyl` | Lowers `ExprInner` to the tree-shaped `Icnf` IR |
 | `optimization.zyl` | Integer constant folding and dead-branch elimination on `Icnf` |

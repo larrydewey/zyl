@@ -153,19 +153,41 @@ in the tree has that many.
 
 ### Closure calls
 
-An `ICallClosure` stages its arguments the same way, then unpacks the
-closure block held in the local's slot and passes the environment as
-one extra trailing register argument:
+A call through a local holding a function value (`cg-call-indirect`)
+stages one argument more than the source wrote. The extra, last
+argument is the closure's environment, or 0 when the value is a plain
+code address; the tag word tells the two apart:
 
 ```asm
-    mov r11, [rbp-24]     ; the closure block [tag, code, env]
-    mov rsi, [r11+16]     ; env as the argument after the real ones
-    mov r11, [r11+8]      ; code pointer
-    call r11
+    mov rax, [rbp-24]     ; the function value
+    mov r11, 2051230803   ; ic-closure-magic
+    cmp qword ptr [rax], r11
+    jne .L7
+    mov rax, [rax+16]     ; closure: its environment
+    jmp .L8
+.L7:
+    xor eax, eax          ; plain function: 0
+.L8:
+    sub rsp, 8            ; staged as the last argument
+    mov [rsp], rax
+    ...                   ; registers loaded from the scratch slots
+    mov r10, [rbp-24]
+    mov r11, 2051230803
+    cmp qword ptr [r10], r11
+    jne .L9
+    mov r10, [r10+8]      ; closure: its code pointer
+.L9:
+    call r10
 ```
 
-A call through a local that holds a plain function pointer is
-`mov r10, [rbp+off]` / `call r10`.
+A plain function ignores the extra argument (the SysV caller owns every
+argument slot), so a function value of either kind can be passed
+anywhere and the arity of a closure is not limited. A code address's
+first word is this compiler's prologue, which starts with `push rbp`
+(0x55), so it never equals the tag. A call by name to something that is
+neither a local nor a known function is reported by `cg-call-user` as
+a located `E_UNBOUND_VARIABLE` instead of an undefined symbol at link
+time.
 
 ## 29.4 Stack Frame Layout
 
