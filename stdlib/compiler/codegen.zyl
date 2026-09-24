@@ -357,18 +357,18 @@
     (ICallClosure name args (cg-call-user st env name args e))
     (IFfi sym args (cg-call-args st env sym args false 0))
     (IPrint a (cg-print st env a))
-    (IIf c t eb (cg-if-dispatch st env c t eb))
+    (IIf c t eb (cg-if-dispatch st env c t eb 0))
     (IWhile c body (cg-while-dispatch st env c body))
     (ISet n v
      (let st2 (cg-expr st env v)
        (let st3 (cg-emit st2 "    mov [rbp")
          (let st4 (cg-emit-int st3 (env-lookup env n))
            (cg-nl (cg-emit st4 "], rax"))))))
-    (ILet n v body (cg-let-dispatch st env n v body))
-    (ISeq es (cg-seq st env es))
+    (ILet n v body (cg-let-dispatch st env n v body 0))
+    (ISeq es (cg-seq st env es 0))
     (IVariant _ tag fields (cg-variant st env tag fields))
     (IStackVariant _ tag fields (cg-stack-variant st env tag fields))
-    (IMatch scr arms (cg-match st env scr arms))
+    (IMatch scr arms (cg-match st env scr arms 0))
     ; A bare function node is never emitted as a value expression; keep st.
     (IFn _ _ _ st)
     (ITryCatch tbody cvar cbody (cg-trycatch st env tbody cvar cbody))))
@@ -384,6 +384,34 @@
       (cg-call-args st env name args true 0)
       (cg-fail-undefined-fn st env name site))
     (cg-call-args st env name args true 0)))
+
+; Tail-position emission; tl is the frame size, 0 when not in tail position.
+(defn cg-tail (st env e tl)
+  (if (= tl 0)
+    (cg-expr st env e)
+    (match e
+      (IIf c t eb (cg-if-dispatch st env c t eb tl))
+      (ILet n v body (cg-let-dispatch st env n v body tl))
+      (ISeq es (cg-seq st env es tl))
+      (IMatch scr arms (cg-match st env scr arms tl))
+      (ICall name args (cg-tail-call st env name args tl e))
+      (_ (cg-expr st env e)))))
+
+; Direct call to a top-level function with register-only args: reuse the frame.
+(defn cg-tail-ok (st env name args)
+  (and (= (env-lookup env name) 0)
+       (and (= (cg-fn-known st name) 1) (<= (list-length args) 6))))
+
+(defn cg-tail-call (st env name args fsz site)
+  (if (cg-tail-ok st env name args)
+    (let n (list-length args)
+      (let st2 (cg-scratch-all st env args)
+        (let st3 (cg-restore-callee-saved (cg-load-reg-args st2 n (- n 1)) fsz)
+          (let st4 (cg-emit-line st3 "    mov rsp, rbp")
+            (let st5 (cg-emit-line st4 "    pop rbp")
+              (let sym (cg-sym-for (cg-arena-of st5) name 1)
+                (cg-emit-line st5 (cg-cat2 (cg-arena-of st5) (str-intern (cg-arena-of st5) "    jmp ") sym))))))))
+    (cg-expr st env site)))
 
 ; Every name visible at this point: locals first, then top-level functions.
 (defn cg-visible-names (st env)
@@ -474,11 +502,11 @@
 (defn cg-load-unresolved (st)
   (cg-nl (cg-emit st "    mov rax, 0")))
 
-(defn cg-if-dispatch (st env c t eb)
-  (cg-if-labels (cg-label-pair st) env c t eb))
+(defn cg-if-dispatch (st env c t eb tl)
+  (cg-if-labels (cg-label-pair st) env c t eb tl))
 
-(defn cg-if-labels (p env c t eb)
-  (cg-if-parts p env c t eb))
+(defn cg-if-labels (p env c t eb tl)
+  (cg-if-parts p env c t eb tl))
 
 (defn cg-while-dispatch (st env c body)
   (cg-while-labels (cg-label-pair st) env c body))
@@ -487,22 +515,22 @@
   (match p
     (CGP st lstart lend (cg-while-parts st env c body lstart lend))))
 
-(defn cg-let-dispatch (st env n v body)
+(defn cg-let-dispatch (st env n v body tl)
   (match (cg-new-slot st)
     (CGR st2 off _
-      (cg-let-store st2 env n v body off))))
+      (cg-let-store st2 env n v body off tl))))
 
-(defn cg-let-store (st env n v body off)
+(defn cg-let-store (st env n v body off tl)
   (let k (kind-of st env v)
     (let st3 (cg-expr st env v)
       (let st4 (cg-emit st3 "    mov [rbp")
         (let st5 (cg-emit-int st4 off)
           (let st6 (cg-nl (cg-emit st5 "], rax"))
-            (cg-expr st6 (EnvBind n off k env) body)))))))
+            (cg-tail st6 (EnvBind n off k env) body tl)))))))
 
 ; (if c t e): condition tested, then branch tails. p carries the state
 ; plus the else/join labels.
-(defn cg-if-parts (p env c t eb)
+(defn cg-if-parts (p env c t eb tl)
   (match p
     (CGP st lelse lend
       (let st2 (cg-expr st env c)
@@ -510,11 +538,11 @@
           (let st4 (cg-nl st3)
             (let st5 (cg-emit st4 "    je ")
               (let st6 (cg-nl (cg-emit st5 lelse))
-                (let st7 (cg-expr st6 env t)
+                (let st7 (cg-tail st6 env t tl)
                   (let st8 (cg-emit st7 "    jmp ")
                     (let st9 (cg-nl (cg-emit st8 lend))
                       (let st10 (cg-emit-label st9 lelse)
-                        (let st11 (cg-expr st10 env eb)
+                        (let st11 (cg-tail st10 env eb tl)
                           (cg-emit-label st11 lend))))))))))))))
 
 ; (while c body...)
@@ -556,13 +584,13 @@
 (defn cg-emit-line (st s)
   (cg-nl (cg-emit st s)))
 
-(defn cg-seq (st env es)
+(defn cg-seq (st env es tl)
   (if (is-nil es)
     (cg-emit-line st "    xor eax, eax")
     (if (is-nil (tl2 es))
-      (cg-expr st env (ih-ic es))
+      (cg-tail st env (ih-ic es) tl)
       (let st2 (cg-expr st env (ih-ic es))
-        (cg-seq st2 env (tl2 es))))))
+        (cg-seq st2 env (tl2 es) tl)))))
 
 ; Integer binary op: lhs -> rax (pushed), rhs -> rax, lhs restored to rax,
 ; rhs kept in rcx. Div/Rem use cqo/idiv with divisor safe in rcx.
@@ -1174,21 +1202,21 @@
 ; Match: evaluate scrutinee, keep it on the stack for the whole dispatch,
 ; replace it with the arm-body result, pop at the end.
 ; Stack invariant: exactly one pushed word ([rsp] = scrutinee or result).
-(defn cg-match (st env scr arms)
-  (cg-match-labels (cg-label-pair st) env scr arms))
+(defn cg-match (st env scr arms tl)
+  (cg-match-labels (cg-label-pair st) env scr arms tl))
 
-(defn cg-match-labels (p env scr arms)
+(defn cg-match-labels (p env scr arms tl)
   (match p
     (CGP st lend lzero
-      (cg-match-scrutinee st env scr arms lend lzero))))
+      (cg-match-scrutinee st env scr arms lend lzero tl))))
 
-(defn cg-match-scrutinee (st env scr arms lend lzero)
+(defn cg-match-scrutinee (st env scr arms lend lzero tl)
   (let st3 (cg-expr st env scr)
     (let st4 (cg-emit-line st3 "    push rax")
-      (cg-match-arms st4 env arms lend lzero))))
+      (cg-match-arms st4 env arms lend lzero tl))))
 
-(defn cg-match-arms (st env arms lend lzero)
-  (let st5 (cg-arms st env arms lend lzero)
+(defn cg-match-arms (st env arms lend lzero tl)
+  (let st5 (cg-arms st env arms lend lzero tl)
     ; fall-through: no arm matched -> 0
     (let st6 (cg-emit-label st5 lzero)
       (let st7 (cg-emit-line st6 "    mov qword ptr [rsp], 0")
@@ -1198,24 +1226,24 @@
 ; Emit arms[i..]. Each arm checks [rsp]'s tag; a failed check jumps to
 ; the next arm's label (or the zero fall-through after the last arm); a
 ; successful match binds pattern vars and evaluates the body.
-(defn cg-arms (st env arms lend lzero)
+(defn cg-arms (st env arms lend lzero tl)
   (if (is-nil arms)
     st
-    (cg-arm-one (CGP st lend lzero) (hd-ia arms) (tl2 arms) env)))
+    (cg-arm-one (CGP st lend lzero) (hd-ia arms) (tl2 arms) env tl)))
 
-(defn cg-arm-one (p arm rest env)
+(defn cg-arm-one (p arm rest env tl)
   (match p
     (CGP st lend lzero
       (match arm
         (IArm vname tag binds body
           (if (is-nil rest)
             ; last arm: failed tag check falls through to the zero label
-            (cg-arm-match (CGP st lzero lend) env tag binds body)
+            (cg-arm-match (CGP st lzero lend) env tag binds body tl)
             ; more arms follow: failures jump to a fresh next-arm label
             (let picked (cg-label-new st)
               (let lnext (cgr-str picked)
-                (let st-after (cg-arm-match (CGP (cgr-st picked) lnext lend) env tag binds body)
-                  (cg-arms (cg-emit-label st-after lnext) env rest lend lzero))))))))))
+                (let st-after (cg-arm-match (CGP (cgr-st picked) lnext lend) env tag binds body tl)
+                  (cg-arms (cg-emit-label st-after lnext) env rest lend lzero tl))))))))))
 
 ; Emit one arm's tag check, bindings, body and exit jump. flabel (carried
 ; in p) is where a failed tag check goes; lend is the match join label.
@@ -1234,13 +1262,13 @@
 ; for the wildcard arm, routes the no-match fallthrough straight to its
 ; body); this mirrors that: skip the tag check entirely and match
 ; unconditionally when tag is the sentinel.
-(defn cg-arm-match (p env tag binds body)
+(defn cg-arm-match (p env tag binds body tl)
   (match p
     (CGP st flabel lend
       (if (= tag -1)
         (match (cg-bind-fields st env binds 0)
           (CGE st6 arm-env
-            (let st7 (cg-expr st6 arm-env body)
+            (let st7 (cg-tail st6 arm-env body tl)
               (let st8 (cg-emit-line st7 "    mov [rsp], rax")
                 (let st9 (cg-emit st8 "    jmp ")
                   (cg-nl (cg-emit st9 lend)))))))
@@ -1249,7 +1277,7 @@
             (let st5 (cg-nl (cg-emit st4 flabel))
               (match (cg-bind-fields st5 env binds 0)
                 (CGE st6 arm-env
-                  (let st7 (cg-expr st6 arm-env body)
+                  (let st7 (cg-tail st6 arm-env body tl)
                     (let st8 (cg-emit-line st7 "    mov [rsp], rax")
                       (let st9 (cg-emit st8 "    jmp ")
                         (cg-nl (cg-emit st9 lend))))))))))))))
@@ -1534,7 +1562,7 @@
                        (let st8 (cg-param-spills st7 0 (list-length params))
                          ; per-function slot counter reset after params
                          (let st9 (cg-reset-slots st8 (* 8 (+ 1 (list-length params))))
-                            (let st10 (cg-restore-callee-saved (cg-expr st9 env body) fsz)
+                            (let st10 (cg-restore-callee-saved (cg-tail st9 env body fsz) fsz)
                               (let st11 (cg-emit-line st10 "    mov rsp, rbp")
                                 (let st12 (cg-emit-line st11 "    pop rbp")
                                   (cg-emit-line st12 "    ret")))))))))))))))))))

@@ -26,8 +26,8 @@ history, or a probe compile with `build/boot/zyl-self` on 2026-09-23.
 - `./boot.sh` produces `build/boot/{zyl-self, stage2.bin, zyl-lsp,
   zyl-repl, stdlib/, actor_runtime.c, actor_runtime.h}`. The self-build
   prints no warnings (swept 2026-09-24).
-- `./run_regression_tests.sh --full --no-boot` passes **147/147**
-  (updated 2026-09-24): regression 58, interpreter 39, compile-fail 24,
+- `./run_regression_tests.sh --full --no-boot` passes **148/148**
+  (updated 2026-09-24): regression 59, interpreter 39, compile-fail 24,
   integration 7, packages-fail 7, stress 4, scripts 3, packages 2,
   packages-build 1, lsp 1, unit_test 1. The interpreter category runs the regression and smoke
   tests both through the ICNF interpreter and as compiled binaries and
@@ -169,9 +169,11 @@ Compiler:
 - `Secret`: no zeroization on scope exit, no `print` redaction, no
   `Secret` trait for user-defined types. Taint crosses a call boundary
   only where the callee's parameters are annotated.
-- `codegen.zyl` performs no tail-call optimization, so `lexer.zyl`'s
-  mutually recursive whitespace skip uses a frame per character; only a
-  very large single file is at risk now that there is no bundle.
+- Tail calls are partial: a direct call to a top-level function in tail
+  position with at most six arguments is a jump (`cg-tail`); indirect
+  calls, calls with more than six arguments and calls inside
+  `try`/`catch` or `while` still push a frame. The REPL interpreter does
+  no TCO.
 
 Package system:
 
@@ -240,10 +242,12 @@ by recent sessions. The completed roadmap items are kept, annotated, under
 
 ### P2: Code generation correctness
 
-- [ ] Field and return kinds in codegen, so compiled `print` and `==`
+- [x] Field and return kinds in codegen, so compiled `print` and `==`
       agree with the interpreter; then derivable `Show`.
-- [ ] Tail-call optimization in `codegen.zyl`, or a self-tail-recursive
-      whitespace skip in `lexer.zyl`.
+- [x] Tail-call optimization in `codegen.zyl` (direct calls, at most six
+      arguments; indirect and stack-argument tail calls still open).
+- [ ] `print` on `Result` (`Ok`/`Err`) prints an address instead of its
+      content; add a prelude `Show` impl for `Result`.
 - [x] ~~A per-file paren-depth check in `assemble.py`~~: obsolete, every
       module is compiled and balance-checked as its own file.
 
@@ -373,7 +377,25 @@ as recorded below.
 
 # Session log (newest first)
 
-## Session (2026-09-24, latest) — annotations enforced, structural ADT equality
+## Session (2026-09-24, latest) — tail calls
+
+**Direct tail calls are jumps.** `codegen.zyl` threads a tail flag (the
+frame size, 0 outside tail position) through `if`, `let`, `begin` and
+`match` emission (`cg-tail`). A tail `ICall` to a known top-level
+function that is not shadowed by a local and has at most six arguments
+stages its arguments as usual, loads the argument registers, restores
+`rbx`/`r12`, tears down the frame and `jmp`s (`cg-tail-call`). The
+callee sees the caller's return address and alignment. `try`/`catch`
+and `while` bodies are never tail position. Stack-promoted variants
+never reach a call (region inference), so no frame address outlives the
+jump. The seed has 3061 tail jumps; `lexer.zyl`'s mutual whitespace
+skip no longer costs a frame per character. New test
+`tests/regression/tail-calls.zyl` (10^8-deep self and mutual recursion,
+six-argument loops, tail calls from `match` arms and `begin`); it is
+skipped by the interpreter differential run. 148/148 pass, fixed point
+holds.
+
+## Session (2026-09-24, earlier) — annotations enforced, structural ADT equality
 
 **`E_TYPE_MISMATCH` from annotations.** `type_annotate.zyl` checks each
 call to a top-level function (`ta-check-params`) and each constructor

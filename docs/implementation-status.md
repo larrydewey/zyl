@@ -85,7 +85,7 @@ it compiles and runs correctly; the notes say where it stops.
 - **Unlocated diagnostics:** `mutability_check`, `capability_check`,
   `unused_check`, `secret_check` and the remaining errors in
   `expr_inner` still print a bare `PANIC:` message with no location.
-- **No tail-call optimization.**
+- **Partial tail-call optimization:** a direct call to a top-level function in tail position (an `if` branch, a `let` body, the last form of a `begin`, a `match` arm body) with at most six arguments reuses the caller's frame and becomes a jump. Calls through a function value, calls with more than six arguments, and calls inside `try`/`catch` or `while` still push a frame. The REPL interpreter does none.
 - **Package system:** no index repository exists yet (the index URL in
   the examples is a placeholder), there is no build cache (§31.4), and
   capability enforcement applies only to packages with a manifest.

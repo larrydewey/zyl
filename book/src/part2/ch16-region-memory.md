@@ -161,8 +161,8 @@ Allocation failure, or exceeding the memory budget, is reported as
 ### Stack safety (§14)
 
 §14 guarantees that deep recursion never overflows the stack. The code
-generator does not perform tail-call optimization. The generated `main`
-instead runs on a thread with a very large stack: a 64 GB reservation
+generator turns direct tail calls with at most six arguments into
+jumps; for every other call, the generated `main` runs on a thread with a very large stack: a 64 GB reservation
 (falling back to 16, 4 or 1 GB) mapped without committing memory, with a
 guard page. Recursion depth is therefore bounded by that reservation
 rather than unbounded.

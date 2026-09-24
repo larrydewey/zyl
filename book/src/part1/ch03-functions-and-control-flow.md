@@ -89,12 +89,15 @@ Zyl supports full recursion:
   (print (sum-to 1000000 0)))     ; 500000500000
 ```
 
-**No tail-call optimization yet.** The specification calls for
-guaranteed TCO; the current code generator emits every call, tail
-position or not, as a real `call`. In practice deep recursion still
-works: a generated program runs `main` on a large dedicated stack, so a
-recursion depth in the millions (like `sum-to` above) is fine. A loop
-(`while`, §3.5) is the tool for unbounded iteration.
+**Tail calls.** The specification calls for guaranteed TCO. The code
+generator gives it to the common case: a direct call to a top-level
+function in tail position (an `if` branch, a `let` body, the last form
+of a `begin`, a `match` arm body) with at most six arguments becomes a
+jump, so `sum-to` above runs in constant stack, and so does mutual
+recursion. Calls through a function value, calls with more than six
+arguments and calls inside `try`/`catch` still push a frame; for those,
+deep recursion relies on the large dedicated stack `main` runs on. The
+REPL interpreter does no TCO.
 
 ### Mutual Recursion
 
@@ -540,11 +543,13 @@ implemented by the code generator (it evaluates to 0). File I/O is in
 
 `--emit-asm` shows all of this: `zyl file.zyl --emit-asm -o file.s`.
 
-### No Tail Calls (Yet)
+### Tail Calls
 
-Every call, including one in tail position, is emitted as `call`. The
-generated entry stub runs `main` on a large dedicated stack instead,
-which is what makes deep recursion practical today.
+A direct call to a top-level function in tail position, with at most
+six arguments, restores the callee-saved registers, tears down the
+frame and `jmp`s to the callee. Every other call is a `call`; the
+generated entry stub runs `main` on a large dedicated stack, which
+keeps deep non-tail recursion practical.
 
 ### Closure Representation
 

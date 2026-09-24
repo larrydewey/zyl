@@ -234,7 +234,8 @@ run_diff_test() {
 #   math-*               — minutes of interpreted arithmetic for what
 #                          the compiled suite already covers in seconds.
 #                          Matched by prefix, below.
-DIFF_SKIP="actors concurrency modules derive collections ffi-advanced package-system selfhost-codegen c-abi"
+#   tail-calls           — 10^8-deep loops; the interpreter has no TCO.
+DIFF_SKIP="actors concurrency modules derive collections ffi-advanced package-system selfhost-codegen c-abi tail-calls"
 
 diff_skipped() {
     local name="$1"

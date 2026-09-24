@@ -254,12 +254,8 @@
 ; MAIN LEXER — one function, one self-tail-recursion site
 ; ===========================================================================
 ; ALL routing and token production live inside lex-loop: every
-; continuation is a DIRECT self-call. The compiler does no tail-call
-; optimization, so each token still costs one frame; what keeps large
-; inputs from overflowing is the large stack `main` runs on
-; (zyl_bigstack_tramp in runtime/actor_runtime.c, up to 64 GiB
-; reserved). Keeping it to one function keeps that per-token frame
-; small: a helper hop would add a second frame per token.
+; continuation is a DIRECT tail call, which codegen turns into a jump,
+; so lexing runs in constant stack.
 ;
 ; Bootstrap constraints honored: arity <=6, flat if-chains (no nesting
 ; deeper than the proven ic-special shape).

@@ -406,9 +406,10 @@ small wrapper ADT (`CGR`, `CGE`, `CGP`) and the caller destructures it.
 
 ## 30.11 Performance Considerations
 
-- **Deep recursion is normal.** There is no tail-call elimination; the
-  compiler recurses over lists and trees freely and relies on the big
-  worker stack every generated program runs on (Chapter 29, §29.9).
+- **Deep recursion is normal.** Direct tail calls are jumps, but most
+  of the compiler's recursion over lists and trees is not in tail
+  position; it relies on the big worker stack every generated program
+  runs on (Chapter 29, §29.9).
 - **Watch for repeated work.** Type inference once inferred the last
   statement of every body twice; with bodies nested to the right that
   doubled the cost per statement, and a boot stage took about ten

@@ -326,9 +326,11 @@ name:
     ret
 ```
 
-There is no tail-call elimination: every call is a real `call`. Deep
-recursion is supported by running the program on a very large stack
-instead (§29.9).
+A direct call to a top-level function in tail position with at most
+six arguments is a jump (`cg-tail`): the arguments are staged as usual,
+`rbx`/`r12` restored, the frame torn down, then `jmp`. Every other call
+is a real `call`; deep recursion there is supported by running the
+program on a very large stack (§29.9).
 
 Generated code uses `rbx` (the block pointer of a variant
 construction) and `r12` (the saved `rsp` around a C call) as scratch,
