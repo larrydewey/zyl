@@ -174,20 +174,10 @@ else
     die "FIXED POINT BROKEN: stage2 and stage3 outputs differ"
 fi
 
-# ── smoke: stage2 CLI compiles, links and runs a program ─────────────────
-step "Smoke: stage2 CLI compiles + links + runs"
-cat > /tmp/zyl_smoke.zyl <<'SMOKE_EOF'
-(defn dbl (x) (* x 2))
-(defn applyit (f v) (f v))
-(defn main () (begin (print (applyit dbl 21)) (print (+ 1 2)) 0))
-SMOKE_EOF
-timeout 120 "${OUT}/stage2.bin" /tmp/zyl_smoke.zyl -o "${OUT}/smoke.bin" >/dev/null
-[ -x "${OUT}/smoke.bin" ] || die "smoke did not produce a linked binary"
-RESULT="$("${OUT}/smoke.bin")"
-[ "$RESULT" = "$(printf '42\n3')" ] || die "smoke output was '$RESULT'"
-ok "smoke output correct ($RESULT)"
-
-step "Generating build/boot/zyl-self wrapper"
+# ── sync stdlib + runtime into OUT (ZYL_HOME) ─────────────────────────────
+# Before the smoke test: ZYL_HOME points at OUT, so on a fresh checkout
+# (no OUT/stdlib yet) the smoke compile could not resolve the implicit
+# stdlib and failed with E_PKG_UNDECLARED_DEP.
 # rm first: `cp -R stdlib OUT/stdlib` nests a fresh copy INSIDE an
 # already-existing OUT/stdlib instead of updating it (cp -R's directory-
 # target semantics), so every run after the first silently left the real
@@ -200,6 +190,21 @@ rm -rf "${OUT}/stdlib"
 cp -R "${SCRIPT_DIR}/stdlib" "${OUT}/stdlib"
 cp "${SCRIPT_DIR}/runtime/actor_runtime.c" "${OUT}/actor_runtime.c"
 cp "${SCRIPT_DIR}/runtime/actor_runtime.h" "${OUT}/actor_runtime.h"
+
+# ── smoke: stage2 CLI compiles, links and runs a program ─────────────────
+step "Smoke: stage2 CLI compiles + links + runs"
+cat > "${OUT}/smoke.zyl" <<'SMOKE_EOF'
+(defn dbl (x) (* x 2))
+(defn applyit (f v) (f v))
+(defn main () (begin (print (applyit dbl 21)) (print (+ 1 2)) 0))
+SMOKE_EOF
+timeout 120 "${OUT}/stage2.bin" "${OUT}/smoke.zyl" -o "${OUT}/smoke.bin" >/dev/null
+[ -x "${OUT}/smoke.bin" ] || die "smoke did not produce a linked binary"
+RESULT="$("${OUT}/smoke.bin")"
+[ "$RESULT" = "$(printf '42\n3')" ] || die "smoke output was '$RESULT'"
+ok "smoke output correct ($RESULT)"
+
+step "Generating build/boot/zyl-self wrapper"
 cat > "${OUT}/zyl-self" <<'WRAPPER_EOF'
 #!/usr/bin/env bash
 # Cargo-free CLI wrapper: passes arguments straight to the self-hosted
