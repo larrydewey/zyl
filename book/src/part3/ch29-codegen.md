@@ -444,8 +444,9 @@ the runtime.
 | `E_UNBOUND_VARIABLE` | An identifier that names no local, parameter or function; reported at the identifier with a source line and caret |
 
 The other codes earlier drafts listed (`E_REG_ALLOC_FAILED`,
-`E_STACK_FRAME_TOO_LARGE`, `E_TCO_FAILED`) do not exist; there is no
-register allocator and no tail-call elimination for them to report on.
+`E_STACK_FRAME_TOO_LARGE`, `E_TCO_FAILED`) do not exist: there is no
+register allocator, and a tail call that cannot be a jump is compiled
+as an ordinary call rather than reported (§29.6).
 
 ## 29.12 Debugging Codegen
 
@@ -473,5 +474,5 @@ assembly carries no DWARF line information of its own.
 | Register alloc | Greedy/Graph | Linear scan | None: stack slots, `rax` stack machine |
 | Optimizations | Many | Some | Integer constant folding, dead-branch elimination (in ICNF) |
 | Determinism | Configurable | Configurable | Mandatory |
-| Tail calls | ✅ | ✅ | ❌ (large stack instead) |
+| Tail calls | ✅ | ✅ | ✅ (jumps; a few cases fall back to calls) |
 | Debug info | DWARF | DWARF | None |

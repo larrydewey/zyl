@@ -497,4 +497,6 @@ resolutions (`E_PKG_YANKED`), never an existing lock.
 
 **Zeroize**: Explicit erasure of key material, `(zeroize base n)`. It
 writes through a volatile pointer so the stores cannot be optimised
-away; Zyl does not yet erase secrets automatically at scope exit.
+away. A function that handles a `Secret` zeroes its own stack frame on
+return; heap copies are erased only by `zeroize` or the `Secret` trait's
+`wipe` (Chapter 33).

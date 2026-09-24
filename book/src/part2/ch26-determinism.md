@@ -111,7 +111,7 @@ Rule: no phase may depend on a later phase.
 - **Module resolution** and the static checks are not phases in §22. They run between parsing and type inference. The capability pass runs after macro expansion, as §31.9 requires ("after module resolution and before type inference").
 - **Region inference runs last**, on ICNF after optimization, not as phase 4.
 - **Type inference is not a separate phase over the whole program.** Definitions are collected and typed, then monomorphized; `docs/compiler-pipeline.md` describes the current arrangement.
-- **Contract injection (phase 10) is not wired in.** See Chapter 24.
+- **Contract injection (phase 10) happens at parse time**, not after linking: `convert-ast` rewrites `requires`, `ensures`, `invariant`, `recover` and `checkpoint` into ordinary checks under the active contract profile (Chapter 24).
 - **Hash finalization (phase 11)** exists only for `zyl build` and `zyl test`, as the `.buildinfo` file.
 
 The phase-isolation rule does hold: each pass consumes only the output of earlier passes.

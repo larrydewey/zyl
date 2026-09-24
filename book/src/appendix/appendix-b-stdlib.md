@@ -206,12 +206,12 @@ and adds lifecycle operations backed by the C runtime:
 ```
 
 `spawn` takes a zero-argument closure, `(spawn (fn () ...))`, and
-returns an `Int` handle. There is no `receive` form: the runtime queues
-a `send` message and then discards it unread, so an actor's work is its
-spawned closure. `actor-wait` stops an actor and joins its thread.
-Nothing waits for actors when `main` returns; the runtime's
-`zyl_actor_wait_all`, reachable only through `ffi-call`, drains every
-mailbox and stops all actors. Using this module from a package requires
+returns an `Int` handle. The actor reads messages with the `(receive)`
+form and names itself with `(actor-self)` (Chapter 9). `actor-wait`
+stops an actor and joins its thread. When `main` returns, the program
+drains every mailbox and stops all actors; the runtime's
+`zyl_actor_wait_all`, reachable through `ffi-call`, does the same
+earlier. Using this module from a package requires
 the `actor` capability (§31.9).
 
 ### `atomic/atomic` — Atomic Operations on Addresses

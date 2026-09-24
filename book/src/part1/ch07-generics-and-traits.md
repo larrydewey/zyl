@@ -254,10 +254,8 @@ C2. Orphan rule: impl valid only if trait or type defined in current crate.
 C3. No conflicting impls.
 ```
 
-- **C1** is not checked by a compiler pass. Two `(impl Area Rect ...)`
-  blocks both define the same function, and the build fails in the
-  assembler with "symbol ... is already defined", not with
-  `E_DUPLICATE_IMPL`.
+- **C1** is checked: two `(impl Area Rect ...)` blocks, or an impl and
+  a derive of the same trait for one type, are `E_DUPLICATE_IMPL`.
 - **C2** applies at the package boundary (spec §24.6) and is enforced:
   an impl is allowed only if your package defines the trait or the
   type. Otherwise it is `E_PKG_ORPHAN_IMPL`. This is where a `trait`
@@ -283,8 +281,8 @@ happens during type inference: collect the bounds, substitute the
 concrete types at each call, find the impl, verify the bound. Since
 bounds cannot be written (§7.1), they are not checked. The impl is found
 from the inferred receiver type; a `Trait.method` call with no impl for a
-known receiver type falls back to the runtime match, and with no impl at
-all it fails at link time rather than with `E_TRAIT_NOT_FOUND`.
+known receiver type is `E_TRAIT_NOT_FOUND`, located at the call, and a
+trait with no impls at all makes the call `E_UNBOUND_VARIABLE`.
 
 ## 7.6 Monomorphization
 
@@ -396,9 +394,9 @@ one, use a list of structs dispatched by tag (§7.3), or an ADT wrapper:
 | `E_PKG_ORPHAN_IMPL` | impl where neither the trait nor the type is yours | raised |
 | `E_CANNOT_INFER` | generic parameter with no call-site evidence | in the specification; never raised |
 | `E_TRAIT_BOUND_NOT_SATISFIED` | concrete type lacks a bound's trait | in the specification; never raised |
-| `E_TRAIT_NOT_DERIVABLE` | a field lacks the derived trait | in the specification; never raised |
-| `E_DUPLICATE_IMPL` | two impls for one (Trait, Type) | in the specification; fails in the assembler instead |
-| `E_TRAIT_NOT_FOUND` | no impl for a required trait | in the specification; fails at link time instead |
+| `E_TRAIT_NOT_DERIVABLE` | a field lacks the derived trait, or the trait is not derivable | raised |
+| `E_DUPLICATE_IMPL` | two impls for one (Trait, Type) | raised |
+| `E_TRAIT_NOT_FOUND` | no impl for a known receiver type | raised |
 
 ---
 

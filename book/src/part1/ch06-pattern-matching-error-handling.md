@@ -378,11 +378,9 @@ Nested `match` handles a sequence of steps that can each fail:
     0))
 ```
 
-The functions passed here are named, top-level functions. A `fn` that
-captures a variable cannot yet be passed to another function (Chapter 3,
-§3.3), and a `fn` whose body applies a constructor directly, such as
-`(fn (x) (Ok x))`, hangs when passed; use `result-ok` there instead, or a
-named function as above.
+The functions passed here are named, top-level functions; a `fn`,
+capturing or not, works the same: `(option-map (Some 3) (fn (x) (+ x k)))`
+is `Some(13)`.
 
 The other core helpers: `result-map`, `result-or`, `result-unwrap`
 (value or a default), `result-expect` (value or `error`),

@@ -154,7 +154,7 @@ Build suites from flat `test` forms today, which is exactly how Zyl's own `tests
 
 ## 11.6 Testing Actors
 
-Actors cannot yet receive messages or report results back to their parent (Chapter 9). What a test can check deterministically is an actor's lifecycle, after an explicit `actor-wait`:
+A test can check an actor's lifecycle after an explicit `actor-wait`:
 
 ```lisp
 (use actor/actor)
@@ -168,6 +168,20 @@ Actors cannot yet receive messages or report results back to their parent (Chapt
       (assert-false (actor-is-alive a)))))
 
 (run-tests)
+```
+
+A test can also talk to an actor: the test's own `(actor-self)` is a mailbox the actor can reply to, and `(receive)` waits for the reply (Chapter 9, §9.3):
+
+```lisp
+(defn doubler ()
+  (let from (receive)
+    (begin (send from 42) (doubler))))
+
+(test "actor-replies"
+  (let d (spawn doubler)
+    (begin
+      (send d (actor-self))
+      (assert-equal (receive) 42))))
 ```
 
 For the logic itself, keep it in ordinary functions (like `work` above) and test those directly, leaving a thin actor wrapper on top.

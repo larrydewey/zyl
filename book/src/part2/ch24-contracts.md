@@ -99,7 +99,7 @@ Checked where it is written, exactly like `requires`, and reported as `invariant
     (if (= i 0) 0 (countdown (- i 1)))))
 ```
 
-A top-level `invariant` (beside a `defstruct`, for example) is accepted and has no effect.
+A top-level `invariant` (beside a `defstruct`, for example) is accepted and not checked; put the check inside the functions that must keep it.
 
 ## 24.5 Recovery Blocks: `recover`
 

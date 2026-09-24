@@ -257,11 +257,12 @@ runs:
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-Two phases of the specification are not in the compiled pipeline yet:
-**contract injection** (`requires`, `ensures` and the rest parse, but
-are not checked — Chapter 24), and full **hash finalization** (a package
-build writes a `.buildinfo` file with the compiler and assembly hashes,
-but the dependency graph's hash is not yet mixed into the binary's).
+Contracts (`requires`, `ensures`, `invariant`, `recover`,
+`checkpoint`) are checked where they appear, and `(contracts off)` or
+`--contracts=off` removes the checks (Chapter 24). A package build
+finalizes a hash of its compiler, dependency graph, native objects and
+ICNF, writes it to a `.buildinfo` file and embeds it in the binary
+(Chapter 26).
 
 **Why this matters for you:**
 - Errors are caught early, and most carry a location: `error[CODE]`,

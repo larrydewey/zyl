@@ -171,14 +171,14 @@ h.join().unwrap();
   a `let-mut` variable may not cross (`E_CAPABILITY_LEAK`).
 - `spawn` takes a zero-argument closure and returns an `Int` handle.
   The actor's work is that closure.
-- There is no `receive` form, so an actor cannot read what it is sent:
-  the runtime queues a `send` message in the mailbox and then discards
-  it. A closure queued with `(ffi-call "zyl_actor_send_closure" actor fn
-  state 1000)` is run by the actor.
-- There is no `wait-all` form, and nothing waits for actors when `main`
-  returns. `actor-wait` stops one actor and joins its thread;
-  `(ffi-call "zyl_actor_wait_all" 1000)` drains every mailbox and then
-  stops all actors.
+- An actor reads its messages with `(receive)`, which blocks until one
+  arrives, and `(actor-self)` is its own handle, so a request can carry
+  where to send the reply. `main` has a mailbox too. There is no
+  selective receive or receive timeout: messages come out in FIFO order.
+- There is no `wait-all` form, but every program drains and stops its
+  actors when `main` returns. `actor-wait` stops one actor and joins its
+  thread; `(ffi-call "zyl_actor_wait_all" 1000)` drains every mailbox and
+  then stops all actors.
 
 ### Macros → Macros (Different)
 

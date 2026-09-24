@@ -224,9 +224,10 @@ post-processor actually does with each definition form.
 | `(def name expr)` | An immutable global, evaluated once, in source order, before `main` or the tests run. |
 | `(deftype Name Variant+)` | Recognized (Chapter 18). |
 | `(defstruct Name Field*)`, `(defstruct+ ...)` | Recognized. |
-| `(trait Name ...)` | Accepted with no effect (Chapter 20). |
+| `(trait Name ...)` | Declares the trait's methods, which dot calls and `E_TRAIT_NOT_FOUND` check against (Chapter 20). |
 | `(impl Trait Type (defn ...)*)` | Recognized (Chapter 20). |
-| `(derive Type Trait*)` | Generates `Show`; other traits accepted, nothing generated (Chapter 20). |
+| `(impl-not Trait Type)` | Forbids that impl anywhere; an impl or derive of it is `E_IMPL_FORBIDDEN` (Chapter 20). |
+| `(derive Type Trait*)` | Generates `Show`, `Debug`, `Eq`, `Ord`, `Hash` and `Clone`; any other trait is `E_TRAIT_NOT_DERIVABLE` (Chapter 20). |
 | `(alias Name Type)` | Accepted with no effect. |
 | `(defmacro name (pattern*) template)` | Recognized; `macro` is a synonym (Chapter 23). |
 | `(use path ...)`, `(module name)`, `(pub <definition>)` | Recognized (Chapter 25). `export` is accepted but deprecated (§24.3). |

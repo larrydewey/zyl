@@ -153,9 +153,9 @@ C3. No conflicting impls.
 
 ### C1: One impl per pair
 
-Not checked by a compiler pass. Two `(impl Area Rect ...)` blocks both
-define `Area.area_Rect`, and the build fails in the assembler with
-"symbol ... is already defined", not with `E_DUPLICATE_IMPL`.
+Checked. Two `(impl Area Rect ...)` blocks, or an impl and a derive of
+the same trait for one type, are `E_DUPLICATE_IMPL`, located at the
+first of them.
 
 ### C2: Orphan rule
 
@@ -357,7 +357,7 @@ collection does today, and `for` is a condition loop (§12.6).
 | `E_PKG_ORPHAN_IMPL` | impl where neither the trait nor the type belongs to the package (§24.6) | raised |
 | `E_IMPL_FORBIDDEN` | an impl or derive an `impl-not` forbids, or an impl whose result exposes a protected value | raised |
 | `E_TRAIT_NOT_FOUND` | no impl for a required (Trait, Type) | raised for a known receiver type, and for dot calls |
-| `E_DUPLICATE_IMPL` | two impls for one (Trait, Type) | catalogued; a duplicate fails in the assembler instead |
+| `E_DUPLICATE_IMPL` | two impls for one (Trait, Type) | raised |
 | `E_TRAIT_BOUND_NOT_SATISFIED` | a concrete type lacks a bound's trait (§6.7) | catalogued; never raised |
 | `E_TRAIT_NOT_DERIVABLE` | a derive constraint fails | raised |
 
@@ -387,5 +387,5 @@ library.
 | Default methods | yes | no |
 | Trait objects | `dyn Trait` | no |
 | Orphan rule | crate boundary | package boundary (`E_PKG_ORPHAN_IMPL`) |
-| Derive | `#[derive(...)]`, generates code | `(derive T Show)` generates code; other traits not yet |
+| Derive | `#[derive(...)]`, generates code | `(derive T Show Eq ...)` generates `Show`, `Debug`, `Eq`, `Ord`, `Hash`, `Clone` |
 | Associated types | yes | no |

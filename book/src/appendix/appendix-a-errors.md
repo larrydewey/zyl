@@ -79,7 +79,7 @@ with its code split off the front of the message.
 |---|---|
 | `E_UNTERMINATED_STRING` | A string literal reached end of input with no closing quote |
 | `E_BYTE_VALUE_OOB` | A `byte` literal outside 0..255, or a non-integer argument to `byte` |
-| `E_INVALID_CHAR` | A character that cannot begin any token. *Catalogued only: the lexer ends the token stream at such a character instead.* |
+| `E_INVALID_CHAR` | A character that cannot begin any token, such as `'` or `#` outside a string or comment, located at that byte |
 | `E_UNEXPECTED_EOF` | End of input while a token was still open. *Catalogued only.* |
 | `E_INTEGER_OVERFLOW` | An integer literal too large for `Int`. *Catalogued only.* |
 | `E_FLOAT_OVERFLOW` | A float literal too large for `Float`. *Catalogued only.* |
@@ -203,11 +203,11 @@ frame, and everything else stays on the heap. No pass reports
 | Code | Cause |
 |---|---|
 | `E_PKG_ORPHAN_IMPL` | An `impl` where neither the trait nor the type is local to the package |
-| `E_TRAIT_NOT_FOUND` | No implementation for a required trait. *Catalogued only.* |
+| `E_TRAIT_NOT_FOUND` | A trait call, or a dot method call, whose receiver type is known and has no impl of the trait, located at the call |
 | `E_TRAIT_BOUND_NOT_SATISFIED` | A concrete type lacks a required trait. *Catalogued only.* |
 | `E_IMPL_FORBIDDEN` | An `impl` or `derive` that an `(impl-not Trait Target)` declaration forbids, or an impl of that trait whose result is derived from a protected value (Chapter 20). |
 | `E_TRAIT_NOT_DERIVABLE` | `derive` of a trait that is not derivable, or whose field requirement fails: a field type without the trait, or a `Secret` field under `Eq`/`Ord`/`Hash`. |
-| `E_DUPLICATE_IMPL` | Two implementations of one trait for one type. *Catalogued only.* |
+| `E_DUPLICATE_IMPL` | Two implementations of one trait for one type, counting impls and derives |
 
 ## A.12 Capabilities, Aliasing and Secrets (phase 13)
 
@@ -296,16 +296,15 @@ Warnings are written to stderr and never stop a build:
 
 Name a binding `_`, or give it a `_` prefix (`_count`), to exempt it
 from the unused, shadowing and duplicate-parameter checks. The `W_`
-codes come from `unused_check.zyl` and are not in the catalog. They do
-not reach your editor, because the language server does not run
-`unused_check` (Chapter 35).
+codes come from `unused_check.zyl` and are not in the catalog. The
+language server publishes them as Warning diagnostics (Chapter 35).
 
 ## A.17 Catalog Versus Implementation
 
-**In the catalog, never raised.** 44 of the catalog's 111 distinct
+**In the catalog, never raised.** 39 of the catalog's 114 distinct
 codes are not raised anywhere in the compiler, runtime or REPL:
 
-- Lexer and parser: `E_INVALID_CHAR`, `E_UNEXPECTED_EOF`,
+- Lexer and parser: `E_UNEXPECTED_EOF`,
   `E_INTEGER_OVERFLOW`, `E_FLOAT_OVERFLOW`, `E_UNBALANCED_PARENS`,
   `E_EXPECTED_RPAREN`, `E_EXPECTED_RBRACKET`, `E_EXPECTED_RCURLY`,
   `E_EXPECTED_EXPRESSION`, `E_EMPTY_LIST`, `E_ATOM_AS_OPERATOR`.
@@ -320,17 +319,14 @@ codes are not raised anywhere in the compiler, runtime or REPL:
   `E_BYTE_OOB`, `E_BYTEBUF_CAP_EXCEEDED`, `E_BYTEBUF_OVERLAP`,
   `E_BYTEBUF_INVALID`, `E_ALIGNMENT_FAILED`, `E_ALIGN_CHECK_FAILED`.
 - Testing: `E_TEST_FAILURE`, `E_TEST_RUNNER_ERROR`.
-- Traits: `E_TRAIT_NOT_FOUND`, `E_TRAIT_BOUND_NOT_SATISFIED`,
-  `E_TRAIT_NOT_DERIVABLE`, `E_DUPLICATE_IMPL`.
-- Contracts, numerics and FFI: `E_CONTRACT_VIOLATION`, `E_OVERFLOW`,
-  `E_FFI_TYPE_NOT_PINNABLE`, `E_FFI_TIMEOUT`.
+- Traits: `E_TRAIT_BOUND_NOT_SATISFIED`.
+- Numerics and FFI: `E_OVERFLOW`, `E_FFI_TYPE_NOT_PINNABLE`,
+  `E_FFI_TIMEOUT`.
 
-Thirteen of these are codes spec §28 requires: `E_USER_ERROR`,
+Nine of these are codes spec §28 requires: `E_USER_ERROR`,
 `E_ASSERT_FAIL`, `E_FFI_TIMEOUT`, `E_REGION_ESCAPE`,
-`E_UNINITIALIZED_USE`, `E_TRAIT_NOT_FOUND`,
-`E_DUPLICATE_IMPL`, `E_CONTRACT_VIOLATION`,
-`E_OVERFLOW`, `E_TEST_FAILURE`, `E_TEST_RUNNER_ERROR`,
-`E_TRAIT_NOT_DERIVABLE` and `E_CANNOT_INFER`. `E_DIVISION_BY_ZERO` is
+`E_UNINITIALIZED_USE`, `E_OVERFLOW`, `E_TEST_FAILURE`,
+`E_TEST_RUNNER_ERROR` and `E_CANNOT_INFER`. `E_DIVISION_BY_ZERO` is
 raised only by the REPL interpreter. Every other code in §28, the 36
 package codes included, is both catalogued and raised.
 

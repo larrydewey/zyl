@@ -154,7 +154,11 @@ lowering, the same `compile-to-fns` the CLI uses — and is then
 *evaluated* by an ICNF interpreter (`stdlib/repl/interp.zyl`) in the
 REPL's own process rather than compiled and linked. That is why an
 entry takes milliseconds, and why a value bound with `def` survives
-from one entry to the next without being recomputed. Values print
+from one entry to the next without being recomputed; a `defn` entered
+later can read it, as `double x` would inside a function body. The
+interpreter runs tail calls in constant stack, so a recursive loop
+behaves as it does compiled. An `Int` result of 0 is not echoed, so a
+`print` entry does not add `=> 0` under its output. Values print
 structurally: a variant as its constructor and fields, a struct as its
 name and fields.
 
@@ -306,8 +310,8 @@ language-servers = ["zyl-lsp"]
 |---|---|
 | `publishDiagnostics` | Unbalanced delimiters (with a line, column and fix-it), parse errors, duplicate definitions, arity mismatches, mutability and aliasing conflicts, non-exhaustive matches, and `Secret` violations — each with its `E_*` code and a range pointing at the offending name |
 | `codeAction` | A quick fix for each balance error, applying the fix-it the diagnostic carries; none for other diagnostics |
-| `hover` | Signatures for your own functions, variant and struct layouts, the owning struct of a field, and documentation for every built-in form, operator, type, region and capability |
-| `definition` | Functions, types, structs, traits, macros and constants; a variant constructor resolves to its `deftype`, a field to its `defstruct`; `pub` and `feature-gate` wrappers are seen through |
+| `hover` | Signatures for your own functions, variant and struct layouts, the owning struct of a field, and documentation for every built-in form, operator, type, region and capability; on dot syntax (`p.x`, `(p.area)`) the segment under the cursor |
+| `definition` | Functions, types, structs, traits, macros and constants; a variant constructor resolves to its `deftype`, a field to its `defstruct` (also from a dot segment); `pub` and `feature-gate` wrappers are seen through |
 | `typeDefinition` | A variant to its ADT, a field to its struct |
 | `implementation` | Every `impl` of the trait under the cursor |
 | `references`, `documentHighlight` | Every whole-word occurrence, skipping strings and comments, honouring `includeDeclaration` |
@@ -343,9 +347,10 @@ folding, semantic tokens, references — is computed by a separate scan
 over the raw document text, using the same character classification
 `sexp_balance.zyl` uses. That scan is exact about positions and knows
 nothing about scope. A diagnostic from a compiler check gets its range
-by taking the name the message quotes in backticks and finding it in
-the document; a message with no quoted name reports at the top of the
-file.
+from the `--> file:line:col` location the compiler writes into the
+message, spanning the token there; a message without a location falls
+back to the first name it quotes in backticks, and then to the top of
+the file.
 
 **Everything that needs to answer "what" runs the real front end.** The
 document is parsed, its modules resolved and its macros expanded, and a
@@ -377,8 +382,6 @@ Each of these is a consequence of the design above, not an oversight:
   shadows the name being renamed. Zyl rejects duplicate top-level
   definitions, so a top-level name is unambiguous file-wide; a shadowing
   `let` is the case to watch.
-- **The extension is not bundled.** `vsce package` warns about the
-  number of JavaScript files it ships from the language-client library.
 
 ## 35.9 Testing the Tools
 

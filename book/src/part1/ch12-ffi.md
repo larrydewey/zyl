@@ -233,7 +233,7 @@ A pointer returned by C is an `Int` in Zyl. If C allocated it with `malloc`, Zyl
 
 ## 12.6 Callbacks (C Calling Zyl)
 
-Not supported. There is no way to hand C a Zyl function to call back. (Actor mailboxes are no workaround: C has no Zyl function to post to one, and `send` messages are never observed; see Chapter 9.)
+Not supported. There is no way to hand C a Zyl function to call back. (Actor mailboxes are no workaround: C has no Zyl function to post to one; see Chapter 9.)
 
 ## 12.7 Timeout and Safety
 

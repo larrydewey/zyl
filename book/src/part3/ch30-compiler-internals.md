@@ -39,7 +39,7 @@ which the `zyl` CLI, `zyl eval` and the REPL all call. Abridged:
     0))
 
 (defn lower-exprs (arena exprs0)
-  (let exprs (dv-expand-program exprs0)                           ; derive Show
+  (let exprs (dv-expand-program exprs0)                           ; derive
     (let inferer (inferer-new)                                    ; empty: impl lifting only
       (let mono-ctx (mono-context-populate-adt-order (mono-context-new inferer) inferer)
         (let mono-exprs (monomorphize mono-ctx exprs)             ; lift impl bodies
