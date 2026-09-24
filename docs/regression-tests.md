@@ -29,6 +29,34 @@ This file documents the test infrastructure and how to run tests for Zyl.
 | `--depth N` | Set nesting depth for stress tests (default: 100) |
 | `--timeout N` | Per-test timeout in seconds (default: 10) |
 
+
+## Interpreter agreement
+
+`--full` runs one more section: every regression and smoke test is run
+**twice**, once as a compiled binary and once through the ICNF
+interpreter (`zyl eval`, the REPL's evaluator), and the two outputs are
+diffed. Two back ends for one language is exactly the kind of thing that
+drifts silently, so the suite compares them rather than assuming.
+
+```bash
+./run_regression_tests.sh --full --filter interpreter   # just this section
+./run_regression_tests.sh --full --filter interpreter --verbose  # with diffs
+```
+
+Only stdout is compared: compiler warnings go to stderr, and the
+compiled run emits them at build time while the interpreted run emits
+them at eval time — a difference in when, not in what.
+
+Some tests are deliberately left out of this comparison, and
+`DIFF_SKIP` in the runner records why for each: programs that spawn
+actors (an interpreted function has no native entry point, so the
+interpreter reports `E_UNSUPPORTED_INTERPRETED`), two that print a
+value's address, one that assumes a fresh `alloc-malloc` block reads
+back as zeroes, and the crypto suite, which is minutes of interpreted
+arithmetic for what the compiled run already covers in seconds.
+
+`docs/repl.md` lists the places the two back ends differ on purpose.
+
 ---
 
 ## Test Directory Structure

@@ -69,9 +69,34 @@ verify/                  Python cross-checks for stdlib/math
 | Optimization | `stdlib/compiler/optimization.zyl` |
 | Code generation | `stdlib/compiler/codegen.zyl` |
 | Errors | `stdlib/compiler/error_codes.zyl`, `error_report.zyl` |
+| The pipeline itself | `stdlib/compiler/pipeline.zyl` |
+
+`pipeline.zyl` is the one implementation of the phase order:
+`compile-to-fns` runs everything up to and including region inference,
+`compile-to-asm` is that plus code generation. The CLI
+(`selfhost/driver.zyl`) and the REPL both call it, which is what keeps
+`zyl build` and `zyl repl` running the same compiler.
 
 `contract_injection.zyl` exists but is not wired into the driver; see
 the comment in `selfhost/driver.zyl` for why.
+
+### REPL, file by file
+
+| Concern | File |
+|---|---|
+| Raw mode, window size, key decoding | `stdlib/repl/terminal.zyl` |
+| Editor state, multi-line layout, redraw | `stdlib/repl/line_editor.zyl` |
+| The key loop, completion, reverse search | `stdlib/repl/reader.zyl` |
+| Syntax highlighting as you type | `stdlib/repl/highlight.zyl` |
+| Persistent history | `stdlib/repl/history.zyl` |
+| ICNF interpreter | `stdlib/repl/interp.zyl` |
+| Session, entries, `def` bindings | `stdlib/repl/eval.zyl` |
+| Prompt, meta commands, scripted mode | `stdlib/repl/repl.zyl` |
+
+`zyl repl` and the standalone binary from `tools/repl.zyl` are two entry
+points onto the same modules. `zyl eval <file>` runs a program through
+the interpreter with no binary; the regression suite uses it to check
+that the interpreter and the code generator agree. See `docs/repl.md`.
 
 ### Language server, file by file
 

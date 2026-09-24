@@ -37,6 +37,9 @@ FILTER=""
 VERBOSE=0
 DEPTH=100
 TIMEOUT=10
+# The interpreted side of a differential run is slower than native code
+# by the usual interpreter factor, so it gets its own budget.
+DIFF_TIMEOUT=60
 DRY_RUN=0
 BOOT=0
 NO_BOOT=0
@@ -156,6 +159,74 @@ run_fail_test() {
     PASS=$((PASS + 1))
 }
 
+# Differential test: the same program, compiled and interpreted, must
+# print the same thing. `zyl eval` runs a program through the ICNF
+# interpreter (stdlib/repl/interp), which is the REPL's evaluator; this
+# is what keeps that second back end honest, since a divergence between
+# it and code generation is exactly the risk of having two.
+#
+# stdout only: compiler warnings go to stderr, and the compiled run
+# emits them at build time while the interpreted run emits them at eval
+# time, which is a difference in when, not in what.
+run_diff_test() {
+    local name="$1"
+    local file="$2"
+
+    TOTAL=$((TOTAL + 1))
+
+    if ! "${ZYL_BIN}" "$file" -o "/tmp/zyl_diff_${TOTAL}.bin" >/dev/null 2>&1; then
+        echo -e "  ${RED}✗${NC} ${name}: does not compile"
+        FAIL=$((FAIL + 1))
+        return
+    fi
+
+    local compiled interpreted
+    compiled=$(timeout "$TIMEOUT" "/tmp/zyl_diff_${TOTAL}.bin" 2>/dev/null) || true
+    interpreted=$(timeout "$DIFF_TIMEOUT" "${ZYL_BIN}" eval "$file" 2>/dev/null) || true
+
+    if [ "$compiled" = "$interpreted" ]; then
+        echo -e "  ${GREEN}✓${NC} ${name}"
+        PASS=$((PASS + 1))
+    else
+        echo -e "  ${RED}✗${NC} ${name}: interpreted output differs from compiled"
+        if [ "$VERBOSE" -eq 1 ]; then
+            diff <(echo "$compiled") <(echo "$interpreted") | head -20
+        fi
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+# Tests the differential run deliberately leaves out, with the reason:
+#   actors, concurrency  — spawning an actor hands the runtime a native
+#                          function pointer, which an interpreted
+#                          function does not have. The interpreter says
+#                          so (E_UNSUPPORTED_INTERPRETED) rather than
+#                          jumping to a number.
+#   derive               — one of its tests prints a value's address,
+#                          which is not the same number in two different
+#                          runtimes and is not meant to be.
+#   collections          — asserts that a fresh alloc-malloc block reads
+#                          back as zeroes, which malloc does not promise.
+#   ffi-advanced         — prints the bytes at a pinned address, which
+#                          are not the same bytes in two runtimes.
+#   modules              — one of its tests spawns an actor.
+#   package-system       — its signature tests are Ed25519.
+#   math-*               — minutes of interpreted arithmetic for what
+#                          the compiled suite already covers in seconds.
+#                          Matched by prefix, below.
+DIFF_SKIP="actors concurrency modules derive collections ffi-advanced package-system selfhost-codegen"
+
+diff_skipped() {
+    local name="$1"
+    case "$name" in
+        math-*) return 0 ;;
+    esac
+    for s in $DIFF_SKIP; do
+        [ "$s" = "$name" ] && return 0
+    done
+    return 1
+}
+
 echo "=== Zyl Regression Test Suite ==="
 echo ""
 
@@ -232,6 +303,20 @@ if [ "$MODE" = "full" ]; then
         local_name=$(basename "$f" .zyl)
         if [ -z "$FILTER" ] || echo "$local_name" | grep -qi -- "$FILTER"; then
             run_test "integration/${local_name}" "$f"
+        fi
+    done
+fi
+
+# Interpreter/codegen agreement (see run_diff_test).
+if [ "$MODE" = "full" ]; then
+    echo ""
+    echo "=== Interpreter agrees with codegen ==="
+    for f in "${TESTS_DIR}"/regression/*.zyl "${TESTS_DIR}"/smoke/*.zyl; do
+        [ -f "$f" ] || continue
+        local_name=$(basename "$f" .zyl)
+        diff_skipped "$local_name" && continue
+        if [ -z "$FILTER" ] || echo "interpreter ${local_name}" | grep -qi -- "$FILTER"; then
+            run_diff_test "interpreter/${local_name}" "$f"
         fi
     done
 fi

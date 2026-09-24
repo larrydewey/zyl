@@ -625,15 +625,22 @@
 ; monotonically increasing Int distinct from every earlier call, with no
 ; separate counter to thread through ic-expr's signature.
 (defn ic-fresh-id (arena)
-  ; NOTE: must be a deterministic, monotonically increasing value across
-  ; runs (used to name lifted match-arm/lambda helper functions) so that
-  ; stageN and stage(N+1) emit byte-identical assembly (the self-hosting
-  ; fixed point). A raw heap pointer is NOT deterministic (varies with
-  ; arena base address between runs); arena-used (the bump allocator's
-  ; byte offset from the arena's own base) is — every call still returns
-  ; a fresh, distinct value since it strictly increases with each alloc.
-  (let _ (arena-alloc-zeroed arena 1)
-    (arena-used arena)))
+  ; Must be deterministic and monotonically increasing across runs (it
+  ; names the lifted match-arm and lambda helper functions), so that
+  ; stageN and stage(N+1) emit byte-identical assembly -- the
+  ; self-hosting fixed point.
+  ;
+  ; This was `arena-used` after a one-byte allocation: also
+  ; deterministic, but it restarts whenever the arena does. The REPL
+  ; compiles one program per entry and reclaims each entry's arena, so
+  ; two entries would name two unrelated lambdas `_lambda_1234`, and a
+  ; closure stored by the first would find the second. zyl_fresh_id is a
+  ; process-lifetime counter: still a fixed sequence for a fresh process
+  ; compiling a fixed source, and never repeating within a session.
+  ; `arena` is no longer needed; the parameter stays so that every call
+  ; site reads the same.
+  (let _ arena
+    (ffi-call "zyl_fresh_id" 0)))
 
 (defn ic-digit-str (d)
   (if (= d 0) "0"

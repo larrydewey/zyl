@@ -155,4 +155,41 @@ long long zyl_mkdir_p(long long path);
 long long zyl_cstr_from_byte(long long b);
 long long zyl_cc_compile_log(long long path, long long logpath);
 
+/* Interpreter support (stdlib/repl/interp.zyl). */
+long long zyl_word_of_cstr(long long s);
+long long zyl_fresh_id(void);
+long long zyl_heap_swap(long long arena);
+long long zyl_session_arena(void);
+long long zyl_heap_block_p(long long w);
+long long zyl_itest_add(long long name, long long fn);
+long long zyl_itest_count(void);
+long long zyl_itest_name(long long i);
+long long zyl_itest_fn(long long i);
+long long zyl_itest_reset(void);
+long long zyl_itest_start(long long name);
+long long zyl_itest_outcome(long long ok);
+long long zyl_itest_summary(long long passed, long long failed);
+long long zyl_fnmap_reset(void);
+long long zyl_fnmap_put(long long name, long long value);
+long long zyl_fnmap_get(long long name);
+long long zyl_val_alloc(long long nwords, long long kinds);
+long long zyl_val_kind(long long p, long long i);
+long long zyl_cstr_of_word(long long w);
+long long zyl_int_text(long long n);
+long long zyl_ffi_lookup(long long name);
+long long zyl_call_argv(long long fn, long long argc, long long argv);
+long long zyl_f_parse(long long text);
+long long zyl_f_add(long long a, long long b);
+long long zyl_f_sub(long long a, long long b);
+long long zyl_f_mul(long long a, long long b);
+long long zyl_f_div(long long a, long long b);
+long long zyl_f_rem(long long a, long long b);
+long long zyl_f_cmp(long long a, long long b);
+long long zyl_f_of_int(long long n);
+long long zyl_f_to_int(long long bits);
+long long zyl_f_text(long long bits);
+long long zyl_print_int(long long n);
+long long zyl_print_str(long long s);
+long long zyl_print_float(long long bits);
+
 #endif

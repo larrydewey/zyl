@@ -43,6 +43,7 @@
 (use compiler/codegen)
 (use compiler/pipeline)
 (use repl/repl)
+(use repl/interp)
 (use compiler/sexp_balance)
 (use compiler/error_codes)
 (use compiler/error_report)
@@ -208,6 +209,32 @@
                             (begin
                               (print "zyl: error: cannot open source file")
                               1)))))))))))))))
+
+; ===========================================================================
+; `zyl eval <file.zyl>` — run a program without building one
+; ===========================================================================
+;
+; The same phases as a compile, stopping at ICNF, with the result
+; evaluated in this process (stdlib/repl/interp) instead of turned into
+; assembly. No binary is produced and no linker runs, which makes it the
+; quick way to run a script -- and the way the regression suite checks
+; that the interpreter and the code generator agree, by running the same
+; program both ways and diffing the output.
+(defn drv-eval (arena cwd)
+  (let src (cli-resolve-path cwd (drv-arg 2))
+    (let fd (file-open src "r")
+      (if (< fd 1)
+        (begin
+          (print "zyl: error: cannot open source file")
+          1)
+        (let srcbuf (file-read fd 4194304)
+          (begin
+            (file-close fd)
+            (drv-eval-src arena srcbuf src)))))))
+
+(defn drv-eval-src (arena srcbuf src)
+  (let fns (compile-to-fns arena srcbuf src)
+    (in-run-main fns)))
 
 ; ===========================================================================
 ; PACKAGE SUBCOMMANDS (spec v5.0 SS31.11)
@@ -384,6 +411,7 @@
     (print "zyl publish                            archive, hash and sign this package")
     (print "zyl key                                show or create the publisher key")
     (print "zyl repl                               start an interactive session")
+    (print "zyl eval <file.zyl>                    run a program without building one")
     0))
 
 (defn drv-subcommand (arena cmd cwd)
@@ -412,7 +440,9 @@
   ; there by the time this is reached.
   (if (> (str-eq cmd "repl") 0)
     (repl-run arena)
-    (drv-usage)))))))))))))
+  (if (> (str-eq cmd "eval") 0)
+    (drv-eval arena cwd)
+    (drv-usage))))))))))))))
 
 (defn main ()
   (let arena (arena-create 1073741824)

@@ -3076,3 +3076,467 @@ long long zyl_cstr_from_byte(long long b) {
     s[1] = 0;
     return p;
 }
+
+/* ── Interpreter support (stdlib/repl/interp.zyl) ───────────────────────
+   The REPL evaluates a lowered ICNF program in this process instead of
+   generating machine code for it. Three things only C can provide:
+   calling an arbitrary FFI symbol by name, doing real double arithmetic
+   on values the interpreter carries as bit patterns, and turning a
+   String into the machine word every other layer already knows it is. */
+#include <dlfcn.h>
+
+/* A String and its address are the same thing at runtime; the type
+   system is what distinguishes them. The interpreter stores every value
+   as a machine word, so it needs to cross that line explicitly rather
+   than by accident. */
+long long zyl_word_of_cstr(long long s) { return s; }
+
+/* A fresh id, unique for the life of the process and monotonically
+   increasing. icnf.zyl names its lifted match-arm and lambda helpers
+   with it, so it has to be deterministic: a fresh process compiling the
+   same source asks for ids in the same order and gets the same ones,
+   which is what keeps stageN and stage(N+1) byte-identical.
+
+   It used to be the compile arena's byte offset, which is also
+   deterministic but restarts whenever the arena does. The REPL compiles
+   many programs in one process and reclaims each entry's arena, so two
+   entries would name two unrelated lambdas `_lambda_1234` and a closure
+   stored from the first would call the second. A counter that never
+   resets cannot do that. */
+/* The heap arena the runtime allocates from, swapped for the duration
+   of one REPL entry. Compiling a program allocates a great deal of
+   string garbage through zyl_cstr_concat and friends -- the qualifier
+   alone builds a canonical key per identifier -- and a bump allocator
+   never gives it back. The REPL compiles a program per entry, so it
+   runs each one against an arena it can throw away, and keeps the
+   session's own arena for the entries that bind something.
+
+   Returns the arena that was in place, for the caller to restore. */
+long long zyl_heap_swap(long long arena) {
+    long long old = (long long)(size_t)g_heap_arena;
+    if (arena) g_heap_arena = (void*)(size_t)arena;
+    return old;
+}
+
+/* The arena that holds everything a session keeps: the values bound by
+   `def`, and whatever they point at. Created once, never destroyed. */
+long long zyl_session_arena(void) {
+    static void* session = NULL;
+    if (!session) {
+        session = (void*)(size_t)zyl_arena_create(ZYL_HEAP_ARENA_DEFAULT_BLOCK);
+    }
+    return (long long)(size_t)session;
+}
+
+/* Whether `w` addresses a live block in one of the arenas the
+   interpreter allocates values from. It has to ask: a variant's field
+   is just a machine word, and the interpreter cannot tell an Int from a
+   pointer by looking at it -- `(Cons 1 Nil)` holds the integer 1 where
+   another value would hold an address. Dereferencing that 1 to read a
+   tag is what this prevents.
+
+   Conservative in the safe direction: an integer that happens to land
+   inside a live block is treated as a pointer (and then read as a
+   block, which is harmless -- it yields a wrong tag, not a crash),
+   while a pointer into an arena that has been destroyed reads as not a
+   pointer, which is exactly right. */
+static int zyl_addr_in_arena(void* arenap, long long ptr) {
+    if (!arenap) return 0;
+    ZylArena* a = (ZylArena*)arenap;
+    char* p = (char*)(size_t)ptr;
+    int found = 0;
+    pthread_mutex_lock(&a->lock);
+    for (ZylArenaBlock* b = a->head; b; b = b->next) {
+        if (p >= b->mem && p + sizeof(long long) <= b->mem + b->used) { found = 1; break; }
+    }
+    pthread_mutex_unlock(&a->lock);
+    return found;
+}
+
+long long zyl_heap_block_p(long long w) {
+    if (w < 4096) return 0;
+    if (w & 7) return 0;
+    if (zyl_addr_in_arena(g_heap_arena, w)) return 1;
+    return zyl_addr_in_arena((void*)(size_t)zyl_session_arena(), w) ? 1 : 0;
+}
+
+/* The interpreter's test registry. A `(test "name" ...)` form lowers to
+   a zyl_register_test call whose second argument is the address of the
+   generated test function -- which, under the interpreter, is not an
+   address at all but an interpreter value. So the interpreter keeps its
+   own registry of those values and runs the tests itself, printing what
+   zyl_run_tests prints, character for character, because the regression
+   suite compares the two outputs. */
+#define ZYL_ITEST_MAX 4096
+static struct { long long name; long long fn; } g_itests[ZYL_ITEST_MAX];
+static long long g_itest_count = 0;
+
+long long zyl_itest_add(long long name, long long fn) {
+    if (g_itest_count >= ZYL_ITEST_MAX) return -1;
+    g_itests[g_itest_count].name = name;
+    g_itests[g_itest_count].fn = fn;
+    return g_itest_count++;
+}
+
+long long zyl_itest_count(void) { return g_itest_count; }
+long long zyl_itest_name(long long i) {
+    if (i < 0 || i >= g_itest_count) return 0;
+    return g_itests[i].name;
+}
+long long zyl_itest_fn(long long i) {
+    if (i < 0 || i >= g_itest_count) return 0;
+    return g_itests[i].fn;
+}
+long long zyl_itest_reset(void) { g_itest_count = 0; return 0; }
+
+/* The two lines zyl_run_tests writes, so that an interpreted run and a
+   compiled run produce the same transcript. */
+long long zyl_itest_start(long long name) {
+    printf("test: %s ... ", (const char*)(size_t)name);
+    fflush(stdout);
+    return 0;
+}
+
+long long zyl_itest_outcome(long long ok) {
+    printf(ok ? "ok\n" : "FAIL\n");
+    return 0;
+}
+
+long long zyl_itest_summary(long long passed, long long failed) {
+    printf("\ntest result: %lld passed, %lld failed, %lld total\n",
+           passed, failed, passed + failed);
+    return (failed > 0) ? 1 : 0;
+}
+
+/* Name-to-value map for the interpreter's function table. Finding the
+   callee by walking a list is fine for one expression at a prompt and
+   hopeless for a program that makes millions of calls: a lowered
+   program has thousands of functions in it, and the walk is per call.
+   One map, rebuilt when the table changes, makes the lookup a hash.
+
+   Open addressing, no deletion, contents replaced wholesale -- the
+   interpreter rebuilds it for each program it runs. Lookup order never
+   affects a result, so nothing here can make a run non-deterministic. */
+#define ZYL_FNMAP_CAP 16384
+static struct { long long name; long long value; } g_fnmap[ZYL_FNMAP_CAP];
+static long long g_fnmap_used = 0;
+
+static size_t zyl_str_hash(const char* s) {
+    size_t h = 1469598103934665603ULL;           /* FNV-1a */
+    while (*s) { h ^= (unsigned char)*s++; h *= 1099511628211ULL; }
+    return h;
+}
+
+long long zyl_fnmap_reset(void) {
+    memset(g_fnmap, 0, sizeof(g_fnmap));
+    g_fnmap_used = 0;
+    return 0;
+}
+
+/* First writer wins: the interpreter inserts newest-definition-first, so
+   a redefinition entered at the prompt shadows the earlier one. */
+long long zyl_fnmap_put(long long name, long long value) {
+    const char* n = (const char*)(size_t)name;
+    if (!n || g_fnmap_used >= ZYL_FNMAP_CAP / 2) return 0;
+    size_t i = zyl_str_hash(n) & (ZYL_FNMAP_CAP - 1);
+    for (size_t probe = 0; probe < ZYL_FNMAP_CAP; probe++) {
+        size_t j = (i + probe) & (ZYL_FNMAP_CAP - 1);
+        if (!g_fnmap[j].name) {
+            g_fnmap[j].name = name;
+            g_fnmap[j].value = value;
+            g_fnmap_used++;
+            return 1;
+        }
+        if (strcmp((const char*)(size_t)g_fnmap[j].name, n) == 0) return 0;
+    }
+    return 0;
+}
+
+long long zyl_fnmap_get(long long name) {
+    const char* n = (const char*)(size_t)name;
+    if (!n || g_fnmap_used == 0) return 0;
+    size_t i = zyl_str_hash(n) & (ZYL_FNMAP_CAP - 1);
+    for (size_t probe = 0; probe < ZYL_FNMAP_CAP; probe++) {
+        size_t j = (i + probe) & (ZYL_FNMAP_CAP - 1);
+        if (!g_fnmap[j].name) return 0;
+        if (strcmp((const char*)(size_t)g_fnmap[j].name, n) == 0) return g_fnmap[j].value;
+    }
+    return 0;
+}
+
+/* A heap block for the interpreter: the same payload compiled code
+   builds -- [tag][field]... with zyl_heap_alloc's qword-count header
+   right in front of it, which is what zyl_variant_eq and
+   zyl_variant_field read -- plus one more hidden word ahead of that,
+   recording what kind each field is (two bits apiece, lowest field
+   first: 0 Int, 1 String, 2 Float, 3 pointer).
+
+   Compiled code has no such word: codegen binds every destructured
+   field as an Int, so a String pulled out of a variant prints as its
+   address. The interpreter can do better for free, and this is where it
+   keeps what it needs to. The magic tag is what makes the word safe to
+   read: a block that came from anywhere else answers "no kinds", and
+   its fields read back as Int exactly as before. */
+#define ZYL_KINDS_MAGIC 0x5A4B4E44LL   /* 'ZKND' */
+
+long long zyl_val_alloc(long long nwords, long long kinds) {
+    if (nwords < 0) nwords = 0;
+    if (nwords > (1LL << 20)) return 0;
+    /* Two extra words in front of the payload: the kinds record, and a
+       second copy of the qword count where zyl_variant_eq expects to
+       find it (immediately before the pointer that is handed out). */
+    long long raw = zyl_heap_alloc((nwords + 2) * 8);
+    if (!raw) return 0;
+    long long* w = (long long*)(size_t)raw;
+    w[0] = (ZYL_KINDS_MAGIC << 32) | (kinds & 0xFFFFFFFFLL);
+    w[1] = nwords;
+    return raw + 16;
+}
+
+/* The kind of field `i` of `p`, or 0 (Int) when `p` was not built here. */
+long long zyl_val_kind(long long p, long long i) {
+    if (!p || i < 0 || i >= 31) return 0;
+    if (!zyl_heap_block_p(p - 16)) return 0;
+    long long w = *(long long*)(size_t)(p - 16);
+    if ((w >> 32) != ZYL_KINDS_MAGIC) return 0;
+    return (w >> (2 * i)) & 3;
+}
+
+long long zyl_fresh_id(void) {
+    static long long counter = 0;
+    return ++counter;
+}
+
+/* The other direction, for a word the interpreter knows points at
+   NUL-terminated bytes. Also the identity; also there for the type
+   system rather than the machine. */
+long long zyl_cstr_of_word(long long w) { return w; }
+
+/* Decimal text of an integer, heap-allocated. zyl_cstr_from_int needs
+   an arena; the interpreter has heap values and no arena of its own. */
+long long zyl_int_text(long long n) {
+    long long p = zyl_heap_alloc(24);
+    if (!p) return 0;
+    snprintf((char*)(size_t)p, 24, "%lld", n);
+    return p;
+}
+
+/* Every runtime symbol the compiler can emit an `ffi-call` to, by name.
+   dlsym alone would need the whole program linked with -rdynamic, which
+   is not something a language should require of every binary it
+   produces, so the symbols this runtime owns are listed explicitly and
+   dlsym is the fallback for everything else (libc, a shared library the
+   program links). Adding a function here is only necessary for the
+   interpreter -- compiled code calls it directly by symbol. */
+/* Every runtime symbol the compiler can emit an `ffi-call` to, by name.
+   dlsym alone would need the whole program linked with -rdynamic, which
+   is not something a language should require of every binary it
+   produces, so the symbols this runtime owns are listed here and dlsym
+   is the fallback for everything else (libc, a shared library the
+   program links).
+
+   The list is generated from what this runtime declares and what
+   icnf.zyl/codegen.zyl emit; regenerate it when the runtime gains a
+   function the compiler lowers to. Compiled code needs no entry -- it
+   calls the symbol directly -- so a missing name costs only the
+   interpreter, and shows up as E_FFI_SYMBOL_NOT_FOUND rather than as
+   anything silent. */
+#define ZYL_FFI_SYMBOLS(X) \
+    X(ffi_pin) X(ffi_unpin) X(zyl_actor_init) \
+    X(zyl_actor_is_alive) X(zyl_actor_send) X(zyl_actor_send_closure) \
+    X(zyl_actor_send_data) X(zyl_actor_spawn) X(zyl_actor_terminate) \
+    X(zyl_actor_wait) X(zyl_actor_wait_all) X(zyl_aes_encrypt_block) \
+    X(zyl_aesni_available) X(zyl_align_check) X(zyl_arena_alloc) \
+    X(zyl_arena_alloc_zeroed) X(zyl_arena_capacity) X(zyl_arena_create) \
+    X(zyl_arena_destroy) X(zyl_arena_reset) X(zyl_arena_used) \
+    X(zyl_arg_str) X(zyl_argc) X(zyl_atomic_add) \
+    X(zyl_atomic_cas) X(zyl_atomic_fetch_add) X(zyl_atomic_load) \
+    X(zyl_atomic_max) X(zyl_atomic_min) X(zyl_atomic_store) \
+    X(zyl_atomic_sub) X(zyl_blake3_file_hex) X(zyl_blake3_hex) \
+    X(zyl_byte_slice) X(zyl_byte_slice_sub) X(zyl_bytebuf_append) \
+    X(zyl_bytebuf_atomic_add) X(zyl_bytebuf_atomic_cas) X(zyl_bytebuf_atomic_fetch_add) \
+    X(zyl_bytebuf_atomic_load) X(zyl_bytebuf_atomic_max) X(zyl_bytebuf_atomic_min) \
+    X(zyl_bytebuf_atomic_store) X(zyl_bytebuf_atomic_sub) X(zyl_bytebuf_cap) \
+    X(zyl_bytebuf_len) X(zyl_bytebuf_new) X(zyl_bytebuf_ptr) \
+    X(zyl_call0) X(zyl_call1) X(zyl_call2) \
+    X(zyl_call3) X(zyl_call4) X(zyl_call5) \
+    X(zyl_call6) X(zyl_call_argv) X(zyl_call_on_big_stack) \
+    X(zyl_cc_compile) X(zyl_cc_compile_log) X(zyl_chdir) \
+    X(zyl_cpuid_features) X(zyl_cstr_byte_at) X(zyl_cstr_byte_set) \
+    X(zyl_cstr_concat) X(zyl_cstr_count_newlines) X(zyl_cstr_decode) \
+    X(zyl_cstr_eq) X(zyl_cstr_from_byte) X(zyl_cstr_from_int) \
+    X(zyl_cstr_last_newline) X(zyl_cstr_len) X(zyl_cstr_of_word) \
+    X(zyl_cstr_sanitize) X(zyl_cstr_sub) X(zyl_cstr_substr) \
+    X(zyl_cstr_to_int) X(zyl_cstr_to_int_base) X(zyl_dirname_cstr) \
+    X(zyl_ensure_arenas) X(zyl_exec_cmd) X(zyl_f_add) \
+    X(zyl_f_cmp) X(zyl_f_div) X(zyl_f_error) \
+    X(zyl_f_mul) X(zyl_f_of_int) X(zyl_f_parse) \
+    X(zyl_f_rem) X(zyl_f_sub) X(zyl_f_text) \
+    X(zyl_f_to_int) X(zyl_ffi_lookup) X(zyl_file_close_c) \
+    X(zyl_file_open_c) X(zyl_file_read_c) X(zyl_file_write_c) \
+    X(zyl_fnmap_get) X(zyl_fnmap_put) X(zyl_fnmap_reset) \
+    X(zyl_fresh_id) X(zyl_getcwd) X(zyl_getenv) \
+    X(zyl_heap_alloc) X(zyl_heap_block_p) X(zyl_heap_swap) \
+    X(zyl_int_text) X(zyl_itest_add) X(zyl_itest_count) \
+    X(zyl_itest_fn) X(zyl_itest_name) X(zyl_itest_outcome) \
+    X(zyl_itest_reset) X(zyl_itest_start) X(zyl_itest_summary) \
+    X(zyl_load_byte) X(zyl_load_byte_signed) X(zyl_mangle_key) \
+    X(zyl_mem_alloc) X(zyl_mem_free) X(zyl_mem_read) \
+    X(zyl_mem_write) X(zyl_mkdir_p) X(zyl_mlock) \
+    X(zyl_panic) X(zyl_path_exists) X(zyl_pin_alloc) \
+    X(zyl_print_float) X(zyl_print_int) X(zyl_print_str) \
+    X(zyl_random_fill) X(zyl_random_words) X(zyl_run_bin) \
+    X(zyl_session_arena) X(zyl_source_path) X(zyl_source_register) \
+    X(zyl_span_col) X(zyl_span_copy) X(zyl_span_file) \
+    X(zyl_span_line) X(zyl_span_line_text) X(zyl_span_off) \
+    X(zyl_span_offset_at) X(zyl_span_set) X(zyl_store_byte) \
+    X(zyl_store_byte_signed) X(zyl_str_append) X(zyl_str_append_capped) \
+    X(zyl_sym_escape) X(zyl_system_cmd) X(zyl_term_flush) \
+    X(zyl_term_height) X(zyl_term_is_tty) X(zyl_term_raw_off) \
+    X(zyl_term_raw_on) X(zyl_term_read_byte) X(zyl_term_read_byte_timeout) \
+    X(zyl_term_width) X(zyl_term_write) X(zyl_try_frame_msg) \
+    X(zyl_try_last_msg) X(zyl_try_pop) X(zyl_try_push) \
+    X(zyl_variant_cmp) X(zyl_variant_eq) X(zyl_variant_field) \
+    X(zyl_word_of_cstr) X(zyl_zeroize)
+
+/* Forward declarations for the interpreter helpers named above. */
+long long zyl_f_parse(long long text);
+long long zyl_f_add(long long a, long long b);
+long long zyl_f_sub(long long a, long long b);
+long long zyl_f_mul(long long a, long long b);
+long long zyl_f_div(long long a, long long b);
+long long zyl_f_rem(long long a, long long b);
+long long zyl_f_cmp(long long a, long long b);
+long long zyl_f_of_int(long long n);
+long long zyl_f_to_int(long long bits);
+long long zyl_f_text(long long bits);
+long long zyl_print_int(long long n);
+long long zyl_print_str(long long s);
+long long zyl_print_float(long long bits);
+
+struct ZylFfiEntry { const char* name; void* fn; };
+
+#define ZYL_FFI_ENTRY(sym) { #sym, (void*)(size_t)&sym },
+static const struct ZylFfiEntry g_ffi_table[] = {
+    ZYL_FFI_SYMBOLS(ZYL_FFI_ENTRY)
+    { NULL, NULL }
+};
+#undef ZYL_FFI_ENTRY
+
+/* Address of an FFI target by name: this runtime's own symbols first
+   (always present, no link flags needed), then whatever the dynamic
+   loader can see. 0 means "no such symbol", which the interpreter
+   reports as a located error rather than calling into nothing. */
+long long zyl_ffi_lookup(long long name) {
+    const char* n = (const char*)(size_t)name;
+    if (!n) return 0;
+    for (const struct ZylFfiEntry* e = g_ffi_table; e->name; e++) {
+        if (strcmp(e->name, n) == 0) return (long long)(size_t)e->fn;
+    }
+    void* sym = dlsym(RTLD_DEFAULT, n);
+    return (long long)(size_t)sym;
+}
+
+/* Call `fn` with `argc` machine words read from the array at `argv`.
+   Arguments arrive as an array rather than as parameters because a
+   variadic bridge would need more than six of its own.
+
+   Deliberately NOT routed through zyl_call0..6: those treat any address
+   at or above 4 GiB as a closure object and dereference its first word
+   for the code pointer, which is right for a Zyl closure value and
+   wrong for every symbol the dynamic loader hands back -- libc lives
+   well above that line. The interpreter resolves Zyl closures itself
+   and only ever passes a real function address here. */
+typedef long long (*ZylFn0)(void);
+typedef long long (*ZylFn1)(long long);
+typedef long long (*ZylFn2)(long long, long long);
+typedef long long (*ZylFn3)(long long, long long, long long);
+typedef long long (*ZylFn4)(long long, long long, long long, long long);
+typedef long long (*ZylFn5)(long long, long long, long long, long long, long long);
+typedef long long (*ZylFn6)(long long, long long, long long, long long, long long, long long);
+
+long long zyl_call_argv(long long fn, long long argc, long long argv) {
+    const long long* a = (const long long*)(size_t)argv;
+    if (fn < ZYL_MIN_CALL_ADDR) {
+        fprintf(stderr, "zyl: ffi call to invalid address 0x%llx\n",
+                (unsigned long long)fn);
+        return 0;
+    }
+    switch (argc) {
+        case 0: return ((ZylFn0)(size_t)fn)();
+        case 1: return ((ZylFn1)(size_t)fn)(a[0]);
+        case 2: return ((ZylFn2)(size_t)fn)(a[0], a[1]);
+        case 3: return ((ZylFn3)(size_t)fn)(a[0], a[1], a[2]);
+        case 4: return ((ZylFn4)(size_t)fn)(a[0], a[1], a[2], a[3]);
+        case 5: return ((ZylFn5)(size_t)fn)(a[0], a[1], a[2], a[3], a[4]);
+        case 6: return ((ZylFn6)(size_t)fn)(a[0], a[1], a[2], a[3], a[4], a[5]);
+        default:
+            fprintf(stderr, "zyl: ffi call with %lld arguments (max 6)\n",
+                    (long long)argc);
+            return 0;
+    }
+}
+
+/* Doubles, carried as their bit patterns. The interpreter stores every
+   value in one machine word, so a Float is its IEEE-754 bits and every
+   operation on it crosses through here. Compiled code uses the SSE unit
+   on the same bit patterns, so the results agree bit for bit. */
+static double zyl_d_of(long long bits) {
+    double d;
+    memcpy(&d, &bits, sizeof(d));
+    return d;
+}
+
+static long long zyl_bits_of(double d) {
+    long long bits;
+    memcpy(&bits, &d, sizeof(bits));
+    return bits;
+}
+
+long long zyl_f_parse(long long text) {
+    const char* s = (const char*)(size_t)text;
+    if (!s) return 0;
+    return zyl_bits_of(strtod(s, NULL));
+}
+
+long long zyl_f_add(long long a, long long b) { return zyl_bits_of(zyl_d_of(a) + zyl_d_of(b)); }
+long long zyl_f_sub(long long a, long long b) { return zyl_bits_of(zyl_d_of(a) - zyl_d_of(b)); }
+long long zyl_f_mul(long long a, long long b) { return zyl_bits_of(zyl_d_of(a) * zyl_d_of(b)); }
+long long zyl_f_div(long long a, long long b) { return zyl_bits_of(zyl_d_of(a) / zyl_d_of(b)); }
+/* Truncated remainder without libm: x - trunc(x/y)*y. Written this way
+   so that nothing linking this runtime has to link -lm for a case the
+   language barely exercises (float `%`). */
+long long zyl_f_rem(long long a, long long b) {
+    double x = zyl_d_of(a), y = zyl_d_of(b);
+    if (y == 0.0) return zyl_bits_of(0.0);
+    double q = x / y;
+    if (q > -9.22e18 && q < 9.22e18) q = (double)(long long)q;
+    return zyl_bits_of(x - q * y);
+}
+
+/* -1, 0 or 1. NaN compares as 2, so that every ordering built on this
+   answers false for it rather than accidentally answering true. */
+long long zyl_f_cmp(long long a, long long b) {
+    double x = zyl_d_of(a), y = zyl_d_of(b);
+    if (x < y) return -1;
+    if (x > y) return 1;
+    if (x == y) return 0;
+    return 2;
+}
+
+long long zyl_f_of_int(long long n) { return zyl_bits_of((double)n); }
+long long zyl_f_to_int(long long bits) { return (long long)zyl_d_of(bits); }
+
+/* The same text printf's "%f" would produce, for a REPL result line. */
+long long zyl_f_text(long long bits) {
+    long long p = zyl_heap_alloc(48);
+    if (!p) return 0;
+    snprintf((char*)(size_t)p, 48, "%f", zyl_d_of(bits));
+    return p;
+}
+
+/* print, in each of the three shapes codegen emits, so that interpreted
+   output is byte-identical to compiled output. */
+long long zyl_print_int(long long n) { printf("%lld\n", n); return 0; }
+long long zyl_print_str(long long s) { printf("%s\n", (const char*)(size_t)s); return 0; }
+long long zyl_print_float(long long bits) { printf("%f\n", zyl_d_of(bits)); return 0; }

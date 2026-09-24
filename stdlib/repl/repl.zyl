@@ -23,6 +23,7 @@
 (use repl/history)
 (use repl/highlight)
 (use repl/eval)
+(use repl/interp)
 
 (defn repl-version () "0.1")
 
@@ -31,10 +32,17 @@
 ; ===========================================================================
 
 ; Run a session to completion. Returns 0.
-(defn repl-run (arena)
-  (if (= (term-is-tty 0) 1)
-    (repl-interactive arena)
-    (repl-scripted arena)))
+;
+; The arena made here belongs to the editor: cursor motions, the digits
+; in an escape sequence, the odd scratch string, all of it per
+; keystroke. It is reset at every prompt, so a session that runs for a
+; day costs the same as one that runs for a minute. Evaluation does not
+; use it -- each entry compiles into an arena of its own (repl/eval).
+(defn repl-run (_arena)
+  (let arena (arena-create 1048576)
+    (if (= (term-is-tty 0) 1)
+      (repl-interactive arena)
+      (repl-scripted))))
 
 (defn repl-interactive (arena)
   (let entries (hist-load)
@@ -66,6 +74,7 @@
 ; works the way it would outside the REPL.
 (defn repl-loop (arena st sess)
   (begin
+    (arena-reset arena)
     (term-raw-on)
     (let res (reader-read-line arena st (repl-prompt) (repl-cprompt)
                                (repl-candidates sess))
@@ -92,8 +101,13 @@
       (repl-loop arena st sess)
       (let st2 (repl-remember st trimmed)
         (if (= (repl-meta-p trimmed) 1)
-          (repl-meta arena st2 sess trimmed)
+          (repl-meta-interactive arena st2 sess trimmed)
           (repl-eval arena st2 sess trimmed))))))
+
+(defn repl-meta-interactive (arena st sess text)
+  (match (repl-meta-apply sess (Hist.entries (ES.hist st)) text)
+    (MetaQuit (repl-goodbye))
+    (MetaDone sess2 (repl-loop arena st sess2))))
 
 (defn repl-remember (st entry)
   (begin
@@ -101,21 +115,33 @@
     (ES.with-hist st (Hist (hist-push (Hist.entries (ES.hist st)) entry) -1 ""))))
 
 (defn repl-eval (arena st sess text)
-  (let outcome (eval-entry arena sess text)
+  (let outcome (eval-entry sess text)
     (begin
       (repl-report (EvalOutcome.result outcome))
       (repl-loop arena st (EvalOutcome.session outcome)))))
 
 (defn repl-report (result)
   (match result
-    (EvalRan _ 0)
+    (EvalValue text (repl-value text))
+    (EvalUnit 0)
     (EvalDefined name (repl-note (str-concat "defined " name)))
+    (EvalBound name text (repl-note (str-concat name (str-concat " = " text))))
+    (EvalNote text (repl-note text))
     (EvalFailed msg (repl-error msg))))
+
+; The result line. A value the entry produced is the answer to what was
+; typed, so it gets its own marker rather than looking like output the
+; program printed.
+(defn repl-value (text)
+  (begin
+    (term-write "\e[38;5;71m=>\e[0m ")
+    (term-write text)
+    (term-write "\n")
+    0))
 
 (defn repl-note (text)
   (begin
-    (print (str-concat "\e[38;5;244m" (str-concat text "\e[0m")))
-    (term-flush)
+    (term-write (str-concat "\e[38;5;244m" (str-concat text "\e[0m\n")))
     0))
 
 ; Diagnostics arrive already formatted by the compiler's own reporter --
@@ -138,11 +164,19 @@
 (defn repl-meta-p (text)
   (if (= (str-length text) 0) 0 (if (= (term-byte-at text 0) 58) 1 0)))
 
-(defn repl-meta (arena st sess text)
+; What a meta command leaves behind: the session it produced, or the
+; decision to end the run. Both loops -- the editor's and the scripted
+; one -- go through this, so `:defs` means the same thing typed at a
+; prompt and piped in from a file.
+(deftype MetaResult
+  (MetaDone Session)
+  (MetaQuit))
+
+(defn repl-meta-apply (sess entries text)
   (let cmd (repl-meta-word text)
     (let rest (rd-trim (str-substring text (+ 1 (str-length cmd))
                                       (- (str-length text) (+ 1 (str-length cmd)))))
-      (repl-meta-run arena st sess cmd rest))))
+      (repl-meta-run sess entries cmd rest))))
 
 ; The command word after the leading colon.
 (defn repl-meta-word (text)
@@ -154,25 +188,25 @@
       n
       (if (= (term-byte-at text i) 32) i (repl-meta-end text (+ i 1))))))
 
-(defn repl-meta-run (arena st sess cmd rest)
-  (if (= (repl-cmd-p cmd "q" "quit") 1) (repl-goodbye)
-  (if (= (repl-cmd-p cmd "h" "help") 1) (repl-next arena st sess (repl-help))
-  (if (= (repl-cmd-p cmd "history" "hist") 1)
-    (repl-next arena st sess (repl-show-history (Hist.entries (ES.hist st))))
-  (if (= (repl-cmd-p cmd "clear" "cls") 1)
-    (repl-next arena st sess (term-write (ansi-clear-screen)))
-  (if (= (repl-cmd-p cmd "reset" "r") 1) (repl-do-reset arena st sess)
-  (if (= (repl-cmd-p cmd "load" "l") 1) (repl-do-load arena st sess rest)
-  (if (= (repl-cmd-p cmd "save" "s") 1) (repl-next arena st sess (repl-do-save sess rest))
-  (if (= (repl-cmd-p cmd "doc" "d") 1) (repl-next arena st sess (repl-do-doc rest))
-  (if (= (repl-cmd-p cmd "defs" "browse") 1) (repl-next arena st sess (repl-show-defs sess))
-  (repl-next arena st sess (repl-unknown cmd))))))))))))
+(defn repl-meta-run (sess entries cmd rest)
+  (if (= (repl-cmd-p cmd "q" "quit") 1) (MetaQuit)
+  (if (= (repl-cmd-p cmd "h" "help") 1) (repl-kept sess (repl-help))
+  (if (= (repl-cmd-p cmd "history" "hist") 1) (repl-kept sess (repl-show-history entries))
+  (if (= (repl-cmd-p cmd "clear" "cls") 1) (repl-kept sess (term-write (ansi-clear-screen)))
+  (if (= (repl-cmd-p cmd "reset" "r") 1) (repl-kept (session-reset sess) (repl-note "session reset"))
+  (if (= (repl-cmd-p cmd "load" "l") 1) (repl-do-load sess rest)
+  (if (= (repl-cmd-p cmd "save" "s") 1) (repl-kept sess (repl-do-save sess rest))
+  (if (= (repl-cmd-p cmd "doc" "d") 1) (repl-kept sess (repl-do-doc rest))
+  (if (= (repl-cmd-p cmd "defs" "browse") 1) (repl-kept sess (repl-show-defs sess))
+  (repl-kept sess (repl-unknown cmd))))))))))))
 
 (defn repl-cmd-p (cmd short long)
   (if (> (str-eq cmd short) 0) 1 (if (> (str-eq cmd long) 0) 1 0)))
 
-(defn repl-next (arena st sess _done)
-  (repl-loop arena st sess))
+; The command already printed whatever it had to say; this is only the
+; session it leaves behind.
+(defn repl-kept (sess _printed)
+  (MetaDone sess))
 
 (defn repl-unknown (cmd)
   (repl-note (str-concat "unknown command :" (str-concat cmd " — :help lists them"))))
@@ -208,49 +242,82 @@
     (Nil 0)
     (Cons h t
       (begin
-        (print (str-concat "  " h))
+        (term-write (str-concat "  " (str-concat h "\n")))
         (repl-print-history t (+ i 1))))))
 
 (defn repl-show-defs (sess)
-  (let defs (Session.defs sess)
-    (if (= (str-length (rd-trim defs)) 0)
-      (repl-note "no definitions yet")
-      (begin
-        (print (hl-colorize defs))
-        0))))
-
-(defn repl-do-reset (arena st sess)
   (begin
-    (repl-note "session reset")
-    (repl-loop arena st (session-reset sess))))
+    (repl-show-uses (Session.uses sess))
+    (repl-show-globals (Session.globals sess))
+    (repl-show-defn-text (Session.defs sess))))
 
-; :load reads a file and adds its definitions to the session, so a
-; project's code can be brought in and poked at.
-(defn repl-do-load (arena st sess path)
+(defn repl-show-uses (uses)
+  (match uses
+    (Nil 0)
+    (Cons u rest
+      (begin
+        (term-write (str-concat "  (use " (str-concat u ")\n")))
+        (repl-show-uses rest)))))
+
+(defn repl-show-globals (gs)
+  (match gs
+    (Nil 0)
+    (Cons b rest
+      (match b
+        (Bind n v
+          (begin
+            (term-write (str-concat "  " (str-concat n (str-concat " = "
+              (str-concat (in-val-text v) "\n")))))
+            (repl-show-globals rest)))))))
+
+(defn repl-show-defn-text (defs)
+  (if (= (str-length (rd-trim defs)) 0)
+    0
+    (begin
+      (term-write (hl-colorize defs))
+      (term-write "\n")
+      0)))
+
+; :load reads a file and adds its modules and definitions to the
+; session, so a project's code can be brought in and poked at.
+(defn repl-do-load (sess path)
   (let fd (file-open path "r")
     (if (<= fd 0)
-      (repl-next arena st sess (repl-note (str-concat "cannot read " path)))
+      (repl-kept sess (repl-note (str-concat "cannot read " path)))
       (let text (file-read fd 4194304)
         (begin
           (file-close fd)
-          (repl-load-text arena st sess path text))))))
+          (repl-load-text sess path text))))))
 
-(defn repl-load-text (arena st sess path text)
-  (let outcome (eval-entry arena sess (repl-strip-uses text))
-    (match (EvalOutcome.result outcome)
-      (EvalFailed msg (repl-next arena st sess (repl-error msg)))
-      (EvalDefined _ (repl-loaded arena st (EvalOutcome.session outcome) path))
-      (EvalRan _ (repl-loaded arena st (EvalOutcome.session outcome) path)))))
+; The file's modules go in first, then its definitions as one block.
+(defn repl-load-text (sess path text)
+  (match (repl-load-uses sess (repl-file-uses text))
+    (Err msg (repl-kept sess (repl-error msg)))
+    (Ok sess2 (repl-load-defs sess2 path (repl-strip-uses text)))))
 
-(defn repl-loaded (arena st sess path)
-  (begin
-    (repl-note (str-concat "loaded " path))
-    (repl-loop arena st sess)))
+(defn repl-load-uses (sess modules)
+  (match modules
+    (Nil (Ok sess))
+    (Cons m rest
+      (let outcome (eval-entry sess (str-concat "(use " (str-concat m ")")))
+        (match (EvalOutcome.result outcome)
+          (EvalFailed msg (Err msg))
+          (_ (repl-load-uses (EvalOutcome.session outcome) rest)))))))
 
-; A loaded file's own `(use ...)` lines are dropped: the REPL program is
-; assembled as one unit and its module set is already resolved, so a
-; second resolution of the same module would be a duplicate definition
-; rather than an import.
+(defn repl-load-defs (sess path text)
+  (if (= (str-length (rd-trim text)) 0)
+    (repl-loaded sess path)
+    (let outcome (eval-entry sess text)
+      (match (EvalOutcome.result outcome)
+        (EvalFailed msg (repl-kept sess (repl-error msg)))
+        (_ (repl-loaded (EvalOutcome.session outcome) path))))))
+
+(defn repl-loaded (sess path)
+  (repl-kept sess (repl-note (str-concat "loaded " path))))
+
+; A loaded file's `(use ...)` lines join the session's module set rather
+; than staying in the text: the session is assembled as one program, and
+; a use line repeated inside it would resolve the same module twice.
 (defn repl-strip-uses (text)
   (repl-strip-scan text 0 (str-length text) ""))
 
@@ -263,6 +330,30 @@
           (if (= (rd-starts-with (rd-trim line) "(use ") 1)
             acc
             (str-concat acc (str-concat line "\n"))))))))
+
+; The modules a loaded file asks for, in the order it asks for them.
+(defn repl-file-uses (text)
+  (repl-uses-scan text 0 (str-length text) Nil))
+
+(defn repl-uses-scan (text i n acc)
+  (if (>= i n)
+    (list-reverse acc)
+    (let e (repl-line-end text i n)
+      (let line (rd-trim (str-substring text i (- e i)))
+        (repl-uses-scan text (+ e 1) n
+          (if (= (rd-starts-with line "(use ") 1)
+            (Cons (repl-use-module line) acc)
+            acc))))))
+
+(defn repl-use-module (line)
+  (let start 5
+    (str-substring line start (- (repl-use-end line start) start))))
+
+(defn repl-use-end (line i)
+  (let n (str-length line)
+    (if (>= i n)
+      n
+      (if (= (term-byte-at line i) 41) i (repl-use-end line (+ i 1))))))
 
 (defn repl-line-end (text i n)
   (if (>= i n)
@@ -295,10 +386,14 @@
         (repl-doc-print b)
         (repl-doc-find rest name)))))
 
+; term-write, not print: codegen picks print's format from a static kind
+; analysis with no return-type inference, so `(print (f x))` for a
+; String-returning f prints the pointer (see kind-of in codegen.zyl).
 (defn repl-doc-print (b)
   (begin
-    (print (hl-colorize (ZB.sig b)))
-    (print (str-concat "  " (ZB.doc b)))
+    (term-write (hl-colorize (ZB.sig b)))
+    (term-write "\n")
+    (term-write (str-concat "  " (str-concat (ZB.doc b) "\n")))
     0))
 
 ; ===========================================================================
@@ -311,7 +406,13 @@
 (defn repl-candidates (sess)
   (list-append (repl-meta-names)
     (list-append (repl-builtin-names (builtins-all))
-                 (repl-session-names (Session.defs sess)))))
+      (list-append (repl-global-names (Session.globals sess))
+                   (repl-session-names (Session.defs sess))))))
+
+(defn repl-global-names (gs)
+  (match gs
+    (Nil Nil)
+    (Cons b rest (match b (Bind n _ (Cons n (repl-global-names rest)))))))
 
 (defn repl-meta-names ()
   (Cons ":help" (Cons ":quit" (Cons ":history" (Cons ":defs" (Cons ":doc"
@@ -372,13 +473,13 @@
 ; Input that is not a terminal: read entries as whole lines, evaluate
 ; each, print nothing but what the entries themselves produce. Multi-
 ; line forms still work -- lines accumulate until the form is complete.
-(defn repl-scripted (arena)
-  (repl-script-loop arena (session-new) "" ""))
+(defn repl-scripted ()
+  (repl-script-loop (session-new) "" ""))
 
-(defn repl-script-loop (arena sess pending acc)
+(defn repl-script-loop (sess pending acc)
   (match (repl-script-line pending)
-    (SNone (repl-script-finish arena sess acc))
-    (SLine line rest (repl-script-entry arena sess line rest acc))))
+    (SNone (repl-script-finish sess acc))
+    (SLine line rest (repl-script-entry sess line rest acc))))
 
 (deftype ScriptLine
   (SLine String String)
@@ -404,30 +505,34 @@
     -1
     (if (= (term-byte-at s i) 10) i (repl-find-nl s (+ i 1) n))))
 
-(defn repl-script-entry (arena sess line rest acc)
+(defn repl-script-entry (sess line rest acc)
   (let text (if (= (str-length acc) 0) line (str-concat acc (str-concat "\n" line)))
     (if (= (rd-complete-p text) 1)
-      (repl-script-eval arena sess text rest)
-      (repl-script-loop arena sess rest text))))
+      (repl-script-eval sess text rest)
+      (repl-script-loop sess rest text))))
 
-(defn repl-script-eval (arena sess text rest)
+(defn repl-script-eval (sess text rest)
   (let trimmed (rd-trim text)
     (if (= (str-length trimmed) 0)
-      (repl-script-loop arena sess rest "")
-      (if (= (repl-script-quit-p trimmed) 1)
-        0
-        (let outcome (eval-entry arena sess trimmed)
+      (repl-script-loop sess rest "")
+      (if (= (repl-meta-p trimmed) 1)
+        (repl-script-meta sess trimmed rest)
+        (let outcome (eval-entry sess trimmed)
           (begin
             (repl-report (EvalOutcome.result outcome))
-            (repl-script-loop arena (EvalOutcome.session outcome) rest "")))))))
+            (repl-script-loop (EvalOutcome.session outcome) rest "")))))))
 
-(defn repl-script-quit-p (text)
-  (if (> (str-eq text ":q") 0) 1 (if (> (str-eq text ":quit") 0) 1 0))) 
+; A script gets the same meta commands a prompt does; there is simply no
+; history behind it to show.
+(defn repl-script-meta (sess text rest)
+  (match (repl-meta-apply sess Nil text)
+    (MetaQuit 0)
+    (MetaDone sess2 (repl-script-loop sess2 rest "")))) 
 
-(defn repl-script-finish (arena sess acc)
+(defn repl-script-finish (sess acc)
   (if (= (str-length (rd-trim acc)) 0)
     0
-    (let outcome (eval-entry arena sess (rd-trim acc))
+    (let outcome (eval-entry sess (rd-trim acc))
       (begin
         (repl-report (EvalOutcome.result outcome))
         0))))

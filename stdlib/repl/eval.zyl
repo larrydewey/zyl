@@ -1,22 +1,28 @@
 ; === Zyl Standard Library — REPL evaluation ===
 ; Module: repl/eval
 ;
-; Turns an entry into a result. The compiler has no interpreter yet, so
-; an expression is evaluated by building a program around it, compiling
-; it with the real pipeline (compiler/pipeline -- the same phases, in
-; the same order, as `zyl build`) and running it. The session's
-; definitions are carried in the program's text, so a function defined
-; on one line is callable on the next.
+; An entry becomes a value in three steps: build a program around it,
+; run the real compiler's phases over that program (compiler/pipeline,
+; stopping at ICNF), and evaluate the lowered result in this process
+; (repl/interp). No `cc`, no child process, no assembly.
 ;
-; This is the stage that the ICNF interpreter replaces: the phases up to
-; `compile-to-fns` stay exactly as they are, and only the last step --
-; assemble, link, run a child process -- gives way to evaluating the
-; lowered functions in this process, which is what makes a binding, and
-; not just a definition, survive from one entry to the next.
+; The session is what survives between entries:
 ;
-; Nothing here is allowed to take the REPL down: every compile and every
-; run is wrapped in `try`, because a REPL that exits on a type error is
-; not a REPL.
+;   uses     — the modules in scope, extended by entering `(use ...)`
+;   defs     — the text of every definition entered so far
+;   globals  — the values bound by `(def name expr)`, as live values
+;
+; Definitions are carried as text and re-lowered with each entry, which
+; costs milliseconds and keeps type inference whole-program, exactly as
+; it is for a file. Values are carried as values: nothing that was run
+; is ever run again, so a `(def out (file-open ...))` opens one file,
+; not one per later entry.
+;
+; A global reaches the entry as a parameter of the function the entry is
+; wrapped in, and only when the entry's text mentions it. That is what
+; makes `x` in `(+ x 1)` resolve to a binding from three entries ago
+; without top-level mutable state in the generated program, and why an
+; unused global costs nothing and raises no unused-parameter warning.
 
 (use allocator/allocator)
 (use core/core)
@@ -24,52 +30,110 @@
 (use core/option)
 (use core/result)
 (use compiler/pipeline)
+(use compiler/icnf)
 (use repl/terminal)
-(use repl/history)
+(use repl/interp)
 
 ; What an entry did.
 (deftype EvalResult
-  (EvalRan Int)          ; ran to completion with this exit status
-  (EvalDefined String)   ; a definition, accepted and now in scope
+  (EvalValue String)     ; the value's text, for the result line
+  (EvalUnit)             ; ran, with nothing worth showing
+  (EvalDefined String)   ; a definition, now in scope
+  (EvalBound String String) ; a `def`: name, and the value's text
+  (EvalNote String)      ; something happened worth one line
   (EvalFailed String))   ; diagnostics, ready to print
 
-; The accumulated session: the text of every definition entered so far,
-; and the number of entries evaluated.
-(deftype Session (Session String Int))
+; `lifted` holds the lambda bodies of earlier entries. A closure value
+; stored in a global names the function it was lifted to
+; (`_lambda_<id>`), and that function only exists in the table of the
+; entry that created it: every entry re-lowers the session's text, and a
+; lambda is given a fresh name each time. Keeping the lifted bodies is
+; what lets a closure made three entries ago still be callable now. The
+; names cannot collide -- ic-fresh-id counts bytes used in the session's
+; one compile arena, so it never repeats while the session lives.
+(deftype Session (Session (List String) String (List Bind) (List Icnf) Int))
 
-(defn Session.defs (s) (match s (Session d _ d)))
-(defn Session.count (s) (match s (Session _ n n)))
+(defn Session.uses (s) (match s (Session u _ _ _ _ u)))
+(defn Session.defs (s) (match s (Session _ d _ _ _ d)))
+(defn Session.globals (s) (match s (Session _ _ g _ _ g)))
+(defn Session.lifted (s) (match s (Session _ _ _ l _ l)))
+(defn Session.count (s) (match s (Session _ _ _ _ n n)))
 
-(defn session-new () (Session "" 0))
+; The modules a session starts with. Deliberately small and additive:
+; `(use collections/vec)` at the prompt extends it, and a module that
+; collides with another is then the user's choice rather than a default
+; they never asked for.
+(defn session-default-uses ()
+  (Cons "core/core"
+    (Cons "core/list"
+      (Cons "core/option"
+        (Cons "core/result"
+          (Cons "allocator/allocator" Nil))))))
 
-(defn session-reset (s) (Session "" (Session.count s)))
+(defn session-new ()
+  (Session (session-default-uses) "" Nil Nil 0))
 
-(defn session-add-defs (s text)
-  (Session (str-concat (Session.defs s) (str-concat "\n" text)) (+ (Session.count s) 1)))
+(defn session-reset (s)
+  (Session (session-default-uses) "" Nil Nil (Session.count s)))
+
+(defn session-with-defs (s text)
+  (Session (Session.uses s) (str-concat (Session.defs s) (str-concat "\n" text))
+           (Session.globals s) (Session.lifted s) (+ (Session.count s) 1)))
+
+(defn session-with-use (s module)
+  (Session (list-append (Session.uses s) (Cons module Nil)) (Session.defs s)
+           (Session.globals s) (Session.lifted s) (+ (Session.count s) 1)))
+
+(defn session-with-global (s name v)
+  (Session (Session.uses s) (Session.defs s)
+           (Cons (Bind name v) (session-drop-global (Session.globals s) name))
+           (Session.lifted s) (+ (Session.count s) 1)))
+
+(defn session-with-lifted (s fns)
+  (Session (Session.uses s) (Session.defs s) (Session.globals s)
+           (list-append (eval-lifted-of fns) (Session.lifted s))
+           (Session.count s)))
+
+(defn is-nil-list (xs) (match xs (Nil 1) (Cons _ _ 0)))
+
+; The lifted lambda bodies of one compile. Everything else in the table
+; is re-created by the next entry's compile from the same text.
+(defn eval-lifted-of (fns)
+  (match fns
+    (Nil Nil)
+    (Cons f rest
+      (if (= (eval-lambda-name-p (in-fn-name f)) 1)
+        (Cons f (eval-lifted-of rest))
+        (eval-lifted-of rest)))))
+
+(defn eval-lambda-name-p (name)
+  (eval-contains name "_lambda_"))
+
+(defn eval-contains (s sub)
+  (eval-contains-at s sub 0))
+
+(defn eval-contains-at (s sub i)
+  (if (> (+ i (str-length sub)) (str-length s))
+    0
+    (if (> (str-eq (str-substring s i (str-length sub)) sub) 0)
+      1
+      (eval-contains-at s sub (+ i 1)))))
+
+(defn session-drop-global (gs name)
+  (match gs
+    (Nil Nil)
+    (Cons b rest
+      (match b
+        (Bind n _ (if (> (str-eq n name) 0) (session-drop-global rest name)
+                    (Cons b (session-drop-global rest name))))))))
 
 (defn session-bump (s)
-  (Session (Session.defs s) (+ (Session.count s) 1)))
+  (Session (Session.uses s) (Session.defs s) (Session.globals s)
+           (Session.lifted s) (+ (Session.count s) 1)))
 
 ; ===========================================================================
-; CLASSIFYING AN ENTRY
+; READING AN ENTRY
 ; ===========================================================================
-
-; Whether the entry is a top-level definition rather than an expression
-; to evaluate. Definitions are added to the session; expressions are
-; wrapped in a `main` and run.
-; Returns: Bool (0/1)
-(defn eval-definition-p (text)
-  (let head (eval-head text)
-    (if (> (str-eq head "defn") 0) 1
-    (if (> (str-eq head "def") 0) 1
-    (if (> (str-eq head "deftype") 0) 1
-    (if (> (str-eq head "defstruct") 0) 1
-    (if (> (str-eq head "defstruct+") 0) 1
-    (if (> (str-eq head "defmacro") 0) 1
-    (if (> (str-eq head "trait") 0) 1
-    (if (> (str-eq head "impl") 0) 1
-    (if (> (str-eq head "use") 0) 1
-    0)))))))))))
 
 ; The head symbol of `(head ...)`, or "" if the entry is not a form.
 (defn eval-head (text)
@@ -101,151 +165,397 @@
       (if (= b 41) i
       (eval-symbol-end text (+ i 1) n)))))))
 
-; The name a definition introduces, for the "defined X" acknowledgement.
-; Returns: String
-(defn eval-defined-name (text)
+; The word after the head: a definition's name, or a use's module.
+(defn eval-second-word (text)
   (let n (str-length text)
     (let i (eval-skip-space text 0 n)
-      (let h (eval-symbol-end text (eval-skip-space text (+ i 1) n) n)
-        (let s (eval-skip-space text h n)
-          (str-substring text s (- (eval-name-end text s n) s)))))))
+      (let after-head (eval-symbol-end text (eval-skip-space text (+ i 1) n) n)
+        (let s (eval-skip-space text after-head n)
+          (str-substring text s (- (eval-symbol-end text s n) s)))))))
 
-; A definition's name may be `(name args)` as in `(defn (f x) ...)` is
-; not the shape here, but `(impl Trait Type)` has two -- taking the text
-; up to the first delimiter covers every real case.
-(defn eval-name-end (text i n)
-  (if (>= i n)
-    n
-    (let b (term-byte-at text i)
-      (if (= (eval-space-p b) 1) i
-      (if (= b 41) i
-      (eval-name-end text (+ i 1) n))))))
+; Whether the entry is a definition to keep rather than an expression to
+; evaluate. `def` is not in this list: the REPL binds it as a value.
+(defn eval-definition-p (text)
+  (let head (eval-head text)
+    (if (> (str-eq head "defn") 0) 1
+    (if (> (str-eq head "deftype") 0) 1
+    (if (> (str-eq head "defstruct") 0) 1
+    (if (> (str-eq head "defstruct+") 0) 1
+    (if (> (str-eq head "defmacro") 0) 1
+    (if (> (str-eq head "trait") 0) 1
+    (if (> (str-eq head "impl") 0) 1
+    0)))))))))
 
 ; ===========================================================================
-; PROGRAM ASSEMBLY
+; BUILDING THE PROGRAM
 ; ===========================================================================
 
-; The program text for evaluating one expression: everything defined so
-; far, plus a `main` that prints the expression's value.
-(defn eval-program-expr (sess text)
-  (str-concat (Session.defs sess)
-              (str-concat "\n(defn main () (print " (str-concat text "))\n"))))
+(defn eval-use-lines (uses)
+  (match uses
+    (Nil "")
+    (Cons u rest (str-concat (str-concat "(use " (str-concat u ")\n"))
+                             (eval-use-lines rest)))))
 
-; The program text for checking a definition: everything defined so far
-; including the new definition, plus a trivial `main` so the program is
-; complete. Compiling this is what type-checks the definition.
+; The name of the function an entry is wrapped in. Long enough not to
+; collide with anything a user would write, and looked up by suffix
+; because module resolution qualifies it (§31.2).
+(defn eval-entry-name () "__zyl_repl_entry")
+
+; Globals the entry actually mentions, in binding order.
+(defn eval-used-globals (globals text)
+  (match globals
+    (Nil Nil)
+    (Cons b rest
+      (match b
+        (Bind n _
+          (if (= (eval-mentions text n) 1)
+            (Cons b (eval-used-globals rest text))
+            (eval-used-globals rest text)))))))
+
+; A whole-token occurrence of `name` in `text`: `x` does not match
+; inside `xs` or `max`.
+(defn eval-mentions (text name)
+  (eval-mentions-at text name 0))
+
+(defn eval-mentions-at (text name i)
+  (let n (str-length name)
+    (if (> (+ i n) (str-length text))
+      0
+      (if (= (eval-token-match text name i n) 1)
+        1
+        (eval-mentions-at text name (+ i 1))))))
+
+(defn eval-token-match (text name i n)
+  (if (> (str-eq (str-substring text i n) name) 0)
+    (if (= (eval-boundary-p text (- i 1)) 1)
+      (eval-boundary-p text (+ i n))
+      0)
+    0))
+
+; Positions outside the text count as boundaries; inside, anything that
+; cannot continue an identifier does.
+(defn eval-boundary-p (text i)
+  (if (< i 0)
+    1
+    (if (>= i (str-length text))
+      1
+      (eval-delimiter-p (term-byte-at text i)))))
+
+(defn eval-delimiter-p (b)
+  (if (= (eval-space-p b) 1) 1
+  (if (= b 40) 1
+  (if (= b 41) 1
+  (if (= b 34) 1
+  (if (= b 39) 1
+  0))))))
+
+(defn eval-param-list (gs)
+  (match gs
+    (Nil "")
+    (Cons b rest
+      (match b
+        (Bind n _ (str-concat n (str-concat " " (eval-param-list rest))))))))
+
+(defn eval-global-values (gs)
+  (match gs
+    (Nil Nil)
+    (Cons b rest (match b (Bind _ v (Cons v (eval-global-values rest)))))))
+
+; The program for evaluating one expression: the session's modules, its
+; definitions, and the expression wrapped in a function that takes the
+; globals it mentions.
+(defn eval-program-expr (sess text gs)
+  (str-concat (eval-use-lines (Session.uses sess))
+    (str-concat (Session.defs sess)
+      (str-concat "\n(defn " (str-concat (eval-entry-name)
+        (str-concat " (" (str-concat (eval-param-list gs)
+          (str-concat ") " (str-concat text ")\n")))))))))
+
+; The program for checking a definition: the same, with the new
+; definition in place and a trivial entry so that something references
+; the module set.
 (defn eval-program-defs (sess text)
-  (str-concat (Session.defs sess)
-              (str-concat "\n" (str-concat text "\n(defn main () 0)\n"))))
+  (str-concat (eval-use-lines (Session.uses sess))
+    (str-concat (Session.defs sess)
+      (str-concat "\n" (str-concat text
+        (str-concat "\n(defn " (str-concat (eval-entry-name) " () 0)\n")))))))
 
 ; ===========================================================================
-; WORK DIRECTORY
+; RUNNING AN ENTRY
 ; ===========================================================================
 
-; Where the REPL writes the assembly and binary for an entry. Under the
-; REPL's own state directory rather than /tmp: a fixed /tmp path is
-; owned by whoever ran first on a shared machine, and every later user's
-; open fails.
-(defn eval-work-dir ()
-  (str-concat (hist-dir) "/repl"))
+; Compile to lowered functions, or hand back the diagnostics. Every
+; reporting path in the compiler ends in zyl_panic, which unwinds to
+; here rather than ending the session.
+; Returns: Result(List(Icnf), String)
+(defn eval-lower (arena src)
+  (try (Ok (compile-to-fns arena src "<repl>")) (catch e (Err e))))
 
-(defn eval-asm-path ()
-  (str-concat (eval-work-dir) "/entry.s"))
+; Interpreting is wrapped too: an interpreted program can divide by
+; zero, call something undefined, or `error` on purpose, and all three
+; arrive here as a message.
+; Returns: Result(Val, String)
+(defn eval-interpret (fns name vals)
+  (try (Ok (in-call-fn fns name vals)) (catch e (Err e))))
 
-(defn eval-bin-path ()
-  (str-concat (eval-work-dir) "/entry"))
-
-(defn eval-log-path ()
-  (str-concat (eval-work-dir) "/entry.log"))
-
-(defn eval-read-file (path)
-  (let fd (file-open path "r")
-    (if (<= fd 0)
-      ""
-      (let text (file-read fd 262144)
-        (begin
-          (file-close fd)
-          text)))))
-
-(defn eval-write-file (path content)
-  (let fd (file-open path "w")
-    (if (<= fd 0)
-      -1
-      (let n (file-write fd content)
-        (begin
-          (file-close fd)
-          n)))))
-
-; ===========================================================================
-; EVALUATION
-; ===========================================================================
-
-; Compile `src` and return either its assembly or the diagnostics the
-; compiler produced. `try` is what keeps a type error from ending the
-; session: every reporting path in the compiler ends in zyl_panic, which
-; unwinds to here instead of exiting.
-; Returns: Result(String, String)
-(defn eval-compile (arena src)
-  (try (Ok (compile-to-asm arena src "<repl>")) (catch e (Err e))))
-
-; Evaluate one entry against the session. Returns the result and the
-; session it produced.
 (deftype EvalOutcome (EvalOutcome EvalResult Session))
 
 (defn EvalOutcome.result (o) (match o (EvalOutcome r _ r)))
 (defn EvalOutcome.session (o) (match o (EvalOutcome _ s s)))
 
-(defn eval-entry (arena sess text)
-  (if (= (eval-definition-p text) 1)
-    (eval-add-definition arena sess text)
-    (eval-expression arena sess text)))
+(defn eval-entry (sess text)
+  (let head (eval-head text)
+    (if (> (str-eq head "use") 0)
+      (eval-add-use sess text)
+      (if (> (str-eq head "def") 0)
+        (eval-add-global sess text)
+        (if (= (eval-definition-p text) 1)
+          (eval-add-definition sess text)
+          (eval-expression sess text))))))
 
-; A definition is accepted only if the whole session still compiles AND
-; links with it. Linking is what catches a call to a name nothing
-; defines: no phase before it resolves call targets, so a definition
-; that only compiles can still poison every later entry in the session.
-; Rejecting it here costs one `cc` per definition and keeps the session
-; in a state where everything in it works.
-(defn eval-add-definition (arena sess text)
-  (match (eval-compile arena (eval-program-defs sess text))
-    (Err msg (EvalOutcome (EvalFailed msg) sess))
-    (Ok asm (eval-accept-definition sess text asm))))
+; A definition is accepted once the whole session still compiles with
+; it. Nothing runs: a definition has no effect until something calls it.
+; A definition is checked in a throwaway arena: nothing it lowers to is
+; kept, because the next entry re-lowers it from the session's text.
+(defn eval-add-definition (sess text)
+  (let name (eval-second-word text)
+    (let arena (eval-entry-arena)
+      (let scratch (arena-create 8388608)
+        (let saved (eval-heap-swap scratch)
+          (let res (eval-lower arena (eval-program-defs sess text))
+            (let copied (eval-copy-result res saved scratch arena)
+              (eval-definition-result copied sess text name))))))))
 
-(defn eval-accept-definition (sess text asm)
-  (match (eval-link asm)
-    (Err msg (EvalOutcome (EvalFailed msg) sess))
-    (Ok _ (EvalOutcome (EvalDefined (eval-defined-name text))
-                       (session-add-defs sess text)))))
-
-; Assemble and link, without running.
-; Returns: Result(Int, String)
-(defn eval-link (asm)
+; Leave the scratch window, carrying only the diagnostics out of it.
+(defn eval-copy-result (res saved scratch arena)
   (begin
-    (term-flush)
-    (ffi-call "zyl_mkdir_p" (eval-work-dir) 1000)
-    (if (< (eval-write-file (eval-asm-path) asm) 0)
-      (Err "E_IO_WRITE_FAILED: could not write the entry's assembly")
-      (let rc (ffi-call "zyl_cc_compile_log" (eval-asm-path) (eval-log-path) 1000)
-        (if (= rc 0) (Ok rc) (Err (eval-link-diagnostic)))))))
+    (eval-heap-swap saved)
+    (let out (eval-copy-lower res)
+      (begin
+        (arena-destroy scratch)
+        (arena-destroy arena)
+        out))))
 
-(defn eval-expression (arena sess text)
-  (match (eval-compile arena (eval-program-expr sess text))
-    (Err msg (EvalOutcome (EvalFailed msg) (session-bump sess)))
-    (Ok asm (EvalOutcome (eval-link-and-run asm) (session-bump sess)))))
+(defn eval-copy-lower (res)
+  (match res
+    (Err msg (Err (eval-copy-str msg)))
+    (Ok _ (Ok 0))))
 
-; Assemble, link and run. The child inherits this process's terminal, so
-; whatever it prints lands in the transcript exactly where it belongs --
-; after everything this process has already printed, which is why the
-; flush inside eval-link is not optional.
-(defn eval-link-and-run (asm)
-  (match (eval-link asm)
+(defn eval-definition-result (res sess text name)
+  (match res
+    (Err msg (EvalOutcome (EvalFailed msg) sess))
+    (Ok _ (EvalOutcome (EvalDefined name) (session-with-defs sess text)))))
+
+; `(use module)` extends the session's module set, and is rejected if
+; the module does not resolve or collides with one already in scope.
+(defn eval-add-use (sess text)
+  (let module (eval-second-word text)
+    (let probe (session-with-use sess module)
+      (let arena (eval-entry-arena)
+        (let scratch (arena-create 8388608)
+          (let saved (eval-heap-swap scratch)
+            (let res (eval-lower arena (eval-program-defs probe ""))
+              (let copied (eval-copy-result res saved scratch arena)
+                (eval-use-result copied sess probe module)))))))))
+
+(defn eval-use-result (res sess probe module)
+  (match res
+    (Err msg (EvalOutcome (EvalFailed msg) sess))
+    (Ok _ (EvalOutcome (EvalNote (str-concat "using " module)) probe))))
+
+; `(def name expr)` evaluates expr once, now, and binds the value for
+; every later entry. Top-level `def` is not a compiled construct in this
+; language (see codegen's cg-load-nonslot); at the prompt it is the
+; natural way to name a value, so the REPL gives it that meaning.
+; `def` binds a value the session keeps, so it runs against the
+; session's own heap arena: the value, and everything it points at, stay
+; valid for as long as the binding does.
+(defn eval-add-global (sess text)
+  (let name (eval-second-word text)
+    (let body (eval-def-body text name)
+      (let saved (eval-heap-swap (eval-session-heap))
+        (match (eval-value-of sess body 1)
+          (Outcome res sess2
+            (let bound (eval-bind-global name res sess2)
+              (begin
+                (eval-heap-swap saved)
+                bound))))))))
+
+(defn eval-bind-global (name res sess)
+  (match res
+    (Err msg (EvalOutcome (EvalFailed msg) sess))
+    (Ok v (EvalOutcome (EvalBound name (in-val-text v))
+                       (session-with-global sess name v)))))
+
+; The expression inside `(def name <expr>)`, with the trailing paren of
+; the `def` form removed.
+(defn eval-def-body (text name)
+  (let n (str-length text)
+    (let start (eval-def-body-start text name n)
+      (str-substring text start (- (eval-def-body-end text n) start)))))
+
+(defn eval-def-body-start (text name n)
+  (let i (eval-skip-space text 0 n)
+    (let after-head (eval-symbol-end text (eval-skip-space text (+ i 1) n) n)
+      (eval-skip-space text (eval-symbol-end text (eval-skip-space text after-head n) n) n))))
+
+(defn eval-def-body-end (text n)
+  (eval-trim-back text (- n 1)))
+
+(defn eval-trim-back (text i)
+  (if (< i 0)
+    0
+    (if (= (eval-space-p (term-byte-at text i)) 1)
+      (eval-trim-back text (- i 1))
+      (if (= (term-byte-at text i) 41) i (+ i 1)))))
+
+; An expression keeps nothing, so everything it allocates -- the
+; compiler's garbage, the values it built, the text of its own result --
+; goes in a scratch heap arena. Only the line to print is copied out,
+; after the real heap is back in place and before the scratch is gone.
+(defn eval-expression (sess text)
+  (let scratch (arena-create 8388608)
+    (let saved (eval-heap-swap scratch)
+      (match (eval-value-of sess text 0)
+        (Outcome res sess2
+          (let shown (eval-shown-of res)
+            (begin
+              (eval-heap-swap saved)
+              (let copied (eval-copy-shown shown)
+                (begin
+                  (arena-destroy scratch)
+                  (EvalOutcome copied (session-bump sess2)))))))))))
+
+; The result line, still inside the scratch window (rendering a value's
+; text allocates).
+(defn eval-shown-of (res)
+  (match res
     (Err msg (EvalFailed msg))
-    (Ok _ (EvalRan (ffi-call "zyl_run_bin" (eval-bin-path) 1000)))))
+    (Ok v (eval-result-of v))))
 
-; The toolchain's own message, wrapped in the compiler's diagnostic
-; shape. An undefined reference here is almost always a call to a name
-; nothing defines: the front end does not resolve call targets, so the
-; linker is the first phase that notices.
-(defn eval-link-diagnostic ()
-  (str-concat "error[E_LINK_FAILED]: this entry did not link\n  = help: a call to a name nothing defines reaches the linker as an undefined reference\n"
-              (eval-read-file (eval-log-path))))
+(defn eval-copy-shown (r)
+  (match r
+    (EvalFailed msg (EvalFailed (eval-copy-str msg)))
+    (EvalValue text (EvalValue (eval-copy-str text)))
+    (EvalUnit (EvalUnit))
+    (EvalNote text (EvalNote (eval-copy-str text)))
+    (EvalDefined name (EvalDefined (eval-copy-str name)))
+    (EvalBound name text (EvalBound (eval-copy-str name) (eval-copy-str text)))))
+
+; `print` and anything else whose value is a bare 0 would otherwise put
+; a pointless `=> 0` under every line that already printed itself.
+(defn eval-result-of (v)
+  (match v
+    (VInt n (if (= n 0) (EvalUnit) (EvalValue (in-val-text v))))
+    (_ (EvalValue (in-val-text v)))))
+
+; A value, and the session that producing it left behind -- evaluating
+; an expression can lift a lambda the session must keep.
+(deftype Outcome (Outcome (Result Val String) Session))
+
+; Each entry compiles into an arena of its own, which is then thrown
+; away -- unless the entry lifted a lambda, because a closure value the
+; session keeps points at the lifted function's body, and that body
+; lives in the arena that produced it. An entry that creates no closure
+; leaves nothing behind.
+(defn eval-entry-arena ()
+  (arena-create 8388608))
+
+; The other half of an entry's memory is the heap: compiling a program
+; builds a canonical key per identifier, a mangled label per definition
+; and a diagnostic per warning, all through str-concat, and a bump
+; allocator never takes any of it back. So an entry runs against a heap
+; arena of its own.
+;
+; Which arena depends on whether the entry keeps anything:
+;
+;   an expression, a definition, a use  -> a scratch arena, destroyed
+;     when the entry finishes. Nothing it allocated outlives it, except
+;     the one string the REPL copies out to print.
+;
+;   `def`                               -> the session's own arena, kept
+;     for the life of the session, because the value being bound lives
+;     in it and so does everything it points at.
+;
+; That is what keeps a long session flat: typing expressions costs no
+; permanent memory, and binding a value costs exactly the value.
+(defn eval-session-heap ()
+  (ffi-call "zyl_session_arena" 0))
+
+(defn eval-heap-swap (arena)
+  (ffi-call "zyl_heap_swap" arena 1000))
+
+; Copy a string out of an arena that is about to be destroyed, into
+; whichever heap arena is current now.
+(defn eval-copy-str (s)
+  (str-concat "" s))
+
+; The heart of it: build the program, run the compiler's phases, find
+; the function the entry was wrapped in, and evaluate it with the
+; session's globals as its arguments. Lambdas lifted by this compile are
+; retained, and the ones retained earlier are appended to the table so a
+; closure from an earlier entry is still callable.
+; `keep` says whether anything this entry produces can outlive it. An
+; expression's value is printed and dropped, so its arena goes too,
+; closures and all; a `def` binds its value, so a lambda lifted while
+; producing it has to stay callable.
+(defn eval-value-of (sess text keep)
+  (let arena (eval-entry-arena)
+    (let gs (eval-used-globals (Session.globals sess) text)
+      (match (eval-lower arena (eval-program-expr sess text gs))
+        (Err msg (eval-discard arena (Outcome (Err msg) sess)))
+        (Ok fns (eval-after-run arena sess fns keep
+                  (eval-run-entry (list-append fns (Session.lifted sess))
+                                  (eval-global-values gs))))))))
+
+; Keep the compile arena exactly when it holds something the session
+; still refers to -- the body of a lifted lambda that a closure names.
+(defn eval-after-run (arena sess fns keep res)
+  (let lifted (eval-lifted-of fns)
+    (if (= keep 0)
+      (eval-discard arena (Outcome (eval-heapify res) sess))
+      (if (= (is-nil-list lifted) 1)
+        (eval-discard arena (Outcome (eval-heapify res) sess))
+        (Outcome res (session-with-lifted sess fns))))))
+
+; A String value can point straight into the entry's compile arena --
+; a literal, interned there by the lexer and handed through untouched --
+; so it is copied into the heap before that arena is destroyed. Blocks
+; need no copying: the interpreter allocates those from the heap.
+(defn eval-heapify (res)
+  (match res
+    (Err msg (Err (eval-copy-str msg)))
+    (Ok v (Ok (eval-heapify-val v)))))
+
+(defn eval-heapify-val (v)
+  (match v
+    (VStr p (VStr (in-word-of-str (eval-copy-str (in-str-of-word p)))))
+    (_ v)))
+
+(defn eval-discard (arena out)
+  (begin
+    (arena-destroy arena)
+    out))
+
+(defn eval-run-entry (fns vals)
+  (match (eval-entry-fn fns)
+    (None (Err "error[E_INTERNAL]: the entry did not survive lowering"))
+    (Some name (eval-interpret fns name vals))))
+
+; Module resolution qualifies every top-level name (§31.2), so the entry
+; is found by the suffix it was given rather than by an exact match.
+(defn eval-entry-fn (fns)
+  (match fns
+    (Nil None)
+    (Cons f rest
+      (let n (in-fn-name f)
+        (if (= (eval-ends-with n (eval-entry-name)) 1)
+          (Some n)
+          (eval-entry-fn rest))))))
+
+(defn eval-ends-with (s suffix)
+  (let ns (str-length s)
+    (let nf (str-length suffix)
+      (if (< ns nf)
+        0
+        (str-eq (str-substring s (- ns nf) nf) suffix)))))

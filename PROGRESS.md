@@ -1,5 +1,107 @@
 # Zyl Progress Tracker
 
+## Current Session (2026-09-23) — a first-class REPL, stage 2: the ICNF interpreter
+
+**A binding entered at the prompt is now a live value, not a line of
+text that gets recompiled: `zyl repl` evaluates each entry by running
+the real compiler's phases and then interpreting the lowered ICNF in
+its own process.** An entry costs about 6 ms. Nothing that already ran
+ever runs again.
+
+### What changed
+
+`stdlib/repl/interp.zyl` is the second back end. It takes what
+`compile-to-fns` produces — after parsing, macro expansion, every check,
+type inference, monomorphization, trait dispatch, closure lifting, ICNF
+lowering, optimization and region inference — and evaluates it. Values
+use compiled layout: a variant is a `zyl_heap_alloc` block of
+`[tag][field]...`, so `zyl_variant_eq` and `zyl_variant_field` read an
+interpreted value exactly as they read a compiled one, and a Float is
+its IEEE-754 bit pattern operated on through the runtime's double
+helpers.
+
+`stdlib/repl/eval.zyl` is the session: the modules in scope, the text of
+every definition, and the values bound by `def`. A global reaches an
+entry as a parameter of the function the entry is wrapped in, and only
+when the entry mentions it — which is what makes `x` from three entries
+ago resolve without top-level mutable state in the generated program.
+
+`zyl eval <file.zyl>` runs a program through the same interpreter with
+no binary and no linker: 12 ms for hello-world against about 600 ms to
+compile, link and run it.
+
+### Memory: flat for an ordinary session
+
+Each entry compiles into an arena of its own and evaluates against a
+heap arena of its own, both released when the entry finishes. Two things
+are kept, for reasons that are not negotiable: a `def` runs against the
+session's own heap (the value has to outlive the entry), and an entry
+that lifts a lambda keeps its compile arena (a closure value names the
+lifted function, whose body lives there). 200 entries take a session
+from 17 MB to 28 MB; before the arenas were separated it was 1.6 GB.
+
+Making that safe needed three supporting changes:
+
+- `ic-fresh-id` was the compile arena's byte offset, which restarts
+  whenever the arena does. Two entries would then name two unrelated
+  lambdas `_lambda_1234`, and a closure stored by the first would call
+  the second. It is now `zyl_fresh_id`, a process-lifetime counter —
+  still a fixed sequence for a fresh process compiling a fixed source,
+  so the fixed point is unaffected.
+- A String field is copied into the heap when a variant is built: the
+  string may be a literal living in the arena its entry compiled into,
+  and the block outlives that arena.
+- `zyl_heap_block_p` answers whether a word addresses a live block, so
+  the interpreter never dereferences `(Cons 1 Nil)`'s field as a
+  pointer.
+
+### The interpreter and codegen are compared, not assumed
+
+`./run_regression_tests.sh --full` now runs every regression and smoke
+test **both ways** and diffs the output (`--filter interpreter` for just
+that section). Divergences it found and what came of them:
+
+- **Undefined call** — the front end never resolves call targets, so a
+  typo reached the linker. The interpreter reports
+  `E_UNDEFINED_FUNCTION` at the call.
+- **A catch-all match arm** carries tag -1, which `cg-arm-match`
+  special-cases; the interpreter had been comparing it like any other
+  tag, so a wildcard arm never matched.
+- **A loop's value** is its last iteration's body (`cg-while-body` keeps
+  it in a slot); the interpreter had been returning 0, so an
+  accumulating `for` evaluated to nothing.
+- **`==` on Strings and on heap values** is structural (spec §7.4). The
+  interpreter compares bytes and fields, through the same
+  `zyl_cstr_eq`/`zyl_variant_eq`/`zyl_variant_cmp` codegen uses when its
+  static kind analysis gets the type right.
+- **A field read out of a variant** keeps its kind: the interpreter
+  records the kinds of a block's fields in a hidden word ahead of the
+  block, so `(Some "hello")` destructures to a String. Codegen binds
+  every field as an Int, which is where `print` of such a field shows a
+  pointer.
+- **The test harness** hands `zyl_register_test` a function address; an
+  interpreted function has none, so the interpreter keeps the registry
+  and runs the tests itself, printing what `zyl_run_tests` prints.
+
+Excluded from the comparison, with the reason recorded in the runner:
+actors and concurrency (spawn needs a native entry point — the
+interpreter reports `E_UNSUPPORTED_INTERPRETED` rather than jumping to a
+number), two tests that print an address, one that assumes `malloc`
+returns zeroes, and the crypto suite (minutes of interpreted arithmetic
+for what the compiled suite covers in seconds).
+
+### Known limitations (stage 2)
+
+- Actors are compile-only.
+- Heavy numeric work allocates per operation and reclaims nothing within
+  a run: an Ed25519 verification that is milliseconds compiled is tens
+  of seconds and gigabytes interpreted. The memory budget stops it with
+  `E_OUT_OF_MEMORY` instead of taking the machine down.
+- A definition entered at the prompt cannot capture a `def` binding —
+  the binding reaches the entry, not the definitions.
+- Values still print as `#<variant tag=N at …>`; a derivable `Show` is
+  stage 3.
+
 ## Current Session (2026-09-23) — a first-class REPL, stage 1: the line editor
 
 **`zyl repl` is a real interactive session now: raw-mode line editing

@@ -39,7 +39,10 @@ are reserved names that the compiler rejects rather than implements.
   the comment in `selfhost/driver.zyl`.
 - A top-level `def` does not become a readable global; references to one
   compile to 0.
-- The REPL (`tools/repl.zyl`) is an unfinished skeleton.
+- The REPL (`zyl repl`, `stdlib/repl/*`) is a full interactive session:
+  line editing, history, completion, multi-line entries, and an ICNF
+  interpreter that keeps definitions and values alive between entries.
+  See `docs/repl.md`.
 - The v5.0 package system (§31) is implemented — manifests, canonical
   symbol keys and injective mangling, two-level visibility, Minimal
   Version Selection, the lock, the content store, the index with
@@ -402,7 +405,7 @@ Where init-bindings is a list of `(name [value])` pairs:
 - [ ] Self-hosting (not yet targeting Zyl source code generation)
 - [ ] Contract injection (Phase 10 of spec — optional overlay)
 - [ ] Hash finalization (Phase 11 of spec — SHA-256 binary fingerprinting)
-- [ ] Full REPL (currently a minimal stub)
+- [x] Full REPL (`zyl repl`; see docs/repl.md)
 
 ---
 

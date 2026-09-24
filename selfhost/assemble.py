@@ -311,6 +311,7 @@ files = [
     'stdlib/repl/line_editor.zyl',
     'stdlib/repl/reader.zyl',
     'stdlib/repl/history.zyl',
+    'stdlib/repl/interp.zyl',
     'stdlib/repl/eval.zyl',
     'stdlib/repl/repl.zyl',
     # NOTE: stdlib/lsp/* is deliberately NOT part of this bundle. This file

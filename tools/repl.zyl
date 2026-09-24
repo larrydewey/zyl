@@ -8,4 +8,4 @@
 (use repl/repl)
 
 (defn main ()
-  (repl-main (arena-create 268435456)))
+  (repl-main (arena-create 1048576)))
