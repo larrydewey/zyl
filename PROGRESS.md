@@ -246,8 +246,10 @@ by recent sessions. The completed roadmap items are kept, annotated, under
       agree with the interpreter; then derivable `Show`.
 - [x] Tail-call optimization in `codegen.zyl` (direct calls, at most six
       arguments; indirect and stack-argument tail calls still open).
-- [ ] `print` on `Result` (`Ok`/`Err`) prints an address instead of its
-      content; add a prelude `Show` impl for `Result`.
+- [x] `print` on `Result`/`Option`/`List` whose payload has no `Show`
+      printed garbage or crashed; it now prints raw. Open: explicit
+      `Show.show` on a type without an impl still hits the runtime tag
+      dispatch (`ic-trait-dispatch`) instead of `E_TRAIT_NOT_FOUND`.
 - [x] ~~A per-file paren-depth check in `assemble.py`~~: obsolete, every
       module is compiled and balance-checked as its own file.
 
@@ -377,7 +379,18 @@ as recorded below.
 
 # Session log (newest first)
 
-## Session (2026-09-24, latest) — tail calls
+## Session (2026-09-24, latest) — tail calls, print of non-Show payloads
+
+**`print` of a container whose payload has no `Show`.** `Result` already
+had a prelude `Show` impl (`core/result.zyl`) and `(print (Ok 5))`
+printed `Ok(5)`. The failing case was `(print (Ok (make-P 1)))` with no
+`Show` for `P`: `print` picked `Result`'s impl, whose inner `Show.show`
+had no target and fell into `ic-trait-dispatch`, where the `String` arm
+is a catch-all, so the struct was read as a string (`Ok()`, or a
+segfault). `ta-print-status` now uses `Show` only when every type
+argument is showable (`ta-showable`); otherwise the value prints raw,
+like the payload does. Tests: `print-result` in `show-trait.zyl`,
+`print-container-of-non-show` in `derive.zyl`.
 
 **Direct tail calls are jumps.** `codegen.zyl` threads a tail flag (the
 frame size, 0 outside tail position) through `if`, `let`, `begin` and

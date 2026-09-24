@@ -70,6 +70,16 @@
   )
 )
 
+; A container whose payload has no Show prints raw, like the payload itself.
+(defstruct _dr_Bare (v Int))
+
+(test "print-container-of-non-show"
+  (begin
+    (print (Some (make-_dr_Bare 1)))
+    (print (Ok (make-_dr_Bare 2)))
+    (print (Cons (make-_dr_Bare 3) Nil))
+    (assert-equal (struct-get (make-_dr_Bare 4) "v") 4)))
+
 ; Multiple traits on one struct.
 (defstruct _dr_Multi (a) (b))
 (derive _dr_Multi Eq Ord Debug)

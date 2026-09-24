@@ -60,4 +60,13 @@
     (print (Cons 1.5 Nil))
     0))
 
+(defn st-div (a b) (if (= b 0) (Err "div by zero") (Ok (/ a b))))
+
+(test "print-result"
+  (begin
+    (print (st-div 10 2))
+    (print (st-div 1 0))
+    (print (Ok (Some (StRect 1 2))))
+    0))
+
 (run-tests)

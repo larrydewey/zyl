@@ -1745,15 +1745,33 @@
 (defn ta-print-status (st t)
   (let r (ta-resolve st t)
     (match r
-      (TaC n _
+      (TaC n args
         (if (ta-prim n)
           0
           (let sd (ta-sget (ta-specs st) "!show")
             (if (= sd 0)
               0
               (let fi (ta-impl-fn st sd n)
-                (if (< fi 0) 0 (ta-impl-status st fi (ta-show-ct r))))))))
+                (if (< fi 0) 0
+                  (if (ta-showable-list st args) (ta-impl-status st fi (ta-show-ct r)) 0)))))))
       (_ (ta-open-var st r)))))
+
+; Every type argument has Show too; else the impl's inner Show.show has no target.
+(defn ta-showable (st t)
+  (match (ta-resolve st t)
+    (TaC n args
+      (if (ta-prim n)
+        (if (ta-streq n "Unit") false true)
+        (let sd (ta-sget (ta-specs st) "!show")
+          (if (= sd 0) false
+            (if (< (ta-impl-fn st sd n) 0) false (ta-showable-list st args))))))
+    (TaF _ _ false)
+    (TaV _ true)))
+
+(defn ta-showable-list (st ts)
+  (match ts
+    (Nil true)
+    (Cons h rest (if (ta-showable st h) (ta-showable-list st rest) false))))
 
 (defn ta-act-list (st members es)
   (match es

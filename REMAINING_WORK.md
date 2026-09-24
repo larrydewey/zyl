@@ -10,7 +10,7 @@
 - [x] Field and return kinds: `compiler/type_annotate.zyl` feeds inferred String/Float kinds to codegen and the interpreter (generic Vec/Map elements included); prelude `Show` trait with container impls and `derive Show`; trait calls resolved statically with per-type specialization; structural `==` on ADT values; open: other derivable traits
 - [x] ~~Whitespace collapse / per-file paren check in `assemble.py`~~ — obsolete: the compiler builds from `selfhost/driver.zyl` through module resolution; `assemble.py` and the bundle are gone
 - [x] Tail-call optimization in `codegen.zyl`: direct tail calls with at most six arguments are jumps; open: indirect and stack-argument tail calls, interpreter TCO
-- [ ] `print` on `Result` (`Ok`/`Err`) prints an address instead of its content; add a prelude `Show` impl for `Result`
+- [x] `print` on `Result`: the prelude impl already existed; the real bug was a payload without `Show` (garbage or segfault via the runtime trait dispatch), now printed raw; open: explicit `Show.show` on a type without an impl still falls into that dispatch
 
 ## P3: Language Features
 - [ ] Contract injection (spec §23) against real `expr_inner.zyl` shapes, wired into pipeline
