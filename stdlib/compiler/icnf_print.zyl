@@ -71,16 +71,19 @@
 
 (defn ip-open (buf tag) (begin (ip-out buf "(") (ip-out buf tag)))
 
-; `)`, preceded by ` :k` when codegen gave the node a representation kind
-; and ` @r` when region inference gave it a region (attr 4: 1 frame,
-; 2 result, 3 heap, 4+k with-region scope k; on a function, its flags).
+; `)`, preceded by ` :k` when codegen gave the node a representation kind,
+; ` @r` when region inference gave it a region (attr 4: 1 frame,
+; 2 result, 3 heap, 4+k with-region scope k; on a function, its flags),
+; and ` ^x` when the reuse pass lets it take the block of `x`.
 (defn ip-close (buf e)
   (let k (icnf-kind e)
     (let r (icnf-region e)
-      (begin
-        (if (= k 0) unit (begin (ip-out buf " :") (ip-int buf k)))
-        (if (= r 0) unit (begin (ip-out buf " @") (ip-int buf r)))
-        (ip-out buf ")")))))
+      (let u (icnf-reuse e)
+        (begin
+          (if (= k 0) unit (begin (ip-out buf " :") (ip-int buf k)))
+          (if (= r 0) unit (begin (ip-out buf " @") (ip-int buf r)))
+          (if (= (str-length u) 0) unit (begin (ip-out buf " ^") (ip-out buf u)))
+          (ip-out buf ")"))))))
 
 (defn ip-node (buf e)
   (begin
