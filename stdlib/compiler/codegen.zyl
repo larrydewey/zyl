@@ -38,6 +38,7 @@
 (use allocator/allocator)
 (use compiler/ast)
 (use compiler/icnf)
+(use compiler/mir)
 ; shd (compiler/resolver.zyl) is called below (cg-bind-one/
 ; icnf-binds-slots/cg-param-env) but was never declared as a real
 ; dependency -- harmless for the assemble.py bundle (every `use` line
@@ -1812,6 +1813,11 @@
       (icnf-add2 1 (icnf-add2 (icnf-size body) (icnf-count-arms rest))))))
 
 (defn cg-function (st f)
+  (if (and (ifn-tag-p f) (mb-eligible st f))
+    (mb-function st f)
+    (cg-function-stack st f)))
+
+(defn cg-function-stack (st f)
   ; Extract the IFn fields via tiny two-arm helpers: a trailing catch-all
   ; arm on this single large IFn arm was dropped between macro expand and
   ; icnf, leaving only the first arm and tripping exhaustiveness.
@@ -2354,3 +2360,511 @@
                                             (let s22 (cg-emit-label s21 lfail)
                                               (let s23 (cg-emit-line s22 "    xor eax, eax")
                                                 (cg-emit-label s23 ldone)))))))))))))))))))))))))
+
+; ===========================================================================
+; NATIVE BACKEND, STAGE 1 (docs/native-backend-design.md)
+; ===========================================================================
+;
+; A function whose ICNF is in the supported set (integers and control:
+; constants, locals, function references, integer operators, if, while,
+; let, set!, sequences, direct user calls, runtime calls with at most six
+; arguments, inline byte access) and that needs no frame region and no
+; frame wiping is lowered to MIR (compiler/mir), given registers by linear
+; scan and emitted here; any other function goes through the stack-machine
+; code above. Both keep the same ABI. Evaluation order is the ICNF's: a
+; local read is copied into a fresh register when a later sibling could
+; set! it, exactly the test the fast paths above use.
+
+; ZYL_MIR=0 at compile time sends every function through the stack
+; machine, for bisecting a suspected backend bug.
+(defn mb-enabled () (not (str-eq (ffi-call "zyl_getenv_str" "ZYL_MIR" 1000) "0")))
+
+(defn mb-eligible (st f)
+  (match f
+    (IFn name params body kinds
+      (and (mb-enabled) (= (cg-region-flags f) 0)
+        (and (not (cg-wipes-frame name))
+          (and (<= (list-length params) 6)
+            (ml-ok st (cg-param-env params kinds 0 (EnvNil)) body)))))
+    (_ false)))
+
+(defn ml-site-ok (e) (let l (cg-site-level e) (or (= l 0) (= l 3))))
+
+(defn ml-ok (st env e)
+  (match e
+    (IConst _ true)
+    (ILoad n (or (not (= (env-lookup env n) 0)) (= (cg-fn-known st n) 1)))
+    (IBinop op l r
+      (and (and (>= op 0) (<= op 16))
+        (and (cg-int-operands st env l r) (and (ml-ok st env l) (ml-ok st env r)))))
+    (ICall name args
+      (and (= (env-lookup env name) 0)
+        (and (= (cg-fn-known st name) 1)
+          (and (<= (list-length args) 6) (and (ml-site-ok e) (ml-list-ok st env args))))))
+    (IFfi _ args (and (<= (list-length args) 6) (and (ml-site-ok e) (ml-list-ok st env args))))
+    (IIf c t f (and (ml-ok st env c) (and (ml-ok st env t) (ml-ok st env f))))
+    (IWhile c b (and (ml-ok st env c) (ml-ok st env b)))
+    (ISet n v (and (not (= (env-lookup env n) 0)) (ml-ok st env v)))
+    (ILet n v b (and (ml-ok st env v) (ml-ok st (EnvBind n -8 (kind-of st env v) env) b)))
+    (ISeq es (ml-list-ok st env es))
+    (_ false)))
+
+(defn ml-list-ok (st env es)
+  (match es
+    (Nil true)
+    (Cons h t (if (ml-ok st env h) (ml-list-ok st env t) false))))
+
+; --- lowering ---------------------------------------------------------------
+
+; Next vreg, next label, instructions (newest first).
+(deftype MS (MS Int Int (List MI)))
+(deftype MR (MR MS Int))
+(deftype MVar (MVar String Int))
+; The function: its name, its parameters' vregs, the label after them.
+(deftype MCtx (MCtx String (List Int) Int))
+
+(defn ms-emit (ms i) (match ms (MS v l is (MS v l (Cons i is)))))
+(defn ms-vreg (ms) (match ms (MS v l is (MR (MS (+ v 1) l is) v))))
+(defn ms-label (ms) (match ms (MS v l is (MR (MS v (+ l 1) is) l))))
+(defn mr-ms (r) (match r (MR ms _ ms)))
+(defn mr-v (r) (match r (MR _ v v)))
+
+(defn ml-var (venv n)
+  (match venv
+    (Nil -1)
+    (Cons m t (match m (MVar k v (if (str-eq k n) v (ml-var t n)))))))
+
+; d <- one instruction producing a fresh vreg.
+(defn ml-def (ms mk)
+  (let r (ms-vreg ms)
+    (MR (ms-emit (mr-ms r) (mk (mr-v r))) (mr-v r))))
+
+(defn ml-expr (st env venv ms e)
+  (match e
+    (IConst n (ml-const ms n))
+    (ILoad n
+      (let v (ml-var venv n)
+        (if (>= v 0)
+          (MR ms v)
+          (let r (ms-vreg ms) (MR (ms-emit (mr-ms r) (MFnRef (mr-v r) n)) (mr-v r))))))
+    (IBinop op l r
+      (let ra (ml-operand st env venv ms l (icnf-has-set r))
+        (if (ml-imm-op op r)
+          (let rd (ms-vreg (mr-ms ra))
+            (MR (ms-emit (mr-ms rd) (MBinI op (mr-v rd) (mr-v ra) (ml-const-of r))) (mr-v rd)))
+          (let rb (ml-expr st env venv (mr-ms ra) r)
+            (let rd (ms-vreg (mr-ms rb))
+              (MR (ms-emit (mr-ms rd) (MBin op (mr-v rd) (mr-v ra) (mr-v rb))) (mr-v rd)))))))
+    (ICall name args (ml-call st env venv ms name true args (cg-site-level e)))
+    (IFfi sym args
+      (if (cg-inline-byte-p sym args)
+        (ml-byte st env venv ms sym args)
+        (ml-call st env venv ms sym false args (cg-site-level e))))
+    (IIf c t f
+      (let rr (ms-vreg ms)
+        (let le (ms-label (mr-ms rr))
+          (let lx (ms-label (mr-ms le))
+            (let m1 (ml-cond st env venv (mr-ms lx) c (mr-v le))
+              (let rt (ml-expr st env venv m1 t)
+                (let m2 (ms-emit (ms-emit (mr-ms rt) (MMov (mr-v rr) (mr-v rt))) (MJmp (mr-v lx)))
+                  (let rf (ml-expr st env venv (ms-emit m2 (MLabel (mr-v le))) f)
+                    (MR (ms-emit (ms-emit (mr-ms rf) (MMov (mr-v rr) (mr-v rf))) (MLabel (mr-v lx))) (mr-v rr))))))))))
+    (IWhile c b
+      (let rr (ms-vreg ms)
+        (let ls (ms-label (mr-ms rr))
+          (let le (ms-label (mr-ms ls))
+            (let m1 (ms-emit (ms-emit (mr-ms le) (MConst (mr-v rr) 0)) (MLabel (mr-v ls)))
+              (let m2 (ml-cond st env venv m1 c (mr-v le))
+                (let rb (ml-expr st env venv m2 b)
+                  (MR (ms-emit (ms-emit (ms-emit (mr-ms rb) (MMov (mr-v rr) (mr-v rb))) (MJmp (mr-v ls))) (MLabel (mr-v le)))
+                      (mr-v rr)))))))))
+    (ISet n v
+      (let rv (ml-expr st env venv ms v)
+        (MR (ms-emit (mr-ms rv) (MMov (ml-var venv n) (mr-v rv))) (mr-v rv))))
+    (ILet n v b
+      (let rv (ml-expr st env venv ms v)
+        (let rx (ms-vreg (mr-ms rv))
+          (ml-expr st (EnvBind n -8 (kind-of st env v) env) (Cons (MVar n (mr-v rx)) venv)
+                   (ms-emit (mr-ms rx) (MMov (mr-v rx) (mr-v rv))) b))))
+    (ISeq es (ml-seq st env venv ms es))
+    (_ (ml-const ms 0))))
+
+; A right operand that is a constant fitting an x86 imm32, for an
+; operator with an immediate form (add sub imul and or xor, comparisons).
+(defn ml-imm-op (op r)
+  (match r
+    (IConst n (and (and (>= n -2147483648) (<= n 2147483647))
+                   (or (<= op 2) (or (and (>= op 5) (<= op 10)) (and (>= op 11) (<= op 13))))))
+    (_ false)))
+
+(defn ml-const-of (r) (match r (IConst n n) (_ 0)))
+
+(defn ml-const (ms n)
+  (let r (ms-vreg ms) (MR (ms-emit (mr-ms r) (MConst (mr-v r) n)) (mr-v r))))
+
+(defn ml-seq (st env venv ms es)
+  (match es
+    (Nil (ml-const ms 0))
+    (Cons h t
+      (let r (ml-expr st env venv ms h)
+        (if (is-nil t) r (ml-seq st env venv (mr-ms r) t))))))
+
+; A local read, copied when a later operand could set! it.
+(defn ml-operand (st env venv ms e later-sets)
+  (let r (ml-expr st env venv ms e)
+    (if (and later-sets (ml-is-local venv e))
+      (let rc (ms-vreg (mr-ms r))
+        (MR (ms-emit (mr-ms rc) (MMov (mr-v rc) (mr-v r))) (mr-v rc)))
+      r)))
+
+(defn ml-is-local (venv e)
+  (match e (ILoad n (>= (ml-var venv n) 0)) (_ false)))
+
+(deftype MRL (MRL MS (List Int)))
+
+(defn ml-args (st env venv ms args acc)
+  (match args
+    (Nil (MRL ms (list-reverse acc)))
+    (Cons a t
+      (let r (ml-operand st env venv ms a (icnf-list-has-set t))
+        (ml-args st env venv (mr-ms r) t (Cons (mr-v r) acc))))))
+
+(defn ml-call (st env venv ms sym user args lvl)
+  (match (ml-args st env venv ms args Nil)
+    (MRL m2 vs
+      (let rd (ms-vreg m2)
+        (MR (ms-emit (mr-ms rd) (MCall (mr-v rd) sym user vs lvl)) (mr-v rd))))))
+
+(defn ml-byte (st env venv ms sym args)
+  (match (ml-args st env venv ms (match args (Cons _ t t) (Nil Nil)) Nil)
+    (MRL m2 vs
+      (let kind (if (str-eq sym "zyl_load_byte") 0 (if (str-eq sym "zyl_load_byte_signed") 1 (if (str-eq sym "zyl_store_byte") 2 3)))
+        (let rd (ms-vreg m2)
+          (MR (ms-emit (mr-ms rd) (MByte kind (mr-v rd) (ml-nth vs 0) (ml-nth vs 1) (if (> kind 1) (ml-nth vs 2) -1)))
+              (mr-v rd)))))))
+
+(defn ml-nth (xs i) (match xs (Nil -1) (Cons h t (if (= i 0) h (ml-nth t (- i 1))))))
+
+; Jump to `lf` when `c` is false; an integer comparison is one MJf.
+(defn ml-cond (st env venv ms c lf)
+  (match c
+    (IBinop op l r
+      (if (and (>= op 5) (<= op 10))
+        (let ra (ml-operand st env venv ms l (icnf-has-set r))
+          (if (ml-imm-op op r)
+            (ms-emit (mr-ms ra) (MJfI op (mr-v ra) (ml-const-of r) lf))
+            (let rb (ml-expr st env venv (mr-ms ra) r)
+              (ms-emit (mr-ms rb) (MJf op (mr-v ra) (mr-v rb) lf)))))
+        (ml-cond-plain st env venv ms c lf)))
+    (_ (ml-cond-plain st env venv ms c lf))))
+
+(defn ml-cond-plain (st env venv ms c lf)
+  (let r (ml-expr st env venv ms c)
+    (ms-emit (mr-ms r) (MJz (mr-v r) lf))))
+
+; Tail position: every path ends in MRet, a self tail jump or MTail.
+(defn ml-tail (st env venv ms cx e)
+  (match e
+    (IIf c t f
+      (let le (ms-label ms)
+        (let m1 (ml-cond st env venv (mr-ms le) c (mr-v le))
+          (let m2 (ml-tail st env venv m1 cx t)
+            (ml-tail st env venv (ms-emit m2 (MLabel (mr-v le))) cx f)))))
+    (ILet n v b
+      (let rv (ml-expr st env venv ms v)
+        (let rx (ms-vreg (mr-ms rv))
+          (ml-tail st (EnvBind n -8 (kind-of st env v) env) (Cons (MVar n (mr-v rx)) venv)
+                   (ms-emit (mr-ms rx) (MMov (mr-v rx) (mr-v rv))) cx b))))
+    (ISeq es
+      (match es
+        (Nil (ml-ret ms (ml-const ms 0)))
+        (Cons h t
+          (if (is-nil t)
+            (ml-tail st env venv ms cx h)
+            (ml-tail st env venv (mr-ms (ml-expr st env venv ms h)) cx (ISeq t))))))
+    (ICall name args (ml-tail-call st env venv ms cx name args (cg-site-level e) e))
+    (_ (ml-ret ms (ml-expr st env venv ms e)))))
+
+(defn ml-ret (_ms r) (ms-emit (mr-ms r) (MRet (mr-v r))))
+
+(defn ml-tail-call (st env venv ms cx name args lvl _e)
+  (match cx
+    (MCtx self ps head
+      (if (and (str-eq name self) (= (list-length args) (list-length ps)))
+        ; Every argument into a fresh register first, then the parameters.
+        (match (ml-fresh-args st env venv ms args Nil)
+          (MRL m2 vs (ms-emit (ml-assign m2 ps vs) (MJmp head))))
+        (match (ml-args st env venv ms args Nil)
+          (MRL m2 vs (ms-emit m2 (MTail name vs lvl))))))))
+
+(defn ml-fresh-args (st env venv ms args acc)
+  (match args
+    (Nil (MRL ms (list-reverse acc)))
+    (Cons a t
+      (let r (ml-expr st env venv ms a)
+        (let rc (ms-vreg (mr-ms r))
+          (ml-fresh-args st env venv (ms-emit (mr-ms rc) (MMov (mr-v rc) (mr-v r))) t (Cons (mr-v rc) acc)))))))
+
+(defn ml-assign (ms ps vs)
+  (match ps
+    (Nil ms)
+    (Cons p pt (match vs (Cons v vt (ml-assign (ms-emit ms (MMov p v)) pt vt)) (Nil ms)))))
+
+; The whole function: parameters, the loop head a self tail call jumps
+; to, then the body in tail position.
+(defn ml-function (st name params kinds body)
+  (let np (list-length params)
+    (let m0 (ml-params (MS np 1 Nil) 0 np)
+      (let venv (ml-param-vars params 0)
+        (let m1 (ms-emit m0 (MLabel 0))
+          (ml-tail st (cg-param-env params kinds 0 (EnvNil)) venv m1 (MCtx name (ml-range 0 np) 0) body))))))
+
+(defn ml-params (ms i n) (if (>= i n) ms (ml-params (ms-emit ms (MParam i i)) (+ i 1) n)))
+(defn ml-param-vars (ps i)
+  (match ps (Nil Nil) (Cons p t (Cons (MVar p i) (ml-param-vars t (+ i 1))))))
+(defn ml-range (i n) (if (>= i n) Nil (Cons i (ml-range (+ i 1) n))))
+
+; --- emission ---------------------------------------------------------------
+
+; The allocation plus the frame: callee-saved registers used (in order
+; rbx r12 r13 r14 r15), their save slots, spill slots, the label base.
+(deftype MF (MF Alloc (List Int) Int String))
+
+(defn mf-alloc (f) (match f (MF a _ _ _ a)))
+(defn mf-saved (f) (match f (MF _ s _ _ s)))
+(defn mf-base (f) (match f (MF _ _ _ b b)))
+(defn mf-ncs (f) (list-length (mf-saved f)))
+
+(defn mb-loc-text (f v)
+  (let l (alloc-loc (mf-alloc f) v)
+    (if (> l 0)
+      (mir-reg-name l)
+      (str-concat "qword ptr [rbp-" (str-concat (ffi-call "zyl_int_text" (* 8 (+ (mf-ncs f) (- 0 l))) 1000) "]")))))
+
+(defn mb-live (f v) (and (>= v 0) (not (= (alloc-loc (mf-alloc f) v) 0))))
+(defn mb-in-mem (f v) (< (alloc-loc (mf-alloc f) v) 0))
+(defn mb-label (f l) (str-concat (mf-base f) (str-concat "_" (ffi-call "zyl_int_text" l 1000))))
+
+(defn mb-used-callee (al nv v acc)
+  (if (>= v nv)
+    (mb-sort-regs acc 6)
+    (let l (alloc-loc al v)
+      (mb-used-callee al nv (+ v 1) (if (and (>= l 6) (not (me-int-in l acc))) (Cons l acc) acc)))))
+
+(defn me-int-in (x xs) (match xs (Nil false) (Cons h t (if (= h x) true (me-int-in x t)))))
+(defn mb-sort-regs (xs r) (if (> r 10) Nil (if (me-int-in r xs) (Cons r (mb-sort-regs xs (+ r 1))) (mb-sort-regs xs (+ r 1)))))
+
+(defn mb-function (st f)
+  (match f
+    (IFn name params body kinds
+      (let _ (mir-reset)
+        (match (ml-function st name params kinds body)
+          (MS nv nl rev (mb-alloc-emit st name nv nl (list-reverse rev))))))
+    (_ st)))
+
+(defn mb-alloc-emit (st name nv nl instrs)
+  (let n (list-length instrs)
+    (let a (mir-array instrs n)
+      (let lin (mir-liveness a n nv (mir-label-pos a n nl))
+        (let al (mir-allocate (mir-intervals a n nv lin) nv (mir-hints a n nv))
+          (match (cg-label-new st)
+            (CGR st1 _ base (mb-emit-fn st1 name al nv base instrs))))))))
+
+(defn mb-emit-fn (st name al nv base instrs)
+  (let saved (mb-used-callee al nv 0 Nil)
+    (let fr (MF al saved 0 base)
+      (let fsz (* 16 (/ (+ (* 8 (+ (list-length saved) (alloc-spills al))) 15) 16))
+        (mb-emit-all (mb-prologue st name fr fsz) fr instrs 0)))))
+
+(defn mb-prologue (st name fr fsz)
+  (let st1 (cg-emit-line (cg-emit st (cg-sym-mangled (cg-arena-of st) name)) ":")
+    (let st2 (cg-emit-lines st1 (Cons "    push rbp" (Cons "    mov rbp, rsp" (Cons "    and rsp, -16" Nil))))
+      (let st3 (if (> fsz 0) (cg-emit-line st2 (str-concat "    sub rsp, " (ffi-call "zyl_int_text" fsz 1000))) st2)
+        (mb-save-regs st3 (mf-saved fr) 1)))))
+
+(defn mb-save-regs (st rs k)
+  (match rs
+    (Nil st)
+    (Cons r t (mb-save-regs (cg-emit-line st (str-concat "    mov qword ptr [rbp-" (str-concat (ffi-call "zyl_int_text" (* 8 k) 1000) (str-concat "], " (mir-reg-name r))))) t (+ k 1)))))
+
+(defn mb-restore-regs (st rs k)
+  (match rs
+    (Nil st)
+    (Cons r t (mb-restore-regs (cg-emit-line st (str-concat "    mov " (str-concat (mir-reg-name r) (str-concat ", qword ptr [rbp-" (str-concat (ffi-call "zyl_int_text" (* 8 k) 1000) "]"))))) t (+ k 1)))))
+
+(defn mb-leave (st fr)
+  (cg-emit-lines (mb-restore-regs st (mf-saved fr) 1) (Cons "    mov rsp, rbp" (Cons "    pop rbp" Nil))))
+
+; The leading MParams are one parallel move from the argument registers.
+(defn mb-emit-all (st fr instrs i)
+  (match instrs
+    (Nil st)
+    (Cons ins rest
+      (match ins
+        (MParam _ _ (mb-params st fr instrs Nil))
+        (_ (mb-emit-all (mb-emit-one st fr ins i) fr rest (+ i 1)))))))
+
+(defn mb-params (st fr instrs acc)
+  (match instrs
+    (Cons ins rest
+      (match ins
+        (MParam d k
+          (mb-params st fr rest (if (mb-live fr d) (Cons (PMove (mb-loc-text fr d) (cg-reg-of k)) acc) acc)))
+        (_ (mb-emit-all (mb-moves st (list-reverse acc)) fr instrs 0))))
+    (Nil (mb-moves st (list-reverse acc)))))
+
+(defn mb-moves (st ms)
+  (mb-move-list st (pm-sequence ms)))
+
+(defn mb-move-list (st ms)
+  (match ms
+    (Nil st)
+    (Cons m t (mb-move-list (mb-mov st (pm-dst m) (pm-src m)) t))))
+
+; mov between two operands, through rax when both are memory.
+(defn mb-mov (st d s)
+  (if (str-eq d s)
+    st
+    (if (and (mb-mem-text d) (mb-mem-text s))
+      (cg-emit-line (cg-emit-line st (str-concat "    mov rax, " s)) (str-concat "    mov " (str-concat d ", rax")))
+      (cg-emit-line st (str-concat "    mov " (str-concat d (str-concat ", " s)))))))
+
+(defn mb-mem-text (s) (= (ffi-call "zyl_cstr_byte_at" s 0 1000) 113)) ; 'q' of "qword ptr"
+
+(defn mb-set (st fr d src)
+  (if (mb-live fr d) (mb-mov st (mb-loc-text fr d) src) st))
+
+(defn mb-emit-one (st fr ins i)
+  (match ins
+    (MConst d n
+      (if (mb-live fr d)
+        (if (and (mb-in-mem fr d) (or (> n 2147483647) (< n -2147483648)))
+          (mb-set (cg-emit-line st (str-concat "    mov rax, " (ffi-call "zyl_int_text" n 1000))) fr d "rax")
+          (cg-emit-line st (str-concat "    mov " (str-concat (mb-loc-text fr d) (str-concat ", " (ffi-call "zyl_int_text" n 1000))))))
+        st))
+    (MMov d s (if (mb-live fr d) (mb-mov st (mb-loc-text fr d) (mb-loc-text fr s)) st))
+    (MBin op d a b
+      (if (mb-live fr d)
+        (if (and (mb-two-op op) (and (not (mb-in-mem fr d)) (not (str-eq (mb-loc-text fr d) (mb-loc-text fr b)))))
+          ; d = a; d op= b
+          (cg-emit-line (mb-mov st (mb-loc-text fr d) (mb-loc-text fr a))
+                        (str-concat "    " (str-concat (mb-two-op-mnem op) (str-concat " " (str-concat (mb-loc-text fr d) (str-concat ", " (mb-loc-text fr b)))))))
+         (if (and (mb-commutes op) (and (not (mb-in-mem fr d)) (str-eq (mb-loc-text fr d) (mb-loc-text fr b))))
+          ; d already holds b: d op= a
+          (cg-emit-line st (str-concat "    " (str-concat (mb-two-op-mnem op) (str-concat " " (str-concat (mb-loc-text fr d) (str-concat ", " (mb-loc-text fr a)))))))
+          (let st2 (cg-emit-line (cg-emit-line st (str-concat "    mov rax, " (mb-loc-text fr a))) (str-concat "    mov rcx, " (mb-loc-text fr b)))
+            (let st3 (if (< op 5) (cg-arith-mnem st2 op) (if (> op 10) (cg-bit-mnem st2 op) (cg-cmp-set st2 op)))
+              (mb-set st3 fr d "rax")))))
+        st))
+    (MBinI op d a n
+      (if (mb-live fr d)
+        (if (mb-two-op op)
+          (if (mb-in-mem fr d)
+            (mb-set (cg-emit-line (cg-emit-line st (str-concat "    mov rax, " (mb-loc-text fr a)))
+                                  (str-concat "    " (str-concat (mb-two-op-mnem op) (str-concat " rax, " (ffi-call "zyl_int_text" n 1000)))))
+                    fr d "rax")
+            (cg-emit-line (mb-mov st (mb-loc-text fr d) (mb-loc-text fr a))
+                          (str-concat "    " (str-concat (mb-two-op-mnem op) (str-concat " " (str-concat (mb-loc-text fr d) (str-concat ", " (ffi-call "zyl_int_text" n 1000))))))))
+          ; a comparison: cmp against the immediate, then setcc
+          (let st2 (cg-emit-line (cg-emit-line st (str-concat "    mov rax, " (mb-loc-text fr a))) (str-concat "    cmp rax, " (ffi-call "zyl_int_text" n 1000)))
+            (mb-set (mb-setcc st2 op) fr d "rax")))
+        st))
+    (MCall d sym user args lvl
+      (let st2 (mb-moves st (mb-arg-moves fr args 0))
+        (let st3 (mb-cur-region st2 lvl)
+          (let st4 (cg-emit-line st3 (if user
+                                       (str-concat "    call " (cg-sym-for (cg-arena-of st) sym true))
+                                       (str-concat "    call " (ffi-call "zyl_cstr_sanitize" (cg-arena-of st) (if (> lvl 0) (str-concat sym "_r") sym) 1000))))
+            (mb-set st4 fr d "rax")))))
+    (MTail sym args lvl
+      (let st2 (mb-cur-region (mb-moves st (mb-arg-moves fr args 0)) lvl)
+        (cg-emit-line (mb-leave st2 fr) (str-concat "    jmp " (cg-sym-for (cg-arena-of st) sym true)))))
+    (MByte kind d o b v (mb-byte st fr kind d o b v i))
+    (MFnRef d name
+      (mb-set (cg-emit-line st (str-concat "    lea rax, [rip+" (str-concat (cg-sym-mangled (cg-arena-of st) name) "]"))) fr d "rax"))
+    (MLabel l (cg-emit-line st (str-concat (mb-label fr l) ":")))
+    (MJmp l (cg-emit-line st (str-concat "    jmp " (mb-label fr l))))
+    (MJf op a b l
+      (let st2 (if (and (mb-in-mem fr a) (mb-in-mem fr b))
+                 (cg-emit-line (cg-emit-line st (str-concat "    mov rax, " (mb-loc-text fr a))) (str-concat "    cmp rax, " (mb-loc-text fr b)))
+                 (cg-emit-line st (str-concat "    cmp " (str-concat (mb-loc-text fr a) (str-concat ", " (mb-loc-text fr b))))))
+        (cg-emit-line st2 (str-concat (cg-jump-unless op) (mb-label fr l)))))
+    (MJfI op a n l
+      (let st2 (cg-emit-line st (str-concat "    cmp " (str-concat (mb-loc-text fr a) (str-concat ", " (ffi-call "zyl_int_text" n 1000)))))
+        (cg-emit-line st2 (str-concat (cg-jump-unless op) (mb-label fr l)))))
+    (MJz a l
+      (cg-emit-lines st (Cons (str-concat "    cmp " (str-concat (mb-loc-text fr a) ", 0"))
+                        (Cons (str-concat "    je " (mb-label fr l)) Nil))))
+    (MRet a
+      (let st2 (cg-emit-line st (str-concat "    mov rax, " (mb-loc-text fr a)))
+        (cg-emit-line (mb-leave st2 fr) "    ret")))
+    (MParam _ _ st)))
+
+; add, sub, imul, and, or, xor have a two-operand form d op= s. (Shifts,
+; division and comparisons keep the fixed rax/rcx sequences above, which
+; also keep the shift and bit sequences constant-time.)
+(defn mb-two-op (op) (or (<= op 2) (and (>= op 11) (<= op 13))))
+(defn mb-commutes (op) (or (= op 0) (or (= op 2) (and (>= op 11) (<= op 13)))))
+
+(defn mb-two-op-mnem (op)
+  (if (= op 0) "add" (if (= op 1) "sub" (if (= op 2) "imul" (if (= op 11) "and" (if (= op 12) "or" "xor"))))))
+
+; rax = the comparison op's result as 0 or 1, after a cmp.
+(defn mb-setcc (st op)
+  (cg-setcc (cg-emit st "    set")
+    (if (= op 5) "l al" (if (= op 6) "g al" (if (= op 7) "le al" (if (= op 8) "ge al" (if (= op 9) "e al" "ne al")))))))
+
+(defn mb-arg-moves (fr args k)
+  (match args
+    (Nil Nil)
+    (Cons a t (Cons (PMove (cg-reg-of k) (mb-loc-text fr a)) (mb-arg-moves fr t (+ k 1))))))
+
+; Level 3 (heap) is the only annotated level a function without a frame
+; region has (mb-eligible).
+(defn mb-cur-region (st lvl)
+  (if (= lvl 3)
+    (cg-emit-lines st (Cons "    xor r11d, r11d" (Cons "    mov QWORD PTR fs:zyl_cur_region@tpoff, r11" Nil)))
+    st))
+
+; cg-inline-byte's sequence on scratch registers only: the offset in
+; rax, the handle in rdx, the magic in r11, rcx for the bound check and
+; the stored value.
+(defn mb-byte (st fr kind d o b v i)
+  (let lb (str-concat (mf-base fr) (str-concat "_b" (ffi-call "zyl_int_text" i 1000)))
+    (let lslice (str-concat lb "s")
+      (let lhit (str-concat lb "h")
+        (let lfail (str-concat lb "f")
+          (let ldone (str-concat lb "d")
+            (let store (> kind 1)
+              (let st2 (cg-emit-lines st
+                         (Cons (str-concat "    mov rdx, " (mb-loc-text fr b))
+                         (Cons (str-concat "    mov rax, " (mb-loc-text fr o))
+                         (Cons "    cmp rdx, 4096"
+                         (Cons (str-concat "    jb " lfail)
+                         (Cons "    test rdx, 7"
+                         (Cons (str-concat "    jnz " lfail)
+                         (Cons "    mov r11, [rdx]"
+                         (Cons "    movabs rcx, 6510318584122966017"
+                         (Cons "    cmp r11, rcx"
+                         (Cons (str-concat "    jne " lslice)
+                         (Cons "    cmp rax, [rdx+24]"
+                         (Cons (str-concat "    jae " lfail)
+                         (Cons (str-concat "    jmp " lhit)
+                         (Cons (str-concat lslice ":")
+                         (Cons "    movabs rcx, 6510318584122966018"
+                         (Cons "    cmp r11, rcx"
+                         (Cons (str-concat "    jne " lfail)
+                         (Cons "    cmp rax, [rdx+16]"
+                         (Cons (str-concat "    jae " lfail)
+                         (Cons (str-concat lhit ":")
+                         (Cons "    mov rdx, [rdx+8]" Nil))))))))))))))))))))))
+                (let st3 (if store
+                           (cg-emit-lines st2 (Cons (str-concat "    mov rcx, " (mb-loc-text fr v))
+                                              (Cons "    mov byte ptr [rdx+rax], cl"
+                                              (Cons "    mov eax, 1" Nil))))
+                           (cg-emit-line st2 (if (= kind 1) "    movsx rax, byte ptr [rdx+rax]" "    movzx eax, byte ptr [rdx+rax]")))
+                  (let st4 (cg-emit-lines st3 (Cons (str-concat "    jmp " ldone)
+                                              (Cons (str-concat lfail ":")
+                                              (Cons "    xor eax, eax"
+                                              (Cons (str-concat ldone ":") Nil)))))
+                    (mb-set st4 fr d "rax")))))))))))

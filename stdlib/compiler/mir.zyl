@@ -1,0 +1,428 @@
+; === Zyl Compiler — MIR: machine IR, liveness, register allocation ===
+; Module: compiler/mir
+;
+; The native backend's middle (docs/native-backend-design.md). codegen.zyl
+; lowers a function's ICNF to a linear list of MIR instructions over
+; virtual registers (vregs, numbered from 0), this module computes
+; liveness and assigns each vreg a location by linear scan, and codegen
+; emits x86-64 from the result.
+;
+; Every step is a function of instruction order alone (vregs are
+; numbered in lowering order, intervals are sorted by start then by
+; vreg, registers are tried in a fixed order), so the same function
+; always gets the same assignment.
+
+(use core/list)
+(use math/words)
+
+; --- instructions ---------------------------------------------------------
+
+; Labels are small integers local to one function; codegen prefixes them.
+(deftype MI
+  (MConst Int Int)                    ; d <- n
+  (MMov Int Int)                      ; d <- s
+  (MBin Int Int Int Int)              ; op, d <- a op b (ICNF operator codes)
+  (MBinI Int Int Int Int)             ; op, d <- a op imm (imm fits 32 bits)
+  (MParam Int Int)                    ; d <- incoming argument i
+  (MCall Int String Bool (List Int) Int) ; d <- call sym(args); user?; region level
+  (MTail String (List Int) Int)       ; tail call of a user function; region level
+  (MByte Int Int Int Int Int)         ; kind (0 u8, 1 i8, 2 store, 3 store signed), d, off, buf, val (-1)
+  (MFnRef Int String)                 ; d <- address of a user function
+  (MLabel Int)
+  (MJmp Int)
+  (MJf Int Int Int Int)               ; op, a, b, L: jump to L when (a op b) is false
+  (MJfI Int Int Int Int)              ; op, a, imm, L
+  (MJz Int Int)                       ; a, L: jump to L when a is 0
+  (MRet Int))
+
+; Vregs an instruction reads, and the one it writes (-1 for none).
+(defn mi-uses (i)
+  (match i
+    (MConst _ _ Nil)
+    (MMov _ s (Cons s Nil))
+    (MBin _ _ a b (Cons a (Cons b Nil)))
+    (MBinI _ _ a _ (Cons a Nil))
+    (MParam _ _ Nil)
+    (MCall _ _ _ args _ args)
+    (MTail _ args _ args)
+    (MByte _ _ o b v (if (< v 0) (Cons o (Cons b Nil)) (Cons o (Cons b (Cons v Nil)))))
+    (MFnRef _ _ Nil)
+    (MLabel _ Nil)
+    (MJmp _ Nil)
+    (MJf _ a b _ (Cons a (Cons b Nil)))
+    (MJfI _ a _ _ (Cons a Nil))
+    (MJz a _ (Cons a Nil))
+    (MRet a (Cons a Nil))))
+
+(defn mi-def (i)
+  (match i
+    (MConst d _ d)
+    (MMov d _ d)
+    (MBin _ d _ _ d)
+    (MBinI _ d _ _ d)
+    (MParam d _ d)
+    (MCall d _ _ _ _ d)
+    (MByte _ d _ _ _ d)
+    (MFnRef d _ d)
+    (_ -1)))
+
+(defn mi-is-call (i)
+  (match i
+    (MCall _ _ _ _ _ true)
+    (_ false)))
+
+; --- scratch memory -------------------------------------------------------
+
+; One arena for a function's tables, reset before the next function.
+(def mir-arena-cell (ffi-call "zyl_ref_new" (ffi-call "zyl_arena_create" 0 1000) 1000))
+(defn mir-arena () (ffi-call "zyl_ref_get" mir-arena-cell 1000))
+(defn mir-reset () (ffi-call "zyl_arena_reset" (mir-arena) 1000))
+
+; --- liveness -------------------------------------------------------------
+
+; Instructions are held in an (Array MI) for indexed access; live sets
+; are word vectors of 64-bit masks, one bit per vreg.
+
+(defn mir-array (instrs n)
+  (let a (ffi-call "zyl_array_new" (mir-arena) (if (> n 0) n 1) 1000)
+    (let _ (mir-fill a instrs 0)
+      a)))
+
+(defn mir-fill (a xs i)
+  (match xs
+    (Nil unit)
+    (Cons h t (let _ (ffi-call "zyl_array_set" a i h 1000) (mir-fill a t (+ i 1))))))
+
+; Position of each label, by label number.
+(defn mir-label-pos (a n nlabels)
+  (let w (w-alloc (mir-arena) (if (> nlabels 0) nlabels 1))
+    (let _ (mir-label-scan a n w 0)
+      w)))
+
+(defn mir-label-scan (a n w i)
+  (if (>= i n)
+    unit
+    (let _ (match (ffi-call "zyl_array_get" a i 1000) (MLabel l (let _ (w-set w l i) unit)) (_ unit))
+      (mir-label-scan a n w (+ i 1)))))
+
+; A bit set of vregs: `words` words at base index `row * words` of `w`.
+(defn bs-get (w words row v)
+  (let x (w-get w (+ (* row words) (/ v 64)))
+    (= (bit-and (shr x (% v 64)) 1) 1)))
+
+(defn bs-set (w words row v)
+  (let k (+ (* row words) (/ v 64))
+    (w-set w k (bit-or (w-get w k) (shl 1 (% v 64))))))
+
+; live-in(i) = uses(i) | (live-out(i) - def(i)); live-out(i) = union of
+; live-in over the successors. Iterated backwards to a fixpoint; returns
+; the live-in table (n rows).
+(defn mir-liveness (a n nv lpos)
+  (let words (+ (/ nv 64) 1)
+    (let lin (w-alloc (mir-arena) (if (> n 0) (* n words) 1))
+      (let _ (mir-live-rounds a n words lin lpos)
+        lin))))
+
+(defn mir-live-rounds (a n words lin lpos)
+  (if (mir-live-pass a n words lin lpos (- n 1) false)
+    (mir-live-rounds a n words lin lpos)
+    unit))
+
+; One backward pass; true when any live-in set grew.
+(defn mir-live-pass (a n words lin lpos i changed)
+  (if (< i 0)
+    changed
+    (let c (mir-live-one a n words lin lpos i)
+      (mir-live-pass a n words lin lpos (- i 1) (or changed c)))))
+
+(defn mir-live-one (a n words lin lpos i)
+  (let ins (ffi-call "zyl_array_get" a i 1000)
+    (let d (mi-def ins)
+      (mir-live-words a n words lin lpos i ins d 0 false))))
+
+; Word by word: new = uses | (succ-out & ~def).
+(defn mir-live-words (a n words lin lpos i ins d k changed)
+  (if (>= k words)
+    changed
+    (let out (mir-succ-out a n words lin lpos i ins k)
+      (let dm (if (and (>= d 0) (= (/ d 64) k)) (bit-not (shl 1 (% d 64))) -1)
+        (let um (mir-use-mask (mi-uses ins) k 0)
+          (let nw (bit-or um (bit-and out dm))
+            (let old (w-get lin (+ (* i words) k))
+              (let _ (w-set lin (+ (* i words) k) (bit-or old nw))
+                (mir-live-words a n words lin lpos i ins d (+ k 1)
+                                (or changed (not (= (bit-or old nw) old))))))))))))
+
+(defn mir-use-mask (us k acc)
+  (match us
+    (Nil acc)
+    (Cons v t (mir-use-mask t k (if (= (/ v 64) k) (bit-or acc (shl 1 (% v 64))) acc)))))
+
+; Word k of the union of the successors' live-in sets.
+(defn mir-succ-out (_a n words lin lpos i ins k)
+  (let next (if (< (+ i 1) n) (w-get lin (+ (* (+ i 1) words) k)) 0)
+    (match ins
+      (MJmp l (w-get lin (+ (* (w-get lpos l) words) k)))
+      (MJf _ _ _ l (bit-or next (w-get lin (+ (* (w-get lpos l) words) k))))
+      (MJfI _ _ _ l (bit-or next (w-get lin (+ (* (w-get lpos l) words) k))))
+      (MJz _ l (bit-or next (w-get lin (+ (* (w-get lpos l) words) k))))
+      (MRet _ 0)
+      (MTail _ _ _ 0)
+      (_ next))))
+
+; --- live intervals ---------------------------------------------------------
+
+; start/end per vreg (-1 when never live), and whether a call lies
+; strictly inside the interval (the value must then survive the call).
+(deftype Iv (Iv Int Int Int Bool))  ; vreg, start, end, crosses a call
+
+(defn mir-intervals (a n nv lin)
+  (let words (+ (/ nv 64) 1)
+    (let st (w-alloc (mir-arena) (+ nv 1))
+      (let en (w-alloc (mir-arena) (+ nv 1))
+        (let _ (mir-iv-init st en 0 nv)
+          (let _ (mir-iv-scan a n words lin st en 0 nv)
+            (mir-iv-list a n st en 0 nv)))))))
+
+(defn mir-iv-init (st en v nv)
+  (if (>= v nv) unit (let _ (w-set st v -1) (let _ (w-set en v -1) (mir-iv-init st en (+ v 1) nv)))))
+
+(defn mir-iv-touch (st en v i)
+  (begin
+    (if (or (< (w-get st v) 0) (< i (w-get st v))) (let _ (w-set st v i) unit) unit)
+    (if (> i (w-get en v)) (let _ (w-set en v i) unit) unit)))
+
+(defn mir-iv-scan (a n words lin st en i nv)
+  (if (>= i n)
+    unit
+    (let ins (ffi-call "zyl_array_get" a i 1000)
+      (let _ (mir-iv-live words lin st en i 0 nv)
+        (let _ (if (>= (mi-def ins) 0) (mir-iv-touch st en (mi-def ins) i) unit)
+          (let _ (mir-iv-uses st en (mi-uses ins) i)
+            (mir-iv-scan a n words lin st en (+ i 1) nv)))))))
+
+(defn mir-iv-uses (st en us i)
+  (match us
+    (Nil unit)
+    (Cons v t (let _ (mir-iv-touch st en v i) (mir-iv-uses st en t i)))))
+
+(defn mir-iv-live (words lin st en i v nv)
+  (if (>= v nv)
+    unit
+    (let _ (if (bs-get lin words i v) (mir-iv-touch st en v i) unit)
+      (mir-iv-live words lin st en i (+ v 1) nv))))
+
+(defn mir-iv-list (a n st en v nv)
+  (if (>= v nv)
+    Nil
+    (if (< (w-get st v) 0)
+      (mir-iv-list a n st en (+ v 1) nv)
+      (Cons (Iv v (w-get st v) (w-get en v) (mir-crosses a (+ (w-get st v) 1) (w-get en v)))
+            (mir-iv-list a n st en (+ v 1) nv)))))
+
+; A call at a position in [from, to): the value is live after it.
+(defn mir-crosses (a from to)
+  (if (>= from to)
+    false
+    (if (mi-is-call (ffi-call "zyl_array_get" a from 1000)) true (mir-crosses a (+ from 1) to))))
+
+; --- linear scan ------------------------------------------------------------
+
+; Locations: 1..5 caller-saved (rsi rdi r8 r9 r10), 6..10 callee-saved
+; (rbx r12 r13 r14 r15); a spill slot is -(k+1). rax, rcx, rdx and r11
+; are never allocated: the emitter uses them as scratch.
+(defn mir-reg-name (r)
+  (if (= r 1) "rsi" (if (= r 2) "rdi" (if (= r 3) "r8" (if (= r 4) "r9" (if (= r 5) "r10"
+  (if (= r 6) "rbx" (if (= r 7) "r12" (if (= r 8) "r13" (if (= r 9) "r14" "r15"))))))))))
+
+(defn mir-callee-saved (r) (>= r 6))
+
+; The allocatable location of argument register k (rdi rsi rdx rcx r8
+; r9), or 0 for the two that are scratch (rdx, rcx).
+(defn mir-arg-reg-loc (k)
+  (if (= k 0) 2 (if (= k 1) 1 (if (= k 4) 3 (if (= k 5) 4 0)))))
+
+; Intervals sorted by start, then vreg (insertion sort; stable).
+(defn mir-sort-iv (xs)
+  (match xs
+    (Nil Nil)
+    (Cons h t (mir-insert-iv h (mir-sort-iv t)))))
+
+(defn mir-insert-iv (x ys)
+  (match ys
+    (Nil (Cons x Nil))
+    (Cons y t (if (mir-iv-before x y) (Cons x ys) (Cons y (mir-insert-iv x t))))))
+
+(defn mir-iv-before (x y)
+  (match x
+    (Iv vx sx _ _
+      (match y
+        (Iv vy sy _ _ (if (< sx sy) true (if (> sx sy) false (< vx vy))))))))
+
+(defn iv-v (x) (match x (Iv v _ _ _ v)))
+(defn iv-s (x) (match x (Iv _ s _ _ s)))
+(defn iv-e (x) (match x (Iv _ _ e _ e)))
+(defn iv-call (x) (match x (Iv _ _ _ c c)))
+
+; The result: location per vreg (0 = never live), and the spill-slot count.
+(deftype Alloc (Alloc Words Int))
+
+(defn alloc-loc (al v) (match al (Alloc w _ (w-get w v))))
+(defn alloc-spills (al) (match al (Alloc _ n n)))
+
+; `hint`: per vreg, a vreg + 1 whose register it would like (the source
+; of the move that defines it), or 0.
+(defn mir-allocate (ivs nv hint)
+  (let loc (w-alloc (mir-arena) (+ nv 1))
+    (let busy (w-alloc (mir-arena) 11)   ; register -> vreg + 1 while taken
+      (let nsp (mir-scan (mir-sort-iv ivs) Nil loc busy 0 hint)
+        (Alloc loc nsp)))))
+
+; The source of each MMov, recorded against its destination.
+(defn mir-hints (a n nv)
+  (let h (w-alloc (mir-arena) (+ nv 1))
+    (let _ (mir-hint-scan a n h 0)
+      h)))
+
+(defn mir-hint-scan (a n h i)
+  (if (>= i n)
+    unit
+    ; A parameter would like the register it arrives in (as a negative
+    ; hint: -(register + 1)); a move's destination, its source's.
+    (let _ (match (ffi-call "zyl_array_get" a i 1000)
+             (MMov d s (if (= (w-get h d) 0) (let _ (w-set h d (+ s 1)) unit) unit))
+             (MParam d k (let r (mir-arg-reg-loc k) (if (> r 0) (let _ (w-set h d (- 0 r)) unit) unit)))
+             (_ unit))
+      (mir-hint-scan a n h (+ i 1)))))
+
+; `active`: intervals holding registers, in the order they were given one.
+(defn mir-scan (ivs active loc busy nsp hint)
+  (match ivs
+    (Nil nsp)
+    (Cons iv rest
+      (let act (mir-expire active (iv-s iv) loc busy)
+        (let r (mir-pick-reg busy (iv-call iv) loc hint (iv-v iv))
+          (if (> r 0)
+            (let _ (w-set busy r (+ (iv-v iv) 1))
+              (let _ (w-set loc (iv-v iv) r)
+                (mir-scan rest (list-append act (Cons iv Nil)) loc busy nsp hint)))
+            (mir-spill iv rest act loc busy nsp hint)))))))
+
+; The hinted register when it is free and of the right class.
+(defn mir-pick-reg (busy crosses loc hint v)
+  (let h (w-get hint v)
+    (let hr (if (> h 0) (w-get loc (- h 1)) (if (< h 0) (- 0 h) 0))
+      (if (and (> hr 0) (and (= (w-get busy hr) 0) (or (not crosses) (mir-callee-saved hr))))
+        hr
+        (mir-free-reg busy crosses)))))
+
+(defn mir-expire (active pos loc busy)
+  (match active
+    (Nil Nil)
+    (Cons a t
+      ; An instruction reads its operands before it writes its result, so
+      ; an interval that ends where this one starts can hand it its register.
+      (if (<= (iv-e a) pos)
+        (let _ (w-set busy (w-get loc (iv-v a)) 0)
+          (mir-expire t pos loc busy))
+        (Cons a (mir-expire t pos loc busy))))))
+
+; A value live across a call needs a callee-saved register; any other
+; takes a caller-saved one first.
+(defn mir-free-reg (busy crosses)
+  (if crosses
+    (mir-first-free busy 6 10)
+    (let r (mir-first-free busy 1 5)
+      (if (> r 0) r (mir-first-free busy 6 10)))))
+
+(defn mir-first-free (busy lo hi)
+  (if (> lo hi) 0 (if (= (w-get busy lo) 0) lo (mir-first-free busy (+ lo 1) hi))))
+
+; No register: the active interval that ends last (and may use this
+; interval's register class) gives up its register if it ends after
+; this one; otherwise this one goes to memory.
+(defn mir-spill (iv rest active loc busy nsp hint)
+  (let victim (mir-last-ending active (iv-call iv) loc -1 -1)
+    (if (and (>= victim 0) (> (mir-end-of active victim) (iv-e iv)))
+      (let r (w-get loc victim)
+        (let _ (w-set loc victim (- 0 (+ nsp 1)))
+          (let _ (w-set loc (iv-v iv) r)
+            (let _ (w-set busy r (+ (iv-v iv) 1))
+              (mir-scan rest (list-append (mir-drop-v active victim) (Cons iv Nil)) loc busy (+ nsp 1) hint)))))
+      (let _ (w-set loc (iv-v iv) (- 0 (+ nsp 1)))
+        (mir-scan rest active loc busy (+ nsp 1) hint)))))
+
+; A value live across a call can only take a callee-saved register.
+(defn mir-last-ending (active needs-callee loc best best-end)
+  (match active
+    (Nil best)
+    (Cons a t
+      (if (and (> (iv-e a) best-end) (or (not needs-callee) (mir-callee-saved (w-get loc (iv-v a)))))
+        (mir-last-ending t needs-callee loc (iv-v a) (iv-e a))
+        (mir-last-ending t needs-callee loc best best-end)))))
+
+(defn mir-end-of (active v)
+  (match active
+    (Nil -1)
+    (Cons a t (if (= (iv-v a) v) (iv-e a) (mir-end-of t v)))))
+
+(defn mir-drop-v (active v)
+  (match active
+    (Nil Nil)
+    (Cons a t (if (= (iv-v a) v) t (Cons a (mir-drop-v t v))))))
+
+; --- parallel moves -----------------------------------------------------------
+
+; Moves into registers from operands (register names, memory or
+; immediates, as text). A move whose destination no pending move still
+; reads goes first; a cycle is broken through rax. Returns the moves in
+; emission order as (dst, src) pairs.
+(deftype PMove (PMove String String))
+
+(defn pm-dst (m) (match m (PMove d _ d)))
+(defn pm-src (m) (match m (PMove _ s s)))
+
+(defn pm-sequence (moves)
+  (pm-seq (pm-drop-self moves) Nil))
+
+(defn pm-drop-self (ms)
+  (match ms
+    (Nil Nil)
+    (Cons m t (if (str-eq (pm-dst m) (pm-src m)) (pm-drop-self t) (Cons m (pm-drop-self t))))))
+
+(defn pm-seq (pending out)
+  (match pending
+    (Nil (list-reverse out))
+    (Cons _ _
+      (match (pm-ready pending pending)
+        (Some m (pm-seq (pm-remove pending m) (Cons m out)))
+        (None
+          ; A cycle: park the first move's source in rax.
+          (match pending
+            (Cons m _
+              (let src (pm-src m)
+                (pm-seq (pm-redirect pending src "rax") (Cons (PMove "rax" src) out))))
+            (Nil (list-reverse out))))))))
+
+(defn pm-ready (cands all)
+  (match cands
+    (Nil None)
+    (Cons m t (if (pm-read-by (pm-dst m) all m) (pm-ready t all) (Some m)))))
+
+; Whether some other pending move reads register `r`.
+(defn pm-read-by (r all self)
+  (match all
+    (Nil false)
+    (Cons m t (if (and (not (pm-same m self)) (str-eq (pm-src m) r)) true (pm-read-by r t self)))))
+
+(defn pm-same (a b) (and (str-eq (pm-dst a) (pm-dst b)) (str-eq (pm-src a) (pm-src b))))
+
+(defn pm-remove (ms m)
+  (match ms
+    (Nil Nil)
+    (Cons h t (if (pm-same h m) t (Cons h (pm-remove t m))))))
+
+(defn pm-redirect (ms from to)
+  (match ms
+    (Nil Nil)
+    (Cons m t (Cons (if (str-eq (pm-src m) from) (PMove (pm-dst m) to) m) (pm-redirect t from to)))))
