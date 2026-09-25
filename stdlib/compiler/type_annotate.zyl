@@ -211,7 +211,7 @@
 (defn ta-report-p () (ffi-call "zyl_ref_get" ta-report-mode 1000))
 
 (defn ta-strict (msg)
-  (ta-type-error (if (ta-starts-with msg "no type for") "E_CANNOT_INFER" "E_TYPE_MISMATCH")
+  (ta-type-error (if (ta-starts-with msg "no type for") "E_CANNOT_INFER" (if (ta-starts-with msg "infinite type") "E_INFINITE_TYPE" "E_TYPE_MISMATCH"))
                  msg (ffi-call "zyl_ref_get" ta-cur-node 1000) Nil ""))
 
 (defn ta-starts-with (s p)

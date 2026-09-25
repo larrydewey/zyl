@@ -207,6 +207,88 @@ ResultValue:
     Nominal for Structs/ADTs/Aliases.
     Aliases are transparent: A is coerced to B (and vice versa) without runtime cost.
 
+4.8 Soundness (normative):
+    A program the compiler accepts never uses a value at the wrong
+    representation: no Int used as a pointer, no Float through integer
+    arithmetic, no String compared by address, no call with the wrong
+    number of arguments. The checker is sound, not best effort: every
+    unification failure, occurs-check failure and type it cannot
+    determine is a compile error, all of a program's type errors are
+    reported, and then the compile fails.
+    There is no cast form. The trusted base is the compiler, the C
+    runtime, the runtime-signature table (stdlib/compiler/ffi_sigs.zyl)
+    and a program's own extern declarations (§16).
+    Known exception: `receive` returns a value of any type, because an
+    actor mailbox holds whatever any sender put there (§15). Typed
+    single-sender channels are to replace mailboxes and remove it.
+    ZYL_STRICT_TYPES=report prints the errors as W_TYPE_STRICT warnings
+    and continues; it is a tool for counting, never a way to run an
+    ill-typed program.
+
+4.9 Typing Rules (normative):
+    Γ ⊢ e : τ. Top-level functions are generalized per strongly
+    connected component of the call graph; local let bindings are
+    monomorphic. A type variable left unconstrained is a type parameter.
+
+    Literals        integer : Int   float : Float   true, false : Bool
+                    "..." : String   unit : Unit
+    Variable        Γ(x) = ∀ā.τ  ⊢  x : τ[ā := fresh]
+    let             e1 : τ1,  Γ,x:τ1 ⊢ e2 : τ2  ⊢  (let x e1 e2) : τ2
+                    (let-mut the same)
+    set!            x bound by let-mut at τ,  e : τ  ⊢  (set! x e) : Unit
+    begin           (begin e1 ... en) : type of en;  (begin) : Unit
+    if              c : Bool,  a : τ,  b : τ  ⊢  (if c a b) : τ
+                    c : Bool,  a : Unit  ⊢  (if c a) : Unit
+    cond            every test : Bool, every body : τ.  A clause whose
+                    test is the literal true or `else` ends the cond, and
+                    the cond is τ; with no such clause, τ = Unit.
+    while, for      condition : Bool  ⊢  the loop : Unit
+    fn              Γ,x1:T1..xn:Tn ⊢ body : R  ⊢  (fn (x1..xn) body) : (T1..Tn) -> R
+    Application     f : (T1..Tn) -> R,  ai : Ti  ⊢  (f a1..an) : R
+                    (the argument count must equal the parameter count)
+    Arithmetic      + - * / %: both operands Int -> Int, or both Float ->
+                    Float (a closed class; no implicit conversion).
+                    (- x) negates; (+ x) and (* x) are x.
+    Ordering        < > <= >=: two operands of one type, Int, Float,
+                    String or a declared ADT/struct (structural,
+                    field by field)  ->  Bool
+    Equality        = == !=: two operands of one type -> Bool
+                    (structural for ADTs and Strings)
+    Bits            bit-and bit-or bit-xor shl shr ashr bit-not: Int
+    Constructor     for (deftype T (C F1..Fn) ...): C : ∀ā. (F1..Fn) -> (T ā),
+                    ā the type parameters.  An untyped struct field is an
+                    implicit type parameter of its struct.
+    match           scrutinee : T ā; an arm (C x1..xn body) binds xi at
+                    C's i-th field type; every body : τ  ⊢  match : τ.
+                    Patterns are flat (E_NESTED_PATTERN); exhaustiveness
+                    is §12.
+    struct-get      p : S ā, f a field of S  ⊢  (struct-get p "f") : its type
+    try             b : τ,  x : String ⊢ h : τ  ⊢  (try b (catch x h)) : τ
+    Assertions      assert-true, assert-false, assert: a Bool -> Unit;
+                    assert-equal l r: l and r of one type -> Unit
+    print           any value -> Unit
+    Traits          A method's Self is its receiver's type:
+                    (trait Ord (compare (self (other Self)) Int)).
+                    (Tr.m r a..): r's type selects the impl at compile
+                    time; a trait-generic function is specialized per
+                    type at every call and every use as a value; a call
+                    whose receiver type stays unknown is E_CANNOT_INFER.
+    exit, error     do not return: any type
+    main            () -> Int
+    Actors          spawn : Actor;  actor-self : Actor;
+                    send : Actor a -> Unit;  receive : a (§4.8)
+    FFI             a runtime symbol (zyl_*) has the type in the
+                    signature table; a foreign symbol the type of its
+                    (extern "sym" (T1..Tn) R) declaration (§16);
+                    (ffi-pin v) has v's type.
+    file-open       path : String, mode a literal fopen mode -> Int
+
+4.10 Type Errors:
+    E_TYPE_MISMATCH   two types that must be equal are not
+    E_INFINITE_TYPE   a type would contain itself (occurs check)
+    E_CANNOT_INFER    a type the program does not determine
+    E_UNBOUND_VARIABLE a name defined nowhere
+
 ================================================================================
 5. TRAIT SYSTEM
 ================================================================================
@@ -556,6 +638,20 @@ Timeout:
     The foreign code is abandoned, never interrupted: memory it was handed
     stays valid for the rest of the process.
     A timeout is an FFI result (§27): observable external input.
+
+Signatures:
+    (extern "name" (T1 ... Tn) R)
+    declares the C signature of a foreign symbol; every ffi-call to it is
+    type-checked against it (§4.9), and an ffi-call to a foreign symbol
+    with no extern is a Compile Error (E_CANNOT_INFER). The types are
+    concrete (no type variables: that would be a cast) and fit a machine
+    word: Int, Bool, String, Ptr, the runtime's opaque handle types, and
+    (Fn (A1 ... An) R) for a C callback. Float is not allowed (the timed
+    call passes every argument in an integer register), nor is Float
+    returned. R may be Unit. Runtime symbols (zyl_*) are typed by the
+    compiler's signature table instead; those that read raw memory or
+    reinterpret a machine word may only be named by the standard library
+    (E_FFI_RESTRICTED).
 
 FFI_Pinnable types:
     Int, Float, Bool, String, Vec<T> (where T is FFI_Pinnable),
@@ -924,7 +1020,8 @@ Errors:
     E_TEST_RUNNER_ERROR         — test harness error
     E_TRAIT_NOT_DERIVABLE       — cannot derive trait
     E_RESERVED_KEYWORD          — reserved keyword used as identifier (Compile Error)
-    E_CANNOT_INFER              — generic param has no call-site evidence (Compile Error)
+    E_CANNOT_INFER              — a type the program does not determine (Compile Error)
+    E_INFINITE_TYPE             — a type would contain itself (Compile Error)
 
 Package system errors (§31). All are Compile Errors. The phase numbers
 below are the phase categories of the error catalog
