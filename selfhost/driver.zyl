@@ -93,7 +93,7 @@
 
 ; Resolve `path` against `cwd` unless it's already absolute.
 (defn cli-resolve-path (cwd path)
-  (if (> (cli-is-absolute path) 0)
+  (if (cli-is-absolute path)
     path
     (str-concat cwd (str-concat "/" path))))
 

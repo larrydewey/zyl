@@ -112,14 +112,14 @@
 (defn si-word-scan-back (text i)
   (if (<= i 0)
     0
-    (if (> (si-is-ident-char (str-substring text (- i 1) 1)) 0)
+    (if (si-is-ident-char (str-substring text (- i 1) 1))
       (si-word-scan-back text (- i 1))
       i)))
 
 (defn si-word-scan-fwd (text i len)
   (if (>= i len)
     i
-    (if (> (si-is-ident-char (str-substring text i 1)) 0)
+    (if (si-is-ident-char (str-substring text i 1))
       (si-word-scan-fwd text (+ i 1) len)
       i)))
 
@@ -306,7 +306,7 @@
           (si-occ-scan text (+ i 1) len line (+ col 1) 1 word acc)
           (if (sb-is-semicolon ch)
             (si-occ-skip-comment text i len line word acc)
-            (if (> (si-is-ident-char ch) 0)
+            (if (si-is-ident-char ch)
               (si-occ-word text i len line col word acc)
               (si-occ-advance text i len line col in-string word acc ch))))))))
 
@@ -370,7 +370,7 @@
               (si-ctx-scan text (+ i 1) target len 0 (Cons (CC "" 0) stack))
               (if (or (sb-is-paren-close ch) (or (sb-is-bracket-close ch) (sb-is-brace-close ch)))
                 (si-ctx-scan text (+ i 1) target len 0 (si-ctx-pop stack))
-                (if (> (si-is-ident-char ch) 0)
+                (if (si-is-ident-char ch)
                   (si-ctx-word text i target len stack)
                   (si-ctx-scan text (+ i 1) target len 0 stack))))))))))
 

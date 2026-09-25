@@ -469,10 +469,10 @@
     (mr-implicit-pkg disc pkg (mru-module u))))
 
 (defn mr-implicit-pkg (disc pkg module)
-  (if (> (mr-file-exists (mr-module-file pkg module)) 0)
+  (if (mr-file-exists (mr-module-file pkg module))
     pkg
     (let std (mr-stdlib-pkg)
-      (if (> (mr-file-exists (mr-module-file std module)) 0)
+      (if (mr-file-exists (mr-module-file std module))
         std
         (mr-dep-pkg disc pkg module)))))
 
@@ -495,7 +495,7 @@
         (mr-target-module-name target (mru-module u))))))
 
 (defn mr-target-module-name (target module)
-  (if (> (mr-file-exists (mr-module-file target module)) 0)
+  (if (mr-file-exists (mr-module-file target module))
     module
     (mr-root-module target)))
 
@@ -539,7 +539,7 @@
 (defn mr-discover-new (arena disc stack pkg module)
   (let _ (mr-check-module-name module (mrp-name pkg))
     (let path (mr-module-file pkg module)
-      (if (= (mr-file-exists path) 0)
+      (if (not (mr-file-exists path))
         (mr-missing-module pkg module path)
         (mr-discover-forms arena disc stack pkg module)))))
 
@@ -590,7 +590,7 @@
 
 (defn mr-load-deps (disc arena pkg)
   (let manifest-path (str-concat (mrp-root pkg) "/zyl.pkg")
-    (if (= (mr-file-exists manifest-path) 0)
+    (if (not (mr-file-exists manifest-path))
       disc
       (let m (pk-read-manifest arena manifest-path)
         (mr-add-dep-pkgs disc arena pkg (mf-deps m))))))
@@ -641,7 +641,7 @@
   (if (is-nil (pd-features d))
     1
     (let path (str-concat root "/zyl.pkg")
-      (if (= (mr-file-exists path) 0)
+      (if (not (mr-file-exists path))
         1
         (mr-check-features-in (mf-features (pk-read-manifest arena path))
                               (pd-features d) (pd-name d))))))
@@ -665,7 +665,7 @@
 ; edge that named it: capabilities are declared, not granted (§31.9).
 (defn mr-dep-caps (arena root)
   (let path (str-concat root "/zyl.pkg")
-    (if (> (mr-file-exists path) 0)
+    (if (mr-file-exists path)
       (mf-capabilities (pk-read-manifest arena path))
       Nil)))
 
@@ -685,7 +685,7 @@
 ; answer is to run `zyl fetch`, not to reach for the index.
 (defn mr-store-root (arena pkg d)
   (let lockpath (str-concat (mrp-root pkg) "/zyl.lock")
-    (if (= (mr-file-exists lockpath) 0)
+    (if (not (mr-file-exists lockpath))
       (mr-no-store d)
       (match (lk-find (lk-read arena lockpath) (pd-name d))
         (Some lp (store-require (pd-name d) (pv-str arena (pd-version d)) (lp-hash lp)))
@@ -1145,7 +1145,7 @@
 ; declared nothing, so nothing is enforced against it. It holds every
 ; capability for that reason, not as a grant.
 (defn mr-root-pkg (arena srcdir)
-  (if (> (mr-file-exists (str-concat srcdir "/zyl.pkg")) 0)
+  (if (mr-file-exists (str-concat srcdir "/zyl.pkg"))
     (mr-manifest-pkg arena srcdir)
     (MRP "local/main" 0 srcdir 0
          (Cons "io" (Cons "ffi" (Cons "actor" (Cons "secret" (Cons "native" (Cons "unsafe" Nil))))))
@@ -1237,7 +1237,7 @@
 
 (defn mr-denied-of (arena pkg)
   (let path (str-concat (mrp-root pkg) "/zyl.pkg")
-    (if (> (mr-file-exists path) 0)
+    (if (mr-file-exists path)
       (mf-denied (pk-read-manifest arena path))
       Nil)))
 

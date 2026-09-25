@@ -1134,7 +1134,7 @@
     (let strb (ic-str-builtin-sym arena fname)
       (if (> (str-length strb) 0)
         (IFfi strb (ic-expr-list arena args vt))
-        (if (> (ic-starts-with-make fname) 0)
+        (if (ic-starts-with-make fname)
           (ic-make-struct arena fname args vt)
           (let op (ic-op-of arena fname)
             (if (> op -1)
@@ -1166,7 +1166,7 @@
 (defn ic-starts-with-make (s)
   (if (>= (str-length s) 5)
     (ffi-call "zyl_cstr_eq" (str-substring s 0 5) "make-" 1000)
-    0))
+    false))
 
 ; (make-<Name> field-vals...): struct constructor call. Structs are
 ; single-variant deftypes named after the struct (see expr_inner.zyl's
@@ -1323,7 +1323,7 @@
       (let _ (ffi-check-call args sym)
         (let name (ic-ffi-sym sym)
           (let real (butlast-expr tail Nil)
-            (if (> (ic-ffi-runtime-p name) 0)
+            (if (ic-ffi-runtime-p name)
               (IFfi name (ic-expr-list arena real vt))
               (IFfi "zyl_ffi_timed"
                 (Cons (ISymAddr name)
@@ -1336,7 +1336,7 @@
 (defn ic-ffi-runtime-p (name)
   (if (>= (str-length name) 4)
     (ffi-call "zyl_cstr_eq" (str-substring name 0 4) "zyl_" 1000)
-    0))
+    false))
 
 ; (with-region kind block align limit body), from parse-with-region.
 (defn ic-with-region (arena args vt)
@@ -1370,7 +1370,7 @@
 ; Check if any arm is a catch-all (wildcard) — variant not in VT.
 (defn ic-arm-is-catchall (vt arm)
   (let iname (MA.variant arm)
-    (= (ic-vt-has-variant vt iname) 0)))
+    (not (ic-vt-has-variant vt iname))))
 
 ; Check if any arm is catch-all
 (defn ic-has-catchall (arms vt)

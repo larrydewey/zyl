@@ -72,7 +72,7 @@
 
 ; Logical or on two 0/1 values (avoids and/or forms).
 (defn either (a b)
-  (if (= a 0) (if (= b 0) false true) true))
+  (or a b))
 
 ; ===========================================================================
 ; BYTE / SCAN PRIMITIVES

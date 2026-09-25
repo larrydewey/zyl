@@ -106,7 +106,7 @@
   (if (>= (IHSt.i st) len)
     st
     (let ch (str-substring text (IHSt.i st) 1)
-      (if (> (si-is-ident-char ch) 0)
+      (if (si-is-ident-char ch)
         (ih-read-atom text (ih-advance st ch) len)
         st))))
 
@@ -152,7 +152,7 @@
     (let ch (str-substring text (IHSt.i st) 1)
       (if (str-eq ch closeCh)
         (ih-advance st ch)
-        (if (> (si-is-ident-char ch) 0)
+        (if (si-is-ident-char ch)
           (let headStart (IHSt.i st)
             (let stHead (ih-read-atom text st len)
               (let headWord (str-substring text headStart (- (IHSt.i stHead) headStart))

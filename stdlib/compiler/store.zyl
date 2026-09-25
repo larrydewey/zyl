@@ -106,13 +106,13 @@
 (defn store-chars-ok (s i upper)
   (if (>= i (pk-len s))
     1
-    (if (= (store-char-ok (pk-byte-at s i) upper) 0)
+    (if (not (store-char-ok (pk-byte-at s i) upper))
       0
       (store-chars-ok s (+ i 1) upper))))
 
 (defn store-char-ok (c upper)
   (if (> upper 0)
-    (if (>= c 65) (if (<= c 90) 1 (store-char-ok2 c upper)) (store-char-ok2 c upper))
+    (if (>= c 65) (if (<= c 90) true (store-char-ok2 c upper)) (store-char-ok2 c upper))
     (store-char-ok2 c upper)))
 
 (defn store-char-ok2 (c upper)

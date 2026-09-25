@@ -36,7 +36,7 @@
         (assert-equal (list-length prog) 1)
         ; head identifier of the single form is "defn"
         (match (nth-ast (kids-of (pv-hd prog)) 0)
-          (AstIdent h (assert-true (> (str-eq h (str-intern arena "defn")) 0)))
+          (AstIdent h (assert-true (str-eq h (str-intern arena "defn"))))
           (AstInt _ (assert-equal 1 2))
           (AstFloat _ (assert-equal 1 2))
           (AString _ (assert-equal 1 2))

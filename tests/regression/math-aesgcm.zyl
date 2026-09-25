@@ -15,7 +15,7 @@
 ; Encrypt and return the sealed hex, or the expected value when the CPU
 ; has no AES-NI so the assertion still passes on such a machine.
 (defn _gcm_seal_hex ((keyhex String) (ivhex String) (aadhex String) (pthex String) (expect String))
-  (if (= (aes-available) 0)
+  (if (not (aes-available))
     expect
     (let a (_gcm_arena)
       (let key (w-from-hex a keyhex)
@@ -39,7 +39,7 @@
 ; Round-trip, and rejection of a tampered ciphertext. Both are skipped
 ; (trivially true) without AES-NI.
 (test "gcm-decrypt-roundtrip"
-  (if (= (aes-available) 0)
+  (if (not (aes-available))
     (assert-true true)
     (let a (_gcm_arena)
       (let key (w-from-hex a "feffe9928665731c6d6a8f9467308308")
@@ -51,7 +51,7 @@
                   (assert-equal (w-hex-bytes (option-unwrap-or got 0) 60) "d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b39"))))))))))
 
 (test "gcm-decrypt-rejects-tampered"
-  (if (= (aes-available) 0)
+  (if (not (aes-available))
     (assert-true true)
     (let a (_gcm_arena)
       (let key (w-from-hex a "feffe9928665731c6d6a8f9467308308")

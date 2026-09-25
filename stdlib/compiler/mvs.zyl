@@ -187,7 +187,7 @@
           (mvs-ensure-store arena dep iv))))))
 
 (defn mvs-ensure-store (arena dep iv)
-  (if (> (store-has (iv-hash iv)) 0)
+  (if (store-has (iv-hash iv))
     (store-dir (iv-hash iv))
     (let tmp (store-tmp-path (pd-name dep) ".tar.zst")
       (let _ (store-fetch-url (iv-url iv) tmp)

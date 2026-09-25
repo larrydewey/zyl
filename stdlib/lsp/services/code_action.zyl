@@ -122,7 +122,7 @@
   (let trimmed (fmt-trim-left line)
     (if (= (str-length trimmed) 0)
       ""
-      (let effective (if (> (fmt-starts-with-closer trimmed) 0) (- depth 1) depth)
+      (let effective (if (fmt-starts-with-closer trimmed) (- depth 1) depth)
         (str-concat (fmt-spaces (* 2 (if (< effective 0) 0 effective))) trimmed)))))
 
 (defn fmt-starts-with-closer (s)

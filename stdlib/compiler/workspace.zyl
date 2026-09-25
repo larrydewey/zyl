@@ -40,7 +40,7 @@
 ; a workspace file; "" when there is none, which is the ordinary case of
 ; a standalone package.
 (defn ws-find-root (dir depth)
-  (if (> (ws-exists dir) 0)
+  (if (ws-exists dir)
     dir
     (if (< depth 1)
       ""

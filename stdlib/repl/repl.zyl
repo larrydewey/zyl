@@ -51,7 +51,7 @@
 ; machine, whatever happens to be saved next to it.
 (defn repl-run-in (_arena dir)
   (let arena (arena-create 1048576)
-    (if (= (term-is-tty 0) 1)
+    (if (term-is-tty 0)
       (repl-interactive arena (repl-start-session dir))
       (repl-scripted (session-new dir)))))
 

@@ -131,7 +131,7 @@
             (st-scan text (+ i 1) len (+ line 1) 0 tbl acc)
             (if (st-is-digit b)
               (st-scan-number text i len line col tbl acc)
-              (if (> (st-is-word-char b) 0)
+              (if (st-is-word-char b)
                 (st-scan-word text i len line col tbl acc)
                 (st-scan text (+ i 1) len line (+ col 1) tbl acc)))))))))
 
@@ -171,7 +171,7 @@
 (defn st-word-end (text i len)
   (if (>= i len)
     i
-    (if (> (st-is-word-char (st-byte-at text i)) 0)
+    (if (st-is-word-char (st-byte-at text i))
       (st-word-end text (+ i 1) len)
       i)))
 
@@ -222,7 +222,7 @@
   (match (st-field-owner tbl word)
     (Some _ (Some (RT line col length (st-tt-property) 0)))
     (None
-      (if (> (st-is-upper (sb-char-code (str-substring word 0 1))) 0)
+      (if (st-is-upper (sb-char-code (str-substring word 0 1)))
         (Some (RT line col length (st-tt-type) 0))
         None))))
 

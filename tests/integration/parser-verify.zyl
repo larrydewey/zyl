@@ -45,7 +45,7 @@
 ; True when `a` is an AstIdent whose name equals `s`.
 (defn ident-eq (arena a s)
   (match a
-    (AstIdent n (if (> (str-eq n (str-intern arena s)) 0) 1 0))
+    (AstIdent n (if (str-eq n (str-intern arena s)) 1 0))
     (AstInt _ 0)
     (AstFloat _ 0)
     (AString _ 0)
@@ -111,11 +111,11 @@
           ; element 1: (print 42) -> arg atom 42
           (assert-equal (atom-int (nth-ast (kids-of (nth-ast bkids 1)) 1)) 42)
           ; element 2: (print "hi") -> string literal
-          (assert-true (> (str-eq (atom-str arena (nth-ast (kids-of (nth-ast bkids 2)) 1)) (str-intern arena "hi")) 0))
+          (assert-true (str-eq (atom-str arena (nth-ast (kids-of (nth-ast bkids 2)) 1)) (str-intern arena "hi")))
           ; element 3: (print true) -> bool literal
           (assert-equal (atom-int-as-bool (nth-ast (kids-of (nth-ast bkids 3)) 1)) 1)
           ; element 4: (print 1.5) -> float literal text
-          (assert-true (> (str-eq (atom-float arena (nth-ast (kids-of (nth-ast bkids 4)) 1)) (str-intern arena "1.5")) 0))
+          (assert-true (str-eq (atom-float arena (nth-ast (kids-of (nth-ast bkids 4)) 1)) (str-intern arena "1.5")))
           0)))))
 
 ; 1 when the node is AstBool true; 0 otherwise (including AstBool false).
