@@ -39,6 +39,7 @@
 (use compiler/type_system)
 (use compiler/expr_inner)
 (use compiler/error_report)
+(use compiler/ffi_sigs)
 
 (deftype ArityEntry (AE String Int))
 
@@ -184,9 +185,28 @@
                         "pass a pointer to a struct or buffer instead" site)
               0)))))))
 
+; Run from the arity pass only, where ac-cur-fn names the definition.
+(defn ffi-check-raw (args site)
+  (match args
+    (Nil unit)
+    (Cons sym _
+      (if (and (ffi-raw-p (ffi-literal-str sym)) (not (ac-in-stdlib)))
+        (ffi-fail "E_FFI_RESTRICTED"
+                  (str-concat "`" (str-concat (ffi-literal-str sym) "` is a raw runtime entry (it reads memory or reinterprets a machine word) and only the standard library may call it"))
+                  "use the typed standard-library function built on it" site)
+        unit))))
+
+; Standard-library definitions carry the package key `zyl/std@N::`.
+(defn ac-in-stdlib ()
+  (let n (ffi-call "zyl_ref_get" ac-cur-fn 1000)
+    (and (>= (str-length n) 8) (str-eq (str-substring n 0 8) "zyl/std@"))))
+
 (defn ac-check-program (exprs)
   (let arities (ac-collect exprs)
     (ac-check-top exprs arities)))
+
+; The top-level definition being checked, for E_FFI_RESTRICTED.
+(def ac-cur-fn (ffi-call "zyl_ref_new" "" 1000))
 
 (defn ac-check-top (exprs arities)
   (match exprs
@@ -194,7 +214,9 @@
     (Cons e rest
       (begin
         (match (Expr.inner e)
-          (EDefn _ params body (ac-expr body arities (ac-wrap-unknown (ac-param-names params))))
+          (EDefn name params body
+            (let _ (ffi-call "zyl_ref_set" ac-cur-fn name 1000)
+              (ac-expr body arities (ac-wrap-unknown (ac-param-names params)))))
           (ETestDecl _ body _ (ac-expr body arities Nil))
           (_ 0))
         (ac-check-top rest arities)))))
@@ -244,7 +266,7 @@
         (ac-list args arities shadowed)))
     (EApply fname args
       (begin
-        (if (str-eq fname "ffi-call") (ffi-check-call args e) 0)
+        (if (str-eq fname "ffi-call") (let _ (ffi-check-call args e) (ffi-check-raw args e)) unit)
         (ac-check-call-by-name fname args arities shadowed e)
         (ac-list args arities shadowed)))
     (EFfiCall _ args _ (ac-list args arities shadowed))

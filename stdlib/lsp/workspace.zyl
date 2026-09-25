@@ -30,7 +30,7 @@
     (Nil Nil)
     (Cons f rest
       (match f
-        (WorkspaceFolder uri _ (Cons uri (ws-folder-uris rest)))))))
+        (WF uri _ (Cons uri (ws-folder-uris rest)))))))
 
 (defn ws-roots (ws) (match ws (WS roots roots)))
 

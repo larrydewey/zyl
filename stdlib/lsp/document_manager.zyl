@@ -167,10 +167,10 @@
 
 ; unused_check's warnings, captured instead of printed, as Warning diagnostics.
 (defn dm-unused-warnings (exprs text)
-  (let _ (ffi-call "zyl_warn_capture" 1 1000)
+  (let _ (ffi-call "zyl_warn_capture" true 1000)
     (let _ (try (uc-check-program exprs) (catch _e 0))
       (let w (ffi-call "zyl_warn_take" 1000)
-        (let _ (ffi-call "zyl_warn_capture" 0 1000)
+        (let _ (ffi-call "zyl_warn_capture" false 1000)
           (diagnostics-from-warnings w text))))))
 
 ; The checks compiler/pipeline.zyl's compile-run-checks runs, in the same

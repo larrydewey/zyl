@@ -312,7 +312,7 @@
     (Nil 0)
     (Cons b rest
       (match b
-        (Bind n v
+        (Global n v _
           (begin
             (term-write (str-concat "  " (str-concat n (str-concat " = "
               (str-concat (in-val-text v) "\n")))))
@@ -515,7 +515,7 @@
 (defn repl-global-names (gs)
   (match gs
     (Nil Nil)
-    (Cons b rest (match b (Bind n _ (Cons n (repl-global-names rest)))))))
+    (Cons b rest (match b (Global n _ _ (Cons n (repl-global-names rest)))))))
 
 (defn repl-meta-names ()
   (Cons ":help" (Cons ":quit" (Cons ":history" (Cons ":defs" (Cons ":doc"

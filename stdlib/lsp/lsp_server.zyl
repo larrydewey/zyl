@@ -319,8 +319,8 @@
     (Some ctx
       (match (lsp-some-bool (map-get ctx "includeDeclaration"))
         (Some b b)
-        (_ 1)))
-    (_ 1)))
+        (_ true)))
+    (_ true)))
 
 (defn lsp-loc-list-any (locs)
   (match locs
@@ -772,7 +772,7 @@
       (match (dm-get-text dm uri)
         (Some text
           (let formatted (format-document text)
-            (lsp-respond id (Some (LSPArray (Cons (LSPObject (map-insert (map-insert (map-new) "range" (lsp-whole-doc-range text)) "newText" (LSPString formatted))) Nil))) None)))
+            (lsp-respond id (Some (LSPArray (Cons (LSPObject (map-insert (map-insert (map-new) "range" (lsp-range-to-any (lsp-whole-doc-range text))) "newText" (LSPString formatted))) Nil))) None)))
         (None (lsp-respond id (Some (LSPArray Nil)) None)))
       (lsp-loop arena dm ws 1))))
 
@@ -855,8 +855,8 @@
           (match (dm-get-text dm uri)
             (Some text
               (match (repl-eval-text text)
-                (EvalOk out (lsp-respond id (Some (lsp-eval-result-any 1 out)) None))
-                (EvalFail out (lsp-respond id (Some (lsp-eval-result-any 0 out)) None))))
+                (EvalOk out (lsp-respond id (Some (lsp-eval-result-any true out)) None))
+                (EvalFail out (lsp-respond id (Some (lsp-eval-result-any false out)) None))))
             (None (lsp-respond id (Some LSPNull) None)))
           (lsp-loop arena dm ws 1)))
       (begin

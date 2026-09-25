@@ -16,7 +16,11 @@
 ; Representation is deliberately the same as compiled code's, not a
 ; convenient one:
 ;
-;   - A value is one machine word, tagged here with what it is.
+;   - A value is one machine word, tagged here with what it is: an Int,
+;     a Float, a String, or the address of a heap block. Words cross to
+;     and from the other kinds only through typed runtime entries
+;     (zyl_float_bits, zyl_cstr_of_word, ...), which ffi_sigs.zyl types
+;     and only the standard library may call.
 ;   - A variant, a struct and a closure environment are all a heap block
 ;     of [tag][field]... allocated by zyl_heap_alloc, byte-identical to
 ;     what cg-variant emits -- so a value can be handed to any FFI
@@ -45,27 +49,27 @@
 (use core/list)
 (use core/option)
 (use compiler/icnf)
+(use compiler/ffi_sigs)
 
 ; ===========================================================================
 ; VALUES
 ; ===========================================================================
 
-; VStr and VPtr both carry a pointer; the distinction is what may be
-; done with it. VPtr covers variants, structs, closures and function
-; references alike -- the block's own shape says which.
+; VPtr covers variants, structs, closures and function references alike
+; -- the block's own shape says which. Its address is a machine word.
 (deftype Val
   (VInt Int)
-  (VFlt Int)      ; IEEE-754 bits
-  (VStr Int)      ; pointer to NUL-terminated bytes
-  (VPtr Int))     ; pointer to a heap block
+  (VFlt Float)
+  (VStr String)
+  (VPtr Int))
 
 ; The machine word behind a value: what an FFI call receives, and what
 ; is stored into a variant's field.
 (defn val-word (v)
   (match v
     (VInt n n)
-    (VFlt b b)
-    (VStr p p)
+    (VFlt f (ffi-call "zyl_float_bits" f 1000))
+    (VStr s (in-word-of-str s))
     (VPtr p p)))
 
 (defn val-truthy (v)
@@ -74,35 +78,34 @@
 (defn in-word-of-str (s)
   (ffi-call "zyl_word_of_cstr" s 1000))
 
+(defn in-float-of-word (w)
+  (ffi-call "zyl_float_of_bits" w 1000))
+
+; A value as the String it holds, for a runtime entry typed String.
+(defn in-val-str (v)
+  (match v
+    (VStr s s)
+    (_ (in-str-of-word (val-word v)))))
+
 ; ===========================================================================
 ; ENVIRONMENT
 ; ===========================================================================
 
-; A binding is a name and a cell: two words on the heap holding the
-; value's kind and its machine word. `set!` writes the cell, so the
+; A binding is a name and a cell holding its value. `set!` writes the
+; cell, so the
 ; environment list itself is never rebuilt and nothing has to thread a
 ; new one back out of every evaluation. That is what keeps evaluation a
 ; plain function from an expression to a value -- and what stopped the
 ; interpreter allocating a fresh spine per assignment, which a loop
 ; turned into gigabytes.
-(deftype Bind (Bind String Int))
+(deftype Bind (Bind String (Ref Val)))
 
 (defn Bind.name (b) (match b (Bind n _ n)))
 (defn Bind.cell (b) (match b (Bind _ c c)))
 
-(defn in-cell-new (v)
-  (let p (ffi-call "zyl_heap_alloc" 16 1000)
-    (begin
-      (in-cell-set p v)
-      p)))
-
-(defn in-cell-set (p v)
-  (begin
-    (alloc-write-int p (in-kind-of-val v))
-    (alloc-write-int (+ p 8) (val-word v))))
-
-(defn in-cell-get (p)
-  (in-val-of-kind (alloc-read-int (+ p 8)) (alloc-read-int p)))
+(defn in-cell-new (v) (ffi-call "zyl_ref_new" v 1000))
+(defn in-cell-set (c v) (ffi-call "zyl_ref_set" c v 1000))
+(defn in-cell-get (c) (ffi-call "zyl_ref_get" c 1000))
 
 (defn in-lookup (env name)
   (match env
@@ -114,9 +117,9 @@
 
 (defn in-lookup-cell (env name)
   (match env
-    (Nil 0)
+    (Nil None)
     (Cons b rest
-      (if (str-eq (Bind.name b) name) (Bind.cell b) (in-lookup-cell rest name)))))
+      (if (str-eq (Bind.name b) name) (Some (Bind.cell b)) (in-lookup-cell rest name)))))
 
 (defn in-bind (env name v)
   (Cons (Bind name (in-cell-new v)) env))
@@ -136,17 +139,17 @@
 (defn in-alloc-block (tag n kinds name)
   (let p (ffi-call "zyl_val_alloc" (+ n 1) kinds (ffi-call "zyl_intern_name" name 1000) 1000)
     (begin
-      (alloc-write-int p tag)
+      (ffi-call "zyl_word_store" p tag 1000)
       p)))
 
 (defn in-block-tag (p)
-  (alloc-read-int p))
+  (ffi-call "zyl_word_load" p 1000))
 
 (defn in-block-field (p i)
-  (alloc-read-int (+ p (* 8 (+ i 1)))))
+  (ffi-call "zyl_word_load" (+ p (* 8 (+ i 1))) 1000))
 
 (defn in-block-set (p i w)
-  (alloc-write-int (+ p (* 8 (+ i 1))) w))
+  (ffi-call "zyl_word_store" (+ p (* 8 (+ i 1))) w 1000))
 
 ; A function value: [FUNTAG][name]. A distinct tag rather than a bare
 ; code pointer because there is no code to point at -- the callee is an
@@ -156,7 +159,7 @@
 (defn in-make-fun (name)
   (let p (in-alloc-block (in-fun-tag) 1 1 "fn")
     (begin
-      (in-block-set p 0 (ffi-call "zyl_intern_name" name 1000))
+      (in-block-set p 0 (in-word-of-str (ffi-call "zyl_intern_name" name 1000)))
       (VPtr p))))
 
 (defn in-fun-name-of (p)
@@ -169,7 +172,7 @@
   (ffi-call "zyl_heap_block_p" w 1000))
 
 (defn in-is-fun (p)
-  (if (= (in-block-p p) 0) false (if (= (in-block-tag p) (in-fun-tag)) true false)))
+  (and (in-block-p p) (= (in-block-tag p) (in-fun-tag))))
 
 ; ===========================================================================
 ; ERRORS
@@ -194,10 +197,13 @@
 ; and the walk would be per call. The list is still the authority; the
 ; map is an index onto it, and a miss falls back to the walk.
 (defn in-find-fn (fns name)
-  (let w (ffi-call "zyl_fnmap_get" name 1000)
-    (if (= w 0)
-      (in-scan-fn fns name)
-      (Some (in-fn-of-word w)))))
+  (let m (ffi-call "zyl_ref_get" in-fn-index 1000)
+    (if (ffi-call "zyl_smap_has" m name 1000)
+      (Some (ffi-call "zyl_smap_get_or" m name (IConst 0) 1000))
+      (in-scan-fn fns name))))
+
+; The index: name to IFn node.
+(def in-fn-index (ffi-call "zyl_ref_new" (ffi-call "zyl_smap_new" 1000) 1000))
 
 (defn in-scan-fn (fns name)
   (match fns
@@ -209,25 +215,20 @@
 ; the first writer means the newest definition of a name wins, which is
 ; the same rule the walk follows.
 (defn in-index-fns (fns)
-  (begin
-    (ffi-call "zyl_fnmap_reset" 1000)
-    (in-index-loop fns)))
+  (let m (ffi-call "zyl_smap_new" 1000)
+    (begin
+      (in-index-loop m fns)
+      (ffi-call "zyl_ref_set" in-fn-index m 1000))))
 
-(defn in-index-loop (fns)
+(defn in-index-loop (m fns)
   (match fns
-    (Nil 0)
+    (Nil unit)
     (Cons f rest
       (begin
-        (ffi-call "zyl_fnmap_put" (in-fn-name f) (in-word-of-fn f) 1000)
-        (in-index-loop rest)))))
-
-; An IFn node as a machine word and back. The map stores nodes, not
-; names, so a hit needs no second search.
-(defn in-word-of-fn (f)
-  (ffi-call "zyl_word_of_cstr" f 1000))
-
-(defn in-fn-of-word (w)
-  (ffi-call "zyl_cstr_of_word" w 1000))
+        (if (ffi-call "zyl_smap_has" m (in-fn-name f) 1000)
+          unit
+          (ffi-call "zyl_smap_put" m (in-fn-name f) f 1000))
+        (in-index-loop m rest)))))
 
 ; The table holds IFn nodes; the wildcard arms below are what an
 ; exhaustive match over Icnf costs when only one variant is interesting.
@@ -277,8 +278,8 @@
 (defn in-eval-node (fns env e)
   (match e
     (IConst n (VInt n))
-    (IStr s (VStr (in-word-of-str s)))
-    (ISymAddr s (VInt (ffi-call "zyl_ffi_lookup" s 1000)))
+    (IStr s (VStr s))
+    (ISymAddr s (VInt (ffi-call "zyl_ffi_addr" s 1000)))
     (IFlt text (VFlt (ffi-call "zyl_f_parse" text 1000)))
     (ILoad name (in-load fns env name))
     (IBinop op l r (in-binop-eval fns env op l r))
@@ -326,7 +327,7 @@
     (in-float-op op a b)
     (if (in-string-compare-p op a b)
       (in-string-eq op a b)
-      (if (= (in-block-compare-p op a b) 1)
+      (if (in-block-compare-p op a b)
         (in-block-compare op a b)
         (in-int-op op (val-word a) (val-word b))))))
 
@@ -337,13 +338,10 @@
 ; selected there by a static kind analysis and here by the values in
 ; hand.
 (defn in-block-compare-p (op a b)
-  (if (> op 10)
-    0
-    (if (in-is-ptr a)
-      (if (in-is-ptr b)
-        (if (= (in-block-p (val-word a)) 1) (in-block-p (val-word b)) 0)
-        0)
-      0)))
+  (and (<= op 10)
+       (and (in-is-ptr a)
+            (and (in-is-ptr b)
+                 (and (in-block-p (val-word a)) (in-block-p (val-word b)))))))
 
 (defn in-is-ptr (v)
   (match v (VPtr _ true) (_ false)))
@@ -379,9 +377,9 @@
 
 (defn in-string-eq (op a b)
   (if (> op 8)
-    (let same (ffi-call "zyl_cstr_eq" (val-word a) (val-word b) 1000)
+    (let same (ffi-call "zyl_cstr_eq" (in-val-str a) (in-val-str b) 1000)
       (if (= op 9) (VInt (if same 1 0)) (VInt (if same 0 1))))
-    (in-int-compare-of op (ffi-call "zyl_cstr_cmp" (val-word a) (val-word b) 1000))))
+    (in-int-compare-of op (ffi-call "zyl_cstr_cmp" (in-val-str a) (in-val-str b) 1000))))
 
 (defn in-float-pair (a b)
   (if (in-is-float a) true (in-is-float b)))
@@ -391,14 +389,14 @@
 
 ; A mixed Int/Float operand is widened, which is what the SSE path in
 ; codegen does with a constant operand too.
-(defn in-as-float-bits (v)
+(defn in-as-float (v)
   (match v
-    (VFlt b b)
+    (VFlt f f)
     (_ (ffi-call "zyl_f_of_int" (val-word v) 1000))))
 
 (defn in-float-op (op a b)
-  (let x (in-as-float-bits a)
-    (let y (in-as-float-bits b)
+  (let x (in-as-float a)
+    (let y (in-as-float b)
       (if (< op 5)
         (VFlt (in-float-arith op x y))
         (VInt (if (in-float-compare op x y) 1 0))))))
@@ -497,10 +495,10 @@
 
 (defn in-set-eval (fns env name v)
   (let val (in-eval fns env v)
-    (let cell (in-lookup-cell env name)
-      (if (= cell 0)
-        (VInt (in-fail "E_UNBOUND_VARIABLE"
-                       (str-concat "set! on unbound `" (str-concat name "`"))))
+    (match (in-lookup-cell env name)
+      (None (VInt (in-fail "E_UNBOUND_VARIABLE"
+                           (str-concat "set! on unbound `" (str-concat name "`")))))
+      (Some cell
         (begin
           (in-cell-set cell val)
           val)))))
@@ -512,7 +510,7 @@
 (defn in-try (fns env body var handler)
   (match (try (Ok (in-eval fns env body)) (catch msg (Err msg)))
     (Ok v v)
-    (Err msg (in-eval fns (in-bind env var (VStr (in-word-of-str msg))) handler))))
+    (Err msg (in-eval fns (in-bind env var (VStr msg)) handler))))
 
 ; ===========================================================================
 ; VARIANTS AND MATCH
@@ -542,7 +540,7 @@
 ; or a pointer to something already on the heap.
 (defn in-store-fields (p vals i)
   (match vals
-    (Nil 0)
+    (Nil unit)
     (Cons v rest
       (begin
         (in-block-set p i (val-word (in-own-value v)))
@@ -550,7 +548,7 @@
 
 (defn in-own-value (v)
   (match v
-    (VStr w (VStr (in-word-of-str (str-concat "" (in-str-of-word w)))))
+    (VStr w (VStr (str-concat "" w)))
     (_ v)))
 
 ; Two bits per field, lowest field first. Beyond 31 fields the kinds are
@@ -572,9 +570,9 @@
 
 (defn in-match (fns env scrut arms)
   (let p (val-word (in-eval fns env scrut))
-    (if (= (in-block-p p) 0)
-      (in-match-arm fns env p (in-no-tag) arms)
-      (in-match-arm fns env p (in-block-tag p) arms))))
+    (if (in-block-p p)
+      (in-match-arm fns env p (in-block-tag p) arms)
+      (in-match-arm fns env p (in-no-tag) arms))))
 
 ; Tag -1 is the catch-all: vt-tag-of gives it to any pattern name that
 ; is not a variant, and codegen skips the tag check for it
@@ -618,8 +616,8 @@
   (ffi-call "zyl_val_kind" p i 1000))
 
 (defn in-val-of-kind (w k)
-  (if (= k 1) (VStr w)
-  (if (= k 2) (VFlt w)
+  (if (= k 1) (VStr (in-str-of-word w))
+  (if (= k 2) (VFlt (in-float-of-word w))
   (if (= k 3) (VPtr w)
   (VInt w)))))
 
@@ -722,9 +720,9 @@
         (in-closure-triple fns env p args)))))
 
 (defn in-closure-triple (fns env p args)
-  (if (= (in-block-p p) 0)
-    (VInt (in-fail "E_NOT_CALLABLE" "this value is not a function"))
-    (in-closure-fields fns env p args)))
+  (if (in-block-p p)
+    (in-closure-fields fns env p args)
+    (VInt (in-fail "E_NOT_CALLABLE" "this value is not a function"))))
 
 (defn in-closure-fields (fns env p args)
   (let code (in-block-field p 0)
@@ -775,7 +773,7 @@
 ; reported by the runtime as E_FFI_SYMBOL_NOT_FOUND.
 (defn in-ffi-timed (vals)
   (VInt (ffi-call "zyl_ffi_timed_argv"
-                  (val-word (in-nth-val vals 0)) (val-word (in-nth-val vals 1))
+                  (val-word (in-nth-val vals 0)) (in-val-str (in-nth-val vals 1))
                   (val-word (in-nth-val vals 2)) (val-word (in-nth-val vals 3))
                   (in-argv-of (in-drop-vals vals 4)) 1000)))
 
@@ -797,7 +795,7 @@
 (defn in-register-test (fns env args)
   (let vals (in-args-eval fns env args)
     (begin
-      (ffi-call "zyl_itest_add" (val-word (in-nth-val vals 0))
+      (ffi-call "zyl_itest_add" (in-val-str (in-nth-val vals 0))
                 (val-word (in-nth-val vals 1)) 1000)
       (VInt 0))))
 
@@ -820,7 +818,7 @@
   (if (>= i n)
     failed
     (let ok (in-run-one-test fns i)
-      (in-run-test-loop fns (+ i 1) n (if (= ok 1) failed (+ failed 1))))))
+      (in-run-test-loop fns (+ i 1) n (if ok failed (+ failed 1))))))
 
 (defn in-run-one-test (fns i)
   (begin
@@ -840,7 +838,7 @@
     (Ok v (if (= (val-word v) 0) true false))))
 
 (defn in-ffi-call (sym vals)
-  (let addr (ffi-call "zyl_ffi_lookup" sym 1000)
+  (let addr (ffi-call "zyl_ffi_addr" sym 1000)
     (if (= addr 0)
       (VInt (in-fail "E_FFI_SYMBOL_NOT_FOUND"
                      (str-concat "no such FFI symbol: " sym)))
@@ -857,10 +855,10 @@
 
 (defn in-argv-fill (p vals i)
   (match vals
-    (Nil 0)
+    (Nil unit)
     (Cons v rest
       (begin
-        (alloc-write-int (+ p (* 8 i)) (val-word v))
+        (ffi-call "zyl_mem_write" (ffi-call "zyl_ptr_add" p (* 8 i) 1000) (val-word v) 1000)
         (in-argv-fill p rest (+ i 1))))))
 
 ; print, through the runtime's own formatters, so interpreted output is
@@ -877,11 +875,26 @@
     (VStr p (ffi-call "zyl_print_str" p 1000))
     (VPtr p (ffi-call "zyl_print_int" p 1000))))
 
-; What an FFI call hands back. The names that return a string are known
-; (they are the runtime's own), so the result carries that, and `print`
-; of a str-concat shows text rather than an address.
+; What an FFI call hands back, by the result type of the symbol's
+; signature (ffi_sigs.zyl), or a legacy list of the runtime's own
+; String-returning entries. `print` of a str-concat then shows text
+; rather than an address.
 (defn in-ffi-result (sym w)
-  (if (in-ffi-returns-str sym) (VStr w) (VInt w)))
+  (let r (in-sig-result (ffi-sig sym))
+    (if (or (str-eq r "String") (in-ffi-returns-str sym))
+      (VStr (in-str-of-word w))
+      (if (str-eq r "Float") (VFlt (in-float-of-word w)) (VInt w)))))
+
+; "A B -> R" -> "R"; "" when there is no signature.
+(defn in-sig-result (sig)
+  (let n (str-length sig)
+    (let i (in-arrow-at sig 0 n)
+      (if (< i 0) "" (str-substring sig (+ i 3) (- n (+ i 3)))))))
+
+(defn in-arrow-at (sig i n)
+  (if (> (+ i 3) n)
+    -1
+    (if (str-eq (str-substring sig i 3) "-> ") i (in-arrow-at sig (+ i 1) n))))
 
 (defn in-ffi-returns-str (sym)
   (if (str-eq sym "zyl_cstr_concat") true
@@ -949,15 +962,15 @@
 (defn in-show (v depth)
   (match v
     (VInt n (ffi-call "zyl_int_text" n 1000))
-    (VFlt b (ffi-call "zyl_f_text" b 1000))
-    (VStr p (in-quote-str p))
+    (VFlt f (ffi-call "zyl_f_text" f 1000))
+    (VStr s (in-quote-str s))
     (VPtr p (in-show-block p depth))))
 
-(defn in-quote-str (p)
-  (str-concat "\"" (str-concat (in-str-of-word p) "\"")))
+(defn in-quote-str (s)
+  (str-concat "\"" (str-concat s "\"")))
 
 (defn in-show-block (p depth)
-  (if (= (in-block-p p) 0)
+  (if (not (in-block-p p))
     (str-concat "#<0x" (str-concat (ffi-call "zyl_int_text" p 1000) ">"))
     (if (in-is-fun p)
       (in-fn-text (in-fun-name-of p))
@@ -991,7 +1004,7 @@
 ; A closure is the [tag][code][env] triple whose code field is itself a
 ; function cell.
 (defn in-is-closure (p)
-  (if (= (in-block-p p) 0) false (in-is-fun (in-block-field p 0))))
+  (and (in-block-p p) (in-is-fun (in-block-field p 0))))
 
 (defn in-show-variant (p depth)
   (let name (ffi-call "zyl_val_name" p 1000)

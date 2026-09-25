@@ -39,7 +39,7 @@
     (RespMsg _ id result error
       (let obj0 (map-insert (map-new) "jsonrpc" (JStr "2.0"))
         (let obj1 (map-insert obj0 "id" (JInt id))
-          (let obj2 (if (option-is-some result) (map-insert obj1 "result" (jr-encode-any (option-unwrap result JNull))) obj1)
+          (let obj2 (if (option-is-some result) (map-insert obj1 "result" (jr-encode-any (option-unwrap result LSPNull))) obj1)
             (let obj3 (if (option-is-some error) (map-insert obj2 "error" (jr-encode-error (option-unwrap error (RErr 0 "" None)))) obj2)
               (jr-json-to-string (JObj obj3)))))))))
 
@@ -427,7 +427,7 @@
         (jr-read-headers-loop (jr-merge-content-length line len-so-far))))))
 
 (defn jr-merge-content-length (line current)
-  (if (> (jr-starts-with line 0 "Content-Length:") 0)
+  (if (jr-starts-with line 0 "Content-Length:")
     (Some (ffi-call "zyl_cstr_to_int" (str-trim (str-substring line 15 (- (str-length line) 15))) 1000))
     current))
 

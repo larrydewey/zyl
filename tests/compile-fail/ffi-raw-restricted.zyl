@@ -1,0 +1,8 @@
+; expect-error: E_FFI_RESTRICTED
+; zyl_cstr_of_word turns any Int into a String. The standard library's
+; interpreter needs it; a user program calling it would have an unchecked
+; cast, so only the standard library may name it.
+(defn main ()
+  (begin
+    (print (ffi-call "zyl_cstr_of_word" 4096 1000))
+    0))

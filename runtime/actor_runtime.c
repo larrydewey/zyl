@@ -4522,6 +4522,25 @@ long long zyl_cstr_of_word(long long w) { return w; }
    Float -> Int, it is how Hash hashes a Float without a cast. */
 long long zyl_float_bits(long long w) { return w; }
 
+/* The Float whose IEEE-754 bit pattern is `w`. Every 64-bit pattern is
+   some double (a NaN at worst), so this is total and safe to expose. */
+long long zyl_float_of_bits(long long w) { return w; }
+
+/* Raw word access for the interpreter, which runs word-level ICNF: the
+   word at address `a`, and a store to it. Typed Int -> Int and
+   Int Int -> Unit; they are raw memory access, so the checker only lets
+   the standard library call them (arity_check.zyl, E_FFI_RESTRICTED). */
+long long zyl_word_load(long long a) { return *(long long*)(size_t)a; }
+long long zyl_word_store(long long a, long long w) { *(long long*)(size_t)a = w; return 0; }
+
+/* `p` advanced by `n` bytes. */
+long long zyl_ptr_add(long long p, long long n) { return p + n; }
+
+/* zyl_ffi_lookup as an address word, for the interpreter's ISymAddr and
+   its calls through zyl_call_argv (FnPtr is opaque to Zyl code). */
+long long zyl_ffi_lookup(long long name);
+long long zyl_ffi_addr(long long name) { return zyl_ffi_lookup(name); }
+
 /* Decimal text of an integer, heap-allocated. zyl_cstr_from_int needs
    an arena; the interpreter has heap values and no arena of its own. */
 long long zyl_int_text(long long n) {
@@ -4576,7 +4595,7 @@ long long zyl_int_text(long long n) {
     X(zyl_cstr_concat) X(zyl_cstr_count_newlines) X(zyl_cstr_decode) \
     X(zyl_cstr_cmp) X(zyl_cstr_eq) X(zyl_cstr_from_byte) X(zyl_cstr_from_int) \
     X(zyl_cstr_key_matches) \
-    X(zyl_cstr_last_newline) X(zyl_cstr_len) X(zyl_cstr_of_word) X(zyl_float_bits) \
+    X(zyl_cstr_last_newline) X(zyl_cstr_len) X(zyl_cstr_of_word) X(zyl_float_bits) X(zyl_float_of_bits) X(zyl_word_load) X(zyl_word_store) X(zyl_ptr_add) X(zyl_ffi_addr) \
     X(zyl_cstr_sanitize) X(zyl_cstr_sub) X(zyl_cstr_substr) \
     X(zyl_cstr_to_int) X(zyl_cstr_to_int_base) X(zyl_diag_json) \
     X(zyl_diag_json_set) X(zyl_dirname_cstr) \

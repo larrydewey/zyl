@@ -618,7 +618,7 @@
 
 (defn eval-heapify-val (v)
   (match v
-    (VStr p (VStr (in-word-of-str (eval-copy-str (in-str-of-word p)))))
+    (VStr s (VStr (eval-copy-str s)))
     (_ v)))
 
 (defn eval-discard (arena out)

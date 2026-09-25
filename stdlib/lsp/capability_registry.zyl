@@ -30,7 +30,8 @@
     (Some (SHOpt
       (Some (Cons "(" (Cons " " Nil)))
       (Some (Cons " " Nil))
-      (Some true)))
+      (Some true)
+      None))
     None
     (Some (DefOpt (Some true)))
     (Some (TDefOpt (Some true)))

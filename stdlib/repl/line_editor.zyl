@@ -302,8 +302,8 @@
 
 ; Word motion: skip the run of non-word bytes, then the word itself.
 (defn ed-word-left-idx (text i)
-  (let j (ed-skip-back text i 0)
-    (ed-skip-back text j 1)))
+  (let j (ed-skip-back text i false)
+    (ed-skip-back text j true)))
 
 (defn ed-skip-back (text i want)
   (if (<= i 0)
@@ -314,8 +314,8 @@
         i))))
 
 (defn ed-word-right-idx (text i)
-  (let j (ed-skip-fwd text i 0)
-    (ed-skip-fwd text j 1)))
+  (let j (ed-skip-fwd text i false)
+    (ed-skip-fwd text j true)))
 
 (defn ed-skip-fwd (text i want)
   (let n (str-length text)

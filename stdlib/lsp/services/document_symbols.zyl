@@ -56,7 +56,7 @@
   (match forms
     (Nil Nil)
     (Cons f rest
-      (if (> (ws-matches (TopForm.name f) query) 0)
+      (if (ws-matches (TopForm.name f) query)
         (Cons (SymInfo (TopForm.name f) (ds-symbol-kind (TopForm.kind f)) None
                        (Some (Loc uri (ds-name-range f))) None None)
               (ws-from-forms rest uri query))
@@ -65,11 +65,11 @@
 ; Empty query matches everything (LSP convention); otherwise a plain
 ; substring match -- no fuzzy scoring, but real and fast.
 (defn ws-matches (name query)
-  (if (= (str-length query) 0) 1 (str-contains-ci name query)))
+  (or (= (str-length query) 0) (str-contains-ci name query)))
 
 (defn str-contains-ci (s sub)
   (if (> (str-length sub) (str-length s))
-    0
+    false
     (str-contains-loop s sub 0 (- (+ (str-length s) 1) (str-length sub)))))
 
 (defn str-contains-loop (s sub i limit)

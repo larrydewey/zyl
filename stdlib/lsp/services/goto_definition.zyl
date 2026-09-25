@@ -116,7 +116,7 @@
     (if (= (str-length word) 0)
       Nil
       (let occs (si-word-occurrences text word)
-        (let kept (if (> include-decl 0) occs (refs-without-declaration text occs word))
+        (let kept (if include-decl occs (refs-without-declaration text occs word))
           (refs-to-locations kept uri (str-length word)))))))
 
 (defn refs-without-declaration (text occs word)

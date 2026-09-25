@@ -11,12 +11,39 @@
 ; types: Arena, Ptr (a raw address), Words (math/words arrays), StrBuf,
 ; (SMap v), (WVec v), UF, Actor, Fd, FileId, FnPtr.
 ;
-; Not listed yet, because their honest type is "any word" and their
-; callers must be restructured first (docs/ffi-signature-draft.md):
-; zyl_abs, zyl_attr_clear, zyl_attr_copy, zyl_attr_get, zyl_attr_set, zyl_call_argv, zyl_cell_get, zyl_cell_set, zyl_cstr_of_word, zyl_ffi_timed_argv, zyl_fnmap_get, zyl_fnmap_put, zyl_heap_block_p, zyl_itest_add, zyl_itest_fn, zyl_native_double, zyl_repl_global_set, zyl_smap_global, zyl_val_alloc, zyl_val_arity, zyl_val_kind, zyl_val_name, zyl_word_of_cstr, zyl_wvec_global.
+; The interpreter's raw word entries (zyl_word_*, zyl_cstr_of_word,
+; zyl_word_of_cstr, zyl_val_*, zyl_call_argv, ...) are typed here too; they
+; are in ffi-raw-p, which only the standard library may call.
+;
+; A runtime symbol missing here (zyl_abs, zyl_attr_*, zyl_cell_*,
+; zyl_fnmap_*, zyl_smap_global, zyl_wvec_global) has an untyped result in
+; strict mode.
 
 (defn ffi-sig (s)
   (ffi-sig-lookup s ffi-sig-tab))
+
+; Runtime entries that read raw memory or reinterpret a machine word as
+; another type. Typed, but only the standard library may name them in an
+; ffi-call (arity_check.zyl, E_FFI_RESTRICTED): in a user program they
+; would be the unchecked cast the language does not have.
+(defn ffi-raw-p (s)
+  (or (str-eq s "zyl_cstr_of_word")
+  (or (str-eq s "zyl_word_of_cstr")
+  (or (str-eq s "zyl_word_load")
+  (or (str-eq s "zyl_word_store")
+  (or (str-eq s "zyl_ptr_add")
+  (or (str-eq s "zyl_mem_read")
+  (or (str-eq s "zyl_mem_write")
+  (or (str-eq s "zyl_ffi_addr")
+  (or (str-eq s "zyl_call_argv")
+  (or (str-eq s "zyl_ffi_timed_argv")
+  (or (str-eq s "zyl_val_alloc")
+  (or (str-eq s "zyl_val_kind")
+  (or (str-eq s "zyl_val_name")
+  (or (str-eq s "zyl_val_arity")
+  (or (str-eq s "zyl_itest_add")
+  (or (str-eq s "zyl_itest_fn")
+      (str-eq s "zyl_repl_global_set"))))))))))))))))))
 
 ; Built once, before the compiler's main runs.
 (def ffi-sig-tab (ffi-sig-table))
@@ -113,6 +140,25 @@
   (Cons (FSig "zyl_panic" "String -> a")
   (Cons (FSig "zyl_path_exists" "String -> Bool")
   (Cons (FSig "zyl_float_bits" "Float -> Int")
+  (Cons (FSig "zyl_float_of_bits" "Int -> Float")
+  (Cons (FSig "zyl_word_load" "Int -> Int")
+  (Cons (FSig "zyl_word_store" "Int Int -> Unit")
+  (Cons (FSig "zyl_ptr_add" "Ptr Int -> Ptr")
+  (Cons (FSig "zyl_ffi_addr" "String -> Int")
+  (Cons (FSig "zyl_cstr_of_word" "Int -> String")
+  (Cons (FSig "zyl_word_of_cstr" "String -> Int")
+  (Cons (FSig "zyl_heap_block_p" "Int -> Bool")
+  (Cons (FSig "zyl_val_alloc" "Int Int String -> Int")
+  (Cons (FSig "zyl_val_kind" "Int Int -> Int")
+  (Cons (FSig "zyl_val_name" "Int -> Int")
+  (Cons (FSig "zyl_val_arity" "Int -> Int")
+  (Cons (FSig "zyl_intern_name" "String -> String")
+  (Cons (FSig "zyl_call_argv" "Int Int Ptr -> Int")
+  (Cons (FSig "zyl_ffi_timed_argv" "Int String Int Int Ptr -> Int")
+  (Cons (FSig "zyl_itest_add" "String Int -> Int")
+  (Cons (FSig "zyl_itest_fn" "Int -> Int")
+  (Cons (FSig "zyl_iglobal_clear" "-> Unit")
+  (Cons (FSig "zyl_repl_global_set" "String Int -> Unit")
   (Cons (FSig "zyl_print_float" "Float -> Unit")
   (Cons (FSig "zyl_print_int" "Int -> Unit")
   (Cons (FSig "zyl_print_str" "String -> Unit")
@@ -142,7 +188,7 @@
   (Cons (FSig "zyl_system_cmd" "String -> Int")
   (Cons (FSig "zyl_term_flush" "-> Unit")
   (Cons (FSig "zyl_term_height" "-> Int")
-  (Cons (FSig "zyl_term_is_tty" "Fd -> Bool")
+  (Cons (FSig "zyl_term_is_tty" "Int -> Bool")
   (Cons (FSig "zyl_term_raw_off" "-> Int")
   (Cons (FSig "zyl_term_raw_on" "-> Int")
   (Cons (FSig "zyl_term_read_byte" "-> Int")
@@ -194,4 +240,4 @@
   (Cons (FSig "zyl_words_set" "Words Int Int -> Int")
   (Cons (FSig "zyl_words_view" "Arena Words Int Int -> Words")
   (Cons (FSig "zyl_zeroize" "Int Int -> Int")
-  Nil))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+  Nil)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
