@@ -2,7 +2,7 @@
 
 **Canonical authority:** `zyl_specification.txt` §4.3, §7.4, §10, §15, §31.9 (`secret`)
 **Related:** `spec/05-types-and-inference.md`, `spec/07-region-memory-model.md`
-**Implementation:** `stdlib/compiler/type_system.zyl` (`CapKind`), `stdlib/compiler/mutability_check.zyl` (aliasing), `stdlib/compiler/secret_check.zyl` (`Secret`)
+**Implementation:** `stdlib/compiler/type_annotate.zyl` (`Pin`, `E_FFI_TYPE_NOT_PINNABLE`), `stdlib/compiler/mutability_check.zyl` (aliasing), `stdlib/compiler/secret_check.zyl` (`Secret`)
 
 ---
 
@@ -87,14 +87,17 @@ lowering. It treats a `let` binding as `TCap` and a `let-mut` binding as
   `E_MUT_CONFLICT`;
 - a `spawn` whose closure, or a `send` whose message, refers to an
   in-scope `let-mut` binding is `E_CAPABILITY_LEAK`;
-- a closure passed as an `ffi-call` argument is `E_INVALID_CAPABILITY`.
+- a closure passed as an `ffi-call` argument is `E_INVALID_CAPABILITY`;
+- a `set!` inside a closure on a `let-mut` of an enclosing scope is
+  `E_MUT_CONFLICT` (`mc-fn-fence`): the closure captured a copy by value,
+  so the assignment could never reach the outer binding.
 
 `set!` on anything other than a plain name, such as a struct field, is
 rejected earlier by the parser with `E_MUT_CONFLICT`.
 
-It does not check a `let-mut` binding captured and mutated by an ordinary
-closure, and it does not track aliasing through the raw allocation, atomic
-or FFI primitives. Rules 3 and 4 above (downgrade and no upgrade) have no
+A closure may read a captured `let-mut` (it sees the value at capture
+time). The pass does not track aliasing through the raw allocation,
+atomic or FFI primitives. Rules 3 and 4 above (downgrade and no upgrade) have no
 dedicated check.
 
 ### Secret

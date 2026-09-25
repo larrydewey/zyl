@@ -5,8 +5,8 @@ coherence, resolution and derivation. The normative text is
 `zyl_specification.txt` §5 (trait system), §6.6 (generic derivation) and
 §24.6 (coherence across packages). The implementation is
 `stdlib/compiler/type_annotate.zyl` (resolution and per-type instances),
-`stdlib/compiler/derive.zyl` (`derive Show`),
-`stdlib/compiler/monomorphization.zyl` (impl bodies) and
+`stdlib/compiler/derive.zyl` (the six derivable traits),
+`stdlib/compiler/lift_impls.zyl` (impl bodies) and
 `stdlib/compiler/module_resolver.zyl` (the orphan rule).
 
 In brief: `trait` declarations, `impl` blocks and qualified
@@ -403,7 +403,7 @@ defined in the standard library.
 |---------|------|-----|
 | Declaration | `trait Foo { fn bar(&self); }` | `(trait Foo (bar (self) Ret))`; signatures type calls |
 | Implementation | `impl Foo for Bar { ... }` | `(impl Foo Bar (defn bar (self) ...))` |
-| Call | `x.bar()` | `(Foo.bar x)` |
+| Call | `x.bar()` | `(x.bar)` or `(Foo.bar x)` |
 | Dispatch | static, or `dyn` | static from inferred types only |
 | Supertraits | `trait Foo: Bar` | not supported |
 | Default methods | yes | no |

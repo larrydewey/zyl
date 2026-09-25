@@ -65,7 +65,7 @@ Symbols in an import list are separated by whitespace, not commas.
 
 ### Implementation notes
 
-- **`*` does not check names.** With an explicit list, each name is checked when the import is resolved. With `*` or a bare path, a use of a private symbol is not diagnosed by the resolver. It survives as an unresolved reference, reported by codegen as `E_UNBOUND_VARIABLE: call to undefined function`.
+- **`*` does not check names.** With an explicit list, each name is checked when the import is resolved. With `*` or a bare path, a use of a private symbol is not diagnosed by the resolver. It survives as an unresolved reference, which the type checker reports as `E_UNBOUND_VARIABLE` ("call to undefined function `helper`"), located at the use.
 - **`:unsafe` is parsed and ignored.** Spec §31.9 ties `:unsafe` imports to the `unsafe` capability but does not say what such an import permits. The implementation records the marker and does nothing with it: it does not bypass visibility, and a package without the `unsafe` capability can write it without error.
 - **The standard library is one surface.** The implicit standard library (§25) has no manifest and therefore no `pub` surface. A `use` of any standard-library module exposes every standard-library definition that has been loaded. For example, `testing/testing` pulls in the allocator's `str-eq`. A named list still adds its renames on top.
 - **`core/core` is implicit.** A program that loads none of `core/core`, `core/option` or `core/result` gets `core/core` anyway.
@@ -417,7 +417,7 @@ Features are additive only (§31.10). A feature may add top-level definitions an
 - An **optional dependency** named in a `(feature ...)` enters the graph only when its feature is in the union.
 - Requesting an undeclared feature is `E_PKG_FEATURE_UNKNOWN`.
 - A gated definition that collides with a base definition is `E_PKG_FEATURE_COLLISION`.
-- `feature-gate` is valid at top level only. The implementation honours it at top level but does not reject a nested one: a nested gate never reaches the resolver's top-level scan and is compiled as an ordinary form.
+- `feature-gate` is valid at top level only. A gate inside another form is `E_PKG_FEATURE_NESTED`, located at the inner gate.
 
 ## 25.13 Native Dependencies
 
@@ -458,7 +458,7 @@ $ zyl build && ./fast
 - `cflags` come from an allowlist: `-O*`, `-D*`, `-std=*`, `-fPIC`, `-fno-strict-aliasing`, `-fwrapv`, `-fstack-protector-strong` and `-fno-omit-frame-pointer`. Anything else, including raw `-I`, `-L`, `-l` and `-Wl,`, is `E_PKG_NATIVE_FLAG_DENIED`. Includes go through `include-dirs` and libraries through `link-libs`.
 - `cc` is invoked with a canonical, sorted argument vector, and objects land in `build/native/`. A `cc` failure is `E_PKG_NATIVE_BUILD_FAILED`.
 
-**Status.** Only the root package's `native` block is compiled and linked. A dependency's native sources are not built. The spec also says the object hashes are recorded in the lock and in `zyl.buildinfo`: today the lock records none, and `zyl.buildinfo` carries an empty `(native-objects)` field.
+**Status.** Only the root package's `native` block is compiled and linked. A dependency's native sources are not built. The spec also says the object hashes are recorded in the lock and in the build info: the `.buildinfo` file lists each object with its BLAKE3 hash under `(native-objects)`, and the hashes feed the final build hash, but the lock records none.
 
 ## 25.14 Workspaces and Editions
 
@@ -479,7 +479,7 @@ A workspace root carries `zyl-workspace.zyl` (§31.11):
 
 | Command | Does |
 |---------|------|
-| `zyl <file.zyl> [-o out] [--emit-asm]` | compile one file (a lone file is package `local/main`) |
+| `zyl <file.zyl> [-o out] [--emit-asm] [--contracts=P] [--error-format=json]` | compile one file (a lone file is package `local/main`); `--contracts` picks the contract profile (Chapter 24), `--error-format=json` reports diagnostics as JSON lines |
 | `zyl new <org/name>` | create `<name>/zyl.pkg` and the root module `<name>/<name>.zyl` |
 | `zyl add <name> [version]` | add a dependency and re-serialise the manifest canonically; without a version, it takes the latest non-yanked release from the index |
 | `zyl fetch` | sync the index, resolve (dev-deps included), download and verify, and write `zyl.lock` |
@@ -491,22 +491,30 @@ A workspace root carries `zyl-workspace.zyl` (§31.11):
 | `zyl publish [--index DIR [--url-base URL]]` | build the canonical archive, hash and sign it; print the index entry, or add it to the index at DIR |
 | `zyl key` | show the publisher key, creating `~/.zyl/keys/publisher.seed` if needed |
 | `zyl repl` / `zyl eval <file>` | interactive session / run without producing a binary |
+| `zyl doc [file.zyl \| dir] [-o out.md]` | generate Markdown from doc comments (`compiler/doc.zyl`); in a package, only `pub` definitions |
 
 Package subcommands find the package root by searching upward from the working directory for a `zyl.pkg`, and fail with `E_MANIFEST_NOT_FOUND` if they find none.
 
-`zyl.buildinfo` records the inputs of §31.12 in canonical order:
+`<name>.buildinfo` records the four inputs of §31.12 in canonical order (compiler, lock graph, native objects, ICNF), the resolved graph from the lock, the hash of the emitted assembly, and the final hash over the four inputs:
 
 ```lisp
 (buildinfo
-  (compiler-hash "blake3:2ebe9bf1...d512fd")
-  (graph-hash "blake3:8b09f859...691f75")
+  (compiler-hash "blake3:046b21ff...5d6965")
+  (graph-hash "blake3:89c2d193...51126c")
+  (graph
+    (package "acme/greet" "0.1.0" ""))
   (native-objects)
-  (asm-hash "blake3:c762dfc9...84a87e"))
+  (icnf-hash "blake3:ce4e5af5...a69f46ec")
+  (asm-hash "blake3:223583e7...739b4c8")
+  (final-hash "blake3:8fb3c5b4...fa0701"))
 ```
+
+The ICNF hash is BLAKE3 over the canonical ICNF text (`icnf_print.zyl`), region annotations included. The binary carries the final hash as the symbol `zyl_build_hash`, in a `.zyl_build` section, so a binary can be matched to its build info. A native object appears as `("build/native/x.o" "blake3:...")`, with a package-relative path.
 
 Notes on the current state:
 
-- `graph-hash` is empty until `zyl fetch` has written a lock.
+- `graph-hash` is empty, and `(graph)` has no entries, until `zyl fetch` has written a lock.
+- A single-file compile (`zyl file.zyl`) writes no build info and embeds no `zyl_build_hash`.
 - Without `--index`, `zyl publish` leaves the archive in `~/.zyl/tmp/` and prints the entry with `(url "https://REPLACE-ME")` for you to fill in.
 - Nothing reads `./vendor` yet: `zyl vendor` copies the graph, but builds still resolve from paths and the store.
 - `zyl build` and `zyl test` reuse a previous build whose inputs are unchanged: the key is BLAKE3 over the compiler hash, the contract profile, the lock, and every `.zyl`, `.c`, `.h` and `zyl.pkg` file of the package, of each package in the graph and of the stdlib; a hit copies the binary and `.buildinfo` from `~/.zyl/cache/<key>/` without compiling. Compilation is deterministic (§27), so a hit is the same bytes a rebuild would give. `ZYL_NO_BUILD_CACHE=1` bypasses it.
@@ -550,7 +558,7 @@ The standard library is package `zyl/std` at the compiler's major. It is implici
 
 ## 25.18 Errors
 
-Resolver and package errors abort compilation with `PANIC: CODE: area: message` and exit status 1. All of these are spec §28 codes except `E_MODULE_NOT_FOUND`, which the resolver uses for a missing file outside a package.
+Resolver and package errors abort compilation with exit status 1. Most print `PANIC: CODE: area: message`; those tied to a place in the source (`E_PKG_CAPABILITY_VIOLATION`, `E_PKG_FEATURE_NESTED`) print `PANIC: error[CODE]: message` followed by the location. All of these are spec §28 codes except `E_MODULE_NOT_FOUND`, which the resolver uses for a missing file outside a package, `E_PKG_FEATURE_NESTED` and `E_PKG_VERSION_EXISTS`.
 
 | Error | Cause |
 |-------|-------|
@@ -568,6 +576,7 @@ Resolver and package errors abort compilation with `PANIC: CODE: area: message` 
 | `E_PKG_DUPLICATE_DEP` | two dep entries for one name |
 | `E_PKG_VERSION_CONFLICT` | unsatisfiable within a major, or a workspace member version mismatch |
 | `E_PKG_NOT_FOUND` / `E_PKG_VERSION_NOT_FOUND` | not in the index |
+| `E_PKG_VERSION_EXISTS` | `zyl publish --index` of a version already in the index |
 | `E_PKG_NOT_IN_STORE` | a build needs a package the store lacks |
 | `E_PKG_HASH_MISMATCH` / `E_PKG_SIGNATURE_INVALID` / `E_PKG_KEY_CHANGED` / `E_PKG_UNSIGNED` | integrity and trust failures |
 | `E_PKG_YANKED` | a new resolution selected a yanked version |
@@ -575,14 +584,14 @@ Resolver and package errors abort compilation with `PANIC: CODE: area: message` 
 | `E_PKG_COMPILER_TOO_OLD` / `E_PKG_UNKNOWN_EDITION` | `zyl` or `edition` field unsatisfied |
 | `E_PKG_FETCH_FAILED` / `E_PKG_ARCHIVE_INVALID` | `git`/`curl` failure, non-canonical archive |
 | `E_PKG_NATIVE_PATH_ESCAPE` / `E_PKG_NATIVE_FLAG_DENIED` / `E_PKG_NATIVE_BUILD_FAILED` | native dependency rules |
-| `E_PKG_FEATURE_UNKNOWN` / `E_PKG_FEATURE_COLLISION` | feature rules |
+| `E_PKG_FEATURE_UNKNOWN` / `E_PKG_FEATURE_COLLISION` / `E_PKG_FEATURE_NESTED` | feature rules |
 | `E_PKG_CAPABILITY_VIOLATION` / `E_PKG_CAPABILITY_GROWTH` | capability rules |
 
 ## 25.19 Best Practices
 
 1. **Write a `zyl.pkg` for anything you share.** Without one, nothing is enforced and every definition is keyed under `local/main`.
 2. **Mark the public surface with `pub`.** Everything else stays package-private and free to change.
-3. **Prefer explicit import lists.** They are checked at resolution time, while `*` and bare imports defer mistakes to the linker.
+3. **Prefer explicit import lists.** They are checked at resolution time, while `*` and bare imports defer mistakes to the type checker, which reports only an undefined name.
 4. **Declare the narrowest capability set** and read `zyl audit` after adding a dependency.
 5. **Commit `zyl.lock`**, and build CI with `zyl build --locked`.
 6. **Do not define `main` in a module meant to be `use`d.** Spliced forms are not renamed away from `main`, so a library's `main` collides with the importer's.

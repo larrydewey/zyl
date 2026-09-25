@@ -655,7 +655,9 @@ zyl publish                 build the canonical archive, sign, emit index entry
 zyl key new|show            manage publisher keys
 ```
 
-*As implemented (`zyl` with no arguments prints the list): `zyl add
+*As implemented (`zyl help`, or any unrecognised subcommand, prints the
+list; `zyl` with no arguments runs the legacy fixed-path boot protocol
+instead): `zyl add
 <name> [version]` takes the index's latest version when none is given
 and rewrites `zyl.pkg`; `zyl fetch` takes no flag and writes `zyl.lock`;
 `zyl update` takes no package argument, re-resolves the whole graph,
@@ -688,9 +690,14 @@ finalization (pipeline step 11) takes as input, in this canonical order:
 plus the resolved graph in canonical form, so a third party can verify a
 binary was produced from a claimed set of inputs. *As implemented it is
 written as `<binary>.buildinfo` with `compiler-hash`, `graph-hash`
-(empty when there is no lock), an always-empty `native-objects` and
-`asm-hash` in place of an ICNF hash; the resolved graph is not written,
-and none of it is mixed into the binary's own hash yet (§16).*
+(empty when there is no lock), the resolved `graph` from the lock, one
+`native-objects` entry per native object (package-relative path and
+BLAKE3), `icnf-hash` (BLAKE3 of the canonical ICNF text from
+`icnf_print.zyl`, which includes region annotations), `asm-hash`, and
+`final-hash`, the BLAKE3 of the four inputs in the order above. The
+binary carries the final hash as `zyl_build_hash` in its `.zyl_build`
+section (`drv-build-hashes`, `drv-hash-section` in
+`selfhost/driver.zyl`).*
 
 Consequences worth stating explicitly:
 
@@ -710,7 +717,10 @@ added to `stdlib/compiler/error_codes.zyl`. Phase 9 is the existing
 `module` phase; a new phase **19 = package** covers manifest, lock,
 index, fetch and signature errors. *Done: all 36 are in the catalog and
 in spec §28, the phase legend has the entry, and every one has at least
-one raising site (`docs/errors.md` lists them).*
+one raising site (`docs/errors.md` lists them). Two phase-19 codes were
+added since: `E_PKG_VERSION_EXISTS` (publishing a version the index
+already holds; published versions are immutable) and
+`E_PKG_FEATURE_NESTED` (a `feature-gate` that is not at top level).*
 
 | Code | Phase | Meaning |
 |------|-------|---------|
@@ -757,7 +767,10 @@ one raising site (`docs/errors.md` lists them).*
 
 Every phase changes the compiler's own source, so every phase ends with
 `python3 selfhost/assemble.py`, `./boot.sh --bootstrap-from-self`,
-`./boot.sh`, and a committed seed, per `AGENTS.md`. Each phase is
+`./boot.sh`, and a committed seed, per `AGENTS.md`. (`assemble.py` and
+its single-file bundle were removed on 2026-09-24; the compiler is now
+built through ordinary module resolution, so the step is only the
+reseed and the verification.) Each phase is
 independently useful and independently fixed-point-verified.
 
 *Status (2026-09-23): all five phases landed in one implementation
@@ -766,7 +779,7 @@ workspace was deliberately not done (see the top of this document); the
 other deviations are in §16. File names below are the plan's; the
 manifest reader is `package.zyl`, name lookup is `qualify.zyl` and
 `module_resolver.zyl`, and the orphan rule is checked in
-`module_resolver.zyl` rather than `trait_dispatch.zyl`.*
+`module_resolver.zyl` rather than `trait_dispatch.zyl` (since deleted).*
 
 ### Phase 1 — Namespacing and visibility
 
@@ -858,7 +871,7 @@ structured copy.
 
 ---
 
-## 16. Implementation notes (2026-09-23)
+## 16. Implementation notes (2026-09-23, revised 2026-09-25)
 
 Where the implementation differs from the design above. The first five
 are the deliberate deviations `PROGRESS.md` records; the rest are gaps
@@ -875,8 +888,17 @@ found by reading the modules.
   `<root of P>/M.zyl`; a package's root module, what `(use acme/json)`
   names, is the module spelled by the name's last segment
   (`json.zyl`).
-- **`zyl.buildinfo` hashes the assembly, not the ICNF**, which has no
-  serialised form.
+- **`zyl.buildinfo` hashes the canonical ICNF text** (`icnf_print.zyl`)
+  as the fourth input, and records the assembly hash beside it. *(Until
+  2026-09-24 it hashed the assembly in place of the ICNF, which had no
+  serialised form then.)*
+- **There is no monomorphization pass.** `monomorphization.zyl` is
+  deleted. The type checker (`type_annotate.zyl`) specializes a
+  trait-generic function or function value per type, naming the
+  instance `<function key>~<canonical type arguments>` and appending
+  instances in the order the checker reaches them, so the design's
+  "qualified type arguments in instance names" holds without an
+  alphabetical instance sort.
 - **Qualified names are copied per occurrence.** This was done because
   the old `type_inference.zyl` compared names with `=` (a pointer
   comparison) and a shared key pointer woke a dormant, broken code path.
@@ -884,7 +906,7 @@ found by reading the modules.
   copies.
 - **Capabilities, as enforced.** `ffi` guards `ffi-call`, `ffi-pin`,
   `ffi-unpin` and `use` of `ffi/*`; `actor` guards `spawn`, `send`,
-  `receive` and `actor/*`; `io` guards `file-open`, `file-read`,
+  `receive`, `actor-self` and `actor/*`; `io` guards `file-open`, `file-read`,
   `file-write`, `file-close`, `read-line`, `core/io` and `io/*`;
   `secret` guards `use` of `math/secret/*` (not the `Secret` annotation
   itself); `native` is checked by `zyl build` when a manifest has a
@@ -893,11 +915,12 @@ found by reading the modules.
   Pin-region allocation outside `ffi-pin` is not guarded. Only packages
   with a manifest are checked, and `deny-capabilities` applies only
   there.
-- **Native objects are not hashed.** The lock has no object-hash field
-  and `buildinfo`'s `native-objects` is always `()`.
-- **Hash finalization** records its inputs in `buildinfo` but does not
-  mix the graph hash into the binary's hash; `buildinfo` does not carry
-  the resolved graph.
+- **Native objects are hashed at build time only.** `buildinfo` lists
+  each object's BLAKE3 and they enter the final hash, but the lock has
+  no object-hash field.
+- **Hash finalization** is done (see §12): the final hash of the four
+  inputs is written to `buildinfo` and embedded in the binary as
+  `zyl_build_hash`.
 - **Tooling surface** differs from §11's list as described there: no
   `zyl update <pkg>` and no `--accept-key` (a key change is a hard stop
   with no accept path in the tool), no `zyl fetch --locked`, no
@@ -906,7 +929,7 @@ found by reading the modules.
   `-fno-strict-aliasing`, `-fwrapv`, `-fstack-protector-strong`,
   `-fno-omit-frame-pointer`; include directories come from
   `include-dirs`.
-- **Build cache**: keyed by the content hash of every build input (`drv-cache-key`), under `~/.zyl/cache/`; `ZYL_NO_BUILD_CACHE=1` bypasses it.
+- **Build cache**: keyed by the content hash of every build input (`drv-cache-key`), under `~/.zyl/cache/` (`$ZYL_HOME/cache/` when set); `ZYL_NO_BUILD_CACHE=1` bypasses it.
 - **The default index URL** (`https://github.com/zyl-lang/index`) is not
   hosted yet; `ZYL_INDEX` selects another, and the registry path is tested
   end to end against a local git index (`tests/scripts/package-index.sh`). A `git` dependency is cloned, archived,
@@ -915,8 +938,9 @@ found by reading the modules.
 - **Paths and URLs** handed to `tar`, `zstd`, `git`, `curl` or `cc` must
   pass `store-safe`'s character set; a space or quote is refused rather
   than quoted.
-- **A nested `feature-gate`** is not rejected; it is treated as an
-  ordinary form.
-- **Ed25519 ships inside the compiler bundle** (in Zyl), because
+- **A nested `feature-gate`** is rejected with `E_PKG_FEATURE_NESTED`
+  (`module_resolver.zyl`).
+- **Ed25519 is compiled into the compiler** (in Zyl, through
+  `index.zyl`'s `(use math/crypto/asymmetric/ed25519)`), because
   verification is mandatory; moving it into the runtime was considered
   and not done.

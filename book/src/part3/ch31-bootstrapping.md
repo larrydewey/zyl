@@ -47,13 +47,16 @@ without the reporting, is:
 SRC="selfhost/driver.zyl"     # the entry file; its (use ...) tree is resolved
 OUT="build/boot"
 export ZYL_HOME="$OUT"        # resolve stdlib from this checkout, not ~/.zyl
-export ZYL_MAX_MEMORY="${ZYL_STAGE_MEMORY:-2147483648}"   # per-stage ceiling
+export ZYL_MAX_MEMORY="${ZYL_STAGE_MEMORY:-4294967296}"   # per-stage ceiling
 
 # First: stdlib/ and the runtime are copied into build/boot/, so every
-# stage compiles this checkout's compiler source
+# stage compiles this checkout's compiler source; the runtime is
+# compiled once, and every stage and every program links the object
 rm -rf "$OUT/stdlib"; cp -R stdlib "$OUT/stdlib"
+cp runtime/actor_runtime.c runtime/actor_runtime.h "$OUT/"
+cc -O2 -c "$OUT/actor_runtime.c" -o "$OUT/actor_runtime.o"
 
-link_cc() { cc -no-pie "$1" runtime/actor_runtime.c -o "$2" -lpthread; }
+link_cc() { cc -no-pie "$1" "$OUT/actor_runtime.o" -o "$2" -lpthread; }
 
 # Stage 1: cc links the committed seed
 link_cc "$OUT/stage2.s" "$OUT/stage1.bin"
@@ -80,8 +83,8 @@ fi
 ```
 
 `STAGE_TIMEOUT` defaults to 2400 seconds (`ZYL_STAGE_TIMEOUT`). The
-memory ceiling defaults to 2 GB; a self-compile needs about 1.4 GB. The
-remedy for a stage-2 mismatch is `--bootstrap-from-self` (§31.10).
+memory ceiling defaults to 4 GB; a self-compile allocates somewhat over
+2 GB. The remedy for a stage-2 mismatch is `--bootstrap-from-self` (§31.10).
 
 ## 31.4 Why the Fixed Point Is Hard
 
@@ -95,6 +98,8 @@ remedy for a stage-2 mismatch is `--bootstrap-from-self` (§31.10).
 | Struct and variant tags | Assigned in declaration order; structs from their own counter |
 | Specialization names | Built from the canonical text of the concrete argument types (`ta-canon-list`), so the same instantiation always gets the same name |
 | Stack slot allocation | A per-function counter in the immutable emitter state |
+| Register allocation | Vregs are numbered in lowering order, intervals sorted by start and then vreg, registers tried in a fixed order: the assignment and the spill slots are a function of instruction order alone |
+| Inlining and reuse | Candidates are found and applied in program order; the reuse facts are a fixpoint over the functions in program order |
 | Environment and time | No timestamps, no randomness; the stage tracing file is written only when `ZYL_DEBUG_STAGES` is set |
 
 The span table in the runtime is keyed by node addresses, which do vary
@@ -184,7 +189,10 @@ diff /tmp/s1.s /tmp/s2.s
 A difference between two binaries built from the same source is the
 behavior change that needs a reseed; a difference between two runs of
 the *same* binary is real non-determinism. `ZYL_DEBUG_STAGES=1` traces
-which phase a compile reached (appended to `/tmp/dbg`).
+which phase a compile reached (appended to `/tmp/dbg`). When the
+difference is inside one function's code, compiling with `ZYL_MIR=0`,
+`ZYL_INLINE=0` or `ZYL_REUSE=0` (Chapter 29, §29.12) shows whether the
+native backend, inlining or the reuse pass is involved.
 
 ### Step 4: Minimal reproduction
 
@@ -215,7 +223,7 @@ hand-edited module is checked on its own by any compile that reaches
 it, including `./boot.sh`. A balance error is reported before anything
 else runs.
 
-## 31.9 Current Status (2026-09-24)
+## 31.9 Current Status (2026-09-25)
 
 | Component | Language | Status |
 |-----------|----------|--------|
@@ -223,15 +231,16 @@ else runs.
 | Module resolution, packages (spec §31) | Zyl | ✅ |
 | Macro expansion | Zyl | ✅ |
 | Checks (capability, duplicate, arity, mutability, exhaustiveness, unused, Secret) | Zyl | ✅ |
-| Type inference | Zyl | ✅ (degrades to type variables rather than rejecting; see Chapter 30) |
-| Monomorphization, trait dispatch | Zyl | ✅ |
-| Closure inlining, assert lowering | Zyl | ✅ |
+| Type checking | Zyl | ✅ strict: every type error is reported and the compile fails (Chapter 30, §30.3) |
+| Specialization, trait resolution | Zyl | ✅ per-type instances; static resolution, no run-time dispatch |
+| Impl lifting, derive expansion | Zyl | ✅ (closure inlining is an identity step) |
 | ICNF lowering | Zyl | ✅ |
-| Optimization | Zyl | ✅ integer constant folding, dead-branch elimination |
+| Optimization | Zyl | ✅ inlining, copy propagation, integer constant folding, dead-branch elimination |
 | Region inference | Zyl | ✅ per-call frame and result regions, `with-region`, `E_REGION_ESCAPE`; Global and Circular are names only |
-| Code generation | Zyl | ✅ |
+| In-place reuse | Zyl | ✅ unique, dead values' blocks reused by the native backend |
+| Code generation | Zyl | ✅ MIR and linear-scan register allocation for most functions; the stack machine for the rest (Chapter 29) |
 | ICNF interpreter (`zyl repl`, `zyl eval`) | Zyl | ✅ (no actors) |
-| Contract injection | Zyl | ❌ module exists, not wired into the pipeline |
+| Contract injection | Zyl | ✅ lowered to checks by `expr_inner.zyl` during conversion; the profile picks panic, warn or strip |
 
 **Fixed point**: ✅ Holding
 **Build input**: `selfhost/driver.zyl` through module resolution (the single-file bundle was retired on 2026-09-24)
@@ -243,7 +252,7 @@ What was tracked here as future work is done:
 
 1. ✅ All Zyl passes verified through the fixed point, and through the
    full regression suite (43/43 via the self-hosted compiler at the
-   time of eviction — see `docs/rust-eviction-plan.md`; 135 tests now)
+   time of eviction — see `docs/rust-eviction-plan.md`; 260 tests now)
 2. ✅ `src/` archived to `archive/rust-bootstrap-2026/` (self-contained:
    its own `Cargo.toml`, kept buildable in place)
 3. ✅ `boot.sh` (default) starts from the committed Zyl-compiled seed

@@ -1,25 +1,53 @@
 # Rust Eviction Plan (2026-09-12)
 
-> **Current status (verified 2026-09-23): DONE. This document is history.**
+> **Current status (verified 2026-09-25): DONE. This document is history.**
 > Rust was evicted on 2026-09-17. The compiler is `stdlib/compiler/*.zyl`
-> (37 modules) plus `selfhost/`; `./boot.sh` builds it from the committed
-> seed `build/boot/stage2.s` with nothing but `cc` and verifies the
-> stage2 == stage3 fixed point; `./boot.sh --bootstrap-from-self`
-> reseeds. The Rust implementation is frozen in
-> `archive/rust-bootstrap-2026/`, reachable only through
-> `./boot.sh --bootstrap-from-rust`, the fallback for a syntax change the
-> current seed cannot parse. The feature-parity survey below closed at
-> 43/43; the suite has since grown to 121 tests
-> (`./run_regression_tests.sh --full --no-boot`, see
-> `docs/regression-tests.md`). Phase C's REPL was later rebuilt from
+> (41 modules) plus `selfhost/` (`driver.zyl`, `lsp_main.zyl`);
+> `./boot.sh` builds it from the committed seed `build/boot/stage2.s`
+> with nothing but `cc` and verifies the stage2 == stage3 fixed point;
+> `./boot.sh --bootstrap-from-self` reseeds. The Rust implementation is
+> frozen in `archive/rust-bootstrap-2026/` and is no longer a working
+> fallback: it cannot lex the current source (it rejects the `\e`
+> string escape), and `./boot.sh --bootstrap-from-rust` now only exits
+> with a pointer to `--bootstrap-from-self`. New syntax is introduced in
+> two steps instead (teach the compiler to accept it, reseed, then use
+> it in the compiler's own source; see `AGENTS.md`). The feature-parity
+> survey below closed at 43/43; the suite has since grown to 260 tests
+> (`./run_regression_tests.sh --full --no-boot --dry-run` lists them,
+> see `docs/regression-tests.md`). Phase C's REPL was later rebuilt from
 > scratch around an ICNF interpreter (`stdlib/repl/`, `docs/repl.md`);
 > the error system (Phase A.8) is described as it stands in
-> `docs/error-system-architecture.md`. The sections below are kept as
-> written, in the order they were written (newest survey first, the
-> original plan last), with dated status notes where a later change made
-> a statement stale. Commands in them that name `target/debug/zyl`,
-> `target/release/zyl` or `src/*.rs` refer to the Rust tree, which now
-> lives under the archive.
+> `docs/error-system-architecture.md`.
+>
+> The survey below names several modules and mechanisms that no longer
+> exist. As of 2026-09-25: typing is sound, strict Hindley-Milner in
+> `type_annotate.zyl`, with static trait resolution and per-type
+> specialization of calls and function values; `type_inference.zyl`,
+> `monomorphization.zyl`, `trait_dispatch.zyl`, `assert_lowering.zyl`
+> and `contract_injection.zyl` are deleted, and `type_system.zyl` holds
+> only `Pair` and `Region`. Codegen's `kind-of` keeps its shape rules
+> but falls back to the kind recorded from the checker's types
+> (`icnf-kind`) where they give no answer. Contracts
+> are real (`requires`/`ensures`/`invariant` checks, `recover`,
+> `checkpoint`, profiles; see `AGENTS.md`), not the passthrough of item
+> #5. Derive covers six traits (`derive.zyl`). Optimization inlines
+> small functions and propagates copies before folding constants
+> (`optimization.zyl`); region inference is the `IStackVariant` rewrite
+> followed by `rg-regions` (`region_inference.zyl`,
+> `docs/regions-design.md`); `reuse.zyl` then reuses a unique, dead
+> value's block in place; and the backend lowers ICNF to MIR with
+> linear-scan register allocation (`mir.zyl`). `assemble.py` and the
+> single-file `selfhost/zyl_selfhost_compiler.zyl` bundle are gone:
+> `selfhost/driver.zyl` is compiled like any program, its `(use ...)`
+> tree resolved from `stdlib/` with names qualified per module. The
+> phase order is `stdlib/compiler/pipeline.zyl`.
+>
+> The sections below are kept as written, in the order they were
+> written (newest survey first, the original plan last), with dated
+> status notes where a later change made a statement stale. Commands in
+> them that name `target/debug/zyl`, `target/release/zyl`, `src/*.rs`
+> or `--bootstrap-from-rust` refer to the Rust tree, which now lives,
+> unusable, under the archive.
 
 ## Self-hosted compiler feature-parity survey (2026-09-16)
 

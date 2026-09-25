@@ -27,26 +27,28 @@ Deliberate deviations (recorded in `PROGRESS.md`):
 - **Module layout:** module path `M` of package `P` is the file
   `<root of P>/M.zyl`; a package's root module, which `(use acme/json)`
   names, is the module spelled by the name's last segment.
-- **`zyl.buildinfo`'s fourth input is the assembly hash**, not the ICNF
-  hash, because the ICNF has no serialised form.
-
 Known gaps:
 
-- `zyl fetch` downloads registry archives over HTTPS, but does not yet
-  clone, archive and install a `git` dependency.
-- No index repository exists; the index URL in the examples is a
-  placeholder, so the fetch path is tested through its pure parts only.
-- Hash finalization records its inputs in `zyl.buildinfo` but does not mix
-  the graph hash into the binary. The `native-objects` field is always
-  empty, and the native object hash is not recorded in the lock as
-  §31.10 requires. The resolved graph is not written into
-  `zyl.buildinfo`.
-- There is no build cache (§31.4); every build recompiles the whole graph.
+- The default index URL (`https://github.com/zyl-lang/index`) is a
+  placeholder: no public index repository exists. `ZYL_INDEX` names
+  another index (a git URL or a local repository path), and
+  `zyl publish --index` writes entries into one.
+- The native object hashes are recorded in `zyl.buildinfo`
+  (`native-objects`) and in the final hash, but not in the lock as
+  §31.10 requires.
 - Paths and URLs handed to `tar`, `zstd`, `git`, `curl` or `cc` must match a
   strict character set; a package root containing a space or quote is
   refused rather than escaped.
-- A nested `feature-gate` is not rejected; it is simply not seen by the
-  resolver's top-level scan.
+
+Implemented since earlier drafts of this list: a `git` dependency is
+cloned, archived and installed during an online resolution
+(`mvs-git-fetch`, `mvs.zyl`); hash finalization covers §31.12's four
+inputs, with the ICNF hash taken over the canonical ICNF text
+(`icnf_print.zyl`), and the final hash is embedded in the binary as
+`zyl_build_hash`; `zyl.buildinfo` records the resolved graph; builds are
+cached by content hash in `~/.zyl/cache` (§31.4; `ZYL_NO_BUILD_CACHE=1`
+skips it); and a `feature-gate` below top level is
+`E_PKG_FEATURE_NESTED`.
 
 ---
 
@@ -368,7 +370,8 @@ form**, since build-time code would forfeit §27.
   `-fno-omit-frame-pointer`.
 - The toolchain invokes `cc` with a canonical sorted argument vector and
   records the object hash in the lock. The sorted invocation is
-  implemented; recording the object hash is not (see Status).
+  implemented, and the object hashes go into `zyl.buildinfo` and the
+  final hash; recording them in the lock is not (see Status).
 
 ---
 

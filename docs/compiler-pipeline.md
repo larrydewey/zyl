@@ -18,7 +18,7 @@ and the REPL. No phase depends on output from a later phase.
 | Function | Runs | Used by |
 |---|---|---|
 | `compile-to-exprs` | Balance check through the checks; returns checked `ExprInner` | `compile-to-fns` |
-| `compile-to-fns` | Everything through region inference; returns `(List Icnf)` | `zyl eval`, the REPL |
+| `compile-to-fns` | Everything through region inference and in-place reuse; returns `(List Icnf)` | `zyl eval`, the REPL, `zyl build` (for the ICNF hash) |
 | `compile-to-asm` | `compile-to-fns` plus code generation; returns assembly text | the CLI, `zyl build`, `zyl test` |
 
 Errors are raised with `zyl_panic` and a located `error[CODE]` message.
@@ -39,10 +39,11 @@ in a different shape, and this document describes what the code does:
   pass**, `type_annotate.zyl`, run on the whole program just before ICNF
   lowering, after derive expansion and impl lifting. It is sound: every
   type error is reported and then the compile fails (spec §4.8).
-- **Region inference** runs on the lowered IR after optimization, not
-  on the AST before type inference.
+- **Region inference** runs on the lowered IR after inlining and
+  optimization, not on the AST before type inference, and an in-place
+  reuse pass follows it.
 - **Contract injection** happens during parsing (`convert-ast`), and
-  **hash finalization** happens only for package builds, as a `zyl.buildinfo` file.
+  **hash finalization** happens only for package builds, as a `<out>.buildinfo` file.
 
 ---
 
@@ -138,7 +139,7 @@ diagnostic rather than rejecting a valid program.
 | 3 | `arity_check.zyl` | `E_ARITY_MISMATCH`: a direct call to a known, unshadowed top-level function with the wrong argument count. `E_MALFORMED_FORM`: a special form whose shape its parser rejected (an `EUnknown` node, which used to lower to the constant 0). The `ffi-call` shape checks (`E_FFI_SYMBOL_REQUIRED`, `E_FFI_TIMEOUT_REQUIRED`, more than 16 arguments) and `E_FFI_RESTRICTED`: an `ffi-call` naming a raw runtime entry (`ffi-raw-p`, `ffi_sigs.zyl`) outside the standard library |
 | 4 | `mutability_check.zyl` | `E_MUT_CONFLICT`: `set!` on a name that is not a `let-mut` binding in scope |
 | 5 | `exhaustiveness_check.zyl` | `E_NON_EXHAUSTIVE_MATCH`, `E_UNREACHABLE_MATCH_ARM` for ADT matches; skipped for a match whose constructor names are ambiguous across deftypes |
-| 6 | `unused_check.zyl` | `W_UNUSED_FUNCTION`, `W_UNUSED_PARAMETER`, `W_UNUSED_VARIABLE`, `W_SHADOWED_BINDING` (warnings); `E_DUPLICATE_PARAMETER` (error). `_` and `_`-prefixed names are exempt |
+| 6 | `unused_check.zyl` | `W_UNUSED_PARAMETER`, `W_UNUSED_VARIABLE`, `W_SHADOWED_BINDING` (warnings); `E_DUPLICATE_PARAMETER` (error). `_` and `_`-prefixed names are exempt |
 | 7 | `secret_check.zyl` | Taint from `Secret` parameters: `E_CT_VIOLATION` (branch, index, divide), `E_SECRET_DEBUG` (`print`), `E_SECRET_ESCAPE` (`spawn`, `send`, `file-write`), `E_FFI_PIN_REQUIRED`. `declassify`, `ct-eq-bool` and `ct-eq-words-bool` remove taint |
 
 Literal-pattern matches never reach the exhaustiveness check: the
@@ -288,18 +289,34 @@ IRegion
 
 ## Phase 10: Optimization
 
-**Implementation:** `optimization.zyl` (`opt-optimize-fns`)
+**Implementation:** `optimization.zyl` (`opt-inline-fns`, then
+`opt-optimize-fns`)
 
-One bottom-up walk performs two safe rewrites:
+1. **Inlining** (`opt-inline-fns`) replaces a call of a small function
+   by its body: the arguments are bound first, in order, by nested
+   `ILet`s, and every binder in the copied body is renamed. A candidate
+   is not `main`, does not call itself, takes only word-kind parameters,
+   contains no `try`, region scope, lambda, closure call or `print`, and
+   has at most 6 ICNF nodes (`ZYL_INLINE_LIMIT`); a leaf that calls only
+   the runtime may be three times that size but is inlined only into a
+   function that calls itself. A call inside a `try` body, a call whose
+   name is a local at the site, and a body naming a global that a local
+   at the site would shadow are left alone. Two rounds run, then
+   **copy propagation** removes the `(ILet n (ILoad x) ...)` bindings
+   inlining leaves, when neither name is `set!` and nothing is captured.
+   `ZYL_INLINE=0` turns inlining off.
+2. **Constant folding** (`opt-optimize-fns`, one bottom-up walk) of
+   `IBinop` arithmetic (opcodes 0-4) and comparisons (5-10) whose
+   operands are both integer constants. Bitwise operators, floats, and
+   division or remainder by a constant zero are not folded, so a
+   division by zero still fails at run time.
+3. **Dead-branch elimination:** an `IIf` whose condition folds to a
+   constant keeps only the taken branch, and an `IWhile` whose
+   condition folds to 0 becomes `(IConst 0)`.
 
-1. **Constant folding** of `IBinop` arithmetic (opcodes 0-4) and
-   comparisons (5-10) whose operands are both integer constants.
-   Bitwise operators, floats, and division or remainder by a constant
-   zero are not folded, so a division by zero still fails at run time.
-2. **Dead-branch elimination:** an `IIf` whose condition folds to a
-   constant keeps only the taken branch.
-
-Nothing is reordered and no side effect is removed.
+Nothing is reordered and no side effect is removed. Inlining runs
+before region inference, so the allocations of inlined code are placed
+like any other.
 
 ## Phase 11: Region inference
 
@@ -315,7 +332,8 @@ Two steps over the optimized ICNF:
    the function's own frame.
 2. `rg-regions`, a whole-program escape analysis. Values belong to
    field-insensitive union-find object classes (runtime `zyl_uf_*`);
-   nodes the type pass proves scalar (attribute table 5, `ta-scalar`)
+   nodes the type pass proves scalar (the `icnf-scalars` side table,
+   `node_tables.zyl`)
    never join one. Every allocation site (`IVariant`, a call to a
    region-aware runtime function) and every call site gets a level:
    **L**, the frame's own region, released on return, before a tail
@@ -327,7 +345,7 @@ Two steps over the optimized ICNF:
    over the program. Tail-call arguments are at least R; calls through a
    function value pass arguments as H; runtime functions not listed in
    `rg-ffi-kind`, and foreign `ffi-call`s, keep their arguments in the
-   heap. The levels are stored in attribute table 4 (sites: 1 frame,
+   heap. The levels are stored in the `icnf-regions` side table (sites: 1 frame,
    2 result, 3 heap, `4 + k` `with-region` scope `k`; functions: flags
    plus 4) and printed by `icnf_print` as ` @r`, so the package-build
    ICNF hash covers them.
@@ -339,30 +357,81 @@ for a value allocated inside `with-region` that outlives it.
 regions are not inferred; Pin allocation comes from `ffi-pin` and the
 Pin arena in the runtime.
 
+## Phase 11b: In-place reuse
+
+**Implementation:** `reuse.zyl` (`ru-reuse`)
+
+When a construction's old value is provably unique (nothing else
+refers to it) and dead (nothing uses it later in evaluation order, and
+the construction is not in a loop the value was bound outside of), and
+the new record reads at least one field of the old one (so region
+inference has put both in one class), the `IVariant` is marked with the
+variable whose block it may take, in the `icnf-reuses` side table. The
+tree is not rewritten. A function whose parameters it could reuse gets
+an owning clone `f~own` (functions of up to 150 nodes), which a call
+with owned, dead arguments in those positions calls; ownership and
+freshness of results are a fixpoint over the program. At run time the
+native backend takes the block only when its size header covers the new
+record; the stack-machine emitter and the interpreter ignore the mark,
+so it cannot change what a program computes. `ZYL_REUSE=0` turns the
+pass off. The marks are not printed by `icnf_print`.
+
 ## Phase 12: Code generation
 
 **Output:** GAS assembly, `.intel_syntax noprefix`
-**Implementation:** `codegen.zyl` (`cg-program`, via `codegen-fns`)
+**Implementation:** `codegen.zyl` (`cg-program-file`, via
+`codegen-fns`) and `mir.zyl`
+**Design:** `docs/native-backend-design.md`; book Chapter 29
 
-- **Stack-machine discipline:** every expression leaves its value in
-  `rax`; a binary operator pushes its left operand while the right is
-  evaluated. There is no register allocator.
+There are two emitters with one ABI, chosen per function by
+`mb-eligible`:
+
+- **Native path.** A function with at most six parameters, no `Secret`
+  frame wiping, no call or allocation in a `with-region` scope, and a
+  body of supported nodes only (integer constants, strings, Float
+  constants, symbol addresses, locals and function references, integer
+  operators, `if`, `while`, `let`, `set!`, sequences, direct calls and
+  runtime calls of at most six arguments, variants, stack variants and
+  `match`) is lowered to MIR (`ml-expr`/`ml-tail` in `codegen.zyl`), a
+  linear three-address IR over virtual registers (`deftype MI` in
+  `mir.zyl`). `mir.zyl` computes liveness and intervals and assigns
+  registers by Poletto–Sarkar linear scan (callee-saved `rbx`,
+  `r12`–`r15` for values live across a call; `rax`, `rcx`, `rdx`,
+  `r11` are scratch); moves are sequenced as parallel moves. The path
+  emits self tail calls as jumps to the loop head (recycling the frame
+  region with `zyl_region_recycle`), inline region bump allocation,
+  inline byte and `Array` access (a byte buffer's data and bound loaded
+  once per function), division and remainder by a constant without
+  `idiv` (`zyl_div_magic`, `zyl_div_shift`), and the reuse marks of
+  Phase 11b. About 95% of the compiler's own functions take this path.
+  `ZYL_MIR=0` at compile time disables it.
+- **Stack machine.** Every other function (a `print`, Float
+  arithmetic, a String or variant comparison, a call through a local,
+  `try`, a `with-region` scope, frame wiping, more than six parameters
+  or arguments): every expression leaves its value in `rax`; a binary
+  operator pushes its left operand while the right is evaluated, unless
+  the right is a constant or a local.
 - **Calls:** up to six arguments in the SysV registers (`rdi rsi rdx
-  rcx r8 r9`), spilled to `[rbp-8*(i+1)]` in the prologue. Arguments
-  are evaluated left to right. Every C call of arity six or less aligns
-  `rsp` to 16 bytes first.
+  rcx r8 r9`); the stack machine spills them to `[rbp-8*(i+1)]` in the
+  prologue and passes more on the stack. Arguments are evaluated left to
+  right. A native function that calls C aligns its frame once in the
+  prologue; the stack machine aligns `rsp` to 16 bytes before every C
+  call.
 - **Floats** travel as bit patterns in `rax` and move to `xmm0`/`xmm1`
   for SSE arithmetic. `print` chooses `%lld`, `%f` or `%s` from the
   operand's kind.
-- **Regions:** a function flagged in attribute table 4 keeps six words
-  above its parameters (`[rbp-8]` saved `rax`, `[rbp-16]` result region,
-  `[rbp-48]` the region header `prev, bump, end, blocks`; parameters from
-  `[rbp-56]`). Entry pushes the header on the thread-local
+- **Regions:** a function flagged in `icnf-regions` keeps six words at
+  the top of its frame in both emitters (`[rbp-8]` saved `rax`,
+  `[rbp-16]` result region, `[rbp-48]` the region header `prev, bump,
+  end, blocks`; stack-machine parameters from `[rbp-56]`, native saved
+  registers below the header). Entry pushes the header on the thread-local
   `zyl_region_top` chain inline; exit and tail jumps pop it and call
   `zyl_region_free` only if a block was taken. Before each call the
   site's region is stored in `zyl_cur_region` (`fs`-relative). A
-  variant at a region site is allocated with `zyl_ralloc(size, region)`;
-  a string-producing runtime call at an annotated site goes to its `_r`
+  variant at a region site is allocated with `zyl_ralloc(size, region)`
+  (the native path bumps a frame or result region's pointer inline when
+  its block has room); a self tail call on the native path empties the
+  frame region with `zyl_region_recycle` instead of releasing it; a string-producing runtime call at an annotated site goes to its `_r`
   entry point. `IRegion` pushes a scope header of the same layout.
 - **Heap values:** variants and structs at heap sites are allocated with
   `zyl_heap_alloc`, which writes a hidden field-count header that
@@ -370,8 +439,9 @@ Pin arena in the runtime.
   raw field words) is used only for `==` on a variant-kind operand that
   Phase 8 did not rewrite to a `T.==` call (a type with a `Secret`
   field).
-- **Symbols:** user functions get a `_ZYL_` prefix; canonical keys go
-  through the runtime's `zyl_mangle_key`.
+- **Symbols:** a function's label is its canonical key mangled by the
+  runtime's `zyl_mangle_key`; the few names the compiler recognizes by
+  spelling (the user's `_ZYL_main`) keep a `_ZYL_` prefix.
 - **Entry stub:** `main` calls `zyl_save_args` and
   `zyl_ensure_arenas`, then runs `_ZYL_main` through
   `zyl_call_on_big_stack`, whose result becomes the exit code.
@@ -386,10 +456,13 @@ Pin arena in the runtime.
 The CLI writes `<out>.s` and runs:
 
 ```
-cc -no-pie <out>.s actor_runtime.c -o <out> -lpthread
+cc -no-pie <out>.s actor_runtime.o -o <out> -lpthread
 ```
 
-from the bundle directory, where `actor_runtime.c` sits. A package
+from the bundle directory, where the runtime sits. `./boot.sh` and
+`./install.sh` compile `actor_runtime.c` once, at `-O2`, into
+`actor_runtime.o`; when that object is not newer than the source, the
+link compiles `-O2 actor_runtime.c` instead. A package
 build appends its native objects and libraries (§31.10). With
 `--emit-asm`, the assembly is written to the output path and nothing is
 linked.
@@ -411,7 +484,8 @@ Contract forms are rewritten where every form is recognized,
   convert that form under profile P (`off`/`production` drop every clause;
   `warn` checks become `(if C unit (zyl-contract-warn msg))`; every check
   is Unit); the build's
-  profile comes from `--contracts=P` (global map 6).
+  profile comes from `--contracts=P` (the `contract-profiles` table,
+  `node_tables.zyl`).
 - `(checkpoint E)` saves the outer `let-mut` variables E `set!`s, and
   restores them before re-raising if E raises.
 
@@ -448,11 +522,13 @@ Source (.zyl)
   -> [8]  Type checking, trait resolution,
           specialization                type_annotate, ffi_sigs
   -> [9]  ICNF lowering                 icnf                 -> (List Icnf)
-  -> [10] Optimization                  optimization
+  -> [10] Inlining, copy propagation,
+          folding, dead branches        optimization
   -> [11] Region inference              region_inference
+  -> [11b] In-place reuse marks         reuse
           (compile-to-fns stops here; zyl eval and the REPL interpret this)
-  -> [12] Code generation               codegen              -> assembly
-  -> [13] Linking                       cc + actor_runtime.c -> binary
+  -> [12] Code generation               codegen, mir         -> assembly
+  -> [13] Linking                       cc + actor_runtime.o -> binary
   -> [15] zyl.buildinfo                 package builds only
 ```
 
@@ -474,8 +550,9 @@ Each step consumes only the output of the steps above it:
 | Type checking | lifted `ExprInner` | ICNF onward |
 | ICNF lowering | lowered `ExprInner` | optimization onward |
 | Optimization | ICNF | region inference onward |
-| Region inference | optimized ICNF | codegen |
-| Code generation | region-annotated ICNF | linking |
+| Region inference | optimized ICNF | reuse |
+| In-place reuse | region-annotated ICNF | codegen |
+| Code generation | region-annotated ICNF with reuse marks | linking |
 
 **Rule:** no phase may depend on a later phase. Determinism is required
 at every step.

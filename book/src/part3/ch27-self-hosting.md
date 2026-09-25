@@ -28,7 +28,7 @@ fallback for anything (§27.9).
 
 ### The Zyl Compiler (`stdlib/compiler/`)
 
-Thirty-seven modules. The phase order is the one
+Forty-one modules. The phase order is the one
 `stdlib/compiler/pipeline.zyl` runs (see Chapter 30 for the exact
 sequence); the table groups them by what they do.
 
@@ -39,9 +39,9 @@ sequence); the table groups them by what they do.
 | Macro expansion | `macro_expand.zyl` |
 | Checks | `duplicate_check.zyl`, `arity_check.zyl`, `mutability_check.zyl`, `exhaustiveness_check.zyl`, `unused_check.zyl`, `secret_check.zyl` |
 | Types | `type_annotate.zyl` (the strict HM checker: inference, trait resolution, per-type instances; every type error is reported), `ffi_sigs.zyl` (the type of every runtime function), `type_system.zyl` (shared data types), `node_tables.zyl` (typed per-node side tables) |
-| Middle | `derive.zyl`, `lift_impls.zyl`, `closure_inline.zyl`, `assert_lowering.zyl` |
-| ICNF and after | `icnf.zyl` (lowering), `optimization.zyl`, `region_inference.zyl` (escape analysis on ICNF), `codegen.zyl` (x86_64) |
-| Driver support | `pipeline.zyl` (the phase sequence shared by the CLI and the REPL), `error_codes.zyl`, `error_report.zyl` |
+| Middle | `derive.zyl`, `lift_impls.zyl`, `closure_inline.zyl` (an identity step since closures became values) |
+| ICNF and after | `icnf.zyl` (lowering), `icnf_print.zyl` (canonical text, hashed by package builds), `optimization.zyl` (inlining, copy propagation, constant folding, dead branches), `region_inference.zyl` (escape analysis on ICNF), `reuse.zyl` (in-place reuse of unique, dead values), `codegen.zyl` (x86_64: the native path and the stack machine), `mir.zyl` (the native path's machine IR, liveness and linear-scan register allocation) |
+| Driver support | `pipeline.zyl` (the phase sequence shared by the CLI and the REPL), `error_codes.zyl`, `error_report.zyl`, `doc.zyl` (`zyl doc`) |
 
 ### Self-Host Driver (`selfhost/`)
 
@@ -75,7 +75,8 @@ Default flow — verifies the fixed point, no Rust anywhere:
 
 ```bash
 ./boot.sh
-# 0. copies stdlib/ and the runtime into build/boot/
+# 0. copies stdlib/ and the runtime into build/boot/, and compiles the
+#    runtime once (-O2) into build/boot/actor_runtime.o
 # 1. cc links the committed seed build/boot/stage2.s -> stage1.bin
 # 2. stage1 compiles selfhost/driver.zyl -> stage2_gen.s
 #    (must byte-match the committed seed); stage2.s is linked -> stage2.bin
@@ -85,16 +86,17 @@ Default flow — verifies the fixed point, no Rust anywhere:
 # 6. writes the build/boot/zyl-self wrapper and builds build/boot/zyl-lsp
 ```
 
-Each link is `cc -no-pie <asm> runtime/actor_runtime.c -o <bin> -lpthread`.
+Each link is `cc -no-pie <asm> build/boot/actor_runtime.o -o <bin> -lpthread`.
 The script exports `ZYL_HOME=build/boot` so the build resolves the
 standard library from this checkout rather than from an installed
 `~/.zyl`; the copy in step 0 is what makes each stage compile this
 checkout's compiler source. Each stage runs under a timeout
 (`ZYL_STAGE_TIMEOUT`, default 2400 seconds) and an allocation ceiling
-(`ZYL_STAGE_MEMORY`, default 2 GB, passed on as `ZYL_MAX_MEMORY`). A
-self-compile needs about 1.4 GB, so a memory regression fails with
+(`ZYL_STAGE_MEMORY`, default 4 GB, passed on as `ZYL_MAX_MEMORY`). With
+inlining, in-place reuse and the native backend a self-compile
+allocates somewhat over 2 GB, so a memory regression fails with
 `E_OUT_OF_MEMORY` instead of swapping the machine. The whole two-stage
-verification takes on the order of half a minute.
+verification takes well under a minute.
 
 Reseeding — needed only when a compiler source change moves the fixed
 point (`FIXED POINT BROKEN` or "reproduced asm differs from committed
@@ -155,7 +157,9 @@ miscompiles. The current list (the full, annotated version is
 3. Parens must balance per top-level form (each file is checked on
    its own before parsing)
 4. One deftype per name
-5. buf-append appends at strlen(dst); use fresh zeroed buffers
+5. buf-append appends at a buf-new buffer's recorded length and
+   panics (E_INDEX_OUT_OF_BOUNDS) when it is full; any other
+   destination is appended at strlen(dst), so start from a fresh buffer
 6. Do not combine two calls directly in one binop, (+ (f x) (g y));
    bind each call with let first. In a match arm, the shape
    "constant plus several calls" is rejected with E_MATCH_ARM_COMPLEX
@@ -202,6 +206,8 @@ form, which is the one to inspect.
 | Type-inference exponential removed | 2026-09-23 | A boot stage drops from about ten minutes to seconds |
 | REPL and ICNF interpreter in the compiler | 2026-09-23 | `zyl repl`, `zyl eval`; C calls get an aligned stack (Chapter 29) |
 | Built through module resolution | 2026-09-24 | `assemble.py` and the one-line bundle retired; per-stage memory ceiling |
+| Strict type checking the default | 2026-09-25 | The compiler, the REPL and the LSP type-check clean; every type error is reported |
+| Native backend | 2026-09-25 | MIR and linear-scan register allocation for about 95% of the compiler's own functions; inlining and in-place reuse |
 
 ## 27.8 Debugging the Bootstrap
 
@@ -238,7 +244,7 @@ of `docs/rust-eviction-plan.md`'s latest survey, it's complete:
 
 1. ✅ Every compiler phase ported to Zyl (`stdlib/compiler/*.zyl`)
 2. ✅ Full regression suite passes through the self-hosted compiler
-   (43/43 at eviction; the suite has since grown to 135 tests)
+   (43/43 at eviction; the suite has since grown to 260 tests)
 3. ✅ `./boot.sh` builds and verifies with nothing but `cc`
 4. ✅ Reseeding no longer needs Rust either (`--bootstrap-from-self`, §27.3)
 5. ✅ `src/` archived to `archive/rust-bootstrap-2026/`, `Cargo.toml`/

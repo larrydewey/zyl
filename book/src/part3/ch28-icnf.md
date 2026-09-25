@@ -2,7 +2,8 @@
 
 ICNF (Intermediate Canonical Normal Form) is Zyl's own intermediate
 representation: the output of lowering, the input of optimization,
-region inference, code generation and the REPL's interpreter. This
+region inference, in-place reuse, code generation and the REPL's
+interpreter. This
 chapter documents what ICNF actually is in the self-hosted compiler
 (`stdlib/compiler/icnf.zyl`), how the typed expression tree is lowered
 into it, and what the passes that run on it do.
@@ -20,23 +21,30 @@ worth being exact about the difference:
 - **Untyped.** Types are gone by the time ICNF exists. What survives is
   a small *representation kind* per function parameter (0 for a machine
   word, 1 for a String, 2 for a Float), because those three are emitted
-  differently.
+  differently, and a few per-node facts the type checker leaves in side
+  tables (`node_tables.zyl`): each node's codegen kind (`icnf-kinds`,
+  adding 3 for a variant), whether it is a scalar, and whether it is a
+  program ADT.
 - **Regions are a side-table annotation, plus one rewrite.** No node has
   a region field. Region inference runs on ICNF and records, for every
   allocation and call site, which region its result goes into (the
   frame's own region, the caller's result region, the heap, or an
-  enclosing `with-region` scope) in attribute table 4, keyed by the
-  node. A variant that is only matched or printed is instead rewritten
+  enclosing `with-region` scope) in the `icnf-regions` side table
+  (`node_tables.zyl`), keyed by the node. A variant that is only matched or printed is instead rewritten
   from `IVariant` to `IStackVariant`, and an explicit `with-region`
   scope is its own node, `IRegion` (§28.5).
 - **Phase position.** ICNF is produced after impl lifting, closure
   inlining and type checking, and consumed by the
-  optimizer, region inference and codegen, in that order (§28.6).
+  optimizer, region inference, the reuse pass and codegen, in that
+  order (§28.6). Codegen lowers most functions further, to a linear
+  machine IR with virtual registers (Chapter 29, §29.2); that IR lives
+  only inside codegen.
 - **Textual form.** `compiler/icnf_print.zyl` (`icnf-text`) writes the
   lowered program as canonical s-expressions, one function per line,
   with each node's codegen kind as a `:k` suffix and its region
   annotation as an `@r` suffix. Package builds hash it for
   `zyl.buildinfo`'s `icnf-hash`, so the hash covers region decisions.
+  The reuse marks (§28.7) are not printed.
 
 ## 28.2 ICNF Structure
 
@@ -189,10 +197,10 @@ a union-find object class; each class gets a level — frame (the value
 does not outlive the call), result (it may reach the call's result, so it
 goes in the region the caller chose), or heap (it escapes in a way the
 analysis does not track). Per-function parameter summaries are joined to
-a fixpoint over the whole program. The decisions go into attribute
-table 4:
+a fixpoint over the whole program. The decisions go into the
+`icnf-regions` table:
 
-| Node | Attribute 4 |
+| Node | `icnf-regions` value |
 |------|-------------|
 | allocation or call site | 1 frame region, 2 result region, 3 heap, `4 + k` the `k`th enclosing `with-region` scope |
 | `IFn` | 4 plus flags: bit 0, the function has a frame region; bit 1, it keeps its caller's result region |
@@ -223,11 +231,13 @@ byte-buffer types.
 ```
 derive expansion        (dv-expand-program)
   → impl lifting          (lift-impls)
-  → closure inlining      (ci-expand-program)
+  → closure inlining      (ci-expand-program; now an identity step)
   → type checking         (ta-annotate: strict HM, trait resolution, instances)
   → ICNF lowering         (ic-program)
-  → optimization          (opt-optimize-fns)
+  → inlining              (opt-inline-fns: two rounds, then copy propagation)
+  → optimization          (opt-optimize-fns: folding, dead branches)
   → region inference      (ri-transform-fns, then rg-regions)
+  → in-place reuse        (ru-reuse)
 ```
 
 `compile-to-fns` returns the result of the last step. The compiler hands
@@ -271,9 +281,39 @@ it again.
 
 ## 28.7 ICNF Optimizations
 
-`optimization.zyl` is two passes in one bottom-up walk. Nothing else
-is done: there is no dead-code elimination of unused lets, no copy
-propagation and no common-subexpression elimination.
+Three passes run on ICNF before region inference, and one after it.
+Each is safe in the sense of spec §22: nothing is reordered and no side
+effect is discarded or duplicated. There is no common-subexpression
+elimination and no loop-invariant code motion.
+
+### Inlining
+
+`opt-inline-fns` (`optimization.zyl`) replaces a call of a small
+function by its body. The arguments are bound first, in order, by
+nested `ILet`s, which keeps the call's own evaluation order, and every
+binder in the copied body is renamed (`__in<id>_<name>`), so nothing in
+it can capture or be captured by a name at the call site.
+
+A function is a candidate when it is not `main`, does not call itself,
+takes only word-kind parameters, contains no `try`, region scope,
+lambda, closure call or `print`, and is at most 6 ICNF nodes
+(`ZYL_INLINE_LIMIT`). A *leaf*, which calls nothing but the runtime,
+may be three times that size, but is inlined only into a function that
+calls itself (a loop). A call is left alone inside a `try` body (a
+caught panic releases the regions of the calls it unwinds), when its
+name is a local at the site, or when the body names a global that a
+local at the site would shadow. Two rounds run, so a wrapper of a
+wrapper (`vec-get` over `array-get`) flattens. `ZYL_INLINE=0` turns
+inlining off.
+
+Inlining binds every argument that is a variable to another variable,
+so *copy propagation* follows it: `(ILet n (ILoad x) body)` becomes
+`body` with `n` replaced by `x`, when neither is `set!` in `body` and
+`body` binds no `x` that the replacement could capture. Reading a local
+has no effect, so no side effect moves.
+
+Region inference runs after inlining, so the allocations in inlined
+code are placed like any other.
 
 ### Constant folding
 
@@ -303,6 +343,43 @@ value), and neither are the bitwise opcodes.
 A constant-true `while` is left alone: an infinite loop is a legitimate
 program. Neither pass can discard a side effect, because the only thing
 that ever folds to an `IConst` is arithmetic on literals.
+
+### In-place reuse
+
+`reuse.zyl` (`ru-reuse`) runs after region inference. Values are
+immutable, so an update such as `(vec-push v x)`, a struct with one
+field changed, or a list rebuilt cell by cell constructs a new record.
+When the old value is provably *unique* (nothing else refers to it) and
+*dead* (nothing uses it afterwards), the new record can be written into
+the old one's block instead of a fresh one: the "functional but in
+place" technique of Koka's Perceus, decided statically here. The pass
+marks the `IVariant` with the variable whose block it may take (the
+`icnf-reuses` side table); it does not rewrite the tree.
+
+- **Ownership.** A variable is owned when it is bound to a fresh value
+  (a construction, or a call of a function whose results are fresh) or
+  is a parameter of an owning clone (below). Any use that could keep a
+  second reference taints it: storing it in a variant, binding it to
+  another name, `set!`, passing it where the callee's region summary
+  lets it escape, capturing it in a closure, or using it inside a
+  lambda, `try` or region scope.
+- **Death.** It is not used later in evaluation order, and the
+  construction is not inside a loop the variable was bound outside of.
+- **Region.** At least one field of the new record is read out of the
+  old one, so region inference, which is field-insensitive, has already
+  put both in one class and one region.
+- **Owning clones.** A function whose parameters it could reuse gets a
+  copy `f~own` that assumes them owned; a call whose arguments in those
+  positions are owned and dead calls the copy. Which parameters each
+  copy reuses and whether each function's results are fresh are a
+  fixpoint over the program. Only functions of up to 150 nodes get a
+  clone.
+
+At run time the block is taken only when its size header covers the new
+record (Chapter 29, §29.7). The native backend honours the mark; the
+stack machine and the interpreter ignore it and allocate, so the mark
+cannot change what a program computes. `ZYL_REUSE=0` turns the pass
+off.
 
 ## 28.8 ICNF Verification
 
@@ -334,6 +411,6 @@ can raise; Appendix A has the full catalogue.
 | Regions | ❌ | Per-site annotations (frame, result, heap, scope) in a side table; `IStackVariant`; `IRegion` scopes |
 | Capabilities | ❌ | Checked before lowering, not represented |
 | Target | Multi-arch | x86_64 only |
-| Optimizations | Many | Integer constant folding, dead-branch elimination |
-| Consumers | Backends | Codegen, and the REPL's interpreter |
+| Optimizations | Many | Inlining, copy propagation, integer constant folding, dead-branch elimination, in-place reuse marks |
+| Consumers | Backends | Codegen (lowered further to MIR for most functions), and the REPL's interpreter |
 | Determinism | Configurable | Mandatory |

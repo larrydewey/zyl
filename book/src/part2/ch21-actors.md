@@ -205,7 +205,7 @@ PANIC: error[E_CAPABILITY_LEAK]: spawned closure captures let-mut (TMut) variabl
 Limits of the check:
 
 - It is name-based. Copying the value into an immutable binding first (`(let y x (send a y))`) passes, which is sound for an `Int`.
-- There is no type-based Send check. The type system defines one (`tc-is-send`) but never calls it, so `TBox`, `TPin` and other non-Send types are not rejected.
+- There is no type-based Send check. The type checker has no Send trait or predicate, so a closure, a `(Pin a)` or any other value the specification counts as non-Send is not rejected by its type.
 - A `Secret` value in a message or spawn capture is rejected separately, with `E_SECRET_ESCAPE`.
 
 ## 21.4 Closure Messages
@@ -275,10 +275,10 @@ Two message kinds exist in the runtime: data messages from `send`, which `receiv
 
 ## 21.10 Capabilities
 
-In a package with a `zyl.pkg`, `spawn`, `send` and `receive`, and any call into `stdlib/actor`, require the `actor` capability (§31.9):
+In a package with a `zyl.pkg`, `spawn`, `send`, `receive` and `actor-self`, and any call into `stdlib/actor`, require the `actor` capability (§31.9):
 
 ```
-PANIC: E_PKG_CAPABILITY_VIOLATION: capability: package demo/nocap uses actor in demo/nocap@0::nocap::helper without declaring it in zyl.pkg
+PANIC: error[E_PKG_CAPABILITY_VIOLATION]: package demo/nocap uses actor in helper without declaring it in zyl.pkg
 ```
 
 A lone file compiled without a manifest is not checked. The current pass also does not check the body of `main` (see Chapter 25, §25.11).

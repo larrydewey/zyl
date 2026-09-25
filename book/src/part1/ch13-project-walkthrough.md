@@ -1,6 +1,6 @@
 # Chapter 13: A Complete Project Walkthrough
 
-Let's build a small **log processor**: a Zyl program that reads a log file, parses each line into a structured entry, and prints a summary. It is split into a library module, a program, and a test file, and it runs **sequentially**, because determinism and ease of reasoning matter more here than throughput. §13.9 explains why a concurrent version is not practical yet.
+Let's build a small **log processor**: a Zyl program that reads a log file, parses each line into a structured entry, and prints a summary. It is split into a library module, a program, and a test file, and it runs **sequentially**, because determinism and ease of reasoning matter more here than throughput. §13.10 sketches a concurrent version.
 
 The finished program is in `book/examples/log-processor/`. Every code block in this chapter is taken from those files, which were compiled and run with the current self-hosted compiler; the output shown is what they print.
 
@@ -54,7 +54,7 @@ log-processor/
 
 `(use logstats)` finds `logstats.zyl` next to the file being compiled; a subdirectory works the same way (`(use util/strings)` loads `util/strings.zyl`). Two rules for a module you `use`:
 
-- **It must not define `main`.** A `use`d file's top-level forms are spliced into the program that uses it, so its `main` would collide with the program's own. It would also make every test file that uses it fail with `E_TOPLEVEL_STMTS_WITH_EXPLICIT_MAIN`, because a file may not contain both tests and a `main`. That is why the program and the tests are separate files that share one library.
+- **It must not define `main`.** A `use`d file's definitions become part of the program that uses it, so its `main` would collide with the program's own (`E_DUPLICATE_DEFINITION`). It would also make every test file that uses it fail with `E_TOPLEVEL_STMTS_WITH_EXPLICIT_MAIN`, because a file may not contain both tests and a `main`. That is why the program and the tests are separate files that share one library.
 - **It must `use` what it constructs.** `logstats.zyl` builds `Cons`/`Nil` lists, so it starts with `(use core/list)`. Without that line, `Nil` is not known as a constructor inside the module, and `match` reports `E_UNREACHABLE_MATCH_ARM` for the arms that follow it.
 
 To build and run, from the project directory:

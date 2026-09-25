@@ -2,9 +2,9 @@
 ; Module: math/bits
 ; Provides: 32/64-bit word arithmetic, rotations, byte packing
 ;
-; Zyl's only integer type is a 64-bit signed Int (type_system.zyl's
-; TInt), so every 32-bit quantity here is an Int carrying its value in
-; the low 32 bits with the upper 32 bits held at zero by `u32`. That
+; Zyl's only integer type is a 64-bit signed Int, so every 32-bit
+; quantity here is an Int carrying its value in the low 32 bits with the
+; upper 32 bits held at zero by `u32`. That
 ; invariant is what makes `(== a b)` on two u32 values mean what it
 ; looks like it means; a function that can overflow 32 bits (add32,
 ; shl32, rotations) re-establishes it before returning.

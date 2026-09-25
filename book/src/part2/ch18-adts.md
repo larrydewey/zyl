@@ -303,8 +303,8 @@ plain `print` formats each one correctly (Chapter 15).
 §7.4 and §15 require an actor message to be Send-capable. The spec-level
 rule for an ADT is that it is Send when all of its fields are.
 
-The type predicate that would decide this (`tc-is-send`) is not called.
-What is enforced is the syntactic rule from Chapter 17: a `send` whose
+There is no type predicate that decides this. What is enforced is the
+syntactic rule from Chapter 17: a `send` whose
 message mentions a `let-mut` variable, or a `Secret`, is rejected.
 
 ```lisp
@@ -324,11 +324,13 @@ message mentions a `let-mut` variable, or a `Secret`, is rejected.
 (print (Rect 2 3))        ; Rect(2, 3)
 ```
 
-`Show` is generated (Chapter 20): each variant prints as its name and
-its fields' `Show` text, `Circle(1.500000)`, and a struct as
-`Point { x: 1, y: 2 }`. Without a `Show` impl, `print` of an ADT value
-prints its address. The other traits are accepted and generate nothing;
-their behavior exists regardless:
+All six are generated (Chapter 20, §20.6); any other trait, or a field
+whose type lacks the trait, is `E_TRAIT_NOT_DERIVABLE`. `Show` prints
+each variant as its name and its fields' `Show` text, `Circle(1.500000)`,
+and a struct as `Point { x: 1, y: 2 }`; `Debug` is the same with strings
+quoted: `P(1, a)` shows as `P(1, "a")`. Without a `Show` impl, `print` of an ADT value
+prints its address. Equality exists with or without a derive, and
+ordering needs one:
 
 - `==` and `!=` on two ADT values compare by content: different
   variants are unequal, and otherwise each field pair is compared with
@@ -361,10 +363,14 @@ A variant value is a pointer to a block of words:
   word: an integer, a float's bits, a boolean, or a pointer.
 - **Blocks are sized per variant.** Each variant gets a block exactly as
   large as its own fields; blocks are not padded to the largest variant.
-  A nullary variant is still a heap block, holding just the tag.
+  A nullary variant is still a block, holding just the tag. Where a
+  block lives (the frame, a region or the heap) is region inference's
+  choice (Chapter 16).
 - **The hidden size word** sits before the tag and records the block's
-  size in words. The runtime's shallow `==` fallback and `<` read it
-  (Chapter 15).
+  size in words. The runtime's shallow `==` fallback reads it (Chapter
+  15), and in-place reuse checks it before writing a new record into an
+  old block (Chapter 16). A variant placed directly in the stack frame
+  (16.3) has no size word; nothing that reads one ever sees it.
 - **Tags** are 0-based in declaration order, per `deftype`:
 
   ```lisp
@@ -415,4 +421,4 @@ There is no jump table and no merging of arms.
 | Guards | `if` | `\|` | `(when ...)` on literal arms only |
 | Nested patterns | yes | yes | no |
 | GADTs | no | yes (extension) | no |
-| Deriving | `#[derive(...)]` | `deriving` | `(derive T Show)`; other traits not generated yet |
+| Deriving | `#[derive(...)]` | `deriving` | `(derive T Show Eq Ord)`: `Show`, `Debug`, `Eq`, `Ord`, `Hash`, `Clone` |

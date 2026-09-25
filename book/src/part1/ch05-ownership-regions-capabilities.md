@@ -2,9 +2,11 @@
 
 This chapter explains Zyl's memory model: where values live (regions)
 and who may change them (capabilities). The specification describes a
-complete static system for both. The current compiler implements a
-small, safe part of it, so this chapter shows the rules you write code
-against and, alongside them, what the compiler actually checks today.
+complete static system for both. The current compiler implements most
+of the region side (escape analysis with per-call regions, explicit
+`with-region` scopes, the Pin region) and checks capabilities by
+binding form, so this chapter shows the rules you write code against
+and, alongside them, what the compiler actually checks today.
 Chapters 16 and 17 are the full reference.
 
 ## 5.1 The Problem Zyl Solves
@@ -28,7 +30,7 @@ The specification assigns every value to one of five **regions**:
 
 | Region | Purpose (spec) | Today |
 |--------|----------------|-------|
-| **Stack** | Values that do not escape | Parameters and `let` locals live in the function's frame. An ADT value that does not outlive its call goes in the call's own region, released when the call returns (§5.5) |
+| **Stack** | Values that do not escape | Parameters and `let` locals live in registers or the function's frame. An ADT value that does not outlive its call goes in the frame itself or in the call's own region, released when the call returns (§5.5) |
 | **Heap** | Escaped values, captured closure variables | A value the compiler cannot prove short-lived: stored in a global, sent to an actor, handed to foreign code, or passed to a closure called through an unknown function value. Heap values live until the program exits |
 | **Global** | Top-level immutable constants | A top-level `def`: immutable, evaluated once, in source order, before `main` or the tests run |
 | **Circular** | Cyclic structures | Not implemented |
@@ -245,10 +247,13 @@ stack frame.
 ```
 
 Both functions print the same thing; only the allocation differs. In the
-output of `--emit-asm`, `local-area` allocates nothing, and `passed-area`
-allocates through `zyl_ralloc` into the region its caller chose (the call
-to `area` is a tail call, so `passed-area`'s own frame is gone by the time
-`area` runs). Neither calls `zyl_heap_alloc`. A missed case costs one heap
+output of `--emit-asm`, `local-area` builds its `Square` in a block of
+its own stack frame and calls no allocator, and `passed-area` allocates
+in the region its caller chose (`zyl_cur_region`): an inline bump of
+that region's pointer, with a call to `zyl_ralloc` only when the
+current block is full. The call to `area` is a tail call, so
+`passed-area`'s own frame is gone by the time `area` runs. Neither
+calls `zyl_heap_alloc`. A missed case costs one heap
 allocation, never a dangling pointer.
 
 Values that do reach the heap are not reclaimed while the program runs;
@@ -550,8 +555,9 @@ the tutorial.
 
 `E_MUT_CONFLICT` and `E_CAPABILITY_LEAK` are located: they point at the
 `set!`, `spawn` or `send`, and a second label points at the binding
-involved. `E_INVALID_CAPABILITY` and the Secret diagnostics still print
-as a single `PANIC:` line naming the code.
+involved. The Secret diagnostics, `E_FFI_TYPE_NOT_PINNABLE` and the
+region errors are located too. `E_INVALID_CAPABILITY` still prints as a
+single `PANIC:` line naming the code.
 
 ## 5.12 Mental Model: Regions + Capabilities
 
@@ -588,7 +594,8 @@ unreported (Chapter 17, §17.11).
 
 The specification places region inference in Phase 4, before
 monomorphization, but prescribes no algorithm. The implementation runs
-on ICNF after optimization, just before code generation, in
+on ICNF after optimization (which has already inlined small functions),
+just before in-place reuse and code generation, in
 `stdlib/compiler/region_inference.zyl`. First `ri-transform-fns` rewrites
 a qualifying `let`-bound variant construction (§5.5) into a stack
 allocation; then `rg-regions` groups values that may point to each other

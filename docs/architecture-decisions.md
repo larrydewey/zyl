@@ -71,12 +71,17 @@ auditing, and testing.
 
 **Spec reference:** `spec/14-determinism-and-hashing.md`
 **Implementation:** All phases. The compiler's tables are association
-lists and ordered `List`s walked in source order; monomorphization
-sorts type names for canonical specialization names; module
+lists and ordered `List`s walked in source order; the type checker
+(`type_annotate.zyl`, which replaced `monomorphization.zyl`) names each
+instance of a trait-generic function by its argument types in order
+(`f~T1,T2`); the native backend's block order, register assignment and
+spill slots depend only on instruction order (`mir.zyl`); module
 resolution builds its symbol table only after the whole graph is
 discovered, so the result does not depend on traversal order; locks
-and manifests are written in canonical order. The one hash table, the
-runtime's source-span table, is only probed by key and never iterated.
+and manifests are written in canonical order. Hash tables (the
+runtime's source-span table, the per-node side tables of
+`node_tables.zyl`, string maps) are only probed by key and never
+iterated.
 `./boot.sh` checks the result: the compiler must reproduce its own
 assembly byte for byte.
 **Alternative considered:** Non-deterministic iteration with hash-based
@@ -100,8 +105,8 @@ testable.
 **Spec reference:** `zyl_specification.txt` §22
 **Implementation:** `stdlib/compiler/pipeline.zyl` is the single
 definition of the phase order. `compile-to-fns` stops after region
-inference, for the REPL's interpreter; `compile-to-asm` adds code
-generation. `docs/compiler-pipeline.md` lists the order.
+inference and in-place reuse, for the REPL's interpreter;
+`compile-to-asm` adds code generation. `docs/compiler-pipeline.md` lists the order.
 **Alternative considered:** Interleaved phases — rejected because it
 creates hidden dependencies and makes the compilation order
 non-deterministic.
@@ -122,9 +127,13 @@ labeled jumps) simplify IR traversal and code generation.
 **Spec reference:** `spec/11-icnf-ir.md`
 **Implementation:** `stdlib/compiler/icnf.zyl`. The self-hosted ICNF is
 a tree of instructions with embedded control flow, but it is **not
-SSA**: nodes refer to variables by name and `ISet` assigns them. The
-only region information it carries is `IStackVariant`, written by
-region inference.
+SSA**: nodes refer to variables by name and `ISet` assigns them.
+Region decisions are a side table keyed by node (`icnf-regions`,
+`node_tables.zyl`), printed as ` @r` by `icnf_print.zyl` so the
+package-build ICNF hash covers them, plus the `IStackVariant` rewrite
+and the `IRegion` node for `with-region`. Codegen lowers most functions
+further, to a linear machine IR with virtual registers (`mir.zyl`)
+that exists only inside the backend.
 **Alternative considered:** CPS (continuation-passing style) — rejected
 because it complicates region reasoning and makes debugging output
 harder to interpret.
@@ -143,11 +152,16 @@ values that outlive their allocation scope.
 
 **Spec reference:** `spec/07-region-memory-model.md`
 **Implementation:** `stdlib/compiler/region_inference.zyl` runs on
-ICNF after optimization and puts a variant on the stack when its
-binding is only matched on or printed; every other value is heap
-allocated through the runtime's arenas. Pin memory comes from `ffi-pin`.
-Global and Circular regions are not inferred, and `E_REGION_ESCAPE` is
-defined but not raised.
+ICNF after inlining and optimization. It puts a variant on the stack
+when its binding is only matched on or printed, then (`rg-regions`)
+places every allocation and call site, by escape analysis over
+union-find object classes with per-function parameter summaries joined
+to a whole-program fixpoint, in the frame's own region, the caller's
+result region, or the process heap. `with-region` opens an explicit
+arena or fixed region. `E_REGION_ESCAPE` is raised for a Stack
+bytebuf or `with-region` value that would outlive its region. Pin
+memory comes from `ffi-pin`. Global and Circular regions are not
+inferred. `docs/regions-design.md` has the design.
 **Alternatives considered:** Garbage collection (rejected: adds runtime
 overhead, non-deterministic collection), manual memory management
 (rejected: error-prone), ownership-only without explicit regions

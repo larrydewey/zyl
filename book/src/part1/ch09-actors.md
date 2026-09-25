@@ -220,6 +220,7 @@ The `actor/actor` module provides:
 | `(actor-terminate a)` | Stop actor `a`'s mailbox loop and join its thread |
 | `(actor-is-alive a)` | `true` until the actor has been waited on or terminated |
 | `(actor-spawn f)`, `(actor-send a m)` | Function wrappers around `spawn` and `send` |
+| `(actor-send-with-timeout a m t)` | `send` wrapped in a `Result`: `(Ok ...)`, or `(Err e)` if the send raised. The timeout `t` is ignored, because `send` never blocks on a mailbox |
 
 `actor-wait` does not drain the mailbox: messages still queued when the actor is stopped are dropped. To let every actor finish its queued messages first, call the runtime directly with `(ffi-call "zyl_actor_wait_all" 1000)`. It needs no declaration, because the compiler's signature table types it `-> Unit` (Chapter 12); it waits until every mailbox is empty and then stops and joins every actor (Chapter 21, §21.5).
 
@@ -362,7 +363,7 @@ A single file compiled directly is not capability-checked. (The current checker 
 
 ```c
 typedef struct ZylMessage {
-    int kind;                  /* ZYL_MSG_DATA or ZYL_MSG_CLOSURE */
+    ZylMessageKind kind;       /* ZYL_MSG_DATA or ZYL_MSG_CLOSURE */
     void* data;                /* the sent word, or a ZylClosureMsg* */
     struct ZylMessage* next;   /* FIFO link */
 } ZylMessage;

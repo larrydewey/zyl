@@ -19,8 +19,8 @@ build it with `./boot.sh` first.
 ./run_regression_tests.sh --dry-run          # list the selected tests without running them
 ```
 
-A `--full --no-boot` run is 131 tests and takes well under a minute on a
-current machine (43 s as of 2026-09-23). `--full` adds one more entry,
+A `--full --no-boot` run is 260 tests and takes well under a minute on a
+current machine (18 s as of 2026-09-25). `--full` adds one more entry,
 `boot/fixed-point`, which runs `./boot.sh` and takes as long as a
 bootstrap does.
 
@@ -29,7 +29,7 @@ bootstrap does.
 | Flag | Description |
 |------|-------------|
 | `--quick` | Run `tests/unit_test.zyl`, `tests/smoke/*.zyl` and the LSP protocol test (default) |
-| `--full` | Run the unit test, regression, stress, integration, interpreter-agreement, package, compile-fail and LSP sections, then the fixed-point check |
+| `--full` | Run the unit test, regression, stress, integration, interpreter-agreement, package, compile-fail, script and LSP sections, then the fixed-point check |
 | `--dry-run` | List the tests the same mode and `--filter` would run, without running them |
 | `--filter N` | Run only tests whose name contains N, case-insensitively (see below) |
 | `--boot` | Run the fixed-point check (`./boot.sh`) in any mode |
@@ -51,8 +51,8 @@ test, so `--filter structs` on its own selects nothing. Combine it with
 The name matched is the file's basename for single-file tests;
 `interpreter NAME` for the agreement section (so `--filter interpreter`
 selects that whole section, and `--filter structs` also selects
-`interpreter/structs`); and `packages NAME` for the three package
-sections.
+`interpreter/structs`); `packages NAME` for the three package
+sections; and `scripts NAME` for the script section.
 
 `--dry-run` goes through the same selection as a real run, so it lists
 exactly the tests the same mode and `--filter` would run (every section,
@@ -75,29 +75,38 @@ prints their count.
   out-of-memory stop does not count as a pass. Without such a line the
   runner does not check which code was reported.
 - **Package builds** (`tests/packages-build/`): `zyl build` in the
-  case's `app/` directory must succeed, and the resulting binary must run
-  without printing `FAIL`.
+  case's `app/` directory must succeed, the resulting binary must run
+  without printing `FAIL`, the `.buildinfo` file must record a
+  `(final-hash "blake3:...")`, and the binary must carry that hash.
 
-Compiled test binaries are written to `/tmp/zyl_test_N.bin` and
-`/tmp/zyl_diff_N.bin`; logs for the package-build, LSP, timing and boot
-steps go to `/tmp/zyl_*.log`.
+Each run works in a scratch directory of its own
+(`mktemp -d ${TMPDIR:-/tmp}/zyl_tests.XXXXXX`, removed on exit), so two
+checkouts can run the suite at once: compiled test binaries are
+`zyl_test_N.bin` and `zyl_diff_N.bin` there, and the package-build, script,
+LSP, timing and boot logs are `zyl_*.log` there. A failed fixed-point
+check copies its log to `build/boot/boot_check.log`. The runner sets
+`ZYL_HOME` to `build/boot`, so the suite always compiles against this
+checkout's standard library, not an installed one.
 
-### Sections and counts (`--full --no-boot`, 2026-09-23)
+### Sections and counts (`--full --no-boot`, 2026-09-25)
 
 | Section | Source | Tests |
 |---------|--------|-------|
 | unit test | `tests/unit_test.zyl` | 1 |
-| regression | `tests/regression/*.zyl` | 53 |
+| regression | `tests/regression/*.zyl` | 77 |
 | stress | `tests/stress/*.zyl` | 4 |
 | integration | `tests/integration/*.zyl` | 7 |
-| interpreter agreement | regression + smoke, minus `DIFF_SKIP` | 34 |
+| interpreter agreement | regression + smoke, minus `DIFF_SKIP` | 55 |
 | packages | `tests/packages/*/app/main.zyl` | 2 |
-| packages-fail | `tests/packages-fail/*/app/main.zyl` | 7 |
+| packages-fail | `tests/packages-fail/*/app/main.zyl` | 8 |
 | packages-build | `tests/packages-build/*/app` via `zyl build` | 1 |
-| compile-fail | `tests/compile-fail/*.zyl` | 19 |
-| scripts | `tests/scripts/*.sh` | 2 |
+| compile-fail | `tests/compile-fail/*.zyl` | 97 |
+| scripts | `tests/scripts/*.sh` | 7 |
 | LSP protocol | `tests/lsp/lsp_protocol_test.py` | 1 |
-| **total** | | **131** |
+| **total** | | **260** |
+
+`--quick` is 7 tests: the unit test, the five smoke tests and the LSP
+protocol test.
 
 The smoke tests run directly only in `--quick`; in `--full` they are
 exercised through the interpreter-agreement section.
@@ -136,16 +145,20 @@ them at eval time — a difference in when, not in what.
 
 Some tests are deliberately left out of this comparison, and
 `DIFF_SKIP` in the runner records why for each: programs that spawn
-actors (`actors`, `concurrency`, and `modules`, one of whose tests spawns
-an actor; an interpreted function has no native entry point, so the
-interpreter reports `E_UNSUPPORTED_INTERPRETED`), one that prints a
-value's address (`derive`), one that prints the bytes at a pinned address
-(`ffi-advanced`), one that assumes a fresh `alloc-malloc` block reads back
-as zeroes (`collections`), `package-system` (its signature tests are
-Ed25519), `c-abi` (it hands a function to `qsort` as a C callback, which
-needs a native function pointer), and every `math-*` file, which is minutes of interpreted
-arithmetic for what the compiled run already covers in seconds. That is
-24 of the 58 regression and smoke files, leaving 34.
+actors (`actors`, `actor-receive`, `concurrency`, and `modules`, one of
+whose tests spawns an actor; an interpreted function has no native entry
+point, so the interpreter reports `E_UNSUPPORTED_INTERPRETED`), one that
+prints a value's address (`derive`), one that prints the bytes at a
+pinned address (`ffi-advanced`), one that assumes a fresh `alloc-malloc`
+block reads back as zeroes (`collections`), `package-system` (its
+signature tests are Ed25519), `c-abi` (it hands a function to `qsort` as
+a C callback, which needs a native function pointer), `tail-calls`
+(10^8-deep loops, far too slow interpreted), `with-region-limits` (the
+interpreter accounts no region bytes), and every `math-*` file, which is
+minutes of interpreted arithmetic for what the compiled run already
+covers in seconds. That is 27 of the 82 regression and smoke files,
+leaving 55. (`DIFF_SKIP` also names `selfhost-codegen`, an integration
+test the section never reaches.)
 
 `docs/repl.md` lists the places the two back ends differ on purpose.
 
@@ -156,37 +169,60 @@ arithmetic for what the compiled run already covers in seconds. That is
 ```
 tests/
 ├── unit_test.zyl              # Harness + stdlib tests (runs in --quick and --full)
-├── regression/                # 52 domain-specific regression files (--full)
+├── regression/                # 77 domain-specific regression files (--full)
 │   ├── arithmetic.zyl         # +, -, *, /, multi-operand, float chains
 │   ├── bitwise.zyl            # bit-and/or/xor/not, shifts, n-ary folding
+│   ├── eval-order.zyl         # strict left-to-right evaluation
 │   ├── byte-primitives.zyl    # bytebuf, load/store round-trips, slices,
 │   │                          #   atomics, alignment
+│   ├── views.zyl              # zero-copy string views and slices
 │   ├── control-flow.zyl       # if, while, for, cond, begin, nested
 │   ├── control-flow-ext.zyl   # nested loops, else-arms, multi init, breaks
+│   ├── let-scope.zyl          # a let in a body scopes over its own body
 │   ├── functions.zyl          # defn, recursion, nested calls, HOFs
+│   ├── tail-calls.zyl         # tail calls are jumps
+│   ├── toplevel-def.zyl       # top-level def
 │   ├── closures.zyl           # fn, lambda, capture
+│   ├── closures-core.zyl      # core/core's higher-order helpers
 │   ├── param-kinds.zyl        # String and Float parameters
 │   ├── structs.zyl            # defstruct, defstruct+, struct-get (spec §8/§10)
+│   ├── dot-syntax.zyl         # v.field, (v.method args)
 │   ├── adts.zyl               # deftype, match, recursive ADTs
+│   ├── adt-equality.zyl       # == and != on ADTs and structs, by content
 │   ├── alias.zyl              # transparent type wrappers
 │   ├── match-exhaustive.zyl   # compile-time exhaustiveness (accepting side)
 │   ├── match-value-position.zyl
 │   ├── list-accessors.zyl     # car/cdr/cadr/caddr/cddr, list-rest
+│   ├── list-literals.zyl      # (list ...), [...], quoted constant data
+│   ├── quasiquote.zyl         # `d, ,e and ,@e
 │   ├── macros.zyl             # defmacro, gensym, nested macros, unless/when
 │   ├── types.zyl              # HM inference, traits, generics, TCap/TMut
 │   ├── generics.zyl           # generic ADTs, per-site instantiation
 │   ├── generics-multi-type.zyl
+│   ├── generic-collections.zyl # Vec, Map and generic ADTs over element types
 │   ├── traits.zyl             # trait definitions and impls
+│   ├── trait-static-dispatch.zyl # trait calls resolved from the receiver type
+│   ├── trait-generic-value.zyl # a trait-generic function used as a value
+│   ├── show-trait.zyl         # the prelude Show trait and print
 │   ├── derive.zyl             # derived traits for structs
+│   ├── derive-traits.zyl      # Show, Debug, Eq, Ord, Hash, Clone
 │   ├── capabilities.zyl       # TCap/TMut
 │   ├── regions.zyl            # region annotations, escape analysis
+│   ├── region-reclaim.zyl     # per-call regions reclaim short-lived values
+│   ├── stack-bytebuf.zyl      # a Stack bytebuf in the frame region
+│   ├── with-region.zyl        # explicit arena and fixed regions
+│   ├── with-region-limits.zyl # :size and :limit raise E_REGION_EXHAUSTED
+│   ├── reuse.zyl              # in-place reuse is never visible
 │   ├── contracts.zyl          # requires, ensures, invariant, recover, checkpoint
+│   ├── try-catch.zyl          # error inside a called function, caught
 │   ├── with-resource.zyl      # lexically scoped resources
 │   ├── unwrap-error.zyl       # Result/Option unwrapping, error propagation
 │   ├── actors.zyl             # spawn, send, message patterns
+│   ├── actor-receive.zyl      # (receive) and (actor-self)
 │   ├── concurrency.zyl        # spawn, send, send-closure, mailboxes
 │   ├── ffi.zyl                # ffi-call, ffi-pin, ffi-unpin, timeout
 │   ├── ffi-advanced.zyl       # pinning, timeouts
+│   ├── ffi-timeout.zyl        # a foreign call that overruns raises E_FFI_TIMEOUT
 │   ├── c-abi.zyl              # C callbacks keep callee-saved registers;
 │   │                          #   C calls with more than six arguments
 │   ├── io.zyl                 # read-line, file-open/read/write/close
@@ -195,6 +231,7 @@ tests/
 │   ├── package-system.zyl     # spec v5.0 §31 building blocks
 │   ├── testing-framework.zyl  # test, assert-*, run-tests, test-suite, test-property
 │   ├── secret-capability.zyl  # Secret / constant-time checker, accepting side
+│   ├── secret-types.zyl       # Secret types and impl-not, accepting side
 │   ├── compiler.zyl           # stdlib/compiler: lexer, parser, AST types
 │   └── math-*.zyl             # Published NIST/FIPS/RFC vectors, one file per
 │                              #   algorithm family (16 files)
@@ -217,29 +254,42 @@ tests/
 │   ├── parser-verify.zyl      # reader/parser structure checks
 │   ├── pv_min.zyl             # minimal reader smoke test
 │   └── selfhost-codegen.zyl   # compiler/icnf + codegen end to end
-├── compile-fail/              # 19 programs that MUST be rejected
-│   ├── match-non-exhaustive.zyl
-│   ├── match-nested-non-exhaustive.zyl
+├── compile-fail/              # 97 programs that MUST be rejected; 55 carry
+│   │                          #   a `; expect-error: CODE` line
 │   ├── unclosed-opener.zyl    # balance errors
 │   ├── unexpected-close.zyl
 │   ├── mismatched-bracket.zyl
-│   ├── macro-*.zyl            # 7 macro errors (arity, capture, duplicate,
-│   │                          #   function clash, mutual recursion,
-│   │                          #   nested definition, non-termination)
-│   └── secret-*.zyl           # 7 Secret capability violations (branch,
-│                              #   divide, escape, ffi-unpinned, index,
-│                              #   interprocedural, print)
+│   ├── type-*.zyl             # 10 type errors (mismatch, infinite type,
+│   │                          #   Bool conditions, Int/Float mixing, ...)
+│   ├── match-*.zyl            # 5 match errors (non-exhaustive, duplicate
+│   │                          #   arm, nested pattern, constructor as binder)
+│   ├── macro-*.zyl            # 11 macro errors (arity, capture, duplicate,
+│   │                          #   function clash, recursion, nested
+│   │                          #   definition, non-termination, splicing)
+│   ├── secret-*.zyl           # 10 Secret capability violations
+│   ├── ffi-*.zyl              # 8 FFI errors (timeout, symbol, extern,
+│   │                          #   restricted entries, unpin)
+│   ├── trait-*.zyl, derive-*.zyl, duplicate-*.zyl, impl-not-*.zyl,
+│   │                          #   dot-*.zyl: traits, derive and impl-not
+│   ├── bytes-*.zyl            # byte-operation operand types
+│   ├── with-region-*.zyl, stack-bytebuf-*.zyl  # region errors
+│   └── ...                    # parameters, quoting, forms, let/def rules
 ├── packages/                  # multi-package builds that must succeed
 │   ├── features/              #   (each case: app/ plus path dependencies)
 │   └── two-parses/
 ├── packages-fail/             # multi-package builds that must be rejected
-│   ├── bad-requirement/  capability/  feature-unknown/  orphan-impl/
-│   └── private-symbol/  undeclared-dep/  unknown-edition/
+│   ├── bad-requirement/  capability/  feature-nested/  feature-unknown/
+│   └── orphan-impl/  private-symbol/  undeclared-dep/  unknown-edition/
 ├── packages-build/            # built with `zyl build` (native block, lock,
-│   └── native/                #   zyl.buildinfo)
+│   └── native/                #   <out>.buildinfo, embedded build hash)
 ├── scripts/                   # shell checks of the repository's scripts,
-│   ├── deterministic-link.sh  #   against scratch directories
-│   └── uninstall.sh
+│   ├── build-cache.sh         #   against scratch directories
+│   ├── deterministic-link.sh
+│   ├── package-index.sh
+│   ├── repl-session.sh
+│   ├── uninstall.sh
+│   ├── vscode-problem-matcher.sh
+│   └── zyl-doc.sh
 ├── lsp/
 │   └── lsp_protocol_test.py   # real JSON-RPC against build/boot/zyl-lsp
 ├── manual/
@@ -267,7 +317,9 @@ structs, fields), navigation (definition, type definition,
 implementation, references with and without the declaration, document
 highlight), symbols and folding, completion (general and inside
 `(use ...)`), signature help, semantic tokens (full and by range),
-rename, and one diagnostic case per compiler check the server runs.
+rename, package forms, diagnostics (a clean program, type errors
+reported together on their own lines, an unused-binding warning), a
+150 KB document, and UTF-8 text in both directions.
 
 It runs in both `--quick` and `--full` mode, counts as one test, and is
 skipped with a notice if `build/boot/zyl-lsp` has not been built.
@@ -302,8 +354,9 @@ measurement worked.
 ./run_regression_tests.sh --full --no-boot --filter struct
 ```
 
-`struct` (rather than `structs`) also picks up `stress/large-struct` and
-the agreement run of `structs`.
+`struct` (rather than `structs`) also picks up `stress/large-struct`,
+the agreement runs of `structs` and `struct-basic`, and the compile-fail
+cases `prelude-constructor` and `struct-field-ambiguous`.
 
 ### Spec Coverage (spec §8/§10)
 
@@ -384,12 +437,11 @@ to `DIFF_SKIP` in `run_regression_tests.sh` with the reason.
 ## Manual Tests
 
 `tests/manual/read-line.zyl` needs interactive input and is not run by
-the suite. Its header still gives the Rust-era command
-(`./target/debug/zyl`). With the current compiler the file does not
-link: it is a bare top-level `let` with no `main`, and only top-level
-`test` forms cause a `main` to be generated, so `zyl-self` reports
-`undefined reference to _ZYL_main`. Wrapping the body in
-`(defn main () ...)` makes it build.
+the suite. Its header gives the `build/boot/zyl-self` command, and says
+what is still true: the file does not link. It is a bare top-level `let`
+with no `main`, and only top-level `test` forms cause a `main` to be
+generated, so the link fails with `undefined reference to _ZYL_main`.
+Wrapping the body in `(defn main () ... 0)` makes it build.
 
 ---
 
@@ -397,5 +449,6 @@ link: it is a bare top-level `let` with no `main`, and only top-level
 
 - [ ] Golden output comparison (tracked as future work)
 - [ ] Parallel test execution
-- [ ] Compile-fail tests that assert the expected error code, not just a non-zero exit
+- [ ] Every compile-fail test asserting its expected error code (55 of
+      the 97 carry `; expect-error: CODE`; no packages-fail case does)
 - [ ] CI integration

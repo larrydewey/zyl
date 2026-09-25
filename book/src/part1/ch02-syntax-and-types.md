@@ -200,8 +200,8 @@ A list is zero or more expressions enclosed in parentheses:
   42)
 ```
 
-Only line comments (`;`) exist. There are no block comments — `#| ... |#`
-is not a comment, and the compiler will misread everything after it.
+Only line comments (`;`) exist. There are no block comments: `#| ... |#`
+is not a comment, and the `#` is rejected as `E_INVALID_CHAR`.
 
 ## 2.5 Variables and Bindings
 
@@ -265,12 +265,11 @@ outer one:
   0)
 ```
 
-Note the `begin`. In the current compiler, a `let` that appears as one
-of several forms in a function body (or in a `let` body) without an
-enclosing `begin` stays in scope for the forms after it — here, the
-second `print` would see 20. Grouping the forms with `begin`, as above,
-gives the scoping the language defines. It is good practice anyway:
-Chapter 3 recommends `begin` for every multi-form body.
+A binding is in scope only inside its own `let`: the second `print`
+sees the outer `x` whether or not the two forms are wrapped in a
+`begin`, and a name used after the `let` that bound it has closed is
+`E_UNBOUND_VARIABLE`. The compiler also warns, `W_SHADOWED_BINDING`,
+when an inner binding hides an outer one of the same name.
 
 ### Local Mutable Bindings (`let-mut`)
 
@@ -320,9 +319,8 @@ The same operators work on Floats: `(/ 7.0 2.0)` is `3.500000`. Each
 operator takes Ints or Floats, never one of each: `(* 2 1.5)` is a type
 error.
 
-**One-argument forms**: only `-` has one, and it negates: `(- 5)` is
--5. Don't write `(+ x)`, `(* x)` or `(/ x)` — the current compiler
-evaluates each of them to 0 instead of rejecting it.
+**One-argument forms**: `-` negates, so `(- 5)` is -5; `(+ x)` and
+`(* x)` are just `x`. `(/ x)` and `(% x)` are `E_ARITY_MISMATCH`.
 
 ### Comparison
 
@@ -344,10 +342,10 @@ compare structs and ADT values **structurally, by content**:
 `(== (Some 1) (Some 1))` is true, and two structs with equal field
 values are equal. Nested struct and ADT fields, and String fields, are
 compared by content too, so two separately built lists
-`(Cons 1 (Cons 2 Nil))` are `==`. Two exceptions compare only one level
-deep, with pointer fields by address: a value whose type inference
-cannot determine, and a type with a `Secret` field. For strings, see
-§2.2.
+`(Cons 1 (Cons 2 Nil))` are `==`. The one exception is a type with a
+`Secret` field: it gets no generated field-by-field comparison, and
+`==` on it compares one level deep, word by word, with pointer fields
+(a String, a nested struct) by address. For strings, see §2.2.
 
 ### Boolean Logic (short-circuiting)
 
@@ -512,7 +510,7 @@ is not raised today.
 | Functions | `kebab-case` | `factorial`, `read-file` |
 | Types (structs, ADTs) | `PascalCase` | `Point`, `Result`, `MyType` |
 | ADT Variants | `PascalCase` | `Some`, `None`, `Ok`, `Err` |
-| Constants | nullary function, `kebab-case` | `(defn max-size () 1000)` |
+| Constants | top-level `def`, `kebab-case` | `(def max-size 1000)` |
 | Variables/params | `kebab-case` | `user-count`, `file-handle` |
 | Predicates | `?` suffix | `even?`, `origin?` |
 | Unused names | `_` or a `_` prefix | `_`, `_rest` |
@@ -531,7 +529,7 @@ true / false    ; Bool
 ;; Bindings
 (def name expr)                 ; Constant (immutable global)
 (let name expr body...)         ; Local immutable
-(let (name expr) body)          ; The same, one body form only
+(let (name expr) body...)       ; The same, binding-list spelling
 (let-mut name expr body...)     ; Local mutable (use set!)
 
 ;; Control (details in Chapter 3)
@@ -580,7 +578,7 @@ Every value is one 64-bit machine word.
 | `Bool` | 1 or 0 |
 | `String` | Pointer to NUL-terminated UTF-8 bytes |
 | Struct / ADT value | Pointer to a block: a hidden header, the variant tag, then one 8-byte word per field |
-| `Vec` | A struct: buffer pointer, length, capacity, arena |
+| `Vec` | A one-variant ADT: its storage (a bounds-checked runtime `Array`, which holds the capacity), length and arena |
 | `Map` | A struct: parallel key and value arrays, length, capacity, arena |
 
 Because a field is always one word, a struct or variant block's layout
@@ -597,11 +595,11 @@ ADT whose variant name is the struct's name.
 
 | Value | Where |
 |-------|-------|
-| `let`-bound Int, Float, Bool | The function's stack frame |
+| `let`-bound Int, Float, Bool | A register, or a slot in the function's stack frame |
 | String literal | Read-only data in the binary |
 | Struct or ADT value that provably never escapes | The function's stack frame, or the call's own region, released when it returns |
 | Struct or ADT value returned to a caller | The region the caller chose for the result |
-| Any other struct or ADT value | The runtime's heap arena |
+| Any other struct or ADT value | The process heap, where it lives until the program exits |
 | `Vec` / `Map` buffers | An arena, passed to `vec-create` / `map-create`; the `-default` constructors create a private one |
 
 Details in [Chapter 5](ch05-ownership-regions-capabilities.md).

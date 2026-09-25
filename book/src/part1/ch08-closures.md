@@ -27,12 +27,14 @@ There is **no shorthand**. The spec rejects `((x) (* x x))`; you must write:
 (lambda (x) (* x x))     ; correct
 ```
 
-The compiler reads `((x) (* x x))` as a call whose head `(x)` is itself a call to `x`, so unless `x` is a function in scope it reports a located error:
+The compiler reads `((x) (* x x))` as a call whose head `(x)` is itself a call to `x`, so unless `x` is a function in scope it reports located errors, one for the call and one for each other use of `x`, and the compile fails:
 
 ```
-PANIC: error[E_UNBOUND_VARIABLE]: call to undefined function `x`
-  --> sq.zyl:1:24
+error[E_UNBOUND_VARIABLE]: call to undefined function `x`
+  --> sq.zyl:2:12
    = help: define it, or bind it with `let`; an anonymous function is written (fn (params) body) -- ((params) body) is not lambda syntax (spec 7.1)
+...
+PANIC: error[E_UNBOUND_VARIABLE]: the program does not type-check (3 errors above)
 ```
 
 A head that is an expression computing a function is ordinary application, not shorthand: `((make-adder 10) 5)` calls the closure `make-adder` returns.
@@ -142,7 +144,7 @@ Captured variables, closure parameters and the results of calls through function
 
 ### Map / Filter / Fold
 
-The standard `List` type (`Cons`/`Nil`, from `core/list`) is available in every program. These definitions work with any non-capturing function value:
+The standard `List` type (`Cons`/`Nil`, from `core/list`) is available in every program. These definitions work with any function value, capturing or not:
 
 ```lisp
 (defn map (f xs)

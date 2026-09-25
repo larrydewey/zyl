@@ -4,21 +4,22 @@
 
 **Self-hosting is complete and there is no Rust in the active path.**
 The compiler written in Zyl (`stdlib/compiler/*.zyl` plus
-`selfhost/driver.zyl`, assembled by `selfhost/assemble.py`) compiles
-itself to a byte-identical fixed point, verified by `./boot.sh`.
+`selfhost/driver.zyl`, compiled through module resolution like any
+program) compiles itself to a byte-identical fixed point, verified by
+`./boot.sh`.
 Building Zyl needs `cc` and `pthread` and nothing else.
 
 | | |
 |---|---|
 | Specification | `zyl_specification.txt` v5.0 (§0–§31) |
-| Compiler | ~22,600 lines of Zyl across 39 files in `stdlib/compiler/` |
+| Compiler | ~26,200 lines of Zyl across 41 files in `stdlib/compiler/` |
 | Standard library | `core`, `collections`, `text`, `allocator`, `actor`, `ffi`, `io`, `atomic`, `testing`, `math` |
-| Cryptography | `stdlib/math/`, ~7,600 lines of Zyl |
+| Cryptography | `stdlib/math/`, ~7,700 lines of Zyl |
 | REPL | `stdlib/repl/`, ~4,100 lines of Zyl, with an ICNF interpreter; `zyl repl` and `zyl eval` |
-| Language server | `stdlib/lsp/`, ~5,400 lines of Zyl, built by `boot.sh` as `zyl-lsp` |
+| Language server | `stdlib/lsp/`, ~5,600 lines of Zyl, built by `boot.sh` as `zyl-lsp` |
 | Package system | Spec §31, implemented (see below) |
-| Runtime | `runtime/actor_runtime.c` |
-| Tests | 121/121 passing on `./run_regression_tests.sh --full` (regression 52, interpreter 34, compile-fail 12, integration 7, packages-fail 7, stress 4, packages 2, packages-build 1, lsp 1, unit test 1) |
+| Runtime | `runtime/actor_runtime.c` (~5,500 lines of C); `boot.sh` and `install.sh` compile it once to `actor_runtime.o` (`-O2`), which every link uses while it is newer than the source |
+| Tests | 260/260 passing on `./run_regression_tests.sh --full --no-boot` (compile-fail 97, regression 77, interpreter 55, packages-fail 8, integration 7, scripts 7, stress 4, packages 2, packages-build 1, lsp 1, unit test 1); `--full` adds the fixed-point check |
 
 ### Language features
 
@@ -51,6 +52,8 @@ it compiles and runs correctly; the notes say where it stops.
 | Byte primitives | 8-, 16-, 32- and 64-bit loads and stores (le/be), byte buffers (`ByteBuf`), slices (`ByteSlice`), atomics and alignment work. Offsets, lengths and stored values must be Int; each operation takes the handle kind its runtime entry accepts, and a load/store handle whose type stays unknown is `E_CANNOT_INFER` |
 | Test harness | Works: `test`, `run-tests`, `assert-equal`, `assert-true`, `assert-false` |
 | Type inference | Strict Hindley–Milner (`type_annotate.zyl`, spec §4.8–§4.10). Every unification failure is `E_TYPE_MISMATCH`, an occurs-check failure `E_INFINITE_TYPE`, a type the program does not determine `E_CANNOT_INFER`, a name defined nowhere `E_UNBOUND_VARIABLE`; all are reported, then the compile fails. Conditions are Bool, arithmetic is Int or Float with no mixing, statements are Unit, `main` is `() -> Int`. `ZYL_STRICT_TYPES=report` prints them as `W_TYPE_STRICT` warnings instead. The compiler, the REPL and the language server type-check clean. The one known hole (`receive`) and the remaining gaps are listed below |
+| Optimization | Constant folding and dead-branch elimination; small functions (at most `ZYL_INLINE_LIMIT` nodes, default 6, Int-kind parameters, no try, region scope, lambda or print) are inlined before region inference (`ZYL_INLINE=0` turns it off); after region inference, `reuse.zyl` writes a new variant into the block of a unique, dead old value of a program ADT (`ZYL_REUSE=0` turns it off). No pass reorders side effects |
+| Native code generation | x86_64 assembly, linked with `cc`. A function whose ICNF is in the native backend's set (integer code and control, direct calls, runtime calls with at most six arguments, inline byte access, variants and `match`, constants, frame regions) is lowered to MIR (`mir.zyl`), given registers by linear scan and emitted from that; any other function, and every function under `ZYL_MIR=0`, goes through the stack-machine generator. Both keep one ABI. Division by a constant uses multiply-and-shift; one-byte loads and stores and Array access are inline (`docs/native-backend-design.md`) |
 | Contracts | `requires`, `ensures` (with `result`) and `invariant` are checked at run time (`E_CONTRACT_VIOLATION`); `recover` arms match error codes; `checkpoint` rolls back `let-mut` state; profiles by `--contracts=P` or `(contracts P)` |
 
 ### Known gaps
@@ -81,11 +84,15 @@ it compiles and runs correctly; the notes say where it stops.
   (byte-buffer writes are not undone); errors carry no type beyond their
   message, so `recover` arms match an error-code prefix.
 - **Hash finalization** (§31.12): only package builds (`zyl build`, `zyl
-  test`) write `zyl.buildinfo` and embed `zyl_build_hash`; a single-file
-  compile writes neither.
-- **Unlocated diagnostics:** `mutability_check`, `capability_check`,
-  `unused_check` and the remaining errors in
-  `expr_inner` still print a bare `PANIC:` message with no location.
+  test`) write `<out>.buildinfo` and embed `zyl_build_hash`; a
+  single-file compile writes neither.
+- **Unlocated diagnostics:** a few errors still print a bare `PANIC:
+  CODE: message` with no location: `E_INVALID_CAPABILITY`
+  (`mutability_check`), `E_PKG_CAPABILITY_GROWTH` (`capability_check`),
+  `E_DUPLICATE_PARAMETER` (`unused_check`), the byte-primitive shape
+  errors, the `set!`-target `E_MUT_CONFLICT` and the literal-match
+  `E_MATCH_NONEXHAUSTIVE` in `expr_inner`, and the `icnf.zyl` backstops.
+  `docs/errors.md` marks which codes are located.
 - **Tail-call optimization:** a call in tail position (an `if` branch, a `let` body, the last form of a `begin`, a `match` arm body), direct or through a function value, is a jump, provided its stack arguments (beyond six) fit in the caller's own incoming ones. Calls inside `try`/`catch` or `while`, and in frame-wiping (secret) functions, still push a frame. The REPL interpreter runs tail calls in constant stack unless the result is a String or Float.
 - **Package system:** the default index URL is not hosted yet (use
   `ZYL_INDEX` and `zyl publish --index`), and
@@ -93,8 +100,10 @@ it compiles and runs correctly; the notes say where it stops.
   `PROGRESS.md` has the full list, including the deliberate deviations.
 - **REPL:** actors are compile-only (the interpreter reports
   `E_UNSUPPORTED_INTERPRETED`). See `docs/repl.md`.
-- **Language server:** does not run the type pass or the capability
-  check, and reports one error at a time (warnings all together).
+- **Language server:** runs the checks and the type checker, but not
+  the capability check or anything after type checking. A check before
+  the type checker stops at its first error; type errors and warnings
+  are all reported together.
 
 Design, rationale and the original phased plan for the package system:
 `docs/package-management-design.md`.

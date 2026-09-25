@@ -61,7 +61,7 @@ This document explains why key architectural choices were made in the Zyl compil
 
 **Tradeoff:** Region inference is more complex than GC, and escape analysis requires careful design. However, the tradeoff is justified by deterministic reclamation and no runtime overhead.
 
-**Current implementation:** `region_inference.zyl` is deliberately narrow: it stack-allocates a variant whose binding is only matched on or printed, and leaves everything else on the heap arena, because a wrong stack assignment is silent memory corruption. Global and Circular regions are not inferred.
+**Current implementation:** `region_inference.zyl` runs on the optimized ICNF. It stack-allocates a variant whose binding is only matched on or printed (`IStackVariant`), then runs a whole-program escape analysis (`rg-regions`) over union-find object classes that places every allocation and call site in the frame's own region (released on return, before a tail jump, or when a caught panic unwinds it), the region the caller chose for the result, or the process heap. It is conservative on purpose: undershooting costs a heap allocation, overshooting would be silent memory corruption. `with-region` opens an explicit arena or fixed region, and a value that would outlive its region is `E_REGION_ESCAPE`. Global and Circular regions are not inferred. See `docs/regions-design.md`.
 
 **Spec reference:** `spec/07-region-memory-model.md`
 
@@ -117,7 +117,7 @@ This document explains why key architectural choices were made in the Zyl compil
 
 **Rejected alternative:** Syntactic closures (syntax-rules with lexical scope tracking). More complex implementation, harder to debug.
 
-**Current implementation:** not yet delivered. `macro_expand.zyl` substitutes arguments into the body without renaming the names the body binds, so a macro that binds `tmp` captures a caller's `tmp`. The Rust bootstrap in `archive/rust-bootstrap-2026/` had a gensym registry; the self-hosted expander does not.
+**Current implementation:** `macro_expand.zyl` renames every binder the macro template introduces (`let`, `fn` parameters, `match` binders and the like) to a fresh `<name>__hyg<N>`, with `N` a counter threaded through the expansion in source order, so expansion is deterministic. Arguments keep their names, and a free template name that is a local at the call site is `E_UNBOUND_VARIABLE` rather than captured.
 
 **Spec reference:** `spec/03-macros-and-hygiene.md`
 
@@ -135,7 +135,7 @@ This document explains why key architectural choices were made in the Zyl compil
 
 **Tradeoff:** Less convenient for performance-critical code that needs in-place mutation. However, the safety benefits outweigh the convenience cost. For in-place mutation, use `let-mut` to rebind the entire struct.
 
-**Current implementation:** `mutability_check.zyl` rejects `(set! (struct-get p "x") 5)` with `E_MUT_CONFLICT`. Struct instances are heap allocated.
+**Current implementation:** `mutability_check.zyl` rejects `(set! (struct-get p "x") 5)` with `E_MUT_CONFLICT`. Struct instances are placed by region inference like any other allocation (frame region, result region or heap). Immutability is also what makes in-place reuse (`reuse.zyl`) sound: a new record is written into an old one's block only when the old value is provably unique and dead, so no program can observe the difference.
 
 **Spec reference:** `spec/10-structs-and-data-types.md`, `zyl_specification.txt` §10
 
@@ -157,7 +157,7 @@ This document explains why key architectural choices were made in the Zyl compil
 
 **Tradeoff:** Custom IR means no access to LLVM's optimization passes. However, the current optimization set (constant folding, dead-branch elimination) covers the common cases. Advanced optimizations can be added incrementally.
 
-**Current implementation:** the self-hosted ICNF (`icnf.zyl`) is a tree with embedded control flow, but it is not SSA: variables are named and `ISet` assigns them. Its only region annotation is `IStackVariant`. The code generator emits a stack-machine style, with no register allocator.
+**Current implementation:** the self-hosted ICNF (`icnf.zyl`) is a tree with embedded control flow, but it is not SSA: variables are named and `ISet` assigns them. Region decisions live in a side table keyed by node (`icnf-regions`, `node_tables.zyl`), printed as ` @r` in the canonical ICNF text, plus the `IStackVariant` and `IRegion` nodes. Code generation lowers most functions further, to a linear machine IR over virtual registers (`mir.zyl`) with linear-scan register allocation; the rest go through the older stack-machine emitter. The same no-LLVM decision was confirmed for the native backend on 2026-09-25 (`docs/native-backend-design.md`).
 
 **Spec reference:** `spec/11-icnf-ir.md`
 
@@ -179,7 +179,9 @@ This document explains why key architectural choices were made in the Zyl compil
 
 **Tradeoff:** Generated code is not as optimized as it could be. However, the Zyl compiler targets systems programming where correctness is more important than raw performance. Runtime performance can be improved by algorithmic choices in source code.
 
-**Current implementation:** `optimization.zyl` folds integer arithmetic and comparisons whose operands are constants and keeps only the taken branch of an `if` with a constant condition. It does not fold floats, bitwise operators, or a division by a constant zero (which must still fail at run time). `closure_inline.zyl` beta-reduces a let-bound lambda that is only ever called directly; that is a lowering step that lets such a lambda read its enclosing scope, not a performance pass.
+**Current implementation:** `optimization.zyl` folds integer arithmetic and comparisons whose operands are constants and keeps only the taken branch of an `if` with a constant condition. It does not fold floats, bitwise operators, or a division by a constant zero (which must still fail at run time). `closure_inline.zyl` is now an identity step: beta-reducing a lambda into its callers was not hygienic, and closures are real values.
+
+**Status (2026-09-25):** the "no general inlining" part of the decision no longer describes the compiler. With the native backend work (`docs/native-backend-design.md`), these safe transformations were added, none of which reorders or removes a side effect: inlining of small non-recursive functions before region inference, with arguments bound in order and binders renamed, followed by copy propagation (`opt-inline-fns`); in-place reuse of a unique, dead value's block (`reuse.zyl`); and, in the native backend, register allocation, self tail calls as jumps, frame-region recycling in loops, and division by a constant without `idiv`. There are still no loop optimizations, no common-subexpression elimination and no reordering.
 
 **Spec reference:** `zyl_specification.txt` §26, `spec/12-optimization-rules.md`
 
@@ -196,7 +198,7 @@ This document explains why key architectural choices were made in the Zyl compil
 - Debugging is easier when behavior is predictable
 - FFI safety: non-deterministic memory layout could expose sensitive data
 
-**Implementation:** the compiler's tables are association lists and lists walked in source order; monomorphization sorts type names; module resolution builds its symbol table only after the whole graph is discovered; locks and manifests are serialized canonically. The runtime's source-span hash table is only probed by key, never iterated. `./boot.sh` verifies that the compiler reproduces its own assembly byte for byte.
+**Implementation:** the compiler's tables are association lists and lists walked in source order, or hash tables that are only probed by key; the type checker names each instance of a trait-generic function by its argument types in order (`f~T1,T2`); the native backend's block order, register assignment and spill slots are functions of instruction order only; module resolution builds its symbol table only after the whole graph is discovered; locks and manifests are serialized canonically. The runtime's source-span hash table is only probed by key, never iterated. `./boot.sh` verifies that the compiler reproduces its own assembly byte for byte.
 
 **Tradeoff:** Slower lookups (linear association lists rather than hash tables). However, the difference is small for compilation workloads.
 
@@ -215,6 +217,8 @@ This document explains why key architectural choices were made in the Zyl compil
 - Consistent with Lisp tradition
 
 **Rejected alternative:** Dot notation. Would require new parser token (`.`) and special-case handling in the parser.
+
+**Status:** dot syntax was later added as sugar over this form, without a parser token: `expr_inner.zyl`'s `dot-rewrite` turns an identifier `p.x.y` into field reads and `(p.m args)` into a trait method call resolved by the receiver's type. `struct-get` remains the underlying form.
 
 **Spec reference:** `spec/10-structs-and-data-types.md`
 
@@ -271,6 +275,6 @@ This document explains why key architectural choices were made in the Zyl compil
 
 **Rejected alternative:** Implicit closure syntax `((param*) body)`. This would conflict with function calls in the no-dispatch parser.
 
-**Current implementation:** `((x) body)` is not accepted as a closure, but it is not rejected with a diagnostic either: it compiles as a call and fails at link time with an undefined reference.
+**Current implementation:** `((x) body)` is not accepted as a closure. It is read as a call, and the type checker rejects it with a located `E_UNBOUND_VARIABLE` (`call to undefined function`) rather than a closure-specific diagnostic.
 
 **Spec reference:** `spec/04-evaluation-semantics.md` (Closures)

@@ -100,11 +100,11 @@ Every phase must produce deterministic output from the same input:
 | Parsing | Same tokens, same AST |
 | Macro Expansion | Same expansion order (innermost-first) |
 | Type Inference | Same type assignments |
-| Region Inference | Same stack-promotion decisions |
+| Region Inference | Same stack-promotion and region-placement decisions |
 | Monomorphization | Same canonical names (argument types in order, §6.4) |
 | ICNF Generation | Same node tree and generated names |
-| Optimization | Same folding and dead-branch results |
-| Code Generation | Same instruction sequence and labels |
+| Optimization | Same inlining, folding, dead-branch and reuse results |
+| Code Generation | Same instruction sequence, register assignment and labels |
 
 ---
 
@@ -115,14 +115,22 @@ Not normative.
 - **`zyl.buildinfo`** is written for package builds only (`zyl build`,
   `zyl test`), as `<output>.buildinfo`. It contains `compiler-hash`
   (BLAKE3 of the running compiler binary), `graph-hash` (from the lock,
-  empty when there is none), `native-objects` (always empty), the ICNF
+  empty when there is none), `native-objects` (each native object's
+  package-relative path and BLAKE3 hash, in manifest order), the ICNF
   hash (BLAKE3 of the canonical ICNF text from `icnf_print.zyl`, which
   includes each node's region annotation as ` @r`, so region decisions
-  are covered), the resolved graph, `asm-hash` (BLAKE3 of the emitted
+  are covered; the tree is the one after inlining and region inference,
+  and the in-place reuse marks of `reuse.zyl` are not printed), the
+  resolved graph, `asm-hash` (BLAKE3 of the emitted
   assembly) and the final hash of the four spec inputs, which the binary
   carries as `zyl_build_hash`.
 - A single-file compile (`zyl file.zyl -o out`) runs no hash-finalization
   step.
+- **Register allocation** (`mir.zyl`) depends on instruction order alone:
+  virtual registers are numbered in lowering order, live intervals are
+  sorted by start and then by register number, and physical registers
+  are tried in a fixed order, so a function always gets the same
+  assignment.
 - There is no SHA-256 in the compiler or runtime; BLAKE3 is implemented in
   the runtime (`zyl_blake3_raw`, `zyl_blake3_hex`, `zyl_blake3_file_hex`).
   SHA-2 exists only as library code in `stdlib/math/hash/`.

@@ -42,17 +42,27 @@ type-checks, but prints `x` whatever `ok` is. Use `(if test stmt)` to
 evaluate `stmt` only when `test` holds. The predicates (`is-zero`, `is-even`, `xor`, `implies`, …)
 return `Bool`.
 
-### `core/show` — Readable Text
+### `core/show` — The Derivable Traits
 
 ```lisp
 (trait Show (show (self) String))
-; impls: Int, Float, Bool, String here; List, Option, Result in core;
-; Vec in collections/vec; Map in core/map
+(trait Debug (debug (self) String))            ; strings quoted
+(trait Eq (eq (self (other Self)) Bool))
+(trait Ord (compare (self (other Self)) Int))  ; -1, 0 or 1
+(trait Hash (hash (self) Int))                 ; FNV-1a, deterministic
+(trait Clone (clone (self) Self))
+(trait Secret (wipe (self) Int))
+; all six derivable traits: Int, Float, Bool, String here; List, Option,
+; Result in core. All but Clone: StrView in text/view.
+; Show only: Vec in collections/vec, Slice in collections/slice, Map in core/map
 ```
 
 Part of the prelude. `print` of a value whose type has a `Show` impl
 prints `(Show.show v)`, so `(print (Cons 1 (Cons 2 Nil)))` prints
-`[1, 2]`; `(derive T Show)` writes the impl for an ADT or struct.
+`[1, 2]`; `(derive T Show Eq ...)` writes the impls for an ADT or
+struct. A type that implements `Secret` is secret wherever it appears
+and prints as `<secret>`; `impl-not` declarations here forbid it
+`Show`, `Debug`, `Eq`, `Ord` and `Hash` impls (Chapter 33).
 
 ### `core/option` — Optional Values
 
@@ -84,9 +94,9 @@ use `option-expect`. `option-is-some` and `option-is-none` return
 ;(result-and res other) (result-or res other) (result-inspect res f)
 ```
 
-`result-unwrap` also takes a default of the `Ok` type. Prefer these to the compiler's
-`unwrap` form where the failure message matters: it panics with
-`unwrap on None` for any failure (Appendix C.7).
+`result-unwrap` also takes a default of the `Ok` type. The compiler's
+`unwrap` form takes an `Option` only, so a `Result` needs one of these;
+`result-expect` panics with your message (Appendix C.7).
 
 ### `core/list` — Singly-Linked Lists
 
@@ -464,7 +474,7 @@ Chapter 35 covers what the server provides and what it cannot.
 
 ## B.11 Compiler (stdlib/compiler/)
 
-The 40 modules of the self-hosted compiler. `selfhost/driver.zyl`
+The 41 modules of the self-hosted compiler. `selfhost/driver.zyl`
 reaches them through ordinary `(use compiler/...)` imports, and the
 compiler is built from that entry file like any program.
 
@@ -480,19 +490,20 @@ compiler is built from that entry file like any program.
 | `module_resolver.zyl` | Module and package resolution; splices the program |
 | `qualify.zyl` | Canonical symbol keys (§31.2) |
 | `capability_check.zyl` | Package capability enforcement (§31.9) |
-| `type_system.zyl` | Type ADT, substitution, type environment |
+| `type_system.zyl` | Shared declarations: `Pair` and the `Region` family |
 | `type_annotate.zyl` | The type checker: Hindley–Milner inference, trait resolution, per-type instances; every type error is reported |
 | `ffi_sigs.zyl` | The type of every `zyl_*` runtime function reached through `ffi-call` |
 | `node_tables.zyl` | Typed side tables that later passes attach to AST and ICNF nodes |
-| `derive.zyl` | `derive Show` expansion |
+| `derive.zyl` | `derive` expansion for Show, Debug, Eq, Ord, Hash and Clone, with the field check |
 | `region_inference.zyl` | Stack promotion of non-escaping variants and escape analysis over ICNF |
 | `lift_impls.zyl` | Impl method lifting |
 | `closure_inline.zyl` | Closure inlining (retired; identity pass) |
-| `assert_lowering.zyl` | Lowering of `assert-equal` |
 | `icnf.zyl` | ICNF lowering |
 | `icnf_print.zyl` | Canonical ICNF text, for the build's ICNF hash |
-| `optimization.zyl` | Safe-only optimizations (constant folding, dead code) |
-| `codegen.zyl` | x86-64 code generation |
+| `optimization.zyl` | Safe-only optimizations: constant folding, dead branches, inlining of small functions (`ZYL_INLINE=0` turns it off) |
+| `reuse.zyl` | In-place reuse of a unique, dead value's block for the value built from it |
+| `mir.zyl` | The native backend's machine IR, liveness and linear-scan register allocation |
+| `codegen.zyl` | x86-64 code generation: through MIR for each function the native backend supports (`ZYL_MIR=0` turns it off), by the older stack-machine emitter for the rest |
 | `pipeline.zyl` | The pass sequence from source to assembly |
 | `error_codes.zyl` | The error-code catalog |
 | `error_report.zyl` | Error formatting and source snippets |
@@ -532,7 +543,7 @@ stdlib/
 ├── repl/          *.zyl
 ├── lsp/           *.zyl, services/*.zyl
 ├── mlib/          deep.zyl (a code-generation stress fixture)
-└── compiler/      *.zyl (40 files)
+└── compiler/      *.zyl (41 files)
 ```
 
 The compiler resolves stdlib modules against its own bundle directory —

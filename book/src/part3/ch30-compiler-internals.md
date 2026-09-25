@@ -8,8 +8,11 @@ together and how to write one, using the real modules in
 
 Each pass is an ordinary Zyl function from one tree to another, or a
 check that walks a tree and calls `zyl_panic` with an `E_*` message on
-the first problem. Passes communicate only through ADT values; there is
-no shared mutable compiler state.
+the first problem (the type checker is the exception: it reports every
+error, then stops). Passes hand each other ADT values, plus a small set
+of per-node facts kept in side tables keyed by the node
+(`node_tables.zyl`, §30.3): a node's type, its codegen kind, its region,
+its reuse mark. Those tables are emptied for every program.
 
 ### Pass composition
 
@@ -43,15 +46,17 @@ which the `zyl` CLI, `zyl eval` and the REPL all call. Abridged:
     (lower-after-mono arena (lift-impls exprs))))                 ; lift impl bodies
 
 ;; lower-after-mono: closure inlining -> type checking (ta-annotate)
-;;                   -> ICNF -> optimization -> region inference
+;;                   -> ICNF -> inlining -> optimization
+;;                   -> region inference -> in-place reuse
 ;; compile-to-fns  = compile-to-exprs + lower-exprs   (stops at ICNF)
-;; compile-to-asm  = compile-to-fns + codegen
+;; compile-to-asm  = compile-to-fns + codegen (MIR or the stack machine)
 ```
 
 Two things differ from the phase list in the specification. Region
-inference runs on ICNF, after optimization, because what it produces is
-an ICNF rewrite plus per-node region annotations that codegen consumes
-(Chapter 28, §28.5). And contract injection has no
+inference runs on ICNF, after inlining and optimization, because what
+it produces is an ICNF rewrite plus per-node region annotations that
+codegen consumes (Chapter 28, §28.5); the reuse pass after it depends
+on its classes (§28.7). And contract injection has no
 phase of its own: `expr_inner.zyl` lowers contract forms to checks while
 converting the parse tree.
 
@@ -106,7 +111,7 @@ when `expr_inner.zyl` converts `Ast` to `Expr`.
 
 (deftype Atom (AInt Int) (AFloat String) (ABool Bool) (AStr String)
               (AIdent String) (ASymbol String) (AKeyword String) (ANil))
-(deftype Param (P String (Option String)))       ; name, declared type
+(deftype Param (P String (Option Expr)))         ; name, declared type
 (deftype MatchArm (MA String (List Expr) Expr))  ; variant, patterns, body
 ```
 
@@ -185,10 +190,13 @@ deterministic.
 
 ### Results
 
-Each Expr node's type goes to attr table 0 (`zyl_attr_set 0 node ty`),
-keyed by the node's address. ICNF lowering reads it (`ta-kind`) and stores
-a codegen kind on the new Icnf node (table 1); trait-call targets and
-instance names go to table 2, `print`-via-`Show` targets to table 3.
+The results live in typed side tables keyed by the node
+(`node_tables.zyl`, runtime `zyl_attrh_*`). Each Expr node's type goes
+to `node-types`. ICNF lowering reads it (`ta-kind`) and stores a codegen
+kind on the new Icnf node (`icnf-kinds`), plus whether the node is a
+scalar (`icnf-scalars`) or a program ADT (`icnf-adts`); a call the type
+pass redirected to a trait impl or an instance goes to `node-calls`,
+and the `Show` function for a `print` argument to `node-shows`.
 Instances of trait-generic functions are deep copies of the definition
 (`ta-copy-defn`), typed with the call's argument types and appended to
 the program. `ZYL_DEBUG_TYPES=1` prints every scheme as it is generalized.
@@ -217,14 +225,14 @@ whole idea:
         ;; A let-bound variant whose name is only ever matched or
         ;; printed cannot outlive the frame: build it on the stack.
         (IVariant _ _ _
-          (if (> (ri-name-safe-in body2 name) 0)
+          (if (ri-name-safe-in body2 name)
             (ILet name (ri-to-stack-variant val2) body2)
             (ILet name val2 body2)))
         (_ (ILet name val2 body2))))))
 ```
 
-`ri-name-safe-in` is a total `match` over every `Icnf` constructor that
-answers "is every occurrence of this name either a `match` scrutinee or
+`ri-name-safe-in` is a total `match` over every `Icnf` constructor, a
+`Bool` predicate that answers "is every occurrence of this name either a `match` scrutinee or
 a `print` argument?" Any other use — a call argument, a field of
 another variant, a reference inside a nested `fn` — answers no, and the
 value stays on the heap. The shape generalizes: a conservative pass
@@ -235,7 +243,7 @@ The second step, `rg-regions`, is a whole-program analysis rather than a
 rewrite: it gives every allocation and call site a level (the call's
 frame region, the caller's result region, or the heap) through
 union-find object classes and per-function parameter summaries joined to
-a fixpoint, and records the result in a side table (attribute table 4)
+a fixpoint, and records the result in a side table (`icnf-regions`)
 that codegen and `icnf-text` read. It follows the same rule: a runtime
 function missing from its table (`rg-ffi-kind`) keeps its arguments and
 result in the heap, the always-correct path. `docs/regions-design.md` is
@@ -262,8 +270,8 @@ changes every specialized symbol in the compiler's own output.
 
 ## 30.6 Writing a Pass: ICNF Lowering
 
-`icnf.zyl`'s `ic-program` turns the post-assert-lowering `(List Expr)`
-into a `(List Icnf)` of `IFn`s; Chapter 28 documents the node types and
+`icnf.zyl`'s `ic-program` turns the type-checked `(List Expr)` into a
+`(List Icnf)` of `IFn`s; Chapter 28 documents the node types and
 the lowering rules. The entry points are:
 
 ```lisp
@@ -324,8 +332,9 @@ the repository uses:
 - `tests/integration/selfhost-codegen.zyl` parses, lowers and generates
   assembly for a nested program at run time.
 - `tests/compile-fail/*.zyl` are programs that must be rejected; the
-  runner counts a test as passing when compilation fails (it does not
-  check which error code was raised).
+  runner counts a test as passing when compilation fails, and a file
+  with a `; expect-error: CODE` line passes only when that code appears
+  in the output, so an unrelated failure cannot pass it.
 
 ```lisp
 (use allocator/allocator)
@@ -355,10 +364,15 @@ The last name in `/tmp/dbg` is the phase that crashed or hung.
 
 ### Looking at intermediate results
 
-There is no `--emit-icnf` flag and no ICNF printer. Two practical
-routes: write a small program like the one in §30.7 that `use`s the
-modules and prints what you need, or read the generated assembly
-(`--emit-asm`).
+There is no `--emit-icnf` flag, but there is an ICNF printer:
+`icnf-text` in `compiler/icnf_print.zyl` writes a lowered program as
+canonical s-expressions, one function per line, with kinds and region
+annotations. A small program like the one in §30.7 that `use`s the
+modules can print it at any point, or you can read the generated
+assembly (`--emit-asm`). The environment switches in Chapter 29, §29.12
+(`ZYL_MIR`, `ZYL_INLINE`, `ZYL_REUSE`, `ZYL_REGIONS`) turn one
+transformation off at a time; `ZYL_REUSE_DEBUG=1` prints the reuse
+pass's per-function facts on stderr.
 
 ### The REPL
 
@@ -366,11 +380,14 @@ modules and prints what you need, or read the generated assembly
 zyl> :type "hi"
 "hi" : String
 zyl> :type (+ 1 2)
-(+ 1 2) : unresolved — inference had no evidence for this expression
+(+ 1 2) : Int
+zyl> :type (fn (x) x)
+(fn (x) x) : (a -> a)
 ```
 
-`:type` runs the front end and type inference and reports what
-inference knows (§30.3 explains *unresolved*). There is no `:region`
+`:type` runs the front end and the type checker and reports the type it
+assigns, without evaluating anything; an entry that does not type-check
+is rejected with the checker's own error. There is no `:region`
 command.
 
 ## 30.9 Adding a New Pass
@@ -403,7 +420,7 @@ only care about a few forms use a `_` arm for the rest. The optimizer's
 walk is a representative rewrite:
 
 ```lisp
-(defn opt-expr (e)
+(defn opt-expr-node (e)
   (match e
     (IConst _ e)
     (IBinop op l r (opt-binop op (opt-expr l) (opt-expr r)))
@@ -412,13 +429,16 @@ walk is a representative rewrite:
     ...))                   ; one arm per Icnf constructor
 ```
 
+Its caller, `opt-expr`, is `(ic-keep-span (ic-keep-kind (opt-expr-node e) e) e)`,
+so every rebuilt node keeps the original's codegen kind and source span.
+
 ### State threading
 
 Passes that accumulate state thread an immutable record and return a
 new one. Codegen's emitter state is the clearest case:
 
 ```lisp
-(deftype CGState (CGS Int Int Int Int (List REntry) (List FnName)))
+(deftype CGState (CGS Arena StrBuf Int Int (List REntry) (List FnName)))
 ;; arena, text buffer, next label, next slot, rodata, known functions
 
 (deftype CGR (CGR CGState Int String))   ; state + a label or slot
@@ -443,7 +463,10 @@ small wrapper ADT (`CGR`, `CGE`, `CGP`) and the caller destructures it.
   first thing to suspect when compile time grows with nesting depth.
 - **Allocate from the arena.** Compiler memory comes from one arena per
   compile (1 GiB reserved by the driver) and is never freed during the
-  compile. An allocation failure reports `E_OUT_OF_MEMORY`, and a memory
+  compile; the native backend's per-function tables are the exception,
+  in an arena reset before each function (`mir-reset`). A self-compile
+  allocates somewhat over 2 GB in all, which is why `./boot.sh` caps a
+  stage at 4 GB. An allocation failure reports `E_OUT_OF_MEMORY`, and a memory
   budget (`ZYL_MAX_MEMORY`, else 80% of available memory) stops a
   runaway compile before the kernel kills it.
 - **Keep the output under the codegen buffer.** Generated assembly is

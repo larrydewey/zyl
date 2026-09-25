@@ -2,7 +2,7 @@
 
 Complete reference for Zyl's determinism guarantees, the compilation pipeline as specified and as implemented, the self-hosting fixed point, and the tools for checking all three.
 
-The normative text is spec v5.0 §0 (P1, P6), §17 (monomorphization), §18 (ICNF), §20.4 (numeric determinism), §22 (pipeline), §27 (determinism contract) and §31.12 (package build determinism). The pipeline itself is `compile-to-asm` in `stdlib/compiler/pipeline.zyl`, driven by `selfhost/driver.zyl`.
+The normative text is spec v5.0 §0 (P1, P6), §17 (monomorphization), §18 (ICNF), §20.4 (numeric determinism), §22 (pipeline), §27 (determinism contract) and §31.12 (package build determinism). The pipeline itself is `compile-to-asm` in `stdlib/compiler/pipeline.zyl`, driven by `selfhost/driver.zyl`; the REPL runs the same phases up to code generation (`compile-to-fns`) and interprets the ICNF.
 
 ## 26.1 Determinism Guarantee (Normative)
 
@@ -40,7 +40,7 @@ For a package build, "same program" means the same resolved graph: same `zyl.pkg
 | Source | Zyl's position | Implementation |
 |--------|----------------|----------------|
 | Map iteration order | deterministic iteration (§21.5) | `stdlib/core/map.zyl` is an association list, iterated in a fixed order (most recently inserted first); no hashing, no seed |
-| Monomorphization naming | alphabetical canonical names (§17) | type names sorted before naming (`canonical-name-from-type-map`) |
+| Monomorphization naming | alphabetical canonical names (§17) | an instance is named `f~T1,T2` from the canonical text of its argument types, in argument order (§6.4); the name is a function of the types alone |
 | Symbol order | total order over canonical keys (§31.2) | qualification tables are sorted by name |
 | Thread scheduling | "not observable" (§27) | each actor is its own pthread, and interleaving of output between actors varies from run to run |
 | Heap addresses | not observable | vary per run (ASLR applies to arena memory); code addresses are fixed by `-no-pie` |
@@ -59,7 +59,7 @@ The compiler's internal tables are ordered by construction, so the same source y
 - **`stdlib/core/map.zyl`** is the ordered `Map` offered to programs: an association list whose iteration order is a function of the insertion sequence alone.
 - **`stdlib/collections/map.zyl` and `set.zyl`** store keys and values in arena-backed arrays, searched linearly in insertion order.
 
-No part of the compiler iterates a hash table in hash order. (The runtime's interpreter uses an FNV-1a table to look up functions by name, but never iterates it.)
+No part of the compiler iterates a hash table in hash order. The hash tables that do exist (the compiler's variant-table index, top-level arities and codegen's function kinds; the runtime's FNV-1a function map for the interpreter and its source-span table) are only probed by key, never iterated.
 
 ## 26.4 Compilation Pipeline
 
@@ -85,23 +85,26 @@ Rule: no phase may depend on a later phase.
 
 ```
  1. Balance check        sb-check-string: every ( [ { closed, with line/col and a fix-it hint
- 2. Lex + parse          zyl-lex, parse-program → raw AST (no-dispatch: every form is a call)
+ 2. Lex + parse          zyl-parse-file → raw AST (no-dispatch: every form is a call)
  3. Module resolution    mr-resolve-program-full: splice the use graph, qualify names to
-                         canonical keys, check the orphan rule, convert to ExprInner
-                         (the "PostProcessor")
+                         canonical keys, check the orphan rule and impl-not, convert to
+                         ExprInner (convert-ast, which also lowers contracts)
  4. Macro expansion      me-expand-program
- 5. Static checks        capability (§31.9), duplicate definitions, arity, mutability,
-                         match exhaustiveness, unused bindings, Secret handling
+ 5. Static checks        capability (§31.9), duplicate definitions, arity (with malformed
+                         forms and restricted FFI entries), mutability, match
+                         exhaustiveness, unused bindings, Secret handling
  6. Derive expansion     dv-expand-program
- 7. Monomorphization     monomorphize (impl lifting)
- 8. Closure inlining     ci-expand-program
- 9. Assert lowering      al-expand-program
-10. Type annotation      ta-annotate (HM, trait resolution, instances)
-11. ICNF lowering        ic-program
-12. Optimization         opt-optimize-fns
-13. Region inference     ri-transform-fns
-14. Code generation      cg-program → x86_64 assembly text
-15. Linking              cc -no-pie out.s actor_runtime.c -o out -lpthread
+ 7. Impl lifting         lift-impls: impl bodies become Trait.method_Type functions
+ 8. Closure inlining     ci-expand-program (an identity pass today)
+ 9. Type checking        ta-annotate: HM, static trait resolution, per-type instances
+10. ICNF lowering        ic-program
+11. Inlining             opt-inline-fns: small non-recursive functions, copy propagation
+12. Optimization         opt-optimize-fns: constant folding, dead-branch elimination
+13. Region inference     ri-transform-fns (stack variants), then rg-regions
+14. Reuse                ru-reuse: in-place update of a unique, dead value's block
+15. Code generation      cg-program-file → x86_64 assembly text (MIR + linear scan,
+                         or the stack machine; §26.5)
+16. Linking              cc -no-pie out.s actor_runtime.o -o out -lpthread
 ```
 
 `zyl build` adds native-object compilation before the link and writes `<name>.buildinfo` after it (§26.5, Phase 11).
@@ -109,10 +112,10 @@ Rule: no phase may depend on a later phase.
 ### Where the two differ
 
 - **Module resolution** and the static checks are not phases in §22. They run between parsing and type inference. The capability pass runs after macro expansion, as §31.9 requires ("after module resolution and before type inference").
-- **Region inference runs last**, on ICNF after optimization, not as phase 4.
-- **Type inference is not a separate phase over the whole program.** Definitions are collected and typed, then monomorphized; `docs/compiler-pipeline.md` describes the current arrangement.
+- **Monomorphization is part of type checking.** `ta-annotate` types the whole program and, where a generic function needs its argument types (a trait method, `print` or an operator at a type variable), specializes it per concrete argument types; there is no separate monomorphization pass.
+- **Region inference runs late**, on ICNF after inlining and optimization, not as phase 4. Inlining runs before it so that inlined code is placed like any other.
 - **Contract injection (phase 10) happens at parse time**, not after linking: `convert-ast` rewrites `requires`, `ensures`, `invariant`, `recover` and `checkpoint` into ordinary checks under the active contract profile (Chapter 24).
-- **Hash finalization (phase 11)** exists only for `zyl build` and `zyl test`, as the `.buildinfo` file.
+- **Hash finalization (phase 11)** exists only for `zyl build` and `zyl test`, as the `.buildinfo` file and the `zyl_build_hash` embedded in the binary.
 
 The phase-isolation rule does hold: each pass consumes only the output of earlier passes.
 
@@ -138,22 +141,25 @@ Each check is a separate pass over the expanded program. Each one either stops c
 
 ### Type inference and monomorphization
 
-- Definitions are collected and typed with Hindley–Milner inference extended with capability types.
-- Monomorphization specialises generic functions and ADTs per call site. Specialisation names are canonical: type names are sorted alphabetically (§17).
+- The whole program is typed with Hindley–Milner inference (spec §4.8–§4.10); top-level functions are generalized per strongly connected component of the call graph. Capability types (`TCap`/`TMut`) are not part of this pass: `mutability_check.zyl` enforces them from `let` and `let-mut` before it.
+- A generic function that calls a trait method, prints, or applies an operator at a type variable is specialized per concrete argument types, at every call and every use as a value, into an instance named `f~T1,T2`; the generic original is dropped. The name is the canonical text of the argument types in argument order, so it depends on nothing but the types.
 - Type annotation (`type_annotate.zyl`) is the one authority on types, and it is strict. Every unification failure, occurs-check failure and unknown type is an error (`E_TYPE_MISMATCH`, `E_CANNOT_INFER`, `E_UNBOUND_VARIABLE`). The pass reports all of a program's type errors, each at its source position, and then the compile stops with `the program does not type-check (N errors above)`. `(+ 1 "a")` is rejected. `ZYL_STRICT_TYPES=report` turns the errors into `W_TYPE_STRICT` warnings, for counting them; there is no mode that runs an ill-typed program.
 
 ### ICNF
 
-ICNF (`icnf.zyl`) is the compiler's intermediate representation. Spec §18 defines it as SSA with a region annotation on every value. The implemented ICNF is a tree-structured IR of let-bound expressions: it has no SSA identifiers and no per-value region field.
+ICNF (`icnf.zyl`) is the compiler's intermediate representation. Spec §18 defines it as SSA with a region annotation on every value. The implemented ICNF is a tree-structured IR of let-bound expressions with no SSA identifiers. Region annotations live in a side table keyed by node; `icnf_print.zyl`'s canonical text prints them as ` @r` (1 frame, 2 result, 3 heap, higher a `with-region` scope), so a package build's ICNF hash covers them.
 
 ### Optimization
 
-`optimization.zyl` performs two safe transformations:
+`optimization.zyl` performs these safe transformations:
 
+- **Inlining** (`opt-inline-fns`, before region inference): a call of a small (6 ICNF nodes, `ZYL_INLINE_LIMIT`), non-recursive function with Int-kind parameters and no `try`, region scope, lambda, closure call or `print` is replaced by its body, the arguments bound by nested `let`s in call order and every binder renamed. Leaf functions of up to 18 nodes are inlined into self-recursive functions (loops) only. A call inside a `try` body is left alone. A `(let n x ...)` that binds a variable to another variable is then copy-propagated. `ZYL_INLINE=0` turns inlining off.
 - **Integer constant folding**: `(+ (* 2 3) 4)` compiles to `mov rax, 10`. Floats are not folded, and neither is division by zero.
 - **Dead-branch elimination**: an `if` with a constant condition keeps one branch, and a `while` whose condition is constant false disappears.
 
-Nothing is reordered.
+After region inference, `reuse.zyl` marks an update of an immutable value (`vec-push`, a struct with one field changed, a list rebuilt cell by cell) whose old value is provably unique and dead, so the new record is written into the old one's block instead of a fresh allocation; functions that own such a parameter get an owning clone `f~own`. The decision is an attribute that only the native backend acts on, so it cannot change a result. `ZYL_REUSE=0` turns it off.
+
+Nothing is reordered: arguments bound by inlining are evaluated in call order, and every pass keeps strict left-to-right evaluation.
 
 ### Region inference
 
@@ -162,18 +168,17 @@ Nothing is reordered.
 ### Code generation
 
 - **Target**: x86_64, System V AMD64 ABI, Intel-syntax assembly text.
-- **Stack machine**: every value passes through `rax`, with `rcx` for the second operand and `rbp`-relative slots for locals. There is no register allocator.
-- **Frames** are sized per function.
+- **Two backends, one ABI.** A function whose ICNF lies in the native backend's supported set is lowered to MIR (`mir.zyl`: basic blocks, virtual registers), allocated by linear scan (over `rsi`, `rdi`, `r8`–`r10` and the callee-saved `rbx`, `r12`–`r15`; a value live across a call gets a callee-saved register, and only used ones are saved) and emitted from there. The supported set covers integers and control, direct and runtime calls with at most six arguments, inline byte and `Array` access, variants and `match`, constants, and frame and result regions, with inline region allocation. Any other function (closures, `try`, `with-region` scopes, `print`, Float arithmetic, more than six parameters, Secret frame wiping) is compiled by the stack machine in `codegen.zyl`, where every value passes through `rax` and locals live in `rbp`-relative slots. The two call each other freely. `ZYL_MIR=0` at compile time sends every function through the stack machine. Every choice the allocator makes is a function of instruction order, so the output stays deterministic; `docs/native-backend-design.md` has the design.
 - **Calls** are direct for known functions, and indirect through the closure record for closures.
-- **Tail-call optimization.** A tail call is a jump (unless its stack arguments outgrow the caller's, or it is inside `try`/`while`); every other call pushes a frame, and deep recursion survives because `main` runs on a thread with a very large reserved stack (`zyl_call_on_big_stack` in the runtime). This is how the implementation meets §14's stack-safety guarantee in practice.
+- **Tail-call optimization.** A tail call is a jump (unless its stack arguments outgrow the caller's, or it is inside `try`/`while`); in the native backend a self tail call is a jump to the loop head, recycling the frame region. Every other call pushes a frame, and deep recursion survives because `main` runs on a thread with a very large reserved stack (`zyl_call_on_big_stack` in the runtime). This is how the implementation meets §14's stack-safety guarantee in practice.
 
 ### Linking
 
 ```bash
-cc -no-pie out.s actor_runtime.c -o out -lpthread
+cc -no-pie out.s actor_runtime.o -o out -lpthread
 ```
 
-The runtime is compiled from source on every link. `zyl build` appends the objects and libraries from the package's `native` block.
+`actor_runtime.o` is the runtime compiled once at `-O2` by `./boot.sh` or `install.sh`; when it is missing or older than `actor_runtime.c`, the source is compiled into the link with the same flags. `zyl build` appends the objects and libraries from the package's `native` block.
 
 ### Phase 11: hash finalization
 
@@ -204,13 +209,15 @@ A plain `zyl file.zyl` compile writes no buildinfo.
 ## 26.6 Compiler Flags
 
 ```
-zyl <file.zyl> [-o out] [--emit-asm]
+zyl <file.zyl> [-o out] [--emit-asm] [--contracts=P] [--error-format=json]
 ```
 
 | Flag | Purpose |
 |------|---------|
 | `-o <file>` | output path; default: the source path without `.zyl` |
 | `--emit-asm` | write assembly to the output path instead of linking. The name is used as given, so pass `-o prog.s` |
+| `--contracts=P` | contract profile: `strict` (default), `debug`, `warn`, `off` or `production` (Chapter 24) |
+| `--error-format=json` | report diagnostics as JSON lines |
 
 No other flags exist. In particular there is no `--emit-ast`, `--emit-expanded`, `--emit-typed`, `--emit-regions`, `--emit-mono`, `--emit-icnf` or `--emit-opt`.
 
@@ -221,10 +228,15 @@ The argument parser is strict about order and loose about content:
 
 `zyl help` prints the usage summary, including the package subcommands (Chapter 25).
 
-Two environment variables affect compilation:
+Environment variables that affect compilation:
 
 - `ZYL_HOME` selects the directory that holds `stdlib/` and `actor_runtime.c`. When it has no `stdlib/`, the compiler tries `~/.zyl`, and then the compiler's own directory.
 - `ZYL_DEBUG_STAGES`, when set, appends each stage name to `/tmp/dbg` as the compiler reaches it.
+- `ZYL_STRICT_TYPES=report` prints type errors as `W_TYPE_STRICT` warnings instead of failing, for counting them.
+- `ZYL_REGIONS=0`, `ZYL_INLINE=0`, `ZYL_REUSE=0` and `ZYL_MIR=0` turn off region inference, inlining, reuse and the native backend, for bisecting a suspected miscompilation; `ZYL_INLINE_LIMIT` sets the inlining size limit.
+- `ZYL_MAX_MEMORY` caps the compiler's allocation (default 80% of available memory; `E_OUT_OF_MEMORY` beyond it).
+
+Each is a fixed input: the same source under the same settings compiles to the same assembly.
 
 ## 26.7 Bootstrapping and the Fixed Point
 
@@ -234,6 +246,7 @@ The compiler is written in Zyl: `stdlib/compiler/*.zyl` plus `selfhost/driver.zy
 
 ```
 0. copy stdlib/ and actor_runtime.c into build/boot/       (the source the stages resolve)
+   cc -O2 -c actor_runtime.c                               → actor_runtime.o
 1. cc links the committed seed build/boot/stage2.s        → stage1.bin
 2. stage1.bin compiles selfhost/driver.zyl --emit-asm      → stage2_gen.s
    cmp stage2_gen.s stage2.s     (else: "reproduced asm differs from committed seed")
@@ -242,9 +255,10 @@ The compiler is written in Zyl: `stdlib/compiler/*.zyl` plus `selfhost/driver.zy
    cmp stage2.s stage3.s         (else: "FIXED POINT BROKEN")
 5. smoke test: compile and run a small program
 6. write the zyl-self wrapper and build zyl-lsp in build/boot/
+7. refresh an existing install (~/.zyl) with uninstall.sh + install.sh
 ```
 
-The comparisons are byte comparisons (`cmp`) of assembly text, not of binaries. Short SHA-256 prefixes are printed for display only. Each stage has a timeout, `ZYL_STAGE_TIMEOUT`, which defaults to 2400 seconds, and an allocation ceiling, `ZYL_STAGE_MEMORY`, which defaults to 2 GB. The resulting assembly does not depend on where the checkout lives or which directory `boot.sh` runs from.
+The comparisons are byte comparisons (`cmp`) of assembly text, not of binaries. Short SHA-256 prefixes are printed for display only. Each stage has a timeout, `ZYL_STAGE_TIMEOUT`, which defaults to 2400 seconds, and an allocation ceiling, `ZYL_STAGE_MEMORY`, which defaults to 4 GB. `ZYL_NO_INSTALL_REFRESH=1` skips step 7. The resulting assembly does not depend on where the checkout lives or which directory `boot.sh` runs from.
 
 After a change to compiler source that alters the compiler's own output, re-seed:
 
@@ -293,6 +307,7 @@ It does not prove the compiler correct. A bug that reproduces itself faithfully 
 | `integration/` | self-hosting and codegen integration |
 | `compile-fail/` | programs that must fail with a specific diagnostic |
 | `packages/`, `packages-fail/`, `packages-build/` | multi-package builds, package errors, `zyl build` with native code |
+| `scripts/` | shell checks of the repository's own scripts (install, deterministic link, package index) |
 | `lsp/` | the language server protocol test |
 
 See `docs/regression-tests.md` for the full description.
@@ -314,7 +329,8 @@ Other tools:
 | Which stage fails or hangs | `ZYL_DEBUG_STAGES=1 zyl prog.zyl` appends each stage name to `/tmp/dbg` as it starts |
 | Wrong code | read `prog.s`; labels are mangled canonical keys (`zy_local_x2Fmain_0__prog__fact`) |
 | Compiled vs intended semantics | `zyl eval prog.zyl` runs the program through the ICNF interpreter; compare its output with the binary's |
-| Link errors | `undefined reference to ...` usually means a misspelled function, a private symbol reached through `*`, or a C symbol that is not linked |
+| Which pass miscompiles | rebuild with `ZYL_MIR=0`, `ZYL_REUSE=0`, `ZYL_INLINE=0` or `ZYL_REGIONS=0` and compare the output |
+| Link errors | `undefined reference to ...` means a C symbol that is not linked; an undefined Zyl function, including a private symbol reached through `*`, is `E_UNBOUND_VARIABLE` from the type checker |
 
 ## 26.10 Determinism Verification
 
@@ -367,8 +383,8 @@ Under §27, anything outside this list is a bug.
 
 | Feature | GCC/Clang | Rustc | Zyl |
 |---------|-----------|-------|-----|
-| Deterministic compiler output | with care (`-frandom-seed`, path maps) | with care | assembly always; binaries identical after `strip` |
+| Deterministic compiler output | with care (`-frandom-seed`, path maps) | with care | assembly always; binaries identical for the same C toolchain (§26.10) |
 | Phase isolation | ❌ | partial | ✅ (strict ordering, no back edges) |
 | Self-hosting | ✅ | ✅ | ✅ (fixed point checked on every boot) |
-| Reproducible package builds | external tooling | external tooling | `zyl.lock` + `.buildinfo` (§31.12, partial) |
+| Reproducible package builds | external tooling | external tooling | `zyl.lock` + `.buildinfo` + embedded `zyl_build_hash` (§31.12; the lock records no native-object hashes) |
 | Build verification | manual | manual | `./boot.sh` automated |

@@ -1,10 +1,12 @@
 ; === Zyl Standard Library — Icnf Safe Optimizations ===
 ; Module: compiler/optimization
-; Provides: constant folding + dead-branch elimination (spec §22)
+; Provides: constant folding + dead-branch elimination (spec §22), plus
+;           small-function inlining and copy propagation (opt-inline-fns)
 ; Safe-only: no reordering, no speculation, preserves all semantics
 ;
 ; This used to be written against src/optimization.rs's SSA-form
-; ICNFNode/IFS/ICNFProgram representation (type_system.zyl), a
+; ICNFNode/IFS/ICNFProgram representation (then in type_system.zyl, since
+; removed), a
 ; different shape from what this self-hosted pipeline actually produces
 ; -- compiler/icnf.zyl's own tree-shaped Icnf (IFn name params body, no
 ; SSA ids at all). Feeding a real `(List IFn)` into the old
@@ -17,7 +19,8 @@
 ; of patching the old file, same approach as region_inference.zyl's
 ; Phase B rewrite.
 ;
-; Two passes, both structural, single bottom-up tree walk (opt-expr
+; opt-optimize-fns runs two passes, both structural, in a single
+; bottom-up tree walk (opt-expr
 ; recurses into children BEFORE checking whether the current node
 ; folds, so nested constant arithmetic like `(+ (* 2 3) 4)` collapses
 ; in one pass -- by the time the outer `+` is examined, its own

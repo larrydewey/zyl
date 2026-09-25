@@ -1,23 +1,40 @@
 # Zyl Byte-Level Primitives — Implementation Plan
 
-## Current Status (verified against the code, 2026-09-23)
+## Current Status (verified against the code, 2026-09-25)
+
+**Status (2026-09-25):** the plan's surface forms, all four widths
+(8/16/32/64-bit, 2026-09-24) and the runtime are done. What changed
+since this section was first written: the type system that held
+`TByte`/`TByteBuf` and the `TCByte`/`TCAtomicByte` capability kinds was
+removed with the old inference pass; the sound checker
+(`stdlib/compiler/type_annotate.zyl`) types handles as `ByteBuf` and
+`ByteSlice` and offsets, lengths and values as `Int`. One-byte loads and
+stores are emitted inline by codegen (and on the native path with the
+handle's data pointer and bound loaded once per function); `(bytebuf
+Stack N)` lives in the call's frame region and a Stack buffer or slice
+that escapes is `E_REGION_ESCAPE` (`region_inference.zyl`).
 
 **Implemented and in the shipping compiler:**
 
-- Types `TByte`, `TByteSlice Region`, `TByteBuf Region` and capability kinds
-  `TCByte`/`TCAtomicByte` — `stdlib/compiler/type_system.zyl`.
+- Handle types `ByteBuf` and `ByteSlice`, checked by
+  `stdlib/compiler/type_annotate.zyl` (`ta-bytebuf`, `ta-byteslice`);
+  `type_system.zyl` keeps only the `Region` family the forms name.
 - Surface forms `byte`, `load-u8`/`load-i8`, `store-u8`/`store-i8` (with a
   `:le`/`:be` endian selector), `byteslice`, `byteslice-sub`, `bytebuf`,
   `bytebuf-append`, `bytebuf-len`, `bytebuf-cap`, `bytebuf-ptr`,
   `align-check`, and the eight `bytebuf-atomic-*` forms —
   `stdlib/compiler/expr_inner.zyl` (`byte-form-dispatch`).
-- Type rules — `stdlib/compiler/type_inference.zyl`.
+- Type rules — `stdlib/compiler/type_annotate.zyl`.
 - Lowering to generic `IFfi` calls into the runtime —
-  `stdlib/compiler/icnf.zyl`. No dedicated ICNF nodes, no codegen changes.
+  `stdlib/compiler/icnf.zyl`. No dedicated ICNF nodes; codegen emits the
+  one-byte calls inline (`zyl_load_byte`, `zyl_store_byte` and the signed
+  forms), including MIR's `MByte` and `MByteFast`.
 - Runtime functions (`zyl_load_byte`, `zyl_byte_slice`, `zyl_bytebuf_new`,
   `zyl_bytebuf_atomic_*`, ...) — `runtime/actor_runtime.c`.
-- Regression test `tests/regression/byte-primitives.zyl` (29 tests,
-  round-trip assertions).
+- Regression test `tests/regression/byte-primitives.zyl` (32 tests,
+  round-trip assertions); compile-fail tests `bytes-offset-type`,
+  `bytes-handle-unknown`, `bytes-handle-kind` and
+  `stack-bytebuf-escape`.
 - Book chapter `book/src/part4/ch32-bits-and-bytes.md`; forms listed in
   `book/src/appendix/appendix-c-builtins.md`, codes in
   `book/src/appendix/appendix-a-errors.md`.
@@ -28,17 +45,17 @@
 ICNF variants; the runtime header is a magic tag plus bounds checks, not the
 planned canary/version layout; wide-width forms (`load-u16` ... `store-i64`)
 were implemented on 2026-09-24 (`zyl_load_n`/`zyl_store_n`, the width in
-the `Endian` value), and the endian selector now matters for them; the
-active type pass types handles as `ByteBuf`/`ByteSlice`.
+the `Endian` value), and the endian selector now matters for them.
 
-**Not done:** no compile-time region enforcement of any kind (Pin-only
-`bytebuf-ptr`, Stack constant capacity, Stack-return promotion,
-Global immutability); the `region` argument to `bytebuf` is accepted and
-ignored at runtime. Several error codes for that enforcement
+**Not done:** region enforcement beyond Stack (Pin-only `bytebuf-ptr`,
+Stack constant capacity, Global immutability); a Stack buffer that
+escapes is `E_REGION_ESCAPE`, not promoted, and the other region
+arguments are heap. The checker does not distinguish buffer regions in
+types. Several error codes for the planned enforcement
 (`E_BYTEBUF_NOT_PIN`, `E_ATOMIC_ABA`, `E_BYTEBUF_OVERLAP`,
 `E_STACK_BYTEBUF_RETURN`, `E_GLOBAL_BYTEBUF_MUT`) are defined in
 `stdlib/compiler/error_codes.zyl` but never raised. No constant-time bounds
-checks, no property tests, no fuzzing harness, no wide-width loads/stores.
+checks, no property tests, no fuzzing harness.
 
 The sections below are the original plan annotated with what was actually
 built. Historical statements (test counts, the seed-commit note) describe

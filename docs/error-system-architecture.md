@@ -4,10 +4,10 @@
 
 The most incredible developer experience for a systems Lisp. Every error is actionable, every location is precise, every suggestion is correct. No Python scripts, no guesswork, no "figure it out yourself."
 
-## Current State (as of 2026-09-23)
+## Current State (as of 2026-09-25)
 
 ### What Works
-- **Catalog**: `stdlib/compiler/error_codes.zyl` holds 111 distinct codes
+- **Catalog**: `stdlib/compiler/error_codes.zyl` holds 126 distinct codes
   (phase, severity, default message), covering spec §28 and the §31
   package codes; `docs/errors.md` lists every one, which module raises
   it, and which are catalog-only. The catalog is data: checkers write the
@@ -18,18 +18,23 @@ The most incredible developer experience for a systems Lisp. Every error is acti
   Spans come from the runtime's source/span table (`zyl_source_register`,
   `zyl_span_line`, `zyl_span_col`, `zyl_span_line_text`). A node with no
   recorded span degrades to the header plus help line. Canonical symbol
-  keys are shortened to the name the user wrote (`err-name`). Used today
-  by the balance check, `duplicate_check.zyl`, `arity_check.zyl`,
-  `exhaustiveness_check.zyl`, `expr_inner.zyl` (`E_MALFORMED_PARAMETER`)
-  and `codegen.zyl` (`E_UNBOUND_VARIABLE`).
+  keys are shortened to the name the user wrote (`err-name`).
+  `err-diag` renders the same shape for a warning or a non-fatal error,
+  and `err-at-labels` adds secondary `:::` locations (a declared
+  parameter or field type, say). Used today by the balance check, the
+  reader, `duplicate_check.zyl`, `arity_check.zyl`,
+  `exhaustiveness_check.zyl`, `expr_inner.zyl`, `macro_expand.zyl`,
+  `derive.zyl`, `mutability_check.zyl`, `capability_check.zyl`,
+  `secret_check.zyl`, `module_resolver.zyl`, `region_inference.zyl`, the
+  type pass `type_annotate.zyl`, `unused_check.zyl`'s warnings and
+  `codegen.zyl`; `docs/errors.md` lists the located codes.
 - **Native balance validator**: `sexp_balance.zyl`, a stack-based,
   string- and comment-aware scan over bracket type, run on the source
   text before parsing (`compile-check-balance` in `pipeline.zyl`,
   `check-balanced` in `parser.zyl`), with its own fix-it text
   (`sb-hint`).
-- **Warnings**: `unused_check.zyl` reports `W_UNUSED_FUNCTION`,
-  `W_UNUSED_PARAMETER`, `W_UNUSED_VARIABLE` and `W_SHADOWED_BINDING` on
-  stderr without failing the compile; `secret_check.zyl` reports
+- **Warnings**: `unused_check.zyl` reports `W_UNUSED_PARAMETER`, `W_UNUSED_VARIABLE` and
+  `W_SHADOWED_BINDING` on stderr without failing the compile; `secret_check.zyl` reports
   `E_ZEROIZE_MISSING` at severity 2.
 - **LSP diagnostics**: `stdlib/lsp/compiler_bridge.zyl` turns a balance
   result, a compiler panic message or the type checker's reports into an
@@ -50,9 +55,12 @@ The most incredible developer experience for a systems Lisp. Every error is acti
 1. ~~**Paren balance**: no location, no context, no help~~ FIXED
    (2026-09-19): native stack-based validator reports exact line/column
    and a fix-it hint (see Phase 1 below).
-2. **Coverage of located diagnostics**: only the checks listed above use
-   `err-at`. Every other check raises a plain `PANIC: CODE: message`
-   through `zyl_panic`, with no location.
+2. **Coverage of located diagnostics**: most checks are located now.
+   The rest raise a plain `PANIC: CODE: message` through `zyl_panic`,
+   with no location: `E_INVALID_CAPABILITY`, `E_PKG_CAPABILITY_GROWTH`,
+   `E_DUPLICATE_PARAMETER`, the byte-primitive shape errors and a few
+   other `expr_inner.zyl` errors, the `icnf.zyl` backstops, the package
+   manifest, lock and index errors, and every run-time panic.
 3. ~~**No source snippets**~~ PARTLY FIXED: located diagnostics show the
    offending line with a caret. There is no multi-line context and no
    underline spanning a whole expression.
@@ -62,21 +70,23 @@ The most incredible developer experience for a systems Lisp. Every error is acti
    suggested edits.
 6. **No color output**: compiler diagnostics are monochrome (the REPL
    colors its own prompt and results, not the diagnostics).
-7. **Single error**: the first error stops compilation, exit status 1.
-8. **No error recovery**: the compiler cannot continue past an error.
-9. **Many catalog codes are never raised**: type inference rejects only
-   an argument that clashes with a parameter annotation or field type
-   (`E_TYPE_MISMATCH`; `E_RETURN_TYPE_MISMATCH` is catalog-only), and
-   several runtime codes
+7. **Mostly single error**: every check before the type pass stops
+   the compile at its first error, exit status 1. The type pass is the
+   exception: it reports every type error in the program, then fails.
+8. **No error recovery**: the parser and the checks cannot continue past
+   an error.
+9. **Many catalog codes are never raised**: the strict type pass reports
+   every unification failure as `E_TYPE_MISMATCH`, so
+   `E_RETURN_TYPE_MISMATCH` is catalog-only, and several runtime codes
    (`E_ASSERT_FAIL`, `E_USER_ERROR`, `E_DIVISION_BY_ZERO` in compiled
    code) are not what a failing program prints. `docs/errors.md` has the
    list.
 10. **Name drift**: `exhaustiveness_check.zyl` raises
     `E_NON_EXHAUSTIVE_MATCH` for a missing variant, while spec §28 and
     the catalog name that `E_MATCH_NONEXHAUSTIVE`. The catalog also has
-    duplicate entries (`E_CANNOT_INFER` twice, `E_OUT_OF_MEMORY` twice
-    with different messages, `E_ALIGNMENT_FAILED` and
-    `E_ALIGN_CHECK_FAILED` with the same message).
+    duplicate entries (`E_OUT_OF_MEMORY` twice with different messages,
+    `E_ALIGNMENT_FAILED` and `E_ALIGN_CHECK_FAILED` with the same
+    message).
 11. ~~**No native balance validator**: Currently requires Python script~~
     FIXED (2026-09-19): `sexp_balance.zyl`, wired into the real compile
     path.
@@ -153,7 +163,7 @@ error[E0308]: type mismatch at tests/example.zyl:12:15
 
 ### 3. Error Code Catalog (Complete)
 
-**Current**: 111 codes in `stdlib/compiler/error_codes.zyl`, listed with
+**Current**: 126 codes in `stdlib/compiler/error_codes.zyl`, listed with
 their raising module in `docs/errors.md`, plus the warnings and
 REPL-interpreter codes the catalog does not contain  
 **Target**: All codes with:
@@ -305,8 +315,9 @@ lexer, rather than the token stream):
       *(2026-09-19)*
 - [ ] `error_report.zyl` - colorized output + source snippets. Partly
       done: `err-at` renders the header, `path:line:col`, the source line,
-      a caret and a help line for the checks listed under "What Works";
-      no colorization, no multi-line context.
+      a caret and a help line for the checks listed under "What Works",
+      with secondary locations (`err-at-labels`); no colorization, no
+      multi-line context.
 - [x] Integrate into the pipeline - `compile-check-balance`
       (`stdlib/compiler/pipeline.zyl`, called from `compile-to-exprs`)
       and `zyl-parse-file` (`stdlib/compiler/parser.zyl`) both call
@@ -319,7 +330,8 @@ lexer, rather than the token stream):
 - [ ] `error_suggest.zyl` - "did you mean?" engine
 - [ ] `error_fixit.zyl` - fix-it hints for top 20 errors
 - [ ] Error recovery (continue past errors)
-- [ ] Multiple error aggregation
+- [ ] Multiple error aggregation (partly: the type pass reports every
+      type error before failing; the other checks stop at the first)
 
 ### Phase 3: Polish
 - [ ] LSP structured error format (partly: the LSP publishes code, range
@@ -350,9 +362,9 @@ rather than waiting for the rest of this plan.
 
 ## Success Criteria
 
-- [ ] Zero Python scripts in build/test path (the build still uses
-      `selfhost/assemble.py` for reseeding; the LSP and timing tests are
-      Python)
+- [ ] Zero Python scripts in build/test path (the build uses none;
+      `selfhost/assemble.py` was retired on 2026-09-24, but the LSP
+      protocol test and the timing harness are Python)
 - [ ] Every error has location + snippet + suggestion + fix-it
 - [ ] First-time user can fix any error without docs
 - [ ] Color output works in all terminals

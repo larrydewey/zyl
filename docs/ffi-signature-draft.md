@@ -1,8 +1,29 @@
 # FFI signature draft: typed signatures for the `zyl_*` runtime surface
 
-> Note (2026-09-25): this is the planning survey. The live table is
-> `stdlib/compiler/ffi_sigs.zyl`, and the checker no longer poisons on a
-> conflict: every type error is reported (spec §4.8).
+> Note (2026-09-25): this is the planning survey, a snapshot at
+> `fa904ba`; its counts, line numbers and call sites are as of then. The
+> live table is `stdlib/compiler/ffi_sigs.zyl` (193 signatures), and the
+> checker no longer poisons on a conflict: every type error is reported
+> (spec §4.8). What has landed since:
+> - Every runtime entry reached through `ffi-call` is typed by that
+>   table; a runtime entry missing from it is `E_CANNOT_INFER`, and an
+>   `extern` may not retype one (`E_FFI_RESTRICTED`).
+> - The raw-word escapes (`zyl_cstr_of_word`, `zyl_word_of_cstr`,
+>   `zyl_mem_read`/`zyl_mem_write`, `zyl_call_argv`,
+>   `zyl_ffi_timed_argv`, the `zyl_val_*` entries, `zyl_itest_add`/`fn`,
+>   `zyl_repl_global_set`, ...) are typed but restricted to the standard
+>   library (`ffi-raw-p`, `E_FFI_RESTRICTED` in a user program).
+> - No Zyl code calls `zyl_smap_global`, `zyl_wvec_global`, `zyl_attr_*`,
+>   `zyl_cell_*` or `zyl_fnmap_*` any more: the compiler's shared tables
+>   are typed top-level `def`s (per-pass defs, and the node side tables
+>   in `node_tables.zyl` on `(Attr k v)` handles from `zyl_attrh_new`), and
+>   the qualifier's symbol table is two typed arrays rather than raw
+>   words. The C entries still exist in `runtime/actor_runtime.c`.
+> - The interpreter's `VStr` holds a String (`stdlib/repl/interp.zyl`).
+> - Finding 1 (the 32-bit publisher seed) is fixed: `cli.zyl` fills the
+>   seed with `zyl_random_words` (commit `7f58292`). The `void` results
+>   of finding 2 are typed `Unit`, so their values cannot be used.
+>   String escapes are checked before `zyl_cstr_decode` runs (finding 3).
 
 Status: draft for sound types phase 2, the "primitive surface" in
 `docs/sound-types-design.md`. This is a survey, not an implementation.

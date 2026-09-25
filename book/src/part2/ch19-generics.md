@@ -5,7 +5,7 @@ ADTs, type-parameter constraints and monomorphization. The normative text
 is `zyl_specification.txt` §6 (generics) and §17 (monomorphization),
 formalized in v4.2 (§30). The implementation is
 `stdlib/compiler/type_annotate.zyl` (inference and per-type instances)
-and `stdlib/compiler/monomorphization.zyl` (impl lifting).
+and `stdlib/compiler/lift_impls.zyl` (impl lifting).
 
 The specification and the compiler diverge further here than anywhere
 else in Part II:
@@ -48,7 +48,8 @@ None of these declarations compile as intended:
 | Written | Read as | Result |
 |---------|---------|--------|
 | `((T) x)` | a one-element list in parameter position | `E_MALFORMED_PARAMETER` |
-| `((T : Ord) a b)` | the lexer merges `: Ord` into the keyword `:Ord`, so this is `(T :Ord)` | an ordinary *value* parameter named `T`. The function takes one more argument than intended, and `(min 3 5)` is `E_ARITY_MISMATCH`. |
+| `((T : Ord) a b)` | the lexer merges `: Ord` into the keyword `:Ord`, so this is `(T :Ord)`, the colon spelling of an annotation | `E_MALFORMED_PARAMETER`: "a parameter's type is written (name Type), without a colon" |
+| `((a Ord))` | a parameter annotated with a trait name | `E_MALFORMED_PARAMETER`: "`Ord` is a trait, not a type" |
 
 **Do not write type-parameter groups.**
 
@@ -130,9 +131,8 @@ For each call site of a generic function:
 
 ### Implementation
 
-`monomorphization.zyl` runs after type inference (§22 Phase 5).
-
-Specialization happens in the type annotation pass
+There is no separate monomorphization pass. Specialization happens in
+the type annotation pass
 (`type_annotate.zyl`), after inference, at the close of each strongly
 connected component of the call graph:
 
@@ -154,8 +154,9 @@ connected component of the call graph:
   argument types in order, fully spelled: `smaller~String,String`,
   `show~(Vec String)` style keys. Distinct type tuples always get distinct
   names; the spec's sorted `f_Int_String` form is not used.
-- **Impl methods.** `monomorphization.zyl` lifts an impl method body to a
-  top-level function named `Trait.method_Type` (Chapter 20). An impl for a
+- **Impl methods.** `lift_impls.zyl`, which runs before type checking,
+  lifts an impl method body to a top-level function named
+  `Trait.method_Type` (Chapter 20). An impl for a
   generic type (`(impl Show Vec ...)`) is itself trait-generic when it
   calls a trait method on the element type, and is instantiated per
   element type.
@@ -189,7 +190,9 @@ recursive functions are inferred together.
 ## 19.5 Trait Bounds
 
 §6.4 requires each call site's concrete types to satisfy the declared
-bounds. With no way to declare a bound (19.1), nothing is checked.
+bounds. There is no way to declare a bound (19.1): the colon form and a
+trait name in type position are both `E_MALFORMED_PARAMETER`, so no bound
+is checked.
 
 What is checked is the impl itself: a trait call on a concrete type with
 no impl is `E_TRAIT_NOT_FOUND` at the call, including one made inside an
@@ -219,8 +222,7 @@ What the compiler derives from the body instead of from a declaration:
 | `E_TRAIT_BOUND_NOT_SATISFIED` | a concrete type violates a bound | catalogued; never raised |
 | `E_UNKNOWN_GENERIC_PARAM` | reference to an undeclared type parameter | catalogued; never raised |
 | `E_TRAIT_NOT_DERIVABLE` | a derive constraint fails | raised for a trait outside `Show`, `Debug`, `Eq`, `Ord`, `Hash`, `Clone` |
-| `E_MALFORMED_PARAMETER` | `((T) x)`: not a name or `(name Type)` | raised |
-| `E_ARITY_MISMATCH` | follows from `((T : Ord) ...)` adding a value parameter | raised |
+| `E_MALFORMED_PARAMETER` | `((T) x)`: not a name or `(name Type)`; `((T : Ord) ...)`: the colon spelling; `((a Ord))`: a trait in type position | raised |
 
 §6.1 makes shadowing a type parameter in a nested `defn` an error, but it
 assigns no code.

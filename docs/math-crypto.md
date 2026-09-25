@@ -4,9 +4,10 @@ Every algorithm under `stdlib/math/` is pure Zyl, with two exceptions
 that call into `runtime/actor_runtime.c`: AES (hardware AES-NI only,
 `zyl_aesni_available` / `zyl_aes_encrypt_block`) and system entropy
 (`zyl_random_words`, which uses `getrandom(2)`). Beyond those, the
-library calls the runtime only for plumbing: `math/words` reads string
-bytes through `zyl_cstr_len` / `zyl_cstr_byte_at`, and `zeroize` erases
-memory through `zyl_zeroize`.
+library calls the runtime only for plumbing: `math/words` keeps its
+arrays as bounds-checked `Words` handles (`zyl_words_new`, `_get`,
+`_set`, `_len`, `_view`) and reads string bytes through `zyl_cstr_len` /
+`zyl_cstr_byte_at`, and `zeroize` erases memory through `zyl_zeroize`.
 
 `(use math/math)` imports the whole tree; importing only the modules a
 program uses keeps its compile time and binary smaller.
@@ -17,7 +18,7 @@ Two conventions run through every module, and reading them first makes
 the rest obvious:
 
 - **Byte strings are one byte per 8-byte word** (`math/words`). A
-  32-byte key is a 32-slot word array whose every slot holds 0..255.
+  32-byte key is a 32-slot `Words` array whose every slot holds 0..255.
   This costs memory and buys a single uniform representation with no
   packing or endianness handling at every call site. `w-from-hex`,
   `w-from-string`, `w-hex-bytes` convert at the edges.
@@ -135,7 +136,7 @@ python3 verify/crypto.py                                    # vs hashlib + pyca
   as S-expressions. They are excluded from the suite's
   interpreter-agreement section, which would take minutes of interpreted
   arithmetic.
-- `tests/compile-fail/secret-*.zyl` (7 files) are programs the Secret
+- `tests/compile-fail/secret-*.zyl` (10 files) are programs the Secret
   checker must reject; `tests/regression/secret-capability.zyl` is the
   accepting side.
 - `tests/integration/math-protocol.zyl` runs a miniature authenticated
@@ -151,11 +152,15 @@ python3 verify/crypto.py                                    # vs hashlib + pyca
 
 ## Not implemented
 
-- Automatic zeroization on scope exit and debug-output redaction
+- Automatic zeroization on scope exit
   (`MATH_CRYPTO_IMPLEMENTATION_PLAN.md` Phase 0's codegen half). Erasure
   is still explicit `zeroize`, with an `E_ZEROIZE_MISSING` warning when a
-  function consumes a `Secret` into a public result without it; `print`
-  of a secret is rejected outright rather than redacted to `<secret>`.
+  function consumes a `Secret` into a public result without it.
+  Redaction exists only inside records: a derived `Show` or `Debug`
+  prints a `Secret` field, or a value of a type implementing the
+  `Secret` trait, as `<secret>` (book chapter 33.6), but `print` of a
+  secret-tainted value itself is rejected (`E_SECRET_DEBUG`) rather than
+  redacted.
 - `Secret` annotations beyond `math/secret/secret` itself. Taint crosses
   a call boundary only where the callee's own parameters are annotated,
   so the AEAD, KDF, signature and bignum entry points are not yet under

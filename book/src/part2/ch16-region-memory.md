@@ -137,6 +137,12 @@ Analysis" (§22), but does not prescribe an algorithm. The implementation
 runs later than the specification places it: on ICNF, after optimization
 (§22 steps 6–7), rather than before monomorphization. `pipeline.zyl` runs
 the stack-variant rewrite `ri-transform-fns` and then `rg-regions`.
+Optimization includes inlining: a call of a small, non-recursive function
+with `Int`-kind parameters (at most 6 ICNF nodes, `ZYL_INLINE_LIMIT`; no
+`try`, region scope, lambda, closure call or `print` in it) is replaced
+by its body, except inside a `try` body. Because inlining comes first, the
+inlined code is placed like any other code of its caller. `ZYL_INLINE=0`
+turns it off.
 
 - **Object classes.** Values that may point to each other share an
   abstract object class, kept in a union-find structure. Classes are
@@ -234,7 +240,7 @@ collector (P4). What happens today:
 | Region | Reclamation |
 |--------|-------------|
 | Stack | On function return, by restoring the stack pointer. |
-| Frame region | On function return, before a tail jump, or when a caught panic or failing test unwinds the frame. Its blocks go back to a per-thread pool. |
+| Frame region | On function return, before a tail jump, or when a caught panic or failing test unwinds the frame. Its blocks go back to a per-thread pool. A self tail call (a loop) instead empties the region and keeps its first block for the next iteration (`zyl_region_recycle`). |
 | Result region | Along with the caller's region it was allocated in. |
 | `with-region` scope | When the body ends or is unwound. |
 | Heap | Never during the program. The heap arena is a bump allocator that generated code does not reset or free; values that escape to the heap live until the process exits. |
@@ -251,6 +257,25 @@ carved from `mmap`ed chunks, and count against the same memory budget as the hea
 that builds and drops 20000 lists fell from a 630 MB to a 12 MB peak with
 per-call regions. The compiler's own peak barely moves, because its data
 mostly escapes into its results or into global tables.
+
+### In-place reuse
+
+Values are immutable, but an update that builds a new record from an old
+one (a `vec-push`, a struct with one field changed, a list rebuilt cell by
+cell) need not allocate. After region inference, `compiler/reuse.zyl`
+marks a construction that may take the block of a value that is provably
+unique (bound to a fresh value, and never stored, aliased, captured or
+passed where its region summary lets it escape) and dead (not used later
+in evaluation order, and not bound outside a loop the construction is
+in). The new record must hold a pointer read out of the old one, so
+region inference has already put both in one class and one region. A
+function whose parameters could be reused this way gets an owning copy,
+`f~own`, called where the arguments are owned and dead. At run time the
+block is taken only when its size header covers the new record. Only
+functions compiled by the register-allocating backend (Chapter 29) honour
+the mark; the stack-machine code path and the REPL interpreter allocate
+as before, so the program's meaning cannot change.
+`ZYL_REUSE=0` turns the pass off.
 
 Allocation failure, or exceeding the memory budget, is reported as
 `E_OUT_OF_MEMORY` instead of crashing on a null pointer. The budget is

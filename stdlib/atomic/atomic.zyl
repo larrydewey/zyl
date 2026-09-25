@@ -1,5 +1,5 @@
 ; === Zyl Standard Library — Atomic Operations ===
-; Module: atomic
+; Module: atomic/atomic
 ; Provides: Atomic load/store/add/sub/max/min/cas on 64-bit memory locations.
 ;
 ; Addresses are Ints obtained from `allocator/alloc` or `ffi-pin`.

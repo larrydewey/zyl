@@ -65,7 +65,7 @@ The declaration is a top-level form, and it describes the C function; it does no
 
 The types must be concrete: a type variable, such as `(extern "abs" (a) b)`, would let one call pretend C returned any type at all, so it is `E_TYPE_MISMATCH`. `Float` is refused too (§12.2). There is no cast form in Zyl, so the `extern` is the only place a C value's type is decided: get it right, because the compiler takes it on trust.
 
-The Zyl runtime's own `zyl_*` functions need no declaration: the compiler types each one from its signature table, `stdlib/compiler/ffi_sigs.zyl`, so `(ffi-call "zyl_actor_wait_all" 1000)` needs no `extern` and has type `Unit`. An `extern` is only for foreign code. Declaring one for a runtime entry, such as `(extern "zyl_actor_wait_all" () Int)`, is `E_FFI_RESTRICTED`: the program may not retype the runtime. A few runtime functions that would turn an arbitrary `Int` into a pointer or a `String` are reserved for the standard library; calling one from a program is `E_FFI_RESTRICTED`.
+The Zyl runtime's own `zyl_*` functions need no declaration: the compiler types each one from its signature table, `stdlib/compiler/ffi_sigs.zyl`, so `(ffi-call "zyl_actor_wait_all" 1000)` needs no `extern` and has type `Unit`. An `extern` is only for foreign code. Calling a runtime entry declared with one, such as `(extern "zyl_actor_wait_all" () Int)`, is `E_FFI_RESTRICTED`: the program may not retype the runtime. A few runtime functions that read raw memory or reinterpret a machine word as another type (an arbitrary `Int` as a pointer or a `String`, say) are reserved for the standard library; calling one from a program is `E_FFI_RESTRICTED`.
 
 **The timeout is positional, and it must be a literal.** The compiler takes the last argument of every `ffi-call` as the timeout and requires it to be a positive integer literal. Anything else is rejected at compile time with `E_FFI_TIMEOUT_REQUIRED`, so a forgotten timeout cannot silently swallow your last real argument:
 
@@ -153,7 +153,7 @@ int64_t zyl_divmod(int64_t a, int64_t b, int64_t* rem) {
 }
 ```
 
-`ffi-call` uses the symbol name exactly as written. The `zyl_` prefix does matter in one way: the compiler treats a `zyl_*` symbol as part of the runtime and calls it directly, on the calling thread and without the timeout worker (§12.7). The examples here keep the prefix because the functions are tiny and cannot hang; give C code that might block any other prefix, so its timeout is enforced.
+`ffi-call` uses the symbol name exactly as written. A symbol declared with an `extern` is always foreign code and runs on the timeout worker (§12.7), whatever its prefix; only the runtime's own `zyl_*` entries, which take no `extern`, are called directly.
 
 ## 12.4 Complete FFI Example
 
@@ -211,11 +211,11 @@ Plain `zyl file.zyl` links only the runtime and libc. To add your own C code, em
 
 ```bash
 zyl ffi-demo.zyl -o ffi-demo.s --emit-asm
-cc -no-pie ffi-demo.s mylib.c ~/.zyl/actor_runtime.c -o ffi-demo -lpthread
+cc -no-pie ffi-demo.s mylib.c ~/.zyl/actor_runtime.o -o ffi-demo -lpthread
 ./ffi-demo
 ```
 
-With `--emit-asm`, the assembly is written to exactly the `-o` path, and nothing is assembled or linked. `actor_runtime.c` is the runtime: `~/.zyl/actor_runtime.c` after `./install.sh`, or `build/boot/actor_runtime.c` in a source checkout. The `cc` line is the same one `zyl` itself runs, plus `mylib.c`. Output:
+With `--emit-asm`, the assembly is written to exactly the `-o` path, and nothing is assembled or linked. `actor_runtime.o` is the runtime, compiled with `-O2` from `actor_runtime.c`: both are in `~/.zyl` after `./install.sh`, or in `build/boot/` in a source checkout (`./boot.sh` builds the object). The `cc` line is the same one `zyl` itself runs (§12.9), plus `mylib.c`. Output:
 
 ```
 factorial of 5:
@@ -288,7 +288,7 @@ A top-level function named as an argument is passed to C as a function pointer, 
 (extern "qsort" (Ptr Int Int (Fn (Ptr Ptr) Int)) Unit)
 ```
 
-Then `(ffi-call "qsort" p 64 8 compare 1000)` sorts with a Zyl comparator `compare`, which must take two `Ptr`s (read them with `alloc-read-int`) and return an `Int`. Because the foreign call runs on its FFI worker thread (§12.7), the callback runs there too. It sees the caller's `actor-self`, but a panic inside it that no `try` within the callback catches ends the process. Closures written inline are still rejected as arguments (§12.2).
+Then `(ffi-call "qsort" p 64 8 compare 1000)` sorts with a Zyl comparator `compare`, which must take two `Ptr`s (read them with `alloc-read-int`) and return an `Int`. Because the foreign call runs on its FFI worker thread (§12.7), the callback runs there too. It sees the caller's `actor-self`, but a panic inside it that no `try` within the callback catches ends the process. A `fn` written inline is not a top-level function: passing one is `E_INVALID_CAPABILITY`, because a closure is not FFI-pinnable.
 
 ## 12.7 Timeout and Safety
 
@@ -347,14 +347,16 @@ Most of libc is reachable with one `extern` each: `(extern "strlen" (String) Int
 
 Every program produced by `zyl` is linked with:
 
-- `actor_runtime.c` (the Zyl runtime: actors, heap and Pin arenas, strings, the test harness)
+- the Zyl runtime (actors, heap and Pin arenas, strings, the test harness), as `actor_runtime.o`
 - `libc` and `libpthread`
 
 The link command `zyl` runs is:
 
 ```bash
-cc -no-pie program.s actor_runtime.c -o program -lpthread
+cc -no-pie program.s actor_runtime.o -o program -lpthread
 ```
+
+`actor_runtime.o` is built with `-O2` from `actor_runtime.c` by `./boot.sh` and `./install.sh`. When the object is missing or older than the source, `zyl` compiles the source in its place (`-O2 actor_runtime.c`).
 
 To link your own objects into a single-file program, use `--emit-asm` and run that command yourself with your `.c` or `.o` files added (§12.4). In a package, use `(native ...)` instead.
 
@@ -376,15 +378,15 @@ To link your own objects into a single-file program, use `--emit-asm` and run th
 
 ### FFI Call Sequence
 
-The type pass (`ta-ffi-typed` in `stdlib/compiler/type_annotate.zyl`) types each `ffi-call` first: a runtime symbol by its entry in the signature table `stdlib/compiler/ffi_sigs.zyl`, any other symbol by its `extern` declaration, which it checks for concrete, word-sized types.
+The arity pass (`stdlib/compiler/arity_check.zyl`) checks each `ffi-call` first: `ffi-check-call` rejects a non-literal symbol, a missing or non-positive timeout, and more than 16 arguments (`E_ARITY_MISMATCH`), and `ffi-check-raw` rejects a raw runtime entry outside the standard library (`E_FFI_RESTRICTED`). The type pass (`ta-ffi-typed` in `stdlib/compiler/type_annotate.zyl`) then types the call: a runtime symbol by its entry in the signature table `stdlib/compiler/ffi_sigs.zyl`, any other symbol by its `extern` declaration, which it checks for concrete, word-sized types.
 
-`(ffi-call "sym" a b timeout)` then reaches ICNF lowering (`ic-ffi` in `stdlib/compiler/icnf.zyl`) as an application of `ffi-call`. Lowering first runs `ffi-check-call` (`stdlib/compiler/arity_check.zyl`), which rejects a non-literal symbol, a missing or non-positive timeout, and more than 16 arguments (`E_ARITY_MISMATCH`). A `zyl_*` runtime symbol becomes `IFfi "sym" (a b)`, a direct call. Any other symbol becomes a call of the runtime's timed bridge:
+`(ffi-call "sym" a b timeout)` then reaches ICNF lowering (`ic-ffi` in `stdlib/compiler/icnf.zyl`) as an application of `ffi-call`; lowering runs `ffi-check-call` again. A `zyl_*` runtime symbol becomes `IFfi "sym" (a b)`, a direct call. Any other symbol becomes a call of the runtime's timed bridge:
 
 ```
 IFfi "zyl_ffi_timed" (ISymAddr "sym", IStr "sym", IConst timeout, IConst 2, a, b)
 ```
 
-`ISymAddr` is the address of the C symbol, emitted as `mov rax, QWORD PTR [rip+sym@GOTPCREL]`. Code generation evaluates the arguments left to right, loads them into the System V integer argument registers (the rest on the stack), aligns the stack, and emits the call. The result is read from `rax`.
+`ISymAddr` is the address of the C symbol, emitted as `mov rax, QWORD PTR [rip+sym@GOTPCREL]`. Code generation evaluates the arguments left to right, loads them into the System V integer argument registers (the rest on the stack), and emits the call with the stack 16-byte aligned. The result is read from `rax`.
 
 ### Pin Region Implementation
 

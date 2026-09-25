@@ -9,6 +9,11 @@ holds for user code, the standard library, the REPL, the language server
 and the compiler itself, with one documented exception (see "Known
 hole" below).
 
+Since commit f4213bc the language server also runs derive expansion, impl
+lifting and the type checker on each document and publishes every type
+error, located in the document; before that it stopped after the checks
+that precede typing, so no type error reached the editor.
+
 The normative rules are in `zyl_specification.txt` §4.8–§4.10 and §16.
 This document records the design decisions and how they were reached.
 

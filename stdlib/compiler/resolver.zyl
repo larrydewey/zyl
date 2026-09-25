@@ -1,22 +1,10 @@
-; === Zyl Module Resolver (self-hosted) ===
+; === Zyl Compiler — List head/tail helpers ===
+; Module: compiler/resolver
 ;
-; The full `(use ...)` transitive-resolution logic that used to live here
-; (module loading, dependency worklist, shadowing) is DEAD CODE from the
-; self-hosted boot pipeline's perspective: driver.zyl's boot-run never
-; calls anything in this file — assemble.py handles module concatenation
-; at BUILD time instead, so runtime `(use ...)` resolution is unused by
-; the bootstrap. It was removed after an extensive chase confirmed it was
-; blocking the self-hosted compiler's own boot process at LINK time with
-; an undefined `rbp0` symbol, despite never executing: the self-hosted
-; compiler's reachability analysis is less aggressive than the Rust
-; bootstrap's, so unreachable code here still got fully compiled. Root
-; cause wasn't pinned down (every `set!` target name read back as an
-; empty string by ICNF-lowering time despite parsing correctly — doesn't
-; fit this session's other confirmed bug classes), and since the whole
-; module resolution feature isn't wired into the boot path at all, there
-; was nothing worth keeping half-broken. See git history to revive it.
-;
-; shd/stl (head/tail, like car/cdr) are kept — codegen.zyl depends on them.
+; Only shd/stl (head/tail, like car/cdr) remain here; codegen.zyl depends
+; on them. The name is historical: this file once held a `(use ...)`
+; resolver that the boot pipeline never called, and it was removed.
+; Module resolution is compiler/module_resolver.
 
 (defn shd (xs)
   (match xs

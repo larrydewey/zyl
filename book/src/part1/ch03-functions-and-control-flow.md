@@ -60,10 +60,8 @@ A body may contain several forms. They run in order, as if wrapped in
 
 The **last expression's value is returned** — no explicit `return` keyword exists.
 
-One difference remains in the current compiler: with the forms
-directly after the parameter list, a `let` among them stays in scope
-for the forms that follow it (Chapter 2, §2.5). An explicit `begin`
-gives the scoping you expect.
+Either way, a `let` among the forms is in scope only inside itself, not
+in the forms that follow it (Chapter 2, §2.5).
 
 ### `defun` — Synonym for `defn`
 
@@ -385,10 +383,11 @@ Things to know about the current implementation:
 
 The specification defines `(unwrap r)` and `(assert condition "message")`.
 Both work. A false `assert` panics with your message when it is a
-string literal (`assert failed` otherwise); `unwrap` of `None` or of an
-`Err` panics with `unwrap on None`. Where the message
-matters, use `result-expect` / `option-expect` instead of `unwrap`, and
-an explicit check with `error` instead of `assert`:
+string literal (`assert failed` otherwise). `unwrap` takes an `Option`:
+of `None` it panics with `unwrap on None`, and applied to a `Result` it
+is `E_TYPE_MISMATCH`. Where the message matters, or for a `Result`, use
+`result-expect` / `option-expect` instead of `unwrap`, and an explicit
+check with `error` instead of `assert`:
 
 ```lisp
 (defn checked-sqrt-floor (x)
@@ -482,9 +481,9 @@ types and its result type (in the compiler's type representation, a
 `TFun` over those types). You never write one: the checker infers them,
 and they appear in type errors.
 
-The REPL's `:type` reports the types of literals and annotated
-definitions; for most function applications it currently answers
-*unresolved* (a known type-inference gap, see Chapter 35).
+The REPL's `:type` shows them: after `(defn add1 (x) (+ x 1))`,
+`:type add1` answers `add1 : (Int -> Int)` and `:type (add1 2)`
+answers `(add1 2) : Int`.
 
 ## 3.10 Scope and Shadowing
 
@@ -500,8 +499,8 @@ definitions; for most function applications it currently answers
   0)
 ```
 
-There is no global mutable state: every binding is local, and there
-are no top-level variables in a compiled program (Chapter 2, §2.5).
+There is no global mutable state: every mutable binding is local, and
+a top-level `def` is an immutable constant (Chapter 2, §2.5).
 
 ## 3.11 I/O Basics
 
@@ -524,7 +523,8 @@ library) are the same with a fixed argument type; like `print`, they
 return `Unit`.
 
 Reading input: `read-line` is recognized by the parser but not yet
-implemented by the code generator (it returns a null string). File I/O is in
+implemented by the code generator (it returns a null string, which
+prints as `(null)`). File I/O is in
 `stdlib/io` (Chapter 12).
 
 ## 3.12 Control Flow Cheat Sheet
@@ -558,9 +558,15 @@ implemented by the code generator (it returns a null string). File I/O is in
 - Return value: `rax` (every value is one 64-bit word)
 - Callee-saved: `rbx`, `rbp`, `r12`-`r15`
 - Stack alignment: 16-byte before `call`
-- Every argument is evaluated left to right into a scratch slot before
+- Arguments are evaluated left to right, each into its own place before
   any argument register is loaded, so evaluating one argument can never
-  clobber another
+  clobber another. A function the native backend handles (integers,
+  control flow, variants, `match`, direct calls; see
+  `docs/native-backend-design.md`) keeps its values in virtual
+  registers, assigned to machine registers by linear scan, and saves
+  only the callee-saved registers it uses; any other function goes
+  through the older stack-machine generator, which stages arguments in
+  scratch stack slots. Both use this ABI, so they call each other freely
 
 `--emit-asm` shows all of this: `zyl file.zyl --emit-asm -o file.s`.
 
@@ -586,10 +592,14 @@ keeps deep non-tail recursion practical.
 
 ### Region Interaction
 
-- Int, Float and Bool parameters and `let` bindings live in the stack frame
-- `let-mut` bindings are ordinary frame slots; `set!` overwrites the slot
-- Struct and ADT values are heap-allocated unless region inference
-  proves they never escape (Chapter 5)
+- Int, Float and Bool parameters and `let` bindings live in registers
+  or stack-frame slots
+- A `let-mut` binding is a register or frame slot like any other;
+  `set!` overwrites it
+- Struct and ADT values are placed by region inference: in the call's
+  own frame region when they do not outlive the call, in the region the
+  caller chose when they are returned, and on the heap only when they
+  escape further (Chapter 5)
 
 ---
 

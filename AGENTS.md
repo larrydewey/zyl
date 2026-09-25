@@ -2,7 +2,7 @@
 
 ## Project Identity
 
-**Zyl** is a deterministic Lisp systems language with region-based memory, Hindley-Milner type inference with capability types, actor concurrency, SSA IR (ICNF), FFI safety via pinning/timeout enforcement, hygienic macros, and full determinism. S-expression syntax targeting x86_64 native code. The compiler is self-hosting: it is written in Zyl and reproduces itself byte for byte (`./boot.sh`).
+**Zyl** is a deterministic Lisp systems language with region-based memory, Hindley-Milner type inference with capability types, actor concurrency, a custom IR (ICNF; SSA in the spec, a tree IR today), FFI safety via pinning/timeout enforcement, hygienic macros, and full determinism. S-expression syntax targeting x86_64 native code. The compiler is self-hosting: it is written in Zyl and reproduces itself byte for byte (`./boot.sh`).
 
 ## Authoritative Sources (in order)
 
@@ -44,15 +44,19 @@ and differs from the list above: balance check → parse → module
 resolution → macro expansion → capability/duplicate/arity (also
 `E_MALFORMED_FORM`, `E_FFI_RESTRICTED`)/mutability/exhaustiveness/
 unused/secret checks → derive expansion → impl lifting → closure
-lifting → type checking (`type_annotate.zyl`: sound HM, spec §4.8–§4.10;
+inlining (`closure_inline.zyl`, now an identity step) → type checking (`type_annotate.zyl`: sound HM, spec §4.8–§4.10;
 every type error is reported, then the compile fails; static trait
 resolution, per-type specialization of calls and function values,
 generated structural `T.==`) → ICNF lowering →
-optimization → region inference (the stack-variant rewrite, then
+optimization (small-function inlining and copy propagation, then
+constant folding and dead-branch elimination) → region inference (the stack-variant rewrite, then
 `rg-regions`: escape analysis over ICNF that places every allocation and
 call site in the frame's own region, the caller's result region, or the
 heap, and raises `E_REGION_ESCAPE`; see `docs/regions-design.md`) →
-codegen → `cc` link. Contracts are lowered where forms are recognized
+in-place reuse (`reuse.zyl`) → codegen (the native backend: MIR and
+linear-scan register allocation in `mir.zyl`, with the stack machine
+for functions it does not take; `docs/native-backend-design.md`) →
+`cc` link. Contracts are lowered where forms are recognized
 (`convert-ast`, `expr_inner.zyl`): `requires`/`ensures`/`invariant`
 become checks raising `E_CONTRACT_VIOLATION`, `ensures` binds `result`,
 `recover` is `try`/`catch` with arms by error code, `checkpoint` rolls
@@ -80,8 +84,8 @@ carries as `zyl_build_hash`).
   union-find object classes, with per-function parameter summaries joined
   to a whole-program fixpoint
 - Each call that allocates short-lived values gets a frame region,
-  released on return, before a tail jump, or when a caught panic unwinds
-  it; results go into the region the caller chose (`zyl_cur_region`);
+  released on return, before a tail jump (a self tail call on the
+  native path recycles it instead), or when a caught panic unwinds it; results go into the region the caller chose (`zyl_cur_region`);
   values that escape untracked go to the process heap, which still lives
   until exit. `ZYL_REGIONS=0` at compile time turns this off
 - `(bytebuf Stack N)` lives in the frame region; `with-region` opens an
@@ -132,7 +136,7 @@ carries as `zyl_build_hash`).
 - **Region-based memory** (not GC) for deterministic reclamation
 - **Capability types** (TCap/TMut) for compile-time aliasing control
 - **Structs immutable by default** (rebinding only)
-- **Safe-only optimizations** (constant folding, DCE — no reordering)
+- **Safe-only optimizations** (constant folding, DCE, small-function inlining, copy propagation, in-place reuse — no reordering)
 
 ## Development Commands
 
@@ -190,7 +194,7 @@ The CLI (`selfhost/driver.zyl`, `drv-usage`): `zyl <file.zyl> [-o out]
 
 `--filter` is a case-insensitive substring of the test name and applies
 *within* the selected mode — `--filter structs` alone runs in quick mode
-and selects nothing. `--full` runs `./boot.sh` first unless `--no-boot`
+and selects nothing. `--full` runs `./boot.sh` after the suites unless `--no-boot`
 is given. Other flags: `--verbose`, `--timeout N`, `--boot`,
 `--dry-run` (lists exactly the tests a real run with the same mode and
 `--filter` would run). Categories in `--full`: regression, interpreter

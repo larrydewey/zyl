@@ -35,8 +35,9 @@ form has no way to bootstrap understanding of it from nothing.
 ## It no longer works as that fallback
 
 The Rust compiler can no longer read the current compiler source. Run
-against `selfhost/zyl_selfhost_compiler.zyl` as of 2026-09-23, it stops
-in its lexer:
+against `selfhost/zyl_selfhost_compiler.zyl` (the single-file bundle
+the compiler was then built from) as of 2026-09-23, it stops in its
+lexer:
 
 ```
 [Phase 1] Parsing selfhost/zyl_selfhost_compiler.zyl ...
@@ -60,13 +61,16 @@ cargo build --release --manifest-path archive/rust-bootstrap-2026/Cargo.toml \
     --target-dir archive/rust-bootstrap-2026/target
 ```
 
-or run `./boot.sh --bootstrap-from-rust` from the repo root, which does
-exactly this, compiles the bundle with the Rust-built compiler into a
-stage1 binary, and then drives that binary through the legacy
-fixed-path protocol (`/tmp/zyl_boot_in.zyl` → `/tmp/zyl_boot_out.s`) to
-produce a new `stage2.s`. Given the lexer failure above, today this
-fails at the first step. The build directory (`target/`) is ignored by
-git.
+`./boot.sh --bootstrap-from-rust` used to do exactly this, compile the
+single-file bundle with the Rust-built compiler into a stage1 binary,
+and drive that binary through the legacy fixed-path protocol
+(`/tmp/zyl_boot_in.zyl` → `/tmp/zyl_boot_out.s`) to produce a new
+`stage2.s`. That path is retired: the single-file bundle
+(`selfhost/zyl_selfhost_compiler.zyl`) no longer exists, since
+`selfhost/driver.zyl` is now compiled like any program with its
+`(use ...)` tree resolved from `stdlib/`, and `--bootstrap-from-rust`
+only exits with a pointer to `--bootstrap-from-self`. The build
+directory (`target/`) is ignored by git.
 
 ## Layout
 

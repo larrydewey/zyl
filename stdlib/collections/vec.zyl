@@ -1,5 +1,5 @@
 ; === Zyl Standard Library — Arena-backed Vec<T> ===
-; Module: collections (vec submodule)
+; Module: collections/vec
 ;
 ; A Vec is a runtime array (`(Array T)`, compiler/ffi_sigs) plus the
 ; length this Vec sees, in an arena. The array is typed and bounds-checked

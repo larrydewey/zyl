@@ -281,8 +281,9 @@ Zyl's collections are library code, not built-in syntax. Import them:
 (use collections/set)
 ```
 
-`Vec` holds elements of any one type, `(Vec T)`; `collections/map` and
-`collections/set` are Int-keyed, Int-valued hash tables. For a map with
+`Vec` holds elements of any one type, `(Vec T)`; `collections/map` is
+a table from Int keys to Int values and `collections/set` a set of
+Ints, both kept in insertion order and searched linearly. For a map with
 String keys and values of any type, use `core/map` (below). All of them
 are *persistent in style*: an operation returns the updated collection,
 and you keep using the value it returns.
@@ -616,10 +617,12 @@ Rules that follow from this design:
   Allocation from one arena is locked, so two actors may allocate from
   it safely, but writing to one collection from two actors is a race.
   Give each actor its own arena, or send immutable data.
-- **ADT and struct values do not use your arenas.** A constructor like
-  `(Some 1)` or `(make-Point 1 2)` allocates from the runtime's
-  process-wide heap, which lives until the program exits (§5.5). Only
-  the functions that take an arena argument allocate from one.
+- **ADT and struct values do not use your arenas.** Region inference
+  places a constructor like `(Some 1)` or `(make-Point 1 2)` in the
+  call's own frame region, the region its caller chose for the result,
+  or the process heap (which lives until the program exits), as §5.5
+  describes. Only the functions that take an arena argument allocate
+  from one.
 - **`core/map` needs no arena.** It is a persistent association list on
   the runtime heap.
 
@@ -725,12 +728,12 @@ recursive field simply holds a pointer to another block.
 
 ## 4.9 Deriving Traits
 
-The specification lets you derive `Eq`, `Ord`, `Show`, `Debug`, `Clone`
-and `Hash`. `Show` is implemented:
+`derive` generates impls of `Show`, `Debug`, `Eq`, `Ord`, `Hash` and
+`Clone`:
 
 ```lisp
 (defstruct Person (name String) (age Int))
-(derive Person Show)                     ; or (derive Person [Show])
+(derive Person [Show Ord Debug])         ; or (derive Person Show Ord Debug)
 (deftype Shape (Circle Float) (Rect Int Int))
 (derive Shape Show)
 
@@ -738,15 +741,23 @@ and `Hash`. `Show` is implemented:
   (begin
     (print (make-Person "Ann" 30))       ; Person { name: Ann, age: 30 }
     (print (Rect 2 3))                   ; Rect(2, 3)
+    (print (Ord.compare (make-Person "Ann" 30) (make-Person "Bob" 25)))  ; -1
+    (print (Debug.debug (make-Person "Ann" 30)))  ; Person { name: "Ann", age: 30 }
     0))
 ```
+
+Every field's type must implement the trait being derived; if one does
+not, or the trait is not one of the six, the derive is
+`E_TRAIT_NOT_DERIVABLE`. `Ord.compare` orders field by field in
+declaration order (variants in declaration order) and returns -1, 0 or
+1. `Debug` differs from `Show` in quoting Strings.
 
 `print` of any value whose type has a `Show` impl prints its text; the
 standard library provides impls for the primitives, `List`, `Option`,
 `Result`, `Vec` and `Map`. A value with no impl prints as a word (a
-struct or ADT value prints its address). The other derivable traits are
-accepted and generate nothing yet; `==` already compares structs and
-ADT values field by field, by content (Chapter 2, §2.6).
+struct or ADT value prints its address). `==` compares structs and ADT
+values field by field, by content, with or without a derived `Eq`
+(Chapter 2, §2.6).
 
 ## 4.10 Module Imports for Stdlib Types
 
@@ -782,8 +793,10 @@ value is a pointer to a block:
   or a pointer (a String, another struct, another variant)
 - The tag says which variant the block is; `match` dispatches on it
 - The header records the block's size, which the runtime's shallow
-  comparison uses when the value's type is unknown to inference
-  (otherwise `==` calls a generated per-type equality function)
+  comparison reads (used by `==` only for a type with a `Secret` field;
+  every other type gets a generated per-type equality function) and
+  which in-place reuse checks before writing a new record into a dead
+  value's block
 - A nullary variant is a block with no fields
 
 Because a field is always one word, a block's layout depends only on
@@ -796,13 +809,16 @@ its field count, and a generic ADT needs no per-type layout.
 | `(let s (Some 42) body)`, where `body` only `match`es on `s` or `print`s it | The function's stack frame |
 | A struct or ADT value that does not outlive its call | The call's own region, released when the call returns |
 | A struct or ADT value that is returned but goes no further | The region the caller chose for the result |
-| Every other struct or ADT value (stored, sent, captured) | The runtime heap arena |
+| Every other struct or ADT value (stored, sent, captured) | The process heap |
 | `(vec-create a 10)`, `(map-create-default 10)` | The arena `a`, or a private one |
 
 Region inference decides the placement; anything it cannot prove
-short-lived goes to the heap, which is always safe. The heap arena is
+short-lived goes to the heap, which is always safe. The heap is
 released when the program exits; the regions are released as calls
-return. Chapter 5 describes the rules, and `with-region` for choosing a
+return. When the compiler proves a value unique (nothing else refers
+to it) and dead (nothing uses it afterwards), an update that builds a
+new record from it, such as a `vec-push`, may write the new record into
+the old value's block instead of allocating (`compiler/reuse.zyl`). Chapter 5 describes the rules, and `with-region` for choosing a
 region explicitly.
 
 ### Monomorphization of Generic ADTs

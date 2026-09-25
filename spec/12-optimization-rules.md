@@ -2,7 +2,7 @@
 
 **Canonical authority:** `zyl_specification.txt` §22 (step 7, "Optimization (Safe only)"), §26 (Implementation Contract)
 **Related:** `docs/design-rationale.md` §D9, `spec/11-icnf-ir.md`
-**Implementation:** `stdlib/compiler/optimization.zyl`
+**Implementation:** `stdlib/compiler/optimization.zyl` (inlining, copy propagation, folding), `stdlib/compiler/reuse.zyl` (in-place reuse)
 
 ---
 
@@ -69,9 +69,28 @@ Not normative.
 
 ### `optimization.zyl`
 
-One bottom-up walk over each function's ICNF tree (`opt-expr`). Children
-are optimized first, so nested constant arithmetic collapses in a single
-pass; there is no fixed-point iteration.
+The pipeline applies `opt-inline-fns` and then `opt-optimize-fns` to the
+lowered ICNF, before region inference.
+
+**Inlining** (`opt-inline-fns`). A call of a small function is replaced
+by its body. The arguments are bound first, in call order, by nested
+`let`s, and every binder in the copied body is renamed, so nothing can
+capture or be captured. A candidate has at most `ZYL_INLINE_LIMIT` ICNF
+nodes (default 6), does not call itself, takes only Int-kind parameters,
+and contains no `try`, region scope, lambda, closure call or `print`; a
+leaf (a body that calls only runtime functions) of up to three times
+that limit is inlined only into a self-recursive function (a loop). A call is left alone inside a `try` body, when its
+name is a local at the site, or when the body names a function or global
+that a local at the site would shadow. Two rounds flatten a wrapper of a
+wrapper. Copy propagation then replaces `(let n x body)`, where `x` is a
+local read, by `body` with `n` renamed to `x` when neither is `set!` in
+`body` and `body` binds no `x`; reading a local has no effect, so no side
+effect moves. `ZYL_INLINE=0` turns both off.
+
+**Folding** (`opt-optimize-fns`) is one bottom-up walk over each
+function's ICNF tree (`opt-expr`). Children are optimized first, so
+nested constant arithmetic collapses in a single pass; there is no
+fixed-point iteration.
 
 1. **Constant folding.** An `IBinop` whose operands are both `IConst`
    folds, for opcodes 0–10 (arithmetic and comparison) only. Floats are
@@ -85,6 +104,21 @@ pass; there is no fixed-point iteration.
    becomes `(IConst 0)`.
 
 There is no dead-code elimination of unused bindings or functions.
+
+### `reuse.zyl`
+
+`ru-reuse` runs after region inference. When a variant construction's
+old value is provably unique (bound to a fresh value, never stored,
+aliased, `set!`, captured or passed where its region summary lets it
+escape) and dead (no later use in evaluation order, and not inside a loop
+it was bound outside of), and the new record holds a pointer read out of
+the old one (so both are one region class), the construction is marked
+to reuse the old block (`icnf-reuse`). A function whose parameters could
+be reused gets an owning clone `f~own`, called where those arguments are
+owned and dead; ownership and freshness are a whole-program fixpoint in
+program order. The native backend takes the block at run time only when
+its size header covers the new record; every other consumer ignores the
+mark, so the program's meaning is unchanged. `ZYL_REUSE=0` turns it off.
 
 ### Other rewriting passes
 
@@ -101,14 +135,20 @@ These run on the program before ICNF lowering (see the pipeline in
   function. `assert-equal` unifies its two sides, and the inferred type
   alone picks the Float epsilon comparison; the old syntactic
   `assert_lowering.zyl` rewrite is deleted.
-- **Region inference** (`ri-transform-fns`) runs after optimization; see
-  `spec/07-region-memory-model.md`.
+- **Region inference** (`ri-transform-fns`, `rg-regions`) runs after
+  optimization and before reuse; see `spec/07-region-memory-model.md`.
 
 ### Relation to §26
 
-Several MUST items are not met by the current compiler; each is described
-in the file for its area: region rules and escape violations
-(`spec/07`), FFI Pin-only safety (`spec/09`), macro hygiene (`spec/03`),
-trait coherence and derive (`spec/05`), `with-resource` cleanup
-(`spec/04`) and alias transparency (`spec/10`). Match exhaustiveness and
-struct immutability are enforced.
+Evaluation order, determinism of ICNF and of instance naming, macro
+hygiene (`spec/03`), trait coherence (`E_DUPLICATE_IMPL` and the
+package orphan rule) and derive (`E_TRAIT_NOT_DERIVABLE`, `spec/05`),
+match exhaustiveness and struct immutability are enforced. Some MUST
+items are met only in part or not at all; each is described in the file
+for its area: aliasing (`TMut`/`TCap` are syntactic checks, `spec/06`),
+region rules (escape analysis places every value where it cannot
+escape, and `E_REGION_ESCAPE` covers Stack bytebufs and `with-region`
+values, but there is no Circular or distinct Global region, `spec/07`),
+FFI Pin-only safety (only a `Secret` argument must be pinned,
+`spec/09`), `with-resource` cleanup (`spec/04`) and alias transparency
+(`spec/10`).

@@ -1,5 +1,5 @@
 ; === Zyl Standard Library — List ADT ===
-; Module: list
+; Module: core/list
 ; Provides: Generic List<T> ADT and list utilities
 ;
 ; list-car returns Option<T>, requires Option to be in scope

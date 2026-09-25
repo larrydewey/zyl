@@ -1,6 +1,6 @@
 # Zyl Math/Crypto Libraries — Implementation Plan
 
-## Current Status (verified against the code, 2026-09-23)
+## Current Status (verified against the code, 2026-09-25)
 
 **Phases 1-5 are implemented; Phase 0's enforcement half is implemented;
 Phase 0's codegen half is implemented as frame zeroization on return and
@@ -23,15 +23,15 @@ library is `docs/math-crypto.md`.
 | KDFs | `stdlib/math/crypto/kdf/{hkdf,pbkdf2,argon2}.zyl` | HKDF and PBKDF2 are fixed to SHA-256 (`hkdf`, `pbkdf2-sha256`), not parameterized by hash function. Argon2id blocks are real 64-bit words |
 | Parent module | `stdlib/math/math.zyl` | `(use math/math)` imports the whole tree |
 | C helpers | `runtime/actor_runtime.c` | `zyl_cpuid_features`, `zyl_aesni_available`, `zyl_aes_encrypt_block` (AES-NI via `__attribute__((target))`), `zyl_random_words`/`zyl_random_fill`, `zyl_pin_alloc` (best-effort `mlock`), `zyl_mlock`. No separate `runtime/crypto_*.c` files |
-| Secret checker | `stdlib/compiler/secret_check.zyl`, `TCSecret` in `stdlib/compiler/type_system.zyl` | Runs in `compile-run-checks` (`stdlib/compiler/pipeline.zyl`) after `unused-check`; the LSP runs it too (`stdlib/lsp/document_manager.zyl`) |
-| Tests | `tests/regression/math-*.zyl` (16 files), `tests/regression/secret-capability.zyl`, `tests/compile-fail/secret-*.zyl` (7 files), `tests/integration/math-protocol.zyl` | `--filter math` selects the math files; the interpreter-vs-codegen diff run skips `math-*` for speed |
+| Secret checker | `stdlib/compiler/secret_check.zyl`; the `Secret` annotation is also read by the type checker (`stdlib/compiler/type_annotate.zyl`) | Runs in `compile-run-checks` (`stdlib/compiler/pipeline.zyl`) after `unused-check`; the LSP runs it too (`stdlib/lsp/document_manager.zyl`) |
+| Tests | `tests/regression/math-*.zyl` (16 files), `tests/regression/secret-capability.zyl`, `tests/compile-fail/secret-*.zyl` (10 files), `tests/integration/math-protocol.zyl` | `--filter math` selects the math files; the interpreter-vs-codegen diff run skips `math-*` for speed |
 | Cross-checks | `verify/sha2.py`, `verify/crypto.py`, `verify/timing.py` | Python references only (no C/OpenSSL references). `timing.py` is dudect-style with a positive control, run by `./run_regression_tests.sh --filter timing` |
 
 ### Phase status
 
 | Phase | Status |
 |-------|--------|
-| 0 — `TCSecret`, secret checker, error codes | Done |
+| 0 — `TCSecret`, secret checker, error codes | Done (`TCSecret` was removed with the old type system on 2026-09-25; the checker and codes remain) |
 | 0 — CT effect in the type system | Not done: the checker is a syntactic taint walk, not a type-level effect |
 | 0 — zeroize on scope exit, `print`/panic redaction | Done 2026-09-24 in this form: frames holding secrets are zeroed on return (heap erasure explicit); Secret fields/types print `<secret>`; a secret in `print`, `error` or a `show` result is `E_SECRET_DEBUG` |
 | 0 — ctgrind/valgrind on compiled output | Not done: `verify/timing.py` is the substitute |

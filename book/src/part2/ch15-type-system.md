@@ -3,8 +3,8 @@
 This chapter is the reference for Zyl's types: primitives, composite
 types, capability types, function types and inference. The normative text
 is `zyl_specification.txt` §4, with the value model in §3 and the numeric
-model in §20. The checker is one pass, `stdlib/compiler/type_annotate.zyl`;
-`stdlib/compiler/type_system.zyl` holds the `Type` ADT. The design is
+model in §20. The checker is one pass, `stdlib/compiler/type_annotate.zyl`, which
+also holds its type representation, the `TaTy` ADT. The design is
 `docs/sound-types-design.md`.
 
 One fact shapes the rest of this chapter. §4.6 specifies Hindley–Milner
@@ -166,8 +166,8 @@ capability you do write). Chapter 17 covers them.
 
 ## 15.4 Function Types
 
-§4.4 writes a function type as `TFun([T*], TReturn)`. The implementation
-represents it as `TFun (List Type)`, the parameter types followed by the
+§4.4 writes a function type as `TFun([T*], TReturn)`. The checker
+represents it as `TaF (List TaTy) TaTy`, the parameter types and the
 return type. In an annotation a function type is written
 `(Fn (A ...) R)`:
 
@@ -251,10 +251,10 @@ program just before ICNF lowering.
   not a known type (an uppercase name like `T`) is a type parameter.
 - **Every failure is an error.** A unification failure is
   `E_TYPE_MISMATCH` with both types, at the innermost expression being
-  checked. A failed occurs check is also `E_TYPE_MISMATCH` ("infinite
-  type"). A name defined nowhere is `E_UNBOUND_VARIABLE`. An expression
-  the checker has no rule for, such as an `ffi-call` to a symbol with no
-  signature, is `E_CANNOT_INFER`. The pass keeps going after an error, so
+  checked. A failed occurs check, such as `(defn f (x) (x x))`, is
+  `E_INFINITE_TYPE`. A name defined nowhere is `E_UNBOUND_VARIABLE`. A
+  type the program does not determine, such as the result of an
+  `ffi-call` to a symbol with no signature, is `E_CANNOT_INFER`. The pass keeps going after an error, so
   one compile lists them all (a clash often shows up twice, once for the
   argument and once for the whole call), and then fails with "the
   program does not type-check (N errors above)".
@@ -328,13 +328,15 @@ and no annotation on `let`.
 
 | Code | Status |
 |------|--------|
-| `E_TYPE_MISMATCH` | **Raised** by `type_annotate` for every unification failure, including an occurs-check failure, a non-`Bool` condition, mixed `Int`/`Float` arithmetic, and an argument that clashes with an annotation (15.6). Also for a `file-open` mode that is not a literal `"r"`, `"w"` or `"a"` (optionally with `+` or `b`). |
-| `E_CANNOT_INFER` | **Raised** when the checker has no type for an expression: an `ffi-call` to a foreign symbol with no `extern` declaration, or to a runtime symbol with no signature. |
+| `E_TYPE_MISMATCH` | **Raised** by `type_annotate` for every unification failure, including a non-`Bool` condition, mixed `Int`/`Float` arithmetic, and an argument that clashes with an annotation (15.6). Also for a `file-open` mode that is not a literal `"r"`, `"w"` or `"a"` (optionally with `+` or `b`). |
+| `E_INFINITE_TYPE` | **Raised** for a failed occurs check: a type that would have to contain itself. |
+| `E_CANNOT_INFER` | **Raised** when the program does not determine a type: an `ffi-call` to a foreign symbol with no `extern` declaration or to a runtime symbol with no signature, a trait call whose receiver type stays unknown (Chapter 20), a `struct-get` whose struct stays unknown when several structs have the field, a byte-operation handle that could be a `ByteBuf` or a `ByteSlice` (15.1), and more than 256 instances of one function (Chapter 19). |
 | `E_UNBOUND_VARIABLE` | **Raised** for a name defined nowhere, with suggestions. |
 | `E_TRAIT_NOT_FOUND` | **Raised** when a trait call's receiver type has no impl (Chapter 20). |
 | `E_INVALID_CAPABILITY` | **Raised** by `mutability_check` (before inference) when a lambda is passed to `ffi-call`; a named top-level function may be passed, as a C callback. |
 | `E_BYTE_VALUE_OOB` | **Raised** by the parser for `(byte N)` outside 0–255. |
 | `E_MALFORMED_FORM` | **Raised** for a special form whose shape its parser rejects (it used to compile to the constant 0). |
+| `E_MALFORMED_PARAMETER` | **Raised** for a parameter that is neither a name nor `(name Type)`, including the colon spelling `(a : Int)` and a trait name in type position, `(a Ord)`. |
 | `E_RETURN_TYPE_MISMATCH` | Catalogued; never raised (there are no return annotations). |
 | `E_UNKNOWN_TYPE` | Catalogued; never raised: an unknown type name is a type variable. |
 | `E_TRAIT_BOUND_NOT_SATISFIED` | In §6.7; never raised (Chapter 19). |
@@ -362,8 +364,8 @@ observable).
 | `Bool` | 0 or 1 |
 | `Byte` | an integer 0–255 |
 | `String` | pointer to NUL-terminated bytes (literals are in read-only data; no reference count) |
-| struct, ADT variant | pointer to a heap block `[tag][field0][field1]...`, one word per slot, preceded by a hidden word holding the block's size in words |
-| closure | a code pointer, or a pointer to a heap `[tag, code, env]` block when it captures variables |
+| struct, ADT variant | pointer to a block `[tag][field0][field1]...`, one word per slot, preceded by a hidden word holding the block's size in words; the block is in a call's region, the caller's result region or the heap, as region inference decides (Chapter 16) |
+| closure | a code pointer, or a pointer to a `[tag, code, env]` block when it captures variables |
 | `ByteBuf`, `ByteSlice` | pointer to a runtime header holding the data pointer, length and capacity |
 | `Vec`, `Map` | ordinary ADT values (15.2) |
 

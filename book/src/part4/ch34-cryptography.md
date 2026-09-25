@@ -122,7 +122,7 @@ the caller is about to act on.
 
 AES-GCM is there too (`gcm-encrypt` and `gcm-decrypt`, which take the
 key length as an extra argument and also return an `Option`), but it
-refuses to run without AES-NI: `aes-available` reports 0 and the
+refuses to run without AES-NI: `aes-available` returns `false` and the
 functions return `None`. That is deliberate, and §34.6 explains why.
 
 ## 34.5 Key Agreement and Derivation
@@ -154,7 +154,7 @@ shipping it would make the library worse:
   protocols to keep using it. `rsa.zyl` implements OAEP and PSS only.
 - **Software AES.** Every portable AES implementation is a key-indexed
   table lookup, which leaks the key through the data cache. `aesgcm`
-  reports `aes-available` as 0 and refuses rather than falling back to
+  reports `aes-available` as `false` and refuses rather than falling back to
   something that looks like AES and is not safe.
 - **RSA key generation.** Finding 1024-bit primes needs thousands of
   exponentiations at this arithmetic's speed. Keys are loaded, not

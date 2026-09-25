@@ -7,27 +7,33 @@ was true when it was written. Where a later session changed something an
 entry reports as open, the entry carries a short *Status (date)* note
 rather than a rewrite.
 
-## Current State (verified 2026-09-23, HEAD `3e65944`; build and compiler sections updated 2026-09-25)
+## Current State (verified 2026-09-25, HEAD `f4213bc`)
 
 Every claim in this section was checked against the source tree, the git
-history, or a probe compile with `build/boot/zyl-self` on 2026-09-23.
+history, or a probe compile with `build/boot/zyl-self` on 2026-09-25.
 
 ### Build and verification
 
-- The compiler is self-hosted: `stdlib/compiler/*.zyl` (37 modules) plus
+- The compiler is self-hosted: `stdlib/compiler/*.zyl` (41 modules) plus
   `selfhost/` (`driver.zyl`, `lsp_main.zyl`). Every boot stage compiles
   `selfhost/driver.zyl` through module resolution, like any program;
   the single-file bundle and `assemble.py` were retired on 2026-09-24.
-  `./boot.sh` builds with nothing but `cc`, caps each stage at 2 GB
+  `./boot.sh` builds with nothing but `cc`, caps each stage at 4 GB
   (`ZYL_STAGE_MEMORY`), and verifies the stage2 == stage3 fixed point;
   `./boot.sh --bootstrap-from-self` reseeds. The Rust implementation is
   frozen in `archive/rust-bootstrap-2026/` for the record only: it cannot
   lex the current source, and `--bootstrap-from-rust` is retired.
 - `./boot.sh` produces `build/boot/{zyl-self, stage2.bin, zyl-lsp,
-  zyl-repl, stdlib/, actor_runtime.c, actor_runtime.h}`. The self-build
-  prints no warnings (swept 2026-09-24).
-- `./run_regression_tests.sh --full --no-boot` passes **227/227**
-  (updated 2026-09-25, sound types). Compile-fail tests may carry a
+  stdlib/, actor_runtime.c, actor_runtime.h, actor_runtime.o}`; it does
+  not build the REPL (`zyl-self repl` runs it, `install.sh` builds
+  `zyl-repl`). The runtime is compiled once at -O2 into
+  `actor_runtime.o`, and a link uses it when it is newer than the
+  source. A self-compile takes about 2 s; the self-build prints no
+  warnings (swept 2026-09-24).
+- `./run_regression_tests.sh --full --no-boot` passes **260/260** in
+  about 20 s (2026-09-25): 77 regression, 55 interpreter, 97
+  compile-fail, 7 integration, 4 stress, 2 packages, 8 packages-fail, 1
+  packages-build, 7 scripts, the LSP protocol test and the unit test. Compile-fail tests may carry a
   `; expect-error: CODE` line, which pins the failure to that code. The
   interpreter category runs the regression and smoke tests both through
   the ICNF interpreter, in its tag-checking mode (`ZYL_INTERP_CHECK=1`),
@@ -45,12 +51,28 @@ history, or a probe compile with `build/boot/zyl-self` on 2026-09-23.
   derive expansion, impl lifting, closure lifting, type checking
   (`type_annotate.zyl`: sound HM, static trait resolution, per-type
   specialization of calls and function values), ICNF lowering,
-  optimization (constant folding and dead-branch elimination), region
-  inference (a provably non-escaping variant becomes `IStackVariant`;
-  then `rg-regions` places every allocation and call site in the frame's
-  own region, the caller's result region, or the heap — see
-  `docs/regions-design.md`), x86_64 code generation, and linking with
-  `cc`.
+  optimization (`opt-inline-fns`: small non-recursive functions inlined,
+  up to `ZYL_INLINE_LIMIT` nodes, off with `ZYL_INLINE=0`, then copy
+  propagation; `opt-optimize-fns`: constant folding and dead-branch
+  elimination), region inference (a provably non-escaping variant
+  becomes `IStackVariant`; then `rg-regions` places every allocation
+  and call site in the frame's own region, the caller's result region,
+  or the heap — see `docs/regions-design.md`), in-place reuse
+  (`reuse.zyl`: a construction may take the block of a unique, dead
+  value; `ZYL_REUSE=0` turns it off), x86_64 code generation, and
+  linking with `cc`. `closure_inline.zyl` is kept as an identity step.
+- Code generation (`docs/native-backend-design.md`): a function in the
+  supported set is lowered to MIR (`mir.zyl`), given registers by
+  liveness and linear scan, and emitted directly; the rest (with-region
+  scopes, closures, `try`, `print`, Float arithmetic, frame-wiping
+  secret functions, more than six parameters) use the stack machine.
+  Both share one ABI; `ZYL_MIR=0` sends everything through the stack
+  machine. The native path has immediates, compare-and-branch, division
+  and remainder by a constant without `idiv` (`zyl_div_magic`),
+  inline array access, byte access and region allocation, a byte
+  handle's data and bound loaded once per function, and a self tail
+  call that recycles the frame region (`zyl_region_recycle`) and jumps
+  to the loop head.
 - Regions are real (2026-09-24): each call that allocates short-lived
   values gets a frame region released on return, results go into the
   region the caller chose, and only values that escape untracked go to
@@ -70,11 +92,14 @@ history, or a probe compile with `build/boot/zyl-self` on 2026-09-23.
   by the typed-channel work).
 - Covered by the suite: structs, ADTs with per-ADT exhaustiveness
   checking, literal/OR/range/guard patterns, `_` and `_`-prefixed names
-  as discards, generics through monomorphization, traits and derive,
-  closures with free-variable capture, `try`/`catch`, macros, actors
+  as discards, generics (per-type specialization in the type checker), traits and derive,
+  closures with free-variable capture, `try`/`catch`, macros
+  (quasiquote, `&rest`), list literals, zero-copy views, actors
   (`spawn`, `send`, `actor-wait`), FFI with pinning and timeouts, the
-  bitwise operators, 8-bit byte loads and stores, byte slices, atomics,
-  `align-check`, and the `Secret` capability's constant-time checks.
+  bitwise operators, 8- to 64-bit byte loads and stores, byte slices,
+  atomics, `align-check`, strict left-to-right evaluation
+  (`eval-order`), in-place reuse, and the `Secret` capability's
+  constant-time checks.
 - Macro expansion (`macro_expand.zyl`) implements spec §19: gensym
   hygiene (template binders renamed to `name__hygN` from a source-order
   counter; a free template name that is a call-site local is
@@ -83,12 +108,15 @@ history, or a probe compile with `build/boot/zyl-self` on 2026-09-23.
   macro reached during its own expansion, `E_MACRO_ILLEGAL_ACCESS` for a
   non-top-level `defmacro`, `E_ARITY_MISMATCH` for a wrong argument
   count, `E_DUPLICATE_DEFINITION` for a repeated macro name. Parameters
-  are still plain names (no patterns or rest parameters).
+  are plain names plus a final `&rest name`, spliced with `,@name`; there
+  are no pattern parameters. Quasiquote (`` `d ``, `,e`, `,@e`) builds
+  lists.
 - Located diagnostics (`error[CODE]`, `--> file:line:col`, the source
   line, a caret and a `= help:` line) for the four balance errors,
   `E_MALFORMED_PARAMETER`, `E_ARITY_MISMATCH`, `E_NON_EXHAUSTIVE_MATCH`,
-  `E_UNREACHABLE_MATCH_ARM`, `E_DUPLICATE_DEFINITION` and
-  `E_UNBOUND_VARIABLE`.
+  `E_UNREACHABLE_MATCH_ARM`, `E_DUPLICATE_DEFINITION`,
+  `E_UNBOUND_VARIABLE`, every type error, and most other checks (see
+  **Open limitations** for the ones still unlocated).
 - An allocation failure reports `E_OUT_OF_MEMORY`; the budget is
   `ZYL_MAX_MEMORY` when set, otherwise 80% of available memory.
 
@@ -122,19 +150,22 @@ history, or a probe compile with `build/boot/zyl-self` on 2026-09-23.
   `:reset`, and a per-directory `.zyl-session` file. `tools/repl.zyl` is a
   thin `main` over these modules.
 - Language server: `stdlib/lsp/`, entry `selfhost/lsp_main.zyl`, binary
-  `build/boot/zyl-lsp`. VS Code extension 0.3.0 in `editors/vscode/`.
+  `build/boot/zyl-lsp`. It runs the front end, the checks and the type
+  checker, and publishes every type error, located, plus unused-binding
+  warnings. VS Code extension 0.4.0 in `editors/vscode/` (esbuild
+  bundle, `$zyl` problem matcher).
   `install.sh` installs the compiler, REPL and server into `~/.zyl` (or
   `$ZYL_HOME`); `--with-vscode` adds the extension; `uninstall.sh`
   removes what it installed and keeps the store, keys and REPL files
   (`--purge` removes everything).
-- Standard library directories: actor, allocator, atomic, collections,
-  compiler, core, ffi, io, lsp, math (bits, words, bignum, hashes,
-  symmetric and asymmetric cryptography, KDFs, RNG, secret), mlib, repl,
-  testing.
+- Standard library directories: actor, allocator, atomic, collections
+  (vec, map, set, slice), compiler, core, ffi, io, lsp, math (bits,
+  words, bignum, hashes, symmetric and asymmetric cryptography, KDFs,
+  RNG, secret), mlib, repl, testing, text (view).
 - Book: `book/` (mdBook), with a runnable example project in
   `book/examples/log-processor/`.
 
-### Open limitations (each confirmed still open on 2026-09-23)
+### Open limitations (each confirmed still open on 2026-09-25)
 
 Compiler:
 
@@ -150,12 +181,6 @@ Compiler:
   top-level `def` are mis-handled; the checker does not distinguish
   byte-buffer regions; the interpreter's checking mode sees Bool, Unit
   and ADTs as words. `<` on ADTs is a type error (use `Ord.compare`).
-- The standard library has no higher-order list functions (`map`,
-  `filter`, `fold`).
-- Call targets are resolved only in codegen (`cg-call-user`): a call to
-  an undefined function, including the unimplemented `(list ...)`
-  literal, is a located `E_UNBOUND_VARIABLE` there, not a linker error,
-  but no earlier phase (type inference) reports it.
 - Diagnostics still reported as a bare `PANIC:` with no location:
   `E_INVALID_CAPABILITY` and the remaining errors in
   `expr_inner`. Warnings carry spans, parameter warnings included (qualification
@@ -169,7 +194,8 @@ Compiler:
   `zyl_build_hash`.
 - `Secret`: frames holding secrets are zeroed on return, heap erasure is
   explicit (`zeroize`, `wipe`); Secret fields/types redact as `<secret>`;
-  `set!` of a secret into a `let-mut` is not tracked. Taint crosses a call
+  a `let-mut` that is ever `set!` to a secret is secret for its whole
+  scope. Taint crosses a call
   boundary only where the callee's parameters are annotated.
 - Tail calls are jumps (`cg-tail`), direct or through a function value;
   exceptions: stack arguments beyond the caller's own, calls inside
@@ -189,11 +215,9 @@ Package system:
   have a manifest.
 - Paths and URLs containing characters outside `store-safe`'s set (a
   space or a quote, for example) are refused rather than quoted.
-- A nested `feature-gate` is not rejected; it is treated as an ordinary
-  form.
-- Ed25519 still ships inside the compiler rather than the runtime.
-  The boot cost that motivated moving it went away when the
-  type-inference exponential was fixed (`./boot.sh` now takes about 23 s).
+- Ed25519 still ships inside the compiler (`index.zyl` uses
+  `math/crypto/asymmetric/ed25519`) rather than the runtime. The boot
+  cost that motivated moving it is gone (a self-compile takes about 2 s).
 
 REPL and interpreter:
 
@@ -204,10 +228,10 @@ REPL and interpreter:
 
 Tooling and library:
 
-- The language server does not run `unused_check` or type inference's
-  `collect-definitions`, and reports one diagnostic at a time.
-- The VS Code extension is not bundled (no esbuild step) and has no
-  problem matcher, although CLI diagnostics now carry `file:line:col`.
+- The language server does not run `capability_check` (a capability
+  violation shows only when `zyl` compiles the file); the checks before
+  the type checker stop at their first problem, so those errors arrive
+  one at a time; positions are byte columns, not UTF-16 code units.
 - BLAKE3 uses the portable compression function (no SIMD). There is no
   ctgrind or valgrind instrumentation; `verify/timing.py` is the
   statistical substitute.
@@ -228,7 +252,8 @@ by recent sessions. The completed roadmap items are kept, annotated, under
       located error (codegen's `cg-call-user`, 2026-09-23; an earlier
       phase would be better still).
 - [x] Fix the `=`-on-strings name comparisons in `type_inference.zyl`
-      (`f6ea129`; made allocation-free on 2026-09-24).
+      (`f6ea129`; made allocation-free on 2026-09-24; the module was
+      replaced by `type_annotate.zyl` and deleted on 2026-09-25).
 - [x] Labelled secondary spans (`err-at-labels`) on `E_MUT_CONFLICT`,
       `E_CAPABILITY_LEAK` and `E_PKG_CAPABILITY_VIOLATION`.
       `E_REGION_ESCAPE` (raised since 2026-09-24) is located but has no
@@ -236,14 +261,17 @@ by recent sessions. The completed roadmap items are kept, annotated, under
 - [x] "Did you mean" (edit distance over in-scope names) on unbound
       identifiers and undefined functions.
 - [x] `--error-format=json`: one JSON object per diagnostic on stderr.
-- [ ] Sweep the warnings `./boot.sh` prints.
+- [x] Sweep the warnings `./boot.sh` prints (the self-build is
+      warning-free since 2026-09-24).
 
 ### P2: Code generation correctness
 
 - [x] Field and return kinds in codegen, so compiled `print` and `==`
       agree with the interpreter; then derivable `Show`.
-- [x] Tail-call optimization in `codegen.zyl` (direct calls, at most six
-      arguments; indirect and stack-argument tail calls still open).
+- [x] Tail-call optimization in `codegen.zyl`: direct and indirect tail
+      calls, stack arguments within the caller's incoming area, and
+      interpreter TCO (except String/Float results); on the native path
+      a self tail call is a loop.
 - [x] `print` on `Result`/`Option`/`List` whose payload has no `Show`
       printed garbage or crashed; it now prints raw. The run-time tag
       dispatch is gone (2026-09-25): a trait call resolves statically or
@@ -253,8 +281,8 @@ by recent sessions. The completed roadmap items are kept, annotated, under
 
 ### P3: Language features
 
-- [x] Contract injection (spec §23), lowered in `expr_inner.zyl`;
-      open: profiles, `checkpoint` rollback, typed `recover` arms.
+- [x] Contract injection (spec §23), lowered in `expr_inner.zyl`, with
+      profiles, `checkpoint` rollback and `recover` arms by error code.
 - [x] 16-, 32- and 64-bit byte loads and stores; `ByteBuf`/`ByteSlice`
       handle types.
 - [x] `Secret`: frame zeroization on return, `print` redaction, a `Secret`
@@ -275,7 +303,11 @@ by recent sessions. The completed roadmap items are kept, annotated, under
 
 Agreed order: FFI timeouts (done 2026-09-24), real regions (done
 2026-09-24), sound HM type checking (done 2026-09-25), zero-copy
-views plus the P1-P3 leftovers, deterministic concurrency, intrinsics.
+views (done 2026-09-25) plus the P1-P3 leftovers, deterministic
+concurrency, intrinsics. The native backend (MIR and linear scan,
+`docs/native-backend-design.md`, started 2026-09-25 as the performance
+priority) is in progress alongside: stages 1 and 2 and in-place reuse
+have landed, stages 3 to 5 are partial.
 
 - **Sound types:** done 2026-09-25 (see the session log and
   `docs/sound-types-design.md`).
@@ -304,8 +336,7 @@ views plus the P1-P3 leftovers, deterministic concurrency, intrinsics.
   the escape hatch.
 - **Byte-level primitives:** 8-, 16-, 32- and 64-bit loads and stores,
   `bytebuf`, `byteslice`/`byteslice-sub`, atomics and `align-check` are
-  done. Views that provably cannot outlive their buffer come with the
-  zero-copy views item, after real regions.
+  done, and so are views tied to their base by escape analysis (below).
 - **Deterministic region extension:** done 2026-09-24: `with-region`
   with the audited kinds `arena` (block size, alignment, byte limit) and
   `fixed` (size, alignment), no raw alloc/free function pointers, and
@@ -316,9 +347,10 @@ views plus the P1-P3 leftovers, deterministic concurrency, intrinsics.
   read-only pages shared between actors. The `TCAtomic` and
   `TCAtomicByte` capability kinds and the atomic byte-buffer operations
   exist; the sharing model does not.
-- **Ergonomic zero-copy views:** short-lived region views over
-  longer-lived data (parsing, substrings, array slices) without
-  Rust-style lifetime parameters. `byteslice` is the only form so far.
+- **Ergonomic zero-copy views:** done 2026-09-25: `text/view`
+  (`StrView`, `Cursor`) and `collections/slice` (`Slice`), ordinary
+  values holding their base, so region inference keeps the base alive
+  as long as any view; no lifetime parameters.
 
 ## Constraints for Compiler Source Written in Zyl
 
@@ -366,6 +398,8 @@ as recorded below.
 - Error codes: `docs/errors.md`, `docs/error-system-architecture.md`
 - Package system: `docs/package-management-design.md`
 - REPL: `docs/repl.md`; cryptography library: `docs/math-crypto.md`
+- Regions: `docs/regions-design.md`; types: `docs/sound-types-design.md`;
+  native backend: `docs/native-backend-design.md`
 - Historical phase details: `docs/implementation-status.md`
 - Specifications: `zyl_specification.txt` (v5.0, canonical), `spec/`
   (structured copy), `specifications/` (v1.0 to v4.1, historical)
@@ -395,10 +429,40 @@ as recorded below.
 | Located diagnostics; type-inference exponential fixed | 2026-09-23 | `./boot.sh` from about ten minutes per stage to 23 s total |
 | REPL with an ICNF interpreter | 2026-09-23 | live bindings, structural printing, per-project sessions; interpreter checked against codegen by the suite |
 | Compiler built through module resolution | 2026-09-24 | bundle and `assemble.py` retired; memory regression fixed; per-stage memory ceiling |
+| Real regions | 2026-09-24 | per-call frame regions, escape analysis over ICNF, `with-region`, `E_REGION_ESCAPE` |
+| **Sound HM type checking** | **2026-09-25** | `type_annotate.zyl`; `type_inference`, `monomorphization` and `assert_lowering` deleted |
+| Native backend, stages 1-2 | 2026-09-25 | MIR + linear scan (`mir.zyl`), inlining, in-place reuse (`reuse.zyl`); self-compile about 2 s |
 
 ---
 
 # Session log (newest first)
+
+## Session (2026-09-25, later still) — bugs found by the skill audit
+
+- Native backend: a function whose only C call is a reuse slow path
+  aligns its frame (`mb-any-c-call` counts `MReuse`).
+- Types: a lowercase field type in `deftype` is `E_UNKNOWN_TYPE`; it was a
+  fresh type per use, so the field was unchecked. The compiler's own
+  unused `ECatalog` had one.
+- Match: a program's own constructor in a binder slot, `(Node v Leaf v)`,
+  is `E_NESTED_PATTERN` (qualify qualifies a capitalized binder that
+  names a known symbol).
+- The ICNF text shows reuse decisions (` ^x`), so the ICNF hash covers them.
+- `exit` flushes and ends the process (`zyl_exit`), `read-line` reads a
+  line from stdin (`zyl_read_line`), and `close` is `file-close`. They
+  used to lower to 0.
+- FFI: an extern'd `zyl_*` symbol is user code and runs on the timed
+  worker; an extern for an entry with a table signature (`zyl_now_ms`)
+  is `E_FFI_RESTRICTED`.
+- Parse: a form after an `if`'s else branch, a quote or unquote with no
+  form after it (a trailing comma in `{ a, }` swallowed the rest of the
+  file), and a non-name in an import list are `E_MALFORMED_FORM`.
+- `E_MATCH_ARM_COMPLEX` is located. The JSON summary of type errors
+  carries its code (`zyl_panic_json` reads `error[CODE]:`).
+- Tests: compile-fail `deftype-lowercase-field`, `nested-own-nullary`,
+  `extern-on-typed-runtime`, `if-extra-form`, `import-trailing-comma`,
+  `import-comma`, `match-arm-complex`; regression `exit`; script
+  `json-diagnostics`.
 
 ## Session (2026-09-25, later) — the language server type-checks
 
@@ -430,6 +494,39 @@ as recorded below.
   150 KB document still takes about 470 MB (the front end and the type
   checker allocate on the process heap, which is never freed), and
   semantic tokens for it about 500 MB more.
+
+## Session (2026-09-25) — native backend and performance
+
+Commits `4892ede` .. `763b67c`; design and measurements in
+`docs/native-backend-design.md`, and `bench/` holds seven benchmarks in
+Zyl, C, C++, Rust and Go with `bench/matrix.py`.
+
+- Strict left-to-right evaluation fixed where it was not (byte
+  operations evaluated the offset before the buffer; a call through a
+  local read the local after the arguments); `tests/regression/eval-order.zyl`.
+- The compiler builds itself 3.6x faster (`6367283`): the runtime is
+  prebuilt once at -O2 as `actor_runtime.o`, the lexer's quadratic byte
+  reads are gone, `StrBuf` has a length header, and linear lookups became
+  hash lookups. A one-line program links in about 0.05 s.
+- Native backend (`7161725`, `70922f7`): `compiler/mir.zyl` (MIR,
+  liveness, linear scan, parallel moves) and its lowering and emission in
+  `codegen.zyl`. About 95% of the compiler's functions take it; the rest
+  keep the stack machine. `ZYL_MIR=0` turns it off.
+- Inlining of small functions before region inference (`cdda64b`,
+  `ZYL_INLINE`, `ZYL_INLINE_LIMIT`), then copy propagation; inline array
+  access and region allocation (`0929426`); loop frame-region recycling
+  (`93ab380`); division by constants through `zyl_div_magic` and
+  `zyl_div_shift` (`13a72eb`, `4577304`); lighter frames (`c154e7e`);
+  a byte handle's data and bound loaded once per function (`763b67c`).
+- In-place reuse (`55c9355`, `compiler/reuse.zyl`): a construction takes
+  the block of a provably unique, dead value, with owning clones of
+  functions (`f~own`); `ZYL_REUSE=0` turns it off. `boot.sh`'s per-stage
+  memory cap went from 2 GB to 4 GB for the new passes.
+  `vec-push` grows storage with one `zyl_array_copy` (`23976f3`).
+- Suite 260/260; fixed point verified after each commit.
+
+Open: Float arithmetic, `print`, closures, `try` and `with-region` scopes
+on the native path; MIR-level optimization; bounds-check elimination.
 
 ## Session (2026-09-25) — sound type checking
 
@@ -1593,6 +1690,8 @@ are bound.
 
 ### Deliberate deviations, recorded rather than hidden
 
+*(2026-09-25: several items below have since closed — the ICNF hash, the build cache, the graph and final hash in the binary, and `E_PKG_FEATURE_NESTED`. See spec/16-package-system.md for the current list.)*
+
 - **The standard library stays implicit.** §25 says it is implicit and
   versioned with the compiler, so it is package `zyl/std` at the
   compiler's major with no manifest: fully visible, never capability-
@@ -1621,6 +1720,8 @@ are bound.
   comparisons is a change to type inference, not to the module system.
 
 ### Known gaps
+
+*(2026-09-25: several items below have since closed — the ICNF hash, the build cache, the graph and final hash in the binary, and `E_PKG_FEATURE_NESTED`. See spec/16-package-system.md for the current list.)*
 
 - `zyl fetch` downloads registry archives over HTTPS; a `git` dependency
   is recognised, pinned by revision and resolvable from the store, but

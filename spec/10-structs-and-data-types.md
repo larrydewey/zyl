@@ -136,35 +136,44 @@ Not normative.
 ### Structs
 
 - `defstruct` is sugar for a single-variant `deftype`. A field is a bare
-  name or `(name Type)`; the type is accepted and not used.
-  `defstruct+` is parsed by the same function as `defstruct`.
-- `(:derive ...)` inside `defstruct` is not recognised; use the standalone
+  name or `(name Type)`. A declared field type is checked: a value of
+  another type is `E_TYPE_MISMATCH` (`ta-check-fields`); a bare field is
+  an implicit type parameter of the struct
+  (`spec/05-types-and-inference.md`). `defstruct+` is parsed by the same
+  function as `defstruct`.
+- An inline `(:derive [Trait ...])` after the fields is accepted by both
+  `defstruct` and `defstruct+` and means the same as the standalone
   `(derive Name Trait...)` form (see `spec/05-types-and-inference.md`).
 - `make-Name` lowers to a variant construction. `(make-struct Name args...)`
-  is also accepted.
+  is parsed, but the type checker has no rule for it
+  (`E_CANNOT_INFER`, "no type for form"), so only `make-Name` compiles.
 - `struct-get` accepts the field name as a string, `(struct-get p "x")`,
   which is what the tests use, or as a bare symbol.
-- A struct or variant is a block `[tag][field0]...` from `zyl_heap_alloc`.
-  Region inference moves a let-bound value to the stack only when it is
-  used solely as a `match` subject or a `print` argument
-  (`spec/07-region-memory-model.md`).
+- A struct or variant is a block `[tag][field0]...`, allocated in the
+  frame region, the caller's result region or the heap as region
+  inference places the construction; a let-bound value used solely as a
+  `match` subject or a `print` argument is moved into the stack frame
+  (`spec/07-region-memory-model.md`). An update of a unique, dead value
+  may write the new record into the old one's block (`reuse.zyl`).
 - `set!` on anything but a plain `let-mut` name is rejected by the parser
   with `E_MUT_CONFLICT`.
 
 ### Aliases
 
 `alias` has no parser entry, so `(alias Name T)` is a top-level no-op
-rather than a new name for `T`. The special form `(unwrap x)` is parsed but
-has no ICNF lowering and evaluates to `0`; the library functions
-`result-unwrap` and `option-unwrap` (which take a default) are what the
-tests use.
+rather than a new name for `T`. An annotation that names the alias is
+then an undeclared uppercase name, which the type checker treats as a
+type parameter, so `((m Meters))` accepts any type rather than exactly
+`T`. `(unwrap x)` takes an `Option`: `(Some v)` gives `v` and `None`
+panics with `unwrap on None`; the library functions `result-unwrap` and
+`option-unwrap` (which take a default) cover `Result` and defaults.
 
 ### Pattern matching
 
 - **Constructor patterns:** `(Variant field... body)` or
-  `((Variant field...) body)`. Constructor patterns may nest, for example
-  `(Wrap (Some x) x)`; a nested zero-field constructor such as
-  `(Wrap None)` is not supported.
+  `((Variant field...) body)`. Each field is bound to a name or `_`; a
+  nested pattern such as `(Wrap (Some x) x)` is `E_NESTED_PATTERN`
+  (match on the field in the arm body instead).
 - **Catch-all:** `_`. Any identifier that is not a known variant also acts
   as a catch-all, a consequence of how variant tags are looked up; the
   convention is to write `_` or a `_`-prefixed name.

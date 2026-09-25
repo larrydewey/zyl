@@ -49,7 +49,7 @@ You can define any number of tests; each one is another top-level form:
 | `(assert-true expr)` or `(assert-true expr "msg")` | Fail if `expr` is false |
 | `(assert-false expr)` or `(assert-false expr "msg")` | Fail if `expr` is true |
 
-The optional message is accepted but not printed; a failing test is reported only as `FAIL`.
+Inside a test the optional message is not printed: a failing test is reported only as `FAIL`. Outside a test, a failed assertion ends the program with `PANIC:` and the message.
 
 The operands are type-checked. `assert-true`, `assert-false` and `assert` take a `Bool`, such as the result of `str-eq` or a comparison, so `(assert-true 1)` is `E_TYPE_MISMATCH`. The two sides of an `assert-equal` must have one type: `(assert-equal "x" 1)` does not compile.
 
@@ -77,7 +77,7 @@ A test has exactly one body form. To make several assertions, wrap them in `begi
 - **Strings** compare by content: `(assert-equal "ab" (str-concat "a" "b"))` passes.
 - **Structs and ADT values** compare by content, exactly like `==`: the variant, then each field, recursing into nested values and strings. `(assert-equal (Cons 1 Nil) (Cons 1 Nil))` and `(assert-equal (Some (Some 1)) (Some (Some 1)))` pass; `(assert-equal (Some (Some 1)) (Some (Some 2)))` fails. A type with a `Secret` field is the exception: it is compared one level deep, with pointer fields by address.
 
-> **`assert` and `assert-fail`:** a false `(assert expr "msg")` fails the test with your message when it is a string literal (`assert failed` otherwise); `(assert-true expr "msg")` does the same. `assert-fail` is still not enforced: it evaluates its expression and always passes, so avoid it until the runtime check lands.
+> **`assert` and `assert-fail`:** a false `(assert expr "msg")` panics with your message when it is a string literal (`assert failed` otherwise), and `(assert-true expr "msg")` does the same; outside a test that prints `PANIC: msg`, inside one the harness prints `FAIL`. `assert-fail` is still not enforced: it evaluates its expression and always passes, so avoid it until the runtime check lands.
 
 ## 11.3 Running Tests
 
@@ -220,7 +220,7 @@ The tests live under `tests/` (`tests/regression/` for the `test`-based files). 
 
 ### Isolation
 
-- A panic inside a test unwinds to the harness; the process survives.
+- A panic inside a test unwinds to the harness, which releases the regions the test opened; the process survives.
 - There is no `try` boundary between assertions in the same test: the first failure abandons the rest of that test's body.
 - Tests share one process and one heap; there is no fresh environment per test yet (Spec §11 calls for one).
 

@@ -55,9 +55,13 @@ fn longest<'a>(x: &'a str, y: &'a str) -> &'a str { ... }
 (defn longest (x y) (if (> (str-length x) (str-length y)) x y))
 ```
 
-Region inference today is conservative: a variant that is only matched
-or printed is placed in its function's frame, and everything else goes
-on the heap (Chapter 16).
+Region inference does the work lifetimes do in Rust, without asking
+you: escape analysis places each allocation in the current call's frame
+region, released when the call returns, in the region its caller chose
+for the result, or on the heap when it escapes untracked (Chapter 16).
+The explicit choices are a `(bytebuf Stack N)` and `with-region`, and
+letting one of those escape is `E_REGION_ESCAPE`, the nearest thing to
+a borrow-checker error.
 
 ### Traits → Traits (Similar)
 
@@ -104,9 +108,9 @@ fn min<T: Ord>(a: T, b: T) -> T { ... }
   because nothing constrains `x`. `smaller` works on any type `<`
   accepts (`Int`, `Float`, `String`); an ADT is ordered with
   `Ord.compare` instead.
-- Specialisations are named canonically, with type arguments sorted
-  alphabetically (`min_Int`; `pair_Int_String` for either argument
-  order) (§6.4).
+- A function specialised per type gets one instance per list of
+  argument types, named after them in argument order: `pair~Int,String`
+  and `pair~String,Int` are two instances (§6.4).
 - A struct is generic in each field written without a type:
   `(defstruct Box (v))` is a box of any one type.
 - No const generics, no GATs and no specialisation (§6.5).
@@ -132,9 +136,10 @@ let n = parse(s)?;
 helpers (`result-map`, `result-and-then`, `result-unwrap` with a
 default). `try`/`catch` catches a *panic* — what `(error "msg")` raises
 — rather than an `Err` value; it is the counterpart of
-`std::panic::catch_unwind`, not of `?`. The `unwrap` form panics on
-`None` or `Err`, like Rust's, but always with the message `unwrap on
-None` (Appendix C.7).
+`std::panic::catch_unwind`, not of `?`. The `unwrap` form takes an `Option` only
+and panics on `None` with `unwrap on None`; for a `Result`, use
+`result-expect`, which panics with your message, or `result-unwrap`
+with a default (Appendix C.7).
 
 ### Pattern Matching → Match (Similar)
 

@@ -298,7 +298,7 @@ A macro call must pass exactly one argument per parameter, or at least one per p
 
 ## 10.8 Built-in Forms That Look Like Macros
 
-Several forms that other Lisps define as macros are built into Zyl's parser instead:
+Several forms that other Lisps define as macros are built into the compiler instead (recognized, like every special form, in `convert-ast`):
 
 | Form | Behavior |
 |------|----------|
@@ -330,7 +330,7 @@ The `and` evaluates the first two operands and stops at `false` (printed as `0`)
 
 ## 10.9 Debugging Macros
 
-The compiler has no option that prints the expanded program (the only output option is `--emit-asm`), and the REPL has no `:macroexpand` command. To check an expansion:
+The compiler has no option that prints the expanded program (its options are `-o`, `--emit-asm`, `--contracts=P` and `--error-format=json`), and the REPL has no `:macroexpand` command. To check an expansion:
 
 1. Write the expansion you expect by hand, as ordinary code, and confirm it behaves the same as the macro call.
 2. Test the macro directly with the test harness (Chapter 11). Macros expand inside `test` bodies:

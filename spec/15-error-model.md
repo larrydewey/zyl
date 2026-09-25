@@ -154,9 +154,10 @@ code plus implementation codes such as `E_ARITY_MISMATCH`,
 `E_UNBOUND_VARIABLE`, `E_DUPLICATE_DEFINITION`, `E_MALFORMED_PARAMETER`,
 `E_OUT_OF_MEMORY`, the `E_UNBALANCED_*` balance errors, the byte-buffer
 codes and the Secret codes (`E_CT_VIOLATION`, `E_SECRET_ESCAPE`,
-`E_SECRET_DEBUG`, `E_ZEROIZE_MISSING`, `E_FFI_PIN_REQUIRED`). A few
-entries are duplicated (`E_CANNOT_INFER`, `E_OUT_OF_MEMORY`) or near
-duplicates (`E_ALIGNMENT_FAILED`, `E_ALIGN_CHECK_FAILED`).
+`E_SECRET_DEBUG`, `E_ZEROIZE_MISSING`, `E_FFI_PIN_REQUIRED`), and also
+`W_TYPE_STRICT` and the interpreter's `E_INTERP_TAG`. One entry is
+duplicated (`E_OUT_OF_MEMORY`) and two are near duplicates
+(`E_ALIGNMENT_FAILED`, `E_ALIGN_CHECK_FAILED`).
 
 A compile error aborts through the runtime's `zyl_panic`, which prints
 `PANIC: ` and the message to stderr and exits with status 1. Where the
@@ -172,26 +173,34 @@ error[E_UNBOUND_VARIABLE]: unbound identifier `nosuchvar`
    = help: check the spelling, or bind it with `let` before this point
 ```
 
-Several checks (mutability, capability, the unused-binding checks, the
-Secret checker and most of the post-processor's errors) still print a bare
-`CODE: message` line without a location.
+The mutability, capability, unused-binding and Secret checks, the arity
+pass and the type pass report located errors in this form. A few errors
+still print a bare `CODE: message` line without a location:
+`E_INVALID_CAPABILITY` (`mutability_check.zyl`),
+`E_PKG_CAPABILITY_GROWTH` (`capability_check.zyl`),
+`E_DUPLICATE_PARAMETER` (`unused_check.zyl`), and in `expr_inner.zyl`
+the byte-primitive shape errors, the `set!`-target `E_MUT_CONFLICT` and
+the literal-match `E_MATCH_NONEXHAUSTIVE`, as well as the backstops in
+`icnf.zyl`. `docs/errors.md` marks which codes are located.
 
-Warnings are `W_UNUSED_FUNCTION`, `W_UNUSED_PARAMETER`, `W_UNUSED_VARIABLE`
-and `W_SHADOWED_BINDING` (from `unused_check.zyl`), printed to stderr
-without a location, plus `E_ZEROIZE_MISSING` at severity 2. Names that are
-`_` or start with `_` are exempt.
+Warnings are `W_UNUSED_PARAMETER`, `W_UNUSED_VARIABLE` and
+`W_SHADOWED_BINDING` (from `unused_check.zyl`; `W_UNUSED_FUNCTION` is
+catalogued but not raised), printed to stderr
+with a location in the same form (`warning[CODE]: ...`), plus
+`E_ZEROIZE_MISSING` at severity 2. Names that are `_` or start with `_`
+are exempt.
 
 ### Which §28 codes are raised
 
-Raised by the compiler: `E_RESERVED_KEYWORD` (only for the reserved byte
-widths; see `spec/01-lexing-and-tokens.md`), `E_INVALID_ESCAPE`
+Raised by the compiler: `E_INVALID_ESCAPE`
 (`parser.zyl`), `E_MALFORMED_FORM` and `E_FFI_RESTRICTED` (the arity
 pass, below), `E_FFI_SYMBOL_REQUIRED` and `E_FFI_TIMEOUT_REQUIRED`
 (`ffi-check-call`), `E_NESTED_PATTERN` (`expr_inner.zyl`),
 `E_MACRO_NON_TERMINATION` and `E_MACRO_ILLEGAL_ACCESS`
 (`macro_expand.zyl`), `E_MUT_CONFLICT` and `E_CAPABILITY_LEAK`
-(`mutability_check.zyl`), `E_MATCH_NONEXHAUSTIVE`, `E_DUPLICATE_IMPL`
-and `E_TRAIT_NOT_DERIVABLE` (`derive.zyl`), `E_TRAIT_NOT_FOUND`,
+(`mutability_check.zyl`), `E_MATCH_NONEXHAUSTIVE` (a literal-pattern
+match without a final `_` arm, and ICNF lowering's backstops),
+`E_DUPLICATE_IMPL` and `E_TRAIT_NOT_DERIVABLE` (`derive.zyl`), `E_TRAIT_NOT_FOUND`,
 `E_CANNOT_INFER` and `E_INFINITE_TYPE` (`type_annotate.zyl`),
 `E_REGION_ESCAPE` (a `(bytebuf Stack N)` that escapes its frame, or a
 value that outlives its `with-region`), `E_REGION_SPEC`, and every
@@ -200,16 +209,16 @@ package-system code. Raised at run time: `E_FFI_TIMEOUT`,
 and `E_CONTRACT_VIOLATION` (the prefix of a failed contract check's
 message).
 
-Catalogued but never raised: `E_USER_ERROR`, `E_ASSERT_FAIL`,
+Catalogued but never raised: `E_RESERVED_KEYWORD` (see
+`spec/01-lexing-and-tokens.md`), `E_USER_ERROR`, `E_ASSERT_FAIL`,
 `E_UNINITIALIZED_USE`, `E_OVERFLOW`, `E_TEST_FAILURE`,
 `E_TEST_RUNNER_ERROR`, and from §6.7 `E_TRAIT_BOUND_NOT_SATISFIED` and
 `E_UNKNOWN_GENERIC_PARAM`. `E_DIVISION_BY_ZERO` is raised only by the
 REPL's ICNF interpreter; a compiled program traps with SIGFPE.
 
 Raised but not in the catalog: `E_NON_EXHAUSTIVE_MATCH` and
-`E_UNREACHABLE_MATCH_ARM` (from `exhaustiveness_check.zyl`),
-`E_DUPLICATE_PARAMETER` (from `unused_check.zyl`), `W_TYPE_STRICT` (the
-type pass in report mode) and the interpreter's `E_INTERP_TAG`.
+`E_UNREACHABLE_MATCH_ARM` (from `exhaustiveness_check.zyl`) and
+`E_DUPLICATE_PARAMETER` (from `unused_check.zyl`).
 `E_NON_EXHAUSTIVE_MATCH` is a second spelling of §28's
 `E_MATCH_NONEXHAUSTIVE`; the two are raised by different passes.
 
@@ -239,9 +248,7 @@ and an `ffi-call` to a runtime entry the program also declares with
 `extern` (`E_FFI_RESTRICTED`) are collected the same way. Setting
 `ZYL_STRICT_TYPES=report` (or `1`) prints each of the collected errors as
 a `W_TYPE_STRICT` warning instead and lets the compile continue; it is
-for counting errors, not for running an ill-typed program. The catalog's
-message for `E_CANNOT_INFER` still reads "cannot infer concrete type for
-generic parameter G", the narrower old meaning.
+for counting errors, not for running an ill-typed program.
 
 ### Form and FFI errors from the arity pass
 

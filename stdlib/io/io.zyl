@@ -1,5 +1,5 @@
 ; === Zyl Standard Library — I/O ===
-; Module: io
+; Module: io/io
 ; Provides: File I/O operations (builtin file-open/file-read/file-write/file-close),
 ;           stdin/stdout helpers, and the OutputStream trait for generic output.
 
@@ -79,10 +79,9 @@
 
 ; Try to read from file, return Result
 ; Returns: Result<String, Int>
-; NOTE: Uses explicit Ok/Err — `try`/`catch` (spec §12.2 Result sugar) is not yet
-;       desugared by the compiler, so it would emit undefined _ZYL_try/_ZYL_catch
-;       symbols at link time. These wrappers are behaviorally identical to
-;       `(try (Ok X) (catch e (Err e)))` since the try body is always Ok.
+; NOTE: Uses explicit Ok/Err rather than `try`/`catch`: these wrappers
+;       are behaviorally identical to `(try (Ok X) (catch e (Err e)))`
+;       since the try body is always Ok.
 (defn io-safe-read (handle count)
   (Ok (file-read handle count)))
 
@@ -102,7 +101,8 @@
 
 ; Generic output abstraction. Implementations receive `self` typed as the
 ; concrete impl type; dispatch resolves `(Trait.method receiver ...)` to
-; `(Trait.method_ImplType receiver ...)` at monomorphization time.
+; `(Trait.method_ImplType receiver ...)` during type checking
+; (type_annotate's static trait resolution).
 
 (defstruct Stdout (fd Int))
 

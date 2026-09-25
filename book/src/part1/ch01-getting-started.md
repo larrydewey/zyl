@@ -40,9 +40,8 @@ self-hosting fixed point (the compiler reproduces its own committed
 output, byte for byte, when compiling itself), and writes
 `build/boot/zyl-self` — a wrapper you invoke like a normal compiler
 binary from any directory. It also builds the language server,
-`build/boot/zyl-lsp`. It prints a good number of `warning[W_UNUSED_PARAMETER]`
-and `warning[W_SHADOWED_BINDING]` lines along the way; they are not
-errors.
+`build/boot/zyl-lsp`. The compiler's own build is warning-free, so
+anything `boot.sh` prints besides its progress lines is worth reading.
 
 ### Quick Test
 
@@ -233,28 +232,35 @@ runs:
 └─────────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│ Type inference                                                  │
-│   Hindley-Milner inference with capability types               │
+│ Derive expansion, impl lifting, closure lifting                 │
+│   `derive` impls generated; impl bodies become                  │
+│   `Trait.method_Type` functions; closures become top-level code │
 └─────────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│ Monomorphization, trait dispatch, closure lifting               │
-│   Canonical (alphabetical) names for determinism                │
+│ Type checking                                                   │
+│   Hindley-Milner inference; every type error reported; static   │
+│   trait resolution and per-type specialization (`f~T1,T2`)      │
 └─────────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│ ICNF generation and optimization                                │
-│   SSA-style IR; constant folding and dead-branch elimination    │
+│ ICNF lowering and optimization                                  │
+│   Tree-shaped IR; inlining of small functions, constant folding │
+│   and dead-branch elimination (nothing is reordered)            │
 └─────────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│ Region inference                                                │
-│   Values that provably never escape are placed on the stack     │
+│ Region inference and reuse                                      │
+│   Escape analysis places each allocation in the call's frame    │
+│   region, the caller's result region or the heap; a dead,       │
+│   unique value's block may be reused in place                   │
 └─────────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
 │ Code generation and linking                                     │
-│   x86_64 assembly (System V AMD64 ABI), then cc +               │
+│   x86_64 assembly (System V AMD64 ABI): machine IR with         │
+│   linear-scan register allocation where a function fits it,     │
+│   the stack-machine generator otherwise; then cc +              │
 │   actor_runtime.c                                               │
 └─────────────────────────────────────────────────────────────────┘
 ```

@@ -1,5 +1,5 @@
 ; === Zyl Standard Library — Actor Operations ===
-; Module: actor
+; Module: actor/actor
 ; Provides: spawn, send, and actor lifecycle operations backed by the C runtime.
 
 ; ===========================================================================

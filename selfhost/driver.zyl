@@ -7,8 +7,8 @@
 ;      `(use module/name)` resolves `stdlib/module/name.zyl` relative to
 ;      the compiler binary's own bundle dir, not the caller's cwd.
 ;   2. Legacy fixed-path protocol (`argc < 2`): reads
-;      /tmp/zyl_boot_in.zyl, writes /tmp/zyl_boot_out.s. Used by
-;      boot.sh's --bootstrap-from-rust reseed step and kept as a
+;      /tmp/zyl_boot_in.zyl, writes /tmp/zyl_boot_out.s. Once used by the
+;      now-retired `boot.sh --bootstrap-from-rust` reseed step; kept as a
 ;      dependency-free smoke path.
 
 (use compiler/node_tables)
@@ -50,8 +50,10 @@
 
 (def __zyl_boot_bundle 1)
 
-; Pipeline: lexer → parser → Ast → ExprInner → type inference
-;           → monomorphization → ICNF → codegen
+; Pipeline (compiler/pipeline): balance check → lexer/parser → module
+;           resolution → macro expansion → checks → derive → impl lifting
+;           → closure lifting → type checking → ICNF → optimization
+;           → region inference → reuse → codegen
 
 ; The pipeline itself (parse, resolve, check, lower, codegen) lives in
 ; compiler/pipeline now, so the REPL can run the same phases and stop at
@@ -421,11 +423,9 @@
 ; lock, the native object hashes and the ICNF hash, in that order, so a
 ; third party can verify a binary came from a claimed set of inputs.
 ;
-; DEVIATION, recorded rather than hidden: the fourth input is the hash of
-; the emitted assembly, not of the ICNF itself. The ICNF has no
-; serialised form in this implementation, and assembly is a deterministic
-; function of it, so the field verifies the same claim through a
-; downstream artefact. A real ICNF hash needs an ICNF printer.
+; The ICNF hash is over the ICNF's canonical text (icnf_print.zyl's
+; icnf-text, region annotations included); the assembly hash is recorded
+; beside it.
 ;; Step 11: the four inputs of spec 31.12 in canonical order -- compiler,
 ;; lock graph, native objects, ICNF (its canonical text, icnf_print.zyl) --
 ;; and their final hash, which the binary carries as `zyl_build_hash`

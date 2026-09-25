@@ -5,7 +5,11 @@ ac3042e, and b840013 for size-class blocks). This document describes how spec §
 in the implementation, replacing the single never-reclaimed heap arena for
 values the compiler can prove short-lived. The sections below describe what
 was built; where the implementation departed from the original plan, the
-text has been corrected.
+text has been corrected. Later changes that touch regions: inlining now
+runs before this analysis (cdda64b), in-place reuse runs after it and
+relies on it (55c9355), and the native backend (`docs/native-backend-design.md`)
+emits the same region frames, with inline bump allocation (0929426) and
+frame-region recycling in self tail calls (93ab380).
 
 ## Starting point (before this work)
 
@@ -42,12 +46,14 @@ only if nothing else constrains them) and it is sound.
 ## Analysis (compile time, over ICNF)
 
 A pass in `region_inference.zyl` (the `rg-*` functions, entry
-`rg-regions`), run in `pipeline.zyl` after optimization and after the
-stack-variant rewrite `ri-transform-fns`, over the whole program. The
+`rg-regions`), run in `pipeline.zyl` after inlining and optimization and
+after the stack-variant rewrite `ri-transform-fns`, over the whole
+program; the in-place reuse pass (`reuse.zyl`) runs after it. The
 allocation sites are `IVariant` nodes and calls to region-aware runtime
 functions; every call site is classified too. Classes are kept in a
 union-find structure in the runtime (`zyl_uf_*`). A node the type pass
-proves to be `Int`, `Bool` or `Float` (attribute table 5, `ta-scalar`)
+proves to be `Int`, `Bool` or `Float` (the `icnf-scalars` side table in
+`node_tables.zyl`, set by `ta-scalar`)
 never joins a class, so scalars do not tie unrelated objects together.
 
 Per function, walk the body with an environment from names to classes:
@@ -81,8 +87,8 @@ join, summaries only rise in a finite lattice, so the fixpoint terminates
 and is deterministic.
 
 Each allocation site and each call site is annotated with the level of its
-result class. The annotations live in attribute table 4, keyed by the ICNF
-node: for a site, the level plus one (1 frame, 2 result, 3 heap, `4 + k`
+result class. The annotations live in the `icnf-regions` side table
+(`node_tables.zyl`), keyed by the ICNF node: for a site, the level plus one (1 frame, 2 result, 3 heap, `4 + k`
 the enclosing `with-region` scope `k`); for a function node, flags plus 4
 (bit 0: the function has a frame region, bit 1: it keeps the result
 region). `icnf_print` shows a site's annotation as ` @r`, so the ICNF hash
@@ -113,11 +119,18 @@ of a package build covers region decisions.
   at a dead frame.
 - A region-aware allocation keeps the hidden size header `zyl_heap_alloc`
   writes, so structural equality and the interpreter's value helpers behave
-  the same.
+  the same, and in-place reuse can check that an old block is large
+  enough for the new record.
+- `zyl_region_recycle` empties a frame region but keeps its first block;
+  a self tail call in a function with a frame region calls it (when the
+  region took a block) instead of releasing the region and re-opening
+  it. Region inference already keeps every tail-call argument out of the
+  frame region.
 - Only runtime functions listed as region-aware allocate in a region: the
   fresh-result producers `zyl_cstr_concat`, `zyl_cstr_substr`,
-  `zyl_cstr_from_byte`, `zyl_int_text`, `zyl_f_text` and `zyl_file_read_c`
-  have `_r` entry points that compiled code calls from annotated sites.
+  `zyl_cstr_from_byte`, `zyl_int_text`, `zyl_f_text`, `zyl_view_copy` and
+  `zyl_file_read_c` have `_r` entry points (and `zyl_bytebuf_new_r` takes
+  the region of a Stack bytebuf) that compiled code calls from annotated sites.
   Every other runtime allocation stays in the heap. The
   compiler's table of region-aware functions and the runtime's list must
   agree in one direction only: a function the compiler treats as
@@ -126,10 +139,12 @@ of a package build covers region decisions.
 
 ## Codegen
 
-- A flagged function has six words above its parameters: `[rbp-8]` the
-  saved `rax`, `[rbp-16]` the result region, `[rbp-48]` the four-word
-  region header (`prev`, `bump`, `end`, `blocks`); parameters start at
-  `[rbp-56]`. Entry pushes the header on the `zyl_region_top` chain
+- Both emitters (the native MIR path and the stack machine) use one
+  layout. A flagged function has six words at the top of its frame:
+  `[rbp-8]` the saved `rax`, `[rbp-16]` the result region, `[rbp-48]`
+  the four-word region header (`prev`, `bump`, `end`, `blocks`). On the
+  stack machine parameters start at `[rbp-56]`; on the native path the
+  saved callee-saved registers follow the header. Entry pushes the header on the `zyl_region_top` chain
   inline; exit, and every tail jump, pops it inline and calls
   `zyl_region_free` only if a block was taken.
 - Before each annotated call: `zyl_cur_region` (addressed `fs`-relative) := the frame
@@ -137,7 +152,11 @@ of a package build covers region decisions.
   arguments are evaluated and immediately before the `call`.
 - `IVariant` at a region site allocates through `zyl_ralloc(size, region)`
   with the region passed directly; a heap site still calls
-  `zyl_heap_alloc`.
+  `zyl_heap_alloc`. On the native path a frame- or result-region
+  allocation bumps the region's pointer inline, writing `zyl_ralloc`'s
+  size header itself, when the current block has room and the region is
+  not a `with-region` scope; otherwise it calls `zyl_ralloc`. Functions
+  with a `with-region` scope stay on the stack machine.
 
 ## Explicit regions and E_REGION_ESCAPE
 
@@ -193,6 +212,8 @@ The same analysis checks explicit region choices:
   the old behaviour), for bisecting a suspected region bug.
 
 ## Results
+
+Measured when regions landed (2026-09-24):
 
 - The regression suite passes (200/200) and `./boot.sh` reaches the
   fixed point. New tests: `tests/regression/{region-reclaim,stack-bytebuf,

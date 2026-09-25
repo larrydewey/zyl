@@ -1,5 +1,5 @@
 ; === Zyl Standard Library — Slices ===
-; Module: collections (slice submodule)
+; Module: collections/slice
 ;
 ; A Slice is a zero-copy window on a Vec's storage: the array, an offset
 ; and a length. Making a slice or a sub-slice copies nothing, and every

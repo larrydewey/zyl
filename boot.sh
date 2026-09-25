@@ -138,8 +138,7 @@ if [ "$BOOTSTRAP_SELF" -eq 1 ]; then
     die "did not converge after ${MAX_SELF_ROUNDS} rounds — likely a genuinely new language construct the old seed can't parse at all (not just new behavior); land the syntax in two steps (teach the parser first, reseed, then use it) -- the archived Rust bootstrap can no longer parse the current source (see archive/rust-bootstrap-2026/README.md)"
 fi
 
-# ── Re-seed path: Rust bootstrap -> fresh stage2 (fallback only — see
-#    --bootstrap-from-self above; this needs the archived Rust source) ───
+# ── Retired re-seed path: --bootstrap-from-rust (use --bootstrap-from-self) ─
 if [ "$BOOTSTRAP" -eq 1 ]; then
     # It needed a single-file source and cannot lex today's compiler anyway.
     die "--bootstrap-from-rust is retired: use --bootstrap-from-self (history in archive/rust-bootstrap-2026/README.md)"

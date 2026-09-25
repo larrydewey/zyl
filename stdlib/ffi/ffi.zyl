@@ -1,5 +1,5 @@
 ; === Zyl Standard Library — FFI Operations ===
-; Module: ffi
+; Module: ffi/ffi
 ; Provides: FFI pinning helpers and safe wrappers.
 ;
 ; ffi-pin copies a value's 8-byte word into a slot in the Pin region and

@@ -22,9 +22,9 @@ fully interchangeable with its target (§4.7, §10).
 number of arguments is `E_ARITY_MISMATCH`.
 
 **Assertion**: A check that panics when it fails. The test assertions
-(`assert-equal`, `assert-true`, `assert-false`) work today, and so does
-the general `assert` form, though it does not print its message
-(Appendix C.7).
+(`assert-equal`, `assert-true`, `assert-false`) and the general
+`assert` form all work; `assert` panics with its message when that is a
+string literal, else with `assert failed` (Appendix C.7).
 
 **Audit**: `zyl audit` — reports the capabilities each package in the
 graph declares and uses.
@@ -116,8 +116,10 @@ places verified package archives. `zyl build` reads only the store and
 never uses the network; a missing entry is `E_PKG_NOT_IN_STORE`.
 
 **Contract**: The optional overlay of preconditions, postconditions,
-invariants and recovery (§23). The forms are parsed today but not
-enforced.
+invariants and recovery (§23). `requires`, `ensures` and `invariant`
+are checked at run time and raise `E_CONTRACT_VIOLATION`; `recover`
+and `checkpoint` handle the failure. The profile decides whether a
+failed check panics, warns or is compiled out (Chapter 24).
 
 ## D
 
@@ -241,7 +243,8 @@ representation, specified as an SSA IR with region annotations (§18).
 The implementation (`icnf.zyl`) is not SSA; region decisions are kept in
 a side table and printed with the tree. It is a tree of instructions —
 `ILet`, `IIf`, `IWhile`, `IMatch`, `ICall`, `IFfi` and so on — that
-code generation walks directly.
+code generation lowers to MIR, or walks directly for a function the
+native backend does not yet support.
 
 **ICNF interpreter**: The evaluator in `stdlib/repl/interp.zyl` that
 runs a REPL entry's ICNF directly instead of compiling it to machine
@@ -263,6 +266,8 @@ publisher key and signature (§31.8). There is no server component.
 §4.6).
 
 **Inline**: Optimisation that replaces a call with the function body.
+The optimiser does this for small, non-recursive functions before region
+inference; `ZYL_INLINE=0` turns it off.
 
 **Instantiation**: Monomorphisation creating a concrete function from a
 generic one.
@@ -311,6 +316,11 @@ one, e.g. ExprInner → ICNF.
 template)`. The template is the body with the parameters replaced by
 the unevaluated argument expressions.
 
+**MIR**: The native backend's machine IR (`mir.zyl`): a linear list of
+instructions over virtual registers, given machine registers by linear
+scan in a fixed order, so the same function always gets the same
+assignment.
+
 **Mangling**: The injective encoding of a canonical key into an
 assembler symbol, `zy_<package>_<major>__<module>__<symbol>` with
 non-alphanumeric bytes escaped (§31.2).
@@ -350,8 +360,9 @@ declaratively through `(native ...)` in its manifest. It needs the
 
 ## O
 
-**Optimisation**: Phase 7 — constant folding and dead-code elimination
-only; nothing that reorders effects.
+**Optimisation**: Phase 7 — constant folding, dead-branch elimination
+and inlining of small functions; after region inference, in-place reuse
+of a dead value's block (*Reuse*). Nothing reorders effects.
 
 **OR-pattern**: Several literal alternatives in one arm,
 `(1 2 3 body)`, matching any of them.
@@ -360,7 +371,8 @@ only; nothing that reorders effects.
 defines the trait or the type (§24.6); otherwise `E_PKG_ORPHAN_IMPL`.
 
 **Overflow**: §20.1 makes checked integer overflow the default. Compiled
-code does not check it today, and `E_OVERFLOW` is never raised.
+code does not check it today: `Int` arithmetic wraps, and `E_OVERFLOW`
+is never raised.
 
 ## P
 
@@ -384,7 +396,10 @@ into ExprInner nodes (`expr_inner.zyl`).
 **Primitive**: `Int`, `Float`, `Bool`, `String`, `Unit`.
 
 **Profile**: A contract enforcement level — `strict`, `debug`, `warn`,
-`off`, `production` (§23). Not implemented.
+`off`, `production` (§23). `strict` and `debug` panic on a failed check,
+`warn` reports it and goes on, `off` and `production` strip the checks.
+Chosen with `--contracts=P` or `(contracts P)`; the default is
+`strict`.
 
 **`pub`**: The marker that exports a top-level definition from its
 package, `(pub defn ...)`. Without it a definition is package-private
@@ -423,6 +438,10 @@ region (released on return), the caller's result region, or the heap.
 and keeps a per-directory session file, `.zyl-session`.
 
 **Result**: The error-handling type, `(Ok T)` | `(Err E)`.
+
+**Reuse**: Writing a new value into the block of an old one that is
+unique and never used again, instead of allocating (`reuse.zyl`). The
+old value cannot be observed, so the program's meaning is unchanged.
 
 ## S
 
@@ -480,8 +499,11 @@ trait: `(trait Ord (compare (self (other Self)) Int))`.
 
 **Tail call optimisation (TCO)**: §14 guarantees that deep recursion
 never overflows the stack, "via tail-call optimization or
-heap-allocated stack frames". The implementation runs `main` on a
-thread with a very large stack; there is no TCO pass.
+heap-allocated stack frames". A call in tail position, direct or
+through a function value, compiles to a jump when its stack arguments
+fit in the caller's own; calls inside `try` or `while`, and in
+functions that wipe a `Secret` frame, still push a frame. `main` also
+runs on a thread with a very large stack.
 
 **Template**: A macro's body, into which the call's argument
 expressions are substituted. A parameter needs no unquote; `,@` splices
@@ -527,8 +549,9 @@ to export. Importing a non-`pub` symbol is `E_PKG_PRIVATE_SYMBOL`.
 
 ## W
 
-**Warning**: A `W_` diagnostic (`W_UNUSED_FUNCTION`,
-`W_UNUSED_PARAMETER`, `W_UNUSED_VARIABLE`, `W_SHADOWED_BINDING`) or
+**Warning**: A `W_` diagnostic (
+`W_UNUSED_PARAMETER`, `W_UNUSED_VARIABLE`, `W_SHADOWED_BINDING`, and
+`W_TYPE_STRICT` under `ZYL_STRICT_TYPES=report`) or
 `E_ZEROIZE_MISSING`. Warnings never stop a build.
 
 **Wildcard pattern**: `_`, the catch-all arm. It must be the last arm.

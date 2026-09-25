@@ -104,10 +104,17 @@ Escape     ::= "\\n" | "\\t" | "\\r" | "\\0" | "\\\"" | "\\\\" | "\\e" | "\\x" H
 - Strings are NUL-terminated at runtime, so `\0` ends the string early.
 - An unterminated string is reported before reading starts, as
   `E_UNTERMINATED_STRING`.
+- Any other escape, such as `\q`, or a `\x` not followed by two hex
+  digits, is `E_INVALID_ESCAPE`, located at the literal:
 
-> **Implementation gap.** An unknown escape such as `\q` is not reported.
-> The whole literal decodes to a null string, which prints as an empty
-> line.
+```
+PANIC: error[E_INVALID_ESCAPE]: invalid escape sequence in string literal
+  --> main.zyl:1:29
+   |
+ 1 | (defn main () (begin (print "a\qb") 0))
+   |                             ^
+   = help: the escapes are \n \t \r \0 \" \\ \e and \xNN
+```
 
 ### Booleans
 
@@ -237,6 +244,7 @@ PANIC: error[E_INVALID_CHAR]: unexpected character `#`
    |
  2 |   (begin (print #x) 0))
    |                 ^
+   = help: Zyl has quote, quasiquote and unquote (`'`, `` ` ``, `,`, `,@`); `@`, `#`, `$`, `|`, `^` and `\` may appear only in strings and comments
 ```
 
 (Before 2026-09-24 the lexer stopped there silently and dropped the rest

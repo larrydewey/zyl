@@ -16,7 +16,7 @@
 ;
 ; Shape note: the table is split into a dozen small functions rather
 ; than one giant Cons chain. Both compile, but a single ~200-deep
-; nesting is a needlessly large single expression for monomorphization
+; nesting is a needlessly large single expression for the type checker
 ; to walk, and the split gives each group a name that says what it is.
 ; Nullary functions keep each group a plain function the compiler can
 ; walk once.

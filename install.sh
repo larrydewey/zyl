@@ -3,13 +3,14 @@
 # per-user location (~/.zyl, or $ZYL_HOME if set), so all three work
 # from any directory without needing to sit next to a build/boot/
 # checkout. This is the install path selfhost/driver.zyl's
-# cli-resolve-bundledir and tools/repl.zyl's repl-resolve-bundledir look
+# cli-resolve-bundledir and stdlib/repl/repl.zyl's repl-resolve-bundledir look
 # for first, ahead of the argv0-relative fallback used for this repo's
 # own dev workflow.
 #
-# Not wired into ./boot.sh on purpose: boot.sh builds and verifies the
-# compiler for THIS checkout; installing it system-/user-wide is a
-# separate, opt-in step.
+# A first install is a separate, opt-in step: ./boot.sh builds and
+# verifies the compiler for THIS checkout, and only refreshes an install
+# that already exists (uninstall.sh + install.sh; ZYL_NO_INSTALL_REFRESH=1
+# skips that).
 #
 # Usage:
 #   ./install.sh                 compiler + REPL + language server

@@ -4,7 +4,7 @@ Zyl's specification has parametric polymorphism (generics) and ad-hoc
 polymorphism (traits), both resolved at compile time with full type
 inference. The current compiler supports a practical subset: generic
 ADTs, polymorphic functions written without annotations, and trait
-`impl` blocks called through qualified names. This chapter shows what
+`impl` blocks called through dot syntax or qualified names. This chapter shows what
 works, and what the specified syntax does today. Chapters 19 and 20 are
 the full reference.
 
@@ -261,10 +261,12 @@ compiled once per concrete receiver type (§7.6):
     0))
 ```
 
-### The Standard Library's Trait
+### The Standard Library's Traits
 
-The standard library defines one trait, `OutputStream` in `io/io`, with
-impls for `Stdout` and `StringBuffer`:
+The prelude module `core/show` declares the derivable traits `Show`,
+`Debug`, `Eq`, `Ord`, `Hash` and `Clone`, with impls for `Int`, `Float`,
+`Bool` and `String`, plus the `Secret` trait (Chapter 33). `io/io`
+declares `OutputStream`, with impls for `Stdout` and `StringBuffer`:
 
 ```lisp
 (use io/io)
@@ -315,9 +317,9 @@ concrete types at each call, find the impl, verify the bound. Since
 bounds cannot be written (§7.1), they are not checked as bounds. The
 effect is close, though: the impl is found from the inferred receiver
 type, and a `Trait.method` call with no impl for a known receiver type
-is `E_TRAIT_NOT_FOUND`, located at the call. A receiver whose type is
-never known is `E_CANNOT_INFER`, and a trait with no impls at all makes
-the call `E_UNBOUND_VARIABLE`.
+is `E_TRAIT_NOT_FOUND`, located at the call; so is a call to a trait
+that has no impls at all. A receiver whose type is never known is
+`E_CANNOT_INFER`.
 
 ## 7.6 Monomorphization
 
@@ -346,17 +348,19 @@ Impl methods become functions named `Trait.method_Type`, such as
 ## 7.7 Deriving Traits
 
 The specification lets you derive `Eq`, `Ord`, `Show`, `Debug`, `Clone`
-and `Hash`, inline on `defstruct+` or with a standalone `derive`:
+and `Hash`, with a standalone `derive` or inline as the last element of
+a `defstruct` or `defstruct+`:
 
 ```lisp
 (derive Pt Show)            ; or (derive Pt [Show Eq])
+(defstruct+ Pt2 (x Int) (y Int) (:derive [Show Eq]))
 ```
 
 `(derive T Show)` (or `(derive T [Show])`) generates a `Show` impl, and
-`print` then shows the value (Chapter 4, §4.9). The inline `(:derive
-...)` option on `defstruct+` is not parsed, and the other traits are
-`Eq`, `Ord`, `Debug`, `Hash` and `Clone` derive the same way
-(Chapter 20, §20.6). Equality needs no derive: `==` and `!=` compare two
+`print` then shows the value (Chapter 4, §4.9); an inline `(:derive
+...)` is the same as a separate `derive` form after the struct. `Eq`,
+`Ord`, `Debug`, `Hash` and `Clone` derive the same way (Chapter 20,
+§20.6). Equality needs no derive: `==` and `!=` compare two
 struct or ADT values field by field, by content, with nested values and
 strings compared recursively. Ordering does: `<`, `>`, `<=` and `>=`
 take only `Int`, `Float` and `String`, and on a struct they are
@@ -428,8 +432,7 @@ one, use an ADT wrapper (§7.3):
 
 | Error | Cause | Status |
 |-------|-------|--------|
-| `E_MALFORMED_PARAMETER` | `((T) x)`: a type-parameter group | raised |
-| `E_ARITY_MISMATCH` | follows from `((T : Ord) ...)` adding a value parameter | raised |
+| `E_MALFORMED_PARAMETER` | `((T) x)`: a type-parameter group, or `((T : Ord) a b)`: a colon bound | raised |
 | `E_DUPLICATE_DEFINITION` | a function with the same name as one in the core library | raised |
 | `E_PKG_ORPHAN_IMPL` | impl where neither the trait nor the type is yours | raised |
 | `E_CANNOT_INFER` | a trait call whose receiver type is never known, or more than 256 instances | raised |
@@ -437,7 +440,7 @@ one, use an ADT wrapper (§7.3):
 | `E_TRAIT_BOUND_NOT_SATISFIED` | concrete type lacks a bound's trait | in the specification; never raised |
 | `E_TRAIT_NOT_DERIVABLE` | a field lacks the derived trait, or the trait is not derivable | raised |
 | `E_DUPLICATE_IMPL` | two impls for one (Trait, Type) | raised |
-| `E_TRAIT_NOT_FOUND` | no impl for a known receiver type | raised |
+| `E_TRAIT_NOT_FOUND` | no impl for a known receiver type, or a dot call whose method several traits declare | raised |
 
 ---
 

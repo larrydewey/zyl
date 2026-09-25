@@ -1,5 +1,5 @@
 ; === Zyl Standard Library — Arena-backed Map<K, V> ===
-; Module: collections (map submodule)
+; Module: collections/map
 ; Provides: Arena-backed Map<K, V>
 
 (use allocator/allocator)

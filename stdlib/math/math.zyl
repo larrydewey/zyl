@@ -1,5 +1,5 @@
 ; === Zyl Standard Library — Math/Crypto Parent Module ===
-; Module: math
+; Module: math/math
 ; Provides: re-export of every math submodule
 ;
 ; `(use math/math)` pulls in the whole tree. Module resolution inlines

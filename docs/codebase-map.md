@@ -30,15 +30,17 @@ selfhost/
                          resolution, linking, `zyl build`/`test`/`eval`/
                          `repl` and the package subcommands
   lsp_main.zyl           Language server entry point (zyl-lsp)
-  assemble.py            Bundles the compiler, the stdlib modules it needs
-                         and the REPL into one source file
-  zyl_selfhost_compiler.zyl   The assembled bundle boot.sh compiles
 
-stdlib/compiler/         The compiler itself (39 files, ~22,600 lines)
+                         There is no bundling step: boot.sh compiles
+                         driver.zyl directly, and its (use ...) tree is
+                         resolved from stdlib/ like any program's.
+
+stdlib/compiler/         The compiler itself (41 files, ~26,200 lines)
 stdlib/repl/             The REPL and its ICNF interpreter (8 files, ~4,100 lines)
-stdlib/lsp/              The language server (20 files, ~5,500 lines)
-stdlib/math/             Cryptography and number libraries (28 files, ~7,600 lines)
-stdlib/core/             core (facade), list, option, result, map
+stdlib/lsp/              The language server (20 files, ~5,600 lines)
+stdlib/math/             Cryptography and number libraries (28 files, ~7,700 lines)
+stdlib/core/             core (facade), list, option, result, map, show
+                         (the derivable traits and their primitive impls)
 stdlib/collections/      collections (Assoc + list utilities), vec, map, set,
                          slice (zero-copy Vec slices)
 stdlib/text/             view: StrView (zero-copy substrings) and Cursor
@@ -57,7 +59,9 @@ editors/vscode/          VS Code extension (0.4.0)
 book/                    The book (mdBook: book.toml, src/, examples/)
 tests/                   smoke, regression, compile-fail, integration,
                          stress, packages, packages-fail, packages-build,
-                         lsp, manual, debug; plus unit_test.zyl
+                         scripts, lsp, manual, debug; plus unit_test.zyl
+bench/                   The benchmark matrix against C, C++, Rust and Go
+                         (matrix.py; see docs/native-backend-design.md)
 verify/                  Python cross-checks for stdlib/math
 spec/                    The specification, split by domain
 zyl_specification.txt    The canonical specification (v5.0)
@@ -67,7 +71,10 @@ archive/rust-bootstrap-2026/   The frozen Rust bootstrap
 `boot.sh` writes its outputs to `build/boot/`: `stage2.bin` and
 `stage2.s` (the committed seed), `zyl-self` (a wrapper that execs
 `stage2.bin`), `zyl-lsp`, and a copy of `stdlib/` and the runtime next
-to them so the compiler finds both relative to its own location.
+to them so the compiler finds both relative to its own location. The
+runtime is also compiled once, at `-O2`, into `actor_runtime.o`, which
+every link uses while it is newer than `actor_runtime.c` (`install.sh`
+does the same in the install directory).
 
 ### Compiler, file by file
 
@@ -110,12 +117,14 @@ in `docs/compiler-pipeline.md`.
 | `closure_inline.zyl` | Retired closure-inlining pass, now an identity step (closures are real values) |
 | `type_annotate.zyl` | The type checker (spec §4.8–§4.10): HM inference with SCC generalization, every type error reported then fatal, static trait resolution, per-type instances of trait-generic functions (generic originals dropped), generated structural `T.==`, codegen kinds and scalar marks |
 | `ffi_sigs.zyl` | The type of every runtime function reached through `ffi-call` (`ffi-sig`), and the raw entries only the standard library may call (`ffi-raw-p`) |
-| `node_tables.zyl` | Per-node side tables: types, renamed calls, Show functions, ICNF kinds, regions, scalar marks |
+| `node_tables.zyl` | Per-node side tables: types, renamed calls, Show functions, ICNF kinds, regions, scalar marks, ADT marks, reuse marks; also the contract-profile and secret-mark tables |
 | `icnf.zyl` | Lowers `ExprInner` to the tree-shaped `Icnf` IR |
 | `icnf_print.zyl` | Canonical ICNF text for the package build's ICNF hash |
-| `optimization.zyl` | Integer constant folding and dead-branch elimination on `Icnf` |
-| `region_inference.zyl` | Escape analysis: a non-escaping variant becomes `IStackVariant` |
-| `codegen.zyl` | `Icnf` to x86_64 GAS Intel-syntax assembly |
+| `optimization.zyl` | Inlining of small functions and copy propagation (`opt-inline-fns`), then integer constant folding and dead-branch elimination (`opt-optimize-fns`) on `Icnf` |
+| `region_inference.zyl` | The stack-variant rewrite (`ri-transform-fns`) and whole-program escape analysis that places every allocation and call site in the frame region, the result region or the heap (`rg-regions`); `E_REGION_ESCAPE` |
+| `reuse.zyl` | In-place reuse: marks a construction that may take the block of a unique, dead value (`ru-reuse`), with owning clones `f~own` |
+| `codegen.zyl` | `Icnf` to x86_64 GAS Intel-syntax assembly: chooses per function between the native path (lowering to MIR, `ml-expr`; emission, `mb-emit-one`) and the stack-machine emitter |
+| `mir.zyl` | The native backend's machine IR (`deftype MI`), liveness, and linear-scan register allocation (`mir-allocate`) |
 | `pipeline.zyl` | The one implementation of the phase order (`compile-to-fns`, `compile-to-asm`) |
 | `doc.zyl` | `zyl doc`: Markdown from source comments |
 
@@ -140,7 +149,8 @@ in `docs/compiler-pipeline.md`.
 
 `pipeline.zyl` is the one implementation of the phase order:
 `compile-to-fns` runs everything from the balance check through region
-inference, and `compile-to-asm` is that plus code generation. The CLI
+inference and in-place reuse, and `compile-to-asm` is that plus code
+generation. The CLI
 (`selfhost/driver.zyl`), `zyl eval` and the REPL all call it, which is
 what keeps a compile and a REPL entry running the same compiler.
 
@@ -174,13 +184,13 @@ and the code generator agree. See `docs/repl.md`.
 | Protocol types | `stdlib/lsp/lsp_types.zyl` |
 | Transport | `stdlib/lsp/json_rpc.zyl` |
 | Document text and edits | `stdlib/lsp/vfs.zyl` |
-| Analysis cache and diagnostics | `stdlib/lsp/document_manager.zyl` |
+| Analysis cache and diagnostics (runs the checks, derive expansion, impl lifting and the type checker, and publishes every type error) | `stdlib/lsp/document_manager.zyl` |
 | Symbol table, hover text, diagnostic mapping | `stdlib/lsp/compiler_bridge.zyl` |
 | Positions, occurrences, call context | `stdlib/lsp/source_index.zyl` |
 | Built-in and special-form table | `stdlib/lsp/builtins.zyl` |
 | Advertised capabilities | `stdlib/lsp/capability_registry.zyl` |
 | Workspace folders and symbols | `stdlib/lsp/workspace.zyl` |
-| Run-a-file support (marked known broken in its header) | `stdlib/lsp/repl_integration.zyl` |
+| Run-a-file support (`zyl.evalDocument`: compiles and runs the buffer through the `zyl` CLI) | `stdlib/lsp/repl_integration.zyl` |
 | Request loop | `stdlib/lsp/lsp_server.zyl` |
 | Features: call hierarchy, code actions, completion, document symbols, go-to-definition and references, hover, inlay hints, semantic tokens, signature help | `stdlib/lsp/services/*.zyl` |
 
@@ -205,7 +215,11 @@ dudect-style timing-leak check. See `docs/math-crypto.md`.
 
 `runtime/actor_runtime.c` is linked into every binary. Besides the
 pthread actor system it holds the try/catch frame stack, closure
-invocation, FFI pinning, arenas and the memory budget, string and byte
+invocation, FFI pinning and timed foreign calls (`zyl_ffi_timed`),
+arenas and the memory budget, the region allocator (`zyl_ralloc`,
+`zyl_region_free`, `zyl_region_recycle`, size-class block pools),
+the division magic numbers the backend uses (`zyl_div_magic`,
+`zyl_div_shift`), string and byte
 primitives, atomics, the source-span table used for located
 diagnostics, AES-NI and system entropy for `stdlib/math`, the test
 harness, file and process helpers (`zyl_cc_compile`, `zyl_exec_cmd`,
@@ -225,6 +239,7 @@ are Zyl code in `stdlib/math`, bundled into the compiler.
 | `tests/integration/` | Multi-module and whole-compiler programs |
 | `tests/stress/` | Deep recursion, large structs, long chains, balance |
 | `tests/packages/`, `packages-fail/`, `packages-build/` | Package-system fixtures |
+| `tests/scripts/` | Shell checks of the repository's own scripts |
 | `tests/lsp/` | `lsp_protocol_test.py`, the LSP protocol suite |
 | `tests/manual/` | Interactive checks (`read-line`) |
 | `tests/debug/` | A minimized reproduction kept for reference |

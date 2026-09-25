@@ -64,7 +64,8 @@ Binary opcodes: 0 add, 1 sub, 2 mul, 3 div, 4 rem, 5 lt, 6 gt, 7 le, 8 ge,
   `IIf`, `IWhile` and `IMatch`, and locals are named and may be reassigned
   (`ISet`).
 - Region annotations are not part of the node: region inference records
-  them in a side table (attribute table 4) keyed by the node. An
+  them in a side table (`icnf-regions`, `node_tables.zyl`) keyed by the
+  node. An
   allocation or call site holds its level plus one (1 frame region,
   2 result region, 3 heap, `4 + k` the enclosing `with-region` scope `k`);
   an `IFn` holds flags plus 4 (bit 0 has a frame region, bit 1 keeps the
@@ -75,4 +76,16 @@ Binary opcodes: 0 add, 1 sub, 2 mul, 3 div, 4 rem, 5 lt, 6 gt, 7 le, 8 ge,
 - The printed form (`icnf_print.zyl`) is the serialised form: it shows
   each node's codegen kind as ` :k` and its region annotation as ` @r`, so
   the ICNF hash of a package build covers region decisions; see
-  `spec/14-determinism-and-hashing.md`.
+  `spec/14-determinism-and-hashing.md`. The in-place reuse decision
+  (`icnf-reuse`, from `reuse.zyl`) is another side table and is not
+  printed.
+
+### Below ICNF
+
+The native backend lowers each function's ICNF to MIR (`mir.zyl`), a
+linear three-address IR over virtual registers with labels and jumps,
+computes liveness, and assigns registers by linear scan; `codegen.zyl`
+emits x86-64 from the result. A function whose ICNF the MIR lowering
+does not support is emitted by `codegen.zyl`'s older stack-machine code
+instead (see `spec/13-code-generation.md`). MIR is internal to code
+generation: it is not printed, hashed or seen by any other pass.

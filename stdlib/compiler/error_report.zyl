@@ -2,24 +2,21 @@
 ; error_report.zyl — Rich error formatting (Phase A.8 / Phase 1)
 ;
 ; Builds ErrorLocation + source-snippet rendering primitives used by the
-; native pipeline. All builders return plain Strings; Int-accessible
-; components (line, col) are the testable surface under the Rust bootstrap,
-; where dynamic strings cannot be printed. The self-hosted driver consumes
-; the fields directly for its renderer.
+; native pipeline. All builders return plain Strings; the self-hosted
+; driver consumes the fields directly for its renderer.
 ;
-; CODEGEN RULE (Rust bootstrap): zyl_cstr_concat is inlined at every call
-; site, and an inline operand that is ITSELF a call (especially in the
-; second position) miscompiles. Every str-concat therefore receives only
-; pre-bound variables or literals; all intermediate values go through let.
-; The self-hosted compiler calls the real str-concat body, so this is
-; belt-and-braces, but it keeps every result provable via str-eq tests.
+; Every str-concat receives only pre-bound variables or literals, with
+; intermediate values going through let. That rule dates from the
+; archived Rust bootstrap, which miscompiled an inline call operand to
+; its inlined zyl_cstr_concat; the self-hosted compiler has no such bug,
+; so it is now only a style kept for readability.
 ; ===========================================================================
 
 (use compiler/error_codes)
 
-; Int-first field order: the Rust bootstrap mis-lays records whose FIRST
-; field is a String/pointer in the inline make-variant path. Ints first
-; (like CheckState in sexp_balance) match correctly.
+; Int-first field order (like CheckState in sexp_balance): a workaround
+; for the archived Rust bootstrap, which mis-laid records whose FIRST
+; field is a String/pointer in the inline make-variant path.
 (deftype ErrorLocation
   ; line, col, file-path
   (EL Int Int String))

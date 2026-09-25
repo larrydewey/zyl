@@ -41,7 +41,7 @@ Appendices A–C record the differences.
 | 25 | Standard Library (Abstract) | Core modules; the stdlib is implicit, versioned with the compiler | App. B |
 | 26 | Implementation Contract | What the compiler MUST, MAY and MUST NOT do | Ch. 26 |
 | 27 | Determinism Contract | Observable versus non-observable behavior; package builds | Ch. 26 |
-| 28 | Error Model | 20 core codes plus 36 package codes, all compile errors except the runtime ones | App. A |
+| 28 | Error Model | 30 core codes plus 36 package codes, all compile errors except the runtime ones | App. A |
 | 29 | Formal Guarantees | G1–G13 | F.3 |
 | 30 | Version Roadmap | v4.0, v4.1, v4.2, v5.0 (current), FUTURE | — |
 | 31 | Package System | Identity, symbol keys and mangling, manifest, compilation model, MVS, lock, content store, index and trust, capabilities, features and native dependencies, workspaces and editions, determinism (§31.1–§31.12) | Ch. 25 |
@@ -78,7 +78,7 @@ TopLevelForm    ::= Definition | Expression
 
 Definition      ::= (def Name Expr)
                   | (defn Name (Param*) Body+)
-                  | (defmacro Name (Name*) Template)
+                  | (defmacro Name (Name* (&rest Name)?) Template)
                   | (defstruct Name (Field*))
                   | (deftype Name (Variant*))
                   | (trait Name TraitMethod*)
@@ -125,10 +125,11 @@ Special Forms   ::= (let Name Expr Body)
 `Keyword` is `:name` and `Symbol` is `~name`. The specification also
 lists `defun`, `(let (Name Expr) Body)`, `(assert Expr String)`,
 `(unwrap Expr)`, `(error String)` and `(export Name)`. Of those, the
-compiler accepts the parenthesised `let`; lowers `assert` and `unwrap`
-(both panic without the specified message); parses `export` without
-lowering it; treats `error` as a library function that panics; and does
-not recognise `defun` (Appendix C). A form whose arguments do not fit
+compiler accepts the parenthesised `let`; lowers `assert`, which panics
+with its message, and `unwrap`, which takes an `Option` and panics with
+`unwrap on None`; parses `export` without lowering it; treats `error`
+as a library function that panics; and does not recognise `defun`
+(Appendix C). A form whose arguments do not fit
 its shape is `E_MALFORMED_FORM`; `test` and `defmacro` take exactly one
 body form.
 
@@ -252,6 +253,7 @@ runtime event.
 | `E_TRAIT_NOT_DERIVABLE` | Cannot derive trait |
 | `E_RESERVED_KEYWORD` | Reserved keyword used as an identifier |
 | `E_CANNOT_INFER` | No type for an expression: a generic parameter with no call-site evidence, or an `ffi-call` to an undeclared foreign symbol |
+| `E_INFINITE_TYPE` | A type would have to contain itself (occurs check) |
 
 `E_TYPE_MISMATCH` and `E_UNBOUND_VARIABLE`, the two errors the type
 pass reports most, are not in §28's core list; Appendix A.5 describes
@@ -303,6 +305,9 @@ Appendix B has the full listing.
 | `zyl new`, `add`, `fetch`, `build [--locked]`, `test`, `update`, `vendor`, `audit`, `publish`, `key` | The package subcommands of §31.11 |
 | `zyl repl` | Interactive session |
 | `zyl eval <file.zyl>` | Run a program without building a binary |
+| `zyl doc [file.zyl \| dir] [-o out.md]` | Markdown from doc comments |
+| `--error-format=json` | Report diagnostics as JSON lines |
+| `--contracts=P` | Contract profile: `strict` (default), `debug`, `warn`, `off`, `production` |
 
 No other phase dumps (`--emit-ast`, `--emit-icnf` and the like) are
 implemented. Appendix C.16 has the details.

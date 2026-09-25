@@ -107,15 +107,19 @@ The self-hosted pipeline (`compile-to-asm` in
    generated structural `T.==`; every type error is reported, then the
    compile fails (§4.8)
 9. ICNF lowering (`icnf.zyl`)
-10. optimization (`optimization.zyl`)
+10. optimization (`optimization.zyl`): inlining of small functions and
+    copy propagation (`opt-inline-fns`), then constant folding and
+    dead-branch elimination (`opt-optimize-fns`)
 11. region inference (`ri-transform-fns`, then the escape analysis
     `rg-regions`)
-12. code generation (`codegen.zyl`), then linking with `cc`
+12. in-place reuse of unique, dead values (`reuse.zyl`)
+13. code generation (`codegen.zyl`; most functions through MIR and
+    linear-scan register allocation, `mir.zyl`), then linking with `cc`
 
 This differs from §22: module resolution precedes macro expansion, type
 checking and trait resolution run after derive expansion and impl
 lifting, region inference runs after ICNF generation and optimization
-rather than before monomorphization, contracts are lowered while the
+rather than before monomorphization (and after inlining), contracts are lowered while the
 parse tree is converted (`expr_inner.zyl`), and hash finalization
 happens only for package builds (`zyl.buildinfo`, see
 `14-determinism-and-hashing.md`).

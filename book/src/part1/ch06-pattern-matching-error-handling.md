@@ -270,8 +270,10 @@ constructor patterns.
 - **Literal patterns bind nothing.** The `_` arm refers to the value
   through the scrutinee's own name (`code`, `s`).
 - **Don't mix** literal arms and constructor arms in one `match`. They
-  are compiled by different mechanisms, and a mixed `match` is not
-  diagnosed.
+  are compiled by different mechanisms, and a mixed `match` has no
+  diagnostic of its own: with constructors that carry fields it fails
+  with confusing `E_TYPE_MISMATCH` and `E_UNBOUND_VARIABLE` errors, and
+  with nullary constructors it can compile and choose the wrong arm.
 
 ## 6.5 Guards
 
@@ -303,7 +305,12 @@ Guards currently work only in this position. Elsewhere:
 - **On a constructor arm** such as `(Some x (when (> x 0)) x)`, the
   guard is read as a nested pattern in a field position:
   `E_NESTED_PATTERN`.
-- **On the trailing `_` arm** a guard is ignored.
+- **A guard that names a top-level `def`**, as in `(0 (when verbose) ...)`
+  with `(def verbose true)`, is `E_UNBOUND_VARIABLE`. Pass the value in
+  as a parameter, or bind it with `let` around the `match`.
+- **On the trailing `_` arm** a guard makes the arm no longer count as
+  the closing catch-all, so the match is
+  ``E_MATCH_NONEXHAUSTIVE: a literal-pattern match must end with a `_` arm``.
 
 For a condition on a constructor's field, test it in the body:
 
@@ -467,8 +474,9 @@ differences from the specification:
 
 - A false `(assert c "msg")` panics with `msg` when it is a string
   literal (`assert failed` otherwise); no `E_ASSERT_FAIL` code is shown.
-- `(unwrap x)` of `None` or of an `Err` panics with `unwrap on None`
-  either way.
+- `(unwrap x)` takes an `Option` only: of `None` it panics with
+  `unwrap on None`, and applied to a `Result` it is `E_TYPE_MISMATCH`.
+  Use `result-expect` for a `Result`.
 
 Both unwind to the nearest `try`, and inside a `test` they fail that
 test. When the message matters, use an explicit check with `error`

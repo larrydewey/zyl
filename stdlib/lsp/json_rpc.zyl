@@ -27,7 +27,7 @@
   (JObj (Map String JSON)))
 
 ; Parser return pair: local rather than compiler/type_system's Pair, to
-; keep this module free of any dependency on the type-inference engine.
+; keep this module free of any dependency on the compiler.
 (deftype JVal (JV JSON Int))     ; parsed value, position after it
 (deftype JKV (JKVP String JSON Int)) ; parsed key+value, position after it
 

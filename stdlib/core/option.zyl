@@ -1,5 +1,5 @@
 ; === Zyl Standard Library — Option ADT ===
-; Module: option
+; Module: core/option
 ; Provides: Generic Option<T> ADT and helpers
 ;
 ; Cross-module conversions (option-to-result, option-from-result) are in core/core.zyl

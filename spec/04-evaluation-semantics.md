@@ -285,9 +285,16 @@ behave where it matters to §11, §12 and §20.5.
 
 ### Evaluation order
 
-Arguments are evaluated left to right into stack slots before a call;
-the optimizer folds constants and drops constant-false branches but does
-not reorder anything.
+Operands and arguments are evaluated strictly left to right, and a call
+through a local function value reads the function before the arguments
+(`tests/regression/eval-order.zyl`). A load or store evaluates its
+buffer before its offset, although the runtime takes them in the other
+order. Code generation departs from the written order only where no
+effect can tell (`icnf-has-set`): a local or constant operand is loaded
+directly, and a right operand is evaluated first only when it contains no
+`set!`. The optimizer folds constants, drops constant-false branches and
+inlines small functions, binding the arguments by nested `let`s in call
+order; none of it reorders a side effect.
 
 ### Errors: `error`, `try`, `unwrap`
 
@@ -303,7 +310,9 @@ not reorder anything.
   `handler` is evaluated. It does not inspect a `Result` value, so an
   `Err` returned normally from `body` passes through unchanged. §12.2
   describes `try` as sugar for matching on `Result`.
-- **`(unwrap x)`** is parsed but not lowered; it evaluates to `0`.
+- **`(unwrap x)`** takes an `Option` (`(Option a) -> a`, `ta-unwrap`):
+  `(Some v)` gives `v`, and `None` panics with `unwrap on None`
+  (`ic-unwrap`). A `Result` argument is `E_TYPE_MISMATCH`.
   `stdlib/core/result.zyl` and `stdlib/core/option.zyl` provide
   `result-unwrap` and `option-unwrap`, which take a default.
 
@@ -318,11 +327,11 @@ and guarantee G11 are not met.
 `assert`, `assert-equal`, `assert-true` and `assert-false` abort through
 `zyl_panic` with a fixed message (`assert-equal failed` and so on) and no
 error code; `E_ASSERT_FAIL` is catalogued but not printed.
-`assert-equal` on ADT or struct values lowers to `(assert-true (== l r))`,
-so it gets the same content comparison as `==` (a generated per-type
-`T.==`; the runtime's shallow `zyl_variant_eq` when the type is
-unknown). `assert-fail` evaluates its argument and checks
-nothing.
+`assert-equal` unifies its two sides. On ADT or struct values the type
+pass renames it to the type's generated `T.==`, the same content
+comparison as `==`; a Float type selects an epsilon comparison
+(`|a - b| <= 1e-5`); anything else is `=`. `assert-fail` evaluates its
+argument and checks nothing.
 
 ### Testing framework
 

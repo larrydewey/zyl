@@ -30,7 +30,7 @@ It does not build a standalone REPL binary; in a checkout, use
 | `bin/zyl-repl` | the REPL, built from `tools/repl.zyl` |
 | `bin/zyl-lsp` | the language server |
 | `bin/stage2.bin`, `bin/zyl-repl-bin`, `bin/zyl-lsp-bin` | the binaries the three wrappers run |
-| `stdlib/`, `actor_runtime.c`, `actor_runtime.h` | what every compile needs |
+| `stdlib/`, `actor_runtime.c`, `actor_runtime.h`, `actor_runtime.o` | what every compile needs; the object is the runtime compiled once at `-O2`, which every link uses |
 | `env`, `env.fish` | one line each that puts `bin/` on `PATH`; the script never edits your shell profile |
 
 The REPL and the server are compiled by the just-installed compiler
@@ -103,8 +103,9 @@ Because an installed `~/.zyl` wins that search, running a checkout's
 `build/boot/zyl-self` on a machine with an older install compiles
 against the *installed* standard library; set
 `ZYL_HOME=$PWD/build/boot` to use the checkout's (this is what
-`./boot.sh` does). Linking runs `cc -no-pie` with the runtime and
-`-lpthread` (Chapter 29).
+`./boot.sh` does). Linking runs `cc -no-pie` with the prebuilt runtime
+object (or, when that is older than `actor_runtime.c`, the source at
+`-O2`) and `-lpthread` (Chapter 29, §29.1).
 
 `zyl eval file.zyl` runs a program through the REPL's interpreter
 instead: no assembly, no linker, a few milliseconds for a small
@@ -165,7 +166,9 @@ from one entry to the next without being recomputed; a `defn` entered
 later can read it, as `double x` would inside a function body. The
 interpreter runs tail calls in constant stack, so a recursive loop
 behaves as it does compiled. An `Int` result of 0 is not echoed, so a
-`print` entry does not add `=> 0` under its output. Values print
+`print` entry does not add `=> 0` under its output. A `Bool` result is
+echoed as its machine word: `true` as `=> 1`, and `false`, being 0, not
+at all. Values print
 structurally: a variant as its constructor and fields, a struct as its
 name and fields.
 
@@ -193,10 +196,10 @@ highlighting as you type. `docs/repl.md` has the full key table.
 `:type` reports the type the checker assigns: `(+ 1 2)` is `Int`,
 `(str-eq "a" "b")` is `Bool`, `(fn (x) x)` is `(a -> a)`. An entry that
 does not type-check is rejected with the same `E_TYPE_MISMATCH` the
-compiler would print, and nothing is evaluated. One flaw to know: the
-source line shown under such an error can be a line of an earlier
-entry rather than the one you typed; trust the message, not the
-snippet. Relative paths in `:load` and `:save` resolve against
+compiler would print, and nothing is evaluated. The error quotes the
+entry you typed, but its line number counts the whole session's
+program, and an expression entry is shown inside the wrapper function
+the REPL compiles it as (`__zyl_repl_entry`). Relative paths in `:load` and `:save` resolve against
 the directory you started in.
 
 ### What carries over
@@ -319,7 +322,7 @@ language-servers = ["zyl-lsp"]
 
 | Request | What you get |
 |---|---|
-| `publishDiagnostics` | Unbalanced delimiters (with a line, column and fix-it), parse errors, duplicate definitions, arity mismatches, mutability and aliasing conflicts, non-exhaustive matches, and `Secret` violations — each with its `E_*` code and a range pointing at the offending name |
+| `publishDiagnostics` | Unbalanced delimiters (with a line, column and fix-it), parse errors, duplicate definitions, arity mismatches, mutability and aliasing conflicts, non-exhaustive matches, `Secret` violations and type errors — each with its `E_*` code and a range pointing at the offending name |
 | `codeAction` | A quick fix for each balance error, applying the fix-it the diagnostic carries; none for other diagnostics |
 | `hover` | Signatures for your own functions, variant and struct layouts, the owning struct of a field, and documentation for every built-in form, operator, type, region and capability; on dot syntax (`p.x`, `(p.area)`) the segment under the cursor |
 | `definition` | Functions, types, structs, traits, macros and constants; a variant constructor resolves to its `deftype`, a field to its `defstruct` (also from a dot segment); `pub` and `feature-gate` wrappers are seen through |
@@ -341,9 +344,12 @@ Diagnostics come from running the real checks — `duplicate_check`,
 `arity_check`, `mutability_check`, `exhaustiveness_check` and
 `secret_check` — in the order `stdlib/compiler/pipeline.zyl` runs them,
 plus `unused_check`, whose unused-binding and shadowing warnings appear
-as Warning diagnostics. The type checker is not among them, so a type
-error shows up only when you compile (or run `zyl.evalDocument`). Each diagnostic sits at the line and column the
-compiler reports. The package capability check (`capability_check`, spec
+as Warning diagnostics. When those checks pass, the server runs the
+steps that precede type checking in the compiler (derive expansion,
+impl lifting, closure inlining) and then the type checker itself, and
+publishes every type error located in the document; one the checker
+places in another file belongs to that file. Each diagnostic sits at
+the line and column the compiler reports. The package capability check (`capability_check`, spec
 §31.9) is not run in the editor.
 
 ## 35.7 How It Works, and What That Costs
@@ -368,21 +374,23 @@ the file.
 document is parsed, its modules resolved and its macros expanded, and a
 flat symbol table is built from the resulting expression tree. That is
 where the function signatures, ADT variants, struct fields and their
-owners come from. The server does not run type inference, for the
-reasons recorded in `stdlib/lsp/compiler_bridge.zyl`'s header.
+owners come from. The type checker runs too, but only for diagnostics:
+hover and navigation do not read its results (see
+`stdlib/lsp/compiler_bridge.zyl`'s header).
 
 The two halves meet by *name*: the text scan says which identifier is
 under the cursor, and the symbol table says what that name is. It is
-less clever than an inference-driven server, and it is honest — the
-server never reports a type it did not actually compute.
+less clever than an inference-driven server, and it is honest — hover
+shows the type the programmer wrote, never one the server guessed.
 
 ## 35.8 Known Limits
 
 Each of these is a consequence of the design above, not an oversight:
 
-- **One error at a time.** Every compiler check stops at its first
-  problem, exactly as a command-line build does. Fix it, save, see the
-  next. Warnings are reported all together.
+- **One error at a time, before type checking.** Every check that
+  runs before the type checker stops at its first problem, exactly as a
+  command-line build does. Fix it, save, see the next. Type errors, like
+  warnings, are reported all together, and only once those checks pass.
 - **Completion does not offer local variables.** The text scan has no
   scope to read at a cursor.
 - **Hover shows declared types, not inferred ones.** A parameter's
@@ -390,6 +398,10 @@ Each of these is a consequence of the design above, not an oversight:
   hovers as a bare name.
 - **Navigation is per-document.** Workspace symbol search covers every
   file you have open, not files you have never opened.
+- **Columns count bytes.** LSP positions are UTF-16 code units; the
+  server reports byte columns, so a position after a non-ASCII
+  character on the same line is off. The text itself survives in both
+  directions.
 - **Renaming is textual.** It would also rename a local binding that
   shadows the name being renamed. Zyl rejects duplicate top-level
   definitions, so a top-level name is unambiguous file-wide; a shadowing

@@ -104,27 +104,11 @@
 ; restarts at 0 for every deftype, since codegen's dispatch needs small
 ; per-type-relative tags), gid lets ic-check-exhaustive find a variant's
 ; siblings across the whole flat table. See vt-names-with-gid below.
-; VTClosureFn (5th kind): marks a NAME -- a let-bound local, never a real
-; top-level defn (see icnf.zyl's ic-lambda/ic-is-closure-shaped) -- as
-; holding a CAPTURING closure value (a heap [tag,code,env] triple, not a
-; bare code pointer). Purely additive bookkeeping alongside VTEntry/VTFn:
-; every existing query below treats it as absent unless it specifically
-; asks vt-returns-closure.
-;
-; VTClosureReturn (6th kind): a DIFFERENT fact about a name -- that
-; CALLING it (not loading its own value) produces a closure-triple
-; result. Genuinely distinct from VTClosureFn: `outer` in `(let outer
-; (fn (x) (fn (y) (+ x y))) (let add5 (outer 5) ...))` is itself a
-; plain non-capturing lambda (its OWN value is a bare code pointer --
-; ic-lambda's unmodified fast path, correctly called with the ordinary
-; convention), but its BODY's tail is another `fn` that DOES capture
-; `x`, so CALLING `outer` hands back a real closure triple. Conflating
-; the two (an earlier version of this marked `outer` itself via
-; VTClosureFn, using ic-free-vars's result for the OUTER lambda) marked
-; the wrong name and left `add5` uncovered -- add5's own call then used
-; the plain bare-pointer convention on an actual triple and crashed.
-; See ic-lower-let (sets it) and ic-is-closure-shaped's EApply arm
-; (reads it to decide whether the LET-BOUND RESULT gets VTClosureFn).
+; VTClosureFn (5th kind) and VTClosureReturn (6th kind) marked a
+; let-bound name as holding a capturing closure value, or as returning
+; one when called. Nothing constructs them any more (closure calls are
+; decided elsewhere); every query below treats them as absent, and
+; vt-returns-closure / vt-call-returns-closure have no callers.
 (deftype VTable
   (VTEntry String Int (List String) Int VTable) ; variant name, tag, field names, gid
   (VTFn String VTable)                       ; plain top-level function name
@@ -212,8 +196,7 @@
     (VTNil Nil)))
 
 ; True when `name` is known (via VTClosureFn) to hold a capturing closure
-; value -- see icnf.zyl's ic-is-closure-shaped (what marks it) and
-; ic-call-or-variant (what consults it to pick ICall vs ICallClosure).
+; value. No longer called (see VTable above).
 (defn vt-returns-closure (vt name)
   (match vt
     (VTEntry _ _ _ _ rest (vt-returns-closure rest name))
@@ -224,8 +207,7 @@
     (VTNil false)))
 
 ; True when `name` is known (via VTClosureReturn) to hand back a closure
-; triple when CALLED -- see ic-lower-let (sets it) and
-; ic-is-closure-shaped's EApply arm (the only reader).
+; triple when CALLED. No longer called (see VTable above).
 (defn vt-call-returns-closure (vt name)
   (match vt
     (VTEntry _ _ _ _ rest (vt-call-returns-closure rest name))

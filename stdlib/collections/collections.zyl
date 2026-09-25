@@ -1,5 +1,5 @@
 ; === Zyl Standard Library — Collections ===
-; Module: collections
+; Module: collections/collections
 ; Provides: Assoc<K, V> (persistent key-value map, deterministic iteration),
 ;           and higher-order List<T> utilities.
 ;

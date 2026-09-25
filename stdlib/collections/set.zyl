@@ -1,5 +1,5 @@
 ; === Zyl Standard Library — Arena-backed Set<K> ===
-; Module: collections (set submodule)
+; Module: collections/set
 ; Provides: Arena-backed Set<K> with deterministic insertion order.
 ; Inserting an already-present key is a no-op (ignored).
 

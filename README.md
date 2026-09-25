@@ -4,7 +4,7 @@
 </div>
 
 
-A deterministic Lisp systems language with region-based memory, capability types, actor concurrency, SSA IR, and native x86_64 code generation.
+A deterministic Lisp systems language with region-based memory, capability types, sound Hindley-Milner type checking, actor concurrency, a custom IR (ICNF), and native x86_64 code generation.
 
 ## Installation
 
@@ -142,7 +142,7 @@ yourself is left for you to remove by hand.
 `zyl repl` starts an interactive session (so does `zyl-repl`, or the
 installed `zyl` with no arguments). Every entry goes through the real
 compiler front end and middle — parsing, macro expansion, every check,
-type inference, monomorphization, ICNF lowering — and the lowered ICNF
+type checking, ICNF lowering — and the lowered ICNF
 is then evaluated in-process by an interpreter
 (`stdlib/repl/interp.zyl`) instead of being compiled and linked, so an
 entry costs milliseconds and a binding survives from one entry to the
@@ -174,11 +174,12 @@ zyl> (Some "hi")
 - `zyl eval FILE.zyl` runs a whole program through the same interpreter
   without producing a binary.
 
-Known limitations: `:type` often answers *unresolved* for applications
-(several of type inference's own name lookups compare strings by
-pointer), and a compiled program still prints a struct as an address —
-the REPL's structural printing is not spec §5.6's `Show`, which is not
-implemented. The full reference is [`docs/repl.md`](docs/repl.md).
+Known limitations: actors are compile-only (the interpreter reports
+`E_UNSUPPORTED_INTERPRETED`), and the REPL's structural printing is its
+own: a compiled program prints a struct or variant structurally only
+when its type has a `Show` impl (`(:derive [Show])` gives one), and
+otherwise prints an address. The full reference is
+[`docs/repl.md`](docs/repl.md).
 
 ## Editor Support
 
@@ -192,7 +193,8 @@ cannot disagree about whether a program is valid.
 ./install.sh --with-vscode   # also builds and installs the VS Code extension
 ```
 
-It provides diagnostics (with the compiler's own `E_*` codes), hover,
+It provides diagnostics (with the compiler's own `E_*` codes, every
+type error the type checker finds, and unused-binding warnings), hover,
 go-to-definition, type definition and implementation, find references,
 document highlight, rename, completion, signature help, document and
 workspace symbols, semantic tokens, folding, selection ranges, call
@@ -217,9 +219,10 @@ the book for per-editor setup.
 compiler written in Zyl (`stdlib/compiler/*.zyl`, `selfhost/`) compiles
 itself end-to-end with a strict byte-identical fixed point, verified by
 `./boot.sh`, and passes the full regression suite (`./run_regression_tests.sh
---full`) — 121/121 as of this writing, covering regression, interpreter
+--full`) — 260/260 as of this writing, covering regression, interpreter
 (differential REPL-vs-codegen), compile-fail, integration, stress,
-package and language-server protocol tests.
+package, script and language-server protocol tests. A self-compile
+takes about two seconds.
 
 The original Rust bootstrap compiler is archived at
 `archive/rust-bootstrap-2026/` (see its own README). The normal reseed
@@ -233,27 +236,34 @@ The Zyl-written compiler runs, in order (`stdlib/compiler/pipeline.zyl`):
 delimiter-balance check → parsing → module resolution (canonical
 symbol keys, spec §31) → macro expansion → capability, duplicate,
 arity, mutability, exhaustiveness, unused-binding and `Secret` checks →
-type inference → monomorphization → trait dispatch → closure lifting →
-assert lowering → ICNF generation → optimization → region inference
-(escape analysis) → x86_64 code generation → linking with `cc`.
+derive expansion → impl lifting → type checking (`type_annotate.zyl`:
+sound Hindley-Milner, static trait resolution, per-type specialization)
+→ ICNF generation → optimization (inlining of small functions, copy
+propagation, constant folding, dead-branch elimination) → region
+inference (escape analysis) → in-place reuse (`reuse.zyl`) → x86_64
+code generation (the native backend, MIR with linear-scan register
+allocation in `mir.zyl`, with a stack-machine path for the functions it
+does not take) → linking with `cc`.
 
 ## Features
 
 - **S-expression syntax** — homoiconic Lisp with S-expressions targeting x86_64 native code
-- **Region-based memory** — Stack, Heap, Global, Circular and Pin regions in the type system; escape analysis stack-allocates provably non-escaping values
+- **Region-based memory** — Stack, Heap, Global, Circular and Pin regions; escape analysis over ICNF places each allocation in the call's own frame region (released on return), the caller's result region, or the heap, and `with-region` opens an explicit `arena` or `fixed` region; an escaping Stack value is `E_REGION_ESCAPE`
 - **Capability types** — TCap (shared immutable) and TMut (exclusive mutable) with compile-time aliasing enforcement: only a `let-mut` binding may be `set!`, and direct field mutation is rejected
-- **Hindley-Milner type inference** — HM with trait resolution and generics via monomorphization; `derive` accepts `Eq`, `Ord` and `Debug` (`Show` is not implemented)
+- **Sound Hindley-Milner type checking** — every type error is reported, then the compile fails; conditions are Bool, arithmetic is Int or Float with no conversion, there is no cast form; traits resolve statically with per-type specialization; `derive` accepts `Show`, `Debug`, `Eq`, `Ord`, `Hash` and `Clone`
 - **Deterministic compilation** — same source + same inputs → identical binaries; the compiler reproduces itself byte for byte
-- **ICNF IR** — custom intermediate representation between the AST and codegen (spec §18 describes it as SSA with region annotations; the implementation is currently a tree IR without either)
+- **ICNF IR** — custom intermediate representation between the AST and codegen (spec §18 describes it as SSA with region annotations; the implementation is a tree IR, not SSA, whose region annotations live in a side table and are printed, so the ICNF hash covers them)
 - **Actor concurrency** — pthread-based actor runtime: `spawn` a closure as an actor, `send` it messages through its mailbox, and wait for it (`actor/actor` adds send-with-timeout, liveness and termination)
-- **Macros** — `defmacro` template macros, expanded innermost-first with gensym hygiene (spec §19): a template's binders are renamed per expansion, and a macro that expands to itself is `E_MACRO_NON_TERMINATION`
+- **Macros** — `defmacro` template macros, expanded innermost-first with gensym hygiene (spec §19): a template's binders are renamed per expansion, `&rest` parameters splice with `,@`, and a macro that expands to itself is `E_MACRO_NON_TERMINATION`; quasiquote (`` ` ``, `,`, `,@`) builds lists
 - **FFI** — `ffi-call` with a trailing timeout argument, `ffi-pin` for Pin-region memory, and a `Secret` value may only cross FFI pinned
 - **Structs and ADTs** — immutable structs by default, `deftype`/`match` with compile-time exhaustiveness and unreachable-arm checks; literal, OR (`(1 2 body)`), range (`(range lo hi)`) and guarded (`(when cond)`) patterns
 - **`_` as the discard** — in patterns, parameter lists and bindings; `_`-prefixed names are exempt from unused-binding warnings
 - **Located diagnostics** — `error[CODE]`, `--> file:line:col`, the source line, a caret and a `= help:` line for the most common errors
-- **Safe-only optimizations** — constant folding and dead-branch elimination
+- **Safe-only optimizations** — inlining of small functions, copy propagation, constant folding, dead-branch elimination, and in-place reuse of a unique, dead value's block; none reorders side effects
+- **Native backend** — MIR with liveness and linear-scan register allocation (`mir.zyl`), immediates, fused compare-and-branch, division by constants without `idiv`, inline allocation and array and byte access; tail calls are jumps and a self tail call is a loop
 - **Float64 support** — IEEE-754 arithmetic, SSE code generation, comparisons, print
 - **Closures** — `fn`/`lambda` with free-variable capture
+- **List literals and views** — `(list ...)`, `[...]` and quoted constant data `'(...)`; zero-copy views `text/view` (`StrView`, `Cursor`) and `collections/slice` (`Slice`)
 - **Try/catch** — `(try expr (catch e handler))`, backed by the runtime's setjmp/longjmp panic frames
 - **I/O** — `read-line`, file open/read/write/close
 - **Bitwise, byte and atomic operations** — `bit-and`/`bit-or`/`bit-xor`/`bit-not`, `shl`/`shr`/`ashr` (each one instruction, with defined out-of-range shift counts), byte and byte-buffer primitives with explicit endianness, and seq-cst atomics (`atomic/atomic`)
@@ -273,18 +283,18 @@ assert lowering → ICNF generation → optimization → region inference
 | 2. Module Resolution | ✅ | `use` graph, canonical symbol keys, visibility (spec §31) |
 | 3. Macro Expansion | ✅ | Gensym hygiene, innermost-first |
 | 4. Post-Processing + Checks | ✅ | AST → ExprInner; capability, duplicate, arity, mutability, exhaustiveness, unused, `Secret` |
-| 5. Type Inference | ✅ | HM inference + trait resolution |
-| 6. Monomorphization | ✅ | Canonical naming, trait bounds; then trait dispatch, closure lifting, assert lowering |
-| 7. ICNF Generation | ✅ | SSA IR with region annotations |
-| 8. Optimization | ✅ | Constant folding, dead-branch elimination |
-| 9. Region Inference | ✅ | Escape analysis over ICNF: non-escaping variants move to the stack |
-| 10. Code Generation | ✅ | x86_64, System V AMD64 ABI |
-| 11. Linking | ✅ | cc + actor_runtime.c + pthread |
+| 5. Derive + Impl Lifting | ✅ | `derive` expanded to impls; impl bodies lifted to `Trait.method_Type` functions |
+| 6. Type Checking | ✅ | Sound HM (`type_annotate.zyl`), static trait resolution, per-type specialization |
+| 7. ICNF Generation | ✅ | Tree IR; region annotations in a side table |
+| 8. Optimization | ✅ | Inlining of small functions, copy propagation, constant folding, dead-branch elimination |
+| 9. Region Inference | ✅ | Escape analysis over ICNF: frame, result or heap region per allocation; then in-place reuse |
+| 10. Code Generation | ✅ | x86_64, System V AMD64 ABI; MIR + linear scan, stack machine for the rest |
+| 11. Linking | ✅ | cc + prebuilt `actor_runtime.o` (or `actor_runtime.c`) + pthread |
 | — Contract Injection | ✅ | Lowered to checks during parsing (`expr_inner.zyl`), under a profile |
 
 The implementation's order differs from spec §22's (which puts region
-inference before monomorphization and contract injection after
-linking); `stdlib/compiler/pipeline.zyl` is the authority for what
+inference before monomorphization, a pass the implementation does not
+have, and contract injection after linking); `stdlib/compiler/pipeline.zyl` is the authority for what
 actually runs.
 
 ## Project Structure
@@ -303,27 +313,32 @@ build/boot/                   # Committed seed (stage2.s, stage2.bin) and
                               # everything boot.sh produces (zyl-self, zyl-lsp)
 
 runtime/                      # C runtime linked into every compiled binary
-├── actor_runtime.c           # Actors, arenas, I/O, FFI helpers, panics
-└── actor_runtime.h
+├── actor_runtime.c           # Actors, regions, I/O, FFI helpers, panics
+└── actor_runtime.h           # (boot.sh and install.sh prebuild actor_runtime.o)
 
-stdlib/compiler/              # The compiler, written in Zyl (37 modules)
+stdlib/compiler/              # The compiler, written in Zyl (41 modules)
 ├── pipeline.zyl              # Phase order shared by the CLI and the REPL
-├── lexer.zyl, parser.zyl, sexp_balance.zyl, ast.zyl, expr_inner.zyl
+├── lexer.zyl, parser.zyl, sexp_balance.zyl, ast.zyl, expr_inner.zyl,
+│   node_tables.zyl
 ├── module_resolver.zyl, qualify.zyl, resolver.zyl, macro_expand.zyl
 ├── capability_check.zyl, duplicate_check.zyl, arity_check.zyl,
 │   mutability_check.zyl, exhaustiveness_check.zyl, unused_check.zyl,
-│   secret_check.zyl          # Pre-inference checks
-├── type_system.zyl, type_inference.zyl, derive.zyl, monomorphization.zyl,
-│   closure_inline.zyl, assert_lowering.zyl, type_annotate.zyl
-├── icnf.zyl, optimization.zyl, region_inference.zyl, codegen.zyl
+│   secret_check.zyl          # Checks run before type checking
+├── derive.zyl, lift_impls.zyl, closure_inline.zyl,
+│   type_annotate.zyl, type_system.zyl, ffi_sigs.zyl   # Types and traits
+├── icnf.zyl, icnf_print.zyl, optimization.zyl, region_inference.zyl,
+│   reuse.zyl                 # ICNF, optimization, regions, in-place reuse
+├── codegen.zyl, mir.zyl      # x86_64: native backend (MIR) + stack machine
 ├── package.zyl, workspace.zyl, lock.zyl, index.zyl, mvs.zyl, store.zyl,
 │   cli.zyl                   # Package system (spec §31)
+├── doc.zyl                   # `zyl doc`
 └── error_codes.zyl, error_report.zyl   # Error catalog and rendering
 
 stdlib/                       # The implicit standard library (package zyl/std)
 ├── core/                     # core, list, option, result, map (auto-loaded)
-├── collections/              # vec, map, set
-├── allocator/, atomic/, actor/, io/, ffi/, testing/
+├── collections/              # vec, map, set, slice
+├── text/                     # view: StrView, Cursor
+├── allocator/, atomic/, actor/, io/, ffi/, testing/, mlib/
 ├── math/                     # Cryptography and number libraries (pure Zyl)
 │   ├── bits.zyl, words.zyl   # Word operations, byte-string representation
 │   ├── secret/               # Constant-time primitives
@@ -341,6 +356,8 @@ book/                         # "The Zyl Programming Language" (mdBook)
 spec/                         # Structured copy of the specification
 specifications/               # Historical specification versions
 docs/                         # Architecture, design rationale, status
+bench/                        # Benchmarks in Zyl, C, C++, Rust and Go (matrix.py)
+verify/                       # Python cross-checks for stdlib/math, timing harness
 archive/rust-bootstrap-2026/  # The original Rust compiler, frozen
 
 tests/
@@ -350,6 +367,7 @@ tests/
 ├── integration/              # Multi-module and self-hosting programs
 ├── compile-fail/             # Programs that must be rejected
 ├── packages/, packages-fail/, packages-build/   # Package-system tests
+├── scripts/                  # Shell checks of the repository's own scripts
 ├── lsp/                      # Language-server protocol tests
 └── unit_test.zyl             # Comprehensive harness (runs in every mode)
 ```
@@ -381,6 +399,9 @@ The canonical language specification is `zyl_specification.txt` (v5.0; §31 is t
 - [The REPL](docs/repl.md)
 - [Error Codes](docs/errors.md)
 - [Self-Hosting and the Rust Eviction](docs/rust-eviction-plan.md)
+- [Sound Types Design](docs/sound-types-design.md)
+- [Regions Design](docs/regions-design.md)
+- [Native Backend Design](docs/native-backend-design.md)
 - [LSP Architecture](LSP_ARCHITECTURE_PLAN.md)
 
 ## License

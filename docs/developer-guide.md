@@ -7,7 +7,8 @@ it's a fast on-ramp with real, working examples for the parts of the
 language you'll reach for most often.
 
 Every example below is written in the same style as the project's own
-test suite (`tests/regression/*.zyl`) and uses real, verified syntax.
+test suite (`tests/regression/*.zyl`), and every complete program in it
+compiles and prints what its comments say (checked 2026-09-25).
 
 ## Table of contents
 
@@ -34,7 +35,8 @@ test suite (`tests/regression/*.zyl`) and uses real, verified syntax.
 
 ```zyl
 (defn main ()
-  (print "Hello, World!"))
+  (print "Hello, World!")
+  0)
 ```
 
 Compile and run it:
@@ -44,7 +46,19 @@ Compile and run it:
 ./hello
 ```
 
-`print` is polymorphic — it works on ints, floats, strings, and bools.
+`main` takes no arguments and returns an Int, the exit status, so it
+ends with `0`. A `defn` body may hold several forms; they run in order
+and the last one is the result.
+
+`print` works on ints, floats, strings and bools (a Bool prints as `1`
+or `0`, a Float with six decimals), and on any value whose type has a
+`Show` impl (section 11).
+
+Types are inferred and checked (Hindley–Milner, spec §4.8): nothing
+needs an annotation, but a program that does not type-check does not
+compile. Conditions must be Bool, arithmetic does not mix Int and Float,
+and every type error in the program is reported before the compile
+fails.
 
 ## 2. Variables
 
@@ -56,7 +70,8 @@ note below) whose value the whole `let` evaluates to:
 (defn main ()
   (let x 10
     (let y (+ x 5)
-      (print y))))              ; => 15
+      (print y)))              ; => 15
+  0)
 ```
 
 ```zyl
@@ -65,7 +80,8 @@ note below) whose value the whole `let` evaluates to:
     (begin
       (set! total (+ total 5))
       (set! total (+ total 10))
-      (print total))))          ; => 15
+      (print total)))          ; => 15
+  0)
 ```
 
 **Multiple body statements.** `(let name val stmt1 stmt2 ...)` runs
@@ -84,7 +100,8 @@ manually:
             (set! acc (+ acc i))
             (set! i (+ i 1))))
         acc)
-      (print acc))))            ; acc is still in scope here => 10
+      (print acc)))            ; acc is still in scope here => 10
+  0)
 ```
 
 There's also a binding-pair form, useful when generated or when it
@@ -103,14 +120,17 @@ reads better with the name and value grouped: `(let (name value) body)`.
 
 (defn main ()
   (print (add 2 3))          ; => 5
-  (print (factorial 5)))     ; => 120
+  (print (factorial 5))      ; => 120
+  0)
 ```
 
-Arithmetic: `+ - * / %`. Comparisons: `< > <= >= == !=` (`=` also works
-as `==`). The comparisons also work on structs and ADTs, comparing by
-structural equality and ordering rather than pointer identity; see
-[Traits and derive](#11-traits-and-derive). Integers also have
-`bit-and`, `bit-or`, `bit-xor`, `bit-not`, `shl`, `shr` and `ashr`.
+Arithmetic: `+ - * / %`, on two Ints or two Floats (never one of each).
+Comparisons: `< > <= >= == !=` (`=` also works as `==`). `==` and `!=`
+also compare structs and ADTs, by content rather than by address; the
+orderings `<`, `>`, `<=`, `>=` take Int, Float and String only (order an
+ADT with `Ord.compare`, see [Traits and derive](#11-traits-and-derive)).
+Integers also have `bit-and`, `bit-or`, `bit-xor`, `bit-not`, `shl`,
+`shr` and `ashr`.
 
 ## 4. Control flow
 
@@ -133,15 +153,6 @@ with `else` as the fallback:
     ((== n 0) 0)
     (else 1)))
 ```
-
-> **Note:** the code generator has no general return-type inference,
-> so `print` can't always tell that a value is a String. Printing a
-> string literal, a String-typed variable, or the result of an ordinary
-> function that returns a String works. A String that reaches `print`
-> through a generic function (`(defn id (x) x)` called with a String)
-> or out of an ADT field can print as a raw number instead of its text.
-> If you hit this, compare with `assert-equal`/`assert-true` in a
-> [`test`](#13-testing) instead of `print`ing the result.
 
 `while` and `for` loops. `for` takes a binding section, a condition
 and a body, and you update the loop variables yourself with `set!`.
@@ -177,13 +188,16 @@ The binding section is either one binding, `(i 0)`, or a list of them,
 
 (defn main ()
   (let p (make-Point 3 4)
-    (print (struct-get p "x"))     ; => 3
-    (print (struct-get p "y"))))   ; => 4
+    (begin
+      (print (struct-get p "x"))     ; => 3
+      (print p.y)))                  ; => 4
+  0)
 ```
 
-`defstruct` generates a constructor (`make-<Name>`); fields are read
-back with `(struct-get value "field-name")` rather than a per-field
-accessor function.
+`defstruct` generates a constructor (`make-<Name>`); a field is read
+back with `(struct-get value "field-name")` or the dot syntax `p.y`,
+rather than a per-field accessor function. A field may carry a type,
+`(x Int)`; an untyped field is a type parameter of the struct.
 
 ## 6. Algebraic data types and pattern matching
 
@@ -198,32 +212,36 @@ variants, each with its own fields.
 
 (defn area (s)
   (match s
-    (Circle r (* r r))
+    (Circle r (* 3 (* r r)))       ; a rough area: 3r²
     (Rect w h (* w h))
-    (Triangle a b c 0)))       ; placeholder — not a real formula
+    (Triangle b h _ (/ (* b h) 2))))
 ```
 
 `match` dispatches on which variant a value was constructed with,
-binding each variant's fields by position. It also works on lists,
-recursively:
+binding each variant's fields by position (`_` discards one). It also
+works on the built-in list type, whose constructors are `Cons` and
+`Nil`; `[1 2 3]` and `(list 1 2 3)` build the same list:
 
 ```zyl
-(deftype IntList
-  (Cons Int IntList)
-  (Nil))
-
 (defn sum (xs)
   (match xs
     (Cons h t (+ h (sum t)))
     (Nil 0)))
 
 (defn main ()
-  (print (sum (Cons 1 (Cons 2 (Cons 3 Nil))))))   ; => 6
+  (print (sum (Cons 1 (Cons 2 (Cons 3 Nil)))))   ; => 6
+  (print (sum [1 2 3]))                          ; => 6
+  0)
 ```
+
+`Cons`, `Nil`, `Some`, `None`, `Ok` and `Err` belong to the standard
+library's prelude; a program's own `deftype` may not reuse those
+constructor names (`E_DUPLICATE_VARIANT`).
 
 A match must be exhaustive: every variant needs an arm, or the match
 needs a `_` catch-all. A missing variant is the compile-time error
-`E_NON_EXHAUSTIVE_MATCH`.
+`E_NON_EXHAUSTIVE_MATCH`. Patterns do not nest: a constructor's fields
+are bound to names (`E_NESTED_PATTERN` otherwise).
 
 `match` also takes literal patterns. A literal match must end with a
 `_` arm; an arm can list several literals, and `(range lo hi)` matches
@@ -243,21 +261,25 @@ Type parameters on a `deftype` let one declaration work over any
 concrete type:
 
 ```zyl
-(deftype Opt (Some T) (None))
+(deftype Maybe (Just T) (Nothing))
 
-(defn unwrap-or (o default)
-  (match o
-    (Some v v)
-    (None default)))
+(defn unwrap-or (m default)
+  (match m
+    (Just v v)
+    (Nothing default)))
 
 (defn main ()
-  (print (unwrap-or (Some 42) 0))        ; => 42
-  (print (unwrap-or (None) 0)))          ; => 0
+  (print (unwrap-or (Just 42) 0))        ; => 42
+  (print (unwrap-or Nothing 0))          ; => 0
+  (print (unwrap-or (Just "yes") "no"))  ; => yes
+  0)
 ```
 
-The same `Opt` type works whether `T` ends up being an `Int`, a
-`String`, or another struct — each concrete instantiation is
-monomorphized at compile time.
+The same `Maybe` type works whether `T` ends up being an `Int`, a
+`String`, or another struct. Generic functions are generalized by
+Hindley–Milner inference; one that prints, compares or calls a trait
+method at a type parameter is specialized per concrete argument type at
+compile time.
 
 ## 8. Option and Result
 
@@ -274,10 +296,10 @@ declare your own for the common case:
     (result-ok (/ a b))))
 
 (defn main ()
-  (let r (safe-div 10 2)
-    (print (result-unwrap r 0)))         ; => 5
-  (let r2 (safe-div 10 0)
-    (print (result-unwrap r2 -1))))      ; => -1 (fallback, since r2 is Err)
+  (print (result-unwrap (safe-div 10 2) 0))     ; => 5
+  (print (result-unwrap (safe-div 10 0) -1))    ; => -1 (the fallback: it is an Err)
+  (print (option-unwrap-or (Some 3) 0))         ; => 3
+  0)
 ```
 
 Useful combinators: `option-map`, `option-unwrap-or`, `option-and`,
@@ -302,7 +324,8 @@ the scope it was created in:
   (let outer (fn (x)
     (let inner (fn (y) (+ x y))
       (inner 10)))
-    (print (outer 5))))                  ; => 15
+    (print (outer 5)))                   ; => 15
+  0)
 ```
 
 A closure that captures a variable can also outlive the function that
@@ -314,35 +337,40 @@ made it:
 
 (defn main ()
   (let add5 (make-adder 5)
-    (print (add5 10))))                  ; => 15
+    (print (add5 10)))                   ; => 15
+  0)
 ```
 
 ## 10. Collections
 
 ```zyl
-(use collections/collections)
 (use collections/vec)
+(use collections/map)
+(use collections/set)
 
 (defn main ()
-  (let v (vec-push (vec-push (vec-create 0 10) 1) 2)
-    (print (vec-len v))                  ; => 2
-    (print (vec-get v 0)))               ; => 1
-
-  (let m (map-put (map-create 0 10) 1 42)
-    (print (map-get m 1 0))              ; => 42
-    (print (map-has m 1)))               ; => 1 (bools print as 1/0)
-
-  (let s (set-add (set-create 0 10) 42)
-    (print (set-contains s 42))))        ; => 1
+  (let v (vec-push (vec-push (vec-create-default 10) 1) 2)
+    (begin
+      (print (vec-len v))                ; => 2
+      (print (vec-get v 0))))            ; => 1
+  (let m (map-put (map-create-default 10) 1 42)
+    (begin
+      (print (map-get m 1 0))            ; => 42
+      (print (map-has m 1))))            ; => 1 (bools print as 1/0)
+  (let s (set-add (set-create-default 10) 42)
+    (print (set-contains s 42)))         ; => 1
+  0)
 ```
 
-`vec-create`, `map-create` and `set-create` take an arena and an
-initial capacity: `(vec-create 0 10)` means "a private arena of its
-own" (an arena argument of 0) with room for 10 elements. `Vec` and
-`Map` double their capacity when they fill up. For
-simple linked lists, the built-in `Cons`/`Nil` ADT (section 6) plus
-`core/list`'s helpers (`list-length`, `list-append`, `list-map`, ...)
-are usually simpler than reaching for `Vec`.
+`vec-create-default`, `map-create-default` and `set-create-default`
+take an initial capacity and give the collection a private arena of its
+own; `vec-create`, `map-create` and `set-create` take an `Arena` first,
+for a collection that should live in an arena you manage. `Vec` is
+generic over its element type; `Map` and `Set` hold Int keys (and Int
+values). `Vec` and `Map` double their capacity when they fill up. For
+simple linked lists, the built-in `Cons`/`Nil` list (section 6) plus
+`core/list`'s helpers (`list-length`, `list-append`, `list-reverse`,
+...) are usually simpler than reaching for `Vec`.
 
 Memory is managed by regions, not a garbage collector. The compiler
 works out where each value can go: a value that does not outlive its
@@ -354,9 +382,23 @@ it lives until exit. You do not annotate anything for this. When you
 want an explicit, bounded arena, use `with-region`:
 
 ```zyl
+(deftype WList (WCons Int WList) (WNil))
+
+(defn build (n acc)
+  (if (== n 0) acc (build (- n 1) (WCons n acc))))
+
+(defn wsum (xs)
+  (match xs
+    (WCons h t (+ h (wsum t)))
+    (WNil 0)))
+
 (defn arena-sum (n)
   (with-region (arena :block 65536 :align 16 :limit 1048576)
-    (wsum (build n (WN)))))
+    (wsum (build n WNil))))
+
+(defn main ()
+  (print (arena-sum 100))                ; => 5050
+  0)
 ```
 
 Everything the body allocates is released when it ends. The body's
@@ -367,39 +409,58 @@ details are in `docs/regions-design.md`.
 ## 11. Traits and derive
 
 ```zyl
-(defstruct Box (w) (h))
-(derive Box Eq Ord)
+(defstruct Box (w Int) (h Int))
+(derive Box Eq Show)
+
+(deftype Size (Small) (Large))
+(derive Size Eq Ord Show)
 
 (defn main ()
   (let a (make-Box 2 3)
     (let b (make-Box 2 3)
-      (print (== a b))                   ; => 1 (structural, not pointer, equality)
-      (print (< a b)))))                 ; => 0
+      (begin
+        (print (== a b))                 ; => 1 (by content, not by address)
+        (print a))))                     ; => Box { w: 2, h: 3 }
+  (print (Ord.compare Small Large))      ; => -1
+  (print Large)                          ; => Large
+  0)
 ```
 
-`derive` declares `Eq` (`==`/`!=`) and `Ord` (ordering) for a struct
-or ADT. `derive ... Debug` is also accepted, but there is no derived
-`Show` yet: `print` of a struct or ADT value prints its address, so
-compare its fields individually via `struct-get` if you need to check
-its contents.
+`derive` generates impls of `Show`, `Debug`, `Eq`, `Ord`, `Hash` and
+`Clone` for a struct or ADT; any other trait, or a field whose type
+lacks the trait, is `E_TRAIT_NOT_DERIVABLE`. `print` of a value whose
+type has a `Show` impl prints its `Show.show` text; without one, a
+struct or ADT prints as an address. `==` compares structs and ADTs by
+content with or without a derive; the orderings `<` and `>` do not take
+them, so an ADT is ordered with `Ord.compare`.
 
-`trait`/`impl` declare and implement a shared interface, and a call
-written `(Trait.method receiver args...)` dispatches to the impl for
-the receiver's type:
+`trait`/`impl` declare and implement a shared interface. A method is
+declared with its parameter list and its result type, and a call
+written `(Trait.method receiver args...)`, or `(receiver.method args...)`
+with the dot syntax, goes to the impl for the receiver's type:
 
 ```zyl
 (trait Describe
-  (describe self))
+  (describe (self) Int))
 
 (impl Describe Int
   (defn describe (self) (* self 10)))
 
+(impl Describe String
+  (defn describe (self) (str-length self)))
+
 (defn main ()
-  (print (Describe.describe 4)))         ; => 40
+  (print (Describe.describe 4))          ; => 40
+  (print (Describe.describe "four"))     ; => 4
+  (let n 5
+    (print (n.describe)))                ; => 50
+  0)
 ```
 
-The dispatch is chosen at run time from the receiver's tag, so it
-works for any type with an `impl`.
+The impl is chosen at compile time from the receiver's inferred type;
+there is no run-time dispatch. A receiver whose type the program does
+not determine is `E_CANNOT_INFER`, and one with no impl is
+`E_TRAIT_NOT_FOUND`.
 
 ## 12. Modules
 
@@ -454,25 +515,40 @@ blocks until it finishes.
 (use actor/actor)
 
 (defn main ()
-  (let a (spawn (fn () (+ 1 2 3)))
-    (send a 42)
-    (actor-wait a)))
+  (let greeting "hello from an actor"
+    (let a (spawn (fn () (begin (print greeting) 0)))
+      (begin
+        (send a 42)
+        (actor-wait a))))
+  0)
 ```
 
 Actors don't share mutable state with each other or the spawning code;
-they communicate through messages. At the time of writing, a `spawn`
-body that captures a variable from the enclosing scope hangs at run
-time, so pass data with `send` instead.
+they communicate through messages. A `spawn` body may capture immutable
+values from the enclosing scope, as `greeting` is here; capturing a
+`let-mut` variable is `E_CAPABILITY_LEAK`. Inside an actor, `(receive)`
+takes the next message and `(actor-self)` names the actor. Actors run
+only in compiled code; the REPL's interpreter reports
+`E_UNSUPPORTED_INTERPRETED`.
 
 ## 15. FFI
 
-`ffi-call` invokes a C runtime function directly, passing arguments and
-a timeout:
+`ffi-call` calls a C function, passing arguments and a timeout. A
+foreign symbol needs an `extern` declaration giving its parameter and
+result types, which must be concrete and fit a machine word (no Float):
 
 ```zyl
+(extern "strlen" (String) Int)
+
 (defn main ()
-  (print (ffi-call "strlen" "hello" 1000)))     ; => 5
+  (print (ffi-call "strlen" "hello" 1000))     ; => 5
+  0)
 ```
+
+Without the `extern`, the call is `E_CANNOT_INFER`. The runtime's own
+`zyl_*` entries are typed by the compiler (`compiler/ffi_sigs.zyl`) and
+need no `extern`; the raw ones among them may only be called by the
+standard library (`E_FFI_RESTRICTED`).
 
 The last argument is the timeout, in milliseconds. It must be a
 positive integer literal, or the compiler rejects the call with
@@ -498,7 +574,7 @@ This guide covers the everyday 80%. For the rest:
 - **`tests/regression/*.zyl`** — real, compiling examples of nearly
   every language feature, including the ones this guide only touched
   on (`with-resource`, `contracts`/`requires`/`ensures`, aliasing,
-  region annotations).
+  regions, macros, quasiquote, views).
 - **`docs/implementation-status.md`** — what works today and the known
   gaps.
 - **`docs/repl.md`** — `zyl repl` and `zyl eval`.

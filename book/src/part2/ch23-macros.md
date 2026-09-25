@@ -106,9 +106,9 @@ The body itself is the template: a parameter is replaced wherever the body names
 (print (sum))                                ; 0: (+ 0)
 ```
 
-`&rest` must be followed by exactly one name, and only at the end of the list: `(defmacro m (&rest) ...)` and `(defmacro m (&rest a b) ...)` are `E_MALFORMED_PARAMETER`. Only `defmacro` has rest parameters; in a `defn`, `&rest` is an ordinary parameter name.
+`&rest` must be followed by exactly one name, and only at the end of the list: `(defmacro m (&rest) ...)` and `(defmacro m (&rest a b) ...)` are `E_MALFORMED_PARAMETER`. Only `defmacro` has rest parameters: `&rest` in a `defn` or `fn` parameter list is `E_MALFORMED_PARAMETER` ("`&rest` is a macro parameter marker; a function takes a fixed number of parameters").
 
-**Where a splice may appear.** `,@name` changes the number of expressions in the form around it, so it is accepted only where a form takes any number of them: the arguments of a call (including a constructor and `ffi-call`), `begin`, `print`, `setup` and `teardown`. A splice anywhere else, such as into an `if`, is `E_MALFORMED_FORM`:
+**Where a splice may appear.** `,@name` changes the number of expressions in the form around it, so it is accepted only where a form takes any number of them: the arguments of a function call (including `ffi-call`), `begin`, `print`, `setup` and `teardown`. A splice anywhere else, such as into an `if` or into a constructor's fields (a constructor has a fixed number of them), is `E_MALFORMED_FORM`, and so is a template that is nothing but `,@name`:
 
 ```lisp
 (defmacro bad (c &rest body) (if c ,@body 0))
@@ -134,7 +134,7 @@ Outside a quasiquote, `,@` splices only the rest parameter: `,@x` for a fixed pa
 (print (framed 9 8 7))                       ; [9, 8, 7, 0]
 ```
 
-Build lists in a template this way, not with `[...]`: a list literal is a chain of two-argument `Cons` calls, so `[0 ,@xs]` splices into one `Cons` and fails to type-check (`E_TYPE_MISMATCH`) instead of making a longer list.
+Build lists in a template this way, not with `[...]`: a list literal is a chain of two-field `Cons` constructions, so `[0 ,@xs]` would splice into a constructor's fields and is `E_MALFORMED_FORM` ("`,@` cannot splice into a constructor's fields").
 
 **Unquote.** `,x` in a template is `x`, since parameters are substituted anyway; `(begin ,x ,x)` and `(begin x x)` are the same template. A `,` or `,@` written outside a quasiquote and outside a macro template has no meaning and is `E_MALFORMED_FORM`, reported after expansion:
 
@@ -255,8 +255,8 @@ Every operand is a `Bool`, and so is the result: `(or 5 6)` is `E_TYPE_MISMATCH`
 | `E_MACRO_ILLEGAL_ACCESS` | a `defmacro` inside a function body or other form |
 | `E_ARITY_MISMATCH` | a macro call with the wrong number of arguments, or too few before `&rest` |
 | `E_DUPLICATE_DEFINITION` | two macros with one name, or a macro and a function with one name in one file |
-| `E_MALFORMED_FORM` | a `defmacro` with no body or with more than one body form; a `,@` where a form takes a fixed number of expressions, or of something other than the rest parameter; a `,` or `,@` outside a quasiquote and a template |
-| `E_MALFORMED_PARAMETER` | a macro parameter that is not an identifier, a `&rest` not followed by exactly one name at the end of the list, or a non-identifier argument used where the body needs a name |
+| `E_MALFORMED_FORM` | a `defmacro` with no body or with more than one body form; a `,@` where a form takes a fixed number of expressions (a constructor's fields included), of something other than the rest parameter, or as a whole template; a `,` or `,@` outside a quasiquote and a template |
+| `E_MALFORMED_PARAMETER` | a macro parameter that is not an identifier, a `&rest` not followed by exactly one name at the end of the list, a `&rest` in a function's parameters, or a non-identifier argument used where the body needs a name |
 | `E_UNBOUND_VARIABLE` | a body names a variable that is local at the call site but unbound where the macro is defined (§23.4) |
 
 Each one points at the offending form in the source.

@@ -47,7 +47,7 @@ that builds your program, so the editor and `zyl` never disagree):
 
 | Feature | What it does |
 |---|---|
-| Diagnostics | Unbalanced parentheses, parse errors, duplicate definitions, call arity, mutability and capability conflicts, non-exhaustive matches, and every `Secret` constant-time violation — each with its `E_*` code |
+| Diagnostics | Unbalanced parentheses, parse errors, duplicate definitions, call arity, mutability and capability conflicts, non-exhaustive matches, every `Secret` constant-time violation, every type error from the type checker, and unused-binding and shadowing warnings — each with its `E_*` code, at the line and column the compiler reports |
 | Hover | Signatures for your functions, variant and struct layouts, field owners, and documentation for every built-in form, operator and capability |
 | Go to definition | Functions, types, structs, traits, macros; a variant constructor resolves to its `deftype` |
 | Go to type definition | A variant to its ADT, a field to its struct |
@@ -94,10 +94,12 @@ binary after a rebuild.
 These come from the server, and are the honest edges of what the
 compiler can currently report:
 
-- **One diagnostic at a time.** Each compiler check stops at its first
-  problem, exactly as a command-line build does.
-- **Unused-binding warnings do not appear.** That check reports by
-  printing to stdout, which is the server's JSON-RPC channel.
+- **One error at a time, before type checking.** Each check that runs
+  before the type checker stops at its first problem, exactly as a
+  command-line build does. Type errors and warnings are reported all
+  together, and type errors only once those earlier checks pass.
+- **No capability check.** The package capability check (spec §31.9)
+  is not run in the editor.
 - **Completion does not offer local variables.** The compiler's AST
   carries no position-aware scopes (diagnostics are located through a
   separate table of byte offsets, which gives a position but not a
@@ -107,6 +109,9 @@ compiler can currently report:
   shows declared signatures rather than inferred types.
 - **Navigation is per-document.** A workspace symbol search covers every
   file you have open, not files you have not opened.
+- **Columns count bytes.** LSP positions are UTF-16 code units; the
+  server reports byte columns, so a position after a non-ASCII
+  character on the same line is off. The text itself survives intact.
 - **Renaming is textual**, and would rename a local binding that shadows
   the name being renamed.
 

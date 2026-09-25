@@ -80,8 +80,9 @@ Notes on the kinds that have no source form:
   on raw addresses, and the byte primitives provide `bytebuf-atomic-load`
   and friends on a `ByteBuf`. Neither produces a `TAtomic` value, and
   there is no `atomic-new`.
-- **`TBox`** has no source form. Recursive ADT fields are already heap
-  pointers (Chapter 18), so nothing needs one.
+- **`TBox`** has no source form. Recursive ADT fields are already
+  pointers to separately allocated blocks (Chapter 18), so nothing needs
+  one.
 
 ## 17.3 Capability Operations
 
@@ -140,8 +141,10 @@ capability tracking, and no partial mutability to reason about.
 §7.2: a read-only capture is `TCap`, a mutated capture is `TMut`, and an
 escaping capture is promoted to the heap.
 
-In the implementation a closure copies the values it captures into a heap
-environment when it is created. It sees the value a variable had at that
+In the implementation a closure copies the values it captures into an
+environment block when it is created; region inference places the block
+like any other value (Chapter 16), so an escaping closure's environment
+lives in its caller's region or the heap. It sees the value a variable had at that
 moment:
 
 ```lisp
@@ -193,9 +196,8 @@ closure passed to `spawn`, or the message passed to `send`, refers to any
         0))))
 ```
 
-The type-level Send predicate (`tc-is-send` in `type_system.zyl`) exists
-but nothing calls it. A `Secret` reaching `spawn` or `send` is rejected
-separately (17.8).
+There is no type-level Send predicate. A `Secret` reaching `spawn` or
+`send` is rejected separately (17.8).
 
 ### FFI (§16, §9.1 R4)
 
@@ -291,7 +293,9 @@ What the specification infers, and how each rule is met today:
 2. **`set!`** requires `TMut`. Met by name, through `let-mut` (17.1).
 3. **Atomic use** gives `TAtomic`. No atomic type exists (17.2).
 4. **Escape and capture** promote to the heap. Captures are always
-   copied into a heap environment (Chapter 16).
+   copied into an environment block, which region inference places in
+   the frame, the caller's result region or the heap, as far as the
+   closure escapes (Chapter 16).
 5. **Actor send** requires Send. Met syntactically for `let-mut`
    variables and `Secret`s (17.7, 17.8).
 6. **FFI** requires FFI_Pinnable and Pin. Argument types are fixed by
@@ -311,9 +315,10 @@ What the specification infers, and how each rule is met today:
 
 `E_MUT_CONFLICT` and `E_CAPABILITY_LEAK` use the located
 `error[CODE] --> file:line:col` form, with a second label at the `let`
-or `let-mut` binding involved (Appendix A, §A.1). `E_INVALID_CAPABILITY`
-and the Secret diagnostics still print as `PANIC:` lines naming the
-code.
+or `let-mut` binding involved (Appendix A, §A.1). The Secret errors are
+located too, without a second label. `E_INVALID_CAPABILITY`, the
+`E_MUT_CONFLICT` for a `set!` on a field, and the `E_ZEROIZE_MISSING`
+warning still print as bare lines naming the code.
 
 ## 17.11 Comparison with Rust
 
@@ -321,11 +326,11 @@ code.
 |------|---------------------|-------------|
 | `&T` | `TCap<T>`, inferred | every binding by default |
 | `&mut T` | `TMut<T>`, inferred | `let-mut` + `set!`, checked by name |
-| `Box<T>` | `TBox<T>` | no source form; ADT fields are heap pointers |
+| `Box<T>` | `TBox<T>` | no source form; ADT fields are pointers to their blocks |
 | `Pin<&mut T>` | `TPin<T>` via `ffi-pin` | `ffi-pin` copies into the pin arena |
 | `Arc<Mutex<T>>` | `TAtomic<T>` | atomic operations on addresses and byte buffers |
 | borrow checker | region + capability inference | syntactic checks (17.1, 17.7) |
-| lifetime parameters | region variables, inferred | none; heap values live until exit |
+| lifetime parameters | region variables, inferred | none written; region inference gives each value its call's region, its caller's result region or the heap, and heap values live until exit |
 
 The key difference in design is the same in both columns: Zyl code
 carries no capability or lifetime annotations. The difference in

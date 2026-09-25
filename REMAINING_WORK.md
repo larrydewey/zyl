@@ -7,18 +7,18 @@
 - [x] Warning sweep: the self-build is warning-free, and parameter warnings carry spans (qualify and macro expansion now copy them)
 
 ## P2: Codegen Correctness
-- [x] Field and return kinds: `compiler/type_annotate.zyl` feeds inferred String/Float kinds to codegen and the interpreter (generic Vec/Map elements included); prelude `Show` trait with container impls and `derive Show`; trait calls resolved statically with per-type specialization; structural `==` on ADT values; open: other derivable traits
+- [x] Field and return kinds: `compiler/type_annotate.zyl` feeds inferred String/Float kinds to codegen and the interpreter (generic Vec/Map elements included); prelude `Show` trait with container impls and `derive Show`; trait calls resolved statically with per-type specialization; structural `==` on ADT values; the other derivable traits followed (P3.5)
 - [x] ~~Whitespace collapse / per-file paren check in `assemble.py`~~ — obsolete: the compiler builds from `selfhost/driver.zyl` through module resolution; `assemble.py` and the bundle are gone
-- [x] Tail-call optimization in `codegen.zyl`: direct tail calls with at most six arguments are jumps; open: indirect and stack-argument tail calls, interpreter TCO
-- [x] `print` on `Result`: the prelude impl already existed; the real bug was a payload without `Show` (garbage or segfault via the runtime trait dispatch), now printed raw; open: explicit `Show.show` on a type without an impl still falls into that dispatch
+- [x] Tail-call optimization in `codegen.zyl`: direct tail calls with at most six arguments are jumps; indirect and stack-argument tail calls and interpreter TCO followed (P3.5)
+- [x] `print` on `Result`: the prelude impl already existed; the real bug was a payload without `Show` (garbage or segfault via the runtime trait dispatch), now printed raw; the run-time dispatch is gone (2026-09-25), so an explicit `Show.show` on a type without an impl is `E_TRAIT_NOT_FOUND`
 
 ## P3: Language Features
 - [x] Dot syntax: `v.field` (chained) and `(v.method args)` / `((expr).method args)` resolved by receiver type; open: ambiguous method names on unknown-type receivers need the qualified name
-- [x] Contract injection (spec §23): lowered in `expr_inner.zyl`; open: profiles, `checkpoint` rollback, typed `recover` arms
+- [x] Contract injection (spec §23): lowered in `expr_inner.zyl`; profiles, `checkpoint` rollback and typed `recover` arms followed (P3.5)
 - [x] `try` around an even-arity call segfaulted or hung (frame pointer overwritten)
 - [x] Trait method with a compound (or no) return type: `print` of the call printed an address
 - [x] 16-, 32-, 64-bit byte loads/stores; distinct `ByteBuf`/`ByteSlice` handle types
-- [x] `Secret`: frame zeroization on return, redaction (`<secret>`), `Secret` trait, Secret-field taint; `impl-not` with a flow rule (`E_IMPL_FORBIDDEN`); open: heap erasure explicit, `set!` into `let-mut` untracked
+- [x] `Secret`: frame zeroization on return, redaction (`<secret>`), `Secret` trait, Secret-field taint; `impl-not` with a flow rule (`E_IMPL_FORBIDDEN`); open: heap erasure explicit (`set!` into `let-mut` followed in P3.5)
 - [x] `receive` form, `actor-self`, and a runnable structured-message actor example (`book/examples/actor-counter/`)
 - [x] Top-level `def` in compiled programs: immutable globals, initialized in source order before `main`
 - [x] Hash finalization: final hash of compiler/graph/native/asm hashes embedded in the binary (`zyl_build_hash`) and recorded in `.buildinfo`
@@ -53,7 +53,8 @@
 - [x] Ergonomic zero-copy views beyond `byteslice`: `text/view` (`StrView`, `Cursor`) and `collections/slice` (`Slice`), tied to their base by escape analysis (done 2026-09-25)
 - [x] List literals: `(list ...)`, `[...]` and quoted constant data `'(...)`, Cons chains in source order (done 2026-09-25)
 - [x] Quasiquote (`` `d ``, `,e`, `,@e`) and macro `&rest` parameters spliced with `,@name` (done 2026-09-25)
-- [ ] Leftovers: Vec/Map derive beyond Show; explicit `Show.show` without an impl hits runtime dispatch; ambiguous dot methods on unknown receivers; Secret heap erasure explicit; interpreter TCO for String/Float results; LSP consuming `--error-format=json`; hosting the default package index
+- [ ] Leftovers: Vec/Map derive beyond Show; ambiguous dot methods on unknown receivers; Secret heap erasure explicit; interpreter TCO for String/Float results; LSP consuming `--error-format=json`; hosting the default package index
 - [ ] Deterministic concurrency (Kahn): single-sender channels with linear endpoints, blocking receive, no select, bounded buffers, commutative TAtomic read after join, actor output channels drained by main, `--sched=deterministic` oracle vs seeded chaos mode
+- [ ] Native backend (`docs/native-backend-design.md`, started 2026-09-25): stages 1-2 (MIR, linear scan, variants, match, frame regions), inlining, in-place reuse (`compiler/reuse.zyl`) and division by constants done; open: Float arithmetic, `print`, closures, `try` and `with-region` scopes on the native path, MIR-level optimization, bounds-check elimination
 - [x] ~~Inline assembly~~: rejected (breaks determinism)
 - [ ] Deterministic intrinsics instead of asm (popcnt, clz/ctz, bswap, rotl, crc32, mul-hi; later SIMD with fallback)

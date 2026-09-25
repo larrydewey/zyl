@@ -20,10 +20,10 @@ rules that most often surprise are collected in each section: conditions
 are `Bool`, arithmetic never mixes `Int` and `Float`, and statement forms
 have type `Unit`.
 
-Recognising a form is not the same as implementing it. A handful of
-forms are parsed and checked but have no lowering to ICNF yet, and so
-evaluate to 0 in a compiled program. They are flagged **not lowered**
-in the tables. The examples in this appendix were checked against
+Recognising a form is not the same as implementing it. `make-struct`
+and `make-variant` are parsed but have no typing or lowering, so a
+program using them is rejected (`E_CANNOT_INFER`); they are flagged
+**not implemented** in the tables. The examples in this appendix were checked against
 `build/boot/zyl-self`.
 
 ## C.1 Arithmetic
@@ -50,11 +50,13 @@ Every operand of one arithmetic form has the same type, `Int` or
 them implicitly; write the literal in the type you want, or convert an
 `Int` with the runtime's `(ffi-call "zyl_f_of_int" n 1000)`.
 
-Any other single-argument use, such as `(+ 7)` or `(* 7)`, yields 0, not
-the argument. Integers are 64-bit signed. Floats are IEEE-754 binary64,
-and float division by zero yields an infinity or a NaN. Integer division
-by zero is **not checked** in compiled code; only the REPL interpreter
-reports `E_DIVISION_BY_ZERO`.
+With one operand, `(+ x)` and `(* x)` are `x`; `(/ x)` and `(% x)` are
+`E_ARITY_MISMATCH` (`operator 3 needs two operands`). Integers are
+64-bit signed. Floats are IEEE-754 binary64, and float division by zero
+yields an infinity or a NaN. Integer division by zero is **not checked**
+in compiled code: the process dies with SIGFPE (exit status 136), which
+`try` does not catch. Only the REPL interpreter reports
+`E_DIVISION_BY_ZERO`.
 
 ## C.2 Comparison
 
@@ -95,6 +97,9 @@ which returns -1, 0 or 1 (variants in declaration order, then fields).
 | `shl` | `(shl a n)` | logical left shift |
 | `shr` | `(shr a n)` | **logical** right shift, zero fill |
 | `ashr` | `(ashr a n)` | **arithmetic** right shift, sign fill |
+
+`bit-and`, `bit-or` and `bit-xor` need at least two operands; with one
+they are `E_ARITY_MISMATCH`.
 
 Each lowers to a single machine instruction and is constant-time, which
 is what makes them the vocabulary of `math/secret/secret`.
@@ -186,7 +191,7 @@ it a `_` prefix, to mark it unused; `_` may repeat.
 | `try` | `(try body (catch e handler ...))` | catches a runtime panic, binding its message to `e`; the handler may be several forms and has the body's type |
 | `with-resource` | `(with-resource (name init) body)` | binds `name` for `body`; no release step is run yet |
 | `assert` | `(assert expr)` or `(assert expr "message")` | `expr` is `Bool`; a false `expr` panics with the message (a string literal), else `assert failed`. `Unit` |
-| `unwrap` | `(unwrap expr)` | the value of `Some`/`Ok`; `None` or `Err` panics with `unwrap on None` |
+| `unwrap` | `(unwrap expr)` | `expr` is an `Option`; the value of `Some`, and `None` panics with `unwrap on None`. A `Result` is `E_TYPE_MISMATCH`: use `result-expect` or `result-unwrap` |
 | `error` | `(error "message")` | library function (`allocator/allocator`); panics with the message |
 | `when` | `(when cond body)` | library function (`core/core`); `body` is a `Unit` statement, evaluated even when `cond` is false — to skip it, use `(if cond stmt)` |
 
@@ -246,8 +251,8 @@ the same type.
 | `defstruct` | `(defstruct Name (field Type) ...)` | also defines the constructor `make-Name`; a field written without a type is a type parameter of the struct |
 | `defstruct+` | `(defstruct+ Name (field Type) ...)` | parsed the same way as `defstruct` |
 | `struct-get` | `(struct-get value "field")`, or `value.field` | dot form chains: `v.a.b` |
-| `make-struct` | `(make-struct Name field ...)` | **not lowered**; use `(make-Name field ...)` |
-| `make-variant` | `(make-variant (Type) Variant field ...)` | **not lowered**; call the constructor, `(Variant field ...)` |
+| `make-struct` | `(make-struct Name field ...)` | **not implemented** (`E_CANNOT_INFER`); use `(make-Name field ...)` |
+| `make-variant` | `(make-variant (Type) Variant field ...)` | **not implemented** (`E_CANNOT_INFER`); call the constructor, `(Variant field ...)` |
 | `trait` | `(trait Name (method (self (p Type) ...) ReturnType) ...)` | `Self` in a signature is the implementing type |
 | `extern` | `(extern "symbol" (Type ...) ReturnType)` | declares a C function's signature; required before an `ffi-call` to it |
 | `impl` | `(impl Trait Type (defn method (self ...) body) ...)` | call a method as `(Trait.method receiver ...)` |
@@ -311,9 +316,9 @@ is `x`; `,` and `,@` outside a quasiquote and a template are
 | `file-read` | `(file-read fd nbytes)` | two `Int`s; returns a `String` of up to `nbytes` bytes |
 | `file-write` | `(file-write fd text)` | `fd` an `Int`, `text` a `String`; returns an `Int`; rejected on a `Secret` operand |
 | `file-close` | `(file-close fd)` | `fd` an `Int`; returns an `Int` |
-| `read-line` | `(read-line)` | **not lowered**: evaluates to 0 |
-| `exit` | `(exit code)` | **not lowered**: does not end the process |
-| `close` | `(close handle)` | **not lowered**; use `file-close` |
+| `read-line` | `(read-line)` | one line from stdin without its newline (a trailing `\r` is dropped too); `""` at end of input |
+| `exit` | `(exit code)` | `code` an `Int`; flushes output and ends the process with that status |
+| `close` | `(close fd)` | same as `file-close`: `fd` an `Int`; returns an `Int` |
 
 `print` chooses its format from the type of its argument, including
 when that argument is a parameter: `(defn greet ((s String)) (print s))`
@@ -397,7 +402,7 @@ ownership, regions or scheduling. `--contracts=P` sets the build's profile.
 |---|---|---|
 | `test` | `(test "name" body)` | top level only; exactly one body form (use `begin` for several) |
 | `run-tests` | `(run-tests)` | runs every top-level `test` and prints a summary |
-| `assert-equal` | `(assert-equal actual expected)` | `=` comparison; approximate when either side contains a float literal. Compare a `Bool` result with `true`, or use `assert-true` |
+| `assert-equal` | `(assert-equal actual expected)` | `=` comparison, structural on structs and ADTs; when the operands are `Float` it passes if they differ by at most 1e-5. Compare a `Bool` result with `true`, or use `assert-true` |
 | `assert-true` / `assert-false` | `(assert-true expr)` | |
 | `assert-fail` | `(assert-fail expr)` | evaluates `expr`; does not yet check that it fails |
 | `test-suite` | `(test-suite "name" test ...)` | parsed, but the tests inside it are not registered |
@@ -468,7 +473,11 @@ zyl hello.zyl --emit-asm -o hello.s # write x86-64 assembly instead
 | `zyl key` | Show or create the publisher key |
 | `zyl repl` | Start an interactive session |
 | `zyl eval <file.zyl>` | Run a program without building one |
+| `zyl doc [file.zyl \| dir] [-o out.md]` | Markdown from doc comments |
 
+A single-file compile also takes `--error-format=json` (diagnostics as
+JSON lines, Appendix A.1) and `--contracts=P` (the contract profile:
+`strict`, the default, `debug`, `warn`, `off` or `production`, C.13).
 An unknown subcommand prints this list. Phase dumps beyond `--emit-asm`
 are not implemented.
 

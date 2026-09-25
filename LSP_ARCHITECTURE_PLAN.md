@@ -1,26 +1,40 @@
 # Zyl LSP Server — Architecture Plan
 
-## Current Status (verified against the code, 2026-09-23)
+## Current Status (verified against the code, 2026-09-25)
+
+**Status (2026-09-25):** since this section was first written the server
+runs the type checker (`document_manager.zyl`'s `dm-type-diagnostics`:
+derive expansion, impl lifting, closure inlining, `ta-annotate`) and
+publishes every type error in the document; `unused_check` warnings are
+published as Warning diagnostics; every located diagnostic is placed at
+its `--> line:col`; the JSON codec is linear and keeps UTF-8 intact; the
+VS Code extension is 0.4.0, bundled with esbuild, with a `$zyl` problem
+matcher.
 
 **The server is implemented and ships.** Source is `stdlib/lsp/` (plus
 `stdlib/lsp/services/`), the entry point is `selfhost/lsp_main.zyl`, and
-`./boot.sh` builds it directly to `build/boot/zyl-lsp` (it is not part of
-the `assemble.py` compiler bundle; only `stdlib/lsp/builtins.zyl` is, for
-the REPL). `./install.sh` installs it as `~/.zyl/bin/zyl-lsp`. The VS Code
-extension is `editors/vscode/` at version 0.3.0. End-to-end coverage is
-`tests/lsp/lsp_protocol_test.py` (96/96 checks), run by
+`./boot.sh` builds it directly to `build/boot/zyl-lsp` (the compiler is
+built through module resolution; the `assemble.py` bundle is gone, and
+the REPL uses `stdlib/lsp/builtins.zyl` through `(use ...)`).
+`./install.sh` installs it as `~/.zyl/bin/zyl-lsp`. The VS Code
+extension is `editors/vscode/` at version 0.4.0. End-to-end coverage is
+`tests/lsp/lsp_protocol_test.py` (108 checks), run by
 `./run_regression_tests.sh --filter lsp`. The Status section at the end of
 this document lists every request the server answers.
 
-**Deviations from the plan below:** analysis is name-based over the raw
-text (`stdlib/lsp/source_index.zyl`) rather than driven by type inference;
+**Deviations from the plan below:** navigation, hover and completion
+are name-based over the raw text (`stdlib/lsp/source_index.zyl`); only
+diagnostics are driven by the type checker;
 there is no incremental per-phase cache (each change re-runs the front end
 and checks on the whole document); diagnostics are produced in
 `compiler_bridge.zyl`/`document_manager.zyl`, not a `services/diagnostics.zyl`;
 the built-in table `stdlib/lsp/builtins.zyl` and `services/signature_help.zyl`,
 `services/inlay_hints.zyl`, `services/call_hierarchy.zyl` are additions.
 
-**Not done:** inference-driven hover and type inlay hints; local-variable
+**Not done:** inference-driven hover (hover shows a parameter's
+annotated type, not an inferred one) and type inlay hints; package
+capability checks (`cc-check-program`); UTF-16 positions (columns are
+bytes); local-variable
 completion; region-aware hover and region diagnostics; structured
 capability-conflict data on diagnostics; cross-file navigation for files
 that are not open; a workspace-wide package graph (`zyl.pkg` workspaces
@@ -32,9 +46,9 @@ measurement against the targets listed below.
 true when the LSP was built. Since then tokens carry a byte offset and the
 reader records each node's offset in a span table in
 `runtime/actor_runtime.c`, which the command-line compiler uses for
-`file:line:col` diagnostics. The LSP does not use that table yet: it still
-locates a checker diagnostic by searching the document for the first
-backticked name in the message, and falls back to (0,0) when there is none.
+`file:line:col` diagnostics. The LSP places a located message at its
+`--> line:col`, and only an unlocated one by searching the document for
+the first backticked name in the message, with (0,0) as the fallback.
 
 The sections below are the plan as written, annotated where the built
 server differs.
@@ -227,12 +241,14 @@ Phase 5); `repl_integration.zyl`'s header now says so.
 - [x] `initialize` → `initialized` → request handling, end-to-end
   tested over real stdio against the built `zyl-lsp` binary
 
-### Phase 1: Diagnostics — DONE for balance and checker errors; no type-inference or region errors
+### Phase 1: Diagnostics — DONE for balance, checker and type errors (type errors since 2026-09-25); no region errors
 - [x] `sexp_balance.zyl` → `PublishDiagnostics`, real line/col
 - [x] Parse / mutability-check / capability errors → one Diagnostic via
   the Wall-2 `try`/`catch` path (message text real; originally reported
-  at start-of-file, now placed at the first occurrence of the message's
-  backticked name, with (0,0) as the fallback)
+  at start-of-file, now placed at the message's `--> line:col`, or at
+  the first occurrence of its backticked name when it is unlocated)
+- [x] Type errors (2026-09-25): the type checker runs after the checks
+  and every error it reports in the document is published
 - [x] E_MUT_CONFLICT / E_CAPABILITY_LEAK / E_INVALID_CAPABILITY are
   REAL, load-bearing checks (mutability_check.zyl) — genuinely Zyl-
   specific value, confirmed firing correctly through the LSP path
@@ -428,11 +444,13 @@ data on diagnostics, and no region information in hover.
 ## Bootstrap Integration
 
 ### Build Process
-As built, the LSP modules are not in the `assemble.py` bundle (only
-`stdlib/lsp/builtins.zyl` is, because the REPL uses it). `boot.sh` compiles
-`selfhost/lsp_main.zyl` with the freshly built `stage2.bin` into
-`build/boot/zyl-lsp`, so a change under `stdlib/lsp/` does not alter the
-compiler's own output or require reseeding. `./install.sh` builds
+As built, the compiler is compiled from `selfhost/driver.zyl` through
+module resolution, and of the LSP modules only `stdlib/lsp/builtins.zyl`
+is part of it (the REPL, which `zyl repl` runs, uses it). `boot.sh`
+compiles `selfhost/lsp_main.zyl` with the freshly built `stage2.bin` into
+`build/boot/zyl-lsp`, so a change under `stdlib/lsp/` other than
+`builtins.zyl` does not alter the compiler's own output or require
+reseeding. `./install.sh` builds
 `~/.zyl/bin/zyl-lsp-bin` and a `zyl-lsp` wrapper script that execs it.
 
 ### Server Entry Point
@@ -586,9 +604,9 @@ tests/lsp/
 **Complete for the language as it stands today, within the limits listed
 below.** `zyl-lsp` builds via `./boot.sh` and is exercised end-to-end by
 `tests/lsp/lsp_protocol_test.py`, which drives the real binary over real
-JSON-RPC on stdio and asserts on the responses (96/96 checks;
-`./run_regression_tests.sh --filter lsp`, in both quick and full mode). The
-full suite is 121/121.
+JSON-RPC on stdio and asserts on the responses (108 checks;
+`./run_regression_tests.sh --filter lsp`, in both quick and full mode). The full suite is
+260/260 (2026-09-25).
 
 ### What the server answers today
 
@@ -622,17 +640,21 @@ full suite is 121/121.
 
 `document_manager.zyl` parses the document, resolves modules with the
 document's path (so it finds the package the file belongs to, spec v5.0
-§31.3), expands macros, then runs `dc-check-program`, `ac-check-program`,
+§31.3), expands macros, runs `uc-check-program` with its warnings
+captured, then runs `dc-check-program`, `ac-check-program`,
 `mc-check-program`, `ec-check-program` and `sc-check-program` — the order
 `compile-run-checks` in `stdlib/compiler/pipeline.zyl` uses — inside
 `try`/`catch`, so a checker's `zyl_panic` becomes a Diagnostic instead of
-killing the server. Each diagnostic carries its `E_*` code in the LSP
-`code` field and a range located by finding the message's backticked name
-in the document text.
+killing the server. When they pass, the type checker runs (derive
+expansion, impl lifting, closure inlining, `ta-annotate`) with its
+reports captured, and every one located in the document is published.
+Each diagnostic carries its `E_*` code in the LSP `code` field and is
+placed at the message's `--> line:col`, or, for an unlocated message, at
+the message's backticked name in the document text.
 
-Two of the pipeline's checks are not run: `cc-check-program` (package
-capability enforcement, §31.9, which needs the resolver's grant/deny sets)
-and `uc-check-program` (see below). Type inference does not run at all.
+One of the pipeline's checks is not run: `cc-check-program` (package
+capability enforcement, §31.9, which needs the resolver's grant/deny
+sets). Nothing after type checking runs.
 
 The symbol table is built BEFORE the checks run and kept whatever they
 say, so a document that fails exhaustiveness still offers hover,
@@ -653,26 +675,21 @@ editor as an ordinary unresolved identifier.
 ### Known gaps
 
 - **Type inlay hints** and **inference-driven hover**. Hover shows the
-  declared annotation, not an inferred type. The compiler now records
-  node positions (see Current Status), but type inference's name lookups
-  are unreliable (several compare strings with `=`; see
-  `compiler_bridge.zyl`'s header), so position data alone would not
-  produce trustworthy types.
+  declared annotation, not an inferred type; the type checker runs for
+  diagnostics only, and its results are not kept per position.
 - **Local-variable completion**. There is no scope to read at a cursor.
-- **Diagnostic positions** come from a name search in the text, not from
-  the compiler's span table.
-- **One diagnostic at a time**, because each checker stops at its first
-  problem — the same behaviour as a command-line build.
-- **`unused_check` is not run**, because it reports by printing to
-  stdout, which is the server's JSON-RPC channel. Surfacing those
-  warnings needs the check to return them rather than print them.
+- **Diagnostic positions** are byte columns, not UTF-16 code units, so a
+  column after a non-ASCII character on the same line is off.
+- **One check error at a time**, because each check before the type
+  checker stops at its first problem — the same behaviour as a
+  command-line build. Type errors are all reported at once.
 - **Navigation is per-document.** Workspace symbol search covers open
   documents only; the server does not load a `zyl.pkg` workspace's
   package graph.
 
 ### Editor integration
 
-`editors/vscode/` v0.3.0 (vscode-languageclient 10.1, VS Code engine
+`editors/vscode/` v0.4.0 (vscode-languageclient 10.1, VS Code engine
 ^1.91.0): two languages, `zyl` and `zyl-pkg` (manifests get their own
 grammar so the server never compiles one as a program); a TextMate
 grammar covering every special form, bitwise and byte operation, atomic,

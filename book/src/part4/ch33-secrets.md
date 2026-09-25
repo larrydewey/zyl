@@ -77,10 +77,9 @@ And one obligation: a secret reaches C only through `ffi-pin`, in the
 Pin region, or the compiler reports `E_FFI_PIN_REQUIRED`.
 
 `Secret` is deliberately **not** `Send`. A secret crossing into another
-actor is exactly the escape the capability is for. The type layer
-records this (`tc-is-send` answers no for a `TCSecret` type), but
-nothing in type inference consults it yet; what actually refuses a
-secret at `spawn` or `send` is the checker's `E_SECRET_ESCAPE`.
+actor is exactly the escape the capability is for. The type checker
+has no `Send` rule of its own; what refuses a secret at `spawn` or
+`send` is the checker's `E_SECRET_ESCAPE`.
 
 ## 33.3 Writing Branchless Code
 

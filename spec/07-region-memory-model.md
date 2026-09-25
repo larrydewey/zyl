@@ -107,6 +107,9 @@ Not normative. The design and its rationale are in
 
 ### Region inference
 
+- Region inference runs after optimization, so the code that inlining
+  (`opt-inline-fns`, `optimization.zyl`) copied into a caller is placed
+  like any other code of that caller.
 - `ri-transform-fns`, an ICNF-to-ICNF rewrite run after optimization,
   turns `(let x (Variant ...) body)` into `IStackVariant` (allocated in the
   frame) when every use of `x` is a `match` subject or a `print` argument.
@@ -123,7 +126,8 @@ Not normative. The design and its rationale are in
   - **H** — the process heap (rule R2).
 - Levels belong to union-find object classes (runtime `zyl_uf_*`), which
   are field-insensitive. A node the type pass proves `Int`, `Bool` or
-  `Float` (attribute table 5, `ta-scalar`) never joins a class.
+  `Float` (the `icnf-scalars` side table, set from `ta-scalar`) never
+  joins a class.
 - Each function has a parameter summary (0 does not escape, 1 may reach
   the result, 2 escapes; bit 62: may allocate into its result region).
   Summaries are joined (per-parameter maximum) to a fixpoint over the
@@ -134,7 +138,8 @@ Not normative. The design and its rationale are in
   (rule R5). Runtime functions are trusted only from the explicit table
   `rg-ffi-kind`; any other runtime function keeps its arguments and result
   in the heap. Arguments of a foreign `ffi-call` are H.
-- Annotations live in attribute table 4 (sites: 1 frame, 2 result, 3 heap,
+- Annotations live in the side table `icnf-regions` (`node_tables.zyl`;
+  sites: 1 frame, 2 result, 3 heap,
   `4 + k` the enclosing `with-region` scope `k`; function nodes: bit 0 has
   a frame region, bit 1 keeps the result region, stored plus 4). The ICNF
   printer shows them as ` @r`, so the ICNF hash of a package build covers
@@ -142,6 +147,17 @@ Not normative. The design and its rationale are in
 - `E_REGION_ESCAPE` is raised, with a location, for a `(bytebuf Stack N)`
   that escapes and for a value that outlives its `with-region`.
 - `ZYL_REGIONS=0` at compile time turns the pass off: every site is H.
+- A self tail call in a function with a frame region empties the region
+  and keeps its first block (`zyl_region_recycle`) instead of releasing
+  and re-opening it; the analysis already keeps every tail-call argument
+  out of the frame region.
+- In-place reuse (`reuse.zyl`, `ru-reuse`) runs after region inference.
+  A variant construction may take the block of a value that is provably
+  unique and dead, only when the new record holds a pointer read out of
+  the old one, so the two are one class and one region; the native
+  backend takes the block when its size header is large enough. The
+  decision is the `icnf-reuse` side table, which the ICNF printer does
+  not show. `ZYL_REUSE=0` turns it off.
 - Not implemented: Circular detection (R6) and a distinct Global region
   (R7); top-level `def` values live in the heap. Classes over-approximate:
   a local list of strings shares one level with its strings.

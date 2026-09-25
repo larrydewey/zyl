@@ -28,14 +28,16 @@ leftover of an older build); from a checkout, use
 
 ## How an entry is evaluated
 
-Every entry goes through the real compiler. Parsing, macro expansion,
-capability and duplicate and arity and mutability and exhaustiveness and
-unused and secret checks, derive expansion, impl lifting, type checking
-(with static trait resolution and per-type specialization), closure
-lifting, ICNF lowering, optimization and region
-inference all run exactly as they do for `zyl build` — the shared
-implementation is `stdlib/compiler/pipeline.zyl`, and the REPL calls
-`compile-to-fns`, which is `compile-to-asm` minus the last phase.
+Every entry goes through the real compiler. Parsing, module resolution,
+macro expansion, the capability, duplicate, arity, mutability,
+exhaustiveness, unused and secret checks, derive expansion, impl lifting,
+closure lifting, type checking (with static trait resolution and
+per-type specialization), ICNF lowering, inlining and optimization,
+region inference and in-place reuse all run exactly as they do for a
+compile with `zyl` — the shared implementation is
+`stdlib/compiler/pipeline.zyl`, and the REPL calls `compile-to-fns`,
+which is `compile-to-asm` minus code generation. (The interpreter
+ignores the regions and the reuse decisions; see below.)
 
 What differs is the back end. Instead of generating x86_64 and linking a
 binary, the REPL evaluates the lowered ICNF in its own process
@@ -82,8 +84,9 @@ calls it. A name can be defined only once per session: entering a second
 `(defn f ...)` is rejected with `E_DUPLICATE_DEFINITION` (the duplicate
 check sees the whole session as one program), and the first definition
 stays in force. `:reset` clears the session so a name can be defined
-afresh. The caret of that diagnostic currently points into the REPL's
-generated wrapper (`<repl>:N:1`) rather than at the entry you typed.
+afresh. The location of that diagnostic is a line of the session's
+generated program (`<repl>:N:1`), not a position in what you typed,
+though the source line it shows is your entry's text.
 
 A definition can refer to a `def` binding: after `(def k 5)`,
 `(defn f (x) (+ x k))` and `(f 1)` give 6. Each binding is also emitted
@@ -187,6 +190,13 @@ expression, generalized: after `(use collections/vec)`, `:type (vec-push (vec-cr
 is `(Vec String)`, `:type (fn (x) x)` is `(a -> a)`. A type the pass
 could not pin down prints as `a` (unconstrained) or `?` (conflicting).
 
+Known bug (2026-09-25): once the session holds a `def` binding, `:type`
+fails with `E_UNBOUND_VARIABLE` on `zyl-repl-global`. The type-only path
+compiles the session's generated `(def ...)` lines without setting the
+flag (`repl-compiling`) that types that internal form, which only
+`eval.zyl`'s compile of an entry sets. Evaluating entries is not
+affected.
+
 ## What carries over between sessions
 
 Three things, in the order they are applied when a session starts:
@@ -280,6 +290,10 @@ Where they knowingly differ:
 - **`IStackVariant` allocates on the heap.** Region inference chose the
   stack for a value that provably does not escape; allocating it on the
   heap instead is sound, just less tidy.
+- **Regions and reuse are ignored.** The interpreter allocates in its
+  own arenas, so a `with-region` byte limit holds only in compiled code,
+  and every variant construction allocates a new block, whatever
+  `reuse.zyl` decided.
 
 ### Values
 

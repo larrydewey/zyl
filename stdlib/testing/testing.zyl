@@ -1,5 +1,5 @@
 ; === Zyl Standard Library — Testing Framework ===
-; Module: testing
+; Module: testing/testing
 ; Provides: Test helpers and utilities
 
 ; ===========================================================================

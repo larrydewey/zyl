@@ -1,5 +1,5 @@
 ; === Zyl Standard Library — Allocator ===
-; Module: allocator
+; Module: allocator/allocator
 ; Provides: Raw memory arena backed by C runtime helpers.
 ;           All addresses are Ints (64-bit pointers).
 ;
@@ -181,13 +181,10 @@
 (defn str-eq (p1 p2)
   (ffi-call "zyl_cstr_eq" p1 p2 1000))
 
-; `str-concat` is recognized directly by codegen.rs's Rust bootstrap (as
-; are str-equal/str-length/str-substring) — the RUST-built stage1 never
-; actually calls this body, it inlines the FFI at every call site. But
-; the SELF-HOSTED icnf.zyl/codegen.zyl don't special-case the name at
-; all, so without a real definition every "str-concat" call site lowers
-; to a call to a nonexistent function, producing an undefined `f_str_concat`
-; symbol at link time when stage1 compiles this bundle to produce stage2.
+; `str-concat` (like str-equal/str-length/str-substring) is recognized by
+; name and inlined to its runtime symbol at every direct call site
+; (icnf.zyl's ic-str-builtin-sym), so this body runs only when the name
+; is used as a function value.
 (defn str-concat (a b)
   (ffi-call "zyl_cstr_concat" a b 1000))
 

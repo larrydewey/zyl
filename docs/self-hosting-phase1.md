@@ -13,15 +13,20 @@
 > do not exist.
 >
 > What exists instead: the compiler is fully self-hosted.
-> `stdlib/compiler/*.zyl` (37 modules, recursive ADTs throughout: `ast.zyl`,
-> `expr_inner.zyl`, `icnf.zyl`, ...) plus `selfhost/driver.zyl` are the
+> `stdlib/compiler/*.zyl` (41 modules as of 2026-09-25, recursive ADTs
+> throughout: `ast.zyl`, `expr_inner.zyl`, `icnf.zyl`, ...) plus
+> `selfhost/driver.zyl` are the
 > active implementation; `./boot.sh` builds it with only `cc` and verifies
 > the stage2 == stage3 fixed point (first reached 2026-08-25). The Rust
 > implementation referred to below (`src/ast.rs`, `src/icnf.rs`) is frozen
-> in `archive/rust-bootstrap-2026/`. See `docs/rust-eviction-plan.md` and
+> in `archive/rust-bootstrap-2026/` and can no longer compile the current
+> source. See `docs/rust-eviction-plan.md` and
 > the Current State section of `PROGRESS.md` for the present architecture.
 > The constraints in §2 and the limitations in §6 describe the language as
-> it was on 2026-08-04, not as it is now.
+> it was on 2026-08-04, not as it is now: typing is sound Hindley-Milner
+> (`type_annotate.zyl`), and containers hold any element type (the
+> compiler's own state is kept in typed `(WVec a)` and `(SMap a)`
+> tables).
 
 
 ## 1. Goal
