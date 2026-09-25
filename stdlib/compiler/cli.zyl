@@ -524,13 +524,17 @@
           (print (str-concat "public key: " (idx-public-key arena (cli-read-seed arena))))
           0)))))
 
+;; The seed is 32 bytes of kernel entropy, one byte per word (the layout
+;; w-hex-bytes reads). zyl_random_fill writes packed bytes and must not be
+;; used here: it filled the first four words, so a seed held 32 bits.
 (defn cli-generate-seed (arena)
   (let _ (store-mkdir (store-keys-dir))
     (let seed (w-alloc arena 32)
-      (let _ (ffi-call "zyl_random_fill" seed 32 1000)
+      (if (= (ffi-call "zyl_random_words" seed 32 1000) 32)
         (let out (file-open (cli-key-path) "w")
           (let _ (file-write out (w-hex-bytes seed 32))
-            (file-close out)))))))
+            (file-close out)))
+        (ffi-call "zyl_panic" "E_PKG_UNSIGNED: package: no kernel entropy for a publisher key" 1000)))))
 
 (defn cli-read-seed (_arena)
   (let fd (file-open (cli-key-path) "r")
