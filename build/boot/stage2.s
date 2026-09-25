@@ -34964,6 +34964,7 @@ zy_zyl_x2Fstd_5__compiler_x2Fparser__parse_x2Dprogram_x2Dloop:
     push r12
     push r13
     push r14
+    and rsp, -16
     mov rbx, rdi
     mov r12, rsi
     mov r13, rdx
@@ -332945,6 +332946,7 @@ zy_zyl_x2Fstd_5__compiler_x2Ftype_5Fannotate__ta_x2Dctor_x2Dinst:
 zy_zyl_x2Fstd_5__compiler_x2Ftype_5Fannotate__ta_x2Dctor_x2Dinst_x7Eown:
     push rbp
     mov rbp, rsp
+    and rsp, -16
 .L6522_0:
     mov r8, [rsi+0]
     cmp r8, 0
@@ -384237,7 +384239,8 @@ zy_zyl_x2Fstd_5__compiler_x2Ficnf__ic_x2Dlambda_x2Dfree_x7Eown:
     push r13
     push r14
     push r15
-    sub rsp, 8
+    and rsp, -16
+    sub rsp, 16
     mov rbx, rdi
     mov qword ptr [rbp-48], rsi
     mov r13, rdx
@@ -489065,9 +489068,9 @@ zy_zyl_x2Fstd_5__compiler_x2Fcodegen__mb_x2Dany_x2Dc_x2Dcall:
     jmp .L10255_4
 .L10255_10:
     mov rsi, [rsi+0]
-    cmp rsi, 20
+    cmp rsi, 25
     jne .L10255_11
-    mov rsi, 0
+    mov rsi, 1
     mov r9, rsi
     jmp .L10255_4
 .L10255_11:

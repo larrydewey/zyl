@@ -5,7 +5,9 @@
 ; GAS .intel_syntax noprefix assembly text. Expression code is evaluated
 ; into rax (a pure stack-machine discipline): every sub-expression leaves
 ; its value in rax; binary operators push the left operand around the
-; right operand's evaluation.
+; right operand's evaluation. Functions in the native backend's
+; supported set instead go through MIR (compiler/mir) with linear-scan
+; register allocation; see NATIVE BACKEND below.
 ;
 ; Conventions:
 ;   - Parameters arrive in SysV registers (rdi rsi rdx rcx r8 r9) and are
@@ -13,12 +15,12 @@
 ;   - Locals (let / match bindings) get slots from a downward-growing
 ;     offset counter carried in the emitter state.
 ;   - Names are resolved through an immutable Env chain (see ast.zyl).
-;   - Calls support up to 6 register arguments; argument values are pushed
-;     and popped in reverse so evaluation order stays strictly
-;     left-to-right (spec evaluation-order rule).
+;   - Calls pass the first 6 arguments in registers and the rest on the
+;     stack (SysV); every argument is evaluated left-to-right into a
+;     scratch slot first (spec evaluation-order rule, see cg-call-args).
 ;   - Floats travel as bit patterns in rax and move to xmm0/xmm1 for SSE
 ;     arithmetic; print selects %d/%f/%s by the operand's kind.
-;   - rbx and r12, the only callee-saved registers the emitted code
+;   - rbx and r12, the only callee-saved registers the stack-machine code
 ;     touches, are saved in the two lowest frame words by every
 ;     function's prologue and restored by its epilogue, so C callers of
 ;     Zyl functions keep them (cg-save-callee-saved).
@@ -39,15 +41,11 @@
 (use compiler/ast)
 (use compiler/icnf)
 (use compiler/mir)
-; shd (compiler/resolver.zyl) is called below (cg-bind-one/
-; icnf-binds-slots/cg-param-env) but was never declared as a real
-; dependency -- harmless for the assemble.py bundle (every `use` line
-; is stripped there, and resolver.zyl is always inlined into the same
-; bundle regardless), but a standalone program that `use`s
-; compiler/codegen directly as a library (e.g.
-; integration/selfhost-codegen.zyl) got an undefined reference to
-; f_shd at link time since the module resolver had no way to know to
-; pull resolver.zyl in too.
+; shd (compiler/resolver.zyl) is called below. Every real dependency must
+; be declared for the module resolver to pull it in; without this line a
+; program that `use`s compiler/codegen directly (e.g.
+; integration/selfhost-codegen.zyl) had an undefined reference to f_shd
+; at link time.
 (use compiler/resolver)
 (use core/list)
 (use compiler/error_report)
@@ -2362,15 +2360,18 @@
                                                 (cg-emit-label s23 ldone)))))))))))))))))))))))))
 
 ; ===========================================================================
-; NATIVE BACKEND, STAGE 1 (docs/native-backend-design.md)
+; NATIVE BACKEND (docs/native-backend-design.md)
 ; ===========================================================================
 ;
-; A function whose ICNF is in the supported set (integers and control:
-; constants, locals, function references, integer operators, if, while,
-; let, set!, sequences, direct user calls, runtime calls with at most six
-; arguments, inline byte access) and that needs no frame region and no
-; frame wiping is lowered to MIR (compiler/mir), given registers by linear
-; scan and emitted here; any other function goes through the stack-machine
+; A function whose ICNF is in the supported set (ml-ok: constants,
+; strings, floats and symbols; locals and function references; integer
+; operators; if, while, let, set!, sequences, match; variants and stack
+; variants; direct user calls and runtime calls with at most six
+; arguments; every site at region level 3 or below, so a with-region
+; scope keeps the stack machine), that has at most six parameters and
+; needs no frame wiping is lowered to MIR (compiler/mir), given registers
+; by linear scan and emitted here; frame and result regions are handled
+; on this path too. Any other function goes through the stack-machine
 ; code above. Both keep the same ABI. Evaluation order is the ICNF's: a
 ; local read is copied into a fresh register when a later sibling could
 ; set! it, exactly the test the fast paths above use.
@@ -2436,7 +2437,6 @@
 
 ; --- lowering ---------------------------------------------------------------
 
-; Next vreg, next label, instructions (newest first).
 ; Next vreg, next label, instructions (newest first), and the sizes in
 ; words of the frame blocks stack variants use (newest first).
 (deftype MS (MS Int Int (List MI) (List Int)))
