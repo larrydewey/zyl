@@ -23,6 +23,24 @@
   (LSPArray (List LSPAny))
   (LSPObject (Map String LSPAny)))
 
+; Narrow an optional LSPAny to one variant's payload. Patterns are flat
+; (a constructor's fields bind names, not sub-patterns), so these replace
+; `(Some (LSPObject obj) ...)`.
+(defn lsp-some-obj (o)
+  (match o (Some v (match v (LSPObject m (Some m)) (_ None))) (None None)))
+
+(defn lsp-some-arr (o)
+  (match o (Some v (match v (LSPArray xs (Some xs)) (_ None))) (None None)))
+
+(defn lsp-some-str (o)
+  (match o (Some v (match v (LSPString s (Some s)) (_ None))) (None None)))
+
+(defn lsp-some-int (o)
+  (match o (Some v (match v (LSPInt i (Some i)) (_ None))) (None None)))
+
+(defn lsp-some-bool (o)
+  (match o (Some v (match v (LSPBool b (Some b)) (_ None))) (None None)))
+
 ; Position in a text document (zero-based line/character)
 (deftype Position
   (Pos Int Int))

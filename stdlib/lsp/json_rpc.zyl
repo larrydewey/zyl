@@ -194,8 +194,8 @@
   (match j
     (JObj obj
       (let method-opt (map-get obj "method")
-        (match method-opt
-          (Some (JStr method)
+        (match (match method-opt (Some v (match v (JStr m (Some m)) (_ None))) (None None))
+          (Some method
             (match (map-get obj "id")
               (Some id-val (Left (ReqMsg "2.0" (jr-decode-int id-val) method (jr-decode-params-opt obj))))
               (None (Right (NotifMsg "2.0" method (jr-decode-params-opt obj))))))

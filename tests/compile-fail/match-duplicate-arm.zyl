@@ -1,0 +1,9 @@
+; Compile-fail: the same constructor in two arms. The duplicate-arm check
+; compared (tag . owner) pairs as strings and so never fired.
+; expect-error: E_UNREACHABLE_MATCH_ARM
+
+(deftype DupShape (DupA Int) (DupB Int))
+
+(defn f (s) (match s (DupA x x) (DupA y y) (DupB z z)))
+
+(defn main () (begin (print (f (DupA 1))) 0))

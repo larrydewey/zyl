@@ -281,8 +281,8 @@
 (defn mvs-step-existing (arena ctx nodes dep cur req)
   (let _ (mvs-check-unit arena (pd-name dep) (mn-version cur) (pd-version dep))
     (let feats (mvs-merge-features (mn-features cur) (pd-features dep))
-      (let higher (if (> (pv-cmp (pd-version dep) (mn-version cur)) 0) 1 0)
-        (if (= (+ higher (mvs-features-grew (mn-features cur) feats)) 0)
+      (let higher (> (pv-cmp (pd-version dep) (mn-version cur)) 0)
+        (if (not (or higher (mvs-features-grew (mn-features cur) feats)))
           (MSel nodes Nil)
           (mvs-select arena ctx nodes dep req feats))))))
 

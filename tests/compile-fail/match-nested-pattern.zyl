@@ -1,0 +1,9 @@
+; expect-error: E_NESTED_PATTERN
+; Patterns are flat: a constructor's fields bind names. A sub-pattern in
+; a field position used to be accepted and matched the wrong values.
+(deftype Opt (OSome Int) (ONone))
+
+(defn main ()
+  (match (Some (ONone))
+    (Some (OSome x) x)
+    (_ 0)))

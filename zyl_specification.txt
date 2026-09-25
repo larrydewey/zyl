@@ -905,6 +905,8 @@ Errors:
     E_REGION_ESCAPE             — region rule violation
     E_REGION_SPEC               — malformed with-region specification
     E_INVALID_ESCAPE            — invalid escape sequence in a string literal
+    E_INDEX_OUT_OF_BOUNDS       — index outside a word array
+    E_NESTED_PATTERN            — nested pattern in a constructor arm
     E_REGION_EXHAUSTED          — with-region region exceeded its size or limit
     E_MACRO_NON_TERMINATION     — macro expansion loop
     E_MATCH_NONEXHAUSTIVE       — missing match case (Compile Error)

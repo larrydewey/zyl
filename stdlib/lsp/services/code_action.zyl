@@ -40,10 +40,10 @@
 (defn ca-fixit-of (d)
   (match d
     (Diag _ _ _ _ _ _ _ _ dataOpt
-      (match dataOpt
-        (Some (LSPObject obj)
-          (match (map-get obj "fixIt")
-            (Some (LSPString s) (Some s))
+      (match (lsp-some-obj dataOpt)
+        (Some obj
+          (match (lsp-some-str (map-get obj "fixIt"))
+            (Some s (Some s))
             (_ None)))
         (_ None)))))
 

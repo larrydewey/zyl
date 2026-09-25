@@ -89,7 +89,8 @@
   )
 )
 
-; Nested patterns: matching a variant whose field is another ADT.
+; A variant whose field is another ADT: patterns are flat, so the field
+; is bound to a name and matched by an inner match.
 (deftype _me_Opt (MeSome Int) (MeNone))
 (deftype _me_Nested (Wrap _me_Opt))
 
@@ -100,8 +101,7 @@
   (
     match
     n
-    (Wrap (MeSome x) x)
-    (Wrap (MeNone) 0)
+    (Wrap o (match o (MeSome x x) (MeNone 0)))
   )
 )
 
@@ -114,9 +114,6 @@
     42
   )
 )
-
-; Note: nested empty-variant pattern (Wrap None) requires compiler support
-; for matching nested zero-field variants. Currently unsupported.
 
 ; Match on built-in Option type.
 (

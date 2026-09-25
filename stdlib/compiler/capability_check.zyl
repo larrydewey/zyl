@@ -165,7 +165,7 @@
 (defn cc-check-owned (name body grants denied dnode)
   (let pkg (ck-package-of name)
     (match (cc-find-grant grants pkg)
-      (Some g (if (not (cg-enforced g)) 1 (cc-walk body (cg-caps g) denied pkg name dnode)))
+      (Some g (if (= (cg-enforced g) 0) 1 (cc-walk body (cg-caps g) denied pkg name dnode)))
       (None 1))))
 
 ; Depth-first over the body. The first violation stops the build with the

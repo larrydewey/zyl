@@ -53,6 +53,6 @@
 
 (test "adt-nested"
   (assert-equal (match (Boxed (A-Int 7))
-    (Boxed (A-Int n) n)) 7))
+    (Boxed a (match a (A-Int n n) (_ 0)))) 7))
 
 (run-tests)

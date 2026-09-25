@@ -114,6 +114,14 @@
             (Cons (Pair v newowner) rest)
             (Cons pr (ec-owner-replace vname newowner rest))))))))
 
+;; Whether `tag` is already covered: `covered` holds (tag . owner) pairs.
+;; (This used ec-in-list, which compared each pair with str-eq as if it
+;; were a String, so a duplicate arm was never caught.)
+(defn ec-covered-p (tag covered)
+  (match covered
+    (Nil false)
+    (Cons p t (match p (Pair h _ (if (str-eq h tag) true (ec-covered-p tag t)))))))
+
 (defn ec-in-list (name xs)
   (match xs
     (Nil false)
@@ -144,7 +152,7 @@
             (Some owner
               (if (str-eq owner "")
                 0
-                (if (ec-in-list tag covered)
+                (if (ec-covered-p tag covered)
                   (ec-fail-duplicate-arm tag site)
                   (ec-scan-arms rest dtypes vowners (Cons (Pair tag owner) covered) site))))))))))
 

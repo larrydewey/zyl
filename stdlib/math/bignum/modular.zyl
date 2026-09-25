@@ -84,7 +84,7 @@
 ; Returns: Int
 (defn mr-probably-prime ((arena Arena) (cand Words) (n Int) (rounds Int))
   (if (bn-even cand)
-    0
+    false
     (mr-rounds arena cand n rounds 2)))
 
 ; 1 when the number is even.
