@@ -442,7 +442,7 @@
 (defn ic-expr (arena expr vt)
   (let out (ic-expr-node arena expr vt)
     (let _ (ffi-call "zyl_span_copy" out expr 1000)
-      (let _ (if (> (ta-scalar expr) 0) (icnf-scalar-set out 1) 0)
+      (let _ (if (> (ta-scalar expr) 0) (icnf-scalar-set out 1) unit)
         (ic-mark-kind out (ta-kind expr))))))
 
 ; Codegen kind from type annotation (attr table 1); 0 is left unrecorded.

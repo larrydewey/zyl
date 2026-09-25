@@ -1083,7 +1083,7 @@
               (let lbl (str-concat t "|")
                 (begin
                   (if (> (mr-neg-get (str-concat "l|" lbl)) 0)
-                    0
+                    unit
                     (let c (mr-neg-get "n#c")
                       (begin
                         (mr-neg-put (str-concat "l|" lbl) 1)
@@ -1101,7 +1101,7 @@
       (match pr
         (Pair t y
           (begin
-            (if (str-eq t x) (mr-neg-put (str-concat "p|" (str-concat lbl y)) 1) 0)
+            (if (str-eq t x) (mr-neg-put (str-concat "p|" (str-concat lbl y)) 1) unit)
             (mr-protect-implementors rest lbl x)))))))
 
 (defn mr-check-impl (f pkgname)

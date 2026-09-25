@@ -486,7 +486,7 @@
         (let savr (cg-new-slot st2)
           (match savr
             (CGR st3 save _
-              (let _ (if (>= idx 0) (cg-scope-record idx base) 0)
+              (let _ (if (>= idx 0) (cg-scope-record idx base) unit)
                 (let st4 (cg-emit-lines st3
                            (Cons (str-concat "    lea rdi, [rbp-" (str-concat (ffi-call "zyl_int_text" base 1000) "]"))
                            (Cons (str-concat "    mov rsi, " (ffi-call "zyl_int_text" k 1000))

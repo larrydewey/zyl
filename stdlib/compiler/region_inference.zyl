@@ -296,7 +296,7 @@
           (let _ (ffi-call "zyl_wvec_push" (rg-scope-stack) idx 1000)
             (let cb (rg-expr body env 0 rec)
               (let _ (ffi-call "zyl_wvec_pop" (rg-scope-stack) 1000)
-                (let _ (if (> rec 0) (icnf-region-set e (+ idx 1)) 0)
+                (let _ (if (> rec 0) (icnf-region-set e (+ idx 1)) unit)
                 (let _ (ffi-call "zyl_wvec_push" (rg-scope-nodes) e 1000)
                   (rg-union bnd cb)))))))))))
 
@@ -408,8 +408,8 @@
     (Nil 0)
     (Cons a rest
       (let lvl (rg-param-level summary i)
-        (let _ (if (= lvl 1) (rg-union a c) (if (= lvl 2) (rg-raise a 2) 0))
-          (let _ (if (> tail 0) (rg-raise a 1) 0)
+        (let _ (if (= lvl 1) (rg-union a c) (if (= lvl 2) (rg-raise a 2) unit))
+          (let _ (if (> tail 0) (rg-raise a 1) unit)
             (rg-apply-summary rest summary (+ i 1) c tail)))))))
 
 (defn rg-call (e name args env tail rec)
@@ -580,7 +580,7 @@
                     ; the result could need.
                     (let packed (rg-join old (bit-or (rg-pack cs 0 (list-length params) 0)
                                                      (shl (if (> (bit-and flags 2) 0) 1 0) 62)) 0)
-                      (let _ (if (> rec 0) (icnf-region-set f (+ flags 4)) 0)
+                      (let _ (if (> rec 0) (icnf-region-set f (+ flags 4)) unit)
                         (if (= packed old)
                           0
                           (let _ (ffi-call "zyl_smap_put" (rg-summaries) name (+ packed 1) 1000)
@@ -611,7 +611,7 @@
     (Cons f rest
       (let _ (match f
                (IFn name _ _ _ (ffi-call "zyl_smap_put" (rg-summaries) name 1 1000))
-               (_ 0))
+               (_ unit))
         (rg-init rest)))))
 
 ; Final pass: annotate every site and function (rg-fn with rec = 1).
@@ -654,10 +654,10 @@
           (let lvl (rg-level c)
             (if (and (>= scope 0) (rg-in-scope c lvl scope))
               ; Placed in the with-region scope: no frame or result region.
-              (let _ (if (> rec 0) (icnf-region-set node (+ 4 scope)) 0)
+              (let _ (if (> rec 0) (icnf-region-set node (+ 4 scope)) unit)
                 (rg-mark-sites (+ i 3) n flags rec))
               (let _ (if (and (> rec 0) (>= scope 0)) (rg-scope-escape (rg-located node scope) lvl) 0)
-                (let _ (if (> rec 0) (icnf-region-set node (+ lvl 1)) 0)
+                (let _ (if (> rec 0) (icnf-region-set node (+ lvl 1)) unit)
                   (rg-mark-sites (+ i 3) n
                     (bit-or flags (if (= lvl 0) 1 (if (= lvl 1) 2 0))) rec))))))))))
 

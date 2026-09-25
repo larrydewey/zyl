@@ -602,10 +602,10 @@
     0
     (let a (ffi-call "zyl_arg_str" i 1000)
       (begin
-        (if (str-eq a "--error-format=json") (ffi-call "zyl_diag_json_set" 1 1000) 0)
+        (if (str-eq a "--error-format=json") (ffi-call "zyl_diag_json_set" 1 1000) unit)
         (if (drv-contracts-flag-p a)
           (ffi-call "zyl_smap_put" (ffi-call "zyl_smap_global" 6 1000) "profile" (str-substring a 12 (- (str-length a) 12)) 1000)
-          0)
+          unit)
         (drv-scan-error-format (+ i 1) argc)))))
 
 ; `--contracts=P`: the build's contract profile (strict, debug, warn, off, production).

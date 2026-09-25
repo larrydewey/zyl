@@ -190,22 +190,22 @@
 
 (defn ta-poison (st t)
   (let r (ta-root st t)
-    (if (< r 0) 0 (ta-wset (ta-vars st) r (TbPoison)))))
+    (if (< r 0) unit (ta-wset (ta-vars st) r (TbPoison)))))
 
 ; --- strict report mode (docs/sound-types-design.md, phase 1) --------------
 ; ZYL_STRICT_TYPES set: every unification failure, occurs-check failure and
 ; "don't know" type is reported as a located W_TYPE_STRICT warning at the
 ; innermost expression being typed (runtime cell 1), without changing what
 ; the pass computes. Cell 0 holds the mode, set per program.
-(defn ta-strict-p () (> (ffi-call "zyl_cell_get" 0 1000) 0))
+(def ta-strict-mode (ffi-call "zyl_ref_new" false 1000))
+(def ta-cur-node (ffi-call "zyl_ref_new" (Expr (EAtom ANil)) 1000))
+
+(defn ta-strict-p () (ffi-call "zyl_ref_get" ta-strict-mode 1000))
 
 (defn ta-strict (msg)
   (if (ta-strict-p)
-    (let node (ffi-call "zyl_cell_get" 1 1000)
-      (if (= node 0)
-        (ffi-call "zyl_warn_emit" (str-concat "warning[W_TYPE_STRICT]: " (str-concat msg "\n")) 1000)
-        (err-warn-at "W_TYPE_STRICT" msg node "")))
-    0))
+    (err-warn-at "W_TYPE_STRICT" msg (ffi-call "zyl_ref_get" ta-cur-node 1000) "")
+    unit))
 
 ; A fresh variable standing for a type the pass does not know.
 (defn ta-dk (st why)
@@ -510,7 +510,7 @@
 (defn ta-put2 (m n x)
   (let _ (ta-sput m n x)
     (let s (ta-short n)
-      (if (ta-streq s n) 0 (begin (ta-sput m s x) (ta-sput ta-alias-table s 1))))))
+      (if (ta-streq s n) unit (begin (ta-sput m s x) (ta-sput ta-alias-table s 1))))))
 
 (defn ta-alias-only (_m n)
   (and (ta-shas ta-alias-table n) (ta-looks-param n)))
@@ -605,7 +605,7 @@
               (begin
                 (ta-sput (ta-traits st) dotted (TaSc (list-length seen) t))
                 (ta-mtab-add dotted)
-                (if (ta-key-is dotted "Show.show") (ta-sput ta-name-table "!show" dotted) 0)))))))))
+                (if (ta-key-is dotted "Show.show") (ta-sput ta-name-table "!show" dotted) unit)))))))))
 
 (defn ta-is-struct (sm)
   (match sm
@@ -696,18 +696,19 @@
 
 ; --- inference ----------------------------------------------------------------
 
+; The type bound to `n`, or (ta-no-type) when `n` is not local.
 (defn ta-env-get (env n)
   (match env
-    (Nil 0)
+    (Nil (ta-no-type))
     (Cons p rest
       (match p
         (Pair k v (if (ta-streq k n) v (ta-env-get rest n)))))))
 
 (defn ta-expr (st ctx env e)
-  (let prev (ffi-call "zyl_cell_get" 1 1000)
-    (let _ (ffi-call "zyl_cell_set" 1 e 1000)
+  (let prev (ffi-call "zyl_ref_get" ta-cur-node 1000)
+    (let _ (ffi-call "zyl_ref_set" ta-cur-node e 1000)
       (let t (ta-rec e (ta-expr-node st ctx env e))
-        (let _ (ffi-call "zyl_cell_set" 1 prev 1000)
+        (let _ (ffi-call "zyl_ref_set" ta-cur-node prev 1000)
           t)))))
 
 (defn ta-list (st ctx env es)
@@ -764,29 +765,32 @@
 
 ; Arithmetic operand types, checked against the Num class {Int, Float}
 ; once the whole program is typed (ta-check-num).
-(defn ta-num-notes () (ffi-call "zyl_wvec_global" 7 1000))
+; node, operand type, class (1 arithmetic, 2 ordering).
+(deftype TaNum (TaNum Expr TaTy Int))
+
+(def ta-num-note-store (ffi-call "zyl_wvec_new" 1000))
+
+(defn ta-num-notes () ta-num-note-store)
 
 (defn ta-note-num (_st e t cls)
   (if (ta-strict-p)
-    (let _ (ffi-call "zyl_wvec_push" (ta-num-notes) e 1000)
-      (let _ (ffi-call "zyl_wvec_push" (ta-num-notes) t 1000)
-        (ffi-call "zyl_wvec_push" (ta-num-notes) cls 1000)))
+    (let _ (ffi-call "zyl_wvec_push" ta-num-note-store (TaNum e t cls) 1000) 0)
     0))
 
 (defn ta-check-num (st i n)
   (if (>= i n)
     0
-    (let e (ffi-call "zyl_wvec_get" (ta-num-notes) i 1000)
-      (let t (ta-resolve st (ffi-call "zyl_wvec_get" (ta-num-notes) (+ i 1) 1000))
-        (let cls (ffi-call "zyl_wvec_get" (ta-num-notes) (+ i 2) 1000)
+    (match (ffi-call "zyl_wvec_get" ta-num-note-store i 1000)
+      (TaNum e t0 cls
+        (let t (ta-resolve st t0)
           (let _ (match t
                    (TaC name args
                      (if (or (ta-streq name "Int") (or (ta-streq name "Float") (and (= cls 2) (ta-streq name "String"))))
                        0
-                       (let _ (ffi-call "zyl_cell_set" 1 e 1000)
+                       (let _ (ffi-call "zyl_ref_set" ta-cur-node e 1000)
                          (ta-strict (str-concat (if (= cls 1) "arithmetic on " "ordering on ") (ta-show st t))))))
                    (_ 0))
-            (ta-check-num st (+ i 3) n)))))))
+            (ta-check-num st (+ i 1) n)))))))
 
 (defn ta-l2 (a b) (Cons a (Cons b Nil)))
 (defn ta-l3 (a b c) (Cons a (Cons b (Cons c Nil))))
@@ -875,7 +879,7 @@
 
 (defn ta-ident (st ctx env n)
   (let lt (ta-env-get env n)
-    (if (= lt 0)
+    (if (ta-no-type-p lt)
       (let fi (ta-sget (ta-fnmap st) n)
         (if (> fi 0)
           (ta-fn-ref st ctx (- fi 1))
@@ -902,7 +906,7 @@
 (defn ta-set (st ctx env name val)
   (let tv (ta-expr st ctx env val)
     (let lt (ta-env-get env name)
-      (let _ (if (= lt 0) 0 (ta-unify st lt tv))
+      (let _ (if (ta-no-type-p lt) 0 (ta-unify st lt tv))
         (ta-stmt)))))
 
 (defn ta-cond (st ctx env clauses r)
@@ -1077,7 +1081,7 @@
       (if (> oc 0)
         (ta-op st ctx env e n oc args)
         (let bi (ta-builtin-sig st n)
-          (if (= bi 0)
+          (if (ta-no-type-p bi)
             (ta-call-named st ctx env e n args)
             (ta-apply-type st bi (ta-list st ctx env args)))))))))
 
@@ -1105,7 +1109,7 @@
 
 (defn ta-note-op (st ctx t)
   (match (ta-resolve st t)
-    (TaV i (if (< i 0) 0 (ta-note st ctx 0 4 "" t -1)))
+    (TaV i (if (< i 0) 0 (ta-note st ctx (ta-no-node) 4 "" t -1)))
     (_ 0)))
 
 (defn ta-unify-all (st ts t)
@@ -1130,11 +1134,11 @@
   (if (ta-key-is n "collections/vec::array-get") (ta-sig-parse st "(Array a) Int -> a")
   (if (ta-key-is n "collections/vec::array-set") (ta-sig-parse st "(Array a) Int a -> Unit")
   (if (ta-key-is n "collections/vec::array-cap") (ta-sig-parse st "(Array a) -> Int")
-  0))))))))))))
+  (ta-no-type)))))))))))))
 
 (defn ta-call-named (st ctx env e n args)
   (let lt (ta-env-get env n)
-    (if (= lt 0)
+    (if (ta-no-type-p lt)
       (let fi (ta-sget (ta-fnmap st) n)
         (if (> fi 0)
           (ta-call-fn st ctx env e (- fi 1) args)
@@ -1172,7 +1176,11 @@
       (let t (ta-expr st ctx env a)
         (ta-seq (ta-note st ctx a 2 "" t -1) (ta-print st ctx env rest))))))
 
-(deftype TaSp (TaSp Int Int Int String TaTy Int))
+; ctx, node, kind, name, type, function index.
+(deftype TaSp (TaSp Int Expr Int String TaTy Int))
+
+; The node of a note that has none (kind 4).
+(defn ta-no-node () (Expr (EAtom ANil)))
 
 (defn ta-note (st ctx node kind name t fi)
   (ta-wpush (ta-special st) (TaSp ctx node kind name t fi)))
@@ -1333,7 +1341,7 @@
   (if (< ctx 0)
     0
     (let a (ta-wget (ta-tjlow st) ctx)
-      (if (< v a) (ta-wset (ta-tjlow st) ctx v) 0))))
+      (if (< v a) (ta-wset (ta-tjlow st) ctx v) unit))))
 
 (defn ta-fn-ref (st ctx i)
   (let s (ta-wget (ta-fnstate st) i)
@@ -1606,7 +1614,7 @@
               (ta-mismatch st a want t
                 (Cons (err-label-at p (str-concat what " declared here")) Nil)
                 (str-concat what (str-concat " is declared `" (str-concat (ta-pretty st want) "`")))))
-            0))))))
+            unit))))))
 
 (defn ta-check-fields (st cname tc args ts)
   (match tc
@@ -1628,7 +1636,7 @@
                   (ta-mismatch st a want t Nil
                     (str-concat "field " (str-concat (ffi-call "zyl_int_text" k 1000)
                       (str-concat " of `" (str-concat (err-name cname) (str-concat "` is declared `" (str-concat (ta-pretty st want) "`")))))))
-                  0)
+                  unit)
                 (ta-check-field-list st cname frest arest trest (+ k 1))))))))))
 
 (defn ta-mismatch (st node want got labels help)
@@ -1681,10 +1689,10 @@
 
 (defn ta-eq-register (st name variants)
   (match variants
-    (Nil 0)
+    (Nil unit)
     (Cons _ _
       (if (ta-secret-variants st variants)
-        0
+        unit
         (ta-sput ta-eqv-table name variants)))))
 
 (defn ta-secret-variants (st variants)
@@ -1809,9 +1817,9 @@
 ; Returns the specialized instances to append to the program.
 (defn ta-annotate-program (exprs)
   (begin
-    (ffi-call "zyl_cell_set" 0 (if (= (ffi-call "zyl_getenv" "ZYL_STRICT_TYPES" 1000) 0) 0 1) 1000)
-    (ffi-call "zyl_cell_set" 1 0 1000)
-    (ffi-call "zyl_wvec_truncate" (ffi-call "zyl_wvec_global" 7 1000) 0 1000)
+    (ffi-call "zyl_ref_set" ta-strict-mode (> (str-length (ffi-call "zyl_getenv_str" "ZYL_STRICT_TYPES" 1000)) 0) 1000)
+    (ffi-call "zyl_ref_set" ta-cur-node (ta-no-node) 1000)
+    (ffi-call "zyl_wvec_truncate" ta-num-note-store 0 1000)
     (node-tables-clear)
     (ffi-call "zyl_wvec_truncate" ta-var-store 0 1000)
     (ffi-call "zyl_smap_clear" ta-impl-table 1000)
@@ -1871,14 +1879,14 @@
 ; --- debugging (ZYL_DEBUG_TYPES=1 prints every function's scheme) -------------
 
 (defn ta-debug-scheme (st m t)
-  (let flag (ffi-call "zyl_getenv" "ZYL_DEBUG_TYPES" 1000)
-    (if (= flag 0)
+  (let flag (ffi-call "zyl_getenv_str" "ZYL_DEBUG_TYPES" 1000)
+    (if (= (str-length flag) 0)
       0
       (match (Expr.inner (ta-wget (ta-fnexp st) m))
         (EDefn name _ _
           (let l1 (str-concat name " : ")
             (ffi-call "zyl_warn_emit" (str-concat l1 (ta-show st t)) 1000)))
-        (_ 0)))))
+        (_ unit)))))
 
 (defn ta-show (st t)
   (match (ta-resolve st t)
@@ -2197,7 +2205,7 @@
 
 (defn ta-act-list (st members es)
   (match es
-    (Nil 0)
+    (Nil unit)
     (Cons sp rest
       (begin
         (let s (ta-sp-status st sp)
@@ -2235,17 +2243,17 @@
           (let r (ta-recv st t)
             (match r
               (TaC n _ (ta-set-name node 2 (ta-impl-target st members (ta-impl-fn st name n) t)))
-              (_ 0)))
+              (_ unit)))
           (if (= kind 5)
             (match (ta-recv st t)
               (TaC n _ (ta-set-name node 2 (ta-impl-target st members (ta-eq-fn st n) t)))
-              (_ 0))
+              (_ unit))
           (let r (ta-resolve st t)
             (match r
               (TaC n _
                 (ta-set-name node 3
                   (ta-impl-target st members (ta-impl-fn st (ta-sget-or ta-name-table "!show" "") n) (ta-show-ct r))))
-              (_ 0)))))))))
+              (_ unit)))))))))
 
 ; Table 2: the call's new target; 3: the print argument's Show function.
 (defn ta-set-name (node tbl name)
