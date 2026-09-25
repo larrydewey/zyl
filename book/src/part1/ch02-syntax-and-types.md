@@ -423,6 +423,30 @@ and `'()` are `Nil`. A quote holds only constants, but it nests:
 Square brackets always mean a list literal, except in a derive:
 `(derive T [Eq Show])` and `(:derive [Eq Show])` still name traits.
 
+A **quasiquote**, written with a backquote, is a quote with holes. In
+`` `(1 ,x ,@ys) ``, `,x` puts the value of `x` in the list and `,@ys`
+puts in every element of the list `ys`, so the whole is
+`(Cons 1 (Cons x (list-append ys Nil)))`. The parts are evaluated left
+to right, and everything the list holds must have one type, so `ys`
+must be a list of that type. Outside the holes the rules of quote
+apply: a name that is not after `,` or `,@` is `E_MALFORMED_FORM`.
+
+```lisp
+(use core/list)
+
+(defn main ()
+  (let ys [3 4]
+    (begin
+      (print (Show.show `(1 ,(+ 1 1) ,@ys)))           ; [1, 2, 3, 4]
+      (print (Show.show `(,@ys 0 ,@ys)))               ; [3, 4, 0, 3, 4]
+      (print (Show.show `((0 ,(list-length ys)) ())))  ; [[0, 2], []]
+      0)))
+```
+
+A quasiquote cannot contain another quasiquote, and `,` and `,@` mean
+something only inside a quasiquote or a macro template (Chapter 10);
+anywhere else they are `E_MALFORMED_FORM`.
+
 ### Vectors and Maps
 
 `Vec` and `Map` are library types, imported with `use`. A `Vec` holds

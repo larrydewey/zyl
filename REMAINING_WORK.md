@@ -52,6 +52,7 @@
 - [x] Sound HM type checking: every type error reported, no cast form, byte and file operands typed; `receive` the one known hole (done 2026-09-25, `docs/sound-types-design.md`)
 - [x] Ergonomic zero-copy views beyond `byteslice`: `text/view` (`StrView`, `Cursor`) and `collections/slice` (`Slice`), tied to their base by escape analysis (done 2026-09-25)
 - [x] List literals: `(list ...)`, `[...]` and quoted constant data `'(...)`, Cons chains in source order (done 2026-09-25)
+- [x] Quasiquote (`` `d ``, `,e`, `,@e`) and macro `&rest` parameters spliced with `,@name` (done 2026-09-25)
 - [ ] Leftovers: Vec/Map derive beyond Show; explicit `Show.show` without an impl hits runtime dispatch; ambiguous dot methods on unknown receivers; Secret heap erasure explicit; interpreter TCO for String/Float results; LSP consuming `--error-format=json`; hosting the default package index
 - [ ] Deterministic concurrency (Kahn): single-sender channels with linear endpoints, blocking receive, no select, bounded buffers, commutative TAtomic read after join, actor output channels drained by main, `--sched=deterministic` oracle vs seeded chaos mode
 - [x] ~~Inline assembly~~: rejected (breaks determinism)

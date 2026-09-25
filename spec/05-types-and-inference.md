@@ -110,6 +110,7 @@ top-level `def` values are monomorphic (the value restriction). A type variable 
 | FFI | A runtime symbol (`zyl_*`) has the type in the signature table; a foreign symbol the type of its `(extern "sym" (T1..Tn) R)` declaration (§16); `(ffi-pin v)` : `(Pin a)` for v : a; `(ffi-unpin p)` : a for p : `(Pin a)`; pinning a function is `E_FFI_TYPE_NOT_PINNABLE` |
 | List literal | `(list e1 .. en)` and `[e1 .. en]` are `(Cons e1 (Cons .. (Cons en Nil)))`: e1..en are evaluated left to right, every ei : τ ⊢ `(List τ)`. `(list)`, `[]` : `(List a)`. Mixed element types are `E_TYPE_MISMATCH` |
 | `quote` | `(quote d)`, `'d`: an Int, Float, String or Bool datum is itself; a list datum is the list literal of its quoted elements, so `'((1 2) (3))` : `(List (List Int))` and `'()` : `(List a)`. A name inside d, or a `quote` without exactly one operand, is `E_MALFORMED_FORM` (there is no symbol type) |
+| `quasiquote` | `(quasiquote d)`, `` `d ``: quote with holes. `(unquote e)`, `,e`, is the value of e; a list datum is the list literal of its elements, where an element `(unquote-splicing e)`, `,@e`, contributes the elements of e : `(List τ)`. So `` `(1 ,x ,@ys) `` is `(Cons 1 (Cons x (zyl-qq-append ys Nil)))`, evaluated left to right, with 1, x : τ and ys : `(List τ)` ⊢ `(List τ)`; `` `() `` : `(List a)` and `` `,e `` is e. `zyl-qq-append` (`core/list`) is `list-append` under a name of its own. A name outside an unquote, a `,@e` that is not a list element, a nested quasiquote, an unquote, splice or quasiquote without exactly one operand, and a `,` or `,@` outside a quasiquote and a macro template (§19.1) are `E_MALFORMED_FORM` |
 | Byte operations | Offsets, lengths and stored values are Int, and so is every result but the handles. `(bytebuf R N)` : ByteBuf; `(byteslice b off len)` : ByteSlice for b : ByteBuf; `(byteslice-sub s off len)` : ByteSlice for s : ByteSlice; `(bytebuf-append b s)` : Int for b : ByteBuf, s : ByteSlice; `bytebuf-len`, `bytebuf-cap`, `bytebuf-ptr` and the atomic operations take a ByteBuf. A load or store (`load-u8` .. `store-i64`) takes a ByteBuf or a ByteSlice; a handle whose type is still unknown when its function group is typed is `E_CANNOT_INFER` (annotate it: `((b ByteBuf))`) |
 | `file-open` | path : String, mode a literal fopen mode -> Int |
 | `file-read` | `(file-read fd n)`: fd, n : Int -> String |
@@ -377,6 +378,9 @@ falls short of §4–§6 and §17.
   `(List τ)` and mixed elements are `E_TYPE_MISMATCH`, reported once:
   a unification failure inside a type (an element of two lists) is not
   reported again by the enclosing unification.
+- A quasiquote is typed as the `Cons` and `zyl-qq-append` chain it
+  becomes, and a macro's `&rest` parameter used as a value as the list
+  literal of its arguments, so both are `(List τ)` with one element type.
 - A top-level `def` is rewritten by the parse into a zero-argument getter
   function (`def-getter`, `expr_inner.zyl`) and typed as that function,
   but its type is not generalized (`ta-gen-members`): the value

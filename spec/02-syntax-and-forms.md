@@ -19,6 +19,8 @@ Expr :=
   | (if Expr Expr Expr)
   | (list Expr*)                 ; reader: [Expr*]
   | (quote Datum)                ; reader: 'Datum
+  | (quasiquote QDatum)          ; reader: `QDatum
+  | (defmacro Name (MacroParams) Expr)   ; §19
 
   ;; Error Handling (Result-based)
   | (try Expr (catch Name Expr))
@@ -79,6 +81,11 @@ PropertyFn := (fn (Param+) Expr)
 Param := Name | (Name Type)
 Clause := (Expr Expr)
 Datum := INTEGER | FLOAT | STRING | BOOLEAN | (Datum*)
+QDatum := INTEGER | FLOAT | STRING | BOOLEAN | (QElem*)
+        | (unquote Expr)                          ; reader: ,Expr
+QElem := QDatum
+       | (unquote-splicing Expr)                  ; reader: ,@Expr
+MacroParams := Name* | Name* &rest Name
 TraitMethod := (Name (Param*) TypeExpr)
 ImplBody := (defn Name (Params*) Body)
 Variant := (Name TypeExpr*)
@@ -119,7 +126,7 @@ recorded here rather than silently corrected in the grammar above.
 
 ### Forms the post-processor recognises
 
-`list`, `quote`, `def`, `defn`, `deftype`, `defstruct`, `defstruct+`, `trait`, `impl`,
+`list`, `quote`, `quasiquote`, `def`, `defn`, `deftype`, `defstruct`, `defstruct+`, `trait`, `impl`,
 `derive`, `extern`, `let`, `let-mut`, `if`, `while`, `for`, `cond`, `and`,
 `or`, `not`, `match`, `try` (with a nested `catch`), `begin`, `fn`,
 `lambda`, `set!`, `print`, `assert`, `assert-equal`, `assert-true`,
@@ -142,6 +149,20 @@ hand-written ones. `(quote d)` checks that `d` holds no name (a name is
 `E_MALFORMED_FORM`, since there is no symbol type), then turns every list
 in `d` into a list literal of its elements (`ast-quote-data`); an atom is
 itself. `(quote)` or `(quote a b)` is `E_MALFORMED_FORM`.
+
+`quasiquote` produces no node either. `(quasiquote d)` with valid data
+(`ast-qq-problem` returns `""`) is rewritten by `ast-qq-data`: `(unquote
+e)` becomes `e`, and a list becomes a `Cons` chain whose element
+`(unquote-splicing e)` becomes `(zyl-qq-append e rest)`, so
+`` `(1 ,x ,@ys) `` is `(Cons 1 (Cons x (zyl-qq-append ys Nil)))`.
+`qualify.zyl` does this before names are qualified (`qf-quasi-data-p`),
+and leaves a malformed quasiquote as written so that `parse-quasiquote`
+reports it in the program's own names: a name outside an unquote, a
+`,@e` that is not a list element, a nested quasiquote, or an unquote or
+splice without exactly one operand is `E_MALFORMED_FORM`. An `unquote`
+or `unquote-splicing` left after macro expansion, that is, one written
+outside a quasiquote and outside a macro template, is `E_MALFORMED_FORM`
+from the arity pass (`arity_check.zyl`).
 
 A recognised form whose arguments do not have the shape its parser
 requires becomes an `EUnknown` node, which the arity pass reports as

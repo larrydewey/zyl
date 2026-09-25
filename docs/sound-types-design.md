@@ -126,7 +126,10 @@ empty inferer were used.
   rewritten to `Cons` chains before typing, so they need no rule of
   their own: the elements share one type. A unification failure inside a
   type (two list elements) is reported there and not again by the
-  enclosing unification (`ta-unify` compares the error count).
+  enclosing unification (`ta-unify` compares the error count). A
+  quasiquote is rewritten the same way, to `Cons` and `zyl-qq-append`
+  (for `,@`), and a macro's `&rest` parameter used as a value to the
+  `Cons` chain of its arguments, so neither has a rule of its own.
 - **Generated helpers.** A `def` getter's cell operations are named with
   spaces (`zyl global get`), which no source can spell, so their
   `String -> a` read can only come from the getter, whose `if` joins it

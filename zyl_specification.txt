@@ -47,15 +47,23 @@ P9. Testability
 
 1.2 Tokens:
     IDENTIFIER | INTEGER | FLOAT | STRING | BOOLEAN | SYMBOL | KEYWORD
-    "(" | ")" | "{" | "}" | ":" | "[" | "]" | "'"
+    "(" | ")" | "{" | "}" | ":" | "[" | "]" | "'" | "`" | "," | ",@"
+
+    An identifier may start with & (as in &rest, §19.1).
 
 1.2.1 Reader sugar:
     [e1 ... en]   reads as (list e1 ... en), a list literal (§4.9).
                   In a derive, (derive T [Eq Show]) and
                   (:derive [Eq Show]), the bracket still names traits.
     'd            reads as (quote d), quoted constant data (§4.9).
-    Any other character outside a string or comment, such as a
-    backtick, is E_INVALID_CHAR.
+    `d            reads as (quasiquote d), quoted data with holes (§4.9).
+    ,e            reads as (unquote e).
+    ,@e           reads as (unquote-splicing e); the lexer reads ,@ as
+                  one token, so , @e is a comma followed by an
+                  invalid @.
+    , and ,@ have a meaning only inside a quasiquote or a macro
+    template (§19.1). Any other character outside a string or comment,
+    such as #, @ or $, is E_INVALID_CHAR.
 
 1.3 Keywords:
     def, defn, defun, let, let-mut, if, try, catch, spawn, send,
@@ -93,6 +101,8 @@ Expr :=
   | (if Expr Expr Expr)
   | (list Expr*)                 ; reader: [Expr*]
   | (quote Datum)                ; reader: 'Datum
+  | (quasiquote QDatum)          ; reader: `QDatum
+  | (defmacro Name (MacroParams) Expr)   ; §19
   
   ;; Error Handling (Result-based)
   | (try Expr (catch Name Expr))
@@ -149,6 +159,11 @@ PropertyFn := (fn (Param+) Expr)
 Param := Name | (Name Type)
 Clause := (Expr Expr)
 Datum := INTEGER | FLOAT | STRING | BOOLEAN | (Datum*)
+QDatum := INTEGER | FLOAT | STRING | BOOLEAN | (QElem*)
+        | (unquote Expr)                          ; reader: ,Expr
+QElem := QDatum
+       | (unquote-splicing Expr)                  ; reader: ,@Expr
+MacroParams := Name* | Name* &rest Name
 TraitMethod := (Name (Param*) TypeExpr)
 ImplBody := (defn Name (Params*) Body)
 Variant := (Name TypeExpr*)
@@ -310,6 +325,22 @@ ResultValue:
                     and '() : (List a).  A name inside d, or a quote with
                     other than one operand, is E_MALFORMED_FORM (there is
                     no symbol type).
+    quasiquote      (quasiquote d), `d: quote with holes.  (unquote e),
+                    ,e, is the value of e; a list datum is the list
+                    literal of its elements, where an element
+                    (unquote-splicing e), ,@e, contributes the elements
+                    of e : (List τ).  So `(1 ,x ,@ys) is
+                    (Cons 1 (Cons x (zyl-qq-append ys Nil))), evaluated
+                    left to right, with 1, x : τ and ys : (List τ)
+                    ⊢ (List τ); `() : (List a) and `,e is e.
+                    zyl-qq-append (core/list) is list-append under a
+                    name of its own, so a program's list-append does not
+                    change it.  A name outside an unquote, ,@e that is
+                    not an element of a list, a quasiquote inside a
+                    quasiquote, or an unquote, splice or quasiquote with
+                    other than one operand is E_MALFORMED_FORM.  A , or
+                    ,@ outside a quasiquote and outside a macro template
+                    (§19.1) is E_MALFORMED_FORM.
     Byte operations Offsets, lengths and stored values are Int, and so is
                     every result except the handles below.
                     (bytebuf R N) : ByteBuf
@@ -747,8 +778,30 @@ Definition:
 19.1 Macro Definition:
     (defmacro name (pattern*) template)
 
+    A pattern is a parameter name.  The list may end in &rest name: a
+    call then passes at least one argument per parameter before &rest
+    (fewer is E_ARITY_MISMATCH), and name is bound to the remaining
+    arguments, possibly none.  &rest anywhere else, or not followed by
+    exactly one name, is E_MALFORMED_PARAMETER.  Without &rest a call
+    passes exactly one argument per parameter (E_ARITY_MISMATCH).
+
+    In the template:
+    - a parameter stands for its argument, unevaluated;
+    - ,x is x (parameters are substituted anyway);
+    - ,@name, for the &rest parameter name, splices its arguments in
+      place, in order, where any number of expressions may appear: the
+      arguments of a call (a constructor and ffi-call included), begin,
+      print, setup and teardown.  Elsewhere, such as in an if, it is
+      E_MALFORMED_FORM, as is a ,@ outside a quasiquote whose operand
+      is not the &rest parameter (inside a quasiquote, ,@ is §4.9's);
+    - the &rest parameter as a value is the list literal of its
+      arguments, (list a1 .. an), so its arguments share one type, and a
+      quasiquote in a template can splice it: `(,a ,@rest 0).
+    A , or ,@ still present after expansion is E_MALFORMED_FORM.
+
 19.2 Hygiene:
     Gensym-based hygiene. All macro-introduced variables are renamed to unique symbols.
+    Spliced arguments are the caller's code and keep their names.
 
 19.3 Expansion Algorithm:
     Post-order traversal (innermost first).
@@ -853,6 +906,8 @@ Design rationale and the implementation plan: docs/package-management-design.md
     (len x)           — length of Vec, Map, String
     (list elem...)    — constructs a List (also [elem...]); see §4.9
     (quote datum)     — constant data (also 'datum); see §4.9
+    (quasiquote d)    — a list with holes (also `d, with ,e and ,@e);
+                        see §4.9
     (vec elem...)     — constructs Vec
     (map key val...)  — constructs Map (deterministic iteration)
     (tuple elems...)  — constructs Tuple

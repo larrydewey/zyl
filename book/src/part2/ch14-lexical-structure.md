@@ -28,7 +28,7 @@ The lexer works byte by byte and classifies ASCII only:
 
 ```
 IDENTIFIER | INTEGER | FLOAT | STRING | BOOLEAN | SYMBOL | KEYWORD
-"(" | ")" | "{" | "}" | ":" | "[" | "]" | "'"
+"(" | ")" | "{" | "}" | ":" | "[" | "]" | "'" | "`" | "," | ",@"
 ```
 
 Every token carries its byte offset in the file, which is how diagnostics
@@ -38,7 +38,7 @@ report `file:line:col`.
 
 ```
 Identifier ::= IdentStart IdentCont*
-IdentStart ::= [a-zA-Z] | "_" | "-" | "?" | "!" | "+" | "/" | "=" | "<" | ">" | "*" | "%"
+IdentStart ::= [a-zA-Z] | "_" | "-" | "?" | "!" | "+" | "/" | "=" | "<" | ">" | "*" | "%" | "&"
 IdentCont  ::= IdentStart | [0-9] | "."
 ```
 
@@ -53,7 +53,8 @@ IdentCont  ::= IdentStart | [0-9] | "."
 - A token `.name` (a dot followed by a letter) is the method part of
   `((expr).name args)`.
 - Operators are ordinary identifiers: `+`, `<=`, `set!`, `str-concat`,
-  `=>` all lex the same way.
+  `=>` all lex the same way. So is `&rest`, the rest-parameter marker of
+  a macro (Chapter 23).
 - `@` is not an identifier character. The module resolver relies on this:
   a name containing `@` is always a canonical symbol key (§31.2), never
   user text.
@@ -166,8 +167,38 @@ PANIC: error[E_MALFORMED_FORM]: a quoted list holds constant data; `x` is a name
    = help: write the value with (list ...) or [...], which evaluates its elements
 ```
 
-`(quote)` and `(quote a b)` are `E_MALFORMED_FORM` too. There is no
-quasiquote: a backtick is still an unrecognized character (14.3).
+`(quote)` and `(quote a b)` are `E_MALFORMED_FORM` too.
+
+### Quasiquote, Unquote and Splicing
+
+`` ` ``, `,` and `,@` are tokens too, and the reader wraps the form after
+each: `` `d `` is `(quasiquote d)`, `,e` is `(unquote e)` and `,@e` is
+`(unquote-splicing e)`. `,@` is a single token only when the `@`
+follows the comma directly; `, @e` is a comma and then an unrecognized
+`@`.
+
+A quasiquote is quoted data with holes. `,e` is the value of `e`, and
+`,@e`, as an element of a list, puts in every element of the list `e`:
+`` `(1 ,x ,@ys) `` is `(Cons 1 (Cons x (zyl-qq-append ys Nil)))`, where
+`zyl-qq-append` is `core/list`'s `list-append` under a name a program
+cannot redefine. The elements are evaluated left to right and share one
+type (Chapter 2). The rest follows quote, so a name outside an unquote
+is an error:
+
+```
+PANIC: error[E_MALFORMED_FORM]: malformed quasiquote: `x` is a name; write ,name for its value
+  --> main.zyl:1:30
+   |
+ 1 | (defn main () (begin (print `(1 x)) 0))
+   |                              ^
+   = help: unquote a value with ,e and splice a list with ,@e
+```
+
+A quasiquote inside a quasiquote, a `,@e` that is not an element of a
+list (`` `,@ys ``), and an unquote, splice or quasiquote with other than
+one operand are `E_MALFORMED_FORM` as well. `,` and `,@` also have a
+meaning in a macro template (Chapter 23). Anywhere else, outside a
+quasiquote and a template, they are `E_MALFORMED_FORM`.
 
 ### Delimiters
 
@@ -195,22 +226,22 @@ Comment ::= ";" AnyByte* ( Newline | EndOfFile )
   syntax.
 
 Any byte that is not whitespace, a delimiter, `"`, `:`, `~`, `;`, `'`,
-a digit, an identifier character, or a `.` followed by a letter is an
-error: `` ` ``, `,`, `@`, `#`, `$`, `&`, `|`, `^`, `\` and non-ASCII
-bytes outside strings and comments are reported as `E_INVALID_CHAR` at
-their position.
+`` ` ``, `,`, a digit, an identifier character, or a `.` followed by a
+letter is an error: `@` (other than in `,@`), `#`, `$`, `|`, `^`, `\`
+and non-ASCII bytes outside strings and comments are reported as
+`E_INVALID_CHAR` at their position.
 
 ```
-PANIC: error[E_INVALID_CHAR]: unexpected character ```
+PANIC: error[E_INVALID_CHAR]: unexpected character `#`
   --> main.zyl:2:17
    |
- 2 |   (begin (print `x) 0))
+ 2 |   (begin (print #x) 0))
    |                 ^
 ```
 
 (Before 2026-09-24 the lexer stopped there silently and dropped the rest
-of the file.) Because commas are not accepted, write `{ a b }` in an
-import list, never `{ a, b }`. An unterminated string is
+of the file.) A comma is unquote, not a separator, so write `{ a b }` in
+an import list, never `{ a, b }`, which is rejected. An unterminated string is
 `E_UNTERMINATED_STRING`.
 
 ## 14.4 Whitespace
@@ -224,13 +255,15 @@ characters, such as form feed, are unrecognized characters (14.3).
 Zyl uses no-dispatch parsing (§2 and `docs/architecture-decisions.md`).
 The reader produces only atoms and lists. A separate post-processor
 decides which lists are special forms. `[d ...]` reads as the list
-`(list d ...)` and `'d` as `(quote d)`.
+`(list d ...)`, `'d` as `(quote d)`, `` `d `` as `(quasiquote d)`, `,d`
+as `(unquote d)` and `,@d` as `(unquote-splicing d)`.
 
 ### Reader grammar
 
 ```
 Program ::= Datum*
-Datum   ::= Atom | "(" Datum* ")" | "[" Datum* "]" | "{" Datum* "}" | "'" Datum
+Datum   ::= Atom | "(" Datum* ")" | "[" Datum* "]" | "{" Datum* "}"
+          | "'" Datum | "`" Datum | "," Datum | ",@" Datum
 Atom    ::= Integer | Float | String | Boolean | Identifier | Keyword | Symbol
 ```
 
@@ -252,7 +285,7 @@ post-processor actually does with each definition form.
 | `(derive Type Trait*)` | Generates `Show`, `Debug`, `Eq`, `Ord`, `Hash` and `Clone`; any other trait is `E_TRAIT_NOT_DERIVABLE` (Chapter 20). |
 | `(extern "sym" (Type*) Ret)` | Declares the C signature of a foreign function; an `ffi-call` to an undeclared foreign symbol is an error (Chapter 22). |
 | `(alias Name Type)` | Accepted with no effect. |
-| `(defmacro name (pattern*) template)` | Recognized, with exactly one template; `macro` is a synonym (Chapter 23). |
+| `(defmacro name (pattern*) template)` | Recognized, with exactly one template; `macro` is a synonym. The parameters are names, and the last may follow `&rest` (Chapter 23). |
 | `(use path ...)`, `(module name)`, `(pub <definition>)` | Recognized (Chapter 25). `export` is accepted but deprecated (§24.3). |
 
 ```

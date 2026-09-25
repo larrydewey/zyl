@@ -256,6 +256,7 @@ the same type.
 | `macro`, `defmacro` | `(defmacro name (param ...) template)` | |
 | `list` | `(list e ...)`, or `[e ...]` | the list `(Cons e (Cons ... Nil))`, elements evaluated left to right, all of one type (`E_TYPE_MISMATCH` otherwise); `(list)` and `[]` are `Nil` |
 | `quote` | `(quote datum)`, or `'datum` | constant data: a number, string or boolean is itself, a list is a list literal of its quoted elements (`'((1 2) (3))` is a `(List (List Int))`). A name inside is `E_MALFORMED_FORM`, as is a `quote` without exactly one operand |
+| `quasiquote` | `(quasiquote d)`, or `` `d `` | quote with holes: `,e` is the value of `e`, and `,@e` in a list the elements of the list `e`; `` `(1 ,x ,@ys) `` is `(Cons 1 (Cons x (list-append ys Nil)))`, all of one element type. A name outside an unquote, a nested quasiquote, or `,@e` outside a list is `E_MALFORMED_FORM` |
 
 `defstruct` is sugar: it lowers to a single-variant `deftype` whose
 variant is named after the type, so the ADT machinery builds and reads
@@ -284,7 +285,12 @@ with `self` bare instead of in a list, is `E_MALFORMED_FORM`; write
 
 A macro's template is the body with the parameters substituted:
 `(defmacro twice (x) (begin x x))`. The template is exactly one form.
-There is no quasiquote or unquote syntax.
+The parameter list may end in `&rest name`, which takes the remaining
+arguments: `,@name` splices them where a form takes any number of
+expressions (call arguments, `begin`, `print`), and `name` alone is the
+list of them, `(defmacro sum (&rest xs) (+ 0 ,@xs))`. In a template `,x`
+is `x`; `,` and `,@` outside a quasiquote and a template are
+`E_MALFORMED_FORM`.
 
 ## C.9 Modules and Packages
 

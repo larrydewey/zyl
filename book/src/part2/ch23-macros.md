@@ -2,12 +2,12 @@
 
 Complete reference for Zyl's macro system: definition, substitution, expansion order, and the hygiene and termination rules the specification requires.
 
-The normative text is spec v5.0 §19. The implementation is `stdlib/compiler/macro_expand.zyl`, which runs after module resolution and before the static checks and type inference (see Chapter 26). This chapter documents the implementation and marks where it is narrower than §19: parameters are plain names, not patterns.
+The normative text is spec v5.0 §19. The implementation is `stdlib/compiler/macro_expand.zyl`, which runs after module resolution and before the static checks and type inference (see Chapter 26). This chapter documents the implementation and marks where it is narrower than §19: parameters are plain names, optionally ending in a rest parameter, not patterns.
 
 ## 23.1 Macro Definition
 
 ```
-defmacro ::= "(" "defmacro" Identifier "(" Identifier* ")" Body ")"
+defmacro ::= "(" "defmacro" Identifier "(" Identifier* ( "&rest" Identifier )? ")" Body ")"
 ```
 
 ```lisp
@@ -16,7 +16,7 @@ defmacro ::= "(" "defmacro" Identifier "(" Identifier* ")" Body ")"
 
 `(macro name ...)` is accepted as a synonym.
 
-- **Parameters** are plain identifiers. Spec §19.1 calls them patterns; the implementation has no destructuring, literal or rest parameters. A parameter that is not an identifier is `E_MALFORMED_PARAMETER`.
+- **Parameters** are plain identifiers, and the last may follow `&rest` (§23.3). Spec §19.1 calls them patterns; the implementation has no destructuring or literal parameters. A parameter that is not an identifier is `E_MALFORMED_PARAMETER`.
 - **The body** is ordinary Zyl code, not a quoted template. It is exactly one form: a `defmacro` with several body forms is `E_MALFORMED_FORM`, so wrap them in `begin`.
 - **Expansion** happens at compile time. Macro definitions are removed from the program once expanded.
 - **Top level only.** A `defmacro` inside a function body or any other form is `E_MACRO_ILLEGAL_ACCESS`: its template could name the run-time variables around it, which a compile-time rewrite cannot see.
@@ -62,6 +62,7 @@ Because arguments are substituted, not evaluated, an argument used twice in the 
 
 - Parameters and arguments are paired by position.
 - A call must pass exactly one argument per parameter. Too many or too few is `E_ARITY_MISMATCH`, reported at the call.
+- With `(a b &rest r)`, a call passes at least one argument per parameter before `&rest`, and `r` takes the rest, possibly none. Too few is `E_ARITY_MISMATCH` ("takes at least 2 argument(s)").
 
 ### Where parameters are substituted
 
@@ -90,9 +91,59 @@ An argument that is not an identifier in one of these positions is `E_MALFORMED_
 
 Macro calls are recognised in every position too: inside `match` arms, `fn` bodies, `for` loops, `try`, `impl` methods, `test` bodies, and at top level, where a call can expand to a definition, as `def-square` does.
 
-## 23.3 No Quasiquote
+## 23.3 Rest Parameters, Quasiquote and Splicing
 
-Zyl has no quasiquote, unquote or unquote-splicing: the body itself is the template. The lexer does not recognise `` ` ``, `,` or `@`. Each of them outside a string or comment is `E_INVALID_CHAR`, so a backquoted Common Lisp-style macro is rejected at its first backquote. `'` is recognised, but only as the quote of constant data (`'(1 2 3)`, Chapter 14); a quoted name is `E_MALFORMED_FORM`.
+The body itself is the template: a parameter is replaced wherever the body names it, so a template needs no unquote. Three pieces of reader syntax still have a use in one. The reader turns `` `d `` into `(quasiquote d)`, `,e` into `(unquote e)` and `,@e` into `(unquote-splicing e)` (Chapter 14).
+
+**Rest parameters.** A parameter list may end in `&rest name`. `name` then stands for all the arguments after the fixed ones, and `,@name` in the body splices them in place, in source order:
+
+```lisp
+(defmacro my-when (c &rest body) (if c (begin ,@body) unit))
+(defmacro sum (&rest xs) (+ 0 ,@xs))
+
+(my-when true (print "one") (print "two"))   ; one, two
+(print (sum 1 2 3))                          ; 6: (+ 0 1 2 3)
+(print (sum))                                ; 0: (+ 0)
+```
+
+`&rest` must be followed by exactly one name, and only at the end of the list: `(defmacro m (&rest) ...)` and `(defmacro m (&rest a b) ...)` are `E_MALFORMED_PARAMETER`. Only `defmacro` has rest parameters; in a `defn`, `&rest` is an ordinary parameter name.
+
+**Where a splice may appear.** `,@name` changes the number of expressions in the form around it, so it is accepted only where a form takes any number of them: the arguments of a call (including a constructor and `ffi-call`), `begin`, `print`, `setup` and `teardown`. A splice anywhere else, such as into an `if`, is `E_MALFORMED_FORM`:
+
+```lisp
+(defmacro bad (c &rest body) (if c ,@body 0))
+(print (bad true 1 2))
+;; error[E_MALFORMED_FORM]: `,@` splices only where any number of
+;; expressions may appear
+;;   = help: splice into a call's arguments, a begin or a print
+```
+
+Outside a quasiquote, `,@` splices only the rest parameter: `,@x` for a fixed parameter `x`, or for anything else, is `E_MALFORMED_FORM` ("in a macro template, `,@` splices a `&rest` parameter").
+
+**A rest parameter as a value.** Written without `,@`, a rest parameter is the list literal of its arguments. Its arguments must then have one type:
+
+```lisp
+(defmacro count-args (&rest xs) (list-length xs))
+(print (count-args 5 6 7))                   ; 3: (list-length (list 5 6 7))
+```
+
+**Quasiquote in a template.** A quasiquote builds a list with holes, in a template as anywhere else: `,e` puts in the value of `e`, and `,@e` the elements of the list `e`. Because a rest parameter is a list, a quasiquote can splice it:
+
+```lisp
+(defmacro framed (a &rest xs) `(,a ,@xs 0))
+(print (framed 9 8 7))                       ; [9, 8, 7, 0]
+```
+
+Build lists in a template this way, not with `[...]`: a list literal is a chain of two-argument `Cons` calls, so `[0 ,@xs]` splices into one `Cons` and fails to type-check (`E_TYPE_MISMATCH`) instead of making a longer list.
+
+**Unquote.** `,x` in a template is `x`, since parameters are substituted anyway; `(begin ,x ,x)` and `(begin x x)` are the same template. A `,` or `,@` written outside a quasiquote and outside a macro template has no meaning and is `E_MALFORMED_FORM`, reported after expansion:
+
+```lisp
+(defn main () (let x 1 (begin (print ,x) 0)))
+;; error[E_MALFORMED_FORM]: `,` outside a quasiquote or a macro template
+```
+
+`'` is the quote of constant data (`'(1 2 3)`, Chapter 14): a quoted name, like a name outside an unquote in a quasiquote, is `E_MALFORMED_FORM`. Nothing in a template is evaluated at compile time, quasiquotes included: a quasiquote in a template is copied into the program and builds its list when the program runs.
 
 ## 23.4 Hygiene
 
@@ -106,7 +157,15 @@ Spec §19.2 requires gensym-based hygiene: every variable a macro introduces is 
 (let tmp 1 (print (add-tmp tmp)))   ; 101
 ```
 
-The expansion is `(let tmp__hyg0 100 (+ tmp__hyg0 tmp))`. `_` is never renamed, and a renamed name keeps its leading underscore, so the unused-variable warnings treat it the same way.
+The expansion is `(let tmp__hyg0 100 (+ tmp__hyg0 tmp))`. Spliced rest arguments are arguments too, and keep their names:
+
+```lisp
+(defmacro with-tmp (&rest body) (let tmp 100 (+ tmp (begin ,@body))))
+
+(let tmp 5 (print (with-tmp (+ tmp 1))))   ; 106: the template's tmp is 100, the caller's 5
+```
+
+`_` is never renamed, and a renamed name keeps its leading underscore, so the unused-variable warnings treat it the same way.
 
 **Free names resolve where the macro is defined.** Module resolution runs before expansion and rewrites every reference to a top-level definition to its canonical key (Chapter 25), so a function the body calls is the one visible at the definition, whatever the call site binds. The only names a call site could still capture are its own local variables. A body that names a variable which is unbound at the definition but local at the call site is rejected instead of captured:
 
@@ -194,10 +253,10 @@ Every operand is a `Bool`, and so is the result: `(or 5 6)` is `E_TYPE_MISMATCH`
 |-------|------|
 | `E_MACRO_NON_TERMINATION` | a macro reached again during its own expansion, or expansion nested more than 256 deep |
 | `E_MACRO_ILLEGAL_ACCESS` | a `defmacro` inside a function body or other form |
-| `E_ARITY_MISMATCH` | a macro call with the wrong number of arguments |
+| `E_ARITY_MISMATCH` | a macro call with the wrong number of arguments, or too few before `&rest` |
 | `E_DUPLICATE_DEFINITION` | two macros with one name, or a macro and a function with one name in one file |
-| `E_MALFORMED_FORM` | a `defmacro` with no body or with more than one body form |
-| `E_MALFORMED_PARAMETER` | a macro parameter that is not an identifier, or a non-identifier argument used where the body needs a name |
+| `E_MALFORMED_FORM` | a `defmacro` with no body or with more than one body form; a `,@` where a form takes a fixed number of expressions, or of something other than the rest parameter; a `,` or `,@` outside a quasiquote and a template |
+| `E_MALFORMED_PARAMETER` | a macro parameter that is not an identifier, a `&rest` not followed by exactly one name at the end of the list, or a non-identifier argument used where the body needs a name |
 | `E_UNBOUND_VARIABLE` | a body names a variable that is local at the call site but unbound where the macro is defined (§23.4) |
 
 Each one points at the offending form in the source.
@@ -253,15 +312,15 @@ A helper function works as well:
 2. **Pass what the body needs from the call site as an argument**: a hygienic body cannot see the caller's locals.
 3. **Never write a recursive macro**: it is rejected with `E_MACRO_NON_TERMINATION`.
 4. **Remember that arguments are substituted**, and may be evaluated more than once or not at all.
-5. **Keep backquote, comma, quote and `@` out of source files** outside strings and comments.
+5. **Build lists in a template with a quasiquote**, `` `(,a ,@rest) ``, not with `[...]` (§23.3).
 
 ## 23.12 Comparison with Other Lisps
 
 | Feature | Common Lisp | Scheme (R7RS) | Racket | Zyl (implemented) |
 |---------|-------------|---------------|--------|-------------------|
 | Hygiene | manual (`gensym`) | `syntax-rules` | `syntax-parse` | automatic renaming of body binders |
-| Template syntax | quasiquote | pattern templates | quasisyntax | the body itself; parameters substituted |
-| Parameters | destructuring lambda list | patterns | patterns | plain identifiers |
+| Template syntax | quasiquote | pattern templates | quasisyntax | the body itself; parameters substituted, `,@` splices a rest parameter |
+| Parameters | destructuring lambda list | patterns | patterns | plain identifiers, optionally `&rest name` |
 | Expansion-time evaluation | ✅ | ❌ (`syntax-rules`) | ✅ | ❌ |
 | Procedural macros | ✅ | ❌ (`syntax-rules`) | ✅ | ❌ |
 | Termination check | ❌ | ❌ | ❌ | ✅ (a macro reached during its own expansion) |

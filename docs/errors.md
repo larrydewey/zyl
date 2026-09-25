@@ -80,7 +80,7 @@ codes spec §28 lists by name.
 | `E_BYTE_VALUE_OOB` | lexer: byte literal out of range 0-255 | `expr_inner.zyl` (`(byte N)` forms) |
 | `E_FLOAT_OVERFLOW` | lexer: float overflow in literal L at S | catalog only |
 | `E_INTEGER_OVERFLOW` | lexer: integer overflow in literal L at S | catalog only |
-| `E_INVALID_CHAR` | lexer: invalid character C at S | `parser.zyl` (located): a character that begins no token, such as a backtick or `#` outside a string or comment (`'` is the quote token) |
+| `E_INVALID_CHAR` | lexer: invalid character C at S | `parser.zyl` (located): a character that begins no token, such as `#`, `$` or a lone `@` outside a string or comment (`'`, `` ` ``, `,` and `,@` are the quote, quasiquote, unquote and splice tokens) |
 | `E_UNEXPECTED_EOF` | lexer: unexpected EOF while expecting C at S | catalog only |
 | `E_UNTERMINATED_STRING` | lexer: unterminated string at S | `parser.zyl` (balance check, located) |
 
@@ -94,8 +94,8 @@ codes spec §28 lists by name.
 | `E_EXPECTED_RBRACKET` | parser: expected ] but found T at S | catalog only |
 | `E_EXPECTED_RCURLY` | parser: expected } but found T at S | catalog only |
 | `E_EXPECTED_RPAREN` | parser: expected ) at S but found T | catalog only |
-| `E_MALFORMED_PARAMETER` | parser: P is not a parameter at S - write a name, or (name Type) | `expr_inner.zyl` (located) |
-| `E_MALFORMED_FORM` | parser: special form F has arguments of the wrong shape at S | `arity_check.zyl` (located): a special form whose parser rejected its shape (`expr_inner.zyl` builds an `EUnknown` node for it), such as `(let x 1)` with no body, a trait method whose parameters are not a list, `test` or `defmacro` with more than one body, a malformed `extern`, or `(quote)`/`(quote a b)`. Such a form used to compile to the constant 0. `expr_inner.zyl` (located, `quote-name-fail`): a name inside quoted data, `'(1 x)`, which has no value since there is no symbol type |
+| `E_MALFORMED_PARAMETER` | parser: P is not a parameter at S - write a name, or (name Type) | `expr_inner.zyl` (located); `macro_expand.zyl` (located, `me-check-rest`): a macro's `&rest` not followed by exactly one name at the end of its parameter list |
+| `E_MALFORMED_FORM` | parser: special form F has arguments of the wrong shape at S | `arity_check.zyl` (located): a special form whose parser rejected its shape (`expr_inner.zyl` builds an `EUnknown` node for it), such as `(let x 1)` with no body, a trait method whose parameters are not a list, `test` or `defmacro` with more than one body, a malformed `extern`, or `(quote)`/`(quote a b)`. Such a form used to compile to the constant 0. `expr_inner.zyl` (located, `quote-name-fail`): a name inside quoted data, `'(1 x)`, which has no value since there is no symbol type; `expr_inner.zyl` (located, `parse-quasiquote`): a malformed quasiquote (a name outside an unquote, a nested quasiquote, a `,@e` that is not a list element, an unquote or splice without one operand); `arity_check.zyl` (located): a `,` or `,@` outside a quasiquote and a macro template; `macro_expand.zyl` (located): in a template, a `,@` into a form that takes a fixed number of expressions (`me-kids`), or of anything but the `&rest` parameter (`me-splice-of`) |
 | `E_RESERVED_KEYWORD` (§28) | parser: reserved keyword K cannot be used as identifier at S | `expr_inner.zyl` (reserved-but-unimplemented forms) |
 | `E_UNBALANCED_PARENS` | parser: unbalanced parens - open and close counts differ | catalog only (the old depth-counter check; superseded by the three below) |
 | `E_UNBALANCED_UNCLOSED` | parser: unclosed opener - opened at S, never reached its matching closer | `parser.zyl` via `sexp_balance.zyl` (located at the opener) |
@@ -119,7 +119,7 @@ over bracket type, and its `sb-hint` supplies the `= help:` text.
 
 | Code | Catalog message | Raised by |
 |------|-----------------|-----------|
-| `E_ARITY_MISMATCH` | type: function arity mismatch for F at S: expected E arguments, found G | `arity_check.zyl` (located), `icnf.zyl` (also arithmetic with no operand, or one operand other than `(- x)`, `(+ x)`, `(* x)`), `expr_inner.zyl` (special forms), REPL interpreter |
+| `E_ARITY_MISMATCH` | type: function arity mismatch for F at S: expected E arguments, found G | `arity_check.zyl` (located), `icnf.zyl` (also arithmetic with no operand, or one operand other than `(- x)`, `(+ x)`, `(* x)`), `expr_inner.zyl` (special forms), `macro_expand.zyl` (a macro call's argument count, or too few before `&rest`), REPL interpreter |
 | `E_ATOMIC_ABA` | region: atomic CAS on non-Pin memory is forbidden | catalog only |
 | `E_BYTEBUF_NOT_PIN` | type: bytebuf-ptr requires Pin region | catalog only |
 | `E_STACK_BYTEBUF_RETURN` | type: Stack ByteBuf cannot be returned | catalog only (a returned Stack bytebuf is `E_REGION_ESCAPE`) |

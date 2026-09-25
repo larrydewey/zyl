@@ -390,6 +390,13 @@ into ExprInner nodes (`expr_inner.zyl`).
 package, `(pub defn ...)`. Without it a definition is package-private
 (§24.3, §24.4).
 
+## Q
+
+**Quasiquote**: `` `d ``, read as `(quasiquote d)`: quoted data with
+holes. `,e` puts the value of `e` in the list and `,@e` every element of
+the list `e`, so `` `(1 ,x ,@ys) `` is a `(List Int)` when `x` is an
+`Int` and `ys` a `(List Int)` (§4.9).
+
 ## R
 
 **RAII**: Resource Acquisition Is Initialisation — `with-resource` in
@@ -399,6 +406,10 @@ Zyl (§12.9). Today it binds the resource but runs no release step.
 matching `lo` through `hi` inclusive.
 
 **Rebinding**: `set!` on a `let-mut` name.
+
+**Rest parameter**: `&rest name` at the end of a macro's parameter
+list. `name` stands for the call's remaining arguments: `,@name` splices
+them into the template, and `name` alone is the list of them (§19.1).
 
 **Region**: A memory area with a lifetime: Stack, Heap, Global,
 Circular or Pin (§9).
@@ -443,6 +454,10 @@ opt-out (§31.8).
 **Special form**: Built-in syntax with its own evaluation rule (e.g.
 `if`, `let`).
 
+**Splice**: `,@e`. In a quasiquote, the elements of the list `e`; in a
+macro template, the arguments of the rest parameter `e`, placed where a
+form takes any number of expressions.
+
 **SSA (Static Single Assignment)**: Each value assigned exactly once —
 the form §18 specifies for ICNF.
 
@@ -469,7 +484,8 @@ heap-allocated stack frames". The implementation runs `main` on a
 thread with a very large stack; there is no TCO pass.
 
 **Template**: A macro's body, into which the call's argument
-expressions are substituted. There is no quasiquote or unquote syntax.
+expressions are substituted. A parameter needs no unquote; `,@` splices
+a rest parameter.
 
 **Trait**: Ad-hoc polymorphism — an interface of method signatures a
 type can implement.
@@ -491,6 +507,10 @@ ADT. A struct field written without a type is one.
 **Unit**: The type with one value, `unit`: the type of statement forms
 (`print`, `set!`, `while`, an `if` without `else`, a `cond` with no
 `else` clause).
+
+**Unquote**: `,e`, read as `(unquote e)`. In a quasiquote, the value of
+`e`; in a macro template, `,x` is the same as `x`. Anywhere else it is
+`E_MALFORMED_FORM`.
 
 **Unsafe**: A capability and a reserved module name. `(use pkg :unsafe
 { ... })` imports need the `unsafe` capability, and no module may be

@@ -12,9 +12,39 @@
 (defmacro name (pattern*) template)
 ```
 
+A pattern is a parameter name. The list may end in `&rest name`: a call
+then passes at least one argument per parameter before `&rest` (fewer is
+`E_ARITY_MISMATCH`), and `name` is bound to the remaining arguments,
+possibly none. `&rest` anywhere else, or not followed by exactly one
+name, is `E_MALFORMED_PARAMETER`. Without `&rest` a call passes exactly
+one argument per parameter (`E_ARITY_MISMATCH`).
+
+In the template:
+
+- a parameter stands for its argument, unevaluated;
+- `,x` is `x` (parameters are substituted anyway);
+- `,@name`, for the `&rest` parameter `name`, splices its arguments in
+  place, in order, where any number of expressions may appear: the
+  arguments of a call (a constructor and `ffi-call` included), `begin`,
+  `print`, `setup` and `teardown`. Elsewhere, such as in an `if`, it is
+  `E_MALFORMED_FORM`, as is a `,@` outside a quasiquote whose operand is
+  not the `&rest` parameter (inside a quasiquote, `,@` is §4.9's);
+- the `&rest` parameter as a value is the list literal of its
+  arguments, `(list a1 .. an)`, so its arguments share one type, and a
+  quasiquote in a template can splice it: `` `(,a ,@rest 0) ``.
+
+A `,` or `,@` still present after expansion is `E_MALFORMED_FORM`.
+
+```lisp
+(defmacro my-when (c &rest body) (if c (begin ,@body) unit))
+(defmacro sum (&rest xs) (+ 0 ,@xs))       ; (sum 1 2 3) is (+ 0 1 2 3)
+(defmacro framed (a &rest xs) `(,a ,@xs 0)) ; (framed 9 8 7) is [9 8 7 0]
+```
+
 ## 19.2 Hygiene
 
 Gensym-based hygiene. All macro-introduced variables are renamed to unique symbols.
+Spliced arguments are the caller's code and keep their names.
 
 ## 19.3 Expansion Algorithm
 
@@ -48,7 +78,9 @@ gaps are recorded here, not papered over.
 
 - **Definition:** `(defmacro name (p1 p2 ...) body)`; `macro` is accepted as
   a synonym. The body is the last form after the parameter list. A
-  parameter that is not an identifier is `E_MALFORMED_PARAMETER`.
+  parameter that is not an identifier is `E_MALFORMED_PARAMETER`, and so
+  is a `&rest` that is not followed by exactly one name at the end of the
+  list (`me-check-rest`).
 - **Registration (§19.5):** top-level macro definitions are collected
   before expansion (`me-collect`) and then removed from the program
   (`me-strip`). Two macros with one name are `E_DUPLICATE_DEFINITION`, as
@@ -69,11 +101,26 @@ gaps are recorded here, not papered over.
   of a `defn`/`def`/`deftype`/`impl`), the argument must be an identifier
   and becomes that name; anything else is `E_MALFORMED_PARAMETER`.
   Parameters and arguments are paired positionally, and a count mismatch
-  is `E_ARITY_MISMATCH` at the call.
+  is `E_ARITY_MISMATCH` at the call; with `&rest`, too few arguments for
+  the parameters before it is (`me-check-arity-rest`).
+- **Rest parameters:** the substitution environment binds a `&rest`
+  parameter to the list of remaining arguments (`SRest`). In a list of
+  expressions the expander rewrites (`me-rewrite-list-acc`), `,@name`
+  is replaced by those arguments (`me-splice-of`); `me-kids` then
+  rejects a changed count unless the node takes any number of children
+  (`me-variadic`: calls, `begin`, `print`, constructors, `ffi-call`,
+  `setup`, `teardown`). The parameter as a value becomes the `Cons`
+  chain of its arguments (`me-list-expr`), built from `core/list`'s own
+  `Cons` and `Nil`, which `me-find-prelude-list` reads from the
+  program's resolved `deftype`. In a template, `(unquote x)` is replaced
+  by `x` (`me-apply`). A quasiquote in a template was already desugared
+  by `qualify.zyl`, so its `,@` is a `zyl-qq-append` call by the time the
+  expander sees it.
 - **Hygiene (§19.2):** every variable the body binds is renamed to a fresh
   `name__hygN` per expansion; `N` is a counter threaded through the walk
   in source order, so expansion stays deterministic. `_` and
-  compiler-internal `__` names are not renamed. Arguments are not renamed.
+  compiler-internal `__` names are not renamed. Arguments, spliced ones
+  included, are not renamed.
   Free names resolve at the definition site: module resolution has already
   qualified every reference to a top-level definition, and a free body
   name that is a local variable at the call site is `E_UNBOUND_VARIABLE`
@@ -92,5 +139,9 @@ gaps are recorded here, not papered over.
 
 ### What is not implemented
 
-- **Patterns.** Parameters are plain names; there is no `&` rest parameter
-  and no destructuring.
+- **Patterns.** Parameters are plain names, optionally ending in
+  `&rest name`; there is no destructuring and no literal pattern.
+- **List literals in templates.** `[0 ,@xs]` in a template splices into
+  the arguments of the `Cons` the list literal became, which yields an
+  ill-formed `Cons` and an `E_TYPE_MISMATCH`, not a longer list. Write
+  `` `(0 ,@xs) ``.

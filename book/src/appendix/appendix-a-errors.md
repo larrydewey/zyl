@@ -93,7 +93,7 @@ with its code split off the front of the message.
 | `E_UNTERMINATED_STRING` | A string literal reached end of input with no closing quote |
 | `E_BYTE_VALUE_OOB` | A `byte` literal outside 0..255, or a non-integer argument to `byte` |
 | `E_INVALID_ESCAPE` | A backslash escape in a string literal that the lexer does not know |
-| `E_INVALID_CHAR` | A character that cannot begin any token, such as a backtick or `#` outside a string or comment, located at that byte. (`'` is the quote token.) |
+| `E_INVALID_CHAR` | A character that cannot begin any token, such as `#`, `$` or a lone `@` outside a string or comment, located at that byte. (`'`, `` ` ``, `,` and `,@` are the quote, quasiquote, unquote and splice tokens.) |
 | `E_UNEXPECTED_EOF` | End of input while a token was still open. *Catalogued only.* |
 | `E_INTEGER_OVERFLOW` | An integer literal too large for `Int`. *Catalogued only.* |
 | `E_FLOAT_OVERFLOW` | A float literal too large for `Float`. *Catalogued only.* |
@@ -106,7 +106,7 @@ with its code split off the front of the message.
 | `E_UNBALANCED_UNEXPECTED_CLOSE` | A closing delimiter with no opener open |
 | `E_UNBALANCED_MISMATCHED_BRACKET` | A closer that does not match its opener |
 | `E_MALFORMED_PARAMETER` | A parameter that is neither a name nor `(name Type)` — usually a missing `)` |
-| `E_MALFORMED_FORM` | A special form whose arguments do not have the shape it requires, such as `(if c)` with no branches, or `(quote a b)`; also a name inside quoted data, `'(1 x)`, since there is no symbol type. Such a form used to compile to the constant 0, which let some tests pass without testing anything. Raised by `arity_check.zyl`. |
+| `E_MALFORMED_FORM` | A special form whose arguments do not have the shape it requires, such as `(if c)` with no branches, or `(quote a b)`; also a name inside quoted data, `'(1 x)`, since there is no symbol type, and the same in quasiquoted data outside an unquote, `` `(1 x) ``; a quasiquote inside a quasiquote; a `,` or `,@` outside a quasiquote and a macro template; and in a template, a `,@` where a form takes a fixed number of expressions, or of anything but the `&rest` parameter. Such a form used to compile to the constant 0, which let some tests pass without testing anything. Raised by `arity_check.zyl`. |
 | `E_UNEXPECTED_TOKEN_IN_EXPR` | A token that cannot appear in expression position |
 | `E_RESERVED_KEYWORD` | A reserved form that is not implemented: the 16-, 32- and 64-bit `load-*`/`store-*` names |
 | `E_UNBALANCED_PARENS` | Open and close counts differ. *Catalogued only; the three `E_UNBALANCED_*` codes above replace it.* |
@@ -132,7 +132,7 @@ enforcing that in definition forms is listed under FUTURE in §30. Today
 | `E_MACRO_NON_TERMINATION` | A macro was called while its own expansion was in progress (directly or through other macros), or expansion nested more than 256 deep. |
 | `E_MACRO_ILLEGAL_ACCESS` | A `defmacro` inside a function body or other form, where its template could name run-time values. |
 
-Macro expansion also reports `E_ARITY_MISMATCH` (wrong argument count), `E_DUPLICATE_DEFINITION` (a macro name defined twice, or shared with a function in the same file), `E_MALFORMED_PARAMETER` (a non-identifier parameter, or a non-identifier argument where the template needs a name) and `E_UNBOUND_VARIABLE` (a template naming a call-site local, which hygiene forbids it to capture).
+Macro expansion also reports `E_ARITY_MISMATCH` (wrong argument count, or too few before `&rest`), `E_DUPLICATE_DEFINITION` (a macro name defined twice, or shared with a function in the same file), `E_MALFORMED_PARAMETER` (a non-identifier parameter, a `&rest` not followed by exactly one name at the end of the list, or a non-identifier argument where the template needs a name) and `E_UNBOUND_VARIABLE` (a template naming a call-site local, which hygiene forbids it to capture).
 
 ## A.5 Types, Names and Arity (phases 4 and 5)
 

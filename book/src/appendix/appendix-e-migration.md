@@ -225,7 +225,9 @@ macro_rules! max { ($a:expr, $b:expr) => { if $a > $b { $a } else { $b } } }
 ```
 
 **Differences**:
-- Only template macros; no procedural macros and no quasiquote syntax.
+- Only template macros; no procedural macros. A template needs no
+  quasiquote: parameters are substituted directly, and `&rest body` with
+  `,@body` takes the place of `$($x:expr),*`.
 - Arguments are spliced in as source, so an argument used twice is
   evaluated twice — as in Rust's `macro_rules!`.
 - Hygiene is automatic (§19.2): names a template binds are renamed per

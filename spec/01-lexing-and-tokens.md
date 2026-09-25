@@ -14,8 +14,10 @@ UTF-8.
 
 ```
 IDENTIFIER | INTEGER | FLOAT | STRING | BOOLEAN | SYMBOL | KEYWORD
-"(" | ")" | "{" | "}" | ":" | "[" | "]" | "'"
+"(" | ")" | "{" | "}" | ":" | "[" | "]" | "'" | "`" | "," | ",@"
 ```
+
+An identifier may start with `&` (as in `&rest`, §19.1).
 
 ### 1.2.1 Reader sugar
 
@@ -23,10 +25,16 @@ IDENTIFIER | INTEGER | FLOAT | STRING | BOOLEAN | SYMBOL | KEYWORD
 |---------|----------|---------|
 | `[e1 ... en]` | `(list e1 ... en)` | a list literal (§4.9) |
 | `'d` | `(quote d)` | quoted constant data (§4.9) |
+| `` `d `` | `(quasiquote d)` | quoted data with holes (§4.9) |
+| `,e` | `(unquote e)` | a value in a quasiquote or macro template |
+| `,@e` | `(unquote-splicing e)` | a spliced list in a quasiquote, or a spliced `&rest` parameter in a macro template (§19.1) |
 
 In a derive, `(derive T [Eq Show])` and `(:derive [Eq Show])`, the
-bracket still names traits. Any other character outside a string or
-comment, such as a backtick, is `E_INVALID_CHAR`.
+bracket still names traits. `,@` is one token, so `, @e` is a comma
+followed by an invalid `@`. `,` and `,@` mean something only inside a
+quasiquote or a macro template; anywhere else they are
+`E_MALFORMED_FORM`. Any other character outside a string or comment,
+such as `#`, `@` or `$`, is `E_INVALID_CHAR`.
 
 ## 1.3 Keywords
 
@@ -74,7 +82,8 @@ divergence.
 
 `TkIdent`, `TkInt`, `TkFloat`, `TkString`, `TkBool`, `TkSymbol`,
 `TkKeyword`, `TkLParen`, `TkRParen`, `TkLBrace`, `TkRBrace`, `TkLBracket`,
-`TkRBracket`, `TkColon`, `TkQuote` and `TkEof`. Every token carries its byte offset
+`TkRBracket`, `TkColon`, `TkQuote`, `TkQuasi`, `TkUnquote`, `TkSplice`
+and `TkEof`. Every token carries its byte offset
 in the source, which is how diagnostics report `file:line:col`.
 
 ### Literals
@@ -92,7 +101,7 @@ in the source, which is how diagnostics report `file:line:col`.
 
 ### Identifiers, keywords and symbols
 
-- An identifier starts with a letter or one of `_ - ? ! + / = < > * %`,
+- An identifier starts with a letter or one of `_ - ? ! + / = < > * % &`,
   and may continue with those characters, digits and `.`.
 - `:name` is a keyword token. The reader keeps the colon (`AstIdent ":name"`),
   which is what lets the module resolver tell `(use pkg:mod)` from
@@ -112,7 +121,10 @@ trait list drops that head (`derive-drop-list`, `expr_inner.zyl`). There
 are no vector or map literals.
 
 `'` is `TkQuote`: the reader reads the next form `d` and returns
-`(quote d)` (`read-quote`).
+`(quote d)`. In the same way `` ` `` (`TkQuasi`) gives `(quasiquote d)`,
+`,` (`TkUnquote`) `(unquote d)` and `,@` (`TkSplice`)
+`(unquote-splicing d)` (`read-prefixed`). The lexer reads `,@` as one
+token when `@` follows the comma directly (`lex-c3`).
 
 Before reading, `stdlib/compiler/sexp_balance.zyl` checks that every
 opener has a matching closer of the same kind and reports
@@ -122,7 +134,7 @@ opener has a matching closer of the same kind and reports
 ### Comments
 
 Only `;` line comments exist. A character the lexer does not recognise
-(a backtick, say) is `E_INVALID_CHAR`.
+(`#`, say) is `E_INVALID_CHAR`.
 
 ### Reserved keywords (§1.3.1)
 

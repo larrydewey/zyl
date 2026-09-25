@@ -24,7 +24,7 @@ Macro definitions exist only at compile time; they are removed from the program 
 
 ### Basic Syntax
 
-The template is ordinary Zyl code, written exactly as the expansion should read. There is no quasiquote: backquote, `,` and `,@` are not supported, and a template that uses them does not compile.
+The template is ordinary Zyl code, written exactly as the expansion should read. A parameter is substituted wherever the template names it, so the template needs no unquote. `,x` is accepted and means the same as `x`; `,@` splices a rest parameter (see Rest Parameters and Splicing, below).
 
 ```lisp
 (defmacro my-unless (c body)
@@ -123,9 +123,57 @@ evaluating
 
 There is no way to print the *source* of the argument (the spec's `',expr`); a template can only place the argument where it will be evaluated.
 
+### Rest Parameters and Splicing
+
+A parameter list may end in `&rest name`. The macro then takes any number of further arguments, and `name` stands for all of them. In the template, `,@name` splices them in place, in order:
+
+```lisp
+(defmacro my-when (c &rest body)
+  (if c (begin ,@body) unit))
+
+(defmacro sum (&rest xs) (+ 0 ,@xs))
+
+(defmacro count-args (&rest xs) (list-length xs))
+
+(defmacro framed (a &rest xs) `(,a ,@xs 0))
+
+(defn main ()
+  (begin
+    (my-when true (print "one") (print "two"))
+    (my-when false (print "skipped"))
+    (print (sum 1 2 3))
+    (print (sum))
+    (print (count-args 5 6 7))
+    (print (framed 9 8 7))
+    0))
+```
+
+```
+one
+two
+6
+0
+3
+[9, 8, 7, 0]
+```
+
+`(my-when true (print "one") (print "two"))` expands to `(if true (begin (print "one") (print "two")) unit)`, and `(sum 1 2 3)` to `(+ 0 1 2 3)`. The rest may be empty: `(sum)` is `(+ 0)`.
+
+A splice changes how many expressions a form holds, so it is allowed only where any number may appear: the arguments of a call, `begin` and `print`. Anywhere else, such as in an `if`, which has exactly three parts, it is `E_MALFORMED_FORM`:
+
+```lisp
+(defmacro bad (c &rest body) (if c ,@body 0))
+;; (bad true 1 2) → error[E_MALFORMED_FORM]: `,@` splices only where any
+;;                  number of expressions may appear
+```
+
+Used without `,@`, as in `count-args`, a rest parameter is the list of its arguments: `(count-args 5 6 7)` is `(list-length (list 5 6 7))`, so the arguments must have one type. That also lets a quasiquote in the template (Chapter 2) splice them, as `framed` does. To build a list in a template, use a quasiquote rather than `[...]`: a list literal is a chain of two-argument `Cons` calls, and splicing into one does not make a longer list.
+
+The arguments before `&rest` are still required: calling `framed` with no arguments is `E_ARITY_MISMATCH` ("takes at least 1 argument(s)"). `&rest` must be followed by exactly one name, at the end of the list; anything else is `E_MALFORMED_PARAMETER`.
+
 ## 10.3 Hygiene
 
-The specification requires gensym-based hygiene: names a template introduces are renamed so they cannot collide with the caller's names. The expander renames every variable a template binds (`let`, `let-mut`, `fn` parameters, `for`, `match` pattern variables, the `catch` name of a `try`) to a fresh name in each expansion, and leaves the arguments, which are the caller's code, alone:
+The specification requires gensym-based hygiene: names a template introduces are renamed so they cannot collide with the caller's names. The expander renames every variable a template binds (`let`, `let-mut`, `fn` parameters, `for`, `match` pattern variables, the `catch` name of a `try`) to a fresh name in each expansion, and leaves the arguments, which are the caller's code, alone. Spliced rest arguments are arguments too:
 
 ```lisp
 (defmacro add-tmp (e)
@@ -246,7 +294,7 @@ Because a template is never evaluated, a recursive macro can never stop, even wh
 ;; itself, so its expansion never ends
 ```
 
-A macro call must pass exactly one argument per parameter (`E_ARITY_MISMATCH`), and a macro name may be defined only once (`E_DUPLICATE_DEFINITION`, also raised for a function with the same name as a macro in the same file).
+A macro call must pass exactly one argument per parameter, or at least one per parameter before `&rest` (`E_ARITY_MISMATCH`), and a macro name may be defined only once (`E_DUPLICATE_DEFINITION`, also raised for a function with the same name as a macro in the same file).
 
 ## 10.8 Built-in Forms That Look Like Macros
 
@@ -317,9 +365,9 @@ The expander is `stdlib/compiler/macro_expand.zyl`. It runs on the parsed progra
 2. **Strip** (`me-strip`): remove the macro definitions from the program.
 3. **Rewrite** (`me-rewrite`): walk every remaining form, every node shape, with a context holding a substitution environment, the macros whose expansion is in progress, and the call site's local variables. At a call `(f arg ...)`:
    - rewrite the arguments under the current context, which expands the macros inside them first;
-   - if `f` names a macro, check that it is not already being expanded and that the argument count matches, then rewrite its template under a new environment that binds each parameter to the corresponding rewritten argument, and return the result.
+   - if `f` names a macro, check that it is not already being expanded and that the argument count matches, then rewrite its template under a new environment that binds each parameter to the corresponding rewritten argument (and a `&rest` parameter to the list of the remaining ones), and return the result.
 
-In a template, a binder is renamed by pushing a `name -> name__hygN` entry onto the environment for the binder's scope; an identifier is looked up in the environment and replaced by the argument or the fresh name it maps to. An argument is inserted as it is and not walked again, so the caller's names inside it are never renamed. Each rewritten node keeps its original source position, so diagnostics inside expanded code point at the user's source.
+In a template, a binder is renamed by pushing a `name -> name__hygN` entry onto the environment for the binder's scope; an identifier is looked up in the environment and replaced by the argument or the fresh name it maps to. A `,@name` in a list of expressions is replaced by the rest arguments, and the node is then checked to be one that takes any number of children. An argument is inserted as it is and not walked again, so the caller's names inside it are never renamed. Each rewritten node keeps its original source position, so diagnostics inside expanded code point at the user's source.
 
 ### Hygiene and Canonical Keys
 
