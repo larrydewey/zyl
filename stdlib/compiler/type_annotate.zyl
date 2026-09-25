@@ -149,6 +149,30 @@
   (let r (ta-root st t)
     (if (< r 0) 0 (ta-wset (ta-vars st) r 1))))
 
+; --- strict report mode (docs/sound-types-design.md, phase 1) --------------
+; ZYL_STRICT_TYPES set: every unification failure, occurs-check failure and
+; "don't know" type is reported as a located W_TYPE_STRICT warning at the
+; innermost expression being typed (runtime cell 1), without changing what
+; the pass computes. Cell 0 holds the mode, set per program.
+(defn ta-strict-p () (> (ffi-call "zyl_cell_get" 0 1000) 0))
+
+(defn ta-strict (msg)
+  (if (ta-strict-p)
+    (let node (ffi-call "zyl_cell_get" 1 1000)
+      (if (= node 0)
+        (ffi-call "zyl_warn_emit" (str-concat "warning[W_TYPE_STRICT]: " (str-concat msg "\n")) 1000)
+        (err-warn-at "W_TYPE_STRICT" msg node "")))
+    0))
+
+; A fresh variable standing for a type the pass does not know.
+(defn ta-dk (st why)
+  (let _ (ta-strict (str-concat "no type for " why))
+    (ta-fresh st)))
+
+(defn ta-dk-list (st n acc)
+  (let _ (if (> n 0) (ta-strict "field without a type") 0)
+    (ta-fresh-list st n acc)))
+
 (defn ta-occurs (st i t)
   (match (ta-resolve st t)
     (TaV j (= i j))
@@ -165,7 +189,10 @@
   (let ok (ta-unify-r st (ta-resolve st a) (ta-resolve st b))
     (if (> ok 0)
       1
-      (ta-seq (ta-poison st a) (ta-seq (ta-poison st b) 0)))))
+      (let _ (if (ta-strict-p)
+               (ta-strict (str-concat "cannot unify " (str-concat (ta-show st a) (str-concat " with " (ta-show st b)))))
+               0)
+        (ta-seq (ta-poison st a) (ta-seq (ta-poison st b) 0))))))
 
 (defn ta-unify-r (st ra rb)
   (match ra
@@ -182,7 +209,7 @@
       (match other
         (TaV j (if (= i j) 1 (ta-seq (ta-wset (ta-vars st) i other) 1)))
         (_ (if (ta-occurs st i other)
-             (ta-seq (ta-wset (ta-vars st) i 1) 1)
+             (ta-seq (ta-strict "infinite type (occurs check)") (ta-seq (ta-wset (ta-vars st) i 1) 1))
              (ta-seq (ta-wset (ta-vars st) i other) 1)))))))
 
 ; A poisoned class absorbs: an unbound var joining it becomes poisoned.
@@ -255,7 +282,7 @@
 ; Slots from `args` first, fresh for the rest.
 (defn ta-slots-with (st args n)
   (match args
-    (Nil (ta-fresh-list st n Nil))
+    (Nil (ta-dk-list st n Nil))
     (Cons h t (if (<= n 0) Nil (Cons h (ta-slots-with st t (- n 1)))))))
 
 ; Generalize: every unbound var becomes a slot.
@@ -325,16 +352,16 @@
     (EAtom a
       (match a
         (AIdent n (ta-conv-name st n Nil scope))
-        (_ (TaR (ta-fresh st) scope))))
+        (_ (TaR (ta-dk st "type expression") scope))))
     (EApply head args (ta-conv-name st head args scope))
     (ECall op args
       (match (Expr.inner op)
         (EAtom a
           (match a
             (AIdent n (ta-conv-name st n args scope))
-            (_ (TaR (ta-fresh st) scope))))
-        (_ (TaR (ta-fresh st) scope))))
-    (_ (TaR (ta-fresh st) scope))))
+            (_ (TaR (ta-dk st "type expression") scope))))
+        (_ (TaR (ta-dk st "type expression") scope))))
+    (_ (TaR (ta-dk st "type expression") scope))))
 
 (defn ta-conv-name (st n args scope)
   (if (ta-builtin-type n)
@@ -342,7 +369,7 @@
     (if (ta-streq n "Secret")
       (match args
         (Cons a _ (ta-conv st a scope))
-        (Nil (TaR (ta-fresh st) scope)))
+        (Nil (TaR (ta-dk st "Secret without a type") scope)))
       (match (ta-scope-get scope n)
         (Some t (TaR t scope))
         (None
@@ -391,7 +418,7 @@
   (if (<= n 0)
     Nil
     (match ts
-      (Nil (Cons (ta-fresh st) (ta-pad st Nil (- n 1))))
+      (Nil (Cons (ta-dk st "missing type argument") (ta-pad st Nil (- n 1))))
       (Cons h t (Cons h (ta-pad st t (- n 1)))))))
 
 ; --- collection ---------------------------------------------------------------
@@ -610,7 +637,11 @@
         (Pair k v (if (ta-streq k n) v (ta-env-get rest n)))))))
 
 (defn ta-expr (st ctx env e)
-  (ta-rec e (ta-expr-node st ctx env e)))
+  (let prev (ffi-call "zyl_cell_get" 1 1000)
+    (let _ (ffi-call "zyl_cell_set" 1 e 1000)
+      (let t (ta-rec e (ta-expr-node st ctx env e))
+        (let _ (ffi-call "zyl_cell_set" 1 prev 1000)
+          t)))))
 
 (defn ta-list (st ctx env es)
   (match es
@@ -717,7 +748,7 @@
     (EAtomicFetchAdd b o v (ta-bytes-op st ctx env b (ta-l2 o v)))
     (EAtomicMax b o v (ta-bytes-op st ctx env b (ta-l2 o v)))
     (EAtomicMin b o v (ta-bytes-op st ctx env b (ta-l2 o v)))
-    (_ (ta-fresh st))))
+    (_ (ta-dk st "form not typed"))))
 
 (defn ta-atom (st ctx env a)
   (match a
@@ -726,7 +757,7 @@
     (ABool _ (ta-bool))
     (AStr _ (ta-str))
     (AKeyword _ (ta-str))
-    (ANil (ta-fresh st))
+    (ANil (ta-dk st "nil"))
     (AIdent n (ta-ident st ctx env n))
     (ASymbol n (ta-ident st ctx env n))))
 
@@ -743,10 +774,10 @@
 (defn ta-ctor-value (st n)
   (let vd (ta-sget (ta-variants st) n)
     (if (= vd 0)
-      (ta-fresh st)
+      (ta-dk st "unknown identifier")
       (match (ta-ctor-inst st vd)
         (TaF ps r (match ps (Nil r) (_ (TaF ps r))))
-        (_ (ta-fresh st))))))
+        (_ (ta-dk st "unknown identifier"))))))
 
 (defn ta-ctor-inst (st vd)
   (match vd
@@ -868,8 +899,8 @@
                         (let sc (ta-sget (ta-traits st) dotted)
                           (let _ (if (= sc 0) 0 (ta-unify st (ta-inst st sc) ct))
                             (ta-seq (ta-note st ctx e 0 dotted ct -1) r)))))))))))
-        (Nil (ta-fresh st))))
-    (Nil (ta-fresh st))))
+        (Nil (ta-dk st "malformed method call"))))
+    (Nil (ta-dk st "malformed method call"))))
 
 (defn ta-str-lit (e)
   (match (Expr.inner e)
@@ -920,7 +951,7 @@
 
 (defn ta-call-go (st ctx env e n args)
   (if (ta-streq n "with-region")
-    (ta-last (ta-list st ctx env args) (ta-fresh st))
+    (ta-last (ta-list st ctx env args) (ta-dk st "with-region shape"))
   (if (ta-streq n "ffi-call")
     (ta-ffi-call st ctx env args)
     (let oc (ta-op-class n)
@@ -966,8 +997,8 @@
   (if (ta-key-is n "str-concat") (ta-sig2 (ta-str) (ta-str) (ta-str))
   (if (ta-key-is n "str-length") (TaF (Cons (ta-str) Nil) (ta-int))
   (if (ta-key-is n "str-substring") (TaF (ta-l3 (ta-str) (ta-int) (ta-int)) (ta-str))
-  (if (ta-key-is n "str-equal") (ta-sig2 (ta-str) (ta-str) (ta-fresh st))
-  (if (ta-key-is n "str-eq") (ta-sig2 (ta-str) (ta-str) (ta-fresh st))
+  (if (ta-key-is n "str-equal") (ta-sig2 (ta-str) (ta-str) (ta-dk st "str-equal result"))
+  (if (ta-key-is n "str-eq") (ta-sig2 (ta-str) (ta-str) (ta-dk st "str-eq result"))
   (if (ta-key-is n "print-string") (TaF (Cons (ta-str) Nil) (ta-int))
   (if (ta-key-is n "print-float") (TaF (Cons (ta-flt) Nil) (ta-int))
   0))))))))
@@ -1021,7 +1052,7 @@
 (defn ta-call-ctor (st ctx env n args)
   (let vd (ta-ctor-lookup st n)
     (if (= vd 0)
-      (ta-seq (ta-list st ctx env args) (ta-fresh st))
+      (ta-seq (ta-list st ctx env args) (ta-dk st "call to an unknown name"))
       (let tc (ta-ctor-inst st vd)
         (let ts (ta-list st ctx env args)
           (let _ (ta-check-fields st n tc args ts)
@@ -1041,13 +1072,13 @@
 
 (defn ta-ffi-call (st ctx env args)
   (match args
-    (Nil (ta-fresh st))
+    (Nil (ta-dk st "ffi-call shape"))
     (Cons sym rest
       (let _ (ta-ffi-args st ctx env (ta-butlast rest))
         (let _ (ta-list st ctx env (ta-last-only rest))
         (match (Expr.inner sym)
-          (EAtom a (match a (AStr s (ta-ffi-ret st s)) (_ (ta-fresh st))))
-          (_ (ta-fresh st))))))))
+          (EAtom a (match a (AStr s (ta-ffi-ret st s)) (_ (ta-dk st "ffi-call symbol"))))
+          (_ (ta-dk st "ffi-call symbol"))))))))
 
 (defn ta-butlast (xs)
   (match xs
@@ -1063,7 +1094,7 @@
   (ta-seq (ta-list st ctx env args) 0))
 
 (defn ta-ffi-ret (st s)
-  (if (ta-ffi-str s) (ta-str) (ta-fresh st)))
+  (if (ta-ffi-str s) (ta-str) (ta-dk st "untyped ffi result")))
 
 (defn ta-ffi-str (s)
   (if (ta-streq s "zyl_cstr_concat") true
@@ -1229,12 +1260,12 @@
   (let tx (ta-expr st ctx env x)
     (let vd (ta-sget (ta-variants st) "Some")
       (if (= vd 0)
-        (ta-fresh st)
+        (ta-dk st "unwrap")
         (match (ta-ctor-inst st vd)
           (TaF fts rt
             (let _ (ta-unify st tx rt)
-              (ta-nth fts 0 (ta-fresh st))))
-          (_ (ta-fresh st)))))))
+              (ta-nth fts 0 (ta-dk st "unwrap"))))
+          (_ (ta-dk st "unwrap")))))))
 
 (deftype TaPend (TaPend Int TaTy String TaTy Int))
 
@@ -1264,7 +1295,7 @@
             (if (< idx 0)
               (if (> isst 0) (ta-no-field node n field names) 1)
               (match (ta-subst st t (ta-slots-with st args nq))
-                (TaF fts _ (ta-seq (ta-unify st r (ta-nth fts idx (ta-fresh st))) 1))
+                (TaF fts _ (ta-seq (ta-unify st r (ta-nth fts idx (ta-dk st "struct field index"))) 1))
                 (_ 1)))))))))
 
 (defn ta-str-index (xs s i)
@@ -1558,6 +1589,8 @@
 ; Returns the specialized instances to append to the program.
 (defn ta-annotate-program (exprs)
   (begin
+    (ffi-call "zyl_cell_set" 0 (if (= (ffi-call "zyl_getenv" "ZYL_STRICT_TYPES" 1000) 0) 0 1) 1000)
+    (ffi-call "zyl_cell_set" 1 0 1000)
     (ffi-call "zyl_attr_clear" 0 1000)
     (ffi-call "zyl_attr_clear" 1 1000)
     (ffi-call "zyl_attr_clear" 2 1000)

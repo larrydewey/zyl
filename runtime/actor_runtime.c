@@ -4913,3 +4913,9 @@ long long zyl_bytebuf_new_r(long long region, long long cap) {
     h->cap = cap;
     return (long long)(size_t)h;
 }
+
+/* Sixteen process-wide word cells for compiler passes (the type pass's
+   strict-mode flag and current node). */
+static long long g_cells[16];
+long long zyl_cell_get(long long i) { return (i >= 0 && i < 16) ? g_cells[i] : 0; }
+long long zyl_cell_set(long long i, long long v) { if (i >= 0 && i < 16) g_cells[i] = v; return 0; }
