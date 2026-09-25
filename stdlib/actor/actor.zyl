@@ -20,9 +20,10 @@
 (defn actor-send (actor message)
   (send actor message))
 
-; Send a message with timeout, wrapped in a Result.
-; Returns: Result<Unit, Int>
-(defn actor-send-with-timeout (actor message timeout)
+; Send a message, wrapped in a Result. The timeout is not implemented:
+; send never blocks on a mailbox, so there is nothing to time out yet.
+; Returns: Result<Unit, String>
+(defn actor-send-with-timeout (actor message _timeout)
   (try
     (Ok (send actor message))
     (catch e

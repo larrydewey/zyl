@@ -2290,9 +2290,8 @@
 ; itself (there's nothing to extract) -- flagged as a real limitation
 ; when this was scoped, not a hidden one. NOT supported on the trailing
 ; wildcard arm: a failed guard there has nowhere left to fall through
-; to (Rust makes this a runtime panic; replicating that is more
-; machinery than this fix's scope), so a `(when ...)` on `_` is
-; silently ignored rather than enforced -- an accepted, narrow gap.
+; to, so a match whose `_` arm has a guard is rejected as
+; E_MATCH_NONEXHAUSTIVE (the guarded arm is not a catch-all).
 (defn ast-is-guard-marker (h)
   (match h
     (AList kids
@@ -2448,8 +2447,8 @@
 ; Build nested EIf comparing the bound scrutinee against each arm's
 ; alternatives (and guard, if any) in turn. The last arm (already
 ; checked to be `_` by the caller) supplies the base case body
-; directly, with no comparison -- see ast-is-guard-marker's own comment
-; for why a guard on the wildcard arm itself is silently ignored.
+; directly, with no comparison (a guarded `_` never gets here; see
+; ast-is-guard-marker's comment).
 (defn build-literal-chain (scrutinee-name raw-arms)
   (match raw-arms
     (Nil (Expr (EAtom ANil)))

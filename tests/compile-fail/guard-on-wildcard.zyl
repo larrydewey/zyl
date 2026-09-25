@@ -1,0 +1,5 @@
+; expect-error: E_MATCH_NONEXHAUSTIVE
+; A guard on the last `_` arm has nothing to fall through to: the
+; guarded arm is not a catch-all, so the match is not exhaustive.
+(defn f (v) (match v (0 "zero") (_ (when (> v 100)) "big")))
+(defn main () (begin (print (f 3)) 0))

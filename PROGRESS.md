@@ -7,7 +7,7 @@ was true when it was written. Where a later session changed something an
 entry reports as open, the entry carries a short *Status (date)* note
 rather than a rewrite.
 
-## Current State (verified 2026-09-23, HEAD `3e65944`; build section updated 2026-09-24)
+## Current State (verified 2026-09-23, HEAD `3e65944`; build and compiler sections updated 2026-09-25)
 
 Every claim in this section was checked against the source tree, the git
 history, or a probe compile with `build/boot/zyl-self` on 2026-09-23.
@@ -26,11 +26,12 @@ history, or a probe compile with `build/boot/zyl-self` on 2026-09-23.
 - `./boot.sh` produces `build/boot/{zyl-self, stage2.bin, zyl-lsp,
   zyl-repl, stdlib/, actor_runtime.c, actor_runtime.h}`. The self-build
   prints no warnings (swept 2026-09-24).
-- `./run_regression_tests.sh --full --no-boot` passes **200/200**
-  (updated 2026-09-24, real regions). Compile-fail tests may carry a
-  `; expect-error: CODE` line, which pins the failure to that code. The interpreter category runs the regression and smoke
-  tests both through the ICNF interpreter and as compiled binaries and
-  diffs the output.
+- `./run_regression_tests.sh --full --no-boot` passes **227/227**
+  (updated 2026-09-25, sound types). Compile-fail tests may carry a
+  `; expect-error: CODE` line, which pins the failure to that code. The
+  interpreter category runs the regression and smoke tests both through
+  the ICNF interpreter, in its tag-checking mode (`ZYL_INTERP_CHECK=1`),
+  and as compiled binaries, and diffs the output.
 - The specification is `zyl_specification.txt` **v5.0** (§0–§31, §31 being
   the package system); `spec/` is the structured copy, including
   `spec/16-package-system.md`.
@@ -39,11 +40,11 @@ history, or a probe compile with `build/boot/zyl-self` on 2026-09-23.
 
 - Phase order (`stdlib/compiler/pipeline.zyl`): balance check, parse,
   module resolution and qualification, macro expansion, the checks
-  (capability, duplicate definition, arity, mutability/aliasing,
-  exhaustiveness, unused, secret), derive expansion, type inference,
-  monomorphization (impl lifting), closure lifting, assert lowering,
-  type annotation (HM, static trait resolution, per-type
-  specialization), ICNF lowering,
+  (capability, duplicate definition, arity, malformed forms, restricted
+  FFI entries, mutability/aliasing, exhaustiveness, unused, secret),
+  derive expansion, impl lifting, closure lifting, type checking
+  (`type_annotate.zyl`: sound HM, static trait resolution, per-type
+  specialization of calls and function values), ICNF lowering,
   optimization (constant folding and dead-branch elimination), region
   inference (a provably non-escaping variant becomes `IStackVariant`;
   then `rg-regions` places every allocation and call site in the frame's
@@ -58,6 +59,15 @@ history, or a probe compile with `build/boot/zyl-self` on 2026-09-23.
   explicit `arena` or `fixed` region (`E_REGION_SPEC`,
   `E_REGION_EXHAUSTED`). `ZYL_REGIONS=0` at compile time turns region
   inference off.
+- Types are sound (2026-09-25, `docs/sound-types-design.md`, spec
+  §4.8–§4.10): every type error is reported, then the compile fails
+  (`ZYL_STRICT_TYPES=report` only counts). Unit is a type, conditions
+  are Bool, arithmetic is Int or Float with no conversion, traits have
+  `Self`, untyped struct fields are implicit type parameters, runtime
+  functions are typed by `compiler/ffi_sigs.zyl`, foreign functions by
+  `(extern ...)`, and there is no cast form and no run-time trait
+  dispatch. The one known hole is `receive` (untyped mailboxes, removed
+  by the typed-channel work).
 - Covered by the suite: structs, ADTs with per-ADT exhaustiveness
   checking, literal/OR/range/guard patterns, `_` and `_`-prefixed names
   as discards, generics through monomorphization, traits and derive,
@@ -135,30 +145,13 @@ Compiler:
   freed; the interpreter ignores regions, so `with-region` byte limits
   hold only in compiled code; the Global and Circular regions are names
   only (Global is the top-level `def` values, which are heap).
-- Several name lookups in `type_inference.zyl` compare strings with `=`,
-  which is a pointer comparison when the operand kinds are unknown, so a
-  builtin operator is never recognized by name. REPL `:type (+ 1 2)`
-  answers *unresolved*. The fix is a type-inference change; see the
-  header of `stdlib/lsp/compiler_bridge.zyl`.
-- Codegen kinds (String/Float) come from `compiler/type_annotate.zyl`, an
-  HM pass over the final Expr program, as well as from literals and
-  annotations. Values read from `Vec`, `Map`, ADT fields, struct fields,
-  generic returns and closure captures print and compare correctly.
-  Trait calls resolve statically from the receiver's type, and a
-  function that uses a trait method or `print` on a type variable is
-  specialized per concrete call (`f~T`). The prelude trait `Show`
-  (`core/show`) has impls for the primitives, `List`, `Option`,
-  `Result`, `Vec` and `Map`; `(derive T Show)` writes one for an ADT or
-  struct; `print` of a value with a Show impl prints its text.
-  `==`/`=`/`!=` on ADT and struct values compare by content, deeply,
-  through a generated per-type equality function (2026-09-24). An
-  argument that definitely clashes with a parameter annotation or a
-  declared constructor field type is `E_TYPE_MISMATCH`; every other
-  unification failure still fails open (`(+ 1 "a")` compiles).
-  Still open: `derive` of anything but `Show` generates nothing;
-  `(defstruct ... (:derive ...))` is not parsed; ADT `<`/`>` order by
-  raw field words (`zyl_variant_cmp`); constructor calls are not
-  arity-checked.
+- Types (2026-09-25): `receive` returns any type until typed channels
+  replace mailboxes; match guards on range arms and guards naming a
+  top-level `def` are mis-handled; the checker does not distinguish
+  byte-buffer regions; the interpreter's checking mode sees Bool, Unit
+  and ADTs as words. `<` on ADTs is a type error (use `Ord.compare`).
+- The standard library has no higher-order list functions (`map`,
+  `filter`, `fold`).
 - Call targets are resolved only in codegen (`cg-call-user`): a call to
   an undefined function, including the unimplemented `(list ...)`
   literal, is a located `E_UNBOUND_VARIABLE` there, not a linker error,
@@ -252,9 +245,9 @@ by recent sessions. The completed roadmap items are kept, annotated, under
 - [x] Tail-call optimization in `codegen.zyl` (direct calls, at most six
       arguments; indirect and stack-argument tail calls still open).
 - [x] `print` on `Result`/`Option`/`List` whose payload has no `Show`
-      printed garbage or crashed; it now prints raw. Open: explicit
-      `Show.show` on a type without an impl still hits the runtime tag
-      dispatch (`ic-trait-dispatch`) instead of `E_TRAIT_NOT_FOUND`.
+      printed garbage or crashed; it now prints raw. The run-time tag
+      dispatch is gone (2026-09-25): a trait call resolves statically or
+      is an error.
 - [x] ~~A per-file paren-depth check in `assemble.py`~~: obsolete, every
       module is compiled and balance-checked as its own file.
 
@@ -281,8 +274,11 @@ by recent sessions. The completed roadmap items are kept, annotated, under
 ### Deferred design work (decided 2026-09-24)
 
 Agreed order: FFI timeouts (done 2026-09-24), real regions (done
-2026-09-24), zero-copy
+2026-09-24), sound HM type checking (done 2026-09-25), zero-copy
 views plus the P1-P3 leftovers, deterministic concurrency, intrinsics.
+
+- **Sound types:** done 2026-09-25 (see the session log and
+  `docs/sound-types-design.md`).
 
 - **FFI timeouts:** done 2026-09-24 (see the session log).
 - **Real regions:** done 2026-09-24 (see the session log and
@@ -403,6 +399,42 @@ as recorded below.
 ---
 
 # Session log (newest first)
+
+## Session (2026-09-25) — sound type checking
+
+The type checker is the guarantee the user asked for, not a best
+effort: a program the compiler accepts never uses a value at the wrong
+representation (spec §4.8). Design and history:
+`docs/sound-types-design.md`. Commits `815b691` .. `b8034b1`.
+
+- Strict checking is the default (`d6f4ec2`). Every failure is reported,
+  then the compile fails; `ZYL_STRICT_TYPES=report` prints warnings and
+  continues, for counting only. New codes: `E_MALFORMED_FORM`,
+  `E_FFI_RESTRICTED`, `E_INFINITE_TYPE`, `E_NESTED_PATTERN`.
+- Unit, Bool-only conditions, a closed Num class, typed runtime handles,
+  `extern` for foreign functions (concrete, word-sized types; `Fn` for
+  callbacks), raw runtime entries restricted to the standard library,
+  traits with `Self`, untyped struct fields as implicit type parameters,
+  prelude constructor names reserved, no run-time trait dispatch
+  (function values are specialized too), `main : () -> Int`.
+- The compiler, the language server and the REPL type-check clean;
+  `type_inference.zyl`, `monomorphization.zyl` and `assert_lowering.zyl`
+  are deleted and `type_system.zyl` is 26 lines. The REPL interpreter's
+  values carry Floats and Strings as themselves.
+- Silent miscompiles found and fixed on the way: nested patterns,
+  malformed forms compiling to 0, bodies keeping only their last form,
+  `file-open` with an Int mode truncating the file, `assert-equal` not
+  unifying its sides, ADT ordering by address, a trait-generic function
+  used as a value crashing, the duplicate-arm check never firing.
+- Evidence: per-rule compile-fail tests; the interpreter's checking mode
+  (`ZYL_INTERP_CHECK=1`, every operator checks its operand tags and
+  every condition must be 0 or 1) runs the whole differential category
+  clean.
+- The book (`book/`) is ported: every complete program in it compiles
+  and runs.
+
+Open: `receive` (typed channels), match guards on range arms,
+byte-buffer region types, higher-order list functions in the stdlib.
 
 ## Session (2026-09-24, latest) — regions are real
 
