@@ -8,9 +8,10 @@
 ;        19 package (spec v5.0 SS31: manifest, lock, index, fetch, signature)
 ; Severity: 1 error | 2 warning | 3 note
 ;
-; Every code name, phase, and default message mirrors src/error.rs (Rust
-; bootstrap) plus the self-hosted-only codes from parser.zyl / icnf.zyl /
-; monomorphization.zyl. Structural format: one form per line.
+; The code names, phases, and default messages started as a mirror of the
+; Rust bootstrap's src/error.rs (now archive/rust-bootstrap-2026/), plus
+; the codes only the self-hosted compiler raises. Structural format: one
+; form per line.
 ; ===========================================================================
 
 (deftype ErrorCode
@@ -22,7 +23,7 @@
   (EFound Int ErrorCode))
 
 (deftype ECatalog
-  (ECat list (List ErrorCode)))
+  (ECat (List ErrorCode)))
 
 ; ---------------------------------------------------------------------------
 ; CATALOG

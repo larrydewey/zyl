@@ -758,11 +758,21 @@
   (match (Expr.inner te)
     (EAtom a
       (match a
-        (AIdent n (ta-param-add st n acc))
+        (AIdent n (let _ (ta-field-name-check st n te) (ta-param-add st n acc)))
         (_ acc)))
     (EApply _ args (ta-params-of-list st args acc))
     (ECall _ args (ta-params-of-list st args acc))
     (_ acc)))
+
+; A lowercase field type is neither a type nor a parameter (those are uppercase).
+(defn ta-field-name-check (st n te)
+  (if (or (not (ta-lower-first (err-name n))) (ta-shas (ta-types st) n))
+    unit
+    (ta-type-error "E_UNKNOWN_TYPE" (str-concat "unknown type `" (str-concat (err-name n) "` in a field"))
+                   te Nil "a type parameter is written in uppercase, as in (deftype Box (Bx T))")))
+
+(defn ta-lower-first (n)
+  (let c (ffi-call "zyl_cstr_byte_at" n 0 1000) (and (>= c 97) (<= c 122))))
 
 (defn ta-param-add (st n acc)
   (if (ta-builtin-type n)
