@@ -1,0 +1,7 @@
+; expect-error: E_CANNOT_INFER
+; The impl a trait call runs is chosen by its receiver's type; an unknown
+; receiver used to be defaulted to Int.
+(defstruct Sq (s Int))
+(trait Area (area (self) Int))
+(impl Area Sq (defn area (self) (* (struct-get self "s") (struct-get self "s"))))
+(defn main () (Area.area (receive)))

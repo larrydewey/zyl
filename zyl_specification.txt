@@ -249,9 +249,9 @@ ResultValue:
     Arithmetic      + - * / %: both operands Int -> Int, or both Float ->
                     Float (a closed class; no implicit conversion).
                     (- x) negates; (+ x) and (* x) are x.
-    Ordering        < > <= >=: two operands of one type, Int, Float,
-                    String or a declared ADT/struct (structural,
-                    field by field)  ->  Bool
+    Ordering        < > <= >=: two operands of one type, Int, Float or
+                    String  ->  Bool.  An ADT is ordered with
+                    Ord.compare (derivable, §5.6).
     Equality        = == !=: two operands of one type -> Bool
                     (structural for ADTs and Strings)
     Bits            bit-and bit-or bit-xor shl shr ashr bit-not: Int
@@ -275,6 +275,7 @@ ResultValue:
                     whose receiver type stays unknown is E_CANNOT_INFER.
     exit, error     do not return: any type
     main            () -> Int
+    spawn           the entry is () -> a
     Actors          spawn : Actor;  actor-self : Actor;
                     send : Actor a -> Unit;  receive : a (§4.8)
     FFI             a runtime symbol (zyl_*) has the type in the

@@ -1,0 +1,5 @@
+; expect-error: E_TYPE_MISMATCH
+; < > <= >= order Ints, Floats and Strings; an ADT is ordered with
+; Ord.compare (derivable), which compares its fields by their own Ord.
+(deftype Color (Red) (Blue))
+(defn main () (if (< Red Blue) 1 0))

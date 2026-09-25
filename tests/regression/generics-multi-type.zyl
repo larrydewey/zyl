@@ -21,4 +21,5 @@
     ; must not poison each other (the old first-site monomorphization bug:
     ; whichever site inferred first fixed the shared scheme for all sites).
     (print (_g-opt-int (GoSome 42)))
-    (print (_g-opt-tag (GoSome "hi")))))
+    (print (_g-opt-tag (GoSome "hi")))
+    0))

@@ -1,0 +1,3 @@
+; expect-error: E_MALFORMED_FORM
+; A let binds a name for a body; without one it is malformed.
+(defn main () (let x 1))

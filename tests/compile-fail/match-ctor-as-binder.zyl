@@ -1,0 +1,5 @@
+; expect-error: E_NESTED_PATTERN
+; A constructor in a field position is a nested pattern: (Some Nil ...)
+; would bind a variable named Nil and match every Some.
+(defn f (o) (match o (Some Nil -1) (None 0)))
+(defn main () (f (Some Nil)))

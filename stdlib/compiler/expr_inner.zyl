@@ -1708,13 +1708,28 @@
       (None (Expr (EUnknown "trait" (convert-ast-list rest)))))))
 
 ; (trait Name (method (params...) RetType)*)
+; Every method is (name (params) [(p Type)...] [Ret]); a bare `self` in
+; place of the parameter list is malformed (it read as no parameters).
 (defn parse-trait (args)
   (match args
     (Cons nm methods
       (match nm
-        (AstIdent n (Some (Expr (ETraitDecl n (parse-trait-methods methods) None))))
+        (AstIdent n
+          (if (trait-methods-ok methods)
+            (Some (Expr (ETraitDecl n (parse-trait-methods methods) None)))
+            None))
         (_ None)))
     (Nil None)))
+
+(defn trait-methods-ok (ms)
+  (match ms
+    (Nil true)
+    (Cons m rest
+      (match m
+        (AList parts
+          (and (match (ast-nth parts 1 (AstInt 0)) (AList _ true) (_ false))
+               (trait-methods-ok rest)))
+        (_ false)))))
 
 (defn parse-trait-methods (ms)
   (match ms
@@ -1964,14 +1979,7 @@
               n
               (convert-ast (ast-nth args 1 (AstInt 0)))
               (parse-body-from args 2))))
-        (if (ast-has-at-least args 2)
-          (Some
-            (Expr
-              (ELet
-                n
-                (convert-ast (ast-nth args 1 (AstInt 0)))
-                (Expr (EAtom (AIdent "Unit"))))))
-          None)))
+        None))
     (AList blist
       (match blist
         (Cons bname _
@@ -1983,7 +1991,7 @@
                     (ELet
                       bn
                       (convert-ast (ast-nth blist 1 (AstInt 0)))
-                      (convert-ast (ast-nth args 1 (AstInt 0))))))
+                      (parse-body-from args 1))))
                 None))
             (_ None)))
         (_ None)))
@@ -1999,14 +2007,7 @@
               n
               (convert-ast (ast-nth args 1 (AstInt 0)))
               (parse-body-from args 2))))
-        (if (ast-has-at-least args 2)
-          (Some
-            (Expr
-              (ELetMut
-                n
-                (convert-ast (ast-nth args 1 (AstInt 0)))
-                (Expr (EAtom (AIdent "Unit"))))))
-          None)))
+        None))
     (AList blist
       (match blist
         (Cons bname _
@@ -2018,7 +2019,7 @@
                     (ELetMut
                       bn
                       (convert-ast (ast-nth blist 1 (AstInt 0)))
-                      (convert-ast (ast-nth args 1 (AstInt 0))))))
+                      (parse-body-from args 1))))
                 None))
             (_ None)))
         (_ None)))
@@ -2532,14 +2533,34 @@
     (Nil Nil)
     (Cons b rest
       (match b
-        (AstIdent _ (Cons b (arm-binders-checked arm rest)))
-        (_ (let at (match (ast-spanned b) (Some n n) (None (match (ast-spanned arm) (Some n n) (None arm))))
+        ; A constructor where a binder belongs is a nested pattern too:
+        ; `(Some Nil ...)` would bind a variable named Nil.
+        (AstIdent n (if (binder-names-ctor n) (arm-nested-fail arm b) (Cons b (arm-binders-checked arm rest))))
+        (_ (arm-nested-fail arm b))))))
+
+(defn binder-names-ctor (n)
+  (or (str-contains-colons n)
+      (or (str-eq n "Some") (or (str-eq n "None") (or (str-eq n "Ok")
+        (or (str-eq n "Err") (or (str-eq n "Cons") (str-eq n "Nil"))))))))
+
+(defn str-contains-colons (s)
+  (str-colons-from s 0))
+
+(defn str-colons-from (s i)
+  (if (>= (+ i 1) (str-length s))
+    false
+    (if (and (= (ffi-call "zyl_cstr_byte_at" s i 1000) 58) (= (ffi-call "zyl_cstr_byte_at" s (+ i 1) 1000) 58))
+      true
+      (str-colons-from s (+ i 1)))))
+
+(defn arm-nested-fail (arm b)
+  (let at (match (ast-spanned b) (Some n n) (None (match (ast-spanned arm) (Some n n) (None arm))))
            (let off (ffi-call "zyl_span_off" at 1000)
              (let fid (ffi-call "zyl_span_file" at 1000)
                (ffi-call "zyl_panic"
                  (err-at "E_NESTED_PATTERN" "nested patterns are not supported: a constructor's field is bound to a name"
                          fid off "bind the field to a name and match it inside the arm body")
-                 1000)))))))))
+                 1000)))))
 
 (defn parse-match-arm (arm)
   (match arm

@@ -7,7 +7,7 @@
 
 ; Simple trait with one method.
 (trait _tr_Printable
-  (print-self self)
+  (print-self (self) Unit)
 )
 
 ; Implement for Int.
@@ -65,8 +65,8 @@
 
 ; Trait with multiple methods.
 (trait _tr_Comparable
-  (compare self other)
-  (equal self other)
+  (compare (self (other Self)) Int)
+  (equal (self (other Self)) Bool)
 )
 
 (impl _tr_Comparable Int

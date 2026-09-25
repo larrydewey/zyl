@@ -1,0 +1,5 @@
+; expect-error: E_MALFORMED_FORM
+; A trait method's parameters are a list: (area (self) Int). A bare
+; `self` used to read as no parameters at all.
+(trait Area (area self))
+(defn main () 0)

@@ -40,7 +40,7 @@
       (make-_dr_Box 3 4)
       (
         assert-true
-        (< b1 b2)
+        (< (Ord.compare b1 b2) 0)
       )
     )
   )
@@ -93,7 +93,7 @@
       (
         begin
         (assert-true (== m1 m2))
-        (assert-false (< m1 m2))
+        (assert-false (< (Ord.compare m1 m2) 0))
         1
       )
     )

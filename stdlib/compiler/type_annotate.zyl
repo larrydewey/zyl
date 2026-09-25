@@ -202,6 +202,7 @@
 ; production.
 (def ta-report-mode (ffi-call "zyl_ref_new" false 1000))
 (def ta-error-count (ffi-call "zyl_ref_new" 0 1000))
+(def ta-first-code (ffi-call "zyl_ref_new" "E_TYPE_MISMATCH" 1000))
 (def ta-cur-node (ffi-call "zyl_ref_new" (Expr (EAtom ANil)) 1000))
 
 ; The checker is always strict; kept as a predicate for the call sites
@@ -223,6 +224,7 @@
       (if (ta-report-p)
         (ffi-call "zyl_warn_emit" (err-diag "warning" "W_TYPE_STRICT" msg fid off labels help) 1000)
         (begin
+          (if (= (ffi-call "zyl_ref_get" ta-error-count 1000) 0) (ffi-call "zyl_ref_set" ta-first-code code 1000) unit)
           (ffi-call "zyl_ref_set" ta-error-count (+ (ffi-call "zyl_ref_get" ta-error-count 1000) 1) 1000)
           (ffi-call "zyl_warn_emit" (err-diag "error" code msg fid off labels help) 1000))))))
 
@@ -882,9 +884,10 @@
         (let t (ta-resolve st t0)
           (let _ (match t
                    (TaC name args
-                     ; Ordering also takes a declared ADT or struct: it
-                     ; compares structurally, field by field (spec 7.4).
-                     (if (or (ta-streq name "Int") (or (ta-streq name "Float") (and (= cls 2) (or (ta-streq name "String") (ta-shas (ta-types st) name)))))
+                     ; Ordering is on Int, Float and String; an ADT is
+                     ; ordered with Ord.compare (derivable), which
+                     ; compares its fields by their own Ord.
+                     (if (or (ta-streq name "Int") (or (ta-streq name "Float") (and (= cls 2) (ta-streq name "String"))))
                        unit
                        (let _ (ffi-call "zyl_ref_set" ta-cur-node e 1000)
                          (ta-strict (str-concat (if (= cls 1) "arithmetic on " "ordering on ") (ta-show st t))))))
@@ -912,7 +915,7 @@
         (let _ (ta-expr st ctx env body)
           (ta-stmt))))
     (ESetBang name val (ta-set st ctx env name val))
-    (EBegin exprs (ta-last (ta-list st ctx env exprs) (ta-int)))
+    (EBegin exprs (ta-last (ta-list st ctx env exprs) (ta-unit-ty)))
     (ECond clauses (ta-cond st ctx env clauses (ta-fresh st)))
     (EMatch subj arms (ta-match st ctx env subj arms))
     (EPrint exprs (ta-seq (ta-print st ctx env exprs) (ta-stmt)))
@@ -936,10 +939,16 @@
     (EUnwrap x (ta-unwrap st ctx env x))
     (EStructGet se field (ta-struct-get st ctx env se field e))
     (EFor bindings cond body (ta-for st ctx env bindings cond body))
-    ; Pinning moves a value to the Pin region; its type is unchanged.
-    (EFfiPin x (ta-expr st ctx env x))
-    (EFfiUnpin x (ta-walk-int st ctx env (Cons x Nil)))
-    (ESpawn b (let _ (ta-list st ctx env (Cons b Nil)) (TaC "Actor" Nil)))
+    ; Pinning moves a value to the Pin region; its type is unchanged. A
+    ; function is not FFI_Pinnable (spec 16).
+    (EFfiPin x
+      (let t (ta-expr st ctx env x)
+        (match (ta-resolve st t)
+          (TaF _ _ (let _ (ta-type-error "E_FFI_TYPE_NOT_PINNABLE" "a function cannot be pinned: FFI_Pinnable types are Int, Float, Bool, String and data built from them" x Nil "") t))
+          (_ t))))
+    (EFfiUnpin x (ta-walk-stmt st ctx env (Cons x Nil)))
+    ; An actor's entry takes no arguments.
+    (ESpawn b (let _ (ta-unify st (ta-expr st ctx env b) (TaF Nil (ta-fresh st))) (TaC "Actor" Nil)))
     (ESend a m
       (let ta (ta-expr st ctx env a)
         (let _ (ta-unify st ta (TaC "Actor" Nil))
@@ -1276,8 +1285,8 @@
   (if (ta-key-is n "str-substring") (TaF (ta-l3 (ta-str) (ta-int) (ta-int)) (ta-str))
   (if (ta-key-is n "str-equal") (ta-sig2 (ta-str) (ta-str) (if (ta-strict-p) (ta-bool) (ta-fresh st)))
   (if (ta-key-is n "str-eq") (ta-sig2 (ta-str) (ta-str) (if (ta-strict-p) (ta-bool) (ta-fresh st)))
-  (if (ta-key-is n "print-string") (TaF (Cons (ta-str) Nil) (ta-int))
-  (if (ta-key-is n "print-float") (TaF (Cons (ta-flt) Nil) (ta-int))
+  (if (ta-key-is n "print-string") (TaF (Cons (ta-str) Nil) (ta-unit-ty))
+  (if (ta-key-is n "print-float") (TaF (Cons (ta-flt) Nil) (ta-unit-ty))
   ; A def getter's cell (expr_inner.zyl, def-getter). The read is the
   ; only generic result here: its one caller joins it, in the same `if`,
   ; with the value the getter stores under the same key.
@@ -2029,6 +2038,7 @@
   (begin
     (ffi-call "zyl_ref_set" ta-report-mode (ta-report-env (ffi-call "zyl_getenv_str" "ZYL_STRICT_TYPES" 1000)) 1000)
     (ffi-call "zyl_ref_set" ta-error-count 0 1000)
+    (ffi-call "zyl_ref_set" ta-first-code "E_TYPE_MISMATCH" 1000)
     (ffi-call "zyl_ref_set" ta-cur-node (ta-no-node) 1000)
     (ffi-call "zyl_wvec_truncate" ta-num-note-store 0 1000)
     (node-tables-clear)
@@ -2048,10 +2058,19 @@
         (ta-top st exprs)
         (ta-resolve-specials st (Cons -1 Nil) 0)
         (ta-check-num st 0 (ffi-call "zyl_wvec_len" (ta-num-notes) 1000))
+        (ta-check-main st)
         (ta-fail-if-errors)
         (ffi-call "zyl_smap_clear" ta-generic-names 1000)
         (ta-record-generic st 0 (ta-wlen (ta-fnstate st)))
         (ta-extra-list st 0 (ta-wlen (ta-extra st)))))))
+
+; `main` takes nothing and returns the process's Int exit status.
+(defn ta-check-main (st)
+  (let fi (ta-sget (ta-fnmap st) "main")
+    (if (> fi 0)
+      (let _ (ffi-call "zyl_ref_set" ta-cur-node (ta-wget (ta-fnexp st) (- fi 1)) 1000)
+        (ta-unify st (ta-inst st (ta-wget (ta-fnsc st) (- fi 1))) (TaF Nil (ta-int))))
+      0)))
 
 (defn ta-report-env (v) (or (ta-streq v "report") (ta-streq v "1")))
 
@@ -2059,8 +2078,9 @@
   (let n (ffi-call "zyl_ref_get" ta-error-count 1000)
     (if (> n 0)
       (ffi-call "zyl_panic"
-        (str-concat "error[E_TYPE_MISMATCH]: the program does not type-check ("
-          (str-concat (ffi-call "zyl_int_text" n 1000) (if (= n 1) " error above)" " errors above)")))
+        (str-concat "error[" (str-concat (ffi-call "zyl_ref_get" ta-first-code 1000)
+          (str-concat "]: the program does not type-check ("
+            (str-concat (ffi-call "zyl_int_text" n 1000) (if (= n 1) " error above)" " errors above)")))))
         1000)
       unit)))
 
@@ -2328,8 +2348,18 @@
     (Nil 0)
     (Cons sp rest
       (match sp
-        (TaSp _ _ _ _ t _
+        (TaSp _ node kind name t _
           (begin
+            ; A trait call's receiver is never defaulted: the impl would
+            ; be a guess.
+            (if (= kind 0)
+              (match (ta-recv st t)
+                (TaV i (if (or (< i 0) (ta-int-in i keep)) unit
+                         (ta-type-error "E_CANNOT_INFER"
+                           (str-concat "cannot tell which impl of `" (str-concat (err-name name) "` to call: the receiver's type is not known"))
+                           node Nil "give the receiver a type annotation")))
+                (_ unit))
+              unit)
             (ta-default-list st (ta-vars-of st t Nil) keep)
             (ta-default-locals st rest keep)))))))
 
