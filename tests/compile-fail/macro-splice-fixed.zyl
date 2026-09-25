@@ -1,0 +1,4 @@
+; expect-error: E_MALFORMED_FORM
+; An if has exactly three parts, so a rest parameter cannot be spliced into it.
+(defmacro bad (c &rest body) (if c ,@body 0))
+(defn main () (begin (print (bad true 1 2)) 0))

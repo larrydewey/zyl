@@ -267,6 +267,11 @@
         (ac-list args arities shadowed)))
     (EApply fname args
       (begin
+        (if (ac-unquote-name fname)
+          (ffi-fail "E_MALFORMED_FORM"
+                    (str-concat "`" (str-concat (if (str-eq fname "unquote") "," ",@") "` outside a quasiquote or a macro template"))
+                    "a macro template substitutes its parameters directly; `,@rest` splices a rest parameter" e)
+          unit)
         (if (str-eq fname "ffi-call") (let _ (ffi-check-call args e) (ffi-check-raw args e)) unit)
         (ac-check-call-by-name fname args arities shadowed e)
         (ac-list args arities shadowed)))
@@ -312,6 +317,8 @@
                 (str-concat "malformed `" (str-concat name "` form: its arguments do not have the shape the form requires"))
                 "see the form's syntax in the specification" e))
     (_ 0)))
+
+(defn ac-unquote-name (n) (or (str-eq n "unquote") (str-eq n "unquote-splicing")))
 
 (defn ac-list (xs arities shadowed)
   (match xs

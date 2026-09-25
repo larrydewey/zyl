@@ -57,7 +57,7 @@
                   (if (= c 60) true
                     (if (= c 62) true
                       (if (= c 42) true
-                        (if (= c 37) true false)))))))))))))
+                        (if (= c 37) true (= c 38))))))))))))))
 
 ; Mirror Rust lexer is_ident_continue: alnum | _ - ? ! / = + % .
 (defn chr-ident-cont-p (c)
@@ -289,7 +289,17 @@
                   (lex-loop arena src len (+ i 1) (Cons (TkRBracket i) acc))
                   (if (= c 39)
                     (lex-loop arena src len (+ i 1) (Cons (TkQuote i) acc))
-                    (lex-c2 arena src len i acc c)))))))))))
+                    (lex-c3 arena src len i acc c)))))))))))
+
+; `` ` `` quasiquote, `,` unquote and `,@` unquote-splicing.
+(defn lex-c3 (arena src len i acc c)
+  (if (= c 96)
+    (lex-loop arena src len (+ i 1) (Cons (TkQuasi i) acc))
+    (if (= c 44)
+      (if (= (byte-at src (+ i 1)) 64)
+        (lex-loop arena src len (+ i 2) (Cons (TkSplice i) acc))
+        (lex-loop arena src len (+ i 1) (Cons (TkUnquote i) acc)))
+      (lex-c2 arena src len i acc c))))
 
 (defn lex-c2 (arena src len i acc c)
   (if (= c 34)

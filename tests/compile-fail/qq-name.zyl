@@ -1,0 +1,3 @@
+; expect-error: E_MALFORMED_FORM
+; A name inside quasiquoted data has no value; ,x gives one.
+(defn main () (begin (print `(1 x)) 0))

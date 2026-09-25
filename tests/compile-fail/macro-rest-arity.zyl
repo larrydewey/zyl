@@ -1,0 +1,4 @@
+; expect-error: E_ARITY_MISMATCH
+; A macro with a rest parameter still needs its fixed arguments.
+(defmacro m (a &rest b) (+ a 1))
+(defn main () (begin (print (m)) 0))

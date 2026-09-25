@@ -1,0 +1,3 @@
+; expect-error: E_MALFORMED_FORM
+; A comma means something only inside a quasiquote or a macro template.
+(defn main () (let x 1 (begin (print ,x) 0)))

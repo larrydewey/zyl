@@ -58,7 +58,10 @@
     (TkLBracket _ false)
     (TkRBracket _ false)
     (TkColon _ false)
-    (TkQuote _ false)))
+    (TkQuote _ false)
+    (TkQuasi _ false)
+    (TkUnquote _ false)
+    (TkSplice _ false)))
 
 ; True when the stream is exhausted (empty or at TkEof).
 ; Returns: Bool
@@ -89,7 +92,10 @@
     (TkLBracket o o)
     (TkRBracket o o)
     (TkColon o o)
-    (TkQuote o o)))
+    (TkQuote o o)
+    (TkQuasi o o)
+    (TkUnquote o o)
+    (TkSplice o o)))
 
 ; Record where `node` was read from, then hand it straight back, so a
 ; construction reads `(ast-at fid off (AstInt v))`. The position is kept beside
@@ -114,7 +120,10 @@
         (TkLParen o (read-forms arena rest (no-forms) fid o))
         (TkLBracket o (read-forms-bracket arena rest (no-forms) fid o))
         (TkLBrace o (read-forms-brace arena rest (no-forms) fid o))
-        (TkQuote o (read-quote arena rest fid o))
+        (TkQuote o (read-prefixed arena rest fid o "quote"))
+        (TkQuasi o (read-prefixed arena rest fid o "quasiquote"))
+        (TkUnquote o (read-prefixed arena rest fid o "unquote"))
+        (TkSplice o (read-prefixed arena rest fid o "unquote-splicing"))
         (TkRParen _ (read-form-atom arena t rest fid))
         (TkRBrace _ (read-form-atom arena t rest fid))
         (TkRBracket _ (read-form-atom arena t rest fid))
@@ -152,7 +161,10 @@
     (TkLBracket o (AstOf (ast-at fid o (AList (no-forms))) rest))
     (TkRBracket o (AstOf (ast-at fid o (AList (no-forms))) rest))
     (TkColon o (AstOf (ast-at fid o (AList (no-forms))) rest))
-    (TkQuote o (AstOf (ast-at fid o (AList (no-forms))) rest))))
+    (TkQuote o (AstOf (ast-at fid o (AList (no-forms))) rest))
+    (TkQuasi o (AstOf (ast-at fid o (AList (no-forms))) rest))
+    (TkUnquote o (AstOf (ast-at fid o (AList (no-forms))) rest))
+    (TkSplice o (AstOf (ast-at fid o (AList (no-forms))) rest))))
 
 ; Read forms until ')' (or EOF), accumulating into `acc` (reverse order).
 ; Returns: AstTok wrapping (AList forms...)
@@ -182,7 +194,10 @@
     (TkLBracket _ false)
     (TkRBracket _ false)
     (TkColon _ false)
-    (TkQuote _ false)))
+    (TkQuote _ false)
+    (TkQuasi _ false)
+    (TkUnquote _ false)
+    (TkSplice _ false)))
 
 ; Read forms until '}' (or EOF).
 ; Returns: AstTok wrapping (AList forms...)
@@ -212,16 +227,21 @@
     (TkLBracket _ false)
     (TkRBracket _ false)
     (TkColon _ false)
-    (TkQuote _ false)))
+    (TkQuote _ false)
+    (TkQuasi _ false)
+    (TkUnquote _ false)
+    (TkSplice _ false)))
 
-; `[a b]` is the list literal `(list a b)`; `'d` is `(quote d)`
+; `[a b]` is the list literal `(list a b)`; `'d` is `(quote d)`, and
+; `` `d ``, `,d`, `,@d` are quasiquote, unquote and unquote-splicing
 ; (expr_inner.zyl gives both their meaning).
 (defn bracket-forms (fid off acc)
   (Cons (ast-at fid off (AstIdent "list")) (list-reverse acc)))
 
-(defn read-quote (arena rest fid off)
+;; `'d`, `` `d ``, `,d` and `,@d`: `(head d)`.
+(defn read-prefixed (arena rest fid off head)
   (let r (read-form arena rest fid)
-    (AstOf (ast-at fid off (AList (Cons (ast-at fid off (AstIdent "quote")) (Cons (art-ast r) Nil))))
+    (AstOf (ast-at fid off (AList (Cons (ast-at fid off (AstIdent head)) (Cons (art-ast r) Nil))))
            (art-rest r))))
 
 ; Read forms until ']' (or EOF).
@@ -252,7 +272,10 @@
     (TkRBrace _ false)
     (TkLBracket _ false)
     (TkColon _ false)
-    (TkQuote _ false)))
+    (TkQuote _ false)
+    (TkQuasi _ false)
+    (TkUnquote _ false)
+    (TkSplice _ false)))
 
 ; Parse a whole source token stream into a program: a List of top-level
 ; Ast forms in source order.
@@ -351,7 +374,7 @@
             (ffi-call "zyl_panic" (err-at "E_INVALID_ESCAPE" "invalid escape sequence in string literal" fid off "the escapes are \\n \\t \\r \\0 \\\" \\\\ \\e and \\xNN") 1000))
           (ffi-call "zyl_panic"
             (err-at "E_INVALID_CHAR" (str-concat "unexpected character `" (str-concat (ffi-call "zyl_cstr_substr" src off 1 1000) "`"))
-              fid off "Zyl has quote (`'`) but no quasiquote or comma syntax; `,`, `@`, `#`, `$`, `&`, `|`, `^` and `\\` may appear only in strings and comments") 1000))))))
+              fid off "Zyl has quote, quasiquote and unquote (`'`, `` ` ``, `,`, `,@`); `@`, `#`, `$`, `&`, `|`, `^` and `\\` may appear only in strings and comments") 1000))))))
 
 (defn last-eof-offset (toks)
   (match toks

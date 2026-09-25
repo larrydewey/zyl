@@ -1007,7 +1007,32 @@
     (convert-ast (ast-list-literal rest))
     (if (str-eq n "quote")
       (parse-quote rest)
-      (dispatch-special-form n rest))))
+      (if (str-eq n "quasiquote")
+        (parse-quasiquote rest)
+        (dispatch-special-form n rest)))))
+
+;; `(quasiquote d)`: see ast-qq-data. `,e` and `,@e` outside one are
+;; reported after macro expansion (arity_check.zyl), since a macro
+;; template may use them.
+(defn parse-quasiquote (rest)
+  (match rest
+    (Cons d t
+      (if (nil? t)
+        (let why (ast-qq-problem d)
+          (if (= (str-length why) 0)
+            (convert-ast (ast-qq-data d))
+            (qq-fail d why)))
+        (Expr (EUnknown "quasiquote" (convert-ast-list rest)))))
+    (Nil (Expr (EUnknown "quasiquote" Nil)))))
+
+(defn qq-fail (d why)
+  (let at (match (ast-spanned d) (Some n n) (None d))
+    (let off (ffi-call "zyl_span_off" at 1000)
+      (let fid (ffi-call "zyl_span_file" at 1000)
+        (ffi-call "zyl_panic"
+          (err-at "E_MALFORMED_FORM" (str-concat "malformed quasiquote: " why)
+                  fid off "unquote a value with ,e and splice a list with ,@e")
+          1000)))))
 
 (defn dispatch-special-form (n rest)
   (if (str-eq n "with-region")

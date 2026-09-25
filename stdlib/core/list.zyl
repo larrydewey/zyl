@@ -82,6 +82,10 @@
     (Nil ys)
     (Cons h t (Cons h (list-append t ys)))))
 
+; What a quasiquote's `,@xs` expands to (compiler/ast.zyl, ast-qq-list).
+; A name of its own, so a program's `list-append` cannot change it.
+(defn zyl-qq-append (xs ys) (list-append xs ys))
+
 ; Reverse
 (defn list-reverse (xs)
   (list-reverse-acc xs Nil))

@@ -352,6 +352,12 @@
     (qf-call tab locals hn (qf-derive-flat rest))
   (if (qf-quote-data-p hn rest)
     (match rest (Cons d _ (qf-form tab locals (ast-quote-data d))) (Nil (AList Nil)))
+  (if (qf-quasi-data-p hn rest)
+    (match rest (Cons d _ (qf-form tab locals (ast-qq-data d))) (Nil (AList Nil)))
+  ; A malformed quote or quasiquote is left as written, for convert-ast
+  ; to report in the program's own names.
+  (if (or (str-eq hn "quote") (str-eq hn "quasiquote"))
+    (AList (Cons (AstIdent hn) rest))
   (if (str-eq hn "defn")
     (qf-defn tab locals hn rest)
   (if (str-eq hn "fn")
@@ -394,7 +400,7 @@
     (qf-pub tab locals rest)
   (if (qf-opaque-head hn)
     (AList (Cons (AstIdent hn) rest))
-    (qf-call tab locals hn rest))))))))))))))))))))))))))
+    (qf-call tab locals hn rest))))))))))))))))))))))))))))
 
 ;; `(derive T [A B])`: the trait list is names, not a list literal.
 (defn qf-derive-flat (xs)
@@ -410,6 +416,15 @@
                 (_ (Cons h (qf-derive-flat t)))))
             (Nil (Cons h (qf-derive-flat t)))))
         (_ (Cons h (qf-derive-flat t)))))))
+
+;; `(quasiquote d)` that is well formed; anything else stays for
+;; convert-ast to report.
+(defn qf-quasi-data-p (hn rest)
+  (if (str-eq hn "quasiquote")
+    (match rest
+      (Cons d t (if (nil? t) (= (str-length (ast-qq-problem d)) 0) false))
+      (Nil false))
+    false))
 
 ;; `(quote d)` with constant data only; anything else stays for
 ;; convert-ast to report.

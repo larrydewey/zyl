@@ -1,0 +1,47 @@
+; Quasiquote: `d builds a list with holes, ,e for a value and ,@e for a
+; spliced list. Macros take `&rest` parameters, which a template splices
+; with ,@name (or uses as a list value).
+
+(use core/core)
+(use core/list)
+
+(defmacro qq-when (c &rest body) (if c (begin ,@body) unit))
+(defmacro qq-sum (&rest xs) (+ 0 ,@xs))
+(defmacro qq-listed (a &rest xs) `(,a ,@xs 99))
+(defmacro qq-count (&rest xs) (list-length xs))
+(defmacro qq-twice (x) (begin ,x ,x))
+; `tmp` is the template's own binder; the caller's `tmp` is untouched.
+(defmacro qq-with-tmp (&rest body) (let tmp 100 (begin ,@body)))
+
+(def hits (ffi-call "zyl_ref_new" 0 1000))
+(defn bump () (ffi-call "zyl_ref_set" hits (+ (ffi-call "zyl_ref_get" hits 1000) 1) 1000))
+
+(test "quasiquoted data"
+  (let ys [3 4]
+    (begin
+      (assert-equal `(1 ,(+ 1 1) ,@ys) [1 2 3 4])
+      (assert-equal `(,@ys ,@ys) [3 4 3 4])
+      (assert-equal (list-length `()) 0)
+      (assert-equal `((1 ,(+ 1 1)) (3)) [[1 2] [3]])
+      (assert-equal `(,@[] 5) [5]))))
+
+(test "rest parameters splice"
+  (begin
+    (assert-equal (qq-sum 1 2 3) 6)
+    (assert-equal (qq-sum) 0)
+    (assert-equal (qq-listed 1 2 3) [1 2 3 99])
+    (assert-equal (qq-listed 7) [7 99])
+    (assert-equal (qq-count 5 6 7) 3)))
+
+(test "a spliced body runs in order"
+  (begin
+    (qq-when true (bump) (bump))
+    (qq-when false (bump))
+    (qq-twice (bump))
+    (assert-equal (ffi-call "zyl_ref_get" hits 1000) 4)))
+
+(test "spliced code keeps its own names"
+  (let tmp 5
+    (assert-equal (qq-with-tmp (+ tmp 1)) 6)))
+
+(run-tests)

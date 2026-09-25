@@ -43,7 +43,10 @@
   (TkLBracket Int)
   (TkRBracket Int)
   (TkColon Int)
-  (TkQuote Int))
+  (TkQuote Int)
+  (TkQuasi Int)
+  (TkUnquote Int)
+  (TkSplice Int))
 
 ; --- Parsed source ---------------------------------------------------------
 
@@ -260,3 +263,77 @@
 (defn ast-span-like (node from)
   (let _ (ffi-call "zyl_span_copy" node from 1000)
     node))
+
+; --- Quasiquote ---------------------------------------------------------------
+
+; `(quasiquote d)` (the reader's `` `d ``) is quoted data with holes:
+; `(unquote e)` (`,e`) is the value of e, and `(unquote-splicing e)`
+; (`,@e`) inside a list is the elements of the list e. So `` `(1 ,x ,@ys) ``
+; is `(Cons 1 (Cons x (zyl-qq-append ys Nil)))`: built in source order,
+; one element type. The constant parts follow `quote`: a name outside an
+; unquote has no value (ast-qq-ok is false), and so has no meaning.
+(defn ast-qq-data (d)
+  (match d
+    (AList xs
+      (match (ast-unquote-arg xs "unquote")
+        (Some e e)
+        (None (ast-span-like (ast-qq-list xs) d))))
+    (_ d)))
+
+(defn ast-qq-list (xs)
+  (match xs
+    (Nil (AstIdent "Nil"))
+    (Cons h t
+      (match (ast-splice-arg h)
+        (Some e (ast-span-like (AList (Cons (AstIdent "zyl-qq-append") (Cons e (Cons (ast-qq-list t) Nil)))) h))
+        (None (ast-span-like (AList (Cons (AstIdent "Cons") (Cons (ast-qq-data h) (Cons (ast-qq-list t) Nil)))) h))))))
+
+; The e of `(head e)`, when `xs` is exactly that form.
+(defn ast-unquote-arg (xs head)
+  (match xs
+    (Cons h t
+      (match h
+        (AstIdent n
+          (if (str-eq n head)
+            (match t (Cons e r (match r (Nil (Some e)) (_ None))) (Nil None))
+            None))
+        (_ None)))
+    (Nil None)))
+
+(defn ast-splice-arg (d)
+  (match d
+    (AList xs (ast-unquote-arg xs "unquote-splicing"))
+    (_ None)))
+
+; "" when `d` is valid quasiquoted data, else why not.
+(defn ast-qq-problem (d)
+  (match d
+    (AList xs
+      (match (ast-unquote-arg xs "unquote")
+        (Some _ "")
+        (None
+          (if (ast-head-is xs "unquote")
+            "(unquote e) takes one expression"
+            (if (ast-head-is xs "quasiquote")
+              "a quasiquote inside a quasiquote is not supported"
+              (if (ast-head-is xs "unquote-splicing")
+                (if (ast-is-some (ast-unquote-arg xs "unquote-splicing"))
+                  ",@ splices into a list, so it must be an element of one"
+                  "(unquote-splicing e) takes one expression")
+                (ast-qq-problem-list xs)))))))
+    (AstIdent n (str-concat "`" (str-concat n "` is a name; write ,name for its value")))
+    (_ "")))
+
+(defn ast-qq-problem-list (xs)
+  (match xs
+    (Nil "")
+    (Cons h t
+      (let p (if (ast-is-some (ast-splice-arg h)) "" (ast-qq-problem h))
+        (if (= (str-length p) 0) (ast-qq-problem-list t) p)))))
+
+(defn ast-head-is (xs name)
+  (match xs
+    (Cons h _ (match h (AstIdent n (str-eq n name)) (_ false)))
+    (Nil false)))
+
+(defn ast-is-some (o) (match o (Some _ true) (None false)))

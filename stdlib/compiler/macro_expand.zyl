@@ -99,8 +99,26 @@
       (match (Expr.inner e)
         (EMacroDef name params body
           (let _ (me-check-dup-macro mt name e)
-            (me-collect rest (MEntry name (me-param-names params) body mt))))
+            (let names (me-param-names params)
+              (let _ (me-check-rest names e)
+                (me-collect rest (MEntry name names body mt))))))
         (_ (me-collect rest mt))))))
+
+; `&rest name` may only end the parameter list: it binds the remaining
+; arguments, which the template splices with `,@name`.
+(defn me-check-rest (names site)
+  (match names
+    (Nil 0)
+    (Cons h t
+      (if (str-eq h "&rest")
+        (match t
+          (Cons _ t2 (if (nil? t2) 0 (me-rest-fail site)))
+          (Nil (me-rest-fail site)))
+        (me-check-rest t site)))))
+
+(defn me-rest-fail (site)
+  (me-fail "E_MALFORMED_PARAMETER" "`&rest` must be followed by exactly one parameter name, at the end of the list" site
+           "write (defmacro m (a &rest body) ...)"))
 
 (defn me-check-dup-macro (mt name site)
   (if (mt-has mt name)
@@ -161,23 +179,29 @@
 ; The innermost entry for a name wins, so a template binder that reuses a
 ; parameter's name shadows the parameter, exactly as it would in code.
 
-(deftype SEnv (SBind String Expr SEnv) (SRen String String SEnv) (SNil))
+; SRest:  a `&rest` parameter and the remaining arguments.
+(deftype SEnv (SBind String Expr SEnv) (SRen String String SEnv) (SRest String (List Expr) SEnv) (SNil))
 
-(deftype SHit (SHParam Expr) (SHRen String) (SHNone))
+(deftype SHit (SHParam Expr) (SHRen String) (SHRest (List Expr)) (SHNone))
 
 (defn senv-find (env name)
   (match env
     (SNil SHNone)
     (SBind n e rest (if (str-eq n name) (SHParam e) (senv-find rest name)))
-    (SRen n nm rest (if (str-eq n name) (SHRen nm) (senv-find rest name)))))
+    (SRen n nm rest (if (str-eq n name) (SHRen nm) (senv-find rest name)))
+    (SRest n xs rest (if (str-eq n name) (SHRest xs) (senv-find rest name)))))
 
 (defn senv-from-lists (params args)
   (match params
     (Nil SNil)
     (Cons p prest
-      (match args
-        (Nil SNil)
-        (Cons a arest (SBind p a (senv-from-lists prest arest)))))))
+      (if (str-eq p "&rest")
+        (match prest
+          (Cons r _ (SRest r args SNil))
+          (Nil SNil))
+        (match args
+          (Nil SNil)
+          (Cons a arest (SBind p a (senv-from-lists prest arest))))))))
 
 ; --- walk context --------------------------------------------------------------
 ; senv, the macro table, the macros whose expansion is in progress
@@ -254,6 +278,7 @@
   (match (senv-find (cx-senv cx) name)
     (SHParam a (MeB (me-arg-ident a site name) cx n))
     (SHRen _ (me-fresh name cx n))
+    (SHRest _ (me-fresh name cx n))
     (SHNone (me-fresh name cx n))))
 
 (defn me-fresh (name cx n)
@@ -282,12 +307,14 @@
   (match (senv-find (cx-senv cx) name)
     (SHParam a (me-arg-ident a site name))
     (SHRen nm nm)
+    (SHRest _ (me-bad-arg-ident site name))
     (SHNone name)))
 
 (defn me-set-target (site name cx)
   (match (senv-find (cx-senv cx) name)
     (SHParam a (me-arg-ident a site name))
     (SHRen nm nm)
+    (SHRest _ (me-bad-arg-ident site name))
     (SHNone (me-check-free site name cx))))
 
 ; A free template name that is a local variable at the call site would be
@@ -341,8 +368,41 @@
   (match forms
     (Nil (MeRL (list-reverse acc) n))
     (Cons e rest
-      (match (me-rewrite e cx n)
-        (MeR e2 n2 (me-rewrite-list-acc rest cx n2 (Cons e2 acc)))))))
+      (match (me-splice-of e cx)
+        (Some xs (me-rewrite-list-acc rest cx n (list-append (list-reverse xs) acc)))
+        (None
+          (match (me-rewrite e cx n)
+            (MeR e2 n2 (me-rewrite-list-acc rest cx n2 (Cons e2 acc)))))))))
+
+; `,@name` for a `&rest` parameter: its arguments, spliced in place. A
+; splice of anything else has nothing to splice at expansion time.
+(defn me-splice-of (e cx)
+  (match (Expr.inner e)
+    (EApply f args
+      (if (str-eq f "unquote-splicing")
+        (if (cx-in-template cx)
+          (match args
+            (Cons a t
+              (match (me-rest-name a)
+                (Some nm
+                  (match (senv-find (cx-senv cx) nm)
+                    (SHRest xs (if (nil? t) (Some xs) (me-splice-fail e)))
+                    (_ (me-splice-fail e))))
+                (None (me-splice-fail e))))
+            (Nil (me-splice-fail e)))
+          None)
+        None))
+    (_ None)))
+
+(defn me-rest-name (a)
+  (match (Expr.inner a)
+    (EAtom atom (match atom (AIdent n (Some n)) (_ None)))
+    (_ None)))
+
+(defn me-splice-fail (e)
+  (let _ (me-fail "E_MALFORMED_FORM" "in a macro template, `,@` splices a `&rest` parameter" e
+                  "declare it with (defmacro m (a &rest body) ...) and write ,@body")
+    None))
 
 ; Macro expansion rebuilds every node it walks, so the rewritten node keeps
 ; the original's position -- see qf-form for the same note. An identifier
@@ -365,13 +425,70 @@
 (defn me-ref (e name cx)
   (match (senv-find (cx-senv cx) name)
     (SHParam a a)
+    ; A rest parameter as a value is the list of its arguments.
+    (SHRest xs (me-spanned (me-list-expr xs) e))
     (SHRen nm (me-spanned (Expr (EAtom (AIdent nm))) e))
     (SHNone (let _ (me-check-free e name cx) e))))
 
-; Rewrite a fixed list of children, then rebuild with me-rebuild.
+; The list literal of `xs`, with the prelude's Cons and Nil.
+(defn me-list-expr (xs)
+  (match xs
+    (Nil (Expr (EAtom (AIdent (ffi-call "zyl_ref_get" me-nil-key 1000)))))
+    (Cons h t (Expr (EApply (ffi-call "zyl_ref_get" me-cons-key 1000) (Cons h (Cons (me-list-expr t) Nil)))))))
+
+; The prelude's canonical names for Cons and Nil (module resolution has
+; qualified every reference by now), read from core/list's own deftype.
+(def me-cons-key (ffi-call "zyl_ref_new" "Cons" 1000))
+(def me-nil-key (ffi-call "zyl_ref_new" "Nil" 1000))
+
+(defn me-find-prelude-list (forms)
+  (match forms
+    (Nil unit)
+    (Cons e rest
+      (match (Expr.inner e)
+        (EDeftype _ variants _ _
+          (let _ (me-note-list-variants variants)
+            (me-find-prelude-list rest)))
+        (_ (me-find-prelude-list rest))))))
+
+(defn me-note-list-variants (vs)
+  (match vs
+    (Nil unit)
+    (Cons v rest
+      (match v
+        (AV vn _
+          (begin
+            (if (me-std-named vn "Cons") (ffi-call "zyl_ref_set" me-cons-key vn 1000) unit)
+            (if (me-std-named vn "Nil") (ffi-call "zyl_ref_set" me-nil-key vn 1000) unit)
+            (me-note-list-variants rest)))))))
+
+(defn me-std-named (key sym)
+  (and (str-eq (err-name key) sym)
+       (and (>= (str-length key) 8) (str-eq (str-substring key 0 8) "zyl/std@"))))
+
+; Rewrite a fixed list of children, then rebuild with me-rebuild. A
+; splice may change the count only where the node takes any number.
 (defn me-kids (e kids cx n)
   (match (me-rewrite-list kids cx n)
-    (MeRL ks n2 (MeR (me-rebuild (Expr.inner e) ks) n2))))
+    (MeRL ks n2
+      (if (or (= (list-length ks) (list-length kids)) (me-variadic (Expr.inner e)))
+        (MeR (me-rebuild (Expr.inner e) ks) n2)
+        (let _ (me-fail "E_MALFORMED_FORM" "`,@` splices only where any number of expressions may appear" e
+                        "splice into a call's arguments, a begin or a print")
+          (MeR e n2))))))
+
+(defn me-variadic (inner)
+  (match inner
+    (ECall _ _ true)
+    (EBegin _ true)
+    (EPrint _ true)
+    (EMakeStruct _ _ true)
+    (EMakeVariant _ _ _ true)
+    (EFfiCall _ _ _ true)
+    (EUnknown _ _ true)
+    (ESetup _ true)
+    (ETeardown _ true)
+    (_ false)))
 
 (defn me-k1 (e a cx n) (me-kids e (Cons a Nil) cx n))
 (defn me-k2 (e a b cx n) (me-kids e (Cons a (Cons b Nil)) cx n))
@@ -791,10 +908,16 @@
 (defn me-apply (e fname args cx n)
   (match (me-rewrite-list args cx n)
     (MeRL args2 n2
+     (if (and (cx-in-template cx) (str-eq fname "unquote"))
+      ; `,x` in a template is x: parameters are substituted anyway.
+      (match args2
+        (Cons a t (if (nil? t) (MeR a n2) (MeR (Expr (EApply fname args2)) n2)))
+        (Nil (MeR (Expr (EApply fname args2)) n2)))
       (match (senv-find (cx-senv cx) fname)
         (SHParam a (me-apply-param e a args2 cx n2))
         (SHRen nm (MeR (Expr (EApply nm args2)) n2))
-        (SHNone (me-apply-name e (me-check-free e fname cx) args2 cx n2))))))
+        (SHNone (me-apply-name e (me-check-free e fname cx) args2 cx n2))
+        (SHRest _ (MeR (Expr (EApply fname args2)) n2)))))))
 
 (defn me-apply-param (e a args2 cx n)
   (match (Expr.inner a)
@@ -828,6 +951,20 @@
       0)))
 
 (defn me-check-arity (e fname params args)
+  (if (me-in-list "&rest" params)
+    (me-check-arity-rest e fname (- (list-length params) 2) (list-length args))
+    (me-check-arity-fixed e fname params args)))
+
+(defn me-check-arity-rest (e fname want got)
+  (if (>= got want)
+    0
+    (let m1 (str-concat "macro " (me-quote fname))
+      (let m2 (str-concat m1 " takes at least ")
+        (let m3 (str-concat m2 (int-to-str want))
+          (let msg (str-concat m3 (str-concat " argument(s), but this call passes " (int-to-str got)))
+            (me-fail "E_ARITY_MISMATCH" msg e "pass one argument per parameter before &rest")))))))
+
+(defn me-check-arity-fixed (e fname params args)
   (let want (list-length params)
     (let got (list-length args)
       (if (= want got)
@@ -852,7 +989,8 @@
         (_ (Cons e (me-strip rest)))))))
 
 (defn me-expand-program (forms)
+  (let _ (me-find-prelude-list forms)
   (let mt (me-collect forms MNil)
     (let _ (me-check-clash forms mt)
       (match (me-rewrite-list (me-strip forms) (MeCx SNil mt Nil Nil) 0)
-        (MeRL out _ out)))))
+        (MeRL out _ out))))))
