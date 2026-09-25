@@ -4,15 +4,18 @@ This chapter is the reference for Zyl's capability types (`TCap`, `TMut`,
 `TAtomic`, `TBox`, `TPin` and `Secret`) and the aliasing invariant they
 protect. The normative text is `zyl_specification.txt` §4.3 (capability
 types), §7.2 and §7.4 (closure capture), §10 (mutability and aliasing),
-§15 (actors) and §16 (FFI). The implementation is spread over
-`stdlib/compiler/type_system.zyl` (`CapKind`),
-`stdlib/compiler/mutability_check.zyl` (aliasing and actor transfer),
-`stdlib/compiler/type_inference.zyl` (FFI pinnability) and
-`stdlib/compiler/secret_check.zyl` (the Secret capability).
+§15 (actors) and §16 (FFI). The implementation is
+`stdlib/compiler/mutability_check.zyl` (aliasing and actor transfer) and
+`stdlib/compiler/secret_check.zyl` (the Secret capability); FFI argument
+types come from `extern` declarations, checked by the type pass
+(`type_annotate.zyl`).
 
-Capabilities are never written in source. The specification infers them
-(§0 P7). The compiler enforces the parts of the invariant that can be
-decided from the syntax, and this chapter says which parts those are.
+Capabilities are never written in source, except `Secret`. The
+specification infers them (§0 P7). The compiler has no capability types:
+the type checker (Chapter 15) sees a `let-mut` variable or a pinned
+value as the plain type of its value. It enforces the parts of the
+invariant that can be decided from the syntax, in passes of their own,
+and this chapter says which parts those are.
 
 ## 17.1 The Aliasing Invariant
 
@@ -58,18 +61,17 @@ name to a `let-mut` value creates an independent copy, not an alias:
 
 ## 17.2 Capability Kinds
 
-§4.3 defines five capability types. In the implementation each one is a
-`CapKind` inside a single type constructor, `TCap CapKind Type`.
+§4.3 defines five capability types. None of them exists as a type in the
+compiler; each is met, where it is met at all, by a rule on the syntax.
 
-| Spec | `CapKind` | Meaning (spec) | Where the compiler produces it |
-|------|-----------|----------------|-------------------------------|
-| `TCap<T>` | `TCCap` | shared, immutable | the default for every binding |
-| `TMut<T>` | `TCMut` | exclusive, mutable | `let-mut` (checked by name, 17.1); `for` loop variables in inference |
-| `TAtomic<T>` | `TCAtomic` | atomic shared mutation | not produced by any source construct |
-| `TBox<T>` | `TCBox` | heap-managed allocation | not produced by any source construct |
-| `TPin<T>` | `TCPin` | FFI-pinned, non-moving | the result of `ffi-pin` |
-| — | `TCSecret` | key material (17.8) | defined, but not produced: a `Secret` annotation is tracked by `secret_check.zyl`, not turned into this type |
-| — | `TCByte`, `TCAtomicByte` | byte-primitive capabilities | defined for the byte primitives (Chapter 32), not produced by inference today |
+| Spec | Meaning (spec) | What the compiler does |
+|------|----------------|------------------------|
+| `TCap<T>` | shared, immutable | the default for every binding |
+| `TMut<T>` | exclusive, mutable | `let-mut`, checked by name (17.1) |
+| `TAtomic<T>` | atomic shared mutation | not produced by any source construct |
+| `TBox<T>` | heap-managed allocation | not produced by any source construct |
+| `TPin<T>` | FFI-pinned, non-moving | `ffi-pin` copies the value into the pin arena; the result has type `(Pin a)` |
+| `Secret` (17.8) | key material | a `Secret` annotation, tracked by `secret_check.zyl` |
 
 Notes on the kinds that have no source form:
 
@@ -102,11 +104,8 @@ The canonical specification states no coercion rules. `spec/06` derives
 two from the invariant: a `TMut` may be downgraded to `TCap`, and a `TCap`
 may never be upgraded to `TMut`.
 
-In the implementation, two capability types unify only if their kinds are
-equal, with one exception: `Secret` and `Cap` unify in either direction
-(17.8). Apart from an argument that clashes with a parameter or field
-annotation, type errors are not reported (Chapter 15), so neither rule
-has a dedicated check. In practice, reading a `let-mut` variable is
+The implementation has no capability types to coerce between, so neither
+rule has a dedicated check. In practice, reading a `let-mut` variable is
 always allowed, and nothing can turn a `let` binding into a mutable one.
 
 There is no syntax for annotating a parameter with a capability. To write
@@ -158,24 +157,21 @@ moment:
         0))))
 ```
 
-> **Compiler defect.** A closure that mutates a captured `let-mut`
-> variable is not rejected and does not work. This compiles and then
-> crashes with a segmentation fault:
->
-> ```lisp
-> (defn main ()
->   (let-mut n 0
->     (let bump (fn () (set! n (+ n 1)))
->       (begin
->         (bump)
->         (print n)
->         0))))
-> ```
->
-> The mutability check deliberately walks closure bodies in the enclosing
-> scope, so it accepts the `set!`. Until capture by reference exists,
-> keep mutable state in the function that owns it and return new values
-> from closures instead.
+Because the closure holds a copy, a `set!` inside it could not change
+the variable outside. It is rejected:
+
+```lisp
+(defn main ()
+  (let-mut n 0
+    (let bump (fn () (set! n (+ n 1)))   ; E_MUT_CONFLICT: `n` is captured by value
+      (begin
+        (bump)
+        (print n)
+        0))))
+```
+
+Keep mutable state in the function that owns it, and return new values
+from closures instead.
 
 ## 17.7 Actors and FFI
 
@@ -205,24 +201,22 @@ separately (17.8).
 
 FFI_Pinnable types are `Int`, `Float`, `Bool`, `String`, `Vec<T>` of a
 pinnable `T`, and types composed only of pinnable types (§16).
-`is-ffi-pinnable` implements this, and also treats `Byte`, lists, arrays,
-structs, maps and results of pinnable parts as pinnable. A capability
-type is pinnable only if it is `TCap` or `Secret` over a pinnable type.
 
-Type inference applies the check to every `ffi-call` argument and to
-`ffi-pin`, and raises `E_INVALID_CAPABILITY`. The mutability pass also
-rejects a `fn` written directly as an `ffi-call` argument.
-
-```lisp
-(ffi-pin (fn (x) x))            ; E_INVALID_CAPABILITY: Fn is not FFI_Pinnable
-```
+The compiler meets this through `extern` declarations. A foreign
+function's C signature must be declared before any `ffi-call` to it, and
+the declaration's types must be concrete and fit a machine word, so an
+argument's type is fixed by the declaration and a struct passed where
+the C side takes an `Int` is `E_TYPE_MISMATCH`. The mutability pass also
+rejects a `fn` written directly as an `ffi-call` argument with
+`E_INVALID_CAPABILITY`; a named top-level function may be passed where
+the declaration has an `(Fn (A ...) R)` parameter.
 
 Two gaps in the implementation:
 
 - R4's Pin-region requirement is not enforced for ordinary values. An
   `Int` or `String` may be passed straight to `ffi-call`.
-- An unresolved type variable counts as pinnable, so the check catches
-  only values whose type inference has already pinned down.
+- `ffi-pin` rejects only a function (`E_FFI_TYPE_NOT_PINNABLE`); any
+  other value may be pinned, whatever its capability.
 
 Chapter 22 covers FFI in full.
 
@@ -255,13 +249,14 @@ arithmetic, constructors and byte loads, and rejects the following:
 
 `declassify`, from `math/secret/secret`, is the one named way out. So are
 the two library functions `ct-eq-bool` and `ct-eq-words-bool`, which
-reduce a comparison to its public verdict:
+reduce a comparison to its public verdict. `ct-eq` itself returns an
+`Int` (1 or 0), not a `Bool`, so a condition compares it with `=`:
 
 ```lisp
 (use math/secret/secret)
 
 (defn check ((k (Secret Int)))
-  (if (declassify (ct-eq k 5)) 1 0))
+  (if (= (declassify (ct-eq k 5)) 1) 1 0))
 
 (defn main ()
   (begin
@@ -277,11 +272,9 @@ The rules across calls:
 - **Unannotated helpers.** Taint enters a callee only through annotated
   parameters, so a helper without annotations launders a secret.
 
-At the type level, `TCSecret` is defined as not Send and as FFI_Pinnable
-through its inner type, and it unifies with `TCCap` so that a key can pass
-through generic helpers. Type inference does not currently give a `Secret`
-parameter this type; the taint is tracked by name in the checker, not by
-the unifier.
+To the type checker, `(Secret Int)` is an `Int`: the annotation gives the
+parameter its inner type, so a key passes through generic helpers. The
+taint is tracked by name in `secret_check.zyl`, not by the unifier.
 
 Two different capabilities share the name here:
 
@@ -301,8 +294,9 @@ What the specification infers, and how each rule is met today:
    copied into a heap environment (Chapter 16).
 5. **Actor send** requires Send. Met syntactically for `let-mut`
    variables and `Secret`s (17.7, 17.8).
-6. **FFI** requires FFI_Pinnable and Pin. Pinnability is checked; the
-   Pin region is required only for `Secret`s (17.7).
+6. **FFI** requires FFI_Pinnable and Pin. Argument types are fixed by
+   the `extern` declaration; the Pin region is required only for
+   `Secret`s (17.7).
 
 ## 17.10 Capability Errors
 
@@ -310,7 +304,7 @@ What the specification infers, and how each rule is met today:
 |------|------------|
 | `E_MUT_CONFLICT` | `set!` on a binding that is not `let-mut`, or on a struct field |
 | `E_CAPABILITY_LEAK` | a `let-mut` variable referenced by a `spawn` closure or a `send` message |
-| `E_INVALID_CAPABILITY` | a non-FFI_Pinnable value given to `ffi-call` or `ffi-pin` |
+| `E_INVALID_CAPABILITY` | a `fn` written directly as an `ffi-call` argument |
 | `E_CT_VIOLATION`, `E_SECRET_DEBUG`, `E_SECRET_ESCAPE`, `E_FFI_PIN_REQUIRED` | Secret misuse (17.8) |
 | `E_ZEROIZE_MISSING` | warning: a Secret consumed without `zeroize` |
 | `E_REGION_ESCAPE` | a Stack bytebuf, or a value allocated inside `with-region`, that outlives its region (Chapter 16) |
@@ -328,7 +322,7 @@ code.
 | `&T` | `TCap<T>`, inferred | every binding by default |
 | `&mut T` | `TMut<T>`, inferred | `let-mut` + `set!`, checked by name |
 | `Box<T>` | `TBox<T>` | no source form; ADT fields are heap pointers |
-| `Pin<&mut T>` | `TPin<T>` via `ffi-pin` | `ffi-pin` result |
+| `Pin<&mut T>` | `TPin<T>` via `ffi-pin` | `ffi-pin` copies into the pin arena |
 | `Arc<Mutex<T>>` | `TAtomic<T>` | atomic operations on addresses and byte buffers |
 | borrow checker | region + capability inference | syntactic checks (17.1, 17.7) |
 | lifetime parameters | region variables, inferred | none; heap values live until exit |

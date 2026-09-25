@@ -1,6 +1,6 @@
 # Chapter 22: FFI Safety and Pinning
 
-Complete reference for Zyl's Foreign Function Interface: `ffi-call`, pinning, FFI-pinnable types, how values are represented on the C side, linking C code, and which of the specification's safety rules the compiler enforces today.
+Complete reference for Zyl's Foreign Function Interface: `ffi-call`, `extern` declarations, pinning, FFI-pinnable types, how values are represented on the C side, linking C code, and which of the specification's safety rules the compiler enforces today.
 
 The normative text is spec v5.0 §16 (FFI model), §9.1 rules R4 and R8, §13.4 (Pin region), §31.9 (the `ffi` capability) and §31.10 (native dependencies). The implementation lives in `stdlib/compiler/icnf.zyl` (lowering), `stdlib/compiler/codegen.zyl` (the call itself), `stdlib/compiler/type_system.zyl` (`is-ffi-pinnable`), `stdlib/compiler/capability_check.zyl`, `stdlib/compiler/arity_check.zyl` (`ffi-check-call`), and `runtime/actor_runtime.c` (`ffi_pin`, `ffi_unpin`, `zyl_ffi_timed`). This chapter describes both, and says plainly where they differ: the FFI is one of the areas where the implementation lags furthest behind the specification.
 
@@ -14,8 +14,9 @@ The specification's model (§16, R4, R8) is:
 
 What the compiler does today:
 
+- Every foreign function is declared with `extern`, which gives its C signature; the type pass checks each `ffi-call` against it (§22.2). The runtime's own `zyl_*` functions are typed by the compiler's signature table, and an `extern` for one is `E_FFI_RESTRICTED`.
 - `ffi-call` compiles to a System V call of the named C symbol, passing every argument as a 64-bit word in the integer registers. A foreign symbol is called on a worker thread through the runtime's timed bridge; the runtime's own `zyl_*` symbols are called directly.
-- `ffi-pin` copies one word into the Pin arena and returns the address of the copy.
+- `ffi-pin` copies one word into a slot in the Pin arena and returns the slot, a `(Pin a)`; `ffi-unpin` takes the slot and returns the `a` in it.
 - The timeout argument must be a positive integer literal, and it is **enforced**: a foreign call that overruns it raises `E_FFI_TIMEOUT` (§22.7).
 - Pinnability is checked for `ffi-pin` operands and for closures written inline as `ffi-call` arguments, not in general (§22.4).
 - In a package with a `zyl.pkg`, using `ffi-call`, `ffi-pin` or `ffi-unpin` requires the `ffi` capability (§22.11).
@@ -37,6 +38,10 @@ ffi-call ::= "(" "ffi-call" String Expression* Timeout ")"
 - `timeout-ms`: the last argument, the timeout in milliseconds, which must be a positive integer literal.
 
 ```lisp
+(extern "abs" (Int) Int)
+(extern "strlen" (String) Int)
+(extern "puts" (String) Int)
+
 (defn main ()
   (begin
     (print (ffi-call "abs" -42 1000))        ; 42
@@ -56,9 +61,42 @@ PANIC: error[E_FFI_TIMEOUT_REQUIRED]: the last argument of ffi-call must be a po
    = help: end the call with a timeout in milliseconds, e.g. 1000; a missing timeout would otherwise drop the real last argument
 ```
 
-`(ffi-call "abs" -42)` and `(ffi-call "abs" -42 0)` are rejected the same way, since neither ends with a positive timeout. The check cannot catch every omission: `(ffi-call "f" 5)` is accepted as a call with no arguments and a 5 ms timeout. A call with more than 16 arguments is `E_ARITY_MISMATCH`.
+`(ffi-call "abs" -42)` and `(ffi-call "abs" -42 0)` are rejected the same way, since neither ends with a positive timeout. A call with more than 16 arguments is `E_ARITY_MISMATCH`.
 
-The result is whatever the function left in `rax`, as a 64-bit word (§22.5).
+The result is whatever the function left in `rax`, as a 64-bit word (§22.5), with the type its `extern` declares.
+
+### Declaring a foreign function: `extern`
+
+```
+extern ::= "(" "extern" String "(" Type* ")" Type ")"
+```
+
+```lisp
+(extern "strlen" (String) Int)
+(extern "free" (String) Unit)
+(extern "qsort" (Ptr Int Int (Fn (Ptr Ptr) Int)) Unit)
+```
+
+An `extern` names a C symbol, the types of its parameters and its result type. It must appear before any `ffi-call` to that symbol. The type pass then checks each call like a call of a Zyl function: the arguments unify with the parameter types (`E_TYPE_MISMATCH` otherwise, or when the count differs), and the call has the result type. The form itself evaluates to Unit.
+
+A call to a foreign symbol with no `extern` is rejected:
+
+```
+error[E_CANNOT_INFER]: no type for ffi-call to `abs`, which has no (extern ...) declaration
+```
+
+The types must be concrete and must fit in one machine word:
+
+- `Int`, `Bool`, `String`, `Unit` (for a `void` result), declared ADTs and structs (passed as a pointer), and the runtime's handle types: `Ptr` (an opaque address, as `alloc-malloc` returns, that Zyl code can only pass back to C or to the `alloc-` functions), `Arena`, `Fd` and the rest listed in `stdlib/compiler/ffi_sigs.zyl`.
+- `(Fn (A ...) R)` is a C function pointer: a top-level Zyl function passed as a callback (§22.9), whose parameters take the types `A ...`.
+- No `Float`: the timed bridge passes every argument in an integer register (§22.5).
+- No type variables: `(extern "abs" (a) b)` would let any value become any other, so it is `E_TYPE_MISMATCH`. There is no unsafe cast form in Zyl, and `extern` is not one.
+
+These checks run when a call to the symbol is typed, so an `extern` that no call uses is not checked. A program has one `extern` per symbol; a later one for the same symbol replaces the earlier.
+
+The `extern` is a promise about C, not a check of it. Nothing compares it with the C prototype, so declaring `(extern "strlen" (Int) Int)` compiles and passes an integer where C reads a pointer. Declare what the C code actually takes.
+
+The `zyl_*` runtime functions need no `extern`: the compiler has a signature for each one it expects programs to call (`stdlib/compiler/ffi_sigs.zyl`), such as `-> Unit` for `zyl_actor_wait_all`. An `extern` is only for foreign code: declaring one for a symbol the runtime exports is `E_FFI_RESTRICTED` ("`zyl_actor_wait_all` is a runtime entry; its type comes from the compiler's signature table, not from an extern"), whatever type it gives. A runtime export with no entry in the table, such as `zyl_actor_send_closure`, is `E_CANNOT_INFER` ("no type for untyped ffi result"), and cannot be called from a program at all. A few raw entries that would turn any word into any type, such as `zyl_cstr_of_word`, are reserved to the standard library: naming one in a user program is `E_FFI_RESTRICTED`.
 
 ## 22.3 Pinning
 
@@ -70,13 +108,13 @@ The result is whatever the function left in `rax`, as a 64-bit word (§22.5).
 
 Spec §16: `ffi-pin` copies the value to the Pin region (a non-moving arena) and returns a stable pointer. Pin lifetime is tied to the FFI call scope unless the program manages it manually.
 
-Implementation (`ffi_pin`, `actor_runtime.c`): `ffi-pin` allocates one 8-byte slot in the process-wide Pin arena, stores the value's word in it, and returns the slot's address. The C function therefore receives a **pointer to the value**, not the value:
+Implementation (`ffi_pin`, `actor_runtime.c`): `ffi-pin` allocates one 8-byte slot in the process-wide Pin arena, stores the value's word in it, and returns the slot. When `value` has type `a`, `(ffi-pin value)` has type `(Pin a)`. The C function therefore receives a **pointer to the value**, not the value, and the `extern` parameter that takes it is declared `(Pin a)`:
 
-| Pinned value | C receives |
-|--------------|------------|
-| `Int` 21 | `const int64_t *` pointing at 21 |
-| `String` | `char **`: a pointer to the string pointer |
-| a struct or ADT value | a pointer to the value's heap pointer |
+| Pinned value | Zyl type | C receives |
+|--------------|----------|------------|
+| `Int` 21 | `(Pin Int)` | `int64_t *` pointing at 21 |
+| `String` | `(Pin String)` | `char **`: a pointer to the string pointer |
+| a struct or ADT value of type `T` | `(Pin T)` | a pointer to the value's heap pointer |
 
 ```c
 /* C side: reads through the pinned slot */
@@ -84,23 +122,38 @@ int64_t ml_deref(const int64_t *slot) { return *slot * 2; }
 ```
 
 ```lisp
+(extern "ml_deref" ((Pin Int)) Int)
+
 (let slot (ffi-pin 21)
-  (begin
-    (print (ffi-call "ml_deref" slot 1000))  ; 42
-    (print (ffi-unpin slot))))               ; 21
+  (print (ffi-call "ml_deref" slot 1000)))  ; 42
 ```
 
-Passing `(ffi-pin "text")` to a function that expects `const char *`, such as `puts`, is a bug: it receives a `char **`.
+A `(Pin a)` is not an `a`. `(ffi-pin "text")` is a `(Pin String)`, so passing it to `puts`, declared `(String) Int`, is `E_TYPE_MISMATCH`, and so is arithmetic on a pinned `Int`. Pinning a function is `E_FFI_TYPE_NOT_PINNABLE`.
 
 ### ffi-unpin
 
 ```lisp
-(ffi-unpin pinned-pointer)
+(ffi-unpin pinned)
 ```
 
 Spec §16: `ffi-unpin` explicitly frees pinned memory.
 
-Implementation: `ffi-unpin` returns the word stored in the slot and frees nothing. It can be called on the same slot more than once. A pointer that did not come from the Pin arena prints `zyl: ffi-unpin: pointer not from ffi-pin/Pin arena` to stderr and yields 0.
+Implementation (`ffi_unpin`): `ffi-unpin` takes a `(Pin a)` and returns the `a` now in the slot. That is the value pinned, or the word C wrote there, so a pinned slot is how C hands a one-word out-parameter back to Zyl:
+
+```c
+/* C side: writes the remainder through the slot */
+int64_t ml_divmod(int64_t a, int64_t b, int64_t *rem) { *rem = a % b; return a / b; }
+```
+
+```lisp
+(extern "ml_divmod" (Int Int (Pin Int)) Int)
+
+(let rem (ffi-pin 0)
+  (let q (ffi-call "ml_divmod" 17 5 rem 1000)
+    (print (+ (* q 10) (ffi-unpin rem)))))    ; 32
+```
+
+It frees nothing, so the same slot can be read more than once. A pointer that did not come from the Pin arena prints `zyl: ffi-unpin: pointer not from ffi-pin/Pin arena` to stderr, and the result is 0. A buffer of more than one word does not fit in a slot; allocate it with `alloc-malloc` or `arena-alloc-zeroed`, a `Ptr` (§22.8).
 
 ### The Pin arena
 
@@ -114,24 +167,22 @@ Implementation: `ffi-unpin` returns the word stored in the slot and frees nothin
 
 Spec §16: the FFI-pinnable types are `Int`, `Float`, `Bool`, `String`, `Vec<T>` where `T` is pinnable, and types composed solely of pinnable types. §9.1 R4 requires `ffi-call` arguments to be in the Pin region and of an FFI-pinnable type.
 
-What the compiler checks (`is-ffi-pinnable`, `type_system.zyl`):
+What the compiler checks (the type pass, `type_annotate.zyl`, and `mutability_check.zyl`):
 
 | Construct | Rejected | Error |
 |-----------|----------|-------|
-| `(ffi-pin e)` where `e` has a resolved TMut, TAtomic, TPin or TBox capability type, a function type, or a byte-buffer type | yes | `E_INVALID_CAPABILITY` |
+| `(ffi-pin e)` where `e` has a function type | yes | `E_FFI_TYPE_NOT_PINNABLE` |
 | `(ffi-call "f" (fn (x) x) 1000)`, a closure written inline as an argument | yes | `E_INVALID_CAPABILITY` |
 | a `Secret` passed to `ffi-call` without `ffi-pin` | yes | `E_FFI_PIN_REQUIRED` |
-| a closure bound with `let` and then pinned or passed | **no** | none |
+| a closure bound with `let` and then passed to `ffi-call` (an `extern` parameter that is not a `Fn` type rejects it as `E_TYPE_MISMATCH`) | only by the `extern` | none |
 | a `let-mut` variable pinned or passed | **no** | none |
 | an unpinned `Int` or `String` passed straight to `ffi-call` (R4) | **no** | none |
 | a value whose type is still a type variable | **no** | none |
 
 ```
-PANIC: E_INVALID_CAPABILITY: FFI value has type Fn which is not FFI_Pinnable
+error[E_FFI_TYPE_NOT_PINNABLE]: a function cannot be pinned: FFI_Pinnable types are Int, Float, Bool, String and data built from them
 PANIC: E_INVALID_CAPABILITY: ffi-call argument is a closure, which is not FFI_Pinnable (Int/Float/Bool/String/composed only) -- pin its result data explicitly instead of passing the closure itself
 ```
-
-Spec §28 does not define a dedicated pinnability code. The compiler's catalogue has `E_FFI_TYPE_NOT_PINNABLE`, but the checks emit `E_INVALID_CAPABILITY` instead.
 
 Passing raw `Int` and `String` values directly, as in §22.2, is the idiom the standard library and the compiler itself use throughout. Rule R4 is not enforced.
 
@@ -144,23 +195,31 @@ Every argument travels as one 64-bit word in an integer register, and the result
 | `Int` | the integer | `int64_t` / `long long` |
 | `Bool` | 1 or 0, as a 64-bit word | `int64_t` |
 | `String` | pointer to NUL-terminated UTF-8 bytes | `const char *` |
-| a buffer from `alloc-malloc` | the raw pointer, as an `Int` | `char *` / `void *` |
+| a buffer from `alloc-malloc` | the raw pointer, a `Ptr` | `char *` / `void *` |
 | struct / ADT value | pointer to a heap record `[tag][field0][field1]...` | `const int64_t *` (layout is internal) |
 | `Vec` | pointer to a heap record `[tag][data][len][cap][arena]` | internal layout; avoid |
-| `(ffi-pin v)` | pointer to an 8-byte slot holding `v`'s word | `const int64_t *` |
+| `(ffi-pin v)`, a `(Pin a)` | pointer to an 8-byte slot holding `v`'s word | `int64_t *` |
 | `Float` | the IEEE-754 bits **in an integer register** | see below |
 
-**Floats do not work across the FFI.** The compiler never loads `xmm` registers for arguments and never reads `xmm0` for a result. A C function declared `double f(double)` receives garbage and its result is lost: calling `sqrt`-style code with `2.0` returns `4611686018427387904`, the integer view of 2.0's bits. For floating-point work, keep it in Zyl, or pass integers (for example, fixed-point values).
+**Floats do not cross the FFI.** The compiler never loads `xmm` registers for arguments and never reads `xmm0` for a result, so an `extern` that mentions `Float` is rejected at the first call:
+
+```
+error[E_TYPE_MISMATCH]: the extern declaration of `fabs` uses the type Float, which cannot cross the C boundary
+```
+
+For floating-point work, keep it in Zyl, or pass integers (for example, fixed-point values).
 
 The layouts of structs, ADTs and `Vec` are implementation details of the current code generator, not part of any specification. Do not write C that depends on them.
 
-**Results.** The result is the raw `rax` word. To use a returned `char *` as a Zyl string, pass it through a string builtin:
+**Results.** The result is the raw `rax` word, typed by the `extern`. A function returning `char *` that points at a NUL-terminated string can be declared to return `String`:
 
 ```lisp
+(extern "getenv" (String) String)
+
 (print (str-concat "HOME=" (ffi-call "getenv" "HOME" 1000)))   ; HOME=/home/larry
 ```
 
-`(print (ffi-call "getenv" "HOME" 1000))` prints the pointer as an integer. `print` treats an FFI result as an `Int`, except for a few runtime string functions that it recognises by name.
+A function that returns a buffer or a pointer that is not a string returns `Ptr`; `alloc-cstr` (`allocator/allocator`) reads the NUL-terminated bytes at a `Ptr` as a `String`. A `String` declared this way is C's memory, not a copy: if C may free or reuse it, copy it first with `(str-concat "" s)`.
 
 ### Calling convention
 
@@ -217,6 +276,12 @@ int64_t ml_deref(const int64_t *slot) { return *slot * 2; }
 ```lisp
 (use allocator/allocator)
 
+(extern "ml_factorial" (Int) Int)
+(extern "ml_count_char" (String Int) Int)
+(extern "ml_reverse" (String Ptr Int) Int)
+(extern "ml_deref" ((Pin Int)) Int)
+(extern "getenv" (String) String)
+
 (defn factorial (n) (ffi-call "ml_factorial" n 1000))
 
 (defn count-char (s c) (ffi-call "ml_count_char" s c 1000))
@@ -224,7 +289,7 @@ int64_t ml_deref(const int64_t *slot) { return *slot * 2; }
 (defn reverse-string (s)
   (let buf (alloc-malloc 256)
     (let _ (ffi-call "ml_reverse" s buf 256 1000)
-      (let out (str-concat "" buf)
+      (let out (str-concat "" (alloc-cstr buf))
         (let _ (alloc-free buf)
           out)))))
 
@@ -233,10 +298,7 @@ int64_t ml_deref(const int64_t *slot) { return *slot * 2; }
     (print (factorial 10))
     (print (count-char "mississippi" 115))
     (print (str-concat "reversed: " (reverse-string "hello")))
-    (let slot (ffi-pin 21)
-      (begin
-        (print (ffi-call "ml_deref" slot 1000))
-        (print (ffi-unpin slot))))
+    (print (ffi-call "ml_deref" (ffi-pin 21) 1000))
     (print (str-concat "HOME=" (ffi-call "getenv" "HOME" 1000)))
     0))
 ```
@@ -250,11 +312,10 @@ $ cd mathlib && zyl build && ./mathlib
 4
 reversed: olleh
 42
-21
 HOME=/home/larry
 ```
 
-`(str-concat "" buf)` copies the C-filled buffer into a fresh Zyl string before the buffer is freed.
+`alloc-malloc` returns a `Ptr`, so `ml_reverse` is declared to take one for `dst`. `(alloc-cstr buf)` reads the buffer as a `String` without copying it, and `(str-concat "" ...)` copies it into a fresh Zyl string before the buffer is freed.
 
 ## 22.7 Timeout Enforcement
 
@@ -275,6 +336,9 @@ E_FFI_TIMEOUT: ffi call `usleep` exceeded its timeout of 50 ms
 This is an ordinary panic: `try`/`catch` catches it, and `recover` (or `zyl_err_is`) matches it by code.
 
 ```lisp
+(extern "usleep" (Int) Int)
+(extern "abs" (Int) Int)
+
 (defn slow-call () (ffi-call "usleep" 300000 50))   ; 300 ms against 50 ms
 
 (print (try (slow-call) (catch e 0)))               ; 0
@@ -285,7 +349,7 @@ This is an ordinary panic: `try`/`catch` catches it, and `recover` (or `zyl_err_
 
 **Determinism.** Whether a timeout fires depends on how long foreign code runs. Spec §27 treats FFI results as observable external input, and a timeout is one of them, just like a value the C function returns.
 
-**Trusted runtime symbols.** Symbols beginning with `zyl_` belong to the Zyl runtime. They are called directly, without a worker thread; their timeout must still be a positive literal but is not used.
+**Trusted runtime symbols.** Symbols beginning with `zyl_` belong to the Zyl runtime. They are called directly, without a worker thread; their timeout must still be a positive literal but is not used. Their types come from the compiler's signature table (§22.2).
 
 **Callbacks** from C into Zyl run on the worker thread (§22.9).
 
@@ -302,18 +366,23 @@ Allocate a buffer, pass the pointer, copy the result out, and free the buffer. T
 ```lisp
 (use allocator/allocator)
 
+(extern "c_fill_buffer" (Ptr Int) Int)
+
 (let buf (alloc-malloc 1024)
   (let _ (ffi-call "c_fill_buffer" buf 1024 1000)
-    (let data (str-concat "" buf)   ; copy out as a Zyl string
+    (let data (str-concat "" (alloc-cstr buf))   ; copy out as a Zyl string
       (let _ (alloc-free buf)
         data))))
 ```
 
-`alloc-malloc` and `alloc-free` wrap `malloc` and `free`. They come from `allocator/allocator`, which must be `use`d.
+`alloc-malloc` and `alloc-free` wrap `malloc` and `free`, and take and return `Ptr`. They come from `allocator/allocator`, which must be `use`d, as does `alloc-cstr`.
 
 ### C allocates, Zyl frees
 
 ```lisp
+(extern "strdup" (String) String)
+(extern "free" (String) Unit)
+
 (defn c-owned-string ()
   (let p (ffi-call "strdup" "copied by C" 1000)
     (let s (str-concat "" p)        ; copy into Zyl memory
@@ -321,15 +390,23 @@ Allocate a buffer, pass the pointer, copy the result out, and free the buffer. T
         s))))
 ```
 
-Pass the returned pointer itself to `free`, not `(ffi-pin p)`, which would pass the address of a slot holding `p`.
+Pass the returned pointer itself to `free`. `(ffi-pin p)` would be the address of a slot holding `p`; it is a `(Pin String)`, so the `extern` rejects it with `E_TYPE_MISMATCH`.
 
 ## 22.9 Callbacks (C to Zyl)
 
-A top-level function named as an `ffi-call` argument is passed as its code address, so C can call it back with integer and pointer arguments: `(ffi-call "qsort" p 64 8 compare 1000)` sorts with a Zyl comparator (`tests/regression/c-abi.zyl`). The callback runs on the FFI worker thread that is running the foreign call (§22.7). It sees the caller's `actor-self`, but a panic inside it that no `try` within the callback catches ends the process, since it cannot unwind into the caller, which is waiting on another thread. Closures are rejected as FFI arguments (§22.4).
+A top-level function named as an `ffi-call` argument is passed as its code address, so C can call it back with integer and pointer arguments. The `extern` gives the callback parameter a function type, `(Fn (A ...) R)`:
+
+```lisp
+(extern "qsort" (Ptr Int Int (Fn (Ptr Ptr) Int)) Unit)
+```
+
+`(ffi-call "qsort" p 64 8 compare 1000)` then sorts with a Zyl comparator `compare` whose two parameters are `Ptr`s, read with `alloc-read-int` (`tests/regression/c-abi.zyl`). The callback runs on the FFI worker thread that is running the foreign call (§22.7). It sees the caller's `actor-self`, but a panic inside it that no `try` within the callback catches ends the process, since it cannot unwind into the caller, which is waiting on another thread. Closures are rejected as FFI arguments (§22.4).
 
 When C needs to deliver events without calling back, have Zyl poll a C function that returns an integer code:
 
 ```lisp
+(extern "c_poll_event" () Int)
+
 (defn poll-loop (n)
   (let ev (ffi-call "c_poll_event" 1000)   ; returns 0 when idle
     (if (= ev 0)
@@ -375,20 +452,26 @@ A root package can forbid FFI for its whole graph with `(deny-capabilities ffi n
 
 | Property | Status |
 |----------|--------|
-| Only pinnable types cross the boundary | partial: inline closures and resolved non-pinnable types in `ffi-pin` are rejected (§22.4) |
+| Only pinnable types cross the boundary | partial: `extern` types every argument, and inline closures and pinned functions are rejected (§22.4) |
 | Pinned memory does not move | holds: nothing in Zyl moves memory |
 | Pinned memory stays alive during the call | holds: pins are never freed before exit |
 | Calls are bounded by a timeout | holds for foreign symbols: an overrunning call raises `E_FFI_TIMEOUT` and is abandoned (§22.7) |
 | C cannot corrupt Zyl memory (G5) | **not enforced**: C runs unrestricted in the process |
 | Symbol names cannot inject assembly | holds: names are sanitised |
 | FFI use is declared per package | holds for `defn`/`def` bodies in manifest-bearing packages (§22.11) |
-| Correct argument types | not checked: C sees raw words; floats are mis-passed |
+| Correct argument types | checked against the `extern` declaration (§22.2); the declaration itself is trusted, not compared with the C prototype |
+| Floats | rejected in `extern` types |
 
 ## 22.13 Errors
 
 | Error | When |
 |-------|------|
-| `E_INVALID_CAPABILITY` | non-pinnable operand of `ffi-pin`, or inline closure passed to `ffi-call` |
+| `E_CANNOT_INFER` | `ffi-call` to a foreign symbol with no `extern`, or to a `zyl_` symbol with no signature |
+| `E_TYPE_MISMATCH` | an argument or result that does not match the `extern`; a `Float` or type variable in an `extern` |
+| `E_FFI_RESTRICTED` | a raw runtime entry reserved to the standard library, or an `extern` for a runtime entry |
+| `E_MALFORMED_FORM` | an `extern` that is not `(extern "sym" (T ...) R)` |
+| `E_FFI_TYPE_NOT_PINNABLE` | a function passed to `ffi-pin` |
+| `E_INVALID_CAPABILITY` | an inline closure passed to `ffi-call` |
 | `E_FFI_PIN_REQUIRED` | a `Secret` passed to `ffi-call` without `ffi-pin` |
 | `E_PKG_CAPABILITY_VIOLATION` | FFI used in a package that does not declare `ffi`, or denied by the root |
 | `E_FFI_SYMBOL_NOT_FOUND` | interpreter only (`zyl eval`, the REPL): symbol not found by `dlsym` |
@@ -402,10 +485,10 @@ A root package can forbid FFI for its whole graph with `(deny-capabilities ffi n
 
 ## 22.14 Best Practices
 
-1. **Wrap every foreign function in one Zyl function**, so the raw word-level interface lives in one place.
+1. **Declare every foreign function with `extern`** next to one Zyl wrapper for it, so the word-level interface lives in one place.
 2. **Write a realistic timeout** as the last argument, as a literal. A missing one is a compile error; a too-tight one abandons the C call with `E_FFI_TIMEOUT`.
-3. **Pass integers and strings directly.** Use `ffi-pin` only when C expects a pointer to a value.
-4. **Keep floating point on the Zyl side** until the FFI passes floats correctly.
+3. **Pass integers and strings directly.** Use `ffi-pin` only when C expects a pointer to a value, and declare that parameter `(Pin a)`.
+4. **Keep floating point on the Zyl side**; `extern` rejects `Float`.
 5. **Copy C-owned data into Zyl strings** with `str-concat` before freeing it.
 6. **Declare `ffi` and `native` in `zyl.pkg`**, and check `zyl audit` to see which dependencies use them.
 7. **Test the C side with sanitizers** (ASan, UBSan). Nothing on the Zyl side can protect you from a C bug.

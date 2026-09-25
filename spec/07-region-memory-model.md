@@ -146,9 +146,12 @@ Not normative. The design and its rationale are in
   (R7); top-level `def` values live in the heap. Classes over-approximate:
   a local list of strings shares one level with its strings.
 - The `Region` ADT (`RStack`, `RHeap`, `RGlobal`, `RCircular`, `RPin`) in
-  `type_system.zyl` is a type parameter of `ByteBuf` and `ByteSlice`,
-  where unification requires equal regions. A Stack bytebuf is allocated
-  in the frame region.
+  `type_system.zyl` is recorded on the `(bytebuf R N)` node itself, a
+  construction-time constant that lowering and region inference read; it
+  is not part of the type. To the type checker `ByteBuf` and `ByteSlice`
+  are plain nullary types, and a byte operation rejects only a primitive
+  (Int, Float, Bool, String, Unit) where the handle belongs. A Stack
+  bytebuf is allocated in the frame region.
 
 ### Memory in the runtime
 

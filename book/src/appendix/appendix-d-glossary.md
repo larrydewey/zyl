@@ -8,7 +8,9 @@ what the specification says, the entry says so.
 
 **Actor**: Isolated concurrent entity with private state and a FIFO
 mailbox, created with `(spawn (fn () ...))` and addressed with `send`
-(§15).
+(§15). Its id has type `Actor`, the type of `spawn` and `actor-self`
+and the first argument of `send`. What `receive` returns is not yet
+type-checked.
 
 **ADT (Algebraic Data Type)**: Sum type declared with `deftype`. One of
 several variants, each with an optional payload (§8).
@@ -149,8 +151,8 @@ the unused, shadowing and duplicate-parameter checks.
 **Dispatch**: How a trait method call is resolved. A call
 `(Trait.method receiver ...)` is redirected to the per-type
 implementation for the receiver's inferred type (`type_annotate.zyl`);
-when that type is unknown it becomes a match on the receiver's variant
-tag. There is no dynamic dispatch through trait objects.
+a receiver whose type never resolves is `E_CANNOT_INFER`. There is no
+dynamic dispatch through trait objects.
 
 ## E
 
@@ -184,15 +186,20 @@ definition included only when `feature` is enabled. A gated
 definition may add to a package but never replace a base definition
 (`E_PKG_FEATURE_COLLISION`).
 
+**Extern**: `(extern "sym" (T ...) R)`, the declaration of a foreign C
+function's signature. An `ffi-call` to a foreign symbol needs one; its
+types are concrete machine-word types (no `Float`, no type variables).
+
 **FFI (Foreign Function Interface)**: Calling C functions from Zyl with
-`ffi-call`, which requires pinning for pointer arguments and a timeout
-argument (§16).
+`ffi-call`, which requires an `extern` declaration for a foreign
+symbol, pinning for pointer arguments and a timeout argument (§16).
 
 **Fixed point**: `f(x) = x`. For Zyl: the stage-2 compiler, compiling
 its own source, emits exactly the assembly it was built from
 (`stage2.s == stage3.s`).
 
-**Float**: IEEE-754 binary64.
+**Float**: IEEE-754 binary64. Never mixed with `Int` in arithmetic, and
+never converted implicitly.
 
 **Free variable**: A variable used in a closure but not bound inside it.
 
@@ -325,6 +332,9 @@ No search and no backtracking, so resolution never drifts.
 
 **Mutability**: Only through `let-mut` and `set!` (rebinding).
 
+**Num**: The closed class `{Int, Float}` that `+ - * / %` accept. Both
+operands of one form have the same type.
+
 ## N
 
 **Native dependency**: C sources a package ships and compiles
@@ -361,7 +371,7 @@ with a `zyl.pkg`, named by a scoped path such as `acme/json` (or
 
 **Phase**: One compilation step of §22 (11 phases, strict order).
 
-**Pin region**: Non-moving memory for FFI.
+**Pin region**: Non-moving memory for FFI. `ffi-pin` copies a value of type `a` into a slot there and returns the slot, a `(Pin a)`; `ffi-unpin` reads the `a` back.
 
 **Polymorphism**: Parametric (generics) and ad-hoc (traits).
 
@@ -438,6 +448,9 @@ the form §18 specifies for ICNF.
 
 **Symbol**: A `~name` token.
 
+**Self**: In a trait's method signatures, the type that implements the
+trait: `(trait Ord (compare (self (other Self)) Int))`.
+
 ## T
 
 **Tail call optimisation (TCO)**: §14 guarantees that deep recursion
@@ -457,14 +470,17 @@ type can implement.
 `tuple` constructor of §21.5 is not implemented.
 
 **Type inference**: Hindley–Milner with capability and trait
-constraints (phase 3).
+constraints (phase 3). It is strict: every unification failure is an
+error, and a program with a type error does not compile.
 
 **Type parameter**: A generic placeholder (`T`, `U`) in a function or
-ADT.
+ADT. A struct field written without a type is one.
 
 ## U
 
-**Unit**: The type with no meaningful value.
+**Unit**: The type with one value, `unit`: the type of statement forms
+(`print`, `set!`, `while`, an `if` without `else`, a `cond` with no
+`else` clause).
 
 **Unsafe**: A capability and a reserved module name. `(use pkg :unsafe
 { ... })` imports need the `unsafe` capability, and no module may be

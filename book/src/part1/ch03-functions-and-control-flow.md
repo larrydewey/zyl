@@ -19,7 +19,8 @@ Functions are the core building blocks of Zyl programs. This chapter covers func
 
 (defn main ()
   (print (add 2 3))       ; 5
-  (greet "Zyl"))          ; Hello, Zyl
+  (greet "Zyl")           ; Hello, Zyl
+  0)
 ```
 
 **Parameters are immutable** — they behave like `let` bindings. A `set!` on a parameter is a compile error (`E_MUT_CONFLICT`).
@@ -35,8 +36,10 @@ Functions are the core building blocks of Zyl programs. This chapter covers func
 Annotations are optional, and type inference works without them:
 `greet` would print `name` as text unannotated too, because every call
 passes a String. An annotation documents intent and constrains
-inference, and a call whose argument definitely clashes with it, such
-as `(add-ints 1.5 2)`, is `E_TYPE_MISMATCH` (Chapter 15).
+inference. Either way the program is checked: a call whose argument
+clashes with a parameter's type, annotated or inferred, such as
+`(add-ints 1.5 2)`, is `E_TYPE_MISMATCH` (Chapter 15), and the compile
+stops.
 
 There is no return-type annotation. Anything after the parameter list
 is the body, so `(defn add ((a Int) (b Int)) Int (+ a b))` treats `Int`
@@ -44,7 +47,8 @@ as an expression and fails with `E_UNBOUND_VARIABLE`.
 
 ### Multiple Expressions in Body
 
-A body may contain several forms; wrap them in `begin`:
+A body may contain several forms. They run in order, as if wrapped in
+`begin`, and you can also write the `begin` yourself:
 
 ```lisp
 (defn compute (x y)
@@ -56,9 +60,10 @@ A body may contain several forms; wrap them in `begin`:
 
 The **last expression's value is returned** — no explicit `return` keyword exists.
 
-The compiler also accepts several forms directly after the parameter
-list, but then a `let` among them stays in scope for the forms that
-follow it (Chapter 2, §2.5). `begin` gives the scoping you expect.
+One difference remains in the current compiler: with the forms
+directly after the parameter list, a `let` among them stays in scope
+for the forms that follow it (Chapter 2, §2.5). An explicit `begin`
+gives the scoping you expect.
 
 ### `defun` — Synonym for `defn`
 
@@ -86,7 +91,8 @@ Zyl supports full recursion:
 
 (defn main ()
   (print (factorial 10))          ; 3628800
-  (print (sum-to 1000000 0)))     ; 500000500000
+  (print (sum-to 1000000 0))      ; 500000500000
+  0)
 ```
 
 **Tail calls.** The specification calls for guaranteed TCO. A call in
@@ -110,7 +116,8 @@ in constant stack, except ones returning a String or Float.
 
 (defn main ()
   (print (even? 10))    ; 1
-  (print (odd? 7)))     ; 1
+  (print (odd? 7))      ; 1
+  0)
 ```
 
 Forward references work — all functions are collected before type inference.
@@ -134,7 +141,8 @@ no shorter syntax. To call one, bind it first:
 ```lisp
 (defn main ()
   (let square (fn (x) (* x x))
-    (print (square 7))))      ; 49
+    (print (square 7)))       ; 49
+  0)
 ```
 
 ### Closures Capture Their Environment
@@ -145,7 +153,8 @@ no shorter syntax. To call one, bind it first:
 
 (defn main ()
   (let add5 (make-adder 5)
-    (print (add5 10))))    ; 15
+    (print (add5 10)))     ; 15
+  0)
 ```
 
 `make-adder` returns a closure that carries `n` with it; `add5` is then
@@ -163,6 +172,9 @@ Chapter 8 covers closures in depth.
 (if condition then-branch else-branch)
 ```
 
+The condition must be a `Bool`, and the two branches must have the
+same type, which is the type of the `if`.
+
 ```lisp
 (defn max-of (a b)
   (if (> a b) a b))
@@ -173,9 +185,9 @@ Chapter 8 covers closures in depth.
       0)))
 ```
 
-The else branch may be left out. Then, when the condition is false,
-the `if` evaluates to 0 — fine when the `if` is only there for its
-effect:
+The else branch may be left out. An `if` without an else is a
+statement: its type is `Unit`, so its one branch must be `Unit` too,
+and the `if` can only be used for its effect:
 
 ```lisp
 (defn log-if-positive (n)
@@ -183,8 +195,10 @@ effect:
     (print n)))            ; nothing printed for n <= 0
 ```
 
-There is no truthiness beyond Bool: a condition is a comparison, a
-Bool, or a call that returns one.
+There is no truthiness: a condition is a comparison, a Bool, or a call
+that returns one. An Int is not a condition — `(if n ...)` is
+`E_TYPE_MISMATCH` (cannot unify Int with Bool); write `(if (!= n 0) ...)`.
+The same holds for `cond`, `when`, `while` and `for`.
 
 ### `cond` — Multi-Branch
 
@@ -196,8 +210,12 @@ Bool, or a call that returns one.
 ```
 
 Evaluates the tests in order; the first true one wins, and `cond`
-returns its body's value. `else` is optional but recommended — without
-it, a `cond` in which no test is true evaluates to 0.
+returns its body's value. A clause's body may be several forms, run in
+order. A clause whose test is `else` or the literal `true` catches
+everything and ends the `cond`. Without one, a `cond` may run no clause
+at all, so it is a statement of type `Unit`, like an `if` without an
+else: every body must be `Unit`. To return a value from a `cond`, end
+it with an `else` clause.
 
 ```lisp
 (defn classify (n)
@@ -210,7 +228,8 @@ it, a `cond` in which no test is true evaluates to 0.
 (defn main ()
   (print (classify -1))    ; negative
   (print (classify 5))     ; small positive
-  (print (classify 50)))   ; large positive
+  (print (classify 50))    ; large positive
+  0)
 ```
 
 ## 3.5 Loops
@@ -226,15 +245,15 @@ it, a `cond` in which no test is true evaluates to 0.
   (let-mut i 0
     (while (< i 3)
       (print i)
-      (set! i (+ i 1)))))
+      (set! i (+ i 1))))
+  0)
 ;; Output: 0, 1, 2 (one per line)
 ```
 
 - Condition evaluated before each iteration
 - The body may be several forms; they run in order
 - Body typically uses `let-mut` + `set!` to update loop variables
-- Use `while` for its effect, not its value (the specification says it
-  returns `Unit`; the current compiler leaves the last body value behind)
+- `while` is a statement: its type is `Unit`, and so is `set!`
 
 ### `for` — Loop With Its Own Variables
 
@@ -259,7 +278,8 @@ clause: the body updates the variables with `set!`.
     (begin
       (print (+ i j))
       (set! i (+ i 1))
-      (set! j (- j 10)))))
+      (set! j (- j 10))))
+  0)
 ;; Output: 0 1 2, then 100 91 82 (one per line)
 ```
 
@@ -303,12 +323,16 @@ Zyl has two mechanisms, and they are for different things:
 (defn show-division (a b)
   (match (divide a b)
     (Ok q (print q))
-    (Err msg (print-string msg))))
+    (Err msg (print msg))))
 
 (defn main ()
   (show-division 10 2)     ; 5
-  (show-division 1 0))     ; division by zero
+  (show-division 1 0)      ; division by zero
+  0)
 ```
+
+Both arms print, so both are `Unit`, and so is the `match`. An arm that
+printed while another returned a number would not type-check.
 
 The core library has helpers for the common cases:
 `(result-unwrap r default)` and `(option-unwrap o default)` return the
@@ -344,7 +368,8 @@ message.
 (defn main ()
   (print (safe-percent 4))      ; 25
   (print (safe-percent 0))      ; caught: division by zero, then -1
-  (print "still running"))
+  (print "still running")
+  0)
 ```
 
 Things to know about the current implementation:
@@ -352,8 +377,8 @@ Things to know about the current implementation:
 - `try` does **not** unwrap a `Result`. An `(Err ...)` value is an
   ordinary value and passes straight through; only `error` (and the
   failed `assert-` forms of Chapter 11) transfer control to `catch`.
-- The catch clause uses one handler expression. Write several steps as
-  a `begin`, or call a function, as `report` does.
+- The handler may be several forms, run in order; the last one's value
+  is the value of the `try`. It must have the same type as `expr`.
 - The message is a String, and prints as one.
 
 ### `unwrap` and `assert`
@@ -375,7 +400,8 @@ an explicit check with `error` instead of `assert`:
   (if (> (* (+ r 1) (+ r 1)) x) r (sqrt-floor x (+ r 1))))
 
 (defn main ()
-  (print (checked-sqrt-floor 17)))   ; 4
+  (print (checked-sqrt-floor 17))    ; 4
+  0)
 ```
 
 In tests, `assert-true`, `assert-false` and `assert-equal` do work
@@ -412,7 +438,8 @@ Functions are values. Pass them around:
 
 (defn main ()
   (print (apply-twice add1 5))              ; 7
-  (print (apply-twice (fn (x) (* x 2)) 3))) ; 12
+  (print (apply-twice (fn (x) (* x 2)) 3))  ; 12
+  0)
 ```
 
 A named function, a non-capturing `fn` and a capturing closure are all
@@ -440,7 +467,8 @@ fine as arguments.
   (let xs (Cons 1 (Cons 2 (Cons 3 (Cons 4 Nil))))
     (begin
       (print (list-sum (my-map (fn (x) (* x 10)) xs)))       ; 100
-      (print (list-length (my-filter (fn (x) (> x 2)) xs)))))) ; 2
+      (print (list-length (my-filter (fn (x) (> x 2)) xs)))))  ; 2
+  0)
 ```
 
 `list-sum` and `list-length` come from the core list library. The
@@ -468,7 +496,8 @@ definitions; for most function applications it currently answers
     (print x)))      ; the parameter, unchanged
 
 (defn main ()
-  (foo 10))          ; prints 20, then 10
+  (foo 10)           ; prints 20, then 10
+  0)
 ```
 
 There is no global mutable state: every binding is local, and there
@@ -486,25 +515,26 @@ are no top-level variables in a compiled program (Chapter 2, §2.5).
 `print` writes one value followed by a newline. Given several
 arguments, `(print a b)` prints each on its own line. To put text and
 a value on one line, build the string first with `str-concat`. `print`
-evaluates to 0.
+is a statement: its type is `Unit`.
 
 `print` follows the value's inferred type (Chapter 2, §2.2), and a value
 whose type has a `Show` impl prints as its `show` text: `(print (Some 1))`
 prints `Some(1)`. `print-string`, `print-float` and `print-int` (core
-library) are the same with a fixed type.
+library) are the same with a fixed argument type; like `print`, they
+return `Unit`.
 
 Reading input: `read-line` is recognized by the parser but not yet
-implemented by the code generator (it evaluates to 0). File I/O is in
+implemented by the code generator (it returns a null string). File I/O is in
 `stdlib/io` (Chapter 12).
 
 ## 3.12 Control Flow Cheat Sheet
 
 | Construct | Purpose | Returns |
 |-----------|---------|---------|
-| `(if c t e)` | Binary choice | Value of chosen branch (0 if no else and `c` false) |
-| `(cond (c1 b1) ... (else be))` | Multi-way choice | Value of first matching branch |
-| `(while c b...)` | Loop while true | Use for effect only |
-| `(for ((v init)...) c b)` | Loop with its own variables | Use for effect only |
+| `(if c t e)` | Binary choice | Value of chosen branch (`Unit` if there is no else) |
+| `(cond (c1 b1) ... (else be))` | Multi-way choice | Value of first matching branch (`Unit` without `else`/`true`) |
+| `(while c b...)` | Loop while true | `Unit` |
+| `(for ((v init)...) c b)` | Loop with its own variables | `Unit` |
 | `(match v arms...)` | Case analysis (Chapter 6) | Value of the matching arm |
 | `(error msg)` | Abort, or jump to the nearest `catch` | Does not return |
 | `(try e (catch v h))` | Intercept `error` | Value of `e`, or of `h` after an `error` |

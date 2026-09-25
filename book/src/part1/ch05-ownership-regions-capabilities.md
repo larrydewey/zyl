@@ -71,7 +71,7 @@ A violation is the compile-time error `E_MUT_CONFLICT`.
 The specification also defines `TAtomic<T>` (atomic shared mutation),
 `TBox<T>` (heap ownership) and `TPin<T>` (FFI-pinned). No source
 construct produces `TAtomic` or `TBox` today; `TPin` is the type of an
-`ffi-pin` result.
+`ffi-pin` result, written `(Pin a)`.
 
 ### How Capabilities Are Decided
 
@@ -128,7 +128,7 @@ rebinds:
       sum)))
 
 (defn main ()
-  (let-mut v (vec-create 0 4)
+  (let-mut v (vec-create-default 4)
     (begin
       (set! v (add-two v))
       (set! v (add-two v))
@@ -274,26 +274,26 @@ An `arena` grows in blocks of `B` bytes (a multiple of 4096, at most
 holds exactly `S` bytes. `A` is a power of two from 8 to 4096, default 8.
 
 ```lisp
-(deftype Nums (Nil) (Cons Int Nums))
+(deftype Nums (End) (Link Int Nums))
 
 (defn build (n acc)
-  (if (= n 0) acc (build (- n 1) (Cons n acc))))
+  (if (= n 0) acc (build (- n 1) (Link n acc))))
 
 (defn total (l)
   (match l
-    (Nil 0)
-    (Cons h t (+ h (total t)))))
+    (End 0)
+    (Link h t (+ h (total t)))))
 
 ;; The list lives in an arena that is released when the body ends;
 ;; only the Int result leaves it.
 (defn arena-total (n)
   (with-region (arena :block 65536 :limit 1048576)
-    (total (build n (Nil)))))
+    (total (build n (End)))))
 
 ;; A fixed region holds exactly 4096 bytes.
 (defn small-total (n)
   (with-region (fixed :size 4096)
-    (total (build n (Nil)))))
+    (total (build n (End)))))
 
 (defn live-bytes () (ffi-call "zyl_region_live_bytes" 1000))
 
@@ -315,6 +315,10 @@ Output:
 -1
 ```
 
+`Nums` names its constructors `End` and `Link` because `Nil` and `Cons`
+belong to the prelude's `List`, and a program type may not reuse a
+prelude constructor name (`E_DUPLICATE_VARIANT`).
+
 Three errors belong to `with-region`:
 
 - `E_REGION_SPEC` (compile time): a malformed spec, such as an unknown
@@ -329,14 +333,14 @@ Three errors belong to `with-region`:
 ```lisp
 (defn leak ()
   (with-region (arena :block 4096)
-    (build 10 (Nil))))            ; the list is the body's value
+    (build 10 (End))))            ; the list is the body's value
 ```
 
 ```
 PANIC: error[E_REGION_ESCAPE]: a value allocated inside with-region outlives it
   --> leak.zyl:3:15
    |
- 3 |     (build 10 (Nil))))            ; the list is the body's value
+ 3 |     (build 10 (End))))            ; the list is the body's value
    |               ^
    = help: compute a result that does not point into the region (a number, or data built outside it)
 ```
@@ -429,14 +433,21 @@ it with `let` first: `(let snapshot x (send a snapshot))`.
 ## 5.8 FFI Safety — The Pin Region
 
 A foreign call takes the C function's name, its arguments, and a timeout
-in milliseconds as the last argument:
+in milliseconds as the last argument. The C function's signature is
+declared first with `extern`, so the type checker knows what the call
+takes and returns:
 
 ```lisp
+(extern "abs" (Int) Int)
+
 (defn main ()
   (begin
     (print (ffi-call "abs" -5 1000))   ; 5
     0))
 ```
+
+An `ffi-call` to a foreign function with no `extern` is `E_CANNOT_INFER`.
+The runtime's own `zyl_*` functions are already declared.
 
 The specification requires FFI arguments to be **FFI_Pinnable** and to
 live in the Pin region. FFI_Pinnable types (spec §16) are:
@@ -446,16 +457,22 @@ live in the Pin region. FFI_Pinnable types (spec §16) are:
 
 What the compiler enforces today:
 
-- **Pinnability** is checked on every `ffi-call` argument and on
-  `ffi-pin`. A function value, for example, is rejected:
+- **Types** come from the `extern` declaration: each argument must
+  have the declared type, and the result has the declared result type.
+- **Pinnability** is checked on `ffi-call` arguments. A closure literal,
+  for example, is rejected:
 
   ```lisp
-  (ffi-pin (fn (x) x))
+  (extern "apply_cb" ((Fn (Int) Int)) Int)
+  (ffi-call "apply_cb" (fn (x) (+ x 1)) 1000)
   ```
 
   ```
-  PANIC: E_INVALID_CAPABILITY: FFI value has type Fn which is not FFI_Pinnable
+  PANIC: E_INVALID_CAPABILITY: ffi-call argument is a closure, which is not FFI_Pinnable ...
   ```
+
+  A named top-level function can be passed as a C callback, typed
+  `(Fn (A ...) R)` in the `extern` (Chapter 12).
 
 - **The Pin region** is not required for ordinary values: an `Int` or a
   `String` may be passed straight to `ffi-call`, as above. Only a
@@ -466,14 +483,18 @@ What the compiler enforces today:
   and the C function is abandoned (Chapter 12, §12.7).
 
 `ffi-pin` copies a one-word value into the pin arena and returns a
-stable pointer to it; `ffi-unpin` checks that the pointer came from the
-pin arena and returns the value:
+stable pointer to it. For a value of type `a` the pointer has type
+`(Pin a)`, which is not an `a`: C receives the address, and an `extern`
+parameter that takes it is declared `(Pin a)`. `ffi-unpin` checks that
+the pointer came from the pin arena and returns the `a` in the slot,
+which C may have written. A function cannot be pinned
+(`E_FFI_TYPE_NOT_PINNABLE`):
 
 ```lisp
 (defn main ()
   (let p (ffi-pin 42)
     (begin
-      (print (ffi-unpin p))    ; 42
+      (print (ffi-unpin p))           ; 42
       0)))
 ```
 
@@ -503,10 +524,9 @@ the tutorial.
 
 ## 5.10 What Is Not Implemented
 
-- **Global region.** A top-level `(def PI 3)` compiles, but a function
-  that refers to `PI` is `E_UNBOUND_VARIABLE`. Use a zero-argument
-  function instead: `(defn pi () 3)`. (At the REPL, `def` does bind a
-  value.)
+- **Global region.** A top-level `(def PI 3)` is an immutable global
+  (Chapter 2, §2.5), allocated on the heap; there is no separate global
+  region.
 - **Circular region.** There is no cycle detection. With immutable
   fields a program cannot build a cycle out of structs and ADT values
   anyway: a constructor can only point at values that already exist.
@@ -521,7 +541,8 @@ the tutorial.
 |-------|-------|-----|
 | `E_MUT_CONFLICT` | `set!` on a `let` binding, a parameter or a struct field | Use `let-mut`, or rebind the whole value |
 | `E_CAPABILITY_LEAK` | A `let-mut` variable in a `spawn` closure or a `send` message | Send a `let`-bound copy |
-| `E_INVALID_CAPABILITY` | A non-FFI_Pinnable value given to `ffi-call` or `ffi-pin` | Pass primitives, strings or pinnable data |
+| `E_INVALID_CAPABILITY` | A closure written inline as an `ffi-call` argument | Pass a named top-level function, typed `(Fn ...)` in the `extern` |
+| `E_FFI_TYPE_NOT_PINNABLE` | A function given to `ffi-pin` | Pin data, not code |
 | `E_REGION_ESCAPE` | A value allocated inside `with-region`, or a `(bytebuf Stack N)`, outlives its region | Return data that does not point into the region |
 | `E_REGION_SPEC` | A malformed `with-region` spec | Use `arena` or `fixed` with valid sizes and alignment |
 | `E_REGION_EXHAUSTED` | A `with-region` scope ran out of space (run time) | Raise the limit, or catch it with `try` |
@@ -584,12 +605,13 @@ program tracking which names are in-scope `let-mut` bindings, rejects a
 `set!` of anything else (`E_MUT_CONFLICT`), and rejects a `spawn` or
 `send` that mentions one (`E_CAPABILITY_LEAK`). The field-mutation form
 `(set! (struct-get ...) ...)` is rejected earlier, by the parser.
-Pinnability (`E_INVALID_CAPABILITY`) is checked during type inference,
-and the Secret rules by `stdlib/compiler/secret_check.zyl`.
+The same pass rejects a closure written inline as an `ffi-call` argument
+(`E_INVALID_CAPABILITY`); the type pass rejects a pinned function
+(`E_FFI_TYPE_NOT_PINNABLE`), and `stdlib/compiler/secret_check.zyl`
+checks the Secret rules.
 
-In the type system, a capability is a `CapKind` inside one type
-constructor, `TCap CapKind Type`; `type_system.zyl` also defines a Send
-predicate, but no pass calls it yet.
+Capabilities are not types in the type checker: TCap and TMut are
+enforced by these passes, not by unification.
 
 ### Determinism
 

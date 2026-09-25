@@ -24,13 +24,13 @@
   (assert-equal (list-length (tokenize "a bbb ccc" " ")) 3))
 
 (test "tokenize-keeps-order"
-  (assert-equal (str-eq (list-nth (tokenize "a bbb ccc" " ") 1) "bbb") 1))
+  (assert-true (str-eq (list-nth (tokenize "a bbb ccc" " ") 1) "bbb")))
 
 (test "parse-reads-level"
-  (assert-equal (str-eq (level-of "2024-01-15 [WARN] db slow query") "[WARN]") 1))
+  (assert-true (str-eq (level-of "2024-01-15 [WARN] db slow query") "[WARN]")))
 
 (test "parse-keeps-whole-message"
-  (assert-equal (str-eq (message-of "2024-01-15 [WARN] db slow query") "slow query") 1))
+  (assert-true (str-eq (message-of "2024-01-15 [WARN] db slow query") "slow query")))
 
 (test "short-line-is-unparsed"
   (assert-equal (is-unparsed "garbage") 1))

@@ -36,8 +36,11 @@ Operators and special forms (`+ - * / %`, `= == != < > <= >=`,
 ```
 
 `when` and `unless` are ordinary functions, not special forms: both
-arguments are evaluated before the call, so `(when false (print "x"))`
-still prints. Use `if` when the body has an effect.
+arguments are evaluated before the call, so the body runs even when the
+test fails. Both are `Bool Unit -> Unit`: `(when ok (print "x"))`
+type-checks, but prints `x` whatever `ok` is. Use `(if test stmt)` to
+evaluate `stmt` only when `test` holds. The predicates (`is-zero`, `is-even`, `xor`, `implies`, …)
+return `Bool`.
 
 ### `core/show` — Readable Text
 
@@ -63,7 +66,11 @@ prints `(Show.show v)`, so `(print (Cons 1 (Cons 2 Nil)))` prints
 ;(option-and opt other) (option-or opt other) (option-inspect opt f)
 ```
 
-`option-unwrap` takes a default: `(option-unwrap opt default)`.
+`option-unwrap` takes a default of the contents' type:
+`(option-unwrap opt default)`. A default of another type is
+`E_TYPE_MISMATCH`, not a sentinel; when there is no sensible default,
+use `option-expect`. `option-is-some` and `option-is-none` return
+`Bool`.
 
 ### `core/result` — Error Handling
 
@@ -77,7 +84,7 @@ prints `(Show.show v)`, so `(print (Cons 1 (Cons 2 Nil)))` prints
 ;(result-and res other) (result-or res other) (result-inspect res f)
 ```
 
-`result-unwrap` also takes a default. Prefer these to the compiler's
+`result-unwrap` also takes a default of the `Ok` type. Prefer these to the compiler's
 `unwrap` form where the failure message matters: it panics with
 `unwrap on None` for any failure (Appendix C.7).
 
@@ -123,20 +130,24 @@ arena-backed. `Vec` is generic, `(Vec T)`; `collections/map` and
 length, a capacity and the owning arena; an operation that changes the
 contents returns an updated value. The new struct can
 share its storage with the old one, so treat the old value as used up.
-Pass an arena from `(arena-create block-size)`, or `0` for a private
-arena created on the spot.
+The first argument of `vec-create`, `map-create` and `set-create` is an
+`Arena`, from `(arena-create block-size)`; `0` is an `Int`, not an
+arena, and does not type-check. The `-default` constructors take only a
+capacity and make a private arena on the spot:
+`(vec-create-default 10)`.
 
 ### `collections/vec` — Vectors
 
 ```lisp
 (use collections/vec)
-(deftype Vec (VecC Int Int Int Int T))  ; ptr len cap arena, phantom T
-;(vec-create (arena Int) (cap Int)) (vec-create-default (cap Int))
+(deftype Vec (VecC (Array T) Int Arena))  ; storage, length, arena
+;(vec-create (arena Arena) (cap Int)) (vec-create-default (cap Int))
 ;(vec-len v) (vec-cap v)
-;(vec-get v (i Int))                    ; a T; the word -1 when out of bounds
-;(vec-set v (i Int) value)              ; a write past len extends it, up to cap
+;(vec-get v (i Int))                    ; a T; E_INDEX_OUT_OF_BOUNDS outside the Vec
+;(vec-get-or v (i Int) default)         ; a T; default outside the Vec
+;(vec-set v (i Int) value)              ; a write at len extends it, up to cap
 ;(vec-push v value)                     ; reallocates when full
-;(vec-pop v) (vec-last v)               ; vec-last is the word -1 when empty
+;(vec-pop v) (vec-last v)               ; vec-last of an empty Vec is E_INDEX_OUT_OF_BOUNDS
 ;(vec-free v)                           ; an empty Vec; storage returns at arena-reset
 ```
 
@@ -148,8 +159,8 @@ There is no `vec-slice`, `vec-append` or `vec-clear`.
 
 ```lisp
 (use collections/map)
-(defstruct Map (kptr Int) (vptr Int) (len Int) (cap Int) (arena Int))
-;(map-create (arena Int) (cap Int)) (map-create-default (cap Int))
+(defstruct Map (kptr Words) (vptr Words) (len Int) (cap Int) (arena Arena))
+;(map-create (arena Arena) (cap Int)) (map-create-default (cap Int))
 ;(map-len (m Map)) (map-cap (m Map))
 ;(map-put (m Map) (k Int) (v Int))
 ;(map-get (m Map) (k Int) (default Int))
@@ -166,8 +177,8 @@ or `map-entries` here; use `core/map` or the association lists in
 
 ```lisp
 (use collections/set)
-(defstruct Set (ptr Int) (len Int) (cap Int) (arena Int))
-;(set-create (arena Int) (cap Int))
+(defstruct Set (ptr Words) (len Int) (cap Int) (arena Arena))
+;(set-create (arena Arena) (cap Int)) (set-create-default (cap Int))
 ;(set-len (s Set)) (set-cap (s Set))
 ;(set-contains (s Set) (k Int)) (set-add (s Set) (k Int)) (set-remove (s Set) (k Int))
 ;(set-find (s Set) (k Int) (i Int))
@@ -206,12 +217,16 @@ and adds lifecycle operations backed by the C runtime:
 ```
 
 `spawn` takes a zero-argument closure, `(spawn (fn () ...))`, and
-returns an `Int` handle. The actor reads messages with the `(receive)`
-form and names itself with `(actor-self)` (Chapter 9). `actor-wait`
+returns an `Actor`; `send`, `actor-is-alive`, `actor-wait` and
+`actor-terminate` take one, and `actor-is-alive` returns `Bool`. The
+actor reads messages with the `(receive)` form and names itself with
+`(actor-self)`, also an `Actor` (Chapter 9). `receive` is not
+type-checked yet: its result takes whatever type its use needs, until
+typed channels replace mailboxes. `actor-wait`
 stops an actor and joins its thread. When `main` returns, the program
 drains every mailbox and stops all actors; the runtime's
-`zyl_actor_wait_all`, reachable through `ffi-call`, does the same
-earlier. Using this module from a package requires
+`zyl_actor_wait_all`, reachable through `ffi-call` (the compiler's
+signature table types it), does the same earlier. Using this module from a package requires
 the `actor` capability (§31.9).
 
 ### `atomic/atomic` — Atomic Operations on Addresses
@@ -259,7 +274,9 @@ Using this module from a package requires the `ffi` capability.
 ;(error msg)
 ```
 
-`str-eq` compares contents and returns 1 or 0. `buf-append` appends at
+`str-eq` compares contents and returns a `Bool`, so it is a condition
+by itself: `(if (str-eq a b) ...)`. `alloc-read-int` and
+`alloc-write-int` read and write `Int`s only. `buf-append` appends at
 the end of the NUL-terminated string already in `dst`. `error` panics
 with `msg`: it unwinds to the nearest `try`, or prints `PANIC: msg` and
 exits with status 1.
@@ -269,7 +286,9 @@ exits with status 1.
 ### `io/io` — File and Buffer I/O
 
 `file-open`, `file-read`, `file-write`, `file-close` and `read-line` are
-compiler special forms; file handles are `Int` descriptors. `io/io`
+compiler special forms; file handles are `Int` descriptors, and
+`file-open`'s mode is a string literal (`"r"`, `"w"`, `"a"`, optionally
+with `+` or `b`). `io/io`
 adds named helpers, buffered output and an output trait:
 
 ```lisp
@@ -280,11 +299,12 @@ adds named helpers, buffered output and an output trait:
 ;(io-print x) (io-print-int n) (io-print-string s) (io-print-float f)
 ;(io-safe-read handle count) (io-safe-write handle data) (io-safe-close handle)
 (defstruct Stdout (fd Int))                    ; (make-stdout)
-(defstruct StringBuffer (hdr Int) (fd Int))    ; (make-string-buffer)
+(defstruct StringBuffer (buf (Ref StrBuf)) (len (Ref Int)) (cap (Ref Int))
+  (arena Arena) (fd Int))                      ; (make-string-buffer)
 ;(string-buffer-str sb) (string-buffer-len sb) (string-buffer-destroy sb)
 (trait OutputStream
-  (write (self T) (chunk String) Int)
-  (flush (self T) Int))                        ; implemented for Stdout and StringBuffer
+  (write (self) (chunk String) Int)
+  (flush (self) Int))                          ; implemented for Stdout and StringBuffer
 ```
 
 Call a trait method by its qualified name: `(OutputStream.write out "text")`.
@@ -399,7 +419,7 @@ Chapter 35 covers what the server provides and what it cannot.
 
 ## B.11 Compiler (stdlib/compiler/)
 
-The 37 modules of the self-hosted compiler. `selfhost/driver.zyl`
+The 40 modules of the self-hosted compiler. `selfhost/driver.zyl`
 reaches them through ordinary `(use compiler/...)` imports, and the
 compiler is built from that entry file like any program.
 
@@ -416,14 +436,16 @@ compiler is built from that entry file like any program.
 | `qualify.zyl` | Canonical symbol keys (§31.2) |
 | `capability_check.zyl` | Package capability enforcement (§31.9) |
 | `type_system.zyl` | Type ADT, substitution, type environment |
-| `type_inference.zyl` | Older inferer (no longer run by the pipeline) |
-| `type_annotate.zyl` | Hindley–Milner inference, trait resolution, per-type instances |
+| `type_annotate.zyl` | The type checker: Hindley–Milner inference, trait resolution, per-type instances; every type error is reported |
+| `ffi_sigs.zyl` | The type of every `zyl_*` runtime function reached through `ffi-call` |
+| `node_tables.zyl` | Typed side tables that later passes attach to AST and ICNF nodes |
 | `derive.zyl` | `derive Show` expansion |
-| `region_inference.zyl` | Stack promotion of non-escaping variants |
-| `monomorphization.zyl` | Impl method lifting |
+| `region_inference.zyl` | Stack promotion of non-escaping variants and escape analysis over ICNF |
+| `lift_impls.zyl` | Impl method lifting |
 | `closure_inline.zyl` | Closure inlining (retired; identity pass) |
 | `assert_lowering.zyl` | Lowering of `assert-equal` |
 | `icnf.zyl` | ICNF lowering |
+| `icnf_print.zyl` | Canonical ICNF text, for the build's ICNF hash |
 | `optimization.zyl` | Safe-only optimizations (constant folding, dead code) |
 | `codegen.zyl` | x86-64 code generation |
 | `pipeline.zyl` | The pass sequence from source to assembly |
@@ -442,6 +464,7 @@ compiler is built from that entry file like any program.
 | `index.zyl` | The package index and Ed25519 verification |
 | `store.zyl` | The content store and canonical archives |
 | `cli.zyl` | The `zyl` subcommands and linking |
+| `doc.zyl` | Markdown from source comments (`zyl doc`) |
 
 ## B.12 Finding Stdlib Source
 
@@ -463,7 +486,7 @@ stdlib/
 ├── repl/          *.zyl
 ├── lsp/           *.zyl, services/*.zyl
 ├── mlib/          deep.zyl (a code-generation stress fixture)
-└── compiler/      *.zyl (37 files)
+└── compiler/      *.zyl (40 files)
 ```
 
 The compiler resolves stdlib modules against its own bundle directory —

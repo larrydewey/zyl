@@ -58,17 +58,24 @@ Not normative.
 
 ### Capability kinds
 
-`CapKind` in `type_system.zyl` has `TCCap`, `TCMut`, `TCAtomic`, `TCBox`,
-`TCPin`, `TCByte`, `TCAtomicByte` and `TCSecret`; a capability type is
-`TCap CapKind Type`.
+The type checker (`type_annotate.zyl`) has no capability types: `TCap`,
+`TMut` and the other wrappers of §4.3 are not represented (except
+`Pin`, below), and the old
+`CapKind`, `is-ffi-pinnable` and `tc-is-send` were removed with the
+unused type ADT of `type_system.zyl`. What remains is enforced by
+syntactic passes:
 
-- `is-ffi-pinnable` implements FFI_Pinnable (§16): primitives, bytes and
-  lists, arrays, structs, maps and results composed of pinnable parts.
-  `TCMut`, `TCAtomic`, `TCPin`, `TCBox` and the byte capabilities are not
-  pinnable; `TCCap` and `TCSecret` are pinnable when their inner type is.
-  Type inference applies it to `ffi-call` and `ffi-pin` arguments and
-  raises `E_INVALID_CAPABILITY`.
-- `tc-is-send` implements Send-capability, but nothing calls it.
+- FFI_Pinnable (§16) is checked in two places. `ffi-pin` of a function
+  is `E_FFI_TYPE_NOT_PINNABLE` (the type pass); otherwise `(ffi-pin v)`
+  is a `(Pin a)` for v : a (§4.9), the address of the 8-byte Pin-arena
+  slot the runtime copied v's word into, and `ffi-unpin` takes that
+  `(Pin a)` back to `a`. `Pin` is the one §4.3 wrapper with a type, as
+  an opaque handle. A closure passed as an `ffi-call` argument is
+  `E_INVALID_CAPABILITY` (`mutability_check.zyl`). The arguments of an
+  `ffi-call` are otherwise typed by the callee's signature (the runtime
+  table `ffi_sigs.zyl` or the program's `extern`).
+- Send-capability is checked syntactically (the `let-mut` rule below and
+  `spec/08-actors-and-concurrency.md`); no type carries it.
 
 ### Aliasing and mutation
 
@@ -92,10 +99,11 @@ dedicated check.
 
 ### Secret
 
-`TCSecret` is a `TCap` with one extra obligation: the wrapped value is key
-material. It is not Send, and it is FFI_Pinnable only through `ffi-pin`.
-It unifies with a plain `TCCap` in either direction; the taint is tracked
-by `secret_check.zyl`, not by the unifier.
+To the type checker `(Secret T)` is `T`, and a bare `Secret` field
+annotation marks the field secret without giving it a type (it is then an
+implicit type parameter of its struct). The obligations of key material
+(not sent, pinned for FFI, constant-time use) are tracked as taint by
+`secret_check.zyl`, not by the unifier.
 
 A parameter annotated `(k Secret)` or `(k (Secret Int))` seeds a taint
 that propagates through `let`, calls, arithmetic, constructors and byte

@@ -51,11 +51,11 @@ IEEE-754 binary64 (double precision). ~15-17 decimal digits of precision.
 `print` writes a Float with six decimal places: `(print 3.14)` prints
 `3.140000`.
 
-**Keep Int and Float apart.** There is no implicit conversion between
-them, and there are no conversion built-ins yet. The compiler does not
-currently reject an expression that mixes the two, such as
-`(+ 1 2.5)` — it computes a wrong answer instead — so treat mixing
-them as an error you have to catch yourself.
+**Int and Float do not mix.** There is no implicit conversion between
+them: `(+ 1 2.5)` is a compile error (`E_TYPE_MISMATCH`, "cannot unify
+Float with Int"). Write `1.0` when you mean a Float. There are no
+conversion built-ins yet; the runtime's `(ffi-call "zyl_f_of_int" n 1000)`
+turns an Int into a Float.
 
 The compiler infers every value's type (Chapter 15), and `print`,
 arithmetic and comparison follow it: a Float that arrives through an
@@ -67,7 +67,8 @@ per type it is called with, so it works for each:
 (defn half (x) (/ x 2.0))
 
 (defn main ()
-  (print (half 5.0)))    ; 2.500000
+  (print (half 5.0))     ; 2.500000
+  0)
 ```
 
 ### Booleans (`Bool`)
@@ -78,7 +79,11 @@ false
 ```
 
 At runtime a Bool is the integer 1 or 0, and `print` shows it that way:
-`(print true)` prints `1`.
+`(print true)` prints `1`. To the type checker, though, `Bool` and `Int`
+are different types. A condition — of `if`, `cond`, `when`, `while`, a
+guard or a contract — must be a `Bool`; there are no "truthy" numbers,
+so `(if 1 ...)` and `(if count ...)` are type errors. Compare
+explicitly: `(if (!= count 0) ...)`.
 
 ### Strings (`String`)
 
@@ -100,11 +105,13 @@ The string built-ins:
 | `(str-concat a b)` | A new string, `a` followed by `b` |
 | `(str-length s)` | Length in **bytes** (`(str-length "你好")` is 6) |
 | `(str-substring s start len)` | `len` bytes starting at byte `start` |
-| `(str-eq a b)` | 1 if the two strings have the same contents, else 0 |
+| `(str-eq a b)` | `true` if the two strings have the same contents, else `false` |
 
 There is no `+` for strings. `==` and `!=` on two Strings compare their
 contents, wherever the strings came from — a parameter, a struct field,
-a `Vec` element. `str-eq` does the same explicitly.
+a `Vec` element. `str-eq` does the same explicitly. Its result is a
+`Bool`, so use it directly as a condition — `(if (str-eq a b) ...)`,
+not `(if (> (str-eq a b) 0) ...)`, which no longer type-checks.
 
 ```lisp
 (defn shout (s)
@@ -114,7 +121,8 @@ a `Vec` element. `str-eq` does the same explicitly.
   (shout "hello")                         ; hello!
   (print (str-length "hello"))            ; 5
   (print (str-substring "hello" 1 3))     ; ell
-  (print (str-eq "abc" "abc")))           ; 1
+  (print (str-eq "abc" "abc"))            ; 1 (true)
+  0)
 ```
 
 ### Symbols and Keywords
@@ -132,13 +140,16 @@ Quoted data (`'foo`, `'(+ 1 2)`) is part of the specification but is
 not supported as a runtime value in compiled programs yet. Don't use it
 in ordinary code.
 
-### "No Value"
+### `Unit`: "No Value"
 
-There is no `unit` literal. Forms evaluated only for their effect
-produce a meaningless value: `print` and a two-armed `if` whose
-condition is false evaluate to 0, and a loop leaves whatever its body
-last produced. Don't use those values. The type system calls this type
-`Unit`.
+Forms evaluated only for their effect have type `Unit`: `print`,
+`set!`, `while`, an `if` without an else branch, and a `cond` with no
+`true` or `else` clause. The literal `unit` is the one value of that
+type. Because `Unit` is a type like any other, the checker holds it to
+the same rules: `(+ 1 (print x))` is a type error, and so is an `if`
+whose one branch prints and whose other returns a number — both
+branches of an `if` (and all arms of a `match`) must have the same
+type.
 
 ## 2.3 Lists — The Universal Structure
 
@@ -170,7 +181,8 @@ A list is zero or more expressions enclosed in parentheses:
     v))
 
 (defn main ()
-  (print (+ (noisy "first" 1) (noisy "second" 2))))
+  (print (+ (noisy "first" 1) (noisy "second" 2)))
+  0)
 ;; Output:
 ;; first
 ;; second
@@ -233,10 +245,9 @@ Two spellings are accepted:
 ```
 
 The bare form is what the standard library and the compiler's own
-source use throughout, and it is what the rest of this book uses. It
-takes any number of body forms. **The binding-list form takes exactly
-one body form** — anything after the first is silently dropped — so if
-you use it, wrap a longer body in `begin`.
+source use throughout, and it is what the rest of this book uses. Both
+take any number of body forms, run in order as an implicit `begin`. A
+`let` with no body at all, such as `(let x 1)`, is `E_MALFORMED_FORM`.
 
 ### Shadowing
 
@@ -249,7 +260,8 @@ outer one:
     (begin
       (let x 20
         (print x))         ; prints 20
-      (print x))))         ; prints 10 (outer x unchanged)
+      (print x)))         ; prints 10 (outer x unchanged)
+  0)
 ```
 
 Note the `begin`. In the current compiler, a `let` that appears as one
@@ -266,7 +278,8 @@ Chapter 3 recommends `begin` for every multi-form body.
   (let-mut counter 0
     (begin
       (set! counter (+ counter 1))   ; rebinding, not in-place mutation
-      (print counter))))             ; prints 1
+      (print counter)))             ; prints 1
+  0)
 ```
 
 - `set!` **rebinds** the name to a new value — it does *not* mutate the old value in place
@@ -302,7 +315,9 @@ surprise.
 (% 17 5)           ; 2      (remainder, sign follows dividend: (% -17 5) is -2)
 ```
 
-The same operators work on Floats: `(/ 7.0 2.0)` is `3.500000`.
+The same operators work on Floats: `(/ 7.0 2.0)` is `3.500000`. Each
+operator takes Ints or Floats, never one of each: `(* 2 1.5)` is a type
+error.
 
 **One-argument forms**: only `-` has one, and it negates: `(- 5)` is
 -5. Don't write `(+ x)`, `(* x)` or `(/ x)` — the current compiler
@@ -319,7 +334,11 @@ evaluates each of them to 0 instead of rejecting it.
 (>= 1 2)           ; false
 ```
 
-The ordering operators work on `Int` and `Float`. `==` and `!=` also
+The ordering operators work on `Int`, `Float` and `String` (by bytes),
+and both sides must have the same type. A struct or ADT value is not
+ordered by `<`: `(< Red Blue)` is `E_TYPE_MISMATCH`. Order such values
+with `Ord.compare`, which returns -1, 0 or 1 and can be derived
+(`(derive Color Ord)`, Chapter 7, §7.7). `==` and `!=`
 compare structs and ADT values **structurally, by content**:
 `(== (Some 1) (Some 1))` is true, and two structs with equal field
 values are equal. Nested struct and ADT fields, and String fields, are
@@ -381,20 +400,22 @@ Because they are already defined, don't declare your own `Option`,
 
 ### Vectors and Maps
 
-`Vec` and `Map` are library types, imported with `use`. Both hold
-`Int` elements and keys in the current library.
+`Vec` and `Map` are library types, imported with `use`. A `Vec` holds
+elements of any one type; a `Map` has `Int` keys and `Int` values in
+the current library.
 
 ```lisp
 (use collections/vec)
 (use collections/map)
 
 (defn main ()
-  (let v (vec-push (vec-push (vec-create 0 10) 42) 7)
+  (let v (vec-push (vec-push (vec-create-default 10) 42) 7)
     (begin
       (print (vec-len v))           ; 2
       (print (vec-get v 0))))       ; 42
-  (let m (map-put (map-create 0 10) 1 100)
-    (print (map-get m 1 0))))       ; 100
+  (let m (map-put (map-create-default 10) 1 100)
+    (print (map-get m 1 0)))        ; 100
+  0)
 ```
 
 There is no literal syntax for either. Tuples are in the specification
@@ -411,7 +432,9 @@ but are not implemented; use a struct.
 
 Use `begin` whenever you need several expressions where one is
 expected — an `if` branch, a `match` arm — and around any multi-form
-body (see the note on shadowing in §2.5).
+body (see the note on shadowing in §2.5). A `fn` or `lambda` body, a
+`try` handler and a `cond` clause already take several forms as an
+implicit `begin`.
 
 ## 2.9 Special-Form Names
 
@@ -420,6 +443,10 @@ Words such as `defn`, `let`, `if`, `match`, `begin`, `while`, `for`,
 `use`, `spawn`, `send` and `ffi-call` are recognized when they appear at
 the head of a list. The complete set is what `:doc` answers for in the
 REPL.
+
+A special form written in a shape its parser does not accept — a
+`let` with no value, an `if` with no branches — is a compile error,
+`E_MALFORMED_FORM`.
 
 The compiler does not stop you from using one as a variable name —
 `(let begin 5 begin)` compiles — but code that does is hard to read,
@@ -459,7 +486,7 @@ true / false    ; Bool
 (let-mut name expr body...)     ; Local mutable (use set!)
 
 ;; Control (details in Chapter 3)
-(if cond then else)
+(if cond then else)             ; cond is a Bool
 (cond (cond1 body1) (cond2 body2) (else body))
 (while cond body...)
 (for ((var init) ...) cond body)
@@ -470,15 +497,15 @@ true / false    ; Bool
 (lambda (params) body)          ; The same form, other name
 
 ;; Data structures
-(vec-create 0 cap)              ; Vec (use collections/vec)
-(map-create 0 cap)              ; Map (use collections/map)
+(vec-create-default cap)        ; Vec (use collections/vec)
+(map-create-default cap)        ; Map (use collections/map)
 (Ok val) / (Err err)            ; Result
 (Some val) / None               ; Option
 (Cons head tail) / Nil          ; List
 
 ;; Operations
-(+ - * / %)                     ; Arithmetic
-(== != < > <= >=)               ; Comparison
+(+ - * / %)                     ; Arithmetic: all Int or all Float
+(== != < > <= >=)               ; Comparison, result Bool
 (and or not)                    ; Boolean
 (set! var value)                ; Rebinding (let-mut only)
 (print expr)                    ; One value and a newline to stdout
@@ -526,7 +553,7 @@ ADT whose variant name is the struct's name.
 | Struct or ADT value that provably never escapes | The function's stack frame, or the call's own region, released when it returns |
 | Struct or ADT value returned to a caller | The region the caller chose for the result |
 | Any other struct or ADT value | The runtime's heap arena |
-| `Vec` / `Map` buffers | An arena, passed to `vec-create` / `map-create` (0 creates a private one) |
+| `Vec` / `Map` buffers | An arena, passed to `vec-create` / `map-create`; the `-default` constructors create a private one |
 
 Details in [Chapter 5](ch05-ownership-regions-capabilities.md).
 

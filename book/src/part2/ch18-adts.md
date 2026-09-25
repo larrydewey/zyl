@@ -39,14 +39,18 @@ The prelude (`core/core`, injected into every program) already defines
 `Option` (`Some`/`None`), `Result` (`Ok`/`Err`) and `List` (`Cons`/`Nil`),
 so those names are taken: declaring another type called `Option` is
 `E_DUPLICATE_DEFINITION`, as is a second top-level `defn` with the same
-name as one in the prelude.
+name as one in the prelude. The prelude's constructor names are taken
+too: a program type with a variant called `Some`, `None`, `Ok`, `Err`,
+`Cons` or `Nil` is `E_DUPLICATE_VARIANT`, because the standard library's
+own unqualified uses of those names would resolve to it. Use the prelude
+`List` instead of declaring a list type, or pick other names.
 
 ### Rules
 
 1. **Variant names.**
    - A name used twice within one `deftype` is `E_DUPLICATE_VARIANT`.
    - A variant name may be reused by a different `deftype` (type names may
-     not; see above). For construction, the declaration that comes later
+     not, and the prelude's constructor names may not; see above). For construction, the declaration that comes later
      in the program wins.
    - The exhaustiveness check skips any `match` whose arms use a name
      claimed by two types, rather than guess which type is meant.
@@ -54,11 +58,10 @@ name as one in the prelude.
    (§6.5). A name that repeats is one parameter.
 3. **Recursive references** are allowed. Every field is one word, so a
    recursive field is simply a pointer.
-4. **Field types are checked narrowly.** They name types and type
-   parameters for inference and monomorphization. A constructor argument
-   whose inferred type definitely clashes with the declared field type is
-   `E_TYPE_MISMATCH`: `(Circle "x")` is rejected. A type parameter or an
-   argument of unknown type never clashes (Chapter 15, §15.6).
+4. **Field types are checked.** A constructor argument whose type
+   clashes with the declared field type is `E_TYPE_MISMATCH`:
+   `(Circle "x")` is rejected. Every use of one type parameter within a
+   value must have the same type (Chapter 15, §15.6).
 5. **Bounds.** §2's grammar shows an optional bound after the variants,
    but neither the specification nor the compiler defines one. Write
    bounds in Chapter 19's terms, not on the `deftype`.
@@ -82,9 +85,8 @@ None                ; or (None)
 
 - Arguments are evaluated left to right, then the variant is allocated
   (Chapter 16 says where).
-- Types are inferred from the arguments. An argument that definitely
-  clashes with its declared field type is `E_TYPE_MISMATCH` (rule 4
-  above).
+- Types are inferred from the arguments. An argument that clashes with
+  its declared field type is `E_TYPE_MISMATCH` (rule 4 above).
 - A `defstruct` is a one-variant ADT named after the struct, so
   `(make-Point 1 2)` and `(Point 1 2)` build the same value.
 
@@ -145,29 +147,20 @@ Both arm shapes mean the same thing: `(Some x body)` and
 
 §8.3 leaves the pattern grammar open, and the book's earlier editions
 showed nested constructor patterns such as `(Cons (Cons x _) rest ...)`.
-The compiler does not implement them.
+The compiler does not implement them, and rejects one with
+`E_NESTED_PATTERN`:
 
-> **Compiler defect.** A nested pattern is accepted without a diagnostic,
-> but its inner constructor is never tested. Only the outer tag is
-> checked, and the inner names bind to garbage when the shape does not
-> match:
->
-> ```lisp
-> (deftype L (N) (C Int L))
->
-> (defn f (xs)
->   (match xs
->     (C a (C b _) (+ a b))
->     (_ 77)))
->
-> (defn main ()
->   (begin
->     (print (f (C 5 (N))))   ; expected 77; prints 0
->     0))
-> ```
->
-> Write the inner match explicitly:
-> `(C a rest (match rest (C b _ (+ a b)) (N 77)))`.
+```lisp
+(deftype L (N) (C Int L))
+
+(defn f (xs)
+  (match xs
+    (C a (C b _) (+ a b))     ; E_NESTED_PATTERN
+    (_ 77)))
+```
+
+Bind the field to a name and match it in the arm body:
+`(C a rest (match rest (C b _ (+ a b)) (N 77)))`.
 
 ## 18.4 Literal Patterns, OR-Patterns, Ranges and Guards
 
@@ -187,8 +180,9 @@ Guard   ::= "(" "when" Expression ")"
 - **OR-patterns**: several alternatives before the body. `(1 2 3 "small")`
   matches any of them.
 - **Ranges**: `(range lo hi)` matches `lo <= x <= hi`.
-- **Guards**: `(when cond)` as the last element before the body. The arm
-  matches only when the pattern matches and `cond` is true; otherwise
+- **Guards**: `(when cond)` as the last element before the body, where
+  `cond` is a `Bool`. The arm matches only when the pattern matches and
+  `cond` is true; otherwise
   matching continues with the next arm. Literal patterns bind nothing, so
   a guard can only refer to names already in scope.
 - **Exhaustiveness**: a literal match must end with a `_` arm. Otherwise
@@ -227,7 +221,7 @@ Limits:
   becomes an `if` chain, while a constructor match tests tags.
 - **Guards on `_`.** A guard on the trailing `_` arm is ignored.
 - **Guards on constructor arms** are not supported. The `(when ...)` is
-  read as a field pattern, and the program crashes at runtime.
+  read as a field pattern and rejected as `E_NESTED_PATTERN`.
 - **Guards after ranges.** A guard following a `range` alternative
   currently fails to compile (the guard is mistaken for a call to the
   prelude's two-argument `when`, giving `E_ARITY_MISMATCH`). Guards after
@@ -244,7 +238,7 @@ For constructor matches, `exhaustiveness_check.zyl` enforces:
 | Situation | Code |
 |-----------|------|
 | a variant of the scrutinee's type has no arm, and there is no catch-all | `E_NON_EXHAUSTIVE_MATCH` |
-| a catch-all arm is followed by more arms | `E_UNREACHABLE_MATCH_ARM` |
+| a catch-all arm is followed by more arms, or an arm repeats a constructor | `E_UNREACHABLE_MATCH_ARM` |
 
 ```
 error[E_NON_EXHAUSTIVE_MATCH]: match over `Color` does not cover variant `Blue`
@@ -262,12 +256,10 @@ error[E_NON_EXHAUSTIVE_MATCH]: match over `Color` does not cover variant `Blue`
   from the constructors named in the arms, not from type inference. A
   match whose arms name a constructor claimed by two types is skipped
   (18.1, rule 1).
-- **Repeated arms.** The code has a check for an arm that repeats a
-  constructor already matched (reported as `E_UNREACHABLE_MATCH_ARM`),
-  but it never fires. The list of covered constructors it searches is
-  built from pairs, while the search compares plain names.
-  `(match c (Red 1) (Red 2) (Green 3) (Blue 4))` compiles, and the second
-  `Red` arm is dead.
+- **Repeated arms.** An arm that repeats a constructor already matched
+  is `E_UNREACHABLE_MATCH_ARM`: in
+  `(match c (Red 1) (Red 2) (Green 3) (Blue 4))` the second `Red` arm can
+  never run.
 
 ## 18.6 Generic ADTs
 
@@ -283,8 +275,7 @@ Type parameters are collected from uppercase field names (§6.5):
   concrete types in the same program, and the instances do not interfere
   (`tests/regression/generics-multi-type.zyl`).
 - **Same-type constraint.** §6.2 requires every use of one parameter to
-  have the same type, so `(Make 1 "x")` should be rejected. It compiles
-  (Chapter 15, 15.6).
+  have the same type, so `(Make 1 "x")` is `E_TYPE_MISMATCH`.
 
 Chapter 19 covers monomorphization and naming.
 
@@ -345,12 +336,14 @@ their behavior exists regardless:
   recursive types such as lists compare element by element. The
   type-annotation pass generates this per type as a function `T.==`; a
   generic ADT such as `(List T)` gets one instance per element type.
-  A type with a `Secret` field gets no such function, and a value whose
-  type inference cannot determine falls back to the runtime's shallow
-  comparison (tag, then each field word, pointers by address).
-- `<`, `>`, `<=` and `>=` compare the fields lexicographically. This
-  comparison is shallow: a field that holds a string or another ADT
-  value is compared by address, not by content.
+  A type with a `Secret` field gets no such function and falls back to
+  the runtime's shallow comparison (tag, then each field word, pointers
+  by address).
+- `<`, `>`, `<=` and `>=` do not take ADT values: `(< (P 1 5) (P 2 0))`
+  is `E_TYPE_MISMATCH` ("ordering on P"). Derive `Ord` and use
+  `Ord.compare`, which orders variants in declaration order and then the
+  fields lexicographically, comparing strings and nested values by
+  content (Chapter 20, §20.6).
 
 ## 18.9 Representation
 
@@ -406,9 +399,10 @@ There is no jump table and no merging of arms.
 | `E_NON_EXHAUSTIVE_MATCH` | constructor match misses a variant | raised (spec spelling `E_MATCH_NONEXHAUSTIVE`) |
 | `E_MATCH_NONEXHAUSTIVE` | literal match without a trailing `_` arm | raised |
 | `E_UNREACHABLE_MATCH_ARM` | arm after a catch-all | raised |
-| `E_DUPLICATE_VARIANT` | variant name repeated within one `deftype` | raised |
+| `E_DUPLICATE_VARIANT` | variant name repeated within one `deftype`, or a prelude constructor name (`Some`, `None`, `Ok`, `Err`, `Cons`, `Nil`) reused | raised |
+| `E_NESTED_PATTERN` | a constructor pattern inside a field position (18.3) | raised |
 | `E_MATCH_ARM_COMPLEX` | an arm body that combines a constant with several calls, a shape the code generator is known to miscompile | raised |
-| `E_TYPE_MISMATCH` | constructor argument clashes with the declared field type | raised by `type_annotate` for definite clashes only; pattern types are not checked |
+| `E_TYPE_MISMATCH` | constructor argument clashes with the declared field type, or arms of one match that produce different types | raised by `type_annotate` |
 
 ## 18.12 Comparison with Other Languages
 

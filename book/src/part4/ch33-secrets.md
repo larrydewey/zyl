@@ -167,6 +167,13 @@ accept/reject bit is their whole purpose:
 An AEAD's tag check therefore needs no explicit `declassify` call — it
 is already a declassifying operation, by construction.
 
+The two differ from `declassify` in type as well. `ct-eq` and the other
+constant-time predicates return an `Int` mask, 1 or 0, and so does
+`(declassify (ct-eq a b))`; a condition must be a `Bool`, so a branch on
+it is written `(if (= (declassify (ct-eq a b)) 1) ...)`. `ct-eq-bool`
+and `ct-eq-words-bool` already return a `Bool` and can be the condition
+themselves.
+
 Every deliberate declassification in `stdlib/math` is a call you can
 grep for, with a comment saying why that particular verdict is public.
 Chapter 34 lists them.

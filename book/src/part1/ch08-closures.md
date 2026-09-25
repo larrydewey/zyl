@@ -14,6 +14,12 @@ This chapter describes both the language design and what the current self-hosted
 (lambda (params) body)   ; synonym, identical to fn
 ```
 
+The body may be several forms; they run in order and the last one is the closure's result, as if they were wrapped in `begin`:
+
+```lisp
+(fn (x) (print "called") (* x 5))
+```
+
 There is **no shorthand**. The spec rejects `((x) (* x x))`; you must write:
 
 ```lisp
@@ -51,7 +57,8 @@ Closures are ordinary values: bind them with `let`, call them like functions, pa
       (print (apply-twice square 3))          ; 81  (3² = 9, 9² = 81)
       (print (apply-twice (fn (x) (+ x 1)) 5)) ; 7
       (print (add5 10))                       ; 15
-      (print (triple 4)))))))                 ; 12
+      (print (triple 4))))))                 ; 12
+  0)
 ```
 
 Output:
@@ -89,7 +96,8 @@ In the current compiler, captures are **by value**: when the closure is created,
 
 (defn main ()
   (let m (make-multiplier 3 1)
-    (print (m 4))))        ; 13
+    (print (m 4)))        ; 13
+  0)
 ```
 
 **A closure cannot `set!` a captured variable.** Because the closure holds a copy, a `set!` inside it could only change the copy, never the binding the program named. The compiler rejects it:
@@ -162,7 +170,8 @@ The standard `List` type (`Cons`/`Nil`, from `core/list`) is available in every 
     (begin
       (print (fold (fn (a x) (+ a x)) 0 ys))      ; 100
       (print (list-length evens))                 ; 2
-      (print (fold (fn (a x) (+ a x)) 0 evens)))))))  ; 6
+      (print (fold (fn (a x) (+ a x)) 0 evens))))))  ; 6
+  0)
 ```
 
 Match arms are written `(Pattern body)`, so an empty-list arm is `(Nil Nil)`, not `Nil Nil`. Generic functions need no type-parameter list: `map`, `filter`, and `fold` are inferred as polymorphic (Chapter 7).
@@ -192,7 +201,8 @@ The textbook versions of these combinators return a new closure that calls the c
     (begin
       (print ((compose mul2 add1) 5))       ; 12 = (5+1)*2
       (print ((partial2 sub 10) 3))         ; 7  = 10 - 3
-      (print (flip sub 3 10)))))))           ; 7  = 10 - 3
+      (print (flip sub 3 10))))))           ; 7  = 10 - 3
+  0)
 ```
 
 `flip` comes from `core/core`, which is loaded into every program: `(flip f a b)` calls `(f b a)`. `core/core` also provides `identity`, `const`, and `apply`. Because those names are already defined, a program that defines its own `compose` or `flip` fails with `E_DUPLICATE_DEFINITION`; pick another name.
@@ -218,7 +228,14 @@ The error is located at the `spawn`, with a second label at the `let-mut` (Appen
 
 ## 8.7 Closure Types
 
-The type checker gives every closure a function type (internally `TFun`, built from the parameter and result types) and infers it from use; closure types never need to be written. There is no surface syntax for function types in parameter annotations: leave closure parameters such as `f` unannotated, as every example in this chapter does.
+The type checker gives every closure a function type, built from the parameter and result types, and infers it from use; closure types never need to be written. Leaving closure parameters such as `f` unannotated, as every example in this chapter does, makes the function generic in them. When you do want to pin a parameter to one function type, write it `(Fn (Params...) Result)`:
+
+```lisp
+(defn apply-to-one ((g (Fn (Int) Int)))
+  (g 1))
+```
+
+`(apply-to-one (fn (x) (+ x 1)))` is `2`; passing a closure that takes a `String` is `E_TYPE_MISMATCH`. The same notation types a C callback in an `extern` declaration (Chapter 12).
 
 ## 8.8 Recursive Closures
 
@@ -250,7 +267,8 @@ Spec §10 allows exactly one `TMut` reference, and a closure's capture is a copy
       (begin
         (set! count (inc count))
         (set! count (inc count))
-        (print count)))))         ; 2
+        (print count))))         ; 2
+  0)
 ```
 
 ## 8.11 Performance Notes

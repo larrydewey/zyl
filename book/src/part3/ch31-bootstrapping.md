@@ -91,9 +91,9 @@ remedy for a stage-2 mismatch is `--bootstrap-from-self` (§31.10).
 |--------|--------------------------------------|
 | Iteration order of tables | Every table is an association list or ordered structure built in source order; nothing iterates a hash table |
 | Generated names from addresses | Lifted lambdas and match helpers are named from `zyl_fresh_id`, a counter, not from a heap pointer |
-| Comparisons that depend on allocation | String `=`/`!=` compares contents (`zyl_cstr_eq`) when codegen knows an operand is a String; pointer equality had made results depend on allocation order, which differs between stage 2 and stage 3 |
+| Comparisons that depend on allocation | String `=`/`!=` compares contents (`zyl_cstr_eq`); the strict type pass knows every operand's type, so no string comparison falls back to pointer equality, which had made results depend on allocation order, different between stage 2 and stage 3 |
 | Struct and variant tags | Assigned in declaration order; structs from their own counter |
-| Monomorphization names | Built from `type-to-string` of the concrete types, so the same instantiation always gets the same name |
+| Specialization names | Built from the canonical text of the concrete argument types (`ta-canon-list`), so the same instantiation always gets the same name |
 | Stack slot allocation | A per-function counter in the immutable emitter state |
 | Environment and time | No timestamps, no randomness; the stage tracing file is written only when `ZYL_DEBUG_STAGES` is set |
 
@@ -163,7 +163,7 @@ diff -u build/boot/stage2.s build/boot/stage3.s | head -100
 
 Look at the differing lines:
 - Function labels differ (`zy_...` names, `_lambda_N`) → naming:
-  monomorphization, lambda lifting, fresh ids
+  type-pass specialization, lambda lifting, fresh ids
 - Instruction sequences differ inside one function → ICNF lowering,
   optimization or codegen
 - `.rodata` differs → string or float constants

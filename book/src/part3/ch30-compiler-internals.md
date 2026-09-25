@@ -40,14 +40,10 @@ which the `zyl` CLI, `zyl eval` and the REPL all call. Abridged:
 
 (defn lower-exprs (arena exprs0)
   (let exprs (dv-expand-program exprs0)                           ; derive
-    (let inferer (inferer-new)                                    ; empty: impl lifting only
-      (let mono-ctx (mono-context-populate-adt-order (mono-context-new inferer) inferer)
-        (let mono-exprs (monomorphize mono-ctx exprs)             ; lift impl bodies
-          (lower-after-mono arena mono-exprs))))))
+    (lower-after-mono arena (lift-impls exprs))))                 ; lift impl bodies
 
-;; lower-after-mono: closure inlining -> assert lowering
-;;                   -> type annotation (ta-annotate) -> ICNF
-;;                   -> optimization -> region inference
+;; lower-after-mono: closure inlining -> type checking (ta-annotate)
+;;                   -> ICNF -> optimization -> region inference
 ;; compile-to-fns  = compile-to-exprs + lower-exprs   (stops at ICNF)
 ;; compile-to-asm  = compile-to-fns + codegen
 ```
@@ -135,9 +131,12 @@ downstream.
 
 ## 30.3 Writing a Pass: Type Inference
 
-The active inferer is `type_annotate.zyl`. (`type_system.zyl` and
-`type_inference.zyl` hold the older inferer; the pipeline now uses only
-their data types and an empty `TypeInferer` for monomorphization.)
+The type checker is `type_annotate.zyl`, and it is the only authority
+on types: a program it rejects does not compile. (`type_system.zyl`
+keeps a few shared data types; the older inferer,
+`type_inference.zyl`, is gone, and `lift_impls.zyl` replaced
+`monomorphization.zyl`.) The rationale and the rules are in
+`docs/sound-types-design.md`.
 
 ### Types and the store
 
@@ -147,11 +146,28 @@ their data types and an empty `TypeInferer` for monomorphization.)
 
 `TaC` is a named type with arguments (`Int`, `(Vec String)`), `TaF` a
 function type, `TaV` a type variable. Variables live in a runtime word
-vector (`zyl_wvec_*`): slot `i` holds 0 (unbound), 1 (poisoned) or the
-type it is bound to. Unification is union-find with an occurs check. A
-conflict poisons the variables involved instead of failing, so
-inference degrades rather than rejects. Negative `TaV` ids are template
-slots, used for generalized schemes and constructor types.
+vector (`zyl_wvec_*`): slot `i` holds a `TaBind` — free, poisoned, or
+the type it is bound to. Unification is union-find with an occurs check.
+A conflict or a failed occurs check is reported at once, as
+`E_TYPE_MISMATCH` located at the innermost expression being typed
+(`ta-cur-node`), with both types in the message; the variables involved
+are then poisoned so that one mistake does not produce a cascade of
+follow-on errors. A form the pass has no type for (an `ffi-call` to an
+undeclared symbol, a trait call whose receiver never resolves) is
+`E_CANNOT_INFER`, and a name defined nowhere is `E_UNBOUND_VARIABLE`.
+Every error in the program is reported; at the end
+`ta-fail-if-errors` stops the compile if there were any.
+`ZYL_STRICT_TYPES=report` emits them as `W_TYPE_STRICT` warnings and
+lets the compile go on, for counting what is left in code being
+ported. Negative `TaV` ids are template slots, used for generalized
+schemes and constructor types.
+
+The primitive surface is typed explicitly. `ffi_sigs.zyl` gives every
+`zyl_*` runtime function a type scheme (`"zyl_int_text" "Int -> String"`),
+an `(extern "sym" (T ...) R)` declaration types a foreign one, and the
+special forms have fixed rules: conditions `Bool`, arithmetic over the
+closed class `{Int, Float}` (`ta-check-num` resolves each use after
+inference), statement forms `Unit`. There is no cast.
 
 ### Order and generalization
 
@@ -160,7 +176,9 @@ call graph's strongly connected components (Tarjan, state in word
 vectors) are closed callees-first. At an SCC's close its struct-gets
 with unknown receivers are retried, its recorded *uses* (trait calls,
 calls of trait-generic functions, prints and operators on type
-variables) are resolved, and its members are generalized. Global lookups
+variables) are resolved, and its members are generalized. A trait call
+must resolve to an impl or to a per-type instance; there is no run-time
+dispatch on a variant tag to fall back to. Global lookups
 (functions, types, variants, struct fields) go through content-hashed
 string maps (`zyl_smap_*`); nothing is iterated, so output stays
 deterministic.
@@ -225,31 +243,22 @@ the design.
 
 ## 30.5 Writing a Pass: Monomorphization
 
-`monomorphization.zyl` keeps its tables in one record:
+There is no separate monomorphization pass any more. What the old
+`monomorphization.zyl` did with an empty inference context was lift
+impl methods, and `lift_impls.zyl` now does only that: each impl method
+becomes a top-level function named `Trait.method_Type` whose first
+parameter is annotated with the impl's type.
 
-```lisp
-(deftype MonoKV (MK String A))
-
-(deftype MonoCtx
-  (MC
-    (MCGenFns ...)          ; generic function -> its type parameters
-    (MCKnownFns ...)        ; function -> (parameter, Type) pairs
-    (MCReturns ...)         ; function -> return Type
-    (MCKTypes ...)
-    (MCStructs ...)
-    (MCAdtDefs ...)
-    (MCAdtInsts ...)
-    (MCTImpls ...)          ; trait -> implementing types
-    (MCAdtParamOrder ...)))
-```
-
-`mono-context-new` seeds it from the `TypeInferer`, and
-`(monomorphize ctx exprs)` returns the program with each generic
-function replaced by specializations for the concrete argument types
-inference observed. Specialized names are built from
-`type-to-string`, so that function's output is part of the fixed point:
-changing how a type prints changes every specialized symbol in the
-compiler's own output.
+Every real specialization is the type checker's. When a call reaches a
+trait-generic function, `ta-specialize` keys an instance on the
+function's name and the canonical text of its argument types
+(`name~Int`, from `ta-canon-list`), makes a deep copy of the definition
+under that name (`ta-copy-defn`), and types the copy at those argument
+types. A function that would need more than 256 instances is
+`E_CANNOT_INFER`: that is nearly always polymorphic recursion at an
+ever larger type. Instance names are built from the printed types, so
+that printer is part of the fixed point: changing how a type prints
+changes every specialized symbol in the compiler's own output.
 
 ## 30.6 Writing a Pass: ICNF Lowering
 
@@ -319,6 +328,10 @@ the repository uses:
   check which error code was raised).
 
 ```lisp
+(use allocator/allocator)
+(use compiler/lexer)
+(use compiler/parser)
+
 (test "parse-nested-ast"
   (let arena (arena-create 0)
     (let prog (zyl-parse arena "(defn f (x) (* x x))")

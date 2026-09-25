@@ -91,13 +91,20 @@ Not normative.
 
 ### Differences from §15
 
-- **There is no `receive`.** An actor cannot read the messages sent to it.
-  The runtime runs the actor's closure, then drains its mailbox: a message
-  carrying a closure is executed, and a plain data message is discarded.
-  `receive` appears only in the capability table.
+- **`(receive)` takes the next data message** from the running actor's
+  mailbox (`zyl_actor_receive`), blocking until one arrives, and
+  `(actor-self)` is the running actor's id; `main` has a mailbox too, so
+  actors can exchange structured messages and replies
+  (`tests/regression/actor-receive.zyl`).
+- **Typing.** `spawn` and `actor-self` are `Actor`, `send` requires an
+  `Actor` as its target and is `Unit`, and the entry passed to `spawn`
+  is `() -> a`. `receive` is `a`: a mailbox holds whatever any sender put
+  there, so its result takes whatever type the receiver uses it at. This
+  is the one exception spec §4.8 names to the soundness guarantee; typed
+  single-sender channels are to replace mailboxes and remove it.
 - **Scheduling is not deterministic.** Actors are scheduled by the
   operating system; nothing orders the interleaving of output from two
   actors. This is at odds with P1 and §27 for programs whose observable
   output depends on that interleaving.
 - **Send-capability is checked syntactically** (the `let-mut` rule above),
-  not by type. `tc-is-send` in `type_system.zyl` is never called.
+  not by type; no type carries Send-capability.

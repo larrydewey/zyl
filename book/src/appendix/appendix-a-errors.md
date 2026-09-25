@@ -55,9 +55,22 @@ Warnings use the same shape with `warning[CODE]`, and never stop a
 build.
 
 A check without a source position panics with the code at the front of
-the message, for example `PANIC: E_MATCH_ARM_COMPLEX: ...`. Either way
-the compiler stops at the first error: every check aborts on its first
-problem, so a file reports one error at a time.
+the message, for example `PANIC: E_MATCH_ARM_COMPLEX: ...`. Every check
+but one aborts on its first problem, so those report one error at a
+time. The exception is the type pass: it reports every type error in
+the program (`E_TYPE_MISMATCH`, `E_CANNOT_INFER`,
+`E_UNBOUND_VARIABLE`), then stops with
+
+```text
+PANIC: error[E_TYPE_MISMATCH]: the program does not type-check (3 errors above)
+```
+
+The code on that closing line is the first error's code.
+
+Setting `ZYL_STRICT_TYPES=report` turns those errors into
+`W_TYPE_STRICT` warnings (§A.16) so you can count what is left while
+porting old code. The compile then goes on, but it is a counting tool:
+no setting makes the compiler accept an ill-typed program for real.
 
 ### Machine-readable output
 
@@ -79,6 +92,7 @@ with its code split off the front of the message.
 |---|---|
 | `E_UNTERMINATED_STRING` | A string literal reached end of input with no closing quote |
 | `E_BYTE_VALUE_OOB` | A `byte` literal outside 0..255, or a non-integer argument to `byte` |
+| `E_INVALID_ESCAPE` | A backslash escape in a string literal that the lexer does not know |
 | `E_INVALID_CHAR` | A character that cannot begin any token, such as `'` or `#` outside a string or comment, located at that byte |
 | `E_UNEXPECTED_EOF` | End of input while a token was still open. *Catalogued only.* |
 | `E_INTEGER_OVERFLOW` | An integer literal too large for `Int`. *Catalogued only.* |
@@ -92,6 +106,7 @@ with its code split off the front of the message.
 | `E_UNBALANCED_UNEXPECTED_CLOSE` | A closing delimiter with no opener open |
 | `E_UNBALANCED_MISMATCHED_BRACKET` | A closer that does not match its opener |
 | `E_MALFORMED_PARAMETER` | A parameter that is neither a name nor `(name Type)` — usually a missing `)` |
+| `E_MALFORMED_FORM` | A special form whose arguments do not have the shape it requires, such as `(if c)` with no branches. Such a form used to compile to the constant 0, which let some tests pass without testing anything. Raised by `arity_check.zyl`. |
 | `E_UNEXPECTED_TOKEN_IN_EXPR` | A token that cannot appear in expression position |
 | `E_RESERVED_KEYWORD` | A reserved form that is not implemented: the 16-, 32- and 64-bit `load-*`/`store-*` names |
 | `E_UNBALANCED_PARENS` | Open and close counts differ. *Catalogued only; the three `E_UNBALANCED_*` codes above replace it.* |
@@ -123,16 +138,16 @@ Macro expansion also reports `E_ARITY_MISMATCH` (wrong argument count), `E_DUPLI
 
 | Code | Cause |
 |---|---|
-| `E_UNBOUND_VARIABLE` | A name with no binding |
+| `E_UNBOUND_VARIABLE` | A name with no binding. The type pass reports every one it finds, located, with a "did you mean" suggestion when a close name is in scope |
 | `E_ARITY_MISMATCH` | A call with the wrong number of arguments, or a malformed byte, load, store or atomic form |
 | `E_DUPLICATE_DEFINITION` | A name defined more than once at top level |
-| `E_DUPLICATE_VARIANT` | A variant name repeated within one `deftype` |
+| `E_DUPLICATE_VARIANT` | A variant name repeated within one `deftype`, or a program type that reuses a prelude constructor name (`Some`, `None`, `Ok`, `Err`, `Cons`, `Nil`) — the standard library's unqualified uses of those names would otherwise resolve to it |
 | `E_DUPLICATE_PARAMETER` | A parameter name repeated in one signature (`_` and `_`-prefixed names may repeat). *Raised by `unused_check.zyl`; not in the catalog.* |
-| `E_TYPE_MISMATCH` | Expected one type, found another. *Raised by `type_annotate.zyl` only when an argument to a top-level function or a constructor definitely clashes with the parameter annotation or declared field type; any other mismatch falls back to a fresh type variable rather than failing.* |
+| `E_TYPE_MISMATCH` | Two types that must be equal are not: an `Int` condition where `Bool` is required, `Int` and `Float` mixed in arithmetic, a `String` passed where a field or parameter wants an `Int`, an `Int` given to `send` where an `Actor` is required, a `Float` in an `extern` signature, a `file-open` mode that is not a literal. Raised by `type_annotate.zyl` for every unification failure and every failed occurs check, with both types in the message |
 | `E_RETURN_TYPE_MISMATCH` | A body that does not match its declared return type. *Catalogued only.* |
 | `E_UNKNOWN_TYPE` | A type name that does not resolve. *Catalogued only.* |
 | `E_UNKNOWN_GENERIC_PARAM` | A reference to an undeclared type parameter. *Catalogued only.* |
-| `E_CANNOT_INFER` | A generic parameter with no call-site evidence (phase 5). *Catalogued only, and listed twice in the catalog.* |
+| `E_CANNOT_INFER` | The type pass has no type for an expression: an `ffi-call` to a foreign symbol with no `(extern ...)` declaration, a runtime entry with no signature, or a trait call whose receiver type never resolves. *Listed twice in the catalog.* |
 
 ## A.6 Regions (phase 6) and Byte Buffers
 
@@ -193,6 +208,7 @@ an inferred placement is always one the value cannot escape (Chapter
 | `E_BYTEBUF_CAP_EXCEEDED` | An append past a buffer's fixed capacity. *Catalogued only: the append returns 0 and leaves the buffer unchanged.* |
 | `E_BYTEBUF_OVERLAP` | An append from a slice overlapping its own buffer. *Catalogued only.* |
 | `E_BYTEBUF_INVALID` | A buffer handle whose magic tag does not match. *Catalogued only.* |
+| `E_INDEX_OUT_OF_BOUNDS` | An index outside a vector or word array |
 | `E_ALIGNMENT_FAILED` / `E_ALIGN_CHECK_FAILED` | An alignment check that did not hold. *Both catalogued only: `align-check` returns a Bool rather than failing.* |
 
 ## A.10 Testing (phase 11)
@@ -219,7 +235,7 @@ an inferred placement is always one the value cannot escape (Chapter
 |---|---|
 | `E_MUT_CONFLICT` | `set!` on a name that is not a `let-mut` binding in scope, on a `let-mut` of an enclosing scope from inside a closure (captures are by value), or on anything other than a plain name — direct field mutation included |
 | `E_CAPABILITY_LEAK` | A spawned closure or a sent message refers to a `let-mut` (`TMut`) variable of the enclosing scope |
-| `E_INVALID_CAPABILITY` | An `ffi-call` argument whose type is not `FFI_Pinnable`, a closure included |
+| `E_INVALID_CAPABILITY` | A closure written inline as an `ffi-call` argument |
 | `E_CT_VIOLATION` | A `Secret` steered a branch, indexed memory, or went through a divider |
 | `E_SECRET_ESCAPE` | A `Secret` reached `spawn`, `send` or `file-write` |
 | `E_SECRET_DEBUG` | A `Secret` reached `print` |
@@ -237,6 +253,7 @@ Chapter 25 package capabilities.
 | `E_MATCH_NONEXHAUSTIVE` | A `match` missing a variant, an unknown variant in an arm, or a literal-pattern match with no trailing `_` arm. Raised during parsing and lowering. |
 | `E_NON_EXHAUSTIVE_MATCH` | A `match` that does not cover every variant of its ADT. *Raised by `exhaustiveness_check.zyl`; not in the catalog.* |
 | `E_UNREACHABLE_MATCH_ARM` | An arm that no value can reach: a catch-all that is not last, or a repeated constructor. *Not in the catalog.* |
+| `E_NESTED_PATTERN` | A constructor arm whose field is itself a pattern, such as `(Some (Pair a b) ...)`. Bind the field to a name and match it inside the arm body. |
 | `E_DIVISION_BY_ZERO` | Integer division or remainder by zero. *Raised only by the REPL's ICNF interpreter; compiled code does not check for it.* |
 | `E_OVERFLOW` | Checked integer overflow. *Catalogued only.* |
 | `E_CONTRACT_VIOLATION` | A `requires`, `ensures` or `invariant` clause failed at run time; the message names the clause and its function. Catchable with `try`. |
@@ -249,10 +266,16 @@ catch-all pattern; it may repeat, and it must be the last arm.
 | Code | Cause |
 |---|---|
 | `E_FFI_PIN_REQUIRED` | A `Secret` argument crossed the FFI boundary without `ffi-pin` |
-| `E_FFI_TYPE_NOT_PINNABLE` | A value whose type is not `FFI_Pinnable`. *Catalogued only; the type checker reports this as `E_INVALID_CAPABILITY`.* |
+| `E_FFI_TYPE_NOT_PINNABLE` | `ffi-pin` of a function, located at the operand |
 | `E_FFI_TIMEOUT` | A foreign call did not return within its timeout. Raised at run time; catchable with `try` and matchable with `recover` |
 | `E_FFI_TIMEOUT_REQUIRED` | An `ffi-call` does not end with a positive integer literal timeout in milliseconds |
 | `E_FFI_SYMBOL_REQUIRED` | An `ffi-call` does not name its C symbol with a string literal |
+| `E_FFI_RESTRICTED` | A raw runtime entry that only the standard library may call, called from user code; or an `extern` for a runtime (`zyl_*`) entry, whose type comes from the compiler's signature table |
+
+An `ffi-call` to a foreign C function needs an `(extern "sym" (T ...) R)`
+declaration first; without one the type pass reports `E_CANNOT_INFER`,
+and an `extern` that names `Float` or a type variable is
+`E_TYPE_MISMATCH` (Chapter 22).
 
 ## A.15 Package Manifest, Lock and Registry (phase 19)
 
@@ -287,6 +310,8 @@ Every code here is raised by the package modules
 | `E_PKG_NATIVE_BUILD_FAILED` | `cc` failed on a native source |
 | `E_PKG_FEATURE_UNKNOWN` | A requested feature the package does not declare |
 | `E_PKG_FEATURE_COLLISION` | A gated definition collides with a base definition |
+| `E_PKG_FEATURE_NESTED` | A `feature-gate` below top level |
+| `E_PKG_VERSION_EXISTS` | `zyl publish` of a version already in the index |
 
 ## A.16 Warnings
 
@@ -299,15 +324,17 @@ Warnings are written to stderr and never stop a build:
 | `W_UNUSED_VARIABLE` | A binding never read |
 | `W_SHADOWED_BINDING` | A binding that hides an outer one of the same name |
 | `E_ZEROIZE_MISSING` | See §A.12 — a warning despite the `E_` prefix |
+| `W_TYPE_STRICT` | A type error reported as a warning because `ZYL_STRICT_TYPES=report` is set (§A.1) |
 
 Name a binding `_`, or give it a `_` prefix (`_count`), to exempt it
 from the unused, shadowing and duplicate-parameter checks. The `W_`
-codes come from `unused_check.zyl` and are not in the catalog. The
+codes come from `unused_check.zyl` (`W_TYPE_STRICT` from
+`type_annotate.zyl`) and are not in the catalog. The
 language server publishes them as Warning diagnostics (Chapter 35).
 
 ## A.17 Catalog Versus Implementation
 
-**In the catalog, never raised.** 37 of the catalog's 118 distinct
+**In the catalog, never raised.** 36 of the catalog's 124 distinct
 codes are not raised anywhere in the compiler, runtime or REPL:
 
 - Lexer and parser: `E_UNEXPECTED_EOF`,
@@ -315,7 +342,7 @@ codes are not raised anywhere in the compiler, runtime or REPL:
   `E_EXPECTED_RPAREN`, `E_EXPECTED_RBRACKET`, `E_EXPECTED_RCURLY`,
   `E_EXPECTED_EXPRESSION`, `E_EMPTY_LIST`, `E_ATOM_AS_OPERATOR`.
 - Types: `E_RETURN_TYPE_MISMATCH`, `E_UNKNOWN_TYPE`,
-  `E_UNKNOWN_GENERIC_PARAM`, `E_CANNOT_INFER`.
+  `E_UNKNOWN_GENERIC_PARAM`.
 - Regions and buffers: `E_UNINITIALIZED_USE`,
   `E_ATOMIC_ABA`, `E_BYTEBUF_NOT_PIN`, `E_STACK_BYTEBUF_RETURN`,
   `E_GLOBAL_BYTEBUF_MUT`.
@@ -328,9 +355,9 @@ codes are not raised anywhere in the compiler, runtime or REPL:
 - Traits: `E_TRAIT_BOUND_NOT_SATISFIED`.
 - Numerics and FFI: `E_OVERFLOW`, `E_FFI_TYPE_NOT_PINNABLE`.
 
-Seven of these are codes spec §28 requires: `E_USER_ERROR`,
-`E_ASSERT_FAIL`, `E_UNINITIALIZED_USE`, `E_OVERFLOW`, `E_TEST_FAILURE`,
-`E_TEST_RUNNER_ERROR` and `E_CANNOT_INFER`. `E_DIVISION_BY_ZERO` is
+Six of these are codes spec §28 requires: `E_USER_ERROR`,
+`E_ASSERT_FAIL`, `E_UNINITIALIZED_USE`, `E_OVERFLOW`, `E_TEST_FAILURE`
+and `E_TEST_RUNNER_ERROR`. `E_DIVISION_BY_ZERO` is
 raised only by the REPL interpreter. Every other code in §28, the 36
 package codes included, is both catalogued and raised.
 
@@ -372,7 +399,7 @@ and `E_NON_EXHAUSTIVE_MATCH`.
   `mutability_check.zyl`, `exhaustiveness_check.zyl`,
   `secret_check.zyl`, `unused_check.zyl`, `capability_check.zyl`,
   `module_resolver.zyl` and the package modules, plus the parser,
-  type inference and ICNF lowering.
+  the type pass (`type_annotate.zyl`) and ICNF lowering.
 - **Tested by**: `tests/compile-fail/` (one file per rejected program)
   and `tests/packages-fail/` (one package per rejected manifest or
   graph).

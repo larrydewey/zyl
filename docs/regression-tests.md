@@ -115,6 +115,21 @@ drifts silently, so the suite compares them rather than assuming.
 ./run_regression_tests.sh --full --no-boot --filter interpreter --verbose  # with diffs
 ```
 
+The interpreted run is in the interpreter's checking mode,
+`ZYL_INTERP_CHECK=1` (the "CHECKING MODE" section of
+`stdlib/repl/interp.zyl`). Every interpreted value carries its tag (Int,
+Float, String or heap block); in this mode arithmetic must be on two Ints
+or two Floats, a comparison on two values of one tag, a bit operation on
+two Ints, and every condition exactly 0 or 1. A violation is
+`E_INTERP_TAG`, which means the type checker accepted a program that
+misuses a value: a checker bug, located at the expression. The section
+passing is empirical evidence for spec §4.8 on the programs it covers.
+To run a file the same way by hand:
+
+```bash
+ZYL_INTERP_CHECK=1 build/boot/zyl-self eval tests/regression/adts.zyl
+```
+
 Only stdout is compared: compiler warnings go to stderr, and the
 compiled run emits them at build time while the interpreted run emits
 them at eval time — a difference in when, not in what.

@@ -44,7 +44,7 @@ The language forms are `spawn`, `send`, `receive` and `actor-self`. Everything e
 (spawn entry-fn)          ; a named zero-argument function also works
 ```
 
-`spawn` starts a new actor running `body` on its own thread and returns immediately with an **actor reference**, an `Int` handle used by `send` and the `actor/actor` functions.
+`spawn` starts a new actor running `body` on its own thread and returns immediately with an **actor reference**, a value of type `Actor` used by `send` and the `actor/actor` functions. An `Actor` is not an `Int`: it cannot be added to, and an `Int` cannot be sent to.
 
 ```lisp
 (use actor/actor)
@@ -62,7 +62,8 @@ The language forms are `spawn`, `send`, `receive` and `actor-self`. Everything e
       (let b (spawn (fn () (report-b)))
         (begin
           (actor-wait b)
-          (print "both done"))))))
+          (print "both done")))))
+  0)
 ```
 
 Output:
@@ -76,7 +77,7 @@ both done
 Two rules for the closure passed to `spawn` in the current compiler:
 
 1. **Capture only immutable values.** A spawned closure may read variables from the enclosing scope; like any closure it gets copies of them. A closure that captures a `let-mut` variable is rejected at compile time with `E_CAPABILITY_LEAK` (Chapter 8, §8.6).
-2. **Take no parameters.** Messages are read with `(receive)` (§9.3), not passed as an argument. A parameter, if declared, receives 0.
+2. **Take no parameters.** Messages are read with `(receive)` (§9.3), not passed as an argument. Spawning a function that takes a parameter is `E_TYPE_MISMATCH`.
 
 ## 9.3 Sending Messages
 
@@ -98,7 +99,8 @@ Two rules for the closure passed to `spawn` in the current compiler:
       (send a 2)
       (send a 3)
       (actor-wait a)
-      (print "sent three messages"))))
+      (print "sent three messages")))
+  0)
 ```
 
 The messages above are never read, so they are dropped when the actor stops. To read them, the actor calls `receive`.
@@ -110,10 +112,10 @@ The messages above are never read, so they are dropped when the actor stops. To 
 (actor-self)    ; this actor's own reference
 ```
 
-`receive` returns the message. Messages are usually ADT values, so the actor matches on what it received and loops with a tail call to wait for the next one. A message that expects an answer carries the sender's reference, obtained with `actor-self`; `main` has a mailbox too, so an actor can reply to it:
+`receive` returns the message. It is the one form the type checker does not see through yet: its result takes whatever type the code that uses it needs, so matching it against `CounterMsg` arms, or printing it as an `Int`, is accepted without any check that the sender sent that type. Mailboxes are to be replaced by typed channels, which will close this hole; until then, keep one message type per actor and match on it right away. Messages are usually ADT values, so the actor matches on what it received and loops with a tail call to wait for the next one. A message that expects an answer carries the sender's reference, obtained with `actor-self`; `main` has a mailbox too, so an actor can reply to it:
 
 ```lisp
-(deftype CounterMsg (Add Int) (Get Int) (Stop Int))
+(deftype CounterMsg (Add Int) (Get Actor) (Stop Actor))
 
 (defn counter-loop (total)
   (match (receive)
@@ -141,6 +143,8 @@ Output:
 12
 42
 ```
+
+`Get` and `Stop` carry the reference of whoever asked, so their fields are typed `Actor`: `actor-self` returns one, and `send` takes one as its first argument. Declaring them `Int`, as older versions of this program did, is now `E_TYPE_MISMATCH` at the `send`.
 
 `counter-loop` calls itself in tail position, so it runs in constant stack however many messages it handles. An actor still blocked in `receive` when `main` returns does not hold up the exit: it is idle, and the runtime stops it. A `receive` that no message ever answers blocks forever. Sending to a reference that does not name a live actor does nothing. `book/examples/actor-counter/counter.zyl` is a complete version of this program.
 
@@ -191,7 +195,7 @@ A stateful actor is a recursive loop over `receive`, with its state passed as th
 2. Define the actor's protocol as an ADT, one variant per kind of message.
 3. Give each actor a loop that receives a message, matches on it, and calls itself with the new state; the variant that stops the actor simply does not loop.
 
-The runtime also provides **closure messages**: `zyl_actor_send_closure`, called through `ffi-call`, queues a call to a named one-parameter function on the actor's thread (Chapter 21, §21.4). A closure message queued ahead of a data message runs before `receive` returns that message, so the mailbox stays FIFO. Prefer `receive` for new code.
+The runtime also has **closure messages**, queued by its C entry `zyl_actor_send_closure`, which run a C function on the actor's thread. A Zyl program cannot send one: the entry has no signature in the compiler's table, and an `extern` for a runtime entry is `E_FFI_RESTRICTED` (Chapter 21, §21.4). Every message a Zyl program sends goes through `send` and `receive`.
 
 ## 9.5 Request-Response
 
@@ -217,14 +221,15 @@ The `actor/actor` module provides:
 | `(actor-is-alive a)` | `true` until the actor has been waited on or terminated |
 | `(actor-spawn f)`, `(actor-send a m)` | Function wrappers around `spawn` and `send` |
 
-`actor-wait` does not drain the mailbox: messages still queued when the actor is stopped are dropped. To let every actor finish its queued messages first, call the runtime directly with `(ffi-call "zyl_actor_wait_all" 1000)`, which waits until every mailbox is empty and then stops and joins every actor (Chapter 21, §21.5).
+`actor-wait` does not drain the mailbox: messages still queued when the actor is stopped are dropped. To let every actor finish its queued messages first, call the runtime directly with `(ffi-call "zyl_actor_wait_all" 1000)`. It needs no declaration, because the compiler's signature table types it `-> Unit` (Chapter 12); it waits until every mailbox is empty and then stops and joins every actor (Chapter 21, §21.5).
 
 There is no `wait_all` language form, but every compiled program runs `zyl_actor_wait_all` when it exits, so returning from `main` lets every actor finish its queued messages; an actor waiting in `receive` for a message that will never come is stopped. This program:
 
 ```lisp
 (defn main ()
   (let a (spawn (fn () (print "hi from actor")))
-    (print "main exits")))
+    (print "main exits"))
+  0)
 ```
 
 printed `hi from actor` in 200 of 200 runs. (Before 2026-09-24 the process did not wait, and the line appeared in only 186 of 200.) Wait explicitly where the order of output matters, as in §9.8.
@@ -282,7 +287,8 @@ Spawn several independent workers, then wait for all of them:
       (actor-wait a)
       (actor-wait b)
       (actor-wait c)
-      (print "all workers finished"))))))
+      (print "all workers finished")))))
+  0)
 ```
 
 Typical output:
@@ -350,7 +356,7 @@ A single file compiled directly is not capability-checked. (The current checker 
 
 - **One POSIX thread per actor**, created by `zyl_actor_spawn`, which receives the spawned closure's code pointer and a state pointer. For a capturing closure it unpacks the closure block into its code and environment, so the environment arrives as that state pointer.
 - **Mailbox**: a singly linked FIFO list protected by a per-actor mutex, with a condition variable to wake the actor thread.
-- **Thread body**: run the entry function once, then loop, dequeuing messages until the actor is marked dead. A message is either a *data* message (what `send` produces; `receive` returns it, and one left unread when the body returns is dropped) or a *closure* message (`zyl_actor_send_closure`, which runs a function in the actor's thread). `zyl_actor_receive` runs closure messages it finds ahead of the next data message. `main` gets a mailbox, without a thread, the first time it calls `actor-self` or `receive`.
+- **Thread body**: run the entry function once, then loop, dequeuing messages until the actor is marked dead. A message is either a *data* message (what `send` produces; `receive` returns it, and one left unread when the body returns is dropped) or a *closure* message (`zyl_actor_send_closure`, a C entry a Zyl program cannot call, which runs a C function in the actor's thread). `zyl_actor_receive` runs closure messages it finds ahead of the next data message. `main` gets a mailbox, without a thread, the first time it calls `actor-self` or `receive`.
 
 ### Message Representation
 
@@ -362,7 +368,7 @@ typedef struct ZylMessage {
 } ZylMessage;
 ```
 
-`(send a m)` lowers to `zyl_actor_send(a, m)`, `(receive)` to `zyl_actor_receive()` and `(actor-self)` to `zyl_actor_self()`; the value `m` is passed through as an opaque 64-bit word, never copied or boxed.
+`(send a m)` lowers to `zyl_actor_send(a, m)`, `(receive)` to `zyl_actor_receive()` and `(actor-self)` to `zyl_actor_self()`; the value `m` is passed through as an opaque 64-bit word, never copied or boxed. That is also why `receive` is untyped: the word carries no record of the type it was sent at.
 
 ### Send Capability Check (Compile Time)
 

@@ -34,9 +34,9 @@ selfhost/
                          and the REPL into one source file
   zyl_selfhost_compiler.zyl   The assembled bundle boot.sh compiles
 
-stdlib/compiler/         The compiler itself (37 files, ~21,200 lines)
-stdlib/repl/             The REPL and its ICNF interpreter (8 files, ~4,000 lines)
-stdlib/lsp/              The language server (20 files, ~5,400 lines)
+stdlib/compiler/         The compiler itself (39 files, ~22,600 lines)
+stdlib/repl/             The REPL and its ICNF interpreter (8 files, ~4,100 lines)
+stdlib/lsp/              The language server (20 files, ~5,500 lines)
 stdlib/math/             Cryptography and number libraries (28 files, ~7,600 lines)
 stdlib/core/             core (facade), list, option, result, map
 stdlib/collections/      collections (Assoc + list utilities), vec, map, set
@@ -51,7 +51,7 @@ stdlib/mlib/             deep.zyl: a small deep-call fixture module
 runtime/actor_runtime.c  The C runtime every compiled binary links against
 runtime/actor_runtime.h  Its header
 tools/repl.zyl           Standalone REPL entry point (a thin `main`)
-editors/vscode/          VS Code extension (0.3.0)
+editors/vscode/          VS Code extension (0.4.0)
 book/                    The book (mdBook: book.toml, src/, examples/)
 tests/                   smoke, regression, compile-fail, integration,
                          stress, packages, packages-fail, packages-build,
@@ -80,7 +80,7 @@ in `docs/compiler-pipeline.md`.
 | `sexp_balance.zyl` | Delimiter balance check with the location of the first fault |
 | `parser.zyl` | Dispatch-free reader: tokens to nested `Ast` lists |
 | `ast.zyl` | `Token`, `Ast`, and the immutable `Env`/`VTable` chains |
-| `expr_inner.zyl` | `Ast` to `ExprInner`: recognizes every special form (`convert-ast`, `dispatch-special`) |
+| `expr_inner.zyl` | `Ast` to `ExprInner`: recognizes every special form (`convert-ast`, `dispatch-special`); records declared field types and `extern` signatures (`extern-table`) for the type pass; lowers contracts |
 | `module_resolver.zyl` | Resolves the `use` graph into one compilation unit (discovery, then qualification) |
 | `qualify.zyl` | Rewrites identifiers to canonical keys `<pkg>@<major>::<module>::<symbol>` (§31.2) |
 | `resolver.zyl` | Two list helpers (`shd`/`stl`) that codegen uses; the old resolver is gone |
@@ -91,8 +91,8 @@ in `docs/compiler-pipeline.md`.
 | File | Responsibility |
 |---|---|
 | `capability_check.zyl` | Package capability enforcement (§31.9) |
-| `duplicate_check.zyl` | `E_DUPLICATE_DEFINITION` for repeated top-level `defn`/`deftype` |
-| `arity_check.zyl` | `E_ARITY_MISMATCH` for direct calls to known top-level functions |
+| `duplicate_check.zyl` | `E_DUPLICATE_DEFINITION` for repeated top-level `defn`/`deftype`; `E_DUPLICATE_VARIANT` for a program type that reuses a prelude constructor name |
+| `arity_check.zyl` | `E_ARITY_MISMATCH` for direct calls to known top-level functions; `E_MALFORMED_FORM` for a special form its parser rejected; the `ffi-call` shape checks and `E_FFI_RESTRICTED` for a raw runtime entry named outside the standard library |
 | `mutability_check.zyl` | `E_MUT_CONFLICT`: `set!` only on a `let-mut` binding in scope |
 | `exhaustiveness_check.zyl` | `E_NON_EXHAUSTIVE_MATCH` and `E_UNREACHABLE_MATCH_ARM` for ADT matches |
 | `unused_check.zyl` | Unused function/parameter/variable and shadowing warnings; `E_DUPLICATE_PARAMETER` |
@@ -102,18 +102,20 @@ in `docs/compiler-pipeline.md`.
 
 | File | Responsibility |
 |---|---|
-| `type_system.zyl` | Type ADT, substitutions, environments, trait context, `TypeInferer` record |
-| `type_inference.zyl` | Older best-effort inferer; no longer run by the pipeline (the REPL and LSP use `type_annotate`) |
-| `type_annotate.zyl` | HM inference over the lowered program; kinds for codegen, static trait resolution, per-type instances, generated structural `T.==`, the `E_TYPE_MISMATCH` annotation check |
-| `derive.zyl` | Expands `(derive T Show)` into an impl block |
-| `monomorphization.zyl` | Lifts impl bodies to `Trait.method_Type` (runs with an empty inferer) |
+| `type_system.zyl` | 26 lines: the generic `Pair` and the `Region` family (`RStack` ... `RPin`) used by the parser and ICNF lowering |
+| `derive.zyl` | Expands `(derive T Trait...)` into impl blocks for Show, Debug, Eq, Ord, Hash and Clone; `E_TRAIT_NOT_DERIVABLE`, `E_DUPLICATE_IMPL` |
+| `lift_impls.zyl` | Lifts impl bodies to top-level `Trait.method_Type` functions (replaced `monomorphization.zyl` and `type_inference.zyl`) |
 | `closure_inline.zyl` | Retired closure-inlining pass, now an identity step (closures are real values) |
-| `assert_lowering.zyl` | Rewrites `assert-equal` on ADT/struct values to `(assert-true (== l r))` |
+| `type_annotate.zyl` | The type checker (spec §4.8–§4.10): HM inference with SCC generalization, every type error reported then fatal, static trait resolution, per-type instances of trait-generic functions (generic originals dropped), generated structural `T.==`, codegen kinds and scalar marks |
+| `ffi_sigs.zyl` | The type of every runtime function reached through `ffi-call` (`ffi-sig`), and the raw entries only the standard library may call (`ffi-raw-p`) |
+| `node_tables.zyl` | Per-node side tables: types, renamed calls, Show functions, ICNF kinds, regions, scalar marks |
 | `icnf.zyl` | Lowers `ExprInner` to the tree-shaped `Icnf` IR |
+| `icnf_print.zyl` | Canonical ICNF text for the package build's ICNF hash |
 | `optimization.zyl` | Integer constant folding and dead-branch elimination on `Icnf` |
 | `region_inference.zyl` | Escape analysis: a non-escaping variant becomes `IStackVariant` |
 | `codegen.zyl` | `Icnf` to x86_64 GAS Intel-syntax assembly |
 | `pipeline.zyl` | The one implementation of the phase order (`compile-to-fns`, `compile-to-asm`) |
+| `doc.zyl` | `zyl doc`: Markdown from source comments |
 
 **Diagnostics**
 

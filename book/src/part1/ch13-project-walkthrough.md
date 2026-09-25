@@ -67,7 +67,7 @@ zyl log-processor.zyl -o log-processor
 
 `-o log-processor` writes the executable `log-processor` and its assembly `log-processor.s`. (With no `-o`, the executable is named after the source file.) Run the program from the project directory so the relative path `"sample.log"` resolves.
 
-> **Things to know about the current compiler.** `print` writes *each argument on its own line*; `str-eq` returns an `Int`, `1` for equal and `0` for different; and struct fields declared without a type (as here) hold one 64-bit word, a string pointer or an integer. The chapter's code works with these, and each is pointed out where it matters.
+> **Things to know about the current compiler.** `print` writes *each argument on its own line*; `str-eq` returns a `Bool`, so it is a condition by itself; and a struct field declared without a type (as here) is a type parameter of the struct, fixed by the values the constructor is given. The chapter's code works with these, and each is pointed out where it matters.
 
 ## 13.3 Step 1: Data Types
 
@@ -84,7 +84,7 @@ zyl log-processor.zyl -o log-processor
   (Unparsed String))
 ```
 
-- `LogEntry` models one parsed line.
+- `LogEntry` models one parsed line. Its fields have no declared types, so the type checker infers them from the `make-LogEntry` call: four `String`s. Every `make-LogEntry` in the program must then agree; passing an `Int` for one of the fields where the others see a `String` is `E_TYPE_MISMATCH`.
 - `Stats` holds the counts we accumulate, including lines we could not parse.
 - `ParseResult` is the outcome of parsing one line: either a `Parsed` entry or the `Unparsed` line itself.
 
@@ -104,7 +104,7 @@ The workhorse splits a string on a one-character separator and returns a list of
     (if (> i start)
       (Cons (str-substring s start (- i start)) acc)
       acc)
-    (if (> (str-eq (str-substring s i 1) sep) 0)
+    (if (str-eq (str-substring s i 1) sep)
       (tokenize-h s n (+ i 1) (+ i 1)
         (Cons (str-substring s start (- i start)) acc) sep)
       (tokenize-h s n (+ i 1) start acc sep))))
@@ -112,16 +112,18 @@ The workhorse splits a string on a one-character separator and returns a list of
 (defn tokenize (s sep)
   (list-reverse (tokenize-h s (str-length s) 0 0 Nil sep)))
 
+; The k-th token, or "" past the end. A token list holds Strings, so the
+; past-the-end answer must be a String too.
 (defn list-nth (l k)
   (match l
-    (Nil 0)
+    (Nil "")
     (Cons h t (if (= k 0) h (list-nth t (- k 1))))))
 ```
 
 - `tokenize-h` walks the string with an index pair (`start`, `i`) and **accumulates into `acc`**; `tokenize` then reverses the list with `core/list`'s `list-reverse` so the tokens come back in reading order. Recursion with an accumulator is the idiomatic Zyl replacement for a loop that pushes into a growing vector.
 - `str-substring` returns a fresh heap copy of the slice, so each token stays valid after the call.
-- `str-eq` compares contents and returns `1` or `0`, so it is used as `(> (str-eq a b) 0)` in a condition.
-- `list-nth` returns `0` past the end of the list, which is enough for this program.
+- `str-eq` compares contents and returns a `Bool`, so it is the `if`'s condition directly. A condition must be a `Bool`: an `Int` such as `1` is `E_TYPE_MISMATCH`, and so is comparing the `Bool` with `0`.
+- `list-nth` returns `""` past the end of the list. Both arms of its `match` must have one type, the element type, so the fallback for a list of `String`s is a `String`. (An earlier version returned `0`; the checker then saw `list-nth` produce `Int`s, and every `make-LogEntry` call built from its results failed to type-check.)
 
 ## 13.5 Step 3: Parse One Line
 
@@ -161,7 +163,7 @@ Counting takes the running `Stats` and returns a new one:
 (defn empty-stats () (make-Stats 0 0 0 0 0))
 
 (defn level-is (e lvl)
-  (if (> (str-eq (struct-get e "level") lvl) 0) 1 0))
+  (if (str-eq (struct-get e "level") lvl) 1 0))
 
 (defn count-entry (st e)
   (make-Stats (+ (struct-get st "total") 1)
@@ -193,7 +195,7 @@ Counting takes the running `Stats` and returns a new one:
 (defn scan (st s n i start)
   (if (>= i n)
     (finish-line st s start i)
-    (if (> (str-eq (str-substring s i 1) "\n") 0)
+    (if (str-eq (str-substring s i 1) "\n")
       (scan (finish-line st s start i) s n (+ i 1) (+ i 1))
       (scan st s n (+ i 1) start))))
 
@@ -219,7 +221,7 @@ Counting takes the running `Stats` and returns a new one:
 
 - `finish-line` skips empty lines, so the file's trailing newline does not produce a skipped entry.
 - `scan-text` works on any string, which makes the counting testable without a file (§13.9).
-- `file-open` returns a file descriptor, or a negative number when the file cannot be opened. `file-read` returns up to the given number of bytes as a string; `1000000` is the maximum read here.
+- `file-open` returns a file descriptor, or a negative number when the file cannot be opened. Its mode must be a string literal: `"r"`, `"w"` or `"a"`, optionally with `+` or `b`. `file-read` returns up to the given number of bytes as a string; `1000000` is the maximum read here.
 
 ## 13.8 Step 6: `main`
 
@@ -288,13 +290,13 @@ Each label and its value are on separate lines because `print` writes every argu
   (assert-equal (list-length (tokenize "a bbb ccc" " ")) 3))
 
 (test "tokenize-keeps-order"
-  (assert-equal (str-eq (list-nth (tokenize "a bbb ccc" " ") 1) "bbb") 1))
+  (assert-true (str-eq (list-nth (tokenize "a bbb ccc" " ") 1) "bbb")))
 
 (test "parse-reads-level"
-  (assert-equal (str-eq (level-of "2024-01-15 [WARN] db slow query") "[WARN]") 1))
+  (assert-true (str-eq (level-of "2024-01-15 [WARN] db slow query") "[WARN]")))
 
 (test "parse-keeps-whole-message"
-  (assert-equal (str-eq (message-of "2024-01-15 [WARN] db slow query") "slow query") 1))
+  (assert-true (str-eq (message-of "2024-01-15 [WARN] db slow query") "slow query")))
 
 (test "short-line-is-unparsed"
   (assert-equal (is-unparsed "garbage") 1))
@@ -333,13 +335,14 @@ test result: 7 passed, 0 failed, 7 total
 
 Notes on the harness (Chapter 11 has the details):
 
+- `str-eq` is a `Bool`, so the string checks use `assert-true`; `assert-equal` is for two values of the same type, such as two counts.
 - The file has no `main`; the compiler generates one. A file with both tests and its own `main` is rejected with `E_TOPLEVEL_STMTS_WITH_EXPLICIT_MAIN`.
 - Only flat top-level `(test "name" body)` forms run. `test-suite`, `setup`/`teardown`, `test-property`, and keyword options such as `:filter` are accepted but do nothing yet.
 - Read the summary line: the program's exit status is 0 even when a test fails.
 
 ## 13.10 A Concurrent Variation?
 
-The natural concurrent design gives each file to a worker actor, which parses it and sends its `Stats` back to a collector. With `receive` and `actor-self` (Chapter 21, §21.3) that design works: main sends each worker a message carrying a file name and its own id, the worker parses the file and `send`s its `Stats` back, and main `receive`s one reply per worker. For a single sample file it adds nothing over calling `report` directly, so the sequential version is the one shown here.
+The natural concurrent design gives each file to a worker actor, which parses it and sends its `Stats` back to a collector. With `receive` and `actor-self` (Chapter 21, §21.3) that design works: main sends each worker a message carrying a file name and its own id (a field of type `Actor`), the worker parses the file and `send`s its `Stats` back, and main `receive`s one reply per worker. For a single sample file it adds nothing over calling `report` directly, so the sequential version is the one shown here.
 
 ## 13.11 Key Zyl Features Demonstrated
 
@@ -362,7 +365,7 @@ Ideas to stretch the example:
 1. **Per-service counts**: keep an association list of `(service, count)` pairs in `Stats`, or use `core/map`'s `map-insert` / `map-get-or`.
 2. **Report the skipped lines**: `Unparsed` already carries the line; collect those lines in a list instead of only counting them.
 3. **Contracts**: add a `requires` clause to `count-entry` (Chapter 24). Contracts are an optional overlay and do not change what the program computes.
-4. **A macro**: write a `defmacro` that expands to one of the `count-*` field updates (Chapter 10). Keep the macro call out of `match` arms, where the current expander does not look.
+4. **A macro**: write a `defmacro` that expands to one of the `count-*` field updates (Chapter 10).
 5. **A package**: add a `zyl.pkg` with `(capabilities io)` (the program opens files) and build it with `zyl build` (Chapter 25).
 
 ---

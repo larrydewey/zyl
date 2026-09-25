@@ -1,5 +1,9 @@
 # FFI signature draft: typed signatures for the `zyl_*` runtime surface
 
+> Note (2026-09-25): this is the planning survey. The live table is
+> `stdlib/compiler/ffi_sigs.zyl`, and the checker no longer poisons on a
+> conflict: every type error is reported (spec §4.8).
+
 Status: draft for sound types phase 2, the "primitive surface" in
 `docs/sound-types-design.md`. This is a survey, not an implementation.
 

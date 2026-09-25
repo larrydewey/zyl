@@ -84,7 +84,8 @@ The shortest thing in the library:
 
 (defn main ()
   (let a (arena-create 0)
-    (print (sha256-hex-of-string a "abc"))))
+    (print (sha256-hex-of-string a "abc")))
+  0)
 ```
 
 ```

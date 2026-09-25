@@ -10,7 +10,7 @@ A macro is a compile-time rewrite rule:
 (defmacro name (param ...) template)
 ```
 
-(`macro` is accepted as a synonym for `defmacro`.)
+(`macro` is accepted as a synonym for `defmacro`.) The template is exactly one form; to expand to several, wrap them in `begin`. A `defmacro` with two template forms is `E_MALFORMED_FORM`.
 
 When the compiler sees a call `(name arg ...)`, it:
 
@@ -36,7 +36,8 @@ The template is ordinary Zyl code, written exactly as the expansion should read.
 (defn main ()
   (begin
     (print (my-unless false 1))   ; 1
-    (print (my-when true 2))))    ; 2
+    (print (my-when true 2))    ; 2
+    0))
 ```
 
 ### Arguments Are Spliced, Not Evaluated
@@ -50,7 +51,8 @@ Because an argument is copied into the template as source, a parameter that appe
   (begin (print "evaluated") 21))
 
 (defn main ()
-  (print (double (noisy))))
+  (print (double (noisy)))
+  0)
 ```
 
 Output:
@@ -71,7 +73,8 @@ Splicing is what makes a macro useful: the macro decides whether an argument is 
 (defn main ()
   (begin
     (unless true (print "core unless is a function"))
-    (print "end")))
+    (print "end")
+    0))
 ```
 
 ```
@@ -79,16 +82,19 @@ core unless is a function
 end
 ```
 
-A macro version skips the body when the condition says so:
+(The body of the `core/core` functions is a statement: they are typed `Bool Unit -> Unit`.)
+
+A macro version skips the body when the condition says so. An `if` without an else branch is a statement, of type `Unit`, and so is the `print` it guards:
 
 ```lisp
 (defmacro unless (c body)
-  (if (not c) body 0))
+  (if (not c) body))
 
 (defn main ()
   (begin
     (unless true (print "should not print"))
-    (print "end")))
+    (print "end")
+    0))
 ```
 
 ```
@@ -106,7 +112,8 @@ A macro takes precedence over a function of the same name: once `unless` is defi
     e))
 
 (defn main ()
-  (print (log-and-return (+ 1 2))))
+  (print (log-and-return (+ 1 2)))
+  0)
 ```
 
 ```
@@ -126,7 +133,8 @@ The specification requires gensym-based hygiene: names a template introduces are
 
 (defn main ()
   (let tmp 1
-    (print (add-tmp tmp))))
+    (print (add-tmp tmp)))
+  0)
 ```
 
 ```
@@ -155,7 +163,8 @@ Pass such values in as arguments. When a parameter is used where the template ne
 (defn main ()
   (let-mut tmp 1
     (let-mut y 2
-      (begin (swap! tmp y) (print tmp) (print y)))))
+      (begin (swap! tmp y) (print tmp) (print y))))
+  0)
 ```
 
 ```
@@ -174,7 +183,8 @@ Arguments are expanded before the macro that receives them, so expansion is inne
 (defmacro m2 (x) (+ x 1))
 
 (defn main ()
-  (print (m1 (m1 5))))    ; 7
+  (print (m1 (m1 5)))    ; 7
+  0)
 ```
 
 1. The inner `(m1 5)` expands to `(m2 5)`, then to `(+ 5 1)`
@@ -187,7 +197,8 @@ All `defmacro` forms are collected from the whole program **before** any expansi
 
 ```lisp
 (defn main ()
-  (print (triple 2)))        ; 6
+  (print (triple 2))        ; 6
+  0)
 
 (defmacro triple (x) (* 3 x))
 ```
@@ -206,7 +217,8 @@ A macro call expands wherever it is written: function and test bodies, `let`, `i
   (begin
     (print (match (Some 3) (Some v (square-it v)) (None 0)))
     (let f (fn (z) (square-it z)) (print (f 4)))
-    (print (sq 10))))
+    (print (sq 10))
+    0))
 ```
 
 ```
@@ -244,7 +256,7 @@ Several forms that other Lisps define as macros are built into Zyl's parser inst
 |------|----------|
 | `and` | Short-circuit: stops at the first false operand |
 | `or` | Short-circuit: stops at the first true operand |
-| `cond` | `(cond (test value) ... (else value))`, a chain of `if`s |
+| `cond` | `(cond (test value) ... (else value))`, a chain of `if`s; a clause may hold several forms, run in order |
 | `begin` | Sequencing; the value is the last expression |
 
 `let*` is not available; nest `let` forms instead.
@@ -255,7 +267,8 @@ Several forms that other Lisps define as macros are built into Zyl's parser inst
 (defn main ()
   (begin
     (print (and (say "a" true) (say "b" false) (say "c" true)))
-    (print (cond ((> 1 2) 10) ((> 2 1) 20) (else 30)))))
+    (print (cond ((> 1 2) 10) ((> 2 1) 20) (else 30)))
+    0))
 ```
 
 ```
@@ -265,7 +278,7 @@ b
 20
 ```
 
-The `and` evaluates the first two operands and stops at `false` (printed as `0`), so `(say "c" true)` never runs. The `String` annotation on `s` makes `print` treat the parameter as a string; an unannotated parameter prints as a machine word.
+The `and` evaluates the first two operands and stops at `false` (printed as `0`), so `(say "c" true)` never runs. The operands of `and` and `or`, like every condition, must be `Bool`. The `String` annotation on `s` pins `say` to strings; without it `say` is generic and `print` still shows the argument's inferred type.
 
 ## 10.9 Debugging Macros
 

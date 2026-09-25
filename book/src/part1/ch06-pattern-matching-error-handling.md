@@ -62,9 +62,10 @@ An arm can also be written with its pattern in its own parentheses:
       0)))
 ```
 
-Every arm should produce the same type. The type checker infers the
-types but does not currently reject arms that disagree, so this is on
-you.
+Every arm must produce the same type, and that is the type of the
+`match`. An arm that returns a String where another returns an Int is
+`E_TYPE_MISMATCH`, and so is one that prints (`Unit`) where another
+returns a number.
 
 ## 6.2 Patterns in Detail
 
@@ -92,7 +93,8 @@ matched too:
     (Point x y (+ x y))))
 
 (defn main ()
-  (print (manhattan (make-Point 3 4))))   ; 7
+  (print (manhattan (make-Point 3 4)))    ; 7
+  0)
 ```
 
 ### The Discard `_`
@@ -117,9 +119,9 @@ caught as `E_UNREACHABLE_MATCH_ARM`.
 ### One Level at a Time
 
 A binder position holds a name or `_`, not another pattern. A nested
-pattern such as `(Some (Cons x _) body)` is accepted, but only the outer
-variant is tested; the inner constructor is not checked (Chapter 4,
-§4.2). Match the field in the body instead:
+pattern such as `(Some (Cons x _) body)` is a compile error,
+`E_NESTED_PATTERN` (Chapter 4, §4.2). Match the field in the body
+instead:
 
 ```lisp
 (deftype Expr
@@ -212,14 +214,13 @@ There is no `default` or `otherwise` keyword; `_` is the catch-all.
 Exhaustiveness matters for correctness, not only style: if no arm of a
 constructor match applies, the `match` evaluates to 0.
 
-Two limits of the current check:
+A repeated arm is reported too: in
+`(match c (Red 1) (Red 2) (Green 3) (Yellow 4))` the second `Red` arm
+can never run, and is `E_UNREACHABLE_MATCH_ARM`.
 
-- It works out the scrutinee's type from the constructors named in the
-  arms. If two types share a variant name, a `match` using that name is
-  not checked.
-- It does not report a repeated arm: in
-  `(match c (Red 1) (Red 2) (Green 3) (Yellow 4))` the second `Red` arm
-  is simply dead.
+One limit of the current check: it works out the scrutinee's type from
+the constructors named in the arms, so if two of your types share a
+variant name, a `match` using that name is not checked.
 
 The specification spells the error `E_MATCH_NONEXHAUSTIVE`. The
 constructor check prints `E_NON_EXHAUSTIVE_MATCH`; the literal-pattern
@@ -274,7 +275,8 @@ constructor patterns.
 
 ## 6.5 Guards
 
-A literal arm may end its pattern with `(when condition)`. The arm then
+A literal arm may end its pattern with `(when condition)`, where the
+condition is a `Bool`. The arm then
 matches only if the pattern matches *and* the condition is true;
 otherwise matching continues with the next arm.
 
@@ -299,8 +301,8 @@ Guards currently work only in this position. Elsewhere:
   ``E_ARITY_MISMATCH: `when` called with 1 argument(s), but it takes 2``
   (it is mistaken for a call to the core library's `when` function).
 - **On a constructor arm** such as `(Some x (when (> x 0)) x)`, the
-  guard is read as a field binder. The program compiles and then
-  crashes.
+  guard is read as a nested pattern in a field position:
+  `E_NESTED_PATTERN`.
 - **On the trailing `_` arm** a guard is ignored.
 
 For a condition on a constructor's field, test it in the body:
@@ -332,7 +334,7 @@ that can fail returns a `Result`:
 (defn show (r)
   (match r
     (Ok v (print v))
-    (Err msg (print-string msg))))
+    (Err msg (print msg))))
 
 (defn main ()
   (begin
@@ -341,8 +343,8 @@ that can fail returns a `Result`:
     0))
 ```
 
-A plain `print` works too: the message is bound with its field type,
-String.
+`print` shows the message as text because `msg` is bound with its
+field type, String. Both arms print, so both are `Unit`.
 
 ### Result Chaining
 
@@ -451,19 +453,14 @@ What `try` is and is not:
   `Result`: an `(Err ...)` value is an ordinary value and passes straight
   through `try` unchanged. Use `match` or `result-and-then` for Results,
   and `result-expect` to turn an `Err` into an `error` on purpose.
-- The handler is one expression, with `err-var` bound to the message
-  String. Use `begin` or a function call, as `report` does, for more.
-
-> **Known bug.** An `error` raised inside some user functions of two or
-> four parameters hangs the program instead of reaching the handler. The
-> function `(defn f (a b) (error "x"))` hangs under
-> `(try (f 1 2) (catch e 0))`, while `(f 0 0)` or `(f "a" 1)` is caught.
-> Chapter 3 (§3.6) describes it. Until it is fixed, prefer `Result`
-> values for failures you expect to handle.
+- The handler may be several forms, run in order, with `err-var` bound
+  to the message String. Its last form is the value of the `try`, so it
+  must have the same type as `expr`: here both are Int.
 
 ## 6.9 `assert` and `unwrap`
 
-The specification defines `(assert condition "message")`, which aborts
+The specification defines `(assert condition "message")` (the condition
+is a `Bool`), which aborts
 with `E_ASSERT_FAIL` when the condition is false, and `(unwrap r)`, which
 extracts an `Ok`/`Some` value or aborts. Both work today, with two
 differences from the specification:
@@ -502,7 +499,7 @@ In tests, `assert-true`, `assert-false` and `assert-equal` do work
 | Optional value | `Option` + `match` or `option-map` |
 | Default on failure | `result-unwrap` / `option-unwrap` with a default |
 | Unrecoverable condition | `error` |
-| Recovering from an `error` | `try` / `catch` (mind the bug in §6.8) |
+| Recovering from an `error` | `try` / `catch` |
 | Internal invariant | an `if` that calls `error` (not `assert`) |
 | Several kinds of error | `Result` whose `Err` holds your own ADT |
 

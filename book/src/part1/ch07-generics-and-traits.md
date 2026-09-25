@@ -112,9 +112,15 @@ way. One generic ADT can be used at several types in the same program:
 ```
 
 The type arguments are inferred from the field values; you never write
-them. The specification's same-type constraint — `(Make 1 "hi")` should
-be rejected because both fields are `T` — is not enforced: it compiles.
-Generic *structs* are not supported (§6.5 of the specification).
+them. Every occurrence of one parameter must be the same type, so
+`(Make 1 "hi")` is `E_TYPE_MISMATCH`: both fields are `T`, and `T` cannot
+be `Int` and `String` at once.
+
+A struct gets its type parameters without any syntax: a field with no
+type is an implicit parameter. `(defstruct Box (v))` is generic in `v`,
+so `(make-Box 3)` and `(make-Box "s")` are a box of `Int` and a box of
+`String`, and `(+ (struct-get (make-Box "s") "v") 1)` is a type error.
+Write `(v Int)` when the field should only ever hold one type.
 
 ## 7.3 Traits — Ad-Hoc Polymorphism
 
@@ -124,13 +130,31 @@ A trait names a set of methods that several types can implement.
 
 ```lisp
 (trait Area
-  (area self))
+  (area (self) Int))
 ```
 
-A declaration lists the method names and their parameters. In the
-current compiler it serves mainly as documentation: the method list is
-not recorded, and an `impl` is not checked against it. It does matter
-in one case, the orphan rule (§7.4).
+A declaration lists each method as `(name (params...) Result)`. The
+receiver comes first and is written `self`; its type is whatever type
+the impl is for. A parameter that must have the receiver's type is
+written `(other Self)`:
+
+```lisp
+(trait Cmp
+  (cmp (self (other Self)) Int))
+```
+
+`Self` stands for the implementing type, so `Cmp.cmp` on a `Money`
+takes a second `Money`, and `(Cmp.cmp (make-Money 500) 3)` is
+`E_TYPE_MISMATCH`. The standard library's own traits are declared this
+way: `(trait Eq (eq (self (other Self)) Bool))`,
+`(trait Ord (compare (self (other Self)) Int))`,
+`(trait Clone (clone (self) Self))`.
+
+The signature is what a trait call is checked against: an impl method
+that returns a `String` for `(area (self) Int)` is a type error, and so
+is a call with the wrong number of arguments. Write the parameter list
+in parentheses even when it is only `self`: the older form
+`(area self)`, with a bare `self`, is `E_MALFORMED_FORM`.
 
 ### Implementation and Calls
 
@@ -139,7 +163,7 @@ in one case, the orphan rule (§7.4).
 (defstruct Circle (r))
 
 (trait Area
-  (area self))
+  (area (self) Int))
 
 (impl Area Rect
   (defn area (self) (* (struct-get self "w") (struct-get self "h"))))
@@ -168,9 +192,9 @@ in one case, the orphan rule (§7.4).
   `(area r)` does not find the method.
 - **The receiver is the first parameter.** Calling it `self` is
   convention. Further parameters follow it as usual:
-  `(defn scale (self k) ...)`.
-- The method's parameters are whatever the `defn` inside the `impl`
-  says; there are no default method bodies.
+  `(defn scale (self k) ...)`, declared in the trait as
+  `(scale (self (k Int)) Int)`.
+- There are no default method bodies: every impl writes each method.
 
 ### How a Call Finds Its Method
 
@@ -179,37 +203,46 @@ Trait calls are resolved statically, from the receiver's inferred type
 whatever else implements `Area` — structs, multi-variant ADTs and
 primitives such as `Int` alike.
 
+There is no run-time dispatch. A list's elements all have one type, so
+a list that mixes a `Circle` and a `Rect` is `E_TYPE_MISMATCH`, and a
+trait call whose receiver type is never pinned down is `E_CANNOT_INFER`.
+To hold several shapes in one collection, wrap them in one ADT and
+`match` on it; each arm then calls the impl for a known type:
+
 ```lisp
 (defstruct Circle (r))
 (defstruct Rect (w) (h))
 
-(trait Describe (describe self))
+(trait Describe (describe (self) Int))
 
 (impl Describe Circle
-  (defn describe (self) (begin (print "circle") (struct-get self "r"))))
+  (defn describe (self) (print "circle") (struct-get self "r")))
 
 (impl Describe Rect
-  (defn describe (self) (begin (print "rect") (* (struct-get self "w") (struct-get self "h")))))
+  (defn describe (self) (print "rect") (* (struct-get self "w") (struct-get self "h"))))
+
+(deftype Shape (C Circle) (R Rect))
+
+(defn describe-shape (s)
+  (match s
+    (C c (Describe.describe c))
+    (R r (Describe.describe r))))
 
 (defn describe-all (xs)
   (match xs
     (Nil 0)
-    (Cons x rest (+ (Describe.describe x) (describe-all rest)))))
+    (Cons s rest (+ (describe-shape s) (describe-all rest)))))
 
 (defn main ()
-  (print (describe-all (Cons (make-Circle 2) (Cons (make-Rect 3 4) Nil)))))
+  (print (describe-all (Cons (C (make-Circle 2)) (Cons (R (make-Rect 3 4)) Nil))))
+  0)
 ;; circle
 ;; rect
 ;; 14
 ```
 
-The list above mixes two struct types, so its element type has no single
-answer. A call like that, whose receiver type inference cannot pin down,
-falls back to a `match` on the receiver's runtime tag, with one arm per
-implementing type. For structs that is still exact, since each struct has
-its own tag; for a mix that includes a multi-variant ADT or a primitive
-it can pick the wrong impl, so keep heterogeneous collections to
-structs, or wrap the cases in one ADT.
+A function body with several forms runs them in order and returns the
+last, as if wrapped in `begin`.
 
 A generic function that calls a trait method on one of its parameters is
 compiled once per concrete receiver type (§7.6):
@@ -279,10 +312,12 @@ In the specification, a bound such as `(T : Ord)` requires every call
 site's concrete type to implement the trait, and trait resolution
 happens during type inference: collect the bounds, substitute the
 concrete types at each call, find the impl, verify the bound. Since
-bounds cannot be written (§7.1), they are not checked. The impl is found
-from the inferred receiver type; a `Trait.method` call with no impl for a
-known receiver type is `E_TRAIT_NOT_FOUND`, located at the call, and a
-trait with no impls at all makes the call `E_UNBOUND_VARIABLE`.
+bounds cannot be written (§7.1), they are not checked as bounds. The
+effect is close, though: the impl is found from the inferred receiver
+type, and a `Trait.method` call with no impl for a known receiver type
+is `E_TRAIT_NOT_FOUND`, located at the call. A receiver whose type is
+never known is `E_CANNOT_INFER`, and a trait with no impls at all makes
+the call `E_UNBOUND_VARIABLE`.
 
 ## 7.6 Monomorphization
 
@@ -302,7 +337,9 @@ copies and are compiled once. A copy is made only for a function whose
 body depends on a type parameter — it prints one, compares or does
 arithmetic on one, or calls a trait method on one. Each distinct tuple of
 concrete argument types gets one instance, named after the function and
-its argument types (`smaller~String,String`), at most 32 per function.
+its argument types (`smaller~String,String`). A function that would
+need more than 256 instances (almost always recursion at an ever larger
+type) is `E_CANNOT_INFER`.
 Impl methods become functions named `Trait.method_Type`, such as
 `Area.area_Rect`. Chapter 19 has the details.
 
@@ -318,24 +355,26 @@ and `Hash`, inline on `defstruct+` or with a standalone `derive`:
 `(derive T Show)` (or `(derive T [Show])`) generates a `Show` impl, and
 `print` then shows the value (Chapter 4, §4.9). The inline `(:derive
 ...)` option on `defstruct+` is not parsed, and the other traits are
-accepted and generate nothing; you get their behavior without them:
-
-- `==` and `!=` compare two struct or ADT values field by field, by
-  content: nested values and strings are compared recursively;
-- `<`, `>`, `<=` and `>=` compare the fields lexicographically, and are
-  shallow: a string or nested-value field is compared by address.
+`Eq`, `Ord`, `Debug`, `Hash` and `Clone` derive the same way
+(Chapter 20, §20.6). Equality needs no derive: `==` and `!=` compare two
+struct or ADT values field by field, by content, with nested values and
+strings compared recursively. Ordering does: `<`, `>`, `<=` and `>=`
+take only `Int`, `Float` and `String`, and on a struct they are
+`E_TYPE_MISMATCH`. A derived `Ord.compare` returns -1, 0 or 1, ordering
+variants in declaration order and then the fields lexicographically:
 
 ```lisp
 (defstruct Pt (x) (y))
+(derive Pt Ord)
 
 (defn main ()
   (let a (make-Pt 1 2)
     (let b (make-Pt 1 2)
       (let c (make-Pt 2 0)
         (begin
-          (print (== a b))    ; 1
-          (print (== a c))    ; 0
-          (print (< a c))     ; 1 (1 < 2 in the first field)
+          (print (== a b))                ; 1 (true)
+          (print (== a c))                ; 0 (false)
+          (print (Ord.compare a c))       ; -1 (1 < 2 in the first field)
           0)))))
 ```
 
@@ -346,7 +385,7 @@ capability types cannot be written in source (Chapter 5). An `impl`
 names a plain type: a struct, an ADT or a primitive.
 
 There are no trait objects (`dyn Trait`) either. Where you would use
-one, use a list of structs dispatched by tag (§7.3), or an ADT wrapper:
+one, use an ADT wrapper (§7.3):
 
 ```lisp
 (defstruct Circle (r))
@@ -377,7 +416,8 @@ one, use a list of structs dispatched by tag (§7.3), or an ADT wrapper:
 (defn double (x) (* x 2))
 
 (defn main ()
-  (print (list-sum (my-map double (Cons 1 (Cons 2 (Cons 3 Nil)))))))   ; 12
+  (print (list-sum (my-map double (Cons 1 (Cons 2 (Cons 3 Nil))))))   ; 12
+  0)
 ```
 
 `my-map` works for any element type. Pass it a named function or any
@@ -392,7 +432,8 @@ one, use a list of structs dispatched by tag (§7.3), or an ADT wrapper:
 | `E_ARITY_MISMATCH` | follows from `((T : Ord) ...)` adding a value parameter | raised |
 | `E_DUPLICATE_DEFINITION` | a function with the same name as one in the core library | raised |
 | `E_PKG_ORPHAN_IMPL` | impl where neither the trait nor the type is yours | raised |
-| `E_CANNOT_INFER` | generic parameter with no call-site evidence | in the specification; never raised |
+| `E_CANNOT_INFER` | a trait call whose receiver type is never known, or more than 256 instances | raised |
+| `E_TYPE_MISMATCH` | a trait call or impl that disagrees with the trait's signature, or two types for one parameter | raised |
 | `E_TRAIT_BOUND_NOT_SATISFIED` | concrete type lacks a bound's trait | in the specification; never raised |
 | `E_TRAIT_NOT_DERIVABLE` | a field lacks the derived trait, or the trait is not derivable | raised |
 | `E_DUPLICATE_IMPL` | two impls for one (Trait, Type) | raised |
@@ -407,11 +448,11 @@ one, use a list of structs dispatched by tag (§7.3), or an ADT wrapper:
 `stdlib/compiler/type_annotate.zyl` runs Hindley–Milner inference over
 the lowered program: top-level functions are inferred one strongly
 connected component of the call graph at a time and generalized, so each
-call instantiates a function's type afresh. The only type error reported
-is an argument that clashes with a parameter or field annotation
-(Chapter 15); otherwise the inferred types guide code generation and
-trait resolution. A function whose body depends on a type variable gets one
-instance per concrete argument-type tuple, named `key~T1,T2`.
+call instantiates a function's type afresh. Every unification failure
+is an error (Chapter 15), and the inferred types then guide code
+generation and trait resolution. A function whose body depends on a type
+variable gets one instance per concrete argument-type tuple, named
+`key~T1,T2`.
 
 ### Naming
 
@@ -423,12 +464,9 @@ the lines of `zy_local_x2Fmain_0__shapes__Area_x2Earea_...Rect`.
 ### Trait Dispatch
 
 The type annotation pass redirects each qualified call to the lifted
-method for the receiver's inferred type. Only when that type is unknown
-does ICNF lowering emit a `match` on the receiver whose arms are named
-after the implementing types; those arm names are ordinary constructor
-patterns, which is why a struct (a one-variant ADT named after itself)
-dispatches correctly there and a multi-variant ADT's name acts as a
-catch-all.
+method for the receiver's inferred type. There is no fallback: a call
+whose receiver type stays unknown is rejected rather than dispatched on
+the value's run-time tag.
 
 ### Representation
 

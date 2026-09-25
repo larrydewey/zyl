@@ -102,7 +102,8 @@ function:
       (bit-xor b (shr b 29)))))
 
 (defn main ()
-  (print (rotl64 1 8)))     ; 256
+  (print (rotl64 1 8))      ; 256
+  0)
 ```
 
 Note `shr`, not `ashr`, in both places: these are bit patterns, not

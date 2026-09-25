@@ -98,9 +98,12 @@ The prelude's `Option`, `Result` and `List` are declared the same way
   instances (§6.5). One ADT may be used at several types in one program
   without the instances interfering; this is the regression
   `generics-multi-type.zyl` guards.
-- **Same-type constraint.** Not enforced: `(Make 1 "hi")` for
-  `(deftype Pair (Make T T))` compiles.
-- **Generic structs** are not supported (§6.5).
+- **Same-type constraint.** Enforced: `(Make 1 "hi")` for
+  `(deftype Pair (Make T T))` is `E_TYPE_MISMATCH`.
+- **Generic structs.** An untyped struct field is an implicit type
+  parameter: `(defstruct Box (v))` is generic in `v`, and `(make-Box 1)`
+  and `(make-Box "s")` are a `(Box Int)` and a `(Box String)` (Chapter
+  15, 15.5). There is no syntax for naming a struct's parameters.
 
 ## 19.3 Monomorphization
 
@@ -144,8 +147,9 @@ connected component of the call graph:
   types, so everything type-dependent inside it resolves. The call is
   redirected to the instance; calls inside the instance may create more.
   A variable that only the call site mentions and nothing can fix (the
-  error type of `(Ok "yes")`) defaults to `Int`. At most 32 instances are
-  made per function; beyond that, calls use the shared body.
+  error type of `(Ok "yes")`) defaults to `Int`. A function that would
+  need more than 256 instances, almost always polymorphic recursion at an
+  ever larger type, is `E_CANNOT_INFER`.
 - **Naming.** An instance is named by the function's key, `~`, and its
   argument types in order, fully spelled: `smaller~String,String`,
   `show~(Vec String)` style keys. Distinct type tuples always get distinct
@@ -187,9 +191,9 @@ recursive functions are inferred together.
 §6.4 requires each call site's concrete types to satisfy the declared
 bounds. With no way to declare a bound (19.1), nothing is checked.
 
-The monomorphizer's own bound check (`check-trait-bound`) accepts every
-primitive type for every trait. For other types it looks for a matching
-`impl`, but no source construct reaches it.
+What is checked is the impl itself: a trait call on a concrete type with
+no impl is `E_TRAIT_NOT_FOUND` at the call, including one made inside an
+instance of a generic function (Chapter 20).
 
 `(derive T Show)` works on generic ADTs (§6.6); the generated `show`
 is instantiated per concrete type argument (Chapter 20).
@@ -200,20 +204,21 @@ What the compiler derives from the body instead of from a declaration:
 
 - Type inference unifies the uses of a parameter. A body that adds 1 to
   `x` gives `x` the type `Int` at that site.
-- A failed unification is not an error (Chapter 15). It marks the
-  variables involved as unknown.
-- Usage therefore guides code generation, such as print formats, String
-  comparison and float arithmetic, and which instances are made, but it
-  rejects nothing.
+- A failed unification is `E_TYPE_MISMATCH` (Chapter 15): a body that
+  adds 1 to `x` and also passes it to `str-length` does not compile.
+- Usage also guides code generation, such as print formats, String
+  comparison and float arithmetic, and which instances are made.
+- Arithmetic constrains a parameter to `Int` or `Float` without choosing
+  one: `(defn twice (x) (+ x x))` works at both, with one instance each.
 
 ## 19.7 Errors
 
 | Code | Condition (§6.7) | Status |
 |------|------------------|--------|
-| `E_CANNOT_INFER` | a generic parameter with no call-site evidence | catalogued; never raised |
+| `E_CANNOT_INFER` | a generic parameter with no call-site evidence | raised for other unknowns (an untyped `ffi-call`, more than 256 instances); an unconstrained parameter is left generic |
 | `E_TRAIT_BOUND_NOT_SATISFIED` | a concrete type violates a bound | catalogued; never raised |
 | `E_UNKNOWN_GENERIC_PARAM` | reference to an undeclared type parameter | catalogued; never raised |
-| `E_TRAIT_NOT_DERIVABLE` | a derive constraint fails | catalogued; never raised |
+| `E_TRAIT_NOT_DERIVABLE` | a derive constraint fails | raised for a trait outside `Show`, `Debug`, `Eq`, `Ord`, `Hash`, `Clone` |
 | `E_MALFORMED_PARAMETER` | `((T) x)`: not a name or `(name Type)` | raised |
 | `E_ARITY_MISMATCH` | follows from `((T : Ord) ...)` adding a value parameter | raised |
 
@@ -242,7 +247,7 @@ the cache of step 4 limit that.
 
 In the current compiler, a polymorphic function is compiled once unless
 its body depends on a type variable (19.3); those get one instance per
-concrete argument-type tuple used, capped at 32. Impl methods add one
+concrete argument-type tuple used, up to 256. Impl methods add one
 function per `(Trait, Type)` pair.
 
 ## 19.10 Comparison with Rust
@@ -252,7 +257,7 @@ function per `(Trait, Type)` pair.
 | Syntax | `fn foo<T: Trait>(x: T)` | `(defn foo ((T : Trait) x) ...)` | unannotated `(defn foo (x) ...)` |
 | Specialization | monomorphized | monomorphized | shared body; per-type instances where the body depends on the type |
 | Naming | mangled | `fn_Type1_Type2...`, sorted | `key~T1,T2`, then mangled (§31.2) |
-| Type checking | enforced | HM + trait resolution | HM + static trait resolution; only annotation clashes rejected |
+| Type checking | enforced | HM + trait resolution | HM + static trait resolution; every type error rejected |
 | Bounds | enforced | enforced | not expressible |
 | Higher-kinded types | no (GATs cover some uses) | no | no |
 | Const generics | yes | no | no |

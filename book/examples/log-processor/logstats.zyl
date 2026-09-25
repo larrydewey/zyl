@@ -23,7 +23,7 @@
     (if (> i start)
       (Cons (str-substring s start (- i start)) acc)
       acc)
-    (if (> (str-eq (str-substring s i 1) sep) 0)
+    (if (str-eq (str-substring s i 1) sep)
       (tokenize-h s n (+ i 1) (+ i 1)
         (Cons (str-substring s start (- i start)) acc) sep)
       (tokenize-h s n (+ i 1) start acc sep))))
@@ -31,9 +31,11 @@
 (defn tokenize (s sep)
   (list-reverse (tokenize-h s (str-length s) 0 0 Nil sep)))
 
+; The k-th token, or "" past the end. A token list holds Strings, so the
+; past-the-end answer must be a String too.
 (defn list-nth (l k)
   (match l
-    (Nil 0)
+    (Nil "")
     (Cons h t (if (= k 0) h (list-nth t (- k 1))))))
 
 ; --- parsing ----------------------------------------------------------------
@@ -67,7 +69,7 @@
 (defn empty-stats () (make-Stats 0 0 0 0 0))
 
 (defn level-is (e lvl)
-  (if (> (str-eq (struct-get e "level") lvl) 0) 1 0))
+  (if (str-eq (struct-get e "level") lvl) 1 0))
 
 (defn count-entry (st e)
   (make-Stats (+ (struct-get st "total") 1)
@@ -94,7 +96,7 @@
 (defn scan (st s n i start)
   (if (>= i n)
     (finish-line st s start i)
-    (if (> (str-eq (str-substring s i 1) "\n") 0)
+    (if (str-eq (str-substring s i 1) "\n")
       (scan (finish-line st s start i) s n (+ i 1) (+ i 1))
       (scan st s n (+ i 1) start))))
 

@@ -6,6 +6,26 @@ current implementation differs from the specification.
 
 ## E.1 From Rust
 
+### Types → Types (Stricter in Places)
+
+Zyl infers types the way Rust infers local ones, but everywhere: a
+top-level function needs no signature. The checker is strict, and a
+program with a type error does not compile. A few rules are tighter
+than Rust's:
+
+- A condition is a `Bool`, as in Rust. `str-eq`, `=`, `<` and the
+  library predicates all return `Bool`.
+- `+ - * / %` take two `Int`s or two `Float`s, and nothing converts
+  between them implicitly: `(+ 1 2.5)` is `E_TYPE_MISMATCH`. Write the
+  literal in the type you mean. The one explicit conversion is the
+  runtime's `Int -> Float`, `(ffi-call "zyl_f_of_int" n 1000)`; there
+  is no general `as`.
+- There is no `unsafe` block and no `transmute`. No form changes a
+  value's type; the only trusted code is the compiler and its C runtime.
+- A statement form (`print`, `set!`, `while`, an `if` without `else`)
+  has type `Unit`, like Rust's `()`. `main` returns an `Int`, the exit
+  status.
+
 ### Ownership → Regions + Capabilities
 
 | Rust | Zyl |
@@ -50,14 +70,17 @@ c.draw();
 
 ```lisp
 ;; Zyl
-(trait Drawable (draw (self T) Unit))
+(trait Drawable (draw (self) Unit))
 (impl Drawable Circle (defn draw (self) ...))
 (Drawable.draw c)
 ```
 
 **Differences**:
 - A method is called by its qualified name, `(Trait.method receiver ...)`.
-- No trait objects (`dyn Trait`); dispatch is on the receiver's variant.
+- No trait objects (`dyn Trait`); every call is resolved at compile
+  time from the receiver's type, as with Rust generics.
+- `Self` in a method signature is the implementing type, as in Rust:
+  `(trait Ord (compare (self (other Self)) Int))`.
 - Derive with `(derive Type Trait ...)`.
 - The orphan rule works at the package boundary, as Rust's does at the
   crate boundary (`E_PKG_ORPHAN_IMPL`).
@@ -72,17 +95,21 @@ fn min<T: Ord>(a: T, b: T) -> T { ... }
 
 ```lisp
 ;; Zyl
-(defn identity ((T) x) x)
-(defn min ((T : Ord) a b) ...)
+(defn identity (x) x)
+(defn smaller (a b) (if (< a b) a b))
 ```
 
 **Differences**:
-- Type parameters are separate parameter groups, `(T)` or `(T : Bound)`.
+- Type parameters are inferred, never written: `identity` is generic
+  because nothing constrains `x`. `smaller` works on any type `<`
+  accepts (`Int`, `Float`, `String`); an ADT is ordered with
+  `Ord.compare` instead.
 - Specialisations are named canonically, with type arguments sorted
   alphabetically (`min_Int`; `pair_Int_String` for either argument
   order) (§6.4).
-- No const generics, no GATs, no specialisation, and no generic structs
-  (§6.5) — only ADTs may be generic.
+- A struct is generic in each field written without a type:
+  `(defstruct Box (v))` is a box of any one type.
+- No const generics, no GATs and no specialisation (§6.5).
 
 ### Error Handling → Result/Option
 
@@ -119,8 +146,8 @@ match opt {
 }
 match n {
     0 => "zero",
-    1 | 2 | 3 => "small",
-    4..=9 if verbose => "medium",
+    1 | 2 | 3 if verbose => "small",
+    4..=9 => "medium",
     _ => "large",
 }
 ```
@@ -133,8 +160,8 @@ match n {
 
 (match n
   (0 "zero")
-  (1 2 3 "small")
-  ((range 4 9) (when verbose) "medium")
+  (1 2 3 (when verbose) "small")
+  ((range 4 9) "medium")
   (_ "large"))
 ```
 
@@ -169,12 +196,16 @@ h.join().unwrap();
 **Differences**:
 - No shared memory between actors, and messages must be Send-capable:
   a `let-mut` variable may not cross (`E_CAPABILITY_LEAK`).
-- `spawn` takes a zero-argument closure and returns an `Int` handle.
-  The actor's work is that closure.
+- `spawn` takes a zero-argument closure and returns an `Actor`, the
+  type `send` requires. The actor's work is that closure.
 - An actor reads its messages with `(receive)`, which blocks until one
   arrives, and `(actor-self)` is its own handle, so a request can carry
-  where to send the reply. `main` has a mailbox too. There is no
-  selective receive or receive timeout: messages come out in FIFO order.
+  where to send the reply; a message field that carries it is typed
+  `Actor`. `main` has a mailbox too. There is no selective receive or
+  receive timeout: messages come out in FIFO order.
+- Unlike an `mpsc::Receiver<T>`, a mailbox is not typed yet: `receive`
+  returns whatever type its use expects, and nothing checks that the
+  sender agreed. Typed channels will replace mailboxes.
 - There is no `wait-all` form, but every program drains and stops its
   actors when `main` returns. `actor-wait` stops one actor and joins its
   thread; `(ffi-call "zyl_actor_wait_all" 1000)` drains every mailbox and
@@ -234,7 +265,7 @@ free(arr);
 
 ```lisp
 ;; Zyl: arena-backed collections
-(let v (vec-push (vec-create 0 n) 7)   ; 0 = a private arena
+(let v (vec-push (vec-create-default n) 7)   ; a private arena
   (vec-get v 0))
 ```
 
@@ -246,19 +277,51 @@ with `arena-reset` or `arena-destroy` (`vec-free` only empties the value; the st
 ### Pointers → Capabilities + FFI
 
 ```c
-// C: raw pointers
-void process(int* data, size_t len);
+// C: a raw pointer to a value the callee may update
+void process(int64_t* value);
 ```
 
 ```lisp
-;; Zyl: pin the data, pass the length as an Int, give a timeout
-(ffi-call "process" (ffi-pin data) len 1000)
+;; Zyl: declare the C signature, pin the value, give a timeout,
+;; then read the (possibly updated) value back
+(extern "process" ((Pin Int)) Unit)
+(let slot (ffi-pin 42)
+  (let _ (ffi-call "process" slot 1000)
+    (ffi-unpin slot)))
 ```
 
+A pin holds one word. An array goes in a buffer from
+`allocator/allocator` (`alloc-malloc`, a `Ptr`).
+
 **No raw pointers in ordinary Zyl** — addresses appear only through
-`ffi-pin`, `bytebuf-ptr` and the allocator functions. The trailing
-timeout is a required integer literal in milliseconds; a call that
-overruns it raises `E_FFI_TIMEOUT`.
+`ffi-pin`, `bytebuf-ptr` and the allocator functions, and an opaque C
+address is a `Ptr` that Zyl can only hand back to C. The `extern` is
+the prototype a C header would give: an `ffi-call` to a foreign
+function without one does not compile (`E_CANNOT_INFER`). Its types are
+`Int`, `Bool`, `String`, `Ptr`, the byte handle types, `(Pin a)` for
+a pinned slot, `Unit` as a result, and `(Fn (A ...) R)` for a callback; `Float` cannot cross yet.
+The trailing timeout is a required integer literal in milliseconds; a
+call that overruns it raises `E_FFI_TIMEOUT`.
+
+### Integers and Truth → Bool and No Conversions
+
+```c
+// C: an int is a truth value, and arithmetic converts silently
+if (count) ...
+double avg = total / 2.0;
+```
+
+```lisp
+;; Zyl: conditions are Bool; Int and Float never mix
+(if (!= count 0) ...)
+(/ total-f 2.0)        ; total-f is already a Float
+```
+
+`(if count ...)` with an `Int` `count` is `E_TYPE_MISMATCH`, as is
+`(/ total 2.0)` with an `Int` `total`; convert explicitly with
+`(ffi-call "zyl_f_of_int" total 1000)`. There is no cast form, and
+nothing like `reinterpret_cast`: a value keeps the type it was built
+with.
 
 ### Structs → Structs (Similar but Immutable)
 
@@ -328,8 +391,9 @@ pthread_mutex_unlock(&lock);
 ```
 
 **No mutexes** — actors are isolated, and a spawned closure may not
-capture a `let-mut` variable from outside it. Since an actor cannot
-yet receive data messages (E.1), put the work in the spawned closure.
+capture a `let-mut` variable from outside it. State that several parts
+of a program update lives in one actor, and the others `send` it
+messages (E.1).
 
 ### Macros → Macros (Different)
 
@@ -379,6 +443,9 @@ identical binary (§27, §31.12). Builds never touch the network.
 | Macros | Procedural/declarative | Textual | AST templates |
 | Concurrency | Threads + channels | pthreads | Actors |
 | Determinism | Configurable | No | Mandatory |
-| FFI | `extern "C"` | Native | `ffi-call` + pinning + timeout |
+| Truth values | `bool` | Any scalar | `Bool` only |
+| Numeric conversion | `as` | Implicit | Explicit only (`zyl_f_of_int`); `Int` and `Float` never mix |
+| Unsafe casts | `transmute` | Casts | None |
+| FFI | `extern "C"` | Native | `extern` + `ffi-call` + pinning + timeout |
 | Packages | Cargo, crates.io | — | `zyl.pkg`, MVS, signed git index |
 | Build | `cargo build` | Make/CMake | `zyl build` or `zyl file.zyl` |

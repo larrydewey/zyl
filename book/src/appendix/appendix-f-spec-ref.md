@@ -77,11 +77,12 @@ Program         ::= TopLevelForm*
 TopLevelForm    ::= Definition | Expression
 
 Definition      ::= (def Name Expr)
-                  | (defn Name (Param*) Body)
+                  | (defn Name (Param*) Body+)
                   | (defmacro Name (Name*) Template)
                   | (defstruct Name (Field*))
                   | (deftype Name (Variant*))
-                  | (trait Name (TraitMethod*))
+                  | (trait Name TraitMethod*)
+                  | (extern String (Type*) Type)
                   | (impl Trait Type (ImplBody*))
                   | (alias Name Type)
                   | (derive Type Trait*)
@@ -92,7 +93,8 @@ Definition      ::= (def Name Expr)
 
 ImportSpec      ::= { Symbol* } | { Symbol => Alias } | :unsafe { Symbol* } | *
 Param           ::= Name | (Name Type)
-Field           ::= (Name Type)
+Field           ::= (Name Type) | (Name)                ; untyped: a type parameter
+TraitMethod     ::= (Name (self Param*) Type)           ; Type may be Self
 
 Expression      ::= Atom | List
 Atom            ::= Int | Float | Bool | String | Keyword | Symbol | Identifier
@@ -101,16 +103,16 @@ List            ::= (Expression*)
 Special Forms   ::= (let Name Expr Body)
                   | (let-mut Name Expr Body)
                   | (set! Name Expr)
-                  | (if Expr Expr Expr)
-                  | (cond (Expr Expr)* (else Expr)?)
-                  | (while Expr Expr)
-                  | (for (Name Expr) Expr Expr)
+                  | (if Expr Expr Expr?)
+                  | (cond (Expr Expr+)* (else Expr+)?)
+                  | (while Expr Expr+)
+                  | (for (Name Expr) Expr Expr+)
                   | (begin Expr+)
                   | (match Expr Arm*)
-                  | (try Expr (catch Name Expr))
+                  | (try Expr (catch Name Expr+))
                   | (with-resource (Name Expr) Body)
-                  | (fn (Param*) Body)
-                  | (lambda (Param*) Body)
+                  | (fn (Param*) Body+)
+                  | (lambda (Param*) Body+)
                   | (spawn Expr)
                   | (send Expr Expr)
                   | (ffi-call String Expr* Int)
@@ -126,7 +128,32 @@ lists `defun`, `(let (Name Expr) Body)`, `(assert Expr String)`,
 compiler accepts the parenthesised `let`; lowers `assert` and `unwrap`
 (both panic without the specified message); parses `export` without
 lowering it; treats `error` as a library function that panics; and does
-not recognise `defun` (Appendix C).
+not recognise `defun` (Appendix C). A form whose arguments do not fit
+its shape is `E_MALFORMED_FORM`; `test` and `defmacro` take exactly one
+body form.
+
+## F.2a Typing Rules at a Glance
+
+The type pass (`type_annotate.zyl`) is Hindley–Milner (§4.6) and
+strict: every failure is a compile error, and there is no cast form.
+
+| Form | Rule |
+|---|---|
+| `if`, `cond`, `while`, `for`, guards, contract clauses | The condition is `Bool`; an `Int` is not a truth value |
+| `if` with `else`, `match`, `cond` ending in `else`/`true` | Every branch has one type, which is the form's type |
+| `if` without `else`, `cond` without `else`/`true` | `Unit`; the branches must be `Unit` |
+| `+ - * / %` | Both operands `Int` or both `Float`; the result has their type; no implicit conversion |
+| `< > <= >=` | Both operands one type: `Int`, `Float` or `String`; result `Bool`. An ADT is ordered with `Ord.compare` |
+| `= != and or not` and the predicates | Result `Bool`; `and`, `or`, `not` take `Bool` |
+| `print`, `set!`, `while`, `for`, `assert`, `send`, `file-write` | `Unit` |
+| `main` | Returns `Int`, the exit status |
+| `defstruct` | An untyped field is a type parameter of the struct |
+| `trait` | `Self` in a method signature is the implementing type |
+| `ffi-call` | A `zyl_*` symbol has a type in the compiler's table; any other symbol needs an `extern` with concrete, word-sized types (no `Float`); `(Fn (A ...) R)` types a callback |
+| `file-open` | The mode is a literal `"r"`, `"w"` or `"a"`, optionally with `+` or `b` |
+| `spawn`, `actor-self` | `Actor`; `send`'s first argument is an `Actor` |
+| `receive` | Not checked: it takes whatever type its use needs, until typed channels replace mailboxes |
+| `deftype` | May not reuse `Some`, `None`, `Ok`, `Err`, `Cons` or `Nil` (`E_DUPLICATE_VARIANT`) |
 
 ## F.3 Key Invariants and Guarantees (Normative)
 
@@ -139,7 +166,7 @@ not recognise `defun` (Appendix C).
 | 5 | Region inference assigns Stack/Heap/Global/Circular/Pin | P4, §9 |
 | 6 | Strict left-to-right evaluation | P5, §11 |
 | 7 | Phases strictly ordered (1 → 11) | P6, §22 |
-| 8 | Inference over annotation | P7, §4.6 |
+| 8 | Inference over annotation; an accepted program never uses a value at the wrong type | P7, §4.6 |
 | 9 | Contracts never alter core semantics | P8, §23, G8 |
 | 10 | Testing is built in | P9, §20.5 |
 | 11 | TCap/TMut aliasing invariant | §10 |
@@ -197,7 +224,16 @@ runtime event.
 | `E_MUT_CONFLICT` | Aliasing violation |
 | `E_ASSERT_FAIL` | Assertion failure |
 | `E_FFI_TIMEOUT` | FFI call exceeded its timeout |
+| `E_FFI_TIMEOUT_REQUIRED` | `ffi-call` lacks a positive integer literal timeout |
+| `E_FFI_SYMBOL_REQUIRED` | `ffi-call` symbol is not a string literal |
+| `E_FFI_RESTRICTED` | A raw runtime entry called outside the standard library, or an `extern` declared for a runtime entry |
+| `E_MALFORMED_FORM` | A special form's arguments do not have its required shape |
 | `E_REGION_ESCAPE` | Region rule violation |
+| `E_REGION_SPEC` | Malformed `with-region` specification |
+| `E_INVALID_ESCAPE` | Invalid escape sequence in a string literal |
+| `E_INDEX_OUT_OF_BOUNDS` | Index outside a word array (runtime) |
+| `E_NESTED_PATTERN` | Nested pattern in a constructor arm |
+| `E_REGION_EXHAUSTED` | A `with-region` region exceeded its size or limit (runtime) |
 | `E_MACRO_NON_TERMINATION` | Macro expansion loop |
 | `E_MATCH_NONEXHAUSTIVE` | Missing match case |
 | `E_UNINITIALIZED_USE` | Variable used before initialisation |
@@ -212,7 +248,11 @@ runtime event.
 | `E_TEST_RUNNER_ERROR` | Test harness error |
 | `E_TRAIT_NOT_DERIVABLE` | Cannot derive trait |
 | `E_RESERVED_KEYWORD` | Reserved keyword used as an identifier |
-| `E_CANNOT_INFER` | Generic parameter with no call-site evidence |
+| `E_CANNOT_INFER` | No type for an expression: a generic parameter with no call-site evidence, or an `ffi-call` to an undeclared foreign symbol |
+
+`E_TYPE_MISMATCH` and `E_UNBOUND_VARIABLE`, the two errors the type
+pass reports most, are not in §28's core list; Appendix A.5 describes
+them.
 
 The 36 package codes are grouped by phase: manifest, lock and registry
 (25 codes, `E_MANIFEST_*` and most `E_PKG_*`); module and package

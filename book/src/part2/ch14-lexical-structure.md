@@ -115,7 +115,9 @@ Escape     ::= "\\n" | "\\t" | "\\r" | "\\0" | "\\\"" | "\\\\" | "\\e" | "\\x" H
 Boolean ::= "true" | "false"
 ```
 
-At runtime a boolean is the word 0 or 1; `(print true)` prints `1`.
+At runtime a boolean is the word 0 or 1; `(print true)` prints `1`. To
+the type checker `Bool` is its own type: a condition must be a `Bool`,
+and `1` is not one (Chapter 15).
 
 ### Keywords
 
@@ -219,17 +221,18 @@ post-processor actually does with each definition form.
 
 | Form | Status |
 |------|--------|
-| `(defn name (Param*) body...)` | Recognized. |
-| `(defun ...)` | Not recognized (§2 lists it as a synonym). It is an ordinary call, so the function is never defined and calls to it fail at link time. |
+| `(defn name (Param*) body...)` | Recognized. Several body forms are an implicit `begin`; the value is the last. |
+| `(defun ...)` | Not recognized (§2 lists it as a synonym). It is an ordinary call, so the function is never defined and calls to it are `E_UNBOUND_VARIABLE`. |
 | `(def name expr)` | An immutable global, evaluated once, in source order, before `main` or the tests run. |
 | `(deftype Name Variant+)` | Recognized (Chapter 18). |
 | `(defstruct Name Field*)`, `(defstruct+ ...)` | Recognized. |
-| `(trait Name ...)` | Declares the trait's methods, which dot calls and `E_TRAIT_NOT_FOUND` check against (Chapter 20). |
+| `(trait Name (method (self Param*) Ret)*)` | Declares the trait's methods, which dot calls and `E_TRAIT_NOT_FOUND` check against (Chapter 20). |
 | `(impl Trait Type (defn ...)*)` | Recognized (Chapter 20). |
 | `(impl-not Trait Type)` | Forbids that impl anywhere; an impl or derive of it is `E_IMPL_FORBIDDEN` (Chapter 20). |
 | `(derive Type Trait*)` | Generates `Show`, `Debug`, `Eq`, `Ord`, `Hash` and `Clone`; any other trait is `E_TRAIT_NOT_DERIVABLE` (Chapter 20). |
+| `(extern "sym" (Type*) Ret)` | Declares the C signature of a foreign function; an `ffi-call` to an undeclared foreign symbol is an error (Chapter 22). |
 | `(alias Name Type)` | Accepted with no effect. |
-| `(defmacro name (pattern*) template)` | Recognized; `macro` is a synonym (Chapter 23). |
+| `(defmacro name (pattern*) template)` | Recognized, with exactly one template; `macro` is a synonym (Chapter 23). |
 | `(use path ...)`, `(module name)`, `(pub <definition>)` | Recognized (Chapter 25). `export` is accepted but deprecated (§24.3). |
 
 ```
@@ -250,6 +253,8 @@ ImportSpec ::= "{" ( Identifier | Identifier "=>" Identifier )* "}"
 - A `defn` has no return-type slot. In `(defn f ((a Int)) Int body)`, the
   `Int` is read as the first body expression and is reported as an
   unbound identifier.
+- A special form whose arguments do not have the shape it requires, such
+  as `(let 3 4 body)`, is `E_MALFORMED_FORM`.
 - Match arms and patterns are covered in Chapter 18.
 
 ## 14.6 Reserved Keywords
@@ -292,7 +297,8 @@ always explicit:
 ```
 
 `+` and `*` accept any number of operands and fold them left to right
-(§21.1).
+(§21.1). All the operands must be `Int`, or all `Float`: `(+ 1 2 3)` is
+`6`, and `(+ 1 2.0)` is a type error (Chapter 15).
 
 ## 14.8 Evaluation Order
 

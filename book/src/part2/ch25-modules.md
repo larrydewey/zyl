@@ -438,6 +438,8 @@ long long fast_triple(long long n) { return n * TRIPLE; }
 
 ```lisp
 ; fast.zyl
+(extern "fast_triple" (Int) Int)
+
 (defn triple (n) (ffi-call "fast_triple" n 1000))
 
 (defn main ()
@@ -451,7 +453,7 @@ $ zyl build && ./fast
 42
 ```
 
-- Shipping sources requires `native`. Calling them requires `ffi`.
+- Shipping sources requires `native`. Calling them requires `ffi`, and each C function needs an `extern` declaring its signature before the first `ffi-call` to it (Chapter 22, §22.2).
 - Source paths and include directories are package-relative. An escape is `E_PKG_NATIVE_PATH_ESCAPE`.
 - `cflags` come from an allowlist: `-O*`, `-D*`, `-std=*`, `-fPIC`, `-fno-strict-aliasing`, `-fwrapv`, `-fstack-protector-strong` and `-fno-omit-frame-pointer`. Anything else, including raw `-I`, `-L`, `-l` and `-Wl,`, is `E_PKG_NATIVE_FLAG_DENIED`. Includes go through `include-dirs` and libraries through `link-libs`.
 - `cc` is invoked with a canonical, sorted argument vector, and objects land in `build/native/`. A `cc` failure is `E_PKG_NATIVE_BUILD_FAILED`.

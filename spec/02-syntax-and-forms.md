@@ -116,45 +116,70 @@ recorded here rather than silently corrected in the grammar above.
 
 ### Forms the post-processor recognises
 
-`def`, `defn`, `deftype`, `defstruct`, `defstruct+`, `impl`, `derive`,
-`let`, `let-mut`, `if`, `while`, `for`, `cond`, `and`, `or`, `not`,
-`match`, `try` (with a nested `catch`), `begin`, `fn`, `lambda`, `set!`,
-`print`, `assert`, `assert-equal`, `assert-true`, `assert-false`,
-`assert-fail`, `spawn`, `send`, `ffi-pin`, `ffi-unpin`, `exit`, `close`,
-`read-line`, `file-open`, `file-read`, `file-write`, `file-close`,
-`struct-get`, `make-struct`, `make-variant`, `unwrap`, `with-resource`,
-`module`, `use`, `pub`, `export`, `feature-gate`, `defmacro` (and its
-synonym `macro`), `test`, `test-suite`, `run-tests`, `setup`, `teardown`,
-`test-property`, `test-compile`, `contracts`, `requires`, `ensures`,
-`checkpoint` and `recover`. `ffi-call` is not a dedicated node; it stays
-an application of the reserved name and is recognised during ICNF
-lowering.
+`def`, `defn`, `deftype`, `defstruct`, `defstruct+`, `trait`, `impl`,
+`derive`, `extern`, `let`, `let-mut`, `if`, `while`, `for`, `cond`, `and`,
+`or`, `not`, `match`, `try` (with a nested `catch`), `begin`, `fn`,
+`lambda`, `set!`, `print`, `assert`, `assert-equal`, `assert-true`,
+`assert-false`, `assert-fail`, `spawn`, `send`, `ffi-pin`, `ffi-unpin`,
+`exit`, `close`, `read-line`, `file-open`, `file-read`, `file-write`,
+`file-close`, `struct-get`, `make-struct`, `make-variant`, `unwrap`,
+`with-resource`, `with-region`, `module`, `use`, `pub`, `export`,
+`feature-gate`, `defmacro` (and its synonym `macro`), `test`,
+`test-suite`, `run-tests`, `setup`, `teardown`, `test-property`,
+`test-compile`, `contracts`, `requires`, `ensures`, `invariant`,
+`checkpoint` and `recover`, plus the byte primitives
+(`byte-form-dispatch`). `ffi-call` is not a dedicated node; it stays an
+application of the reserved name and is recognised during ICNF lowering.
+
+A recognised form whose arguments do not have the shape its parser
+requires becomes an `EUnknown` node, which the arity pass reports as
+`E_MALFORMED_FORM` (it used to lower silently to the constant 0).
 
 ### Differences from §2
 
 - **`defun` is not recognised.** It is parsed as an ordinary application,
-  so a function defined with `defun` is never defined and a call to it
-  fails at link time. Use `defn`.
-- **`trait` and `alias` are not recognised** as definition forms. A
-  `trait` declaration is accepted syntactically but has no effect;
-  `impl` blocks work without one (see `spec/05-types-and-inference.md`).
+  so a function defined with `defun` is never defined, and a call to it
+  is `E_UNBOUND_VARIABLE`. Use `defn`.
+- **`alias` is not recognised** as a definition form.
+- **`trait`** declares method signatures, `(trait Name (method (params)
+  RetType) ...)`, which type calls to the methods
+  (`spec/05-types-and-inference.md`); a method whose parameters are not a
+  list, `(area self)`, is `E_MALFORMED_FORM`. There is no `where` clause.
+- **`extern`**, `(extern "sym" (T ...) R)`, declares a foreign symbol's C
+  signature (§16, `spec/09-ffi-contracts.md`). It is a top-level form of
+  type Unit that emits no code.
 - **`test-suite`, `test-property` and `test-compile` are parsed but
   discard their arguments** (placeholder nodes). `setup` and `teardown`
   are parsed.
-- **`contracts`, `requires`, `ensures`, `checkpoint` and `recover`** are
-  parsed and pass their first argument through unchanged; see
-  `spec/09-ffi-contracts.md`.
-- **`let` accepts two shapes:** `(let x v body...)`, where several body
-  forms are sequenced, and `(let (x v) body)`. `(let x v)` with no body
-  evaluates to Unit. `let-mut` is the same.
-- **`if` may omit the else branch.** `(if c t)` evaluates to Unit when `c`
-  is false.
+- **`contracts`, `requires`, `ensures`, `invariant`, `checkpoint` and
+  `recover`** are lowered to ordinary code while the tree is converted;
+  see `spec/09-ffi-contracts.md`.
+- **Bodies.** Where a form has a body, several body forms are an implicit
+  `begin` whose value is the last: `defn`, `fn` and `lambda` bodies, both
+  shapes of `let` and `let-mut`, a `try`'s `catch` handler, a `cond`
+  clause, `while`, `for` and `with-resource`. `test` and `defmacro` take exactly
+  one body (a name and one expression, a name, parameters and one
+  template); extra forms are `E_MALFORMED_FORM`, where they used to be
+  dropped.
+- **`let` accepts two shapes:** `(let x v body...)` and
+  `(let (x v) body...)`. A `let` without a body is `E_MALFORMED_FORM`.
+  `let-mut` is the same.
+- **`if` may omit the else branch.** `(if c t)` is Unit, and `t` must be
+  Unit.
 - **`for`** accepts the single-binding shorthand `(for (i 0) cond body...)`
   and a list of bindings `(for ((i 0) (j 1)) cond body...)`.
-- **`cond`** is lowered to nested `if`; an `else` test is always true.
+- **`cond`** is lowered to nested `if`. A clause whose test is the literal
+  `true` or `else` ends the cond: clauses after it are never reached and
+  are dropped, and the cond has that clause's body type. A cond with no
+  such clause is Unit when no test holds.
+- **`file-open`'s mode** must be a string literal: `"r"`, `"w"`, `"a"`,
+  `"r+"`, `"w+"`, `"a+"`, `"rb"`, `"wb"` or `"ab"` (`E_TYPE_MISMATCH`
+  otherwise). An Int mode such as `0` used to open the file for writing.
 - **`match` arms** may be written flat, `(Variant field... body)`, or with
-  the pattern grouped, `((Variant field...) body)`. Pattern kinds are
-  described in `spec/10-structs-and-data-types.md`.
+  the pattern grouped, `((Variant field...) body)`. A field position
+  holds a plain name; a nested pattern, or a prelude constructor name
+  such as `Nil` in that position, is `E_NESTED_PATTERN`. Pattern kinds
+  are described in `spec/10-structs-and-data-types.md`.
 - **Definition parameters** are a bare name or `(name Type)`; anything
   else is `E_MALFORMED_PARAMETER`.
 - **`_` is the discard name.** `_` and any name beginning with `_` are

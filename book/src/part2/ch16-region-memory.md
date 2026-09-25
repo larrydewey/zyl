@@ -24,7 +24,7 @@ history are in `docs/regions-design.md`.
 | **Heap** | escaped values and captured closure variables | Values the analysis cannot bound come from `zyl_heap_alloc`, a bump allocator over one process-wide arena. |
 | **Global** | immutable constants only | A top-level `def` is an immutable global, evaluated once, in source order, before `main` or the tests run (Chapter 14). String literals are placed in read-only data. |
 | **Circular** | detected cyclic structures | Not implemented. There is no cycle detection. |
-| **Pin** | FFI-safe memory (non-moving arena) | `ffi-pin` copies a one-word value into a separate pin arena and returns a stable pointer; `ffi-unpin` validates that pointer and reads the value back (16.6). |
+| **Pin** | FFI-safe memory (non-moving arena) | `ffi-pin` copies a one-word value into a separate pin arena and returns a stable pointer; the pointer has type `(Pin a)`, and `ffi-unpin` validates it and returns the value in the slot (16.6). |
 
 ## 16.2 Region Rules (Normative, §9.1)
 
@@ -48,7 +48,7 @@ How each rule is met today:
 | R1 | Met by region inference (16.3–16.4): a value that does not outlive its call goes in the call's frame region. |
 | R2, R5 | A value returned from a call goes in the region its caller chose for the result, and ends in the heap only if it escapes further. A closure and its captured values are allocated the same way. Anything the analysis cannot bound is heap-allocated. |
 | R3 | Checked syntactically: a `spawn` closure or a `send` message that refers to an in-scope `let-mut` variable is `E_CAPABILITY_LEAK` (Chapter 17). |
-| R4 | The FFI_Pinnable half is checked (`E_INVALID_CAPABILITY`). The Pin-region half is not: plain values may be passed straight to `ffi-call`. Only a `Secret` must go through `ffi-pin` (`E_FFI_PIN_REQUIRED`). |
+| R4 | The FFI_Pinnable half is met by `extern` declarations, whose C types are concrete machine-word types that every argument must match (Chapter 22). The Pin-region half is not: plain values may be passed straight to `ffi-call`. Only a `Secret` must go through `ffi-pin` (`E_FFI_PIN_REQUIRED`). |
 | R6 | Not implemented. |
 | R7 | A top-level `def` is immutable and eagerly initialized; its value lives in the heap. |
 | R8 | Implemented by the pin arena. |
@@ -124,9 +124,9 @@ A value handed to C is copied into the Pin region by `ffi-pin` (Chapter
 
 ```lisp
 (defn main ()
-  (let p (ffi-pin 42)
+  (let p (ffi-pin 42)             ; a (Pin Int)
     (begin
-      (ffi-unpin p)
+      (print (ffi-unpin p))       ; 42
       0)))
 ```
 
@@ -178,8 +178,8 @@ region). The ICNF printer shows a site's annotation as ` @r`, so the ICNF
 hash of a package build covers region decisions (Chapter 28).
 
 In types, the region appears as the parameter of `ByteBuf` and
-`ByteSlice` (Chapter 15). There it is compared during unification, but a
-mismatch is not reported.
+`ByteSlice` (Chapter 15), but the type pass does not tell two regions
+apart; a buffer's region is enforced here, by `E_REGION_ESCAPE`.
 
 ### Explicit regions: `with-region`
 
@@ -206,8 +206,6 @@ of it.
   anything longer-lived, is `E_REGION_ESCAPE` at compile time.
 
 ```lisp
-(deftype Nums (Nil) (Cons Int Nums))
-
 (defn build (n acc)
   (if (= n 0) acc (build (- n 1) (Cons n acc))))
 
@@ -216,7 +214,7 @@ of it.
 
 (defn small-total (n)
   (with-region (fixed :size 4096)
-    (total (build n (Nil)))))
+    (total (build n Nil))))
 
 (defn main ()
   (begin
@@ -242,7 +240,7 @@ collector (P4). What happens today:
 | Heap | Never during the program. The heap arena is a bump allocator that generated code does not reset or free; values that escape to the heap live until the process exits. |
 | Global | Top-level `def` values live in the heap. |
 | Circular | Not applicable (not implemented). |
-| Pin | §16 says `ffi-unpin` frees pinned memory. In the runtime, `ffi-unpin` checks that the pointer came from the pin arena and returns the pinned value; the slot itself is not freed, because the pin arena reclaims storage only in bulk. |
+| Pin | §16 says `ffi-unpin` frees pinned memory. In the runtime, `ffi-unpin` checks that the pointer came from the pin arena and returns the value in the slot; the slot itself is not freed, because the pin arena reclaims storage only in bulk. |
 
 Region blocks come in four size classes (1, 4, 16 and 64 KiB): a
 region's first block is the smallest and each further block is the next
@@ -276,7 +274,7 @@ rather than unbounded.
 | `E_REGION_SPEC` | Raised at compile time for a malformed `with-region` spec. |
 | `E_REGION_EXHAUSTED` | Raised at run time when a `with-region` scope runs out of space; catchable. |
 | `E_CAPABILITY_LEAK` | Raised for a `let-mut` variable reaching `spawn` or `send` (R3; Chapter 17). |
-| `E_INVALID_CAPABILITY` | Raised for a non-FFI_Pinnable value given to `ffi-call` or `ffi-pin` (R4). |
+| `E_INVALID_CAPABILITY` | Raised for a `fn` written directly as an `ffi-call` argument (R4). |
 | `E_FFI_PIN_REQUIRED` | Raised for a `Secret` passed to `ffi-call` without `ffi-pin` (Chapter 17). |
 | `E_OUT_OF_MEMORY` | Raised at runtime when an allocation fails or the budget is exhausted. |
 | `E_STACK_BYTEBUF_RETURN`, `E_GLOBAL_BYTEBUF_MUT`, `E_BYTEBUF_NOT_PIN` | Catalogued for the byte primitives; not raised. A returned Stack bytebuf is reported as `E_REGION_ESCAPE`. |
@@ -291,7 +289,7 @@ The specification ties the two systems together through R3 and R4.
 | `TMut<T>` | must not cross an actor boundary | `let-mut` captures in `spawn`/`send` are rejected. |
 | `TAtomic<T>` | Send-capable, shared | Atomics exist as operations on addresses and byte buffers, not as a type (Chapter 17). |
 | `TBox<T>` | Heap | No source construct produces it. |
-| `TPin<T>` | Pin | The type of an `ffi-pin` result. |
+| `TPin<T>` | Pin | `ffi-pin` copies the value into the pin arena; the result has type `(Pin a)`. |
 
 ## 16.9 Determinism
 
@@ -319,5 +317,6 @@ layout is not observable behavior (§27).
    reclaimed before exit. Long-lived collections that churn should use an
    explicit arena from `allocator/allocator` (`arena-create`,
    `arena-alloc`), as the compiler itself does.
-5. **Unpin what you pin**, and remember that only `Secret` values are
-   forced through `ffi-pin` today.
+5. **Pin only what C must reach through a pointer.** A pinned slot is
+   not freed before exit, even after `ffi-unpin` reads it, and only
+   `Secret` values are forced through `ffi-pin` today.

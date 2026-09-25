@@ -166,8 +166,9 @@ references. This prevents data races at compile time and enables safe
 concurrency without locks.
 
 **Spec reference:** `spec/06-capability-types.md`
-**Implementation:** `stdlib/compiler/type_system.zyl` defines the
-capability types, including `TCSecret`. Enforcement is syntactic:
+**Implementation:** no type represents a capability (the type checker,
+`type_annotate.zyl`, has none, and the unused capability ADT once in
+`type_system.zyl` was removed). Enforcement is syntactic:
 `mutability_check.zyl` treats a `let` binding as TCap and a `let-mut`
 binding as TMut and rejects `set!` on anything else (`E_MUT_CONFLICT`),
 and `secret_check.zyl` enforces the `Secret` capability's obligations.

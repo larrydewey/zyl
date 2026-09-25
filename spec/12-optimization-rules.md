@@ -91,12 +91,16 @@ There is no dead-code elimination of unused bindings or functions.
 These run on the program before ICNF lowering (see the pipeline in
 `spec/00-language-overview.md`):
 
-- **`closure_inline.zyl`:** for `(let f (fn params body) rest)` where `f`
-  is only ever called directly (it does not escape and is not recursive),
-  each call is beta-reduced in place. This is inlining, permitted by §26.
-- **`assert_lowering.zyl`:** rewrites `assert-equal` on ADT or struct
-  values to `(assert-true (== l r))`, which type annotation then turns
-  into a call to the type's generated structural equality function.
+- **`closure_inline.zyl`:** retired; it is now an identity pass
+  (beta-reducing a lambda into its callers was not hygienic, and closures
+  are real values).
+- **Type annotation** (`type_annotate.zyl`) renames calls rather than
+  rewriting code: a trait call to its impl, a call or value use of a
+  trait-generic function to its per-type instance, and `==`/`=`/`!=` or
+  `assert-equal` on an ADT to the type's generated structural equality
+  function. `assert-equal` unifies its two sides, and the inferred type
+  alone picks the Float epsilon comparison; the old syntactic
+  `assert_lowering.zyl` rewrite is deleted.
 - **Region inference** (`ri-transform-fns`) runs after optimization; see
   `spec/07-region-memory-model.md`.
 

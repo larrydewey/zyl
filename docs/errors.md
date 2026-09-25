@@ -41,15 +41,27 @@ The checks that currently produce located diagnostics are the balance check
 (`E_UNBALANCED_*`, `E_UNTERMINATED_STRING`), `duplicate_check.zyl`
 (`E_DUPLICATE_DEFINITION`), `arity_check.zyl` (`E_ARITY_MISMATCH`),
 `exhaustiveness_check.zyl` (`E_NON_EXHAUSTIVE_MATCH`,
-`E_UNREACHABLE_MATCH_ARM`), `expr_inner.zyl` (`E_MALFORMED_PARAMETER`) and
-`codegen.zyl` (`E_UNBOUND_VARIABLE`).
+`E_UNREACHABLE_MATCH_ARM`), `expr_inner.zyl` (`E_MALFORMED_PARAMETER`,
+`E_NESTED_PATTERN`), `arity_check.zyl` (`E_MALFORMED_FORM`,
+`E_FFI_RESTRICTED`, `E_FFI_TIMEOUT_REQUIRED`, `E_FFI_SYMBOL_REQUIRED`),
+`macro_expand.zyl`, `derive.zyl`, the type pass `type_annotate.zyl`
+(every type error) and `codegen.zyl` (`E_UNBOUND_VARIABLE`, now only a
+backstop behind the type pass).
 
 **Plain diagnostics** are every other check: `zyl_panic` with a string of
 the form `CODE: message`, printed as `PANIC: CODE: message` with no
 location.
 
-Every error is fatal: the first one aborts the compile with exit status 1.
-There is no error recovery and no multi-error report. Warnings are printed
+Every error is fatal. Most checks abort the compile with exit status 1 at
+the first error. The type pass is the exception: it reports every type
+error in the program (`E_TYPE_MISMATCH`, `E_INFINITE_TYPE`,
+`E_CANNOT_INFER`, `E_UNBOUND_VARIABLE`, `E_TRAIT_NOT_FOUND`,
+`E_FFI_TYPE_NOT_PINNABLE`, and `E_FFI_RESTRICTED` for an `extern` of a
+runtime entry), then fails with `error[CODE]: the program does not
+type-check (N errors above)`, CODE being the first error's code.
+`ZYL_STRICT_TYPES=report` (or `1`) prints the type errors as
+`W_TYPE_STRICT` warnings and lets the compile continue; it exists for
+counting, not for running an ill-typed program. Warnings are printed
 to stderr as `CODE: message` and do not change the exit status.
 
 ## Catalog
@@ -83,6 +95,7 @@ codes spec §28 lists by name.
 | `E_EXPECTED_RCURLY` | parser: expected } but found T at S | catalog only |
 | `E_EXPECTED_RPAREN` | parser: expected ) at S but found T | catalog only |
 | `E_MALFORMED_PARAMETER` | parser: P is not a parameter at S - write a name, or (name Type) | `expr_inner.zyl` (located) |
+| `E_MALFORMED_FORM` | parser: special form F has arguments of the wrong shape at S | `arity_check.zyl` (located): a special form whose parser rejected its shape (`expr_inner.zyl` builds an `EUnknown` node for it), such as `(let x 1)` with no body, a trait method whose parameters are not a list, `test` or `defmacro` with more than one body, or a malformed `extern`. Such a form used to compile to the constant 0 |
 | `E_RESERVED_KEYWORD` (§28) | parser: reserved keyword K cannot be used as identifier at S | `expr_inner.zyl` (reserved-but-unimplemented forms) |
 | `E_UNBALANCED_PARENS` | parser: unbalanced parens - open and close counts differ | catalog only (the old depth-counter check; superseded by the three below) |
 | `E_UNBALANCED_UNCLOSED` | parser: unclosed opener - opened at S, never reached its matching closer | `parser.zyl` via `sexp_balance.zyl` (located at the opener) |
@@ -99,33 +112,34 @@ over bracket type, and its `sb-hint` supplies the `= help:` text.
 
 | Code | Catalog message | Raised by |
 |------|-----------------|-----------|
-| `E_MACRO_ILLEGAL_ACCESS` (§28) | macro: illegal runtime access in macro expansion | catalog only |
-| `E_MACRO_NON_TERMINATION` (§28) | macro: expansion loop detected (max depth exceeded) | catalog only |
+| `E_MACRO_ILLEGAL_ACCESS` (§28) | macro: illegal runtime access in macro expansion | `macro_expand.zyl` (located: a `defmacro` that is not at top level) |
+| `E_MACRO_NON_TERMINATION` (§28) | macro: expansion loop detected (max depth exceeded) | `macro_expand.zyl` (located: a macro called during its own expansion, or a chain of 256 expansions) |
 
 ### Type (phases 4 and 5)
 
 | Code | Catalog message | Raised by |
 |------|-----------------|-----------|
-| `E_ARITY_MISMATCH` | type: function arity mismatch for F at S: expected E arguments, found G | `arity_check.zyl` (located), `icnf.zyl`, `expr_inner.zyl` (special forms), REPL interpreter |
+| `E_ARITY_MISMATCH` | type: function arity mismatch for F at S: expected E arguments, found G | `arity_check.zyl` (located), `icnf.zyl` (also arithmetic with no operand, or one operand other than `(- x)`, `(+ x)`, `(* x)`), `expr_inner.zyl` (special forms), REPL interpreter |
 | `E_ATOMIC_ABA` | region: atomic CAS on non-Pin memory is forbidden | catalog only |
 | `E_BYTEBUF_NOT_PIN` | type: bytebuf-ptr requires Pin region | catalog only |
 | `E_STACK_BYTEBUF_RETURN` | type: Stack ByteBuf cannot be returned | catalog only (a returned Stack bytebuf is `E_REGION_ESCAPE`) |
 | `E_GLOBAL_BYTEBUF_MUT` | type: Global ByteBuf must be immutable | catalog only |
 | `E_DUPLICATE_DEFINITION` | type: duplicate definition of N at S. previously defined at P | `duplicate_check.zyl` (located at the second definition) |
-| `E_DUPLICATE_VARIANT` | type: duplicate variant V in deftype at S | `icnf.zyl` (a variant name defined twice in one `deftype`) |
+| `E_DUPLICATE_VARIANT` | type: duplicate variant V in deftype at S | `duplicate_check.zyl` (located: a program type declaring a prelude constructor name, `Some`, `None`, `Ok`, `Err`, `Cons` or `Nil`, which the standard library's unqualified uses would resolve to; only the standard library may declare them), `icnf.zyl` (a variant name defined twice in one `deftype`) |
 | `E_RETURN_TYPE_MISMATCH` | type: return type mismatch in F - expected T, got U at S | catalog only |
-| `E_TYPE_MISMATCH` | type: type mismatch at S - expected E, found F | `type_annotate.zyl` (located: an argument that definitely clashes with a parameter annotation or declared field type) |
-| `E_UNBOUND_VARIABLE` | type: unbound variable V at S | `codegen.zyl` (located), REPL interpreter |
+| `E_TYPE_MISMATCH` | type: type mismatch at S - expected E, found F | `type_annotate.zyl` (located): every unification failure, labelled with a declared parameter or field type where there is one; also a non-literal `file-open` mode and a field a known struct lacks |
+| `E_UNBOUND_VARIABLE` | type: unbound variable V at S | `type_annotate.zyl` (located: an identifier or called function defined nowhere), `macro_expand.zyl`, `codegen.zyl` (backstop), REPL interpreter |
 | `E_UNKNOWN_GENERIC_PARAM` | type: unknown generic parameter G at S | catalog only |
 | `E_UNKNOWN_TYPE` | type: unknown type T at S | catalog only |
-| `E_CANNOT_INFER` (§28, phase 5) | type: cannot infer concrete type for generic parameter G at S - no call-site evidence | catalog only (listed twice in the catalog) |
+| `E_CANNOT_INFER` (§28, phase 5) | type: cannot infer concrete type for generic parameter G at S - no call-site evidence | `type_annotate.zyl` (located): a type the program does not determine, such as an `ffi-call` to a foreign symbol with no `extern` or to a runtime symbol missing from `ffi_sigs.zyl`, a trait call whose receiver type stays unknown, a `struct-get` whose record type is still unknown when several structs have the field, or a function that would need more than 256 specialized instances; `icnf.zyl` (backstop for an unresolved trait call). Listed twice in the catalog, and the catalog text still describes the old meaning |
+| `E_INFINITE_TYPE` (§28) | type: a type would have to contain itself at S (occurs check) | `type_annotate.zyl` (located) |
 
-Type inference otherwise does not reject ill-typed programs:
-`(+ 1 "a")` compiles without a diagnostic, and `E_RETURN_TYPE_MISMATCH`
-is never raised. `E_TYPE_MISMATCH` is raised only for a call to a
-top-level function or a constructor whose argument definitely clashes
-with the declared type; the message is
-``mismatched types: expected `T`, found `U` ``, not the catalog text.
+The type pass is strict (spec §4.8-§4.10): `(+ 1 "a")` and `(+ 1 1.5)`
+are `E_TYPE_MISMATCH`. Its messages are its own, not the catalog text:
+``cannot unify T with U``, or ``mismatched types: expected `T`, found `U` ``
+for an argument that clashes with a declared parameter or field type.
+`E_RETURN_TYPE_MISMATCH` is never raised; a wrong return type is an
+ordinary unification failure.
 
 ### Region and ICNF (phases 6 and 7)
 
@@ -171,12 +185,12 @@ parts with `let` or move the sum into a helper function.
 |------|-----------------|-----------|
 | `E_ALIGNMENT_FAILED` | runtime: alignment check failed | catalog only |
 | `E_ALIGN_CHECK_FAILED` | runtime: alignment check failed | catalog only (same message as the previous entry) |
-| `E_ASSERT_FAIL` (§28) | assertion: condition failed - M at S | catalog only |
+| `E_ASSERT_FAIL` (§28) | assertion: condition failed - M at S | catalog only (a failed assertion panics with its own message, see below) |
 | `E_BYTE_OOB` | runtime: byte offset out of bounds | catalog only |
 | `E_BYTEBUF_CAP_EXCEEDED` | runtime: bytebuf append exceeds capacity | catalog only (the runtime fails closed past capacity but prints no code) |
 | `E_BYTEBUF_INVALID` | runtime: bytebuf magic tag mismatch | catalog only |
 | `E_BYTEBUF_OVERLAP` | runtime: bytebuf append overlapping slice | catalog only |
-| `E_LIST_NTH_OOB` | runtime: list-nth index out of bounds at S | `monomorphization.zyl` (compiler-internal) |
+| `E_LIST_NTH_OOB` | runtime: list-nth index out of bounds at S | catalog only |
 | `E_NULL_POINTER` | runtime: null pointer dereference | catalog only |
 | `E_REGION_EXHAUSTED` (§28) | runtime: a with-region region ran out of its fixed size or limit | `actor_runtime.c` (catchable with `try`; deterministic for a given request sequence) |
 | `E_OUT_OF_MEMORY` | runtime: memory budget exhausted - raise or remove it with ZYL_MAX_MEMORY | `actor_runtime.c` (`PANIC: error[E_OUT_OF_MEMORY]: ...`); a second catalog entry reads "runtime: out of memory" |
@@ -185,9 +199,10 @@ parts with `let` or move the sum into a helper function.
 What a compiled program prints at runtime today: `(error "boom")` prints
 `PANIC: boom` and exits 1; a failed `assert-true` or `assert-equal` prints
 `PANIC: assert-true failed` or `PANIC: assert-equal failed` and exits 1.
-Neither carries the catalog code. The one-argument form `(assert c)` is
-parsed (`EAssert`) and checked, but `icnf.zyl` does not lower it, so a
-false `(assert ...)` in a compiled program currently does nothing.
+Neither carries the catalog code. A false `(assert c msg)` panics with
+`msg`, or `assert failed` without one. The condition of `assert`,
+`assert-true` and `assert-false` must be a Bool, and the two sides of
+`assert-equal` must have one type (spec §4.9).
 
 ### Test (phase 11)
 
@@ -200,10 +215,10 @@ false `(assert ...)` in a compiled program currently does nothing.
 
 | Code | Catalog message | Raised by |
 |------|-----------------|-----------|
-| `E_DUPLICATE_IMPL` (§28) | trait: duplicate impl of T for U at S | catalog only |
+| `E_DUPLICATE_IMPL` (§28) | trait: duplicate impl of T for U at S | `derive.zyl` (located: two written impls of one trait for one type) |
 | `E_TRAIT_BOUND_NOT_SATISFIED` | type: unsatisfied trait bound T : U at S | catalog only |
-| `E_TRAIT_NOT_DERIVABLE` (§28) | trait: cannot derive T for type U at S | catalog only |
-| `E_TRAIT_NOT_FOUND` (§28) | trait: no implementation found for T at S | catalog only |
+| `E_TRAIT_NOT_DERIVABLE` (§28) | trait: cannot derive T for type U at S | `derive.zyl` (located: a trait outside Show, Debug, Eq, Ord, Hash, Clone, a field whose type lacks the trait, or Eq/Ord/Hash/Clone on a type with a Secret field) |
+| `E_TRAIT_NOT_FOUND` (§28) | trait: no implementation found for T at S | `type_annotate.zyl` (located): a trait call on a concrete receiver type with no impl, a dot method no trait declares or none implements for the receiver, or one declared by several traits |
 | `E_PKG_ORPHAN_IMPL` (§28) | trait: impl of T for U where neither the trait nor the type is local to N | `module_resolver.zyl` |
 
 ### Capabilities and secrets (phase 13)
@@ -211,7 +226,7 @@ false `(assert ...)` in a compiled program currently does nothing.
 | Code | Catalog message | Raised by |
 |------|-----------------|-----------|
 | `E_CAPABILITY_LEAK` (§28) | capability: TMut leaked across boundary at S | `mutability_check.zyl` |
-| `E_INVALID_CAPABILITY` | type: invalid capability usage for F - M at S | `mutability_check.zyl` (closure passed to `ffi-call`), `type_inference.zyl` (FFI value of a non-pinnable type) |
+| `E_INVALID_CAPABILITY` | type: invalid capability usage for F - M at S | `mutability_check.zyl` (a closure passed to `ffi-call`) |
 | `E_MUT_CONFLICT` (§28) | aliasing: mutable reference conflict at S | `mutability_check.zyl` (`set!` on a non-`let-mut` binding, or, located, on a `let-mut` captured by a closure), `expr_inner.zyl` |
 | `E_CT_VIOLATION` | constant-time: secret-dependent M at S - branches, memory indices and divisions must not depend on a Secret value | `secret_check.zyl` |
 | `E_SECRET_ESCAPE` | secret: Secret value escapes through M at S | `secret_check.zyl` |
@@ -230,14 +245,16 @@ themselves.
 
 | Code | Catalog message | Raised by |
 |------|-----------------|-----------|
-| `E_CONTRACT_VIOLATION` (§28) | contract: contract violation - M at S | catalog only |
+| `E_CONTRACT_VIOLATION` (§28) | contract: contract violation - M at S | `expr_inner.zyl` (a failed `requires`/`ensures`/`invariant` check panics with `E_CONTRACT_VIOLATION: <what> failed: <condition>`, at run time) |
 | `E_DIVISION_BY_ZERO` (§28) | numeric: division by zero at S | REPL interpreter only; a compiled `(/ 1 0)` dies with SIGFPE |
 | `E_OVERFLOW` (§28) | numeric: integer overflow at S | catalog only |
 | `E_FFI_PIN_REQUIRED` | ffi: Secret argument to F must be handed over through ffi-pin (Pin region) at S | `secret_check.zyl` |
-| `E_FFI_TYPE_NOT_PINNABLE` | ffi: value has type T which is not FFI_Pinnable | catalog only (`type_inference.zyl` and `mutability_check.zyl` report a non-pinnable FFI argument as `E_INVALID_CAPABILITY`) |
+| `E_FFI_TYPE_NOT_PINNABLE` | ffi: value has type T which is not FFI_Pinnable | `type_annotate.zyl` (located: `ffi-pin` of a function) |
+| `E_FFI_RESTRICTED` (§28) | ffi: raw runtime entry F may only be called by the standard library at S | `arity_check.zyl` (located, `ffi-check-raw`): an `ffi-call` outside the standard library naming an entry in `ffi-raw-p` (`ffi_sigs.zyl`), one that reads raw memory or reinterprets a machine word; `type_annotate.zyl` (located): an `ffi-call` to a symbol the runtime exports (`zyl_runtime_export_p`) that the program also declares with `extern`, since runtime entries are typed only by `ffi_sigs.zyl` |
 | `E_FFI_TIMEOUT` (§28) | ffi: call exceeded timeout of M ms at S | `actor_runtime.c` (`zyl_ffi_timed`), at run time: ``E_FFI_TIMEOUT: ffi call `sym` exceeded its timeout of M ms`` |
 | `E_FFI_TIMEOUT_REQUIRED` | ffi: ffi-call must end with a positive integer literal timeout in milliseconds at S | `arity_check.zyl` (`ffi-check-call`, located, with a help line) |
 | `E_FFI_SYMBOL_REQUIRED` | ffi: ffi-call must name its C symbol with a string literal at S | `arity_check.zyl` (`ffi-check-call`) |
+| `E_NESTED_PATTERN` (§28) | match: nested pattern in a constructor arm at S | `expr_inner.zyl` (located): a constructor arm whose field position holds anything but a plain name, including a prelude constructor or qualified name used as a binder, `(Some Nil ...)` |
 | `E_MATCH_NONEXHAUSTIVE` (§28) | match: non-exhaustive pattern match at S - missing cases: M | `icnf.zyl` (unknown variant in an arm; residual non-exhaustive match), `expr_inner.zyl` (literal-pattern match without a final `_`), REPL interpreter |
 
 The main compile-time exhaustiveness check (`exhaustiveness_check.zyl`)
@@ -287,7 +304,9 @@ All raised by the package modules named; all are §28 codes.
 | `W_UNUSED_PARAMETER` | warning | `unused_check.zyl` | a parameter is never used (`_` and `_`-prefixed names are exempt) |
 | `W_UNUSED_VARIABLE` | warning | `unused_check.zyl` | a `let`/`let-mut`/`for` binding is never used |
 | `W_SHADOWED_BINDING` | warning | `unused_check.zyl` | a binding shadows an outer binding of the same name |
-| `E_UNDEFINED_FUNCTION` | error | `stdlib/repl/interp.zyl` | a call names no function (the compiled path reports `E_UNBOUND_VARIABLE` from codegen's `cg-call-user`) |
+| `E_UNDEFINED_FUNCTION` | error | `stdlib/repl/interp.zyl` | a call names no function (the compiled path reports `E_UNBOUND_VARIABLE` from the type pass) |
+| `W_TYPE_STRICT` | warning | `type_annotate.zyl` | a type error printed as a warning under `ZYL_STRICT_TYPES=report` |
+| `E_INTERP_TAG` | error | `stdlib/repl/interp.zyl` | under `ZYL_INTERP_CHECK=1`, an operator whose operand tags break its rule or a condition that is not 0 or 1: a type-checker bug |
 | `E_NOT_CALLABLE` | error | `stdlib/repl/interp.zyl` | a call's head is not a function or closure |
 | `E_UNSUPPORTED_INTERPRETED` | error | `stdlib/repl/interp.zyl` | spawning an actor, which needs a native entry point; compile the program instead |
 | `E_FFI_SYMBOL_NOT_FOUND` | error | `stdlib/repl/interp.zyl`, `actor_runtime.c` | an `ffi-call` names a symbol the REPL process does not export |

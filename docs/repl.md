@@ -30,8 +30,9 @@ leftover of an older build); from a checkout, use
 
 Every entry goes through the real compiler. Parsing, macro expansion,
 capability and duplicate and arity and mutability and exhaustiveness and
-unused and secret checks, type inference, monomorphization, trait
-dispatch, closure lifting, ICNF lowering, optimization and region
+unused and secret checks, derive expansion, impl lifting, type checking
+(with static trait resolution and per-type specialization), closure
+lifting, ICNF lowering, optimization and region
 inference all run exactly as they do for `zyl build` — the shared
 implementation is `stdlib/compiler/pipeline.zyl`, and the REPL calls
 `compile-to-fns`, which is `compile-to-asm` minus the last phase.
@@ -89,7 +90,10 @@ A definition can refer to a `def` binding: after `(def k 5)`,
 into the session program as a top-level `(def k (if false SRC
 (zyl-repl-global "k")))`: the live branch reads the value the binding
 stored (a runtime table), and the dead branch gives type inference SRC's
-type without running SRC again. Cached `def` values are cleared before
+type without running SRC again. `zyl-repl-global` is typed (`String ->
+a`) only while the REPL compiles its own generated program; anywhere
+else, the prompt included, it is an undefined function
+(`E_UNBOUND_VARIABLE`). Cached `def` values are cleared before
 each entry, so `:reset` never leaves an old value behind.
 
 ### Modules
@@ -234,9 +238,11 @@ compiled code reads. Nesting is bounded at six levels and twenty-four
 fields per level, because a result line is not the place to print ten
 thousand elements.
 
-Compiled code cannot do this yet: `print` of a struct in a compiled
-program still shows a pointer, and spec §5.6's derivable `Show` is not
-implemented. The REPL is ahead of the compiler here, not instead of it.
+Compiled code prints a struct or ADT this way only through `Show`:
+`(derive T Show)` (spec §5.6) generates an impl, and `print` of a value
+whose type has one calls it. `print` of a value with no `Show` impl, in a
+compiled program or through `zyl eval`, still prints an address; only the
+REPL's result line reads the hidden words.
 
 ## `zyl eval`
 
@@ -263,26 +269,42 @@ The editor's own arena is reset at every prompt.
 ## Where the interpreter differs from compiled code
 
 The two back ends are meant to agree, and the regression suite compares
-them. Where they knowingly differ:
+them, with the interpreter in its checking mode (below). Both take every
+value's representation from the type checker, so `print`, `==` and a
+field read out of a variant see the same String, Float or Int in both.
+Where they knowingly differ:
 
-- **`print` picks its format from the value in hand**, not from
-  codegen's static `kind-of` analysis. Every case where the two disagree
-  is one codegen gets wrong — it prints a `String`-typed parameter as a
-  pointer, having no return-type inference — and the interpreter prints
-  the text.
-- **A field read out of a variant keeps its kind.** The interpreter
-  records the kinds of a block's fields in a hidden word in front of the
-  block, so destructuring `(Some "hello")` gives a `String` back;
-  `cg-bind-fields` binds every field as an `Int`.
-- **`==` on two `String`s compares their bytes** (spec §7.4, structural
-  equality). Compiled code does the same through `zyl_cstr_eq` whenever
-  codegen knows either operand is a string (`codegen.zyl` routes
-  string-kind equality and inequality there), including strings built at
-  runtime; where it knows neither kind — a `String` coming out of a generic
-  function or an ADT field — it falls back to comparing addresses.
+- **`print` picks its format from the value in hand**; compiled code
+  picks it from the node's inferred type. For a well-typed program the
+  two are the same.
 - **`IStackVariant` allocates on the heap.** Region inference chose the
   stack for a value that provably does not escape; allocating it on the
   heap instead is sound, just less tidy.
+
+### Values
+
+An interpreted value is a `Val`: `VInt`, `VFlt` (a Float held as a
+Float), `VStr` (a String held as a String) or `VPtr` (the address of a
+heap block: a variant, a struct, a closure or a function reference). A
+value becomes a machine word only where one is needed, to store it in a
+block or pass it to a runtime entry, and those conversions go through
+typed runtime entries: `zyl_float_bits` and `zyl_float_of_bits` for a
+Float, and for a String `zyl_word_of_cstr` and `zyl_cstr_of_word`, raw
+entries only the standard library may call (`E_FFI_RESTRICTED`). Heap blocks are laid out as compiled code lays them
+out, `[tag][field]...`, with the fields' kinds and the constructor's name
+in hidden words in front. A binding is a name and a `(Ref Val)` cell
+that `set!` writes. The function index is an `(SMap Icnf)` from name to
+lowered function. An FFI result is typed by the symbol's signature: a
+String or Float result becomes `VStr` or `VFlt`, anything else `VInt`.
+
+### Checking mode
+
+`ZYL_INTERP_CHECK=1` makes every operator check its operands' tags
+(arithmetic on two Ints or two Floats, comparison within one tag, bit
+operations on Ints) and requires every condition to be exactly 0 or 1.
+A violation is `E_INTERP_TAG`: the type checker accepted a program that
+misuses a value, which is a checker bug (spec §4.8). The regression
+suite's interpreter section always runs in this mode.
 
 And what the interpreter does not do:
 

@@ -877,9 +877,11 @@ found by reading the modules.
   (`json.zyl`).
 - **`zyl.buildinfo` hashes the assembly, not the ICNF**, which has no
   serialised form.
-- **Qualified names are copied per occurrence**, because
-  `type_inference.zyl` compares names with `=` (a pointer comparison) and
-  a shared key pointer woke a dormant, broken code path.
+- **Qualified names are copied per occurrence.** This was done because
+  the old `type_inference.zyl` compared names with `=` (a pointer
+  comparison) and a shared key pointer woke a dormant, broken code path.
+  That module has since been deleted; `qualify.zyl` (`qf-ident`) still
+  copies.
 - **Capabilities, as enforced.** `ffi` guards `ffi-call`, `ffi-pin`,
   `ffi-unpin` and `use` of `ffi/*`; `actor` guards `spawn`, `send`,
   `receive` and `actor/*`; `io` guards `file-open`, `file-read`,

@@ -51,7 +51,9 @@ You can define any number of tests; each one is another top-level form:
 
 The optional message is accepted but not printed; a failing test is reported only as `FAIL`.
 
-A test body may contain several forms, evaluated in order (wrapping them in `begin` is equivalent). The first failing assertion ends the test:
+The operands are type-checked. `assert-true`, `assert-false` and `assert` take a `Bool`, such as the result of `str-eq` or a comparison, so `(assert-true 1)` is `E_TYPE_MISMATCH`. The two sides of an `assert-equal` must have one type: `(assert-equal "x" 1)` does not compile.
+
+A test has exactly one body form. To make several assertions, wrap them in `begin`; a `test` with two body forms is `E_MALFORMED_FORM`. The first failing assertion ends the test:
 
 ```lisp
 (defstruct Point x y)
@@ -73,9 +75,7 @@ A test body may contain several forms, evaluated in order (wrapping them in `beg
 
 - **Ints, Bools, and Floats** compare by value. Floats compare with a tolerance of `1e-5`.
 - **Strings** compare by content: `(assert-equal "ab" (str-concat "a" "b"))` passes.
-- **Structs and ADT values** compare **shallowly**: the variant tag and each field as a raw 64-bit word. `(assert-equal (Some 1) (Some 1))` and two `make-Point 1 2` values are equal, but a field that is itself a struct, ADT, or list is compared by address. `(assert-equal (Cons 1 Nil) (Cons 1 Nil))` and `(assert-equal (Some (Some 1)) (Some (Some 1)))` **fail**.
-
-For nested data, assert on the individual fields, or on a count or sum computed from the structure.
+- **Structs and ADT values** compare by content, exactly like `==`: the variant, then each field, recursing into nested values and strings. `(assert-equal (Cons 1 Nil) (Cons 1 Nil))` and `(assert-equal (Some (Some 1)) (Some (Some 1)))` pass; `(assert-equal (Some (Some 1)) (Some (Some 2)))` fails. A type with a `Secret` field is the exception: it is compared one level deep, with pointer fields by address.
 
 > **`assert` and `assert-fail`:** a false `(assert expr "msg")` fails the test with your message when it is a string literal (`assert failed` otherwise); `(assert-true expr "msg")` does the same. `assert-fail` is still not enforced: it evaluates its expression and always passes, so avoid it until the runtime check lands.
 
@@ -126,7 +126,7 @@ Inside a package (a directory with a `zyl.pkg`, Spec §31), `zyl test` resolves 
 
 (test "vector-push"
   (assert-equal
-    (vec-len (vec-push (vec-create 0 4) 42))
+    (vec-len (vec-push (vec-create-default 4) 42))
     1))
 
 (run-tests)

@@ -43,7 +43,7 @@ The build's profile is `--contracts=P` on the command line; a directive override
 requires ::= "(" "requires" Expression ")"
 ```
 
-A condition that must hold on entry. Write it as a leading form of a `defn` body, directly or inside the body's `begin`:
+A condition that must hold on entry. Write it as a leading form of a `defn` body, directly or inside the body's `begin`. A `defn` body of several forms is an implicit `begin`, so the clause and the code after it need no wrapper:
 
 ```lisp
 (defn safe-div (a b)
@@ -66,7 +66,7 @@ PANIC: E_CONTRACT_VIOLATION: precondition of safe-div failed: (> b 0)
 
 The message names the function and repeats the clause as written. A `requires` outside a `defn` body (inside a nested `let`, say) is checked the same way, without the function name.
 
-The condition is ordinary code, evaluated every time the function runs: keep it pure and cheap.
+The condition is ordinary code, evaluated every time the function runs: keep it pure and cheap. It is a `Bool`, like every condition in Zyl; write `(> n 0)`, not `n`.
 
 ## 24.3 Postconditions: `ensures`
 
@@ -170,6 +170,7 @@ The override is lexical: `(contracts off (f x))` does not switch off the clauses
 A check is ordinary code in the function body, so two consequences hold:
 
 - **Conditions are type-checked and executed** like any other expression. A condition with side effects affects the program.
+- **A condition is a `Bool`.** A clause is lowered to `assert-true`, which takes a `Bool`, so `(requires n)` makes `n` a `Bool` and an `Int` argument is `E_TYPE_MISMATCH`.
 - **Conditions are subject to every static check**, including the capability and `Secret` checks: a condition that branches on a `Secret` is rejected.
 
 ## 24.9 Implementation

@@ -35,13 +35,12 @@ in a different shape, and this document describes what the code does:
   expansion, and it rewrites every name to a canonical key (§31.2).
 - **A block of checks** runs after macro expansion and before type
   inference.
-- **Type inference** is best-effort. It records function signatures and
-  return types that monomorphization consumes, but a type mismatch does
-  not stop the compile (see Phase 5).
+- **Type inference, trait resolution and monomorphization are one
+  pass**, `type_annotate.zyl`, run on the whole program just before ICNF
+  lowering, after derive expansion and impl lifting. It is sound: every
+  type error is reported and then the compile fails (spec §4.8).
 - **Region inference** runs on the lowered IR after optimization, not
   on the AST before type inference.
-- **Trait dispatch, closure inlining and assert lowering** are
-  source-to-source rewrites between monomorphization and ICNF lowering.
 - **Contract injection** happens during parsing (`convert-ast`), and
   **hash finalization** happens only for package builds, as a `zyl.buildinfo` file.
 
@@ -135,8 +134,8 @@ diagnostic rather than rejecting a valid program.
 | Order | File | Reports |
 |---|---|---|
 | 1 | `capability_check.zyl` | A package using `io`, `ffi`, `actor`, `secret`, `native` or `unsafe` without declaring it (§31.9). The implicit stdlib and a lone file with no `zyl.pkg` are not policed |
-| 2 | `duplicate_check.zyl` | `E_DUPLICATE_DEFINITION`: two top-level `defn`s or `deftype`s with one name |
-| 3 | `arity_check.zyl` | `E_ARITY_MISMATCH`: a direct call to a known, unshadowed top-level function with the wrong argument count |
+| 2 | `duplicate_check.zyl` | `E_DUPLICATE_DEFINITION`: two top-level `defn`s or `deftype`s with one name. `E_DUPLICATE_VARIANT`: a program type (outside the standard library) declaring a prelude constructor name (`Some`, `None`, `Ok`, `Err`, `Cons`, `Nil`) |
+| 3 | `arity_check.zyl` | `E_ARITY_MISMATCH`: a direct call to a known, unshadowed top-level function with the wrong argument count. `E_MALFORMED_FORM`: a special form whose shape its parser rejected (an `EUnknown` node, which used to lower to the constant 0). The `ffi-call` shape checks (`E_FFI_SYMBOL_REQUIRED`, `E_FFI_TIMEOUT_REQUIRED`, more than 16 arguments) and `E_FFI_RESTRICTED`: an `ffi-call` naming a raw runtime entry (`ffi-raw-p`, `ffi_sigs.zyl`) outside the standard library |
 | 4 | `mutability_check.zyl` | `E_MUT_CONFLICT`: `set!` on a name that is not a `let-mut` binding in scope |
 | 5 | `exhaustiveness_check.zyl` | `E_NON_EXHAUSTIVE_MATCH`, `E_UNREACHABLE_MATCH_ARM` for ADT matches; skipped for a match whose constructor names are ambiguous across deftypes |
 | 6 | `unused_check.zyl` | `W_UNUSED_FUNCTION`, `W_UNUSED_PARAMETER`, `W_UNUSED_VARIABLE`, `W_SHADOWED_BINDING` (warnings); `E_DUPLICATE_PARAMETER` (error). `_` and `_`-prefixed names are exempt |
@@ -146,88 +145,99 @@ Literal-pattern matches never reach the exhaustiveness check: the
 parser requires a trailing `_` arm for them and lowers them to an `if`
 chain.
 
-## Phase 6: Type inference
+## Phase 6: Derive expansion
 
-**Implementation:** `type_system.zyl`, `type_inference.zyl`
-(`collect-definitions`)
+**Implementation:** `derive.zyl` (`dv-expand-program`)
 
-`collect-definitions` walks the top-level forms once. For each `defn`
-it infers the body's type and records the function's parameter and
-return types; it also records deftypes, structs, traits, impl blocks,
-aliases and `derive` declarations. The resulting `TypeInferer` is what
-monomorphization is built from (`mono-context-new`).
+`(derive T Trait...)` becomes one `(impl Trait T ...)` block per trait,
+for all six §5.6 traits: `Show` and `Debug` render `Variant(a, b)` or
+`Struct { f: a }` through the trait on each field; `Eq.eq` is `==`;
+`Clone.clone` returns the value; `Hash.hash` folds the fields' hashes;
+`Ord.compare` orders variants by declaration, then fields
+lexicographically. A field type without the trait, a `Secret` field for
+a value trait, or a trait outside the six is `E_TRAIT_NOT_DERIVABLE`;
+two written impls of one trait for one type are `E_DUPLICATE_IMPL`.
 
-Inference is best-effort. A mismatch such as `(+ 1 "a")` degrades to
-`TUnit` rather than failing, so it compiles. The errors this phase does
-raise are FFI-related: `E_INVALID_CAPABILITY` for a non-pinnable FFI
-argument and `E_BYTEBUF_NOT_PIN`. Several name lookups in this module
-compare strings with `=`, which is a pointer comparison, so some
-lookups never match; `stdlib/lsp/compiler_bridge.zyl`'s header
-documents the problem.
+## Phase 7: Impl lifting
 
-## Phase 7: Derive expansion and monomorphization
+**Implementation:** `lift_impls.zyl` (`lift-impls`)
 
-**Implementation:** `derive.zyl` (`dv-expand-program`),
-`monomorphization.zyl` (`monomorphize`)
+Each impl method becomes a top-level function named `Trait.method_Type`
+(for example `OutputStream.write_Stdout`) whose first parameter is
+annotated with the impl's type; the impl block stays for the type pass's
+trait tables. This replaced `monomorphization.zyl` and
+`type_inference.zyl`, which with an empty inference context did only
+this. `closure_inline.zyl` (`ci-expand-program`) then runs as an
+identity pass: beta-reducing a lambda into its callers is not hygienic,
+and closures are real values (Phase 9).
 
-1. `(derive T Show)` becomes an `(impl Show T ...)` block whose `show`
-   prints `Variant(a, b)` or `Struct { f: a }` through `Show.show` on
-   each field. Other derivable traits generate nothing yet.
-2. Impl method bodies are lifted to top-level functions named
-   `Trait.method_Type` (for example `OutputStream.write_Stdout`).
+## Phase 8: Type checking, trait resolution, specialization
 
-Trait calls are resolved later, in the type annotation pass (Phase 8b).
+**Implementation:** `type_annotate.zyl` (`ta-annotate`); runtime
+signatures in `ffi_sigs.zyl`, `extern` declarations in `expr_inner.zyl`
+**Rules:** spec §4.8–§4.10; `spec/05-types-and-inference.md`
 
-## Phase 8: Source-level lowering
+Hindley–Milner inference (union-find, Tarjan SCCs, generalization of
+top-level functions per component; local bindings monomorphic) over the
+final `ExprInner` program. Each node's type goes to the node table
+`node-types` (`node_tables.zyl`).
 
-**Implementation:** `closure_inline.zyl` (`ci-expand-program`),
-`assert_lowering.zyl` (`al-expand-program`)
-
-- **Closure inlining:** retired; `ci-expand-program` is an identity
-  pass (beta-reducing a lambda into its callers is not hygienic, and
-  closures are real values now, see Phase 9).
-- **Assert lowering:** `(assert-equal l r)` where either side looks like
-  an ADT or struct value becomes `(assert-true (== l r))`, so it gets the
-  structural equality of Phase 8b.
-
-## Phase 8b: Type annotation
-
-**Implementation:** `type_annotate.zyl` (`ta-annotate`)
-
-Hindley-Milner inference (union-find, Tarjan SCCs, let-polymorphism)
-over the final `ExprInner` program. Each node's type goes to runtime
-attr table 0; a unify conflict poisons the variables involved, so the
-pass fails open, with one exception:
-
-- An argument to a top-level function, or to a constructor
-  (`(Circle 1.5)`, `make-Point`), whose inferred type definitely clashes
-  with the parameter's annotation or the declared field type is
-  `E_TYPE_MISMATCH`, labelled at the parameter declaration and with a
-  help line. The check is structural (`(List String)` against
-  `(List Int)` clashes); a type variable or unknown part on either side
-  never clashes, nor does `Unit`. Lambda parameters and trait method
-  calls are not checked.
+- **Every failure is an error.** A unification failure is a located
+  `E_TYPE_MISMATCH`, a failed occurs check `E_INFINITE_TYPE`, a type the
+  program does not determine `E_CANNOT_INFER`, an unknown name
+  `E_UNBOUND_VARIABLE`. An argument that clashes with a parameter
+  annotation or declared field type gets a `mismatched types` message
+  labelled at the declaration. The pass types the whole program,
+  printing every error, and then fails with the first error's code. The
+  classes involved in a failure are poisoned only so one mistake is not
+  reported repeatedly. `ZYL_STRICT_TYPES=report` prints the errors as
+  `W_TYPE_STRICT` warnings and lets the compile continue.
+- **Rules the pass enforces** beyond plain unification: conditions are
+  Bool; `+ - * / %` take two Ints or two Floats, ordering two Ints,
+  Floats or Strings (checked once the program is typed); statement forms
+  are Unit; `main` is `() -> Int`; a `spawn` entry is `() -> a` and
+  `send` needs an `Actor`; `file-open`'s mode is a literal fopen mode.
+- **FFI.** An `ffi-call` to a `zyl_*` runtime symbol is typed by its
+  signature in `ffi_sigs.zyl`; one to a foreign symbol by its `(extern
+  "sym" (T ...) R)` declaration, whose types must be concrete and not
+  Float. An undeclared foreign symbol, or a runtime symbol with no
+  signature (except eleven string-producing ones), is `E_CANNOT_INFER`;
+  an `extern` for a symbol the runtime exports is `E_FFI_RESTRICTED`.
+  `ffi-pin` gives a `(Pin a)`, `ffi-unpin` takes it back to `a`, and
+  pinning a function is `E_FFI_TYPE_NOT_PINNABLE`.
+- **`def` and `struct-get`.** A top-level `def` is typed as its getter but not
+  generalized. A `struct-get` whose record type is still unknown when
+  several structs have the field is `E_CANNOT_INFER`.
 
 At each SCC's close:
 
-- A trait call `(Trait.method recv ...)` whose receiver type is known
-  is renamed to `Trait.method_Type` (attr table 2).
-- A function that uses a trait method, or prints, on a type variable is
-  trait-generic; each call with concrete argument types gets its own
-  instance `f~T1,T2` (spec §6.4), typed with those types, so the trait
-  calls inside it resolve. Instances are appended to the program.
+- A trait call `(Trait.method recv ...)`, or a method call `(recv.m
+  ...)`, whose receiver type is known is renamed to `Trait.method_Type`
+  (`node-calls`). A receiver that stays unknown is `E_CANNOT_INFER`; a
+  missing impl or an unknown method is `E_TRAIT_NOT_FOUND`.
+- A function that applies a trait method, `print`, an arithmetic or
+  comparison operator or an equality to a value of type-variable type is
+  trait-generic. Every call and every use as a value with concrete
+  argument types gets its own instance `f~T1,T2` (argument types in
+  order), typed and checked at those types; instances are appended to
+  the program and the generic original is dropped, so no unspecialized
+  body runs. More than 256 instances of one function is
+  `E_CANNOT_INFER`.
 - `print` of a value whose type has a `Show` impl prints `Show.show` of
-  it (attr table 3).
-- `==`, `=` and `!=` on a known ADT or struct type become a call to a
-  generated `(defn T.== (a b) ...)` (negated for `!=`), which is false
-  for different variants and otherwise compares each field pair with
-  `==`, so nested ADTs, Strings and Floats compare by content and
-  recursive types work. A generic field makes it trait-generic, so
-  `(List T)` gets an instance per element type. A type with a `Secret`
-  field gets no equality function and keeps the shallow comparison.
+  it (`node-shows`).
+- `==`, `=`, `!=` and `assert-equal` on a known ADT or struct type become
+  a call to a generated `(defn T.== (a b) ...)` (negated for `!=`),
+  which is false for different variants and otherwise compares each
+  field pair with `==`, so nested ADTs, Strings and Floats compare by
+  content and recursive types work. A generic field makes it
+  trait-generic, so `(List T)` gets an instance per element type. A type
+  with a `Secret` field gets no equality function and keeps codegen's
+  shallow comparison. `assert-equal`'s two sides have one type; a Float
+  type selects its epsilon comparison.
 
-A trait call it cannot resolve is lowered to a match on the receiver's
-runtime tag. `ZYL_DEBUG_TYPES=1` prints every function's scheme.
+There is no run-time trait dispatch: a trait call still unresolved at
+lowering is `E_CANNOT_INFER` (`ic-trait-unresolved`, `icnf.zyl`).
+`ZYL_DEBUG_TYPES=1` prints every function's scheme.
 
 ## Phase 9: ICNF lowering
 
@@ -266,7 +276,12 @@ IRegion
   `zyl_try_push`/`zyl_try_pop` frames and `setjmp`; `zyl_panic` unwinds
   to the nearest one.
 - `IFn` carries each parameter's representation kind (Int/pointer,
-  String, Float) so codegen can print and compare it correctly.
+  String, Float) so codegen can print and compare it correctly. Every
+  node's kind comes from its inferred type (`ta-kind`), and `ta-scalar`
+  marks Int, Bool and Float nodes for region inference.
+- Arithmetic with one operand: `(- x)` is `0 - x`, with a Float zero for
+  a Float `x`; `(+ x)` and `(* x)` are `x`; any other one- or
+  zero-operand arithmetic is `E_ARITY_MISMATCH`.
 - Top-level `test` and `run-tests` forms are gathered into a generated
   `main`; mixing them with an explicit `(defn main ...)` is
   `E_TOPLEVEL_STMTS_WITH_EXPLICIT_MAIN`.
@@ -352,15 +367,17 @@ Pin arena in the runtime.
 - **Heap values:** variants and structs at heap sites are allocated with
   `zyl_heap_alloc`, which writes a hidden field-count header that
   `zyl_variant_eq` and `zyl_variant_cmp` read. `zyl_variant_eq` (tag plus
-  raw field words) is now only the fallback for `==` on a variant-kind
-  operand whose type Phase 8b left unknown.
+  raw field words) is used only for `==` on a variant-kind operand that
+  Phase 8 did not rewrite to a `T.==` call (a type with a `Secret`
+  field).
 - **Symbols:** user functions get a `_ZYL_` prefix; canonical keys go
   through the runtime's `zyl_mangle_key`.
 - **Entry stub:** `main` calls `zyl_save_args` and
   `zyl_ensure_arenas`, then runs `_ZYL_main` through
   `zyl_call_on_big_stack`, whose result becomes the exit code.
-- An unbound identifier is reported here as `E_UNBOUND_VARIABLE`, and
-  output larger than the codegen buffer is `E_CODEGEN_BUFFER_FULL`.
+- An unbound identifier is reported by Phase 8; codegen's own
+  `E_UNBOUND_VARIABLE` remains as a backstop. Output larger than the
+  codegen buffer is `E_CODEGEN_BUFFER_FULL`.
 
 ## Phase 13: Linking
 
@@ -392,7 +409,8 @@ Contract forms are rewritten where every form is recognized,
   testing each arm's error code with `zyl_err_is` and re-raising if none matches.
 - `(contracts P FORM)`, and a bare `(contracts P)` before a top-level form,
   convert that form under profile P (`off`/`production` drop every clause;
-  `warn` checks become `(if C 0 (zyl-contract-warn msg))`); the build's
+  `warn` checks become `(if C unit (zyl-contract-warn msg))`; every check
+  is Unit); the build's
   profile comes from `--contracts=P` (global map 6).
 - `(checkpoint E)` saves the outer `let-mut` variables E `set!`s, and
   restores them before re-raising if E raises.
@@ -425,10 +443,10 @@ Source (.zyl)
   -> [4]  Macro expansion               macro_expand
   -> [5]  Checks: capability, duplicate, arity, mutability,
           exhaustiveness, unused, secret
-  -> [6]  Type inference                type_inference       -> TypeInferer
-  -> [7]  Derive expansion, monomorphization
-  -> [8]  Closure inlining, assert lowering
-          Type annotation, trait resolution  type_annotate
+  -> [6]  Derive expansion              derive
+  -> [7]  Impl lifting, closure inlining  lift_impls, closure_inline
+  -> [8]  Type checking, trait resolution,
+          specialization                type_annotate, ffi_sigs
   -> [9]  ICNF lowering                 icnf                 -> (List Icnf)
   -> [10] Optimization                  optimization
   -> [11] Region inference              region_inference
@@ -450,11 +468,10 @@ Each step consumes only the output of the steps above it:
 | Parsing | source text | module resolution onward |
 | Module resolution | raw `Ast` | macro expansion onward |
 | Macro expansion | qualified `ExprInner` | the checks onward |
-| Checks | expanded `ExprInner` | type inference onward |
-| Type inference | checked `ExprInner` | monomorphization onward |
-| Derive expansion, monomorphization | `ExprInner` + `TypeInferer` | lowering onward |
-| Closure inlining, assert lowering | monomorphized `ExprInner` | ICNF onward |
-| Type annotation | lowered `ExprInner` | ICNF onward |
+| Checks | expanded `ExprInner` | derive expansion onward |
+| Derive expansion | checked `ExprInner` | impl lifting onward |
+| Impl lifting, closure inlining | `ExprInner` with derived impls | type checking onward |
+| Type checking | lifted `ExprInner` | ICNF onward |
 | ICNF lowering | lowered `ExprInner` | optimization onward |
 | Optimization | ICNF | region inference onward |
 | Region inference | optimized ICNF | codegen |

@@ -48,7 +48,7 @@ errors.
 
 ```bash
 # Create a test file
-echo '(defn main () (print "Hello, Zyl!"))' > hello.zyl
+echo '(defn main () (print "Hello, Zyl!") 0)' > hello.zyl
 
 # Compile
 build/boot/zyl-self hello.zyl -o hello
@@ -137,7 +137,8 @@ Create a file `factorial.zyl`:
 
 (defn main ()
   (print "Factorial of 10:")
-  (print (factorial 10)))
+  (print (factorial 10))
+  0)
 ```
 
 Compile and run:
@@ -157,14 +158,15 @@ zyl factorial.zyl -o factorial
 | `(defn factorial (n) ...)` | Define a function named `factorial` taking one parameter `n` |
 | `(if (== n 0) 1 ...)` | If `n` equals 0, return 1; otherwise... |
 | `(* n (factorial (- n 1)))` | Multiply `n` by factorial of `n-1` (recursive call) |
-| `(defn main () ...)` | **Entry point** — every executable needs a `main` function with no parameters; the value it returns becomes the process exit status |
+| `(defn main () ...)` | **Entry point** — every executable needs a `main` function with no parameters; it must return an `Int` (anything else is a type error), which becomes the process exit status |
+| `0` | `main`'s last form, so `main` returns 0: success |
 | `(print ...)` | Built-in: write one value to stdout, **followed by a newline** |
 
 **Key observations:**
 - **Prefix notation**: Operator comes first: `(+ 1 2)` not `1 + 2`
 - **Parentheses are mandatory**: No operator precedence rules — grouping is always explicit
 - **Strict left-to-right evaluation**: In `(f a b c)`, evaluate `f`, then `a`, then `b`, then `c`, then call
-- **Last expression returns**: Functions return the value of their final expression (no `return` keyword)
+- **Last expression returns**: A function body may hold several forms, run in order; the function returns the value of the final one (no `return` keyword)
 - **`print` ends the line itself**: each `print` writes one value and a newline, which is why the output above is on two lines
 
 ### Running Without Building
@@ -335,14 +337,14 @@ matter in a few places this book points out as they come up.
 | Homoiconicity | ✅ Code = data |
 | Macros | ✅ Template macros, innermost-first, hygienic (Chapter 10) |
 | `eval` at runtime | ❌ No `eval` function in compiled programs (the REPL and `zyl eval` interpret whole entries) |
-| Dynamic typing | ❌ Static Hindley-Milner inference + capabilities (only an argument that clashes with an annotation is rejected; Chapter 15) |
+| Dynamic typing | ❌ Static Hindley-Milner inference + capabilities; every type error stops the compile (Chapter 15) |
 | GC | ❌ Region-based |
 | REPL | ✅ `zyl repl` (see above) |
 | `cons`/`car`/`cdr` | Lists are an ADT: `(Cons head tail)` / `Nil`; `car` and `cdr` exist but return an `Option` |
 
 ### From Python/JavaScript
 - **Compiled** — `zyl` produces a native executable
-- **Static types** — inferred, not declared (mostly)
+- **Static types** — inferred, not declared (mostly), and checked strictly: an `if` needs a `Bool`, not a number, and `(+ 1 "a")` does not compile
 - **No `null`** — use `Option` ( `(Some value)` / `None` )
 - **Errors are values** — use `Result` ( `(Ok value)` / `(Err error)` ); `error` aborts, and `try` / `catch` can intercept that (Chapter 3)
 - **Immutable by default** — mutation requires explicit `let-mut` + `set!`

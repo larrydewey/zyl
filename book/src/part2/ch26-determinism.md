@@ -140,7 +140,7 @@ Each check is a separate pass over the expanded program. Each one either stops c
 
 - Definitions are collected and typed with Hindley–Milner inference extended with capability types.
 - Monomorphization specialises generic functions and ADTs per call site. Specialisation names are canonical: type names are sorted alphabetically (§17).
-- The inference is permissive in places: some ill-typed programs, for example `(+ 1 "a")`, are accepted and compile.
+- Type annotation (`type_annotate.zyl`) is the one authority on types, and it is strict. Every unification failure, occurs-check failure and unknown type is an error (`E_TYPE_MISMATCH`, `E_CANNOT_INFER`, `E_UNBOUND_VARIABLE`). The pass reports all of a program's type errors, each at its source position, and then the compile stops with `the program does not type-check (N errors above)`. `(+ 1 "a")` is rejected. `ZYL_STRICT_TYPES=report` turns the errors into `W_TYPE_STRICT` warnings, for counting them; there is no mode that runs an ill-typed program.
 
 ### ICNF
 

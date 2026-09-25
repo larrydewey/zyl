@@ -4,9 +4,12 @@
 ;
 ; Messages are ADT values. The actor loops on `receive`, one message per
 ; call; `Get` carries the id of whoever asked, so the actor can reply with
-; `send`, and main reads the reply with its own `receive`.
+; `send`, and main reads the reply with its own `receive`. An actor id has
+; type `Actor` (what `spawn` and `actor-self` return, and what `send`
+; takes), so the reply fields are `Actor`, not `Int`. `receive` itself is
+; not type-checked yet: its result takes whatever type the use needs.
 
-(deftype CounterMsg (Add Int) (Get Int) (Stop Int))
+(deftype CounterMsg (Add Int) (Get Actor) (Stop Actor))
 
 (defn counter-loop (total)
   (match (receive)

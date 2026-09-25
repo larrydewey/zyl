@@ -3,14 +3,16 @@
 This chapter is the reference for Zyl's types: primitives, composite
 types, capability types, function types and inference. The normative text
 is `zyl_specification.txt` §4, with the value model in §3 and the numeric
-model in §20. The implementation is `stdlib/compiler/type_system.zyl` (the
-`Type` ADT and unifier) and `stdlib/compiler/type_inference.zyl`.
+model in §20. The checker is one pass, `stdlib/compiler/type_annotate.zyl`;
+`stdlib/compiler/type_system.zyl` holds the `Type` ADT. The design is
+`docs/sound-types-design.md`.
 
 One fact shapes the rest of this chapter. §4.6 specifies Hindley–Milner
-inference with region and capability constraints. The self-hosted
-inferer computes types, but **it does not reject ill-typed programs**: a
-failed unification falls back to a fresh type variable, and compilation
-continues. Section 15.7 lists what is actually checked.
+inference, and the checker enforces it: **a program the compiler accepts
+never uses a value at the wrong representation.** Every unification
+failure is an error. The pass reports all of a program's type errors,
+then the compile fails. There is no cast form and no mode that runs an
+ill-typed program. Section 15.7 lists the errors.
 
 ## 15.1 Primitive Types
 
@@ -26,11 +28,29 @@ continues. Section 15.7 lists what is actually checked.
 
 - **No subtyping and no implicit conversion** between primitives. The
   standard library has no conversion functions either: `(float 42)` and
-  `(int 3.7)` fail at link time as undefined functions.
+  `(int 3.7)` are `E_UNBOUND_VARIABLE`.
+- **Arithmetic.** `+ - * / %` take two `Int`s or two `Float`s and return
+  the same type. Mixing them is `E_TYPE_MISMATCH`: `(+ 1.5 2)` does not
+  compile; write `(+ 1.5 2.0)`.
+- **Ordering.** `< > <= >=` take two `Int`s, two `Float`s or two
+  `String`s (by contents) and return `Bool`. A struct or ADT operand is
+  `E_TYPE_MISMATCH` ("ordering on T"); such values are ordered with
+  `Ord.compare`, which `derive` generates (Chapter 20, §20.6).
 - **String comparison.** `=` and `==` on strings compare contents.
-- **Unit** has no literal (`unit` is an unbound identifier). It is the
-  value of a one-armed `if` whose condition is false and of a `let` with
-  no body.
+- **Bool** is the only condition type. `if`, `cond`, `when`, `unless`,
+  `while`, match guards and contract clauses reject an `Int` condition:
+  `(if 1 ...)` is `E_TYPE_MISMATCH`. Predicates such as `str-eq` return
+  `Bool`, so they are used directly: `(if (str-eq a b) ...)`.
+- **Unit** is a real type, and its one value is written `unit`. The
+  statement forms are `Unit`: `print`, `set!`, `while`, `assert`,
+  `file-write`, `send`, an `if` without an else, and a `cond` with no
+  `true` or `else` clause. A form whose two branches are a `Unit` and an
+  `Int` does not type-check, so a statement-only `match` arm next to an
+  arm that returns a number needs a value of its own. `main` must have
+  type `() -> Int`, its result being the process exit status, which is
+  why the book's programs end with `0`; a `main` that ends in `print` is
+  `E_TYPE_MISMATCH`. An actor entry passed to `spawn` must take no
+  arguments.
 
 > **Implementation gaps (§20).**
 >
@@ -40,8 +60,6 @@ continues. Section 15.7 lists what is actually checked.
 > - **Division by zero.** §20.3 requires `E_DIVISION_BY_ZERO` for
 >   `Int`. Generated code executes `idiv` and the process dies with
 >   `SIGFPE`.
-> - **Mixed arithmetic.** Mixing `Int` and `Float` in one operation is
->   neither rejected nor converted. `(+ 1.5 2)` evaluates to `1.5`.
 
 ### Byte-level types (implementation extension)
 
@@ -56,10 +74,11 @@ Chapter 32):
 | `ByteSlice` *region* | `(byteslice buf off len)`, `(byteslice-sub s off len)` | A view of the same bytes, not a copy. |
 | endian selector | `:le` or `:be`, as the first argument of `load-u8`/`load-i8`/`store-u8`/`store-i8` | Only the byte width is implemented. |
 
-The region is part of the type: unification requires two `ByteBuf`s to
-have the same region. Because inference never fails a program (15.6), a
-mismatch is not reported, and the runtime allocates every buffer with
-`malloc` whatever region it names.
+The region is written as part of the type, but the type pass does not
+tell buffers of two regions apart: `(if c (bytebuf Stack 4) (bytebuf
+Heap 4))` type-checks. Where a buffer may live is region inference's
+business (Chapter 16), which rejects a `Stack` buffer that escapes with
+`E_REGION_ESCAPE`.
 
 ```lisp
 (defn main ()
@@ -78,8 +97,8 @@ mismatch is not reported, and the runtime allocates every buffer with
 
 | Spec type | In the implementation |
 |-----------|-----------------------|
-| `Vec<T>` | `(Vec T)`, a generic ADT in `collections/vec`: `(deftype Vec (VecC Int Int Int Int T))` (buffer, length, capacity, arena, and a phantom `T` that is never read). Elements are 8-byte words. Use `vec-create`, `vec-push`, `vec-get`, `vec-len`; `vec-get` returns `T`. |
-| `Map<K,V>` | `(Map String V)`, a generic ADT in `core/map` (an association list; keys compared with `str-eq`), with `map-new`, `map-insert`, `map-get` (an `Option`), `map-has`, `map-remove`. `collections/map` is a separate Int-to-Int hash map. |
+| `Vec<T>` | `(Vec T)`, a generic ADT in `collections/vec`: `(deftype Vec (VecC (Array T) Int Arena))` (a typed, bounds-checked runtime array, the length, the arena). Use `vec-create` (which takes an `Arena`) or `vec-create-default`, then `vec-push`, `vec-get`, `vec-len`; `vec-get` returns `T`. |
+| `Map<K,V>` | `(Map String V)`, a generic ADT in `core/map` (an association list; keys compared with `str-eq`), with `map-new`, `map-insert`, `map-get` (an `Option`), `map-has`, `map-remove`. `collections/map` is a separate Int-to-Int hash map (`map-create-default`). |
 | `Set<T>` | `collections/set` (not in §4.2). |
 | `Result<T,E>` | `(deftype Result (Ok T) (Err E))` in `core/result`. |
 | `Option<T>` | `(deftype Option (Some T) None)` in `core/option` (named in §25). |
@@ -120,22 +139,37 @@ so `Some`, `Ok` and `Cons` need no `use`.
 | `TBox<T>` | heap-managed allocation |
 | `TPin<T>` | FFI-pinned memory (non-moving arena) |
 
-These are not types you can write. In the implementation they are
-`CapKind` values inside one type constructor, `TCap CapKind Type`, and the
-compiler introduces them itself: `ffi-pin` produces a `TPin`, and a `for`
-loop variable is a `TMut`. `CapKind` also has `TCByte`, `TCAtomicByte` and
-`TCSecret`, which are defined but not yet produced by inference.
-
-Two capability types unify only if their kinds are equal, with one
-exception: `Secret` and `Cap` unify with each other. The rules, the
-aliasing invariant and the Secret capability are covered in Chapter 17.
+These are not types you can write, and the checker has no capability
+types either: it types a `let-mut` variable or a `for` loop variable as
+the plain type of its value. An `ffi-pin` result is the one exception:
+it has the handle type `(Pin a)`, which `ffi-unpin` turns back into
+the `a`. The capability rules
+are enforced by separate passes that run before type inference:
+`mutability_check.zyl` (the `TMut`/`TCap` aliasing invariant and actor
+transfer) and `secret_check.zyl` (the `Secret` annotation, the one
+capability you do write). Chapter 17 covers them.
 
 ## 15.4 Function Types
 
 §4.4 writes a function type as `TFun([T*], TReturn)`. The implementation
 represents it as `TFun (List Type)`, the parameter types followed by the
-return type. Function types cannot be written in source either. A
-parameter that holds a function is left unannotated.
+return type. In an annotation a function type is written
+`(Fn (A ...) R)`:
+
+```lisp
+(defn app ((f (Fn (Int) Int)) (x Int)) (f x))
+
+(defn main ()
+  (begin
+    (print (app (fn (y) (+ y 1)) 2))   ; 3
+    0))
+```
+
+Passing `(fn (y) "s")` to `app` is `E_TYPE_MISMATCH`: expected
+`(Int -> Int)`, found `(a -> String)`. The same spelling types a C
+callback in an `extern` declaration (Chapter 22). A parameter that holds
+a function may also be left unannotated; inference finds its type from
+the calls.
 
 ### Calling convention
 
@@ -160,13 +194,14 @@ left to right before the call.
   with `(struct-get p "x")`, where the field name is a string.
 - Fields are immutable (§10). See Chapter 17.
 - A struct is represented as a one-variant ADT whose variant name is the
-  struct name, so `(Point 1 2)` also constructs one. Each struct gets a
-  tag unique across the program, which is what the runtime fallback of
-  trait dispatch relies on (Chapter 20).
-- §4.7 makes structs nominal. `==` compares a struct's tag as well as its
-  fields, so values of two struct types with the same fields are never
-  equal. Comparing them raises no type error, though (15.6).
-- Generic structs are not supported (§6.5).
+  struct name, so `(Point 1 2)` also constructs one.
+- §4.7 makes structs nominal. Values of two struct types with the same
+  fields are different types, and comparing them is `E_TYPE_MISMATCH`.
+- **An untyped field is a type parameter of the struct.** `(defstruct
+  Pt (x) (y))` is generic in both fields, so `(make-Pt "a" 2)` is a
+  `(Pt String Int)` and `(make-Pt 1.5 2)` a `(Pt Float Int)`. Each value
+  keeps its field types: `(+ (struct-get p "x") 1)` on the first is
+  `E_TYPE_MISMATCH`. Give a field a type, `(x Int)`, to fix it.
 
 ### ADTs
 
@@ -178,13 +213,13 @@ left to right before the call.
 §4.7 and §10 specify aliases as transparent and zero-cost. The
 post-processor does not recognize `alias`: `(alias UserId Int)` is
 accepted, has no effect, and does not introduce `UserId` as a name.
-An unknown name in an annotation becomes a type variable (15.6), so
-writing `(id UserId)` in a parameter list is also accepted, and the
-parameter is not checked.
+An unknown capitalized name in an annotation is a type variable (15.6),
+so writing `(id UserId)` in a parameter list is also accepted: the
+parameter is generic, not an `Int`.
 
 ## 15.6 Type Inference
 
-### What the inferer does
+### What the checker does
 
 The pass is `compiler/type_annotate.zyl`, run on the fully lowered
 program just before ICNF lowering.
@@ -193,48 +228,59 @@ program just before ICNF lowering.
   with an occurs check. Top-level functions are inferred in dependency
   order, one strongly connected component of the call graph at a time,
   and generalized, so each call instantiates a function's type afresh.
-  Local `let`s are not generalized.
+  Local `let`s are not generalized: a lambda bound by `let` has one type,
+  so using it at `Int` and then at `String` is `E_TYPE_MISMATCH`.
 - **Declared types count.** Parameter annotations, the field types of
-  `deftype` and `defstruct`, and `trait` method signatures all constrain
-  inference; a type name in a field that is not a known type (an
-  uppercase name like `T`) is a type parameter.
+  `deftype` and `defstruct`, `trait` method signatures and `extern`
+  declarations all constrain inference; a type name in a field that is
+  not a known type (an uppercase name like `T`) is a type parameter.
+- **Every failure is an error.** A unification failure is
+  `E_TYPE_MISMATCH` with both types, at the innermost expression being
+  checked. A failed occurs check is also `E_TYPE_MISMATCH` ("infinite
+  type"). A name defined nowhere is `E_UNBOUND_VARIABLE`. An expression
+  the checker has no rule for, such as an `ffi-call` to a symbol with no
+  signature, is `E_CANNOT_INFER`. The pass keeps going after an error, so
+  one compile lists them all (a clash often shows up twice, once for the
+  argument and once for the whole call), and then fails with "the
+  program does not type-check (N errors above)".
 - **The results are used**, not only computed. Every expression's type
   reaches code generation, which picks `print`'s format (`%lld`, `%f`,
-  `%s`), String comparison and Float arithmetic from it — for a `Vec`
-  element, a struct field, a pattern-bound name, a closure capture or the
-  result of a generic call alike. Trait calls are resolved from it
-  (Chapter 20), and a function whose body depends on a type parameter is
-  instantiated per concrete type (15.8).
+  `%s`), String comparison and Float arithmetic from it. Trait calls are
+  resolved from it statically (Chapter 20), and a function whose body
+  depends on a type parameter is instantiated per concrete type (15.8).
 - `ZYL_DEBUG_TYPES=1` prints every function's inferred type while
   compiling; the REPL's `:type` shows an expression's type.
+- `ZYL_STRICT_TYPES=report` turns the type errors into `W_TYPE_STRICT`
+  warnings and lets the compile finish. It exists for counting what is
+  left while porting code, not for running the result.
 
-### What it does not do
+```lisp
+(defn main ()
+  (begin
+    (print (+ 1 "a"))       ; error[E_TYPE_MISMATCH]: cannot unify String with Int
+    (print (+ 1.5 2))       ; error[E_TYPE_MISMATCH]: cannot unify Int with Float
+    0))
+```
 
-- **It rejects only annotation clashes.** A unification failure marks
-  the type variables involved as unknown, and code generation falls back
-  to what the literals and annotations say. The one exception is an
-  argument that definitely clashes with a declared type (see
-  Annotations). Both of these compile without a diagnostic:
+A list holding a `Circle` and a `Rect` has no single element type, so it
+is rejected too: build a sum type (`(deftype Shape (C Circle) (R Rect))`)
+instead.
 
-  ```lisp
-  (defn main ()
-    (begin
-      (print (+ 1 "a"))       ; adds a string's address to 1
-      (print (+ 1.5 2))       ; wrong: Int and Float mixed
-      0))
-  ```
+### The one hole
 
-- **Unknown type names are accepted.** A name such as `(v Bogus)` that
-  is not a known type becomes a type variable, so it constrains nothing.
-- **Heterogeneous data loses its type.** A list holding a `Circle` and a
-  `Rect` has no single element type; values read from it are treated as
-  plain words (and trait calls on them use the runtime fallback).
+`receive` is not typed yet: its result takes whatever type its use
+needs, so a message of the wrong type is not caught at compile time.
+Mailboxes are to be replaced by typed channels; until then, the message
+ADT you `match` on is your contract (Chapter 21). `send` and `spawn` are
+typed: an actor id has type `Actor`, and `send` needs one.
 
 ### Annotations
 
 A parameter may be annotated as `(name Type)`, where `Type` is a name
-such as `Int`, `Float`, `Bool`, `String`, `Unit`, `Byte`, a struct or ADT
-name, or `Secret`/`(Secret Int)` (Chapter 17):
+such as `Int`, `Float`, `Bool`, `String`, `Unit`, `Byte`, `Actor`, a
+struct or ADT name (applied to arguments for a generic one:
+`(List String)`), a function type `(Fn (A ...) R)`, or
+`Secret`/`(Secret Int)` (Chapter 17):
 
 ```lisp
 (defn half ((x Float)) (/ x 2.0))
@@ -246,14 +292,10 @@ name, or `Secret`/`(Secret Int)` (Chapter 17):
 ```
 
 Annotations are optional (§0 P7): inference usually finds the same
-type without them. They are enforced narrowly. A call to a top-level
-function whose argument's inferred type definitely clashes with the
-parameter's annotation is `E_TYPE_MISMATCH`, and so is a constructor
-call (`(Circle 1.5)`, `make-Point`) whose argument clashes with the
-declared field type. The comparison is structural, so `(List String)`
-against `(List Int)` is caught. A type variable or unknown part on either
-side never clashes, nor does `Unit`. Lambda parameters and trait method
-calls are not checked.
+type without them. An argument that clashes with a parameter's
+annotation, or a constructor argument (`(Circle 1.5)`, `make-Point`)
+that clashes with the declared field type, gets a diagnostic whose label
+points at the declaration:
 
 ```lisp
 (defn add ((a Int) (b Int)) (+ a b))
@@ -264,26 +306,27 @@ calls are not checked.
     0))                     ;   expected `Int`, found `Float`
 ```
 
-The diagnostic's label points at the parameter's declaration, and a help
-line gives the declared type. There is no return-type annotation and no
-annotation on `let`.
+A help line gives the declared type. There is no return-type annotation
+and no annotation on `let`.
 
 ## 15.7 Type Errors
 
 | Code | Status |
 |------|--------|
+| `E_TYPE_MISMATCH` | **Raised** by `type_annotate` for every unification failure, including an occurs-check failure, a non-`Bool` condition, mixed `Int`/`Float` arithmetic, and an argument that clashes with an annotation (15.6). Also for a `file-open` mode that is not a literal `"r"`, `"w"` or `"a"` (optionally with `+` or `b`). |
+| `E_CANNOT_INFER` | **Raised** when the checker has no type for an expression: an `ffi-call` to a foreign symbol with no `extern` declaration, or to a runtime symbol with no signature. |
+| `E_UNBOUND_VARIABLE` | **Raised** for a name defined nowhere, with suggestions. |
+| `E_TRAIT_NOT_FOUND` | **Raised** when a trait call's receiver type has no impl (Chapter 20). |
 | `E_INVALID_CAPABILITY` | **Raised** by `mutability_check` (before inference) when a lambda is passed to `ffi-call`; a named top-level function may be passed, as a C callback. |
 | `E_BYTE_VALUE_OOB` | **Raised** by the parser for `(byte N)` outside 0–255. |
-| `E_TYPE_MISMATCH` | **Raised** by `type_annotate` when an argument to a top-level function or a constructor definitely clashes with the parameter annotation or declared field type (15.6). No other type error raises it. |
-| `E_RETURN_TYPE_MISMATCH` | Catalogued; never raised. |
-| `E_UNKNOWN_TYPE` | Catalogued; never raised. |
-| `E_CANNOT_INFER` | In §28 and §6.7; never raised (Chapter 19). |
+| `E_MALFORMED_FORM` | **Raised** for a special form whose shape its parser rejects (it used to compile to the constant 0). |
+| `E_RETURN_TYPE_MISMATCH` | Catalogued; never raised (there are no return annotations). |
+| `E_UNKNOWN_TYPE` | Catalogued; never raised: an unknown type name is a type variable. |
 | `E_TRAIT_BOUND_NOT_SATISFIED` | In §6.7; never raised (Chapter 19). |
 
-Other checks run before type inference and do report errors, for example
-`E_UNBOUND_VARIABLE`, `E_ARITY_MISMATCH`, `E_MUT_CONFLICT` and the match
-checks of Chapter 18. They are covered in the chapters for those
-features.
+Other checks run before type inference, for example `E_ARITY_MISMATCH`,
+`E_MUT_CONFLICT` and the match checks of Chapter 18. They are covered in
+the chapters for those features.
 
 ## 15.8 Monomorphization
 
@@ -313,7 +356,7 @@ observable).
 structural equality function that `type_annotate` generates per type
 (`T.==`), which compares fields by content and recurses into nested ADTs
 and Strings. The hidden size word is what lets the runtime compare two
-separately allocated aggregates when the type is unknown to inference or
-has a `Secret` field (`zyl_variant_eq`), and what `<` always uses (`zyl_variant_cmp`, in
-`runtime/actor_runtime.c`). Those comparisons are shallow: fields that
-are pointers, including strings, are compared by address.
+separately allocated aggregates of a type with a `Secret` field
+(`zyl_variant_eq`, in `runtime/actor_runtime.c`). That runtime
+comparison is shallow: fields that are pointers, including strings, are
+compared by address.

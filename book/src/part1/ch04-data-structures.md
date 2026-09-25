@@ -20,8 +20,14 @@ Structs are immutable aggregates with named fields. Think of them like `struct` 
 (defstruct Vec3 x y z)
 ```
 
-Each field is written `(name)`, `(name Type)`, or just `name`. Types
-are optional; they are inferred from usage.
+Each field is written `(name)`, `(name Type)`, or just `name`. A field
+with a type holds only values of that type: `(make-Person 30 "Alice")`
+is `E_TYPE_MISMATCH`. A field without one is an implicit **type
+parameter** of the struct, as if `Point` were `(Point X Y)`: each
+`make-Point` call picks the field types from its arguments, and the
+checker follows them from there. `(make-Point 1 2)` is a Point of two
+Ints and `(make-Point "a" 2)` one whose `x` is a String, so
+`(+ (struct-get p "x") 1)` on the second one does not compile.
 
 ### Creating Instances
 
@@ -47,7 +53,8 @@ Arguments are evaluated left-to-right, matched to fields in declaration order.
       (begin
         (print (struct-get p "x"))              ; 3
         (print (struct-get alice "age"))        ; 30
-        (print (struct-get alice "name"))))))  ; Alice
+        (print (struct-get alice "name")))))   ; Alice
+  0)
 ```
 
 **Field names are strings** in `struct-get`. A field's declared type
@@ -84,7 +91,8 @@ To "mutate" a struct, use `let-mut` and `set!` to rebind the **entire struct**:
   (let-mut p (make-Point 0 0)
     (begin
       (set! p (make-Point 10 20))   ; Replace with new struct
-      (print (struct-get p "x")))))  ; 10
+      (print (struct-get p "x"))))   ; 10
+  0)
 ```
 
 This creates a new `Point` and rebinds `p` to it. The old `Point` becomes unreachable.
@@ -107,7 +115,8 @@ does. To derive traits, use a standalone `derive` (§4.9).
 
 (defn main ()
   (let deep (make-Level1 (make-Level2 (make-Level3 99)))
-    (print (struct-get (struct-get (struct-get deep "val") "data") "content"))))
+    (print (struct-get (struct-get (struct-get deep "val") "data") "content")))
+  0)
 ;; 99
 ```
 
@@ -195,7 +204,8 @@ An arm names a variant, then one binder per field, then the body.
 (defn main ()
   (print (area (Circle 2)))            ; 12
   (print (area (Rectangle 3 4)))       ; 12
-  (print (perimeter (Triangle 3 4 5)))) ; 12
+  (print (perimeter (Triangle 3 4 5)))  ; 12
+  0)
 ```
 
 A pattern-bound name has its field's type: with `(Rectangle Float
@@ -218,25 +228,20 @@ range and OR-patterns and guards.
 
 ### One Level at a Time
 
-A field position holds a name or `_`, never another pattern. The
-compiler accepts a nested constructor pattern such as
-`(Some (Cons x _) ...)` without complaint, but it only tests the outer
-variant: the inner constructor is never checked, so the arm matches
-whatever the field holds.
+A field position holds a name or `_`, never another pattern. A nested
+constructor pattern is a compile error:
 
 ```lisp
 (defn first-of-some (o)
   (match o
-    (Some Nil -1)
-    (Some (Cons x _) x)
+    (Some (Cons x _) x)     ; error[E_NESTED_PATTERN]
+    (Some _ -1)
     (None 0)))
-
-(defn main ()
-  (print (first-of-some (Some (Cons 7 Nil)))))   ; -1, not 7
 ```
 
-The first arm matches every `Some`. Match one level at a time instead,
-with an inner `match` on the field:
+A *nullary* constructor in a field position, as in `(Some Nil -1)`, is
+`E_NESTED_PATTERN` too. Match one level at a time instead, with an
+inner `match` on the field:
 
 ```lisp
 (defn sum-first-two (lst)
@@ -250,7 +255,8 @@ with an inner `match` on the field:
 (defn main ()
   (print (sum-first-two (Cons 1 (Cons 2 (Cons 3 Nil)))))   ; 3
   (print (sum-first-two (Cons 5 Nil)))                     ; 5
-  (print (sum-first-two Nil)))                             ; 0
+  (print (sum-first-two Nil))                              ; 0
+  0)
 ```
 
 ### Match as Expression (Returns a Value)
@@ -288,12 +294,14 @@ Growable arrays with O(1) indexing, generic in their element type:
 
 | Function | Result |
 |----------|--------|
-| `(vec-create arena cap)` | Empty Vec with room for `cap` elements, in `arena` (a handle, or 0 for a private one; see *Arenas* below) |
+| `(vec-create arena cap)` | Empty Vec with room for `cap` elements, in `arena` (see *Arenas* below) |
+| `(vec-create-default cap)` | The same, in a new private arena |
 | `(vec-push v x)` | The Vec with `x` appended (grows as needed) |
-| `(vec-pop v)` | The Vec without its last element |
-| `(vec-get v i)` | Element `i`, or the word -1 if `i` is out of bounds |
-| `(vec-set v i x)` | The Vec with element `i` replaced (an `i` past the length but within capacity extends it; beyond capacity, no change) |
-| `(vec-last v)` | The last element, or the word -1 if empty |
+| `(vec-pop v)` | The Vec without its last element (an empty Vec is returned unchanged) |
+| `(vec-get v i)` | Element `i`; an `i` outside the Vec panics with `E_INDEX_OUT_OF_BOUNDS` |
+| `(vec-get-or v i default)` | Element `i`, or `default` (of the element type) if `i` is outside the Vec |
+| `(vec-set v i x)` | The Vec with element `i` replaced (`i` equal to the length, within capacity, appends; any other `i` outside the Vec leaves it unchanged) |
+| `(vec-last v)` | The last element; an empty Vec panics with `E_INDEX_OUT_OF_BOUNDS` |
 | `(vec-len v)` / `(vec-cap v)` | Length / capacity |
 
 Use `let-mut` to track the current version:
@@ -302,15 +310,16 @@ Use `let-mut` to track the current version:
 (use collections/vec)
 
 (defn main ()
-  (let-mut v (vec-create 0 10)
+  (let-mut v (vec-create-default 10)
     (begin
       (set! v (vec-push v 42))
       (set! v (vec-push v 99))
-      (print (vec-len v))       ; 2
-      (print (vec-get v 0))     ; 42
-      (print (vec-get v 5))     ; -1 (out of bounds)
+      (print (vec-len v))           ; 2
+      (print (vec-get v 0))         ; 42
+      (print (vec-get-or v 5 -1))   ; -1 (out of bounds)
       (set! v (vec-pop v))
-      (print (vec-len v)))))    ; 1
+      (print (vec-len v))))         ; 1
+  0)
 ```
 
 A Vec's buffer is shared by the versions derived from it, so treat the
@@ -333,7 +342,8 @@ compared with `str-eq`, values may be any type, and lookup returns an
       (match (map-get m "a")
         (Some v (print v))             ; Some(1)
         (None (print "missing")))
-      (print m))))                     ; {b: None, a: Some(1)}
+      (print m)))                      ; {b: None, a: Some(1)}
+  0)
 ```
 
 ### Int maps (`Map`) — `collections/map.zyl`
@@ -344,7 +354,7 @@ An association from Int keys to Int values, kept in insertion order.
 (use collections/map)
 
 (defn main ()
-  (let-mut m (map-create 0 10)
+  (let-mut m (map-create-default 10)
     (begin
       (set! m (map-put m 1 100))
       (set! m (map-put m 2 200))
@@ -352,9 +362,10 @@ An association from Int keys to Int values, kept in insertion order.
       (print (map-len m))            ; 2
       (print (map-get m 1 0))        ; 111
       (print (map-get m 3 -1))       ; -1 (the default: key missing)
-      (print (map-has m 2))          ; 1
+      (print (map-has m 2))          ; 1 (true)
       (set! m (map-remove m 2))
-      (print (map-has m 2)))))       ; 0
+      (print (map-has m 2))))        ; 0 (false)
+  0)
 ```
 
 Lookup is a linear scan, which is fine for the small maps it is meant
@@ -371,14 +382,15 @@ so, as with a Vec, the old version sees the change too.
 (use collections/set)
 
 (defn main ()
-  (let-mut s (set-create 0 10)
+  (let-mut s (set-create-default 10)
     (begin
       (set! s (set-add s 42))
       (set! s (set-add s 42))        ; duplicate ignored
       (print (set-len s))            ; 1
-      (print (set-contains s 42))    ; 1
+      (print (set-contains s 42))    ; 1 (true)
       (set! s (set-remove s 42))
-      (print (set-len s)))))         ; 0
+      (print (set-len s))))          ; 0
+  0)
 ```
 
 For lists, `collections/collections` has `list-map`, `list-filter`,
@@ -392,32 +404,32 @@ hold any value type.
 point in `stdlib/math` take an **arena** argument. An arena is a region
 of memory you own: a bump allocator (`allocator/allocator`) that hands
 out 16-byte-aligned chunks from growable blocks and frees them only all
-at once. It is represented as an `Int` handle.
+at once. Its type is `Arena`, a handle distinct from `Int`: an Int
+cannot be passed where an arena is expected.
 
 | Function | What it does |
 |----------|--------------|
-| `(arena-create block-size)` | A new arena; `block-size` is the bytes per block (below 16 means the 64 KiB default). Returns the handle, or 0 if memory is exhausted |
+| `(arena-create block-size)` | A new arena; `block-size` is the bytes per block (below 16 means the 64 KiB default) |
 | `(arena-alloc a n)` / `(arena-alloc-zeroed a n)` | `n` bytes from `a` (zeroed for the second); 0 on failure |
 | `(arena-used a)` / `(arena-capacity a)` | Bytes handed out / bytes of blocks held |
 | `(arena-reset a)` | Frees every block at once; `a` stays usable |
 | `(arena-destroy a)` | Frees everything; `a` must not be used again |
 
 **The `arena` argument** of `vec-create`, `map-create` and `set-create`
-accepts exactly two kinds of value:
+is an `Arena` from `arena-create`: the collection's storage, and every
+reallocation as it grows, comes from that arena. Several collections
+may share one arena, and freeing it (`arena-reset`/`arena-destroy`)
+frees them all together. Passing `0` is a type error (expected `Arena`,
+found `Int`).
 
-- **a handle from `arena-create`**: the collection's storage, and every
-  reallocation as it grows, comes from that arena. Several collections
-  may share one arena, and freeing it (`arena-reset`/`arena-destroy`)
-  frees them all together.
-- **0, or any value at or below 0**: the call creates a new private
-  arena for this one collection. `vec-create-default`,
-  `map-create-default` and `set-create-default` do the same. A private
-  arena is never freed: that is fine for a few long-lived collections,
-  but inside a loop it leaks one arena per call.
+`vec-create-default`, `map-create-default` and `set-create-default`
+create a new private arena for the one collection. A private arena is
+never freed: that is fine for a few long-lived collections, but inside
+a loop it leaks one arena per call.
 
-Any other positive `Int` (an address, a count, a handle already
-destroyed) is not an arena. The runtime does not check it, and the
-first allocation reads garbage or crashes.
+A handle already destroyed is still an `Arena` to the type checker. The
+runtime does not check it, and the first allocation from it reads
+garbage or crashes.
 
 **The `cap` argument** is the initial capacity in elements. 0 is fine
 (the first push allocates room for 16); a negative value means 0; a
@@ -540,7 +552,8 @@ Recursive ADTs need nothing special:
     (Node v l r (+ v (+ (tree-sum l) (tree-sum r))))))
 
 (defn main ()
-  (print (tree-sum (Node 1 (Node 2 (Leaf) (Leaf)) (Node 3 (Leaf) (Leaf))))))  ; 6
+  (print (tree-sum (Node 1 (Node 2 (Leaf) (Leaf)) (Node 3 (Leaf) (Leaf)))))   ; 6
+  0)
 ```
 
 Every constructed variant is a pointer to its own block, so a
@@ -572,7 +585,8 @@ and `Hash`. `Show` is implemented:
 (defn main ()
   (begin
     (print (make-Person "Ann" 30))       ; Person { name: Ann, age: 30 }
-    (print (Rect 2 3))))                 ; Rect(2, 3)
+    (print (Rect 2 3))                   ; Rect(2, 3)
+    0))
 ```
 
 `print` of any value whose type has a `Show` impl prints its text; the
@@ -629,7 +643,7 @@ its field count, and a generic ADT needs no per-type layout.
 | A struct or ADT value that does not outlive its call | The call's own region, released when the call returns |
 | A struct or ADT value that is returned but goes no further | The region the caller chose for the result |
 | Every other struct or ADT value (stored, sent, captured) | The runtime heap arena |
-| `(vec-create 0 10)`, `(map-create 0 10)` | Their own arena (0 creates a private one) |
+| `(vec-create a 10)`, `(map-create-default 10)` | The arena `a`, or a private one |
 
 Region inference decides the placement; anything it cannot prove
 short-lived goes to the heap, which is always safe. The heap arena is

@@ -101,7 +101,7 @@ Every phase must produce deterministic output from the same input:
 | Macro Expansion | Same expansion order (innermost-first) |
 | Type Inference | Same type assignments |
 | Region Inference | Same stack-promotion decisions |
-| Monomorphization | Same canonical names (alphabetical sort) |
+| Monomorphization | Same canonical names (argument types in order, §6.4) |
 | ICNF Generation | Same node tree and generated names |
 | Optimization | Same folding and dead-branch results |
 | Code Generation | Same instruction sequence and labels |
@@ -133,3 +133,8 @@ Not normative.
 - **Actors** are scheduled by the operating system
   (`spec/08-actors-and-concurrency.md`), so a program whose output depends
   on the interleaving of two actors is not deterministic.
+- **Specialization names** (§17): an instance of a trait-generic function
+  is named `f~T1,T2`, its argument types in argument order
+  (`ta-canon-list` in `type_annotate.zyl`), compound types written in
+  full (`List<Int>`, `fn<Int>String`). The name is deterministic and
+  distinct type maps get distinct names (§6.4, §17).

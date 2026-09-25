@@ -29,8 +29,8 @@ worth being exact about the difference:
   node. A variant that is only matched or printed is instead rewritten
   from `IVariant` to `IStackVariant`, and an explicit `with-region`
   scope is its own node, `IRegion` (§28.5).
-- **Phase position.** ICNF is produced after monomorphization, trait
-  dispatch, closure inlining and assert lowering, and consumed by the
+- **Phase position.** ICNF is produced after impl lifting, closure
+  inlining and type checking, and consumed by the
   optimizer, region inference and codegen, in that order (§28.6).
 - **Textual form.** `compiler/icnf_print.zyl` (`icnf-text`) writes the
   lowered program as canonical s-expressions, one function per line,
@@ -221,11 +221,10 @@ byte-buffer types.
 `stdlib/compiler/pipeline.zyl`'s middle section is the exact order:
 
 ```
-type inference (collect-definitions)
-  → monomorphization
-  → trait dispatch        (td-expand-program)
+derive expansion        (dv-expand-program)
+  → impl lifting          (lift-impls)
   → closure inlining      (ci-expand-program)
-  → assert lowering       (al-expand-program)
+  → type checking         (ta-annotate: strict HM, trait resolution, instances)
   → ICNF lowering         (ic-program)
   → optimization          (opt-optimize-fns)
   → region inference      (ri-transform-fns, then rg-regions)

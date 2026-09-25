@@ -11,9 +11,10 @@ coherence, resolution and derivation. The normative text is
 
 In brief: `trait` declarations, `impl` blocks and qualified
 `Trait.method` calls work, resolved statically from the receiver's
-inferred type. `derive Show` generates an impl, and the prelude's `Show`
-trait drives `print`. Coherence C1 and C3, bounds and the other derivable
-traits are not enforced or generated.
+inferred type. Every trait call must resolve to one impl at compile
+time; there is no run-time dispatch. `derive` generates impls of the six
+prelude traits, and the prelude's `Show` trait drives `print`. Bounds
+cannot be declared.
 
 ## 20.1 Trait Declaration
 
@@ -25,19 +26,35 @@ traits are not enforced or generated.
 
 ```lisp
 (trait Area
-  (area self))
+  (area (self) Int))
+
+(trait Ord                             ; stdlib/core/show.zyl
+  (compare (self (other Self)) Int))
 
 (trait OutputStream                    ; stdlib/io/io.zyl
-  (write (self T) (chunk String) Int)
-  (flush (self T) Int))
+  (write (self) (chunk String) Int)
+  (flush (self) Int))
 ```
 
 Rules from the specification: a trait lists method signatures, and §5.4
 supports recursive transitive bounds through `where`.
 
-A declaration records its method signatures, which type every call of
-the method (a `String` return type makes the call's result a String).
-The implementation does not check the declaration against impls:
+A method signature is its name, a parameter list that starts with
+`self`, and a return type. A parameter is a name or `(name Type)`;
+parameters written after the list, as in `write` above, are extra
+parameters. `Self` stands for the implementing type: `Ord.compare` takes
+two values of one type, so `(Ord.compare (make-V 5) 2)` is
+`E_TYPE_MISMATCH`, and `Clone.clone` returns `Self`.
+
+Write the parameters as a list. The older spelling `(area self)` is
+`E_MALFORMED_FORM` ("malformed `trait` form"). A return type
+may be left out, `(area (self))`, in which case the impl decides it.
+
+A declaration types every call of the method: the arguments must match
+its parameter types, and the call's result has its return type. An impl
+whose method disagrees with the declaration is reported at the calls.
+Otherwise the implementation does not check the declaration against
+impls:
 
 - there is no `where` clause;
 - an `impl` of a trait that was never declared compiles when the type
@@ -62,7 +79,7 @@ There are no default method bodies.
 (defstruct Circle (r))
 
 (trait Area
-  (area self))
+  (area (self) Int))
 
 (impl Area Rect
   (defn area (self) (* (struct-get self "w") (struct-get self "h"))))
@@ -87,13 +104,13 @@ There are no default method bodies.
   such impl, and an ambiguous call on a receiver of unknown type. A bare
   `(area r)` does not find the method.
 - **The receiver is the first argument.** Naming it `self` is convention.
-- **Parameters are not checked** against the declaration. They are
-  whatever the `defn` inside the `impl` says.
+- **Parameters are checked** through the declaration: an impl's `defn`
+  lists names only, and the declared types apply to them.
 - **Each method body is lifted** to a top-level function named
   `Trait.method_Type` (Chapter 19).
 
-The standard library's one trait is `OutputStream` in `io/io`, with
-impls for `Stdout` and `StringBuffer`:
+Besides the prelude traits (20.11), the standard library has
+`OutputStream` in `io/io`, with impls for `Stdout` and `StringBuffer`:
 
 ```lisp
 (use io/io)
@@ -117,7 +134,7 @@ all dispatch exactly:
 ```lisp
 (deftype Shape (Circ Int) (Sq Int))
 (deftype Tri (Tri Int))
-(trait Area (area self))
+(trait Area (area (self) Int))
 (impl Area Shape (defn area (self) (match self (Circ r (* 3 (* r r))) (Sq s (* s s)))))
 (impl Area Tri (defn area (self) (match self (Tri b b))))
 (impl Area Int (defn area (self) (* self 100)))
@@ -136,12 +153,12 @@ with (Chapter 19), and each instance resolves the call. An impl for a
 generic type, `(impl Show Vec ...)`, is handled the same way per element
 type.
 
-When inference cannot give the receiver one type (a list mixing two
-struct types, for example), the call falls back to a `match` on the
-receiver's runtime tag with one arm per implementing type. That is exact
-for structs, whose tags are unique; an arm named after a multi-variant
-ADT or a primitive acts as a catch-all, so keep such heterogeneous data
-to structs or wrap it in one ADT.
+There is no run-time fallback. A receiver whose type nothing fixes, such
+as the result of an untyped `receive`, is `E_CANNOT_INFER` ("cannot
+tell which impl of `Area.area` to call"); annotate the value's type.
+Data mixing two types, such as a list
+holding a `Circle` and a `Rect`, is already `E_TYPE_MISMATCH`. Wrap such
+data in one ADT (20.5).
 
 ## 20.3 Coherence Rules (Normative, §5.3)
 
@@ -224,9 +241,8 @@ Not supported in v5.0: there is no `dyn` type and no vtable.
 (defn process (items (Vec (dyn Drawable))) ...)
 ```
 
-The runtime fallback of 20.2 behaves like dynamic dispatch over a
-closed set of struct types, because the receiver's runtime tag selects
-the method. The usual alternatives still apply:
+Every trait call is resolved at compile time (20.2). The usual
+alternatives apply:
 
 1. **An ADT wrapper**, such as `(deftype Drawable (DCircle Circle) (DRect Rect))`,
    with one function that matches on it.
@@ -315,12 +331,12 @@ is redacted by `Show` and `Debug`, but a record with one cannot derive
 What the operators give you without a derive:
 
 - **Equality.** `==`, `!=` and `assert-equal` on two struct or ADT values
-  compare by content, through an equality function the type-annotation
-  pass generates per type. A type with a `Secret` field, or a value of a
-  type inference cannot determine, gets the runtime's shallow comparison.
-- **Ordering.** `<`, `>`, `<=` and `>=` compare the fields
-  lexicographically, and are shallow: a string or nested-ADT field is
-  compared by address. Use a derived `Ord` for a real ordering.
+  of one type compare by content, through an equality function the
+  type-annotation pass generates per type. A type with a `Secret` field
+  gets the runtime's shallow comparison.
+- **Ordering.** There is none: `<`, `>`, `<=` and `>=` take only `Int`,
+  `Float` and `String`, and on a struct or ADT value they are
+  `E_TYPE_MISMATCH`. Derive `Ord` and call `Ord.compare`.
 
 ## 20.7 Derivation Errors
 
@@ -344,7 +360,7 @@ an associated type, have the method return a concrete ADT, as §21.10's
 
 ```lisp
 (trait Iterator
-  (next (self T) (Option T)))
+  (next (self) (Option T)))
 ```
 
 §21.10 says collections implement `Iterator` for `for` loops. No
@@ -365,15 +381,20 @@ collection does today, and `for` is a condition loop (§12.6).
 
 | Trait | Methods | Impls | Where |
 |-------|---------|-------|-------|
-| `Show` | `show` (returns `String`) | `Int`, `Float`, `Bool`, `String` (`core/show`); `List`, `Option`, `Result` (core); `Vec` (`collections/vec`); `Map` (`core/map`) | prelude |
+| `Show` | `(show (self) String)` | `Int`, `Float`, `Bool`, `String` (`core/show`); `List`, `Option`, `Result` (core); `Vec` (`collections/vec`); `Map` (`core/map`) | prelude |
+| `Debug` | `(debug (self) String)` | as `Show`, for the primitives and prelude ADTs | prelude |
+| `Eq` | `(eq (self (other Self)) Bool)` | same | prelude |
+| `Ord` | `(compare (self (other Self)) Int)` | same | prelude |
+| `Hash` | `(hash (self) Int)` | same | prelude |
+| `Clone` | `(clone (self) Self)` | same | prelude |
+| `Secret` | `(wipe (self) Int)` | key-material types (Chapter 33) | prelude |
 | `OutputStream` | `write`, `flush` | `Stdout`, `StringBuffer` | `stdlib/io/io.zyl` |
 
 `print` of a value whose type has a `Show` impl prints `(Show.show v)`;
 Int, Float, Bool and String print natively as before. Containers show as
 `[a, b]`, `{k: v}`, `Some(x)`, `Ok(x)`; a String inside one is not
-quoted. The other derivable traits of §5.6 and `Iterator` (§21.10) are
-named in the specification but not defined as traits in the standard
-library.
+quoted. `Iterator` (§21.10) is named in the specification but not
+defined in the standard library.
 
 ## 20.12 Comparison with Rust
 
@@ -382,7 +403,7 @@ library.
 | Declaration | `trait Foo { fn bar(&self); }` | `(trait Foo (bar (self) Ret))`; signatures type calls |
 | Implementation | `impl Foo for Bar { ... }` | `(impl Foo Bar (defn bar (self) ...))` |
 | Call | `x.bar()` | `(Foo.bar x)` |
-| Dispatch | static, or `dyn` | static from inferred types; runtime tag match as fallback |
+| Dispatch | static, or `dyn` | static from inferred types only |
 | Supertraits | `trait Foo: Bar` | not supported |
 | Default methods | yes | no |
 | Trait objects | `dyn Trait` | no |

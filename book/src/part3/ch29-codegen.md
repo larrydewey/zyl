@@ -58,7 +58,8 @@ to choose:
 - structural `=`/`!=` on Strings (`zyl_cstr_eq`) and on variants
   (`zyl_variant_eq`, a shallow fallback: an ADT comparison whose type is
   known has already become a call to a generated `T.==` function in
-  `type_annotate.zyl`; ordering comparisons use `zyl_variant_cmp`)
+  `type_annotate.zyl`; the type pass rejects ordering on an ADT, so no
+  ordering comparison reaches the runtime)
 
 `kind-of` has no return-type inference. A function's result kind is
 read off its body when that body has a fixed shape; otherwise it
@@ -499,9 +500,9 @@ main:
 `zyl_call_on_big_stack` runs the user's `main` on a pthread whose stack
 is reserved with `mmap` — 64 GiB, falling back to 16, 4 and 1 GiB —
 with a guard page at the bottom, and returns its result as the
-process's exit code. `print` always evaluates to 0, so a `main` that
-ends in `print` exits 0, and one that ends in `(run-tests)` exits with
-the test harness's pass/fail status.
+process's exit code. `main` returns an `Int`, usually a final `0`;
+a `main` that ends in `print`, a `Unit`, is `E_TYPE_MISMATCH`. A program built from top-level `test`
+forms exits 0 even when a test fails; read the summary line.
 
 ## 29.10 FFI Call Sequence
 
@@ -510,7 +511,12 @@ aligned `call`, the result in `rax`. Before lowering, `ffi-check-call`
 (`arity_check.zyl`) requires the symbol of `(ffi-call "sym" arg...
 timeout)` to be a string literal (`E_FFI_SYMBOL_REQUIRED`) and the last
 argument to be a positive integer literal (`E_FFI_TIMEOUT_REQUIRED`),
-so a forgotten timeout can no longer swallow a real argument. A symbol
+so a forgotten timeout can no longer swallow a real argument. The type
+pass has already given the call a type: a `zyl_` symbol from the
+signature table in `ffi_sigs.zyl`, any other from its
+`(extern "sym" (T ...) R)` declaration, whose types all fit in one
+integer register (which is why `Float` is refused there for now). A
+symbol
 of the runtime (`zyl_` prefix) is called directly and its timeout is
 dropped. Any other symbol is called through the runtime's
 `zyl_ffi_timed`, which receives the symbol's address, its name, the

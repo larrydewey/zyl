@@ -17,7 +17,7 @@ defmacro ::= "(" "defmacro" Identifier "(" Identifier* ")" Body ")"
 `(macro name ...)` is accepted as a synonym.
 
 - **Parameters** are plain identifiers. Spec §19.1 calls them patterns; the implementation has no destructuring, literal or rest parameters. A parameter that is not an identifier is `E_MALFORMED_PARAMETER`.
-- **The body** is ordinary Zyl code, not a quoted template. If the body has several forms, only the last is kept, silently, so wrap multiple forms in `begin`.
+- **The body** is ordinary Zyl code, not a quoted template. It is exactly one form: a `defmacro` with several body forms is `E_MALFORMED_FORM`, so wrap them in `begin`.
 - **Expansion** happens at compile time. Macro definitions are removed from the program once expanded.
 - **Top level only.** A `defmacro` inside a function body or any other form is `E_MACRO_ILLEGAL_ACCESS`: its template could name the run-time variables around it, which a compile-time rewrite cannot see.
 
@@ -26,14 +26,15 @@ defmacro ::= "(" "defmacro" Identifier "(" Identifier* ")" Body ")"
 A macro call `(name arg1 arg2 ...)` is replaced by the macro's body, with every occurrence of a parameter name replaced by the corresponding **unevaluated argument expression**, and every variable the body itself binds renamed (§23.4). Nothing in the body runs at compile time: an `if`, a `match` or a call in the body is copied into the program and runs when the program runs.
 
 ```lisp
-(defmacro my-unless (c body) (if c 0 body))
+(defmacro my-unless (c body) (if c unit body))
 (defmacro my-when (c body) (my-unless (not c) body))
+(defmacro pick-unless (c a b) (if c b a))
 
 (defn main ()
   (begin
     (my-when true (print "when-true runs"))
     (my-when false (print "when-false runs"))
-    (print (my-unless false 42))
+    (print (pick-unless false 42 0))
     0))
 ```
 
@@ -43,6 +44,8 @@ Output:
 when-true runs
 42
 ```
+
+The expansion is type-checked like code written by hand, after expansion. Both branches of an `if` have one type, so `my-unless` returns `unit` for the skipped case and its body must be Unit, as `print` is; `(my-unless false 42)` is `E_TYPE_MISMATCH`. A macro that yields a value takes it for both branches, as `pick-unless` does. The condition must be a `Bool`.
 
 Because arguments are substituted, not evaluated, an argument used twice in the body is evaluated twice:
 
@@ -130,7 +133,7 @@ The implementation:
 4. **Re-expansion.** The result is walked again, so macros used inside a macro body expand too. This is how `my-when` expands through `my-unless` above.
 
 ```lisp
-(defn main () (print (triple 7)))       ; used before its definition: prints 21
+(defn main () (print (triple 7)) 0)     ; used before its definition: prints 21
 
 (defmacro triple (x) (+ x (+ x x)))
 ```
@@ -159,9 +162,9 @@ A chain of distinct macros nested more than 256 deep is also `E_MACRO_NON_TERMIN
 
 | Form | Desugaring |
 |------|------------|
-| `(and e1 e2 ...)` | `(if e1 (and e2 ...) false)`; the last operand is returned as is |
-| `(or e1 e2 ...)` | `(if e1 true (or e2 ...))`; the last operand is returned as is |
-| `(cond (c1 b1) ... (else b))` | nested `if` |
+| `(and e1 e2 ...)` | `(if e1 (and e2 ...) false)` |
+| `(or e1 e2 ...)` | `(if e1 true (or e2 ...))` |
+| `(cond (c1 b1) ... (else b))` | nested `if`; a clause guarded by `true` or `else` ends it |
 | `(not e)` | negation |
 
 Both `and` and `or` short-circuit:
@@ -171,7 +174,7 @@ Both `and` and `or` short-circuit:
 ;; prints "a", then the result 0 (false)
 ```
 
-`(or 5 6)` yields `true` (printed as `1`), not 5, because a non-final operand that succeeds yields `true`. `(or false 7)` yields 7.
+Every operand is a `Bool`, and so is the result: `(or 5 6)` is `E_TYPE_MISMATCH`, since an `Int` is not a condition. A `cond` without a `true` or `else` clause is Unit, like an `if` without an else.
 
 `begin` is a core form. There is no `let*`, and no `when` or `unless` form (`when` is only a keyword inside `match` guards). User macros named `when`, `unless` and so on work as shown above.
 
@@ -193,6 +196,7 @@ Both `and` and `or` short-circuit:
 | `E_MACRO_ILLEGAL_ACCESS` | a `defmacro` inside a function body or other form |
 | `E_ARITY_MISMATCH` | a macro call with the wrong number of arguments |
 | `E_DUPLICATE_DEFINITION` | two macros with one name, or a macro and a function with one name in one file |
+| `E_MALFORMED_FORM` | a `defmacro` with no body or with more than one body form |
 | `E_MALFORMED_PARAMETER` | a macro parameter that is not an identifier, or a non-identifier argument used where the body needs a name |
 | `E_UNBOUND_VARIABLE` | a body names a variable that is local at the call site but unbound where the macro is defined (§23.4) |
 
@@ -212,7 +216,7 @@ There is no flag that prints the expanded program and no REPL command for macro 
 ### Syntax sugar over existing forms
 
 ```lisp
-(defmacro my-unless (c body) (if c 0 body))
+(defmacro my-unless (c body) (if c unit body))
 (defmacro inc! (v) (+ v 1))
 ```
 
@@ -221,12 +225,12 @@ There is no flag that prints the expanded program and no REPL command for macro 
 ```lisp
 (defn debug-enabled () false)
 
-(defmacro debug (body) (if (debug-enabled) body 0))
+(defmacro debug (body) (if (debug-enabled) body))
 
-(debug (print "debug output"))   ; expands to (if (debug-enabled) (print ...) 0)
+(debug (print "debug output"))   ; expands to (if (debug-enabled) (print ...))
 ```
 
-The condition is tested at run time. A macro cannot remove code at compile time, because its body is never evaluated.
+An `if` without an else is Unit, so `debug` takes only Unit bodies. The condition is tested at run time. A macro cannot remove code at compile time, because its body is never evaluated.
 
 ### Evaluating an argument exactly once
 

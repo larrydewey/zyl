@@ -88,6 +88,13 @@ zyl hello.zyl --error-format=json     # diagnostics as JSON, one per line
 stderr as one JSON object per line (Appendix A, §A.1). A program the
 compiler builds is not affected; its own panics stay plain text.
 
+The type checker reports every type error in a file before it stops.
+While porting code written for the old, lenient checker,
+`ZYL_STRICT_TYPES=report` turns those errors into `W_TYPE_STRICT`
+warnings so you can see the whole list shrink; the compile then goes
+on, but a program built that way is not one the compiler vouches for.
+Leave the variable unset for real builds.
+
 The compiler changes directory to its bundle (the directory holding
 `stdlib/` and `actor_runtime.c`: `$ZYL_HOME` or `~/.zyl` if it holds a
 `stdlib/`, else the directory the binary is in) before it compiles, and
@@ -149,7 +156,7 @@ zyl> (Some "hi")
 ```
 
 Every entry goes through the real compiler's phases — parsing, macro
-expansion, every check, type inference, monomorphization and ICNF
+expansion, every check, impl lifting, type checking and ICNF
 lowering, the same `compile-to-fns` the CLI uses — and is then
 *evaluated* by an ICNF interpreter (`stdlib/repl/interp.zyl`) in the
 REPL's own process rather than compiled and linked. That is why an
@@ -183,9 +190,13 @@ highlighting as you type. `docs/repl.md` has the full key table.
 | `:reset` | `:r` | forget everything, including the saved session |
 | `:clear` | `:cls` | clear the screen |
 
-`:type` is honest about what inference knows: `"hi"` is `String`, but
-many applications come back as *unresolved* (Chapter 30, §30.3
-explains why). Relative paths in `:load` and `:save` resolve against
+`:type` reports the type the checker assigns: `(+ 1 2)` is `Int`,
+`(str-eq "a" "b")` is `Bool`, `(fn (x) x)` is `(a -> a)`. An entry that
+does not type-check is rejected with the same `E_TYPE_MISMATCH` the
+compiler would print, and nothing is evaluated. One flaw to know: the
+source line shown under such an error can be a line of an earlier
+entry rather than the one you typed; trust the message, not the
+snippet. Relative paths in `:load` and `:save` resolve against
 the directory you started in.
 
 ### What carries over
@@ -330,7 +341,8 @@ Diagnostics come from running the real checks — `duplicate_check`,
 `arity_check`, `mutability_check`, `exhaustiveness_check` and
 `secret_check` — in the order `stdlib/compiler/pipeline.zyl` runs them,
 plus `unused_check`, whose unused-binding and shadowing warnings appear
-as Warning diagnostics. Each diagnostic sits at the line and column the
+as Warning diagnostics. The type checker is not among them, so a type
+error shows up only when you compile (or run `zyl.evalDocument`). Each diagnostic sits at the line and column the
 compiler reports. The package capability check (`capability_check`, spec
 §31.9) is not run in the editor.
 

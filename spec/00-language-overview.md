@@ -76,7 +76,7 @@ Phases (strict order):
 3. Type Inference + Trait Resolution — includes derive validation;
    validates struct field types and mutability; validates alias targets
 4. Region Inference + Capture Analysis — assigns regions (Stack, Heap, Pin, etc.)
-5. Monomorphization (alphabetical determinism)
+5. Monomorphization (deterministic naming, §17)
 6. ICNF Generation (SSA IR)
 7. Optimization (safe only)
 8. Code Generation
@@ -96,21 +96,28 @@ The self-hosted pipeline (`compile-to-asm` in
 3. module resolution and name qualification (`module_resolver.zyl`,
    `qualify.zyl`), which also converts the tree to `ExprInner`
 4. macro expansion (`macro_expand.zyl`)
-5. static checks: capabilities, duplicate definitions, arity, mutability,
+5. static checks: capabilities, duplicate definitions (including
+   prelude constructor names), arity and malformed forms, mutability,
    match exhaustiveness, unused bindings, Secret taint
-6. type inference (`collect-definitions`), monomorphization, trait
-   dispatch expansion
-7. closure inlining and assert lowering
-8. ICNF lowering (`icnf.zyl`)
-9. optimization (`optimization.zyl`)
-10. region inference (`ri-transform-fns`, a stack-promotion rewrite over
-    ICNF)
-11. code generation (`codegen.zyl`), then linking with `cc`
+6. derive expansion (`derive.zyl`) and impl lifting (`lift_impls.zyl`,
+   each impl method becomes `Trait.method_Type`)
+7. closure inlining (`closure_inline.zyl`, now an identity pass)
+8. type checking (`type_annotate.zyl`): Hindley–Milner inference, static
+   trait resolution, per-type specialization of trait-generic functions,
+   generated structural `T.==`; every type error is reported, then the
+   compile fails (§4.8)
+9. ICNF lowering (`icnf.zyl`)
+10. optimization (`optimization.zyl`)
+11. region inference (`ri-transform-fns`, then the escape analysis
+    `rg-regions`)
+12. code generation (`codegen.zyl`), then linking with `cc`
 
-This differs from §22: module resolution precedes macro expansion,
-region inference runs after ICNF generation and optimization rather than
-before monomorphization, contract injection is not wired in, and hash
-finalization happens only for package builds (`zyl.buildinfo`, see
+This differs from §22: module resolution precedes macro expansion, type
+checking and trait resolution run after derive expansion and impl
+lifting, region inference runs after ICNF generation and optimization
+rather than before monomorphization, contracts are lowered while the
+parse tree is converted (`expr_inner.zyl`), and hash finalization
+happens only for package builds (`zyl.buildinfo`, see
 `14-determinism-and-hashing.md`).
 
 ---

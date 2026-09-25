@@ -80,8 +80,8 @@ acme/json/v2@2::json/parser::parse   ; different major
 ```
 
 Two packages may define the same name; so may two modules within a package.
-The key doubles as monomorphization's sort key, keeping the canonical
-alphabetical ordering (§17) total over any graph.
+The key is also how a named type is written in a specialized instance's
+name (§6.4, §17), so instance names stay distinct over any graph.
 
 ### Mangling (must be injective)
 
