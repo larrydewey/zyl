@@ -13,6 +13,7 @@
 (use compiler/type_system)
 (use compiler/expr_inner)
 (use compiler/error_report)
+(use compiler/ffi_sigs)
 
 ; Types. Negative TaV ids are template slots (see ta-inst).
 (deftype TaTy (TaV Int) (TaC String (List TaTy)) (TaF (List TaTy) TaTy))
@@ -1048,8 +1049,8 @@
   (if (ta-key-is n "str-concat") (ta-sig2 (ta-str) (ta-str) (ta-str))
   (if (ta-key-is n "str-length") (TaF (Cons (ta-str) Nil) (ta-int))
   (if (ta-key-is n "str-substring") (TaF (ta-l3 (ta-str) (ta-int) (ta-int)) (ta-str))
-  (if (ta-key-is n "str-equal") (ta-sig2 (ta-str) (ta-str) (ta-dk st "str-equal result"))
-  (if (ta-key-is n "str-eq") (ta-sig2 (ta-str) (ta-str) (ta-dk st "str-eq result"))
+  (if (ta-key-is n "str-equal") (ta-sig2 (ta-str) (ta-str) (if (ta-strict-p) (ta-int) (ta-fresh st)))
+  (if (ta-key-is n "str-eq") (ta-sig2 (ta-str) (ta-str) (if (ta-strict-p) (ta-int) (ta-fresh st)))
   (if (ta-key-is n "print-string") (TaF (Cons (ta-str) Nil) (ta-int))
   (if (ta-key-is n "print-float") (TaF (Cons (ta-flt) Nil) (ta-int))
   0))))))))
@@ -1125,11 +1126,97 @@
   (match args
     (Nil (ta-dk st "ffi-call shape"))
     (Cons sym rest
-      (let _ (ta-ffi-args st ctx env (ta-butlast rest))
+      (let ats (ta-list st ctx env (ta-butlast rest))
         (let _ (ta-list st ctx env (ta-last-only rest))
         (match (Expr.inner sym)
-          (EAtom a (match a (AStr s (ta-ffi-ret st s)) (_ (ta-dk st "ffi-call symbol"))))
+          (EAtom a (match a (AStr s (ta-ffi-typed st s ats)) (_ (ta-dk st "ffi-call symbol"))))
           (_ (ta-dk st "ffi-call symbol"))))))))
+
+; In strict mode a symbol with a signature (compiler/ffi_sigs) is typed by
+; it: the arguments unify with its parameters and the result is its
+; result. Otherwise the old behaviour (a few String results, else unknown).
+(defn ta-ffi-typed (st s ats)
+  (let spec (if (ta-strict-p) (ffi-sig s) "")
+    (if (= (str-length spec) 0)
+      (ta-ffi-ret st s)
+      (match (ta-sig-parse st spec)
+        (TaF ps ret
+          (if (= (list-length ps) (list-length ats))
+            (let _ (ta-unify-pairs st ats ps) ret)
+            (let _ (ta-strict (str-concat "wrong number of arguments to " s)) ret)))
+        (_ (ta-dk st "ffi signature"))))))
+
+(defn ta-unify-pairs (st xs ys)
+  (match xs
+    (Nil 0)
+    (Cons x xr
+      (match ys
+        (Nil 0)
+        (Cons y yr (let _ (ta-unify st x y) (ta-unify-pairs st xr yr)))))))
+
+; --- signature text: "A B -> R", types Int Float Bool String Unit, a
+; capitalized name with arguments in parentheses "(SMap v)", and lowercase
+; names as type variables shared across one signature.
+(deftype TaSP (TaSP TaTy Int (List (Pair String TaTy))))
+
+(defn ta-sig-parse (st spec)
+  (ta-sig-params st spec 0 Nil Nil))
+
+(defn ta-sig-params (st spec i acc vars)
+  (let j (ta-sig-skip spec i)
+    (if (ta-sig-arrow spec j)
+      (match (ta-sig-type st spec (ta-sig-skip spec (+ j 2)) vars)
+        (TaSP ret _ _ (TaF (list-reverse acc) ret)))
+      (if (>= j (str-length spec))
+        (TaF (list-reverse acc) (ta-unit-ty))
+        (match (ta-sig-type st spec j vars)
+          (TaSP t k vars2 (ta-sig-params st spec k (Cons t acc) vars2)))))))
+
+(defn ta-sig-byte (spec i)
+  (if (>= i (str-length spec)) 0 (ffi-call "zyl_cstr_byte_at" spec i 1000)))
+
+(defn ta-sig-skip (spec i)
+  (if (= (ta-sig-byte spec i) 32) (ta-sig-skip spec (+ i 1)) i))
+
+(defn ta-sig-arrow (spec i)
+  (and (= (ta-sig-byte spec i) 45) (= (ta-sig-byte spec (+ i 1)) 62)))
+
+(defn ta-sig-word-end (spec i)
+  (let c (ta-sig-byte spec i)
+    (if (or (= c 0) (or (= c 32) (or (= c 40) (= c 41)))) i (ta-sig-word-end spec (+ i 1)))))
+
+; One type starting at i: a word, or (Name arg...).
+(defn ta-sig-type (st spec i vars)
+  (let j (ta-sig-skip spec i)
+    (if (= (ta-sig-byte spec j) 40)
+      (let k (ta-sig-word-end spec (+ j 1))
+        (let name (str-substring spec (+ j 1) (- k (+ j 1)))
+          (ta-sig-args st spec k vars name Nil)))
+      (let k (ta-sig-word-end spec j)
+        (ta-sig-word st (str-substring spec j (- k j)) k vars)))))
+
+(defn ta-sig-args (st spec i vars name acc)
+  (let j (ta-sig-skip spec i)
+    (if (= (ta-sig-byte spec j) 41)
+      (TaSP (TaC name (list-reverse acc)) (+ j 1) vars)
+      (match (ta-sig-type st spec j vars)
+        (TaSP t k vars2 (ta-sig-args st spec k vars2 name (Cons t acc)))))))
+
+(defn ta-sig-word (st w k vars)
+  (let c (ffi-call "zyl_cstr_byte_at" w 0 1000)
+    (if (and (>= c 97) (<= c 122))
+      (let found (ta-sig-var-find vars w)
+        (match found
+          (Some t (TaSP t k vars))
+          (None (let v (ta-fresh st) (TaSP v k (Cons (Pair w v) vars))))))
+      (TaSP (TaC w Nil) k vars))))
+
+(defn ta-sig-var-find (vars w)
+  (match vars
+    (Nil None)
+    (Cons p rest
+      (match p
+        (Pair k t (if (ta-streq k w) (Some t) (ta-sig-var-find rest w)))))))
 
 (defn ta-butlast (xs)
   (match xs

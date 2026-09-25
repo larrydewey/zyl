@@ -1,0 +1,18 @@
+; === Zyl Compiler — Runtime Function Signatures ===
+; Module: compiler/ffi_sigs
+;
+; The type of every runtime function reached through `ffi-call`
+; (docs/sound-types-design.md). The type pass (type_annotate.zyl,
+; ta-ffi-typed) reads these in strict mode; a symbol missing here is an
+; untyped result. Syntax: parameter types, `->`, the result type; a
+; capitalized name with arguments in parentheses is a type constructor,
+; e.g. "(SMap v)", and a lowercase name is a type variable shared across
+; the signature. Must agree with runtime/actor_runtime.c.
+
+(defn ffi-sig (s)
+  (if (> (str-eq s "zyl_panic") 0) "String -> a"
+  (if (> (str-eq s "zyl_cstr_len") 0) "String -> Int"
+  (if (> (str-eq s "zyl_cstr_byte_at") 0) "String Int -> Int"
+  (if (> (str-eq s "zyl_cstr_eq") 0) "String String -> Int"
+  (if (> (str-eq s "zyl_int_text") 0) "Int -> String"
+  ""))))))
