@@ -17,6 +17,7 @@
 
 (use allocator/allocator)
 (use compiler/ast)
+(use compiler/lexer)
 (use compiler/sexp_balance)
 (use compiler/error_codes)
 (use compiler/error_report)
