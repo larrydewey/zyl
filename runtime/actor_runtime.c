@@ -2288,13 +2288,18 @@ long long zyl_heap_alloc(long long size) {
    chunks sit far above 4 GiB, which matters: zyl_callN and generated code
    tell a closure object from a code address partly by where it lies.
    ========================================================================== */
-#define ZYL_RBLOCK_SIZE (64 * 1024)
-#define ZYL_RCHUNK_BLOCKS 16
+/* Block size classes: a region's first block is small, and each further
+   block is the next class up, so a deep recursion whose every frame keeps
+   a little local data costs about 1 KiB a frame, not a whole block. */
+#define ZYL_RCLASSES 4
+static const size_t g_rclass_size[ZYL_RCLASSES] = { 1024, 4096, 16384, 65536 };
+#define ZYL_RCHUNK_BYTES (1024 * 1024)
 
 typedef struct ZylRBlock {
     struct ZylRBlock* next;
     size_t size;          /* bytes, header included */
     int big;              /* its own mapping, unmapped on release */
+    int cls;              /* size class, when not big */
 } ZylRBlock;
 
 typedef struct ZylRegion {
@@ -2317,8 +2322,7 @@ typedef struct ZylRegion {
 
 __thread ZylRegion* zyl_cur_region = 0;
 __thread ZylRegion* zyl_region_top = 0;
-static __thread ZylRBlock* g_rpool = 0;
-static __thread long long g_rpool_n = 0;
+static __thread ZylRBlock* g_rpool[ZYL_RCLASSES];
 static long long g_region_live = 0;   /* bytes in blocks handed to regions */
 
 static void* zyl_rmap(size_t n) {
@@ -2331,30 +2335,34 @@ static void* zyl_rmap(size_t n) {
     return p;
 }
 
-static ZylRBlock* zyl_rblock_get(size_t need) {
+/* A block for a region that already holds `nblocks` blocks. */
+static ZylRBlock* zyl_rblock_get(size_t need, int nblocks) {
     size_t hdr = sizeof(ZylRBlock);
-    if (need + hdr > ZYL_RBLOCK_SIZE) {
+    int cls = nblocks < ZYL_RCLASSES ? nblocks : ZYL_RCLASSES - 1;
+    while (cls < ZYL_RCLASSES && need + hdr > g_rclass_size[cls]) cls++;
+    if (cls >= ZYL_RCLASSES) {
         size_t n = (need + hdr + 4095) & ~(size_t)4095;
         ZylRBlock* b = (ZylRBlock*)zyl_rmap(n);
         b->size = n;
         b->big = 1;
+        b->cls = -1;
         b->next = 0;
         return b;
     }
-    if (!g_rpool) {
-        char* c = (char*)zyl_rmap((size_t)ZYL_RBLOCK_SIZE * ZYL_RCHUNK_BLOCKS);
-        for (int i = 0; i < ZYL_RCHUNK_BLOCKS; i++) {
-            ZylRBlock* b = (ZylRBlock*)(c + (size_t)i * ZYL_RBLOCK_SIZE);
-            b->size = ZYL_RBLOCK_SIZE;
+    if (!g_rpool[cls]) {
+        size_t sz = g_rclass_size[cls];
+        char* c = (char*)zyl_rmap(ZYL_RCHUNK_BYTES);
+        for (size_t off = 0; off + sz <= ZYL_RCHUNK_BYTES; off += sz) {
+            ZylRBlock* b = (ZylRBlock*)(c + off);
+            b->size = sz;
             b->big = 0;
-            b->next = g_rpool;
-            g_rpool = b;
+            b->cls = cls;
+            b->next = g_rpool[cls];
+            g_rpool[cls] = b;
         }
-        g_rpool_n += ZYL_RCHUNK_BLOCKS;
     }
-    ZylRBlock* b = g_rpool;
-    g_rpool = b->next;
-    g_rpool_n--;
+    ZylRBlock* b = g_rpool[cls];
+    g_rpool[cls] = b->next;
     b->next = 0;
     return b;
 }
@@ -2423,7 +2431,9 @@ long long zyl_ralloc(long long size, long long rp) {
     }
     size_t need = (size_t)((size + 7) / 8) * 8 + 8;
     if (!r->bump || (size_t)(r->end - r->bump) < need) {
-        ZylRBlock* b = zyl_rblock_get(need);
+        int nb = 0;
+        for (ZylRBlock* q = ZYL_RBLOCKS(r); q && nb < ZYL_RCLASSES; q = q->next) nb++;
+        ZylRBlock* b = zyl_rblock_get(need, nb);
         b->next = ZYL_RBLOCKS(r);
         ZYL_RSET_BLOCKS(r, b);
         __atomic_add_fetch(&g_region_live, (long long)b->size, __ATOMIC_RELAXED);
@@ -2448,9 +2458,8 @@ static void zyl_region_free_blocks(ZylRegion* r) {
         } else {
             /* Pool blocks are reused, never unmapped: a chunk is one
                mapping, so its blocks cannot be returned one by one. */
-            b->next = g_rpool;
-            g_rpool = b;
-            g_rpool_n++;
+            b->next = g_rpool[b->cls];
+            g_rpool[b->cls] = b;
         }
         b = next;
     }
