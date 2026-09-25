@@ -1,9 +1,9 @@
 ; === Zyl LSP — Document Manager ===
 ; Module: lsp/document_manager
 ;
-; Per-document analysis cache. It stops at macro expansion, the checks
-; and a flat SymTable pass (see lsp/compiler_bridge's header); it does
-; not run the type checker.
+; Per-document analysis cache. It runs the front end, the checks, the
+; type checker and a flat SymTable pass (see lsp/compiler_bridge's
+; header); nothing after type checking runs.
 ;
 ; The checks that run here are the ones compiler/pipeline.zyl's
 ; compile-run-checks runs (the same front end selfhost/driver.zyl uses),
@@ -22,10 +22,12 @@
 ;     of spec v5.0 §31.9. It needs the grants and denials that
 ;     mr-resolve-program-full returns; dm-frontend calls the plain
 ;     mr-resolve-program, which returns only the resolved forms.
-;   - type checking (compiler/type_annotate) and everything after it.
+;   - everything after type checking (ICNF lowering onward).
 ;
-; Because every check panics on its FIRST problem, a document reports
-; one diagnostic at a time -- fix it, save, see the next. That matches
+; Because every check before the type checker panics on its FIRST
+; problem, such a document reports one diagnostic at a time -- fix it,
+; save, see the next. The type checker, like the compiler's, reports
+; every type error in the document at once (dm-type-diagnostics). That matches
 ; the compiler's own behavior exactly, which is the point: the editor
 ; should never claim a program is fine that `zyl` would reject, nor the
 ; reverse. The passes left out above are the known exceptions: a
@@ -52,6 +54,10 @@
 (use compiler/secret_check)
 (use compiler/unused_check)
 (use compiler/sexp_balance)
+(use compiler/derive)
+(use compiler/lift_impls)
+(use compiler/closure_inline)
+(use compiler/type_annotate)
 (use lsp/compiler_bridge)
 
 (deftype DocState
@@ -139,7 +145,7 @@
   (let front (try (Ok (dm-frontend arena (lsp-uri-path (Document.uri doc)) text)) (catch e (Err e)))
     (match front
       (Err msg (DS doc (Document.version doc) (st-new) (Cons (diagnostic-from-panic msg text) Nil)))
-      (Ok exprs (dm-check-and-index doc text exprs)))))
+      (Ok exprs (dm-check-and-index arena doc text exprs)))))
 
 ; Parse, resolve modules, expand macros. Anything that fails here left
 ; no usable program behind, so there is nothing to index and the
@@ -147,20 +153,28 @@
 ; The resolver works on the raw parse tree and needs the document's path,
 ; which is how it finds the package this file belongs to (spec v5.0
 ; §31.3) and therefore what its definitions are named.
+; The document is parsed under its own path, so the type checker's
+; located reports name it and dm-type-diagnostics can keep this file's.
+; Field types recorded by an earlier analysis are cleared first, as a
+; compile does (compiler/pipeline.zyl's compile-to-exprs).
 (defn dm-frontend (arena path text)
-  (let prog (zyl-parse arena text)
-    (me-expand-program (mr-resolve-program arena prog path))))
+  (let _ (field-types-clear)
+    (let prog (zyl-parse-file arena text (dm-source-path path))
+      (me-expand-program (mr-resolve-program arena prog path)))))
+
+(defn dm-source-path (path) (if (= (str-length path) 0) "<input>" path))
 
 ; Past the front end there IS a program, so the symbol table is built
 ; first and kept whatever the checks then say. A document that fails
 ; exhaustiveness still offers hover, completion and go-to-definition
 ; for every name it declares -- which is exactly when you want them.
-(defn dm-check-and-index (doc text exprs)
+(defn dm-check-and-index (arena doc text exprs)
   (let tbl (st-build exprs)
     (let warns (dm-unused-warnings exprs text)
       (let outcome (try (Ok (dm-run-checks exprs)) (catch e (Err e)))
         (match outcome
-          (Ok _ (DS doc (Document.version doc) tbl warns))
+          (Ok _ (DS doc (Document.version doc) tbl
+                  (list-append (dm-type-diagnostics arena exprs text (dm-source-path (lsp-uri-path (Document.uri doc)))) warns)))
           (Err msg (DS doc (Document.version doc) tbl (Cons (diagnostic-from-panic msg text) warns))))))))
 
 ; unused_check's warnings, captured instead of printed, as Warning diagnostics.
@@ -170,6 +184,22 @@
       (let w (ffi-call "zyl_warn_take" 1000)
         (let _ (ffi-call "zyl_warn_capture" false 1000)
           (diagnostics-from-warnings w text))))))
+
+; The type checker's errors in this document, after the steps that
+; precede it in compiler/pipeline.zyl's lower-exprs (derive expansion,
+; impl lifting, closure inlining). It reports every error through
+; zyl_warn_emit, captured here, and then panics; the panic only says how
+; many there were, so it is dropped. A panic with nothing captured (a
+; failure inside one of the earlier steps) is reported as itself.
+(defn dm-type-diagnostics (arena exprs text path)
+  (let _ (ffi-call "zyl_warn_capture" true 1000)
+    (let outcome (try (Ok (ta-annotate (ci-expand-program arena (lift-impls (dv-expand-program exprs))))) (catch e (Err e)))
+      (let w (ffi-call "zyl_warn_take" 1000)
+        (let _ (ffi-call "zyl_warn_capture" false 1000)
+          (let found (diagnostics-from-errors w text path)
+            (match outcome
+              (Ok _ found)
+              (Err msg (if (= (str-length w) 0) (Cons (diagnostic-from-panic msg text) Nil) found)))))))))
 
 ; The checks compiler/pipeline.zyl's compile-run-checks runs, in the same
 ; order. See this file's header for the ones it leaves out and why.

@@ -32,9 +32,12 @@ The most incredible developer experience for a systems Lisp. Every error is acti
   stderr without failing the compile; `secret_check.zyl` reports
   `E_ZEROIZE_MISSING` at severity 2.
 - **LSP diagnostics**: `stdlib/lsp/compiler_bridge.zyl` turns a balance
-  result or a compiler panic message into an LSP `Diagnostic` with the
-  code, a range (from the first backticked name in the message) and
-  source `zyl`; `lsp_server.zyl` publishes them with
+  result, a compiler panic message or the type checker's reports into an
+  LSP `Diagnostic` with the code, a range (the message's `-->` location,
+  else the first backticked name in it) and source `zyl`. The server
+  runs the same checks as the compiler through type checking
+  (`document_manager.zyl`), so every type error in the document is
+  published at once, each where it is; `lsp_server.zyl` publishes them with
   `textDocument/publishDiagnostics`, and `services/code_action.zyl`
   offers a quick fix when a diagnostic carries `fixIt` data (today only
   balance diagnostics do, with the `sb-hint` text).

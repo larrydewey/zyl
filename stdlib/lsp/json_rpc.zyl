@@ -11,6 +11,7 @@
 (use core/option)
 (use core/map)
 (use compiler/error_report)
+(use io/io)
 
 ; ===========================================================================
 ; JSON VALUE ADT (internal representation)
@@ -86,23 +87,29 @@
 ; JSON -> STRING (compact)
 ; ===========================================================================
 
+; The whole message is written into one growable buffer (io/io's
+; StringBuffer) and copied out once, so encoding is linear in its size.
+; Threading a String through `str-concat` copied the text so far on every
+; piece, which made a large response (a big document's semantic tokens)
+; quadratic in time and memory.
 (defn jr-json-to-string (j)
-  (let buf ""
-    (jr-write-json-str buf j)))
+  (let sb (make-string-buffer)
+    (let _ (jr-write-json sb j)
+      (let out (str-substring (string-buffer-str sb) 0 (string-buffer-len sb))
+        (let _ (string-buffer-destroy sb)
+          out)))))
 
-; buf-append (used by the earlier draft) mutates via string reassignment
-; through `str-concat`, not in place -- so every writer here just returns
-; the extended string and threads it through, exactly like the rest of
-; this codebase's string-building code (see error_report.zyl).
-(defn jr-write-json-str (buf j)
+(defn jr-put (sb (s String)) (OutputStream.write sb s))
+
+(defn jr-write-json (sb j)
   (match j
-    (JNull (str-concat buf "null"))
-    (JBool b (str-concat buf (if b "true" "false")))
-    (JInt i (str-concat buf (int-to-str-signed i)))
-    (JFloat s (str-concat buf s))
-    (JStr s (jr-write-string-str buf s))
-    (JArr arr (jr-write-array-str buf arr))
-    (JObj obj (jr-write-object-str buf obj))))
+    (JNull (jr-put sb "null"))
+    (JBool b (jr-put sb (if b "true" "false")))
+    (JInt i (jr-put sb (int-to-str-signed i)))
+    (JFloat s (jr-put sb s))
+    (JStr s (jr-write-string sb s))
+    (JArr arr (jr-write-array sb arr))
+    (JObj obj (jr-write-object sb obj))))
 
 ; error_report.zyl's int-to-str doesn't handle negatives (LSP ids/counts
 ; are never negative in practice, but a defensive minus-sign prefix costs
@@ -110,32 +117,40 @@
 (defn int-to-str-signed (n)
   (if (< n 0) (str-concat "-" (int-to-str (- 0 n))) (int-to-str n)))
 
-(defn jr-write-string-str (buf s)
-  (jr-write-string-loop (str-concat buf "\"") s 0 (str-length s)))
+; A JSON string literal. Runs of bytes that need no escape are copied as
+; one piece; bytes from 128 up are copied as they are, so UTF-8 text
+; reaches the client intact (JSON text is UTF-8).
+(defn jr-write-string (sb s)
+  (let _ (jr-put sb "\"")
+    (let _ (jr-write-string-loop sb s 0 0 (str-length s))
+      (jr-put sb "\""))))
 
-(defn jr-write-string-loop (buf s i len)
+(defn jr-write-string-loop (sb s start i len)
   (if (>= i len)
-    (str-concat buf "\"")
-    (let c (ffi-call "zyl_cstr_byte_at" s i 1000)
-      (jr-write-string-loop (jr-write-json-char buf c) s (+ i 1) len))))
+    (jr-flush-run sb s start i)
+    (let esc (jr-escape-of (ffi-call "zyl_cstr_byte_at" s i 1000))
+      (if (= (str-length esc) 0)
+        (jr-write-string-loop sb s start (+ i 1) len)
+        (let _ (jr-flush-run sb s start i)
+          (let _ (jr-put sb esc)
+            (jr-write-string-loop sb s (+ i 1) (+ i 1) len)))))))
 
-(defn jr-write-json-char (buf c)
+(defn jr-flush-run (sb s start i)
+  (if (> i start) (jr-put sb (str-substring s start (- i start))) 0))
+
+; The escape for byte `c`, or "" when it is written as it is.
+(defn jr-escape-of (c)
   (match c
-    (34 (str-concat buf "\\\""))
-    (92 (str-concat buf "\\\\"))
-    (8 (str-concat buf "\\b"))
-    (9 (str-concat buf "\\t"))
-    (10 (str-concat buf "\\n"))
-    (12 (str-concat buf "\\f"))
-    (13 (str-concat buf "\\r"))
-    (_ (if (and (>= c 32) (< c 127))
-        (str-concat buf (char-from-int c))
-        (str-concat buf (jr-encode-unicode c))))))
+    (34 "\\\"")
+    (92 "\\\\")
+    (8 "\\b")
+    (9 "\\t")
+    (10 "\\n")
+    (12 "\\f")
+    (13 "\\r")
+    (_ (if (< c 32) (jr-encode-unicode c) ""))))
 
-; Only reachable for control bytes < 32 and the DEL/8-bit range, since
-; the printable-ASCII path above (32..126) goes through char-from-int
-; directly -- this only ever needs to print small values as 4 hex
-; digits.
+; A control byte as \u00XX.
 (defn jr-encode-unicode (codepoint)
   (let hex "0123456789abcdef"
     (let h1 (str-substring hex (/ codepoint 4096) 1)
@@ -144,29 +159,35 @@
           (let h4 (str-substring hex (% codepoint 16) 1)
             (str-concat "\\u" (str-concat h1 (str-concat h2 (str-concat h3 h4))))))))))
 
-(defn jr-write-array-str (buf arr)
+(defn jr-write-array (sb arr)
   (match arr
-    (Nil (str-concat buf "[]"))
-    (Cons h t (jr-write-array-rest (jr-write-json-str (str-concat buf "[") h) t))))
+    (Nil (jr-put sb "[]"))
+    (Cons h t
+      (let _ (jr-put sb "[")
+        (let _ (jr-write-json sb h)
+          (jr-write-array-rest sb t))))))
 
-(defn jr-write-array-rest (buf xs)
+(defn jr-write-array-rest (sb xs)
   (match xs
-    (Nil (str-concat buf "]"))
-    (Cons h t (jr-write-array-rest (jr-write-json-str (str-concat buf ",") h) t))))
+    (Nil (jr-put sb "]"))
+    (Cons h t
+      (let _ (jr-put sb ",")
+        (let _ (jr-write-json sb h)
+          (jr-write-array-rest sb t))))))
 
-(defn jr-write-object-str (buf obj)
-  (jr-write-entries-str (str-concat buf "{") (map-entries obj) 1)
+(defn jr-write-object (sb obj)
+  (let _ (jr-put sb "{")
+    (jr-write-entries sb (map-entries obj) true)))
 
-)
-
-(defn jr-write-entries-str (buf entries first)
+(defn jr-write-entries (sb entries (first Bool))
   (match entries
-    (Nil (str-concat buf "}"))
+    (Nil (jr-put sb "}"))
     (Cons e rest
-      (let buf1 (if (> first 0) buf (str-concat buf ","))
-        (let buf2 (jr-write-string-str buf1 (ME.key e))
-          (let buf3 (str-concat buf2 ":")
-            (jr-write-entries-str (jr-write-json-str buf3 (ME.value e)) rest 0)))))))
+      (let _ (if first 0 (jr-put sb ","))
+        (let _ (jr-write-string sb (ME.key e))
+          (let _ (jr-put sb ":")
+            (let _ (jr-write-json sb (ME.value e))
+              (jr-write-entries sb rest false))))))))
 
 ; ===========================================================================
 ; DECODER: JSON string -> internal JSON, then -> LSP types
@@ -293,42 +314,87 @@
       (jr-starts-with-loop s pos prefix (+ i 1) len)
       false)))
 
+; A string's text, from just after its opening quote. The common case, no
+; escapes, is one copy of the bytes up to the closing quote; with escapes
+; the text is built in a buffer from the runs between them. Bytes are
+; kept as they are, so UTF-8 in a document survives, and a \u escape
+; becomes the code point's UTF-8 bytes (a surrogate pair is combined).
 (defn jr-parse-string (s pos)
-  (jr-parse-string-loop s pos "")
+  (let len (str-length s)
+    (let end (jr-plain-end s pos len)
+      (if (and (< end len) (= (ffi-call "zyl_cstr_byte_at" s end 1000) 34))
+        (JV (JStr (str-substring s pos (- end pos))) (+ end 1))
+        (let sb (make-string-buffer)
+          (let after (jr-parse-string-loop sb s pos pos len)
+            (let out (str-substring (string-buffer-str sb) 0 (string-buffer-len sb))
+              (let _ (string-buffer-destroy sb)
+                (JV (JStr out) after)))))))))
 
-)
+; The first quote or backslash at or after i (or len).
+(defn jr-plain-end (s i len)
+  (if (>= i len)
+    len
+    (let c (ffi-call "zyl_cstr_byte_at" s i 1000)
+      (if (or (= c 34) (= c 92)) i (jr-plain-end s (+ i 1) len)))))
 
-(defn jr-parse-string-loop (s i acc)
-  (let c (ffi-call "zyl_cstr_byte_at" s i 1000)
-    (if (= c 34)
-      (JV (JStr acc) (+ i 1))
-      (if (= c 92)
-        (jr-parse-string-escape s (+ i 1) acc)
-        (jr-parse-string-loop s (+ i 1) (str-concat acc (jr-safe-char c)))))))
+; Returns the position after the closing quote.
+(defn jr-parse-string-loop (sb s start i len)
+  (if (>= i len)
+    (let _ (jr-flush-run sb s start i) i)
+    (let c (ffi-call "zyl_cstr_byte_at" s i 1000)
+      (if (= c 34)
+        (let _ (jr-flush-run sb s start i) (+ i 1))
+        (if (= c 92)
+          (let _ (jr-flush-run sb s start i)
+            (let next (jr-parse-escape sb s (+ i 1))
+              (jr-parse-string-loop sb s next next len)))
+          (jr-parse-string-loop sb s start (+ i 1) len))))))
 
-; Bytes outside the printable range can't round-trip through
-; char-from-int's lookup table; JSON we author never emits them
-; unescaped, and this only needs to survive whatever a well-behaved
-; peer actually sends.
-(defn jr-safe-char (c)
-  (if (and (>= c 32) (< c 127)) (char-from-int c) "?"))
-
-(defn jr-parse-string-escape (s i acc)
+; Writes the escape at i (just after its backslash); returns the position after it.
+(defn jr-parse-escape (sb s i)
   (let esc (ffi-call "zyl_cstr_byte_at" s i 1000)
     (match esc
-      (34 (jr-parse-string-loop s (+ i 1) (str-concat acc "\"")))
-      (92 (jr-parse-string-loop s (+ i 1) (str-concat acc "\\")))
-      (47 (jr-parse-string-loop s (+ i 1) (str-concat acc "/")))
-      (98 (jr-parse-string-loop s (+ i 1) (str-concat acc (jr-safe-char 8))))
-      (102 (jr-parse-string-loop s (+ i 1) (str-concat acc (jr-safe-char 12))))
-      (110 (jr-parse-string-loop s (+ i 1) (str-concat acc "\n")))
-      (114 (jr-parse-string-loop s (+ i 1) (str-concat acc "\r")))
-      (116 (jr-parse-string-loop s (+ i 1) (str-concat acc "\t")))
-      (117
-        (let hex (str-substring s (+ i 1) 4)
-          (let cp (jr-hex-to-int hex)
-            (jr-parse-string-loop s (+ i 5) (str-concat acc (jr-safe-char cp))))))
-      (_ (jr-parse-string-loop s (+ i 1) (str-concat acc (jr-safe-char esc)))))))
+      (98 (let _ (jr-put sb (ffi-call "zyl_cstr_from_byte" 8 1000)) (+ i 1)))
+      (102 (let _ (jr-put sb (ffi-call "zyl_cstr_from_byte" 12 1000)) (+ i 1)))
+      (110 (let _ (jr-put sb "\n") (+ i 1)))
+      (114 (let _ (jr-put sb "\r") (+ i 1)))
+      (116 (let _ (jr-put sb "\t") (+ i 1)))
+      (117 (jr-parse-unicode sb s (+ i 1)))
+      (_ (let _ (jr-put sb (ffi-call "zyl_cstr_from_byte" esc 1000)) (+ i 1))))))
+
+; \uXXXX at i (the first hex digit), with a following low surrogate
+; joined to a high one.
+(defn jr-parse-unicode (sb s i)
+  (let cp (jr-hex-to-int (str-substring s i 4))
+    (if (and (>= cp 55296) (<= cp 56319))
+      (if (and (= (ffi-call "zyl_cstr_byte_at" s (+ i 4) 1000) 92)
+               (= (ffi-call "zyl_cstr_byte_at" s (+ i 5) 1000) 117))
+        (let lo (jr-hex-to-int (str-substring s (+ i 6) 4))
+          (if (and (>= lo 56320) (<= lo 57343))
+            (let _ (jr-put-utf8 sb (+ 65536 (+ (* (- cp 55296) 1024) (- lo 56320)))) (+ i 10))
+            (let _ (jr-put-utf8 sb 65533) (+ i 4))))
+        (let _ (jr-put-utf8 sb 65533) (+ i 4)))
+      (let _ (jr-put-utf8 sb (if (and (>= cp 56320) (<= cp 57343)) 65533 cp)) (+ i 4)))))
+
+(defn jr-put-byte (sb (b Int)) (jr-put sb (ffi-call "zyl_cstr_from_byte" b 1000)))
+
+; Code point cp as UTF-8. A NUL cannot live in a String, so \u0000 is U+FFFD.
+(defn jr-put-utf8 (sb (cp Int))
+  (if (= cp 0)
+    (jr-put-utf8 sb 65533)
+    (if (< cp 128)
+      (jr-put-byte sb cp)
+      (if (< cp 2048)
+        (let _ (jr-put-byte sb (+ 192 (/ cp 64)))
+          (jr-put-byte sb (+ 128 (% cp 64))))
+        (if (< cp 65536)
+          (let _ (jr-put-byte sb (+ 224 (/ cp 4096)))
+            (let _ (jr-put-byte sb (+ 128 (% (/ cp 64) 64)))
+              (jr-put-byte sb (+ 128 (% cp 64)))))
+          (let _ (jr-put-byte sb (+ 240 (/ cp 262144)))
+            (let _ (jr-put-byte sb (+ 128 (% (/ cp 4096) 64)))
+              (let _ (jr-put-byte sb (+ 128 (% (/ cp 64) 64)))
+                (jr-put-byte sb (+ 128 (% cp 64)))))))))))
 
 (defn jr-hex-to-int (s)
   (jr-hex-to-int-loop s 0 0 (str-length s)))
@@ -443,14 +509,7 @@
       acc
       (if (= ch 10)
         acc
-        ; jr-safe-char maps anything outside printable-ASCII to "?" --
-        ; wrong here specifically for \r (13), the other half of a
-        ; \r\n line terminator: that turned every header line's
-        ; trailing \r into a literal "?" instead of a strippable
-        ; whitespace byte, so str-trim never removed it and
-        ; "Content-Length: N" never string-equality-matched anything
-        ; (confirmed: length was right, content had a stray "?").
-        (jr-read-raw-line (str-concat acc (if (= ch 13) "\r" (jr-safe-char ch))))))))
+        (jr-read-raw-line (str-concat acc (ffi-call "zyl_cstr_from_byte" ch 1000)))))))
 
 ; One byte from stdin via the same fd the rest of this codebase already
 ; reads with (`file-read`, icnf.zyl's special-cased builtin) -- -1 on EOF.
@@ -481,9 +540,6 @@
 ; ===========================================================================
 ; UTILITIES
 ; ===========================================================================
-
-(defn char-from-int (i)
-  (str-substring " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~" (- i 32) 1))
 
 (defn str-trim (s)
   (let len (str-length s)

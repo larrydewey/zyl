@@ -400,6 +400,37 @@ as recorded below.
 
 # Session log (newest first)
 
+## Session (2026-09-25, later) — the language server type-checks
+
+- The language server now runs the type checker after the checks, as
+  the compiler does (`document_manager.zyl`'s `dm-type-diagnostics`:
+  derive expansion, impl lifting, closure inlining, `ta-annotate`). The
+  checker's reports are captured and every one located in the document
+  is published (`compiler_bridge.zyl`'s `diagnostics-from-errors`).
+  Before this, no type error reached the editor, although type errors
+  are the main class since sound typing. A document is parsed under its
+  own path, and recorded field types are cleared before each analysis.
+- The JSON codec (`json_rpc.zyl`) is linear: messages are written into
+  one growable `StringBuffer`, and a string is parsed as one copy when
+  it has no escapes. It threaded a String through `str-concat` per
+  piece, which is quadratic: opening `codegen.zyl` (158 KB) peaked at
+  12 GB, and the protocol suite at 34 GB. It now peaks at about 1 GB.
+- UTF-8 survives both directions. The parser turned every byte outside
+  printable ASCII into `?`, and the writer escaped each byte of a UTF-8
+  sequence as its own `\u00XX`. `\uXXXX` escapes (with surrogate
+  pairs) now decode to UTF-8.
+- Hover shows a parameter's annotated type by its source name
+  (`StrView`), not its canonical key.
+- The protocol test's "clean" program returned Unit from `main`, which
+  the compiler rejects; it now returns 0. New checks: a type error, one
+  diagnostic per type error, a 150 KB document, and UTF-8 in formatting
+  and diagnostics (108 checks).
+- Known limits: positions are byte columns, not UTF-16 code units, so a
+  column after a non-ASCII character on the same line is off. Opening a
+  150 KB document still takes about 470 MB (the front end and the type
+  checker allocate on the process heap, which is never freed), and
+  semantic tokens for it about 500 MB more.
+
 ## Session (2026-09-25) — sound type checking
 
 The type checker is the guarantee the user asked for, not a best
@@ -518,7 +549,9 @@ details are in `docs/regions-design.md`.
 - Known limitation: `(ffi-call "f" 5)` still reads as a zero-argument call
   with a 5 ms timeout; the positional syntax cannot tell them apart.
 - `lsp/protocol` fails when `ZYL_MAX_MEMORY` is capped at 1.6 GB (the
-  completion session needs more); it passes 99/99 uncapped.
+  completion session needs more); it passes 99/99 uncapped. (2026-09-25:
+  with the linear JSON codec every check passes at 1.6 GB except the
+  new 150 KB semantic-tokens check.)
 
 ## Session (2026-09-24, earlier) — REPL definitions see prompt defs
 

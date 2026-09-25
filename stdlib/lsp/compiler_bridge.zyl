@@ -5,12 +5,12 @@
 ; LSP-OWNED symbol table (SymTable) built directly from the macro-expanded
 ; Expr list.
 ;
-; It does not run the type checker (compiler/type_annotate): tokens carry
-; byte offsets and the compiler keeps a span table, but hover and
-; go-to-definition locate names by scanning the document text
-; (lsp/source_index), so a symbol table built in one flat pass over the
-; top-level forms is all they need. Type errors reach the editor only
-; through the CLI's diagnostics for now.
+; Hover and go-to-definition do not use the type checker's results:
+; they locate names by scanning the document text (lsp/source_index),
+; so a symbol table built in one flat pass over the top-level forms is
+; all they need. Type errors do reach the editor: lsp/document_manager
+; runs the type checker and turns its reports into diagnostics here
+; (diagnostics-from-errors).
 ;
 ; What this means for hover text: it shows the DECLARED text of a
 ; parameter's type annotation (Param carries `(Option String)`, exactly
@@ -102,6 +102,39 @@
         (let stop (if (< e 0) n e)
           (Cons (diagnostic-of (str-substring w s (- stop s)) text DSWarning)
                 (bridge-warning-blocks w text stop n)))))))
+
+; Every `error[...]` block in captured report text that is located in
+; `path` (or not located at all), as Error diagnostics. The type checker
+; reports each error this way before the compile fails; an error it
+; places in another file belongs to that file's document, not this one.
+(defn diagnostics-from-errors (reports text path)
+  (bridge-error-blocks (str-concat "\n" reports) text path 0 (+ (str-length reports) 1)))
+
+(defn bridge-error-blocks (w text path i n)
+  (let s (bridge-index-of-str w "\nerror[" i n)
+    (if (< s 0)
+      Nil
+      (let e (bridge-next-block w (+ s 1) n)
+        (let block (str-substring w (+ s 1) (- e (+ s 1)))
+          (if (bridge-in-file block path)
+            (Cons (diagnostic-of block text DSError) (bridge-error-blocks w text path e n))
+            (bridge-error-blocks w text path e n)))))))
+
+(defn bridge-next-block (w i n)
+  (let a (bridge-index-of-str w "\nerror[" i n)
+    (let b (bridge-index-of-str w "\nwarning[" i n)
+      (if (< a 0) (if (< b 0) n b) (if (< b 0) a (if (< a b) a b))))))
+
+; Whether a report's `--> path:line:col` names `path` (true when it has no location).
+(defn bridge-in-file (msg path)
+  (let n (str-length msg)
+    (let a (bridge-index-of-str msg "--> " 0 n)
+      (if (< a 0)
+        true
+        (let k (str-length path)
+          (and (<= (+ (+ a 5) k) n)
+               (and (ffi-call "zyl_cstr_eq" (str-substring msg (+ a 4) k) path 1000)
+                    (= (ffi-call "zyl_cstr_byte_at" msg (+ (+ a 4) k) 1000) 58))))))))
 
 (defn bridge-index-of-str (s needle i n)
   (let k (str-length needle)
@@ -413,7 +446,7 @@
   (match (Expr.inner e)
     (EAtom atom
       (match atom
-        (AIdent s s)
+        (AIdent s (lsp-source-name s))
         (_ "<expr>")))
     (_ "<expr>")))
 

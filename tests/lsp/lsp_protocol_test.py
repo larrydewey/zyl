@@ -307,6 +307,8 @@ DIAGNOSTIC_CASES = [
      "(defn leak ((k Secret))\n  (print k))\n(defn main () (leak 7))\n"),
     ("balance", "E_UNBALANCED_UNCLOSED",
      "(defn oops (x)\n  (+ x 1)\n"),
+    ("type", "E_TYPE_MISMATCH",
+     "(defn g () (+ 1 \"a\"))\n(defn main () 0)\n"),
 ]
 
 
@@ -340,8 +342,13 @@ def test_diagnostics():
         check(f"diagnostics/{name}", first.get("severity") == 1, "should be an error")
         check(f"diagnostics/{name}", first.get("range") is not None, "should carry a range")
 
-    clean = diagnostics_for("(defn add (a b) (+ a b))\n(defn main () (print (add 1 2)))\n")
+    clean = diagnostics_for("(defn add (a b) (+ a b))\n(defn main () (begin (print (add 1 2)) 0))\n")
     check("diagnostics/clean", clean == [], f"a valid program should be clean, got {clean}")
+
+    # The type checker reports every type error, each where it is.
+    typed = diagnostics_for('(defn g () (+ 1 "a"))\n(defn h () (str-concat 1 "b"))\n(defn main () 0)\n') or []
+    lines = sorted({d["range"]["start"]["line"] for d in typed if d.get("code") == "E_TYPE_MISMATCH"})
+    check("diagnostics/type-errors", lines == [0, 1], f"expected type errors on lines 1 and 2, got {typed}")
 
     # unused_check's warnings are published as Warning diagnostics, located.
     warned = diagnostics_for("(defn main ()\n  (let unused 1\n    (begin (print 2) 0)))\n") or []
@@ -393,6 +400,36 @@ def test_package_forms():
 
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Large documents and UTF-8
+# ---------------------------------------------------------------------------
+
+def test_large_document():
+    # About 150 KB: encoding and decoding must stay linear in the size.
+    body = "".join(f"(defn f{i} ((x Int)) (+ x {i}))\n" for i in range(5000))
+    text = body + "(defn main () (f1 1))\n"
+    responses, notifications, _ = session(
+        request(2, "textDocument/semanticTokens/full"), text=text)
+    published = [m for m in notifications if m.get("method") == "textDocument/publishDiagnostics"]
+    check("large/diagnostics", published and published[0]["params"]["diagnostics"] == [],
+          f"expected no diagnostics, got {published[:1]}")
+    data = (responses.get(2) or {}).get("data") or []
+    check("large/semantic-tokens", len(data) >= 5 * 5000, f"expected tokens for every form, got {len(data)}")
+
+
+def test_utf8():
+    # Non-ASCII text survives the round trip in both directions.
+    text = "; caf\u00e9 \u2192 \U0001f600\n(defn main () 0)\n"
+    responses, _, _ = session(
+        request(2, "textDocument/formatting", options={"tabSize": 2, "insertSpaces": True}), text=text)
+    edits = json.dumps(responses.get(2), ensure_ascii=False)
+    check("utf8/formatting", "caf\u00e9 \u2192 \U0001f600" in edits or responses.get(2) == [],
+          f"non-ASCII text changed: {edits[:200]}")
+    escaped = diagnostics_for('(defn g () (+ 1 "\u00e9"))\n(defn main () 0)\n') or []
+    check("utf8/diagnostics", any(d.get("code") == "E_TYPE_MISMATCH" for d in escaped),
+          f"expected a type error, got {escaped}")
+
+
 TESTS = [
     ("capabilities", test_capabilities),
     ("hover", test_hover),
@@ -403,6 +440,8 @@ TESTS = [
     ("rename", test_rename),
     ("diagnostics", test_diagnostics),
     ("package forms", test_package_forms),
+    ("large document", test_large_document),
+    ("utf-8", test_utf8),
 ]
 
 
