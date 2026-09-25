@@ -1,18 +1,15 @@
 ; === Zyl Compiler — ExprInner AST Bridge ===
-; Port of Rust ast.rs ExprInner enum to Zyl deftype/match form.
+; Began as a port of the Rust bootstrap's ast.rs ExprInner enum.
 ;
 ; The Zyl parser produces raw Ast (AstIdent/AstInt/AList); every later
 ; pass works on ExprInner (Atom/Call/Defn/.../Apply). This module converts
 ; one to the other, recognizing every special form in one place.
 
-; Needed for Pair (parse-for-binding/parse-cond-clause construct one) —
-; previously missing here entirely. Harmless for the assemble.py bundle
-; (use lines are stripped there regardless), but a standalone program
-; that `use`s a compiler/* module directly instead of importing the
-; whole bundle (e.g. integration/selfhost-codegen.zyl, using icnf.zyl as
-; a library to compile a nested program at runtime) needs every real
-; dependency actually declared for the module resolver to pull it in -
-; this was an undefined `f_Pair` reference at link time otherwise.
+; Needed for Pair (parse-for-binding/parse-cond-clause construct one).
+; Every real dependency must be declared for the module resolver to pull
+; it in; without this line a program that `use`s a compiler/* module
+; directly (e.g. integration/selfhost-codegen.zyl) had an undefined
+; `f_Pair` reference at link time.
 (use compiler/node_tables)
 (use compiler/type_system)
 (use compiler/error_report)
@@ -1292,10 +1289,11 @@
 
 ; --- Byte-level primitives (BYTE_PRIMITIVES_IMPLEMENTATION_PLAN.md §2) ------
 ; Recognition happens here, not in the reader (no-dispatch arch). The 21
-; byte-form names below carry real ExprInner variants; the wider-width
-; load/store names (u16/u32/u64, i16/i32/i64) are RESERVED by the plan but
-; have no variants -- they are rejected loudly with E_RESERVED_KEYWORD
-; instead of silently lowering to a call that can never resolve.
+; byte-form names below carry real ExprInner variants. The wider-width
+; load/store names (u16/u32/u64, i16/i32/i64) reuse the 8-bit variants:
+; parse-wide-byte swaps the :le/:be selector for an EWide endian carrying
+; the width, which ICNF lowers to zyl_load_n / zyl_load_n_signed /
+; zyl_store_n.
 ;
 ; Endian/region selectors arrive as AstIdent: the parser maps TkKeyword
 ; (`:le`/`:be`) and plain identifiers alike to AstIdent (parser.zyl's
@@ -1995,19 +1993,14 @@
         None))
     (_ None)))
 
-; Rust bootstrap's p_let (src/parser.rs) supports THREE surface forms:
+; `let` has THREE surface forms (as the Rust bootstrap's p_let did):
 ;   1. (let name val body...)  -- flat, name a bare ident, >=3 args
 ;   2. (let name val)          -- flat, 2 args, implicit Unit body
 ;   3. (let (name val) body)   -- wrapped single-binding list
-; This parser used to support ONLY form 1. Form 3 — used pervasively
-; throughout type_system.zyl/type_inference.zyl/monomorphization.zyl —
-; silently fell through to `None`, which the caller turns into an
-; EUnknown node; EUnknown lowers to a harmless-looking (IConst 0) in
-; icnf.zyl. Every function whose ENTIRE body was a form-3 `let`
-; (inferer-new, infer-defn-body, ...) therefore compiled down to a bare
-; "return 0", discarding all of its real work — the true cause behind a
-; whole class of "silently returns garbage/null" bugs chased this
-; session (e.g. ti-env dereferencing the null inferer-new result).
+; This parser once supported ONLY form 1; form 3 fell through to `None`,
+; which the caller turns into an EUnknown node that lowers to a bare
+; (IConst 0), so every function whose whole body was a form-3 `let`
+; compiled to "return 0".
 ; Trailing "body" args (everything from `start` on) as ONE Expr: the lone
 ; expr directly when there's exactly one, an implicit EBegin sequence
 ; when there's more. A bare `(ast-list-last ...)` picks only the FINAL
@@ -2107,6 +2100,8 @@
 ; otherwise, which icnf.zyl's catch-all silently lowers to a constant 0
 ; regardless of the condition. Default the missing else to nil/unit.
 (defn parse-if (args)
+  (if (ast-has-at-least args 4)
+    (if-extra-fail (ast-nth args 3 (AstInt 0)))
   (if (ast-has-at-least args 3)
     (Some
       (Expr
@@ -2121,7 +2116,16 @@
             (convert-ast (ast-nth args 0 (AstInt 0)))
             (convert-ast (ast-nth args 1 (AstInt 0)))
             (Expr (EAtom ANil)))))
-      None)))
+      None))))
+
+; A form after the else branch used to be dropped silently.
+(defn if-extra-fail (d)
+  (let off (ffi-call "zyl_span_off" d 1000)
+    (let fid (ffi-call "zyl_span_file" d 1000)
+      (ffi-call "zyl_panic"
+        (err-at "E_MALFORMED_FORM" "`if` takes a condition, a then branch and an else branch; this form is extra"
+                fid off "wrap a branch of several forms in (begin ...)")
+        1000))))
 
 (defn parse-while (args)
   (if (ast-has-at-least args 2)
@@ -2194,14 +2198,11 @@
     (_ (Pair "___" None))))
 
 ; `ECond` (the node parse-cond used to build directly) has no icnf.zyl/
-; codegen.zyl lowering anywhere — monomorphization.zyl/type_inference.zyl
-; recurse into it, but ic-expr's wildcard default silently drops any
-; unhandled ExprInner shape to a bare (IConst 0). Every `cond` in the
-; entire self-hosted compiler's own source (infer-arg-type-atom's AIdent
-; arm among them) therefore compiled down to a literal "0", discarding
-; the whole clause chain. Desugar to nested `if` here instead, at the
-; source level (same fix already applied to `or`/`and` above) — so every
-; downstream phase only ever sees plain EIf nodes.
+; codegen.zyl lowering anywhere, and ic-expr's wildcard default silently
+; drops any unhandled ExprInner shape to a bare (IConst 0), so every
+; `cond` once compiled to a literal "0". Desugar to nested `if` here
+; instead, at the source level (same fix already applied to `or`/`and`
+; above) — so every downstream phase only ever sees plain EIf nodes.
 (defn parse-cond (args)
   (if (nil? args)
     None
@@ -2441,8 +2442,8 @@
 ; specifically -- matches this codebase's own pervasive ADT-match
 ; convention (an unresolved name isn't a registered variant, so
 ; vt-tag-of/cg-tag-check already treat it as a universal catchall;
-; `d1`/`d2`/... throwaway names are used this way hundreds of times
-; already, e.g. type_system.zyl's binop-kind-from-int). Requiring
+; `_` is the conventional spelling, but any unregistered name binds the
+; same way). Requiring
 ; literally `_` here would be a second, inconsistent wildcard
 ; convention alongside the one ADT matches already have.
 (defn ast-pattern-is-wildcard (h)
@@ -2692,12 +2693,9 @@
     (_ (Some (Expr (EBegin (convert-ast-list args))))))
 
 )
-; `lambda` and `fn` are fully equivalent anonymous-function syntax --
-; everywhere both ELambda and EFn are handled (type_inference.zyl's
-; infer-expr-lambda, monomorphization.zyl's subst-expr) they do exactly
-; the same thing. But icnf.zyl (the final Icnf lowering), closure_inline
-; .zyl, trait_dispatch.zyl, macro_expand.zyl, and module_resolver.zyl
-; never learned about ELambda, only EFn -- so a `lambda` silently fell
+; `lambda` and `fn` are fully equivalent anonymous-function syntax. But
+; icnf.zyl (the final Icnf lowering) and several passes before it once
+; handled only EFn, not ELambda -- so a `lambda` silently fell
 ; through icnf.zyl's "unsupported shape" catchall to a bare (IConst 0),
 ; and calling it jumped to address 0. Rather than teach every one of
 ; those passes about a second, functionally-identical closure node

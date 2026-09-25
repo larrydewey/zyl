@@ -1,0 +1,3 @@
+; expect-error: E_MALFORMED_FORM
+; A form after the else branch was dropped silently.
+(defn main () (if true (print 1) (print 2) (print 3)) 0)
