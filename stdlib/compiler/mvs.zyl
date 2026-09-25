@@ -237,7 +237,7 @@
   (match features
     (Nil Nil)
     (Cons f t
-      (if (> (pk-has-capability feats (pf-name f)) 0)
+      (if (pk-has-capability feats (pf-name f))
         (list-append (pf-deps f) (mvs-feature-deps-in t feats))
         (mvs-feature-deps-in t feats)))))
 
@@ -258,8 +258,8 @@
 
 (defn mvs-declares-in (features f)
   (match features
-    (Nil 0)
-    (Cons h t (if (str-eq (pf-name h) f) 1 (mvs-declares-in t f)))))
+    (Nil false)
+    (Cons h t (if (str-eq (pf-name h) f) true (mvs-declares-in t f)))))
 
 (defn mvs-reqs-of (m root)
   (mvs-reqs-list (mf-deps m) root))

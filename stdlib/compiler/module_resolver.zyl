@@ -145,8 +145,8 @@
 
 (defn mr-str-in-list (s xs)
   (match xs
-    (Nil 0)
-    (Cons h t (if (str-eq s h) 1 (mr-str-in-list s t)))))
+    (Nil false)
+    (Cons h t (if (str-eq s h) true (mr-str-in-list s t)))))
 
 (defn mr-unit-id (pkg module)
   (str-concat pkg (str-concat "|" module)))
@@ -384,13 +384,13 @@
   (match defs
     (Nil Nil)
     (Cons d t
-      (if (> (mr-def-active feats d) 0)
+      (if (mr-def-active feats d)
         (Cons d (mr-active-defs feats t))
         (mr-active-defs feats t)))))
 
 (defn mr-def-active (feats d)
   (if (= (str-length (mrd-feature d)) 0)
-    1
+    true
     (pk-has-capability feats (mrd-feature d))))
 
 ; A gated definition that collides with a base definition is
@@ -399,7 +399,7 @@
 ; effect.
 (defn mr-check-feature-collisions (defs)
   (match defs
-    (Nil 1)
+    (Nil true)
     (Cons d t
       (if (= (str-length (mrd-feature d)) 0)
         (mr-check-feature-collisions t)
@@ -510,9 +510,9 @@
 
 (defn mr-discover (arena disc stack pkg module)
   (let id (mr-unit-id (mrp-name pkg) module)
-    (if (> (mr-str-in-list id (mrd-seen disc)) 0)
+    (if (mr-str-in-list id (mrd-seen disc))
       disc
-      (if (> (mr-str-in-list id stack) 0)
+      (if (mr-str-in-list id stack)
         (mr-cycle-error id stack)
         (mr-discover-new arena disc stack pkg module)))))
 
@@ -533,8 +533,8 @@
 
 (defn mr-all-same-pkg (p stack)
   (match stack
-    (Nil 1)
-    (Cons h t (if (str-eq (mr-id-pkg h) p) (mr-all-same-pkg p t) 0))))
+    (Nil true)
+    (Cons h t (if (str-eq (mr-id-pkg h) p) (mr-all-same-pkg p t) false))))
 
 (defn mr-discover-new (arena disc stack pkg module)
   (let _ (mr-check-module-name module (mrp-name pkg))
@@ -650,7 +650,7 @@
   (match wanted
     (Nil 1)
     (Cons f t
-      (if (> (mr-feature-declared declared f) 0)
+      (if (mr-feature-declared declared f)
         (mr-check-features-in declared t name)
         (ffi-call "zyl_panic"
           (str-concat "E_PKG_FEATURE_UNKNOWN: package: feature " (str-concat f
@@ -658,8 +658,8 @@
 
 (defn mr-feature-declared (declared f)
   (match declared
-    (Nil 0)
-    (Cons h t (if (str-eq (pf-name h) f) 1 (mr-feature-declared t f)))))
+    (Nil false)
+    (Cons h t (if (str-eq (pf-name h) f) true (mr-feature-declared t f)))))
 
 ; A dependency's own ceiling comes from its own manifest, never from the
 ; edge that named it: capabilities are declared, not granted (§31.9).
@@ -908,7 +908,7 @@
   (match (mr-ast-args f)
     (Nil Nil)
     (Cons featureast rest
-      (if (> (pk-has-capability feats (mr-ident-of featureast)) 0)
+      (if (pk-has-capability feats (mr-ident-of featureast))
         (mr-gate-inner rest)
         Nil))))
 
@@ -951,7 +951,7 @@
 
 (defn mr-check-coherence (forms pkgname)
   (match forms
-    (Nil 1)
+    (Nil true)
     (Cons f rest
       (if (str-eq (mr-ast-head f) "impl")
         (let _ (mr-check-impl f pkgname)
@@ -1182,11 +1182,11 @@
 ; so re-splicing it would be a duplicate definition.
 (defn mr-core-loaded (uses)
   (match uses
-    (Nil 0)
+    (Nil false)
     (Cons u rest
-      (if (str-eq (mru-module u) "core/core") 1
-      (if (str-eq (mru-module u) "core/option") 1
-      (if (str-eq (mru-module u) "core/result") 1
+      (if (str-eq (mru-module u) "core/core") true
+      (if (str-eq (mru-module u) "core/option") true
+      (if (str-eq (mru-module u) "core/result") true
       (mr-core-loaded rest)))))))
 
 (defn mr-bundle-source (forms)
@@ -1217,7 +1217,7 @@
 (defn mr-root-uses (main-forms uses)
   (if (> (mr-bundle-source main-forms) 0)
     uses
-    (if (> (mr-core-loaded uses) 0)
+    (if (mr-core-loaded uses)
       uses
       (Cons (MRU "" "core/core" 1 Nil 0) uses))))
 

@@ -261,8 +261,8 @@
 
 (defn drv-has-flag (i flag)
   (if (>= i (ffi-call "zyl_argc" 1000))
-    0
-    (if (str-eq (drv-arg i) flag) 1 (drv-has-flag (+ i 1) flag))))
+    false
+    (if (str-eq (drv-arg i) flag) true (drv-has-flag (+ i 1) flag))))
 
 ; The package root for a subcommand: the nearest directory at or above
 ; the working directory that carries a zyl.pkg. A tool that guessed

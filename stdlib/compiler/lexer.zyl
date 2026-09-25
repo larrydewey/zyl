@@ -222,10 +222,10 @@
 
 (defn marker-loop (text n i)
   (if (>= i n)
-    0
+    false
     (let c (byte-at text i)
       (if (either (= c 46) (either (= c 101) (= c 69)))
-        1
+        true
         (marker-loop text n (+ i 1))))))
 
 ; End of a `;`-comment: first '\n' index (exclusive), or len.

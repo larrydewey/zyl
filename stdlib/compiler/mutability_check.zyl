@@ -60,8 +60,8 @@
 
 (defn mc-in-scope (name scope)
   (match scope
-    (Nil 0)
-    (Cons h t (if (str-eq h name) 1 (mc-in-scope name t)))))
+    (Nil false)
+    (Cons h t (if (str-eq h name) true (mc-in-scope name t)))))
 
 ; A `fn`/`lambda` body is walked with this marker pushed onto the
 ; enclosing mutscope: a let-mut found only BEHIND it belongs to an
@@ -279,14 +279,14 @@
     ; that's a TMut value crossing an actor boundary.
     (ESpawn closure
       (begin
-        (if (> (mc-refs-any closure mutscope) 0)
+        (if (mc-refs-any closure mutscope)
           (mc-fail-leak e closure mutscope lets "spawned closure captures let-mut (TMut) variable `" "only Send-capable (non-mut) captures may cross into another actor")
           0)
         (mc-expr closure mutscope lets)))
     (ESend actor msg
       (begin
         (mc-expr actor mutscope lets)
-        (if (> (mc-refs-any msg mutscope) 0)
+        (if (mc-refs-any msg mutscope)
           (mc-fail-leak e msg mutscope lets "message sent to an actor references let-mut (TMut) variable `" "messages must be Send-capable; send a copy bound with plain `let`")
           0)
         (mc-expr msg mutscope lets)))
@@ -308,7 +308,7 @@
 (defn mc-first-ref (e names)
   (match names
     (Nil "")
-    (Cons n rest (if (> (mc-refs-any e (Cons n Nil)) 0) n (mc-first-ref e rest)))))
+    (Cons n rest (if (mc-refs-any e (Cons n Nil)) n (mc-first-ref e rest)))))
 
 (defn mc-fail-leak (site inner mutscope lets what hint)
   (let name (mc-first-ref inner mutscope)
@@ -329,50 +329,50 @@
 
 (defn mc-or-list (xs names)
   (match xs
-    (Nil 0)
-    (Cons h t (if (> (mc-refs-any h names) 0) 1 (mc-or-list t names)))))
+    (Nil false)
+    (Cons h t (if (mc-refs-any h names) true (mc-or-list t names)))))
 
 (defn mc-or-arms (arms names)
   (match arms
-    (Nil 0)
+    (Nil false)
     (Cons a rest
       (match a
-        (MA _ _ body (if (> (mc-refs-any body names) 0) 1 (mc-or-arms rest names)))))))
+        (MA _ _ body (if (mc-refs-any body names) true (mc-or-arms rest names)))))))
 
 (defn mc-refs-any (e names)
   (match (Expr.inner e)
     (EAtom a
       (match a
         (AIdent n (mc-in-scope n names))
-        (_ 0)))
-    (ECall op args (if (> (mc-refs-any op names) 0) 1 (mc-or-list args names)))
+        (_ false)))
+    (ECall op args (if (mc-refs-any op names) true (mc-or-list args names)))
     (EApply _ args (mc-or-list args names))
     (EDef _ val (mc-refs-any val names))
-    (ELet _ val body (if (> (mc-refs-any val names) 0) 1 (mc-refs-any body names)))
-    (ELetMut _ val body (if (> (mc-refs-any val names) 0) 1 (mc-refs-any body names)))
+    (ELet _ val body (if (mc-refs-any val names) true (mc-refs-any body names)))
+    (ELetMut _ val body (if (mc-refs-any val names) true (mc-refs-any body names)))
     (EIf c t eb
-      (if (> (mc-refs-any c names) 0) 1
-        (if (> (mc-refs-any t names) 0) 1 (mc-refs-any eb names))))
-    (EWhile c body (if (> (mc-refs-any c names) 0) 1 (mc-refs-any body names)))
+      (if (mc-refs-any c names) true
+        (if (mc-refs-any t names) true (mc-refs-any eb names))))
+    (EWhile c body (if (mc-refs-any c names) true (mc-refs-any body names)))
     (EBegin exprs (mc-or-list exprs names))
     (ELambda _ _ body (mc-refs-any body names))
     (EFn _ _ body (mc-refs-any body names))
     (ETryCatch tbody _ handler
-      (if (> (mc-refs-any tbody names) 0) 1 (mc-refs-any handler names)))
-    (EMatch subj arms (if (> (mc-refs-any subj names) 0) 1 (mc-or-arms arms names)))
+      (if (mc-refs-any tbody names) true (mc-refs-any handler names)))
+    (EMatch subj arms (if (mc-refs-any subj names) true (mc-or-arms arms names)))
     (EFfiCall _ args _ (mc-or-list args names))
     (EFfiPin e2 (mc-refs-any e2 names))
     (EFfiUnpin e2 (mc-refs-any e2 names))
     (EAssert c _ (mc-refs-any c names))
     (EUnwrap e2 (mc-refs-any e2 names))
     (ESetBang name val
-      (if (> (mc-in-scope name names) 0) 1 (mc-refs-any val names)))
+      (if (mc-in-scope name names) true (mc-refs-any val names)))
     (EStructGet se _ (mc-refs-any se names))
     (EMakeStruct _ fields (mc-or-list fields names))
     (EMakeVariant _ _ args (mc-or-list args names))
     (EPrint exprs (mc-or-list exprs names))
     (ESpawn closure (mc-refs-any closure names))
-    (ESend actor msg (if (> (mc-refs-any actor names) 0) 1 (mc-refs-any msg names)))
+    (ESend actor msg (if (mc-refs-any actor names) true (mc-refs-any msg names)))
     (EWithResource _ init body
-      (if (> (mc-refs-any init names) 0) 1 (mc-refs-any body names)))
-    (_ 0)))
+      (if (mc-refs-any init names) true (mc-refs-any body names)))
+    (_ false)))

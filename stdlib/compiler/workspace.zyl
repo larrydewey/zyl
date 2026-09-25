@@ -160,7 +160,7 @@
 
 (defn ws-check-members (arena w members)
   (match members
-    (Nil 1)
+    (Nil true)
     (Cons m t
       (let _ (ws-check-member arena w m)
         (ws-check-members arena w t)))))
@@ -171,7 +171,7 @@
 
 (defn ws-check-deps (arena w deps from)
   (match deps
-    (Nil 1)
+    (Nil true)
     (Cons d t
       (let _ (ws-check-dep arena w d from)
         (ws-check-deps arena w t from)))))

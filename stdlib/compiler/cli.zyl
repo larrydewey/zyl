@@ -389,13 +389,13 @@
     false
     (if (= (pk-byte-at p 0) 47)
       false
-      (if (> (cli-has-dotdot p 0) 0) false true))))
+      (if (cli-has-dotdot p 0) false true))))
 
 (defn cli-has-dotdot (p i)
   (if (>= (+ i 1) (pk-len p))
-    0
+    false
     (if (= (pk-byte-at p i) 46)
-      (if (= (pk-byte-at p (+ i 1)) 46) 1 (cli-has-dotdot p (+ i 1)))
+      (if (= (pk-byte-at p (+ i 1)) 46) true (cli-has-dotdot p (+ i 1)))
       (cli-has-dotdot p (+ i 1)))))
 
 (defn cli-check-native-path (p)
@@ -486,7 +486,7 @@
 ; USING the symbols needs `ffi` (§31.10) — the second half is enforced by
 ; the capability pass, which sees the ffi-call itself.
 (defn cli-check-native-capability (m)
-  (if (> (pk-has-capability (mf-capabilities m) "native") 0)
+  (if (pk-has-capability (mf-capabilities m) "native")
     1
     (ffi-call "zyl_panic"
       (str-concat "E_PKG_CAPABILITY_VIOLATION: capability: package " (str-concat (mf-name m)

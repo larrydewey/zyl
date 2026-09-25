@@ -74,9 +74,9 @@
 
 (defn str-contains-loop (s sub i limit)
   (if (>= i limit)
-    0
+    false
     (if (str-eq (str-substring s i (str-length sub)) sub)
-      1
+      true
       (str-contains-loop s sub (+ i 1) limit))))
 
 ; ===========================================================================

@@ -237,16 +237,16 @@
 ; defines one explicitly — that combination doesn't occur in this
 ; codebase, so it's left unsupported rather than guessed at.
 (defn ic-finish-program (fns stmts)
-  (if (> (ic-has-fn fns "zyl-init-globals") 0)
+  (if (ic-has-fn fns "zyl-init-globals")
     (ic-init-in-main (ic-finish-main fns stmts))
     (ic-finish-main fns stmts)))
 
 (defn ic-has-fn (fns nm)
   (match fns
-    (Nil 0)
+    (Nil false)
     (Cons f rest
       (match f
-        (IFn name _ _ (if (str-eq name nm) 1 (ic-has-fn rest nm)))
+        (IFn name _ _ (if (str-eq name nm) true (ic-has-fn rest nm)))
         (_ (ic-has-fn rest nm))))))
 
 ; Top-level defs are initialized, in source order, before main's body.
@@ -265,16 +265,16 @@
   (match stmts
     (Nil fns)
     (Cons _ _
-      (if (> (ic-has-main fns) 0)
+      (if (ic-has-main fns)
         (ffi-call "zyl_panic" "E_TOPLEVEL_STMTS_WITH_EXPLICIT_MAIN: top-level test/run-tests forms alongside an explicit (defn main ...)" 1000)
         (Cons (IFn "main" (no-strs) (ISeq (list-append stmts (Cons (IConst 0) Nil))) (no-ints)) fns)))))
 
 (defn ic-has-main (fns)
   (match fns
-    (Nil 0)
+    (Nil false)
     (Cons f rest
       (match f
-        (IFn name _ _ (if (str-eq name "main") 1 (ic-has-main rest)))
+        (IFn name _ _ (if (str-eq name "main") true (ic-has-main rest)))
         (_ (ic-has-main rest))))))
 
 ; Walk top-level exprs; EDeftype forms extend the variant table.
@@ -343,9 +343,9 @@
 ; from earlier deftypes -- see vt-from-adtvariants below.)
 (defn av-list-has-name (variants nm)
   (match variants
-    (Nil 0)
+    (Nil false)
     (Cons v rest
-      (if (str-eq (AV.name v) nm) 1 (av-list-has-name rest nm)))))
+      (if (str-eq (AV.name v) nm) true (av-list-has-name rest nm)))))
 
 ; Link one variant entry per variant; tail = next entry chain. Tags
 ; assigned in declaration order (first variant gets the lowest tag).
@@ -373,7 +373,7 @@
     (Cons v rest
       (let tail (vt-from-adtvariants rest vt (+ tag 1) gid)
         (let nm (AV.name v)
-          (if (> (av-list-has-name rest nm) 0)
+          (if (av-list-has-name rest nm)
             (ffi-call "zyl_panic" "E_DUPLICATE_VARIANT: variant name defined more than once in the same deftype" 1000)
             (VTEntry nm
                      tag
@@ -528,7 +528,7 @@
     ; literal, though a bare variable holding a float with no literal in
     ; sight still falls through to exact `=` unrecognized.
     (EAssertEqual l r
-     (if (> (ic-assert-is-float l r) 0)
+     (if (ic-assert-is-float l r)
        (ic-assert-float-eq arena l r vt)
        (IIf (IBinop 9 (ic-expr arena l vt) (ic-expr arena r vt))
             (IConst 0)
@@ -703,25 +703,25 @@
 ; with no literal in the expression at all won't be recognized.
 (defn ic-looks-float (e)
   (match (Expr.inner e)
-    (EAtom atom (match atom (AFloat _ 1) (_ 0)))
+    (EAtom atom (match atom (AFloat _ true) (_ false)))
     (EApply fname args (ic-looks-float-any args))
     (ECall op args (ic-looks-float-any args))
-    (_ 0)))
+    (_ false)))
 
 ; Inferred kinds decide; the literal guess applies only when neither side is a String.
 (defn ic-assert-is-float (l r)
   (let kl (ta-kind l)
     (let kr (ta-kind r)
       (if (or (= kl 2) (= kr 2))
-        1
+        true
         (if (or (= kl 1) (= kr 1))
-          0
-          (if (> (ic-looks-float l) 0) 1 (ic-looks-float r)))))))
+          false
+          (if (ic-looks-float l) true (ic-looks-float r)))))))
 
 (defn ic-looks-float-any (args)
   (match args
-    (Nil 0)
-    (Cons a rest (if (> (ic-looks-float a) 0) 1 (ic-looks-float-any rest)))))
+    (Nil false)
+    (Cons a rest (if (ic-looks-float a) true (ic-looks-float-any rest)))))
 
 ; See EFileOpen above: a literal string mode lowers normally; anything
 ; else becomes a hardcoded "w".
@@ -829,11 +829,11 @@
 ; name codegen resolves to 0 (cg-load-nonslot); a top-level function is
 ; reachable by name from the lifted body, so neither is a capture.
 (defn ic-lambda-add (name bound vt acc)
-  (if (> (ic-name-in-list name bound) 0)
+  (if (ic-name-in-list name bound)
     acc
-    (if (> (ic-name-in-list name acc) 0)
+    (if (ic-name-in-list name acc)
       acc
-      (if (> (vt-is-fn vt name) 0)
+      (if (vt-is-fn vt name)
         acc
         (if (str-eq name "nil")
           acc
@@ -884,8 +884,8 @@
 
 (defn ic-name-in-list (name xs)
   (match xs
-    (Nil 0)
-    (Cons h t (if (str-eq name h) 1 (ic-name-in-list name t)))))
+    (Nil false)
+    (Cons h t (if (str-eq name h) true (ic-name-in-list name t)))))
 
 
 ; --- hoist embedded IFn nodes (from `fn`) out to the top level -------------
@@ -1375,10 +1375,10 @@
 ; Check if any arm is catch-all
 (defn ic-has-catchall (arms vt)
   (match arms
-    (Nil 0)
+    (Nil false)
     (Cons arm rest
       (let ca (ic-arm-is-catchall vt arm)
-        (if (> ca 0) 1 (ic-has-catchall rest vt))))))
+        (if (> ca 0) true (ic-has-catchall rest vt))))))
 
 ; Check all arms' variants exist in VT (no typos)
 (defn ic-check-variants-exist (arms vt)
@@ -1417,25 +1417,25 @@
 ; distinguish from a real bug.
 (defn ic-arm-covers-name (arms n)
   (match arms
-    (Nil 0)
+    (Nil false)
     (Cons arm rest
-      (if (str-eq (MA.variant arm) n) 1 (ic-arm-covers-name rest n)))))
+      (if (str-eq (MA.variant arm) n) true (ic-arm-covers-name rest n)))))
 
 (defn ic-names-uncovered (names arms)
   (match names
-    (Nil 0)
+    (Nil false)
     (Cons n rest
-      (if (> (ic-arm-covers-name arms n) 0)
+      (if (ic-arm-covers-name arms n)
         (ic-names-uncovered rest arms)
-        1))))
+        true))))
 
 (defn ic-arms-all-gid (arms vt gid)
   (match arms
-    (Nil 1)
+    (Nil true)
     (Cons arm rest
       (if (= (vt-gid-of vt (MA.variant arm)) gid)
         (ic-arms-all-gid rest vt gid)
-        0))))
+        false))))
 
 (defn ic-check-exhaustive-gid (arms vt)
   (match arms
@@ -1444,9 +1444,9 @@
       (let gid (vt-gid-of vt (MA.variant arm))
         (if (< gid 0)
           0
-          (if (= (ic-arms-all-gid arms vt gid) 0)
+          (if (not (ic-arms-all-gid arms vt gid))
             0
-            (if (> (ic-names-uncovered (vt-names-with-gid vt gid) arms) 0)
+            (if (ic-names-uncovered (vt-names-with-gid vt gid) arms)
               (ffi-call "zyl_panic" "E_MATCH_NONEXHAUSTIVE: match does not cover every variant" 1000)
               0)))))))
 
@@ -1454,7 +1454,7 @@
 ; a known VT variant (typo detection), then that every sibling variant of
 ; the arms' own deftype is actually covered.
 (defn ic-check-exhaustive (arms vt)
-  (if (> (ic-has-catchall arms vt) 0)
+  (if (ic-has-catchall arms vt)
     0
     (let _ (ic-check-variants-exist arms vt)
       (ic-check-exhaustive-gid arms vt))))

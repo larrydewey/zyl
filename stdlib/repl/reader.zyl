@@ -440,7 +440,7 @@
     (Cons h t
       (if (< i from)
         (rd-search-find t query from (+ i 1))
-        (if (= (rd-contains h query) 1)
+        (if (rd-contains h query)
           h
           (rd-search-find t query from (+ i 1)))))))
 
@@ -450,20 +450,20 @@
     (Cons h t
       (if (< i from)
         (rd-search-index t query from (+ i 1))
-        (if (= (rd-contains h query) 1)
+        (if (rd-contains h query)
           i
           (rd-search-index t query from (+ i 1)))))))
 
 (defn rd-contains (s sub)
   (if (= (str-length sub) 0)
-    1
+    true
     (rd-contains-at s sub 0)))
 
 (defn rd-contains-at (s sub i)
   (if (> (+ i (str-length sub)) (str-length s))
-    0
+    false
     (if (str-eq (str-substring s i (str-length sub)) sub)
-      1
+      true
       (rd-contains-at s sub (+ i 1)))))
 
 (defn rd-search-key (arena st prompt cprompt cands query from saved hit)

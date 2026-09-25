@@ -116,8 +116,8 @@
 
 (defn ec-in-list (name xs)
   (match xs
-    (Nil 0)
-    (Cons h t (if (str-eq h name) 1 (ec-in-list name t)))))
+    (Nil false)
+    (Cons h t (if (str-eq h name) true (ec-in-list name t)))))
 
 ; ===========================================================================
 ; MATCH CHECK
@@ -144,7 +144,7 @@
             (Some owner
               (if (str-eq owner "")
                 0
-                (if (> (ec-in-list tag covered) 0)
+                (if (ec-in-list tag covered)
                   (ec-fail-duplicate-arm tag site)
                   (ec-scan-arms rest dtypes vowners (Cons (Pair tag owner) covered) site))))))))))
 
@@ -160,7 +160,7 @@
         (Pair _ tyname (ec-check-consistent-and-full dtypes tyname covered site))))))
 
 (defn ec-check-consistent-and-full (dtypes tyname covered site)
-  (if (> (ec-all-same-owner tyname covered) 0)
+  (if (ec-all-same-owner tyname covered)
     (match (ec-variants-of tyname dtypes)
       (Some all-variants (ec-check-full-coverage tyname all-variants (ec-tags-only covered) site))
       (None 0))
@@ -168,10 +168,10 @@
 
 (defn ec-all-same-owner (tyname covered)
   (match covered
-    (Nil 1)
+    (Nil true)
     (Cons pr rest
       (match pr
-        (Pair _ owner (if (str-eq owner tyname) (ec-all-same-owner tyname rest) 0))))))
+        (Pair _ owner (if (str-eq owner tyname) (ec-all-same-owner tyname rest) false))))))
 
 (defn ec-tags-only (covered)
   (match covered
@@ -182,7 +182,7 @@
   (match all-variants
     (Nil 0)
     (Cons v rest
-      (if (> (ec-in-list v covered) 0)
+      (if (ec-in-list v covered)
         (ec-check-full-coverage tyname rest covered site)
         (ec-fail-nonexhaustive tyname v site)))))
 

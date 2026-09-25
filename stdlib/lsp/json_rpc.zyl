@@ -288,10 +288,10 @@
 
 (defn jr-starts-with-loop (s pos prefix i len)
   (if (>= i len)
-    1
+    true
     (if (= (ffi-call "zyl_cstr_byte_at" s (+ pos i) 1000) (ffi-call "zyl_cstr_byte_at" prefix i 1000))
       (jr-starts-with-loop s pos prefix (+ i 1) len)
-      0)))
+      false)))
 
 (defn jr-parse-string (s pos)
   (jr-parse-string-loop s pos "")
@@ -363,8 +363,8 @@
 
 (defn jr-has-char-loop (s c i len)
   (if (>= i len)
-    0
-    (if (= (ffi-call "zyl_cstr_byte_at" s i 1000) c) 1 (jr-has-char-loop s c (+ i 1) len))))
+    false
+    (if (= (ffi-call "zyl_cstr_byte_at" s i 1000) c) true (jr-has-char-loop s c (+ i 1) len))))
 
 (defn jr-parse-array (s pos)
   (jr-parse-array-loop s (jr-skip-whitespace s pos) Nil))

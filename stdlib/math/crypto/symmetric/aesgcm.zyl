@@ -217,9 +217,9 @@
 ; Returns: Int
 (defn gcm-ctr-loop ((arena Arena) (key Words) (keylen Int) (j0 Words) (start Int) (src Words) (dst Words) (len Int) (off Int))
   (if (>= off len)
-    1
+    true
     (match (aes-encrypt-block arena key keylen (gcm-counter arena j0 (+ start (/ off 16))))
-      (None 0)
+      (None false)
       (Some ks
         (begin
           (gcm-xor-block src dst ks off (if (< (- len off) 16) (- len off) 16))

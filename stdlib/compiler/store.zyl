@@ -105,9 +105,9 @@
 
 (defn store-chars-ok (s i upper)
   (if (>= i (pk-len s))
-    1
+    true
     (if (not (store-char-ok (pk-byte-at s i) upper))
-      0
+      false
       (store-chars-ok s (+ i 1) upper))))
 
 (defn store-char-ok (c upper)
@@ -123,7 +123,7 @@
   (if (= (pk-len s) 0)
     (ffi-call "zyl_panic"
       (str-concat "E_PKG_FETCH_FAILED: package: empty " label) 1000)
-    (if (> (store-chars-ok s 0 (if (= kind 0) 0 (if (= kind 1) 1 2))) 0)
+    (if (store-chars-ok s 0 (if (= kind 0) 0 (if (= kind 1) 1 2)))
       s
       (ffi-call "zyl_panic"
         (str-concat "E_PKG_FETCH_FAILED: package: refusing unsafe characters in "

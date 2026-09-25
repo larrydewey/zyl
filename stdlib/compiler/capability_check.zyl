@@ -151,7 +151,7 @@
 
 (defn cc-check-forms (forms grants denied)
   (match forms
-    (Nil 1)
+    (Nil true)
     (Cons e rest
       (let _ (cc-check-form e grants denied)
         (cc-check-forms rest grants denied)))))
@@ -180,11 +180,11 @@
 (defn cc-require (need caps denied pkg fname dnode site)
   (if (= (str-length need) 0)
     1
-    (if (> (pk-has-capability denied need) 0)
+    (if (pk-has-capability denied need)
       (cc-fail site dnode
         (str-concat (err-name fname) (str-concat " uses " (str-concat need ", which the root package forbids with deny-capabilities")))
         "remove the use, or lift the root package's deny-capabilities entry")
-      (if (> (pk-has-capability caps need) 0)
+      (if (pk-has-capability caps need)
         1
         (cc-fail site dnode
           (str-concat "package " (str-concat pkg (str-concat " uses " (str-concat need (str-concat " in " (str-concat (err-name fname) " without declaring it in zyl.pkg"))))))
@@ -199,7 +199,7 @@
 
 (defn cc-walk-list (xs caps denied pkg fname dnode)
   (match xs
-    (Nil 1)
+    (Nil true)
     (Cons h t
       (let _ (cc-walk h caps denied pkg fname dnode)
         (cc-walk-list t caps denied pkg fname dnode)))))
@@ -258,7 +258,7 @@
 
 (defn cc-walk-arms (arms caps denied pkg fname dnode)
   (match arms
-    (Nil 1)
+    (Nil true)
     (Cons a rest
       (let _ (cc-walk (MA.body a) caps denied pkg fname dnode)
         (cc-walk-arms rest caps denied pkg fname dnode)))))

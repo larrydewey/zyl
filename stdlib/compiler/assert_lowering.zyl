@@ -135,9 +135,9 @@
 
 (defn al-looks-arms (all arms vt depth)
   (match arms
-    (Nil 0)
+    (Nil false)
     (Cons a rest
-      (if (> (al-looks-variant all (MA.body a) vt (+ depth 1)) 0) 1
+      (if (> (al-looks-variant all (MA.body a) vt (+ depth 1)) 0) true
         (al-looks-arms all rest vt depth)))))
 
 ; A name is "variant-looking" if it's a known ADT/struct constructor

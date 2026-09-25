@@ -1086,9 +1086,9 @@
 
 (defn cg-has-at (name i)
   (if (>= i (ffi-call "zyl_cstr_len" name 1000))
-    0
+    false
     (if (= (ffi-call "zyl_cstr_byte_at" name i 1000) 64)
-      1
+      true
       (cg-has-at name (+ i 1)))))
 
 (defn cg-cat2 (arena a b)
@@ -1963,7 +1963,7 @@
     (let start (cg-after-last-slash path 0 0 len)
       (if (>= start len)
         "main.zyl"
-        (if (> (cg-file-name-bad path start len) 0)
+        (if (cg-file-name-bad path start len)
           "main.zyl"
           (str-substring path start (- len start)))))))
 
@@ -1976,14 +1976,14 @@
 
 (defn cg-file-name-bad (path i len)
   (if (>= i len)
-    0
+    false
     (let c (ffi-call "zyl_cstr_byte_at" path i 1000)
       (if (< c 32)
-        1
+        true
         (if (= c 34)
-          1
+          true
           (if (= c 92)
-            1
+            true
             (cg-file-name-bad path (+ i 1) len)))))))
 
 (defn cg-program-run (st fns)

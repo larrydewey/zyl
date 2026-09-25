@@ -152,10 +152,10 @@
 (defn vt-is-fn (vt name)
   (match vt
     (VTEntry _ _ _ _ rest (vt-is-fn rest name))
-    (VTFn n rest (if (str-eq n name) 1 (vt-is-fn rest name)))
+    (VTFn n rest (if (str-eq n name) true (vt-is-fn rest name)))
     (VTClosureFn _ rest (vt-is-fn rest name))
     (VTClosureReturn _ rest (vt-is-fn rest name))
-    (VTNil 0)))
+    (VTNil false)))
 
 ; gid for an interned variant name; -1 when absent.
 (defn vt-gid-of (vt name)
@@ -184,9 +184,9 @@
   (match vt
     (VTEntry _ _ _ _ rest (vt-returns-closure rest name))
     (VTFn _ rest (vt-returns-closure rest name))
-    (VTClosureFn n rest (if (str-eq n name) 1 (vt-returns-closure rest name)))
+    (VTClosureFn n rest (if (str-eq n name) true (vt-returns-closure rest name)))
     (VTClosureReturn _ rest (vt-returns-closure rest name))
-    (VTNil 0)))
+    (VTNil false)))
 
 ; True when `name` is known (via VTClosureReturn) to hand back a closure
 ; triple when CALLED -- see ic-lower-let (sets it) and
@@ -196,8 +196,8 @@
     (VTEntry _ _ _ _ rest (vt-call-returns-closure rest name))
     (VTFn _ rest (vt-call-returns-closure rest name))
     (VTClosureFn _ rest (vt-call-returns-closure rest name))
-    (VTClosureReturn n rest (if (str-eq n name) 1 (vt-call-returns-closure rest name)))
-    (VTNil 0)))
+    (VTClosureReturn n rest (if (str-eq n name) true (vt-call-returns-closure rest name)))
+    (VTNil false)))
 
 ; --- Token stream helpers ----------------------------------------------------
 

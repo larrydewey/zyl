@@ -67,14 +67,14 @@
     (Cons p rest
       (match p
         (Pair n site
-          (if (> (dc-in-list n seen) 0)
+          (if (dc-in-list n seen)
             (dc-fail kind n site)
             (dc-check-names kind rest (Cons n seen))))))))
 
 (defn dc-in-list (name xs)
   (match xs
-    (Nil 0)
-    (Cons h t (if (str-eq h name) 1 (dc-in-list name t)))))
+    (Nil false)
+    (Cons h t (if (str-eq h name) true (dc-in-list name t)))))
 
 (defn dc-fail (kind name site)
   (let m1 ""

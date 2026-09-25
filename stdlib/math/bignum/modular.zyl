@@ -96,9 +96,9 @@
 ; Returns: Int
 (defn mr-rounds ((arena Arena) (cand Words) (n Int) (rounds Int) (base Int))
   (if (<= rounds 0)
-    1
+    true
     (if (= (mr-witness arena cand n base) 0)
-      0
+      false
       (mr-rounds arena cand n (- rounds 1) (mr-next-base base)))))
 
 ; The next small odd base to try.
@@ -146,17 +146,17 @@
             ; not a leak. (Candidate secrecy is preserved by every other
             ; operation above staying constant-time.)
             (if (= (declassify (bn-eq x one n)) 1)
-              1
+              true
               (mr-square-loop arena x candm1 cand n s))))))))
 
 ; Square up to s-1 times looking for cand-1.
 ; Returns: Int
 (defn mr-square-loop ((arena Arena) (x Words) (candm1 Words) (cand Words) (n Int) (s Int))
   (if (<= s 0)
-    0
+    false
     ; Same public round verdict as mr-check's first test.
     (if (= (declassify (bn-eq x candm1 n)) 1)
-      1
+      true
       (begin
         (mr-square-once arena x cand n)
         (mr-square-loop arena x candm1 cand n (- s 1))))))

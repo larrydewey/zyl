@@ -194,9 +194,9 @@
 
 (defn pk-name-chars-ok (s i)
   (if (>= i (pk-len s))
-    1
+    true
     (if (not (pk-name-char-ok (pk-byte-at s i)))
-      0
+      false
       (pk-name-chars-ok s (+ i 1)))))
 
 ; Last path segment of a package name, e.g. "v2" for "acme/json/v2".
@@ -231,7 +231,7 @@
 (defn pk-name-valid (s)
   (if (= (pk-len s) 0)
     0
-    (if (= (pk-name-chars-ok s 0) 0)
+    (if (not (pk-name-chars-ok s 0))
       0
       (let segs (pk-name-segments s)
         (if (= segs 2)
@@ -249,9 +249,9 @@
 
 (defn pk-no-empty-seg (s i)
   (if (>= i (pk-len s))
-    1
+    true
     (if (= (pk-byte-at s i) 47)
-      (if (= (pk-byte-at s (- i 1)) 47) 0 (pk-no-empty-seg s (+ i 1)))
+      (if (= (pk-byte-at s (- i 1)) 47) false (pk-no-empty-seg s (+ i 1)))
       (pk-no-empty-seg s (+ i 1)))))
 
 (defn pk-check-name (s)
@@ -511,15 +511,15 @@
   (match deps
     (Nil 0)
     (Cons h t
-      (if (> (pk-dep-named t (pd-name h)) 0)
+      (if (pk-dep-named t (pd-name h))
         (ffi-call "zyl_panic"
           (str-concat "E_PKG_DUPLICATE_DEP: package: duplicate dep entry for " (pd-name h)) 1000)
         (pk-check-dup-deps t)))))
 
 (defn pk-dep-named (deps name)
   (match deps
-    (Nil 0)
-    (Cons h t (if (str-eq (pd-name h) name) 1 (pk-dep-named t name)))))
+    (Nil false)
+    (Cons h t (if (str-eq (pd-name h) name) true (pk-dep-named t name)))))
 
 (defn pk-find-dep (deps name)
   (match deps
@@ -689,8 +689,8 @@
 
 (defn pk-has-capability (caps c)
   (match caps
-    (Nil 0)
-    (Cons h t (if (str-eq h c) 1 (pk-has-capability t c)))))
+    (Nil false)
+    (Cons h t (if (str-eq h c) true (pk-has-capability t c)))))
 
 ; Union of two capability sets, left order preserved then new names
 ; appended — the closure written to the lock must be a deterministic
@@ -699,7 +699,7 @@
   (match b
     (Nil a)
     (Cons h t
-      (if (> (pk-has-capability a h) 0)
+      (if (pk-has-capability a h)
         (pk-caps-union a t)
         (pk-caps-union (list-append a (Cons h Nil)) t)))))
 

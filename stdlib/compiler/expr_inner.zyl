@@ -805,21 +805,21 @@
 ; Every keyword must be one the kind takes, each followed by a value.
 (defn wr-keys-ok (kvs allowed)
   (match kvs
-    (Nil 1)
+    (Nil true)
     (Cons a rest
       (match a
         (AstIdent n
-          (if (> (wr-member n allowed) 0)
+          (if (wr-member n allowed)
             (match rest
               (Cons _ more (wr-keys-ok more allowed))
-              (Nil 0))
-            0))
-        (_ 0)))))
+              (Nil false))
+            false))
+        (_ false)))))
 
 (defn wr-member (n xs)
   (match xs
-    (Nil 0)
-    (Cons x rest (if (str-eq n x) 1 (wr-member n rest)))))
+    (Nil false)
+    (Cons x rest (if (str-eq n x) true (wr-member n rest)))))
 
 (defn wr-align-ok (a)
   (if (< a 8) false (if (> a 4096) false (if (= (bit-and a (- a 1)) 0) true false))))
@@ -837,7 +837,7 @@
     (if (not (wr-align-ok align))
       (wr-fail spec ":align must be a power of two from 8 to 4096")
       (if (str-eq kind "arena")
-        (if (= (wr-keys-ok kvs (Cons ":block" (Cons ":align" (Cons ":limit" Nil)))) 0)
+        (if (not (wr-keys-ok kvs (Cons ":block" (Cons ":align" (Cons ":limit" Nil)))))
           (wr-fail spec "an arena region takes :block, :align and :limit, each followed by an integer")
           (let block (wr-opt kvs ":block" -1)
             (let limit (wr-opt kvs ":limit" 0)
@@ -847,7 +847,7 @@
                   (wr-fail spec ":limit must be a non-negative integer")
                   (wr-node spec 1 block align limit body))))))
         (if (str-eq kind "fixed")
-          (if (= (wr-keys-ok kvs (Cons ":size" (Cons ":align" Nil))) 0)
+          (if (not (wr-keys-ok kvs (Cons ":size" (Cons ":align" Nil))))
             (wr-fail spec "a fixed region takes :size and :align, each followed by an integer")
             (let size (wr-opt kvs ":size" -1)
               (if (or (< size 8) (> size 4294967296))
@@ -2301,10 +2301,10 @@
 
 (defn match-has-literal-head (raw-arms)
   (match raw-arms
-    (Nil 0)
+    (Nil false)
     (Cons arm rest
       (if (ast-is-literal-head (ast-first-alt (ast-pattern-alts arm)))
-        1
+        true
         (match-has-literal-head rest)))))
 
 ; Any bare identifier counts as the trailing wildcard, not just `_`
@@ -2426,7 +2426,7 @@
   (if (ast-has-at-least args 2)
     (let scrutinee-ast (ast-nth args 0 (AstInt 0))
       (let raw-arms (ast-list-nth-rest args 1)
-        (if (> (match-has-literal-head raw-arms) 0)
+        (if (match-has-literal-head raw-arms)
           (Some (parse-literal-match scrutinee-ast raw-arms))
           (Some
             (Expr

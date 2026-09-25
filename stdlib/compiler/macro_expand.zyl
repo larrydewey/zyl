@@ -61,8 +61,8 @@
 
 (defn mt-has (mt name)
   (match mt
-    (MNil 0)
-    (MEntry n _ _ rest (if (str-eq n name) 1 (mt-has rest name)))))
+    (MNil false)
+    (MEntry n _ _ rest (if (str-eq n name) true (mt-has rest name)))))
 
 (defn mt-params (mt name)
   (match mt
@@ -103,7 +103,7 @@
         (_ (me-collect rest mt))))))
 
 (defn me-check-dup-macro (mt name site)
-  (if (> (mt-has mt name) 0)
+  (if (mt-has mt name)
     (let m1 (str-concat "macro " (me-quote name))
       (let msg (str-concat m1 " is defined more than once in this program")
         (me-fail "E_DUPLICATE_DEFINITION" msg site "rename one of them, or delete the repeated definition")))
@@ -132,7 +132,7 @@
     (_ 0)))
 
 (defn me-same-file-macro (mt name e)
-  (if (> (mt-has mt name) 0)
+  (if (mt-has mt name)
     (let mf (ffi-call "zyl_span_file" (mt-body mt name) 1000)
       (let df (ffi-call "zyl_span_file" e 1000)
         (if (= mf df) true false)))
@@ -205,8 +205,8 @@
 
 (defn me-in-list (name xs)
   (match xs
-    (Nil 0)
-    (Cons h t (if (str-eq h name) 1 (me-in-list name t)))))
+    (Nil false)
+    (Cons h t (if (str-eq h name) true (me-in-list name t)))))
 
 ; --- results: every rewrite threads the fresh-name counter ------------------
 
@@ -294,7 +294,7 @@
 ; captured by it; at the definition site (top level) it names nothing.
 (defn me-check-free (site name cx)
   (if (cx-in-template cx)
-    (if (> (me-in-list name (cx-locals cx)) 0)
+    (if (me-in-list name (cx-locals cx))
       (me-capture-fail site name cx)
       name)
     name))
@@ -805,7 +805,7 @@
     (_ (MeR (Expr (ECall a args2)) n))))
 
 (defn me-apply-name (e fname args2 cx n)
-  (if (> (mt-has (cx-mt cx) fname) 0)
+  (if (mt-has (cx-mt cx) fname)
     (me-expand e fname args2 cx n)
     (MeR (Expr (EApply fname args2)) n)))
 
@@ -817,7 +817,7 @@
           (me-rewrite (mt-body (cx-mt cx) fname) cx2 n))))))
 
 (defn me-check-termination (e fname cx)
-  (if (> (me-in-list fname (cx-stack cx)) 0)
+  (if (me-in-list fname (cx-stack cx))
     (let m1 (str-concat "macro " (me-quote fname))
       (let msg (str-concat m1 " expands to a call of itself, so its expansion never ends")
         (me-fail "E_MACRO_NON_TERMINATION" msg e "a macro's template is not evaluated at expansion time; write the recursion as a function")))

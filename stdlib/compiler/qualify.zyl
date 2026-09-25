@@ -206,8 +206,8 @@
 
 (defn qf-bound (locals n)
   (match locals
-    (Nil 0)
-    (Cons h t (if (str-eq h n) 1 (qf-bound t n)))))
+    (Nil false)
+    (Cons h t (if (str-eq h n) true (qf-bound t n)))))
 
 (defn qf-bind-all (locals names)
   (match names
@@ -232,7 +232,7 @@
 ; comparisons is a separate change to type inference, not to the module
 ; system.
 (defn qf-ident (tab locals n)
-  (if (> (qf-bound locals n) 0)
+  (if (qf-bound locals n)
     n
     (let k (qt-lookup tab n)
       (if (> (str-length k) 0) (str-concat k "") n))))
@@ -294,11 +294,11 @@
 
 (defn qf-upper-from (n i)
   (if (>= i (pk-len n))
-    0
+    false
     (let c (pk-byte-at n i)
       (if (= c 95)
         (qf-upper-from n (+ i 1))
-        (if (>= c 65) (if (<= c 90) 1 0) 0)))))
+        (if (>= c 65) (if (<= c 90) true false) false)))))
 
 (defn qf-type-ident (tab locals n)
   (if (> (qf-upper-p n) 0) (qf-ident tab locals n) n))

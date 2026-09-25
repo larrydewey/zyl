@@ -139,9 +139,9 @@
 
 (defn eval-contains-at (s sub i)
   (if (> (+ i (str-length sub)) (str-length s))
-    0
+    false
     (if (str-eq (str-substring s i (str-length sub)) sub)
-      1
+      true
       (eval-contains-at s sub (+ i 1)))))
 
 (defn session-drop-global (gs name)
@@ -244,9 +244,9 @@
 (defn eval-mentions-at (text name i)
   (let n (str-length name)
     (if (> (+ i n) (str-length text))
-      0
+      false
       (if (eval-token-match text name i n)
-        1
+        true
         (eval-mentions-at text name (+ i 1))))))
 
 (defn eval-token-match (text name i n)

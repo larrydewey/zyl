@@ -119,17 +119,17 @@
     (Cons e rest
       (match e
         (CE caller callee
-          (if (> (ch-edge-seen caller callee seen) 0)
+          (if (ch-edge-seen caller callee seen)
             (ch-dedup-acc rest seen)
             (Cons e (ch-dedup-acc rest (Cons e seen)))))))))
 
 (defn ch-edge-seen (caller callee seen)
   (match seen
-    (Nil 0)
+    (Nil false)
     (Cons e rest
       (match e
         (CE c2 k2
-          (if (and (str-eq c2 caller) (str-eq k2 callee)) 1 (ch-edge-seen caller callee rest)))))))
+          (if (and (str-eq c2 caller) (str-eq k2 callee)) true (ch-edge-seen caller callee rest)))))))
 
 (defn ch-incoming-callers (edges name)
   (match edges

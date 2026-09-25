@@ -175,10 +175,10 @@
 ; True (1) if code-name appears in the catalog.
 (defn ec-contains (code-name codes)
   (match codes
-    (Nil 0)
+    (Nil false)
     (Cons head rest
       (if (str-eq (ec-name head) code-name)
-        1
+        true
         (ec-contains code-name rest)))))
 
 ; First catalog entry matching code-name; EFound found=0 with an empty code
