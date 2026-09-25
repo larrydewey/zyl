@@ -1,0 +1,96 @@
+; === Zyl Standard Library — Slices ===
+; Module: collections (slice submodule)
+;
+; A Slice is a zero-copy window on a Vec's storage: the array, an offset
+; and a length. Making a slice or a sub-slice copies nothing, and every
+; read is checked against the slice's own bounds. Like a Vec version, a
+; slice shares its storage: an element set through a Vec that still uses
+; that storage is visible through the slice. A slice holds the array, so
+; region inference keeps the storage alive for as long as the slice.
+
+(use core/show)
+(use collections/vec)
+
+(deftype Slice (SliceC (Array T) Int Int)) ; storage, offset, length
+
+(defn slice-store (s) (match s (SliceC a _ _ a)))
+(defn slice-off (s) (match s (SliceC _ o _ o)))
+
+; The number of elements in the slice.
+; Returns: Int
+(defn slice-len (s) (match s (SliceC _ _ n n)))
+
+; A slice of all of `v`.
+; Returns: Slice
+(defn slice-of-vec (v) (SliceC (vec-store v) 0 (vec-len v)))
+
+; The `len` elements of `v` from `off`. A range outside the Vec is
+; E_INDEX_OUT_OF_BOUNDS.
+; Returns: Slice
+(defn slice-vec (v (off Int) (len Int))
+  (if (or (< off 0) (or (< len 0) (> len (- (vec-len v) off))))
+    (ffi-call "zyl_panic" "E_INDEX_OUT_OF_BOUNDS: slice-vec range outside the Vec" 1000)
+    (SliceC (vec-store v) off len)))
+
+; The `len` elements of `s` from `off`. A range outside the slice is
+; E_INDEX_OUT_OF_BOUNDS.
+; Returns: Slice
+(defn slice-sub (s (off Int) (len Int))
+  (if (or (< off 0) (or (< len 0) (> len (- (slice-len s) off))))
+    (ffi-call "zyl_panic" "E_INDEX_OUT_OF_BOUNDS: slice-sub range outside the slice" 1000)
+    (SliceC (slice-store s) (+ (slice-off s) off) len)))
+
+; Element i of the slice. An index outside it is E_INDEX_OUT_OF_BOUNDS.
+; Returns: T
+(defn slice-get (s (i Int))
+  (if (or (< i 0) (>= i (slice-len s)))
+    (ffi-call "zyl_panic" "E_INDEX_OUT_OF_BOUNDS: slice-get index outside the slice" 1000)
+    (array-get (slice-store s) (+ (slice-off s) i))))
+
+; Element i, or `default` when i is outside the slice.
+; Returns: T
+(defn slice-get-or (s (i Int) default)
+  (if (or (< i 0) (>= i (slice-len s)))
+    default
+    (array-get (slice-store s) (+ (slice-off s) i))))
+
+; The slice without its first `n` elements (empty when `n` >= its length).
+; Returns: Slice
+(defn slice-drop (s (n Int))
+  (let k (if (< n 0) 0 (if (> n (slice-len s)) (slice-len s) n))
+    (SliceC (slice-store s) (+ (slice-off s) k) (- (slice-len s) k))))
+
+; The first `n` elements of the slice (all of it when `n` >= its length).
+; Returns: Slice
+(defn slice-take (s (n Int))
+  (let k (if (< n 0) 0 (if (> n (slice-len s)) (slice-len s) n))
+    (SliceC (slice-store s) (slice-off s) k)))
+
+; `f` applied to an accumulator and each element in order, from `init`.
+; Returns: the accumulator's type
+(defn slice-fold (s f init) (slice-fold-from s f init 0))
+
+(defn slice-fold-from (s f acc (i Int))
+  (if (>= i (slice-len s))
+    acc
+    (slice-fold-from s f (f acc (slice-get s i)) (+ i 1))))
+
+; A new Vec in `arena` holding the slice's elements (a copy).
+; Returns: Vec
+(defn slice-to-vec (s (arena Arena))
+  (slice-push-from s (vec-create arena (slice-len s)) 0))
+
+(defn slice-push-from (s v (i Int))
+  (if (>= i (slice-len s))
+    v
+    (slice-push-from s (vec-push v (slice-get s i)) (+ i 1))))
+
+(impl Show Slice (defn show (self) (str-concat "[" (str-concat (slice-show-from self 0) "]"))))
+
+(defn slice-show-from (s (i Int))
+  (if (>= i (slice-len s))
+    ""
+    (let item (Show.show (slice-get s i))
+      (if (= i (- (slice-len s) 1))
+        item
+        (str-concat item (str-concat ", " (slice-show-from s (+ i 1))))))))

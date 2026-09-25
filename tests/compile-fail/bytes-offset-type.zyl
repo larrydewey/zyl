@@ -1,0 +1,4 @@
+; expect-error: E_TYPE_MISMATCH
+; A byte offset is an Int. A String here used to be accepted, and its
+; address was used as the offset.
+(defn main () (let b (bytebuf Heap 8) (begin (print (load-u8 :le b "abc")) 0)))

@@ -1,0 +1,8 @@
+; expect-error: E_FFI_RESTRICTED
+; zyl_view_byte trusts the caller's offset and length (text/view checks
+; them once, when a view is made); a user program calling it directly could
+; read outside the string.
+(defn main ()
+  (begin
+    (print (ffi-call "zyl_view_byte" "abc" 1000000 10 0 1000))
+    0))

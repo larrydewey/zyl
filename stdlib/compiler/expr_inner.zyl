@@ -973,7 +973,43 @@
 (defn recover-last-colon (n i)
   (if (< i 0) -1 (if (= (ffi-call "zyl_cstr_byte_at" n i 1000) 58) i (recover-last-colon n (- i 1)))))
 
+;; `(quote d)`: see ast-quote-data. A name inside it is E_MALFORMED_FORM.
+(defn parse-quote (rest)
+  (match rest
+    (Cons d t
+      (if (nil? t)
+        (let _ (quote-check d)
+          (convert-ast (ast-quote-data d)))
+        (Expr (EUnknown "quote" (convert-ast-list rest)))))
+    (Nil (Expr (EUnknown "quote" Nil)))))
+
+(defn quote-check (d)
+  (match d
+    (AList xs (quote-check-list xs))
+    (AstIdent n (quote-name-fail d n))
+    (_ unit)))
+
+(defn quote-check-list (xs)
+  (match xs
+    (Nil unit)
+    (Cons h t (let _ (quote-check h) (quote-check-list t)))))
+
+(defn quote-name-fail (d n)
+  (let off (ffi-call "zyl_span_off" d 1000)
+    (let fid (ffi-call "zyl_span_file" d 1000)
+      (ffi-call "zyl_panic"
+        (err-at "E_MALFORMED_FORM" (str-concat "a quoted list holds constant data; `" (str-concat n "` is a name"))
+                fid off "write the value with (list ...) or [...], which evaluates its elements")
+        1000))))
+
 (defn dispatch-special (n rest)
+  (if (str-eq n "list")
+    (convert-ast (ast-list-literal rest))
+    (if (str-eq n "quote")
+      (parse-quote rest)
+      (dispatch-special-form n rest))))
+
+(defn dispatch-special-form (n rest)
   (if (str-eq n "with-region")
     (parse-with-region rest)
   (if (str-eq n "extern")
@@ -2808,13 +2844,19 @@
           (parse-derive-traits (ast-list-nth-rest args 1)))))
     None))
 
+; `[Show Eq]` reads as `(list Show Eq)`.
+(defn derive-drop-list (xs)
+  (match xs
+    (Cons h t (match h (AstIdent n (if (str-eq n "list") t xs)) (_ xs)))
+    (Nil Nil)))
+
 ; `(derive T Show Eq)` or `(derive T [Show Eq])`.
 (defn parse-derive-traits (xs)
   (match xs
     (Nil Nil)
     (Cons t rest
       (match t
-        (AList inner (list-append (parse-derive-traits inner) (parse-derive-traits rest)))
+        (AList inner (list-append (parse-derive-traits (derive-drop-list inner)) (parse-derive-traits rest)))
         (_ (let hd (match t (AstIdent n n) (_ "___"))
              (Cons hd (parse-derive-traits rest))))))))
 

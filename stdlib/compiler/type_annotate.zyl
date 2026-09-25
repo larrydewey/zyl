@@ -258,14 +258,17 @@
     (Cons h t (if (ta-occurs st i h) true (ta-occurs-list st i t)))))
 
 ; Returns 1 when unified, 0 on a conflict (whose vars are then poisoned).
+; A conflict inside the types (an element of two lists, say) is reported
+; there, so the enclosing unification does not report it again.
 (defn ta-unify (st a b)
+  (let before (ffi-call "zyl_ref_get" ta-error-count 1000)
   (let ok (ta-unify-r st (ta-resolve st a) (ta-resolve st b))
     (if (> ok 0)
       1
-      (let _ (if (ta-strict-p)
+      (let _ (if (and (ta-strict-p) (= (ffi-call "zyl_ref_get" ta-error-count 1000) before))
                (ta-strict (str-concat "cannot unify " (str-concat (ta-show st a) (str-concat " with " (ta-show st b)))))
                unit)
-        (ta-seq (ta-poison st a) (ta-seq (ta-poison st b) 0))))))
+        (ta-seq (ta-poison st a) (ta-seq (ta-poison st b) 0)))))))
 
 (defn ta-unify-r (st ra rb)
   (match ra
@@ -824,24 +827,52 @@
 (defn ta-bytebuf () (TaC "ByteBuf" Nil))
 (defn ta-byteslice () (TaC "ByteSlice" Nil))
 
+; A load or store takes a ByteBuf or a ByteSlice. A handle whose type is
+; still open waits for its function group (like a struct-get on an
+; unknown record) and is E_CANNOT_INFER if nothing settles it.
 (defn ta-bytes (st ctx env b)
   (let t (ta-expr st ctx env b)
-    (match (ta-resolve st t)
-      (TaC n _
-        (if (or (ta-show-prim n) (ta-streq n "Unit"))
-          (let _ (ta-mismatch st b (ta-bytebuf) t Nil "pass the handle `bytebuf` or `byteslice` returned")
-            t)
-          t))
-      (_ t))))
+    (let _ (if (= (ta-bytes-try st t b) 0)
+             (let _ (ta-wpush (ta-pending st) (TaPend ctx t " bytes" t b)) unit)
+             unit)
+      t)))
+
+; 1 when settled (accepted or reported), 0 when it must wait.
+(defn ta-bytes-try (st t node)
+  (match (ta-resolve st t)
+    (TaC n _
+      (if (or (ta-streq n "ByteBuf") (ta-streq n "ByteSlice"))
+        1
+        (ta-seq (ta-mismatch st node (ta-bytebuf) t Nil "pass the handle `bytebuf` or `byteslice` returned") 1)))
+    (TaV i (if (< i 0) 1 (if (ta-poisoned st i) 1 0)))
+    (_ (ta-seq (ta-mismatch st node (ta-bytebuf) t Nil "pass the handle `bytebuf` or `byteslice` returned") 1))))
+
+(defn ta-bytes-ambiguous (node)
+  (ta-type-error "E_CANNOT_INFER" "cannot tell whether this is a ByteBuf or a ByteSlice"
+    node Nil "annotate it, e.g. ((b ByteBuf))"))
 
 ; Handle first, then the other operands; the result is an Int.
 (defn ta-bytes-op (st ctx env b rest)
   (let _ (ta-bytes st ctx env b)
     (ta-walk-int st ctx env rest)))
 
+; An operation on one kind of handle.
+(defn ta-buf-op (st ctx env b want rest)
+  (let _ (ta-expect st ctx env b want)
+    (ta-walk-int st ctx env rest)))
+
+; Every operand is an Int; so is the result.
 (defn ta-walk-int (st ctx env es)
-  (let _ (ta-list st ctx env es)
-    (ta-int)))
+  (match es
+    (Nil (ta-int))
+    (Cons e t (let _ (ta-expect st ctx env e (ta-int)) (ta-walk-int st ctx env t)))))
+
+; Type `e` and require `want`.
+(defn ta-expect (st ctx env e want)
+  (let t (ta-expr st ctx env e)
+    (if (ta-clash st want t)
+      (ta-seq (ta-mismatch st e want t Nil "") 0)
+      (ta-unify st t want))))
 
 ; Strict mode (docs/sound-types-design.md): statement forms return Unit,
 ; conditions must be Bool, arithmetic needs Int or Float. Outside strict
@@ -923,8 +954,9 @@
     (EPrint exprs (ta-seq (ta-print st ctx env exprs) (ta-stmt)))
     (EFfiCall sym args _ (let _ (ta-ffi-args st ctx env args) (ta-ffi-ret st sym)))
     (EFileOpen a b (ta-file-open st ctx env a b))
-    (EFileRead a b (let _ (ta-list st ctx env (ta-l2 a b)) (ta-str)))
-    (EFileWrite a b (ta-walk-int st ctx env (ta-l2 a b)))
+    ; A file is its descriptor, an Int; the data written is a String.
+    (EFileRead a b (ta-seq (ta-walk-int st ctx env (ta-l2 a b)) (ta-str)))
+    (EFileWrite a b (ta-seq (ta-walk-int st ctx env (Cons a Nil)) (ta-seq (ta-expect st ctx env b (ta-str)) (ta-int))))
     (EFileClose a (ta-walk-int st ctx env (Cons a Nil)))
     (EBufAppend a b (ta-last (ta-list st ctx env (ta-l2 a b)) (ta-int)))
     (EAssert c _ (ta-assert-bool st ctx env c))
@@ -968,25 +1000,27 @@
     (EDefn _ params body (ta-lambda st ctx env params body))
     (EByteLit _ (ta-int))
     (EByteBuf _ _ (ta-bytebuf))
+    ; Loads and stores take either handle; the rest name the one they
+    ; need. Offsets, lengths and stored values are Ints.
     (ELoadByte _ b o (ta-bytes-op st ctx env b (Cons o Nil)))
     (ELoadByteSigned _ b o (ta-bytes-op st ctx env b (Cons o Nil)))
     (EStoreByte _ b o v (ta-bytes-op st ctx env b (ta-l2 o v)))
     (EStoreByteSigned _ b o v (ta-bytes-op st ctx env b (ta-l2 o v)))
-    (EByteSlice b s l (ta-seq (ta-bytes-op st ctx env b (ta-l2 s l)) (ta-byteslice)))
-    (EByteSliceSub b s l (ta-seq (ta-bytes-op st ctx env b (ta-l2 s l)) (ta-byteslice)))
-    (EByteBufAppend b v (ta-bytes-op st ctx env b (Cons v Nil)))
-    (EByteBufLen b (ta-bytes-op st ctx env b Nil))
-    (EByteBufCap b (ta-bytes-op st ctx env b Nil))
-    (EByteBufPtr b (ta-bytes-op st ctx env b Nil))
+    (EByteSlice b s l (ta-seq (ta-buf-op st ctx env b (ta-bytebuf) (ta-l2 s l)) (ta-byteslice)))
+    (EByteSliceSub b s l (ta-seq (ta-buf-op st ctx env b (ta-byteslice) (ta-l2 s l)) (ta-byteslice)))
+    (EByteBufAppend b v (ta-seq (ta-buf-op st ctx env b (ta-bytebuf) Nil) (ta-seq (ta-expect st ctx env v (ta-byteslice)) (ta-int))))
+    (EByteBufLen b (ta-buf-op st ctx env b (ta-bytebuf) Nil))
+    (EByteBufCap b (ta-buf-op st ctx env b (ta-bytebuf) Nil))
+    (EByteBufPtr b (ta-buf-op st ctx env b (ta-bytebuf) Nil))
     (EAlignCheck x _ (ta-walk-int st ctx env (Cons x Nil)))
-    (EAtomicLoad b o (ta-bytes-op st ctx env b (Cons o Nil)))
-    (EAtomicStore b o v (ta-bytes-op st ctx env b (ta-l2 o v)))
-    (EAtomicAdd b o v (ta-bytes-op st ctx env b (ta-l2 o v)))
-    (EAtomicSub b o v (ta-bytes-op st ctx env b (ta-l2 o v)))
-    (EAtomicCAS b o x v (ta-bytes-op st ctx env b (ta-l3 o x v)))
-    (EAtomicFetchAdd b o v (ta-bytes-op st ctx env b (ta-l2 o v)))
-    (EAtomicMax b o v (ta-bytes-op st ctx env b (ta-l2 o v)))
-    (EAtomicMin b o v (ta-bytes-op st ctx env b (ta-l2 o v)))
+    (EAtomicLoad b o (ta-buf-op st ctx env b (ta-bytebuf) (Cons o Nil)))
+    (EAtomicStore b o v (ta-buf-op st ctx env b (ta-bytebuf) (ta-l2 o v)))
+    (EAtomicAdd b o v (ta-buf-op st ctx env b (ta-bytebuf) (ta-l2 o v)))
+    (EAtomicSub b o v (ta-buf-op st ctx env b (ta-bytebuf) (ta-l2 o v)))
+    (EAtomicCAS b o x v (ta-buf-op st ctx env b (ta-bytebuf) (ta-l3 o x v)))
+    (EAtomicFetchAdd b o v (ta-buf-op st ctx env b (ta-bytebuf) (ta-l2 o v)))
+    (EAtomicMax b o v (ta-buf-op st ctx env b (ta-bytebuf) (ta-l2 o v)))
+    (EAtomicMin b o v (ta-buf-op st ctx env b (ta-bytebuf) (ta-l2 o v)))
     (EReadLine (ta-str))
     ; `exit` and `error` do not return, so their type is anything.
     (EExit x (let _ (ta-unify st (ta-expr st ctx env x) (ta-int)) (ta-fresh st)))
@@ -1824,13 +1858,15 @@
     0
     (match (ta-wget pv i)
       (TaPend _ ts field r node
-        (let _ (if (= (ta-sg-try st ts field r node) 0) (ta-sg-ambiguous st field node) unit)
+        (let _ (if (ta-streq field " bytes")
+                 (if (= (ta-bytes-try st ts node) 0) (ta-bytes-ambiguous node) unit)
+                 (if (= (ta-sg-try st ts field r node) 0) (ta-sg-ambiguous field node) unit))
           (ta-flush-loop st pv (+ i 1) n))))))
 
 ; A field read whose record type is still unknown when its function
 ; group is done: several structs have the field, so the result would be
 ; any type. (The field's type used to be left free.)
-(defn ta-sg-ambiguous (st field node)
+(defn ta-sg-ambiguous (field node)
   (ta-type-error "E_CANNOT_INFER"
     (str-concat "cannot tell which struct's field `" (str-concat field "` this reads: more than one struct has it"))
     node Nil "annotate the value's type, e.g. ((p Point))"))

@@ -45,6 +45,7 @@
     (TkLBracket (= 12 want))
     (TkRBracket (= 13 want))
     (TkColon (= 14 want))
+    (TkQuote (= 15 want))
     (TkInt _ (= 2 want))
     (TkFloat _ (= 3 want))
     (TkString _ (= 4 want))

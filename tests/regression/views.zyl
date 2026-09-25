@@ -1,0 +1,83 @@
+; Zero-copy views (text/view, collections/slice): string views, a parsing
+; cursor and Vec slices. A view holds its base, so a view of a string
+; built in a callee survives the callee's region.
+
+(use core/core)
+(use text/view)
+(use collections/vec)
+(use collections/slice)
+
+(defn digit-p ((b Int)) (and (>= b 48) (<= b 57)))
+
+(defn churn (i total) (if (= i 0) total (churn (- i 1) (+ total (str-length (str-concat "x" (Show.show i)))))))
+
+; The base string is built here; only the view is returned.
+(defn word-of ((a String) (b String)) (view-take (view-of (str-concat a b)) 5))
+
+(defn sum-fields ((parts (List StrView)))
+  (match parts
+    (Nil 0)
+    (Cons p rest (+ (match (view-parse-int (view-trim p)) (Some n n) (None 1000)) (sum-fields rest)))))
+
+(test "trim, sub and compare"
+  (let v (view-trim (view-of "  hello, world \n"))
+    (begin
+      (assert-equal (view-len v) 12)
+      (assert-true (view-eq-str (view-sub v 7 5) "world"))
+      (assert-true (view-starts-with v "hello"))
+      (assert-true (view-ends-with v "world"))
+      (assert-false (view-starts-with v "world"))
+      (assert-equal (view-to-string (view-take v 5)) "hello"))))
+
+(test "ordering, equality and hashing follow the bytes"
+  (begin
+    (assert-equal (view-compare (view-of "abc") (view-of "abd")) -1)
+    (assert-equal (view-compare (view-of "ab") (view-of "abc")) -1)
+    (assert-equal (Ord.compare (view-of "b") (view-of "a")) 1)
+    (assert-true (Eq.eq (view-slice "xabcx" 1 3) (view-of "abc")))
+    (assert-equal (Hash.hash (view-slice "xabcx" 1 3)) (Hash.hash "abc"))))
+
+(test "split and parse"
+  (begin
+    (assert-equal (sum-fields (view-split (view-of "1, 22 ,333,-4") 44)) 352)
+    (assert-equal (list-length (view-split (view-of "a,,b,") 44)) 4)
+    (assert-true (match (view-parse-int (view-of "-")) (Some _ false) (None true)))
+    (assert-true (match (view-parse-int (view-of "12a")) (Some _ false) (None true)))))
+
+(test "byte access is bounded by the view"
+  (let v (view-slice "abcdef" 2 2)
+    (begin
+      (assert-equal (view-byte-at v 0) 99)
+      (assert-equal (view-byte-at v 2) -1)
+      (assert-equal (view-byte-at v -1) -1)
+      (assert-equal (view-find v 102 0) -1))))
+
+(test "a range outside the string is an error"
+  (assert-equal (try (view-len (view-slice "abc" 2 5)) (catch e (if (view-starts-with (view-of e) "E_INDEX_OUT_OF_BOUNDS") -7 0))) -7))
+
+(test "a view keeps a callee's string alive"
+  (let w (word-of "alpha" "beta")
+    (let _ (churn 200 0)
+      (assert-equal (view-to-string w) "alpha"))))
+
+(test "cursor scanning"
+  (let t (cursor-take-while (cursor-of "12345 abc") digit-p)
+    (let c (cursor-skip-space (taken-rest t))
+      (begin
+        (assert-equal (view-to-string (taken-view t)) "12345")
+        (assert-equal (cursor-pos c) 6)
+        (assert-equal (match (cursor-expect c "ab") (Some c2 (cursor-peek c2)) (None -2)) 99)
+        (assert-true (match (cursor-expect c "x") (Some _ false) (None true)))))))
+
+(test "slices of a Vec"
+  (let v (vec-push (vec-push (vec-push (vec-create-default 4) 10) 20) 30)
+    (let s (slice-vec v 1 2)
+      (begin
+        (assert-equal (slice-get s 1) 30)
+        (assert-equal (slice-fold s (fn (a x) (+ a x)) 0) 50)
+        (assert-equal (slice-len (slice-drop s 5)) 0)
+        (assert-equal (slice-get (slice-sub s 1 1) 0) 30)
+        (assert-equal (vec-len (slice-to-vec s (arena-create 0))) 2)
+        (assert-equal (try (slice-get s 2) (catch e (if (view-starts-with (view-of e) "E_INDEX_OUT_OF_BOUNDS") -7 0))) -7)))))
+
+(run-tests)

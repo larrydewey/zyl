@@ -1,0 +1,38 @@
+; List literals: (list ...), the reader's [...] and quoted constant data
+; '(...). Each is a Cons chain built in source order.
+
+(use core/core)
+(use core/list)
+
+(defn total ((xs (List Int))) (match xs (Nil 0) (Cons h t (+ h (total t)))))
+
+(defn trace-log () (ffi-call "zyl_ref_new" "" 1000))
+(def order (trace-log))
+(defn note ((s String)) (begin (ffi-call "zyl_ref_set" order (str-concat (ffi-call "zyl_ref_get" order 1000) s) 1000) s))
+
+(defstruct LPt (x Int) (y Int) (:derive [Eq Show]))
+
+(test "bracket and list forms"
+  (begin
+    (assert-equal (total [1 2 3]) 6)
+    (assert-equal (total (list 10 20 (+ 1 2))) 33)
+    (assert-equal (list-length []) 0)
+    (assert-equal (list-length (list)) 0)
+    (assert-equal (Show.show ["a" "b"]) "[a, b]")
+    (assert-equal [1 2] (Cons 1 (Cons 2 Nil)))))
+
+(test "quoted data"
+  (begin
+    (assert-equal '(1 2 3) [1 2 3])
+    (assert-equal (Show.show '((1 2) (3) ())) "[[1, 2], [3], []]")
+    (assert-equal '"q" "q")
+    (assert-equal (list-length '()) 0)))
+
+(test "elements are evaluated left to right"
+  (let _ (list (note "a") (note "b") (note "c"))
+    (assert-equal (ffi-call "zyl_ref_get" order 1000) "abc")))
+
+(test "derive lists still name traits"
+  (assert-true (== (make-LPt 1 2) (make-LPt 1 2))))
+
+(run-tests)

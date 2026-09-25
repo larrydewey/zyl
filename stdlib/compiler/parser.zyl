@@ -57,7 +57,8 @@
     (TkRBrace _ false)
     (TkLBracket _ false)
     (TkRBracket _ false)
-    (TkColon _ false)))
+    (TkColon _ false)
+    (TkQuote _ false)))
 
 ; True when the stream is exhausted (empty or at TkEof).
 ; Returns: Bool
@@ -87,7 +88,8 @@
     (TkRBrace o o)
     (TkLBracket o o)
     (TkRBracket o o)
-    (TkColon o o)))
+    (TkColon o o)
+    (TkQuote o o)))
 
 ; Record where `node` was read from, then hand it straight back, so a
 ; construction reads `(ast-at fid off (AstInt v))`. The position is kept beside
@@ -112,6 +114,7 @@
         (TkLParen o (read-forms arena rest (no-forms) fid o))
         (TkLBracket o (read-forms-bracket arena rest (no-forms) fid o))
         (TkLBrace o (read-forms-brace arena rest (no-forms) fid o))
+        (TkQuote o (read-quote arena rest fid o))
         (TkRParen _ (read-form-atom arena t rest fid))
         (TkRBrace _ (read-form-atom arena t rest fid))
         (TkRBracket _ (read-form-atom arena t rest fid))
@@ -148,7 +151,8 @@
     (TkRBrace o (AstOf (ast-at fid o (AList (no-forms))) rest))
     (TkLBracket o (AstOf (ast-at fid o (AList (no-forms))) rest))
     (TkRBracket o (AstOf (ast-at fid o (AList (no-forms))) rest))
-    (TkColon o (AstOf (ast-at fid o (AList (no-forms))) rest))))
+    (TkColon o (AstOf (ast-at fid o (AList (no-forms))) rest))
+    (TkQuote o (AstOf (ast-at fid o (AList (no-forms))) rest))))
 
 ; Read forms until ')' (or EOF), accumulating into `acc` (reverse order).
 ; Returns: AstTok wrapping (AList forms...)
@@ -177,7 +181,8 @@
     (TkRBrace _ false)
     (TkLBracket _ false)
     (TkRBracket _ false)
-    (TkColon _ false)))
+    (TkColon _ false)
+    (TkQuote _ false)))
 
 ; Read forms until '}' (or EOF).
 ; Returns: AstTok wrapping (AList forms...)
@@ -206,16 +211,27 @@
     (TkLBrace _ false)
     (TkLBracket _ false)
     (TkRBracket _ false)
-    (TkColon _ false)))
+    (TkColon _ false)
+    (TkQuote _ false)))
+
+; `[a b]` is the list literal `(list a b)`; `'d` is `(quote d)`
+; (expr_inner.zyl gives both their meaning).
+(defn bracket-forms (fid off acc)
+  (Cons (ast-at fid off (AstIdent "list")) (list-reverse acc)))
+
+(defn read-quote (arena rest fid off)
+  (let r (read-form arena rest fid)
+    (AstOf (ast-at fid off (AList (Cons (ast-at fid off (AstIdent "quote")) (Cons (art-ast r) Nil))))
+           (art-rest r))))
 
 ; Read forms until ']' (or EOF).
-; Returns: AstTok wrapping (AList forms...)
+; Returns: AstTok wrapping (AList (list forms...))
 (defn read-forms-bracket (arena toks acc fid off)
   (if (toks-empty toks)
-    (AstOf (ast-at fid off (AList (list-reverse acc))) toks)
+    (AstOf (ast-at fid off (AList (bracket-forms fid off acc))) toks)
     (let t (toks-head toks)
       (if (tok-is-rbracket t)
-        (AstOf (ast-at fid off (AList (list-reverse acc))) (toks-tail toks))
+        (AstOf (ast-at fid off (AList (bracket-forms fid off acc))) (toks-tail toks))
         (let r (read-form arena toks fid)
           (read-forms-bracket arena (art-rest r) (Cons (art-ast r) acc) fid off))))))
 
@@ -235,7 +251,8 @@
     (TkLBrace _ false)
     (TkRBrace _ false)
     (TkLBracket _ false)
-    (TkColon _ false)))
+    (TkColon _ false)
+    (TkQuote _ false)))
 
 ; Parse a whole source token stream into a program: a List of top-level
 ; Ast forms in source order.

@@ -344,6 +344,12 @@
   (AList (Cons (AstIdent (qf-head-name tab locals hn)) (qf-forms tab locals rest))))
 
 (defn qf-special (tab locals hn rest)
+  (if (str-eq hn "list")
+    (qf-form tab locals (ast-list-literal rest))
+  (if (str-eq hn "derive")
+    (qf-call tab locals hn (qf-derive-flat rest))
+  (if (qf-quote-data-p hn rest)
+    (match rest (Cons d _ (qf-form tab locals (ast-quote-data d))) (Nil (AList Nil)))
   (if (str-eq hn "defn")
     (qf-defn tab locals hn rest)
   (if (str-eq hn "fn")
@@ -386,7 +392,31 @@
     (qf-pub tab locals rest)
   (if (qf-opaque-head hn)
     (AList (Cons (AstIdent hn) rest))
-    (qf-call tab locals hn rest)))))))))))))))))))))))
+    (qf-call tab locals hn rest))))))))))))))))))))))))))
+
+;; `(derive T [A B])`: the trait list is names, not a list literal.
+(defn qf-derive-flat (xs)
+  (match xs
+    (Nil Nil)
+    (Cons h t
+      (match h
+        (AList kids
+          (match kids
+            (Cons k ks
+              (match k
+                (AstIdent n (if (str-eq n "list") (list-append ks (qf-derive-flat t)) (Cons h (qf-derive-flat t))))
+                (_ (Cons h (qf-derive-flat t)))))
+            (Nil (Cons h (qf-derive-flat t)))))
+        (_ (Cons h (qf-derive-flat t)))))))
+
+;; `(quote d)` with constant data only; anything else stays for
+;; convert-ast to report.
+(defn qf-quote-data-p (hn rest)
+  (if (str-eq hn "quote")
+    (match rest
+      (Cons d t (if (nil? t) (ast-quote-ok d) false))
+      (Nil false))
+    false))
 
 ; `(pub defn f ...)`: the visibility marker sits in front of the
 ; definition rather than around it, so the form to qualify is everything

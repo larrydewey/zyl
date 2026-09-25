@@ -42,7 +42,8 @@
   (TkRBrace Int)
   (TkLBracket Int)
   (TkRBracket Int)
-  (TkColon Int))
+  (TkColon Int)
+  (TkQuote Int))
 
 ; --- Parsed source ---------------------------------------------------------
 
@@ -214,3 +215,48 @@
   (match toks
     (Cons _ rest rest)
     (Nil Nil)))
+
+; --- List literals ---------------------------------------------------------
+
+; `(list a b c)` (the reader's `[a b c]`) is the chain
+; `(Cons a (Cons b (Cons c Nil)))`, built in source order, so the elements
+; are evaluated left to right and must have one type. Qualification
+; (qualify.zyl) rewrites the form this way so `Cons` and `Nil` are
+; resolved like hand-written ones; convert-ast does the same for a tree
+; that was never qualified.
+(defn ast-list-literal (xs)
+  (match xs
+    (Nil (AstIdent "Nil"))
+    (Cons x t
+      (ast-span-like (AList (Cons (AstIdent "Cons") (Cons x (Cons (ast-list-literal t) Nil)))) x))))
+
+; `(quote d)` (the reader's `'d`) is constant data: an Int, Float, String
+; or Bool is itself, and a list is a list literal of quoted elements, so
+; `'((1 2) (3))` is a (List (List Int)). A name has no value to quote; the
+; caller rejects one (ast-quote-ok, expr_inner.zyl's quote-check).
+(defn ast-quote-data (d)
+  (match d
+    (AList xs (ast-span-like (ast-list-literal (ast-quote-list xs)) d))
+    (_ d)))
+
+(defn ast-quote-list (xs)
+  (match xs
+    (Nil Nil)
+    (Cons h t (Cons (ast-quote-data h) (ast-quote-list t)))))
+
+; Whether quoted data holds no name.
+(defn ast-quote-ok (d)
+  (match d
+    (AList xs (ast-quote-ok-list xs))
+    (AstIdent _ false)
+    (_ true)))
+
+(defn ast-quote-ok-list (xs)
+  (match xs
+    (Nil true)
+    (Cons h t (if (ast-quote-ok h) (ast-quote-ok-list t) false))))
+
+; `node` with `from`'s source position.
+(defn ast-span-like (node from)
+  (let _ (ffi-call "zyl_span_copy" node from 1000)
+    node))

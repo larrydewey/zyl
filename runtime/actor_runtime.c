@@ -783,6 +783,53 @@ long long zyl_cstr_byte_at(long long ptr, long long i) {
     return (long long)(unsigned char)s[i];
 }
 
+/* String views (stdlib text/view): a view is {base, off, len} with
+   off + len <= strlen(base), checked once by zyl_view_ok when the view is
+   made. The accessors below trust that invariant and never call strlen,
+   so they are restricted to the standard library (ffi-raw-p). */
+
+/* Whether [off, off+len) lies within the string: 1 or 0. */
+long long zyl_view_ok(long long s, long long off, long long len) {
+    if (off < 0 || len < 0) return 0;
+    if (!zyl_cstr_valid(s, "view")) return 0;
+    long long n = s ? (long long)strlen((const char*)(size_t)s) : 0;
+    return off <= n && len <= n - off;
+}
+
+/* Byte `i` of the view, or -1 outside [0, len). */
+long long zyl_view_byte(long long s, long long off, long long len, long long i) {
+    if (!s || i < 0 || i >= len) return -1;
+    return (long long)((const unsigned char*)(size_t)s)[off + i];
+}
+
+/* Three-way byte comparison of two views: -1, 0 or 1 (shorter first on a
+   common prefix), like zyl_cstr_cmp. */
+long long zyl_view_cmp(long long a, long long aoff, long long alen,
+                       long long b, long long boff, long long blen) {
+    const unsigned char* pa = a ? (const unsigned char*)(size_t)a + aoff : (const unsigned char*)"";
+    const unsigned char* pb = b ? (const unsigned char*)(size_t)b + boff : (const unsigned char*)"";
+    long long n = alen < blen ? alen : blen;
+    int c = n > 0 ? memcmp(pa, pb, (size_t)n) : 0;
+    if (c != 0) return c < 0 ? -1 : 1;
+    return alen < blen ? -1 : (alen > blen ? 1 : 0);
+}
+
+/* Index of the first `byte` at or after `from` in the view, or -1. */
+long long zyl_view_find(long long s, long long off, long long len, long long from, long long byte) {
+    if (!s || from < 0 || from >= len) return -1;
+    const unsigned char* p = (const unsigned char*)(size_t)s + off;
+    const void* hit = memchr(p + from, (int)(unsigned char)byte, (size_t)(len - from));
+    return hit ? (long long)((const unsigned char*)hit - p) : -1;
+}
+
+/* A fresh String holding the view's bytes. */
+long long zyl_view_copy(long long s, long long off, long long len) {
+    char* out = (char*)(size_t)ZYL_RESULT_ALLOC(len + 1);
+    if (s && len > 0) memcpy(out, (const char*)(size_t)s + off, (size_t)len);
+    out[len] = 0;
+    return (long long)(size_t)out;
+}
+
 /* Write byte `b` at index `i` of a buffer (does not manage the terminator). */
 void zyl_cstr_byte_set(long long ptr, long long i, long long b) {
     if (!ptr || i < 0) return;
@@ -4608,7 +4655,7 @@ long long zyl_int_text(long long n) {
     X(zyl_cpuid_features) X(zyl_cstr_byte_at) X(zyl_cstr_byte_set) \
     X(zyl_cstr_concat) X(zyl_cstr_count_newlines) X(zyl_cstr_decode) \
     X(zyl_cstr_cmp) X(zyl_cstr_eq) X(zyl_cstr_from_byte) X(zyl_cstr_from_int) \
-    X(zyl_cstr_key_matches) \
+    X(zyl_cstr_key_matches) X(zyl_view_ok) X(zyl_view_byte) X(zyl_view_cmp) X(zyl_view_find) X(zyl_view_copy) \
     X(zyl_cstr_last_newline) X(zyl_cstr_len) X(zyl_cstr_of_word) X(zyl_float_bits) X(zyl_float_of_bits) X(zyl_word_load) X(zyl_word_store) X(zyl_ptr_add) X(zyl_ptr_cstr) X(zyl_ffi_addr) \
     X(zyl_cstr_sanitize) X(zyl_cstr_sub) X(zyl_cstr_substr) \
     X(zyl_cstr_to_int) X(zyl_cstr_to_int_base) X(zyl_diag_json) \
@@ -5016,6 +5063,7 @@ long long zyl_cstr_substr_r(long long s, long long st, long long n) { ZYL_R_BEGI
 long long zyl_cstr_from_byte_r(long long b) { ZYL_R_BEGIN long long v = zyl_cstr_from_byte(b); ZYL_R_END return v; }
 long long zyl_int_text_r(long long n) { ZYL_R_BEGIN long long v = zyl_int_text(n); ZYL_R_END return v; }
 long long zyl_f_text_r(long long bits) { ZYL_R_BEGIN long long v = zyl_f_text(bits); ZYL_R_END return v; }
+long long zyl_view_copy_r(long long s, long long o, long long n) { ZYL_R_BEGIN long long v = zyl_view_copy(s, o, n); ZYL_R_END return v; }
 long long zyl_file_read_c_r(long long fd, long long n) { ZYL_R_BEGIN long long v = zyl_file_read_c(fd, n); ZYL_R_END return v; }
 
 /* Regions are on unless ZYL_REGIONS=0 was set for the compile. */

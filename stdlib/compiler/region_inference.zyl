@@ -328,6 +328,11 @@
   (if (str-eq s "zyl_int_text") 1
   (if (str-eq s "zyl_f_text") 1
   (if (str-eq s "zyl_file_read_c") 1
+  (if (str-eq s "zyl_view_copy") 1
+  (if (str-eq s "zyl_view_ok") 0
+  (if (str-eq s "zyl_view_byte") 0
+  (if (str-eq s "zyl_view_cmp") 0
+  (if (str-eq s "zyl_view_find") 0
   (if (str-eq s "zyl_variant_field") 2
   (if (str-eq s "zyl_cstr_len") 0
   (if (str-eq s "zyl_cstr_eq") 0
@@ -350,7 +355,7 @@
   (if (str-eq s "zyl_diag_json") 0
   (if (str-eq s "zyl_load_byte") 0
   (if (str-eq s "zyl_load_n") 0
-  (rg-ffi-kind-bytes s))))))))))))))))))))))))))))))
+  (rg-ffi-kind-bytes s)))))))))))))))))))))))))))))))))))
 
 ; Byte buffers: 0 as above; 2 as above (a slice points into its buffer);
 ; 4 (stores: width, endian, offset, buffer, value): only the stored value

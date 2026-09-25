@@ -1,5 +1,5 @@
-; Compile-fail: a stray `'` (no quote syntax) used to end the file silently;
-; it is E_INVALID_CHAR.
+; Compile-fail: a stray character the lexer does not know (here a
+; backtick) used to end the file silently; it is E_INVALID_CHAR.
 
 (defn main ()
-  (begin (print 'x) 0))
+  (begin (print `x) 0))

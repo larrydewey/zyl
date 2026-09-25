@@ -1,0 +1,219 @@
+; === Zyl Standard Library — String views ===
+; Module: text/view
+; Provides: StrView (a zero-copy substring) and Cursor (a parsing position)
+;
+; A StrView is a string, an offset and a length: taking a view, a sub-view,
+; splitting or trimming never copies bytes. The bounds are checked once,
+; when a view is made from a String (`view-slice`, `view-of`); every other
+; operation stays inside them. A view is an ordinary value holding its
+; base string, so region inference keeps the base alive for as long as any
+; view of it (docs/regions-design.md): a view returned from a function
+; takes its base into the caller's region.
+;
+; `view-to-string` is the one operation that copies. The raw accessors it
+; and the others use (`zyl_view_byte`, `zyl_view_cmp`, `zyl_view_find`,
+; `zyl_view_copy`) trust the bounds and are restricted to the standard
+; library (E_FFI_RESTRICTED).
+
+(use core/show)
+(use core/option)
+(use core/list)
+(use allocator/allocator)
+
+(deftype StrView (StrViewC String Int Int)) ; base, offset, length
+
+(defn view-base ((v StrView)) (match v (StrViewC b _ _ b)))
+(defn view-off ((v StrView)) (match v (StrViewC _ o _ o)))
+
+; The length of the view in bytes.
+; Returns: Int
+(defn view-len ((v StrView)) (match v (StrViewC _ _ n n)))
+
+; A view of all of `s`.
+; Returns: StrView
+(defn view-of ((s String))
+  (StrViewC s 0 (ffi-call "zyl_cstr_len" s 1000)))
+
+; The `len` bytes of `s` from `off`. A range outside `s` is
+; E_INDEX_OUT_OF_BOUNDS.
+; Returns: StrView
+(defn view-slice ((s String) (off Int) (len Int))
+  (if (ffi-call "zyl_view_ok" s off len 1000)
+    (StrViewC s off len)
+    (ffi-call "zyl_panic" "E_INDEX_OUT_OF_BOUNDS: view-slice range outside the string" 1000)))
+
+; The `len` bytes of `v` from `off`. A range outside `v` is
+; E_INDEX_OUT_OF_BOUNDS.
+; Returns: StrView
+(defn view-sub ((v StrView) (off Int) (len Int))
+  (if (or (< off 0) (or (< len 0) (> len (- (view-len v) off))))
+    (ffi-call "zyl_panic" "E_INDEX_OUT_OF_BOUNDS: view-sub range outside the view" 1000)
+    (StrViewC (view-base v) (+ (view-off v) off) len)))
+
+; The view without its first `n` bytes (empty when `n` >= its length).
+; Returns: StrView
+(defn view-drop ((v StrView) (n Int))
+  (let k (if (< n 0) 0 (if (> n (view-len v)) (view-len v) n))
+    (StrViewC (view-base v) (+ (view-off v) k) (- (view-len v) k))))
+
+; The first `n` bytes of the view (all of it when `n` >= its length).
+; Returns: StrView
+(defn view-take ((v StrView) (n Int))
+  (let k (if (< n 0) 0 (if (> n (view-len v)) (view-len v) n))
+    (StrViewC (view-base v) (view-off v) k)))
+
+(defn view-is-empty ((v StrView)) (= (view-len v) 0))
+
+; Byte `i` of the view (0..255), or -1 when `i` is outside it.
+; Returns: Int
+(defn view-byte-at ((v StrView) (i Int))
+  (ffi-call "zyl_view_byte" (view-base v) (view-off v) (view-len v) i 1000))
+
+; A new String with the view's bytes (the one copying operation).
+; Returns: String
+(defn view-to-string ((v StrView))
+  (ffi-call "zyl_view_copy" (view-base v) (view-off v) (view-len v) 1000))
+
+; Byte order: -1, 0 or 1; a proper prefix sorts first.
+; Returns: Int
+(defn view-compare ((a StrView) (b StrView))
+  (ffi-call "zyl_view_cmp" (view-base a) (view-off a) (view-len a)
+                           (view-base b) (view-off b) (view-len b) 1000))
+
+(defn view-eq ((a StrView) (b StrView))
+  (if (= (view-len a) (view-len b)) (= (view-compare a b) 0) false))
+
+; Whether the view holds exactly the bytes of `s`.
+; Returns: Bool
+(defn view-eq-str ((v StrView) (s String)) (view-eq v (view-of s)))
+
+; The index of the first `byte` at or after `from`, or -1.
+; Returns: Int
+(defn view-find ((v StrView) (byte Int) (from Int))
+  (ffi-call "zyl_view_find" (view-base v) (view-off v) (view-len v) from byte 1000))
+
+(defn view-starts-with ((v StrView) (prefix String))
+  (let p (view-of prefix)
+    (if (> (view-len p) (view-len v)) false (view-eq (view-take v (view-len p)) p))))
+
+(defn view-ends-with ((v StrView) (suffix String))
+  (let p (view-of suffix)
+    (if (> (view-len p) (view-len v))
+      false
+      (view-eq (view-drop v (- (view-len v) (view-len p))) p))))
+
+; The pieces of the view between occurrences of `byte`, in order. An empty
+; view splits into one empty piece, as does each pair of adjacent
+; separators.
+; Returns: (List StrView)
+(defn view-split ((v StrView) (byte Int))
+  (let at (view-find v byte 0)
+    (if (< at 0)
+      (Cons v Nil)
+      (Cons (view-take v at) (view-split (view-drop v (+ at 1)) byte)))))
+
+(defn view-space-p ((b Int)) (or (= b 32) (or (= b 9) (or (= b 10) (= b 13)))))
+
+; The view without leading and trailing ASCII whitespace (space, tab,
+; newline, carriage return).
+; Returns: StrView
+(defn view-trim ((v StrView)) (view-trim-end (view-trim-start v)))
+
+(defn view-trim-start ((v StrView))
+  (if (and (> (view-len v) 0) (view-space-p (view-byte-at v 0)))
+    (view-trim-start (view-drop v 1))
+    v))
+
+(defn view-trim-end ((v StrView))
+  (if (and (> (view-len v) 0) (view-space-p (view-byte-at v (- (view-len v) 1))))
+    (view-trim-end (view-take v (- (view-len v) 1)))
+    v))
+
+; A decimal integer with an optional leading `-`, filling the whole view;
+; None for anything else (including an empty view or a lone `-`).
+; Overflow wraps, as Int arithmetic does.
+; Returns: (Option Int)
+(defn view-parse-int ((v StrView))
+  (if (= (view-len v) 0)
+    None
+    (if (= (view-byte-at v 0) 45)
+      (if (= (view-len v) 1) None (view-parse-digits v 1 0 -1))
+      (view-parse-digits v 0 0 1))))
+
+(defn view-parse-digits ((v StrView) (i Int) (acc Int) (sign Int))
+  (if (>= i (view-len v))
+    (Some (* sign acc))
+    (let b (view-byte-at v i)
+      (if (and (>= b 48) (<= b 57))
+        (view-parse-digits v (+ i 1) (+ (* acc 10) (- b 48)) sign)
+        None))))
+
+(impl Show StrView (defn show (self) (view-to-string self)))
+(impl Debug StrView (defn debug (self) (str-concat "\"" (str-concat (view-to-string self) "\""))))
+(impl Eq StrView (defn eq (self other) (view-eq self other)))
+(impl Ord StrView (defn compare (self other) (view-compare self other)))
+; The same hash as the String with the view's bytes.
+(impl Hash StrView (defn hash (self) (view-hash self 0 1469598103934665603)))
+
+(defn view-hash ((v StrView) (i Int) (h Int))
+  (if (>= i (view-len v))
+    h
+    (view-hash v (+ i 1) (show-mix h (view-byte-at v i)))))
+
+; ===========================================================================
+; CURSOR — a position in a view, for hand-written parsers
+; ===========================================================================
+
+(deftype Cursor (CursorC StrView Int)) ; the input, the position
+
+; What a scanning step returns: the bytes it took and the cursor after them.
+(deftype Taken (TakenC StrView Cursor))
+
+(defn taken-view ((t Taken)) (match t (TakenC v _ v)))
+(defn taken-rest ((t Taken)) (match t (TakenC _ c c)))
+
+(defn cursor-new ((v StrView)) (CursorC v 0))
+(defn cursor-of ((s String)) (CursorC (view-of s) 0))
+(defn cursor-view ((c Cursor)) (match c (CursorC v _ v)))
+(defn cursor-pos ((c Cursor)) (match c (CursorC _ p p)))
+
+(defn cursor-at-end ((c Cursor)) (>= (cursor-pos c) (view-len (cursor-view c))))
+
+; The input from the cursor on.
+; Returns: StrView
+(defn cursor-rest ((c Cursor)) (view-drop (cursor-view c) (cursor-pos c)))
+
+; The byte at the cursor, or -1 at the end.
+; Returns: Int
+(defn cursor-peek ((c Cursor)) (view-byte-at (cursor-view c) (cursor-pos c)))
+
+; The cursor `n` bytes on, stopping at the end.
+; Returns: Cursor
+(defn cursor-advance ((c Cursor) (n Int))
+  (let p (+ (cursor-pos c) (if (< n 0) 0 n))
+    (CursorC (cursor-view c) (if (> p (view-len (cursor-view c))) (view-len (cursor-view c)) p))))
+
+; The bytes from the cursor for which `pred` holds, and the cursor after
+; them.
+; Returns: Taken
+(defn cursor-take-while ((c Cursor) pred)
+  (let end (cursor-scan c pred (cursor-pos c))
+    (TakenC (view-sub (cursor-view c) (cursor-pos c) (- end (cursor-pos c)))
+            (CursorC (cursor-view c) end))))
+
+(defn cursor-scan ((c Cursor) pred (i Int))
+  (if (>= i (view-len (cursor-view c)))
+    i
+    (if (pred (view-byte-at (cursor-view c) i)) (cursor-scan c pred (+ i 1)) i)))
+
+; The cursor past any ASCII whitespace.
+; Returns: Cursor
+(defn cursor-skip-space ((c Cursor))
+  (taken-rest (cursor-take-while c view-space-p)))
+
+; If the input at the cursor starts with `s`, the cursor after it; else None.
+; Returns: (Option Cursor)
+(defn cursor-expect ((c Cursor) (s String))
+  (if (view-starts-with (cursor-rest c) s)
+    (Some (cursor-advance c (ffi-call "zyl_cstr_len" s 1000)))
+    None))

@@ -287,7 +287,9 @@
                 (lex-loop arena src len (+ i 1) (Cons (TkLBracket i) acc))
                 (if (= c 93)
                   (lex-loop arena src len (+ i 1) (Cons (TkRBracket i) acc))
-                  (lex-c2 arena src len i acc c))))))))))
+                  (if (= c 39)
+                    (lex-loop arena src len (+ i 1) (Cons (TkQuote i) acc))
+                    (lex-c2 arena src len i acc c)))))))))))
 
 (defn lex-c2 (arena src len i acc c)
   (if (= c 34)

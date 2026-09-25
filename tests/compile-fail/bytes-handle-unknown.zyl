@@ -1,0 +1,5 @@
+; expect-error: E_CANNOT_INFER
+; A load takes a ByteBuf or a ByteSlice; an unannotated parameter that
+; nothing settles would accept any value as a handle.
+(defn rd (b off) (load-u8 :le b off))
+(defn main () (let b (bytebuf Heap 8) (begin (print (rd b 0)) 0)))
