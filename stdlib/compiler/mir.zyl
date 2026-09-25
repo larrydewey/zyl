@@ -35,7 +35,7 @@
   (MJz Int Int)                       ; a, L: jump to L when a is 0
   (MRet Int)
   ; Stage 2: variants, match, constants, regions.
-  (MAlloc Int Int Int)                ; d <- a block of n bytes at region level (a call)
+  (MAlloc Int Int Int)                ; d <- a block of n bytes at region level (keeps registers)
   (MLoad Int Int Int)                 ; d <- [base + off]
   (MStore Int Int Int)                ; [base + off] <- v
   (MStoreI Int Int Int)               ; [base + off] <- imm
@@ -43,7 +43,10 @@
   (MStr Int String)                   ; d <- a string constant
   (MFlt Int String)                   ; d <- a Float constant's bits
   (MSym Int String)                   ; d <- a symbol's address
-  (MRegionCycle))                     ; release and re-open the frame region (a call)
+  (MRegionCycle)                      ; release and re-open the frame region (a call)
+  ; Array access, inline (kind 0 get, 1 set, 2 cap); the slow path is the
+  ; runtime's own check, which panics and does not return.
+  (MArr Int Int Int Int Int))         ; kind, d, array, index (-1), value (-1)
 
 ; Vregs an instruction reads, and the one it writes (-1 for none).
 (defn mi-uses (i)
@@ -71,7 +74,10 @@
     (MStr _ _ Nil)
     (MFlt _ _ Nil)
     (MSym _ _ Nil)
-    (MRegionCycle Nil)))
+    (MRegionCycle Nil)
+    (MArr _ _ a ix v (Cons a (mir-opt-use ix (mir-opt-use v Nil))))))
+
+(defn mir-opt-use (v rest) (if (< v 0) rest (Cons v rest)))
 
 (defn mi-def (i)
   (match i
@@ -89,6 +95,7 @@
     (MStr d _ d)
     (MFlt d _ d)
     (MSym d _ d)
+    (MArr _ d _ _ _ d)
     (_ -1)))
 
 ; Instructions that call C (or other code) and so clobber the
@@ -96,7 +103,6 @@
 (defn mi-is-call (i)
   (match i
     (MCall _ _ _ _ _ true)
-    (MAlloc _ _ _ true)
     (MRegionCycle true)
     (_ false)))
 

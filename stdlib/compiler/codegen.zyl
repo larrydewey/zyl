@@ -2483,7 +2483,9 @@
     (IFfi sym args
       (if (cg-inline-byte-p sym args)
         (ml-byte st env venv ms sym args)
-        (ml-call st env venv ms sym false args (cg-site-level e))))
+        (if (ml-array-p sym args)
+          (ml-array st env venv ms sym args)
+          (ml-call st env venv ms sym false args (cg-site-level e)))))
     (IIf c t f
       (let rr (ms-vreg ms)
         (let le (ms-label (mr-ms rr))
@@ -2641,6 +2643,18 @@
         (let rd (ms-vreg m2)
           (MR (ms-emit (mr-ms rd) (MByte kind (mr-v rd) (ml-nth vs 0) (ml-nth vs 1) (if (> kind 1) (ml-nth vs 2) -1)))
               (mr-v rd)))))))
+
+(defn ml-array-p (sym args)
+  (let n (list-length args)
+    (or (and (str-eq sym "zyl_array_get") (= n 2))
+        (or (and (str-eq sym "zyl_array_set") (= n 3)) (and (str-eq sym "zyl_array_cap") (= n 1))))))
+
+(defn ml-array (st env venv ms sym args)
+  (match (ml-args st env venv ms args Nil)
+    (MRL m2 vs
+      (let kind (if (str-eq sym "zyl_array_get") 0 (if (str-eq sym "zyl_array_set") 1 2))
+        (let rd (ms-vreg m2)
+          (MR (ms-emit (mr-ms rd) (MArr kind (mr-v rd) (ml-nth vs 0) (ml-nth vs 1) (ml-nth vs 2))) (mr-v rd)))))))
 
 (defn ml-nth (xs i) (match xs (Nil -1) (Cons h t (if (= i 0) h (ml-nth t (- i 1))))))
 
@@ -2941,14 +2955,7 @@
                  (mb-moves st (mb-arg-moves fr args 0)))
         (let st3 (mb-cur-region st2 lvl)
           (cg-emit-line (mb-leave st3 fr) (str-concat "    jmp " (cg-sym-for (cg-arena-of st) sym true))))))
-    (MAlloc d n lvl
-      (let st2 (cg-emit-line st (str-concat "    mov rdi, " (ffi-call "zyl_int_text" n 1000)))
-        (let st3 (if (= lvl 1)
-                   (cg-emit-lines st2 (Cons "    lea rsi, [rbp-48]" (Cons "    call zyl_ralloc" Nil)))
-                   (if (= lvl 2)
-                     (cg-emit-lines st2 (Cons "    mov rsi, [rbp-16]" (Cons "    call zyl_ralloc" Nil)))
-                     (cg-emit-line st2 "    call zyl_heap_alloc")))
-          (mb-set st3 fr d "rax"))))
+    (MAlloc d n lvl (mb-alloc st fr d n lvl i))
     (MLoad d b off
       (if (mb-live fr d)
         (let st2 (if (mb-in-mem fr b) (cg-emit-line st (str-concat "    mov rax, " (mb-loc-text fr b))) st)
@@ -2974,6 +2981,7 @@
     (MSym d t (mb-set (cg-sym-addr st t) fr d "rax"))
     (MRegionCycle
       (cg-region-prologue (mb-region-release st fr) 1))
+    (MArr kind d a ix v (mb-array st fr kind d a ix v i))
     (MByte kind d o b v (mb-byte st fr kind d o b v i))
     (MFnRef d name
       (mb-set (cg-emit-line st (str-concat "    lea rax, [rip+" (str-concat (cg-sym-mangled (cg-arena-of st) name) "]"))) fr d "rax"))
@@ -3075,3 +3083,110 @@
                                               (Cons "    xor eax, eax"
                                               (Cons (str-concat ldone ":") Nil)))))
                     (mb-set st4 fr d "rax")))))))))))
+
+; zyl_array_get/set/cap (actor_runtime.c, ZylArray {magic, cap, filled,
+; data}) inline. Anything the runtime would reject (a bad handle, an
+; index outside [0, filled), or for a set outside [0, filled] or at cap)
+; calls the runtime entry, which panics with its own message.
+(defn mb-array (st fr kind d a ix v i)
+  (let lb (str-concat (mf-base fr) (str-concat "_a" (ffi-call "zyl_int_text" i 1000)))
+    (let lslow (str-concat lb "s")
+      (let ldone (str-concat lb "d")
+        (let lok (str-concat lb "k")
+          (let st2 (cg-emit-lines st
+                     (Cons (str-concat "    mov rdx, " (mb-loc-text fr a))
+                     (Cons (if (= kind 2) "    xor eax, eax" (str-concat "    mov rax, " (mb-loc-text fr ix)))
+                     (Cons "    cmp rdx, 4096"
+                     (Cons (str-concat "    jb " lslow)
+                     (Cons "    test rdx, 7"
+                     (Cons (str-concat "    jnz " lslow)
+                     (Cons "    movabs rcx, 6510318579778470233"
+                     (Cons "    cmp [rdx], rcx"
+                     (Cons (str-concat "    jne " lslow) Nil))))))))))
+            (let st3 (if (= kind 0)
+                       (cg-emit-lines st2
+                         (Cons "    cmp rax, [rdx+16]"
+                         (Cons (str-concat "    jae " lslow)
+                         (Cons "    mov rdx, [rdx+24]"
+                         (Cons "    mov rax, [rdx+rax*8]"
+                         (Cons (str-concat "    jmp " ldone)
+                         (Cons (str-concat lslow ":")
+                         (Cons "    mov rdi, rdx"
+                         (Cons "    mov rsi, rax"
+                         (Cons "    call zyl_array_get" Nil))))))))))
+                     (if (= kind 1)
+                       (cg-emit-lines st2
+                         (Cons "    cmp rax, [rdx+16]"
+                         (Cons (str-concat "    jb " lok)
+                         (Cons (str-concat "    jne " lslow)
+                         (Cons "    cmp rax, [rdx+8]"
+                         (Cons (str-concat "    jae " lslow)
+                         (Cons "    add qword ptr [rdx+16], 1"
+                         (Cons (str-concat lok ":")
+                         (Cons "    mov rcx, [rdx+24]"
+                         (Cons (str-concat "    mov r11, " (mb-loc-text fr v))
+                         (Cons "    mov [rcx+rax*8], r11"
+                         (Cons "    xor eax, eax"
+                         (Cons (str-concat "    jmp " ldone)
+                         (Cons (str-concat lslow ":")
+                         (Cons "    mov rdi, rdx"
+                         (Cons "    mov rsi, rax"
+                         (Cons (str-concat "    mov rdx, " (mb-loc-text fr v))
+                         (Cons "    call zyl_array_set" Nil))))))))))))))))))
+                       (cg-emit-lines st2
+                         (Cons "    mov rax, [rdx+8]"
+                         (Cons (str-concat "    jmp " ldone)
+                         (Cons (str-concat lslow ":")
+                         (Cons "    mov rdi, rdx"
+                         (Cons "    call zyl_array_cap" Nil))))))))
+              (mb-set (cg-emit-line st3 (str-concat ldone ":")) fr d "rax"))))))))
+
+; A block of n bytes plus zyl_ralloc's size header. In a region (levels
+; 1, 2) the bump pointer is advanced inline when the current block has
+; room and the region is not a with-region scope; everything else calls
+; the runtime with the allocatable caller-saved registers kept, so an
+; allocation is not a call to the register allocator. The budget is
+; charged per region block (zyl_rblock_get), which only the runtime path
+; takes.
+(defn mb-alloc (st fr d n lvl i)
+  (let need (+ (* 8 (/ (+ n 7) 8)) 8)
+    (let lb (str-concat (mf-base fr) (str-concat "_m" (ffi-call "zyl_int_text" i 1000)))
+      (let lslow (str-concat lb "s")
+        (let ldone (str-concat lb "d")
+          (let st2 (if (or (= lvl 1) (= lvl 2))
+                     (cg-emit-lines st
+                       (Cons (if (= lvl 1) "    lea r11, [rbp-48]" "    mov r11, [rbp-16]")
+                       (Cons "    test r11, r11"
+                       (Cons (str-concat "    jz " lslow)
+                       (Cons "    test byte ptr [r11+24], 1"
+                       (Cons (str-concat "    jnz " lslow)
+                       (Cons "    mov rax, [r11+8]"
+                       (Cons "    test rax, rax"
+                       (Cons (str-concat "    jz " lslow)
+                       (Cons (str-concat "    lea rdx, [rax+" (str-concat (ffi-call "zyl_int_text" need 1000) "]"))
+                       (Cons "    cmp rdx, [r11+16]"
+                       (Cons (str-concat "    ja " lslow)
+                       (Cons "    mov [r11+8], rdx"
+                       (Cons (str-concat "    mov qword ptr [rax], " (ffi-call "zyl_int_text" (/ (+ n 7) 8) 1000))
+                       (Cons "    add rax, 8"
+                       (Cons (str-concat "    jmp " ldone)
+                       (Cons (str-concat lslow ":") Nil)))))))))))))))))
+                     st)
+            (let st3 (cg-emit-lines st2
+                       (Cons "    push rsi"
+                       (Cons "    push rdi"
+                       (Cons "    push r8"
+                       (Cons "    push r9"
+                       (Cons "    push r10"
+                       (Cons "    sub rsp, 8"
+                       (Cons (str-concat "    mov rdi, " (ffi-call "zyl_int_text" n 1000))
+                       (Cons (if (or (= lvl 1) (= lvl 2)) "    mov rsi, r11" "    nop")
+                       (Cons (if (or (= lvl 1) (= lvl 2)) "    call zyl_ralloc" "    call zyl_heap_alloc")
+                       (Cons "    add rsp, 8"
+                       (Cons "    pop r10"
+                       (Cons "    pop r9"
+                       (Cons "    pop r8"
+                       (Cons "    pop rdi"
+                       (Cons "    pop rsi"
+                       (Cons (str-concat ldone ":") Nil)))))))))))))))))
+              (mb-set st3 fr d "rax"))))))))
