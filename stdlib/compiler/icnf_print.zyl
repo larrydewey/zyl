@@ -70,10 +70,16 @@
 
 (defn ip-open (buf tag) (begin (ip-out buf "(") (ip-out buf tag)))
 
-; `)` or ` :k)` when codegen gave the node a representation kind.
+; `)`, preceded by ` :k` when codegen gave the node a representation kind
+; and ` @r` when region inference gave it a region (attr 4: 1 frame,
+; 2 result, 3 heap, 4+k with-region scope k; on a function, its flags).
 (defn ip-close (buf e)
   (let k (ffi-call "zyl_attr_get" 1 e 1000)
-    (if (= k 0) (ip-out buf ")") (begin (ip-out buf " :") (ip-int buf k) (ip-out buf ")")))))
+    (let r (ffi-call "zyl_attr_get" 4 e 1000)
+      (begin
+        (if (= k 0) 0 (begin (ip-out buf " :") (ip-int buf k)))
+        (if (= r 0) 0 (begin (ip-out buf " @") (ip-int buf r)))
+        (ip-out buf ")")))))
 
 (defn ip-node (buf e)
   (begin
