@@ -91,7 +91,7 @@
 ; closed and where, and the parser only knows that it ran out of input.
 (defn compile-check-balance (srcbuf srcpath)
   (let balance (sb-check-string srcbuf)
-    (if (= (sb-result-balanced balance) 0)
+    (if (not (sb-result-balanced balance))
       ; Register the path first so report-unbalanced can name the file and
       ; print the offending line. zyl_source_register dedupes by path, so
       ; this is the same id zyl-parse-file goes on to use.

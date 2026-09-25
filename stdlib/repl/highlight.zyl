@@ -40,25 +40,25 @@
     (let b (term-byte-at text i)
       (if (= b 59) (hl-comment-run text i n acc)
       (if (= b 34) (hl-string-run text (+ i 1) n acc)
-      (if (= (hl-paren-byte b) 1)
+      (if (hl-paren-byte b)
         (hl-scan text (+ i 1) n (str-concat acc (hl-wrap (hl-paren) (byte-str b))))
-      (if (= (hl-atom-byte b) 1) (hl-atom-run text i n acc)
+      (if (hl-atom-byte b) (hl-atom-run text i n acc)
         (hl-scan text (+ i 1) n (str-concat acc (byte-str b))))))))))
 
 (defn hl-paren-byte (b)
-  (if (= b 40) 1 (if (= b 41) 1 (if (= b 91) 1 (if (= b 93) 1 0)))))
+  (if (= b 40) true (if (= b 41) true (if (= b 91) true (if (= b 93) true false)))))
 
 (defn hl-space-byte (b)
-  (if (= b 32) 1 (if (= b 9) 1 (if (= b 10) 1 (if (= b 13) 1 0)))))
+  (if (= b 32) true (if (= b 9) true (if (= b 10) true (if (= b 13) true false)))))
 
 ; An atom runs to the next delimiter: whitespace, a paren, a quote or a
 ; comment.
 (defn hl-atom-byte (b)
-  (if (= (hl-space-byte b) 1) 0
-  (if (= (hl-paren-byte b) 1) 0
-  (if (= b 34) 0
-  (if (= b 59) 0
-  1)))))
+  (if (hl-space-byte b) false
+  (if (hl-paren-byte b) false
+  (if (= b 34) false
+  (if (= b 59) false
+  true)))))
 
 (defn hl-comment-run (text i n acc)
   (let e (hl-find-newline text i n)
@@ -93,78 +93,78 @@
 (defn hl-atom-end (text i n)
   (if (>= i n)
     n
-    (if (= (hl-atom-byte (term-byte-at text i)) 1)
+    (if (hl-atom-byte (term-byte-at text i))
       (hl-atom-end text (+ i 1) n)
       i)))
 
 (defn hl-color-atom (word)
-  (if (= (hl-number-p word) 1) (hl-wrap (hl-number) word)
-  (if (= (hl-keyword-p word) 1) (hl-wrap (hl-keyword) word)
-  (if (= (hl-type-p word) 1) (hl-wrap (hl-type) word)
+  (if (hl-number-p word) (hl-wrap (hl-number) word)
+  (if (hl-keyword-p word) (hl-wrap (hl-keyword) word)
+  (if (hl-type-p word) (hl-wrap (hl-type) word)
   word))))
 
 ; A leading digit, or a sign followed by one.
 (defn hl-number-p (word)
   (let n (str-length word)
     (if (= n 0)
-      0
+      false
       (let b0 (term-byte-at word 0)
-        (if (= (hl-digit-byte b0) 1)
-          1
+        (if (hl-digit-byte b0)
+          true
           (if (> n 1)
-            (if (= (hl-sign-byte b0) 1) (hl-digit-byte (term-byte-at word 1)) 0)
-            0))))))
+            (if (hl-sign-byte b0) (hl-digit-byte (term-byte-at word 1)) false)
+            false))))))
 
 (defn hl-digit-byte (b)
-  (if (>= b 48) (if (<= b 57) 1 0) 0))
+  (if (>= b 48) (if (<= b 57) true false) false))
 
 (defn hl-sign-byte (b)
-  (if (= b 45) 1 (if (= b 43) 1 0)))
+  (if (= b 45) true (if (= b 43) true false)))
 
 ; An initial capital marks a type or a variant constructor -- the
 ; convention the whole language follows.
 (defn hl-type-p (word)
   (if (= (str-length word) 0)
-    0
+    false
     (let b (term-byte-at word 0)
-      (if (>= b 65) (if (<= b 90) 1 0) 0))))
+      (if (>= b 65) (if (<= b 90) true false) false))))
 
 (defn hl-keyword-p (word)
-  (if (str-eq word "defn") 1
-  (if (str-eq word "def") 1
-  (if (str-eq word "deftype") 1
-  (if (str-eq word "defstruct") 1
-  (if (str-eq word "defstruct+") 1
-  (if (str-eq word "defmacro") 1
-  (if (str-eq word "let") 1
-  (if (str-eq word "let-mut") 1
-  (if (str-eq word "set!") 1
-  (if (str-eq word "if") 1
-  (if (str-eq word "match") 1
-  (if (str-eq word "begin") 1
-  (if (str-eq word "while") 1
-  (if (str-eq word "for") 1
-  (if (str-eq word "fn") 1
-  (if (str-eq word "lambda") 1
-  (if (str-eq word "trait") 1
-  (if (str-eq word "impl") 1
-  (if (str-eq word "use") 1
-  (if (str-eq word "spawn") 1
-  (if (str-eq word "send") 1
-  (if (str-eq word "receive") 1
-  (if (str-eq word "try") 1
-  (if (str-eq word "catch") 1
-  (if (str-eq word "ffi-call") 1
-  (if (str-eq word "test") 1
-  (if (str-eq word "assert") 1
-  (if (str-eq word "assert-equal") 1
-  (if (str-eq word "impl-not") 1
-  (if (str-eq word "actor-self") 1
-  (if (str-eq word "requires") 1
-  (if (str-eq word "ensures") 1
-  (if (str-eq word "invariant") 1
-  (if (str-eq word "recover") 1
-  (if (str-eq word "checkpoint") 1
-  (if (str-eq word "contracts") 1
-  (if (str-eq word "print") 1
-  0))))))))))))))))))))))))))))))))))))))
+  (if (str-eq word "defn") true
+  (if (str-eq word "def") true
+  (if (str-eq word "deftype") true
+  (if (str-eq word "defstruct") true
+  (if (str-eq word "defstruct+") true
+  (if (str-eq word "defmacro") true
+  (if (str-eq word "let") true
+  (if (str-eq word "let-mut") true
+  (if (str-eq word "set!") true
+  (if (str-eq word "if") true
+  (if (str-eq word "match") true
+  (if (str-eq word "begin") true
+  (if (str-eq word "while") true
+  (if (str-eq word "for") true
+  (if (str-eq word "fn") true
+  (if (str-eq word "lambda") true
+  (if (str-eq word "trait") true
+  (if (str-eq word "impl") true
+  (if (str-eq word "use") true
+  (if (str-eq word "spawn") true
+  (if (str-eq word "send") true
+  (if (str-eq word "receive") true
+  (if (str-eq word "try") true
+  (if (str-eq word "catch") true
+  (if (str-eq word "ffi-call") true
+  (if (str-eq word "test") true
+  (if (str-eq word "assert") true
+  (if (str-eq word "assert-equal") true
+  (if (str-eq word "impl-not") true
+  (if (str-eq word "actor-self") true
+  (if (str-eq word "requires") true
+  (if (str-eq word "ensures") true
+  (if (str-eq word "invariant") true
+  (if (str-eq word "recover") true
+  (if (str-eq word "checkpoint") true
+  (if (str-eq word "contracts") true
+  (if (str-eq word "print") true
+  false))))))))))))))))))))))))))))))))))))))

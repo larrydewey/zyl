@@ -86,8 +86,8 @@
 ; "looks variant" could route a non-pointer straight into
 ; zyl_variant_eq, which dereferences it unconditionally.
 (defn al-should-variant-eq (all l r vt)
-  (if (> (al-is-primitive-const l) 0) 0
-  (if (> (al-is-primitive-const r) 0) 0
+  (if (al-is-primitive-const l) 0
+  (if (al-is-primitive-const r) 0
   (if (> (al-looks-variant all l vt 0) 0) 1
     (al-looks-variant all r vt 0)))))
 
@@ -95,11 +95,11 @@
   (match (Expr.inner e)
     (EAtom atom
       (match atom
-        (AInt _ 1)
-        (AFloat _ 1)
-        (ABool _ 1)
-        (_ 0)))
-    (_ 0)))
+        (AInt _ true)
+        (AFloat _ true)
+        (ABool _ true)
+        (_ false)))
+    (_ false)))
 
 ; Structural guess at whether `e` evaluates to a heap ADT/struct value:
 ; does its actual runtime tail (see al-tail) construct a known variant

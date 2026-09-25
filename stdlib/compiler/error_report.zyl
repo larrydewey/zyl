@@ -145,14 +145,14 @@
 (defn err-last-sep (n i best)
   (if (>= (+ i 1) (str-length n))
     best
-    (if (= (err-colon2-p n i) 1)
+    (if (err-colon2-p n i)
       (err-last-sep n (+ i 2) i)
       (err-last-sep n (+ i 1) best))))
 
 (defn err-colon2-p (n i)
   (if (= (ffi-call "zyl_cstr_byte_at" n i 1000) 58)
-    (if (= (ffi-call "zyl_cstr_byte_at" n (+ i 1) 1000) 58) 1 0)
-    0))
+    (if (= (ffi-call "zyl_cstr_byte_at" n (+ i 1) 1000) 58) true false)
+    false))
 
 ; A secondary span: another place the diagnostic points at, with its own
 ; short message (the binding a `set!` targets, the definition a capability

@@ -89,19 +89,19 @@
 ; an escape.
 
 (defn store-path-char-ok (c)
-  (if (= (pk-name-char-ok c) 1)
-    1
-    (if (= c 46) 1                      ; .
-      (if (= c 43) 1 0))))              ; +
+  (if (pk-name-char-ok c)
+    true
+    (if (= c 46) true                      ; .
+      (if (= c 43) true false))))              ; +
 
 (defn store-url-char-ok (c)
-  (if (= (store-path-char-ok c) 1)
-    1
-    (if (= c 58) 1                      ; :
-      (if (= c 126) 1                   ; ~
-        (if (= c 37) 1                  ; %
-          (if (= c 63) 1                ; ?
-            (if (= c 61) 1 0)))))))     ; =
+  (if (store-path-char-ok c)
+    true
+    (if (= c 58) true                      ; :
+      (if (= c 126) true                   ; ~
+        (if (= c 37) true                  ; %
+          (if (= c 63) true                ; ?
+            (if (= c 61) true false)))))))     ; =
 
 (defn store-chars-ok (s i upper)
   (if (>= i (pk-len s))

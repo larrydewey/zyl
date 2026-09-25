@@ -53,7 +53,7 @@
 ; A canonical key always carries '@'; a bare local or builtin name never
 ; does, which is how codegen tells the two apart without a side table.
 (defn ck-is-key (s)
-  (if (> (pk-index-of s 64 0) -1) 1 0))
+  (if (> (pk-index-of s 64 0) -1) true false))
 
 ; Text after the last "::" — the source-level symbol, for diagnostics.
 (defn ck-symbol-of (s)
@@ -249,8 +249,8 @@
 
 (defn qf-is-make (n)
   (if (>= (pk-len n) 6)
-    (if (str-eq (pk-sub n 0 5) "make-") 1 0)
-    0))
+    (if (str-eq (pk-sub n 0 5) "make-") true false)
+    false))
 
 ; `Trait.method` is a single identifier ('.' is an identifier character),
 ; and monomorphization builds the impl body's name from the trait and type
@@ -276,7 +276,7 @@
       direct)))
 
 (defn qf-head-fallbacks (tab locals n)
-  (if (> (qf-is-make n) 0)
+  (if (qf-is-make n)
     (qf-make-head tab locals n)
     (let dot (qf-dot-index n 0)
       (if (> dot 0) (qf-dotted-head tab locals n dot) n))))
@@ -394,7 +394,7 @@
     (qf-set tab locals hn rest)
   (if (str-eq hn "pub")
     (qf-pub tab locals rest)
-  (if (> (qf-opaque-head hn) 0)
+  (if (qf-opaque-head hn)
     (AList (Cons (AstIdent hn) rest))
     (qf-call tab locals hn rest)))))))))))))))))))))))
 
@@ -410,9 +410,9 @@
 ; identifiers name modules and packages, which the resolver reads BEFORE
 ; this pass runs and which must survive it verbatim.
 (defn qf-opaque-head (hn)
-  (if (str-eq hn "use") 1
-  (if (str-eq hn "module") 1
-  (if (str-eq hn "export") 1 0))))
+  (if (str-eq hn "use") true
+  (if (str-eq hn "module") true
+  (if (str-eq hn "export") true false))))
 
 ; (defn name (params) body...) — `name` is a definition, so it is renamed
 ; through the table exactly like a reference to it elsewhere; the params

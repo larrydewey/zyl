@@ -51,7 +51,7 @@
   (str-substring s start n))
 
 (defn pk-digit-p (c)
-  (if (>= c 48) (if (<= c 57) 1 0) 0))
+  (if (>= c 48) (if (<= c 57) true false) false))
 
 ; Index of the first occurrence of byte `c` at or after `i`; -1 if absent.
 (defn pk-index-of (s c i)
@@ -67,7 +67,7 @@
   (if (>= start end)
     acc
     (let c (pk-byte-at s start)
-      (if (= (pk-digit-p c) 0)
+      (if (not (pk-digit-p c))
         -1
         (let next (+ (* acc 10) (- c 48))
           (pk-digits s (+ start 1) end next))))))
@@ -185,17 +185,17 @@
   (+ 1 (pk-count-byte s 47 0 0)))
 
 (defn pk-name-char-ok (c)
-  (if (>= c 97) (if (<= c 122) 1 (pk-name-char-ok2 c)) (pk-name-char-ok2 c)))
+  (if (>= c 97) (if (<= c 122) true (pk-name-char-ok2 c)) (pk-name-char-ok2 c)))
 
 (defn pk-name-char-ok2 (c)
-  (if (= (pk-digit-p c) 1)
-    1
-    (if (= c 45) 1 (if (= c 95) 1 (if (= c 47) 1 0)))))
+  (if (pk-digit-p c)
+    true
+    (if (= c 45) true (if (= c 95) true (if (= c 47) true false)))))
 
 (defn pk-name-chars-ok (s i)
   (if (>= i (pk-len s))
     1
-    (if (= (pk-name-char-ok (pk-byte-at s i)) 0)
+    (if (not (pk-name-char-ok (pk-byte-at s i)))
       0
       (pk-name-chars-ok s (+ i 1)))))
 
@@ -292,7 +292,7 @@
 (defn pn-empty () (PN Nil Nil Nil Nil))
 
 (defn pn-is-empty (n)
-  (if (is-nil (pn-sources n)) 1 0))
+  (if (is-nil (pn-sources n)) true false))
 
 ; A graph-wide override (§31.5). Either pins a version or redirects the
 ; source; the unused half is the neutral value.
@@ -436,7 +436,7 @@
 ; here rather than parsed-and-ignored: MVS takes minimums, and silently
 ; treating "^1.2" as "1.2" would give a caret a meaning it does not have.
 (defn pk-check-requirement (s name)
-  (if (= (pk-req-operator-p s) 0)
+  (if (not (pk-req-operator-p s))
     s
     (ffi-call "zyl_panic"
       (str-concat "E_PKG_BAD_REQUIREMENT: package: requirement "
@@ -445,14 +445,14 @@
 
 (defn pk-req-operator-p (s)
   (if (= (pk-len s) 0)
-    0
+    false
     (let c (pk-byte-at s 0)
-      (if (= c 94) 1
-      (if (= c 126) 1
-      (if (= c 62) 1
-      (if (= c 60) 1
-      (if (= c 61) 1
-      (if (= c 42) 1 0)))))))))
+      (if (= c 94) true
+      (if (= c 126) true
+      (if (= c 62) true
+      (if (= c 60) true
+      (if (= c 61) true
+      (if (= c 42) true false)))))))))
 
 ; (dep "name" "version" (features a b) (path "..") (git "url" (rev "..")))
 (defn pk-parse-dep (form)
@@ -628,10 +628,10 @@
 (defn pk-compiler-version () "5.0.0")
 
 (defn pk-known-edition (e)
-  (if (str-eq e "2026") 1 0))
+  (if (str-eq e "2026") true false))
 
 (defn pk-check-edition (e name)
-  (if (> (pk-known-edition e) 0)
+  (if (pk-known-edition e)
     1
     (ffi-call "zyl_panic"
       (str-concat "E_PKG_UNKNOWN_EDITION: package: edition "
@@ -660,18 +660,18 @@
 ; a silently-ignored grant, which would otherwise read as "trusted".
 
 (defn pk-known-capability (c)
-  (if (str-eq c "io") 1
-  (if (str-eq c "ffi") 1
-  (if (str-eq c "actor") 1
-  (if (str-eq c "secret") 1
-  (if (str-eq c "native") 1
-  (if (str-eq c "unsafe") 1 0)))))))
+  (if (str-eq c "io") true
+  (if (str-eq c "ffi") true
+  (if (str-eq c "actor") true
+  (if (str-eq c "secret") true
+  (if (str-eq c "native") true
+  (if (str-eq c "unsafe") true false)))))))
 
 (defn pk-check-capabilities (caps name)
   (match caps
     (Nil 1)
     (Cons c t
-      (if (> (pk-known-capability c) 0)
+      (if (pk-known-capability c)
         (pk-check-capabilities t name)
         (ffi-call "zyl_panic"
           (str-concat "E_MANIFEST_INVALID: package: unknown capability "

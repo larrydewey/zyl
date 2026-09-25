@@ -131,15 +131,15 @@
       (cc-colons s (+ i 1)))))
 
 (defn cc-module-capability (m)
-  (if (> (cc-prefix-p m "io/") 0) "io"
+  (if (cc-prefix-p m "io/") "io"
   (if (str-eq m "core/io") "io"
-  (if (> (cc-prefix-p m "actor/") 0) "actor"
-  (if (> (cc-prefix-p m "ffi/") 0) "ffi"
-  (if (> (cc-prefix-p m "math/secret/") 0) "secret" ""))))))
+  (if (cc-prefix-p m "actor/") "actor"
+  (if (cc-prefix-p m "ffi/") "ffi"
+  (if (cc-prefix-p m "math/secret/") "secret" ""))))))
 
 (defn cc-prefix-p (s p)
   (if (< (pk-len s) (pk-len p))
-    0
+    false
     (str-eq (pk-sub s 0 (pk-len p)) p)))
 
 ; ===========================================================================

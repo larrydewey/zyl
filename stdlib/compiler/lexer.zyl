@@ -20,59 +20,59 @@
 ; ===========================================================================
 
 (defn chr-ws-p (c)
-  (if (= c 32) 1 (if (= c 9) 1 (if (= c 13) 1 (if (= c 10) 1 0)))))
+  (if (= c 32) true (if (= c 9) true (if (= c 13) true (if (= c 10) true false)))))
 
 (defn chr-digit-p (c)
-  (if (>= c 48) (if (<= c 57) 1 0) 0))
+  (if (>= c 48) (if (<= c 57) true false) false))
 
 ; Hex digit: 0-9 a-f A-F (byte values; ASCII).
 (defn chr-hexdigit-p (c)
-  (if (= (chr-digit-p c) 1) 1
-    (if (>= c 97) (if (<= c 102) 1 (if (>= c 65) (if (<= c 70) 1 0) 0))
-    (if (>= c 65) (if (<= c 70) 1 0) 0))))
+  (if (chr-digit-p c) true
+    (if (>= c 97) (if (<= c 102) true (if (>= c 65) (if (<= c 70) true false) false))
+    (if (>= c 65) (if (<= c 70) true false) false))))
 
 ; Octal digit: 0-7.
 (defn chr-octdigit-p (c)
-  (if (>= c 48) (if (<= c 55) 1 0) 0))
+  (if (>= c 48) (if (<= c 55) true false) false))
 
 ; Binary digit: 0-1.
 (defn chr-bindigit-p (c)
-  (if (>= c 48) (if (<= c 49) 1 0) 0))
+  (if (>= c 48) (if (<= c 49) true false) false))
 
 (defn chr-alpha-p (c)
   (if (>= c 65)
-    (if (<= c 90) 1 (if (>= c 97) (if (<= c 122) 1 0) 0))
-    (if (>= c 97) (if (<= c 122) 1 0) 0)))
+    (if (<= c 90) true (if (>= c 97) (if (<= c 122) true false) false))
+    (if (>= c 97) (if (<= c 122) true false) false)))
 
 ; Mirror Rust lexer is_ident_start: alpha | _ - ? ! + / = < > * %
 (defn chr-ident-start-p (c)
-  (if (= (chr-alpha-p c) 1) 1
-    (if (= c 95) 1
-      (if (= c 45) 1
-        (if (= c 63) 1
-          (if (= c 33) 1
-            (if (= c 43) 1
-              (if (= c 47) 1
-                (if (= c 61) 1
-                  (if (= c 60) 1
-                    (if (= c 62) 1
-                      (if (= c 42) 1
-                        (if (= c 37) 1 0)))))))))))))
+  (if (chr-alpha-p c) true
+    (if (= c 95) true
+      (if (= c 45) true
+        (if (= c 63) true
+          (if (= c 33) true
+            (if (= c 43) true
+              (if (= c 47) true
+                (if (= c 61) true
+                  (if (= c 60) true
+                    (if (= c 62) true
+                      (if (= c 42) true
+                        (if (= c 37) true false)))))))))))))
 
 ; Mirror Rust lexer is_ident_continue: alnum | _ - ? ! / = + % .
 (defn chr-ident-cont-p (c)
-  (if (= (chr-digit-p c) 1) 1
+  (if (chr-digit-p c) true
     (chr-ident-start-2 c)))
 
 ; ident-continue adds '.' over ident-start and drops nothing else.
 (defn chr-ident-start-2 (c)
-  (if (= c 46) 1 (chr-ident-start-p c)))
+  (if (= c 46) true (chr-ident-start-p c)))
 
-(defn chr-semicolon-p (c) (if (= c 59) 1 0))
+(defn chr-semicolon-p (c) (if (= c 59) true false))
 
 ; Logical or on two 0/1 values (avoids and/or forms).
 (defn either (a b)
-  (if (= a 0) (if (= b 0) 0 1) 1))
+  (if (= a 0) (if (= b 0) false true) true))
 
 ; ===========================================================================
 ; BYTE / SCAN PRIMITIVES
@@ -88,7 +88,7 @@
 (defn scan-ident-end (src len i)
   (if (>= i len)
     i
-    (if (= (chr-ident-cont-p (byte-at src i)) 1)
+    (if (chr-ident-cont-p (byte-at src i))
       (scan-ident-end src len (+ i 1))
       i)))
 
@@ -98,7 +98,7 @@
   (if (>= i len)
     i
     (let c (byte-at src i)
-      (if (= (chr-digit-p c) 1)
+      (if (chr-digit-p c)
         (scan-num-body src len (+ i 1))
         (if (= c 46)
           (scan-num-body src len (+ i 1))
@@ -109,7 +109,7 @@
 (defn scan-exp-digits (src len i)
   (if (>= i len)
     i
-    (if (= (chr-digit-p (byte-at src i)) 1)
+    (if (chr-digit-p (byte-at src i))
       (scan-exp-digits src len (+ i 1))
       i)))
 
@@ -126,7 +126,7 @@
 
 (defn scan-exp-b (src len _i j b)
   (scan-exp-digits src len
-                   (if (= (either (= b 43) (= b 45)) 1) (+ j 1) j)))
+                   (if (either (= b 43) (= b 45)) (+ j 1) j)))
 
 ; Full numeric literal end from `start` (sign included in caller).
 ; Handles decimal/float literals AND radix-prefixed integers (0x.., 0o..,
@@ -140,7 +140,7 @@
           (if (>= mid len)
             mid
             (let c (byte-at src mid)
-              (if (= (either (= c 101) (= c 69)) 1)
+              (if (either (= c 101) (= c 69))
                 (scan-exp src len mid)
                 mid))))))))
 
@@ -157,11 +157,11 @@
 
 ; Probe the radix-marker char after '0'.
 (defn radix-probe (src len i c)
-  (if (= (either (= c 120) (= c 88)) 1)
+  (if (either (= c 120) (= c 88))
     (radix-body src len i 16)
-  (if (= (either (= c 111) (= c 79)) 1)
+  (if (either (= c 111) (= c 79))
     (radix-body src len i 8)
-  (if (= (either (= c 98) (= c 66)) 1)
+  (if (either (= c 98) (= c 66))
     (radix-body src len i 2)
     -1))))
 
@@ -175,7 +175,7 @@
     (radix-body-c src len i base j (byte-at src j))))
 
 (defn radix-body-c (src len i base j c)
-  (if (= (radix-digit-p c base) 1)
+  (if (radix-digit-p c base)
     (radix-body-j src len i base (+ j 1))
     j))
 
@@ -183,7 +183,7 @@
 (defn radix-digit-p (c base)
   (if (= base 16) (chr-hexdigit-p c)
   (if (= base 8) (chr-octdigit-p c)
-  (if (= base 2) (chr-bindigit-p c) 0))))
+  (if (= base 2) (chr-bindigit-p c) false))))
 
 ; Index of the closing '"' for a string opened before `i`; -1 if unterminated.
 ; Returns: Int
@@ -204,7 +204,7 @@
 ; 'e', which must not force float classification. Returns: Bool (0/1)
 (defn text-float-marker-p (text)
   (let n (ffi-call "zyl_cstr_len" text 1000)
-    (if (= (radix-prefix-len text n) 1)
+    (if (radix-prefix-len text n)
       0
       (marker-loop text n 0))))
 
@@ -214,17 +214,17 @@
     (let c0 (ffi-call "zyl_cstr_byte_at" text 0 1000)
       (if (= c0 48)
         (let c1 (ffi-call "zyl_cstr_byte_at" text 1 1000)
-          (if (= (either (= c1 120) (= c1 88)) 1) 1
-          (if (= (either (= c1 111) (= c1 79)) 1) 1
-          (if (= (either (= c1 98) (= c1 66)) 1) 1 0))))
-        0))
-    0))
+          (if (either (= c1 120) (= c1 88)) true
+          (if (either (= c1 111) (= c1 79)) true
+          (if (either (= c1 98) (= c1 66)) true false))))
+        false))
+    false))
 
 (defn marker-loop (text n i)
   (if (>= i n)
     0
     (let c (byte-at text i)
-      (if (= (either (= c 46) (either (= c 101) (= c 69))) 1)
+      (if (either (= c 46) (either (= c 101) (= c 69)))
         1
         (marker-loop text n (+ i 1))))))
 
@@ -239,13 +239,13 @@
 
 ; Delimiters that stop a keyword/symbol head: ( ) { } [ ] : ~
 (defn chr-punctuator-p (c)
-  (if (= c 40) 1
-    (if (= c 41) 1
-      (if (= c 123) 1
-        (if (= c 125) 1
-          (if (= c 91) 1
-            (if (= c 93) 1
-              (if (= c 58) 1 (if (= c 126) 1 0)))))))))
+  (if (= c 40) true
+    (if (= c 41) true
+      (if (= c 123) true
+        (if (= c 125) true
+          (if (= c 91) true
+            (if (= c 93) true
+              (if (= c 58) true (if (= c 126) true false)))))))))
 
 ; Empty token stream (typed so `Nil` never unifies as Option).
 (defn no-tokens () Nil)
@@ -271,9 +271,9 @@
     (lex-c1 arena src len i acc (byte-at src i))))
 
 (defn lex-c1 (arena src len i acc c)
-  (if (= (chr-ws-p c) 1)
+  (if (chr-ws-p c)
     (lex-loop arena src len (+ i 1) acc)
-    (if (= (chr-semicolon-p c) 1)
+    (if (chr-semicolon-p c)
       (lex-loop arena src len (comment-end src len (+ i 1)) acc)
       (if (= c 40)
         (lex-loop arena src len (+ i 1) (Cons (TkLParen i) acc))
@@ -296,23 +296,23 @@
       (lex-sym-probe arena src len i acc)
       (if (= c 126)
         (lex-sym-probe arena src len i acc)
-        (if (= (chr-digit-p c) 1)
+        (if (chr-digit-p c)
           (lex-num-e arena src len i acc (scan-number-end src len i))
           (if (= c 45)
             (lex-minus-e arena src len i acc)
-            (if (= (chr-ident-start-p c) 1)
+            (if (chr-ident-start-p c)
               (lex-ident-e arena src len i acc (scan-ident-end src len i))
               ; `.name`: the method part of ((expr).name args)
-              (if (= (lex-dot-name-p src c i) 1)
+              (if (lex-dot-name-p src c i)
                 (lex-ident-e arena src len i acc (scan-ident-end src len i))
                 ; unrecognized character: terminate the stream
                 (Cons (TkEof i) acc)))))))))
 
 (defn lex-dot-name-p (src c i)
-  (if (= c 46) (chr-alpha-p (byte-at src (+ i 1))) 0))
+  (if (= c 46) (chr-alpha-p (byte-at src (+ i 1))) false))
 
 (defn lex-minus-e (arena src len i acc)
-  (if (= (chr-digit-p (byte-at src (+ i 1))) 1)
+  (if (chr-digit-p (byte-at src (+ i 1)))
     (lex-num-e arena src len i acc (scan-number-end src len i))
     (lex-ident-e arena src len i acc (scan-ident-end src len i))))
 
@@ -355,9 +355,9 @@
   (let c (byte-at src i)
     (if (< pk 0)
       (lex-sym-bare arena src len i acc c)
-      (if (= (chr-ident-start-p (byte-at src pk)) 0)
+      (if (not (chr-ident-start-p (byte-at src pk)))
         (lex-sym-bare arena src len i acc c)
-        (if (= (chr-punctuator-p (byte-at src pk)) 1)
+        (if (chr-punctuator-p (byte-at src pk))
           (lex-sym-bare arena src len i acc c)
           (lex-sym-tok arena src len i acc (scan-ident-end src len pk)))))))
 
@@ -388,6 +388,6 @@
 (defn next-nonws (src len i)
   (if (>= i len)
     -1
-    (if (= (chr-ws-p (byte-at src i)) 1)
+    (if (chr-ws-p (byte-at src i))
       (next-nonws src len (+ i 1))
       i)))

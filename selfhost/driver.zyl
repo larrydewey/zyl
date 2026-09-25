@@ -100,13 +100,13 @@
 (defn cli-ends-with-zyl (s)
   (let n (str-len s)
     (if (< n 4)
-      0
+      false
       (str-eq (str-substring s (- n 4) 4) ".zyl"))))
 
 ; Default output path when no `-o`/positional out is given: strip a
 ; trailing ".zyl" from the source path, else append ".out".
 (defn cli-default-out (src)
-  (if (> (cli-ends-with-zyl src) 0)
+  (if (cli-ends-with-zyl src)
     (str-substring src 0 (- (str-len src) 4))
     (str-concat src ".out")))
 
@@ -249,11 +249,11 @@
 ; invoke the compiler. Anything else is a subcommand.
 
 (defn drv-is-subcommand (a)
-  (if (> (cli-ends-with-zyl a) 0)
-    0
+  (if (cli-ends-with-zyl a)
+    false
     (if (= (ffi-call "zyl_cstr_byte_at" a 0 1000) 45)
-      0
-      1)))
+      false
+      true)))
 
 (defn drv-arg (i)
   (let argc (ffi-call "zyl_argc" 1000)
@@ -364,8 +364,8 @@
 (defn drv-cache-copy (bin-from bin-to info-from info-to)
   (if (= (store-run (str-concat "cp -p '" (str-concat bin-from (str-concat "' '" (str-concat bin-to
         (str-concat "' && cp '" (str-concat info-from (str-concat "' '" (str-concat info-to "'"))))))))) 0)
-    0
-    1))
+    false
+    true))
 
 (defn drv-cache-key (arena dir nodes)
   (let prof (ffi-call "zyl_smap_get" (ffi-call "zyl_smap_global" 6 1000) "profile" 1000)
@@ -563,7 +563,7 @@
 ; (compiler/doc.zyl); only `pub` items when a zyl.pkg sits beside them.
 (defn drv-doc (arena cwd)
   (let target (cli-resolve-path cwd (if (= (str-length (drv-arg 2)) 0) "." (drv-arg 2)))
-    (let md (if (> (cli-ends-with-zyl target) 0)
+    (let md (if (cli-ends-with-zyl target)
               (doc-file arena target (drv-doc-modname target) (drv-has-pkg (ffi-call "zyl_dirname_cstr" target 1000)))
               (doc-dir arena target (drv-has-pkg target)))
       (let out (drv-doc-out 3)
@@ -618,7 +618,7 @@
 ; both are resolved before anything moves.
 (defn drv-main-arg (arena)
   (let a (ffi-call "zyl_arg_str" 1 1000)
-    (if (> (drv-is-subcommand a) 0)
+    (if (drv-is-subcommand a)
       (drv-run-subcommand arena a)
       (cli-run arena))))
 

@@ -252,16 +252,16 @@
 ; defines a name and is missing here is a name the outline, the
 ; breadcrumb bar and go-to-definition all silently cannot see.
 (defn si-is-def-keyword (kw)
-  (if (str-eq kw "defn") 1
-    (if (str-eq kw "deftype") 1
-      (if (str-eq kw "defstruct") 1
-        (if (str-eq kw "defstruct+") 1
-          (if (str-eq kw "trait") 1
-            (if (str-eq kw "impl") 1
-              (if (str-eq kw "macro") 1
-                (if (str-eq kw "defmacro") 1
-                  (if (str-eq kw "def") 1
-                    (if (str-eq kw "alias") 1 0)))))))))))
+  (if (str-eq kw "defn") true
+    (if (str-eq kw "deftype") true
+      (if (str-eq kw "defstruct") true
+        (if (str-eq kw "defstruct+") true
+          (if (str-eq kw "trait") true
+            (if (str-eq kw "impl") true
+              (if (str-eq kw "macro") true
+                (if (str-eq kw "defmacro") true
+                  (if (str-eq kw "def") true
+                    (if (str-eq kw "alias") true false)))))))))))
 
 (defn si-skip-ws (text i len)
   (if (>= i len)

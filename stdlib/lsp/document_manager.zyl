@@ -128,7 +128,7 @@
 (defn dm-analyze (arena doc)
   (let text (Document.text doc)
     (let balance (sb-check-string text)
-      (if (= (sb-result-balanced balance) 0)
+      (if (not (sb-result-balanced balance))
         (DS doc (Document.version doc) (st-new) (dm-balance-diags balance))
         (dm-analyze-parsed arena doc text)))))
 

@@ -124,7 +124,7 @@
 (defn me-check-clash-one (e mt)
   (match (Expr.inner e)
     (EDefn name _ _
-      (if (> (me-same-file-macro mt name e) 0)
+      (if (me-same-file-macro mt name e)
         (let m1 (str-concat "function " (me-quote name))
           (let msg (str-concat m1 " has the same name as a macro")
             (me-fail "E_DUPLICATE_DEFINITION" msg e "rename the function or the macro")))
@@ -135,8 +135,8 @@
   (if (> (mt-has mt name) 0)
     (let mf (ffi-call "zyl_span_file" (mt-body mt name) 1000)
       (let df (ffi-call "zyl_span_file" e 1000)
-        (if (= mf df) 1 0)))
-    0))
+        (if (= mf df) true false)))
+    false))
 
 (defn me-param-names (params)
   (match params
@@ -194,8 +194,8 @@
 
 (defn cx-in-template (cx)
   (match (cx-stack cx)
-    (Nil 0)
-    (Cons _ _ 1)))
+    (Nil false)
+    (Cons _ _ true)))
 
 (defn cx-add-local (cx name)
   (match cx (MeCx s m k l (MeCx s m k (Cons name l)))))
@@ -238,15 +238,15 @@
 ; `_` discards and compiler-internal `__` names are never renamed.
 (defn me-bind-fixed (name)
   (if (str-eq name "_")
-    1
+    true
     (if (< (str-length name) 2)
-      0
-      (if (str-eq (str-substring name 0 2) "__") 1 0))))
+      false
+      (if (str-eq (str-substring name 0 2) "__") true false))))
 
 (defn me-bind (site name cx n)
-  (if (> (me-bind-fixed name) 0)
+  (if (me-bind-fixed name)
     (MeB name cx n)
-    (if (> (cx-in-template cx) 0)
+    (if (cx-in-template cx)
       (me-bind-template site name cx n)
       (MeB name (cx-add-local cx name) n))))
 
@@ -293,7 +293,7 @@
 ; A free template name that is a local variable at the call site would be
 ; captured by it; at the definition site (top level) it names nothing.
 (defn me-check-free (site name cx)
-  (if (> (cx-in-template cx) 0)
+  (if (cx-in-template cx)
     (if (> (me-in-list name (cx-locals cx)) 0)
       (me-capture-fail site name cx)
       name)
@@ -663,18 +663,18 @@
 ; A lowercase arm head with no fields binds the whole scrutinee; any other
 ; head names a constructor (and may be a parameter naming one).
 (defn me-arm-head (e v pats cx n)
-  (if (> (me-binder-like v) 0)
+  (if (me-binder-like v)
     (match pats
       (Nil (me-bind e v cx n))
       (Cons _ _ (MeB (me-name-subst e v cx) cx n)))
     (MeB v cx n)))
 
 (defn me-binder-like (name)
-  (if (> (me-bind-fixed name) 0)
-    0
+  (if (me-bind-fixed name)
+    false
     (if (> (pk-index-of name 64 0) -1)
-      0
-      (if (> (qf-upper-p name) 0) 0 1))))
+      false
+      (if (> (qf-upper-p name) 0) false true))))
 
 (defn me-pats (e pats cx n acc)
   (match pats
@@ -697,7 +697,7 @@
 (defn me-pat-atom (e p atom cx n)
   (match atom
     (AIdent name
-      (if (> (me-binder-like name) 0)
+      (if (me-binder-like name)
         (match (me-bind e name cx n)
           (MeB nm cx2 n2 (MeP (me-spanned (Expr (EAtom (AIdent nm))) p) cx2 n2)))
         (MeP p cx n)))

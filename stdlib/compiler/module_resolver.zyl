@@ -178,7 +178,7 @@
     (_ "")))
 
 (defn mr-starts-colon (s)
-  (if (= (pk-len s) 0) 0 (if (= (pk-byte-at s 0) 58) 1 0)))
+  (if (= (pk-len s) 0) false (if (= (pk-byte-at s 0) 58) true false)))
 
 (defn mr-drop-colon (s)
   (pk-sub s 1 (- (pk-len s) 1)))
@@ -211,7 +211,7 @@
 (defn mr-use-ident (s acc)
   (if (str-eq s "*")
     (match acc (MRU p m _ sy u (MRU p m 1 sy u)))
-    (if (> (mr-starts-colon s) 0)
+    (if (mr-starts-colon s)
       (mr-use-colon (mr-drop-colon s) acc)
       (mr-use-colon s acc))))
 
@@ -277,11 +277,11 @@
 ; they never enter a symbol table — at their definition sites or at
 ; their call sites.
 (defn mr-reserved-name (n)
-  (if (str-eq n "main") 1
-  (if (str-eq n "str-concat") 1
-  (if (str-eq n "str-length") 1
-  (if (str-eq n "str-substring") 1
-  (if (str-eq n "str-equal") 1 0))))))
+  (if (str-eq n "main") true
+  (if (str-eq n "str-concat") true
+  (if (str-eq n "str-length") true
+  (if (str-eq n "str-substring") true
+  (if (str-eq n "str-equal") true false))))))
 
 (defn mr-collect-defs (arena pkg module forms)
   (match forms
@@ -296,7 +296,7 @@
       (mr-pub-defs arena pkg module (mr-ast-args f))
       (if (str-eq head "feature-gate")
         (mr-gated-defs arena pkg module (mr-ast-args f))
-        (if (> (mr-def-head-p head) 0)
+        (if (mr-def-head-p head)
           (mr-named-defs arena pkg module f head pub)
           Nil)))))
 
@@ -331,14 +331,14 @@
     (Cons _ _ (mr-form-defs arena pkg module (AList args) 1))))
 
 (defn mr-def-head-p (h)
-  (if (str-eq h "defn") 1
-  (if (str-eq h "def") 1
-  (if (str-eq h "deftype") 1
-  (if (str-eq h "defstruct") 1
-  (if (str-eq h "defstruct+") 1
-  (if (str-eq h "trait") 1
-  (if (str-eq h "macro") 1
-  (if (str-eq h "defmacro") 1 0)))))))))
+  (if (str-eq h "defn") true
+  (if (str-eq h "def") true
+  (if (str-eq h "deftype") true
+  (if (str-eq h "defstruct") true
+  (if (str-eq h "defstruct+") true
+  (if (str-eq h "trait") true
+  (if (str-eq h "macro") true
+  (if (str-eq h "defmacro") true false)))))))))
 
 (defn mr-named-defs (arena pkg module f head pub)
   (let args (mr-ast-args f)
@@ -348,7 +348,7 @@
         (let n (mr-ident-of nameast)
           (if (= (str-length n) 0)
             Nil
-            (if (> (mr-reserved-name n) 0)
+            (if (mr-reserved-name n)
               Nil
               (list-append
                 (Cons (MRDF n (ck-key arena (mrp-name pkg) (mrp-major pkg) module n) pub "") Nil)
@@ -719,7 +719,7 @@
   (match units
     (Nil Nil)
     (Cons h t
-      (if (> (mr-unit-in-pkg h pkgname skip) 0)
+      (if (mr-unit-in-pkg h pkgname skip)
         (let _ (mr-check-feature-collisions (mru2-defs h))
           (list-append (mr-defs-pairs (mr-active-defs feats (mru2-defs h)))
                        (mr-pkg-pairs-except t pkgname feats skip)))
@@ -727,8 +727,8 @@
 
 (defn mr-unit-in-pkg (u pkgname skip)
   (if (not (str-eq (mru2-pkg u) pkgname))
-    0
-    (if (str-eq (mru2-module u) skip) 0 1)))
+    false
+    (if (str-eq (mru2-module u) skip) false true)))
 
 ; The table a module is qualified against, weakest first: the rest of its
 ; package, then the modules it explicitly `use`s, then its own
@@ -1114,9 +1114,9 @@
     (Nil 1)))
 
 (defn mr-orphan-verdict (trait type pkgname)
-  (if (> (mr-local-name trait pkgname) 0)
+  (if (mr-local-name trait pkgname)
     1
-    (if (> (mr-local-name type pkgname) 0)
+    (if (mr-local-name type pkgname)
       1
       (ffi-call "zyl_panic"
         (str-concat "E_PKG_ORPHAN_IMPL: trait: impl of " (str-concat (ck-symbol-of trait)
@@ -1124,7 +1124,7 @@
             (str-concat " where neither the trait nor the type is local to " pkgname))))) 1000))))
 
 (defn mr-local-name (n pkgname)
-  (if (str-eq (ck-package-of n) pkgname) 1 0))
+  (if (str-eq (ck-package-of n) pkgname) true false))
 
 (defn mr-unit-pkg (pkgs name)
   (match (mr-find-pkg pkgs name)
@@ -1163,7 +1163,7 @@
 
 (defn mr-basename-module (path)
   (let base (mr-strip-dir path)
-    (if (> (mr-ends-zyl base) 0) (pk-sub base 0 (- (pk-len base) 4)) base)))
+    (if (mr-ends-zyl base) (pk-sub base 0 (- (pk-len base) 4)) base)))
 
 (defn mr-strip-dir (path)
   (let i (pk-last-slash path (- (pk-len path) 1))
@@ -1171,7 +1171,7 @@
 
 (defn mr-ends-zyl (s)
   (if (< (pk-len s) 4)
-    0
+    false
     (str-eq (pk-sub s (- (pk-len s) 4) 4) ".zyl")))
 
 ; The implicit core prelude: a program that participates in the module

@@ -315,7 +315,7 @@
     (None Nil)))
 
 (defn cli-report-growth (before after)
-  (if (> (mvs-closure-grew before after) 0)
+  (if (mvs-closure-grew before after)
     (print (str-concat "capability closure grew to: " (cli-words (pk-caps-sorted after))))
     (print "capability closure unchanged")))
 
@@ -386,10 +386,10 @@
 
 (defn cli-native-path-ok (p)
   (if (= (pk-len p) 0)
-    0
+    false
     (if (= (pk-byte-at p 0) 47)
-      0
-      (if (> (cli-has-dotdot p 0) 0) 0 1))))
+      false
+      (if (> (cli-has-dotdot p 0) 0) false true))))
 
 (defn cli-has-dotdot (p i)
   (if (>= (+ i 1) (pk-len p))
@@ -399,31 +399,31 @@
       (cli-has-dotdot p (+ i 1)))))
 
 (defn cli-check-native-path (p)
-  (if (> (cli-native-path-ok p) 0)
+  (if (cli-native-path-ok p)
     p
     (ffi-call "zyl_panic"
       (str-concat "E_PKG_NATIVE_PATH_ESCAPE: package: native source path escapes the package root: " p) 1000)))
 
 (defn cli-flag-allowed (f)
-  (if (> (cli-prefix f "-O") 0) 1
-  (if (> (cli-prefix f "-D") 0) 1
-  (if (> (cli-prefix f "-std=") 0) 1
-  (if (str-eq f "-fPIC") 1
-  (if (str-eq f "-fno-strict-aliasing") 1
-  (if (str-eq f "-fwrapv") 1
-  (if (str-eq f "-fstack-protector-strong") 1
-  (if (str-eq f "-fno-omit-frame-pointer") 1 0)))))))))
+  (if (cli-prefix f "-O") true
+  (if (cli-prefix f "-D") true
+  (if (cli-prefix f "-std=") true
+  (if (str-eq f "-fPIC") true
+  (if (str-eq f "-fno-strict-aliasing") true
+  (if (str-eq f "-fwrapv") true
+  (if (str-eq f "-fstack-protector-strong") true
+  (if (str-eq f "-fno-omit-frame-pointer") true false)))))))))
 
 (defn cli-prefix (s p)
   (if (< (pk-len s) (pk-len p))
-    0
+    false
     (str-eq (pk-sub s 0 (pk-len p)) p)))
 
 (defn cli-check-flags (flags)
   (match flags
     (Nil 1)
     (Cons f t
-      (if (> (cli-flag-allowed f) 0)
+      (if (cli-flag-allowed f)
         (cli-check-flags t)
         (ffi-call "zyl_panic"
           (str-concat "E_PKG_NATIVE_FLAG_DENIED: package: cflag outside the allowlist: " f) 1000)))))
@@ -471,14 +471,14 @@
 ; The compiled objects of the native block, in manifest order (none without one).
 (defn cli-native-objs (arena dir m)
   (let n (mf-native m)
-    (if (> (pn-is-empty n) 0)
+    (if (pn-is-empty n)
       Nil
       (let _ (cli-check-native-capability m)
         (cli-native-objects arena dir n (pn-sources n))))))
 
 (defn cli-native-args (m objs)
   (let n (mf-native m)
-    (if (> (pn-is-empty n) 0)
+    (if (pn-is-empty n)
       ""
       (str-concat (cli-quoted-paths objs) (cli-lib-args (pn-link-libs n))))))
 
@@ -567,7 +567,7 @@
         (let base (cli-flag-value "--url-base")
           (let url (if (= (pk-len base) 0) (str-concat "file://" (str-concat index (str-concat "/archives/" file))) (str-concat base (str-concat "/" file)))
             (let _ (idx-publish arena index (mf-name m)
-                     (IV (mf-version m) url hash (ITrust (idx-public-key arena (cli-read-seed arena)) sig) (IMeta (mf-zyl m) 0)))
+                     (IV (mf-version m) url hash (ITrust (idx-public-key arena (cli-read-seed arena)) sig) (IMeta (mf-zyl m) false)))
               (begin
                 (if (ffi-call "zyl_path_exists" (str-concat index "/.git") 1000)
                   (store-run (str-concat "git -C '" (str-concat index (str-concat "' add -A && git -C '" (str-concat index

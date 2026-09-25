@@ -225,7 +225,7 @@
   (pk-caps-union existing wanted))
 
 (defn mvs-features-grew (before after)
-  (if (= (list-length before) (list-length after)) 0 1))
+  (if (= (list-length before) (list-length after)) false true))
 
 ; Dependencies contributed by the features in `feats`, in manifest order.
 ; An optional dependency enters the graph exactly when its feature is in
@@ -352,4 +352,4 @@
         (pk-caps-union acc (mf-capabilities (pk-read-manifest arena (str-concat (mn-root n) "/zyl.pkg"))))))))
 
 (defn mvs-closure-grew (before after)
-  (if (> (list-length after) (list-length before)) 1 0))
+  (if (> (list-length after) (list-length before)) true false))

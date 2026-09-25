@@ -20,10 +20,10 @@
 (deftype TaTy (TaV Int) (TaC String (List TaTy)) (TaF (List TaTy) TaTy))
 
 ; Per-type info: params (names), struct?
-(deftype TaTd (TaTd String (List String) Int Int))
+(deftype TaTd (TaTd String (List String) Bool Int))
 ; Per-variant info: type name, slot count, constructor template, field
 ; names, struct?, type parameter count.
-(deftype TaVd (TaVd String Int TaTy (List String) Int Int))
+(deftype TaVd (TaVd String Int TaTy (List String) Bool Int))
 ; Function scheme: slot count, template.
 (deftype TaSc (TaSc Int TaTy))
 ; Conversion result: type plus extended annotation scope.
@@ -119,8 +119,8 @@
 ; is never returned for a present key).
 (defn ta-shas (m k) (ffi-call "zyl_smap_has" m k 1000))
 (defn ta-sget-or (m k d) (ffi-call "zyl_smap_get_or" m k d 1000))
-(defn ta-no-td () (TaTd "" Nil 0 0))
-(defn ta-no-vd () (TaVd "" 0 (ta-no-type) Nil 0 0))
+(defn ta-no-td () (TaTd "" Nil false 0))
+(defn ta-no-vd () (TaVd "" 0 (ta-no-type) Nil false 0))
 
 ; Impl lists by dotted method name (other passes read it), the Show.show
 ; method's dotted name, ADT variants for structural equality, and the
@@ -521,7 +521,7 @@
     (Cons e rest
       (begin
         (match (Expr.inner e)
-          (EDeftype name _ _ _ (ta-put2 (ta-types st) name (TaTd name Nil 0 0)))
+          (EDeftype name _ _ _ (ta-put2 (ta-types st) name (TaTd name Nil false 0)))
           (EDefn name _ _ (ta-add-fn st name e))
           (EImplBlock trait type bodies (ta-add-impls st trait type bodies))
           (_ 0))
@@ -609,8 +609,8 @@
 
 (defn ta-is-struct (sm)
   (match sm
-    (Some _ 1)
-    (None 0)))
+    (Some _ true)
+    (None false)))
 
 (defn ta-deftype-params (st name variants sm)
   (let params (ta-params-of-variants st variants Nil)
@@ -1517,9 +1517,9 @@
     (Some vd
       (match vd
         (TaVd _ nq t names isst np
-          (let idx (if (> isst 0) (ta-str-index names field 0) -1)
+          (let idx (if isst (ta-str-index names field 0) -1)
             (if (< idx 0)
-              (if (> isst 0) (ta-no-field node n field names) 1)
+              (if isst (ta-no-field node n field names) 1)
               (match (ta-subst st t (ta-slots-with st args nq))
                 (TaF fts _ (ta-seq (ta-unify st r (ta-nth fts idx (ta-dk st "struct field index"))) 1))
                 (_ 1)))))))))
@@ -1775,7 +1775,7 @@
       (begin
         (match (Expr.inner e)
           (EDeftype _ variants _ sm
-            (if (> (ta-is-struct sm) 0) (ta-register-struct-fields st variants) 0))
+            (if (ta-is-struct sm) (ta-register-struct-fields st variants) 0))
           (_ 0))
         (ta-register-fields st rest)))))
 
@@ -1860,13 +1860,13 @@
 (defn ta-scalar (e)
   (let t (ta-attr e)
     (if (ta-no-type-p t)
-      0
+      false
       (match (ta-gresolve ta-var-store t)
         (TaC n args
           (if (is-nil args)
-            (if (or (ta-streq n "Int") (or (ta-streq n "Bool") (ta-streq n "Float"))) 1 0)
-            0))
-        (_ 0)))))
+            (if (or (ta-streq n "Int") (or (ta-streq n "Bool") (ta-streq n "Float"))) true false)
+            false))
+        (_ false)))))
 
 (defn ta-kind-of-ty (t)
   (match t

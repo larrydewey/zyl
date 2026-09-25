@@ -119,7 +119,7 @@
            (list-append (eval-lifted-of fns) (Session.lifted s))
            (Session.count s) (Session.dir s)))
 
-(defn is-nil-list (xs) (match xs (Nil 1) (Cons _ _ 0)))
+(defn is-nil-list (xs) (match xs (Nil true) (Cons _ _ false)))
 
 ; The lifted lambda bodies of one compile. Everything else in the table
 ; is re-created by the next entry's compile from the same text.
@@ -174,18 +174,18 @@
 (defn eval-skip-space (text i n)
   (if (>= i n)
     i
-    (if (= (eval-space-p (term-byte-at text i)) 1)
+    (if (eval-space-p (term-byte-at text i))
       (eval-skip-space text (+ i 1) n)
       i)))
 
 (defn eval-space-p (b)
-  (if (= b 32) 1 (if (= b 9) 1 (if (= b 10) 1 (if (= b 13) 1 0)))))
+  (if (= b 32) true (if (= b 9) true (if (= b 10) true (if (= b 13) true false)))))
 
 (defn eval-symbol-end (text i n)
   (if (>= i n)
     n
     (let b (term-byte-at text i)
-      (if (= (eval-space-p b) 1) i
+      (if (eval-space-p b) i
       (if (= b 40) i
       (if (= b 41) i
       (eval-symbol-end text (+ i 1) n)))))))
@@ -202,15 +202,15 @@
 ; evaluate. `def` is not in this list: the REPL binds it as a value.
 (defn eval-definition-p (text)
   (let head (eval-head text)
-    (if (str-eq head "defn") 1
-    (if (str-eq head "deftype") 1
-    (if (str-eq head "defstruct") 1
-    (if (str-eq head "defstruct+") 1
-    (if (str-eq head "defmacro") 1
-    (if (str-eq head "trait") 1
-    (if (str-eq head "impl") 1
-    (if (str-eq head "derive") 1
-    0))))))))))
+    (if (str-eq head "defn") true
+    (if (str-eq head "deftype") true
+    (if (str-eq head "defstruct") true
+    (if (str-eq head "defstruct+") true
+    (if (str-eq head "defmacro") true
+    (if (str-eq head "trait") true
+    (if (str-eq head "impl") true
+    (if (str-eq head "derive") true
+    false))))))))))
 
 ; ===========================================================================
 ; BUILDING THE PROGRAM
@@ -245,33 +245,33 @@
   (let n (str-length name)
     (if (> (+ i n) (str-length text))
       0
-      (if (= (eval-token-match text name i n) 1)
+      (if (eval-token-match text name i n)
         1
         (eval-mentions-at text name (+ i 1))))))
 
 (defn eval-token-match (text name i n)
   (if (str-eq (str-substring text i n) name)
-    (if (= (eval-boundary-p text (- i 1)) 1)
+    (if (eval-boundary-p text (- i 1))
       (eval-boundary-p text (+ i n))
-      0)
-    0))
+      false)
+    false))
 
 ; Positions outside the text count as boundaries; inside, anything that
 ; cannot continue an identifier does.
 (defn eval-boundary-p (text i)
   (if (< i 0)
-    1
+    true
     (if (>= i (str-length text))
-      1
+      true
       (eval-delimiter-p (term-byte-at text i)))))
 
 (defn eval-delimiter-p (b)
-  (if (= (eval-space-p b) 1) 1
-  (if (= b 40) 1
-  (if (= b 41) 1
-  (if (= b 34) 1
-  (if (= b 39) 1
-  0))))))
+  (if (eval-space-p b) true
+  (if (= b 40) true
+  (if (= b 41) true
+  (if (= b 34) true
+  (if (= b 39) true
+  false))))))
 
 (defn eval-param-list (gs)
   (match gs
@@ -381,7 +381,7 @@
     (Cons e rest
       (match (Expr.inner e)
         (EDefn name _ body
-          (if (= (eval-ends-with name (eval-entry-name)) 1)
+          (if (eval-ends-with name (eval-entry-name))
             (Some body)
             (eval-entry-body rest)))
         (_ (eval-entry-body rest))))))
@@ -397,7 +397,7 @@
       (eval-add-use sess text)
       (if (str-eq head "def")
         (eval-add-global sess text)
-        (if (= (eval-definition-p text) 1)
+        (if (eval-definition-p text)
           (eval-add-definition sess text)
           (eval-expression sess text))))))
 
@@ -494,7 +494,7 @@
 (defn eval-trim-back (text i)
   (if (< i 0)
     0
-    (if (= (eval-space-p (term-byte-at text i)) 1)
+    (if (eval-space-p (term-byte-at text i))
       (eval-trim-back text (- i 1))
       (if (= (term-byte-at text i) 41) i (+ i 1)))))
 
@@ -603,7 +603,7 @@
   (let lifted (eval-lifted-of fns)
     (if (= keep 0)
       (eval-discard arena (Outcome (eval-heapify res) sess))
-      (if (= (is-nil-list lifted) 1)
+      (if (is-nil-list lifted)
         (eval-discard arena (Outcome (eval-heapify res) sess))
         (Outcome res (session-with-lifted sess fns))))))
 
@@ -638,7 +638,7 @@
     (Nil None)
     (Cons f rest
       (let n (in-fn-name f)
-        (if (= (eval-ends-with n (eval-entry-name)) 1)
+        (if (eval-ends-with n (eval-entry-name))
           (Some n)
           (eval-entry-fn rest))))))
 
@@ -646,7 +646,7 @@
   (let ns (str-length s)
     (let nf (str-length suffix)
       (if (< ns nf)
-        0
+        false
         (str-eq (str-substring s (- ns nf) nf) suffix)))))
 
 ; ===========================================================================
@@ -680,7 +680,7 @@
 
 (defn session-save (sess)
   (let path (session-file (Session.dir sess))
-    (if (= (session-empty-p sess) 1)
+    (if (session-empty-p sess)
       0
       (let fd (file-open path "w")
         (if (<= fd 0)
@@ -692,11 +692,11 @@
 
 (defn session-empty-p (sess)
   (if (> (str-length (Session.defs sess)) 0)
-    0
+    false
     (match (Session.globals sess)
       (Nil (if (= (list-length (Session.uses sess))
-                  (list-length (session-default-uses))) 1 0))
-      (Cons _ _ 0))))
+                  (list-length (session-default-uses))) true false))
+      (Cons _ _ false))))
 
 (defn session-text (sess)
   (str-concat "; Zyl REPL session state. Loaded when a session starts here.\n"

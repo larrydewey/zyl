@@ -822,7 +822,7 @@
     (Cons x rest (if (str-eq n x) 1 (wr-member n rest)))))
 
 (defn wr-align-ok (a)
-  (if (< a 8) 0 (if (> a 4096) 0 (if (= (bit-and a (- a 1)) 0) 1 0))))
+  (if (< a 8) false (if (> a 4096) false (if (= (bit-and a (- a 1)) 0) true false))))
 
 (defn wr-int (n) (Expr (EAtom (AInt n))))
 
@@ -834,7 +834,7 @@
 
 (defn wr-build (spec kind kvs body)
   (let align (wr-opt kvs ":align" 8)
-    (if (= (wr-align-ok align) 0)
+    (if (not (wr-align-ok align))
       (wr-fail spec ":align must be a power of two from 8 to 4096")
       (if (str-eq kind "arena")
         (if (= (wr-keys-ok kvs (Cons ":block" (Cons ":align" (Cons ":limit" Nil)))) 0)
@@ -995,7 +995,7 @@
     (match (parse-defstruct rest)
       (Some expr expr)
       (None (Expr (EUnknown "defstruct+" (convert-ast-list rest)))))
-  (if (> (ds-impl-or-trait n) 0)
+  (if (ds-impl-or-trait n)
     (ds-impl-or-trait-form n rest)
   (if (str-eq n "def")
     (match (parse-def rest)
@@ -1277,7 +1277,7 @@
     (ffi-call "zyl_panic" "E_ARITY_MISMATCH: byte requires a literal argument" 1000)))
 
 (defn byte-value-ok (n)
-  (if (>= n 0) (if (<= n 255) 1 0) 0))
+  (if (>= n 0) (if (<= n 255) true false) false))
 
 (defn parse-load-byte (args signed)
   (if (ast-has-at-least args 3)
@@ -1687,7 +1687,7 @@
     None))
 
 (defn ds-impl-or-trait (n)
-  (if (str-eq n "impl") 1 (str-eq n "trait")))
+  (if (str-eq n "impl") true (str-eq n "trait")))
 
 (defn ds-impl-or-trait-form (n rest)
   (if (str-eq n "impl")
@@ -2042,7 +2042,7 @@
       (match lst
         (Nil Nil)
         ((Cons binding rest)
-          (if (> (parse-for-is-ident binding) 0)
+          (if (parse-for-is-ident binding)
             (Cons (parse-for-binding (AList lst)) Nil)
             (let hd (parse-for-binding binding)
               (let tl (parse-for-bindings (AList rest))
@@ -2054,8 +2054,8 @@
 ; 1 when the Ast node is a bare identifier.
 (defn parse-for-is-ident (node)
   (match node
-    (AstIdent _ 1)
-    (_ 0)))
+    (AstIdent _ true)
+    (_ false)))
 (defn parse-for-binding (binding)
   ; same nested-field-position bug as parse-adt-variant above.
   (match binding
@@ -2212,9 +2212,9 @@
         (Cons head _
           (match head
             (AstIdent n (str-eq n "range"))
-            (_ 0)))
-        (Nil 0)))
-    (_ 0)))
+            (_ false)))
+        (Nil false)))
+    (_ false)))
 
 (defn ast-range-lo (h)
   (match h
@@ -2245,9 +2245,9 @@
         (Cons head _
           (match head
             (AstIdent n (str-eq n "when"))
-            (_ 0)))
-        (Nil 0)))
-    (_ 0)))
+            (_ false)))
+        (Nil false)))
+    (_ false)))
 
 (defn ast-guard-cond (h)
   (match h
@@ -2271,7 +2271,7 @@
     (if (nil? middles)
       middles
       (let last1 (ast-list-last middles (AstIdent "_"))
-        (if (> (ast-is-guard-marker last1) 0)
+        (if (ast-is-guard-marker last1)
           (ast-list-butlast middles)
           middles)))))
 
@@ -2280,19 +2280,19 @@
     (if (nil? middles)
       None
       (let last1 (ast-list-last middles (AstIdent "_"))
-        (if (> (ast-is-guard-marker last1) 0)
+        (if (ast-is-guard-marker last1)
           (Some (ast-guard-cond last1))
           None)))))
 
 (defn ast-is-literal-head (h)
-  (if (> (ast-is-range-pattern h) 0)
-    1
+  (if (ast-is-range-pattern h)
+    true
     (match h
-      (AstInt _ 1)
-      (AstFloat _ 1)
-      (AString _ 1)
-      (AstBool _ 1)
-      (_ 0))))
+      (AstInt _ true)
+      (AstFloat _ true)
+      (AString _ true)
+      (AstBool _ true)
+      (_ false))))
 
 (defn ast-first-alt (alts)
   (match alts
@@ -2303,7 +2303,7 @@
   (match raw-arms
     (Nil 0)
     (Cons arm rest
-      (if (> (ast-is-literal-head (ast-first-alt (ast-pattern-alts arm))) 0)
+      (if (ast-is-literal-head (ast-first-alt (ast-pattern-alts arm)))
         1
         (match-has-literal-head rest)))))
 
@@ -2317,16 +2317,16 @@
 ; convention alongside the one ADT matches already have.
 (defn ast-pattern-is-wildcard (h)
   (match h
-    (AstIdent n 1)
-    (_ 0)))
+    (AstIdent n true)
+    (_ false)))
 
 ; A wildcard arm is exactly one alternative, `_` -- `(_ x body)` (a
 ; wildcard alongside something else) isn't treated as one, since that
 ; would be ambiguous about which case actually applies.
 (defn ast-pattern-is-wildcard-alts (alts)
   (match alts
-    (Nil 0)
-    (Cons h t (if (nil? t) (ast-pattern-is-wildcard h) 0))))
+    (Nil false)
+    (Cons h t (if (nil? t) (ast-pattern-is-wildcard h) false))))
 
 (defn ast-list-is-last-wildcard (raw-arms)
   (match raw-arms
@@ -2361,7 +2361,7 @@
       (Expr (EAtom (ABool false))))))
 
 (defn literal-one-test (scrutinee-name alt)
-  (if (> (ast-is-range-pattern alt) 0)
+  (if (ast-is-range-pattern alt)
     (literal-range-test scrutinee-name alt)
     (literal-eq-test scrutinee-name alt)))
 
@@ -2400,7 +2400,7 @@
     (Nil (Expr (EAtom ANil)))
     (Cons arm rest
       (let alts (ast-pattern-alts arm)
-        (if (> (ast-pattern-is-wildcard-alts alts) 0)
+        (if (ast-pattern-is-wildcard-alts alts)
           (literal-arm-body arm)
           (Expr
             (EIf

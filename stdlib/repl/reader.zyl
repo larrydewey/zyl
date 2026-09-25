@@ -41,13 +41,13 @@
 ; Returns: Bool (0/1)
 (defn rd-complete-p (text)
   (if (= (str-length (rd-trim text)) 0)
-    1
+    true
     (match (sb-check-string text)
-      (Balanced 1)
-      (UnbalancedOpenString 0)
-      (UnclosedOpen _ _ _ 0)
-      (UnbalancedClose _ _ _ 1)
-      (MismatchedPair _ _ _ _ 1))))
+      (Balanced true)
+      (UnbalancedOpenString false)
+      (UnclosedOpen _ _ _ false)
+      (UnbalancedClose _ _ _ true)
+      (MismatchedPair _ _ _ _ true))))
 
 (defn rd-trim (s)
   (let n (str-length s)
@@ -58,15 +58,15 @@
 (defn rd-trim-start (s i n)
   (if (>= i n)
     i
-    (if (= (rd-space-p (term-byte-at s i)) 1) (rd-trim-start s (+ i 1) n) i)))
+    (if (rd-space-p (term-byte-at s i)) (rd-trim-start s (+ i 1) n) i)))
 
 (defn rd-trim-end (s i)
   (if (< i 0)
     0
-    (if (= (rd-space-p (term-byte-at s i)) 1) (rd-trim-end s (- i 1)) (+ i 1))))
+    (if (rd-space-p (term-byte-at s i)) (rd-trim-end s (- i 1)) (+ i 1))))
 
 (defn rd-space-p (b)
-  (if (= b 32) 1 (if (= b 9) 1 (if (= b 10) 1 (if (= b 13) 1 0)))))
+  (if (= b 32) true (if (= b 9) true (if (= b 10) true (if (= b 13) true false)))))
 
 ; ===========================================================================
 ; THE LOOP
@@ -138,7 +138,7 @@
 ; Enter: submit a complete entry, or open an indented continuation line.
 (defn rd-enter (arena st prompt cprompt cands)
   (let e (ES.ed st)
-    (if (= (rd-complete-p (Ed.text e)) 1)
+    (if (rd-complete-p (Ed.text e))
       (rd-submit arena st prompt cprompt)
       (rd-edit arena st prompt cprompt cands (ed-newline-indent e)))))
 
@@ -178,12 +178,12 @@
 ; Up: previous line of this entry if there is one, otherwise the
 ; previous history entry.
 (defn rd-up (arena st prompt cprompt cands)
-  (if (= (ed-on-first-line (ES.ed st)) 0)
+  (if (not (ed-on-first-line (ES.ed st)))
     (rd-edit arena st prompt cprompt cands (ed-up-line (ES.ed st)))
     (rd-hist-move arena st prompt cprompt cands 1)))
 
 (defn rd-down (arena st prompt cprompt cands)
-  (if (= (ed-on-last-line (ES.ed st)) 0)
+  (if (not (ed-on-last-line (ES.ed st)))
     (rd-edit arena st prompt cprompt cands (ed-down-line (ES.ed st)))
     (rd-hist-move arena st prompt cprompt cands -1)))
 
@@ -300,7 +300,7 @@
 (defn rd-token-start (text cur)
   (if (<= cur 0)
     0
-    (if (= (ed-word-byte (term-byte-at text (- cur 1))) 1)
+    (if (ed-word-byte (term-byte-at text (- cur 1)))
       (rd-token-start text (- cur 1))
       cur)))
 
@@ -329,14 +329,14 @@
   (match cands
     (Nil Nil)
     (Cons c rest
-      (if (= (rd-starts-with c pre) 1)
+      (if (rd-starts-with c pre)
         (Cons c (rd-matches rest pre))
         (rd-matches rest pre)))))
 
 (defn rd-starts-with (s pre)
   (let n (str-length pre)
     (if (> n (str-length s))
-      0
+      false
       (str-eq (str-substring s 0 n) pre))))
 
 (defn rd-first (xs)

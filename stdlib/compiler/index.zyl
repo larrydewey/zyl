@@ -45,7 +45,7 @@
 (defn itrust-key (t) (match t (ITrust k _ k)))
 (defn itrust-sig (t) (match t (ITrust _ s s)))
 
-(deftype IdxMeta (IMeta String Int))
+(deftype IdxMeta (IMeta String Bool))
 
 (defn imeta-zyl (m) (match m (IMeta z _ z)))
 (defn imeta-yanked (m) (match m (IMeta _ y y)))
@@ -128,7 +128,7 @@
 
 (defn idx-bool-field (forms field)
   (let v (idx-field forms field)
-    (if (str-eq v "true") 1 0)))
+    (if (str-eq v "true") true false)))
 
 (defn idx-read (arena root name)
   (let path (idx-entry-path root name)
@@ -193,7 +193,7 @@
   (match vs
     (Nil best)
     (Cons h t
-      (if (> (iv-yanked h) 0)
+      (if (iv-yanked h)
         (idx-latest-in t best)
         (if (> (str-length (pv-pre (iv-version h))) 0)
           (idx-latest-in t best)
@@ -207,7 +207,7 @@
 ; A yanked version is refused for a NEW resolution only; nothing here is
 ; reachable from a build that already has the version in its lock.
 (defn idx-check-yanked (arena entry iv)
-  (if (> (iv-yanked iv) 0)
+  (if (iv-yanked iv)
     (ffi-call "zyl_panic"
       (str-concat "E_PKG_YANKED: package: resolution selected yanked version "
         (str-concat (pv-str arena (iv-version iv)) (str-concat " of " (ie-name entry)))) 1000)
@@ -325,7 +325,7 @@
         (str-concat ")\n       (key " (str-concat (idx-quote (iv-key v))
           (str-concat ") (sig " (str-concat (idx-quote (iv-sig v))
             (str-concat ")\n       (zyl " (str-concat (idx-quote (imeta-zyl (iv-meta v)))
-              (str-concat ") (yanked " (str-concat (if (> (iv-yanked v) 0) "true" "false") "))")))))))))))))))
+              (str-concat ") (yanked " (str-concat (if (iv-yanked v) "true" "false") "))")))))))))))))))
 
 (defn idx-quote (s) (str-concat "\"" (str-concat s "\"")))
 

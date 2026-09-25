@@ -337,30 +337,30 @@
       (if (str-eq (ZB.name b) name) (Some b) (builtin-find rest name)))))
 
 (defn builtin-is-known (name)
-  (match (builtin-lookup name) (Some _ 1) (None 0)))
+  (match (builtin-lookup name) (Some _ true) (None false)))
 
 ; A "keyword" for colouring purposes: a special form or an operator,
 ; not a type/region/capability name (those colour as types).
 (defn builtin-is-keyword (name)
   (match (builtin-lookup name)
-    (Some b (if (str-eq (ZB.kind b) "special-form") 1
-              (if (str-eq (ZB.kind b) "operator") 1 0)))
-    (None 0)))
+    (Some b (if (str-eq (ZB.kind b) "special-form") true
+              (if (str-eq (ZB.kind b) "operator") true false)))
+    (None false)))
 
 (defn builtin-is-type-name (name)
   (match (builtin-lookup name)
-    (Some b (if (str-eq (ZB.kind b) "type") 1
-              (if (str-eq (ZB.kind b) "region") 1
-                (if (str-eq (ZB.kind b) "capability") 1 0))))
-    (None 0)))
+    (Some b (if (str-eq (ZB.kind b) "type") true
+              (if (str-eq (ZB.kind b) "region") true
+                (if (str-eq (ZB.kind b) "capability") true false))))
+    (None false)))
 
 ; `catch` is part of `try`'s syntax rather than a form of its own, and
 ; the endian keywords lead the byte ops; neither has a table entry, but
 ; both should still colour as syntax.
 (defn builtin-is-syntax-word (name)
-  (if (str-eq name "catch") 1
-    (if (str-eq name ":le") 1
-      (if (str-eq name ":be") 1
+  (if (str-eq name "catch") true
+    (if (str-eq name ":le") true
+      (if (str-eq name ":be") true
         (builtin-is-keyword name)))))
 
 ; ===========================================================================

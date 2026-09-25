@@ -442,7 +442,7 @@
 (defn ic-expr (arena expr vt)
   (let out (ic-expr-node arena expr vt)
     (let _ (ffi-call "zyl_span_copy" out expr 1000)
-      (let _ (if (> (ta-scalar expr) 0) (icnf-scalar-set out 1) unit)
+      (let _ (if (ta-scalar expr) (icnf-scalar-set out 1) unit)
         (ic-mark-kind out (ta-kind expr))))))
 
 ; Codegen kind from type annotation (attr table 1); 0 is left unrecorded.
@@ -1515,7 +1515,7 @@
     (Cons p rest (Cons (ic-arm-bind-one arena p) (ic-arm-binds arena rest)))))
 
 (defn ic-arm-bind-one (arena p)
-  (if (> (ic-pat-is-nested p) 0)
+  (if (ic-pat-is-nested p)
     (str-intern arena (str-concat "_np" (ic-int-to-str (ic-fresh-id arena))))
     (str-intern arena (expr-ident-name p ""))))
 
@@ -1523,9 +1523,9 @@
 ; destructuring) rather than a bare identifier/wildcard binder.
 (defn ic-pat-is-nested (p)
   (match (Expr.inner p)
-    (ECall _ _ 1)
-    (EApply _ _ 1)
-    (_ 0)))
+    (ECall _ _ true)
+    (EApply _ _ true)
+    (_ false)))
 
 (defn ic-pat-ctor-name (p)
   (match (Expr.inner p)
@@ -1552,7 +1552,7 @@
       (match binds
         (Nil Nil)
         (Cons b brest
-          (if (> (ic-pat-is-nested p) 0)
+          (if (ic-pat-is-nested p)
             (Cons (NPEntry b p) (ic-arm-nested prest brest))
             (ic-arm-nested prest brest)))))))
 
@@ -1635,11 +1635,11 @@
   (match (Expr.inner a)
     (EAtom atom
       (match atom
-        (AInt _ 1)
-        (AFloat _ 1)
-        (ABool _ 1)
-        (_ 0)))
-    (_ 0)))
+        (AInt _ true)
+        (AFloat _ true)
+        (ABool _ true)
+        (_ false)))
+    (_ false)))
 
 ; A call-like operand: an Apply/Call whose head is NOT a known variant
 ; constructor (special forms inside binop args are rejected too — they
@@ -1648,11 +1648,11 @@
   (match (Expr.inner a)
     (EApply fname _ (ic-arm-guard-call-head arena fname vt))
     (ECall op _ (ic-arm-guard-call-head arena (expr-ident-name op "") vt))
-    (_ 0)))
+    (_ false)))
 
 (defn ic-arm-guard-call-head (arena fname vt)
   (let tag (vt-tag-of vt (str-intern arena fname))
-    (if (> tag -1) 0 1)))
+    (if (> tag -1) false true)))
 
 ; Lower argument lists left-to-right.
 (defn ic-expr-list (arena args vt)

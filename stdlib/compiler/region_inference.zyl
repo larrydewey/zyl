@@ -48,7 +48,7 @@
 (defn ri-is-load-of (e name)
   (match e
     (ILoad n (str-eq n name))
-    (_ 0)))
+    (_ false)))
 
 (defn ri-name-safe-in (e name)
   (match e
@@ -61,7 +61,7 @@
     (ICall _ args (ri-name-safe-in-list args name))
     (ICallClosure _ args (ri-name-safe-in-list args name))
     (IFfi _ args (ri-name-safe-in-list args name))
-    (IPrint a (if (> (ri-is-load-of a name) 0) 1 (ri-name-safe-in a name)))
+    (IPrint a (if (ri-is-load-of a name) 1 (ri-name-safe-in a name)))
     (IIf c t eb
       (if (> (ri-name-safe-in c name) 0)
         (if (> (ri-name-safe-in t name) 0) (ri-name-safe-in eb name) 0)
@@ -73,7 +73,7 @@
     (IVariant _ _ fields (ri-name-safe-in-list fields name))
     (IStackVariant _ _ fields (ri-name-safe-in-list fields name))
     (IMatch scr arms
-      (if (> (ri-is-load-of scr name) 0)
+      (if (ri-is-load-of scr name)
         (ri-name-safe-in-arms arms name)
         (if (> (ri-name-safe-in scr name) 0) (ri-name-safe-in-arms arms name) 0)))
     (IFn _ _ body (= (ri-name-referenced body name) 0))
@@ -373,9 +373,9 @@
 (defn rg-stack-bytebuf-p (name args)
   (if (str-eq name "zyl_bytebuf_new")
     (match args
-      (Cons a _ (match a (IConst n (if (= n 0) 1 0)) (_ 0)))
-      (Nil 0))
-    0))
+      (Cons a _ (match a (IConst n (if (= n 0) true false)) (_ false)))
+      (Nil false))
+    false))
 
 (defn rg-stack-sites () (ffi-call "zyl_wvec_global" 2 1000))
 
@@ -437,7 +437,7 @@
 
 (defn rg-ffi (e name args env rec)
   (let cs (rg-list args env rec)
-    (if (> (rg-stack-bytebuf-p name args) 0)
+    (if (rg-stack-bytebuf-p name args)
       ; An explicit Stack buffer lives in the frame region; rg-check-stack
       ; reports it if its class ends above L.
       (let c (rg-new 0)
@@ -582,10 +582,10 @@
                                                      (shl (if (> (bit-and flags 2) 0) 1 0) 62)) 0)
                       (let _ (if (> rec 0) (icnf-region-set f (+ flags 4)) unit)
                         (if (= packed old)
-                          0
+                          false
                           (let _ (ffi-call "zyl_smap_put" (rg-summaries) name (+ packed 1) 1000)
-                            1)))))))))))))))))
-    (_ 0)))
+                            true)))))))))))))))))
+    (_ false)))
 
 ; Per-parameter maximum of two summaries, and the OR of bit 62.
 (defn rg-join (a b i)

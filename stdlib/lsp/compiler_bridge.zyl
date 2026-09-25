@@ -190,7 +190,7 @@
 (defn bridge-code-end (s i n)
   (if (>= i n)
     i
-    (if (= (bridge-code-char-p s i) 1)
+    (if (bridge-code-char-p s i)
       (bridge-code-end s (+ i 1) n)
       i)))
 
@@ -198,12 +198,12 @@
 (defn bridge-code-char-p (s i)
   (let c (ffi-call "zyl_cstr_byte_at" s i 1000)
     (if (= c 95)
-      1
+      true
       (if (< c 48)
-        0
+        false
         (if (<= c 57)
-          1
-          (if (< c 65) 0 (if (<= c 90) 1 0)))))))
+          true
+          (if (< c 65) false (if (<= c 90) true false)))))))
 
 (defn bridge-code-start (msg i n)
   (if (> (+ i 2) n)
@@ -276,13 +276,13 @@
 ; to find the package a document belongs to (§31.3). A URI in any other
 ; scheme has no path, and an unsaved buffer resolves as a lone file.
 (defn lsp-uri-path (uri)
-  (if (> (lsp-has-file-scheme uri) 0)
+  (if (lsp-has-file-scheme uri)
     (str-substring uri 7 (- (str-length uri) 7))
     uri))
 
 (defn lsp-has-file-scheme (uri)
   (if (< (str-length uri) 8)
-    0
+    false
     (str-eq (str-substring uri 0 7) "file://")))
 
 (defn st-build (exprs)

@@ -247,8 +247,8 @@
 
 (defn dv-is-struct (sm)
   (match sm
-    (Some _ 1)
-    (None 0)))
+    (Some _ true)
+    (None false)))
 
 (defn dv-binders (pre n i)
   (if (>= i n) Nil (Cons (str-concat pre (ffi-call "zyl_int_text" i 1000)) (dv-binders pre n (+ i 1)))))

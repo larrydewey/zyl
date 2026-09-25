@@ -79,25 +79,25 @@
 
 ; A UTF-8 continuation byte carries no column of its own.
 (defn ed-cont-byte (b)
-  (if (>= b 128) (if (< b 192) 1 0) 0))
+  (if (>= b 128) (if (< b 192) true false) false))
 
 (defn ed-space-byte (b)
-  (if (= b 32) 1 (if (= b 9) 1 (if (= b 10) 1 0))))
+  (if (= b 32) true (if (= b 9) true (if (= b 10) true false))))
 
 ; Word characters for word motion: everything that is not whitespace and
 ; not a delimiter. Zyl identifiers include -, ?, !, *, <, >, = and more,
 ; so listing the delimiters is both shorter and more accurate than
 ; listing the identifier characters.
 (defn ed-word-byte (b)
-  (if (= (ed-space-byte b) 1) 0
-  (if (= b 40) 0
-  (if (= b 41) 0
-  (if (= b 91) 0
-  (if (= b 93) 0
-  (if (= b 123) 0
-  (if (= b 125) 0
-  (if (= b 34) 0
-  1)))))))))
+  (if (ed-space-byte b) false
+  (if (= b 40) false
+  (if (= b 41) false
+  (if (= b 91) false
+  (if (= b 93) false
+  (if (= b 123) false
+  (if (= b 125) false
+  (if (= b 34) false
+  true)))))))))
 
 ; Byte offset one character to the left of `i` (a whole UTF-8 character,
 ; not a byte).
@@ -109,7 +109,7 @@
 (defn ed-prev-char-scan (s i)
   (if (<= i 0)
     0
-    (if (= (ed-cont-byte (term-byte-at s i)) 1)
+    (if (ed-cont-byte (term-byte-at s i))
       (ed-prev-char-scan s (- i 1))
       i)))
 
@@ -122,7 +122,7 @@
 (defn ed-next-char-scan (s i n)
   (if (>= i n)
     n
-    (if (= (ed-cont-byte (term-byte-at s i)) 1)
+    (if (ed-cont-byte (term-byte-at s i))
       (ed-next-char-scan s (+ i 1) n)
       i)))
 
@@ -137,7 +137,7 @@
     (let b (term-byte-at s i)
       (if (= b 27)
         (ed-width-scan s (ed-skip-escape s (+ i 1) n) n acc)
-        (if (= (ed-cont-byte b) 1)
+        (if (ed-cont-byte b)
           (ed-width-scan s (+ i 1) n acc)
           (ed-width-scan s (+ i 1) n (+ acc 1)))))))
 
@@ -179,7 +179,7 @@
     (let b (term-byte-at text i)
       (if (= b 10)
         (ed-pos-scan text (+ i 1) end cols pw cw (+ row 1) cw)
-        (if (= (ed-cont-byte b) 1)
+        (if (ed-cont-byte b)
           (ed-pos-scan text (+ i 1) end cols pw cw row col)
           (ed-pos-advance text i end cols pw cw row (+ col 1)))))))
 
@@ -358,10 +358,10 @@
 ; test that decides whether Up means "previous line" or "previous
 ; history entry".
 (defn ed-on-first-line (e)
-  (if (= (ed-line-start (Ed.text e) (Ed.cur e)) 0) 1 0))
+  (if (= (ed-line-start (Ed.text e) (Ed.cur e)) 0) true false))
 
 (defn ed-on-last-line (e)
-  (if (>= (ed-line-end (Ed.text e) (Ed.cur e)) (str-length (Ed.text e))) 1 0))
+  (if (>= (ed-line-end (Ed.text e) (Ed.cur e)) (str-length (Ed.text e))) true false))
 
 ; ===========================================================================
 ; KILL AND YANK

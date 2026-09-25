@@ -255,7 +255,7 @@
     (CS line col stack ctx-col in-string in-comment escape-next err
       (if (>= idx len)
         state
-        (if (= (sb-result-balanced err) 1)
+        (if (sb-result-balanced err)
           (let next (sb-process-char (str-substring src idx 1) state)
             (sb-scan-index src (+ idx 1) len next))
           state)))))
@@ -268,7 +268,7 @@
 (defn sb-finalize (state)
   (match state
     (CS line col stack ctx-col in-string in-comment escape-next err
-      (if (= (sb-result-balanced err) 1)
+      (if (sb-result-balanced err)
         (if (= in-string 1)
           UnbalancedOpenString
           (match stack
@@ -286,19 +286,19 @@
 
 (defn sb-result-balanced (r)
   (match r
-    (Balanced 1)
-    (UnbalancedOpenString 0)
-    (UnclosedOpen closer line col 0)
-    (UnbalancedClose closer line col 0)
-    (MismatchedPair opener closer line col 0)))
+    (Balanced true)
+    (UnbalancedOpenString false)
+    (UnclosedOpen closer line col false)
+    (UnbalancedClose closer line col false)
+    (MismatchedPair opener closer line col false)))
 
 (defn sb-result-error (r)
   (match r
-    (Balanced 0)
-    (UnbalancedOpenString 1)
-    (UnclosedOpen closer line col 1)
-    (UnbalancedClose closer line col 1)
-    (MismatchedPair opener closer line col 1)))
+    (Balanced false)
+    (UnbalancedOpenString true)
+    (UnclosedOpen closer line col true)
+    (UnbalancedClose closer line col true)
+    (MismatchedPair opener closer line col true)))
 
 ; CLI friendly status: 0 balanced, 1 fatal deviation. Prints only literal
 ; strings and Int values — the Rust-bootstrap print path can only emit

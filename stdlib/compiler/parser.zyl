@@ -257,7 +257,7 @@
 ; passed straight through to the reader.
 (defn check-balanced (src fid)
   (let result (sb-check-string src)
-    (if (= (sb-result-balanced result) 1)
+    (if (sb-result-balanced result)
       0
       (report-unbalanced result fid))))
 

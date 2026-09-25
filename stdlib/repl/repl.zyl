@@ -136,7 +136,7 @@
     (if (= (str-length trimmed) 0)
       (repl-loop arena st sess)
       (let st2 (repl-remember st trimmed)
-        (if (= (repl-meta-p trimmed) 1)
+        (if (repl-meta-p trimmed)
           (repl-meta-interactive arena st2 sess trimmed)
           (repl-eval arena st2 sess trimmed))))))
 
@@ -206,7 +206,7 @@
 ; ===========================================================================
 
 (defn repl-meta-p (text)
-  (if (= (str-length text) 0) 0 (if (= (term-byte-at text 0) 58) 1 0)))
+  (if (= (str-length text) 0) false (if (= (term-byte-at text 0) 58) true false)))
 
 ; What a meta command leaves behind: the session it produced, or the
 ; decision to end the run. Both loops -- the editor's and the scripted
@@ -233,21 +233,21 @@
       (if (= (term-byte-at text i) 32) i (repl-meta-end text (+ i 1))))))
 
 (defn repl-meta-run (sess entries cmd rest)
-  (if (= (repl-cmd-p cmd "q" "quit") 1) (MetaQuit)
-  (if (= (repl-cmd-p cmd "h" "help") 1) (repl-kept sess (repl-help))
-  (if (= (repl-cmd-p cmd "history" "hist") 1) (repl-kept sess (repl-show-history entries))
-  (if (= (repl-cmd-p cmd "clear" "cls") 1) (repl-kept sess (term-write (ansi-clear-screen)))
-  (if (= (repl-cmd-p cmd "reset" "r") 1) (repl-do-reset sess)
-  (if (= (repl-cmd-p cmd "load" "l") 1) (repl-do-load sess rest)
-  (if (= (repl-cmd-p cmd "save" "s") 1) (repl-kept sess (repl-do-save sess rest))
-  (if (= (repl-cmd-p cmd "doc" "d") 1) (repl-kept sess (repl-do-doc rest))
-  (if (= (repl-cmd-p cmd "t" "type") 1) (repl-kept sess (repl-do-type sess rest))
-  (if (= (repl-cmd-p cmd "time" "tm") 1) (repl-do-time sess rest)
-  (if (= (repl-cmd-p cmd "defs" "browse") 1) (repl-kept sess (repl-show-defs sess))
+  (if (repl-cmd-p cmd "q" "quit") (MetaQuit)
+  (if (repl-cmd-p cmd "h" "help") (repl-kept sess (repl-help))
+  (if (repl-cmd-p cmd "history" "hist") (repl-kept sess (repl-show-history entries))
+  (if (repl-cmd-p cmd "clear" "cls") (repl-kept sess (term-write (ansi-clear-screen)))
+  (if (repl-cmd-p cmd "reset" "r") (repl-do-reset sess)
+  (if (repl-cmd-p cmd "load" "l") (repl-do-load sess rest)
+  (if (repl-cmd-p cmd "save" "s") (repl-kept sess (repl-do-save sess rest))
+  (if (repl-cmd-p cmd "doc" "d") (repl-kept sess (repl-do-doc rest))
+  (if (repl-cmd-p cmd "t" "type") (repl-kept sess (repl-do-type sess rest))
+  (if (repl-cmd-p cmd "time" "tm") (repl-do-time sess rest)
+  (if (repl-cmd-p cmd "defs" "browse") (repl-kept sess (repl-show-defs sess))
   (repl-kept sess (repl-unknown cmd))))))))))))))
 
 (defn repl-cmd-p (cmd short long)
-  (if (str-eq cmd short) 1 (if (str-eq cmd long) 1 0)))
+  (if (str-eq cmd short) true (if (str-eq cmd long) true false)))
 
 ; The command already printed whatever it had to say; this is only the
 ; session it leaves behind.
@@ -398,7 +398,7 @@
     (let e (repl-line-end text i n)
       (let line (str-substring text i (- e i))
         (repl-strip-scan text (+ e 1) n
-          (if (= (rd-starts-with (rd-trim line) "(use ") 1)
+          (if (rd-starts-with (rd-trim line) "(use ")
             acc
             (str-concat acc (str-concat line "\n"))))))))
 
@@ -412,7 +412,7 @@
     (let e (repl-line-end text i n)
       (let line (rd-trim (str-substring text i (- e i)))
         (repl-uses-scan text (+ e 1) n
-          (if (= (rd-starts-with line "(use ") 1)
+          (if (rd-starts-with line "(use ")
             (Cons (repl-use-module line) acc)
             acc))))))
 
@@ -536,7 +536,7 @@
 (defn repl-names-scan (text i n acc)
   (if (>= i n)
     (list-reverse acc)
-    (if (= (repl-defn-start text i n) 1)
+    (if (repl-defn-start text i n)
       (let ns (eval-skip-space text (repl-skip-word text (eval-skip-space text (+ i 1) n) n) n)
         (let e (repl-name-end text ns n)
           (repl-names-scan text e n (Cons (str-substring text ns (- e ns)) acc))))
@@ -547,21 +547,21 @@
   (if (= (term-byte-at text i) 40)
     (let s (eval-skip-space text (+ i 1) n)
       (repl-def-word (str-substring text s (- (repl-skip-word text s n) s))))
-    0))
+    false))
 
 (defn repl-def-word (w)
-  (if (str-eq w "defn") 1
-  (if (str-eq w "def") 1
-  (if (str-eq w "deftype") 1
-  (if (str-eq w "defstruct") 1
-  (if (str-eq w "defmacro") 1
-  0))))))
+  (if (str-eq w "defn") true
+  (if (str-eq w "def") true
+  (if (str-eq w "deftype") true
+  (if (str-eq w "defstruct") true
+  (if (str-eq w "defmacro") true
+  false))))))
 
 (defn repl-skip-word (text i n)
   (if (>= i n)
     n
     (let b (term-byte-at text i)
-      (if (= (eval-space-p b) 1) i
+      (if (eval-space-p b) i
       (if (= b 40) i
       (if (= b 41) i
       (repl-skip-word text (+ i 1) n)))))))
@@ -610,7 +610,7 @@
 
 (defn repl-script-entry (sess line rest acc)
   (let text (if (= (str-length acc) 0) line (str-concat acc (str-concat "\n" line)))
-    (if (= (rd-complete-p text) 1)
+    (if (rd-complete-p text)
       (repl-script-eval sess text rest)
       (repl-script-loop sess rest text))))
 
@@ -618,7 +618,7 @@
   (let trimmed (rd-trim text)
     (if (= (str-length trimmed) 0)
       (repl-script-loop sess rest "")
-      (if (= (repl-meta-p trimmed) 1)
+      (if (repl-meta-p trimmed)
         (repl-script-meta sess trimmed rest)
         (let outcome (eval-entry sess trimmed)
           (begin

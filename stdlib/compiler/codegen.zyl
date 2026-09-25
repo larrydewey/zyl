@@ -1714,8 +1714,8 @@
 (defn icnf-bind-real (b)
   ; exact "_" (length 1, byte '_') gets no slot in cg-bind-one
   (if (= (alloc-strlen b) 1)
-    (if (= (byte-at b 0) 95) 0 1)
-    1))
+    (if (= (byte-at b 0) 95) false true)
+    true))
 
 (defn icnf-count-arms (xs)
   (if (is-nil xs)
@@ -1819,8 +1819,8 @@
 
 (defn ifn-tag-p (f)
   (match f
-    (IFn a b c 1)
-    (_ 0)))
+    (IFn a b c true)
+    (_ false)))
 
 (defn ifn-tag-name (f)
   (match f

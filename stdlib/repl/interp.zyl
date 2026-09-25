@@ -69,7 +69,7 @@
     (VPtr p p)))
 
 (defn val-truthy (v)
-  (if (= (val-word v) 0) 0 1))
+  (if (= (val-word v) 0) false true))
 
 (defn in-word-of-str (s)
   (ffi-call "zyl_word_of_cstr" s 1000))
@@ -169,7 +169,7 @@
   (ffi-call "zyl_heap_block_p" w 1000))
 
 (defn in-is-fun (p)
-  (if (= (in-block-p p) 0) 0 (if (= (in-block-tag p) (in-fun-tag)) 1 0)))
+  (if (= (in-block-p p) 0) false (if (= (in-block-tag p) (in-fun-tag)) true false)))
 
 ; ===========================================================================
 ; ERRORS
@@ -322,9 +322,9 @@
     (in-binop op a (in-eval fns env r))))
 
 (defn in-binop (op a b)
-  (if (= (in-float-pair a b) 1)
+  (if (in-float-pair a b)
     (in-float-op op a b)
-    (if (= (in-string-compare-p op a b) 1)
+    (if (in-string-compare-p op a b)
       (in-string-eq op a b)
       (if (= (in-block-compare-p op a b) 1)
         (in-block-compare op a b)
@@ -339,17 +339,17 @@
 (defn in-block-compare-p (op a b)
   (if (> op 10)
     0
-    (if (= (in-is-ptr a) 1)
-      (if (= (in-is-ptr b) 1)
+    (if (in-is-ptr a)
+      (if (in-is-ptr b)
         (if (= (in-block-p (val-word a)) 1) (in-block-p (val-word b)) 0)
         0)
       0)))
 
 (defn in-is-ptr (v)
-  (match v (VPtr _ 1) (_ 0)))
+  (match v (VPtr _ true) (_ false)))
 
 (defn in-block-compare (op a b)
-  (if (= op 9) (VInt (ffi-call "zyl_variant_eq" (val-word a) (val-word b) 1000))
+  (if (= op 9) (VInt (if (ffi-call "zyl_variant_eq" (val-word a) (val-word b) 1000) 1 0))
   (if (= op 10) (VInt (if (ffi-call "zyl_variant_eq" (val-word a) (val-word b) 1000) 0 1))
   (in-int-compare-of op (ffi-call "zyl_variant_cmp" (val-word a) (val-word b) 1000)))))
 
@@ -368,26 +368,26 @@
 ; runtime, where it answers false for equal text. The interpreter
 ; follows the spec; closing the gap in codegen is its own change.
 (defn in-string-compare-p (op a b)
-  (if (= (in-is-str a) 1)
-    (if (= (in-is-str b) 1)
-      (if (and (> op 4) (< op 11)) 1 0)
-      0)
-    0))
+  (if (in-is-str a)
+    (if (in-is-str b)
+      (if (and (> op 4) (< op 11)) true false)
+      false)
+    false))
 
 (defn in-is-str (v)
-  (match v (VStr _ 1) (_ 0)))
+  (match v (VStr _ true) (_ false)))
 
 (defn in-string-eq (op a b)
   (if (> op 8)
     (let same (ffi-call "zyl_cstr_eq" (val-word a) (val-word b) 1000)
-      (if (= op 9) (VInt same) (VInt (if (> same 0) 0 1))))
+      (if (= op 9) (VInt (if same 1 0)) (VInt (if same 0 1))))
     (in-int-compare-of op (ffi-call "zyl_cstr_cmp" (val-word a) (val-word b) 1000))))
 
 (defn in-float-pair (a b)
-  (if (= (in-is-float a) 1) 1 (in-is-float b)))
+  (if (in-is-float a) true (in-is-float b)))
 
 (defn in-is-float (v)
-  (match v (VFlt _ 1) (_ 0)))
+  (match v (VFlt _ true) (_ false)))
 
 ; A mixed Int/Float operand is widened, which is what the SSE path in
 ; codegen does with a constant operand too.
@@ -401,7 +401,7 @@
     (let y (in-as-float-bits b)
       (if (< op 5)
         (VFlt (in-float-arith op x y))
-        (VInt (in-float-compare op x y))))))
+        (VInt (if (in-float-compare op x y) 1 0))))))
 
 (defn in-float-arith (op x y)
   (if (= op 0) (ffi-call "zyl_f_add" x y 1000)
@@ -412,17 +412,17 @@
 
 (defn in-float-compare (op x y)
   (let c (ffi-call "zyl_f_cmp" x y 1000)
-    (if (= op 5) (if (= c -1) 1 0)
-    (if (= op 6) (if (= c 1) 1 0)
-    (if (= op 7) (if (= c -1) 1 (if (= c 0) 1 0))
-    (if (= op 8) (if (= c 1) 1 (if (= c 0) 1 0))
-    (if (= op 9) (if (= c 0) 1 0)
-    (if (= op 10) (if (= c 0) 0 1)
-    0))))))))
+    (if (= op 5) (if (= c -1) true false)
+    (if (= op 6) (if (= c 1) true false)
+    (if (= op 7) (if (= c -1) true (if (= c 0) true false))
+    (if (= op 8) (if (= c 1) true (if (= c 0) true false))
+    (if (= op 9) (if (= c 0) true false)
+    (if (= op 10) (if (= c 0) false true)
+    false))))))))
 
 (defn in-int-op (op x y)
   (if (< op 5) (VInt (in-int-arith op x y))
-  (if (< op 11) (VInt (in-int-compare op x y))
+  (if (< op 11) (VInt (if (in-int-compare op x y) 1 0))
   (VInt (in-int-bits op x y)))))
 
 (defn in-int-arith (op x y)
@@ -445,12 +445,12 @@
     (% x y)))
 
 (defn in-int-compare (op x y)
-  (if (= op 5) (if (< x y) 1 0)
-  (if (= op 6) (if (> x y) 1 0)
-  (if (= op 7) (if (<= x y) 1 0)
-  (if (= op 8) (if (>= x y) 1 0)
-  (if (= op 9) (if (= x y) 1 0)
-  (if (= x y) 0 1)))))))
+  (if (= op 5) (if (< x y) true false)
+  (if (= op 6) (if (> x y) true false)
+  (if (= op 7) (if (<= x y) true false)
+  (if (= op 8) (if (>= x y) true false)
+  (if (= op 9) (if (= x y) true false)
+  (if (= x y) false true)))))))
 
 (defn in-int-bits (op x y)
   (if (= op 11) (bit-and x y)
@@ -465,7 +465,7 @@
 ; ===========================================================================
 
 (defn in-if (fns env c t f)
-  (if (= (val-truthy (in-eval fns env c)) 1)
+  (if (val-truthy (in-eval fns env c))
     (in-eval fns env t)
     (in-eval fns env f)))
 
@@ -477,7 +477,7 @@
   (in-while-step fns env c b (VInt 0)))
 
 (defn in-while-step (fns env c b last)
-  (if (= (val-truthy (in-eval fns env c)) 1)
+  (if (val-truthy (in-eval fns env c))
     (in-while-step fns env c b (in-eval fns env b))
     last))
 
@@ -662,7 +662,7 @@
   (let p (val-word v)
     (if (= p 0)
       (VInt (in-fail "E_NOT_CALLABLE" "this value is not a function"))
-      (if (= (in-is-fun p) 1)
+      (if (in-is-fun p)
         (in-call-named fns env (in-str-of-word (in-fun-name-of p)) args)
         (in-closure-triple fns env p args)))))
 
@@ -717,7 +717,7 @@
   (let p (val-word v)
     (if (= p 0)
       (VInt (in-fail "E_NOT_CALLABLE" "this value is not a closure"))
-      (if (= (in-is-fun p) 1)
+      (if (in-is-fun p)
         (in-call-named fns env (in-str-of-word (in-fun-name-of p)) args)
         (in-closure-triple fns env p args)))))
 
@@ -729,7 +729,7 @@
 (defn in-closure-fields (fns env p args)
   (let code (in-block-field p 0)
     (let cenv (in-block-field p 1)
-      (if (= (in-is-fun code) 1)
+      (if (in-is-fun code)
         (in-closure-invoke fns env (in-str-of-word (in-fun-name-of code)) cenv args)
         (VInt (in-fail "E_NOT_CALLABLE" "closure has no callable code field"))))))
 
@@ -755,7 +755,7 @@
     (in-register-test fns env args)
     (if (str-eq sym "zyl_run_tests")
       (in-run-tests fns)
-      (if (= (in-actor-sym-p sym) 1)
+      (if (in-actor-sym-p sym)
         (VInt (in-fail "E_UNSUPPORTED_INTERPRETED"
                        "spawning an actor needs compiled code: the entry point is a native function pointer, which an interpreted function does not have. Compile this program with `zyl <file>` and run the binary."))
         (if (in-global-sym-p sym)
@@ -790,9 +790,9 @@
 ; function. Under the interpreter there is no address, so the call is
 ; refused with an explanation rather than jumping to a number.
 (defn in-actor-sym-p (sym)
-  (if (str-eq sym "zyl_actor_spawn") 1
-  (if (str-eq sym "zyl_actor_send_closure") 1
-  0)))
+  (if (str-eq sym "zyl_actor_spawn") true
+  (if (str-eq sym "zyl_actor_send_closure") true
+  false)))
 
 (defn in-register-test (fns env args)
   (let vals (in-args-eval fns env args)
@@ -836,8 +836,8 @@
 ; failure.
 (defn in-test-ok (outcome)
   (match outcome
-    (Err _ 0)
-    (Ok v (if (= (val-word v) 0) 1 0))))
+    (Err _ false)
+    (Ok v (if (= (val-word v) 0) true false))))
 
 (defn in-ffi-call (sym vals)
   (let addr (ffi-call "zyl_ffi_lookup" sym 1000)
@@ -881,34 +881,34 @@
 ; (they are the runtime's own), so the result carries that, and `print`
 ; of a str-concat shows text rather than an address.
 (defn in-ffi-result (sym w)
-  (if (= (in-ffi-returns-str sym) 1) (VStr w) (VInt w)))
+  (if (in-ffi-returns-str sym) (VStr w) (VInt w)))
 
 (defn in-ffi-returns-str (sym)
-  (if (str-eq sym "zyl_cstr_concat") 1
-  (if (str-eq sym "zyl_cstr_substr") 1
-  (if (str-eq sym "zyl_cstr_sub") 1
-  (if (str-eq sym "zyl_cstr_from_int") 1
-  (if (str-eq sym "zyl_cstr_from_byte") 1
-  (if (str-eq sym "zyl_cstr_sanitize") 1
-  (if (str-eq sym "zyl_cstr_decode") 1
-  (if (str-eq sym "zyl_file_read_c") 1
-  (if (str-eq sym "zyl_str_append") 1
-  (if (str-eq sym "zyl_str_append_capped") 1
-  (if (str-eq sym "zyl_getcwd") 1
-  (if (str-eq sym "zyl_getenv") 1
-  (if (str-eq sym "zyl_dirname_cstr") 1
-  (if (str-eq sym "zyl_arg_str") 1
-  (if (str-eq sym "zyl_f_text") 1
-  (if (str-eq sym "zyl_sym_escape") 1
-  (if (str-eq sym "zyl_mangle_key") 1
-  (if (str-eq sym "zyl_span_line_text") 1
-  (if (str-eq sym "zyl_span_snippet") 1
-  (if (str-eq sym "zyl_json_quote") 1
-  (if (str-eq sym "zyl_warn_take") 1
-  (if (str-eq sym "zyl_source_path") 1
-  (if (str-eq sym "zyl_blake3_hex") 1
-  (if (str-eq sym "zyl_blake3_file_hex") 1
-  0)))))))))))))))))))))))))
+  (if (str-eq sym "zyl_cstr_concat") true
+  (if (str-eq sym "zyl_cstr_substr") true
+  (if (str-eq sym "zyl_cstr_sub") true
+  (if (str-eq sym "zyl_cstr_from_int") true
+  (if (str-eq sym "zyl_cstr_from_byte") true
+  (if (str-eq sym "zyl_cstr_sanitize") true
+  (if (str-eq sym "zyl_cstr_decode") true
+  (if (str-eq sym "zyl_file_read_c") true
+  (if (str-eq sym "zyl_str_append") true
+  (if (str-eq sym "zyl_str_append_capped") true
+  (if (str-eq sym "zyl_getcwd") true
+  (if (str-eq sym "zyl_getenv") true
+  (if (str-eq sym "zyl_dirname_cstr") true
+  (if (str-eq sym "zyl_arg_str") true
+  (if (str-eq sym "zyl_f_text") true
+  (if (str-eq sym "zyl_sym_escape") true
+  (if (str-eq sym "zyl_mangle_key") true
+  (if (str-eq sym "zyl_span_line_text") true
+  (if (str-eq sym "zyl_span_snippet") true
+  (if (str-eq sym "zyl_json_quote") true
+  (if (str-eq sym "zyl_warn_take") true
+  (if (str-eq sym "zyl_source_path") true
+  (if (str-eq sym "zyl_blake3_hex") true
+  (if (str-eq sym "zyl_blake3_file_hex") true
+  false)))))))))))))))))))))))))
 
 
 
@@ -958,9 +958,9 @@
 (defn in-show-block (p depth)
   (if (= (in-block-p p) 0)
     (str-concat "#<0x" (str-concat (ffi-call "zyl_int_text" p 1000) ">"))
-    (if (= (in-is-fun p) 1)
+    (if (in-is-fun p)
       (in-fn-text (in-fun-name-of p))
-      (if (= (in-is-closure p) 1)
+      (if (in-is-closure p)
         (in-fn-text (in-fun-name-of (in-block-field p 0)))
         (in-show-variant p depth)))))
 
@@ -990,7 +990,7 @@
 ; A closure is the [tag][code][env] triple whose code field is itself a
 ; function cell.
 (defn in-is-closure (p)
-  (if (= (in-block-p p) 0) 0 (in-is-fun (in-block-field p 0))))
+  (if (= (in-block-p p) 0) false (in-is-fun (in-block-field p 0))))
 
 (defn in-show-variant (p depth)
   (let name (ffi-call "zyl_val_name" p 1000)
@@ -1029,16 +1029,16 @@
     (Nil None)
     (Cons f rest
       (let n (in-fn-name f)
-        (if (= (in-name-is-main n) 1) (Some n) (in-main-name rest))))))
+        (if (in-name-is-main n) (Some n) (in-main-name rest))))))
 
 (defn in-name-is-main (n)
   (if (str-eq n "main")
-    1
+    true
     (in-ends-with n "::main")))
 
 (defn in-ends-with (s suffix)
   (let ns (str-length s)
     (let nf (str-length suffix)
       (if (< ns nf)
-        0
+        false
         (str-eq (str-substring s (- ns nf) nf) suffix)))))

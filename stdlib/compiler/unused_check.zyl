@@ -79,7 +79,7 @@
 
 (defn uc-is-exempt (name)
   (if (< (str-length name) 1)
-    0
+    false
     (str-eq (str-substring name 0 1) "_")))
 
 (defn uc-in-list (name xs)
@@ -123,14 +123,14 @@
     (Cons h t (if (str-eq h name) (uc-filter-out name t) (Cons h (uc-filter-out name t))))))
 
 (defn uc-should-check-fn (name)
-  (if (str-eq name "main") 0 (if (> (uc-is-exempt name) 0) 0 1)))
+  (if (str-eq name "main") false (if (uc-is-exempt name) false true)))
 
 (defn uc-report-unused-fns (names refs)
   (match names
     (Nil 0)
     (Cons n rest
       (begin
-        (if (> (uc-should-check-fn n) 0)
+        (if (uc-should-check-fn n)
           (if (> (uc-in-list n refs) 0) unit (uc-warn-unused-fn n))
           0)
         (uc-report-unused-fns rest refs)))))
@@ -256,7 +256,7 @@
   (match names
     (Nil 0)
     (Cons n rest
-      (if (> (uc-is-exempt n) 0)
+      (if (uc-is-exempt n)
         (uc-check-dup-params fname rest seen)
         (if (> (uc-in-list n seen) 0)
           (uc-fail-dup-param fname n)
@@ -277,7 +277,7 @@
     (Cons p rest
       (let n (P.name p)
         (begin
-          (if (> (uc-is-exempt n) 0) 0 (if (> (uc-in-list n refs) 0) unit (uc-warn-unused n "parameter" p)))
+          (if (uc-is-exempt n) 0 (if (> (uc-in-list n refs) 0) unit (uc-warn-unused n "parameter" p)))
           (uc-check-unused-params refs rest))))))
 
 (defn uc-warn-unused (name kind site)
@@ -291,7 +291,7 @@
 ; ===========================================================================
 
 (defn uc-check-shadow (name scope site)
-  (if (> (uc-is-exempt name) 0)
+  (if (uc-is-exempt name)
     0
     (if (> (uc-in-list name scope) 0) (uc-warn-shadow name site) unit)))
 
@@ -351,7 +351,7 @@
         (Pair name valOpt
           (begin
             (uc-check-shadow name scope site)
-            (if (> (uc-is-exempt name) 0) 0 (if (> (uc-in-list name refs) 0) unit (uc-warn-unused name "variable" site)))
+            (if (uc-is-exempt name) 0 (if (> (uc-in-list name refs) 0) unit (uc-warn-unused name "variable" site)))
             (match valOpt (Some v (uc-walk-scope v refs scope)) (None 0))
             (uc-walk-for-bindings rest refs (Cons name scope) site)))))))
 
@@ -396,13 +396,13 @@
     (ELet name val body
       (begin
         (uc-check-shadow name scope e)
-        (if (> (uc-is-exempt name) 0) 0 (if (> (uc-in-list name refs) 0) unit (uc-warn-unused name "variable" e)))
+        (if (uc-is-exempt name) 0 (if (> (uc-in-list name refs) 0) unit (uc-warn-unused name "variable" e)))
         (uc-walk-scope val refs scope)
         (uc-walk-scope body refs (Cons name scope))))
     (ELetMut name val body
       (begin
         (uc-check-shadow name scope e)
-        (if (> (uc-is-exempt name) 0) 0 (if (> (uc-in-list name refs) 0) unit (uc-warn-unused name "variable" e)))
+        (if (uc-is-exempt name) 0 (if (> (uc-in-list name refs) 0) unit (uc-warn-unused name "variable" e)))
         (uc-walk-scope val refs scope)
         (uc-walk-scope body refs (Cons name scope))))
     (EDef _ val (uc-walk-scope val refs scope))
