@@ -1,0 +1,4 @@
+; Compile-fail: the region registry is closed; `pool` is not a kind.
+; expect-error: E_REGION_SPEC
+
+(defn main () (begin (print (with-region (pool :block 4096) 1)) 0))

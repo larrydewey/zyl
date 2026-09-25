@@ -1,0 +1,11 @@
+; Compile-fail: a list built inside with-region is the body's value, so it
+; would outlive the region that holds it.
+; expect-error: E_REGION_ESCAPE
+
+(deftype WL (WN) (WC Int WL))
+
+(defn build (n acc) (if (= n 0) acc (build (- n 1) (WC n acc))))
+
+(defn leak () (with-region (arena :block 4096) (build 10 (WN))))
+
+(defn main () (begin (print (match (leak) (WN 0) (WC h _ h))) 0))

@@ -1,0 +1,4 @@
+; Compile-fail: an arena's block size must be a multiple of 4096.
+; expect-error: E_REGION_SPEC
+
+(defn main () (begin (print (with-region (arena :block 1000) 1)) 0))

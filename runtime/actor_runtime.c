@@ -1668,7 +1668,7 @@ long long zyl_span_copy(long long dst, long long src) {
 /* Node attribute tables, string maps and word vectors for compiler passes.
    Keyed by address or content, probed only (never iterated); a miss reads 0. */
 
-#define ZYL_ATTR_TABLES 5
+#define ZYL_ATTR_TABLES 6
 typedef struct { uintptr_t key; long long val; } ZylAttrSlot;
 static ZylAttrSlot* g_attrs[ZYL_ATTR_TABLES];
 static size_t g_attr_cap[ZYL_ATTR_TABLES];
@@ -2301,8 +2301,19 @@ typedef struct ZylRegion {
     struct ZylRegion* prev;
     char* bump;
     char* end;
-    ZylRBlock* blocks;
+    ZylRBlock* blocks;   /* low bit set: a with-region scope, whose kind,
+                            block, align, limit and bytes used follow in
+                            the next five words of its header */
 } ZylRegion;
+
+/* The four-word layout is shared with generated code (codegen.zyl's
+   cg-region-prologue), including code from the committed seed, so a
+   scope is marked in `blocks` rather than by a fifth word. */
+#define ZYL_RBLOCKS(r) ((ZylRBlock*)((uintptr_t)(r)->blocks & ~(uintptr_t)1))
+#define ZYL_RSCOPED(r) (((uintptr_t)(r)->blocks & 1) != 0)
+#define ZYL_RSET_BLOCKS(r, b) ((r)->blocks = (ZylRBlock*)((uintptr_t)(b) | ((uintptr_t)(r)->blocks & 1)))
+#define ZYL_RPOLICY(r) ((long long*)(r) + 4)
+
 
 __thread ZylRegion* zyl_cur_region = 0;
 __thread ZylRegion* zyl_region_top = 0;
@@ -2348,6 +2359,56 @@ static ZylRBlock* zyl_rblock_get(size_t need) {
     return b;
 }
 
+enum { ZYL_RP_KIND, ZYL_RP_BLOCK, ZYL_RP_ALIGN, ZYL_RP_LIMIT, ZYL_RP_USED };
+
+/* A with-region scope (compiler/region_inference, the region extension
+   registry): kind 1 arena (blocks of `block` bytes, at most `limit` in
+   all, 0 meaning no limit), kind 2 fixed (one block of `block` bytes).
+   Every decision depends only on the sequence of requests: blocks are
+   page-aligned, so alignment padding is the same on every run, and the
+   limit counts requested bytes plus that padding. */
+static long long zyl_policy_alloc(ZylRegion* r, long long size) {
+    long long* p = ZYL_RPOLICY(r);
+    size_t align = (size_t)p[ZYL_RP_ALIGN];
+    size_t payload = (size_t)((size + 7) / 8) * 8;
+    for (int attempt = 0; attempt < 2; attempt++) {
+        if (r->bump) {
+            uintptr_t at = ((uintptr_t)r->bump + 8 + align - 1) & ~(uintptr_t)(align - 1);
+            char* end = (char*)at + payload;
+            if (end <= r->end) {
+                long long used = p[ZYL_RP_USED] + (long long)(end - r->bump);
+                /* fixed: the limit is its :size, so a block rounded up to
+                   whole pages still holds exactly that many bytes */
+                if (p[ZYL_RP_LIMIT] > 0 && used > p[ZYL_RP_LIMIT]) break;
+                p[ZYL_RP_USED] = used;
+                r->bump = end;
+                *(long long*)(at - 8) = (long long)(payload / 8);
+                return (long long)at;
+            }
+        }
+        if (p[ZYL_RP_KIND] == 2 && ZYL_RBLOCKS(r)) break;
+        size_t want = (size_t)p[ZYL_RP_BLOCK];
+        size_t need = payload + 8 + align + sizeof(ZylRBlock);
+        if (want < need) want = need;
+        if (p[ZYL_RP_KIND] == 2) want = (size_t)p[ZYL_RP_BLOCK] + 8 + align + sizeof(ZylRBlock);
+        want = (want + 4095) & ~(size_t)4095;
+        ZylRBlock* b = (ZylRBlock*)zyl_rmap(want);
+        b->size = want;
+        b->big = 1;
+        b->next = ZYL_RBLOCKS(r);
+        ZYL_RSET_BLOCKS(r, b);
+        __atomic_add_fetch(&g_region_live, (long long)want, __ATOMIC_RELAXED);
+        r->bump = (char*)b + sizeof(ZylRBlock);
+        r->end = (char*)b + want;
+    }
+    char* m = (char*)malloc(160);
+    snprintf(m, 160, "E_REGION_EXHAUSTED: %s region of %lld bytes is full",
+             p[ZYL_RP_KIND] == 2 ? "fixed" : "arena",
+             p[ZYL_RP_KIND] == 2 ? p[ZYL_RP_BLOCK] : p[ZYL_RP_LIMIT]);
+    zyl_panic(m);
+    return 0;
+}
+
 /* Allocate `size` bytes in region `rp` (0: the heap), with the hidden
    qword-count header zyl_heap_alloc writes, so zyl_variant_eq and the
    value helpers read region blocks the same way. */
@@ -2355,6 +2416,7 @@ long long zyl_ralloc(long long size, long long rp) {
     ZylRegion* r = (ZylRegion*)(size_t)rp;
     if (!r) return zyl_heap_alloc(size);
     if (size <= 0) return 0;
+    if (ZYL_RSCOPED(r)) return zyl_policy_alloc(r, size);
     if (size > (1LL << 48)) {
         fprintf(stderr, "zyl_ralloc: size too large size=%lld\n", size);
         return 0;
@@ -2362,8 +2424,8 @@ long long zyl_ralloc(long long size, long long rp) {
     size_t need = (size_t)((size + 7) / 8) * 8 + 8;
     if (!r->bump || (size_t)(r->end - r->bump) < need) {
         ZylRBlock* b = zyl_rblock_get(need);
-        b->next = r->blocks;
-        r->blocks = b;
+        b->next = ZYL_RBLOCKS(r);
+        ZYL_RSET_BLOCKS(r, b);
         __atomic_add_fetch(&g_region_live, (long long)b->size, __ATOMIC_RELAXED);
         r->bump = (char*)b + sizeof(ZylRBlock);
         r->end = (char*)b + b->size;
@@ -2375,7 +2437,7 @@ long long zyl_ralloc(long long size, long long rp) {
 }
 
 static void zyl_region_free_blocks(ZylRegion* r) {
-    ZylRBlock* b = r->blocks;
+    ZylRBlock* b = ZYL_RBLOCKS(r);
     while (b) {
         ZylRBlock* next = b->next;
         __atomic_sub_fetch(&g_region_live, (long long)b->size, __ATOMIC_RELAXED);
@@ -2392,7 +2454,7 @@ static void zyl_region_free_blocks(ZylRegion* r) {
         }
         b = next;
     }
-    r->blocks = 0;
+    ZYL_RSET_BLOCKS(r, 0);
     r->bump = 0;
     r->end = 0;
 }
@@ -2407,12 +2469,29 @@ void zyl_region_enter(long long rp) {
     zyl_region_top = r;
 }
 
+/* Enter a with-region scope; `hp` is a ten-word header in the frame. */
+void zyl_region_scope_enter(long long hp, long long kind, long long block,
+                            long long align, long long limit) {
+    ZylRegion* r = (ZylRegion*)(size_t)hp;
+    long long* p = ZYL_RPOLICY(r);
+    r->prev = zyl_region_top;
+    r->bump = 0;
+    r->end = 0;
+    r->blocks = (ZylRBlock*)(uintptr_t)1;
+    p[ZYL_RP_KIND] = kind;
+    p[ZYL_RP_BLOCK] = block;
+    p[ZYL_RP_ALIGN] = align < 8 ? 8 : align;
+    p[ZYL_RP_LIMIT] = limit;
+    p[ZYL_RP_USED] = 0;
+    zyl_region_top = r;
+}
+
 /* Release a frame region's blocks; generated code pops the chain and
    clears zyl_cur_region inline, calling this only when blocks were
    taken. */
 void zyl_region_free(long long rp) {
     ZylRegion* r = (ZylRegion*)(size_t)rp;
-    if (r->blocks) zyl_region_free_blocks(r);
+    if (ZYL_RBLOCKS(r)) zyl_region_free_blocks(r);
 }
 
 /* Function exit (and before a tail jump): pop and release. The result
@@ -2420,7 +2499,7 @@ void zyl_region_free(long long rp) {
    names this one. */
 void zyl_region_exit(long long rp) {
     ZylRegion* r = (ZylRegion*)(size_t)rp;
-    if (r->blocks) zyl_region_free_blocks(r);
+    if (ZYL_RBLOCKS(r)) zyl_region_free_blocks(r);
     zyl_region_top = r->prev;
     if (zyl_cur_region == r) zyl_cur_region = 0;
 }
@@ -2431,7 +2510,7 @@ void zyl_region_unwind(void* mark) {
     ZylRegion* stop = (ZylRegion*)mark;
     while (zyl_region_top && zyl_region_top != stop) {
         ZylRegion* r = zyl_region_top;
-        if (r->blocks) zyl_region_free_blocks(r);
+        if (ZYL_RBLOCKS(r)) zyl_region_free_blocks(r);
         zyl_region_top = r->prev;
     }
     zyl_cur_region = 0;
@@ -4422,7 +4501,7 @@ long long zyl_int_text(long long n) {
     X(zyl_load_n) X(zyl_load_n_signed) X(zyl_store_n) \
     X(zyl_global_get) X(zyl_global_put) X(zyl_global_ready) X(zyl_global_clear) \
     X(zyl_repl_global_get) X(zyl_repl_global_set) \
-    X(zyl_uf_reset) X(zyl_uf_new) X(zyl_uf_find) X(zyl_uf_union) X(zyl_uf_raise) X(zyl_uf_level) X(zyl_regions_enabled) X(zyl_heap_alloc) X(zyl_ralloc) X(zyl_region_enter) X(zyl_region_exit) X(zyl_region_free) X(zyl_region_live_bytes) X(zyl_heap_block_p) X(zyl_heap_swap) \
+    X(zyl_uf_reset) X(zyl_uf_new) X(zyl_uf_find) X(zyl_uf_union) X(zyl_uf_raise) X(zyl_uf_level) X(zyl_regions_enabled) X(zyl_heap_alloc) X(zyl_ralloc) X(zyl_region_enter) X(zyl_region_exit) X(zyl_region_free) X(zyl_region_scope_enter) X(zyl_region_live_bytes) X(zyl_heap_block_p) X(zyl_heap_swap) \
     X(zyl_int_text) X(zyl_itest_add) X(zyl_itest_count) \
     X(zyl_itest_fn) X(zyl_itest_name) X(zyl_itest_outcome) \
     X(zyl_itest_reset) X(zyl_itest_start) X(zyl_itest_summary) \

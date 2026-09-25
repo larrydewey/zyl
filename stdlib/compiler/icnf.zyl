@@ -75,7 +75,11 @@
   ; Address of the C symbol, verbatim (through the GOT). Only produced by
   ; ic-ffi, which hands a foreign function to the runtime's timed call
   ; bridge (zyl_ffi_timed) instead of calling it directly.
-  (ISymAddr String))
+  (ISymAddr String)
+  ; (with-region SPEC body): kind (1 arena, 2 fixed), block size, alignment,
+  ; limit (0 none), body. Allocations in body that region inference places
+  ; in the scope go to a region of that kind, released when body ends.
+  (IRegion Int Int Int Int Icnf))
 
 (deftype IArm (IArm String Int (List String) Icnf)) ; variant, tag, binds, body
 
@@ -437,7 +441,8 @@
 (defn ic-expr (arena expr vt)
   (let out (ic-expr-node arena expr vt)
     (let _ (ffi-call "zyl_span_copy" out expr 1000)
-      (ic-mark-kind out (ta-kind expr)))))
+      (let _ (if (> (ta-scalar expr) 0) (ffi-call "zyl_attr_set" 5 out 1 1000) 0)
+        (ic-mark-kind out (ta-kind expr))))))
 
 ; Codegen kind from type annotation (attr table 1); 0 is left unrecorded.
 (defn ic-mark-kind (out k)
@@ -869,7 +874,8 @@
     (IStackVariant _ _ fs (ic-lambda-free-list fs bound vt acc))
     (IMatch s arms (ic-lambda-free-arms arms bound vt (ic-lambda-free s bound vt acc)))
     (IFn _ _ _ acc)
-    (ITryCatch tb cv cb (ic-lambda-free cb (Cons cv bound) vt (ic-lambda-free tb bound vt acc)))))
+    (ITryCatch tb cv cb (ic-lambda-free cb (Cons cv bound) vt (ic-lambda-free tb bound vt acc)))
+    (IRegion _ _ _ _ b (ic-lambda-free b bound vt acc))))
 
 ; ic-expr's ELet/ELetMut both funnel through here.
 (defn ic-lower-let (arena name val body vt)
@@ -946,6 +952,9 @@
         (let hc (ic-hoist cbody)
           (HoistAcc (ITryCatch (hoist-node ht) cvar (hoist-node hc))
                     (list-append (hoist-fns ht) (hoist-fns hc))))))
+    (IRegion k b a l body
+      (let hb (ic-hoist body)
+        (HoistAcc (IRegion k b a l (hoist-node hb)) (hoist-fns hb))))
     (IFfi name args
       (let ha (ic-hoist-list args)
         (HoistAcc (IFfi name (hoistl-nodes ha)) (hoistl-fns ha))))
@@ -1119,6 +1128,8 @@
 (defn ic-apply (arena fname args vt)
   (if (> (str-eq fname (str-intern arena "ffi-call")) 0)
     (ic-ffi arena args vt)
+  (if (> (str-eq fname "with-region") 0)
+    (ic-with-region arena args vt)
     (let strb (ic-str-builtin-sym arena fname)
       (if (> (str-length strb) 0)
         (IFfi strb (ic-expr-list arena args vt))
@@ -1127,7 +1138,7 @@
           (let op (ic-op-of arena fname)
             (if (> op -1)
               (ic-binop arena op args vt)
-              (ic-call-or-variant arena fname args vt))))))))
+              (ic-call-or-variant arena fname args vt)))))))))
 
 ; Whether `s` starts with "make-". Deliberately NOT reusing
 ; monomorphization.zyl's str-starts-with (str-substring + `=`): codegen's
@@ -1325,6 +1336,21 @@
   (if (>= (str-length name) 4)
     (ffi-call "zyl_cstr_eq" (str-substring name 0 4) "zyl_" 1000)
     0))
+
+; (with-region kind block align limit body), from parse-with-region.
+(defn ic-with-region (arena args vt)
+  (IRegion (ic-wr-int args 0) (ic-wr-int args 1) (ic-wr-int args 2) (ic-wr-int args 3)
+           (ic-expr arena (ic-wr-nth args 4) vt)))
+
+(defn ic-wr-nth (xs i)
+  (match xs
+    (Nil (Expr (EAtom (AInt 0))))
+    (Cons h t (if (= i 0) h (ic-wr-nth t (- i 1))))))
+
+(defn ic-wr-int (xs i)
+  (match (Expr.inner (ic-wr-nth xs i))
+    (EAtom a (match a (AInt n n) (_ 0)))
+    (_ 0)))
 
 ; The ffi symbol is a string literal — extract via its Atom, NOT
 ; expr-ident-name (which only extracts identifiers).

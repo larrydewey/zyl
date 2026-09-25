@@ -289,7 +289,9 @@
     (IMatch scrut arms (in-match fns env scrut arms))
     (IFn name _ _ _ (in-make-fun name))
     (ICallClosure name args (in-call-closure fns env name args))
-    (ITryCatch body var handler (in-try fns env body var handler))))
+    (ITryCatch body var handler (in-try fns env body var handler))
+    ; The interpreter allocates everything in its own arenas.
+    (IRegion _ _ _ _ body (in-eval fns env body))))
 
 ; A name is a local binding, or a top-level function referred to as a
 ; value (`(map f xs)` passes `f` that way).

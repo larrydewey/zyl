@@ -1,0 +1,49 @@
+; with-region (the region extension registry, docs/regions-design.md):
+; allocations inside the body go to a region of an audited kind and are
+; released when the body ends.
+
+(use core/core)
+
+(deftype WL (WN) (WC Int WL))
+
+(defn build (n acc) (if (= n 0) acc (build (- n 1) (WC n acc))))
+
+(defn wsum (l) (match l (WN 0) (WC h t (+ h (wsum t)))))
+
+(defn live () (ffi-call "zyl_region_live_bytes" 1000))
+
+(defn arena-sum (n)
+  (with-region (arena :block 65536 :align 16 :limit 1048576)
+    (wsum (build n (WN)))))
+
+(defn fixed-sum (n)
+  (with-region (fixed :size 4096)
+    (wsum (build n (WN)))))
+
+(defn nested (n)
+  (with-region (arena :block 4096)
+    (+ (wsum (build n (WN)))
+       (with-region (fixed :size 8192 :align 64) (wsum (build n (WN)))))))
+
+(defn text-len (n)
+  (with-region (arena :block 4096)
+    (str-length (str-concat "abc" (str-concat "def" (if (> n 0) "g" ""))))))
+
+(test "an arena region computes"
+  (assert-equal (arena-sum 1000) 500500))
+
+(test "a fixed region computes"
+  (assert-equal (fixed-sum 10) 55))
+
+(test "nested regions"
+  (assert-equal (nested 20) 420))
+
+(test "strings inside a region"
+  (assert-equal (text-len 1) 7))
+
+(test "regions are released"
+  (let before (live)
+    (let s (+ (arena-sum 2000) (fixed-sum 50))
+      (assert-equal (+ s (- (live) before)) 2002275))))
+
+(run-tests)

@@ -98,7 +98,9 @@
       (IFn n ps body ks (begin (ip-open buf "fn ") (ip-str buf n) (ip-out buf " (") (ip-strs buf ps) (ip-out buf " ) (")
                                (ip-ints buf ks) (ip-out buf " ) ") (ip-node buf body)))
       (ICallClosure n args (begin (ip-open buf "call-closure ") (ip-str buf n) (ip-list buf args)))
-      (ITryCatch b v h (begin (ip-open buf "try ") (ip-node buf b) (ip-sp buf) (ip-str buf v) (ip-sp buf) (ip-node buf h))))
+      (ITryCatch b v h (begin (ip-open buf "try ") (ip-node buf b) (ip-sp buf) (ip-str buf v) (ip-sp buf) (ip-node buf h)))
+      (IRegion k b a l body (begin (ip-open buf "region ") (ip-int buf k) (ip-sp buf) (ip-int buf b) (ip-sp buf)
+                                   (ip-int buf a) (ip-sp buf) (ip-int buf l) (ip-sp buf) (ip-node buf body))))
     (ip-close buf e)))
 
 (defn ip-arms (buf arms)

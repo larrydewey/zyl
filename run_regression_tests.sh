@@ -248,7 +248,9 @@ run_diff_test() {
 #                          the compiled suite already covers in seconds.
 #                          Matched by prefix, below.
 #   tail-calls           — 10^8-deep loops, far too slow interpreted.
-DIFF_SKIP="actors actor-receive concurrency modules derive collections ffi-advanced package-system selfhost-codegen c-abi tail-calls"
+#   with-region-limits   — region byte limits; the interpreter allocates
+#                          in its own arenas and accounts no region bytes.
+DIFF_SKIP="actors actor-receive concurrency modules derive collections ffi-advanced package-system selfhost-codegen c-abi tail-calls with-region-limits"
 
 diff_skipped() {
     local name="$1"

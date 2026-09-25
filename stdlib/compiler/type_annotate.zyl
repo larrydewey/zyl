@@ -919,6 +919,8 @@
       (ffi-call "zyl_panic" (err-at "E_TRAIT_NOT_FOUND" msg fid off help) 1000))))
 
 (defn ta-call-go (st ctx env e n args)
+  (if (ta-streq n "with-region")
+    (ta-last (ta-list st ctx env args) (ta-fresh st))
   (if (ta-streq n "ffi-call")
     (ta-ffi-call st ctx env args)
     (let oc (ta-op-class n)
@@ -927,7 +929,7 @@
         (let bi (ta-builtin-sig st n)
           (if (= bi 0)
             (ta-call-named st ctx env e n args)
-            (ta-apply-type st bi (ta-list st ctx env args))))))))
+            (ta-apply-type st bi (ta-list st ctx env args)))))))))
 
 ; Arithmetic or comparison on a type variable needs the instance type.
 ; An equality between two values is also noted: on an ADT it becomes a
@@ -1560,6 +1562,8 @@
     (ffi-call "zyl_attr_clear" 1 1000)
     (ffi-call "zyl_attr_clear" 2 1000)
     (ffi-call "zyl_attr_clear" 3 1000)
+    (ffi-call "zyl_attr_clear" 4 1000)
+    (ffi-call "zyl_attr_clear" 5 1000)
     (ffi-call "zyl_wvec_truncate" (ffi-call "zyl_wvec_global" 0 1000) 0 1000)
     (ffi-call "zyl_smap_clear" (ffi-call "zyl_smap_global" 1 1000) 1000)
     (ffi-call "zyl_smap_clear" (ta-mtab) 1000)
@@ -1586,6 +1590,20 @@
         (let b (ffi-call "zyl_wvec_get" vars i 1000)
           (if (< b 2) t (ta-gresolve vars b)))))
     (_ t)))
+
+; 1 when `e`'s type is fully known to be Int, Bool or Float: a word that
+; is never a pointer (region inference keeps such values out of object
+; classes). A type variable, poisoned or not, is not scalar.
+(defn ta-scalar (e)
+  (let t (ta-attr e)
+    (if (= t 0)
+      0
+      (match (ta-gresolve (ffi-call "zyl_wvec_global" 0 1000) t)
+        (TaC n args
+          (if (is-nil args)
+            (if (or (ta-streq n "Int") (or (ta-streq n "Bool") (ta-streq n "Float"))) 1 0)
+            0))
+        (_ 0)))))
 
 (defn ta-kind-of-ty (t)
   (match t

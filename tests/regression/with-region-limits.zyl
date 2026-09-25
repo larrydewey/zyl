@@ -1,0 +1,39 @@
+; with-region limits: a fixed region's :size and an arena's :limit are
+; enforced with E_REGION_EXHAUSTED. Compiled only: the interpreter
+; allocates in its own arenas and does not account region bytes.
+
+(use core/core)
+
+(deftype WL (WN) (WC Int WL))
+
+(defn build (n acc) (if (= n 0) acc (build (- n 1) (WC n acc))))
+
+(defn wsum (l) (match l (WN 0) (WC h t (+ h (wsum t)))))
+
+(defn live () (ffi-call "zyl_region_live_bytes" 1000))
+
+(defn arena-sum (n)
+  (with-region (arena :block 65536 :align 16 :limit 1048576)
+    (wsum (build n (WN)))))
+
+(defn fixed-sum (n)
+  (with-region (fixed :size 4096)
+    (wsum (build n (WN)))))
+
+(defn nested (n)
+  (with-region (arena :block 4096)
+    (+ (wsum (build n (WN)))
+       (with-region (fixed :size 8192 :align 64) (wsum (build n (WN)))))))
+
+(defn text-len (n)
+  (with-region (arena :block 4096)
+    (str-length (str-concat "abc" (str-concat "def" (if (> n 0) "g" ""))))))
+
+(test "a full fixed region raises E_REGION_EXHAUSTED"
+  (assert-equal (try (fixed-sum 1000) (catch e (ffi-call "zyl_err_is" e "E_REGION_EXHAUSTED" 1000))) 1))
+
+(test "an arena over its limit raises E_REGION_EXHAUSTED"
+  (assert-equal (try (with-region (arena :block 4096 :limit 8192) (wsum (build 10000 (WN))))
+                     (catch e (ffi-call "zyl_err_is" e "E_REGION_EXHAUSTED" 1000))) 1))
+
+(run-tests)

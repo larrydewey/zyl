@@ -320,7 +320,8 @@
     (IMatch _ _ 0)
     (IFn _ 0)
     (ICallClosure _ _ 0)
-    (ITryCatch _ _ _ 0)))
+    (ITryCatch _ _ _ 0)
+    (IRegion _ _ _ _ body (kind-of st env body))))
 
 ; ===========================================================================
 ; EXPRESSION EMISSION (result always in rax)
@@ -373,7 +374,8 @@
     (IMatch scr arms (cg-match st env scr arms 0))
     ; A bare function node is never emitted as a value expression; keep st.
     (IFn _ _ _ st)
-    (ITryCatch tbody cvar cbody (cg-trycatch st env tbody cvar cbody))))
+    (ITryCatch tbody cvar cbody (cg-trycatch st env tbody cvar cbody))
+    (IRegion k b a l body (cg-region-scope st env e k b a l body))))
 
 ; A call by name: a local holding a function value (indirect), or a
 ; top-level function. A name that is neither is reported here, at the
@@ -445,8 +447,10 @@
 ;;   [rbp-8]   rax saved across the exit call
 ;;   [rbp-16]  the result region its caller chose (zyl_cur_region at entry)
 ;;   [rbp-48]  the frame region header (prev, bump, end, blocks)
-;; and its parameters start at [rbp-56]. A site's level (attr 4, level+1:
-;; 1 frame, 2 result, 3 heap; 0 unannotated) picks the region.
+;; and its parameters start at [rbp-56]. The runtime (ZylRegion) shares
+;; this layout, and so does code from the committed seed. A site's level (attr 4, level+1:
+;; 1 frame, 2 result, 3 heap; 4+k the k-th with-region scope of the
+;; function; 0 unannotated) picks the region.
 
 (defn cg-region-flags (f)
   (let v (ffi-call "zyl_attr_get" 4 f 1000)
@@ -460,9 +464,55 @@
 (defn cg-set-cur-region (st lvl)
   (if (= lvl 0)
     st
-    (let st2 (cg-emit-line st (if (= lvl 1) "    lea r11, [rbp-48]"
-                                (if (= lvl 2) "    mov r11, [rbp-16]" "    xor r11d, r11d")))
+    (let st2 (if (> lvl 3)
+               (cg-emit-line (cg-emit-int (cg-emit st "    lea r11, [rbp-") (cg-scope-base lvl)) "]")
+               (cg-emit-line st (if (= lvl 1) "    lea r11, [rbp-48]"
+                                  (if (= lvl 2) "    mov r11, [rbp-16]" "    xor r11d, r11d"))))
       (cg-emit-line st2 "    mov QWORD PTR fs:zyl_cur_region@tpoff, r11"))))
+
+; Frame offset of the header of scope `lvl - 4` (recorded by
+; cg-region-scope when it reserved the header).
+(defn cg-scope-base (lvl) (ffi-call "zyl_wvec_get" (ffi-call "zyl_wvec_global" 5 1000) (- lvl 4) 1000))
+
+; (with-region ...): a header in the frame (the frame header's four words,
+; then kind, block, alignment, limit, bytes used; the runtime marks it with
+; the low bit of `blocks`), pushed on the chain before the body and popped
+; and released after it.
+(defn cg-region-scope (st env e k b a l body)
+  (let idx (- (ffi-call "zyl_attr_get" 4 e 1000) 1)
+    (let base (cg-reserve-words st 10)
+      (let st2 (cg-reset-slots st (+ base 8))
+        (let savr (cg-new-slot st2)
+          (match savr
+            (CGR st3 save _
+              (let _ (if (>= idx 0) (cg-scope-record idx base) 0)
+                (let st4 (cg-emit-lines st3
+                           (Cons (str-concat "    lea rdi, [rbp-" (str-concat (ffi-call "zyl_int_text" base 1000) "]"))
+                           (Cons (str-concat "    mov rsi, " (ffi-call "zyl_int_text" k 1000))
+                           (Cons (str-concat "    mov rdx, " (ffi-call "zyl_int_text" b 1000))
+                           (Cons (str-concat "    mov rcx, " (ffi-call "zyl_int_text" a 1000))
+                           (Cons (str-concat "    mov r8, " (ffi-call "zyl_int_text" l 1000)) Nil))))))
+                  (let st5 (cg-ext-call-aligned st4 "    call zyl_region_scope_enter" 5)
+                    (let st6 (cg-expr st5 env body)
+                      (let st7 (cg-emit-line (cg-emit-int (cg-emit st6 "    mov [rbp") save) "], rax")
+                        (let st8 (cg-emit-line (cg-emit-int (cg-emit st7 "    lea rdi, [rbp-") base) "]")
+                          (let st9 (cg-ext-call-aligned st8 "    call zyl_region_exit" 1)
+                            (cg-emit-line (cg-emit-int (cg-emit st9 "    mov rax, [rbp") save) "]")))))))))))))))
+
+; The next `n` slots, as the offset of the lowest one (they are consecutive).
+(defn cg-reserve-words (st n)
+  (match st
+    (CGS _ _ _ off _ _ (+ off (* 8 (- n 1))))))
+
+(defn cg-scope-record (idx base)
+  (let v (ffi-call "zyl_wvec_global" 5 1000)
+    (let _ (cg-wvec-grow v (+ idx 1))
+      (ffi-call "zyl_wvec_set" v idx base 1000))))
+
+(defn cg-wvec-grow (v n)
+  (if (< (ffi-call "zyl_wvec_len" v 1000) n)
+    (let _ (ffi-call "zyl_wvec_push" v 0 1000) (cg-wvec-grow v n))
+    0))
 
 (defn cg-region-call (st fname)
   (let st2 (cg-emit-line st "    lea rdi, [rbp-48]")
@@ -1281,11 +1331,13 @@
 ; Level 1 (frame) and 2 (result) allocate in a region; anything else in
 ; the heap, exactly as before regions.
 (defn cg-variant-alloc (st lvl)
+  (if (> lvl 3)
+    (cg-emit-line (cg-emit-line (cg-emit-int (cg-emit st "    lea rsi, [rbp-") (cg-scope-base lvl)) "]") "    call zyl_ralloc")
   (if (= lvl 1)
     (cg-emit-line (cg-emit-line st "    lea rsi, [rbp-48]") "    call zyl_ralloc")
     (if (= lvl 2)
       (cg-emit-line (cg-emit-line st "    mov rsi, [rbp-16]") "    call zyl_ralloc")
-      (cg-emit-line st "    call zyl_heap_alloc"))))
+      (cg-emit-line st "    call zyl_heap_alloc")))))
 
 ; Evaluate each field left-to-right, pushing its value.
 (defn cg-push-fields (st env fields)
@@ -1590,7 +1642,8 @@
     (IMatch scr arms (icnf-add3 2 (icnf-size scr) (icnf-count-arms arms)))
     (IFn _ _ _ 1)
     (ICallClosure _ args (icnf-add2 2 (icnf-count-list args)))
-    (ITryCatch tbody _ cbody (icnf-add3 4 (icnf-size tbody) (icnf-size cbody)))))
+    (ITryCatch tbody _ cbody (icnf-add3 4 (icnf-size tbody) (icnf-size cbody)))
+    (IRegion _ _ _ _ body (+ 2 (icnf-size body)))))
 
 (defn icnf-count-list (xs)
   (match xs
@@ -1628,7 +1681,10 @@
     (IMatch scr arms (icnf-add2 (icnf-slot-count scr) (icnf-count-arm-slots arms)))
     (IFn _ _ _ 0)
     (ICallClosure _ args (icnf-count-slots-list args))
-    (ITryCatch tbody _ cbody (+ 1 (icnf-add2 (icnf-slot-count tbody) (icnf-slot-count cbody))))))
+    (ITryCatch tbody _ cbody (+ 1 (icnf-add2 (icnf-slot-count tbody) (icnf-slot-count cbody))))
+    ; The region header (cg-region-scope): ten consecutive slots, and
+    ; one for the body's value across the release call.
+    (IRegion _ _ _ _ body (+ 11 (icnf-slot-count body)))))
 
 (defn icnf-count-slots-list (xs)
   (if (is-nil xs)

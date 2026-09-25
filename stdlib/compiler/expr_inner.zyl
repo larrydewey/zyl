@@ -746,6 +746,112 @@
         (convert-ast body)
         (convert-ast (checkpoint-saves names 0 (checkpoint-try body names)))))))
 
+;; (with-region SPEC BODY): BODY's allocations go to a region of an
+;; audited kind (spec §9, the region extension registry), released when
+;; BODY finishes. SPEC is one of
+;;   (arena :block B :align A :limit L)   blocks of B bytes (a multiple of
+;;        4096, at most 64 MiB), at most L bytes in all (0: no limit)
+;;   (fixed :size S :align A)             one block of S bytes, no growth
+;; with A a power of two from 8 to 4096 (default 8). Running past a limit
+;; is E_REGION_EXHAUSTED; a value allocated in BODY that outlives it is
+;; E_REGION_ESCAPE. The form becomes (with-region kind block align limit
+;; BODY) for ICNF lowering (ic-apply), kind 1 arena, 2 fixed.
+(defn parse-with-region (args)
+  (if (= (ast-count args) 2)
+    (let spec (ast-nth args 0 (AstInt 0))
+      (match spec
+        (AList xs
+          (match xs
+            (Cons head kvs
+              (match head
+                (AstIdent kind
+                  (wr-build spec kind kvs (ast-nth args 1 (AstInt 0))))
+                (_ (wr-fail spec "the region kind must be `arena` or `fixed`"))))
+            (Nil (wr-fail spec "the region kind must be `arena` or `fixed`"))))
+        (_ (wr-fail spec "the region specification must be a list such as (arena :block 65536)"))))
+    (wr-fail (ast-nth args 0 (AstInt 0)) "with-region takes a region specification and one body expression")))
+
+(defn ast-count (xs)
+  (match xs
+    (Nil 0)
+    (Cons _ t (+ 1 (ast-count t)))))
+
+(defn wr-fail (at msg)
+  (let off (ffi-call "zyl_span_off" at 1000)
+    (let fid (ffi-call "zyl_span_file" at 1000)
+      (ffi-call "zyl_panic"
+        (err-at "E_REGION_SPEC" msg fid off
+                "write (arena :block 65536 :align 16 :limit 1048576) or (fixed :size 4096)")
+        1000))))
+
+; The integer after keyword `k` in `kvs`, or `dflt`; -1 when it is there
+; but not an integer literal.
+(defn wr-opt (kvs k dflt)
+  (match kvs
+    (Nil dflt)
+    (Cons a rest
+      (match a
+        (AstIdent n
+          (if (> (str-eq n k) 0)
+            (match rest
+              (Cons v _ (match v (AstInt i i) (_ -1)))
+              (Nil -1))
+            (wr-opt rest k dflt)))
+        (_ (wr-opt rest k dflt))))))
+
+; Every keyword must be one the kind takes, each followed by a value.
+(defn wr-keys-ok (kvs allowed)
+  (match kvs
+    (Nil 1)
+    (Cons a rest
+      (match a
+        (AstIdent n
+          (if (> (wr-member n allowed) 0)
+            (match rest
+              (Cons _ more (wr-keys-ok more allowed))
+              (Nil 0))
+            0))
+        (_ 0)))))
+
+(defn wr-member (n xs)
+  (match xs
+    (Nil 0)
+    (Cons x rest (if (> (str-eq n x) 0) 1 (wr-member n rest)))))
+
+(defn wr-align-ok (a)
+  (if (< a 8) 0 (if (> a 4096) 0 (if (= (bit-and a (- a 1)) 0) 1 0))))
+
+(defn wr-int (n) (Expr (EAtom (AInt n))))
+
+(defn wr-node (spec kind block align limit body)
+  (let e (Expr (EApply "with-region"
+                 (Cons (wr-int kind) (Cons (wr-int block) (Cons (wr-int align)
+                   (Cons (wr-int limit) (Cons (convert-ast body) Nil)))))))
+    (let _ (ffi-call "zyl_span_copy" e spec 1000) e)))
+
+(defn wr-build (spec kind kvs body)
+  (let align (wr-opt kvs ":align" 8)
+    (if (= (wr-align-ok align) 0)
+      (wr-fail spec ":align must be a power of two from 8 to 4096")
+      (if (> (str-eq kind "arena") 0)
+        (if (= (wr-keys-ok kvs (Cons ":block" (Cons ":align" (Cons ":limit" Nil)))) 0)
+          (wr-fail spec "an arena region takes :block, :align and :limit, each followed by an integer")
+          (let block (wr-opt kvs ":block" -1)
+            (let limit (wr-opt kvs ":limit" 0)
+              (if (or (< block 4096) (or (> block 67108864) (> (% block 4096) 0)))
+                (wr-fail spec ":block must be a multiple of 4096, at most 67108864")
+                (if (< limit 0)
+                  (wr-fail spec ":limit must be a non-negative integer")
+                  (wr-node spec 1 block align limit body))))))
+        (if (> (str-eq kind "fixed") 0)
+          (if (= (wr-keys-ok kvs (Cons ":size" (Cons ":align" Nil))) 0)
+            (wr-fail spec "a fixed region takes :size and :align, each followed by an integer")
+            (let size (wr-opt kvs ":size" -1)
+              (if (or (< size 8) (> size 4294967296))
+                (wr-fail spec ":size must be an integer from 8 to 4294967296")
+                (wr-node spec 2 size align size body))))
+          (wr-fail spec "the region kind must be `arena` or `fixed`"))))))
+
 (defn checkpoint-var (i) (str-concat "_cp" (ffi-call "zyl_int_text" i 1000)))
 
 (defn checkpoint-saves (names i inner)
@@ -860,6 +966,8 @@
   (if (< i 0) -1 (if (= (ffi-call "zyl_cstr_byte_at" n i 1000) 58) i (recover-last-colon n (- i 1)))))
 
 (defn dispatch-special (n rest)
+  (if (> (str-eq n "with-region") 0)
+    (parse-with-region rest)
   (if (> (str-eq n "contracts") 0)
     (parse-contracts-off rest)
   (if (contract-head-p n)
@@ -1107,7 +1215,7 @@
       (Some expr expr)
       (None (Expr (EUnknown "test-compile" (convert-ast-list rest)))))
     (byte-form-dispatch n rest)
-  )))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+  ))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 
 ; --- Byte-level primitives (BYTE_PRIMITIVES_IMPLEMENTATION_PLAN.md §2) ------
 ; Recognition happens here, not in the reader (no-dispatch arch). The 21
