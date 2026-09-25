@@ -34,6 +34,9 @@
 ; the always-correct heap path unchanged -- undershooting here can only
 ; cost a missed optimization, never a wrong program.
 
+
+(use compiler/error_report)
+
 ; True when EVERY occurrence of `name` inside `e` is either the
 ; scrutinee of an IMatch or a direct argument to IPrint -- the only two
 ; contexts proven not to retain the pointer past this expression's own
@@ -188,7 +191,7 @@
     (IBinop op l r (IBinop op (ri-transform-expr l) (ri-transform-expr r)))
     (ICall name args (ic-keep-span (ICall name (ri-transform-list args)) e))
     (ICallClosure name args (ic-keep-span (ICallClosure name (ri-transform-list args)) e))
-    (IFfi name args (IFfi name (ri-transform-list args)))
+    (IFfi name args (ic-keep-span (IFfi name (ri-transform-list args)) e))
     (IPrint a (IPrint (ri-transform-expr a)))
     (IIf c t eb (IIf (ri-transform-expr c) (ri-transform-expr t) (ri-transform-expr eb)))
     (IWhile c b (IWhile (ri-transform-expr c) (ri-transform-expr b)))
@@ -304,7 +307,54 @@
   (if (> (str-eq s "zyl_diag_json") 0) 0
   (if (> (str-eq s "zyl_load_byte") 0) 0
   (if (> (str-eq s "zyl_load_n") 0) 0
-  3)))))))))))))))))))))))))))))))
+  (rg-ffi-kind-bytes s))))))))))))))))))))))))))))))))
+
+; Byte buffers: 0 as above; 2 as above (a slice points into its buffer);
+; 4 (stores: width, endian, offset, buffer, value): only the stored value
+; escapes (a stored word may be a pointer); 5 (atomics: buffer, offset,
+; values): everything but the buffer escapes.
+(defn rg-ffi-kind-bytes (s)
+  (if (> (str-eq s "zyl_bytebuf_len") 0) 0
+  (if (> (str-eq s "zyl_bytebuf_cap") 0) 0
+  (if (> (str-eq s "zyl_bytebuf_append") 0) 0
+  (if (> (str-eq s "zyl_align_check") 0) 0
+  (if (> (str-eq s "zyl_load_byte_signed") 0) 0
+  (if (> (str-eq s "zyl_load_n_signed") 0) 0
+  (if (> (str-eq s "zyl_bytebuf_atomic_load") 0) 0
+  (if (> (str-eq s "zyl_byte_slice") 0) 2
+  (if (> (str-eq s "zyl_byte_slice_sub") 0) 2
+  (if (> (str-eq s "zyl_bytebuf_ptr") 0) 2
+  (if (> (str-eq s "zyl_store_byte") 0) 4
+  (if (> (str-eq s "zyl_store_byte_signed") 0) 4
+  (if (> (str-eq s "zyl_store_n") 0) 4
+  (if (> (str-eq s "zyl_bytebuf_atomic_store") 0) 5
+  (if (> (str-eq s "zyl_bytebuf_atomic_add") 0) 5
+  (if (> (str-eq s "zyl_bytebuf_atomic_sub") 0) 5
+  (if (> (str-eq s "zyl_bytebuf_atomic_cas") 0) 5
+  (if (> (str-eq s "zyl_bytebuf_atomic_fetch_add") 0) 5
+  (if (> (str-eq s "zyl_bytebuf_atomic_max") 0) 5
+  (if (> (str-eq s "zyl_bytebuf_atomic_min") 0) 5
+  3)))))))))))))))))))))
+
+; `(bytebuf Stack N)`: region code 0 as the first argument.
+(defn rg-stack-bytebuf-p (name args)
+  (if (> (str-eq name "zyl_bytebuf_new") 0)
+    (match args
+      (Cons a _ (match a (IConst n (if (= n 0) 1 0)) (_ 0)))
+      (Nil 0))
+    0))
+
+(defn rg-stack-sites () (ffi-call "zyl_wvec_global" 2 1000))
+
+(defn rg-last (cs)
+  (match cs
+    (Nil Nil)
+    (Cons h t (if (is-nil t) (Cons h Nil) (rg-last t)))))
+
+(defn rg-rest (cs)
+  (match cs
+    (Nil Nil)
+    (Cons _ t t)))
 
 (defn rg-list (xs env rec)
   (match xs
@@ -354,15 +404,29 @@
 
 (defn rg-ffi (e name args env rec)
   (let cs (rg-list args env rec)
-    (let k (rg-ffi-kind name)
-      (if (= k 0)
-        (rg-new 0)
-        (if (= k 1)
-          (let c (rg-new 0)
-            (let _ (rg-site rec e c) c))
-          (if (= k 2)
-            (rg-first cs)
-            (let _ (rg-raise-all cs 2) (rg-new 2))))))))
+    (if (> (rg-stack-bytebuf-p name args) 0)
+      ; An explicit Stack buffer lives in the frame region; rg-check-stack
+      ; reports it if its class ends above L.
+      (let c (rg-new 0)
+        (let _ (rg-site rec e c)
+          (let _ (if (> rec 0)
+                   (let _ (ffi-call "zyl_wvec_push" (rg-stack-sites) e 1000)
+                     (ffi-call "zyl_wvec_push" (rg-stack-sites) c 1000))
+                   0)
+            c)))
+      (let k (rg-ffi-kind name)
+        (if (= k 0)
+          (rg-new 0)
+          (if (= k 1)
+            (let c (rg-new 0)
+              (let _ (rg-site rec e c) c))
+            (if (= k 2)
+              (rg-first cs)
+              (if (= k 4)
+                (let _ (rg-raise-all (rg-last cs) 2) (rg-new 0))
+                (if (= k 5)
+                  (let _ (rg-raise-all (rg-rest cs) 2) (rg-new 0))
+                  (let _ (rg-raise-all cs 2) (rg-new 2)))))))))))
 
 (defn rg-fields (fs c env rec)
   (match fs
@@ -512,8 +576,29 @@
   (match fns
     (Nil 0)
     (Cons f rest
-      (let _ (rg-fn f 1)
-        (rg-annotate rest)))))
+      (let _ (ffi-call "zyl_wvec_truncate" (rg-stack-sites) 0 1000)
+        (let _ (rg-fn f 1)
+          (let _ (rg-check-stack 0 (ffi-call "zyl_wvec_len" (rg-stack-sites) 1000))
+            (rg-annotate rest)))))))
+
+; E_REGION_ESCAPE: a Stack buffer (or a slice of it) that is returned,
+; stored in something longer-lived, or handed to code that may keep it.
+(defn rg-check-stack (i n)
+  (if (>= i n)
+    0
+    (let node (ffi-call "zyl_wvec_get" (rg-stack-sites) i 1000)
+      (let lvl (rg-level (ffi-call "zyl_wvec_get" (rg-stack-sites) (+ i 1) 1000))
+        (if (> lvl 0)
+          (let off (ffi-call "zyl_span_off" node 1000)
+            (let fid (ffi-call "zyl_span_file" node 1000)
+              (ffi-call "zyl_panic"
+                (err-at "E_REGION_ESCAPE"
+                        (if (= lvl 1) "a Stack bytebuf is returned from the function that allocates it"
+                            "a Stack bytebuf escapes its frame (stored, sent or passed to code that may keep it)")
+                        fid off
+                        "allocate it in the Heap region, or keep it and every slice of it inside this function")
+                1000)))
+          (rg-check-stack (+ i 2) n))))))
 
 ; Levels of the recorded sites, as function flags (bit 0: an L site,
 ; bit 1: an R site); with rec = 1 each site's level is also stored.

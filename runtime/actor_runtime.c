@@ -4806,3 +4806,22 @@ long long zyl_regions_enabled(void) {
     const char* e = getenv("ZYL_REGIONS");
     return (e && e[0] == '0' && e[1] == 0) ? 0 : 1;
 }
+
+/* `(bytebuf Stack N)`: header and bytes in the frame region region
+   inference chose (it is an error for such a buffer to leave it). */
+long long zyl_bytebuf_new_r(long long region, long long cap) {
+    (void)region;
+    if (cap < 0 || cap > ZYL_BYTEBUF_MAX_CAP) return 0;
+    long long rp = (long long)(size_t)zyl_cur_region;
+    ZylByteBufHeader* h = (ZylByteBufHeader*)(size_t)zyl_ralloc((long long)sizeof(ZylByteBufHeader), rp);
+    if (!h) return 0;
+    size_t alloc_len = (size_t)cap > 0 ? (size_t)cap : 1;
+    unsigned char* data = (unsigned char*)(size_t)zyl_ralloc((long long)alloc_len, rp);
+    if (!data) return 0;
+    memset(data, 0, alloc_len);
+    h->magic = ZYL_BYTEBUF_MAGIC;
+    h->data = data;
+    h->len = 0;
+    h->cap = cap;
+    return (long long)(size_t)h;
+}

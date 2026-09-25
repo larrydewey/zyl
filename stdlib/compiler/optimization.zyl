@@ -122,7 +122,7 @@
     (IBinop op l r (opt-binop op (opt-expr l) (opt-expr r)))
     (ICall name args (ic-keep-span (ICall name (opt-list args)) e))
     (ICallClosure name args (ic-keep-span (ICallClosure name (opt-list args)) e))
-    (IFfi name args (IFfi name (opt-list args)))
+    (IFfi name args (ic-keep-span (IFfi name (opt-list args)) e))
     (IPrint a (IPrint (opt-expr a)))
     (IIf c t eb (opt-if (opt-expr c) t eb))
     (IWhile c b (opt-while (opt-expr c) b))

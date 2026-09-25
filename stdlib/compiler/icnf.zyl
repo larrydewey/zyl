@@ -921,7 +921,7 @@
 
 (defn ic-hoist (node)
   (match (ic-hoist-node node)
-    (HoistAcc n fs (HoistAcc (ic-keep-kind n node) fs))))
+    (HoistAcc n fs (HoistAcc (ic-keep-span (ic-keep-kind n node) node) fs))))
 
 (defn ic-hoist-node (node)
   (match node

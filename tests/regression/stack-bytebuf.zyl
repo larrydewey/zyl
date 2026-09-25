@@ -1,0 +1,22 @@
+; A Stack bytebuf used only inside its function lives in the frame region
+; and is released on return (compare tests/compile-fail/stack-bytebuf-*).
+
+(use core/core)
+
+(defn checksum (n)
+  (let b (bytebuf Stack 64)
+    (let _ (store-u8 :le b 0 n)
+      (let _ (store-u8 :le b 1 (+ n 1))
+        (+ (load-u8 :le b 0) (+ (load-u8 :le b 1) (bytebuf-cap b)))))))
+
+(defn many (i acc) (if (= i 0) acc (many (- i 1) (+ acc (checksum 3)))))
+
+(test "stack bytebuf works locally"
+  (assert-equal (checksum 10) 85))
+
+(test "stack bytebufs are reclaimed"
+  (let before (ffi-call "zyl_region_live_bytes" 1000)
+    (let total (many 1000 0)
+      (assert-equal (+ total (- (ffi-call "zyl_region_live_bytes" 1000) before)) 71000))))
+
+(run-tests)

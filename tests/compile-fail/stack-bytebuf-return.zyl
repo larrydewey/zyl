@@ -1,0 +1,7 @@
+; Compile-fail: a Stack bytebuf lives in its function's frame region and
+; is released on return, so returning it is a region escape.
+; expect-error: E_REGION_ESCAPE
+
+(defn make-buf () (bytebuf Stack 16))
+
+(defn main () (begin (print (bytebuf-cap (make-buf))) 0))
