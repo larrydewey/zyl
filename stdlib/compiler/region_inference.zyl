@@ -232,11 +232,23 @@
 ; ever rise, so this terminates, and the order makes it deterministic.
 ; ===========================================================================
 
-(deftype RgB (RgB String Int))
+(deftype RgB (RgB String UF))
 
-(defn rg-summaries () (ffi-call "zyl_smap_global" 7 1000))
+; A recorded site: node, class, with-region scope (-1 none).
+(deftype RgSite (RgSite Icnf UF Int))
+; A Stack bytebuf allocation: node, class.
+(deftype RgStk (RgStk Icnf UF))
 
-(defn rg-sites () (ffi-call "zyl_wvec_global" 1 1000))
+(def rg-summary-table (ffi-call "zyl_smap_new" 1000))
+(def rg-site-store (ffi-call "zyl_wvec_new" 1000))
+(def rg-scope-start-store (ffi-call "zyl_wvec_new" 1000))
+(def rg-scope-stack-store (ffi-call "zyl_wvec_new" 1000))
+(def rg-scope-node-store (ffi-call "zyl_wvec_new" 1000))
+(def rg-stack-site-store (ffi-call "zyl_wvec_new" 1000))
+
+(defn rg-summaries () rg-summary-table)
+
+(defn rg-sites () rg-site-store)
 
 (defn rg-new (lvl) (ffi-call "zyl_uf_new" lvl 1000))
 
@@ -248,10 +260,10 @@
 
 (defn rg-lookup (env n)
   (match env
-    (Nil -1)
+    (Nil None)
     (Cons b rest
       (match b
-        (RgB k c (if (str-eq k n) c (rg-lookup rest n)))))))
+        (RgB k c (if (str-eq k n) (Some c) (rg-lookup rest n)))))))
 
 ; Summary of a top-level function, or -1 when `n` is not one.
 (defn rg-summary (n)
@@ -266,9 +278,7 @@
 ; call to a function that never allocates into its result region is not
 ; a site (its result region is never read, so choosing one is wasted).
 (defn rg-site (_rec node c)
-  (let _ (ffi-call "zyl_wvec_push" (rg-sites) node 1000)
-    (let _ (ffi-call "zyl_wvec_push" (rg-sites) c 1000)
-      (ffi-call "zyl_wvec_push" (rg-sites) (rg-scope-top) 1000))))
+  (let _ (ffi-call "zyl_wvec_push" rg-site-store (RgSite node c (rg-scope-top)) 1000) 0))
 
 ; with-region scopes. rg-scope-starts holds, per scope of the current
 ; function (numbered in walk order), the first class id created inside
@@ -276,13 +286,13 @@
 ; lower id as a root, so a class created inside a scope whose root is
 ; below the scope's first id has been joined to something from outside:
 ; it escapes the scope.
-(defn rg-scope-starts () (ffi-call "zyl_wvec_global" 3 1000))
+(defn rg-scope-starts () rg-scope-start-store)
 
-(defn rg-scope-stack () (ffi-call "zyl_wvec_global" 4 1000))
+(defn rg-scope-stack () rg-scope-stack-store)
 
 ; The IRegion node of each scope, for locating a diagnostic whose own site
 ; has no source position.
-(defn rg-scope-nodes () (ffi-call "zyl_wvec_global" 6 1000))
+(defn rg-scope-nodes () rg-scope-node-store)
 
 (defn rg-scope-top ()
   (let n (ffi-call "zyl_wvec_len" (rg-scope-stack) 1000)
@@ -377,7 +387,7 @@
       (Nil false))
     false))
 
-(defn rg-stack-sites () (ffi-call "zyl_wvec_global" 2 1000))
+(defn rg-stack-sites () rg-stack-site-store)
 
 (defn rg-last (cs)
   (match cs
@@ -408,19 +418,20 @@
     (Nil 0)
     (Cons a rest
       (let lvl (rg-param-level summary i)
-        (let _ (if (= lvl 1) (rg-union a c) (if (= lvl 2) (rg-raise a 2) unit))
+        (let _ (if (= lvl 1) (let _ (rg-union a c) unit) (if (= lvl 2) (rg-raise a 2) unit))
           (let _ (if (> tail 0) (rg-raise a 1) unit)
             (rg-apply-summary rest summary (+ i 1) c tail)))))))
 
 (defn rg-call (e name args env tail rec)
   (let cs (rg-list args env rec)
-    (let local (rg-lookup env name)
-      (if (>= local 0)
-        ; Through a function value: whatever it is may keep its arguments,
-        ; and its result may point into the closure.
+    (match (rg-lookup env name)
+      ; Through a function value: whatever it is may keep its arguments,
+      ; and its result may point into the closure.
+      (Some local
         (let _ (rg-raise-all cs 2)
           (let c (rg-union (rg-new 0) local)
-            (let _ (rg-site rec e c) c)))
+            (let _ (rg-site rec e c) c))))
+      (None
         (let s (rg-summary name)
           (if (< s 0)
             (let _ (rg-raise-all cs 2)
@@ -443,8 +454,7 @@
       (let c (rg-new 0)
         (let _ (rg-site rec e c)
           (let _ (if (> rec 0)
-                   (let _ (ffi-call "zyl_wvec_push" (rg-stack-sites) e 1000)
-                     (ffi-call "zyl_wvec_push" (rg-stack-sites) c 1000))
+                   (ffi-call "zyl_wvec_push" rg-stack-site-store (RgStk e c) 1000)
                    0)
             c)))
       (let k (rg-ffi-kind name)
@@ -504,7 +514,7 @@
     (IStr _ (rg-new 0))
     (ISymAddr _ (rg-new 0))
     (IFlt _ (rg-new 0))
-    (ILoad n (let c (rg-lookup env n) (if (< c 0) (rg-new 0) c)))
+    (ILoad n (match (rg-lookup env n) (Some c c) (None (rg-new 0))))
     (IBinop _ l r (let _ (rg-expr l env 0 rec) (let _ (rg-expr r env 0 rec) (rg-new 0))))
     (ICall name args (rg-call e name args env tail rec))
     (ICallClosure name args (rg-call e name args env tail rec))
@@ -517,9 +527,10 @@
     (IWhile c b (let _ (rg-expr c env 0 rec) (let _ (rg-expr b env 0 rec) (rg-new 0))))
     (ISet n v
       (let cv (rg-expr v env 0 rec)
-        (let cn (rg-lookup env n)
-          (let _ (if (>= cn 0) (rg-union cn cv) (rg-raise cv 2))
-            (rg-new 0)))))
+        (let _ (match (rg-lookup env n)
+                 (Some cn (let _ (rg-union cn cv) unit))
+                 (None (rg-raise cv 2)))
+          (rg-new 0))))
     (ILet n v body
       (let cv (rg-expr v env 0 rec)
         (rg-expr body (Cons (RgB n cv) env) tail rec)))
@@ -544,7 +555,7 @@
       (let c (rg-new 0)
         (rg-param-env rest (Cons (RgB p c) env) (Cons c acc))))))
 
-(deftype RgPE (RgPE (List RgB) (List Int)))
+(deftype RgPE (RgPE (List RgB) (List UF)))
 
 ; Pack parameter levels; `cs` is in reverse parameter order.
 (defn rg-pack (cs i n acc)
@@ -600,10 +611,10 @@
     (Nil changed)
     (Cons f rest
       (let c (rg-fn f rec)
-        (rg-round rest rec (if (> c 0) 1 changed))))))
+        (rg-round rest rec (if c true changed))))))
 
 (defn rg-fixpoint (fns)
-  (if (> (rg-round fns 0 0) 0) (rg-fixpoint fns) 0))
+  (if (rg-round fns 0 false) (rg-fixpoint fns) 0))
 
 (defn rg-init (fns)
   (match fns
@@ -629,8 +640,9 @@
 (defn rg-check-stack (i n)
   (if (>= i n)
     0
-    (let node (ffi-call "zyl_wvec_get" (rg-stack-sites) i 1000)
-      (let lvl (rg-level (ffi-call "zyl_wvec_get" (rg-stack-sites) (+ i 1) 1000))
+    (match (ffi-call "zyl_wvec_get" rg-stack-site-store i 1000)
+      (RgStk node c
+      (let lvl (rg-level c)
         (if (> lvl 0)
           (let off (ffi-call "zyl_span_off" node 1000)
             (let fid (ffi-call "zyl_span_file" node 1000)
@@ -641,31 +653,30 @@
                         fid off
                         "allocate it in the Heap region, or keep it and every slice of it inside this function")
                 1000)))
-          (rg-check-stack (+ i 2) n))))))
+          (rg-check-stack (+ i 1) n)))))))
 
 ; Levels of the recorded sites, as function flags (bit 0: an L site,
 ; bit 1: an R site); with rec = 1 each site's level is also stored.
 (defn rg-mark-sites (i n flags rec)
   (if (>= i n)
     flags
-    (let node (ffi-call "zyl_wvec_get" (rg-sites) i 1000)
-      (let c (ffi-call "zyl_wvec_get" (rg-sites) (+ i 1) 1000)
-        (let scope (ffi-call "zyl_wvec_get" (rg-sites) (+ i 2) 1000)
+    (match (ffi-call "zyl_wvec_get" rg-site-store i 1000)
+      (RgSite node c scope
           (let lvl (rg-level c)
             (if (and (>= scope 0) (rg-in-scope c lvl scope))
               ; Placed in the with-region scope: no frame or result region.
               (let _ (if (> rec 0) (icnf-region-set node (+ 4 scope)) unit)
-                (rg-mark-sites (+ i 3) n flags rec))
+                (rg-mark-sites (+ i 1) n flags rec))
               (let _ (if (and (> rec 0) (>= scope 0)) (rg-scope-escape (rg-located node scope) lvl) 0)
                 (let _ (if (> rec 0) (icnf-region-set node (+ lvl 1)) unit)
-                  (rg-mark-sites (+ i 3) n
-                    (bit-or flags (if (= lvl 0) 1 (if (= lvl 1) 2 0))) rec))))))))))
+                  (rg-mark-sites (+ i 1) n
+                    (bit-or flags (if (= lvl 0) 1 (if (= lvl 1) 2 0))) rec)))))))))
 
 (defn rg-in-scope (c lvl scope)
   (if (> lvl 0)
     false
-    (>= (ffi-call "zyl_uf_find" c 1000)
-        (ffi-call "zyl_wvec_get" (rg-scope-starts) scope 1000))))
+    (>= (ffi-call "zyl_uf_id" (ffi-call "zyl_uf_find" c 1000) 1000)
+        (ffi-call "zyl_uf_id" (ffi-call "zyl_wvec_get" (rg-scope-starts) scope 1000) 1000))))
 
 (defn rg-located (node scope)
   (if (>= (ffi-call "zyl_span_off" node 1000) 0)
