@@ -33,7 +33,17 @@
   (MJf Int Int Int Int)               ; op, a, b, L: jump to L when (a op b) is false
   (MJfI Int Int Int Int)              ; op, a, imm, L
   (MJz Int Int)                       ; a, L: jump to L when a is 0
-  (MRet Int))
+  (MRet Int)
+  ; Stage 2: variants, match, constants, regions.
+  (MAlloc Int Int Int)                ; d <- a block of n bytes at region level (a call)
+  (MLoad Int Int Int)                 ; d <- [base + off]
+  (MStore Int Int Int)                ; [base + off] <- v
+  (MStoreI Int Int Int)               ; [base + off] <- imm
+  (MStackBlk Int Int)                 ; d <- address of frame block k
+  (MStr Int String)                   ; d <- a string constant
+  (MFlt Int String)                   ; d <- a Float constant's bits
+  (MSym Int String)                   ; d <- a symbol's address
+  (MRegionCycle))                     ; release and re-open the frame region (a call)
 
 ; Vregs an instruction reads, and the one it writes (-1 for none).
 (defn mi-uses (i)
@@ -52,7 +62,16 @@
     (MJf _ a b _ (Cons a (Cons b Nil)))
     (MJfI _ a _ _ (Cons a Nil))
     (MJz a _ (Cons a Nil))
-    (MRet a (Cons a Nil))))
+    (MRet a (Cons a Nil))
+    (MAlloc _ _ _ Nil)
+    (MLoad _ b _ (Cons b Nil))
+    (MStore b _ v (Cons b (Cons v Nil)))
+    (MStoreI b _ _ (Cons b Nil))
+    (MStackBlk _ _ Nil)
+    (MStr _ _ Nil)
+    (MFlt _ _ Nil)
+    (MSym _ _ Nil)
+    (MRegionCycle Nil)))
 
 (defn mi-def (i)
   (match i
@@ -64,11 +83,21 @@
     (MCall d _ _ _ _ d)
     (MByte _ d _ _ _ d)
     (MFnRef d _ d)
+    (MAlloc d _ _ d)
+    (MLoad d _ _ d)
+    (MStackBlk d _ d)
+    (MStr d _ d)
+    (MFlt d _ d)
+    (MSym d _ d)
     (_ -1)))
 
+; Instructions that call C (or other code) and so clobber the
+; caller-saved registers.
 (defn mi-is-call (i)
   (match i
     (MCall _ _ _ _ _ true)
+    (MAlloc _ _ _ true)
+    (MRegionCycle true)
     (_ false)))
 
 ; --- scratch memory -------------------------------------------------------
