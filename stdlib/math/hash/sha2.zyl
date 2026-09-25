@@ -34,8 +34,8 @@
 ; the cube roots of the first 64 primes (FIPS 180-4 s4.2.2). Built into
 ; an arena array rather than a 64-deep `if` chain so the lookup is a
 ; single indexed load and the compiler never sees a 64-level nesting.
-; Returns: Int
-(defn sha256-k-table ((arena Int))
+; Returns: Words
+(defn sha256-k-table ((arena Arena))
   (let p (w-alloc arena 64)
     (begin
       (w-set p 0 1116352408)
@@ -106,8 +106,8 @@
 
 ; Initial hash state: the first 32 bits of the fractional parts of the
 ; square roots of the first 8 primes (FIPS 180-4 s5.3.3).
-; Returns: Int
-(defn sha256-init ((arena Int))
+; Returns: Words
+(defn sha256-init ((arena Arena))
   (let p (w-alloc arena 8)
     (begin
       (w-set p 0 1779033703)
@@ -125,8 +125,8 @@
 ; ===========================================================================
 
 ; Expand w[0..15] (already loaded) into w[16..63] in place.
-; Returns: Int
-(defn sha256-schedule ((wp Int))
+; Returns: Words
+(defn sha256-schedule ((wp Words))
   (begin
     (for (i 16) (< i 64)
       (begin
@@ -136,7 +136,7 @@
 
 ; One schedule step: w[i] = w[i-16] + s0(w[i-15]) + w[i-7] + s1(w[i-2]).
 ; Returns: Int
-(defn sha256-schedule-step ((wp Int) (i Int))
+(defn sha256-schedule-step ((wp Words) (i Int))
   (let x (w-get wp (- i 15))
     (let y (w-get wp (- i 2))
       (let s0 (bit-xor (rotr32 x 7) (rotr32 x 18) (shr32 x 3))
@@ -147,8 +147,8 @@
 
 ; Load 16 big-endian 32-bit words from the 64 message bytes starting at
 ; `off`, then expand them to the full 64-word schedule.
-; Returns: Int
-(defn sha256-load-block ((arena Int) (msg Int) (off Int))
+; Returns: Words
+(defn sha256-load-block ((arena Arena) (msg Words) (off Int))
   (let wp (w-alloc arena 64)
     (begin
       (for (t 0) (< t 16)
@@ -158,7 +158,7 @@
       (sha256-schedule wp))))
 
 ; Returns: Int
-(defn sha256-load-word ((wp Int) (msg Int) (o Int) (t Int))
+(defn sha256-load-word ((wp Words) (msg Words) (o Int) (t Int))
   (let b0 (w-get msg o)
     (let b1 (w-get msg (+ o 1))
       (let b2 (w-get msg (+ o 2))
@@ -172,7 +172,7 @@
 ; One of the 64 rounds, updating the eight working variables held in
 ; `wv` (a 0..7 word array standing in for a..h).
 ; Returns: Int
-(defn sha256-round ((wv Int) (kp Int) (wp Int) (i Int))
+(defn sha256-round ((wv Words) (kp Words) (wp Words) (i Int))
   (let a (w-get wv 0)
     (let b (w-get wv 1)
       (let c (w-get wv 2)
@@ -198,7 +198,7 @@
 
 ; a..h <- t1+t2, a, b, c, d+t1, e, f, g.
 ; Returns: Int
-(defn sha256-shift-vars ((wv Int) (a Int) (b Int) (c Int) (d Int) (e Int) (f Int) (g Int) (t1 Int) (t2 Int))
+(defn sha256-shift-vars ((wv Words) (a Int) (b Int) (c Int) (d Int) (e Int) (f Int) (g Int) (t1 Int) (t2 Int))
   (begin
     (w-set wv 7 g)
     (w-set wv 6 f)
@@ -211,8 +211,8 @@
     0))
 
 ; Compress the 64-byte block at msg[off..off+64) into `state`.
-; Returns: Int
-(defn sha256-compress ((arena Int) (state Int) (msg Int) (off Int) (kp Int))
+; Returns: Words
+(defn sha256-compress ((arena Arena) (state Words) (msg Words) (off Int) (kp Words))
   (let wp (sha256-load-block arena msg off)
     (let wv (w-alloc arena 8)
       (begin
@@ -246,8 +246,8 @@
 ; Build the padded message: the message, a 0x80 byte, zeros, then the
 ; original length in BITS as a 64-bit big-endian value. The zero run
 ; needs no explicit writing -- w-alloc hands back zeroed arena memory.
-; Returns: Int
-(defn sha256-pad ((arena Int) (msg Int) (len Int))
+; Returns: Words
+(defn sha256-pad ((arena Arena) (msg Words) (len Int))
   (let total (sha256-padded-len len)
     (let p (w-alloc arena total)
       (begin
@@ -256,8 +256,8 @@
         (sha256-write-length p total (* len 8))
         p))))
 
-; Returns: Int
-(defn sha256-write-length ((p Int) (total Int) (bits Int))
+; Returns: Words
+(defn sha256-write-length ((p Words) (total Int) (bits Int))
   (begin
     (for (i 0) (< i 8)
       (begin
@@ -271,8 +271,8 @@
 
 ; SHA-256 of the `len` message bytes held one-per-word at `msg`.
 ; Returns an 8-word array holding the digest as big-endian 32-bit words.
-; Returns: Int
-(defn sha256-words ((arena Int) (msg Int) (len Int))
+; Returns: Words
+(defn sha256-words ((arena Arena) (msg Words) (len Int))
   (let kp (sha256-k-table arena)
     (let st (sha256-init arena)
       (let padded (sha256-pad arena msg len)
@@ -285,8 +285,8 @@
             st))))))
 
 ; SHA-256 digest as a 32-entry byte array (one byte per word).
-; Returns: Int
-(defn sha256-bytes ((arena Int) (msg Int) (len Int))
+; Returns: Words
+(defn sha256-bytes ((arena Arena) (msg Words) (len Int))
   (let st (sha256-words arena msg len)
     (let out (w-alloc arena 32)
       (begin
@@ -297,7 +297,7 @@
         out))))
 
 ; Returns: Int
-(defn sha256-spread-word ((out Int) (st Int) (i Int))
+(defn sha256-spread-word ((out Words) (st Words) (i Int))
   (let v (w-get st i)
     (begin
       (w-set out (* i 4) (be-byte32 v 0))
@@ -308,7 +308,7 @@
 
 ; SHA-256 of a String, as a 64-character lowercase hex String.
 ; Returns: String
-(defn sha256-hex-of-string ((arena Int) (s String))
+(defn sha256-hex-of-string ((arena Arena) (s String))
   (let msg (w-from-string arena s)
     (let len (w-string-len s)
       (let st (sha256-words arena msg len)

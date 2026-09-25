@@ -4,16 +4,20 @@
 ; Inserting an already-present key is a no-op (ignored).
 
 (use allocator/allocator)
+(use math/words)
 
-(defstruct Set (ptr Int) (len Int) (cap Int) (arena Int))
+(defstruct Set (ptr Words) (len Int) (cap Int) (arena Arena))
 
 ; Create an empty Set with the given initial capacity on the given arena.
 ; Returns: Set
-; arena <= 0 means "create a private default arena".
-(defn set-create ((arena Int) (cap Int))
-  (let a (if (> arena 0) arena (arena-create 0))
-    (let c (if (< cap 0) 0 cap)
-      (make-Set (arena-alloc a (* c 8)) 0 c a))))
+(defn set-create ((arena Arena) (cap Int))
+  (let c (if (< cap 0) 0 cap)
+    (make-Set (w-alloc arena c) 0 c arena)))
+
+; Create an empty Set in a new private arena.
+; Returns: Set
+(defn set-create-default ((cap Int))
+  (set-create (arena-create 0) cap))
 
 ; Get the number of distinct elements.
 ; Returns: Int
@@ -29,7 +33,7 @@
 (defn set-find ((s Set) (k Int) (i Int))
   (if (>= i (set-len s))
     -1
-    (let stored (alloc-read-int (+ (struct-get s "ptr") (* i 8)))
+    (let stored (w-get (struct-get s "ptr") i)
       (if (== k stored)
         i
         (set-find s k (+ i 1))))))
@@ -47,18 +51,18 @@
     (let len (set-len s)
       (if (>= len (set-cap s))
         (let new-cap (if (<= (set-cap s) 0) 16 (* (set-cap s) 2))
-          (let new-ptr (arena-alloc (struct-get s "arena") (* new-cap 8))
+          (let new-ptr (w-alloc (struct-get s "arena") new-cap)
             (let old-ptr (struct-get s "ptr")
               (begin
                 (for (j 0) (< j len)
                   (begin
-                    (alloc-write-int (+ new-ptr (* j 8)) (alloc-read-int (+ old-ptr (* j 8))))
+                    (w-set new-ptr j (w-get old-ptr j))
                     (set! j (+ j 1))))
-                (alloc-write-int (+ new-ptr (* len 8)) k)
+                (w-set new-ptr len k)
                 (make-Set new-ptr (+ len 1) new-cap (struct-get s "arena"))))))
         (let new-ptr (struct-get s "ptr")
           (begin
-            (alloc-write-int (+ new-ptr (* len 8)) k)
+            (w-set new-ptr len k)
             (make-Set new-ptr (+ len 1) (struct-get s "cap") (struct-get s "arena"))))))))
 
 ; Remove k. Compacts the array so iteration order stays dense.
@@ -72,6 +76,6 @@
           (begin
             (for (j idx) (< j (- len 1))
               (begin
-                (alloc-write-int (+ new-ptr (* j 8)) (alloc-read-int (+ new-ptr (* (+ j 1) 8))))
+                (w-set new-ptr j (w-get new-ptr (+ j 1)))
                 (set! j (+ j 1))))
             (make-Set new-ptr (- len 1) (struct-get s "cap") (struct-get s "arena"))))))))

@@ -28,8 +28,8 @@
 
 ; The BLAKE2b IV: the same eight words as SHA-512's initial state
 ; (fractional parts of the square roots of the first eight primes).
-; Returns: Int
-(defn blake2b-iv ((arena Int))
+; Returns: Words
+(defn blake2b-iv ((arena Arena))
   (let p (w-alloc arena 8)
     (begin
       (w-set p 0 7640891576956012808)
@@ -43,8 +43,8 @@
       p)))
 
 ; The message-word permutation sigma, 12 rounds of 16 indices, flattened.
-; Returns: Int
-(defn blake2b-sigma ((arena Int))
+; Returns: Words
+(defn blake2b-sigma ((arena Arena))
   (let p (w-alloc arena 192)
     (begin
       (w-set p 0 0)
@@ -249,7 +249,7 @@
 ; rather than passed by value so the caller can keep the state in one
 ; array.
 ; Returns: Int
-(defn blake2b-g ((v Int) (ia Int) (ib Int) (ic Int) (id Int) (x Int) (y Int))
+(defn blake2b-g ((v Words) (ia Int) (ib Int) (ic Int) (id Int) (x Int) (y Int))
   (begin
     (blake2b-g-half v ia ib ic id x 32 24)
     (blake2b-g-half v ia ib ic id y 16 63)
@@ -257,7 +257,7 @@
 
 ; One half of G: a += b + m; d = rotr(d^a, r1); c += d; b = rotr(b^c, r2).
 ; Returns: Int
-(defn blake2b-g-half ((v Int) (ia Int) (ib Int) (ic Int) (id Int) (m Int) (r1 Int) (r2 Int))
+(defn blake2b-g-half ((v Words) (ia Int) (ib Int) (ic Int) (id Int) (m Int) (r1 Int) (r2 Int))
   (let a (+ (+ (w-get v ia) (w-get v ib)) m)
     (let d (rotr64 (bit-xor (w-get v id) a) r1)
       (let c (+ (w-get v ic) d)
@@ -271,7 +271,7 @@
 
 ; One round: four column mixes then four diagonal mixes.
 ; Returns: Int
-(defn blake2b-round ((v Int) (m Int) (sigma Int) (r Int))
+(defn blake2b-round ((v Words) (m Words) (sigma Words) (r Int))
   (let s (* r 16)
     (begin
       (blake2b-g v 0 4 8 12 (w-get m (w-get sigma s)) (w-get m (w-get sigma (+ s 1))))
@@ -289,7 +289,7 @@
 ; v[14] and is what stops a block of one message being reusable as the
 ; final block of another.
 ; Returns: Int
-(defn blake2b-compress ((arena Int) (h Int) (m Int) (t Int) (last Int))
+(defn blake2b-compress ((arena Arena) (h Words) (m Words) (t Int) (last Int))
   (let v (w-alloc arena 16)
     (let iv (blake2b-iv arena)
       (let sigma (blake2b-sigma arena)
@@ -313,8 +313,8 @@
 
 ; Load 16 little-endian 64-bit words from a 128-byte block of the
 ; message, zero-padding a short final block.
-; Returns: Int
-(defn blake2b-load-block ((arena Int) (msg Int) (off Int) (len Int))
+; Returns: Words
+(defn blake2b-load-block ((arena Arena) (msg Words) (off Int) (len Int))
   (let m (w-alloc arena 16)
     (begin
       (for (i 0) (< i 16)
@@ -324,11 +324,11 @@
       m)))
 
 ; Returns: Int
-(defn blake2b-le64 ((msg Int) (off Int) (len Int))
+(defn blake2b-le64 ((msg Words) (off Int) (len Int))
   (blake2b-le64-loop msg off len 7 0))
 
 ; Returns: Int
-(defn blake2b-le64-loop ((msg Int) (off Int) (len Int) (i Int) (acc Int))
+(defn blake2b-le64-loop ((msg Words) (off Int) (len Int) (i Int) (acc Int))
   (if (< i 0)
     acc
     (let byte (if (< (+ off i) len) (w-get msg (+ off i)) 0)
@@ -338,8 +338,8 @@
 ; word. The parameter block encodes digest length, key length, fanout
 ; and depth, which is what makes a keyed 32-byte BLAKE2b a different
 ; function from an unkeyed 64-byte one rather than a truncation of it.
-; Returns: Int
-(defn blake2b-init ((arena Int) (outlen Int) (keylen Int))
+; Returns: Words
+(defn blake2b-init ((arena Arena) (outlen Int) (keylen Int))
   (let h (w-copy (w-alloc arena 8) (blake2b-iv arena) 8)
     (begin
       (w-set h 0 (bit-xor (w-get h 0) (bit-or 16842752 (bit-or (shl keylen 8) outlen))))
@@ -348,8 +348,8 @@
 ; BLAKE2b with an optional key. `keylen` of 0 means unkeyed; a keyed
 ; hash prepends a zero-padded 128-byte block holding the key, exactly
 ; as RFC 7693 s3.3 specifies.
-; Returns: Int
-(defn blake2b ((arena Int) (msg Int) (msglen Int) (key Int) (keylen Int) (outlen Int))
+; Returns: Words
+(defn blake2b ((arena Arena) (msg Words) (msglen Int) (key Words) (keylen Int) (outlen Int))
   (let h (blake2b-init arena outlen keylen)
     (let input (blake2b-prepare arena msg msglen key keylen)
       (let total (+ msglen (if (> keylen 0) 128 0))
@@ -358,8 +358,8 @@
           (blake2b-emit arena h outlen))))))
 
 ; The message with the key block in front of it, when keyed.
-; Returns: Int
-(defn blake2b-prepare ((arena Int) (msg Int) (msglen Int) (key Int) (keylen Int))
+; Returns: Words
+(defn blake2b-prepare ((arena Arena) (msg Words) (msglen Int) (key Words) (keylen Int))
   (if (= keylen 0)
     msg
     (let buf (w-alloc arena (+ msglen 128))
@@ -372,13 +372,13 @@
 ; Absorb the whole input. An empty input still compresses one zero
 ; block -- BLAKE2b's definition, not an edge case to skip.
 ; Returns: Int
-(defn blake2b-absorb ((arena Int) (h Int) (input Int) (total Int))
+(defn blake2b-absorb ((arena Arena) (h Words) (input Words) (total Int))
   (if (= total 0)
     (blake2b-compress arena h (w-alloc arena 16) 0 1)
     (blake2b-absorb-loop arena h input total 0)))
 
 ; Returns: Int
-(defn blake2b-absorb-loop ((arena Int) (h Int) (input Int) (total Int) (off Int))
+(defn blake2b-absorb-loop ((arena Arena) (h Words) (input Words) (total Int) (off Int))
   (if (>= off total)
     0
     (let last (if (>= (+ off 128) total) 1 0)
@@ -388,8 +388,8 @@
           (blake2b-absorb-loop arena h input total (+ off 128)))))))
 
 ; The first `outlen` bytes of the state, little-endian.
-; Returns: Int
-(defn blake2b-emit ((arena Int) (h Int) (outlen Int))
+; Returns: Words
+(defn blake2b-emit ((arena Arena) (h Words) (outlen Int))
   (let out (w-alloc arena outlen)
     (begin
       (for (i 0) (< i outlen)
@@ -399,11 +399,11 @@
       out)))
 
 ; Unkeyed BLAKE2b-512.
-; Returns: Int
-(defn blake2b-512 ((arena Int) (msg Int) (msglen Int))
+; Returns: Words
+(defn blake2b-512 ((arena Arena) (msg Words) (msglen Int))
   (blake2b arena msg msglen (w-alloc arena 1) 0 64))
 
 ; Returns: String
-(defn blake2b-hex-of-string ((arena Int) (s String) (outlen Int))
+(defn blake2b-hex-of-string ((arena Arena) (s String) (outlen Int))
   (let msg (w-from-string arena s)
     (w-hex-bytes (blake2b arena msg (w-string-len s) (w-alloc arena 1) 0 outlen) outlen)))

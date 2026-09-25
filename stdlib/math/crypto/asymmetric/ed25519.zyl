@@ -42,80 +42,82 @@
 (use math/hash/sha512)
 
 ; ===========================================================================
-; CONTEXT
+; CONTEXT AND POINTS
 ;
-; The field and group constants are gathered into one array of
-; addresses so that every function below takes a single `ctx` rather
-; than eight separate parameters. Building it costs a handful of
-; exponentiations and is done once per signing or verification.
+; The field and group constants are gathered into one record so that
+; every function below takes a single `ctx` rather than nine separate
+; parameters. Building it costs a handful of exponentiations and is
+; done once per signing or verification.
 ;
-;   0 p          the field prime, 11 limbs
-;   1 n0         Montgomery constant for p
-;   2 r2         R^2 mod p
-;   3 one        1 in Montgomery form
-;   4 d2         2*d in Montgomery form (the curve constant, doubled,
-;                which is the form the addition formula wants)
-;   5 order      the group order L, 11 limbs
-;   6 mu         Barrett reciprocal for L, 12 limbs
-;   7 sqrtm1     sqrt(-1) in Montgomery form, for point decompression
-;   8 base       the base point in extended Montgomery coordinates
+;   p          the field prime, 11 limbs
+;   n0         Montgomery constant for p
+;   r2         R^2 mod p
+;   one        1 in Montgomery form
+;   d2         2*d in Montgomery form (the curve constant, doubled,
+;              which is the form the addition formula wants)
+;   order      the group order L, 11 limbs
+;   mu         Barrett reciprocal for L, 12 limbs
+;   sqrtm1     sqrt(-1) in Montgomery form, for point decompression
+;   base       the base point in extended Montgomery coordinates
+;
+; A point is four 11-limb field elements X, Y, Z, T, each in Montgomery
+; form, satisfying x = X/Z, y = Y/Z and T = XY/Z. The record never
+; changes; the point operations write the limbs of its arrays.
 ; ===========================================================================
 
+(deftype EdPt (EdPt Words Words Words Words))
+
+(deftype EdCtx (EdCtx Words Int Words Words Words Words Words Words EdPt))
+
+; Returns: Words
+(defn ed-ctx-p ((ctx EdCtx)) (match ctx (EdCtx v _ _ _ _ _ _ _ _ v)))
 ; Returns: Int
-(defn ed-ctx-p ((ctx Int)) (w-get ctx 0))
-; Returns: Int
-(defn ed-ctx-n0 ((ctx Int)) (w-get ctx 1))
-; Returns: Int
-(defn ed-ctx-r2 ((ctx Int)) (w-get ctx 2))
-; Returns: Int
-(defn ed-ctx-one ((ctx Int)) (w-get ctx 3))
-; Returns: Int
-(defn ed-ctx-d2 ((ctx Int)) (w-get ctx 4))
-; Returns: Int
-(defn ed-ctx-order ((ctx Int)) (w-get ctx 5))
-; Returns: Int
-(defn ed-ctx-mu ((ctx Int)) (w-get ctx 6))
-; Returns: Int
-(defn ed-ctx-sqrtm1 ((ctx Int)) (w-get ctx 7))
-; Returns: Int
-(defn ed-ctx-base ((ctx Int)) (w-get ctx 8))
+(defn ed-ctx-n0 ((ctx EdCtx)) (match ctx (EdCtx _ v _ _ _ _ _ _ _ v)))
+; Returns: Words
+(defn ed-ctx-r2 ((ctx EdCtx)) (match ctx (EdCtx _ _ v _ _ _ _ _ _ v)))
+; Returns: Words
+(defn ed-ctx-one ((ctx EdCtx)) (match ctx (EdCtx _ _ _ v _ _ _ _ _ v)))
+; Returns: Words
+(defn ed-ctx-d2 ((ctx EdCtx)) (match ctx (EdCtx _ _ _ _ v _ _ _ _ v)))
+; Returns: Words
+(defn ed-ctx-order ((ctx EdCtx)) (match ctx (EdCtx _ _ _ _ _ v _ _ _ v)))
+; Returns: Words
+(defn ed-ctx-mu ((ctx EdCtx)) (match ctx (EdCtx _ _ _ _ _ _ v _ _ v)))
+; Returns: Words
+(defn ed-ctx-sqrtm1 ((ctx EdCtx)) (match ctx (EdCtx _ _ _ _ _ _ _ v _ v)))
+; Returns: EdPt
+(defn ed-ctx-base ((ctx EdCtx)) (match ctx (EdCtx _ _ _ _ _ _ _ _ v v)))
 
 ; A big-endian hex constant as an 11-limb Nat.
-; Returns: Int
-(defn ed-const ((arena Int) (hex String))
+; Returns: Words
+(defn ed-const ((arena Arena) (hex String))
   (let bytes (w-from-hex arena hex)
     (let v (bn-alloc arena 11)
       (bn-from-bytes-be v 11 bytes (w-hex-len hex)))))
 
 ; The same, converted into Montgomery form.
-; Returns: Int
-(defn ed-const-mont ((arena Int) (hex String) (p Int) (n0 Int) (r2 Int))
+; Returns: Words
+(defn ed-const-mont ((arena Arena) (hex String) (p Words) (n0 Int) (r2 Words))
   (let v (ed-const arena hex)
     (let out (bn-alloc arena 11)
       (mont-to arena out v p 11 n0 r2))))
 
 ; Build the context.
-; Returns: Int
-(defn ed-ctx ((arena Int))
+; Returns: EdCtx
+(defn ed-ctx ((arena Arena))
   (let p (ed-const arena "7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffed")
     (let n0 (mont-n0 p)
       (let r2 (mont-r2 arena p 11)
-        (let ctx (w-alloc arena 9)
-          (begin
-            (w-set ctx 0 p)
-            (w-set ctx 1 n0)
-            (w-set ctx 2 r2)
-            (w-set ctx 3 (mont-one arena p 11 n0 r2))
-            (w-set ctx 4 (ed-const-mont arena "2406d9dc56dffce7198e80f2eef3d13000e0149a8283b156ebd69b9426b2f159" p n0 r2))
-            (w-set ctx 5 (ed-const arena "1000000000000000000000000000000014def9dea2f79cd65812631a5cf5d3ed"))
-            (w-set ctx 6 (ed-mu arena))
-            (w-set ctx 7 (ed-const-mont arena "2b8324804fc1df0b2b4d00993dfbd7a72f431806ad2fe478c4ee1b274a0ea0b0" p n0 r2))
-            (w-set ctx 8 (ed-base-point arena ctx))
-            ctx))))))
+        (let one (mont-one arena p 11 n0 r2)
+          (let d2 (ed-const-mont arena "2406d9dc56dffce7198e80f2eef3d13000e0149a8283b156ebd69b9426b2f159" p n0 r2)
+            (let order (ed-const arena "1000000000000000000000000000000014def9dea2f79cd65812631a5cf5d3ed")
+              (let mu (ed-mu arena)
+                (let sqrtm1 (ed-const-mont arena "2b8324804fc1df0b2b4d00993dfbd7a72f431806ad2fe478c4ee1b274a0ea0b0" p n0 r2)
+                  (EdCtx p n0 r2 one d2 order mu sqrtm1 (ed-base-point arena p n0 r2 one)))))))))))
 
 ; The Barrett reciprocal floor(2^528 / L), 12 limbs.
-; Returns: Int
-(defn ed-mu ((arena Int))
+; Returns: Words
+(defn ed-mu ((arena Arena))
   (let bytes (w-from-hex arena "000fffffffffffffffffffffffffffffffeb2106215d086329a7ed9ce5a30a2c131b3994")
     (let v (bn-alloc arena 12)
       (bn-from-bytes-be v 12 bytes 36))))
@@ -124,55 +126,65 @@
 ; FIELD SHORTHAND (all operands in Montgomery form)
 ; ===========================================================================
 
-; Returns: Int
-(defn edf-mul ((arena Int) (ctx Int) (out Int) (a Int) (b Int))
+; Returns: Words
+(defn edf-mul ((arena Arena) (ctx EdCtx) (out Words) (a Words) (b Words))
   (mont-mul arena out a b (ed-ctx-p ctx) 11 (ed-ctx-n0 ctx)))
 
-; Returns: Int
-(defn edf-add ((arena Int) (ctx Int) (out Int) (a Int) (b Int))
+; Returns: Words
+(defn edf-add ((arena Arena) (ctx EdCtx) (out Words) (a Words) (b Words))
   (mod-add arena out a b (ed-ctx-p ctx) 11))
 
-; Returns: Int
-(defn edf-sub ((arena Int) (ctx Int) (out Int) (a Int) (b Int))
+; Returns: Words
+(defn edf-sub ((arena Arena) (ctx EdCtx) (out Words) (a Words) (b Words))
   (mod-sub arena out a b (ed-ctx-p ctx) 11))
 
 ; out = a^e mod p, with a and out in Montgomery form.
-; Returns: Int
-(defn edf-pow ((arena Int) (ctx Int) (out Int) (a Int) (e Int))
+; Returns: Words
+(defn edf-pow ((arena Arena) (ctx EdCtx) (out Words) (a Words) (e Words))
   (mont-exp-form arena out a e 255 (ed-ctx-p ctx) 11 (ed-ctx-n0 ctx) (ed-ctx-one ctx)))
 
 ; out = a^-1 mod p, by Fermat.
-; Returns: Int
-(defn edf-inv ((arena Int) (ctx Int) (out Int) (a Int))
+; Returns: Words
+(defn edf-inv ((arena Arena) (ctx EdCtx) (out Words) (a Words))
   (edf-pow arena ctx out a (ed-const arena "7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeb")))
 
-; ===========================================================================
-; POINTS
-;
-; A point is 44 words: four 11-limb field elements X, Y, Z, T, each in
-; Montgomery form, satisfying x = X/Z, y = Y/Z and T = XY/Z.
-; ===========================================================================
+; Returns: Words
+(defn ed-pt-x ((pt EdPt)) (match pt (EdPt v _ _ _ v)))
+; Returns: Words
+(defn ed-pt-y ((pt EdPt)) (match pt (EdPt _ v _ _ v)))
+; Returns: Words
+(defn ed-pt-z ((pt EdPt)) (match pt (EdPt _ _ v _ v)))
+; Returns: Words
+(defn ed-pt-t ((pt EdPt)) (match pt (EdPt _ _ _ v v)))
 
-; Returns: Int
-(defn ed-pt-slot ((pt Int) (i Int)) (+ pt (* i 88)))
-; Returns: Int
-(defn ed-pt-x ((pt Int)) (ed-pt-slot pt 0))
-; Returns: Int
-(defn ed-pt-y ((pt Int)) (ed-pt-slot pt 1))
-; Returns: Int
-(defn ed-pt-z ((pt Int)) (ed-pt-slot pt 2))
-; Returns: Int
-(defn ed-pt-t ((pt Int)) (ed-pt-slot pt 3))
+; Returns: EdPt
+(defn ed-pt-new ((arena Arena))
+  (EdPt (bn-alloc arena 11) (bn-alloc arena 11) (bn-alloc arena 11) (bn-alloc arena 11)))
 
+; dst = src, coordinate by coordinate.
 ; Returns: Int
-(defn ed-pt-new ((arena Int)) (w-alloc arena 44))
+(defn ed-pt-copy ((dst EdPt) (src EdPt))
+  (begin
+    (bn-copy (ed-pt-x dst) (ed-pt-x src) 11)
+    (bn-copy (ed-pt-y dst) (ed-pt-y src) 11)
+    (bn-copy (ed-pt-z dst) (ed-pt-z src) 11)
+    (bn-copy (ed-pt-t dst) (ed-pt-t src) 11)
+    0))
 
+; dst = src where `mask` is all ones, unchanged where it is zero; every
+; limb is read and written either way.
 ; Returns: Int
-(defn ed-pt-copy ((dst Int) (src Int)) (w-copy dst src 44))
+(defn ed-pt-cond-copy ((dst EdPt) (src EdPt) (mask Int))
+  (begin
+    (bn-cond-copy (ed-pt-x dst) (ed-pt-x src) 11 mask)
+    (bn-cond-copy (ed-pt-y dst) (ed-pt-y src) 11 mask)
+    (bn-cond-copy (ed-pt-z dst) (ed-pt-z src) 11 mask)
+    (bn-cond-copy (ed-pt-t dst) (ed-pt-t src) 11 mask)
+    0))
 
 ; The neutral element (0, 1) in extended coordinates.
-; Returns: Int
-(defn ed-pt-identity ((arena Int) (ctx Int))
+; Returns: EdPt
+(defn ed-pt-identity ((arena Arena) (ctx EdCtx))
   (let pt (ed-pt-new arena)
     (begin
       (bn-zero (ed-pt-x pt) 11)
@@ -182,23 +194,20 @@
       pt)))
 
 ; The standard base point, built from its published affine coordinates.
-; Returns: Int
-(defn ed-base-point ((arena Int) (ctx Int))
+; Returns: EdPt
+(defn ed-base-point ((arena Arena) (p Words) (n0 Int) (r2 Words) (one Words))
   (let pt (ed-pt-new arena)
-    (let p (w-get ctx 0)
-      (let n0 (w-get ctx 1)
-        (let r2 (w-get ctx 2)
-          (begin
-            (mont-to arena (ed-pt-x pt) (ed-const arena "216936d3cd6e53fec0a4e231fdd6dc5c692cc7609525a7b2c9562d608f25d51a") p 11 n0 r2)
-            (mont-to arena (ed-pt-y pt) (ed-const arena "6666666666666666666666666666666666666666666666666666666666666658") p 11 n0 r2)
-            (bn-copy (ed-pt-z pt) (w-get ctx 3) 11)
-            (mont-mul arena (ed-pt-t pt) (ed-pt-x pt) (ed-pt-y pt) p 11 n0)
-            pt))))))
+    (begin
+      (mont-to arena (ed-pt-x pt) (ed-const arena "216936d3cd6e53fec0a4e231fdd6dc5c692cc7609525a7b2c9562d608f25d51a") p 11 n0 r2)
+      (mont-to arena (ed-pt-y pt) (ed-const arena "6666666666666666666666666666666666666666666666666666666666666658") p 11 n0 r2)
+      (bn-copy (ed-pt-z pt) one 11)
+      (mont-mul arena (ed-pt-t pt) (ed-pt-x pt) (ed-pt-y pt) p 11 n0)
+      pt)))
 
 ; out = 2 * a, by the extended-coordinate doubling formula (Hisil et
 ; al.), which needs no curve constant.
 ; Returns: Int
-(defn ed-double ((arena Int) (ctx Int) (out Int) (a Int))
+(defn ed-double ((arena Arena) (ctx EdCtx) (out EdPt) (a EdPt))
   (let ta (bn-alloc arena 11)
     (let tb (bn-alloc arena 11)
       (let tc (bn-alloc arena 11)
@@ -212,7 +221,7 @@
             (ed-double2 arena ctx out a ta tb tc th)))))))
 
 ; Returns: Int
-(defn ed-double2 ((arena Int) (ctx Int) (out Int) (a Int) (ta Int) (tb Int) (tc Int) (th Int))
+(defn ed-double2 ((arena Arena) (ctx EdCtx) (out EdPt) (a EdPt) (ta Words) (tb Words) (tc Words) (th Words))
   (let te (bn-alloc arena 11)
     (let tg (bn-alloc arena 11)
       (let tf (bn-alloc arena 11)
@@ -228,7 +237,7 @@
 ; X = E*F, Y = G*H, T = E*H, Z = F*G -- the shared tail of both the
 ; addition and the doubling formula.
 ; Returns: Int
-(defn ed-store-egfh ((arena Int) (ctx Int) (out Int) (te Int) (tf Int) (tg Int) (th Int))
+(defn ed-store-egfh ((arena Arena) (ctx EdCtx) (out EdPt) (te Words) (tf Words) (tg Words) (th Words))
   (let x (bn-alloc arena 11)
     (let y (bn-alloc arena 11)
       (let t (bn-alloc arena 11)
@@ -250,7 +259,7 @@
 ; multiplication needs no special cases -- and special cases are
 ; exactly what turns into a timing signal.
 ; Returns: Int
-(defn ed-add ((arena Int) (ctx Int) (out Int) (a Int) (b Int))
+(defn ed-add ((arena Arena) (ctx EdCtx) (out EdPt) (a EdPt) (b EdPt))
   (let ta (bn-alloc arena 11)
     (let tb (bn-alloc arena 11)
       (let tc (bn-alloc arena 11)
@@ -263,8 +272,8 @@
             (ed-add2 arena ctx out ta tb tc td)))))))
 
 ; A = (Y1-X1)*(Y2-X2)
-; Returns: Int
-(defn ed-add-a ((arena Int) (ctx Int) (out Int) (a Int) (b Int))
+; Returns: Words
+(defn ed-add-a ((arena Arena) (ctx EdCtx) (out Words) (a EdPt) (b EdPt))
   (let u (bn-alloc arena 11)
     (let v (bn-alloc arena 11)
       (begin
@@ -273,8 +282,8 @@
         (edf-mul arena ctx out u v)))))
 
 ; B = (Y1+X1)*(Y2+X2)
-; Returns: Int
-(defn ed-add-b ((arena Int) (ctx Int) (out Int) (a Int) (b Int))
+; Returns: Words
+(defn ed-add-b ((arena Arena) (ctx EdCtx) (out Words) (a EdPt) (b EdPt))
   (let u (bn-alloc arena 11)
     (let v (bn-alloc arena 11)
       (begin
@@ -283,23 +292,23 @@
         (edf-mul arena ctx out u v)))))
 
 ; C = T1 * 2d * T2
-; Returns: Int
-(defn ed-add-c ((arena Int) (ctx Int) (out Int) (a Int) (b Int))
+; Returns: Words
+(defn ed-add-c ((arena Arena) (ctx EdCtx) (out Words) (a EdPt) (b EdPt))
   (let u (bn-alloc arena 11)
     (begin
       (edf-mul arena ctx u (ed-pt-t a) (ed-ctx-d2 ctx))
       (edf-mul arena ctx out u (ed-pt-t b)))))
 
 ; D = 2 * Z1 * Z2
-; Returns: Int
-(defn ed-add-d ((arena Int) (ctx Int) (out Int) (a Int) (b Int))
+; Returns: Words
+(defn ed-add-d ((arena Arena) (ctx EdCtx) (out Words) (a EdPt) (b EdPt))
   (let u (bn-alloc arena 11)
     (begin
       (edf-mul arena ctx u (ed-pt-z a) (ed-pt-z b))
       (edf-add arena ctx out u u))))
 
 ; Returns: Int
-(defn ed-add2 ((arena Int) (ctx Int) (out Int) (ta Int) (tb Int) (tc Int) (td Int))
+(defn ed-add2 ((arena Arena) (ctx EdCtx) (out EdPt) (ta Words) (tb Words) (tc Words) (td Words))
   (let te (bn-alloc arena 11)
     (let tf (bn-alloc arena 11)
       (let tg (bn-alloc arena 11)
@@ -318,8 +327,8 @@
 ; mask. The classic double-and-add would skip the addition on a zero
 ; bit, and that skipped multiplication is visible in timing, power and
 ; cache behaviour -- it is the standard way scalar bits leak.
-; Returns: Int
-(defn ed-scalar-mul ((arena Int) (ctx Int) (out Int) (pt Int) (k Int))
+; Returns: EdPt
+(defn ed-scalar-mul ((arena Arena) (ctx EdCtx) (out EdPt) (pt EdPt) (k Words))
   (let acc (ed-pt-identity arena ctx)
     (begin
       (ed-scalar-loop arena ctx acc pt k 255)
@@ -327,7 +336,7 @@
       out)))
 
 ; Returns: Int
-(defn ed-scalar-loop ((arena Int) (ctx Int) (acc Int) (pt Int) (k Int) (i Int))
+(defn ed-scalar-loop ((arena Arena) (ctx EdCtx) (acc EdPt) (pt EdPt) (k Words) (i Int))
   (if (< i 0)
     0
     (begin
@@ -335,13 +344,13 @@
       (ed-scalar-loop arena ctx acc pt k (- i 1)))))
 
 ; Returns: Int
-(defn ed-scalar-step ((arena Int) (ctx Int) (acc Int) (pt Int) (k Int) (i Int))
+(defn ed-scalar-step ((arena Arena) (ctx EdCtx) (acc EdPt) (pt EdPt) (k Words) (i Int))
   (let sum (ed-pt-new arena)
     (let bit (bit-and (shr (w-get k (/ i 8)) (% i 8)) 1)
       (begin
         (ed-double arena ctx acc acc)
         (ed-add arena ctx sum acc pt)
-        (bn-cond-copy acc sum 44 (ct-mask bit))
+        (ed-pt-cond-copy acc sum (ct-mask bit))
         0))))
 
 ; ===========================================================================
@@ -350,8 +359,8 @@
 
 ; Encode a point as 32 little-endian bytes: y, with x's low bit in the
 ; top bit position.
-; Returns: Int
-(defn ed-encode ((arena Int) (ctx Int) (pt Int))
+; Returns: Words
+(defn ed-encode ((arena Arena) (ctx EdCtx) (pt EdPt))
   (let zinv (bn-alloc arena 11)
     (let x (bn-alloc arena 11)
       (let y (bn-alloc arena 11)
@@ -363,8 +372,8 @@
           (mont-from arena y y (ed-ctx-p ctx) 11 (ed-ctx-n0 ctx))
           (ed-encode-bytes arena x y))))))
 
-; Returns: Int
-(defn ed-encode-bytes ((arena Int) (x Int) (y Int))
+; Returns: Words
+(defn ed-encode-bytes ((arena Arena) (x Words) (y Words))
   (let out (w-alloc arena 32)
     (begin
       (bn-to-bytes-le out 32 y 11)
@@ -374,8 +383,8 @@
 ; Decode a 32-byte little-endian point encoding. Returns None when the
 ; y coordinate has no matching x on the curve, which is what a
 ; corrupted or hostile encoding produces.
-; Returns: Option
-(defn ed-decode ((arena Int) (ctx Int) (bytes Int))
+; Returns: (Option EdPt)
+(defn ed-decode ((arena Arena) (ctx EdCtx) (bytes Words))
   (let yb (w-copy (w-alloc arena 32) bytes 32)
     (let sign (bit-and (shr (w-get bytes 31) 7) 1)
       (let y (bn-alloc arena 11)
@@ -386,8 +395,8 @@
 
 ; Solve x^2 = (y^2 - 1) / (d*y^2 + 1) for x, choosing the root whose
 ; low bit matches `sign`.
-; Returns: Option
-(defn ed-decode-x ((arena Int) (ctx Int) (y Int) (sign Int))
+; Returns: (Option EdPt)
+(defn ed-decode-x ((arena Arena) (ctx EdCtx) (y Words) (sign Int))
   (let ym (bn-alloc arena 11)
     (let u (bn-alloc arena 11)
       (let v (bn-alloc arena 11)
@@ -400,7 +409,7 @@
 ; by halving it -- which modulo an odd prime is a multiplication by the
 ; inverse of 2, done here once per decode.
 ; Returns: Int
-(defn ed-decode-uv ((arena Int) (ctx Int) (ym Int) (u Int) (v Int))
+(defn ed-decode-uv ((arena Arena) (ctx EdCtx) (ym Words) (u Words) (v Words))
   (let y2 (bn-alloc arena 11)
     (let d (bn-alloc arena 11)
       (begin
@@ -415,7 +424,7 @@
 ; down, an odd one has p added first (which makes it even) before the
 ; shift. Both branches are computed and selected by mask.
 ; Returns: Int
-(defn ed-half ((arena Int) (ctx Int) (out Int) (a Int))
+(defn ed-half ((arena Arena) (ctx EdCtx) (out Words) (a Words))
   (let plain (bn-alloc arena 11)
     (let alt (bn-alloc arena 11)
       (begin
@@ -430,15 +439,15 @@
 ; The candidate root x = u*v^3 * (u*v^7)^((p-5)/8), then the two checks
 ; RFC 8032 s5.1.3 specifies: accept it if v*x^2 = u, otherwise multiply
 ; by sqrt(-1) and check again, otherwise fail.
-; Returns: Option
-(defn ed-decode-root ((arena Int) (ctx Int) (ym Int) (u Int) (v Int) (sign Int))
+; Returns: (Option EdPt)
+(defn ed-decode-root ((arena Arena) (ctx EdCtx) (ym Words) (u Words) (v Words) (sign Int))
   (let x (bn-alloc arena 11)
     (begin
       (ed-decode-candidate arena ctx x u v)
       (ed-decode-select arena ctx ym x u v sign))))
 
 ; Returns: Int
-(defn ed-decode-candidate ((arena Int) (ctx Int) (x Int) (u Int) (v Int))
+(defn ed-decode-candidate ((arena Arena) (ctx EdCtx) (x Words) (u Words) (v Words))
   (let v2 (bn-alloc arena 11)
     (let v3 (bn-alloc arena 11)
       (let v7 (bn-alloc arena 11)
@@ -454,8 +463,8 @@
             (edf-mul arena ctx x x t)
             0))))))
 
-; Returns: Option
-(defn ed-decode-select ((arena Int) (ctx Int) (ym Int) (x Int) (u Int) (v Int) (sign Int))
+; Returns: (Option EdPt)
+(defn ed-decode-select ((arena Arena) (ctx EdCtx) (ym Words) (x Words) (u Words) (v Words) (sign Int))
   (let chk (bn-alloc arena 11)
     (begin
       (edf-mul arena ctx chk x x)
@@ -467,8 +476,8 @@
         (ed-decode-finish arena ctx ym x sign)
         (ed-decode-retry arena ctx ym x u v sign)))))
 
-; Returns: Option
-(defn ed-decode-retry ((arena Int) (ctx Int) (ym Int) (x Int) (u Int) (v Int) (sign Int))
+; Returns: (Option EdPt)
+(defn ed-decode-retry ((arena Arena) (ctx EdCtx) (ym Words) (x Words) (u Words) (v Words) (sign Int))
   (let chk (bn-alloc arena 11)
     (begin
       (edf-mul arena ctx x x (ed-ctx-sqrtm1 ctx))
@@ -481,8 +490,8 @@
 
 ; Fix the root's sign and assemble the point. x = 0 with a sign bit of
 ; 1 is the one encoding RFC 8032 rejects outright.
-; Returns: Option
-(defn ed-decode-finish ((arena Int) (ctx Int) (ym Int) (x Int) (sign Int))
+; Returns: (Option EdPt)
+(defn ed-decode-finish ((arena Arena) (ctx EdCtx) (ym Words) (x Words) (sign Int))
   (let plain (bn-alloc arena 11)
     (begin
       (mont-from arena plain x (ed-ctx-p ctx) 11 (ed-ctx-n0 ctx))
@@ -495,7 +504,7 @@
           (Some (ed-decode-point arena ctx ym x)))))))
 
 ; Returns: Int
-(defn ed-decode-fix-sign ((arena Int) (ctx Int) (x Int) (plain Int) (sign Int))
+(defn ed-decode-fix-sign ((arena Arena) (ctx EdCtx) (x Words) (plain Words) (sign Int))
   (let neg (bn-alloc arena 11)
     (let differs (bit-xor (bit-and (w-get plain 0) 1) sign)
       (begin
@@ -504,8 +513,8 @@
         (bn-cond-copy x neg 11 (ct-mask differs))
         0))))
 
-; Returns: Int
-(defn ed-decode-point ((arena Int) (ctx Int) (ym Int) (x Int))
+; Returns: EdPt
+(defn ed-decode-point ((arena Arena) (ctx EdCtx) (ym Words) (x Words))
   (let pt (ed-pt-new arena)
     (begin
       (bn-copy (ed-pt-x pt) x 11)
@@ -519,8 +528,8 @@
 ; ===========================================================================
 
 ; Reduce a 64-byte little-endian value modulo the group order.
-; Returns: Int
-(defn ed-reduce64 ((arena Int) (ctx Int) (bytes Int))
+; Returns: Words
+(defn ed-reduce64 ((arena Arena) (ctx EdCtx) (bytes Words))
   (let wide (bn-alloc arena 22)
     (let out (bn-alloc arena 11)
       (begin
@@ -529,8 +538,8 @@
         out))))
 
 ; s = (r + k*a) mod L.
-; Returns: Int
-(defn ed-mul-add ((arena Int) (ctx Int) (k Int) (a Int) (r Int))
+; Returns: Words
+(defn ed-mul-add ((arena Arena) (ctx EdCtx) (k Words) (a Words) (r Words))
   (let wide (bn-alloc arena 22)
     (let t (bn-alloc arena 11)
       (begin
@@ -546,8 +555,8 @@
 ; Expand a 32-byte seed into the scalar half and the nonce prefix half
 ; of the secret key, as RFC 8032 s5.1.5 specifies. The scalar is
 ; clamped exactly as X25519 clamps, and for the same reasons.
-; Returns: Int
-(defn ed-expand ((arena Int) (seed Int))
+; Returns: Words
+(defn ed-expand ((arena Arena) (seed Words))
   (let h (sha512-bytes arena seed 32)
     (begin
       (w-set h 0 (bit-and (w-get h 0) 248))
@@ -556,8 +565,8 @@
       h)))
 
 ; The 32-byte public key for a 32-byte seed.
-; Returns: Int
-(defn ed25519-public-key ((arena Int) (seed Int))
+; Returns: Words
+(defn ed25519-public-key ((arena Arena) (seed Words))
   (let ctx (ed-ctx arena)
     (let h (ed-expand arena seed)
       (let pt (ed-pt-new arena)
@@ -571,15 +580,15 @@
 
 ; Sign `msglen` message bytes with a 32-byte seed, returning the
 ; 64-byte signature R || S.
-; Returns: Int
-(defn ed25519-sign ((arena Int) (seed Int) (msg Int) (msglen Int))
+; Returns: Words
+(defn ed25519-sign ((arena Arena) (seed Words) (msg Words) (msglen Int))
   (let ctx (ed-ctx arena)
     (let h (ed-expand arena seed)
       (let pub (ed25519-public-key arena seed)
         (ed-sign-with arena ctx h pub msg msglen)))))
 
-; Returns: Int
-(defn ed-sign-with ((arena Int) (ctx Int) (h Int) (pub Int) (msg Int) (msglen Int))
+; Returns: Words
+(defn ed-sign-with ((arena Arena) (ctx EdCtx) (h Words) (pub Words) (msg Words) (msglen Int))
   (let prefix (ed-slice arena h 32 32)
     (let rin (ed-concat arena prefix 32 msg msglen)
       (let r (ed-reduce64 arena ctx (sha512-bytes arena rin (+ 32 msglen)))
@@ -588,8 +597,8 @@
             (ed-scalar-mul arena ctx rpt (ed-ctx-base ctx) (ed-scalar-bytes arena r))
             (ed-sign-finish arena ctx h pub msg msglen r (ed-encode arena ctx rpt))))))))
 
-; Returns: Int
-(defn ed-sign-finish ((arena Int) (ctx Int) (h Int) (pub Int) (msg Int) (msglen Int) (r Int) (renc Int))
+; Returns: Words
+(defn ed-sign-finish ((arena Arena) (ctx EdCtx) (h Words) (pub Words) (msg Words) (msglen Int) (r Words) (renc Words))
   (let kin (ed-concat3 arena renc 32 pub 32 msg msglen)
     (let k (ed-reduce64 arena ctx (sha512-bytes arena kin (+ 64 msglen)))
       (let a (bn-alloc arena 11)
@@ -597,17 +606,17 @@
           (bn-from-bytes-le a 11 h 32)
           (ed-sign-emit arena ctx renc (ed-mul-add arena ctx k a r)))))))
 
-; Returns: Int
-(defn ed-sign-emit ((arena Int) (_ctx Int) (renc Int) (s Int))
+; Returns: Words
+(defn ed-sign-emit ((arena Arena) (_ctx EdCtx) (renc Words) (s Words))
   (let sig (w-alloc arena 64)
     (begin
       (w-copy sig renc 32)
-      (bn-to-bytes-le (+ sig 256) 32 s 11)
+      (bn-to-bytes-le (w-view arena sig 32 32) 32 s 11)
       sig)))
 
 ; A scalar as 32 little-endian bytes, the form ed-scalar-mul consumes.
-; Returns: Int
-(defn ed-scalar-bytes ((arena Int) (s Int))
+; Returns: Words
+(defn ed-scalar-bytes ((arena Arena) (s Words))
   (let out (w-alloc arena 32)
     (bn-to-bytes-le out 32 s 11)))
 
@@ -620,14 +629,14 @@
 ; that still verifies. Protocols that treat a signature as a unique
 ; identifier break on exactly that.
 ; Returns: Bool
-(defn ed25519-verify ((arena Int) (pub Int) (msg Int) (msglen Int) (sig Int))
+(defn ed25519-verify ((arena Arena) (pub Words) (msg Words) (msglen Int) (sig Words))
   (let ctx (ed-ctx arena)
     (match (ed-decode arena ctx pub)
       (None false)
       (Some apt (ed-verify-with arena ctx apt pub msg msglen sig)))))
 
 ; Returns: Bool
-(defn ed-verify-with ((arena Int) (ctx Int) (apt Int) (pub Int) (msg Int) (msglen Int) (sig Int))
+(defn ed-verify-with ((arena Arena) (ctx EdCtx) (apt EdPt) (pub Words) (msg Words) (msglen Int) (sig Words))
   (let renc (ed-slice arena sig 0 32)
     (let senc (ed-slice arena sig 32 32)
       (let s (bn-alloc arena 11)
@@ -639,13 +648,13 @@
 
 ; 1 when s < L.
 ; Returns: Int
-(defn ed-scalar-in-range ((arena Int) (s Int) (order Int))
+(defn ed-scalar-in-range ((arena Arena) (s Words) (order Words))
   (let scratch (bn-alloc arena 11)
     (bn-sub scratch s order 11)))
 
 ; Check [S]B = R + [k]A.
 ; Returns: Bool
-(defn ed-verify-equation ((arena Int) (ctx Int) (apt Int) (pub Int) (msg Int) (msglen Int) (renc Int) (senc Int))
+(defn ed-verify-equation ((arena Arena) (ctx EdCtx) (apt EdPt) (pub Words) (msg Words) (msglen Int) (renc Words) (senc Words))
   (let kin (ed-concat3 arena renc 32 pub 32 msg msglen)
     (let k (ed-reduce64 arena ctx (sha512-bytes arena kin (+ 64 msglen)))
       (let lhs (ed-pt-new arena)
@@ -656,7 +665,7 @@
             (ed-verify-compare arena ctx lhs ka renc)))))))
 
 ; Returns: Bool
-(defn ed-verify-compare ((arena Int) (ctx Int) (lhs Int) (ka Int) (renc Int))
+(defn ed-verify-compare ((arena Arena) (ctx EdCtx) (lhs EdPt) (ka EdPt) (renc Words))
   (match (ed-decode arena ctx renc)
     (None false)
     (Some rpt
@@ -669,16 +678,16 @@
 ; BYTE HELPERS
 ; ===========================================================================
 
-; Returns: Int
-(defn ed-slice ((arena Int) (src Int) (off Int) (n Int))
+; Returns: Words
+(defn ed-slice ((arena Arena) (src Words) (off Int) (n Int))
   (let out (w-alloc arena n)
     (begin
       (for (i 0) (< i n)
         (begin (w-set out i (w-get src (+ off i))) (set! i (+ i 1))))
       out)))
 
-; Returns: Int
-(defn ed-concat ((arena Int) (a Int) (alen Int) (b Int) (blen Int))
+; Returns: Words
+(defn ed-concat ((arena Arena) (a Words) (alen Int) (b Words) (blen Int))
   (let out (w-alloc arena (+ alen blen))
     (begin
       (w-copy out a alen)
@@ -686,6 +695,6 @@
         (begin (w-set out (+ alen i) (w-get b i)) (set! i (+ i 1))))
       out)))
 
-; Returns: Int
-(defn ed-concat3 ((arena Int) (a Int) (alen Int) (b Int) (blen Int) (c Int) (clen Int))
+; Returns: Words
+(defn ed-concat3 ((arena Arena) (a Words) (alen Int) (b Words) (blen Int) (c Words) (clen Int))
   (ed-concat arena (ed-concat arena a alen b blen) (+ alen blen) c clen))

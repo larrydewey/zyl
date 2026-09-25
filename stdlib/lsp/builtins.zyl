@@ -415,6 +415,6 @@
 
 (defn builtin-stdlib-tools ()
   (Cons "compiler/ast" (Cons "compiler/lexer" (Cons "compiler/parser"
-  (Cons "compiler/expr_inner" (Cons "compiler/type_inference" (Cons "compiler/icnf"
+  (Cons "compiler/expr_inner" (Cons "compiler/lift_impls" (Cons "compiler/icnf"
   (Cons "compiler/codegen" (Cons "compiler/sexp_balance" (Cons "mlib/deep"
   Nil))))))))))

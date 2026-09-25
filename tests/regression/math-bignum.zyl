@@ -11,11 +11,11 @@
 
 (defn _bn_arena () (arena-create 0))
 
-(defn _bn_from ((a Int) (hex String) (n Int))
+(defn _bn_from ((a Arena) (hex String) (n Int))
   (let v (bn-alloc a n)
     (bn-from-bytes-be v n (w-from-hex a hex) (w-hex-len hex))))
 
-(defn _bn_hex ((a Int) (v Int) (n Int) (nbytes Int))
+(defn _bn_hex ((a Arena) (v Words) (n Int) (nbytes Int))
   (w-hex-bytes (bn-to-bytes-be (w-alloc a nbytes) nbytes v n) nbytes))
 
 (test "bn-limbs-for-bits"

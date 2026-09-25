@@ -57,23 +57,23 @@
   (bn-limbs-for-bits (* nbytes 8)))
 
 ; Allocate an n-limb Nat, zeroed.
-; Returns: Int
-(defn bn-alloc ((arena Int) (n Int))
+; Returns: Words
+(defn bn-alloc ((arena Arena) (n Int))
   (w-alloc arena n))
 
 ; Set every limb to zero.
-; Returns: Int
-(defn bn-zero ((a Int) (n Int))
+; Returns: Words
+(defn bn-zero ((a Words) (n Int))
   (w-fill a n 0))
 
 ; Copy n limbs.
-; Returns: Int
-(defn bn-copy ((dst Int) (src Int) (n Int))
+; Returns: Words
+(defn bn-copy ((dst Words) (src Words) (n Int))
   (w-copy dst src n))
 
 ; Set a Nat to a small value (below 2^24).
-; Returns: Int
-(defn bn-set-small ((a Int) (n Int) (v Int))
+; Returns: Words
+(defn bn-set-small ((a Words) (n Int) (v Int))
   (begin
     (bn-zero a n)
     (w-set a 0 (bit-and v 16777215))
@@ -85,11 +85,11 @@
 
 ; out = a + b (mod 2^(24n)); returns the carry out of the top limb.
 ; Returns: Int
-(defn bn-add ((out Int) (a Int) (b Int) (n Int))
+(defn bn-add ((out Words) (a Words) (b Words) (n Int))
   (bn-add-loop out a b n 0 0))
 
 ; Returns: Int
-(defn bn-add-loop ((out Int) (a Int) (b Int) (n Int) (i Int) (carry Int))
+(defn bn-add-loop ((out Words) (a Words) (b Words) (n Int) (i Int) (carry Int))
   (if (>= i n)
     carry
     (let s (+ (+ (w-get a i) (w-get b i)) carry)
@@ -102,11 +102,11 @@
 ; bit with a logical shift, not from a comparison, so no branch depends
 ; on the operand values.
 ; Returns: Int
-(defn bn-sub ((out Int) (a Int) (b Int) (n Int))
+(defn bn-sub ((out Words) (a Words) (b Words) (n Int))
   (bn-sub-loop out a b n 0 0))
 
 ; Returns: Int
-(defn bn-sub-loop ((out Int) (a Int) (b Int) (n Int) (i Int) (borrow Int))
+(defn bn-sub-loop ((out Words) (a Words) (b Words) (n Int) (i Int) (borrow Int))
   (if (>= i n)
     borrow
     (let d (- (- (w-get a i) (w-get b i)) borrow)
@@ -116,11 +116,11 @@
 
 ; out = a + b where b is a single limb; returns the carry.
 ; Returns: Int
-(defn bn-add-limb ((out Int) (a Int) (n Int) (v Int))
+(defn bn-add-limb ((out Words) (a Words) (n Int) (v Int))
   (bn-add-limb-loop out a n 0 (bit-and v 16777215)))
 
 ; Returns: Int
-(defn bn-add-limb-loop ((out Int) (a Int) (n Int) (i Int) (carry Int))
+(defn bn-add-limb-loop ((out Words) (a Words) (n Int) (i Int) (carry Int))
   (if (>= i n)
     carry
     (let s (+ (w-get a i) carry)
@@ -135,32 +135,32 @@
 ; 1 when every limb is zero, 0 otherwise. Accumulates first, decides
 ; once -- no early exit.
 ; Returns: Int
-(defn bn-is-zero ((a Int) (n Int))
+(defn bn-is-zero ((a Words) (n Int))
   (ct-is-zero (bn-or-acc a n 0 0)))
 
 ; Returns: Int
-(defn bn-or-acc ((a Int) (n Int) (i Int) (acc Int))
+(defn bn-or-acc ((a Words) (n Int) (i Int) (acc Int))
   (if (>= i n)
     acc
     (bn-or-acc a n (+ i 1) (bit-or acc (w-get a i)))))
 
 ; 1 when a equals b, 0 otherwise, constant-time.
 ; Returns: Int
-(defn bn-eq ((a Int) (b Int) (n Int))
+(defn bn-eq ((a Words) (b Words) (n Int))
   (ct-eq-words a b n))
 
 ; 1 when a < b, 0 otherwise, constant-time. Computed as the borrow out
 ; of a full-width subtraction into a scratch array, which is exactly
 ; the "did it go negative" bit and costs no branch.
 ; Returns: Int
-(defn bn-lt ((arena Int) (a Int) (b Int) (n Int))
+(defn bn-lt ((arena Arena) (a Words) (b Words) (n Int))
   (let scratch (bn-alloc arena n)
     (bn-sub scratch a b n)))
 
 ; dst = src when mask is all-ones, unchanged when mask is zero. The
 ; mask must be 0 or -1 (ct-mask produces exactly that).
 ; Returns: Int
-(defn bn-cond-copy ((dst Int) (src Int) (n Int) (mask Int))
+(defn bn-cond-copy ((dst Words) (src Words) (n Int) (mask Int))
   (begin
     (for (i 0) (< i n)
       (begin
@@ -173,7 +173,7 @@
 ; memory access pattern are identical either way. This is the primitive
 ; behind every "reduce once if the result overflowed" step.
 ; Returns: Int
-(defn bn-cond-sub ((arena Int) (a Int) (b Int) (n Int) (cond Int))
+(defn bn-cond-sub ((arena Arena) (a Words) (b Words) (n Int) (cond Int))
   (let scratch (bn-alloc arena n)
     (begin
       (bn-sub scratch a b n)
@@ -186,11 +186,11 @@
 
 ; a = a * 2 (mod 2^(24n)); returns the bit shifted out.
 ; Returns: Int
-(defn bn-shl1 ((a Int) (n Int))
+(defn bn-shl1 ((a Words) (n Int))
   (bn-shl1-loop a n 0 0))
 
 ; Returns: Int
-(defn bn-shl1-loop ((a Int) (n Int) (i Int) (carry Int))
+(defn bn-shl1-loop ((a Words) (n Int) (i Int) (carry Int))
   (if (>= i n)
     carry
     (let v (+ (shl (w-get a i) 1) carry)
@@ -200,11 +200,11 @@
 
 ; a = a / 2, discarding the low bit.
 ; Returns: Int
-(defn bn-shr1 ((a Int) (n Int))
+(defn bn-shr1 ((a Words) (n Int))
   (bn-shr1-loop a n (- n 1) 0))
 
 ; Returns: Int
-(defn bn-shr1-loop ((a Int) (n Int) (i Int) (carry Int))
+(defn bn-shr1-loop ((a Words) (n Int) (i Int) (carry Int))
   (if (< i 0)
     0
     (let v (w-get a i)
@@ -214,7 +214,7 @@
 
 ; Bit `k` of a Nat (0 = least significant), as 0 or 1.
 ; Returns: Int
-(defn bn-bit ((a Int) (k Int))
+(defn bn-bit ((a Words) (k Int))
   (bit-and (shr (w-get a (/ k 24)) (% k 24)) 1))
 
 ; ===========================================================================
@@ -224,8 +224,8 @@
 ; out = a * b, where out has 2n limbs and a, b have n each. Schoolbook:
 ; n^2 limb products, every one of them executed regardless of operand
 ; values.
-; Returns: Int
-(defn bn-mul ((out Int) (a Int) (b Int) (n Int))
+; Returns: Words
+(defn bn-mul ((out Words) (a Words) (b Words) (n Int))
   (begin
     (bn-zero out (* 2 n))
     (for (i 0) (< i n)
@@ -241,11 +241,11 @@
 ; since every later read adds it in and re-masks, but the final top
 ; limb has no later read to fix it. One linear pass settles them all.
 ; Returns: Int
-(defn bn-normalize ((a Int) (n Int))
+(defn bn-normalize ((a Words) (n Int))
   (bn-normalize-loop a n 0 0))
 
 ; Returns: Int
-(defn bn-normalize-loop ((a Int) (n Int) (i Int) (carry Int))
+(defn bn-normalize-loop ((a Words) (n Int) (i Int) (carry Int))
   (if (>= i n)
     carry
     (let v (+ (w-get a i) carry)
@@ -255,12 +255,12 @@
 
 ; Add a[*] * b[i] shifted by i limbs into the accumulator.
 ; Returns: Int
-(defn bn-mul-row ((out Int) (a Int) (b Int) (n Int) (i Int))
+(defn bn-mul-row ((out Words) (a Words) (b Words) (n Int) (i Int))
   (let bi (w-get b i)
     (bn-mul-row-loop out a n i 0 bi 0)))
 
 ; Returns: Int
-(defn bn-mul-row-loop ((out Int) (a Int) (n Int) (i Int) (j Int) (bi Int) (carry Int))
+(defn bn-mul-row-loop ((out Words) (a Words) (n Int) (i Int) (j Int) (bi Int) (carry Int))
   (if (>= j n)
     (begin
       (w-set out (+ i n) (+ (w-get out (+ i n)) carry))
@@ -275,8 +275,8 @@
 ; form doubles cross terms and halves the work, but it also makes the
 ; carry chain depend on the diagonal, and correctness of the plain
 ; version is easy to see.
-; Returns: Int
-(defn bn-sqr ((out Int) (a Int) (n Int))
+; Returns: Words
+(defn bn-sqr ((out Words) (a Words) (n Int))
   (bn-mul out a a n))
 
 ; ===========================================================================
@@ -285,8 +285,8 @@
 
 ; Load a big-endian byte string (one byte per word, `nbytes` of them)
 ; into an n-limb Nat. Bytes beyond the Nat's width are ignored.
-; Returns: Int
-(defn bn-from-bytes-be ((a Int) (n Int) (bytes Int) (nbytes Int))
+; Returns: Words
+(defn bn-from-bytes-be ((a Words) (n Int) (bytes Words) (nbytes Int))
   (begin
     (bn-zero a n)
     (for (i 0) (< i nbytes)
@@ -301,7 +301,7 @@
 ; below is written so it would still be correct if the limb width
 ; changed).
 ; Returns: Int
-(defn bn-or-byte ((a Int) (n Int) (pos Int) (v Int))
+(defn bn-or-byte ((a Words) (n Int) (pos Int) (v Int))
   (let bitpos (* pos 8)
     (let limb (/ bitpos 24)
       (let off (% bitpos 24)
@@ -313,7 +313,7 @@
 
 ; The part of a straddling byte that lands in the next limb up.
 ; Returns: Int
-(defn bn-or-byte-carry ((a Int) (n Int) (limb Int) (off Int) (v Int))
+(defn bn-or-byte-carry ((a Words) (n Int) (limb Int) (off Int) (v Int))
   (if (<= off 16)
     0
     (if (>= (+ limb 1) n)
@@ -323,8 +323,8 @@
         0))))
 
 ; Write an n-limb Nat as `nbytes` big-endian bytes (one per word).
-; Returns: Int
-(defn bn-to-bytes-be ((out Int) (nbytes Int) (a Int) (n Int))
+; Returns: Words
+(defn bn-to-bytes-be ((out Words) (nbytes Int) (a Words) (n Int))
   (begin
     (for (i 0) (< i nbytes)
       (begin
@@ -334,7 +334,7 @@
 
 ; Byte `pos` (counting from the least significant end) of a Nat.
 ; Returns: Int
-(defn bn-byte-at ((a Int) (n Int) (pos Int))
+(defn bn-byte-at ((a Words) (n Int) (pos Int))
   (let bitpos (* pos 8)
     (let limb (/ bitpos 24)
       (let off (% bitpos 24)
@@ -343,7 +343,7 @@
           (bit-and (bit-or (shr (w-get a limb) off) (bn-byte-carry a n limb off)) 255))))))
 
 ; Returns: Int
-(defn bn-byte-carry ((a Int) (n Int) (limb Int) (off Int))
+(defn bn-byte-carry ((a Words) (n Int) (limb Int) (off Int))
   (if (<= off 16)
     0
     (if (>= (+ limb 1) n)
@@ -353,8 +353,8 @@
 ; Load a little-endian byte string into an n-limb Nat. Curve25519 and
 ; Ed25519 encode every scalar and coordinate little-endian, so this is
 ; the conversion those modules actually use.
-; Returns: Int
-(defn bn-from-bytes-le ((a Int) (n Int) (bytes Int) (nbytes Int))
+; Returns: Words
+(defn bn-from-bytes-le ((a Words) (n Int) (bytes Words) (nbytes Int))
   (begin
     (bn-zero a n)
     (for (i 0) (< i nbytes)
@@ -364,8 +364,8 @@
     a))
 
 ; Write an n-limb Nat as `nbytes` little-endian bytes.
-; Returns: Int
-(defn bn-to-bytes-le ((out Int) (nbytes Int) (a Int) (n Int))
+; Returns: Words
+(defn bn-to-bytes-le ((out Words) (nbytes Int) (a Words) (n Int))
   (begin
     (for (i 0) (< i nbytes)
       (begin
@@ -381,11 +381,11 @@
 ; never on a secret scalar, where the whole point of the fixed-width
 ; representation is that its length says nothing.
 ; Returns: Int
-(defn bn-bit-length ((a Int) (n Int))
+(defn bn-bit-length ((a Words) (n Int))
   (bn-bit-length-loop a (- (* 24 n) 1)))
 
 ; Returns: Int
-(defn bn-bit-length-loop ((a Int) (i Int))
+(defn bn-bit-length-loop ((a Words) (i Int))
   (if (< i 0)
     0
     (if (= (bn-bit a i) 1)

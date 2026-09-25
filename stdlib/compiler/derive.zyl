@@ -181,9 +181,7 @@
         (dv-check-variants all site tname short rest)))))
 
 ; Declared field types, recorded by the parse (expr_inner.zyl record-field-types).
-(defn dv-field-types (cname)
-  (let raw (ffi-call "zyl_smap_get" (ffi-call "zyl_smap_global" 0 1000) cname 1000)
-    (if (= raw 0) Nil (ffi-call "zyl_cstr_of_word" raw 1000))))
+(defn dv-field-types (cname) (field-types-of cname))
 
 (defn dv-check-types (all site tname short cname types i)
   (match types

@@ -1739,9 +1739,19 @@
     (Cons s rest (Cons (parse-struct-field-name s) (parse-struct-fields rest)))))
 
 ; Field type Exprs keyed by variant name, for compiler/type_annotate.
+; Declared field types per constructor name: (List Expr), one per field.
+; Read by the type pass, derive and the secret check; emptied per compile.
+(def field-type-table (ffi-call "zyl_smap_new" 1000))
+
 (defn record-field-types (av types)
-  (let _ (ffi-call "zyl_smap_put" (ffi-call "zyl_smap_global" 0 1000) (AV.name av) types 1000)
+  (let _ (ffi-call "zyl_smap_put" field-type-table (AV.name av) types 1000)
     av))
+
+(defn field-types-of (cname)
+  (ffi-call "zyl_smap_get_or" field-type-table cname Nil 1000))
+
+(defn field-types-clear ()
+  (ffi-call "zyl_smap_clear" field-type-table 1000))
 
 ; An untyped struct field records `_` (unknown type).
 (defn parse-struct-field-types (specs)

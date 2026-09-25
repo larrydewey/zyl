@@ -28,8 +28,8 @@
 ; ===========================================================================
 
 ; The 24 round constants (FIPS 202 s3.2.5).
-; Returns: Int
-(defn keccak-rc-table ((arena Int))
+; Returns: Words
+(defn keccak-rc-table ((arena Arena))
   (let p (w-alloc arena 24)
     (begin
       (w-set p 0 1)
@@ -59,8 +59,8 @@
       p)))
 
 ; Rotation offsets for rho, indexed by lane (x + 5*y).
-; Returns: Int
-(defn keccak-rho-table ((arena Int))
+; Returns: Words
+(defn keccak-rho-table ((arena Arena))
   (let p (w-alloc arena 25)
     (begin
       (w-set p 0 0)
@@ -93,8 +93,8 @@
 ; The pi permutation as a destination-indexed source table:
 ; B[i] = A[pi[i]], which is the lane-index form of
 ; B[y, 2x+3y] = A[x, y].
-; Returns: Int
-(defn keccak-pi-table ((arena Int))
+; Returns: Words
+(defn keccak-pi-table ((arena Arena))
   (let p (w-alloc arena 25)
     (begin
       (w-set p 0 0)
@@ -131,7 +131,7 @@
 ; theta: each lane is XORed with the parity of the two neighbouring
 ; columns, one of them rotated by 1.
 ; Returns: Int
-(defn keccak-theta ((st Int) (c Int) (d Int))
+(defn keccak-theta ((st Words) (c Words) (d Words))
   (begin
     (for (x 0) (< x 5)
       (begin
@@ -148,7 +148,7 @@
     0))
 
 ; Returns: Int
-(defn keccak-column-parity ((st Int) (x Int))
+(defn keccak-column-parity ((st Words) (x Int))
   (let a (bit-xor (w-get st x) (w-get st (+ x 5)))
     (let b (bit-xor (w-get st (+ x 10)) (w-get st (+ x 15)))
       (bit-xor (bit-xor a b) (w-get st (+ x 20))))))
@@ -156,7 +156,7 @@
 ; rho and pi together: every lane is rotated by its own offset and
 ; moved to its permuted position.
 ; Returns: Int
-(defn keccak-rho-pi ((st Int) (b Int) (rho Int) (pi Int))
+(defn keccak-rho-pi ((st Words) (b Words) (rho Words) (pi Words))
   (begin
     (for (i 0) (< i 25)
       (begin
@@ -165,14 +165,14 @@
     0))
 
 ; Returns: Int
-(defn keccak-rho-pi-lane ((st Int) (b Int) (rho Int) (pi Int) (i Int))
+(defn keccak-rho-pi-lane ((st Words) (b Words) (rho Words) (pi Words) (i Int))
   (let src (w-get pi i)
     (w-set b i (rotl64 (w-get st src) (w-get rho src)))))
 
 ; chi: the only non-linear step -- each lane is combined with the two
 ; lanes to its right in the same row.
 ; Returns: Int
-(defn keccak-chi ((st Int) (b Int))
+(defn keccak-chi ((st Words) (b Words))
   (begin
     (for (y 0) (< y 5)
       (begin
@@ -181,7 +181,7 @@
     0))
 
 ; Returns: Int
-(defn keccak-chi-row ((st Int) (b Int) (base Int))
+(defn keccak-chi-row ((st Words) (b Words) (base Int))
   (begin
     (for (x 0) (< x 5)
       (begin
@@ -190,14 +190,14 @@
     0))
 
 ; Returns: Int
-(defn keccak-chi-lane ((st Int) (b Int) (base Int) (x Int))
+(defn keccak-chi-lane ((st Words) (b Words) (base Int) (x Int))
   (let n1 (w-get b (+ base (% (+ x 1) 5)))
     (let n2 (w-get b (+ base (% (+ x 2) 5)))
       (w-set st (+ base x) (bit-xor (w-get b (+ base x)) (bit-and (bit-not n1) n2))))))
 
 ; One round: theta, rho+pi, chi, iota.
 ; Returns: Int
-(defn keccak-round ((st Int) (b Int) (c Int) (d Int) (rho Int) (pi Int) (rc Int) (i Int))
+(defn keccak-round ((st Words) (b Words) (c Words) (d Words) (rho Words) (pi Words) (rc Words) (i Int))
   (begin
     (keccak-theta st c d)
     (keccak-rho-pi st b rho pi)
@@ -207,7 +207,7 @@
 
 ; Keccak-f[1600]: 24 rounds over the 25-lane state, in place.
 ; Returns: Int
-(defn keccak-f ((arena Int) (st Int) (rho Int) (pi Int) (rc Int))
+(defn keccak-f ((arena Arena) (st Words) (rho Words) (pi Words) (rc Words))
   (let b (w-alloc arena 25)
     (let c (w-alloc arena 5)
       (let d (w-alloc arena 5)
@@ -224,14 +224,14 @@
 
 ; Read a little-endian 64-bit lane from 8 message bytes.
 ; Returns: Int
-(defn keccak-le64 ((buf Int) (off Int))
+(defn keccak-le64 ((buf Words) (off Int))
   (let lo (le-pack32 (w-get buf off) (w-get buf (+ off 1)) (w-get buf (+ off 2)) (w-get buf (+ off 3)))
     (let hi (le-pack32 (w-get buf (+ off 4)) (w-get buf (+ off 5)) (w-get buf (+ off 6)) (w-get buf (+ off 7)))
       (bit-or (shl hi 32) lo))))
 
 ; XOR one rate-sized block into the state and permute.
 ; Returns: Int
-(defn keccak-absorb-block ((arena Int) (st Int) (blk Int) (off Int) (rate Int) (rho Int) (pi Int) (rc Int))
+(defn keccak-absorb-block ((arena Arena) (st Words) (blk Words) (off Int) (rate Int) (rho Words) (pi Words) (rc Words))
   (begin
     (for (i 0) (< (* i 8) rate)
       (begin
@@ -243,8 +243,8 @@
 ; The padded message: pad10*1 with the domain-separation suffix folded
 ; into the first pad byte (0x06 for SHA-3, 0x1f for SHAKE -- FIPS 202
 ; s6.1/s6.2), and the high bit of the last byte set.
-; Returns: Int
-(defn keccak-pad ((arena Int) (msg Int) (len Int) (rate Int) (suffix Int))
+; Returns: Words
+(defn keccak-pad ((arena Arena) (msg Words) (len Int) (rate Int) (suffix Int))
   (let total (keccak-padded-len len rate)
     (let p (w-alloc arena total)
       (begin
@@ -260,8 +260,8 @@
   (* (+ (/ len rate) 1) rate))
 
 ; Squeeze `outlen` bytes out of the state, permuting between blocks.
-; Returns: Int
-(defn keccak-squeeze ((arena Int) (st Int) (rate Int) (outlen Int) (rho Int) (pi Int) (rc Int))
+; Returns: Words
+(defn keccak-squeeze ((arena Arena) (st Words) (rate Int) (outlen Int) (rho Words) (pi Words) (rc Words))
   (let out (w-alloc arena (+ outlen rate))
     (begin
       (for (off 0) (< off outlen)
@@ -274,7 +274,7 @@
       out)))
 
 ; Returns: Int
-(defn keccak-squeeze-block ((st Int) (out Int) (off Int) (rate Int))
+(defn keccak-squeeze-block ((st Words) (out Words) (off Int) (rate Int))
   (begin
     (for (i 0) (< (* i 8) rate)
       (begin
@@ -283,7 +283,7 @@
     0))
 
 ; Returns: Int
-(defn keccak-put-lane ((out Int) (off Int) (v Int))
+(defn keccak-put-lane ((out Words) (off Int) (v Int))
   (begin
     (for (j 0) (< j 8)
       (begin
@@ -293,8 +293,8 @@
 
 ; The full sponge: absorb the padded message at the given rate, then
 ; squeeze `outlen` bytes.
-; Returns: Int
-(defn keccak-sponge ((arena Int) (msg Int) (len Int) (rate Int) (suffix Int) (outlen Int))
+; Returns: Words
+(defn keccak-sponge ((arena Arena) (msg Words) (len Int) (rate Int) (suffix Int) (outlen Int))
   (let st (w-alloc arena 25)
     (let rho (keccak-rho-table arena)
       (let pi (keccak-pi-table arena)
@@ -313,31 +313,31 @@
 ; ===========================================================================
 
 ; SHA3-256: rate 136 bytes (1088 bits), 32-byte digest.
-; Returns: Int
-(defn sha3-256-bytes ((arena Int) (msg Int) (len Int))
+; Returns: Words
+(defn sha3-256-bytes ((arena Arena) (msg Words) (len Int))
   (keccak-sponge arena msg len 136 6 32))
 
 ; SHA3-512: rate 72 bytes (576 bits), 64-byte digest.
-; Returns: Int
-(defn sha3-512-bytes ((arena Int) (msg Int) (len Int))
+; Returns: Words
+(defn sha3-512-bytes ((arena Arena) (msg Words) (len Int))
   (keccak-sponge arena msg len 72 6 64))
 
 ; SHAKE128: rate 168 bytes, caller-chosen output length.
-; Returns: Int
-(defn shake128-bytes ((arena Int) (msg Int) (len Int) (outlen Int))
+; Returns: Words
+(defn shake128-bytes ((arena Arena) (msg Words) (len Int) (outlen Int))
   (keccak-sponge arena msg len 168 31 outlen))
 
 ; SHAKE256: rate 136 bytes, caller-chosen output length.
-; Returns: Int
-(defn shake256-bytes ((arena Int) (msg Int) (len Int) (outlen Int))
+; Returns: Words
+(defn shake256-bytes ((arena Arena) (msg Words) (len Int) (outlen Int))
   (keccak-sponge arena msg len 136 31 outlen))
 
 ; Returns: String
-(defn sha3-256-hex-of-string ((arena Int) (s String))
+(defn sha3-256-hex-of-string ((arena Arena) (s String))
   (let msg (w-from-string arena s)
     (w-hex-bytes (sha3-256-bytes arena msg (w-string-len s)) 32)))
 
 ; Returns: String
-(defn sha3-512-hex-of-string ((arena Int) (s String))
+(defn sha3-512-hex-of-string ((arena Arena) (s String))
   (let msg (w-from-string arena s)
     (w-hex-bytes (sha3-512-bytes arena msg (w-string-len s)) 64)))

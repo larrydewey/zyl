@@ -32,7 +32,7 @@
 (use compiler/exhaustiveness_check)
 (use compiler/unused_check)
 (use compiler/secret_check)
-(use compiler/monomorphization)
+(use compiler/lift_impls)
 (use compiler/region_inference)
 (use compiler/icnf)
 (use compiler/closure_inline)

@@ -21,7 +21,7 @@
 ; every real dependency actually declared for the module resolver to
 ; pull it in - this was an undefined `f_str_drop` reference at link
 ; time otherwise.
-(use compiler/monomorphization)
+(use compiler/lift_impls)
 (use compiler/type_annotate)
 (use compiler/arity_check)
 
@@ -1218,8 +1218,8 @@
   (let tag (vt-tag-of vt (str-intern arena fname))
     (if (> tag -1)
       (IVariant (str-intern arena fname) tag (ic-expr-list arena args vt))
-      (let impls (ffi-call "zyl_smap_get" (ffi-call "zyl_smap_global" 1 1000) fname 1000)
-        (if (= impls 0)
+      (let impls (ffi-call "zyl_smap_get_or" ta-impl-table fname Nil 1000)
+        (if (is-nil impls)
           (ic-plain-call arena fname args vt)
           (ic-trait-dispatch arena impls args vt))))))
 

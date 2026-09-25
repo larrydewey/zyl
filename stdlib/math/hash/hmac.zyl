@@ -26,16 +26,16 @@
 
 ; The 64-byte key block K0: the key itself when it fits, its digest
 ; when it does not, zero-padded either way.
-; Returns: Int
-(defn hmac-key-block ((arena Int) (key Int) (keylen Int))
+; Returns: Words
+(defn hmac-key-block ((arena Arena) (key Words) (keylen Int))
   (let k0 (w-alloc arena 64)
     (if (> keylen 64)
       (w-copy k0 (sha256-bytes arena key keylen) 32)
       (w-copy k0 key keylen))))
 
 ; k0 XOR a repeated pad byte, as a fresh 64-byte array.
-; Returns: Int
-(defn hmac-xor-pad ((arena Int) (k0 Int) (pad Int))
+; Returns: Words
+(defn hmac-xor-pad ((arena Arena) (k0 Words) (pad Int))
   (let out (w-alloc arena 64)
     (begin
       (for (i 0) (< i 64)
@@ -43,8 +43,8 @@
       out)))
 
 ; Concatenate two byte arrays into a fresh one.
-; Returns: Int
-(defn hmac-concat ((arena Int) (a Int) (alen Int) (b Int) (blen Int))
+; Returns: Words
+(defn hmac-concat ((arena Arena) (a Words) (alen Int) (b Words) (blen Int))
   (let out (w-alloc arena (+ alen blen))
     (begin
       (w-copy out a alen)
@@ -53,8 +53,8 @@
       out)))
 
 ; HMAC-SHA256 tag (32 bytes).
-; Returns: Int
-(defn hmac-sha256 ((arena Int) (key Int) (keylen Int) (msg Int) (msglen Int))
+; Returns: Words
+(defn hmac-sha256 ((arena Arena) (key Words) (keylen Int) (msg Words) (msglen Int))
   (let k0 (hmac-key-block arena key keylen)
     (let inner-key (hmac-xor-pad arena k0 54)
       (let outer-key (hmac-xor-pad arena k0 92)
@@ -65,6 +65,6 @@
 
 ; Constant-time tag verification.
 ; Returns: Bool
-(defn hmac-sha256-verify ((arena Int) (key Int) (keylen Int) (msg Int) (msglen Int) (tag Int))
+(defn hmac-sha256-verify ((arena Arena) (key Words) (keylen Int) (msg Words) (msglen Int) (tag Words))
   (let computed (hmac-sha256 arena key keylen msg msglen)
     (ct-eq-words-bool computed tag 32)))

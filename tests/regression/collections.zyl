@@ -6,45 +6,45 @@
 
 ; Vec basic operations
 (test "vec-create"
-  (assert-equal (vec-len (vec-create 0 10)) 0))
+  (assert-equal (vec-len (vec-create-default 10)) 0))
 (test "vec-len"
-  (assert-equal (vec-len (vec-create 0 10)) 0))
+  (assert-equal (vec-len (vec-create-default 10)) 0))
 (test "vec-cap"
-  (assert-equal (vec-cap (vec-create 0 10)) 10))
+  (assert-equal (vec-cap (vec-create-default 10)) 10))
 (test "vec-set"
-  (assert-equal (vec-get (vec-set (vec-create 0 10) 0 42) 0) 42))
+  (assert-equal (vec-get (vec-set (vec-create-default 10) 0 42) 0) 42))
 (test "vec-get-oob"
-  (assert-equal (vec-get (vec-create 0 10) 99) -1))
+  (assert-equal (vec-get-or (vec-create-default 10) 99 -1) -1))
 (test "vec-push"
-  (assert-equal (vec-len (vec-push (vec-create 0 10) 1)) 1))
+  (assert-equal (vec-len (vec-push (vec-create-default 10) 1)) 1))
 (test "vec-push-2"
-  (assert-equal (vec-len (vec-push (vec-push (vec-create 0 10) 1) 2)) 2))
+  (assert-equal (vec-len (vec-push (vec-push (vec-create-default 10) 1) 2)) 2))
 (test "vec-pop"
-  (assert-equal (vec-len (vec-pop (vec-push (vec-create 0 10) 42))) 0))
+  (assert-equal (vec-len (vec-pop (vec-push (vec-create-default 10) 42))) 0))
 (test "vec-pop-empty"
-  (assert-equal (vec-len (vec-pop (vec-create 0 10))) 0))
+  (assert-equal (vec-len (vec-pop (vec-create-default 10))) 0))
 
 ; Map basic operations
 (test "map-create"
-  (assert-equal (map-len (map-create 0 10)) 0))
+  (assert-equal (map-len (map-create-default 10)) 0))
 (test "map-len"
-  (assert-equal (map-len (map-create 0 10)) 0))
+  (assert-equal (map-len (map-create-default 10)) 0))
 (test "map-put"
-  (assert-equal (map-len (map-put (map-create 0 10) 1 42)) 1))
+  (assert-equal (map-len (map-put (map-create-default 10) 1 42)) 1))
 (test "map-get"
-  (assert-equal (map-get (map-put (map-create 0 10) 1 42) 1 0) 42))
+  (assert-equal (map-get (map-put (map-create-default 10) 1 42) 1 0) 42))
 (test "map-get-miss"
-  (assert-equal (map-get (map-create 0 10) 99 0) 0))
+  (assert-equal (map-get (map-create-default 10) 99 0) 0))
 (test "map-has-y"
-  (assert-true (map-has (map-put (map-create 0 10) 1 42) 1)))
+  (assert-true (map-has (map-put (map-create-default 10) 1 42) 1)))
 (test "map-has-n"
-  (assert-false (map-has (map-create 0 10) 99)))
+  (assert-false (map-has (map-create-default 10) 99)))
 (test "map-remove"
-  (assert-equal (map-len (map-remove (map-put (map-create 0 10) 1 42) 1)) 0))
+  (assert-equal (map-len (map-remove (map-put (map-create-default 10) 1 42) 1)) 0))
 ; map-remove used to allocate new-len slots but keep the old cap, so the
 ; puts that followed wrote past the new arrays and corrupted other keys.
 (test "map-remove-then-put"
-  (let m (map-put (map-put (map-put (map-remove (map-put (map-put (map-create 0 4) 1 10) 2 20) 2) 3 30) 4 40) 5 50)
+  (let m (map-put (map-put (map-put (map-remove (map-put (map-put (map-create-default 4) 1 10) 2 20) 2) 3 30) 4 40) 5 50)
     (begin
       (assert-equal (map-get m 1 0) 10)
       (assert-equal (map-get m 3 0) 30)
@@ -53,7 +53,7 @@
       (assert-false (map-has m 2))
       (assert-equal (map-len m) 4))))
 (test "map-remove-to-empty-then-put"
-  (let m (map-put (map-put (map-remove (map-put (map-create 0 1) 7 70) 7) 8 80) 9 90)
+  (let m (map-put (map-put (map-remove (map-put (map-create-default 1) 7 70) 7) 8 80) 9 90)
     (begin
       (assert-equal (map-get m 8 0) 80)
       (assert-equal (map-get m 9 0) 90)
@@ -61,30 +61,30 @@
 ; map-put used to look for an existing key only in slot 0, so overwriting
 ; any other key appended a duplicate entry.
 (test "map-put-overwrite-not-first"
-  (let m (map-put (map-put (map-put (map-create 0 4) 1 10) 2 20) 2 99)
+  (let m (map-put (map-put (map-put (map-create-default 4) 1 10) 2 20) 2 99)
     (begin
       (assert-equal (map-len m) 2)
       (assert-equal (map-get m 2 0) 99)
       (assert-equal (map-len (map-remove m 2)) 1)
       (assert-false (map-has (map-remove m 2) 2)))))
 (test "map-put-zero-key-empty"
-  (assert-equal (map-len (map-put (map-create 0 4) 0 5)) 1))
+  (assert-equal (map-len (map-put (map-create-default 4) 0 5)) 1))
 
 ; Set basic operations
 (test "set-create"
-  (assert-equal (set-len (set-create 0 10)) 0))
+  (assert-equal (set-len (set-create-default 10)) 0))
 (test "set-len"
-  (assert-equal (set-len (set-create 0 10)) 0))
+  (assert-equal (set-len (set-create-default 10)) 0))
 (test "set-add"
-  (assert-equal (set-len (set-add (set-create 0 10) 42)) 1))
+  (assert-equal (set-len (set-add (set-create-default 10) 42)) 1))
 (test "set-add-dup"
-  (assert-equal (set-len (set-add (set-add (set-create 0 10) 42) 42)) 1))
+  (assert-equal (set-len (set-add (set-add (set-create-default 10) 42) 42)) 1))
 (test "set-has-y"
-  (assert-true (set-contains (set-add (set-create 0 10) 42) 42)))
+  (assert-true (set-contains (set-add (set-create-default 10) 42) 42)))
 (test "set-has-n"
-  (assert-false (set-contains (set-create 0 10) 42)))
+  (assert-false (set-contains (set-create-default 10) 42)))
 (test "set-remove"
-  (assert-equal (set-len (set-remove (set-add (set-create 0 10) 42) 42)) 0))
+  (assert-equal (set-len (set-remove (set-add (set-create-default 10) 42) 42)) 0))
 
 ; Allocator operations
 (test "alloc-malloc"
@@ -111,7 +111,7 @@
   (let a (arena-create 0)
     (begin
       (assert-equal (vec-get (vec-push (vec-create a 0) 5) 0) 5)
-      (assert-equal (vec-get (vec-push (vec-create 0 -3) 7) 0) 7)
+      (assert-equal (vec-get (vec-push (vec-create-default -3) 7) 0) 7)
       (assert-equal (vec-len (vec-push (vec-push (vec-create a -1) 1) 2)) 2)
       (arena-destroy a)
       0)))

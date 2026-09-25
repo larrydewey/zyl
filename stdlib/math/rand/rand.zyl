@@ -29,7 +29,7 @@
 
 ; Assemble a 64-bit value from 8 bytes held one-per-word, little-endian.
 ; Returns: Int
-(defn rand-u64-from-bytes ((buf Int) (off Int))
+(defn rand-u64-from-bytes ((buf Words) (off Int))
   (let lo (le-pack32 (w-get buf off) (w-get buf (+ off 1)) (w-get buf (+ off 2)) (w-get buf (+ off 3)))
     (let hi (le-pack32 (w-get buf (+ off 4)) (w-get buf (+ off 5)) (w-get buf (+ off 6)) (w-get buf (+ off 7)))
       (bit-or (shl hi 32) lo))))

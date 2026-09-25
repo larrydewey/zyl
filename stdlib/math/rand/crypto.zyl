@@ -25,26 +25,26 @@
 ; Fill `n` bytes (one per word) at `out` with kernel entropy.
 ; Returns the byte count, or -1 on failure.
 ; Returns: Int
-(defn sysrng-fill ((out Int) (n Int))
+(defn sysrng-fill ((out Words) (n Int))
   (ffi-call "zyl_random_words" out n 1000))
 
 ; A fresh array of `n` random bytes, or None if entropy failed.
-; Returns: Option
-(defn sysrng-bytes ((arena Int) (n Int))
+; Returns: (Option Words)
+(defn sysrng-bytes ((arena Arena) (n Int))
   (let out (w-alloc arena n)
     (if (= (sysrng-fill out n) n)
       (Some out)
       None)))
 
 ; A random 64-bit value, or None if entropy failed.
-; Returns: Option
-(defn sysrng-next-u64 ((arena Int))
+; Returns: (Option Int)
+(defn sysrng-next-u64 ((arena Arena))
   (let buf (w-alloc arena 8)
     (if (= (sysrng-fill buf 8) 8)
       (Some (rand-u64-from-bytes buf 0))
       None)))
 
 ; A random 32-byte key, the shape most of this library wants.
-; Returns: Option
-(defn sysrng-key32 ((arena Int))
+; Returns: (Option Words)
+(defn sysrng-key32 ((arena Arena))
   (sysrng-bytes arena 32))

@@ -35,8 +35,8 @@
 
 ; The first 32 bytes of ChaCha20 block 0 under (key, nonce)
 ; (RFC 8439 s2.6). The remaining 32 bytes of that block are discarded.
-; Returns: Int
-(defn aead-poly-key ((arena Int) (key Int) (nonce Int))
+; Returns: Words
+(defn aead-poly-key ((arena Arena) (key Words) (nonce Words))
   (let blk (chacha20-block arena key nonce 0)
     (let pk (w-alloc arena 32)
       (begin
@@ -65,8 +65,8 @@
 ; Build that input. The two length fields are 64-bit little-endian and
 ; are what stops an attacker shifting bytes between the associated data
 ; and the ciphertext while keeping the concatenation identical.
-; Returns: Int
-(defn aead-mac-input ((arena Int) (aad Int) (aadlen Int) (ct Int) (ctlen Int))
+; Returns: Words
+(defn aead-mac-input ((arena Arena) (aad Words) (aadlen Int) (ct Words) (ctlen Int))
   (let total (aead-mac-len aadlen ctlen)
     (let buf (w-alloc arena total)
       (let capos (+ aadlen (aead-pad16 aadlen))
@@ -79,7 +79,7 @@
 
 ; Copy n bytes into dst starting at `off`.
 ; Returns: Int
-(defn aead-copy-at ((dst Int) (off Int) (src Int) (n Int))
+(defn aead-copy-at ((dst Words) (off Int) (src Words) (n Int))
   (begin
     (for (i 0) (< i n)
       (begin (w-set dst (+ off i) (w-get src i)) (set! i (+ i 1))))
@@ -87,7 +87,7 @@
 
 ; Write a 64-bit little-endian length.
 ; Returns: Int
-(defn aead-put64 ((buf Int) (off Int) (v Int))
+(defn aead-put64 ((buf Words) (off Int) (v Int))
   (begin
     (for (i 0) (< i 8)
       (begin
@@ -101,8 +101,8 @@
 
 ; Encrypt and authenticate. Returns a byte array of `ptlen + 16` bytes:
 ; the ciphertext followed by the tag.
-; Returns: Int
-(defn aead-encrypt ((arena Int) (key Int) (nonce Int) (aad Int) (aadlen Int) (pt Int) (ptlen Int))
+; Returns: Words
+(defn aead-encrypt ((arena Arena) (key Words) (nonce Words) (aad Words) (aadlen Int) (pt Words) (ptlen Int))
   (let pk (aead-poly-key arena key nonce)
     (let ct (chacha20-xor arena key nonce 1 pt ptlen)
       (let macin (aead-mac-input arena aad aadlen ct ptlen)
@@ -114,8 +114,8 @@
               out)))))))
 
 ; The tag Poly1305 would produce for this (key, nonce, aad, ciphertext).
-; Returns: Int
-(defn aead-expected-tag ((arena Int) (key Int) (nonce Int) (aad Int) (aadlen Int) (ct Int) (ctlen Int))
+; Returns: Words
+(defn aead-expected-tag ((arena Arena) (key Words) (nonce Words) (aad Words) (aadlen Int) (ct Words) (ctlen Int))
   (let pk (aead-poly-key arena key nonce)
     (let macin (aead-mac-input arena aad aadlen ct ctlen)
       (poly1305-mac arena pk macin (aead-mac-len aadlen ctlen)))))
@@ -129,8 +129,8 @@
 ; deliberate branch on a secret-derived value in this module, and it
 ; reveals only the accept/reject bit the caller is about to learn
 ; anyway.
-; Returns: Option
-(defn aead-decrypt ((arena Int) (key Int) (nonce Int) (aad Int) (aadlen Int) (sealed Int) (ctlen Int))
+; Returns: (Option Words)
+(defn aead-decrypt ((arena Arena) (key Words) (nonce Words) (aad Words) (aadlen Int) (sealed Words) (ctlen Int))
   (let expect (aead-expected-tag arena key nonce aad aadlen sealed ctlen)
     (let given (aead-tag-of arena sealed ctlen)
       (if (ct-eq-words-bool expect given 16)
@@ -138,8 +138,8 @@
         None))))
 
 ; The trailing 16 tag bytes of a sealed message, as their own array.
-; Returns: Int
-(defn aead-tag-of ((arena Int) (sealed Int) (ctlen Int))
+; Returns: Words
+(defn aead-tag-of ((arena Arena) (sealed Words) (ctlen Int))
   (let t (w-alloc arena 16)
     (begin
       (for (i 0) (< i 16)

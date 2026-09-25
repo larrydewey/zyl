@@ -32,7 +32,7 @@
     (assert-equal (vec-get v 2) 3)))
 
 (test "alias-in-map"
-  (let m (map-create 0 10)
+  (let m (map-create-default 10)
     (let m1 (map-put m 42 999)
       (assert-equal (map-get m1 42 0) 999))))
 

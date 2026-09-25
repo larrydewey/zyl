@@ -1853,6 +1853,33 @@ long long zyl_smap_get(long long mh, long long key) {
     return 0;
 }
 
+/* Whether `key` is present, and the value or a default: the typed API
+   (compiler/ffi_sigs) for maps whose values are not Ints, where 0 is not
+   a value of the type and so cannot mean "absent". */
+long long zyl_smap_has(long long mh, long long key) {
+    ZylSmap* m = (ZylSmap*)(size_t)mh;
+    const char* k = (const char*)(size_t)key;
+    if (!m || !k || !m->cap) return 0;
+    size_t i = zyl_smap_hash(k) & (m->cap - 1);
+    while (m->slots[i].key) {
+        if (strcmp(m->slots[i].key, k) == 0) return 1;
+        i = (i + 1) & (m->cap - 1);
+    }
+    return 0;
+}
+
+long long zyl_smap_get_or(long long mh, long long key, long long dflt) {
+    ZylSmap* m = (ZylSmap*)(size_t)mh;
+    const char* k = (const char*)(size_t)key;
+    if (!m || !k || !m->cap) return dflt;
+    size_t i = zyl_smap_hash(k) & (m->cap - 1);
+    while (m->slots[i].key) {
+        if (strcmp(m->slots[i].key, k) == 0) return m->slots[i].val;
+        i = (i + 1) & (m->cap - 1);
+    }
+    return dflt;
+}
+
 long long zyl_smap_clear(long long mh) {
     ZylSmap* m = (ZylSmap*)(size_t)mh;
     if (!m) return 0;
@@ -1884,9 +1911,15 @@ long long zyl_wvec_push(long long vh, long long x) {
     return v->len++;
 }
 
+/* Out of range is an error, not 0: a typed vector of ADT values has no
+   0 among its values. */
 long long zyl_wvec_get(long long vh, long long i) {
     ZylWvec* v = (ZylWvec*)(size_t)vh;
-    if (!v || i < 0 || i >= v->len) return 0;
+    if (!v || i < 0 || i >= v->len) {
+        char* m = (char*)malloc(128);
+        snprintf(m, 128, "E_INDEX_OUT_OF_BOUNDS: vector index %lld outside length %lld", i, v ? v->len : 0);
+        zyl_panic(m);
+    }
     return v->data[i];
 }
 
@@ -1904,7 +1937,7 @@ long long zyl_wvec_len(long long vh) {
 
 long long zyl_wvec_pop(long long vh) {
     ZylWvec* v = (ZylWvec*)(size_t)vh;
-    if (!v || v->len <= 0) return 0;
+    if (!v || v->len <= 0) zyl_panic("E_INDEX_OUT_OF_BOUNDS: pop from an empty vector");
     return v->data[--v->len];
 }
 
@@ -2655,14 +2688,19 @@ long long zyl_cpuid_features(void) {
 
 long long zyl_aesni_available(void) { return (zyl_cpuid_features() & 1) ? 1 : 0; }
 
+static long long* zyl_words_data(long long h);
+long long zyl_words_len(long long h);
+static void zyl_words_oob(const char* who, long long i, long long len);
 /* Pack 16 one-byte-per-word Ints into a 16-byte block. */
 static void zyl_words_to_block(long long base, unsigned char* out) {
-    const long long* w = (const long long*)(size_t)base;
+    if (zyl_words_len(base) < 16) zyl_words_oob("aes block", 15, zyl_words_len(base));
+    const long long* w = zyl_words_data(base);
     for (int i = 0; i < 16; i++) out[i] = (unsigned char)(w[i] & 0xff);
 }
 
 static void zyl_block_to_words(const unsigned char* in, long long base) {
-    long long* w = (long long*)(size_t)base;
+    if (zyl_words_len(base) < 16) zyl_words_oob("aes block", 15, zyl_words_len(base));
+    long long* w = zyl_words_data(base);
     for (int i = 0; i < 16; i++) w[i] = (long long)in[i];
 }
 
@@ -2765,7 +2803,8 @@ long long zyl_aes_encrypt_block(long long keybase, long long keybytes,
     if (keybytes != 16 && keybytes != 32) return 0;
     unsigned char key[32], in[16], out[16];
     __m128i rk[15];
-    long long* kw = (long long*)(size_t)keybase;
+    if (keybytes < 0 || zyl_words_len(keybase) < keybytes) zyl_words_oob("aes key", keybytes - 1, zyl_words_len(keybase));
+    long long* kw = zyl_words_data(keybase);
     for (long long i = 0; i < keybytes; i++) key[i] = (unsigned char)(kw[i] & 0xff);
     zyl_words_to_block(inbase, in);
     int rounds = zyl_aes_expand(key, (int)keybytes, rk);
@@ -2813,7 +2852,8 @@ long long zyl_aes_encrypt_block(long long keybase, long long keybytes,
 long long zyl_random_words(long long base, long long n) {
     if (!base || n <= 0) return -1;
     unsigned char buf[256];
-    long long* out = (long long*)(size_t)base;
+    long long* out = zyl_words_data(base);
+    if (n > zyl_words_len(base)) zyl_words_oob("random-words", n - 1, zyl_words_len(base));
     long long done = 0;
     while (done < n) {
         size_t want = (size_t)(n - done);
@@ -4520,7 +4560,7 @@ long long zyl_int_text(long long n) {
     X(zyl_load_n) X(zyl_load_n_signed) X(zyl_store_n) \
     X(zyl_global_get) X(zyl_global_put) X(zyl_global_ready) X(zyl_global_clear) \
     X(zyl_repl_global_get) X(zyl_repl_global_set) \
-    X(zyl_uf_reset) X(zyl_uf_new) X(zyl_uf_find) X(zyl_uf_union) X(zyl_uf_raise) X(zyl_uf_level) X(zyl_regions_enabled) X(zyl_heap_alloc) X(zyl_ralloc) X(zyl_region_enter) X(zyl_region_exit) X(zyl_region_free) X(zyl_region_scope_enter) X(zyl_region_live_bytes) X(zyl_heap_block_p) X(zyl_heap_swap) \
+    X(zyl_uf_reset) X(zyl_uf_new) X(zyl_uf_find) X(zyl_uf_union) X(zyl_uf_raise) X(zyl_uf_level) X(zyl_regions_enabled) X(zyl_words_new) X(zyl_words_len) X(zyl_words_get) X(zyl_words_set) X(zyl_words_view) X(zyl_smap_has) X(zyl_smap_get_or) X(zyl_array_new) X(zyl_array_cap) X(zyl_array_filled) X(zyl_array_get) X(zyl_array_set) X(zyl_attrh_new) X(zyl_attrh_set) X(zyl_attrh_get_or) X(zyl_attrh_has) X(zyl_attrh_copy) X(zyl_attrh_clear) X(zyl_ref_new) X(zyl_ref_get) X(zyl_ref_set) X(zyl_getenv_str) X(zyl_heap_alloc) X(zyl_ralloc) X(zyl_region_enter) X(zyl_region_exit) X(zyl_region_free) X(zyl_region_scope_enter) X(zyl_region_live_bytes) X(zyl_heap_block_p) X(zyl_heap_swap) \
     X(zyl_int_text) X(zyl_itest_add) X(zyl_itest_count) \
     X(zyl_itest_fn) X(zyl_itest_name) X(zyl_itest_outcome) \
     X(zyl_itest_reset) X(zyl_itest_start) X(zyl_itest_summary) \
@@ -4929,3 +4969,207 @@ long long zyl_bytebuf_new_r(long long region, long long cap) {
 static long long g_cells[16];
 long long zyl_cell_get(long long i) { return (i >= 0 && i < 16) ? g_cells[i] : 0; }
 long long zyl_cell_set(long long i, long long v) { if (i >= 0 && i < 16) g_cells[i] = v; return 0; }
+
+/* ==========================================================================
+   Word arrays (math/words): a bounds-checked handle instead of a raw base
+   address, so no Zyl code does address arithmetic (docs/sound-types-
+   design.md). A handle is {magic, length, data}; a view shares its
+   parent's data. Out-of-range access is E_INDEX_OUT_OF_BOUNDS.
+   ========================================================================== */
+#define ZYL_WORDS_MAGIC 0x5A594C574F524453LL  /* "ZYLWORDS" */
+typedef struct { long long magic; long long len; long long* data; } ZylWords;
+
+static ZylWords* zyl_words_of(long long h, const char* who) {
+    ZylWords* w = (ZylWords*)(size_t)h;
+    if (h < ZYL_MIN_CALL_ADDR || (h & 7) || w->magic != ZYL_WORDS_MAGIC) {
+        char m[128];
+        snprintf(m, sizeof m, "E_INDEX_OUT_OF_BOUNDS: %s: not a word array", who);
+        zyl_panic(strdup(m));
+    }
+    return w;
+}
+
+static void zyl_words_oob(const char* who, long long i, long long len) {
+    char* m = (char*)malloc(160);
+    snprintf(m, 160, "E_INDEX_OUT_OF_BOUNDS: %s: index %lld outside a word array of length %lld", who, i, len);
+    zyl_panic(m);
+}
+
+/* `n` zeroed words from `arena`. */
+long long zyl_words_new(long long arena, long long n) {
+    if (n < 0) n = 0;
+    ZylWords* w = (ZylWords*)(size_t)zyl_arena_alloc_zeroed(arena, (long long)sizeof(ZylWords));
+    long long* d = (long long*)(size_t)zyl_arena_alloc_zeroed(arena, (n > 0 ? n : 1) * 8);
+    if (!w || !d) zyl_panic("E_OUT_OF_MEMORY: word array");
+    w->magic = ZYL_WORDS_MAGIC;
+    w->len = n;
+    w->data = d;
+    return (long long)(size_t)w;
+}
+
+static long long* zyl_words_data(long long h) { return zyl_words_of(h, "words")->data; }
+long long zyl_words_len(long long h) { return zyl_words_of(h, "w-len")->len; }
+
+long long zyl_words_get(long long h, long long i) {
+    ZylWords* w = zyl_words_of(h, "w-get");
+    if (i < 0 || i >= w->len) zyl_words_oob("w-get", i, w->len);
+    return w->data[i];
+}
+
+long long zyl_words_set(long long h, long long i, long long v) {
+    ZylWords* w = zyl_words_of(h, "w-set");
+    if (i < 0 || i >= w->len) zyl_words_oob("w-set", i, w->len);
+    w->data[i] = v;
+    return v;
+}
+
+/* Words [off, off+len) of `h`, sharing its storage; the view's header is
+   allocated in `arena`. */
+long long zyl_words_view(long long arena, long long h, long long off, long long len) {
+    ZylWords* w = zyl_words_of(h, "w-view");
+    if (off < 0 || len < 0 || off > w->len || len > w->len - off) zyl_words_oob("w-view", off + len, w->len);
+    ZylWords* v = (ZylWords*)(size_t)zyl_arena_alloc_zeroed(arena, (long long)sizeof(ZylWords));
+    if (!v) zyl_panic("E_OUT_OF_MEMORY: word array view");
+    v->magic = ZYL_WORDS_MAGIC;
+    v->len = len;
+    v->data = w->data + off;
+    return (long long)(size_t)v;
+}
+
+/* ==========================================================================
+   Typed arrays (collections/vec): `(Array a)` in compiler/ffi_sigs. Slots
+   are filled contiguously from 0 -- a set may overwrite a filled slot or
+   append at `filled` -- and only filled slots can be read, so a slot that
+   was never written is never read as a value of the element type. Out of
+   range is E_INDEX_OUT_OF_BOUNDS. Storage comes from an arena.
+   ========================================================================== */
+#define ZYL_ARRAY_MAGIC 0x5A594C4152524159LL  /* "ZYLARRAY" */
+typedef struct { long long magic; long long cap; long long filled; long long* data; } ZylArray;
+
+static ZylArray* zyl_array_of(long long h, const char* who) {
+    ZylArray* a = (ZylArray*)(size_t)h;
+    if (h < ZYL_MIN_CALL_ADDR || (h & 7) || a->magic != ZYL_ARRAY_MAGIC) {
+        char* m = (char*)malloc(96);
+        snprintf(m, 96, "E_INDEX_OUT_OF_BOUNDS: %s: not an array", who);
+        zyl_panic(m);
+    }
+    return a;
+}
+
+long long zyl_array_new(long long arena, long long cap) {
+    if (cap < 0) cap = 0;
+    ZylArray* a = (ZylArray*)(size_t)zyl_arena_alloc_zeroed(arena, (long long)sizeof(ZylArray));
+    long long* d = (long long*)(size_t)zyl_arena_alloc_zeroed(arena, (cap > 0 ? cap : 1) * 8);
+    if (!a || !d) zyl_panic("E_OUT_OF_MEMORY: array");
+    a->magic = ZYL_ARRAY_MAGIC;
+    a->cap = cap;
+    a->filled = 0;
+    a->data = d;
+    return (long long)(size_t)a;
+}
+
+long long zyl_array_cap(long long h) { return zyl_array_of(h, "array-cap")->cap; }
+long long zyl_array_filled(long long h) { return zyl_array_of(h, "array-filled")->filled; }
+
+long long zyl_array_get(long long h, long long i) {
+    ZylArray* a = zyl_array_of(h, "array-get");
+    if (i < 0 || i >= a->filled) zyl_words_oob("array-get", i, a->filled);
+    return a->data[i];
+}
+
+long long zyl_array_set(long long h, long long i, long long v) {
+    ZylArray* a = zyl_array_of(h, "array-set");
+    if (i < 0 || i > a->filled || i >= a->cap) zyl_words_oob("array-set", i, a->filled);
+    a->data[i] = v;
+    if (i == a->filled) a->filled++;
+    return 0;
+}
+
+/* ==========================================================================
+   Typed side tables and cells (docs/sound-types-design.md). A handle-based
+   node-keyed attribute table, `(Attr k v)`: the index-based zyl_attr_* stay
+   for code the committed seed emitted. A `(Ref a)` is a one-word mutable
+   cell. zyl_getenv_str gives "" for an unset variable, never 0.
+   ========================================================================== */
+typedef struct { ZylAttrSlot* slots; size_t cap; size_t len; } ZylAttrTab;
+
+long long zyl_attrh_new(void) {
+    return (long long)(size_t)calloc(1, sizeof(ZylAttrTab));
+}
+
+static void zyl_attrh_grow(ZylAttrTab* t) {
+    size_t ncap = t->cap ? t->cap * 8 : 4096;
+    ZylAttrSlot* ns = (ZylAttrSlot*)calloc(ncap, sizeof(ZylAttrSlot));
+    if (!ns) zyl_arena_oom(ncap * sizeof(ZylAttrSlot), "attribute table");
+    for (size_t i = 0; i < t->cap; i++) {
+        if (!t->slots[i].key) continue;
+        size_t j = zyl_span_hash(t->slots[i].key) & (ncap - 1);
+        while (ns[j].key) j = (j + 1) & (ncap - 1);
+        ns[j] = t->slots[i];
+    }
+    free(t->slots);
+    t->slots = ns;
+    t->cap = ncap;
+}
+
+long long zyl_attrh_set(long long th, long long node, long long val) {
+    ZylAttrTab* t = (ZylAttrTab*)(size_t)th;
+    if (!t || !node) return 0;
+    if (t->len * 10 >= t->cap * 7) zyl_attrh_grow(t);
+    uintptr_t k = (uintptr_t)(size_t)node;
+    size_t m = t->cap - 1;
+    size_t i = zyl_span_hash(k) & m;
+    while (t->slots[i].key && t->slots[i].key != k) i = (i + 1) & m;
+    if (!t->slots[i].key) { t->slots[i].key = k; t->len++; }
+    t->slots[i].val = val;
+    return 0;
+}
+
+static ZylAttrSlot* zyl_attrh_find(ZylAttrTab* t, long long node) {
+    if (!t || !node || !t->cap) return NULL;
+    uintptr_t k = (uintptr_t)(size_t)node;
+    size_t m = t->cap - 1;
+    size_t i = zyl_span_hash(k) & m;
+    while (t->slots[i].key) {
+        if (t->slots[i].key == k) return &t->slots[i];
+        i = (i + 1) & m;
+    }
+    return NULL;
+}
+
+long long zyl_attrh_get_or(long long th, long long node, long long dflt) {
+    ZylAttrSlot* s = zyl_attrh_find((ZylAttrTab*)(size_t)th, node);
+    return s ? s->val : dflt;
+}
+
+long long zyl_attrh_has(long long th, long long node) {
+    return zyl_attrh_find((ZylAttrTab*)(size_t)th, node) ? 1 : 0;
+}
+
+long long zyl_attrh_copy(long long th, long long dst, long long src) {
+    ZylAttrSlot* s = zyl_attrh_find((ZylAttrTab*)(size_t)th, src);
+    if (s) zyl_attrh_set(th, dst, s->val);
+    return 0;
+}
+
+long long zyl_attrh_clear(long long th) {
+    ZylAttrTab* t = (ZylAttrTab*)(size_t)th;
+    if (!t || !t->cap) return 0;
+    memset(t->slots, 0, t->cap * sizeof(ZylAttrSlot));
+    t->len = 0;
+    return 0;
+}
+
+long long zyl_ref_new(long long v) {
+    long long* r = (long long*)malloc(sizeof(long long));
+    if (!r) zyl_arena_oom(8, "ref cell");
+    *r = v;
+    return (long long)(size_t)r;
+}
+long long zyl_ref_get(long long r) { return *(long long*)(size_t)r; }
+long long zyl_ref_set(long long r, long long v) { *(long long*)(size_t)r = v; return 0; }
+
+long long zyl_getenv_str(long long name) {
+    const char* v = name ? getenv((const char*)(size_t)name) : NULL;
+    return (long long)(size_t)(v ? v : "");
+}

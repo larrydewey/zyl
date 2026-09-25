@@ -37,19 +37,19 @@
 ; AES PRIMITIVE
 ; ===========================================================================
 
-; 1 when the CPU has AES-NI.
-; Returns: Int
+; True when the CPU has AES-NI.
+; Returns: Bool
 (defn aes-available ()
   (ffi-call "zyl_aesni_available" 1000))
 
-; Encrypt one 16-byte block. Returns the output array, or 0 if AES-NI
-; is unavailable or the key length is not 16 or 32 bytes.
-; Returns: Int
-(defn aes-encrypt-block ((arena Int) (key Int) (keylen Int) (blk Int))
+; Encrypt one 16-byte block. Returns Some(output array), or None if
+; AES-NI is unavailable or the key length is not 16 or 32 bytes.
+; Returns: (Option Words)
+(defn aes-encrypt-block ((arena Arena) (key Words) (keylen Int) (blk Words))
   (let out (w-alloc arena 16)
-    (if (= (ffi-call "zyl_aes_encrypt_block" key keylen blk out 1000) 1)
-      out
-      0)))
+    (if (ffi-call "zyl_aes_encrypt_block" key keylen blk out 1000)
+      (Some out)
+      None)))
 
 ; ===========================================================================
 ; GF(2^128) MULTIPLICATION FOR GHASH
@@ -67,8 +67,8 @@
 ; arrays. 128 iterations, every one of them performing the same work:
 ; the conditional XOR of V into Z and the conditional reduction after
 ; the shift are both masked, never branched.
-; Returns: Int
-(defn ghash-mul ((arena Int) (z Int) (x Int) (y Int))
+; Returns: Words
+(defn ghash-mul ((arena Arena) (z Words) (x Words) (y Words))
   (let v (w-alloc arena 2)
     (begin
       (w-set z 0 0)
@@ -81,7 +81,7 @@
       z)))
 
 ; Returns: Int
-(defn ghash-mul-step ((z Int) (v Int) (x Int) (i Int))
+(defn ghash-mul-step ((z Words) (v Words) (x Words) (i Int))
   (let bit (ghash-bit x i)
     (let m (ct-mask bit)
       (begin
@@ -92,7 +92,7 @@
 
 ; Bit `i` of a 128-bit value counting from the most significant end.
 ; Returns: Int
-(defn ghash-bit ((x Int) (i Int))
+(defn ghash-bit ((x Words) (i Int))
   (if (< i 64)
     (bit-and (shr (w-get x 0) (- 63 i)) 1)
     (bit-and (shr (w-get x 1) (- 127 i)) 1)))
@@ -100,7 +100,7 @@
 ; v = v >> 1, XORing in the reduction polynomial when a set bit fell
 ; off the bottom.
 ; Returns: Int
-(defn ghash-shift ((v Int))
+(defn ghash-shift ((v Words))
   (let lsb (bit-and (w-get v 1) 1)
     (let m (ct-mask lsb)
       (let hi (w-get v 0)
@@ -116,8 +116,8 @@
 ; ===========================================================================
 
 ; Load 16 bytes as a 2-word big-endian value.
-; Returns: Int
-(defn ghash-load ((arena Int) (buf Int) (off Int))
+; Returns: Words
+(defn ghash-load ((arena Arena) (buf Words) (off Int))
   (let out (w-alloc arena 2)
     (begin
       (w-set out 0 (ghash-load64 buf off))
@@ -125,18 +125,18 @@
       out)))
 
 ; Returns: Int
-(defn ghash-load64 ((buf Int) (off Int))
+(defn ghash-load64 ((buf Words) (off Int))
   (ghash-load64-loop buf off 0 0))
 
 ; Returns: Int
-(defn ghash-load64-loop ((buf Int) (off Int) (i Int) (acc Int))
+(defn ghash-load64-loop ((buf Words) (off Int) (i Int) (acc Int))
   (if (>= i 8)
     acc
     (ghash-load64-loop buf off (+ i 1) (bit-or (shl acc 8) (bit-and (w-get buf (+ off i)) 255)))))
 
 ; Write a 2-word value as 16 big-endian bytes.
 ; Returns: Int
-(defn ghash-store ((val Int) (out Int) (off Int))
+(defn ghash-store ((val Words) (out Words) (off Int))
   (begin
     (for (i 0) (< i 8)
       (begin
@@ -148,7 +148,7 @@
 ; y = (y XOR block) * H, the GHASH absorption step. A short final block
 ; is zero-padded, which is what SP 800-38D specifies.
 ; Returns: Int
-(defn ghash-absorb ((arena Int) (y Int) (h Int) (buf Int) (off Int) (n Int))
+(defn ghash-absorb ((arena Arena) (y Words) (h Words) (buf Words) (off Int) (n Int))
   (let blk (ghash-load-padded arena buf off n)
     (let tmp (w-alloc arena 2)
       (begin
@@ -158,8 +158,8 @@
         (w-copy y tmp 2)
         0))))
 
-; Returns: Int
-(defn ghash-load-padded ((arena Int) (buf Int) (off Int) (n Int))
+; Returns: Words
+(defn ghash-load-padded ((arena Arena) (buf Words) (off Int) (n Int))
   (let pad (w-alloc arena 16)
     (begin
       (for (i 0) (< i n)
@@ -168,7 +168,7 @@
 
 ; GHASH over a whole byte array, absorbing 16 bytes at a time.
 ; Returns: Int
-(defn ghash-bytes ((arena Int) (y Int) (h Int) (buf Int) (len Int))
+(defn ghash-bytes ((arena Arena) (y Words) (h Words) (buf Words) (len Int))
   (begin
     (for (off 0) (< off len)
       (begin
@@ -181,8 +181,8 @@
 ; ===========================================================================
 
 ; The pre-counter block J0 = IV || 0x00000001 for a 12-byte IV.
-; Returns: Int
-(defn gcm-j0 ((arena Int) (iv Int))
+; Returns: Words
+(defn gcm-j0 ((arena Arena) (iv Words))
   (let j (w-alloc arena 16)
     (begin
       (w-copy j iv 12)
@@ -190,8 +190,8 @@
       j)))
 
 ; A counter block: J0 with its low 32 bits replaced by `ctr`.
-; Returns: Int
-(defn gcm-counter ((arena Int) (j0 Int) (ctr Int))
+; Returns: Words
+(defn gcm-counter ((arena Arena) (j0 Words) (ctr Int))
   (let b (w-alloc arena 16)
     (begin
       (w-copy b j0 16)
@@ -211,22 +211,22 @@
 ; the tag computable from the ciphertext -- a total break, and an easy
 ; one to write by accident.
 ; Returns: Int
-(defn gcm-ctr-xor ((arena Int) (key Int) (keylen Int) (j0 Int) (start Int) (src Int) (dst Int) (len Int))
+(defn gcm-ctr-xor ((arena Arena) (key Words) (keylen Int) (j0 Words) (start Int) (src Words) (dst Words) (len Int))
   (gcm-ctr-loop arena key keylen j0 start src dst len 0))
 
 ; Returns: Int
-(defn gcm-ctr-loop ((arena Int) (key Int) (keylen Int) (j0 Int) (start Int) (src Int) (dst Int) (len Int) (off Int))
+(defn gcm-ctr-loop ((arena Arena) (key Words) (keylen Int) (j0 Words) (start Int) (src Words) (dst Words) (len Int) (off Int))
   (if (>= off len)
     1
-    (let ks (aes-encrypt-block arena key keylen (gcm-counter arena j0 (+ start (/ off 16))))
-      (if (= ks 0)
-        0
+    (match (aes-encrypt-block arena key keylen (gcm-counter arena j0 (+ start (/ off 16))))
+      (None 0)
+      (Some ks
         (begin
           (gcm-xor-block src dst ks off (if (< (- len off) 16) (- len off) 16))
           (gcm-ctr-loop arena key keylen j0 start src dst len (+ off 16)))))))
 
 ; Returns: Int
-(defn gcm-xor-block ((src Int) (dst Int) (ks Int) (off Int) (n Int))
+(defn gcm-xor-block ((src Words) (dst Words) (ks Words) (off Int) (n Int))
   (begin
     (for (i 0) (< i n)
       (begin
@@ -238,20 +238,19 @@
 ; TAG
 ; ===========================================================================
 
-; The GHASH subkey H = AES_K(0^128).
-; Returns: Int
-(defn gcm-subkey ((arena Int) (key Int) (keylen Int))
+; The GHASH subkey H = AES_K(0^128), or None without AES.
+; Returns: (Option Words)
+(defn gcm-subkey ((arena Arena) (key Words) (keylen Int))
   (let zero (w-alloc arena 16)
-    (let hb (aes-encrypt-block arena key keylen zero)
-      (if (= hb 0)
-        0
-        (ghash-load arena hb 0)))))
+    (match (aes-encrypt-block arena key keylen zero)
+      (None None)
+      (Some hb (Some (ghash-load arena hb 0))))))
 
 ; The authentication tag over (aad, ciphertext). The trailing block of
 ; bit lengths is what binds the two together -- without it, bytes could
-; be moved from one to the other.
-; Returns: Int
-(defn gcm-tag ((arena Int) (key Int) (keylen Int) (j0 Int) (h Int) (aad Int) (aadlen Int) (ct Int) (ctlen Int))
+; be moved from one to the other. None without AES.
+; Returns: (Option Words)
+(defn gcm-tag ((arena Arena) (key Words) (keylen Int) (j0 Words) (h Words) (aad Words) (aadlen Int) (ct Words) (ctlen Int))
   (let y (w-alloc arena 2)
     (let lens (w-alloc arena 16)
       (begin
@@ -263,7 +262,7 @@
         (gcm-finish-tag arena key keylen j0 y)))))
 
 ; Returns: Int
-(defn gcm-put-len ((buf Int) (off Int) (bits Int))
+(defn gcm-put-len ((buf Words) (off Int) (bits Int))
   (begin
     (for (i 0) (< i 8)
       (begin
@@ -271,11 +270,11 @@
         (set! i (+ i 1))))
     0))
 
-; Returns: Int
-(defn gcm-finish-tag ((arena Int) (key Int) (keylen Int) (j0 Int) (y Int))
-  (let mask (aes-encrypt-block arena key keylen j0)
-    (if (= mask 0)
-      0
+; Returns: (Option Words)
+(defn gcm-finish-tag ((arena Arena) (key Words) (keylen Int) (j0 Words) (y Words))
+  (match (aes-encrypt-block arena key keylen j0)
+    (None None)
+    (Some mask
       (let tag (w-alloc arena 16)
         (begin
           (ghash-store y tag 0)
@@ -283,7 +282,7 @@
             (begin
               (w-set tag i (bit-xor (w-get tag i) (w-get mask i)))
               (set! i (+ i 1))))
-          tag)))))
+          (Some tag))))))
 
 ; ===========================================================================
 ; AEAD INTERFACE
@@ -291,22 +290,22 @@
 
 ; Encrypt and authenticate. Returns Some(ciphertext || 16-byte tag), or
 ; None when AES-NI is unavailable or the key length is unsupported.
-; Returns: Option
-(defn gcm-encrypt ((arena Int) (key Int) (keylen Int) (iv Int) (aad Int) (aadlen Int) (pt Int) (ptlen Int))
-  (let h (gcm-subkey arena key keylen)
-    (if (= h 0)
-      None
+; Returns: (Option Words)
+(defn gcm-encrypt ((arena Arena) (key Words) (keylen Int) (iv Words) (aad Words) (aadlen Int) (pt Words) (ptlen Int))
+  (match (gcm-subkey arena key keylen)
+    (None None)
+    (Some h
       (let j0 (gcm-j0 arena iv)
         (let ct (w-alloc arena (+ ptlen 16))
           (if (= (gcm-ctr-xor arena key keylen j0 2 pt ct ptlen) 0)
             None
             (gcm-seal arena key keylen j0 h aad aadlen ct ptlen)))))))
 
-; Returns: Option
-(defn gcm-seal ((arena Int) (key Int) (keylen Int) (j0 Int) (h Int) (aad Int) (aadlen Int) (ct Int) (ptlen Int))
-  (let tag (gcm-tag arena key keylen j0 h aad aadlen ct ptlen)
-    (if (= tag 0)
-      None
+; Returns: (Option Words)
+(defn gcm-seal ((arena Arena) (key Words) (keylen Int) (j0 Words) (h Words) (aad Words) (aadlen Int) (ct Words) (ptlen Int))
+  (match (gcm-tag arena key keylen j0 h aad aadlen ct ptlen)
+    (None None)
+    (Some tag
       (begin
         (for (i 0) (< i 16)
           (begin (w-set ct (+ ptlen i) (w-get tag i)) (set! i (+ i 1))))
@@ -315,19 +314,18 @@
 ; Verify and decrypt a sealed message (ciphertext followed by its tag).
 ; The tag is checked BEFORE any plaintext is produced, with a
 ; constant-time comparison; a failure returns None and nothing else.
-; Returns: Option
-(defn gcm-decrypt ((arena Int) (key Int) (keylen Int) (iv Int) (aad Int) (aadlen Int) (sealed Int) (ctlen Int))
-  (let h (gcm-subkey arena key keylen)
-    (if (= h 0)
-      None
+; Returns: (Option Words)
+(defn gcm-decrypt ((arena Arena) (key Words) (keylen Int) (iv Words) (aad Words) (aadlen Int) (sealed Words) (ctlen Int))
+  (match (gcm-subkey arena key keylen)
+    (None None)
+    (Some h
       (let j0 (gcm-j0 arena iv)
-        (let expect (gcm-tag arena key keylen j0 h aad aadlen sealed ctlen)
-          (if (= expect 0)
-            None
-            (gcm-open arena key keylen j0 sealed ctlen expect)))))))
+        (match (gcm-tag arena key keylen j0 h aad aadlen sealed ctlen)
+          (None None)
+          (Some expect (gcm-open arena key keylen j0 sealed ctlen expect)))))))
 
-; Returns: Option
-(defn gcm-open ((arena Int) (key Int) (keylen Int) (j0 Int) (sealed Int) (ctlen Int) (expect Int))
+; Returns: (Option Words)
+(defn gcm-open ((arena Arena) (key Words) (keylen Int) (j0 Words) (sealed Words) (ctlen Int) (expect Words))
   (let given (w-alloc arena 16)
     (begin
       (for (i 0) (< i 16)
@@ -336,8 +334,8 @@
         (gcm-open-verified arena key keylen j0 sealed ctlen)
         None))))
 
-; Returns: Option
-(defn gcm-open-verified ((arena Int) (key Int) (keylen Int) (j0 Int) (sealed Int) (ctlen Int))
+; Returns: (Option Words)
+(defn gcm-open-verified ((arena Arena) (key Words) (keylen Int) (j0 Words) (sealed Words) (ctlen Int))
   (let pt (w-alloc arena (+ ctlen 16))
     (if (= (gcm-ctr-xor arena key keylen j0 2 sealed pt ctlen) 0)
       None

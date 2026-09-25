@@ -39,13 +39,13 @@
 
 ; Read a little-endian 32-bit word from four bytes at `off`.
 ; Returns: Int
-(defn chacha20-word-at ((buf Int) (off Int))
+(defn chacha20-word-at ((buf Words) (off Int))
   (le-pack32 (w-get buf off) (w-get buf (+ off 1)) (w-get buf (+ off 2)) (w-get buf (+ off 3))))
 
 ; Build the 16-word initial state: 4 constant words, 8 key words, the
 ; block counter, then 3 nonce words.
-; Returns: Int
-(defn chacha20-state ((arena Int) (key Int) (nonce Int) (counter Int))
+; Returns: Words
+(defn chacha20-state ((arena Arena) (key Words) (nonce Words) (counter Int))
   (let st (w-alloc arena 16)
     (begin
       (for (i 0) (< i 4)
@@ -67,7 +67,7 @@
 ;   a += b; d ^= a; d <<<= 8
 ;   c += d; b ^= c; b <<<= 7
 ; Returns: Int
-(defn chacha20-qr ((st Int) (ia Int) (ib Int) (ic Int) (id Int))
+(defn chacha20-qr ((st Words) (ia Int) (ib Int) (ic Int) (id Int))
   (begin
     (chacha20-qr-half st ia ib ic id 16 12)
     (chacha20-qr-half st ia ib ic id 8 7)
@@ -76,7 +76,7 @@
 ; One half of a quarter round: the two (add, xor, rotate) pairs share
 ; an identical shape and differ only in their rotation amounts.
 ; Returns: Int
-(defn chacha20-qr-half ((st Int) (ia Int) (ib Int) (ic Int) (id Int) (r1 Int) (r2 Int))
+(defn chacha20-qr-half ((st Words) (ia Int) (ib Int) (ic Int) (id Int) (r1 Int) (r2 Int))
   (let a (add32 (w-get st ia) (w-get st ib))
     (let d (rotl32 (bit-xor (w-get st id) a) r1)
       (let c (add32 (w-get st ic) d)
@@ -90,7 +90,7 @@
 
 ; One double round: four column rounds then four diagonal rounds.
 ; Returns: Int
-(defn chacha20-double-round ((st Int))
+(defn chacha20-double-round ((st Words))
   (begin
     (chacha20-qr st 0 4 8 12)
     (chacha20-qr st 1 5 9 13)
@@ -110,8 +110,8 @@
 ; byte array. Twenty rounds (ten double rounds) over a working copy,
 ; then the original state is added back in word by word and each word
 ; serialized little-endian.
-; Returns: Int
-(defn chacha20-block ((arena Int) (key Int) (nonce Int) (counter Int))
+; Returns: Words
+(defn chacha20-block ((arena Arena) (key Words) (nonce Words) (counter Int))
   (let init (chacha20-state arena key nonce counter)
     (let work (w-copy (w-alloc arena 16) init 16)
       (begin
@@ -124,8 +124,8 @@
         (chacha20-serialize arena work)))))
 
 ; Serialize 16 words little-endian into 64 bytes.
-; Returns: Int
-(defn chacha20-serialize ((arena Int) (work Int))
+; Returns: Words
+(defn chacha20-serialize ((arena Arena) (work Words))
   (let out (w-alloc arena 64)
     (begin
       (for (i 0) (< i 16)
@@ -135,7 +135,7 @@
       out)))
 
 ; Returns: Int
-(defn chacha20-put-word ((out Int) (v Int) (o Int))
+(defn chacha20-put-word ((out Words) (v Int) (o Int))
   (begin
     (w-set out o (bit-and v 255))
     (w-set out (+ o 1) (bit-and (shr v 8) 255))
@@ -150,8 +150,8 @@
 ; XOR `len` bytes at `msg` with the ChaCha20 keystream for (key, nonce)
 ; starting at `counter`, returning a fresh byte array. Encryption and
 ; decryption are the same operation.
-; Returns: Int
-(defn chacha20-xor ((arena Int) (key Int) (nonce Int) (counter Int) (msg Int) (len Int))
+; Returns: Words
+(defn chacha20-xor ((arena Arena) (key Words) (nonce Words) (counter Int) (msg Words) (len Int))
   (let out (w-alloc arena len)
     (begin
       (for (off 0) (< off len)
@@ -162,7 +162,7 @@
 
 ; XOR one block's worth of bytes (or fewer, at the end of the message).
 ; Returns: Int
-(defn chacha20-xor-block ((arena Int) (key Int) (nonce Int) (counter Int) (msg Int) (out Int) (off Int) (len Int))
+(defn chacha20-xor-block ((arena Arena) (key Words) (nonce Words) (counter Int) (msg Words) (out Words) (off Int) (len Int))
   (let ks (chacha20-block arena key nonce counter)
     (let n (if (< (- len off) 64) (- len off) 64)
       (begin

@@ -38,73 +38,64 @@
 ; ===========================================================================
 ; KEYS
 ;
-; A public key is two addresses plus a limb count: (n, e, nlimbs).
-; A private key adds the CRT components: (p, q, dp, dq, qinv, plimbs).
-; Both are held in plain math/words arrays rather than a struct, for
-; the same reason the curve code does: one Int passes everywhere.
-;
-;   public:  0 n   1 e   2 nlimbs   3 nbytes
-;   private: 0 pub 1 p   2 q   3 dp   4 dq   5 qinv   6 plimbs
+; A public key is (n, e, nlimbs, nbytes); a private key is the public
+; key plus the CRT components (p, q, dp, dq, qinv) and their limb count.
+; n, e and the CRT components are Nats in math/words arrays.
 ; ===========================================================================
 
+(deftype RsaPublic (RsaPublic Words Words Int Int))
+(deftype RsaPrivate (RsaPrivate RsaPublic Words Words Words Words Words Int))
+
+; Returns: Words
+(defn rsa-pub-n ((k RsaPublic)) (match k (RsaPublic v _ _ _ v)))
+; Returns: Words
+(defn rsa-pub-e ((k RsaPublic)) (match k (RsaPublic _ v _ _ v)))
 ; Returns: Int
-(defn rsa-pub-n ((k Int)) (w-get k 0))
+(defn rsa-pub-limbs ((k RsaPublic)) (match k (RsaPublic _ _ v _ v)))
 ; Returns: Int
-(defn rsa-pub-e ((k Int)) (w-get k 1))
-; Returns: Int
-(defn rsa-pub-limbs ((k Int)) (w-get k 2))
-; Returns: Int
-(defn rsa-pub-bytes ((k Int)) (w-get k 3))
+(defn rsa-pub-bytes ((k RsaPublic)) (match k (RsaPublic _ _ _ v v)))
 
 ; Build a public key from big-endian hex for n and a small exponent.
-; Returns: Int
-(defn rsa-public-key ((arena Int) (nhex String) (e Int))
+; Returns: RsaPublic
+(defn rsa-public-key ((arena Arena) (nhex String) (e Int))
   (let nbytes (w-hex-len nhex)
     (let limbs (bn-limbs-for-bytes nbytes)
       (let n (bn-alloc arena limbs)
         (let ev (bn-alloc arena limbs)
-          (let k (w-alloc arena 4)
-            (begin
-              (bn-from-bytes-be n limbs (w-from-hex arena nhex) nbytes)
-              (bn-set-small ev limbs e)
-              (w-set k 0 n)
-              (w-set k 1 ev)
-              (w-set k 2 limbs)
-              (w-set k 3 nbytes)
-              k)))))))
+          (begin
+            (bn-from-bytes-be n limbs (w-from-hex arena nhex) nbytes)
+            (bn-set-small ev limbs e)
+            (RsaPublic n ev limbs nbytes)))))))
 
+; Returns: RsaPublic
+(defn rsa-priv-pub ((k RsaPrivate)) (match k (RsaPrivate v _ _ _ _ _ _ v)))
+; Returns: Words
+(defn rsa-priv-p ((k RsaPrivate)) (match k (RsaPrivate _ v _ _ _ _ _ v)))
+; Returns: Words
+(defn rsa-priv-q ((k RsaPrivate)) (match k (RsaPrivate _ _ v _ _ _ _ v)))
+; Returns: Words
+(defn rsa-priv-dp ((k RsaPrivate)) (match k (RsaPrivate _ _ _ v _ _ _ v)))
+; Returns: Words
+(defn rsa-priv-dq ((k RsaPrivate)) (match k (RsaPrivate _ _ _ _ v _ _ v)))
+; Returns: Words
+(defn rsa-priv-qinv ((k RsaPrivate)) (match k (RsaPrivate _ _ _ _ _ v _ v)))
 ; Returns: Int
-(defn rsa-priv-pub ((k Int)) (w-get k 0))
-; Returns: Int
-(defn rsa-priv-p ((k Int)) (w-get k 1))
-; Returns: Int
-(defn rsa-priv-q ((k Int)) (w-get k 2))
-; Returns: Int
-(defn rsa-priv-dp ((k Int)) (w-get k 3))
-; Returns: Int
-(defn rsa-priv-dq ((k Int)) (w-get k 4))
-; Returns: Int
-(defn rsa-priv-qinv ((k Int)) (w-get k 5))
-; Returns: Int
-(defn rsa-priv-limbs ((k Int)) (w-get k 6))
+(defn rsa-priv-limbs ((k RsaPrivate)) (match k (RsaPrivate _ _ _ _ _ _ v v)))
 
 ; Build a private key from the CRT components, each as big-endian hex.
-; Returns: Int
-(defn rsa-private-key ((arena Int) (pub Int) (phex String) (qhex String) (dphex String) (dqhex String) (qinvhex String))
+; Returns: RsaPrivate
+(defn rsa-private-key ((arena Arena) (pub RsaPublic) (phex String) (qhex String) (dphex String) (dqhex String) (qinvhex String))
   (let limbs (bn-limbs-for-bytes (w-hex-len phex))
-    (let k (w-alloc arena 7)
-      (begin
-        (w-set k 0 pub)
-        (w-set k 1 (rsa-load arena phex limbs))
-        (w-set k 2 (rsa-load arena qhex limbs))
-        (w-set k 3 (rsa-load arena dphex limbs))
-        (w-set k 4 (rsa-load arena dqhex limbs))
-        (w-set k 5 (rsa-load arena qinvhex limbs))
-        (w-set k 6 limbs)
-        k))))
+    (RsaPrivate pub
+                (rsa-load arena phex limbs)
+                (rsa-load arena qhex limbs)
+                (rsa-load arena dphex limbs)
+                (rsa-load arena dqhex limbs)
+                (rsa-load arena qinvhex limbs)
+                limbs)))
 
-; Returns: Int
-(defn rsa-load ((arena Int) (hex String) (limbs Int))
+; Returns: Words
+(defn rsa-load ((arena Arena) (hex String) (limbs Int))
   (let v (bn-alloc arena limbs)
     (bn-from-bytes-be v limbs (w-from-hex arena hex) (w-hex-len hex))))
 
@@ -121,8 +112,8 @@
 ; the public exponent is published with the key, so leaking its length
 ; through timing leaks nothing. Private-key exponentiations keep the
 ; full fixed width.
-; Returns: Int
-(defn rsa-public-op ((arena Int) (out Int) (m Int) (pub Int))
+; Returns: Words
+(defn rsa-public-op ((arena Arena) (out Words) (m Words) (pub RsaPublic))
   (let limbs (rsa-pub-limbs pub)
     (let bits (bn-bit-length (rsa-pub-e pub) limbs)
       (begin
@@ -132,7 +123,7 @@
 ; out = m^d mod n by the CRT: m1 = m^dp mod p, m2 = m^dq mod q, and
 ; then h = qinv*(m1-m2) mod p, out = m2 + h*q.
 ; Returns: Int
-(defn rsa-private-op ((arena Int) (out Int) (m Int) (priv Int))
+(defn rsa-private-op ((arena Arena) (out Words) (m Words) (priv RsaPrivate))
   (let pl (rsa-priv-limbs priv)
     (let m1 (bn-alloc arena pl)
       (let m2 (bn-alloc arena pl)
@@ -150,7 +141,7 @@
 ; Montgomery trick: multiplying by R^2 and then by 1 leaves the value
 ; reduced.
 ; Returns: Int
-(defn rsa-reduce ((arena Int) (out Int) (m Int) (p Int) (pl Int) (mlimbs Int))
+(defn rsa-reduce ((arena Arena) (out Words) (m Words) (p Words) (pl Int) (mlimbs Int))
   (let n0 (mont-n0 p)
     (let r2 (mont-r2 arena p pl)
       (let low (bn-alloc arena pl)
@@ -161,7 +152,7 @@
 
 ; Split m into low and high halves of pl limbs each.
 ; Returns: Int
-(defn rsa-split ((low Int) (high Int) (m Int) (pl Int) (mlimbs Int))
+(defn rsa-split ((low Words) (high Words) (m Words) (pl Int) (mlimbs Int))
   (begin
     (for (i 0) (< i pl)
       (begin
@@ -174,7 +165,7 @@
 ; obtained as R mod p -- which is exactly what a Montgomery
 ; multiplication by R^2 followed by one by 1 computes.
 ; Returns: Int
-(defn rsa-reduce-combine ((arena Int) (out Int) (low Int) (high Int) (p Int) (pl Int) (n0 Int) (r2 Int))
+(defn rsa-reduce-combine ((arena Arena) (out Words) (low Words) (high Words) (p Words) (pl Int) (n0 Int) (r2 Words))
   (let rmod (bn-alloc arena pl)
     (let t (bn-alloc arena pl)
       (let lowr (bn-alloc arena pl)
@@ -188,14 +179,14 @@
           (mod-add arena out t lowr p pl)
           0)))))
 
-; Returns: Int
-(defn rsa-one ((arena Int) (pl Int))
+; Returns: Words
+(defn rsa-one ((arena Arena) (pl Int))
   (let one (bn-alloc arena pl)
     (bn-set-small one pl 1)))
 
 ; out = m2 + q * (qinv * (m1 - m2) mod p).
 ; Returns: Int
-(defn rsa-crt-combine ((arena Int) (out Int) (m1 Int) (m2 Int) (priv Int) (pl Int))
+(defn rsa-crt-combine ((arena Arena) (out Words) (m1 Words) (m2 Words) (priv RsaPrivate) (pl Int))
   (let diff (bn-alloc arena pl)
     (let h (bn-alloc arena pl)
       (let wide (bn-alloc arena (* 2 pl))
@@ -208,7 +199,7 @@
 
 ; out = a * b mod m, via one round trip through Montgomery form.
 ; Returns: Int
-(defn rsa-mulmod ((arena Int) (out Int) (a Int) (b Int) (m Int) (n Int))
+(defn rsa-mulmod ((arena Arena) (out Words) (a Words) (b Words) (m Words) (n Int))
   (let n0 (mont-n0 m)
     (let r2 (mont-r2 arena m n)
       (let am (bn-alloc arena n)
@@ -219,18 +210,18 @@
 
 ; out (2n limbs) = wide (2n limbs) + m2 (n limbs).
 ; Returns: Int
-(defn rsa-add-wide ((out Int) (wide Int) (m2 Int) (pl Int))
+(defn rsa-add-wide ((out Words) (wide Words) (m2 Words) (pl Int))
   (begin
     (bn-copy out wide (* 2 pl))
     (rsa-add-in-place out m2 pl (* 2 pl))
     0))
 
 ; Returns: Int
-(defn rsa-add-in-place ((out Int) (add Int) (addlen Int) (total Int))
+(defn rsa-add-in-place ((out Words) (add Words) (addlen Int) (total Int))
   (rsa-add-loop out add addlen total 0 0))
 
 ; Returns: Int
-(defn rsa-add-loop ((out Int) (add Int) (addlen Int) (total Int) (i Int) (carry Int))
+(defn rsa-add-loop ((out Words) (add Words) (addlen Int) (total Int) (i Int) (carry Int))
   (if (>= i total)
     carry
     (let s (+ (+ (w-get out i) (if (< i addlen) (w-get add i) 0)) carry)
@@ -244,8 +235,8 @@
 
 ; The mask generation function: SHA-256 of the seed with a 32-bit
 ; big-endian counter appended, concatenated until `masklen` bytes.
-; Returns: Int
-(defn rsa-mgf1 ((arena Int) (seed Int) (seedlen Int) (masklen Int))
+; Returns: Words
+(defn rsa-mgf1 ((arena Arena) (seed Words) (seedlen Int) (masklen Int))
   (let out (w-alloc arena (+ masklen 32))
     (begin
       (for (i 0) (< (* i 32) masklen)
@@ -255,7 +246,7 @@
       out)))
 
 ; Returns: Int
-(defn rsa-mgf1-block ((arena Int) (out Int) (seed Int) (seedlen Int) (i Int))
+(defn rsa-mgf1-block ((arena Arena) (out Words) (seed Words) (seedlen Int) (i Int))
   (let buf (w-alloc arena (+ seedlen 4))
     (begin
       (w-copy buf seed seedlen)
@@ -267,14 +258,14 @@
       0)))
 
 ; Returns: Int
-(defn rsa-copy-at ((dst Int) (off Int) (src Int) (n Int))
+(defn rsa-copy-at ((dst Words) (off Int) (src Words) (n Int))
   (begin
     (for (i 0) (< i n)
       (begin (w-set dst (+ off i) (w-get src i)) (set! i (+ i 1))))
     0))
 
 ; Returns: Int
-(defn rsa-xor-into ((dst Int) (off Int) (src Int) (n Int))
+(defn rsa-xor-into ((dst Words) (off Int) (src Words) (n Int))
   (begin
     (for (i 0) (< i n)
       (begin
@@ -290,8 +281,8 @@
 ; fresh random bytes from math/rand/crypto -- OAEP's security rests on
 ; that seed being unpredictable, and reusing one leaks the plaintext
 ; relationship between two messages.
-; Returns: Option
-(defn rsa-oaep-encode ((arena Int) (msg Int) (msglen Int) (seed Int) (k Int))
+; Returns: (Option Words)
+(defn rsa-oaep-encode ((arena Arena) (msg Words) (msglen Int) (seed Words) (k Int))
   (if (> (+ msglen 66) k)
     None
     (let em (w-alloc arena k)
@@ -304,7 +295,7 @@
 ; DB = lHash || PS || 0x01 || M, where lHash is SHA-256 of the empty
 ; label.
 ; Returns: Int
-(defn rsa-oaep-build-db ((arena Int) (db Int) (msg Int) (msglen Int) (k Int))
+(defn rsa-oaep-build-db ((arena Arena) (db Words) (msg Words) (msglen Int) (k Int))
   (let lhash (sha256-bytes arena (w-alloc arena 1) 0)
     (begin
       (rsa-copy-at db 0 lhash 32)
@@ -314,7 +305,7 @@
 
 ; EM = 0x00 || maskedSeed || maskedDB.
 ; Returns: Int
-(defn rsa-oaep-mask ((arena Int) (em Int) (db Int) (seed Int) (k Int))
+(defn rsa-oaep-mask ((arena Arena) (em Words) (db Words) (seed Words) (k Int))
   (let dbmask (rsa-mgf1 arena seed 32 (- k 33))
     (begin
       (rsa-copy-at em 33 db (- k 33))
@@ -323,7 +314,7 @@
       0)))
 
 ; Returns: Int
-(defn rsa-oaep-mask-seed ((arena Int) (em Int) (seed Int) (k Int))
+(defn rsa-oaep-mask-seed ((arena Arena) (em Words) (seed Words) (k Int))
   (let maskeddb (w-alloc arena (- k 33))
     (begin
       (for (i 0) (< i (- k 33))
@@ -334,15 +325,15 @@
 
 ; Encrypt with RSA-OAEP. Returns the k-byte ciphertext, or None when
 ; the message is too long for the modulus.
-; Returns: Option
-(defn rsa-oaep-encrypt ((arena Int) (pub Int) (msg Int) (msglen Int) (seed Int))
+; Returns: (Option Words)
+(defn rsa-oaep-encrypt ((arena Arena) (pub RsaPublic) (msg Words) (msglen Int) (seed Words))
   (let k (rsa-pub-bytes pub)
     (match (rsa-oaep-encode arena msg msglen seed k)
       (None None)
       (Some em (Some (rsa-apply-public arena pub em k))))))
 
-; Returns: Int
-(defn rsa-apply-public ((arena Int) (pub Int) (em Int) (k Int))
+; Returns: Words
+(defn rsa-apply-public ((arena Arena) (pub RsaPublic) (em Words) (k Int))
   (let limbs (rsa-pub-limbs pub)
     (let m (bn-alloc arena limbs)
       (let c (bn-alloc arena limbs)
@@ -359,15 +350,15 @@
 ; missing 0x01 separator is a decryption oracle, which is how OAEP
 ; implementations get broken in practice even though the scheme itself
 ; is sound.
-; Returns: Option
-(defn rsa-oaep-decrypt ((arena Int) (priv Int) (ct Int) (outlen Int))
+; Returns: (Option Words)
+(defn rsa-oaep-decrypt ((arena Arena) (priv RsaPrivate) (ct Words) (outlen Words))
   (let pub (rsa-priv-pub priv)
     (let k (rsa-pub-bytes pub)
       (let em (rsa-apply-private arena priv ct k)
         (rsa-oaep-decode arena em k outlen)))))
 
-; Returns: Int
-(defn rsa-apply-private ((arena Int) (priv Int) (ct Int) (k Int))
+; Returns: Words
+(defn rsa-apply-private ((arena Arena) (priv RsaPrivate) (ct Words) (k Int))
   (let pub (rsa-priv-pub priv)
     (let limbs (rsa-pub-limbs pub)
       (let c (bn-alloc arena limbs)
@@ -377,24 +368,24 @@
             (rsa-private-op arena m c priv)
             (bn-to-bytes-be (w-alloc arena k) k m limbs)))))))
 
-; Returns: Option
-(defn rsa-oaep-decode ((arena Int) (em Int) (k Int) (outlen Int))
+; Returns: (Option Words)
+(defn rsa-oaep-decode ((arena Arena) (em Words) (k Int) (outlen Words))
   (let seedmask (rsa-mgf1 arena (rsa-slice arena em 33 (- k 33)) (- k 33) 32)
     (let seed (rsa-slice arena em 1 32)
       (begin
         (rsa-xor-into seed 0 seedmask 32)
         (rsa-oaep-decode-db arena em seed k outlen)))))
 
-; Returns: Option
-(defn rsa-oaep-decode-db ((arena Int) (em Int) (seed Int) (k Int) (outlen Int))
+; Returns: (Option Words)
+(defn rsa-oaep-decode-db ((arena Arena) (em Words) (seed Words) (k Int) (outlen Words))
   (let db (rsa-slice arena em 33 (- k 33))
     (let dbmask (rsa-mgf1 arena seed 32 (- k 33))
       (begin
         (rsa-xor-into db 0 dbmask (- k 33))
         (rsa-oaep-extract arena db k outlen (w-get em 0))))))
 
-; Returns: Option
-(defn rsa-oaep-extract ((arena Int) (db Int) (k Int) (outlen Int) (firstbyte Int))
+; Returns: (Option Words)
+(defn rsa-oaep-extract ((arena Arena) (db Words) (k Int) (outlen Words) (firstbyte Int))
   (let lhash (sha256-bytes arena (w-alloc arena 1) 0)
     (let hashok (ct-eq-words db lhash 32)
       (let idx (rsa-oaep-find-one db (- k 33) 32 -1)
@@ -413,7 +404,7 @@
 ; there is none. The scan runs the full length regardless of where the
 ; separator is: stopping early is a padding oracle.
 ; Returns: Int
-(defn rsa-oaep-find-one ((db Int) (dblen Int) (i Int) (found Int))
+(defn rsa-oaep-find-one ((db Words) (dblen Int) (i Int) (found Int))
   (if (>= i dblen)
     found
     (let v (w-get db i)
@@ -426,13 +417,13 @@
 ; RFC 8017 s7.1.2 requires -- skipping this check accepts alternative
 ; encodings of the same message. Accumulated over the whole scan.
 ; Returns: Int
-(defn rsa-oaep-ps-zero ((db Int) (idx Int) (i Int) (acc Int))
+(defn rsa-oaep-ps-zero ((db Words) (idx Int) (i Int) (acc Int))
   (if (>= i idx)
     (ct-is-zero acc)
     (rsa-oaep-ps-zero db idx (+ i 1) (bit-or acc (w-get db i)))))
 
-; Returns: Option
-(defn rsa-oaep-emit ((arena Int) (db Int) (k Int) (idx Int) (outlen Int))
+; Returns: (Option Words)
+(defn rsa-oaep-emit ((arena Arena) (db Words) (k Int) (idx Int) (outlen Words))
   (let n (- (- k 34) idx)
     (let out (w-alloc arena (+ n 1))
       (begin
@@ -440,8 +431,8 @@
         (w-set outlen 0 n)
         (Some out)))))
 
-; Returns: Int
-(defn rsa-slice ((arena Int) (src Int) (off Int) (n Int))
+; Returns: Words
+(defn rsa-slice ((arena Arena) (src Words) (off Int) (n Int))
   (let out (w-alloc arena n)
     (begin
       (for (i 0) (< i n)
@@ -455,8 +446,8 @@
 ; EMSA-PSS encode with SHA-256 and a 32-byte salt. The salt must be
 ; fresh randomness; PSS with a fixed salt degrades to a deterministic
 ; scheme whose security proof no longer applies.
-; Returns: Option
-(defn rsa-pss-encode ((arena Int) (mhash Int) (salt Int) (embits Int))
+; Returns: (Option Words)
+(defn rsa-pss-encode ((arena Arena) (mhash Words) (salt Words) (embits Int))
   (let emlen (/ (+ embits 7) 8)
     (if (< emlen 66)
       None
@@ -468,8 +459,8 @@
 
 ; EM = maskedDB || H || 0xbc, with the leftmost bits of maskedDB
 ; cleared so the value stays below the modulus.
-; Returns: Int
-(defn rsa-pss-assemble ((arena Int) (h Int) (salt Int) (emlen Int) (embits Int))
+; Returns: Words
+(defn rsa-pss-assemble ((arena Arena) (h Words) (salt Words) (emlen Int) (embits Int))
   (let em (w-alloc arena emlen)
     (let db (w-alloc arena (- emlen 33))
       (begin
@@ -486,16 +477,16 @@
 ; verified against the public key before it is returned, so a fault
 ; during the private operation produces None instead of a signature
 ; that would factor the modulus.
-; Returns: Option
-(defn rsa-pss-sign ((arena Int) (priv Int) (mhash Int) (salt Int))
+; Returns: (Option Words)
+(defn rsa-pss-sign ((arena Arena) (priv RsaPrivate) (mhash Words) (salt Words))
   (let pub (rsa-priv-pub priv)
     (let k (rsa-pub-bytes pub)
       (match (rsa-pss-encode arena mhash salt (- (* 8 k) 1))
         (None None)
         (Some em (rsa-pss-finish arena priv pub em k mhash))))))
 
-; Returns: Option
-(defn rsa-pss-finish ((arena Int) (priv Int) (pub Int) (em Int) (k Int) (mhash Int))
+; Returns: (Option Words)
+(defn rsa-pss-finish ((arena Arena) (priv RsaPrivate) (pub RsaPublic) (em Words) (k Int) (mhash Words))
   (let sig (rsa-apply-private arena priv em k)
     (if (rsa-pss-verify arena pub mhash sig)
       (Some sig)
@@ -503,19 +494,19 @@
 
 ; Verify an RSA-PSS signature over a 32-byte SHA-256 digest.
 ; Returns: Bool
-(defn rsa-pss-verify ((arena Int) (pub Int) (mhash Int) (sig Int))
+(defn rsa-pss-verify ((arena Arena) (pub RsaPublic) (mhash Words) (sig Words))
   (let k (rsa-pub-bytes pub)
     (let em (rsa-apply-public arena pub sig k)
       (rsa-pss-check arena em k mhash (- (* 8 k) 1)))))
 
 ; Returns: Bool
-(defn rsa-pss-check ((arena Int) (em Int) (emlen Int) (mhash Int) (embits Int))
+(defn rsa-pss-check ((arena Arena) (em Words) (emlen Int) (mhash Words) (embits Int))
   (if (= (w-get em (- emlen 1)) 188)
     (rsa-pss-check-db arena em emlen mhash embits)
     false))
 
 ; Returns: Bool
-(defn rsa-pss-check-db ((arena Int) (em Int) (emlen Int) (mhash Int) (embits Int))
+(defn rsa-pss-check-db ((arena Arena) (em Words) (emlen Int) (mhash Words) (embits Int))
   (let h (rsa-slice arena em (- emlen 33) 32)
     (let db (rsa-slice arena em 0 (- emlen 33))
       (begin
@@ -524,7 +515,7 @@
         (rsa-pss-recompute arena db h mhash emlen)))))
 
 ; Returns: Bool
-(defn rsa-pss-recompute ((arena Int) (db Int) (h Int) (mhash Int) (emlen Int))
+(defn rsa-pss-recompute ((arena Arena) (db Words) (h Words) (mhash Words) (emlen Int))
   (let salt (rsa-slice arena db (- emlen 65) 32)
     (let mprime (w-alloc arena 72)
       (begin

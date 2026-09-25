@@ -22,8 +22,8 @@
 ; DK = T(1) || T(2) || ... truncated to `dklen` bytes, where
 ; T(i) = U(1) ^ U(2) ^ ... ^ U(c), U(1) = PRF(P, S || INT32BE(i)) and
 ; U(j) = PRF(P, U(j-1)).
-; Returns: Int
-(defn pbkdf2-sha256 ((arena Int) (pw Int) (pwlen Int) (salt Int) (saltlen Int) (iters Int) (dklen Int))
+; Returns: Words
+(defn pbkdf2-sha256 ((arena Arena) (pw Words) (pwlen Int) (salt Words) (saltlen Int) (iters Int) (dklen Int))
   (let out (w-alloc arena (+ dklen 32))
     (begin
       (for (i 0) (< (* i 32) dklen)
@@ -34,7 +34,7 @@
 
 ; One output block: the XOR of all `iters` chained HMAC results.
 ; Returns: Int
-(defn pbkdf2-block ((arena Int) (pw Int) (pwlen Int) (salt Int) (saltlen Int) (iters Int) (out Int) (i Int))
+(defn pbkdf2-block ((arena Arena) (pw Words) (pwlen Int) (salt Words) (saltlen Int) (iters Int) (out Words) (i Int))
   (let first (pbkdf2-first-u arena pw pwlen salt saltlen (+ i 1))
     (let acc (w-copy (w-alloc arena 32) first 32)
       (begin
@@ -43,8 +43,8 @@
         0))))
 
 ; U(1) = HMAC(P, S || INT32BE(i)).
-; Returns: Int
-(defn pbkdf2-first-u ((arena Int) (pw Int) (pwlen Int) (salt Int) (saltlen Int) (index Int))
+; Returns: Words
+(defn pbkdf2-first-u ((arena Arena) (pw Words) (pwlen Int) (salt Words) (saltlen Int) (index Int))
   (let buf (w-alloc arena (+ saltlen 4))
     (begin
       (w-copy buf salt saltlen)
@@ -57,7 +57,7 @@
 ; Chain U(2)..U(c), accumulating the XOR into `acc`. `cur` is mutated
 ; in place to hold the running U.
 ; Returns: Int
-(defn pbkdf2-iterate ((arena Int) (pw Int) (pwlen Int) (cur Int) (acc Int) (iters Int))
+(defn pbkdf2-iterate ((arena Arena) (pw Words) (pwlen Int) (cur Words) (acc Words) (iters Int))
   (begin
     (for (j 1) (< j iters)
       (begin
@@ -66,7 +66,7 @@
     0))
 
 ; Returns: Int
-(defn pbkdf2-step ((arena Int) (pw Int) (pwlen Int) (cur Int) (acc Int))
+(defn pbkdf2-step ((arena Arena) (pw Words) (pwlen Int) (cur Words) (acc Words))
   (let next (hmac-sha256 arena pw pwlen cur 32)
     (begin
       (w-copy cur next 32)
@@ -77,7 +77,7 @@
       0)))
 
 ; Returns: Int
-(defn pbkdf2-copy-at ((dst Int) (off Int) (src Int) (n Int))
+(defn pbkdf2-copy-at ((dst Words) (off Int) (src Words) (n Int))
   (begin
     (for (i 0) (< i n)
       (begin (w-set dst (+ off i) (w-get src i)) (set! i (+ i 1))))

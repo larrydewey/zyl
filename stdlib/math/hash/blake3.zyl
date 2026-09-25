@@ -43,8 +43,8 @@
 (defn blake3-flag-root () 8)
 
 ; The BLAKE3 IV, identical to SHA-256's initial state.
-; Returns: Int
-(defn blake3-iv ((arena Int))
+; Returns: Words
+(defn blake3-iv ((arena Arena))
   (let p (w-alloc arena 8)
     (begin
       (w-set p 0 1779033703)
@@ -58,8 +58,8 @@
       p)))
 
 ; The message-word permutation applied between rounds.
-; Returns: Int
-(defn blake3-perm ((arena Int))
+; Returns: Words
+(defn blake3-perm ((arena Arena))
   (let p (w-alloc arena 16)
     (begin
       (w-set p 0 2) (w-set p 1 6) (w-set p 2 3) (w-set p 3 10)
@@ -74,14 +74,14 @@
 
 ; The G mixing function on four indexed words of the 16-word state.
 ; Returns: Int
-(defn blake3-g ((s Int) (ia Int) (ib Int) (ic Int) (id Int) (mx Int) (my Int))
+(defn blake3-g ((s Words) (ia Int) (ib Int) (ic Int) (id Int) (mx Int) (my Int))
   (begin
     (blake3-g-half s ia ib ic id mx 16 12)
     (blake3-g-half s ia ib ic id my 8 7)
     0))
 
 ; Returns: Int
-(defn blake3-g-half ((s Int) (ia Int) (ib Int) (ic Int) (id Int) (m Int) (r1 Int) (r2 Int))
+(defn blake3-g-half ((s Words) (ia Int) (ib Int) (ic Int) (id Int) (m Int) (r1 Int) (r2 Int))
   (let a (add32 (add32 (w-get s ia) (w-get s ib)) m)
     (let d (rotr32 (bit-xor (w-get s id) a) r1)
       (let c (add32 (w-get s ic) d)
@@ -95,7 +95,7 @@
 
 ; One round: four column mixes then four diagonal mixes.
 ; Returns: Int
-(defn blake3-round ((s Int) (m Int))
+(defn blake3-round ((s Words) (m Words))
   (begin
     (blake3-g s 0 4 8 12 (w-get m 0) (w-get m 1))
     (blake3-g s 1 5 9 13 (w-get m 2) (w-get m 3))
@@ -109,7 +109,7 @@
 
 ; Permute the message words in place between rounds.
 ; Returns: Int
-(defn blake3-permute ((arena Int) (m Int) (perm Int))
+(defn blake3-permute ((arena Arena) (m Words) (perm Words))
   (let tmp (w-alloc arena 16)
     (begin
       (for (i 0) (< i 16)
@@ -120,8 +120,8 @@
 ; The compression function, returning the full 16-word state (the
 ; caller takes the first eight as a chaining value, or all sixteen as
 ; extendable output).
-; Returns: Int
-(defn blake3-compress ((arena Int) (cv Int) (block Int) (counter Int) (blocklen Int) (flags Int))
+; Returns: Words
+(defn blake3-compress ((arena Arena) (cv Words) (block Words) (counter Int) (blocklen Int) (flags Int))
   (let s (w-alloc arena 16)
     (let m (w-copy (w-alloc arena 16) block 16)
       (let iv (blake3-iv arena)
@@ -138,7 +138,7 @@
           s)))))
 
 ; Returns: Int
-(defn blake3-rounds ((arena Int) (s Int) (m Int))
+(defn blake3-rounds ((arena Arena) (s Words) (m Words))
   (let perm (blake3-perm arena)
     (begin
       (for (r 0) (< r 7)
@@ -151,7 +151,7 @@
 ; The output feed-forward: the low half is XORed with the high half,
 ; and the high half with the input chaining value.
 ; Returns: Int
-(defn blake3-feedforward ((s Int) (cv Int))
+(defn blake3-feedforward ((s Words) (cv Words))
   (begin
     (for (i 0) (< i 8)
       (begin
@@ -166,8 +166,8 @@
 
 ; Load 16 little-endian 32-bit words from a 64-byte block, zero-padding
 ; past the end of the message.
-; Returns: Int
-(defn blake3-load-block ((arena Int) (msg Int) (off Int) (len Int))
+; Returns: Words
+(defn blake3-load-block ((arena Arena) (msg Words) (off Int) (len Int))
   (let m (w-alloc arena 16)
     (begin
       (for (i 0) (< i 16)
@@ -177,7 +177,7 @@
       m)))
 
 ; Returns: Int
-(defn blake3-le32 ((msg Int) (off Int) (len Int))
+(defn blake3-le32 ((msg Words) (off Int) (len Int))
   (let b0 (blake3-byte msg off len)
     (let b1 (blake3-byte msg (+ off 1) len)
       (let b2 (blake3-byte msg (+ off 2) len)
@@ -185,7 +185,7 @@
           (le-pack32 b0 b1 b2 b3))))))
 
 ; Returns: Int
-(defn blake3-byte ((msg Int) (i Int) (len Int))
+(defn blake3-byte ((msg Words) (i Int) (len Int))
   (if (< i len) (bit-and (w-get msg i) 255) 0))
 
 ; ===========================================================================
@@ -198,8 +198,8 @@
 ; ===========================================================================
 
 ; The chaining value of chunk `index`, whose bytes start at `off`.
-; Returns: Int
-(defn blake3-chunk-cv ((arena Int) (msg Int) (len Int) (off Int) (index Int))
+; Returns: Words
+(defn blake3-chunk-cv ((arena Arena) (msg Words) (len Int) (off Int) (index Int))
   (let out (blake3-chunk-output arena msg len off index 0)
     (blake3-out-cv arena out)))
 
@@ -207,24 +207,26 @@
 ; then counter, block length and flags. Keeping the last block rather
 ; than its chaining value is what lets the ROOT flag be applied at the
 ; very end, which is where BLAKE3 puts it.
-; Returns: Int
-(defn blake3-out-new ((arena Int))
+; Returns: Words
+(defn blake3-out-new ((arena Arena))
   (w-alloc arena 27))
 
+; The input chaining value (words 0..7), a view sharing the record.
+; Returns: Words
+(defn blake3-out-cv-in ((arena Arena) (out Words)) (w-view arena out 0 8))
+; The block (words 8..23), a view sharing the record.
+; Returns: Words
+(defn blake3-out-block ((arena Arena) (out Words)) (w-view arena out 8 16))
 ; Returns: Int
-(defn blake3-out-cv-in ((out Int)) out)
+(defn blake3-out-counter ((out Words)) (w-get out 24))
 ; Returns: Int
-(defn blake3-out-block ((out Int)) (+ out 64))
+(defn blake3-out-blocklen ((out Words)) (w-get out 25))
 ; Returns: Int
-(defn blake3-out-counter ((out Int)) (w-get out 24))
-; Returns: Int
-(defn blake3-out-blocklen ((out Int)) (w-get out 25))
-; Returns: Int
-(defn blake3-out-flags ((out Int)) (w-get out 26))
+(defn blake3-out-flags ((out Words)) (w-get out 26))
 
 ; The Output for the final block of a chunk.
-; Returns: Int
-(defn blake3-chunk-output ((arena Int) (msg Int) (len Int) (off Int) (index Int) (extraflags Int))
+; Returns: Words
+(defn blake3-chunk-output ((arena Arena) (msg Words) (len Int) (off Int) (index Int) (extraflags Int))
   (let cv (w-copy (w-alloc arena 8) (blake3-iv arena) 8)
     (let chunklen (blake3-chunk-len len off)
       (let nblocks (blake3-block-count chunklen)
@@ -240,18 +242,16 @@
 (defn blake3-block-count ((chunklen Int))
   (if (<= chunklen 0) 1 (/ (+ chunklen 63) 64)))
 
-; Returns: Int
-(defn blake3-chunk-loop ((arena Int) (msg Int) (len Int) (off Int) (index Int) (cv Int) (nblocks Int) (chunklen Int) (extraflags Int) (i Int))
-  (if (>= i nblocks)
-    0
-    (let blockoff (+ off (* i 64))
-      (let blocklen (blake3-block-len chunklen i nblocks)
-        (let flags (blake3-chunk-flags i nblocks extraflags)
-          (if (= i (- nblocks 1))
-            (blake3-make-output arena cv (blake3-load-block arena msg blockoff len) index blocklen flags)
-            (begin
-              (blake3-advance arena cv (blake3-load-block arena msg blockoff len) index blocklen flags)
-              (blake3-chunk-loop arena msg len off index cv nblocks chunklen extraflags (+ i 1)))))))))
+; Returns: Words
+(defn blake3-chunk-loop ((arena Arena) (msg Words) (len Int) (off Int) (index Int) (cv Words) (nblocks Int) (chunklen Int) (extraflags Int) (i Int))
+  (let blockoff (+ off (* i 64))
+    (let blocklen (blake3-block-len chunklen i nblocks)
+      (let flags (blake3-chunk-flags i nblocks extraflags)
+        (if (>= i (- nblocks 1))
+          (blake3-make-output arena cv (blake3-load-block arena msg blockoff len) index blocklen flags)
+          (begin
+            (blake3-advance arena cv (blake3-load-block arena msg blockoff len) index blocklen flags)
+            (blake3-chunk-loop arena msg len off index cv nblocks chunklen extraflags (+ i 1))))))))
 
 ; Returns: Int
 (defn blake3-block-len ((chunklen Int) (i Int) (nblocks Int))
@@ -267,14 +267,14 @@
 
 ; Compress one non-final block, updating the chaining value in place.
 ; Returns: Int
-(defn blake3-advance ((arena Int) (cv Int) (block Int) (counter Int) (blocklen Int) (flags Int))
+(defn blake3-advance ((arena Arena) (cv Words) (block Words) (counter Int) (blocklen Int) (flags Int))
   (let s (blake3-compress arena cv block counter blocklen flags)
     (begin
       (w-copy cv s 8)
       0)))
 
-; Returns: Int
-(defn blake3-make-output ((arena Int) (cv Int) (block Int) (counter Int) (blocklen Int) (flags Int))
+; Returns: Words
+(defn blake3-make-output ((arena Arena) (cv Words) (block Words) (counter Int) (blocklen Int) (flags Int))
   (let out (blake3-out-new arena)
     (begin
       (w-copy out cv 8)
@@ -287,9 +287,9 @@
 
 ; The chaining value an Output stands for (its compression without the
 ; ROOT flag).
-; Returns: Int
-(defn blake3-out-cv ((arena Int) (out Int))
-  (let s (blake3-compress arena (blake3-out-cv-in out) (blake3-out-block out)
+; Returns: Words
+(defn blake3-out-cv ((arena Arena) (out Words))
+  (let s (blake3-compress arena (blake3-out-cv-in arena out) (blake3-out-block arena out)
                           (blake3-out-counter out) (blake3-out-blocklen out) (blake3-out-flags out))
     (w-copy (w-alloc arena 8) s 8)))
 
@@ -298,8 +298,8 @@
 ; ===========================================================================
 
 ; The Output for a parent node, combining two child chaining values.
-; Returns: Int
-(defn blake3-parent-output ((arena Int) (left Int) (right Int))
+; Returns: Words
+(defn blake3-parent-output ((arena Arena) (left Words) (right Words))
   (let block (w-alloc arena 16)
     (begin
       (w-copy block left 8)
@@ -314,8 +314,8 @@
 ; which is exactly the shape of the binary tree. The final chunk is
 ; folded into whatever remains on the stack, and only the outermost
 ; node gets the ROOT flag.
-; Returns: Int
-(defn blake3-hash ((arena Int) (msg Int) (len Int) (outlen Int))
+; Returns: Words
+(defn blake3-hash ((arena Arena) (msg Words) (len Int) (outlen Int))
   (let nchunks (blake3-chunk-count len)
     (let stack (w-alloc arena 440)
       (let depth (blake3-absorb-chunks arena msg len nchunks stack)
@@ -329,11 +329,11 @@
 ; Hash every chunk but the last, merging as the tree requires, and
 ; return the resulting stack depth.
 ; Returns: Int
-(defn blake3-absorb-chunks ((arena Int) (msg Int) (len Int) (nchunks Int) (stack Int))
+(defn blake3-absorb-chunks ((arena Arena) (msg Words) (len Int) (nchunks Int) (stack Words))
   (blake3-absorb-loop arena msg len nchunks stack 0 0))
 
 ; Returns: Int
-(defn blake3-absorb-loop ((arena Int) (msg Int) (len Int) (nchunks Int) (stack Int) (i Int) (depth Int))
+(defn blake3-absorb-loop ((arena Arena) (msg Words) (len Int) (nchunks Int) (stack Words) (i Int) (depth Int))
   (if (>= i (- nchunks 1))
     depth
     (let cv (blake3-chunk-cv arena msg len (* i 1024) i)
@@ -343,21 +343,21 @@
 ; Push a chaining value, merging with the top of the stack once for
 ; every trailing zero bit of the completed-chunk count.
 ; Returns: Int
-(defn blake3-push ((arena Int) (stack Int) (depth Int) (cv Int) (total Int))
+(defn blake3-push ((arena Arena) (stack Words) (depth Int) (cv Words) (total Int))
   (if (= (bit-and total 1) 0)
-    (let left (+ stack (* (- depth 1) 64))
+    (let left (w-view arena stack (* (- depth 1) 8) 8)
       (let merged (blake3-out-cv arena (blake3-parent-output arena left cv))
         (blake3-push arena stack (- depth 1) merged (shr total 1))))
     (begin
-      (w-copy (+ stack (* depth 64)) cv 8)
+      (w-copy (w-view arena stack (* depth 8) 8) cv 8)
       (+ depth 1))))
 
 ; Fold the last chunk's Output into every parent still on the stack.
-; Returns: Int
-(defn blake3-fold ((arena Int) (stack Int) (depth Int) (out Int))
+; Returns: Words
+(defn blake3-fold ((arena Arena) (stack Words) (depth Int) (out Words))
   (if (<= depth 0)
     out
-    (let left (+ stack (* (- depth 1) 64))
+    (let left (w-view arena stack (* (- depth 1) 8) 8)
       (blake3-fold arena stack (- depth 1)
         (blake3-parent-output arena left (blake3-out-cv arena out))))))
 
@@ -369,8 +369,8 @@
 ; block re-runs the compression with an incrementing counter and the
 ; ROOT flag, which is what makes BLAKE3 an XOF rather than a
 ; fixed-length hash.
-; Returns: Int
-(defn blake3-finalize ((arena Int) (out Int) (outlen Int))
+; Returns: Words
+(defn blake3-finalize ((arena Arena) (out Words) (outlen Int))
   (let buf (w-alloc arena (+ outlen 64))
     (begin
       (for (i 0) (< (* i 64) outlen)
@@ -380,8 +380,8 @@
       buf)))
 
 ; Returns: Int
-(defn blake3-squeeze-block ((arena Int) (out Int) (buf Int) (i Int))
-  (let s (blake3-compress arena (blake3-out-cv-in out) (blake3-out-block out)
+(defn blake3-squeeze-block ((arena Arena) (out Words) (buf Words) (i Int))
+  (let s (blake3-compress arena (blake3-out-cv-in arena out) (blake3-out-block arena out)
                           i (blake3-out-blocklen out)
                           (bit-or (blake3-out-flags out) 8))
     (begin
@@ -392,7 +392,7 @@
       0)))
 
 ; Returns: Int
-(defn blake3-put32 ((buf Int) (off Int) (v Int))
+(defn blake3-put32 ((buf Words) (off Int) (v Int))
   (begin
     (w-set buf off (bit-and v 255))
     (w-set buf (+ off 1) (bit-and (shr v 8) 255))
@@ -402,6 +402,6 @@
 
 ; BLAKE3 of a String as a 64-character hex digest.
 ; Returns: String
-(defn blake3-hex-of-string ((arena Int) (s String))
+(defn blake3-hex-of-string ((arena Arena) (s String))
   (let msg (w-from-string arena s)
     (w-hex-bytes (blake3-hash arena msg (w-string-len s) 32) 32)))

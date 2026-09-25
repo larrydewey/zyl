@@ -16,7 +16,7 @@
 
 (defn _ec_arena () (arena-create 0))
 
-(defn _ec_priv ((a Int) (hex String))
+(defn _ec_priv ((a Arena) (hex String))
   (let v (bn-alloc a 11)
     (bn-from-bytes-be v 11 (w-from-hex a hex) 32)))
 

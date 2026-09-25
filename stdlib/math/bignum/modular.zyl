@@ -23,8 +23,8 @@
 ; out = (a + b) mod m, for a, b < m. One conditional subtraction
 ; suffices because the sum is below 2m; the subtraction always runs and
 ; only its write-back is masked.
-; Returns: Int
-(defn mod-add ((arena Int) (out Int) (a Int) (b Int) (m Int) (n Int))
+; Returns: Words
+(defn mod-add ((arena Arena) (out Words) (a Words) (b Words) (m Words) (n Int))
   (let carry (bn-add out a b n)
     (let scratch (bn-alloc arena n)
       (let borrow (bn-sub scratch out m n)
@@ -35,8 +35,8 @@
 
 ; out = (a - b) mod m, for a, b < m. When the subtraction borrows, the
 ; modulus is added back -- again masked rather than branched.
-; Returns: Int
-(defn mod-sub ((arena Int) (out Int) (a Int) (b Int) (m Int) (n Int))
+; Returns: Words
+(defn mod-sub ((arena Arena) (out Words) (a Words) (b Words) (m Words) (n Int))
   (let borrow (bn-sub out a b n)
     (let scratch (bn-alloc arena n)
       (begin
@@ -45,8 +45,8 @@
         out))))
 
 ; out = (a * 2) mod m.
-; Returns: Int
-(defn mod-double ((arena Int) (out Int) (a Int) (m Int) (n Int))
+; Returns: Words
+(defn mod-double ((arena Arena) (out Words) (a Words) (m Words) (n Int))
   (mod-add arena out a a m n))
 
 ; ===========================================================================
@@ -62,8 +62,8 @@
 ;
 ; The modulus must be prime. For a composite modulus the result is
 ; meaningless (silently, as it is in every Fermat-based inverse).
-; Returns: Int
-(defn mod-inverse-prime ((arena Int) (out Int) (a Int) (p Int) (n Int))
+; Returns: Words
+(defn mod-inverse-prime ((arena Arena) (out Words) (a Words) (p Words) (n Int))
   (let e (bn-alloc arena n)
     (let two (bn-alloc arena n)
       (begin
@@ -82,19 +82,19 @@
 ;
 ; Returns 1 for "probably prime", 0 for "definitely composite".
 ; Returns: Int
-(defn mr-probably-prime ((arena Int) (cand Int) (n Int) (rounds Int))
+(defn mr-probably-prime ((arena Arena) (cand Words) (n Int) (rounds Int))
   (if (= (bn-even cand) 1)
     0
     (mr-rounds arena cand n rounds 2)))
 
 ; 1 when the number is even.
 ; Returns: Int
-(defn bn-even ((a Int))
+(defn bn-even ((a Words))
   (- 1 (bit-and (w-get a 0) 1)))
 
 ; Try the small prime bases 2, 3, 5, 7, ... for `rounds` of them.
 ; Returns: Int
-(defn mr-rounds ((arena Int) (cand Int) (n Int) (rounds Int) (base Int))
+(defn mr-rounds ((arena Arena) (cand Words) (n Int) (rounds Int) (base Int))
   (if (<= rounds 0)
     1
     (if (= (mr-witness arena cand n base) 0)
@@ -111,7 +111,7 @@
 ; Decomposes cand-1 as d * 2^s, computes base^d mod cand, and looks for
 ; the 1 or -1 that a prime must produce.
 ; Returns: Int
-(defn mr-witness ((arena Int) (cand Int) (n Int) (base Int))
+(defn mr-witness ((arena Arena) (cand Words) (n Int) (base Int))
   (let d (bn-alloc arena n)
     (let one (bn-alloc arena n)
       (begin
@@ -122,7 +122,7 @@
 
 ; Halve `d` while it is even, returning how many times.
 ; Returns: Int
-(defn mr-strip-twos ((d Int) (n Int) (count Int))
+(defn mr-strip-twos ((d Words) (n Int) (count Int))
   (if (= (bit-and (w-get d 0) 1) 1)
     count
     (begin
@@ -130,7 +130,7 @@
       (mr-strip-twos d n (+ count 1)))))
 
 ; Returns: Int
-(defn mr-check ((arena Int) (cand Int) (n Int) (base Int) (d Int) (s Int))
+(defn mr-check ((arena Arena) (cand Words) (n Int) (base Int) (d Words) (s Int))
   (let b (bn-alloc arena n)
     (let x (bn-alloc arena n)
       (let one (bn-alloc arena n)
@@ -151,7 +151,7 @@
 
 ; Square up to s-1 times looking for cand-1.
 ; Returns: Int
-(defn mr-square-loop ((arena Int) (x Int) (candm1 Int) (cand Int) (n Int) (s Int))
+(defn mr-square-loop ((arena Arena) (x Words) (candm1 Words) (cand Words) (n Int) (s Int))
   (if (<= s 0)
     0
     ; Same public round verdict as mr-check's first test.
@@ -162,7 +162,7 @@
         (mr-square-loop arena x candm1 cand n (- s 1))))))
 
 ; Returns: Int
-(defn mr-square-once ((arena Int) (x Int) (cand Int) (n Int))
+(defn mr-square-once ((arena Arena) (x Words) (cand Words) (n Int))
   (let two (bn-alloc arena n)
     (begin
       (bn-set-small two n 2)

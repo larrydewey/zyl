@@ -55,6 +55,7 @@
           (Cons (EC "E_FFI_SYMBOL_REQUIRED" 16 1 "ffi: ffi-call must name its C symbol with a string literal at S")
           (Cons (EC "E_REGION_SPEC" 6 1 "region: malformed with-region specification at S")
           (Cons (EC "E_INVALID_ESCAPE" 1 1 "lexer: invalid escape sequence in a string literal at S")
+          (Cons (EC "E_INDEX_OUT_OF_BOUNDS" 10 1 "runtime: index outside a word array")
           (Cons (EC "E_REGION_EXHAUSTED" 10 1 "runtime: a with-region region ran out of its fixed size or limit")
           (Cons (EC "E_CAPABILITY_LEAK" 13 1 "capability: TMut leaked across boundary at S")
             (Cons (EC "E_CIRCULAR_MODULE" 9 1 "module: circular dependency: M")
@@ -150,7 +151,7 @@
                                                           (Cons (EC "E_PKG_ORPHAN_IMPL" 12 1 "trait: impl of T for U where neither the trait nor the type is local to N")
                                                           (Cons (EC "E_PKG_CAPABILITY_VIOLATION" 13 1 "capability: package N uses M without declaring the C capability")
                                                           (Cons (EC "E_PKG_CAPABILITY_GROWTH" 13 1 "capability: capability closure grew under --locked: C")
-                                                          Nil))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+                                                          Nil)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 ; ---------------------------------------------------------------------------
 ; ACCESSORS
 ; ---------------------------------------------------------------------------

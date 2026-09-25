@@ -15,41 +15,49 @@
 ;     the slots just written. A 64-round loop of `(vec-set v i x)`
 ;     inside a `begin` therefore silently reads back nothing.
 ;
-; A word array is just a base address into an arena with an 8-byte
-; stride and NO length header: the length is whatever the caller
-; allocated and tracks. That means w-get/w-set are unchecked -- they are
-; the primitive these libraries build bounds-checked structures ON, and
-; every caller in stdlib/math indexes with a loop counter whose bound is
-; a compile-time constant of the algorithm (64 rounds, 16 words, 8
-; state slots), never with attacker-controlled data.
+; A word array is a `Words` handle: its length and its storage, allocated
+; in an arena. Every access is bounds-checked by the runtime
+; (E_INDEX_OUT_OF_BOUNDS), and a sub-array is a view (w-view) that shares
+; its parent's storage, so no code here or in its callers does address
+; arithmetic (docs/sound-types-design.md).
 
 (use allocator/allocator)
 
-; Allocate `n` zeroed words. Returns the base address.
+; Allocate `n` zeroed words.
+; Returns: Words
+(defn w-alloc ((arena Arena) (n Int))
+  (ffi-call "zyl_words_new" arena n 1000))
+
+; Number of words.
 ; Returns: Int
-(defn w-alloc ((arena Int) (n Int))
-  (arena-alloc-zeroed arena (* n 8)))
+(defn w-len ((base Words))
+  (ffi-call "zyl_words_len" base 1000))
 
 ; Read word i.
 ; Returns: Int
-(defn w-get ((base Int) (i Int))
-  (alloc-read-int (+ base (* i 8))))
+(defn w-get ((base Words) (i Int))
+  (ffi-call "zyl_words_get" base i 1000))
 
 ; Write word i. Returns the value written.
 ; Returns: Int
-(defn w-set ((base Int) (i Int) (v Int))
-  (alloc-write-int (+ base (* i 8)) v))
+(defn w-set ((base Words) (i Int) (v Int))
+  (ffi-call "zyl_words_set" base i v 1000))
+
+; Words [off, off + n) of `base`, sharing its storage.
+; Returns: Words
+(defn w-view ((arena Arena) (base Words) (off Int) (n Int))
+  (ffi-call "zyl_words_view" arena base off n 1000))
 
 ; Set words [0, n) to v.
-; Returns: Int
-(defn w-fill ((base Int) (n Int) (v Int))
+; Returns: Words
+(defn w-fill ((base Words) (n Int) (v Int))
   (begin
     (for (i 0) (< i n) (begin (w-set base i v) (set! i (+ i 1))))
     base))
 
 ; Copy n words from src to dst.
-; Returns: Int
-(defn w-copy ((dst Int) (src Int) (n Int))
+; Returns: Words
+(defn w-copy ((dst Words) (src Words) (n Int))
   (begin
     (for (i 0) (< i n) (begin (w-set dst i (w-get src i)) (set! i (+ i 1))))
     dst))
@@ -70,8 +78,8 @@
   (ffi-call "zyl_cstr_len" s 1000))
 
 ; Copy a String's bytes into a fresh word array, one byte per word.
-; Returns: Int
-(defn w-from-string ((arena Int) (s String))
+; Returns: Words
+(defn w-from-string ((arena Arena) (s String))
   (let n (ffi-call "zyl_cstr_len" s 1000)
     (let p (w-alloc arena n)
       (begin
@@ -124,14 +132,14 @@
 ; the program is not yet in that table, so the caller would fall back
 ; to "Int" and turn `=` on its result into a pointer comparison.
 ; Returns: String
-(defn w-hex-words-acc ((base Int) (n Int) (i Int) (acc String))
+(defn w-hex-words-acc ((base Words) (n Int) (i Int) (acc String))
   (if (>= i n)
     (str-concat acc "")
     (w-hex-words-acc base n (+ i 1) (str-concat acc (w-hex-word32 (w-get base i))))))
 
 ; `n` 32-bit words as hex, in order.
 ; Returns: String
-(defn w-hex-words ((base Int) (n Int))
+(defn w-hex-words ((base Words) (n Int))
   (w-hex-words-acc base n 0 ""))
 
 ; The base case returns `(str-concat acc "")` rather than `acc` itself.
@@ -141,14 +149,14 @@
 ; and `print` of one show a pointer value. Ending in a call that is
 ; known to return a String makes the kind visible.
 ; Returns: String
-(defn w-hex-bytes-acc ((base Int) (n Int) (i Int) (acc String))
+(defn w-hex-bytes-acc ((base Words) (n Int) (i Int) (acc String))
   (if (>= i n)
     (str-concat acc "")
     (w-hex-bytes-acc base n (+ i 1) (str-concat acc (w-hex-byte (w-get base i))))))
 
 ; `n` bytes (one per word) as hex, in order.
 ; Returns: String
-(defn w-hex-bytes ((base Int) (n Int))
+(defn w-hex-bytes ((base Words) (n Int))
   (w-hex-bytes-acc base n 0 ""))
 
 ; ===========================================================================
@@ -172,8 +180,8 @@
     -1))))
 
 ; Decode a hex String into a fresh byte array (one byte per word).
-; Returns: Int
-(defn w-from-hex ((arena Int) (s String))
+; Returns: Words
+(defn w-from-hex ((arena Arena) (s String))
   (let n (/ (ffi-call "zyl_cstr_len" s 1000) 2)
     (let p (w-alloc arena n)
       (begin

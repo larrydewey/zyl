@@ -1,0 +1,69 @@
+; === Zyl Compiler — Impl Lifting ===
+; Module: compiler/lift_impls
+;
+; Each impl method becomes a top-level function named `Trait.method_Type`
+; whose first parameter is annotated with the impl's type; the impl block
+; itself stays for the trait tables. A deftype's field names that are
+; type parameters (uppercase) are blanked, as the field types are read
+; from the parse-time side table (expr_inner.zyl's record-field-types).
+;
+; This replaced compiler/monomorphization and compiler/type_inference
+; (2026-09-24): with an empty inference context those did only this;
+; every real specialization is compiler/type_annotate's.
+
+(use core/list)
+(use compiler/expr_inner)
+
+(defn lift-impls (exprs)
+  (list-reverse (lift-loop Nil exprs)))
+
+(defn lift-loop (acc exprs)
+  (match exprs
+    (Nil acc)
+    (Cons e rest (lift-loop (lift-one acc e) rest))))
+
+(defn lift-one (acc e)
+  (match (Expr.inner e)
+    (EImplBlock trait_name type_name bodies
+      (Cons e (lift-bodies acc trait_name type_name bodies)))
+    (EDeftype name variants _ bound
+      (Cons (lift-keep-span (Expr (EDeftype name (lift-variants variants) Nil bound)) e) acc))
+    (_ (Cons e acc))))
+
+(defn lift-keep-span (out from)
+  (let _ (ffi-call "zyl_span_copy" out from 1000) out))
+
+(defn lift-bodies (acc trait_name type_name bodies)
+  (match bodies
+    (Nil acc)
+    (Cons ib rest
+      (match ib
+        (IB body
+          (let name (str-concat trait_name (str-concat "." (str-concat (DN.name body) (str-concat "_" type_name))))
+            (lift-bodies (Cons (Expr (EDefn name (lift-annotate-first (DN.params body) type_name) (DN.body body))) acc)
+                         trait_name type_name rest)))))))
+
+(defn lift-annotate-first (params type_name)
+  (match params
+    (Nil Nil)
+    (Cons p rest (Cons (P (P.name p) (Some (Expr (EAtom (AIdent type_name))))) rest))))
+
+(defn lift-variants (variants)
+  (match variants
+    (Nil Nil)
+    (Cons v rest (Cons (AV (AV.name v) (lift-fields (AV.fields v))) (lift-variants rest)))))
+
+(defn lift-fields (fields)
+  (match fields
+    (Nil Nil)
+    (Cons f rest (Cons (if (lift-uppercase-p f) "" f) (lift-fields rest)))))
+
+(defn lift-uppercase-p (name)
+  (if (= (str-length name) 0)
+    false
+    (let c (ffi-call "zyl_cstr_byte_at" name 0 1000)
+      (and (>= c 65) (<= c 90)))))
+
+; The suffix of `s` after its first `n` bytes.
+(defn str-drop (s n)
+  (if (<= n (str-length s)) (str-substring s n (- (str-length s) n)) ""))

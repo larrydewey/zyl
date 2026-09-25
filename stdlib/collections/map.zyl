@@ -3,21 +3,21 @@
 ; Provides: Arena-backed Map<K, V>
 
 (use allocator/allocator)
+(use math/words)
 
-(defstruct Map (kptr Int) (vptr Int) (len Int) (cap Int) (arena Int))
+(defstruct Map (kptr Words) (vptr Words) (len Int) (cap Int) (arena Arena))
 
 ; Create an empty Map with the given initial capacity on the given arena.
 ; Returns: Map
-; arena <= 0 means "create a private default arena".
-(defn map-create ((arena Int) (cap Int))
-  (let a (if (> arena 0) arena (arena-create 0))
-    (let c (if (< cap 0) 0 cap)
-      (make-Map (arena-alloc a (* c 8)) (arena-alloc a (* c 8)) 0 c a))))
+(defn map-create ((arena Arena) (cap Int))
+  (let c (if (< cap 0) 0 cap)
+    (make-Map (w-alloc arena c) (w-alloc arena c) 0 c arena)))
 
-; Create an empty Map with the given initial capacity using the default arena.
+; Create an empty Map with the given initial capacity in a new private
+; arena.
 ; Returns: Map
 (defn map-create-default ((cap Int))
-  (map-create 0 cap))
+  (map-create (arena-create 0) cap))
 
 ; Get the number of entries.
 ; Returns: Int
@@ -31,7 +31,7 @@
 
 ; Internal: lookup key `k` at index `i`. Returns 1-based index if found, 0 if not.
 (defn map-get-at ((m Map) (k Int) (i Int))
-  (let stored (alloc-read-int (+ (struct-get m "kptr") (* i 8)))
+  (let stored (w-get (struct-get m "kptr") i)
     (if (== k stored)
       (+ i 1)
       0)))
@@ -50,7 +50,7 @@
     default
     (let result (map-get-at m k i)
       (if (> result 0)
-        (alloc-read-int (+ (struct-get m "vptr") (* (- result 1) 8)))
+        (w-get (struct-get m "vptr") (- result 1))
         (map-get-loop m k default (+ i 1) len)))))
 
 ; Put a key-value pair. If key exists, overwrites value in-place.
@@ -60,7 +60,7 @@
     (if (> existing 0)
       (let idx (- existing 1)
         (begin
-          (alloc-write-int (+ (struct-get m "vptr") (* idx 8)) v)
+          (w-set (struct-get m "vptr") idx v)
           m))
       (map-put-inner m k v))))
 
@@ -69,23 +69,23 @@
     (let cap (map-cap m)
       (if (>= len cap)
         (let new-cap (if (<= cap 0) 16 (* cap 2))
-          (let new-kptr (arena-alloc (struct-get m "arena") (* new-cap 8))
-            (let new-vptr (arena-alloc (struct-get m "arena") (* new-cap 8))
+          (let new-kptr (w-alloc (struct-get m "arena") new-cap)
+            (let new-vptr (w-alloc (struct-get m "arena") new-cap)
               (let old-kptr (struct-get m "kptr")
                 (let old-vptr (struct-get m "vptr")
                   (begin
                     (for (j 0) (< j len)
                       (begin
-                        (alloc-write-int (+ new-kptr (* j 8)) (alloc-read-int (+ old-kptr (* j 8))))
-                        (alloc-write-int (+ new-vptr (* j 8)) (alloc-read-int (+ old-vptr (* j 8))))
+                        (w-set new-kptr j (w-get old-kptr j))
+                        (w-set new-vptr j (w-get old-vptr j))
                         (set! j (+ j 1))))
-                    (alloc-write-int (+ new-kptr (* len 8)) k)
-                    (alloc-write-int (+ new-vptr (* len 8)) v)
+                    (w-set new-kptr len k)
+                    (w-set new-vptr len v)
                     (make-Map new-kptr new-vptr (+ len 1) new-cap (struct-get m "arena"))))))))
         (let new-kptr (struct-get m "kptr")
           (begin
-            (alloc-write-int (+ new-kptr (* len 8)) k)
-            (alloc-write-int (+ (struct-get m "vptr") (* len 8)) v)
+            (w-set new-kptr len k)
+            (w-set (struct-get m "vptr") len v)
             (make-Map new-kptr (struct-get m "vptr") (+ len 1) cap (struct-get m "arena"))))))))
 
 ; Remove a key. Compacts the arrays in place (like set-remove), so the
@@ -102,8 +102,8 @@
             (begin
               (for (j (- removed 1)) (< j (- len 1))
                 (begin
-                  (alloc-write-int (+ kptr (* j 8)) (alloc-read-int (+ kptr (* (+ j 1) 8))))
-                  (alloc-write-int (+ vptr (* j 8)) (alloc-read-int (+ vptr (* (+ j 1) 8))))
+                  (w-set kptr j (w-get kptr (+ j 1)))
+                  (w-set vptr j (w-get vptr (+ j 1)))
                   (set! j (+ j 1))))
               (make-Map kptr vptr (- len 1) (map-cap m) (struct-get m "arena")))))))))
 
@@ -111,7 +111,7 @@
 (defn map-find ((m Map) (k Int) (i Int) (len Int))
   (if (>= i len)
     0
-    (let stored (alloc-read-int (+ (struct-get m "kptr") (* i 8)))
+    (let stored (w-get (struct-get m "kptr") i)
       (if (== k stored)
         (+ i 1)
         (map-find m k (+ i 1) len)))))
@@ -128,7 +128,7 @@
 (defn map-has-loop ((m Map) (k Int) (i Int) (len Int))
   (if (>= i len)
     false
-    (let stored (alloc-read-int (+ (struct-get m "kptr") (* i 8)))
+    (let stored (w-get (struct-get m "kptr") i)
       (if (== k stored)
         true
         (map-has-loop m k (+ i 1) len)))))
@@ -138,4 +138,4 @@
 ; An empty Map in the same arena. The storage is the arena's (freeing it
 ; with C free() was undefined behaviour); it returns at arena-reset.
 (defn map-free ((m Map))
-  (make-Map 0 0 0 0 (struct-get m "arena")))
+  (make-Map (w-alloc (struct-get m "arena") 0) (w-alloc (struct-get m "arena") 0) 0 0 (struct-get m "arena")))

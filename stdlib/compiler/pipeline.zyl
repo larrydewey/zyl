@@ -31,8 +31,7 @@
 (use compiler/exhaustiveness_check)
 (use compiler/unused_check)
 (use compiler/secret_check)
-(use compiler/type_inference)
-(use compiler/monomorphization)
+(use compiler/lift_impls)
 (use compiler/icnf)
 (use compiler/closure_inline)
 (use compiler/assert_lowering)
@@ -70,7 +69,7 @@
 (defn compile-to-exprs (arena srcbuf srcpath)
   (begin
     ; Field types recorded by the parse (type_annotate); none survive a compile.
-    (ffi-call "zyl_smap_clear" (ffi-call "zyl_smap_global" 0 1000) 1000)
+    (field-types-clear)
     (dbg-log "balance-check\n")
     (compile-check-balance srcbuf srcpath)
     (dbg-log "parse\n")
@@ -130,14 +129,10 @@
 (defn lower-exprs (arena exprs0)
   (let exprs (dv-expand-program exprs0)
   (begin
-    ; Types come from type_annotate (after lowering); monomorphization only
-    ; needs an empty inferer to lift impl bodies.
-    (let inferer (inferer-new)
-      (dbg-log "mono\n")
-      (let mono-ctx (mono-context-populate-adt-order (mono-context-new inferer) inferer)
-        (let mono-exprs (monomorphize mono-ctx exprs)
-          (begin
-            (lower-after-mono arena mono-exprs))))))))
+    ; Types come from type_annotate (after lowering); here impl bodies
+    ; are lifted into Trait.method_Type functions.
+    (let _ (dbg-log "lift-impls\n")
+      (lower-after-mono arena (lift-impls exprs))))))
 
 (defn lower-after-mono (arena td-exprs)
   (begin
