@@ -58,7 +58,7 @@
     (Nil -1)
     (Cons entry rest
       (match entry
-        (AE n arity (if (> (str-eq n name) 0) arity (ac-lookup rest name)))))))
+        (AE n arity (if (str-eq n name) arity (ac-lookup rest name)))))))
 
 ; `shadowed` is (List (Pair String Int)): a local binding's name paired
 ; with its arity if known -- -1 if the local is something whose arity
@@ -81,7 +81,7 @@
     (Nil -2)
     (Cons pr rest
       (match pr
-        (Pair n arity (if (> (str-eq n name) 0) arity (ac-lookup-local name rest)))))))
+        (Pair n arity (if (str-eq n name) arity (ac-lookup-local name rest)))))))
 
 (defn ac-wrap-unknown (names)
   (match names
@@ -244,7 +244,7 @@
         (ac-list args arities shadowed)))
     (EApply fname args
       (begin
-        (if (> (str-eq fname "ffi-call") 0) (ffi-check-call args e) 0)
+        (if (str-eq fname "ffi-call") (ffi-check-call args e) 0)
         (ac-check-call-by-name fname args arities shadowed e)
         (ac-list args arities shadowed)))
     (EFfiCall _ args _ (ac-list args arities shadowed))

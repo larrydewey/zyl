@@ -111,13 +111,13 @@
 (defn idx-find-form (forms head)
   (match forms
     (Nil None)
-    (Cons h t (if (> (str-eq (idx-ast-head h) head) 0) (Some h) (idx-find-form t head)))))
+    (Cons h t (if (str-eq (idx-ast-head h) head) (Some h) (idx-find-form t head)))))
 
 (defn idx-find-forms (forms head)
   (match forms
     (Nil Nil)
     (Cons h t
-      (if (> (str-eq (idx-ast-head h) head) 0)
+      (if (str-eq (idx-ast-head h) head)
         (Cons h (idx-find-forms t head))
         (idx-find-forms t head)))))
 
@@ -128,7 +128,7 @@
 
 (defn idx-bool-field (forms field)
   (let v (idx-field forms field)
-    (if (> (str-eq v "true") 0) 1 0)))
+    (if (str-eq v "true") 1 0)))
 
 (defn idx-read (arena root name)
   (let path (idx-entry-path root name)
@@ -255,7 +255,7 @@
   (let pinned (idx-pinned-key name)
     (if (= (str-length pinned) 0)
       (let _ (idx-pin-key name key) 1)
-      (if (> (str-eq pinned key) 0)
+      (if (str-eq pinned key)
         1
         (ffi-call "zyl_panic"
           (str-concat "E_PKG_KEY_CHANGED: package: publisher key for " (str-concat name

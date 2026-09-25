@@ -48,7 +48,7 @@
 (defn cc-find-grant (grants pkg)
   (match grants
     (Nil None)
-    (Cons h t (if (> (str-eq (cg-name h) pkg) 0) (Some h) (cc-find-grant t pkg)))))
+    (Cons h t (if (str-eq (cg-name h) pkg) (Some h) (cc-find-grant t pkg)))))
 
 ; ===========================================================================
 ; CONSTRUCTS
@@ -99,18 +99,18 @@
 ; capability they need is recognised by that name here. These names are
 ; never qualified — they are the language's, not a package's.
 (defn cc-builtin-capability (n)
-  (if (> (str-eq n "ffi-call") 0) "ffi"
-  (if (> (str-eq n "ffi-pin") 0) "ffi"
-  (if (> (str-eq n "ffi-unpin") 0) "ffi"
-  (if (> (str-eq n "spawn") 0) "actor"
-  (if (> (str-eq n "send") 0) "actor"
-  (if (> (str-eq n "receive") 0) "actor"
-  (if (> (str-eq n "actor-self") 0) "actor"
-  (if (> (str-eq n "file-open") 0) "io"
-  (if (> (str-eq n "file-read") 0) "io"
-  (if (> (str-eq n "file-write") 0) "io"
-  (if (> (str-eq n "file-close") 0) "io"
-  (if (> (str-eq n "read-line") 0) "io" "")))))))))))))
+  (if (str-eq n "ffi-call") "ffi"
+  (if (str-eq n "ffi-pin") "ffi"
+  (if (str-eq n "ffi-unpin") "ffi"
+  (if (str-eq n "spawn") "actor"
+  (if (str-eq n "send") "actor"
+  (if (str-eq n "receive") "actor"
+  (if (str-eq n "actor-self") "actor"
+  (if (str-eq n "file-open") "io"
+  (if (str-eq n "file-read") "io"
+  (if (str-eq n "file-write") "io"
+  (if (str-eq n "file-close") "io"
+  (if (str-eq n "read-line") "io" "")))))))))))))
 
 ; Module half of a canonical key `pkg@major::module::symbol`.
 (defn cc-module-of (n)
@@ -132,7 +132,7 @@
 
 (defn cc-module-capability (m)
   (if (> (cc-prefix-p m "io/") 0) "io"
-  (if (> (str-eq m "core/io") 0) "io"
+  (if (str-eq m "core/io") "io"
   (if (> (cc-prefix-p m "actor/") 0) "actor"
   (if (> (cc-prefix-p m "ffi/") 0) "ffi"
   (if (> (cc-prefix-p m "math/secret/") 0) "secret" ""))))))

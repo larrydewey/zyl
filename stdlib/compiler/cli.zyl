@@ -408,11 +408,11 @@
   (if (> (cli-prefix f "-O") 0) 1
   (if (> (cli-prefix f "-D") 0) 1
   (if (> (cli-prefix f "-std=") 0) 1
-  (if (> (str-eq f "-fPIC") 0) 1
-  (if (> (str-eq f "-fno-strict-aliasing") 0) 1
-  (if (> (str-eq f "-fwrapv") 0) 1
-  (if (> (str-eq f "-fstack-protector-strong") 0) 1
-  (if (> (str-eq f "-fno-omit-frame-pointer") 0) 1 0)))))))))
+  (if (str-eq f "-fPIC") 1
+  (if (str-eq f "-fno-strict-aliasing") 1
+  (if (str-eq f "-fwrapv") 1
+  (if (str-eq f "-fstack-protector-strong") 1
+  (if (str-eq f "-fno-omit-frame-pointer") 1 0)))))))))
 
 (defn cli-prefix (s p)
   (if (< (pk-len s) (pk-len p))
@@ -578,7 +578,7 @@
 (defn cli-flag-from (i flag)
   (if (>= (+ i 1) (ffi-call "zyl_argc" 1000))
     ""
-    (if (> (str-eq (ffi-call "zyl_arg_str" i 1000) flag) 0)
+    (if (str-eq (ffi-call "zyl_arg_str" i 1000) flag)
       (ffi-call "zyl_arg_str" (+ i 1) 1000)
       (cli-flag-from (+ i 1) flag))))
 

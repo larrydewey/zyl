@@ -61,7 +61,7 @@
 (defn mc-in-scope (name scope)
   (match scope
     (Nil 0)
-    (Cons h t (if (> (str-eq h name) 0) 1 (mc-in-scope name t)))))
+    (Cons h t (if (str-eq h name) 1 (mc-in-scope name t)))))
 
 ; A `fn`/`lambda` body is walked with this marker pushed onto the
 ; enclosing mutscope: a let-mut found only BEHIND it belongs to an
@@ -79,9 +79,9 @@
   (match scope
     (Nil 0)
     (Cons h t
-      (if (> (str-eq h name) 0)
+      (if (str-eq h name)
         (if (> fenced 0) 2 1)
-        (if (> (str-eq h (mc-fn-fence)) 0)
+        (if (str-eq h (mc-fn-fence))
           (mc-scope-status name t 1)
           (mc-scope-status name t fenced))))))
 
@@ -107,7 +107,7 @@
     (Nil None)
     (Cons pr rest
       (match pr
-        (Pair n node (if (> (str-eq n name) 0) (Some node) (mc-find-let name rest)))))))
+        (Pair n node (if (str-eq n name) (Some node) (mc-find-let name rest)))))))
 
 (defn mc-fail-immutable-set (e name lets)
   (let m1 (str-concat "set! target `" (err-name name))
@@ -232,7 +232,7 @@
     ; lowering does.
     (EApply fname args
       (begin
-        (if (> (str-eq fname "ffi-call") 0)
+        (if (str-eq fname "ffi-call")
           (mc-check-ffi-args (mc-butlast args))
           0)
         (mc-list args mutscope lets)))

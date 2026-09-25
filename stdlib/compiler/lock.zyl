@@ -86,7 +86,7 @@
 (defn lk-find-in (pkgs name)
   (match pkgs
     (Nil None)
-    (Cons h t (if (> (str-eq (lp-name h) name) 0) (Some h) (lk-find-in t name)))))
+    (Cons h t (if (str-eq (lp-name h) name) (Some h) (lk-find-in t name)))))
 
 ; ===========================================================================
 ; READING
@@ -116,13 +116,13 @@
 (defn lk-find-form (forms head)
   (match forms
     (Nil None)
-    (Cons h t (if (> (str-eq (lk-ast-head h) head) 0) (Some h) (lk-find-form t head)))))
+    (Cons h t (if (str-eq (lk-ast-head h) head) (Some h) (lk-find-form t head)))))
 
 (defn lk-find-forms (forms head)
   (match forms
     (Nil Nil)
     (Cons h t
-      (if (> (str-eq (lk-ast-head h) head) 0)
+      (if (str-eq (lk-ast-head h) head)
         (Cons h (lk-find-forms t head))
         (lk-find-forms t head)))))
 
@@ -213,9 +213,9 @@
     (Nil (PSRegistry))
     (Cons h _
       (let head (lk-ast-head h)
-        (if (> (str-eq head "path") 0)
+        (if (str-eq head "path")
           (PSPath (lk-first-str h))
-          (if (> (str-eq head "git") 0)
+          (if (str-eq head "git")
             (PSGit (lk-first-str h) (lk-field (lk-ast-args h) "rev"))
             (PSRegistry)))))))
 

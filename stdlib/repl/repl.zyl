@@ -247,7 +247,7 @@
   (repl-kept sess (repl-unknown cmd))))))))))))))
 
 (defn repl-cmd-p (cmd short long)
-  (if (> (str-eq cmd short) 0) 1 (if (> (str-eq cmd long) 0) 1 0)))
+  (if (str-eq cmd short) 1 (if (str-eq cmd long) 1 0)))
 
 ; The command already printed whatever it had to say; this is only the
 ; session it leaves behind.
@@ -485,7 +485,7 @@
   (match bs
     (Nil (repl-note (str-concat "no documentation for " name)))
     (Cons b rest
-      (if (> (str-eq (ZB.name b) name) 0)
+      (if (str-eq (ZB.name b) name)
         (repl-doc-print b)
         (repl-doc-find rest name)))))
 
@@ -550,11 +550,11 @@
     0))
 
 (defn repl-def-word (w)
-  (if (> (str-eq w "defn") 0) 1
-  (if (> (str-eq w "def") 0) 1
-  (if (> (str-eq w "deftype") 0) 1
-  (if (> (str-eq w "defstruct") 0) 1
-  (if (> (str-eq w "defmacro") 0) 1
+  (if (str-eq w "defn") 1
+  (if (str-eq w "def") 1
+  (if (str-eq w "deftype") 1
+  (if (str-eq w "defstruct") 1
+  (if (str-eq w "defmacro") 1
   0))))))
 
 (defn repl-skip-word (text i n)

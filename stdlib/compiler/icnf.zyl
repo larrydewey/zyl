@@ -98,25 +98,25 @@
 ; previous-generation seed binary cannot compile.
 
 (defn ic-op-of (arena s)
-  (if (> (str-eq s (str-intern arena "+")) 0) 0
-  (if (> (str-eq s (str-intern arena "-")) 0) 1
-  (if (> (str-eq s (str-intern arena "*")) 0) 2
-  (if (> (str-eq s (str-intern arena "/")) 0) 3
-  (if (> (str-eq s (str-intern arena "%")) 0) 4
-  (if (> (str-eq s (str-intern arena "<")) 0) 5
-  (if (> (str-eq s (str-intern arena ">")) 0) 6
-  (if (> (str-eq s (str-intern arena "<=")) 0) 7
-  (if (> (str-eq s (str-intern arena ">=")) 0) 8
-  (if (> (str-eq s (str-intern arena "==")) 0) 9
-  (if (> (str-eq s (str-intern arena "=")) 0) 9
-  (if (> (str-eq s (str-intern arena "!=")) 0) 10
-  (if (> (str-eq s (str-intern arena "bit-and")) 0) 11
-  (if (> (str-eq s (str-intern arena "bit-or")) 0) 12
-  (if (> (str-eq s (str-intern arena "bit-xor")) 0) 13
-  (if (> (str-eq s (str-intern arena "shl")) 0) 14
-  (if (> (str-eq s (str-intern arena "shr")) 0) 15
-  (if (> (str-eq s (str-intern arena "ashr")) 0) 16
-  (if (> (str-eq s (str-intern arena "bit-not")) 0) 17
+  (if (str-eq s (str-intern arena "+")) 0
+  (if (str-eq s (str-intern arena "-")) 1
+  (if (str-eq s (str-intern arena "*")) 2
+  (if (str-eq s (str-intern arena "/")) 3
+  (if (str-eq s (str-intern arena "%")) 4
+  (if (str-eq s (str-intern arena "<")) 5
+  (if (str-eq s (str-intern arena ">")) 6
+  (if (str-eq s (str-intern arena "<=")) 7
+  (if (str-eq s (str-intern arena ">=")) 8
+  (if (str-eq s (str-intern arena "==")) 9
+  (if (str-eq s (str-intern arena "=")) 9
+  (if (str-eq s (str-intern arena "!=")) 10
+  (if (str-eq s (str-intern arena "bit-and")) 11
+  (if (str-eq s (str-intern arena "bit-or")) 12
+  (if (str-eq s (str-intern arena "bit-xor")) 13
+  (if (str-eq s (str-intern arena "shl")) 14
+  (if (str-eq s (str-intern arena "shr")) 15
+  (if (str-eq s (str-intern arena "ashr")) 16
+  (if (str-eq s (str-intern arena "bit-not")) 17
   -1))))))))))))))))))))
 
 ; Typed empty lists (bare `Nil` values unify ambiguously as Option vs
@@ -245,7 +245,7 @@
     (Nil 0)
     (Cons f rest
       (match f
-        (IFn name _ _ (if (> (str-eq name nm) 0) 1 (ic-has-fn rest nm)))
+        (IFn name _ _ (if (str-eq name nm) 1 (ic-has-fn rest nm)))
         (_ (ic-has-fn rest nm))))))
 
 ; Top-level defs are initialized, in source order, before main's body.
@@ -255,7 +255,7 @@
     (Cons f rest
       (match f
         (IFn name ps body ks
-          (if (> (str-eq name "main") 0)
+          (if (str-eq name "main")
             (Cons (IFn name ps (ISeq (Cons (ICall "zyl-init-globals" Nil) (Cons body Nil))) ks) rest)
             (Cons f (ic-init-in-main rest))))
         (_ (Cons f (ic-init-in-main rest)))))))
@@ -273,7 +273,7 @@
     (Nil 0)
     (Cons f rest
       (match f
-        (IFn name _ _ (if (> (str-eq name "main") 0) 1 (ic-has-main rest)))
+        (IFn name _ _ (if (str-eq name "main") 1 (ic-has-main rest)))
         (_ (ic-has-main rest))))))
 
 ; Walk top-level exprs; EDeftype forms extend the variant table.
@@ -344,7 +344,7 @@
   (match variants
     (Nil 0)
     (Cons v rest
-      (if (> (str-eq (AV.name v) nm) 0) 1 (av-list-has-name rest nm)))))
+      (if (str-eq (AV.name v) nm) 1 (av-list-has-name rest nm)))))
 
 ; Link one variant entry per variant; tail = next entry chain. Tags
 ; assigned in declaration order (first variant gets the lowest tag).
@@ -415,9 +415,9 @@
     (EAtom a
       (match a
         (AIdent n
-          (if (> (str-eq n "String") 0)
+          (if (str-eq n "String")
             1
-            (if (> (str-eq n "Float") 0) 2 0)))
+            (if (str-eq n "Float") 2 0)))
         (_ 0)))
     (_ 0)))
 
@@ -834,7 +834,7 @@
       acc
       (if (> (vt-is-fn vt name) 0)
         acc
-        (if (> (str-eq name "nil") 0)
+        (if (str-eq name "nil")
           acc
           (list-append acc (Cons name Nil)))))))
 
@@ -884,7 +884,7 @@
 (defn ic-name-in-list (name xs)
   (match xs
     (Nil 0)
-    (Cons h t (if (> (str-eq name h) 0) 1 (ic-name-in-list name t)))))
+    (Cons h t (if (str-eq name h) 1 (ic-name-in-list name t)))))
 
 
 ; --- hoist embedded IFn nodes (from `fn`) out to the top level -------------
@@ -1045,7 +1045,7 @@
 (defn ic-field-index (fields field i)
   (match fields
     (Nil -1)
-    (Cons h t (if (> (str-eq h field) 0) i (ic-field-index t field (+ i 1))))))
+    (Cons h t (if (str-eq h field) i (ic-field-index t field (+ i 1))))))
 
 (defn ic-nth-str (xs i)
   (match xs
@@ -1109,7 +1109,7 @@
 
 (defn ic-apply-renamed (arena expr fname args vt)
   (let nm (ta-renamed expr)
-    (if (> (str-eq fname "zyl-method") 0)
+    (if (str-eq fname "zyl-method")
       (ic-method-call arena nm args vt)
       (if (= nm 0) (ic-apply arena fname args vt) (ic-renamed-call arena nm fname args vt)))))
 
@@ -1126,9 +1126,9 @@
 ; Apply: operator, ffi-call, or call/variant routing by head-symbol name
 ; (no-dispatch arch: recognition happens here, never in the reader).
 (defn ic-apply (arena fname args vt)
-  (if (> (str-eq fname (str-intern arena "ffi-call")) 0)
+  (if (str-eq fname (str-intern arena "ffi-call"))
     (ic-ffi arena args vt)
-  (if (> (str-eq fname "with-region") 0)
+  (if (str-eq fname "with-region")
     (ic-with-region arena args vt)
     (let strb (ic-str-builtin-sym arena fname)
       (if (> (str-length strb) 0)
@@ -1189,10 +1189,10 @@
 ; that calls them without also defining its own same-named wrapper
 ; function links with an undefined `f_str_*` reference.
 (defn ic-str-builtin-sym (arena fname)
-  (if (> (str-eq fname (str-intern arena "str-concat")) 0) "zyl_cstr_concat"
-  (if (> (str-eq fname (str-intern arena "str-length")) 0) "zyl_cstr_len"
-  (if (> (str-eq fname (str-intern arena "str-substring")) 0) "zyl_cstr_substr"
-  (if (> (str-eq fname (str-intern arena "str-equal")) 0) "zyl_cstr_eq"
+  (if (str-eq fname (str-intern arena "str-concat")) "zyl_cstr_concat"
+  (if (str-eq fname (str-intern arena "str-length")) "zyl_cstr_len"
+  (if (str-eq fname (str-intern arena "str-substring")) "zyl_cstr_substr"
+  (if (str-eq fname (str-intern arena "str-equal")) "zyl_cstr_eq"
   "")))))
 
 (defn ic-call-or-variant (arena fname args vt)
@@ -1204,15 +1204,15 @@
 ; Runtime ops reached by name: def getters' cells (expr_inner.zyl's
 ; def-getter) and the actor forms (receive) / (actor-self).
 (defn ic-global-sym (n)
-  (if (> (str-eq n "zyl-global-ready") 0) "zyl_global_ready"
-    (if (> (str-eq n "zyl-global-get") 0) "zyl_global_get"
-      (if (> (str-eq n "zyl-global-put") 0) "zyl_global_put"
-        (if (> (str-eq n "receive") 0) "zyl_actor_receive"
-          (if (> (str-eq n "actor-self") 0) "zyl_actor_self"
-            (if (> (str-eq n "zyl-contract-warn") 0) "zyl_contract_warn"
-              (if (> (str-eq n "zyl-err-is") 0) "zyl_err_is"
-                (if (> (str-eq n "zyl-reraise") 0) "zyl_panic"
-                  (if (> (str-eq n "zyl-repl-global") 0) "zyl_repl_global_get" ""))))))))))
+  (if (str-eq n "zyl-global-ready") "zyl_global_ready"
+    (if (str-eq n "zyl-global-get") "zyl_global_get"
+      (if (str-eq n "zyl-global-put") "zyl_global_put"
+        (if (str-eq n "receive") "zyl_actor_receive"
+          (if (str-eq n "actor-self") "zyl_actor_self"
+            (if (str-eq n "zyl-contract-warn") "zyl_contract_warn"
+              (if (str-eq n "zyl-err-is") "zyl_err_is"
+                (if (str-eq n "zyl-reraise") "zyl_panic"
+                  (if (str-eq n "zyl-repl-global") "zyl_repl_global_get" ""))))))))))
 
 (defn ic-call-or-variant-go (arena fname args vt)
   (let tag (vt-tag-of vt (str-intern arena fname))
@@ -1418,7 +1418,7 @@
   (match arms
     (Nil 0)
     (Cons arm rest
-      (if (> (str-eq (MA.variant arm) n) 0) 1 (ic-arm-covers-name rest n)))))
+      (if (str-eq (MA.variant arm) n) 1 (ic-arm-covers-name rest n)))))
 
 (defn ic-names-uncovered (names arms)
   (match names

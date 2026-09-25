@@ -251,7 +251,7 @@
 ; `file://` archives (a local index) are copied; anything else is fetched
 ; over HTTPS only. Either way the content hash is verified on install.
 (defn store-fetch-url (url out)
-  (if (and (> (pk-len url) 7) (> (str-eq (pk-sub url 0 7) "file://") 0))
+  (if (and (> (pk-len url) 7) (str-eq (pk-sub url 0 7) "file://"))
     (store-copy-file (pk-sub url 7 (- (pk-len url) 7)) out)
     (store-fetch-https url out)))
 
@@ -299,7 +299,7 @@
 ; invariant is that a directory's name IS its contents' hash.
 (defn store-install (arena tarpath expected)
   (let got (str-concat "blake3:" (ffi-call "zyl_blake3_file_hex" arena tarpath 32 1000))
-    (if (> (str-eq got expected) 0)
+    (if (str-eq got expected)
       (let dir (store-dir got)
         (if (> (ffi-call "zyl_path_exists" dir 1000) 0)
           dir

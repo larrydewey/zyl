@@ -119,11 +119,11 @@
   (if (>= i argc)
     acc
     (let a (ffi-call "zyl_arg_str" i 1000)
-      (if (> (str-eq a "--emit-asm") 0)
+      (if (str-eq a "--emit-asm")
         (match acc (CliOpts out _ (cli-parse-opts (+ i 1) argc (CliOpts out 1))))
-      (if (or (> (str-eq a "--error-format=json") 0) (drv-contracts-flag-p a))
+      (if (or (str-eq a "--error-format=json") (drv-contracts-flag-p a))
         (cli-parse-opts (+ i 1) argc acc)
-        (if (> (str-eq a "-o") 0)
+        (if (str-eq a "-o")
           (let nxt (ffi-call "zyl_arg_str" (+ i 1) 1000)
             (match acc (CliOpts _ flag (cli-parse-opts (+ i 2) argc (CliOpts nxt flag)))))
           (match acc (CliOpts _ flag (cli-parse-opts (+ i 1) argc (CliOpts a flag))))))))))
@@ -262,7 +262,7 @@
 (defn drv-has-flag (i flag)
   (if (>= i (ffi-call "zyl_argc" 1000))
     0
-    (if (> (str-eq (drv-arg i) flag) 0) 1 (drv-has-flag (+ i 1) flag))))
+    (if (str-eq (drv-arg i) flag) 1 (drv-has-flag (+ i 1) flag))))
 
 ; The package root for a subcommand: the nearest directory at or above
 ; the working directory that carries a zyl.pkg. A tool that guessed
@@ -526,36 +526,36 @@
     0))
 
 (defn drv-subcommand (arena cmd cwd)
-  (if (> (str-eq cmd "new") 0)
+  (if (str-eq cmd "new")
     (cli-new arena cwd (drv-arg 2))
-  (if (> (str-eq cmd "add") 0)
+  (if (str-eq cmd "add")
     (cli-add arena (drv-package-dir cwd 16) (drv-arg 2) (drv-arg 3))
-  (if (> (str-eq cmd "fetch") 0)
+  (if (str-eq cmd "fetch")
     (cli-fetch arena (drv-package-dir cwd 16))
-  (if (> (str-eq cmd "update") 0)
+  (if (str-eq cmd "update")
     (cli-update arena (drv-package-dir cwd 16))
-  (if (> (str-eq cmd "vendor") 0)
+  (if (str-eq cmd "vendor")
     (cli-vendor arena (drv-package-dir cwd 16))
-  (if (> (str-eq cmd "audit") 0)
+  (if (str-eq cmd "audit")
     (cli-audit arena (drv-package-dir cwd 16))
-  (if (> (str-eq cmd "publish") 0)
+  (if (str-eq cmd "publish")
     (cli-publish arena (drv-package-dir cwd 16))
-  (if (> (str-eq cmd "key") 0)
+  (if (str-eq cmd "key")
     (cli-key arena)
-  (if (> (str-eq cmd "build") 0)
+  (if (str-eq cmd "build")
     (drv-build arena (drv-package-dir cwd 16) (drv-has-flag 2 "--locked"))
-  (if (> (str-eq cmd "test") 0)
+  (if (str-eq cmd "test")
     (drv-test arena (drv-package-dir cwd 16))
   ; The REPL compiles code, so it runs from the bundle directory the
   ; same way a compile does -- drv-run-subcommand has already chdir'd
   ; there by the time this is reached.
-  (if (> (str-eq cmd "repl") 0)
+  (if (str-eq cmd "repl")
     ; `cwd` is the user's directory, captured before the chdir to the
     ; bundle: a saved session belongs to the project, not the compiler.
     (repl-run-in arena cwd)
-  (if (> (str-eq cmd "eval") 0)
+  (if (str-eq cmd "eval")
     (drv-eval arena cwd)
-  (if (> (str-eq cmd "doc") 0)
+  (if (str-eq cmd "doc")
     (drv-doc arena cwd)
     (drv-usage)))))))))))))))
 
@@ -577,7 +577,7 @@
 (defn drv-doc-out (i)
   (if (>= i (ffi-call "zyl_argc" 1000))
     ""
-    (if (> (str-eq (drv-arg i) "-o") 0) (drv-arg (+ i 1)) (drv-doc-out (+ i 1)))))
+    (if (str-eq (drv-arg i) "-o") (drv-arg (+ i 1)) (drv-doc-out (+ i 1)))))
 
 ; `dir/name.zyl` -> `name`.
 (defn drv-doc-modname (p)
@@ -602,7 +602,7 @@
     0
     (let a (ffi-call "zyl_arg_str" i 1000)
       (begin
-        (if (> (str-eq a "--error-format=json") 0) (ffi-call "zyl_diag_json_set" 1 1000) 0)
+        (if (str-eq a "--error-format=json") (ffi-call "zyl_diag_json_set" 1 1000) 0)
         (if (drv-contracts-flag-p a)
           (ffi-call "zyl_smap_put" (ffi-call "zyl_smap_global" 6 1000) "profile" (str-substring a 12 (- (str-length a) 12)) 1000)
           0)

@@ -171,7 +171,7 @@
         (Cons top rest
           (match top
             (SBPair expected (SBPair ol oc)
-              (if (= (str-eq expected closer) 1)
+              (if (str-eq expected closer)
                 (CS line (+ col 1) rest ctx-col in-string in-comment 0 err)
                 (let new-err (MismatchedPair expected closer line col)
                   (CS line (+ col 1) stack ctx-col in-string in-comment 0 new-err))))))))))

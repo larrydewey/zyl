@@ -105,7 +105,7 @@
     (Nil Nil)
     (Cons raw rest
       (let name (lsp-source-name raw)
-        (if (> (str-eq name caller) 0)
+        (if (str-eq name caller)
           (ch-refs-to-edges caller rest tbl)
           (if (> (st-is-known-fn tbl name) 0)
             (Cons (CE caller name) (ch-refs-to-edges caller rest tbl))
@@ -129,21 +129,21 @@
     (Cons e rest
       (match e
         (CE c2 k2
-          (if (and (> (str-eq c2 caller) 0) (> (str-eq k2 callee) 0)) 1 (ch-edge-seen caller callee rest)))))))
+          (if (and (str-eq c2 caller) (str-eq k2 callee)) 1 (ch-edge-seen caller callee rest)))))))
 
 (defn ch-incoming-callers (edges name)
   (match edges
     (Nil Nil)
     (Cons e rest
       (match e
-        (CE caller callee (if (> (str-eq callee name) 0) (Cons caller (ch-incoming-callers rest name)) (ch-incoming-callers rest name)))))))
+        (CE caller callee (if (str-eq callee name) (Cons caller (ch-incoming-callers rest name)) (ch-incoming-callers rest name)))))))
 
 (defn ch-outgoing-callees (edges name)
   (match edges
     (Nil Nil)
     (Cons e rest
       (match e
-        (CE caller callee (if (> (str-eq caller name) 0) (Cons callee (ch-outgoing-callees rest name)) (ch-outgoing-callees rest name)))))))
+        (CE caller callee (if (str-eq caller name) (Cons callee (ch-outgoing-callees rest name)) (ch-outgoing-callees rest name)))))))
 
 ; ===========================================================================
 ; CallHierarchyItem construction — real declaration position via
@@ -153,7 +153,7 @@
 (defn ch-topform-for-name (forms name)
   (match forms
     (Nil None)
-    (Cons f rest (if (> (str-eq (TopForm.name f) name) 0) (Some f) (ch-topform-for-name rest name)))))
+    (Cons f rest (if (str-eq (TopForm.name f) name) (Some f) (ch-topform-for-name rest name)))))
 
 (defn ch-item-for (uri text name)
   (match (ch-topform-for-name (si-top-level-forms text) name)

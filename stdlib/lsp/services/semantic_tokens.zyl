@@ -187,9 +187,9 @@
 
 (defn st-builtin-token-type (b)
   (let kind (ZB.kind b)
-    (if (> (str-eq kind "operator") 0) (st-tt-operator)
-      (if (> (str-eq kind "special-form") 0) (st-tt-keyword)
-        (if (> (str-eq kind "builtin") 0) (st-tt-function)
+    (if (str-eq kind "operator") (st-tt-operator)
+      (if (str-eq kind "special-form") (st-tt-keyword)
+        (if (str-eq kind "builtin") (st-tt-function)
           (st-tt-type))))))
 
 (defn st-classify-user (word tbl line col length)
@@ -209,9 +209,9 @@
 ; `:le`/`:be` lead the byte operations; none has a builtins table entry,
 ; but all three are syntax and should read as such.
 (defn st-is-syntax-extra (word)
-  (if (> (str-eq word "catch") 0) 1
-    (if (> (str-eq word ":le") 0) 1
-      (if (> (str-eq word ":be") 0) 1 0))))
+  (if (str-eq word "catch") 1
+    (if (str-eq word ":le") 1
+      (if (str-eq word ":be") 1 0))))
 
 ; Last resort: a struct field name colours as a property, and Zyl's
 ; naming convention (types and variant constructors capitalised,

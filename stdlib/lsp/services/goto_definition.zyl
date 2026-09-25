@@ -58,7 +58,7 @@
   (match forms
     (Nil None)
     (Cons f rest
-      (if (> (str-eq (TopForm.name f) word) 0)
+      (if (str-eq (TopForm.name f) word)
         (Some (Loc uri (goto-name-range f)))
         (goto-search rest uri word)))))
 
@@ -99,7 +99,7 @@
   (match forms
     (Nil Nil)
     (Cons f rest
-      (if (and (> (str-eq (TopForm.kind f) "impl") 0) (> (str-eq (TopForm.name f) word) 0))
+      (if (and (str-eq (TopForm.kind f) "impl") (str-eq (TopForm.name f) word))
         (Cons (Loc uri (goto-name-range f)) (impl-search rest uri word))
         (impl-search rest uri word)))))
 

@@ -74,7 +74,7 @@
 (defn dc-in-list (name xs)
   (match xs
     (Nil 0)
-    (Cons h t (if (> (str-eq h name) 0) 1 (dc-in-list name t)))))
+    (Cons h t (if (str-eq h name) 1 (dc-in-list name t)))))
 
 (defn dc-fail (kind name site)
   (let m1 ""

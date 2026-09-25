@@ -85,7 +85,7 @@
 (defn uc-in-list (name xs)
   (match xs
     (Nil 0)
-    (Cons h t (if (> (str-eq h name) 0) 1 (uc-in-list name t)))))
+    (Cons h t (if (str-eq h name) 1 (uc-in-list name t)))))
 
 ; Warnings go through the runtime sink: stderr, or the LSP's capture buffer.
 (defn uc-warn-line (msg)
@@ -120,10 +120,10 @@
 (defn uc-filter-out (name xs)
   (match xs
     (Nil Nil)
-    (Cons h t (if (> (str-eq h name) 0) (uc-filter-out name t) (Cons h (uc-filter-out name t))))))
+    (Cons h t (if (str-eq h name) (uc-filter-out name t) (Cons h (uc-filter-out name t))))))
 
 (defn uc-should-check-fn (name)
-  (if (> (str-eq name "main") 0) 0 (if (> (uc-is-exempt name) 0) 0 1)))
+  (if (str-eq name "main") 0 (if (> (uc-is-exempt name) 0) 0 1)))
 
 (defn uc-report-unused-fns (names refs)
   (match names
@@ -281,7 +281,7 @@
           (uc-check-unused-params refs rest))))))
 
 (defn uc-warn-unused (name kind site)
-  (let code (if (> (str-eq kind "parameter") 0) "W_UNUSED_PARAMETER" "W_UNUSED_VARIABLE")
+  (let code (if (str-eq kind "parameter") "W_UNUSED_PARAMETER" "W_UNUSED_VARIABLE")
     (let m1 (str-concat "`" name)
       (let msg (str-concat m1 "` is never used")
         (err-warn-at code msg site "remove it, or prefix it with `_` to mark it deliberately unused")))))

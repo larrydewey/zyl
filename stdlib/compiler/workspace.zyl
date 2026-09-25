@@ -87,7 +87,7 @@
 (defn ws-find-form (forms head)
   (match forms
     (Nil None)
-    (Cons h t (if (> (str-eq (ws-head h) head) 0) (Some h) (ws-find-form t head)))))
+    (Cons h t (if (str-eq (ws-head h) head) (Some h) (ws-find-form t head)))))
 
 (defn ws-members-of (args)
   (match (ws-find-form args "members")
@@ -106,7 +106,7 @@
   (match forms
     (Nil Nil)
     (Cons h t
-      (if (> (str-eq (ws-head h) head) 0)
+      (if (str-eq (ws-head h) head)
         (Cons h (ws-find-forms t head))
         (ws-find-forms t head)))))
 

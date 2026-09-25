@@ -78,7 +78,7 @@
 (defn mr-find-pkg (pkgs name)
   (match pkgs
     (Nil None)
-    (Cons h t (if (> (str-eq (mrp-name h) name) 0) (Some h) (mr-find-pkg t name)))))
+    (Cons h t (if (str-eq (mrp-name h) name) (Some h) (mr-find-pkg t name)))))
 
 ; ===========================================================================
 ; IMPORTS
@@ -146,7 +146,7 @@
 (defn mr-str-in-list (s xs)
   (match xs
     (Nil 0)
-    (Cons h t (if (> (str-eq s h) 0) 1 (mr-str-in-list s t)))))
+    (Cons h t (if (str-eq s h) 1 (mr-str-in-list s t)))))
 
 (defn mr-unit-id (pkg module)
   (str-concat pkg (str-concat "|" module)))
@@ -209,14 +209,14 @@
     (_ acc)))
 
 (defn mr-use-ident (s acc)
-  (if (> (str-eq s "*") 0)
+  (if (str-eq s "*")
     (match acc (MRU p m _ sy u (MRU p m 1 sy u)))
     (if (> (mr-starts-colon s) 0)
       (mr-use-colon (mr-drop-colon s) acc)
       (mr-use-colon s acc))))
 
 (defn mr-use-colon (s acc)
-  (if (> (str-eq s "unsafe") 0)
+  (if (str-eq s "unsafe")
     (match acc (MRU p m w sy _ (MRU p m w sy 1)))
     (match acc (MRU p m w sy u (MRU p s w sy u)))))
 
@@ -235,7 +235,7 @@
   (match rest
     (Nil (Cons (MRS name name) Nil))
     (Cons a t
-      (if (> (str-eq (mr-ident-of a) "=>") 0)
+      (if (str-eq (mr-ident-of a) "=>")
         (mr-sym-alias name t)
         (Cons (MRS name name) (mr-sym-entry (mr-ident-of a) t))))))
 
@@ -259,7 +259,7 @@
   (match forms
     (Nil Nil)
     (Cons f rest
-      (if (> (str-eq (mr-ast-head f) "use") 0)
+      (if (str-eq (mr-ast-head f) "use")
         (Cons (mr-parse-use (mr-ast-args f)) (mr-collect-uses rest))
         (mr-collect-uses rest)))))
 
@@ -277,11 +277,11 @@
 ; they never enter a symbol table — at their definition sites or at
 ; their call sites.
 (defn mr-reserved-name (n)
-  (if (> (str-eq n "main") 0) 1
-  (if (> (str-eq n "str-concat") 0) 1
-  (if (> (str-eq n "str-length") 0) 1
-  (if (> (str-eq n "str-substring") 0) 1
-  (if (> (str-eq n "str-equal") 0) 1 0))))))
+  (if (str-eq n "main") 1
+  (if (str-eq n "str-concat") 1
+  (if (str-eq n "str-length") 1
+  (if (str-eq n "str-substring") 1
+  (if (str-eq n "str-equal") 1 0))))))
 
 (defn mr-collect-defs (arena pkg module forms)
   (match forms
@@ -292,9 +292,9 @@
 
 (defn mr-form-defs (arena pkg module f pub)
   (let head (mr-ast-head f)
-    (if (> (str-eq head "pub") 0)
+    (if (str-eq head "pub")
       (mr-pub-defs arena pkg module (mr-ast-args f))
-      (if (> (str-eq head "feature-gate") 0)
+      (if (str-eq head "feature-gate")
         (mr-gated-defs arena pkg module (mr-ast-args f))
         (if (> (mr-def-head-p head) 0)
           (mr-named-defs arena pkg module f head pub)
@@ -331,14 +331,14 @@
     (Cons _ _ (mr-form-defs arena pkg module (AList args) 1))))
 
 (defn mr-def-head-p (h)
-  (if (> (str-eq h "defn") 0) 1
-  (if (> (str-eq h "def") 0) 1
-  (if (> (str-eq h "deftype") 0) 1
-  (if (> (str-eq h "defstruct") 0) 1
-  (if (> (str-eq h "defstruct+") 0) 1
-  (if (> (str-eq h "trait") 0) 1
-  (if (> (str-eq h "macro") 0) 1
-  (if (> (str-eq h "defmacro") 0) 1 0)))))))))
+  (if (str-eq h "defn") 1
+  (if (str-eq h "def") 1
+  (if (str-eq h "deftype") 1
+  (if (str-eq h "defstruct") 1
+  (if (str-eq h "defstruct+") 1
+  (if (str-eq h "trait") 1
+  (if (str-eq h "macro") 1
+  (if (str-eq h "defmacro") 1 0)))))))))
 
 (defn mr-named-defs (arena pkg module f head pub)
   (let args (mr-ast-args f)
@@ -358,7 +358,7 @@
 ; constructors, so they need keys of their own or two packages could not
 ; each define a `Node`.
 (defn mr-variant-defs (arena pkg module head rest pub)
-  (if (> (str-eq head "deftype") 0)
+  (if (str-eq head "deftype")
     (mr-variant-list arena pkg module rest pub)
     Nil))
 
@@ -410,7 +410,7 @@
   (match rest
     (Nil 1)
     (Cons d t
-      (if (> (str-eq (mrd-name d) (mrd-name gated)) 0)
+      (if (str-eq (mrd-name d) (mrd-name gated))
         (if (= (str-length (mrd-feature d)) 0)
           (ffi-call "zyl_panic"
             (str-concat "E_PKG_FEATURE_COLLISION: package: gated definition "
@@ -423,7 +423,7 @@
 (defn mr-find-def (defs name)
   (match defs
     (Nil None)
-    (Cons h t (if (> (str-eq (mrd-name h) name) 0) (Some h) (mr-find-def t name)))))
+    (Cons h t (if (str-eq (mrd-name h) name) (Some h) (mr-find-def t name)))))
 
 (defn mr-defs-pairs (defs)
   (match defs
@@ -490,7 +490,7 @@
   (let target (mr-target-pkg disc pkg u)
     (if (> (str-length (mru-pkg u)) 0)
       (mru-module u)
-      (if (> (str-eq (mrp-name target) (mrp-name pkg)) 0)
+      (if (str-eq (mrp-name target) (mrp-name pkg))
         (mru-module u)
         (mr-target-module-name target (mru-module u))))))
 
@@ -503,7 +503,7 @@
 ; `(use pkg :unsafe)` and `(use pkg:unsafe)` are the same token stream and
 ; the marker has to win (§24.2).
 (defn mr-check-module-name (module pkgname)
-  (if (> (str-eq module "unsafe") 0)
+  (if (str-eq module "unsafe")
     (ffi-call "zyl_panic"
       (str-concat "E_PKG_RESERVED_MODULE: module: unsafe is a reserved module name, used in " pkgname) 1000)
     1))
@@ -534,7 +534,7 @@
 (defn mr-all-same-pkg (p stack)
   (match stack
     (Nil 1)
-    (Cons h t (if (> (str-eq (mr-id-pkg h) p) 0) (mr-all-same-pkg p t) 0))))
+    (Cons h t (if (str-eq (mr-id-pkg h) p) (mr-all-same-pkg p t) 0))))
 
 (defn mr-discover-new (arena disc stack pkg module)
   (let _ (mr-check-module-name module (mrp-name pkg))
@@ -623,7 +623,7 @@
   (match pkgs
     (Nil (Cons entry Nil))
     (Cons h t
-      (if (> (str-eq (mrp-name h) (mrp-name entry)) 0)
+      (if (str-eq (mrp-name h) (mrp-name entry))
         (Cons entry t)
         (Cons h (mr-replace-pkg-in t entry))))))
 
@@ -659,7 +659,7 @@
 (defn mr-feature-declared (declared f)
   (match declared
     (Nil 0)
-    (Cons h t (if (> (str-eq (pf-name h) f) 0) 1 (mr-feature-declared t f)))))
+    (Cons h t (if (str-eq (pf-name h) f) 1 (mr-feature-declared t f)))))
 
 ; A dependency's own ceiling comes from its own manifest, never from the
 ; edge that named it: capabilities are declared, not granted (§31.9).
@@ -726,9 +726,9 @@
         (mr-pkg-pairs-except t pkgname feats skip)))))
 
 (defn mr-unit-in-pkg (u pkgname skip)
-  (if (= (str-eq (mru2-pkg u) pkgname) 0)
+  (if (not (str-eq (mru2-pkg u) pkgname))
     0
-    (if (> (str-eq (mru2-module u) skip) 0) 0 1)))
+    (if (str-eq (mru2-module u) skip) 0 1)))
 
 ; The table a module is qualified against, weakest first: the rest of its
 ; package, then the modules it explicitly `use`s, then its own
@@ -766,8 +766,8 @@
   (match units
     (Nil None)
     (Cons h t
-      (if (> (str-eq (mru2-pkg h) pkgname) 0)
-        (if (> (str-eq (mru2-module h) module) 0) (Some h) (mr-find-unit t pkgname module))
+      (if (str-eq (mru2-pkg h) pkgname)
+        (if (str-eq (mru2-module h) module) (Some h) (mr-find-unit t pkgname module))
         (mr-find-unit t pkgname module)))))
 
 ; Import pairs for one unit: everything its `use` forms bring in from
@@ -782,7 +782,7 @@
 
 (defn mr-one-import (disc units pkg u)
   (let target (mr-target-pkg disc pkg u)
-    (if (> (str-eq (mrp-name target) (mrp-name pkg)) 0)
+    (if (str-eq (mrp-name target) (mrp-name pkg))
       Nil
       (if (= (mrp-manifested target) 0)
         (mr-implicit-import disc units pkg target u)
@@ -866,15 +866,15 @@
     (Nil Nil)
     (Cons f rest
       (let h (mr-ast-head f)
-        (if (> (str-eq h "use") 0)
+        (if (str-eq h "use")
           (mr-strip-module-forms feats rest)
-          (if (> (str-eq h "module") 0)
+          (if (str-eq h "module")
             (mr-strip-module-forms feats rest)
-            (if (> (str-eq h "export") 0)
+            (if (str-eq h "export")
               (mr-strip-module-forms feats rest)
-              (if (> (str-eq h "pub") 0)
+              (if (str-eq h "pub")
                 (list-append (mr-unwrap-pub f) (mr-strip-module-forms feats rest))
-                (if (> (str-eq h "feature-gate") 0)
+                (if (str-eq h "feature-gate")
                   (list-append (mr-unwrap-gate feats f) (mr-strip-module-forms feats rest))
                   (Cons f (mr-strip-module-forms feats rest)))))))))))
 
@@ -893,7 +893,7 @@
 (defn mr-gates-in (a)
   (match a
     (AList xs
-      (if (> (str-eq (mr-ast-head a) "feature-gate") 0)
+      (if (str-eq (mr-ast-head a) "feature-gate")
         (ffi-call "zyl_panic"
           (err-at "E_PKG_FEATURE_NESTED" "`feature-gate` inside another form"
             (ffi-call "zyl_span_file" a 1000) (ffi-call "zyl_span_off" a 1000)
@@ -953,7 +953,7 @@
   (match forms
     (Nil 1)
     (Cons f rest
-      (if (> (str-eq (mr-ast-head f) "impl") 0)
+      (if (str-eq (mr-ast-head f) "impl")
         (let _ (mr-check-impl f pkgname)
           (mr-check-coherence rest pkgname))
         (mr-check-coherence rest pkgname)))))
@@ -986,7 +986,7 @@
   (match forms
     (Nil Nil)
     (Cons f rest
-      (if (> (str-eq (mr-ast-head f) "impl-not") 0)
+      (if (str-eq (mr-ast-head f) "impl-not")
         (match (mr-ast-args f)
           (Cons t more
             (match more
@@ -998,14 +998,14 @@
 (defn mr-drop-negs (forms)
   (match forms
     (Nil Nil)
-    (Cons f rest (if (> (str-eq (mr-ast-head f) "impl-not") 0) (mr-drop-negs rest) (Cons f (mr-drop-negs rest))))))
+    (Cons f rest (if (str-eq (mr-ast-head f) "impl-not") (mr-drop-negs rest) (Cons f (mr-drop-negs rest))))))
 
 ; (trait-symbol, type-symbol) of every impl.
 (defn mr-impl-pairs (forms)
   (match forms
     (Nil Nil)
     (Cons f rest
-      (if (> (str-eq (mr-ast-head f) "impl") 0)
+      (if (str-eq (mr-ast-head f) "impl")
         (match (mr-ast-args f)
           (Cons t more
             (match more
@@ -1026,11 +1026,11 @@
     (Cons f rest
       (let h (mr-ast-head f)
         (begin
-          (if (> (str-eq h "impl") 0)
+          (if (str-eq h "impl")
             (match (mr-ast-args f)
               (Cons t more (match more (Cons y _ (mr-forbid-one negs f (ck-symbol-of (mr-ident-of t)) (ck-symbol-of (mr-ident-of y)))) (Nil 0)))
               (Nil 0))
-            (if (> (str-eq h "derive") 0)
+            (if (str-eq h "derive")
               (match (mr-ast-args f)
                 (Cons y ts (mr-forbid-derive negs f (ck-symbol-of (mr-ident-of y)) (mr-derive-names ts)))
                 (Nil 0))
@@ -1059,13 +1059,13 @@
         (Pair decl pr
           (match pr
             (Pair nt target
-              (if (and (> (str-eq nt trait) 0) (or (> (str-eq target ty) 0) (> (mr-neg-get (mr-pair-key "i|" target ty)) 0)))
+              (if (and (str-eq nt trait) (or (str-eq target ty) (> (mr-neg-get (mr-pair-key "i|" target ty)) 0)))
                 (mr-forbidden-fail f trait ty target)
                 (mr-forbid-one rest f trait ty)))))))))
 
 (defn mr-forbidden-fail (f trait ty target)
   (let msg (str-concat "`" (str-concat trait (str-concat "` cannot be implemented for `" (str-concat ty "`"))))
-    (let why (if (> (str-eq target ty) 0)
+    (let why (if (str-eq target ty)
                (str-concat "forbidden by (impl-not " (str-concat trait (str-concat " " (str-concat target ")"))))
                (str-concat "`" (str-concat ty (str-concat "` implements `" (str-concat target
                  (str-concat "`, and (impl-not " (str-concat trait (str-concat " " (str-concat target ") forbids that")))))))))
@@ -1101,7 +1101,7 @@
       (match pr
         (Pair t y
           (begin
-            (if (> (str-eq t x) 0) (mr-neg-put (str-concat "p|" (str-concat lbl y)) 1) 0)
+            (if (str-eq t x) (mr-neg-put (str-concat "p|" (str-concat lbl y)) 1) 0)
             (mr-protect-implementors rest lbl x)))))))
 
 (defn mr-check-impl (f pkgname)
@@ -1124,7 +1124,7 @@
             (str-concat " where neither the trait nor the type is local to " pkgname))))) 1000))))
 
 (defn mr-local-name (n pkgname)
-  (if (> (str-eq (ck-package-of n) pkgname) 0) 1 0))
+  (if (str-eq (ck-package-of n) pkgname) 1 0))
 
 (defn mr-unit-pkg (pkgs name)
   (match (mr-find-pkg pkgs name)
@@ -1184,23 +1184,23 @@
   (match uses
     (Nil 0)
     (Cons u rest
-      (if (> (str-eq (mru-module u) "core/core") 0) 1
-      (if (> (str-eq (mru-module u) "core/option") 0) 1
-      (if (> (str-eq (mru-module u) "core/result") 0) 1
+      (if (str-eq (mru-module u) "core/core") 1
+      (if (str-eq (mru-module u) "core/option") 1
+      (if (str-eq (mru-module u) "core/result") 1
       (mr-core-loaded rest)))))))
 
 (defn mr-bundle-source (forms)
   (match forms
     (Nil 0)
     (Cons f rest
-      (if (> (str-eq (mr-ast-head f) "def") 0)
+      (if (str-eq (mr-ast-head f) "def")
         (mr-bundle-def f rest)
         (mr-bundle-source rest)))))
 
 (defn mr-bundle-def (f rest)
   (match (mr-ast-args f)
     (Cons nameast _
-      (if (> (str-eq (mr-ident-of nameast) "__zyl_boot_bundle") 0) 1 (mr-bundle-source rest)))
+      (if (str-eq (mr-ident-of nameast) "__zyl_boot_bundle") 1 (mr-bundle-source rest)))
     (Nil (mr-bundle-source rest))))
 
 ; Resolve `main-forms` (raw Ast, as parsed from `srcpath`) into one

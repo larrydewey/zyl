@@ -462,7 +462,7 @@
 (defn rd-contains-at (s sub i)
   (if (> (+ i (str-length sub)) (str-length s))
     0
-    (if (> (str-eq (str-substring s i (str-length sub)) sub) 0)
+    (if (str-eq (str-substring s i (str-length sub)) sub)
       1
       (rd-contains-at s sub (+ i 1)))))
 

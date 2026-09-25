@@ -114,4 +114,4 @@
     entries
     (match entries
       (Nil (Cons entry Nil))
-      (Cons h t (if (> (str-eq h entry) 0) entries (Cons entry (Cons h t)))))))
+      (Cons h t (if (str-eq h entry) entries (Cons entry (Cons h t)))))))

@@ -36,14 +36,14 @@
          (Pos (TopForm.line f) (+ start (str-length (TopForm.name f)))))))
 
 (defn ds-symbol-kind (kind)
-  (if (> (str-eq kind "defn") 0) SKFunction
-    (if (> (str-eq kind "deftype") 0) SKEnum
-      (if (> (str-eq kind "defstruct") 0) SKStruct
-        (if (> (str-eq kind "defstruct+") 0) SKStruct
-          (if (> (str-eq kind "trait") 0) SKInterface
-            (if (> (str-eq kind "impl") 0) SKClass
-              (if (> (str-eq kind "def") 0) SKConstant
-                (if (> (str-eq kind "alias") 0) SKClass
+  (if (str-eq kind "defn") SKFunction
+    (if (str-eq kind "deftype") SKEnum
+      (if (str-eq kind "defstruct") SKStruct
+        (if (str-eq kind "defstruct+") SKStruct
+          (if (str-eq kind "trait") SKInterface
+            (if (str-eq kind "impl") SKClass
+              (if (str-eq kind "def") SKConstant
+                (if (str-eq kind "alias") SKClass
                   SKFunction)))))))))
 
 ; workspace/symbol: same data, flattened to SymbolInformation with a
@@ -75,7 +75,7 @@
 (defn str-contains-loop (s sub i limit)
   (if (>= i limit)
     0
-    (if (> (str-eq (str-substring s i (str-length sub)) sub) 0)
+    (if (str-eq (str-substring s i (str-length sub)) sub)
       1
       (str-contains-loop s sub (+ i 1) limit))))
 

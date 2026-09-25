@@ -141,17 +141,17 @@
       (if (or (dv-secret-type tname) (dv-hidden-type short tname))
         Nil
         (let _ (dv-check-fields all site tname short dt)
-          (Cons (dv-text-impl t (if (> (str-eq short "Show") 0) "show" "debug") short tname dt) Nil)))
+          (Cons (dv-text-impl t (if (str-eq short "Show") "show" "debug") short tname dt) Nil)))
       (if (dv-value-trait short)
         (let _ (dv-check-fields all site tname short dt)
           (Cons (dv-value-impl t short tname dt) Nil))
         (dv-fail site (str-concat "`" (str-concat short "` is not derivable"))
           "derivable traits are Show, Debug, Eq, Ord, Hash and Clone")))))
 
-(defn dv-text-trait (s) (or (> (str-eq s "Show") 0) (> (str-eq s "Debug") 0)))
+(defn dv-text-trait (s) (or (str-eq s "Show") (str-eq s "Debug")))
 
 (defn dv-value-trait (s)
-  (or (> (str-eq s "Eq") 0) (or (> (str-eq s "Ord") 0) (or (> (str-eq s "Hash") 0) (> (str-eq s "Clone") 0)))))
+  (or (str-eq s "Eq") (or (str-eq s "Ord") (or (str-eq s "Hash") (str-eq s "Clone")))))
 
 (defn dv-fail (site msg help)
   (ffi-call "zyl_panic"
@@ -162,7 +162,7 @@
     (Nil None)
     (Cons e rest
       (match (Expr.inner e)
-        (EDeftype n _ _ _ (if (> (str-eq n tname) 0) (Some e) (dv-find-type rest tname)))
+        (EDeftype n _ _ _ (if (str-eq n tname) (Some e) (dv-find-type rest tname)))
         (_ (dv-find-type rest tname))))))
 
 ; --- field constraint ----------------------------------------------------------
@@ -216,18 +216,18 @@
 
 ; Untyped, the type itself, a type parameter, a primitive, or a type with the impl.
 (defn dv-field-ok (all tname short n)
-  (if (> (str-eq n "_") 0) true
+  (if (str-eq n "_") true
     (if (dv-same n tname) true
       (if (dv-prim n) true
         (if (not (dv-declared-type all n)) true
           (dv-has-impl all short n))))))
 
 ; Same type, whether or not either name is qualified.
-(defn dv-same (a b) (> (str-eq (dv-short a) (dv-short b)) 0))
+(defn dv-same (a b) (str-eq (dv-short a) (dv-short b)))
 
 (defn dv-prim (n)
   (let s (dv-short n)
-    (or (> (str-eq s "Int") 0) (or (> (str-eq s "Float") 0) (or (> (str-eq s "Bool") 0) (> (str-eq s "String") 0))))))
+    (or (str-eq s "Int") (or (str-eq s "Float") (or (str-eq s "Bool") (str-eq s "String"))))))
 
 (defn dv-declared-type (forms n)
   (match forms
@@ -294,9 +294,9 @@
             (dv-redact t mask hmask (+ i 1))))))
 
 (defn dv-text-call (call b)
-  (if (> (str-eq b "!secret") 0)
+  (if (str-eq b "!secret")
     (dv-str "<secret>")
-    (if (> (str-eq b "!hidden") 0)
+    (if (str-eq b "!hidden")
       (dv-str "<hidden>")
       (dv-call call (Cons (dv-id b) Nil)))))
 
@@ -335,11 +335,11 @@
 (defn dv-value-impl (trait short tname dt)
   (match (Expr.inner dt)
     (EDeftype _ variants _ _
-      (if (> (str-eq short "Eq") 0)
+      (if (str-eq short "Eq")
         (dv-impl trait tname "eq" (dv-self-other) (dv-call2 "==" (dv-id "self") (dv-id "other")))
-        (if (> (str-eq short "Clone") 0)
+        (if (str-eq short "Clone")
           (dv-impl trait tname "clone" (dv-self-param) (dv-id "self"))
-          (if (> (str-eq short "Hash") 0)
+          (if (str-eq short "Hash")
             (dv-impl trait tname "hash" (dv-self-param)
               (Expr (EMatch (dv-id "self") (dv-hash-arms (dv-method trait "hash") variants 0))))
             (dv-impl trait tname "compare" (dv-self-other)

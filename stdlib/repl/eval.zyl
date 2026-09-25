@@ -140,7 +140,7 @@
 (defn eval-contains-at (s sub i)
   (if (> (+ i (str-length sub)) (str-length s))
     0
-    (if (> (str-eq (str-substring s i (str-length sub)) sub) 0)
+    (if (str-eq (str-substring s i (str-length sub)) sub)
       1
       (eval-contains-at s sub (+ i 1)))))
 
@@ -148,7 +148,7 @@
   (match gs
     (Nil Nil)
     (Cons g rest
-      (if (> (str-eq (Global.name g) name) 0)
+      (if (str-eq (Global.name g) name)
         (session-drop-global rest name)
         (Cons g (session-drop-global rest name))))))
 
@@ -202,14 +202,14 @@
 ; evaluate. `def` is not in this list: the REPL binds it as a value.
 (defn eval-definition-p (text)
   (let head (eval-head text)
-    (if (> (str-eq head "defn") 0) 1
-    (if (> (str-eq head "deftype") 0) 1
-    (if (> (str-eq head "defstruct") 0) 1
-    (if (> (str-eq head "defstruct+") 0) 1
-    (if (> (str-eq head "defmacro") 0) 1
-    (if (> (str-eq head "trait") 0) 1
-    (if (> (str-eq head "impl") 0) 1
-    (if (> (str-eq head "derive") 0) 1
+    (if (str-eq head "defn") 1
+    (if (str-eq head "deftype") 1
+    (if (str-eq head "defstruct") 1
+    (if (str-eq head "defstruct+") 1
+    (if (str-eq head "defmacro") 1
+    (if (str-eq head "trait") 1
+    (if (str-eq head "impl") 1
+    (if (str-eq head "derive") 1
     0))))))))))
 
 ; ===========================================================================
@@ -250,7 +250,7 @@
         (eval-mentions-at text name (+ i 1))))))
 
 (defn eval-token-match (text name i n)
-  (if (> (str-eq (str-substring text i n) name) 0)
+  (if (str-eq (str-substring text i n) name)
     (if (= (eval-boundary-p text (- i 1)) 1)
       (eval-boundary-p text (+ i n))
       0)
@@ -393,9 +393,9 @@
 
 (defn eval-entry (sess text)
   (let head (eval-head text)
-    (if (> (str-eq head "use") 0)
+    (if (str-eq head "use")
       (eval-add-use sess text)
-      (if (> (str-eq head "def") 0)
+      (if (str-eq head "def")
         (eval-add-global sess text)
         (if (= (eval-definition-p text) 1)
           (eval-add-definition sess text)

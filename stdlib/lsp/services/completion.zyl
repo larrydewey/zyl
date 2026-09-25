@@ -31,7 +31,7 @@
 (defn completion-items-at (text tbl line col)
   (match (si-call-context text line col)
     (Some ctx
-      (if (> (str-eq (CallCtx.head ctx) "use") 0)
+      (if (str-eq (CallCtx.head ctx) "use")
         (completion-modules)
         (completion-general tbl)))
     (None (completion-general tbl))))
@@ -64,10 +64,10 @@
 
 (defn cmp-builtin-kind (b)
   (let kind (ZB.kind b)
-    (if (> (str-eq kind "special-form") 0) CIKKeyword
-      (if (> (str-eq kind "operator") 0) CIKOperator
-        (if (> (str-eq kind "builtin") 0) CIKFunction
-          (if (> (str-eq kind "type") 0) CIKClass
+    (if (str-eq kind "special-form") CIKKeyword
+      (if (str-eq kind "operator") CIKOperator
+        (if (str-eq kind "builtin") CIKFunction
+          (if (str-eq kind "type") CIKClass
             CIKConstant))))))
 
 ; ===========================================================================

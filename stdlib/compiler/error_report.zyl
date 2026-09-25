@@ -359,7 +359,7 @@
     (Nil best)
     (Cons c rest
       (let cs (err-name c)
-        (if (> (str-eq cs short) 0)
+        (if (str-eq cs short)
           (err-suggest-best short rest limit best bestd)
           (let d (err-edit-distance short cs)
             (if (< d bestd)

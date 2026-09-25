@@ -336,9 +336,9 @@
 ; Identifier / boolean literal: i..e with text.
 (defn lex-ident-e (arena src len i acc e)
   (let text (sub-str arena src i (- e i))
-    (if (> (str-eq text (str-intern arena "true")) 0)
+    (if (str-eq text (str-intern arena "true"))
       (lex-loop arena src len e (Cons (TkBool true i) acc))
-      (if (> (str-eq text (str-intern arena "false")) 0)
+      (if (str-eq text (str-intern arena "false"))
         (lex-loop arena src len e (Cons (TkBool false i) acc))
         (lex-loop arena src len e (Cons (TkIdent text i) acc))))))
 

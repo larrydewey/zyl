@@ -71,7 +71,7 @@
     (Nil None)
     (Cons dt rest
       (match dt
-        (Pair t v (if (> (str-eq t tyname) 0) (Some v) (ec-variants-of tyname rest)))))))
+        (Pair t v (if (str-eq t tyname) (Some v) (ec-variants-of tyname rest)))))))
 
 ; variant name -> owning deftype name, or "" if claimed by 2+ deftypes.
 (defn ec-build-owners (dtypes)
@@ -93,7 +93,7 @@
   (match (ec-owner-lookup vname acc)
     (None (Cons (Pair vname tyname) acc))
     (Some existing
-      (if (> (str-eq existing tyname) 0)
+      (if (str-eq existing tyname)
         acc
         (ec-owner-replace vname "" acc)))))
 
@@ -102,7 +102,7 @@
     (Nil None)
     (Cons pr rest
       (match pr
-        (Pair v owner (if (> (str-eq v vname) 0) (Some owner) (ec-owner-lookup vname rest)))))))
+        (Pair v owner (if (str-eq v vname) (Some owner) (ec-owner-lookup vname rest)))))))
 
 (defn ec-owner-replace (vname newowner acc)
   (match acc
@@ -110,14 +110,14 @@
     (Cons pr rest
       (match pr
         (Pair v owner
-          (if (> (str-eq v vname) 0)
+          (if (str-eq v vname)
             (Cons (Pair v newowner) rest)
             (Cons pr (ec-owner-replace vname newowner rest))))))))
 
 (defn ec-in-list (name xs)
   (match xs
     (Nil 0)
-    (Cons h t (if (> (str-eq h name) 0) 1 (ec-in-list name t)))))
+    (Cons h t (if (str-eq h name) 1 (ec-in-list name t)))))
 
 ; ===========================================================================
 ; MATCH CHECK
@@ -142,7 +142,7 @@
                 (ec-fail-unreachable-bind tag site)
                 0))
             (Some owner
-              (if (> (str-eq owner "") 0)
+              (if (str-eq owner "")
                 0
                 (if (> (ec-in-list tag covered) 0)
                   (ec-fail-duplicate-arm tag site)
@@ -171,7 +171,7 @@
     (Nil 1)
     (Cons pr rest
       (match pr
-        (Pair _ owner (if (> (str-eq owner tyname) 0) (ec-all-same-owner tyname rest) 0))))))
+        (Pair _ owner (if (str-eq owner tyname) (ec-all-same-owner tyname rest) 0))))))
 
 (defn ec-tags-only (covered)
   (match covered

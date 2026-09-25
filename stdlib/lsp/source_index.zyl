@@ -228,9 +228,9 @@
                 (if (> (str-length name) 0)
                   (Some (TF kw name line col (- 0 1) (- 0 1)))
                   None))))
-          (if (> (str-eq kw "pub") 0)
+          (if (str-eq kw "pub")
             (si-try-header text kwend len line col)
-            (if (> (str-eq kw "feature-gate") 0)
+            (if (str-eq kw "feature-gate")
               (si-try-gated-header text kwend len line col)
               None)))))))
 
@@ -242,7 +242,7 @@
   (let p1 (si-skip-ws text pos len)
     (let p2 (si-skip-ws text (si-word-scan-fwd text p1 len) len)
       (if (< p2 len)
-        (if (> (str-eq (str-substring text p2 1) "(") 0)
+        (if (str-eq (str-substring text p2 1) "(")
           (si-try-header text (+ p2 1) len line col)
           None)
         None))))
@@ -252,16 +252,16 @@
 ; defines a name and is missing here is a name the outline, the
 ; breadcrumb bar and go-to-definition all silently cannot see.
 (defn si-is-def-keyword (kw)
-  (if (> (str-eq kw "defn") 0) 1
-    (if (> (str-eq kw "deftype") 0) 1
-      (if (> (str-eq kw "defstruct") 0) 1
-        (if (> (str-eq kw "defstruct+") 0) 1
-          (if (> (str-eq kw "trait") 0) 1
-            (if (> (str-eq kw "impl") 0) 1
-              (if (> (str-eq kw "macro") 0) 1
-                (if (> (str-eq kw "defmacro") 0) 1
-                  (if (> (str-eq kw "def") 0) 1
-                    (if (> (str-eq kw "alias") 0) 1 0)))))))))))
+  (if (str-eq kw "defn") 1
+    (if (str-eq kw "deftype") 1
+      (if (str-eq kw "defstruct") 1
+        (if (str-eq kw "defstruct+") 1
+          (if (str-eq kw "trait") 1
+            (if (str-eq kw "impl") 1
+              (if (str-eq kw "macro") 1
+                (if (str-eq kw "defmacro") 1
+                  (if (str-eq kw "def") 1
+                    (if (str-eq kw "alias") 1 0)))))))))))
 
 (defn si-skip-ws (text i len)
   (if (>= i len)
@@ -325,7 +325,7 @@
 (defn si-occ-word (text i len line col word acc)
   (let end (si-word-scan-fwd text i len)
     (let found (str-substring text i (- end i))
-      (let acc2 (if (> (str-eq found word) 0) (Cons (Pair2 line col) acc) acc)
+      (let acc2 (if (str-eq found word) (Cons (Pair2 line col) acc) acc)
         (si-occ-scan text end len line (+ col (- end i)) 0 word acc2)))))
 
 (defn si-find-word (text word)

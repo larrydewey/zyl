@@ -37,7 +37,7 @@
   (match entries
     (Nil Nil)
     (Cons e rest
-      (if (> (str-eq (ME.key e) k) 0)
+      (if (str-eq (ME.key e) k)
         (map-entries-without rest k)
         (Cons e (map-entries-without rest k))))))
 
@@ -53,7 +53,7 @@
   (match entries
     (Nil None)
     (Cons e rest
-      (if (> (str-eq (ME.key e) k) 0)
+      (if (str-eq (ME.key e) k)
         (Some (ME.value e))
         (map-entries-find rest k)))))
 

@@ -133,7 +133,7 @@
   (let st1 (ih-advance st openCh)
     (let closeCh (ih-close-char openCh)
       (let st2 (ih-skip-ws-comments text st1 len)
-        (if (> (str-eq openCh "(") 0)
+        (if (str-eq openCh "(")
           (ih-read-call-or-list text st2 len tbl closeCh)
           (ih-read-children text st2 len tbl closeCh Nil))))))
 
@@ -150,7 +150,7 @@
   (if (>= (IHSt.i st) len)
     st
     (let ch (str-substring text (IHSt.i st) 1)
-      (if (> (str-eq ch closeCh) 0)
+      (if (str-eq ch closeCh)
         (ih-advance st ch)
         (if (> (si-is-ident-char ch) 0)
           (let headStart (IHSt.i st)
@@ -179,7 +179,7 @@
   (if (>= (IHSt.i st) len)
     st
     (let ch (str-substring text (IHSt.i st) 1)
-      (if (> (str-eq ch closeCh) 0)
+      (if (str-eq ch closeCh)
         (ih-advance st ch)
         (let stHinted (ih-maybe-hint st paramNames)
           (let stArg (ih-read-form text stHinted len tbl)

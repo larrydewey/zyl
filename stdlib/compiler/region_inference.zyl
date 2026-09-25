@@ -55,7 +55,7 @@
     (IStr _ 1)
     (ISymAddr _ 1)
     (IFlt _ 1)
-    (ILoad n (if (> (str-eq n name) 0) 0 1))
+    (ILoad n (if (str-eq n name) 0 1))
     (IBinop _ l r (if (> (ri-name-safe-in l name) 0) (ri-name-safe-in r name) 0))
     (ICall _ args (ri-name-safe-in-list args name))
     (ICallClosure _ args (ri-name-safe-in-list args name))
@@ -250,7 +250,7 @@
     (Nil -1)
     (Cons b rest
       (match b
-        (RgB k c (if (> (str-eq k n) 0) c (rg-lookup rest n)))))))
+        (RgB k c (if (str-eq k n) c (rg-lookup rest n)))))))
 
 ; Summary of a top-level function, or -1 when `n` is not one.
 (defn rg-summary (n)
@@ -311,34 +311,34 @@
 ; allocation and no argument kept. Must agree with actor_runtime.c:
 ; every level-1 function allocates only through zyl_result_alloc.
 (defn rg-ffi-kind (s)
-  (if (> (str-eq s "zyl_cstr_concat") 0) 1
-  (if (> (str-eq s "zyl_cstr_substr") 0) 1
-  (if (> (str-eq s "zyl_cstr_from_byte") 0) 1
-  (if (> (str-eq s "zyl_int_text") 0) 1
-  (if (> (str-eq s "zyl_f_text") 0) 1
-  (if (> (str-eq s "zyl_file_read_c") 0) 1
-  (if (> (str-eq s "zyl_variant_field") 0) 2
-  (if (> (str-eq s "zyl_cstr_len") 0) 0
-  (if (> (str-eq s "zyl_cstr_eq") 0) 0
-  (if (> (str-eq s "zyl_cstr_cmp") 0) 0
-  (if (> (str-eq s "zyl_cstr_byte_at") 0) 0
-  (if (> (str-eq s "zyl_cstr_to_int") 0) 0
-  (if (> (str-eq s "zyl_cstr_key_matches") 0) 0
-  (if (> (str-eq s "zyl_variant_eq") 0) 0
-  (if (> (str-eq s "zyl_variant_cmp") 0) 0
-  (if (> (str-eq s "zyl_err_is") 0) 0
-  (if (> (str-eq s "zyl_mem_read") 0) 0
-  (if (> (str-eq s "zyl_span_off") 0) 0
-  (if (> (str-eq s "zyl_span_file") 0) 0
-  (if (> (str-eq s "zyl_attr_get") 0) 0
-  (if (> (str-eq s "zyl_smap_get") 0) 0
-  (if (> (str-eq s "zyl_smap_global") 0) 0
-  (if (> (str-eq s "zyl_wvec_global") 0) 0
-  (if (> (str-eq s "zyl_wvec_get") 0) 0
-  (if (> (str-eq s "zyl_wvec_len") 0) 0
-  (if (> (str-eq s "zyl_diag_json") 0) 0
-  (if (> (str-eq s "zyl_load_byte") 0) 0
-  (if (> (str-eq s "zyl_load_n") 0) 0
+  (if (str-eq s "zyl_cstr_concat") 1
+  (if (str-eq s "zyl_cstr_substr") 1
+  (if (str-eq s "zyl_cstr_from_byte") 1
+  (if (str-eq s "zyl_int_text") 1
+  (if (str-eq s "zyl_f_text") 1
+  (if (str-eq s "zyl_file_read_c") 1
+  (if (str-eq s "zyl_variant_field") 2
+  (if (str-eq s "zyl_cstr_len") 0
+  (if (str-eq s "zyl_cstr_eq") 0
+  (if (str-eq s "zyl_cstr_cmp") 0
+  (if (str-eq s "zyl_cstr_byte_at") 0
+  (if (str-eq s "zyl_cstr_to_int") 0
+  (if (str-eq s "zyl_cstr_key_matches") 0
+  (if (str-eq s "zyl_variant_eq") 0
+  (if (str-eq s "zyl_variant_cmp") 0
+  (if (str-eq s "zyl_err_is") 0
+  (if (str-eq s "zyl_mem_read") 0
+  (if (str-eq s "zyl_span_off") 0
+  (if (str-eq s "zyl_span_file") 0
+  (if (str-eq s "zyl_attr_get") 0
+  (if (str-eq s "zyl_smap_get") 0
+  (if (str-eq s "zyl_smap_global") 0
+  (if (str-eq s "zyl_wvec_global") 0
+  (if (str-eq s "zyl_wvec_get") 0
+  (if (str-eq s "zyl_wvec_len") 0
+  (if (str-eq s "zyl_diag_json") 0
+  (if (str-eq s "zyl_load_byte") 0
+  (if (str-eq s "zyl_load_n") 0
   (rg-ffi-kind-bytes s))))))))))))))))))))))))))))))
 
 ; Byte buffers: 0 as above; 2 as above (a slice points into its buffer);
@@ -346,31 +346,31 @@
 ; escapes (a stored word may be a pointer); 5 (atomics: buffer, offset,
 ; values): everything but the buffer escapes.
 (defn rg-ffi-kind-bytes (s)
-  (if (> (str-eq s "zyl_bytebuf_len") 0) 0
-  (if (> (str-eq s "zyl_bytebuf_cap") 0) 0
-  (if (> (str-eq s "zyl_bytebuf_append") 0) 0
-  (if (> (str-eq s "zyl_align_check") 0) 0
-  (if (> (str-eq s "zyl_load_byte_signed") 0) 0
-  (if (> (str-eq s "zyl_load_n_signed") 0) 0
-  (if (> (str-eq s "zyl_bytebuf_atomic_load") 0) 0
-  (if (> (str-eq s "zyl_byte_slice") 0) 2
-  (if (> (str-eq s "zyl_byte_slice_sub") 0) 2
-  (if (> (str-eq s "zyl_bytebuf_ptr") 0) 2
-  (if (> (str-eq s "zyl_store_byte") 0) 4
-  (if (> (str-eq s "zyl_store_byte_signed") 0) 4
-  (if (> (str-eq s "zyl_store_n") 0) 4
-  (if (> (str-eq s "zyl_bytebuf_atomic_store") 0) 5
-  (if (> (str-eq s "zyl_bytebuf_atomic_add") 0) 5
-  (if (> (str-eq s "zyl_bytebuf_atomic_sub") 0) 5
-  (if (> (str-eq s "zyl_bytebuf_atomic_cas") 0) 5
-  (if (> (str-eq s "zyl_bytebuf_atomic_fetch_add") 0) 5
-  (if (> (str-eq s "zyl_bytebuf_atomic_max") 0) 5
-  (if (> (str-eq s "zyl_bytebuf_atomic_min") 0) 5
+  (if (str-eq s "zyl_bytebuf_len") 0
+  (if (str-eq s "zyl_bytebuf_cap") 0
+  (if (str-eq s "zyl_bytebuf_append") 0
+  (if (str-eq s "zyl_align_check") 0
+  (if (str-eq s "zyl_load_byte_signed") 0
+  (if (str-eq s "zyl_load_n_signed") 0
+  (if (str-eq s "zyl_bytebuf_atomic_load") 0
+  (if (str-eq s "zyl_byte_slice") 2
+  (if (str-eq s "zyl_byte_slice_sub") 2
+  (if (str-eq s "zyl_bytebuf_ptr") 2
+  (if (str-eq s "zyl_store_byte") 4
+  (if (str-eq s "zyl_store_byte_signed") 4
+  (if (str-eq s "zyl_store_n") 4
+  (if (str-eq s "zyl_bytebuf_atomic_store") 5
+  (if (str-eq s "zyl_bytebuf_atomic_add") 5
+  (if (str-eq s "zyl_bytebuf_atomic_sub") 5
+  (if (str-eq s "zyl_bytebuf_atomic_cas") 5
+  (if (str-eq s "zyl_bytebuf_atomic_fetch_add") 5
+  (if (str-eq s "zyl_bytebuf_atomic_max") 5
+  (if (str-eq s "zyl_bytebuf_atomic_min") 5
   3)))))))))))))))))))))
 
 ; `(bytebuf Stack N)`: region code 0 as the first argument.
 (defn rg-stack-bytebuf-p (name args)
-  (if (> (str-eq name "zyl_bytebuf_new") 0)
+  (if (str-eq name "zyl_bytebuf_new")
     (match args
       (Cons a _ (match a (IConst n (if (= n 0) 1 0)) (_ 0)))
       (Nil 0))

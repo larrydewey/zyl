@@ -62,17 +62,17 @@
 (defn mt-has (mt name)
   (match mt
     (MNil 0)
-    (MEntry n _ _ rest (if (> (str-eq n name) 0) 1 (mt-has rest name)))))
+    (MEntry n _ _ rest (if (str-eq n name) 1 (mt-has rest name)))))
 
 (defn mt-params (mt name)
   (match mt
     (MNil Nil)
-    (MEntry n params _ rest (if (> (str-eq n name) 0) params (mt-params rest name)))))
+    (MEntry n params _ rest (if (str-eq n name) params (mt-params rest name)))))
 
 (defn mt-body (mt name)
   (match mt
     (MNil (Expr (EAtom ANil)))
-    (MEntry n _ body rest (if (> (str-eq n name) 0) body (mt-body rest name)))))
+    (MEntry n _ body rest (if (str-eq n name) body (mt-body rest name)))))
 
 ; Deeper than any real chain of macros calling macros; a recursive macro
 ; is caught by the in-progress check long before this.
@@ -168,8 +168,8 @@
 (defn senv-find (env name)
   (match env
     (SNil SHNone)
-    (SBind n e rest (if (> (str-eq n name) 0) (SHParam e) (senv-find rest name)))
-    (SRen n nm rest (if (> (str-eq n name) 0) (SHRen nm) (senv-find rest name)))))
+    (SBind n e rest (if (str-eq n name) (SHParam e) (senv-find rest name)))
+    (SRen n nm rest (if (str-eq n name) (SHRen nm) (senv-find rest name)))))
 
 (defn senv-from-lists (params args)
   (match params
@@ -206,7 +206,7 @@
 (defn me-in-list (name xs)
   (match xs
     (Nil 0)
-    (Cons h t (if (> (str-eq h name) 0) 1 (me-in-list name t)))))
+    (Cons h t (if (str-eq h name) 1 (me-in-list name t)))))
 
 ; --- results: every rewrite threads the fresh-name counter ------------------
 
@@ -237,11 +237,11 @@
 
 ; `_` discards and compiler-internal `__` names are never renamed.
 (defn me-bind-fixed (name)
-  (if (> (str-eq name "_") 0)
+  (if (str-eq name "_")
     1
     (if (< (str-length name) 2)
       0
-      (if (> (str-eq (str-substring name 0 2) "__") 0) 1 0))))
+      (if (str-eq (str-substring name 0 2) "__") 1 0))))
 
 (defn me-bind (site name cx n)
   (if (> (me-bind-fixed name) 0)

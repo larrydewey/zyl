@@ -107,7 +107,7 @@
   (match env
     (Nil None)
     (Cons b rest
-      (if (> (str-eq (Bind.name b) name) 0)
+      (if (str-eq (Bind.name b) name)
         (Some (in-cell-get (Bind.cell b)))
         (in-lookup rest name)))))
 
@@ -115,7 +115,7 @@
   (match env
     (Nil 0)
     (Cons b rest
-      (if (> (str-eq (Bind.name b) name) 0) (Bind.cell b) (in-lookup-cell rest name)))))
+      (if (str-eq (Bind.name b) name) (Bind.cell b) (in-lookup-cell rest name)))))
 
 (defn in-bind (env name v)
   (Cons (Bind name (in-cell-new v)) env))
@@ -202,7 +202,7 @@
   (match fns
     (Nil None)
     (Cons f rest
-      (if (> (str-eq (in-fn-name f) name) 0) (Some f) (in-scan-fn rest name)))))
+      (if (str-eq (in-fn-name f) name) (Some f) (in-scan-fn rest name)))))
 
 ; Build the index for this table. Inserting in list order and keeping
 ; the first writer means the newest definition of a name wins, which is
@@ -745,14 +745,14 @@
 ; keeps the registry and runs the tests, printing what the runtime's own
 ; zyl_run_tests prints.
 (defn in-ffi (fns env sym args)
-  (if (> (str-eq sym "zyl_register_test") 0)
+  (if (str-eq sym "zyl_register_test")
     (in-register-test fns env args)
-    (if (> (str-eq sym "zyl_run_tests") 0)
+    (if (str-eq sym "zyl_run_tests")
       (in-run-tests fns)
       (if (= (in-actor-sym-p sym) 1)
         (VInt (in-fail "E_UNSUPPORTED_INTERPRETED"
                        "spawning an actor needs compiled code: the entry point is a native function pointer, which an interpreted function does not have. Compile this program with `zyl <file>` and run the binary."))
-        (if (> (str-eq sym "zyl_ffi_timed") 0)
+        (if (str-eq sym "zyl_ffi_timed")
           (in-ffi-timed (in-args-eval fns env args))
           (in-ffi-call sym (in-args-eval fns env args)))))))
 
@@ -777,8 +777,8 @@
 ; function. Under the interpreter there is no address, so the call is
 ; refused with an explanation rather than jumping to a number.
 (defn in-actor-sym-p (sym)
-  (if (> (str-eq sym "zyl_actor_spawn") 0) 1
-  (if (> (str-eq sym "zyl_actor_send_closure") 0) 1
+  (if (str-eq sym "zyl_actor_spawn") 1
+  (if (str-eq sym "zyl_actor_send_closure") 1
   0)))
 
 (defn in-register-test (fns env args)
@@ -871,30 +871,30 @@
   (if (= (in-ffi-returns-str sym) 1) (VStr w) (VInt w)))
 
 (defn in-ffi-returns-str (sym)
-  (if (> (str-eq sym "zyl_cstr_concat") 0) 1
-  (if (> (str-eq sym "zyl_cstr_substr") 0) 1
-  (if (> (str-eq sym "zyl_cstr_sub") 0) 1
-  (if (> (str-eq sym "zyl_cstr_from_int") 0) 1
-  (if (> (str-eq sym "zyl_cstr_from_byte") 0) 1
-  (if (> (str-eq sym "zyl_cstr_sanitize") 0) 1
-  (if (> (str-eq sym "zyl_cstr_decode") 0) 1
-  (if (> (str-eq sym "zyl_file_read_c") 0) 1
-  (if (> (str-eq sym "zyl_str_append") 0) 1
-  (if (> (str-eq sym "zyl_str_append_capped") 0) 1
-  (if (> (str-eq sym "zyl_getcwd") 0) 1
-  (if (> (str-eq sym "zyl_getenv") 0) 1
-  (if (> (str-eq sym "zyl_dirname_cstr") 0) 1
-  (if (> (str-eq sym "zyl_arg_str") 0) 1
-  (if (> (str-eq sym "zyl_f_text") 0) 1
-  (if (> (str-eq sym "zyl_sym_escape") 0) 1
-  (if (> (str-eq sym "zyl_mangle_key") 0) 1
-  (if (> (str-eq sym "zyl_span_line_text") 0) 1
-  (if (> (str-eq sym "zyl_span_snippet") 0) 1
-  (if (> (str-eq sym "zyl_json_quote") 0) 1
-  (if (> (str-eq sym "zyl_warn_take") 0) 1
-  (if (> (str-eq sym "zyl_source_path") 0) 1
-  (if (> (str-eq sym "zyl_blake3_hex") 0) 1
-  (if (> (str-eq sym "zyl_blake3_file_hex") 0) 1
+  (if (str-eq sym "zyl_cstr_concat") 1
+  (if (str-eq sym "zyl_cstr_substr") 1
+  (if (str-eq sym "zyl_cstr_sub") 1
+  (if (str-eq sym "zyl_cstr_from_int") 1
+  (if (str-eq sym "zyl_cstr_from_byte") 1
+  (if (str-eq sym "zyl_cstr_sanitize") 1
+  (if (str-eq sym "zyl_cstr_decode") 1
+  (if (str-eq sym "zyl_file_read_c") 1
+  (if (str-eq sym "zyl_str_append") 1
+  (if (str-eq sym "zyl_str_append_capped") 1
+  (if (str-eq sym "zyl_getcwd") 1
+  (if (str-eq sym "zyl_getenv") 1
+  (if (str-eq sym "zyl_dirname_cstr") 1
+  (if (str-eq sym "zyl_arg_str") 1
+  (if (str-eq sym "zyl_f_text") 1
+  (if (str-eq sym "zyl_sym_escape") 1
+  (if (str-eq sym "zyl_mangle_key") 1
+  (if (str-eq sym "zyl_span_line_text") 1
+  (if (str-eq sym "zyl_span_snippet") 1
+  (if (str-eq sym "zyl_json_quote") 1
+  (if (str-eq sym "zyl_warn_take") 1
+  (if (str-eq sym "zyl_source_path") 1
+  (if (str-eq sym "zyl_blake3_hex") 1
+  (if (str-eq sym "zyl_blake3_file_hex") 1
   0)))))))))))))))))))))))))
 
 
@@ -1016,7 +1016,7 @@
         (if (= (in-name-is-main n) 1) (Some n) (in-main-name rest))))))
 
 (defn in-name-is-main (n)
-  (if (> (str-eq n "main") 0)
+  (if (str-eq n "main")
     1
     (in-ends-with n "::main")))
 

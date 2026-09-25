@@ -73,13 +73,13 @@
 (defn mvs-find (nodes name)
   (match nodes
     (Nil None)
-    (Cons h t (if (> (str-eq (mn-name h) name) 0) (Some h) (mvs-find t name)))))
+    (Cons h t (if (str-eq (mn-name h) name) (Some h) (mvs-find t name)))))
 
 (defn mvs-replace (nodes node)
   (match nodes
     (Nil (Cons node Nil))
     (Cons h t
-      (if (> (str-eq (mn-name h) (mn-name node)) 0)
+      (if (str-eq (mn-name h) (mn-name node))
         (Cons node t)
         (Cons h (mvs-replace t node))))))
 
@@ -109,7 +109,7 @@
 (defn mvs-find-override (overrides name)
   (match overrides
     (Nil None)
-    (Cons h t (if (> (str-eq (pov-name h) name) 0) (Some h) (mvs-find-override t name)))))
+    (Cons h t (if (str-eq (pov-name h) name) (Some h) (mvs-find-override t name)))))
 
 (defn mvs-apply-override (dep o)
   (match (pov-source o)
@@ -209,7 +209,7 @@
         m))))
 
 (defn mvs-check-identity (_arena m dep root)
-  (if (= (str-eq (mf-name m) (pd-name dep)) 0)
+  (if (not (str-eq (mf-name m) (pd-name dep)))
     (ffi-call "zyl_panic"
       (str-concat "E_MANIFEST_INVALID: package: " (str-concat root
         (str-concat " declares package " (str-concat (mf-name m)
@@ -259,7 +259,7 @@
 (defn mvs-declares-in (features f)
   (match features
     (Nil 0)
-    (Cons h t (if (> (str-eq (pf-name h) f) 0) 1 (mvs-declares-in t f)))))
+    (Cons h t (if (str-eq (pf-name h) f) 1 (mvs-declares-in t f)))))
 
 (defn mvs-reqs-of (m root)
   (mvs-reqs-list (mf-deps m) root))

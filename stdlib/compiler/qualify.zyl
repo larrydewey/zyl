@@ -207,7 +207,7 @@
 (defn qf-bound (locals n)
   (match locals
     (Nil 0)
-    (Cons h t (if (> (str-eq h n) 0) 1 (qf-bound t n)))))
+    (Cons h t (if (str-eq h n) 1 (qf-bound t n)))))
 
 (defn qf-bind-all (locals names)
   (match names
@@ -245,11 +245,11 @@
 (defn qf-make-head (tab locals n)
   (let base (pk-sub n 5 (- (pk-len n) 5))
     (let k (qf-ident tab locals base)
-      (if (> (str-eq k base) 0) n (str-concat "make-" k)))))
+      (if (str-eq k base) n (str-concat "make-" k)))))
 
 (defn qf-is-make (n)
   (if (>= (pk-len n) 6)
-    (if (> (str-eq (pk-sub n 0 5) "make-") 0) 1 0)
+    (if (str-eq (pk-sub n 0 5) "make-") 1 0)
     0))
 
 ; `Trait.method` is a single identifier ('.' is an identifier character),
@@ -265,13 +265,13 @@
 (defn qf-dotted-head (tab locals n i)
   (let head (pk-sub n 0 i)
     (let k (qf-ident tab locals head)
-      (if (> (str-eq k head) 0)
+      (if (str-eq k head)
         n
         (str-concat k (pk-sub n i (- (pk-len n) i)))))))
 
 (defn qf-head-name (tab locals n)
   (let direct (qf-ident tab locals n)
-    (if (> (str-eq direct n) 0)
+    (if (str-eq direct n)
       (qf-head-fallbacks tab locals n)
       direct)))
 
@@ -354,45 +354,45 @@
   (AList (Cons (AstIdent (qf-head-name tab locals hn)) (qf-forms tab locals rest))))
 
 (defn qf-special (tab locals hn rest)
-  (if (> (str-eq hn "defn") 0)
+  (if (str-eq hn "defn")
     (qf-defn tab locals hn rest)
-  (if (> (str-eq hn "fn") 0)
+  (if (str-eq hn "fn")
     (qf-lambda tab locals hn rest)
-  (if (> (str-eq hn "lambda") 0)
+  (if (str-eq hn "lambda")
     (qf-lambda tab locals hn rest)
-  (if (> (str-eq hn "macro") 0)
+  (if (str-eq hn "macro")
     (qf-defn tab locals hn rest)
-  (if (> (str-eq hn "defmacro") 0)
+  (if (str-eq hn "defmacro")
     (qf-defn tab locals hn rest)
-  (if (> (str-eq hn "def") 0)
+  (if (str-eq hn "def")
     (qf-def tab locals hn rest)
-  (if (> (str-eq hn "let") 0)
+  (if (str-eq hn "let")
     (qf-let tab locals hn rest)
-  (if (> (str-eq hn "let-mut") 0)
+  (if (str-eq hn "let-mut")
     (qf-let tab locals hn rest)
-  (if (> (str-eq hn "match") 0)
+  (if (str-eq hn "match")
     (qf-match tab locals hn rest)
-  (if (> (str-eq hn "for") 0)
+  (if (str-eq hn "for")
     (qf-for tab locals hn rest)
-  (if (> (str-eq hn "try") 0)
+  (if (str-eq hn "try")
     (qf-try tab locals hn rest)
-  (if (> (str-eq hn "with-resource") 0)
+  (if (str-eq hn "with-resource")
     (qf-with-resource tab locals hn rest)
-  (if (> (str-eq hn "deftype") 0)
+  (if (str-eq hn "deftype")
     (qf-deftype tab locals hn rest)
-  (if (> (str-eq hn "defstruct") 0)
+  (if (str-eq hn "defstruct")
     (qf-defstruct tab locals hn rest)
-  (if (> (str-eq hn "defstruct+") 0)
+  (if (str-eq hn "defstruct+")
     (qf-defstruct tab locals hn rest)
-  (if (> (str-eq hn "impl") 0)
+  (if (str-eq hn "impl")
     (qf-impl tab locals hn rest)
-  (if (> (str-eq hn "trait") 0)
+  (if (str-eq hn "trait")
     (qf-trait tab locals hn rest)
-  (if (> (str-eq hn "struct-get") 0)
+  (if (str-eq hn "struct-get")
     (qf-struct-get tab locals hn rest)
-  (if (> (str-eq hn "set!") 0)
+  (if (str-eq hn "set!")
     (qf-set tab locals hn rest)
-  (if (> (str-eq hn "pub") 0)
+  (if (str-eq hn "pub")
     (qf-pub tab locals rest)
   (if (> (qf-opaque-head hn) 0)
     (AList (Cons (AstIdent hn) rest))
@@ -410,9 +410,9 @@
 ; identifiers name modules and packages, which the resolver reads BEFORE
 ; this pass runs and which must survive it verbatim.
 (defn qf-opaque-head (hn)
-  (if (> (str-eq hn "use") 0) 1
-  (if (> (str-eq hn "module") 0) 1
-  (if (> (str-eq hn "export") 0) 1 0))))
+  (if (str-eq hn "use") 1
+  (if (str-eq hn "module") 1
+  (if (str-eq hn "export") 1 0))))
 
 ; (defn name (params) body...) — `name` is a definition, so it is renamed
 ; through the table exactly like a reference to it elsewhere; the params
@@ -635,7 +635,7 @@
 (defn qf-arm-flat (tab locals n rest)
   (let key (qf-ident tab locals n)
     (let bound (qf-bind-all locals (qf-pattern-binders (qf-butlast rest)))
-      (let inner (if (> (str-eq key n) 0) (Cons n bound) bound)
+      (let inner (if (str-eq key n) (Cons n bound) bound)
         (AList (Cons (AstIdent key)
                  (list-append (qf-pattern-forms tab locals (qf-butlast rest))
                    (Cons (qf-form tab inner (qf-last rest)) Nil))))))))

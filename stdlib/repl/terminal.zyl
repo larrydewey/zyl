@@ -169,15 +169,15 @@
 
 ; ESC [ <n> ~ : the keypad/editing block, plus bracketed paste markers.
 (defn key-csi-tilde (params)
-  (if (> (str-eq params "1") 0) (KHome)
-  (if (> (str-eq params "7") 0) (KHome)
-  (if (> (str-eq params "4") 0) (KEnd)
-  (if (> (str-eq params "8") 0) (KEnd)
-  (if (> (str-eq params "3") 0) (KDel)
-  (if (> (str-eq params "5") 0) (KPageUp)
-  (if (> (str-eq params "6") 0) (KPageDown)
-  (if (> (str-eq params "200") 0) (KPasteStart)
-  (if (> (str-eq params "201") 0) (KPasteEnd)
+  (if (str-eq params "1") (KHome)
+  (if (str-eq params "7") (KHome)
+  (if (str-eq params "4") (KEnd)
+  (if (str-eq params "8") (KEnd)
+  (if (str-eq params "3") (KDel)
+  (if (str-eq params "5") (KPageUp)
+  (if (str-eq params "6") (KPageDown)
+  (if (str-eq params "200") (KPasteStart)
+  (if (str-eq params "201") (KPasteEnd)
   (KNone)))))))))))
 
 ; ESC [ 1;<mod> <letter>: a modified arrow. Ctrl (mod 5), Alt (3) and

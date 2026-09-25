@@ -209,9 +209,9 @@
   (if (> (+ i 2) n)
     (- 0 1)
     (let lead (str-substring msg i 2)
-      (if (> (str-eq lead "E_") 0)
+      (if (str-eq lead "E_")
         i
-        (if (> (str-eq lead "W_") 0)
+        (if (str-eq lead "W_")
           i
           (bridge-code-start msg (+ i 1) n))))))
 
@@ -229,7 +229,7 @@
 (defn bridge-index-of (s needle i n)
   (if (>= i n)
     (- 0 1)
-    (if (> (str-eq (str-substring s i 1) needle) 0)
+    (if (str-eq (str-substring s i 1) needle)
       i
       (bridge-index-of s needle (+ i 1) n))))
 
@@ -331,7 +331,7 @@
 (defn st-add-type-stripped (t name variants gparams marker)
   (match marker
     (Some tag
-      (if (> (str-eq tag "struct") 0)
+      (if (str-eq tag "struct")
         (st-add-struct t name variants)
         (st-add-adt t name variants gparams)))
     (None (st-add-adt t name variants gparams))))
@@ -496,7 +496,7 @@
     (Cons v rest
       (match v
         (AV vname fields
-          (if (> (str-eq vname name) 0)
+          (if (str-eq vname name)
             (bridge-variant-line vname fields)
             (bridge-find-variant-line rest name)))))))
 

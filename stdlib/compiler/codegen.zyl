@@ -129,7 +129,7 @@
 
 (defn cg-fn-check-head (h t nm)
   (match h
-    (FN s _ (if (= (str-eq s nm) 1) 1 (cg-fn-search t nm)))
+    (FN s _ (if (str-eq s nm) 1 (cg-fn-search t nm)))
     (FNNil (cg-fn-search t nm))))
 
 ; Look up `nm`'s recorded return kind; 0 (int) if it's not a known
@@ -142,7 +142,7 @@
 
 (defn cg-fn-kind-check-head (h t nm)
   (match h
-    (FN s k (if (= (str-eq s nm) 1) k (cg-fn-kind-search t nm)))
+    (FN s k (if (str-eq s nm) k (cg-fn-kind-search t nm)))
     (FNNil (cg-fn-kind-search t nm))))
 
 ; Empty rodata list.
@@ -241,13 +241,13 @@
 ; since these are exactly the fixed set of C symbols icnf.zyl ever emits
 ; that hand back a string pointer.
 (defn ffi-str-kind (name)
-  (if (> (str-eq name "zyl_cstr_concat") 0) 1
-  (if (> (str-eq name "zyl_cstr_substr") 0) 1
-  (if (> (str-eq name "zyl_cstr_sub") 0) 1
-  (if (> (str-eq name "zyl_cstr_from_int") 0) 1
-  (if (> (str-eq name "zyl_cstr_sanitize") 0) 1
-  (if (> (str-eq name "zyl_cstr_decode") 0) 1
-  (if (> (str-eq name "zyl_file_read_c") 0) 1
+  (if (str-eq name "zyl_cstr_concat") 1
+  (if (str-eq name "zyl_cstr_substr") 1
+  (if (str-eq name "zyl_cstr_sub") 1
+  (if (str-eq name "zyl_cstr_from_int") 1
+  (if (str-eq name "zyl_cstr_sanitize") 1
+  (if (str-eq name "zyl_cstr_decode") 1
+  (if (str-eq name "zyl_file_read_c") 1
     0))))))))
 
 ; kind-of's ICall arm used to unconditionally return 0 (int), regardless
@@ -637,7 +637,7 @@
   ; passed as an argument and called indirectly (HOF support).
   (if (= (cg-fn-known st n) 1)
     (cg-load-fnref st n)
-    (if (> (str-eq n "nil") 0)
+    (if (str-eq n "nil")
       (cg-load-unresolved st)
       (cg-fail-unbound st env n site))))
 
@@ -1507,7 +1507,7 @@
 (defn cg-bind-one (st env binds j)
   (let st2 (cg-load-field st j)
     (let b (shd binds)
-      (if (> (str-eq b (str-intern (cg-arena-of st) "_")) 0)
+      (if (str-eq b (str-intern (cg-arena-of st) "_"))
         (cg-bind-fields st2 env (tl2 binds) (+ j 1))
         (cg-bind-slot st2 env binds j b)))))
 

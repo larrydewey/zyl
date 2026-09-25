@@ -110,7 +110,7 @@
         (doc-items buf src rest pub-only)))))
 
 (defn doc-item (buf src f pub-only)
-  (let is-pub (> (str-eq (ast-head f) "pub") 0)
+  (let is-pub (str-eq (ast-head f) "pub")
     (let def (if is-pub (doc-unwrap-pub f) f)
       (if (and pub-only (not is-pub))
         0
@@ -131,16 +131,16 @@
     (_ f)))
 
 (defn doc-definition-p (h)
-  (or (> (str-eq h "defn") 0) (or (> (str-eq h "def") 0) (or (> (str-eq h "deftype") 0)
-    (or (> (str-eq h "defstruct") 0) (or (> (str-eq h "trait") 0) (> (str-eq h "defmacro") 0)))))))
+  (or (str-eq h "defn") (or (str-eq h "def") (or (str-eq h "deftype")
+    (or (str-eq h "defstruct") (or (str-eq h "trait") (str-eq h "defmacro")))))))
 
 ; A function shows its head and parameters; a type or trait shows in full.
 (defn doc-signature (def)
-  (if (or (> (str-eq (ast-head def) "defn") 0) (> (str-eq (ast-head def) "defmacro") 0))
+  (if (or (str-eq (ast-head def) "defn") (str-eq (ast-head def) "defmacro"))
     (match def
       (AList xs (str-concat "(" (str-concat (ast-text-list (doc-take xs 3)) ")")))
       (_ ""))
-    (if (> (str-eq (ast-head def) "def") 0)
+    (if (str-eq (ast-head def) "def")
       (str-concat "(def " (str-concat (ast-text (ast-arg1 def)) " ...)"))
       (ast-text def))))
 
