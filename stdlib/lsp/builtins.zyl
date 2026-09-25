@@ -65,7 +65,7 @@
   (Cons (ZB "defn" "special-form" "(defn name (param ...) body)"
           "Define a top-level function. Parameters may carry a type annotation: `(k Secret)`, `(n Int)`.")
   (Cons (ZB "def" "special-form" "(def name value)"
-          "Bind a name at top level. Note that a `def` is not a readable global in the current backend; prefer a nullary `defn`.")
+          "Bind a name at top level: an immutable global, initialized in source order before `main`. Its type is not generalized (one type for every use).")
   (Cons (ZB "let" "special-form" "(let name value body)"
           "Bind `name` to `value` for the extent of `body`. Immutable; shadowing an outer binding is allowed.")
   (Cons (ZB "let-mut" "special-form" "(let-mut name value body)"
@@ -132,7 +132,11 @@
           "Define a macro. Expansion is innermost-first with gensym hygiene.")
   (Cons (ZB "defmacro" "special-form" "(defmacro name (param ...) template)"
           "Define a macro; a spelling of `macro`.")
-  Nil)))))))))))))
+  (Cons (ZB "list" "special-form" "(list expr ...)  [expr ...]"
+          "A list literal: the Cons chain of the elements in order, evaluated left to right. Every element has one type; `[]` is Nil.")
+  (Cons (ZB "quote" "special-form" "(quote data)  'data"
+          "Constant data: an Int, Float, String or Bool, or a list of them (nested lists allowed). A name inside is E_MALFORMED_FORM.")
+  Nil)))))))))))))))
 
 (defn builtins-modules ()
   (Cons (ZB "use" "special-form" "(use path/to/module)"

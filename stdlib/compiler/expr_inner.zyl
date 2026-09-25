@@ -1639,8 +1639,27 @@
 
 (defn parse-param-typed (p name typ)
   (match name
-    (AstIdent n (P n (Some (convert-ast typ))))
+    (AstIdent n
+      (if (param-keyword-type-p typ)
+        (fail-colon-param p)
+        (P n (Some (convert-ast typ)))))
     (_ (fail-malformed-param p))))
+
+; `(a : Int)` reads as `a` and the keyword `:Int`, which is not a type.
+(defn param-keyword-type-p (typ)
+  (match typ
+    (AstIdent t (= (ffi-call "zyl_cstr_byte_at" t 0 1000) 58))
+    (_ false)))
+
+(defn fail-colon-param (p)
+  (let off (ffi-call "zyl_span_off" p 1000)
+    (let fid (ffi-call "zyl_span_file" p 1000)
+      (begin
+        (ffi-call "zyl_panic"
+          (err-at "E_MALFORMED_PARAMETER" "a parameter's type is written (name Type), without a colon"
+                  fid off "write (a Int), not (a : Int)")
+          1000)
+        (P "___" None)))))
 
 ; Renders only the offending entry's own head, not the whole form: the
 ; point is to name what was written where a parameter belongs.

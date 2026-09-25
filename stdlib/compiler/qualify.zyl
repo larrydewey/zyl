@@ -297,10 +297,12 @@
 ; names, a parameter's annotation — needs no such heuristic: whatever the
 ; table knows, it means.
 (defn qf-ref-form (tab locals ty)
-  (match ty
-    (AstIdent n (AstIdent (qf-ident tab locals n)))
-    (AList xs (AList (qf-ref-forms tab locals xs)))
-    (_ ty)))
+  (let out (match ty
+             (AstIdent n (AstIdent (qf-ident tab locals n)))
+             (AList xs (AList (qf-ref-forms tab locals xs)))
+             (_ ty))
+    (let _ (ffi-call "zyl_span_copy" out ty 1000)
+      out)))
 
 (defn qf-ref-forms (tab locals xs)
   (match xs
@@ -522,10 +524,12 @@
 
 ; A type expression: `Int`, `(List Expr)`, `(Option String)`.
 (defn qf-type-form (tab locals ty)
-  (match ty
-    (AstIdent n (AstIdent (qf-type-ident tab locals n)))
-    (AList xs (AList (qf-type-forms tab locals xs)))
-    (_ ty)))
+  (let out (match ty
+             (AstIdent n (AstIdent (qf-type-ident tab locals n)))
+             (AList xs (AList (qf-type-forms tab locals xs)))
+             (_ ty))
+    (let _ (ffi-call "zyl_span_copy" out ty 1000)
+      out)))
 
 (defn qf-type-forms (tab locals xs)
   (match xs

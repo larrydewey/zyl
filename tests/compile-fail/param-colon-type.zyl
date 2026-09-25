@@ -1,0 +1,5 @@
+; expect-error: E_MALFORMED_PARAMETER
+; `(a : String)` reads as `a` and the keyword `:String`; the annotation
+; used to be ignored, so `(+ a 1)` compiled.
+(defn f ((a : String)) (+ a 1))
+(defn main () (begin (print (f 1)) 0))

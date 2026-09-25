@@ -131,6 +131,8 @@
 (def ta-name-table (ffi-call "zyl_smap_new" 1000))
 (def ta-eqv-table (ffi-call "zyl_smap_new" 1000))
 (def ta-alias-table (ffi-call "zyl_smap_new" 1000))
+; Declared trait names (a trait is not a type).
+(def ta-trait-set (ffi-call "zyl_smap_new" 1000))
 (defn ta-bool () (TaC "Bool" Nil))
 (defn ta-str () (TaC "String" Nil))
 (defn ta-flt () (TaC "Float" Nil))
@@ -451,7 +453,7 @@
   (match (Expr.inner te)
     (EAtom a
       (match a
-        (AIdent n (ta-conv-name st n Nil scope))
+        (AIdent n (let _ (ta-trait-as-type st n te) (ta-conv-name st n Nil scope)))
         (_ (TaR (ta-dk st "type expression") scope))))
     (EApply head args (ta-conv-name st head args scope))
     (ECall op args
@@ -502,6 +504,27 @@
         (if (ta-looks-param n)
           (TaR v (Cons (Pair n v) scope))
           (TaR v scope))))))
+
+; `((T : Ord) a)` reads as a parameter T annotated `Ord` (the lone `:` is
+; dropped): a trait in type position would silently be a fresh type.
+; An annotation is converted more than once (signature, then body), so
+; each is reported once, by position.
+(def ta-trait-type-seen (ffi-call "zyl_smap_new" 1000))
+
+(defn ta-trait-as-type (st n te)
+  ; `Secret` is also the annotation that marks a secret value.
+  (if (and (ta-shas ta-trait-set (err-name n))
+           (and (not (ta-shas (ta-types st) n)) (not (ta-streq (err-name n) "Secret"))))
+    (let key (str-concat n (str-concat ":" (ffi-call "zyl_int_text" (ffi-call "zyl_span_off" te 1000) 1000)))
+      (if (ta-shas ta-trait-type-seen key)
+        unit
+        (begin
+          (ta-sput ta-trait-type-seen key 1)
+          (ta-type-error "E_MALFORMED_PARAMETER"
+            (str-concat "`" (str-concat (err-name n) "` is a trait, not a type"))
+            te Nil
+            "trait bounds are not written: use an uppercase type parameter, and a missing impl is reported where the function is used"))))
+    unit))
 
 ; A type parameter: an uppercase name that is not a qualified key (no '@').
 (defn ta-looks-param (n)
@@ -632,7 +655,8 @@
             (begin
               (ta-deftype st name variants sm)
               (ta-eq-register st name variants)))
-          (ETraitDecl name methods _ (ta-add-trait st name methods))
+          (ETraitDecl name methods _
+            (begin (ta-sput ta-trait-set (err-name name) 1) (ta-add-trait st name methods)))
           (_ unit))
         (ta-collect-c st rest)))))
 

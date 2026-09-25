@@ -1,0 +1,5 @@
+; expect-error: E_MALFORMED_PARAMETER
+; A trait is not a type. `Ord` here used to become a fresh type variable,
+; so the annotation meant nothing.
+(defn f ((a Ord)) a)
+(defn main () (begin (print (f 1)) 0))

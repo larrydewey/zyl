@@ -46,7 +46,7 @@
         (hl-scan text (+ i 1) n (str-concat acc (byte-str b))))))))))
 
 (defn hl-paren-byte (b)
-  (if (= b 40) true (if (= b 41) true (if (= b 91) true (if (= b 93) true false)))))
+  (if (= b 40) true (if (= b 41) true (if (= b 91) true (if (= b 93) true (= b 39))))))
 
 (defn hl-space-byte (b)
   (if (= b 32) true (if (= b 9) true (if (= b 10) true (if (= b 13) true false)))))
