@@ -73,8 +73,7 @@
 ; Result wrapper: state + two labels.
 (deftype CGP (CGP CGState String String))
 
-; Allocate two consecutive labels. Each match is the entire body of its
-; own defn (nested matches miscompile in the current bootstrap).
+; Allocate two consecutive labels.
 (defn cg-label-pair (st)
   (cg-label-pair-2 (cg-label-new st)))
 
@@ -1116,9 +1115,6 @@
 ; Phase 3: load register args i = min(n,6)-1 down to 0 from scratch;
 ; offsets skip over the S copy-pushed stack args.
 (defn cg-load-reg-args (st n i)
-  ; NOTE: the offset must be built through lets — a binop whose direct
-  ; operands are BOTH calls silently computes 0 in stage>=2 binaries
-  ; (generalisation of the match-arm one-call rule).
   (if (< i 0)
     st
     (let a (* 8 (- n 1 i))
@@ -1804,8 +1800,6 @@
     (icnf-arm-size (hd-ia xs) (tl2 xs))))
 
 (defn icnf-arm-size (arm rest)
-  ; Match-arm bodies must contain at most ONE call (see icnf-add2 note);
-  ; nest the sum through helpers.
   (match arm
     (IArm _ _ _ body
       (icnf-add2 1 (icnf-add2 (icnf-size body) (icnf-count-arms rest))))))
@@ -2944,6 +2938,7 @@
             (MArr _ _ _ _ _ true)
             (MRegionCycle true)
             (MStr _ _ false)
+            (MReuse _ _ _ _ true)               ; slow path allocates through C
             (_ false))
         true
         (mb-any-c-call t)))))

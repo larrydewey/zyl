@@ -1688,12 +1688,8 @@
                               Nil))))))))))
 
 ; ─── E_MATCH_ARM_COMPLEX guard ────────────────────────────────────────────
-; A match-arm body whose TOP-LEVEL binop combines a constant with two or
-; more calls silently computes 0 in stage>=2 binaries ("bind fields;
-; store 0"). Nest sums through helper functions so each arm body has a
-; single call. This check mirrors the Rust bootstrap's
-; validate_match_arm_complexity but runs at lowering time in the
-; self-hosted compiler too.
+; A match-arm body whose top-level binop combines a constant with two or
+; more calls is rejected (spec/10). The shape once computed 0; the rule stays.
 (defn ic-arm-guard (arena body vt)
   (match (Expr.inner body)
     (EApply fname args

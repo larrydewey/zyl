@@ -25,37 +25,14 @@
 
 ; Local, self-contained pair -- deliberately NOT compiler/type_system's
 ; generic `Pair`. This module is a real `use` dependency of parser.zyl
-; now (not just bundle-concatenated), and type_system.zyl is the entire
-; Hindley-Milner inference engine; reaching across for one generic tuple
-; type would saddle a small lexical-structure checker with a large,
-; wrong-direction dependency edge.
+; and stays free of compiler-module dependencies: a small
+; lexical-structure checker should not reach across the compiler for one
+; generic tuple type.
 (deftype SBPair (SBPair A B))
 
 ; line col stack ctx-col in-string in-comment escape-next err
 ;   stack  :: (List (SBPair expected-closer (SBPair open-line open-col)))
-;   (there used to be a `ctx` field here too -- "current partial line",
-;   rebuilt via str-concat on every single character and only ever reset
-;   on a newline. Nothing read it (sb-report's output never references
-;   it), so it was pure dead weight -- but for a single-line, whitespace-
-;   collapsed source of length n with no newlines at all (e.g. the
-;   ~280KB assembled compiler bundle), rebuilding it via str-concat on
-;   every character is an O(n^2) allocation: for a real-sized bundle,
-;   tens of GB actually allocated, corrupting the heap arena in a way
-;   that only surfaced later as a segfault deep in an unrelated
-;   function -- confirmed via gdb backtraces that kept relocating
-;   between attempts to fix it elsewhere before this dead field turned
-;   out to be the actual source. Removed entirely rather than just
-;   left unused, both because it was genuinely never needed and because
-;   an odd CheckState field count (9, with `ctx` present) turned out to
-;   also trip a separate stack-alignment bug in codegen.zyl's cg-variant
-;   for nested variant construction -- CS's own construction embeds
-;   other 0-field variant constructions (Nil, Balanced) as arguments,
-;   and cg-variant's odd/even alignment padding is computed purely from
-;   the CURRENT call's own field count, not the caller's already-pushed
-;   argument count at the point that nested call happens. Even field
-;   count sidesteps it here; the alignment computation itself is still
-;   wrong in general and is a separate, not-yet-fixed defect in
-;   cg-variant.)
+;   (a `ctx` field rebuilt per character made the scan quadratic; removed)
 ;   err    :: BalanceResult if a fatal deviation was recorded, else balanced
 (deftype CheckState
   (CS Int Int (List (SBPair String (SBPair Int Int))) Int Int Int Int BalanceResult))
@@ -240,13 +217,6 @@
 
 ; Scan a NUL-terminated buffer by index. Stops early once the error slot
 ; is filled (fatal deviation), otherwise advances one frame per char.
-; `init-err` is bound before the CS call rather than nesting `Balanced`
-; directly as CS's last argument -- a nested variant construction inline
-; as another constructor's argument miscompiles under the current
-; bootstrap (see the field-count-parity note on CheckState above; the
-; underlying defect survives even after the parity workaround, so every
-; nested construction site is pre-bound through a `let` instead, the
-; same workaround already used for `str-concat` call arguments).
 (defn sb-check-string (src)
   (let init-err Balanced
     (let len (str-length src)
@@ -306,9 +276,9 @@
     (MismatchedPair opener closer line col true)))
 
 ; CLI friendly status: 0 balanced, 1 fatal deviation. Prints only literal
-; strings and Int values — the Rust-bootstrap print path can only emit
-; string literals (dynamic strings print as raw pointers), and the
-; self-hosted driver will consume the BalanceResult fields directly.
+; strings and Int values (a limit of the archived Rust bootstrap's print
+; path); the self-hosted driver consumes the BalanceResult fields
+; directly.
 (defn sb-cli-status (r)
   (match r
     (Balanced 0)
@@ -350,7 +320,7 @@
 ; the wording can never drift from what the structural scan actually
 ; found. Every str-concat argument is a literal or a pre-bound `let` --
 ; see error_report.zyl's header comment for why (inline call operands
-; miscompile under the Rust bootstrap's str-concat inlining).
+; miscompiled under the archived Rust bootstrap's str-concat inlining).
 (defn sb-hint (r)
   (match r
     (Balanced "")
@@ -375,15 +345,11 @@
 ; FILE VALIDATION + STANDALONE CLI ENTRY
 ; ===========================================================================
 ; NOT named `main`: this module is a real library dependency of
-; parser.zyl/driver.zyl now (both `use` it directly), and Zyl's module
-; resolver splices a `use`d file's top-level forms in verbatim -- a
+; parser.zyl/driver.zyl now (both `use` it directly), and the module
+; resolver never qualifies `main` (mr-reserved-name) -- a
 ; `defn main` here would silently override/collide with the importing
 ; program's own `main`, or trip E_TOPLEVEL_STMTS_WITH_EXPLICIT_MAIN for
-; any importer that also has top-level `test`/`run-tests` forms (both
-; confirmed live: assemble.py's bundle path already special-cases
-; stripping a `main` named exactly `main` from every non-driver file for
-; this exact reason -- see strip_named_defn -- but that stripping never
-; applied to a standalone, non-bundled `use compiler/sexp_balance`).
+; any importer that also has top-level `test`/`run-tests` forms.
 ; A dedicated standalone binary can still wrap `sb-standalone-run` in its
 ; own `(defn main () (sb-standalone-run))`.
 

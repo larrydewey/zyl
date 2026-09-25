@@ -3,9 +3,9 @@
 ;
 ; The type of every runtime function reached through `ffi-call`
 ; (docs/sound-types-design.md). The type pass (type_annotate.zyl,
-; ta-ffi-typed) types every ffi-call to a runtime entry by this table; a
-; runtime entry missing here is E_CANNOT_INFER, and an extern may not
-; retype one (E_FFI_RESTRICTED). Syntax: parameter types, `->`, the result type; a
+; ta-ffi-typed) types every ffi-call to a runtime entry by this table, and
+; an extern may not retype an entry listed here or exported by the runtime
+; (E_FFI_RESTRICTED). Syntax: parameter types, `->`, the result type; a
 ; capitalized name with arguments in parentheses is a type constructor,
 ; e.g. "(SMap v)", and a lowercase name is a type variable shared across
 ; the signature. Must agree with runtime/actor_runtime.c. Opaque handle
@@ -16,9 +16,8 @@
 ; zyl_word_of_cstr, zyl_val_*, zyl_call_argv, ...) are typed here too; they
 ; are in ffi-raw-p, which only the standard library may call.
 ;
-; A runtime symbol missing here gets no signature: its result is String
-; when type_annotate's ta-ffi-str names it, and otherwise the call is
-; E_CANNOT_INFER (ta-ffi-ret; the type pass is always strict).
+; An exported runtime entry missing here is E_CANNOT_INFER, unless
+; ta-ffi-str names it (its result is then String; ta-ffi-ret).
 
 (defn ffi-sig (s)
   (ffi-sig-lookup s ffi-sig-tab))
