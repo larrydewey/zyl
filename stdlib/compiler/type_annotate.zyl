@@ -700,7 +700,7 @@
 ; once the whole program is typed (ta-check-num).
 (defn ta-num-notes () (ffi-call "zyl_wvec_global" 7 1000))
 
-(defn ta-note-num (st e t cls)
+(defn ta-note-num (_st e t cls)
   (if (ta-strict-p)
     (let _ (ffi-call "zyl_wvec_push" (ta-num-notes) e 1000)
       (let _ (ffi-call "zyl_wvec_push" (ta-num-notes) t 1000)
@@ -1558,7 +1558,11 @@
     (let msg (str-concat m1 (str-concat "`, found `" (str-concat (ta-pretty st got) "`")))
       (let fid (ffi-call "zyl_span_file" node 1000)
         (let off (ffi-call "zyl_span_off" node 1000)
-          (ffi-call "zyl_panic" (err-at-labels "E_TYPE_MISMATCH" msg fid off labels help) 1000))))))
+          ; In strict report mode every type error is a warning, so one
+          ; run lists them all.
+          (if (ta-strict-p)
+            (ffi-call "zyl_warn_emit" (err-diag "warning" "W_TYPE_STRICT" msg fid off labels help) 1000)
+            (ffi-call "zyl_panic" (err-at-labels "E_TYPE_MISMATCH" msg fid off labels help) 1000)))))))
 
 ; True when `a` and `b` can never unify. A variable (known or poisoned) never
 ; clashes, nor does Unit, which no expression is inferred to have.
