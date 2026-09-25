@@ -301,7 +301,7 @@
         (if (>= c 65) (if (<= c 90) true false) false)))))
 
 (defn qf-type-ident (tab locals n)
-  (if (> (qf-upper-p n) 0) (qf-ident tab locals n) n))
+  (if (qf-upper-p n) (qf-ident tab locals n) n))
 
 ; A position that holds ONLY a type or trait reference — an impl's two
 ; names, a parameter's annotation — needs no such heuristic: whatever the

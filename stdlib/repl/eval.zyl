@@ -127,7 +127,7 @@
   (match fns
     (Nil Nil)
     (Cons f rest
-      (if (= (eval-lambda-name-p (in-fn-name f)) 1)
+      (if (eval-lambda-name-p (in-fn-name f))
         (Cons f (eval-lifted-of rest))
         (eval-lifted-of rest)))))
 
@@ -232,7 +232,7 @@
   (match globals
     (Nil Nil)
     (Cons g rest
-      (if (= (eval-mentions text (Global.name g)) 1)
+      (if (eval-mentions text (Global.name g))
         (Cons g (eval-used-globals rest text))
         (eval-used-globals rest text)))))
 

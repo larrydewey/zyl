@@ -213,7 +213,7 @@
     (ta-fresh st)))
 
 (defn ta-dk-list (st n acc)
-  (let _ (if (> n 0) (ta-strict "field without a type") 0)
+  (let _ (if (> n 0) (ta-strict "field without a type") unit)
     (ta-fresh-list st n acc)))
 
 (defn ta-occurs (st i t)
@@ -234,7 +234,7 @@
       1
       (let _ (if (ta-strict-p)
                (ta-strict (str-concat "cannot unify " (str-concat (ta-show st a) (str-concat " with " (ta-show st b)))))
-               0)
+               unit)
         (ta-seq (ta-poison st a) (ta-seq (ta-poison st b) 0))))))
 
 (defn ta-unify-r (st ra rb)
@@ -524,7 +524,7 @@
           (EDeftype name _ _ _ (ta-put2 (ta-types st) name (TaTd name Nil false 0)))
           (EDefn name _ _ (ta-add-fn st name e))
           (EImplBlock trait type bodies (ta-add-impls st trait type bodies))
-          (_ 0))
+          (_ unit))
         (ta-collect-a st rest)))))
 
 ; Impl methods by dotted `Trait.method`: (List (Pair type mangled)).
@@ -568,7 +568,7 @@
       (begin
         (match (Expr.inner e)
           (EDeftype name variants _ sm (ta-deftype-params st name variants sm))
-          (_ 0))
+          (_ unit))
         (ta-collect-b st rest)))))
 
 (defn ta-collect-c (st exprs)
@@ -582,7 +582,7 @@
               (ta-deftype st name variants sm)
               (ta-eq-register st name variants)))
           (ETraitDecl name methods _ (ta-add-trait st name methods))
-          (_ 0))
+          (_ unit))
         (ta-collect-c st rest)))))
 
 ; Method schemes by dotted name; `specs` "!show" names Show.show.
@@ -786,7 +786,7 @@
           (let _ (match t
                    (TaC name args
                      (if (or (ta-streq name "Int") (or (ta-streq name "Float") (and (= cls 2) (ta-streq name "String"))))
-                       0
+                       unit
                        (let _ (ffi-call "zyl_ref_set" ta-cur-node e 1000)
                          (ta-strict (str-concat (if (= cls 1) "arithmetic on " "ordering on ") (ta-show st t))))))
                    (_ 0))
@@ -1339,7 +1339,7 @@
 
 (defn ta-min-low (st ctx v)
   (if (< ctx 0)
-    0
+    unit
     (let a (ta-wget (ta-tjlow st) ctx)
       (if (< v a) (ta-wset (ta-tjlow st) ctx v) unit))))
 
@@ -1605,7 +1605,7 @@
 
 (defn ta-check-param (st fname p a t)
   (match (P.type p)
-    (None 0)
+    (None unit)
     (Some te
       (match (ta-conv st te Nil)
         (TaR want _
@@ -1881,7 +1881,7 @@
 (defn ta-debug-scheme (st m t)
   (let flag (ffi-call "zyl_getenv_str" "ZYL_DEBUG_TYPES" 1000)
     (if (= (str-length flag) 0)
-      0
+      unit
       (match (Expr.inner (ta-wget (ta-fnexp st) m))
         (EDefn name _ _
           (let l1 (str-concat name " : ")

@@ -83,7 +83,7 @@
 ; Returns 1 for "probably prime", 0 for "definitely composite".
 ; Returns: Int
 (defn mr-probably-prime ((arena Arena) (cand Words) (n Int) (rounds Int))
-  (if (= (bn-even cand) 1)
+  (if (bn-even cand)
     0
     (mr-rounds arena cand n rounds 2)))
 
@@ -97,7 +97,7 @@
 (defn mr-rounds ((arena Arena) (cand Words) (n Int) (rounds Int) (base Int))
   (if (<= rounds 0)
     true
-    (if (= (mr-witness arena cand n base) 0)
+    (if (not (mr-witness arena cand n base))
       false
       (mr-rounds arena cand n (- rounds 1) (mr-next-base base)))))
 

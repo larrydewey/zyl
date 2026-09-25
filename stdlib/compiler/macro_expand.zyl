@@ -674,7 +674,7 @@
     false
     (if (> (pk-index-of name 64 0) -1)
       false
-      (if (> (qf-upper-p name) 0) false true))))
+      (if (qf-upper-p name) false true))))
 
 (defn me-pats (e pats cx n acc)
   (match pats

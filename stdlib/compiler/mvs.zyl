@@ -247,7 +247,7 @@
   (match feats
     (Nil 1)
     (Cons f t
-      (if (> (mvs-declares-feature m f) 0)
+      (if (mvs-declares-feature m f)
         (mvs-check-features m t)
         (ffi-call "zyl_panic"
           (str-concat "E_PKG_FEATURE_UNKNOWN: package: feature " (str-concat f

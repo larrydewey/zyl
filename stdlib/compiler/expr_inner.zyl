@@ -2331,7 +2331,7 @@
 
 (defn ast-list-is-last-wildcard (raw-arms)
   (match raw-arms
-    (Nil 0)
+    (Nil false)
     (Cons arm t
       (if (nil? t)
         (ast-pattern-is-wildcard-alts (ast-pattern-alts arm))
@@ -2410,7 +2410,7 @@
               (build-literal-chain scrutinee-name rest))))))))
 
 (defn parse-literal-match (scrutinee-ast raw-arms)
-  (if (> (ast-list-is-last-wildcard raw-arms) 0)
+  (if (ast-list-is-last-wildcard raw-arms)
     (Expr
       (ELet "__match_scrutinee__"
             (convert-ast scrutinee-ast)

@@ -132,7 +132,7 @@
       (begin
         (if (uc-should-check-fn n)
           (if (uc-in-list n refs) unit (uc-warn-unused-fn n))
-          0)
+          unit)
         (uc-report-unused-fns rest refs)))))
 
 (defn uc-warn-unused-fn (name)
@@ -277,7 +277,7 @@
     (Cons p rest
       (let n (P.name p)
         (begin
-          (if (uc-is-exempt n) 0 (if (uc-in-list n refs) unit (uc-warn-unused n "parameter" p)))
+          (if (uc-is-exempt n) unit (if (uc-in-list n refs) unit (uc-warn-unused n "parameter" p)))
           (uc-check-unused-params refs rest))))))
 
 (defn uc-warn-unused (name kind site)
@@ -292,7 +292,7 @@
 
 (defn uc-check-shadow (name scope site)
   (if (uc-is-exempt name)
-    0
+    unit
     (if (uc-in-list name scope) (uc-warn-shadow name site) unit)))
 
 (defn uc-check-shadow-list (names scope site)
@@ -351,7 +351,7 @@
         (Pair name valOpt
           (begin
             (uc-check-shadow name scope site)
-            (if (uc-is-exempt name) 0 (if (uc-in-list name refs) unit (uc-warn-unused name "variable" site)))
+            (if (uc-is-exempt name) unit (if (uc-in-list name refs) unit (uc-warn-unused name "variable" site)))
             (match valOpt (Some v (uc-walk-scope v refs scope)) (None 0))
             (uc-walk-for-bindings rest refs (Cons name scope) site)))))))
 
@@ -396,13 +396,13 @@
     (ELet name val body
       (begin
         (uc-check-shadow name scope e)
-        (if (uc-is-exempt name) 0 (if (uc-in-list name refs) unit (uc-warn-unused name "variable" e)))
+        (if (uc-is-exempt name) unit (if (uc-in-list name refs) unit (uc-warn-unused name "variable" e)))
         (uc-walk-scope val refs scope)
         (uc-walk-scope body refs (Cons name scope))))
     (ELetMut name val body
       (begin
         (uc-check-shadow name scope e)
-        (if (uc-is-exempt name) 0 (if (uc-in-list name refs) unit (uc-warn-unused name "variable" e)))
+        (if (uc-is-exempt name) unit (if (uc-in-list name refs) unit (uc-warn-unused name "variable" e)))
         (uc-walk-scope val refs scope)
         (uc-walk-scope body refs (Cons name scope))))
     (EDef _ val (uc-walk-scope val refs scope))

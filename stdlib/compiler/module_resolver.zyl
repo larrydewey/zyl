@@ -520,7 +520,7 @@
 ; A cycle inside one package is E_MODULE_CYCLE; a cycle that leaves and
 ; re-enters a package is E_PKG_CYCLE (§24.5).
 (defn mr-cycle-error (id stack)
-  (if (> (mr-same-pkg-cycle id stack) 0)
+  (if (mr-same-pkg-cycle id stack)
     (ffi-call "zyl_panic" (str-concat "E_MODULE_CYCLE: module: module graph is not a DAG at " id) 1000)
     (ffi-call "zyl_panic" (str-concat "E_PKG_CYCLE: package: dependency graph is not a DAG at " id) 1000)))
 
