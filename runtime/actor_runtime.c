@@ -3181,7 +3181,8 @@ long long zyl_diag_json(void);
 long long zyl_json_quote(long long s);
 
 /* JSON-mode panic: a message err-diag already rendered as JSON passes
- * through; a bare "E_CODE: text" is wrapped with its code split off. */
+ * through; a bare "E_CODE: text" or "error[E_CODE]: text" is wrapped
+ * with its code split off. */
 static void zyl_panic_json(const char* msg) {
     if (msg[0] == '{') { fprintf(stderr, "%s\n", msg); return; }
     size_t k = 0;
@@ -3197,6 +3198,15 @@ static void zyl_panic_json(const char* msg) {
         code[k] = 0;
         text = msg + k + 1;
         while (*text == ' ') text++;
+    } else if (strncmp(msg, "error[", 6) == 0) {
+        /* "error[E_CODE]: text", as the type pass's summary is written. */
+        const char* e = strchr(msg + 6, ']');
+        if (e && e[1] == ':' && (size_t)(e - msg - 6) < sizeof(code)) {
+            memcpy(code, msg + 6, (size_t)(e - msg - 6));
+            code[e - msg - 6] = 0;
+            text = e + 2;
+            while (*text == ' ') text++;
+        }
     }
     fprintf(stderr,
         "{\"severity\":\"error\",\"code\":%s,\"message\":%s,\"file\":\"\",\"line\":0,\"column\":0,\"labels\":[],\"help\":\"\"}\n",
