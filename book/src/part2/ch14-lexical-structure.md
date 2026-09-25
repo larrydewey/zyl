@@ -20,8 +20,7 @@ The lexer works byte by byte and classifies ASCII only:
 - **Line endings**: LF. A carriage return is whitespace, so CRLF files
   compile.
 - **Byte-order mark**: not recognized. A leading BOM is an unrecognized
-  character, the token stream ends before the first form, and the program
-  is empty (the link step then reports a missing `main`).
+  character, `E_INVALID_CHAR` at 1:1 (14.3).
 
 ## 14.2 Tokens
 
@@ -29,7 +28,7 @@ The lexer works byte by byte and classifies ASCII only:
 
 ```
 IDENTIFIER | INTEGER | FLOAT | STRING | BOOLEAN | SYMBOL | KEYWORD
-"(" | ")" | "{" | "}" | ":" | "[" | "]"
+"(" | ")" | "{" | "}" | ":" | "[" | "]" | "'"
 ```
 
 Every token carries its byte offset in the file, which is how diagnostics
@@ -149,16 +148,36 @@ one for `~name`, and the reader turns it into the plain identifier `name`.
 A `~` followed by a non-identifier character is the one-character
 identifier `~`.
 
-There is no quote syntax. `'foo` and `(quote foo)` do not produce data:
-the first ends the token stream (see 14.3) and the second is an ordinary
-call to an undefined function.
+### Quote
+
+`'` is a token of its own. The reader reads the form after it and wraps
+it: `'d` is `(quote d)`, and the two are the same program. Quoted data
+is constant: an integer, float, string or boolean is itself, and a list
+is a list literal of its quoted elements, so `'(1 2 3)` is `[1 2 3]` and
+`'((1 2) (3))` is a `(List (List Int))`. There is no symbol type, so a
+name inside quoted data has no value to stand for:
+
+```
+PANIC: error[E_MALFORMED_FORM]: a quoted list holds constant data; `x` is a name
+  --> main.zyl:1:33
+   |
+ 1 | (defn main () (begin (print '(1 x)) 0))
+   |                                 ^
+   = help: write the value with (list ...) or [...], which evaluates its elements
+```
+
+`(quote)` and `(quote a b)` are `E_MALFORMED_FORM` too. There is no
+quasiquote: a backtick is still an unrecognized character (14.3).
 
 ### Delimiters
 
-`( )`, `[ ]` and `{ }` are separate tokens, but the reader turns all three
-into the same list node. The containing form decides what the group
-means. For example, `{ a b }` is the symbol list of an import (§24.2), and
-`[Eq Ord]` is a list of trait names. There are no vector or map literals.
+`( )`, `[ ]` and `{ }` are separate tokens. The reader turns `( )` and
+`{ }` into the same list node, and the containing form decides what the
+group means: `{ a b }` is the symbol list of an import (§24.2). A
+`[ ]` group reads as a list literal: `[a b c]` is `(list a b c)`, the
+`Cons` chain of its elements (Chapter 4). The one exception is a
+derive, where `(derive T [Eq Ord])` and `(:derive [Eq Ord])` name
+traits. There are no vector or map literals.
 
 Before the reader runs, `stdlib/compiler/sexp_balance.zyl` checks that
 every opener has a closer of the same kind. It reports
@@ -175,17 +194,17 @@ Comment ::= ";" AnyByte* ( Newline | EndOfFile )
 - `;;` and `;;;` are conventions for heavier comments, not separate
   syntax.
 
-Any byte that is not whitespace, a delimiter, `"`, `:`, `~`, `;`, a digit,
-an identifier character, or a `.` followed by a letter is an error:
-`'`, `` ` ``, `,`, `@`, `#`, `$`, `&`, `|`, `^`, `\` and non-ASCII bytes
-outside strings and comments are reported as `E_INVALID_CHAR` at their
-position.
+Any byte that is not whitespace, a delimiter, `"`, `:`, `~`, `;`, `'`,
+a digit, an identifier character, or a `.` followed by a letter is an
+error: `` ` ``, `,`, `@`, `#`, `$`, `&`, `|`, `^`, `\` and non-ASCII
+bytes outside strings and comments are reported as `E_INVALID_CHAR` at
+their position.
 
 ```
-PANIC: error[E_INVALID_CHAR]: unexpected character `'`
+PANIC: error[E_INVALID_CHAR]: unexpected character ```
   --> main.zyl:2:17
    |
- 2 |   (begin (print 'x) 0))
+ 2 |   (begin (print `x) 0))
    |                 ^
 ```
 
@@ -204,13 +223,14 @@ characters, such as form feed, are unrecognized characters (14.3).
 
 Zyl uses no-dispatch parsing (§2 and `docs/architecture-decisions.md`).
 The reader produces only atoms and lists. A separate post-processor
-decides which lists are special forms.
+decides which lists are special forms. `[d ...]` reads as the list
+`(list d ...)` and `'d` as `(quote d)`.
 
 ### Reader grammar
 
 ```
 Program ::= Datum*
-Datum   ::= Atom | "(" Datum* ")" | "[" Datum* "]" | "{" Datum* "}"
+Datum   ::= Atom | "(" Datum* ")" | "[" Datum* "]" | "{" Datum* "}" | "'" Datum
 Atom    ::= Integer | Float | String | Boolean | Identifier | Keyword | Symbol
 ```
 

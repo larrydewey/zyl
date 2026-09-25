@@ -43,7 +43,7 @@ ill-typed program. Section 15.7 lists the errors.
   `Bool`, so they are used directly: `(if (str-eq a b) ...)`.
 - **Unit** is a real type, and its one value is written `unit`. The
   statement forms are `Unit`: `print`, `set!`, `while`, `assert`,
-  `file-write`, `send`, an `if` without an else, and a `cond` with no
+  `send`, an `if` without an else, and a `cond` with no
   `true` or `else` clause. A form whose two branches are a `Unit` and an
   `Int` does not type-check, so a statement-only `match` arm next to an
   arm that returns a number needs a value of its own. `main` must have
@@ -72,13 +72,28 @@ Chapter 32):
 | `Byte` | `(byte N)`, where `N` is an integer literal 0–255; anything else is `E_BYTE_VALUE_OOB` | Unifies with `Int` in both directions. |
 | `ByteBuf` *region* | `(bytebuf Heap 64)`, with region `Stack`, `Heap`, `Global`, `Circular` or `Pin` and a literal capacity | Fixed capacity, zero-initialized. |
 | `ByteSlice` *region* | `(byteslice buf off len)`, `(byteslice-sub s off len)` | A view of the same bytes, not a copy. |
-| endian selector | `:le` or `:be`, as the first argument of `load-u8`/`load-i8`/`store-u8`/`store-i8` | Only the byte width is implemented. |
+| endian selector | `:le` or `:be`, as the first argument of `load-u8`/`load-i8`/`store-u8`/`store-i8` and the 16-, 32- and 64-bit forms | Chosen at compile time. |
 
 The region is written as part of the type, but the type pass does not
 tell buffers of two regions apart: `(if c (bytebuf Stack 4) (bytebuf
 Heap 4))` type-checks. Where a buffer may live is region inference's
 business (Chapter 16), which rejects a `Stack` buffer that escapes with
 `E_REGION_ESCAPE`.
+
+The operands are typed exactly. Every offset, length and stored value
+is an `Int`: `(load-u8 :le b "abc")` is `E_TYPE_MISMATCH` (it used to
+compile and use the string's address as the offset). Each operation
+takes the handle its runtime entry accepts: `byteslice`,
+`bytebuf-append`, `bytebuf-len`, `bytebuf-cap`, `bytebuf-ptr` and the
+atomics a `ByteBuf`; `byteslice-sub` and `bytebuf-append`'s second
+operand a `ByteSlice`; a load or store either. When nothing in its
+function group decides whether a load's or store's handle is a buffer
+or a slice, the handle is `E_CANNOT_INFER`, and an annotation settles
+it:
+
+```lisp
+(defn first-byte ((b ByteBuf)) (load-u8 :le b 0))   ; without the annotation, E_CANNOT_INFER
+```
 
 ```lisp
 (defn main ()

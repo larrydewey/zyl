@@ -62,7 +62,7 @@ its own parentheses and optionally with trait bounds:
 | Written | What happens |
 |---------|--------------|
 | `((T) x)` | `E_MALFORMED_PARAMETER`: `(T ...)` is not a parameter |
-| `((T : Ord) a b)` | The lexer reads `: Ord` as the keyword `:Ord`, so `(T :Ord)` becomes an ordinary *value* parameter named `T`. The function then takes three arguments, and `(smallest 3 5)` is `E_ARITY_MISMATCH`. |
+| `((T : Ord) a b)` | `E_MALFORMED_PARAMETER`: a parameter's type is written `(name Type)`, without a colon. Writing `(a Ord)` instead is also `E_MALFORMED_PARAMETER`, because `Ord` is a trait, not a type. |
 
 ```
 PANIC: error[E_MALFORMED_PARAMETER]: `(T ...)` is not a parameter - write a name, or (name Type)

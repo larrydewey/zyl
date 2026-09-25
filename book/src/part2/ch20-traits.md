@@ -259,8 +259,9 @@ alternatives apply:
 ```
 
 - `derive` takes the type name followed by the trait names, separated by
-  spaces. The bracketed `[Eq Ord]` spelling of §5.7 also parses: brackets
-  read as a list (Chapter 14).
+  spaces. The bracketed `[Eq Ord]` spelling of §5.7 also parses: elsewhere
+  brackets are a list literal, but in a derive they name traits
+  (Chapter 14).
 - §5.7 requires a standalone derive to appear in the same module as its
   type.
 

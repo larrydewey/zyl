@@ -17,6 +17,8 @@ Expr :=
   | (let (Name Expr) Body)
   | (let-mut (Name Expr) Body)
   | (if Expr Expr Expr)
+  | (list Expr*)                 ; reader: [Expr*]
+  | (quote Datum)                ; reader: 'Datum
 
   ;; Error Handling (Result-based)
   | (try Expr (catch Name Expr))
@@ -76,6 +78,7 @@ Generator := gen-int | gen-bool | gen-string | gen-float
 PropertyFn := (fn (Param+) Expr)
 Param := Name | (Name Type)
 Clause := (Expr Expr)
+Datum := INTEGER | FLOAT | STRING | BOOLEAN | (Datum*)
 TraitMethod := (Name (Param*) TypeExpr)
 ImplBody := (defn Name (Params*) Body)
 Variant := (Name TypeExpr*)
@@ -116,7 +119,7 @@ recorded here rather than silently corrected in the grammar above.
 
 ### Forms the post-processor recognises
 
-`def`, `defn`, `deftype`, `defstruct`, `defstruct+`, `trait`, `impl`,
+`list`, `quote`, `def`, `defn`, `deftype`, `defstruct`, `defstruct+`, `trait`, `impl`,
 `derive`, `extern`, `let`, `let-mut`, `if`, `while`, `for`, `cond`, `and`,
 `or`, `not`, `match`, `try` (with a nested `catch`), `begin`, `fn`,
 `lambda`, `set!`, `print`, `assert`, `assert-equal`, `assert-true`,
@@ -130,6 +133,15 @@ recorded here rather than silently corrected in the grammar above.
 `checkpoint` and `recover`, plus the byte primitives
 (`byte-form-dispatch`). `ffi-call` is not a dedicated node; it stays an
 application of the reserved name and is recognised during ICNF lowering.
+
+`list` and `quote` produce no node of their own. `(list a b c)` becomes
+the constructor chain `(Cons a (Cons b (Cons c Nil)))`
+(`ast-list-literal`, `ast.zyl`); `qualify.zyl` rewrites the form the same
+way before names are qualified, so `Cons` and `Nil` resolve like
+hand-written ones. `(quote d)` checks that `d` holds no name (a name is
+`E_MALFORMED_FORM`, since there is no symbol type), then turns every list
+in `d` into a list literal of its elements (`ast-quote-data`); an atom is
+itself. `(quote)` or `(quote a b)` is `E_MALFORMED_FORM`.
 
 A recognised form whose arguments do not have the shape its parser
 requires becomes an `EUnknown` node, which the arity pass reports as

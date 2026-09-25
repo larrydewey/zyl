@@ -80,7 +80,7 @@ codes spec §28 lists by name.
 | `E_BYTE_VALUE_OOB` | lexer: byte literal out of range 0-255 | `expr_inner.zyl` (`(byte N)` forms) |
 | `E_FLOAT_OVERFLOW` | lexer: float overflow in literal L at S | catalog only |
 | `E_INTEGER_OVERFLOW` | lexer: integer overflow in literal L at S | catalog only |
-| `E_INVALID_CHAR` | lexer: invalid character C at S | catalog only |
+| `E_INVALID_CHAR` | lexer: invalid character C at S | `parser.zyl` (located): a character that begins no token, such as a backtick or `#` outside a string or comment (`'` is the quote token) |
 | `E_UNEXPECTED_EOF` | lexer: unexpected EOF while expecting C at S | catalog only |
 | `E_UNTERMINATED_STRING` | lexer: unterminated string at S | `parser.zyl` (balance check, located) |
 
@@ -95,7 +95,7 @@ codes spec §28 lists by name.
 | `E_EXPECTED_RCURLY` | parser: expected } but found T at S | catalog only |
 | `E_EXPECTED_RPAREN` | parser: expected ) at S but found T | catalog only |
 | `E_MALFORMED_PARAMETER` | parser: P is not a parameter at S - write a name, or (name Type) | `expr_inner.zyl` (located) |
-| `E_MALFORMED_FORM` | parser: special form F has arguments of the wrong shape at S | `arity_check.zyl` (located): a special form whose parser rejected its shape (`expr_inner.zyl` builds an `EUnknown` node for it), such as `(let x 1)` with no body, a trait method whose parameters are not a list, `test` or `defmacro` with more than one body, or a malformed `extern`. Such a form used to compile to the constant 0 |
+| `E_MALFORMED_FORM` | parser: special form F has arguments of the wrong shape at S | `arity_check.zyl` (located): a special form whose parser rejected its shape (`expr_inner.zyl` builds an `EUnknown` node for it), such as `(let x 1)` with no body, a trait method whose parameters are not a list, `test` or `defmacro` with more than one body, a malformed `extern`, or `(quote)`/`(quote a b)`. Such a form used to compile to the constant 0. `expr_inner.zyl` (located, `quote-name-fail`): a name inside quoted data, `'(1 x)`, which has no value since there is no symbol type |
 | `E_RESERVED_KEYWORD` (§28) | parser: reserved keyword K cannot be used as identifier at S | `expr_inner.zyl` (reserved-but-unimplemented forms) |
 | `E_UNBALANCED_PARENS` | parser: unbalanced parens - open and close counts differ | catalog only (the old depth-counter check; superseded by the three below) |
 | `E_UNBALANCED_UNCLOSED` | parser: unclosed opener - opened at S, never reached its matching closer | `parser.zyl` via `sexp_balance.zyl` (located at the opener) |
@@ -127,11 +127,11 @@ over bracket type, and its `sb-hint` supplies the `= help:` text.
 | `E_DUPLICATE_DEFINITION` | type: duplicate definition of N at S. previously defined at P | `duplicate_check.zyl` (located at the second definition) |
 | `E_DUPLICATE_VARIANT` | type: duplicate variant V in deftype at S | `duplicate_check.zyl` (located: a program type declaring a prelude constructor name, `Some`, `None`, `Ok`, `Err`, `Cons` or `Nil`, which the standard library's unqualified uses would resolve to; only the standard library may declare them), `icnf.zyl` (a variant name defined twice in one `deftype`) |
 | `E_RETURN_TYPE_MISMATCH` | type: return type mismatch in F - expected T, got U at S | catalog only |
-| `E_TYPE_MISMATCH` | type: type mismatch at S - expected E, found F | `type_annotate.zyl` (located): every unification failure, labelled with a declared parameter or field type where there is one; also a non-literal `file-open` mode and a field a known struct lacks |
+| `E_TYPE_MISMATCH` | type: type mismatch at S - expected E, found F | `type_annotate.zyl` (located): every unification failure, labelled with a declared parameter or field type where there is one; also a non-literal `file-open` mode, a field a known struct lacks, list-literal elements of different types, a non-Int byte offset, length or stored value, the wrong kind of byte handle (`bytebuf-len` of a slice), and a non-String `file-write` operand |
 | `E_UNBOUND_VARIABLE` | type: unbound variable V at S | `type_annotate.zyl` (located: an identifier or called function defined nowhere), `macro_expand.zyl`, `codegen.zyl` (backstop), REPL interpreter |
 | `E_UNKNOWN_GENERIC_PARAM` | type: unknown generic parameter G at S | catalog only |
 | `E_UNKNOWN_TYPE` | type: unknown type T at S | catalog only |
-| `E_CANNOT_INFER` (§28, phase 5) | type: cannot infer concrete type for generic parameter G at S - no call-site evidence | `type_annotate.zyl` (located): a type the program does not determine, such as an `ffi-call` to a foreign symbol with no `extern` or to a runtime symbol missing from `ffi_sigs.zyl`, a trait call whose receiver type stays unknown, a `struct-get` whose record type is still unknown when several structs have the field, or a function that would need more than 256 specialized instances; `icnf.zyl` (backstop for an unresolved trait call). Listed twice in the catalog, and the catalog text still describes the old meaning |
+| `E_CANNOT_INFER` (§28, phase 5) | type: cannot infer concrete type for generic parameter G at S - no call-site evidence | `type_annotate.zyl` (located): a type the program does not determine, such as an `ffi-call` to a foreign symbol with no `extern` or to a runtime symbol missing from `ffi_sigs.zyl`, a trait call whose receiver type stays unknown, a `struct-get` whose record type is still unknown when several structs have the field, a byte load or store whose handle is still unknown after its function group (`ta-bytes-ambiguous`), or a function that would need more than 256 specialized instances; `icnf.zyl` (backstop for an unresolved trait call). Listed twice in the catalog, and the catalog text still describes the old meaning |
 | `E_INFINITE_TYPE` (§28) | type: a type would have to contain itself at S (occurs check) | `type_annotate.zyl` (located) |
 
 The type pass is strict (spec §4.8-§4.10): `(+ 1 "a")` and `(+ 1 1.5)`
@@ -250,7 +250,7 @@ themselves.
 | `E_OVERFLOW` (§28) | numeric: integer overflow at S | catalog only |
 | `E_FFI_PIN_REQUIRED` | ffi: Secret argument to F must be handed over through ffi-pin (Pin region) at S | `secret_check.zyl` |
 | `E_FFI_TYPE_NOT_PINNABLE` | ffi: value has type T which is not FFI_Pinnable | `type_annotate.zyl` (located: `ffi-pin` of a function) |
-| `E_FFI_RESTRICTED` (§28) | ffi: raw runtime entry F may only be called by the standard library at S | `arity_check.zyl` (located, `ffi-check-raw`): an `ffi-call` outside the standard library naming an entry in `ffi-raw-p` (`ffi_sigs.zyl`), one that reads raw memory or reinterprets a machine word; `type_annotate.zyl` (located): an `ffi-call` to a symbol the runtime exports (`zyl_runtime_export_p`) that the program also declares with `extern`, since runtime entries are typed only by `ffi_sigs.zyl` |
+| `E_FFI_RESTRICTED` (§28) | ffi: raw runtime entry F may only be called by the standard library at S | `arity_check.zyl` (located, `ffi-check-raw`): an `ffi-call` outside the standard library naming an entry in `ffi-raw-p` (`ffi_sigs.zyl`), one that reads raw memory or reinterprets a machine word, or trusts bounds its caller checked (the string-view accessors `zyl_view_byte`, `zyl_view_cmp`, `zyl_view_find`, `zyl_view_copy`); `type_annotate.zyl` (located): an `ffi-call` to a symbol the runtime exports (`zyl_runtime_export_p`) that the program also declares with `extern`, since runtime entries are typed only by `ffi_sigs.zyl` |
 | `E_FFI_TIMEOUT` (§28) | ffi: call exceeded timeout of M ms at S | `actor_runtime.c` (`zyl_ffi_timed`), at run time: ``E_FFI_TIMEOUT: ffi call `sym` exceeded its timeout of M ms`` |
 | `E_FFI_TIMEOUT_REQUIRED` | ffi: ffi-call must end with a positive integer literal timeout in milliseconds at S | `arity_check.zyl` (`ffi-check-call`, located, with a help line) |
 | `E_FFI_SYMBOL_REQUIRED` | ffi: ffi-call must name its C symbol with a string literal at S | `arity_check.zyl` (`ffi-check-call`) |

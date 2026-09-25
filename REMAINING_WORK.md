@@ -49,7 +49,9 @@
 - [x] FFI timeouts enforced: literal timeout required (`E_FFI_TIMEOUT_REQUIRED`), worker-thread bridge raises `E_FFI_TIMEOUT`
 - [x] Real regions: per-call regions, escape analysis over ICNF, region annotations, `E_REGION_ESCAPE` (done 2026-09-24, `docs/regions-design.md`)
 - [x] The deterministic region extension registry: `with-region` with `arena` and `fixed` kinds, `E_REGION_SPEC`, `E_REGION_EXHAUSTED` (done 2026-09-24)
-- [ ] Ergonomic zero-copy views beyond `byteslice` (parsing, substrings, array slices), tied to their base by escape analysis
+- [x] Sound HM type checking: every type error reported, no cast form, byte and file operands typed; `receive` the one known hole (done 2026-09-25, `docs/sound-types-design.md`)
+- [x] Ergonomic zero-copy views beyond `byteslice`: `text/view` (`StrView`, `Cursor`) and `collections/slice` (`Slice`), tied to their base by escape analysis (done 2026-09-25)
+- [x] List literals: `(list ...)`, `[...]` and quoted constant data `'(...)`, Cons chains in source order (done 2026-09-25)
 - [ ] Leftovers: Vec/Map derive beyond Show; explicit `Show.show` without an impl hits runtime dispatch; ambiguous dot methods on unknown receivers; Secret heap erasure explicit; interpreter TCO for String/Float results; LSP consuming `--error-format=json`; hosting the default package index
 - [ ] Deterministic concurrency (Kahn): single-sender channels with linear endpoints, blocking receive, no select, bounded buffers, commutative TAtomic read after join, actor output channels drained by main, `--sched=deterministic` oracle vs seeded chaos mode
 - [x] ~~Inline assembly~~: rejected (breaks determinism)

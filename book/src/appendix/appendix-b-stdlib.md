@@ -202,6 +202,51 @@ There is no `set-union`, `set-intersect` or `set-diff`.
 Note the argument order: the collection comes last (`(list-nth n xs)`,
 `(assoc-get k default m)`).
 
+### `collections/slice` — Zero-Copy Slices of a Vec
+
+```lisp
+(use collections/slice)
+(deftype Slice (SliceC (Array T) Int Int))   ; storage, offset, length
+;(slice-of-vec v) (slice-vec v (off Int) (len Int))
+;(slice-sub s (off Int) (len Int)) (slice-take s (n Int)) (slice-drop s (n Int))
+;(slice-len s) (slice-get s (i Int)) (slice-get-or s (i Int) default)
+;(slice-fold s f init) (slice-to-vec s (arena Arena))
+```
+
+Making a slice copies nothing; `slice-to-vec` copies. A range or index
+outside the slice is `E_INDEX_OUT_OF_BOUNDS` (`slice-get-or` returns the
+default instead; take and drop clamp). The slice shares the Vec's
+storage and keeps it alive (Chapter 4). `Show` is implemented.
+
+### `text/view` — String Views and a Parsing Cursor
+
+```lisp
+(use text/view)
+(deftype StrView (StrViewC String Int Int))   ; base, offset, length
+(deftype Cursor (CursorC StrView Int))        ; input, position
+(deftype Taken (TakenC StrView Cursor))       ; bytes taken, cursor after
+;(view-of (s String)) (view-slice (s String) (off Int) (len Int))
+;(view-sub (v StrView) (off Int) (len Int)) (view-take v (n Int)) (view-drop v (n Int))
+;(view-len v) (view-is-empty v) (view-byte-at v (i Int)) (view-find v (byte Int) (from Int))
+;(view-eq a b) (view-eq-str v (s String)) (view-compare a b)
+;(view-starts-with v (prefix String)) (view-ends-with v (suffix String))
+;(view-trim v) (view-trim-start v) (view-trim-end v)
+;(view-split v (byte Int)) (view-parse-int v) (view-to-string v)
+;(cursor-of (s String)) (cursor-new (v StrView)) (cursor-view c) (cursor-pos c)
+;(cursor-at-end c) (cursor-rest c) (cursor-peek c) (cursor-advance c (n Int))
+;(cursor-take-while c pred) (cursor-skip-space c) (cursor-expect c (s String))
+;(taken-view t) (taken-rest t)
+```
+
+The bounds are checked once, when a view is made from a String
+(`E_INDEX_OUT_OF_BOUNDS`); after that nothing is copied until
+`view-to-string`. `view-byte-at` and `cursor-peek` return -1 outside
+the view, `view-find` -1 when the byte is absent, `view-parse-int` an
+`(Option Int)`, `cursor-expect` an `(Option Cursor)`. `StrView`
+implements `Show`, `Debug`, `Eq`, `Ord` and `Hash` (the same hash as the
+equal String). The raw runtime accessors behind it are standard-library
+only (`E_FFI_RESTRICTED`).
+
 ## B.3 Concurrency
 
 ### `actor/actor` — Actor System
@@ -473,7 +518,8 @@ All stdlib source is in `stdlib/`:
 ```
 stdlib/
 ├── core/          core.zyl, option.zyl, result.zyl, list.zyl, map.zyl
-├── collections/   collections.zyl, vec.zyl, map.zyl, set.zyl
+├── collections/   collections.zyl, vec.zyl, map.zyl, set.zyl, slice.zyl
+├── text/          view.zyl
 ├── actor/         actor.zyl
 ├── atomic/        atomic.zyl
 ├── allocator/     allocator.zyl

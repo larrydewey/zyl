@@ -107,6 +107,26 @@ empty inferer were used.
   Extern types are concrete (no type variables) and word-sized: Int,
   Bool, String, `Ptr`, handles, and `(Fn (A ...) R)` for a callback. Float
   is rejected because the timed FFI worker passes machine words.
+- **Byte operations.** `ta-walk-int` typed each operand but required
+  nothing of it, so a String offset was accepted and its address used as
+  the offset. Each offset, length and stored value is now required to be
+  Int (`ta-expect`). Each handle is the kind its runtime entry accepts
+  (`ta-buf-op`): `byteslice`, `bytebuf-append`, `bytebuf-len`, `-cap`,
+  `-ptr` and the atomics a ByteBuf, `byteslice-sub` and
+  `bytebuf-append`'s second operand a ByteSlice. A load or store takes
+  either; before, it rejected only a primitive, so an unannotated handle
+  accepted any value. A load/store handle still a type variable is queued
+  like an ambiguous `struct-get` and is `E_CANNOT_INFER` if its function
+  group does not settle it (`ta-bytes-ambiguous`).
+- **File operations.** A file is its descriptor, an Int. `file-read` is
+  `Int Int -> String`, `file-write` `Int String -> Int`, `file-close`
+  `Int -> Int`. `file-write` used to accept an Int as its data and pass
+  it to `strlen` as an address.
+- **List literals.** `(list ...)`, `[...]` and quoted data `'(...)` are
+  rewritten to `Cons` chains before typing, so they need no rule of
+  their own: the elements share one type. A unification failure inside a
+  type (two list elements) is reported there and not again by the
+  enclosing unification (`ta-unify` compares the error count).
 - **Generated helpers.** A `def` getter's cell operations are named with
   spaces (`zyl global get`), which no source can spell, so their
   `String -> a` read can only come from the getter, whose `if` joins it
@@ -144,7 +164,9 @@ written. Each is now an error or does what it says:
 - **Per-rule compile-fail tests** in `tests/compile-fail/` (`type-*`,
   `ffi-extern-*`, `ffi-undeclared`, `ffi-raw-restricted`, `malformed-*`,
   `trait-*`, `main-returns-int`, `spawn-entry-arity`, `ordering-on-adt`,
-  `prelude-constructor`, `match-*`, `let-without-body`).
+  `prelude-constructor`, `match-*`, `let-without-body`, `bytes-offset-type`,
+  `bytes-handle-kind`, `bytes-handle-unknown`, `file-write-data`,
+  `list-literal-mixed`, `quote-name`, `view-raw-restricted`).
 - **A checking interpreter.** With `ZYL_INTERP_CHECK=1` the interpreter's
   values carry their tags (Int, Float, String, block); every operator
   checks its operands (arithmetic on two Ints or two Floats, comparison
@@ -154,6 +176,10 @@ written. Each is now an error or does what it says:
   found three real gaps (listed above), now fixed.
 
 ## Known hole
+
+The byte-operation and `file-write` holes above were found after strict
+checking became the default and closed on 2026-09-25; `receive` is again
+the only one.
 
 `receive` returns a value of any type: an actor mailbox holds whatever
 any sender put there, so no type can be given to what comes out without

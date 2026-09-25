@@ -93,7 +93,7 @@ with its code split off the front of the message.
 | `E_UNTERMINATED_STRING` | A string literal reached end of input with no closing quote |
 | `E_BYTE_VALUE_OOB` | A `byte` literal outside 0..255, or a non-integer argument to `byte` |
 | `E_INVALID_ESCAPE` | A backslash escape in a string literal that the lexer does not know |
-| `E_INVALID_CHAR` | A character that cannot begin any token, such as `'` or `#` outside a string or comment, located at that byte |
+| `E_INVALID_CHAR` | A character that cannot begin any token, such as a backtick or `#` outside a string or comment, located at that byte. (`'` is the quote token.) |
 | `E_UNEXPECTED_EOF` | End of input while a token was still open. *Catalogued only.* |
 | `E_INTEGER_OVERFLOW` | An integer literal too large for `Int`. *Catalogued only.* |
 | `E_FLOAT_OVERFLOW` | A float literal too large for `Float`. *Catalogued only.* |
@@ -106,7 +106,7 @@ with its code split off the front of the message.
 | `E_UNBALANCED_UNEXPECTED_CLOSE` | A closing delimiter with no opener open |
 | `E_UNBALANCED_MISMATCHED_BRACKET` | A closer that does not match its opener |
 | `E_MALFORMED_PARAMETER` | A parameter that is neither a name nor `(name Type)` — usually a missing `)` |
-| `E_MALFORMED_FORM` | A special form whose arguments do not have the shape it requires, such as `(if c)` with no branches. Such a form used to compile to the constant 0, which let some tests pass without testing anything. Raised by `arity_check.zyl`. |
+| `E_MALFORMED_FORM` | A special form whose arguments do not have the shape it requires, such as `(if c)` with no branches, or `(quote a b)`; also a name inside quoted data, `'(1 x)`, since there is no symbol type. Such a form used to compile to the constant 0, which let some tests pass without testing anything. Raised by `arity_check.zyl`. |
 | `E_UNEXPECTED_TOKEN_IN_EXPR` | A token that cannot appear in expression position |
 | `E_RESERVED_KEYWORD` | A reserved form that is not implemented: the 16-, 32- and 64-bit `load-*`/`store-*` names |
 | `E_UNBALANCED_PARENS` | Open and close counts differ. *Catalogued only; the three `E_UNBALANCED_*` codes above replace it.* |
@@ -143,11 +143,11 @@ Macro expansion also reports `E_ARITY_MISMATCH` (wrong argument count), `E_DUPLI
 | `E_DUPLICATE_DEFINITION` | A name defined more than once at top level |
 | `E_DUPLICATE_VARIANT` | A variant name repeated within one `deftype`, or a program type that reuses a prelude constructor name (`Some`, `None`, `Ok`, `Err`, `Cons`, `Nil`) — the standard library's unqualified uses of those names would otherwise resolve to it |
 | `E_DUPLICATE_PARAMETER` | A parameter name repeated in one signature (`_` and `_`-prefixed names may repeat). *Raised by `unused_check.zyl`; not in the catalog.* |
-| `E_TYPE_MISMATCH` | Two types that must be equal are not: an `Int` condition where `Bool` is required, `Int` and `Float` mixed in arithmetic, a `String` passed where a field or parameter wants an `Int`, an `Int` given to `send` where an `Actor` is required, a `Float` in an `extern` signature, a `file-open` mode that is not a literal. Raised by `type_annotate.zyl` for every unification failure and every failed occurs check, with both types in the message |
+| `E_TYPE_MISMATCH` | Two types that must be equal are not: an `Int` condition where `Bool` is required, `Int` and `Float` mixed in arithmetic, a `String` passed where a field or parameter wants an `Int`, an `Int` given to `send` where an `Actor` is required, a `Float` in an `extern` signature, a `file-open` mode that is not a literal, a list literal with elements of two types, a non-`Int` byte offset, a slice where a `ByteBuf` is required, an `Int` given to `file-write` as its data. Raised by `type_annotate.zyl` for every unification failure and every failed occurs check, with both types in the message |
 | `E_RETURN_TYPE_MISMATCH` | A body that does not match its declared return type. *Catalogued only.* |
 | `E_UNKNOWN_TYPE` | A type name that does not resolve. *Catalogued only.* |
 | `E_UNKNOWN_GENERIC_PARAM` | A reference to an undeclared type parameter. *Catalogued only.* |
-| `E_CANNOT_INFER` | The type pass has no type for an expression: an `ffi-call` to a foreign symbol with no `(extern ...)` declaration, a runtime entry with no signature, or a trait call whose receiver type never resolves. *Listed twice in the catalog.* |
+| `E_CANNOT_INFER` | The type pass has no type for an expression: an `ffi-call` to a foreign symbol with no `(extern ...)` declaration, a runtime entry with no signature, a trait call whose receiver type never resolves, or a byte load or store whose handle may be a `ByteBuf` or a `ByteSlice` and nothing decides which (annotate it: `((b ByteBuf))`). *Listed twice in the catalog.* |
 
 ## A.6 Regions (phase 6) and Byte Buffers
 
@@ -270,7 +270,7 @@ catch-all pattern; it may repeat, and it must be the last arm.
 | `E_FFI_TIMEOUT` | A foreign call did not return within its timeout. Raised at run time; catchable with `try` and matchable with `recover` |
 | `E_FFI_TIMEOUT_REQUIRED` | An `ffi-call` does not end with a positive integer literal timeout in milliseconds |
 | `E_FFI_SYMBOL_REQUIRED` | An `ffi-call` does not name its C symbol with a string literal |
-| `E_FFI_RESTRICTED` | A raw runtime entry that only the standard library may call, called from user code; or an `extern` for a runtime (`zyl_*`) entry, whose type comes from the compiler's signature table |
+| `E_FFI_RESTRICTED` | A raw runtime entry that only the standard library may call, called from user code (for example `zyl_word_load`, or `zyl_view_byte`, which trusts bounds `text/view` checked); or an `extern` for a runtime (`zyl_*`) entry, whose type comes from the compiler's signature table |
 
 An `ffi-call` to a foreign C function needs an `(extern "sym" (T ...) R)`
 declaration first; without one the type pass reports `E_CANNOT_INFER`,

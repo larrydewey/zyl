@@ -306,10 +306,15 @@ Two further caveats:
   need packed representations; it is not yet load-bearing.
 - **Buffers and slices have their own types**, `ByteBuf` and
   `ByteSlice`, usable as annotations: `(defn fill ((b ByteBuf)) ...)`.
-  Passing an `Int`, `Float`, `Bool` or `String` where a handle is
-  expected is `E_TYPE_MISMATCH`. The byte operations accept either
-  handle type. A value whose type inference cannot determine is still
-  checked only at run time, by the magic word in the handle's header.
+  Every offset, length and stored value is an `Int`, and each operation
+  takes the handle its runtime entry accepts: `byteslice`,
+  `bytebuf-append`, `bytebuf-len`, `bytebuf-cap`, `bytebuf-ptr` and the
+  atomics a `ByteBuf`, `byteslice-sub` and `bytebuf-append`'s second
+  operand a `ByteSlice`, a load or store either. Anything else, a slice
+  passed to `bytebuf-len` included, is `E_TYPE_MISMATCH`. A load or
+  store whose handle's type nothing in its function group determines is
+  `E_CANNOT_INFER`; annotate the parameter, `((b ByteBuf))`. The magic
+  word in the handle's header is still checked at run time.
 
 ## Summary
 

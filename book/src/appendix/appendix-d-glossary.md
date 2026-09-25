@@ -293,6 +293,9 @@ diagnostics and command-line diagnostics are the same diagnostics
 
 **Lifetime**: How long a value's region lasts.
 
+**List literal**: `(list a b c)`, `[a b c]` or quoted data `'(a b c)`:
+the `Cons` chain of the elements in source order, all of one type.
+
 **Lock file (`zyl.lock`)**: The integrity and provenance record of a
 resolved graph: each package's version, source, content hash, pinned
 key, signature, features and capabilities, plus the capability closure
@@ -434,6 +437,9 @@ regular expression.
 package archive's BLAKE3 hash. Verification is mandatory and has no
 opt-out (§31.8).
 
+**Slice**: A zero-copy, bounds-checked window on a Vec's storage
+(`collections/slice`).
+
 **Special form**: Built-in syntax with its own evaluation rule (e.g.
 `if`, `let`).
 
@@ -442,11 +448,15 @@ the form §18 specifies for ICNF.
 
 **Stack region**: Local values with function-scope lifetime.
 
+**StrView**: A zero-copy substring: a string, an offset and a length
+(`text/view`). Bounds are checked once, when the view is made.
+
 **Struct**: Named product type with immutable fields, `defstruct`.
 
 **Substitution**: A mapping from type variables to types.
 
-**Symbol**: A `~name` token.
+**Symbol**: A `~name` token. There is no symbol value type, so a quoted
+name is `E_MALFORMED_FORM`.
 
 **Self**: In a trait's method signatures, the type that implements the
 trait: `(trait Ord (compare (self (other Self)) Int))`.

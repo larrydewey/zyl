@@ -108,7 +108,13 @@ top-level `def` values are monomorphic (the value restriction). A type variable 
 | `spawn` | The entry is () -> a |
 | Actors | `spawn` : Actor; `actor-self` : Actor; `send` : Actor a -> Unit; `receive` : a (§4.8) |
 | FFI | A runtime symbol (`zyl_*`) has the type in the signature table; a foreign symbol the type of its `(extern "sym" (T1..Tn) R)` declaration (§16); `(ffi-pin v)` : `(Pin a)` for v : a; `(ffi-unpin p)` : a for p : `(Pin a)`; pinning a function is `E_FFI_TYPE_NOT_PINNABLE` |
+| List literal | `(list e1 .. en)` and `[e1 .. en]` are `(Cons e1 (Cons .. (Cons en Nil)))`: e1..en are evaluated left to right, every ei : τ ⊢ `(List τ)`. `(list)`, `[]` : `(List a)`. Mixed element types are `E_TYPE_MISMATCH` |
+| `quote` | `(quote d)`, `'d`: an Int, Float, String or Bool datum is itself; a list datum is the list literal of its quoted elements, so `'((1 2) (3))` : `(List (List Int))` and `'()` : `(List a)`. A name inside d, or a `quote` without exactly one operand, is `E_MALFORMED_FORM` (there is no symbol type) |
+| Byte operations | Offsets, lengths and stored values are Int, and so is every result but the handles. `(bytebuf R N)` : ByteBuf; `(byteslice b off len)` : ByteSlice for b : ByteBuf; `(byteslice-sub s off len)` : ByteSlice for s : ByteSlice; `(bytebuf-append b s)` : Int for b : ByteBuf, s : ByteSlice; `bytebuf-len`, `bytebuf-cap`, `bytebuf-ptr` and the atomic operations take a ByteBuf. A load or store (`load-u8` .. `store-i64`) takes a ByteBuf or a ByteSlice; a handle whose type is still unknown when its function group is typed is `E_CANNOT_INFER` (annotate it: `((b ByteBuf))`) |
 | `file-open` | path : String, mode a literal fopen mode -> Int |
+| `file-read` | `(file-read fd n)`: fd, n : Int -> String |
+| `file-write` | `(file-write fd s)`: fd : Int, s : String -> Int |
+| `file-close` | `(file-close fd)`: fd : Int -> Int |
 
 ### 4.10 Type Errors
 
@@ -201,8 +207,9 @@ Multiple type parameters are declared as multiple parameter groups:
 parameter or field annotation that is not a declared type is a type
 parameter scoped to that declaration, and an unannotated parameter has a
 fresh type (§4.9). The group syntax above is not accepted: `((T) x)` is
-`E_MALFORMED_PARAMETER`, and in `((T : Ord) a)` the reader takes `:Ord`
-as a keyword, so `T` becomes an ordinary value parameter. Trait bounds
+`E_MALFORMED_PARAMETER`, and so is `((T : Ord) a)`: a parameter's type
+is written `(name Type)`, without a colon, and a trait name in type
+position (other than `Secret`) is rejected. Trait bounds
 are not written; a missing impl is found at each specialized instance
 (`E_TRAIT_NOT_FOUND`).
 
@@ -352,8 +359,24 @@ falls short of §4–§6 and §17.
   is not reported there: its function is specialized per type (see
   Generics), and each instance is checked at its concrete type.
 - `file-open`'s mode must be one of the string literals `"r"`, `"w"`,
-  `"a"`, `"r+"`, `"w+"`, `"a+"`, `"rb"`, `"wb"`, `"ab"`. `file-write`
-  and `file-close` return Int, `file-read` String.
+  `"a"`, `"r+"`, `"w+"`, `"a+"`, `"rb"`, `"wb"`, `"ab"`. A file is its
+  descriptor, an Int. `file-read` takes two Ints and returns a String,
+  `file-write` an Int and a String and returns an Int, `file-close` an Int
+  and returns an Int. (`file-write` used to accept an Int as its data and
+  pass it to `strlen` as an address.)
+- Byte operations (`ta-bytes`, `ta-buf-op`): every offset, length and
+  stored value must be Int (`ta-walk-int` requires each operand, where it
+  used to type them and require nothing, so a String offset used the
+  string's address). `byteslice`, `bytebuf-append`, `bytebuf-len`,
+  `bytebuf-cap`, `bytebuf-ptr` and the atomics require a ByteBuf;
+  `byteslice-sub` and `bytebuf-append`'s second operand a ByteSlice. A
+  load or store takes either; a handle still a type variable waits for its
+  function group, like a `struct-get`, and is `E_CANNOT_INFER` if nothing
+  settles it (`ta-bytes-ambiguous`).
+- A list literal is typed as the `Cons` chain it becomes, so its type is
+  `(List τ)` and mixed elements are `E_TYPE_MISMATCH`, reported once:
+  a unification failure inside a type (an element of two lists) is not
+  reported again by the enclosing unification.
 - A top-level `def` is rewritten by the parse into a zero-argument getter
   function (`def-getter`, `expr_inner.zyl`) and typed as that function,
   but its type is not generalized (`ta-gen-members`): the value
@@ -417,10 +440,9 @@ falls short of §4–§6 and §17.
   parameter annotation that is not a declared type is a type parameter
   (scoped to the declaration); a lowercase unknown name is a fresh
   variable. So a misspelled type name (`Strng`) silently becomes a type
-  parameter. The §6.1 spelling `((T : Ord) x)` does not work as written:
-  the lexer reads `: Ord` as the keyword `:Ord`, so `(T :Ord)` is an
-  ordinary *value* parameter and the function's arity grows by one.
-  `((T) x)` is `E_MALFORMED_PARAMETER`. Trait bounds are never declared
+  parameter. The §6.1 spellings `((T : Ord) x)` and `((T) x)` are
+  `E_MALFORMED_PARAMETER`, as are `(a : Int)` (the colon form) and a
+  trait name used as a type (`(a Ord)`). Trait bounds are never declared
   or checked as such; a missing impl is found at the instance
   (`E_TRAIT_NOT_FOUND`). `E_TRAIT_BOUND_NOT_SATISFIED` and
   `E_UNKNOWN_GENERIC_PARAM` are catalogued but never raised.
@@ -481,8 +503,11 @@ falls short of §4–§6 and §17.
 
 `receive` (§4.8) is the only one. Holes found while porting and since
 closed: an ambiguous `struct-get` (above), a generalized top-level `def`,
-an `extern` retyping a runtime entry (now `E_FFI_RESTRICTED`), and
-`ffi-pin` typed as its argument although it gives a Pin slot's address.
+an `extern` retyping a runtime entry (now `E_FFI_RESTRICTED`),
+`ffi-pin` typed as its argument although it gives a Pin slot's address,
+byte-operation offsets and values that were not required to be Int (a
+String offset used its address), and `file-write` accepting an Int as
+its data.
 
 Two gaps remain that do not break §4.8: a misspelled type name becomes a
 type parameter (above), and a type variable no signature mentions is

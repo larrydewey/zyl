@@ -129,7 +129,8 @@ Core modules:
 | Module | Contents |
 |--------|----------|
 | core | identity, compose, arithmetic, bool, type-predicates, I/O |
-| collections | Vec, Map (deterministic iteration) |
+| collections | Vec, Map (deterministic iteration), Slice (zero-copy window on a Vec) |
+| text | StrView (zero-copy substring), Cursor (parsing position) |
 | option | Option (Some, None), is-some, unwrap, map |
 | result | Result (Ok, Err), is-ok, unwrap, map |
 | io | file-open, file-read, file-write, file-close |
@@ -147,7 +148,7 @@ enforces capability grants at import time.
 
 In the repository the standard library lives in `stdlib/` (`actor`,
 `allocator`, `atomic`, `collections`, `compiler`, `core`, `ffi`, `io`,
-`lsp`, `math`, `mlib`, `repl`, `testing`), as package `zyl/std`. Option
+`lsp`, `math`, `mlib`, `repl`, `testing`, `text`), as package `zyl/std`. Option
 and Result are `stdlib/core/option.zyl` and `stdlib/core/result.zyl`. The
 capability each module needs is decided by `capability_check.zyl` from its
 module path, not declared by the module (see `16-package-system.md`).

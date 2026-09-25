@@ -149,8 +149,9 @@ Not normative. The design and its rationale are in
   `type_system.zyl` is recorded on the `(bytebuf R N)` node itself, a
   construction-time constant that lowering and region inference read; it
   is not part of the type. To the type checker `ByteBuf` and `ByteSlice`
-  are plain nullary types, and a byte operation rejects only a primitive
-  (Int, Float, Bool, String, Unit) where the handle belongs. A Stack
+  are plain nullary types. Each byte operation requires the handle its
+  runtime entry accepts (a load or store either, `bytebuf-len` a ByteBuf,
+  `byteslice-sub` a ByteSlice; `spec/05-types-and-inference.md` §4.9). A Stack
   bytebuf is allocated in the frame region.
 
 ### Memory in the runtime

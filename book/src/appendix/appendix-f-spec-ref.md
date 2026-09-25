@@ -145,7 +145,10 @@ strict: every failure is a compile error, and there is no cast form.
 | `+ - * / %` | Both operands `Int` or both `Float`; the result has their type; no implicit conversion |
 | `< > <= >=` | Both operands one type: `Int`, `Float` or `String`; result `Bool`. An ADT is ordered with `Ord.compare` |
 | `= != and or not` and the predicates | Result `Bool`; `and`, `or`, `not` take `Bool` |
-| `print`, `set!`, `while`, `for`, `assert`, `send`, `file-write` | `Unit` |
+| `print`, `set!`, `while`, `for`, `assert`, `send` | `Unit` |
+| `list`, `[...]`, `'(...)` | `(List τ)`: every element one type τ; a quoted datum holds no name |
+| Byte operations | Offsets, lengths and stored values `Int`; each takes the handle kind its runtime entry accepts (`ByteBuf`, `ByteSlice`, or either for a load or store) |
+| `file-read`, `file-write`, `file-close` | `Int Int -> String`, `Int String -> Int`, `Int -> Int` |
 | `main` | Returns `Int`, the exit status |
 | `defstruct` | An untyped field is a type parameter of the struct |
 | `trait` | `Self` in a method signature is the implementing type |
@@ -277,6 +280,8 @@ raise.
 | `collections/map` | `map-create`, `map-put`, `map-get`, `map-len`, `map-has`, `map-remove` |
 | `collections/set` | `set-create`, `set-add`, `set-remove`, `set-len`, `set-contains` |
 | `collections/collections` | `assoc-*`, `list-map`, `list-filter`, `list-fold`, `list-nth`, `list-range` |
+| `collections/slice` | `Slice`, `slice-vec`, `slice-of-vec`, `slice-sub`, `slice-get`, `slice-len`, `slice-fold`, `slice-to-vec` |
+| `text/view` | `StrView`, `view-of`, `view-slice`, `view-sub`, `view-split`, `view-trim`, `view-parse-int`, `view-to-string`; `Cursor`, `cursor-of`, `cursor-take-while`, `cursor-expect` |
 | `actor/actor` | `actor-spawn`, `actor-send`, `actor-wait`, `actor-is-alive`, `actor-terminate` |
 | `atomic/atomic` | `atomic-load`, `atomic-store`, `atomic-add`, `atomic-cas`, `atomic-fetch-add` |
 | `ffi/ffi` | `ffi-pin-value`, `ffi-unpin-value`, `ffi-safe-call`, `ffi-pin-call-unpin` |

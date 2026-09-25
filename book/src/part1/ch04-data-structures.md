@@ -393,10 +393,162 @@ so, as with a Vec, the old version sees the change too.
   0)
 ```
 
+### Lists
+
+`List` is the core ADT `(Cons head tail)` / `Nil`. A list literal
+builds one: `(list 1 2 3)`, `[1 2 3]` and the quoted constant
+`'(1 2 3)` are all `(Cons 1 (Cons 2 (Cons 3 Nil)))`, with the elements
+evaluated left to right and all of one type (Chapter 2, §2.7). `[]` is
+`Nil`.
+
+```lisp
+(use core/list)
+
+(defn total ((xs (List Int)))
+  (match xs
+    (Nil 0)
+    (Cons h t (+ h (total t)))))
+
+(defn main ()
+  (begin
+    (print (total [1 2 3]))                  ; 6
+    (print (list-length '((1 2) (3))))       ; 2
+    (print (Show.show ["a" "b"]))            ; [a, b]
+    0))
+```
+
 For lists, `collections/collections` has `list-map`, `list-filter`,
 `list-fold`, `list-nth`, `list-take`, `list-drop` and more, and an
 immutable association list (`assoc-put`, `assoc-get`, ...) that can
 hold any value type.
+
+### Slices (`Slice`) — `collections/slice.zyl`
+
+A `Slice` is a window on a Vec's storage: the storage, an offset and a
+length. Making a slice or a sub-slice copies nothing, and every read is
+checked against the slice's own bounds, so an index past the slice
+panics with `E_INDEX_OUT_OF_BOUNDS` even when the Vec has more
+elements.
+
+| Function | Result |
+|----------|--------|
+| `(slice-of-vec v)` | All of `v` |
+| `(slice-vec v off len)` | The `len` elements of `v` from `off`; a range outside the Vec is `E_INDEX_OUT_OF_BOUNDS` |
+| `(slice-sub s off len)` | The same, within a slice |
+| `(slice-take s n)` / `(slice-drop s n)` | The first `n` elements / all but the first `n` (clamped to the slice) |
+| `(slice-get s i)` / `(slice-get-or s i default)` | Element `i`; outside the slice, a panic / `default` |
+| `(slice-len s)` | The number of elements |
+| `(slice-fold s f init)` | `f` applied to an accumulator and each element in order |
+| `(slice-to-vec s arena)` | A new Vec in `arena` holding the elements (a copy) |
+
+```lisp
+(use collections/vec)
+(use collections/slice)
+
+(defn main ()
+  (let v (vec-push (vec-push (vec-push (vec-create-default 4) 10) 20) 30)
+    (let s (slice-vec v 1 2)                        ; elements 1 and 2, no copy
+      (begin
+        (print (slice-len s))                       ; 2
+        (print (slice-get s 0))                     ; 20
+        (print (slice-fold s (fn (a x) (+ a x)) 0)) ; 50
+        (print (Show.show (slice-take s 1)))        ; [20]
+        (print (vec-len (slice-to-vec s (arena-create 0))))  ; 2 (a copy)
+        0))))
+```
+
+A slice shares its storage with the Vec, like a Vec version does: an
+element later set through a Vec that still uses that storage is visible
+through the slice. The slice holds the storage, so region inference
+keeps it alive for as long as the slice; an arena reset or destroy
+still frees it (see *Arenas* below). `Show` is implemented for `Slice`.
+
+### String views (`StrView`, `Cursor`) — `text/view.zyl`
+
+A `StrView` is a string, an offset and a length. Taking a view, a
+sub-view, splitting or trimming copies no bytes. The bounds are checked
+once, when a view is made from a `String` (`view-of`, `view-slice`;
+a range outside the string is `E_INDEX_OUT_OF_BOUNDS`), and every
+other operation stays inside them. `view-to-string` is the one
+operation that copies.
+
+| Function | Result |
+|----------|--------|
+| `(view-of s)` / `(view-slice s off len)` | All of `s` / `len` bytes of `s` from `off` |
+| `(view-sub v off len)`, `(view-take v n)`, `(view-drop v n)` | Narrower views (`view-sub` checks its range; take and drop clamp) |
+| `(view-len v)`, `(view-is-empty v)` | Length in bytes; whether it is 0 |
+| `(view-byte-at v i)` | Byte `i` (0..255), or -1 outside the view |
+| `(view-find v byte from)` | Index of the first `byte` at or after `from`, or -1 |
+| `(view-eq a b)`, `(view-eq-str v s)`, `(view-compare a b)` | Byte equality; three-way byte order (-1, 0, 1) |
+| `(view-starts-with v s)`, `(view-ends-with v s)` | Prefix / suffix test against a String |
+| `(view-trim v)`, `view-trim-start`, `view-trim-end` | Without ASCII whitespace (space, tab, `\n`, `\r`) |
+| `(view-split v byte)` | The pieces between occurrences of `byte`, as a `(List StrView)` |
+| `(view-parse-int v)` | `(Some n)` for a decimal integer with an optional `-` filling the view, else `None` |
+| `(view-to-string v)` | A new String with the view's bytes |
+
+`StrView` implements `Show`, `Debug`, `Eq`, `Ord` and `Hash`; its hash
+is the hash of the String with the same bytes.
+
+```lisp
+(use text/view)
+
+(defn field-total ((fields (List StrView)))
+  (match fields
+    (Nil 0)
+    (Cons f rest
+      (+ (match (view-parse-int (view-trim f)) (Some n n) (None 0))
+         (field-total rest)))))
+
+(defn main ()
+  (let line (view-trim (view-of "  12, 30 ,-2  \n"))
+    (begin
+      (print (view-len line))                       ; 10
+      (print (view-to-string (view-take line 2)))   ; 12
+      (print (view-starts-with line "12"))          ; 1 (true)
+      (print (field-total (view-split line 44)))    ; 40 (44 is `,`)
+      0)))
+```
+
+A `Cursor` is a view and a position, for hand-written parsers. A
+scanning step returns a `Taken`: the bytes it took and the cursor after
+them.
+
+| Function | Result |
+|----------|--------|
+| `(cursor-of s)` / `(cursor-new v)` | A cursor at the start of a String / a view |
+| `(cursor-pos c)`, `(cursor-at-end c)`, `(cursor-rest c)` | Position; whether at the end; the view from the position on |
+| `(cursor-peek c)` | The byte at the cursor, or -1 at the end |
+| `(cursor-advance c n)` | `n` bytes on, stopping at the end |
+| `(cursor-take-while c pred)` | A `Taken` of the bytes for which `pred` holds |
+| `(taken-view t)` / `(taken-rest t)` | What was taken / the cursor after it |
+| `(cursor-skip-space c)` | Past any ASCII whitespace |
+| `(cursor-expect c s)` | `(Some c2)` past `s` if the input starts with it, else `None` |
+
+```lisp
+(use text/view)
+
+(defn digit-p ((b Int)) (and (>= b 48) (<= b 57)))
+
+(defn main ()
+  (let t (cursor-take-while (cursor-of "8080 /index") digit-p)
+    (let c (cursor-skip-space (taken-rest t))
+      (begin
+        (print (view-to-string (taken-view t)))     ; 8080
+        (print (cursor-pos c))                      ; 5
+        (print (cursor-peek c))                     ; 47 (`/`)
+        (print (match (cursor-expect c "/index")
+                 (Some c2 (cursor-at-end c2))
+                 (None false)))                     ; 1 (true)
+        0))))
+```
+
+A view holds its base string, so a view returned from a function keeps
+the string alive in the caller's region even though only the view was
+returned. The runtime accessors the module uses (`zyl_view_byte`,
+`zyl_view_cmp`, `zyl_view_find`, `zyl_view_copy`) trust bounds the view
+already checked, so a program outside the standard library may not call
+them (`E_FFI_RESTRICTED`); `zyl_view_ok`, the bounds check itself, is
+not restricted.
 
 ### Arenas: where collections keep their elements
 
@@ -603,6 +755,8 @@ ADT values field by field, by content (Chapter 2, §2.6).
 (use collections/map)           ; map-create map-put map-get ...
 (use collections/set)           ; set-create set-add set-contains ...
 (use collections/collections)   ; list-map list-filter assoc-put ...
+(use collections/slice)         ; slice-vec slice-get slice-fold ...
+(use text/view)                 ; view-of view-split cursor-of ...
 ```
 
 `Option`, `Result`, `List` and their helpers come from `core/core`,

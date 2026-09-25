@@ -39,7 +39,9 @@ stdlib/repl/             The REPL and its ICNF interpreter (8 files, ~4,100 line
 stdlib/lsp/              The language server (20 files, ~5,500 lines)
 stdlib/math/             Cryptography and number libraries (28 files, ~7,600 lines)
 stdlib/core/             core (facade), list, option, result, map
-stdlib/collections/      collections (Assoc + list utilities), vec, map, set
+stdlib/collections/      collections (Assoc + list utilities), vec, map, set,
+                         slice (zero-copy Vec slices)
+stdlib/text/             view: StrView (zero-copy substrings) and Cursor
 stdlib/allocator/        Raw memory arenas
 stdlib/actor/            spawn/send and actor lifecycle over the C runtime
 stdlib/ffi/              FFI pinning helpers

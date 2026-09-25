@@ -92,7 +92,7 @@ Macro calls are recognised in every position too: inside `match` arms, `fn` bodi
 
 ## 23.3 No Quasiquote
 
-Zyl has no quasiquote, unquote or unquote-splicing: the body itself is the template. The lexer does not recognise `` ` ``, `,`, `'` or `@`. Each of them outside a string or comment is `E_INVALID_CHAR`, so a backquoted Common Lisp-style macro is rejected at its first backquote.
+Zyl has no quasiquote, unquote or unquote-splicing: the body itself is the template. The lexer does not recognise `` ` ``, `,` or `@`. Each of them outside a string or comment is `E_INVALID_CHAR`, so a backquoted Common Lisp-style macro is rejected at its first backquote. `'` is recognised, but only as the quote of constant data (`'(1 2 3)`, Chapter 14); a quoted name is `E_MALFORMED_FORM`.
 
 ## 23.4 Hygiene
 

@@ -14,8 +14,19 @@ UTF-8.
 
 ```
 IDENTIFIER | INTEGER | FLOAT | STRING | BOOLEAN | SYMBOL | KEYWORD
-"(" | ")" | "{" | "}" | ":" | "[" | "]"
+"(" | ")" | "{" | "}" | ":" | "[" | "]" | "'"
 ```
+
+### 1.2.1 Reader sugar
+
+| Written | Reads as | Meaning |
+|---------|----------|---------|
+| `[e1 ... en]` | `(list e1 ... en)` | a list literal (§4.9) |
+| `'d` | `(quote d)` | quoted constant data (§4.9) |
+
+In a derive, `(derive T [Eq Show])` and `(:derive [Eq Show])`, the
+bracket still names traits. Any other character outside a string or
+comment, such as a backtick, is `E_INVALID_CHAR`.
 
 ## 1.3 Keywords
 
@@ -63,7 +74,7 @@ divergence.
 
 `TkIdent`, `TkInt`, `TkFloat`, `TkString`, `TkBool`, `TkSymbol`,
 `TkKeyword`, `TkLParen`, `TkRParen`, `TkLBrace`, `TkRBrace`, `TkLBracket`,
-`TkRBracket`, `TkColon` and `TkEof`. Every token carries its byte offset
+`TkRBracket`, `TkColon`, `TkQuote` and `TkEof`. Every token carries its byte offset
 in the source, which is how diagnostics report `file:line:col`.
 
 ### Literals
@@ -92,11 +103,16 @@ in the source, which is how diagnostics report `file:line:col`.
 
 ### Delimiters
 
-`( )`, `[ ]` and `{ }` are all tokens, and the reader turns each bracketed
-group into the same list node. There are no distinct vector or map
-literals at the syntax level; the meaning of `[...]` or `{...}` is decided
-by the form that contains it (for example the `{ symbol }` import list of
-§24.2).
+`( )`, `[ ]` and `{ }` are all tokens. The reader turns a `( )` or `{ }`
+group into a list node; the meaning of `{...}` is decided by the form
+that contains it (for example the `{ symbol }` import list of §24.2). A
+`[ ]` group reads as a list node headed by the identifier `list`, so
+`[1 2 3]` is `(list 1 2 3)` (`bracket-forms`, `parser.zyl`); a derive's
+trait list drops that head (`derive-drop-list`, `expr_inner.zyl`). There
+are no vector or map literals.
+
+`'` is `TkQuote`: the reader reads the next form `d` and returns
+`(quote d)` (`read-quote`).
 
 Before reading, `stdlib/compiler/sexp_balance.zyl` checks that every
 opener has a matching closer of the same kind and reports
@@ -105,8 +121,8 @@ opener has a matching closer of the same kind and reports
 
 ### Comments
 
-Only `;` line comments exist. An unrecognised character ends the token
-stream (it is treated as end of input).
+Only `;` line comments exist. A character the lexer does not recognise
+(a backtick, say) is `E_INVALID_CHAR`.
 
 ### Reserved keywords (§1.3.1)
 

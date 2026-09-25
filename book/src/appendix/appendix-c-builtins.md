@@ -199,7 +199,7 @@ it a `_` prefix, to mark it unused; `_` may repeat.
 ```
 
 A form evaluated only for its effect — `print`, `set!`, `while`, `for`,
-`assert`, `send`, `file-write`, an `if` with no `else` — has type
+`assert`, `send`, an `if` with no `else` — has type
 `Unit`, written `unit` as a value. A function whose last form is one of
 these returns `Unit`. `main` must return an `Int`, the exit status, so
 it usually ends with `0`; `(defn main () (print 1))` is
@@ -254,6 +254,8 @@ the same type.
 | `derive` | `(derive Type Trait ...)` | Show, Debug, Eq, Ord, Hash, Clone; fields must implement the trait |
 | `alias` | `(alias Name Type)` | transparent |
 | `macro`, `defmacro` | `(defmacro name (param ...) template)` | |
+| `list` | `(list e ...)`, or `[e ...]` | the list `(Cons e (Cons ... Nil))`, elements evaluated left to right, all of one type (`E_TYPE_MISMATCH` otherwise); `(list)` and `[]` are `Nil` |
+| `quote` | `(quote datum)`, or `'datum` | constant data: a number, string or boolean is itself, a list is a list literal of its quoted elements (`'((1 2) (3))` is a `(List (List Int))`). A name inside is `E_MALFORMED_FORM`, as is a `quote` without exactly one operand |
 
 `defstruct` is sugar: it lowers to a single-variant `deftype` whose
 variant is named after the type, so the ADT machinery builds and reads
@@ -262,6 +264,9 @@ annotations become the variant's field types, and a `make-Name`
 argument of another type is `E_TYPE_MISMATCH` (Chapter 15, §15.6). An
 unannotated field is an implicit type parameter: `(defstruct Box (v))`
 is a `Box` of any one type, fixed at each construction.
+
+`[...]` is always a list literal except as a derive's trait list:
+`(derive T [Eq Show])` and `(:derive [Eq Show])` name traits.
 
 A `deftype` may not reuse a prelude constructor name — `Some`, `None`,
 `Ok`, `Err`, `Cons`, `Nil` — which is `E_DUPLICATE_VARIANT`.
@@ -297,9 +302,9 @@ There is no quasiquote or unquote syntax.
 |---|---|---|
 | `print` | `(print expr ...)` | one line per argument; `Unit`; rejected on a `Secret` operand |
 | `file-open` | `(file-open path mode)` | `mode` is a string literal: `"r"`, `"w"` or `"a"`, optionally followed by `+` or `b`. Anything else, a variable included, is `E_TYPE_MISMATCH` |
-| `file-read` | `(file-read fd nbytes)` | |
-| `file-write` | `(file-write fd text)` | `Unit`; rejected on a `Secret` operand |
-| `file-close` | `(file-close fd)` | |
+| `file-read` | `(file-read fd nbytes)` | two `Int`s; returns a `String` of up to `nbytes` bytes |
+| `file-write` | `(file-write fd text)` | `fd` an `Int`, `text` a `String`; returns an `Int`; rejected on a `Secret` operand |
+| `file-close` | `(file-close fd)` | `fd` an `Int`; returns an `Int` |
 | `read-line` | `(read-line)` | **not lowered**: evaluates to 0 |
 | `exit` | `(exit code)` | **not lowered**: does not end the process |
 | `close` | `(close handle)` | **not lowered**; use `file-close` |
@@ -358,7 +363,13 @@ assertion.
 The wider widths — `load-u16`/`u32`/`u64`, `load-i16`/`i32`/`i64` and
 the matching `store-*` forms — take the same arguments as the 8-bit ones
 and honour the `:le`/`:be` selector. Buffers are typed `ByteBuf`, slices
-`ByteSlice`. Chapter 32 covers this family in full.
+`ByteSlice`. Every offset, length and stored value is an `Int`.
+`byteslice`, `bytebuf-append`, `bytebuf-len`, `-cap`, `-ptr` and the
+atomics take a `ByteBuf`; `byteslice-sub` and `bytebuf-append`'s second
+operand a `ByteSlice`; a load or store takes either. A load or store
+whose handle's type nothing determines, such as an unannotated
+parameter used only there, is `E_CANNOT_INFER`: annotate it,
+`((b ByteBuf))`. Chapter 32 covers this family in full.
 
 ## C.13 Contracts
 

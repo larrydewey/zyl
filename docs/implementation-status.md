@@ -12,7 +12,7 @@ Building Zyl needs `cc` and `pthread` and nothing else.
 |---|---|
 | Specification | `zyl_specification.txt` v5.0 (§0–§31) |
 | Compiler | ~22,600 lines of Zyl across 39 files in `stdlib/compiler/` |
-| Standard library | `core`, `collections`, `allocator`, `actor`, `ffi`, `io`, `atomic`, `testing`, `math` |
+| Standard library | `core`, `collections`, `text`, `allocator`, `actor`, `ffi`, `io`, `atomic`, `testing`, `math` |
 | Cryptography | `stdlib/math/`, ~7,600 lines of Zyl |
 | REPL | `stdlib/repl/`, ~4,100 lines of Zyl, with an ICNF interpreter; `zyl repl` and `zyl eval` |
 | Language server | `stdlib/lsp/`, ~5,400 lines of Zyl, built by `boot.sh` as `zyl-lsp` |
@@ -27,14 +27,16 @@ it compiles and runs correctly; the notes say where it stops.
 
 | Feature | Status |
 |---|---|
-| S-expression syntax, dispatch-free reader | Works |
+| S-expression syntax, dispatch-free reader | Works. `[a b]` reads as `(list a b)` and `'d` as `(quote d)` |
+| List literals | Works: `(list a b c)`, `[a b c]` and quoted constant data `'(1 2 3)` are `Cons` chains built in source order (left-to-right evaluation, one element type, `E_TYPE_MISMATCH` otherwise); `[]`, `(list)` and `'()` are `Nil`. Quoted data holds Int, Float, String, Bool and nested lists; a name inside it is `E_MALFORMED_FORM` (there is no symbol type). A derive's `[Eq Show]` still names traits |
+| Zero-copy views | Works: `text/view` (`StrView`, `Cursor`) and `collections/slice` (`Slice`). Making, splitting and trimming a view copies nothing; bounds are checked once when a view is made from a String; `view-to-string` and `slice-to-vec` copy. A view holds its base, so region inference keeps the base alive. The raw `zyl_view_*` accessors are `E_FFI_RESTRICTED` outside the standard library (`zyl_view_ok` is not) |
 | `let`, `let-mut`/`set!`, `if`, `cond`, `while`, `for`, `begin` | Works. `set!` on a plain `let` binding or on a field is `E_MUT_CONFLICT` |
 | Functions, recursion | Works. Direct calls with the wrong argument count are `E_ARITY_MISMATCH` |
 | Integers, 64-bit | Works, including bitwise `bit-and`/`bit-or`/`bit-xor`/`shl`/`shr`/`ashr` |
 | Float64 | Works: literals, arithmetic, comparisons, printing |
 | Structs | Works: `defstruct`, `make-<Name>`, `struct-get`, rebinding with `let-mut` |
 | ADTs and `match` | Works, including literal patterns, OR-patterns, range patterns and guards. A non-exhaustive ADT match is `E_NON_EXHAUSTIVE_MATCH`; a literal match needs a trailing `_` |
-| Generics | Works. Top-level functions are generalized per strongly connected component of the call graph (Hindley–Milner); generic ADTs and structs take their type parameters from uppercase field types, and an untyped field is an implicit type parameter. A function that calls a trait method, prints, or applies an operator at a type variable is specialized per concrete argument types into an instance named `f~T1,T2` (argument order, spec §6.4), at every call and every use as a value; the generic original is dropped. More than 256 instances of one function is `E_CANNOT_INFER`. The §6.1 bound spelling `((T : Ord) x)` does not work: the lexer reads `:Ord` as a keyword, so `T` becomes an ordinary parameter and the arity grows by one |
+| Generics | Works. Top-level functions are generalized per strongly connected component of the call graph (Hindley–Milner); generic ADTs and structs take their type parameters from uppercase field types, and an untyped field is an implicit type parameter. A function that calls a trait method, prints, or applies an operator at a type variable is specialized per concrete argument types into an instance named `f~T1,T2` (argument order, spec §6.4), at every call and every use as a value; the generic original is dropped. More than 256 instances of one function is `E_CANNOT_INFER`. The §6.1 bound spelling `((T : Ord) x)` is `E_MALFORMED_PARAMETER` (the colon form and a trait in type position are both rejected) |
 | Traits and `impl` | Works. `(Trait.method recv ...)` is resolved at compile time from the receiver's inferred type to `Trait.method_Type`; a method's `Self` is its receiver's type. There is no run-time dispatch: a call whose receiver type stays unknown is `E_CANNOT_INFER`, and a concrete receiver with no impl is `E_TRAIT_NOT_FOUND`. Two written impls of one trait for one type are `E_DUPLICATE_IMPL` |
 | `derive` | Show, Debug, Eq, Ord, Hash and Clone generate impls (`derive.zyl`); anything else, or a field whose type lacks the trait, is `E_TRAIT_NOT_DERIVABLE`. `print` of a value whose type has a Show impl prints `Show.show` of it; without one, a struct or ADT prints an address. `==` compares structs and ADTs by content, deeply, with or without a `derive` (a generated `T.==` per type). `<`, `>`, `<=`, `>=` take Int, Float and String only; an ADT is ordered with `Ord.compare` |
 | Closures | Works, including closures that capture and escape (heap `[tag, code, env]` values) |
@@ -46,7 +48,7 @@ it compiles and runs correctly; the notes say where it stops.
 | Regions | Real (`docs/regions-design.md`). Region inference places every allocation and call site in the frame's own region (released on return, before a tail jump, or when a caught panic unwinds it), the caller's result region, or the heap; a non-escaping `let`-bound variant still goes on the stack. `with-region` gives explicit `arena`/`fixed` regions (`E_REGION_SPEC`, `E_REGION_EXHAUSTED`); `E_REGION_ESCAPE` is raised for an escaping Stack bytebuf or `with-region` value. Heap values that escape live until exit. `ZYL_REGIONS=0` turns inference off. Circular and Global regions are not inferred |
 | Capability types | `TCap`/`TMut` are enforced syntactically (`let` vs `let-mut`) by `mutability_check.zyl` |
 | `Secret` capability | Enforced by `secret_check.zyl` (branch, index, divide, print, escape, unpinned FFI) |
-| Byte primitives | 8-, 16-, 32- and 64-bit loads and stores (le/be), byte buffers (`ByteBuf`), slices (`ByteSlice`), atomics and alignment work |
+| Byte primitives | 8-, 16-, 32- and 64-bit loads and stores (le/be), byte buffers (`ByteBuf`), slices (`ByteSlice`), atomics and alignment work. Offsets, lengths and stored values must be Int; each operation takes the handle kind its runtime entry accepts, and a load/store handle whose type stays unknown is `E_CANNOT_INFER` |
 | Test harness | Works: `test`, `run-tests`, `assert-equal`, `assert-true`, `assert-false` |
 | Type inference | Strict Hindley–Milner (`type_annotate.zyl`, spec §4.8–§4.10). Every unification failure is `E_TYPE_MISMATCH`, an occurs-check failure `E_INFINITE_TYPE`, a type the program does not determine `E_CANNOT_INFER`, a name defined nowhere `E_UNBOUND_VARIABLE`; all are reported, then the compile fails. Conditions are Bool, arithmetic is Int or Float with no mixing, statements are Unit, `main` is `() -> Int`. `ZYL_STRICT_TYPES=report` prints them as `W_TYPE_STRICT` warnings instead. The compiler, the REPL and the language server type-check clean. The one known hole (`receive`) and the remaining gaps are listed below |
 | Contracts | `requires`, `ensures` (with `result`) and `invariant` are checked at run time (`E_CONTRACT_VIOLATION`); `recover` arms match error codes; `checkpoint` rolls back `let-mut` state; profiles by `--contracts=P` or `(contracts P)` |
@@ -61,7 +63,11 @@ it compiles and runs correctly; the notes say where it stops.
   be it); a top-level `def` is not generalized (value restriction); an
   `extern` for a symbol the runtime exports is `E_FFI_RESTRICTED`, so
   runtime entries are typed only by `ffi_sigs.zyl`; `(ffi-pin v)` is
-  `(Pin a)` and `ffi-unpin` takes a `(Pin a)` back to `a`.
+  `(Pin a)` and `ffi-unpin` takes a `(Pin a)` back to `a`; a byte
+  operation's offset, length or stored value must be Int (a String
+  offset used its address) and its handle the kind its runtime entry
+  accepts; `file-write`'s data must be a String (an Int was passed to
+  `strlen`), and `file-read`/`file-close` take Ints.
 - **Type-checker gaps that are not holes:**
   - An unknown type name in an annotation, such as a misspelled
     `Strng`, silently becomes a type parameter instead of an error.

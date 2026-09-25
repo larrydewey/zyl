@@ -136,9 +136,10 @@ general values in the current compiler — a bare `:foo` in an expression
 is an `E_UNBOUND_VARIABLE` error. They appear inside particular forms,
 such as the endianness selector of the byte loads in Chapter 32.
 
-Quoted data (`'foo`, `'(+ 1 2)`) is part of the specification but is
-not supported as a runtime value in compiled programs yet. Don't use it
-in ordinary code.
+A quote, `'d`, is constant data: `'(1 2 3)` is a list of three `Int`s
+(§2.7). Only numbers, strings, booleans and lists of them can be
+quoted. There is no symbol type, so a name inside quoted data, as in
+`'foo` or `'(+ 1 2)`, is `E_MALFORMED_FORM`.
 
 ### `Unit`: "No Value"
 
@@ -398,6 +399,30 @@ Because they are already defined, don't declare your own `Option`,
 `Result` or `List` — a second `deftype` with the same name is an
 `E_DUPLICATE_DEFINITION` error.
 
+A list can also be written as a literal. `(list a b c)`, its short form
+`[a b c]`, and quoted data `'(a b c)` all build the same `Cons` chain,
+in source order: the elements are evaluated left to right, and they
+must have one type, so `[1 "a"]` is `E_TYPE_MISMATCH`. `[]`, `(list)`
+and `'()` are `Nil`. A quote holds only constants, but it nests:
+`'((1 2) (3))` is a `(List (List Int))`.
+
+```lisp
+(use core/list)
+
+(defn main ()
+  (let xs [1 2 3]
+    (begin
+      (print (list-length xs))                 ; 3
+      (print (Show.show (list 10 20 (+ 1 2)))) ; [10, 20, 3]
+      (print (Show.show '((1 2) (3) ())))      ; [[1, 2], [3], []]
+      (print (list-length []))                 ; 0
+      (print (= xs (Cons 1 (Cons 2 (Cons 3 Nil)))))  ; 1 (true)
+      0)))
+```
+
+Square brackets always mean a list literal, except in a derive:
+`(derive T [Eq Show])` and `(:derive [Eq Show])` still name traits.
+
 ### Vectors and Maps
 
 `Vec` and `Map` are library types, imported with `use`. A `Vec` holds
@@ -418,7 +443,7 @@ the current library.
   0)
 ```
 
-There is no literal syntax for either. Tuples are in the specification
+There is no literal syntax for either (`[...]` is a `List`). Tuples are in the specification
 but are not implemented; use a struct.
 
 ## 2.8 The `begin` Form — Sequencing
