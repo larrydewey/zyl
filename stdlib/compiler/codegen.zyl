@@ -34,6 +34,7 @@
 ; pattern. (Named dummies `d1`, `d2`, ... were used while the Rust
 ; bootstrap, now archived, miscompiled bare `_`.)
 
+(use compiler/node_tables)
 (use allocator/allocator)
 (use compiler/ast)
 (use compiler/icnf)
@@ -271,7 +272,7 @@
 ; Legacy kind first; else the type-annotation kind (attr table 1).
 (defn kind-of (st env e)
   (let k (kind-of-base st env e)
-    (if (> k 0) k (ffi-call "zyl_attr_get" 1 e 1000))))
+    (if (> k 0) k (icnf-kind e))))
 
 (defn kind-of-base (st env e)
   (match e
@@ -453,12 +454,12 @@
 ;; function; 0 unannotated) picks the region.
 
 (defn cg-region-flags (f)
-  (let v (ffi-call "zyl_attr_get" 4 f 1000)
+  (let v (icnf-region f)
     (if (= v 0) 0 (- v 4))))
 
 (defn cg-region-shift (rflags) (if (> rflags 0) 6 0))
 
-(defn cg-site-level (e) (ffi-call "zyl_attr_get" 4 e 1000))
+(defn cg-site-level (e) (icnf-region e))
 
 ; r11 = the region for a site of level `lvl`, then zyl_cur_region = r11.
 (defn cg-set-cur-region (st lvl)
@@ -479,7 +480,7 @@
 ; the low bit of `blocks`), pushed on the chain before the body and popped
 ; and released after it.
 (defn cg-region-scope (st env e k b a l body)
-  (let idx (- (ffi-call "zyl_attr_get" 4 e 1000) 1)
+  (let idx (- (icnf-region e) 1)
     (let base (cg-reserve-words st 10)
       (let st2 (cg-reset-slots st (+ base 8))
         (let savr (cg-new-slot st2)

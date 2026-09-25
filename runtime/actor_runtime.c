@@ -2105,6 +2105,34 @@ long long zyl_global_clear(void) {
     return 0;
 }
 
+/* The same for programs the interpreter runs, in a table of their own:
+   an interpreted program must neither see nor clear the `def`s of the
+   compiled program running it (the REPL's own compiler tables are defs). */
+static long long g_idef_cells = 0;
+
+long long zyl_iglobal_clear(void) {
+    if (g_idef_cells) zyl_smap_clear(g_idef_cells);
+    return 0;
+}
+
+long long zyl_iglobal_ready(long long key) {
+    return g_idef_cells && zyl_smap_get(g_idef_cells, key) ? 1 : 0;
+}
+
+long long zyl_iglobal_get(long long key) {
+    long long* cell = (long long*)(size_t)(g_idef_cells ? zyl_smap_get(g_idef_cells, key) : 0);
+    return cell ? *cell : 0;
+}
+
+long long zyl_iglobal_put(long long key, long long val) {
+    if (!g_idef_cells) g_idef_cells = zyl_smap_new();
+    long long* cell = (long long*)malloc(sizeof(long long));
+    if (!cell) return val;
+    *cell = val;
+    zyl_smap_put(g_idef_cells, key, (long long)(size_t)cell);
+    return val;
+}
+
 /* The REPL's prompt `def`s, by name: the value each one was bound to. */
 static long long g_repl_globals = 0;
 
@@ -4558,7 +4586,7 @@ long long zyl_int_text(long long n) {
     X(zyl_fresh_id) X(zyl_getcwd) X(zyl_getenv) \
     X(zyl_contract_warn) X(zyl_err_is) X(zyl_list_zyl_files) X(zyl_list_files) \
     X(zyl_load_n) X(zyl_load_n_signed) X(zyl_store_n) \
-    X(zyl_global_get) X(zyl_global_put) X(zyl_global_ready) X(zyl_global_clear) \
+    X(zyl_global_get) X(zyl_global_put) X(zyl_global_ready) X(zyl_global_clear) X(zyl_iglobal_get) X(zyl_iglobal_put) X(zyl_iglobal_ready) X(zyl_iglobal_clear) \
     X(zyl_repl_global_get) X(zyl_repl_global_set) \
     X(zyl_uf_reset) X(zyl_uf_new) X(zyl_uf_find) X(zyl_uf_union) X(zyl_uf_raise) X(zyl_uf_level) X(zyl_regions_enabled) X(zyl_words_new) X(zyl_words_len) X(zyl_words_get) X(zyl_words_set) X(zyl_words_view) X(zyl_smap_has) X(zyl_smap_get_or) X(zyl_array_new) X(zyl_array_cap) X(zyl_array_filled) X(zyl_array_get) X(zyl_array_set) X(zyl_attrh_new) X(zyl_attrh_set) X(zyl_attrh_get_or) X(zyl_attrh_has) X(zyl_attrh_copy) X(zyl_attrh_clear) X(zyl_ref_new) X(zyl_ref_get) X(zyl_ref_set) X(zyl_getenv_str) X(zyl_heap_alloc) X(zyl_ralloc) X(zyl_region_enter) X(zyl_region_exit) X(zyl_region_free) X(zyl_region_scope_enter) X(zyl_region_live_bytes) X(zyl_heap_block_p) X(zyl_heap_swap) \
     X(zyl_int_text) X(zyl_itest_add) X(zyl_itest_count) \

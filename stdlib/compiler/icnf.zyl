@@ -11,6 +11,7 @@
 ; There are no numeric node-kind tags, no projection accessors, and no
 ; positional index surgery anywhere in this module.
 
+(use compiler/node_tables)
 (use allocator/allocator)
 (use compiler/ast)
 (use compiler/expr_inner)
@@ -441,21 +442,21 @@
 (defn ic-expr (arena expr vt)
   (let out (ic-expr-node arena expr vt)
     (let _ (ffi-call "zyl_span_copy" out expr 1000)
-      (let _ (if (> (ta-scalar expr) 0) (ffi-call "zyl_attr_set" 5 out 1 1000) 0)
+      (let _ (if (> (ta-scalar expr) 0) (icnf-scalar-set out 1) 0)
         (ic-mark-kind out (ta-kind expr))))))
 
 ; Codegen kind from type annotation (attr table 1); 0 is left unrecorded.
 (defn ic-mark-kind (out k)
   (if (> k 0)
-    (let _ (ffi-call "zyl_attr_set" 1 out k 1000)
+    (let _ (icnf-kind-set out k)
       out)
     out))
 
 ; A rebuilt node keeps its original's kind unless it already has one.
 (defn ic-keep-kind (out from)
-  (if (> (ffi-call "zyl_attr_get" 1 out 1000) 0)
+  (if (> (icnf-kind out) 0)
     out
-    (let _ (ffi-call "zyl_attr_copy" 1 out from 1000)
+    (let _ (icnf-kind-copy out from)
       out)))
 
 ; A pass that rebuilds a call node hands its position on with this, so
@@ -1105,18 +1106,18 @@
 ; ADT's equality function for `==`/`=`/`!=`, negated for `!=`).
 (defn ic-call-renamed (arena expr op args vt)
   (let nm (ta-renamed expr)
-    (if (= nm 0) (ic-call-expr arena op args vt) (ic-renamed-call arena nm (expr-ident-name op "") args vt))))
+    (if (= (str-length nm) 0) (ic-call-expr arena op args vt) (ic-renamed-call arena nm (expr-ident-name op "") args vt))))
 
 (defn ic-apply-renamed (arena expr fname args vt)
   (let nm (ta-renamed expr)
     (if (str-eq fname "zyl-method")
       (ic-method-call arena nm args vt)
-      (if (= nm 0) (ic-apply arena fname args vt) (ic-renamed-call arena nm fname args vt)))))
+      (if (= (str-length nm) 0) (ic-apply arena fname args vt) (ic-renamed-call arena nm fname args vt)))))
 
 ; (zyl-method "m" recv args...): the type pass named the trait method or its impl.
 (defn ic-method-call (arena nm args vt)
   (match args
-    (Cons _ rest (if (= nm 0) (IConst 0) (ic-apply arena nm rest vt)))
+    (Cons _ rest (if (= (str-length nm) 0) (IConst 0) (ic-apply arena nm rest vt)))
     (Nil (IConst 0))))
 
 (defn ic-renamed-call (arena nm fname args vt)
@@ -1304,7 +1305,7 @@
 ; A value whose type has a Show impl prints as its `show` text.
 (defn ic-print-arg (arena a vt)
   (let sh (ta-print-show a)
-    (if (= sh 0)
+    (if (= (str-length sh) 0)
       (ic-expr arena a vt)
       (ic-mark-kind (ICall (str-intern arena sh) (Cons (ic-expr arena a vt) Nil)) 1))))
 

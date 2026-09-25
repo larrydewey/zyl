@@ -39,6 +39,7 @@
 ;     stack for a value that provably does not escape; allocating it on
 ;     the heap instead is always sound, just less tidy.
 
+(use compiler/node_tables)
 (use allocator/allocator)
 (use core/core)
 (use core/list)
@@ -256,10 +257,15 @@
 ; A node with no String/Float kind needs no retag, so its evaluation is a
 ; tail call: interpreted tail calls then run in constant host stack.
 (defn in-eval (fns env e)
-  (let k (ffi-call "zyl_attr_get" 1 e 1000)
+  (let k (icnf-kind e)
     (if (= k 0)
       (in-eval-node fns env e)
       (in-retag-kind k (in-eval-node fns env e)))))
+
+(defn in-retag-body (f v)
+  (match f
+    (IFn _ _ body _ (let k (icnf-kind body) (if (= k 0) v (in-retag-kind k v))))
+    (_ v)))
 
 (defn in-retag-kind (k v)
   (match v
@@ -752,9 +758,16 @@
       (if (= (in-actor-sym-p sym) 1)
         (VInt (in-fail "E_UNSUPPORTED_INTERPRETED"
                        "spawning an actor needs compiled code: the entry point is a native function pointer, which an interpreted function does not have. Compile this program with `zyl <file>` and run the binary."))
+        (if (in-global-sym-p sym)
+          (in-ffi-call (str-concat "zyl_iglobal_" (str-substring sym 11 (- (str-length sym) 11))) (in-args-eval fns env args))
         (if (str-eq sym "zyl_ffi_timed")
           (in-ffi-timed (in-args-eval fns env args))
-          (in-ffi-call sym (in-args-eval fns env args)))))))
+          (in-ffi-call sym (in-args-eval fns env args))))))))
+
+; An interpreted program's `def` cells (zyl_global_*) are kept apart from
+; the host's (zyl_iglobal_*, runtime).
+(defn in-global-sym-p (sym)
+  (or (str-eq sym "zyl_global_ready") (or (str-eq sym "zyl_global_get") (str-eq sym "zyl_global_put"))))
 
 ; A foreign call, lowered by ic-ffi to (zyl_ffi_timed addr name ms argc
 ; args...): the runtime runs it on a worker thread under its timeout, as
@@ -911,9 +924,12 @@
     (in-index-fns fns)
     (in-call-indexed fns name vals)))
 
+; The result is retagged by the body's static kind: a tail call inside the
+; body returns its callee's value untouched, so a String that arrived as a
+; bare word (from a runtime array, say) would otherwise print as a number.
 (defn in-call-indexed (fns name vals)
   (match (in-find-fn fns name)
-    (Some f (in-invoke fns f vals))
+    (Some f (in-retag-body f (in-invoke fns f vals)))
     (None (VInt (in-fail "E_UNDEFINED_FUNCTION"
                          (str-concat "no function named `" (str-concat name "`")))))))
 

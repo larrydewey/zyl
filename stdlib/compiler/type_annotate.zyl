@@ -14,6 +14,7 @@
 (use compiler/expr_inner)
 (use compiler/error_report)
 (use compiler/ffi_sigs)
+(use compiler/node_tables)
 
 ; Types. Negative TaV ids are template slots (see ta-inst).
 (deftype TaTy (TaV Int) (TaC String (List TaTy)) (TaF (List TaTy) TaTy))
@@ -106,7 +107,8 @@
 (defn ta-wlen (v) (ffi-call "zyl_wvec_len" v 1000))
 (defn ta-sget (m k) (ffi-call "zyl_smap_get" m k 1000))
 (defn ta-sput (m k x) (ffi-call "zyl_smap_put" m k x 1000))
-(defn ta-attr (node) (ffi-call "zyl_attr_get" 0 node 1000))
+; The type recorded for `node`, or (ta-no-type) when there is none.
+(defn ta-attr (node) (ffi-call "zyl_attrh_get_or" node-types node (ta-no-type) 1000))
 
 (defn ta-int () (TaC "Int" Nil))
 ; "Not set yet" in the per-function type vectors (never unified with).
@@ -134,7 +136,7 @@
 (defn ta-fresh (st) (TaV (ta-wpush (ta-vars st) (TbFree))))
 
 (defn ta-rec (e t)
-  (let _ (ffi-call "zyl_attr_set" 0 e t 1000)
+  (let _ (ffi-call "zyl_attrh_set" node-types e t 1000)
     t))
 
 ; --- union-find ---------------------------------------------------------------
@@ -1810,12 +1812,7 @@
     (ffi-call "zyl_cell_set" 0 (if (= (ffi-call "zyl_getenv" "ZYL_STRICT_TYPES" 1000) 0) 0 1) 1000)
     (ffi-call "zyl_cell_set" 1 0 1000)
     (ffi-call "zyl_wvec_truncate" (ffi-call "zyl_wvec_global" 7 1000) 0 1000)
-    (ffi-call "zyl_attr_clear" 0 1000)
-    (ffi-call "zyl_attr_clear" 1 1000)
-    (ffi-call "zyl_attr_clear" 2 1000)
-    (ffi-call "zyl_attr_clear" 3 1000)
-    (ffi-call "zyl_attr_clear" 4 1000)
-    (ffi-call "zyl_attr_clear" 5 1000)
+    (node-tables-clear)
     (ffi-call "zyl_wvec_truncate" ta-var-store 0 1000)
     (ffi-call "zyl_smap_clear" ta-impl-table 1000)
     (ffi-call "zyl_smap_clear" ta-name-table 1000)
@@ -1837,7 +1834,7 @@
 ; Codegen kind of an annotated Expr: 1 String, 2 Float, else 0.
 (defn ta-kind (e)
   (let t (ta-attr e)
-    (if (= t 0) 0 (ta-kind-of-ty (ta-gresolve ta-var-store t)))))
+    (if (ta-no-type-p t) 0 (ta-kind-of-ty (ta-gresolve ta-var-store t)))))
 
 (defn ta-gresolve (vars t)
   (match t
@@ -1854,7 +1851,7 @@
 ; classes). A type variable, poisoned or not, is not scalar.
 (defn ta-scalar (e)
   (let t (ta-attr e)
-    (if (= t 0)
+    (if (ta-no-type-p t)
       0
       (match (ta-gresolve ta-var-store t)
         (TaC n args
@@ -2250,8 +2247,9 @@
                   (ta-impl-target st members (ta-impl-fn st (ta-sget-or ta-name-table "!show" "") n) (ta-show-ct r))))
               (_ 0)))))))))
 
+; Table 2: the call's new target; 3: the print argument's Show function.
 (defn ta-set-name (node tbl name)
-  (ffi-call "zyl_attr_set" tbl node name 1000))
+  (ffi-call "zyl_attrh_set" (if (= tbl 2) node-calls node-shows) node name 1000))
 
 ; Unify the impl's type with the use, then pick it or an instance of it.
 (defn ta-impl-target (st members fi ct)
@@ -2319,8 +2317,8 @@
   (if (>= i n) Nil (Cons (ta-wget (ta-extra st) i) (ta-extra-list st (+ i 1) n))))
 
 ; Renamed call target (table 2) / Show function for a print argument (table 3).
-(defn ta-renamed (e) (ffi-call "zyl_attr_get" 2 e 1000))
-(defn ta-print-show (e) (ffi-call "zyl_attr_get" 3 e 1000))
+(defn ta-renamed (e) (ffi-call "zyl_attrh_get_or" node-calls e "" 1000))
+(defn ta-print-show (e) (ffi-call "zyl_attrh_get_or" node-shows e "" 1000))
 
 ; --- readable types (REPL :type, diagnostics) ---------------------------------
 
@@ -2342,7 +2340,7 @@
 (defn ta-type-text (exprs node)
   (let _ (ta-annotate-program exprs)
     (let t (ta-attr node)
-      (if (= t 0)
+      (if (ta-no-type-p t)
         "?"
         (match (ta-gen (ta-st-new) t Nil)
           (TaGen g _ (ta-pretty (ta-st-new) g)))))))

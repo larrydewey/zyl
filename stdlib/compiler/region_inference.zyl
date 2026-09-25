@@ -35,6 +35,7 @@
 ; cost a missed optimization, never a wrong program.
 
 
+(use compiler/node_tables)
 (use compiler/error_report)
 
 ; True when EVERY occurrence of `name` inside `e` is either the
@@ -295,7 +296,7 @@
           (let _ (ffi-call "zyl_wvec_push" (rg-scope-stack) idx 1000)
             (let cb (rg-expr body env 0 rec)
               (let _ (ffi-call "zyl_wvec_pop" (rg-scope-stack) 1000)
-                (let _ (if (> rec 0) (ffi-call "zyl_attr_set" 4 e (+ idx 1) 1000) 0)
+                (let _ (if (> rec 0) (icnf-region-set e (+ idx 1)) 0)
                 (let _ (ffi-call "zyl_wvec_push" (rg-scope-nodes) e 1000)
                   (rg-union bnd cb)))))))))))
 
@@ -495,7 +496,7 @@
 ; pointer, so it joins no class; its children are still analysed.
 (defn rg-expr (e env tail rec)
   (let c (rg-expr-node e env tail rec)
-    (if (> (ffi-call "zyl_attr_get" 5 e 1000) 0) (rg-new 0) c)))
+    (if (> (icnf-scalar e) 0) (rg-new 0) c)))
 
 (defn rg-expr-node (e env tail rec)
   (match e
@@ -579,7 +580,7 @@
                     ; the result could need.
                     (let packed (rg-join old (bit-or (rg-pack cs 0 (list-length params) 0)
                                                      (shl (if (> (bit-and flags 2) 0) 1 0) 62)) 0)
-                      (let _ (if (> rec 0) (ffi-call "zyl_attr_set" 4 f (+ flags 4) 1000) 0)
+                      (let _ (if (> rec 0) (icnf-region-set f (+ flags 4)) 0)
                         (if (= packed old)
                           0
                           (let _ (ffi-call "zyl_smap_put" (rg-summaries) name (+ packed 1) 1000)
@@ -653,10 +654,10 @@
           (let lvl (rg-level c)
             (if (and (>= scope 0) (rg-in-scope c lvl scope))
               ; Placed in the with-region scope: no frame or result region.
-              (let _ (if (> rec 0) (ffi-call "zyl_attr_set" 4 node (+ 4 scope) 1000) 0)
+              (let _ (if (> rec 0) (icnf-region-set node (+ 4 scope)) 0)
                 (rg-mark-sites (+ i 3) n flags rec))
               (let _ (if (and (> rec 0) (>= scope 0)) (rg-scope-escape (rg-located node scope) lvl) 0)
-                (let _ (if (> rec 0) (ffi-call "zyl_attr_set" 4 node (+ lvl 1) 1000) 0)
+                (let _ (if (> rec 0) (icnf-region-set node (+ lvl 1)) 0)
                   (rg-mark-sites (+ i 3) n
                     (bit-or flags (if (= lvl 0) 1 (if (= lvl 1) 2 0))) rec))))))))))
 

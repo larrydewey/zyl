@@ -331,7 +331,7 @@
 ; arrive here as a message.
 ; Returns: Result(Val, String)
 (defn eval-interpret (fns name vals)
-  (let _ (ffi-call "zyl_global_clear" 1000)
+  (let _ (ffi-call "zyl_iglobal_clear" 1000)
     (try (Ok (in-call-fn fns name vals)) (catch e (Err e)))))
 
 ; ===========================================================================

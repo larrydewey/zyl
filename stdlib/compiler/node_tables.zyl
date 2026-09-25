@@ -1,0 +1,38 @@
+; === Zyl Compiler — Node Side Tables ===
+; Module: compiler/node_tables
+;
+; Facts later passes attach to AST and ICNF nodes, keyed by the node
+; (runtime zyl_attrh_*, typed `(Attr k v)` in compiler/ffi_sigs). Each
+; table holds one type of value; all are emptied per program
+; (node-tables-clear, from the type pass).
+;
+;   node-types   Expr -> TaTy   the type pass's type of each expression
+;   node-calls   Expr -> String a call the type pass renamed ("" none)
+;   node-shows   Expr -> String the Show function for a print argument
+;   icnf-kinds   Icnf -> Int    codegen kind (1 String, 2 Float, 3 variant)
+;   icnf-regions Icnf -> Int    region inference (region_inference.zyl)
+;   icnf-scalars Icnf -> Int    1 on a node typed Int, Bool or Float
+
+(def node-types (ffi-call "zyl_attrh_new" 1000))
+(def node-calls (ffi-call "zyl_attrh_new" 1000))
+(def node-shows (ffi-call "zyl_attrh_new" 1000))
+(def icnf-kinds (ffi-call "zyl_attrh_new" 1000))
+(def icnf-regions (ffi-call "zyl_attrh_new" 1000))
+(def icnf-scalars (ffi-call "zyl_attrh_new" 1000))
+
+(defn node-tables-clear ()
+  (begin
+    (ffi-call "zyl_attrh_clear" node-types 1000)
+    (ffi-call "zyl_attrh_clear" node-calls 1000)
+    (ffi-call "zyl_attrh_clear" node-shows 1000)
+    (ffi-call "zyl_attrh_clear" icnf-kinds 1000)
+    (ffi-call "zyl_attrh_clear" icnf-regions 1000)
+    (ffi-call "zyl_attrh_clear" icnf-scalars 1000)))
+
+(defn icnf-kind (e) (ffi-call "zyl_attrh_get_or" icnf-kinds e 0 1000))
+(defn icnf-kind-set (e k) (ffi-call "zyl_attrh_set" icnf-kinds e k 1000))
+(defn icnf-kind-copy (dst src) (ffi-call "zyl_attrh_copy" icnf-kinds dst src 1000))
+(defn icnf-region (e) (ffi-call "zyl_attrh_get_or" icnf-regions e 0 1000))
+(defn icnf-region-set (e v) (ffi-call "zyl_attrh_set" icnf-regions e v 1000))
+(defn icnf-scalar (e) (ffi-call "zyl_attrh_get_or" icnf-scalars e 0 1000))
+(defn icnf-scalar-set (e v) (ffi-call "zyl_attrh_set" icnf-scalars e v 1000))
