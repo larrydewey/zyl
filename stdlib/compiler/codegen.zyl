@@ -2713,25 +2713,33 @@
         ; Every argument into a fresh register first, then the parameters.
         ; A frame region is released and opened again, as the stack
         ; machine's re-entry through the prologue does.
-        (match (ml-fresh-args st env venv ms args Nil)
+        (match (ml-fresh-args st env venv ms args ps Nil)
           (MRL m2 vs
             (let m3 (ml-assign m2 ps vs)
               (ms-emit (if (> (bit-and rflags 1) 0) (ms-emit m3 (MRegionCycle)) m3) (MJmp head)))))
         (match (ml-args st env venv ms args Nil)
           (MRL m2 vs (ms-emit m2 (MTail name vs lvl))))))))
 
-(defn ml-fresh-args (st env venv ms args acc)
+; An argument that is its own parameter unchanged needs no move (-1).
+(defn ml-fresh-args (st env venv ms args ps acc)
   (match args
     (Nil (MRL ms (list-reverse acc)))
     (Cons a t
-      (let r (ml-expr st env venv ms a)
-        (let rc (ms-vreg (mr-ms r))
-          (ml-fresh-args st env venv (ms-emit (mr-ms rc) (MMov (mr-v rc) (mr-v r))) t (Cons (mr-v rc) acc)))))))
+      (let p (match ps (Cons h _ h) (Nil -1))
+        (if (and (>= p 0) (and (ml-is-var venv a p) (not (icnf-list-has-set t))))
+          (ml-fresh-args st env venv ms t (match ps (Cons _ pt pt) (Nil Nil)) (Cons -1 acc))
+          (let r (ml-expr st env venv ms a)
+            (let rc (ms-vreg (mr-ms r))
+              (ml-fresh-args st env venv (ms-emit (mr-ms rc) (MMov (mr-v rc) (mr-v r))) t
+                             (match ps (Cons _ pt pt) (Nil Nil)) (Cons (mr-v rc) acc)))))))))
+
+(defn ml-is-var (venv e v)
+  (match e (ILoad n (= (ml-var venv n) v)) (_ false)))
 
 (defn ml-assign (ms ps vs)
   (match ps
     (Nil ms)
-    (Cons p pt (match vs (Cons v vt (ml-assign (ms-emit ms (MMov p v)) pt vt)) (Nil ms)))))
+    (Cons p pt (match vs (Cons v vt (ml-assign (if (< v 0) ms (ms-emit ms (MMov p v))) pt vt)) (Nil ms)))))
 
 ; The whole function: parameters, the loop head a self tail call jumps
 ; to, then the body in tail position.
@@ -2761,6 +2769,12 @@
 (defn mf-saved (f) (match f (MF _ s _ _ _ _ s)))
 (defn mf-rflags (f) (match f (MF _ _ r _ _ _ r)))
 (defn mf-base (f) (match f (MF _ _ _ b _ _ b)))
+; Without region words the saved registers are pushed right after rbp
+; (the same slots) and reloaded from them on the way out. Measured on
+; bench/: push to save and load to restore gave fib 0.31 s, trees
+; 1.27 s; stores and loads 0.44 s and 1.20 s; pushes and pops 0.30 s and
+; 1.45 s.
+(defn mf-pushes (f) (= (mf-rflags f) 0))
 (defn mf-ncs (f) (list-length (mf-saved f)))
 (defn mf-top (f) (if (> (mf-rflags f) 0) 48 0))
 (defn mf-stage (f k) (+ (mf-top f) (* 8 (+ (mf-ncs f) (+ (alloc-spills (mf-alloc f)) (+ k 1))))))
@@ -2812,7 +2826,27 @@
           (let bend (mb-block-offsets boffs blocks 0 bstart)
             (let fr (MF al saved rflags base bstart boffs)
               (let fsz (* 16 (/ (+ bend 15) 16))
-                (mb-emit-all (mb-prologue st name fr fsz) fr instrs 0)))))))))
+                (mb-emit-all (mb-prologue st name fr fsz (mb-needs-align instrs rflags)) fr instrs 0)))))))))
+
+; The frame is aligned to 16 only when the function itself calls C: a
+; runtime call, an allocation or array slow path, a region operation. A
+; Zyl callee aligns its own frame (or, in the stack machine, each C call).
+(defn mb-needs-align (instrs rflags)
+  (if (> rflags 0) true (mb-any-c-call instrs)))
+
+(defn mb-any-c-call (instrs)
+  (match instrs
+    (Nil false)
+    (Cons i t
+      (if (match i
+            (MCall _ _ user _ _ (not user))
+            (MAlloc _ _ _ true)
+            (MArr _ _ _ _ _ true)
+            (MRegionCycle true)
+            (MStr _ _ false)
+            (_ false))
+        true
+        (mb-any-c-call t)))))
 
 ; Block k's lowest address is rbp - offset; fields at +8 each.
 (defn mb-block-offsets (w blocks k off)
@@ -2825,11 +2859,23 @@
 
 ; The region prologue only uses rax, so the arguments are still in
 ; their registers for the parameter moves after it.
-(defn mb-prologue (st name fr fsz)
+(defn mb-prologue (st name fr fsz align)
   (let st1 (cg-emit-line (cg-emit st (cg-sym-mangled (cg-arena-of st) name)) ":")
-    (let st2 (cg-emit-lines st1 (Cons "    push rbp" (Cons "    mov rbp, rsp" (Cons "    and rsp, -16" Nil))))
-      (let st3 (if (> fsz 0) (cg-emit-line st2 (str-concat "    sub rsp, " (ffi-call "zyl_int_text" fsz 1000))) st2)
-        (cg-region-prologue (mb-save-regs st3 (mf-saved fr) (mf-top fr) 1) (mf-rflags fr))))))
+    (let st2 (cg-emit-lines st1 (Cons "    push rbp" (Cons "    mov rbp, rsp" Nil)))
+      (if (mf-pushes fr)
+        (let st3 (mb-push-regs st2 (mf-saved fr))
+          (let st4 (if align (cg-emit-line st3 "    and rsp, -16") st3)
+            (let rest (- fsz (* 8 (mf-ncs fr)))
+              (let sub (if align (* 16 (/ (+ rest 15) 16)) rest)
+                (if (> sub 0) (cg-emit-line st4 (str-concat "    sub rsp, " (ffi-call "zyl_int_text" sub 1000))) st4)))))
+        (let st3 (if align (cg-emit-line st2 "    and rsp, -16") st2)
+          (let st4 (if (> fsz 0) (cg-emit-line st3 (str-concat "    sub rsp, " (ffi-call "zyl_int_text" fsz 1000))) st3)
+            (cg-region-prologue (mb-save-regs st4 (mf-saved fr) (mf-top fr) 1) (mf-rflags fr))))))))
+
+(defn mb-push-regs (st rs)
+  (match rs
+    (Nil st)
+    (Cons r t (mb-push-regs (cg-emit-line st (str-concat "    push " (mir-reg-name r))) t))))
 
 (defn mb-save-regs (st rs top k)
   (match rs
