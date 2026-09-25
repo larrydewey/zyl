@@ -1,0 +1,4 @@
+; expect-error: E_FFI_RESTRICTED
+; zyl_now_ms has a table signature; an extern may not retype it.
+(extern "zyl_now_ms" () String)
+(defn main () (begin (print (ffi-call "zyl_now_ms" 1000)) 0))

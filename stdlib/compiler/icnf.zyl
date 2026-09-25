@@ -1398,9 +1398,9 @@
 ; (ffi-call "sym" a b timeout): arrives here as EApply("ffi-call", args)
 ; since expr_inner.zyl's dispatch has no dedicated ffi-call parser.
 ; ffi-check-call (arity_check.zyl) guarantees a literal symbol and a
-; positive literal timeout. A symbol of this runtime (`zyl_` prefix) is
-; part of the trusted implementation and is called directly, timeout
-; unused. Any other symbol is foreign code: the call goes through
+; positive literal timeout. A symbol of this runtime (`zyl_` prefix, no
+; extern: the type pass refuses an extern for a runtime entry) is called
+; directly, timeout unused. Any other symbol is foreign code: the call goes through
 ; zyl_ffi_timed(address, name, timeout-ms, argc, args...), which runs it
 ; on a worker thread and raises E_FFI_TIMEOUT when it overruns.
 (defn ic-ffi (arena args vt)
@@ -1409,7 +1409,7 @@
       (let _ (ffi-check-call args sym)
         (let name (ic-ffi-sym sym)
           (let real (butlast-expr tail Nil)
-            (if (ic-ffi-runtime-p name)
+            (if (and (ic-ffi-runtime-p name) (not (option-is-some (extern-sig-of name))))
               (IFfi name (ic-expr-list arena real vt))
               (IFfi "zyl_ffi_timed"
                 (Cons (ISymAddr name)

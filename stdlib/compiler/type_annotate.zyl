@@ -1477,15 +1477,14 @@
 ; (extern ...) declaration, and one with none is E_CANNOT_INFER.
 (defn ta-ffi-typed (st s ats)
   (let spec (if (ta-strict-p) (ffi-sig s) "")
-    (if (ta-runtime-export s)
+    ; A runtime entry is exported by the runtime or has a table signature.
+    (if (or (ta-runtime-export s) (> (str-length spec) 0))
       (if (ta-extern-declared s)
         (ta-extern-on-runtime st s ats spec)
         (if (= (str-length spec) 0)
           (ta-ffi-ret st s)
           (ta-ffi-sig st s ats spec)))
-      (if (> (str-length spec) 0)
-        (ta-ffi-sig st s ats spec)
-        (ta-ffi-extern st s ats)))))
+      (ta-ffi-extern st s ats))))
 
 ; An extern may not retype the runtime's own entries.
 (defn ta-extern-on-runtime (st s ats spec)
