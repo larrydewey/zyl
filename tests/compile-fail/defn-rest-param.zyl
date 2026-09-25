@@ -1,0 +1,5 @@
+; expect-error: E_MALFORMED_PARAMETER
+; `&rest` marks a macro's rest parameter; in a function it used to be an
+; ordinary parameter named `&rest`.
+(defn f (&rest xs) 0)
+(defn main () (begin (print (f 1 2)) 0))

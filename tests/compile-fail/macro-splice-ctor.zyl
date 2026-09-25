@@ -1,0 +1,5 @@
+; expect-error: E_MALFORMED_FORM
+; `[0 ,@xs]` is a Cons with two fields; a splice would give it more.
+(use core/list)
+(defmacro m (&rest xs) [0 ,@xs])
+(defn main () (begin (print (list-length (m 1 2))) 0))

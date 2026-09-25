@@ -200,7 +200,7 @@
 ; statements become an implicit `main` (skipped if the source already
 ; defines one explicitly).
 (defn ic-program (arena prog)
-  (let vt (ic-collect-vt prog VTNil)
+  (let vt (vt-with-index (ic-collect-vt prog VTNil))
     (match (ic-toplevel arena prog vt (TLAcc (no-ifuncs) Nil))
       (TLAcc fns stmts (ic-finish-program (list-reverse fns) (list-reverse stmts))))))
 
@@ -1021,6 +1021,7 @@
     (VTFn _ rest (ic-struct-arms arena rest field))
     (VTClosureFn _ rest (ic-struct-arms arena rest field))
     (VTClosureReturn _ rest (ic-struct-arms arena rest field))
+    (VTIndex _ _ rest (ic-struct-arms arena rest field))
     (VTEntry name tag fields _ rest
       (let arms-rest (ic-struct-arms arena rest field)
         (let idx (ic-field-index fields field 0)

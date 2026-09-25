@@ -73,7 +73,7 @@
 (defn fmt-raw-lines-loop (text i start len acc)
   (if (>= i len)
     (list-reverse (Cons (str-substring text start (- i start)) acc))
-    (if (= (sb-char-code (str-substring text i 1)) 10)
+    (if (= (sb-str-code (str-substring text i 1)) 10)
       (fmt-raw-lines-loop text (+ i 1) (+ i 1) len (Cons (str-substring text start (- i start)) acc))
       (fmt-raw-lines-loop text (+ i 1) start len acc))))
 
@@ -86,18 +86,18 @@
     acc
     (let ch (str-substring text i 1)
       (if (> in-string 0)
-        (if (sb-is-backslash ch)
+        (if (sb-is-backslash (sb-str-code ch))
           (fmt-depth-scan text (+ i 2) len depth in-string acc)
-          (if (sb-is-quote ch)
+          (if (sb-is-quote (sb-str-code ch))
             (fmt-depth-scan text (+ i 1) len depth 0 acc)
             (fmt-depth-scan text (+ i 1) len depth in-string acc)))
-        (if (sb-is-quote ch)
+        (if (sb-is-quote (sb-str-code ch))
           (fmt-depth-scan text (+ i 1) len depth 1 acc)
-          (if (sb-is-newline ch)
+          (if (sb-is-newline (sb-str-code ch))
             (fmt-depth-scan text (+ i 1) len depth in-string (Cons depth acc))
-            (if (or (sb-is-paren-open ch) (or (sb-is-bracket-open ch) (sb-is-brace-open ch)))
+            (if (or (sb-is-paren-open (sb-str-code ch)) (or (sb-is-bracket-open (sb-str-code ch)) (sb-is-brace-open (sb-str-code ch))))
               (fmt-depth-scan text (+ i 1) len (+ depth 1) in-string acc)
-              (if (or (sb-is-paren-close ch) (or (sb-is-bracket-close ch) (sb-is-brace-close ch)))
+              (if (or (sb-is-paren-close (sb-str-code ch)) (or (sb-is-bracket-close (sb-str-code ch)) (sb-is-brace-close (sb-str-code ch))))
                 (fmt-depth-scan text (+ i 1) len (- depth 1) in-string acc)
                 (fmt-depth-scan text (+ i 1) len depth in-string acc)))))))))
 
@@ -126,7 +126,7 @@
         (str-concat (fmt-spaces (* 2 (if (< effective 0) 0 effective))) trimmed)))))
 
 (defn fmt-starts-with-closer (s)
-  (let c (sb-char-code (str-substring s 0 1))
+  (let c (sb-str-code (str-substring s 0 1))
     (or (= c 41) (or (= c 93) (= c 125)))))
 
 (defn fmt-trim-left (s)
@@ -135,7 +135,7 @@
 (defn fmt-trim-left-loop (s i len)
   (if (>= i len)
     ""
-    (let c (sb-char-code (str-substring s i 1))
+    (let c (sb-str-code (str-substring s i 1))
       (if (or (= c 32) (= c 9)) (fmt-trim-left-loop s (+ i 1) len) (str-substring s i (- len i))))))
 
 (defn fmt-spaces (n)

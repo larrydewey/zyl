@@ -908,6 +908,11 @@
 (defn me-apply (e fname args cx n)
   (match (me-rewrite-list args cx n)
     (MeRL args2 n2
+     (let _ (me-check-ctor-splice e fname args args2)
+     (if (and (cx-in-template cx) (str-eq fname "unquote-splicing"))
+      (let _ (me-fail "E_MALFORMED_FORM" "`,@` splices into a list of expressions, so it cannot be a whole expression" e
+                      "write it among a call's arguments or a begin's forms, e.g. (begin ,@body)")
+        (MeR e n2))
      (if (and (cx-in-template cx) (str-eq fname "unquote"))
       ; `,x` in a template is x: parameters are substituted anyway.
       (match args2
@@ -917,7 +922,7 @@
         (SHParam a (me-apply-param e a args2 cx n2))
         (SHRen nm (MeR (Expr (EApply nm args2)) n2))
         (SHNone (me-apply-name e (me-check-free e fname cx) args2 cx n2))
-        (SHRest _ (MeR (Expr (EApply fname args2)) n2)))))))
+        (SHRest _ (MeR (Expr (EApply fname args2)) n2)))))))))
 
 (defn me-apply-param (e a args2 cx n)
   (match (Expr.inner a)
@@ -931,6 +936,19 @@
   (if (mt-has (cx-mt cx) fname)
     (me-expand e fname args2 cx n)
     (MeR (Expr (EApply fname args2)) n)))
+
+; A constructor has a fixed number of fields, so a splice may not change
+; how many it is given: `[0 ,@xs]` in a template is two Cons fields plus
+; the spliced ones.
+(defn me-check-ctor-splice (e fname args args2)
+  (if (= (list-length args) (list-length args2))
+    unit
+    (let c (ffi-call "zyl_cstr_byte_at" (err-name fname) 0 1000)
+      (if (and (>= c 65) (<= c 90))
+        (let _ (me-fail "E_MALFORMED_FORM" "`,@` cannot splice into a constructor's fields" e
+                        "build a list with a quasiquote in the template: `(0 ,@xs)")
+          unit)
+        unit))))
 
 (defn me-expand (e fname args2 cx n)
   (let _ (me-check-termination e fname cx)

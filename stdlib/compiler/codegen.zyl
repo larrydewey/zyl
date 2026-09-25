@@ -96,25 +96,32 @@
 ; emission — overflow would otherwise corrupt the arena silently.
 (defn cg-new (arena)
   (let buf (buf-new arena 67108864)
-    (CGS arena buf 0 8 (no-rentries) (no-fnnames))))   ; slots 1..n
+    (let _ (ffi-call "zyl_ref_set" cg-fn-index (ffi-call "zyl_smap_new" 1000) 1000)
+      (CGS arena buf 0 8 (no-rentries) (no-fnnames)))))   ; slots 1..n
+
+; Known top-level functions by name: their kind plus one (0 = unknown).
+; The fn-names list keeps the order; this answers the lookups, which a
+; linear search made quadratic in the program size.
+(def cg-fn-index (ffi-call "zyl_ref_new" (ffi-call "zyl_smap_new" 1000) 1000))
 
 (defn cg-with-fnname (st nm kind)
   (match st
     (CGS a b n s rd fns2
-      (CGS a b n s rd (Cons (FN nm kind) fns2)))))
+      (let _ (ffi-call "zyl_smap_put" (ffi-call "zyl_ref_get" cg-fn-index 1000) nm (+ kind 1) 1000)
+        (CGS a b n s rd (Cons (FN nm kind) fns2))))))
 
 (defn cgg-fns (st)
   (match st
     (CGS _ _ _ _ _ fns fns)))
 
 ; True when `nm` is a known top-level function name.
-(defn cg-fn-known (st nm)
-  (cg-fn-search (cgg-fns st) nm))
+(defn cg-fn-known (_st nm)
+  (if (> (ffi-call "zyl_smap_get" (ffi-call "zyl_ref_get" cg-fn-index 1000) nm 1000) 0) 1 0))
 
-(defn cg-fn-search (fns nm)
-  (if (is-nil fns)
-    0
-    (cg-fn-check-head (fnhead fns) (fntail fns) nm)))
+; A known function's return kind; 0 (int) for any other name.
+(defn cg-fn-kind (nm)
+  (let k (ffi-call "zyl_smap_get" (ffi-call "zyl_ref_get" cg-fn-index 1000) nm 1000)
+    (if (> k 0) (- k 1) 0)))
 
 ; Head of a List(FnName); FNNil when empty.
 (defn fnhead (xs)
@@ -127,24 +134,6 @@
   (match xs
     (Cons h d d)
     (Nil Nil)))
-
-(defn cg-fn-check-head (h t nm)
-  (match h
-    (FN s _ (if (str-eq s nm) 1 (cg-fn-search t nm)))
-    (FNNil (cg-fn-search t nm))))
-
-; Look up `nm`'s recorded return kind; 0 (int) if it's not a known
-; top-level function name at all (matches every other "not found"
-; default in this file).
-(defn cg-fn-kind-search (fns nm)
-  (if (is-nil fns)
-    0
-    (cg-fn-kind-check-head (fnhead fns) (fntail fns) nm)))
-
-(defn cg-fn-kind-check-head (h t nm)
-  (match h
-    (FN s k (if (str-eq s nm) k (cg-fn-kind-search t nm)))
-    (FNNil (cg-fn-kind-search t nm))))
 
 ; Empty rodata list.
 (defn no-rentries () Nil)
@@ -288,7 +277,7 @@
          2
          (if (= (kind-of st env r) 2) 2 0))))
     (IIf _ t _ (kind-of st env t))
-    (ICall name _ (cg-fn-kind-search (cgg-fns st) name))
+    (ICall name _ (cg-fn-kind name))
     (IFfi name _ (ffi-str-kind name))
     (IPrint _ 0)
     (IWhile _ _ 0)

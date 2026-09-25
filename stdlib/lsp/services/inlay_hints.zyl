@@ -56,7 +56,7 @@
 (defn ih-advance (st ch)
   (match st
     (IHS i l c hs
-      (if (sb-is-newline ch)
+      (if (sb-is-newline (sb-str-code ch))
         (IHS (+ i 1) (+ l 1) 0 hs)
         (IHS (+ i 1) l (+ c 1) hs)))))
 
@@ -68,9 +68,9 @@
   (if (>= (IHSt.i st) len)
     st
     (let ch (str-substring text (IHSt.i st) 1)
-      (if (sb-is-semicolon ch)
+      (if (sb-is-semicolon (sb-str-code ch))
         (ih-skip-comment text st len)
-        (if (or (= (sb-char-code ch) 32) (or (= (sb-char-code ch) 9) (or (= (sb-char-code ch) 10) (= (sb-char-code ch) 13))))
+        (if (or (= (sb-str-code ch) 32) (or (= (sb-str-code ch) 9) (or (= (sb-str-code ch) 10) (= (sb-str-code ch) 13))))
           (ih-skip-ws-comments text (ih-advance st ch) len)
           st)))))
 
@@ -78,7 +78,7 @@
   (if (>= (IHSt.i st) len)
     st
     (let ch (str-substring text (IHSt.i st) 1)
-      (if (sb-is-newline ch)
+      (if (sb-is-newline (sb-str-code ch))
         (ih-skip-ws-comments text (ih-advance st ch) len)
         (ih-skip-comment text (ih-advance st ch) len)))))
 
@@ -90,9 +90,9 @@
   (if (>= (IHSt.i st) len)
     st
     (let ch (str-substring text (IHSt.i st) 1)
-      (if (sb-is-backslash ch)
+      (if (sb-is-backslash (sb-str-code ch))
         (ih-read-string-body text (ih-advance-escaped text st len) len)
-        (if (sb-is-quote ch)
+        (if (sb-is-quote (sb-str-code ch))
           (ih-advance st ch)
           (ih-read-string-body text (ih-advance st ch) len))))))
 
@@ -120,14 +120,14 @@
   (if (>= (IHSt.i st) len)
     st
     (let ch (str-substring text (IHSt.i st) 1)
-      (if (or (sb-is-paren-open ch) (or (sb-is-bracket-open ch) (sb-is-brace-open ch)))
+      (if (or (sb-is-paren-open (sb-str-code ch)) (or (sb-is-bracket-open (sb-str-code ch)) (sb-is-brace-open (sb-str-code ch))))
         (ih-read-bracketed text st len tbl ch)
-        (if (sb-is-quote ch)
+        (if (sb-is-quote (sb-str-code ch))
           (ih-read-string text st len)
           (ih-read-atom text st len))))))
 
 (defn ih-close-char (openCh)
-  (if (sb-is-paren-open openCh) ")" (if (sb-is-bracket-open openCh) "]" "}")))
+  (if (sb-is-paren-open (sb-str-code openCh)) ")" (if (sb-is-bracket-open (sb-str-code openCh)) "]" "}")))
 
 (defn ih-read-bracketed (text st len tbl openCh)
   (let st1 (ih-advance st openCh)

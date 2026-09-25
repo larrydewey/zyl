@@ -80,7 +80,7 @@ fi
 
 # Exactly the files install.sh writes.
 INSTALLED_BIN="stage2.bin zyl-repl-bin zyl-lsp-bin zyl zyl-repl zyl-lsp"
-INSTALLED_TOP="actor_runtime.c actor_runtime.h env env.fish"
+INSTALLED_TOP="actor_runtime.c actor_runtime.o actor_runtime.h env env.fish"
 
 echo "Removing the Zyl installation from $TARGET"
 for f in $INSTALLED_BIN; do

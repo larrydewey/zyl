@@ -87,6 +87,10 @@ rm -rf "${OUT}/stdlib"
 cp -R "${SCRIPT_DIR}/stdlib" "${OUT}/stdlib"
 cp "${SCRIPT_DIR}/runtime/actor_runtime.c" "${OUT}/actor_runtime.c"
 cp "${SCRIPT_DIR}/runtime/actor_runtime.h" "${OUT}/actor_runtime.h"
+# The runtime, compiled once (-O2): every stage and every program the
+# compiler links uses this object (driver.zyl's cli-link-command).
+RUNTIME_O="${OUT}/actor_runtime.o"
+cc -O2 -c "${OUT}/actor_runtime.c" -o "${RUNTIME_O}.tmp" && mv -f "${RUNTIME_O}.tmp" "${RUNTIME_O}"
 
 
 step() { echo -e "\033[1;34m==>\033[0m $*"; }
@@ -94,7 +98,7 @@ ok()   { echo -e "  \033[0;32m✓\033[0m $*"; }
 die()  { echo -e "  \033[0;31m✗\033[0m $*"; exit 1; }
 
 link_cc() { # link_cc <asm> <out-bin>
-    cc -no-pie "$1" "$RUNTIME" -o "$2" -lpthread
+    cc -no-pie "$1" "$RUNTIME_O" -o "$2" -lpthread
 }
 
 # ── Re-seed path: iterate the self-hosted compiler to a new fixed point ──

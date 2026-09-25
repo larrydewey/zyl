@@ -151,16 +151,10 @@
       -1
       (pk-cmp-str a b 0))))
 
-(defn pk-cmp-str (a b i)
-  (let la (pk-len a)
-    (let lb (pk-len b)
-      (if (>= i la)
-        (if (>= i lb) 0 -1)
-        (if (>= i lb)
-          1
-          (let ca (pk-byte-at a i)
-            (let cb (pk-byte-at b i)
-              (if (< ca cb) -1 (if (> ca cb) 1 (pk-cmp-str a b (+ i 1)))))))))))
+; Byte order, a proper prefix first: strcmp compares unsigned bytes.
+; (`_i` is the start offset, always 0.)
+(defn pk-cmp-str (a b _i)
+  (ffi-call "zyl_cstr_cmp" a b 1000))
 
 ; Compatibility unit (§31.1): major 0 makes each minor its own unit, so
 ; 0.3.x and 0.4.x never satisfy one another. Encoded as a single Int so

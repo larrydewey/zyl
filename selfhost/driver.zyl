@@ -145,11 +145,14 @@
 (defn cli-link-child (asmpath outpath extra)
   (ffi-call "zyl_system_cmd" (cli-link-command asmpath outpath extra) 1000))
 
+; The runtime is linked as the object boot.sh/install.sh build next to its
+; source (actor_runtime.o, -O2) when that is newer than the source; else
+; the source is compiled here, with the same flags.
 (defn cli-link-command (asmpath outpath extra)
-  (str-concat "cc "
+  (str-concat "if [ actor_runtime.o -nt actor_runtime.c ]; then ZYL_RT=actor_runtime.o; else ZYL_RT='-O2 actor_runtime.c'; fi; cc "
     (str-concat "-no-pie "
       (str-concat asmpath
-        (str-concat " actor_runtime.c -o "
+        (str-concat " $ZYL_RT -o "
           (str-concat outpath (str-concat " -lpthread" extra)))))))
 
 ; Where to find `actor_runtime.c` and `stdlib/` at runtime. Prefers a

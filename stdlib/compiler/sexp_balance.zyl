@@ -64,8 +64,11 @@
 ; CHARACTER CLASSIFICATION (byte values, ASCII)
 ; ===========================================================================
 
-(defn sb-char-code (c)
-  (ffi-call "zyl_cstr_byte_at" c 0 1000))
+; A character is its byte value.
+(defn sb-char-code ((c Int)) c)
+
+; The first byte of a one-character string (the language server's use).
+(defn sb-str-code ((s String)) (ffi-call "zyl_cstr_byte_at" s 0 1000))
 
 (defn sb-is-paren-open (c)
   (= (sb-char-code c) 40))
@@ -256,7 +259,9 @@
       (if (>= idx len)
         state
         (if (sb-result-balanced err)
-          (let next (sb-process-char (str-substring src idx 1) state)
+          ; Read by position within the length measured once: a String
+          ; access (substring, byte-at) measures the whole source again.
+          (let next (sb-process-char (ffi-call "zyl_view_byte" src 0 len idx 1000) state)
             (sb-scan-index src (+ idx 1) len next))
           state)))))
 

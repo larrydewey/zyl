@@ -130,7 +130,32 @@
   (VTFn String VTable)                       ; plain top-level function name
   (VTClosureFn String VTable)                ; name known to hold a capturing closure
   (VTClosureReturn String VTable)            ; name known: CALLING it returns a closure
+  (VTIndex (SMap VTable) (SMap Int) VTable)  ; by name: rest's VTEntry nodes, its VTFn names
   (VTNil))
+
+; VTIndex sits on top of the program's table (icnf.zyl's ic-program), so a
+; lookup walks only the entries pushed since and then answers by hash. The
+; table below it holds only VTEntry and VTFn nodes; the first node of each
+; name is indexed, the one a scan would find. A table without an index is
+; still searched linearly.
+(defn vt-with-index (vt)
+  (let es (ffi-call "zyl_smap_new" 1000)
+    (let fs (ffi-call "zyl_smap_new" 1000)
+      (let _ (vt-index-fill vt es fs)
+        (VTIndex es fs vt)))))
+
+(defn vt-index-fill (vt es fs)
+  (match vt
+    (VTEntry n _ _ _ rest
+      (let _ (if (ffi-call "zyl_smap_has" es n 1000) unit (ffi-call "zyl_smap_put" es n vt 1000))
+        (vt-index-fill rest es fs)))
+    (VTFn n rest (let _ (ffi-call "zyl_smap_put" fs n 1 1000) (vt-index-fill rest es fs)))
+    (VTClosureFn _ rest (vt-index-fill rest es fs))
+    (VTClosureReturn _ rest (vt-index-fill rest es fs))
+    (VTIndex _ _ rest (vt-index-fill rest es fs))
+    (VTNil unit)))
+
+(defn vt-indexed (es name) (ffi-call "zyl_smap_get_or" es name VTNil 1000))
 
 ; Tag for an interned variant name; -1 when absent.
 ; Returns: Int
@@ -140,6 +165,7 @@
     (VTFn _ rest (vt-tag-of rest name))
     (VTClosureFn _ rest (vt-tag-of rest name))
     (VTClosureReturn _ rest (vt-tag-of rest name))
+    (VTIndex es _ _ (match (vt-indexed es name) (VTEntry _ tag _ _ _ tag) (_ -1)))
     (VTNil -1)))
 
 ; Field count for an interned variant name; -1 when absent.
@@ -150,6 +176,7 @@
     (VTFn _ rest (vt-arity-of rest name))
     (VTClosureFn _ rest (vt-arity-of rest name))
     (VTClosureReturn _ rest (vt-arity-of rest name))
+    (VTIndex es _ _ (match (vt-indexed es name) (VTEntry _ _ fields _ _ (list-length fields)) (_ -1)))
     (VTNil -1)))
 
 ; True when `name` is a registered plain top-level function name.
@@ -159,6 +186,7 @@
     (VTFn n rest (if (str-eq n name) true (vt-is-fn rest name)))
     (VTClosureFn _ rest (vt-is-fn rest name))
     (VTClosureReturn _ rest (vt-is-fn rest name))
+    (VTIndex _ fs _ (ffi-call "zyl_smap_has" fs name 1000))
     (VTNil false)))
 
 ; gid for an interned variant name; -1 when absent.
@@ -168,6 +196,7 @@
     (VTFn _ rest (vt-gid-of rest name))
     (VTClosureFn _ rest (vt-gid-of rest name))
     (VTClosureReturn _ rest (vt-gid-of rest name))
+    (VTIndex es _ _ (match (vt-indexed es name) (VTEntry _ _ _ gid _ gid) (_ -1)))
     (VTNil -1)))
 
 ; All variant names sharing one gid (i.e. one deftype declaration's full
@@ -179,6 +208,7 @@
     (VTFn _ rest (vt-names-with-gid rest gid))
     (VTClosureFn _ rest (vt-names-with-gid rest gid))
     (VTClosureReturn _ rest (vt-names-with-gid rest gid))
+    (VTIndex _ _ rest (vt-names-with-gid rest gid))
     (VTNil Nil)))
 
 ; True when `name` is known (via VTClosureFn) to hold a capturing closure
@@ -190,6 +220,7 @@
     (VTFn _ rest (vt-returns-closure rest name))
     (VTClosureFn n rest (if (str-eq n name) true (vt-returns-closure rest name)))
     (VTClosureReturn _ rest (vt-returns-closure rest name))
+    (VTIndex _ _ _ false)
     (VTNil false)))
 
 ; True when `name` is known (via VTClosureReturn) to hand back a closure
@@ -201,6 +232,7 @@
     (VTFn _ rest (vt-call-returns-closure rest name))
     (VTClosureFn _ rest (vt-call-returns-closure rest name))
     (VTClosureReturn n rest (if (str-eq n name) true (vt-call-returns-closure rest name)))
+    (VTIndex _ _ _ false)
     (VTNil false)))
 
 ; --- Token stream helpers ----------------------------------------------------

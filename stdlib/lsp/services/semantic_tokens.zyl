@@ -82,7 +82,7 @@
 
 (defn st-is-keyword (w) (builtin-is-syntax-word w))
 
-(defn st-byte-at (text i) (sb-char-code (str-substring text i 1)))
+(defn st-byte-at (text i) (sb-str-code (str-substring text i 1)))
 
 (defn st-is-digit (b) (and (>= b 48) (<= b 57)))
 
@@ -222,7 +222,7 @@
   (match (st-field-owner tbl word)
     (Some _ (Some (RT line col length (st-tt-property) 0)))
     (None
-      (if (st-is-upper (sb-char-code (str-substring word 0 1)))
+      (if (st-is-upper (sb-str-code (str-substring word 0 1)))
         (Some (RT line col length (st-tt-type) 0))
         None))))
 

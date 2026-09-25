@@ -47,7 +47,7 @@
     i
     (if (= curline targetline)
       (if (>= curcol targetcol) i (si-offset-of-pos-loop text (+ i 1) curline (+ curcol 1) targetline targetcol len))
-      (if (= (sb-char-code (str-substring text i 1)) 10)
+      (if (= (sb-str-code (str-substring text i 1)) 10)
         (si-offset-of-pos-loop text (+ i 1) (+ curline 1) 0 targetline targetcol len)
         (si-offset-of-pos-loop text (+ i 1) curline (+ curcol 1) targetline targetcol len)))))
 
@@ -57,7 +57,7 @@
 (defn si-pos-of-offset-loop (text i line col target)
   (if (>= i target)
     (Pair2 line col)
-    (if (= (sb-char-code (str-substring text i 1)) 10)
+    (if (= (sb-str-code (str-substring text i 1)) 10)
       (si-pos-of-offset-loop text (+ i 1) (+ line 1) 0 target)
       (si-pos-of-offset-loop text (+ i 1) line (+ col 1) target))))
 
@@ -70,7 +70,7 @@
 ; ===========================================================================
 
 (defn si-is-ident-char (ch)
-  (let c (sb-char-code ch)
+  (let c (sb-str-code ch)
     (not (or (= c 32) (or (= c 9) (or (= c 10) (or (= c 13)
         (or (= c 40) (or (= c 41) (or (= c 91) (or (= c 93)
         (or (= c 123) (or (= c 125) (or (= c 34) (= c 59)))))))))))))))
@@ -91,7 +91,7 @@
 ; Dot syntax (`p.x.y`, `(p.m)`, `.m`): the segment under the cursor. A
 ; name starting uppercase (`Trait.method`) is one identifier and stays whole.
 (defn si-dot-segment (w at)
-  (let c (sb-char-code (str-substring w 0 1))
+  (let c (sb-str-code (str-substring w 0 1))
     (if (and (>= c 65) (<= c 90))
       w
       (if (= (si-index-of-dot w 0) -1)
@@ -101,13 +101,13 @@
             (if (> b a) (str-substring w a (- b a)) w)))))))
 
 (defn si-index-of-dot (w i)
-  (if (>= i (str-length w)) -1 (if (= (sb-char-code (str-substring w i 1)) 46) i (si-index-of-dot w (+ i 1)))))
+  (if (>= i (str-length w)) -1 (if (= (sb-str-code (str-substring w i 1)) 46) i (si-index-of-dot w (+ i 1)))))
 
 (defn si-seg-start (w i)
-  (if (<= i 0) 0 (if (= (sb-char-code (str-substring w (- i 1) 1)) 46) i (si-seg-start w (- i 1)))))
+  (if (<= i 0) 0 (if (= (sb-str-code (str-substring w (- i 1) 1)) 46) i (si-seg-start w (- i 1)))))
 
 (defn si-seg-end (w i n)
-  (if (>= i n) n (if (= (sb-char-code (str-substring w i 1)) 46) i (si-seg-end w (+ i 1) n))))
+  (if (>= i n) n (if (= (sb-str-code (str-substring w i 1)) 46) i (si-seg-end w (+ i 1) n))))
 
 (defn si-word-scan-back (text i)
   (if (<= i 0)
@@ -159,23 +159,23 @@
     acc
     (let ch (str-substring text i 1)
       (if (> in-string 0)
-        (if (sb-is-backslash ch)
+        (if (sb-is-backslash (sb-str-code ch))
           (si-scan text (+ i 2) len line (+ col 2) depth in-string acc)
-          (if (sb-is-quote ch)
+          (if (sb-is-quote (sb-str-code ch))
             (si-scan text (+ i 1) len line (+ col 1) depth 0 acc)
             (si-scan-advance text i len line col depth in-string acc ch)))
-        (if (sb-is-quote ch)
+        (if (sb-is-quote (sb-str-code ch))
           (si-scan text (+ i 1) len line (+ col 1) depth 1 acc)
-          (if (sb-is-semicolon ch)
+          (if (sb-is-semicolon (sb-str-code ch))
             (si-scan-skip-comment text i len line depth acc)
-            (if (or (sb-is-paren-open ch) (or (sb-is-bracket-open ch) (sb-is-brace-open ch)))
+            (if (or (sb-is-paren-open (sb-str-code ch)) (or (sb-is-bracket-open (sb-str-code ch)) (sb-is-brace-open (sb-str-code ch))))
               (si-scan-open text i len line col depth acc ch)
-              (if (or (sb-is-paren-close ch) (or (sb-is-bracket-close ch) (sb-is-brace-close ch)))
+              (if (or (sb-is-paren-close (sb-str-code ch)) (or (sb-is-bracket-close (sb-str-code ch)) (sb-is-brace-close (sb-str-code ch))))
                 (si-scan-close text i len line col depth acc)
                 (si-scan-advance text i len line col depth in-string acc ch)))))))))
 
 (defn si-scan-advance (text i len line col depth in-string acc ch)
-  (if (sb-is-newline ch)
+  (if (sb-is-newline (sb-str-code ch))
     (si-scan text (+ i 1) len (+ line 1) 0 depth in-string acc)
     (si-scan text (+ i 1) len line (+ col 1) depth in-string acc)))
 
@@ -185,7 +185,7 @@
 (defn si-scan-skip-comment (text i len line depth acc)
   (if (>= i len)
     acc
-    (if (sb-is-newline (str-substring text i 1))
+    (if (sb-is-newline (sb-str-code (str-substring text i 1)))
       (si-scan text (+ i 1) len (+ line 1) 0 depth 0 acc)
       (si-scan-skip-comment text (+ i 1) len line depth acc))))
 
@@ -266,7 +266,7 @@
 (defn si-skip-ws (text i len)
   (if (>= i len)
     i
-    (let c (sb-char-code (str-substring text i 1))
+    (let c (sb-str-code (str-substring text i 1))
       (if (or (= c 32) (or (= c 9) (or (= c 10) (= c 13)))) (si-skip-ws text (+ i 1) len) i))))
 
 ; The innermost top-level form containing `line`, if any.
@@ -297,28 +297,28 @@
     acc
     (let ch (str-substring text i 1)
       (if (> in-string 0)
-        (if (sb-is-backslash ch)
+        (if (sb-is-backslash (sb-str-code ch))
           (si-occ-scan text (+ i 2) len line (+ col 2) in-string word acc)
-          (if (sb-is-quote ch)
+          (if (sb-is-quote (sb-str-code ch))
             (si-occ-scan text (+ i 1) len line (+ col 1) 0 word acc)
             (si-occ-advance text i len line col in-string word acc ch)))
-        (if (sb-is-quote ch)
+        (if (sb-is-quote (sb-str-code ch))
           (si-occ-scan text (+ i 1) len line (+ col 1) 1 word acc)
-          (if (sb-is-semicolon ch)
+          (if (sb-is-semicolon (sb-str-code ch))
             (si-occ-skip-comment text i len line word acc)
             (if (si-is-ident-char ch)
               (si-occ-word text i len line col word acc)
               (si-occ-advance text i len line col in-string word acc ch))))))))
 
 (defn si-occ-advance (text i len line col in-string word acc ch)
-  (if (sb-is-newline ch)
+  (if (sb-is-newline (sb-str-code ch))
     (si-occ-scan text (+ i 1) len (+ line 1) 0 in-string word acc)
     (si-occ-scan text (+ i 1) len line (+ col 1) in-string word acc)))
 
 (defn si-occ-skip-comment (text i len line word acc)
   (if (>= i len)
     acc
-    (if (sb-is-newline (str-substring text i 1))
+    (if (sb-is-newline (sb-str-code (str-substring text i 1)))
       (si-occ-scan text (+ i 1) len (+ line 1) 0 0 word acc)
       (si-occ-skip-comment text (+ i 1) len line word acc))))
 
@@ -357,18 +357,18 @@
     (si-ctx-top stack)
     (let ch (str-substring text i 1)
       (if (> in-string 0)
-        (if (sb-is-backslash ch)
+        (if (sb-is-backslash (sb-str-code ch))
           (si-ctx-scan text (+ i 2) target len 1 stack)
-          (if (sb-is-quote ch)
+          (if (sb-is-quote (sb-str-code ch))
             (si-ctx-scan text (+ i 1) target len 0 (si-ctx-count stack))
             (si-ctx-scan text (+ i 1) target len 1 stack)))
-        (if (sb-is-quote ch)
+        (if (sb-is-quote (sb-str-code ch))
           (si-ctx-scan text (+ i 1) target len 1 stack)
-          (if (sb-is-semicolon ch)
+          (if (sb-is-semicolon (sb-str-code ch))
             (si-ctx-skip-comment text i target len stack)
-            (if (or (sb-is-paren-open ch) (or (sb-is-bracket-open ch) (sb-is-brace-open ch)))
+            (if (or (sb-is-paren-open (sb-str-code ch)) (or (sb-is-bracket-open (sb-str-code ch)) (sb-is-brace-open (sb-str-code ch))))
               (si-ctx-scan text (+ i 1) target len 0 (Cons (CC "" 0) stack))
-              (if (or (sb-is-paren-close ch) (or (sb-is-bracket-close ch) (sb-is-brace-close ch)))
+              (if (or (sb-is-paren-close (sb-str-code ch)) (or (sb-is-bracket-close (sb-str-code ch)) (sb-is-brace-close (sb-str-code ch))))
                 (si-ctx-scan text (+ i 1) target len 0 (si-ctx-pop stack))
                 (if (si-is-ident-char ch)
                   (si-ctx-word text i target len stack)
@@ -414,7 +414,7 @@
 (defn si-ctx-skip-comment (text i target len stack)
   (if (>= i target)
     (si-ctx-top stack)
-    (if (sb-is-newline (str-substring text i 1))
+    (if (sb-is-newline (sb-str-code (str-substring text i 1)))
       (si-ctx-scan text (+ i 1) target len 0 stack)
       (si-ctx-skip-comment text (+ i 1) target len stack))))
 

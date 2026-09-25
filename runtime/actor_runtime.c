@@ -8,6 +8,7 @@ long long zyl_ralloc(long long size, long long rp);
 static __thread long long g_result_region = 0;
 long long zyl_regions_enabled(void);
 #define ZYL_RESULT_ALLOC(n) zyl_ralloc((long long)(n), g_result_region)
+static volatile int g_threads_started; /* see ZYL_ARENA_LOCK */
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -211,6 +212,7 @@ uint32_t zyl_actor_spawn(void (*entry)(void*), void* state) {
     pthread_mutex_init(&actor->lock, NULL);
     pthread_cond_init(&actor->cond, NULL);
 
+    g_threads_started = 1;
     pthread_create(&actor->thread, NULL, zyl_actor_thread_entry, (void*)(size_t)id);
     g_system.next_id++;
 
@@ -1356,6 +1358,13 @@ typedef struct ZylArenaBlock {
     struct ZylArenaBlock* next;
 } ZylArenaBlock;
 
+/* Arenas are locked only once a second thread can touch them: an actor
+   or an FFI worker (a foreign callback may run Zyl code there). The flag
+   goes 0 -> 1 on the one mutator thread before pthread_create, which is
+   a memory barrier for the new thread, and never goes back. */
+#define ZYL_ARENA_LOCK(a) do { if (g_threads_started) pthread_mutex_lock(&(a)->lock); } while (0)
+#define ZYL_ARENA_UNLOCK(a) do { if (g_threads_started) pthread_mutex_unlock(&(a)->lock); } while (0)
+
 typedef struct ZylArena {
     ZylArenaBlock* head;
     size_t block_size;
@@ -1505,16 +1514,16 @@ long long zyl_arena_alloc(long long arena, long long size) {
     if (!arena || size < 0 || size > ZYL_ARENA_MAX_ALLOC) return 0;
     ZylArena* a = (ZylArena*)(size_t)arena;
     size_t need = zyl_arena_align_up((size_t)size);
-    pthread_mutex_lock(&a->lock);
+    ZYL_ARENA_LOCK(a);
     ZylArenaBlock* b = a->head;
     if (!b || need > b->cap - b->used) {
         b = zyl_arena_new_block_of(a, need);
-        if (!b) { pthread_mutex_unlock(&a->lock); return 0; }
+        if (!b) { ZYL_ARENA_UNLOCK(a); return 0; }
     }
     char* p = b->mem + b->used;
     b->used += need;
     a->total_used += need;
-    pthread_mutex_unlock(&a->lock);
+    ZYL_ARENA_UNLOCK(a);
     return (long long)(size_t)p;
 }
 
@@ -1522,16 +1531,16 @@ long long zyl_arena_alloc_zeroed(long long arena, long long size) {
     if (!arena || size < 0 || size > ZYL_ARENA_MAX_ALLOC) return 0;
     ZylArena* a = (ZylArena*)(size_t)arena;
     size_t need = zyl_arena_align_up((size_t)size);
-    pthread_mutex_lock(&a->lock);
+    ZYL_ARENA_LOCK(a);
     ZylArenaBlock* b = a->head;
     if (!b || need > b->cap - b->used) {
         b = zyl_arena_new_block_of(a, need);
-        if (!b) { pthread_mutex_unlock(&a->lock); return 0; }
+        if (!b) { ZYL_ARENA_UNLOCK(a); return 0; }
     }
     char* p = b->mem + b->used;
     b->used += need;
     a->total_used += need;
-    pthread_mutex_unlock(&a->lock);
+    ZYL_ARENA_UNLOCK(a);
     /* p is exclusively ours from here: `used` was already advanced past it
      * under the lock, so no concurrent allocator can hand out an
      * overlapping range -- safe to zero without holding the lock. */
@@ -1542,7 +1551,7 @@ long long zyl_arena_alloc_zeroed(long long arena, long long size) {
 long long zyl_arena_reset(long long arena) {
     if (!arena) return 0;
     ZylArena* a = (ZylArena*)(size_t)arena;
-    pthread_mutex_lock(&a->lock);
+    ZYL_ARENA_LOCK(a);
     ZylArenaBlock* b = a->head;
     while (b) {
         ZylArenaBlock* next = b->next;
@@ -1560,14 +1569,14 @@ long long zyl_arena_reset(long long arena) {
     a->head = NULL;
     a->total_capacity = 0;
     a->total_used = 0;
-    pthread_mutex_unlock(&a->lock);
+    ZYL_ARENA_UNLOCK(a);
     return 0;
 }
 
 long long zyl_arena_destroy(long long arena) {
     if (!arena) return 0;
     ZylArena* a = (ZylArena*)(size_t)arena;
-    pthread_mutex_lock(&a->lock);
+    ZYL_ARENA_LOCK(a);
     ZylArenaBlock* b = a->head;
     while (b) {
         ZylArenaBlock* next = b->next;
@@ -1577,7 +1586,7 @@ long long zyl_arena_destroy(long long arena) {
         free(b);
         b = next;
     }
-    pthread_mutex_unlock(&a->lock);
+    ZYL_ARENA_UNLOCK(a);
     pthread_mutex_destroy(&a->lock);
     free(a);
     return 0;
@@ -1586,18 +1595,18 @@ long long zyl_arena_destroy(long long arena) {
 long long zyl_arena_used(long long arena) {
     if (!arena) return 0;
     ZylArena* a = (ZylArena*)(size_t)arena;
-    pthread_mutex_lock(&a->lock);
+    ZYL_ARENA_LOCK(a);
     long long v = (long long)a->total_used;
-    pthread_mutex_unlock(&a->lock);
+    ZYL_ARENA_UNLOCK(a);
     return v;
 }
 
 long long zyl_arena_capacity(long long arena) {
     if (!arena) return 0;
     ZylArena* a = (ZylArena*)(size_t)arena;
-    pthread_mutex_lock(&a->lock);
+    ZYL_ARENA_LOCK(a);
     long long v = (long long)a->total_capacity;
-    pthread_mutex_unlock(&a->lock);
+    ZYL_ARENA_UNLOCK(a);
     return v;
 }
 
@@ -2351,13 +2360,13 @@ long long zyl_span_offset_at(long long fid, long long line, long long col) {
 static int zyl_ptr_in_pin_arena(long long ptr) {
     if (!ptr || !g_pin_arena) return 0;
     ZylArena* a = (ZylArena*)(size_t)g_pin_arena;
-    pthread_mutex_lock(&a->lock);
+    ZYL_ARENA_LOCK(a);
     int found = 0;
     for (ZylArenaBlock* b = a->head; b; b = b->next) {
         char* p = (char*)(size_t)ptr;
         if (p >= b->mem && p + sizeof(long long) <= b->mem + b->used) { found = 1; break; }
     }
-    pthread_mutex_unlock(&a->lock);
+    ZYL_ARENA_UNLOCK(a);
     return found;
 }
 
@@ -3291,6 +3300,10 @@ long long zyl_f_error(long long msg) {
  * different buffers that hash to the same slot would otherwise race on a
  * shared cache entry and could write through a stale cached end-pointer
  * into memory they don't own. Use SipHash-like mixing for better distribution. */
+/* StrBuf header (see zyl_strbuf_new). */
+#define ZYL_STRBUF_MAGIC 0x5A594C5342554631ULL /* "ZYLSBUF1" */
+typedef struct { unsigned long long magic; long long len; long long cap; } ZylStrBufHdr;
+
 #define ZSA_CACHE_SLOTS 64
 static _Thread_local long long zsa_cache_dst[ZSA_CACHE_SLOTS];
 static _Thread_local char* zsa_cache_end[ZSA_CACHE_SLOTS];
@@ -3311,10 +3324,25 @@ static inline size_t zsa_cache_index(long long dst) {
  * original unchecked behavior for every existing caller that has no
  * capacity to hand it). When a real cap is given and the append would
  * write past it, panics instead of writing out of bounds. */
+static ZylStrBufHdr* zyl_strbuf_hdr(long long dst);
+
 static long long zyl_str_append_impl(long long dst, long long src, long long cap) {
     if (!dst) return dst;
     if (!src) return dst;
     if (!zyl_cstr_valid(dst, "str-append") || !zyl_cstr_valid(src, "str-append")) return dst;
+    ZylStrBufHdr* hb = zyl_strbuf_hdr(dst);
+    if (hb) {
+        size_t n = strlen((const char*)(size_t)src);
+        long long limit = hb->cap;
+        if (cap > 0 && cap < limit) limit = cap;
+        if (hb->len + (long long)n + 1 > limit)
+            zyl_panic(cap > 0 ? "codegen buffer limit exceeded" : "E_INDEX_OUT_OF_BOUNDS: string buffer full");
+        char* d = (char*)(size_t)dst + hb->len;
+        memcpy(d, (const char*)(size_t)src, n);
+        d[n] = 0;
+        hb->len += (long long)n;
+        return dst;
+    }
     size_t idx = zsa_cache_index(dst);
     char* base = (char*)(size_t)dst;
     char* d;
@@ -3564,6 +3592,24 @@ long long zyl_exec_cmd(long long cmd) {
    to the caller -- needed by the REPL, which must keep looping after
    each compile. Returns the child's exit status (0 on a successful
    compile), or -1 if the path is malformed or spawning/waiting fails. */
+/* The runtime to link: the object boot.sh/install.sh build next to the
+   source (actor_runtime.o, -O2) when it is newer than the source, else
+   the source itself, compiled with the same flags. */
+static int zyl_rt_obj_fresh(void) {
+    struct stat so, sc;
+    if (stat("actor_runtime.o", &so) != 0 || stat("actor_runtime.c", &sc) != 0) return 0;
+    if (so.st_mtim.tv_sec != sc.st_mtim.tv_sec) return so.st_mtim.tv_sec > sc.st_mtim.tv_sec;
+    return so.st_mtim.tv_nsec > sc.st_mtim.tv_nsec;
+}
+
+static void zyl_cc_argv(char** argv, const char* asm_path, char* out_path) {
+    int k = 0;
+    argv[k++] = (char*)"cc"; argv[k++] = (char*)"-no-pie"; argv[k++] = (char*)asm_path;
+    if (zyl_rt_obj_fresh()) argv[k++] = (char*)"actor_runtime.o";
+    else { argv[k++] = (char*)"-O2"; argv[k++] = (char*)"actor_runtime.c"; }
+    argv[k++] = (char*)"-o"; argv[k++] = out_path; argv[k++] = (char*)"-lpthread"; argv[k] = NULL;
+}
+
 long long zyl_cc_compile(long long path) {
     const char* asm_path = (const char*)(size_t)path;
     if (!asm_path) return -1;
@@ -3578,10 +3624,8 @@ long long zyl_cc_compile(long long path) {
         if (len + 4 >= sizeof(out_path)) return -1;
         snprintf(out_path, sizeof(out_path), "%s.bin", asm_path);
     }
-    char* argv[] = {
-        (char*)"cc", (char*)"-no-pie", (char*)asm_path, (char*)"actor_runtime.c",
-        (char*)"-o", out_path, (char*)"-lpthread", NULL
-    };
+    char* argv[8];
+    zyl_cc_argv(argv, asm_path, out_path);
     pid_t pid;
     if (posix_spawnp(&pid, "cc", NULL, NULL, argv, environ) != 0) return -1;
     int status;
@@ -3614,10 +3658,8 @@ long long zyl_cc_compile_log(long long path, long long logpath) {
     posix_spawn_file_actions_addopen(&fa, STDOUT_FILENO, log_path,
                                      O_WRONLY | O_CREAT | O_TRUNC, 0644);
     posix_spawn_file_actions_adddup2(&fa, STDOUT_FILENO, STDERR_FILENO);
-    char* argv[] = {
-        (char*)"cc", (char*)"-no-pie", (char*)asm_path, (char*)"actor_runtime.c",
-        (char*)"-o", out_path, (char*)"-lpthread", NULL
-    };
+    char* argv[8];
+    zyl_cc_argv(argv, asm_path, out_path);
     pid_t pid;
     int rc = posix_spawnp(&pid, "cc", &fa, NULL, argv, environ);
     posix_spawn_file_actions_destroy(&fa);
@@ -4339,11 +4381,11 @@ static int zyl_addr_in_arena(void* arenap, long long ptr) {
     ZylArena* a = (ZylArena*)arenap;
     char* p = (char*)(size_t)ptr;
     int found = 0;
-    pthread_mutex_lock(&a->lock);
+    ZYL_ARENA_LOCK(a);
     for (ZylArenaBlock* b = a->head; b; b = b->next) {
         if (p >= b->mem && p + sizeof(long long) <= b->mem + b->used) { found = 1; break; }
     }
-    pthread_mutex_unlock(&a->lock);
+    ZYL_ARENA_UNLOCK(a);
     return found;
 }
 
@@ -4918,6 +4960,7 @@ static ZylFfiWorker* zyl_ffi_worker_get(void) {
     pthread_attr_init(&attr);
     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
     pthread_t t;
+    g_threads_started = 1;
     int rc = pthread_create(&t, &attr, zyl_ffi_worker_main, w);
     pthread_attr_destroy(&attr);
     if (rc != 0) zyl_panic("E_FFI_TIMEOUT: could not start the FFI worker thread");
@@ -5304,10 +5347,27 @@ long long zyl_getenv_str(long long name) {
 /* A zeroed text buffer of `n` bytes from `arena` (`StrBuf`), and the same
    buffer read as a String: a StrBuf is a NUL-terminated char buffer that
    zyl_str_append extends in place, so both views are the same pointer. */
+/* A StrBuf is a String with a header in front: {magic, len, cap}. The
+   header makes an append O(length of what is appended) and bounds it by
+   the capacity; the String is the data pointer, NUL-terminated. */
+
 long long zyl_strbuf_new(long long arena, long long n) {
-    return zyl_arena_alloc_zeroed(arena, n > 0 ? n : 1);
+    long long cap = n > 0 ? n : 1;
+    char* p = (char*)(size_t)zyl_arena_alloc_zeroed(arena, cap + (long long)sizeof(ZylStrBufHdr));
+    if (!p) return 0;
+    ZylStrBufHdr* h = (ZylStrBufHdr*)p;
+    h->magic = ZYL_STRBUF_MAGIC; h->len = 0; h->cap = cap;
+    return (long long)(size_t)(p + sizeof(ZylStrBufHdr));
 }
 long long zyl_strbuf_str(long long b) { return b; }
+
+/* The header of a buffer zyl_strbuf_new made, or NULL for any other
+   string (which appends the old way). */
+static ZylStrBufHdr* zyl_strbuf_hdr(long long dst) {
+    if ((unsigned long long)dst < ZYL_MIN_CALL_ADDR + sizeof(ZylStrBufHdr) || (dst & 7) != 0) return NULL;
+    ZylStrBufHdr* h = (ZylStrBufHdr*)(size_t)(dst - (long long)sizeof(ZylStrBufHdr));
+    return h->magic == ZYL_STRBUF_MAGIC ? h : NULL;
+}
 
 /* A union-find class's id, for ordering classes by creation. */
 long long zyl_uf_id(long long a) { return a; }

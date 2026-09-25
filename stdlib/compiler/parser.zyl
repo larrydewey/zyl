@@ -374,7 +374,7 @@
             (ffi-call "zyl_panic" (err-at "E_INVALID_ESCAPE" "invalid escape sequence in string literal" fid off "the escapes are \\n \\t \\r \\0 \\\" \\\\ \\e and \\xNN") 1000))
           (ffi-call "zyl_panic"
             (err-at "E_INVALID_CHAR" (str-concat "unexpected character `" (str-concat (ffi-call "zyl_cstr_substr" src off 1 1000) "`"))
-              fid off "Zyl has quote, quasiquote and unquote (`'`, `` ` ``, `,`, `,@`); `@`, `#`, `$`, `&`, `|`, `^` and `\\` may appear only in strings and comments") 1000))))))
+              fid off "Zyl has quote, quasiquote and unquote (`'`, `` ` ``, `,`, `,@`); `@`, `#`, `$`, `|`, `^` and `\\` may appear only in strings and comments") 1000))))))
 
 (defn last-eof-offset (toks)
   (match toks

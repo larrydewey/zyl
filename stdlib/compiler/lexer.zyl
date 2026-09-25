@@ -83,12 +83,17 @@
 (defn byte-at (src i)
   (ffi-call "zyl_cstr_byte_at" src i 1000))
 
+; Byte i of `src`, whose length `len` the lexer measured once; -1 outside.
+; zyl_cstr_byte_at would measure the whole source again on every byte.
+(defn byte-at-n ((src String) (len Int) (i Int))
+  (ffi-call "zyl_view_byte" src 0 len i 1000))
+
 ; End index (exclusive) of an identifier starting at `i`.
 ; Returns: Int
 (defn scan-ident-end (src len i)
   (if (>= i len)
     i
-    (if (chr-ident-cont-p (byte-at src i))
+    (if (chr-ident-cont-p (byte-at-n src len i))
       (scan-ident-end src len (+ i 1))
       i)))
 
@@ -97,7 +102,7 @@
 (defn scan-num-body (src len i)
   (if (>= i len)
     i
-    (let c (byte-at src i)
+    (let c (byte-at-n src len i)
       (if (chr-digit-p c)
         (scan-num-body src len (+ i 1))
         (if (= c 46)
@@ -109,7 +114,7 @@
 (defn scan-exp-digits (src len i)
   (if (>= i len)
     i
-    (if (chr-digit-p (byte-at src i))
+    (if (chr-digit-p (byte-at-n src len i))
       (scan-exp-digits src len (+ i 1))
       i)))
 
@@ -122,7 +127,7 @@
 (defn scan-exp-j (src len i j)
   (if (>= j len)
     i
-    (scan-exp-b src len i j (byte-at src j))))
+    (scan-exp-b src len i j (byte-at-n src len j))))
 
 (defn scan-exp-b (src len _i j b)
   (scan-exp-digits src len
@@ -132,14 +137,14 @@
 ; Handles decimal/float literals AND radix-prefixed integers (0x.., 0o..,
 ; 0b..). Returns: Int (end, exclusive)
 (defn scan-number-end (src len start)
-  (let i (if (= (byte-at src start) 45) (+ start 1) start)
+  (let i (if (= (byte-at-n src len start) 45) (+ start 1) start)
     (let radix (scan-radix-end src len i)
       (if (>= radix 0)
         radix
         (let mid (scan-num-body src len i)
           (if (>= mid len)
             mid
-            (let c (byte-at src mid)
+            (let c (byte-at-n src len mid)
               (if (either (= c 101) (= c 69))
                 (scan-exp src len mid)
                 mid))))))))
@@ -150,9 +155,9 @@
 (defn scan-radix-end (src len i)
   (if (>= (+ i 1) len)
     -1
-    (let c0 (byte-at src i)
+    (let c0 (byte-at-n src len i)
       (if (= c0 48)
-        (radix-probe src len i (byte-at src (+ i 1)))
+        (radix-probe src len i (byte-at-n src len (+ i 1)))
         -1))))
 
 ; Probe the radix-marker char after '0'.
@@ -172,7 +177,7 @@
 (defn radix-body-j (src len i base j)
   (if (>= j len)
     j
-    (radix-body-c src len i base j (byte-at src j))))
+    (radix-body-c src len i base j (byte-at-n src len j))))
 
 (defn radix-body-c (src len i base j c)
   (if (radix-digit-p c base)
@@ -190,7 +195,7 @@
 (defn scan-str-end (src len i)
   (if (>= i len)
     -1
-    (let b (byte-at src i)
+    (let b (byte-at-n src len i)
       (if (= b 92)
         (if (<= (+ i 1) (- len 1))
           (scan-str-end src len (+ i 2))
@@ -233,7 +238,7 @@
 (defn comment-end (src len i)
   (if (>= i len)
     len
-    (if (= (byte-at src i) 10)
+    (if (= (byte-at-n src len i) 10)
       i
       (comment-end src len (+ i 1)))))
 
@@ -268,7 +273,7 @@
 (defn lex-loop (arena src len i acc)
   (if (>= i len)
     (Cons (TkEof i) acc)
-    (lex-c1 arena src len i acc (byte-at src i))))
+    (lex-c1 arena src len i acc (byte-at-n src len i))))
 
 (defn lex-c1 (arena src len i acc c)
   (if (chr-ws-p c)
@@ -296,7 +301,7 @@
   (if (= c 96)
     (lex-loop arena src len (+ i 1) (Cons (TkQuasi i) acc))
     (if (= c 44)
-      (if (= (byte-at src (+ i 1)) 64)
+      (if (= (byte-at-n src len (+ i 1)) 64)
         (lex-loop arena src len (+ i 2) (Cons (TkSplice i) acc))
         (lex-loop arena src len (+ i 1) (Cons (TkUnquote i) acc)))
       (lex-c2 arena src len i acc c))))
@@ -324,7 +329,7 @@
   (if (= c 46) (chr-alpha-p (byte-at src (+ i 1))) false))
 
 (defn lex-minus-e (arena src len i acc)
-  (if (chr-digit-p (byte-at src (+ i 1)))
+  (if (chr-digit-p (byte-at-n src len (+ i 1)))
     (lex-num-e arena src len i acc (scan-number-end src len i))
     (lex-ident-e arena src len i acc (scan-ident-end src len i))))
 
@@ -343,14 +348,14 @@
 ; integers -- their text carries neither '.' nor 'e', so they take the
 ; TkInt path, and zyl_cstr_to_int_base decodes the prefix.
 (defn lex-num-e (arena src len i acc e)
-  (let text (sub-str arena src i (- e i))
+  (let text (lex-sub src len i (- e i))
     (if (text-float-marker-p text)
       (lex-loop arena src len e (Cons (TkFloat text i) acc))
       (lex-loop arena src len e (Cons (TkInt (ffi-call "zyl_cstr_to_int_base" text 1000) i) acc)))))
 
 ; Identifier / boolean literal: i..e with text.
 (defn lex-ident-e (arena src len i acc e)
-  (let text (sub-str arena src i (- e i))
+  (let text (lex-sub src len i (- e i))
     (if (str-eq text (str-intern arena "true"))
       (lex-loop arena src len e (Cons (TkBool true i) acc))
       (if (str-eq text (str-intern arena "false"))
@@ -363,20 +368,20 @@
 
 ; c is the character at i, recovered with byte-at so the arity stays <= 6.
 (defn lex-sym-pk (arena src len i acc pk)
-  (let c (byte-at src i)
+  (let c (byte-at-n src len i)
     (if (< pk 0)
       (lex-sym-bare arena src len i acc c)
-      (if (not (chr-ident-start-p (byte-at src pk)))
+      (if (not (chr-ident-start-p (byte-at-n src len pk)))
         (lex-sym-bare arena src len i acc c)
-        (if (chr-punctuator-p (byte-at src pk))
+        (if (chr-punctuator-p (byte-at-n src len pk))
           (lex-sym-bare arena src len i acc c)
           (lex-sym-tok arena src len i acc (scan-ident-end src len pk)))))))
 
 ; end = index one past the symbol text; token kind depends on the
 ; introducing character c (58 = ':').
 (defn lex-sym-tok (arena src len i acc end)
-  (let c (byte-at src i)
-    (let text (sub-str arena src (+ i 1) (- end (+ i 1)))
+  (let c (byte-at-n src len i)
+    (let text (lex-sub src len (+ i 1) (- end (+ i 1)))
       (if (= c 58)
         (lex-loop arena src len end (Cons (TkKeyword text i) acc))
         (lex-loop arena src len end (Cons (TkSymbol text i) acc))))))
@@ -384,21 +389,28 @@
 (defn lex-sym-bare (arena src len i acc c)
   (if (= c 58)
     (lex-loop arena src len (+ i 1) (Cons (TkColon i) acc))
-    (lex-loop arena src len (+ i 1) (Cons (TkSymbol (sub-str arena src i 1) i) acc))))
+    (lex-loop arena src len (+ i 1) (Cons (TkSymbol (lex-sub src len i 1) i) acc))))
 
 ; ===========================================================================
 ; SCAN UTILITIES
 ; ===========================================================================
 
 ; Extract a substring of `src` as a fresh NUL-terminated buffer.
-; Returns: Int (pointer)
 (defn sub-str (arena src start n)
   (ffi-call "zyl_cstr_sub" arena src start n 1000))
+
+; A fresh String holding bytes [start, start+n) of `src`, whose length
+; `len` the lexer measured once (zyl_cstr_sub would measure it again).
+; Returns: String
+(defn lex-sub ((src String) (len Int) (start Int) (n Int))
+  (if (and (>= start 0) (and (>= n 0) (<= (+ start n) len)))
+    (ffi-call "zyl_view_copy" src start n 1000)
+    ""))
 
 ; Index of the next non-whitespace character at or after `i`; -1 at end.
 (defn next-nonws (src len i)
   (if (>= i len)
     -1
-    (if (chr-ws-p (byte-at src i))
+    (if (chr-ws-p (byte-at-n src len i))
       (next-nonws src len (+ i 1))
       i)))

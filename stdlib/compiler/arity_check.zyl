@@ -41,25 +41,26 @@
 (use compiler/error_report)
 (use compiler/ffi_sigs)
 
-(deftype ArityEntry (AE String Int))
-
+; Top-level function arities by name, stored plus one (0 = unknown). A
+; later definition of a name replaces an earlier one, as the list this
+; replaced did by being searched newest first.
 (defn ac-collect (exprs)
-  (ac-collect-acc exprs Nil))
+  (let m (ffi-call "zyl_smap_new" 1000)
+    (let _ (ac-collect-into exprs m)
+      m)))
 
-(defn ac-collect-acc (exprs acc)
+(defn ac-collect-into (exprs m)
   (match exprs
-    (Nil acc)
+    (Nil unit)
     (Cons e rest
       (match (Expr.inner e)
-        (EDefn name params _ (ac-collect-acc rest (Cons (AE name (list-length params)) acc)))
-        (_ (ac-collect-acc rest acc))))))
+        (EDefn name params _
+          (let _ (ffi-call "zyl_smap_put" m name (+ (list-length params) 1) 1000)
+            (ac-collect-into rest m)))
+        (_ (ac-collect-into rest m))))))
 
 (defn ac-lookup (arities name)
-  (match arities
-    (Nil -1)
-    (Cons entry rest
-      (match entry
-        (AE n arity (if (str-eq n name) arity (ac-lookup rest name)))))))
+  (- (ffi-call "zyl_smap_get" arities name 1000) 1))
 
 ; `shadowed` is (List (Pair String Int)): a local binding's name paired
 ; with its arity if known -- -1 if the local is something whose arity

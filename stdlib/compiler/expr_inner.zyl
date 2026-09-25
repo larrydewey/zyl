@@ -1647,7 +1647,10 @@
 
 (defn parse-single-param-node (p)
   (match p
-    (AstIdent name (P name None))
+    (AstIdent name
+      (if (str-eq name "&rest")
+        (fail-rest-param p)
+        (P name None)))
     (AList lst (parse-param-list p lst))
     (_ (fail-malformed-param p))))
 
@@ -1675,6 +1678,18 @@
   (match typ
     (AstIdent t (= (ffi-call "zyl_cstr_byte_at" t 0 1000) 58))
     (_ false)))
+
+; `&rest` belongs to macros; in a function it would be a parameter named
+; `&rest`, and the next name a second one.
+(defn fail-rest-param (p)
+  (let off (ffi-call "zyl_span_off" p 1000)
+    (let fid (ffi-call "zyl_span_file" p 1000)
+      (begin
+        (ffi-call "zyl_panic"
+          (err-at "E_MALFORMED_PARAMETER" "`&rest` is a macro parameter marker; a function takes a fixed number of parameters"
+                  fid off "pass a list, or write a macro: (defmacro m (a &rest body) ...)")
+          1000)
+        (P "___" None)))))
 
 (defn fail-colon-param (p)
   (let off (ffi-call "zyl_span_off" p 1000)
