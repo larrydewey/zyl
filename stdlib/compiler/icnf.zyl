@@ -530,11 +530,16 @@
     ; literal, though a bare variable holding a float with no literal in
     ; sight still falls through to exact `=` unrecognized.
     (EAssertEqual l r
-     (if (ic-assert-is-float l r)
-       (ic-assert-float-eq arena l r vt)
-       (IIf (IBinop 9 (ic-expr arena l vt) (ic-expr arena r vt))
-            (IConst 0)
-            (IFfi "zyl_panic" (Cons (IStr "assert-equal failed") Nil)))))
+     (let eqfn (ta-renamed expr)
+       (if (> (str-length eqfn) 0)
+         (IIf (ICall (str-intern arena eqfn) (Cons (ic-expr arena l vt) (Cons (ic-expr arena r vt) Nil)))
+              (IConst 0)
+              (IFfi "zyl_panic" (Cons (IStr "assert-equal failed") Nil)))
+         (if (ic-assert-is-float l r)
+           (ic-assert-float-eq arena l r vt)
+           (IIf (IBinop 9 (ic-expr arena l vt) (ic-expr arena r vt))
+                (IConst 0)
+                (IFfi "zyl_panic" (Cons (IStr "assert-equal failed") Nil)))))))
     (EAssertTrue e m
      (IIf (ic-expr arena e vt)
           (IConst 0)
@@ -703,27 +708,9 @@
 ; to pick assert-equal's comparison strategy (see EAssertEqual above) —
 ; not a real type check, so a bare variable/parameter holding a float
 ; with no literal in the expression at all won't be recognized.
-(defn ic-looks-float (e)
-  (match (Expr.inner e)
-    (EAtom atom (match atom (AFloat _ true) (_ false)))
-    (EApply fname args (ic-looks-float-any args))
-    (ECall op args (ic-looks-float-any args))
-    (_ false)))
-
-; Inferred kinds decide; the literal guess applies only when neither side is a String.
+; The inferred type decides (both sides have one type).
 (defn ic-assert-is-float (l r)
-  (let kl (ta-kind l)
-    (let kr (ta-kind r)
-      (if (or (= kl 2) (= kr 2))
-        true
-        (if (or (= kl 1) (= kr 1))
-          false
-          (if (ic-looks-float l) true (ic-looks-float r)))))))
-
-(defn ic-looks-float-any (args)
-  (match args
-    (Nil false)
-    (Cons a rest (if (ic-looks-float a) true (ic-looks-float-any rest)))))
+  (or (= (ta-kind l) 2) (= (ta-kind r) 2)))
 
 ; See EFileOpen above: a literal string mode lowers normally; anything
 ; else becomes a hardcoded "w".
@@ -1254,12 +1241,24 @@
             (ic-expr arena (first-expr args) vt)
             (ic-expr arena (last-expr args) vt))
     (if (= (list-length args) 1)
-      (if (= op 1)
-        (IBinop 1 (IConst 0) (ic-expr arena (first-expr args) vt))
-        (IConst 0))
+      (ic-unary arena op (first-expr args) vt)
       (if (> (list-length args) 2)
         (ic-binop-fold arena op args vt)
-        (IConst 0))))))
+        (ic-binop-arity op))))))
+
+; One operand: `(- x)` is 0 - x, with a Float zero for a Float x; `(+ x)`
+; and `(* x)` are x. Any other operator needs two.
+(defn ic-unary (arena op x vt)
+  (if (= op 1)
+    (IBinop 1 (if (= (ta-kind x) 2) (IFlt "0.0") (IConst 0)) (ic-expr arena x vt))
+    (if (or (= op 0) (= op 2))
+      (ic-expr arena x vt)
+      (ic-binop-arity op))))
+
+(defn ic-binop-arity (op)
+  (ffi-call "zyl_panic"
+    (str-concat "error[E_ARITY_MISMATCH]: operator " (str-concat (ffi-call "zyl_int_text" op 1000) " needs two operands"))
+    1000))
 
 ; bit-not is the one bitwise op with no two-operand machine form here:
 ; `(bit-not x)` lowers to `x XOR -1`, which is exactly one's complement

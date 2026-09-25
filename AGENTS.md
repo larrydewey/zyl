@@ -43,7 +43,7 @@ The implementation's order is defined in `stdlib/compiler/pipeline.zyl`
 and differs from the list above: balance check → parse → module
 resolution → macro expansion → capability/duplicate/arity/mutability/
 exhaustiveness/unused/secret checks → derive expansion → type inference
-→ monomorphization (impl lifting) → closure lifting → assert lowering →
+→ monomorphization (impl lifting) → closure lifting →
 type annotation (HM, static trait resolution, per-type specialization,
 generated structural `T.==`, `E_TYPE_MISMATCH` for an argument that
 clashes with a parameter or field annotation, `type_annotate.zyl`) →

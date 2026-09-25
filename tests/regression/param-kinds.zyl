@@ -16,7 +16,7 @@
 (defn pk-id-string ((s String)) s)
 
 (test "string-parameter-returned-unchanged"
-  (assert-equal (str-eq (pk-id-string "abc") "abc") 1))
+  (assert-true (str-eq (pk-id-string "abc") "abc")))
 
 (defn pk-string-eq ((a String) (b String))
   (if (= a b) 1 0))
@@ -39,7 +39,7 @@
   (str-concat a b))
 
 (test "string-parameters-concatenate"
-  (assert-equal (str-eq (pk-concat-param "foo" "bar") "foobar") 1))
+  (assert-true (str-eq (pk-concat-param "foo" "bar") "foobar")))
 
 ; --- Float parameters ------------------------------------------------------
 

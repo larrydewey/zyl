@@ -51,13 +51,13 @@
 ; --- package names (§31.1) --------------------------------------------------
 
 (test "a two-segment scoped name is valid"
-  (assert-equal (pk-name-valid "acme/json") 1))
+  (assert-true (pk-name-valid "acme/json")))
 
 (test "a bare name is not a scoped path"
-  (assert-equal (pk-name-valid "acme") 0))
+  (assert-false (pk-name-valid "acme")))
 
 (test "a third segment must pin major 2 or above"
-  (assert-equal (pk-name-valid "acme/json/v1") 0))
+  (assert-false (pk-name-valid "acme/json/v1")))
 
 (test "a /vN segment pins the major"
   (assert-equal (pk-name-pinned-major "acme/json/v3") 3))
@@ -76,8 +76,8 @@
                 "zy_acme_x2Fjson_1__json_x2Fparser__parse"))
 
 (test "names differing only in punctuation mangle apart"
-  (assert-equal (str-eq (ck-mangle (pkg-arena) "acme/json@1::m::f")
-                        (ck-mangle (pkg-arena) "acme-json@1::m::f")) 0))
+  (assert-false (str-eq (ck-mangle (pkg-arena) "acme/json@1::m::f")
+                        (ck-mangle (pkg-arena) "acme-json@1::m::f"))))
 
 (test "a mangled label never exceeds 200 bytes"
   (assert-equal (> (str-length (ck-mangle (pkg-arena)
@@ -105,13 +105,13 @@
   (assert-equal (mf-major (demo-manifest)) 1))
 
 (test "2026 is the edition this compiler knows"
-  (assert-equal (pk-known-edition "2026") 1))
+  (assert-true (pk-known-edition "2026")))
 
 (test "an unknown edition is not accepted"
-  (assert-equal (pk-known-edition "2031") 0))
+  (assert-false (pk-known-edition "2031")))
 
 (test "the capability vocabulary is closed"
-  (assert-equal (pk-known-capability "telepathy") 0))
+  (assert-false (pk-known-capability "telepathy")))
 
 (test "capabilities are unioned without duplicates"
   (assert-equal (list-length (pk-caps-union (Cons "io" (Cons "ffi" Nil))
@@ -140,15 +140,15 @@
 
 (test "a lock round-trips through its canonical text"
   (let a (pkg-arena)
-    (assert-equal (str-eq (lp-name (lock-first (lock-roundtrip a))) "acme/json") 1)))
+    (assert-true (str-eq (lp-name (lock-first (lock-roundtrip a))) "acme/json"))))
 
 (test "a lock records the content hash it was given"
   (let a (pkg-arena)
-    (assert-equal (str-eq (lp-hash (lock-first (lock-roundtrip a))) "blake3:bb") 1)))
+    (assert-true (str-eq (lp-hash (lock-first (lock-roundtrip a))) "blake3:bb"))))
 
 (test "a lock records the version it selected"
   (let a (pkg-arena)
-    (assert-equal (str-eq (pv-str a (lp-version (lock-first (lock-roundtrip a)))) "1.4.0") 1)))
+    (assert-true (str-eq (pv-str a (lp-version (lock-first (lock-roundtrip a)))) "1.4.0"))))
 
 (test "the capability closure survives the round trip"
   (let a (pkg-arena)
@@ -156,7 +156,7 @@
 
 (test "the graph hash is written and is a blake3 hash"
   (let a (pkg-arena)
-    (assert-equal (str-eq (str-substring (lk-graph-hash (lock-roundtrip a)) 0 7) "blake3:") 1)))
+    (assert-true (str-eq (str-substring (lk-graph-hash (lock-roundtrip a)) 0 7) "blake3:"))))
 
 (test "the buildinfo graph lists each package with version and hash"
   (let a (pkg-arena)
@@ -184,7 +184,7 @@
 (test "a selected node carries the version its manifest declares"
   (let a (pkg-arena)
     (let nodes (mvs-resolve a (demo-ctx a) (app-manifest a) "tests/packages/two-parses/app")
-      (assert-equal (str-eq (pv-str a (mn-version (node-first nodes))) "1.4.0") 1))))
+      (assert-true (str-eq (pv-str a (mn-version (node-first nodes))) "1.4.0")))))
 
 (test "the capability closure of a graph is the union of its grants"
   (let a (pkg-arena)

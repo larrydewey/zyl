@@ -18,11 +18,7 @@
       let
       p2
       (make-_dr_Point 1 2)
-      (
-        assert-equal
-        (== p1 p2)
-        1
-      )
+      (assert-true (== p1 p2))
     )
   )
 )
@@ -119,11 +115,7 @@
       let
       c2
       (Box 42)
-      (
-        assert-equal
-        (== c1 c2)
-        1
-      )
+      (assert-true (== c1 c2))
     )
   )
 )

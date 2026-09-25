@@ -323,6 +323,10 @@
     (in-binop op a (in-eval fns env r))))
 
 (defn in-binop (op a b)
+  (let _ (if (in-checking) (in-check-binop op a b) unit)
+    (in-binop-go op a b)))
+
+(defn in-binop-go (op a b)
   (if (in-float-pair a b)
     (in-float-op op a b)
     (if (in-string-compare-p op a b)
@@ -462,8 +466,54 @@
 ; CONTROL FLOW
 ; ===========================================================================
 
+; ===========================================================================
+; CHECKING MODE (ZYL_INTERP_CHECK=1)
+; ===========================================================================
+
+; Every value carries its tag; in this mode every operator checks its
+; operands' tags against its rule and every condition must be exactly
+; 0 or 1 (a Bool), so a well-typed program running clean is an empirical
+; check of the type system's soundness (docs/sound-types-design.md,
+; "Evidence"). A failure is E_INTERP_TAG, a checker bug to be found.
+(def in-check-mode (ffi-call "zyl_ref_new" false 1000))
+
+(defn in-checking () (ffi-call "zyl_ref_get" in-check-mode 1000))
+
+(defn in-check-init ()
+  (ffi-call "zyl_ref_set" in-check-mode
+    (str-eq (ffi-call "zyl_getenv_str" "ZYL_INTERP_CHECK" 1000) "1") 1000))
+
+(defn in-tag-name (v)
+  (match v (VInt _ "Int") (VFlt _ "Float") (VStr _ "String") (VPtr _ "block")))
+
+(defn in-tag-fail (what a b)
+  (in-fail "E_INTERP_TAG"
+    (str-concat what (str-concat " on " (str-concat (in-tag-name a) (str-concat " and " (in-tag-name b)))))))
+
+(defn in-same-tag (a b) (str-eq (in-tag-name a) (in-tag-name b)))
+
+; Arithmetic: two Ints or two Floats. Comparison: two values of one tag.
+; Bit operations: two Ints.
+(defn in-check-binop (op a b)
+  (if (< op 5)
+    (if (and (in-same-tag a b) (or (in-is-int a) (in-is-float a))) unit (in-tag-fail "arithmetic" a b))
+    (if (< op 11)
+      (if (in-same-tag a b) unit (in-tag-fail "comparison" a b))
+      (if (and (in-is-int a) (in-is-int b)) unit (in-tag-fail "bit operation" a b)))))
+
+(defn in-is-int (v) (match v (VInt _ true) (_ false)))
+
+(defn in-cond (v)
+  (begin
+    (if (in-checking)
+      (match v
+        (VInt n (if (or (= n 0) (= n 1)) unit (in-fail "E_INTERP_TAG" (str-concat "condition is the Int " (ffi-call "zyl_int_text" n 1000)))))
+        (_ (in-fail "E_INTERP_TAG" (str-concat "condition is a " (in-tag-name v)))))
+      unit)
+    (val-truthy v)))
+
 (defn in-if (fns env c t f)
-  (if (val-truthy (in-eval fns env c))
+  (if (in-cond (in-eval fns env c))
     (in-eval fns env t)
     (in-eval fns env f)))
 
@@ -475,7 +525,7 @@
   (in-while-step fns env c b (VInt 0)))
 
 (defn in-while-step (fns env c b last)
-  (if (val-truthy (in-eval fns env c))
+  (if (in-cond (in-eval fns env c))
     (in-while-step fns env c b (in-eval fns env b))
     last))
 
@@ -935,6 +985,7 @@
 ; into a function and invoked here.
 (defn in-call-fn (fns name vals)
   (begin
+    (in-check-init)
     (in-index-fns fns)
     (in-call-indexed fns name vals)))
 

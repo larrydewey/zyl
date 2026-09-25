@@ -198,6 +198,11 @@ run_fail_test() {
 # stdout only: compiler warnings go to stderr, and the compiled run
 # emits them at build time while the interpreted run emits them at eval
 # time, which is a difference in when, not in what.
+#
+# The interpreter runs in its checking mode (ZYL_INTERP_CHECK=1): every
+# operator checks its operands' tags and every condition must be a Bool,
+# so a type the checker got wrong shows up as an E_INTERP_TAG failure
+# (docs/sound-types-design.md, "Evidence").
 run_diff_test() {
     local name="$1"
     local file="$2"
@@ -213,7 +218,7 @@ run_diff_test() {
 
     local compiled interpreted
     compiled=$(timeout "$TIMEOUT" "$RUN_TMP/zyl_diff_${TOTAL}.bin" 2>/dev/null) || true
-    interpreted=$(timeout "$DIFF_TIMEOUT" "${ZYL_BIN}" eval "$file" 2>/dev/null) || true
+    interpreted=$(ZYL_INTERP_CHECK=1 timeout "$DIFF_TIMEOUT" "${ZYL_BIN}" eval "$file" 2>/dev/null) || true
 
     if [ "$compiled" = "$interpreted" ]; then
         echo -e "  ${GREEN}✓${NC} ${name}"

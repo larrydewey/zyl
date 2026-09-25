@@ -847,6 +847,12 @@
 
 (defn ta-stmt () (if (ta-strict-p) (ta-unit-ty) (ta-int)))
 
+; assert-true / assert-false take a Bool.
+(defn ta-assert-bool (st ctx env x)
+  (let t (ta-expr st ctx env x)
+    (let _ (ta-unify st t (ta-bool))
+      (ta-stmt))))
+
 (defn ta-walk-stmt (st ctx env es)
   (let _ (ta-list st ctx env es)
     (ta-stmt)))
@@ -916,10 +922,16 @@
     (EFileWrite a b (ta-walk-int st ctx env (ta-l2 a b)))
     (EFileClose a (ta-walk-int st ctx env (Cons a Nil)))
     (EBufAppend a b (ta-last (ta-list st ctx env (ta-l2 a b)) (ta-int)))
-    (EAssert c _ (ta-walk-stmt st ctx env (Cons c Nil)))
-    (EAssertEqual l r (ta-walk-stmt st ctx env (ta-l2 l r)))
-    (EAssertTrue x _ (ta-walk-stmt st ctx env (Cons x Nil)))
-    (EAssertFalse x _ (ta-walk-stmt st ctx env (Cons x Nil)))
+    (EAssert c _ (ta-assert-bool st ctx env c))
+    ; Both sides have one type; on an ADT the comparison is its
+    ; structural equality, resolved like `==` (a kind-5 note).
+    (EAssertEqual l r
+      (let tl (ta-expr st ctx env l)
+        (let _ (ta-unify st (ta-expr st ctx env r) tl)
+          (let _ (ta-note st ctx e 5 "" (ta-sig2 tl tl (ta-bool)) -1)
+            (ta-stmt)))))
+    (EAssertTrue x _ (ta-assert-bool st ctx env x))
+    (EAssertFalse x _ (ta-assert-bool st ctx env x))
     (EAssertFail x _ (ta-walk-stmt st ctx env (Cons x Nil)))
     (EUnwrap x (ta-unwrap st ctx env x))
     (EStructGet se field (ta-struct-get st ctx env se field e))

@@ -5,9 +5,9 @@
 
 ; ADT construction
 (test "adt-some"
-  (assert-true (match (AdSome 42)
+  (assert-equal (match (AdSome 42)
     (AdSome v v)
-    (AdNone 0))))
+    (AdNone 0)) 42))
 
 ; ADT with no fields
 (deftype _ad_Status (Active) (Inactive))

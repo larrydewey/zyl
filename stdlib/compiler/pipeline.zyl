@@ -34,7 +34,6 @@
 (use compiler/lift_impls)
 (use compiler/icnf)
 (use compiler/closure_inline)
-(use compiler/assert_lowering)
 (use compiler/type_annotate)
 (use compiler/derive)
 (use compiler/region_inference)
@@ -139,11 +138,9 @@
     (dbg-log "closure-inline\n")
     (let ci-exprs (ci-expand-program arena td-exprs)
       (begin
-        (dbg-log "assert-lowering\n")
-        (let al-exprs (al-expand-program ci-exprs)
-          (begin
+        (begin
             (dbg-log "lower\n")
-            (let fns (ic-program arena (ta-annotate al-exprs))
+            (let fns (ic-program arena (ta-annotate ci-exprs))
               (begin
                 ; Real constant folding + dead-branch elimination:
                 ; optimization.zyl was rewritten against this pipeline's
@@ -159,7 +156,7 @@
                     ; IStackVariant (stack-allocated, see
                     ; cg-stack-variant) in place.
                     (dbg-log "region-infer\n")
-                    (rg-regions (ri-transform-fns opt-fns))))))))))))
+                    (rg-regions (ri-transform-fns opt-fns)))))))))))
 
 ; Source text to lowered functions: everything except code generation.
 ; Returns: List(Icnf)

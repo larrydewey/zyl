@@ -137,10 +137,10 @@
 
 (test "miller-rabin-prime"
   (let ar (_bn_arena)
-    (assert-equal (mr-probably-prime ar (_bn_from ar "7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffed" 11) 11 2) 1)))
+    (assert-true (mr-probably-prime ar (_bn_from ar "7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffed" 11) 11 2))))
 
 (test "miller-rabin-composite"
   (let ar (_bn_arena)
-    (assert-equal (mr-probably-prime ar (_bn_from ar "7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeb" 11) 11 2) 0)))
+    (assert-false (mr-probably-prime ar (_bn_from ar "7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeb" 11) 11 2))))
 
 (run-tests)

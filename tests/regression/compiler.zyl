@@ -138,13 +138,13 @@
 (test "balance-ok"
   (let r (sb-check-string "(defn f (x) (* x x))")
     (begin
-      (assert-equal (sb-result-balanced r) 1)
+      (assert-true (sb-result-balanced r))
       0)))
 
 (test "balance-unclosed-open"
   (let r (sb-check-string "(defn main () (begin (print (+ 1 2)) 0)")
     (begin
-      (assert-equal (sb-result-balanced r) 0)
+      (assert-false (sb-result-balanced r))
       ; reports the OPENER's position (the outermost '(', the only
       ; frame still on the stack), not the EOF position.
       (assert-equal (br-line r) 1)
@@ -155,7 +155,7 @@
 (test "balance-unexpected-close"
   (let r (sb-check-string "(defn main () (begin (print (+ 1 2)) 0)))")
     (begin
-      (assert-equal (sb-result-balanced r) 0)
+      (assert-false (sb-result-balanced r))
       (assert-equal (br-line r) 1)
       (assert-equal (br-col r) 41)
       0)))
@@ -163,7 +163,7 @@
 (test "balance-mismatched-bracket"
   (let r (sb-check-string "(defn main (] (begin (print (+ 1 2)) 0))")
     (begin
-      (assert-equal (sb-result-balanced r) 0)
+      (assert-false (sb-result-balanced r))
       (assert-equal (br-line r) 1)
       (assert-equal (br-col r) 13)
       0)))
@@ -173,7 +173,7 @@
 (test "balance-reversed-pair-rejected"
   (let r (sb-check-string ")(")
     (begin
-      (assert-equal (sb-result-balanced r) 0)
+      (assert-false (sb-result-balanced r))
       0)))
 
 (run-tests)
