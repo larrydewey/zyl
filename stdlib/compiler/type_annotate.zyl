@@ -99,8 +99,8 @@
 ; --- small helpers ------------------------------------------------------------
 
 (defn ta-seq (_a b) b)
-(defn ta-streq (a b) (> (ffi-call "zyl_cstr_eq" a b 1000) 0))
-(defn ta-key-is (key name) (> (ffi-call "zyl_cstr_key_matches" key name 1000) 0))
+(defn ta-streq (a b) (ffi-call "zyl_cstr_eq" a b 1000))
+(defn ta-key-is (key name) (ffi-call "zyl_cstr_key_matches" key name 1000))
 (defn ta-wget (v i) (ffi-call "zyl_wvec_get" v i 1000))
 (defn ta-wset (v i x) (ffi-call "zyl_wvec_set" v i x 1000))
 (defn ta-wpush (v x) (ffi-call "zyl_wvec_push" v x 1000))

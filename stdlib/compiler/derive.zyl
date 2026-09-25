@@ -68,14 +68,14 @@
     (Nil false)
     (Cons e rest
       (match (Expr.inner e)
-        (EImplBlock tr t _ (if (and (> (ffi-call "zyl_cstr_key_matches" tr label 1000) 0) (dv-same t ty)) true (dv-has-impl rest label ty)))
+        (EImplBlock tr t _ (if (and (ffi-call "zyl_cstr_key_matches" tr label 1000) (dv-same t ty)) true (dv-has-impl rest label ty)))
         (EDerive t traits (if (and (dv-same t ty) (dv-lists label traits)) true (dv-has-impl rest label ty)))
         (_ (dv-has-impl rest label ty))))))
 
 (defn dv-lists (label traits)
   (match traits
     (Nil false)
-    (Cons t rest (if (> (ffi-call "zyl_cstr_key_matches" t label 1000) 0) true (dv-lists label rest)))))
+    (Cons t rest (if (ffi-call "zyl_cstr_key_matches" t label 1000) true (dv-lists label rest)))))
 
 ; A trait's canonical name, as the prelude declared it.
 (defn dv-trait-key (forms label)
@@ -83,7 +83,7 @@
     (Nil label)
     (Cons e rest
       (match (Expr.inner e)
-        (ETraitDecl n _ _ (if (> (ffi-call "zyl_cstr_key_matches" n label 1000) 0) n (dv-trait-key rest label)))
+        (ETraitDecl n _ _ (if (ffi-call "zyl_cstr_key_matches" n label 1000) n (dv-trait-key rest label)))
         (_ (dv-trait-key rest label))))))
 
 (defn dv-fixed-impl (trait method tname text)
@@ -120,7 +120,7 @@
     (Nil 0)
     (Cons e rest
       (+ (match (Expr.inner e)
-           (EImplBlock tr t _ (if (and (> (ffi-call "zyl_cstr_key_matches" tr label 1000) 0) (dv-same t ty)) 1 0))
+           (EImplBlock tr t _ (if (and (ffi-call "zyl_cstr_key_matches" tr label 1000) (dv-same t ty)) 1 0))
            (EDerive t traits (if (dv-same t ty) (dv-count-in label traits) 0))
            (_ 0))
          (dv-impl-count rest label ty)))))
@@ -128,7 +128,7 @@
 (defn dv-count-in (label traits)
   (match traits
     (Nil 0)
-    (Cons t rest (+ (if (> (ffi-call "zyl_cstr_key_matches" t label 1000) 0) 1 0) (dv-count-in label rest)))))
+    (Cons t rest (+ (if (ffi-call "zyl_cstr_key_matches" t label 1000) 1 0) (dv-count-in label rest)))))
 
 (defn dv-fail-dup (site short tname)
   (ffi-call "zyl_panic"

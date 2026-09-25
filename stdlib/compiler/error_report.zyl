@@ -175,7 +175,7 @@
 
 ; One renderer for errors and warnings; `sev` is "error" or "warning".
 (defn err-diag (sev code msg fid off labels help)
-  (if (> (ffi-call "zyl_diag_json" 1000) 0)
+  (if (ffi-call "zyl_diag_json" 1000)
     (err-json sev code msg fid off labels help)
     (err-text sev code msg fid off labels help)))
 

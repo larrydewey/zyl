@@ -126,7 +126,7 @@
   (let k (str-length needle)
     (if (> (+ i k) n)
       -1
-      (if (> (ffi-call "zyl_cstr_eq" (str-substring s i k) needle 1000) 0)
+      (if (ffi-call "zyl_cstr_eq" (str-substring s i k) needle 1000)
         i
         (bridge-index-of-str s needle (+ i 1) n)))))
 

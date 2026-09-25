@@ -561,9 +561,9 @@
                                        (Cons id stack) pkg uses)
             (mr-add-unit disc2 (MRUN (mrp-name pkg) module forms uses defs) id)))))))
 
-(defn mr-add-unit (disc unit id)
+(defn mr-add-unit (disc munit id)
   (match disc
-    (MRD units seen pkgs (MRD (Cons unit units) (Cons id seen) pkgs))))
+    (MRD units seen pkgs (MRD (Cons munit units) (Cons id seen) pkgs))))
 
 (defn mr-discover-deps (arena disc stack pkg uses)
   (match uses
@@ -759,7 +759,7 @@
 ; correct: those names arrive through the import table instead.
 (defn mr-used-one (units pkgname feats module)
   (match (mr-find-unit units pkgname module)
-    (Some unit (mr-defs-pairs (mr-active-defs feats (mru2-defs unit))))
+    (Some munit (mr-defs-pairs (mr-active-defs feats (mru2-defs munit))))
     (None Nil)))
 
 (defn mr-find-unit (units pkgname module)
@@ -811,15 +811,15 @@
 (defn mr-import-from (disc units pkg target u)
   (let module (mr-target-module disc pkg u)
     (match (mr-find-unit units (mrp-name target) module)
-      (Some unit (mr-filter-import target unit u))
+      (Some munit (mr-filter-import target munit u))
       (None Nil))))
 
 ; With an explicit symbol list, exactly those names are imported (and
 ; checked); otherwise the module's whole visible surface is.
-(defn mr-filter-import (target unit u)
+(defn mr-filter-import (target munit u)
   (match (mru-syms u)
-    (Nil (mr-visible-pairs target (mr-active-defs (mrp-features target) (mru2-defs unit))))
-    (Cons _ _ (mr-named-imports target unit (mru-syms u)))))
+    (Nil (mr-visible-pairs target (mr-active-defs (mrp-features target) (mru2-defs munit))))
+    (Cons _ _ (mr-named-imports target munit (mru-syms u)))))
 
 (defn mr-visible-pairs (target defs)
   (match defs
@@ -834,25 +834,25 @@
 (defn mr-def-visible (target d)
   (if (= (mrp-manifested target) 0) 1 (mrd-pub d)))
 
-(defn mr-named-imports (target unit syms)
+(defn mr-named-imports (target munit syms)
   (match syms
     (Nil Nil)
     (Cons s rest
-      (Cons (mr-one-named-import target unit s) (mr-named-imports target unit rest)))))
+      (Cons (mr-one-named-import target munit s) (mr-named-imports target munit rest)))))
 
-(defn mr-one-named-import (target unit s)
-  (match (mr-find-def (mr-active-defs (mrp-features target) (mru2-defs unit)) (mrs-remote s))
-    (Some d (mr-checked-import target unit d s))
+(defn mr-one-named-import (target munit s)
+  (match (mr-find-def (mr-active-defs (mrp-features target) (mru2-defs munit)) (mrs-remote s))
+    (Some d (mr-checked-import target munit d s))
     (None (ffi-call "zyl_panic"
             (str-concat "E_PKG_UNKNOWN_SYMBOL: module: symbol " (str-concat (mrs-remote s)
-              (str-concat " does not exist in " (mru2-module unit)))) 1000))))
+              (str-concat " does not exist in " (mru2-module munit)))) 1000))))
 
-(defn mr-checked-import (target unit d s)
+(defn mr-checked-import (target munit d s)
   (if (> (mr-def-visible target d) 0)
     (QP (mrs-local s) (mrd-key d))
     (ffi-call "zyl_panic"
       (str-concat "E_PKG_PRIVATE_SYMBOL: module: symbol " (str-concat (mrd-name d)
-        (str-concat " imported from " (str-concat (mru2-module unit) " is not pub")))) 1000)))
+        (str-concat " imported from " (str-concat (mru2-module munit) " is not pub")))) 1000)))
 
 ; ===========================================================================
 ; SPLICING

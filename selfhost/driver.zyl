@@ -178,7 +178,7 @@
 (defn cli-resolve-bundledir (argv0dir)
   (let candidate (cli-zyl-home-candidate)
     (if (> (str-length candidate) 0)
-      (if (> (ffi-call "zyl_path_exists" (str-concat candidate "/stdlib") 1000) 0)
+      (if (ffi-call "zyl_path_exists" (str-concat candidate "/stdlib") 1000)
         candidate
         argv0dir)
       argv0dir)))
@@ -269,7 +269,7 @@
 ; differently from the compiler would resolve a different graph than the
 ; one it built.
 (defn drv-package-dir (cwd depth)
-  (if (> (ffi-call "zyl_path_exists" (str-concat cwd "/zyl.pkg") 1000) 0)
+  (if (ffi-call "zyl_path_exists" (str-concat cwd "/zyl.pkg") 1000)
     cwd
     (if (< depth 1)
       (ffi-call "zyl_panic"
@@ -350,7 +350,7 @@
   (if (> (ffi-call "zyl_getenv" "ZYL_NO_BUILD_CACHE" 1000) 0)
     (drv-compile-uncached arena src out dir)
     (let cdir (str-concat (store-home) (str-concat "/cache/" (drv-cache-key arena dir nodes)))
-      (if (> (ffi-call "zyl_path_exists" (str-concat cdir "/bin") 1000) 0)
+      (if (ffi-call "zyl_path_exists" (str-concat cdir "/bin") 1000)
         (drv-cache-copy (str-concat cdir "/bin") out (str-concat cdir "/buildinfo") (str-concat out ".buildinfo"))
         (let rc (drv-compile-uncached arena src out dir)
           (begin
@@ -455,7 +455,7 @@
 
 (defn drv-rel (dir p)
   (let n (+ (str-length dir) 1)
-    (if (and (> (str-length p) n) (> (ffi-call "zyl_cstr_eq" (str-substring p 0 n) (str-concat dir "/") 1000) 0))
+    (if (and (> (str-length p) n) (ffi-call "zyl_cstr_eq" (str-substring p 0 n) (str-concat dir "/") 1000))
       (str-substring p n (- (str-length p) n))
       p)))
 
@@ -571,7 +571,7 @@
           (begin (print md) 0)
           (begin (cli-write-file (cli-resolve-path cwd out) md) 0))))))
 
-(defn drv-has-pkg (dir) (> (ffi-call "zyl_path_exists" (str-concat dir "/zyl.pkg") 1000) 0))
+(defn drv-has-pkg (dir) (ffi-call "zyl_path_exists" (str-concat dir "/zyl.pkg") 1000))
 
 ; `-o path` after the target, or "".
 (defn drv-doc-out (i)
@@ -610,7 +610,7 @@
 
 ; `--contracts=P`: the build's contract profile (strict, debug, warn, off, production).
 (defn drv-contracts-flag-p (a)
-  (and (> (str-length a) 12) (> (ffi-call "zyl_cstr_eq" (str-substring a 0 12) "--contracts=" 1000) 0)))
+  (and (> (str-length a) 12) (ffi-call "zyl_cstr_eq" (str-substring a 0 12) "--contracts=" 1000)))
 
 ; The bundle dir holds stdlib/ and actor_runtime.c; the compiler chdirs
 ; there so module resolution and linking find them. A subcommand needs

@@ -189,7 +189,7 @@
 (defn doc-comment-p (line) (doc-starts line ";"))
 
 (defn doc-starts (s p)
-  (and (>= (str-length s) (str-length p)) (> (ffi-call "zyl_cstr_eq" (str-substring s 0 (str-length p)) p 1000) 0)))
+  (and (>= (str-length s) (str-length p)) (ffi-call "zyl_cstr_eq" (str-substring s 0 (str-length p)) p 1000)))
 
 ; A separator: nothing but `=` or `-` after the semicolons.
 (defn doc-rule-p (text)

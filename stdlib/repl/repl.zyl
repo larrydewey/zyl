@@ -659,7 +659,7 @@
 (defn repl-resolve-bundledir (argv0dir)
   (let candidate (repl-zyl-home-candidate)
     (if (> (str-length candidate) 0)
-      (if (> (ffi-call "zyl_path_exists" (str-concat candidate "/stdlib") 1000) 0)
+      (if (ffi-call "zyl_path_exists" (str-concat candidate "/stdlib") 1000)
         candidate
         argv0dir)
       argv0dir)))

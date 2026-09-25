@@ -1122,7 +1122,7 @@
 
 (defn ic-renamed-call (arena nm fname args vt)
   (let c (ICall (str-intern arena nm) (ic-expr-list arena args vt))
-    (if (> (ffi-call "zyl_cstr_eq" fname "!=" 1000) 0) (IBinop 9 c (IConst 0)) c)))
+    (if (ffi-call "zyl_cstr_eq" fname "!=" 1000) (IBinop 9 c (IConst 0)) c)))
 
 ; Apply: operator, ffi-call, or call/variant routing by head-symbol name
 ; (no-dispatch arch: recognition happens here, never in the reader).

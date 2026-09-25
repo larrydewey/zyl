@@ -301,7 +301,7 @@
   (let got (str-concat "blake3:" (ffi-call "zyl_blake3_file_hex" arena tarpath 32 1000))
     (if (str-eq got expected)
       (let dir (store-dir got)
-        (if (> (ffi-call "zyl_path_exists" dir 1000) 0)
+        (if (ffi-call "zyl_path_exists" dir 1000)
           dir
           (store-extract-tar tarpath dir)))
       (ffi-call "zyl_panic"
@@ -316,7 +316,7 @@
       (str-concat "E_PKG_NOT_IN_STORE: package: " (str-concat name
         " has no recorded hash - run zyl fetch")) 1000)
     (let dir (store-dir hash)
-      (if (> (ffi-call "zyl_path_exists" dir 1000) 0)
+      (if (ffi-call "zyl_path_exists" dir 1000)
         dir
         (ffi-call "zyl_panic"
           (str-concat "E_PKG_NOT_IN_STORE: package: " (str-concat name

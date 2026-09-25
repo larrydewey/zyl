@@ -350,7 +350,7 @@
 
 (defn in-block-compare (op a b)
   (if (= op 9) (VInt (ffi-call "zyl_variant_eq" (val-word a) (val-word b) 1000))
-  (if (= op 10) (VInt (if (> (ffi-call "zyl_variant_eq" (val-word a) (val-word b) 1000) 0) 0 1))
+  (if (= op 10) (VInt (if (ffi-call "zyl_variant_eq" (val-word a) (val-word b) 1000) 0 1))
   (in-int-compare-of op (ffi-call "zyl_variant_cmp" (val-word a) (val-word b) 1000)))))
 
 ; zyl_variant_cmp answers -1, 0 or 1; the ordering operators read that.

@@ -208,7 +208,7 @@
   (str-concat (ws-lock-dir dir) "/zyl.lock"))
 
 (defn cli-read-lock (arena dir)
-  (if (> (ffi-call "zyl_path_exists" (cli-lock-path dir) 1000) 0)
+  (if (ffi-call "zyl_path_exists" (cli-lock-path dir) 1000)
     (Some (lk-read arena (cli-lock-path dir)))
     None))
 
@@ -515,7 +515,7 @@
 
 (defn cli-key (arena)
   (let path (cli-key-path)
-    (if (> (ffi-call "zyl_path_exists" path 1000) 0)
+    (if (ffi-call "zyl_path_exists" path 1000)
       (begin
         (print (str-concat "public key: " (idx-public-key arena (cli-read-seed arena))))
         0)
@@ -569,7 +569,7 @@
             (let _ (idx-publish arena index (mf-name m)
                      (IV (mf-version m) url hash (ITrust (idx-public-key arena (cli-read-seed arena)) sig) (IMeta (mf-zyl m) 0)))
               (begin
-                (if (> (ffi-call "zyl_path_exists" (str-concat index "/.git") 1000) 0)
+                (if (ffi-call "zyl_path_exists" (str-concat index "/.git") 1000)
                   (store-run (str-concat "git -C '" (str-concat index (str-concat "' add -A && git -C '" (str-concat index
                     (str-concat "' commit -q -m 'publish " (str-concat (mf-name m) (str-concat " " (str-concat (pv-str arena (mf-version m)) "'")))))))))
                   0)

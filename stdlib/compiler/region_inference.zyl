@@ -687,7 +687,7 @@
 ; return it unchanged. ZYL_REGIONS=0 turns regions off: nothing is
 ; annotated, so every site is H, exactly the old behaviour.
 (defn rg-regions (fns)
-  (if (> (ffi-call "zyl_regions_enabled" 1000) 0)
+  (if (ffi-call "zyl_regions_enabled" 1000)
     (let _ (ffi-call "zyl_smap_clear" (rg-summaries) 1000)
     (let _ (rg-init fns)
       (let _ (rg-fixpoint fns)

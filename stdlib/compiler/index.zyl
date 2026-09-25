@@ -224,7 +224,7 @@
 ; toolchain has seen the package.
 (defn idx-pinned-key (name)
   (let path (store-key-path name)
-    (if (= (ffi-call "zyl_path_exists" path 1000) 0)
+    (if (not (ffi-call "zyl_path_exists" path 1000))
       ""
       (let fd (file-open path "r")
         (if (< fd 1)
@@ -333,7 +333,7 @@
 ; version already published is immutable (E_PKG_VERSION_EXISTS).
 (defn idx-publish (arena root name v)
   (let path (idx-entry-path root name)
-    (let old (if (> (ffi-call "zyl_path_exists" path 1000) 0) (ie-versions (idx-read arena root name)) Nil)
+    (let old (if (ffi-call "zyl_path_exists" path 1000) (ie-versions (idx-read arena root name)) Nil)
       (match (idx-find-version-in old (iv-version v))
         (Some _ (ffi-call "zyl_panic"
                   (str-concat "E_PKG_VERSION_EXISTS: package: " (str-concat name (str-concat " "
@@ -346,7 +346,7 @@
 
 (defn idx-sync (url)
   (let root (store-index-dir)
-    (if (> (ffi-call "zyl_path_exists" (str-concat root "/.git") 1000) 0)
+    (if (ffi-call "zyl_path_exists" (str-concat root "/.git") 1000)
       (idx-pull root)
       (idx-clone url root))))
 

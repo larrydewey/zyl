@@ -184,7 +184,7 @@
 
 (defn ws-check-path-dep (arena w d from p)
   (let path (str-concat (ws-root w) (str-concat "/" (str-concat p "/zyl.pkg")))
-    (if (= (ffi-call "zyl_path_exists" path 1000) 0)
+    (if (not (ffi-call "zyl_path_exists" path 1000))
       1
       (ws-compare-version arena (pk-read-manifest arena path) d from))))
 

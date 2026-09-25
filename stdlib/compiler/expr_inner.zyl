@@ -251,9 +251,12 @@
 
 (defn convert-ast-node (ast)
   (match ast
+    ; `unit` is the value of type Unit (docs/sound-types-design.md).
     (AstIdent s
-      (let (atom (AIdent s))
-        (Expr (EAtom atom))))
+      (if (str-eq s "unit")
+        (Expr (EAtom ANil))
+        (let (atom (AIdent s))
+          (Expr (EAtom atom)))))
     (AstInt n
       (let (atom (AInt n))
         (Expr (EAtom atom))))
@@ -956,7 +959,7 @@
              (AList ys (match ys (Cons y _ (match y (AstIdent s s) (_ ""))) (Nil "")))
              (_ ""))
       (let p (recover-plain n)
-        (if (and (> (str-length p) 2) (> (ffi-call "zyl_cstr_eq" (str-substring p 0 2) "E_" 1000) 0)) p "")))))
+        (if (and (> (str-length p) 2) (ffi-call "zyl_cstr_eq" (str-substring p 0 2) "E_" 1000)) p "")))))
 
 (defn recover-plain (n)
   (let i (recover-last-colon n (- (str-length n) 1))
