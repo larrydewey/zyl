@@ -2171,8 +2171,19 @@ long long zyl_source_register(long long path, long long text) {
     const char* t = (const char*)(size_t)text;
     if (!p) p = "<input>";
     if (!t) t = "";
+    /* A path seen before keeps its id; its text is replaced when it
+       changed, since the REPL (every entry is "<repl>") and the language
+       server (an edited document) register new text under an old path,
+       and a diagnostic must quote the text it was computed from. */
     for (int i = 0; i < g_src_file_count; i++)
-        if (strcmp(g_src_files[i].path, p) == 0) return i;
+        if (strcmp(g_src_files[i].path, p) == 0) {
+            if (strcmp(g_src_files[i].text ? g_src_files[i].text : "", t) != 0) {
+                free(g_src_files[i].text);
+                g_src_files[i].text = strdup(t);
+                g_src_files[i].len = g_src_files[i].text ? strlen(g_src_files[i].text) : 0;
+            }
+            return i;
+        }
     if (g_src_file_count >= ZYL_MAX_SRC_FILES) return -1;
     int id = g_src_file_count++;
     g_src_files[id].path = strdup(p);
