@@ -1,0 +1,66 @@
+; Per-call regions (docs/regions-design.md): values that do not outlive a
+; call are reclaimed when it returns; values that reach a result, a
+; closure, a global or a caught panic survive.
+
+(use core/core)
+(use core/list)
+
+(deftype RL (RN) (RC Int RL))
+
+(defn live () (ffi-call "zyl_region_live_bytes" 1000))
+
+(defn build (n acc) (if (= n 0) acc (build (- n 1) (RC n acc))))
+
+(defn rl-len (l) (match l (RN 0) (RC _ t (+ 1 (rl-len t)))))
+
+(defn rl-sum (l) (match l (RN 0) (RC h t (+ h (rl-sum t)))))
+
+; A 500-element list that never leaves the call.
+(defn scratch (_i) (rl-len (build 500 (RN))))
+
+(defn churn (i total) (if (= i 0) total (churn (- i 1) (+ total (scratch i)))))
+
+(defn keep (n) (build n (RN)))
+
+(defn greet (name) (str-concat "hi " name))
+
+(defn adder (n) (let k (RC n (RN)) (fn (x) (+ x (rl-sum k)))))
+
+(defn noisy-fail (n) (let _ (build n (RN)) (error "boom")))
+
+(def kept (keep 5))
+
+(test "temporaries are reclaimed"
+  (let before (live)
+    (let total (churn 2000 0)
+      (let after (live)
+        (assert-equal (+ total (- after before)) 1000000)))))
+
+(test "a result built in the callee survives"
+  (let l (keep 300)
+    (let _ (churn 50 0)
+      (assert-equal (rl-sum l) 45150))))
+
+(test "a string built in the callee survives"
+  (let s (greet "zyl")
+    (let _ (churn 50 0)
+      (assert-equal s "hi zyl"))))
+
+(test "a closure keeps its captures"
+  (let f (adder 7)
+    (let _ (churn 50 0)
+      (assert-equal (f 3) 10))))
+
+(test "a global keeps its value"
+  (let _ (churn 50 0)
+    (assert-equal (rl-sum kept) 15)))
+
+(test "a caught panic releases the regions it unwinds"
+  (let before (live)
+    (let r (try (noisy-fail 1000) (catch e e))
+      (assert-equal (+ (if (str-eq r "boom") 1 0) (- (live) before)) 1))))
+
+(test "tail-recursive accumulation"
+  (assert-equal (rl-len (build 20000 (RN))) 20000))
+
+(run-tests)

@@ -200,3 +200,339 @@
     (IMatch scr arms (IMatch (ri-transform-expr scr) (ri-transform-arms arms)))
     (IFn name params body kinds (IFn name params (ri-transform-expr body) kinds))
     (ITryCatch tbody cvar cbody (ITryCatch (ri-transform-expr tbody) cvar (ri-transform-expr cbody)))))
+
+; ===========================================================================
+; Per-call regions (docs/regions-design.md)
+;
+; Every allocation site and every call site gets a level, stored in attr
+; table 4 as level+1:
+;   1  L  the value does not outlive this call: the frame's own region
+;   2  R  the value may reach this call's result: the region the caller
+;         chose for the result (zyl_cur_region at entry)
+;   3  H  the heap
+; A function node gets its flags in the same table: bit 0 when it has an
+; L site (it needs a frame region), bit 1 when it has an R site (it keeps
+; the result region), plus 4 so that the entry is never 0.
+;
+; Levels belong to abstract object classes (a union-find in the runtime,
+; zyl_uf_*), field-insensitive: a variant, its fields and whatever is
+; read out of it share one class. A function's summary is the level of
+; each parameter's class: 0 the argument does not escape the call, 1 it
+; may reach the result, 2 it escapes. Summaries live in smap 7 as
+; packed+1 (2 bits per parameter, the first 31 parameters; any later
+; parameter counts as escaping), and start at 0. Every function is
+; re-analysed in program order until no summary changes; levels only
+; ever rise, so this terminates, and the order makes it deterministic.
+; ===========================================================================
+
+(deftype RgB (RgB String Int))
+
+(defn rg-summaries () (ffi-call "zyl_smap_global" 7 1000))
+
+(defn rg-sites () (ffi-call "zyl_wvec_global" 1 1000))
+
+(defn rg-new (lvl) (ffi-call "zyl_uf_new" lvl 1000))
+
+(defn rg-union (a b) (ffi-call "zyl_uf_union" a b 1000))
+
+(defn rg-raise (a lvl) (ffi-call "zyl_uf_raise" a lvl 1000))
+
+(defn rg-level (a) (ffi-call "zyl_uf_level" a 1000))
+
+(defn rg-lookup (env n)
+  (match env
+    (Nil -1)
+    (Cons b rest
+      (match b
+        (RgB k c (if (> (str-eq k n) 0) c (rg-lookup rest n)))))))
+
+; Summary of a top-level function, or -1 when `n` is not one.
+(defn rg-summary (n)
+  (let v (ffi-call "zyl_smap_get" (rg-summaries) n 1000)
+    (if (= v 0) -1 (- v 1))))
+
+(defn rg-param-level (summary i)
+  (if (> i 30) 2 (% (shr summary (* 2 i)) 4)))
+
+; Record a site: its node and its class. Every site recorded allocates,
+; or calls something that may allocate, in the region chosen for it; a
+; call to a function that never allocates into its result region is not
+; a site (its result region is never read, so choosing one is wasted).
+(defn rg-site (_rec node c)
+  (let _ (ffi-call "zyl_wvec_push" (rg-sites) node 1000)
+    (ffi-call "zyl_wvec_push" (rg-sites) c 1000)))
+
+; Bit 62 of a summary: the function may allocate in its result region
+; (directly, or through a call that may). Transitive through the
+; fixpoint; a function value called through a local always may.
+(defn rg-res-alloc (summary) (bit-and (shr summary 62) 1))
+
+; Runtime functions and how they treat their arguments. Only the ones
+; listed here are trusted; any other symbol keeps its arguments and
+; result in the heap. 1: allocates a fresh result in zyl_cur_region and
+; keeps no argument; 2: result is (part of) the first argument; 0: no
+; allocation and no argument kept. Must agree with actor_runtime.c:
+; every level-1 function allocates only through zyl_result_alloc.
+(defn rg-ffi-kind (s)
+  (if (> (str-eq s "zyl_cstr_concat") 0) 1
+  (if (> (str-eq s "zyl_cstr_substr") 0) 1
+  (if (> (str-eq s "zyl_cstr_from_byte") 0) 1
+  (if (> (str-eq s "zyl_int_text") 0) 1
+  (if (> (str-eq s "zyl_f_text") 0) 1
+  (if (> (str-eq s "zyl_file_read_c") 0) 1
+  (if (> (str-eq s "zyl_variant_field") 0) 2
+  (if (> (str-eq s "zyl_cstr_of_word") 0) 2
+  (if (> (str-eq s "zyl_word_of_cstr") 0) 2
+  (if (> (str-eq s "zyl_cstr_len") 0) 0
+  (if (> (str-eq s "zyl_cstr_eq") 0) 0
+  (if (> (str-eq s "zyl_cstr_cmp") 0) 0
+  (if (> (str-eq s "zyl_cstr_byte_at") 0) 0
+  (if (> (str-eq s "zyl_cstr_to_int") 0) 0
+  (if (> (str-eq s "zyl_cstr_key_matches") 0) 0
+  (if (> (str-eq s "zyl_variant_eq") 0) 0
+  (if (> (str-eq s "zyl_variant_cmp") 0) 0
+  (if (> (str-eq s "zyl_err_is") 0) 0
+  (if (> (str-eq s "zyl_mem_read") 0) 0
+  (if (> (str-eq s "zyl_span_off") 0) 0
+  (if (> (str-eq s "zyl_span_file") 0) 0
+  (if (> (str-eq s "zyl_attr_get") 0) 0
+  (if (> (str-eq s "zyl_smap_get") 0) 0
+  (if (> (str-eq s "zyl_smap_global") 0) 0
+  (if (> (str-eq s "zyl_wvec_global") 0) 0
+  (if (> (str-eq s "zyl_wvec_get") 0) 0
+  (if (> (str-eq s "zyl_wvec_len") 0) 0
+  (if (> (str-eq s "zyl_diag_json") 0) 0
+  (if (> (str-eq s "zyl_load_byte") 0) 0
+  (if (> (str-eq s "zyl_load_n") 0) 0
+  3)))))))))))))))))))))))))))))))
+
+(defn rg-list (xs env rec)
+  (match xs
+    (Nil Nil)
+    (Cons h t
+      (let c (rg-expr h env 0 rec)
+        (Cons c (rg-list t env rec))))))
+
+(defn rg-raise-all (cs lvl)
+  (match cs
+    (Nil 0)
+    (Cons c rest (let _ (rg-raise c lvl) (rg-raise-all rest lvl)))))
+
+; Arguments against the callee's summary; in tail position each is at
+; least R, since the frame is released before the callee runs.
+(defn rg-apply-summary (cs summary i c tail)
+  (match cs
+    (Nil 0)
+    (Cons a rest
+      (let lvl (rg-param-level summary i)
+        (let _ (if (= lvl 1) (rg-union a c) (if (= lvl 2) (rg-raise a 2) 0))
+          (let _ (if (> tail 0) (rg-raise a 1) 0)
+            (rg-apply-summary rest summary (+ i 1) c tail)))))))
+
+(defn rg-call (e name args env tail rec)
+  (let cs (rg-list args env rec)
+    (let local (rg-lookup env name)
+      (if (>= local 0)
+        ; Through a function value: whatever it is may keep its arguments,
+        ; and its result may point into the closure.
+        (let _ (rg-raise-all cs 2)
+          (let c (rg-union (rg-new 0) local)
+            (let _ (rg-site rec e c) c)))
+        (let s (rg-summary name)
+          (if (< s 0)
+            (let _ (rg-raise-all cs 2)
+              (let c (rg-new 2)
+                (let _ (rg-site rec e c) c)))
+            (let c (rg-new 0)
+              (let _ (rg-apply-summary cs s 0 c tail)
+                (let _ (if (> (rg-res-alloc s) 0) (rg-site rec e c) 0) c)))))))))
+
+(defn rg-first (cs)
+  (match cs
+    (Nil (rg-new 0))
+    (Cons h _ h)))
+
+(defn rg-ffi (e name args env rec)
+  (let cs (rg-list args env rec)
+    (let k (rg-ffi-kind name)
+      (if (= k 0)
+        (rg-new 0)
+        (if (= k 1)
+          (let c (rg-new 0)
+            (let _ (rg-site rec e c) c))
+          (if (= k 2)
+            (rg-first cs)
+            (let _ (rg-raise-all cs 2) (rg-new 2))))))))
+
+(defn rg-fields (fs c env rec)
+  (match fs
+    (Nil c)
+    (Cons f rest
+      (let fc (rg-expr f env 0 rec)
+        (let _ (rg-union c fc)
+          (rg-fields rest c env rec))))))
+
+(defn rg-seq (es env tail rec)
+  (match es
+    (Nil (rg-new 0))
+    (Cons h t
+      (if (is-nil t)
+        (rg-expr h env tail rec)
+        (let _ (rg-expr h env 0 rec)
+          (rg-seq t env tail rec))))))
+
+(defn rg-bind-all (names c env)
+  (match names
+    (Nil env)
+    (Cons n rest (rg-bind-all rest c (Cons (RgB n c) env)))))
+
+(defn rg-arms (arms sc res env tail rec)
+  (match arms
+    (Nil res)
+    (Cons a rest
+      (match a
+        (IArm _ _ binds body
+          (let bc (rg-expr body (rg-bind-all binds sc env) tail rec)
+            (rg-arms rest sc (rg-union res bc) env tail rec)))))))
+
+(defn rg-expr (e env tail rec)
+  (match e
+    (IConst _ (rg-new 0))
+    (IStr _ (rg-new 0))
+    (ISymAddr _ (rg-new 0))
+    (IFlt _ (rg-new 0))
+    (ILoad n (let c (rg-lookup env n) (if (< c 0) (rg-new 0) c)))
+    (IBinop _ l r (let _ (rg-expr l env 0 rec) (let _ (rg-expr r env 0 rec) (rg-new 0))))
+    (ICall name args (rg-call e name args env tail rec))
+    (ICallClosure name args (rg-call e name args env tail rec))
+    (IFfi name args (rg-ffi e name args env rec))
+    (IPrint a (let _ (rg-expr a env 0 rec) (rg-new 0)))
+    (IIf c t eb
+      (let _ (rg-expr c env 0 rec)
+        (let ct (rg-expr t env tail rec)
+          (rg-union ct (rg-expr eb env tail rec)))))
+    (IWhile c b (let _ (rg-expr c env 0 rec) (let _ (rg-expr b env 0 rec) (rg-new 0))))
+    (ISet n v
+      (let cv (rg-expr v env 0 rec)
+        (let cn (rg-lookup env n)
+          (let _ (if (>= cn 0) (rg-union cn cv) (rg-raise cv 2))
+            (rg-new 0)))))
+    (ILet n v body
+      (let cv (rg-expr v env 0 rec)
+        (rg-expr body (Cons (RgB n cv) env) tail rec)))
+    (ISeq es (rg-seq es env tail rec))
+    (IVariant _ _ fields
+      (let c (rg-fields fields (rg-new 0) env rec)
+        (let _ (rg-site rec e c) c)))
+    (IStackVariant _ _ fields (rg-fields fields (rg-new 0) env rec))
+    (IMatch scr arms
+      (let sc (rg-expr scr env 0 rec)
+        (rg-arms arms sc (rg-new 0) env tail rec)))
+    (IFn _ _ _ _ (rg-new 2))
+    (ITryCatch tbody cvar cbody
+      (let tc (rg-expr tbody env 0 rec)
+        (rg-union tc (rg-expr cbody (Cons (RgB cvar (rg-new 2)) env) 0 rec))))))
+
+(defn rg-param-env (params env acc)
+  (match params
+    (Nil (RgPE env acc))
+    (Cons p rest
+      (let c (rg-new 0)
+        (rg-param-env rest (Cons (RgB p c) env) (Cons c acc))))))
+
+(deftype RgPE (RgPE (List RgB) (List Int)))
+
+; Pack parameter levels; `cs` is in reverse parameter order.
+(defn rg-pack (cs i n acc)
+  (match cs
+    (Nil acc)
+    (Cons c rest
+      (let idx (- n (+ i 1))
+        (let lvl (if (> idx 30) 0 (rg-level c))
+          (rg-pack rest (+ i 1) n (bit-or acc (shl lvl (* 2 (if (> idx 30) 0 idx))))))))))
+
+; Analyse one function; returns 1 when its summary rose.
+(defn rg-fn (f rec)
+  (match f
+    (IFn name params body _
+      (let _ (ffi-call "zyl_uf_reset" 1000)
+        (let _ (ffi-call "zyl_wvec_truncate" (rg-sites) 0 1000)
+        (match (rg-param-env params Nil Nil)
+          (RgPE env cs
+            (let ret (rg-new 1)
+              (let bc (rg-expr body env 1 rec)
+                (let _ (rg-union bc ret)
+                  (let flags (rg-mark-sites 0 (ffi-call "zyl_wvec_len" (rg-sites) 1000) 0 rec)
+                  (let old (rg-summary name)
+                    ; Joined with the previous summary. The constraints are
+                    ; not monotone in the summary (an R parameter unifies
+                    ; its argument with the result, an H one only raises
+                    ; it), so a recomputed level can fall, and the rounds
+                    ; could cycle. Keeping the higher level is sound: an H
+                    ; argument lives in the heap, which outlives anything
+                    ; the result could need.
+                    (let packed (rg-join old (bit-or (rg-pack cs 0 (list-length params) 0)
+                                                     (shl (if (> (bit-and flags 2) 0) 1 0) 62)) 0)
+                      (let _ (if (> rec 0) (ffi-call "zyl_attr_set" 4 f (+ flags 4) 1000) 0)
+                        (if (= packed old)
+                          0
+                          (let _ (ffi-call "zyl_smap_put" (rg-summaries) name (+ packed 1) 1000)
+                            1))))))))))))))
+    (_ 0)))
+
+; Per-parameter maximum of two summaries, and the OR of bit 62.
+(defn rg-join (a b i)
+  (if (> i 30)
+    (bit-or (bit-and a (shl 1 62)) (bit-and b (shl 1 62)))
+    (let la (% (shr a (* 2 i)) 4)
+      (let lb (% (shr b (* 2 i)) 4)
+        (bit-or (shl (if (> la lb) la lb) (* 2 i)) (rg-join a b (+ i 1)))))))
+
+(defn rg-round (fns rec changed)
+  (match fns
+    (Nil changed)
+    (Cons f rest
+      (let c (rg-fn f rec)
+        (rg-round rest rec (if (> c 0) 1 changed))))))
+
+(defn rg-fixpoint (fns)
+  (if (> (rg-round fns 0 0) 0) (rg-fixpoint fns) 0))
+
+(defn rg-init (fns)
+  (match fns
+    (Nil 0)
+    (Cons f rest
+      (let _ (match f
+               (IFn name _ _ _ (ffi-call "zyl_smap_put" (rg-summaries) name 1 1000))
+               (_ 0))
+        (rg-init rest)))))
+
+; Final pass: annotate every site and function (rg-fn with rec = 1).
+(defn rg-annotate (fns)
+  (match fns
+    (Nil 0)
+    (Cons f rest
+      (let _ (rg-fn f 1)
+        (rg-annotate rest)))))
+
+; Levels of the recorded sites, as function flags (bit 0: an L site,
+; bit 1: an R site); with rec = 1 each site's level is also stored.
+(defn rg-mark-sites (i n flags rec)
+  (if (>= i n)
+    flags
+    (let node (ffi-call "zyl_wvec_get" (rg-sites) i 1000)
+      (let lvl (rg-level (ffi-call "zyl_wvec_get" (rg-sites) (+ i 1) 1000))
+        (let _ (if (> rec 0) (ffi-call "zyl_attr_set" 4 node (+ lvl 1) 1000) 0)
+          (rg-mark-sites (+ i 2) n
+            (bit-or flags (if (= lvl 0) 1 (if (= lvl 1) 2 0))) rec))))))
+
+; Entry point: annotate `fns` (the list codegen receives) in place and
+; return it unchanged. ZYL_REGIONS=0 turns regions off: nothing is
+; annotated, so every site is H, exactly the old behaviour.
+(defn rg-regions (fns)
+  (if (> (ffi-call "zyl_regions_enabled" 1000) 0)
+    (let _ (rg-init fns)
+      (let _ (rg-fixpoint fns)
+        (let _ (rg-annotate fns)
+          fns)))
+    fns))

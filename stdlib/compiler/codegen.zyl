@@ -357,7 +357,7 @@
            (cg-ibinop st env op l r)))))
     (ICall name args (cg-call-user st env name args e))
     (ICallClosure name args (cg-call-user st env name args e))
-    (IFfi sym args (cg-call-args st env sym args false 0))
+    (IFfi sym args (cg-call-args st env sym args false (cg-site-level e)))
     (IPrint a (cg-print st env a))
     (IIf c t eb (cg-if-dispatch st env c t eb 0))
     (IWhile c body (cg-while-dispatch st env c body))
@@ -368,7 +368,7 @@
            (cg-nl (cg-emit st4 "], rax"))))))
     (ILet n v body (cg-let-dispatch st env n v body 0))
     (ISeq es (cg-seq st env es 0))
-    (IVariant _ tag fields (cg-variant st env tag fields))
+    (IVariant _ tag fields (cg-variant st env tag fields (cg-site-level e)))
     (IStackVariant _ tag fields (cg-stack-variant st env tag fields))
     (IMatch scr arms (cg-match st env scr arms 0))
     ; A bare function node is never emitted as a value expression; keep st.
@@ -383,9 +383,9 @@
 (defn cg-call-user (st env name args site)
   (if (= (env-lookup env name) 0)
     (if (= (cg-fn-known st name) 1)
-      (cg-call-args st env name args true 0)
+      (cg-call-args st env name args true (cg-site-level site))
       (cg-fail-undefined-fn st env name site))
-    (cg-call-args st env name args true 0)))
+    (cg-call-args st env name args true (cg-site-level site))))
 
 ; Tail-position emission; tl is the frame size, 0 when not in tail position.
 (defn cg-tail (st env e tl)
@@ -403,8 +403,10 @@
 ;; parameter count (cg-tail-tl); a callee may take stack arguments only as
 ;; far as this function's own incoming stack-argument area reaches.
 (defn cg-tail-tl (fsz nparams) (+ fsz (* 1000000 nparams)))
+(defn cg-tail-tl-r (fsz nparams rflags) (+ (cg-tail-tl fsz nparams) (* 1000000000 rflags)))
 (defn cg-tl-fsz (tl) (% tl 1000000))
-(defn cg-tl-params (tl) (/ tl 1000000))
+(defn cg-tl-params (tl) (% (/ tl 1000000) 1000))
+(defn cg-tl-rflags (tl) (/ tl 1000000000))
 
 (defn cg-tail-fits (tl m) (<= (cg-stack-count m) (cg-stack-count (cg-tl-params tl))))
 
@@ -412,30 +414,114 @@
   (let m (list-length args)
     (if (= (env-lookup env name) 0)
       (if (and (= (cg-fn-known st name) 1) (cg-tail-fits tl m))
-        (cg-tail-direct st env name args tl)
+        (cg-tail-direct st env name args tl site)
         (cg-expr st env site))
       (if (cg-tail-fits tl (+ m 1))
-        (cg-tail-indirect st env name args tl)
+        (cg-tail-indirect st env name args tl site)
         (cg-expr st env site)))))
 
-(defn cg-tail-direct (st env name args tl)
+(defn cg-tail-direct (st env name args tl site)
   (let n (list-length args)
-    (let st2 (cg-tail-stage (cg-scratch-all st env args) n)
+    (let st2 (cg-tail-stage (cg-tail-regions (cg-scratch-all st env args) tl site) n)
       (let sym (cg-sym-for (cg-arena-of st2) name 1)
         (cg-emit-line (cg-tail-leave st2 tl) (cg-cat2 (cg-arena-of st2) (str-intern (cg-arena-of st2) "    jmp ") sym))))))
 
 ; Through a local function value: the env goes last, as in cg-call-indirect.
-(defn cg-tail-indirect (st env name args tl)
+(defn cg-tail-indirect (st env name args tl site)
   (let off (env-lookup env name)
     (let m (+ (list-length args) 1)
       (let st3 (cg-closure-env-scratch (cg-label-pair (cg-scratch-all st env args)) off)
-        (let st4 (cg-tail-stage st3 m)
+        (let st4 (cg-tail-stage (cg-tail-regions st3 tl site) m)
           (match (cg-label-new st4)
             (CGR st5 _ lc
               (let st6 (cg-closure-magic-cmp st5 "r10" off)
                 (let st7 (cg-nl (cg-emit (cg-emit st6 "    jne ") lc))
                   (let st8 (cg-label-def (cg-emit-line st7 "    mov r10, [r10+8]") lc)
                     (cg-emit-line (cg-tail-leave st8 tl) "    jmp r10")))))))))))
+
+;; ── Regions (docs/regions-design.md) ─────────────────────────────────────
+;; A function region inference flagged (attr 4 on its IFn: bit 0 frame
+;; region, bit 1 result region) has six words above its parameters:
+;;   [rbp-8]   rax saved across the exit call
+;;   [rbp-16]  the result region its caller chose (zyl_cur_region at entry)
+;;   [rbp-48]  the frame region header (prev, bump, end, blocks)
+;; and its parameters start at [rbp-56]. A site's level (attr 4, level+1:
+;; 1 frame, 2 result, 3 heap; 0 unannotated) picks the region.
+
+(defn cg-region-flags (f)
+  (let v (ffi-call "zyl_attr_get" 4 f 1000)
+    (if (= v 0) 0 (- v 4))))
+
+(defn cg-region-shift (rflags) (if (> rflags 0) 6 0))
+
+(defn cg-site-level (e) (ffi-call "zyl_attr_get" 4 e 1000))
+
+; r11 = the region for a site of level `lvl`, then zyl_cur_region = r11.
+(defn cg-set-cur-region (st lvl)
+  (if (= lvl 0)
+    st
+    (let st2 (cg-emit-line st (if (= lvl 1) "    lea r11, [rbp-48]"
+                                (if (= lvl 2) "    mov r11, [rbp-16]" "    xor r11d, r11d")))
+      (cg-emit-line st2 "    mov QWORD PTR fs:zyl_cur_region@tpoff, r11"))))
+
+(defn cg-region-call (st fname)
+  (let st2 (cg-emit-line st "    lea rdi, [rbp-48]")
+    (cg-ext-call-aligned st2 (str-concat "    call " fname) 1)))
+
+; Entry: keep the result region; push an empty frame region on this
+; thread's chain (zyl_region_enter, inline).
+(defn cg-region-prologue (st rflags)
+  (let st2 (if (> (bit-and rflags 2) 0)
+             (cg-emit-line (cg-emit-line st "    mov rax, QWORD PTR fs:zyl_cur_region@tpoff") "    mov [rbp-16], rax")
+             st)
+    (if (> (bit-and rflags 1) 0)
+      (cg-emit-lines st2 (Cons "    mov rax, QWORD PTR fs:zyl_region_top@tpoff"
+                         (Cons "    mov [rbp-48], rax"
+                         (Cons "    xor eax, eax"
+                         (Cons "    mov [rbp-40], rax"
+                         (Cons "    mov [rbp-32], rax"
+                         (Cons "    mov [rbp-24], rax"
+                         (Cons "    lea rax, [rbp-48]"
+                         (Cons "    mov QWORD PTR fs:zyl_region_top@tpoff, rax" Nil)))))))))
+      st2)))
+
+(defn cg-emit-lines (st lines)
+  (match lines
+    (Nil st)
+    (Cons l rest (cg-emit-lines (cg-emit-line st l) rest))))
+
+; Pop and release the frame region (zyl_region_exit, inline: the call
+; only when a block was taken), keeping rax. r10/r11 are free here.
+(defn cg-region-release (st)
+  (match (cg-label-new st)
+    (CGR st2 _ lskip
+      (let st3 (cg-emit-line st2 "    cmp qword ptr [rbp-24], 0")
+        (let st4 (cg-nl (cg-emit (cg-emit st3 "    je ") lskip))
+          (let st5 (cg-region-call st4 "zyl_region_free")
+            (let st6 (cg-label-def st5 lskip)
+              (match (cg-label-new st6)
+                (CGR st7 _ lkeep
+                  (let st8 (cg-emit-lines st7 (Cons "    mov r10, [rbp-48]"
+                                               (Cons "    mov QWORD PTR fs:zyl_region_top@tpoff, r10"
+                                               (Cons "    lea r11, [rbp-48]"
+                                               (Cons "    cmp QWORD PTR fs:zyl_cur_region@tpoff, r11" Nil)))))
+                    (let st9 (cg-nl (cg-emit (cg-emit st8 "    jne ") lkeep))
+                      (cg-label-def (cg-emit-line st9 "    mov QWORD PTR fs:zyl_cur_region@tpoff, 0") lkeep))))))))))))
+
+; Release the frame region, keeping the value in rax.
+(defn cg-region-epilogue (st rflags)
+  (if (> (bit-and rflags 1) 0)
+    (let st2 (cg-emit-line st "    mov [rbp-8], rax")
+      (cg-emit-line (cg-region-release st2) "    mov rax, [rbp-8]"))
+    st))
+
+; Before a tail jump: the frame (and its region) is about to be reused.
+; Region inference made every tail-call argument at least level R, so
+; nothing the callee receives lives in the region released here.
+(defn cg-tail-regions (st tl site)
+  (let rf (cg-tl-rflags tl)
+    (let st2 (if (> (bit-and rf 1) 0) (cg-region-release st) st)
+      (cg-set-cur-region st2 (cg-site-level site)))))
 
 ; n args are in scratch slots: stack args to the incoming area, then registers.
 (defn cg-tail-stage (st n)
@@ -843,24 +929,26 @@
 ;            offsets account for the copy-pushes)
 ;   phase 4: call; cleanup removes pad + scratch + copy-pushes.
 ; `mangle` adds the _ZYL_ prefix for user functions.
-(defn cg-call-args (st env name args mangle _i)
+; `lvl` is the site's region level (0 when unannotated). A runtime call
+; with a level goes to the function's region-aware `_r` entry point.
+(defn cg-call-args (st env name args mangle lvl)
   (if (> mangle 0)
     (if (= (env-lookup env name) 0)
-      (cg-call-args-go st env name args mangle)
-      (cg-call-indirect st env name args))
-    (cg-call-args-go st env name args mangle)))
+      (cg-call-args-go st env name args mangle lvl)
+      (cg-call-indirect st env name args lvl))
+    (cg-call-args-go st env name args mangle lvl)))
 
-(defn cg-call-args-go (st env name args mangle)
+(defn cg-call-args-go (st env name args mangle lvl)
   (let n (list-length args)
     (let st2 (if (= (% (+ n (cg-stack-count n)) 2) 1)
                (cg-emit-line st "    sub rsp, 8")
                st)
       (let st3 (cg-scratch-all st2 env args)
         (let st4 (cg-copy-stack-args st3 n (- n 1) 0)
-          (let st5 (cg-load-reg-args st4 n (- (cg-min-int n 6) 1))
+          (let st5 (cg-set-cur-region (cg-load-reg-args st4 n (- (cg-min-int n 6) 1)) lvl)
             (if (> mangle 0)
               (cg-fire-user st5 env name n)
-              (cg-fire-ext st5 env name n))))))))
+              (cg-fire-ext st5 env (if (> lvl 0) (str-concat name "_r") name) n))))))))
 
 ; Number of stack-passed (SysV) arguments for a call of arity n.
 (defn cg-stack-count (n)
@@ -996,7 +1084,7 @@
 ; same tag test into r10 after the registers are loaded (r10/r11 are
 ; never argument registers). A code address's first 8 bytes are this
 ; compiler's own prologue (`push rbp` = 0x55 first), never the tag.
-(defn cg-call-indirect (st env name args)
+(defn cg-call-indirect (st env name args lvl)
   (let n (list-length args)
     (let m (+ n 1)
       (let off (env-lookup env name)
@@ -1006,7 +1094,7 @@
           (let st3 (cg-scratch-all st2 env args)
             (let st4 (cg-closure-env-scratch (cg-label-pair st3) off)
               (let st5 (cg-copy-stack-args st4 m (- m 1) 0)
-                (let st6 (cg-load-reg-args st5 m (- (cg-min-int m 6) 1))
+                (let st6 (cg-set-cur-region (cg-load-reg-args st5 m (- (cg-min-int m 6) 1)) lvl)
                   (let st7 (cg-closure-target (cg-label-new st6) off)
                     (cg-call-cleanup st7 m)))))))))))
 
@@ -1176,19 +1264,28 @@
 ; count shifts the actual parity out from under a check that only looks
 ; at n. Saving/restoring rsp around the call sidesteps that regardless
 ; of any outer pushes.
-(defn cg-variant (st env tag fields)
+(defn cg-variant (st env tag fields lvl)
   (let n (list-length fields)
     (let st2 (cg-push-fields st env fields)
       (let st3 (cg-emit-line st2 "    mov r12, rsp")
         (let st4 (cg-emit-line st3 "    and rsp, -16")
           (let st5 (cg-nl (cg-emit-int (cg-emit st4 "    mov rdi, ") (* 8 (+ n 1))))
-            (let st6 (cg-emit-line st5 "    call zyl_heap_alloc")
+            (let st6 (cg-variant-alloc st5 lvl)
               (let st7 (cg-emit-line st6 "    mov rsp, r12")
                 (let st8 (cg-emit-line st7 "    mov rbx, rax")
                   (let st9 (cg-emit-int (cg-emit st8 "    mov qword ptr [rbx], ") tag)
                     (let st10 (cg-nl st9)
                       (let st11 (cg-pop-fields st10 (- n 1))
                         (cg-emit-line st11 "    mov rax, rbx")))))))))))))
+
+; Level 1 (frame) and 2 (result) allocate in a region; anything else in
+; the heap, exactly as before regions.
+(defn cg-variant-alloc (st lvl)
+  (if (= lvl 1)
+    (cg-emit-line (cg-emit-line st "    lea rsi, [rbp-48]") "    call zyl_ralloc")
+    (if (= lvl 2)
+      (cg-emit-line (cg-emit-line st "    mov rsi, [rbp-16]") "    call zyl_ralloc")
+      (cg-emit-line st "    call zyl_heap_alloc"))))
 
 ; Evaluate each field left-to-right, pushing its value.
 (defn cg-push-fields (st env fields)
@@ -1584,11 +1681,12 @@
     (let name (ifn-tag-name f)
       (let params (ifn-tag-params f)
         (let body (ifn-tag-body f)
-     (let env (cg-param-env params (ifn-tag-kinds f) 0 (EnvNil))
+     (let rflags (cg-region-flags f)
+     (let env (cg-param-env-s params (ifn-tag-kinds f) 0 (cg-region-shift rflags) (EnvNil))
 ; Frame sized from actual slot usage: param slots + one per ILet /
         ; non-wildcard pattern bind (+ headroom), rounded to 16 bytes.
         ; The old uniform 16*(64+icnf-size) wasted ~16x stack.
-        (let nslots (icnf-add2 (list-length params)
+        (let nslots (icnf-add2 (+ (list-length params) (cg-region-shift rflags))
                                (+ (icnf-slot-count body) 8))
           ; 16*(1 + ns/2) >= 8*ns and stays 16-byte aligned
           ; Entry rsp is 8 mod 16 (after push rbp), so fsz must be 16n+8.
@@ -1602,13 +1700,13 @@
                  (let st5 (cg-emit-line st4 "    mov rbp, rsp")
                    (let st6 (cg-emit st5 "    sub rsp, ")
                      (let st7 (cg-save-callee-saved (cg-nl (cg-emit-int st6 fsz)) fsz)
-                       (let st8 (cg-param-spills st7 0 (list-length params))
+                       (let st8 (cg-region-prologue (cg-param-spills-s st7 0 (list-length params) (cg-region-shift rflags)) rflags)
                          ; per-function slot counter reset after params
-                         (let st9 (cg-reset-slots st8 (* 8 (+ 1 (list-length params))))
-                            (let st10 (cg-body-exit st9 env body fsz (list-length params) (cg-wipes-frame name))
+                         (let st9 (cg-reset-slots st8 (* 8 (+ 1 (+ (list-length params) (cg-region-shift rflags)))))
+                            (let st10 (cg-body-exit st9 env body fsz (list-length params) (cg-wipes-frame name) rflags)
                               (let st11 (cg-emit-line st10 "    mov rsp, rbp")
                                 (let st12 (cg-emit-line st11 "    pop rbp")
-                                  (cg-emit-line st12 "    ret")))))))))))))))))))
+                                  (cg-emit-line st12 "    ret"))))))))))))))))))))
     st))
 
 ; A function secret_check.zyl marked (Secret params or secret lets) zeroes its
@@ -1624,10 +1722,10 @@
       (str-substring n 0 i)
       (cg-base-name n (+ i 1)))))
 
-(defn cg-body-exit (st env body fsz np wipe)
+(defn cg-body-exit (st env body fsz np wipe rflags)
   (if wipe
-    (cg-wipe-frame (cg-restore-callee-saved (cg-expr st env body) fsz) fsz)
-    (cg-restore-callee-saved (cg-tail st env body (cg-tail-tl fsz np)) fsz)))
+    (cg-wipe-frame (cg-restore-callee-saved (cg-region-epilogue (cg-expr st env body) rflags) fsz) fsz)
+    (cg-restore-callee-saved (cg-region-epilogue (cg-tail st env body (cg-tail-tl-r fsz np rflags)) rflags) fsz)))
 
 ; rep stosq over [rbp-fsz, rbp), keeping the result in r11 meanwhile.
 (defn cg-wipe-frame (st fsz)
@@ -1696,6 +1794,13 @@
 ; the declared kind so a String or Float parameter is emitted as one.
 ; A kind list shorter than the param list (a lambda's, which is empty)
 ; simply falls back to 0, the behaviour before kinds existed.
+(defn cg-param-env-s (params kinds i shift acc)
+  (if (is-nil params)
+    acc
+    (cg-param-env-s (tl2 params) (cg-kinds-tail kinds) (+ i 1) shift
+                    (EnvBind (shd params) (- (* 8 (+ i (+ shift 1))))
+                             (cg-kinds-head kinds) acc))))
+
 (defn cg-param-env (params kinds i acc)
   (if (is-nil params)
     acc
@@ -1712,6 +1817,17 @@
   (match kinds
     (Cons _ t t)
     (Nil Nil)))
+
+; The same, with the parameter slots starting `shift` words further down.
+(defn cg-param-spills-s (st i n shift)
+  (if (or (>= i n) (= shift 0))
+    (if (>= i n) st (cg-param-spills st i n))
+    (let st2 (if (< i 6)
+               (cg-emit st "    mov r10, ")
+               (cg-emit (cg-emit-int (cg-emit st "    mov r10, [rbp+") (+ 16 (* 8 (- i 6)))) "]"))
+      (let st3 (if (< i 6) (cg-emit st2 (cg-reg-of i)) st2)
+        (let st4 (cg-emit-int (cg-emit (cg-nl st3) "    mov [rbp") (- (* 8 (+ i (+ shift 1)))))
+          (cg-param-spills-s (cg-nl (cg-emit st4 "], r10")) (+ i 1) n shift))))))
 
 ; Spill incoming args to param slots: indices 0..5 from SysV registers,
 ; indices >= 6 from the caller's stack frame ([rbp+16] is stack arg 6).

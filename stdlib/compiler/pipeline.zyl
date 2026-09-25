@@ -164,7 +164,7 @@
                     ; IStackVariant (stack-allocated, see
                     ; cg-stack-variant) in place.
                     (dbg-log "region-infer\n")
-                    (ri-transform-fns opt-fns)))))))))))
+                    (rg-regions (ri-transform-fns opt-fns))))))))))))
 
 ; Source text to lowered functions: everything except code generation.
 ; Returns: List(Icnf)

@@ -1,4 +1,13 @@
 #include "actor_runtime.h"
+long long zyl_ralloc(long long size, long long rp);
+/* The region a region-aware runtime function allocates its result in:
+   0 (the heap) except while one of the `_r` entry points below runs,
+   which compiled code calls only from a site region inference
+   annotated, with zyl_cur_region set just before the call. Every other
+   caller (the interpreter, C code inside this runtime) gets the heap. */
+static __thread long long g_result_region = 0;
+long long zyl_regions_enabled(void);
+#define ZYL_RESULT_ALLOC(n) zyl_ralloc((long long)(n), g_result_region)
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -578,7 +587,10 @@ struct ZylTryFrame {
     jmp_buf buf;
     struct ZylTryFrame* prev;
     const char* msg;
+    void* region_mark;   /* zyl_region_top when the handler was installed */
 };
+void* zyl_region_mark(void);
+void zyl_region_unwind(void* mark);
 
 /* Thread-local: each actor runs its own thread with independent try/catch
  * nesting. A process-global here would let one actor's zyl_try_pop/
@@ -589,6 +601,7 @@ void* zyl_try_push(void) {
     struct ZylTryFrame* f = (struct ZylTryFrame*)malloc(sizeof *f);
     f->prev = g_try_top;
     f->msg = 0;
+    f->region_mark = zyl_region_mark();
     g_try_top = f;
     return (void*)f;
 }
@@ -680,7 +693,7 @@ long long zyl_cstr_concat(long long a, long long b) {
     if (la > SIZE_MAX - lb - 1) {
         zyl_panic("string concatenation length overflow");
     }
-    char* buf = (char*)(size_t)zyl_heap_alloc((long long)(la + lb + 1));
+    char* buf = (char*)(size_t)ZYL_RESULT_ALLOC(la + lb + 1);
     memcpy(buf, sa, la);
     memcpy(buf + la, sb, lb);
     buf[la + lb] = '\0';
@@ -699,7 +712,7 @@ long long zyl_cstr_substr(long long src, long long start, long long len) {
     size_t avail = slen - (size_t)start;
     if (len < 0) len = 0;
     if ((size_t)len > avail) len = (long long)avail;
-    char* buf = (char*)(size_t)zyl_heap_alloc(len + 1);
+    char* buf = (char*)(size_t)ZYL_RESULT_ALLOC(len + 1);
     memcpy(buf, s + start, (size_t)len);
     buf[len] = '\0';
     return (long long)(size_t)buf;
@@ -1655,7 +1668,7 @@ long long zyl_span_copy(long long dst, long long src) {
 /* Node attribute tables, string maps and word vectors for compiler passes.
    Keyed by address or content, probed only (never iterated); a miss reads 0. */
 
-#define ZYL_ATTR_TABLES 4
+#define ZYL_ATTR_TABLES 5
 typedef struct { uintptr_t key; long long val; } ZylAttrSlot;
 static ZylAttrSlot* g_attrs[ZYL_ATTR_TABLES];
 static size_t g_attr_cap[ZYL_ATTR_TABLES];
@@ -1706,6 +1719,68 @@ long long zyl_attr_clear(long long t) {
     memset(g_attrs[t], 0, g_attr_cap[t] * sizeof(ZylAttrSlot));
     g_attr_len[t] = 0;
     return 0;
+}
+
+/* Union-find over abstract object classes, for region inference
+   (compiler/region_inference). Each class carries a level: 0 local,
+   1 result, 2 heap. A union keeps the higher level; raising never lowers.
+   One table, reset per function; compiler-internal, single-threaded. */
+static long long* g_uf_parent = 0;
+static long long* g_uf_level = 0;
+static long long g_uf_len = 0, g_uf_cap = 0;
+
+long long zyl_uf_reset(void) { g_uf_len = 0; return 0; }
+
+long long zyl_uf_new(long long level) {
+    if (g_uf_len == g_uf_cap) {
+        long long nc = g_uf_cap ? g_uf_cap * 2 : 4096;
+        long long* np = (long long*)realloc(g_uf_parent, (size_t)nc * sizeof(long long));
+        long long* nl = (long long*)realloc(g_uf_level, (size_t)nc * sizeof(long long));
+        if (!np || !nl) zyl_arena_oom((size_t)nc * 16, "union-find table");
+        g_uf_parent = np;
+        g_uf_level = nl;
+        g_uf_cap = nc;
+    }
+    g_uf_parent[g_uf_len] = g_uf_len;
+    g_uf_level[g_uf_len] = level;
+    return g_uf_len++;
+}
+
+long long zyl_uf_find(long long a) {
+    if (a < 0 || a >= g_uf_len) return a;
+    long long root = a;
+    while (g_uf_parent[root] != root) root = g_uf_parent[root];
+    while (g_uf_parent[a] != root) {
+        long long next = g_uf_parent[a];
+        g_uf_parent[a] = root;
+        a = next;
+    }
+    return root;
+}
+
+/* The lower id becomes the root, so the result does not depend on
+   anything but the order of calls. */
+long long zyl_uf_union(long long a, long long b) {
+    long long ra = zyl_uf_find(a), rb = zyl_uf_find(b);
+    if (ra < 0 || rb < 0 || ra >= g_uf_len || rb >= g_uf_len) return ra;
+    if (ra == rb) return ra;
+    long long lo = ra < rb ? ra : rb, hi = ra < rb ? rb : ra;
+    if (g_uf_level[hi] > g_uf_level[lo]) g_uf_level[lo] = g_uf_level[hi];
+    g_uf_parent[hi] = lo;
+    return lo;
+}
+
+long long zyl_uf_raise(long long a, long long level) {
+    long long r = zyl_uf_find(a);
+    if (r < 0 || r >= g_uf_len) return 0;
+    if (level > g_uf_level[r]) g_uf_level[r] = level;
+    return 0;
+}
+
+long long zyl_uf_level(long long a) {
+    long long r = zyl_uf_find(a);
+    if (r < 0 || r >= g_uf_len) return 2;
+    return g_uf_level[r];
 }
 
 /* Give `dst` whatever `src` has in table `t`. */
@@ -2200,6 +2275,175 @@ long long zyl_heap_alloc(long long size) {
     return base + 8;
 }
 
+/* ==========================================================================
+   Frame regions (docs/regions-design.md).
+
+   A region is a four-word header the compiler reserves in a function's
+   frame. Values the compiler proves do not outlive the call (level L) are
+   allocated in it; values that may reach the call's result (level R) go
+   into the region the caller chose for that result, which the caller
+   passes in zyl_cur_region; everything else (level H) goes to the heap.
+
+   Blocks come from a per-thread pool carved out of mmap'd chunks. The
+   chunks sit far above 4 GiB, which matters: zyl_callN and generated code
+   tell a closure object from a code address partly by where it lies.
+   ========================================================================== */
+#define ZYL_RBLOCK_SIZE (64 * 1024)
+#define ZYL_RCHUNK_BLOCKS 16
+
+typedef struct ZylRBlock {
+    struct ZylRBlock* next;
+    size_t size;          /* bytes, header included */
+    int big;              /* its own mapping, unmapped on release */
+} ZylRBlock;
+
+typedef struct ZylRegion {
+    struct ZylRegion* prev;
+    char* bump;
+    char* end;
+    ZylRBlock* blocks;
+} ZylRegion;
+
+__thread ZylRegion* zyl_cur_region = 0;
+__thread ZylRegion* zyl_region_top = 0;
+static __thread ZylRBlock* g_rpool = 0;
+static __thread long long g_rpool_n = 0;
+static long long g_region_live = 0;   /* bytes in blocks handed to regions */
+
+static void* zyl_rmap(size_t n) {
+    if (!zyl_arena_charge(n)) zyl_arena_oom(n, "memory budget exhausted");
+    void* p = mmap(NULL, n, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (p == MAP_FAILED) {
+        zyl_arena_refund(n);
+        zyl_arena_oom(n, "mmap failed for a region block");
+    }
+    return p;
+}
+
+static ZylRBlock* zyl_rblock_get(size_t need) {
+    size_t hdr = sizeof(ZylRBlock);
+    if (need + hdr > ZYL_RBLOCK_SIZE) {
+        size_t n = (need + hdr + 4095) & ~(size_t)4095;
+        ZylRBlock* b = (ZylRBlock*)zyl_rmap(n);
+        b->size = n;
+        b->big = 1;
+        b->next = 0;
+        return b;
+    }
+    if (!g_rpool) {
+        char* c = (char*)zyl_rmap((size_t)ZYL_RBLOCK_SIZE * ZYL_RCHUNK_BLOCKS);
+        for (int i = 0; i < ZYL_RCHUNK_BLOCKS; i++) {
+            ZylRBlock* b = (ZylRBlock*)(c + (size_t)i * ZYL_RBLOCK_SIZE);
+            b->size = ZYL_RBLOCK_SIZE;
+            b->big = 0;
+            b->next = g_rpool;
+            g_rpool = b;
+        }
+        g_rpool_n += ZYL_RCHUNK_BLOCKS;
+    }
+    ZylRBlock* b = g_rpool;
+    g_rpool = b->next;
+    g_rpool_n--;
+    b->next = 0;
+    return b;
+}
+
+/* Allocate `size` bytes in region `rp` (0: the heap), with the hidden
+   qword-count header zyl_heap_alloc writes, so zyl_variant_eq and the
+   value helpers read region blocks the same way. */
+long long zyl_ralloc(long long size, long long rp) {
+    ZylRegion* r = (ZylRegion*)(size_t)rp;
+    if (!r) return zyl_heap_alloc(size);
+    if (size <= 0) return 0;
+    if (size > (1LL << 48)) {
+        fprintf(stderr, "zyl_ralloc: size too large size=%lld\n", size);
+        return 0;
+    }
+    size_t need = (size_t)((size + 7) / 8) * 8 + 8;
+    if (!r->bump || (size_t)(r->end - r->bump) < need) {
+        ZylRBlock* b = zyl_rblock_get(need);
+        b->next = r->blocks;
+        r->blocks = b;
+        __atomic_add_fetch(&g_region_live, (long long)b->size, __ATOMIC_RELAXED);
+        r->bump = (char*)b + sizeof(ZylRBlock);
+        r->end = (char*)b + b->size;
+    }
+    char* base = r->bump;
+    r->bump += need;
+    *(long long*)base = (long long)((size + 7) / 8);
+    return (long long)(size_t)(base + 8);
+}
+
+static void zyl_region_free_blocks(ZylRegion* r) {
+    ZylRBlock* b = r->blocks;
+    while (b) {
+        ZylRBlock* next = b->next;
+        __atomic_sub_fetch(&g_region_live, (long long)b->size, __ATOMIC_RELAXED);
+        if (b->big) {
+            size_t n = b->size;
+            munmap(b, n);
+            zyl_arena_refund(n);
+        } else {
+            /* Pool blocks are reused, never unmapped: a chunk is one
+               mapping, so its blocks cannot be returned one by one. */
+            b->next = g_rpool;
+            g_rpool = b;
+            g_rpool_n++;
+        }
+        b = next;
+    }
+    r->blocks = 0;
+    r->bump = 0;
+    r->end = 0;
+}
+
+/* Function entry: push the frame's region on this thread's chain. */
+void zyl_region_enter(long long rp) {
+    ZylRegion* r = (ZylRegion*)(size_t)rp;
+    r->prev = zyl_region_top;
+    r->bump = 0;
+    r->end = 0;
+    r->blocks = 0;
+    zyl_region_top = r;
+}
+
+/* Release a frame region's blocks; generated code pops the chain and
+   clears zyl_cur_region inline, calling this only when blocks were
+   taken. */
+void zyl_region_free(long long rp) {
+    ZylRegion* r = (ZylRegion*)(size_t)rp;
+    if (r->blocks) zyl_region_free_blocks(r);
+}
+
+/* Function exit (and before a tail jump): pop and release. The result
+   region pointer must never name a dead frame, so it is cleared if it
+   names this one. */
+void zyl_region_exit(long long rp) {
+    ZylRegion* r = (ZylRegion*)(size_t)rp;
+    if (r->blocks) zyl_region_free_blocks(r);
+    zyl_region_top = r->prev;
+    if (zyl_cur_region == r) zyl_cur_region = 0;
+}
+
+/* Unwinding (a caught panic, a failed test): release every region pushed
+   after `mark`, the chain top when the handler was installed. */
+void zyl_region_unwind(void* mark) {
+    ZylRegion* stop = (ZylRegion*)mark;
+    while (zyl_region_top && zyl_region_top != stop) {
+        ZylRegion* r = zyl_region_top;
+        if (r->blocks) zyl_region_free_blocks(r);
+        zyl_region_top = r->prev;
+    }
+    zyl_cur_region = 0;
+}
+
+void* zyl_region_mark(void) { return (void*)zyl_region_top; }
+
+/* Bytes currently held by live regions, across all threads. */
+long long zyl_region_live_bytes(void) {
+    return __atomic_load_n(&g_region_live, __ATOMIC_RELAXED);
+}
+
 /* Structural equality for heap-allocated aggregates (ADT variants and
  * structs): equal hidden sizes AND identical payload qwords (discriminant +
  * fields). Pointer/string fields compare by identity — flat Int/Bool
@@ -2666,6 +2910,7 @@ static int g_test_count = 0;
 /* Recovery point for panics raised inside a running test. */
 static jmp_buf g_test_jmp;
 static int g_in_test = 0;
+static void* g_test_region_mark = 0;
 
 void zyl_register_test(const char* name, int (*fn)(void)) {
     if (g_test_count < ZYL_MAX_TESTS) {
@@ -2708,12 +2953,14 @@ void zyl_panic(const char* msg) {
         struct ZylTryFrame* f = g_try_top;
         g_try_top = f->prev;
         f->msg = msg ? msg : "error";
+        zyl_region_unwind(f->region_mark);
         longjmp(f->buf, 1);
     }
     if (g_in_test && !zyl_ffi_on_worker()) {
         /* Panic inside a test: unwind to the runner and mark it failed
          * instead of killing the whole process. */
         g_in_test = 0;
+        zyl_region_unwind(g_test_region_mark);
         longjmp(g_test_jmp, 1);
     }
     if (zyl_diag_json()) {
@@ -2736,6 +2983,7 @@ int zyl_run_tests(void) {
         printf("test: %s ... ", name);
         fflush(stdout);
 
+        g_test_region_mark = zyl_region_mark();
         if (setjmp(g_test_jmp) == 0) {
             g_in_test = 1;
             int result = fn();
@@ -2781,7 +3029,7 @@ long long zyl_file_open_c(long long path, long long mode) {
 long long zyl_file_read_c(long long fd, long long count) {
     if (count < 0) count = 0;
     if (count > (1LL << 26)) count = 1LL << 26;   /* 64 MiB ceiling */
-    long long buf = zyl_heap_alloc(count + 1);
+    long long buf = ZYL_RESULT_ALLOC(count + 1);
     if (!buf) return 0;
     char* p = (char*)(size_t)buf;
     long long n = read((int)fd, p, (size_t)count);
@@ -3791,7 +4039,7 @@ long long zyl_mkdir_p(long long path) {
    typed character) and Zyl has no character type -- every such byte has
    to become a one-character string before str-concat can join it. */
 long long zyl_cstr_from_byte(long long b) {
-    long long p = zyl_heap_alloc(2);
+    long long p = ZYL_RESULT_ALLOC(2);
     if (!p) return 0;
     char* s = (char*)(size_t)p;
     s[0] = (char)(b & 0xFF);
@@ -4106,7 +4354,7 @@ long long zyl_cstr_of_word(long long w) { return w; }
 /* Decimal text of an integer, heap-allocated. zyl_cstr_from_int needs
    an arena; the interpreter has heap values and no arena of its own. */
 long long zyl_int_text(long long n) {
-    long long p = zyl_heap_alloc(24);
+    long long p = ZYL_RESULT_ALLOC(24);
     if (!p) return 0;
     snprintf((char*)(size_t)p, 24, "%lld", n);
     return p;
@@ -4174,7 +4422,7 @@ long long zyl_int_text(long long n) {
     X(zyl_load_n) X(zyl_load_n_signed) X(zyl_store_n) \
     X(zyl_global_get) X(zyl_global_put) X(zyl_global_ready) X(zyl_global_clear) \
     X(zyl_repl_global_get) X(zyl_repl_global_set) \
-    X(zyl_heap_alloc) X(zyl_heap_block_p) X(zyl_heap_swap) \
+    X(zyl_uf_reset) X(zyl_uf_new) X(zyl_uf_find) X(zyl_uf_union) X(zyl_uf_raise) X(zyl_uf_level) X(zyl_regions_enabled) X(zyl_heap_alloc) X(zyl_ralloc) X(zyl_region_enter) X(zyl_region_exit) X(zyl_region_free) X(zyl_region_live_bytes) X(zyl_heap_block_p) X(zyl_heap_swap) \
     X(zyl_int_text) X(zyl_itest_add) X(zyl_itest_count) \
     X(zyl_itest_fn) X(zyl_itest_name) X(zyl_itest_outcome) \
     X(zyl_itest_reset) X(zyl_itest_start) X(zyl_itest_summary) \
@@ -4529,7 +4777,7 @@ long long zyl_f_to_int(long long bits) { return (long long)zyl_d_of(bits); }
 
 /* The same text printf's "%f" would produce, for a REPL result line. */
 long long zyl_f_text(long long bits) {
-    long long p = zyl_heap_alloc(48);
+    long long p = ZYL_RESULT_ALLOC(48);
     if (!p) return 0;
     snprintf((char*)(size_t)p, 48, "%f", zyl_d_of(bits));
     return p;
@@ -4540,3 +4788,21 @@ long long zyl_f_text(long long bits) {
 long long zyl_print_int(long long n) { printf("%lld\n", n); return 0; }
 long long zyl_print_str(long long s) { printf("%s\n", (const char*)(size_t)s); return 0; }
 long long zyl_print_float(long long bits) { printf("%f\n", zyl_d_of(bits)); return 0; }
+
+/* Region-aware entry points (see g_result_region). Compiled code calls
+   these, instead of the plain names, from sites region inference
+   annotated (compiler/region_inference, rg-ffi-kind 1). */
+#define ZYL_R_BEGIN long long saved_ = g_result_region; g_result_region = (long long)(size_t)zyl_cur_region;
+#define ZYL_R_END g_result_region = saved_;
+long long zyl_cstr_concat_r(long long a, long long b) { ZYL_R_BEGIN long long v = zyl_cstr_concat(a, b); ZYL_R_END return v; }
+long long zyl_cstr_substr_r(long long s, long long st, long long n) { ZYL_R_BEGIN long long v = zyl_cstr_substr(s, st, n); ZYL_R_END return v; }
+long long zyl_cstr_from_byte_r(long long b) { ZYL_R_BEGIN long long v = zyl_cstr_from_byte(b); ZYL_R_END return v; }
+long long zyl_int_text_r(long long n) { ZYL_R_BEGIN long long v = zyl_int_text(n); ZYL_R_END return v; }
+long long zyl_f_text_r(long long bits) { ZYL_R_BEGIN long long v = zyl_f_text(bits); ZYL_R_END return v; }
+long long zyl_file_read_c_r(long long fd, long long n) { ZYL_R_BEGIN long long v = zyl_file_read_c(fd, n); ZYL_R_END return v; }
+
+/* Regions are on unless ZYL_REGIONS=0 was set for the compile. */
+long long zyl_regions_enabled(void) {
+    const char* e = getenv("ZYL_REGIONS");
+    return (e && e[0] == '0' && e[1] == 0) ? 0 : 1;
+}
