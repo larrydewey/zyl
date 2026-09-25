@@ -181,7 +181,7 @@
         (IArm v tag binds body (Cons (IArm v tag binds (ri-transform-expr body)) (ri-transform-arms rest)))))))
 
 (defn ri-transform-expr (e)
-  (ic-keep-kind (ri-transform-node e) e))
+  (ic-keep-span (ic-keep-kind (ri-transform-node e) e) e))
 
 (defn ri-transform-node (e)
   (match e
@@ -279,6 +279,10 @@
 
 (defn rg-scope-stack () (ffi-call "zyl_wvec_global" 4 1000))
 
+; The IRegion node of each scope, for locating a diagnostic whose own site
+; has no source position.
+(defn rg-scope-nodes () (ffi-call "zyl_wvec_global" 6 1000))
+
 (defn rg-scope-top ()
   (let n (ffi-call "zyl_wvec_len" (rg-scope-stack) 1000)
     (if (= n 0) -1 (ffi-call "zyl_wvec_get" (rg-scope-stack) (- n 1) 1000))))
@@ -292,7 +296,8 @@
             (let cb (rg-expr body env 0 rec)
               (let _ (ffi-call "zyl_wvec_pop" (rg-scope-stack) 1000)
                 (let _ (if (> rec 0) (ffi-call "zyl_attr_set" 4 e (+ idx 1) 1000) 0)
-                  (rg-union bnd cb))))))))))
+                (let _ (ffi-call "zyl_wvec_push" (rg-scope-nodes) e 1000)
+                  (rg-union bnd cb)))))))))))
 
 ; Bit 62 of a summary: the function may allocate in its result region
 ; (directly, or through a call that may). Transitive through the
@@ -556,6 +561,7 @@
       (let _ (ffi-call "zyl_uf_reset" 1000)
         (let _ (ffi-call "zyl_wvec_truncate" (rg-sites) 0 1000)
         (let _ (ffi-call "zyl_wvec_truncate" (rg-scope-starts) 0 1000)
+        (let _ (ffi-call "zyl_wvec_truncate" (rg-scope-nodes) 0 1000)
         (let _ (ffi-call "zyl_wvec_truncate" (rg-scope-stack) 0 1000)
         (match (rg-param-env params Nil Nil)
           (RgPE env cs
@@ -577,7 +583,7 @@
                         (if (= packed old)
                           0
                           (let _ (ffi-call "zyl_smap_put" (rg-summaries) name (+ packed 1) 1000)
-                            1))))))))))))))))
+                            1)))))))))))))))))
     (_ 0)))
 
 ; Per-parameter maximum of two summaries, and the OR of bit 62.
@@ -649,7 +655,7 @@
               ; Placed in the with-region scope: no frame or result region.
               (let _ (if (> rec 0) (ffi-call "zyl_attr_set" 4 node (+ 4 scope) 1000) 0)
                 (rg-mark-sites (+ i 3) n flags rec))
-              (let _ (if (and (> rec 0) (>= scope 0)) (rg-scope-escape node lvl) 0)
+              (let _ (if (and (> rec 0) (>= scope 0)) (rg-scope-escape (rg-located node scope) lvl) 0)
                 (let _ (if (> rec 0) (ffi-call "zyl_attr_set" 4 node (+ lvl 1) 1000) 0)
                   (rg-mark-sites (+ i 3) n
                     (bit-or flags (if (= lvl 0) 1 (if (= lvl 1) 2 0))) rec))))))))))
@@ -659,6 +665,11 @@
     false
     (>= (ffi-call "zyl_uf_find" c 1000)
         (ffi-call "zyl_wvec_get" (rg-scope-starts) scope 1000))))
+
+(defn rg-located (node scope)
+  (if (>= (ffi-call "zyl_span_off" node 1000) 0)
+    node
+    (ffi-call "zyl_wvec_get" (rg-scope-nodes) scope 1000)))
 
 (defn rg-scope-escape (node lvl)
   (let off (ffi-call "zyl_span_off" node 1000)

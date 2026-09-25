@@ -138,17 +138,20 @@ Macro expansion also reports `E_ARITY_MISMATCH` (wrong argument count), `E_DUPLI
 
 | Code | Cause |
 |---|---|
-| `E_REGION_ESCAPE` | A value escapes its assigned region. *Catalogued only.* |
+| `E_REGION_ESCAPE` | A value outlives the region it was allocated in: a `(bytebuf Stack N)` that is returned, stored, sent or passed to code that may keep it, or a value allocated inside `with-region` that reaches the body's result or anything longer-lived. Located at the allocation where one is known. |
+| `E_REGION_SPEC` | A malformed `with-region` spec: an unknown kind (only `arena` and `fixed` exist), an arena block size that is not a multiple of 4096 or exceeds 64 MiB, or an alignment that is not a power of two from 8 to 4096. Located. |
 | `E_UNINITIALIZED_USE` | A variable read before initialisation. *Catalogued only.* |
 | `E_ATOMIC_ABA` | An atomic compare-and-swap on non-Pin memory. *Catalogued only.* |
 | `E_BYTEBUF_NOT_PIN` | `bytebuf-ptr` on a buffer outside the Pin region. *Catalogued only.* |
-| `E_STACK_BYTEBUF_RETURN` | A Stack `ByteBuf` returned from its scope. *Catalogued only.* |
+| `E_STACK_BYTEBUF_RETURN` | A Stack `ByteBuf` returned from its scope. *Catalogued only: a returned Stack bytebuf is reported as `E_REGION_ESCAPE`.* |
 | `E_GLOBAL_BYTEBUF_MUT` | A Global `ByteBuf` mutated. *Catalogued only.* |
 
-Region inference today is a single, conservative rewrite: a variant
-that is only matched or printed is allocated in the function's own
-frame, and everything else stays on the heap. No pass reports
-`E_REGION_ESCAPE` (Chapter 16).
+Region inference classifies every allocation as belonging to the
+current call's frame region, the caller's result region, or the heap,
+and reclaims the regions on return. `E_REGION_ESCAPE` is reported only
+for explicit region choices — a Stack bytebuf and `with-region` — since
+an inferred placement is always one the value cannot escape (Chapter
+16).
 
 ## A.7 ICNF Lowering and Code Generation (phases 7 and 8)
 
@@ -182,6 +185,7 @@ frame, and everything else stays on the heap. No pass reports
 |---|---|
 | `E_OUT_OF_MEMORY` | The memory budget is exhausted. Raise or remove it with `ZYL_MAX_MEMORY` (a byte count; `0` disables it). *Listed twice in the catalog, with two messages.* |
 | `E_LIST_NTH_OOB` | The compiler's internal `list-nth` given an out-of-range index |
+| `E_REGION_EXHAUSTED` | A `with-region` scope ran out: a `fixed` region's `:size` or an `arena`'s `:limit` was exceeded. Catchable with `try`, and deterministic: it depends only on the sequence of allocation requests. Enforced in compiled code only; the REPL interpreter ignores region limits. |
 | `E_USER_ERROR` | `(error "...")`. *Catalogued only: `error` panics with its message, printed as `PANIC: <message>`, and unwinds to the nearest `try` if there is one.* |
 | `E_ASSERT_FAIL` | A failed `assert`. *Catalogued only: a failed `assert` panics as `PANIC: <message>` when the message is a string literal, else `PANIC: assert failed`, without this code (Appendix C.7). The test assertions panic with `assert-equal failed` and similar.* |
 | `E_NULL_POINTER` | A null dereference. *Catalogued only.* |
@@ -303,7 +307,7 @@ language server publishes them as Warning diagnostics (Chapter 35).
 
 ## A.17 Catalog Versus Implementation
 
-**In the catalog, never raised.** 38 of the catalog's 116 distinct
+**In the catalog, never raised.** 37 of the catalog's 118 distinct
 codes are not raised anywhere in the compiler, runtime or REPL:
 
 - Lexer and parser: `E_UNEXPECTED_EOF`,
@@ -312,7 +316,7 @@ codes are not raised anywhere in the compiler, runtime or REPL:
   `E_EXPECTED_EXPRESSION`, `E_EMPTY_LIST`, `E_ATOM_AS_OPERATOR`.
 - Types: `E_RETURN_TYPE_MISMATCH`, `E_UNKNOWN_TYPE`,
   `E_UNKNOWN_GENERIC_PARAM`, `E_CANNOT_INFER`.
-- Regions and buffers: `E_REGION_ESCAPE`, `E_UNINITIALIZED_USE`,
+- Regions and buffers: `E_UNINITIALIZED_USE`,
   `E_ATOMIC_ABA`, `E_BYTEBUF_NOT_PIN`, `E_STACK_BYTEBUF_RETURN`,
   `E_GLOBAL_BYTEBUF_MUT`.
 - Code generation: `E_CODEGEN`, `E_CODEGEN_BUFFER_LIMIT`.
@@ -324,9 +328,8 @@ codes are not raised anywhere in the compiler, runtime or REPL:
 - Traits: `E_TRAIT_BOUND_NOT_SATISFIED`.
 - Numerics and FFI: `E_OVERFLOW`, `E_FFI_TYPE_NOT_PINNABLE`.
 
-Eight of these are codes spec §28 requires: `E_USER_ERROR`,
-`E_ASSERT_FAIL`, `E_REGION_ESCAPE`,
-`E_UNINITIALIZED_USE`, `E_OVERFLOW`, `E_TEST_FAILURE`,
+Seven of these are codes spec §28 requires: `E_USER_ERROR`,
+`E_ASSERT_FAIL`, `E_UNINITIALIZED_USE`, `E_OVERFLOW`, `E_TEST_FAILURE`,
 `E_TEST_RUNNER_ERROR` and `E_CANNOT_INFER`. `E_DIVISION_BY_ZERO` is
 raised only by the REPL interpreter. Every other code in §28, the 36
 package codes included, is both catalogued and raised.

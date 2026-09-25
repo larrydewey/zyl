@@ -228,7 +228,7 @@ else runs.
 | Closure inlining, assert lowering | Zyl | ✅ |
 | ICNF lowering | Zyl | ✅ |
 | Optimization | Zyl | ✅ integer constant folding, dead-branch elimination |
-| Region inference | Zyl | Partial: stack allocation of non-escaping variants only |
+| Region inference | Zyl | ✅ per-call frame and result regions, `with-region`, `E_REGION_ESCAPE`; Global and Circular are names only |
 | Code generation | Zyl | ✅ |
 | ICNF interpreter (`zyl repl`, `zyl eval`) | Zyl | ✅ (no actors) |
 | Contract injection | Zyl | ❌ module exists, not wired into the pipeline |

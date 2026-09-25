@@ -110,7 +110,7 @@
   (IConst (if (= a b) 0 1))))))))))))))
 
 (defn opt-expr (e)
-  (ic-keep-kind (opt-expr-node e) e))
+  (ic-keep-span (ic-keep-kind (opt-expr-node e) e) e))
 
 (defn opt-expr-node (e)
   (match e

@@ -26,8 +26,8 @@ history, or a probe compile with `build/boot/zyl-self` on 2026-09-23.
 - `./boot.sh` produces `build/boot/{zyl-self, stage2.bin, zyl-lsp,
   zyl-repl, stdlib/, actor_runtime.c, actor_runtime.h}`. The self-build
   prints no warnings (swept 2026-09-24).
-- `./run_regression_tests.sh --full --no-boot` passes **188/188**
-  (updated 2026-09-24, FFI timeouts). Compile-fail tests may carry a
+- `./run_regression_tests.sh --full --no-boot` passes **200/200**
+  (updated 2026-09-24, real regions). Compile-fail tests may carry a
   `; expect-error: CODE` line, which pins the failure to that code. The interpreter category runs the regression and smoke
   tests both through the ICNF interpreter and as compiled binaries and
   diffs the output.
@@ -45,8 +45,19 @@ history, or a probe compile with `build/boot/zyl-self` on 2026-09-23.
   type annotation (HM, static trait resolution, per-type
   specialization), ICNF lowering,
   optimization (constant folding and dead-branch elimination), region
-  inference (a provably non-escaping variant becomes `IStackVariant`),
-  x86_64 code generation, and linking with `cc`.
+  inference (a provably non-escaping variant becomes `IStackVariant`;
+  then `rg-regions` places every allocation and call site in the frame's
+  own region, the caller's result region, or the heap — see
+  `docs/regions-design.md`), x86_64 code generation, and linking with
+  `cc`.
+- Regions are real (2026-09-24): each call that allocates short-lived
+  values gets a frame region released on return, results go into the
+  region the caller chose, and only values that escape untracked go to
+  the process heap. `(bytebuf Stack N)` lives in the frame region and
+  `E_REGION_ESCAPE` is raised when one escapes; `with-region` opens an
+  explicit `arena` or `fixed` region (`E_REGION_SPEC`,
+  `E_REGION_EXHAUSTED`). `ZYL_REGIONS=0` at compile time turns region
+  inference off.
 - Covered by the suite: structs, ADTs with per-ADT exhaustiveness
   checking, literal/OR/range/guard patterns, `_` and `_`-prefixed names
   as discards, generics through monomorphization, traits and derive,
@@ -117,6 +128,13 @@ history, or a probe compile with `build/boot/zyl-self` on 2026-09-23.
 
 Compiler:
 
+- Regions: object classes are field-insensitive, so they over-approximate
+  (a local list of strings shares one level with its strings); values
+  that escape into the heap still live until exit; the `try`/`catch`
+  frames `zyl_try_push` allocates are `malloc`ed per `try` and never
+  freed; the interpreter ignores regions, so `with-region` byte limits
+  hold only in compiled code; the Global and Circular regions are names
+  only (Global is the top-level `def` values, which are heap).
 - Several name lookups in `type_inference.zyl` compare strings with `=`,
   which is a pointer comparison when the operand kinds are unknown, so a
   builtin operator is never recognized by name. REPL `:type (+ 1 2)`
@@ -219,8 +237,9 @@ by recent sessions. The completed roadmap items are kept, annotated, under
 - [x] Fix the `=`-on-strings name comparisons in `type_inference.zyl`
       (`f6ea129`; made allocation-free on 2026-09-24).
 - [x] Labelled secondary spans (`err-at-labels`) on `E_MUT_CONFLICT`,
-      `E_CAPABILITY_LEAK` and `E_PKG_CAPABILITY_VIOLATION`. No region
-      diagnostic exists yet to label (`E_REGION_ESCAPE` is never raised).
+      `E_CAPABILITY_LEAK` and `E_PKG_CAPABILITY_VIOLATION`.
+      `E_REGION_ESCAPE` (raised since 2026-09-24) is located but has no
+      secondary label yet.
 - [x] "Did you mean" (edit distance over in-scope names) on unbound
       identifiers and undefined functions.
 - [x] `--error-format=json`: one JSON object per diagnostic on stderr.
@@ -261,18 +280,16 @@ by recent sessions. The completed roadmap items are kept, annotated, under
 
 ### Deferred design work (decided 2026-09-24)
 
-Agreed order: FFI timeouts (done 2026-09-24), real regions, zero-copy
+Agreed order: FFI timeouts (done 2026-09-24), real regions (done
+2026-09-24), zero-copy
 views plus the P1-P3 leftovers, deterministic concurrency, intrinsics.
 
 - **FFI timeouts:** done 2026-09-24 (see the session log).
-- **Real regions:** today one global heap arena is never reclaimed and
-  region inference only stack-allocates matched-or-printed variants.
-  Plan: a region per function call, escape analysis over ICNF promoting
-  escaping values to the caller's region or the heap, region annotations
-  on ICNF values, `E_REGION_ESCAPE` raised for real, then the extension
-  registry below on top. Once an FFI call has been abandoned by a
-  timeout, region reclamation must stop (the call may still use what it
-  was handed), as the exit-time teardown already does.
+- **Real regions:** done 2026-09-24 (see the session log and
+  `docs/regions-design.md`): per-call frame regions, region-polymorphic
+  results, region annotations on ICNF (printed, so hashed),
+  `E_REGION_ESCAPE` raised. Foreign `ffi-call` arguments are always
+  heap, so an abandoned timed-out call never holds a released region.
 - **Deterministic concurrency (Kahn process networks):** single-sender
   channels with linear endpoints replace multi-sender mailboxes (fan-in
   is one channel per producer), receive blocks on one channel with no
@@ -293,10 +310,10 @@ views plus the P1-P3 leftovers, deterministic concurrency, intrinsics.
   `bytebuf`, `byteslice`/`byteslice-sub`, atomics and `align-check` are
   done. Views that provably cannot outlive their buffer come with the
   zero-copy views item, after real regions.
-- **Deterministic region extension:** a closed registry of additional
-  audited region kinds (fixed growth, alignment, policy) that user code
-  selects among, with no raw alloc/free function pointers; any kind that
-  touches the OS must be deterministic for a given request sequence.
+- **Deterministic region extension:** done 2026-09-24: `with-region`
+  with the audited kinds `arena` (block size, alignment, byte limit) and
+  `fixed` (size, alignment), no raw alloc/free function pointers, and
+  exhaustion deterministic for a given request sequence.
 - **Capability-mediated sharing:** a shared region holding only TCap or
   atomic values, mutation only through atomics or a temporary exclusive
   upgrade, typed bounded channels with explicit ownership transfer,
@@ -387,7 +404,65 @@ as recorded below.
 
 # Session log (newest first)
 
-## Session (2026-09-24, latest) — FFI timeouts are real
+## Session (2026-09-24, latest) — regions are real
+
+Commits `8d5c17d`, `12b7f4c`, `a06157d`, `ac3042e`, `b840013`; the design and its
+details are in `docs/regions-design.md`.
+
+- Per-call regions. `rg-regions` (`region_inference.zyl`, run in
+  `pipeline.zyl` after `ri-transform-fns`) classifies every allocation
+  site (`IVariant`, region-aware runtime calls) and call site as L (the
+  frame's own region, released on return, before a tail jump, or when a
+  caught panic or failed test unwinds it), R (the region the caller chose
+  for the result, passed in the thread-local `zyl_cur_region`) or H (the
+  process heap). Levels belong to union-find object classes (runtime
+  `zyl_uf_*`), field-insensitive; scalar-typed nodes (`ta-scalar`, attr
+  table 5) never join a class. Per-function parameter summaries (0 does
+  not escape, 1 may reach the result, 2 escapes; bit 62 may allocate
+  into its result region) are joined per parameter to a whole-program
+  fixpoint; plain replacement cycled forever on `math-blake3` because the
+  constraints are not monotone in the summary. Tail-call arguments are at
+  least R; calls through function values make their arguments H; foreign
+  `ffi-call` arguments are H; runtime functions are trusted only from the
+  `rg-ffi-kind` table, whose fresh-result producers have `_r` entry
+  points.
+- Annotations live in attr table 4 and `icnf_print` shows them as ` @r`,
+  so the package-build ICNF hash covers region decisions.
+- Codegen: a flagged function keeps the saved `rax`, the result region
+  and a four-word region header above its parameters (which now start at
+  `[rbp-56]`); entry and exit push and pop the header inline, calling
+  `zyl_region_free` only if a block was taken. Region sites allocate
+  through `zyl_ralloc(size, region)`; heap sites still call
+  `zyl_heap_alloc`.
+- Runtime: blocks from per-thread pools carved from mmap'd chunks above
+  4 GiB (size classes of 1, 4, 16 and 64 KiB since `b840013`, so a deep
+  recursion costs about 1 KiB a frame), charged to `ZYL_MAX_MEMORY`, with the hidden size header
+  kept for structural equality; `zyl_region_live_bytes`; try frames and
+  the test runner record the chain top and `zyl_panic` unwinds regions
+  before `longjmp`.
+- `E_REGION_ESCAPE` is raised, located: a `(bytebuf Stack N)` (now really
+  in the frame region) that is returned, stored, sent or passed to code
+  that may keep it, and a value allocated inside `with-region` that
+  outlives it.
+- `with-region`, the region extension registry: `(with-region (arena
+  :block B :align A :limit L) BODY)` or `(with-region (fixed :size S
+  :align A) BODY)`. New codes `E_REGION_SPEC` and `E_REGION_EXHAUSTED`
+  (catchable, deterministic). Parsed by `parse-with-region`
+  (`expr_inner.zyl`), lowered to the new ICNF node `IRegion`.
+- `ZYL_REGIONS=0` at compile time turns it off (every site H).
+- Results: a program that built and dropped 20000 lists went from a
+  630 MB to a 12 MB peak and ran 2.4 times faster. The compiler's own
+  build is unchanged at about 6.1 s and its peak memory barely moves (its
+  data mostly escapes into results or global tables).
+- Tests: `regression/{region-reclaim,stack-bytebuf,with-region,
+  with-region-limits}` (the last excluded from the interpreter diff) and
+  compile-fail `stack-bytebuf-return`, `stack-bytebuf-escape`,
+  `with-region-escape`, `with-region-spec`, `with-region-block`.
+  200/200 pass; the fixed point holds.
+- Known limitations: see **Open limitations** (field-insensitive classes,
+  unfreed try frames, interpreter limits, Global and Circular regions).
+
+## Session (2026-09-24, earlier) — FFI timeouts are real
 
 - `ffi-check-call` (`arity_check.zyl`, also run by `ic-ffi`): the symbol
   must be a string literal (`E_FFI_SYMBOL_REQUIRED`), the last argument a

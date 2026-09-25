@@ -240,7 +240,12 @@ to variables by name, and `ISet` mutates them. The node set is:
 ```
 IConst IStr IFlt ILoad IBinop ICall IFfi IPrint IIf IWhile ISet ILet
 ISeq IVariant IMatch IFn ICallClosure ITryCatch IStackVariant ISymAddr
+IRegion
 ```
+
+- `with-region` (recognised by `parse-with-region` in `expr_inner.zyl`,
+  which raises `E_REGION_SPEC` for a malformed spec) lowers to `IRegion
+  kind block align limit body` (kind 1 arena, 2 fixed; limit 0 none).
 
 - `for` lowers to `IWhile`; `spawn` and `send` lower to `IFfi` calls to
   `zyl_actor_spawn` and `zyl_actor_send`.
@@ -283,15 +288,41 @@ Nothing is reordered and no side effect is removed.
 
 ## Phase 11: Region inference
 
-**Implementation:** `region_inference.zyl` (`ri-transform-fns`)
+**Implementation:** `region_inference.zyl` (`ri-transform-fns`, then
+`rg-regions`)
+**Design:** `docs/regions-design.md`
 
-A narrow escape analysis on ICNF. In `(let x (Variant ...) body)`, if
-every use of `x` in `body` is either the scrutinee of a `match` or an
-argument to `print`, the `IVariant` becomes `IStackVariant` and is
-allocated in the function's own frame. Every other value keeps the
-heap path. No other region (Global, Circular, Pin) is inferred here;
-Pin allocation comes from `ffi-pin` and the Pin arena in the runtime,
-and `E_REGION_ESCAPE` is defined but never raised.
+Two steps over the optimized ICNF:
+
+1. `ri-transform-fns`: in `(let x (Variant ...) body)`, if every use of
+   `x` in `body` is either the scrutinee of a `match` or an argument to
+   `print`, the `IVariant` becomes `IStackVariant` and is allocated in
+   the function's own frame.
+2. `rg-regions`, a whole-program escape analysis. Values belong to
+   field-insensitive union-find object classes (runtime `zyl_uf_*`);
+   nodes the type pass proves scalar (attribute table 5, `ta-scalar`)
+   never join one. Every allocation site (`IVariant`, a call to a
+   region-aware runtime function) and every call site gets a level:
+   **L**, the frame's own region, released on return, before a tail
+   jump, or when a caught panic or failed test unwinds it; **R**, the
+   region the caller chose for the result (passed in the thread-local
+   `zyl_cur_region`); or **H**, the process heap. Per-function parameter
+   summaries (0 does not escape, 1 may reach the result, 2 escapes;
+   bit 62 may allocate into the result region) are joined to a fixpoint
+   over the program. Tail-call arguments are at least R; calls through a
+   function value pass arguments as H; runtime functions not listed in
+   `rg-ffi-kind`, and foreign `ffi-call`s, keep their arguments in the
+   heap. The levels are stored in attribute table 4 (sites: 1 frame,
+   2 result, 3 heap, `4 + k` `with-region` scope `k`; functions: flags
+   plus 4) and printed by `icnf_print` as ` @r`, so the package-build
+   ICNF hash covers them.
+
+This phase raises `E_REGION_ESCAPE` (located) for a `(bytebuf Stack N)`
+that is returned, stored, sent or passed to code that may keep it, and
+for a value allocated inside `with-region` that outlives it.
+`ZYL_REGIONS=0` at compile time makes every site H. Global and Circular
+regions are not inferred; Pin allocation comes from `ffi-pin` and the
+Pin arena in the runtime.
 
 ## Phase 12: Code generation
 
@@ -308,7 +339,17 @@ and `E_REGION_ESCAPE` is defined but never raised.
 - **Floats** travel as bit patterns in `rax` and move to `xmm0`/`xmm1`
   for SSE arithmetic. `print` chooses `%lld`, `%f` or `%s` from the
   operand's kind.
-- **Heap values:** variants and structs are allocated with
+- **Regions:** a function flagged in attribute table 4 keeps six words
+  above its parameters (`[rbp-8]` saved `rax`, `[rbp-16]` result region,
+  `[rbp-48]` the region header `prev, bump, end, blocks`; parameters from
+  `[rbp-56]`). Entry pushes the header on the thread-local
+  `zyl_region_top` chain inline; exit and tail jumps pop it and call
+  `zyl_region_free` only if a block was taken. Before each call the
+  site's region is stored in `zyl_cur_region` (`fs`-relative). A
+  variant at a region site is allocated with `zyl_ralloc(size, region)`;
+  a string-producing runtime call at an annotated site goes to its `_r`
+  entry point. `IRegion` pushes a scope header of the same layout.
+- **Heap values:** variants and structs at heap sites are allocated with
   `zyl_heap_alloc`, which writes a hidden field-count header that
   `zyl_variant_eq` and `zyl_variant_cmp` read. `zyl_variant_eq` (tag plus
   raw field words) is now only the fallback for `==` on a variant-kind

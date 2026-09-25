@@ -626,12 +626,16 @@ its field count, and a generic ADT needs no per-type layout.
 | Construction | Where |
 |--------------|-------|
 | `(let s (Some 42) body)`, where `body` only `match`es on `s` or `print`s it | The function's stack frame |
-| Every other struct or ADT value | The runtime heap arena |
+| A struct or ADT value that does not outlive its call | The call's own region, released when the call returns |
+| A struct or ADT value that is returned but goes no further | The region the caller chose for the result |
+| Every other struct or ADT value (stored, sent, captured) | The runtime heap arena |
 | `(vec-create 0 10)`, `(map-create 0 10)` | Their own arena (0 creates a private one) |
 
-Region inference proves non-escape for that one shape only; anything
-else goes to the heap, which is always safe. The heap arena is released
-when the program exits. Chapter 5 describes the rule.
+Region inference decides the placement; anything it cannot prove
+short-lived goes to the heap, which is always safe. The heap arena is
+released when the program exits; the regions are released as calls
+return. Chapter 5 describes the rules, and `with-region` for choosing a
+region explicitly.
 
 ### Monomorphization of Generic ADTs
 

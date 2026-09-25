@@ -28,8 +28,8 @@ The specification assigns every value to one of five **regions**:
 
 | Region | Purpose (spec) | Today |
 |--------|----------------|-------|
-| **Stack** | Values that do not escape | Parameters and `let` locals live in the function's frame, and so does one kind of ADT value (§5.5) |
-| **Heap** | Escaped values, captured closure variables | Every other struct, ADT value and capturing closure, from one bump-allocated arena that lives until the program exits |
+| **Stack** | Values that do not escape | Parameters and `let` locals live in the function's frame. An ADT value that does not outlive its call goes in the call's own region, released when the call returns (§5.5) |
+| **Heap** | Escaped values, captured closure variables | A value the compiler cannot prove short-lived: stored in a global, sent to an actor, handed to foreign code, or passed to a closure called through an unknown function value. Heap values live until the program exits |
 | **Global** | Top-level immutable constants | A top-level `def`: immutable, evaluated once, in source order, before `main` or the tests run |
 | **Circular** | Cyclic structures | Not implemented |
 | **Pin** | Non-moving memory for FFI | `ffi-pin` copies a value into a separate pin arena (§5.8) |
@@ -47,10 +47,11 @@ R7. Global Region: Immutable constants only. Eager initialization. No mutation a
 R8. Pin Region: Non-moving arena. Values physically copied here for FFI. Never compacted.
 ```
 
-The compiler meets R1, R2 and R5 conservatively: anything it cannot
-prove stays local goes to the heap, which is always safe. R3 and R4 are
-checked in the specific forms described in §5.7 and §5.8. R6 and R7 are
-not implemented.
+The compiler meets R1, R2 and R5 with region inference (§5.5): a value
+that does not outlive its call is allocated in the call's region and
+reclaimed on return, and anything it cannot prove short-lived goes to the
+heap, which is always safe. R3 and R4 are checked in the specific forms
+described in §5.7 and §5.8. R6 and R7 are not implemented.
 
 ## 5.3 Capability Types — Who Can Access
 
@@ -198,11 +199,23 @@ In the specification, a value **escapes** if it is:
 3. **sent** to an actor, or
 4. **passed to FFI** (which requires the Pin region instead).
 
-The current compiler proves non-escape for exactly one shape: a
-`(let x (Variant ...) body)` where every use of `x` in `body` is the
-subject of a `match` or an argument to `print`. That construction is
-placed in the function's stack frame. Every other struct or ADT value is
-heap-allocated.
+The compiler runs region inference over the whole program and gives
+every allocation one of three levels:
+
+- **Frame** — the value does not outlive the call. It goes in the call's
+  own region, which is released when the call returns (or makes a tail
+  call, or is unwound by a caught panic).
+- **Result** — the value may be part of the call's result but goes no
+  further. It goes in the region the *caller* chose for the result, so a
+  list built by a helper and consumed by its caller is reclaimed when the
+  caller returns.
+- **Heap** — the value escapes in a way the compiler does not track:
+  stored in a global, sent to an actor, handed to foreign code, or passed
+  to a closure called through an unknown function value.
+
+A `(let x (Variant ...) body)` where every use of `x` is the subject of a
+`match` or an argument to `print` is placed directly in the function's
+stack frame.
 
 ```lisp
 (deftype Shape (Circle Int) (Square Int))
@@ -219,7 +232,7 @@ heap-allocated.
       (Circle r r)
       (Square n (* n n)))))
 
-;; Heap: `s` is passed to a function.
+;; Region: `s` is passed to `area`, which does not keep it.
 (defn passed-area ()
   (let s (Square 4)
     (area s)))
@@ -231,23 +244,117 @@ heap-allocated.
     0))
 ```
 
-Both functions print the same thing; only the allocation differs. You
-can see it in the output of `--emit-asm`: `local-area` makes no call to
-`zyl_heap_alloc`. A missed case costs one allocation, never a dangling
-pointer.
+Both functions print the same thing; only the allocation differs. In the
+output of `--emit-asm`, `local-area` allocates nothing, and `passed-area`
+allocates through `zyl_ralloc` into the region its caller chose (the call
+to `area` is a tail call, so `passed-area`'s own frame is gone by the time
+`area` runs). Neither calls `zyl_heap_alloc`. A missed case costs one heap
+allocation, never a dangling pointer.
 
-Heap values are not reclaimed while the program runs; the arena is
-released when the process exits. A long-running program that allocates
-without bound should manage its own arena from `allocator/allocator`
+Values that do reach the heap are not reclaimed while the program runs;
+the heap is released when the process exits. A long-running program whose
+data escapes in bulk can manage memory explicitly, either with
+`with-region` (below) or with an arena from `allocator/allocator`
 (`arena-create`, `arena-alloc`), as the compiler itself does.
+`ZYL_REGIONS=0` at compile time turns region inference off (everything
+goes to the heap), which is useful for bisecting a suspected region bug.
+
+### Explicit regions: `with-region`
+
+`with-region` runs a body with its allocations in a region of an audited
+kind, released when the body ends:
+
+```lisp
+(with-region (arena :block B :align A :limit L) body)
+(with-region (fixed :size S :align A) body)
+```
+
+An `arena` grows in blocks of `B` bytes (a multiple of 4096, at most
+64 MiB) up to `L` bytes (0, the default, means no limit). A `fixed` region
+holds exactly `S` bytes. `A` is a power of two from 8 to 4096, default 8.
+
+```lisp
+(deftype Nums (Nil) (Cons Int Nums))
+
+(defn build (n acc)
+  (if (= n 0) acc (build (- n 1) (Cons n acc))))
+
+(defn total (l)
+  (match l
+    (Nil 0)
+    (Cons h t (+ h (total t)))))
+
+;; The list lives in an arena that is released when the body ends;
+;; only the Int result leaves it.
+(defn arena-total (n)
+  (with-region (arena :block 65536 :limit 1048576)
+    (total (build n (Nil)))))
+
+;; A fixed region holds exactly 4096 bytes.
+(defn small-total (n)
+  (with-region (fixed :size 4096)
+    (total (build n (Nil)))))
+
+(defn live-bytes () (ffi-call "zyl_region_live_bytes" 1000))
+
+(defn main ()
+  (begin
+    (print (arena-total 1000))                  ; 500500
+    (print (live-bytes))                        ; 0: the arena is gone
+    (print (small-total 10))                    ; 55
+    (print (try (small-total 1000) (catch _ -1))) ; -1: E_REGION_EXHAUSTED
+    0))
+```
+
+Output:
+
+```
+500500
+0
+55
+-1
+```
+
+Three errors belong to `with-region`:
+
+- `E_REGION_SPEC` (compile time): a malformed spec, such as an unknown
+  kind (`pool`), a block size that is not a multiple of 4096, or an
+  alignment that is not a power of two.
+- `E_REGION_EXHAUSTED` (run time, catchable): the region is full. It is
+  deterministic: it depends only on the sequence of allocation requests,
+  and blocks are page-aligned, so padding is the same on every run.
+- `E_REGION_ESCAPE` (compile time): a value allocated inside the region
+  outlives it. Returning the list itself instead of its total is rejected:
+
+```lisp
+(defn leak ()
+  (with-region (arena :block 4096)
+    (build 10 (Nil))))            ; the list is the body's value
+```
+
+```
+PANIC: error[E_REGION_ESCAPE]: a value allocated inside with-region outlives it
+  --> leak.zyl:3:15
+   |
+ 3 |     (build 10 (Nil))))            ; the list is the body's value
+   |               ^
+   = help: compute a result that does not point into the region (a number, or data built outside it)
+```
+
+The error points at the allocation that escapes: here the empty list that
+becomes the tail of the returned list.
+
+The REPL's interpreter ignores regions and allocates in its own arenas,
+so it does not enforce a region's byte limit; compiled code does.
 
 ## 5.6 Closure Capture
 
 The specification makes a read-only capture `TCap`, a mutated capture
 `TMut`, and promotes an escaping closure's captures to the heap.
 
-In the implementation, a closure copies the values it captures into a
-heap block when it is created. It sees the value each variable had at
+In the implementation, a closure copies the values it captures into an
+environment block when it is created (allocated like any other value:
+in the caller's result region when the closure is returned). It sees the value each variable had at
 that moment:
 
 ```lisp
@@ -403,8 +510,10 @@ the tutorial.
 - **Circular region.** There is no cycle detection. With immutable
   fields a program cannot build a cycle out of structs and ADT values
   anyway: a constructor can only point at values that already exist.
-- **`E_REGION_ESCAPE`** is listed in the specification but never raised,
-  because nothing is ever placed in a region it could escape from.
+- **Heap reclamation.** A value that escapes to the heap lives until the
+  process exits; only frame and result regions, and `with-region` scopes,
+  are reclaimed while the program runs. The analysis is field-insensitive,
+  so a local list of strings and its strings share one level.
 
 ## 5.11 Error Messages You'll See
 
@@ -413,6 +522,9 @@ the tutorial.
 | `E_MUT_CONFLICT` | `set!` on a `let` binding, a parameter or a struct field | Use `let-mut`, or rebind the whole value |
 | `E_CAPABILITY_LEAK` | A `let-mut` variable in a `spawn` closure or a `send` message | Send a `let`-bound copy |
 | `E_INVALID_CAPABILITY` | A non-FFI_Pinnable value given to `ffi-call` or `ffi-pin` | Pass primitives, strings or pinnable data |
+| `E_REGION_ESCAPE` | A value allocated inside `with-region`, or a `(bytebuf Stack N)`, outlives its region | Return data that does not point into the region |
+| `E_REGION_SPEC` | A malformed `with-region` spec | Use `arena` or `fixed` with valid sizes and alignment |
+| `E_REGION_EXHAUSTED` | A `with-region` scope ran out of space (run time) | Raise the limit, or catch it with `try` |
 | `E_CT_VIOLATION`, `E_SECRET_DEBUG`, `E_SECRET_ESCAPE`, `E_FFI_PIN_REQUIRED` | Misuse of a `Secret` | See Chapter 17 |
 
 `E_MUT_CONFLICT` and `E_CAPABILITY_LEAK` are located: they point at the
@@ -442,8 +554,8 @@ Pin     │     │  via ffi-pin│  no         │
 ```
 
 In today's compiler the capability column is enforced by name
-(`let` versus `let-mut`), and the region row is chosen conservatively
-(heap unless proven local). The checks are designed to reject only what
+(`let` versus `let-mut`), and the region row is chosen by region
+inference (the call's region unless the value escapes, heap otherwise). The checks are designed to reject only what
 they are sure about, so some violations of the full specification go
 unreported (Chapter 17, §17.11).
 
@@ -454,13 +566,16 @@ unreported (Chapter 17, §17.11).
 ### Region Inference
 
 The specification places region inference in Phase 4, before
-monomorphization, but prescribes no algorithm. An earlier general
-two-pass design that assigned a region to every value was removed,
-because nothing downstream used its result. What remains is
-`ri-transform-fns` in `stdlib/compiler/region_inference.zyl`. It runs on
-ICNF after optimization, just before code generation, and rewrites a
-qualifying `let`-bound variant construction (§5.5) into a stack
-allocation. See Chapter 16.
+monomorphization, but prescribes no algorithm. The implementation runs
+on ICNF after optimization, just before code generation, in
+`stdlib/compiler/region_inference.zyl`. First `ri-transform-fns` rewrites
+a qualifying `let`-bound variant construction (§5.5) into a stack
+allocation; then `rg-regions` groups values that may point to each other
+into union-find classes and gives each class a level (frame, result or
+heap), using per-function parameter summaries computed to a fixpoint over
+the whole program. The levels are recorded per allocation and call site,
+and code generation turns them into region pushes, pops and
+`zyl_ralloc` calls. The design is `docs/regions-design.md`; see Chapter 16.
 
 ### Capability Checking
 

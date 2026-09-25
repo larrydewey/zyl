@@ -279,7 +279,7 @@ shows `3.500000`.
 | Form | Syntax | Notes |
 |---|---|---|
 | `byte` | `(byte n)` | literal, 0..255 |
-| `bytebuf` | `(bytebuf Region capacity)` | region and capacity are compile-time literals |
+| `bytebuf` | `(bytebuf Region capacity)` | region and capacity are compile-time literals; a `Stack` buffer lives in the frame region, and letting it escape is `E_REGION_ESCAPE` |
 | `bytebuf-len` / `bytebuf-cap` | `(bytebuf-len buf)` | |
 | `bytebuf-ptr` | `(bytebuf-ptr buf)` | raw address of the first byte |
 | `bytebuf-append` | `(bytebuf-append buf slice)` | takes a **slice**, not a single byte; returns 0 and changes nothing when the slice does not fit |
@@ -348,6 +348,18 @@ expressions:
 | Constructed types | `List`, `Option`, `Result`, `Vec`, `Map` |
 | Regions | `Stack`, `Heap`, `Global`, `Circular`, `Pin` |
 | Capabilities | `Secret`, `TCap`, `TMut` |
+
+`with-region` is the one form that chooses a region for a computation:
+
+| Form | Syntax | Notes |
+|---|---|---|
+| `with-region` | `(with-region (arena :block B :align A :limit L) body)` | allocations in `body` go to an arena grown in `B`-byte blocks (a multiple of 4096, at most 64 MiB) up to `L` bytes (0: no limit); released when `body` ends |
+| | `(with-region (fixed :size S :align A) body)` | a region of exactly `S` bytes |
+
+`A` is a power of two from 8 to 4096 (default 8). A malformed spec is
+`E_REGION_SPEC`; running out is `E_REGION_EXHAUSTED` (catchable); a value
+allocated inside that outlives the body is `E_REGION_ESCAPE`. Chapter 16
+has the details.
 
 `declassify` (`math/secret/secret`) is the library function that drops
 the `Secret` capability; `ct-eq-bool` and `ct-eq-words-bool` do the same

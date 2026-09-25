@@ -523,7 +523,8 @@ ADT whose variant name is the struct's name.
 |-------|-------|
 | `let`-bound Int, Float, Bool | The function's stack frame |
 | String literal | Read-only data in the binary |
-| Struct or ADT value that provably never escapes | The function's stack frame |
+| Struct or ADT value that provably never escapes | The function's stack frame, or the call's own region, released when it returns |
+| Struct or ADT value returned to a caller | The region the caller chose for the result |
 | Any other struct or ADT value | The runtime's heap arena |
 | `Vec` / `Map` buffers | An arena, passed to `vec-create` / `map-create` (0 creates a private one) |
 

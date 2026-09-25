@@ -149,7 +149,7 @@ the call itself, after the argument registers are loaded:
 ```
 
 `r12` is callee-saved in C, so the callee hands it back. `print`
-(`printf`) and variant allocation (`zyl_heap_alloc`) use the same
+(`printf`) and variant allocation (`zyl_ralloc`, `zyl_heap_alloc`) use the same
 sequence. A C call with seven or more arguments must have its stack
 arguments at `[rsp]`, so rounding `rsp` down would move them out from
 under the callee; instead the stack arguments are copied into a fresh
@@ -216,6 +216,7 @@ Higher addresses
 | saved rbp              | [rbp]      <- rbp
 +------------------------+
 | parameter slots        | [rbp-8], [rbp-16], ... one per parameter
+|                        | (from [rbp-56] in a region function, below)
 +------------------------+
 | local slots            | one per let, match binding, loop value,
 | ...                    | and word of every stack-allocated variant
@@ -228,6 +229,26 @@ The frame is sized from the function's actual slot count: parameters
 plus one slot per binding the body needs plus eight slots of headroom,
 rounded so that the frame size is 16n+8. There is no red-zone use and
 no frame-pointer omission.
+
+### Region functions
+
+A function that region inference flags (it has a frame region, or it
+keeps its caller's result region; Chapter 28, §28.5) reserves six words
+above its parameters:
+
+```
+[rbp-8]     saved rax (the return value while the region is released)
+[rbp-16]    the result region, read from zyl_cur_region at entry
+[rbp-48]    the frame region's header: prev, bump, end, blocks
+            (at [rbp-48], [rbp-40], [rbp-32], [rbp-24])
+[rbp-56]    first parameter slot
+```
+
+The header is pushed on the thread-local `zyl_region_top` chain inline in
+the prologue, and popped inline in the epilogue and before every tail
+jump; `zyl_region_free` is called only if the region actually took a
+block (`blocks` nonzero). A `with-region` scope uses the same four-word
+header layout, marked by the low bit of `blocks`.
 
 ## 29.5 Instruction Selection
 
@@ -326,6 +347,48 @@ name:
     ret
 ```
 
+A region function adds to this. Its prologue pushes the frame region:
+
+```asm
+    mov rax, QWORD PTR fs:zyl_region_top@tpoff
+    mov [rbp-48], rax            ; prev
+    xor eax, eax
+    mov [rbp-40], rax            ; bump
+    mov [rbp-32], rax            ; end
+    mov [rbp-24], rax            ; blocks
+    lea rax, [rbp-48]
+    mov QWORD PTR fs:zyl_region_top@tpoff, rax
+```
+
+and its epilogue saves the result in `[rbp-8]`, frees the region's blocks
+if it took any, pops the chain, and clears `zyl_cur_region` if it still
+names the dying frame:
+
+```asm
+    mov [rbp-8], rax
+    cmp qword ptr [rbp-24], 0
+    je .L1
+    lea rdi, [rbp-48]
+    ...                          ; aligned call
+    call zyl_region_free
+.L1:
+    mov r10, [rbp-48]
+    mov QWORD PTR fs:zyl_region_top@tpoff, r10
+    lea r11, [rbp-48]
+    cmp QWORD PTR fs:zyl_cur_region@tpoff, r11
+    jne .L2
+    mov QWORD PTR fs:zyl_cur_region@tpoff, 0
+.L2:
+    mov rax, [rbp-8]
+```
+
+Before a call whose callee may allocate into its result region, the call
+site's region is stored in the thread-local `zyl_cur_region`, addressed
+`fs`-relative, after the arguments are evaluated: the frame region
+(`lea r11, [rbp-48]`), the saved result region (`[rbp-16]`), or 0 for the
+heap. A function that keeps the result region reads `zyl_cur_region`
+once, at entry, into `[rbp-16]`.
+
 A call in tail position is a jump (`cg-tail`): the arguments are staged
 in scratch slots, arguments beyond the sixth copied into the caller's
 incoming stack-argument area (which bounds how many a tail call may
@@ -348,10 +411,13 @@ the epilogue reloads them. No other callee-saved register is used.
 
 ### Variants and structs
 
-A constructor application allocates `8 * (fields + 1)` bytes with
-`zyl_heap_alloc` and fills them as `[tag][field 0][field 1]...`. The
+A constructor application allocates `8 * (fields + 1)` bytes and fills
+them as `[tag][field 0][field 1]...`. A site that region inference placed
+in a region calls `zyl_ralloc(size, region)` with the region passed
+directly (the frame header's address, the saved result region, or a
+`with-region` scope); a heap site calls `zyl_heap_alloc(size)`. The
 fields are evaluated left to right and pushed, the block is allocated,
-and the fields are popped into place:
+and the fields are popped into place. A heap site:
 
 ```asm
     ; fields already pushed
@@ -369,9 +435,23 @@ and the fields are popped into place:
     mov rax, rbx
 ```
 
-`zyl_heap_alloc` places a hidden header before the block, which is how
+A result-region site differs only in the call:
+
+```asm
+    mov rdi, 16
+    mov rsi, [rbp-16]         ; the caller's result region
+    call zyl_ralloc
+```
+
+Both allocators place a hidden size header before the block, which is how
 `zyl_variant_eq` compares two separately allocated values field word by
-field word.
+field word. Region blocks come in size classes of 1, 4, 16 and 64 KiB (a
+region's first block is the smallest, each further block the next class
+up), taken from per-thread pools carved from `mmap`ed chunks above 4 GiB (so the closure-versus-code address
+checks keep working) and charged to `ZYL_MAX_MEMORY`. Region-aware
+runtime functions (`zyl_cstr_concat` and the other fresh-string producers)
+have `_r` entry points that allocate in `zyl_cur_region`; compiled code
+calls them from annotated sites.
 An `IStackVariant` has the same layout written into consecutive slots
 of the current frame, with no allocation call.
 

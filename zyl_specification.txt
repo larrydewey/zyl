@@ -377,6 +377,23 @@ R6. Cyclic structures: Cyclic references detected among heap values → Circular
 R7. Global Region: Immutable constants only. Eager initialization. No mutation allowed.
 R8. Pin Region: Non-moving arena. Values physically copied here for FFI. Never compacted.
 
+9.2 EXPLICIT REGIONS (with-region)
+Syntax:
+    (with-region (arena :block B :align A :limit L) body)
+    (with-region (fixed :size S :align A) body)
+Kinds (closed set):
+    arena: grows in blocks of B bytes (multiple of 4096, ≤ 64 MiB), at most L bytes in total (L = 0: no limit).
+    fixed: exactly S bytes.
+    A: power of two, 8 ≤ A ≤ 4096. Default 8.
+Semantics:
+    Allocations in body are placed in the region; the region is released when body ends.
+    Exhaustion depends only on the request sequence (deterministic).
+Errors:
+    Malformed spec → E_REGION_SPEC (compile-time).
+    Region exhausted → E_REGION_EXHAUSTED (runtime, catchable).
+    Value of the region reaching body's result or any longer-lived location → E_REGION_ESCAPE (compile-time).
+    (bytebuf Stack N) returned, stored, sent, or passed where it may be retained → E_REGION_ESCAPE (compile-time).
+
 ================================================================================
 10. MUTABILITY AND ALIASING
 ================================================================================

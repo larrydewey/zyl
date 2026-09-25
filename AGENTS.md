@@ -48,8 +48,11 @@ type annotation (HM, static trait resolution, per-type specialization,
 generated structural `T.==`, `E_TYPE_MISMATCH` for an argument that
 clashes with a parameter or field annotation, `type_annotate.zyl`) →
 ICNF lowering →
-optimization → region inference (escape analysis over ICNF) → codegen →
-`cc` link. Contracts are lowered where forms are recognized
+optimization → region inference (the stack-variant rewrite, then
+`rg-regions`: escape analysis over ICNF that places every allocation and
+call site in the frame's own region, the caller's result region, or the
+heap, and raises `E_REGION_ESCAPE`; see `docs/regions-design.md`) →
+codegen → `cc` link. Contracts are lowered where forms are recognized
 (`convert-ast`, `expr_inner.zyl`): `requires`/`ensures`/`invariant`
 become checks raising `E_CONTRACT_VIOLATION`, `ensures` binds `result`,
 `recover` is `try`/`catch` with arms by error code, `checkpoint` rolls
@@ -72,9 +75,22 @@ carries as `zyl_build_hash`).
 - Function application: evaluate function, then arguments sequentially.
 
 ### Region System
-- Regions are compile-time enforced: Stack, Heap, Global, Circular, Pin
-- Escape analysis with region promotion (Stack → Heap)
-- No value may escape its assigned region
+- Regions: Stack, Heap, Global, Circular, Pin. Region placement is decided
+  at compile time by escape analysis (`region_inference.zyl`) over
+  union-find object classes, with per-function parameter summaries joined
+  to a whole-program fixpoint
+- Each call that allocates short-lived values gets a frame region,
+  released on return, before a tail jump, or when a caught panic unwinds
+  it; results go into the region the caller chose (`zyl_cur_region`);
+  values that escape untracked go to the process heap, which still lives
+  until exit. `ZYL_REGIONS=0` at compile time turns this off
+- `(bytebuf Stack N)` lives in the frame region; `with-region` opens an
+  explicit `arena` or `fixed` region (`E_REGION_SPEC`,
+  `E_REGION_EXHAUSTED`)
+- No value may escape its assigned region: a Stack bytebuf or a
+  `with-region` value that would outlive its region is `E_REGION_ESCAPE`
+- Global and Circular are names only (Global = top-level `def` values,
+  which are heap); the interpreter ignores regions
 
 ### Capability Types
 - TCap: shared immutable access (any number of references)
@@ -112,7 +128,7 @@ carries as `zyl_build_hash`).
 
 - **No-dispatch parsing:** the reader produces generic S-expression nodes; form recognition happens afterwards in one place (`convert-ast` in `stdlib/compiler/expr_inner.zyl`)
 - **Innermost-first macro expansion** with gensym hygiene
-- **ICNF as custom SSA IR** (not LLVM) for region annotation flow (today ICNF is a tree IR, not yet SSA and without region annotations)
+- **ICNF as custom SSA IR** (not LLVM) for region annotation flow (today ICNF is a tree IR, not yet SSA; region annotations live in a side table keyed by node and are printed as ` @r`, so the ICNF hash covers them)
 - **Region-based memory** (not GC) for deterministic reclamation
 - **Capability types** (TCap/TMut) for compile-time aliasing control
 - **Structs immutable by default** (rebinding only)

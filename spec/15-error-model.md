@@ -35,6 +35,7 @@ this document's reading of each code's meaning.
 | `E_MACRO_ILLEGAL_ACCESS` | Macro accessed runtime value | §19.4 |
 | `E_CANNOT_INFER` | Generic param has no call-site evidence | §6.4, §6.7 |
 | `E_REGION_ESCAPE` | Region rule violation | §9 |
+| `E_REGION_SPEC` | Malformed `with-region` specification | §9.2 |
 | `E_CAPABILITY_LEAK` | TMut leaked | §10 |
 
 Two further codes are defined in §6.7 but not repeated in §28:
@@ -58,6 +59,7 @@ Compile-time errors abort compilation.
 | `E_CONTRACT_VIOLATION` | Contract condition failed | §23 |
 | `E_OVERFLOW` | Integer overflow | §20.1 |
 | `E_DIVISION_BY_ZERO` | Division by zero (Int) | §20.3 |
+| `E_REGION_EXHAUSTED` | A `with-region` region ran out of its fixed size or limit (catchable) | §9.2 |
 | `E_TEST_FAILURE` | Test assertion failed | §20.5 |
 | `E_TEST_RUNNER_ERROR` | Test harness error | §20.5 |
 
@@ -173,10 +175,12 @@ without a location, plus `E_ZEROIZE_MISSING` at severity 2. Names that are
 Raised by the compiler: `E_MUT_CONFLICT`, `E_CAPABILITY_LEAK`,
 `E_MATCH_NONEXHAUSTIVE`, every package-system code, and
 `E_RESERVED_KEYWORD` (only for the reserved byte widths; see
-`spec/01-lexing-and-tokens.md`).
+`spec/01-lexing-and-tokens.md`), `E_REGION_ESCAPE` (a `(bytebuf Stack N)`
+that escapes its frame, or a value that outlives its `with-region`) and
+`E_REGION_SPEC`. Raised at run time: `E_REGION_EXHAUSTED`.
 
 Catalogued but never raised: `E_USER_ERROR`, `E_ASSERT_FAIL`,
-`E_REGION_ESCAPE`, `E_MACRO_NON_TERMINATION`,
+`E_MACRO_NON_TERMINATION`,
 `E_UNINITIALIZED_USE`, `E_TRAIT_NOT_FOUND`, `E_DUPLICATE_IMPL`,
 `E_MACRO_ILLEGAL_ACCESS`, `E_CONTRACT_VIOLATION`, `E_OVERFLOW`,
 `E_TEST_FAILURE`, `E_TEST_RUNNER_ERROR`, `E_TRAIT_NOT_DERIVABLE`,

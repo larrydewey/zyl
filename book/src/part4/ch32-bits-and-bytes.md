@@ -148,15 +148,20 @@ exactly `bytebuf-cap` bytes. By design it belongs to the Pin region,
 because an address into a region that may move is not an address at
 all.
 
-**The region is currently recorded, not enforced.** The runtime gives
-every region the same stable, zero-initialized heap allocation, so
-nothing is unsound — but the rules the design specifies are not checked
-yet:
+**The Stack region is enforced; the others are recorded.** A
+`(bytebuf Stack N)` is allocated, zero-initialized, in the function's
+frame region and released when the function returns. Returning it,
+storing it in another value, sending it, or passing it to code that may
+keep it is `E_REGION_ESCAPE` at compile time. Byte loads, stores,
+appends and atomics are known not to keep the buffer, so local use is
+fine. Every other region gets the same stable, zero-initialized heap
+allocation, so nothing is unsound, but the remaining rules are not
+checked yet:
 
 | Rule | Designated error | Today |
 |---|---|---|
 | `bytebuf-ptr` only in the Pin region | `E_BYTEBUF_NOT_PIN` | Not checked; works on any buffer |
-| A Stack buffer may not escape its scope | `E_STACK_BYTEBUF_RETURN` | Not checked |
+| A Stack buffer may not escape its scope | `E_STACK_BYTEBUF_RETURN` | Checked, reported as `E_REGION_ESCAPE` |
 | A Global buffer may not be mutated | `E_GLOBAL_BYTEBUF_MUT` | Not checked |
 
 Write `Pin` when you mean to take an address, so the program stays
@@ -282,13 +287,14 @@ at different stages:
 | Feature | State |
 |---|---|
 | `bit-and`, `bit-or`, `bit-xor`, `bit-not`, `shl`, `shr`, `ashr` | Complete. Covered by `tests/regression/bitwise.zyl` and used throughout `stdlib/math` |
-| `bytebuf`, `bytebuf-cap`, `bytebuf-len`, `bytebuf-ptr` | Working; the region argument does not change allocation |
+| `bytebuf`, `bytebuf-cap`, `bytebuf-len`, `bytebuf-ptr` | Working; a `Stack` buffer lives in the frame region, every other region in the heap |
 | `byteslice`, `byteslice-sub`, `bytebuf-append` | Working |
 | `load-u8`, `load-i8`, `store-u8`, `store-i8` | Working |
 | 16-, 32- and 64-bit loads and stores | Working, little- or big-endian |
 | The atomic family | Working, on 8-aligned offsets |
 | `align-check` | Working, as a 1/0 test |
-| Region rules (`E_BYTEBUF_NOT_PIN`, `E_STACK_BYTEBUF_RETURN`, `E_GLOBAL_BYTEBUF_MUT`, `E_ATOMIC_ABA`) | **Not enforced** |
+| Stack escape (`E_REGION_ESCAPE`) | Enforced |
+| Other region rules (`E_BYTEBUF_NOT_PIN`, `E_GLOBAL_BYTEBUF_MUT`, `E_ATOMIC_ABA`) | **Not enforced** |
 
 Two further caveats:
 
@@ -312,8 +318,9 @@ Two further caveats:
 - Out-of-range shift counts are defined: logical shifts give 0, `ashr`
   saturates to the sign bit.
 - `bytebuf` allocates a fixed-capacity, zero-initialised block; every
-  access is bounds-checked and fails closed. The region is recorded but
-  its rules are not enforced yet.
+  access is bounds-checked and fails closed. A `Stack` buffer lives in
+  the frame region and may not escape it (`E_REGION_ESCAPE`); the other
+  region rules are not enforced yet.
 - Write constants at or above 2^63 as negative `Int`s; an oversized
   literal currently becomes 0.
 - Loads and stores come in 8, 16, 32 and 64 bits, signed and unsigned,

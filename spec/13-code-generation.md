@@ -71,11 +71,25 @@ callee sees the 16-byte alignment System V guarantees.
   `mov rsp, rbp; pop rbp; ret`.
 - Parameter `i` (from 0) is spilled to `[rbp - 8*(i+1)]`; locals take the
   following 8-byte slots downward.
+- A function that region inference flags (it has a frame region or keeps
+  its result region, attribute table 4) reserves six words above its
+  parameters: `[rbp-8]` the saved `rax`, `[rbp-16]` the result region
+  (read from `zyl_cur_region` at entry), `[rbp-48]` a four-word region
+  header (`prev`, `bump`, `end`, `blocks`). Its parameters then start at
+  `[rbp-56]`. Entry pushes the header on the thread-local
+  `zyl_region_top` chain inline; exit, and every tail jump, pops it inline
+  and calls `zyl_region_free` only if a block was taken.
+- Before each call, the region the call site was given (frame, result, a
+  `with-region` scope, or 0 for the heap) is stored in the thread-local
+  `zyl_cur_region`, addressed `fs`-relative.
+- `IRegion` pushes a scope header with the same layout, marked by the low
+  bit of `blocks`, and releases it when the body ends.
 - The frame size is fixed per function from a slot count of the body,
   rounded to keep 16-byte alignment.
 - Expression evaluation is a stack machine that leaves each result in
   `rax`.
-- There is no tail-call optimization; every call is a `call`.
+- A call in tail position is a jump when its stack arguments fit in the
+  caller's incoming ones (see `docs/implementation-status.md`).
 
 ## Implementation: Values
 
@@ -88,9 +102,15 @@ callee sees the 16-byte alignment System V guarantees.
   `comisd`.
 - **String:** a pointer to `.rodata` or to runtime memory; `=`, `==` and
   `!=` on strings compare contents.
-- **Variant / struct:** a `[tag][field0]...` block from `zyl_heap_alloc`
-  (`rdi = 8 * (fields + 1)`), or rbp-relative stores for an
-  `IStackVariant`. `match` compares the tag word.
+- **Variant / struct:** a `[tag][field0]...` block from
+  `zyl_ralloc(size, region)` at a site region inference placed in a
+  region, from `zyl_heap_alloc` (`rdi = 8 * (fields + 1)`) at a heap site,
+  or rbp-relative stores for an `IStackVariant`. `match` compares the tag
+  word.
+- **Region-aware runtime calls:** at an annotated site, the fresh-result
+  producers `zyl_cstr_concat`, `zyl_cstr_substr`, `zyl_cstr_from_byte`,
+  `zyl_int_text`, `zyl_f_text` and `zyl_file_read_c` are called through
+  their `_r` entry points, which allocate in `zyl_cur_region`.
 - **Shifts:** counts outside 0–63 are defined: logical shifts give 0,
   `ashr` saturates to the sign bit.
 - **`print`:** `printf` with `%lld`, `%f` or `%s` chosen by the value's

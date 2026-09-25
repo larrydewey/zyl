@@ -157,7 +157,7 @@ Nothing is reordered.
 
 ### Region inference
 
-`region_inference.zyl` is a narrow ICNF rewrite. A variant value bound by `let` that is only matched or printed is moved to the stack; everything else stays in the heap arena. The general escape analysis of spec §9 is not implemented, and `E_REGION_ESCAPE` is never raised.
+`region_inference.zyl` runs on ICNF. A variant value bound by `let` that is only matched or printed is moved to the stack; every other allocation and call site is then classified as belonging to the call's own region (released on return), the caller's result region, or the heap. The analysis visits functions in program order and joins per-function summaries to a fixpoint, so its decisions are a pure function of the program; they are printed in the ICNF text, so a package build's ICNF hash covers them. `with-region` limits fail with `E_REGION_EXHAUSTED` at a point that depends only on the sequence of allocation requests: region blocks are page-aligned, so alignment padding is the same on every run. `E_REGION_ESCAPE` is raised for a Stack bytebuf or a `with-region` value that outlives its region.
 
 ### Code generation
 

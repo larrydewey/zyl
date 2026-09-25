@@ -115,11 +115,12 @@ Not normative.
 - **`zyl.buildinfo`** is written for package builds only (`zyl build`,
   `zyl test`), as `<output>.buildinfo`. It contains `compiler-hash`
   (BLAKE3 of the running compiler binary), `graph-hash` (from the lock,
-  empty when there is none), `native-objects` (always empty) and
-  `asm-hash` (BLAKE3 of the emitted assembly). The fourth field is a
-  recorded deviation: the ICNF has no serialised form, so the assembly
-  hash stands in for the ICNF hash. The resolved graph itself is not
-  written. The graph hash is not mixed into the binary's own contents.
+  empty when there is none), `native-objects` (always empty), the ICNF
+  hash (BLAKE3 of the canonical ICNF text from `icnf_print.zyl`, which
+  includes each node's region annotation as ` @r`, so region decisions
+  are covered), the resolved graph, `asm-hash` (BLAKE3 of the emitted
+  assembly) and the final hash of the four spec inputs, which the binary
+  carries as `zyl_build_hash`.
 - A single-file compile (`zyl file.zyl -o out`) runs no hash-finalization
   step.
 - There is no SHA-256 in the compiler or runtime; BLAKE3 is implemented in

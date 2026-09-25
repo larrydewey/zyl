@@ -48,6 +48,8 @@ A program is a list of `IFn` nodes. The `Icnf` ADT in `icnf.zyl`:
 | `ISeq list` | Sequence |
 | `IVariant name tag fields` | Heap-allocated variant or struct |
 | `IStackVariant name tag fields` | Same layout, allocated in the current frame (see region inference) |
+| `ISymAddr symbol` | Address of a C symbol (through the GOT); produced only by `ffi-call` lowering, which hands the foreign function to the timed-call bridge `zyl_ffi_timed` |
+| `IRegion kind block align limit body` | `with-region`: kind (1 arena, 2 fixed), block size, alignment, byte limit (0 none); allocations in `body` that region inference places in the scope go to that region, released when `body` ends |
 | `IMatch subject arms` | Match on the variant tag; each `IArm` holds variant, tag, bound names and body |
 | `ITryCatch body var handler` | `try`/`catch` over the runtime's panic frames |
 | `IFn name params body kinds` | Top-level function; `kinds` tags each parameter as Int/pointer, String or Float |
@@ -61,10 +63,16 @@ Binary opcodes: 0 add, 1 sub, 2 mul, 3 div, 4 rem, 5 lt, 6 gt, 7 le, 8 ge,
 - There are no SSA ids and no Phi nodes: control flow is embedded in
   `IIf`, `IWhile` and `IMatch`, and locals are named and may be reassigned
   (`ISet`).
-- Nodes carry no region annotation. The only region decision in the
-  pipeline is the `IVariant` to `IStackVariant` rewrite
-  (`spec/07-region-memory-model.md`).
+- Region annotations are not part of the node: region inference records
+  them in a side table (attribute table 4) keyed by the node. An
+  allocation or call site holds its level plus one (1 frame region,
+  2 result region, 3 heap, `4 + k` the enclosing `with-region` scope `k`);
+  an `IFn` holds flags plus 4 (bit 0 has a frame region, bit 1 keeps the
+  result region). See `spec/07-region-memory-model.md` and
+  `docs/regions-design.md`.
 - There is no Result-specific node. `Result` is an ordinary ADT, and
   errors travel through `ITryCatch` and the runtime's panic frames.
-- The IR has no serialised form, so no ICNF hash exists; see
+- The printed form (`icnf_print.zyl`) is the serialised form: it shows
+  each node's codegen kind as ` :k` and its region annotation as ` @r`, so
+  the ICNF hash of a package build covers region decisions; see
   `spec/14-determinism-and-hashing.md`.

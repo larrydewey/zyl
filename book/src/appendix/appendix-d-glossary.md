@@ -162,8 +162,8 @@ one is `E_PKG_UNKNOWN_EDITION` (§31.11).
 send).
 
 **Escape analysis**: Determining whether a value outlives its defining
-scope. Today's region pass uses it for one rewrite: a variant that is
-only matched or printed is allocated in its function's frame.
+scope. Region inference uses it to place each allocation in the
+current call's region, its caller's result region, or the heap.
 
 **Evaluation order**: Strictly left to right (§11).
 
@@ -231,7 +231,8 @@ caller's variables. Specified in §19.2; see *Gensym*.
 
 **ICNF (Intermediate Canonical Normal Form)**: Zyl's intermediate
 representation, specified as an SSA IR with region annotations (§18).
-The implementation (`icnf.zyl`) is a tree of instructions —
+The implementation (`icnf.zyl`) is not SSA; region decisions are kept in
+a side table and printed with the tree. It is a tree of instructions —
 `ILet`, `IIf`, `IWhile`, `IMatch`, `ICall`, `IFfi` and so on — that
 code generation walks directly.
 
@@ -390,7 +391,8 @@ matching `lo` through `hi` inclusive.
 Circular or Pin (§9).
 
 **Region inference**: Compile-time region assignment (phase 4). The
-current pass promotes only provably non-escaping variants to the stack.
+current pass runs on ICNF and places each allocation in the call's frame
+region (released on return), the caller's result region, or the heap.
 
 **REPL**: `zyl repl` — the interactive session built from
 `stdlib/repl/`, which evaluates each entry with the ICNF interpreter
@@ -484,6 +486,10 @@ to export. Importing a non-`pub` symbol is `E_PKG_PRIVATE_SYMBOL`.
 `E_ZEROIZE_MISSING`. Warnings never stop a build.
 
 **Wildcard pattern**: `_`, the catch-all arm. It must be the last arm.
+
+**`with-region`**: The form that runs a body with its allocations in an
+explicit `arena` or `fixed` region, released when the body ends
+(Chapter 16).
 
 **Workspace**: Several packages under one `zyl-workspace.zyl`, sharing
 one root lock, one store and one build cache (§31.11).

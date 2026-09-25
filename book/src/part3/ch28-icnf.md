@@ -21,17 +21,22 @@ worth being exact about the difference:
   a small *representation kind* per function parameter (0 for a machine
   word, 1 for a String, 2 for a Float), because those three are emitted
   differently.
-- **Regions are a rewrite, not an annotation.** Nothing carries a region
-  field. Region inference runs on ICNF and records its one decision —
-  "this variant does not escape its frame" — by replacing an `IVariant`
-  node with an `IStackVariant` node (§28.5).
+- **Regions are a side-table annotation, plus one rewrite.** No node has
+  a region field. Region inference runs on ICNF and records, for every
+  allocation and call site, which region its result goes into (the
+  frame's own region, the caller's result region, the heap, or an
+  enclosing `with-region` scope) in attribute table 4, keyed by the
+  node. A variant that is only matched or printed is instead rewritten
+  from `IVariant` to `IStackVariant`, and an explicit `with-region`
+  scope is its own node, `IRegion` (§28.5).
 - **Phase position.** ICNF is produced after monomorphization, trait
   dispatch, closure inlining and assert lowering, and consumed by the
   optimizer, region inference and codegen, in that order (§28.6).
 - **Textual form.** `compiler/icnf_print.zyl` (`icnf-text`) writes the
   lowered program as canonical s-expressions, one function per line,
-  with each node's codegen kind as a `:k` suffix. Package builds hash it
-  for `zyl.buildinfo`'s `icnf-hash`.
+  with each node's codegen kind as a `:k` suffix and its region
+  annotation as an `@r` suffix. Package builds hash it for
+  `zyl.buildinfo`'s `icnf-hash`, so the hash covers region decisions.
 
 ## 28.2 ICNF Structure
 
@@ -58,7 +63,8 @@ The whole representation is two ADTs:
   (ICallClosure String (List Icnf))     ; no longer produced; codegen treats it as ICall
   (ITryCatch Icnf String Icnf)          ; try body, catch variable, handler
   (IStackVariant String Int (List Icnf))
-  (ISymAddr String))                    ; address of a C symbol (FFI bridge only)
+  (ISymAddr String)                     ; address of a C symbol (FFI bridge only)
+  (IRegion Int Int Int Int Icnf))       ; with-region: kind (1 arena, 2 fixed), block, align, limit, body
 
 (deftype IArm (IArm String Int (List String) Icnf))  ; variant, tag, binds, body
 ```
@@ -106,6 +112,7 @@ so `(+ a b c)` becomes `(IBinop 0 (IBinop 0 a b) c)`.
 | `match` | `IMatch` of `IArm`s |
 | `struct-get` | an `IMatch` with one arm per struct type that has the field |
 | `try` / `catch` | `ITryCatch` |
+| `with-region` | `IRegion` with the kind, block size, alignment and limit, validated by `parse-with-region` in `expr_inner.zyl` |
 | `fn` | an `IFn` lifted to the top level, referenced by `ILoad`; or, when it captures, a closure value (§28.4) |
 | `assert-equal`, `assert-true`, `assert-false` | an `IIf` that calls `zyl_panic` on failure |
 | a top-level `(test "name" body)` | a function `_test_<name>` plus a `zyl_register_test` call in an implicit `main` |
@@ -157,8 +164,13 @@ were values, is now an identity pass.
 
 ## 28.5 Regions in ICNF
 
-There is one region decision in the whole pipeline, made by
-`region_inference.zyl`'s `ri-transform-fns` after optimization:
+Region inference (`stdlib/compiler/region_inference.zyl`) runs after
+optimization in two steps.
+
+**The stack-variant rewrite.** `ri-transform-fns` moves a let-bound
+variant into the frame when every use of the name is the scrutinee of a
+`match` or the argument of `print`, and the name is not referenced inside
+a nested `fn`:
 
 ```lisp
 ;; Before
@@ -170,17 +182,39 @@ There is one region decision in the whole pipeline, made by
   (IMatch (ILoad "p") arms))
 ```
 
-A let-bound variant is moved to the stack only when every use of the
-name is the scrutinee of a `match` or the argument of `print`, and the
-name is not referenced inside a nested `fn`. Any other use — passed to
-a call, stored in another variant, captured — leaves it on the heap.
-The pass is conservative on purpose: undershooting costs an allocation,
-overshooting would be silent memory corruption.
+**Region annotation.** `rg-regions` then classifies every remaining
+allocation site (an `IVariant`, or an `IFfi` to a region-aware runtime
+function) and every call site. Values that may point to each other share
+a union-find object class; each class gets a level — frame (the value
+does not outlive the call), result (it may reach the call's result, so it
+goes in the region the caller chose), or heap (it escapes in a way the
+analysis does not track). Per-function parameter summaries are joined to
+a fixpoint over the whole program. The decisions go into attribute
+table 4:
 
-The general region machinery the specification describes (the full
-Stack/Heap/Global/Circular/Pin lattice with rules R1–R8 and
-`E_REGION_ESCAPE`) is not implemented. The `Region` ADT survives in
-`type_system.zyl` only as the parameter of the byte-buffer types.
+| Node | Attribute 4 |
+|------|-------------|
+| allocation or call site | 1 frame region, 2 result region, 3 heap, `4 + k` the `k`th enclosing `with-region` scope |
+| `IFn` | 4 plus flags: bit 0, the function has a frame region; bit 1, it keeps its caller's result region |
+
+`icnf-text` prints a nonzero annotation as ` @r` before the node's closing
+parenthesis, after any ` :k`. Chapter 29 (§29.7) shows how codegen uses
+the annotations. `ZYL_REGIONS=0` at compile time leaves every site at 3
+(heap). The interpreter ignores the annotations and allocates in its own
+arenas.
+
+**Explicit regions.** `(with-region (arena ...) body)` and
+`(with-region (fixed ...) body)` lower to `IRegion kind block align limit
+body`. Allocations in `body` that the analysis places in the scope are
+annotated `4 + k`; one whose class reaches the body's result or anything
+longer-lived is `E_REGION_ESCAPE`, as is a `(bytebuf Stack N)` that
+escapes its frame.
+
+The pass is conservative on purpose: undershooting costs a heap
+allocation, overshooting would be silent memory corruption. The Global
+and Circular regions of the specification are not represented; the
+`Region` ADT in `type_system.zyl` survives as the parameter of the
+byte-buffer types.
 
 ## 28.6 Lowering and the Passes Around It
 
@@ -194,7 +228,7 @@ type inference (collect-definitions)
   → assert lowering       (al-expand-program)
   → ICNF lowering         (ic-program)
   → optimization          (opt-optimize-fns)
-  → region inference      (ri-transform-fns)
+  → region inference      (ri-transform-fns, then rg-regions)
 ```
 
 `compile-to-fns` returns the result of the last step. The compiler hands
@@ -298,7 +332,7 @@ can raise; Appendix A has the full catalogue.
 |---------|---------|------|
 | Form | SSA, basic blocks | Structured expression tree |
 | Types | On every value | Erased; three representation kinds on parameters |
-| Regions | ❌ | One decision: `IStackVariant` for a non-escaping variant |
+| Regions | ❌ | Per-site annotations (frame, result, heap, scope) in a side table; `IStackVariant`; `IRegion` scopes |
 | Capabilities | ❌ | Checked before lowering, not represented |
 | Target | Multi-arch | x86_64 only |
 | Optimizations | Many | Integer constant folding, dead-branch elimination |

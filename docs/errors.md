@@ -109,7 +109,7 @@ over bracket type, and its `sb-hint` supplies the `= help:` text.
 | `E_ARITY_MISMATCH` | type: function arity mismatch for F at S: expected E arguments, found G | `arity_check.zyl` (located), `icnf.zyl`, `expr_inner.zyl` (special forms), REPL interpreter |
 | `E_ATOMIC_ABA` | region: atomic CAS on non-Pin memory is forbidden | catalog only |
 | `E_BYTEBUF_NOT_PIN` | type: bytebuf-ptr requires Pin region | catalog only |
-| `E_STACK_BYTEBUF_RETURN` | type: Stack ByteBuf cannot be returned | catalog only |
+| `E_STACK_BYTEBUF_RETURN` | type: Stack ByteBuf cannot be returned | catalog only (a returned Stack bytebuf is `E_REGION_ESCAPE`) |
 | `E_GLOBAL_BYTEBUF_MUT` | type: Global ByteBuf must be immutable | catalog only |
 | `E_DUPLICATE_DEFINITION` | type: duplicate definition of N at S. previously defined at P | `duplicate_check.zyl` (located at the second definition) |
 | `E_DUPLICATE_VARIANT` | type: duplicate variant V in deftype at S | `icnf.zyl` (a variant name defined twice in one `deftype`) |
@@ -131,7 +131,8 @@ with the declared type; the message is
 
 | Code | Catalog message | Raised by |
 |------|-----------------|-----------|
-| `E_REGION_ESCAPE` (§28) | region: value escapes region constraint at S | catalog only (`region_inference.zyl` mentions it only in comments) |
+| `E_REGION_ESCAPE` (§28) | region: value escapes region constraint at S | `region_inference.zyl` (located): a `(bytebuf Stack N)` that is returned, stored, sent or passed to code that may keep it, or a value allocated inside `with-region` that outlives it |
+| `E_REGION_SPEC` (§28) | region: malformed with-region specification at S | `expr_inner.zyl` (`parse-with-region`, located): unknown kind or option, block not a multiple of 4096 or above 64 MiB, alignment not a power of two from 8 to 4096 |
 | `E_UNINITIALIZED_USE` (§28) | variable: use of uninitialized variable V at S | catalog only |
 | `E_MATCH_ARM_COMPLEX` | match: arm combines a constant with multiple calls - bind to lets first | `icnf.zyl` |
 | `E_TOPLEVEL_STMTS_WITH_EXPLICIT_MAIN` | icnf: top-level statements combined with explicit main | `icnf.zyl` (top-level `test`/`run-tests` forms next to an explicit `(defn main ...)`) |
@@ -177,6 +178,7 @@ parts with `let` or move the sum into a helper function.
 | `E_BYTEBUF_OVERLAP` | runtime: bytebuf append overlapping slice | catalog only |
 | `E_LIST_NTH_OOB` | runtime: list-nth index out of bounds at S | `monomorphization.zyl` (compiler-internal) |
 | `E_NULL_POINTER` | runtime: null pointer dereference | catalog only |
+| `E_REGION_EXHAUSTED` (§28) | runtime: a with-region region ran out of its fixed size or limit | `actor_runtime.c` (catchable with `try`; deterministic for a given request sequence) |
 | `E_OUT_OF_MEMORY` | runtime: memory budget exhausted - raise or remove it with ZYL_MAX_MEMORY | `actor_runtime.c` (`PANIC: error[E_OUT_OF_MEMORY]: ...`); a second catalog entry reads "runtime: out of memory" |
 | `E_USER_ERROR` (§28) | runtime: user error - M at S | catalog only |
 

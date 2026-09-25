@@ -1,7 +1,7 @@
 # Remaining Work (after items 5,6,11,22,23,26,27 + type-name fix complete)
 
 ## P1: Diagnostics
-- [x] Labelled secondary spans for capability errors (`E_MUT_CONFLICT`, `E_CAPABILITY_LEAK`, `E_PKG_CAPABILITY_VIOLATION`); no region diagnostic is raised yet
+- [x] Labelled secondary spans for capability errors (`E_MUT_CONFLICT`, `E_CAPABILITY_LEAK`, `E_PKG_CAPABILITY_VIOLATION`); `E_REGION_ESCAPE` is raised and located but has no secondary label yet
 - [x] "Did you mean" suggestions (edit-distance over in-scope names)
 - [x] Structured JSON error output (`--error-format=json`); the LSP does not consume it yet
 - [x] Warning sweep: the self-build is warning-free, and parameter warnings carry spans (qualify and macro expansion now copy them)
@@ -47,7 +47,8 @@
 ## Deferred Design Work (order agreed 2026-09-24)
 - [x] Wider byte widths (16/32/64-bit)
 - [x] FFI timeouts enforced: literal timeout required (`E_FFI_TIMEOUT_REQUIRED`), worker-thread bridge raises `E_FFI_TIMEOUT`
-- [ ] Real regions: per-call regions, escape analysis over ICNF, region annotations, `E_REGION_ESCAPE`; then the deterministic region extension registry (fixed growth, alignment, policy)
+- [x] Real regions: per-call regions, escape analysis over ICNF, region annotations, `E_REGION_ESCAPE` (done 2026-09-24, `docs/regions-design.md`)
+- [x] The deterministic region extension registry: `with-region` with `arena` and `fixed` kinds, `E_REGION_SPEC`, `E_REGION_EXHAUSTED` (done 2026-09-24)
 - [ ] Ergonomic zero-copy views beyond `byteslice` (parsing, substrings, array slices), tied to their base by escape analysis
 - [ ] Leftovers: Vec/Map derive beyond Show; explicit `Show.show` without an impl hits runtime dispatch; ambiguous dot methods on unknown receivers; Secret heap erasure explicit; interpreter TCO for String/Float results; LSP consuming `--error-format=json`; hosting the default package index
 - [ ] Deterministic concurrency (Kahn): single-sender channels with linear endpoints, blocking receive, no select, bounded buffers, commutative TAtomic read after join, actor output channels drained by main, `--sched=deterministic` oracle vs seeded chaos mode

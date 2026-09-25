@@ -76,7 +76,7 @@ The compiler finds the variables a closure uses but does not bind itself (its **
 | Mutated (`set!`) | `TMut` | Heap |
 | Sent to an actor | must be Send-capable (`TCap`/`TAtomic`) | Heap |
 
-In the current compiler, captures are **by value**: when the closure is created, the current value of each captured variable is copied into a heap-allocated environment. Changing the original binding afterward does not affect the closure.
+In the current compiler, captures are **by value**: when the closure is created, the current value of each captured variable is copied into an environment block, allocated like any other value (a returned closure goes in its caller's region; Chapter 5, §5.5). Changing the original binding afterward does not affect the closure.
 
 ```lisp
 ;; Read-only capture of a parameter; the closure escapes (it is returned)

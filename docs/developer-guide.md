@@ -344,6 +344,26 @@ simple linked lists, the built-in `Cons`/`Nil` ADT (section 6) plus
 `core/list`'s helpers (`list-length`, `list-append`, `list-map`, ...)
 are usually simpler than reaching for `Vec`.
 
+Memory is managed by regions, not a garbage collector. The compiler
+works out where each value can go: a value that does not outlive its
+call lives in that call's own region and is released when the call
+returns; a value that becomes part of a result is built in the region
+the caller chose for it; only a value that escapes further (into a
+global, an actor message, foreign code) goes to the process heap, where
+it lives until exit. You do not annotate anything for this. When you
+want an explicit, bounded arena, use `with-region`:
+
+```zyl
+(defn arena-sum (n)
+  (with-region (arena :block 65536 :align 16 :limit 1048576)
+    (wsum (build n (WN)))))
+```
+
+Everything the body allocates is released when it ends. The body's
+result must not point into the region (`E_REGION_ESCAPE`); a region
+that runs out raises `E_REGION_EXHAUSTED`, which `try` can catch. The
+details are in `docs/regions-design.md`.
+
 ## 11. Traits and derive
 
 ```zyl
@@ -478,7 +498,7 @@ This guide covers the everyday 80%. For the rest:
 - **`tests/regression/*.zyl`** — real, compiling examples of nearly
   every language feature, including the ones this guide only touched
   on (`with-resource`, `contracts`/`requires`/`ensures`, aliasing,
-  region annotations). Contracts parse but are not checked yet.
+  region annotations).
 - **`docs/implementation-status.md`** — what works today and the known
   gaps.
 - **`docs/repl.md`** — `zyl repl` and `zyl eval`.

@@ -313,7 +313,7 @@ What the specification infers, and how each rule is met today:
 | `E_INVALID_CAPABILITY` | a non-FFI_Pinnable value given to `ffi-call` or `ffi-pin` |
 | `E_CT_VIOLATION`, `E_SECRET_DEBUG`, `E_SECRET_ESCAPE`, `E_FFI_PIN_REQUIRED` | Secret misuse (17.8) |
 | `E_ZEROIZE_MISSING` | warning: a Secret consumed without `zeroize` |
-| `E_REGION_ESCAPE` | in §28; never raised (Chapter 16) |
+| `E_REGION_ESCAPE` | a Stack bytebuf, or a value allocated inside `with-region`, that outlives its region (Chapter 16) |
 
 `E_MUT_CONFLICT` and `E_CAPABILITY_LEAK` use the located
 `error[CODE] --> file:line:col` form, with a second label at the `let`

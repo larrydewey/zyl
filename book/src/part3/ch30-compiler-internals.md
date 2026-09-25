@@ -54,7 +54,8 @@ which the `zyl` CLI, `zyl eval` and the REPL all call. Abridged:
 
 Two things differ from the phase list in the specification. Region
 inference runs on ICNF, after optimization, because what it produces is
-an ICNF rewrite (Chapter 28, §28.5). And contract injection has no
+an ICNF rewrite plus per-node region annotations that codegen consumes
+(Chapter 28, §28.5). And contract injection has no
 phase of its own: `expr_inner.zyl` lowers contract forms to checks while
 converting the parse tree.
 
@@ -186,8 +187,9 @@ taint pass, not by the unifier (Chapter 33).
 
 ## 30.4 Writing a Pass: Region Inference
 
-Region inference (`region_inference.zyl`) is a rewrite on ICNF, and it
-is small enough to show the whole idea:
+Region inference (`region_inference.zyl`) runs on ICNF in two steps.
+The first, `ri-transform-fns`, is a rewrite small enough to show the
+whole idea:
 
 ```lisp
 (defn ri-transform-let (name val body)
@@ -210,6 +212,16 @@ another variant, a reference inside a nested `fn` — answers no, and the
 value stays on the heap. The shape generalizes: a conservative pass
 proves a narrow property and falls back to the always-correct path on
 anything it does not recognize.
+
+The second step, `rg-regions`, is a whole-program analysis rather than a
+rewrite: it gives every allocation and call site a level (the call's
+frame region, the caller's result region, or the heap) through
+union-find object classes and per-function parameter summaries joined to
+a fixpoint, and records the result in a side table (attribute table 4)
+that codegen and `icnf-text` read. It follows the same rule: a runtime
+function missing from its table (`rg-ffi-kind`) keeps its arguments and
+result in the heap, the always-correct path. `docs/regions-design.md` is
+the design.
 
 ## 30.5 Writing a Pass: Monomorphization
 
