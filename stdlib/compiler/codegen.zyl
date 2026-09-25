@@ -2980,7 +2980,13 @@
     (MFlt d t (mb-set (cg-float-const st t) fr d "rax"))
     (MSym d t (mb-set (cg-sym-addr st t) fr d "rax"))
     (MRegionCycle
-      (cg-region-prologue (mb-region-release st fr) 1))
+      (let l (str-concat (mf-base fr) (str-concat "_c" (ffi-call "zyl_int_text" i 1000)))
+        (cg-emit-lines st
+          (Cons "    cmp qword ptr [rbp-24], 0"
+          (Cons (str-concat "    je " l)
+          (Cons "    lea rdi, [rbp-48]"
+          (Cons "    call zyl_region_recycle"
+          (Cons (str-concat l ":") Nil))))))))
     (MArr kind d a ix v (mb-array st fr kind d a ix v i))
     (MByte kind d o b v (mb-byte st fr kind d o b v i))
     (MFnRef d name

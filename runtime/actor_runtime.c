@@ -2634,6 +2634,37 @@ void zyl_region_free(long long rp) {
     if (ZYL_RBLOCKS(r)) zyl_region_free_blocks(r);
 }
 
+/* A self tail call in a function with a frame region (the native
+   backend's MRegionCycle): the region's contents are dead, since region
+   inference places every tail-call argument outside the frame region,
+   but the frame stays. Its first block (the oldest, smallest) is kept and
+   emptied; any others are released. Releasing and re-acquiring a block
+   on every iteration of a loop cost more than the loop body. */
+void zyl_region_recycle(long long rp) {
+    ZylRegion* r = (ZylRegion*)(size_t)rp;
+    ZylRBlock* b = ZYL_RBLOCKS(r);
+    if (!b) return;
+    ZylRBlock* keep = b;
+    while (keep->next) keep = keep->next;
+    if (keep->big) { zyl_region_free_blocks(r); return; }
+    while (b != keep) {
+        ZylRBlock* next = b->next;
+        __atomic_sub_fetch(&g_region_live, (long long)b->size, __ATOMIC_RELAXED);
+        if (b->big) {
+            size_t n = b->size;
+            munmap(b, n);
+            zyl_arena_refund(n);
+        } else {
+            b->next = g_rpool[b->cls];
+            g_rpool[b->cls] = b;
+        }
+        b = next;
+    }
+    ZYL_RSET_BLOCKS(r, keep);
+    r->bump = (char*)keep + sizeof(ZylRBlock);
+    r->end = (char*)keep + keep->size;
+}
+
 /* Function exit (and before a tail jump): pop and release. The result
    region pointer must never name a dead frame, so it is cleared if it
    names this one. */
@@ -4647,10 +4678,16 @@ long long zyl_ffi_addr(long long name) { return zyl_ffi_lookup(name); }
 /* Decimal text of an integer, heap-allocated. zyl_cstr_from_int needs
    an arena; the interpreter has heap values and no arena of its own. */
 long long zyl_int_text(long long n) {
-    long long p = ZYL_RESULT_ALLOC(24);
+    char tmp[24];
+    int k = 0;
+    unsigned long long u = n < 0 ? 0ULL - (unsigned long long)n : (unsigned long long)n;
+    do { tmp[k++] = (char)('0' + (int)(u % 10)); u /= 10; } while (u);
+    if (n < 0) tmp[k++] = '-';
+    char* p = (char*)(size_t)ZYL_RESULT_ALLOC(k + 1);
     if (!p) return 0;
-    snprintf((char*)(size_t)p, 24, "%lld", n);
-    return p;
+    for (int i = 0; i < k; i++) p[i] = tmp[k - 1 - i];
+    p[k] = 0;
+    return (long long)(size_t)p;
 }
 
 /* Every runtime symbol the compiler can emit an `ffi-call` to, by name.
