@@ -549,10 +549,10 @@
          0)))
 
 (test "ffi-pin"
-      (assert-true (>= (ffi-pin-value 42) 0)))
+      (assert-equal (ffi-unpin-value (ffi-pin-value 7)) 7))
 
 (test "ffi-unpin"
-      (assert-true (begin (ffi-unpin-value (ffi-pin-value 42)) true)))
+      (assert-equal (ffi-unpin-value (ffi-pin-value 42)) 42))
 
 (test "ffi-safe"
       (assert-equal (ffi-safe-call 99) (result-ok 99)))

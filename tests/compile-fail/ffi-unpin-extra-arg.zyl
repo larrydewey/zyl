@@ -1,0 +1,3 @@
+; expect-error: E_MALFORMED_FORM
+; ffi-unpin takes one argument; a second one used to be dropped unseen.
+(defn main () (let p (ffi-pin 5) (begin (ffi-unpin p (print "never")) 0)))

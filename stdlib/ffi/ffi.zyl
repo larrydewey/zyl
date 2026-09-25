@@ -2,20 +2,21 @@
 ; Module: ffi
 ; Provides: FFI pinning helpers and safe wrappers.
 ;
-; ffi-pin copies an 8-byte value to a stable heap location and returns its
-; address (as Int). The value stays valid until ffi-unpin frees it.
+; ffi-pin copies a value's 8-byte word into a slot in the Pin region and
+; returns the slot, a (Pin a): the stable address a C callee reads or
+; writes through. ffi-unpin reads the (possibly C-updated) value back.
 
 ; ===========================================================================
 ; FFI PIN / UNPIN
 ; ===========================================================================
 
-; Pin a value for FFI access. Returns a stable address (Int).
-; Returns: Int (address)
+; Pin a value for FFI access.
+; Returns: (Pin a)
 (defn ffi-pin-value (value)
   (ffi-pin value))
 
-; Unpin a pinned value, releasing its storage.
-; Returns: Unit
+; The value in a pinned slot.
+; Returns: a
 (defn ffi-unpin-value (pointer)
   (ffi-unpin pointer))
 

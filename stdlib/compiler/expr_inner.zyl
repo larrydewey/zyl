@@ -2708,7 +2708,7 @@
     None))
 
 (defn parse-spawn (args)
-  (if (nil? args)
+  (if (not (= (ast-count args) 1))
     None
     (Some (Expr (ESpawn (convert-ast (ast-nth args 0 (AstInt 0))))))))
 
@@ -2722,22 +2722,22 @@
     None))
 
 (defn parse-ffi-pin (args)
-  (if (nil? args)
+  (if (not (= (ast-count args) 1))
     None
     (Some (Expr (EFfiPin (convert-ast (ast-nth args 0 (AstInt 0))))))))
 
 (defn parse-ffi-unpin (args)
-  (if (nil? args)
+  (if (not (= (ast-count args) 1))
     None
     (Some (Expr (EFfiUnpin (convert-ast (ast-nth args 0 (AstInt 0))))))))
 
 (defn parse-exit (args)
-  (if (nil? args)
+  (if (not (= (ast-count args) 1))
     None
     (Some (Expr (EExit (convert-ast (ast-nth args 0 (AstInt 0))))))))
 
 (defn parse-close (args)
-  (if (nil? args)
+  (if (not (= (ast-count args) 1))
     None
     (Some (Expr (EClose (convert-ast (ast-nth args 0 (AstInt 0))))))))
 
@@ -2769,7 +2769,7 @@
     None))
 
 (defn parse-file-close (args)
-  (if (nil? args)
+  (if (not (= (ast-count args) 1))
     None
     (Some (Expr (EFileClose (convert-ast (ast-nth args 0 (AstInt 0))))))))
 
@@ -2938,7 +2938,7 @@
     None))
 
 (defn parse-unwrap (args)
-  (if (nil? args)
+  (if (not (= (ast-count args) 1))
     None
     (Some (Expr (EUnwrap (convert-ast (ast-nth args 0 (AstInt 0))))))))
 

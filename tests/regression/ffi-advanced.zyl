@@ -23,34 +23,13 @@
   )
 )
 
-; FFI pin/unpin for managed pointers.
-(
-  test
-  "ffi-pin-unpin"
-  (
-    let
-    s
-    "test string"
-    (
-      let
-      pinned
-      (ffi-pin s)
-      (
-        let
-        result
-        (ffi-call "puts" pinned 1000)
-        (
-          ffi-unpin pinned
-          (
-            assert-equal
-            result
-            0
-          )
-        )
-      )
-    )
-  )
-)
+; FFI pin/unpin: a (Pin String) slot holds the string and gives it back.
+; (This test used to pass the slot's address to puts as if it were the
+; string, and wrote its assertion as an ignored second argument of
+; ffi-unpin.)
+(test "ffi-pin-unpin"
+  (let pinned (ffi-pin "test string")
+    (assert-true (str-eq (ffi-unpin pinned) "test string"))))
 
 ; FFI with integer arguments.
 (

@@ -416,7 +416,7 @@
   (ta-builtin-prim n)))))))))))
 
 (defn ta-handle-param-type (n)
-  (or (ta-streq n "SMap") (or (ta-streq n "WVec") (or (ta-streq n "Attr") (or (ta-streq n "Array") (ta-streq n "Ref"))))))
+  (or (ta-streq n "SMap") (or (ta-streq n "WVec") (or (ta-streq n "Attr") (or (ta-streq n "Array") (or (ta-streq n "Ref") (ta-streq n "Pin")))))))
 
 (defn ta-conv-handle (st n args scope acc)
   (match args
@@ -939,14 +939,18 @@
     (EUnwrap x (ta-unwrap st ctx env x))
     (EStructGet se field (ta-struct-get st ctx env se field e))
     (EFor bindings cond body (ta-for st ctx env bindings cond body))
-    ; Pinning moves a value to the Pin region; its type is unchanged. A
-    ; function is not FFI_Pinnable (spec 16).
+    ; (ffi-pin v) copies v's word into a slot in the Pin region and gives
+    ; the slot's address, a (Pin a); (ffi-unpin p) reads the value back.
+    ; A function is not FFI_Pinnable (spec 16).
     (EFfiPin x
       (let t (ta-expr st ctx env x)
         (match (ta-resolve st t)
-          (TaF _ _ (let _ (ta-type-error "E_FFI_TYPE_NOT_PINNABLE" "a function cannot be pinned: FFI_Pinnable types are Int, Float, Bool, String and data built from them" x Nil "") t))
-          (_ t))))
-    (EFfiUnpin x (ta-walk-stmt st ctx env (Cons x Nil)))
+          (TaF _ _ (let _ (ta-type-error "E_FFI_TYPE_NOT_PINNABLE" "a function cannot be pinned: FFI_Pinnable types are Int, Float, Bool, String and data built from them" x Nil "") (TaC "Pin" (Cons t Nil))))
+          (_ (TaC "Pin" (Cons t Nil))))))
+    (EFfiUnpin x
+      (let r (ta-fresh st)
+        (let _ (ta-unify st (ta-expr st ctx env x) (TaC "Pin" (Cons r Nil)))
+          r)))
     ; An actor's entry takes no arguments.
     (ESpawn b (let _ (ta-unify st (ta-expr st ctx env b) (TaF Nil (ta-fresh st))) (TaC "Actor" Nil)))
     (ESend a m
