@@ -1,0 +1,4 @@
+; expect-error: E_MALFORMED_FORM
+; A comma in an import list reads the next name as an unquote.
+(use core/list { list-length, list-reverse })
+(defn main () (begin (print (list-length (list-reverse [1]))) 0))

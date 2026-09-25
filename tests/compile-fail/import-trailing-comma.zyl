@@ -1,0 +1,4 @@
+; expect-error: E_MALFORMED_FORM
+; A trailing comma in an import list read past the closer and swallowed main.
+(use core/list { list-length, })
+(defn main () (begin (print (list-length [1])) 0))

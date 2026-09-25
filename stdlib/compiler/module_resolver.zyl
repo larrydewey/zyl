@@ -230,7 +230,7 @@
 (defn mr-sym-list (xs)
   (match xs
     (Nil Nil)
-    (Cons h t (mr-sym-entry (mr-ident-of h) t))))
+    (Cons h t (mr-sym-entry (mr-sym-ident h) t))))
 
 (defn mr-sym-entry (name rest)
   (match rest
@@ -238,12 +238,22 @@
     (Cons a t
       (if (str-eq (mr-ident-of a) "=>")
         (mr-sym-alias name t)
-        (Cons (MRS name name) (mr-sym-entry (mr-ident-of a) t))))))
+        (Cons (MRS name name) (mr-sym-entry (mr-sym-ident a) t))))))
 
 (defn mr-sym-alias (name rest)
   (match rest
     (Nil (Cons (MRS name name) Nil))
-    (Cons a t (Cons (MRS name (mr-ident-of a)) (mr-sym-list t)))))
+    (Cons a t (Cons (MRS name (mr-sym-ident a)) (mr-sym-list t)))))
+
+; An import list holds names only; `{ a, b }` reads `,b` as an unquote.
+(defn mr-sym-ident (a)
+  (match a
+    (AstIdent n n)
+    (_ (ffi-call "zyl_panic"
+         (err-at "E_MALFORMED_FORM" "an import list holds names only"
+                 (ffi-call "zyl_span_file" a 1000) (ffi-call "zyl_span_off" a 1000)
+                 "separate the names with spaces, not commas: { a b }")
+         1000))))
 
 ; With no module part the whole path is `first`: either a module of the
 ; importing package (or of the implicit stdlib), or a dependency's root

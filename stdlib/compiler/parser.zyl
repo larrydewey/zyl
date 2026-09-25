@@ -240,9 +240,29 @@
 
 ;; `'d`, `` `d ``, `,d` and `,@d`: `(head d)`.
 (defn read-prefixed (arena rest fid off head)
+  (let _ (match rest (Cons t _ (if (tok-closes t) (prefix-alone-fail fid off head) unit)) (Nil (prefix-alone-fail fid off head)))
   (let r (read-form arena rest fid)
     (AstOf (ast-at fid off (AList (Cons (ast-at fid off (AstIdent head)) (Cons (art-ast r) Nil))))
-           (art-rest r))))
+           (art-rest r)))))
+
+; A quote or unquote with no form after it read past the closer (a trailing
+; comma in `{ a, }` swallowed the rest of the file).
+(defn prefix-alone-fail (fid off head)
+  (ffi-call "zyl_panic"
+    (err-at "E_MALFORMED_FORM" (str-concat "`" (str-concat (prefix-char head) "` needs a form after it"))
+            fid off "an import list is whitespace-separated: { a b }")
+    1000))
+
+(defn prefix-char (head)
+  (if (str-eq head "quote") "'" (if (str-eq head "quasiquote") "`" (if (str-eq head "unquote") "," ",@"))))
+
+(defn tok-closes (t)
+  (match t
+    (TkRParen _ true)
+    (TkRBracket _ true)
+    (TkRBrace _ true)
+    (TkEof _ true)
+    (_ false)))
 
 ; Read forms until ']' (or EOF).
 ; Returns: AstTok wrapping (AList (list forms...))
@@ -304,8 +324,8 @@
 
 ; Every str-concat argument below is a literal or a pre-bound `let` --
 ; see error_report.zyl's header comment: an inline call operand in a
-; str-concat argument miscompiles under the Rust bootstrap's inlining,
-; and this file is compiled by that bootstrap on the way to stage1.
+; str-concat argument miscompiled under the archived Rust bootstrap's
+; inlining, which once compiled this file on the way to stage1.
 (defn bal-msg (code msg hint)
   (let h (err-header code msg)
     (let n1 (str-concat h "\n  = help: ")
