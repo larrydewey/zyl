@@ -1,0 +1,7 @@
+; (exit code) flushes output and ends the process; nothing after it runs.
+(defn main ()
+  (begin
+    (print "before exit")
+    (exit 0)
+    (print "FAIL: exit returned")
+    1))

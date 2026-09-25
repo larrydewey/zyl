@@ -996,7 +996,7 @@ static ZylBytesView zyl_bytes_view(long long handle) {
 
 /* Load a byte from a ByteBuf/ByteSlice at offset (zero-extended). */
 long long zyl_load_byte(long long endian, long long offset, long long buf) {
-    (void)endian; /* single-byte load: endianness is a no-op until wider loads exist */
+    (void)endian; /* single-byte load: endianness does not apply (wider loads are zyl_load_n) */
     ZylBytesView v = zyl_bytes_view(buf);
     if (!v.valid || !zyl_bb_bounds_ok(offset, 1, v.bound)) return 0;
     return (long long)v.data[offset];
@@ -1089,16 +1089,13 @@ long long zyl_byte_slice_sub(long long slice, long long start, long long len) {
     return (long long)(size_t)s;
 }
 
-/* Create a new, fixed-capacity, zero-initialized ByteBuf. `region` is
-   accepted (matches the ExprInner/EByteBuf shape, which threads the
-   parsed region literal through type inference already -- see
-   type_inference.zyl) but doesn't change allocation strategy: the general
-   Stack/Heap/Global/Circular region-promotion machinery was deleted as
-   dead code (region_inference.zyl's header comment) and was never
-   resurrected by this feature, so every region gets the same plain,
-   stable-address heap allocation. That's actually what Pin needs anyway
-   (never moves once allocated), so nothing is unsound -- Stack/Global's
-   extra compile-time constraints from the plan just aren't enforced yet. */
+/* Create a new, fixed-capacity, zero-initialized ByteBuf on the process
+   heap. `region` is accepted (it matches the ExprInner/EByteBuf shape) but
+   ignored here: region inference marks a `(bytebuf Stack N)` site and
+   codegen calls zyl_bytebuf_new_r for it, which allocates in the frame
+   region; every other
+   region gets this plain, stable-address heap allocation -- which is what
+   Pin needs (never moves once allocated). */
 long long zyl_bytebuf_new(long long region, long long cap) {
     (void)region;
     if (cap < 0 || cap > ZYL_BYTEBUF_MAX_CAP) return 0;
@@ -3305,6 +3302,31 @@ long long zyl_file_close_c(long long fd) {
     return (long long)close((int)fd);
 }
 
+/* (exit code): flush buffered output, then end the process. */
+long long zyl_exit(long long code) {
+    fflush(stdout);
+    fflush(stderr);
+    exit((int)code);
+}
+
+/* (read-line): one line from stdin without its newline; "" at end of input. */
+long long zyl_read_line(void) {
+    fflush(stdout);
+    size_t cap = 128, n = 0;
+    char* buf = (char*)malloc(cap);
+    if (!buf) return (long long)(size_t)"";
+    char c;
+    while (read(0, &c, 1) == 1 && c != '\n') {
+        if (n + 1 >= cap) { char* nb = (char*)realloc(buf, cap * 2); if (!nb) break; buf = nb; cap *= 2; }
+        buf[n++] = c;
+    }
+    if (n > 0 && buf[n - 1] == '\r') n--;
+    char* out = (char*)(size_t)zyl_heap_alloc((long long)n + 1);
+    if (out) { memcpy(out, buf, n); out[n] = 0; }
+    free(buf);
+    return out ? (long long)(size_t)out : (long long)(size_t)"";
+}
+
 /* Stub: Zyl-level (error msg) — print and exit(1).
    Named zyl_f_error (not f_error) so the codegen label `f_error` for a
    user Zyl function named `error` cannot shadow/self-recursively bind it. */
@@ -4781,7 +4803,7 @@ long long zyl_array_copy(long long from, long long to, long long n);
     X(zyl_f_cmp) X(zyl_f_div) X(zyl_f_error) \
     X(zyl_f_mul) X(zyl_f_of_int) X(zyl_f_parse) \
     X(zyl_f_rem) X(zyl_f_sub) X(zyl_f_text) \
-    X(zyl_f_to_int) X(zyl_ffi_lookup) X(zyl_ffi_timed) X(zyl_ffi_timed_argv) X(zyl_file_close_c) \
+    X(zyl_f_to_int) X(zyl_ffi_lookup) X(zyl_ffi_timed) X(zyl_ffi_timed_argv) X(zyl_file_close_c) X(zyl_exit) X(zyl_read_line) \
     X(zyl_file_open_c) X(zyl_file_read_c) X(zyl_file_write_c) \
     X(zyl_fnmap_get) X(zyl_fnmap_put) X(zyl_fnmap_reset) \
     X(zyl_fresh_id) X(zyl_getcwd) X(zyl_getenv) \

@@ -16,9 +16,9 @@
 ; zyl_word_of_cstr, zyl_val_*, zyl_call_argv, ...) are typed here too; they
 ; are in ffi-raw-p, which only the standard library may call.
 ;
-; A runtime symbol missing here (zyl_abs, zyl_attr_*, zyl_cell_*,
-; zyl_fnmap_*, zyl_smap_global, zyl_wvec_global) has an untyped result in
-; strict mode.
+; A runtime symbol missing here gets no signature: its result is String
+; when type_annotate's ta-ffi-str names it, and otherwise the call is
+; E_CANNOT_INFER (ta-ffi-ret; the type pass is always strict).
 
 (defn ffi-sig (s)
   (ffi-sig-lookup s ffi-sig-tab))
@@ -151,6 +151,8 @@
   (Cons (FSig "zyl_mem_write" "Ptr Int -> Int")
   (Cons (FSig "zyl_mkdir_p" "String -> Int")
   (Cons (FSig "zyl_now_ms" "-> Int")
+  (Cons (FSig "zyl_exit" "Int -> a")
+  (Cons (FSig "zyl_read_line" "-> String")
   (Cons (FSig "zyl_panic" "String -> a")
   (Cons (FSig "zyl_path_exists" "String -> Bool")
   (Cons (FSig "zyl_float_bits" "Float -> Int")
@@ -257,4 +259,4 @@
   (Cons (FSig "zyl_words_set" "Words Int Int -> Int")
   (Cons (FSig "zyl_words_view" "Arena Words Int Int -> Words")
   (Cons (FSig "zyl_zeroize" "Int Int -> Int")
-  Nil))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+  Nil))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))

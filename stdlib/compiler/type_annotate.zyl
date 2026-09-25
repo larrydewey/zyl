@@ -1059,7 +1059,7 @@
     ; `exit` and `error` do not return, so their type is anything.
     (EExit x (let _ (ta-unify st (ta-expr st ctx env x) (ta-int)) (ta-fresh st)))
     (EError _ (ta-fresh st))
-    (EClose x (ta-walk-stmt st ctx env (Cons x Nil)))
+    (EClose x (ta-walk-int st ctx env (Cons x Nil)))
     (ETestDecl _ body _ (let _ (ta-expr st ctx env body) (ta-stmt)))
     (ESetup xs (ta-walk-stmt st ctx env xs))
     (ETeardown xs (ta-walk-stmt st ctx env xs))

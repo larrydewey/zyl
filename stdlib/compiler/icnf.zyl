@@ -15,13 +15,11 @@
 (use allocator/allocator)
 (use compiler/ast)
 (use compiler/expr_inner)
-; Needed for str-drop (ic-make-struct) — previously missing here
-; entirely. Harmless for the assemble.py bundle (use lines are stripped
-; there regardless), but a standalone program that `use`s compiler/icnf
-; directly as a library (e.g. integration/selfhost-codegen.zyl) needs
-; every real dependency actually declared for the module resolver to
-; pull it in - this was an undefined `f_str_drop` reference at link
-; time otherwise.
+; Needed for str-drop (ic-make-struct). Every real dependency must be
+; declared for the module resolver to pull it in; without this line a
+; program that `use`s compiler/icnf directly (e.g.
+; integration/selfhost-codegen.zyl) had an undefined `f_str_drop`
+; reference at link time.
 (use compiler/lift_impls)
 (use compiler/type_annotate)
 (use compiler/arity_check)
@@ -258,7 +256,7 @@
   (match acc (TLAcc fns stmts (TLAcc fns (Cons s stmts)))))
 
 ; Lower a whole program: collect deftype variant tables and defn bodies.
-; `prog` is the post-monomorphization (List Expr). Returns: List(IFunc)
+; `prog` is the type-annotated (List Expr). Returns: List(IFunc)
 ;
 ; Top-level (test ...) / (run-tests) forms have no enclosing defn, so a
 ; plain "collect EDefn only" walk (the original behavior) silently drops
@@ -382,7 +380,7 @@
 ; (forms -> Expr.inner -> structmark) miscompiled under the Rust bootstrap
 ; (a deeply nested match arm silently returned a bogus/unrelated sentinel
 ; value instead of recursing). Flattening into its own top-level function
-; dodges that codegen bug.
+; dodged that codegen bug; the split is kept.
 (defn ic-collect-vt-inner (rest inner vt stag)
   (match inner
     (EDeftype name variants _ structmark
@@ -564,7 +562,7 @@
     ; zyl_file_open_c reads mode as a C string pointer ("r"/"a"/else ->
     ; write) — a non-string mode (e.g. regression/io.zyl's raw integer
     ; 577, a leftover POSIX-flags-style value) isn't a valid pointer at
-    ; all and crashes dereferencing it. The Rust bootstrap sidesteps this
+    ; all and crashes dereferencing it. The Rust bootstrap sidestepped this
     ; entirely: its file-open codegen inspects the mode arg for a STRING
     ; literal at compile time and, for anything else (integer included),
     ; silently defaults to write mode without ever using the value — so
@@ -579,6 +577,9 @@
       (IFfi "zyl_file_write_c" (Cons (ic-expr arena h vt) (Cons (ic-expr arena d vt) Nil))))
     (EFileClose h
       (IFfi "zyl_file_close_c" (Cons (ic-expr arena h vt) Nil)))
+    (EClose h (IFfi "zyl_file_close_c" (Cons (ic-expr arena h vt) Nil)))
+    (EExit c (IFfi "zyl_exit" (Cons (ic-expr arena c vt) Nil)))
+    (EReadLine (IFfi "zyl_read_line" Nil))
     (EPrint exprs (ic-print arena exprs vt))
     (EMatch subj arms (ic-match arena subj arms vt))
     (EFfiCall sym args _ (IFfi sym (ic-expr-list arena args vt)))
@@ -1204,15 +1205,6 @@
               (ic-binop arena op args vt)
               (ic-call-or-variant arena fname args vt)))))))))
 
-; Whether `s` starts with "make-". Deliberately NOT reusing
-; monomorphization.zyl's str-starts-with (str-substring + `=`): codegen's
-; cg-param-env hardcodes every function PARAMETER's kind-of to 0 (int),
-; regardless of how it's used, so `=`/`!=` between two STRING parameters
-; silently does raw pointer comparison instead of routing through
-; zyl_cstr_eq — str-starts-with's own `s`/`prefix` are exactly that
-; shape, so it always returns false when self-hosted codegen (not the
-; Rust bootstrap) compiles a call to it. Comparing through zyl_cstr_eq
-; directly via ffi-call, as done here, sidesteps kind-of entirely.
 ; (assert c "msg") panics with msg; any other message form keeps the fixed text.
 (defn ic-assert-msg (m)
   (match m
@@ -1244,6 +1236,9 @@
         (IFfi sym1 (Cons e args))
         (IFfi symn (Cons (IConst (endian-width endian)) (Cons e args)))))))
 
+; Whether `s` starts with "make-". Compares through zyl_cstr_eq directly
+; (an early codegen compared two String parameters by address, so this
+; never relied on `=`).
 (defn ic-starts-with-make (s)
   (if (>= (str-length s) 5)
     (ffi-call "zyl_cstr_eq" (str-substring s 0 5) "make-" 1000)
@@ -1493,10 +1488,8 @@
 ; `((Variant field*) body)` records the NESTED pattern's own constructor as
 ; MA.variant -- correct for a real wrapped arm, but the exact same AST shape
 ; is (mis)produced today for a 3-part `((Inner f*) tail-name body)` arm
-; that's actually destructuring a Cons's head inline (seen in
-; region_inference.zyl's `((RB n r esc) rest ...)`, a currently-dead code
-; path since region inference's result isn't wired into codegen output —
-; not something to fix as a side effect of this check). MA.variant there
+; that's actually destructuring a Cons's head inline (seen in an older
+; region_inference.zyl's `((RB n r esc) rest ...)`). MA.variant there
 ; reports the INNER type's constructor (e.g. "RB" from RegionBind), which
 ; has nothing to do with the outer List's own Cons/Nil siblings. Rather
 ; than guess which shape produced a given arm, require every arm in the
