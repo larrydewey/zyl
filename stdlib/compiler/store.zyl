@@ -34,11 +34,11 @@
 ; ZYL_HOME overrides, matching the compiler's own stdlib lookup; otherwise
 ; $HOME/.zyl, the per-user toolchain convention the driver already uses.
 (defn store-home ()
-  (let zh (ffi-call "zyl_getenv" "ZYL_HOME" 1000)
-    (if (> zh 0)
+  (let zh (ffi-call "zyl_getenv_str" "ZYL_HOME" 1000)
+    (if (> (str-length zh) 0)
       zh
-      (let home (ffi-call "zyl_getenv" "HOME" 1000)
-        (if (> home 0) (str-concat home "/.zyl") ".zyl")))))
+      (let home (ffi-call "zyl_getenv_str" "HOME" 1000)
+        (if (> (str-length home) 0) (str-concat home "/.zyl") ".zyl")))))
 
 (defn store-root ()
   (str-concat (store-home) "/store"))

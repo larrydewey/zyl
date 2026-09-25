@@ -21,20 +21,20 @@
 (defn hist-limit () 5000)
 
 (defn hist-home ()
-  (let h (ffi-call "zyl_getenv" "HOME" 1000)
-    (if (> h 0) h "/tmp")))
+  (let h (ffi-call "zyl_getenv_str" "HOME" 1000)
+    (if (> (str-length h) 0) h "/tmp")))
 
 ; The REPL's own state directory: ~/.zyl, or ZYL_STATE_DIR when set.
 ; Deliberately NOT ZYL_HOME -- that names where the compiler's bundle
 ; (stdlib/ and actor_runtime.c) lives, which during a build is a
 ; throwaway output directory, and history does not belong there.
 (defn hist-dir ()
-  (let sd (ffi-call "zyl_getenv" "ZYL_STATE_DIR" 1000)
-    (if (> sd 0) sd (str-concat (hist-home) "/.zyl"))))
+  (let sd (ffi-call "zyl_getenv_str" "ZYL_STATE_DIR" 1000)
+    (if (> (str-length sd) 0) sd (str-concat (hist-home) "/.zyl"))))
 
 (defn hist-path ()
-  (let p (ffi-call "zyl_getenv" "ZYL_REPL_HISTORY" 1000)
-    (if (> p 0) p (str-concat (hist-dir) "/repl_history"))))
+  (let p (ffi-call "zyl_getenv_str" "ZYL_REPL_HISTORY" 1000)
+    (if (> (str-length p) 0) p (str-concat (hist-dir) "/repl_history"))))
 
 ; Read the history file. Returns entries newest-first, capped at the
 ; limit. A missing file is not an error: it is a first run.

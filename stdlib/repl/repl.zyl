@@ -650,11 +650,11 @@
 ; $ZYL_HOME) and fall back to the directory the binary itself sits in,
 ; the same resolution order the compiler driver uses.
 (defn repl-zyl-home-candidate ()
-  (let zh (ffi-call "zyl_getenv" "ZYL_HOME" 1000)
-    (if (> zh 0)
+  (let zh (ffi-call "zyl_getenv_str" "ZYL_HOME" 1000)
+    (if (> (str-length zh) 0)
       zh
-      (let home (ffi-call "zyl_getenv" "HOME" 1000)
-        (if (> home 0) (str-concat home "/.zyl") "")))))
+      (let home (ffi-call "zyl_getenv_str" "HOME" 1000)
+        (if (> (str-length home) 0) (str-concat home "/.zyl") "")))))
 
 (defn repl-resolve-bundledir (argv0dir)
   (let candidate (repl-zyl-home-candidate)

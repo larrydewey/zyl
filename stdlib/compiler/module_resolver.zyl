@@ -31,6 +31,7 @@
 ; manifest and is treated as fully public — Phase 2 of the package plan
 ; gives it a real `zyl.pkg` and an explicit `pub` surface.
 
+(use compiler/node_tables)
 (use compiler/ast)
 (use compiler/expr_inner)
 (use compiler/lock)
@@ -964,7 +965,8 @@
 (defn mr-impl-not (forms)
   (let negs (mr-negs forms)
     (begin
-      (ffi-call "zyl_smap_clear" (mr-neg-tab) 1000)
+      (let _ (ffi-call "zyl_smap_clear" neg-labels 1000)
+        (ffi-call "zyl_smap_clear" (mr-neg-tab) 1000))
       (if (nil? negs)
         forms
         (let impls (mr-impl-pairs forms)
@@ -976,9 +978,9 @@
 
 ;; Map 5: "i|T|Y" per impl; for secret_check.zyl's flow rule, label "T|" per
 ;; negated trait ("n#" count, "n#i") and "p|T|X" for each protected type.
-(defn mr-neg-tab () (ffi-call "zyl_smap_global" 5 1000))
-(defn mr-neg-put (k v) (ffi-call "zyl_smap_put" (mr-neg-tab) k v 1000))
-(defn mr-neg-get (k) (ffi-call "zyl_smap_get" (mr-neg-tab) k 1000))
+(defn mr-neg-tab () neg-marks)
+(defn mr-neg-put (k v) (ffi-call "zyl_smap_put" neg-marks k v 1000))
+(defn mr-neg-get (k) (ffi-call "zyl_smap_get" neg-marks k 1000))
 (defn mr-pair-key (tag a b) (str-concat tag (str-concat a (str-concat "|" b))))
 
 ; (form, (trait-symbol, target-symbol)) per impl-not.
@@ -1087,7 +1089,7 @@
                     (let c (mr-neg-get "n#c")
                       (begin
                         (mr-neg-put (str-concat "l|" lbl) 1)
-                        (mr-neg-put (str-concat "n#" (ffi-call "zyl_int_text" c 1000)) lbl)
+                        (ffi-call "zyl_smap_put" neg-labels (str-concat "n#" (ffi-call "zyl_int_text" c 1000)) lbl 1000)
                         (mr-neg-put "n#c" (+ c 1)))))
                   (mr-neg-put (str-concat "p|" (str-concat lbl x)) 1)
                   (mr-protect-implementors impls lbl x)

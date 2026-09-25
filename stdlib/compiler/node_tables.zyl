@@ -15,6 +15,22 @@
 
 (def node-types (ffi-call "zyl_attrh_new" 1000))
 
+;; impl-not flow rules (module_resolver.zyl's mr-impl-not): Int flags by
+;; key ("i|", "l|", "p|" plus names; "n#c" the label count, "n#" the count
+;; when complete), and each label by index ("n#0", "n#1", ...).
+(def neg-marks (ffi-call "zyl_smap_new" 1000))
+(def neg-labels (ffi-call "zyl_smap_new" 1000))
+
+;; Contract profiles: "profile" from --contracts=P, "local" from the
+;; nearest (contracts P) directive ("" when none).
+(def contract-profiles (ffi-call "zyl_smap_new" 1000))
+
+;; Names defined by a top-level `def` (expr_inner.zyl's def-key-p).
+(def def-names (ffi-call "zyl_smap_new" 1000))
+
+;; The secret check's current flow label ("" for Secret itself).
+(def secret-label (ffi-call "zyl_ref_new" "" 1000))
+
 ; The secret check's marks by key ("t|", "k|", "c|", "f|", "w|" plus a
 ; name; "any"), read by derive and codegen. Int flags.
 (def secret-marks (ffi-call "zyl_smap_new" 1000))

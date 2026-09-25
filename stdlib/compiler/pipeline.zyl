@@ -51,7 +51,7 @@
 ; and a write nobody asked for. zyl_getenv returns 0 when the variable is
 ; unset.
 (defn dbg-log (msg)
-  (if (= (ffi-call "zyl_getenv" "ZYL_DEBUG_STAGES" 1000) 0)
+  (if (= (str-length (ffi-call "zyl_getenv_str" "ZYL_DEBUG_STAGES" 1000)) 0)
     0
     (dbg-write msg)))
 

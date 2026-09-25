@@ -785,8 +785,8 @@
 ; This is where a `(use ...)` you always want, or a helper you always
 ; reach for, belongs.
 (defn eval-rc-path ()
-  (let p (ffi-call "zyl_getenv" "ZYL_REPLRC" 1000)
-    (if (> p 0) p (str-concat (hist-dir) "/replrc"))))
+  (let p (ffi-call "zyl_getenv_str" "ZYL_REPLRC" 1000)
+    (if (> (str-length p) 0) p (str-concat (hist-dir) "/replrc"))))
 
 (defn session-load-rc (sess)
   (let text (eval-read-file (eval-rc-path))

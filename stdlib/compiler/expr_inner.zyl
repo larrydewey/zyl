@@ -13,6 +13,7 @@
 ; a library to compile a nested program at runtime) needs every real
 ; dependency actually declared for the module resolver to pull it in -
 ; this was an undefined `f_Pair` reference at link time otherwise.
+(use compiler/node_tables)
 (use compiler/type_system)
 (use compiler/error_report)
 ;
@@ -325,12 +326,12 @@
 ;; Profiles (spec 23): strict/debug panic, warn reports and continues,
 ;; off/production strip. The build's profile is `--contracts=P` (map 6
 ;; "profile"); a (contracts P) directive overrides it for the next form.
-(defn contract-tab () (ffi-call "zyl_smap_global" 6 1000))
+(defn contract-tab () contract-profiles)
 (defn contract-profile ()
-  (let l (ffi-call "zyl_smap_get" (contract-tab) "local" 1000)
-    (if (= l 0)
-      (let g (ffi-call "zyl_smap_get" (contract-tab) "profile" 1000)
-        (if (= g 0) "strict" g))
+  (let l (ffi-call "zyl_smap_get_or" contract-profiles "local" "" 1000)
+    (if (= (str-length l) 0)
+      (let g (ffi-call "zyl_smap_get_or" contract-profiles "profile" "" 1000)
+        (if (= (str-length g) 0) "strict" g))
       l)))
 
 (defn contract-profile-p (p)
@@ -360,7 +361,7 @@
       (ffi-call "zyl_smap_put" (contract-tab) "local" p 1000)
       (let e (convert-ast f)
         (begin
-          (ffi-call "zyl_smap_put" (contract-tab) "local" 0 1000)
+          (ffi-call "zyl_smap_put" (contract-tab) "local" "" 1000)
           e)))))
 
 ; Head name of a list form, or "".
@@ -578,7 +579,7 @@
 
 ;; Top-level defs (spec R7: immutable, eager): each becomes a getter that
 ;; caches its value by canonical key; uses become calls; main runs them first.
-(defn def-table () (ffi-call "zyl_smap_global" 2 1000))
+(defn def-table () def-names)
 
 (defn def-key-p (n) (> (ffi-call "zyl_smap_get" (def-table) n 1000) 0))
 

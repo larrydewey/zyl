@@ -11,6 +11,7 @@
 ;      boot.sh's --bootstrap-from-rust reseed step and kept as a
 ;      dependency-free smoke path.
 
+(use compiler/node_tables)
 (use allocator/allocator)
 (use compiler/lexer)
 (use compiler/parser)
@@ -169,11 +170,11 @@
 ; repo's own build/boot/zyl-self keeps working unchanged for anyone who
 ; hasn't installed anything.
 (defn cli-zyl-home-candidate ()
-  (let zh (ffi-call "zyl_getenv" "ZYL_HOME" 1000)
-    (if (> zh 0)
+  (let zh (ffi-call "zyl_getenv_str" "ZYL_HOME" 1000)
+    (if (> (str-length zh) 0)
       zh
-      (let home (ffi-call "zyl_getenv" "HOME" 1000)
-        (if (> home 0) (str-concat home "/.zyl") "")))))
+      (let home (ffi-call "zyl_getenv_str" "HOME" 1000)
+        (if (> (str-length home) 0) (str-concat home "/.zyl") "")))))
 
 (defn cli-resolve-bundledir (argv0dir)
   (let candidate (cli-zyl-home-candidate)
@@ -347,7 +348,7 @@
 ;; deterministic (spec 27), so equal keys mean equal binaries.
 ;; ZYL_NO_BUILD_CACHE=1 skips it.
 (defn drv-compile-file (arena src out dir nodes)
-  (if (> (ffi-call "zyl_getenv" "ZYL_NO_BUILD_CACHE" 1000) 0)
+  (if (> (str-length (ffi-call "zyl_getenv_str" "ZYL_NO_BUILD_CACHE" 1000)) 0)
     (drv-compile-uncached arena src out dir)
     (let cdir (str-concat (store-home) (str-concat "/cache/" (drv-cache-key arena dir nodes)))
       (if (ffi-call "zyl_path_exists" (str-concat cdir "/bin") 1000)
@@ -368,9 +369,9 @@
     true))
 
 (defn drv-cache-key (arena dir nodes)
-  (let prof (ffi-call "zyl_smap_get" (ffi-call "zyl_smap_global" 6 1000) "profile" 1000)
+  (let prof (ffi-call "zyl_smap_get_or" contract-profiles "profile" "" 1000)
     (let text (str-concat (lk-compiler-self-hash arena)
-                (str-concat "\n" (str-concat (if (= prof 0) "strict" prof)
+                (str-concat "\n" (str-concat (if (= (str-length prof) 0) "strict" prof)
                   (str-concat "\n" (str-concat (drv-graph-hash arena dir)
                     (str-concat "\n" (str-concat (drv-tree-hash arena dir)
                       (str-concat "\n" (str-concat (drv-tree-hash arena "stdlib")
@@ -602,9 +603,9 @@
     0
     (let a (ffi-call "zyl_arg_str" i 1000)
       (begin
-        (if (str-eq a "--error-format=json") (ffi-call "zyl_diag_json_set" 1 1000) unit)
+        (if (str-eq a "--error-format=json") (ffi-call "zyl_diag_json_set" true 1000) unit)
         (if (drv-contracts-flag-p a)
-          (ffi-call "zyl_smap_put" (ffi-call "zyl_smap_global" 6 1000) "profile" (str-substring a 12 (- (str-length a) 12)) 1000)
+          (ffi-call "zyl_smap_put" contract-profiles "profile" (str-substring a 12 (- (str-length a) 12)) 1000)
           unit)
         (drv-scan-error-format (+ i 1) argc)))))
 

@@ -896,6 +896,7 @@
   (if (str-eq sym "zyl_str_append_capped") true
   (if (str-eq sym "zyl_getcwd") true
   (if (str-eq sym "zyl_getenv") true
+  (if (str-eq sym "zyl_getenv_str") true
   (if (str-eq sym "zyl_dirname_cstr") true
   (if (str-eq sym "zyl_arg_str") true
   (if (str-eq sym "zyl_f_text") true
@@ -908,7 +909,7 @@
   (if (str-eq sym "zyl_source_path") true
   (if (str-eq sym "zyl_blake3_hex") true
   (if (str-eq sym "zyl_blake3_file_hex") true
-  false)))))))))))))))))))))))))
+  false))))))))))))))))))))))))))
 
 
 

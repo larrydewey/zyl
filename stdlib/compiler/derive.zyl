@@ -47,7 +47,7 @@
 (defn dv-hidden-mask (label n) (dv-mask-of (str-concat "c|" (str-concat label "|")) n))
 
 (defn dv-hidden-type (label n)
-  (> (ffi-call "zyl_smap_get" (ffi-call "zyl_smap_global" 5 1000) (str-concat "p|" (str-concat label (str-concat "|" (dv-short n)))) 1000) 0))
+  (> (ffi-call "zyl_smap_get" neg-marks (str-concat "p|" (str-concat label (str-concat "|" (dv-short n)))) 1000) 0))
 
 ; Secret types get a `label` impl printing `<secret>`, protected ones `<hidden>`:
 ; the only one they have is this compiler-made impl.

@@ -304,8 +304,8 @@
 ; The index to use: $ZYL_INDEX (a git URL or a local repository path), or
 ; the default.
 (defn idx-url ()
-  (let e (ffi-call "zyl_getenv" "ZYL_INDEX" 1000)
-    (if (> e 0) e (idx-default-url))))
+  (let e (ffi-call "zyl_getenv_str" "ZYL_INDEX" 1000)
+    (if (> (str-length e) 0) e (idx-default-url))))
 
 ;; Writing entries (`zyl publish --index`): the canonical text idx-read
 ;; parses back, one version per `v` form, in the order they were added.
