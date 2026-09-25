@@ -1,0 +1,7 @@
+(deftype Tree (Leaf) (Node Tree Tree))
+(defn make ((d Int)) (if (= d 0) (Leaf) (Node (make (- d 1)) (make (- d 1)))))
+(defn check ((t Tree)) (match t (Leaf 1) (Node l r (+ 1 (+ (check l) (check r))))))
+(defn iter ((i Int) (n Int) (d Int) (acc Int)) (if (>= i n) acc (iter (+ i 1) n d (+ acc (check (make d))))))
+(defn depths ((d Int) (maxd Int) (acc Int))
+  (if (> d maxd) acc (depths (+ d 2) maxd (+ acc (iter 0 (* 16 (- (+ maxd 4) d)) d 0)))))
+(defn main () (begin (print (check (make 21))) (print (depths 4 20 0)) 0))

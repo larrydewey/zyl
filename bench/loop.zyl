@@ -1,0 +1,3 @@
+(defn run ((i Int) (n Int) (acc Int))
+  (if (>= i n) acc (run (+ i 1) n (% (+ acc (* i i)) 1000000007))))
+(defn main () (begin (print (run 0 200000000 0)) 0))

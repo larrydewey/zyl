@@ -1,0 +1,4 @@
+(defn build ((i Int) (n Int) (acc Int))
+  (if (>= i n) acc
+    (build (+ i 1) n (+ acc (str-length (str-concat "item-" (Show.show i)))))))
+(defn main () (begin (print (build 0 5000000 0)) 0))

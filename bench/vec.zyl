@@ -1,0 +1,4 @@
+(use collections/vec)
+(defn fill (v (i Int) (n Int)) (if (>= i n) v (fill (vec-push v i) (+ i 1) n)))
+(defn total (v (i Int) (n Int) (acc Int)) (if (>= i n) acc (total v (+ i 1) n (+ acc (vec-get v i)))))
+(defn main () (let v (fill (vec-create-default 16) 0 10000000) (begin (print (total v 0 10000000 0)) 0)))

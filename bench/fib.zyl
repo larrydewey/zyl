@@ -1,0 +1,2 @@
+(defn fib ((n Int)) (if (< n 2) n (+ (fib (- n 1)) (fib (- n 2)))))
+(defn main () (begin (print (fib 40)) 0))

@@ -1,0 +1,8 @@
+(defn mark ((b ByteBuf) (j Int) (step Int) (n Int))
+  (if (>= j n) 0 (begin (store-u8 :le b j 1) (mark b (+ j step) step n))))
+(defn sv ((b ByteBuf) (i Int) (n Int) (cnt Int))
+  (if (>= i n) cnt
+    (if (= (load-u8 :le b i) 0)
+      (begin (mark b (* i i) i n) (sv b (+ i 1) n (+ cnt 1)))
+      (sv b (+ i 1) n cnt))))
+(defn main () (let b (bytebuf Heap 50000000) (begin (print (sv b 2 50000000 0)) 0)))
