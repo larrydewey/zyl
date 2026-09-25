@@ -87,19 +87,16 @@
 (defn qp-name (p) (match p (QP n _ n)))
 (defn qp-key (p) (match p (QP _ k k)))
 
-(deftype SymTab (ST Int Int))
+; Names and their canonical keys, sorted by name, in two typed arrays
+; (runtime (Array String)).
+(deftype SymTab (STEmpty) (ST (Array String) (Array String) Int))
 
-(defn st-base (t) (match t (ST b _ b)))
-(defn st-count (t) (match t (ST _ n n)))
+(defn st-count (t) (match t (STEmpty 0) (ST _ _ n n)))
 
-(defn st-empty () (ST 0 0))
+(defn st-empty () (STEmpty))
 
-(defn st-name-at (t i) (st-word (st-base t) (* i 2)))
-(defn st-key-at (t i) (st-word (st-base t) (+ (* i 2) 1)))
-
-; The table's words hold Strings, so not math/words' Int-typed w-get/w-set.
-(defn st-word (base i) (ffi-call "zyl_mem_read" (+ base (* i 8)) 1000))
-(defn st-word-set (base i v) (ffi-call "zyl_mem_write" (+ base (* i 8)) v 1000))
+(defn st-name-at (t i) (match t (STEmpty "") (ST names _ _ (ffi-call "zyl_array_get" names i 1000))))
+(defn st-key-at (t i) (match t (STEmpty "") (ST _ keys _ (ffi-call "zyl_array_get" keys i 1000))))
 
 ; Sorted (by name) array built from `pairs`. Later pairs win over earlier
 ; ones for the same name, which is what makes an explicit import shadow a
@@ -108,19 +105,20 @@
 (defn st-make (arena pairs)
   (let sorted (qf-sort-pairs pairs)
     (let n (list-length sorted)
-      (let base (w-alloc arena (* n 2))
-        (begin
-          (st-fill base sorted 0)
-          (ST base n))))))
+      (let names (ffi-call "zyl_array_new" arena n 1000)
+        (let keys (ffi-call "zyl_array_new" arena n 1000)
+          (begin
+            (st-fill names keys sorted 0)
+            (ST names keys n)))))))
 
-(defn st-fill (base pairs i)
+(defn st-fill (names keys pairs i)
   (match pairs
     (Nil 0)
     (Cons h t
       (begin
-        (st-word-set base (* i 2) (qp-name h))
-        (st-word-set base (+ (* i 2) 1) (qp-key h))
-        (st-fill base t (+ i 1))))))
+        (ffi-call "zyl_array_set" names i (qp-name h) 1000)
+        (ffi-call "zyl_array_set" keys i (qp-key h) 1000)
+        (st-fill names keys t (+ i 1))))))
 
 ; Merge sort: the table is rebuilt for every module, and an insertion
 ; sort over a few thousand names per module is minutes of the build.
