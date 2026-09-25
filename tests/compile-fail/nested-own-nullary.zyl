@@ -1,0 +1,5 @@
+; A program's own nullary constructor in a field slot is a nested pattern, not a binder.
+; expect-error: E_NESTED_PATTERN
+(deftype Tree (Leaf) (Node Int Tree))
+(defn f (t) (match t (Leaf 0) (Node v Leaf v)))
+(defn main () (begin (print (f (Node 3 (Node 4 Leaf)))) 0))

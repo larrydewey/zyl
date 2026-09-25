@@ -34,7 +34,7 @@
 ; ===========================================================================
 
 ; `<package>@<major>::<module>::<symbol>`. Built as text because every
-; consumer downstream — duplicate checking, monomorphization, codegen's
+; consumer downstream — duplicate checking, type checking, codegen's
 ; mangler — already works in strings, and because the key IS the sort key
 ; (§31.2): comparing keys bytewise gives the specified total order.
 (defn ck-key (arena pkg major module symbol)
@@ -243,7 +243,7 @@
     false))
 
 ; `Trait.method` is a single identifier ('.' is an identifier character),
-; and monomorphization builds the impl body's name from the trait and type
+; and impl lifting (lift_impls.zyl) builds the impl body's name from the trait and type
 ; names it finds in the impl block — which this pass qualifies. So the
 ; call site has to qualify the trait half and leave the method half alone,
 ; or the two halves of trait dispatch name different symbols.
@@ -647,7 +647,12 @@
             (AstIdent n (AList (Cons (AstIdent (qf-ident tab locals n)) rest)))
             (_ (AList kids))))
         (Nil (AList Nil))))
+    ; A known capitalized name in a binder slot is a constructor: qualified, it is E_NESTED_PATTERN.
+    (AstIdent n (if (qf-upper-first n) (AstIdent (qf-ident tab locals n)) p))
     (_ p)))
+
+(defn qf-upper-first (n)
+  (let c (ffi-call "zyl_cstr_byte_at" n 0 1000) (and (>= c 65) (<= c 90))))
 
 ; Every name a pattern binds: the plain identifiers, plus the identifiers
 ; inside a nested constructor pattern (but not that pattern's own head,
