@@ -2,7 +2,7 @@
 ; from the running actor's mailbox; `(actor-self)` is its id (main gets a
 ; mailbox too), so actors can exchange structured messages and replies.
 
-(deftype ArMsg (ArAdd Int) (ArGet Int) (ArStop Int))
+(deftype ArMsg (ArAdd Int) (ArGet Actor) (ArStop Actor))
 
 (defn ar-counter (total)
   (match (receive)

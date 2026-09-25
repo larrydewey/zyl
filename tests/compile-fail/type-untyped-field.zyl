@@ -1,0 +1,5 @@
+; expect-error: E_TYPE_MISMATCH
+; An untyped struct field is a type parameter of the struct, so the
+; field keeps the type it was built with.
+(defstruct Pt x y)
+(defn main () (let p (make-Pt "a" 2) (begin (print (+ (struct-get p "x") 1)) 0)))

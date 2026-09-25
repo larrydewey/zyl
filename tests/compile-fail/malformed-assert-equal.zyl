@@ -1,0 +1,5 @@
+; expect-error: E_MALFORMED_FORM
+; assert-equal takes two expressions; a misplaced paren used to make it a
+; one-argument form that compiled to 0 and passed.
+(test "x" (assert-equal (+ 1 2)))
+(run-tests)

@@ -25,7 +25,7 @@
     (let c (ec-p256 a)
       (let d (_ec_priv a "c9afa9d845ba75166b5c215767b1d6934e50c3db36e89b127b8a622b120f6721")
         (let hash (w-from-hex a "af2bdbe1aa9b6ec1e2ade1d694f41fc71a831d0268e9891562113d8a62add1bf")
-          (assert-equal (w-hex-bytes (option-unwrap-or (ecdsa-sign a c d hash) 0) 64)
+          (assert-equal (w-hex-bytes (option-expect (ecdsa-sign a c d hash) "expected a value") 64)
             "efd48b2aacb6a8fd1140dd9cd45e81d69d2c877b56aaf991c34d0ea84eaf3716f7cb1c942d657c41d436c7a1b6e29f65f3e900dbb9aff4064dc4ab2f843acda8"))))))
 (test "ecdsa-p256-verify"
   (let a (_ec_arena)
@@ -39,7 +39,7 @@
     (let c (ec-secp256k1 a)
       (let d (_ec_priv a "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef")
         (let hash (w-from-hex a "a4772601af6454bf55352c02db55ca6a1d19e8acb780b65a9f849124dd8143be")
-          (assert-equal (w-hex-bytes (option-unwrap-or (ecdsa-sign a c d hash) 0) 64)
+          (assert-equal (w-hex-bytes (option-expect (ecdsa-sign a c d hash) "expected a value") 64)
             "8a7b2bdd8b69ced1527e2780e4171344a54628d10f7af8af81aae3b0ce8d705e24644510ed6b9e300e60dc3c8365304b7527d997b8962263d00cade3915e3304"))))))
 (test "ecdsa-secp256k1-verify"
   (let a (_ec_arena)

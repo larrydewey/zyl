@@ -63,7 +63,7 @@
               (let pt (w-from-string a "the attack begins at dawn")
                 (let sealed (aead-encrypt a key nonce aad 3 pt 25)
                   (assert-equal
-                    (w-hex-bytes (option-unwrap-or (aead-decrypt a key nonce aad 3 sealed 25) 0) 25)
+                    (w-hex-bytes (option-expect (aead-decrypt a key nonce aad 3 sealed 25) "expected a value") 25)
                     (w-hex-bytes pt 25)))))))))))
 
 (test "integration-aead-rejects-wrong-direction-key"

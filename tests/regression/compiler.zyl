@@ -71,13 +71,13 @@
         ; 5 tokens + EOF
         (assert-equal (list-length toks) 6)
         ; token 0: '('
-        (assert-true (= (tok-is (toks-head toks) 8) 1))
+        (assert-true (tok-is (toks-head toks) 8))
         ; token 3: int 2
-        (assert-true (= (tok-is (toks-head (tk-at toks 3)) 2) 1))
+        (assert-true (tok-is (toks-head (tk-at toks 3)) 2))
         ; token 4: ')'
-        (assert-true (= (tok-is (toks-head (tk-at toks 4)) 9) 1))
+        (assert-true (tok-is (toks-head (tk-at toks 4)) 9))
         ; token 5: EOF
-        (assert-true (= (tok-is (toks-head (tk-at toks 5)) 0) 1))
+        (assert-true (tok-is (toks-head (tk-at toks 5)) 0))
         0))))
 
 ; Reader builds nested Ast forms

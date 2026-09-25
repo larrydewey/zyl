@@ -7,7 +7,7 @@
 ; ===========================================================================
 
 ; Spawn a new actor with the given closure
-; Returns: ActorRef (Int)
+; Returns: Actor
 (defn actor-spawn (closure)
   (spawn closure))
 
@@ -35,7 +35,7 @@
 ; Check if an actor is alive (has not been terminated).
 ; Returns: Bool
 (defn actor-is-alive (actor)
-  (if (== (ffi-call "zyl_actor_is_alive" actor 1000) 1) true false))
+  (ffi-call "zyl_actor_is_alive" actor 1000))
 
 ; Wait for an actor to finish its thread (blocks until it exits).
 ; Returns: Unit

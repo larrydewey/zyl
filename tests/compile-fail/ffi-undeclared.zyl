@@ -1,0 +1,3 @@
+; expect-error: E_CANNOT_INFER
+; A foreign symbol needs an (extern ...) declaration of its C signature.
+(defn main () (begin (print (ffi-call "abs" -3 1000)) 0))

@@ -1,0 +1,5 @@
+; expect-error: E_DUPLICATE_VARIANT
+; A program type may not reuse a prelude constructor name: the standard
+; library's own uses of Some would resolve to it.
+(deftype MyOpt (Some Int) (None))
+(defn main () 0)

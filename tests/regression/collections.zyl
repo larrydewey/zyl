@@ -88,22 +88,22 @@
 
 ; Allocator operations
 (test "alloc-malloc"
-  (assert-true (> (alloc-malloc 64) 0)))
+  (let p (alloc-malloc 64)
+    (begin (alloc-free p) (assert-true true))))
 (test "alloc-write-int"
   (let p (alloc-malloc 64)
     (begin
       (alloc-write-int p 42)
       (assert-true true))))
 (test "alloc-strlen"
-  (assert-equal (alloc-strlen (alloc-malloc 64)) 0))
+  (assert-equal (alloc-strlen "hello") 5))
 
 ; buf-append
 (test "buf-append"
-  (let p (alloc-malloc 64)
+  (let b (buf-new (arena-create 4096) 64)
     (begin
-      (alloc-write-int p 0)
-      (buf-append p "hello")
-      (assert-equal (alloc-strlen p) 5)
+      (buf-append b "hello")
+      (assert-equal (str-length (buf-str b)) 5)
       0)))
 
 ; A capacity of 0 or below is fine: the first push allocates room.

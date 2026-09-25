@@ -181,7 +181,7 @@
     (invariant (< i 100))
     (if (= i 0) 0 (_ct-count (- i 1)))))
 
-(defn _ct-msg (thunk) (try (thunk) (catch e e)))
+(defn _ct-msg (thunk) (try (begin (thunk) "") (catch e e)))
 
 (test "contract-requires-violated"
   (begin

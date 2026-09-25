@@ -5,6 +5,9 @@
 (use ffi/ffi)
 (use collections/vec)
 
+(extern "puts" (String) Int)
+(extern "abs" (Int) Int)
+
 ; Basic FFI call with timeout.
 (
   test
@@ -14,9 +17,8 @@
     result
     (ffi-call "puts" "hello from ffi" 1000)
     (
-      assert-equal
+      assert-true
       (> result 0)
-      1
     )
   )
 )

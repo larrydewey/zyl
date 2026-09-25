@@ -103,7 +103,7 @@
           (let pt (w-from-string a "Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the future, sunscreen would be it.")
             (let sealed (aead-encrypt a k n aad 12 pt 114)
               (let got (aead-decrypt a k n aad 12 sealed 114)
-                (assert-equal (w-hex-bytes (option-unwrap-or got 0) 114) (w-hex-bytes pt 114))))))))))
+                (assert-equal (w-hex-bytes (option-expect got "expected a value") 114) (w-hex-bytes pt 114))))))))))
 
 ; A single flipped ciphertext bit must fail the tag check, and the
 ; failure must be a None rather than a decrypted-anyway plaintext.

@@ -5,6 +5,6 @@
 (test "if-nested"
   (assert-equal (if true (if true 1 2) 3) 1))
 (test "if-then-unit"
-  (assert-true (if true (begin (print "then-branch") true))))
+  (assert-true (if true (begin (print "then-branch") true) false)))
 
 (run-tests)

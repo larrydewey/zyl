@@ -66,7 +66,7 @@
 ; Compare and swap. If *addr == expected, set *addr = new_value.
 ; Returns: Bool (true if swap occurred)
 (defn atomic-cas (addr expected new_value)
-  (if (== (ffi-call "zyl_atomic_cas" addr expected new_value 1000) 1) true false))
+  (ffi-call "zyl_atomic_cas" addr expected new_value 1000))
 
 ; ===========================================================================
 ; ATOMIC FETCH ADD

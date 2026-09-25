@@ -32,6 +32,7 @@
   (or (str-eq s "zyl_word_load")
   (or (str-eq s "zyl_word_store")
   (or (str-eq s "zyl_ptr_add")
+  (or (str-eq s "zyl_ptr_cstr")
   (or (str-eq s "zyl_mem_read")
   (or (str-eq s "zyl_mem_write")
   (or (str-eq s "zyl_ffi_addr")
@@ -43,7 +44,7 @@
   (or (str-eq s "zyl_val_arity")
   (or (str-eq s "zyl_itest_add")
   (or (str-eq s "zyl_itest_fn")
-      (str-eq s "zyl_repl_global_set"))))))))))))))))))
+      (str-eq s "zyl_repl_global_set")))))))))))))))))))
 
 ; Built once, before the compiler's main runs.
 (def ffi-sig-tab (ffi-sig-table))
@@ -144,6 +145,7 @@
   (Cons (FSig "zyl_word_load" "Int -> Int")
   (Cons (FSig "zyl_word_store" "Int Int -> Unit")
   (Cons (FSig "zyl_ptr_add" "Ptr Int -> Ptr")
+  (Cons (FSig "zyl_ptr_cstr" "Ptr -> String")
   (Cons (FSig "zyl_ffi_addr" "String -> Int")
   (Cons (FSig "zyl_cstr_of_word" "Int -> String")
   (Cons (FSig "zyl_word_of_cstr" "String -> Int")
@@ -240,4 +242,4 @@
   (Cons (FSig "zyl_words_set" "Words Int Int -> Int")
   (Cons (FSig "zyl_words_view" "Arena Words Int Int -> Words")
   (Cons (FSig "zyl_zeroize" "Int Int -> Int")
-  Nil)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+  Nil))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))

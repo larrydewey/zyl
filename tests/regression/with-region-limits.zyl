@@ -30,10 +30,10 @@
     (str-length (str-concat "abc" (str-concat "def" (if (> n 0) "g" ""))))))
 
 (test "a full fixed region raises E_REGION_EXHAUSTED"
-  (assert-equal (try (fixed-sum 1000) (catch e (ffi-call "zyl_err_is" e "E_REGION_EXHAUSTED" 1000))) 1))
+  (assert-equal (try (fixed-sum 1000) (catch e (if (ffi-call "zyl_err_is" e "E_REGION_EXHAUSTED" 1000) 1 0))) 1))
 
 (test "an arena over its limit raises E_REGION_EXHAUSTED"
   (assert-equal (try (with-region (arena :block 4096 :limit 8192) (wsum (build 10000 (WN))))
-                     (catch e (ffi-call "zyl_err_is" e "E_REGION_EXHAUSTED" 1000))) 1))
+                     (catch e (if (ffi-call "zyl_err_is" e "E_REGION_EXHAUSTED" 1000) 1 0))) 1))
 
 (run-tests)

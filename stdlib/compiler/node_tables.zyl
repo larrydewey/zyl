@@ -56,3 +56,8 @@
 (defn icnf-region-set (e v) (ffi-call "zyl_attrh_set" icnf-regions e v 1000))
 (defn icnf-scalar (e) (ffi-call "zyl_attrh_get_or" icnf-scalars e 0 1000))
 (defn icnf-scalar-set (e v) (ffi-call "zyl_attrh_set" icnf-scalars e v 1000))
+
+; True while the REPL compiles one of its generated programs, the only
+; place `zyl-repl-global` (a session value read back from the runtime,
+; typed by the dead branch the REPL puts next to it) may appear.
+(def repl-compiling (ffi-call "zyl_ref_new" false 1000))

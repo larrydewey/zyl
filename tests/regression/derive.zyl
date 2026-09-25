@@ -43,9 +43,8 @@
       b2
       (make-_dr_Box 3 4)
       (
-        assert-equal
+        assert-true
         (< b1 b2)
-        1
       )
     )
   )
@@ -97,8 +96,8 @@
       (make-_dr_Multi 1 2)
       (
         begin
-        (assert-equal (== m1 m2) 1)
-        (assert-equal (< m1 m2) 0)
+        (assert-true (== m1 m2))
+        (assert-false (< m1 m2))
         1
       )
     )

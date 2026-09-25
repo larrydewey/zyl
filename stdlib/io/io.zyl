@@ -122,8 +122,8 @@
 (defn sb-ref-set (r v) (ffi-call "zyl_ref_set" r v 1000))
 
 (trait OutputStream
-  (write (self T) (chunk String) Int)
-  (flush (self T) Int))
+  (write (self) (chunk String) Int)
+  (flush (self) Int))
 
 (impl OutputStream Stdout
   (defn write (self chunk) (file-write (struct-get self "fd") chunk))

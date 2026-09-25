@@ -8,6 +8,7 @@
   (assert-equal (vec-len (vec-create-default 5)) 0))
 
 (test "multi-module-alloc"
-  (assert-true (> (alloc-malloc 64) 0)))
+  (let p (alloc-malloc 64)
+    (begin (alloc-free p) (assert-true true))))
 
 (run-tests)

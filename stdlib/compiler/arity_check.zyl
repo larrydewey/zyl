@@ -218,6 +218,7 @@
             (let _ (ffi-call "zyl_ref_set" ac-cur-fn name 1000)
               (ac-expr body arities (ac-wrap-unknown (ac-param-names params)))))
           (ETestDecl _ body _ (ac-expr body arities Nil))
+          (EUnknown _ _ (ac-expr e arities Nil))
           (_ 0))
         (ac-check-top rest arities)))))
 
@@ -304,6 +305,12 @@
     ; enclosing `shadowed` set, only its own params: same reset-to-Nil
     ; posture as mutability_check.zyl's mc-expr for this exact case.
     (EDefn _ params body (ac-expr body arities (ac-wrap-unknown (ac-param-names params))))
+    ; A special form whose shape its parser rejected (expr_inner.zyl
+    ; builds EUnknown for it). It used to lower to the constant 0.
+    (EUnknown name _
+      (ffi-fail "E_MALFORMED_FORM"
+                (str-concat "malformed `" (str-concat name "` form: its arguments do not have the shape the form requires"))
+                "see the form's syntax in the specification" e))
     (_ 0)))
 
 (defn ac-list (xs arities shadowed)

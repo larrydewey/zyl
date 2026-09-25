@@ -4,7 +4,7 @@
 (use core/core)
 
 ; Generic ADT with one type parameter.
-(deftype _gn_Option (Some T) (None))
+(deftype _gn_Option (GnSome T) (GnNone))
 
 ; Concrete function for Option<Int>.
 (
@@ -14,8 +14,8 @@
   (
     match
     o
-    (Some x x)
-    (None 0)
+    (GnSome x x)
+    (GnNone 0)
   )
 )
 
@@ -24,7 +24,7 @@
   "generic-option-int"
   (
     assert-equal
-    (_gn_opt_int_get (Some 42))
+    (_gn_opt_int_get (GnSome 42))
     42
   )
 )
@@ -34,7 +34,7 @@
   "generic-option-none"
   (
     assert-equal
-    (_gn_opt_int_get None)
+    (_gn_opt_int_get GnNone)
     0
   )
 )
@@ -47,8 +47,8 @@
   (
     match
     o
-    (Some s s)
-    (None "")
+    (GnSome s s)
+    (GnNone "")
   )
 )
 
@@ -57,7 +57,7 @@
   "generic-option-str"
   (
     assert-equal
-    (_gn_opt_str_get (Some "hello"))
+    (_gn_opt_str_get (GnSome "hello"))
     "hello"
   )
 )

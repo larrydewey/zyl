@@ -95,7 +95,7 @@
 
 ; Complex nested struct access
 (test "struct-complex-nested"
-  (assert-equal (let p (make-_s_Point 5 6) (let q (make-_s_Point 7 8) (let pair (make-_s_Pair (struct-get p "x") (struct-get q "y")) (struct-get pair "right"))) 8)))
+  (assert-equal (let p (make-_s_Point 5 6) (let q (make-_s_Point 7 8) (let pair (make-_s_Pair (struct-get p "x") (struct-get q "y")) (struct-get pair "right")))) 8))
 
 ; Mixed field types in arithmetic
 (test "struct-mixed-access"
@@ -148,7 +148,7 @@
 
 ; Multiple structs of same type
 (test "struct-multiple-same-type"
-  (assert-equal (let p1 (make-_s_Point 1 2) (let p2 (make-_s_Point 3 4) (+ (struct-get p1 "x") (struct-get p2 "x"))) 4)))
+  (assert-equal (let p1 (make-_s_Point 1 2) (let p2 (make-_s_Point 3 4) (+ (struct-get p1 "x") (struct-get p2 "x")))) 4))
 
 ; Struct with let-mut rebinding
 (test "let-mut-struct"

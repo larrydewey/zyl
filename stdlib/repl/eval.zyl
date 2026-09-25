@@ -31,6 +31,7 @@
 (use core/result)
 (use compiler/pipeline)
 (use compiler/icnf)
+(use compiler/node_tables)
 (use compiler/expr_inner)
 (use compiler/type_annotate)
 (use compiler/derive)
@@ -324,7 +325,10 @@
 ; here rather than ending the session.
 ; Returns: Result(List(Icnf), String)
 (defn eval-lower (arena src)
-  (try (Ok (compile-to-fns arena src "<repl>")) (catch e (Err e))))
+  (let _ (ffi-call "zyl_ref_set" repl-compiling true 1000)
+    (let r (try (Ok (compile-to-fns arena src "<repl>")) (catch e (Err e)))
+      (let _ (ffi-call "zyl_ref_set" repl-compiling false 1000)
+        r))))
 
 ; Interpreting is wrapped too: an interpreted program can divide by
 ; zero, call something undefined, or `error` on purpose, and all three
@@ -393,13 +397,26 @@
 
 (defn eval-entry (sess text)
   (let head (eval-head text)
+    (if (eval-mentions-internal text)
+      (EvalOutcome (EvalFailed "error[E_UNBOUND_VARIABLE]: `zyl-repl-global` is the REPL's own internal form") sess)
     (if (str-eq head "use")
       (eval-add-use sess text)
       (if (str-eq head "def")
         (eval-add-global sess text)
         (if (eval-definition-p text)
           (eval-add-definition sess text)
-          (eval-expression sess text))))))
+          (eval-expression sess text)))))))
+
+; The session-value read the REPL generates must not come from the user:
+; with it a value could be read back at any type.
+(defn eval-mentions-internal (text)
+  (eval-find text "zyl-repl-global" 0))
+
+(defn eval-find (s pat i)
+  (let n (str-length pat)
+    (if (> (+ i n) (str-length s))
+      false
+      (if (str-eq (str-substring s i n) pat) true (eval-find s pat (+ i 1))))))
 
 ; A definition is accepted once the whole session still compiles with
 ; it. Nothing runs: a definition has no effect until something calls it.

@@ -1,0 +1,4 @@
+; expect-error: E_MALFORMED_FORM
+; A test is a name and one body; the extra forms used to be dropped.
+(test "x" (assert-true true) (assert-true false))
+(run-tests)

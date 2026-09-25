@@ -4,6 +4,9 @@
 
 (defstruct _abi_Box (v Int) (w Int))
 
+(extern "qsort" (Ptr Int Int (Fn (Ptr Ptr) Int)) Unit)
+(extern "snprintf" (Ptr Int String Int Int Int Int Int Int) Int)
+
 ; glibc's qsort keeps its own state in callee-saved registers across the
 ; comparator call. Generated code uses rbx (variant construction) and r12
 ; (the saved rsp around every C call); functions used to clobber both
@@ -17,13 +20,13 @@
   (if (>= i n)
     0
     (begin
-      (alloc-write-int (+ p (* i 8)) (- 1000 (* (% (* i 37) 64) 3)))
+      (alloc-write-int (alloc-offset p (* i 8)) (- 1000 (* (% (* i 37) 64) 3)))
       (_abi-fill p (+ i 1) n))))
 
 (defn _abi-sorted (p i n)
   (if (>= i n)
     1
-    (if (> (alloc-read-int (+ p (* (- i 1) 8))) (alloc-read-int (+ p (* i 8))))
+    (if (> (alloc-read-int (alloc-offset p (* (- i 1) 8))) (alloc-read-int (alloc-offset p (* i 8))))
       0
       (_abi-sorted p (+ i 1) n))))
 
@@ -55,6 +58,6 @@
   (let buf (alloc-malloc 64)
     (begin
       (_abi-deep buf 2)
-      (assert-equal (alloc-strlen buf) 11))))
+      (assert-equal (str-length (alloc-cstr buf)) 11))))
 
 (run-tests)

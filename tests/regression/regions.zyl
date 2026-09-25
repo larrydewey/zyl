@@ -80,8 +80,7 @@
 ; Pin region for FFI values.
 ; (Requires FFI, tested in ffi tests)
 
-; Circular region for recursive structures.
-(deftype _rg_List (Cons Int _rg_List) (Nil))
+; Circular region for recursive structures (the prelude List).
 
 (
   test

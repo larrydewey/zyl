@@ -3,14 +3,18 @@
 
 (use core/core)
 
+(extern "usleep" (Int) Int)
+(extern "abs" (Int) Int)
+(extern "snprintf" (Ptr Int String Int Int Int Int Int Int Int Int) Int)
+
 ; usleep takes microseconds: 300 ms against a 50 ms budget overruns.
 (defn slow-call () (ffi-call "usleep" 300000 50))
 
 (test "ffi-timeout-fires"
-  (assert-equal (try (slow-call) (catch e (str-eq e "E_FFI_TIMEOUT: ffi call `usleep` exceeded its timeout of 50 ms"))) 1))
+  (assert-equal (try (slow-call) (catch e (if (str-eq e "E_FFI_TIMEOUT: ffi call `usleep` exceeded its timeout of 50 ms") 1 0))) 1))
 
 (test "ffi-timeout-recover-by-code"
-  (assert-equal (try (slow-call) (catch e (if (> (ffi-call "zyl_err_is" e "E_FFI_TIMEOUT" 1000) 0) 7 0))) 7))
+  (assert-equal (try (slow-call) (catch e (if (ffi-call "zyl_err_is" e "E_FFI_TIMEOUT" 1000) 7 0))) 7))
 
 (test "ffi-call-after-timeout"
   (let _ (try (slow-call) (catch e 0))
@@ -22,6 +26,6 @@
 (test "ffi-many-args"
   (let buf (alloc-malloc 64)
     (let _ (ffi-call "snprintf" buf 64 "%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld" 1 2 3 4 5 6 7 8 1000)
-      (assert-equal (str-concat "" buf) "1,2,3,4,5,6,7,8"))))
+      (assert-equal (alloc-cstr buf) "1,2,3,4,5,6,7,8"))))
 
 (run-tests)

@@ -48,8 +48,9 @@
 
 ; Alias with type predicates - using is-zero as example
 (test "alias-type-predicates"
-  (assert-true (is-zero 0))
-  (assert-false (is-zero 42)))
+  (begin
+    (assert-true (is-zero 0))
+    (assert-false (is-zero 42))))
 
 ; Alias with let-mut
 (test "alias-let-mut"

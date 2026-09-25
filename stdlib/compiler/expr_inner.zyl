@@ -341,13 +341,14 @@
 (defn contract-stripping-p (p) (or (str-eq p "off") (str-eq p "production")))
 
 ; (assert-true C "E_CONTRACT_VIOLATION: <what> failed: C") under strict/debug,
-; (if C 0 (zyl-contract-warn msg)) under warn, spanned at the clause.
+; (if C unit (zyl-contract-warn msg)) under warn, spanned at the clause;
+; every form of a check is Unit.
 (defn contract-check (what clause c)
   (let msg (str-concat "E_CONTRACT_VIOLATION: " (str-concat what (str-concat " failed: " (ast-text c))))
     (let chk (if (contract-stripping-p (contract-profile))
-               (AstInt 0)
+               (AstIdent "unit")
                (if (str-eq (contract-profile) "warn")
-               (AList (Cons (AstIdent "if") (Cons c (Cons (AstInt 0)
+               (AList (Cons (AstIdent "if") (Cons c (Cons (AstIdent "unit")
                  (Cons (AList (Cons (AstIdent "zyl-contract-warn") (Cons (AString msg) Nil))) Nil)))))
                (AList (Cons (AstIdent "assert-true") (Cons c (Cons (AString msg) Nil))))))
       (let _ (ffi-call "zyl_span_copy" chk clause 1000)
@@ -975,6 +976,10 @@
 (defn dispatch-special (n rest)
   (if (str-eq n "with-region")
     (parse-with-region rest)
+  (if (str-eq n "extern")
+    (match (parse-extern rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "extern" (convert-ast-list rest)))))
   (if (str-eq n "contracts")
     (parse-contracts-off rest)
   (if (contract-head-p n)
@@ -1222,7 +1227,7 @@
       (Some expr expr)
       (None (Expr (EUnknown "test-compile" (convert-ast-list rest)))))
     (byte-form-dispatch n rest)
-  ))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+  )))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 
 ; --- Byte-level primitives (BYTE_PRIMITIVES_IMPLEMENTATION_PLAN.md §2) ------
 ; Recognition happens here, not in the reader (no-dispatch arch). The 21
@@ -1758,7 +1763,42 @@
   (ffi-call "zyl_smap_get_or" field-type-table cname Nil 1000))
 
 (defn field-types-clear ()
-  (ffi-call "zyl_smap_clear" field-type-table 1000))
+  (begin
+    (ffi-call "zyl_smap_clear" field-type-table 1000)
+    (ffi-call "zyl_smap_clear" extern-table 1000)))
+
+; (extern "sym" (T ...) R): the C signature of a foreign symbol, which the
+; type pass checks every ffi-call to it against (type_annotate.zyl,
+; ta-ffi-typed). Recorded by symbol; the form itself is Unit.
+(def extern-table (ffi-call "zyl_smap_new" 1000))
+
+(deftype ExternSig (ExternSig (List Expr) Expr))
+
+(defn extern-sig-of (sym)
+  (if (ffi-call "zyl_smap_has" extern-table sym 1000)
+    (Some (ffi-call "zyl_smap_get_or" extern-table sym (ExternSig Nil (Expr (EAtom ANil))) 1000))
+    None))
+
+(defn parse-extern (args)
+  (match args
+    (Cons s rest
+      (match s
+        (AString sym
+          (match rest
+            (Cons ps rest2
+              (match rest2
+                (Cons ret rest3
+                  (if (nil? rest3)
+                    (match ps
+                      (AList tys
+                        (let _ (ffi-call "zyl_smap_put" extern-table sym (ExternSig (convert-ast-list tys) (convert-ast ret)) 1000)
+                          (Some (Expr (EAtom ANil)))))
+                      (_ None))
+                    None))
+                (Nil None)))
+            (Nil None)))
+        (_ None)))
+    (Nil None)))
 
 ; An untyped struct field records `_` (unknown type).
 (defn parse-struct-field-types (specs)
@@ -2090,13 +2130,23 @@
     None
     (Some (cond-fold (parse-cond-clauses (AList args))))))
 
+; A clause guarded by the literal `true` (or `else`) always runs, so it
+; ends the cond and gives it its body's type (clauses after it could
+; never run); with no such clause the cond is Unit when nothing matches.
 (defn cond-fold (clauses)
   (match clauses
     (Nil (Expr (EAtom ANil)))
     (Cons c rest
       (match c
         (Pair test body
-          (Expr (EIf test body (cond-fold rest))))))))
+          (if (cond-always-p test)
+            body
+            (Expr (EIf test body (cond-fold rest)))))))))
+
+(defn cond-always-p (test)
+  (match (Expr.inner test)
+    (EAtom a (match a (ABool b b) (AIdent n (str-eq n "else")) (_ false)))
+    (_ false)))
 
 ; `or`/`and` aren't recognized as builtins anywhere in codegen (Rust or
 ; self-hosted) — desugar to nested `if` here instead, at the SOURCE
@@ -2160,7 +2210,7 @@
     (AList kids
       (Pair
         (convert-ast (cond-test-ast (ast-nth kids 0 (AstInt 0))))
-        (convert-ast (ast-list-last kids (AstInt 0)))))
+        (parse-body-from kids 1)))
     (_ (Pair (Expr (EAtom ANil)) (Expr (EAtom ANil))))))
 
 (defn cond-test-ast (test)
@@ -2534,7 +2584,7 @@
                     (ETryCatch
                       (convert-ast (ast-nth args 0 (AstInt 0)))
                       (match name-ast (AstIdent n n) (_ "___"))
-                      (convert-ast (ast-list-last handler-rest (AstInt 0)))))))
+                      (parse-body-from handler-rest 0)))))
               (_ None)))
           (_ None)))
       (_ None))
@@ -2565,7 +2615,7 @@
         (EFn
           "___"
           (parse-params (ast-nth args 0 (AstInt 0)))
-          (convert-ast (ast-list-last args (AstInt 0))))))
+          (parse-body-from args 1))))
     None))
 
 (defn parse-fn (args)
@@ -2575,7 +2625,7 @@
         (EFn
           "___"
           (parse-params (ast-nth args 0 (AstInt 0)))
-          (convert-ast (ast-list-last args (AstInt 0))))))
+          (parse-body-from args 1))))
     None))
 
 (defn parse-print (args)
@@ -2770,7 +2820,7 @@
 (defn parse-macro (args)
   (match (ast-nth args 0 (AstInt 0))
     (AstIdent n
-      (if (ast-has-at-least args 3)
+      (if (= (ast-count args) 3)
         (Some
           (Expr
             (EMacroDef
@@ -2780,8 +2830,9 @@
         None))
     (_ None)))
 
+; Exactly a name and one body expression.
 (defn parse-test (args)
-  (if (ast-has-at-least args 2)
+  (if (= (ast-count args) 2)
     (Some
       (Expr
         (ETestDecl

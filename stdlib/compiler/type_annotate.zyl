@@ -192,20 +192,46 @@
   (let r (ta-root st t)
     (if (< r 0) unit (ta-wset (ta-vars st) r (TbPoison)))))
 
-; --- strict report mode (docs/sound-types-design.md, phase 1) --------------
-; ZYL_STRICT_TYPES set: every unification failure, occurs-check failure and
-; "don't know" type is reported as a located W_TYPE_STRICT warning at the
-; innermost expression being typed (runtime cell 1), without changing what
-; the pass computes. Cell 0 holds the mode, set per program.
-(def ta-strict-mode (ffi-call "zyl_ref_new" false 1000))
+; --- type errors (docs/sound-types-design.md) -------------------------------
+; Every unification failure, occurs-check failure and "don't know" type is
+; an error at the innermost expression being typed (ta-cur-node). All of a
+; program's type errors are reported, then the compile fails
+; (ta-annotate-program). ZYL_STRICT_TYPES=report reports them as
+; W_TYPE_STRICT warnings instead and lets the compile go on: a tool for
+; counting what is left, never a way to run an ill-typed program in
+; production.
+(def ta-report-mode (ffi-call "zyl_ref_new" false 1000))
+(def ta-error-count (ffi-call "zyl_ref_new" 0 1000))
 (def ta-cur-node (ffi-call "zyl_ref_new" (Expr (EAtom ANil)) 1000))
 
-(defn ta-strict-p () (ffi-call "zyl_ref_get" ta-strict-mode 1000))
+; The checker is always strict; kept as a predicate for the call sites
+; that once chose between the strict and the permissive rule.
+(defn ta-strict-p () true)
+
+(defn ta-report-p () (ffi-call "zyl_ref_get" ta-report-mode 1000))
 
 (defn ta-strict (msg)
-  (if (ta-strict-p)
-    (err-warn-at "W_TYPE_STRICT" msg (ffi-call "zyl_ref_get" ta-cur-node 1000) "")
-    unit))
+  (ta-type-error (if (ta-starts-with msg "no type for") "E_CANNOT_INFER" "E_TYPE_MISMATCH")
+                 msg (ffi-call "zyl_ref_get" ta-cur-node 1000) Nil ""))
+
+(defn ta-starts-with (s p)
+  (and (>= (str-length s) (str-length p)) (ta-streq (str-substring s 0 (str-length p)) p)))
+
+(defn ta-type-error (code msg node labels help)
+  (let fid (ffi-call "zyl_span_file" node 1000)
+    (let off (ffi-call "zyl_span_off" node 1000)
+      (if (ta-report-p)
+        (ffi-call "zyl_warn_emit" (err-diag "warning" "W_TYPE_STRICT" msg fid off labels help) 1000)
+        (begin
+          (ffi-call "zyl_ref_set" ta-error-count (+ (ffi-call "zyl_ref_get" ta-error-count 1000) 1) 1000)
+          (ffi-call "zyl_warn_emit" (err-diag "error" code msg fid off labels help) 1000))))))
+
+; A name defined nowhere: E_UNBOUND_VARIABLE, typed as a fresh variable
+; so the rest of the program is still checked.
+(defn ta-unbound (st msg)
+  (let _ (ta-type-error "E_UNBOUND_VARIABLE" msg (ffi-call "zyl_ref_get" ta-cur-node 1000) Nil
+           "define it, or bind it with `let`; an anonymous function is written (fn (params) body) -- ((params) body) is not lambda syntax (spec 7.1)")
+    (ta-fresh st)))
 
 ; A fresh variable standing for a type the pass does not know.
 (defn ta-dk (st why)
@@ -433,6 +459,12 @@
 (defn ta-conv-name (st n args scope)
   (if (ta-builtin-type n)
     (TaR (TaC n Nil) scope)
+  ; (Fn (A B) R): a function from A B to R.
+  (if (and (ta-streq n "Fn") (= (list-length args) 2))
+    (match (ta-conv-args st (ta-type-list (ta-nth args 0 (Expr (EAtom ANil)))) scope Nil)
+      (TaRL ps s2
+        (match (ta-conv st (ta-nth args 1 (Expr (EAtom ANil))) s2)
+          (TaR r s3 (TaR (TaF ps r) s3)))))
   (if (ta-handle-param-type n)
     (ta-conv-handle st n args scope Nil)
     (if (ta-streq n "Secret")
@@ -444,7 +476,16 @@
         (None
           (if (or (not (ta-shas (ta-types st) n)) (ta-alias-only (ta-types st) n))
             (ta-conv-var st n scope)
-            (ta-conv-app st (ta-sget-or (ta-types st) n (ta-no-td)) args scope))))))))
+            (ta-conv-app st (ta-sget-or (ta-types st) n (ta-no-td)) args scope)))))))))
+
+; A parenthesized list of types, which the reader made a call: `(A B)`
+; is A applied to B there, so it is taken apart again; `()` is empty.
+(defn ta-type-list (e)
+  (match (Expr.inner e)
+    (ECall op args (Cons op args))
+    (EApply n args (Cons (Expr (EAtom (AIdent n))) args))
+    (EAtom a (match a (ANil Nil) (_ (Cons e Nil))))
+    (_ (Cons e Nil))))
 
 (defn ta-conv-var (st n scope)
   (match (ta-scope-get scope n)
@@ -598,9 +639,14 @@
           (TM mname params ret rte (ta-add-method st (str-concat name (str-concat "." mname)) params ret rte)))
         (ta-add-trait st name rest)))))
 
+; `Self` in a method's types is the receiver's type: the first
+; parameter's, so (compare (self (other Self)) Int) takes two values of
+; one type.
 (defn ta-add-method (st dotted params ret rte)
-  (match (ta-params st params Nil Nil Nil)
+  (let self-t (ta-fresh st)
+  (match (ta-params st params Nil (Cons (Pair "Self" self-t) Nil) Nil)
     (TaPE ts _ scope _
+     (let _ (match ts (Cons t0 _ (ta-unify st t0 self-t)) (Nil 0))
       (match (match rte (Some te (ta-conv st te scope)) (None (ta-conv-name st ret Nil scope)))
         (TaR rt _
           (match (ta-gen st (TaF ts rt) Nil)
@@ -608,7 +654,7 @@
               (begin
                 (ta-sput (ta-traits st) dotted (TaSc (list-length seen) t))
                 (ta-mtab-add dotted)
-                (if (ta-key-is dotted "Show.show") (ta-sput ta-name-table "!show" dotted) unit)))))))))
+                (if (ta-key-is dotted "Show.show") (ta-sput ta-name-table "!show" dotted) unit)))))))))))
 
 (defn ta-is-struct (sm)
   (match sm
@@ -616,8 +662,48 @@
     (None false)))
 
 (defn ta-deftype-params (st name variants sm)
-  (let params (ta-params-of-variants st variants Nil)
+  (let params (ta-implicit-params st variants (ta-params-of-variants st variants Nil))
     (ta-put2 (ta-types st) name (TaTd name params (ta-is-struct sm) 0))))
+
+; A field written without a type, as in (defstruct Point x y), is an
+; implicit type parameter of its type: Point is (Point 'x 'y), and each
+; value's field types are inferred where it is built. A fresh variable
+; per constructor use instead would make the field type existential, so
+; a field read could be given any type. The names begin with `'`, which
+; no source type can spell.
+(defn ta-implicit-params (st variants acc)
+  (match variants
+    (Nil acc)
+    (Cons v rest
+      (ta-implicit-params st rest
+        (let tes (ta-field-exprs st (AV.name v))
+          (if (nil? tes) acc (list-append acc (ta-implicit-names (AV.name v) (AV.fields v) tes))))))))
+
+; A field is untyped when its recorded type is `_` or missing.
+(defn ta-untyped-te (tes)
+  (match tes
+    (Nil true)
+    ; A bare `Secret` field marks the field secret without giving its
+    ; type, so it is untyped too (secret_check.zyl reads the mark).
+    (Cons te _ (match (Expr.inner te) (EAtom a (match a (AIdent n (or (ta-streq n "_") (ta-streq (ta-short n) "Secret"))) (_ false))) (_ false)))))
+
+(defn ta-implicit-name (vname f) (str-concat "'" (str-concat vname (str-concat "." f))))
+
+(defn ta-implicit-names (vname fields tes)
+  (match fields
+    (Nil Nil)
+    (Cons f rest
+      (let more (ta-implicit-names vname rest (match tes (Nil Nil) (Cons _ t t)))
+        (if (ta-untyped-te tes) (Cons (ta-implicit-name vname f) more) more)))))
+
+; One type expr per field, the implicit parameter standing in for each
+; untyped one.
+(defn ta-full-field-exprs (vname fields tes)
+  (match fields
+    (Nil Nil)
+    (Cons f rest
+      (Cons (if (ta-untyped-te tes) (Expr (EAtom (AIdent (ta-implicit-name vname f)))) (match tes (Cons te _ te) (Nil (Expr (EAtom (AIdent "_"))))))
+            (ta-full-field-exprs vname rest (match tes (Nil Nil) (Cons _ t t)))))))
 
 (defn ta-deftype (st name variants _sm)
   (let td (ta-sget-or (ta-types st) name (ta-no-td))
@@ -681,13 +767,14 @@
 
 (defn ta-variant-reg (st tname params v isst)
   (let np (list-length params)
-    (let tes (ta-field-exprs st (AV.name v))
+    (let tes0 (ta-field-exprs st (AV.name v))
+     (let tes (if (nil? tes0) tes0 (ta-full-field-exprs (AV.name v) (AV.fields v) tes0))
       (let fts (ta-field-tys st tes (ta-slot-scope params 0) (list-length (AV.fields v)))
         (let raw (TaF fts (TaC tname (ta-slot-vars np 0)))
           (match (ta-gen st raw (ta-dummies np))
             (TaGen t seen
               (ta-put2 (ta-variants st) (AV.name v)
-                       (TaVd tname (list-length seen) t (AV.fields v) isst np)))))))))
+                       (TaVd tname (list-length seen) t (AV.fields v) isst np))))))))))
 
 ; Field types from their exprs; fields without a recorded type are unknown.
 (defn ta-field-tys (st tes scope n)
@@ -789,7 +876,9 @@
         (let t (ta-resolve st t0)
           (let _ (match t
                    (TaC name args
-                     (if (or (ta-streq name "Int") (or (ta-streq name "Float") (and (= cls 2) (ta-streq name "String"))))
+                     ; Ordering also takes a declared ADT or struct: it
+                     ; compares structurally, field by field (spec 7.4).
+                     (if (or (ta-streq name "Int") (or (ta-streq name "Float") (and (= cls 2) (or (ta-streq name "String") (ta-shas (ta-types st) name)))))
                        unit
                        (let _ (ffi-call "zyl_ref_set" ta-cur-node e 1000)
                          (ta-strict (str-concat (if (= cls 1) "arithmetic on " "ordering on ") (ta-show st t))))))
@@ -835,10 +924,14 @@
     (EUnwrap x (ta-unwrap st ctx env x))
     (EStructGet se field (ta-struct-get st ctx env se field e))
     (EFor bindings cond body (ta-for st ctx env bindings cond body))
-    (EFfiPin x (ta-seq (ta-ffi-args st ctx env (Cons x Nil)) (ta-int)))
+    ; Pinning moves a value to the Pin region; its type is unchanged.
+    (EFfiPin x (ta-expr st ctx env x))
     (EFfiUnpin x (ta-walk-int st ctx env (Cons x Nil)))
-    (ESpawn b (ta-walk-int st ctx env (Cons b Nil)))
-    (ESend a m (ta-walk-stmt st ctx env (ta-l2 a m)))
+    (ESpawn b (let _ (ta-list st ctx env (Cons b Nil)) (TaC "Actor" Nil)))
+    (ESend a m
+      (let ta (ta-expr st ctx env a)
+        (let _ (ta-unify st ta (TaC "Actor" Nil))
+          (let _ (ta-expr st ctx env m) (ta-stmt)))))
     (ESendClosure a c _ (ta-walk-stmt st ctx env (ta-l2 a c)))
     (ETryCatch tb cv h
       (let tt (ta-expr st ctx env tb)
@@ -867,6 +960,19 @@
     (EAtomicFetchAdd b o v (ta-bytes-op st ctx env b (ta-l2 o v)))
     (EAtomicMax b o v (ta-bytes-op st ctx env b (ta-l2 o v)))
     (EAtomicMin b o v (ta-bytes-op st ctx env b (ta-l2 o v)))
+    (EReadLine (ta-str))
+    ; `exit` and `error` do not return, so their type is anything.
+    (EExit x (let _ (ta-unify st (ta-expr st ctx env x) (ta-int)) (ta-fresh st)))
+    (EError _ (ta-fresh st))
+    (EClose x (ta-walk-stmt st ctx env (Cons x Nil)))
+    (ETestDecl _ body _ (let _ (ta-expr st ctx env body) (ta-stmt)))
+    (ESetup xs (ta-walk-stmt st ctx env xs))
+    (ETeardown xs (ta-walk-stmt st ctx env xs))
+    (ERunTests _ (ta-int))
+    ; Parsed as placeholders that carry no code (expr_inner.zyl).
+    (ETestSuite _ _ _ (ta-stmt))
+    (ETestProperty _ _ _ (ta-stmt))
+    (ETestCompile _ _ (ta-stmt))
     (_ (ta-dk st "form not typed"))))
 
 (defn ta-atom (st ctx env a)
@@ -894,7 +1000,7 @@
 (defn ta-ctor-value (st n)
   (let vd (ta-sget-or (ta-variants st) n (ta-no-vd))
     (if (not (ta-shas (ta-variants st) n))
-      (ta-dk st "unknown identifier")
+      (ta-unbound st (str-concat "unbound identifier `" (str-concat (err-name n) "`")))
       (match (ta-ctor-inst st vd)
         (TaF ps r (match ps (Nil r) (_ (TaF ps r))))
         (_ (ta-dk st "unknown identifier"))))))
@@ -924,11 +1030,28 @@
               (let _ (ta-unify st r bt)
                 (ta-cond st ctx env rest r)))))))))
 
+; The mode is a literal fopen mode ("r", "w", "a", with `+` or `b`):
+; lowering passes a literal through and used to open anything else, an
+; Int such as 0 meaning "read" included, for writing (icnf.zyl).
 (defn ta-file-open (st ctx env a b)
   (let ta (ta-expr st ctx env a)
     (let _ (ta-expr st ctx env b)
       (let _ (ta-unify st ta (ta-str))
-        (ta-int)))))
+        (let _ (if (ta-file-mode-ok b)
+                 unit
+                 (ta-type-error "E_TYPE_MISMATCH" "the mode of file-open must be a string literal: \"r\", \"w\" or \"a\", optionally with + or b"
+                                b Nil "write the mode in double quotes, e.g. (file-open path \"r\")"))
+          (ta-int))))))
+
+(defn ta-file-mode-ok (b)
+  (match (Expr.inner b)
+    (EAtom a
+      (match a
+        (AStr m (or (ta-streq m "r") (or (ta-streq m "w") (or (ta-streq m "a")
+                  (or (ta-streq m "r+") (or (ta-streq m "w+") (or (ta-streq m "a+")
+                  (or (ta-streq m "rb") (or (ta-streq m "wb") (ta-streq m "ab"))))))))))
+        (_ false)))
+    (_ false)))
 
 (defn ta-for (st ctx env bindings cond body)
   (match bindings
@@ -1078,7 +1201,8 @@
 
 (defn ta-call-go (st ctx env e n args)
   (if (ta-streq n "with-region")
-    (ta-last (ta-list st ctx env args) (ta-dk st "with-region shape"))
+    (let ts (ta-list st ctx env args)
+      (if (nil? ts) (ta-dk st "with-region shape") (ta-last ts (ta-no-type))))
   (if (ta-streq n "ffi-call")
     (ta-ffi-call st ctx env args)
     (let oc (ta-op-class n)
@@ -1135,6 +1259,18 @@
   ; A def getter's cell (expr_inner.zyl, def-getter). The read is the
   ; only generic result here: its one caller joins it, in the same `if`,
   ; with the value the getter stores under the same key.
+  ; The actor forms. `receive` is the one generic result a program can
+  ; reach: a mailbox holds whatever any sender put there. Typed
+  ; single-sender channels replace mailboxes (docs/sound-types-design.md,
+  ; "Known hole"); until then this is the only unchecked typing left.
+  (if (ta-key-is n "actor-self") (ta-sig-parse st "-> Actor")
+  (if (ta-key-is n "receive") (ta-sig-parse st "-> a")
+  ; Contract lowering's helpers (expr_inner.zyl): report, test an error
+  ; code, re-raise a caught error.
+  (if (and (ta-streq n "zyl-repl-global") (ffi-call "zyl_ref_get" repl-compiling 1000)) (ta-sig-parse st "String -> a")
+  (if (ta-streq n "zyl-contract-warn") (ta-sig-parse st "String -> Unit")
+  (if (ta-streq n "zyl-err-is") (ta-sig-parse st "String String -> Bool")
+  (if (ta-streq n "zyl-reraise") (ta-sig-parse st "String -> a")
   (if (ta-streq n "zyl global ready") (ta-sig-parse st "String -> Bool")
   (if (ta-streq n "zyl global get") (ta-sig-parse st "String -> a")
   (if (ta-streq n "zyl global put") (ta-sig-parse st "String a -> Unit")
@@ -1144,7 +1280,7 @@
   (if (ta-key-is n "collections/vec::array-get") (ta-sig-parse st "(Array a) Int -> a")
   (if (ta-key-is n "collections/vec::array-set") (ta-sig-parse st "(Array a) Int a -> Unit")
   (if (ta-key-is n "collections/vec::array-cap") (ta-sig-parse st "(Array a) -> Int")
-  (ta-no-type))))))))))))))))
+  (ta-no-type))))))))))))))))))))))
 
 (defn ta-call-named (st ctx env e n args)
   (let lt (ta-env-get env n)
@@ -1197,7 +1333,7 @@
 
 (defn ta-call-ctor (st ctx env n args)
   (match (ta-ctor-lookup st n)
-    (None (ta-seq (ta-list st ctx env args) (ta-dk st (str-concat "call to an unknown name `" (str-concat (err-name n) "`")))))
+    (None (ta-seq (ta-list st ctx env args) (ta-unbound st (str-concat "call to undefined function `" (str-concat (err-name n) "`")))))
     (Some vd
       (let tc (ta-ctor-inst st vd)
         (let ts (ta-list st ctx env args)
@@ -1236,13 +1372,58 @@
 (defn ta-ffi-typed (st s ats)
   (let spec (if (ta-strict-p) (ffi-sig s) "")
     (if (= (str-length spec) 0)
-      (ta-ffi-ret st s)
+      (if (or (not (ta-runtime-sym s)) (ta-extern-declared s))
+        (ta-ffi-extern st s ats)
+        (ta-ffi-ret st s))
       (match (ta-sig-parse st spec)
         (TaF ps ret
           (if (= (list-length ps) (list-length ats))
             (let _ (ta-unify-pairs st ats ps) ret)
             (let _ (ta-strict (str-concat "wrong number of arguments to " s)) ret)))
         (_ (ta-dk st "ffi signature"))))))
+
+(defn ta-extern-declared (s)
+  (match (extern-sig-of s) (Some _ true) (None false)))
+
+(defn ta-runtime-sym (s)
+  (and (>= (str-length s) 4) (ta-streq (str-substring s 0 4) "zyl_")))
+
+; A foreign symbol is typed by its (extern ...) declaration. Its types
+; must be concrete and representable in an integer register: no type
+; variable (that would be a cast) and no Float (the timed FFI worker
+; passes every argument as a machine word).
+(defn ta-ffi-extern (st s ats)
+  (match (extern-sig-of s)
+    (None (ta-dk st (str-concat "ffi-call to `" (str-concat s "`, which has no (extern ...) declaration"))))
+    (Some sig
+      (match sig
+        (ExternSig pes re
+          (match (ta-conv-args st pes Nil Nil)
+            (TaRL ps s2
+              (match (ta-conv st re s2)
+                (TaR r _
+                  (let _ (ta-extern-check st s (Cons r ps))
+                    (if (= (list-length ps) (list-length ats))
+                      (let _ (ta-unify-pairs st ats ps) r)
+                      (let _ (ta-strict (str-concat "wrong number of arguments to " s)) r))))))))))))
+
+(defn ta-extern-check (st s ts)
+  (match ts
+    (Nil unit)
+    (Cons t rest
+      (let _ (if (ta-extern-ok st t) unit (ta-strict (str-concat "the extern declaration of `" (str-concat s (str-concat "` uses the type " (str-concat (ta-show st t) ", which cannot cross the C boundary"))))))
+        (ta-extern-check st s rest)))))
+
+(defn ta-extern-ok (st t)
+  (match (ta-resolve st t)
+    (TaV _ false)
+    (TaC n args (and (not (ta-streq n "Float")) (ta-extern-all st args)))
+    (TaF ps r (and (ta-extern-all st ps) (ta-extern-ok st r)))))
+
+(defn ta-extern-all (st ts)
+  (match ts
+    (Nil true)
+    (Cons t rest (and (ta-extern-ok st t) (ta-extern-all st rest)))))
 
 (defn ta-unify-pairs (st xs ys)
   (match xs
@@ -1500,7 +1681,7 @@
         (match (ta-ctor-inst st vd)
           (TaF fts rt
             (let _ (ta-unify st tx rt)
-              (ta-nth fts 0 (ta-dk st "unwrap"))))
+              (ta-nth fts 0 (ta-no-type))))
           (_ (ta-dk st "unwrap")))))))
 
 (deftype TaPend (TaPend Int TaTy String TaTy Expr))
@@ -1531,7 +1712,10 @@
             (if (< idx 0)
               (if isst (ta-no-field node n field names) 1)
               (match (ta-subst st t (ta-slots-with st args nq))
-                (TaF fts _ (ta-seq (ta-unify st r (ta-nth fts idx (ta-dk st "struct field index"))) 1))
+                (TaF fts _
+                  (if (< idx (list-length fts))
+                    (ta-seq (ta-unify st r (ta-nth fts idx (ta-no-type))) 1)
+                    (ta-seq (ta-dk st "struct field index") 1)))
                 (_ 1)))))))))
 
 (defn ta-str-index (xs s i)
@@ -1652,13 +1836,7 @@
 (defn ta-mismatch (st node want got labels help)
   (let m1 (str-concat "mismatched types: expected `" (ta-pretty st want))
     (let msg (str-concat m1 (str-concat "`, found `" (str-concat (ta-pretty st got) "`")))
-      (let fid (ffi-call "zyl_span_file" node 1000)
-        (let off (ffi-call "zyl_span_off" node 1000)
-          ; In strict report mode every type error is a warning, so one
-          ; run lists them all.
-          (if (ta-strict-p)
-            (ffi-call "zyl_warn_emit" (err-diag "warning" "W_TYPE_STRICT" msg fid off labels help) 1000)
-            (ffi-call "zyl_panic" (err-at-labels "E_TYPE_MISMATCH" msg fid off labels help) 1000)))))))
+      (ta-type-error "E_TYPE_MISMATCH" msg node labels help))))
 
 ; True when `a` and `b` can never unify. A variable (known or poisoned) never
 ; clashes, nor does Unit, which no expression is inferred to have.
@@ -1827,7 +2005,8 @@
 ; Returns the specialized instances to append to the program.
 (defn ta-annotate-program (exprs)
   (begin
-    (ffi-call "zyl_ref_set" ta-strict-mode (> (str-length (ffi-call "zyl_getenv_str" "ZYL_STRICT_TYPES" 1000)) 0) 1000)
+    (ffi-call "zyl_ref_set" ta-report-mode (ta-report-env (ffi-call "zyl_getenv_str" "ZYL_STRICT_TYPES" 1000)) 1000)
+    (ffi-call "zyl_ref_set" ta-error-count 0 1000)
     (ffi-call "zyl_ref_set" ta-cur-node (ta-no-node) 1000)
     (ffi-call "zyl_wvec_truncate" ta-num-note-store 0 1000)
     (node-tables-clear)
@@ -1847,7 +2026,19 @@
         (ta-top st exprs)
         (ta-resolve-specials st (Cons -1 Nil) 0)
         (ta-check-num st 0 (ffi-call "zyl_wvec_len" (ta-num-notes) 1000))
+        (ta-fail-if-errors)
         (ta-extra-list st 0 (ta-wlen (ta-extra st)))))))
+
+(defn ta-report-env (v) (or (ta-streq v "report") (ta-streq v "1")))
+
+(defn ta-fail-if-errors ()
+  (let n (ffi-call "zyl_ref_get" ta-error-count 1000)
+    (if (> n 0)
+      (ffi-call "zyl_panic"
+        (str-concat "error[E_TYPE_MISMATCH]: the program does not type-check ("
+          (str-concat (ffi-call "zyl_int_text" n 1000) (if (= n 1) " error above)" " errors above)")))
+        1000)
+      unit)))
 
 ; Codegen kind of an annotated Expr: 1 String, 2 Float, else 0.
 (defn ta-kind (e)

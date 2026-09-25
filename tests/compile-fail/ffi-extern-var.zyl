@@ -1,0 +1,4 @@
+; expect-error: E_TYPE_MISMATCH
+; An extern's types are concrete: a type variable would be a cast.
+(extern "abs" (a) b)
+(defn main () (begin (print (ffi-call "abs" 3 1000)) 0))

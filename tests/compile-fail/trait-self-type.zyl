@@ -1,0 +1,3 @@
+; expect-error: E_TYPE_MISMATCH
+; Ord.compare takes two values of one type (Self).
+(defn main () (begin (print (Ord.compare 1 "one")) 0))

@@ -23,7 +23,7 @@
           (let aad (w-from-hex a aadhex)
             (let pt (w-from-hex a pthex)
               (let sealed (gcm-encrypt a key (w-hex-len keyhex) iv aad (w-hex-len aadhex) pt (w-hex-len pthex))
-                (w-hex-bytes (option-unwrap-or sealed 0) (+ (w-hex-len pthex) 16))))))))))
+                (w-hex-bytes (option-expect sealed "expected a value") (+ (w-hex-len pthex) 16))))))))))
 
 (test "gcm-empty"
   (assert-equal (_gcm_seal_hex "00000000000000000000000000000000" "000000000000000000000000" "" "" "58e2fccefa7e3061367f1d57a4e7455a") "58e2fccefa7e3061367f1d57a4e7455a"))
@@ -46,9 +46,9 @@
         (let iv (w-from-hex a "cafebabefacedbaddecaf888")
           (let aad (w-from-hex a "feedfacedeadbeeffeedfacedeadbeefabaddad2")
             (let pt (w-from-hex a "d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b39")
-              (let sealed (option-unwrap-or (gcm-encrypt a key 16 iv aad 20 pt 60) 0)
+              (let sealed (option-expect (gcm-encrypt a key 16 iv aad 20 pt 60) "expected a value")
                 (let got (gcm-decrypt a key 16 iv aad 20 sealed 60)
-                  (assert-equal (w-hex-bytes (option-unwrap-or got 0) 60) "d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b39"))))))))))
+                  (assert-equal (w-hex-bytes (option-expect got "expected a value") 60) "d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b39"))))))))))
 
 (test "gcm-decrypt-rejects-tampered"
   (if (not (aes-available))
@@ -58,7 +58,7 @@
         (let iv (w-from-hex a "cafebabefacedbaddecaf888")
           (let aad (w-from-hex a "feedfacedeadbeeffeedfacedeadbeefabaddad2")
             (let pt (w-from-hex a "d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b39")
-              (let sealed (option-unwrap-or (gcm-encrypt a key 16 iv aad 20 pt 60) 0)
+              (let sealed (option-expect (gcm-encrypt a key 16 iv aad 20 pt 60) "expected a value")
                 (begin
                   (w-set sealed 3 (bit-xor (w-get sealed 3) 128))
                   (assert-true (option-is-none (gcm-decrypt a key 16 iv aad 20 sealed 60))))))))))))

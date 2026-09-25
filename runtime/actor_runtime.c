@@ -4536,6 +4536,9 @@ long long zyl_word_store(long long a, long long w) { *(long long*)(size_t)a = w;
 /* `p` advanced by `n` bytes. */
 long long zyl_ptr_add(long long p, long long n) { return p + n; }
 
+/* The NUL-terminated bytes at `p`, as a String (the identity). */
+long long zyl_ptr_cstr(long long p) { return p; }
+
 /* zyl_ffi_lookup as an address word, for the interpreter's ISymAddr and
    its calls through zyl_call_argv (FnPtr is opaque to Zyl code). */
 long long zyl_ffi_lookup(long long name);
@@ -4595,7 +4598,7 @@ long long zyl_int_text(long long n) {
     X(zyl_cstr_concat) X(zyl_cstr_count_newlines) X(zyl_cstr_decode) \
     X(zyl_cstr_cmp) X(zyl_cstr_eq) X(zyl_cstr_from_byte) X(zyl_cstr_from_int) \
     X(zyl_cstr_key_matches) \
-    X(zyl_cstr_last_newline) X(zyl_cstr_len) X(zyl_cstr_of_word) X(zyl_float_bits) X(zyl_float_of_bits) X(zyl_word_load) X(zyl_word_store) X(zyl_ptr_add) X(zyl_ffi_addr) \
+    X(zyl_cstr_last_newline) X(zyl_cstr_len) X(zyl_cstr_of_word) X(zyl_float_bits) X(zyl_float_of_bits) X(zyl_word_load) X(zyl_word_store) X(zyl_ptr_add) X(zyl_ptr_cstr) X(zyl_ffi_addr) \
     X(zyl_cstr_sanitize) X(zyl_cstr_sub) X(zyl_cstr_substr) \
     X(zyl_cstr_to_int) X(zyl_cstr_to_int_base) X(zyl_diag_json) \
     X(zyl_diag_json_set) X(zyl_dirname_cstr) \

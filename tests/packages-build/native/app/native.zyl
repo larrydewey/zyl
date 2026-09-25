@@ -4,6 +4,8 @@
 
 (use testing/testing)
 
+(extern "zyl_native_double" (Int) Int)
+
 (test "native object is linked and callable"
   (assert-equal (ffi-call "zyl_native_double" 21 1000) 42))
 

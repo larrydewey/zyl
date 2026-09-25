@@ -22,10 +22,10 @@
 (impl-not Hash Secret)
 
 (trait Debug (debug (self) String))
-(trait Eq (eq (self other) Bool))
-(trait Ord (compare (self other) Int))
+(trait Eq (eq (self (other Self)) Bool))
+(trait Ord (compare (self (other Self)) Int))
 (trait Hash (hash (self) Int))
-(trait Clone (clone (self)))
+(trait Clone (clone (self) Self))
 
 (impl Show Int (defn show (self) (ffi-call "zyl_int_text" self 1000)))
 (impl Show Float (defn show (self) (ffi-call "zyl_f_text" self 1000)))

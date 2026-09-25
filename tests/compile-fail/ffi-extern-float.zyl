@@ -1,0 +1,5 @@
+; expect-error: E_TYPE_MISMATCH
+; A Float cannot cross the C boundary: the timed FFI worker passes
+; machine words.
+(extern "fabs" (Float) Float)
+(defn main () (begin (print (ffi-call "fabs" -1.5 1000)) 0))

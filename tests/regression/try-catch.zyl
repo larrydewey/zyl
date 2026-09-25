@@ -14,8 +14,8 @@
 
 (test "catch-binds-message"
   (begin
-    (assert-true (str-eq (try (tc-two 1 0) (catch e e)) "two"))
-    (assert-true (str-eq (try (tc-four 1 2 3 0) (catch e e)) "four"))))
+    (assert-true (str-eq (try (begin (tc-two 1 0) "") (catch e e)) "two"))
+    (assert-true (str-eq (try (begin (tc-four 1 2 3 0) "") (catch e e)) "four"))))
 
 (test "nested-try"
   (assert-equal (try (+ 1 (try (tc-two 1 0) (catch e 10))) (catch e 100)) 11))

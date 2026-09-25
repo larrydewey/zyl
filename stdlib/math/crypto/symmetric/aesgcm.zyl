@@ -210,11 +210,11 @@
 ; J0 would XOR the tag mask into the first plaintext block and leave
 ; the tag computable from the ciphertext -- a total break, and an easy
 ; one to write by accident.
-; Returns: Int
+; Returns: Bool
 (defn gcm-ctr-xor ((arena Arena) (key Words) (keylen Int) (j0 Words) (start Int) (src Words) (dst Words) (len Int))
   (gcm-ctr-loop arena key keylen j0 start src dst len 0))
 
-; Returns: Int
+; Returns: Bool (false when a block cannot be encrypted)
 (defn gcm-ctr-loop ((arena Arena) (key Words) (keylen Int) (j0 Words) (start Int) (src Words) (dst Words) (len Int) (off Int))
   (if (>= off len)
     true
@@ -297,7 +297,7 @@
     (Some h
       (let j0 (gcm-j0 arena iv)
         (let ct (w-alloc arena (+ ptlen 16))
-          (if (= (gcm-ctr-xor arena key keylen j0 2 pt ct ptlen) 0)
+          (if (not (gcm-ctr-xor arena key keylen j0 2 pt ct ptlen))
             None
             (gcm-seal arena key keylen j0 h aad aadlen ct ptlen)))))))
 
@@ -337,6 +337,6 @@
 ; Returns: (Option Words)
 (defn gcm-open-verified ((arena Arena) (key Words) (keylen Int) (j0 Words) (sealed Words) (ctlen Int))
   (let pt (w-alloc arena (+ ctlen 16))
-    (if (= (gcm-ctr-xor arena key keylen j0 2 sealed pt ctlen) 0)
+    (if (not (gcm-ctr-xor arena key keylen j0 2 sealed pt ctlen))
       None
       (Some pt))))

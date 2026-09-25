@@ -38,7 +38,41 @@
 (defn dc-check-program (exprs)
   (begin
     (dc-check-names "function" (dc-collect-defn-names exprs) Nil)
-    (dc-check-names "type" (dc-collect-deftype-names exprs) Nil)))
+    (dc-check-names "type" (dc-collect-deftype-names exprs) Nil)
+    (dc-check-prelude exprs)))
+
+; The prelude's constructors are used unqualified throughout the standard
+; library, so a program type declaring one of those names would capture
+; every standard-library use of it (a `(deftype T (Some Int) None)` made
+; core/list's `(Some rest)` an Int). Only the standard library may
+; declare them.
+(defn dc-check-prelude (exprs)
+  (match exprs
+    (Nil unit)
+    (Cons e rest
+      (begin
+        (match (Expr.inner e)
+          (EDeftype name variants _ _
+            (if (dc-stdlib-key name) unit (dc-prelude-variants variants e)))
+          (_ unit))
+        (dc-check-prelude rest)))))
+
+(defn dc-prelude-variants (variants site)
+  (match variants
+    (Nil unit)
+    (Cons v rest
+      (if (dc-prelude-ctor (err-name (AV.name v)))
+        (dc-panic-code-at "E_DUPLICATE_VARIANT"
+          (str-concat "constructor `" (str-concat (err-name (AV.name v)) "` is already a prelude constructor (Option, Result or List)"))
+          "give this constructor a different name" site)
+        (dc-prelude-variants rest site)))))
+
+(defn dc-prelude-ctor (n)
+  (or (str-eq n "Some") (or (str-eq n "None") (or (str-eq n "Ok")
+    (or (str-eq n "Err") (or (str-eq n "Cons") (str-eq n "Nil")))))))
+
+(defn dc-stdlib-key (n)
+  (and (>= (str-length n) 8) (str-eq (str-substring n 0 8) "zyl/std@")))
 
 (defn dc-collect-defn-names (exprs)
   (match exprs
@@ -83,6 +117,11 @@
         (let m4 (str-concat m3 (err-name name))
           (let msg (str-concat m4 "` is defined more than once in this program")
             (dc-panic-at msg site)))))))
+
+(defn dc-panic-code-at (code msg help site)
+  (let off (ffi-call "zyl_span_off" site 1000)
+    (let fid (ffi-call "zyl_span_file" site 1000)
+      (ffi-call "zyl_panic" (err-at code msg fid off help) 1000))))
 
 (defn dc-panic-at (msg site)
   (let off (ffi-call "zyl_span_off" site 1000)

@@ -34,6 +34,16 @@
 (defn alloc-write-int (addr value)
   (ffi-call "zyl_mem_write" addr value 1000))
 
+; `p` advanced by `n` bytes.
+; Returns: Ptr
+(defn alloc-offset (p n)
+  (ffi-call "zyl_ptr_add" p n 1000))
+
+; The NUL-terminated bytes at `p` (written there by C code), as a String.
+; Returns: String
+(defn alloc-cstr (p)
+  (ffi-call "zyl_ptr_cstr" p 1000))
+
 ; Allocate a single 64-bit integer slot initialized to `value`.
 ; Returns: Int (address)
 (defn alloc-int (value)

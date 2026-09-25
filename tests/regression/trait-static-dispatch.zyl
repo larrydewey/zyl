@@ -47,7 +47,7 @@
 
 ; A compound return type, or none, still types the call: print uses Show.
 (trait TsDec (dec (self) (v Int) (Result Int String)))
-(trait TsMk (mk self))
+(trait TsMk (mk (self) (Result Int String)))
 (defstruct TsId (u Int))
 (impl TsDec TsId (defn dec (self v) (Ok v)))
 (impl TsMk TsId (defn mk (self) (Ok (struct-get self "u"))))

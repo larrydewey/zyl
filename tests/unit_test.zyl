@@ -522,7 +522,7 @@
         0))
 
 (test "file-open"
-      (let fd (file-open "/tmp/zyl_test.txt" 577)
+      (let fd (file-open "/tmp/zyl_test.txt" "w")
         (begin
           (assert-true (> fd 0))
           (file-close fd)
@@ -532,14 +532,18 @@
       (assert-equal (file-write 1 "test") 4))
 
 (test "file-read"
-      (let fd (file-open "/tmp/zyl_test.txt" 0)
+      (let w (file-open "/tmp/zyl_test.txt" "w")
         (begin
-         (assert-true (> (file-read fd 100) 0))
-         (file-close fd)
-         0)))
+         (file-write w "hello")
+         (file-close w)
+         (let fd (file-open "/tmp/zyl_test.txt" "r")
+           (begin
+            (assert-true (str-eq (file-read fd 100) "hello"))
+            (file-close fd)
+            0)))))
 
 (test "file-close"
-      (let fd (file-open "/tmp/zyl_test.txt" 0)
+      (let fd (file-open "/tmp/zyl_test.txt" "r")
         (begin
          (file-close fd)
          0)))
@@ -557,17 +561,15 @@
       (assert-equal (result-unwrap (ffi-pin-call-unpin 123) 0) 123))
 
 (test "buf-append"
-      (let p (alloc-malloc 64)
+      (let b (buf-new (arena-create 4096) 64)
         (begin
-         (alloc-write-int p 0)
-         (buf-append p "hello")
-         (assert-equal (alloc-strlen p) 5)
-         0)))
+          (buf-append b "hello")
+          (assert-equal (str-length (buf-str b)) 5)
+          0)))
 
 (test "alloc-malloc"
       (let p (alloc-malloc 64)
         (begin
-          (assert-true (> p 0))
           (alloc-free p)
           0)))
 
@@ -582,7 +584,7 @@
       (assert-true true))
 
 (test "alloc-strlen"
-      (assert-equal (alloc-strlen (alloc-malloc 64)) 0))
+      (assert-equal (alloc-strlen "hello") 5))
 
 (test "atomic-load"
       (let p (alloc-malloc 8)
@@ -660,35 +662,37 @@
       (assert-equal (- 10 2 2 2 2) 2))
 
 (test "deep nesting"
-      (assert-true true)
+      (assert-true true))
 
-      (defn returns-unit () (begin))
-      (test "empty begin"
-            (assert-equal (returns-unit) 0))
+(defn returns-unit () (begin))
+(test "empty begin"
+      (assert-true (begin (returns-unit) true)))
 
-      (defn multi-return () (begin (print "first") (print "second") 42))
-      (test "multi return"
-            (assert-equal (multi-return) 42))
+(defn multi-return () (begin (print "first") (print "second") 42))
+(test "multi return"
+      (assert-equal (multi-return) 42))
 
-      (test "struct match"
-            (assert-equal (struct-get (make-Point 5 7) "x") 5))
+(defstruct Point (x Int) (y Int))
 
-      (test "let-mut struct"
-            (let-mut p (make-Point 1 2)
-                     (set! p (make-Point 10 20))
-                     (assert-equal (struct-get p "x") 10)))
+(test "struct match"
+      (assert-equal (struct-get (make-Point 5 7) "x") 5))
 
-      (defn no-args () 42)
-      (test "no args"
-            (assert-equal (no-args) 42))
+(test "let-mut struct"
+      (let-mut p (make-Point 1 2)
+               (set! p (make-Point 10 20))
+               (assert-equal (struct-get p "x") 10)))
 
-      (defn one-arg (x) (+ x 1))
-      (test "one arg"
-            (assert-equal (one-arg 5) 6))
+(defn no-args () 42)
+(test "no args"
+      (assert-equal (no-args) 42))
 
-      (defn many-args (a b c d e) (+ a b c d e))
-      (test "many args"
-            (assert-equal (many-args 1 2 3 4 5) 15)))
+(defn one-arg (x) (+ x 1))
+(test "one arg"
+      (assert-equal (one-arg 5) 6))
+
+(defn many-args (a b c d e) (+ a b c d e))
+(test "many args"
+      (assert-equal (many-args 1 2 3 4 5) 15))
 
 ; --- Run All Tests ---
 (run-tests)

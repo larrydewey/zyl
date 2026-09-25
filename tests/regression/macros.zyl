@@ -5,7 +5,8 @@
   (if (not cond) body))
 
 (test "macro-unless-false"
-  (assert-true (_m_unless false true)))
+  (let-mut ran false
+    (begin (_m_unless false (set! ran true)) (assert-true ran))))
 (test "macro-unless-true-skips"
   (assert-true (begin (_m_unless true (print "skipped")) true)))
 
@@ -14,7 +15,8 @@
   (_m_unless (not cond) body))
 
 (test "macro-when-true"
-  (assert-true (_m_when true true)))
+  (let-mut ran false
+    (begin (_m_when true (set! ran true)) (assert-true ran))))
 (test "macro-when-false-skips"
   (assert-true (begin (_m_when false (print "skipped")) true)))
 
@@ -28,11 +30,11 @@
     (assert-equal _m_count 2)))
 
 ; Macro with gensym pattern (simple version)
-(defmacro _m-if-not (cond then-body)
-  (if (not cond) then-body))
+(defmacro _m-if-not (cond then-body else-body)
+  (if (not cond) then-body else-body))
 
 (test "macro-gensym-pattern"
-  (assert-equal (_m-if-not false 99) 99))
+  (assert-equal (_m-if-not false 99 0) 99))
 
 ; Macro returning value
 (defmacro _m-double (x)
@@ -128,7 +130,7 @@
 (test "macro-defines-function"
   (assert-equal (_m_sq 5) 25))
 
-(trait _MShow (mshow self))
+(trait _MShow (mshow (self) Int))
 (impl _MShow Int (defn mshow (self) (_m-double self)))
 
 (test "macro-in-impl-method"
