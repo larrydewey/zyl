@@ -754,8 +754,9 @@ long long zyl_mem_alloc(long long size) {
     return (long long)(size_t)malloc((size_t)size);
 }
 
-void zyl_mem_free(long long ptr) {
+long long zyl_mem_free(long long ptr) {
     free((void*)(size_t)ptr);
+    return 0;
 }
 
 long long zyl_mem_read(long long ptr) {
@@ -1491,8 +1492,8 @@ long long zyl_arena_alloc_zeroed(long long arena, long long size) {
     return (long long)(size_t)p;
 }
 
-void zyl_arena_reset(long long arena) {
-    if (!arena) return;
+long long zyl_arena_reset(long long arena) {
+    if (!arena) return 0;
     ZylArena* a = (ZylArena*)(size_t)arena;
     pthread_mutex_lock(&a->lock);
     ZylArenaBlock* b = a->head;
@@ -1513,10 +1514,11 @@ void zyl_arena_reset(long long arena) {
     a->total_capacity = 0;
     a->total_used = 0;
     pthread_mutex_unlock(&a->lock);
+    return 0;
 }
 
-void zyl_arena_destroy(long long arena) {
-    if (!arena) return;
+long long zyl_arena_destroy(long long arena) {
+    if (!arena) return 0;
     ZylArena* a = (ZylArena*)(size_t)arena;
     pthread_mutex_lock(&a->lock);
     ZylArenaBlock* b = a->head;
@@ -1531,6 +1533,7 @@ void zyl_arena_destroy(long long arena) {
     pthread_mutex_unlock(&a->lock);
     pthread_mutex_destroy(&a->lock);
     free(a);
+    return 0;
 }
 
 long long zyl_arena_used(long long arena) {
@@ -2939,9 +2942,9 @@ long long zyl_actor_is_alive(long long actor_id) {
     return alive;
 }
 
-void zyl_actor_terminate(long long actor_id) {
+long long zyl_actor_terminate(long long actor_id) {
     if (!g_system.initialized || actor_id < 0 || actor_id >= ZYL_MAX_ACTORS || actor_id >= g_system.next_id) {
-        return;
+        return 0;
     }
     ZylActor* actor = &g_system.actors[(uint32_t)actor_id];
     pthread_mutex_lock(&actor->lock);
@@ -2956,11 +2959,12 @@ void zyl_actor_terminate(long long actor_id) {
         actor->joined = 1;
         pthread_mutex_unlock(&actor->lock);
     }
+    return 0;
 }
 
-void zyl_actor_wait(long long actor_id) {
+long long zyl_actor_wait(long long actor_id) {
     if (!g_system.initialized || actor_id < 0 || actor_id >= ZYL_MAX_ACTORS || actor_id >= g_system.next_id) {
-        return;
+        return 0;
     }
     ZylActor* actor = &g_system.actors[(uint32_t)actor_id];
     pthread_mutex_lock(&actor->lock);
@@ -2978,6 +2982,7 @@ void zyl_actor_wait(long long actor_id) {
         actor->joined = 1;
         pthread_mutex_unlock(&actor->lock);
     }
+    return 0;
 }
 
 /* === Test Harness === */
@@ -3250,13 +3255,14 @@ long long zyl_dirname_cstr(long long path) {
     } else {
         len = (size_t)(slash - p) + 1;
     }
-    /* Thread-local buffer sized generously; contents valid until next call
-     * on the same thread. A plain static here would let concurrent actor
-     * threads clobber each other's returned string. */
-    static _Thread_local char buf[4096];
-    memcpy(buf, p, len);
-    buf[len] = 0;
-    return (long long)(size_t)buf;
+    /* A fresh heap string: a reused buffer made the next call overwrite
+     * the last result, and passing a result back in (workspace.zyl walks
+     * upward this way) copied the buffer onto itself. */
+    char* out = (char*)(size_t)zyl_heap_alloc((long long)len + 1);
+    if (!out) return 0;
+    memcpy(out, p, len);
+    out[len] = 0;
+    return (long long)(size_t)out;
 }
 
 /* Returns 1 if `path` exists (any type), 0 otherwise. Used to probe for
@@ -3365,11 +3371,15 @@ long long zyl_chdir(long long path) {
 }
 
 long long zyl_getcwd(void) {
-    static _Thread_local char buf[4096];
+    char buf[4096];
     if (getcwd(buf, sizeof(buf)) == NULL) {
         return 0;
     }
-    return (long long)(size_t)buf;
+    size_t n = strlen(buf);
+    char* out = (char*)(size_t)zyl_heap_alloc((long long)n + 1);
+    if (!out) return 0;
+    memcpy(out, buf, n + 1);
+    return (long long)(size_t)out;
 }
 
 /* Was `system((const char*)(size_t)cmd)` -- confirmed by gdb to

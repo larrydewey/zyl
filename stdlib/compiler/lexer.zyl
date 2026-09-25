@@ -317,11 +317,15 @@
     (lex-ident-e arena src len i acc (scan-ident-end src len i))))
 
 ; String literal: e = index of closing quote (-1 unterminated).
+; An invalid escape (zyl_cstr_decode gives 0) also stops here, at the
+; opening quote; check-lexed-to-end (parser.zyl) tells the two apart.
 (defn lex-str-e (arena src len i acc e)
   (if (< e 0)
     (Cons (TkEof i) acc)
-    (lex-loop arena src len (+ e 1)
-              (Cons (TkString (ffi-call "zyl_cstr_decode" arena src (+ i 1) e 1000) i) acc))))
+    (let s (ffi-call "zyl_cstr_decode" arena src (+ i 1) e 1000)
+      (if (= s 0)
+        (Cons (TkEof i) acc)
+        (lex-loop arena src len (+ e 1) (Cons (TkString s i) acc))))))
 
 ; Numeric literal: i..e; float when the text carries '.' or exponent,
 ; integer otherwise. Radix-prefixed literals (0x/0o/0b) are always

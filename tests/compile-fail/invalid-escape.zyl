@@ -1,0 +1,5 @@
+; Compile-fail: an unknown escape in a string literal used to vanish (the
+; literal became the empty string); it is a located error.
+; expect-error: E_INVALID_ESCAPE
+
+(defn main () (begin (print "bad \q escape") 0))

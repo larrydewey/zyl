@@ -55,8 +55,8 @@ void zyl_actor_send_closure(uint32_t actor_id, void (*fn)(void*), void* state);
 void zyl_actor_wait_all(void);
 void* zyl_actor_thread_entry(void* arg);
 long long zyl_actor_is_alive(long long actor_id);
-void zyl_actor_terminate(long long actor_id);
-void zyl_actor_wait(long long actor_id);
+long long zyl_actor_terminate(long long actor_id);
+long long zyl_actor_wait(long long actor_id);
 
 /* FFI pinning. */
 void* ffi_pin(long long value);
@@ -64,7 +64,7 @@ long long ffi_unpin(long long ptr);
 
 /* Raw memory arena. */
 long long zyl_mem_alloc(long long size);
-void zyl_mem_free(long long ptr);
+long long zyl_mem_free(long long ptr);
 long long zyl_mem_read(long long ptr);
 long long zyl_mem_write(long long ptr, long long value);
 long long zyl_cstr_len(long long ptr);
@@ -100,8 +100,8 @@ long long zyl_cstr_last_newline(long long src, long long end);
 long long zyl_arena_create(long long block_size);
 long long zyl_arena_alloc(long long arena, long long size);
 long long zyl_arena_alloc_zeroed(long long arena, long long size);
-void zyl_arena_reset(long long arena);
-void zyl_arena_destroy(long long arena);
+long long zyl_arena_reset(long long arena);
+long long zyl_arena_destroy(long long arena);
 long long zyl_arena_used(long long arena);
 long long zyl_arena_capacity(long long arena);
 
