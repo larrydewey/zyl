@@ -149,7 +149,7 @@
                 ; every function silently fell through its pattern match
                 ; and opt-optimize always returned Nil).
                 (dbg-log "optimize\n")
-                (let opt-fns (opt-optimize-fns fns)
+                (let opt-fns (opt-optimize-fns (opt-inline-fns fns))
                   (begin
                     ; Real escape analysis: region_inference.zyl rewrites
                     ; a provably-non-escaping IVariant let-binding to

@@ -62,6 +62,8 @@
 ; nothing about "is this expression pure" needs to be proven separately.
 
 (use compiler/icnf)
+(use compiler/node_tables)
+(use core/list)
 
 (defn opt-optimize-fns (fns)
   (match fns
@@ -153,3 +155,323 @@
   (match c2
     (IConst v (if (= v 0) (IConst 0) (IWhile c2 (opt-expr b))))
     (_ (IWhile c2 (opt-expr b)))))
+
+; ===========================================================================
+; INLINING (docs/native-backend-design.md, stage 5)
+; ===========================================================================
+;
+; A call of a small function is replaced by its body. The arguments are
+; bound first, in order, by nested lets (the call's own evaluation order),
+; and every binder in the copied body is renamed, so nothing in it can
+; capture or be captured by a name at the call site. It runs before
+; region inference, which then places the allocations of the inlined code
+; like any other.
+;
+; A candidate is small (opt-inline-limit nodes), does not call itself,
+; takes only Int-kind parameters (codegen picks string, float and ADT
+; operators by the kinds of the operands, and an inlined parameter's kind
+; becomes its argument's), and contains no try, region scope, lambda,
+; closure call or print. A call is left alone inside a try body, when its
+; name is a local at the site, or when the body names a function or
+; global that a local at the site would shadow. Two rounds let a wrapper
+; of a wrapper (vec-get over array-get) flatten. ZYL_INLINE=0 turns it
+; off.
+
+(def opt-inline-limit-cell
+  (ffi-call "zyl_ref_new"
+    (let t (ffi-call "zyl_getenv_str" "ZYL_INLINE_LIMIT" 1000)
+      (if (> (str-length t) 0) (ffi-call "zyl_cstr_to_int" t 1000) 6))
+    1000))
+(defn opt-inline-limit () (ffi-call "zyl_ref_get" opt-inline-limit-cell 1000))
+
+(defn opt-inline-fns (fns)
+  (if (str-eq (ffi-call "zyl_getenv_str" "ZYL_INLINE" 1000) "0")
+    fns
+    (opt-inline-round (opt-inline-round fns))))
+
+(defn opt-inline-round (fns)
+  (let tab (ffi-call "zyl_smap_new" 1000)
+    (let _ (opt-collect-inlinable fns tab)
+      (opt-inline-all fns tab))))
+
+; Candidates by name (value: the IFn itself).
+(defn opt-collect-inlinable (fns tab)
+  (match fns
+    (Nil unit)
+    (Cons f rest
+      (let _ (match f
+               (IFn name params body kinds
+                 (if (opt-inlinable name params body kinds)
+                   (let _ (ffi-call "zyl_smap_put" tab name f 1000) unit)
+                   unit))
+               (_ unit))
+        (opt-collect-inlinable rest tab)))))
+
+(defn opt-inlinable (name _params body kinds)
+  (and (not (str-eq name "main"))
+    (and (opt-kinds-int kinds)
+      (and (<= (opt-size body 0) (opt-inline-limit))
+        (and (opt-plain body)
+          (not (opt-calls body name)))))))
+
+(defn opt-kinds-int (ks)
+  (match ks
+    (Nil true)
+    (Cons k t (if (= k 0) (opt-kinds-int t) false))))
+
+; Node count, stopping once past the limit.
+(defn opt-size (e acc)
+  (if (> acc (opt-inline-limit))
+    acc
+    (match e
+      (IBinop _ l r (opt-size r (opt-size l (+ acc 1))))
+      (ICall _ args (opt-size-list args (+ acc 1)))
+      (IFfi _ args (opt-size-list args (+ acc 1)))
+      (IIf c t f (opt-size f (opt-size t (opt-size c (+ acc 1)))))
+      (IWhile c b (opt-size b (opt-size c (+ acc 1))))
+      (ISet _ v (opt-size v (+ acc 1)))
+      (ILet _ v b (opt-size b (opt-size v (+ acc 1))))
+      (ISeq es (opt-size-list es (+ acc 1)))
+      (IVariant _ _ fs (opt-size-list fs (+ acc 1)))
+      (IStackVariant _ _ fs (opt-size-list fs (+ acc 1)))
+      (IMatch s arms (opt-size-arms arms (opt-size s (+ acc 1))))
+      (_ (+ acc 1)))))
+
+(defn opt-size-list (es acc)
+  (match es
+    (Nil acc)
+    (Cons h t (opt-size-list t (opt-size h acc)))))
+
+(defn opt-size-arms (arms acc)
+  (match arms
+    (Nil acc)
+    (Cons a t (match a (IArm _ _ _ b (opt-size-arms t (opt-size b acc)))))))
+
+; Only the node kinds a copy can reproduce exactly.
+(defn opt-plain (e)
+  (match e
+    (IConst _ true)
+    (IStr _ true)
+    (IFlt _ true)
+    (ISymAddr _ true)
+    (ILoad _ true)
+    (IBinop _ l r (and (opt-plain l) (opt-plain r)))
+    (ICall _ args (opt-plain-list args))
+    (IFfi _ args (opt-plain-list args))
+    (IIf c t f (and (opt-plain c) (and (opt-plain t) (opt-plain f))))
+    (IWhile c b (and (opt-plain c) (opt-plain b)))
+    (ISet _ v (opt-plain v))
+    (ILet _ v b (and (opt-plain v) (opt-plain b)))
+    (ISeq es (opt-plain-list es))
+    (IVariant _ _ fs (opt-plain-list fs))
+    (IMatch s arms (and (opt-plain s) (opt-plain-arms arms)))
+    (_ false)))
+
+(defn opt-plain-list (es)
+  (match es
+    (Nil true)
+    (Cons h t (if (opt-plain h) (opt-plain-list t) false))))
+
+(defn opt-plain-arms (arms)
+  (match arms
+    (Nil true)
+    (Cons a t (match a (IArm _ _ _ b (if (opt-plain b) (opt-plain-arms t) false))))))
+
+(defn opt-calls (e name)
+  (match e
+    (ICall n args (if (str-eq n name) true (opt-calls-list args name)))
+    (ILoad n (str-eq n name))
+    (IBinop _ l r (or (opt-calls l name) (opt-calls r name)))
+    (IFfi _ args (opt-calls-list args name))
+    (IIf c t f (or (opt-calls c name) (or (opt-calls t name) (opt-calls f name))))
+    (IWhile c b (or (opt-calls c name) (opt-calls b name)))
+    (ISet _ v (opt-calls v name))
+    (ILet _ v b (or (opt-calls v name) (opt-calls b name)))
+    (ISeq es (opt-calls-list es name))
+    (IVariant _ _ fs (opt-calls-list fs name))
+    (IMatch s arms (or (opt-calls s name) (opt-calls-arms arms name)))
+    (_ false)))
+
+(defn opt-calls-list (es name)
+  (match es
+    (Nil false)
+    (Cons h t (if (opt-calls h name) true (opt-calls-list t name)))))
+
+(defn opt-calls-arms (arms name)
+  (match arms
+    (Nil false)
+    (Cons a t (match a (IArm _ _ _ b (if (opt-calls b name) true (opt-calls-arms t name)))))))
+
+; --- rewriting call sites ---------------------------------------------------
+
+(defn opt-inline-all (fns tab)
+  (match fns
+    (Nil Nil)
+    (Cons f rest
+      (Cons (match f
+              (IFn name params body kinds (IFn name params (opt-in body tab params) kinds))
+              (_ f))
+            (opt-inline-all rest tab)))))
+
+; `locals`: the names bound at this point (parameters, lets, arm binders).
+(defn opt-in (e tab locals)
+  (opt-keep (opt-in-node e tab locals) e))
+
+(defn opt-in-node (e tab locals)
+  (match e
+    (ICall name args
+      (let args2 (opt-in-list args tab locals)
+        (if (and (ffi-call "zyl_smap_has" tab name 1000) (not (opt-member name locals)))
+          (opt-expand (ffi-call "zyl_smap_get_or" tab name e 1000) args2 locals e)
+          (ICall name args2))))
+    (IBinop op l r (IBinop op (opt-in l tab locals) (opt-in r tab locals)))
+    (ICallClosure n args (ICallClosure n (opt-in-list args tab locals)))
+    (IFfi n args (IFfi n (opt-in-list args tab locals)))
+    (IPrint a (IPrint (opt-in a tab locals)))
+    (IIf c t f (IIf (opt-in c tab locals) (opt-in t tab locals) (opt-in f tab locals)))
+    (IWhile c b (IWhile (opt-in c tab locals) (opt-in b tab locals)))
+    (ISet n v (ISet n (opt-in v tab locals)))
+    (ILet n v b (ILet n (opt-in v tab locals) (opt-in b tab (Cons n locals))))
+    (ISeq es (ISeq (opt-in-list es tab locals)))
+    (IVariant nm tag fs (IVariant nm tag (opt-in-list fs tab locals)))
+    (IStackVariant nm tag fs (IStackVariant nm tag (opt-in-list fs tab locals)))
+    (IMatch s arms (IMatch (opt-in s tab locals) (opt-in-arms arms tab locals)))
+    ; Not inside a try body: a caught panic releases the regions of the
+    ; calls it unwinds, and an inlined call would have none.
+    (ITryCatch b v h (ITryCatch (opt-in b (ffi-call "zyl_smap_new" 1000) locals) v (opt-in h tab (Cons v locals))))
+    (IRegion k b a l body (IRegion k b a l (opt-in body tab locals)))
+    (IFn n ps b ks (IFn n ps (opt-in b tab ps) ks))
+    (_ e)))
+
+(defn opt-in-list (es tab locals)
+  (match es
+    (Nil Nil)
+    (Cons h t (Cons (opt-in h tab locals) (opt-in-list t tab locals)))))
+
+(defn opt-in-arms (arms tab locals)
+  (match arms
+    (Nil Nil)
+    (Cons a t
+      (match a
+        (IArm v tag binds b (Cons (IArm v tag binds (opt-in b tab (list-append binds locals))) (opt-in-arms t tab locals)))))))
+
+(defn opt-member (n xs)
+  (match xs
+    (Nil false)
+    (Cons h t (if (str-eq h n) true (opt-member n t)))))
+
+; The body with its parameters bound to the arguments, when no name the
+; body uses from outside would be shadowed at the site.
+(defn opt-expand (f args locals site)
+  (match f
+    (IFn _ params body _
+      (if (and (= (list-length params) (list-length args)) (not (opt-free-shadowed body params locals)))
+        (let id (ffi-call "zyl_int_text" (ffi-call "zyl_fresh_id" 1000) 1000)
+          (opt-bind-args params args (opt-rename body (opt-param-map params id) id) id))
+        (ICall (opt-fn-name f) args)))
+    (_ site)))
+
+(defn opt-fn-name (f) (match f (IFn n _ _ _ n) (_ "")))
+
+; Renamed parameter names, in order: (old new) pairs.
+(deftype OptRn (OptRn String String))
+
+(defn opt-param-map (ps id)
+  (match ps
+    (Nil Nil)
+    (Cons p t (Cons (OptRn p (opt-fresh p id)) (opt-param-map t id)))))
+
+(defn opt-fresh (n id) (str-concat "__in" (str-concat id (str-concat "_" n))))
+
+(defn opt-bind-args (params args body id)
+  (match params
+    (Nil body)
+    (Cons p pt
+      (match args
+        (Cons a at (ILet (opt-fresh p id) a (opt-bind-args pt at body id)))
+        (Nil body)))))
+
+(defn opt-lookup (rn n)
+  (match rn
+    (Nil n)
+    (Cons r t (match r (OptRn o nw (if (str-eq o n) nw (opt-lookup t n)))))))
+
+; Every binder renamed; a reference to a bound name follows it.
+(defn opt-rename (e rn id)
+  (opt-keep (opt-rename-node e rn id) e))
+
+(defn opt-rename-node (e rn id)
+  (match e
+    (ILoad n (ILoad (opt-lookup rn n)))
+    (ISet n v (ISet (opt-lookup rn n) (opt-rename v rn id)))
+    (ILet n v b
+      (let n2 (opt-fresh n id)
+        (ILet n2 (opt-rename v rn id) (opt-rename b (Cons (OptRn n n2) rn) id))))
+    (IBinop op l r (IBinop op (opt-rename l rn id) (opt-rename r rn id)))
+    (ICall n args (ICall (opt-lookup rn n) (opt-rename-list args rn id)))
+    (IFfi n args (IFfi n (opt-rename-list args rn id)))
+    (IIf c t f (IIf (opt-rename c rn id) (opt-rename t rn id) (opt-rename f rn id)))
+    (IWhile c b (IWhile (opt-rename c rn id) (opt-rename b rn id)))
+    (ISeq es (ISeq (opt-rename-list es rn id)))
+    (IVariant nm tag fs (IVariant nm tag (opt-rename-list fs rn id)))
+    (IMatch s arms (IMatch (opt-rename s rn id) (opt-rename-arms arms rn id)))
+    (_ e)))
+
+(defn opt-rename-list (es rn id)
+  (match es
+    (Nil Nil)
+    (Cons h t (Cons (opt-rename h rn id) (opt-rename-list t rn id)))))
+
+(defn opt-rename-arms (arms rn id)
+  (match arms
+    (Nil Nil)
+    (Cons a t
+      (match a
+        (IArm v tag binds b
+          (let bs2 (opt-rename-binds binds id)
+            (Cons (IArm v tag bs2 (opt-rename b (opt-zip binds bs2 rn) id)) (opt-rename-arms t rn id))))))))
+
+(defn opt-rename-binds (bs id)
+  (match bs
+    (Nil Nil)
+    (Cons b t (Cons (if (str-eq b "_") b (opt-fresh b id)) (opt-rename-binds t id)))))
+
+(defn opt-zip (olds news rn)
+  (match olds
+    (Nil rn)
+    (Cons o ot (match news (Cons n nt (opt-zip ot nt (Cons (OptRn o n) rn))) (Nil rn)))))
+
+; A name the body uses without binding it (a function or global) that
+; is a local at the site.
+(defn opt-free-shadowed (e bound locals)
+  (match e
+    (ILoad n (and (not (opt-member n bound)) (opt-member n locals)))
+    (ICall n args (or (and (not (opt-member n bound)) (opt-member n locals)) (opt-free-shadowed-list args bound locals)))
+    (ISet _ v (opt-free-shadowed v bound locals))
+    (ILet n v b (or (opt-free-shadowed v bound locals) (opt-free-shadowed b (Cons n bound) locals)))
+    (IBinop _ l r (or (opt-free-shadowed l bound locals) (opt-free-shadowed r bound locals)))
+    (IFfi _ args (opt-free-shadowed-list args bound locals))
+    (IIf c t f (or (opt-free-shadowed c bound locals) (or (opt-free-shadowed t bound locals) (opt-free-shadowed f bound locals))))
+    (IWhile c b (or (opt-free-shadowed c bound locals) (opt-free-shadowed b bound locals)))
+    (ISeq es (opt-free-shadowed-list es bound locals))
+    (IVariant _ _ fs (opt-free-shadowed-list fs bound locals))
+    (IMatch s arms (or (opt-free-shadowed s bound locals) (opt-free-shadowed-arms arms bound locals)))
+    (_ false)))
+
+(defn opt-free-shadowed-list (es bound locals)
+  (match es
+    (Nil false)
+    (Cons h t (if (opt-free-shadowed h bound locals) true (opt-free-shadowed-list t bound locals)))))
+
+(defn opt-free-shadowed-arms (arms bound locals)
+  (match arms
+    (Nil false)
+    (Cons a t
+      (match a
+        (IArm _ _ binds b (if (opt-free-shadowed b (list-append binds bound) locals) true (opt-free-shadowed-arms t bound locals)))))))
+
+; A rebuilt node keeps the attributes of the one it copies: kind, span,
+; the type pass's scalar mark.
+(defn opt-keep (out from)
+  (let _ (if (= (icnf-scalar out) 0) (let _ (icnf-scalar-set out (icnf-scalar from)) unit) unit)
+    (ic-keep-span (ic-keep-kind out from) from)))
