@@ -1,0 +1,19 @@
+; A trait-generic function used as a value is specialized at the type it
+; is used at. It used to run its generic original, whose run-time tag
+; dispatch sent every non-variant type to the first such impl: Show.show
+; of a String went to the Int impl, and a List of Bool crashed.
+
+(defn _tgv-show (x) (Show.show x))
+(defn _tgv-apply (f v) (f v))
+(defn _tgv-map (f xs) (match xs (Nil Nil) (Cons h t (Cons (f h) (_tgv-map f t)))))
+
+(test "generic-value-at-int"
+  (assert-true (str-eq (_tgv-apply _tgv-show 42) "42")))
+
+(test "generic-value-at-string"
+  (assert-true (str-eq (_tgv-apply _tgv-show "hi") "hi")))
+
+(test "generic-value-through-map"
+  (assert-true (str-eq (Show.show (_tgv-map _tgv-show (Cons true (Cons false Nil)))) "[true, false]")))
+
+(run-tests)

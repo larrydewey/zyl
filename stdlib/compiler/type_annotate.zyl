@@ -891,7 +891,7 @@
 
 (defn ta-expr-node (st ctx env e)
   (match (Expr.inner e)
-    (EAtom a (ta-atom st ctx env a))
+    (EAtom a (ta-atom st ctx env a e))
     (ECall op args (ta-call-expr st ctx env e op args))
     (EApply fname args (ta-call st ctx env e fname args))
     (ELet name val body (ta-let st ctx env name val body))
@@ -975,7 +975,7 @@
     (ETestCompile _ _ (ta-stmt))
     (_ (ta-dk st "form not typed"))))
 
-(defn ta-atom (st ctx env a)
+(defn ta-atom (st ctx env a e)
   (match a
     (AInt _ (ta-int))
     (AFloat _ (ta-flt))
@@ -984,17 +984,27 @@
     (AKeyword _ (ta-str))
     ; A missing `else` (and, in strict mode, the `unit` value) is Unit.
     (ANil (if (ta-strict-p) (ta-unit-ty) (ta-dk st "nil")))
-    (AIdent n (ta-ident st ctx env n))
-    (ASymbol n (ta-ident st ctx env n))))
+    (AIdent n (ta-ident st ctx env n e))
+    (ASymbol n (ta-ident st ctx env n e))))
 
-(defn ta-ident (st ctx env n)
+(defn ta-ident (st ctx env n e)
   (let lt (ta-env-get env n)
     (if (ta-no-type-p lt)
       (let fi (ta-sget (ta-fnmap st) n)
         (if (> fi 0)
-          (ta-fn-ref st ctx (- fi 1))
+          (ta-fn-value st ctx (- fi 1) e)
           (ta-ctor-value st n)))
       lt)))
+
+; A top-level function used as a value, `(map f xs)`: like a call, a
+; trait-generic one is specialized at the type it is used at (the node is
+; renamed to the instance), so no generic original is ever run.
+(defn ta-fn-value (st ctx fi e)
+  (let tf (ta-fn-ref st ctx fi)
+    (let s (ta-wget (ta-fnstate st) fi)
+      (if (or (= s 1) (> (ta-wget (ta-fntg st) fi) 0))
+        (ta-seq (ta-note st ctx e 1 "" tf fi) tf)
+        tf))))
 
 ; A bare constructor: its value (nullary) or its function type.
 (defn ta-ctor-value (st n)
@@ -2027,6 +2037,8 @@
         (ta-resolve-specials st (Cons -1 Nil) 0)
         (ta-check-num st 0 (ffi-call "zyl_wvec_len" (ta-num-notes) 1000))
         (ta-fail-if-errors)
+        (ffi-call "zyl_smap_clear" ta-generic-names 1000)
+        (ta-record-generic st 0 (ta-wlen (ta-fnstate st)))
         (ta-extra-list st 0 (ta-wlen (ta-extra st)))))))
 
 (defn ta-report-env (v) (or (ta-streq v "report") (ta-streq v "1")))
@@ -2074,8 +2086,43 @@
     (TaC n _ (if (ta-streq n "String") 1 (if (ta-streq n "Float") 2 0)))
     (_ 0)))
 
+; The program with its specialized instances appended and the generic
+; originals of trait-generic functions removed: every call and value use
+; of one was renamed to an instance, so an original could only be reached
+; through an unresolved use, which then fails as an undefined function
+; instead of running a guessed impl.
 (defn ta-annotate (exprs)
-  (list-append exprs (ta-annotate-program exprs)))
+  (let extra (ta-annotate-program exprs)
+    (list-append (ta-drop-generic exprs) extra)))
+
+(def ta-generic-names (ffi-call "zyl_smap_new" 1000))
+
+(defn ta-drop-generic (exprs)
+  (match exprs
+    (Nil Nil)
+    (Cons e rest
+      (match (Expr.inner e)
+        (EDefn name _ _
+          (if (ffi-call "zyl_smap_has" ta-generic-names name 1000)
+            (ta-drop-generic rest)
+            (Cons e (ta-drop-generic rest))))
+        (_ (Cons e (ta-drop-generic rest)))))))
+
+(defn ta-record-generic (st i n)
+  (if (>= i n)
+    unit
+    (begin
+      (if (and (> (ta-wget (ta-fntg st) i) 0) (ta-fn-original st i))
+        (ffi-call "zyl_smap_put" ta-generic-names (ta-fn-name st i) 1 1000)
+        unit)
+      (ta-record-generic st (+ i 1) n))))
+
+; Instances are named `f~types`; only originals are dropped.
+(defn ta-fn-original (st i)
+  (not (ta-has-tilde (ta-fn-name st i) 0)))
+
+(defn ta-has-tilde (s i)
+  (if (>= i (str-length s)) false (if (= (ffi-call "zyl_cstr_byte_at" s i 1000) 126) true (ta-has-tilde s (+ i 1)))))
 
 ; --- debugging (ZYL_DEBUG_TYPES=1 prints every function's scheme) -------------
 
@@ -2486,11 +2533,20 @@
     (if (> (ta-sget (ta-specs st) key) 0)
       key
       (let used (ta-wget (ta-fnspecs st) fi)
-        (if (> used 31)
-          (ta-fn-name st fi)
+        (if (> used 255)
+          (ta-spec-limit st fi)
           (let _ (ta-wset (ta-fnspecs st) fi (+ used 1))
             (let _ (ta-sput (ta-specs st) key 1)
               (ta-make-instance st fi key ct))))))))
+
+; A function that needs more than 256 instances is almost always
+; polymorphic recursion whose argument types grow without end.
+(defn ta-spec-limit (st fi)
+  (let _ (ta-type-error "E_CANNOT_INFER"
+           (str-concat "`" (str-concat (err-name (ta-fn-name st fi)) "` would need more than 256 specialized instances"))
+           (ffi-call "zyl_ref_get" ta-cur-node 1000) Nil
+           "a trait-generic function calling itself at an ever larger type cannot be specialized; give the recursion a fixed type")
+    (ta-fn-name st fi)))
 
 (defn ta-make-instance (st fi key ct)
   (let clone (ta-copy-defn (ta-wget (ta-fnexp st) fi) key)

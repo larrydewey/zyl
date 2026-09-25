@@ -467,7 +467,9 @@
 
 (defn ic-expr-node (arena expr vt)
   (match (Expr.inner expr)
-    (EAtom atom (ic-atom arena atom vt))
+    (EAtom atom
+      (let nm (ta-renamed expr)
+        (if (= (str-length nm) 0) (ic-atom arena atom vt) (ILoad (str-intern arena nm)))))
     (ECall op args (ic-call-renamed arena expr op args vt))
     (EApply fname args (ic-apply-renamed arena expr fname args vt))
     (ELet name val body (ic-lower-let arena name val body vt))
@@ -1222,26 +1224,17 @@
       (let impls (ffi-call "zyl_smap_get_or" ta-impl-table fname Nil 1000)
         (if (is-nil impls)
           (ic-plain-call arena fname args vt)
-          (ic-trait-dispatch arena impls args vt))))))
+          (ic-trait-unresolved fname))))))
 
-; A trait call the type pass could not resolve: match the receiver's tag,
-; one arm per impl type (a non-variant type name acts as a catch-all).
-(defn ic-trait-dispatch (arena impls args vt)
-  (match args
-    (Nil (IConst 0))
-    (Cons recv rest
-      (ILet "_td_recv" (ic-expr arena recv vt)
-        (IMatch (ILoad "_td_recv") (ic-trait-arms arena impls rest vt))))))
-
-(defn ic-trait-arms (arena impls rest vt)
-  (match impls
-    (Nil Nil)
-    (Cons pr more
-      (match pr
-        (Pair type mangled
-          (Cons (IArm (str-intern arena type) (vt-tag-of vt (str-intern arena type)) Nil
-                      (ICall (str-intern arena mangled) (Cons (ILoad "_td_recv") (ic-expr-list arena rest vt))))
-                (ic-trait-arms arena more rest vt)))))))
+; A trait call the type pass left unresolved. There used to be a run-time
+; dispatch on the receiver's tag here, which sent every non-variant type
+; (Int, String, ...) to the first such impl; the type pass resolves every
+; call it can reach, so one left over is an error.
+(defn ic-trait-unresolved (fname)
+  (ffi-call "zyl_panic"
+    (str-concat "error[E_CANNOT_INFER]: cannot tell which impl `"
+      (str-concat (err-name fname) "` calls: the receiver's type is not known here; give it a type annotation"))
+    1000))
 
 ; A call through a local holding a function value is still an ICall:
 ; codegen sees the name bound to a slot and emits cg-call-indirect.
