@@ -84,6 +84,75 @@
 
 (deftype IArm (IArm String Int (List String) Icnf)) ; variant, tag, binds, body
 
+; Whether `e` contains a `set!` anywhere. Only a set! in the expression
+; itself can change a local while it is evaluated (a closure cannot set
+; a captured let-mut, E_MUT_CONFLICT), so reading a local before or
+; after such an expression gives the same value exactly when this is
+; false. Lowering and codegen use it to keep left-to-right order.
+(defn icnf-has-set (e)
+  (match e
+    (IConst _ false)
+    (IStr _ false)
+    (IFlt _ false)
+    (ILoad _ false)
+    (ISymAddr _ false)
+    (IBinop _ l r (or (icnf-has-set l) (icnf-has-set r)))
+    (ICall _ args (icnf-list-has-set args))
+    (ICallClosure _ args (icnf-list-has-set args))
+    (IFfi _ args (icnf-list-has-set args))
+    (IPrint a (icnf-has-set a))
+    (IIf c t f (or (icnf-has-set c) (or (icnf-has-set t) (icnf-has-set f))))
+    (IWhile c b (or (icnf-has-set c) (icnf-has-set b)))
+    (ISet _ _ true)
+    (ILet _ v b (or (icnf-has-set v) (icnf-has-set b)))
+    (ISeq es (icnf-list-has-set es))
+    (IVariant _ _ fs (icnf-list-has-set fs))
+    (IStackVariant _ _ fs (icnf-list-has-set fs))
+    (IMatch s arms (or (icnf-has-set s) (icnf-arms-have-set arms)))
+    (IFn _ _ _ _ false)
+    (ITryCatch b _ h (or (icnf-has-set b) (icnf-has-set h)))
+    (IRegion _ _ _ _ b (icnf-has-set b))))
+
+; Whether `e` contains a set! of `n`.
+(defn icnf-sets (e n)
+  (match e
+    (ISet m v (if (str-eq m n) true (icnf-sets v n)))
+    (IBinop _ l r (or (icnf-sets l n) (icnf-sets r n)))
+    (ICall _ args (icnf-list-sets args n))
+    (ICallClosure _ args (icnf-list-sets args n))
+    (IFfi _ args (icnf-list-sets args n))
+    (IPrint a (icnf-sets a n))
+    (IIf c t f (or (icnf-sets c n) (or (icnf-sets t n) (icnf-sets f n))))
+    (IWhile c b (or (icnf-sets c n) (icnf-sets b n)))
+    (ILet _ v b (or (icnf-sets v n) (icnf-sets b n)))
+    (ISeq es (icnf-list-sets es n))
+    (IVariant _ _ fs (icnf-list-sets fs n))
+    (IStackVariant _ _ fs (icnf-list-sets fs n))
+    (IMatch s arms (or (icnf-sets s n) (icnf-arms-set arms n)))
+    (ITryCatch b _ h (or (icnf-sets b n) (icnf-sets h n)))
+    (IRegion _ _ _ _ b (icnf-sets b n))
+    (_ false)))
+
+(defn icnf-list-sets (es n)
+  (match es
+    (Nil false)
+    (Cons h t (if (icnf-sets h n) true (icnf-list-sets t n)))))
+
+(defn icnf-arms-set (arms n)
+  (match arms
+    (Nil false)
+    (Cons a t (match a (IArm _ _ _ b (if (icnf-sets b n) true (icnf-arms-set t n)))))))
+
+(defn icnf-list-has-set (es)
+  (match es
+    (Nil false)
+    (Cons h t (if (icnf-has-set h) true (icnf-list-has-set t)))))
+
+(defn icnf-arms-have-set (arms)
+  (match arms
+    (Nil false)
+    (Cons a t (match a (IArm _ _ _ b (if (icnf-has-set b) true (icnf-arms-have-set t)))))))
+
 ; Binop opcodes (instruction payloads, not node kinds):
 ; 0 add 1 sub 2 mul 3 div 4 rem 5 lt 6 gt 7 le 8 ge 9 eq 10 ne
 ; 11 bit-and 12 bit-or 13 bit-xor 14 shl 15 shr (logical) 16 ashr
@@ -633,10 +702,13 @@
     ; a small integer as a handle, found no magic, and every load
     ; returned 0 while every store silently did nothing. Bind in field
     ; order, emit in runtime order.
-    (ELoadByte endian buf offset (ic-byte-access arena "zyl_load_byte" "zyl_load_n" endian (Cons (ic-expr arena offset vt) (Cons (ic-expr arena buf vt) Nil))))
-    (ELoadByteSigned endian buf offset (ic-byte-access arena "zyl_load_byte_signed" "zyl_load_n_signed" endian (Cons (ic-expr arena offset vt) (Cons (ic-expr arena buf vt) Nil))))
-    (EStoreByte endian buf offset val (ic-byte-access arena "zyl_store_byte" "zyl_store_n" endian (Cons (ic-expr arena offset vt) (Cons (ic-expr arena buf vt) (Cons (ic-expr arena val vt) Nil)))))
-    (EStoreByteSigned endian buf offset val (ic-byte-access arena "zyl_store_byte_signed" "zyl_store_n" endian (Cons (ic-expr arena offset vt) (Cons (ic-expr arena buf vt) (Cons (ic-expr arena val vt) Nil)))))
+    ;
+    ; EVALUATION ORDER: the buffer is evaluated before the offset, as
+    ; written (ic-byte-args).
+    (ELoadByte endian buf offset (ic-byte-access arena "zyl_load_byte" "zyl_load_n" endian (ic-expr arena buf vt) (ic-expr arena offset vt) None))
+    (ELoadByteSigned endian buf offset (ic-byte-access arena "zyl_load_byte_signed" "zyl_load_n_signed" endian (ic-expr arena buf vt) (ic-expr arena offset vt) None))
+    (EStoreByte endian buf offset val (ic-byte-access arena "zyl_store_byte" "zyl_store_n" endian (ic-expr arena buf vt) (ic-expr arena offset vt) (Some (ic-expr arena val vt))))
+    (EStoreByteSigned endian buf offset val (ic-byte-access arena "zyl_store_byte_signed" "zyl_store_n" endian (ic-expr arena buf vt) (ic-expr arena offset vt) (Some (ic-expr arena val vt))))
     (EByteSlice buf start len (IFfi "zyl_byte_slice" (Cons (ic-expr arena buf vt) (Cons (ic-expr arena start vt) (Cons (ic-expr arena len vt) Nil)))))
     (EByteSliceSub buf start len (IFfi "zyl_byte_slice_sub" (Cons (ic-expr arena buf vt) (Cons (ic-expr arena start vt) (Cons (ic-expr arena len vt) Nil)))))
     ; region is a bare `Region` ADT value (not an Expr -- see ExprInner's
@@ -1147,11 +1219,29 @@
     (None "assert failed")))
 
 ; A byte access: one byte through `sym1`, a 16/32/64-bit one through `symn` with its width first.
-(defn ic-byte-access (_arena sym1 symn endian args)
+; The runtime takes (offset, buffer[, value]) but the source reads
+; (buffer offset [value]), and the buffer must be evaluated first. A
+; buffer that is a constant or a local read gives the same value after
+; the offset unless the offset contains a set!; otherwise it is bound
+; first.
+(defn ic-byte-access (arena sym1 symn endian buf off val)
+  (if (and (ic-plain-read buf) (not (icnf-has-set off)))
+    (ic-byte-call sym1 symn endian off buf val)
+    (let t (str-concat "__lr" (ic-int-to-str (ic-fresh-id arena)))
+      (ILet t buf (ic-byte-call sym1 symn endian off (ILoad t) val)))))
+
+(defn ic-plain-read (e)
+  (match e
+    (IConst _ true)
+    (ILoad _ true)
+    (_ false)))
+
+(defn ic-byte-call (sym1 symn endian off buf val)
   (let e (IConst (endian-to-int endian))
-    (if (= (endian-width endian) 1)
-      (IFfi sym1 (Cons e args))
-      (IFfi symn (Cons (IConst (endian-width endian)) (Cons e args))))))
+    (let args (match val (Some v (Cons off (Cons buf (Cons v Nil)))) (None (Cons off (Cons buf Nil))))
+      (if (= (endian-width endian) 1)
+        (IFfi sym1 (Cons e args))
+        (IFfi symn (Cons (IConst (endian-width endian)) (Cons e args)))))))
 
 (defn ic-starts-with-make (s)
   (if (>= (str-length s) 5)
@@ -1226,8 +1316,15 @@
 
 ; A call through a local holding a function value is still an ICall:
 ; codegen sees the name bound to a slot and emits cg-call-indirect.
+; The function is evaluated before the arguments: when an argument
+; set!s the local that holds the function, its value is read first.
 (defn ic-plain-call (arena fname args vt)
-  (ICall (str-intern arena fname) (ic-expr-list arena args vt)))
+  (let nm (str-intern arena fname)
+    (let as (ic-expr-list arena args vt)
+      (if (icnf-list-sets as nm)
+        (let tmp (str-intern arena (str-concat "_callee_" (ic-int-to-str (ic-fresh-id arena))))
+          (ILet tmp (ILoad nm) (ICall tmp as)))
+        (ICall nm as)))))
 
 ; Binary operator: exactly two arguments lowers directly, unary minus
 ; (- x) supported, three or more arguments fold left-associatively

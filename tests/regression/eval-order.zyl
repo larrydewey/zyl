@@ -1,0 +1,62 @@
+; Strict left-to-right evaluation (spec: evaluate the function, then the
+; arguments in order). Each subexpression appends its name to a trace.
+
+(use core/core)
+(use core/list)
+
+(def trace (ffi-call "zyl_ref_new" "" 1000))
+(defn reset () (ffi-call "zyl_ref_set" trace "" 1000))
+(defn got () (ffi-call "zyl_ref_get" trace 1000))
+(defn t ((s String) (v Int)) (begin (ffi-call "zyl_ref_set" trace (str-concat (got) s) 1000) v))
+(defn ts ((s String) (v String)) (begin (ffi-call "zyl_ref_set" trace (str-concat (got) s) 1000) v))
+(defn tf ((s String) (v Float)) (begin (ffi-call "zyl_ref_set" trace (str-concat (got) s) 1000) v))
+
+(deftype EoPair (EoP Int Int))
+(defstruct EoPt (x Int) (y Int))
+(defn eo3 ((a Int) (b Int) (c Int)) (+ a (+ b c)))
+(defn add1 ((x Int)) (+ x 1))
+(defn add100 ((x Int)) (+ x 100))
+(defn pick ((k Int)) (begin (t "f" 0) (if (= k 0) add1 add100)))
+
+(defn order-of (thunk) (begin (reset) (thunk) (got)))
+
+(test "operators"
+  (begin
+    (assert-equal (order-of (fn () (+ (t "a" 1) (t "b" 2)))) "ab")
+    (assert-equal (order-of (fn () (- (t "a" 1) (* (t "b" 2) (t "c" 3))))) "abc")
+    (assert-equal (order-of (fn () (< (t "a" 1) (t "b" 2)))) "ab")
+    (assert-equal (order-of (fn () (bit-xor (t "a" 1) (t "b" 2)))) "ab")
+    (assert-equal (order-of (fn () (+ (tf "a" 1.0) (tf "b" 2.0)))) "ab")
+    (assert-equal (order-of (fn () (= (ts "a" "x") (ts "b" "y")))) "ab")))
+
+(test "calls and constructors"
+  (begin
+    (assert-equal (order-of (fn () (eo3 (t "a" 1) (t "b" 2) (t "c" 3)))) "abc")
+    (assert-equal (order-of (fn () ((pick 0) (t "a" 1)))) "fa")
+    (assert-equal (order-of (fn () (EoP (t "a" 1) (t "b" 2)))) "ab")
+    (assert-equal (order-of (fn () (make-EoPt (t "a" 1) (t "b" 2)))) "ab")
+    (assert-equal (order-of (fn () (str-concat (ts "a" "x") (ts "b" "y")))) "ab")
+    (assert-equal (order-of (fn () [(t "a" 1) (t "b" 2) (t "c" 3)])) "abc")
+    (assert-equal (order-of (fn () `(,(t "a" 1) ,@[(t "b" 2)] ,(t "c" 3)))) "abc")))
+
+(test "a set! in a later operand does not change an earlier one"
+  (let-mut x 1
+    (begin
+      (assert-equal (+ x (begin (set! x 5) 1)) 2)
+      (set! x 1)
+      (assert-equal (eo3 x (begin (set! x 7) 2) 0) 3)
+      (set! x 1)
+      (assert-equal (if (< x (begin (set! x 0) 1)) 1 2) 2))))
+
+(test "the function is evaluated before its arguments"
+  (let-mut f add1
+    (assert-equal (f (begin (set! f add100) 1)) 2)))
+
+(test "byte operations take the buffer first"
+  (let b (bytebuf Heap 8)
+    (begin
+      (assert-equal (order-of (fn () (store-u8 :le (begin (t "b" 0) b) (t "o" 1) (t "v" 7)))) "bov")
+      (assert-equal (order-of (fn () (load-u8 :le (begin (t "b" 0) b) (t "o" 1)))) "bo")
+      (assert-equal (load-u8 :le b 1) 7))))
+
+(run-tests)

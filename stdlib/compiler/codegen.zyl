@@ -348,7 +348,10 @@
            (cg-ibinop st env op l r)))))
     (ICall name args (cg-call-user st env name args e))
     (ICallClosure name args (cg-call-user st env name args e))
-    (IFfi sym args (cg-call-args st env sym args false (cg-site-level e)))
+    (IFfi sym args
+      (if (cg-inline-byte-p sym args)
+        (cg-inline-byte st env sym args)
+        (cg-call-args st env sym args false (cg-site-level e))))
     (IPrint a (cg-print st env a))
     (IIf c t eb (cg-if-dispatch st env c t eb 0))
     (IWhile c body (cg-while-dispatch st env c body))
@@ -714,17 +717,13 @@
 (defn cg-if-parts (p env c t eb tl)
   (match p
     (CGP st lelse lend
-      (let st2 (cg-expr st env c)
-        (let st3 (cg-emit st2 "    test rax, rax")
-          (let st4 (cg-nl st3)
-            (let st5 (cg-emit st4 "    je ")
-              (let st6 (cg-nl (cg-emit st5 lelse))
+      (let st6 (cg-cond-jump st env c lelse)
                 (let st7 (cg-tail st6 env t tl)
                   (let st8 (cg-emit st7 "    jmp ")
                     (let st9 (cg-nl (cg-emit st8 lend))
                       (let st10 (cg-emit-label st9 lelse)
                         (let st11 (cg-tail st10 env eb tl)
-                          (cg-emit-label st11 lend))))))))))))))
+                          (cg-emit-label st11 lend))))))))))
 
 ; (while c body...)
 ; `while` is an expression like everything else here: its value is the
@@ -741,16 +740,13 @@
 (defn cg-while-body (st env c body lstart lend off)
   (let st1 (cg-while-store (cg-emit-line st "    mov rax, 0") off)
     (let st2 (cg-emit-label st1 lstart)
-      (let st3 (cg-expr st2 env c)
-        (let st4 (cg-emit-line st3 "    test rax, rax")
-          (let st5 (cg-emit st4 "    je ")
-            (let st6 (cg-nl (cg-emit st5 lend))
+      (let st6 (cg-cond-jump st2 env c lend)
               (let st7 (cg-expr st6 env body)
                 (let st8 (cg-while-store st7 off)
                   (let st9 (cg-emit st8 "    jmp ")
                     (let st10 (cg-nl (cg-emit st9 lstart))
                       (let st11 (cg-emit-label st10 lend)
-                        (cg-while-load st11 off)))))))))))))
+                        (cg-while-load st11 off))))))))))
 
 (defn cg-while-store (st off)
   (let st1 (cg-emit st "    mov [rbp")
@@ -776,16 +772,70 @@
 ; Integer binary op: lhs -> rax (pushed), rhs -> rax, lhs restored to rax,
 ; rhs kept in rcx. Div/Rem use cqo/idiv with divisor safe in rcx.
 (defn cg-ibinop (st env op l r)
-  (let st2 (cg-expr st env l)
-    (let st3 (cg-emit-line st2 "    push rax")
-      (let st4 (cg-expr st3 env r)
-        (let st5 (cg-emit-line st4 "    mov rcx, rax")
-          (let st6 (cg-emit-line st5 "    pop rax")
-            (if (< op 5)
-              (cg-arith-mnem st6 op)
-              (if (> op 10)
-                (cg-bit-mnem st6 op)
-                (cg-cmp-set st6 op)))))))))
+  (let st6 (cg-ibinop-operands st env l r)
+    (if (< op 5)
+      (cg-arith-mnem st6 op)
+      (if (> op 10)
+        (cg-bit-mnem st6 op)
+        (cg-cmp-set st6 op)))))
+
+; lhs into rax, rhs into rcx. An operand that is a constant or a local's
+; slot is loaded directly instead of through the stack. When only the lhs
+; is one, the rhs is evaluated first; that is the same order unless the
+; rhs contains a set! (which could change the local), so then it is not.
+(defn cg-ibinop-operands (st env l r)
+  (let rs (cg-simple-src env r)
+    (if (> (str-length rs) 0)
+      (cg-emit-line (cg-expr st env l) (str-concat "    mov rcx, " rs))
+      (let ls (if (icnf-has-set r) "" (cg-simple-src env l))
+        (if (> (str-length ls) 0)
+          (let st2 (cg-emit-line (cg-expr st env r) "    mov rcx, rax")
+            (cg-emit-line st2 (str-concat "    mov rax, " ls)))
+          (let st2 (cg-emit-line (cg-expr st env l) "    push rax")
+            (let st3 (cg-emit-line (cg-expr st2 env r) "    mov rcx, rax")
+              (cg-emit-line st3 "    pop rax"))))))))
+
+; The operand text for a constant or a local in a frame slot; "" for
+; anything else.
+(defn cg-simple-src (env e)
+  (match e
+    (IConst v (ffi-call "zyl_int_text" v 1000))
+    (ILoad n
+      (let off (env-lookup env n)
+        (if (= off 0) "" (str-concat "[rbp" (str-concat (ffi-call "zyl_int_text" off 1000) "]")))))
+    (_ "")))
+
+; Jump to `lfalse` when the condition is false. An integer comparison
+; is fused into cmp + a conditional jump instead of materializing 0/1.
+(defn cg-cond-jump (st env c lfalse)
+  (match c
+    (IBinop op l r
+      (if (and (and (>= op 5) (<= op 10)) (cg-int-operands st env l r))
+        (let st2 (cg-emit-line (cg-ibinop-operands st env l r) "    cmp rax, rcx")
+          (cg-nl (cg-emit (cg-emit st2 (cg-jump-unless op)) lfalse)))
+        (cg-cond-jump-plain st env c lfalse)))
+    (_ (cg-cond-jump-plain st env c lfalse))))
+
+(defn cg-cond-jump-plain (st env c lfalse)
+  (let st2 (cg-emit-line (cg-expr st env c) "    test rax, rax")
+    (cg-nl (cg-emit (cg-emit st2 "    je ") lfalse))))
+
+; Neither operand is a Float, String or ADT (cg-expr's dispatch above).
+(defn cg-int-operands (st env l r)
+  (let kl (kind-of st env l)
+    (let kr (kind-of st env r)
+      (and (and (not (= kl 1)) (not (= kl 2)))
+           (and (and (not (= kr 1)) (not (= kr 2)))
+                (and (not (= kl 3)) (not (= kr 3))))))))
+
+; The jump taken when comparison `op` is false.
+(defn cg-jump-unless (op)
+  (if (= op 5) "    jge "
+  (if (= op 6) "    jle "
+  (if (= op 7) "    jg "
+  (if (= op 8) "    jl "
+  (if (= op 9) "    jne "
+    "    je "))))))
 
 ; String `=`/`!=`: content comparison via the C runtime (zyl_cstr_eq),
 ; reusing cg-call-args' proven-safe ABI/stack-alignment handling instead
@@ -987,12 +1037,51 @@
     (let st2 (if (= (% (+ n (cg-stack-count n)) 2) 1)
                (cg-emit-line st "    sub rsp, 8")
                st)
-      (let st3 (cg-scratch-all st2 env args)
-        (let st4 (cg-copy-stack-args st3 n (- n 1) 0)
-          (let st5 (cg-set-cur-region (cg-load-reg-args st4 n (- (cg-min-int n 6) 1)) lvl)
-            (if mangle
-              (cg-fire-user st5 env name n)
-              (cg-fire-ext st5 env (if (> lvl 0) (str-concat name "_r") name) n))))))))
+      (let st4 (if (cg-direct-args-ok env args n)
+                 (cg-direct-args st2 env args n)
+                 (cg-copy-stack-args (cg-scratch-all st2 env args) n (- n 1) 0))
+        (let st5 (cg-set-cur-region (if (cg-direct-args-ok env args n) st4 (cg-load-reg-args st4 n (- (cg-min-int n 6) 1))) lvl)
+          (if mangle
+            (cg-fire-user st5 env name n)
+            (cg-fire-ext st5 env (if (> lvl 0) (str-concat name "_r") name) n)))))))
+
+; Register arguments without the scratch round trip, when at most one
+; argument is more than a constant or a local: that one is evaluated
+; first, straight into its register, and the others are moved in after
+; it. No argument may contain a set!, so reading a local after the
+; complex argument gives the value it had before it. The stack is lowered by the same amount as the general path,
+; so cleanup and alignment are unchanged.
+(defn cg-direct-args-ok (env args n)
+  (and (<= n 6) (and (<= (cg-count-complex env args) 1) (not (icnf-list-has-set args)))))
+
+(defn cg-count-complex (env args)
+  (match args
+    (Nil 0)
+    (Cons a t (+ (if (> (str-length (cg-simple-src env a)) 0) 0 1) (cg-count-complex env t)))))
+
+(defn cg-direct-args (st env args n)
+  (let st2 (if (> n 0) (cg-nl (cg-emit-int (cg-emit st "    sub rsp, ") (* 8 n))) st)
+    (let st3 (cg-direct-complex st2 env args 0)
+      (cg-direct-simple st3 env args 0))))
+
+(defn cg-direct-complex (st env args i)
+  (match args
+    (Nil st)
+    (Cons a t
+      (if (> (str-length (cg-simple-src env a)) 0)
+        (cg-direct-complex st env t (+ i 1))
+        (cg-emit-line (cg-expr st env a) (str-concat "    mov " (str-concat (cg-reg-of i) ", rax")))))))
+
+(defn cg-direct-simple (st env args i)
+  (match args
+    (Nil st)
+    (Cons a t
+      (let src (cg-simple-src env a)
+        (cg-direct-simple
+          (if (> (str-length src) 0)
+            (cg-emit-line st (str-concat "    mov " (str-concat (cg-reg-of i) (str-concat ", " src))))
+            st)
+          env t (+ i 1))))))
 
 ; Number of stack-passed (SysV) arguments for a call of arity n.
 (defn cg-stack-count (n)
@@ -2185,3 +2274,83 @@
   (match xs
     (Cons a rest rest)
     (Nil Nil)))
+
+; ===========================================================================
+; ONE-BYTE LOADS AND STORES, INLINE
+; ===========================================================================
+
+; (load-u8 ...), (load-i8 ...), (store-u8 ...), (store-i8 ...) are the
+; runtime's zyl_load_byte/zyl_store_byte (actor_runtime.c) without the
+; call: the handle's magic word picks the bound (a ByteBuf's cap at +24,
+; a ByteSlice's len at +16; the data pointer is at +8 in both), and an
+; offset outside it, an invalid handle or a 0 handle gives what the
+; runtime gives: 0 for a load, 0 (nothing written) for a store. The
+; arguments are evaluated in the call's order (offset, buffer, value).
+(defn cg-inline-byte-p (sym args)
+  (if (or (str-eq sym "zyl_load_byte") (str-eq sym "zyl_load_byte_signed"))
+    (= (list-length args) 3)
+    (if (or (str-eq sym "zyl_store_byte") (str-eq sym "zyl_store_byte_signed"))
+      (= (list-length args) 4)
+      false)))
+
+(defn cg-inline-byte (st env sym args)
+  (let store (or (str-eq sym "zyl_store_byte") (str-eq sym "zyl_store_byte_signed"))
+    (let signed (str-eq sym "zyl_load_byte_signed")
+      (match args
+        (Cons _ rest
+          (let st2 (cg-inline-byte-args st env rest store)
+            (match (cg-label-pair st2)
+              (CGP st3 lslice lfail
+                (match (cg-label-pair st3)
+                  (CGP st4 lhit ldone
+                    (cg-inline-byte-body st4 store signed lslice lfail lhit ldone)))))))
+        (Nil st)))))
+
+; Leaves the offset in rsi, the handle in rdx and a stored value in r8.
+(defn cg-inline-byte-args (st env rest store)
+  (match rest
+    (Cons off t1
+      (match t1
+        (Cons buf t2
+          (let st2 (cg-emit-line (cg-expr st env off) "    push rax")
+            (if store
+              (match t2
+                (Cons v _
+                  (let st3 (cg-emit-line (cg-expr st2 env buf) "    push rax")
+                    (let st4 (cg-emit-line (cg-expr st3 env v) "    mov r8, rax")
+                      (cg-emit-line (cg-emit-line st4 "    pop rdx") "    pop rsi"))))
+                (Nil st2))
+              (let st3 (cg-emit-line (cg-expr st2 env buf) "    mov rdx, rax")
+                (cg-emit-line st3 "    pop rsi")))))
+        (Nil st)))
+    (Nil st)))
+
+(defn cg-jmp-to (st op lbl) (cg-nl (cg-emit (cg-emit st op) lbl)))
+
+(defn cg-inline-byte-body (st store signed lslice lfail lhit ldone)
+  (let s1 (cg-emit-line st "    cmp rdx, 4096")
+    (let s2 (cg-jmp-to s1 "    jb " lfail)
+      (let s3 (cg-emit-line s2 "    test rdx, 7")
+        (let s4 (cg-jmp-to s3 "    jnz " lfail)
+          (let s5 (cg-emit-line s4 "    movabs rcx, 6510318584122966017")
+            (let s6 (cg-emit-line s5 "    cmp [rdx], rcx")
+              (let s7 (cg-jmp-to s6 "    jne " lslice)
+                (let s8 (cg-emit-line s7 "    cmp rsi, [rdx+24]")
+                  (let s9 (cg-jmp-to s8 "    jae " lfail)
+                    (let s10 (cg-jmp-to s9 "    jmp " lhit)
+                      (let s11 (cg-emit-label s10 lslice)
+                        (let s12 (cg-emit-line s11 "    movabs rcx, 6510318584122966018")
+                          (let s13 (cg-emit-line s12 "    cmp [rdx], rcx")
+                            (let s14 (cg-jmp-to s13 "    jne " lfail)
+                              (let s15 (cg-emit-line s14 "    cmp rsi, [rdx+16]")
+                                (let s16 (cg-jmp-to s15 "    jae " lfail)
+                                  (let s17 (cg-emit-label s16 lhit)
+                                    (let s18 (cg-emit-line s17 "    mov rcx, [rdx+8]")
+                                      (let s19 (cg-emit-line s18
+                                                 (if store "    mov byte ptr [rcx+rsi], r8b"
+                                                   (if signed "    movsx rax, byte ptr [rcx+rsi]" "    movzx eax, byte ptr [rcx+rsi]")))
+                                        (let s20 (if store (cg-emit-line s19 "    mov eax, 1") s19)
+                                          (let s21 (cg-jmp-to s20 "    jmp " ldone)
+                                            (let s22 (cg-emit-label s21 lfail)
+                                              (let s23 (cg-emit-line s22 "    xor eax, eax")
+                                                (cg-emit-label s23 ldone)))))))))))))))))))))))))
