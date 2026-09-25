@@ -50,7 +50,13 @@
   ; A construction that may take the block of a dead, unique value
   ; (compiler/reuse.zyl) when its size header is large enough; else as
   ; MAlloc.
-  (MReuse Int Int Int Int))           ; d, old value, bytes, region level
+  (MReuse Int Int Int Int)            ; d, old value, bytes, region level
+  ; A byte buffer or slice handle's data pointer and bound, loaded once
+  ; (both never change; an invalid handle gives bound 0, so every access
+  ; fails as the runtime's would), and an access through them.
+  (MByteData Int Int)                 ; d data, handle
+  (MByteBound Int Int)                ; d bound, handle
+  (MByteFast Int Int Int Int Int Int)) ; kind, d, off, data, bound, val (-1)
 
 ; Vregs an instruction reads, and the one it writes (-1 for none).
 (defn mi-uses (i)
@@ -80,7 +86,10 @@
     (MSym _ _ Nil)
     (MRegionCycle Nil)
     (MArr _ _ a ix v (Cons a (mir-opt-use ix (mir-opt-use v Nil))))
-    (MReuse _ x _ _ (Cons x Nil))))
+    (MReuse _ x _ _ (Cons x Nil))
+    (MByteData _ h (Cons h Nil))
+    (MByteBound _ h (Cons h Nil))
+    (MByteFast _ _ o dt bd v (Cons o (Cons dt (Cons bd (mir-opt-use v Nil)))))))
 
 (defn mir-opt-use (v rest) (if (< v 0) rest (Cons v rest)))
 
@@ -102,6 +111,9 @@
     (MSym d _ d)
     (MArr _ d _ _ _ d)
     (MReuse d _ _ _ d)
+    (MByteFast _ d _ _ _ _ d)
+    (MByteData d _ d)
+    (MByteBound d _ d)
     (_ -1)))
 
 ; Instructions that call C (or other code) and so clobber the

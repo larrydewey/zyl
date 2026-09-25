@@ -2642,7 +2642,39 @@
       (let rd (ms-vreg m2)
         (MR (ms-emit (mr-ms rd) (MCall (mr-v rd) sym user vs lvl)) (mr-v rd))))))
 
+; Byte-buffer parameters with a view loaded at entry (ml-function):
+; name -> data vreg, and name -> bound vreg.
+(def ml-view-data (ffi-call "zyl_ref_new" Nil 1000))
+(def ml-view-bound (ffi-call "zyl_ref_new" Nil 1000))
+
 (defn ml-byte (st env venv ms sym args)
+  (match (ml-view-of args)
+    (Some p (ml-byte-fast st env venv ms sym args p))
+    (None (ml-byte-slow st env venv ms sym args))))
+
+; The handle argument (the third: endian, offset, handle[, value]) when
+; it is a parameter with a view.
+(defn ml-view-of (args)
+  (match (ml-nth-icnf args 2)
+    (Some h (match h (ILoad n (if (>= (ml-var (ffi-call "zyl_ref_get" ml-view-data 1000) n) 0) (Some n) None)) (_ None)))
+    (None None)))
+
+(defn ml-nth-icnf (xs i) (match xs (Nil None) (Cons h t (if (= i 0) (Some h) (ml-nth-icnf t (- i 1))))))
+
+; Offset, then (the handle, which is a parameter: no effect) the value.
+(defn ml-byte-fast (st env venv ms sym args p)
+  (let kind (if (str-eq sym "zyl_load_byte") 0 (if (str-eq sym "zyl_load_byte_signed") 1 (if (str-eq sym "zyl_store_byte") 2 3)))
+    (let off (match (ml-nth-icnf args 1) (Some o o) (None (IConst 0)))
+      (let ro (ml-operand st env venv ms off (if (> kind 1) (match (ml-nth-icnf args 3) (Some v (icnf-has-set v)) (None false)) false))
+        (let rv (if (> kind 1) (match (ml-nth-icnf args 3) (Some v (ml-expr st env venv (mr-ms ro) v)) (None (MR (mr-ms ro) -1))) (MR (mr-ms ro) -1))
+          (let rd (ms-vreg (mr-ms rv))
+            (MR (ms-emit (mr-ms rd) (MByteFast kind (mr-v rd) (mr-v ro)
+                                     (ml-var (ffi-call "zyl_ref_get" ml-view-data 1000) p)
+                                     (ml-var (ffi-call "zyl_ref_get" ml-view-bound 1000) p)
+                                     (if (> kind 1) (mr-v rv) -1)))
+                (mr-v rd))))))))
+
+(defn ml-byte-slow (st env venv ms sym args)
   (match (ml-args st env venv ms (match args (Cons _ t t) (Nil Nil)) Nil)
     (MRL m2 vs
       (let kind (if (str-eq sym "zyl_load_byte") 0 (if (str-eq sym "zyl_load_byte_signed") 1 (if (str-eq sym "zyl_store_byte") 2 3)))
@@ -2750,10 +2782,75 @@
   (let np (list-length params)
     (let m0 (ml-params (MS np 1 Nil Nil) 0 np)
       (let venv (ml-param-vars params 0)
-        (let m1 (ms-emit m0 (MLabel 0))
+        (let m1 (ms-emit (ml-views m0 name params body 0) (MLabel 0))
           (ml-tail st (cg-param-env params kinds 0 (EnvNil)) venv m1 (MCtx name (ml-range 0 np) 0 rflags) body))))))
 
 (defn ml-params (ms i n) (if (>= i n) ms (ml-params (ms-emit ms (MParam i i)) (+ i 1) n)))
+
+; A parameter used as the handle of a one-byte access, never set!, and
+; passed unchanged by every self call, gets its data pointer and bound
+; loaded once, before the loop head.
+(defn ml-views (ms name params body _i)
+  (let _ (ffi-call "zyl_ref_set" ml-view-data Nil 1000)
+    (let _ (ffi-call "zyl_ref_set" ml-view-bound Nil 1000)
+      (ml-views-go ms name params params body 0))))
+
+(defn ml-views-go (ms name all ps body i)
+  (match ps
+    (Nil ms)
+    (Cons p t
+      (if (and (ml-byte-handle-in p body) (and (not (icnf-sets body p)) (ml-self-keeps body name all p i)))
+        (let rd (ms-vreg ms)
+          (let rb (ms-vreg (mr-ms rd))
+            (let _ (ffi-call "zyl_ref_set" ml-view-data (Cons (MVar p (mr-v rd)) (ffi-call "zyl_ref_get" ml-view-data 1000)) 1000)
+              (let _ (ffi-call "zyl_ref_set" ml-view-bound (Cons (MVar p (mr-v rb)) (ffi-call "zyl_ref_get" ml-view-bound 1000)) 1000)
+                (ml-views-go (ms-emit (ms-emit (mr-ms rb) (MByteData (mr-v rd) i)) (MByteBound (mr-v rb) i))
+                             name all t body (+ i 1))))))
+        (ml-views-go ms name all t body (+ i 1))))))
+
+(defn ml-byte-handle-in (p e)
+  (match e
+    (IFfi s args
+      (or (and (cg-inline-byte-p s args) (match (ml-nth-icnf args 2) (Some h (match h (ILoad n (str-eq n p)) (_ false))) (None false)))
+          (ml-bh-list p args)))
+    (IBinop _ l r (or (ml-byte-handle-in p l) (ml-byte-handle-in p r)))
+    (ICall _ args (ml-bh-list p args))
+    (IIf c t f (or (ml-byte-handle-in p c) (or (ml-byte-handle-in p t) (ml-byte-handle-in p f))))
+    (IWhile c b (or (ml-byte-handle-in p c) (ml-byte-handle-in p b)))
+    (ISet _ v (ml-byte-handle-in p v))
+    (ILet _ v b (or (ml-byte-handle-in p v) (ml-byte-handle-in p b)))
+    (ISeq es (ml-bh-list p es))
+    (IVariant _ _ fs (ml-bh-list p fs))
+    (IMatch s arms (or (ml-byte-handle-in p s) (ml-bh-arms p arms)))
+    (_ false)))
+
+(defn ml-bh-list (p es) (match es (Nil false) (Cons h t (if (ml-byte-handle-in p h) true (ml-bh-list p t)))))
+(defn ml-bh-arms (p arms)
+  (match arms (Nil false) (Cons a t (match a (IArm _ _ bs b (if (and (not (me-in-strs p bs)) (ml-byte-handle-in p b)) true (ml-bh-arms p t)))))))
+(defn me-in-strs (x xs) (match xs (Nil false) (Cons h t (if (str-eq h x) true (me-in-strs x t)))))
+
+; Every self call passes parameter i as itself.
+(defn ml-self-keeps (e name ps p i)
+  (match e
+    (ICall n args
+      (and (if (str-eq n name)
+             (match (ml-nth-icnf args i) (Some a (match a (ILoad m (str-eq m p)) (_ false))) (None false))
+             true)
+           (ml-sk-list args name ps p i)))
+    (IBinop _ l r (and (ml-self-keeps l name ps p i) (ml-self-keeps r name ps p i)))
+    (IFfi _ args (ml-sk-list args name ps p i))
+    (IIf c t f (and (ml-self-keeps c name ps p i) (and (ml-self-keeps t name ps p i) (ml-self-keeps f name ps p i))))
+    (IWhile c b (and (ml-self-keeps c name ps p i) (ml-self-keeps b name ps p i)))
+    (ISet _ v (ml-self-keeps v name ps p i))
+    (ILet _ v b (and (ml-self-keeps v name ps p i) (ml-self-keeps b name ps p i)))
+    (ISeq es (ml-sk-list es name ps p i))
+    (IVariant _ _ fs (ml-sk-list fs name ps p i))
+    (IMatch s arms (and (ml-self-keeps s name ps p i) (ml-sk-arms arms name ps p i)))
+    (_ true)))
+
+(defn ml-sk-list (es name ps p i) (match es (Nil true) (Cons h t (if (ml-self-keeps h name ps p i) (ml-sk-list t name ps p i) false))))
+(defn ml-sk-arms (arms name ps p i)
+  (match arms (Nil true) (Cons a t (match a (IArm _ _ _ b (if (ml-self-keeps b name ps p i) (ml-sk-arms t name ps p i) false))))))
 (defn ml-param-vars (ps i)
   (match ps (Nil Nil) (Cons p t (Cons (MVar p i) (ml-param-vars t (+ i 1))))))
 (defn ml-range (i n) (if (>= i n) Nil (Cons i (ml-range (+ i 1) n))))
@@ -3050,6 +3147,26 @@
           (Cons "    call zyl_region_recycle"
           (Cons (str-concat l ":") Nil))))))))
     (MArr kind d a ix v (mb-array st fr kind d a ix v i))
+    (MByteData d h (mb-byte-view st fr d h i true))
+    (MByteBound d h (mb-byte-view st fr d h i false))
+    (MByteFast kind d o dt bd v
+      (let lf (str-concat (mf-base fr) (str-concat "_q" (ffi-call "zyl_int_text" i 1000)))
+        (let ld (str-concat lf "d")
+          (let st2 (cg-emit-lines st
+                     (Cons (str-concat "    mov rax, " (mb-loc-text fr o))
+                     (Cons (str-concat "    cmp rax, " (mb-loc-text fr bd))
+                     (Cons (str-concat "    jae " lf)
+                     (Cons (str-concat "    mov rdx, " (mb-loc-text fr dt)) Nil)))))
+            (let st3 (if (> kind 1)
+                       (cg-emit-lines st2 (Cons (str-concat "    mov rcx, " (mb-loc-text fr v))
+                                          (Cons "    mov byte ptr [rdx+rax], cl"
+                                          (Cons "    mov eax, 1" Nil))))
+                       (cg-emit-line st2 (if (= kind 1) "    movsx rax, byte ptr [rdx+rax]" "    movzx eax, byte ptr [rdx+rax]")))
+              (mb-set (cg-emit-lines st3 (Cons (str-concat "    jmp " ld)
+                                         (Cons (str-concat lf ":")
+                                         (Cons "    xor eax, eax"
+                                         (Cons (str-concat ld ":") Nil)))))
+                      fr d "rax"))))))
     (MByte kind d o b v (mb-byte st fr kind d o b v i))
     (MFnRef d name
       (mb-set (cg-emit-line st (str-concat "    lea rax, [rip+" (str-concat (cg-sym-mangled (cg-arena-of st) name) "]"))) fr d "rax"))
@@ -3308,3 +3425,33 @@
                   (Cons (str-concat "    imul rdx, rdx, " (ffi-call "zyl_int_text" n 1000))
                   (Cons "    mov rax, rcx"
                   (Cons "    sub rax, rdx" Nil))))))))))))
+
+; The data pointer (data?) or bound of a byte handle, as mb-byte checks
+; it; an invalid or null handle gives data 0 and bound 0.
+(defn mb-byte-view (st fr d h i data)
+  (let lb (str-concat (mf-base fr) (str-concat "_v" (ffi-call "zyl_int_text" i 1000)))
+    (let lslice (str-concat lb "s")
+      (let lfail (str-concat lb "f")
+        (let ldone (str-concat lb "d")
+          (let st2 (cg-emit-lines st
+                     (Cons (str-concat "    mov rdx, " (mb-loc-text fr h))
+                     (Cons "    cmp rdx, 4096"
+                     (Cons (str-concat "    jb " lfail)
+                     (Cons "    test rdx, 7"
+                     (Cons (str-concat "    jnz " lfail)
+                     (Cons "    mov r11, [rdx]"
+                     (Cons "    movabs rcx, 6510318584122966017"
+                     (Cons "    cmp r11, rcx"
+                     (Cons (str-concat "    jne " lslice)
+                     (Cons (if data "    mov rax, [rdx+8]" "    mov rax, [rdx+24]")
+                     (Cons (str-concat "    jmp " ldone)
+                     (Cons (str-concat lslice ":")
+                     (Cons "    movabs rcx, 6510318584122966018"
+                     (Cons "    cmp r11, rcx"
+                     (Cons (str-concat "    jne " lfail)
+                     (Cons (if data "    mov rax, [rdx+8]" "    mov rax, [rdx+16]")
+                     (Cons (str-concat "    jmp " ldone)
+                     (Cons (str-concat lfail ":")
+                     (Cons "    xor eax, eax"
+                     (Cons (str-concat ldone ":") Nil)))))))))))))))))))))
+            (mb-set st2 fr d "rax")))))))
