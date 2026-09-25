@@ -1,0 +1,6 @@
+; expect-error: E_MATCH_ARM_COMPLEX
+; A constant with two calls in one arm-body binop; the error is located.
+(deftype S (A Int))
+(defn f (x) (+ x 1))
+(defn h (s) (match s (A n (+ 1 (f n) (f n)))))
+(defn main () (begin (print (h (A 2))) 0))

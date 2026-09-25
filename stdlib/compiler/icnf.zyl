@@ -23,6 +23,7 @@
 (use compiler/lift_impls)
 (use compiler/type_annotate)
 (use compiler/arity_check)
+(use compiler/error_report)
 
 ; --- Instruction tree -------------------------------------------------------
 
@@ -1698,19 +1699,23 @@
     (EApply fname args
       (let op (ic-op-of arena fname)
         (if (> op -1)
-          (ic-arm-guard-count arena args vt 0 0)
+          (ic-arm-guard-count arena body args vt 0 0)
           0)))
     (_ 0)))
 
 ; Count constant and call-like operands; error on const>=1 && calls>=2.
-(defn ic-arm-guard-count (arena args vt consts calls)
+(defn ic-arm-guard-count (arena body args vt consts calls)
   (if (is-nil args)
     (if (> consts 0)
       (if (> calls 1)
-        (ffi-call "zyl_panic" "E_MATCH_ARM_COMPLEX: match arm combines a constant with multiple calls - nest sums through helper functions" 1000)
+        (ffi-call "zyl_panic"
+          (err-at "E_MATCH_ARM_COMPLEX" "match arm combines a constant with multiple calls"
+                  (ffi-call "zyl_span_file" body 1000) (ffi-call "zyl_span_off" body 1000)
+                  "bind the calls with let first, or nest the sum through a helper function")
+          1000)
         0)
       0)
-    (ic-arm-guard-count arena (rest-expr args) vt
+    (ic-arm-guard-count arena body (rest-expr args) vt
                         (+ consts (if (ic-arm-guard-is-const (first-expr args)) 1 0))
                         (+ calls (if (ic-arm-guard-is-call arena (first-expr args) vt) 1 0)))))
 
