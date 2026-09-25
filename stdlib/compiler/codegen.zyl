@@ -426,7 +426,7 @@
 (defn cg-tail-direct (st env name args tl site)
   (let n (list-length args)
     (let st2 (cg-tail-stage (cg-tail-regions (cg-scratch-all st env args) tl site) n)
-      (let sym (cg-sym-for (cg-arena-of st2) name 1)
+      (let sym (cg-sym-for (cg-arena-of st2) name true)
         (cg-emit-line (cg-tail-leave st2 tl) (cg-cat2 (cg-arena-of st2) (str-intern (cg-arena-of st2) "    jmp ") sym))))))
 
 ; Through a local function value: the env goes last, as in cg-call-indirect.
@@ -473,7 +473,11 @@
 
 ; Frame offset of the header of scope `lvl - 4` (recorded by
 ; cg-region-scope when it reserved the header).
-(defn cg-scope-base (lvl) (ffi-call "zyl_wvec_get" (ffi-call "zyl_wvec_global" 5 1000) (- lvl 4) 1000))
+(defn cg-scope-base (lvl) (ffi-call "zyl_wvec_get" cg-scope-table (- lvl 4) 1000))
+
+; Frame offset of each with-region scope header of the function being
+; emitted, by scope index.
+(def cg-scope-table (ffi-call "zyl_wvec_new" 1000))
 
 ; (with-region ...): a header in the frame (the frame header's four words,
 ; then kind, block, alignment, limit, bytes used; the runtime marks it with
@@ -506,7 +510,7 @@
     (CGS _ _ _ off _ _ (+ off (* 8 (- n 1))))))
 
 (defn cg-scope-record (idx base)
-  (let v (ffi-call "zyl_wvec_global" 5 1000)
+  (let v cg-scope-table
     (let _ (cg-wvec-grow v (+ idx 1))
       (ffi-call "zyl_wvec_set" v idx base 1000))))
 
@@ -983,7 +987,7 @@
 ; `lvl` is the site's region level (0 when unannotated). A runtime call
 ; with a level goes to the function's region-aware `_r` entry point.
 (defn cg-call-args (st env name args mangle lvl)
-  (if (> mangle 0)
+  (if mangle
     (if (= (env-lookup env name) 0)
       (cg-call-args-go st env name args mangle lvl)
       (cg-call-indirect st env name args lvl))
@@ -997,7 +1001,7 @@
       (let st3 (cg-scratch-all st2 env args)
         (let st4 (cg-copy-stack-args st3 n (- n 1) 0)
           (let st5 (cg-set-cur-region (cg-load-reg-args st4 n (- (cg-min-int n 6) 1)) lvl)
-            (if (> mangle 0)
+            (if mangle
               (cg-fire-user st5 env name n)
               (cg-fire-ext st5 env (if (> lvl 0) (str-concat name "_r") name) n))))))))
 
@@ -1058,7 +1062,7 @@
 
 ; Full call-target symbol: _ZYL_<name> for user fns, <name> otherwise.
 (defn cg-sym-for (arena name mangle)
-  (if (> mangle 0)
+  (if mangle
     (cg-sym-mangled arena name)
     (ffi-call "zyl_cstr_sanitize" arena name 1000)))
 
@@ -1071,7 +1075,7 @@
 ; hands over unqualified; they keep the historical `_ZYL_` + sanitize
 ; spelling, which is safe for that fixed vocabulary.
 (defn cg-sym-mangled (arena name)
-  (if (> (cg-canonical-key-p name) 0)
+  (if (cg-canonical-key-p name)
     (ffi-call "zyl_mangle_key" arena name 1000)
     (let buf (buf-new arena 512)
       (begin
@@ -1103,7 +1107,7 @@
 
 ; Build "call f_<sanitized>" as a single string.
 (defn cg-call-user-str (st _env name)
-  (let sym (cg-sym-for (cg-arena-of st) name 1)
+  (let sym (cg-sym-for (cg-arena-of st) name true)
     (cg-cat2 (cg-arena-of st) (str-intern (cg-arena-of st) "call ") sym)))
 
 ; ── mangled (user fn) path: n args already pushed, rsp pre-aligned ──
@@ -1709,7 +1713,7 @@
   (if (is-nil binds)
     acc
     (icnf-binds-slots (tl2 binds)
-                      (+ acc (icnf-bind-real (shd binds))))))
+                      (+ acc (if (icnf-bind-real (shd binds)) 1 0)))))
 
 (defn icnf-bind-real (b)
   ; exact "_" (length 1, byte '_') gets no slot in cg-bind-one
@@ -1769,7 +1773,7 @@
 ; A function secret_check.zyl marked (Secret params or secret lets) zeroes its
 ; whole frame on return and makes no tail calls, so no copy outlives the call.
 (defn cg-wipes-frame (name)
-  (> (ffi-call "zyl_smap_get" (ffi-call "zyl_smap_global" 4 1000) (str-concat "w|" (cg-base-name name 0)) 1000) 0))
+  (> (ffi-call "zyl_smap_get" secret-marks (str-concat "w|" (cg-base-name name 0)) 1000) 0))
 
 ; A specialized instance `f~T` is wiped like `f`.
 (defn cg-base-name (n i)
@@ -1835,7 +1839,7 @@
 (defn ifn-tag-body (f)
   (match f
     (IFn a b c c)
-    (_ (no-icnfs))))
+    (_ (IConst 0))))
 
 ; Declared representation kind per parameter (see icnf.zyl's IFn).
 (defn ifn-tag-kinds (f)

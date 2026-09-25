@@ -7,6 +7,7 @@
 ; being derived counts, as does a type parameter or an untyped field);
 ; otherwise, or for a trait that is not derivable, E_TRAIT_NOT_DERIVABLE.
 
+(use compiler/node_tables)
 (use core/list)
 (use compiler/expr_inner)
 (use compiler/error_report)
@@ -35,7 +36,7 @@
 ;; `<secret>`; fields and types an (impl-not Show X) / (impl-not Debug X)
 ;; protects show as `<hidden>` (shapes from secret_check.zyl, map 4, and
 ;; module_resolver.zyl, map 5).
-(defn dv-shape (tag n) (ffi-call "zyl_smap_get" (ffi-call "zyl_smap_global" 4 1000) (str-concat tag (dv-short n)) 1000))
+(defn dv-shape (tag n) (ffi-call "zyl_smap_get" secret-marks (str-concat tag (dv-short n)) 1000))
 (defn dv-secret-type (n) (> (dv-shape "t|" n) 0))
 
 (defn dv-mask-of (tag n)
