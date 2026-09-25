@@ -74,7 +74,7 @@
       (let _ (array-set (vec-store v) n value)
         (VecC (vec-store v) (+ n 1) (vec-arena v)))
       (let bigger (array-new (vec-arena v) (if (<= (vec-cap v) 0) 16 (* (vec-cap v) 2)))
-        (let _ (vec-copy-into (vec-store v) bigger 0 n)
+        (let _ (ffi-call "zyl_array_copy" (vec-store v) bigger n 1000)
           (let _ (array-set bigger n value)
             (VecC bigger (+ n 1) (vec-arena v))))))))
 
