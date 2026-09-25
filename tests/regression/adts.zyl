@@ -1,13 +1,13 @@
 ; ADT Regression Tests — deftype, match, exhaustiveness, recursive ADTs
 
 ; Simple ADT
-(deftype _ad_Option (Some Int) None)
+(deftype _ad_Option (AdSome Int) AdNone)
 
 ; ADT construction
 (test "adt-some"
-  (assert-true (match (Some 42)
-    (Some v v)
-    (None 0))))
+  (assert-true (match (AdSome 42)
+    (AdSome v v)
+    (AdNone 0))))
 
 ; ADT with no fields
 (deftype _ad_Status (Active) (Inactive))
@@ -17,7 +17,7 @@
     (Inactive false))))
 
 ; Recursive ADT
-(deftype _ad_List (Cons Int _ad_List) Nil)
+(deftype _ad_List (AdCons Int _ad_List) AdNil)
 
 (test "adt-list-cons"
   (assert-true true))

@@ -28,7 +28,7 @@
 
 (defn list-cdr (xs)
   (match xs
-    (Cons _ rest rest)
+    (Cons _ rest (Some rest))
     (Nil None)))
 
 ; Total tail: Nil for the empty list rather than list-cdr's None, so a

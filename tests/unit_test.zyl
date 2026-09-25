@@ -330,7 +330,7 @@
       (assert-equal (option-unwrap-or (list-car (list-range 42 43)) 0) 42))
 
 (test "list-cdr"
-      (assert-equal (list-length (list-cdr (list-range 1 3))) 1))
+      (assert-equal (list-length (option-unwrap-or (list-cdr (list-range 1 3)) Nil)) 1))
 
 (test "list-len empty"
       (assert-equal (list-length (list-range 0 0)) 0))

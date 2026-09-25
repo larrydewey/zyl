@@ -206,7 +206,7 @@
 (defn toks-head (toks)
   (match toks
     (Cons t _ t)
-    (Nil (TkEof))))
+    (Nil (TkEof 0))))
 
 ; Tail of a token stream (empty when empty).
 ; Returns: List(Token)

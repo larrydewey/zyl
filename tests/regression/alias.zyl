@@ -37,13 +37,13 @@
       (assert-equal (map-get m1 42 0) 999))))
 
 ; Alias with pattern matching
-(deftype _al_Option (Some Int) None)
+(deftype _al_Option (AlSome Int) AlNone)
 
 (test "alias-in-match"
   (assert-equal
-    (match (Some 123)
-      (Some x x)
-      (None 0))
+    (match (AlSome 123)
+      (AlSome x x)
+      (AlNone 0))
     123))
 
 ; Alias with type predicates - using is-zero as example

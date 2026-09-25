@@ -4588,7 +4588,7 @@ long long zyl_int_text(long long n) {
     X(zyl_load_n) X(zyl_load_n_signed) X(zyl_store_n) \
     X(zyl_global_get) X(zyl_global_put) X(zyl_global_ready) X(zyl_global_clear) X(zyl_iglobal_get) X(zyl_iglobal_put) X(zyl_iglobal_ready) X(zyl_iglobal_clear) \
     X(zyl_repl_global_get) X(zyl_repl_global_set) \
-    X(zyl_uf_id) X(zyl_uf_reset) X(zyl_uf_new) X(zyl_uf_find) X(zyl_uf_union) X(zyl_uf_raise) X(zyl_uf_level) X(zyl_regions_enabled) X(zyl_words_new) X(zyl_words_len) X(zyl_words_get) X(zyl_words_set) X(zyl_words_view) X(zyl_smap_has) X(zyl_smap_get_or) X(zyl_array_new) X(zyl_array_cap) X(zyl_array_filled) X(zyl_array_get) X(zyl_array_set) X(zyl_attrh_new) X(zyl_attrh_set) X(zyl_attrh_get_or) X(zyl_attrh_has) X(zyl_attrh_copy) X(zyl_attrh_clear) X(zyl_ref_new) X(zyl_ref_get) X(zyl_ref_set) X(zyl_getenv_str) X(zyl_strbuf_new) X(zyl_strbuf_str) X(zyl_heap_alloc) X(zyl_ralloc) X(zyl_region_enter) X(zyl_region_exit) X(zyl_region_free) X(zyl_region_scope_enter) X(zyl_region_live_bytes) X(zyl_heap_block_p) X(zyl_heap_swap) \
+    X(zyl_uf_id) X(zyl_uf_reset) X(zyl_uf_new) X(zyl_uf_find) X(zyl_uf_union) X(zyl_uf_raise) X(zyl_uf_level) X(zyl_regions_enabled) X(zyl_words_new) X(zyl_words_len) X(zyl_words_get) X(zyl_words_set) X(zyl_words_view) X(zyl_smap_has) X(zyl_smap_get_or) X(zyl_array_new) X(zyl_array_cap) X(zyl_array_filled) X(zyl_array_get) X(zyl_array_set) X(zyl_attrh_new) X(zyl_attrh_set) X(zyl_attrh_get_or) X(zyl_attrh_has) X(zyl_attrh_copy) X(zyl_attrh_clear) X(zyl_ref_new) X(zyl_ref_get) X(zyl_ref_set) X(zyl_getenv_str) X(zyl_strbuf_new) X(zyl_strbuf_str) X(zyl_cstr_escapes_ok) X(zyl_heap_alloc) X(zyl_ralloc) X(zyl_region_enter) X(zyl_region_exit) X(zyl_region_free) X(zyl_region_scope_enter) X(zyl_region_live_bytes) X(zyl_heap_block_p) X(zyl_heap_swap) \
     X(zyl_int_text) X(zyl_itest_add) X(zyl_itest_count) \
     X(zyl_itest_fn) X(zyl_itest_name) X(zyl_itest_outcome) \
     X(zyl_itest_reset) X(zyl_itest_start) X(zyl_itest_summary) \
@@ -5212,3 +5212,21 @@ long long zyl_strbuf_str(long long b) { return b; }
 
 /* A union-find class's id, for ordering classes by creation. */
 long long zyl_uf_id(long long a) { return a; }
+
+/* Whether src[start, end) holds only escapes zyl_cstr_decode accepts
+   (the lexer asks before decoding, so decode's 0 is never a String). */
+long long zyl_cstr_escapes_ok(long long src, long long start, long long end) {
+    if (!src) return 0;
+    const char* s = (const char*)(size_t)src;
+    long long i = start;
+    while (i < end) {
+        if (s[i] == '\\') {
+            if (i + 1 >= end) return 0;
+            char n = s[i + 1];
+            if (n == 'n' || n == 't' || n == 'r' || n == '0' || n == '"' || n == '\\' || n == 'e') i += 2;
+            else if (n == 'x' && i + 3 < end && zyl_hexval(s[i + 2]) >= 0 && zyl_hexval(s[i + 3]) >= 0) i += 4;
+            else return 0;
+        } else i += 1;
+    }
+    return 1;
+}

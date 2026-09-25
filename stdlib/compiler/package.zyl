@@ -242,9 +242,9 @@
 
 (defn pk-name-segments-nonempty (s)
   (if (= (pk-byte-at s 0) 47)
-    0
+    false
     (if (= (pk-byte-at s (- (pk-len s) 1)) 47)
-      0
+      false
       (pk-no-empty-seg s 1))))
 
 (defn pk-no-empty-seg (s i)

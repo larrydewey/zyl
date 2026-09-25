@@ -205,7 +205,7 @@
 (defn text-float-marker-p (text)
   (let n (ffi-call "zyl_cstr_len" text 1000)
     (if (radix-prefix-len text n)
-      0
+      false
       (marker-loop text n 0))))
 
 ; 1 if `text` starts with any radix prefix at offset 0; else 0.
@@ -322,10 +322,9 @@
 (defn lex-str-e (arena src len i acc e)
   (if (< e 0)
     (Cons (TkEof i) acc)
-    (let s (ffi-call "zyl_cstr_decode" arena src (+ i 1) e 1000)
-      (if (= s 0)
-        (Cons (TkEof i) acc)
-        (lex-loop arena src len (+ e 1) (Cons (TkString s i) acc))))))
+    (if (ffi-call "zyl_cstr_escapes_ok" src (+ i 1) e 1000)
+      (lex-loop arena src len (+ e 1) (Cons (TkString (ffi-call "zyl_cstr_decode" arena src (+ i 1) e 1000) i) acc))
+      (Cons (TkEof i) acc))))
 
 ; Numeric literal: i..e; float when the text carries '.' or exponent,
 ; integer otherwise. Radix-prefixed literals (0x/0o/0b) are always

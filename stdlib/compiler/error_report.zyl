@@ -159,7 +159,7 @@
 ; is used in). Int-first field order, as above.
 (deftype ErrLabel
   ; fid, off, text
-  (ELbl Int Int String))
+  (ELbl FileId Int String))
 
 (defn err-label (fid off text) (ELbl fid off text))
 

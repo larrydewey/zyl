@@ -357,4 +357,4 @@
 (defn lk-compiler-self-hash (arena)
   (let path (ffi-call "zyl_arg_str" 0 1000)
     (let h (ffi-call "zyl_blake3_file_hex" arena path 32 1000)
-      (if (> h 0) (str-concat "blake3:" h) ""))))
+      (if (> (str-length h) 0) (str-concat "blake3:" h) ""))))

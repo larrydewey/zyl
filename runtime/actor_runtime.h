@@ -201,6 +201,7 @@ long long zyl_iglobal_put(long long key, long long val);
 long long zyl_strbuf_new(long long arena, long long n);
 long long zyl_strbuf_str(long long b);
 long long zyl_uf_id(long long a);
+long long zyl_cstr_escapes_ok(long long src, long long start, long long end);
 long long zyl_attrh_new(void);
 long long zyl_attrh_set(long long th, long long node, long long val);
 long long zyl_attrh_get_or(long long th, long long node, long long dflt);
