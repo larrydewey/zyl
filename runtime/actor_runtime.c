@@ -4677,6 +4677,42 @@ long long zyl_ffi_addr(long long name) { return zyl_ffi_lookup(name); }
 
 /* Decimal text of an integer, heap-allocated. zyl_cstr_from_int needs
    an arena; the interpreter has heap values and no arena of its own. */
+/* Signed division by a constant (Hacker's Delight, 10-1): the magic
+   multiplier and shift the native backend uses instead of idiv for a
+   constant divisor d, |d| >= 2. q = mulhi(M, n), corrected by n when the
+   signs of d and M differ, shifted right by s, plus 1 when negative. The
+   compiler calls these while compiling; the results are exact for every
+   n (checked against idiv). */
+static void zyl_div_magic_of(long long d, long long* m, long long* sh) {
+    const unsigned long long two63 = 1ULL << 63;
+    unsigned long long ad = d < 0 ? 0 - (unsigned long long)d : (unsigned long long)d;
+    unsigned long long t = two63 + ((unsigned long long)d >> 63);
+    unsigned long long anc = t - 1 - t % ad;
+    int p = 63;
+    unsigned long long q1 = two63 / anc, r1 = two63 - q1 * anc, q2 = two63 / ad, r2 = two63 - q2 * ad, delta;
+    do {
+        p++;
+        q1 = 2 * q1; r1 = 2 * r1; if (r1 >= anc) { q1++; r1 -= anc; }
+        q2 = 2 * q2; r2 = 2 * r2; if (r2 >= ad) { q2++; r2 -= ad; }
+        delta = ad - r2;
+    } while (q1 < delta || (q1 == delta && r1 == 0));
+    long long mm = (long long)(q2 + 1);
+    *m = d < 0 ? -mm : mm;
+    *sh = p - 64;
+}
+
+long long zyl_div_magic(long long d) {
+    long long m = 0, sh = 0;
+    if (d > 1 || d < -1) zyl_div_magic_of(d, &m, &sh);
+    return m;
+}
+
+long long zyl_div_shift(long long d) {
+    long long m = 0, sh = 0;
+    if (d > 1 || d < -1) zyl_div_magic_of(d, &m, &sh);
+    return sh;
+}
+
 long long zyl_int_text(long long n) {
     char tmp[24];
     int k = 0;
@@ -4734,7 +4770,7 @@ long long zyl_int_text(long long n) {
     X(zyl_cpuid_features) X(zyl_cstr_byte_at) X(zyl_cstr_byte_set) \
     X(zyl_cstr_concat) X(zyl_cstr_count_newlines) X(zyl_cstr_decode) \
     X(zyl_cstr_cmp) X(zyl_cstr_eq) X(zyl_cstr_from_byte) X(zyl_cstr_from_int) \
-    X(zyl_cstr_key_matches) X(zyl_view_ok) X(zyl_view_byte) X(zyl_view_cmp) X(zyl_view_find) X(zyl_view_copy) \
+    X(zyl_cstr_key_matches) X(zyl_div_magic) X(zyl_div_shift) X(zyl_view_ok) X(zyl_view_byte) X(zyl_view_cmp) X(zyl_view_find) X(zyl_view_copy) \
     X(zyl_cstr_last_newline) X(zyl_cstr_len) X(zyl_cstr_of_word) X(zyl_float_bits) X(zyl_float_of_bits) X(zyl_word_load) X(zyl_word_store) X(zyl_ptr_add) X(zyl_ptr_cstr) X(zyl_ffi_addr) \
     X(zyl_cstr_sanitize) X(zyl_cstr_sub) X(zyl_cstr_substr) \
     X(zyl_cstr_to_int) X(zyl_cstr_to_int_base) X(zyl_diag_json) \
