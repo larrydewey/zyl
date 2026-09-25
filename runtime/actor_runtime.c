@@ -4588,7 +4588,7 @@ long long zyl_int_text(long long n) {
     X(zyl_load_n) X(zyl_load_n_signed) X(zyl_store_n) \
     X(zyl_global_get) X(zyl_global_put) X(zyl_global_ready) X(zyl_global_clear) X(zyl_iglobal_get) X(zyl_iglobal_put) X(zyl_iglobal_ready) X(zyl_iglobal_clear) \
     X(zyl_repl_global_get) X(zyl_repl_global_set) \
-    X(zyl_uf_reset) X(zyl_uf_new) X(zyl_uf_find) X(zyl_uf_union) X(zyl_uf_raise) X(zyl_uf_level) X(zyl_regions_enabled) X(zyl_words_new) X(zyl_words_len) X(zyl_words_get) X(zyl_words_set) X(zyl_words_view) X(zyl_smap_has) X(zyl_smap_get_or) X(zyl_array_new) X(zyl_array_cap) X(zyl_array_filled) X(zyl_array_get) X(zyl_array_set) X(zyl_attrh_new) X(zyl_attrh_set) X(zyl_attrh_get_or) X(zyl_attrh_has) X(zyl_attrh_copy) X(zyl_attrh_clear) X(zyl_ref_new) X(zyl_ref_get) X(zyl_ref_set) X(zyl_getenv_str) X(zyl_heap_alloc) X(zyl_ralloc) X(zyl_region_enter) X(zyl_region_exit) X(zyl_region_free) X(zyl_region_scope_enter) X(zyl_region_live_bytes) X(zyl_heap_block_p) X(zyl_heap_swap) \
+    X(zyl_uf_reset) X(zyl_uf_new) X(zyl_uf_find) X(zyl_uf_union) X(zyl_uf_raise) X(zyl_uf_level) X(zyl_regions_enabled) X(zyl_words_new) X(zyl_words_len) X(zyl_words_get) X(zyl_words_set) X(zyl_words_view) X(zyl_smap_has) X(zyl_smap_get_or) X(zyl_array_new) X(zyl_array_cap) X(zyl_array_filled) X(zyl_array_get) X(zyl_array_set) X(zyl_attrh_new) X(zyl_attrh_set) X(zyl_attrh_get_or) X(zyl_attrh_has) X(zyl_attrh_copy) X(zyl_attrh_clear) X(zyl_ref_new) X(zyl_ref_get) X(zyl_ref_set) X(zyl_getenv_str) X(zyl_strbuf_new) X(zyl_strbuf_str) X(zyl_heap_alloc) X(zyl_ralloc) X(zyl_region_enter) X(zyl_region_exit) X(zyl_region_free) X(zyl_region_scope_enter) X(zyl_region_live_bytes) X(zyl_heap_block_p) X(zyl_heap_swap) \
     X(zyl_int_text) X(zyl_itest_add) X(zyl_itest_count) \
     X(zyl_itest_fn) X(zyl_itest_name) X(zyl_itest_outcome) \
     X(zyl_itest_reset) X(zyl_itest_start) X(zyl_itest_summary) \
@@ -5201,3 +5201,11 @@ long long zyl_getenv_str(long long name) {
     const char* v = name ? getenv((const char*)(size_t)name) : NULL;
     return (long long)(size_t)(v ? v : "");
 }
+
+/* A zeroed text buffer of `n` bytes from `arena` (`StrBuf`), and the same
+   buffer read as a String: a StrBuf is a NUL-terminated char buffer that
+   zyl_str_append extends in place, so both views are the same pointer. */
+long long zyl_strbuf_new(long long arena, long long n) {
+    return zyl_arena_alloc_zeroed(arena, n > 0 ? n : 1);
+}
+long long zyl_strbuf_str(long long b) { return b; }

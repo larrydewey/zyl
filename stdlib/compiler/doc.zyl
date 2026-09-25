@@ -29,18 +29,18 @@
       (str-concat "<!-- cannot open " (str-concat path " -->\n"))
       (let src (file-read fd 16777216)
         (let _ (file-close fd)
-          (let buf (arena-alloc-zeroed arena (doc-cap))
+          (let buf (buf-new arena (doc-cap))
             (begin
               (doc-module buf src modname)
               (doc-items buf src (zyl-parse-file arena src path) pub-only)
-              buf)))))))
+              (buf-str buf))))))))
 
 ; Markdown for every `.zyl` file under `dir`, in sorted path order.
 (defn doc-dir (arena dir pub-only)
-  (let buf (arena-alloc-zeroed arena (doc-cap))
+  (let buf (buf-new arena (doc-cap))
     (begin
       (doc-dir-files arena buf dir (ffi-call "zyl_list_zyl_files" dir 1000) 0 pub-only)
-      buf)))
+      (buf-str buf))))
 
 (defn doc-dir-files (arena buf dir list i pub-only)
   (let j (doc-line-end list i)

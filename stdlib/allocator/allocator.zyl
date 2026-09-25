@@ -150,12 +150,21 @@
 (defn error (msg)
   (ffi-call "zyl_panic" msg 1000))
 
+; A zeroed text buffer of `n` bytes in `arena`, extended in place by
+; buf-append; buf-str reads it as a String (the same bytes).
+; Returns: StrBuf
+(defn buf-new (arena n)
+  (ffi-call "zyl_strbuf_new" arena n 1000))
+
+; Returns: String
+(defn buf-str (b)
+  (ffi-call "zyl_strbuf_str" b 1000))
+
+; A copy of `s` in `arena`.
+; Returns: String
 (defn str-intern (arena s)
   (let n (alloc-strlen s)
-    (let p (arena-alloc-zeroed arena (+ n 1))
-      (begin
-        (buf-append p s)
-        p))))
+    (buf-str (buf-append (buf-new arena (+ n 1)) s))))
 
 ; Whether two NUL-terminated strings are byte-identical.
 ; Returns: Bool (0/1)

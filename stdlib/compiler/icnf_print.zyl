@@ -15,10 +15,10 @@
 
 ; The text of `fns`, in their lowering order.
 (defn icnf-text (arena fns)
-  (let buf (arena-alloc-zeroed arena (ip-cap))
+  (let buf (buf-new arena (ip-cap))
     (begin
       (ip-fns buf fns)
-      buf)))
+      (buf-str buf))))
 
 (defn ip-out (buf s) (ffi-call "zyl_str_append_capped" buf s (ip-cap) 1000))
 (defn ip-int (buf n) (ip-out buf (ffi-call "zyl_int_text" n 1000)))

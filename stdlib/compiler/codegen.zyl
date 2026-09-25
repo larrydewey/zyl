@@ -62,7 +62,7 @@
 ; string/float shape.
 (deftype FnName (FN String Int) FNNil)
 
-(deftype CGState (CGS Int Int Int Int (List REntry) (List FnName)))
+(deftype CGState (CGS Arena StrBuf Int Int (List REntry) (List FnName)))
 ; fields: arena, buffer, next-label, next-slot, rodata, fn-names, fn names
 ; fields: arena, text buffer, next label number, next slot offset,
 ; known top-level function names
@@ -95,7 +95,7 @@
 ; driver checks the final length against E_CODEGEN_BUFFER_LIMIT after
 ; emission — overflow would otherwise corrupt the arena silently.
 (defn cg-new (arena)
-  (let buf (arena-alloc-zeroed arena 67108864)
+  (let buf (buf-new arena 67108864)
     (CGS arena buf 0 8 (no-rentries) (no-fnnames))))   ; slots 1..n
 
 (defn cg-with-fnname (st nm kind)
@@ -151,7 +151,7 @@
 
 (defn cg-buffer (st)
   (match st
-    (CGS _ buf _ _ _ _ buf)))
+    (CGS _ buf _ _ _ _ (buf-str buf))))
 
 (defn cg-with-rodata (st entry)
   (match st
@@ -186,11 +186,11 @@
 (defn cg-label-new (st)
   (match st
     (CGS arena buf n slot rd fns
-      (let lblbuf (arena-alloc-zeroed arena 32)
+      (let lblbuf (buf-new arena 32)
         (begin
-          (buf-append lblbuf (str-intern arena ".L"))
+          (buf-append lblbuf ".L")
           (buf-append lblbuf (ffi-call "zyl_cstr_from_int" arena n 1000))
-          (CGR (CGS arena buf (+ n 1) slot rd fns) 0 lblbuf))))))
+          (CGR (CGS arena buf (+ n 1) slot rd fns) 0 (buf-str lblbuf)))))))
 
 ; Allocate one 8-byte local slot.
 ; Returns: CGR (advanced state; int field carries the rbp offset, negative).
@@ -1073,11 +1073,11 @@
 (defn cg-sym-mangled (arena name)
   (if (> (cg-canonical-key-p name) 0)
     (ffi-call "zyl_mangle_key" arena name 1000)
-    (let buf (arena-alloc-zeroed arena 512)
+    (let buf (buf-new arena 512)
       (begin
-        (buf-append buf (str-intern arena "_ZYL_"))
+        (buf-append buf "_ZYL_")
         (buf-append buf (ffi-call "zyl_cstr_sanitize" arena name 1000))
-        buf))))
+        (buf-str buf)))))
 
 ; '@' (64) never appears in a source identifier -- the lexer does not
 ; accept it -- so it marks a name the resolver qualified.
@@ -1092,11 +1092,11 @@
       (cg-has-at name (+ i 1)))))
 
 (defn cg-cat2 (arena a b)
-  (let buf (arena-alloc-zeroed arena (+ (alloc-strlen a) (alloc-strlen b) 1))
+  (let buf (buf-new arena (+ (alloc-strlen a) (+ (alloc-strlen b) 1)))
     (begin
       (buf-append buf a)
       (buf-append buf b)
-      buf)))
+      (buf-str buf))))
 
 (defn cg-cat3 (arena a b c)
   (cg-cat2 arena (cg-cat2 arena a b) c))
@@ -2098,7 +2098,7 @@
 ; everything else copied verbatim. Deterministic left-to-right.
 (defn cg-escape (arena s)
   (let n (alloc-strlen s)
-    (cg-esc-loop arena s n 0 (arena-alloc-zeroed arena (+ (* 2 n) 1)))))
+    (buf-str (cg-esc-loop arena s n 0 (buf-new arena (+ (* 2 n) 1))))))
 
 (defn cg-esc-loop (arena s n i out)
   (if (>= i n)
