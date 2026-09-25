@@ -187,7 +187,105 @@
 (defn opt-inline-fns (fns)
   (if (str-eq (ffi-call "zyl_getenv_str" "ZYL_INLINE" 1000) "0")
     fns
-    (opt-inline-round (opt-inline-round fns))))
+    (opt-copyprop-fns (opt-inline-round (opt-inline-round fns)))))
+
+; (let n x body) where x is a local read: body with n replaced by x, when
+; neither is set! in body and body binds no x (which the replacement
+; could capture). Loading a local has no effect, so no side effect moves.
+; Inlining produces this shape for every argument that is a variable.
+(defn opt-copyprop-fns (fns)
+  (match fns
+    (Nil Nil)
+    (Cons f rest
+      (Cons (match f (IFn name params body kinds (IFn name params (opt-cp body) kinds)) (_ f))
+            (opt-copyprop-fns rest)))))
+
+(defn opt-cp (e) (opt-keep (opt-cp-node e) e))
+
+(defn opt-cp-node (e)
+  (match e
+    (ILet n v b
+      (match v
+        (ILoad x
+          (if (and (not (str-eq n "_")) (and (not (opt-sets-or-binds b n x)) (not (str-eq n x))))
+            (opt-cp (opt-subst b n x))
+            (ILet n v (opt-cp b))))
+        (_ (ILet n (opt-cp v) (opt-cp b)))))
+    (IBinop op l r (IBinop op (opt-cp l) (opt-cp r)))
+    (ICall n args (ICall n (opt-cp-list args)))
+    (ICallClosure n args (ICallClosure n (opt-cp-list args)))
+    (IFfi n args (IFfi n (opt-cp-list args)))
+    (IPrint a (IPrint (opt-cp a)))
+    (IIf c t f (IIf (opt-cp c) (opt-cp t) (opt-cp f)))
+    (IWhile c b (IWhile (opt-cp c) (opt-cp b)))
+    (ISet n v (ISet n (opt-cp v)))
+    (ISeq es (ISeq (opt-cp-list es)))
+    (IVariant nm tag fs (IVariant nm tag (opt-cp-list fs)))
+    (IStackVariant nm tag fs (IStackVariant nm tag (opt-cp-list fs)))
+    (IMatch s arms (IMatch (opt-cp s) (opt-cp-arms arms)))
+    (ITryCatch b v h (ITryCatch (opt-cp b) v (opt-cp h)))
+    (IRegion k bk al l b (IRegion k bk al l (opt-cp b)))
+    (IFn n ps b ks (IFn n ps (opt-cp b) ks))
+    (_ e)))
+
+(defn opt-cp-list (es) (match es (Nil Nil) (Cons h t (Cons (opt-cp h) (opt-cp-list t)))))
+(defn opt-cp-arms (arms)
+  (match arms (Nil Nil) (Cons a t (match a (IArm v tag bs b (Cons (IArm v tag bs (opt-cp b)) (opt-cp-arms t)))))))
+
+; Whether `e` set!s n or x, or binds x (let, match arm, lambda, try).
+(defn opt-sets-or-binds (e n x)
+  (match e
+    (ISet m v (or (or (str-eq m n) (str-eq m x)) (opt-sets-or-binds v n x)))
+    (ILet m v b (or (str-eq m x) (or (opt-sets-or-binds v n x) (opt-sets-or-binds b n x))))
+    (IBinop _ l r (or (opt-sets-or-binds l n x) (opt-sets-or-binds r n x)))
+    (ICall _ args (opt-sob-list args n x))
+    (ICallClosure _ args (opt-sob-list args n x))
+    (IFfi _ args (opt-sob-list args n x))
+    (IPrint a (opt-sets-or-binds a n x))
+    (IIf c t f (or (opt-sets-or-binds c n x) (or (opt-sets-or-binds t n x) (opt-sets-or-binds f n x))))
+    (IWhile c b (or (opt-sets-or-binds c n x) (opt-sets-or-binds b n x)))
+    (ISeq es (opt-sob-list es n x))
+    (IVariant _ _ fs (opt-sob-list fs n x))
+    (IStackVariant _ _ fs (opt-sob-list fs n x))
+    (IMatch s arms (or (opt-sets-or-binds s n x) (opt-sob-arms arms n x)))
+    (ITryCatch b v h (or (str-eq v x) (or (opt-sets-or-binds b n x) (opt-sets-or-binds h n x))))
+    (IRegion _ _ _ _ b (opt-sets-or-binds b n x))
+    (IFn _ ps b _ (or (opt-member x ps) (opt-sets-or-binds b n x)))
+    (_ false)))
+
+(defn opt-sob-list (es n x) (match es (Nil false) (Cons h t (if (opt-sets-or-binds h n x) true (opt-sob-list t n x)))))
+(defn opt-sob-arms (arms n x)
+  (match arms (Nil false) (Cons a t (match a (IArm _ _ bs b (if (or (opt-member x bs) (opt-sets-or-binds b n x)) true (opt-sob-arms t n x)))))))
+
+; Every read (and call through) n becomes x.
+(defn opt-subst (e n x) (opt-keep (opt-subst-node e n x) e))
+
+(defn opt-subst-node (e n x)
+  (match e
+    (ILoad m (if (str-eq m n) (ILoad x) e))
+    (ICall m args (ICall (if (str-eq m n) x m) (opt-subst-list args n x)))
+    (ICallClosure m args (ICallClosure (if (str-eq m n) x m) (opt-subst-list args n x)))
+    (ILet m v b (ILet m (opt-subst v n x) (if (str-eq m n) b (opt-subst b n x))))
+    (IBinop op l r (IBinop op (opt-subst l n x) (opt-subst r n x)))
+    (IFfi m args (IFfi m (opt-subst-list args n x)))
+    (IPrint a (IPrint (opt-subst a n x)))
+    (IIf c t f (IIf (opt-subst c n x) (opt-subst t n x) (opt-subst f n x)))
+    (IWhile c b (IWhile (opt-subst c n x) (opt-subst b n x)))
+    (ISet m v (ISet m (opt-subst v n x)))
+    (ISeq es (ISeq (opt-subst-list es n x)))
+    (IVariant nm tag fs (IVariant nm tag (opt-subst-list fs n x)))
+    (IStackVariant nm tag fs (IStackVariant nm tag (opt-subst-list fs n x)))
+    (IMatch s arms (IMatch (opt-subst s n x) (opt-subst-arms arms n x)))
+    (ITryCatch b v h (ITryCatch (opt-subst b n x) v (if (str-eq v n) h (opt-subst h n x))))
+    (IRegion k bk al l b (IRegion k bk al l (opt-subst b n x)))
+    (IFn m ps b ks (if (opt-member n ps) e (IFn m ps (opt-subst b n x) ks)))
+    (_ e)))
+
+(defn opt-subst-list (es n x) (match es (Nil Nil) (Cons h t (Cons (opt-subst h n x) (opt-subst-list t n x)))))
+(defn opt-subst-arms (arms n x)
+  (match arms
+    (Nil Nil)
+    (Cons a t (match a (IArm v tag bs b (Cons (IArm v tag bs (if (opt-member n bs) b (opt-subst b n x))) (opt-subst-arms t n x)))))))
 
 (defn opt-inline-round (fns)
   (let tab (ffi-call "zyl_smap_new" 1000)
@@ -207,10 +305,15 @@
                (_ unit))
         (opt-collect-inlinable rest tab)))))
 
+; A leaf (no calls but runtime ones) may be larger: copying it adds no
+; call sites, and it is typically an accessor with a bounds check.
+(defn opt-leaf-limit () (* 3 (opt-inline-limit)))
+
+; A candidate small enough anywhere, or a leaf small enough for a loop.
 (defn opt-inlinable (name _params body kinds)
   (and (not (str-eq name "main"))
     (and (opt-kinds-int kinds)
-      (and (<= (opt-size body 0) (opt-inline-limit))
+      (and (<= (opt-size body 0) (if (opt-leaf body) (opt-leaf-limit) (opt-inline-limit)))
         (and (opt-plain body)
           (not (opt-calls body name)))))))
 
@@ -219,9 +322,28 @@
     (Nil true)
     (Cons k t (if (= k 0) (opt-kinds-int t) false))))
 
+(defn opt-leaf (e)
+  (match e
+    (ICall _ _ false)
+    (ICallClosure _ _ false)
+    (IBinop _ l r (and (opt-leaf l) (opt-leaf r)))
+    (IFfi _ args (opt-leaf-list args))
+    (IIf c t f (and (opt-leaf c) (and (opt-leaf t) (opt-leaf f))))
+    (IWhile c b (and (opt-leaf c) (opt-leaf b)))
+    (ISet _ v (opt-leaf v))
+    (ILet _ v b (and (opt-leaf v) (opt-leaf b)))
+    (ISeq es (opt-leaf-list es))
+    (IVariant _ _ fs (opt-leaf-list fs))
+    (IMatch s arms (and (opt-leaf s) (opt-leaf-arms arms)))
+    (_ true)))
+
+(defn opt-leaf-list (es) (match es (Nil true) (Cons h t (if (opt-leaf h) (opt-leaf-list t) false))))
+(defn opt-leaf-arms (arms)
+  (match arms (Nil true) (Cons a t (match a (IArm _ _ _ b (if (opt-leaf b) (opt-leaf-arms t) false))))))
+
 ; Node count, stopping once past the limit.
 (defn opt-size (e acc)
-  (if (> acc (opt-inline-limit))
+  (if (> acc (opt-leaf-limit))
     acc
     (match e
       (IBinop _ l r (opt-size r (opt-size l (+ acc 1))))
@@ -304,14 +426,27 @@
 
 ; --- rewriting call sites ---------------------------------------------------
 
+; A leaf above the plain limit is inlined only into a loop: a function
+; that calls itself (a self tail call is this language's loop). Inlining
+; such leaves everywhere grew the compiler's own code by 40%.
+(def opt-in-loop (ffi-call "zyl_ref_new" false 1000))
+
 (defn opt-inline-all (fns tab)
   (match fns
     (Nil Nil)
     (Cons f rest
       (Cons (match f
-              (IFn name params body kinds (IFn name params (opt-in body tab params) kinds))
+              (IFn name params body kinds
+                (let _ (ffi-call "zyl_ref_set" opt-in-loop (opt-calls body name) 1000)
+                  (IFn name params (opt-in body tab params) kinds)))
               (_ f))
             (opt-inline-all rest tab)))))
+
+(defn opt-site-ok (f)
+  (match f
+    (IFn _ _ body _
+      (or (<= (opt-size body 0) (opt-inline-limit)) (ffi-call "zyl_ref_get" opt-in-loop 1000)))
+    (_ false)))
 
 ; `locals`: the names bound at this point (parameters, lets, arm binders).
 (defn opt-in (e tab locals)
@@ -322,7 +457,8 @@
     (ICall name args
       (let args2 (opt-in-list args tab locals)
         (if (and (ffi-call "zyl_smap_has" tab name 1000) (not (opt-member name locals)))
-          (opt-expand (ffi-call "zyl_smap_get_or" tab name e 1000) args2 locals e)
+          (let f (ffi-call "zyl_smap_get_or" tab name e 1000)
+            (if (opt-site-ok f) (opt-expand f args2 locals e) (ICall name args2)))
           (ICall name args2))))
     (IBinop op l r (IBinop op (opt-in l tab locals) (opt-in r tab locals)))
     (ICallClosure n args (ICallClosure n (opt-in-list args tab locals)))
@@ -474,4 +610,5 @@
 ; the type pass's scalar mark.
 (defn opt-keep (out from)
   (let _ (if (= (icnf-scalar out) 0) (let _ (icnf-scalar-set out (icnf-scalar from)) unit) unit)
-    (ic-keep-span (ic-keep-kind out from) from)))
+  (let _ (if (= (icnf-adt out) 0) (let _ (icnf-adt-set out (icnf-adt from)) unit) unit)
+    (ic-keep-span (ic-keep-kind out from) from))))

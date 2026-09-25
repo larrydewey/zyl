@@ -2513,7 +2513,7 @@
           (ml-expr st (EnvBind n -8 (kind-of st env v) env) (Cons (MVar n (mr-v rx)) venv)
                    (ms-emit (mr-ms rx) (MMov (mr-v rx) (mr-v rv))) b))))
     (ISeq es (ml-seq st env venv ms es))
-    (IVariant _ tag fs (ml-variant st env venv ms tag fs (cg-site-level e)))
+    (IVariant _ tag fs (ml-variant st env venv ms tag fs (cg-site-level e) (icnf-reuse e)))
     (IStackVariant _ tag fs (ml-stack-variant st env venv ms tag fs))
     (IMatch scr arms
       (let rs (ml-expr st env venv ms scr)
@@ -2526,12 +2526,15 @@
     (_ (ml-const ms 0))))
 
 ; Fields first, in order, then the block, then the stores.
-(defn ml-variant (st env venv ms tag fs lvl)
+(defn ml-variant (st env venv ms tag fs lvl reuse)
   (match (ml-args st env venv ms fs Nil)
     (MRL m2 vs
       (let rd (ms-vreg m2)
-        (let m3 (ms-emit (mr-ms rd) (MAlloc (mr-v rd) (* 8 (+ (list-length vs) 1)) lvl))
-          (MR (ml-store-fields (ms-emit m3 (MStoreI (mr-v rd) 0 tag)) (mr-v rd) vs 1) (mr-v rd)))))))
+        (let old (if (> (str-length reuse) 0) (ml-var venv reuse) -1)
+        (let m3 (ms-emit (mr-ms rd) (if (>= old 0)
+                                      (MReuse (mr-v rd) old (* 8 (+ (list-length vs) 1)) lvl)
+                                      (MAlloc (mr-v rd) (* 8 (+ (list-length vs) 1)) lvl)))
+          (MR (ml-store-fields (ms-emit m3 (MStoreI (mr-v rd) 0 tag)) (mr-v rd) vs 1) (mr-v rd))))))))
 
 (defn ml-store-fields (ms b vs j)
   (match vs
@@ -3007,6 +3010,14 @@
         (let st3 (mb-cur-region st2 lvl)
           (cg-emit-line (mb-leave st3 fr) (str-concat "    jmp " (cg-sym-for (cg-arena-of st) sym true))))))
     (MAlloc d n lvl (mb-alloc st fr d n lvl i))
+    (MReuse d x n lvl
+      ; The old block when its size header (qwords) covers the new one.
+      (let lk (str-concat (mf-base fr) (str-concat "_u" (ffi-call "zyl_int_text" i 1000)))
+        (let st2 (cg-emit-lines st
+                   (Cons (str-concat "    mov rax, " (mb-loc-text fr x))
+                   (Cons (str-concat "    cmp qword ptr [rax-8], " (ffi-call "zyl_int_text" (/ n 8) 1000))
+                   (Cons (str-concat "    jge " lk) Nil))))
+          (mb-set (cg-emit-line (mb-alloc-rax st2 fr n lvl i) (str-concat lk ":")) fr d "rax"))))
     (MLoad d b off
       (if (mb-live fr d)
         (let st2 (if (mb-in-mem fr b) (cg-emit-line st (str-concat "    mov rax, " (mb-loc-text fr b))) st)
@@ -3206,6 +3217,10 @@
 ; charged per region block (zyl_rblock_get), which only the runtime path
 ; takes.
 (defn mb-alloc (st fr d n lvl i)
+  (mb-set (mb-alloc-rax st fr n lvl i) fr d "rax"))
+
+; The block's address in rax.
+(defn mb-alloc-rax (st fr n lvl i)
   (let need (+ (* 8 (/ (+ n 7) 8)) 8)
     (let lb (str-concat (mf-base fr) (str-concat "_m" (ffi-call "zyl_int_text" i 1000)))
       (let lslow (str-concat lb "s")
@@ -3246,7 +3261,7 @@
                        (Cons "    pop rdi"
                        (Cons "    pop rsi"
                        (Cons (str-concat ldone ":") Nil)))))))))))))))))
-              (mb-set st3 fr d "rax"))))))))
+              st3)))))))
 
 ; a / n (op 3) or a % n (op 4) for a constant n other than 0 and -1,
 ; into rax, exactly as idiv computes it (truncating toward zero, the

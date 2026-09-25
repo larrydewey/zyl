@@ -46,7 +46,11 @@
   (MRegionCycle)                      ; release and re-open the frame region (a call)
   ; Array access, inline (kind 0 get, 1 set, 2 cap); the slow path is the
   ; runtime's own check, which panics and does not return.
-  (MArr Int Int Int Int Int))         ; kind, d, array, index (-1), value (-1)
+  (MArr Int Int Int Int Int)          ; kind, d, array, index (-1), value (-1)
+  ; A construction that may take the block of a dead, unique value
+  ; (compiler/reuse.zyl) when its size header is large enough; else as
+  ; MAlloc.
+  (MReuse Int Int Int Int))           ; d, old value, bytes, region level
 
 ; Vregs an instruction reads, and the one it writes (-1 for none).
 (defn mi-uses (i)
@@ -75,7 +79,8 @@
     (MFlt _ _ Nil)
     (MSym _ _ Nil)
     (MRegionCycle Nil)
-    (MArr _ _ a ix v (Cons a (mir-opt-use ix (mir-opt-use v Nil))))))
+    (MArr _ _ a ix v (Cons a (mir-opt-use ix (mir-opt-use v Nil))))
+    (MReuse _ x _ _ (Cons x Nil))))
 
 (defn mir-opt-use (v rest) (if (< v 0) rest (Cons v rest)))
 
@@ -96,6 +101,7 @@
     (MFlt d _ d)
     (MSym d _ d)
     (MArr _ d _ _ _ d)
+    (MReuse d _ _ _ d)
     (_ -1)))
 
 ; Instructions that call C (or other code) and so clobber the

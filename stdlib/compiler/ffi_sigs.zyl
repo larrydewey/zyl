@@ -101,6 +101,7 @@
   (Cons (FSig "zyl_cstr_sanitize" "Arena String -> String")
   (Cons (FSig "zyl_cstr_sub" "Arena String Int Int -> String")
   (Cons (FSig "zyl_cstr_substr" "String Int Int -> String")
+  (Cons (FSig "zyl_array_copy" "(Array a) (Array a) Int -> Unit")
   (Cons (FSig "zyl_div_magic" "Int -> Int")
   (Cons (FSig "zyl_div_shift" "Int -> Int")
   (Cons (FSig "zyl_view_ok" "String Int Int -> Bool")
@@ -256,4 +257,4 @@
   (Cons (FSig "zyl_words_set" "Words Int Int -> Int")
   (Cons (FSig "zyl_words_view" "Arena Words Int Int -> Words")
   (Cons (FSig "zyl_zeroize" "Int Int -> Int")
-  Nil)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+  Nil))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))

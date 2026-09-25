@@ -4746,6 +4746,7 @@ long long zyl_int_text(long long n) {
    calls the symbol directly -- so a missing name costs only the
    interpreter, and shows up as E_FFI_SYMBOL_NOT_FOUND rather than as
    anything silent. */
+long long zyl_array_copy(long long from, long long to, long long n);
 #define ZYL_FFI_SYMBOLS(X) \
     X(ffi_pin) X(ffi_unpin) X(zyl_actor_init) \
     X(zyl_actor_is_alive) X(zyl_actor_send) X(zyl_actor_send_closure) \
@@ -4770,7 +4771,7 @@ long long zyl_int_text(long long n) {
     X(zyl_cpuid_features) X(zyl_cstr_byte_at) X(zyl_cstr_byte_set) \
     X(zyl_cstr_concat) X(zyl_cstr_count_newlines) X(zyl_cstr_decode) \
     X(zyl_cstr_cmp) X(zyl_cstr_eq) X(zyl_cstr_from_byte) X(zyl_cstr_from_int) \
-    X(zyl_cstr_key_matches) X(zyl_div_magic) X(zyl_div_shift) X(zyl_view_ok) X(zyl_view_byte) X(zyl_view_cmp) X(zyl_view_find) X(zyl_view_copy) \
+    X(zyl_cstr_key_matches) X(zyl_div_magic) X(zyl_div_shift) X(zyl_array_copy) X(zyl_view_ok) X(zyl_view_byte) X(zyl_view_cmp) X(zyl_view_find) X(zyl_view_copy) \
     X(zyl_cstr_last_newline) X(zyl_cstr_len) X(zyl_cstr_of_word) X(zyl_float_bits) X(zyl_float_of_bits) X(zyl_word_load) X(zyl_word_store) X(zyl_ptr_add) X(zyl_ptr_cstr) X(zyl_ffi_addr) \
     X(zyl_cstr_sanitize) X(zyl_cstr_sub) X(zyl_cstr_substr) \
     X(zyl_cstr_to_int) X(zyl_cstr_to_int_base) X(zyl_diag_json) \
@@ -5318,6 +5319,19 @@ long long zyl_array_get(long long h, long long i) {
     ZylArray* a = zyl_array_of(h, "array-get");
     if (i < 0 || i >= a->filled) zyl_words_oob("array-get", i, a->filled);
     return a->data[i];
+}
+
+/* The first n elements of `from` into the empty array `to` (vec-push,
+   when the storage grows): one memcpy instead of n gets and sets. Both
+   bounds are checked as array-get and array-set check them. */
+long long zyl_array_copy(long long from, long long to, long long n) {
+    ZylArray* a = zyl_array_of(from, "array-copy");
+    ZylArray* b = zyl_array_of(to, "array-copy");
+    if (n < 0 || n > a->filled) zyl_words_oob("array-copy", n, a->filled);
+    if (b->filled != 0 || n > b->cap) zyl_words_oob("array-copy", n, b->cap);
+    memcpy(b->data, a->data, (size_t)n * 8);
+    b->filled = n;
+    return 0;
 }
 
 long long zyl_array_set(long long h, long long i, long long v) {

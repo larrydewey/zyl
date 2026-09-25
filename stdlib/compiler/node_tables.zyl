@@ -12,6 +12,9 @@
 ;   icnf-kinds   Icnf -> Int    codegen kind (1 String, 2 Float, 3 variant)
 ;   icnf-regions Icnf -> Int    region inference (region_inference.zyl)
 ;   icnf-scalars Icnf -> Int    1 on a node typed Int, Bool or Float
+;   icnf-adts    Icnf -> Int    1 on a node typed as a program ADT (a heap block)
+;   icnf-reuse   Icnf -> String on a variant construction: the variable whose
+;                               block it may reuse (compiler/reuse.zyl)
 
 (def node-types (ffi-call "zyl_attrh_new" 1000))
 
@@ -39,6 +42,8 @@
 (def icnf-kinds (ffi-call "zyl_attrh_new" 1000))
 (def icnf-regions (ffi-call "zyl_attrh_new" 1000))
 (def icnf-scalars (ffi-call "zyl_attrh_new" 1000))
+(def icnf-adts (ffi-call "zyl_attrh_new" 1000))
+(def icnf-reuses (ffi-call "zyl_attrh_new" 1000))
 
 (defn node-tables-clear ()
   (begin
@@ -47,7 +52,9 @@
     (ffi-call "zyl_attrh_clear" node-shows 1000)
     (ffi-call "zyl_attrh_clear" icnf-kinds 1000)
     (ffi-call "zyl_attrh_clear" icnf-regions 1000)
-    (ffi-call "zyl_attrh_clear" icnf-scalars 1000)))
+    (ffi-call "zyl_attrh_clear" icnf-scalars 1000)
+    (ffi-call "zyl_attrh_clear" icnf-adts 1000)
+    (ffi-call "zyl_attrh_clear" icnf-reuses 1000)))
 
 (defn icnf-kind (e) (ffi-call "zyl_attrh_get_or" icnf-kinds e 0 1000))
 (defn icnf-kind-set (e k) (ffi-call "zyl_attrh_set" icnf-kinds e k 1000))
@@ -56,6 +63,10 @@
 (defn icnf-region-set (e v) (ffi-call "zyl_attrh_set" icnf-regions e v 1000))
 (defn icnf-scalar (e) (ffi-call "zyl_attrh_get_or" icnf-scalars e 0 1000))
 (defn icnf-scalar-set (e v) (ffi-call "zyl_attrh_set" icnf-scalars e v 1000))
+(defn icnf-adt (e) (ffi-call "zyl_attrh_get_or" icnf-adts e 0 1000))
+(defn icnf-adt-set (e v) (ffi-call "zyl_attrh_set" icnf-adts e v 1000))
+(defn icnf-reuse (e) (ffi-call "zyl_attrh_get_or" icnf-reuses e "" 1000))
+(defn icnf-reuse-set (e v) (ffi-call "zyl_attrh_set" icnf-reuses e v 1000))
 
 ; True while the REPL compiles one of its generated programs, the only
 ; place `zyl-repl-global` (a session value read back from the runtime,

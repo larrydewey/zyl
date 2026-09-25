@@ -2203,6 +2203,17 @@
 ; 1 when `e`'s type is fully known to be Int, Bool or Float: a word that
 ; is never a pointer (region inference keeps such values out of object
 ; classes). A type variable, poisoned or not, is not scalar.
+; 1 when `e`'s type is a type the program declared (deftype, defstruct):
+; its value is a heap block with a size header (compiler/reuse.zyl).
+(defn ta-adt (e)
+  (let t (ta-attr e)
+    (if (ta-no-type-p t)
+      false
+      (match (ta-gresolve ta-var-store t)
+        (TaC n _
+          (not (or (ta-builtin-type n) (or (ta-handle-param-type n) (or (ta-streq n "Secret") (= (str-length n) 0))))))
+        (_ false)))))
+
 (defn ta-scalar (e)
   (let t (ta-attr e)
     (if (ta-no-type-p t)

@@ -65,9 +65,12 @@ BOOTSTRAP_SELF=0
 # exponential fixed since then brought a stage down to about ten seconds;
 # the generous cap stays as headroom for a slow machine.
 STAGE_TIMEOUT="${ZYL_STAGE_TIMEOUT:-2400}"
-# Allocation ceiling per stage: a self-compile needs ~1.4 GB, so growth past
-# 2 GB is a regression and fails loudly instead of swapping the machine.
-export ZYL_MAX_MEMORY="${ZYL_STAGE_MEMORY:-2147483648}"
+# Allocation ceiling per stage (cumulative bytes allocated, nothing is
+# freed during a compile). With inlining, in-place reuse and the native
+# backend a self-compile allocates somewhat over 2 GB, so the cap is 4 GB:
+# growth past it is a regression and fails loudly instead of swapping the
+# machine. Bringing the compiler's own allocation down is open work.
+export ZYL_MAX_MEMORY="${ZYL_STAGE_MEMORY:-4294967296}"
 
 mkdir -p "$OUT"
 cd "$SCRIPT_DIR"

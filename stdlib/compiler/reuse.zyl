@@ -1,0 +1,650 @@
+; === Zyl Compiler — In-place reuse of unique values ===
+; Module: compiler/reuse
+;
+; Values are immutable, so an update such as `(vec-push v x)` builds a new
+; record. When the compiler can prove the old value is unique (nothing
+; else refers to it) and dead (nothing uses it afterwards), the new record
+; can be written into the old one's block instead (the "functional but in
+; place" technique of Koka's Perceus, here decided statically). The
+; program's meaning does not change: nothing can observe the old value.
+;
+; The pass runs after region inference and records its decision as an
+; attribute on the variant construction (icnf-reuse: the variable whose
+; block it takes). Codegen's native path honours it; everything else
+; (the stack machine, the interpreter) ignores it and allocates as
+; before. At run time the block is taken only when its size header
+; (every heap and region block has one) is at least the new record's size.
+;
+; Soundness conditions, all checked here:
+; - Ownership. A variable is owned when it is bound to a fresh value (a
+;   variant construction, or a call of a function whose results are
+;   fresh) or is a parameter of an owning clone (below). Any use that
+;   could keep a second reference taints it: storing it in a variant,
+;   binding it to another name, set!, passing it to a function whose
+;   region summary lets the parameter escape the call, to an FFI entry
+;   that is not known to keep nothing, to a closure, or using it inside a
+;   lambda, try or region scope. Reading its fields (match), comparing
+;   it, and passing it to a parameter whose summary is 0 (does not
+;   escape the call) are not.
+; - Death. The variable is not used after the construction (liveness over
+;   the tree in evaluation order), and the construction is not inside a
+;   loop the variable was bound outside of.
+; - Region. At least one field of the new record is a pointer read out of
+;   the old one (a match binder of it). Region inference's classes are
+;   field-insensitive, so the two are then one class, placed in one
+;   region: the old block lives exactly as long as the new value may.
+; - The block is a heap block: the variable's type is a program ADT
+;   (icnf-adt), and stack variants (which have no size header) are never
+;   owned.
+;
+; Owning clones. A function f whose parameters it could reuse gets a
+; copy `f~own` that assumes those parameters owned; a call whose
+; arguments at those positions are owned and dead calls the copy. Which
+; parameters a copy reuses (directly, or by passing them on to another
+; copy) and whether a function's results are fresh are computed to a
+; fixpoint over the whole program, in program order.
+;
+; ZYL_REUSE=0 turns the pass off.
+
+(use compiler/icnf)
+(use compiler/node_tables)
+(use compiler/region_inference)
+(use compiler/optimization)
+(use core/list)
+
+; --- per-function facts --------------------------------------------------------
+
+; "r|f" -> bit mask of the parameters f~own reuses; "f|f" -> 1 when f's
+; results are fresh, 2 when they are not; "c|f" the same for f~own.
+(def ru-facts (ffi-call "zyl_smap_new" 1000))
+
+(defn ru-get (k) (ffi-call "zyl_smap_get" ru-facts k 1000))
+(defn ru-put (k v) (ffi-call "zyl_smap_put" ru-facts k v 1000))
+
+(defn ru-reused (f) (ru-get (str-concat "r|" f)))
+(defn ru-fresh (f own) (not (= (ru-get (str-concat (if own "c|" "f|") f)) 2)))
+
+(defn ru-clone-name (f) (str-concat f "~own"))
+
+; Functions whose call sites are not all visible (their address is
+; taken, they are entry points): no owning clone is called for them.
+(def ru-opaque (ffi-call "zyl_smap_new" 1000))
+
+; --- the walk ---------------------------------------------------------------
+
+;; A variable in scope: name, owned, loop depth where bound, the variable
+; it was read out of (a match binder) or "".
+(deftype RV (RV String Bool Int String))
+
+; The walk's state lives in cells, so a fixpoint round allocates nothing
+; per node: the tainted variables (a persistent list, saved and restored
+; around branches), the parameters the function reuses (a mask), and
+; whether every result is fresh.
+(def ru-taint-cell (ffi-call "zyl_ref_new" Nil 1000))
+(def ru-mask-cell (ffi-call "zyl_ref_new" 0 1000))
+(def ru-fresh-cell (ffi-call "zyl_ref_new" true 1000))
+
+(defn rt () (ffi-call "zyl_ref_get" ru-taint-cell 1000))
+(defn rt-set (l) (ffi-call "zyl_ref_set" ru-taint-cell l 1000))
+(defn rt-add (n) (rt-set (Cons n (rt))))
+(defn rmask () (ffi-call "zyl_ref_get" ru-mask-cell 1000))
+(defn rmask-or (m) (ffi-call "zyl_ref_set" ru-mask-cell (bit-or (rmask) m) 1000))
+(defn rfresh () (ffi-call "zyl_ref_get" ru-fresh-cell 1000))
+(defn rnot-fresh () (ffi-call "zyl_ref_set" ru-fresh-cell false 1000))
+(defn rnot-fresh-if (ctx) (if (= ctx 2) (rnot-fresh) unit))
+
+; The context a value is used in: 0 read (fields, comparison, discarded,
+; a parameter that does not escape), 1 kept (escapes), 2 the result of
+; the function, 3 bound to a name.
+;
+; `ps`: the function's parameters (their indices give the mask);
+; `rewrite`: record decisions and redirect calls (the final pass);
+; `zone`: > 0 inside a lambda, try or region scope (no reuse, all uses
+; keep).
+(deftype RC (RC (List String) Bool Int Int))  ; params, rewrite, loop depth, zone
+
+(defn rc-ps (c) (match c (RC p _ _ _ p)))
+(defn rc-rw (c) (match c (RC _ r _ _ r)))
+(defn rc-depth (c) (match c (RC _ _ d _ d)))
+(defn rc-zone (c) (match c (RC _ _ _ z z)))
+(defn rc-deeper (c) (match c (RC p r d z (RC p r (+ d 1) z))))
+(defn rc-inzone (c) (match c (RC p r d z (RC p r d (+ z 1)))))
+
+(defn rv-find (env n)
+  (match env
+    (Nil None)
+    (Cons v t (match v (RV k _ _ _ (if (str-eq k n) (Some v) (rv-find t n)))))))
+
+(defn ru-member (n xs)
+  (match xs
+    (Nil false)
+    (Cons h t (if (str-eq h n) true (ru-member n t)))))
+
+(defn ru-index (n xs i)
+  (match xs
+    (Nil -1)
+    (Cons h t (if (str-eq h n) i (ru-index n t (+ i 1))))))
+
+; Owned and untainted here.
+(defn ru-unique (env n)
+  (match (rv-find env n)
+    (Some v (match v (RV _ own _ _ (and own (not (ru-member n (rt)))))))
+    (None false)))
+
+;; --- liveness ------------------------------------------------------------------
+
+; `after` is the list of expressions still to be evaluated after the
+; current node (a loop's own body and condition included); a variable is
+; live when one of them names it. Searched only where a decision needs
+; it, so the walk itself builds no sets.
+(defn ru-live (n after)
+  (match after
+    (Nil false)
+    (Cons e t (if (ru-occurs n e) true (ru-live n t)))))
+
+; (A binder shadowing n only makes this conservative.)
+(defn ru-occurs (n e)
+  (match e
+    (ILoad m (str-eq m n))
+    (ISet m v (or (str-eq m n) (ru-occurs n v)))
+    (IBinop _ l r (or (ru-occurs n l) (ru-occurs n r)))
+    (ICall m args (or (str-eq m n) (ru-occurs-list n args)))
+    (ICallClosure m args (or (str-eq m n) (ru-occurs-list n args)))
+    (IFfi _ args (ru-occurs-list n args))
+    (IPrint a (ru-occurs n a))
+    (IIf c t f (or (ru-occurs n c) (or (ru-occurs n t) (ru-occurs n f))))
+    (IWhile c b (or (ru-occurs n c) (ru-occurs n b)))
+    (ILet _ v b (or (ru-occurs n v) (ru-occurs n b)))
+    (ISeq es (ru-occurs-list n es))
+    (IVariant _ _ fs (ru-occurs-list n fs))
+    (IStackVariant _ _ fs (ru-occurs-list n fs))
+    (IMatch s arms (or (ru-occurs n s) (ru-occurs-arms n arms)))
+    (IFn _ _ b _ (ru-occurs n b))
+    (ITryCatch b _ h (or (ru-occurs n b) (ru-occurs n h)))
+    (IRegion _ _ _ _ b (ru-occurs n b))
+    (_ false)))
+
+(defn ru-occurs-list (n es)
+  (match es
+    (Nil false)
+    (Cons h t (if (ru-occurs n h) true (ru-occurs-list n t)))))
+
+(defn ru-occurs-arms (n arms)
+  (match arms
+    (Nil false)
+    (Cons a t (match a (IArm _ _ _ b (if (ru-occurs n b) true (ru-occurs-arms n t)))))))
+
+(defn ru-arm-conts (arms after)
+  (match arms
+    (Nil after)
+    (Cons a t (match a (IArm _ _ _ b (Cons b (ru-arm-conts t after)))))))
+
+; --- walking ----------------------------------------------------------------
+
+; `after`: the expressions evaluated after this node (ru-live). Returns
+; the node, rebuilt only in the final pass.
+(defn ru-walk (e ctx after env c)
+  (let out (ru-walk-node e ctx after env c)
+    (if (rc-rw c) (ru-keep out e) e)))
+
+(defn ru-walk-node (e ctx after env c)
+  (match e
+    (ILoad n (let _ (ru-load n ctx env c) e))
+    (IBinop op l r
+      (let l2 (ru-walk l 0 (Cons r after) env c)
+        (IBinop op l2 (ru-walk r 0 after env c))))
+    (ICall name args (ru-call name args ctx after env c))
+    (ICallClosure name args
+      (let as (ru-walk-args args (ru-ones args) after env c)
+        (let _ (rnot-fresh-if ctx) (ICallClosure name as))))
+    (IFfi name args
+      (let as (ru-walk-args args (ru-all args (if (= (rg-ffi-kind name) 0) 0 1)) after env c)
+        (let _ (rnot-fresh-if ctx) (IFfi name as))))
+    (IPrint x (IPrint (ru-walk x 0 after env c)))
+    (IIf k t f
+      (let k2 (ru-walk k 0 (Cons t (Cons f after)) env c)
+        (let t0 (rt)
+          (let t2 (ru-walk t ctx after env c)
+            (let t1 (rt)
+              (let _ (rt-set t0)
+                (let f2 (ru-walk f ctx after env c)
+                  (let _ (rt-set (ru-union t1 (rt)))
+                    (IIf k2 t2 f2)))))))))
+    (IWhile k b
+      (let la (Cons k (Cons b after))
+        (let k2 (ru-walk k 0 la env (rc-deeper c))
+          (IWhile k2 (ru-walk b 0 la env (rc-deeper c))))))
+    (ISet n v
+      (let v2 (ru-walk v 1 after env c)
+        (let _ (rt-add n) (ISet n v2))))
+    (ILet n v b
+      (let v2 (ru-walk v 3 (Cons b after) env c)
+        (let own (ru-fresh-expr v env)
+          (ILet n v2 (ru-walk b ctx after (Cons (RV n own (rc-depth c) "") env) c)))))
+    (ISeq es (ISeq (ru-seq es ctx after env c)))
+    (IVariant nm tag fs (ru-variant nm tag fs after env c))
+    (IStackVariant nm tag fs (IStackVariant nm tag (ru-walk-args fs (ru-ones fs) after env c)))
+    (IMatch sc arms
+      (let s2 (ru-walk sc 0 (ru-arm-conts arms after) env c)
+        (let src (match sc (ILoad n n) (_ ""))
+          (let t0 (rt)
+            (IMatch s2 (ru-arms arms src ctx after env c t0 t0))))))
+    (IFn n ps b ks
+      (let b2 (ru-walk b 1 Nil env (rc-inzone c))
+        (let _ (rnot-fresh-if ctx) (IFn n ps b2 ks))))
+    (ITryCatch b v h
+      (let b2 (ru-walk b 1 after env (rc-inzone c))
+        (let h2 (ru-walk h 1 after env (rc-inzone c))
+          (let _ (rnot-fresh-if ctx) (ITryCatch b2 v h2)))))
+    (IRegion k bk al lm b
+      (let b2 (ru-walk b 1 after env (rc-inzone c))
+        (let _ (rnot-fresh-if ctx) (IRegion k bk al lm b2))))
+    (_ e)))
+
+; Both branches start from the same taint, so the join is a union.
+(defn ru-union (xs acc)
+  (match xs
+    (Nil acc)
+    (Cons h t (ru-union t (if (ru-member h acc) acc (Cons h acc))))))
+
+(defn ru-load (n ctx env c)
+  (if (or (= ctx 1) (or (= ctx 3) (> (rc-zone c) 0)))
+    (rt-add n)
+    (if (= ctx 2)
+      (if (ru-unique env n) unit (rnot-fresh))
+      unit)))
+
+(defn ru-ones (xs) (ru-all xs 1))
+(defn ru-all (xs k) (match xs (Nil Nil) (Cons _ t (Cons k (ru-all t k)))))
+
+; Arguments in order, each in its own context, the later ones counted
+; as `after`.
+(defn ru-walk-args (args ctxs after env c)
+  (match args
+    (Nil Nil)
+    (Cons x t
+      (let x2 (ru-walk x (match ctxs (Cons h _ h) (Nil 1)) (list-append t after) env c)
+        (Cons x2 (ru-walk-args t (match ctxs (Cons _ r r) (Nil Nil)) after env c))))))
+
+(defn ru-seq (es ctx after env c)
+  (match es
+    (Nil Nil)
+    (Cons h t
+      (let h2 (ru-walk h (if (is-nil t) ctx 0) (list-append t after) env c)
+        (Cons h2 (ru-seq t ctx after env c))))))
+
+; Arms: each starts from the taint after the scrutinee (t0); the result
+; is the union (acc). A binder is read out of the scrutinee's variable.
+(defn ru-arms (arms src ctx after env c t0 acc)
+  (match arms
+    (Nil (let _ (rt-set acc) Nil))
+    (Cons arm t
+      (match arm
+        (IArm v tag binds b
+          (let _ (rt-set t0)
+            (let b2 (ru-walk b ctx after (ru-bind-all binds src (rc-depth c) env) c)
+              (let acc2 (ru-union (rt) acc)
+                (Cons (IArm v tag binds b2) (ru-arms t src ctx after env c t0 acc2))))))))))
+
+(defn ru-bind-all (bs src d env)
+  (match bs
+    (Nil env)
+    (Cons b t (ru-bind-all t src d (Cons (RV b false d src) env)))))
+
+; A fresh value: a construction or a call whose results are fresh (or
+; a let, sequence, if or match whose result is one).
+(defn ru-fresh-expr (e env)
+  (match e
+    (IVariant _ _ _ true)
+    (ICall n _ (and (not (ru-local env n)) (ru-fresh n false)))
+    (ILet _ _ b (ru-fresh-expr b env))
+    (ISeq es (match (list-reverse es) (Cons l _ (ru-fresh-expr l env)) (Nil false)))
+    (IIf _ t f (and (ru-fresh-expr t env) (ru-fresh-expr f env)))
+    (IMatch _ arms (ru-fresh-arms arms env))
+    (_ false)))
+
+(defn ru-fresh-arms (arms env)
+  (match arms
+    (Nil true)
+    (Cons x t (match x (IArm _ _ _ b (and (ru-fresh-expr b env) (ru-fresh-arms t env)))))))
+
+(defn ru-local (env n) (match (rv-find env n) (Some _ true) (None false)))
+
+; --- calls --------------------------------------------------------------------
+
+; Arguments against the callee: a parameter whose region summary is 0
+; is only read; the owning clone takes its reused positions by moving
+; owned, dead arguments into them.
+(defn ru-call (name args ctx after env c)
+  (if (ru-local env name)
+    (let as (ru-walk-args args (ru-ones args) after env c)
+      (let _ (rnot-fresh-if ctx) (ICall name as)))
+    (let mask (if (> (rc-zone c) 0) 0 (ru-reused name))
+      (let own (and (> mask 0) (ru-args-movable args mask 0 after env args))
+        (let as (ru-walk-args args (ru-arg-ctxs name args (if own mask 0) 0) after env c)
+          (let _ (if own (rmask-or (ru-param-mask args mask 0 (rc-ps c))) unit)
+            (let _ (if (and (= ctx 2) (not (ru-fresh name own))) (rnot-fresh) unit)
+              (if (and own (rc-rw c)) (ICall (ru-clone-name name) as) (ICall name as)))))))))
+
+; 0 read, 1 kept; a position the clone reuses is 1 as well (it is moved).
+(defn ru-arg-ctxs (name args mask i)
+  (match args
+    (Nil Nil)
+    (Cons _ t
+      (Cons (if (> (bit-and mask (shl 1 i)) 0)
+              1
+              (if (= (rg-param-level (rg-summary name) i) 0) 0 1))
+            (ru-arg-ctxs name t mask (+ i 1))))))
+
+; Every reused position gets an owned variable that is dead after the
+; call and appears in no other argument, or a fresh value.
+(defn ru-args-movable (args mask i after env all)
+  (match args
+    (Nil true)
+    (Cons x t
+      (if (> (bit-and mask (shl 1 i)) 0)
+        (if (ru-movable x i after env all)
+          (ru-args-movable t mask (+ i 1) after env all)
+          false)
+        (ru-args-movable t mask (+ i 1) after env all)))))
+
+(defn ru-movable (x i after env all)
+  (match x
+    (ILoad n (and (ru-unique env n)
+               (and (not (ru-live n after)) (not (ru-used-elsewhere n all 0 i)))))
+    (_ (ru-fresh-expr x env))))
+
+(defn ru-used-elsewhere (n args j skip)
+  (match args
+    (Nil false)
+    (Cons x t (if (and (not (= j skip)) (ru-occurs n x)) true (ru-used-elsewhere n t (+ j 1) skip)))))
+
+; The current function's parameters moved into reused positions.
+(defn ru-param-mask (args mask i ps)
+  (match args
+    (Nil 0)
+    (Cons x t
+      (bit-or (if (> (bit-and mask (shl 1 i)) 0)
+                (match x (ILoad n (let k (ru-index n ps 0) (if (>= k 0) (shl 1 k) 0))) (_ 0))
+                0)
+              (ru-param-mask t mask (+ i 1) ps)))))
+
+; --- the reuse site -----------------------------------------------------------
+
+(defn ru-variant (nm tag fs after env c)
+  (let fs2 (ru-walk-args fs (ru-ones fs) after env c)
+    (let out (IVariant nm tag fs2)
+      (let pick (if (> (rc-zone c) 0) "" (ru-candidate env env after fs c))
+        (if (> (str-length pick) 0)
+          (let _ (if (rc-rw c) (icnf-reuse-set out pick) unit)
+            (let k (ru-index pick (rc-ps c) 0)
+              (let _ (if (>= k 0) (rmask-or (shl 1 k)) unit)
+                (let _ (rt-add pick) out))))
+          out)))))
+
+; The first variable in scope (innermost first) that is owned, untainted,
+; a program ADT, bound at this loop depth, dead after here, not a field of
+; the new record itself, and read into one of its pointer fields.
+(defn ru-candidate (vs env after fs c)
+  (match vs
+    (Nil "")
+    (Cons v t
+      (match v
+        (RV n own d _
+          (if (and own
+                (and (not (ru-member n (rt)))
+                  (and (= d (rc-depth c))
+                    (and (not (ru-live n after))
+                      (and (not (ru-field-is n fs))
+                        (and (ru-adt-var n) (ru-derived-field n fs env)))))))
+            n
+            (ru-candidate t env after fs c)))))))
+
+(defn ru-field-is (n fs)
+  (match fs
+    (Nil false)
+    (Cons f t (if (match f (ILoad m (str-eq m n)) (_ false)) true (ru-field-is n t)))))
+
+; A field that is a non-scalar value read out of `n`: a binder of a
+; match on it, or a match on it whose arms all give such a binder (an
+; inlined accessor).
+(defn ru-derived-field (n fs env)
+  (match fs
+    (Nil false)
+    (Cons f t (if (ru-derives n f env) true (ru-derived-field n t env)))))
+
+(defn ru-derives (n f env)
+  (if (> (icnf-scalar f) 0)
+    false
+    (match f
+      (ILoad m (match (rv-find env m) (Some v (match v (RV _ _ _ src (str-eq src n)))) (None false)))
+      (IMatch s arms (and (match s (ILoad m (str-eq m n)) (_ false)) (ru-arms-binder arms)))
+      (_ false))))
+
+(defn ru-arms-binder (arms)
+  (match arms
+    (Nil false)
+    (Cons x t
+      (match x
+        (IArm _ _ binds b
+          (and (match b (ILoad m (and (ru-member m binds) (= (icnf-scalar b) 0))) (_ false))
+               (if (is-nil t) true (ru-arms-binder t))))))))
+
+; Variables some read of which the type pass typed as a program ADT.
+(def ru-adt-vars (ffi-call "zyl_smap_new" 1000))
+(defn ru-adt-var (n) (ffi-call "zyl_smap_has" ru-adt-vars n 1000))
+
+(defn ru-note-adts (e)
+  (match e
+    (ILoad n (if (> (icnf-adt e) 0) (let _ (ffi-call "zyl_smap_put" ru-adt-vars n 1 1000) unit) unit))
+    (ISet _ v (ru-note-adts v))
+    (IBinop _ l r (begin (ru-note-adts l) (ru-note-adts r)))
+    (ICall _ args (ru-note-list args))
+    (ICallClosure _ args (ru-note-list args))
+    (IFfi _ args (ru-note-list args))
+    (IPrint x (ru-note-adts x))
+    (IIf k t f (begin (ru-note-adts k) (ru-note-adts t) (ru-note-adts f)))
+    (IWhile k b (begin (ru-note-adts k) (ru-note-adts b)))
+    (ILet _ v b (begin (ru-note-adts v) (ru-note-adts b)))
+    (ISeq es (ru-note-list es))
+    (IVariant _ _ fs (ru-note-list fs))
+    (IStackVariant _ _ fs (ru-note-list fs))
+    (IMatch s arms (begin (ru-note-adts s) (ru-note-arms arms)))
+    (IFn _ _ b _ (ru-note-adts b))
+    (ITryCatch b _ h (begin (ru-note-adts b) (ru-note-adts h)))
+    (IRegion _ _ _ _ b (ru-note-adts b))
+    (_ unit)))
+
+(defn ru-note-list (es) (match es (Nil unit) (Cons h t (begin (ru-note-adts h) (ru-note-list t)))))
+(defn ru-note-arms (arms)
+  (match arms (Nil unit) (Cons x t (match x (IArm _ _ _ b (begin (ru-note-adts b) (ru-note-arms t)))))))
+
+; Rebuilt nodes keep the attributes of the nodes they copy.
+(defn ru-keep (out from)
+  (let _ (icnf-region-set out (icnf-region from))
+    (opt-keep out from)))
+
+; --- the program ---------------------------------------------------------------
+
+; Walks a body from a clean state; the facts are then in the cells.
+(defn ru-fn-body (f own rewrite)
+  (match f
+    (IFn _ params body _
+      (begin
+        (rt-set Nil)
+        (ffi-call "zyl_ref_set" ru-mask-cell 0 1000)
+        (ffi-call "zyl_ref_set" ru-fresh-cell true 1000)
+        (ru-walk body 2 Nil (ru-param-env params own) (RC params rewrite 0 0))))
+    (_ f)))
+
+(defn ru-param-env (ps own)
+  (match ps
+    (Nil Nil)
+    (Cons p t (Cons (RV p own 0 "") (ru-param-env t own)))))
+
+; One round over every function (as itself and as its clone): true when
+; a fact changed.
+; `dirty`: the names whose facts changed last round; a function is walked
+; again only when it calls one of them (all are walked in round 0).
+; Returns the names that changed this round.
+(defn ru-round (fns dirty first changed)
+  (match fns
+    (Nil changed)
+    (Cons f rest
+      (match f
+        (IFn name params body _
+         (if (not (or first (ru-calls-any body dirty)))
+          (ru-round rest dirty first changed)
+          (let fresh (let _ (ru-fn-body f false false) (if (rfresh) 1 2))
+            ; Only a parameter of a program ADT can be reused, and only a
+            ; function of modest size is worth a second copy.
+            (let cl (and (ru-any-adt params) (<= (opt-size body 0) (ru-clone-limit)))
+              (let cfresh (if cl (let _ (ru-fn-body f true false) (if (rfresh) 1 2)) 1)
+                (let cmask (if cl (rmask) 0)
+                  (let mask (if (ffi-call "zyl_smap_has" ru-opaque name 1000) 0 cmask)
+                    (let ch (or (not (= fresh (ru-get (str-concat "f|" name))))
+                              (or (not (= cfresh (ru-get (str-concat "c|" name))))
+                                  (not (= mask (ru-reused name)))))
+                      (begin
+                        (ru-put (str-concat "f|" name) fresh)
+                        (ru-put (str-concat "c|" name) cfresh)
+                        (ru-put (str-concat "r|" name) mask)
+                        (ru-round rest dirty first (if ch (Cons name changed) changed)))))))))))
+        (_ (ru-round rest dirty first changed))))))
+
+(defn ru-clone-limit () 150)
+
+; Whether `e` calls any of `names` (as a direct call or an owning clone).
+(defn ru-calls-any (e names)
+  (match e
+    (ICall n args (or (ru-member n names) (ru-calls-any-list args names)))
+    (IBinop _ l r (or (ru-calls-any l names) (ru-calls-any r names)))
+    (ICallClosure _ args (ru-calls-any-list args names))
+    (IFfi _ args (ru-calls-any-list args names))
+    (IPrint a (ru-calls-any a names))
+    (IIf c t f (or (ru-calls-any c names) (or (ru-calls-any t names) (ru-calls-any f names))))
+    (IWhile c b (or (ru-calls-any c names) (ru-calls-any b names)))
+    (ISet _ v (ru-calls-any v names))
+    (ILet _ v b (or (ru-calls-any v names) (ru-calls-any b names)))
+    (ISeq es (ru-calls-any-list es names))
+    (IVariant _ _ fs (ru-calls-any-list fs names))
+    (IStackVariant _ _ fs (ru-calls-any-list fs names))
+    (IMatch sc arms (or (ru-calls-any sc names) (ru-calls-any-arms arms names)))
+    (IFn _ _ b _ (ru-calls-any b names))
+    (ITryCatch b _ h (or (ru-calls-any b names) (ru-calls-any h names)))
+    (IRegion _ _ _ _ b (ru-calls-any b names))
+    (_ false)))
+
+(defn ru-calls-any-list (es names)
+  (match es (Nil false) (Cons h t (if (ru-calls-any h names) true (ru-calls-any-list t names)))))
+(defn ru-calls-any-arms (arms names)
+  (match arms (Nil false) (Cons a t (match a (IArm _ _ _ b (if (ru-calls-any b names) true (ru-calls-any-arms t names)))))))
+
+(defn ru-any-adt (ps)
+  (match ps
+    (Nil false)
+    (Cons p t (if (ru-adt-var p) true (ru-any-adt t)))))
+
+; Facts start optimistic for freshness (every function's results fresh)
+; and empty for reuse masks; rounds repeat to a fixpoint. The masks only
+; grow; freshness can flip either way, so rounds are capped.
+(defn ru-fixpoint (fns n)
+  (ru-fix-go fns (ru-round fns Nil true Nil) n))
+
+(defn ru-fix-go (fns dirty n)
+  (if (and (not (is-nil dirty)) (< n 20))
+    (ru-fix-go fns (ru-round fns dirty false Nil) (+ n 1))
+    (if (> (str-length (ffi-call "zyl_getenv_str" "ZYL_REUSE_DEBUG" 1000)) 0)
+      (ffi-call "zyl_warn_emit" (str-concat "reuse rounds: " (str-concat (ffi-call "zyl_int_text" (+ n 1) 1000) "\n")) 1000)
+      unit)))
+
+(defn ru-rewrite (fns acc)
+  (match fns
+    (Nil (list-reverse acc))
+    (Cons f rest
+      (match f
+        (IFn name params body kinds
+          (let orig (IFn name params (ru-fn-body f false true) kinds)
+            (let _ (icnf-region-set orig (icnf-region f))
+              (if (> (ru-reused name) 0)
+                (let cl (IFn (ru-clone-name name) params (ru-fn-body f true true) kinds)
+                  (let _ (icnf-region-set cl (icnf-region f))
+                    (let _ (ru-copy-summary name)
+                      (ru-rewrite rest (Cons cl (Cons orig acc))))))
+                (ru-rewrite rest (Cons orig acc))))))
+        (_ (ru-rewrite rest (Cons f acc)))))))
+
+(defn ru-copy-summary (name)
+  (let v (ffi-call "zyl_smap_get" (rg-summaries) name 1000)
+    (ffi-call "zyl_smap_put" (rg-summaries) (ru-clone-name name) v 1000)))
+
+; Functions named anywhere as a value, and entry points.
+(defn ru-note-opaque (fns names)
+  (match fns
+    (Nil unit)
+    (Cons f rest
+      (let _ (match f (IFn _ _ b _ (ru-opaque-refs b names)) (_ unit))
+        (ru-note-opaque rest names)))))
+
+(defn ru-opaque-refs (e names)
+  (match e
+    (ILoad n (if (ffi-call "zyl_smap_has" names n 1000) (let _ (ffi-call "zyl_smap_put" ru-opaque n 1 1000) unit) unit))
+    (ISet _ v (ru-opaque-refs v names))
+    (IBinop _ l r (begin (ru-opaque-refs l names) (ru-opaque-refs r names)))
+    (ICall _ args (ru-opaque-list args names))
+    (ICallClosure n args (begin (ffi-call "zyl_smap_put" ru-opaque n 1 1000) (ru-opaque-list args names)))
+    (IFfi _ args (ru-opaque-list args names))
+    (IPrint x (ru-opaque-refs x names))
+    (IIf k t f (begin (ru-opaque-refs k names) (ru-opaque-refs t names) (ru-opaque-refs f names)))
+    (IWhile k b (begin (ru-opaque-refs k names) (ru-opaque-refs b names)))
+    (ILet _ v b (begin (ru-opaque-refs v names) (ru-opaque-refs b names)))
+    (ISeq es (ru-opaque-list es names))
+    (IVariant _ _ fs (ru-opaque-list fs names))
+    (IStackVariant _ _ fs (ru-opaque-list fs names))
+    (IMatch s arms (begin (ru-opaque-refs s names) (ru-opaque-arms arms names)))
+    (IFn _ _ b _ (ru-opaque-refs b names))
+    (ITryCatch b _ h (begin (ru-opaque-refs b names) (ru-opaque-refs h names)))
+    (IRegion _ _ _ _ b (ru-opaque-refs b names))
+    (_ unit)))
+
+(defn ru-opaque-list (es names) (match es (Nil unit) (Cons h t (begin (ru-opaque-refs h names) (ru-opaque-list t names)))))
+(defn ru-opaque-arms (arms names)
+  (match arms (Nil unit) (Cons x t (match x (IArm _ _ _ b (begin (ru-opaque-refs b names) (ru-opaque-arms t names)))))))
+
+(defn ru-fn-names (fns tab)
+  (match fns
+    (Nil tab)
+    (Cons f rest
+      (let _ (match f (IFn n _ b _ (begin (ffi-call "zyl_smap_put" tab n 1 1000) (ru-note-adts b))) (_ unit))
+        (ru-fn-names rest tab)))))
+
+(defn ru-reuse (fns)
+  (if (str-eq (ffi-call "zyl_getenv_str" "ZYL_REUSE" 1000) "0")
+    fns
+    (begin
+      (ffi-call "zyl_smap_clear" ru-facts 1000)
+      (ffi-call "zyl_smap_clear" ru-opaque 1000)
+      (ffi-call "zyl_smap_clear" ru-adt-vars 1000)
+      (let names (ru-fn-names fns (ffi-call "zyl_smap_new" 1000))
+        (begin
+          (ffi-call "zyl_smap_put" ru-opaque "main" 1 1000)
+          (ru-note-opaque fns names)
+          (ru-fixpoint fns 0)
+          (if (> (str-length (ffi-call "zyl_getenv_str" "ZYL_REUSE_DEBUG" 1000)) 0) (ru-dump fns) unit)
+          (ru-rewrite fns Nil))))))
+
+; ZYL_REUSE_DEBUG: each function's facts, on stderr.
+(defn ru-dump (fns)
+  (match fns
+    (Nil unit)
+    (Cons f rest
+      (let _ (match f
+               (IFn name _ _ _
+                 (ffi-call "zyl_warn_emit"
+                   (str-concat name (str-concat " reuse-mask=" (str-concat (ffi-call "zyl_int_text" (ru-reused name) 1000)
+                     (str-concat " fresh=" (str-concat (if (ru-fresh name false) "1" "0")
+                       (str-concat " clone-fresh=" (str-concat (if (ru-fresh name true) "1" "0")
+                         (str-concat (if (ffi-call "zyl_smap_has" ru-opaque name 1000) " opaque" "") "\n"))))))))
+                   1000))
+               (_ unit))
+        (ru-dump rest)))))

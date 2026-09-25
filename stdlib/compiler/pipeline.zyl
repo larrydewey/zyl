@@ -38,6 +38,7 @@
 (use compiler/derive)
 (use compiler/region_inference)
 (use compiler/optimization)
+(use compiler/reuse)
 (use compiler/codegen)
 (use compiler/sexp_balance)
 (use compiler/error_codes)
@@ -156,7 +157,10 @@
                     ; IStackVariant (stack-allocated, see
                     ; cg-stack-variant) in place.
                     (dbg-log "region-infer\n")
-                    (rg-regions (ri-transform-fns opt-fns)))))))))))
+                    (let reg-fns (rg-regions (ri-transform-fns opt-fns))
+                      (begin
+                        (dbg-log "reuse\n")
+                        (ru-reuse reg-fns))))))))))))
 
 ; Source text to lowered functions: everything except code generation.
 ; Returns: List(Icnf)
