@@ -2,8 +2,8 @@
 ; Module: compiler/derive
 ;
 ; Expands `(derive Type Show Debug Eq Ord Hash Clone)` into impl blocks
-; (spec §5.6). Runs before monomorphization, which lifts each impl's method
-; to a function. Every field's type must implement the trait (the type
+; (spec §5.6). Runs before impl lifting (compiler/lift_impls), which makes
+; each impl's method a top-level function. Every field's type must implement the trait (the type
 ; being derived counts, as does a type parameter or an untyped field);
 ; otherwise, or for a trait that is not derivable, E_TRAIT_NOT_DERIVABLE.
 

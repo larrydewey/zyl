@@ -41,13 +41,13 @@ This is spec §22's order:
 
 The implementation's order is defined in `stdlib/compiler/pipeline.zyl`
 and differs from the list above: balance check → parse → module
-resolution → macro expansion → capability/duplicate/arity/mutability/
-exhaustiveness/unused/secret checks → derive expansion → type inference
-→ monomorphization (impl lifting) → closure lifting →
-type annotation (HM, static trait resolution, per-type specialization,
-generated structural `T.==`, `E_TYPE_MISMATCH` for an argument that
-clashes with a parameter or field annotation, `type_annotate.zyl`) →
-ICNF lowering →
+resolution → macro expansion → capability/duplicate/arity (also
+`E_MALFORMED_FORM`, `E_FFI_RESTRICTED`)/mutability/exhaustiveness/
+unused/secret checks → derive expansion → impl lifting → closure
+lifting → type checking (`type_annotate.zyl`: sound HM, spec §4.8–§4.10;
+every type error is reported, then the compile fails; static trait
+resolution, per-type specialization of calls and function values,
+generated structural `T.==`) → ICNF lowering →
 optimization → region inference (the stack-variant rewrite, then
 `rg-regions`: escape analysis over ICNF that places every allocation and
 call site in the frame's own region, the caller's result region, or the

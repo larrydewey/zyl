@@ -151,17 +151,17 @@
 
 ; Content of a StringBuffer.
 ; Returns: String
-(defn string-buffer-str (sb)
+(defn string-buffer-str ((sb StringBuffer))
   (buf-str (sb-ref-get (struct-get sb "buf"))))
 
 ; Current content length of a StringBuffer.
 ; Returns: Int
-(defn string-buffer-len (sb)
+(defn string-buffer-len ((sb StringBuffer))
   (sb-ref-get (struct-get sb "len")))
 
 ; Destroy a StringBuffer, reclaiming its arena.
 ; Returns: Unit
-(defn string-buffer-destroy (sb)
+(defn string-buffer-destroy ((sb StringBuffer))
   (arena-destroy (struct-get sb "arena")))
 
 ; Construct an arena-backed StringBuffer output stream.

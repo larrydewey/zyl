@@ -1,0 +1,5 @@
+; expect-error: E_FFI_RESTRICTED
+; A runtime entry is typed by the compiler's table; an extern could give
+; an untyped one any type.
+(extern "zyl_attr_get" (Int Int) String)
+(defn main () (begin (print (ffi-call "zyl_attr_get" 1 2 1000)) 0))

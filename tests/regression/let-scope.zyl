@@ -1,0 +1,13 @@
+; A let in a body scopes over its own body only: the forms after it see
+; the outer binding. It used to absorb them, so the second print saw the
+; inner x.
+
+(defn _ls-last-x ()
+  (let x 10
+    (let x 20 (print x))
+    x))
+
+(test "inner-let-does-not-leak"
+  (assert-equal (_ls-last-x) 10))
+
+(run-tests)

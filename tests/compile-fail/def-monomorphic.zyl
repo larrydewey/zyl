@@ -1,0 +1,9 @@
+; expect-error: E_TYPE_MISMATCH
+; A top-level def has one type (the value restriction): one vector cannot
+; hold Ints and be read as Strings.
+(def cells (ffi-call "zyl_wvec_new" 1000))
+(defn main ()
+  (begin
+    (ffi-call "zyl_wvec_push" cells 42 1000)
+    (print (str-length (ffi-call "zyl_wvec_get" cells 0 1000)))
+    0))

@@ -217,18 +217,10 @@
 ; ===========================================================================
 
 ; Every occurrence gets its OWN copy of the key rather than the table's
-; string. That looks wasteful and is deliberate: type_inference compares
-; names with `=`, which lowers to a pointer comparison whenever the
-; operand kinds are not known to be String (the same defect
-; ic-starts-with-make documents for str-starts-with). Source tokens are
-; always distinct objects, so those comparisons have always been false
-; and the per-call-site body-inference path behind them has never run;
-; handing out one shared pointer per name makes them true for the first
-; time and the dormant path dereferences a null parameter list
-; (bind-call-site-params). Copying keeps name comparison exactly as
-; sound — or unsound — as it was before packages existed. Fixing those
-; comparisons is a separate change to type inference, not to the module
-; system.
+; string. (The deleted type_inference.zyl compared names by address and
+; broke on a shared pointer; names are compared by content everywhere
+; now, and the copy is kept because changing it would change nothing but
+; the self-hosting seed.)
 (defn qf-ident (tab locals n)
   (if (qf-bound locals n)
     n

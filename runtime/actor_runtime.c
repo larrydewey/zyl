@@ -4678,6 +4678,19 @@ static const struct ZylFfiEntry g_ffi_table[] = {
 };
 #undef ZYL_FFI_ENTRY
 
+/* Whether `name` is one of this runtime's own entries. The compiler is
+   linked with the same runtime it compiles against, so it asks here: a
+   runtime entry is typed only by the compiler's signature table, never
+   by a program's (extern ...) (which could otherwise give an untyped raw
+   entry any type). */
+long long zyl_runtime_export_p(long long name) {
+    const char* n = (const char*)(size_t)name;
+    if (!n) return 0;
+    for (const struct ZylFfiEntry* e = g_ffi_table; e->name; e++)
+        if (strcmp(e->name, n) == 0) return 1;
+    return 0;
+}
+
 /* Address of an FFI target by name: this runtime's own symbols first
    (always present, no link flags needed), then whatever the dynamic
    loader can see. 0 means "no such symbol", which the interpreter

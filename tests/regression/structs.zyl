@@ -13,12 +13,12 @@
 (defstruct _s_Level2 (data))
 (defstruct _s_Level3 (content))
 
-(defn _s-get-x (p) (struct-get p "x"))
-(defn _s-get-y (p) (struct-get p "y"))
+(defn _s-get-x ((p _s_Point)) (struct-get p "x"))
+(defn _s-get-y ((p _s_Point)) (struct-get p "y"))
 (defn _s-make-point (x y) (make-_s_Point x y))
-(defn _s-sum-fields (p) (+ (struct-get p "x") (struct-get p "y")))
+(defn _s-sum-fields ((p _s_Point)) (+ (struct-get p "x") (struct-get p "y")))
 (defn _s-double (x) (* x 2))
-(defn _s-struct-double-x (p) (_s-double (struct-get p "x")))
+(defn _s-struct-double-x ((p _s_Point)) (_s-double (struct-get p "x")))
 
 ; Basic field access
 (test "struct-basic"

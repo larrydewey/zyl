@@ -3,8 +3,9 @@
 ;
 ; The type of every runtime function reached through `ffi-call`
 ; (docs/sound-types-design.md). The type pass (type_annotate.zyl,
-; ta-ffi-typed) reads these in strict mode; a symbol missing here is an
-; untyped result. Syntax: parameter types, `->`, the result type; a
+; ta-ffi-typed) types every ffi-call to a runtime entry by this table; a
+; runtime entry missing here is E_CANNOT_INFER, and an extern may not
+; retype one (E_FFI_RESTRICTED). Syntax: parameter types, `->`, the result type; a
 ; capitalized name with arguments in parentheses is a type constructor,
 ; e.g. "(SMap v)", and a lowercase name is a type variable shared across
 ; the signature. Must agree with runtime/actor_runtime.c. Opaque handle
@@ -146,6 +147,8 @@
   (Cons (FSig "zyl_word_store" "Int Int -> Unit")
   (Cons (FSig "zyl_ptr_add" "Ptr Int -> Ptr")
   (Cons (FSig "zyl_ptr_cstr" "Ptr -> String")
+  (Cons (FSig "zyl_runtime_export_p" "String -> Bool")
+  (Cons (FSig "zyl_actor_wait_all" "-> Unit")
   (Cons (FSig "zyl_ffi_addr" "String -> Int")
   (Cons (FSig "zyl_cstr_of_word" "Int -> String")
   (Cons (FSig "zyl_word_of_cstr" "String -> Int")
@@ -242,4 +245,4 @@
   (Cons (FSig "zyl_words_set" "Words Int Int -> Int")
   (Cons (FSig "zyl_words_view" "Arena Words Int Int -> Words")
   (Cons (FSig "zyl_zeroize" "Int Int -> Int")
-  Nil))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+  Nil))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))

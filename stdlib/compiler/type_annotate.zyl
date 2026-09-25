@@ -1,12 +1,14 @@
 ; === Zyl Compiler — Type Annotation ===
 ; Module: compiler/type_annotate
 ;
-; Hindley-Milner inference over the final Expr program (just before ICNF
-; lowering). Records each expression node's type in attr table 0 so
-; lowering can hand codegen a print/compare/float kind (ta-kind).
-; Fails open: a conflict poisons the type variables involved to unknown,
-; except where an argument clashes with a parameter or field annotation,
-; which is E_TYPE_MISMATCH.
+; The type checker (docs/sound-types-design.md, spec 4.8-4.10):
+; Hindley-Milner over the final Expr program, just before ICNF lowering,
+; with SCC generalization of top-level functions, static trait
+; resolution and per-type specialization. Every failure is an error; all
+; are reported (ta-type-error), then the compile fails
+; (ta-fail-if-errors). A poisoned variable only stops one error from
+; cascading. Each node's type is recorded so lowering can give codegen a
+; print/compare/float kind (ta-kind).
 
 (use core/list)
 (use core/option)
@@ -1229,10 +1231,11 @@
     (Nil "")
     (Cons h t (let hn (err-name h) (if (nil? t) hn (str-concat hn (str-concat ", " (ta-method-names t))))))))
 
+; Reported with the program's other type errors; the method name it
+; stands for is empty.
 (defn ta-method-fail (node msg help)
-  (let fid (ffi-call "zyl_span_file" node 1000)
-    (let off (ffi-call "zyl_span_off" node 1000)
-      (ffi-call "zyl_panic" (err-at "E_TRAIT_NOT_FOUND" msg fid off help) 1000))))
+  (let _ (ta-type-error "E_TRAIT_NOT_FOUND" msg node Nil help)
+    ""))
 
 (defn ta-call-go (st ctx env e n args)
   (if (ta-streq n "with-region")
@@ -1401,24 +1404,44 @@
           (EAtom a (match a (AStr s (ta-ffi-typed st s ats)) (_ (ta-dk st "ffi-call symbol"))))
           (_ (ta-dk st "ffi-call symbol"))))))))
 
-; In strict mode a symbol with a signature (compiler/ffi_sigs) is typed by
-; it: the arguments unify with its parameters and the result is its
-; result. Otherwise the old behaviour (a few String results, else unknown).
+; A runtime entry is typed by its table signature (compiler/ffi_sigs), and
+; one with none is E_CANNOT_INFER; a foreign symbol is typed by its
+; (extern ...) declaration, and one with none is E_CANNOT_INFER.
 (defn ta-ffi-typed (st s ats)
   (let spec (if (ta-strict-p) (ffi-sig s) "")
-    (if (= (str-length spec) 0)
-      (if (or (not (ta-runtime-sym s)) (ta-extern-declared s))
-        (ta-ffi-extern st s ats)
-        (ta-ffi-ret st s))
-      (match (ta-sig-parse st spec)
-        (TaF ps ret
-          (if (= (list-length ps) (list-length ats))
-            (let _ (ta-unify-pairs st ats ps) ret)
-            (let _ (ta-strict (str-concat "wrong number of arguments to " s)) ret)))
-        (_ (ta-dk st "ffi signature"))))))
+    (if (ta-runtime-export s)
+      (if (ta-extern-declared s)
+        (ta-extern-on-runtime st s ats spec)
+        (if (= (str-length spec) 0)
+          (ta-ffi-ret st s)
+          (ta-ffi-sig st s ats spec)))
+      (if (> (str-length spec) 0)
+        (ta-ffi-sig st s ats spec)
+        (ta-ffi-extern st s ats)))))
+
+; An extern may not retype the runtime's own entries.
+(defn ta-extern-on-runtime (st s ats spec)
+  (let _ (ta-type-error "E_FFI_RESTRICTED"
+           (str-concat "`" (str-concat s "` is a runtime entry; its type comes from the compiler's signature table, not from an extern"))
+           (ffi-call "zyl_ref_get" ta-cur-node 1000) Nil "remove the extern declaration")
+    (if (= (str-length spec) 0) (ta-fresh st) (ta-ffi-sig st s ats spec))))
+
+; A symbol typed by its table signature: the arguments unify with its
+; parameters and the result is its result.
+(defn ta-ffi-sig (st s ats spec)
+  (match (ta-sig-parse st spec)
+    (TaF ps ret
+      (if (= (list-length ps) (list-length ats))
+        (let _ (ta-unify-pairs st ats ps) ret)
+        (let _ (ta-strict (str-concat "wrong number of arguments to " s)) ret)))
+    (_ (ta-dk st "ffi signature"))))
 
 (defn ta-extern-declared (s)
   (match (extern-sig-of s) (Some _ true) (None false)))
+
+; Whether `s` is one of the runtime's own entries (asked of the runtime
+; this compiler is linked with).
+(defn ta-runtime-export (s) (ffi-call "zyl_runtime_export_p" s 1000))
 
 (defn ta-runtime-sym (s)
   (and (>= (str-length s) 4) (ta-streq (str-substring s 0 4) "zyl_")))
@@ -1645,16 +1668,21 @@
   (let w (ffi-call "zyl_wvec_pop" (ta-tjstack st) 1000)
     (if (= w v) (Cons w acc) (ta-pop-scc st v (Cons w acc)))))
 
+; A top-level def's getter is not generalized (the value restriction):
+; `(def cells (ffi-call "zyl_wvec_new" 1000))` is one vector of one
+; element type, not a vector of every type.
 (defn ta-gen-members (st ms)
   (match ms
     (Nil 0)
     (Cons m rest
       (begin
+        (if (ffi-call "zyl_smap_has" def-names (ta-fn-name st m) 1000)
+          (ta-wset (ta-fnsc st) m (TaSc 0 (ta-wget (ta-fnty st) m)))
         (match (ta-gen st (ta-wget (ta-fnty st) m) Nil)
           (TaGen t seen
             (begin
               (ta-debug-scheme st m t)
-              (ta-wset (ta-fnsc st) m (TaSc (list-length seen) t)))))
+              (ta-wset (ta-fnsc st) m (TaSc (list-length seen) t))))))
         (ta-wset (ta-fnstate st) m 2)
         (ta-gen-members st rest)))))
 
@@ -1762,9 +1790,8 @@
 ; A known struct without the field: a definite error.
 (defn ta-no-field (node n field names)
   (let msg (str-concat "no field `" (str-concat field (str-concat "` on struct `" (str-concat (err-name n) "`"))))
-    (let fid (ffi-call "zyl_span_file" node 1000)
-      (let off (ffi-call "zyl_span_off" node 1000)
-        (ffi-call "zyl_panic" (err-at "E_TYPE_MISMATCH" msg fid off (str-concat "its fields are: " (ta-join-names names))) 1000)))))
+    (let _ (ta-type-error "E_TYPE_MISMATCH" msg node Nil (str-concat "its fields are: " (ta-join-names names)))
+      1)))
 
 (defn ta-join-names (xs)
   (match xs
@@ -1796,7 +1823,17 @@
   (if (>= i n)
     0
     (match (ta-wget pv i)
-      (TaPend _ ts field r node (ta-seq (ta-sg-try st ts field r node) (ta-flush-loop st pv (+ i 1) n))))))
+      (TaPend _ ts field r node
+        (let _ (if (= (ta-sg-try st ts field r node) 0) (ta-sg-ambiguous st field node) unit)
+          (ta-flush-loop st pv (+ i 1) n))))))
+
+; A field read whose record type is still unknown when its function
+; group is done: several structs have the field, so the result would be
+; any type. (The field's type used to be left free.)
+(defn ta-sg-ambiguous (st field node)
+  (ta-type-error "E_CANNOT_INFER"
+    (str-concat "cannot tell which struct's field `" (str-concat field "` this reads: more than one struct has it"))
+    node Nil "annotate the value's type, e.g. ((p Point))"))
 
 (defn ta-int-in (x xs)
   (match xs
@@ -2514,8 +2551,9 @@
         (match (ta-recv st t)
           (TaC n _
             (if (< (ta-impl-fn st name n) 0)
-              (ta-method-fail node (str-concat "no impl of `" (str-concat (err-name name) (str-concat "` for type `" (str-concat (err-name n) "`"))))
-                (str-concat "add (impl " (str-concat (err-name (ta-trait-of name)) (str-concat " " (str-concat (err-name n) " ...)")))))
+              (let _ (ta-method-fail node (str-concat "no impl of `" (str-concat (err-name name) (str-concat "` for type `" (str-concat (err-name n) "`"))))
+                       (str-concat "add (impl " (str-concat (err-name (ta-trait-of name)) (str-concat " " (str-concat (err-name n) " ...)")))))
+                unit)
               unit))
           (_ unit))
         unit))))

@@ -1,10 +1,9 @@
 ; === Zyl LSP — Document Manager ===
 ; Module: lsp/document_manager
 ;
-; Per-document analysis cache. See lsp/compiler_bridge's header comment
-; for why this stops at macro expansion + the pre-inference checks + a
-; flat SymTable pass, rather than running compiler/type_inference's
-; collect-definitions.
+; Per-document analysis cache. It stops at macro expansion, the checks
+; and a flat SymTable pass (see lsp/compiler_bridge's header); it does
+; not run the type checker.
 ;
 ; The checks that run here are the ones compiler/pipeline.zyl's
 ; compile-run-checks runs (the same front end selfhost/driver.zyl uses),
@@ -23,8 +22,7 @@
 ;     of spec v5.0 §31.9. It needs the grants and denials that
 ;     mr-resolve-program-full returns; dm-frontend calls the plain
 ;     mr-resolve-program, which returns only the resolved forms.
-;   - type_inference's collect-definitions, for the reasons set out at
-;     length in lsp/compiler_bridge.zyl's header.
+;   - type checking (compiler/type_annotate) and everything after it.
 ;
 ; Because every check panics on its FIRST problem, a document reports
 ; one diagnostic at a time -- fix it, save, see the next. That matches

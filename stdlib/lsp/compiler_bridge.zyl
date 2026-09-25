@@ -5,31 +5,12 @@
 ; LSP-OWNED symbol table (SymTable) built directly from the macro-expanded
 ; Expr list.
 ;
-; Deliberately does NOT use compiler/type_inference's TypeInferer/
-; collect-definitions:
-;  1. Position tracking: tokens carry byte offsets and the compiler keeps
-;     a runtime span table keyed by node (zyl_span_set/zyl_span_off in
-;     runtime/actor_runtime.c, read by compiler/error_report.zyl), but
-;     nothing in this LSP reads it -- hover/goto-def locate names by
-;     scanning the document text (lsp/source_index). A full
-;     Hindley-Milner pass therefore buys them nothing beyond what a plain
-;     signature-text listing already gives by NAME.
-;  2. Safety/cost: collect-definitions calls infer-defn-body on every
-;     function -- real, recursive, non-tail-call HM inference over the
-;     WHOLE program on every keystroke. Confirmed by direct testing this
-;     is not merely slow: several of TypeInferer's own name-lookup
-;     helpers compare strings with bare `=` instead of `str-eq` (a
-;     pre-existing bug -- `=` on two dynamically-produced strings is
-;     pointer comparison, not content comparation), and fixing that
-;     class of bug changes control flow deep in generic-instantiation
-;     tracking enough to blow the native call stack compiling this
-;     compiler's own ~14K-line source (confirmed via gdb: unbounded
-;     recursion through collect-definitions). Diagnosing and fixing that
-;     safely is a separate, much larger project; the fix was reverted
-;     rather than risk the self-hosting fixed point for a feature this
-;     LSP doesn't need. SymTable below is built with a single flat pass
-;     over top-level forms and this module's own (correct) str-eq-based
-;     core/map, so it doesn't touch any of that machinery at all.
+; It does not run the type checker (compiler/type_annotate): tokens carry
+; byte offsets and the compiler keeps a span table, but hover and
+; go-to-definition locate names by scanning the document text
+; (lsp/source_index), so a symbol table built in one flat pass over the
+; top-level forms is all they need. Type errors reach the editor only
+; through the CLI's diagnostics for now.
 ;
 ; What this means for hover text: it shows the DECLARED text of a
 ; parameter's type annotation (Param carries `(Option String)`, exactly

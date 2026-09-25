@@ -1,9 +1,9 @@
 ; === Zyl Compiler — ExprInner AST Bridge ===
 ; Port of Rust ast.rs ExprInner enum to Zyl deftype/match form.
 ;
-; The Zyl parser produces raw Ast (AstIdent/AstInt/AList).
-; type_inference.zyl expects ExprInner (Atom/Call/Defn/.../Apply).
-; This module bridges that gap.
+; The Zyl parser produces raw Ast (AstIdent/AstInt/AList); every later
+; pass works on ExprInner (Atom/Call/Defn/.../Apply). This module converts
+; one to the other, recognizing every special form in one place.
 
 ; Needed for Pair (parse-for-binding/parse-cond-clause construct one) —
 ; previously missing here entirely. Harmless for the assemble.py bundle
@@ -177,7 +177,7 @@
 
 (deftype TestOrSuite (Test TestDecl) (Suite TestSuiteNode))
 
-; --- Expr wrapper — matches type_inference.zyl expectation of .inner ----------
+; --- Expr wrapper: every pass reads a node's form through Expr.inner --------
 
 (deftype Expr (Expr ExprInner))
 
@@ -1927,36 +1927,17 @@
 (defn sequence-two (a b)
   (Expr (EBegin (Cons a (Cons b Nil)))))
 
-; Combine a list of already-converted body expressions into one,
-; letting a let/let-mut at a non-final position absorb everything
-; after it as its own nested body, instead of the flat-sequence
-; default of leaving it as a sibling statement. Matters because a
-; let/let-mut used as a mid-sequence statement (not the sequence's
-; sole/final expression) is meant to introduce a binding for the REST
-; of the enclosing body -- e.g. `(let-mut i 0 (let-mut acc 0 BODY)
-; (assert-equal acc N))`, where the outer let-mut's second body
-; statement still reads `acc`, bound by the inner let-mut's OWN third
-; argument-turned-sibling. Left as flat siblings (the previous
-; behavior), the inner let-mut's own body is exactly its own third
-; argument, its scope for `acc` ends there, and the following sibling
-; statement reads `acc` as an unbound name -- silently wrong (falls
-; back through env-lookup's unbound-name path, same failure shape as
-; every other "reads as unbound" bug found this session) rather than
-; erroring, since nothing here signals a scope violation. Built
-; right-to-left: each element's "rest" is already the fully-built tail,
-; so a let's new body is its own original body followed by that tail.
+; Several body forms are one sequence, in order. A `let` among them
+; scopes over its own body only; it used to absorb the forms after it as
+; well, so `(let x 20 (print x))` followed by `(print x)` printed 20
+; twice.
 (defn build-sequenced-body (exprs)
   (match exprs
     (Nil (Expr (EAtom ANil)))
     (Cons only rest
       (match rest
         (Nil only)
-        (Cons _ _
-          (let restbody (build-sequenced-body rest)
-            (match (Expr.inner only)
-              (ELet name val body (Expr (ELet name val (sequence-two body restbody))))
-              (ELetMut name val body (Expr (ELetMut name val (sequence-two body restbody))))
-              (_ (sequence-two only restbody)))))))))
+        (Cons _ _ (Expr (EBegin exprs)))))))
 
 (defn parse-body-from (args start)
   (parse-body-list (ast-list-nth-rest args start)))
@@ -2897,7 +2878,7 @@
                     (EWithResource
                       bn
                       (convert-ast (ast-nth blist 1 (AstInt 0)))
-                      (convert-ast (ast-nth args 1 (AstInt 0))))))
+                      (parse-body-from args 1))))
                 None))
             (_ None)))
         (_ None)))

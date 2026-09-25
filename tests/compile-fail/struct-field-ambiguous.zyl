@@ -1,0 +1,7 @@
+; expect-error: E_CANNOT_INFER
+; Two structs have a field `x`; an unannotated parameter's field read
+; would have any type.
+(defstruct A (x Int))
+(defstruct B (x String))
+(defn getx (p) (struct-get p "x"))
+(defn main () (begin (print (+ 1 (getx (make-B "hi")))) 0))

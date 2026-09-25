@@ -4,44 +4,40 @@
 ; Evaluates a lowered program in this process instead of generating
 ; machine code for it. Every phase before this one is the real compiler:
 ; the input here is what `compile-to-fns` produces, after parsing, macro
-; expansion, every check, type inference, monomorphization, trait
-; dispatch, closure lifting, ICNF lowering, optimization and region
-; inference. Only the back end differs.
+; expansion, every check, impl lifting, closure lifting, type checking
+; (with static trait resolution and specialization), ICNF lowering,
+; optimization and region inference. Only the back end differs.
 ;
 ; That is what makes a REPL binding survive: the session's functions and
 ; values live in this process as ordinary data, so entering one entry
 ; does not re-run the ones before it. It is also why an entry costs
 ; milliseconds rather than a `cc` invocation.
 ;
-; Representation is deliberately the same as compiled code's, not a
-; convenient one:
+; ICNF is word-level, as code generation is, so the interpreter's values
+; are the words compiled code would hold, tagged with what they are:
 ;
-;   - A value is one machine word, tagged here with what it is: an Int,
-;     a Float, a String, or the address of a heap block. Words cross to
-;     and from the other kinds only through typed runtime entries
-;     (zyl_float_bits, zyl_cstr_of_word, ...), which ffi_sigs.zyl types
-;     and only the standard library may call.
+;   - VInt, VFlt (a Float), VStr (a String) and VPtr (the address of a
+;     heap block). Words cross to and from Floats and Strings only through
+;     typed runtime entries (zyl_float_bits, zyl_cstr_of_word, ...), which
+;     ffi_sigs.zyl types and only the standard library may call.
 ;   - A variant, a struct and a closure environment are all a heap block
-;     of [tag][field]... allocated by zyl_heap_alloc, byte-identical to
-;     what cg-variant emits -- so a value can be handed to any FFI
-;     function (zyl_variant_eq, zyl_variant_field) and behave.
-;   - A Float is its IEEE-754 bit pattern, operated on through the
-;     runtime's double helpers, which use the same hardware the SSE
-;     instructions codegen emits would.
+;     of [tag][field]... allocated by the runtime, byte-identical to what
+;     cg-variant emits -- so a value can be handed to any FFI function
+;     (zyl_variant_eq, zyl_variant_field) and behave. The block also
+;     records each field's tag, so a field reads back as what went in.
+;   - A binding is a (Ref Val) cell, so `set!` writes through the
+;     environment.
+;
+; In checking mode (ZYL_INTERP_CHECK=1, below) every operator checks its
+; operands' tags and every condition must be a Bool.
 ;
 ; Where it knowingly differs from codegen, and why:
 ;
-;   - `print` selects its format from the value in hand rather than from
-;     codegen's static `kind-of` analysis. Every case where the two
-;     disagree is one codegen gets wrong (it prints a String-typed
-;     parameter as a pointer, having no return-type inference); the
-;     interpreter prints the text.
-;   - A field read back out of a variant is an Int, exactly as codegen
-;     treats it (cg-bind-fields binds every field with kind 0). The
-;     shared limitation is deliberate: the two must agree.
+;   - `print` selects its format from the value in hand.
 ;   - IStackVariant allocates on the heap. Region inference chose the
 ;     stack for a value that provably does not escape; allocating it on
 ;     the heap instead is always sound, just less tidy.
+;   - Region annotations and with-region limits are ignored.
 
 (use compiler/node_tables)
 (use allocator/allocator)

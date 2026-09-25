@@ -709,9 +709,7 @@
 ; definitions.
 ;
 ; Precedence is the whole point. Two modules of one package may define the
-; same name — the standard library has `list-map` in both
-; `collections/collections` and `compiler/monomorphization` — and their
-; canonical keys differ because the module path is part of the key
+; same name, and their canonical keys differ because the module path is part of the key
 ; (§31.2). Without this rule every module resolved such a name to
 ; whichever definition happened to come last, including at the DEFINITION
 ; site, so both definitions took the same key and the program held one

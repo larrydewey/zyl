@@ -55,13 +55,8 @@
             )
           )
         )
-        _cfe_acc
+        (assert-equal _cfe_acc 25)
       )
-    )
-    (
-      assert-equal
-      _cfe_acc
-      25
     )
   )
 )
