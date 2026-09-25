@@ -2595,7 +2595,10 @@
 (defn ml-imm-op (op r)
   (match r
     (IConst n (and (and (>= n -2147483648) (<= n 2147483647))
-                   (or (<= op 2) (or (and (>= op 5) (<= op 10)) (and (>= op 11) (<= op 13))))))
+                   (or (<= op 2) (or (and (>= op 5) (<= op 10)) (or (and (>= op 11) (<= op 13))
+                     ; division by a constant other than 0 and -1 (whose
+                     ; traps idiv keeps) is a multiply (mb-divmod-const)
+                     (and (or (= op 3) (= op 4)) (not (or (= n 0) (= n -1)))))))))
     (_ false)))
 
 (defn ml-const-of (r) (match r (IConst n n) (_ 0)))
@@ -2930,6 +2933,8 @@
         st))
     (MBinI op d a n
       (if (mb-live fr d)
+       (if (or (= op 3) (= op 4))
+        (mb-set (mb-divmod-const st fr op a n) fr d "rax")
         (if (mb-two-op op)
           (if (mb-in-mem fr d)
             (mb-set (cg-emit-line (cg-emit-line st (str-concat "    mov rax, " (mb-loc-text fr a)))
@@ -2939,7 +2944,7 @@
                           (str-concat "    " (str-concat (mb-two-op-mnem op) (str-concat " " (str-concat (mb-loc-text fr d) (str-concat ", " (ffi-call "zyl_int_text" n 1000))))))))
           ; a comparison: cmp against the immediate, then setcc
           (let st2 (cg-emit-line (cg-emit-line st (str-concat "    mov rax, " (mb-loc-text fr a))) (str-concat "    cmp rax, " (ffi-call "zyl_int_text" n 1000)))
-            (mb-set (mb-setcc st2 op) fr d "rax")))
+            (mb-set (mb-setcc st2 op) fr d "rax"))))
         st))
     (MCall d sym user args lvl
       (let st2 (mb-moves st (mb-arg-moves fr args 0))
@@ -3196,3 +3201,49 @@
                        (Cons "    pop rsi"
                        (Cons (str-concat ldone ":") Nil)))))))))))))))))
               (mb-set st3 fr d "rax"))))))))
+
+; a / n (op 3) or a % n (op 4) for a constant n other than 0 and -1,
+; into rax, exactly as idiv computes it (truncating toward zero, the
+; remainder taking the dividend's sign). 1 is a move, a power of two a
+; biased shift, anything else a multiply by zyl_div_magic's constant.
+(defn mb-divmod-const (st fr op a n)
+  (let st2 (cg-emit-line st (str-concat "    mov rcx, " (mb-loc-text fr a)))
+    (if (= n 1)
+      (cg-emit-line st2 (if (= op 3) "    mov rax, rcx" "    xor eax, eax"))
+      (if (and (> n 0) (= (bit-and n (- n 1)) 0))
+        (mb-div-pow2 st2 op (mb-log2 n 0))
+        (mb-div-magic st2 op n)))))
+
+(defn mb-log2 (n k) (if (<= n 1) k (mb-log2 (/ n 2) (+ k 1))))
+
+(defn mb-div-pow2 (st op k)
+  (let st2 (cg-emit-lines st
+             (Cons "    mov rax, rcx"
+             (Cons "    sar rax, 63"
+             (Cons (str-concat "    shr rax, " (ffi-call "zyl_int_text" (- 64 k) 1000))
+             (Cons "    add rax, rcx"
+             (Cons (str-concat "    sar rax, " (ffi-call "zyl_int_text" k 1000)) Nil))))))
+    (if (= op 3)
+      st2
+      (cg-emit-lines st2
+        (Cons (str-concat "    shl rax, " (ffi-call "zyl_int_text" k 1000))
+        (Cons "    mov rdx, rcx"
+        (Cons "    sub rdx, rax"
+        (Cons "    mov rax, rdx" Nil))))))))
+
+(defn mb-div-magic (st op n)
+  (let m (ffi-call "zyl_div_magic" n 1000)
+    (let sh (ffi-call "zyl_div_shift" n 1000)
+      (let st2 (cg-emit-lines st
+                 (Cons (str-concat "    movabs rax, " (ffi-call "zyl_int_text" m 1000))
+                 (Cons "    imul rcx" Nil)))
+        (let st3 (if (and (> n 0) (< m 0)) (cg-emit-line st2 "    add rdx, rcx")
+                   (if (and (< n 0) (> m 0)) (cg-emit-line st2 "    sub rdx, rcx") st2))
+          (let st4 (if (> sh 0) (cg-emit-line st3 (str-concat "    sar rdx, " (ffi-call "zyl_int_text" sh 1000))) st3)
+            (let st5 (cg-emit-lines st4 (Cons "    mov rax, rdx" (Cons "    shr rax, 63" (Cons "    add rdx, rax" Nil))))
+              (if (= op 3)
+                (cg-emit-line st5 "    mov rax, rdx")
+                (cg-emit-lines st5
+                  (Cons (str-concat "    imul rdx, rdx, " (ffi-call "zyl_int_text" n 1000))
+                  (Cons "    mov rax, rcx"
+                  (Cons "    sub rax, rdx" Nil))))))))))))
