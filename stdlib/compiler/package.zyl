@@ -230,15 +230,15 @@
 ; with N >= 2, and every byte is [a-z0-9-_/].
 (defn pk-name-valid (s)
   (if (= (pk-len s) 0)
-    0
+    false
     (if (not (pk-name-chars-ok s 0))
-      0
+      false
       (let segs (pk-name-segments s)
         (if (= segs 2)
           (pk-name-segments-nonempty s)
           (if (= segs 3)
-            (if (>= (pk-name-pinned-major s) 2) (pk-name-segments-nonempty s) 0)
-            0))))))
+            (and (>= (pk-name-pinned-major s) 2) (pk-name-segments-nonempty s))
+            false))))))
 
 (defn pk-name-segments-nonempty (s)
   (if (= (pk-byte-at s 0) 47)
@@ -255,7 +255,7 @@
       (pk-no-empty-seg s (+ i 1)))))
 
 (defn pk-check-name (s)
-  (if (> (pk-name-valid s) 0)
+  (if (pk-name-valid s)
     s
     (ffi-call "zyl_panic" (str-concat "E_PKG_BAD_NAME: package: not a valid scoped package path: " s) 1000)))
 

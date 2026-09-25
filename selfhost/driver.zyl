@@ -330,13 +330,13 @@
 (defn drv-check-workspace (arena dir)
   (let root (ws-find-root dir 16)
     (if (= (str-length root) 0)
-      1
+      true
       (ws-check-member-deps arena (ws-read arena root)))))
 
 (defn drv-build-package (arena dir locked)
   (let m (pk-read-manifest arena (str-concat dir "/zyl.pkg"))
     (let nodes (mvs-resolve arena (cli-ctx-offline arena dir m) m dir)
-      (let _ (if (> locked 0) (drv-check-locked arena dir m nodes) 1)
+      (let _ (if locked (drv-check-locked arena dir m nodes) 1)
         (let src (drv-entry-module arena dir)
           (let out (drv-output-path arena dir)
             (drv-compile-file arena src out dir nodes)))))))
@@ -365,8 +365,8 @@
 (defn drv-cache-copy (bin-from bin-to info-from info-to)
   (if (= (store-run (str-concat "cp -p '" (str-concat bin-from (str-concat "' '" (str-concat bin-to
         (str-concat "' && cp '" (str-concat info-from (str-concat "' '" (str-concat info-to "'"))))))))) 0)
-    false
-    true))
+    0
+    1))
 
 (defn drv-cache-key (arena dir nodes)
   (let prof (ffi-call "zyl_smap_get_or" contract-profiles "profile" "" 1000)

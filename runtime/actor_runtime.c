@@ -4517,6 +4517,11 @@ long long zyl_fresh_id(void) {
    system rather than the machine. */
 long long zyl_cstr_of_word(long long w) { return w; }
 
+/* The IEEE-754 bit pattern of a Float, as an Int (a Float travels in a
+   general register as its bits, so this is the identity too). Typed
+   Float -> Int, it is how Hash hashes a Float without a cast. */
+long long zyl_float_bits(long long w) { return w; }
+
 /* Decimal text of an integer, heap-allocated. zyl_cstr_from_int needs
    an arena; the interpreter has heap values and no arena of its own. */
 long long zyl_int_text(long long n) {
@@ -4571,7 +4576,7 @@ long long zyl_int_text(long long n) {
     X(zyl_cstr_concat) X(zyl_cstr_count_newlines) X(zyl_cstr_decode) \
     X(zyl_cstr_cmp) X(zyl_cstr_eq) X(zyl_cstr_from_byte) X(zyl_cstr_from_int) \
     X(zyl_cstr_key_matches) \
-    X(zyl_cstr_last_newline) X(zyl_cstr_len) X(zyl_cstr_of_word) \
+    X(zyl_cstr_last_newline) X(zyl_cstr_len) X(zyl_cstr_of_word) X(zyl_float_bits) \
     X(zyl_cstr_sanitize) X(zyl_cstr_sub) X(zyl_cstr_substr) \
     X(zyl_cstr_to_int) X(zyl_cstr_to_int_base) X(zyl_diag_json) \
     X(zyl_diag_json_set) X(zyl_dirname_cstr) \

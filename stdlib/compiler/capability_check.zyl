@@ -151,7 +151,7 @@
 
 (defn cc-check-forms (forms grants denied)
   (match forms
-    (Nil true)
+    (Nil unit)
     (Cons e rest
       (let _ (cc-check-form e grants denied)
         (cc-check-forms rest grants denied)))))
@@ -160,13 +160,13 @@
   (match (Expr.inner e)
     (EDefn name _ body (cc-check-owned name body grants denied e))
     (EDef name value (cc-check-owned name value grants denied e))
-    (_ 1)))
+    (_ unit)))
 
 (defn cc-check-owned (name body grants denied dnode)
   (let pkg (ck-package-of name)
     (match (cc-find-grant grants pkg)
-      (Some g (if (= (cg-enforced g) 0) 1 (cc-walk body (cg-caps g) denied pkg name dnode)))
-      (None 1))))
+      (Some g (if (= (cg-enforced g) 0) unit (cc-walk body (cg-caps g) denied pkg name dnode)))
+      (None unit))))
 
 ; Depth-first over the body. The first violation stops the build with the
 ; offending package, the construct's capability and the definition that
@@ -179,13 +179,13 @@
 
 (defn cc-require (need caps denied pkg fname dnode site)
   (if (= (str-length need) 0)
-    1
+    unit
     (if (pk-has-capability denied need)
       (cc-fail site dnode
         (str-concat (err-name fname) (str-concat " uses " (str-concat need ", which the root package forbids with deny-capabilities")))
         "remove the use, or lift the root package's deny-capabilities entry")
       (if (pk-has-capability caps need)
-        1
+        unit
         (cc-fail site dnode
           (str-concat "package " (str-concat pkg (str-concat " uses " (str-concat need (str-concat " in " (str-concat (err-name fname) " without declaring it in zyl.pkg"))))))
           (str-concat "add `" (str-concat need "` to the package's (capabilities ...) in zyl.pkg")))))))
@@ -199,7 +199,7 @@
 
 (defn cc-walk-list (xs caps denied pkg fname dnode)
   (match xs
-    (Nil true)
+    (Nil unit)
     (Cons h t
       (let _ (cc-walk h caps denied pkg fname dnode)
         (cc-walk-list t caps denied pkg fname dnode)))))
@@ -254,11 +254,11 @@
     (ESetBang _ v (cc-walk v caps denied pkg fname dnode))
     (EStructGet b _ (cc-walk b caps denied pkg fname dnode))
     (EAssert b _ (cc-walk b caps denied pkg fname dnode))
-    (_ 1)))
+    (_ unit)))
 
 (defn cc-walk-arms (arms caps denied pkg fname dnode)
   (match arms
-    (Nil true)
+    (Nil unit)
     (Cons a rest
       (let _ (cc-walk (MA.body a) caps denied pkg fname dnode)
         (cc-walk-arms rest caps denied pkg fname dnode)))))

@@ -51,7 +51,7 @@
 
 ; FNV-1a over the value's word, or over a string's bytes.
 (impl Hash Int (defn hash (self) (show-mix 1469598103934665603 self)))
-(impl Hash Float (defn hash (self) (show-mix 1469598103934665603 (ffi-call "zyl_cstr_of_word" self 1000))))
+(impl Hash Float (defn hash (self) (show-mix 1469598103934665603 (ffi-call "zyl_float_bits" self 1000))))
 (impl Hash Bool (defn hash (self) (show-mix 1469598103934665603 (if self 1 0))))
 (impl Hash String (defn hash (self) (show-str-hash self 0 1469598103934665603)))
 

@@ -74,7 +74,7 @@
 (defn al-assert-equal (all l r vt)
   (let l2 (al-expr all l vt)
     (let r2 (al-expr all r vt)
-      (if (> (al-should-variant-eq all l2 r2 vt) 0)
+      (if (al-should-variant-eq all l2 r2 vt)
         (Expr (EAssertTrue
                 (Expr (EApply "==" (Cons l2 (Cons r2 Nil))))
                 (Some "assert-equal failed")))
@@ -86,10 +86,9 @@
 ; "looks variant" could route a non-pointer straight into
 ; zyl_variant_eq, which dereferences it unconditionally.
 (defn al-should-variant-eq (all l r vt)
-  (if (al-is-primitive-const l) 0
-  (if (al-is-primitive-const r) 0
-  (if (> (al-looks-variant all l vt 0) 0) 1
-    (al-looks-variant all r vt 0)))))
+  (and (not (al-is-primitive-const l))
+       (and (not (al-is-primitive-const r))
+            (or (al-looks-variant all l vt 0) (al-looks-variant all r vt 0)))))
 
 (defn al-is-primitive-const (e)
   (match (Expr.inner e)
@@ -109,7 +108,7 @@
 ; of ICNF/SSA — `all` is the whole top-level form list, needed to look
 ; up a called function's body by name.
 (defn al-looks-variant (all e vt depth)
-  (if (> depth 4) 0
+  (if (> depth 4) false
     (al-looks-variant-tail all (al-tail e) vt depth)))
 
 ; The expr `e` actually evaluates to at runtime — ELet/ELetMut/EBegin
@@ -129,25 +128,25 @@
     (EApply fname args (al-looks-name all fname vt depth))
     (EMatch _ arms (al-looks-arms all arms vt depth))
     (EIf _ t eb
-      (if (> (al-looks-variant all t vt (+ depth 1)) 0) 1
-        (al-looks-variant all eb vt (+ depth 1))))
-    (_ 0)))
+      (or (al-looks-variant all t vt (+ depth 1))
+          (al-looks-variant all eb vt (+ depth 1))))
+    (_ false)))
 
 (defn al-looks-arms (all arms vt depth)
   (match arms
     (Nil false)
     (Cons a rest
-      (if (> (al-looks-variant all (MA.body a) vt (+ depth 1)) 0) true
+      (if (al-looks-variant all (MA.body a) vt (+ depth 1)) true
         (al-looks-arms all rest vt depth)))))
 
 ; A name is "variant-looking" if it's a known ADT/struct constructor
 ; (direct vt hit), or it names a top-level function whose own body's
 ; tail looks-variant (one level of the depth budget spent per hop).
 (defn al-looks-name (all name vt depth)
-  (if (> (vt-tag-of vt name) -1) 1
+  (if (> (vt-tag-of vt name) -1) true
     (match (al-fn-body all name)
       (Some body (al-looks-variant all body vt (+ depth 1)))
-      (None 0))))
+      (None false))))
 
 (defn al-fn-body (all name)
   (match all

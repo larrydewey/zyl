@@ -332,7 +332,7 @@
 ; TkInt path, and zyl_cstr_to_int_base decodes the prefix.
 (defn lex-num-e (arena src len i acc e)
   (let text (sub-str arena src i (- e i))
-    (if (= (text-float-marker-p text) 1)
+    (if (text-float-marker-p text)
       (lex-loop arena src len e (Cons (TkFloat text i) acc))
       (lex-loop arena src len e (Cons (TkInt (ffi-call "zyl_cstr_to_int_base" text 1000) i) acc)))))
 

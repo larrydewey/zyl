@@ -1205,9 +1205,9 @@
 ; Runtime ops reached by name: def getters' cells (expr_inner.zyl's
 ; def-getter) and the actor forms (receive) / (actor-self).
 (defn ic-global-sym (n)
-  (if (str-eq n "zyl-global-ready") "zyl_global_ready"
-    (if (str-eq n "zyl-global-get") "zyl_global_get"
-      (if (str-eq n "zyl-global-put") "zyl_global_put"
+  (if (str-eq n "zyl global ready") "zyl_global_ready"
+    (if (str-eq n "zyl global get") "zyl_global_get"
+      (if (str-eq n "zyl global put") "zyl_global_put"
         (if (str-eq n "receive") "zyl_actor_receive"
           (if (str-eq n "actor-self") "zyl_actor_self"
             (if (str-eq n "zyl-contract-warn") "zyl_contract_warn"
@@ -1377,8 +1377,7 @@
   (match arms
     (Nil false)
     (Cons arm rest
-      (let ca (ic-arm-is-catchall vt arm)
-        (if (> ca 0) true (ic-has-catchall rest vt))))))
+      (or (ic-arm-is-catchall vt arm) (ic-has-catchall rest vt)))))
 
 ; Check all arms' variants exist in VT (no typos)
 (defn ic-check-variants-exist (arms vt)
@@ -1628,8 +1627,8 @@
         0)
       0)
     (ic-arm-guard-count arena (rest-expr args) vt
-                        (+ consts (ic-arm-guard-is-const (first-expr args)))
-                        (+ calls (ic-arm-guard-is-call arena (first-expr args) vt)))))
+                        (+ consts (if (ic-arm-guard-is-const (first-expr args)) 1 0))
+                        (+ calls (if (ic-arm-guard-is-call arena (first-expr args) vt) 1 0)))))
 
 (defn ic-arm-guard-is-const (a)
   (match (Expr.inner a)

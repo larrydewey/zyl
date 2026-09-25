@@ -112,6 +112,7 @@
   (Cons (FSig "zyl_now_ms" "-> Int")
   (Cons (FSig "zyl_panic" "String -> a")
   (Cons (FSig "zyl_path_exists" "String -> Bool")
+  (Cons (FSig "zyl_float_bits" "Float -> Int")
   (Cons (FSig "zyl_print_float" "Float -> Unit")
   (Cons (FSig "zyl_print_int" "Int -> Unit")
   (Cons (FSig "zyl_print_str" "String -> Unit")
@@ -193,4 +194,4 @@
   (Cons (FSig "zyl_words_set" "Words Int Int -> Int")
   (Cons (FSig "zyl_words_view" "Arena Words Int Int -> Words")
   (Cons (FSig "zyl_zeroize" "Int Int -> Int")
-  Nil)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+  Nil))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))

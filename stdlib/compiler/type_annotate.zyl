@@ -471,7 +471,10 @@
     (TaTd name params _ _
       (match (ta-conv-args st args scope Nil)
         (TaRL ts s2
-          (TaR (TaC name (ta-pad st ts (list-length params))) s2))))))
+          ; A bare generic name, as an impl's receiver is annotated
+          ; (`impl Eq Result`), stands for any instance: its arguments are
+          ; left to inference. Only a partial application is an error.
+          (TaR (TaC name (if (nil? ts) (ta-fresh-list st (list-length params) Nil) (ta-pad st name ts (list-length params)))) s2))))))
 
 (deftype TaRL (TaRL (List TaTy) (List (Pair String TaTy))))
 
@@ -482,12 +485,12 @@
       (match (ta-conv st a scope)
         (TaR t s2 (ta-conv-args st rest s2 (Cons t acc)))))))
 
-(defn ta-pad (st ts n)
+(defn ta-pad (st name ts n)
   (if (<= n 0)
     Nil
     (match ts
-      (Nil (Cons (ta-dk st "missing type argument") (ta-pad st Nil (- n 1))))
-      (Cons h t (Cons h (ta-pad st t (- n 1)))))))
+      (Nil (Cons (ta-dk st (str-concat "missing type argument of `" (str-concat (err-name name) "`"))) (ta-pad st name Nil (- n 1))))
+      (Cons h t (Cons h (ta-pad st name t (- n 1)))))))
 
 ; --- collection ---------------------------------------------------------------
 
@@ -522,7 +525,7 @@
       (begin
         (match (Expr.inner e)
           (EDeftype name _ _ _ (ta-put2 (ta-types st) name (TaTd name Nil false 0)))
-          (EDefn name _ _ (ta-add-fn st name e))
+          (EDefn name _ _ (let _ (ta-add-fn st name e) unit))
           (EImplBlock trait type bodies (ta-add-impls st trait type bodies))
           (_ unit))
         (ta-collect-a st rest)))))
@@ -530,7 +533,7 @@
 ; Impl methods by dotted `Trait.method`: (List (Pair type mangled)).
 (defn ta-add-impls (st trait type bodies)
   (match bodies
-    (Nil 0)
+    (Nil unit)
     (Cons ib rest
       (begin
         (match ib
@@ -588,7 +591,7 @@
 ; Method schemes by dotted name; `specs` "!show" names Show.show.
 (defn ta-add-trait (st name methods)
   (match methods
-    (Nil 0)
+    (Nil unit)
     (Cons m rest
       (begin
         (match m
@@ -735,7 +738,8 @@
     (match (ta-resolve st t)
       (TaC n _
         (if (or (ta-show-prim n) (ta-streq n "Unit"))
-          (ta-mismatch st b (ta-bytebuf) t Nil "pass the handle `bytebuf` or `byteslice` returned")
+          (let _ (ta-mismatch st b (ta-bytebuf) t Nil "pass the handle `bytebuf` or `byteslice` returned")
+            t)
           t))
       (_ t))))
 
@@ -789,7 +793,7 @@
                        unit
                        (let _ (ffi-call "zyl_ref_set" ta-cur-node e 1000)
                          (ta-strict (str-concat (if (= cls 1) "arithmetic on " "ordering on ") (ta-show st t))))))
-                   (_ 0))
+                   (_ unit))
             (ta-check-num st (+ i 1) n)))))))
 
 (defn ta-l2 (a b) (Cons a (Cons b Nil)))
@@ -1128,13 +1132,19 @@
   (if (ta-key-is n "str-eq") (ta-sig2 (ta-str) (ta-str) (if (ta-strict-p) (ta-bool) (ta-fresh st)))
   (if (ta-key-is n "print-string") (TaF (Cons (ta-str) Nil) (ta-int))
   (if (ta-key-is n "print-float") (TaF (Cons (ta-flt) Nil) (ta-int))
+  ; A def getter's cell (expr_inner.zyl, def-getter). The read is the
+  ; only generic result here: its one caller joins it, in the same `if`,
+  ; with the value the getter stores under the same key.
+  (if (ta-streq n "zyl global ready") (ta-sig-parse st "String -> Bool")
+  (if (ta-streq n "zyl global get") (ta-sig-parse st "String -> a")
+  (if (ta-streq n "zyl global put") (ta-sig-parse st "String a -> Unit")
   ; collections/vec's typed arrays, whose element type every Vec relies on
   ; (the runtime signatures apply only in strict mode for now).
   (if (ta-key-is n "collections/vec::array-new") (ta-sig-parse st "Arena Int -> (Array a)")
   (if (ta-key-is n "collections/vec::array-get") (ta-sig-parse st "(Array a) Int -> a")
   (if (ta-key-is n "collections/vec::array-set") (ta-sig-parse st "(Array a) Int a -> Unit")
   (if (ta-key-is n "collections/vec::array-cap") (ta-sig-parse st "(Array a) -> Int")
-  (ta-no-type)))))))))))))
+  (ta-no-type))))))))))))))))
 
 (defn ta-call-named (st ctx env e n args)
   (let lt (ta-env-get env n)
@@ -1187,7 +1197,7 @@
 
 (defn ta-call-ctor (st ctx env n args)
   (match (ta-ctor-lookup st n)
-    (None (ta-seq (ta-list st ctx env args) (ta-dk st "call to an unknown name")))
+    (None (ta-seq (ta-list st ctx env args) (ta-dk st (str-concat "call to an unknown name `" (str-concat (err-name n) "`")))))
     (Some vd
       (let tc (ta-ctor-inst st vd)
         (let ts (ta-list st ctx env args)
@@ -1493,7 +1503,7 @@
               (ta-nth fts 0 (ta-dk st "unwrap"))))
           (_ (ta-dk st "unwrap")))))))
 
-(deftype TaPend (TaPend Int TaTy String TaTy Int))
+(deftype TaPend (TaPend Int TaTy String TaTy Expr))
 
 (defn ta-struct-get (st ctx env se field node)
   (let ts (ta-expr st ctx env se)
@@ -1803,7 +1813,7 @@
       (begin
         (match (Expr.inner e)
           (EDefn name _ _ (ta-top-fn st name))
-          (ETestDecl _ body _ (ta-expr st -1 Nil body))
+          (ETestDecl _ body _ (let _ (ta-expr st -1 Nil body) 0))
           (_ 0))
         (ta-top st rest)))))
 
@@ -2209,7 +2219,7 @@
     (Cons sp rest
       (begin
         (let s (ta-sp-status st sp)
-          (if (= s 1) (ta-act st members sp) (if (= s 0) (ta-check-no-impl st sp) 0)))
+          (if (= s 1) (ta-act st members sp) (if (= s 0) (ta-check-no-impl st sp) unit)))
         (ta-act-list st members rest)))))
 
 ; A trait call on a concrete receiver type with no impl has no target.
@@ -2222,9 +2232,9 @@
             (if (< (ta-impl-fn st name n) 0)
               (ta-method-fail node (str-concat "no impl of `" (str-concat (err-name name) (str-concat "` for type `" (str-concat (err-name n) "`"))))
                 (str-concat "add (impl " (str-concat (err-name (ta-trait-of name)) (str-concat " " (str-concat (err-name n) " ...)")))))
-              0))
-          (_ 0))
-        0))))
+              unit))
+          (_ unit))
+        unit))))
 
 ; `Trait` of a dotted trait-method name `Trait.method`.
 (defn ta-trait-of (dotted)

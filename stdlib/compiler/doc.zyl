@@ -20,7 +20,7 @@
 (use compiler/expr_inner)
 
 (defn doc-cap () 16777216)
-(defn doc-out (buf s) (ffi-call "zyl_str_append_capped" buf s (doc-cap) 1000))
+(defn doc-out (buf s) (let _ (ffi-call "zyl_str_append_capped" buf s (doc-cap) 1000) unit))
 
 ; Markdown for the file at `path`, titled `modname`.
 (defn doc-file (arena path modname pub-only)
@@ -45,7 +45,7 @@
 (defn doc-dir-files (arena buf dir list i pub-only)
   (let j (doc-line-end list i)
     (if (>= i j)
-      0
+      unit
       (let rel (str-substring list i (- j i))
         (begin
           (doc-out buf (doc-file arena (str-concat dir (str-concat "/" rel)) (str-substring rel 0 (- (str-length rel) 4)) pub-only))
@@ -68,19 +68,19 @@
 ; Leading comment lines, until the first line that is not a comment.
 (defn doc-header-lines (buf src i n)
   (if (>= i n)
-    0
+    unit
     (let j (doc-line-end src i)
       (let line (doc-trim (str-substring src i (- j i)))
         (if (doc-comment-p line)
           (begin
             (doc-header-line buf line)
             (doc-header-lines buf src (+ j 1) n))
-          0)))))
+          unit)))))
 
 (defn doc-header-line (buf line)
   (let text (doc-strip line)
     (if (or (doc-starts text "Module:") (doc-rule-p text))
-      0
+      unit
       (if (doc-starts text "===")
         (begin (doc-out buf "*") (doc-out buf (doc-trim (doc-strip-eq text))) (doc-out buf "*\n\n"))
         (begin (doc-out buf text) (doc-out buf "\n"))))))
@@ -103,7 +103,7 @@
 
 (defn doc-items (buf src forms pub-only)
   (match forms
-    (Nil 0)
+    (Nil unit)
     (Cons f rest
       (begin
         (doc-item buf src f pub-only)
@@ -113,7 +113,7 @@
   (let is-pub (str-eq (ast-head f) "pub")
     (let def (if is-pub (doc-unwrap-pub f) f)
       (if (and pub-only (not is-pub))
-        0
+        unit
         (if (doc-definition-p (ast-head def))
           (begin
             (doc-out buf "### `")
@@ -122,8 +122,8 @@
             (doc-out buf (doc-signature def))
             (doc-out buf "\n```\n\n")
             (let d (doc-comment-above src (ffi-call "zyl_span_off" f 1000))
-              (if (> (str-length d) 0) (begin (doc-out buf d) (doc-out buf "\n")) 0)))
-          0)))))
+              (if (> (str-length d) 0) (begin (doc-out buf d) (doc-out buf "\n")) unit)))
+          unit)))))
 
 (defn doc-unwrap-pub (f)
   (match f

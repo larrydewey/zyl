@@ -305,7 +305,7 @@
     (match binds
       (Nil (dv-str name))
       (_
-        (if (> isst 0)
+        (if isst
           (dv-cat (dv-str (str-concat name " { ")) (dv-cat (dv-text-fields call (AV.fields v) binds) (dv-str " }")))
           (dv-cat (dv-str (str-concat name "(")) (dv-cat (dv-text-items call binds) (dv-str ")"))))))))
 

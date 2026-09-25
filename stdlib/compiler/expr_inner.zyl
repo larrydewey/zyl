@@ -641,14 +641,17 @@
 (defn ast-call1 (hd a) (AList (Cons (AstIdent hd) (Cons a Nil))))
 
 ; (defn k () (if (ready "k") (get "k") (let _zyl_def v (begin (put "k" _zyl_def) _zyl_def))))
+; The cell operations are named with spaces, which no source text can
+; spell, so only a getter can call them; that is what makes typing the
+; cell read as `String -> a` sound (type_annotate.zyl, ta-builtin-sig).
 (defn def-getter (f k)
   (let key (AString k)
     (let v (def-rewrite (match f (AList xs (ast-nth xs 2 (AstInt 0))) (_ (AstInt 0))))
       (let store (AList (Cons (AstIdent "let") (Cons (AstIdent "_zyl_def") (Cons v
                    (Cons (AList (Cons (AstIdent "begin")
-                     (Cons (ast-call2 "zyl-global-put" key (AstIdent "_zyl_def")) (Cons (AstIdent "_zyl_def") Nil)))) Nil)))))
-        (let body (AList (Cons (AstIdent "if") (Cons (ast-call1 "zyl-global-ready" key)
-                    (Cons (ast-call1 "zyl-global-get" key) (Cons store Nil)))))
+                     (Cons (ast-call2 "zyl global put" key (AstIdent "_zyl_def")) (Cons (AstIdent "_zyl_def") Nil)))) Nil)))))
+        (let body (AList (Cons (AstIdent "if") (Cons (ast-call1 "zyl global ready" key)
+                    (Cons (ast-call1 "zyl global get" key) (Cons store Nil)))))
           (let g (AList (Cons (AstIdent "defn") (Cons (AstIdent k) (Cons (AList Nil) (Cons body Nil)))))
             (let _ (ffi-call "zyl_span_copy" g f 1000) g)))))))
 

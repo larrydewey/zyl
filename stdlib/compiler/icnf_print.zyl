@@ -20,7 +20,7 @@
       (ip-fns buf fns)
       (buf-str buf))))
 
-(defn ip-out (buf s) (ffi-call "zyl_str_append_capped" buf s (ip-cap) 1000))
+(defn ip-out (buf s) (let _ (ffi-call "zyl_str_append_capped" buf s (ip-cap) 1000) unit))
 (defn ip-int (buf n) (ip-out buf (ffi-call "zyl_int_text" n 1000)))
 (defn ip-sp (buf) (ip-out buf " "))
 
@@ -39,7 +39,7 @@
 ; `"` and `\` get a backslash; control bytes become \xNN.
 (defn ip-escaped (buf s i n)
   (if (>= i n)
-    0
+    unit
     (let c (ffi-call "zyl_cstr_byte_at" s i 1000)
       (begin
         (if (ip-special c)
@@ -51,22 +51,22 @@
 
 (defn ip-fns (buf fns)
   (match fns
-    (Nil 0)
+    (Nil unit)
     (Cons f rest (begin (ip-node buf f) (ip-out buf "\n") (ip-fns buf rest)))))
 
 (defn ip-list (buf xs)
   (match xs
-    (Nil 0)
+    (Nil unit)
     (Cons x rest (begin (ip-sp buf) (ip-node buf x) (ip-list buf rest)))))
 
 (defn ip-strs (buf xs)
   (match xs
-    (Nil 0)
+    (Nil unit)
     (Cons x rest (begin (ip-sp buf) (ip-str buf x) (ip-strs buf rest)))))
 
 (defn ip-ints (buf xs)
   (match xs
-    (Nil 0)
+    (Nil unit)
     (Cons x rest (begin (ip-sp buf) (ip-int buf x) (ip-ints buf rest)))))
 
 (defn ip-open (buf tag) (begin (ip-out buf "(") (ip-out buf tag)))
@@ -78,8 +78,8 @@
   (let k (icnf-kind e)
     (let r (icnf-region e)
       (begin
-        (if (= k 0) 0 (begin (ip-out buf " :") (ip-int buf k)))
-        (if (= r 0) 0 (begin (ip-out buf " @") (ip-int buf r)))
+        (if (= k 0) unit (begin (ip-out buf " :") (ip-int buf k)))
+        (if (= r 0) unit (begin (ip-out buf " @") (ip-int buf r)))
         (ip-out buf ")")))))
 
 (defn ip-node (buf e)
@@ -112,7 +112,7 @@
 
 (defn ip-arms (buf arms)
   (match arms
-    (Nil 0)
+    (Nil unit)
     (Cons a rest
       (begin
         (match a

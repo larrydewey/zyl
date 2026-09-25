@@ -80,17 +80,15 @@
 ; it exits as soon as a base proves compositeness, and the loop counts
 ; depend on the candidate's bits. Use it on public parameters only.
 ;
-; Returns 1 for "probably prime", 0 for "definitely composite".
-; Returns: Int
+; True for "probably prime", false for "definitely composite".
 (defn mr-probably-prime ((arena Arena) (cand Words) (n Int) (rounds Int))
   (if (bn-even cand)
     false
     (mr-rounds arena cand n rounds 2)))
 
-; 1 when the number is even.
-; Returns: Int
+; True when the number is even.
 (defn bn-even ((a Words))
-  (- 1 (bit-and (w-get a 0) 1)))
+  (= (bit-and (w-get a 0) 1) 0))
 
 ; Try the small prime bases 2, 3, 5, 7, ... for `rounds` of them.
 ; Returns: Int
