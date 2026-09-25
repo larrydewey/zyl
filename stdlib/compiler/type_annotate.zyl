@@ -680,6 +680,47 @@
   (let _ (ta-list st ctx env es)
     (ta-int)))
 
+; Strict mode (docs/sound-types-design.md): statement forms return Unit,
+; conditions must be Bool, arithmetic needs Int or Float. Outside strict
+; mode the pass behaves as it always has (Int statements, unchecked
+; conditions), so turning the rules on is only ever a report for now.
+(defn ta-unit-ty () (TaC "Unit" Nil))
+
+(defn ta-stmt () (if (ta-strict-p) (ta-unit-ty) (ta-int)))
+
+(defn ta-walk-stmt (st ctx env es)
+  (let _ (ta-list st ctx env es)
+    (ta-stmt)))
+
+(defn ta-cond-bool (st t)
+  (if (ta-strict-p) (ta-unify st t (ta-bool)) 0))
+
+; Arithmetic operand types, checked against the Num class {Int, Float}
+; once the whole program is typed (ta-check-num).
+(defn ta-num-notes () (ffi-call "zyl_wvec_global" 7 1000))
+
+(defn ta-note-num (st e t cls)
+  (if (ta-strict-p)
+    (let _ (ffi-call "zyl_wvec_push" (ta-num-notes) e 1000)
+      (let _ (ffi-call "zyl_wvec_push" (ta-num-notes) t 1000)
+        (ffi-call "zyl_wvec_push" (ta-num-notes) cls 1000)))
+    0))
+
+(defn ta-check-num (st i n)
+  (if (>= i n)
+    0
+    (let e (ffi-call "zyl_wvec_get" (ta-num-notes) i 1000)
+      (let t (ta-resolve st (ffi-call "zyl_wvec_get" (ta-num-notes) (+ i 1) 1000))
+        (let cls (ffi-call "zyl_wvec_get" (ta-num-notes) (+ i 2) 1000)
+          (let _ (match t
+                   (TaC name args
+                     (if (or (ta-streq name "Int") (or (ta-streq name "Float") (and (= cls 2) (ta-streq name "String"))))
+                       0
+                       (let _ (ffi-call "zyl_cell_set" 1 e 1000)
+                         (ta-strict (str-concat (if (= cls 1) "arithmetic on " "ordering on ") (ta-show st t))))))
+                   (_ 0))
+            (ta-check-num st (+ i 3) n)))))))
+
 (defn ta-l2 (a b) (Cons a (Cons b Nil)))
 (defn ta-l3 (a b c) (Cons a (Cons b (Cons c Nil))))
 (defn ta-l4 (a b c d) (Cons a (Cons b (Cons c (Cons d Nil)))))
@@ -693,34 +734,37 @@
     (ELetMut name val body (ta-let st ctx env name val body))
     (EWithResource name val body (ta-let st ctx env name val body))
     (EIf c t eb
-      (let _ (ta-expr st ctx env c)
+      (let _ (ta-cond-bool st (ta-expr st ctx env c))
         (let tt (ta-expr st ctx env t)
           (ta-join st tt (ta-expr st ctx env eb)))))
-    (EWhile c body (ta-walk-int st ctx env (ta-l2 c body)))
+    (EWhile c body
+      (let _ (ta-cond-bool st (ta-expr st ctx env c))
+        (let _ (ta-expr st ctx env body)
+          (ta-stmt))))
     (ESetBang name val (ta-set st ctx env name val))
     (EBegin exprs (ta-last (ta-list st ctx env exprs) (ta-int)))
     (ECond clauses (ta-cond st ctx env clauses (ta-fresh st)))
     (EMatch subj arms (ta-match st ctx env subj arms))
-    (EPrint exprs (ta-print st ctx env exprs))
+    (EPrint exprs (ta-seq (ta-print st ctx env exprs) (ta-stmt)))
     (EFfiCall sym args _ (let _ (ta-ffi-args st ctx env args) (ta-ffi-ret st sym)))
     (EFileOpen a b (ta-file-open st ctx env a b))
     (EFileRead a b (let _ (ta-list st ctx env (ta-l2 a b)) (ta-str)))
     (EFileWrite a b (ta-walk-int st ctx env (ta-l2 a b)))
     (EFileClose a (ta-walk-int st ctx env (Cons a Nil)))
     (EBufAppend a b (ta-last (ta-list st ctx env (ta-l2 a b)) (ta-int)))
-    (EAssert c _ (ta-walk-int st ctx env (Cons c Nil)))
-    (EAssertEqual l r (ta-walk-int st ctx env (ta-l2 l r)))
-    (EAssertTrue x _ (ta-walk-int st ctx env (Cons x Nil)))
-    (EAssertFalse x _ (ta-walk-int st ctx env (Cons x Nil)))
-    (EAssertFail x _ (ta-walk-int st ctx env (Cons x Nil)))
+    (EAssert c _ (ta-walk-stmt st ctx env (Cons c Nil)))
+    (EAssertEqual l r (ta-walk-stmt st ctx env (ta-l2 l r)))
+    (EAssertTrue x _ (ta-walk-stmt st ctx env (Cons x Nil)))
+    (EAssertFalse x _ (ta-walk-stmt st ctx env (Cons x Nil)))
+    (EAssertFail x _ (ta-walk-stmt st ctx env (Cons x Nil)))
     (EUnwrap x (ta-unwrap st ctx env x))
     (EStructGet se field (ta-struct-get st ctx env se field e))
     (EFor bindings cond body (ta-for st ctx env bindings cond body))
     (EFfiPin x (ta-seq (ta-ffi-args st ctx env (Cons x Nil)) (ta-int)))
     (EFfiUnpin x (ta-walk-int st ctx env (Cons x Nil)))
     (ESpawn b (ta-walk-int st ctx env (Cons b Nil)))
-    (ESend a m (ta-walk-int st ctx env (ta-l2 a m)))
-    (ESendClosure a c _ (ta-walk-int st ctx env (ta-l2 a c)))
+    (ESend a m (ta-walk-stmt st ctx env (ta-l2 a m)))
+    (ESendClosure a c _ (ta-walk-stmt st ctx env (ta-l2 a c)))
     (ETryCatch tb cv h
       (let tt (ta-expr st ctx env tb)
         (ta-join st tt (ta-expr st ctx (Cons (Pair cv (ta-str)) env) h))))
@@ -757,7 +801,8 @@
     (ABool _ (ta-bool))
     (AStr _ (ta-str))
     (AKeyword _ (ta-str))
-    (ANil (ta-dk st "nil"))
+    ; A missing `else` (and, in strict mode, the `unit` value) is Unit.
+    (ANil (if (ta-strict-p) (ta-unit-ty) (ta-dk st "nil")))
     (AIdent n (ta-ident st ctx env n))
     (ASymbol n (ta-ident st ctx env n))))
 
@@ -791,7 +836,7 @@
   (let tv (ta-expr st ctx env val)
     (let lt (ta-env-get env name)
       (let _ (if (= lt 0) 0 (ta-unify st lt tv))
-        (ta-int)))))
+        (ta-stmt)))))
 
 (defn ta-cond (st ctx env clauses r)
   (match clauses
@@ -799,7 +844,7 @@
     (Cons pr rest
       (match pr
         (Pair c body
-          (let _ (ta-expr st ctx env c)
+          (let _ (ta-cond-bool st (ta-expr st ctx env c))
             (let bt (ta-expr st ctx env body)
               (let _ (ta-unify st r bt)
                 (ta-cond st ctx env rest r)))))))))
@@ -812,7 +857,9 @@
 
 (defn ta-for (st ctx env bindings cond body)
   (match bindings
-    (Nil (ta-walk-int st ctx env (ta-l2 cond body)))
+    (Nil (let _ (ta-cond-bool st (ta-expr st ctx env cond))
+           (let _ (ta-expr st ctx env body)
+             (ta-stmt))))
     (Cons pr rest
       (match pr
         (Pair name initOpt
@@ -973,9 +1020,13 @@
         (Nil (ta-int))
         (Cons h t
           (let _ (ta-unify-all st t h)
+            (let _ (if (= oc 1) (ta-note-num st e h 1) (if (ta-order-op n) (ta-note-num st e h 2) 0))
             (let _ (ta-note-op st ctx h)
               (let _ (if (and (ta-eq-op n) (= (list-length ts) 2)) (ta-note st ctx e 5 "" (ta-sig2 h h (ta-bool)) -1) 0)
-                (if (= oc 2) (ta-bool) h)))))))))
+                (if (= oc 2) (ta-bool) h))))))))))
+
+(defn ta-order-op (n)
+  (or (ta-streq n "<") (or (ta-streq n ">") (or (ta-streq n "<=") (ta-streq n ">=")))))
 
 (defn ta-eq-op (n)
   (if (ta-streq n "==") true (if (ta-streq n "=") true (ta-streq n "!="))))
@@ -1591,6 +1642,7 @@
   (begin
     (ffi-call "zyl_cell_set" 0 (if (= (ffi-call "zyl_getenv" "ZYL_STRICT_TYPES" 1000) 0) 0 1) 1000)
     (ffi-call "zyl_cell_set" 1 0 1000)
+    (ffi-call "zyl_wvec_truncate" (ffi-call "zyl_wvec_global" 7 1000) 0 1000)
     (ffi-call "zyl_attr_clear" 0 1000)
     (ffi-call "zyl_attr_clear" 1 1000)
     (ffi-call "zyl_attr_clear" 2 1000)
@@ -1608,6 +1660,7 @@
         (ta-register-fields st exprs)
         (ta-top st exprs)
         (ta-resolve-specials st (Cons -1 Nil) 0)
+        (ta-check-num st 0 (ffi-call "zyl_wvec_len" (ta-num-notes) 1000))
         (ta-extra-list st 0 (ta-wlen (ta-extra st)))))))
 
 ; Codegen kind of an annotated Expr: 1 String, 2 Float, else 0.
