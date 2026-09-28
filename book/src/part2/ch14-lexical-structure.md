@@ -309,7 +309,7 @@ post-processor actually does with each definition form.
 | `(impl-not Trait Type)` | Forbids that impl anywhere; an impl or derive of it is `E_IMPL_FORBIDDEN` (Chapter 20). |
 | `(derive Type Trait*)` | Generates `Show`, `Debug`, `Eq`, `Ord`, `Hash` and `Clone`; any other trait is `E_TRAIT_NOT_DERIVABLE` (Chapter 20). |
 | `(extern "sym" (Type*) Ret)` | Declares the C signature of a foreign function; an `ffi-call` to an undeclared foreign symbol is an error (Chapter 22). |
-| `(alias Name Type)` | Accepted with no effect. |
+| `(alias Name Type)` | A transparent second name for `Type` (Chapter 15). |
 | `(defmacro name (pattern*) template)` | Recognized, with exactly one template; `macro` is a synonym. The parameters are names, and the last may follow `&rest` (Chapter 23). |
 | `(use path ...)`, `(module name)`, `(pub <definition>)` | Recognized (Chapter 25). `export` is accepted but deprecated (§24.3). |
 

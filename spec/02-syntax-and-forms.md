@@ -173,7 +173,7 @@ requires becomes an `EUnknown` node, which the arity pass reports as
 - **`defun` is not recognised.** It is parsed as an ordinary application,
   so a function defined with `defun` is never defined, and a call to it
   is `E_UNBOUND_VARIABLE`. Use `defn`.
-- **`alias` is not recognised** as a definition form.
+- **`alias`** is a transparent type alias (`spec/10-structs-and-data-types.md`); it takes no type parameters.
 - **`trait`** declares method signatures, `(trait Name (method (params)
   RetType) ...)`, which type calls to the methods
   (`spec/05-types-and-inference.md`); a method whose parameters are not a
