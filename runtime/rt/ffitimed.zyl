@@ -1,5 +1,6 @@
 ; Timed FFI: a foreign call runs on the caller's worker thread; an overrun raises E_FFI_TIMEOUT and is abandoned, never killed.
 (use base)
+(use out)
 (use thread)
 (use heap)
 (use alloc)
@@ -112,8 +113,13 @@
 (defn ff-copy-args (dst src argc i)
   (if (>= i argc) 0 (let _ (ff-st (+ dst (* i 8)) (ff-ld (+ src (* i 8)))) (ff-copy-args dst src argc (+ i 1)))))
 
-; src holds the argc (at most 16) argument words.
+; src holds the argc (at most 16) argument words; both stdio buffers are flushed around the call, so output stays in order.
 (defn ff-core (f name ms0 argc src)
+  (let _ (zyl_out_flush) (let r (ff-core-go f name ms0 argc src) (let _ (ff-libc-flush) r))))
+
+(defn ff-libc-flush () (let f (ffi-call "%fn-weak" "fflush" 1) (if (> f 0) (ffi-call "%call1" f 0 1) 0)))
+
+(defn ff-core-go (f name ms0 argc src)
   (let sym (if (= name 0) "?" (ffi-call "%str" name 1))
     (if (< f 4096)
       (ffi-call "zyl_panic" (str-concat "E_FFI_SYMBOL_NOT_FOUND: no such FFI symbol: " sym) 1)
