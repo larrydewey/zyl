@@ -42,12 +42,12 @@
 (defn rd-complete-p (text)
   (if (= (str-length (rd-trim text)) 0)
     true
-    (match (sb-check-string text)
+    (match (sb-check-nets text)
       (Balanced true)
-      (UnbalancedOpenString false)
-      (UnclosedOpen _ _ _ false)
+      (UnbalancedOpenString _ _ false)
+      (UnclosedOpen _ _ _ _ _ false)
       (UnbalancedClose _ _ _ true)
-      (MismatchedPair _ _ _ _ true))))
+      (MismatchedPair _ _ _ _ _ _ true))))
 
 (defn rd-trim (s)
   (let n (str-length s)

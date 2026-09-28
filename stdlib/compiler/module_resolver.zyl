@@ -37,6 +37,7 @@
 (use compiler/lock)
 (use compiler/package)
 (use compiler/parser)
+(use compiler/sexp_balance)
 (use compiler/qualify)
 (use compiler/store)
 (use compiler/error_report)
@@ -477,12 +478,9 @@
   (ffi-call "zyl_path_exists" path 1000))
 
 (defn mr-parse-file (arena path)
-  (let fd (file-open path "r")
-    (if (< fd 1)
-      (mr-fail "E_MODULE_NOT_FOUND" (str-concat "module: cannot open " path))
-      (let srcbuf (file-read fd 1048576)
-        (let _ (file-close fd)
-          (zyl-parse-file arena srcbuf path))))))
+  (match (sb-read-file path)
+    (None (mr-fail "E_MODULE_NOT_FOUND" (str-concat "module: cannot open " path)))
+    (Some srcbuf (let _ (check-no-nul path srcbuf) (zyl-parse-file arena srcbuf path)))))
 
 ; ===========================================================================
 ; DISCOVERY

@@ -1,0 +1,105 @@
+; The delimiter check agrees with the lexer: on real compiler sources and
+; deterministic mutations of them (a bracket or quote deleted, doubled or
+; retyped), sexp_balance finds the same first fault as a bracket walk over
+; the lexer's own tokens. Too slow to interpret (DIFF_SKIP).
+
+(use allocator/allocator)
+(use compiler/ast)
+(use compiler/lexer)
+(use compiler/parser)
+(use compiler/sexp_balance)
+
+; The lexer's own verdict: brackets matched over its token stream, or the
+; offset of the first fault, when it lexed the whole text; -2 when it
+; stopped early (an invalid byte or an unterminated string).
+(defn tok-verdict (arena (src String))
+  (let toks (zyl-lex arena src)
+    (if (< (last-eof-offset toks) (str-length src)) -2 (tok-walk toks Nil))))
+
+; -1 balanced, else the offset of the first unmatched closer or unclosed opener.
+(defn tok-walk (toks stack)
+  (match toks
+    (Nil (match stack (Nil -1) (Cons o _ (tpos-at o))))
+    (Cons t rest
+      (match t
+        (TkLParen o (tok-walk rest (Cons (TPos o 41) stack)))
+        (TkLBracket o (tok-walk rest (Cons (TPos o 93) stack)))
+        (TkLBrace o (tok-walk rest (Cons (TPos o 125) stack)))
+        (TkRParen o (tok-close rest stack o 41))
+        (TkRBracket o (tok-close rest stack o 93))
+        (TkRBrace o (tok-close rest stack o 125))
+        (_ (tok-walk rest stack))))))
+
+(defn tok-close (rest stack (o Int) (c Int))
+  (match stack
+    (Nil o)
+    (Cons f more (if (= (tpos-closer f) c) (tok-walk rest more) o))))
+
+(deftype TPos (TPos Int Int))
+(defn tpos-at (p) (match p (TPos a _ a)))
+(defn tpos-closer (p) (match p (TPos _ b b)))
+
+; The checker's verdict in the same terms (net mode: the lexer knows no layout).
+(defn sb-verdict (fid (src String))
+  (let r (sb-check-nets src)
+    (match r
+      (Balanced -1)
+      (UnbalancedOpenString _ _ -2)
+      (_ (ffi-call "zyl_span_offset_at" fid (sb-line r) (sb-col r) 1000)))))
+
+; The i-th deterministic mutation: delete, duplicate or retype one bracket or quote.
+(defn mutate ((src String) (i Int))
+  (let n (str-length src)
+    (let p (% (bit-and (* (+ i 1) -7046029254386353131) 9223372036854775807) n)
+      (let q (bracket-at src p n 0)
+        (if (< q 0) src
+          (let kind (% i 3)
+            (if (= kind 0) (str-concat (str-substring src 0 q) (str-substring src (+ q 1) (- n (+ q 1))))
+              (if (= kind 1) (str-concat (str-substring src 0 (+ q 1)) (str-substring src q (- n q)))
+                (str-concat (str-substring src 0 q) (str-concat (swap-of (ffi-call "zyl_cstr_byte_at" src q 1000))
+                  (str-substring src (+ q 1) (- n (+ q 1)))))))))))))
+
+; The first bracket or quote at or after p (wrapping once), or -1.
+(defn bracket-at ((src String) (p Int) (n Int) (k Int))
+  (if (>= k n) -1
+    (let j (% (+ p k) n)
+      (let c (ffi-call "zyl_cstr_byte_at" src j 1000)
+        (if (or (= c 34) (or (= c 40) (or (= c 41) (or (= c 91) (or (= c 93) (or (= c 123) (= c 125)))))))
+          j (bracket-at src p n (+ k 1)))))))
+
+(defn swap-of ((c Int))
+  (if (= c 40) "[" (if (= c 41) "]" (if (= c 91) "(" (if (= c 93) ")" (if (= c 123) "(" (if (= c 125) ")" "(")))))))
+
+(defn agree-file (arena (path String) (i Int) (n Int) (bad Int))
+  (if (>= i n) bad
+    (match (sb-read-file path)
+      (None (+ bad 1000))
+      (Some src
+        (let m (if (= i 0) src (mutate src i))
+          (let fid (ffi-call "zyl_source_register" (str-concat path (str-concat "#" (ffi-call "zyl_int_text" i 1000))) m 1000)
+            (let a (tok-verdict arena m)
+              (let b (sb-verdict fid m)
+                (agree-file arena path (+ i 1) n (if (or (= a b) (= a -2)) bad (+ bad 1)))))))))))
+
+; How many of the n cases the lexer lexed to the end, so were compared.
+(defn compared (arena (path String) (i Int) (n Int) (k Int))
+  (if (>= i n) k
+    (match (sb-read-file path)
+      (None k)
+      (Some src
+        (let m (if (= i 0) src (mutate src i))
+          (compared arena path (+ i 1) n (if (= (tok-verdict arena m) -2) k (+ k 1))))))))
+
+(test "agreement-covers-most-cases"
+  (assert-true (> (compared (arena-create 0) "stdlib/compiler/lexer.zyl" 0 40 0) 30)))
+
+(test "agrees-with-the-lexer"
+  (let arena (arena-create 0)
+    (assert-equal
+      (+ (agree-file arena "stdlib/compiler/sexp_balance.zyl" 0 40 0)
+        (+ (agree-file arena "stdlib/compiler/lexer.zyl" 0 40 0)
+          (+ (agree-file arena "stdlib/repl/highlight.zyl" 0 40 0)
+            (agree-file arena "stdlib/core/property.zyl" 0 40 0))))
+      0)))
+
+(run-tests)

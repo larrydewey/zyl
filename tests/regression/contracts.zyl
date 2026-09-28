@@ -57,23 +57,23 @@
   defn
   _ct-with-recover
   ()
-(
-  recover
   (
-    try
-    (result-ok 5)
+    recover
     (
-      catch
-      e
-      (result-err e)
+      try
+      (result-ok 5)
+      (
+        catch
+        e
+        (result-err e)
+      )
+    )
+    (
+      String
+      (result-err "fallback")
     )
   )
-  (
-    String
-    (result-err "fallback")
   )
-)
-)
 
 (
   test

@@ -323,48 +323,29 @@
       0
       (report-unbalanced result fid))))
 
-; Every str-concat argument below is a literal or a pre-bound `let` --
-; see error_report.zyl's header comment: an inline call operand in a
-; str-concat argument miscompiled under the archived Rust bootstrap's
-; inlining, which once compiled this file on the way to stage1.
-(defn bal-msg (code msg hint)
-  (let h (err-header code msg)
-    (let n1 (str-concat h "\n  = help: ")
-      (str-concat n1 hint))))
+; A failed balance check as a located fatal diagnostic; a mismatched pair
+; also labels the opener it failed to close.
+; A NUL byte in a source file, as a located E_INVALID_CHAR; 0 when there is none.
+(defn check-no-nul (path src)
+  (let k (sb-nul-offset path src)
+    (if (< k 0) 0
+      (ffi-call "zyl_panic" (nul-diagnostic path src k) 1000))))
 
-(defn bal-msg-loc (code msg line col hint)
-  (let h (err-header code msg)
-    (let ls (int-to-str line)
-      (let cs (int-to-str col)
-        (let loc1 (str-concat ls ":")
-          (let loc2 (str-concat loc1 cs)
-            (let arrow (str-concat "\n  --> line " loc2)
-              (let n1 (str-concat h arrow)
-                (let n2 (str-concat n1 "\n  = help: ")
-                  (str-concat n2 hint))))))))))
+(defn nul-diagnostic (path src k)
+  (err-at "E_INVALID_CHAR" "a NUL byte here ends the text; the rest of the file would be ignored"
+          (ffi-call "zyl_source_register" path src 1000) k "remove the NUL byte"))
 
-; All 5 BalanceResult variants enumerated; Balanced is unreachable here
-; (check-balanced already short-circuits on it) but match must stay
-; exhaustive.
 (defn report-unbalanced (result fid)
-  (match result
-    (Balanced 0)
-    (UnbalancedOpenString
-      (let msg (err-at "E_UNTERMINATED_STRING" "unterminated string literal reached end of input" fid -1 (sb-hint result))
-        (ffi-call "zyl_panic" msg 1000)))
-    (UnclosedOpen closer line col
-      (report-bal "E_UNBALANCED_UNCLOSED" "unclosed opener never reached its matching closer" result fid line col))
-    (UnbalancedClose closer line col
-      (report-bal "E_UNBALANCED_UNEXPECTED_CLOSE" "unexpected closing delimiter" result fid line col))
-    (MismatchedPair opener closer line col
-      (report-bal "E_UNBALANCED_MISMATCHED_BRACKET" "closing delimiter does not match its opener" result fid line col))))
+  (ffi-call "zyl_panic" (balance-diagnostic result fid) 1000))
 
-; sexp_balance tracks line/col directly (it scans the raw bytes itself), so
-; convert back to the byte offset err-at renders from.
-(defn report-bal (code text result fid line col)
-  (let off (ffi-call "zyl_span_offset_at" fid line col 1000)
-    (let msg (err-at code text fid off (sb-hint result))
-      (ffi-call "zyl_panic" msg 1000))))
+; The rendered diagnostic (text or JSON) of a failed balance check in file fid.
+(defn balance-diagnostic (result fid)
+  (let off (ffi-call "zyl_span_offset_at" fid (sb-line result) (sb-col result) 1000)
+    (let labels (match result
+                  (MismatchedPair _ _ _ _ ol oc
+                    (Cons (err-label fid (ffi-call "zyl_span_offset_at" fid ol oc 1000) "opened here") Nil))
+                  (_ Nil))
+      (err-at-labels (sb-code result) (sb-message result) fid off labels (sb-hint result)))))
 
 ; Convenience: lex + parse in one step from a source buffer pointer.
 ; Returns: List(Ast)

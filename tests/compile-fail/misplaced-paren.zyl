@@ -1,0 +1,8 @@
+; expect-error: E_UNBALANCED_UNCLOSED
+; expect-at: misplaced-paren.zyl:5:1
+; A missing closer balanced by an extra one later: the count nets to zero,
+; but h starts in column 1 while g is still open.
+(defn g (x)
+  (if (> x 0) x 0)
+(defn h () 1))
+(defn main () 0)

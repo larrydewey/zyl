@@ -1,374 +1,252 @@
 ; === Zyl Standard Library — S-Expression Balance Validator ===
 ; Module: compiler/sexp_balance
-; Provides: native structural balance validation with precise location.
-; Replaces: Python paren-counting scripts.
+; Provides: the delimiter check every compile runs before lexing, with
+; the location of the first fault; `zyl balance` runs it on its own.
 ;
-; Deterministic, pure-functional single pass over a NUL-terminated buffer.
-; Tracks a stack of expected closers (each with its open position); a
-; serial error slot captures the FIRST fatal deviation (unexpected
-; closer / mismatched pair) so the scan can stop early. Delegates the
-; deep machinery to small single-purpose helpers so every form stays
-; short enough to count parens by eye.
+; One pass over the bytes, with the lexer's own rules (lexer.zyl): a `;`
+; comment runs to the end of its line, a string runs to its unescaped
+; `"` (a backslash takes the next byte, a newline included), and brackets
+; occur nowhere else inside a token. Every opener is pushed with its
+; position; a closer must match the innermost one.
+;
+; Strict mode (every compile, `zyl balance`, the language server) adds the
+; structural rule that makes a misplaced paren visible even when the
+; file's count nets to zero: a top-level form starts in column 1, so an
+; opener in column 1 while a form is still open means a closer is missing
+; in that form. It also remembers the first line, in the open top-level
+; form, whose first token sits at or left of the innermost open bracket's
+; column: where the indentation first contradicts the nesting, which is
+; where the missing closer usually belongs. The REPL checks net balance
+; only (sb-check-nets), since a pasted entry may put a body in column 1.
 
 (use allocator/allocator)
 
 ; ===========================================================================
-; RESULT TYPES
+; RESULT
 ; ===========================================================================
 
+; Lines and columns are 1-based; a column counts bytes.
 (deftype BalanceResult
   (Balanced)
-  (UnbalancedOpenString)
-  (UnclosedOpen String Int Int)
+  ; the opening quote of a string that never closes
+  (UnbalancedOpenString Int Int)
+  ; expected closer, the opener's line and column, the line of the
+  ; top-level form that starts inside it (0: end of input), the first
+  ; indentation contradiction in its top-level form (0: none)
+  (UnclosedOpen String Int Int Int Int)
+  ; the closer, its line and column
   (UnbalancedClose String Int Int)
-  (MismatchedPair String String Int Int))
+  ; expected closer, the closer found, its line and column, the opener's
+  ; line and column
+  (MismatchedPair String String Int Int Int Int))
 
-; Local, self-contained pair -- deliberately NOT compiler/type_system's
-; generic `Pair`. This module is a real `use` dependency of parser.zyl
-; and stays free of compiler-module dependencies: a small
-; lexical-structure checker should not reach across the compiler for one
-; generic tuple type.
-(deftype SBPair (SBPair A B))
-
-; line col stack ctx-col in-string in-comment escape-next err
-;   stack  :: (List (SBPair expected-closer (SBPair open-line open-col)))
-;   (a `ctx` field rebuilt per character made the scan quadratic; removed)
-;   err    :: BalanceResult if a fatal deviation was recorded, else balanced
-(deftype CheckState
-  (CS Int Int (List (SBPair String (SBPair Int Int))) Int Int Int Int BalanceResult))
+; An open bracket: the byte of its closer, its line and column.
+(deftype SBFrame (SBFrame Int Int Int))
 
 ; ===========================================================================
-; CHARACTER CLASSIFICATION (byte values, ASCII)
+; ENTRY POINTS
 ; ===========================================================================
 
-; A character is its byte value.
-(defn sb-char-code ((c Int)) c)
+; Strict: net balance plus the column-1 rule.
+(defn sb-check-string ((src String)) (sb-check src true))
 
-; The first byte of a one-character string (the language server's use).
+; Net balance only (the REPL's completeness test).
+(defn sb-check-nets ((src String)) (sb-check src false))
+
+(defn sb-check ((src String) (strict Bool))
+  (sb-scan src (str-length src) 0 1 0 true Nil 0 strict))
+
+; A whole file, read in 1 MiB steps (a single read would cap its size), or None.
+(defn sb-read-file ((path String))
+  (let fd (file-open path "r")
+    (if (< fd 1) None
+      (let text (sb-read-all fd "")
+        (let _ (file-close fd) (Some text))))))
+
+; Where a NUL byte ends `text`, read from `path`, before the file does; -1 when
+; none does. The lexer stops at the first NUL, so the rest would be ignored.
+(defn sb-nul-offset ((path String) (text String))
+  (let b (ffi-call "zyl_bytebuf_read_file" path 1000)
+    (if (> (bytebuf-len b) (str-length text)) (str-length text) -1)))
+
+(defn sb-read-all ((fd Int) (acc String))
+  (let chunk (file-read fd 1048576)
+    (let n (str-length chunk)
+      (if (= n 0) acc
+        (let acc2 (str-concat acc chunk)
+          (if (< n 1048576) acc2 (sb-read-all fd acc2)))))))
+
+; ===========================================================================
+; THE SCAN
+; ===========================================================================
+
+(defn sb-byte ((src String) (len Int) (i Int)) (ffi-call "zyl_view_byte" src 0 len i 1000))
+
+(defn sb-opener-p ((c Int)) (or (= c 40) (or (= c 91) (= c 123))))
+(defn sb-closer-p ((c Int)) (or (= c 41) (or (= c 93) (= c 125))))
+
+; The closer of an opener byte.
+(defn sb-closer-of ((c Int)) (if (= c 40) 41 (if (= c 91) 93 125)))
+
+(defn sb-text ((c Int)) (if (= c 41) ")" (if (= c 93) "]" (if (= c 125) "}" (if (= c 40) "(" (if (= c 91) "[" "{"))))))
+
+; i: byte index; line: its line; ls: index where that line starts; fresh:
+; no token seen yet on this line; stack: open frames, innermost first;
+; anom: the first indentation contradiction in the open top-level form.
+(defn sb-scan ((src String) (len Int) (i Int) (line Int) (ls Int) (fresh Bool) stack (anom Int) (strict Bool))
+  (if (>= i len) (sb-eof stack anom)
+    (let c (sb-byte src len i)
+      (if (= c 10) (sb-scan src len (+ i 1) (+ line 1) (+ i 1) true stack anom strict)
+        (if (or (= c 32) (or (= c 9) (= c 13))) (sb-scan src len (+ i 1) line ls fresh stack anom strict)
+          (if (= c 59) (sb-scan src len (sb-line-end src len i) line ls fresh stack anom strict)
+            (sb-token src len i line ls fresh stack anom strict c (+ (- i ls) 1))))))))
+
+; The first byte of a token at column col.
+(defn sb-token ((src String) (len Int) (i Int) (line Int) (ls Int) (fresh Bool) stack (anom Int) (strict Bool) (c Int) (col Int))
+  (if (and strict (and fresh (and (= col 1) (and (sb-opener-p c) (not (sb-empty stack))))))
+    (sb-outermost stack line anom)
+    (let a (if (and fresh (= anom 0)) (sb-contradiction stack c col line) anom)
+      (if (= c 34) (sb-string src len (+ i 1) line ls stack a strict line col)
+        (if (sb-opener-p c)
+          (sb-scan src len (+ i 1) line ls false (Cons (SBFrame (sb-closer-of c) line col) stack) a strict)
+          (if (sb-closer-p c) (sb-close src len i line ls stack a strict c col)
+            (sb-scan src len (+ i 1) line ls false stack a strict)))))))
+
+; `line` when its first token, at col and not a closer, sits at or left of
+; the innermost open bracket; else 0.
+(defn sb-contradiction (stack (c Int) (col Int) (line Int))
+  (match stack
+    (Nil 0)
+    (Cons f _ (match f (SBFrame _ _ oc (if (and (not (sb-closer-p c)) (<= col oc)) line 0))))))
+
+(defn sb-close ((src String) (len Int) (i Int) (line Int) (ls Int) stack (anom Int) (strict Bool) (c Int) (col Int))
+  (match stack
+    (Nil (UnbalancedClose (sb-text c) line col))
+    (Cons f rest
+      (match f
+        (SBFrame want ol oc
+          (if (= want c)
+            (sb-scan src len (+ i 1) line ls false rest (if (sb-empty rest) 0 anom) strict)
+            (MismatchedPair (sb-text want) (sb-text c) line col ol oc)))))))
+
+; Inside a string opened at sl:sc.
+(defn sb-string ((src String) (len Int) (i Int) (line Int) (ls Int) stack (anom Int) (strict Bool) (sl Int) (sc Int))
+  (if (>= i len) (UnbalancedOpenString sl sc)
+    (let c (sb-byte src len i)
+      (if (= c 92)
+        (if (>= (+ i 1) len) (UnbalancedOpenString sl sc)
+          (if (= (sb-byte src len (+ i 1)) 10)
+            (sb-string src len (+ i 2) (+ line 1) (+ i 2) stack anom strict sl sc)
+            (sb-string src len (+ i 2) line ls stack anom strict sl sc)))
+        (if (= c 34) (sb-scan src len (+ i 1) line ls false stack anom strict)
+          (if (= c 10) (sb-string src len (+ i 1) (+ line 1) (+ i 1) stack anom strict sl sc)
+            (sb-string src len (+ i 1) line ls stack anom strict sl sc)))))))
+
+; Index of the newline ending the line at i, or len.
+(defn sb-line-end ((src String) (len Int) (i Int))
+  (if (>= i len) len (if (= (sb-byte src len i) 10) i (sb-line-end src len (+ i 1)))))
+
+(defn sb-empty (stack) (match stack (Nil true) (Cons _ _ false)))
+
+; End of input: the innermost open bracket, if any.
+(defn sb-eof (stack (anom Int))
+  (match stack
+    (Nil Balanced)
+    (Cons f _ (match f (SBFrame want ol oc (UnclosedOpen (sb-text want) ol oc 0 anom))))))
+
+; A top-level form starts at `line` while the outermost frame is open.
+(defn sb-outermost (stack (line Int) (anom Int))
+  (match stack
+    (Nil Balanced)
+    (Cons f rest
+      (match rest
+        (Nil (match f (SBFrame want ol oc (UnclosedOpen (sb-text want) ol oc line anom))))
+        (Cons _ _ (sb-outermost rest line anom))))))
+
+; ===========================================================================
+; BYTE CLASSES (shared with the language server's scanner, lsp/source_index.zyl)
+; ===========================================================================
+
+; The first byte of a one-character string.
 (defn sb-str-code ((s String)) (ffi-call "zyl_cstr_byte_at" s 0 1000))
 
-(defn sb-is-paren-open (c)
-  (= (sb-char-code c) 40))
-
-(defn sb-is-paren-close (c)
-  (= (sb-char-code c) 41))
-
-(defn sb-is-bracket-open (c)
-  (= (sb-char-code c) 91))
-
-(defn sb-is-bracket-close (c)
-  (= (sb-char-code c) 93))
-
-(defn sb-is-brace-open (c)
-  (= (sb-char-code c) 123))
-
-(defn sb-is-brace-close (c)
-  (= (sb-char-code c) 125))
-
-(defn sb-is-quote (c)
-  (= (sb-char-code c) 34))
-
-(defn sb-is-semicolon (c)
-  (= (sb-char-code c) 59))
-
-(defn sb-is-backslash (c)
-  (= (sb-char-code c) 92))
-
-(defn sb-is-newline (c)
-  (= (sb-char-code c) 10))
+(defn sb-is-paren-open ((c Int)) (= c 40))
+(defn sb-is-paren-close ((c Int)) (= c 41))
+(defn sb-is-bracket-open ((c Int)) (= c 91))
+(defn sb-is-bracket-close ((c Int)) (= c 93))
+(defn sb-is-brace-open ((c Int)) (= c 123))
+(defn sb-is-brace-close ((c Int)) (= c 125))
+(defn sb-is-quote ((c Int)) (= c 34))
+(defn sb-is-semicolon ((c Int)) (= c 59))
+(defn sb-is-backslash ((c Int)) (= c 92))
+(defn sb-is-newline ((c Int)) (= c 10))
 
 ; ===========================================================================
-; STATE SHAPE-ONLY HELPERS
-; ===========================================================================
-
-; Advance past a character: append to current context line, bump column.
-; `escape-next` falls back to False. All other flags are preserved.
-(defn sb-advance (_c state)
-  (match state
-    (CS line col stack ctx-col in-string in-comment escape-next err
-      (CS line (+ col 1) stack ctx-col in-string in-comment 0 err))))
-
-; Advance and set escape-next so the following character is consumed raw.
-(defn sb-advance-escape (_c state)
-  (match state
-    (CS line col stack ctx-col in-string in-comment escape-next err
-      (CS line (+ col 1) stack ctx-col in-string in-comment 1 err))))
-
-; Consume a character that was itself escaped (escape-next was 1 coming in):
-; advance past it and CLEAR escape-next back to 0, so normal dispatch resumes
-; for the character after it. Reusing sb-advance-escape here (which always
-; sets escape-next to 1) made escape mode permanently sticky after the very
-; first backslash-escape anywhere in the input: every subsequent character
-; for the rest of the file was treated as "still escaped" and never dispatched
-; through the bracket/quote/comment tracking, always landing on an unbalanced
-; result for any real source containing more than one escape sequence.
-(defn sb-consume-escaped (_c state)
-  (match state
-    (CS line col stack ctx-col in-string in-comment escape-next err
-      (CS line (+ col 1) stack ctx-col in-string in-comment 0 err))))
-
-; Enter string context on a quote.
-(defn sb-enter-string (_c state)
-  (match state
-    (CS line col stack ctx-col in-string in-comment escape-next err
-      (CS line (+ col 1) stack ctx-col 1 in-comment 0 err))))
-
-; Leave string context on a closing quote.
-(defn sb-exit-string (_c state)
-  (match state
-    (CS line col stack ctx-col in-string in-comment escape-next err
-      (CS line (+ col 1) stack ctx-col 0 in-comment 0 err))))
-
-; Enter line-comment context on a semicolon.
-(defn sb-enter-comment (_c state)
-  (match state
-    (CS line col stack ctx-col in-string in-comment escape-next err
-      (CS line (+ col 1) stack ctx-col in-string 1 0 err))))
-
-; End-of-line: new line number, reset column and context line, exit comment.
-; String context is preserved (multi-line strings stay inside a string).
-(defn sb-new-line (state)
-  (match state
-    (CS line col stack ctx-col in-string in-comment escape-next err
-      (CS (+ line 1) 1 stack 1 in-string 0 0 err))))
-
-; Opening bracket: push expected closer with its position.
-(defn sb-open-bracket (_c state closer)
-  (match state
-    (CS line col stack ctx-col in-string in-comment escape-next err
-      (CS line (+ col 1)
-          (Cons (SBPair closer (SBPair line col)) stack)
-          ctx-col in-string in-comment 0 err))))
-
-; Closing bracket: verify against the stack head.
-(defn sb-close-bracket (_c state closer)
-  (match state
-    (CS line col stack ctx-col in-string in-comment escape-next err
-      (match stack
-        (Nil
-          (let new-err (UnbalancedClose closer line col)
-            (CS line (+ col 1) stack ctx-col in-string in-comment 0 new-err)))
-        (Cons top rest
-          (match top
-            (SBPair expected _
-              (if (str-eq expected closer)
-                (CS line (+ col 1) rest ctx-col in-string in-comment 0 err)
-                (let new-err (MismatchedPair expected closer line col)
-                  (CS line (+ col 1) stack ctx-col in-string in-comment 0 new-err))))))))))
-
-; ===========================================================================
-; CHARACTER DISPATCH (context-aware)
-; ===========================================================================
-
-; Top dispatcher: honor escape/comment/string first, else normal scanning.
-(defn sb-process-char (c state)
-  (match state
-    (CS line col stack ctx-col in-string in-comment escape-next err
-      (if (= escape-next 1)
-        (sb-consume-escaped c state)
-        (if (= in-comment 1)
-          (sb-process-comment-char c state)
-          (if (= in-string 1)
-            (sb-process-string-char c state)
-            (sb-process-normal-char c state)))))))
-
-(defn sb-process-comment-char (c state)
-  (if (sb-is-newline c)
-    (sb-new-line state)
-    (sb-advance c state)))
-
-; In a string: escapes toggle, a quote ends the string, a newline bumps
-; the line, any other char is consumed.
-(defn sb-process-string-char (c state)
-  (if (sb-is-backslash c)
-    (sb-advance-escape c state)
-    (if (sb-is-quote c)
-      (sb-exit-string c state)
-      (if (sb-is-newline c)
-        (sb-new-line state)
-        (sb-advance c state)))))
-
-; Normal context: brackets push/pop, quotes/comments enter their context,
-; newlines bump the line, anything else is consumed.
-(defn sb-process-normal-char (c state)
-  (if (sb-is-paren-open c)
-    (sb-open-bracket c state ")")
-    (if (sb-is-bracket-open c)
-      (sb-open-bracket c state "]")
-      (if (sb-is-brace-open c)
-        (sb-open-bracket c state "}")
-        (if (sb-is-paren-close c)
-          (sb-close-bracket c state ")")
-          (if (sb-is-bracket-close c)
-            (sb-close-bracket c state "]")
-            (if (sb-is-brace-close c)
-              (sb-close-bracket c state "}")
-              (if (sb-is-quote c)
-                (sb-enter-string c state)
-                (if (sb-is-semicolon c)
-                  (sb-enter-comment c state)
-                  (if (sb-is-newline c)
-                    (sb-new-line state)
-                    (sb-advance c state)))))))))))
-
-; ===========================================================================
-; DRIVER: ONE-PASS SCAN + FINALIZE
-; ===========================================================================
-
-; Scan a NUL-terminated buffer by index. Stops early once the error slot
-; is filled (fatal deviation), otherwise advances one frame per char.
-(defn sb-check-string (src)
-  (let init-err Balanced
-    (let len (str-length src)
-      (let final-state (sb-scan-index src 0 len (CS 1 1 Nil 1 0 0 0 init-err))
-        (sb-finalize final-state)))))
-
-(defn sb-scan-index (src idx len state)
-  (match state
-    (CS line col stack ctx-col in-string in-comment escape-next err
-      (if (>= idx len)
-        state
-        (if (sb-result-balanced err)
-          ; Read by position within the length measured once: a String
-          ; access (substring, byte-at) measures the whole source again.
-          (let next (sb-process-char (ffi-call "zyl_view_byte" src 0 len idx 1000) state)
-            (sb-scan-index src (+ idx 1) len next))
-          state)))))
-
-; Resolve the terminal diagnosis from the final state. A non-empty stack
-; at EOF reports the STILL-OPEN bracket's own position (where it was
-; opened), not the EOF position -- that is the actionable line to fix,
-; and it is the whole reason sb-open-bracket carries (open-line open-col)
-; on every stack frame instead of just the expected closer.
-(defn sb-finalize (state)
-  (match state
-    (CS line col stack ctx-col in-string in-comment escape-next err
-      (if (sb-result-balanced err)
-        (if (= in-string 1)
-          UnbalancedOpenString
-          (match stack
-            (Nil Balanced)
-            (Cons top rest
-              (match top
-                (SBPair closer pos
-                  (match pos
-                    (SBPair ol oc (UnclosedOpen closer ol oc))))))))
-        err))))
-
-; ===========================================================================
-; RESULT QUERIES
+; RESULT QUERIES AND TEXT
 ; ===========================================================================
 
 (defn sb-result-balanced (r)
   (match r
     (Balanced true)
-    (UnbalancedOpenString false)
-    (UnclosedOpen closer line col false)
-    (UnbalancedClose closer line col false)
-    (MismatchedPair opener closer line col false)))
+    (_ false)))
 
-(defn sb-result-error (r)
+(defn sb-result-error (r) (not (sb-result-balanced r)))
+
+; The diagnostic code of a result ("" when balanced).
+(defn sb-code (r)
   (match r
-    (Balanced false)
-    (UnbalancedOpenString true)
-    (UnclosedOpen closer line col true)
-    (UnbalancedClose closer line col true)
-    (MismatchedPair opener closer line col true)))
+    (Balanced "")
+    (UnbalancedOpenString _ _ "E_UNTERMINATED_STRING")
+    (UnclosedOpen _ _ _ _ _ "E_UNBALANCED_UNCLOSED")
+    (UnbalancedClose _ _ _ "E_UNBALANCED_UNEXPECTED_CLOSE")
+    (MismatchedPair _ _ _ _ _ _ "E_UNBALANCED_MISMATCHED_BRACKET")))
 
-; CLI friendly status: 0 balanced, 1 fatal deviation. Prints only literal
-; strings and Int values (a limit of the archived Rust bootstrap's print
-; path); the self-hosted driver consumes the BalanceResult fields
-; directly.
-(defn sb-cli-status (r)
+; The headline of a result ("" when balanced).
+(defn sb-message (r)
+  (match r
+    (Balanced "")
+    (UnbalancedOpenString _ _ "unterminated string literal: this quote is never closed")
+    (UnclosedOpen closer _ _ top _
+      (if (> top 0)
+        (str-concat "this form is still open where a new top-level form starts at line " (sb-int top))
+        (str-concat "unclosed opener: its '" (str-concat closer "' never comes"))))
+    (UnbalancedClose closer _ _ (str-concat "unexpected '" (str-concat closer "': no opener is open here")))
+    (MismatchedPair want found _ _ _ _
+      (str-concat "'" (str-concat found (str-concat "' closes a bracket that expects '" (str-concat want "'")))))))
+
+; Where the result points: (line, column).
+(defn sb-line (r)
   (match r
     (Balanced 0)
-    (UnbalancedOpenString 1)
-    (UnclosedOpen closer line col 1)
-    (UnbalancedClose closer line col 1)
-    (MismatchedPair opener closer line col 1)))
+    (UnbalancedOpenString l _ l)
+    (UnclosedOpen _ l _ _ _ l)
+    (UnbalancedClose _ l _ l)
+    (MismatchedPair _ _ l _ _ _ l)))
 
-(defn sb-report (r)
+(defn sb-col (r)
   (match r
-    (Balanced
-      (print "balanced"))
-    (UnbalancedOpenString
-      (print "unbalanced: reached end of input inside an open string"))
-    (UnclosedOpen closer line col
-      (begin
-        (print "unbalanced: opener never closed")
-        (print line)
-        (print col)))
-    (UnbalancedClose closer line col
-      (begin
-        (print "unbalanced: unexpected closer")
-        (print line)
-        (print col)))
-    (MismatchedPair opener closer line col
-      (begin
-        (print "mismatched pair")
-        (print line)
-        (print col)))
-  )
-)
+    (Balanced 0)
+    (UnbalancedOpenString _ c c)
+    (UnclosedOpen _ _ c _ _ c)
+    (UnbalancedClose _ _ c c)
+    (MismatchedPair _ _ _ c _ _ c)))
 
-; ===========================================================================
-; FIX-IT HINTS
-; ===========================================================================
-; Single source of remediation text for a BalanceResult. Both the fatal
-; compiler error path (parser.zyl's check-balanced) and any future
-; consumer (LSP diagnostics, a REPL live-check) read hints from here, so
-; the wording can never drift from what the structural scan actually
-; found. Every str-concat argument is a literal or a pre-bound `let` --
-; see error_report.zyl's header comment for why (inline call operands
-; miscompiled under the archived Rust bootstrap's str-concat inlining).
+; The fix-it: the one source of remediation text for the compiler, the
+; language server's quick fix and `zyl balance`.
 (defn sb-hint (r)
   (match r
     (Balanced "")
-    (UnbalancedOpenString
-      "close the open string literal with a matching '\"'")
-    (UnclosedOpen closer line col
-      (let m1 "insert '"
-        (let m2 (str-concat m1 closer)
-          (str-concat m2 "' to close the opener"))))
-    (UnbalancedClose closer line col
-      (let m1 "remove this '"
-        (let m2 (str-concat m1 closer)
-          (str-concat m2 "' -- no opener is open here"))))
-    (MismatchedPair opener closer line col
-      (let m1 "replace '"
-        (let m2 (str-concat m1 closer)
-          (let m3 (str-concat m2 "' with '")
-            (let m4 (str-concat m3 opener)
-              (str-concat m4 "', or fix the opener it was meant to close"))))))))
+    (UnbalancedOpenString _ _ "close the string literal with a matching '\"'")
+    (UnclosedOpen closer _ _ top anom
+      (let insert (str-concat "insert '" (str-concat closer "'"))
+        (if (> anom 0)
+          (str-concat insert (str-concat " before line " (str-concat (sb-int anom) ", where the indentation first contradicts the nesting")))
+          (if (> top 0)
+            (str-concat insert (str-concat " to close this form before line " (sb-int top)))
+            (str-concat insert " to close the opener")))))
+    (UnbalancedClose closer _ _ (str-concat "remove this '" (str-concat closer "', or add the opener it was meant to close")))
+    (MismatchedPair want found _ _ ol oc
+      (str-concat "replace '" (str-concat found (str-concat "' with '" (str-concat want
+        (str-concat "' (the opener at " (str-concat (sb-int ol) (str-concat ":" (str-concat (sb-int oc) "), or fix that opener")))))))))))
 
-; ===========================================================================
-; FILE VALIDATION + STANDALONE CLI ENTRY
-; ===========================================================================
-; NOT named `main`: this module is a real library dependency of
-; parser.zyl/driver.zyl now (both `use` it directly), and the module
-; resolver never qualifies `main` (mr-reserved-name) -- a
-; `defn main` here would silently override/collide with the importing
-; program's own `main`, or trip E_TOPLEVEL_STMTS_WITH_EXPLICIT_MAIN for
-; any importer that also has top-level `test`/`run-tests` forms.
-; A dedicated standalone binary can still wrap `sb-standalone-run` in its
-; own `(defn main () (sb-standalone-run))`.
-
-(defn sb-validate-file (path)
-  (let fd (file-open path "r")
-    (if (> fd 0)
-      (let srcbuf (file-read fd 1048576)
-        (let _ (file-close fd)
-          (sb-check-string srcbuf)))
-      (UnbalancedClose "file-open" 0 0))))
-
-(defn sb-standalone-run ()
-  (let argc (ffi-call "zyl_argc" 1000)
-    (if (< argc 2)
-      (begin
-        (print "usage: sexp_balance <file.zyl>")
-        2)
-      (let path (ffi-call "zyl_arg_str" 1 1000)
-        (let result (sb-validate-file path)
-          (begin
-            (sb-report result)
-            (sb-cli-status result)))))))
+(defn sb-int ((n Int)) (ffi-call "zyl_int_text" n 1000))

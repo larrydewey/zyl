@@ -116,23 +116,8 @@
     (AString _ 0)
     (AstBool _ 0)))
 
-; Line component of a location-carrying BalanceResult; -1 otherwise.
-(defn br-line (r)
-  (match r
-    (Balanced -1)
-    (UnbalancedOpenString -1)
-    (UnclosedOpen closer line col line)
-    (UnbalancedClose closer line col line)
-    (MismatchedPair opener closer line col line)))
-
-; Column component of a location-carrying BalanceResult; -1 otherwise.
-(defn br-col (r)
-  (match r
-    (Balanced -1)
-    (UnbalancedOpenString -1)
-    (UnclosedOpen closer line col col)
-    (UnbalancedClose closer line col col)
-    (MismatchedPair opener closer line col col)))
+(defn br-line (r) (sb-line r))
+(defn br-col (r) (sb-col r))
 
 ; sexp_balance: native structural balance check, exercised directly
 ; (not just via the compile-fail black-box tests, which only prove the

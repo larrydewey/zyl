@@ -1,0 +1,88 @@
+; The delimiter check (compiler/sexp_balance.zyl): every fault kind with its
+; location, the column-1 rule, the indentation hint, and agreement with the
+; lexer on mutated copies of real compiler sources.
+
+(use allocator/allocator)
+(use compiler/ast)
+(use compiler/lexer)
+(use compiler/parser)
+(use compiler/sexp_balance)
+
+(defn pos (r) (+ (* 1000 (sb-line r)) (sb-col r)))
+
+(test "balanced" (assert-true (sb-result-balanced (sb-check-string "(defn f (x) [x {x}])\n(defn g () 1)\n"))))
+
+(test "unclosed-at-eof"
+  (let r (sb-check-string "(defn f (x)\n  (+ x 1)\n")
+    (begin
+      (assert-equal (sb-code r) "E_UNBALANCED_UNCLOSED")
+      (assert-equal (pos r) 1001))))
+
+(test "unexpected-close"
+  (let r (sb-check-string "(defn f () 1))\n")
+    (begin
+      (assert-equal (sb-code r) "E_UNBALANCED_UNEXPECTED_CLOSE")
+      (assert-equal (pos r) 1014))))
+
+(test "mismatch-names-the-opener"
+  (let r (sb-check-string "(defn f ()\n  [1 2))\n")
+    (match r
+      (MismatchedPair want found l c ol oc
+        (begin
+          (assert-equal want "]")
+          (assert-equal found ")")
+          (assert-equal (+ (* 1000 l) c) 2007)
+          (assert-equal (+ (* 1000 ol) oc) 2003)))
+      (_ (assert-true false)))))
+
+; A missing closer balanced by an extra one later: the count nets to zero.
+(test "misplaced-paren-caught"
+  (let r (sb-check-string "(defn g (x)\n  (if (> x 0) x 0)\n(defn h () 1))\n")
+    (match r
+      (UnclosedOpen _ l c top anom
+        (begin
+          (assert-equal (+ (* 1000 l) c) 1001)
+          (assert-equal top 3)
+          (assert-equal anom 0)))
+      (_ (assert-true false)))))
+
+; The hint points where the indentation first contradicts the nesting.
+(test "indentation-hint"
+  (let r (sb-check-string "(defn g (x)\n  (let a (foo x\n    (+ a 1)))\n(defn h () 1)\n")
+    (match r
+      (UnclosedOpen _ _ _ top anom
+        (begin
+          (assert-equal top 4)
+          (assert-equal anom 3)))
+      (_ (assert-true false)))))
+
+(test "nets-mode-allows-column-1"
+  (begin
+    (assert-true (sb-result-balanced (sb-check-nets "(defn f (x)\n(+ x 1))\n")))
+    (assert-false (sb-result-balanced (sb-check-string "(defn f (x)\n(+ x 1))\n")))))
+
+(test "strings-and-comments-hide-brackets"
+  (begin
+    (assert-true (sb-result-balanced (sb-check-string "(defn f () \"(]\\\" [\")\n; ) ] }\n(defn g () 1) ; (\n")))
+    (assert-true (sb-result-balanced (sb-check-string "(defn f ()\n  \"line one\n(not a form)\n\")\n")))))
+
+(test "escaped-newline-in-string"
+  (let r (sb-check-string "(defn f () \"a\\\n\")\n(defn g ()\n")
+    (assert-equal (pos r) 3001)))
+
+(test "unterminated-string-located"
+  (let r (sb-check-string "(defn f ()\n  (print \"oops))\n")
+    (begin
+      (assert-equal (sb-code r) "E_UNTERMINATED_STRING")
+      (assert-equal (pos r) 2010))))
+
+(test "backslash-at-end" (assert-equal (sb-code (sb-check-string "(f \"\\")) "E_UNTERMINATED_STRING"))
+
+(test "crlf" (assert-true (sb-result-balanced (sb-check-string "(defn f ()\r\n  1)\r\n(defn g () 2)\r\n"))))
+
+(test "empty-and-comment-only"
+  (begin
+    (assert-true (sb-result-balanced (sb-check-string "")))
+    (assert-true (sb-result-balanced (sb-check-string "; only a comment (\n")))))
+
+(run-tests)
