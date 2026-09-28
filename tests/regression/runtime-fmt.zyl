@@ -1,0 +1,78 @@
+; Float text in the Zyl runtime (runtime/rt/fmt.zyl): strtod-exact parsing and printf "%f" text; expected values from glibc.
+
+(defn ftext (x) (ffi-call "zyl_f_text" x 1000))
+
+(defn ptext (s) (ftext (ffi-call "zyl_f_parse" s 1000)))
+
+(test "text-basic"
+  (begin
+    (assert-equal (ftext 0.0) "0.000000")
+    (assert-equal (ftext -0.0) "-0.000000")
+    (assert-equal (ftext 1.5) "1.500000")
+    (assert-equal (ftext -2.25) "-2.250000")
+    (assert-equal (ftext 0.1) "0.100000")
+    (assert-equal (ftext 123456.789) "123456.789000")
+    (assert-equal (ftext -0.0000001) "-0.000000")
+    (assert-equal (ftext 9007199254740992.0) "9007199254740992.000000")))
+
+(test "text-round-half-even"
+  (begin
+    (assert-equal (ftext 0.0078125) "0.007812")
+    (assert-equal (ftext 0.0234375) "0.023438")
+    (assert-equal (ftext 0.0000005) "0.000000")
+    (assert-equal (ftext 0.0000015) "0.000002")
+    (assert-equal (ftext 0.9999995) "1.000000")
+    (assert-equal (ftext 0.99999951) "1.000000")
+    (assert-equal (ftext 2.5) "2.500000")))
+
+(test "text-extremes"
+  (begin
+    (assert-equal (ftext 5e-324) "0.000000")
+    (assert-equal (ftext 1e22) "10000000000000000000000.000000")
+    (assert-equal (ptext "1e23") "99999999999999991611392.000000")
+    (assert-equal (ftext 1e308) "100000000000000001097906362944045541740492309677311846336810682903157585404911491537163328978494688899061249669721172515611590283743140088328307009198146046031271664502933027185697489699588559043338384466165001178426897626212945177628091195786707458122783970171784415105291802893207873272974885715430223118336.000000")
+    (assert-equal (ftext -1.7976931348623157e308) "-179769313486231570814527423731704356798070567525844996598917476803157260780028538760589558632766878171540458953514382464234321326889464182768467546703537516986049910576551282076245490090389328944075868508455133942304583236903222948165808559332123348274797826204144723168738177180919299881250404026184124858368.000000")))
+
+(test "text-inf-nan"
+  (begin
+    (assert-equal (ftext (/ 1.0 0.0)) "inf")
+    (assert-equal (ftext (/ -1.0 0.0)) "-inf")
+    (assert-equal (ptext "nan") "nan")
+    (assert-equal (ptext "-nan") "-nan")
+    (assert-equal (ftext (/ 0.0 0.0)) "-nan")))
+
+(test "parse-decimal"
+  (begin
+    (assert-equal (= (ffi-call "zyl_f_parse" "0.1" 1000) 0.1) true)
+    (assert-equal (= (ffi-call "zyl_f_parse" "  -12.5e1x" 1000) -125.0) true)
+    (assert-equal (= (ffi-call "zyl_f_parse" "+.5" 1000) 0.5) true)
+    (assert-equal (= (ffi-call "zyl_f_parse" "2.2250738585072011e-308" 1000) 2.225073858507201e-308) true)
+    (assert-equal (ptext "9007199254740993") "9007199254740992.000000")
+    (assert-equal (ptext "9007199254740993.0000000000000000000001") "9007199254740994.000000")
+    (assert-equal (ptext "-0") "-0.000000")
+    (assert-equal (ptext "1e400") "inf")
+    (assert-equal (ptext "-1e400") "-inf")
+    (assert-equal (ptext "1e-400") "0.000000")
+    (assert-equal (ptext "1e") "1.000000")
+    (assert-equal (ptext "abc") "0.000000")
+    (assert-equal (ptext "-") "0.000000")))
+
+(test "parse-subnormal-halfway"
+  (begin
+    (assert-equal (= (ffi-call "zyl_f_parse" "2.4703282292062328e-324" 1000) 5e-324) true)
+    (assert-equal (= (ffi-call "zyl_f_parse" "2.4703282292062327e-324" 1000) 0.0) true)
+    (assert-equal (= (ffi-call "zyl_f_parse" "1.7976931348623158e308" 1000) 1.7976931348623157e308) true)
+    (assert-equal (ptext "1.7976931348623159e308") "inf")))
+
+(test "parse-hex-inf-nan"
+  (begin
+    (assert-equal (ptext "0x1.8p3") "12.000000")
+    (assert-equal (ptext "-0X.8") "-0.500000")
+    (assert-equal (ptext "0x") "0.000000")
+    (assert-equal (ptext "0x1p-1075") "0.000000")
+    (assert-equal (= (ffi-call "zyl_f_parse" "0x1.8p-1074" 1000) 1e-323) true)
+    (assert-equal (ptext "Infinity") "inf")
+    (assert-equal (ptext "-INF") "-inf")
+    (assert-equal (ptext "nan(0x12)") "nan")))
+
+(run-tests)

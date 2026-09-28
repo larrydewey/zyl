@@ -3184,26 +3184,6 @@ static double zyl_d_of(long long bits) {
     return d;
 }
 
-static long long zyl_bits_of(double d) {
-    long long bits;
-    memcpy(&bits, &d, sizeof(bits));
-    return bits;
-}
-
-long long zyl_f_parse(long long text) {
-    const char* s = (const char*)(size_t)text;
-    if (!s) return 0;
-    return zyl_bits_of(strtod(s, NULL));
-}
-
-/* The same text printf's "%f" would produce, for a REPL result line. */
-long long zyl_f_text(long long bits) {
-    long long p = ZYL_RESULT_ALLOC(48);
-    if (!p) return 0;
-    snprintf((char*)(size_t)p, 48, "%f", zyl_d_of(bits));
-    return p;
-}
-
 /* print, in each of the three shapes codegen emits, so that interpreted
    output is byte-identical to compiled output. */
 long long zyl_print_int(long long n) { printf("%lld\n", n); return 0; }
@@ -3215,7 +3195,6 @@ long long zyl_print_float(long long bits) { printf("%f\n", zyl_d_of(bits)); retu
    annotated (compiler/region_inference, rg-ffi-kind 1). */
 #define ZYL_R_BEGIN long long saved_ = g_result_region; g_result_region = (long long)(size_t)zyl_cur_region;
 #define ZYL_R_END g_result_region = saved_;
-long long zyl_f_text_r(long long bits) { ZYL_R_BEGIN long long v = zyl_f_text(bits); ZYL_R_END return v; }
 long long zyl_file_read_c_r(long long fd, long long n) { ZYL_R_BEGIN long long v = zyl_file_read_c(fd, n); ZYL_R_END return v; }
 
 /* Regions are on unless ZYL_REGIONS=0 was set for the compile. */

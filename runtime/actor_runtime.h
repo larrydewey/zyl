@@ -180,7 +180,6 @@ long long zyl_iglobal_get(long long key);
 long long zyl_iglobal_put(long long key, long long val);
 int zyl_ffi_abandoned(void);
 int zyl_ffi_on_worker(void);
-long long zyl_f_parse(long long text);
 long long zyl_f_add(long long a, long long b);
 long long zyl_f_sub(long long a, long long b);
 long long zyl_f_mul(long long a, long long b);
@@ -189,7 +188,6 @@ long long zyl_f_rem(long long a, long long b);
 long long zyl_f_cmp(long long a, long long b);
 long long zyl_f_of_int(long long n);
 long long zyl_f_to_int(long long bits);
-long long zyl_f_text(long long bits);
 long long zyl_print_int(long long n);
 long long zyl_print_str(long long s);
 long long zyl_print_float(long long bits);
@@ -344,5 +342,8 @@ long long zyl_atomic_max(long long addr, long long value);
 long long zyl_atomic_min(long long addr, long long value);
 long long zyl_atomic_cas(long long addr, long long expected, long long new_value);
 long long zyl_atomic_fetch_add(long long addr, long long value);
+long long zyl_f_parse(long long text);
+long long zyl_f_text(long long bits);
+long long zyl_f_text_r(long long bits);
 
 #endif
