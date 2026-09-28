@@ -133,12 +133,6 @@ long long zyl_getcwd(void);
 long long zyl_system_cmd(long long cmd);
 long long zyl_exec_cmd(long long cmd);
 
-/* Package system (spec v5.0 §31). */
-long long zyl_blake3_hex(long long arena, long long src, long long len, long long outbytes);
-long long zyl_blake3_file_hex(long long arena, long long path, long long outbytes);
-long long zyl_sym_escape(long long arena, long long src);
-long long zyl_mangle_key(long long arena, long long key);
-
 /* Interactive terminal primitives (REPL line editor). */
 long long zyl_term_is_tty(long long fd);
 long long zyl_term_raw_on(void);
@@ -245,5 +239,9 @@ long long zyl_view_cmp(long long a, long long aoff, long long alen, long long b,
 long long zyl_view_find(long long s, long long off, long long len, long long from, long long byte);
 long long zyl_view_copy(long long s, long long off, long long len);
 long long zyl_dirname_cstr(long long path);
+long long zyl_blake3_hex(long long arena, long long src, long long len, long long outbytes);
+long long zyl_blake3_file_hex(long long arena, long long path, long long outbytes);
+long long zyl_sym_escape(long long arena, long long src);
+long long zyl_mangle_key(long long arena, long long key);
 
 #endif

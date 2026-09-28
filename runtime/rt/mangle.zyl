@@ -1,0 +1,91 @@
+; Symbol escaping and canonical-key mangling (spec §31.2).
+(use base)
+(use blake3)
+
+(defn mg-upper-hex () "0123456789ABCDEF")
+
+; §31.2 escape() width per byte: 1 for [A-Za-z0-9], 3 for '_' ("_5F"), 4 otherwise ("_x" + two uppercase hex).
+(defn mg-widths () "\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x04\x04\x04\x04\x04\x04\x04\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x04\x04\x04\x04\x03\x04\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04\x04")
+
+(defn mg-esc-len (s i n w)
+  (if (>= i n) w (mg-esc-len s (+ i 1) n (+ w (rt-ld8 (+ (rt-w (mg-widths)) (rt-ld8 (+ s i))))))))
+
+; Writes escape() of n bytes at s to out+w; returns the end offset.
+(defn mg-esc (s i n out w)
+  (if (>= i n) w
+    (let c (rt-ld8 (+ s i))
+      (let k (rt-ld8 (+ (rt-w (mg-widths)) c))
+        (if (= k 1)
+          (let _ (rt-st8 (+ out w) c) (mg-esc s (+ i 1) n out (+ w 1)))
+          (if (= k 3)
+            (let _ (rt-st8 (+ out w) 95) (let _ (rt-st8 (+ out (+ w 1)) 53) (let _ (rt-st8 (+ out (+ w 2)) 70) (mg-esc s (+ i 1) n out (+ w 3)))))
+            (let x (rt-w (mg-upper-hex))
+              (let _ (rt-st8 (+ out w) 95)
+                (let _ (rt-st8 (+ out (+ w 1)) 120)
+                  (let _ (rt-st8 (+ out (+ w 2)) (rt-ld8 (+ x (shr c 4))))
+                    (let _ (rt-st8 (+ out (+ w 3)) (rt-ld8 (+ x (bit-and c 15))))
+                      (mg-esc s (+ i 1) n out (+ w 4)))))))))))))
+
+(defn zyl_sym_escape (arena src)
+  (let s (rt-w src)
+    (if (= s 0) (ffi-call "%str" 0 1)
+      (let n (rt-strlen s)
+        (let need (mg-esc-len s 0 n 0)
+          (let d (rt-w (ffi-call "zyl_arena_alloc_zeroed" arena (+ need 1) 1))
+            (let _ (mg-esc s 0 n d 0) (let _ (rt-st8 (+ d need) 0) (ffi-call "%str" d 1)))))))))
+
+; Offset of the first "::" in the n bytes at p, or -1.
+(defn mg-sep (p i n)
+  (if (>= (+ i 1) n) -1
+    (if (and (= (rt-ld8 (+ p i)) 58) (= (rt-ld8 (+ p (+ i 1))) 58)) i (mg-sep p (+ i 1) n))))
+
+; "zy_" pkg "_" major "__" mod "__" sym into d; returns the length.
+(defn mg-write (d pkg pl maj ml mod mdl sym sl)
+  (let _ (rt-st8 d 122)
+    (let _ (rt-st8 (+ d 1) 121)
+      (let _ (rt-st8 (+ d 2) 95)
+        (let w1 (mg-esc pkg 0 pl d 3)
+          (let _ (rt-st8 (+ d w1) 95)
+            (let _ (rt-copy (+ d (+ w1 1)) maj ml)
+              (let w2 (+ w1 (+ ml 1))
+                (let _ (rt-st8 (+ d w2) 95)
+                  (let _ (rt-st8 (+ d (+ w2 1)) 95)
+                    (let w3 (mg-esc mod 0 mdl d (+ w2 2))
+                      (let _ (rt-st8 (+ d w3) 95)
+                        (let _ (rt-st8 (+ d (+ w3 1)) 95)
+                          (let w4 (mg-esc sym 0 sl d (+ w3 2))
+                            (let _ (rt-st8 (+ d w4) 0) w4)))))))))))))))
+
+; Over 200 bytes: the first 184 plus 16 hex digits of BLAKE3 over the full key.
+(defn mg-emit (arena k klen pkg pl maj ml mod mdl sym sl)
+  (let need (+ (+ (+ 3 (mg-esc-len pkg 0 pl 0)) (+ (+ 1 ml) 2)) (+ (+ (mg-esc-len mod 0 mdl 0) 2) (mg-esc-len sym 0 sl 0)))
+    (if (<= need 200)
+      (let d (rt-w (ffi-call "zyl_arena_alloc_zeroed" arena (+ need 1) 1))
+        (let _ (mg-write d pkg pl maj ml mod mdl sym sl) (ffi-call "%str" d 1)))
+      (let full (ffi-call "malloc" (+ need 1) 1)
+        (if (= full 0) (ffi-call "%str" 0 1)
+          (let _ (mg-write full pkg pl maj ml mod mdl sym sl)
+            (if (not (rt-blake3-raw k klen (+ full 192) 8))
+              (let _ (ffi-call "free" full 1) (ffi-call "%str" 0 1))
+              (let d (rt-w (ffi-call "zyl_arena_alloc_zeroed" arena 201 1))
+                (let _ (rt-copy d full 184)
+                  (let _ (rt-hex-bytes (+ d 184) (+ full 192) 0 8)
+                    (let _ (rt-st8 (+ d 200) 0)
+                      (let _ (ffi-call "free" full 1) (ffi-call "%str" d 1)))))))))))))
+
+; §31.2 mangle(): `<package>@<major>::<module>::<symbol>`; a key with no '@' is a bare symbol.
+(defn zyl_mangle_key (arena key)
+  (let k (rt-w key)
+    (if (= k 0) (ffi-call "%str" 0 1)
+      (let klen (rt-strlen k)
+        (let a (rt-find-byte k klen 64 0)
+          (if (< a 0) (mg-emit arena k klen k 0 (rt-w "0") 1 k 0 k klen)
+            (let rest (+ k (+ a 1))
+              (let rl (- klen (+ a 1))
+                (let s1 (mg-sep rest 0 rl)
+                  (if (< s1 0) (mg-emit arena k klen k a (rt-w "0") 1 k 0 rest rl)
+                    (let after (+ rest (+ s1 2))
+                      (let al (- rl (+ s1 2))
+                        (let s2 (mg-sep after 0 al)
+                          (if (< s2 0) (mg-emit arena k klen k a rest s1 k 0 after al)
+                            (mg-emit arena k klen k a rest s1 after s2 (+ after (+ s2 2)) (- al (+ s2 2)))))))))))))))))

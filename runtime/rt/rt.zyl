@@ -4,3 +4,5 @@
 (use cpu)
 (use cstr)
 (use text)
+(use blake3)
+(use mangle)
