@@ -438,6 +438,38 @@ as recorded below.
 
 # Session log (newest first)
 
+## Session (2026-09-28, wave 2 merges) — float text/parse, union-find, misc
+
+- `runtime/rt/fmt.zyl` (agent): `zyl_f_parse` and `zyl_f_text`/`_r`.
+  - Parse is Clinger's fast path, then Eisel-Lemire, then Go's exact
+    800-digit decimal fallback. `%f` is exact integer arithmetic with
+    round-half-even.
+  - 0 mismatches against glibc in 39.5M parse checks and 18M format
+    checks.
+  - Deliberate change: long values are no longer cut at 47 characters
+    (the C used a 48-byte snprintf).
+  - Parse is 0.75x-1.45x glibc's time; `%f` is about 5x faster.
+- `runtime/rt/uf.zyl`: region-inference union-find. `runtime/rt/misc.zyl`:
+  `zyl_mem_*`, `zyl_cstr_byte_set`, `zyl_getenv`, `zyl_regions_enabled`,
+  and the header-less `zyl_str_append_scan` with its per-thread cache in
+  `%tls`.
+- `runtime/rt/os.zyl` (agent): files, getcwd/chdir/path_exists/mkdir_p,
+  argv, getdents64 directory walks with a merge sort, and the terminal.
+  Still in C: process spawning (it needs `environ`), `zyl_term_flush`
+  (stdio) and the atexit hook. These need a symbol-address primitive.
+- Open:
+  - Float literals are emitted as `.double` decimal text, which the
+    assembler rounds wrongly in some cases (`9007199254740993.0` became
+    ...994, not ...992). Fix: emit the bit pattern from the compiler's
+    correct parser.
+  - `%mulhi`/`%clz` would speed up parsing.
+  - Note: `shr` is logical and `ashr` arithmetic. The agent brief had
+    this backwards; every runtime use is on non-negative values.
+- The AES-NI/entropy port (`runtime/rt/crypto.zyl`, agent branch) is
+  done and tested. It is not merged because deleting the old C was
+  blocked by a permission check; it waits for the user's decision.
+- The suite passes 291/291.
+
 ## Session (2026-09-28, wave 2) — the allocator and frame regions move to Zyl
 
 - `runtime/rt/alloc.zyl` (mine):

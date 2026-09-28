@@ -29849,6 +29849,5002 @@ zyl_str_append_scan:
     mov rsp, rbp
     pop rbp
     ret
+zy_local_x2Fmain_0__fmt__fm_x2Dmulhi:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    sub rsp, 8
+.L660_0:
+    mov r8, 4294967295
+    and r8, rdi
+    mov r9, 32
+    mov rax, rdi
+    mov rcx, r9
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov rdi, rax
+    mov r9, 4294967295
+    and r9, rsi
+    mov r10, 32
+    mov rax, rsi
+    mov rcx, r10
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov rsi, rax
+    mov r10, r8
+    imul r10, r9
+    imul r8, rsi
+    imul r9, rdi
+    mov rbx, 32
+    mov rax, r10
+    mov rcx, rbx
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r10, rax
+    mov rbx, 4294967295
+    and rbx, r8
+    add r10, rbx
+    mov rbx, 4294967295
+    and rbx, r9
+    add r10, rbx
+    imul rsi, rdi
+    mov rdi, 32
+    mov rax, r8
+    mov rcx, rdi
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov rdi, rax
+    add rsi, rdi
+    mov rdi, 32
+    mov rax, r9
+    mov rcx, rdi
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov rdi, rax
+    add rsi, rdi
+    mov rdi, 32
+    mov rax, r10
+    mov rcx, rdi
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov rdi, rax
+    add rsi, rdi
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__fmt__fm_x2Dclz:
+    push rbp
+    mov rbp, rsp
+.L661_0:
+    mov rsi, 0
+    mov r8, 32
+    mov rdx, r8
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__fmt__fm_x2Dclz_x2Dgo
+zy_local_x2Fmain_0__fmt__fm_x2Dclz_x2Dgo:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    sub rsp, 8
+    mov r8, rdx
+.L662_0:
+    cmp r8, 0
+    jne .L662_1
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L662_1:
+    mov r9, 64
+    sub r9, r8
+    mov rax, rdi
+    mov rcx, r9
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r9, rax
+    mov r10, 1
+    mov rax, r10
+    mov rcx, r8
+    mov rdx, rcx
+    shl rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r10, rax
+    sub r10, 1
+    and r9, r10
+    cmp r9, 0
+    jne .L662_2
+    mov rax, rdi
+    mov rcx, r8
+    mov rdx, rcx
+    shl rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r9, rax
+    mov r10, rsi
+    add r10, r8
+    mov rcx, r8
+    mov rax, rcx
+    sar rax, 63
+    shr rax, 63
+    add rax, rcx
+    sar rax, 1
+    mov rbx, rax
+    mov rdi, r9
+    mov rsi, r10
+    mov r8, rbx
+    jmp .L662_0
+.L662_2:
+    mov rcx, r8
+    mov rax, rcx
+    sar rax, 63
+    shr rax, 63
+    add rax, rcx
+    sar rax, 1
+    mov r9, rax
+    mov r8, r9
+    jmp .L662_0
+zy_local_x2Fmain_0__fmt__fm_x2Disdig:
+    push rbp
+    mov rbp, rsp
+.L663_0:
+    cmp rdi, 48
+    jl .L663_1
+    mov rax, rdi
+    cmp rax, 57
+    setle al
+    movzx rax, al
+    mov rsi, rax
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+.L663_1:
+    mov rsi, 0
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__fmt__fm_x2Dtab:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    sub rsp, 8
+.L664_0:
+    lea rax, [rip+zyl_rtg_fmt_tab]
+    mov rsi, rax
+    mov rbx, rsi
+    mov rsi, rbx
+    add rsi, 10600
+    mov rdx, rsi
+    mov rax, qword ptr [rdx]
+    mov rsi, rax
+    cmp rsi, 1
+    jne .L664_1
+    mov rax, rbx
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L664_1:
+    lea rax, [rip+.L665]
+    mov rsi, rax
+    mov rdi, 0
+    mov rdx, rdi
+    mov rdi, rbx
+    call zy_local_x2Fmain_0__fmt__fm_x2Dtab_x2Dfill
+    mov rsi, rax
+    mov rsi, rbx
+    add rsi, 10416
+    mov rdi, 0
+    movsd xmm0, [rip+.L666]
+    movq rax, xmm0
+    mov r8, rax
+    mov rdx, r8
+    mov rax, rsi
+    mov rsi, rdi
+    mov rdi, rax
+    call zy_local_x2Fmain_0__fmt__fm_x2Dp10_x2Dfill
+    mov rsi, rax
+    mfence
+    xor eax, eax
+    mov rsi, rax
+    mov rsi, rbx
+    add rsi, 10600
+    mov rdi, 1
+    mov rdx, rsi
+    mov rcx, rdi
+    mov qword ptr [rdx], rcx
+    mov rax, rcx
+    mov rsi, rax
+    mov rax, rbx
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__fmt__fm_x2Dhex16:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    push r14
+    push r15
+    sub rsp, 8
+    mov rbx, rdi
+    mov r12, rsi
+    mov r13, rdx
+.L667_0:
+    cmp r12, 16
+    jne .L667_1
+    mov rax, r13
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov r15, qword ptr [rbp-40]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L667_1:
+    mov rsi, r12
+    add rsi, 1
+    mov r14, rsi
+    mov r15, r13
+    imul r15, 16
+    mov rsi, rbx
+    add rsi, r12
+    mov rdx, rsi
+    movzx eax, byte ptr [rdx]
+    mov rsi, rax
+    mov rdi, rsi
+    call zy_local_x2Fmain_0__text__rt_x2Dhexval
+    mov rsi, rax
+    add rsi, r15
+    mov r12, r14
+    mov r13, rsi
+    jmp .L667_0
+zy_local_x2Fmain_0__fmt__fm_x2Dtab_x2Dfill:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    push r14
+    mov rbx, rdi
+    mov r12, rsi
+    mov r13, rdx
+.L668_0:
+    cmp r13, 1302
+    jne .L668_1
+    mov rsi, 0
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L668_1:
+    mov rsi, r13
+    imul rsi, 8
+    mov r14, rbx
+    add r14, rsi
+    mov rsi, r13
+    imul rsi, 16
+    add rsi, r12
+    mov rdi, 0
+    mov r8, 0
+    mov rdx, r8
+    mov rax, rsi
+    mov rsi, rdi
+    mov rdi, rax
+    call zy_local_x2Fmain_0__fmt__fm_x2Dhex16
+    mov rsi, rax
+    mov rdx, r14
+    mov rcx, rsi
+    mov qword ptr [rdx], rcx
+    mov rax, rcx
+    mov rsi, rax
+    mov rsi, r13
+    add rsi, 1
+    mov r13, rsi
+    jmp .L668_0
+zy_local_x2Fmain_0__fmt__fm_x2Dp10_x2Dfill:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 136
+    mov [rbp-136], rbx
+    mov [rbp-128], r12
+    mov [rbp-8], rdi
+    mov [rbp-16], rsi
+    mov [rbp-24], rdx
+    mov rax, [rbp-16]
+    mov rcx, 23
+    cmp rax, rcx
+    jne .L669
+    mov rax, 0
+    jmp .L670
+.L669:
+    mov rax, [rbp-16]
+    mov rcx, 8
+    imul rax, rcx
+    mov rcx, rax
+    mov rax, [rbp-8]
+    add rax, rcx
+    push rax
+    mov rax, [rbp-24]
+    mov rcx, rax
+    pop rdx
+    mov qword ptr [rdx], rcx
+    mov rax, rcx
+    mov [rbp-32], rax
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-16]
+    mov rcx, 1
+    add rax, rcx
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    push rax
+    movsd xmm0, [rip+.L671]
+    movq rax, xmm0
+    movq xmm1, rax
+    pop rax
+    movq xmm0, rax
+    mulsd xmm0, xmm1
+    movq rax, xmm0
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdx, [rsp+0]
+    mov rsi, [rsp+8]
+    mov rdi, [rsp+16]
+    mov rbx, [rbp-136]
+    mov r12, [rbp-128]
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__fmt__fm_x2Dp10_x2Dfill
+.L670:
+    mov rbx, [rbp-136]
+    mov r12, [rbp-128]
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__fmt__fm_x2Dp5_x2Dhex:
+    push rbp
+    mov rbp, rsp
+.L672_0:
+    lea rax, [rip+.L673]
+    mov rsi, rax
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__fmt__fm_x2Dspace:
+    push rbp
+    mov rbp, rsp
+.L674_0:
+    cmp rdi, 32
+    jne .L674_1
+    mov rsi, 1
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+.L674_1:
+    cmp rdi, 9
+    jl .L674_2
+    mov rax, rdi
+    cmp rax, 13
+    setle al
+    movzx rax, al
+    mov rsi, rax
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+.L674_2:
+    mov rsi, 0
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__fmt__fm_x2Dskip_x2Dws:
+    push rbp
+    mov rbp, rsp
+.L675_0:
+    mov rdx, rdi
+    movzx eax, byte ptr [rdx]
+    mov rsi, rax
+    cmp rsi, 32
+    jne .L675_2
+    mov r8, 1
+    jmp .L675_3
+.L675_2:
+    cmp rsi, 9
+    jl .L675_4
+    mov rax, rsi
+    cmp rax, 13
+    setle al
+    movzx rax, al
+    mov rsi, rax
+    jmp .L675_5
+.L675_4:
+    mov r9, 0
+    mov rsi, r9
+.L675_5:
+    mov r8, rsi
+.L675_3:
+    cmp r8, 0
+    je .L675_1
+    mov rsi, rdi
+    add rsi, 1
+    mov rdi, rsi
+    jmp .L675_0
+.L675_1:
+    mov rax, rdi
+    mov rsp, rbp
+    pop rbp
+    ret
+.globl zyl_f_parse
+zyl_f_parse:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+.L676_0:
+    cmp rdi, 0
+    jne .L676_1
+    mov rsi, 0
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L676_1:
+    call zy_local_x2Fmain_0__fmt__fm_x2Dskip_x2Dws
+    mov rsi, rax
+    mov rbx, rsi
+    mov rdx, rbx
+    movzx eax, byte ptr [rdx]
+    mov rsi, rax
+    mov r12, rsi
+    cmp r12, 45
+    jne .L676_2
+    mov rsi, rbx
+    add rsi, 1
+    mov rdi, rsi
+    call zy_local_x2Fmain_0__fmt__fm_x2Dbody
+    mov rsi, rax
+    mov rdi, -9223372036854775808
+    mov rax, rsi
+    mov rsi, rdi
+    mov rdi, rax
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__fmt__fm_x2Dsigned
+.L676_2:
+    cmp r12, 43
+    jne .L676_3
+    mov rsi, rbx
+    add rsi, 1
+    jmp .L676_4
+.L676_3:
+    mov rsi, rbx
+.L676_4:
+    mov rdi, rsi
+    call zy_local_x2Fmain_0__fmt__fm_x2Dbody
+    mov rsi, rax
+    mov rdi, 0
+    mov rax, rsi
+    mov rsi, rdi
+    mov rdi, rax
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__fmt__fm_x2Dsigned
+zy_local_x2Fmain_0__fmt__fm_x2Dsigned:
+    push rbp
+    mov rbp, rsp
+.L677_0:
+    cmp rdi, -1
+    jne .L677_1
+    mov r8, 0
+    mov rax, r8
+    mov rsp, rbp
+    pop rbp
+    ret
+.L677_1:
+    or rsi, rdi
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__fmt__fm_x2Dbody:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 120
+    mov [rbp-120], rbx
+    mov [rbp-112], r12
+    mov [rbp-8], rdi
+    mov rax, [rbp-8]
+    mov rdx, rax
+    movzx eax, byte ptr [rdx]
+    mov rcx, 32
+    or rax, rcx
+    mov [rbp-16], rax
+    mov rax, [rbp-16]
+    mov rcx, 105
+    cmp rax, rcx
+    jne .L678
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+    mov rbx, [rbp-120]
+    mov r12, [rbp-112]
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__fmt__fm_x2Dinf_x2Dword
+    jmp .L679
+.L678:
+    mov rax, [rbp-16]
+    mov rcx, 110
+    cmp rax, rcx
+    jne .L680
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdi, [rsp+0]
+    mov rbx, [rbp-120]
+    mov r12, [rbp-112]
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__fmt__fm_x2Dnan_x2Dword
+    jmp .L681
+.L680:
+    mov rax, [rbp-8]
+    mov rdx, rax
+    movzx eax, byte ptr [rdx]
+    mov rcx, 48
+    cmp rax, rcx
+    jne .L684
+    mov rax, [rbp-8]
+    mov rcx, 1
+    add rax, rcx
+    mov rdx, rax
+    movzx eax, byte ptr [rdx]
+    mov rcx, 32
+    or rax, rcx
+    mov rcx, 120
+    cmp rax, rcx
+    sete al
+    movzx rax, al
+    jmp .L685
+.L684:
+    mov rax, 0
+.L685:
+    test rax, rax
+    je .L682
+    sub rsp, 8
+    sub rsp, 40
+    mov rax, [rbp-8]
+    mov rcx, 2
+    add rax, rcx
+    mov rdi, rax
+    mov rsi, 0
+    mov rdx, 0
+    mov rcx, 0
+    mov r8, 0
+call zy_local_x2Fmain_0__fmt__fh_x2Dint
+    add rsp, 48
+    mov [rbp-24], rax
+    mov rax, [rbp-24]
+    mov rcx, -1
+    cmp rax, rcx
+    jne .L686
+    mov rax, 0
+    jmp .L687
+.L686:
+    mov rax, [rbp-24]
+.L687:
+    jmp .L683
+.L682:
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, 0
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, 0
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, 0
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, 0
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, 0
+    sub rsp, 8
+    mov [rsp], rax
+    mov r10, [rsp+0]
+    push r10
+    mov r9, [rsp+16]
+    mov r8, [rsp+24]
+    mov rcx, [rsp+32]
+    mov rdx, [rsp+40]
+    mov rsi, [rsp+48]
+    mov rdi, [rsp+56]
+call zy_local_x2Fmain_0__fmt__fd_x2Dscan
+    add rsp, 64
+.L683:
+.L681:
+.L679:
+    mov rbx, [rbp-120]
+    mov r12, [rbp-112]
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__fmt__fm_x2Dinf_x2Dword:
+    push rbp
+    mov rbp, rsp
+.L688_0:
+    mov rsi, rdi
+    add rsi, 1
+    mov rdx, rsi
+    movzx eax, byte ptr [rdx]
+    mov rsi, rax
+    or rsi, 32
+    cmp rsi, 110
+    jne .L688_1
+    mov rsi, rdi
+    add rsi, 2
+    mov rdx, rsi
+    movzx eax, byte ptr [rdx]
+    mov rsi, rax
+    or rsi, 32
+    cmp rsi, 102
+    jne .L688_1
+    mov rsi, 9218868437227405312
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+.L688_1:
+    mov rsi, -1
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__fmt__fm_x2Dnan_x2Dword:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    sub rsp, 8
+.L689_0:
+    mov rsi, rdi
+    add rsi, 1
+    mov rdx, rsi
+    movzx eax, byte ptr [rdx]
+    mov rsi, rax
+    or rsi, 32
+    cmp rsi, 97
+    jne .L689_1
+    mov rsi, rdi
+    add rsi, 2
+    mov rdx, rsi
+    movzx eax, byte ptr [rdx]
+    mov rsi, rax
+    or rsi, 32
+    cmp rsi, 110
+    jne .L689_1
+    mov rsi, rdi
+    add rsi, 3
+    mov rdx, rsi
+    movzx eax, byte ptr [rdx]
+    mov rsi, rax
+    cmp rsi, 40
+    jne .L689_2
+    mov rbx, rdi
+    add rbx, 4
+    mov rsi, rdi
+    add rsi, 4
+    mov rdi, rsi
+    call zy_local_x2Fmain_0__fmt__fm_x2Dseq_x2Dend
+    mov rsi, rax
+    mov rdi, rbx
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__fmt__fm_x2Dnan_x2Dseq
+.L689_2:
+    mov rsi, 9221120237041090560
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L689_1:
+    mov rsi, -1
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__fmt__fm_x2Dalnum:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    sub rsp, 8
+    mov rbx, rdi
+.L690_0:
+    mov rdi, rbx
+    call zy_local_x2Fmain_0__fmt__fm_x2Disdig
+    mov rsi, rax
+    cmp rsi, 0
+    je .L690_1
+    mov rsi, 1
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L690_1:
+    mov rsi, rbx
+    or rsi, 32
+    cmp rsi, 97
+    jl .L690_2
+    mov rsi, rbx
+    or rsi, 32
+    cmp rsi, 122
+    jg .L690_2
+    mov rsi, 1
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L690_2:
+    mov rax, rbx
+    cmp rax, 95
+    sete al
+    movzx rax, al
+    mov rsi, rax
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__fmt__fm_x2Dseq_x2Dend:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    sub rsp, 8
+    mov rbx, rdi
+.L691_0:
+    mov rdx, rbx
+    movzx eax, byte ptr [rdx]
+    mov rsi, rax
+    mov rdi, rsi
+    call zy_local_x2Fmain_0__fmt__fm_x2Dalnum
+    mov rsi, rax
+    cmp rsi, 0
+    je .L691_1
+    mov rsi, rbx
+    add rsi, 1
+    mov rbx, rsi
+    jmp .L691_0
+.L691_1:
+    mov rax, rbx
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__fmt__fm_x2Dnan_x2Dseq:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    mov rbx, rdi
+    mov r12, rsi
+.L692_0:
+    mov rdx, r12
+    movzx eax, byte ptr [rdx]
+    mov rsi, rax
+    cmp rsi, 41
+    jne .L692_2
+    mov rsi, 0
+    jmp .L692_3
+.L692_2:
+    mov rdi, 1
+    mov rsi, rdi
+.L692_3:
+    cmp rsi, 0
+    je .L692_1
+    mov rsi, 9221120237041090560
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L692_1:
+    mov rdi, rbx
+    call zy_local_x2Fmain_0__fmt__fm_x2Dull_x2Dend
+    mov rsi, rax
+    cmp rsi, r12
+    jne .L692_4
+    mov r12, 9221120237041090560
+    mov rdi, rbx
+    call zy_local_x2Fmain_0__fmt__fm_x2Dull
+    mov rsi, rax
+    mov rdi, 2251799813685247
+    and rsi, rdi
+    or rsi, r12
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L692_4:
+    mov rsi, 9221120237041090560
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__fmt__fm_x2Dhexval_x2Dok:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    sub rsp, 8
+    mov rbx, rsi
+.L693_0:
+    call zy_local_x2Fmain_0__text__rt_x2Dhexval
+    mov rsi, rax
+    cmp rsi, 0
+    jl .L693_1
+    mov rax, rsi
+    mov rcx, rbx
+    cmp rax, rcx
+    setl al
+    movzx rax, al
+    mov rsi, rax
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L693_1:
+    mov rsi, 0
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__fmt__fm_x2Dull_x2Dbase:
+    push rbp
+    mov rbp, rsp
+.L694_0:
+    mov rdx, rdi
+    movzx eax, byte ptr [rdx]
+    mov rsi, rax
+    cmp rsi, 48
+    jne .L694_1
+    mov rsi, rdi
+    add rsi, 1
+    mov rdx, rsi
+    movzx eax, byte ptr [rdx]
+    mov rsi, rax
+    or rsi, 32
+    cmp rsi, 120
+    jne .L694_2
+    mov rsi, rdi
+    add rsi, 2
+    mov rdx, rsi
+    movzx eax, byte ptr [rdx]
+    mov rsi, rax
+    mov rdi, 16
+    mov rax, rsi
+    mov rsi, rdi
+    mov rdi, rax
+    call zy_local_x2Fmain_0__fmt__fm_x2Dhexval_x2Dok
+    mov rsi, rax
+    cmp rsi, 0
+    je .L694_2
+    mov rsi, 16
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+.L694_2:
+    mov rsi, 8
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+.L694_1:
+    mov rsi, 10
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__fmt__fm_x2Dull_x2Dend:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    sub rsp, 8
+    mov rbx, rdi
+.L695_0:
+    mov rdi, rbx
+    call zy_local_x2Fmain_0__fmt__fm_x2Dull_x2Dbase
+    mov rsi, rax
+    mov r12, rsi
+    cmp r12, 16
+    jne .L695_1
+    mov rsi, rbx
+    add rsi, 2
+    jmp .L695_2
+.L695_1:
+    mov rsi, rbx
+.L695_2:
+    mov r13, rsi
+    mov rdx, r13
+    movzx eax, byte ptr [rdx]
+    mov rsi, rax
+    mov rdi, rsi
+    mov rsi, r12
+    call zy_local_x2Fmain_0__fmt__fm_x2Dhexval_x2Dok
+    mov rsi, rax
+    cmp rsi, 0
+    je .L695_3
+    mov rdi, r13
+    mov rsi, r12
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__fmt__fm_x2Ddigits_x2Dend
+.L695_3:
+    mov rax, rbx
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__fmt__fm_x2Ddigits_x2Dend:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    mov rbx, rdi
+    mov r12, rsi
+.L696_0:
+    mov rdx, rbx
+    movzx eax, byte ptr [rdx]
+    mov rsi, rax
+    mov rdi, rsi
+    mov rsi, r12
+    call zy_local_x2Fmain_0__fmt__fm_x2Dhexval_x2Dok
+    mov rsi, rax
+    cmp rsi, 0
+    je .L696_1
+    mov rsi, rbx
+    add rsi, 1
+    mov rbx, rsi
+    jmp .L696_0
+.L696_1:
+    mov rax, rbx
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__fmt__fm_x2Dull:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    sub rsp, 8
+    mov rbx, rdi
+.L697_0:
+    mov rdi, rbx
+    call zy_local_x2Fmain_0__fmt__fm_x2Dull_x2Dbase
+    mov rsi, rax
+    cmp rsi, 16
+    jne .L697_1
+    mov rdi, rbx
+    add rdi, 2
+    jmp .L697_2
+.L697_1:
+    mov rdi, rbx
+.L697_2:
+    mov r8, 0
+    mov r9, 0
+    mov rdx, r8
+    mov rcx, r9
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__fmt__fm_x2Dull_x2Dgo
+zy_local_x2Fmain_0__fmt__fm_x2Dull_x2Dgo:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    push r14
+    push r15
+    sub rsp, 8
+    mov qword ptr [rbp-48], rdi
+    mov r12, rsi
+    mov r13, rdx
+    mov r14, rcx
+.L698_0:
+    mov rdx, qword ptr [rbp-48]
+    movzx eax, byte ptr [rdx]
+    mov rsi, rax
+    mov r15, rsi
+    mov rdi, r15
+    mov rsi, r12
+    call zy_local_x2Fmain_0__fmt__fm_x2Dhexval_x2Dok
+    mov rsi, rax
+    cmp rsi, 0
+    je .L698_2
+    mov rsi, 0
+    jmp .L698_3
+.L698_2:
+    mov rdi, 1
+    mov rsi, rdi
+.L698_3:
+    cmp rsi, 0
+    je .L698_1
+    cmp r14, 0
+    je .L698_4
+    mov rsi, -1
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov r15, qword ptr [rbp-40]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L698_4:
+    mov rax, r13
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov r15, qword ptr [rbp-40]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L698_1:
+    cmp r14, 0
+    je .L698_5
+    mov rsi, qword ptr [rbp-48]
+    add rsi, 1
+    mov rdi, 1
+    mov qword ptr [rbp-48], rsi
+    mov r14, rdi
+    jmp .L698_0
+.L698_5:
+    mov rsi, r13
+    imul rsi, r12
+    mov rbx, rsi
+    mov rdi, r15
+    call zy_local_x2Fmain_0__text__rt_x2Dhexval
+    mov rsi, rax
+    add rsi, rbx
+    mov r15, rsi
+    mov rdi, r13
+    mov rsi, r12
+    call zy_local_x2Fmain_0__fmt__fm_x2Dmulhi
+    mov rsi, rax
+    cmp rsi, 0
+    jne .L698_9
+    mov rsi, 0
+    jmp .L698_10
+.L698_9:
+    mov rdi, 1
+    mov rsi, rdi
+.L698_10:
+    cmp rsi, 0
+    je .L698_7
+    jmp .L698_8
+.L698_7:
+    mov rsi, -9223372036854775808
+    xor rsi, r15
+    mov rdi, -9223372036854775808
+    xor rdi, rbx
+    cmp rsi, rdi
+    jge .L698_6
+.L698_8:
+    mov rsi, qword ptr [rbp-48]
+    add rsi, 1
+    mov rdi, 1
+    mov qword ptr [rbp-48], rsi
+    mov r14, rdi
+    jmp .L698_0
+.L698_6:
+    mov rsi, qword ptr [rbp-48]
+    add rsi, 1
+    mov rdi, 0
+    mov qword ptr [rbp-48], rsi
+    mov r13, r15
+    mov r14, rdi
+    jmp .L698_0
+zy_local_x2Fmain_0__fmt__fm_x2Dexp:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    sub rsp, 8
+.L699_0:
+    mov rdx, rdi
+    movzx eax, byte ptr [rdx]
+    mov rsi, rax
+    mov rax, rsi
+    cmp rax, 45
+    sete al
+    movzx rax, al
+    mov r8, rax
+    mov rbx, r8
+    cmp rsi, 45
+    jne .L699_3
+    jmp .L699_4
+.L699_3:
+    cmp rsi, 43
+    jne .L699_1
+.L699_4:
+    mov rsi, rdi
+    add rsi, 1
+    jmp .L699_2
+.L699_1:
+    mov rsi, rdi
+.L699_2:
+    mov rdi, 0
+    mov rax, rsi
+    mov rsi, rdi
+    mov rdi, rax
+    call zy_local_x2Fmain_0__fmt__fm_x2Dexp_x2Dgo
+    mov rsi, rax
+    cmp rbx, 0
+    je .L699_5
+    mov rdi, 0
+    sub rdi, rsi
+    mov rax, rdi
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L699_5:
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__fmt__fm_x2Dexp_x2Dgo:
+    push rbp
+    mov rbp, rsp
+.L700_0:
+    mov rdx, rdi
+    movzx eax, byte ptr [rdx]
+    mov r8, rax
+    cmp r8, 48
+    jl .L700_1
+    cmp r8, 57
+    jg .L700_1
+    mov r9, rdi
+    add r9, 1
+    mov r10, 1000000000000000
+    cmp rsi, r10
+    jge .L700_2
+    mov r10, rsi
+    imul r10, 10
+    sub r8, 48
+    add r8, r10
+    jmp .L700_3
+.L700_2:
+    mov r8, rsi
+.L700_3:
+    mov rdi, r9
+    mov rsi, r8
+    jmp .L700_0
+.L700_1:
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__fmt__fm_x2Dexp_x2Dat:
+    push rbp
+    mov rbp, rsp
+.L701_0:
+    mov rdx, rdi
+    movzx eax, byte ptr [rdx]
+    mov r8, rax
+    or r8, 32
+    cmp r8, rsi
+    jne .L701_1
+    mov rsi, rdi
+    add rsi, 1
+    mov rdi, rsi
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__fmt__fm_x2Dexp
+.L701_1:
+    mov rsi, 0
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__fmt__fh_x2Dint:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    push r14
+    push r15
+    sub rsp, 8
+    mov rbx, rdi
+    mov qword ptr [rbp-48], rsi
+    mov r13, rdx
+    mov r14, rcx
+    mov r15, r8
+.L702_0:
+    mov rdx, rbx
+    movzx eax, byte ptr [rdx]
+    mov rsi, rax
+    mov r12, rsi
+    mov rdi, r12
+    call zy_local_x2Fmain_0__text__rt_x2Dhexval
+    mov rsi, rax
+    cmp rsi, 0
+    jl .L702_1
+    mov rdi, 56
+    mov rax, qword ptr [rbp-48]
+    mov rcx, rdi
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov rdi, rax
+    cmp rdi, 0
+    jne .L702_2
+    mov rdi, rbx
+    add rdi, 1
+    mov r8, qword ptr [rbp-48]
+    imul r8, 16
+    add r8, rsi
+    mov r9, 1
+    mov rbx, rdi
+    mov qword ptr [rbp-48], r8
+    mov r15, r9
+    jmp .L702_0
+.L702_2:
+    mov rdi, rbx
+    add rdi, 1
+    mov r8, r13
+    add r8, 4
+    cmp r14, 0
+    je .L702_3
+    mov r9, 1
+    jmp .L702_4
+.L702_3:
+    mov rax, rsi
+    cmp rax, 0
+    setg al
+    movzx rax, al
+    mov rsi, rax
+    mov r9, rsi
+.L702_4:
+    mov rsi, 1
+    mov rbx, rdi
+    mov r13, r8
+    mov r14, r9
+    mov r15, rsi
+    jmp .L702_0
+.L702_1:
+    cmp r12, 46
+    jne .L702_5
+    mov rsi, rbx
+    add rsi, 1
+    mov rdi, rsi
+    mov rsi, qword ptr [rbp-48]
+    mov rdx, r13
+    mov rcx, r14
+    mov r8, r15
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov r15, qword ptr [rbp-40]
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__fmt__fh_x2Dfrac
+.L702_5:
+    cmp r15, 0
+    je .L702_6
+    mov rsi, 112
+    mov rdi, rbx
+    call zy_local_x2Fmain_0__fmt__fm_x2Dexp_x2Dat
+    mov rsi, rax
+    add rsi, r13
+    mov rdi, qword ptr [rbp-48]
+    mov rdx, r14
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov r15, qword ptr [rbp-40]
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__fmt__fh_x2Dround
+.L702_6:
+    mov rsi, -1
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov r15, qword ptr [rbp-40]
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__fmt__fh_x2Dfrac:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    push r14
+    push r15
+    sub rsp, 8
+    mov rbx, rdi
+    mov r12, rsi
+    mov r13, rdx
+    mov r14, rcx
+    mov r15, r8
+.L703_0:
+    mov rdx, rbx
+    movzx eax, byte ptr [rdx]
+    mov rsi, rax
+    mov rdi, rsi
+    call zy_local_x2Fmain_0__text__rt_x2Dhexval
+    mov rsi, rax
+    cmp rsi, 0
+    jl .L703_1
+    mov rdi, 56
+    mov rax, r12
+    mov rcx, rdi
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov rdi, rax
+    cmp rdi, 0
+    jne .L703_2
+    mov rdi, rbx
+    add rdi, 1
+    mov r8, r12
+    imul r8, 16
+    add r8, rsi
+    mov r9, r13
+    sub r9, 4
+    mov r10, 1
+    mov rbx, rdi
+    mov r12, r8
+    mov r13, r9
+    mov r15, r10
+    jmp .L703_0
+.L703_2:
+    mov rdi, rbx
+    add rdi, 1
+    cmp r14, 0
+    je .L703_3
+    mov r8, 1
+    jmp .L703_4
+.L703_3:
+    mov rax, rsi
+    cmp rax, 0
+    setg al
+    movzx rax, al
+    mov rsi, rax
+    mov r8, rsi
+.L703_4:
+    mov rsi, 1
+    mov rbx, rdi
+    mov r14, r8
+    mov r15, rsi
+    jmp .L703_0
+.L703_1:
+    cmp r15, 0
+    je .L703_5
+    mov rsi, 112
+    mov rdi, rbx
+    call zy_local_x2Fmain_0__fmt__fm_x2Dexp_x2Dat
+    mov rsi, rax
+    add rsi, r13
+    mov rdi, r12
+    mov rdx, r14
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov r15, qword ptr [rbp-40]
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__fmt__fh_x2Dround
+.L703_5:
+    mov rsi, -1
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov r15, qword ptr [rbp-40]
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__fmt__fh_x2Dround:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    push r14
+    mov rbx, rdi
+    mov r12, rsi
+    mov r13, rdx
+.L704_0:
+    cmp rbx, 0
+    jne .L704_1
+    mov rsi, 0
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L704_1:
+    mov r14, 63
+    mov rsi, 0
+    mov rdi, 32
+    mov rdx, rdi
+    mov rdi, rbx
+    call zy_local_x2Fmain_0__fmt__fm_x2Dclz_x2Dgo
+    mov rsi, rax
+    mov rax, r14
+    mov rcx, rsi
+    sub rax, rcx
+    mov rsi, rax
+    add rsi, r12
+    mov r14, rsi
+    cmp r14, 1023
+    jle .L704_2
+    mov rsi, 9218868437227405312
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L704_2:
+    cmp r14, -1022
+    jge .L704_3
+    mov rsi, -1074
+    jmp .L704_4
+.L704_3:
+    mov rdi, r14
+    sub rdi, 52
+    mov rsi, rdi
+.L704_4:
+    sub rsi, r12
+    cmp rsi, 0
+    jg .L704_5
+    mov rdi, 0
+    sub rdi, rsi
+    mov rax, rbx
+    mov rcx, rdi
+    mov rdx, rcx
+    shl rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov rdi, rax
+    mov r12, rdi
+    jmp .L704_6
+.L704_5:
+    mov rdi, rbx
+    mov rdx, r13
+    call zy_local_x2Fmain_0__fmt__fh_x2Dshift_x2Dround
+    mov rsi, rax
+    mov r12, rsi
+.L704_6:
+    cmp r14, -1022
+    jge .L704_7
+    mov rsi, r12
+    jmp .L704_8
+.L704_7:
+    mov rdi, r14
+    add rdi, 1022
+    mov r8, 52
+    mov rax, rdi
+    mov rcx, r8
+    mov rdx, rcx
+    shl rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov rdi, rax
+    add rdi, r12
+    mov rsi, rdi
+.L704_8:
+    mov rdi, 9218868437227405312
+    cmp rsi, rdi
+    jl .L704_9
+    mov rdi, 9218868437227405312
+    mov rax, rdi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L704_9:
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__fmt__fh_x2Dshift_x2Dround:
+    push rbp
+    mov rbp, rsp
+    mov r8, rdx
+.L705_0:
+    cmp rsi, 62
+    jle .L705_1
+    mov r9, 0
+    mov rax, r9
+    mov rsp, rbp
+    pop rbp
+    ret
+.L705_1:
+    mov rax, rdi
+    mov rcx, rsi
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r9, rax
+    mov r10, 1
+    mov rax, r10
+    mov rcx, rsi
+    mov rdx, rcx
+    shl rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r10, rax
+    sub r10, 1
+    and rdi, r10
+    mov r10, 1
+    sub rsi, 1
+    mov rax, r10
+    mov rcx, rsi
+    mov rdx, rcx
+    shl rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov rsi, rax
+    cmp rdi, rsi
+    jle .L705_3
+    jmp .L705_4
+.L705_3:
+    cmp rdi, rsi
+    jne .L705_2
+    cmp r8, 0
+    je .L705_5
+    jmp .L705_6
+.L705_5:
+    mov rsi, r9
+    and rsi, 1
+    cmp rsi, 1
+    jne .L705_2
+.L705_6:
+.L705_4:
+    mov rsi, r9
+    add rsi, 1
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+.L705_2:
+    mov rax, r9
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__fmt__fd_x2Dscan:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 184
+    mov [rbp-184], rbx
+    mov [rbp-176], r12
+    mov [rbp-8], rdi
+    mov [rbp-16], rsi
+    mov [rbp-24], rdx
+    mov [rbp-32], rcx
+    mov [rbp-40], r8
+    mov [rbp-48], r9
+    mov r10, [rbp+16]
+    mov [rbp-56], r10
+    mov rax, [rbp-16]
+    mov rdx, rax
+    movzx eax, byte ptr [rdx]
+    mov [rbp-64], rax
+    mov rax, [rbp-64]
+    mov rcx, 48
+    cmp rax, rcx
+    jl .L708
+    mov rax, [rbp-64]
+    mov rcx, 57
+    cmp rax, rcx
+    setle al
+    movzx rax, al
+    jmp .L709
+.L708:
+    mov rax, 0
+.L709:
+    test rax, rax
+    je .L706
+    mov rax, [rbp-56]
+    test rax, rax
+    je .L710
+    mov rax, [rbp-40]
+    mov rcx, 1
+    add rax, rcx
+    jmp .L711
+.L710:
+    mov rax, [rbp-40]
+.L711:
+    mov [rbp-72], rax
+    mov rax, [rbp-32]
+    mov rcx, 0
+    cmp rax, rcx
+    jne .L714
+    mov rax, [rbp-64]
+    mov rcx, 48
+    cmp rax, rcx
+    sete al
+    movzx rax, al
+    jmp .L715
+.L714:
+    mov rax, 0
+.L715:
+    test rax, rax
+    je .L712
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-16]
+    mov rcx, 1
+    add rax, rcx
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-32]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-72]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, 1
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-56]
+    sub rsp, 8
+    mov [rsp], rax
+    mov r10, [rsp+0]
+    mov [rbp+16], r10
+    mov r9, [rsp+8]
+    mov r8, [rsp+16]
+    mov rcx, [rsp+24]
+    mov rdx, [rsp+32]
+    mov rsi, [rsp+40]
+    mov rdi, [rsp+48]
+    mov rbx, [rbp-184]
+    mov r12, [rbp-176]
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__fmt__fd_x2Dscan
+    jmp .L713
+.L712:
+    mov rax, [rbp-32]
+    mov rcx, 19
+    cmp rax, rcx
+    jge .L716
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-16]
+    mov rcx, 1
+    add rax, rcx
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 10
+    imul rax, rcx
+    push rax
+    mov rax, [rbp-64]
+    mov rcx, 48
+    sub rax, rcx
+    mov rcx, rax
+    pop rax
+    add rax, rcx
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-32]
+    mov rcx, 1
+    add rax, rcx
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-72]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, 1
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-56]
+    sub rsp, 8
+    mov [rsp], rax
+    mov r10, [rsp+0]
+    mov [rbp+16], r10
+    mov r9, [rsp+8]
+    mov r8, [rsp+16]
+    mov rcx, [rsp+24]
+    mov rdx, [rsp+32]
+    mov rsi, [rsp+40]
+    mov rdi, [rsp+48]
+    mov rbx, [rbp-184]
+    mov r12, [rbp-176]
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__fmt__fd_x2Dscan
+    jmp .L717
+.L716:
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-16]
+    mov rcx, 1
+    add rax, rcx
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-32]
+    mov rcx, 1
+    add rax, rcx
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-72]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, 1
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-56]
+    sub rsp, 8
+    mov [rsp], rax
+    mov r10, [rsp+0]
+    mov [rbp+16], r10
+    mov r9, [rsp+8]
+    mov r8, [rsp+16]
+    mov rcx, [rsp+24]
+    mov rdx, [rsp+32]
+    mov rsi, [rsp+40]
+    mov rdi, [rsp+48]
+    mov rbx, [rbp-184]
+    mov r12, [rbp-176]
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__fmt__fd_x2Dscan
+.L717:
+.L713:
+    jmp .L707
+.L706:
+    mov rax, [rbp-64]
+    mov rcx, 46
+    cmp rax, rcx
+    jne .L720
+    mov rax, [rbp-56]
+    test rax, rax
+    je .L722
+    mov rax, 0
+    jmp .L723
+.L722:
+    mov rax, 1
+.L723:
+    jmp .L721
+.L720:
+    mov rax, 0
+.L721:
+    test rax, rax
+    je .L718
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-16]
+    mov rcx, 1
+    add rax, rcx
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-32]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-40]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-48]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, 1
+    sub rsp, 8
+    mov [rsp], rax
+    mov r10, [rsp+0]
+    mov [rbp+16], r10
+    mov r9, [rsp+8]
+    mov r8, [rsp+16]
+    mov rcx, [rsp+24]
+    mov rdx, [rsp+32]
+    mov rsi, [rsp+40]
+    mov rdi, [rsp+48]
+    mov rbx, [rbp-184]
+    mov r12, [rbp-176]
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__fmt__fd_x2Dscan
+    jmp .L719
+.L718:
+    mov rax, [rbp-48]
+    test rax, rax
+    je .L726
+    mov rax, 0
+    jmp .L727
+.L726:
+    mov rax, 1
+.L727:
+    test rax, rax
+    je .L724
+    mov rax, -1
+    jmp .L725
+.L724:
+    sub rsp, 16
+    mov rdi, [rbp-16]
+    mov rsi, 101
+call zy_local_x2Fmain_0__fmt__fm_x2Dexp_x2Dat
+    add rsp, 16
+    mov [rbp-80], rax
+    mov rax, [rbp-32]
+    mov rcx, 0
+    cmp rax, rcx
+    jne .L728
+    mov rax, 0
+    jmp .L729
+.L728:
+    mov rax, [rbp-32]
+    mov rcx, 19
+    cmp rax, rcx
+    jg .L730
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-80]
+    mov rcx, [rbp-40]
+    sub rax, rcx
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov rbx, [rbp-184]
+    mov r12, [rbp-176]
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__fmt__fd_x2Dexact
+    jmp .L731
+.L730:
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-80]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-80]
+    mov rcx, [rbp-40]
+    sub rax, rcx
+    push rax
+    mov rax, [rbp-32]
+    mov rcx, 19
+    sub rax, rcx
+    mov rcx, rax
+    pop rax
+    add rax, rcx
+    sub rsp, 8
+    mov [rsp], rax
+    mov rcx, [rsp+0]
+    mov rdx, [rsp+8]
+    mov rsi, [rsp+16]
+    mov rdi, [rsp+24]
+    mov rbx, [rbp-184]
+    mov r12, [rbp-176]
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__fmt__fd_x2Dinexact
+.L731:
+.L729:
+.L725:
+.L719:
+.L707:
+    mov rbx, [rbp-184]
+    mov r12, [rbp-176]
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__fmt__fd_x2Dexact:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 136
+    mov [rbp-136], rbx
+    mov [rbp-128], r12
+    mov [rbp-8], rdi
+    mov [rbp-16], rsi
+    mov rax, [rbp-16]
+    mov rcx, -22
+    cmp rax, rcx
+    jl .L736
+    mov rax, [rbp-16]
+    mov rcx, 22
+    cmp rax, rcx
+    setle al
+    movzx rax, al
+    jmp .L737
+.L736:
+    mov rax, 0
+.L737:
+    test rax, rax
+    je .L734
+    mov rax, [rbp-8]
+    mov rcx, 0
+    cmp rax, rcx
+    jl .L738
+    mov rax, [rbp-8]
+    mov rcx, 9007199254740992
+    cmp rax, rcx
+    setle al
+    movzx rax, al
+    jmp .L739
+.L738:
+    mov rax, 0
+.L739:
+    jmp .L735
+.L734:
+    mov rax, 0
+.L735:
+    test rax, rax
+    je .L732
+call zy_local_x2Fmain_0__fmt__fm_x2Dtab
+    add rsp, 0
+    mov [rbp-24], rax
+    mov rax, [rbp-8]
+    mov rdx, rax
+    cvtsi2sd xmm0, rdx
+    movq rax, xmm0
+    mov [rbp-32], rax
+    mov rax, [rbp-16]
+    mov rcx, 0
+    cmp rax, rcx
+    jl .L740
+    mov rax, [rbp-32]
+    push rax
+    mov rax, [rbp-16]
+    mov rcx, 8
+    imul rax, rcx
+    mov rcx, rax
+    mov rax, 10416
+    add rax, rcx
+    mov rcx, rax
+    mov rax, [rbp-24]
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    movq xmm1, rax
+    pop rax
+    movq xmm0, rax
+    mulsd xmm0, xmm1
+    movq rax, xmm0
+    jmp .L741
+.L740:
+    mov rax, [rbp-32]
+    push rax
+    mov rax, 0
+    mov rcx, [rbp-16]
+    sub rax, rcx
+    mov rcx, 8
+    imul rax, rcx
+    mov rcx, rax
+    mov rax, 10416
+    add rax, rcx
+    mov rcx, rax
+    mov rax, [rbp-24]
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    movq xmm1, rax
+    pop rax
+    movq xmm0, rax
+    divsd xmm0, xmm1
+    movq rax, xmm0
+.L741:
+    jmp .L733
+.L732:
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rsi, [rsp+0]
+    mov rdi, [rsp+8]
+    mov rbx, [rbp-136]
+    mov r12, [rbp-128]
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__fmt__fm_x2Del
+.L733:
+    mov rbx, [rbp-136]
+    mov r12, [rbp-128]
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__fmt__fd_x2Dinexact:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    push r14
+    push r15
+    sub rsp, 8
+    mov rbx, rdi
+    mov r12, rsi
+    mov r13, rdx
+    mov r14, rcx
+.L742_0:
+    mov rdi, r14
+    mov rsi, r13
+    call zy_local_x2Fmain_0__fmt__fm_x2Del
+    mov rsi, rax
+    mov r15, rsi
+    mov rsi, r13
+    add rsi, 1
+    mov rdi, r14
+    call zy_local_x2Fmain_0__fmt__fm_x2Del
+    mov rsi, rax
+    cmp r15, rsi
+    jne .L742_1
+    mov rax, r15
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov r15, qword ptr [rbp-40]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L742_1:
+    mov rdi, rbx
+    mov rsi, r12
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov r15, qword ptr [rbp-40]
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__fmt__sd_x2Dparse
+zy_local_x2Fmain_0__fmt__fm_x2Del:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    push r14
+    push r15
+    sub rsp, 8
+    mov rbx, rdi
+    mov r12, rsi
+.L743_0:
+    cmp rbx, -342
+    jge .L743_1
+    mov rsi, 0
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov r15, qword ptr [rbp-40]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L743_1:
+    cmp rbx, 308
+    jle .L743_2
+    mov rsi, 9218868437227405312
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov r15, qword ptr [rbp-40]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L743_2:
+    mov rsi, 0
+    mov rdi, 32
+    mov rdx, rdi
+    mov rdi, r12
+    call zy_local_x2Fmain_0__fmt__fm_x2Dclz_x2Dgo
+    mov rsi, rax
+    mov r13, rsi
+    mov rax, r12
+    mov rcx, r13
+    mov rdx, rcx
+    shl rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov rsi, rax
+    mov r12, rsi
+    call zy_local_x2Fmain_0__fmt__fm_x2Dtab
+    mov rsi, rax
+    mov rdi, rbx
+    add rdi, 342
+    imul rdi, 16
+    add rsi, rdi
+    mov r14, rsi
+    mov rdx, r14
+    mov rax, qword ptr [rdx]
+    mov rsi, rax
+    imul rsi, r12
+    mov r15, rsi
+    mov rdx, r14
+    mov rax, qword ptr [rdx]
+    mov rsi, rax
+    mov rdi, r12
+    call zy_local_x2Fmain_0__fmt__fm_x2Dmulhi
+    mov rsi, rax
+    mov qword ptr [rbp-48], rsi
+    mov rsi, qword ptr [rbp-48]
+    and rsi, 511
+    cmp rsi, 511
+    jne .L743_3
+    mov rsi, r14
+    add rsi, 8
+    mov rdx, rsi
+    mov rax, qword ptr [rdx]
+    mov rsi, rax
+    mov rdi, r12
+    call zy_local_x2Fmain_0__fmt__fm_x2Dmulhi
+    mov rsi, rax
+    add rsi, r15
+    mov rdi, -9223372036854775808
+    xor rdi, rsi
+    mov r8, -9223372036854775808
+    xor r8, r15
+    cmp rdi, r8
+    jge .L743_4
+    mov rdi, qword ptr [rbp-48]
+    add rdi, 1
+    jmp .L743_5
+.L743_4:
+    mov rdi, qword ptr [rbp-48]
+.L743_5:
+    mov rdx, rsi
+    mov rsi, r13
+    mov rcx, rdi
+    mov rdi, rbx
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov r15, qword ptr [rbp-40]
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__fmt__fm_x2Del_x2Dround
+.L743_3:
+    mov rdi, rbx
+    mov rsi, r13
+    mov rdx, r15
+    mov rcx, qword ptr [rbp-48]
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov r15, qword ptr [rbp-40]
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__fmt__fm_x2Del_x2Dround
+zy_local_x2Fmain_0__fmt__fm_x2Del_x2Dround:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    push r14
+    mov r8, rdx
+    mov r9, rcx
+.L744_0:
+    mov r10, 63
+    mov rax, r9
+    mov rcx, r10
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r10, rax
+    mov rbx, r10
+    add rbx, 9
+    mov rax, r9
+    mov rcx, rbx
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r12, rax
+    mov r13, 217706
+    imul r13, rdi
+    mov r14, 16
+    mov rax, r13
+    mov rcx, r14
+    mov rdx, 63
+    cmp rcx, 64
+    cmovae rcx, rdx
+    sar rax, cl
+    mov r13, rax
+    add r13, 63
+    add r10, r13
+    mov rax, r10
+    mov rcx, rsi
+    sub rax, rcx
+    mov rsi, rax
+    add rsi, 1023
+    cmp rsi, 0
+    jg .L744_1
+    mov r10, 0
+    sub r10, rsi
+    add r10, 1
+    cmp r10, 64
+    jl .L744_2
+    mov r10, 0
+    mov rax, r10
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L744_2:
+    mov r10, 0
+    sub r10, rsi
+    add r10, 1
+    mov rax, r12
+    mov rcx, r10
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r10, rax
+    mov r13, r10
+    and r13, 1
+    add r10, r13
+    mov r13, 1
+    mov rax, r10
+    mov rcx, r13
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r10, rax
+    mov rax, r10
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L744_1:
+    mov r10, -9223372036854775808
+    xor r8, r10
+    mov r10, 2
+    mov r13, -9223372036854775808
+    xor r10, r13
+    cmp r8, r10
+    jge .L744_3
+    cmp rdi, -4
+    jl .L744_3
+    cmp rdi, 23
+    jg .L744_3
+    mov rdi, r12
+    and rdi, 3
+    cmp rdi, 1
+    jne .L744_3
+    mov rax, r12
+    mov rcx, rbx
+    mov rdx, rcx
+    shl rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov rdi, rax
+    cmp rdi, r9
+    jne .L744_3
+    mov rdi, r12
+    and rdi, -2
+    jmp .L744_4
+.L744_3:
+    mov rdi, r12
+.L744_4:
+    mov r8, rdi
+    and r8, 1
+    add rdi, r8
+    mov r8, 1
+    mov rax, rdi
+    mov rcx, r8
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov rdi, rax
+    mov r8, 9007199254740992
+    cmp rdi, r8
+    jl .L744_5
+    mov r8, rsi
+    add r8, 1
+    jmp .L744_6
+.L744_5:
+    mov r8, rsi
+.L744_6:
+    mov rsi, 9007199254740992
+    cmp rdi, rsi
+    jl .L744_7
+    mov rsi, 0
+    jmp .L744_8
+.L744_7:
+    mov r9, 4503599627370495
+    and rdi, r9
+    mov rsi, rdi
+.L744_8:
+    cmp r8, 2047
+    jl .L744_9
+    mov rdi, 9218868437227405312
+    mov rax, rdi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L744_9:
+    mov rdi, 52
+    mov rax, r8
+    mov rcx, rdi
+    mov rdx, rcx
+    shl rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov rdi, rax
+    or rsi, rdi
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__fmt__sd_x2Dbuf:
+    push rbp
+    mov rbp, rsp
+.L745_0:
+    mov rax, QWORD PTR fs:0
+    lea rax, [rax+zyl_rtt_fmt_dec@tpoff]
+    mov rsi, rax
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__fmt__sd_x2Dparse:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    mov rbx, rsi
+.L746_0:
+    mov rax, QWORD PTR fs:0
+    lea rax, [rax+zyl_rtt_fmt_dec@tpoff]
+    mov rsi, rax
+    mov r12, rsi
+    mov rsi, 0
+    mov rdx, r12
+    mov rcx, rsi
+    mov qword ptr [rdx], rcx
+    mov rax, rcx
+    mov rsi, rax
+    mov rsi, r12
+    add rsi, 8
+    mov r8, 0
+    mov rdx, rsi
+    mov rcx, r8
+    mov qword ptr [rdx], rcx
+    mov rax, rcx
+    mov rsi, rax
+    mov rsi, r12
+    add rsi, 16
+    mov r8, 0
+    mov rdx, rsi
+    mov rcx, r8
+    mov qword ptr [rdx], rcx
+    mov rax, rcx
+    mov rsi, rax
+    mov rsi, 0
+    mov rdx, rsi
+    mov rsi, rdi
+    mov rdi, r12
+    call zy_local_x2Fmain_0__fmt__sd_x2Dread
+    mov rsi, rax
+    mov rsi, r12
+    add rsi, 8
+    mov rdi, r12
+    add rdi, 8
+    mov rdx, rdi
+    mov rax, qword ptr [rdx]
+    mov rdi, rax
+    add rdi, rbx
+    mov rdx, rsi
+    mov rcx, rdi
+    mov qword ptr [rdx], rcx
+    mov rax, rcx
+    mov rsi, rax
+    mov rdi, r12
+    call zy_local_x2Fmain_0__fmt__sd_x2Dtrim
+    mov rsi, rax
+    mov rdi, r12
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__fmt__sd_x2Dbits
+zy_local_x2Fmain_0__fmt__sd_x2Dread:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    sub rsp, 8
+    mov r8, rdx
+.L747_0:
+    mov rdx, rsi
+    movzx eax, byte ptr [rdx]
+    mov r9, rax
+    cmp r9, 48
+    jl .L747_1
+    cmp r9, 57
+    jg .L747_1
+    mov rdx, rdi
+    mov rax, qword ptr [rdx]
+    mov r10, rax
+    cmp r10, 0
+    jne .L747_2
+    cmp r9, 48
+    jne .L747_2
+    cmp r8, 0
+    je .L747_3
+    mov rbx, rdi
+    add rbx, 8
+    mov r12, rdi
+    add r12, 8
+    mov rdx, r12
+    mov rax, qword ptr [rdx]
+    mov r12, rax
+    sub r12, 1
+    mov rdx, rbx
+    mov rcx, r12
+    mov qword ptr [rdx], rcx
+    mov rax, rcx
+    mov rbx, rax
+    jmp .L747_4
+.L747_3:
+    mov r12, 0
+    mov rbx, r12
+.L747_4:
+    mov rbx, rsi
+    add rbx, 1
+    mov rsi, rbx
+    jmp .L747_0
+.L747_2:
+    cmp r10, 800
+    jge .L747_5
+    mov rbx, rdi
+    add rbx, 32
+    add rbx, r10
+    mov r12, r9
+    sub r12, 48
+    mov rdx, rbx
+    mov rcx, r12
+    mov byte ptr [rdx], cl
+    mov rax, rcx
+    mov rbx, rax
+    add r10, 1
+    mov rdx, rdi
+    mov rcx, r10
+    mov qword ptr [rdx], rcx
+    mov rax, rcx
+    mov r10, rax
+    jmp .L747_6
+.L747_5:
+    cmp r9, 48
+    jne .L747_7
+    mov rbx, 0
+    jmp .L747_8
+.L747_7:
+    mov r12, rdi
+    add r12, 16
+    mov r13, 1
+    mov rdx, r12
+    mov rcx, r13
+    mov qword ptr [rdx], rcx
+    mov rax, rcx
+    mov r12, rax
+    mov rbx, r12
+.L747_8:
+    mov r10, rbx
+.L747_6:
+    cmp r8, 0
+    je .L747_9
+    mov r10, 0
+    jmp .L747_10
+.L747_9:
+    mov rbx, rdi
+    add rbx, 8
+    mov r12, rdi
+    add r12, 8
+    mov rdx, r12
+    mov rax, qword ptr [rdx]
+    mov r12, rax
+    add r12, 1
+    mov rdx, rbx
+    mov rcx, r12
+    mov qword ptr [rdx], rcx
+    mov rax, rcx
+    mov rbx, rax
+    mov r10, rbx
+.L747_10:
+    mov r10, rsi
+    add r10, 1
+    mov rsi, r10
+    jmp .L747_0
+.L747_1:
+    cmp r9, 46
+    jne .L747_11
+    cmp r8, 0
+    je .L747_12
+    mov r9, 0
+    jmp .L747_13
+.L747_12:
+    mov r10, 1
+    mov r9, r10
+.L747_13:
+    cmp r9, 0
+    je .L747_11
+    mov r9, rsi
+    add r9, 1
+    mov r10, 1
+    mov rsi, r9
+    mov r8, r10
+    jmp .L747_0
+.L747_11:
+    mov rsi, 0
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__fmt__sd_x2Dtrim:
+    push rbp
+    mov rbp, rsp
+.L748_0:
+    mov rdx, rdi
+    mov rax, qword ptr [rdx]
+    mov rsi, rax
+    cmp rsi, 0
+    jle .L748_1
+    mov r8, rdi
+    add r8, 32
+    mov r9, rsi
+    sub r9, 1
+    add r8, r9
+    mov rdx, r8
+    movzx eax, byte ptr [rdx]
+    mov r8, rax
+    cmp r8, 0
+    jne .L748_1
+    mov r8, rsi
+    sub r8, 1
+    mov rdx, rdi
+    mov rcx, r8
+    mov qword ptr [rdx], rcx
+    mov rax, rcx
+    mov r8, rax
+    jmp .L748_0
+.L748_1:
+    cmp rsi, 0
+    jne .L748_2
+    mov rsi, rdi
+    add rsi, 8
+    mov rdi, 0
+    mov rdx, rsi
+    mov rcx, rdi
+    mov qword ptr [rdx], rcx
+    mov rax, rcx
+    mov rsi, rax
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+.L748_2:
+    mov rsi, 0
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__fmt__sd_x2Dshift:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    mov rbx, rdi
+    mov r12, rsi
+.L749_0:
+    mov rdx, rbx
+    mov rax, qword ptr [rdx]
+    mov rsi, rax
+    cmp rsi, 0
+    jne .L749_1
+    mov rsi, 0
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L749_1:
+    cmp r12, 25
+    jle .L749_2
+    mov rsi, 25
+    mov rdi, rbx
+    call zy_local_x2Fmain_0__fmt__sd_x2Dlshift
+    mov rsi, rax
+    mov rsi, r12
+    sub rsi, 25
+    mov r12, rsi
+    jmp .L749_0
+.L749_2:
+    cmp r12, 0
+    jle .L749_3
+    mov rdi, rbx
+    mov rsi, r12
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__fmt__sd_x2Dlshift
+.L749_3:
+    cmp r12, -59
+    jge .L749_4
+    mov rsi, 59
+    mov rdi, 0
+    mov r8, 0
+    mov rdx, rdi
+    mov rdi, rbx
+    mov rcx, r8
+    call zy_local_x2Fmain_0__fmt__sd_x2Drs_x2Dread
+    mov rsi, rax
+    mov rsi, r12
+    add rsi, 59
+    mov r12, rsi
+    jmp .L749_0
+.L749_4:
+    cmp r12, 0
+    jge .L749_5
+    mov rsi, 0
+    sub rsi, r12
+    mov rdi, 0
+    mov r8, 0
+    mov rdx, rdi
+    mov rdi, rbx
+    mov rcx, r8
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__fmt__sd_x2Drs_x2Dread
+.L749_5:
+    mov rsi, 0
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__fmt__sd_x2Drshift:
+    push rbp
+    mov rbp, rsp
+.L750_0:
+    mov r8, 0
+    mov r9, 0
+    mov rdx, r8
+    mov rcx, r9
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__fmt__sd_x2Drs_x2Dread
+zy_local_x2Fmain_0__fmt__sd_x2Drs_x2Dread:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    mov r8, rdx
+    mov r9, rcx
+.L751_0:
+    mov rax, r9
+    mov rcx, rsi
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r10, rax
+    cmp r10, 0
+    jne .L751_1
+    mov rdx, rdi
+    mov rax, qword ptr [rdx]
+    mov r10, rax
+    cmp r8, r10
+    jl .L751_2
+    cmp r9, 0
+    jne .L751_3
+    mov r10, 0
+    mov rdx, rdi
+    mov rcx, r10
+    mov qword ptr [rdx], rcx
+    mov rax, rcx
+    mov r10, rax
+    mov r10, rdi
+    add r10, 8
+    mov rbx, 0
+    mov rdx, r10
+    mov rcx, rbx
+    mov qword ptr [rdx], rcx
+    mov rax, rcx
+    mov r10, rax
+    mov rax, r10
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L751_3:
+    mov rdx, r8
+    mov rcx, r9
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__fmt__sd_x2Drs_x2Dpad
+.L751_2:
+    mov r10, r8
+    add r10, 1
+    mov rbx, r9
+    imul rbx, 10
+    mov r12, rdi
+    add r12, 32
+    add r12, r8
+    mov rdx, r12
+    movzx eax, byte ptr [rdx]
+    mov r12, rax
+    add rbx, r12
+    mov r8, r10
+    mov r9, rbx
+    jmp .L751_0
+.L751_1:
+    mov rdx, r8
+    mov rcx, r9
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__fmt__sd_x2Drs_x2Dstart
+zy_local_x2Fmain_0__fmt__sd_x2Drs_x2Dpad:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    sub rsp, 8
+    mov r8, rdx
+    mov r9, rcx
+.L752_0:
+    mov rax, r9
+    mov rcx, rsi
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r10, rax
+    cmp r10, 0
+    jne .L752_1
+    mov r10, r8
+    add r10, 1
+    mov rbx, r9
+    imul rbx, 10
+    mov r8, r10
+    mov r9, rbx
+    jmp .L752_0
+.L752_1:
+    mov rdx, r8
+    mov rcx, r9
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__fmt__sd_x2Drs_x2Dstart
+zy_local_x2Fmain_0__fmt__sd_x2Drs_x2Dstart:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    mov r8, rdx
+    mov r9, rcx
+.L753_0:
+    mov r10, rdi
+    add r10, 8
+    mov rbx, rdi
+    add rbx, 8
+    mov rdx, rbx
+    mov rax, qword ptr [rdx]
+    mov rbx, rax
+    mov r12, r8
+    sub r12, 1
+    sub rbx, r12
+    mov rdx, r10
+    mov rcx, rbx
+    mov qword ptr [rdx], rcx
+    mov rax, rcx
+    mov r10, rax
+    mov r10, 1
+    mov rax, r10
+    mov rcx, rsi
+    mov rdx, rcx
+    shl rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r10, rax
+    sub r10, 1
+    mov rbx, 0
+    mov rdx, r10
+    mov rcx, r8
+    mov r8, rbx
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__fmt__sd_x2Drs_x2Dwrite
+zy_local_x2Fmain_0__fmt__sd_x2Drs_x2Dwrite:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    push r14
+    push r15
+    sub rsp, 8
+    mov r10, r8
+    mov r8, rdx
+    mov rbx, r9
+    mov r9, rcx
+.L754_0:
+    mov rdx, rdi
+    mov rax, qword ptr [rdx]
+    mov r12, rax
+    cmp r9, r12
+    jge .L754_1
+    mov r12, rdi
+    add r12, 32
+    add r12, r10
+    mov rax, rbx
+    mov rcx, rsi
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r13, rax
+    mov rdx, r12
+    mov rcx, r13
+    mov byte ptr [rdx], cl
+    mov rax, rcx
+    mov r12, rax
+    mov r12, r9
+    add r12, 1
+    mov r13, r10
+    add r13, 1
+    mov r14, rbx
+    and r14, r8
+    imul r14, 10
+    mov r15, rdi
+    add r15, 32
+    add r15, r9
+    mov rdx, r15
+    movzx eax, byte ptr [rdx]
+    mov r15, rax
+    add r14, r15
+    mov r9, r12
+    mov r10, r13
+    mov rbx, r14
+    jmp .L754_0
+.L754_1:
+    mov rdx, r8
+    mov rcx, r10
+    mov r8, rbx
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov r15, qword ptr [rbp-40]
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__fmt__sd_x2Drs_x2Dtail
+zy_local_x2Fmain_0__fmt__sd_x2Drs_x2Dtail:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    sub rsp, 8
+    mov r9, rcx
+    mov r10, r8
+    mov r8, rdx
+.L755_0:
+    cmp r10, 0
+    jle .L755_1
+    mov rax, r10
+    mov rcx, rsi
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov rbx, rax
+    cmp r9, 800
+    jge .L755_2
+    mov r12, rdi
+    add r12, 32
+    add r12, r9
+    mov rdx, r12
+    mov rcx, rbx
+    mov byte ptr [rdx], cl
+    mov rax, rcx
+    mov r12, rax
+    mov r12, r9
+    add r12, 1
+    mov r13, r10
+    and r13, r8
+    imul r13, 10
+    mov r9, r12
+    mov r10, r13
+    jmp .L755_0
+.L755_2:
+    cmp rbx, 0
+    jle .L755_3
+    mov rbx, rdi
+    add rbx, 16
+    mov r12, 1
+    mov rdx, rbx
+    mov rcx, r12
+    mov qword ptr [rdx], rcx
+    mov rax, rcx
+    mov rbx, rax
+    jmp .L755_4
+.L755_3:
+    mov r12, 0
+    mov rbx, r12
+.L755_4:
+    mov rbx, r10
+    and rbx, r8
+    imul rbx, 10
+    mov r10, rbx
+    jmp .L755_0
+.L755_1:
+    mov rdx, rdi
+    mov rcx, r9
+    mov qword ptr [rdx], rcx
+    mov rax, rcx
+    mov rsi, rax
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__fmt__sd_x2Dtrim
+zy_local_x2Fmain_0__fmt__fm_x2Dndig:
+    push rbp
+    mov rbp, rsp
+.L756_0:
+    cmp rdi, 10
+    jge .L756_1
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+.L756_1:
+    mov rcx, rdi
+    movabs rax, 7378697629483820647
+    imul rcx
+    sar rdx, 2
+    mov rax, rdx
+    shr rax, 63
+    add rdx, rax
+    mov rax, rdx
+    mov r8, rax
+    mov r9, rsi
+    add r9, 1
+    mov rdi, r8
+    mov rsi, r9
+    jmp .L756_0
+zy_local_x2Fmain_0__fmt__fm_x2Dpow5:
+    push rbp
+    mov rbp, rsp
+.L757_0:
+    cmp rdi, 0
+    jne .L757_1
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+.L757_1:
+    mov r8, rdi
+    sub r8, 1
+    mov r9, rsi
+    imul r9, 5
+    mov rdi, r8
+    mov rsi, r9
+    jmp .L757_0
+zy_local_x2Fmain_0__fmt__sd_x2Dprefix:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    sub rsp, 8
+    mov r8, rdx
+    mov r9, rcx
+.L758_0:
+    cmp rsi, r8
+    jne .L758_1
+    mov rax, r9
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L758_1:
+    mov r10, rsi
+    add r10, 1
+    mov rbx, r9
+    imul rbx, 10
+    mov rdx, rdi
+    mov rax, qword ptr [rdx]
+    mov r12, rax
+    cmp rsi, r12
+    jge .L758_2
+    mov r12, rdi
+    add r12, 32
+    add r12, rsi
+    mov rdx, r12
+    movzx eax, byte ptr [rdx]
+    mov r12, rax
+    jmp .L758_3
+.L758_2:
+    mov r13, 0
+    mov r12, r13
+.L758_3:
+    add rbx, r12
+    mov rsi, r10
+    mov r9, rbx
+    jmp .L758_0
+zy_local_x2Fmain_0__fmt__sd_x2Ddelta:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    push r14
+    mov rbx, rdi
+    mov r12, rsi
+.L759_0:
+    mov rsi, 1
+    mov rdi, r12
+    call zy_local_x2Fmain_0__fmt__fm_x2Dpow5
+    mov rsi, rax
+    mov r13, rsi
+    mov rsi, 1
+    mov rdi, r13
+    call zy_local_x2Fmain_0__fmt__fm_x2Dndig
+    mov rsi, rax
+    mov r14, rsi
+    mov rsi, 1
+    mov rax, rsi
+    mov rcx, r12
+    mov rdx, rcx
+    shl rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov rsi, rax
+    mov rdi, 1
+    mov rax, rsi
+    mov rsi, rdi
+    mov rdi, rax
+    call zy_local_x2Fmain_0__fmt__fm_x2Dndig
+    mov rsi, rax
+    mov r12, rsi
+    mov rsi, 0
+    mov rdi, 0
+    mov rdx, r14
+    mov rcx, rdi
+    mov rdi, rbx
+    call zy_local_x2Fmain_0__fmt__sd_x2Dprefix
+    mov rsi, rax
+    cmp rsi, r13
+    jge .L759_1
+    mov rsi, r12
+    sub rsi, 1
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L759_1:
+    mov rax, r12
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__fmt__sd_x2Dlshift:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    push r14
+    mov rbx, rdi
+    mov r12, rsi
+.L760_0:
+    mov rdi, rbx
+    mov rsi, r12
+    call zy_local_x2Fmain_0__fmt__sd_x2Ddelta
+    mov rsi, rax
+    mov r13, rsi
+    mov rdx, rbx
+    mov rax, qword ptr [rdx]
+    mov rsi, rax
+    mov r14, rsi
+    mov rsi, r14
+    sub rsi, 1
+    mov rdi, r14
+    add rdi, r13
+    mov r8, 0
+    mov rdx, rsi
+    mov rsi, r12
+    mov rcx, rdi
+    mov rdi, rbx
+    call zy_local_x2Fmain_0__fmt__sd_x2Dls_x2Dgo
+    mov rsi, rax
+    mov rsi, r14
+    add rsi, r13
+    cmp rsi, 800
+    jl .L760_1
+    mov rdi, 800
+    jmp .L760_2
+.L760_1:
+    mov rdi, rsi
+.L760_2:
+    mov rdx, rbx
+    mov rcx, rdi
+    mov qword ptr [rdx], rcx
+    mov rax, rcx
+    mov rsi, rax
+    mov rsi, rbx
+    add rsi, 8
+    mov rdi, rbx
+    add rdi, 8
+    mov rdx, rdi
+    mov rax, qword ptr [rdx]
+    mov rdi, rax
+    add rdi, r13
+    mov rdx, rsi
+    mov rcx, rdi
+    mov qword ptr [rdx], rcx
+    mov rax, rcx
+    mov rsi, rax
+    mov rdi, rbx
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__fmt__sd_x2Dtrim
+zy_local_x2Fmain_0__fmt__sd_x2Dls_x2Dput:
+    push rbp
+    mov rbp, rsp
+    mov r8, rdx
+.L761_0:
+    cmp rsi, 800
+    jge .L761_1
+    mov r9, rdi
+    add r9, 32
+    add rsi, r9
+    mov rdx, rsi
+    mov rcx, r8
+    mov byte ptr [rdx], cl
+    mov rax, rcx
+    mov rsi, rax
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+.L761_1:
+    cmp r8, 0
+    jne .L761_2
+    mov rsi, 0
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+.L761_2:
+    mov rsi, rdi
+    add rsi, 16
+    mov rdi, 1
+    mov rdx, rsi
+    mov rcx, rdi
+    mov qword ptr [rdx], rcx
+    mov rax, rcx
+    mov rsi, rax
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__fmt__sd_x2Dls_x2Dgo:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    push r14
+    push r15
+    sub rsp, 8
+    mov qword ptr [rbp-48], rdi
+    mov r12, rsi
+    mov r13, rdx
+    mov r14, rcx
+    mov r15, r8
+.L762_0:
+    cmp r13, 0
+    jl .L762_1
+    mov rsi, qword ptr [rbp-48]
+    add rsi, 32
+    add rsi, r13
+    mov rdx, rsi
+    movzx eax, byte ptr [rdx]
+    mov rsi, rax
+    mov rax, rsi
+    mov rcx, r12
+    mov rdx, rcx
+    shl rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov rsi, rax
+    add rsi, r15
+    mov rcx, rsi
+    movabs rax, 7378697629483820647
+    imul rcx
+    sar rdx, 2
+    mov rax, rdx
+    shr rax, 63
+    add rdx, rax
+    mov rax, rdx
+    mov rdi, rax
+    mov rbx, rdi
+    mov rdi, r14
+    sub rdi, 1
+    mov r8, rbx
+    imul r8, 10
+    sub rsi, r8
+    mov rdx, rsi
+    mov rsi, rdi
+    mov rdi, qword ptr [rbp-48]
+    call zy_local_x2Fmain_0__fmt__sd_x2Dls_x2Dput
+    mov rsi, rax
+    mov rsi, r13
+    sub rsi, 1
+    mov rdi, r14
+    sub rdi, 1
+    mov r13, rsi
+    mov r14, rdi
+    mov r15, rbx
+    jmp .L762_0
+.L762_1:
+    cmp r15, 0
+    jle .L762_2
+    mov rcx, r15
+    movabs rax, 7378697629483820647
+    imul rcx
+    sar rdx, 2
+    mov rax, rdx
+    shr rax, 63
+    add rdx, rax
+    mov rax, rdx
+    mov rsi, rax
+    mov rbx, rsi
+    mov rsi, r14
+    sub rsi, 1
+    mov rdi, rbx
+    imul rdi, 10
+    mov rax, r15
+    mov rcx, rdi
+    sub rax, rcx
+    mov rdi, rax
+    mov rdx, rdi
+    mov rdi, qword ptr [rbp-48]
+    call zy_local_x2Fmain_0__fmt__sd_x2Dls_x2Dput
+    mov rsi, rax
+    mov rsi, -1
+    mov rdi, r14
+    sub rdi, 1
+    mov r13, rsi
+    mov r14, rdi
+    mov r15, rbx
+    jmp .L762_0
+.L762_2:
+    mov rsi, 0
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov r15, qword ptr [rbp-40]
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__fmt__sd_x2Dpowtab:
+    push rbp
+    mov rbp, rsp
+.L763_0:
+    cmp rdi, 0
+    jne .L763_1
+    mov rsi, 1
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+.L763_1:
+    cmp rdi, 1
+    jne .L763_2
+    mov rsi, 3
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+.L763_2:
+    cmp rdi, 2
+    jne .L763_3
+    mov rsi, 6
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+.L763_3:
+    cmp rdi, 3
+    jne .L763_4
+    mov rsi, 9
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+.L763_4:
+    cmp rdi, 4
+    jne .L763_5
+    mov rsi, 13
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+.L763_5:
+    cmp rdi, 5
+    jne .L763_6
+    mov rsi, 16
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+.L763_6:
+    cmp rdi, 6
+    jne .L763_7
+    mov rsi, 19
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+.L763_7:
+    cmp rdi, 7
+    jne .L763_8
+    mov rsi, 23
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+.L763_8:
+    mov rsi, 26
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__fmt__sd_x2Dstep:
+    push rbp
+    mov rbp, rsp
+.L764_0:
+    cmp rdi, 9
+    jl .L764_1
+    mov rsi, 27
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+.L764_1:
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__fmt__sd_x2Dpowtab
+zy_local_x2Fmain_0__fmt__sd_x2Dscale_x2Ddown:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    sub rsp, 8
+    mov rbx, rdi
+    mov r12, rsi
+.L765_0:
+    mov rsi, rbx
+    add rsi, 8
+    mov rdx, rsi
+    mov rax, qword ptr [rdx]
+    mov rsi, rax
+    cmp rsi, 0
+    jle .L765_1
+    mov rsi, rbx
+    add rsi, 8
+    mov rdx, rsi
+    mov rax, qword ptr [rdx]
+    mov rsi, rax
+    mov rdi, rsi
+    call zy_local_x2Fmain_0__fmt__sd_x2Dstep
+    mov rsi, rax
+    mov r13, rsi
+    mov rsi, 0
+    sub rsi, r13
+    mov rdi, rbx
+    call zy_local_x2Fmain_0__fmt__sd_x2Dshift
+    mov rsi, rax
+    mov rsi, r12
+    add rsi, r13
+    mov r12, rsi
+    jmp .L765_0
+.L765_1:
+    mov rax, r12
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__fmt__sd_x2Dscale_x2Dup:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    sub rsp, 8
+    mov rbx, rdi
+    mov r12, rsi
+.L766_0:
+    mov rsi, rbx
+    add rsi, 8
+    mov rdx, rsi
+    mov rax, qword ptr [rdx]
+    mov rsi, rax
+    cmp rsi, 0
+    jge .L766_2
+    jmp .L766_3
+.L766_2:
+    mov rsi, rbx
+    add rsi, 8
+    mov rdx, rsi
+    mov rax, qword ptr [rdx]
+    mov rsi, rax
+    cmp rsi, 0
+    jne .L766_1
+    mov rsi, rbx
+    add rsi, 32
+    add rsi, 0
+    mov rdx, rsi
+    movzx eax, byte ptr [rdx]
+    mov rsi, rax
+    cmp rsi, 5
+    jge .L766_1
+.L766_3:
+    mov rsi, 0
+    mov rdi, rbx
+    add rdi, 8
+    mov rdx, rdi
+    mov rax, qword ptr [rdx]
+    mov rdi, rax
+    sub rsi, rdi
+    mov rdi, rsi
+    call zy_local_x2Fmain_0__fmt__sd_x2Dstep
+    mov rsi, rax
+    mov r13, rsi
+    mov rdi, rbx
+    mov rsi, r13
+    call zy_local_x2Fmain_0__fmt__sd_x2Dshift
+    mov rsi, rax
+    mov rsi, r12
+    sub rsi, r13
+    mov r12, rsi
+    jmp .L766_0
+.L766_1:
+    mov rax, r12
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__fmt__sd_x2Dbits:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    sub rsp, 8
+    mov rbx, rdi
+.L767_0:
+    mov rdx, rbx
+    mov rax, qword ptr [rdx]
+    mov rsi, rax
+    cmp rsi, 0
+    jne .L767_1
+    mov rsi, 0
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L767_1:
+    mov rsi, rbx
+    add rsi, 8
+    mov rdx, rsi
+    mov rax, qword ptr [rdx]
+    mov rsi, rax
+    cmp rsi, 310
+    jle .L767_2
+    mov rsi, 9218868437227405312
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L767_2:
+    mov rsi, rbx
+    add rsi, 8
+    mov rdx, rsi
+    mov rax, qword ptr [rdx]
+    mov rsi, rax
+    cmp rsi, -330
+    jge .L767_3
+    mov rsi, 0
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L767_3:
+    mov rsi, 0
+    mov rdi, rbx
+    call zy_local_x2Fmain_0__fmt__sd_x2Dscale_x2Ddown
+    mov rsi, rax
+    mov rdi, rbx
+    call zy_local_x2Fmain_0__fmt__sd_x2Dscale_x2Dup
+    mov rsi, rax
+    sub rsi, 1
+    mov r12, rsi
+    cmp r12, -1022
+    jge .L767_4
+    mov rsi, -1022
+    sub rsi, r12
+    mov r13, rsi
+    mov rsi, 0
+    sub rsi, r13
+    mov rdi, rbx
+    call zy_local_x2Fmain_0__fmt__sd_x2Dshift
+    mov rsi, rax
+    mov rsi, r12
+    add rsi, r13
+    jmp .L767_5
+.L767_4:
+    mov rsi, r12
+.L767_5:
+    mov r12, rsi
+    mov rsi, r12
+    add rsi, 1023
+    cmp rsi, 2047
+    jl .L767_6
+    mov rsi, 9218868437227405312
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L767_6:
+    mov rsi, 53
+    mov rdi, rbx
+    call zy_local_x2Fmain_0__fmt__sd_x2Dshift
+    mov rsi, rax
+    mov rdi, rbx
+    call zy_local_x2Fmain_0__fmt__sd_x2Drounded
+    mov rsi, rax
+    mov rdi, 9007199254740992
+    cmp rsi, rdi
+    jne .L767_7
+    mov rdi, r12
+    add rdi, 1
+    jmp .L767_8
+.L767_7:
+    mov rdi, r12
+.L767_8:
+    mov r8, 9007199254740992
+    cmp rsi, r8
+    jne .L767_9
+    mov r8, 4503599627370496
+    jmp .L767_10
+.L767_9:
+    mov r8, rsi
+.L767_10:
+    mov rsi, rdi
+    add rsi, 1023
+    cmp rsi, 2047
+    jl .L767_11
+    mov rsi, 9218868437227405312
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L767_11:
+    mov rsi, 4503599627370496
+    and rsi, r8
+    cmp rsi, 0
+    jne .L767_12
+    mov rsi, -1023
+    jmp .L767_13
+.L767_12:
+    mov rsi, rdi
+.L767_13:
+    mov rdi, 4503599627370495
+    and rdi, r8
+    add rsi, 1023
+    and rsi, 2047
+    mov r8, 52
+    mov rax, rsi
+    mov rcx, r8
+    mov rdx, rcx
+    shl rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov rsi, rax
+    or rsi, rdi
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__fmt__sd_x2Dint:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    sub rsp, 8
+    mov r8, rdx
+    mov r9, rcx
+.L768_0:
+    cmp rsi, r8
+    jl .L768_1
+    mov rax, r9
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L768_1:
+    mov r10, rsi
+    add r10, 1
+    mov rbx, r9
+    imul rbx, 10
+    mov rdx, rdi
+    mov rax, qword ptr [rdx]
+    mov r12, rax
+    cmp rsi, r12
+    jge .L768_2
+    mov r12, rdi
+    add r12, 32
+    add r12, rsi
+    mov rdx, r12
+    movzx eax, byte ptr [rdx]
+    mov r12, rax
+    jmp .L768_3
+.L768_2:
+    mov r13, 0
+    mov r12, r13
+.L768_3:
+    add rbx, r12
+    mov rsi, r10
+    mov r9, rbx
+    jmp .L768_0
+zy_local_x2Fmain_0__fmt__sd_x2Drounded:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    sub rsp, 8
+    mov rbx, rdi
+.L769_0:
+    mov rsi, rbx
+    add rsi, 8
+    mov rdx, rsi
+    mov rax, qword ptr [rdx]
+    mov rsi, rax
+    mov r12, rsi
+    mov rsi, 0
+    mov rdi, 0
+    mov rdx, r12
+    mov rcx, rdi
+    mov rdi, rbx
+    call zy_local_x2Fmain_0__fmt__sd_x2Dint
+    mov rsi, rax
+    mov r13, rsi
+    mov rdi, rbx
+    mov rsi, r12
+    call zy_local_x2Fmain_0__fmt__sd_x2Dround_x2Dup
+    mov rsi, rax
+    cmp rsi, 0
+    je .L769_1
+    mov rsi, r13
+    add rsi, 1
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L769_1:
+    mov rax, r13
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__fmt__sd_x2Dround_x2Dup:
+    push rbp
+    mov rbp, rsp
+.L770_0:
+    cmp rsi, 0
+    jge .L770_2
+    jmp .L770_3
+.L770_2:
+    mov rdx, rdi
+    mov rax, qword ptr [rdx]
+    mov r8, rax
+    cmp rsi, r8
+    jl .L770_1
+.L770_3:
+    mov r8, 0
+    mov rax, r8
+    mov rsp, rbp
+    pop rbp
+    ret
+.L770_1:
+    mov r8, rdi
+    add r8, 32
+    add r8, rsi
+    mov rdx, r8
+    movzx eax, byte ptr [rdx]
+    mov r8, rax
+    cmp r8, 5
+    jne .L770_4
+    mov r8, rsi
+    add r8, 1
+    mov rdx, rdi
+    mov rax, qword ptr [rdx]
+    mov r9, rax
+    cmp r8, r9
+    jne .L770_4
+    mov r8, rdi
+    add r8, 16
+    mov rdx, r8
+    mov rax, qword ptr [rdx]
+    mov r8, rax
+    cmp r8, 1
+    jne .L770_5
+    mov r8, 1
+    mov rax, r8
+    mov rsp, rbp
+    pop rbp
+    ret
+.L770_5:
+    cmp rsi, 0
+    jle .L770_6
+    mov r8, rdi
+    add r8, 32
+    mov r9, rsi
+    sub r9, 1
+    add r8, r9
+    mov rdx, r8
+    movzx eax, byte ptr [rdx]
+    mov r8, rax
+    and r8, 1
+    mov rax, r8
+    cmp rax, 1
+    sete al
+    movzx rax, al
+    mov r8, rax
+    mov rax, r8
+    mov rsp, rbp
+    pop rbp
+    ret
+.L770_6:
+    mov r8, 0
+    mov rax, r8
+    mov rsp, rbp
+    pop rbp
+    ret
+.L770_4:
+    add rdi, 32
+    add rsi, rdi
+    mov rdx, rsi
+    movzx eax, byte ptr [rdx]
+    mov rsi, rax
+    mov rax, rsi
+    cmp rax, 5
+    setge al
+    movzx rax, al
+    mov rsi, rax
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+.globl zyl_f_text
+zyl_f_text:
+    push rbp
+    mov rbp, rsp
+.L771_0:
+    mov rsi, 0
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__fmt__fm_x2Dtext
+.globl zyl_f_text_r
+zyl_f_text_r:
+    push rbp
+    mov rbp, rsp
+.L772_0:
+    mov rax, QWORD PTR fs:zyl_cur_region@tpoff
+    mov rsi, rax
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__fmt__fm_x2Dtext
+zy_local_x2Fmain_0__fmt__fm_x2Dtext:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    sub rsp, 8
+.L773_0:
+    mov rax, rdi
+    cmp rax, 0
+    setl al
+    movzx rax, al
+    mov r8, rax
+    mov r9, 9223372036854775807
+    and rdi, r9
+    mov r9, 52
+    mov rax, rdi
+    mov rcx, r9
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r9, rax
+    mov r10, 4503599627370495
+    and rdi, r10
+    cmp r9, 2047
+    jne .L773_1
+    cmp rdi, 0
+    jne .L773_2
+    cmp r8, 0
+    je .L773_3
+    lea rax, [rip+.L774]
+    mov r10, rax
+    mov rbx, 4
+    mov rdi, r10
+    mov rdx, rsi
+    mov rsi, rbx
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__base__rt_x2Dstr_x2Dof
+.L773_3:
+    lea rax, [rip+.L775]
+    mov r10, rax
+    mov rbx, 3
+    mov rdi, r10
+    mov rdx, rsi
+    mov rsi, rbx
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__base__rt_x2Dstr_x2Dof
+.L773_2:
+    cmp r8, 0
+    je .L773_4
+    lea rax, [rip+.L776]
+    mov r10, rax
+    mov rbx, 4
+    mov rdi, r10
+    mov rdx, rsi
+    mov rsi, rbx
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__base__rt_x2Dstr_x2Dof
+.L773_4:
+    lea rax, [rip+.L777]
+    mov r10, rax
+    mov rbx, 3
+    mov rdi, r10
+    mov rdx, rsi
+    mov rsi, rbx
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__base__rt_x2Dstr_x2Dof
+.L773_1:
+    cmp r9, 0
+    jne .L773_5
+    mov r10, rdi
+    jmp .L773_6
+.L773_5:
+    mov rbx, 4503599627370496
+    or rdi, rbx
+    mov r10, rdi
+.L773_6:
+    cmp r9, 0
+    jne .L773_7
+    mov rdi, -1074
+    jmp .L773_8
+.L773_7:
+    sub r9, 1075
+    mov rdi, r9
+.L773_8:
+    cmp rdi, 10
+    jle .L773_9
+    mov rdx, rdi
+    mov rdi, r8
+    mov rcx, rsi
+    mov rsi, r10
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__fmt__fm_x2Dtext_x2Dbig
+.L773_9:
+    cmp rdi, 0
+    jl .L773_10
+    mov rax, r10
+    mov rcx, rdi
+    mov rdx, rcx
+    shl rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r9, rax
+    mov rbx, 0
+    mov rdi, r8
+    mov rdx, rbx
+    mov rcx, rsi
+    mov rsi, r9
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__fmt__fm_x2Dtext_x2Dsmall
+.L773_10:
+    mov r9, 0
+    mov rax, r9
+    mov rcx, rdi
+    sub rax, rcx
+    mov rdi, rax
+    mov rdx, rdi
+    mov rdi, r8
+    mov rcx, rsi
+    mov rsi, r10
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__fmt__fm_x2Dtext_x2Dfrac
+zy_local_x2Fmain_0__fmt__fm_x2Dtext_x2Dfrac:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    push r14
+    push r15
+    sub rsp, 24
+    mov qword ptr [rbp-48], rdi
+    mov r12, rdx
+    mov qword ptr [rbp-56], rcx
+.L778_0:
+    cmp r12, 76
+    jl .L778_1
+    mov rdi, 0
+    mov r8, 0
+    mov rsi, rdi
+    mov rdi, qword ptr [rbp-48]
+    mov rdx, r8
+    mov rcx, qword ptr [rbp-56]
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov r15, qword ptr [rbp-40]
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__fmt__fm_x2Dtext_x2Dsmall
+.L778_1:
+    cmp r12, 64
+    jge .L778_2
+    mov rax, rsi
+    mov rcx, r12
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov rdi, rax
+    jmp .L778_3
+.L778_2:
+    mov r8, 0
+    mov rdi, r8
+.L778_3:
+    mov r14, rdi
+    cmp r12, 64
+    jge .L778_4
+    mov rdi, 1
+    mov rax, rdi
+    mov rcx, r12
+    mov rdx, rcx
+    shl rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov rdi, rax
+    sub rdi, 1
+    and rdi, rsi
+    jmp .L778_5
+.L778_4:
+    mov rdi, rsi
+.L778_5:
+    mov rsi, rdi
+    imul rsi, 1000000
+    mov r15, rsi
+    mov rsi, 1000000
+    call zy_local_x2Fmain_0__fmt__fm_x2Dmulhi
+    mov rsi, rax
+    mov rbx, rsi
+    mov rdi, r12
+    mov rsi, r15
+    mov rdx, rbx
+    call zy_local_x2Fmain_0__fmt__fm_x2Dfrac_x2Dq
+    mov rsi, rax
+    mov r13, rsi
+    mov rsi, r13
+    and rsi, 1
+    mov rax, rsi
+    cmp rax, 1
+    sete al
+    movzx rax, al
+    mov rsi, rax
+    mov rdi, r12
+    mov rdx, rbx
+    mov rcx, rsi
+    mov rsi, r15
+    call zy_local_x2Fmain_0__fmt__fm_x2Dfrac_x2Dup
+    mov rsi, rax
+    cmp rsi, 0
+    je .L778_6
+    mov rsi, r13
+    add rsi, 1
+    jmp .L778_7
+.L778_6:
+    mov rsi, r13
+.L778_7:
+    cmp rsi, 1000000
+    jne .L778_8
+    mov rdi, r14
+    add rdi, 1
+    mov r8, 0
+    mov rsi, rdi
+    mov rdi, qword ptr [rbp-48]
+    mov rdx, r8
+    mov rcx, qword ptr [rbp-56]
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov r15, qword ptr [rbp-40]
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__fmt__fm_x2Dtext_x2Dsmall
+.L778_8:
+    mov rdi, qword ptr [rbp-48]
+    mov rdx, rsi
+    mov rsi, r14
+    mov rcx, qword ptr [rbp-56]
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov r15, qword ptr [rbp-40]
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__fmt__fm_x2Dtext_x2Dsmall
+zy_local_x2Fmain_0__fmt__fm_x2Dfrac_x2Dq:
+    push rbp
+    mov rbp, rsp
+    mov r8, rdx
+.L779_0:
+    cmp rdi, 64
+    jge .L779_1
+    mov rax, rsi
+    mov rcx, rdi
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov rsi, rax
+    mov r9, 64
+    sub r9, rdi
+    mov rax, r8
+    mov rcx, r9
+    mov rdx, rcx
+    shl rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r9, rax
+    or rsi, r9
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+.L779_1:
+    mov rsi, rdi
+    sub rsi, 64
+    mov rax, r8
+    mov rcx, rsi
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov rsi, rax
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__fmt__fm_x2Dfrac_x2Dup:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    mov r8, rdx
+    mov r9, rcx
+.L780_0:
+    cmp rdi, 64
+    jge .L780_1
+    mov r10, 1
+    mov rax, r10
+    mov rcx, rdi
+    mov rdx, rcx
+    shl rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r10, rax
+    sub r10, 1
+    and r10, rsi
+    mov rbx, 1
+    mov r12, rdi
+    sub r12, 1
+    mov rax, rbx
+    mov rcx, r12
+    mov rdx, rcx
+    shl rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov rbx, rax
+    cmp r10, rbx
+    jle .L780_2
+    mov r12, 1
+    mov rax, r12
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L780_2:
+    cmp r10, rbx
+    jne .L780_3
+    mov rax, r9
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L780_3:
+    mov r10, 0
+    mov rax, r10
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L780_1:
+    sub rdi, 64
+    mov r10, 1
+    mov rax, r10
+    mov rcx, rdi
+    mov rdx, rcx
+    shl rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r10, rax
+    sub r10, 1
+    and r8, r10
+    cmp rdi, 0
+    jne .L780_4
+    mov r10, 0
+    jmp .L780_5
+.L780_4:
+    mov rbx, 1
+    mov r12, rdi
+    sub r12, 1
+    mov rax, rbx
+    mov rcx, r12
+    mov rdx, rcx
+    shl rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov rbx, rax
+    mov r10, rbx
+.L780_5:
+    cmp rdi, 0
+    jne .L780_6
+    mov rdi, -9223372036854775808
+    jmp .L780_7
+.L780_6:
+    mov rbx, 0
+    mov rdi, rbx
+.L780_7:
+    cmp r8, r10
+    jle .L780_8
+    mov rbx, 1
+    mov rax, rbx
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L780_8:
+    cmp r8, r10
+    jne .L780_9
+    mov r8, -9223372036854775808
+    xor r8, rdi
+    mov r10, -9223372036854775808
+    xor r10, rsi
+    cmp r8, r10
+    jge .L780_10
+    mov r8, 1
+    mov rax, r8
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L780_10:
+    cmp rsi, rdi
+    jne .L780_11
+    mov rax, r9
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L780_11:
+    mov rsi, 0
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L780_9:
+    mov rsi, 0
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__fmt__fm_x2Dtext_x2Dsmall:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    push r14
+    push r15
+    and rsp, -16
+    sub rsp, 32
+    mov rbx, rdi
+    mov r12, rsi
+    mov qword ptr [rbp-48], rdx
+    mov r14, rcx
+.L781_0:
+    cmp rbx, 0
+    je .L781_1
+    mov rsi, 1
+    jmp .L781_2
+.L781_1:
+    mov rdi, 0
+    mov rsi, rdi
+.L781_2:
+    mov r15, rsi
+    mov rsi, 0
+    sub rsi, r12
+    mov rdi, -10
+    mov r8, 1
+    mov rdx, r8
+    mov rax, rsi
+    mov rsi, rdi
+    mov rdi, rax
+    call zy_local_x2Fmain_0__text__rt_x2Dnd
+    mov rsi, rax
+    mov r13, rsi
+    mov rsi, r15
+    add rsi, r13
+    add rsi, 7
+    mov qword ptr [rbp-56], rsi
+    mov rsi, qword ptr [rbp-56]
+    add rsi, 1
+    mov rdi, rsi
+    mov rsi, r14
+    call zyl_ralloc
+    mov rsi, rax
+    mov r14, rsi
+    cmp rbx, 0
+    je .L781_3
+    mov rsi, 45
+    mov rdx, r14
+    mov rcx, rsi
+    mov byte ptr [rdx], cl
+    mov rax, rcx
+    mov rsi, rax
+    jmp .L781_4
+.L781_3:
+    mov rdi, 0
+    mov rsi, rdi
+.L781_4:
+    mov rsi, 0
+    sub rsi, r12
+    mov rdi, r15
+    add rdi, r13
+    sub rdi, 1
+    mov rdx, rdi
+    mov rdi, r14
+    call zy_local_x2Fmain_0__text__rt_x2Dput_x2Ddigits
+    mov rsi, rax
+    mov rsi, r15
+    add rsi, r13
+    add rsi, r14
+    mov rdi, 46
+    mov rdx, rsi
+    mov rcx, rdi
+    mov byte ptr [rdx], cl
+    mov rax, rcx
+    mov rsi, rax
+    mov rsi, r15
+    add rsi, r13
+    add rsi, 1
+    add rsi, r14
+    mov rdi, 6
+    mov rax, rsi
+    mov rsi, rdi
+    mov rdi, rax
+    call zy_local_x2Fmain_0__fmt__fm_x2Dzeros
+    mov rsi, rax
+    mov rsi, 0
+    sub rsi, qword ptr [rbp-48]
+    mov rdi, qword ptr [rbp-56]
+    sub rdi, 1
+    mov rdx, rdi
+    mov rdi, r14
+    call zy_local_x2Fmain_0__text__rt_x2Dput_x2Ddigits
+    mov rsi, rax
+    mov rsi, r14
+    add rsi, qword ptr [rbp-56]
+    mov rdi, 0
+    mov rdx, rsi
+    mov rcx, rdi
+    mov byte ptr [rdx], cl
+    mov rax, rcx
+    mov rsi, rax
+    mov rax, r14
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov r15, qword ptr [rbp-40]
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__fmt__fm_x2Dzeros:
+    push rbp
+    mov rbp, rsp
+.L782_0:
+    cmp rsi, 0
+    jne .L782_1
+    mov r8, 0
+    mov rax, r8
+    mov rsp, rbp
+    pop rbp
+    ret
+.L782_1:
+    mov r8, 48
+    mov rdx, rdi
+    mov rcx, r8
+    mov byte ptr [rdx], cl
+    mov rax, rcx
+    mov r8, rax
+    mov r8, rdi
+    add r8, 1
+    mov r9, rsi
+    sub r9, 1
+    mov rdi, r8
+    mov rsi, r9
+    jmp .L782_0
+zy_local_x2Fmain_0__fmt__fm_x2Dtext_x2Dbig:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    sub rsp, 8
+    mov rbx, rdi
+    mov rdi, rdx
+    mov r12, rcx
+.L783_0:
+    mov rax, QWORD PTR fs:0
+    lea rax, [rax+zyl_rtt_fmt_big@tpoff]
+    mov r8, rax
+    mov r13, r8
+    mov rcx, rsi
+    movabs rax, 1237940039285380275
+    imul rcx
+    sar rdx, 26
+    mov rax, rdx
+    shr rax, 63
+    add rdx, rax
+    imul rdx, rdx, 1000000000
+    mov rax, rcx
+    sub rax, rdx
+    mov r8, rax
+    mov rdx, r13
+    mov rcx, r8
+    mov qword ptr [rdx], rcx
+    mov rax, rcx
+    mov r8, rax
+    mov r8, r13
+    add r8, 8
+    mov rcx, rsi
+    movabs rax, 1237940039285380275
+    imul rcx
+    sar rdx, 26
+    mov rax, rdx
+    shr rax, 63
+    add rdx, rax
+    mov rax, rdx
+    mov rsi, rax
+    mov rdx, r8
+    mov rcx, rsi
+    mov qword ptr [rdx], rcx
+    mov rax, rcx
+    mov rsi, rax
+    mov rsi, 2
+    mov rdx, rdi
+    mov rdi, r13
+    call zy_local_x2Fmain_0__fmt__fm_x2Dbig_x2Dshift
+    mov rsi, rax
+    mov rdi, rbx
+    mov rdx, rsi
+    mov rsi, r13
+    mov rcx, r12
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__fmt__fm_x2Dbig_x2Dout
+zy_local_x2Fmain_0__fmt__fm_x2Dbig_x2Dshift:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    push r14
+    mov rbx, rdi
+    mov r12, rsi
+    mov r13, rdx
+.L784_0:
+    cmp r13, 0
+    jne .L784_1
+    mov rax, r12
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L784_1:
+    cmp r13, 32
+    jle .L784_2
+    mov rsi, 32
+    jmp .L784_3
+.L784_2:
+    mov rsi, r13
+.L784_3:
+    mov r14, rsi
+    mov rsi, 0
+    mov rdi, 0
+    mov rdx, r12
+    mov rcx, r14
+    mov r8, rdi
+    mov rdi, rbx
+    call zy_local_x2Fmain_0__fmt__fm_x2Dbig_x2Dmul
+    mov rsi, rax
+    mov rdi, r13
+    sub rdi, r14
+    mov r12, rsi
+    mov r13, rdi
+    jmp .L784_0
+zy_local_x2Fmain_0__fmt__fm_x2Dbig_x2Dmul:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    push r14
+    mov r9, rcx
+    mov r10, r8
+    mov r8, rdx
+.L785_0:
+    cmp rsi, r8
+    jge .L785_1
+    mov rbx, rsi
+    imul rbx, 8
+    add rbx, rdi
+    mov rdx, rbx
+    mov rax, qword ptr [rdx]
+    mov rbx, rax
+    mov rax, rbx
+    mov rcx, r9
+    mov rdx, rcx
+    shl rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov rbx, rax
+    add rbx, r10
+    mov rcx, rbx
+    movabs rax, 1237940039285380275
+    imul rcx
+    sar rdx, 26
+    mov rax, rdx
+    shr rax, 63
+    add rdx, rax
+    mov rax, rdx
+    mov r12, rax
+    mov r13, rsi
+    imul r13, 8
+    add r13, rdi
+    mov r14, r12
+    imul r14, 1000000000
+    sub rbx, r14
+    mov rdx, r13
+    mov rcx, rbx
+    mov qword ptr [rdx], rcx
+    mov rax, rcx
+    mov rbx, rax
+    mov rbx, rsi
+    add rbx, 1
+    mov rsi, rbx
+    mov r10, r12
+    jmp .L785_0
+.L785_1:
+    cmp r10, 0
+    jle .L785_2
+    mov rcx, r10
+    movabs rax, 1237940039285380275
+    imul rcx
+    sar rdx, 26
+    mov rax, rdx
+    shr rax, 63
+    add rdx, rax
+    mov rax, rdx
+    mov rbx, rax
+    mov r12, rsi
+    imul r12, 8
+    add r12, rdi
+    mov r13, rbx
+    imul r13, 1000000000
+    mov rax, r10
+    mov rcx, r13
+    sub rax, rcx
+    mov r13, rax
+    mov rdx, r12
+    mov rcx, r13
+    mov qword ptr [rdx], rcx
+    mov rax, rcx
+    mov r12, rax
+    mov r12, rsi
+    add r12, 1
+    mov r13, r8
+    add r13, 1
+    mov rsi, r12
+    mov r8, r13
+    mov r10, rbx
+    jmp .L785_0
+.L785_2:
+    mov rax, r8
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__fmt__fm_x2Dbig_x2Dout:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    push r14
+    push r15
+    and rsp, -16
+    sub rsp, 48
+    mov rbx, rdi
+    mov qword ptr [rbp-56], rsi
+    mov r13, rdx
+    mov r14, rcx
+.L786_0:
+    cmp rbx, 0
+    je .L786_1
+    mov rsi, 1
+    jmp .L786_2
+.L786_1:
+    mov rdi, 0
+    mov rsi, rdi
+.L786_2:
+    mov qword ptr [rbp-48], rsi
+    mov rsi, r13
+    sub rsi, 1
+    imul rsi, 8
+    add rsi, qword ptr [rbp-56]
+    mov rdx, rsi
+    mov rax, qword ptr [rdx]
+    mov rsi, rax
+    mov r15, rsi
+    mov rsi, 0
+    sub rsi, r15
+    mov rdi, -10
+    mov r8, 1
+    mov rdx, r8
+    mov rax, rsi
+    mov rsi, rdi
+    mov rdi, rax
+    call zy_local_x2Fmain_0__text__rt_x2Dnd
+    mov rsi, rax
+    mov r12, rsi
+    mov rsi, 9
+    mov rdi, r13
+    sub rdi, 1
+    imul rsi, rdi
+    add rsi, r12
+    mov qword ptr [rbp-64], rsi
+    mov rsi, qword ptr [rbp-48]
+    add rsi, qword ptr [rbp-64]
+    add rsi, 7
+    mov qword ptr [rbp-72], rsi
+    mov rsi, qword ptr [rbp-72]
+    add rsi, 1
+    mov rdi, rsi
+    mov rsi, r14
+    call zyl_ralloc
+    mov rsi, rax
+    mov r14, rsi
+    cmp rbx, 0
+    je .L786_3
+    mov rsi, 45
+    mov rdx, r14
+    mov rcx, rsi
+    mov byte ptr [rdx], cl
+    mov rax, rcx
+    mov rsi, rax
+    jmp .L786_4
+.L786_3:
+    mov rdi, 0
+    mov rsi, rdi
+.L786_4:
+    mov rsi, r14
+    add rsi, qword ptr [rbp-48]
+    mov rdi, rsi
+    mov rsi, qword ptr [rbp-64]
+    call zy_local_x2Fmain_0__fmt__fm_x2Dzeros
+    mov rsi, rax
+    mov rsi, 0
+    sub rsi, r15
+    mov rdi, qword ptr [rbp-48]
+    add rdi, r12
+    sub rdi, 1
+    mov rdx, rdi
+    mov rdi, r14
+    call zy_local_x2Fmain_0__text__rt_x2Dput_x2Ddigits
+    mov rsi, rax
+    mov rsi, r13
+    sub rsi, 2
+    mov rdi, qword ptr [rbp-48]
+    add rdi, r12
+    add rdi, 8
+    mov rdx, rsi
+    mov rsi, qword ptr [rbp-56]
+    mov rcx, rdi
+    mov rdi, r14
+    call zy_local_x2Fmain_0__fmt__fm_x2Dbig_x2Dlimbs
+    mov rsi, rax
+    mov rsi, qword ptr [rbp-48]
+    add rsi, qword ptr [rbp-64]
+    add rsi, r14
+    mov rdi, 46
+    mov rdx, rsi
+    mov rcx, rdi
+    mov byte ptr [rdx], cl
+    mov rax, rcx
+    mov rsi, rax
+    mov rsi, qword ptr [rbp-48]
+    add rsi, qword ptr [rbp-64]
+    add rsi, 1
+    add rsi, r14
+    mov rdi, 6
+    mov rax, rsi
+    mov rsi, rdi
+    mov rdi, rax
+    call zy_local_x2Fmain_0__fmt__fm_x2Dzeros
+    mov rsi, rax
+    mov rsi, r14
+    add rsi, qword ptr [rbp-72]
+    mov rdi, 0
+    mov rdx, rsi
+    mov rcx, rdi
+    mov byte ptr [rdx], cl
+    mov rax, rcx
+    mov rsi, rax
+    mov rax, r14
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov r15, qword ptr [rbp-40]
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__fmt__fm_x2Dbig_x2Dlimbs:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    push r14
+    mov rbx, rdi
+    mov r12, rsi
+    mov r13, rdx
+    mov r14, rcx
+.L787_0:
+    cmp r13, 0
+    jge .L787_1
+    mov rsi, 0
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L787_1:
+    mov rsi, 0
+    mov rdi, r13
+    imul rdi, 8
+    add rdi, r12
+    mov rdx, rdi
+    mov rax, qword ptr [rdx]
+    mov rdi, rax
+    sub rsi, rdi
+    mov rdi, rbx
+    mov rdx, r14
+    call zy_local_x2Fmain_0__text__rt_x2Dput_x2Ddigits
+    mov rsi, rax
+    mov rsi, r13
+    sub rsi, 1
+    mov rdi, r14
+    add rdi, 9
+    mov r13, rsi
+    mov r14, rdi
+    jmp .L787_0
 zy_local_x2Fmain_0__variant__rt_x2Dwords_x2Dcmp_x7EInt_x2CInt_x2CInt_x2CInt_x2CInt_x2CInt:
     push rbp
     mov rbp, rsp
@@ -29860,11 +34856,11 @@ zy_local_x2Fmain_0__variant__rt_x2Dwords_x2Dcmp_x7EInt_x2CInt_x2CInt_x2CInt_x2CI
     mov r8, rdx
     mov rbx, r9
     mov r9, rcx
-.L660_0:
+.L788_0:
     cmp r8, r9
-    jl .L660_1
+    jl .L788_1
     cmp r10, rbx
-    jge .L660_2
+    jge .L788_2
     mov r12, -1
     mov rax, r12
     mov rbx, qword ptr [rbp-8]
@@ -29874,9 +34870,9 @@ zy_local_x2Fmain_0__variant__rt_x2Dwords_x2Dcmp_x7EInt_x2CInt_x2CInt_x2CInt_x2CI
     mov rsp, rbp
     pop rbp
     ret
-.L660_2:
+.L788_2:
     cmp r10, rbx
-    jle .L660_3
+    jle .L788_3
     mov r12, 1
     mov rax, r12
     mov rbx, qword ptr [rbp-8]
@@ -29886,7 +34882,7 @@ zy_local_x2Fmain_0__variant__rt_x2Dwords_x2Dcmp_x7EInt_x2CInt_x2CInt_x2CInt_x2CI
     mov rsp, rbp
     pop rbp
     ret
-.L660_3:
+.L788_3:
     mov r12, 0
     mov rax, r12
     mov rbx, qword ptr [rbp-8]
@@ -29896,7 +34892,7 @@ zy_local_x2Fmain_0__variant__rt_x2Dwords_x2Dcmp_x7EInt_x2CInt_x2CInt_x2CInt_x2CI
     mov rsp, rbp
     pop rbp
     ret
-.L660_1:
+.L788_1:
     mov r12, r8
     imul r12, 8
     add r12, rdi
@@ -29910,7 +34906,7 @@ zy_local_x2Fmain_0__variant__rt_x2Dwords_x2Dcmp_x7EInt_x2CInt_x2CInt_x2CInt_x2CI
     mov rax, qword ptr [rdx]
     mov r13, rax
     cmp r12, r13
-    jge .L660_4
+    jge .L788_4
     mov r14, -1
     mov rax, r14
     mov rbx, qword ptr [rbp-8]
@@ -29920,9 +34916,9 @@ zy_local_x2Fmain_0__variant__rt_x2Dwords_x2Dcmp_x7EInt_x2CInt_x2CInt_x2CInt_x2CI
     mov rsp, rbp
     pop rbp
     ret
-.L660_4:
+.L788_4:
     cmp r12, r13
-    jle .L660_5
+    jle .L788_5
     mov r12, 1
     mov rax, r12
     mov rbx, qword ptr [rbp-8]
@@ -29932,11 +34928,11 @@ zy_local_x2Fmain_0__variant__rt_x2Dwords_x2Dcmp_x7EInt_x2CInt_x2CInt_x2CInt_x2CI
     mov rsp, rbp
     pop rbp
     ret
-.L660_5:
+.L788_5:
     mov r12, r8
     add r12, 1
     mov r8, r12
-    jmp .L660_0
+    jmp .L788_0
 .section .rodata
 .Lfmtd:
     .string "%lld\n"
@@ -30230,6 +35226,22 @@ zy_local_x2Fmain_0__variant__rt_x2Dwords_x2Dcmp_x7EInt_x2CInt_x2CInt_x2CInt_x2CI
     .string "ZYL_REGIONS"
 .L659:
     .string "codegen buffer limit exceeded"
+.L665:
+    .string "eef453d6923bd65a113faa2906a13b3f9558b4661b6565f84ac7ca59a424c507baaee17fa23ebf765d79bcf00d2df649e95a99df8ace6f53f4d82c2c107973dc91d8a02bb6c1059479071b9b8a4be869b64ec836a47146f99748e2826cdee284e3e27a444d8d98b7fd1b1b2308169b258e6d8c6ab0787f72fe30f0f5e50e20f7b208ef855c969f4fbdbd2d335e51a935de8b2b66b3bc4723ad2c788035e613828b16fb203055ac764c3bcb5021afcc31addcb9e83c6b1793df4abe242a1bbf3dd953e8624b85dd78d71d6dad34a2af0d87d4713d6f33aa6b8672648c40e5ad68a9c98d8ccb009506680efdaf511f18c2d43bf0effdc0ba480212bd1b2566def284a57695fe98746d014bb630f7604b57a5ced43b7e3e9188419ea3bd35385e2dcf42894a5dce35ea52064cac828675b9818995ce7aa0e1b27343efebd1940993a1ebfb4219491a1f1014ebe6c5f90bf8ca66fa129f9b60a6d41a26e077774ef6fd00b897478238d08920b098955522b49e20735e8cb1638255b46e5f5d5535b0c5a890362fddbc62eb2189f734aa831df712b443bbd52b7ba5e9ec7501d523e49a6bb0aa55653b2d47b233c92125366ec1069cd4eabe89f8999ec0bb696e840af148440a256e2c76c00670ea43ca250d96cd2a865764dbca380406926a5e5728bc807527ed3e12bcc605083704f5ecf2eba09271e88d976bf7864a44c633682e93445b8731587ea37ab3ee6afbe0211db8157268fdae9e4c5960ea05bad82964e61acf033d1a45df6fb92487298e33bd8fd0c16206306baba5d3b6d479f8e056b3c4f1ba87bc86968f48a4899877186ce0b62e2929aba83c331acdabfe94de878c71dcd9ba0b49259ff0c08b7f1d0b14af8e5410288e1b6f07ecf0ae5ee44dd9db71e91432b1a24ac9e82cd9f69d6150892731ac9faf056ebe311c083a225cd2ab70fe17c79ac6ca6dbd630a48aaf406d64d3d9db981787d092cbbccdad5b10885f0468293f0eb4e25bbf56008c58ea5a76c582338ed2621af2af2b80af6f24ed1476e2c07286faa1af5af660db4aee182cca4db847945ca50d98d9fc890ed4da37fce126597973ce50ff107bab528a0cc5fc196fefd7d0c1e53ed49a96272c8ff77b1fcbebcdc4f25e8e89c13bb0f7a9faacf3df73609b177b191618c54e9acc795830d75038c1dd59df5b9ef6a2417f97ae3d0d2446f254b0573286b44ad1d9becce62836ac5774ee367f9430aec32c2e801fb244576d5229c41f793cda73ff3a20279ed56d48a6b43527578c1110f9845418c345644d6830a13896b78aaa9be5691ef416bd60c23cc986bc656d553edec366b11c6cb8f2cbfbe86b7ec8aa894b3a202eb1c3f397bf7d71432f3d6a9b9e08a83a5e34f07daf5ccd93fb0cc53e858ad248f5c22c9d1b3400f8f9cff6891376c36d99995be23100809b9c21fa1b58547448ffffb2dabd40a0c2832a78ae2e69915b3fff9f916c90c8f323f516c8dd01fad907ffc3bae3da7d97f6792e3b1442798f49ffb4a99cd11cfdf41779cdd95317f31c7fa1d40405643d711d5838a7d3eef7f1cfc52482835ea666b2572ad1c8eab5ee43b66da3243650005eecfd863b256369d4a4090bed43e40076a82873e4f75e2224e685a7744a6e804a291a90de3535aaae202711515d0a205cb36d3515c2831559a830d5a5b44ca873e038412d9991ed58091e858790afe9486c2a5178fff668ae0b6626e974dbe39a872ce5d73ff402d98e3fb0a3d212dc8128f80fa687f881c7f8e7ce66634bc9d0b99a139029f6a239f721c1fffc1ebc44e80c987434744ac874ea327ffb266b56220fbe9141915d7a9224bf1ff9f0062baa89d71ac8fada6c9b56f773fc3603db4a9c4ce17b399107c22cb550fb4384d21d3f6019da07f549b2b7e2a53a146606a4899c102844f94e0fb2eda7444cbfc426dc0314325637a1939fa911155fefb5308f03d93eebc589f88793555ab7eba27ca96267c7535b763b54bc1558b2f3458debbb01b9283253ca29eb1aaedfb016f16ea9c227723ee8bcb465e15a979c1cadc92a1958a7675175f0bfacd89ec191ec9b749faed14125d36cef980ec671f667be51c79a85916f48482b7e12780e7401a8f31cc0937ae58d2d1b2ecb8b0908810b2fe3f0b8599ef07861fa7e6dcb4aa15dfbdcece67006ac967a791e093e1d49a8bd6a141006042bde0c8bb2c5c6d24e0aecc49914078536d58fae9f773886e18da7f5bf590966848af39a475506a899e888f99797a5e012d6d8406c952429603aab37fd7d8f58178c8e5087ba6d33b83d5605fcdcf32e1d6fb1e4a9a90880a64855c3be0a17fcd265cf2eea09a55067fa6b34ad8c9dfc06ff42faa48c0ea481ed0601d8efc57b08bf13b94daf124da26823c12795db6ce5776c53d08d6b70858a2cb1717b52481ed54768c4b0c64ca6ecb7ddcdda26da268a9942f5dcf7dfd09fe5d54150b090b02d3f93b35435d7c4c9efa548d26e5a6e1c47bc5014a1a6dafc6b8e9b0709f109a359ab6419ca1091bf867241c8cc6d4c0c30163d203c94b629b407691d7fc44f879e0de63425dcf1dc21094364dfb5636985915fc12f542e4f294b943e17a2bc43e6f5b7b17b2939d979cf3ca6cec5b5aa705992ceecf9c42bd8430bd0827723150c6ff782a838353ece53cec4a314ebda4f8bf5635246428940f4613ae5ed136871b7795e136be99b913179899f6858428e2557b59846e3fe757dd7ec07426e5331aeada2fe589cf9096ea6f3848984f3ff0d2c85def7621b4bca50b065abe630fed077a756b53a9e1ebce4dc7f16dfbd3e8495912c628948d3360f09cf6e4bd64712dd7abbbd95cb080392cc4349decbd8d794d96aacfb3dca04777f541c567ecf0d7a0fc5583a089e42caaf9491b60f41686c49db57244ac5d37d5b79b6239311c2875c522ced5d77485cb25823ac77d633293366b828b86a8d39ef77164bcae5dff9c02033197a8530886b54dbdebd9f57f830283fdfcd267caa862a12d66d072df63c324fd7b8380dea93da4bc604247cb9e59f71e6da46116538d0deb7852d9be85f074e608cd795be87051665667902e276c921f8b806bd9714632dff600ba1cd8a3db53b6a086cfcd97bf97f380e8a40eccd228a4c8a883c0fdaf7df06122cd128006b2cdfad2a4b13d1b5d6c796b805720085f819cc3a6eec6311a63cbe3303674053bb0c3f490aa77bd60fcbedbfc4411068a9cf4f1b4d515acb93bee92fb5515482d44991711052d8bf3c5751bdd152d4d1c4abf5cd54678eef0b6d262d45a78a0635def340a98172aace486fb897116c87c349580869f0e7aac0ed45d35e6ae3d4da0bae0a846d21957128974836059cca109e998d258869facd72bd1a438703fc94b91ff83775423cc067b6306a34627ddcfb67f6455292cbf081a3bc84c17b1d542e41f3d6a7377eeca20caba5f1d9e4a938e938662882af53e547eb47b7282ee9cb23867fb2a35b28de99e619a4f23aa43dec681f9f4c31f316405fa00e2ec94d48b3c113c38f9f37ede83bc408dd3dd04ae0b158b4738705e9624ab50b148d445d98ddaee19068c763badd624dd9b095787f8a8d4cfa417c9e54ca5d70a80e5d6a9f6d30a038d1dbc5e9fcf4ccd211f4cd47487cc8470652b7647c3200069671f84c8d4dfd2c63f3b29ecd9f40041e073a5fb0a17c777cf09f468107100525890cf79cc9db955c2cc7182148d4066eeb481ac1fe293d599bfc6f14cd848405530a21727db38cb002fb8ada00e5a506a7cca9cf1d206fdc03ba6d90811f0e4851cfd442e4688bd304a908f4a166d1da6639e4a9cec15763e2e9a598e4e043287fec5dd44271ad3cdba40eff1e1853f29fdf7549530e188c128d12bee59e68ef47c9a94dd3e8cf578b982bb74f8301958cec13a148e3032d6e7e36a52363c1faf01f18899b1bc3f8ca1dc44e6c3cb279ac196f5600f15a7b7e529ab103a5ef8c0b9bcb2b812db11a5de7415d448f6b6f0e7ebdf661791d60f56111b495b3464ad21936b9fcebb25c995cab10dd900beec34b84687c269ef3bfb3d5d514f40eea742e65829b3046b0afa0cb4a5a3112a51128ff71a0fe2c2e6dc47f0e785eaba72abb3f4e093db73a09359ed216765690f56e0f218b8d25088b8306869c13ec3532c8c974f73837255731e414218c73a13fbafbd2350644eeacfe5d1929ef90898fadbac6c247d62a583df45f746b74abf39894bc396ce5da7726b8bba8c328eb783ab9eb47c81f5114f066ea92f3f326564d686619ba27255a2c80a537b0efefebd8613fd0145877585bd06742ce95f5f36a798fc4196e952e72c48113823b73704d17f3b51fca3a7a0f75a15862ca504c582ef85133de648c49a984d73dbe722fba3ab66580d5fdaf5c13e60d0d2e0ebbacc963fee10b7d1b3318df905079926a8ffbbcfe994e5c61ffdf17746497f70529fd561f1fd0f9bd3feb6ea8bedefa633c7caba6e7c5382c8fe64a52ee96b8fc0f9bd690a1b68637b3dfdce7aa3c673b09c1661a651213e2d06bea10ca65c084ec31bfa0fe5698db8486e494fcff30a62f3e2f893dec3f1265a89dba3c3efccfa986ddb5c6b3a76b7f89629465a75e01cbe89523386091465f6bbb397f1135823ee2ba6c0678b597f746aa07ded582e2c94db483840b717efa8c2a44eb4571cdcba121a4650e4ddeb92f34d62616ce413e896a0d7e51e156677b020baf9c81d17915e2486ef32cd600ace1474dc1d122eb5b5ada8aaff80b80d819992132456bae3231912d5bf60e610e1fff697ed6c698df5efabc5979c8fca8d3ffa1ef463c1b1736b96b6fd83b3bd308ff8a6b17cb2ddd0467c64bce4a0ac7cb3f6d05ddbde8aa22c0dbef60ee46bcdf07a423aa96bad4ab7112eb3929d86c16c98d2c953c6d89d64d57a607744e871c7bf077ba8b787625f056c7c4a8b11471cd764ad4972a93af6c6c79b5d2dd598e40d3dd89bcfd389b478798234794aff1d108d4ec2c3843610cb4bf160cbcedf722a585139baa54394fe1eedb8fec2974eb4ee658828ce947a3da6a9273e733d226229feea32811ccc668829b8870806357d5a3f525fa163ff802a3426a8ca07c2dcb0cf26f7c9bcff6034c13052fc89b393dd02f0b5fc2c3f3841f17c67bbac2078d443ace29d9ba7832936edc0d54b944b84aa4c0dc5029163f384a9310a9e795e65d4df11f64335bcf065d37d4d4617b5ff4a16d599ea0196163fa42e504bced1bf8e4e45c06481fb9bcf8d39e45ec2862f71e1d6f07da27a82c370885d767327bb4e5a4c964e858c91ba26553a6a07f8d510f86fbbe226efb628afea890489f70a55368beadab0aba3b2dbe52b45ac74ccea842e92c8ae6b464fc96f3b0b8bc90012929db77ada0617e3bbcb09ce6ebb40173744e55990879ddcaabdcc420a6a101d05158f57fa54c2a9eab69fa946824a12232db32df8e9f354656447939822dc96abf9dff9772470297ebd59787e2b93bc56f78bfbea76c619ef3657eb4edb3c55b65aaefae51477a06b03ede622920b6b23f1dab99e59958885c4e95fab368e45eced88b402f7fd75539b11dbcb0218ebb414aae103b5fcd2a881d652bdc29f26a119d59944a37c0752a24be76d3346f0495f857fcae62d8493a56f70a4400c562ddba6dfbd9fb8e5b88ecb4ccd500f6bb952d097ad07a71f26b27e2000a41346a7a7825ecc24c873782f8ed400668c0c28c8a2f67f2dfa90563b728900802f0f32facbb41ef979346bca4f2b40a03ad2ffb9fea126b7d78186bce2f610c84987bfa89f24b832e6b0f4360dd9ca7d2df4d7c9c6ede63fa05d314391503d1c79720dbbf8a95fcf88747d9475a44c6397ce912a9b69dbe1b548ce7cc986afbe3ee11abac24452da229b021bfbe85badce996168f2d56790ab41c2a2fae27299423fb9c397c560ba6b0919a5dccd879fc967d41abdb6b8e905cb600f5400e987bbc1c920ed246723473e3813290123e9aab23b689436c0760c86e30bf9a0b6720aaf6521b94470938fa89bcef808e40e8d5b3e69e7958cb87392c2c2b60b1d1230b20e0490bd77f3483bb9b9b1c6f22b5e6f48c2b4ecd5f01a4aa8281e38aeb6360b1af3e2280b6c20dd523225c6da63c38de1b08d590723948a535f579c487e5a38ad0eb0af48ec79ace8372d835a9df0c6d851dcdb1b2798182244f8e431456cf88e658a08f0f8bf0f156b1b8e9ecb641b58ffac8b2d36eed2dac5e272467e3d222f3fd7adf884aa8791775b0ed81dcc6abb0f86ccbb52ea94baea98e947129fc2b4e9a87fea27a539e9a53f2398d747b36224d29fe4b18e88640e8eec7f0d19a03aad83a3eeeef9153e891953cf68300424aca48ceaaab75a8e2b5fa8c3423c052dd7cdb02555653131b63792f412cb06794d808e17555f3ebf11e2bbd88bbee40bd0a0b19d2ab70e6ed65b6aceaeae9d0ec4c8de047564d20a8bf245825a5a445275fb158592be068d2eeed6e2f0f0d567129ced737bb6c4183d55464dd69685606bc428d05aa4751e4caa97e14c3c26b886f53304714d9265dfd53dd99f4b3066a8993fe2c6d07b7fabe546a8038efe4029bf8fdb78849a5f96de98520472bdd033ef73d256a5c0f77c963e66858f6d444095a8637627989aaddde7001379a44aa8bb127c53b17ec1595560c018580d5d52e9d71b689dde71afaab8f01e6e10b4a69226712162ab070dcab3961304ca70e8b6b00d69bb55c8d13d607b97c5fd0d22e45c10c42a2b3b058cb89a7db77c506a8eb98a7a9a5b04e377f3608e92adb242b267ed1940f1c61c55f038b237591ed3df01e85f912e37a36b6c46dec52f66888b61313bbabce2c62323ac4b3b3da015ae397d8aa96c1b77abec975e0a0d081ad9c7dced53c7225596e7bd358c904a21881cea14545c75757e50d64177da2e54aa242499697392d2dde50bd1d5d0b9e9d4ad2dbfc3d07787955e4ec64b44e86484ec3c97da624ab4bd5af13bef0b113ea6274bbdd0fadd61ecb1ad8aeacdd58ecfb11ead453994ba67de18eda5814af281ceb32c4b43fcf480eacf948770ced7a2425ff75e14fc31a1258379a94d028dcad2f7f5359a3b3e096ee45813a04330fd87b5f28300ca0d8bca9d6e188853fc9e74d1b791e07e48775ea264cf55347ec612062576589dda95364afe032a819ef79687aed3eec5513a83ddbd83f522059abe14cd44753b52c4926a9672793543c16d9a0095928a2775b7053c0f178294f1c90080baf72cb15324c68b12dd6339971da05074da7beed3f6fc16ebca5e04bce5086492111aea88f4bb1ca6bcf585ec1e4a7db69561a52b31e9e3d06c32e69392ee8e921d5d073aff322e62439fd0b877aa3236a4b44909befeb9fad487c3e69594bec44de15b4c2ebe687989a9b4901d7cf73ab0acd90f9d37014bf60a11b424dc35095cd80f538484c19ef38c95e12e13424bb40e132865a5f206b06fba8cbccc096f5088cbf93f87b7442e45d4afebff0bcb24aafef78f69a51539d749dbe6fecebdedd5beb573440e5a884d1c89705f4136b4a59731680a88f8953031abcc77118461cefcfdc20d2b36ba7c3ed6bf94d5e57a42bc3d32907604691b4d8637bd05af6c69b5a63f9a49c2c1b110a7c5ac471b4784230fcf80dc33721d54d1b71758e219652bd3c36113404ea4a983126e978d4fdf3b645a1cac083126eaa3d70a3d70a3d70a3d70a3d70a3d70a4cccccccccccccccccccccccccccccccd80000000000000000000000000000000a0000000000000000000000000000000c8000000000000000000000000000000fa0000000000000000000000000000009c400000000000000000000000000000c3500000000000000000000000000000f424000000000000000000000000000098968000000000000000000000000000bebc2000000000000000000000000000ee6b28000000000000000000000000009502f900000000000000000000000000ba43b740000000000000000000000000e8d4a5100000000000000000000000009184e72a000000000000000000000000b5e620f4800000000000000000000000e35fa931a000000000000000000000008e1bc9bf040000000000000000000000b1a2bc2ec50000000000000000000000de0b6b3a7640000000000000000000008ac7230489e800000000000000000000ad78ebc5ac6200000000000000000000d8d726b7177a80000000000000000000878678326eac90000000000000000000a968163f0a57b4000000000000000000d3c21bcecceda100000000000000000084595161401484a00000000000000000a56fa5b99019a5c80000000000000000cecb8f27f4200f3a0000000000000000813f3978f89409844000000000000000a18f07d736b90be55000000000000000c9f2c9cd04674edea400000000000000fc6f7c40458122964d000000000000009dc5ada82b70b59df020000000000000c5371912364ce3056c28000000000000f684df56c3e01bc6c7320000000000009a130b963a6c115c3c7f400000000000c097ce7bc90715b34b9f100000000000f0bdc21abb48db201e86d4000000000096769950b50d88f41314448000000000bc143fa4e250eb3117d955a000000000eb194f8e1ae525fd5dcfab080000000092efd1b8d0cf37be5aa1cae500000000b7abc627050305adf14a3d9e40000000e596b7b0c643c7196d9ccd05d00000008f7e32ce7bea5c6fe4820023a2000000b35dbf821ae4f38bdda2802c8a800000e0352f62a19e306ed50b2037ad2000008c213d9da502de454526f422cc340000af298d050e4395d69670b12b7f410000daf3f04651d47b4c3c0cdd765f11400088d8762bf324cd0fa5880a69fb6ac800ab0e93b6efee00538eea0d047a457a00d5d238a4abe9806872a4904598d6d88085a36366eb71f04147a6da2b7f864750a70c3c40a64e6c51999090b65f67d924d0cf4b50cfe20765fff4b4e3f741cf6d82818f1281ed449fbff8f10e7a8921a4a321f2d7226895c7aff72d52192b6a0dcbea6f8ceb02bb399bf4f8a69f764490fee50b7025c36a0802f236d04753d5b49f4f2726179a224501d762422c946590c722f0ef9d80aad6424d3ad2b7b97ef5f8ebad2b84e0d58bd2e0898765a7deb29b934c3b330c857763cc55f49f88eb2fc2781f49ffcfa6d53cbf6b71c76b25fbf316271c7fc3908a8bef464e3945ef7a97edd871cfda3a5697758bf0e3cbb5acbde94e8e43d0c8ec3d52eeed1cbea317ed63a231d4c4fb274ca7aaa863ee4bdd945e455f24fb1cf88fe8caa93e74ef6ab975d6b6ee39e436b3e2fd538e122b44e7d34c64a9c85d4460dbbca87196b61690e40fbeea1d3a4abc8955e946fe31cdb51d13aea4a488dd6babab6398bdbe41e264589a4dcdab14c696963c7eed2dd18d7eb76070a08aecfc1e1de5cf543ca2b0de65388cc8ada83b25a55f43294bcbdd15fe86affad91249ef0eb713f39ebe8a2dbf142dfcc7ab6e3569326c784337acb92ed9397bf99649c2c37f07965404d7e77a8f87daf7fbdc33745ec97be90686f0ac99b4e8dafd69a028bb3ded71a3a8acd7c0222311bcc40832ea0d68ce0cd2d80db02aabd62bf50a3fa490c3019083c7088e1aab65db792667c6da79e0faa4b8cab1a1563f52577001b891185938cde6fd5e09abcf26ed4c0226b55e6f8680b05e5ac60b6178544f8158315b05b4a0dc75f1778e39d6696361ae3db1c721c913936dd571c84c03bc3a19cd1e38e9fb5878494ace3a5f04ab48a04065c7239d174b2dcec0e47b62eb0d64283f9c76c45d1df942711d9a3ba5d0bd324f8394f5746577930d6500ca8f44ec7ee364799968bf6abbe85f207e998b13cf4e1ecbbfc2ef456ae276e89e3fedd8c321a67eefb3ab16c59b14a2c5cfe94ef3ea101e95d04aee3b80ece5bba1f1d158724a12bb445da9ca61281f2a8a6e45ae8edc97ea1575143cf97226f52d09d71a3293bd924d692ca61be758593c2626705f9c56b6e0c377cfa2e12e6f8b2fb00c77836ce498f455c38b997a0b6dfb9c0f9564478edf98b59a373fec4724bd4189bd5eacb2977ee300c50fe758edec91ec2cb657df3d5e9bc0f653e12f2967b66737e3ed8b865b215899f46cbd79e0d20082ee74ae67f1e9aec07187ecd8590680a3aa11da01ee641a708de9e80e6f4820cc9495884134fe908658b23109058d147fdcddaa51823e34a7eedebd4b46f0599fd415d4e5e2cdc1d1ea966c9e18ac7007c91a850fadc09923329e03e2cf6bc604ddb0a6539930bf6bff4584db8346b786151ccfe87f7cef46ff16e612641865679a6381f14fae158c5f6e4fcb7e8f3f60c07ea26da3999aef7749e3be5e330f38f09dcb090c8001ab551c5cadf5bfd3072cc5fdcb4fa002162a6373d9732fc7c8f7f69e9f11c4014dda7e2867e7fddcdd9afac646d63501a1511db281e1fd541501b8f7d88bc24209a5651f225a7ca91a42269ae757596946075f3375788de9b06958c1a12d2fc39789370052d6b1641c83aef209787bb47d6b84c0678c5dbd23a49a9745eb4d50ce6332f840b7ba963646e0bd176620a501fbffb650e5a93bc3d898ec5d3fa8ce427affa3e51f138ab4cebe93ba47c980e98cdfc66f336c36b10137b8a8d9bbe123f017b80b0047445d4184e6d3102ad96cec1da60dc059157491e59043ea1ac7e4139287c89837ad68db2fb454e4a179dd187729babe4598c311fbe16a1dc9d8545e94f4296dd6fef3d67a8ce2529e2734bb1d1899e4a65f58660cb01ae745b101e9e45ec05dcff72e7f8fdc21a1171d42645d76707543f4fa1f73899504ae72497eba6a06494a791c53a8abfa45da0edbde690487db9d17636892d6f8d7509292d60345a9d2845d3c42b6865b86925b9bc5c20b8a2392ba45a9b2a7f26836f282b7328e6cac7768d7141ed1ef0244af2364ff3207d795430cd9268335616aed761f1f7f44e6bd49e807b8a402b9c5a8d3a6e75f16206c9c6209a6cd036837130890a136dba887c37a8c0f802221226be55a64c2494954da2c9789a02aa96b06deb0fdf2db9baa10b7bd6cc83553c5c8965d3d6f92829494e5acc7fa42a8b73abbf48ccb772339ba1f17f99c69a97284b578d7ff2a760414536efbc38413cf25e2d70dfef5138519684abaf46518c2ef5b8cd17eb258665fc25d6998bf2f79d5993802ef2f773ffbd97a61beeefb584aff8603aafb550ffacfd8faeeaaba2e5dbf678495ba2a53f983cf38952ab45cfa97a0b2dd945a747bf26183ba756174393d88df94f971119aeef9e4e912b9d1478ceb177a37cd5601aab85d91abb422ccb812eeac62e055c10ab33ab616a12b7fe617aa577b986b314d6009e39c49765fdf9d94ed5a7e85fda0b80b8e41ade9fbebc27d14588f13be847307b1d219647ae6b31c596eb2d8ae258fc8de469fbd99a05fe36fca5f8ed9aef3bb8aec23d680043bee25de7bb9480d5854ada72ccc20054ae9af561aa79a10ae6ad910f7ff28069da41b2ba1518094da0487aa9aff7904228690fb44d2f05d0842a99541bf57452b28353a1607ac744a53d3fa922f2d1675f242889b8997915ce8847c9b5d7c2e09b769956135febada11a59bc234db398c2543fab9837e699095cf02b2c21207ef2e94f967e45e03f4bb8161afb94b44f57d1d1be0eebac278f5a1ba1ba79e1632dc6462d92a69731732ca28a291859bbf937d7b8f7503cfdcfefcb2cb35e702af785cda735244c3d43e9defbf01b061adab3a0888136afa64a7c56baec21c7a1916088aaa1845b8fdd0f6c69a72a3989f5b8aad549e57273d459a3c2087a63f639936ac54e2f678864bc0cb28a98fcf3c7f84576a1bb416a7ddf0fdf2d3f3c30b9f656d44a2a11c51d5969eb7c47859e7439f644ae5a4b1b325bc4665b596706114873d5d9f0dde1feeeb57ff22fc0c7959a90cb506d155a7ea9316ff75dd87cbd809a7f12442d588f2b7dcbf5354e9bece0c11ed6d538aeb2fe5d3ef282a242e818f1668c8a86da5fa8fa475791a569d10f96e017d694487bcb38d92d760ec445537c981dcc395a9ace070f78d3927556a85bbe253f47b14178c469ab843b8956293956d7478ccec8eaf58416654a6babb387ac8d1970027b2db2e51bfe9d0696a06997b05fcc0319e88fcf317f22241e2441fece3bdf81f03ab3c2fddeeaad25ad527e81cad7626c3d60b3bd56a5586f18a71e223d8d3b07485c7056562757456f6872d5667844e49a738c6bebb12d16cb428f8ac016561dbd106f86e69d785c7e13336d701beba5282a45b450226b39cecc0024661173473a34d721642b0608427f002d7f95d0190cc20ce9bd35c78a531ec038df7b441f4ff290242c83396ce7e67047175a152719f79a169bd203e410f0062c6e984d386c75809c42c684dd152c07b78a3e60868f92e0c3537826145a7709a56ccdf8a829bbcc7a142b17ccb88a66076400bb691c2abf989935ddbfe6acff893d00ea435f356f7ebf83552fe0583f6b8c4124d4398165af37b2153dec3727a337a8b704abe1bf1b059e9a8d6744f18c0592e4c5ceda2ee1c7064130c1162def06f79df739485d4d1c63e8be78addcb5645ac2ba8b9a74a0637ce2ee16d953e2bd7173692e8111c87c5c1ba99c8fa8db6ccdd0437910ab1d4db9914a01d9c9892400a22a2b54d5e4a127f59c82503beb6d00cab4be2a0b5dc971f303a2e44ae64840fd61d8da471a9de737e245ceaecfed289e5d2b10d8e1456105dad7425a83e872c5f47dd50f1996b947518d12f124e28f777198a5296ffe33cc92f82bd6b70d99aaa6face73cbfdc0bfb7b636cc64d1001550bd8210befd30efa5a3c47f7e05401aa4e8714a775e3e95c7865acfaec34810a71a8d9d1535ce3b3967f1839a741a14d0dd31045a8341ca07c1ede48111209a05083ea2b892091e44d934aed0aab460432a4e4b66b68b65d60f81da84d5617853fce1de40642e3f4b936251260ab9d668e80d2ae83e9ce78f3c1d72b7c6b426019a1075a24e4421730b24cf65b8612f81fc94930ae1d529cfcdee033f26797b627fb9b7cd9a4a7443c169840ef017da3b19d412e0806e88aa58e1f289560ee864ec491798a08a2ad4ef1a6f2bab92a27e2f5b5d7ec8acb58a2ae10af696774b1db9991a6f3d6bf1765acca6da1e0a8ef29bff610b0cc6edd3f17fd090a58d32af3eff394dcff8a948eddfc4b4cef07f5b095f83d0a1fb69cd94abdaf101564f98ebb764c4ca7a4440f9d6d1ad41abe37f1ea53df5fd18d551384c86189216dc5ed92746b9be2f8552c32fd3cf5b4e49bb4b7118682dbb66a773fbc8c33221dc2a1e4d5e82392a405150fabaf3feaa5334a8f05b1163ba6832d29cb4d87f2a7400eb2c71d5bca9023f8743e20e9ef511012df78e4b2bd342cf6914da9246b2554168bab8eefb6409c1a1ad089b6c2f7548eae9672aba3d0c320a184ac2473b529b1da3c0f568cc4f3e8c9e5d72d90a2741e8865899617fb18717e2fa67c7a658892aa7eebfb9df9de8dddbb901b98feeab7d51ea6fa85785631552a74227f3ea5658533285c936b35ded53a88958f87275fa67ff273b84603568a892abaf368f137d01fef10a657842c2d2b7569b0432d858213f56a67f6b29b9c3b29620e29fc73a298f2c501f45f428349f3ba91b47b8fcb3f2f7642717713241c70a936219a73fe0efb53d30dd4d7ed238cd383aa01109ec95d1463e8a506f4363804324a40aac67bb4597ce2ce48b143c6053edcd0d5f81aa16fdc1b81dadd94b7868e94050a9b10a4e5e9913128ca7cf2b4191c8326c1d4ce1f63f57d72fd1c2f611f63a3f0f24a01a73cf2dccfbc633b39673c8cec976e41088617ca01d5be0503e085d813bd49d14aa79dbc824b2d8644d8a74e18ec9c459d51852ba2ddf8e7d60ed1219e93e1ab8252f33b45cabb90e5c942b503b8da1662e7b00a173d6a751f3b936243e7109bfba19c0c9d0cc512670a783ad4906a617d450187e227fb2b80668b24c5b484f9dc9641e9dab1f9f660802dedf6e1a63853bbd264515e7873f8a03969738d07e33455637eb2db0b487b6423e1e8b049dc016abc5e5f91ce1a9a3d2cda62dc5c5301c56b75f77641a140cc7810fb89b9b3e11b6329baa9e904c87fcb0a9dac2820d9623bf429546345fa9fbdcd44d732290fbacaf133a97c177947ad4095867f59a9d4bed6c049ed8eabcccc485da81f301449ee8c705c68f256bfff5a74d226fc195c6a2f8c73832eec6fff311183585d8fd9c25db7c831fd53c5ff7eaba42e74f3d032f525ba3e7ca8b77f5e55cd3a1230c43fb26f28ce1bd2e55f35eb80444b5e7aa7cf857980d163cf5b81b3a0555e361951c366d7e105bcc332621fc86ab5c39fa634408dd9472bf3fefaa7fa856334878fc150b14f98f6f0feb9519c935e00d4b9d8d26ed1bf9a569f33d3c3b8358109e84f070a862f80ec4700c8f4a642e14c6262c8cd27bb612758c0fa98e7e9cccfbd7dbd8038d51cb897789cbf21e44003acdd2ce0470a63e6bd56c3eeea5d50049814781858ccfce06cac7495527a5202df0ccb0f37801e0c43ebc8baa718e68396cffdd30560258f54e6bae950df20247c83fd47c6b82ef32a206991d28b7416cdd27e4cdc331d57fa5441b6472e511c81471de0133fe4adf8e952e3d8f9e563a198e558180fddd97723a68e679c2f5e44ff8f570f09eaa7ea7648"
+.L666:
+    .double 1.0
+.L671:
+    .double 10.0
+.L673:
+    .string "eef453d6923bd65a113faa2906a13b3f9558b4661b6565f84ac7ca59a424c507baaee17fa23ebf765d79bcf00d2df649e95a99df8ace6f53f4d82c2c107973dc91d8a02bb6c1059479071b9b8a4be869b64ec836a47146f99748e2826cdee284e3e27a444d8d98b7fd1b1b2308169b258e6d8c6ab0787f72fe30f0f5e50e20f7b208ef855c969f4fbdbd2d335e51a935de8b2b66b3bc4723ad2c788035e613828b16fb203055ac764c3bcb5021afcc31addcb9e83c6b1793df4abe242a1bbf3dd953e8624b85dd78d71d6dad34a2af0d87d4713d6f33aa6b8672648c40e5ad68a9c98d8ccb009506680efdaf511f18c2d43bf0effdc0ba480212bd1b2566def284a57695fe98746d014bb630f7604b57a5ced43b7e3e9188419ea3bd35385e2dcf42894a5dce35ea52064cac828675b9818995ce7aa0e1b27343efebd1940993a1ebfb4219491a1f1014ebe6c5f90bf8ca66fa129f9b60a6d41a26e077774ef6fd00b897478238d08920b098955522b49e20735e8cb1638255b46e5f5d5535b0c5a890362fddbc62eb2189f734aa831df712b443bbd52b7ba5e9ec7501d523e49a6bb0aa55653b2d47b233c92125366ec1069cd4eabe89f8999ec0bb696e840af148440a256e2c76c00670ea43ca250d96cd2a865764dbca380406926a5e5728bc807527ed3e12bcc605083704f5ecf2eba09271e88d976bf7864a44c633682e93445b8731587ea37ab3ee6afbe0211db8157268fdae9e4c5960ea05bad82964e61acf033d1a45df6fb92487298e33bd8fd0c16206306baba5d3b6d479f8e056b3c4f1ba87bc86968f48a4899877186ce0b62e2929aba83c331acdabfe94de878c71dcd9ba0b49259ff0c08b7f1d0b14af8e5410288e1b6f07ecf0ae5ee44dd9db71e91432b1a24ac9e82cd9f69d6150892731ac9faf056ebe311c083a225cd2ab70fe17c79ac6ca6dbd630a48aaf406d64d3d9db981787d092cbbccdad5b10885f0468293f0eb4e25bbf56008c58ea5a76c582338ed2621af2af2b80af6f24ed1476e2c07286faa1af5af660db4aee182cca4db847945ca50d98d9fc890ed4da37fce126597973ce50ff107bab528a0cc5fc196fefd7d0c1e53ed49a96272c8ff77b1fcbebcdc4f25e8e89c13bb0f7a9faacf3df73609b177b191618c54e9acc795830d75038c1dd59df5b9ef6a2417f97ae3d0d2446f254b0573286b44ad1d9becce62836ac5774ee367f9430aec32c2e801fb244576d5229c41f793cda73ff3a20279ed56d48a6b43527578c1110f9845418c345644d6830a13896b78aaa9be5691ef416bd60c23cc986bc656d553edec366b11c6cb8f2cbfbe86b7ec8aa894b3a202eb1c3f397bf7d71432f3d6a9b9e08a83a5e34f07daf5ccd93fb0cc53e858ad248f5c22c9d1b3400f8f9cff6891376c36d99995be23100809b9c21fa1b58547448ffffb2dabd40a0c2832a78ae2e69915b3fff9f916c90c8f323f516c8dd01fad907ffc3bae3da7d97f6792e3b1442798f49ffb4a99cd11cfdf41779cdd95317f31c7fa1d40405643d711d5838a7d3eef7f1cfc52482835ea666b2572ad1c8eab5ee43b66da3243650005eecfd863b256369d4a4090bed43e40076a82873e4f75e2224e685a7744a6e804a291a90de3535aaae202711515d0a205cb36d3515c2831559a830d5a5b44ca873e038412d9991ed58091e858790afe9486c2a5178fff668ae0b6626e974dbe39a872ce5d73ff402d98e3fb0a3d212dc8128f80fa687f881c7f8e7ce66634bc9d0b99a139029f6a239f721c1fffc1ebc44e80c987434744ac874ea327ffb266b56220fbe9141915d7a9224bf1ff9f0062baa89d71ac8fada6c9b56f773fc3603db4a9c4ce17b399107c22cb550fb4384d21d3f6019da07f549b2b7e2a53a146606a4899c102844f94e0fb2eda7444cbfc426dc0314325637a1939fa911155fefb5308f03d93eebc589f88793555ab7eba27ca96267c7535b763b54bc1558b2f3458debbb01b9283253ca29eb1aaedfb016f16ea9c227723ee8bcb465e15a979c1cadc92a1958a7675175f0bfacd89ec191ec9b749faed14125d36cef980ec671f667be51c79a85916f48482b7e12780e7401a8f31cc0937ae58d2d1b2ecb8b0908810b2fe3f0b8599ef07861fa7e6dcb4aa15dfbdcece67006ac967a791e093e1d49a8bd6a141006042bde0c8bb2c5c6d24e0aecc49914078536d58fae9f773886e18da7f5bf590966848af39a475506a899e888f99797a5e012d6d8406c952429603aab37fd7d8f58178c8e5087ba6d33b83d5605fcdcf32e1d6fb1e4a9a90880a64855c3be0a17fcd265cf2eea09a55067fa6b34ad8c9dfc06ff42faa48c0ea481ed0601d8efc57b08bf13b94daf124da26823c12795db6ce5776c53d08d6b70858a2cb1717b52481ed54768c4b0c64ca6ecb7ddcdda26da268a9942f5dcf7dfd09fe5d54150b090b02d3f93b35435d7c4c9efa548d26e5a6e1c47bc5014a1a6dafc6b8e9b0709f109a359ab6419ca1091bf867241c8cc6d4c0c30163d203c94b629b407691d7fc44f879e0de63425dcf1dc21094364dfb5636985915fc12f542e4f294b943e17a2bc43e6f5b7b17b2939d979cf3ca6cec5b5aa705992ceecf9c42bd8430bd0827723150c6ff782a838353ece53cec4a314ebda4f8bf5635246428940f4613ae5ed136871b7795e136be99b913179899f6858428e2557b59846e3fe757dd7ec07426e5331aeada2fe589cf9096ea6f3848984f3ff0d2c85def7621b4bca50b065abe630fed077a756b53a9e1ebce4dc7f16dfbd3e8495912c628948d3360f09cf6e4bd64712dd7abbbd95cb080392cc4349decbd8d794d96aacfb3dca04777f541c567ecf0d7a0fc5583a089e42caaf9491b60f41686c49db57244ac5d37d5b79b6239311c2875c522ced5d77485cb25823ac77d633293366b828b86a8d39ef77164bcae5dff9c02033197a8530886b54dbdebd9f57f830283fdfcd267caa862a12d66d072df63c324fd7b8380dea93da4bc604247cb9e59f71e6da46116538d0deb7852d9be85f074e608cd795be87051665667902e276c921f8b806bd9714632dff600ba1cd8a3db53b6a086cfcd97bf97f380e8a40eccd228a4c8a883c0fdaf7df06122cd128006b2cdfad2a4b13d1b5d6c796b805720085f819cc3a6eec6311a63cbe3303674053bb0c3f490aa77bd60fcbedbfc4411068a9cf4f1b4d515acb93bee92fb5515482d44991711052d8bf3c5751bdd152d4d1c4abf5cd54678eef0b6d262d45a78a0635def340a98172aace486fb897116c87c349580869f0e7aac0ed45d35e6ae3d4da0bae0a846d21957128974836059cca109e998d258869facd72bd1a438703fc94b91ff83775423cc067b6306a34627ddcfb67f6455292cbf081a3bc84c17b1d542e41f3d6a7377eeca20caba5f1d9e4a938e938662882af53e547eb47b7282ee9cb23867fb2a35b28de99e619a4f23aa43dec681f9f4c31f316405fa00e2ec94d48b3c113c38f9f37ede83bc408dd3dd04ae0b158b4738705e9624ab50b148d445d98ddaee19068c763badd624dd9b095787f8a8d4cfa417c9e54ca5d70a80e5d6a9f6d30a038d1dbc5e9fcf4ccd211f4cd47487cc8470652b7647c3200069671f84c8d4dfd2c63f3b29ecd9f40041e073a5fb0a17c777cf09f468107100525890cf79cc9db955c2cc7182148d4066eeb481ac1fe293d599bfc6f14cd848405530a21727db38cb002fb8ada00e5a506a7cca9cf1d206fdc03ba6d90811f0e4851cfd442e4688bd304a908f4a166d1da6639e4a9cec15763e2e9a598e4e043287fec5dd44271ad3cdba40eff1e1853f29fdf7549530e188c128d12bee59e68ef47c9a94dd3e8cf578b982bb74f8301958cec13a148e3032d6e7e36a52363c1faf01f18899b1bc3f8ca1dc44e6c3cb279ac196f5600f15a7b7e529ab103a5ef8c0b9bcb2b812db11a5de7415d448f6b6f0e7ebdf661791d60f56111b495b3464ad21936b9fcebb25c995cab10dd900beec34b84687c269ef3bfb3d5d514f40eea742e65829b3046b0afa0cb4a5a3112a51128ff71a0fe2c2e6dc47f0e785eaba72abb3f4e093db73a09359ed216765690f56e0f218b8d25088b8306869c13ec3532c8c974f73837255731e414218c73a13fbafbd2350644eeacfe5d1929ef90898fadbac6c247d62a583df45f746b74abf39894bc396ce5da7726b8bba8c328eb783ab9eb47c81f5114f066ea92f3f326564d686619ba27255a2c80a537b0efefebd8613fd0145877585bd06742ce95f5f36a798fc4196e952e72c48113823b73704d17f3b51fca3a7a0f75a15862ca504c582ef85133de648c49a984d73dbe722fba3ab66580d5fdaf5c13e60d0d2e0ebbacc963fee10b7d1b3318df905079926a8ffbbcfe994e5c61ffdf17746497f70529fd561f1fd0f9bd3feb6ea8bedefa633c7caba6e7c5382c8fe64a52ee96b8fc0f9bd690a1b68637b3dfdce7aa3c673b09c1661a651213e2d06bea10ca65c084ec31bfa0fe5698db8486e494fcff30a62f3e2f893dec3f1265a89dba3c3efccfa986ddb5c6b3a76b7f89629465a75e01cbe89523386091465f6bbb397f1135823ee2ba6c0678b597f746aa07ded582e2c94db483840b717efa8c2a44eb4571cdcba121a4650e4ddeb92f34d62616ce413e896a0d7e51e156677b020baf9c81d17915e2486ef32cd600ace1474dc1d122eb5b5ada8aaff80b80d819992132456bae3231912d5bf60e610e1fff697ed6c698df5efabc5979c8fca8d3ffa1ef463c1b1736b96b6fd83b3bd308ff8a6b17cb2ddd0467c64bce4a0ac7cb3f6d05ddbde8aa22c0dbef60ee46bcdf07a423aa96bad4ab7112eb3929d86c16c98d2c953c6d89d64d57a607744e871c7bf077ba8b787625f056c7c4a8b11471cd764ad4972a93af6c6c79b5d2dd598e40d3dd89bcfd389b478798234794aff1d108d4ec2c3843610cb4bf160cbcedf722a585139baa54394fe1eedb8fec2974eb4ee658828ce947a3da6a9273e733d226229feea32811ccc668829b8870806357d5a3f525fa163ff802a3426a8ca07c2dcb0cf26f7c9bcff6034c13052fc89b393dd02f0b5fc2c3f3841f17c67bbac2078d443ace29d9ba7832936edc0d54b944b84aa4c0dc5029163f384a9310a9e795e65d4df11f64335bcf065d37d4d4617b5ff4a16d599ea0196163fa42e504bced1bf8e4e45c06481fb9bcf8d39e45ec2862f71e1d6f07da27a82c370885d767327bb4e5a4c964e858c91ba26553a6a07f8d510f86fbbe226efb628afea890489f70a55368beadab0aba3b2dbe52b45ac74ccea842e92c8ae6b464fc96f3b0b8bc90012929db77ada0617e3bbcb09ce6ebb40173744e55990879ddcaabdcc420a6a101d05158f57fa54c2a9eab69fa946824a12232db32df8e9f354656447939822dc96abf9dff9772470297ebd59787e2b93bc56f78bfbea76c619ef3657eb4edb3c55b65aaefae51477a06b03ede622920b6b23f1dab99e59958885c4e95fab368e45eced88b402f7fd75539b11dbcb0218ebb414aae103b5fcd2a881d652bdc29f26a119d59944a37c0752a24be76d3346f0495f857fcae62d8493a56f70a4400c562ddba6dfbd9fb8e5b88ecb4ccd500f6bb952d097ad07a71f26b27e2000a41346a7a7825ecc24c873782f8ed400668c0c28c8a2f67f2dfa90563b728900802f0f32facbb41ef979346bca4f2b40a03ad2ffb9fea126b7d78186bce2f610c84987bfa89f24b832e6b0f4360dd9ca7d2df4d7c9c6ede63fa05d314391503d1c79720dbbf8a95fcf88747d9475a44c6397ce912a9b69dbe1b548ce7cc986afbe3ee11abac24452da229b021bfbe85badce996168f2d56790ab41c2a2fae27299423fb9c397c560ba6b0919a5dccd879fc967d41abdb6b8e905cb600f5400e987bbc1c920ed246723473e3813290123e9aab23b689436c0760c86e30bf9a0b6720aaf6521b94470938fa89bcef808e40e8d5b3e69e7958cb87392c2c2b60b1d1230b20e0490bd77f3483bb9b9b1c6f22b5e6f48c2b4ecd5f01a4aa8281e38aeb6360b1af3e2280b6c20dd523225c6da63c38de1b08d590723948a535f579c487e5a38ad0eb0af48ec79ace8372d835a9df0c6d851dcdb1b2798182244f8e431456cf88e658a08f0f8bf0f156b1b8e9ecb641b58ffac8b2d36eed2dac5e272467e3d222f3fd7adf884aa8791775b0ed81dcc6abb0f86ccbb52ea94baea98e947129fc2b4e9a87fea27a539e9a53f2398d747b36224d29fe4b18e88640e8eec7f0d19a03aad83a3eeeef9153e891953cf68300424aca48ceaaab75a8e2b5fa8c3423c052dd7cdb02555653131b63792f412cb06794d808e17555f3ebf11e2bbd88bbee40bd0a0b19d2ab70e6ed65b6aceaeae9d0ec4c8de047564d20a8bf245825a5a445275fb158592be068d2eeed6e2f0f0d567129ced737bb6c4183d55464dd69685606bc428d05aa4751e4caa97e14c3c26b886f53304714d9265dfd53dd99f4b3066a8993fe2c6d07b7fabe546a8038efe4029bf8fdb78849a5f96de98520472bdd033ef73d256a5c0f77c963e66858f6d444095a8637627989aaddde7001379a44aa8bb127c53b17ec1595560c018580d5d52e9d71b689dde71afaab8f01e6e10b4a69226712162ab070dcab3961304ca70e8b6b00d69bb55c8d13d607b97c5fd0d22e45c10c42a2b3b058cb89a7db77c506a8eb98a7a9a5b04e377f3608e92adb242b267ed1940f1c61c55f038b237591ed3df01e85f912e37a36b6c46dec52f66888b61313bbabce2c62323ac4b3b3da015ae397d8aa96c1b77abec975e0a0d081ad9c7dced53c7225596e7bd358c904a21881cea14545c75757e50d64177da2e54aa242499697392d2dde50bd1d5d0b9e9d4ad2dbfc3d07787955e4ec64b44e86484ec3c97da624ab4bd5af13bef0b113ea6274bbdd0fadd61ecb1ad8aeacdd58ecfb11ead453994ba67de18eda5814af281ceb32c4b43fcf480eacf948770ced7a2425ff75e14fc31a1258379a94d028dcad2f7f5359a3b3e096ee45813a04330fd87b5f28300ca0d8bca9d6e188853fc9e74d1b791e07e48775ea264cf55347ec612062576589dda95364afe032a819ef79687aed3eec5513a83ddbd83f522059abe14cd44753b52c4926a9672793543c16d9a0095928a2775b7053c0f178294f1c90080baf72cb15324c68b12dd6339971da05074da7beed3f6fc16ebca5e04bce5086492111aea88f4bb1ca6bcf585ec1e4a7db69561a52b31e9e3d06c32e69392ee8e921d5d073aff322e62439fd0b877aa3236a4b44909befeb9fad487c3e69594bec44de15b4c2ebe687989a9b4901d7cf73ab0acd90f9d37014bf60a11b424dc35095cd80f538484c19ef38c95e12e13424bb40e132865a5f206b06fba8cbccc096f5088cbf93f87b7442e45d4afebff0bcb24aafef78f69a51539d749dbe6fecebdedd5beb573440e5a884d1c89705f4136b4a59731680a88f8953031abcc77118461cefcfdc20d2b36ba7c3ed6bf94d5e57a42bc3d32907604691b4d8637bd05af6c69b5a63f9a49c2c1b110a7c5ac471b4784230fcf80dc33721d54d1b71758e219652bd3c36113404ea4a983126e978d4fdf3b645a1cac083126eaa3d70a3d70a3d70a3d70a3d70a3d70a4cccccccccccccccccccccccccccccccd80000000000000000000000000000000a0000000000000000000000000000000c8000000000000000000000000000000fa0000000000000000000000000000009c400000000000000000000000000000c3500000000000000000000000000000f424000000000000000000000000000098968000000000000000000000000000bebc2000000000000000000000000000ee6b28000000000000000000000000009502f900000000000000000000000000ba43b740000000000000000000000000e8d4a5100000000000000000000000009184e72a000000000000000000000000b5e620f4800000000000000000000000e35fa931a000000000000000000000008e1bc9bf040000000000000000000000b1a2bc2ec50000000000000000000000de0b6b3a7640000000000000000000008ac7230489e800000000000000000000ad78ebc5ac6200000000000000000000d8d726b7177a80000000000000000000878678326eac90000000000000000000a968163f0a57b4000000000000000000d3c21bcecceda100000000000000000084595161401484a00000000000000000a56fa5b99019a5c80000000000000000cecb8f27f4200f3a0000000000000000813f3978f89409844000000000000000a18f07d736b90be55000000000000000c9f2c9cd04674edea400000000000000fc6f7c40458122964d000000000000009dc5ada82b70b59df020000000000000c5371912364ce3056c28000000000000f684df56c3e01bc6c7320000000000009a130b963a6c115c3c7f400000000000c097ce7bc90715b34b9f100000000000f0bdc21abb48db201e86d4000000000096769950b50d88f41314448000000000bc143fa4e250eb3117d955a000000000eb194f8e1ae525fd5dcfab080000000092efd1b8d0cf37be5aa1cae500000000b7abc627050305adf14a3d9e40000000e596b7b0c643c7196d9ccd05d00000008f7e32ce7bea5c6fe4820023a2000000b35dbf821ae4f38bdda2802c8a800000e0352f62a19e306ed50b2037ad2000008c213d9da502de454526f422cc340000af298d050e4395d69670b12b7f410000daf3f04651d47b4c3c0cdd765f11400088d8762bf324cd0fa5880a69fb6ac800ab0e93b6efee00538eea0d047a457a00d5d238a4abe9806872a4904598d6d88085a36366eb71f04147a6da2b7f864750a70c3c40a64e6c51999090b65f67d924d0cf4b50cfe20765fff4b4e3f741cf6d82818f1281ed449fbff8f10e7a8921a4a321f2d7226895c7aff72d52192b6a0dcbea6f8ceb02bb399bf4f8a69f764490fee50b7025c36a0802f236d04753d5b49f4f2726179a224501d762422c946590c722f0ef9d80aad6424d3ad2b7b97ef5f8ebad2b84e0d58bd2e0898765a7deb29b934c3b330c857763cc55f49f88eb2fc2781f49ffcfa6d53cbf6b71c76b25fbf316271c7fc3908a8bef464e3945ef7a97edd871cfda3a5697758bf0e3cbb5acbde94e8e43d0c8ec3d52eeed1cbea317ed63a231d4c4fb274ca7aaa863ee4bdd945e455f24fb1cf88fe8caa93e74ef6ab975d6b6ee39e436b3e2fd538e122b44e7d34c64a9c85d4460dbbca87196b61690e40fbeea1d3a4abc8955e946fe31cdb51d13aea4a488dd6babab6398bdbe41e264589a4dcdab14c696963c7eed2dd18d7eb76070a08aecfc1e1de5cf543ca2b0de65388cc8ada83b25a55f43294bcbdd15fe86affad91249ef0eb713f39ebe8a2dbf142dfcc7ab6e3569326c784337acb92ed9397bf99649c2c37f07965404d7e77a8f87daf7fbdc33745ec97be90686f0ac99b4e8dafd69a028bb3ded71a3a8acd7c0222311bcc40832ea0d68ce0cd2d80db02aabd62bf50a3fa490c3019083c7088e1aab65db792667c6da79e0faa4b8cab1a1563f52577001b891185938cde6fd5e09abcf26ed4c0226b55e6f8680b05e5ac60b6178544f8158315b05b4a0dc75f1778e39d6696361ae3db1c721c913936dd571c84c03bc3a19cd1e38e9fb5878494ace3a5f04ab48a04065c7239d174b2dcec0e47b62eb0d64283f9c76c45d1df942711d9a3ba5d0bd324f8394f5746577930d6500ca8f44ec7ee364799968bf6abbe85f207e998b13cf4e1ecbbfc2ef456ae276e89e3fedd8c321a67eefb3ab16c59b14a2c5cfe94ef3ea101e95d04aee3b80ece5bba1f1d158724a12bb445da9ca61281f2a8a6e45ae8edc97ea1575143cf97226f52d09d71a3293bd924d692ca61be758593c2626705f9c56b6e0c377cfa2e12e6f8b2fb00c77836ce498f455c38b997a0b6dfb9c0f9564478edf98b59a373fec4724bd4189bd5eacb2977ee300c50fe758edec91ec2cb657df3d5e9bc0f653e12f2967b66737e3ed8b865b215899f46cbd79e0d20082ee74ae67f1e9aec07187ecd8590680a3aa11da01ee641a708de9e80e6f4820cc9495884134fe908658b23109058d147fdcddaa51823e34a7eedebd4b46f0599fd415d4e5e2cdc1d1ea966c9e18ac7007c91a850fadc09923329e03e2cf6bc604ddb0a6539930bf6bff4584db8346b786151ccfe87f7cef46ff16e612641865679a6381f14fae158c5f6e4fcb7e8f3f60c07ea26da3999aef7749e3be5e330f38f09dcb090c8001ab551c5cadf5bfd3072cc5fdcb4fa002162a6373d9732fc7c8f7f69e9f11c4014dda7e2867e7fddcdd9afac646d63501a1511db281e1fd541501b8f7d88bc24209a5651f225a7ca91a42269ae757596946075f3375788de9b06958c1a12d2fc39789370052d6b1641c83aef209787bb47d6b84c0678c5dbd23a49a9745eb4d50ce6332f840b7ba963646e0bd176620a501fbffb650e5a93bc3d898ec5d3fa8ce427affa3e51f138ab4cebe93ba47c980e98cdfc66f336c36b10137b8a8d9bbe123f017b80b0047445d4184e6d3102ad96cec1da60dc059157491e59043ea1ac7e4139287c89837ad68db2fb454e4a179dd187729babe4598c311fbe16a1dc9d8545e94f4296dd6fef3d67a8ce2529e2734bb1d1899e4a65f58660cb01ae745b101e9e45ec05dcff72e7f8fdc21a1171d42645d76707543f4fa1f73899504ae72497eba6a06494a791c53a8abfa45da0edbde690487db9d17636892d6f8d7509292d60345a9d2845d3c42b6865b86925b9bc5c20b8a2392ba45a9b2a7f26836f282b7328e6cac7768d7141ed1ef0244af2364ff3207d795430cd9268335616aed761f1f7f44e6bd49e807b8a402b9c5a8d3a6e75f16206c9c6209a6cd036837130890a136dba887c37a8c0f802221226be55a64c2494954da2c9789a02aa96b06deb0fdf2db9baa10b7bd6cc83553c5c8965d3d6f92829494e5acc7fa42a8b73abbf48ccb772339ba1f17f99c69a97284b578d7ff2a760414536efbc38413cf25e2d70dfef5138519684abaf46518c2ef5b8cd17eb258665fc25d6998bf2f79d5993802ef2f773ffbd97a61beeefb584aff8603aafb550ffacfd8faeeaaba2e5dbf678495ba2a53f983cf38952ab45cfa97a0b2dd945a747bf26183ba756174393d88df94f971119aeef9e4e912b9d1478ceb177a37cd5601aab85d91abb422ccb812eeac62e055c10ab33ab616a12b7fe617aa577b986b314d6009e39c49765fdf9d94ed5a7e85fda0b80b8e41ade9fbebc27d14588f13be847307b1d219647ae6b31c596eb2d8ae258fc8de469fbd99a05fe36fca5f8ed9aef3bb8aec23d680043bee25de7bb9480d5854ada72ccc20054ae9af561aa79a10ae6ad910f7ff28069da41b2ba1518094da0487aa9aff7904228690fb44d2f05d0842a99541bf57452b28353a1607ac744a53d3fa922f2d1675f242889b8997915ce8847c9b5d7c2e09b769956135febada11a59bc234db398c2543fab9837e699095cf02b2c21207ef2e94f967e45e03f4bb8161afb94b44f57d1d1be0eebac278f5a1ba1ba79e1632dc6462d92a69731732ca28a291859bbf937d7b8f7503cfdcfefcb2cb35e702af785cda735244c3d43e9defbf01b061adab3a0888136afa64a7c56baec21c7a1916088aaa1845b8fdd0f6c69a72a3989f5b8aad549e57273d459a3c2087a63f639936ac54e2f678864bc0cb28a98fcf3c7f84576a1bb416a7ddf0fdf2d3f3c30b9f656d44a2a11c51d5969eb7c47859e7439f644ae5a4b1b325bc4665b596706114873d5d9f0dde1feeeb57ff22fc0c7959a90cb506d155a7ea9316ff75dd87cbd809a7f12442d588f2b7dcbf5354e9bece0c11ed6d538aeb2fe5d3ef282a242e818f1668c8a86da5fa8fa475791a569d10f96e017d694487bcb38d92d760ec445537c981dcc395a9ace070f78d3927556a85bbe253f47b14178c469ab843b8956293956d7478ccec8eaf58416654a6babb387ac8d1970027b2db2e51bfe9d0696a06997b05fcc0319e88fcf317f22241e2441fece3bdf81f03ab3c2fddeeaad25ad527e81cad7626c3d60b3bd56a5586f18a71e223d8d3b07485c7056562757456f6872d5667844e49a738c6bebb12d16cb428f8ac016561dbd106f86e69d785c7e13336d701beba5282a45b450226b39cecc0024661173473a34d721642b0608427f002d7f95d0190cc20ce9bd35c78a531ec038df7b441f4ff290242c83396ce7e67047175a152719f79a169bd203e410f0062c6e984d386c75809c42c684dd152c07b78a3e60868f92e0c3537826145a7709a56ccdf8a829bbcc7a142b17ccb88a66076400bb691c2abf989935ddbfe6acff893d00ea435f356f7ebf83552fe0583f6b8c4124d4398165af37b2153dec3727a337a8b704abe1bf1b059e9a8d6744f18c0592e4c5ceda2ee1c7064130c1162def06f79df739485d4d1c63e8be78addcb5645ac2ba8b9a74a0637ce2ee16d953e2bd7173692e8111c87c5c1ba99c8fa8db6ccdd0437910ab1d4db9914a01d9c9892400a22a2b54d5e4a127f59c82503beb6d00cab4be2a0b5dc971f303a2e44ae64840fd61d8da471a9de737e245ceaecfed289e5d2b10d8e1456105dad7425a83e872c5f47dd50f1996b947518d12f124e28f777198a5296ffe33cc92f82bd6b70d99aaa6face73cbfdc0bfb7b636cc64d1001550bd8210befd30efa5a3c47f7e05401aa4e8714a775e3e95c7865acfaec34810a71a8d9d1535ce3b3967f1839a741a14d0dd31045a8341ca07c1ede48111209a05083ea2b892091e44d934aed0aab460432a4e4b66b68b65d60f81da84d5617853fce1de40642e3f4b936251260ab9d668e80d2ae83e9ce78f3c1d72b7c6b426019a1075a24e4421730b24cf65b8612f81fc94930ae1d529cfcdee033f26797b627fb9b7cd9a4a7443c169840ef017da3b19d412e0806e88aa58e1f289560ee864ec491798a08a2ad4ef1a6f2bab92a27e2f5b5d7ec8acb58a2ae10af696774b1db9991a6f3d6bf1765acca6da1e0a8ef29bff610b0cc6edd3f17fd090a58d32af3eff394dcff8a948eddfc4b4cef07f5b095f83d0a1fb69cd94abdaf101564f98ebb764c4ca7a4440f9d6d1ad41abe37f1ea53df5fd18d551384c86189216dc5ed92746b9be2f8552c32fd3cf5b4e49bb4b7118682dbb66a773fbc8c33221dc2a1e4d5e82392a405150fabaf3feaa5334a8f05b1163ba6832d29cb4d87f2a7400eb2c71d5bca9023f8743e20e9ef511012df78e4b2bd342cf6914da9246b2554168bab8eefb6409c1a1ad089b6c2f7548eae9672aba3d0c320a184ac2473b529b1da3c0f568cc4f3e8c9e5d72d90a2741e8865899617fb18717e2fa67c7a658892aa7eebfb9df9de8dddbb901b98feeab7d51ea6fa85785631552a74227f3ea5658533285c936b35ded53a88958f87275fa67ff273b84603568a892abaf368f137d01fef10a657842c2d2b7569b0432d858213f56a67f6b29b9c3b29620e29fc73a298f2c501f45f428349f3ba91b47b8fcb3f2f7642717713241c70a936219a73fe0efb53d30dd4d7ed238cd383aa01109ec95d1463e8a506f4363804324a40aac67bb4597ce2ce48b143c6053edcd0d5f81aa16fdc1b81dadd94b7868e94050a9b10a4e5e9913128ca7cf2b4191c8326c1d4ce1f63f57d72fd1c2f611f63a3f0f24a01a73cf2dccfbc633b39673c8cec976e41088617ca01d5be0503e085d813bd49d14aa79dbc824b2d8644d8a74e18ec9c459d51852ba2ddf8e7d60ed1219e93e1ab8252f33b45cabb90e5c942b503b8da1662e7b00a173d6a751f3b936243e7109bfba19c0c9d0cc512670a783ad4906a617d450187e227fb2b80668b24c5b484f9dc9641e9dab1f9f660802dedf6e1a63853bbd264515e7873f8a03969738d07e33455637eb2db0b487b6423e1e8b049dc016abc5e5f91ce1a9a3d2cda62dc5c5301c56b75f77641a140cc7810fb89b9b3e11b6329baa9e904c87fcb0a9dac2820d9623bf429546345fa9fbdcd44d732290fbacaf133a97c177947ad4095867f59a9d4bed6c049ed8eabcccc485da81f301449ee8c705c68f256bfff5a74d226fc195c6a2f8c73832eec6fff311183585d8fd9c25db7c831fd53c5ff7eaba42e74f3d032f525ba3e7ca8b77f5e55cd3a1230c43fb26f28ce1bd2e55f35eb80444b5e7aa7cf857980d163cf5b81b3a0555e361951c366d7e105bcc332621fc86ab5c39fa634408dd9472bf3fefaa7fa856334878fc150b14f98f6f0feb9519c935e00d4b9d8d26ed1bf9a569f33d3c3b8358109e84f070a862f80ec4700c8f4a642e14c6262c8cd27bb612758c0fa98e7e9cccfbd7dbd8038d51cb897789cbf21e44003acdd2ce0470a63e6bd56c3eeea5d50049814781858ccfce06cac7495527a5202df0ccb0f37801e0c43ebc8baa718e68396cffdd30560258f54e6bae950df20247c83fd47c6b82ef32a206991d28b7416cdd27e4cdc331d57fa5441b6472e511c81471de0133fe4adf8e952e3d8f9e563a198e558180fddd97723a68e679c2f5e44ff8f570f09eaa7ea7648"
+.L774:
+    .string "-inf"
+.L775:
+    .string "inf"
+.L776:
+    .string "-nan"
+.L777:
+    .string "nan"
 .bss
 .p2align 6
 zyl_rtg_cpu_avx2:
@@ -30303,6 +35315,9 @@ zyl_rtg_os_term_saved:
 .p2align 6
 zyl_rtg_uf:
     .zero 32
+.p2align 6
+zyl_rtg_fmt_tab:
+    .zero 10608
 .section .tbss,"awT",@nobits
 .p2align 6
 zyl_rtt_timespec:
@@ -30337,6 +35352,12 @@ zyl_rtt_os_winsz:
 .p2align 6
 zyl_rtt_zsa:
     .zero 1024
+.p2align 6
+zyl_rtt_fmt_dec:
+    .zero 832
+.p2align 6
+zyl_rtt_fmt_big:
+    .zero 384
 .text
 zyl_rt_sys_228:
     mov r10, rcx

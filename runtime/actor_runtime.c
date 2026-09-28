@@ -1,12 +1,5 @@
 #include "actor_runtime.h"
 long long zyl_ralloc(long long size, long long rp);
-/* The region a region-aware runtime function allocates its result in:
-   0 (the heap) except while one of the `_r` entry points below runs,
-   which compiled code calls only from a site region inference
-   annotated, with zyl_cur_region set just before the call. Every other
-   caller (the interpreter, C code inside this runtime) gets the heap. */
-static __thread long long g_result_region = 0;
-#define ZYL_RESULT_ALLOC(n) zyl_ralloc((long long)(n), g_result_region)
 static volatile int g_threads_started; /* see ZYL_ARENA_LOCK */
 #include <stdint.h>
 #include <stdlib.h>
@@ -1967,38 +1960,12 @@ static double zyl_d_of(long long bits) {
     return d;
 }
 
-static long long zyl_bits_of(double d) {
-    long long bits;
-    memcpy(&bits, &d, sizeof(bits));
-    return bits;
-}
-
-long long zyl_f_parse(long long text) {
-    const char* s = (const char*)(size_t)text;
-    if (!s) return 0;
-    return zyl_bits_of(strtod(s, NULL));
-}
-
-/* The same text printf's "%f" would produce, for a REPL result line. */
-long long zyl_f_text(long long bits) {
-    long long p = ZYL_RESULT_ALLOC(48);
-    if (!p) return 0;
-    snprintf((char*)(size_t)p, 48, "%f", zyl_d_of(bits));
-    return p;
-}
-
 /* print, in each of the three shapes codegen emits, so that interpreted
    output is byte-identical to compiled output. */
 long long zyl_print_int(long long n) { printf("%lld\n", n); return 0; }
 long long zyl_print_str(long long s) { printf("%s\n", (const char*)(size_t)s); return 0; }
 long long zyl_print_float(long long bits) { printf("%f\n", zyl_d_of(bits)); return 0; }
 
-/* Region-aware entry points (see g_result_region). Compiled code calls
-   these, instead of the plain names, from sites region inference
-   annotated (compiler/region_inference, rg-ffi-kind 1). */
-#define ZYL_R_BEGIN long long saved_ = g_result_region; g_result_region = (long long)(size_t)zyl_cur_region;
-#define ZYL_R_END g_result_region = saved_;
-long long zyl_f_text_r(long long bits) { ZYL_R_BEGIN long long v = zyl_f_text(bits); ZYL_R_END return v; }
 
 /* Sixteen process-wide word cells for compiler passes (the type pass's
    strict-mode flag and current node). */
