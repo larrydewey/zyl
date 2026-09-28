@@ -105,25 +105,12 @@ long long zyl_aes_encrypt_block(long long keybase, long long keybytes,
                                 long long inbase, long long outbase);
 
 /* CLI helpers. */
-void zyl_save_args(int argc, char** argv);
-long long zyl_argc(void);
-long long zyl_arg_str(long long i);
-long long zyl_chdir(long long path);
-long long zyl_getcwd(void);
 long long zyl_system_cmd(long long cmd);
 long long zyl_exec_cmd(long long cmd);
 
 /* Interactive terminal primitives (REPL line editor). */
-long long zyl_term_is_tty(long long fd);
-long long zyl_term_raw_on(void);
-long long zyl_term_raw_off(void);
-long long zyl_term_read_byte(void);
-long long zyl_term_read_byte_timeout(long long ms);
-long long zyl_term_width(void);
-long long zyl_term_height(void);
-long long zyl_term_write(long long s);
 long long zyl_term_flush(void);
-long long zyl_mkdir_p(long long path);
+long long zyl_term_atexit(void);
 long long zyl_cc_compile_log(long long path, long long logpath);
 
 /* Interpreter support (stdlib/repl/interp.zyl). */
@@ -331,6 +318,29 @@ long long zyl_atomic_max(long long addr, long long value);
 long long zyl_atomic_min(long long addr, long long value);
 long long zyl_atomic_cas(long long addr, long long expected, long long new_value);
 long long zyl_atomic_fetch_add(long long addr, long long value);
+void zyl_save_args(int argc, char** argv);
+long long zyl_argc(void);
+long long zyl_arg_str(long long i);
+long long zyl_chdir(long long path);
+long long zyl_getcwd(void);
+long long zyl_path_exists(long long path);
+long long zyl_mkdir_p(long long path);
+long long zyl_file_open_c(long long path, long long mode);
+long long zyl_file_read_c(long long fd, long long count);
+long long zyl_file_read_c_r(long long fd, long long count);
+long long zyl_file_write_c(long long fd, long long buf);
+long long zyl_file_close_c(long long fd);
+long long zyl_list_zyl_files(long long dir);
+long long zyl_list_files(long long dir, long long suffixes);
+long long zyl_term_is_tty(long long fd);
+long long zyl_term_raw_on(void);
+long long zyl_term_raw_off(void);
+void zyl_term_restore_atexit(void);
+long long zyl_term_read_byte(void);
+long long zyl_term_read_byte_timeout(long long ms);
+long long zyl_term_width(void);
+long long zyl_term_height(void);
+long long zyl_term_write(long long s);
 
 long long zyl_arena_create(long long block_size);
 long long zyl_arena_alloc(long long arena, long long size);
