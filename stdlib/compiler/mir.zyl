@@ -59,7 +59,8 @@
   (MByteFast Int Int Int Int Int Int) ; kind, d, off, data, bound, val (-1)
   (MRaw Int Int (List Int))           ; runtime primitive kind (cg-raw-kind), d, operands
   (MTls Int String (List Int))        ; d <- thread-local sym, or sym <- the operand (then d gets it)
-  (MMem Int Int Int Int Int))         ; raw kind 0-7 (loads, stores), d, base, displacement, value (-1 for a load)
+  (MMem Int Int Int Int Int)          ; raw kind 0-7 (loads, stores), d, base, displacement, value (-1 for a load)
+  (MCSub Int Int Int))                ; d <- a - m when a >= m, else a (m an imm32 > 0; branch-free)
 
 ; Vregs an instruction reads, and the one it writes (-1 for none).
 (defn mi-uses (i)
@@ -95,7 +96,8 @@
     (MByteFast _ _ o dt bd v (Cons o (Cons dt (Cons bd (mir-opt-use v Nil)))))
     (MRaw _ _ vs vs)
     (MTls _ _ vs vs)
-    (MMem _ _ b _ v (Cons b (mir-opt-use v Nil)))))
+    (MMem _ _ b _ v (Cons b (mir-opt-use v Nil)))
+    (MCSub _ a _ (Cons a Nil))))
 
 (defn mir-opt-use (v rest) (if (< v 0) rest (Cons v rest)))
 
@@ -123,6 +125,7 @@
     (MRaw _ d _ d)
     (MTls d _ _ d)
     (MMem _ d _ _ _ d)
+    (MCSub d _ _ d)
     (_ -1)))
 
 ; Instructions that call C (or other code) and so clobber the
@@ -175,6 +178,7 @@
     (MRaw k _ _ (or (<= k 3) (or (= k 18) (= k 46))))
     (MTls _ _ vs (is-nil vs))
     (MMem k _ _ _ _ (<= k 3))
+    (MCSub _ _ _ true)
     (_ false)))
 
 ; Drops pure instructions whose result is never read, last first, so a
@@ -337,6 +341,7 @@
     (MRaw k _ vs (MRaw k d vs))
     (MTls _ sym vs (MTls d sym vs))
     (MMem k _ b o v (MMem k d b o v))
+    (MCSub _ a m (MCSub d a m))
     (_ i)))
 
 ; --- liveness -------------------------------------------------------------

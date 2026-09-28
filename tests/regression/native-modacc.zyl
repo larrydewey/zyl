@@ -1,0 +1,25 @@
+; Guarded modular accumulators: the proven copy and the plain loop give the same results.
+
+(defn run ((i Int) (n Int) (acc Int))
+  (if (>= i n) acc (run (+ i 1) n (% (+ acc (* i i)) 1000000007))))
+(defn run2 ((i Int) (n Int) (acc Int))
+  (if (< i n) (run2 (+ i 3) n (% (+ (* i 7) acc) 97)) acc))
+(defn qsum ((i Int) (n Int) (acc Int) (q Int))
+  (if (>= i n) (+ acc q) (qsum (+ i 1) n (% (+ acc (/ (* i i) 13)) 65536) (+ q (/ i 4)))))
+(defn neg ((i Int) (n Int) (acc Int))
+  (if (>= i n) acc (neg (+ i 1) n (% (- acc (* i 5)) 1009))))
+
+(test "modacc"
+  (begin
+    (assert-equal (run 0 100000 0) 331016704)
+    (assert-equal (run 0 100000 -5) 331016699)
+    (assert-equal (run 0 1000 1000000006) 332833499)
+    (assert-equal (run 0 1000 2000000000) 332833486)
+    (assert-equal (run -3 10 0) 299)
+    (assert-equal (run 2147483640 2147483650 0) 132005908)
+    (assert-equal (run2 0 1000 0) 48)
+    (assert-equal (run2 0 1000 200) 54)
+    (assert-equal (qsum 0 5000 0 0) 3166347)
+    (assert-equal (neg 0 100 0) -534)))
+
+(run-tests)

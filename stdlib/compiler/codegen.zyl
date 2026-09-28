@@ -2774,6 +2774,8 @@
           (MR ms v)
           (let r (ms-vreg ms) (MR (ms-emit (mr-ms r) (MFnRef (mr-v r) n)) (mr-v r))))))
     (IBinop op l r
+      (if (ml-rng-divmod-p op l r venv)
+        (ml-rng-divmod st env venv ms op l r)
       (if (and (mb-commutes op) (and (ml-imm-op op l) (not (ml-imm-op op r))))
         ; a constant on the left of a commutative operator: no effect to order, so it becomes the immediate
         (ml-expr st env venv ms (IBinop op r l))
@@ -2783,7 +2785,7 @@
             (MR (ms-emit (mr-ms rd) (MBinI op (mr-v rd) (mr-v ra) (ml-const-of r))) (mr-v rd)))
           (let rb (ml-expr st env venv (mr-ms ra) r)
             (let rd (ms-vreg (mr-ms rb))
-              (MR (ms-emit (mr-ms rd) (MBin op (mr-v rd) (mr-v ra) (mr-v rb))) (mr-v rd))))))))
+              (MR (ms-emit (mr-ms rd) (MBin op (mr-v rd) (mr-v ra) (mr-v rb))) (mr-v rd)))))))))
     (ICall name args (ml-call st env venv ms name true args (cg-site-level e)))
     (IFfi sym args
       (if (>= (cg-raw-kind sym) 0)
@@ -3201,7 +3203,10 @@
                   (let _ (ffi-call "zyl_ref_set" ml-bce-head -1 1000)
                     (let m2 (match (ml-bce-plan name params body)
                               (Some plan (ml-bce-body st env venv m1 name np rflags aop (mr-v ra) body plan))
-                              (None (ml-tail st env venv (ms-emit m1 (MLabel 0)) (MCtx name (ml-range 0 np) 0 rflags aop (mr-v ra)) body)))
+                              (None
+                                (match (ml-rng-plan name params body)
+                                  (Some rp (ml-rng-body st env venv m1 name np rflags aop (mr-v ra) body rp))
+                                  (None (ml-tail st env venv (ms-emit m1 (MLabel 0)) (MCtx name (ml-range 0 np) 0 rflags aop (mr-v ra)) body)))))
                       (if (< aop 0) m2 (ml-acc-rets m2 aop (mr-v ra))))))))))))))
 
 ; --- bounds checks proven by a guard -------------------------------------------
@@ -3241,13 +3246,39 @@
                                         (and (ml-bce-fixed body j)
                                           (and (and (ml-bce-fixed body n) (ml-self-keeps body name params n ni))
                                             (or (< si 0) (and (ml-bce-fixed body (ml-nth-str params si)) (ml-self-keeps body name params (ml-nth-str params si) si))))))
-                                    (Some (Bce ji ni si b op))
+                                    (if (ml-exit-no-self body op name) (Some (Bce ji ni si b op)) None)
                                     None)))
                                 None))))
                         (_ None)))
                     (_ None)))
                 (_ None)))
             (_ None)))))))
+
+; The exit side of the head test makes no self call: only the loop side re-enters the proven copy.
+(defn ml-exit-no-self (body op name)
+  (match body
+    (IIf _ t f (not (ml-calls (if (= op 8) t f) name)))
+    (_ false)))
+
+(defn ml-calls (e name)
+  (match e
+    (ICall n args (or (str-eq n name) (ml-calls-list args name)))
+    (ILoad n (str-eq n name))
+    (IBinop _ l r (or (ml-calls l name) (ml-calls r name)))
+    (IFfi _ args (ml-calls-list args name))
+    (IIf c t f (or (ml-calls c name) (or (ml-calls t name) (ml-calls f name))))
+    (IWhile c b (or (ml-calls c name) (ml-calls b name)))
+    (ISet _ v (ml-calls v name))
+    (ILet _ v b (or (ml-calls v name) (ml-calls b name)))
+    (ISeq es (ml-calls-list es name))
+    (IVariant _ _ fs (ml-calls-list fs name))
+    (IStackVariant _ _ fs (ml-calls-list fs name))
+    (IMatch s arms (or (ml-calls s name) (ml-calls-arms arms name)))
+    (_ false)))
+
+(defn ml-calls-list (es name) (match es (Nil false) (Cons h t (if (ml-calls h name) true (ml-calls-list t name)))))
+(defn ml-calls-arms (arms name)
+  (match arms (Nil false) (Cons a t (match a (IArm _ _ _ b (if (ml-calls b name) true (ml-calls-arms t name)))))))
 
 (defn ml-nth-str (xs i) (match xs (Nil "") (Cons h t (if (= i 0) h (ml-nth-str t (- i 1))))))
 
@@ -3344,6 +3375,208 @@
                 (let _ (ffi-call "zyl_ref_set" ml-bce-on None 1000)
                   (ml-tail st env venv (ms-emit m2 (MLabel (mr-v le))) cx f))))))))
     (_ ms)))
+
+; --- ranges proven by a guard: a modular accumulator -----------------------------
+; A loop (if (>= j n) exit body) whose self calls step j by constants and pass an
+; accumulator a as (% x M), 0 < M < 2^31, gets a second copy entered when j >= 0,
+; n <= 2^31 and 0 <= a < M. There j < 2^31 on the loop side and a stays in [0, M), so
+; a dividend x proven >= 0 needs no sign correction, and (% (+ a e) M) with e >= 0 is
+; a + (e mod M) less M once when that reaches M (both terms are in [0, M)).
+
+(deftype RngPlan (RngPlan Int Int Int Int Int))   ; j, n, a, M, test op
+(deftype Rng (Rng Int Int Bool))                   ; lo, hi, known
+
+(deftype RngOn (RngOn String Int String Int Int))  ; j and its vreg, a and its vreg, M
+(def ml-rng-on (ffi-call "zyl_ref_new" None 1000))
+
+(defn ml-rng-plan (name params body)
+  (match body
+    (IIf c _ _
+      (match c
+        (IBinop op l r
+          (match l
+            (ILoad j
+              (match r
+                (ILoad n
+                  (let ji (ml-param-index params j 0)
+                    (let ni (ml-param-index params n 0)
+                      (if (and (or (= op 5) (= op 8)) (and (>= ji 0) (and (>= ni 0) (not (= ji ni)))))
+                        (let _ (ffi-call "zyl_ref_set" ml-bce-params params 1000)
+                          (if (and (= (ml-bce-steps body name ji j -2) -1)
+                                (and (ml-bce-fixed body j) (and (ml-bce-fixed body n) (ml-self-keeps body name params n ni))))
+                            (if (ml-exit-no-self body op name) (ml-rng-acc body name params j ji ni op 0 params) None)
+                            None))
+                        None))))
+                (_ None)))
+            (_ None)))
+        (_ None)))
+    (_ None)))
+
+; The first parameter every self call passes as (% x M), x proven >= 0 under the facts.
+(defn ml-rng-acc (body name params j ji ni op i ps)
+  (match ps
+    (Nil None)
+    (Cons a t
+      (let m (if (or (= i ji) (= i ni)) -1 (if (ml-bce-fixed body a) (ml-rng-mod body name i -2) -1))
+        (if (and (> m 0) (ml-rng-args-ok body name i (RngOn j -1 a -1 m)))
+          (Some (RngPlan ji ni i m op))
+          (ml-rng-acc body name params j ji ni op (+ i 1) t))))))
+
+; Over every self call's argument i: -2 none seen, -1 not (% x M) or mixed moduli, else M.
+(defn ml-rng-mod (e name i acc)
+  (if (= acc -1) -1
+    (match e
+      (ICall n args
+        (let a2 (ml-rng-mod-list args name i acc)
+          (if (str-eq n name)
+            (match (ml-nth-icnf args i)
+              (Some x (match x (IBinop op _ y (match y (IConst m (if (and (= op 4) (and (> m 0) (< m 2147483647)) (or (= a2 -2) (= a2 m))) m -1)) (_ -1))) (_ -1)))
+              (None -1))
+            a2)))
+      (IBinop _ l r (ml-rng-mod r name i (ml-rng-mod l name i acc)))
+      (IFfi _ args (ml-rng-mod-list args name i acc))
+      (IIf c t f (ml-rng-mod f name i (ml-rng-mod t name i (ml-rng-mod c name i acc))))
+      (IWhile c b (ml-rng-mod b name i (ml-rng-mod c name i acc)))
+      (ISet _ v (ml-rng-mod v name i acc))
+      (ILet _ v b (ml-rng-mod b name i (ml-rng-mod v name i acc)))
+      (ISeq es (ml-rng-mod-list es name i acc))
+      (IVariant _ _ fs (ml-rng-mod-list fs name i acc))
+      (IMatch s arms (ml-rng-mod-arms arms name i (ml-rng-mod s name i acc)))
+      (_ acc))))
+
+(defn ml-rng-mod-list (es name i acc) (match es (Nil acc) (Cons h t (ml-rng-mod-list t name i (ml-rng-mod h name i acc)))))
+(defn ml-rng-mod-arms (arms name i acc)
+  (match arms (Nil acc) (Cons a t (match a (IArm _ _ _ b (ml-rng-mod-arms t name i (ml-rng-mod b name i acc)))))))
+
+; Every self call's dividend for argument i is >= 0 under the facts.
+(defn ml-rng-args-ok (e name i f)
+  (match e
+    (ICall n args
+      (and (ml-rng-args-list args name i f)
+        (if (str-eq n name)
+          (match (ml-nth-icnf args i) (Some x (match x (IBinop _ l _ (ml-rng-nonneg (ml-rng l f))) (_ false))) (None false))
+          true)))
+    (IBinop _ l r (and (ml-rng-args-ok l name i f) (ml-rng-args-ok r name i f)))
+    (IFfi _ args (ml-rng-args-list args name i f))
+    (IIf c t fl (and (ml-rng-args-ok c name i f) (and (ml-rng-args-ok t name i f) (ml-rng-args-ok fl name i f))))
+    (IWhile c b (and (ml-rng-args-ok c name i f) (ml-rng-args-ok b name i f)))
+    (ISet _ v (ml-rng-args-ok v name i f))
+    (ILet _ v b (and (ml-rng-args-ok v name i f) (ml-rng-args-ok b name i f)))
+    (ISeq es (ml-rng-args-list es name i f))
+    (IVariant _ _ fs (ml-rng-args-list fs name i f))
+    (IMatch s arms (and (ml-rng-args-ok s name i f) (ml-rng-args-arms arms name i f)))
+    (_ true)))
+
+(defn ml-rng-args-list (es name i f) (match es (Nil true) (Cons h t (if (ml-rng-args-ok h name i f) (ml-rng-args-list t name i f) false))))
+(defn ml-rng-args-arms (arms name i f)
+  (match arms (Nil true) (Cons a t (match a (IArm _ _ _ b (if (ml-rng-args-ok b name i f) (ml-rng-args-arms t name i f) false))))))
+
+(defn ml-rng-nonneg (r) (match r (Rng lo _ k (and k (>= lo 0)))))
+
+(defn ml-rng-unknown () (Rng 0 0 false))
+
+; An interval for e, from j in [0, 2^31) and a in [0, M) only (names; the plan forbids rebinding them).
+(defn ml-rng (e f)
+  (match f
+    (RngOn j _ a _ m
+      (match e
+        (IConst k (Rng k k true))
+        (ILoad x (if (str-eq x j) (Rng 0 2147483647 true) (if (str-eq x a) (Rng 0 (- m 1) true) (ml-rng-unknown))))
+        (IBinop op l r
+          (let rl (ml-rng l f)
+            (let rr (ml-rng r f)
+              (match rl
+                (Rng ll lh lk
+                  (match rr
+                    (Rng rl2 rh rk
+                      (if (not (and lk rk)) (ml-rng-unknown)
+                        (if (= op 0)
+                          (if (and (>= ll 0) (and (>= rl2 0) (<= lh (- 9223372036854775807 rh)))) (Rng (+ ll rl2) (+ lh rh) true) (ml-rng-unknown))
+                          (if (= op 2)
+                            (if (and (>= ll 0) (and (>= rl2 0) (or (= rh 0) (<= lh (/ 9223372036854775807 rh))))) (Rng (* ll rl2) (* lh rh) true) (ml-rng-unknown))
+                            (if (and (= op 4) (and (>= ll 0) (and (= rl2 rh) (> rl2 0)))) (Rng 0 (- rl2 1) true)
+                              (if (and (= op 3) (and (>= ll 0) (and (= rl2 rh) (> rl2 0)))) (Rng (/ ll rl2) (/ lh rl2) true)
+                                (ml-rng-unknown)))))))))))))
+        (_ (ml-rng-unknown))))))
+
+; Guard, fast copy under the facts, then the plain loop at label 0 (as ml-bce-body).
+(defn ml-rng-body (st env venv ms name np rflags aop acc body plan)
+  (match plan
+    (RngPlan ji ni ai m op
+      (let rt (ms-vreg ms)
+        (let lf (ms-label (mr-ms rt))
+          (let g (ms-emit (ms-emit (ms-emit (ms-emit (ms-emit (mr-ms lf) (MJfI 8 ji 0 0)) (MConst (mr-v rt) 2147483648)) (MJf 7 ni (mr-v rt) 0))
+                   (MJfI 8 ai 0 0)) (MJfI 5 ai m 0))
+            (let _ (ffi-call "zyl_ref_set" ml-bce-head (mr-v lf) 1000)
+              (let cxf (MCtx name (ml-range 0 np) (mr-v lf) rflags aop acc)
+                (let facts (RngOn (ml-rng-pname venv ji) ji (ml-rng-pname venv ai) ai m)
+                  (let mf (ml-rng-fast st env venv (ms-emit g (MLabel (mr-v lf))) cxf body op facts)
+                    (ml-tail st env venv (ms-emit mf (MLabel 0)) (MCtx name (ml-range 0 np) 0 rflags aop acc) body)))))))))))
+
+; The name of parameter vreg i (params are the oldest venv entries).
+(defn ml-rng-pname (venv i)
+  (match venv (Nil "") (Cons m t (match m (MVar k v (if (= v i) k (ml-rng-pname t i)))))))
+
+(defn ml-rng-fast (st env venv ms cx body op facts)
+  (match body
+    (IIf c t f
+      (let le (ms-label ms)
+        (let m1 (ml-cond st env venv (mr-ms le) c (mr-v le))
+          (if (= op 8)
+            (let m2 (ml-tail st env venv m1 cx t)
+              (let _ (ffi-call "zyl_ref_set" ml-rng-on (Some facts) 1000)
+                (let m3 (ml-tail st env venv (ms-emit m2 (MLabel (mr-v le))) cx f)
+                  (let _ (ffi-call "zyl_ref_set" ml-rng-on None 1000) m3))))
+            (let _ (ffi-call "zyl_ref_set" ml-rng-on (Some facts) 1000)
+              (let m2 (ml-tail st env venv m1 cx t)
+                (let _ (ffi-call "zyl_ref_set" ml-rng-on None 1000)
+                  (ml-tail st env venv (ms-emit m2 (MLabel (mr-v le))) cx f))))))))
+    (_ ms)))
+
+; (/ x M) or (% x M), M > 1 a constant, x >= 0 under the facts, the facts' names still the parameters.
+(defn ml-rng-divmod-p (op l r venv)
+  (match (ffi-call "zyl_ref_get" ml-rng-on 1000)
+    (Some f
+      (match f
+        (RngOn j jv a av _
+          (and (or (= op 3) (= op 4))
+            (and (match r (IConst k (and (> k 1) (<= k 2147483647))) (_ false))
+              (and (= (ml-var venv j) jv) (and (= (ml-var venv a) av) (ml-rng-nonneg (ml-rng l f)))))))))
+    (None false)))
+
+(defn ml-rng-divmod (st env venv ms op l r)
+  (let k (ml-const-of r)
+    (match (ffi-call "zyl_ref_get" ml-rng-on 1000)
+      (Some f
+        (match f
+          (RngOn _ _ a av m
+            (match (ml-rng-acc-sum op l a k m f)
+              (Some e
+                ; a + (e mod M), reduced once: both terms are in [0, M)
+                (let re (ml-expr st env venv ms e)
+                  (let rm (ms-vreg (mr-ms re))
+                    (let m1 (ms-emit (mr-ms rm) (MBinI 104 (mr-v rm) (mr-v re) m))
+                      (let rs (ms-vreg m1)
+                        (let m2 (ms-emit (mr-ms rs) (MBin 0 (mr-v rs) av (mr-v rm)))
+                          (let rd (ms-vreg m2)
+                            (MR (ms-emit (mr-ms rd) (MCSub (mr-v rd) (mr-v rs) m)) (mr-v rd)))))))))
+              (None
+                (let ra (ml-expr st env venv ms l)
+                  (let rd (ms-vreg (mr-ms ra))
+                    (MR (ms-emit (mr-ms rd) (MBinI (+ op 100) (mr-v rd) (mr-v ra) k)) (mr-v rd)))))))))
+      (None (ml-const ms 0)))))
+
+; (% (+ a e) M) or (% (+ e a) M) with the accumulator's own M and e >= 0: e.
+(defn ml-rng-acc-sum (op l a k m f)
+  (if (and (= op 4) (= k m))
+    (match l
+      (IBinop o x y
+        (if (= o 0)
+          (if (and (match x (ILoad n (str-eq n a)) (_ false)) (ml-rng-nonneg (ml-rng y f))) (Some y)
+            (if (and (match y (ILoad n (str-eq n a)) (_ false)) (ml-rng-nonneg (ml-rng x f))) (Some x) None))
+          None))
+      (_ None))
+    None))
 
 ; An access of view p at offset expression off is proven in bounds.
 (defn ml-bce-proven (venv p off)
@@ -3863,7 +4096,7 @@
         st))
     (MBinI op d a n
       (if (mb-live fr d)
-       (if (or (= op 3) (= op 4))
+       (if (or (or (= op 3) (= op 4)) (or (= op 103) (= op 104)))
         (mb-set (mb-divmod-const st fr op a n) fr d "rax")
        (if (>= op 14)
         (mb-shift-imm st fr op d a n)
@@ -3938,6 +4171,16 @@
     (MByte kind d o b v (mb-byte st fr kind d o b v i))
     (MRaw kind d vs (mb-raw st fr kind d vs))
     (MMem kind d b off v (mb-mem st fr kind d b off v))
+    (MCSub d a m
+      (if (mb-live fr d)
+        (mb-set (cg-emit-lines st
+                  (Cons (str-concat "    mov rax, " (mb-loc-text fr a))
+                  (Cons "    mov rcx, rax"
+                  (Cons (str-concat "    sub rcx, " (ffi-call "zyl_int_text" m 1000))
+                  (Cons (str-concat "    cmp rax, " (ffi-call "zyl_int_text" m 1000))
+                  (Cons "    cmovge rax, rcx" Nil))))))
+                fr d "rax")
+        st))
     (MTls d sym vs
       (match vs
         (Nil (mb-set (cg-emit-line st (cg-tls-get-line sym)) fr d "rax"))
@@ -4247,13 +4490,19 @@
 ; into rax, exactly as idiv computes it (truncating toward zero, the
 ; remainder taking the dividend's sign). 1 is a move, a power of two a
 ; biased shift, anything else a multiply by zyl_div_magic's constant.
-(defn mb-divmod-const (st fr op a n)
+; op 103/104: the dividend is proven >= 0 (ml-rng-plan), so no sign correction.
+(defn mb-divmod-const (st fr op0 a n)
+  (let op (if (> op0 100) (- op0 100) op0)
+  (let nonneg (> op0 100)
   (let st2 (cg-emit-line st (str-concat "    mov rcx, " (mb-loc-text fr a)))
     (if (= n 1)
       (cg-emit-line st2 (if (= op 3) "    mov rax, rcx" "    xor eax, eax"))
       (if (and (> n 0) (= (bit-and n (- n 1)) 0))
-        (mb-div-pow2 st2 op (mb-log2 n 0))
-        (mb-div-magic st2 op n)))))
+        (if nonneg
+          (cg-emit-lines st2 (Cons "    mov rax, rcx" (Cons (if (= op 3) (str-concat "    shr rax, " (ffi-call "zyl_int_text" (mb-log2 n 0) 1000))
+                                                               (str-concat "    and rax, " (ffi-call "zyl_int_text" (- n 1) 1000))) Nil)))
+          (mb-div-pow2 st2 op (mb-log2 n 0)))
+        (mb-div-magic st2 op n nonneg)))))))
 
 (defn mb-log2 (n k) (if (<= n 1) k (mb-log2 (/ n 2) (+ k 1))))
 
@@ -4272,7 +4521,7 @@
         (Cons "    sub rdx, rax"
         (Cons "    mov rax, rdx" Nil))))))))
 
-(defn mb-div-magic (st op n)
+(defn mb-div-magic (st op n nonneg)
   (let m (ffi-call "zyl_div_magic" n 1000)
     (let sh (ffi-call "zyl_div_shift" n 1000)
       (let st2 (cg-emit-lines st
@@ -4283,7 +4532,7 @@
           (let st4 (if (> sh 0) (cg-emit-line st3 (str-concat "    sar rdx, " (ffi-call "zyl_int_text" sh 1000))) st3)
             ; q += (dividend < 0): for n > 0 the estimate has the dividend's sign, taken off the multiply's path
             (let st5 (if (> n 0)
-                       (cg-emit-lines st4 (Cons "    mov rax, rcx" (Cons "    sar rax, 63" (Cons "    sub rdx, rax" Nil))))
+                       (if nonneg st4 (cg-emit-lines st4 (Cons "    mov rax, rcx" (Cons "    sar rax, 63" (Cons "    sub rdx, rax" Nil)))))
                        (cg-emit-lines st4 (Cons "    mov rax, rdx" (Cons "    shr rax, 63" (Cons "    add rdx, rax" Nil)))))
               (if (= op 3)
                 (cg-emit-line st5 "    mov rax, rdx")
