@@ -1,0 +1,79 @@
+; x86-64 encodings from compiler/asm_x86, checked against GNU as (symbol fields zeroed).
+(use compiler/asm_x86)
+
+(test "asm mov byte ptr [rdx], sil"
+  (assert-equal (ax-encode-hex "mov byte ptr [rdx], sil") "408832"))
+(test "asm mov byte ptr [rax+8], dil"
+  (assert-equal (ax-encode-hex "mov byte ptr [rax+8], dil") "40887808"))
+(test "asm mov byte ptr [rsp], spl"
+  (assert-equal (ax-encode-hex "mov byte ptr [rsp], spl") "40882424"))
+(test "asm mov byte ptr [rbp-4], bpl"
+  (assert-equal (ax-encode-hex "mov byte ptr [rbp-4], bpl") "40886dfc"))
+(test "asm mov byte ptr [r12+rbp*2-8], r9b"
+  (assert-equal (ax-encode-hex "mov byte ptr [r12+rbp*2-8], r9b") "45884c6cf8"))
+(test "asm and al, spl"
+  (assert-equal (ax-encode-hex "and al, spl") "4020e0"))
+(test "asm test sil, sil"
+  (assert-equal (ax-encode-hex "test sil, sil") "4084f6"))
+(test "asm add byte ptr [rdx+rax], sil"
+  (assert-equal (ax-encode-hex "add byte ptr [rdx+rax], sil") "40003402"))
+(test "asm cmp rcx, [r8+r15*1-300]"
+  (assert-equal (ax-encode-hex "cmp rcx, [r8+r15*1-300]") "4b3b8c38d4feffff"))
+(test "asm cmovge rax, rcx"
+  (assert-equal (ax-encode-hex "cmovge rax, rcx") "480f4dc1"))
+(test "asm cmovl r9, qword ptr [rbp-8]"
+  (assert-equal (ax-encode-hex "cmovl r9, qword ptr [rbp-8]") "4c0f4c4df8"))
+(test "asm cmovnle rdx, r15"
+  (assert-equal (ax-encode-hex "cmovnle rdx, r15") "490f4fd7"))
+(test "asm cmovbe rsi, rdi"
+  (assert-equal (ax-encode-hex "cmovbe rsi, rdi") "480f46f7"))
+(test "asm cmovo rax, rbx"
+  (assert-equal (ax-encode-hex "cmovo rax, rbx") "480f40c3"))
+(test "asm cmovpe r10, r11"
+  (assert-equal (ax-encode-hex "cmovpe r10, r11") "4d0f4ad3"))
+(test "asm setb al"
+  (assert-equal (ax-encode-hex "setb al") "0f92c0"))
+(test "asm setnae sil"
+  (assert-equal (ax-encode-hex "setnae sil") "400f92c6"))
+(test "asm setg r12b"
+  (assert-equal (ax-encode-hex "setg r12b") "410f9fc4"))
+(test "asm seto dil"
+  (assert-equal (ax-encode-hex "seto dil") "400f90c7"))
+(test "asm setns cl"
+  (assert-equal (ax-encode-hex "setns cl") "0f99c1"))
+(test "asm jo ext"
+  (assert-equal (ax-encode-hex "jo ext") "0f8000000000"))
+(test "asm jnge ext"
+  (assert-equal (ax-encode-hex "jnge ext") "0f8c00000000"))
+(test "asm jpo ext"
+  (assert-equal (ax-encode-hex "jpo ext") "0f8b00000000"))
+(test "asm jc ext"
+  (assert-equal (ax-encode-hex "jc ext") "0f8200000000"))
+(test "asm js ext"
+  (assert-equal (ax-encode-hex "js ext") "0f8800000000"))
+(test "asm vmovdqu [rdx], ymm0"
+  (assert-equal (ax-encode-hex "vmovdqu [rdx], ymm0") "c5fe7f02"))
+(test "asm vmovdqu [r9+8], ymm1"
+  (assert-equal (ax-encode-hex "vmovdqu [r9+8], ymm1") "c4c17e7f4908"))
+(test "asm vmovdqu ymm8, [rax+rbx*4]"
+  (assert-equal (ax-encode-hex "vmovdqu ymm8, [rax+rbx*4]") "c57e6f0498"))
+(test "asm vmovdqu [rcx+r9*8+16], ymm12"
+  (assert-equal (ax-encode-hex "vmovdqu [rcx+r9*8+16], ymm12") "c4217e7f64c910"))
+(test "asm vpcmpeqb ymm0, ymm2, ymm10"
+  (assert-equal (ax-encode-hex "vpcmpeqb ymm0, ymm2, ymm10") "c4c16d74c2"))
+(test "asm vpmovmskb r12d, ymm3"
+  (assert-equal (ax-encode-hex "vpmovmskb r12d, ymm3") "c57dd7e3"))
+(test "asm vpxor xmm9, xmm9, xmm9"
+  (assert-equal (ax-encode-hex "vpxor xmm9, xmm9, xmm9") "c44131efc9"))
+(test "asm crc32 eax, sil"
+  (assert-equal (ax-encode-hex "crc32 eax, sil") "f2400f38f0c6"))
+(test "asm crc32 r10, r11"
+  (assert-equal (ax-encode-hex "crc32 r10, r11") "f24d0f38f1d3"))
+(test "asm bswap r13"
+  (assert-equal (ax-encode-hex "bswap r13") "490fcd"))
+(test "asm rol r9, cl"
+  (assert-equal (ax-encode-hex "rol r9, cl") "49d3c1"))
+(test "asm ror eax, 7"
+  (assert-equal (ax-encode-hex "ror eax, 7") "c1c807"))
+
+(run-tests)

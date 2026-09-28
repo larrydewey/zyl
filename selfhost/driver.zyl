@@ -140,22 +140,24 @@
 ; `extra` carries a package's native objects and libraries (SS31.10),
 ; already quoted by compiler/cli; an ordinary single-file compile passes
 ; the empty string and the command is what it always was.
-; Freestanding single-file link through the Zyl assembler + ELF linker (no cc/as/ld), opt-in with ZYL_SELF_LINK=1 until rt is cached.
+; Freestanding links go through the Zyl assembler + ELF linker (no cc/as/ld) over the cached runtime rt.zo; ZYL_EXTERNAL_LD=1 uses cc.
 (defn cli-freestanding-p (extra)
   (and (= (str-length extra) 0)
     (and (not (rt-foreign-p))
-      (> (str-length (ffi-call "zyl_getenv_str" "ZYL_SELF_LINK" 1000)) 0))))
+      (= (str-length (ffi-call "zyl_getenv_str" "ZYL_EXTERNAL_LD" 1000)) 0))))
 
 (defn cli-link-with (asmpath outpath extra)
   (if (cli-freestanding-p extra)
-    (el-link asmpath "rt.s" "start.s" outpath)
+    (el-link asmpath "rt.s" "start.s" "rt.zo" outpath)
     (ffi-call "zyl_exec_cmd" (cli-link-command asmpath outpath extra) 1000)))
 
 ; Same command, run as a CHILD: a package build has work left to do after
 ; linking (zyl.buildinfo, and `zyl test` runs the binary), and
 ; zyl_exec_cmd's execl would end the process here.
 (defn cli-link-child (asmpath outpath extra)
-  (ffi-call "zyl_system_cmd" (cli-link-command asmpath outpath extra) 1000))
+  (if (cli-freestanding-p extra)
+    (el-link asmpath "rt.s" "start.s" "rt.zo" outpath)
+    (ffi-call "zyl_system_cmd" (cli-link-command asmpath outpath extra) 1000)))
 
 ; Freestanding (start.o + rt.o, static, no libc) unless the program calls foreign code or links native objects.
 (defn cli-link-command (asmpath outpath extra)
@@ -581,7 +583,9 @@
     (drv-eval arena cwd)
   (if (str-eq cmd "doc")
     (drv-doc arena cwd)
-    (drv-usage)))))))))))))))
+  (if (str-eq cmd "rt-cache")
+    (el-rt-cache "rt.s" "start.s" "rt.zo")
+    (drv-usage))))))))))))))))
 
 ; `zyl doc <file.zyl | dir> [-o out.md]`: Markdown from doc comments
 ; (compiler/doc.zyl); only `pub` items when a zyl.pkg sits beside them.

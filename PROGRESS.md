@@ -471,13 +471,18 @@ as recorded below.
   static ET_EXEC with PT_TLS, a non-exec stack and a synthesized GOT). Both
   are byte-deterministic, and their per-instruction bytes match GNU as.
   Also `tests/scripts/self-link.sh`.
-- `ZYL_SELF_LINK=1` links a freestanding single-file program with no
-  cc/as/ld. It is opt-in, because each link reassembles `rt.s` (about
-  2.0 s, against 0.04 s for cc). Next is caching the assembled runtime so
-  it can become the default.
+- The self-link is the default for freestanding programs, single files and
+  package builds alike (`ZYL_EXTERNAL_LD=1` uses cc). The runtime is cached
+  as `rt.zo` (`zyl rt-cache`, run by `boot.sh`, shipped by `install.sh`):
+  rt.s + start.s assembled once, relocations pre-resolved, keyed by their
+  BLAKE3, rebuilt when stale or torn. A hello-world links in about 30 ms;
+  the full suite takes 26 s (23 s with cc).
+- Line extraction uses `zyl_view_copy` and byte reads `zyl_view_byte`
+  (`str-substring`/`zyl_cstr_byte_at` re-measure the whole source).
 - Limitations:
-  - package builds still link with cc, and so do hosted programs;
-  - jumps are always rel32.
+  - hosted programs still link with cc;
+  - jumps are always rel32;
+  - `rt.zo` is written with mode 0755 (the only write entry).
 
 ## Session (2026-09-28, concurrency) — Kahn channels replace mailboxes
 

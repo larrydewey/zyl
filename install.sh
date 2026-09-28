@@ -68,6 +68,8 @@ cp -r "$SCRIPT_DIR/stdlib" "$TARGET/stdlib"
 # itself (compiler/asm_x86 + compiler/elf_link), no cc/as/ld.
 cp "$SCRIPT_DIR/build/boot/rt.o" "$SCRIPT_DIR/build/boot/start.o" "$TARGET/"
 cp "$SCRIPT_DIR/build/boot/rt.s" "$SCRIPT_DIR/build/boot/start.s" "$TARGET/"
+# The assembled runtime cache; keyed by rt.s+start.s, rebuilt on a mismatch.
+[ -f "$SCRIPT_DIR/build/boot/rt.zo" ] && cp "$SCRIPT_DIR/build/boot/rt.zo" "$TARGET/"
 cp "$SCRIPT_DIR/build/boot/stage2.bin" "$TARGET/bin/stage2.bin"
 
 # Both tools below are compiled BY the compiler just installed, against

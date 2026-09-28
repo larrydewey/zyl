@@ -159,12 +159,19 @@ no regression against the C version before that C code is deleted.
     = offset − aligned block size, as `zyl_rt_start` expects) and a
     non-exec PT_GNU_STACK, resolves every relocation against a fixed
     load base (weak-undefined → 0, strong-undefined → error), and writes
-    a static ET_EXEC. The driver's freestanding path uses it when
-    `ZYL_SELF_LINK=1` is set, with no cc/as/ld. It is not the default yet,
-    because each link reassembles `rt.s` (about 2 s, against 0.04 s for
-    cc). Caching the assembled runtime will make it the default. Hosted (foreign-calling) programs still link over libc's
-    crt with cc. Output is byte-deterministic. `boot.sh`/`install.sh`
-    ship `rt.s` and `start.s` beside `rt.o`/`start.o`.
+    a static ET_EXEC. The driver's freestanding path (single files and
+    package builds) uses it by default, with no cc/as/ld;
+    `ZYL_EXTERNAL_LD=1` restores the cc link. The runtime is assembled
+    once into `rt.zo` in the bundle (`zyl rt-cache`, run by `boot.sh`;
+    `install.sh` ships it): the bytes of rt.s + start.s, their relocations
+    pre-resolved (same-section pc refs patched, the rest kept as
+    section + offset), the exported globals, weak names and thread-locals.
+    It is keyed by the BLAKE3 of rt.s and start.s and carries its own
+    length, so a stale or torn cache is rebuilt (and rewritten, best
+    effort) in memory; a hit and a miss give byte-identical binaries. A
+    hello-world links in about 30 ms. Hosted (foreign-calling) programs
+    still link over libc's crt with cc. `boot.sh`/`install.sh` ship
+    `rt.s`, `start.s` and `rt.zo` beside `rt.o`/`start.o`.
 
 ## The libc-free phase
 

@@ -23,7 +23,7 @@
 
 ; One ByteBuf per section (heap), sized to an upper bound; cursors tracked
 ; in a Words array (bss/tbss keep only a size, no bytes).
-(defstruct Reloc (file Int) (sec Int) (off Int) (kind Int) (sym String) (addend Int))
+(defstruct Reloc (file Int) (sec Int) (off Int) (kind Int) (sym String) (addend Int) (tsec Int)) ; tsec>=0: target is (tsec, addend) not sym
 (defstruct SymDef (glob Int) (file Int) (name String) (sec Int) (off Int))
 
 (def ax-secbuf (ffi-call "zyl_ref_new" (ffi-call "zyl_wvec_new" 1000) 1000))       ; (Ref (WVec ByteBuf))
@@ -36,6 +36,7 @@
 (def ax-sec (ffi-call "zyl_ref_new" 0 1000))       ; current section id
 (def ax-globl (ffi-call "zyl_ref_new" (ffi-call "zyl_smap_new" 1000) 1000))        ; (Ref (SMap Int))
 (def ax-weak (ffi-call "zyl_ref_new" (ffi-call "zyl_smap_new" 1000) 1000))         ; (Ref (SMap Int))
+(def ax-weaklist (ffi-call "zyl_ref_new" (ffi-call "zyl_wvec_new" 1000) 1000))     ; (Ref (WVec String)) weak names in order
 (def ax-tlsalign (ffi-call "zyl_ref_new" 1 1000))
 (def ax-secactive (ffi-call "zyl_ref_new" 1 1000))
 (def ax-arena (ffi-call "zyl_ref_new" (ffi-call "zyl_arena_create" 0 1000) 1000))
@@ -65,7 +66,7 @@
 (defn ax-reloc32 (kind sym addend)
   (let s (ffi-call "zyl_ref_get" ax-sec 1000)
     (let _ (ffi-call "zyl_wvec_push" (ax-getw ax-relocs)
-             (make-Reloc (ffi-call "zyl_ref_get" ax-file 1000) s (ax-cur-n s) kind sym addend) 1000)
+             (make-Reloc (ffi-call "zyl_ref_get" ax-file 1000) s (ax-cur-n s) kind sym addend -1) 1000)
       (ax-le 0 4))))
 
 ; ---------------------------------------------------------------------------
@@ -84,7 +85,8 @@
     (Nil unit)
     (Cons h t (let _ (ax-reg-add h (+ (* cls 100) i)) (ax-reg-row t cls (+ i 1))))))
 
-(defn ax-reg-init ()
+(defn ax-reg-init () (let _ (ax-reg-init0) (ax-cc-init)))
+(defn ax-reg-init0 ()
   (let _ (ffi-call "zyl_ref_set" ax-regmap (ffi-call "zyl_smap_new" 1000) 1000)
     (let _ (ax-reg-row [ "rax" "rcx" "rdx" "rbx" "rsp" "rbp" "rsi" "rdi" "r8" "r9" "r10" "r11" "r12" "r13" "r14" "r15" ] 0 0)
     (let _ (ax-reg-row [ "eax" "ecx" "edx" "ebx" "esp" "ebp" "esi" "edi" "r8d" "r9d" "r10d" "r11d" "r12d" "r13d" "r14d" "r15d" ] 1 0)
@@ -103,7 +105,8 @@
 ; ---------------------------------------------------------------------------
 
 (defn ax-len (s) (str-length s))
-(defn ax-ch (s i) (ffi-call "zyl_cstr_byte_at" s i 1000))
+; O(1) byte read; callers stay below the string length (zyl_cstr_byte_at re-measures it)
+(defn ax-ch (s i) (ffi-call "zyl_view_byte" s 0 1099511627776 i 1000))
 (defn ax-sub (s a n) (str-substring s a n))
 (defn ax-lc (c) (if (and (>= c 65) (<= c 90)) (+ c 32) c))
 
@@ -183,7 +186,11 @@
           (if (str-eq t "rip") (OMem seg -2 index scale disp kind sym size)
           (let star (ax-indexof t 42 0)
             (if (>= star 0)
-              (OMem seg base (ax-reg-num (ax-reg-code (ax-trim (ax-sub t 0 star)))) (ax-parse-imm (ax-sub t (+ star 1) (- (ax-len t) (+ star 1)))) disp kind sym size)
+              (let rest (ax-sub t (+ star 1) (- (ax-len t) (+ star 1)))
+                (let pm (ax-find-pm rest 1 (ax-len rest))
+                  (OMem seg base (ax-reg-num (ax-reg-code (ax-trim (ax-sub t 0 star))))
+                    (ax-parse-imm (if (>= pm 0) (ax-sub rest 0 pm) rest))
+                    (if (>= pm 0) (+ disp (ax-parse-imm (ax-sub rest pm (- (ax-len rest) pm)))) disp) kind sym size)))
               (let at (ax-indexof t 64 0)
                 (if (>= at 0)
                   (OMem seg base index scale disp (ax-suffix-kind (ax-sub t (+ at 1) (- (ax-len t) (+ at 1)))) (ax-sub t 0 at) size)
@@ -340,6 +347,8 @@
 (defn ax-w (s) (if (= s 8) 1 0))
 (defn ax-pfx (s) (if (= s 2) [ 102 ] []))
 (defn ax-imm-wide (v s) (if (= s 2) (ax-le v 2) (ax-le v 4)))
+; spl/bpl/sil/dil in the reg field need a REX (else they read ah..bh)
+(defn ax-f8 (o) (match o (OReg c (ax-low8-force c)) (_ false)))
 (defn ax-reg-numo (o) (match o (OReg c (ax-reg-num c)) (_ 0)))
 (defn ax-acc-p (o) (match o (OReg c (and (< (ax-reg-class c) 4) (= (ax-reg-num c) 0))) (_ false)))
 
@@ -364,8 +373,8 @@
 (defn ax-alu (opc digit acc dst src)
   (match src
     (OImm v (ax-alu-imm digit acc dst v (ax-size2 dst src)))
-    (OReg _ (let s (ax-size2 dst src) (ax-emit-rm (ax-pfx s) 0 (ax-reg-numo src) dst (ax-w s) false [ (if (= s 1) (- opc 1) opc) ])))
-    (OMem _ _ _ _ _ _ _ _ (let s (ax-size2 dst src) (ax-emit-rm (ax-pfx s) 0 (ax-reg-numo dst) src (ax-w s) false [ (if (= s 1) (+ opc 1) (+ opc 2)) ])))
+    (OReg _ (let s (ax-size2 dst src) (ax-emit-rm (ax-pfx s) 0 (ax-reg-numo src) dst (ax-w s) (ax-f8 src) [ (if (= s 1) (- opc 1) opc) ])))
+    (OMem _ _ _ _ _ _ _ _ (let s (ax-size2 dst src) (ax-emit-rm (ax-pfx s) 0 (ax-reg-numo dst) src (ax-w s) (ax-f8 dst) [ (if (= s 1) (+ opc 1) (+ opc 2)) ])))
     (_ (ax-fail "alu src"))))
 
 (defn ax-test (dst src)
@@ -375,16 +384,16 @@
                 (if (ax-acc-p dst) (ax-b2 168 (bit-and v 255)) (let _ (ax-emit-rm [] 0 0 dst 0 false [ 246 ]) (ax-b (bit-and v 255))))
                 (if (ax-acc-p dst) (let _ (ax-emit-acc s 169) (ax-imm-wide v s))
                   (let _ (ax-emit-rm (ax-pfx s) 0 0 dst (ax-w s) false [ 247 ]) (ax-imm-wide v s))))))
-    (_ (let s (ax-size2 dst src) (ax-emit-rm (ax-pfx s) 0 (ax-reg-numo src) dst (ax-w s) false [ (if (= s 1) 132 133) ])))))
+    (_ (let s (ax-size2 dst src) (ax-emit-rm (ax-pfx s) 0 (ax-reg-numo src) dst (ax-w s) (ax-f8 src) [ (if (= s 1) 132 133) ])))))
 
 (defn ax-mov (dst src)
   (match src
     (OImm v (ax-mov-imm dst v))
     (OReg _ (match dst
-              (OReg _ (let s (ax-size2 dst src) (ax-emit-rm (ax-pfx s) 0 (ax-reg-numo src) dst (ax-w s) false [ (if (= s 1) 136 137) ])))
-              (OMem _ _ _ _ _ _ _ _ (let s (ax-size2 dst src) (ax-emit-rm (ax-pfx s) 0 (ax-reg-numo src) dst (ax-w s) false [ (if (= s 1) 136 137) ])))
+              (OReg _ (let s (ax-size2 dst src) (ax-emit-rm (ax-pfx s) 0 (ax-reg-numo src) dst (ax-w s) (ax-f8 src) [ (if (= s 1) 136 137) ])))
+              (OMem _ _ _ _ _ _ _ _ (let s (ax-size2 dst src) (ax-emit-rm (ax-pfx s) 0 (ax-reg-numo src) dst (ax-w s) (ax-f8 src) [ (if (= s 1) 136 137) ])))
               (_ (ax-fail "mov dst"))))
-    (OMem _ _ _ _ _ _ _ _ (let s (ax-size2 dst src) (ax-emit-rm (ax-pfx s) 0 (ax-reg-numo dst) src (ax-w s) false [ (if (= s 1) 138 139) ])))
+    (OMem _ _ _ _ _ _ _ _ (let s (ax-size2 dst src) (ax-emit-rm (ax-pfx s) 0 (ax-reg-numo dst) src (ax-w s) (ax-f8 dst) [ (if (= s 1) 138 139) ])))
     (_ (ax-fail "mov src"))))
 
 (defn ax-mov-imm (dst v)
@@ -461,15 +470,21 @@
 (defn ax-sse (pfx w ops-bytes dst src)
   (ax-emit-rm pfx 0 (ax-reg-numo dst) src w false ops-bytes))
 
-; VEX 2-byte encoder for the five AVX forms in the corpus (low regs, base low)
-(defn ax-vex2 (vvvv l pp opc reg rm)
-  (let _ (ax-b 197)
-    (let _ (ax-b (bit-or 128 (bit-or (shl (bit-and (- 15 vvvv) 15) 3) (bit-or (shl l 2) pp))))
-      (let _ (ax-b opc) (ax-vex-modrm reg rm)))))
+; VEX: 2-byte C5 when X/B/W/map allow it, else 3-byte C4 (GNU as does not swap operands)
+(defn ax-vl (o) (match o (OReg c (if (= (ax-reg-class c) 6) 1 0)) (_ 0)))
+(defn ax-vex (w l pp mm opc reg vvvv rm)
+  (let r (if (>= reg 8) 1 0)
+    (let xb (match rm (OReg c (if (>= (ax-reg-num c) 8) 1 0)) (OMem _ base index _ _ _ _ _ (+ (* 2 (if (>= index 8) 1 0)) (if (>= base 8) 1 0))) (_ 0))
+      (let x (shr xb 1) (let b (bit-and xb 1)
+        (let v4 (shl (bit-and (- 15 vvvv) 15) 3)
+          (let _ (if (and (= xb 0) (and (= w 0) (= mm 1)))
+                   (ax-b2 197 (bit-or (shl (- 1 r) 7) (bit-or v4 (bit-or (shl l 2) pp))))
+                   (ax-b3 196 (bit-or (shl (- 1 r) 7) (bit-or (shl (- 1 x) 6) (bit-or (shl (- 1 b) 5) mm))) (bit-or (shl w 7) (bit-or v4 (bit-or (shl l 2) pp)))))
+            (let _ (ax-b opc) (ax-vex-modrm reg rm)))))))))
 (defn ax-vex-modrm (reg rm)
   (match rm
     (OReg code (ax-b (bit-or 192 (bit-or (shl (bit-and reg 7) 3) (bit-and (ax-reg-num code) 7)))))
-    (OMem _ base _ _ disp _ _ _ (ax-emit-mem-base reg base -1 1 disp 0 ""))
+    (OMem _ base index scale disp kind sym _ (ax-emit-mem-modrm reg base index scale disp kind sym))
     (_ (ax-fail "vex rm"))))
 
 ; ---------------------------------------------------------------------------
@@ -516,12 +531,17 @@
       (ax-fail (str-concat "sse mnemonic " mnem)))))))))))))))))))))))))))
 
 (defn ax-encode-avx (mnem ops)
-  (let a (ax-nth ops 0) (let b (ax-nth ops 1)
-    (if (str-eq mnem "vmovdqu") (ax-vex2 0 1 2 111 (ax-reg-numo a) b)
-    (if (str-eq mnem "vpcmpeqb") (ax-vex2 (ax-reg-numo b) 1 1 116 (ax-reg-numo a) (ax-nth ops 2))
-    (if (str-eq mnem "vpmovmskb") (ax-vex2 0 1 1 215 (ax-reg-numo a) b)
-    (if (str-eq mnem "vpxor") (ax-vex2 (ax-reg-numo b) 0 1 239 (ax-reg-numo a) (ax-nth ops 2))
-      (ax-fail (str-concat "avx mnemonic " mnem)))))))))
+  (let a (ax-nth ops 0) (let b (ax-nth ops 1) (let c (ax-nth ops 2)
+    (if (str-eq mnem "vmovdqu")
+      (match a (OMem _ _ _ _ _ _ _ _ (ax-vex 0 (ax-vl b) 2 1 127 (ax-reg-numo b) 0 a)) (_ (ax-vex 0 (ax-vl a) 2 1 111 (ax-reg-numo a) 0 b)))
+    (if (str-eq mnem "vmovdqa")
+      (match a (OMem _ _ _ _ _ _ _ _ (ax-vex 0 (ax-vl b) 1 1 127 (ax-reg-numo b) 0 a)) (_ (ax-vex 0 (ax-vl a) 1 1 111 (ax-reg-numo a) 0 b)))
+    (if (str-eq mnem "vpcmpeqb") (ax-vex 0 (ax-vl a) 1 1 116 (ax-reg-numo a) (ax-reg-numo b) c)
+    (if (str-eq mnem "vpmovmskb") (ax-vex 0 (ax-vl b) 1 1 215 (ax-reg-numo a) 0 b)
+    (if (str-eq mnem "vpxor") (ax-vex 0 (ax-vl a) 1 1 239 (ax-reg-numo a) (ax-reg-numo b) c)
+    (if (str-eq mnem "vpor") (ax-vex 0 (ax-vl a) 1 1 235 (ax-reg-numo a) (ax-reg-numo b) c)
+    (if (str-eq mnem "vpand") (ax-vex 0 (ax-vl a) 1 1 219 (ax-reg-numo a) (ax-reg-numo b) c)
+      (ax-fail (str-concat "avx mnemonic " mnem)))))))))))))
 
 ; ---------------------------------------------------------------------------
 ; main dispatch
@@ -578,45 +598,34 @@
     (if (str-eq mnem "stosq") (if (= repf 1) (ax-b3 243 72 171) (ax-b2 72 171))
       (ax-encode-cc mnem ops a b)))))))))))))))))))))))))))))))))))))))))))))))))))
 
+; condition suffix -> cc (every alias GNU as accepts), -1 if none
+(def ax-ccmap (ffi-call "zyl_ref_new" (ffi-call "zyl_smap_new" 1000) 1000))
+(defn ax-cc-row (xs c) (match xs (Nil unit) (Cons h t (let _ (ffi-call "zyl_smap_put" (ax-getw ax-ccmap) h c 1000) (ax-cc-row t c)))))
+(defn ax-cc-init ()
+  (let _ (ax-cc-row [ "o" ] 0) (let _ (ax-cc-row [ "no" ] 1) (let _ (ax-cc-row [ "b" "c" "nae" ] 2) (let _ (ax-cc-row [ "ae" "nb" "nc" ] 3)
+  (let _ (ax-cc-row [ "e" "z" ] 4) (let _ (ax-cc-row [ "ne" "nz" ] 5) (let _ (ax-cc-row [ "be" "na" ] 6) (let _ (ax-cc-row [ "a" "nbe" ] 7)
+  (let _ (ax-cc-row [ "s" ] 8) (let _ (ax-cc-row [ "ns" ] 9) (let _ (ax-cc-row [ "p" "pe" ] 10) (let _ (ax-cc-row [ "np" "po" ] 11)
+  (let _ (ax-cc-row [ "l" "nge" ] 12) (let _ (ax-cc-row [ "ge" "nl" ] 13) (let _ (ax-cc-row [ "le" "ng" ] 14) (ax-cc-row [ "g" "nle" ] 15)))))))))))))))))
+(defn ax-cc-of (mnem pl)
+  (let n (ax-len mnem)
+    (if (<= n pl) -1 (ffi-call "zyl_smap_get_or" (ax-getw ax-ccmap) (ax-sub mnem pl (- n pl)) -1 1000))))
+(defn ax-cc-g (mnem pl) (ax-cc-of mnem pl))
+
 (defn ax-encode-cc (mnem ops a b)
-  (if (str-eq mnem "je") (ax-jcc 4 a)
-  (if (str-eq mnem "jne") (ax-jcc 5 a)
-  (if (str-eq mnem "jz") (ax-jcc 4 a)
-  (if (str-eq mnem "jnz") (ax-jcc 5 a)
-  (if (str-eq mnem "jg") (ax-jcc 15 a)
-  (if (str-eq mnem "jge") (ax-jcc 13 a)
-  (if (str-eq mnem "jl") (ax-jcc 12 a)
-  (if (str-eq mnem "jle") (ax-jcc 14 a)
-  (if (str-eq mnem "ja") (ax-jcc 7 a)
-  (if (str-eq mnem "jae") (ax-jcc 3 a)
-  (if (str-eq mnem "jb") (ax-jcc 2 a)
-  (if (str-eq mnem "jbe") (ax-jcc 6 a)
-  (if (str-eq mnem "js") (ax-jcc 8 a)
-  (if (str-eq mnem "jns") (ax-jcc 9 a)
-  (if (str-eq mnem "seta") (ax-setcc 7 a)
-  (if (str-eq mnem "setae") (ax-setcc 3 a)
-  (if (str-eq mnem "setb") (ax-setcc 2 a)
-  (if (str-eq mnem "setbe") (ax-setcc 6 a)
-  (if (str-eq mnem "sete") (ax-setcc 4 a)
-  (if (str-eq mnem "setg") (ax-setcc 15 a)
-  (if (str-eq mnem "setge") (ax-setcc 13 a)
-  (if (str-eq mnem "setl") (ax-setcc 12 a)
-  (if (str-eq mnem "setle") (ax-setcc 14 a)
-  (if (str-eq mnem "setne") (ax-setcc 5 a)
-  (if (str-eq mnem "setnp") (ax-setcc 11 a)
-  (if (str-eq mnem "setp") (ax-setcc 10 a)
-  (if (str-eq mnem "sets") (ax-setcc 8 a)
-  (if (str-eq mnem "cmovae") (ax-cmovcc 3 a b)
-  (if (str-eq mnem "cmovb") (ax-cmovcc 2 a b)
-  (if (str-eq mnem "cmove") (ax-cmovcc 4 a b)
-  (if (str-eq mnem "cmovz") (ax-cmovcc 4 a b)
-  (if (str-eq mnem "cmovne") (ax-cmovcc 5 a b)
-  (if (str-eq mnem "cmovs") (ax-cmovcc 8 a b)
+  (let jc (if (ax-starts-ci mnem 0 "j") (ax-cc-g mnem 1) -1)
+    (if (>= jc 0) (ax-jcc jc a)
+      (let sc (if (ax-starts-ci mnem 0 "set") (ax-cc-g mnem 3) -1)
+        (if (>= sc 0) (ax-setcc sc a)
+          (let mc (if (ax-starts-ci mnem 0 "cmov") (ax-cc-g mnem 4) -1)
+            (if (>= mc 0) (ax-cmovcc mc a b)
+              (ax-encode-cc2 mnem ops))))))))
+
+(defn ax-encode-cc2 (mnem ops)
   (if (or (str-eq mnem "addsd") (or (str-eq mnem "subsd") (or (str-eq mnem "mulsd") (or (str-eq mnem "divsd") (or (str-eq mnem "ucomisd") (or (str-eq mnem "cvtsi2sd") (or (str-eq mnem "cvttsd2si") (or (str-eq mnem "movq") (or (str-eq mnem "movsd") (or (str-eq mnem "movd") (or (str-eq mnem "pxor") (or (str-eq mnem "pcmpeqb") (or (str-eq mnem "pmovmskb") (or (str-eq mnem "movdqu") (or (str-eq mnem "movdqa") (or (str-eq mnem "pshufd") (or (str-eq mnem "pslldq") (or (str-eq mnem "punpcklbw") (or (str-eq mnem "punpcklwd") (or (str-eq mnem "aesenc") (or (str-eq mnem "aesenclast") (str-eq mnem "aeskeygenassist"))))))))))))))))))))))
     (ax-encode-sse mnem ops)
-  (if (or (str-eq mnem "vmovdqu") (or (str-eq mnem "vpcmpeqb") (or (str-eq mnem "vpmovmskb") (str-eq mnem "vpxor"))))
+  (if (or (str-eq mnem "vmovdqu") (or (str-eq mnem "vmovdqa") (or (str-eq mnem "vpcmpeqb") (or (str-eq mnem "vpmovmskb") (or (str-eq mnem "vpxor") (or (str-eq mnem "vpor") (str-eq mnem "vpand")))))))
     (ax-encode-avx mnem ops)
-    (ax-fail (str-concat "mnemonic " mnem))))))))))))))))))))))))))))))))))))))
+    (ax-fail (str-concat "mnemonic " mnem)))))
 
 ; ---------------------------------------------------------------------------
 ; line & file processing
@@ -712,7 +721,7 @@
           (if (str-eq d ".quad") (ax-le (ax-parse-imm rest) 8)
           (if (str-eq d ".long") (ax-le (ax-parse-imm rest) 4)
           (if (str-eq d ".byte") (ax-b (bit-and (ax-parse-imm rest) 255))
-          (if (str-eq d ".string") (ax-emit-string rest)
+          (if (or (str-eq d ".string") (str-eq d ".asciz")) (ax-emit-string rest)
           (if (str-eq d ".ascii") (ax-emit-ascii rest)
             unit)))))))))))))))))) ; .globl/.weak/.file/.intel_syntax/.type/.size ignored
 
@@ -724,7 +733,7 @@
 (defn ax-string-esc-noz (s i end) (ax-string-esc s i end))
 
 (defn ax-section (rest)
-  (if (ax-starts-ci rest 0 ".rodata") (ax-set-sec 1)
+  (if (or (ax-starts-ci rest 0 ".rodata") (ax-starts-ci rest 0 ".zyl_build")) (ax-set-sec 1)
   (if (ax-starts-ci rest 0 ".tbss") (ax-set-sec 4)
   (if (ax-starts-ci rest 0 ".tdata") (ax-set-sec 4)
   (if (ax-starts-ci rest 0 ".bss") (ax-set-sec 3)
@@ -784,7 +793,7 @@
 (defn ax-each-line (src i n handler)
   (if (>= i n) unit
     (let e2 (ax-find-nl src i n)
-      (let _ (handler (ax-sub src i (- e2 i)))
+      (let _ (handler (ffi-call "zyl_view_copy" src i (- e2 i) 1000))
         (ax-each-line src (+ e2 1) n handler)))))
 
 (defn ax-scan-globl-line (line0)
@@ -793,10 +802,21 @@
       (if (ax-starts-ci line 0 ".globl ")
         (let _ (ffi-call "zyl_smap_put" (ax-getw ax-globl) (ax-trim (ax-sub line 7 (- n 7))) 1 1000) unit)
         (if (ax-starts-ci line 0 ".weak ")
-          (let _ (ffi-call "zyl_smap_put" (ax-getw ax-weak) (ax-trim (ax-sub line 6 (- n 6))) 1 1000) unit)
+          (ax-add-weak (ax-trim (ax-sub line 6 (- n 6))))
           unit)))))
 
-(defn ax-scan-globls (src) (ax-each-line src 0 (ax-len src) ax-scan-globl-line))
+(defn ax-vstarts (s n j p k pn) (if (>= k pn) true (if (>= (+ j k) n) false (if (= (ax-vch s n (+ j k)) (ax-ch p k)) (ax-vstarts s n j p (+ k 1) pn) false))))
+(defn ax-vskip (s n i e) (if (>= i e) i (if (ax-ws (ax-vch s n i)) (ax-vskip s n (+ i 1) e) i)))
+; only .globl/.weak lines are cut out of the source
+(defn ax-scan-l (src i n)
+  (if (>= i n) unit
+    (let e (ax-find-nl src i n)
+      (let j (ax-vskip src n i e)
+        (let _ (if (and (< j e) (= (ax-vch src n j) 46))
+                 (if (or (ax-vstarts src n j ".globl " 0 7) (ax-vstarts src n j ".weak " 0 6)) (ax-scan-globl-line (ffi-call "zyl_view_copy" src j (- e j) 1000)) unit)
+                 unit)
+          (ax-scan-l src (+ e 1) n))))))
+(defn ax-scan-globls (src) (ax-scan-l src 0 (ax-len src)))
 
 (defn ax-assemble-file (src fileidx)
   (let _ (ffi-call "zyl_ref_set" ax-file fileidx 1000)
@@ -823,8 +843,9 @@
                   (let _ (ffi-call "zyl_ref_set" ax-tlsoff (ffi-call "zyl_smap_new" 1000) 1000)
                     (let _ (ffi-call "zyl_ref_set" ax-globl (ffi-call "zyl_smap_new" 1000) 1000)
                       (let _ (ffi-call "zyl_ref_set" ax-weak (ffi-call "zyl_smap_new" 1000) 1000)
+                      (let _ (ffi-call "zyl_ref_set" ax-weaklist (ffi-call "zyl_wvec_new" 1000) 1000)
                         (let _ (ffi-call "zyl_ref_set" ax-tlsalign 1 1000)
-                          (ffi-call "zyl_ref_set" ax-secactive 1 1000))))))))))))))))))
+                          (ffi-call "zyl_ref_set" ax-secactive 1 1000)))))))))))))))))))
 
 ; ----- getters for elf_link -----
 (defn ax-buf (sec) (ax-secbuf-n sec))
@@ -837,7 +858,7 @@
 
 ; ----- debug: assemble one file, dump .text bytes + reloc (offset kind) list -----
 (defn ax-reloc-line (acc r)
-  (match r (Reloc _ sec off kind _ _
+  (match r (Reloc _ sec off kind _ _ _
     (if (= sec 0) (str-concat acc (str-concat (ffi-call "zyl_int_text" off 1000) (str-concat " " (str-concat (ffi-call "zyl_int_text" kind 1000) "\n")))) acc))))
 
 (defn ax-reloc-dump (v i n acc) (if (>= i n) acc (ax-reloc-dump v (+ i 1) n (ax-reloc-line acc (ffi-call "zyl_wvec_get" v i 1000)))))
@@ -854,3 +875,51 @@
                   (let _ (file-write out (ax-reloc-dump (ax-relocs-vec) 0 (ffi-call "zyl_wvec_len" (ax-relocs-vec) 1000) ""))
                     (file-close out)))))))))))
 
+
+; ----- cached-runtime loading (compiler/elf_link) -----
+(defn ax-add-weak (name)
+  (if (ffi-call "zyl_smap_has" (ax-getw ax-weak) name 1000) unit
+    (let _ (ffi-call "zyl_smap_put" (ax-getw ax-weak) name 1 1000)
+      (let _ (ffi-call "zyl_wvec_push" (ax-getw ax-weaklist) name 1000) unit))))
+(defn ax-weak-vec () (ax-getw ax-weaklist))
+(defn ax-set-size (sec n) (ax-cur-set sec n))
+(defn ax-set-tls-align (a) (let _ (ffi-call "zyl_ref_set" ax-tlsalign a 1000) unit))
+(defn ax-add-reloc (r) (let _ (ffi-call "zyl_wvec_push" (ax-getw ax-relocs) r 1000) unit))
+(defn ax-add-sym (d) (let _ (ffi-call "zyl_wvec_push" (ax-getw ax-syms) d 1000) unit))
+(defn ax-add-tls (name off) (let _ (ffi-call "zyl_smap_put" (ax-getw ax-tlsoff) name off 1000) unit))
+
+; debug: assemble one file line by line, listing "offset line" for each instruction
+(defn ax-instr-line-p (t) (let n (ax-len t) (and (> n 0) (and (not (= (ax-ch t 0) 46)) (not (= (ax-ch t (- n 1)) 58))))))
+(defn ax-list-l (src i n acc)
+  (if (>= i n) acc
+    (let e (ax-find-nl src i n)
+      (let line (ffi-call "zyl_view_copy" src i (- e i) 1000)
+        (let t (ax-trim line)
+          (let _ (if (ax-instr-line-p t) (let _ (buf-append acc (str-concat (ffi-call "zyl_int_text" (ax-size 0) 1000) (str-concat " " (str-concat t "\n")))) unit) unit)
+            (let _ (ax-line line) (ax-list-l src (+ e 1) n acc))))))))
+(defn ax-dump-list (srcpath binout relout listout)
+  (let fd (file-open srcpath "r")
+    (let text (file-read fd 20000000)
+      (let _ (file-close fd)
+        (let _ (ax-reset (+ (str-length text) 16))
+          (let _ (ax-scan-globls text)
+            (let _ (ffi-call "zyl_ref_set" ax-file 0 1000)
+              (let _ (ax-set-sec 0)
+                (let lst (buf-str (ax-list-l text 0 (ax-len text) (buf-new (ax-getw ax-arena) (+ 1000000 (* 2 (str-length text))))))
+                  (let _ (ffi-call "zyl_bytebuf_write_exec" binout (ax-buf 0) (ax-size 0) 1000)
+                    (let out (file-open relout "w")
+                      (let _ (file-write out (ax-reloc-dump (ax-relocs-vec) 0 (ffi-call "zyl_wvec_len" (ax-relocs-vec) 1000) ""))
+                        (let _ (file-close out)
+                          (let o2 (file-open listout "w")
+                            (let _ (file-write o2 lst) (file-close o2))))))))))))))))
+
+; one line's machine code as lowercase hex (symbol fields zeroed); for tests
+(defn ax-hex-l (b i n acc) (if (>= i n) acc (ax-hex-l b (+ i 1) n (str-concat acc (ax-hex2 (ax-load8 b i))))))
+(defn ax-hexd (d) (if (< d 10) (ffi-call "zyl_cstr_from_byte" (+ 48 d) 1000) (ffi-call "zyl_cstr_from_byte" (+ 87 d) 1000)))
+(defn ax-hex2 (v) (str-concat (ax-hexd (shr v 4)) (ax-hexd (bit-and v 15))))
+(defn ax-encode-hex (line)
+  (let _ (ax-reset 4096)
+    (let _ (ffi-call "zyl_ref_set" ax-file 0 1000)
+      (let _ (ax-set-sec 0)
+        (let _ (ax-line line)
+          (ax-hex-l (ax-buf 0) 0 (ax-size 0) ""))))))

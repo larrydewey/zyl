@@ -202,6 +202,12 @@ else
     die "FIXED POINT BROKEN: stage2 and stage3 outputs differ"
 fi
 
+# ── the runtime cache: rt.s + start.s assembled once for the Zyl self-link ──
+step "Runtime cache (rt.zo)"
+timeout 120 "${OUT}/stage2.bin" rt-cache >/dev/null || die "rt-cache failed"
+[ -f "${OUT}/rt.zo" ] || die "rt-cache did not write ${OUT}/rt.zo"
+ok "rt.zo written"
+
 # ── smoke: stage2 CLI compiles, links and runs a program ─────────────────
 step "Smoke: stage2 CLI compiles + links + runs"
 cat > "${OUT}/smoke.zyl" <<'SMOKE_EOF'

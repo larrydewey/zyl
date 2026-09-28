@@ -47,7 +47,7 @@
 (defn el-collect-got (v i n)
   (if (>= i n) unit
     (let r (ffi-call "zyl_wvec_get" v i 1000)
-      (let _ (match r (Reloc _ _ _ kind sym _ (if (= kind 3) (let _ (el-got-slot sym) unit) unit)))
+      (let _ (match r (Reloc _ _ _ kind sym _ tsec (if (and (= kind 3) (< tsec 0)) (let _ (el-got-slot sym) unit) unit)))
         (el-collect-got v (+ i 1) n)))))
 
 ; ---- symbol VA table ----
@@ -75,8 +75,11 @@
 (defn el-w32sec (sec off v) (let _ (el-wle (ax-buf sec) off v 4) unit))
 
 (defn el-patch1 (r gotva)
-  (match r (Reloc file sec off kind sym addend
+  (match r (Reloc file sec off kind sym addend tsec
     (let rva (+ (el-secva-n sec) off)
+      (if (>= tsec 0)
+        (if (= kind 2) (el-w32sec sec off (- addend (ffi-call "zyl_ref_get" el-tpsize 1000)))
+          (el-w32sec sec off (- (+ (el-secva-n tsec) addend) rva)))
       (if (= kind 1)
         (let sv (el-resolve file sym)
           (if (< sv 0)
@@ -88,7 +91,7 @@
           (el-w32sec sec off (- (ax-tls-off sym) (ffi-call "zyl_ref_get" el-tpsize 1000)))
           (if (= kind 3)
             (el-w32sec sec off (- (+ (+ gotva (* (el-got-slot sym) 8)) addend) rva))
-            unit)))))))
+            unit))))))))
 
 (defn el-patch-all (v i n gotva) (if (>= i n) unit (let _ (el-patch1 (ffi-call "zyl_wvec_get" v i 1000) gotva) (el-patch-all v (+ i 1) n gotva))))
 
@@ -137,17 +140,172 @@
               (let _ (ffi-call "zyl_ref_set" el-lsyms lv 1000)
                 (ffi-call "zyl_ref_set" el-secva (ffi-call "zyl_words_new" (el-getw el-arena) 8 1000) 1000)))))))))))
 
-; ---- driver: assemble the three inputs, lay out, resolve, write executable ----
-(defn el-link (progpath rtpath startpath outpath)
-  (let prog (el-read progpath)
-    (let rt (el-read rtpath)
-      (let start (el-read startpath)
-        (let bound (+ 64 (+ (str-length prog) (+ (str-length rt) (str-length start))))
-          (let _ (ax-reset bound)
-            (let _ (el-init)
-              (let _ (ax-scan-globls prog) (let _ (ax-scan-globls rt) (let _ (ax-scan-globls start)
-              (let _ (ax-assemble-file prog 0) (let _ (ax-assemble-file rt 1) (let _ (ax-assemble-file start 2)
-                (el-finish outpath))))))))))))))
+; ---- the runtime cache (rt.zo): rt.s + start.s assembled once, relocations pre-resolved ----
+; Layout: "ZYLRTO1\\0", hash (136 bytes, NUL-padded), 12 header words
+; {s0 s1 s2 s3 s4 tlsalign nglob nrel nweak ntls strbase total}, sections
+; (8-padded), records, then NUL-terminated names. All words little-endian.
+
+(defn el-hdr-size () 240)
+(defn el-pad8 (n) (el-align n 8))
+(defn el-mask40 () 1099511627775)
+
+(def el-rc (ffi-call "zyl_ref_new" 0 1000))   ; record cursor
+(def el-sc (ffi-call "zyl_ref_new" 0 1000))   ; string cursor
+
+(defn el-rd (b off) (el-rd-l b off 7 0))
+(defn el-rd-l (b off i acc) (if (< i 0) acc (el-rd-l b off (- i 1) (bit-or (shl acc 8) (el-ld8 b (+ off i))))))
+
+; the cache key: BLAKE3 of rt.s then of start.s
+(defn el-rt-hash (rtpath startpath)
+  (str-concat (ffi-call "zyl_blake3_file_hex" (el-getw el-arena) rtpath 32 1000)
+    (ffi-call "zyl_blake3_file_hex" (el-getw el-arena) startpath 32 1000)))
+
+; copy n bytes of src (from soff) into dst at doff
+(defn el-copy2 (dst doff src soff n i) (if (>= i n) unit (let _ (el-w8 dst (+ doff i) (el-ld8 src (+ soff i))) (el-copy2 dst doff src soff n (+ i 1)))))
+
+(defn el-wstr-l (b s n at i) (if (>= i n) (let _ (el-w8 b (+ at n) 0) (+ at (+ n 1))) (let _ (el-w8 b (+ at i) (ffi-call "zyl_view_byte" s 0 n i 1000)) (el-wstr-l b s n at (+ i 1)))))
+
+; a name into the string area; its offset (-1 for "")
+(defn el-put-name (b s)
+  (let n (str-length s)
+    (if (= n 0) -1
+      (let at (ffi-call "zyl_ref_get" el-sc 1000)
+        (let _ (ffi-call "zyl_ref_set" el-sc (el-wstr-l b s n at 0) 1000) at)))))
+
+(defn el-put-word (b v)
+  (let at (ffi-call "zyl_ref_get" el-rc 1000)
+    (let _ (el-wle b at v 8) (let _ (ffi-call "zyl_ref_set" el-rc (+ at 8) 1000) unit))))
+
+; pre-resolve the runtime's relocations: same-section pc refs are patched now, the rest keep a (section, offset) target
+(defn el-pre-reloc (r kept)
+  (match r (Reloc file sec off kind sym addend _
+    (if (= kind 1)
+      (let v (el-resolve file sym)
+        (if (< v 0) (let _ (ffi-call "zyl_wvec_push" kept r 1000) unit)
+          (let t (shr v 40) (let o (bit-and v (el-mask40))
+            (if (= t sec) (el-w32sec sec off (- (+ o addend) off))
+              (let _ (ffi-call "zyl_wvec_push" kept (make-Reloc file sec off 1 "" (+ o addend) t) 1000) unit))))))
+      (if (= kind 2)
+        (let tl (ax-tls-off sym)
+          (if (< tl 0) (let _ (ffi-call "zyl_wvec_push" kept r 1000) unit)
+            (let _ (ffi-call "zyl_wvec_push" kept (make-Reloc file sec off 2 "" tl 4) 1000) unit)))
+        (let _ (ffi-call "zyl_wvec_push" kept r 1000) unit))))))
+
+(defn el-pre-all (v i n kept) (if (>= i n) unit (let _ (el-pre-reloc (ffi-call "zyl_wvec_get" v i 1000) kept) (el-pre-all v (+ i 1) n kept))))
+
+; exported globals and every thread-local
+(defn el-split-syms (v i n globs tls)
+  (if (>= i n) unit
+    (let _ (match (ffi-call "zyl_wvec_get" v i 1000) (SymDef g f name sec off
+              (let _ (if (= g 1) (let _ (ffi-call "zyl_wvec_push" globs (make-SymDef g f name sec off) 1000) unit) unit)
+                (if (= sec 4) (let _ (ffi-call "zyl_wvec_push" tls (make-SymDef g f name sec off) 1000) unit) unit))))
+      (el-split-syms v (+ i 1) n globs tls))))
+
+(defn el-sym-names (v i n acc) (if (>= i n) acc (el-sym-names v (+ i 1) n (+ acc (+ 1 (match (ffi-call "zyl_wvec_get" v i 1000) (SymDef _ _ name _ _ (str-length name))))))))
+(defn el-rel-names (v i n acc) (if (>= i n) acc (el-rel-names v (+ i 1) n (+ acc (+ 1 (match (ffi-call "zyl_wvec_get" v i 1000) (Reloc _ _ _ _ sym _ _ (str-length sym))))))))
+(defn el-str-names (v i n acc) (if (>= i n) acc (el-str-names v (+ i 1) n (+ acc (+ 1 (str-length (ffi-call "zyl_wvec_get" v i 1000)))))))
+
+(defn el-w-globs (b v i n) (if (>= i n) unit (let _ (match (ffi-call "zyl_wvec_get" v i 1000) (SymDef _ _ name sec off (let _ (el-put-word b (el-put-name b name)) (let _ (el-put-word b sec) (el-put-word b off))))) (el-w-globs b v (+ i 1) n))))
+(defn el-w-tls (b v i n) (if (>= i n) unit (let _ (match (ffi-call "zyl_wvec_get" v i 1000) (SymDef _ _ name _ off (let _ (el-put-word b (el-put-name b name)) (el-put-word b off)))) (el-w-tls b v (+ i 1) n))))
+(defn el-w-weak (b v i n) (if (>= i n) unit (let _ (el-put-word b (el-put-name b (ffi-call "zyl_wvec_get" v i 1000))) (el-w-weak b v (+ i 1) n))))
+(defn el-w-rels (b v i n)
+  (if (>= i n) unit
+    (let _ (match (ffi-call "zyl_wvec_get" v i 1000) (Reloc _ sec off kind sym addend tsec
+              (let _ (el-put-word b sec) (let _ (el-put-word b off) (let _ (el-put-word b kind) (let _ (el-put-word b tsec) (let _ (el-put-word b addend) (el-put-word b (el-put-name b sym)))))))))
+      (el-w-rels b v (+ i 1) n))))
+
+(defn el-w-bytes (b at s i n) (if (>= i n) unit (let _ (el-w8 b (+ at i) (ffi-call "zyl_view_byte" s 0 n i 1000)) (el-w-bytes b at s (+ i 1) n))))
+
+; assemble rt + start and serialize them into a blob
+(defn el-build-blob (rtpath startpath hash)
+  (let rt (el-read rtpath)
+    (let start (el-read startpath)
+      (let _ (ax-reset (+ 64 (+ (str-length rt) (str-length start))))
+        (let _ (el-init)
+          (let _ (ax-scan-globls rt) (let _ (ax-scan-globls start)
+          (let _ (ax-assemble-file rt 1) (let _ (ax-assemble-file start 2)
+            (let _ (el-secva-set 0 0) (let _ (el-secva-set 1 (shl 1 40)) (let _ (el-secva-set 2 (shl 2 40)) (let _ (el-secva-set 3 (shl 3 40)) (let _ (el-secva-set 4 (shl 4 40))
+              (let _ (el-build-syms (ax-syms-vec) 0 (ffi-call "zyl_wvec_len" (ax-syms-vec) 1000))
+                (let kept (ffi-call "zyl_wvec_new" 1000)
+                  (let _ (el-pre-all (ax-relocs-vec) 0 (ffi-call "zyl_wvec_len" (ax-relocs-vec) 1000) kept)
+                    (let globs (ffi-call "zyl_wvec_new" 1000)
+                      (let tls (ffi-call "zyl_wvec_new" 1000)
+                        (let _ (el-split-syms (ax-syms-vec) 0 (ffi-call "zyl_wvec_len" (ax-syms-vec) 1000) globs tls)
+                          (el-serialize hash kept globs tls)))))))))))))))))))))
+
+(defn el-serialize (hash kept globs tls)
+  (let ng (ffi-call "zyl_wvec_len" globs 1000) (let nr (ffi-call "zyl_wvec_len" kept 1000)
+  (let weak (ax-weak-vec) (let nw (ffi-call "zyl_wvec_len" weak 1000) (let nt (ffi-call "zyl_wvec_len" tls 1000)
+    (let s0 (ax-size 0) (let s1 (ax-size 1) (let s2 (ax-size 2)
+      (let t0 (el-hdr-size) (let t1 (+ t0 (el-pad8 s0)) (let t2 (+ t1 (el-pad8 s1)) (let t3 (+ t2 (el-pad8 s2))
+        (let strbase (+ t3 (* 8 (+ (* 3 ng) (+ (* 6 nr) (+ nw (* 2 nt))))))
+          (let strsz (+ (el-sym-names globs 0 ng 0) (+ (el-rel-names kept 0 nr 0) (+ (el-str-names weak 0 nw 0) (el-sym-names tls 0 nt 0))))
+            (let total (+ strbase strsz)
+              (let b (ffi-call "zyl_bytebuf_new" 1 total 1000)
+                (let _ (el-w-bytes b 0 "ZYLRTO1" 0 7)
+                  (let _ (el-w-bytes b 8 hash 0 (str-length hash))
+                    (let _ (ffi-call "zyl_ref_set" el-rc 144 1000)
+                      (let _ (el-put-word b s0) (let _ (el-put-word b s1) (let _ (el-put-word b s2) (let _ (el-put-word b (ax-size 3)) (let _ (el-put-word b (ax-size 4))
+                      (let _ (el-put-word b (ax-tls-align)) (let _ (el-put-word b ng) (let _ (el-put-word b nr) (let _ (el-put-word b nw) (let _ (el-put-word b nt)
+                      (let _ (el-put-word b strbase) (let _ (el-put-word b total)
+                        (let _ (el-copy2 b t0 (ax-buf 0) 0 s0 0) (let _ (el-copy2 b t1 (ax-buf 1) 0 s1 0) (let _ (el-copy2 b t2 (ax-buf 2) 0 s2 0)
+                          (let _ (ffi-call "zyl_ref_set" el-rc t3 1000)
+                            (let _ (ffi-call "zyl_ref_set" el-sc strbase 1000)
+                              (let _ (el-w-globs b globs 0 ng) (let _ (el-w-rels b kept 0 nr) (let _ (el-w-weak b weak 0 nw) (let _ (el-w-tls b tls 0 nt)
+                                b)))))))))))))))))))))))))))))))))))))))))
+
+; a cached blob whose key matches and that is whole, else 0
+(defn el-cstr (b off) (if (< off 0) "" (ffi-call "zyl_cstr_of_word" (+ (bytebuf-ptr b) off) 1000)))
+
+(defn el-blob-ok (b hash)
+  (let n (bytebuf-len b)
+    (and (>= n (el-hdr-size))
+      (and (str-eq (el-cstr b 0) "ZYLRTO1")
+        (and (str-eq (el-cstr b 8) hash) (= (el-rd b 232) n))))))
+
+(defn el-load-globs (b at i n) (if (>= i n) at (let _ (ax-add-sym (make-SymDef 1 1 (el-cstr b (el-rd b at)) (el-rd b (+ at 8)) (el-rd b (+ at 16)))) (el-load-globs b (+ at 24) (+ i 1) n))))
+(defn el-load-rels (b at i n)
+  (if (>= i n) at
+    (let _ (ax-add-reloc (make-Reloc 1 (el-rd b at) (el-rd b (+ at 8)) (el-rd b (+ at 16)) (el-cstr b (el-rd b (+ at 40))) (el-rd b (+ at 32)) (el-rd b (+ at 24))))
+      (el-load-rels b (+ at 48) (+ i 1) n))))
+(defn el-load-weak (b at i n) (if (>= i n) at (let _ (ax-add-weak (el-cstr b (el-rd b at))) (el-load-weak b (+ at 8) (+ i 1) n))))
+(defn el-load-tls (b at i n) (if (>= i n) at (let _ (ax-add-tls (el-cstr b (el-rd b at)) (el-rd b (+ at 8))) (el-load-tls b (+ at 16) (+ i 1) n))))
+
+(defn el-load-sec (b sec off n) (if (= n 0) unit (let _ (bytebuf-append (ax-buf sec) (byteslice b off n)) (ax-set-size sec n))))
+
+; the blob into the assembler's state, ahead of the program's own sections
+(defn el-load-blob (b proglen)
+  (let s0 (el-rd b 144) (let s1 (el-rd b 152) (let s2 (el-rd b 160)
+    (let t1 (+ (el-hdr-size) (el-pad8 s0)) (let t2 (+ t1 (el-pad8 s1)) (let t3 (+ t2 (el-pad8 s2))
+      (let _ (ax-reset (+ 64 (+ proglen (+ s0 (+ s1 s2)))))
+        (let _ (el-init)
+          (let _ (el-load-sec b 0 (el-hdr-size) s0) (let _ (el-load-sec b 1 t1 s1) (let _ (el-load-sec b 2 t2 s2)
+          (let _ (ax-set-size 3 (el-rd b 168)) (let _ (ax-set-size 4 (el-rd b 176)) (let _ (ax-set-tls-align (el-rd b 184))
+            (let a1 (el-load-globs b t3 0 (el-rd b 192))
+              (let a2 (el-load-rels b a1 0 (el-rd b 200))
+                (let a3 (el-load-weak b a2 0 (el-rd b 208))
+                  (let _ (el-load-tls b a3 0 (el-rd b 216)) unit)))))))))))))))))))
+
+; the cached runtime blob, rebuilt (and rewritten, best effort) when missing, torn or stale
+(defn el-runtime-blob (rtpath startpath zopath)
+  (let hash (el-rt-hash rtpath startpath)
+    (let c (if (ffi-call "zyl_path_exists" zopath 1000) (ffi-call "zyl_bytebuf_read_file" zopath 1000) (ffi-call "zyl_bytebuf_new" 1 1 1000))
+      (if (el-blob-ok c hash) c
+        (let b (el-build-blob rtpath startpath hash)
+          (let _ (ffi-call "zyl_bytebuf_write_exec" zopath b (bytebuf-cap b) 1000) b))))))
+
+; `zyl rt-cache`: (re)write the bundle's rt.zo
+(defn el-rt-cache (rtpath startpath zopath)
+  (let _b (el-runtime-blob rtpath startpath zopath) (if (el-blob-ok (ffi-call "zyl_bytebuf_read_file" zopath 1000) (el-rt-hash rtpath startpath)) 0 1)))
+
+; ---- driver: the cached runtime plus the program's own assembly ----
+(defn el-link (progpath rtpath startpath zopath outpath)
+  (let blob (el-runtime-blob rtpath startpath zopath)
+    (let prog (el-read progpath)
+      (let _ (el-load-blob blob (str-length prog))
+        (let _ (ax-scan-globls prog)
+          (let _ (ax-assemble-file prog 0)
+            (el-finish outpath)))))))
 
 (defn el-finish (outpath)
   (let rv (ax-relocs-vec)
