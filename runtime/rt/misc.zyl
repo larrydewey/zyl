@@ -1,5 +1,6 @@
 ; Raw memory for stdlib/allocator, the header-less str-append path, environment lookups.
 (use base)
+(use thread)
 (use heap)
 
 (extern "getenv" (Int) Int)
@@ -9,8 +10,12 @@
 
 (defn rt-note (msg) (let _ (ffi-call "write" 2 msg (rt-strlen (rt-w msg)) 1) 0))
 
-(defn zyl_mem_alloc (size) (zyl_rt_malloc size))
-(defn zyl_mem_free (ptr) (let _ (zyl_rt_free ptr) 0))
+; alloc-malloc memory may be handed to foreign C that free()s it: libc's allocator when hosted, the runtime's otherwise.
+(defn zyl_mem_alloc (size)
+  (let f (ffi-call "%fn-weak" "malloc" 1) (if (and (zyl_rt_hosted_p) (> f 0)) (ffi-call "%call1" f size 1) (zyl_rt_malloc size))))
+
+(defn zyl_mem_free (ptr)
+  (let f (ffi-call "%fn-weak" "free" 1) (let _ (if (and (zyl_rt_hosted_p) (> f 0)) (ffi-call "%call1" f ptr 1) (zyl_rt_free ptr)) 0)))
 (defn zyl_mem_read (ptr) (if (= ptr 0) (rt-note "zyl: mem-read: null pointer\n") (rt-ld64 ptr)))
 (defn zyl_mem_write (ptr value) (if (= ptr 0) (let _ (rt-note "zyl: mem-write: null pointer\n") value) (let _ (rt-st64 ptr value) value)))
 
