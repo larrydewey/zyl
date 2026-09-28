@@ -91,13 +91,8 @@ long long zyl_cstr_byte_at(long long ptr, long long i);
 
 /* Region-specific arena allocation wrappers for codegen. */
 void zyl_ensure_arenas(void);
-long long zyl_zeroize(long long addr, long long len);
-long long zyl_random_fill(long long addr, long long len);
-long long zyl_random_words(long long base, long long n);
 long long zyl_cpuid_features(void);
 long long zyl_aesni_available(void);
-long long zyl_aes_encrypt_block(long long keybase, long long keybytes,
-                                long long inbase, long long outbase);
 
 /* CLI helpers. */
 long long zyl_system_cmd(long long cmd);
@@ -382,5 +377,11 @@ long long zyl_str_append_scan(long long dst, long long src, long long cap);
 long long zyl_f_parse(long long text);
 long long zyl_f_text(long long bits);
 long long zyl_f_text_r(long long bits);
+
+long long zyl_zeroize(long long addr, long long len);
+long long zyl_random_fill(long long addr, long long len);
+long long zyl_random_words(long long base, long long n);
+long long zyl_aes_encrypt_block(long long keybase, long long keybytes,
+                                long long inbase, long long outbase);
 
 #endif

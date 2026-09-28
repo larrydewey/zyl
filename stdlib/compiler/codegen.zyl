@@ -2279,7 +2279,7 @@
 ;; RAW RUNTIME PRIMITIVES (runtime module only, docs/runtime-in-zyl-design.md)
 ;; ===========================================================================
 
-; Primitive kind, or -1: loads 0-3, stores 4-7, %word 8, %str 9, SSE2 10-13, AVX2 14-17, %ctz 18, cpuid 19-22, %xgetbv 23, %global 24, %tls-get/set 25/26, %v128-diff-mask 27, %cas 28, %fetch-add 29, %xchg 30, %fence 31, %f64/%f64-bits 32/33, %tls 34, int-float 35/36; %syscallK lowers to stubs.
+; Primitive kind, or -1: loads 0-3, stores 4-7, %word 8, %str 9, SSE2 10-13, AVX2 14-17, %ctz 18, cpuid 19-22, %xgetbv 23, %global 24, %tls-get/set 25/26, %v128-diff-mask 27, %cas 28, %fetch-add 29, %xchg 30, %fence 31, %f64/%f64-bits 32/33, %tls 34, int-float 35/36, AES-NI 37-41; %syscallK lowers to stubs.
 (defn cg-raw-kind (sym)
   (if (not (rt-prim-p sym)) -1 (cg-raw-kind-in sym cg-raw-names 0)))
 
@@ -2292,7 +2292,8 @@
   (Cons "%ctz" (Cons "%cpuid-eax" (Cons "%cpuid-ebx" (Cons "%cpuid-ecx" (Cons "%cpuid-edx" (Cons "%xgetbv"
   (Cons "%global" (Cons "%tls-get" (Cons "%tls-set" (Cons "%v128-diff-mask"
   (Cons "%cas" (Cons "%fetch-add" (Cons "%xchg" (Cons "%fence"
-  (Cons "%f64" (Cons "%f64-bits" (Cons "%tls" (Cons "%f64-of-int" (Cons "%f64-to-int" Nil))))))))))))))))))))))))))))))))))))))
+  (Cons "%f64" (Cons "%f64-bits" (Cons "%tls" (Cons "%f64-of-int" (Cons "%f64-to-int"
+  (Cons "%aes-enc" (Cons "%aes-enclast" (Cons "%v128-xor" (Cons "%aes-expand-128" (Cons "%aes-expand-256" Nil)))))))))))))))))))))))))))))))))))))))))))
 
 (defn cg-raw-kind-in (sym names i)
   (match names
@@ -2330,12 +2331,60 @@
   (if (= kind 31) (Cons "    mfence" (Cons "    xor eax, eax" Nil))
   (if (= kind 35) (Cons "    cvtsi2sd xmm0, rdx" (Cons "    movq rax, xmm0" Nil))
   (if (= kind 36) (Cons "    movq xmm0, rdx" (Cons "    cvttsd2si rax, xmm0" Nil))
+  (if (and (>= kind 37) (< kind 40)) (cg-aes-round-lines kind)
+  (if (= kind 40) (cg-aes-128-lines)
+  (if (= kind 41) (cg-aes-256-lines)
     (Cons "    mov eax, edx" (Cons "    mov r11, rbx" (Cons "    cpuid"
       (Cons (if (= kind 19) "    mov eax, eax" (if (= kind 20) "    mov eax, ebx" (if (= kind 21) "    mov eax, ecx" "    mov eax, edx")))
-      (Cons "    mov rbx, r11" Nil))))))))))))))))))))))))))))))))
+      (Cons "    mov rbx, r11" Nil)))))))))))))))))))))))))))))))))))
 
 (defn cg-raw-arity (kind)
-  (if (< kind 4) 1 (if (< kind 8) 2 (if (< kind 11) 1 (if (< kind 14) 2 (if (= kind 14) 1 (if (< kind 18) 2 (if (= kind 18) 1 (if (< kind 23) 2 (if (= kind 23) 0 (if (< kind 28) 2 (if (= kind 28) 3 (if (< kind 31) 2 (if (< kind 35) 0 1))))))))))))))
+  (if (< kind 4) 1 (if (< kind 8) 2 (if (< kind 11) 1 (if (< kind 14) 2 (if (= kind 14) 1 (if (< kind 18) 2 (if (= kind 18) 1 (if (< kind 23) 2 (if (= kind 23) 0 (if (< kind 28) 2 (if (= kind 28) 3 (if (< kind 31) 2 (if (< kind 35) 0 (if (< kind 37) 1 2)))))))))))))))
+
+;; AES-NI kinds (the caller checks zyl_aesni_available); every xmm used is cleared so no key material is left in a register.
+(defn cg-aes-wipe () (Cons "    pxor xmm0, xmm0" (Cons "    pxor xmm1, xmm1" (Cons "    pxor xmm2, xmm2" (Cons "    pxor xmm3, xmm3" (Cons "    mov rax, rdx" Nil))))))
+
+; 37 aesenc, 38 aesenclast, 39 pxor: the 16 bytes at rdx <- op(the 16 bytes at rdx, the 16 bytes at rcx).
+(defn cg-aes-round-lines (kind)
+  (Cons "    movdqu xmm0, [rdx]" (Cons "    movdqu xmm1, [rcx]"
+    (Cons (if (= kind 37) "    aesenc xmm0, xmm1" (if (= kind 38) "    aesenclast xmm0, xmm1" "    pxor xmm0, xmm1"))
+      (Cons "    movdqu [rdx], xmm0" (cg-aes-wipe))))))
+
+; k ^= k<<32 three times, then k ^= t: xmm reg k, t in xmm2, xmm3 scratch.
+(defn cg-aes-mix (k tail)
+  (Cons (str-concat "    movdqa xmm3, " k) (Cons "    pslldq xmm3, 4" (Cons (str-concat (str-concat "    pxor " k) ", xmm3")
+  (Cons (str-concat "    movdqa xmm3, " k) (Cons "    pslldq xmm3, 4" (Cons (str-concat (str-concat "    pxor " k) ", xmm3")
+  (Cons (str-concat "    movdqa xmm3, " k) (Cons "    pslldq xmm3, 4" (Cons (str-concat (str-concat "    pxor " k) ", xmm3")
+  (Cons (str-concat (str-concat "    pxor " k) ", xmm2") tail)))))))))))
+
+(defn cg-aes-store (k i tail) (Cons (str-concat (str-concat "    movdqu [rdx+" (ffi-call "zyl_int_text" (* i 16) 1000)) (str-concat "], " k)) tail))
+
+; One key-schedule step: t = shuffle(aeskeygenassist(src, rcon)), dst = mix(dst) ^ t, stored as round key i.
+(defn cg-aes-step (dst src rcon lane i tail)
+  (Cons (str-concat (str-concat "    aeskeygenassist xmm2, " src) (str-concat ", " (ffi-call "zyl_int_text" rcon 1000)))
+    (Cons (str-concat "    pshufd xmm2, xmm2, " (ffi-call "zyl_int_text" lane 1000))
+      (cg-aes-mix dst (cg-aes-store dst i tail)))))
+
+; %aes-expand-128 rk key: the 11 AES-128 round keys (176 bytes at rdx) from the 16-byte key at rcx.
+(defn cg-aes-128-lines ()
+  (Cons "    movdqu xmm1, [rcx]" (cg-aes-store "xmm1" 0 (cg-aes-128-from 1 (cg-aes-wipe)))))
+
+(defn cg-aes-128-from (i tail)
+  (if (> i 10) tail (cg-aes-step "xmm1" "xmm1" (cg-aes-rcon i) 255 i (cg-aes-128-from (+ i 1) tail))))
+
+(defn cg-aes-rcon (i) (if (= i 9) 27 (if (= i 10) 54 (shl 1 (- i 1)))))
+
+; %aes-expand-256 rk key: the 15 AES-256 round keys (240 bytes at rdx) from the 32-byte key at rcx.
+(defn cg-aes-256-lines ()
+  (Cons "    movdqu xmm0, [rcx]" (Cons "    movdqu xmm1, [rcx+16]"
+    (cg-aes-store "xmm0" 0 (cg-aes-store "xmm1" 1 (cg-aes-256-from 2 (cg-aes-wipe)))))))
+
+; Even i: xmm0 = mix(rk[i-2]) ^ rotated SubWord(rk[i-1]) (lane 0xff); odd i: xmm1 with the plain SubWord (lane 0xaa).
+(defn cg-aes-256-from (i tail)
+  (if (> i 14) tail
+    (if (= (bit-and i 1) 0)
+      (cg-aes-step "xmm0" "xmm1" (shl 1 (- (/ i 2) 1)) 255 i (cg-aes-256-from (+ i 1) tail))
+      (cg-aes-step "xmm1" "xmm0" 0 170 i (cg-aes-256-from (+ i 1) tail)))))
 
 ; SSE2 kinds 10-13 and 27 are baseline x86-64; AVX2 kinds 14-17 need the runtime's cpuid check.
 

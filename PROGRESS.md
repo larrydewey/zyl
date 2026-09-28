@@ -465,7 +465,7 @@ as recorded below.
   - `%mulhi`/`%clz` would speed up parsing.
   - Note: `shr` is logical and `ashr` arithmetic. The agent brief had
     this backwards; every runtime use is on non-negative values.
-- The AES-NI/entropy port (`runtime/rt/crypto.zyl`, agent branch) is
+- The AES-NI/entropy port (`runtime/rt/crypto.zyl`) is merged (user approved the C deletion). It was
   done and tested. It is not merged because deleting the old C was
   blocked by a permission check; it waits for the user's decision.
 - The suite passes 291/291.

@@ -34845,6 +34845,1152 @@ zy_local_x2Fmain_0__fmt__fm_x2Dbig_x2Dlimbs:
     mov r13, rsi
     mov r14, rdi
     jmp .L787_0
+.globl zyl_zeroize
+zyl_zeroize:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    sub rsp, 8
+    mov rbx, rsi
+.L788_0:
+    cmp rdi, 0
+    jne .L788_2
+    jmp .L788_3
+.L788_2:
+    cmp rbx, 0
+    jg .L788_1
+.L788_3:
+    mov rsi, 0
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L788_1:
+    mov rsi, rbx
+    call zy_local_x2Fmain_0__crypto__cr_x2Dzero_x2Dbytes
+    mov rsi, rax
+    mov rax, rbx
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__crypto__cr_x2Dzero_x2Dbytes:
+    push rbp
+    mov rbp, rsp
+.L789_0:
+    cmp rsi, 0
+    jg .L789_1
+    mov r8, 0
+    mov rax, r8
+    mov rsp, rbp
+    pop rbp
+    ret
+.L789_1:
+    mov r8, 0
+    mov rdx, rdi
+    mov rcx, r8
+    mov byte ptr [rdx], cl
+    mov rax, rcx
+    mov r8, rax
+    mov r8, rdi
+    add r8, 1
+    mov r9, rsi
+    sub r9, 1
+    mov rdi, r8
+    mov rsi, r9
+    jmp .L789_0
+zy_local_x2Fmain_0__crypto__cr_x2Dwipe:
+    push rbp
+    mov rbp, rsp
+.L790_0:
+    cmp rsi, 0
+    jg .L790_1
+    mov r8, 0
+    mov rax, r8
+    mov rsp, rbp
+    pop rbp
+    ret
+.L790_1:
+    mov r8, 0
+    mov rdx, rdi
+    mov rcx, r8
+    mov qword ptr [rdx], rcx
+    mov rax, rcx
+    mov r8, rax
+    mov r8, rdi
+    add r8, 8
+    mov r9, rsi
+    sub r9, 8
+    mov rdi, r8
+    mov rsi, r9
+    jmp .L790_0
+zy_local_x2Fmain_0__crypto__cr_x2Dpack:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    sub rsp, 8
+    mov r8, rdx
+    mov r9, rcx
+.L791_0:
+    cmp r9, r8
+    jl .L791_1
+    mov r10, 0
+    mov rax, r10
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L791_1:
+    mov r10, rdi
+    add r10, r9
+    mov rbx, r9
+    imul rbx, 8
+    add rbx, rsi
+    mov rdx, rbx
+    mov rax, qword ptr [rdx]
+    mov rbx, rax
+    mov rdx, r10
+    mov rcx, rbx
+    mov byte ptr [rdx], cl
+    mov rax, rcx
+    mov r10, rax
+    mov r10, r9
+    add r10, 1
+    mov r9, r10
+    jmp .L791_0
+zy_local_x2Fmain_0__crypto__cr_x2Dunpack:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    sub rsp, 8
+    mov r8, rdx
+    mov r9, rcx
+.L792_0:
+    cmp r9, r8
+    jl .L792_1
+    mov r10, 0
+    mov rax, r10
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L792_1:
+    mov r10, r9
+    imul r10, 8
+    add r10, rdi
+    mov rbx, rsi
+    add rbx, r9
+    mov rdx, rbx
+    movzx eax, byte ptr [rdx]
+    mov rbx, rax
+    mov rdx, r10
+    mov rcx, rbx
+    mov qword ptr [rdx], rcx
+    mov rax, rcx
+    mov r10, rax
+    mov r10, r9
+    add r10, 1
+    mov r9, r10
+    jmp .L792_0
+zy_local_x2Fmain_0__crypto__cr_x2Dwords_x2Ddata:
+    push rbp
+    mov rbp, rsp
+.L793_0:
+    lea rax, [rip+.L794]
+    mov rsi, rax
+    call zy_local_x2Fmain_0__tables__tb_x2Dwords_x2Dof
+    mov rsi, rax
+    add rsi, 16
+    mov rdx, rsi
+    mov rax, qword ptr [rdx]
+    mov rsi, rax
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__crypto__cr_x2Dneed_x2Dblock:
+    push rbp
+    mov rbp, rsp
+.L795_0:
+    call zyl_words_len
+    mov rsi, rax
+    cmp rsi, 16
+    jge .L795_1
+    lea rax, [rip+.L796]
+    mov rdi, rax
+    mov r8, 15
+    mov rdx, rsi
+    mov rsi, r8
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__tables__tb_x2Doob
+.L795_1:
+    mov rsi, 0
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__crypto__cr_x2Daes_x2Dscratch:
+    push rbp
+    mov rbp, rsp
+.L797_0:
+    mov rax, QWORD PTR fs:0
+    lea rax, [rax+zyl_rtt_aes@tpoff]
+    mov rsi, rax
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__crypto__cr_x2Daes_x2Drounds:
+    push rbp
+    mov rbp, rsp
+    mov r8, rdx
+    mov r9, rcx
+.L798_0:
+    cmp r8, r9
+    jge .L798_1
+    mov r10, r8
+    imul r10, 16
+    add r10, rsi
+    mov rdx, rdi
+    mov rcx, r10
+    movdqu xmm0, [rdx]
+    movdqu xmm1, [rcx]
+    aesenc xmm0, xmm1
+    movdqu [rdx], xmm0
+    pxor xmm0, xmm0
+    pxor xmm1, xmm1
+    pxor xmm2, xmm2
+    pxor xmm3, xmm3
+    mov rax, rdx
+    mov r10, rax
+    mov r10, r8
+    add r10, 1
+    mov r8, r10
+    jmp .L798_0
+.L798_1:
+    mov r8, r9
+    imul r8, 16
+    add rsi, r8
+    mov rdx, rdi
+    mov rcx, rsi
+    movdqu xmm0, [rdx]
+    movdqu xmm1, [rcx]
+    aesenclast xmm0, xmm1
+    movdqu [rdx], xmm0
+    pxor xmm0, xmm0
+    pxor xmm1, xmm1
+    pxor xmm2, xmm2
+    pxor xmm3, xmm3
+    mov rax, rdx
+    mov rsi, rax
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+.globl zyl_aes_encrypt_block
+zyl_aes_encrypt_block:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    push r14
+    push r15
+    sub rsp, 24
+    mov rbx, rdi
+    mov qword ptr [rbp-48], rsi
+    mov r13, rdx
+    mov r14, rcx
+.L799_0:
+    call zyl_cpuid_features
+    mov rsi, rax
+    and rsi, 1
+    cmp rsi, 0
+    jle .L799_2
+    mov rsi, 0
+    jmp .L799_3
+.L799_2:
+    mov rdi, 1
+    mov rsi, rdi
+.L799_3:
+    cmp rsi, 0
+    je .L799_1
+    mov rsi, 0
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov r15, qword ptr [rbp-40]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L799_1:
+    cmp qword ptr [rbp-48], 16
+    jne .L799_7
+    jmp .L799_8
+.L799_7:
+    cmp qword ptr [rbp-48], 32
+    jne .L799_5
+.L799_8:
+    mov rsi, 0
+    jmp .L799_6
+.L799_5:
+    mov rdi, 1
+    mov rsi, rdi
+.L799_6:
+    cmp rsi, 0
+    je .L799_4
+    mov rsi, 0
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov r15, qword ptr [rbp-40]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L799_4:
+    mov rdi, rbx
+    call zyl_words_len
+    mov rsi, rax
+    cmp rsi, qword ptr [rbp-48]
+    jge .L799_9
+    lea rax, [rip+.L800]
+    mov r15, rax
+    mov r12, qword ptr [rbp-48]
+    sub r12, 1
+    mov rdi, rbx
+    call zyl_words_len
+    mov rsi, rax
+    mov rdi, r15
+    mov rdx, rsi
+    mov rsi, r12
+    call zy_local_x2Fmain_0__tables__tb_x2Doob
+    mov rsi, rax
+    jmp .L799_10
+.L799_9:
+    mov rdi, 0
+    mov rsi, rdi
+.L799_10:
+    lea rax, [rip+.L801]
+    mov rsi, rax
+    mov rdi, rbx
+    call zy_local_x2Fmain_0__tables__tb_x2Dwords_x2Dof
+    mov rsi, rax
+    add rsi, 16
+    mov rdx, rsi
+    mov rax, qword ptr [rdx]
+    mov rsi, rax
+    mov rbx, rsi
+    mov rdi, r13
+    call zy_local_x2Fmain_0__crypto__cr_x2Dneed_x2Dblock
+    mov rsi, rax
+    lea rax, [rip+.L802]
+    mov rsi, rax
+    mov rdi, r13
+    call zy_local_x2Fmain_0__tables__tb_x2Dwords_x2Dof
+    mov rsi, rax
+    add rsi, 16
+    mov rdx, rsi
+    mov rax, qword ptr [rdx]
+    mov rsi, rax
+    mov r12, rsi
+    mov rdi, r14
+    call zy_local_x2Fmain_0__crypto__cr_x2Dneed_x2Dblock
+    mov rsi, rax
+    lea rax, [rip+.L803]
+    mov rsi, rax
+    mov rdi, r14
+    call zy_local_x2Fmain_0__tables__tb_x2Dwords_x2Dof
+    mov rsi, rax
+    add rsi, 16
+    mov rdx, rsi
+    mov rax, qword ptr [rdx]
+    mov rsi, rax
+    mov r13, rsi
+    mov rax, QWORD PTR fs:0
+    lea rax, [rax+zyl_rtt_aes@tpoff]
+    mov rsi, rax
+    mov qword ptr [rbp-56], rsi
+    mov rsi, qword ptr [rbp-56]
+    add rsi, 240
+    mov r15, rsi
+    mov rsi, qword ptr [rbp-56]
+    add rsi, 272
+    mov r14, rsi
+    mov rsi, 0
+    mov rdi, r15
+    mov rdx, qword ptr [rbp-48]
+    mov rcx, rsi
+    mov rsi, rbx
+    call zy_local_x2Fmain_0__crypto__cr_x2Dpack
+    mov rsi, rax
+    mov rsi, 16
+    mov rdi, 0
+    mov rdx, rsi
+    mov rsi, r12
+    mov rcx, rdi
+    mov rdi, r14
+    call zy_local_x2Fmain_0__crypto__cr_x2Dpack
+    mov rsi, rax
+    cmp qword ptr [rbp-48], 16
+    jne .L799_11
+    mov rsi, 10
+    jmp .L799_12
+.L799_11:
+    mov rdi, 14
+    mov rsi, rdi
+.L799_12:
+    cmp qword ptr [rbp-48], 16
+    jne .L799_13
+    mov rdx, qword ptr [rbp-56]
+    mov rcx, r15
+    movdqu xmm1, [rcx]
+    movdqu [rdx+0], xmm1
+    aeskeygenassist xmm2, xmm1, 1
+    pshufd xmm2, xmm2, 255
+    movdqa xmm3, xmm1
+    pslldq xmm3, 4
+    pxor xmm1, xmm3
+    movdqa xmm3, xmm1
+    pslldq xmm3, 4
+    pxor xmm1, xmm3
+    movdqa xmm3, xmm1
+    pslldq xmm3, 4
+    pxor xmm1, xmm3
+    pxor xmm1, xmm2
+    movdqu [rdx+16], xmm1
+    aeskeygenassist xmm2, xmm1, 2
+    pshufd xmm2, xmm2, 255
+    movdqa xmm3, xmm1
+    pslldq xmm3, 4
+    pxor xmm1, xmm3
+    movdqa xmm3, xmm1
+    pslldq xmm3, 4
+    pxor xmm1, xmm3
+    movdqa xmm3, xmm1
+    pslldq xmm3, 4
+    pxor xmm1, xmm3
+    pxor xmm1, xmm2
+    movdqu [rdx+32], xmm1
+    aeskeygenassist xmm2, xmm1, 4
+    pshufd xmm2, xmm2, 255
+    movdqa xmm3, xmm1
+    pslldq xmm3, 4
+    pxor xmm1, xmm3
+    movdqa xmm3, xmm1
+    pslldq xmm3, 4
+    pxor xmm1, xmm3
+    movdqa xmm3, xmm1
+    pslldq xmm3, 4
+    pxor xmm1, xmm3
+    pxor xmm1, xmm2
+    movdqu [rdx+48], xmm1
+    aeskeygenassist xmm2, xmm1, 8
+    pshufd xmm2, xmm2, 255
+    movdqa xmm3, xmm1
+    pslldq xmm3, 4
+    pxor xmm1, xmm3
+    movdqa xmm3, xmm1
+    pslldq xmm3, 4
+    pxor xmm1, xmm3
+    movdqa xmm3, xmm1
+    pslldq xmm3, 4
+    pxor xmm1, xmm3
+    pxor xmm1, xmm2
+    movdqu [rdx+64], xmm1
+    aeskeygenassist xmm2, xmm1, 16
+    pshufd xmm2, xmm2, 255
+    movdqa xmm3, xmm1
+    pslldq xmm3, 4
+    pxor xmm1, xmm3
+    movdqa xmm3, xmm1
+    pslldq xmm3, 4
+    pxor xmm1, xmm3
+    movdqa xmm3, xmm1
+    pslldq xmm3, 4
+    pxor xmm1, xmm3
+    pxor xmm1, xmm2
+    movdqu [rdx+80], xmm1
+    aeskeygenassist xmm2, xmm1, 32
+    pshufd xmm2, xmm2, 255
+    movdqa xmm3, xmm1
+    pslldq xmm3, 4
+    pxor xmm1, xmm3
+    movdqa xmm3, xmm1
+    pslldq xmm3, 4
+    pxor xmm1, xmm3
+    movdqa xmm3, xmm1
+    pslldq xmm3, 4
+    pxor xmm1, xmm3
+    pxor xmm1, xmm2
+    movdqu [rdx+96], xmm1
+    aeskeygenassist xmm2, xmm1, 64
+    pshufd xmm2, xmm2, 255
+    movdqa xmm3, xmm1
+    pslldq xmm3, 4
+    pxor xmm1, xmm3
+    movdqa xmm3, xmm1
+    pslldq xmm3, 4
+    pxor xmm1, xmm3
+    movdqa xmm3, xmm1
+    pslldq xmm3, 4
+    pxor xmm1, xmm3
+    pxor xmm1, xmm2
+    movdqu [rdx+112], xmm1
+    aeskeygenassist xmm2, xmm1, 128
+    pshufd xmm2, xmm2, 255
+    movdqa xmm3, xmm1
+    pslldq xmm3, 4
+    pxor xmm1, xmm3
+    movdqa xmm3, xmm1
+    pslldq xmm3, 4
+    pxor xmm1, xmm3
+    movdqa xmm3, xmm1
+    pslldq xmm3, 4
+    pxor xmm1, xmm3
+    pxor xmm1, xmm2
+    movdqu [rdx+128], xmm1
+    aeskeygenassist xmm2, xmm1, 27
+    pshufd xmm2, xmm2, 255
+    movdqa xmm3, xmm1
+    pslldq xmm3, 4
+    pxor xmm1, xmm3
+    movdqa xmm3, xmm1
+    pslldq xmm3, 4
+    pxor xmm1, xmm3
+    movdqa xmm3, xmm1
+    pslldq xmm3, 4
+    pxor xmm1, xmm3
+    pxor xmm1, xmm2
+    movdqu [rdx+144], xmm1
+    aeskeygenassist xmm2, xmm1, 54
+    pshufd xmm2, xmm2, 255
+    movdqa xmm3, xmm1
+    pslldq xmm3, 4
+    pxor xmm1, xmm3
+    movdqa xmm3, xmm1
+    pslldq xmm3, 4
+    pxor xmm1, xmm3
+    movdqa xmm3, xmm1
+    pslldq xmm3, 4
+    pxor xmm1, xmm3
+    pxor xmm1, xmm2
+    movdqu [rdx+160], xmm1
+    pxor xmm0, xmm0
+    pxor xmm1, xmm1
+    pxor xmm2, xmm2
+    pxor xmm3, xmm3
+    mov rax, rdx
+    mov rdi, rax
+    jmp .L799_14
+.L799_13:
+    mov rdx, qword ptr [rbp-56]
+    mov rcx, r15
+    movdqu xmm0, [rcx]
+    movdqu xmm1, [rcx+16]
+    movdqu [rdx+0], xmm0
+    movdqu [rdx+16], xmm1
+    aeskeygenassist xmm2, xmm1, 1
+    pshufd xmm2, xmm2, 255
+    movdqa xmm3, xmm0
+    pslldq xmm3, 4
+    pxor xmm0, xmm3
+    movdqa xmm3, xmm0
+    pslldq xmm3, 4
+    pxor xmm0, xmm3
+    movdqa xmm3, xmm0
+    pslldq xmm3, 4
+    pxor xmm0, xmm3
+    pxor xmm0, xmm2
+    movdqu [rdx+32], xmm0
+    aeskeygenassist xmm2, xmm0, 0
+    pshufd xmm2, xmm2, 170
+    movdqa xmm3, xmm1
+    pslldq xmm3, 4
+    pxor xmm1, xmm3
+    movdqa xmm3, xmm1
+    pslldq xmm3, 4
+    pxor xmm1, xmm3
+    movdqa xmm3, xmm1
+    pslldq xmm3, 4
+    pxor xmm1, xmm3
+    pxor xmm1, xmm2
+    movdqu [rdx+48], xmm1
+    aeskeygenassist xmm2, xmm1, 2
+    pshufd xmm2, xmm2, 255
+    movdqa xmm3, xmm0
+    pslldq xmm3, 4
+    pxor xmm0, xmm3
+    movdqa xmm3, xmm0
+    pslldq xmm3, 4
+    pxor xmm0, xmm3
+    movdqa xmm3, xmm0
+    pslldq xmm3, 4
+    pxor xmm0, xmm3
+    pxor xmm0, xmm2
+    movdqu [rdx+64], xmm0
+    aeskeygenassist xmm2, xmm0, 0
+    pshufd xmm2, xmm2, 170
+    movdqa xmm3, xmm1
+    pslldq xmm3, 4
+    pxor xmm1, xmm3
+    movdqa xmm3, xmm1
+    pslldq xmm3, 4
+    pxor xmm1, xmm3
+    movdqa xmm3, xmm1
+    pslldq xmm3, 4
+    pxor xmm1, xmm3
+    pxor xmm1, xmm2
+    movdqu [rdx+80], xmm1
+    aeskeygenassist xmm2, xmm1, 4
+    pshufd xmm2, xmm2, 255
+    movdqa xmm3, xmm0
+    pslldq xmm3, 4
+    pxor xmm0, xmm3
+    movdqa xmm3, xmm0
+    pslldq xmm3, 4
+    pxor xmm0, xmm3
+    movdqa xmm3, xmm0
+    pslldq xmm3, 4
+    pxor xmm0, xmm3
+    pxor xmm0, xmm2
+    movdqu [rdx+96], xmm0
+    aeskeygenassist xmm2, xmm0, 0
+    pshufd xmm2, xmm2, 170
+    movdqa xmm3, xmm1
+    pslldq xmm3, 4
+    pxor xmm1, xmm3
+    movdqa xmm3, xmm1
+    pslldq xmm3, 4
+    pxor xmm1, xmm3
+    movdqa xmm3, xmm1
+    pslldq xmm3, 4
+    pxor xmm1, xmm3
+    pxor xmm1, xmm2
+    movdqu [rdx+112], xmm1
+    aeskeygenassist xmm2, xmm1, 8
+    pshufd xmm2, xmm2, 255
+    movdqa xmm3, xmm0
+    pslldq xmm3, 4
+    pxor xmm0, xmm3
+    movdqa xmm3, xmm0
+    pslldq xmm3, 4
+    pxor xmm0, xmm3
+    movdqa xmm3, xmm0
+    pslldq xmm3, 4
+    pxor xmm0, xmm3
+    pxor xmm0, xmm2
+    movdqu [rdx+128], xmm0
+    aeskeygenassist xmm2, xmm0, 0
+    pshufd xmm2, xmm2, 170
+    movdqa xmm3, xmm1
+    pslldq xmm3, 4
+    pxor xmm1, xmm3
+    movdqa xmm3, xmm1
+    pslldq xmm3, 4
+    pxor xmm1, xmm3
+    movdqa xmm3, xmm1
+    pslldq xmm3, 4
+    pxor xmm1, xmm3
+    pxor xmm1, xmm2
+    movdqu [rdx+144], xmm1
+    aeskeygenassist xmm2, xmm1, 16
+    pshufd xmm2, xmm2, 255
+    movdqa xmm3, xmm0
+    pslldq xmm3, 4
+    pxor xmm0, xmm3
+    movdqa xmm3, xmm0
+    pslldq xmm3, 4
+    pxor xmm0, xmm3
+    movdqa xmm3, xmm0
+    pslldq xmm3, 4
+    pxor xmm0, xmm3
+    pxor xmm0, xmm2
+    movdqu [rdx+160], xmm0
+    aeskeygenassist xmm2, xmm0, 0
+    pshufd xmm2, xmm2, 170
+    movdqa xmm3, xmm1
+    pslldq xmm3, 4
+    pxor xmm1, xmm3
+    movdqa xmm3, xmm1
+    pslldq xmm3, 4
+    pxor xmm1, xmm3
+    movdqa xmm3, xmm1
+    pslldq xmm3, 4
+    pxor xmm1, xmm3
+    pxor xmm1, xmm2
+    movdqu [rdx+176], xmm1
+    aeskeygenassist xmm2, xmm1, 32
+    pshufd xmm2, xmm2, 255
+    movdqa xmm3, xmm0
+    pslldq xmm3, 4
+    pxor xmm0, xmm3
+    movdqa xmm3, xmm0
+    pslldq xmm3, 4
+    pxor xmm0, xmm3
+    movdqa xmm3, xmm0
+    pslldq xmm3, 4
+    pxor xmm0, xmm3
+    pxor xmm0, xmm2
+    movdqu [rdx+192], xmm0
+    aeskeygenassist xmm2, xmm0, 0
+    pshufd xmm2, xmm2, 170
+    movdqa xmm3, xmm1
+    pslldq xmm3, 4
+    pxor xmm1, xmm3
+    movdqa xmm3, xmm1
+    pslldq xmm3, 4
+    pxor xmm1, xmm3
+    movdqa xmm3, xmm1
+    pslldq xmm3, 4
+    pxor xmm1, xmm3
+    pxor xmm1, xmm2
+    movdqu [rdx+208], xmm1
+    aeskeygenassist xmm2, xmm1, 64
+    pshufd xmm2, xmm2, 255
+    movdqa xmm3, xmm0
+    pslldq xmm3, 4
+    pxor xmm0, xmm3
+    movdqa xmm3, xmm0
+    pslldq xmm3, 4
+    pxor xmm0, xmm3
+    movdqa xmm3, xmm0
+    pslldq xmm3, 4
+    pxor xmm0, xmm3
+    pxor xmm0, xmm2
+    movdqu [rdx+224], xmm0
+    pxor xmm0, xmm0
+    pxor xmm1, xmm1
+    pxor xmm2, xmm2
+    pxor xmm3, xmm3
+    mov rax, rdx
+    mov r8, rax
+    mov rdi, r8
+.L799_14:
+    mov rdx, r14
+    mov rcx, qword ptr [rbp-56]
+    movdqu xmm0, [rdx]
+    movdqu xmm1, [rcx]
+    pxor xmm0, xmm1
+    movdqu [rdx], xmm0
+    pxor xmm0, xmm0
+    pxor xmm1, xmm1
+    pxor xmm2, xmm2
+    pxor xmm3, xmm3
+    mov rax, rdx
+    mov rdi, rax
+    mov rdi, 1
+    mov rdx, rdi
+    mov rdi, r14
+    mov rcx, rsi
+    mov rsi, qword ptr [rbp-56]
+    call zy_local_x2Fmain_0__crypto__cr_x2Daes_x2Drounds
+    mov rsi, rax
+    mov rsi, 16
+    mov rdi, 0
+    mov rdx, rsi
+    mov rsi, r14
+    mov rcx, rdi
+    mov rdi, r13
+    call zy_local_x2Fmain_0__crypto__cr_x2Dunpack
+    mov rsi, rax
+    mov rsi, 288
+    mov rdi, qword ptr [rbp-56]
+    call zy_local_x2Fmain_0__crypto__cr_x2Dwipe
+    mov rsi, rax
+    mov rsi, 1
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov r15, qword ptr [rbp-40]
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__crypto__cr_x2Dgetrandom:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    and rsp, -16
+    sub rsp, 16
+    mov rbx, rdi
+    mov r12, rsi
+    mov r13, rdx
+.L804_0:
+    cmp r13, r12
+    jl .L804_1
+    mov rax, r13
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L804_1:
+    mov rsi, rbx
+    add rsi, r13
+    mov rdi, r12
+    sub rdi, r13
+    mov r8, 0
+    mov rdx, r8
+    mov rax, rsi
+    mov rsi, rdi
+    mov rdi, rax
+    call zyl_rt_sys_318
+    mov rsi, rax
+    cmp rsi, 0
+    jge .L804_2
+    cmp rsi, -4
+    jne .L804_3
+    jmp .L804_0
+.L804_3:
+    mov rax, r13
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L804_2:
+    add rsi, r13
+    mov r13, rsi
+    jmp .L804_0
+zy_local_x2Fmain_0__crypto__cr_x2Dread_x2Dall:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    push r14
+    and rsp, -16
+    mov rbx, rdi
+    mov r12, rsi
+    mov r13, rdx
+    mov r14, rcx
+.L805_0:
+    cmp r14, r13
+    jl .L805_1
+    mov rax, r14
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L805_1:
+    mov rsi, r12
+    add rsi, r14
+    mov rdi, r13
+    sub rdi, r14
+    mov rdx, rdi
+    mov rdi, rbx
+    call zyl_rt_sys_0
+    mov rsi, rax
+    cmp rsi, 0
+    jle .L805_2
+    mov rdi, r14
+    add rdi, rsi
+    mov r14, rdi
+    jmp .L805_0
+.L805_2:
+    cmp rsi, -4
+    jne .L805_3
+    jmp .L805_0
+.L805_3:
+    mov rax, r14
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__crypto__cr_x2Durandom:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    push r14
+    and rsp, -16
+    mov rbx, rdi
+    mov r12, rsi
+    mov r13, rdx
+.L806_0:
+    lea rax, [rip+.L807]
+    mov rsi, rax
+    mov rdi, 524288
+    mov r8, 0
+    mov rdx, r8
+    mov rax, rsi
+    mov rsi, rdi
+    mov rdi, rax
+    call zyl_rt_sys_2
+    mov rsi, rax
+    mov r14, rsi
+    cmp r14, 0
+    jge .L806_1
+    mov rsi, -1
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L806_1:
+    mov rdi, r14
+    mov rsi, rbx
+    mov rdx, r12
+    mov rcx, r13
+    call zy_local_x2Fmain_0__crypto__cr_x2Dread_x2Dall
+    mov rsi, rax
+    mov rbx, rsi
+    mov rdi, r14
+    call zyl_rt_sys_3
+    mov rsi, rax
+    cmp rbx, r12
+    jne .L806_2
+    mov rax, rbx
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L806_2:
+    mov rsi, -1
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov rsp, rbp
+    pop rbp
+    ret
+.globl zyl_random_fill
+zyl_random_fill:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    mov rbx, rdi
+    mov r12, rsi
+.L808_0:
+    cmp rbx, 0
+    jne .L808_2
+    jmp .L808_3
+.L808_2:
+    cmp r12, 0
+    jg .L808_1
+.L808_3:
+    mov rsi, -1
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L808_1:
+    mov rsi, 0
+    mov rdi, rbx
+    mov rdx, rsi
+    mov rsi, r12
+    call zy_local_x2Fmain_0__crypto__cr_x2Dgetrandom
+    mov rsi, rax
+    cmp rsi, r12
+    jne .L808_4
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L808_4:
+    mov rdi, rbx
+    mov rdx, rsi
+    mov rsi, r12
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__crypto__cr_x2Durandom
+zy_local_x2Fmain_0__crypto__cr_x2Drand_x2Dchunks:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    push r14
+    push r15
+    sub rsp, 8
+    mov rbx, rdi
+    mov r12, rsi
+    mov r13, rdx
+    mov r14, rcx
+.L809_0:
+    cmp r13, r12
+    jl .L809_1
+    mov rax, r13
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov r15, qword ptr [rbp-40]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L809_1:
+    mov rsi, r12
+    sub rsi, r13
+    cmp rsi, 256
+    jle .L809_2
+    mov rsi, 256
+    jmp .L809_3
+.L809_2:
+    mov rdi, r12
+    sub rdi, r13
+    mov rsi, rdi
+.L809_3:
+    mov r15, rsi
+    mov rdi, r14
+    mov rsi, r15
+    call zyl_random_fill
+    mov rsi, rax
+    cmp rsi, r15
+    jne .L809_5
+    mov rsi, 0
+    jmp .L809_6
+.L809_5:
+    mov rdi, 1
+    mov rsi, rdi
+.L809_6:
+    cmp rsi, 0
+    je .L809_4
+    mov rsi, -1
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov r15, qword ptr [rbp-40]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L809_4:
+    mov rsi, r13
+    imul rsi, 8
+    add rsi, rbx
+    mov rdi, 0
+    mov rdx, r15
+    mov rcx, rdi
+    mov rdi, rsi
+    mov rsi, r14
+    call zy_local_x2Fmain_0__crypto__cr_x2Dunpack
+    mov rsi, rax
+    mov rsi, r13
+    add rsi, r15
+    mov r13, rsi
+    jmp .L809_0
+.globl zyl_random_words
+zyl_random_words:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    push r14
+    push r15
+    sub rsp, 8
+    mov rbx, rdi
+    mov r12, rsi
+.L810_0:
+    cmp rbx, 0
+    jne .L810_2
+    jmp .L810_3
+.L810_2:
+    cmp r12, 0
+    jg .L810_1
+.L810_3:
+    mov rsi, -1
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov r15, qword ptr [rbp-40]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L810_1:
+    lea rax, [rip+.L811]
+    mov rsi, rax
+    mov rdi, rbx
+    call zy_local_x2Fmain_0__tables__tb_x2Dwords_x2Dof
+    mov rsi, rax
+    add rsi, 16
+    mov rdx, rsi
+    mov rax, qword ptr [rdx]
+    mov rsi, rax
+    mov r13, rsi
+    mov rdi, rbx
+    call zyl_words_len
+    mov rsi, rax
+    cmp r12, rsi
+    jle .L810_4
+    lea rax, [rip+.L812]
+    mov r14, rax
+    mov r15, r12
+    sub r15, 1
+    mov rdi, rbx
+    call zyl_words_len
+    mov rsi, rax
+    mov rdi, r14
+    mov rdx, rsi
+    mov rsi, r15
+    call zy_local_x2Fmain_0__tables__tb_x2Doob
+    mov rsi, rax
+    jmp .L810_5
+.L810_4:
+    mov rdi, 0
+    mov rsi, rdi
+.L810_5:
+    mov rax, QWORD PTR fs:0
+    lea rax, [rax+zyl_rtt_rand@tpoff]
+    mov rsi, rax
+    mov rbx, rsi
+    mov rsi, 0
+    mov rdi, r13
+    mov rdx, rsi
+    mov rsi, r12
+    mov rcx, rbx
+    call zy_local_x2Fmain_0__crypto__cr_x2Drand_x2Dchunks
+    mov rsi, rax
+    mov r12, rsi
+    mov rsi, 256
+    mov rdi, rbx
+    call zy_local_x2Fmain_0__crypto__cr_x2Dwipe
+    mov rsi, rax
+    mov rax, r12
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov r15, qword ptr [rbp-40]
+    mov rsp, rbp
+    pop rbp
+    ret
 zy_local_x2Fmain_0__variant__rt_x2Dwords_x2Dcmp_x7EInt_x2CInt_x2CInt_x2CInt_x2CInt_x2CInt:
     push rbp
     mov rbp, rsp
@@ -34856,11 +36002,11 @@ zy_local_x2Fmain_0__variant__rt_x2Dwords_x2Dcmp_x7EInt_x2CInt_x2CInt_x2CInt_x2CI
     mov r8, rdx
     mov rbx, r9
     mov r9, rcx
-.L788_0:
+.L813_0:
     cmp r8, r9
-    jl .L788_1
+    jl .L813_1
     cmp r10, rbx
-    jge .L788_2
+    jge .L813_2
     mov r12, -1
     mov rax, r12
     mov rbx, qword ptr [rbp-8]
@@ -34870,9 +36016,9 @@ zy_local_x2Fmain_0__variant__rt_x2Dwords_x2Dcmp_x7EInt_x2CInt_x2CInt_x2CInt_x2CI
     mov rsp, rbp
     pop rbp
     ret
-.L788_2:
+.L813_2:
     cmp r10, rbx
-    jle .L788_3
+    jle .L813_3
     mov r12, 1
     mov rax, r12
     mov rbx, qword ptr [rbp-8]
@@ -34882,7 +36028,7 @@ zy_local_x2Fmain_0__variant__rt_x2Dwords_x2Dcmp_x7EInt_x2CInt_x2CInt_x2CInt_x2CI
     mov rsp, rbp
     pop rbp
     ret
-.L788_3:
+.L813_3:
     mov r12, 0
     mov rax, r12
     mov rbx, qword ptr [rbp-8]
@@ -34892,7 +36038,7 @@ zy_local_x2Fmain_0__variant__rt_x2Dwords_x2Dcmp_x7EInt_x2CInt_x2CInt_x2CInt_x2CI
     mov rsp, rbp
     pop rbp
     ret
-.L788_1:
+.L813_1:
     mov r12, r8
     imul r12, 8
     add r12, rdi
@@ -34906,7 +36052,7 @@ zy_local_x2Fmain_0__variant__rt_x2Dwords_x2Dcmp_x7EInt_x2CInt_x2CInt_x2CInt_x2CI
     mov rax, qword ptr [rdx]
     mov r13, rax
     cmp r12, r13
-    jge .L788_4
+    jge .L813_4
     mov r14, -1
     mov rax, r14
     mov rbx, qword ptr [rbp-8]
@@ -34916,9 +36062,9 @@ zy_local_x2Fmain_0__variant__rt_x2Dwords_x2Dcmp_x7EInt_x2CInt_x2CInt_x2CInt_x2CI
     mov rsp, rbp
     pop rbp
     ret
-.L788_4:
+.L813_4:
     cmp r12, r13
-    jle .L788_5
+    jle .L813_5
     mov r12, 1
     mov rax, r12
     mov rbx, qword ptr [rbp-8]
@@ -34928,11 +36074,11 @@ zy_local_x2Fmain_0__variant__rt_x2Dwords_x2Dcmp_x7EInt_x2CInt_x2CInt_x2CInt_x2CI
     mov rsp, rbp
     pop rbp
     ret
-.L788_5:
+.L813_5:
     mov r12, r8
     add r12, 1
     mov r8, r12
-    jmp .L788_0
+    jmp .L813_0
 .section .rodata
 .Lfmtd:
     .string "%lld\n"
@@ -35242,6 +36388,24 @@ zy_local_x2Fmain_0__variant__rt_x2Dwords_x2Dcmp_x7EInt_x2CInt_x2CInt_x2CInt_x2CI
     .string "-nan"
 .L777:
     .string "nan"
+.L794:
+    .string "words"
+.L796:
+    .string "aes block"
+.L800:
+    .string "aes key"
+.L801:
+    .string "words"
+.L802:
+    .string "words"
+.L803:
+    .string "words"
+.L807:
+    .string "/dev/urandom"
+.L811:
+    .string "words"
+.L812:
+    .string "random-words"
 .bss
 .p2align 6
 zyl_rtg_cpu_avx2:
@@ -35358,6 +36522,12 @@ zyl_rtt_fmt_dec:
 .p2align 6
 zyl_rtt_fmt_big:
     .zero 384
+.p2align 6
+zyl_rtt_aes:
+    .zero 288
+.p2align 6
+zyl_rtt_rand:
+    .zero 256
 .text
 zyl_rt_sys_228:
     mov r10, rcx
@@ -35447,5 +36617,10 @@ zyl_rt_sys_16:
 zyl_rt_sys_7:
     mov r10, rcx
     mov eax, 7
+    syscall
+    ret
+zyl_rt_sys_318:
+    mov r10, rcx
+    mov eax, 318
     syscall
     ret
