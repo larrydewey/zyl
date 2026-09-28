@@ -42,6 +42,30 @@
     (assert-equal (big 5) 4611686018427387904)
     (assert-equal (swp 3 10 5) 7)))
 
+; guarded loops: the unchecked copy runs only when j >= 0, n <= the bound and 0 <= s < 2^31
+(defn fillk ((b ByteBuf) (j Int) (s Int) (n Int) (c Int))
+  (if (>= j n) c (begin (store-u8 :le b j 1) (fillk b (+ j s) s n (+ c 1)))))
+(defn cnt1 ((b ByteBuf) (i Int) (n Int) (c Int))
+  (if (< i n) (cnt1 b (+ i 1) n (+ c (load-u8 :le b i))) c))
+; a let shadowing the view parameter reads the other buffer
+(defn shadow ((b ByteBuf) (o ByteBuf) (i Int) (n Int) (acc Int))
+  (if (>= i n) acc (shadow b o (+ i 1) n (+ acc (+ (load-u8 :le b i) (let b o (load-u8 :le b i)))))))
+
+(test "guarded-loops"
+  (let b (bytebuf Heap 32)
+    (let o (bytebuf Heap 32)
+      (begin
+        (assert-equal (fillk b 0 3 32 0) 11)
+        (assert-equal (cnt1 b 0 32 0) 11)
+        (assert-equal (fillk b 30 1 40 0) 10)
+        (assert-equal (cnt1 b 0 40 0) 12)
+        (assert-equal (fillk b -5 2 4 0) 5)
+        (assert-equal (cnt1 b 0 32 0) 13)
+        (assert-equal (fillk b 1 4611686018427387904 32 0) 1)
+        (assert-equal (cnt1 b -3 3 0) 2)
+        (assert-equal (store-u8 :le o 5 9) 1)
+        (assert-equal (shadow b o 0 8 0) 13)))))
+
 (test "view-bytes"
   (let b (bytebuf Heap 64)
     (begin

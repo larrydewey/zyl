@@ -2941,17 +2941,21 @@
 ; name -> data vreg, and name -> bound vreg.
 (def ml-view-data (ffi-call "zyl_ref_new" Nil 1000))
 (def ml-view-bound (ffi-call "zyl_ref_new" Nil 1000))
+(def ml-view-param (ffi-call "zyl_ref_new" Nil 1000))
 
 (defn ml-byte (st env venv ms sym args)
-  (match (ml-view-of args)
+  (match (ml-view-of venv args)
     (Some p (ml-byte-fast st env venv ms sym args p))
     (None (ml-byte-slow st env venv ms sym args))))
 
 ; The handle argument (the third: endian, offset, handle[, value]) when
 ; it is a parameter with a view.
-(defn ml-view-of (args)
+; The name must still mean the parameter (a let or arm binder may shadow it).
+(defn ml-view-of (venv args)
   (match (ml-nth-icnf args 2)
-    (Some h (match h (ILoad n (if (>= (ml-var (ffi-call "zyl_ref_get" ml-view-data 1000) n) 0) (Some n) None)) (_ None)))
+    (Some h (match h (ILoad n (if (and (>= (ml-var (ffi-call "zyl_ref_get" ml-view-data 1000) n) 0)
+                                       (= (ml-var venv n) (ml-var (ffi-call "zyl_ref_get" ml-view-param 1000) n)))
+                                (Some n) None)) (_ None)))
     (None None)))
 
 (defn ml-nth-icnf (xs i) (match xs (Nil None) (Cons h t (if (= i 0) (Some h) (ml-nth-icnf t (- i 1))))))
@@ -2963,7 +2967,7 @@
       (let ro (ml-operand st env venv ms off (if (> kind 1) (match (ml-nth-icnf args 3) (Some v (icnf-has-set v)) (None false)) false))
         (let rv (if (> kind 1) (match (ml-nth-icnf args 3) (Some v (match v (IConst k (MR (mr-ms ro) (- -2 (bit-and k 255)))) (_ (ml-expr st env venv (mr-ms ro) v)))) (None (MR (mr-ms ro) -1))) (MR (mr-ms ro) -1))
           (let rd (ms-vreg (mr-ms rv))
-            (MR (ms-emit (mr-ms rd) (MByteFast kind (mr-v rd) (mr-v ro)
+            (MR (ms-emit (mr-ms rd) (MByteFast (if (ml-bce-proven venv p off) (+ kind 4) kind) (mr-v rd) (mr-v ro)
                                      (ml-var (ffi-call "zyl_ref_get" ml-view-data 1000) p)
                                      (ml-var (ffi-call "zyl_ref_get" ml-view-bound 1000) p)
                                      (if (> kind 1) (mr-v rv) -1)))
@@ -3118,12 +3122,161 @@
       (let venv (ml-param-vars params 0)
         (let aop (ml-acc-op name np body)
           (let mv (ml-views m0 name params body 0)
-            (if (< aop 0)
-              (ml-tail st (cg-param-env params kinds 0 (EnvNil)) venv (ms-emit mv (MLabel 0)) (MCtx name (ml-range 0 np) 0 rflags -1 -1) body)
-              (let ra (ms-vreg mv)
-                (let m1 (ms-emit (ms-emit (mr-ms ra) (MConst (mr-v ra) (ml-acc-unit aop))) (MLabel 0))
-                  (ml-acc-rets (ml-tail st (cg-param-env params kinds 0 (EnvNil)) venv m1 (MCtx name (ml-range 0 np) 0 rflags aop (mr-v ra)) body)
-                               aop (mr-v ra)))))))))))
+            (let ra (if (< aop 0) (MR mv -1) (ms-vreg mv))
+              (let m1 (if (< aop 0) (mr-ms ra) (ms-emit (mr-ms ra) (MConst (mr-v ra) (ml-acc-unit aop))))
+                (let env (cg-param-env params kinds 0 (EnvNil))
+                  (let _ (ffi-call "zyl_ref_set" ml-bce-head -1 1000)
+                    (let m2 (match (ml-bce-plan name params body)
+                              (Some plan (ml-bce-body st env venv m1 name np rflags aop (mr-v ra) body plan))
+                              (None (ml-tail st env venv (ms-emit m1 (MLabel 0)) (MCtx name (ml-range 0 np) 0 rflags aop (mr-v ra)) body)))
+                      (if (< aop 0) m2 (ml-acc-rets m2 aop (mr-v ra))))))))))))))
+
+; --- bounds checks proven by a guard -------------------------------------------
+; A loop (self tail calls) whose body is (if (>= j n) exit loop) or (if (< j n) loop exit)
+; over parameters, with j and n never set, n passed unchanged, and every self call passing
+; j + k (0 <= k < 2^31) or j + s (s a parameter kept the same), gets a second copy of the
+; loop entered when j >= 0, n < 2^62, n <= the bound of view b and 0 <= s < 2^31: there
+; j stays in [0, n) on the loop side (no overflow), so a byte access of b at j needs no check.
+
+(deftype Bce (Bce Int Int Int String Int))  ; j, n, s (-1: constant steps), view b, test op
+
+(def ml-bce-on (ffi-call "zyl_ref_new" None 1000))    ; Some (MVar b jvreg) while lowering a fast loop side
+(def ml-bce-head (ffi-call "zyl_ref_new" -1 1000))    ; the fast loop's head label, or -1
+
+(defn ml-param-index (ps n i) (match ps (Nil -1) (Cons p t (if (str-eq p n) i (ml-param-index t n (+ i 1))))))
+
+(defn ml-bce-plan (name params body)
+  (match (ffi-call "zyl_ref_get" ml-view-param 1000)
+    (Nil None)
+    (Cons bv _
+      (match bv
+        (MVar b _
+          (match body
+            (IIf c _ _
+              (match c
+                (IBinop op l r
+                  (match l
+                    (ILoad j
+                      (match r
+                        (ILoad n
+                          (let ji (ml-param-index params j 0)
+                            (let ni (ml-param-index params n 0)
+                              (if (and (or (= op 5) (= op 8)) (and (>= ji 0) (and (>= ni 0) (not (= ji ni)))))
+                                (let _ (ffi-call "zyl_ref_set" ml-bce-params params 1000)
+                                (let si (ml-bce-steps body name ji j -2)
+                                  (if (and (>= si -1)
+                                        (and (ml-bce-fixed body j)
+                                          (and (and (ml-bce-fixed body n) (ml-self-keeps body name params n ni))
+                                            (or (< si 0) (and (ml-bce-fixed body (ml-nth-str params si)) (ml-self-keeps body name params (ml-nth-str params si) si))))))
+                                    (Some (Bce ji ni si b op))
+                                    None)))
+                                None))))
+                        (_ None)))
+                    (_ None)))
+                (_ None)))
+            (_ None)))))))
+
+(defn ml-nth-str (xs i) (match xs (Nil "") (Cons h t (if (= i 0) h (ml-nth-str t (- i 1))))))
+
+; Never set and never rebound.
+(defn ml-bce-fixed (body p) (and (not (icnf-sets body p)) (not (ml-binds body p))))
+
+(defn ml-binds (e n)
+  (match e
+    (ILet m v b (or (str-eq m n) (or (ml-binds v n) (ml-binds b n))))
+    (IMatch s arms (or (ml-binds s n) (ml-binds-arms arms n)))
+    (IBinop _ l r (or (ml-binds l n) (ml-binds r n)))
+    (ICall _ args (ml-binds-list args n))
+    (IFfi _ args (ml-binds-list args n))
+    (IIf c t f (or (ml-binds c n) (or (ml-binds t n) (ml-binds f n))))
+    (IWhile c b (or (ml-binds c n) (ml-binds b n)))
+    (ISet _ v (ml-binds v n))
+    (ISeq es (ml-binds-list es n))
+    (IVariant _ _ fs (ml-binds-list fs n))
+    (IStackVariant _ _ fs (ml-binds-list fs n))
+    (_ false)))
+
+(defn ml-binds-list (es n) (match es (Nil false) (Cons h t (if (ml-binds h n) true (ml-binds-list t n)))))
+(defn ml-binds-arms (arms n)
+  (match arms (Nil false) (Cons a t (match a (IArm _ _ bs b (if (or (me-in-strs n bs) (ml-binds b n)) true (ml-binds-arms t n)))))))
+
+; Over every self call: -3 no, -2 none seen, -1 constant steps only, else the step parameter's index.
+(defn ml-bce-steps (e name ji j acc)
+  (if (= acc -3) -3
+    (match e
+      (ICall n args
+        (let a2 (ml-bce-steps-list args name ji j acc)
+          (if (str-eq n name) (ml-bce-step1 (ml-nth-icnf args ji) j a2) a2)))
+      (IBinop _ l r (ml-bce-steps r name ji j (ml-bce-steps l name ji j acc)))
+      (IFfi _ args (ml-bce-steps-list args name ji j acc))
+      (IIf c t f (ml-bce-steps f name ji j (ml-bce-steps t name ji j (ml-bce-steps c name ji j acc))))
+      (IWhile c b (ml-bce-steps b name ji j (ml-bce-steps c name ji j acc)))
+      (ISet _ v (ml-bce-steps v name ji j acc))
+      (ILet _ v b (ml-bce-steps b name ji j (ml-bce-steps v name ji j acc)))
+      (ISeq es (ml-bce-steps-list es name ji j acc))
+      (IVariant _ _ fs (ml-bce-steps-list fs name ji j acc))
+      (IMatch s arms (ml-bce-steps-arms arms name ji j (ml-bce-steps s name ji j acc)))
+      (_ acc))))
+
+(defn ml-bce-steps-list (es name ji j acc) (match es (Nil acc) (Cons h t (ml-bce-steps-list t name ji j (ml-bce-steps h name ji j acc)))))
+(defn ml-bce-steps-arms (arms name ji j acc)
+  (match arms (Nil acc) (Cons a t (match a (IArm _ _ _ b (ml-bce-steps-arms t name ji j (ml-bce-steps b name ji j acc)))))))
+
+; One self call's j argument: j + k or j + s (ml-bce-params names the parameters).
+(defn ml-bce-step1 (a j acc)
+  (match a
+    (Some e
+      (match e
+        (IBinop op l r
+          (if (and (= op 0) (match l (ILoad x (str-eq x j)) (_ false)))
+            (match r
+              (IConst k (if (and (>= k 0) (< k 2147483647)) (if (= acc -2) -1 acc) -3))
+              (ILoad s (let si (ffi-call "zyl_ref_get" ml-bce-params 1000)
+                         (let idx (ml-param-index si s 0)
+                           (if (< idx 0) -3 (if (or (= acc -2) (or (= acc -1) (= acc idx))) idx -3)))))
+              (_ -3))
+            -3))
+        (_ -3)))
+    (None -3)))
+
+(def ml-bce-params (ffi-call "zyl_ref_new" Nil 1000))
+
+; Guard, fast copy (head label from ml-bce-head), then the plain loop at label 0.
+(defn ml-bce-body (st env venv ms name np rflags aop acc body plan)
+  (match plan
+    (Bce ji ni si b op
+      (let bv (ml-var (ffi-call "zyl_ref_get" ml-view-bound 1000) b)
+        (let rt (ms-vreg ms)
+          (let lf (ms-label (mr-ms rt))
+            (let g1 (ms-emit (ms-emit (ms-emit (ms-emit (mr-ms lf) (MJfI 8 ji 0 0)) (MConst (mr-v rt) 4611686018427387904)) (MJf 5 ni (mr-v rt) 0)) (MJf 7 ni bv 0))
+              (let g2 (if (< si 0) g1 (ms-emit (ms-emit g1 (MJfI 8 si 0 0)) (MJfI 5 si 2147483647 0)))
+                (let _ (ffi-call "zyl_ref_set" ml-bce-head (mr-v lf) 1000)
+                  (let cxf (MCtx name (ml-range 0 np) (mr-v lf) rflags aop acc)
+                    (let mf (ml-bce-fast st env venv (ms-emit g2 (MLabel (mr-v lf))) cxf body op b ji)
+                      (ml-tail st env venv (ms-emit mf (MLabel 0)) (MCtx name (ml-range 0 np) 0 rflags aop acc) body))))))))))))
+
+; The head test by hand, so only the loop side is lowered with the proof on.
+(defn ml-bce-fast (st env venv ms cx body op b ji)
+  (match body
+    (IIf c t f
+      (let le (ms-label ms)
+        (let m1 (ml-cond st env venv (mr-ms le) c (mr-v le))
+          (if (= op 8)
+            (let m2 (ml-tail st env venv m1 cx t)
+              (let _ (ffi-call "zyl_ref_set" ml-bce-on (Some (MVar b ji)) 1000)
+                (let m3 (ml-tail st env venv (ms-emit m2 (MLabel (mr-v le))) cx f)
+                  (let _ (ffi-call "zyl_ref_set" ml-bce-on None 1000) m3))))
+            (let _ (ffi-call "zyl_ref_set" ml-bce-on (Some (MVar b ji)) 1000)
+              (let m2 (ml-tail st env venv m1 cx t)
+                (let _ (ffi-call "zyl_ref_set" ml-bce-on None 1000)
+                  (ml-tail st env venv (ms-emit m2 (MLabel (mr-v le))) cx f))))))))
+    (_ ms)))
+
+; An access of view p at offset expression off is proven in bounds.
+(defn ml-bce-proven (venv p off)
+  (match (ffi-call "zyl_ref_get" ml-bce-on 1000)
+    (Some bj (match bj (MVar b jv (and (str-eq p b) (match off (ILoad x (= (ml-var venv x) jv)) (_ false))))))
+    (None false)))
 
 ; --- accumulator: a tail `x op (self args)` becomes acc op= x and a self jump ---
 ; Every integer operator on this path wraps, so add, mul, and, or and xor are
@@ -3200,7 +3353,8 @@
 (defn ml-views (ms name params body _i)
   (let _ (ffi-call "zyl_ref_set" ml-view-data Nil 1000)
     (let _ (ffi-call "zyl_ref_set" ml-view-bound Nil 1000)
-      (ml-views-go ms name params params body 0))))
+      (let _ (ffi-call "zyl_ref_set" ml-view-param Nil 1000)
+        (ml-views-go ms name params params body 0)))))
 
 (defn ml-views-go (ms name all ps body i)
   (match ps
@@ -3211,8 +3365,9 @@
           (let rb (ms-vreg (mr-ms rd))
             (let _ (ffi-call "zyl_ref_set" ml-view-data (Cons (MVar p (mr-v rd)) (ffi-call "zyl_ref_get" ml-view-data 1000)) 1000)
               (let _ (ffi-call "zyl_ref_set" ml-view-bound (Cons (MVar p (mr-v rb)) (ffi-call "zyl_ref_get" ml-view-bound 1000)) 1000)
+              (let _ (ffi-call "zyl_ref_set" ml-view-param (Cons (MVar p i) (ffi-call "zyl_ref_get" ml-view-param 1000)) 1000)
                 (ml-views-go (ms-emit (ms-emit (mr-ms rb) (MByteData (mr-v rd) i)) (MByteBound (mr-v rb) i))
-                             name all t body (+ i 1))))))
+                             name all t body (+ i 1)))))))
         (ml-views-go ms name all t body (+ i 1))))))
 
 (defn ml-byte-handle-in (p e)
@@ -3318,8 +3473,9 @@
     (_ st)))
 
 (defn mb-alloc-emit (st name nv nl0 instrs0 rflags blocks)
-  (let nl (+ nl0 1)
-  (let instrs (mir-coalesce (mir-dce (mir-rotate instrs0 nl0) nv) nv)
+  (let nl (+ nl0 2)
+  (let fh (ffi-call "zyl_ref_get" ml-bce-head 1000)
+  (let instrs (mir-coalesce (mir-dce (mir-rotate (if (>= fh 0) (mir-rotate instrs0 fh (+ nl0 1)) instrs0) 0 nl0) nv) nv)
   (let n (list-length instrs)
     (let a (mir-array instrs n)
       (let lin (mir-liveness a n nv (mir-label-pos a n nl))
@@ -3327,7 +3483,7 @@
         (let rv (mir-ret-vregs a n nv u)
         (let al (mir-set-locs (mir-allocate (mir-drop-ivs (mir-intervals a n nv lin u) rv) nv (mir-hints a n nv)) rv 11)
           (match (cg-label-new st)
-            (CGR st1 _ base (mb-emit-fn st1 name al nv base instrs rflags blocks))))))))))))
+            (CGR st1 _ base (mb-emit-fn st1 name al nv base instrs rflags blocks)))))))))))))
 
 (defn mb-emit-fn (st name al nv base instrs rflags blocks)
   (let saved (mb-used-callee al nv 0 Nil)
@@ -3599,14 +3755,17 @@
 
 ; A view access: bound check, then [data+off]; out of bounds gives 0 (a store writes nothing).
 ; A store value below -1 is the immediate -v-2.
-(defn mb-byte-fast (st fr kind d o dt bd v i)
+(defn mb-byte-fast (st fr kind0 d o dt bd v i)
+  (let kind (bit-and kind0 3)
   (let lf (str-concat (mf-base fr) (str-concat "_q" (ffi-call "zyl_int_text" i 1000)))
     (let ld (str-concat lf "d")
       (let om (mb-in-mem fr o)
         (let ot (if om "rax" (mb-loc-text fr o))
           (let st1 (if om (cg-emit-line st (str-concat "    mov rax, " (mb-loc-text fr o))) st)
-            (let st2 (cg-emit-lines st1 (Cons (str-concat "    cmp " (str-concat ot (str-concat ", " (mb-loc-text fr bd))))
-                                        (Cons (str-concat "    jae " lf) Nil)))
+            ; kind0 >= 4: the offset is proven in bounds (ml-bce-plan), no check
+            (let st2 (if (>= kind0 4) st1
+                       (cg-emit-lines st1 (Cons (str-concat "    cmp " (str-concat ot (str-concat ", " (mb-loc-text fr bd))))
+                                          (Cons (str-concat "    jae " lf) Nil))))
               (let dm (mb-in-mem fr dt)
                 (let dtt (if dm "rdx" (mb-loc-text fr dt))
                   (let st3 (if dm (cg-emit-line st2 (str-concat "    mov rdx, " (mb-loc-text fr dt))) st2)
@@ -3618,21 +3777,25 @@
                                      (cg-emit-lines st3 (Cons (str-concat "    mov rcx, " (mb-loc-text fr v)) (Cons (str-concat "    mov " (str-concat addr ", cl")) Nil)))
                                      (cg-emit-line st3 (str-concat "    mov " (str-concat addr (str-concat ", " (mb-reg8 (mb-loc-text fr v))))))))
                           (if (mb-live fr d)
-                            (mb-set (cg-emit-lines st4 (Cons "    mov eax, 1" (Cons (str-concat "    jmp " ld) (Cons (str-concat lf ":") (Cons "    xor eax, eax" (Cons (str-concat ld ":") Nil))))))
+                            (mb-set (cg-emit-lines st4 (Cons "    mov eax, 1" (mb-bf-fail (>= kind0 4) lf ld "eax")))
                                     fr d "rax")
-                            (cg-emit-line st4 (str-concat lf ":"))))
+                            (if (>= kind0 4) st4 (cg-emit-line st4 (str-concat lf ":")))))
                         (if (and (mb-live fr d) (not (mb-in-mem fr d)))
                           (let dr (mb-loc-text fr d)
                             (cg-emit-lines st3
                               (Cons (if (= kind 1) (str-concat "    movsx " (str-concat dr (str-concat ", " addr)))
                                       (str-concat "    movzx " (str-concat (mb-reg32 dr) (str-concat ", " addr))))
-                              (Cons (str-concat "    jmp " ld) (Cons (str-concat lf ":")
-                              (Cons (str-concat "    xor " (str-concat (mb-reg32 dr) (str-concat ", " (mb-reg32 dr))))
-                              (Cons (str-concat ld ":") Nil)))))))
+                              (mb-bf-fail (>= kind0 4) lf ld (mb-reg32 dr)))))
                           (mb-set (cg-emit-lines st3
                                     (Cons (if (= kind 1) (str-concat "    movsx rax, " addr) (str-concat "    movzx eax, " addr))
-                                    (Cons (str-concat "    jmp " ld) (Cons (str-concat lf ":") (Cons "    xor eax, eax" (Cons (str-concat ld ":") Nil))))))
-                                  fr d "rax"))))))))))))))
+                                    (mb-bf-fail (>= kind0 4) lf ld "eax")))
+                                  fr d "rax")))))))))))))))
+
+; The out-of-bounds result 0 in r32 and the join; nothing when the access is proven.
+(defn mb-bf-fail (proven lf ld r32)
+  (if proven Nil
+    (Cons (str-concat "    jmp " ld) (Cons (str-concat lf ":")
+    (Cons (str-concat "    xor " (str-concat r32 (str-concat ", " r32))) (Cons (str-concat ld ":") Nil))))))
 
 (defn mb-all-regs (fr d a b) (and (not (mb-in-mem fr d)) (and (not (mb-in-mem fr a)) (not (mb-in-mem fr b)))))
 

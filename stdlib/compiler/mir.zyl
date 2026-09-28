@@ -190,34 +190,34 @@
 
 ; --- loop rotation ----------------------------------------------------------
 
-; When the loop head (label 0) is a conditional jump, a self jump repeats
+; When a loop head (label h) is a conditional jump, a self jump repeats
 ; that test instead: the same registers are read, so the same branch is
 ; taken, one jump sooner. Label `nl` (unused) marks the head's fall-through.
-(defn mir-rotate (instrs nl)
-  (match (mir-head-test instrs)
-    (Some t (mir-rot-go instrs t nl))
+(defn mir-rotate (instrs h nl)
+  (match (mir-head-test instrs h)
+    (Some t (mir-rot-go instrs t h nl))
     (None instrs)))
 
-(defn mir-head-test (xs)
+(defn mir-head-test (xs h)
   (match xs
     (Nil None)
     (Cons i t
       (match i
-        (MLabel l (if (= l 0) (match t (Cons j _ (if (mir-cond-jump j) (Some j) None)) (Nil None)) (mir-head-test t)))
-        (_ (mir-head-test t))))))
+        (MLabel l (if (= l h) (match t (Cons j _ (if (mir-cond-jump j) (Some j) None)) (Nil None)) (mir-head-test t h)))
+        (_ (mir-head-test t h))))))
 
 (defn mir-cond-jump (i) (match i (MJf _ _ _ _ true) (MJfI _ _ _ _ true) (MJz _ _ true) (_ false)))
 
-(defn mir-rot-go (xs t nl)
+(defn mir-rot-go (xs t h nl)
   (match xs
     (Nil Nil)
     (Cons i rest
       (match i
-        (MJmp l (if (= l 0) (Cons t (Cons (MJmp nl) (mir-rot-go rest t nl))) (Cons i (mir-rot-go rest t nl))))
-        (MLabel l (if (= l 0)
-                    (match rest (Cons j r2 (Cons i (Cons j (Cons (MLabel nl) (mir-rot-go r2 t nl))))) (Nil xs))
-                    (Cons i (mir-rot-go rest t nl))))
-        (_ (Cons i (mir-rot-go rest t nl)))))))
+        (MJmp l (if (= l h) (Cons t (Cons (MJmp nl) (mir-rot-go rest t h nl))) (Cons i (mir-rot-go rest t h nl))))
+        (MLabel l (if (= l h)
+                    (match rest (Cons j r2 (Cons i (Cons j (Cons (MLabel nl) (mir-rot-go r2 t h nl))))) (Nil xs))
+                    (Cons i (mir-rot-go rest t h nl))))
+        (_ (Cons i (mir-rot-go rest t h nl)))))))
 
 ; --- copy coalescing ------------------------------------------------------
 
