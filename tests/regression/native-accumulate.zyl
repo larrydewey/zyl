@@ -19,6 +19,17 @@
 (defn bsum ((b ByteBuf) (i Int) (n Int) (acc Int))
   (if (>= i n) acc (bsum b (+ i 1) n (+ acc (load-u8 :le b i)))))
 
+; tree recursion with a Float result and an ADT result (self unrolling)
+(defn ff ((n Int)) (if (< n 2) 1.0 (+ (ff (- n 1)) (ff (- n 2)))))
+(defn depth ((t T)) (match t (Lf 0) (Nd l r (let a (depth l) (let b (depth r) (+ 1 (if (> a b) a b)))))))
+(defn tri ((n Int) (k Int)) (if (<= n k) (* n 2) (- (tri (- n 1) k) (tri (- n 3) (+ k 1)))))
+
+(test "unroll"
+  (begin
+    (assert-equal (ff 10) 89.0)
+    (assert-equal (depth (mk 7)) 7)
+    (assert-equal (tri 20 0) 182)))
+
 (test "accumulate"
   (begin
     (assert-equal (fib 25) 75025)

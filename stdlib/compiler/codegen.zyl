@@ -3343,7 +3343,7 @@
 ; The region prologue only uses rax, so the arguments are still in
 ; their registers for the parameter moves after it.
 (defn mb-prologue (st name fr fsz align)
-  (let st1 (cg-emit-line (cg-emit (cg-emit-line st ".p2align 4") (cg-sym-mangled (cg-arena-of st) name)) ":")
+  (let st1 (cg-emit-line (cg-emit st (cg-sym-mangled (cg-arena-of st) name)) ":")
     (let st2 (cg-emit-lines st1 (Cons "    push rbp" (Cons "    mov rbp, rsp" Nil)))
       (if (mf-pushes fr)
         (let st3 (mb-push-regs st2 (mf-saved fr))
