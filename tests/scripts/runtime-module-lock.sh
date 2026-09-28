@@ -16,4 +16,11 @@ printf '%s\n' "$out" | grep -q 'E_FFI_RESTRICTED' || fail "copy was not refused:
 "$ZYL" "$ZYL_HOME/runtime/rt/rt.zyl" -o "$SCRATCH/ok.s" --runtime-module || fail "bundled runtime refused"
 grep -q '^\.globl zyl_cstr_len' "$SCRATCH/ok.s" || fail "no export"
 grep -q '^\.globl main' "$SCRATCH/ok.s" && fail "runtime module has a main"
+# A bundle's runtime may use only its own runtime/rt modules.
+B="$SCRATCH/bundle"
+mkdir -p "$B/runtime/rt"
+ln -s "$ZYL_HOME/stdlib" "$B/stdlib"
+printf '(use core/list)\n(defn zyl_x () 0)\n' > "$B/runtime/rt/rt.zyl"
+out="$(ZYL_HOME="$B" "$ZYL" "$B/runtime/rt/rt.zyl" -o "$SCRATCH/b.s" --runtime-module 2>&1 || true)"
+printf '%s\n' "$out" | grep -q 'E_FFI_RESTRICTED' || fail "stdlib use was not refused: $out"
 echo ok

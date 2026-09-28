@@ -1,0 +1,13 @@
+; CPU feature probes.
+(use base)
+
+; --- CPU features ---
+
+; Bit 0 AES-NI, 1 PCLMULQDQ, 2 SSE4.1, 3 AVX (CPUID leaf 1, ECX).
+(defn zyl_cpuid_features ()
+  (let c (ffi-call "%cpuid-ecx" 1 0 1)
+    (bit-or (if (> (bit-and c 33554432) 0) 1 0)
+      (bit-or (if (> (bit-and c 2) 0) 2 0)
+        (bit-or (if (> (bit-and c 524288) 0) 4 0) (if (> (bit-and c 268435456) 0) 8 0))))))
+
+(defn zyl_aesni_available () (> (bit-and (zyl_cpuid_features) 1) 0))

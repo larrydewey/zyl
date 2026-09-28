@@ -1,0 +1,134 @@
+; C-string, view and path entries.
+(use base)
+
+(defn zyl_cstr_len (s)
+  (let w (rt-w s)
+    (if (< w 4096)
+      (if (= w 0) 0 (rt-bad-len w))
+      (strlen-of s))))
+
+(defn rt-bad-len (w) (let _ (rt-bad-str w "cstr-len") 0))
+
+(defn zyl_cstr_eq (a b)
+  (let wa (rt-w a)
+    (let wb (rt-w b)
+      (if (= wa wb) true
+        (if (< wa 4096) (if (= wa 0) false (rt-bad-str wa "cstr-eq"))
+          (if (< wb 4096) (if (= wb 0) false (rt-bad-str wb "cstr-eq"))
+            (= (rt-strcmp wa wb) 0)))))))
+
+(defn zyl_cstr_cmp (a b)
+  (let wa (rt-w a)
+    (let wb (rt-w b)
+      (if (= wa wb) 0
+        (if (= wa 0) -1
+          (if (= wb 0) 1
+            (rt-strcmp wa wb)))))))
+
+(defn zyl_cstr_byte_at (s i)
+  (let w (rt-w s)
+    (if (< i 0) -1
+      (if (< w 4096)
+        (if (= w 0) -1 (rt-bad-at w))
+        (if (>= i (strlen-of s)) -1 (rt-ld8 (+ w i)))))))
+
+(defn rt-bad-at (w) (let _ (rt-bad-str w "cstr-byte-at") -1))
+
+; key equals name, or is a qualified key ending in "::name"; allocation-free.
+(defn zyl_cstr_key_matches (key name)
+  (let wk (rt-w key)
+    (let wn (rt-w name)
+      (if (= wk wn) true
+        (if (or (= wk 0) (= wn 0)) false
+          (let kl (strlen-of key)
+            (let nl (strlen-of name)
+              (if (= kl nl)
+                (rt-mem-eq wk wn kl)
+                (if (< kl (+ nl 2)) false
+                  (let t (+ wk (- kl nl))
+                    (if (= (rt-ld8 (- t 1)) 58)
+                      (if (= (rt-ld8 (- t 2)) 58)
+                        (rt-mem-eq t wn nl)
+                        false)
+                      false)))))))))))
+
+; --- string entries ---
+
+(defn rt-concat (a b rp)
+  (let wa (rt-w a)
+    (let wb (rt-w b)
+      (if (and (> wa 0) (< wa 4096)) (rt-bad-null wa "cstr-concat")
+        (if (and (> wb 0) (< wb 4096)) (rt-bad-null wb "cstr-concat")
+          (let la (if (= wa 0) 0 (rt-strlen wa))
+            (let lb (if (= wb 0) 0 (rt-strlen wb))
+              (let p (rt-alloc (+ (+ la lb) 1) rp)
+                (let _ (rt-copy p wa la)
+                  (let _ (rt-copy (+ p la) wb lb)
+                    (let _ (rt-st8 (+ p (+ la lb)) 0) (ffi-call "%str" p 1))))))))))))
+
+(defn zyl_cstr_concat (a b) (rt-concat a b 0))
+(defn zyl_cstr_concat_r (a b) (rt-concat a b (rt-cur-region)))
+
+(defn rt-substr (s start len rp)
+  (let w (rt-w s)
+    (if (and (> w 0) (< w 4096)) (rt-bad-null w "cstr-substr")
+      (let n (if (= w 0) 0 (rt-strlen w))
+        (let st (if (< start 0) 0 (if (> start n) n start))
+          (let ln (if (< len 0) 0 (if (> len (- n st)) (- n st) len))
+            (rt-str-of (+ w st) ln rp)))))))
+
+(defn zyl_cstr_substr (s start len) (rt-substr s start len 0))
+(defn zyl_cstr_substr_r (s start len) (rt-substr s start len (rt-cur-region)))
+
+(defn rt-from-byte (b rp)
+  (let p (rt-alloc 2 rp)
+    (if (= p 0) (ffi-call "%str" 0 1)
+      (let _ (rt-st8 p (bit-and b 255)) (let _ (rt-st8 (+ p 1) 0) (ffi-call "%str" p 1))))))
+
+(defn zyl_cstr_from_byte (b) (rt-from-byte b 0))
+(defn zyl_cstr_from_byte_r (b) (rt-from-byte b (rt-cur-region)))
+
+; --- string views ---
+
+(defn zyl_view_ok (s off len)
+  (if (or (< off 0) (< len 0)) false
+    (let w (rt-w s)
+      (if (and (> w 0) (< w 4096)) (rt-bad-str w "view")
+        (let n (if (= w 0) 0 (rt-strlen w)) (and (<= off n) (<= len (- n off))))))))
+
+(defn zyl_view_byte (s off len i)
+  (if (or (= (rt-w s) 0) (or (< i 0) (>= i len))) -1 (rt-ld8 (+ (rt-w s) (+ off i)))))
+
+; A null view base reads as the empty string.
+(defn rt-view-base (s off) (if (= (rt-w s) 0) (ffi-call "%global" "empty" 64 1) (+ (rt-w s) off)))
+
+(defn zyl_view_cmp (a aoff alen b boff blen)
+  (let n (if (< alen blen) alen blen)
+    (let c (if (> n 0) (rt-mem-cmp (rt-view-base a aoff) (rt-view-base b boff) n) 0)
+      (if (not (= c 0)) c (if (< alen blen) -1 (if (> alen blen) 1 0))))))
+
+(defn zyl_view_find (s off len from byte)
+  (if (or (= (rt-w s) 0) (or (< from 0) (>= from len))) -1
+    (rt-find-byte (+ (rt-w s) off) len (bit-and byte 255) from)))
+
+(defn rt-view-copy (s off len rp)
+  (let p (rt-alloc (+ len 1) rp)
+    (let _ (if (and (> (rt-w s) 0) (> len 0)) (rt-copy p (+ (rt-w s) off) len) 0)
+      (let _ (rt-st8 (+ p len) 0) (ffi-call "%str" p 1)))))
+
+(defn zyl_view_copy (s off len) (rt-view-copy s off len 0))
+(defn zyl_view_copy_r (s off len) (rt-view-copy s off len (rt-cur-region)))
+
+; --- paths ---
+
+(defn rt-last-slash (s i last) (let c (rt-ld8 (+ s i)) (if (= c 0) last (rt-last-slash s (+ i 1) (if (= c 47) i last)))))
+
+; Everything up to and including the last '/'; with no '/', the first byte (C behaviour kept).
+(defn zyl_dirname_cstr (path)
+  (let w (rt-w path)
+    (if (= w 0) (ffi-call "%str" 0 1)
+      (let sl (rt-last-slash w 0 -1)
+        (let len (if (< sl 0) (if (= (rt-ld8 w) 0) 0 1) (+ sl 1))
+          (let p (rt-w (ffi-call "zyl_heap_alloc" (+ len 1) 1))
+            (if (= p 0) (ffi-call "%str" 0 1)
+              (let _ (rt-copy p w len) (let _ (rt-st8 (+ p len) 0) (ffi-call "%str" p 1))))))))))

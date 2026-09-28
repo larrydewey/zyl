@@ -476,9 +476,13 @@
 ; package, then the implicit stdlib, then a declared dependency's root
 ; module — so the same source always names the same file.
 (defn mr-target-pkg (disc pkg u)
+  (if (rt-mode-p)
+    (if (and (= (str-length (mru-pkg u)) 0) (mr-file-exists (mr-module-file pkg (mru-module u))))
+      pkg
+      (ffi-call "zyl_panic" (str-concat "E_FFI_RESTRICTED: the runtime module may use only runtime/rt modules, not " (mru-module u)) 1000))
   (if (> (str-length (mru-pkg u)) 0)
     (mr-dep-pkg disc pkg (mru-pkg u))
-    (mr-implicit-pkg disc pkg (mru-module u))))
+    (mr-implicit-pkg disc pkg (mru-module u)))))
 
 (defn mr-implicit-pkg (disc pkg module)
   (if (mr-file-exists (mr-module-file pkg module))
@@ -1227,9 +1231,7 @@
 
 (defn mr-root-uses (main-forms uses)
   (if (rt-mode-p)
-    (match uses
-      (Nil Nil)
-      (_ (ffi-call "zyl_panic" "E_FFI_RESTRICTED: the runtime module may not use other modules" 1000)))
+    uses
   (if (> (mr-bundle-source main-forms) 0)
     uses
     (if (mr-core-loaded uses)

@@ -1,0 +1,140 @@
+; Runtime base: the libc bridge, raw-access macros, SIMD scans and memory helpers.
+
+; libc bridge, removed in the libc-free phase.
+(extern "write" (Int String Int) Int)
+
+(defmacro rt-w (x) (ffi-call "%word" x 1))
+(defmacro rt-ld8 (a) (ffi-call "%load8" a 1))
+(defmacro rt-zmask (a) (ffi-call "%v128-zero-mask" a 1))
+(defmacro rt-eqmask (a b) (ffi-call "%v128-eq-mask" a b 1))
+(defmacro rt-ctz (x) (ffi-call "%ctz" x 1))
+
+; --- SIMD scans (SSE2: aligned loads never cross a page) ---
+
+; Length of the NUL-terminated bytes at w.
+(defn rt-strlen (w)
+  (let base (bit-and w -16)
+    (let m (shr (rt-zmask base) (bit-and w 15))
+      (if (= m 0) (rt-strlen-from w (+ base 16)) (rt-ctz m)))))
+
+; p is 16-aligned; one more 16-byte block reaches 32-alignment for the AVX2 loop.
+(defn rt-strlen-from (w p)
+  (let m (rt-zmask p)
+    (if (= m 0)
+      (if (= (bit-and p 31) 0)
+        (rt-strlen-from w (+ p 16))
+        (if (rt-avx2) (rt-strlen-32 w (+ p 16)) (rt-strlen-16 w (+ p 16))))
+      (- (+ p (rt-ctz m)) w))))
+
+(defn rt-strlen-16 (w p)
+  (let m (rt-zmask p)
+    (if (= m 0) (rt-strlen-16 w (+ p 16)) (- (+ p (rt-ctz m)) w))))
+
+(defn rt-strlen-32 (w p)
+  (let m (ffi-call "%v256-zero-mask" p 1)
+    (if (= m 0) (rt-strlen-32 w (+ p 32)) (- (+ p (rt-ctz m)) w))))
+
+; Whether n bytes at a and b are equal.
+(defn rt-mem-eq (a b n)
+  (if (>= n 16)
+    (if (= (rt-eqmask a b) 65535) (rt-mem-eq (+ a 16) (+ b 16) (- n 16)) false)
+    (rt-bytes-eq a b n)))
+
+(defn rt-bytes-eq (a b n)
+  (if (= n 0) true (if (= (rt-ld8 a) (rt-ld8 b)) (rt-bytes-eq (+ a 1) (+ b 1) (- n 1)) false)))
+
+; strcmp: the first differing byte (or NUL) decides; -1, 0 or 1.
+(defn rt-strcmp (a b)
+  (if (or (> (bit-and a 4095) 4080) (> (bit-and b 4095) 4080))
+    (rt-strcmp-bytes a b 16)
+    (let d (ffi-call "%v128-diff-mask" a b 1)
+      (if (= d 0) (rt-strcmp (+ a 16) (+ b 16)) (let k (rt-ctz d) (rt-byte-order (+ a k) (+ b k)))))))
+
+; Near a page end: up to k bytes one at a time, then back to 16-byte blocks.
+(defn rt-strcmp-bytes (a b k)
+  (if (= k 0) (rt-strcmp a b)
+    (let x (rt-ld8 a)
+      (let y (rt-ld8 b)
+        (if (or (not (= x y)) (= x 0)) (rt-byte-order a b) (rt-strcmp-bytes (+ a 1) (+ b 1) (- k 1)))))))
+
+(defn rt-byte-order (a b)
+  (let x (rt-ld8 a) (let y (rt-ld8 b) (if (< x y) -1 (if (> x y) 1 0)))))
+
+(defn rt-hex (n acc)
+  (let d (str-substring "0123456789abcdef" (bit-and n 15) 1)
+    (if (< n 16) (str-concat d acc) (rt-hex (shr n 4) (str-concat d acc)))))
+
+; A non-null pointer below the first page is never a string; report it like the C runtime did.
+(defn rt-bad-str (w who)
+  (let msg (str-concat "zyl: " (str-concat who (str-concat ": invalid string pointer 0x" (str-concat (rt-hex w "") "\n"))))
+    (let _ (ffi-call "write" 2 msg (strlen-of msg) 1)
+      false)))
+
+(defn strlen-of (s) (rt-strlen (rt-w s)))
+
+; --- memory ---
+
+(defmacro rt-st8 (a v) (ffi-call "%store8" a v 1))
+
+; Copies n bytes from src to dst (the ranges do not overlap); returns dst.
+(defn rt-copy (dst src n)
+  (if (>= n 16) (let _ (rt-copy-16 dst src n) dst)
+    (if (>= n 8)
+      (let _ (ffi-call "%store64" dst (ffi-call "%load64" src 1) 1)
+        (let _ (ffi-call "%store64" (+ dst (- n 8)) (ffi-call "%load64" (+ src (- n 8)) 1) 1) dst))
+      (if (>= n 4)
+        (let _ (ffi-call "%store32" dst (ffi-call "%load32" src 1) 1)
+          (let _ (ffi-call "%store32" (+ dst (- n 4)) (ffi-call "%load32" (+ src (- n 4)) 1) 1) dst))
+        (rt-copy-bytes dst src n)))))
+
+; 16-byte blocks, then one last block ending exactly at n (it may overlap the previous one).
+(defn rt-copy-16 (dst src n)
+  (if (> n 16)
+    (let _ (ffi-call "%v128-copy" dst src 1) (rt-copy-16 (+ dst 16) (+ src 16) (- n 16)))
+    (ffi-call "%v128-copy" (+ dst (- n 16)) (+ src (- n 16)) 1)))
+
+(defn rt-copy-bytes (dst src n)
+  (if (= n 0) dst (let _ (rt-st8 dst (rt-ld8 src)) (let _ (rt-copy-bytes (+ dst 1) (+ src 1) (- n 1)) dst))))
+
+; memcmp's sign over n bytes.
+(defn rt-mem-cmp (a b n)
+  (if (>= n 16)
+    (let m (bit-xor (rt-eqmask a b) 65535)
+      (if (= m 0) (rt-mem-cmp (+ a 16) (+ b 16) (- n 16)) (rt-byte-order (+ a (rt-ctz m)) (+ b (rt-ctz m)))))
+    (if (= n 0) 0 (if (= (rt-ld8 a) (rt-ld8 b)) (rt-mem-cmp (+ a 1) (+ b 1) (- n 1)) (rt-byte-order a b)))))
+
+; Offset of byte c in the n bytes at p, or -1.
+(defn rt-find-byte (p n c i)
+  (if (>= (- n i) 16)
+    (let m (ffi-call "%v128-byte-mask" (+ p i) c 1)
+      (if (= m 0) (rt-find-byte p n c (+ i 16)) (+ i (rt-ctz m))))
+    (if (>= i n) -1 (if (= (rt-ld8 (+ p i)) c) i (rt-find-byte p n c (+ i 1))))))
+
+; A block in the current result region (0: the heap).
+(defn rt-alloc (n rp) (ffi-call "zyl_ralloc" n rp 1))
+
+(defn rt-cur-region () (ffi-call "%tls-get" "zyl_cur_region" 1))
+
+; The NUL-terminated copy of n bytes at src.
+(defn rt-str-of (src n rp)
+  (let p (rt-alloc (+ n 1) rp)
+    (let _ (rt-copy p src n) (let _ (rt-st8 (+ p n) 0) (ffi-call "%str" p 1)))))
+
+(defn rt-bad-null (w who) (let _ (rt-bad-str w who) (ffi-call "%str" 0 1)))
+
+; AVX2 usable (CPU and OS), probed once: the cached word is 0 unknown, 1 no, 2 yes.
+(defn rt-avx2 ()
+  (let g (ffi-call "%global" "cpu_avx2" 8 1)
+    (let v (ffi-call "%load64" g 1)
+      (if (= v 0)
+        (let f (if (rt-avx2-probe) 2 1) (let _ (ffi-call "%store64" g f 1) (= f 2)))
+        (= v 2)))))
+
+(defn rt-avx2-probe ()
+  (if (< (ffi-call "%cpuid-eax" 0 0 1) 7) false
+    (let c (ffi-call "%cpuid-ecx" 1 0 1)
+      (if (= (bit-and c 402653184) 402653184)
+        (if (= (bit-and (ffi-call "%xgetbv" 1) 6) 6)
+          (> (bit-and (ffi-call "%cpuid-ebx" 7 0 1) 32) 0)
+          false)
+        false))))

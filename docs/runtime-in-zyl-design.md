@@ -31,9 +31,10 @@ any unsafe construct to the language.
    module. The driver refuses the flag unless `<entry>` is the bundle's
    own `runtime/rt/rt.zyl` (the checkout or `$ZYL_HOME`). The flag is
    not listed in the usage text.
-2. In a runtime module, `(use ...)` is refused. The runtime is
-   self-contained, so a standard-library file never gets compiled with
-   the privilege.
+2. In a runtime module, `(use m)` may name only modules in
+   `runtime/rt/` next to the entry: `base`, `cpu`, `cstr`, `text` and so
+   on. A standard-library module is refused at every level, so a file
+   outside the runtime is never compiled with the privilege.
 3. The raw primitives (all named `%...`, listed below) are
    `E_RT_INTERNAL` in any other compile. That includes user programs,
    the standard library and the compiler itself.
