@@ -1,5 +1,6 @@
 ; OS entries: files, directory walks, argv, cwd, mkdir -p and the terminal, over direct syscalls.
 (use base)
+(use out)
 
 ; libc bridge, removed in the libc-free phase.
 (extern "malloc" (Int) Int)
@@ -270,7 +271,7 @@
 
 ; A byte, -1 at EOF or error, -2 when interrupted (EINTR).
 (defn zyl_term_read_byte ()
-  (let b (ffi-call "%tls" "os_byte" 8 1)
+  (let b (let _ (zyl_out_flush) (ffi-call "%tls" "os_byte" 8 1))
     (let n (ffi-call "%syscall3" 0 0 b 1 1)
       (if (= n 1) (rt-ld8 b) (if (= n -4) -2 -1)))))
 
@@ -291,7 +292,7 @@
 (defn zyl_term_width () (os-winsz 2 80))
 (defn zyl_term_height () (os-winsz 0 24))
 
-; Flushes stdio's stdout first so escapes keep their order with printf output.
+; Flushes the stdout buffer first so escapes keep their order with print output.
 (defn zyl_term_write (s)
   (let w (rt-w s)
     (if (= w 0) 0

@@ -3,9 +3,6 @@
 
 (extern "malloc" (Int) Int)
 (extern "free" (Int) Int)
-(extern "fopen" (Int Int) Int)
-(extern "fread" (Int Int Int Int) Int)
-(extern "fclose" (Int) Int)
 
 (defmacro b3-ld (a) (ffi-call "%load32" a 1))
 (defmacro b3-st (a v) (ffi-call "%store32" a v 1))
@@ -251,20 +248,21 @@
           (if (= h 0) (ffi-call "%str" 0 1)
             (let _ (b3-update h s n) (b3-hex-out arena h (b3-clamp outbytes)))))))))
 
-(defn b3-read-all (h f buf)
-  (let got (ffi-call "fread" buf 1 65536 f 1)
-    (if (> got 0) (let _ (b3-update h buf got) (b3-read-all h f buf)) h)))
+; read(2) to end of file; an error ends the stream as fread's short count did.
+(defn b3-read-all (h fd buf)
+  (let got (ffi-call "%syscall3" 0 fd buf 65536 1)
+    (if (> got 0) (let _ (b3-update h buf got) (b3-read-all h fd buf)) (if (= got -4) (b3-read-all h fd buf) h))))
 
 ; BLAKE3 of a file's contents as lowercase hex, streamed; 0 if it cannot be opened.
 (defn zyl_blake3_file_hex (arena path outbytes)
   (let p (rt-w path)
     (if (= p 0) (ffi-call "%str" 0 1)
-      (let f (ffi-call "fopen" p (rt-w "rb") 1)
-        (if (= f 0) (ffi-call "%str" 0 1)
+      (let f (ffi-call "%syscall3" 2 p 0 0 1)
+        (if (< f 0) (ffi-call "%str" 0 1)
           (let h (b3-new)
             (let buf (if (= h 0) 0 (ffi-call "malloc" 65536 1))
               (if (= buf 0)
-                (let _ (if (= h 0) 0 (ffi-call "free" h 1)) (let _ (ffi-call "fclose" f 1) (ffi-call "%str" 0 1)))
+                (let _ (if (= h 0) 0 (ffi-call "free" h 1)) (let _ (ffi-call "%syscall1" 3 f 1) (ffi-call "%str" 0 1)))
                 (let _ (b3-read-all h f buf)
                   (let _ (ffi-call "free" buf 1)
-                    (let _ (ffi-call "fclose" f 1) (b3-hex-out arena h (b3-clamp outbytes)))))))))))))
+                    (let _ (ffi-call "%syscall1" 3 f 1) (b3-hex-out arena h (b3-clamp outbytes)))))))))))))

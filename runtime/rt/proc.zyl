@@ -1,5 +1,6 @@
 ; Child processes: /bin/sh -c, cc, a compiled binary; posix_spawn, never fork (main runs on a big-stack thread).
 (use base)
+(use out)
 
 (extern "posix_spawn" (Int Int Int Int Int Int) Int)
 (extern "posix_spawnp" (Int Int Int Int Int Int) Int)
@@ -22,7 +23,8 @@
 (defn pr-environ () (pr-ld64 (ffi-call "%fn" "environ" 1)))
 
 ; Per-thread scratch: pid, status, argv[8], out_path[512], file actions[128].
-(defn pr-scratch () (ffi-call "%tls" "proc_scratch" 736 1))
+; Every spawn and exec takes the scratch first; stdout is flushed so the child's output follows ours.
+(defn pr-scratch () (let _ (zyl_out_flush) (ffi-call "%tls" "proc_scratch" 736 1)))
 (defn pr-pid (s) s)
 (defn pr-status (s) (+ s 8))
 (defn pr-argv (s) (+ s 16))

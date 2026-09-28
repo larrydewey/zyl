@@ -290,7 +290,7 @@
 (defn zyl_contract_warn (msg)
   (let m (if (= (rt-w msg) 0) "contract violated" msg)
     (let line (str-concat "warning: " (str-concat m "\n"))
-      (let _ (ffi-call "write" 2 line (rt-strlen (rt-w line)) 1) 0))))
+      (let _ (rt-write-fd 2 (rt-w line) (rt-strlen (rt-w line))) 0))))
 
 ; A recover arm naming a code matches a message starting with it, then ':' or the end.
 (defn zyl_err_is (msg code)

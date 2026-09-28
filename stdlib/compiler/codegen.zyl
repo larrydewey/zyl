@@ -1325,52 +1325,17 @@
         (let st4 (cg-emit-int (cg-emit st3 "    mov [rsp+") (* 8 k))
           (cg-ext-copy-stack-arg (cg-emit-line st4 "], r10") (+ k 1) count))))))
 
-; print: pick the format by the argument's kind.
-; `print`'s own "value" (this is a Lisp where everything is an
-; expression, so a print statement is also usable as one) used to be
-; whatever printf happened to leave in rax -- its return value, the
-; byte count written, an ABI artifact never meant to be meaningful
-; here. That leaked two different ways: it silently became the process
-; exit code whenever a print was the tail expression of `main` (see
-; the entry stub's own comment), and it made nested prints like
-; `(print (print x))` show a second, garbage-looking number (the
-; inner print's byte count) instead of anything sensible. print now
-; always evaluates to a clean, deterministic 0 -- the ordinary "this
-; statement has no useful value" convention -- by zeroing eax again
-; right after the call, regardless of what printf itself returned.
-; printf is called through the same rsp save/AND/restore idiom
-; cg-variant uses: the frame size cg-function picks leaves rsp at 8 mod
-; 16 inside a body, and a call staging its arguments on the stack
-; shifts it again, so the alignment at any given call site is not
-; something this backend can predict. printf tolerated that as long as
-; al was 0 -- with no vararg floats it never reaches the `movaps` that
-; spills the SSE argument registers. `print` on a Float sets al to 1 and
-; does reach it, so an unaligned frame there was a hard crash rather
-; than a wrong answer. r12 is callee-saved, so printf gives it back.
+; print: the runtime entry for the argument's kind ("%lld\n", "%s\n", "%f\n" on the runtime's buffered stdout).
+; print's value is always 0; rsp is aligned around the call as for any C call (r12 is callee-saved).
 (defn cg-print (st env a)
   (let k (kind-of st env a)
-    (let st2 (cg-expr st env a)
-      (if (= k 2)
-        (let st3 (cg-emit-line st2 "    movq xmm0, rax")
-          (let st4 (cg-emit-line st3 "    lea rdi, [rip+.Lfmtf]")
-            (let st5 (cg-emit-line st4 "    mov eax, 1")
-              (cg-emit-line (cg-print-call st5) "    xor eax, eax"))))
-        (if (= k 1)
-          (let st3 (cg-emit-line st2 "    mov rsi, rax")
-            (let st4 (cg-emit-line st3 "    lea rdi, [rip+.Lfmts]")
-              (let st5 (cg-emit-line st4 "    xor eax, eax")
-                (cg-emit-line (cg-print-call st5) "    xor eax, eax"))))
-          (let st3 (cg-emit-line st2 "    mov rsi, rax")
-            (let st4 (cg-emit-line st3 "    lea rdi, [rip+.Lfmtd]")
-              (let st5 (cg-emit-line st4 "    xor eax, eax")
-                (cg-emit-line (cg-print-call st5) "    xor eax, eax")))))))))
+    (let st2 (cg-emit-line (cg-expr st env a) "    mov rdi, rax")
+      (cg-emit-line (cg-print-call st2 (if (= k 2) "zyl_print_float" (if (= k 1) "zyl_print_str" "zyl_print_int"))) "    xor eax, eax"))))
 
-; The call itself, on a 16-byte-aligned stack. Emitted after rdi/rsi/al
-; are already set, so aligning here cannot disturb them.
-(defn cg-print-call (st)
+(defn cg-print-call (st callee)
   (let st2 (cg-emit-line st "    mov r12, rsp")
     (let st3 (cg-emit-line st2 "    and rsp, -16")
-      (let st4 (cg-emit-line st3 "    call printf")
+      (let st4 (cg-emit-line st3 (str-concat "    call " callee))
         (cg-emit-line st4 "    mov rsp, r12")))))
 
 ; Variant construction: [tag][f0]..[fn-1], allocated via zyl_heap_alloc
@@ -2120,18 +2085,8 @@
                     (let st8 (cg-emit-line st7 "    ret")
                       st8))))))))))
 
-(defn cg-format-strings (st)
-  (let st1 (cg-emit-line st ".section .rodata")
-    (let st2 (cg-emit-line st1 ".Lfmtd:")
-      ; %lld, not %d: an Int is a 64-bit machine word, and printf
-      ; reading only 32 bits of it silently truncated every value at or
-      ; above 2^31 (a hash constant, a large product, any pointer-shaped
-      ; value) to a wrong, usually negative, number.
-      (let st3 (cg-emit-line st2 "    .string \"%lld\\n\"")
-        (let st4 (cg-emit-line st3 ".Lfmtf:")
-          (let st5 (cg-emit-line st4 "    .string \"%f\\n\"")
-            (let st6 (cg-emit-line st5 ".Lfmts:")
-              (cg-emit-line st6 "    .string \"%s\\n\""))))))))
+; The rodata section the collected literals follow.
+(defn cg-format-strings (st) (cg-emit-line st ".section .rodata"))
 
 (defn cg-dbg (msg)
   (let f (file-open "/tmp/dbg2" "a")

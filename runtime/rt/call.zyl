@@ -9,7 +9,7 @@
 (defn rt-guard (v)
   (if (< v 4096)
     (let m (str-concat "zyl: invalid callee address 0x" (str-concat (rt-hex v "") "\n"))
-      (let _ (ffi-call "write" 2 m (rt-strlen (rt-w m)) 1) (ffi-call "exit" 1 1)))
+      (let _ (rt-write-fd 2 (rt-w m) (rt-strlen (rt-w m))) (ffi-call "exit" 1 1)))
     0))
 
 (defn rt-code-p (v) (< v 4294967296))

@@ -8,7 +8,7 @@
 (defmacro rt-ld64 (a) (ffi-call "%load64" a 1))
 (defmacro rt-st64 (a v) (ffi-call "%store64" a v 1))
 
-(defn rt-note (msg) (let _ (ffi-call "write" 2 msg (rt-strlen (rt-w msg)) 1) 0))
+(defn rt-note (msg) (let _ (rt-write-fd 2 (rt-w msg) (rt-strlen (rt-w msg))) 0))
 
 (defn zyl_mem_alloc (size) (ffi-call "malloc" size 1))
 (defn zyl_mem_free (ptr) (let _ (ffi-call "free" ptr 1) 0))

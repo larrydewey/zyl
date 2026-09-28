@@ -1,7 +1,7 @@
-; Runtime base: the libc bridge, raw-access macros, SIMD scans and memory helpers.
+; Runtime base: stderr's write, raw-access macros, SIMD scans and memory helpers.
 
-; libc bridge, removed in the libc-free phase.
-(extern "write" (Int String Int) Int)
+; One write(2) syscall of n bytes at address w; the raw kernel result.
+(defn rt-write-fd (fd w n) (ffi-call "%syscall3" 1 fd w n 1))
 
 (defmacro rt-w (x) (ffi-call "%word" x 1))
 (defmacro rt-ld8 (a) (ffi-call "%load8" a 1))
@@ -67,7 +67,7 @@
 ; A non-null pointer below the first page is never a string; report it like the C runtime did.
 (defn rt-bad-str (w who)
   (let msg (str-concat "zyl: " (str-concat who (str-concat ": invalid string pointer 0x" (str-concat (rt-hex w "") "\n"))))
-    (let _ (ffi-call "write" 2 msg (strlen-of msg) 1)
+    (let _ (rt-write-fd 2 (rt-w msg) (strlen-of msg))
       false)))
 
 (defn strlen-of (s) (rt-strlen (rt-w s)))
