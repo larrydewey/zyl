@@ -154,3 +154,7 @@
 ; Ends the calling thread (its joiner frees the stack).
 (defn zyl_rt_thread_exit ()
   (if (zyl_rt_hosted_p) (ffi-call "%call1" (ffi-call "%fn-weak" "pthread_exit" 1) 0 1) (ffi-call "%syscall1" 60 0 1)))
+
+; A thread nobody joins (FFI workers): its handle and stack stay until exit.
+(defn zyl_rt_thread_detach (h)
+  (if (and (> h 0) (zyl_rt_hosted_p)) (let _ (ffi-call "%call1" (ffi-call "%fn-weak" "pthread_detach" 1) (th-ld (+ h 32)) 1) 0) 0))

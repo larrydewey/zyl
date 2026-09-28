@@ -1,9 +1,8 @@
 ; Arenas, the heap and pin arenas, and frame regions (docs/regions-design.md).
 (use base)
+(use thread)
 (use heap)
 
-(extern "pthread_mutex_lock" (Int) Int)
-(extern "pthread_mutex_unlock" (Int) Int)
 
 (defmacro rt-ld64 (a) (ffi-call "%load64" a 1))
 (defmacro rt-st64 (a v) (ffi-call "%store64" a v 1))
@@ -21,16 +20,16 @@
       (let _ (rt-write-fd 2 (rt-w msg) (rt-strlen (rt-w msg)))
         (ffi-call "%syscall1" 231 1 1)))))
 
-; --- arenas: {head, block_size, total_capacity, total_used, pthread mutex (40)}; a block is {mem, cap, used, next} ---
+; --- arenas: {head, block_size, total_capacity, total_used, futex lock word}; a block is {mem, cap, used, next} ---
 
 (defn rt-threads () (ffi-call "%global" "threads_started" 8 1))
 
-; C sets it (before pthread_create) when a second thread can reach an arena; it never goes back.
+; Set before a second thread can reach an arena; it never goes back.
 (defn zyl_threads_started_mark () (let _ (rt-st64 (rt-threads) 1) 0))
 
 ; Macros: a is always a plain variable.
-(defmacro rt-lock (a) (if (= (ffi-call "%load64" (ffi-call "%global" "threads_started" 8 1) 1) 0) 0 (ffi-call "pthread_mutex_lock" (+ a 32) 1)))
-(defmacro rt-unlock (a) (if (= (ffi-call "%load64" (ffi-call "%global" "threads_started" 8 1) 1) 0) 0 (ffi-call "pthread_mutex_unlock" (+ a 32) 1)))
+(defmacro rt-lock (a) (if (= (ffi-call "%load64" (ffi-call "%global" "threads_started" 8 1) 1) 0) 0 (zyl_rt_mutex_lock (+ a 32))))
+(defmacro rt-unlock (a) (if (= (ffi-call "%load64" (ffi-call "%global" "threads_started" 8 1) 1) 0) 0 (zyl_rt_mutex_unlock (+ a 32))))
 
 (defn rt-align16 (n) (bit-and (+ n 15) -16))
 

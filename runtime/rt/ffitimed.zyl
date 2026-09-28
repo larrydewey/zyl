@@ -1,26 +1,11 @@
 ; Timed FFI: a foreign call runs on the caller's worker thread; an overrun raises E_FFI_TIMEOUT and is abandoned, never killed.
 (use base)
+(use thread)
 (use heap)
 (use alloc)
 (use actor)
 
 (extern "clock_gettime" (Int Int) Int)
-(extern "pthread_mutex_init" (Int Int) Int)
-(extern "pthread_mutex_lock" (Int) Int)
-(extern "pthread_mutex_unlock" (Int) Int)
-(extern "pthread_mutex_destroy" (Int) Int)
-(extern "pthread_condattr_init" (Int) Int)
-(extern "pthread_condattr_setclock" (Int Int) Int)
-(extern "pthread_condattr_destroy" (Int) Int)
-(extern "pthread_cond_init" (Int Int) Int)
-(extern "pthread_cond_wait" (Int Int) Int)
-(extern "pthread_cond_timedwait" (Int Int Int) Int)
-(extern "pthread_cond_broadcast" (Int) Int)
-(extern "pthread_cond_destroy" (Int) Int)
-(extern "pthread_attr_init" (Int) Int)
-(extern "pthread_attr_setdetachstate" (Int Int) Int)
-(extern "pthread_attr_destroy" (Int) Int)
-(extern "pthread_create" (Int Int Int Int) Int)
 
 (defmacro ff-ld (a) (ffi-call "%load64" a 1))
 (defmacro ff-st (a v) (ffi-call "%store64" a v 1))
@@ -34,8 +19,8 @@
 (defn zyl_ffi_abandoned () (ff-ld (ff-any-abandoned)))
 (defn zyl_ffi_on_worker () (ff-ld (ff-on-worker-cell)))
 
-(defn ff-lock (w) (ffi-call "pthread_mutex_lock" (ff-ld w) 1))
-(defn ff-unlock (w) (ffi-call "pthread_mutex_unlock" (ff-ld w) 1))
+(defn ff-lock (w) (zyl_rt_mutex_lock (ff-ld w)))
+(defn ff-unlock (w) (zyl_rt_mutex_unlock (ff-ld w)))
 (defn ff-cond (w) (ff-ld (+ w 8)))
 
 ; fn with exactly argc words from a; above 7 through the C bridge (no %call8+ primitive yet).
@@ -58,7 +43,7 @@
 ; Locked: runs each request; an abandoned worker frees itself after its call returns.
 (defn ff-serve (w)
   (if (not (= (ff-ld (+ w 16)) 1))
-    (let _ (ffi-call "pthread_cond_wait" (ff-cond w) (ff-ld w) 1) (ff-serve w))
+    (let _ (zyl_rt_cond_wait (ff-cond w) (ff-ld w)) (ff-serve w))
     (let f (ff-ld (+ w 40))
       (let argc (ff-ld (+ w 48))
         (let a (ffi-call "%tls" "ffi_args" 128 1)
@@ -70,14 +55,14 @@
                     (let _ (ff-st (+ w 16) 2)
                       (if (not (= (ff-ld (+ w 24)) 0))
                         (ff-finish w)
-                        (let _ (ffi-call "pthread_cond_broadcast" (ff-cond w) 1) (ff-serve w))))))))))))))
+                        (let _ (zyl_rt_cond_broadcast (ff-cond w)) (ff-serve w))))))))))))))
 
 (defn ff-finish (w)
   (let m (ff-ld w)
     (let c (ff-cond w)
-      (let _ (ffi-call "pthread_mutex_unlock" m 1)
-        (let _ (ffi-call "pthread_cond_destroy" c 1)
-          (let _ (ffi-call "pthread_mutex_destroy" m 1)
+      (let _ (zyl_rt_mutex_unlock m)
+        (let _ 0
+          (let _ 0
             (let _ (zyl_rt_free c)
               (let _ (zyl_rt_free m)
                 (let _ (zyl_rt_free w) 0)))))))))
@@ -88,7 +73,7 @@
   (let c (ff-worker-cell)
     (let w (ff-ld c) (if (= w 0) (ff-worker-new c) w))))
 
-; mutex 40, cond 48, condattr 8 and pthread_attr_t 56 bytes, all malloc'd and checked.
+; futex mutex and cond words (malloc'd and checked); the worker is a detached runtime thread.
 (defn ff-worker-new (cell)
   (let w (zyl_rt_calloc 1 192)
     (if (= w 0) (ff-oom)
@@ -97,11 +82,11 @@
           (let ca (zyl_rt_malloc 8)
             (let at (zyl_rt_malloc 56)
               (if (or (or (= m 0) (= c 0)) (or (= ca 0) (= at 0))) (ff-oom)
-                (let _ (ffi-call "pthread_mutex_init" m 0 1)
-                  (let _ (ffi-call "pthread_condattr_init" ca 1)
-                    (let _ (ffi-call "pthread_condattr_setclock" ca 1 1)
-                      (let _ (ffi-call "pthread_cond_init" c ca 1)
-                        (let _ (ffi-call "pthread_condattr_destroy" ca 1)
+                (let _ (ffi-call "%store64" m 0 1)
+                  (let _ 0
+                    (let _ 0
+                      (let _ (ffi-call "%store64" c 0 1)
+                        (let _ 0
                           (let _ (zyl_rt_free ca)
                             (let _ (ff-st w m)
                               (let _ (ff-st (+ w 8) c)
@@ -109,14 +94,11 @@
                                   (ff-start cell w at))))))))))))))))))
 
 (defn ff-start (cell w at)
-  (let _ (ffi-call "pthread_attr_init" at 1)
-    (let _ (ffi-call "pthread_attr_setdetachstate" at 1 1)
-      (let _ (zyl_threads_started_mark)
-        (let rc (bit-and (ffi-call "pthread_create" (ffi-call "%tls" "ffi_tid" 8 1) at (ffi-call "%fn" "zyl_ffi_worker_main" 1) w 1) 4294967295)
-          (let _ (ffi-call "pthread_attr_destroy" at 1)
-            (let _ (zyl_rt_free at)
-              (if (not (= rc 0)) (ffi-call "zyl_panic" "E_FFI_TIMEOUT: could not start the FFI worker thread" 1)
-                (let _ (ff-st cell w) w)))))))))
+  (let _ (zyl_threads_started_mark)
+    (let h (zyl_rt_thread_create (ffi-call "%fn" "zyl_ffi_worker_main" 1) w 0 0)
+      (let _ (zyl_rt_free at)
+        (if (= h 0) (ffi-call "zyl_panic" "E_FFI_TIMEOUT: could not start the FFI worker thread" 1)
+          (let _ (zyl_rt_thread_detach h) (let _ (ffi-call "%store64" (ffi-call "%tls" "ffi_tid" 8 1) h 1) (let _ (ff-st cell w) w))))))))
 
 ; CLOCK_MONOTONIC now plus ms, normalised.
 (defn ff-deadline (ms)
@@ -147,14 +129,14 @@
                     (let _ (ffi-call "%fill" (+ w 56) 0 128 1)
                       (let _ (ff-copy-args (+ w 56) src argc 0)
                         (let _ (ff-st (+ w 16) 1)
-                          (let _ (ffi-call "pthread_cond_broadcast" (ff-cond w) 1)
+                          (let _ (zyl_rt_cond_broadcast (ff-cond w))
                             (ff-await w ts sym ms)))))))))))))))
 
 ; Locked: waits for the result until the deadline; a timeout abandons the worker.
 (defn ff-await (w ts sym ms)
   (if (= (ff-ld (+ w 16)) 2)
     (let r (ff-ld (+ w 184)) (let _ (ff-st (+ w 16) 0) (let _ (ff-unlock w) r)))
-    (let rc (bit-and (ffi-call "pthread_cond_timedwait" (ff-cond w) (ff-ld w) ts 1) 4294967295)
+    (let rc (bit-and (zyl_rt_cond_timedwait (ff-cond w) (ff-ld w) ts) 4294967295)
       (if (and (= rc 110) (not (= (ff-ld (+ w 16)) 2)))
         (let _ (ff-st (+ w 24) 1)
           (let _ (ff-unlock w)
