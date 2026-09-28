@@ -22,7 +22,7 @@ t.bin
 t.s.s
 .aider*
 
-# Python (cve_scanner.py, test scripts)
+# Python (test scripts)
 __pycache__/
 *.pyc
 

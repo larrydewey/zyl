@@ -8,7 +8,7 @@
 
 1. **`zyl_specification.txt`** — Canonical language specification (v5.0; §31 is the package system)
 2. **`spec/`/** — Structured reference copy of specification, organized by semantic domain
-3. **`docs/rust-eviction-plan.md`** — Self-hosting status, the fixed-point invariant, and the survey of self-hosted-compiler gaps (mostly closed as of this writing — see the doc for current state)
+3. **`docs/self-hosting.md`** — The bootstrap seeds, the fixed-point invariant, reseeding and two-step changes
 4. **`PROGRESS.md`** — Current implementation state and next priorities
 5. **`docs/`/** — Architecture decisions, implementation history, design rationale
 6. **Source code** — Authority for implemented behavior (overrides specification on implementation details). The compiler is self-hosted: `stdlib/compiler/*.zyl` + `selfhost/` is the ACTIVE implementation. The original Rust implementation has been removed from the tree; it is in git history at commit `b8bc283` (`archive/rust-bootstrap-2026/`).
@@ -166,8 +166,7 @@ behavior). There is no Rust fallback (the Rust bootstrap was removed
 from the tree; it is in git history at `b8bc283`, and could not lex the
 current source anyway): introduce new syntax in two steps instead —
 teach the compiler to accept it, reseed, and only then use it in the
-compiler's own source. See `docs/rust-eviction-plan.md` for the
-history.
+compiler's own source. See `docs/self-hosting.md`.
 
 A verified `./boot.sh` ends by refreshing an existing install (`~/.zyl`,
 or `$ZYL_INSTALL_HOME`) with `uninstall.sh` + `install.sh`, so the

@@ -22,11 +22,19 @@ cd zyl
 ./boot.sh
 ```
 
-This links the committed compiler seed (`build/boot/stage2.s`) with
-`cc`, verifies the self-hosting fixed point (the compiler reproduces
-its own committed output, byte for byte, when compiling itself), and
-writes `build/boot/zyl-self` — a wrapper you can invoke from anywhere —
-plus the language server, `build/boot/zyl-lsp`.
+This links the committed compiler seed (`build/boot/stage2.s`, with the
+runtime seed `build/boot/rt.s`) with `cc`, verifies the self-hosting
+fixed point (the compiler reproduces its own committed output, byte for
+byte, when compiling itself), and writes `build/boot/zyl-self` — a
+wrapper you can invoke from anywhere — plus the language server,
+`build/boot/zyl-lsp`, and the cached runtime object `rt.zo`.
+
+Compiled programs are static executables with no libc: the compiler's
+own x86-64 assembler (`asm_x86.zyl`) and ELF linker (`elf_link.zyl`)
+link them against `rt.zo`, with no `cc`, `as` or `ld`. A program that
+calls foreign C through `ffi-call`, or links native objects, links
+hosted over libc with `cc` instead; `ZYL_EXTERNAL_LD=1` uses `cc` for
+every program.
 
 ## Usage
 
@@ -179,10 +187,10 @@ zyl> (Some "hi")
 - `zyl eval FILE.zyl` runs a whole program through the same interpreter
   without producing a binary.
 
-Known limitations: actors are compile-only (the interpreter reports
-`E_UNSUPPORTED_INTERPRETED`), and the REPL's structural printing is its
-own: a compiled program prints a struct or variant structurally only
-when its type has a `Show` impl (`(:derive [Show])` gives one), and
+Actors run under the interpreter too; the REPL joins an entry's actors
+before the prompt returns, and a deadlock ends the session as it ends a
+program. The REPL's structural printing is its own: a compiled program prints a struct or variant structurally only
+when its type has a `Show` impl (`(derive T Show)`, or `(:derive [Show])` on a struct, gives one), and
 otherwise prints an address. The full reference is
 [`docs/repl.md`](docs/repl.md).
 
@@ -205,7 +213,7 @@ document highlight, rename, completion, signature help, document and
 workspace symbols, semantic tokens, folding, selection ranges, call
 hierarchy, inlay hints (parameter names), quick fixes for unbalanced
 delimiters, and whole-document and range formatting. The VS Code
-extension in `editors/vscode` (version 0.4.0) adds TextMate grammars for
+extension in `editors/vscode` (version 0.5.0) adds TextMate grammars for
 `.zyl` files and `zyl.pkg` manifests, snippets, build/test/fetch tasks,
 and a **Run Current File** command that compiles and runs the unsaved
 buffer.
@@ -224,18 +232,17 @@ the book for per-editor setup.
 compiler written in Zyl (`stdlib/compiler/*.zyl`, `selfhost/`) compiles
 itself end-to-end with a strict byte-identical fixed point, verified by
 `./boot.sh`, and passes the full regression suite (`./run_regression_tests.sh
---full`) — 260/260 as of this writing, covering regression, interpreter
-(differential REPL-vs-codegen), compile-fail, integration, stress,
-package, script and language-server protocol tests. A self-compile
-takes about two seconds.
+--full`) — 352/352 as of this writing, covering regression, interpreter
+(differential REPL-vs-codegen), actor schedules, compile-fail,
+integration, stress, package, script and language-server protocol
+tests. A self-compile takes about two seconds. The runtime is Zyl too
+(`runtime/rt/`); there is no C in the build.
 
 The original Rust bootstrap compiler has been removed from the tree
-(it is in git history at commit `b8bc283`). The normal reseed
-path, `./boot.sh --bootstrap-from-self`, needs no Rust: it iterates the
-self-hosted compiler against its own new output until two consecutive
-rounds match. The Rust compiler could no longer read the current
-compiler source (its lexer rejects the `\e` string escape the REPL
-uses), so it was not a working fallback.
+(it is in git history at commit `b8bc283`). The reseed path,
+`./boot.sh --bootstrap-from-self`, iterates the self-hosted compiler
+against its own new output until two consecutive rounds match; see
+`docs/self-hosting.md`.
 
 The Zyl-written compiler runs, in order (`stdlib/compiler/pipeline.zyl`):
 delimiter-balance check → parsing → module resolution (canonical
@@ -248,7 +255,8 @@ propagation, constant folding, dead-branch elimination) → region
 inference (escape analysis) → in-place reuse (`reuse.zyl`) → x86_64
 code generation (the native backend, MIR with linear-scan register
 allocation in `mir.zyl`, with a stack-machine path for the functions it
-does not take) → linking with `cc`.
+does not take) → linking (the Zyl assembler and static ELF linker, or
+`cc` for a hosted program).
 
 ## Features
 
@@ -258,9 +266,9 @@ does not take) → linking with `cc`.
 - **Sound Hindley-Milner type checking** — every type error is reported, then the compile fails; conditions are Bool, arithmetic is Int or Float with no conversion, there is no cast form; traits resolve statically with per-type specialization; `derive` accepts `Show`, `Debug`, `Eq`, `Ord`, `Hash` and `Clone`
 - **Deterministic compilation** — same source + same inputs → identical binaries; the compiler reproduces itself byte for byte
 - **ICNF IR** — custom intermediate representation between the AST and codegen (spec §18 describes it as SSA with region annotations; the implementation is a tree IR, not SSA, whose region annotations live in a side table and are printed, so the ICNF hash covers them)
-- **Actor concurrency** — pthread-based actor runtime: `spawn` a closure as an actor, `send` it messages through its mailbox, and wait for it (`actor/actor` adds send-with-timeout, liveness and termination)
-- **Macros** — `defmacro` template macros, expanded innermost-first with gensym hygiene (spec §19): a template's binders are renamed per expansion, `&rest` parameters splice with `,@`, and a macro that expands to itself is `E_MACRO_NON_TERMINATION`; quasiquote (`` ` ``, `,`, `,@`) builds lists
-- **FFI** — `ffi-call` with a trailing timeout argument, `ffi-pin` for Pin-region memory, and a `Secret` value may only cross FFI pinned
+- **Deterministic actor concurrency** — Kahn process networks: `spawn` a closure as an actor, and actors talk over typed single-sender channels (`chan`, `chan-tx`, `chan-rx`, `chan-send`, `chan-recv`) whose endpoints move with ownership; receive blocks and there is no select, so output is the same under every schedule. A deadlock is detected (`E_DEADLOCK`), an actor's panic is re-raised by `actor-wait`, and `ZYL_SCHED=deterministic` and `ZYL_SCHED_CHAOS=<seed>` run the test schedules. Actors are the runtime's own `clone` threads
+- **Macros** — `defmacro` template macros, expanded innermost-first with gensym hygiene (spec §19): a template's binders are renamed per expansion, `&rest` parameters splice with `,@name`, and a macro that expands to itself is `E_MACRO_NON_TERMINATION`; quasiquote (`` ` ``, `,`, `,@`) builds lists of data
+- **FFI** — `ffi-call` to a string-literal symbol typed by an `extern`, with a mandatory literal timeout (a call runs on a worker thread; overrunning raises `E_FFI_TIMEOUT`), `ffi-pin` for pinned memory, and a `Secret` value may only cross FFI pinned
 - **Structs and ADTs** — immutable structs by default, `deftype`/`match` with compile-time exhaustiveness and unreachable-arm checks; literal, OR (`(1 2 body)`), range (`(range lo hi)`) and guarded (`(when cond)`) patterns
 - **`_` as the discard** — in patterns, parameter lists and bindings; `_`-prefixed names are exempt from unused-binding warnings
 - **Located diagnostics** — `error[CODE]`, `--> file:line:col`, the source line, a caret and a `= help:` line for the most common errors
@@ -269,9 +277,10 @@ does not take) → linking with `cc`.
 - **Float64 support** — IEEE-754 arithmetic, SSE code generation, comparisons, print
 - **Closures** — `fn`/`lambda` with free-variable capture
 - **List literals and views** — `(list ...)`, `[...]` and quoted constant data `'(...)`; zero-copy views `text/view` (`StrView`, `Cursor`) and `collections/slice` (`Slice`)
-- **Try/catch** — `(try expr (catch e handler))`, backed by the runtime's panic frames (setjmp/longjmp-style stubs written in Zyl, `runtime/rt/panic.zyl`)
+- **Try/catch** — `(try expr (catch e handler))`, backed by the runtime's panic frames (`runtime/rt/panic.zyl`); the saved frame pointers are mangled with a per-process guard, so a stray heap write cannot aim the unwind
 - **I/O** — `read-line`, file open/read/write/close
 - **Bitwise, byte and atomic operations** — `bit-and`/`bit-or`/`bit-xor`/`bit-not`, `shl`/`shr`/`ashr` (each one instruction, with defined out-of-range shift counts), byte and byte-buffer primitives with explicit endianness, and seq-cst atomics (`atomic/atomic`)
+- **Deterministic intrinsics instead of inline assembly** — `bit-popcount`, `bit-clz`, `bit-ctz`, `bit-bswap`, `bit-rotl`, `bit-rotr`, `mul-hi`, `mul-hi-u`, `crc32c` and 32-bit forms, whose results never depend on the CPU; `simd/simd` lane vectors (`I64x2`, `I32x4`, `U8x16`) in portable SWAR
 - **The `Secret` capability** — a compile-time constant-time discipline: a secret may not steer a branch, index memory, divide, print, escape to an actor, or cross FFI unpinned
 - **Cryptography library** — `stdlib/math`, ~7,600 lines of pure Zyl: SHA-2/3, BLAKE2b/3, HMAC, ChaCha20-Poly1305, AES-GCM, X25519, Ed25519, ECDSA, RSA-PSS/OAEP, HKDF, PBKDF2, Argon2id, big-number arithmetic, system and seeded random numbers
 - **Package system** — spec v5.0 §31: manifests, MVS, a lock file, a content-addressed store, signed index entries, declared capabilities, features, workspaces
@@ -294,7 +303,7 @@ does not take) → linking with `cc`.
 | 8. Optimization | ✅ | Inlining of small functions, copy propagation, constant folding, dead-branch elimination |
 | 9. Region Inference | ✅ | Escape analysis over ICNF: frame, result or heap region per allocation; then in-place reuse |
 | 10. Code Generation | ✅ | x86_64, System V AMD64 ABI; MIR + linear scan, stack machine for the rest |
-| 11. Linking | ✅ | cc + `rt.o` (the Zyl runtime, assembled from `build/boot/rt.s`) + pthread |
+| 11. Linking | ✅ | The Zyl assembler + static ELF linker against `rt.zo` (no libc); `cc` + libc for a hosted program |
 | — Contract Injection | ✅ | Lowered to checks during parsing (`expr_inner.zyl`), under a profile |
 
 The implementation's order differs from spec §22's (which puts region
@@ -319,9 +328,9 @@ build/boot/                   # Committed seed (stage2.s, stage2.bin) and
 
 runtime/rt/                   # Zyl runtime linked into every compiled binary
 ├── rt.zyl                    # Entry module (built with --runtime-module)
-└── *.zyl                     # alloc, actor, panic, io, ffitimed, os, ... (rt.s seed)
+└── *.zyl                     # heap, alloc, thread, chan, actor, panic, out, os, ... (rt.s seed)
 
-stdlib/compiler/              # The compiler, written in Zyl (42 modules)
+stdlib/compiler/              # The compiler, written in Zyl (44 modules)
 ├── pipeline.zyl              # Phase order shared by the CLI and the REPL
 ├── lexer.zyl, parser.zyl, sexp_balance.zyl, ast.zyl, expr_inner.zyl,
 │   node_tables.zyl
@@ -334,15 +343,18 @@ stdlib/compiler/              # The compiler, written in Zyl (42 modules)
 ├── icnf.zyl, icnf_print.zyl, optimization.zyl, region_inference.zyl,
 │   reuse.zyl                 # ICNF, optimization, regions, in-place reuse
 ├── codegen.zyl, mir.zyl      # x86_64: native backend (MIR) + stack machine
+├── asm_x86.zyl, elf_link.zyl # Assembler and static ELF linker
+├── rt_mode.zyl               # --runtime-module: the runtime's locked primitives
 ├── package.zyl, workspace.zyl, lock.zyl, index.zyl, mvs.zyl, store.zyl,
 │   cli.zyl                   # Package system (spec §31)
 ├── doc.zyl                   # `zyl doc`
 └── error_codes.zyl, error_report.zyl   # Error catalog and rendering
 
 stdlib/                       # The implicit standard library (package zyl/std)
-├── core/                     # core, list, option, result, map (auto-loaded)
+├── core/                     # core, list, option, result, map, show (auto-loaded)
 ├── collections/              # vec, map, set, slice
 ├── text/                     # view: StrView, Cursor
+├── simd/                     # Portable lane vectors
 ├── allocator/, atomic/, actor/, io/, ffi/, testing/, mlib/
 ├── math/                     # Cryptography and number libraries (pure Zyl)
 │   ├── bits.zyl, words.zyl   # Word operations, byte-string representation
@@ -360,7 +372,6 @@ editors/vscode/               # VS Code extension (grammars, snippets, client)
 book/                         # "The Zyl Programming Language" (mdBook)
 site/                         # The website (GitHub Pages; site/build.sh adds the book)
 spec/                         # Structured copy of the specification
-specifications/               # Historical specification versions
 docs/                         # Architecture, design rationale, status
 bench/                        # Benchmarks in Zyl, C, C++, Rust and Go (matrix.py)
 verify/                       # Python cross-checks for stdlib/math, timing harness
@@ -379,7 +390,9 @@ tests/
 
 ## Requirements
 
-- `cc` (a C compiler) and `pthread` — that's it; no Rust, no Cargo
+- `cc`, to link the seed in `./boot.sh` and to link hosted programs
+  (those calling foreign C); no Rust, no Cargo. Other programs need no
+  toolchain at all
 - Linux x86_64 (the only target; other platforms are untested)
 - `python3` only for the LSP protocol tests
 - Node.js/npm only for building the VS Code extension
@@ -401,7 +414,7 @@ site/build.sh            # writes build/site; open build/site/index.html
 
 ## Specification
 
-The canonical language specification is `zyl_specification.txt` (v5.0; §31 is the package system). Structured reference copies are in `spec/`. Historical specification versions are in `specifications/`.
+The canonical language specification is `zyl_specification.txt` (v5.0; §31 is the package system). Structured reference copies are in `spec/`. Earlier versions are in git history.
 
 ## Resources
 
@@ -409,17 +422,19 @@ The canonical language specification is `zyl_specification.txt` (v5.0; §31 is t
 - [The Zyl Programming Language](https://larrydewey.github.io/zyl/book/) — the book, online (source in [`book/src/`](book/src/SUMMARY.md))
 - [Architecture Decisions](docs/architecture-decisions.md)
 - [Compiler Pipeline](docs/compiler-pipeline.md)
-- [Implementation Status](docs/implementation-status.md)
+- [Implementation Status](PROGRESS.md)
 - [Regression Tests](docs/regression-tests.md)
 - [Cryptography and Number Libraries](docs/math-crypto.md)
 - [Package Management Design](docs/package-management-design.md)
 - [The REPL](docs/repl.md)
 - [Error Codes](docs/errors.md)
-- [Self-Hosting and the Rust Eviction](docs/rust-eviction-plan.md)
+- [Self-Hosting and the Fixed Point](docs/self-hosting.md)
+- [The Runtime in Zyl](docs/runtime-in-zyl-design.md)
+- [Deterministic Concurrency](docs/concurrency-determinism-design.md)
 - [Sound Types Design](docs/sound-types-design.md)
 - [Regions Design](docs/regions-design.md)
 - [Native Backend Design](docs/native-backend-design.md)
-- [LSP Architecture](LSP_ARCHITECTURE_PLAN.md)
+- [Language Server](docs/lsp.md)
 
 ## License
 

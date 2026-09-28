@@ -64,8 +64,7 @@ ill-typed program. Section 15.7 lists the errors.
 ### Byte-level types (implementation extension)
 
 The specification's type list has no byte types. The compiler adds four
-(`BYTE_PRIMITIVES_IMPLEMENTATION_PLAN.md`; the full treatment is
-Chapter 32):
+(the full treatment is Chapter 32):
 
 | Type | Created by | Notes |
 |------|------------|-------|

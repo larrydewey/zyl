@@ -10,7 +10,7 @@
 ; history and, it turns out, the original Rust bootstrap's
 ; region_inference.rs too: its own error path was silently swallowed in
 ; collect_definitions, so E_REGION_ESCAPE never actually fired there
-; either; see docs/rust-eviction-plan.md's Phase B writeup). Region
+; either). Region
 ; inference had never affected a single compiled program's behavior in
 ; any implementation this compiler has ever had. Deleted rather than
 ; kept around unused, once ri-transform-fns below (the real thing)

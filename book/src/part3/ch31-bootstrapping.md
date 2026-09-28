@@ -253,7 +253,7 @@ What was tracked here as future work is done:
 
 1. ✅ All Zyl passes verified through the fixed point, and through the
    full regression suite (43/43 via the self-hosted compiler at the
-   time of eviction — see `docs/rust-eviction-plan.md`; 260 tests now)
+   time of eviction; 352 tests now)
 2. ✅ `src/` archived to `archive/rust-bootstrap-2026/` (self-contained,
    with its own `Cargo.toml`), later removed from the tree (git history
    at `b8bc283`)

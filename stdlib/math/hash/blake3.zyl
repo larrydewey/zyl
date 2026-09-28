@@ -7,8 +7,7 @@
 ; the SIMD backend the specification's own implementations use -- the
 ; compression function here is the portable one, word by word. That
 ; makes it correct and constant-time but several times slower than a
-; vectorized BLAKE3; the FFI SIMD helpers are future work
-; (MATH_CRYPTO_IMPLEMENTATION_PLAN.md).
+; vectorized BLAKE3; SIMD is future work.
 ;
 ; The tree structure is what makes BLAKE3 unusual: chunks are hashed
 ; independently and merged pairwise, which is what admits parallel and

@@ -87,7 +87,7 @@
   (EApply String (List Expr))
   (EMacroDef String (List Expr) Expr)
   (EUnknown String (List Expr))
-  ; --- Byte-level primitives (BYTE_PRIMITIVES_IMPLEMENTATION_PLAN.md §2) --
+  ; --- Byte-level primitives (book chapter 32) --
   ; Endianness is carried per-op (plan lowers ELe=0 / EBe=1); the picking
   ; region for a bytebuf is a construction-time constant in the form's own
   ; Region payload (declared syntax: `(bytebuf Heap 100)`).
@@ -1303,7 +1303,7 @@
     (byte-form-dispatch n rest)
   )))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 
-; --- Byte-level primitives (BYTE_PRIMITIVES_IMPLEMENTATION_PLAN.md §2) ------
+; --- Byte-level primitives (book chapter 32) ------
 ; Recognition happens here, not in the reader (no-dispatch arch). The 21
 ; byte-form names below carry real ExprInner variants. The wider-width
 ; load/store names (u16/u32/u64, i16/i32/i64) reuse the 8-bit variants:
@@ -2324,7 +2324,7 @@
 ; so the FIRST literal/unrecognized arm silently won unconditionally,
 ; and the arm's own body (parsed by parse-match-arm's own catch-all)
 ; collapsed to `(EAtom ANil)`, losing the literal's actual value
-; entirely. See docs/rust-eviction-plan.md for the full writeup.
+; entirely.
 ;
 ; Fixed by recognizing this shape at parse time and desugaring it
 ; entirely separately from ordinary ADT matches, rather than bending

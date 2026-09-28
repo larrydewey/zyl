@@ -200,7 +200,7 @@ Not normative. The design and its rationale are in
 ### Stack safety (§14)
 
 A call in tail position is compiled as a jump where its stack arguments
-allow it (`docs/implementation-status.md`). Beyond that, the guarantee is
+allow it (`PROGRESS.md` lists the exceptions). Beyond that, the guarantee is
 approximated: the generated `main` runs on a thread whose stack is
 a `MAP_NORESERVE` reservation of 64 GB (falling back to 16, 4, then 1 GB)
 with a guard page (`zyl_call_on_big_stack`). Deep recursion is therefore

@@ -239,8 +239,8 @@ ZYL_DEBUG_STAGES=1 build/boot/zyl-self prog.zyl -o /tmp/prog
 
 ## 27.9 Rust Eviction: Done
 
-This was tracked as future work in earlier drafts of this chapter; as
-of `docs/rust-eviction-plan.md`'s latest survey, it's complete:
+This was tracked as future work in earlier drafts of this chapter; it
+is complete (`docs/self-hosting.md` describes the build as it is now):
 
 1. ✅ Every compiler phase ported to Zyl (`stdlib/compiler/*.zyl`)
 2. ✅ Full regression suite passes through the self-hosted compiler

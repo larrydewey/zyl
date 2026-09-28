@@ -4,7 +4,7 @@
 ; TYPE inlay hints (the original architecture plan's "let x = ...: T")
 ; are NOT what this file produces -- that needs a type inferred at a
 ; specific source position, and this LSP does not run type inference
-; or read the compiler's span table (LSP_ARCHITECTURE_PLAN.md's "Wall 1").
+; or read the compiler's span table (docs/lsp.md).
 ; PARAMETER NAME hints ("(add {a:} 1 {b:} 2)") need no type information
 ; at all, only call-site argument positions -- which the LSP does not
 ; take from the compiler either, so this file gets them the same way

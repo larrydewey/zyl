@@ -343,15 +343,6 @@ lexer, rather than the token stream):
 - [ ] Color-blind safe mode
 - [ ] CLI flags: `--color`, `--error-format`, `--max-errors`
 
-## Integration with Rust Eviction
-
-Historical: this plan was written as Phase A.8 of
-`docs/rust-eviction-plan.md`, as a prerequisite for the REPL (Phase C).
-The Rust bootstrap has since been evicted and removed from the tree (it
-is in git history at `b8bc283`), `sexp_balance.zyl` replaced the Python balance scripts, and
-the REPL shipped (`docs/repl.md`) with the located diagnostics above
-rather than waiting for the rest of this plan.
-
 ## Testing Requirements
 
 - Compile-fail tests for each error code

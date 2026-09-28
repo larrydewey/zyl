@@ -16,8 +16,8 @@
 ; itself without a second round trip.
 ;
 ; There is still no "local variables in scope" source: that needs real
-; position-aware scoping, which this LSP does not build
-; (LSP_ARCHITECTURE_PLAN.md's "Wall 1"). Omitted rather than guessed at.
+; position-aware scoping, which this LSP does not build (docs/lsp.md).
+; Omitted rather than guessed at.
 
 (use core/core)
 (use core/list)

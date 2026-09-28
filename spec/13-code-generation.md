@@ -128,7 +128,7 @@ guarantees.
   straight into its register, and an integer comparison in an `if` or
   `while` condition is `cmp` and a conditional jump.
 - A call in tail position is a jump when its stack arguments fit in the
-  caller's incoming ones (see `docs/implementation-status.md`). On the
+  caller's incoming ones (`PROGRESS.md` lists the exceptions). On the
   native path a self tail call is a jump to the loop head with the
   arguments moved into the parameters' registers (an unchanged
   parameter is not copied); in a function with a frame region it first

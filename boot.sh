@@ -59,8 +59,7 @@ cd "$SCRIPT_DIR"
 # resolution path (OUT/stdlib/*, what module_resolver.zyl actually reads
 # after chdir-ing to OUT) frozen at whatever it was on the very first
 # boot.sh run in this checkout -- real, dependency-graph-wide staleness
-# that took a full stdlib diff to actually find (see docs/rust-eviction-
-# plan.md).
+# that took a full stdlib diff to actually find.
 rm -rf "${OUT}/stdlib"
 cp -R "${SCRIPT_DIR}/stdlib" "${OUT}/stdlib"
 rm -f "${OUT}/actor_runtime.c" "${OUT}/actor_runtime.h" "${OUT}/actor_runtime.o"

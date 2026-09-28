@@ -249,5 +249,4 @@ are Zyl code in `stdlib/math`, bundled into the compiler.
 The original Rust compiler (`archive/rust-bootstrap-2026/`) has been
 removed from the tree; retrieve it from git history at commit
 `b8bc283` if needed. `./boot.sh --bootstrap-from-self` is the reseed
-path and needs no Rust. `docs/rust-eviction-plan.md` has the full
-history.
+path and needs no Rust; `docs/self-hosting.md` describes it.

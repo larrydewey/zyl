@@ -577,8 +577,7 @@ This guide covers the everyday 80%. For the rest:
   every language feature, including the ones this guide only touched
   on (`with-resource`, `contracts`/`requires`/`ensures`, aliasing,
   regions, macros, quasiquote, views).
-- **`docs/implementation-status.md`** — what works today and the known
-  gaps.
+- **`PROGRESS.md`** — what works today and the known gaps.
 - **`docs/repl.md`** — `zyl repl` and `zyl eval`.
-- **`docs/rust-eviction-plan.md`** — the self-hosting story and the
-  fixed-point invariant.
+- **`docs/self-hosting.md`** — the bootstrap seeds and the fixed-point
+  invariant.
