@@ -662919,9 +662919,9 @@ main:
 .L7530:
     .string "zyl_panic"
 .L7535:
-    .string "ffi_pin"
+    .string "zyl_ffi_pin"
 .L7537:
-    .string "ffi_unpin"
+    .string "zyl_ffi_unpin"
 .L7539:
     .string "zyl_actor_spawn"
 .L7541:

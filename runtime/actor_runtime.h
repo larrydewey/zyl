@@ -59,8 +59,6 @@ long long zyl_actor_terminate(long long actor_id);
 long long zyl_actor_wait(long long actor_id);
 
 /* FFI pinning. */
-void* ffi_pin(long long value);
-long long ffi_unpin(long long ptr);
 
 /* Raw memory arena. */
 long long zyl_cstr_len(long long ptr);
@@ -387,5 +385,8 @@ void zyl_ensure_arenas(void);
 long long zyl_runtime_cleanup(void);
 long long zyl_term_flush(void);
 long long zyl_term_atexit(void);
+
+long long zyl_ffi_pin(long long value);
+long long zyl_ffi_unpin(long long ptr);
 
 #endif

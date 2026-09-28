@@ -644,8 +644,8 @@
     ; this match at all), silently lowering the whole loop to IConst 0 —
     ; every `for` in the corpus ran zero iterations.
     (EFor bindings cond body (ic-for arena bindings cond body vt))
-    (EFfiPin e (IFfi "ffi_pin" (Cons (ic-expr arena e vt) Nil)))
-    (EFfiUnpin e (IFfi "ffi_unpin" (Cons (ic-expr arena e vt) Nil)))
+    (EFfiPin e (IFfi "zyl_ffi_pin" (Cons (ic-expr arena e vt) Nil)))
+    (EFfiUnpin e (IFfi "zyl_ffi_unpin" (Cons (ic-expr arena e vt) Nil)))
     ; (spawn (fn () body)): had NO icnf.zyl lowering at all (unlike
     ; EFfiPin/EFor before their own fixes, ESpawn wasn't even mentioned
     ; as a known gap) — silently fell to the universal (IConst 0)

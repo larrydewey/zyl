@@ -500,32 +500,6 @@ long long zyl_try_frame_msg(long long frame) {
 }
 
 /* ==========================================================================
-   FFI pinning — copy an 8-byte value to a stable heap location and back.
-   ========================================================================== */
-
-/* Defined below, once the ZylArena block layout is in scope: validates that
- * `ptr` actually lies within a live block of g_pin_arena before ffi_unpin
- * is allowed to dereference it. Without this, ffi_unpin was an unchecked
- * arbitrary-address 8-byte read: any Int a zyl program computed (leaked
- * address, brute-forced offset) could be handed to ffi-unpin regardless of
- * whether ffi-pin ever produced it. */
-
-void* ffi_pin(long long value) {
-    return (void*)(size_t)zyl_pin_word(value);
-}
-
-/* Unpinning returns the pinned value; the Pin arena reclaims storage in
- * bulk, so individual slots are never freed here. */
-long long ffi_unpin(long long ptr) {
-    if (!ptr) return 0;
-    if (!zyl_pin_owns(ptr)) {
-        fprintf(stderr, "zyl: ffi-unpin: pointer not from ffi-pin/Pin arena\n");
-        return 0;
-    }
-    return *(long long*)(size_t)ptr;
-}
-
-/* ==========================================================================
    Raw memory arena — foundation for stdlib/allocator.
    Pointers are passed to/from Zyl as Int (64-bit).
    ========================================================================== */

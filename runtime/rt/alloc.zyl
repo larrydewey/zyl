@@ -393,3 +393,11 @@
 
 ; Defines the chain heads generated code names (fs:zyl_cur_region@tpoff); never called.
 (defn rt-region-tls () (+ (ffi-call "%tls" "zyl_cur_region" 8 1) (ffi-call "%tls" "zyl_region_top" 8 1)))
+
+; (ffi-pin v): v copied to a stable Pin-arena word; (ffi-unpin p) reads it back, refusing any other pointer.
+(defn zyl_ffi_pin (value) (zyl_pin_word value))
+
+(defn zyl_ffi_unpin (ptr)
+  (if (= ptr 0) 0
+    (if (zyl_pin_owns ptr) (rt-ld64 ptr)
+      (let m "zyl: ffi-unpin: pointer not from ffi-pin/Pin arena\n" (let _ (ffi-call "write" 2 m (rt-strlen (rt-w m)) 1) 0)))))

@@ -77,8 +77,8 @@
 ; --- generated from the C ZYL_FFI_SYMBOLS list: same names, same order ---
 
 (defn ft-fill-0 (t)
-  (let _ (ft-put t "ffi_pin" (ffi-call "%fn" "ffi_pin" 1))
-    (let _ (ft-put t "ffi_unpin" (ffi-call "%fn" "ffi_unpin" 1))
+  (let _ (ft-put t "zyl_ffi_pin" (ffi-call "%fn" "zyl_ffi_pin" 1))
+    (let _ (ft-put t "zyl_ffi_unpin" (ffi-call "%fn" "zyl_ffi_unpin" 1))
     (let _ (ft-put t "zyl_actor_init" (ffi-call "%fn" "zyl_actor_init" 1))
     (let _ (ft-put t "zyl_actor_is_alive" (ffi-call "%fn" "zyl_actor_is_alive" 1))
     (let _ (ft-put t "zyl_actor_send" (ffi-call "%fn" "zyl_actor_send" 1))
