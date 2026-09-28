@@ -447,6 +447,7 @@
 
 (defn ax-push (o) (match o (OReg code (let num (ax-reg-num code) (let _ (if (>= num 8) (ax-b 65) unit) (ax-b (+ 80 (bit-and num 7)))))) (_ (ax-fail "push"))))
 (defn ax-pop (o) (match o (OReg code (let num (ax-reg-num code) (let _ (if (>= num 8) (ax-b 65) unit) (ax-b (+ 88 (bit-and num 7)))))) (_ (ax-fail "pop"))))
+(defn ax-bswap (o) (match o (OReg code (let num (ax-reg-num code) (let _ (ax-emit-rex (ax-w (ax-reg-size code)) 0 0 (if (>= num 8) 1 0) false) (ax-b2 15 (+ 200 (bit-and num 7)))))) (_ (ax-fail "bswap"))))
 
 (defn ax-jcall (op-rel op-digit o)
   (match o
@@ -566,12 +567,16 @@
     (if (str-eq mnem "xgetbv") (ax-b3 15 1 208)
     (if (str-eq mnem "mfence") (ax-b3 15 174 240)
     (if (str-eq mnem "vzeroupper") (ax-b3 197 248 119)
+    (if (str-eq mnem "crc32") (ax-emit-rm [ 242 ] 0 (ax-reg-numo a) b (ax-w (ax-opd-size a)) false [ 15 56 (if (= (ax-opd-size b) 1) 240 241) ])
+    (if (str-eq mnem "bswap") (ax-bswap a)
+    (if (str-eq mnem "rol") (ax-shift 0 a b)
+    (if (str-eq mnem "ror") (ax-shift 1 a b)
     (if (str-eq mnem "xchg") (ax-emit-rm [] 0 (ax-reg-numo b) a 1 false [ 135 ])
     (if (str-eq mnem "cmpxchg") (ax-emit-rm [ 240 ] 0 (ax-reg-numo b) a 1 false [ 15 177 ])
     (if (str-eq mnem "xadd") (ax-emit-rm [ 240 ] 0 (ax-reg-numo b) a 1 false [ 15 193 ])
     (if (str-eq mnem "stosb") (if (= repf 1) (ax-b2 243 170) (ax-b 170))
     (if (str-eq mnem "stosq") (if (= repf 1) (ax-b3 243 72 171) (ax-b2 72 171))
-      (ax-encode-cc mnem ops a b)))))))))))))))))))))))))))))))))))))))))))))))
+      (ax-encode-cc mnem ops a b)))))))))))))))))))))))))))))))))))))))))))))))))))
 
 (defn ax-encode-cc (mnem ops a b)
   (if (str-eq mnem "je") (ax-jcc 4 a)
@@ -848,3 +853,4 @@
                 (let out (file-open relout "w")
                   (let _ (file-write out (ax-reloc-dump (ax-relocs-vec) 0 (ffi-call "zyl_wvec_len" (ax-relocs-vec) 1000) ""))
                     (file-close out)))))))))))
+
