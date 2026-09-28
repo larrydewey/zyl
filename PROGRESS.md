@@ -438,6 +438,47 @@ as recorded below.
 
 # Session log (newest first)
 
+## Session (2026-09-28, parallel) — runtime in Zyl: BLAKE3, tables, bytes and atomics, interpreter helpers
+
+Three worktree agents ported sections in parallel. Each branch was
+merged, reseeded and verified on master.
+
+- `runtime/rt/blake3.zyl` + `mangle.zyl`:
+  - moved `zyl_blake3_hex`, `zyl_blake3_file_hex`, `zyl_mangle_key`
+    and `zyl_sym_escape`;
+  - bit-identical to the C for every length 0..3000 and up to 300 KB,
+    with official vectors; stage2.s did not change;
+  - a 10 MB file hash is about 9% slower, 29.9 ms vs 27.5 ms (scalar;
+    vector registers come later).
+- `runtime/rt/tables.zyl`:
+  - moved word arrays, typed arrays, the `attrh` tables, refs,
+    `zyl_uf_id`, `zyl_getenv_str`, StrBuf and `zyl_str_append`
+    (`_capped`);
+  - layouts and magics unchanged;
+  - `zyl_str_append_scan` (header-less appends with a per-thread cache)
+    stays in C until thread-local arrays exist.
+- `runtime/rt/bytes.zyl`:
+  - moved every ByteBuf/ByteSlice entry, `zyl_load_n`/`zyl_store_n`,
+    `zyl_align_check`, and the ByteBuf and word atomics;
+  - new locked primitives `%cas`, `%fetch-add`, `%xchg` and `%fence`,
+    all seq-cst;
+  - stricter than the C: a negative handle is now rejected (the C
+    compared unsigned and dereferenced it).
+- `runtime/rt/interp.zyl` (mine):
+  - moved the interpreted-test registry, function map, value headers,
+    interned names, `zyl_fresh_id` and the raw word identities.
+- `boot.sh` fails when a `zyl_*` defn is not emitted. An uncalled
+  Num-generic function is never instantiated, which silently dropped
+  `zyl_ptr_add` until its parameters were annotated.
+- Perf:
+  - self-compile at parity (tables +1.6% under `perf stat`);
+  - bench/ at parity;
+  - byte and atomic microbenchmarks are slower (0.262 s vs 0.179 s and
+    0.113 s vs 0.091 s). Leaf functions save callee-saved registers and
+    Bools are materialised. This is backend work.
+- Tests: `regression/runtime-blake3`, `-tables`, `-bytes`, plus an
+  atomics case in `concurrency`. The suite passes 285/285.
+
 ## Session (2026-09-28, later still) — runtime in Zyl: variants, compiler tables, modules
 
 - The runtime is split into modules under runtime/rt/ (base, cpu, cstr,

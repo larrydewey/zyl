@@ -10,8 +10,7 @@
 (defmacro b3-ld (a) (ffi-call "%load32" a 1))
 (defmacro b3-st (a v) (ffi-call "%store32" a v 1))
 (defmacro b3-m (blk i) (ffi-call "%load32" (+ blk (* i 4)) 1))
-; Words stay unmasked (sums wrap, the low 32 bits stay exact); store32 truncates.
-; rotr32 on the low 32 bits of x: bits n..31 masked down (mask = 2^(32-n)-1), the rest multiplied up.
+; rotr32 of the low 32 bits of x (mask = 2^(32-n)-1, p = 2^(32-n)); words stay unmasked until store32.
 (defmacro b3-rotr (x n mask p) (bit-or (bit-and (shr x n) mask) (* x p)))
 
 ; The G mix; a b c d are state names rebound for body.

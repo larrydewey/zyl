@@ -114,16 +114,6 @@ long long zyl_aesni_available(void);
 long long zyl_aes_encrypt_block(long long keybase, long long keybytes,
                                 long long inbase, long long outbase);
 
-/* Atomic operations. */
-long long zyl_atomic_load(long long addr);
-long long zyl_atomic_store(long long addr, long long value);
-long long zyl_atomic_add(long long addr, long long value);
-long long zyl_atomic_sub(long long addr, long long value);
-long long zyl_atomic_max(long long addr, long long value);
-long long zyl_atomic_min(long long addr, long long value);
-long long zyl_atomic_cas(long long addr, long long expected, long long new_value);
-long long zyl_atomic_fetch_add(long long addr, long long value);
-
 /* CLI helpers. */
 void zyl_save_args(int argc, char** argv);
 long long zyl_argc(void);
@@ -321,5 +311,37 @@ long long zyl_words_view(long long arena, long long h, long long off, long long 
 long long zyl_array_copy(long long from, long long to, long long n);
 long long zyl_str_append(long long dst, long long src);
 long long zyl_str_append_capped(long long dst, long long src, long long cap);
+long long zyl_load_byte(long long endian, long long offset, long long buf);
+long long zyl_load_byte_signed(long long endian, long long offset, long long buf);
+long long zyl_store_byte(long long endian, long long offset, long long buf, long long val);
+long long zyl_store_byte_signed(long long endian, long long offset, long long buf, long long val);
+long long zyl_load_n(long long width, long long endian, long long offset, long long buf);
+long long zyl_load_n_signed(long long width, long long endian, long long offset, long long buf);
+long long zyl_store_n(long long width, long long endian, long long offset, long long buf, long long val);
+long long zyl_byte_slice(long long buf, long long start, long long len);
+long long zyl_byte_slice_sub(long long slice, long long start, long long len);
+long long zyl_bytebuf_new(long long region, long long cap);
+long long zyl_bytebuf_new_r(long long region, long long cap);
+long long zyl_bytebuf_append(long long buf, long long slice);
+long long zyl_bytebuf_len(long long buf);
+long long zyl_bytebuf_cap(long long buf);
+long long zyl_bytebuf_ptr(long long buf);
+long long zyl_align_check(long long expr, long long align);
+long long zyl_bytebuf_atomic_load(long long buf, long long offset);
+long long zyl_bytebuf_atomic_store(long long buf, long long offset, long long val);
+long long zyl_bytebuf_atomic_add(long long buf, long long offset, long long val);
+long long zyl_bytebuf_atomic_sub(long long buf, long long offset, long long val);
+long long zyl_bytebuf_atomic_fetch_add(long long buf, long long offset, long long val);
+long long zyl_bytebuf_atomic_max(long long buf, long long offset, long long val);
+long long zyl_bytebuf_atomic_min(long long buf, long long offset, long long val);
+long long zyl_bytebuf_atomic_cas(long long buf, long long offset, long long expected, long long new_value);
+long long zyl_atomic_load(long long addr);
+long long zyl_atomic_store(long long addr, long long value);
+long long zyl_atomic_add(long long addr, long long value);
+long long zyl_atomic_sub(long long addr, long long value);
+long long zyl_atomic_max(long long addr, long long value);
+long long zyl_atomic_min(long long addr, long long value);
+long long zyl_atomic_cas(long long addr, long long expected, long long new_value);
+long long zyl_atomic_fetch_add(long long addr, long long value);
 
 #endif

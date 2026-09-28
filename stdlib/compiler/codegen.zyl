@@ -2291,7 +2291,7 @@
 ;; RAW RUNTIME PRIMITIVES (runtime module only, docs/runtime-in-zyl-design.md)
 ;; ===========================================================================
 
-; Primitive kind, or -1: loads 0-3, stores 4-7, %word 8, %str 9, SSE2 10-13, AVX2 14-17, %ctz 18, cpuid 19-22, %xgetbv 23, %global 24, %tls-get/set 25/26, %v128-diff-mask 27.
+; Primitive kind, or -1: loads 0-3, stores 4-7, %word 8, %str 9, SSE2 10-13, AVX2 14-17, %ctz 18, cpuid 19-22, %xgetbv 23, %global 24, %tls-get/set 25/26, %v128-diff-mask 27, %cas 28, %fetch-add 29, %xchg 30, %fence 31.
 (defn cg-raw-kind (sym)
   (if (not (rt-prim-p sym)) -1 (cg-raw-kind-in sym cg-raw-names 0)))
 
@@ -2302,14 +2302,15 @@
   (Cons "%v128-zero-mask" (Cons "%v128-byte-mask" (Cons "%v128-eq-mask" (Cons "%v128-copy"
   (Cons "%v256-zero-mask" (Cons "%v256-byte-mask" (Cons "%v256-eq-mask" (Cons "%v256-copy"
   (Cons "%ctz" (Cons "%cpuid-eax" (Cons "%cpuid-ebx" (Cons "%cpuid-ecx" (Cons "%cpuid-edx" (Cons "%xgetbv"
-  (Cons "%global" (Cons "%tls-get" (Cons "%tls-set" (Cons "%v128-diff-mask" Nil)))))))))))))))))))))))))))))
+  (Cons "%global" (Cons "%tls-get" (Cons "%tls-set" (Cons "%v128-diff-mask"
+  (Cons "%cas" (Cons "%fetch-add" (Cons "%xchg" (Cons "%fence" Nil)))))))))))))))))))))))))))))))))
 
 (defn cg-raw-kind-in (sym names i)
   (match names
     (Nil -1)
     (Cons n rest (if (str-eq n sym) i (cg-raw-kind-in sym rest (+ i 1))))))
 
-; The primitive's code with operands in rdx, rcx and the result in rax.
+; The primitive's code with operands in rdx, rcx, r11 and the result in rax.
 (defn cg-raw-lines (kind)
   (if (= kind 0) (Cons "    movzx eax, byte ptr [rdx]" Nil)
   (if (= kind 1) (Cons "    movzx eax, word ptr [rdx]" Nil)
@@ -2334,12 +2335,16 @@
   (if (= kind 23) (Cons "    xor ecx, ecx" (Cons "    xgetbv" (Cons "    mov eax, eax" Nil)))
   (if (= kind 27) (Cons "    movdqu xmm0, [rdx]" (Cons "    movdqu xmm1, [rcx]" (Cons "    pcmpeqb xmm1, xmm0" (Cons "    pxor xmm2, xmm2"
                   (Cons "    pcmpeqb xmm2, xmm0" (Cons "    pmovmskb eax, xmm1" (Cons "    pmovmskb ecx, xmm2" (Cons "    xor eax, 65535" (Cons "    or eax, ecx" Nil)))))))))
+  (if (= kind 28) (Cons "    mov rax, rcx" (Cons "    lock cmpxchg qword ptr [rdx], r11" Nil))
+  (if (= kind 29) (Cons "    mov rax, rcx" (Cons "    lock xadd qword ptr [rdx], rax" Nil))
+  (if (= kind 30) (Cons "    mov rax, rcx" (Cons "    xchg qword ptr [rdx], rax" Nil))
+  (if (= kind 31) (Cons "    mfence" (Cons "    xor eax, eax" Nil))
     (Cons "    mov eax, edx" (Cons "    mov r11, rbx" (Cons "    cpuid"
       (Cons (if (= kind 19) "    mov eax, eax" (if (= kind 20) "    mov eax, ebx" (if (= kind 21) "    mov eax, ecx" "    mov eax, edx")))
-      (Cons "    mov rbx, r11" Nil))))))))))))))))))))))))))
+      (Cons "    mov rbx, r11" Nil))))))))))))))))))))))))))))))
 
 (defn cg-raw-arity (kind)
-  (if (< kind 4) 1 (if (< kind 8) 2 (if (< kind 11) 1 (if (< kind 14) 2 (if (= kind 14) 1 (if (< kind 18) 2 (if (= kind 18) 1 (if (< kind 23) 2 (if (= kind 23) 0 2))))))))))
+  (if (< kind 4) 1 (if (< kind 8) 2 (if (< kind 11) 1 (if (< kind 14) 2 (if (= kind 14) 1 (if (< kind 18) 2 (if (= kind 18) 1 (if (< kind 23) 2 (if (= kind 23) 0 (if (< kind 28) 2 (if (= kind 28) 3 (if (< kind 31) 2 0)))))))))))))
 
 ; SSE2 kinds 10-13 and 27 are baseline x86-64; AVX2 kinds 14-17 need the runtime's cpuid check.
 
@@ -2368,7 +2373,7 @@
         (RtGlobal name size
           (cg-rt-bss-list (cg-emit-lines st (Cons ".p2align 6" (Cons (str-concat name ":") (Cons (str-concat "    .zero " (ffi-call "zyl_int_text" size 1000)) Nil)))) rest))))))
 
-; Stack machine: operands left to right into rdx, rcx; result in rax.
+; Stack machine: operands left to right into rdx, rcx, r11; result in rax.
 (defn cg-inline-raw (st env kind args)
   (if (= kind 24)
     (cg-sym-addr st (cg-raw-global-label args))
@@ -2385,9 +2390,15 @@
                    (match args
                      (Cons a rest
                        (match rest
-                         (Cons b _
+                         (Cons b rest2
                            (let s1 (cg-emit-line (cg-expr st env a) "    push rax")
-                             (cg-emit-lines (cg-expr s1 env b) (Cons "    mov rcx, rax" (Cons "    pop rdx" Nil)))))
+                             (if (= n 3)
+                               (match rest2
+                                 (Cons c _
+                                   (let s2 (cg-emit-line (cg-expr s1 env b) "    push rax")
+                                     (cg-emit-lines (cg-expr s2 env c) (Cons "    mov r11, rax" (Cons "    pop rcx" (Cons "    pop rdx" Nil))))))
+                                 (Nil st))
+                               (cg-emit-lines (cg-expr s1 env b) (Cons "    mov rcx, rax" (Cons "    pop rdx" Nil))))))
                          (Nil st)))
                      (Nil st))))
         (cg-emit-lines st2 (cg-raw-lines kind))))))))
@@ -2421,7 +2432,11 @@
              (Nil st)
              (Cons a rest
                (let s1 (cg-emit-line st (str-concat "    mov rdx, " (mb-loc-text fr a)))
-                 (match rest (Cons b _ (cg-emit-line s1 (str-concat "    mov rcx, " (mb-loc-text fr b)))) (Nil s1)))))
+                 (match rest
+                   (Cons b rest2
+                     (let s2 (cg-emit-line s1 (str-concat "    mov rcx, " (mb-loc-text fr b)))
+                       (match rest2 (Cons c _ (cg-emit-line s2 (str-concat "    mov r11, " (mb-loc-text fr c)))) (Nil s2))))
+                   (Nil s1)))))
     (mb-set (cg-emit-lines st2 (cg-raw-lines kind)) fr d "rax")))
 
 ; ===========================================================================

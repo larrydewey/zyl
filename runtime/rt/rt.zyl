@@ -11,3 +11,4 @@
 (use blake3)
 (use mangle)
 (use tables)
+(use bytes)

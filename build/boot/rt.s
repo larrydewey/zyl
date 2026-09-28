@@ -18310,6 +18310,3375 @@ zyl_str_append_capped:
     mov rsp, rbp
     pop rbp
     jmp zy_local_x2Fmain_0__tables__tb_x2Dappend
+zy_local_x2Fmain_0__bytes__bb_x2Dmagic_x2Dbuf:
+    push rbp
+    mov rbp, rsp
+.L393_0:
+    mov rsi, 6510318584122966017
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__bytes__bb_x2Dmagic_x2Dslice:
+    push rbp
+    mov rbp, rsp
+.L394_0:
+    mov rsi, 6510318584122966018
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__bytes__bb_x2Dmax_x2Dcap:
+    push rbp
+    mov rbp, rsp
+.L395_0:
+    mov rsi, 1099511627776
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+.globl zyl_load_byte
+zyl_load_byte:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    sub rsp, 8
+    mov rdi, rdx
+.L396_0:
+    cmp rdi, 4096
+    jge .L396_3
+    jmp .L396_4
+.L396_3:
+    mov r8, rdi
+    and r8, 7
+    cmp r8, 0
+    jne .L396_5
+    mov r8, 0
+    jmp .L396_6
+.L396_5:
+    mov r9, 1
+    mov r8, r9
+.L396_6:
+    cmp r8, 0
+    je .L396_1
+.L396_4:
+    mov r8, 0
+    jmp .L396_2
+.L396_1:
+    mov rdx, rdi
+    mov rax, qword ptr [rdx]
+    mov r9, rax
+    mov r10, 6510318584122966017
+    cmp r9, r10
+    jne .L396_7
+    mov r10, rdi
+    add r10, 24
+    mov rdx, r10
+    mov rax, qword ptr [rdx]
+    mov r10, rax
+    jmp .L396_8
+.L396_7:
+    mov rbx, 6510318584122966018
+    cmp r9, rbx
+    jne .L396_9
+    mov r9, rdi
+    add r9, 16
+    mov rdx, r9
+    mov rax, qword ptr [rdx]
+    mov r9, rax
+    jmp .L396_10
+.L396_9:
+    mov rbx, -1
+    mov r9, rbx
+.L396_10:
+    mov r10, r9
+.L396_8:
+    cmp r10, 0
+    jl .L396_11
+    cmp rsi, 0
+    jge .L396_15
+    jmp .L396_16
+.L396_15:
+    cmp r10, 0
+    jge .L396_17
+    jmp .L396_18
+.L396_17:
+    mov r9, 1
+    cmp r9, r10
+    jle .L396_13
+.L396_18:
+.L396_16:
+    mov r9, 0
+    jmp .L396_14
+.L396_13:
+    sub r10, 1
+    mov rax, rsi
+    mov rcx, r10
+    cmp rax, rcx
+    setle al
+    movzx rax, al
+    mov r10, rax
+    mov r9, r10
+.L396_14:
+    cmp r9, 0
+    je .L396_11
+    add rdi, 8
+    mov rdx, rdi
+    mov rax, qword ptr [rdx]
+    mov rdi, rax
+    add rsi, rdi
+    jmp .L396_12
+.L396_11:
+    mov rdi, 0
+    mov rsi, rdi
+.L396_12:
+    mov r8, rsi
+.L396_2:
+    cmp r8, 0
+    jne .L396_19
+    mov rsi, 0
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L396_19:
+    mov rdx, r8
+    movzx eax, byte ptr [rdx]
+    mov rsi, rax
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    ret
+.globl zyl_load_byte_signed
+zyl_load_byte_signed:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    sub rsp, 8
+    mov rdi, rdx
+.L397_0:
+    cmp rdi, 4096
+    jge .L397_3
+    jmp .L397_4
+.L397_3:
+    mov r8, rdi
+    and r8, 7
+    cmp r8, 0
+    jne .L397_5
+    mov r8, 0
+    jmp .L397_6
+.L397_5:
+    mov r9, 1
+    mov r8, r9
+.L397_6:
+    cmp r8, 0
+    je .L397_1
+.L397_4:
+    mov r8, 0
+    jmp .L397_2
+.L397_1:
+    mov rdx, rdi
+    mov rax, qword ptr [rdx]
+    mov r9, rax
+    mov r10, 6510318584122966017
+    cmp r9, r10
+    jne .L397_7
+    mov r10, rdi
+    add r10, 24
+    mov rdx, r10
+    mov rax, qword ptr [rdx]
+    mov r10, rax
+    jmp .L397_8
+.L397_7:
+    mov rbx, 6510318584122966018
+    cmp r9, rbx
+    jne .L397_9
+    mov r9, rdi
+    add r9, 16
+    mov rdx, r9
+    mov rax, qword ptr [rdx]
+    mov r9, rax
+    jmp .L397_10
+.L397_9:
+    mov rbx, -1
+    mov r9, rbx
+.L397_10:
+    mov r10, r9
+.L397_8:
+    cmp r10, 0
+    jl .L397_11
+    cmp rsi, 0
+    jge .L397_15
+    jmp .L397_16
+.L397_15:
+    cmp r10, 0
+    jge .L397_17
+    jmp .L397_18
+.L397_17:
+    mov r9, 1
+    cmp r9, r10
+    jle .L397_13
+.L397_18:
+.L397_16:
+    mov r9, 0
+    jmp .L397_14
+.L397_13:
+    sub r10, 1
+    mov rax, rsi
+    mov rcx, r10
+    cmp rax, rcx
+    setle al
+    movzx rax, al
+    mov r10, rax
+    mov r9, r10
+.L397_14:
+    cmp r9, 0
+    je .L397_11
+    add rdi, 8
+    mov rdx, rdi
+    mov rax, qword ptr [rdx]
+    mov rdi, rax
+    add rsi, rdi
+    jmp .L397_12
+.L397_11:
+    mov rdi, 0
+    mov rsi, rdi
+.L397_12:
+    mov r8, rsi
+.L397_2:
+    cmp r8, 0
+    jne .L397_19
+    mov rsi, 0
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L397_19:
+    mov rdx, r8
+    movzx eax, byte ptr [rdx]
+    mov rsi, rax
+    cmp rsi, 127
+    jle .L397_20
+    mov rdi, rsi
+    sub rdi, 256
+    mov rax, rdi
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L397_20:
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    ret
+.globl zyl_store_byte
+zyl_store_byte:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    mov rdi, rdx
+    mov r8, rcx
+.L398_0:
+    cmp rdi, 4096
+    jge .L398_3
+    jmp .L398_4
+.L398_3:
+    mov r9, rdi
+    and r9, 7
+    cmp r9, 0
+    jne .L398_5
+    mov r9, 0
+    jmp .L398_6
+.L398_5:
+    mov r10, 1
+    mov r9, r10
+.L398_6:
+    cmp r9, 0
+    je .L398_1
+.L398_4:
+    mov r9, 0
+    jmp .L398_2
+.L398_1:
+    mov rdx, rdi
+    mov rax, qword ptr [rdx]
+    mov r10, rax
+    mov rbx, 6510318584122966017
+    cmp r10, rbx
+    jne .L398_7
+    mov rbx, rdi
+    add rbx, 24
+    mov rdx, rbx
+    mov rax, qword ptr [rdx]
+    mov rbx, rax
+    jmp .L398_8
+.L398_7:
+    mov r12, 6510318584122966018
+    cmp r10, r12
+    jne .L398_9
+    mov r10, rdi
+    add r10, 16
+    mov rdx, r10
+    mov rax, qword ptr [rdx]
+    mov r10, rax
+    jmp .L398_10
+.L398_9:
+    mov r12, -1
+    mov r10, r12
+.L398_10:
+    mov rbx, r10
+.L398_8:
+    cmp rbx, 0
+    jl .L398_11
+    cmp rsi, 0
+    jge .L398_15
+    jmp .L398_16
+.L398_15:
+    cmp rbx, 0
+    jge .L398_17
+    jmp .L398_18
+.L398_17:
+    mov r10, 1
+    cmp r10, rbx
+    jle .L398_13
+.L398_18:
+.L398_16:
+    mov r10, 0
+    jmp .L398_14
+.L398_13:
+    sub rbx, 1
+    mov rax, rsi
+    mov rcx, rbx
+    cmp rax, rcx
+    setle al
+    movzx rax, al
+    mov rbx, rax
+    mov r10, rbx
+.L398_14:
+    cmp r10, 0
+    je .L398_11
+    add rdi, 8
+    mov rdx, rdi
+    mov rax, qword ptr [rdx]
+    mov rdi, rax
+    add rsi, rdi
+    jmp .L398_12
+.L398_11:
+    mov rdi, 0
+    mov rsi, rdi
+.L398_12:
+    mov r9, rsi
+.L398_2:
+    cmp r9, 0
+    jne .L398_19
+    mov rsi, 0
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L398_19:
+    mov rdx, r9
+    mov rcx, r8
+    mov byte ptr [rdx], cl
+    mov rax, rcx
+    mov rsi, rax
+    mov rsi, 1
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov rsp, rbp
+    pop rbp
+    ret
+.globl zyl_store_byte_signed
+zyl_store_byte_signed:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    mov rdi, rdx
+    mov r8, rcx
+.L399_0:
+    cmp rdi, 4096
+    jge .L399_3
+    jmp .L399_4
+.L399_3:
+    mov r9, rdi
+    and r9, 7
+    cmp r9, 0
+    jne .L399_5
+    mov r9, 0
+    jmp .L399_6
+.L399_5:
+    mov r10, 1
+    mov r9, r10
+.L399_6:
+    cmp r9, 0
+    je .L399_1
+.L399_4:
+    mov r9, 0
+    jmp .L399_2
+.L399_1:
+    mov rdx, rdi
+    mov rax, qword ptr [rdx]
+    mov r10, rax
+    mov rbx, 6510318584122966017
+    cmp r10, rbx
+    jne .L399_7
+    mov rbx, rdi
+    add rbx, 24
+    mov rdx, rbx
+    mov rax, qword ptr [rdx]
+    mov rbx, rax
+    jmp .L399_8
+.L399_7:
+    mov r12, 6510318584122966018
+    cmp r10, r12
+    jne .L399_9
+    mov r10, rdi
+    add r10, 16
+    mov rdx, r10
+    mov rax, qword ptr [rdx]
+    mov r10, rax
+    jmp .L399_10
+.L399_9:
+    mov r12, -1
+    mov r10, r12
+.L399_10:
+    mov rbx, r10
+.L399_8:
+    cmp rbx, 0
+    jl .L399_11
+    cmp rsi, 0
+    jge .L399_15
+    jmp .L399_16
+.L399_15:
+    cmp rbx, 0
+    jge .L399_17
+    jmp .L399_18
+.L399_17:
+    mov r10, 1
+    cmp r10, rbx
+    jle .L399_13
+.L399_18:
+.L399_16:
+    mov r10, 0
+    jmp .L399_14
+.L399_13:
+    sub rbx, 1
+    mov rax, rsi
+    mov rcx, rbx
+    cmp rax, rcx
+    setle al
+    movzx rax, al
+    mov rbx, rax
+    mov r10, rbx
+.L399_14:
+    cmp r10, 0
+    je .L399_11
+    add rdi, 8
+    mov rdx, rdi
+    mov rax, qword ptr [rdx]
+    mov rdi, rax
+    add rsi, rdi
+    jmp .L399_12
+.L399_11:
+    mov rdi, 0
+    mov rsi, rdi
+.L399_12:
+    mov r9, rsi
+.L399_2:
+    cmp r9, 0
+    jne .L399_19
+    mov rsi, 0
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L399_19:
+    mov rdx, r9
+    mov rcx, r8
+    mov byte ptr [rdx], cl
+    mov rax, rcx
+    mov rsi, rax
+    mov rsi, 1
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov rsp, rbp
+    pop rbp
+    ret
+.globl zyl_load_n
+zyl_load_n:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    sub rsp, 8
+    mov r8, rdx
+    mov r9, rcx
+.L400_0:
+    cmp rdi, 2
+    jne .L400_4
+    jmp .L400_5
+.L400_4:
+    cmp rdi, 4
+    jne .L400_6
+    jmp .L400_7
+.L400_6:
+    cmp rdi, 8
+    jne .L400_2
+.L400_7:
+.L400_5:
+    mov r10, 0
+    jmp .L400_3
+.L400_2:
+    mov rbx, 1
+    mov r10, rbx
+.L400_3:
+    cmp r10, 0
+    je .L400_1
+    mov r10, 0
+    mov rax, r10
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L400_1:
+    cmp r9, 4096
+    jge .L400_10
+    jmp .L400_11
+.L400_10:
+    mov r10, r9
+    and r10, 7
+    cmp r10, 0
+    jne .L400_12
+    mov r10, 0
+    jmp .L400_13
+.L400_12:
+    mov rbx, 1
+    mov r10, rbx
+.L400_13:
+    cmp r10, 0
+    je .L400_8
+.L400_11:
+    mov r10, 0
+    jmp .L400_9
+.L400_8:
+    mov rdx, r9
+    mov rax, qword ptr [rdx]
+    mov rbx, rax
+    mov r12, 6510318584122966017
+    cmp rbx, r12
+    jne .L400_14
+    mov r12, r9
+    add r12, 24
+    mov rdx, r12
+    mov rax, qword ptr [rdx]
+    mov r12, rax
+    jmp .L400_15
+.L400_14:
+    mov r13, 6510318584122966018
+    cmp rbx, r13
+    jne .L400_16
+    mov rbx, r9
+    add rbx, 16
+    mov rdx, rbx
+    mov rax, qword ptr [rdx]
+    mov rbx, rax
+    jmp .L400_17
+.L400_16:
+    mov r13, -1
+    mov rbx, r13
+.L400_17:
+    mov r12, rbx
+.L400_15:
+    cmp r12, 0
+    jl .L400_18
+    cmp r8, 0
+    jge .L400_22
+    jmp .L400_23
+.L400_22:
+    cmp rdi, 0
+    jge .L400_24
+    jmp .L400_25
+.L400_24:
+    cmp r12, 0
+    jge .L400_26
+    jmp .L400_27
+.L400_26:
+    cmp rdi, r12
+    jle .L400_20
+.L400_27:
+.L400_25:
+.L400_23:
+    mov rbx, 0
+    jmp .L400_21
+.L400_20:
+    sub r12, rdi
+    mov rax, r8
+    mov rcx, r12
+    cmp rax, rcx
+    setle al
+    movzx rax, al
+    mov r12, rax
+    mov rbx, r12
+.L400_21:
+    cmp rbx, 0
+    je .L400_18
+    add r9, 8
+    mov rdx, r9
+    mov rax, qword ptr [rdx]
+    mov r9, rax
+    add r8, r9
+    jmp .L400_19
+.L400_18:
+    mov r9, 0
+    mov r8, r9
+.L400_19:
+    mov r10, r8
+.L400_9:
+    cmp r10, 0
+    jne .L400_28
+    mov r8, 0
+    mov rax, r8
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L400_28:
+    cmp rdi, 2
+    jne .L400_29
+    mov rdx, r10
+    movzx eax, word ptr [rdx]
+    mov r8, rax
+    jmp .L400_30
+.L400_29:
+    cmp rdi, 4
+    jne .L400_31
+    mov rdx, r10
+    mov eax, dword ptr [rdx]
+    mov r9, rax
+    jmp .L400_32
+.L400_31:
+    mov rdx, r10
+    mov rax, qword ptr [rdx]
+    mov r10, rax
+    mov r9, r10
+.L400_32:
+    mov r8, r9
+.L400_30:
+    cmp rsi, 0
+    jne .L400_33
+    mov rax, r8
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L400_33:
+    mov rsi, 8
+    mov rax, r8
+    mov rcx, rsi
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov rsi, rax
+    mov r9, 71777214294589695
+    and rsi, r9
+    mov r9, 71777214294589695
+    and r8, r9
+    mov r9, 8
+    mov rax, r8
+    mov rcx, r9
+    mov rdx, rcx
+    shl rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r8, rax
+    or rsi, r8
+    mov r8, 16
+    mov rax, rsi
+    mov rcx, r8
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r8, rax
+    mov r9, 281470681808895
+    and r8, r9
+    mov r9, 281470681808895
+    and rsi, r9
+    mov r9, 16
+    mov rax, rsi
+    mov rcx, r9
+    mov rdx, rcx
+    shl rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov rsi, rax
+    or rsi, r8
+    mov r8, 32
+    mov rax, rsi
+    mov rcx, r8
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r8, rax
+    mov r9, 4294967295
+    and r8, r9
+    mov r9, 32
+    mov rax, rsi
+    mov rcx, r9
+    mov rdx, rcx
+    shl rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov rsi, rax
+    or rsi, r8
+    cmp rdi, 8
+    jne .L400_34
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L400_34:
+    cmp rdi, 4
+    jne .L400_35
+    mov rdi, 32
+    mov rax, rsi
+    mov rcx, rdi
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov rdi, rax
+    mov r8, 4294967295
+    and rdi, r8
+    mov rax, rdi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L400_35:
+    mov rdi, 48
+    mov rax, rsi
+    mov rcx, rdi
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov rsi, rax
+    and rsi, 65535
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov rsp, rbp
+    pop rbp
+    ret
+.globl zyl_load_n_signed
+zyl_load_n_signed:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    sub rsp, 8
+    mov rbx, rdi
+    mov rdi, rdx
+    mov r8, rcx
+.L401_0:
+    mov rdx, rdi
+    mov rdi, rbx
+    mov rcx, r8
+    call zyl_load_n
+    mov rsi, rax
+    cmp rbx, 8
+    jl .L401_2
+    jmp .L401_3
+.L401_2:
+    cmp rbx, 2
+    jne .L401_6
+    jmp .L401_7
+.L401_6:
+    cmp rbx, 4
+    jne .L401_8
+    jmp .L401_9
+.L401_8:
+    cmp rbx, 8
+    jne .L401_4
+.L401_9:
+.L401_7:
+    mov rdi, 0
+    jmp .L401_5
+.L401_4:
+    mov r8, 1
+    mov rdi, r8
+.L401_5:
+    cmp rdi, 0
+    je .L401_1
+.L401_3:
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L401_1:
+    mov rdi, 1
+    mov r8, rbx
+    imul r8, 8
+    sub r8, 1
+    mov rax, rdi
+    mov rcx, r8
+    mov rdx, rcx
+    shl rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov rdi, rax
+    xor rsi, rdi
+    sub rsi, rdi
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    ret
+.globl zyl_store_n
+zyl_store_n:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    push r14
+    mov r9, rcx
+    mov r10, r8
+    mov r8, rdx
+.L402_0:
+    cmp rdi, 2
+    jne .L402_4
+    jmp .L402_5
+.L402_4:
+    cmp rdi, 4
+    jne .L402_6
+    jmp .L402_7
+.L402_6:
+    cmp rdi, 8
+    jne .L402_2
+.L402_7:
+.L402_5:
+    mov rbx, 0
+    jmp .L402_3
+.L402_2:
+    mov r12, 1
+    mov rbx, r12
+.L402_3:
+    cmp rbx, 0
+    je .L402_1
+    mov rbx, 0
+    mov rax, rbx
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L402_1:
+    cmp r9, 4096
+    jge .L402_10
+    jmp .L402_11
+.L402_10:
+    mov rbx, r9
+    and rbx, 7
+    cmp rbx, 0
+    jne .L402_12
+    mov rbx, 0
+    jmp .L402_13
+.L402_12:
+    mov r12, 1
+    mov rbx, r12
+.L402_13:
+    cmp rbx, 0
+    je .L402_8
+.L402_11:
+    mov rbx, 0
+    jmp .L402_9
+.L402_8:
+    mov rdx, r9
+    mov rax, qword ptr [rdx]
+    mov r12, rax
+    mov r13, 6510318584122966017
+    cmp r12, r13
+    jne .L402_14
+    mov r13, r9
+    add r13, 24
+    mov rdx, r13
+    mov rax, qword ptr [rdx]
+    mov r13, rax
+    jmp .L402_15
+.L402_14:
+    mov r14, 6510318584122966018
+    cmp r12, r14
+    jne .L402_16
+    mov r12, r9
+    add r12, 16
+    mov rdx, r12
+    mov rax, qword ptr [rdx]
+    mov r12, rax
+    jmp .L402_17
+.L402_16:
+    mov r14, -1
+    mov r12, r14
+.L402_17:
+    mov r13, r12
+.L402_15:
+    cmp r13, 0
+    jl .L402_18
+    cmp r8, 0
+    jge .L402_22
+    jmp .L402_23
+.L402_22:
+    cmp rdi, 0
+    jge .L402_24
+    jmp .L402_25
+.L402_24:
+    cmp r13, 0
+    jge .L402_26
+    jmp .L402_27
+.L402_26:
+    cmp rdi, r13
+    jle .L402_20
+.L402_27:
+.L402_25:
+.L402_23:
+    mov r12, 0
+    jmp .L402_21
+.L402_20:
+    sub r13, rdi
+    mov rax, r8
+    mov rcx, r13
+    cmp rax, rcx
+    setle al
+    movzx rax, al
+    mov r13, rax
+    mov r12, r13
+.L402_21:
+    cmp r12, 0
+    je .L402_18
+    add r9, 8
+    mov rdx, r9
+    mov rax, qword ptr [rdx]
+    mov r9, rax
+    add r8, r9
+    jmp .L402_19
+.L402_18:
+    mov r9, 0
+    mov r8, r9
+.L402_19:
+    mov rbx, r8
+.L402_9:
+    cmp rbx, 0
+    jne .L402_28
+    mov r8, 0
+    mov rax, r8
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L402_28:
+    cmp rsi, 0
+    jne .L402_29
+    mov rsi, r10
+    jmp .L402_30
+.L402_29:
+    mov r8, 8
+    mov rax, r10
+    mov rcx, r8
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r8, rax
+    mov r9, 71777214294589695
+    and r8, r9
+    mov r9, 71777214294589695
+    and r9, r10
+    mov r10, 8
+    mov rax, r9
+    mov rcx, r10
+    mov rdx, rcx
+    shl rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r9, rax
+    or r8, r9
+    mov r9, 16
+    mov rax, r8
+    mov rcx, r9
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r9, rax
+    mov r10, 281470681808895
+    and r9, r10
+    mov r10, 281470681808895
+    and r8, r10
+    mov r10, 16
+    mov rax, r8
+    mov rcx, r10
+    mov rdx, rcx
+    shl rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r8, rax
+    or r8, r9
+    mov r9, 32
+    mov rax, r8
+    mov rcx, r9
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r9, rax
+    mov r10, 4294967295
+    and r9, r10
+    mov r10, 32
+    mov rax, r8
+    mov rcx, r10
+    mov rdx, rcx
+    shl rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r8, rax
+    or r8, r9
+    cmp rdi, 8
+    jne .L402_31
+    mov r9, r8
+    jmp .L402_32
+.L402_31:
+    cmp rdi, 4
+    jne .L402_33
+    mov r10, 32
+    mov rax, r8
+    mov rcx, r10
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r10, rax
+    mov r12, 4294967295
+    and r10, r12
+    jmp .L402_34
+.L402_33:
+    mov r12, 48
+    mov rax, r8
+    mov rcx, r12
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r8, rax
+    and r8, 65535
+    mov r10, r8
+.L402_34:
+    mov r9, r10
+.L402_32:
+    mov rsi, r9
+.L402_30:
+    cmp rdi, 2
+    jne .L402_35
+    mov rdx, rbx
+    mov rcx, rsi
+    mov word ptr [rdx], cx
+    mov rax, rcx
+    mov r8, rax
+    jmp .L402_36
+.L402_35:
+    cmp rdi, 4
+    jne .L402_37
+    mov rdx, rbx
+    mov rcx, rsi
+    mov dword ptr [rdx], ecx
+    mov rax, rcx
+    mov rdi, rax
+    jmp .L402_38
+.L402_37:
+    mov rdx, rbx
+    mov rcx, rsi
+    mov qword ptr [rdx], rcx
+    mov rax, rcx
+    mov rsi, rax
+    mov rdi, rsi
+.L402_38:
+    mov r8, rdi
+.L402_36:
+    mov rsi, 1
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__bytes__bb_x2Dnew_x2Dslice:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    and rsp, -16
+    mov rbx, rdi
+    mov r12, rsi
+.L403_0:
+    mov rsi, 24
+    mov rdi, rsi
+    call malloc
+    mov rsi, rax
+    cmp rsi, 0
+    jne .L403_1
+    mov rdi, 0
+    mov rax, rdi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L403_1:
+    mov rdi, 6510318584122966018
+    mov rdx, rsi
+    mov rcx, rdi
+    mov qword ptr [rdx], rcx
+    mov rax, rcx
+    mov rdi, rax
+    mov rdi, rsi
+    add rdi, 8
+    mov rdx, rdi
+    mov rcx, rbx
+    mov qword ptr [rdx], rcx
+    mov rax, rcx
+    mov rdi, rax
+    mov rdi, rsi
+    add rdi, 16
+    mov rdx, rdi
+    mov rcx, r12
+    mov qword ptr [rdx], rcx
+    mov rax, rcx
+    mov rdi, rax
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov rsp, rbp
+    pop rbp
+    ret
+.globl zyl_byte_slice
+zyl_byte_slice:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    sub rsp, 8
+    mov r8, rdx
+.L404_0:
+    cmp rdi, 4096
+    jge .L404_3
+    jmp .L404_4
+.L404_3:
+    mov r9, rdi
+    and r9, 7
+    cmp r9, 0
+    jne .L404_5
+    mov r9, 0
+    jmp .L404_6
+.L404_5:
+    mov r10, 1
+    mov r9, r10
+.L404_6:
+    cmp r9, 0
+    je .L404_1
+.L404_4:
+    mov r9, 0
+    jmp .L404_2
+.L404_1:
+    mov rdx, rdi
+    mov rax, qword ptr [rdx]
+    mov r10, rax
+    mov rbx, 6510318584122966017
+    cmp r10, rbx
+    jne .L404_7
+    jmp .L404_8
+.L404_7:
+    mov r10, 0
+    mov rdi, r10
+.L404_8:
+    mov r9, rdi
+.L404_2:
+    cmp r9, 0
+    jne .L404_10
+    jmp .L404_11
+.L404_10:
+    cmp rsi, 0
+    jge .L404_16
+    jmp .L404_17
+.L404_16:
+    cmp r8, 0
+    jge .L404_18
+    jmp .L404_19
+.L404_18:
+    mov rdi, r9
+    add rdi, 24
+    mov rdx, rdi
+    mov rax, qword ptr [rdx]
+    mov rdi, rax
+    cmp rdi, 0
+    jge .L404_20
+    jmp .L404_21
+.L404_20:
+    mov rdi, r9
+    add rdi, 24
+    mov rdx, rdi
+    mov rax, qword ptr [rdx]
+    mov rdi, rax
+    cmp r8, rdi
+    jle .L404_14
+.L404_21:
+.L404_19:
+.L404_17:
+    mov rdi, 0
+    jmp .L404_15
+.L404_14:
+    mov r10, r9
+    add r10, 24
+    mov rdx, r10
+    mov rax, qword ptr [rdx]
+    mov r10, rax
+    sub r10, r8
+    mov rax, rsi
+    mov rcx, r10
+    cmp rax, rcx
+    setle al
+    movzx rax, al
+    mov r10, rax
+    mov rdi, r10
+.L404_15:
+    cmp rdi, 0
+    je .L404_12
+    mov rdi, 0
+    jmp .L404_13
+.L404_12:
+    mov r10, 1
+    mov rdi, r10
+.L404_13:
+    cmp rdi, 0
+    je .L404_9
+.L404_11:
+    mov rdi, 0
+    mov rax, rdi
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L404_9:
+    mov rdi, r9
+    add rdi, 8
+    mov rdx, rdi
+    mov rax, qword ptr [rdx]
+    mov rdi, rax
+    add rsi, rdi
+    mov rdi, rsi
+    mov rsi, r8
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__bytes__bb_x2Dnew_x2Dslice
+.globl zyl_byte_slice_sub
+zyl_byte_slice_sub:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    sub rsp, 8
+    mov r8, rdx
+.L405_0:
+    cmp rdi, 4096
+    jge .L405_3
+    jmp .L405_4
+.L405_3:
+    mov r9, rdi
+    and r9, 7
+    cmp r9, 0
+    jne .L405_5
+    mov r9, 0
+    jmp .L405_6
+.L405_5:
+    mov r10, 1
+    mov r9, r10
+.L405_6:
+    cmp r9, 0
+    je .L405_1
+.L405_4:
+    mov r9, 0
+    jmp .L405_2
+.L405_1:
+    mov rdx, rdi
+    mov rax, qword ptr [rdx]
+    mov r10, rax
+    mov rbx, 6510318584122966018
+    cmp r10, rbx
+    jne .L405_7
+    jmp .L405_8
+.L405_7:
+    mov r10, 0
+    mov rdi, r10
+.L405_8:
+    mov r9, rdi
+.L405_2:
+    cmp r9, 0
+    jne .L405_10
+    jmp .L405_11
+.L405_10:
+    cmp rsi, 0
+    jge .L405_16
+    jmp .L405_17
+.L405_16:
+    cmp r8, 0
+    jge .L405_18
+    jmp .L405_19
+.L405_18:
+    mov rdi, r9
+    add rdi, 16
+    mov rdx, rdi
+    mov rax, qword ptr [rdx]
+    mov rdi, rax
+    cmp rdi, 0
+    jge .L405_20
+    jmp .L405_21
+.L405_20:
+    mov rdi, r9
+    add rdi, 16
+    mov rdx, rdi
+    mov rax, qword ptr [rdx]
+    mov rdi, rax
+    cmp r8, rdi
+    jle .L405_14
+.L405_21:
+.L405_19:
+.L405_17:
+    mov rdi, 0
+    jmp .L405_15
+.L405_14:
+    mov r10, r9
+    add r10, 16
+    mov rdx, r10
+    mov rax, qword ptr [rdx]
+    mov r10, rax
+    sub r10, r8
+    mov rax, rsi
+    mov rcx, r10
+    cmp rax, rcx
+    setle al
+    movzx rax, al
+    mov r10, rax
+    mov rdi, r10
+.L405_15:
+    cmp rdi, 0
+    je .L405_12
+    mov rdi, 0
+    jmp .L405_13
+.L405_12:
+    mov r10, 1
+    mov rdi, r10
+.L405_13:
+    cmp rdi, 0
+    je .L405_9
+.L405_11:
+    mov rdi, 0
+    mov rax, rdi
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L405_9:
+    mov rdi, r9
+    add rdi, 8
+    mov rdx, rdi
+    mov rax, qword ptr [rdx]
+    mov rdi, rax
+    add rsi, rdi
+    mov rdi, rsi
+    mov rsi, r8
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__bytes__bb_x2Dnew_x2Dslice
+zy_local_x2Fmain_0__bytes__bb_x2Dinit:
+    push rbp
+    mov rbp, rsp
+    mov r8, rdx
+.L406_0:
+    mov r9, 6510318584122966017
+    mov rdx, rdi
+    mov rcx, r9
+    mov qword ptr [rdx], rcx
+    mov rax, rcx
+    mov r9, rax
+    mov r9, rdi
+    add r9, 8
+    mov rdx, r9
+    mov rcx, rsi
+    mov qword ptr [rdx], rcx
+    mov rax, rcx
+    mov rsi, rax
+    mov rsi, rdi
+    add rsi, 16
+    mov r9, 0
+    mov rdx, rsi
+    mov rcx, r9
+    mov qword ptr [rdx], rcx
+    mov rax, rcx
+    mov rsi, rax
+    mov rsi, rdi
+    add rsi, 24
+    mov rdx, rsi
+    mov rcx, r8
+    mov qword ptr [rdx], rcx
+    mov rax, rcx
+    mov rsi, rax
+    mov rax, rdi
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__bytes__bb_x2Dcap_x2Dok:
+    push rbp
+    mov rbp, rsp
+.L407_0:
+    cmp rdi, 0
+    jl .L407_1
+    mov rsi, 1099511627776
+    mov rax, rdi
+    mov rcx, rsi
+    cmp rax, rcx
+    setle al
+    movzx rax, al
+    mov rsi, rax
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+.L407_1:
+    mov rsi, 0
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+.globl zyl_bytebuf_new
+zyl_bytebuf_new:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    push r14
+    and rsp, -16
+    mov rbx, rsi
+.L408_0:
+    mov rdi, rbx
+    call zy_local_x2Fmain_0__bytes__bb_x2Dcap_x2Dok
+    mov rsi, rax
+    cmp rsi, 0
+    je .L408_2
+    mov rsi, 0
+    jmp .L408_3
+.L408_2:
+    mov rdi, 1
+    mov rsi, rdi
+.L408_3:
+    cmp rsi, 0
+    je .L408_1
+    mov rsi, 0
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L408_1:
+    mov rsi, 32
+    mov rdi, rsi
+    call malloc
+    mov rsi, rax
+    mov r12, rsi
+    cmp r12, 0
+    jne .L408_4
+    mov rsi, 0
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L408_4:
+    cmp rbx, 0
+    jle .L408_5
+    mov rsi, rbx
+    jmp .L408_6
+.L408_5:
+    mov rdi, 1
+    mov rsi, rdi
+.L408_6:
+    mov r13, rsi
+    mov rdi, r13
+    call malloc
+    mov rsi, rax
+    mov r14, rsi
+    cmp r14, 0
+    jne .L408_7
+    mov rdi, r12
+    call free
+    mov rsi, rax
+    mov rsi, 0
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L408_7:
+    mov rsi, 0
+    mov rdi, r14
+    mov rdx, r13
+    call memset
+    mov rsi, rax
+    mov rdi, r12
+    mov rsi, r14
+    mov rdx, rbx
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__bytes__bb_x2Dinit
+.globl zyl_bytebuf_new_r
+zyl_bytebuf_new_r:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    push r14
+    and rsp, -16
+    mov rbx, rsi
+.L409_0:
+    mov rdi, rbx
+    call zy_local_x2Fmain_0__bytes__bb_x2Dcap_x2Dok
+    mov rsi, rax
+    cmp rsi, 0
+    je .L409_2
+    mov rsi, 0
+    jmp .L409_3
+.L409_2:
+    mov rdi, 1
+    mov rsi, rdi
+.L409_3:
+    cmp rsi, 0
+    je .L409_1
+    mov rsi, 0
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L409_1:
+    mov rax, QWORD PTR fs:zyl_cur_region@tpoff
+    mov rsi, rax
+    mov r12, rsi
+    mov rsi, 32
+    mov rdi, rsi
+    mov rsi, r12
+    call zyl_ralloc
+    mov rsi, rax
+    mov r13, rsi
+    cmp r13, 0
+    jne .L409_4
+    mov rsi, 0
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L409_4:
+    cmp rbx, 0
+    jle .L409_5
+    mov rsi, rbx
+    jmp .L409_6
+.L409_5:
+    mov rdi, 1
+    mov rsi, rdi
+.L409_6:
+    mov r14, rsi
+    mov rdi, r14
+    mov rsi, r12
+    call zyl_ralloc
+    mov rsi, rax
+    mov r12, rsi
+    cmp r12, 0
+    jne .L409_7
+    mov rsi, 0
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L409_7:
+    mov rsi, 0
+    mov rdi, r12
+    mov rdx, r14
+    call memset
+    mov rsi, rax
+    mov rdi, r13
+    mov rsi, r12
+    mov rdx, rbx
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__bytes__bb_x2Dinit
+.globl zyl_bytebuf_append
+zyl_bytebuf_append:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    and rsp, -16
+    sub rsp, 16
+.L410_0:
+    cmp rdi, 4096
+    jge .L410_3
+    jmp .L410_4
+.L410_3:
+    mov r8, rdi
+    and r8, 7
+    cmp r8, 0
+    jne .L410_5
+    mov r8, 0
+    jmp .L410_6
+.L410_5:
+    mov r9, 1
+    mov r8, r9
+.L410_6:
+    cmp r8, 0
+    je .L410_1
+.L410_4:
+    mov r8, 0
+    jmp .L410_2
+.L410_1:
+    mov rdx, rdi
+    mov rax, qword ptr [rdx]
+    mov r9, rax
+    mov r10, 6510318584122966017
+    cmp r9, r10
+    jne .L410_7
+    jmp .L410_8
+.L410_7:
+    mov r9, 0
+    mov rdi, r9
+.L410_8:
+    mov r8, rdi
+.L410_2:
+    mov rbx, r8
+    cmp rsi, 4096
+    jge .L410_11
+    jmp .L410_12
+.L410_11:
+    mov rdi, rsi
+    and rdi, 7
+    cmp rdi, 0
+    jne .L410_13
+    mov rdi, 0
+    jmp .L410_14
+.L410_13:
+    mov r8, 1
+    mov rdi, r8
+.L410_14:
+    cmp rdi, 0
+    je .L410_9
+.L410_12:
+    mov rdi, 0
+    jmp .L410_10
+.L410_9:
+    mov rdx, rsi
+    mov rax, qword ptr [rdx]
+    mov r8, rax
+    mov r9, 6510318584122966018
+    cmp r8, r9
+    jne .L410_15
+    jmp .L410_16
+.L410_15:
+    mov r8, 0
+    mov rsi, r8
+.L410_16:
+    mov rdi, rsi
+.L410_10:
+    cmp rbx, 0
+    jne .L410_18
+    jmp .L410_19
+.L410_18:
+    cmp rdi, 0
+    jne .L410_17
+.L410_19:
+    mov rsi, 0
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L410_17:
+    mov rsi, rbx
+    add rsi, 16
+    mov rdx, rsi
+    mov rax, qword ptr [rdx]
+    mov rsi, rax
+    mov r12, rsi
+    mov rsi, rdi
+    add rsi, 16
+    mov rdx, rsi
+    mov rax, qword ptr [rdx]
+    mov rsi, rax
+    mov r13, rsi
+    cmp r12, 0
+    jge .L410_25
+    jmp .L410_26
+.L410_25:
+    cmp r13, 0
+    jge .L410_27
+    jmp .L410_28
+.L410_27:
+    mov rsi, rbx
+    add rsi, 24
+    mov rdx, rsi
+    mov rax, qword ptr [rdx]
+    mov rsi, rax
+    cmp rsi, 0
+    jge .L410_29
+    jmp .L410_30
+.L410_29:
+    mov rsi, rbx
+    add rsi, 24
+    mov rdx, rsi
+    mov rax, qword ptr [rdx]
+    mov rsi, rax
+    cmp r13, rsi
+    jle .L410_23
+.L410_30:
+.L410_28:
+.L410_26:
+    mov rsi, 0
+    jmp .L410_24
+.L410_23:
+    mov r8, rbx
+    add r8, 24
+    mov rdx, r8
+    mov rax, qword ptr [rdx]
+    mov r8, rax
+    sub r8, r13
+    mov rax, r12
+    mov rcx, r8
+    cmp rax, rcx
+    setle al
+    movzx rax, al
+    mov r8, rax
+    mov rsi, r8
+.L410_24:
+    cmp rsi, 0
+    je .L410_21
+    mov rsi, 0
+    jmp .L410_22
+.L410_21:
+    mov r8, 1
+    mov rsi, r8
+.L410_22:
+    cmp rsi, 0
+    je .L410_20
+    mov rsi, 0
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L410_20:
+    mov rsi, rbx
+    add rsi, 8
+    mov rdx, rsi
+    mov rax, qword ptr [rdx]
+    mov rsi, rax
+    add rsi, r12
+    add rdi, 8
+    mov rdx, rdi
+    mov rax, qword ptr [rdx]
+    mov rdi, rax
+    mov rdx, r13
+    mov rax, rsi
+    mov rsi, rdi
+    mov rdi, rax
+    call memmove
+    mov rsi, rax
+    mov rsi, rbx
+    add rsi, 16
+    mov rdi, r12
+    add rdi, r13
+    mov rdx, rsi
+    mov rcx, rdi
+    mov qword ptr [rdx], rcx
+    mov rax, rcx
+    mov rsi, rax
+    mov rsi, 1
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov rsp, rbp
+    pop rbp
+    ret
+.globl zyl_bytebuf_len
+zyl_bytebuf_len:
+    push rbp
+    mov rbp, rsp
+.L411_0:
+    cmp rdi, 4096
+    jge .L411_3
+    jmp .L411_4
+.L411_3:
+    mov rsi, rdi
+    and rsi, 7
+    cmp rsi, 0
+    jne .L411_5
+    mov rsi, 0
+    jmp .L411_6
+.L411_5:
+    mov r8, 1
+    mov rsi, r8
+.L411_6:
+    cmp rsi, 0
+    je .L411_1
+.L411_4:
+    mov rsi, 0
+    jmp .L411_2
+.L411_1:
+    mov rdx, rdi
+    mov rax, qword ptr [rdx]
+    mov r8, rax
+    mov r9, 6510318584122966017
+    cmp r8, r9
+    jne .L411_7
+    jmp .L411_8
+.L411_7:
+    mov r8, 0
+    mov rdi, r8
+.L411_8:
+    mov rsi, rdi
+.L411_2:
+    cmp rsi, 0
+    jne .L411_9
+    mov rdi, 0
+    mov rax, rdi
+    mov rsp, rbp
+    pop rbp
+    ret
+.L411_9:
+    add rsi, 16
+    mov rdx, rsi
+    mov rax, qword ptr [rdx]
+    mov rsi, rax
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+.globl zyl_bytebuf_cap
+zyl_bytebuf_cap:
+    push rbp
+    mov rbp, rsp
+.L412_0:
+    cmp rdi, 4096
+    jge .L412_3
+    jmp .L412_4
+.L412_3:
+    mov rsi, rdi
+    and rsi, 7
+    cmp rsi, 0
+    jne .L412_5
+    mov rsi, 0
+    jmp .L412_6
+.L412_5:
+    mov r8, 1
+    mov rsi, r8
+.L412_6:
+    cmp rsi, 0
+    je .L412_1
+.L412_4:
+    mov rsi, 0
+    jmp .L412_2
+.L412_1:
+    mov rdx, rdi
+    mov rax, qword ptr [rdx]
+    mov r8, rax
+    mov r9, 6510318584122966017
+    cmp r8, r9
+    jne .L412_7
+    jmp .L412_8
+.L412_7:
+    mov r8, 0
+    mov rdi, r8
+.L412_8:
+    mov rsi, rdi
+.L412_2:
+    cmp rsi, 0
+    jne .L412_9
+    mov rdi, 0
+    mov rax, rdi
+    mov rsp, rbp
+    pop rbp
+    ret
+.L412_9:
+    add rsi, 24
+    mov rdx, rsi
+    mov rax, qword ptr [rdx]
+    mov rsi, rax
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+.globl zyl_bytebuf_ptr
+zyl_bytebuf_ptr:
+    push rbp
+    mov rbp, rsp
+.L413_0:
+    cmp rdi, 4096
+    jge .L413_3
+    jmp .L413_4
+.L413_3:
+    mov rsi, rdi
+    and rsi, 7
+    cmp rsi, 0
+    jne .L413_5
+    mov rsi, 0
+    jmp .L413_6
+.L413_5:
+    mov r8, 1
+    mov rsi, r8
+.L413_6:
+    cmp rsi, 0
+    je .L413_1
+.L413_4:
+    mov rsi, 0
+    jmp .L413_2
+.L413_1:
+    mov rdx, rdi
+    mov rax, qword ptr [rdx]
+    mov r8, rax
+    mov r9, 6510318584122966017
+    cmp r8, r9
+    jne .L413_7
+    jmp .L413_8
+.L413_7:
+    mov r8, 0
+    mov rdi, r8
+.L413_8:
+    mov rsi, rdi
+.L413_2:
+    cmp rsi, 0
+    jne .L413_9
+    mov rdi, 0
+    mov rax, rdi
+    mov rsp, rbp
+    pop rbp
+    ret
+.L413_9:
+    add rsi, 8
+    mov rdx, rsi
+    mov rax, qword ptr [rdx]
+    mov rsi, rax
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+.globl zyl_align_check
+zyl_align_check:
+    push rbp
+    mov rbp, rsp
+.L414_0:
+    cmp rsi, 0
+    jg .L414_1
+    mov r8, 0
+    mov rax, r8
+    mov rsp, rbp
+    pop rbp
+    ret
+.L414_1:
+    mov rax, rdi
+    mov rcx, rsi
+    cqo
+    idiv rcx
+    mov rax, rdx
+    mov rsi, rax
+    cmp rsi, 0
+    jne .L414_2
+    mov rsi, 1
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+.L414_2:
+    mov rsi, 0
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+.globl zyl_atomic_load
+zyl_atomic_load:
+    push rbp
+    mov rbp, rsp
+.L415_0:
+    mov rdx, rdi
+    mov rax, qword ptr [rdx]
+    mov rsi, rax
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+.globl zyl_atomic_store
+zyl_atomic_store:
+    push rbp
+    mov rbp, rsp
+.L416_0:
+    mov rdx, rdi
+    mov rcx, rsi
+    mov rax, rcx
+    xchg qword ptr [rdx], rax
+    mov rdi, rax
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+.globl zyl_atomic_fetch_add
+zyl_atomic_fetch_add:
+    push rbp
+    mov rbp, rsp
+.L417_0:
+    mov rdx, rdi
+    mov rcx, rsi
+    mov rax, rcx
+    lock xadd qword ptr [rdx], rax
+    mov rsi, rax
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+.globl zyl_atomic_add
+zyl_atomic_add:
+    push rbp
+    mov rbp, rsp
+.L418_0:
+    mov rdx, rdi
+    mov rcx, rsi
+    mov rax, rcx
+    lock xadd qword ptr [rdx], rax
+    mov rdi, rax
+    add rsi, rdi
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+.globl zyl_atomic_sub
+zyl_atomic_sub:
+    push rbp
+    mov rbp, rsp
+.L419_0:
+    mov r8, 0
+    sub r8, rsi
+    mov rdx, rdi
+    mov rcx, r8
+    mov rax, rcx
+    lock xadd qword ptr [rdx], rax
+    mov rdi, rax
+    mov rax, rdi
+    mov rcx, rsi
+    sub rax, rcx
+    mov rsi, rax
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+.globl zyl_atomic_cas
+zyl_atomic_cas:
+    push rbp
+    mov rbp, rsp
+    mov r8, rdx
+.L420_0:
+    mov rdx, rdi
+    mov rcx, rsi
+    mov r11, r8
+    mov rax, rcx
+    lock cmpxchg qword ptr [rdx], r11
+    mov rdi, rax
+    mov rax, rdi
+    mov rcx, rsi
+    cmp rax, rcx
+    sete al
+    movzx rax, al
+    mov rsi, rax
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__bytes__bb_x2Datomic_x2Dpick:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    sub rsp, 8
+    mov r8, rdx
+    mov r9, rcx
+.L421_0:
+    cmp r9, 0
+    je .L421_1
+    cmp rsi, r8
+    jle .L421_3
+    mov r10, rsi
+    jmp .L421_4
+.L421_3:
+    mov r10, r8
+.L421_4:
+    jmp .L421_2
+.L421_1:
+    cmp rsi, r8
+    jge .L421_5
+    mov rbx, rsi
+    jmp .L421_6
+.L421_5:
+    mov rbx, r8
+.L421_6:
+    mov r10, rbx
+.L421_2:
+    mov rdx, rdi
+    mov rcx, rsi
+    mov r11, r10
+    mov rax, rcx
+    lock cmpxchg qword ptr [rdx], r11
+    mov rbx, rax
+    cmp rbx, rsi
+    jne .L421_7
+    mov rax, r10
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L421_7:
+    mov rsi, rbx
+    jmp .L421_0
+.globl zyl_atomic_max
+zyl_atomic_max:
+    push rbp
+    mov rbp, rsp
+.L422_0:
+    mov rdx, rdi
+    mov rax, qword ptr [rdx]
+    mov r8, rax
+    mov r9, 1
+    mov rdx, rsi
+    mov rsi, r8
+    mov rcx, r9
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__bytes__bb_x2Datomic_x2Dpick
+.globl zyl_atomic_min
+zyl_atomic_min:
+    push rbp
+    mov rbp, rsp
+.L423_0:
+    mov rdx, rdi
+    mov rax, qword ptr [rdx]
+    mov r8, rax
+    mov r9, 0
+    mov rdx, rsi
+    mov rsi, r8
+    mov rcx, r9
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__bytes__bb_x2Datomic_x2Dpick
+.globl zyl_bytebuf_atomic_load
+zyl_bytebuf_atomic_load:
+    push rbp
+    mov rbp, rsp
+.L424_0:
+    cmp rdi, 4096
+    jge .L424_3
+    jmp .L424_4
+.L424_3:
+    mov r8, rdi
+    and r8, 7
+    cmp r8, 0
+    jne .L424_5
+    mov r8, 0
+    jmp .L424_6
+.L424_5:
+    mov r9, 1
+    mov r8, r9
+.L424_6:
+    cmp r8, 0
+    je .L424_1
+.L424_4:
+    mov r8, 0
+    jmp .L424_2
+.L424_1:
+    mov rdx, rdi
+    mov rax, qword ptr [rdx]
+    mov r9, rax
+    mov r10, 6510318584122966017
+    cmp r9, r10
+    jne .L424_7
+    jmp .L424_8
+.L424_7:
+    mov r9, 0
+    mov rdi, r9
+.L424_8:
+    mov r8, rdi
+.L424_2:
+    cmp r8, 0
+    jne .L424_11
+    jmp .L424_12
+.L424_11:
+    cmp rsi, 0
+    jge .L424_13
+    jmp .L424_14
+.L424_13:
+    mov rdi, rsi
+    and rdi, 7
+    cmp rdi, 0
+    jne .L424_15
+    mov rdi, 0
+    jmp .L424_16
+.L424_15:
+    mov r9, 1
+    mov rdi, r9
+.L424_16:
+    cmp rdi, 0
+    je .L424_9
+.L424_14:
+.L424_12:
+    mov rdi, 0
+    jmp .L424_10
+.L424_9:
+    cmp rsi, 0
+    jge .L424_21
+    jmp .L424_22
+.L424_21:
+    mov r9, r8
+    add r9, 24
+    mov rdx, r9
+    mov rax, qword ptr [rdx]
+    mov r9, rax
+    cmp r9, 0
+    jge .L424_23
+    jmp .L424_24
+.L424_23:
+    mov r9, 8
+    mov r10, r8
+    add r10, 24
+    mov rdx, r10
+    mov rax, qword ptr [rdx]
+    mov r10, rax
+    cmp r9, r10
+    jle .L424_19
+.L424_24:
+.L424_22:
+    mov r9, 0
+    jmp .L424_20
+.L424_19:
+    mov r10, r8
+    add r10, 24
+    mov rdx, r10
+    mov rax, qword ptr [rdx]
+    mov r10, rax
+    sub r10, 8
+    mov rax, rsi
+    mov rcx, r10
+    cmp rax, rcx
+    setle al
+    movzx rax, al
+    mov r10, rax
+    mov r9, r10
+.L424_20:
+    cmp r9, 0
+    je .L424_17
+    add r8, 8
+    mov rdx, r8
+    mov rax, qword ptr [rdx]
+    mov r8, rax
+    add rsi, r8
+    jmp .L424_18
+.L424_17:
+    mov r8, 0
+    mov rsi, r8
+.L424_18:
+    mov rdi, rsi
+.L424_10:
+    cmp rdi, 0
+    jne .L424_25
+    mov rsi, 0
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+.L424_25:
+    mov rdx, rdi
+    mov rax, qword ptr [rdx]
+    mov rsi, rax
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+.globl zyl_bytebuf_atomic_store
+zyl_bytebuf_atomic_store:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    sub rsp, 8
+    mov r8, rdx
+.L425_0:
+    cmp rdi, 4096
+    jge .L425_3
+    jmp .L425_4
+.L425_3:
+    mov r9, rdi
+    and r9, 7
+    cmp r9, 0
+    jne .L425_5
+    mov r9, 0
+    jmp .L425_6
+.L425_5:
+    mov r10, 1
+    mov r9, r10
+.L425_6:
+    cmp r9, 0
+    je .L425_1
+.L425_4:
+    mov r9, 0
+    jmp .L425_2
+.L425_1:
+    mov rdx, rdi
+    mov rax, qword ptr [rdx]
+    mov r10, rax
+    mov rbx, 6510318584122966017
+    cmp r10, rbx
+    jne .L425_7
+    jmp .L425_8
+.L425_7:
+    mov r10, 0
+    mov rdi, r10
+.L425_8:
+    mov r9, rdi
+.L425_2:
+    cmp r9, 0
+    jne .L425_11
+    jmp .L425_12
+.L425_11:
+    cmp rsi, 0
+    jge .L425_13
+    jmp .L425_14
+.L425_13:
+    mov rdi, rsi
+    and rdi, 7
+    cmp rdi, 0
+    jne .L425_15
+    mov rdi, 0
+    jmp .L425_16
+.L425_15:
+    mov r10, 1
+    mov rdi, r10
+.L425_16:
+    cmp rdi, 0
+    je .L425_9
+.L425_14:
+.L425_12:
+    mov rdi, 0
+    jmp .L425_10
+.L425_9:
+    cmp rsi, 0
+    jge .L425_21
+    jmp .L425_22
+.L425_21:
+    mov r10, r9
+    add r10, 24
+    mov rdx, r10
+    mov rax, qword ptr [rdx]
+    mov r10, rax
+    cmp r10, 0
+    jge .L425_23
+    jmp .L425_24
+.L425_23:
+    mov r10, 8
+    mov rbx, r9
+    add rbx, 24
+    mov rdx, rbx
+    mov rax, qword ptr [rdx]
+    mov rbx, rax
+    cmp r10, rbx
+    jle .L425_19
+.L425_24:
+.L425_22:
+    mov r10, 0
+    jmp .L425_20
+.L425_19:
+    mov rbx, r9
+    add rbx, 24
+    mov rdx, rbx
+    mov rax, qword ptr [rdx]
+    mov rbx, rax
+    sub rbx, 8
+    mov rax, rsi
+    mov rcx, rbx
+    cmp rax, rcx
+    setle al
+    movzx rax, al
+    mov rbx, rax
+    mov r10, rbx
+.L425_20:
+    cmp r10, 0
+    je .L425_17
+    add r9, 8
+    mov rdx, r9
+    mov rax, qword ptr [rdx]
+    mov r9, rax
+    add rsi, r9
+    jmp .L425_18
+.L425_17:
+    mov r9, 0
+    mov rsi, r9
+.L425_18:
+    mov rdi, rsi
+.L425_10:
+    cmp rdi, 0
+    jne .L425_25
+    mov rsi, 0
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L425_25:
+    mov rdx, rdi
+    mov rcx, r8
+    mov rax, rcx
+    xchg qword ptr [rdx], rax
+    mov rsi, rax
+    mov rsi, 1
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    ret
+.globl zyl_bytebuf_atomic_add
+zyl_bytebuf_atomic_add:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    sub rsp, 8
+    mov r8, rdx
+.L426_0:
+    cmp rdi, 4096
+    jge .L426_3
+    jmp .L426_4
+.L426_3:
+    mov r9, rdi
+    and r9, 7
+    cmp r9, 0
+    jne .L426_5
+    mov r9, 0
+    jmp .L426_6
+.L426_5:
+    mov r10, 1
+    mov r9, r10
+.L426_6:
+    cmp r9, 0
+    je .L426_1
+.L426_4:
+    mov r9, 0
+    jmp .L426_2
+.L426_1:
+    mov rdx, rdi
+    mov rax, qword ptr [rdx]
+    mov r10, rax
+    mov rbx, 6510318584122966017
+    cmp r10, rbx
+    jne .L426_7
+    jmp .L426_8
+.L426_7:
+    mov r10, 0
+    mov rdi, r10
+.L426_8:
+    mov r9, rdi
+.L426_2:
+    cmp r9, 0
+    jne .L426_11
+    jmp .L426_12
+.L426_11:
+    cmp rsi, 0
+    jge .L426_13
+    jmp .L426_14
+.L426_13:
+    mov rdi, rsi
+    and rdi, 7
+    cmp rdi, 0
+    jne .L426_15
+    mov rdi, 0
+    jmp .L426_16
+.L426_15:
+    mov r10, 1
+    mov rdi, r10
+.L426_16:
+    cmp rdi, 0
+    je .L426_9
+.L426_14:
+.L426_12:
+    mov rdi, 0
+    jmp .L426_10
+.L426_9:
+    cmp rsi, 0
+    jge .L426_21
+    jmp .L426_22
+.L426_21:
+    mov r10, r9
+    add r10, 24
+    mov rdx, r10
+    mov rax, qword ptr [rdx]
+    mov r10, rax
+    cmp r10, 0
+    jge .L426_23
+    jmp .L426_24
+.L426_23:
+    mov r10, 8
+    mov rbx, r9
+    add rbx, 24
+    mov rdx, rbx
+    mov rax, qword ptr [rdx]
+    mov rbx, rax
+    cmp r10, rbx
+    jle .L426_19
+.L426_24:
+.L426_22:
+    mov r10, 0
+    jmp .L426_20
+.L426_19:
+    mov rbx, r9
+    add rbx, 24
+    mov rdx, rbx
+    mov rax, qword ptr [rdx]
+    mov rbx, rax
+    sub rbx, 8
+    mov rax, rsi
+    mov rcx, rbx
+    cmp rax, rcx
+    setle al
+    movzx rax, al
+    mov rbx, rax
+    mov r10, rbx
+.L426_20:
+    cmp r10, 0
+    je .L426_17
+    add r9, 8
+    mov rdx, r9
+    mov rax, qword ptr [rdx]
+    mov r9, rax
+    add rsi, r9
+    jmp .L426_18
+.L426_17:
+    mov r9, 0
+    mov rsi, r9
+.L426_18:
+    mov rdi, rsi
+.L426_10:
+    cmp rdi, 0
+    jne .L426_25
+    mov rsi, 0
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L426_25:
+    mov rdx, rdi
+    mov rcx, r8
+    mov rax, rcx
+    lock xadd qword ptr [rdx], rax
+    mov rsi, rax
+    add rsi, r8
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    ret
+.globl zyl_bytebuf_atomic_sub
+zyl_bytebuf_atomic_sub:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    sub rsp, 8
+    mov r8, rdx
+.L427_0:
+    cmp rdi, 4096
+    jge .L427_3
+    jmp .L427_4
+.L427_3:
+    mov r9, rdi
+    and r9, 7
+    cmp r9, 0
+    jne .L427_5
+    mov r9, 0
+    jmp .L427_6
+.L427_5:
+    mov r10, 1
+    mov r9, r10
+.L427_6:
+    cmp r9, 0
+    je .L427_1
+.L427_4:
+    mov r9, 0
+    jmp .L427_2
+.L427_1:
+    mov rdx, rdi
+    mov rax, qword ptr [rdx]
+    mov r10, rax
+    mov rbx, 6510318584122966017
+    cmp r10, rbx
+    jne .L427_7
+    jmp .L427_8
+.L427_7:
+    mov r10, 0
+    mov rdi, r10
+.L427_8:
+    mov r9, rdi
+.L427_2:
+    cmp r9, 0
+    jne .L427_11
+    jmp .L427_12
+.L427_11:
+    cmp rsi, 0
+    jge .L427_13
+    jmp .L427_14
+.L427_13:
+    mov rdi, rsi
+    and rdi, 7
+    cmp rdi, 0
+    jne .L427_15
+    mov rdi, 0
+    jmp .L427_16
+.L427_15:
+    mov r10, 1
+    mov rdi, r10
+.L427_16:
+    cmp rdi, 0
+    je .L427_9
+.L427_14:
+.L427_12:
+    mov rdi, 0
+    jmp .L427_10
+.L427_9:
+    cmp rsi, 0
+    jge .L427_21
+    jmp .L427_22
+.L427_21:
+    mov r10, r9
+    add r10, 24
+    mov rdx, r10
+    mov rax, qword ptr [rdx]
+    mov r10, rax
+    cmp r10, 0
+    jge .L427_23
+    jmp .L427_24
+.L427_23:
+    mov r10, 8
+    mov rbx, r9
+    add rbx, 24
+    mov rdx, rbx
+    mov rax, qword ptr [rdx]
+    mov rbx, rax
+    cmp r10, rbx
+    jle .L427_19
+.L427_24:
+.L427_22:
+    mov r10, 0
+    jmp .L427_20
+.L427_19:
+    mov rbx, r9
+    add rbx, 24
+    mov rdx, rbx
+    mov rax, qword ptr [rdx]
+    mov rbx, rax
+    sub rbx, 8
+    mov rax, rsi
+    mov rcx, rbx
+    cmp rax, rcx
+    setle al
+    movzx rax, al
+    mov rbx, rax
+    mov r10, rbx
+.L427_20:
+    cmp r10, 0
+    je .L427_17
+    add r9, 8
+    mov rdx, r9
+    mov rax, qword ptr [rdx]
+    mov r9, rax
+    add rsi, r9
+    jmp .L427_18
+.L427_17:
+    mov r9, 0
+    mov rsi, r9
+.L427_18:
+    mov rdi, rsi
+.L427_10:
+    cmp rdi, 0
+    jne .L427_25
+    mov rsi, 0
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L427_25:
+    mov rsi, 0
+    sub rsi, r8
+    mov rdx, rdi
+    mov rcx, rsi
+    mov rax, rcx
+    lock xadd qword ptr [rdx], rax
+    mov rsi, rax
+    sub rsi, r8
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    ret
+.globl zyl_bytebuf_atomic_fetch_add
+zyl_bytebuf_atomic_fetch_add:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    sub rsp, 8
+    mov r8, rdx
+.L428_0:
+    cmp rdi, 4096
+    jge .L428_3
+    jmp .L428_4
+.L428_3:
+    mov r9, rdi
+    and r9, 7
+    cmp r9, 0
+    jne .L428_5
+    mov r9, 0
+    jmp .L428_6
+.L428_5:
+    mov r10, 1
+    mov r9, r10
+.L428_6:
+    cmp r9, 0
+    je .L428_1
+.L428_4:
+    mov r9, 0
+    jmp .L428_2
+.L428_1:
+    mov rdx, rdi
+    mov rax, qword ptr [rdx]
+    mov r10, rax
+    mov rbx, 6510318584122966017
+    cmp r10, rbx
+    jne .L428_7
+    jmp .L428_8
+.L428_7:
+    mov r10, 0
+    mov rdi, r10
+.L428_8:
+    mov r9, rdi
+.L428_2:
+    cmp r9, 0
+    jne .L428_11
+    jmp .L428_12
+.L428_11:
+    cmp rsi, 0
+    jge .L428_13
+    jmp .L428_14
+.L428_13:
+    mov rdi, rsi
+    and rdi, 7
+    cmp rdi, 0
+    jne .L428_15
+    mov rdi, 0
+    jmp .L428_16
+.L428_15:
+    mov r10, 1
+    mov rdi, r10
+.L428_16:
+    cmp rdi, 0
+    je .L428_9
+.L428_14:
+.L428_12:
+    mov rdi, 0
+    jmp .L428_10
+.L428_9:
+    cmp rsi, 0
+    jge .L428_21
+    jmp .L428_22
+.L428_21:
+    mov r10, r9
+    add r10, 24
+    mov rdx, r10
+    mov rax, qword ptr [rdx]
+    mov r10, rax
+    cmp r10, 0
+    jge .L428_23
+    jmp .L428_24
+.L428_23:
+    mov r10, 8
+    mov rbx, r9
+    add rbx, 24
+    mov rdx, rbx
+    mov rax, qword ptr [rdx]
+    mov rbx, rax
+    cmp r10, rbx
+    jle .L428_19
+.L428_24:
+.L428_22:
+    mov r10, 0
+    jmp .L428_20
+.L428_19:
+    mov rbx, r9
+    add rbx, 24
+    mov rdx, rbx
+    mov rax, qword ptr [rdx]
+    mov rbx, rax
+    sub rbx, 8
+    mov rax, rsi
+    mov rcx, rbx
+    cmp rax, rcx
+    setle al
+    movzx rax, al
+    mov rbx, rax
+    mov r10, rbx
+.L428_20:
+    cmp r10, 0
+    je .L428_17
+    add r9, 8
+    mov rdx, r9
+    mov rax, qword ptr [rdx]
+    mov r9, rax
+    add rsi, r9
+    jmp .L428_18
+.L428_17:
+    mov r9, 0
+    mov rsi, r9
+.L428_18:
+    mov rdi, rsi
+.L428_10:
+    cmp rdi, 0
+    jne .L428_25
+    mov rsi, 0
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L428_25:
+    mov rdx, rdi
+    mov rcx, r8
+    mov rax, rcx
+    lock xadd qword ptr [rdx], rax
+    mov rsi, rax
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    ret
+.globl zyl_bytebuf_atomic_max
+zyl_bytebuf_atomic_max:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    sub rsp, 8
+    mov r8, rdx
+.L429_0:
+    cmp rdi, 4096
+    jge .L429_3
+    jmp .L429_4
+.L429_3:
+    mov r9, rdi
+    and r9, 7
+    cmp r9, 0
+    jne .L429_5
+    mov r9, 0
+    jmp .L429_6
+.L429_5:
+    mov r10, 1
+    mov r9, r10
+.L429_6:
+    cmp r9, 0
+    je .L429_1
+.L429_4:
+    mov r9, 0
+    jmp .L429_2
+.L429_1:
+    mov rdx, rdi
+    mov rax, qword ptr [rdx]
+    mov r10, rax
+    mov rbx, 6510318584122966017
+    cmp r10, rbx
+    jne .L429_7
+    jmp .L429_8
+.L429_7:
+    mov r10, 0
+    mov rdi, r10
+.L429_8:
+    mov r9, rdi
+.L429_2:
+    cmp r9, 0
+    jne .L429_11
+    jmp .L429_12
+.L429_11:
+    cmp rsi, 0
+    jge .L429_13
+    jmp .L429_14
+.L429_13:
+    mov rdi, rsi
+    and rdi, 7
+    cmp rdi, 0
+    jne .L429_15
+    mov rdi, 0
+    jmp .L429_16
+.L429_15:
+    mov r10, 1
+    mov rdi, r10
+.L429_16:
+    cmp rdi, 0
+    je .L429_9
+.L429_14:
+.L429_12:
+    mov rdi, 0
+    jmp .L429_10
+.L429_9:
+    cmp rsi, 0
+    jge .L429_21
+    jmp .L429_22
+.L429_21:
+    mov r10, r9
+    add r10, 24
+    mov rdx, r10
+    mov rax, qword ptr [rdx]
+    mov r10, rax
+    cmp r10, 0
+    jge .L429_23
+    jmp .L429_24
+.L429_23:
+    mov r10, 8
+    mov rbx, r9
+    add rbx, 24
+    mov rdx, rbx
+    mov rax, qword ptr [rdx]
+    mov rbx, rax
+    cmp r10, rbx
+    jle .L429_19
+.L429_24:
+.L429_22:
+    mov r10, 0
+    jmp .L429_20
+.L429_19:
+    mov rbx, r9
+    add rbx, 24
+    mov rdx, rbx
+    mov rax, qword ptr [rdx]
+    mov rbx, rax
+    sub rbx, 8
+    mov rax, rsi
+    mov rcx, rbx
+    cmp rax, rcx
+    setle al
+    movzx rax, al
+    mov rbx, rax
+    mov r10, rbx
+.L429_20:
+    cmp r10, 0
+    je .L429_17
+    add r9, 8
+    mov rdx, r9
+    mov rax, qword ptr [rdx]
+    mov r9, rax
+    add rsi, r9
+    jmp .L429_18
+.L429_17:
+    mov r9, 0
+    mov rsi, r9
+.L429_18:
+    mov rdi, rsi
+.L429_10:
+    cmp rdi, 0
+    jne .L429_25
+    mov rsi, 0
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L429_25:
+    mov rsi, r8
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    jmp zyl_atomic_max
+.globl zyl_bytebuf_atomic_min
+zyl_bytebuf_atomic_min:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    sub rsp, 8
+    mov r8, rdx
+.L430_0:
+    cmp rdi, 4096
+    jge .L430_3
+    jmp .L430_4
+.L430_3:
+    mov r9, rdi
+    and r9, 7
+    cmp r9, 0
+    jne .L430_5
+    mov r9, 0
+    jmp .L430_6
+.L430_5:
+    mov r10, 1
+    mov r9, r10
+.L430_6:
+    cmp r9, 0
+    je .L430_1
+.L430_4:
+    mov r9, 0
+    jmp .L430_2
+.L430_1:
+    mov rdx, rdi
+    mov rax, qword ptr [rdx]
+    mov r10, rax
+    mov rbx, 6510318584122966017
+    cmp r10, rbx
+    jne .L430_7
+    jmp .L430_8
+.L430_7:
+    mov r10, 0
+    mov rdi, r10
+.L430_8:
+    mov r9, rdi
+.L430_2:
+    cmp r9, 0
+    jne .L430_11
+    jmp .L430_12
+.L430_11:
+    cmp rsi, 0
+    jge .L430_13
+    jmp .L430_14
+.L430_13:
+    mov rdi, rsi
+    and rdi, 7
+    cmp rdi, 0
+    jne .L430_15
+    mov rdi, 0
+    jmp .L430_16
+.L430_15:
+    mov r10, 1
+    mov rdi, r10
+.L430_16:
+    cmp rdi, 0
+    je .L430_9
+.L430_14:
+.L430_12:
+    mov rdi, 0
+    jmp .L430_10
+.L430_9:
+    cmp rsi, 0
+    jge .L430_21
+    jmp .L430_22
+.L430_21:
+    mov r10, r9
+    add r10, 24
+    mov rdx, r10
+    mov rax, qword ptr [rdx]
+    mov r10, rax
+    cmp r10, 0
+    jge .L430_23
+    jmp .L430_24
+.L430_23:
+    mov r10, 8
+    mov rbx, r9
+    add rbx, 24
+    mov rdx, rbx
+    mov rax, qword ptr [rdx]
+    mov rbx, rax
+    cmp r10, rbx
+    jle .L430_19
+.L430_24:
+.L430_22:
+    mov r10, 0
+    jmp .L430_20
+.L430_19:
+    mov rbx, r9
+    add rbx, 24
+    mov rdx, rbx
+    mov rax, qword ptr [rdx]
+    mov rbx, rax
+    sub rbx, 8
+    mov rax, rsi
+    mov rcx, rbx
+    cmp rax, rcx
+    setle al
+    movzx rax, al
+    mov rbx, rax
+    mov r10, rbx
+.L430_20:
+    cmp r10, 0
+    je .L430_17
+    add r9, 8
+    mov rdx, r9
+    mov rax, qword ptr [rdx]
+    mov r9, rax
+    add rsi, r9
+    jmp .L430_18
+.L430_17:
+    mov r9, 0
+    mov rsi, r9
+.L430_18:
+    mov rdi, rsi
+.L430_10:
+    cmp rdi, 0
+    jne .L430_25
+    mov rsi, 0
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L430_25:
+    mov rsi, r8
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    jmp zyl_atomic_min
+.globl zyl_bytebuf_atomic_cas
+zyl_bytebuf_atomic_cas:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    mov r8, rdx
+    mov r9, rcx
+.L431_0:
+    cmp rdi, 4096
+    jge .L431_3
+    jmp .L431_4
+.L431_3:
+    mov r10, rdi
+    and r10, 7
+    cmp r10, 0
+    jne .L431_5
+    mov r10, 0
+    jmp .L431_6
+.L431_5:
+    mov rbx, 1
+    mov r10, rbx
+.L431_6:
+    cmp r10, 0
+    je .L431_1
+.L431_4:
+    mov r10, 0
+    jmp .L431_2
+.L431_1:
+    mov rdx, rdi
+    mov rax, qword ptr [rdx]
+    mov rbx, rax
+    mov r12, 6510318584122966017
+    cmp rbx, r12
+    jne .L431_7
+    jmp .L431_8
+.L431_7:
+    mov rbx, 0
+    mov rdi, rbx
+.L431_8:
+    mov r10, rdi
+.L431_2:
+    cmp r10, 0
+    jne .L431_11
+    jmp .L431_12
+.L431_11:
+    cmp rsi, 0
+    jge .L431_13
+    jmp .L431_14
+.L431_13:
+    mov rdi, rsi
+    and rdi, 7
+    cmp rdi, 0
+    jne .L431_15
+    mov rdi, 0
+    jmp .L431_16
+.L431_15:
+    mov rbx, 1
+    mov rdi, rbx
+.L431_16:
+    cmp rdi, 0
+    je .L431_9
+.L431_14:
+.L431_12:
+    mov rdi, 0
+    jmp .L431_10
+.L431_9:
+    cmp rsi, 0
+    jge .L431_21
+    jmp .L431_22
+.L431_21:
+    mov rbx, r10
+    add rbx, 24
+    mov rdx, rbx
+    mov rax, qword ptr [rdx]
+    mov rbx, rax
+    cmp rbx, 0
+    jge .L431_23
+    jmp .L431_24
+.L431_23:
+    mov rbx, 8
+    mov r12, r10
+    add r12, 24
+    mov rdx, r12
+    mov rax, qword ptr [rdx]
+    mov r12, rax
+    cmp rbx, r12
+    jle .L431_19
+.L431_24:
+.L431_22:
+    mov rbx, 0
+    jmp .L431_20
+.L431_19:
+    mov r12, r10
+    add r12, 24
+    mov rdx, r12
+    mov rax, qword ptr [rdx]
+    mov r12, rax
+    sub r12, 8
+    mov rax, rsi
+    mov rcx, r12
+    cmp rax, rcx
+    setle al
+    movzx rax, al
+    mov r12, rax
+    mov rbx, r12
+.L431_20:
+    cmp rbx, 0
+    je .L431_17
+    add r10, 8
+    mov rdx, r10
+    mov rax, qword ptr [rdx]
+    mov r10, rax
+    add rsi, r10
+    jmp .L431_18
+.L431_17:
+    mov r10, 0
+    mov rsi, r10
+.L431_18:
+    mov rdi, rsi
+.L431_10:
+    cmp rdi, 0
+    jne .L431_25
+    mov rsi, 0
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L431_25:
+    mov rdx, rdi
+    mov rcx, r8
+    mov r11, r9
+    mov rax, rcx
+    lock cmpxchg qword ptr [rdx], r11
+    mov rsi, rax
+    cmp rsi, r8
+    jne .L431_26
+    mov rsi, 1
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L431_26:
+    mov rsi, 0
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov rsp, rbp
+    pop rbp
+    ret
 zy_local_x2Fmain_0__variant__rt_x2Dwords_x2Dcmp_x7EInt_x2CInt_x2CInt_x2CInt_x2CInt_x2CInt:
     push rbp
     mov rbp, rsp
@@ -18321,11 +21690,11 @@ zy_local_x2Fmain_0__variant__rt_x2Dwords_x2Dcmp_x7EInt_x2CInt_x2CInt_x2CInt_x2CI
     mov r8, rdx
     mov rbx, r9
     mov r9, rcx
-.L393_0:
+.L432_0:
     cmp r8, r9
-    jl .L393_1
+    jl .L432_1
     cmp r10, rbx
-    jge .L393_2
+    jge .L432_2
     mov r12, -1
     mov rax, r12
     mov rbx, qword ptr [rbp-8]
@@ -18335,9 +21704,9 @@ zy_local_x2Fmain_0__variant__rt_x2Dwords_x2Dcmp_x7EInt_x2CInt_x2CInt_x2CInt_x2CI
     mov rsp, rbp
     pop rbp
     ret
-.L393_2:
+.L432_2:
     cmp r10, rbx
-    jle .L393_3
+    jle .L432_3
     mov r12, 1
     mov rax, r12
     mov rbx, qword ptr [rbp-8]
@@ -18347,7 +21716,7 @@ zy_local_x2Fmain_0__variant__rt_x2Dwords_x2Dcmp_x7EInt_x2CInt_x2CInt_x2CInt_x2CI
     mov rsp, rbp
     pop rbp
     ret
-.L393_3:
+.L432_3:
     mov r12, 0
     mov rax, r12
     mov rbx, qword ptr [rbp-8]
@@ -18357,7 +21726,7 @@ zy_local_x2Fmain_0__variant__rt_x2Dwords_x2Dcmp_x7EInt_x2CInt_x2CInt_x2CInt_x2CI
     mov rsp, rbp
     pop rbp
     ret
-.L393_1:
+.L432_1:
     mov r12, r8
     imul r12, 8
     add r12, rdi
@@ -18371,7 +21740,7 @@ zy_local_x2Fmain_0__variant__rt_x2Dwords_x2Dcmp_x7EInt_x2CInt_x2CInt_x2CInt_x2CI
     mov rax, qword ptr [rdx]
     mov r13, rax
     cmp r12, r13
-    jge .L393_4
+    jge .L432_4
     mov r14, -1
     mov rax, r14
     mov rbx, qword ptr [rbp-8]
@@ -18381,9 +21750,9 @@ zy_local_x2Fmain_0__variant__rt_x2Dwords_x2Dcmp_x7EInt_x2CInt_x2CInt_x2CInt_x2CI
     mov rsp, rbp
     pop rbp
     ret
-.L393_4:
+.L432_4:
     cmp r12, r13
-    jle .L393_5
+    jle .L432_5
     mov r12, 1
     mov rax, r12
     mov rbx, qword ptr [rbp-8]
@@ -18393,11 +21762,11 @@ zy_local_x2Fmain_0__variant__rt_x2Dwords_x2Dcmp_x7EInt_x2CInt_x2CInt_x2CInt_x2CI
     mov rsp, rbp
     pop rbp
     ret
-.L393_5:
+.L432_5:
     mov r12, r8
     add r12, 1
     mov r8, r12
-    jmp .L393_0
+    jmp .L432_0
 .section .rodata
 .Lfmtd:
     .string "%lld\n"
