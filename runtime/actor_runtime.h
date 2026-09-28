@@ -371,4 +371,11 @@ long long zyl_region_unwind(void* mark);
 void* zyl_region_mark(void);
 long long zyl_region_live_bytes(void);
 
+long long zyl_uf_reset(void);
+long long zyl_uf_new(long long level);
+long long zyl_uf_find(long long a);
+long long zyl_uf_union(long long a, long long b);
+long long zyl_uf_raise(long long a, long long level);
+long long zyl_uf_level(long long a);
+
 #endif

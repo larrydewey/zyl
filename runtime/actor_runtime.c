@@ -721,67 +721,6 @@ void zyl_cstr_byte_set(long long ptr, long long i, long long b) {
 
 typedef struct { uintptr_t key; long long val; } ZylAttrSlot;
 
-/* Union-find over abstract object classes, for region inference
-   (compiler/region_inference). Each class carries a level: 0 local,
-   1 result, 2 heap. A union keeps the higher level; raising never lowers.
-   One table, reset per function; compiler-internal, single-threaded. */
-static long long* g_uf_parent = 0;
-static long long* g_uf_level = 0;
-static long long g_uf_len = 0, g_uf_cap = 0;
-
-long long zyl_uf_reset(void) { g_uf_len = 0; return 0; }
-
-long long zyl_uf_new(long long level) {
-    if (g_uf_len == g_uf_cap) {
-        long long nc = g_uf_cap ? g_uf_cap * 2 : 4096;
-        long long* np = (long long*)realloc(g_uf_parent, (size_t)nc * sizeof(long long));
-        long long* nl = (long long*)realloc(g_uf_level, (size_t)nc * sizeof(long long));
-        if (!np || !nl) zyl_arena_oom((long long)nc * 16, (long long)(size_t)"union-find table");
-        g_uf_parent = np;
-        g_uf_level = nl;
-        g_uf_cap = nc;
-    }
-    g_uf_parent[g_uf_len] = g_uf_len;
-    g_uf_level[g_uf_len] = level;
-    return g_uf_len++;
-}
-
-long long zyl_uf_find(long long a) {
-    if (a < 0 || a >= g_uf_len) return a;
-    long long root = a;
-    while (g_uf_parent[root] != root) root = g_uf_parent[root];
-    while (g_uf_parent[a] != root) {
-        long long next = g_uf_parent[a];
-        g_uf_parent[a] = root;
-        a = next;
-    }
-    return root;
-}
-
-/* The lower id becomes the root, so the result does not depend on
-   anything but the order of calls. */
-long long zyl_uf_union(long long a, long long b) {
-    long long ra = zyl_uf_find(a), rb = zyl_uf_find(b);
-    if (ra < 0 || rb < 0 || ra >= g_uf_len || rb >= g_uf_len) return ra;
-    if (ra == rb) return ra;
-    long long lo = ra < rb ? ra : rb, hi = ra < rb ? rb : ra;
-    if (g_uf_level[hi] > g_uf_level[lo]) g_uf_level[lo] = g_uf_level[hi];
-    g_uf_parent[hi] = lo;
-    return lo;
-}
-
-long long zyl_uf_raise(long long a, long long level) {
-    long long r = zyl_uf_find(a);
-    if (r < 0 || r >= g_uf_len) return 0;
-    if (level > g_uf_level[r]) g_uf_level[r] = level;
-    return 0;
-}
-
-long long zyl_uf_level(long long a) {
-    long long r = zyl_uf_find(a);
-    if (r < 0 || r >= g_uf_len) return 2;
-    return g_uf_level[r];
-}
 
 /* Process-wide instances, created on first use. */
 

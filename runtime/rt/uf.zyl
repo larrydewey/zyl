@@ -1,0 +1,57 @@
+; Union-find over region-inference object classes: levels 0 local, 1 result, 2 heap; one table, reset per function.
+(use base)
+
+(extern "realloc" (Int Int) Int)
+
+(defmacro rt-ld64 (a) (ffi-call "%load64" a 1))
+(defmacro rt-st64 (a v) (ffi-call "%store64" a v 1))
+
+; {parent array, level array, len, cap}
+(defn rt-uf () (ffi-call "%global" "uf" 32 1))
+
+(defn zyl_uf_reset () (let _ (rt-st64 (+ (rt-uf) 16) 0) 0))
+
+(defn rt-uf-grow (u)
+  (let nc (if (= (rt-ld64 (+ u 24)) 0) 4096 (* (rt-ld64 (+ u 24)) 2))
+    (let np (ffi-call "realloc" (rt-ld64 u) (* nc 8) 1)
+      (let nl (ffi-call "realloc" (rt-ld64 (+ u 8)) (* nc 8) 1)
+        (let _ (if (or (= np 0) (= nl 0)) (ffi-call "zyl_arena_oom" (* nc 16) "union-find table" 1) 0)
+          (let _ (rt-st64 u np) (let _ (rt-st64 (+ u 8) nl) (rt-st64 (+ u 24) nc))))))))
+
+(defn zyl_uf_new (level)
+  (let u (rt-uf)
+    (let _ (if (= (rt-ld64 (+ u 16)) (rt-ld64 (+ u 24))) (rt-uf-grow u) 0)
+      (let n (rt-ld64 (+ u 16))
+        (let _ (rt-st64 (+ (rt-ld64 u) (* n 8)) n)
+          (let _ (rt-st64 (+ (rt-ld64 (+ u 8)) (* n 8)) level) (let _ (rt-st64 (+ u 16) (+ n 1)) n)))))))
+
+(defn rt-uf-root (par r) (let p (rt-ld64 (+ par (* r 8))) (if (= p r) r (rt-uf-root par p))))
+
+(defn rt-uf-compress (par a root)
+  (let p (rt-ld64 (+ par (* a 8))) (if (= p root) 0 (let _ (rt-st64 (+ par (* a 8)) root) (rt-uf-compress par p root)))))
+
+(defn zyl_uf_find (a)
+  (let u (rt-uf)
+    (if (or (< a 0) (>= a (rt-ld64 (+ u 16)))) a
+      (let par (rt-ld64 u) (let root (rt-uf-root par a) (let _ (rt-uf-compress par a root) root))))))
+
+(defn rt-uf-ok (r) (and (>= r 0) (< r (rt-ld64 (+ (rt-uf) 16)))))
+
+; The lower id becomes the root, so the result depends only on the order of calls.
+(defn zyl_uf_union (a b)
+  (let ra (zyl_uf_find a)
+    (let rb (zyl_uf_find b)
+      (if (or (not (rt-uf-ok ra)) (not (rt-uf-ok rb))) ra
+        (if (= ra rb) ra
+          (let lo (if (< ra rb) ra rb)
+            (let hi (if (< ra rb) rb ra)
+              (let lv (rt-ld64 (+ (rt-uf) 8))
+                (let _ (if (> (rt-ld64 (+ lv (* hi 8))) (rt-ld64 (+ lv (* lo 8)))) (rt-st64 (+ lv (* lo 8)) (rt-ld64 (+ lv (* hi 8)))) 0)
+                  (let _ (rt-st64 (+ (rt-ld64 (rt-uf)) (* hi 8)) lo) lo))))))))))
+
+(defn zyl_uf_raise (a level)
+  (let r (zyl_uf_find a)
+    (if (not (rt-uf-ok r)) 0
+      (let c (+ (rt-ld64 (+ (rt-uf) 8)) (* r 8)) (let _ (if (> level (rt-ld64 c)) (rt-st64 c level) 0) 0)))))
+
+(defn zyl_uf_level (a) (let r (zyl_uf_find a) (if (not (rt-uf-ok r)) 2 (rt-ld64 (+ (rt-ld64 (+ (rt-uf) 8)) (* r 8))))))
