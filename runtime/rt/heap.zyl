@@ -1,0 +1,189 @@
+; The memory budget and the runtime's general-purpose allocator (malloc/free/realloc/calloc without libc).
+(use base)
+
+(defmacro hp-ld (a) (ffi-call "%load64" a 1))
+(defmacro hp-st (a v) (ffi-call "%store64" a v 1))
+
+; --- memory budget: {once state, budget bytes, live bytes} ---
+
+(defn rt-budget () (ffi-call "%global" "budget" 24 1))
+
+; strtoull of a decimal prefix after spaces and an optional '+'.
+(defn rt-parse-u (p v) (let c (rt-ld8 p) (if (and (>= c 48) (<= c 57)) (rt-parse-u (+ p 1) (+ (* v 10) (- c 48))) v)))
+
+(defn rt-skip-ws (p) (let c (rt-ld8 p) (if (or (= c 32) (and (>= c 9) (<= c 13))) (rt-skip-ws (+ p 1)) p)))
+
+(defn rt-strtoull (p) (let q (rt-skip-ws p) (rt-parse-u (if (= (rt-ld8 q) 43) (+ q 1) q) 0)))
+
+; The value in kB of the /proc/meminfo line starting with key, or -1.
+(defn rt-meminfo-field (buf n key)
+  (let i (rt-meminfo-find buf n key (rt-strlen (rt-w key)) 0)
+    (if (< i 0) -1 (rt-strtoull (+ buf i)))))
+
+(defn rt-meminfo-find (buf n key kl i)
+  (if (> (+ i kl) n) -1
+    (if (and (or (= i 0) (= (rt-ld8 (+ buf (- i 1))) 10)) (rt-mem-eq (+ buf i) (rt-w key) kl))
+      (+ i kl)
+      (rt-meminfo-find buf n key kl (+ i 1)))))
+
+(defn rt-read-all (fd buf cap n)
+  (if (>= n cap) n
+    (let r (ffi-call "%syscall3" 0 fd (+ buf n) (- cap n) 1)
+      (if (> r 0) (rt-read-all fd buf cap (+ n r)) n))))
+
+; MemAvailable, else MemTotal, in bytes; 0 when /proc/meminfo cannot be read (buffer uncharged: the budget is not set yet).
+(defn rt-meminfo-available ()
+  (let fd (ffi-call "%syscall3" 2 (rt-w "/proc/meminfo") 524288 0 1)
+    (if (< fd 0) 0
+      (let buf (rt-raw-malloc 16384)
+        (if (= buf 0) (let _ (ffi-call "%syscall1" 3 fd 1) 0)
+          (let n (rt-read-all fd buf 16383 0)
+            (let _ (ffi-call "%syscall1" 3 fd 1)
+              (let _ (rt-st8 (+ buf n) 0)
+                (let avail (rt-meminfo-field buf n "MemAvailable:")
+                  (let total (rt-meminfo-field buf n "MemTotal:")
+                    (let _ (zyl_rt_free buf)
+                      (if (> avail 0) (* avail 1024) (if (> total 0) (* total 1024) 0)))))))))))))
+
+; sysinfo: totalram * mem_unit (what sysconf's phys pages times page size gives).
+(defn rt-sysinfo-total ()
+  (let si (ffi-call "%tls" "sysinfo" 128 1)
+    (if (not (= (ffi-call "%syscall1" 99 si 1) 0)) 0
+      (* (hp-ld (+ si 32)) (ffi-call "%load32" (+ si 104) 1)))))
+
+; ZYL_MAX_MEMORY bytes when set (0: no budget); else 80% of available memory; else unlimited.
+(defn rt-budget-value ()
+  (let env (rt-w (ffi-call "zyl_getenv_str" "ZYL_MAX_MEMORY" 1))
+    (if (and (> env 0) (> (rt-ld8 env) 0)) (rt-strtoull env)
+      (let a (rt-meminfo-available)
+        (let avail (if (> a 0) a (rt-sysinfo-total))
+          (if (> avail 0) (* (/ avail 5) 4) 0))))))
+
+; pthread_once: 0 unset, 1 running, 2 done.
+(defn rt-budget-once ()
+  (let b (rt-budget)
+    (if (= (hp-ld b) 2) 0
+      (if (= (ffi-call "%cas" b 0 1 1) 0)
+        (let _ (hp-st (+ b 8) (rt-budget-value)) (ffi-call "%xchg" b 2 1))
+        (rt-budget-wait b)))))
+
+(defn rt-budget-wait (b) (if (= (hp-ld b) 2) 0 (rt-budget-wait b)))
+
+; Charges n bytes before they are mapped; false when over budget.
+(defn rt-charge (n)
+  (let _ (rt-budget-once)
+    (let b (rt-budget)
+      (let now (+ (ffi-call "%fetch-add" (+ b 16) n 1) n)
+        (if (and (> (hp-ld (+ b 8)) 0) (> now (hp-ld (+ b 8))))
+          (let _ (ffi-call "%fetch-add" (+ b 16) (- 0 n) 1) false)
+          true)))))
+
+(defn rt-refund (n) (ffi-call "%fetch-add" (+ (rt-budget) 16) (- 0 n) 1))
+
+; --- allocator: a 16-byte header {block size, tag} precedes each 16-aligned payload ---
+; Classes 0..11 are blocks of 32 << c bytes (up to 64 KiB) bumped from 1 MiB mappings; larger requests get their own mapping.
+; Tag: magic << 16 | charged << 8 | class (255: own mapping). Class state {lock, free head, bump, end} is shared by all threads.
+
+(defn hp-magic () 23130)
+(defn hp-big () 255)
+(defn hp-limit () 281474976710656)
+
+(defn hp-cls (c) (+ (ffi-call "%global" "heap_cls" 384 1) (* c 32)))
+
+(defn hp-threaded () (> (hp-ld (ffi-call "%global" "threads_started" 8 1)) 0))
+
+; Futex mutex: 0 free, 1 held, 2 held with waiters; skipped while only one thread exists.
+(defn hp-lock (a) (if (hp-threaded) (if (= (ffi-call "%cas" a 0 1 1) 0) 0 (hp-lock-slow a)) 0))
+
+(defn hp-lock-slow (a)
+  (if (= (ffi-call "%xchg" a 2 1) 0) 0
+    (let _ (ffi-call "%syscall4" 202 a 128 2 0 1) (hp-lock-slow a))))
+
+(defn hp-unlock (a)
+  (if (hp-threaded) (if (= (ffi-call "%xchg" a 0 1) 2) (ffi-call "%syscall3" 202 a 129 1 1) 0) 0))
+
+; An anonymous private mapping, or 0.
+(defn hp-map (n)
+  (let p (ffi-call "%syscall6" 9 0 n 3 34 -1 0 1) (if (and (< p 0) (> p -4096)) 0 p)))
+
+; The class holding need bytes (header included), or 12 when none does.
+(defn hp-class-of (need)
+  (if (<= need 32) 0 (let k (- 64 (ffi-call "%clz" (- need 1) 1)) (if (> k 16) 12 (- k 5)))))
+
+(defn hp-tag (charged c) (+ (* (hp-magic) 65536) (+ (if charged 256 0) c)))
+
+(defn hp-head (b size tag) (let _ (hp-st b size) (let _ (hp-st (+ b 8) tag) (+ b 16))))
+
+; Pops a free block of class c, else bumps one; 0 when a fresh chunk cannot be mapped.
+(defn hp-take (c)
+  (let s (hp-cls c)
+    (let _ (hp-lock s)
+      (let h (hp-ld (+ s 8))
+        (if (> h 0)
+          (let _ (hp-st (+ s 8) (hp-ld h)) (let _ (hp-unlock s) h))
+          (let sz (shl 32 c)
+            (let bump (hp-ld (+ s 16))
+              (if (and (> bump 0) (<= (+ bump sz) (hp-ld (+ s 24))))
+                (let _ (hp-st (+ s 16) (+ bump sz)) (let _ (hp-unlock s) bump))
+                (let ch (hp-map 1048576)
+                  (if (= ch 0) (let _ (hp-unlock s) 0)
+                    (let _ (hp-st (+ s 16) (+ ch sz)) (let _ (hp-st (+ s 24) (+ ch 1048576)) (let _ (hp-unlock s) ch)))))))))))))
+
+(defn hp-alloc (n charged)
+  (if (or (< n 0) (> n (hp-limit))) 0
+    (let c (hp-class-of (+ n 16))
+      (if (>= c 12)
+        (let len (bit-and (+ n 4111) -4096)
+          (if (and charged (not (rt-charge len))) 0
+            (let b (hp-map len)
+              (if (= b 0) (let _ (if charged (rt-refund len) 0) 0) (hp-head b len (hp-tag charged (hp-big)))))))
+        (let sz (shl 32 c)
+          (if (and charged (not (rt-charge sz))) 0
+            (let b (hp-take c)
+              (if (= b 0) (let _ (if charged (rt-refund sz) 0) 0) (hp-head b sz (hp-tag charged c))))))))))
+
+; Header checks: a pointer this allocator never returned is ignored.
+(defn hp-valid (p) (and (>= p 4112) (and (= (bit-and p 15) 0) (= (shr (hp-ld (- p 8)) 16) (hp-magic)))))
+
+(defn zyl_rt_malloc (n) (hp-alloc n true))
+
+; Not charged: arena blocks and the budget probe account for themselves.
+(defn rt-raw-malloc (n) (hp-alloc n false))
+
+(defn zyl_rt_free (p)
+  (if (not (hp-valid p)) 0
+    (let b (- p 16)
+      (let size (hp-ld b)
+        (let tag (hp-ld (+ b 8))
+          (let c (bit-and tag 255)
+            (let _ (hp-st (+ b 8) 0)
+              (let _ (if (= c (hp-big)) (ffi-call "%syscall2" 11 b size 1)
+                       (let s (hp-cls c)
+                         (let _ (hp-lock s) (let _ (hp-st b (hp-ld (+ s 8))) (let _ (hp-st (+ s 8) b) (hp-unlock s))))))
+                (let _ (if (= (bit-and tag 256) 256) (rt-refund size) 0) 0)))))))))
+
+; n * m zeroed bytes; 0 on overflow (past 2^48) or failure.
+(defn zyl_rt_calloc (n m)
+  (if (or (< n 0) (< m 0)) 0
+    (if (and (> n 0) (> m (/ (hp-limit) n))) 0
+      (let t (* n m)
+        (let p (zyl_rt_malloc t)
+          (if (= p 0) 0
+            (let _ (if (and (> t 0) (not (= (bit-and (hp-ld (- p 8)) 255) (hp-big)))) (ffi-call "%fill" p 0 t 1) 0) p)))))))
+
+; realloc(0, n) is malloc, realloc(p, 0) frees and returns 0; a block that still fits is kept.
+(defn zyl_rt_realloc (p n)
+  (if (= p 0) (zyl_rt_malloc n)
+    (if (= n 0) (let _ (zyl_rt_free p) 0)
+      (if (or (< n 0) (or (> n (hp-limit)) (not (hp-valid p)))) 0
+        (let have (- (hp-ld (- p 16)) 16)
+          (if (<= n have) p
+            (let q (zyl_rt_malloc n)
+              (if (= q 0) 0 (let _ (rt-copy q p have) (let _ (zyl_rt_free p) q))))))))))
+
+; A malloc'd NUL-terminated copy of s, or 0.
+(defn rt-strdup (s)
+  (let w (rt-w s)
+    (let n (rt-strlen w)
+      (let p (zyl_rt_malloc (+ n 1))
+        (if (= p 0) 0 (let _ (rt-copy p w n) (let _ (rt-st8 (+ p n) 0) p)))))))

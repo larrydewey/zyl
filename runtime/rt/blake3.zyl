@@ -1,8 +1,7 @@
 ; BLAKE3 (one implementation on the build path: labels, archive, lock and graph hashes).
 (use base)
+(use heap)
 
-(extern "malloc" (Int) Int)
-(extern "free" (Int) Int)
 (extern "fopen" (Int Int) Int)
 (extern "fread" (Int Int Int Int) Int)
 (extern "fclose" (Int) Int)
@@ -212,7 +211,7 @@
       (b3-fold h (b3-get (b3-slen h)) (b3-get (b3-ctr h)) (b3-get (b3-blen h)) (bit-or (b3-start-flag h) 2) out-len))))
 
 ; A fresh hasher, or 0 when malloc fails.
-(defn b3-new () (let h (ffi-call "malloc" (b3-size) 1) (if (= h 0) 0 (b3-init h))))
+(defn b3-new () (let h (zyl_rt_malloc (b3-size)) (if (= h 0) 0 (b3-init h))))
 
 ; BLAKE3 of n bytes at p into len bytes at dst; false when out of memory.
 (defn rt-blake3-raw (p n dst len)
@@ -220,7 +219,7 @@
     (if (= h 0) false
       (let _ (b3-update h p n)
         (let _ (b3-finalize h len)
-          (let _ (rt-copy dst (b3-dig h) len) (let _ (ffi-call "free" h 1) true)))))))
+          (let _ (rt-copy dst (b3-dig h) len) (let _ (zyl_rt_free h) true)))))))
 
 (defn b3-hexdigits () "0123456789abcdef")
 
@@ -240,7 +239,7 @@
     (let d (rt-w (ffi-call "zyl_arena_alloc_zeroed" arena (+ (* ob 2) 1) 1))
       (let _ (rt-hex-bytes d (b3-dig h) 0 ob)
         (let _ (rt-st8 (+ d (* ob 2)) 0)
-          (let _ (ffi-call "free" h 1) (ffi-call "%str" d 1)))))))
+          (let _ (zyl_rt_free h) (ffi-call "%str" d 1)))))))
 
 ; BLAKE3 over src[0..len) as outbytes bytes of lowercase hex; len < 0 means strlen.
 (defn zyl_blake3_hex (arena src len outbytes)
@@ -262,9 +261,9 @@
       (let f (ffi-call "fopen" p (rt-w "rb") 1)
         (if (= f 0) (ffi-call "%str" 0 1)
           (let h (b3-new)
-            (let buf (if (= h 0) 0 (ffi-call "malloc" 65536 1))
+            (let buf (if (= h 0) 0 (zyl_rt_malloc 65536))
               (if (= buf 0)
-                (let _ (if (= h 0) 0 (ffi-call "free" h 1)) (let _ (ffi-call "fclose" f 1) (ffi-call "%str" 0 1)))
+                (let _ (if (= h 0) 0 (zyl_rt_free h)) (let _ (ffi-call "fclose" f 1) (ffi-call "%str" 0 1)))
                 (let _ (b3-read-all h f buf)
-                  (let _ (ffi-call "free" buf 1)
+                  (let _ (zyl_rt_free buf)
                     (let _ (ffi-call "fclose" f 1) (b3-hex-out arena h (b3-clamp outbytes)))))))))))))

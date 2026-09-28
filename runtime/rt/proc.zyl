@@ -1,5 +1,6 @@
 ; Child processes: /bin/sh -c, cc, a compiled binary; posix_spawn, never fork (main runs on a big-stack thread).
 (use base)
+(use heap)
 
 (extern "posix_spawn" (Int Int Int Int Int Int) Int)
 (extern "posix_spawnp" (Int Int Int Int Int Int) Int)
@@ -10,8 +11,6 @@
 (extern "waitpid" (Int Int Int) Int)
 (extern "mkstemp" (Int) Int)
 (extern "getenv" (Int) Int)
-(extern "malloc" (Int) Int)
-(extern "free" (Int) Int)
 
 (defmacro pr-ld64 (a) (ffi-call "%load64" a 1))
 (defmacro pr-st64 (a v) (ffi-call "%store64" a v 1))
@@ -55,7 +54,7 @@
   (let la (rt-strlen a)
     (let lb (rt-strlen b)
       (let n (let t (+ la lb) (if (> t (- lim 1)) (- lim 1) t))
-        (let p (ffi-call "malloc" (+ n 1) 1)
+        (let p (zyl_rt_malloc (+ n 1))
           (if (= p 0) 0
             (let ka (if (> la n) n la)
               (let _ (rt-copy p a ka)
@@ -74,7 +73,7 @@
       (let path (pr-cat2 (if (= td 0) (rt-w "/tmp") td) (rt-w "/zyl_link_XXXXXX") 512)
         (if (= path 0) -1
           (let fd (pr-int (ffi-call "mkstemp" path 1))
-            (if (< fd 0) (let _ (ffi-call "free" path 1) -1)
+            (if (< fd 0) (let _ (zyl_rt_free path) -1)
               (let _ (pr-write-str fd (rt-w "#!/bin/sh\n"))
                 (let _ (pr-write-str fd (if (= c 0) (rt-w "(null)") c))
                   (let _ (pr-write-str fd (rt-w "\n"))
@@ -86,7 +85,7 @@
                               (let _ (pr-st64 (+ a 16) 0)
                                 (let _ (ffi-call "%syscall3" 59 (rt-w "/bin/sh") a (pr-environ) 1)
                                   (let _ (ffi-call "%syscall1" 87 path 1)
-                                    (let _ (ffi-call "free" path 1) -1)))))))))))))))))))
+                                    (let _ (zyl_rt_free path) -1)))))))))))))))))))
 
 ; --- cc: asm path to a binary next to it ---
 

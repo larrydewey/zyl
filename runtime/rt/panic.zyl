@@ -1,10 +1,9 @@
 ; Panics, try frames, the diagnostic format, the warning sink and the compiled test harness.
 (use base)
+(use heap)
 (use alloc)
 (use text)
 
-(extern "malloc" (Int) Int)
-(extern "realloc" (Int Int) Int)
 (extern "exit" (Int) Int)
 (extern "fputs" (Int Int) Int)
 (extern "fflush" (Int) Int)
@@ -30,7 +29,7 @@
 (defn pn-top () (ffi-call "%tls" "try_top" 8 1))
 
 (defn zyl_try_push ()
-  (let f (ffi-call "malloc" 88 1)
+  (let f (zyl_rt_malloc 88)
     (let t (pn-top)
       (let _ (rt-st64 (+ f 64) (rt-ld64 t))
         (let _ (rt-st64 (+ f 72) 0)
@@ -190,7 +189,7 @@
   (let cap (rt-ld64 (+ w 16))
     (if (<= need cap) true
       (let nc (pn-double (if (= cap 0) 1024 cap) need)
-        (let nb (ffi-call "realloc" (rt-ld64 w) nc 1)
+        (let nb (zyl_rt_realloc (rt-ld64 w) nc)
           (if (= nb 0) false (let _ (rt-st64 w nb) (let _ (rt-st64 (+ w 16) nc) true))))))))
 
 (defn pn-double (nc need) (if (> need nc) (pn-double (* nc 2) need) nc))
@@ -198,7 +197,7 @@
 (defn zyl_warn_take ()
   (let w (pn-warn)
     (let len (rt-ld64 (+ w 8))
-      (let out (ffi-call "malloc" (+ len 1) 1)
+      (let out (zyl_rt_malloc (+ len 1))
         (if (= out 0) (rt-w "")
           (let _ (if (> len 0) (rt-copy out (rt-ld64 w) len) 0)
             (let _ (rt-st8 (+ out len) 0)
@@ -208,7 +207,7 @@
 (defn zyl_json_quote (s)
   (let p (if (= s 0) (rt-w "") s)
     (let n (rt-strlen p)
-      (let out (ffi-call "malloc" (+ (* n 6) 3) 1)
+      (let out (zyl_rt_malloc (+ (* n 6) 3))
         (if (= out 0) (rt-w "\"\"")
           (let _ (rt-st8 out 34)
             (let j (pn-quote-loop p n 0 out 1)

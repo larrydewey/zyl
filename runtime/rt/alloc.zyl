@@ -1,90 +1,12 @@
-; Arenas, the memory budget, the heap and pin arenas, and frame regions (docs/regions-design.md).
+; Arenas, the heap and pin arenas, and frame regions (docs/regions-design.md).
 (use base)
+(use heap)
 
-(extern "malloc" (Int) Int)
-(extern "calloc" (Int Int) Int)
-(extern "free" (Int) Int)
 (extern "pthread_mutex_lock" (Int) Int)
 (extern "pthread_mutex_unlock" (Int) Int)
 
 (defmacro rt-ld64 (a) (ffi-call "%load64" a 1))
 (defmacro rt-st64 (a v) (ffi-call "%store64" a v 1))
-
-; --- memory budget: {once state, budget bytes, live bytes} ---
-
-(defn rt-budget () (ffi-call "%global" "budget" 24 1))
-
-; strtoull of a decimal prefix after spaces and an optional '+'.
-(defn rt-parse-u (p v) (let c (rt-ld8 p) (if (and (>= c 48) (<= c 57)) (rt-parse-u (+ p 1) (+ (* v 10) (- c 48))) v)))
-
-(defn rt-skip-ws (p) (let c (rt-ld8 p) (if (or (= c 32) (and (>= c 9) (<= c 13))) (rt-skip-ws (+ p 1)) p)))
-
-(defn rt-strtoull (p) (let q (rt-skip-ws p) (rt-parse-u (if (= (rt-ld8 q) 43) (+ q 1) q) 0)))
-
-; The value in kB of the /proc/meminfo line starting with key, or -1.
-(defn rt-meminfo-field (buf n key)
-  (let i (rt-meminfo-find buf n key (rt-strlen (rt-w key)) 0)
-    (if (< i 0) -1 (rt-strtoull (+ buf i)))))
-
-(defn rt-meminfo-find (buf n key kl i)
-  (if (> (+ i kl) n) -1
-    (if (and (or (= i 0) (= (rt-ld8 (+ buf (- i 1))) 10)) (rt-mem-eq (+ buf i) (rt-w key) kl))
-      (+ i kl)
-      (rt-meminfo-find buf n key kl (+ i 1)))))
-
-(defn rt-read-all (fd buf cap n)
-  (if (>= n cap) n
-    (let r (ffi-call "%syscall3" 0 fd (+ buf n) (- cap n) 1)
-      (if (> r 0) (rt-read-all fd buf cap (+ n r)) n))))
-
-; MemAvailable, else MemTotal, in bytes; 0 when /proc/meminfo cannot be read.
-(defn rt-meminfo-available ()
-  (let fd (ffi-call "%syscall3" 2 (rt-w "/proc/meminfo") 524288 0 1)
-    (if (< fd 0) 0
-      (let buf (ffi-call "malloc" 16384 1)
-        (if (= buf 0) (let _ (ffi-call "%syscall1" 3 fd 1) 0)
-          (let n (rt-read-all fd buf 16383 0)
-            (let _ (ffi-call "%syscall1" 3 fd 1)
-              (let _ (rt-st8 (+ buf n) 0)
-                (let avail (rt-meminfo-field buf n "MemAvailable:")
-                  (let total (rt-meminfo-field buf n "MemTotal:")
-                    (let _ (ffi-call "free" buf 1)
-                      (if (> avail 0) (* avail 1024) (if (> total 0) (* total 1024) 0)))))))))))))
-
-; sysinfo: totalram * mem_unit (what sysconf's phys pages times page size gives).
-(defn rt-sysinfo-total ()
-  (let si (ffi-call "%tls" "sysinfo" 128 1)
-    (if (not (= (ffi-call "%syscall1" 99 si 1) 0)) 0
-      (* (rt-ld64 (+ si 32)) (ffi-call "%load32" (+ si 104) 1)))))
-
-; ZYL_MAX_MEMORY bytes when set (0: no budget); else 80% of available memory; else unlimited.
-(defn rt-budget-value ()
-  (let env (rt-w (ffi-call "zyl_getenv_str" "ZYL_MAX_MEMORY" 1))
-    (if (and (> env 0) (> (rt-ld8 env) 0)) (rt-strtoull env)
-      (let a (rt-meminfo-available)
-        (let avail (if (> a 0) a (rt-sysinfo-total))
-          (if (> avail 0) (* (/ avail 5) 4) 0))))))
-
-; pthread_once: 0 unset, 1 running, 2 done.
-(defn rt-budget-once ()
-  (let b (rt-budget)
-    (if (= (rt-ld64 b) 2) 0
-      (if (= (ffi-call "%cas" b 0 1 1) 0)
-        (let _ (rt-st64 (+ b 8) (rt-budget-value)) (ffi-call "%xchg" b 2 1))
-        (rt-budget-wait b)))))
-
-(defn rt-budget-wait (b) (if (= (rt-ld64 b) 2) 0 (rt-budget-wait b)))
-
-; Charges n bytes before they are mapped; false when over budget.
-(defn rt-charge (n)
-  (let _ (rt-budget-once)
-    (let b (rt-budget)
-      (let now (+ (ffi-call "%fetch-add" (+ b 16) n 1) n)
-        (if (and (> (rt-ld64 (+ b 8)) 0) (> now (rt-ld64 (+ b 8))))
-          (let _ (ffi-call "%fetch-add" (+ b 16) (- 0 n) 1) false)
-          true)))))
-
-(defn rt-refund (n) (ffi-call "%fetch-add" (+ (rt-budget) 16) (- 0 n) 1))
 
 (defn rt-utext (n) (ffi-call "zyl_int_text" n 1))
 
@@ -115,10 +37,10 @@
 (defn rt-new-block (a cap0)
   (let cap (if (< cap0 (rt-ld64 (+ a 8))) (rt-ld64 (+ a 8)) cap0)
     (let _ (if (rt-charge cap) 0 (rt-oom cap "memory budget exhausted"))
-      (let b (ffi-call "malloc" 32 1)
+      (let b (rt-raw-malloc 32)
         (if (= b 0) (let _ (rt-refund cap) (rt-oom 32 "out of memory allocating an arena block header"))
-          (let m (ffi-call "malloc" cap 1)
-            (if (= m 0) (let _ (ffi-call "free" b 1) (let _ (rt-refund cap) (rt-oom cap "out of memory allocating an arena block")))
+          (let m (rt-raw-malloc cap)
+            (if (= m 0) (let _ (zyl_rt_free b) (let _ (rt-refund cap) (rt-oom cap "out of memory allocating an arena block")))
               (let _ (rt-st64 b m)
                 (let _ (rt-st64 (+ b 8) cap)
                   (let _ (rt-st64 (+ b 16) 0)
@@ -128,8 +50,8 @@
 
 (defn zyl_arena_create (block-size)
   (let bs (if (< block-size 16) 65536 block-size)
-    (let a (ffi-call "calloc" 1 72 1)
-      (if (= a 0) 0 (let _ (rt-st64 (+ a 8) bs) (let _ (rt-new-block a bs) a))))))
+    (let a (rt-raw-malloc 72)
+      (if (= a 0) 0 (let _ (rt-fill0 a 72) (let _ (rt-st64 (+ a 8) bs) (let _ (rt-new-block a bs) a)))))))
 
 ; A 16-aligned bump allocation, or 0 for a bad arena or size (over 2^48).
 (defn rt-arena-bump (arena size)
@@ -160,7 +82,7 @@
     (let next (rt-ld64 (+ b 24))
       (let _ (rt-fill-de (rt-ld64 b) (rt-ld64 (+ b 16)))
         (let _ (rt-refund (rt-ld64 (+ b 8)))
-          (let _ (ffi-call "free" (rt-ld64 b) 1) (let _ (ffi-call "free" b 1) (rt-free-blocks next))))))))
+          (let _ (zyl_rt_free (rt-ld64 b)) (let _ (zyl_rt_free b) (rt-free-blocks next))))))))
 
 (defn zyl_arena_reset (arena)
   (if (= arena 0) 0
@@ -170,7 +92,7 @@
 
 (defn zyl_arena_destroy (arena)
   (if (= arena 0) 0
-    (let _ (rt-lock arena) (let _ (rt-free-blocks (rt-ld64 arena)) (let _ (rt-unlock arena) (let _ (ffi-call "free" arena 1) 0))))))
+    (let _ (rt-lock arena) (let _ (rt-free-blocks (rt-ld64 arena)) (let _ (rt-unlock arena) (let _ (zyl_rt_free arena) 0))))))
 
 (defn zyl_arena_used (arena)
   (if (= arena 0) 0 (let _ (rt-lock arena) (let v (rt-ld64 (+ arena 24)) (let _ (rt-unlock arena) v)))))

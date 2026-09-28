@@ -1,9 +1,8 @@
 ; Actors (mailboxes, threads, the atexit drain) and the big-stack main thread.
 (use base)
+(use heap)
 (use alloc)
 
-(extern "malloc" (Int) Int)
-(extern "free" (Int) Int)
 (extern "atexit" (Int) Int)
 (extern "usleep" (Int) Int)
 (extern "pthread_mutex_init" (Int Int) Int)
@@ -58,10 +57,10 @@
 
 ; Malloc'd pthread mutex (40 bytes) and cond (48); the lock pointer is published last.
 (defn ac-sync-init (a)
-  (let m (ffi-call "malloc" 40 1)
-    (let c (ffi-call "malloc" 48 1)
+  (let m (zyl_rt_malloc 40)
+    (let c (zyl_rt_malloc 48)
       (if (or (= m 0) (= c 0))
-        (let _ (ffi-call "free" m 1) (let _ (ffi-call "free" c 1) (ffi-call "zyl_panic" "E_OUT_OF_MEMORY: no memory for an actor" 1)))
+        (let _ (zyl_rt_free m) (let _ (zyl_rt_free c) (ffi-call "zyl_panic" "E_OUT_OF_MEMORY: no memory for an actor" 1)))
         (let _ (ffi-call "pthread_mutex_init" m 0 1)
           (let _ (ffi-call "pthread_cond_init" c 0 1)
             (let _ (ac-set a 56 c) (ac-set a 48 m))))))))
@@ -106,7 +105,7 @@
 (defn ac-enqueue (a m c)
   (let _ (ac-lock a)
     (if (= (ac-field a 64) 0)
-      (let _ (ac-unlock a) (let _ (ffi-call "free" m 1) (let _ (if (= c 0) 0 (ffi-call "free" c 1)) 0)))
+      (let _ (ac-unlock a) (let _ (zyl_rt_free m) (let _ (if (= c 0) 0 (zyl_rt_free c)) 0)))
       (let t (ac-field a 24)
         (let _ (if (= t 0) (ac-set a 16 m) (ac-st (+ t 16) m))
           (let _ (ac-set a 24 m)
@@ -115,7 +114,7 @@
                 (let _ (ac-unlock a) 0)))))))))
 
 (defn ac-msg (kind data)
-  (let m (ffi-call "malloc" 24 1)
+  (let m (zyl_rt_malloc 24)
     (if (= m 0) 0 (let _ (ac-st m kind) (let _ (ac-st (+ m 8) data) (let _ (ac-st (+ m 16) 0) m))))))
 
 ; msg is caller-owned and never freed here.
@@ -129,12 +128,12 @@
 (defn zyl_actor_send_closure (id f state)
   (let a (ac-target id)
     (if (= a 0) 0
-      (let c (ffi-call "malloc" 16 1)
+      (let c (zyl_rt_malloc 16)
         (if (= c 0) 0
           (let _ (ac-st c f)
             (let _ (ac-st (+ c 8) state)
               (let m (ac-msg 1 c)
-                (if (= m 0) (let _ (ffi-call "free" c 1) 0) (ac-enqueue a m c))))))))))
+                (if (= m 0) (let _ (zyl_rt_free c) 0) (ac-enqueue a m c))))))))))
 
 ; On the main thread the first call opens a threadless mailbox so actors can reply.
 (defn zyl_actor_self ()
@@ -185,11 +184,11 @@
               (if threaded (let _ (ffi-call "pthread_exit" 0 1) 0) 0))))
         (let m (ac-pop a)
           (if (= (ac-ld m) 0)
-            (let v (ac-ld (+ m 8)) (let _ (ffi-call "free" m 1) v))
+            (let v (ac-ld (+ m 8)) (let _ (zyl_rt_free m) v))
             (let c (ac-ld (+ m 8))
               (let _ (ac-run-closure c)
-                (let _ (ffi-call "free" c 1)
-                  (let _ (ffi-call "free" m 1) (ac-recv a)))))))))))
+                (let _ (zyl_rt_free c)
+                  (let _ (zyl_rt_free m) (ac-recv a)))))))))))
 
 (defn zyl_actor_thread_entry (arg)
   (let id (ac-int arg)
@@ -212,9 +211,9 @@
       (if (= (ac-field a 64) 0) (ac-unlock a)
         (let m (ac-pop a)
           (let _ (if (= (ac-ld m) 1)
-                   (let c (ac-ld (+ m 8)) (let _ (ac-run-closure c) (ffi-call "free" c 1)))
+                   (let c (ac-ld (+ m 8)) (let _ (ac-run-closure c) (zyl_rt_free c)))
                    0)
-            (let _ (ffi-call "free" m 1) (ac-serve a))))))))
+            (let _ (zyl_rt_free m) (ac-serve a))))))))
 
 ; --- the exit drain: drain, check quiescence under each lock, then stop and join all ---
 
@@ -306,11 +305,11 @@
 ; ctx: {fn, result, pthread_t}
 (defn zyl_bigstack_tramp (ctx) (let _ (ac-st (+ ctx 8) (ffi-call "%call0" (ac-ld ctx) 1)) 0))
 
-(defn bs-free (ctx at) (let _ (ffi-call "free" ctx 1) (ffi-call "free" at 1)))
+(defn bs-free (ctx at) (let _ (zyl_rt_free ctx) (zyl_rt_free at)))
 
 (defn zyl_call_on_big_stack (f)
-  (let ctx (ffi-call "malloc" 24 1)
-    (let at (ffi-call "malloc" 56 1)
+  (let ctx (zyl_rt_malloc 24)
+    (let at (zyl_rt_malloc 56)
       (if (or (= ctx 0) (= at 0))
         (let _ (bs-free ctx at) (ffi-call "%call0" f 1))
         (let _ (ac-st ctx f) (bs-try f ctx at 0))))))

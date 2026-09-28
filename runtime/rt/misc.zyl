@@ -1,8 +1,7 @@
 ; Raw memory for stdlib/allocator, the header-less str-append path, environment lookups.
 (use base)
+(use heap)
 
-(extern "malloc" (Int) Int)
-(extern "free" (Int) Int)
 (extern "getenv" (Int) Int)
 
 (defmacro rt-ld64 (a) (ffi-call "%load64" a 1))
@@ -10,8 +9,8 @@
 
 (defn rt-note (msg) (let _ (ffi-call "write" 2 msg (rt-strlen (rt-w msg)) 1) 0))
 
-(defn zyl_mem_alloc (size) (ffi-call "malloc" size 1))
-(defn zyl_mem_free (ptr) (let _ (ffi-call "free" ptr 1) 0))
+(defn zyl_mem_alloc (size) (zyl_rt_malloc size))
+(defn zyl_mem_free (ptr) (let _ (zyl_rt_free ptr) 0))
 (defn zyl_mem_read (ptr) (if (= ptr 0) (rt-note "zyl: mem-read: null pointer\n") (rt-ld64 ptr)))
 (defn zyl_mem_write (ptr value) (if (= ptr 0) (let _ (rt-note "zyl: mem-write: null pointer\n") value) (let _ (rt-st64 ptr value) value)))
 

@@ -1,11 +1,8 @@
 ; ByteBuf/ByteSlice entries (load/store, slices, append) and the seq-cst atomics.
 (use base)
+(use heap)
 
 ; libc bridge, removed in the libc-free phase.
-(extern "malloc" (Int) Int)
-(extern "free" (Int) Int)
-(extern "memset" (Int Int Int) Int)
-(extern "memmove" (Int Int Int) Int)
 
 ; Header layouts: ByteBuf {magic, data, len, cap}; ByteSlice {magic, data, len}.
 (defn bb-magic-buf () 6510318584122966017)
@@ -81,7 +78,7 @@
 
 ; A new slice header over len bytes at data, or 0.
 (defn bb-new-slice (data len)
-  (let s (ffi-call "malloc" 24 1)
+  (let s (zyl_rt_malloc 24)
     (if (= s 0) 0
       (let _ (ffi-call "%store64" s (bb-magic-slice) 1)
         (let _ (ffi-call "%store64" (+ s 8) data 1)
@@ -106,12 +103,12 @@
 ; Heap buffer: zeroed malloc'd storage of cap bytes (1 for cap 0); region ignored.
 (defn zyl_bytebuf_new (_region cap)
   (if (not (bb-cap-ok cap)) 0
-    (let h (ffi-call "malloc" 32 1)
+    (let h (zyl_rt_malloc 32)
       (if (= h 0) 0
         (let n (if (> cap 0) cap 1)
-          (let d (ffi-call "malloc" n 1)
-            (if (= d 0) (let _ (ffi-call "free" h 1) 0)
-              (let _ (ffi-call "memset" d 0 n 1) (bb-init h d cap)))))))))
+          (let d (zyl_rt_malloc n)
+            (if (= d 0) (let _ (zyl_rt_free h) 0)
+              (let _ (ffi-call "%fill" d 0 n 1) (bb-init h d cap)))))))))
 
 ; (bytebuf Stack N): header and bytes in the current result region.
 (defn zyl_bytebuf_new_r (_region cap)
@@ -122,7 +119,7 @@
           (let n (if (> cap 0) cap 1)
             (let d (rt-alloc n rp)
               (if (= d 0) 0
-                (let _ (ffi-call "memset" d 0 n 1) (bb-init h d cap))))))))))
+                (let _ (ffi-call "%fill" d 0 n 1) (bb-init h d cap))))))))))
 
 ; Appends a whole slice (it may alias the buf) or fails closed past cap.
 (defn zyl_bytebuf_append (buf slice)
@@ -132,7 +129,7 @@
         (let hl (bb-len h)
           (let sl (bb-len s)
             (if (not (bb-ok hl sl (bb-cap h))) 0
-              (let _ (ffi-call "memmove" (+ (bb-data h) hl) (bb-data s) sl 1)
+              (let _ (rt-move (+ (bb-data h) hl) (bb-data s) sl)
                 (let _ (ffi-call "%store64" (+ h 16) (+ hl sl) 1) 1)))))))))
 
 (defn zyl_bytebuf_len (buf) (let h (bb-buf buf) (if (= h 0) 0 (bb-len h))))

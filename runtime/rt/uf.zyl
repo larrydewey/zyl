@@ -1,7 +1,7 @@
 ; Union-find over region-inference object classes: levels 0 local, 1 result, 2 heap; one table, reset per function.
 (use base)
+(use heap)
 
-(extern "realloc" (Int Int) Int)
 
 (defmacro rt-ld64 (a) (ffi-call "%load64" a 1))
 (defmacro rt-st64 (a v) (ffi-call "%store64" a v 1))
@@ -13,8 +13,8 @@
 
 (defn rt-uf-grow (u)
   (let nc (if (= (rt-ld64 (+ u 24)) 0) 4096 (* (rt-ld64 (+ u 24)) 2))
-    (let np (ffi-call "realloc" (rt-ld64 u) (* nc 8) 1)
-      (let nl (ffi-call "realloc" (rt-ld64 (+ u 8)) (* nc 8) 1)
+    (let np (zyl_rt_realloc (rt-ld64 u) (* nc 8))
+      (let nl (zyl_rt_realloc (rt-ld64 (+ u 8)) (* nc 8))
         (let _ (if (or (= np 0) (= nl 0)) (ffi-call "zyl_arena_oom" (* nc 16) "union-find table" 1) 0)
           (let _ (rt-st64 u np) (let _ (rt-st64 (+ u 8) nl) (rt-st64 (+ u 24) nc))))))))
 

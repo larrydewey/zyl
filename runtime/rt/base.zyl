@@ -96,6 +96,22 @@
 (defn rt-copy-bytes (dst src n)
   (if (= n 0) dst (let _ (rt-st8 dst (rt-ld8 src)) (let _ (rt-copy-bytes (+ dst 1) (+ src 1) (- n 1)) dst))))
 
+; memmove: forward when dst is below src or past it, else backward, so overlapping ranges are safe; returns dst.
+(defn rt-move (dst src n)
+  (if (or (<= n 0) (= dst src)) dst
+    (if (or (< dst src) (>= dst (+ src n))) (rt-move-fwd dst src n 0) (rt-move-back dst src n))))
+
+; Each block is loaded before its store, which then touches only source bytes already read.
+(defn rt-move-fwd (dst src n i)
+  (if (>= (- n i) 16) (let _ (ffi-call "%v128-copy" (+ dst i) (+ src i) 1) (rt-move-fwd dst src n (+ i 16)))
+    (if (>= (- n i) 8) (let _ (ffi-call "%store64" (+ dst i) (ffi-call "%load64" (+ src i) 1) 1) (rt-move-fwd dst src n (+ i 8)))
+      (if (>= i n) dst (let _ (rt-st8 (+ dst i) (rt-ld8 (+ src i))) (rt-move-fwd dst src n (+ i 1)))))))
+
+(defn rt-move-back (dst src n)
+  (if (>= n 16) (let _ (ffi-call "%v128-copy" (+ dst (- n 16)) (+ src (- n 16)) 1) (rt-move-back dst src (- n 16)))
+    (if (>= n 8) (let _ (ffi-call "%store64" (+ dst (- n 8)) (ffi-call "%load64" (+ src (- n 8)) 1) 1) (rt-move-back dst src (- n 8)))
+      (if (= n 0) dst (let _ (rt-st8 (+ dst (- n 1)) (rt-ld8 (+ src (- n 1)))) (rt-move-back dst src (- n 1)))))))
+
 ; memcmp's sign over n bytes.
 (defn rt-mem-cmp (a b n)
   (if (>= n 16)

@@ -1,10 +1,8 @@
 ; OS entries: files, directory walks, argv, cwd, mkdir -p and the terminal, over direct syscalls.
 (use base)
+(use heap)
 
 ; libc bridge, removed in the libc-free phase.
-(extern "malloc" (Int) Int)
-(extern "realloc" (Int Int) Int)
-(extern "free" (Int) Int)
 (extern "zyl_term_atexit" () Int)
 
 (defmacro os-ld64 (a) (ffi-call "%load64" a 1))
@@ -99,7 +97,7 @@
     (let lb (rt-strlen b)
       (let lc (rt-strlen c)
         (let n (let t (+ la (+ lb lc)) (if (> t (- lim 1)) (- lim 1) t))
-          (let p (ffi-call "malloc" (+ n 1) 1)
+          (let p (zyl_rt_malloc (+ n 1))
             (if (= p 0) 0
               (let _ (os-put p 0 a la n)
                 (let _ (os-put p la b lb n)
@@ -127,8 +125,8 @@
     (let cap (os-ld64 (+ l 16))
       (if (= n cap)
         (let nc (if (= cap 0) 64 (* cap 2))
-          (let nv (ffi-call "realloc" (os-ld64 l) (* nc 8) 1)
-            (if (= nv 0) (ffi-call "free" s 1)
+          (let nv (zyl_rt_realloc (os-ld64 l) (* nc 8))
+            (if (= nv 0) (zyl_rt_free s)
               (let _ (os-st64 l nv) (let _ (os-st64 (+ l 16) nc) (os-push l s))))))
         (let _ (os-st64 (+ (os-ld64 l) (* n 8)) s) (os-st64 (+ l 8) (+ n 1)))))))
 
@@ -137,11 +135,11 @@
   (let path (os-cat3 root (os-sep rel) rel 4096)
     (if (= path 0) 0
       (let fd (ffi-call "%syscall3" 2 path 591872 0 1)
-        (let _ (ffi-call "free" path 1)
+        (let _ (zyl_rt_free path)
           (if (< fd 0) 0
-            (let buf (ffi-call "malloc" 32768 1)
+            (let buf (zyl_rt_malloc 32768)
               (let _ (if (= buf 0) 0 (os-walk-fill root rel sfx l fd buf))
-                (let _ (ffi-call "free" buf 1) (ffi-call "%syscall1" 3 fd 1))))))))))
+                (let _ (zyl_rt_free buf) (ffi-call "%syscall1" 3 fd 1))))))))))
 
 (defn os-walk-fill (root rel sfx l fd buf)
   (let n (ffi-call "%syscall3" 217 fd buf 32768 1)
@@ -160,14 +158,14 @@
   (let sub (os-cat3 rel (os-sep rel) name 4096)
     (if (= sub 0) 0
       (let full (os-cat3 root (rt-w "/") sub 8200)
-        (if (= full 0) (ffi-call "free" sub 1)
+        (if (= full 0) (zyl_rt_free sub)
           (let st (ffi-call "%tls" "os_stat" 144 1)
             (let r (ffi-call "%syscall2" 4 full st 1)
-              (let _ (ffi-call "free" full 1)
-                (if (not (= r 0)) (ffi-call "free" sub 1)
+              (let _ (zyl_rt_free full)
+                (if (not (= r 0)) (zyl_rt_free sub)
                   (if (= (bit-and (ffi-call "%load32" (+ st 24) 1) 61440) 16384)
-                    (let _ (os-walk root sub sfx l) (ffi-call "free" sub 1))
-                    (if (os-has-suffix sub (rt-strlen sub) sfx) (os-push l sub) (ffi-call "free" sub 1))))))))))))
+                    (let _ (os-walk root sub sfx l) (zyl_rt_free sub))
+                    (if (os-has-suffix sub (rt-strlen sub) sfx) (os-push l sub) (zyl_rt_free sub))))))))))))
 
 ; Top-down merge sort by strcmp over words lo..hi-1, using tmp.
 (defn os-sort (v tmp lo hi)
@@ -192,25 +190,25 @@
       (let k (rt-strlen s)
         (let _ (rt-copy (+ buf at) s k)
           (let _ (rt-st8 (+ buf (+ at k)) 10)
-            (let _ (ffi-call "free" s 1) (os-emit v (+ i 1) n buf (+ at (+ k 1))))))))))
+            (let _ (zyl_rt_free s) (os-emit v (+ i 1) n buf (+ at (+ k 1))))))))))
 
-(defn os-free-all (v i n) (if (>= i n) 0 (let _ (ffi-call "free" (os-ld64 (+ v (* i 8))) 1) (os-free-all v (+ i 1) n))))
+(defn os-free-all (v i n) (if (>= i n) 0 (let _ (zyl_rt_free (os-ld64 (+ v (* i 8)))) (os-free-all v (+ i 1) n))))
 
 ; One path per line, each ending in '\n'; "" when nothing matched.
 (defn os-join (l)
   (let v (os-ld64 l)
     (let n (os-ld64 (+ l 8))
-      (let tmp (if (< n 2) 0 (ffi-call "malloc" (* n 8) 1))
-        (let _ (if (= tmp 0) 0 (let _ (os-sort v tmp 0 n) (ffi-call "free" tmp 1)))
+      (let tmp (if (< n 2) 0 (zyl_rt_malloc (* n 8)))
+        (let _ (if (= tmp 0) 0 (let _ (os-sort v tmp 0 n) (zyl_rt_free tmp)))
           (let buf (rt-w (ffi-call "zyl_heap_alloc" (os-total v 0 n 1) 1))
             (if (= buf 0)
-              (let _ (os-free-all v 0 n) (let _ (ffi-call "free" v 1) (let _ (ffi-call "free" l 1) (ffi-call "%str" 0 1))))
+              (let _ (os-free-all v 0 n) (let _ (zyl_rt_free v) (let _ (zyl_rt_free l) (ffi-call "%str" 0 1))))
               (let at (os-emit v 0 n buf 0)
                 (let _ (rt-st8 (+ buf at) 0)
-                  (let _ (ffi-call "free" v 1) (let _ (ffi-call "free" l 1) (ffi-call "%str" buf 1))))))))))))
+                  (let _ (zyl_rt_free v) (let _ (zyl_rt_free l) (ffi-call "%str" buf 1))))))))))))
 
 (defn os-list (dir sfx)
-  (let l (ffi-call "malloc" 24 1)
+  (let l (zyl_rt_malloc 24)
     (if (= l 0) (ffi-call "%str" 0 1)
       (let _ (os-st64 l 0)
         (let _ (os-st64 (+ l 8) 0)
