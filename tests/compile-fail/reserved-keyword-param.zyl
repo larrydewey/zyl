@@ -1,0 +1,4 @@
+; expect-error: E_RESERVED_KEYWORD
+; expect-at: reserved-keyword-param.zyl:3:10
+(defn f (test) test)
+(defn main () 0)

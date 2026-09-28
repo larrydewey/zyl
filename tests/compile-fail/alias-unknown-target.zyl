@@ -1,0 +1,4 @@
+; expect-error: E_UNKNOWN_TYPE
+; expect-at: alias-unknown-target.zyl:3:1
+(alias Meters Intt)
+(defn main () 0)

@@ -798,7 +798,9 @@
   (if (str-eq sym "zyl_register_test")
     (in-register-test fns env args)
     (if (str-eq sym "zyl_run_tests")
-      (in-run-tests fns)
+      (in-run-tests fns "")
+    (if (str-eq sym "zyl_run_tests_matching")
+      (in-run-tests fns (in-val-str (in-nth-val (in-args-eval fns env args) 0)))
       (if (in-actor-sym-p sym)
         (in-spawn fns env (in-args-eval fns env args))
         (if (in-global-sym-p sym)
@@ -807,7 +809,7 @@
           (in-ffi-timed (in-args-eval fns env args))
         (if (in-intrinsic-p sym)
           (in-intrinsic sym (in-args-eval fns env args))
-          (in-ffi-call sym (in-args-eval fns env args)))))))))
+          (in-ffi-call sym (in-args-eval fns env args))))))))))
 
 ; ===========================================================================
 ; BIT INTRINSICS (rt_mode.zyl, intrinsic-prim): a portable reference, bit by bit
@@ -929,19 +931,31 @@
 
 ; Run every registered test, catching the panic an assertion failure
 ; raises, exactly as the runtime's try frame does.
-(defn in-run-tests (fns)
+; `filter`: only tests whose name contains it run and count ("" for all).
+(defn in-run-tests (fns filter)
   (let n (ffi-call "zyl_itest_count" 1000)
-    (let failed (in-run-test-loop fns 0 n 0)
-      (begin
-        (ffi-call "zyl_itest_summary" (- n failed) failed 1000)
-        (ffi-call "zyl_itest_reset" 1000)
-        (VInt (if (> failed 0) 1 0))))))
+    (let rf (in-run-test-loop fns 0 n 0 0 filter)
+      (let ran (/ rf 1048576)
+        (let failed (% rf 1048576)
+          (begin
+            (ffi-call "zyl_itest_summary" (- ran failed) failed 1000)
+            (ffi-call "zyl_itest_reset" 1000)
+            (VInt (if (> failed 0) 1 0))))))))
 
-(defn in-run-test-loop (fns i n failed)
+; ran * 2^20 + failed.
+(defn in-run-test-loop (fns i n ran failed filter)
   (if (>= i n)
-    failed
-    (let ok (in-run-one-test fns i)
-      (in-run-test-loop fns (+ i 1) n (if ok failed (+ failed 1))))))
+    (+ (* ran 1048576) failed)
+    (if (not (in-contains (ffi-call "zyl_itest_name" i 1000) filter))
+      (in-run-test-loop fns (+ i 1) n ran failed filter)
+      (let ok (in-run-one-test fns i)
+        (in-run-test-loop fns (+ i 1) n (+ ran 1) (if ok failed (+ failed 1)) filter)))))
+
+(defn in-contains (s sub) (in-contains-at s sub 0 (- (str-length s) (str-length sub))))
+
+(defn in-contains-at (s sub i last)
+  (if (> i last) false
+    (if (str-eq (str-substring s i (str-length sub)) sub) true (in-contains-at s sub (+ i 1) last))))
 
 (defn in-run-one-test (fns i)
   (begin

@@ -466,7 +466,53 @@
         (_ (TaR (ta-dk st "type expression") scope))))
     (_ (TaR (ta-dk st "type expression") scope))))
 
+; (alias Name TypeExpr) forms by alias key; a written Name is its target (spec: alias transparency).
+(def ta-aliases (ffi-call "zyl_smap_new" 1000))
+(def ta-alias-depth (ffi-call "zyl_ref_new" 0 1000))
+
+(defn ta-collect-aliases (exprs)
+  (match exprs
+    (Nil unit)
+    (Cons e rest
+      (let _ (match (Expr.inner e) (EAliasDecl n _ (ffi-call "zyl_smap_put" ta-aliases n e 1000)) (_ unit))
+        (ta-collect-aliases rest)))))
+
+; Every target must name known types, and no alias may reach itself.
+(defn ta-check-aliases (st exprs)
+  (match exprs
+    (Nil unit)
+    (Cons e rest
+      (let _ (match (Expr.inner e)
+               (EAliasDecl n te
+                 (match (ta-conv st te Nil)
+                   (TaR _ scope
+                     (match scope
+                       (Nil unit)
+                       (Cons p _ (match p (Pair u _
+                         (ta-type-error "E_UNKNOWN_TYPE"
+                           (str-concat "the target of alias `" (str-concat (err-name n) (str-concat "` names no type: `" (str-concat (err-name u) "`"))))
+                           e Nil "an alias names an existing type, as in (alias Meters Int)"))))))))
+               (_ unit))
+        (ta-check-aliases st rest)))))
+
+(defn ta-conv-alias (st n scope)
+  (let d (ffi-call "zyl_ref_get" ta-alias-depth 1000)
+    (let decl (ffi-call "zyl_smap_get_or" ta-aliases n (Expr (EAtom ANil)) 1000)
+      (if (> d 32)
+        (let _ (ta-type-error "E_UNKNOWN_TYPE" (str-concat "alias `" (str-concat (err-name n) "` is defined in terms of itself"))
+                              decl Nil "give the alias a target that ends in a real type")
+          (TaR (ta-fresh st) scope))
+        (match (Expr.inner decl)
+          (EAliasDecl _ te
+            (let _ (ffi-call "zyl_ref_set" ta-alias-depth (+ d 1) 1000)
+              (let r (ta-conv st te scope)
+                (let _ (ffi-call "zyl_ref_set" ta-alias-depth d 1000) r))))
+          (_ (TaR (ta-fresh st) scope)))))))
+
 (defn ta-conv-name (st n args scope)
+  (if (ffi-call "zyl_smap_has" ta-aliases n 1000) (ta-conv-alias st n scope) (ta-conv-name-1 st n args scope)))
+
+(defn ta-conv-name-1 (st n args scope)
   (if (ta-builtin-type n)
     (TaR (TaC n Nil) scope)
   ; (Fn (A B) R): a function from A B to R.
@@ -776,7 +822,7 @@
   (let c (ffi-call "zyl_cstr_byte_at" n 0 1000) (and (>= c 97) (<= c 122))))
 
 (defn ta-param-add (st n acc)
-  (if (ta-builtin-type n)
+  (if (or (ta-builtin-type n) (ffi-call "zyl_smap_has" ta-aliases n 1000))
     acc
     (if (and (ta-shas (ta-types st) n) (not (ta-alias-only (ta-types st) n)))
       acc
@@ -1063,6 +1109,7 @@
     (EClose x (ta-walk-int st ctx env (Cons x Nil)))
     (ETestDecl _ body _ (let _ (ta-expr st ctx env body) (ta-stmt)))
     (ERunTests _ (ta-int))
+    (EAliasDecl _ _ (ta-stmt))
     ; Parsed as placeholders that carry no code (expr_inner.zyl).
     (ETestCompile _ _ (ta-stmt))
     (_ (ta-dk st "form not typed"))))
@@ -2155,6 +2202,9 @@
     (ffi-call "zyl_smap_clear" ta-name-table 1000)
     (ffi-call "zyl_smap_clear" ta-eqv-table 1000)
     (ffi-call "zyl_smap_clear" ta-alias-table 1000)
+    (ffi-call "zyl_smap_clear" ta-aliases 1000)
+    (ffi-call "zyl_ref_set" ta-alias-depth 0 1000)
+    (ta-collect-aliases exprs)
     (ffi-call "zyl_smap_clear" ta-mcount-table 1000)
     (ffi-call "zyl_smap_clear" ta-mname-table 1000)
     (let st (ta-st-new)
@@ -2162,6 +2212,7 @@
         (ta-collect-a st exprs)
         (ta-collect-b st exprs)
         (ta-collect-c st exprs)
+        (ta-check-aliases st exprs)
         (ta-register-fields st exprs)
         (ta-top st exprs)
         (ta-resolve-specials st (Cons -1 Nil) 0)

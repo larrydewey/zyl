@@ -1,0 +1,6 @@
+; (run-tests (:filter "keep")) runs only the tests whose names contain "keep":
+; the failing test below never runs, so the file passes.
+(test "keep-one" (assert-equal (+ 1 1) 2))
+(test "keep-two" (assert-true true))
+(test "skipped" (assert-true false))
+(run-tests (:filter "keep") (:parallel true))

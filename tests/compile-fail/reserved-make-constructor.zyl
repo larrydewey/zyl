@@ -1,0 +1,5 @@
+; expect-error: E_RESERVED_KEYWORD
+; expect-at: reserved-make-constructor.zyl:4:7
+(defstruct P (x Int))
+(defn make-P (x) x)
+(defn main () 0)

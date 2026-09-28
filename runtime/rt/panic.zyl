@@ -82,14 +82,21 @@
 
 (defn pn-int-text (n) (zyl_int_text n))
 
-(defn zyl_run_tests () (pn-run-tests 0 0 0))
+(defn zyl_run_tests () (pn-run-tests 0 0 0 0))
 
-(defn pn-run-tests (i passed failed)
+; (run-tests (:filter "s")): only the tests whose name contains s run and count.
+(defn zyl_run_tests_matching (filter) (pn-run-tests 0 0 0 (rt-w filter)))
+
+(defn pn-contains (h n) (if (= (rt-ld8 n) 0) true (if (= (rt-ld8 h) 0) false (if (pn-prefix h n) true (pn-contains (+ h 1) n)))))
+(defn pn-prefix (h n) (if (= (rt-ld8 n) 0) true (if (= (rt-ld8 h) (rt-ld8 n)) (pn-prefix (+ h 1) (+ n 1)) false)))
+
+(defn pn-run-tests (i passed failed f)
   (let st (pn-tstate)
     (if (>= i (rt-ld64 st))
       (let _ (pn-out (str-concat "\ntest result: " (str-concat (pn-int-text passed) (str-concat " passed, " (str-concat (pn-int-text failed) (str-concat " failed, " (str-concat (pn-int-text (+ passed failed)) " total\n")))))))
         (if (> failed 0) 1 0))
       (let e (+ (pn-tests) (* i 136))
+        (if (and (not (= f 0)) (not (pn-contains e f))) (pn-run-tests (+ i 1) passed failed f)
         (let _ (pn-out (str-concat "test: " (str-concat (pn-s e) " ... ")))
           (let _ (zyl_out_flush)
             (let _ (rt-st64 (+ st 16) (zyl_region_mark))
@@ -97,9 +104,9 @@
                 (if (= (ffi-call "zyl_rt_try_call" (pn-tbuf) (rt-ld64 (+ e 128)) 1) 0)
                   (let _ (rt-st64 (+ st 8) 0)
                     (if (= (bit-and (rt-ld64 (+ (pn-tbuf) 64)) 4294967295) 0)
-                      (let _ (pn-out "ok\n") (pn-run-tests (+ i 1) (+ passed 1) failed))
-                      (let _ (pn-out (pn-fail-line)) (pn-run-tests (+ i 1) passed (+ failed 1)))))
-                  (let _ (pn-out (pn-fail-line)) (pn-run-tests (+ i 1) passed (+ failed 1))))))))))))
+                      (let _ (pn-out "ok\n") (pn-run-tests (+ i 1) (+ passed 1) failed f))
+                      (let _ (pn-out (pn-fail-line)) (pn-run-tests (+ i 1) passed (+ failed 1) f))))
+                  (let _ (pn-out (pn-fail-line)) (pn-run-tests (+ i 1) passed (+ failed 1) f))))))))))))
 
 ; --- panic ---
 

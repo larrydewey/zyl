@@ -282,8 +282,10 @@
           (ic-toplevel arena rest vt (tlacc-push-fns (ic-defn arena name params body vt) acc)))
         (ETestDecl name body _
           (ic-toplevel arena rest vt (ic-toplevel-test arena name body vt acc)))
-        (ERunTests _
-          (ic-toplevel arena rest vt (tlacc-push-stmt (IFfi "zyl_run_tests" Nil) acc)))
+        (ERunTests f
+          (ic-toplevel arena rest vt
+            (tlacc-push-stmt (if (= (str-length f) 0) (IFfi "zyl_run_tests" Nil)
+                               (IFfi "zyl_run_tests_matching" (Cons (IStr (str-intern arena f)) Nil))) acc)))
         (_ (ic-toplevel arena rest vt acc))))))
 
 ; One (test "name" body) form: synthesize a "_test_<name>" 0-arg function

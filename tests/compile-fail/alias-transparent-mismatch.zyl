@@ -1,0 +1,5 @@
+; expect-error: E_TYPE_MISMATCH
+; An alias is its target: a String is not a Meters.
+(alias Meters Int)
+(defn run ((d Meters)) d)
+(defn main () (begin (print (run "x")) 0))

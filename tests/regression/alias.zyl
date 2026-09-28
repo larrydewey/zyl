@@ -58,4 +58,18 @@
     (set! x 2)
     (assert-equal x 2)))
 
+; An alias is transparent: an annotation naming it takes exactly its target.
+(alias _al_Meters Int)
+(alias _al_Names (List String))
+(alias _al_Len _al_Meters)
+(defn _al_double ((m _al_Meters)) (* m 2))
+(defn _al_first ((ns _al_Names)) (match ns (Cons h _ h) (Nil "")))
+(defn _al_grow ((n _al_Len)) (+ n 1))
+(deftype _al_Box (AlBox _al_Meters))
+
+(test "alias-annotation-is-its-target" (assert-equal (_al_double 21) 42))
+(test "alias-compound-target" (assert-equal (_al_first ["a" "b"]) "a"))
+(test "alias-of-alias" (assert-equal (_al_grow 1) 2))
+(test "alias-field-type" (assert-equal (match (AlBox 3) (AlBox m (+ m 1))) 4))
+
 (run-tests)

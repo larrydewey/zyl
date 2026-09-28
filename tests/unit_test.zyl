@@ -250,8 +250,8 @@
         (assert-equal (result-or-else (result-ok 42) fallback) (result-ok 42))))
 
 (test "result-or-else err"
-      (let recover (fn (x) (result-ok 99))
-        (assert-equal (result-or-else (result-err "e") recover) (result-ok 99))))
+      (let recovered (fn (x) (result-ok 99))
+        (assert-equal (result-or-else (result-err "e") recovered) (result-ok 99))))
 
 (test "result-inspect"
       (let print-and-return (fn (x) (print "x"))

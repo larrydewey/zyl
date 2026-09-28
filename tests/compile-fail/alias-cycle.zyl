@@ -1,0 +1,5 @@
+; expect-error: E_UNKNOWN_TYPE
+(alias A B)
+(alias B A)
+(defn run ((x A)) x)
+(defn main () 0)

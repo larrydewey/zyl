@@ -1,0 +1,4 @@
+; expect-error: E_MALFORMED_FORM
+; expect-at: run-tests-bad-option.zyl:4:1
+(test "t" (assert-true true))
+(run-tests (:verbose true))

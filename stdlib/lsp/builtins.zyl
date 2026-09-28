@@ -321,7 +321,7 @@
   (Cons (ZB "test-compile" "special-form" "(test-compile expr (:expect-error true))" "Top level. Decided at compile time: a test that passes when `expr` compiles, or with :expect-error true, when it does not.")
   (Cons (ZB "setup" "special-form" "(setup expr ...)" "Inside a test-suite: runs before each of its tests.")
   (Cons (ZB "teardown" "special-form" "(teardown expr ...)" "Inside a test-suite: runs after each of its tests, also when the test fails.")
-  (Cons (ZB "run-tests" "special-form" "(run-tests)" "Run every `test` registered so far and report.")
+  (Cons (ZB "run-tests" "special-form" "(run-tests (:filter \"text\"))" "Run every `test` registered so far, or with :filter only those whose names contain the text, one at a time in registration order, and report.")
   Nil))))))))))))
 
 (defn builtins-types ()
@@ -329,6 +329,7 @@
   (Cons (ZB "Float" "type" "Float" "64-bit floating point.")
   (Cons (ZB "Bool" "type" "Bool" "Boolean.")
   (Cons (ZB "String" "type" "String" "Immutable byte string.")
+  (Cons (ZB "alias" "special-form" "(alias Name Type)" "A transparent second name for Type: wherever a type is written, Name means Type. The target must name existing types.")
   (Cons (ZB "Unit" "type" "Unit" "The empty type, returned by expressions evaluated for effect.")
   (Cons (ZB "List" "type" "(List T)" "Cons list: `Nil` or `(Cons head tail)`.")
   (Cons (ZB "Option" "type" "(Option T)" "`None` or `(Some value)`.")
@@ -343,7 +344,7 @@
   (Cons (ZB "TMut" "capability" "TMut" "Capability of exclusive mutable ownership (a let-mut). Inferred, not written.")
   (Cons (ZB "declassify" "builtin" "(declassify value)"
           "Deliberately drop the Secret capability. The one explicit escape hatch; every use is a decision worth a comment.")
-  Nil)))))))))))))))))
+  Nil))))))))))))))))))
 
 (defn builtins-regions ()
   (Cons (ZB "Stack" "region" "Stack" "The call's frame region, released on return. A Stack value that would escape is E_REGION_ESCAPE.")

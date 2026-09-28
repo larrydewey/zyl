@@ -1,0 +1,139 @@
+; === Zyl Compiler — Reserved keywords ===
+; Module: compiler/reserved_check
+;
+; Spec 1.3.1: a keyword of spec 1.3 may not name anything a definition
+; form introduces (a function, parameter, binding, type, variant, field,
+; trait, alias, macro or module): E_RESERVED_KEYWORD. A call of such a
+; name would be the keyword's form, not the definition, so the definition
+; could never be reached. `make-` is the prefix of generated struct
+; constructors: a definition named make-S for a struct S in the same file
+; is reserved too. Runs on the raw forms of every module outside the
+; standard library (module_resolver.zyl), which implements the library
+; half of the keywords (`error`, `unwrap`) under their own names, or of the runtime.
+
+(use allocator/allocator)
+(use compiler/ast)
+(use compiler/error_report)
+
+(defn rk-keywords ()
+  ["def" "defn" "defun" "let" "let-mut" "if" "try" "catch" "spawn" "chan-send"
+   "ffi-call" "ffi-pin" "ffi-unpin" "assert" "trait" "impl" "fn" "lambda"
+   "while" "for" "cond" "begin" "pub" "use" "export" "requires" "ensures" "invariant"
+   "recover" "checkpoint" "contracts" "defmacro" "alias" "defstruct" "defstruct+"
+   "with-resource" "derive" "unwrap" "error" "Ok" "Err" "match" "struct-get"
+   "test-suite" "test" "assert-equal" "assert-fail" "assert-true"
+   "assert-false" "test-property" "setup" "teardown" "run-tests" "test-compile"])
+
+(defn rk-member ((n String) xs) (match xs (Nil false) (Cons h t (if (str-eq h n) true (rk-member n t)))))
+
+(defn rk-check-forms (forms)
+  (let structs (rk-structs forms)
+    (rk-forms forms structs)))
+
+(defn rk-forms (forms structs) (match forms (Nil unit) (Cons f t (let _ (rk-form f structs) (rk-forms t structs)))))
+
+; --- helpers ---------------------------------------------------------------
+
+(defn rk-head (a)
+  (match a (AList xs (match xs (Cons h _ (match h (AstIdent n n) (_ ""))) (Nil ""))) (_ "")))
+
+(defn rk-items (a) (match a (AList xs xs) (_ Nil)))
+
+(defn rk-nth (xs (i Int)) (match xs (Nil (AstInt 0)) (Cons h t (if (<= i 0) h (rk-nth t (- i 1))))))
+
+(defn rk-rest (xs (i Int)) (match xs (Nil Nil) (Cons _ t (if (<= i 0) xs (rk-rest t (- i 1))))))
+
+; The names of the structs a file declares.
+(defn rk-structs (forms)
+  (match forms
+    (Nil Nil)
+    (Cons f t
+      (let h (rk-head f)
+        (if (or (str-eq h "defstruct") (str-eq h "defstruct+"))
+          (match (rk-nth (rk-items f) 1) (AstIdent n (Cons n (rk-structs t))) (_ (rk-structs t)))
+          (if (str-eq h "pub") (list-append (rk-structs (Cons (AList (rk-rest (rk-items f) 1)) Nil)) (rk-structs t))
+            (rk-structs t)))))))
+
+; `name`, when a definition introduces it, must not be reserved.
+(defn rk-name (a (what String) structs)
+  (match a
+    (AstIdent n
+      (if (rk-member n (rk-keywords))
+        (rk-fail a (str-concat "`" (str-concat n (str-concat "` is a reserved keyword (spec 1.3.1) and cannot name " what))) "rename it")
+        (if (rk-make-p n structs)
+          (rk-fail a (str-concat "`" (str-concat n "` is the generated constructor of a struct in this file and is reserved")) "rename it")
+          unit)))
+    (_ unit)))
+
+(defn rk-make-p ((n String) structs)
+  (if (and (> (str-length n) 5) (str-eq (str-substring n 0 5) "make-"))
+    (rk-member (str-substring n 5 (- (str-length n) 5)) structs)
+    false))
+
+(defn rk-fail (at msg help)
+  (ffi-call "zyl_panic"
+    (err-at "E_RESERVED_KEYWORD" msg (ffi-call "zyl_span_file" at 1000) (ffi-call "zyl_span_off" at 1000) help) 1000))
+
+; A parameter list: names, (name Type) pairs, `&rest name`.
+(defn rk-params (ps structs)
+  (match ps
+    (Nil unit)
+    (Cons p t
+      (let _ (match p
+               (AstIdent _ (rk-name p "a parameter" structs))
+               (AList xs (rk-name (rk-nth xs 0) "a parameter" structs))
+               (_ unit))
+        (rk-params t structs)))))
+
+; --- forms -----------------------------------------------------------------
+
+(defn rk-form (a structs)
+  (match a
+    (AList xs
+      (let h (rk-head a)
+        (if (or (str-eq h "quote") (str-eq h "quasiquote")) unit
+          (let _ (rk-binders h xs structs)
+            (rk-forms (rk-rest xs 1) structs)))))
+    (_ unit)))
+
+; The names form `h` introduces.
+(defn rk-binders ((h String) xs structs)
+  (if (or (str-eq h "defn") (str-eq h "defun"))
+    (let _ (rk-name (rk-nth xs 1) "a function" structs) (rk-params (rk-items (rk-nth xs 2)) structs))
+  (if (or (str-eq h "defmacro") (str-eq h "macro"))
+    (let _ (rk-name (rk-nth xs 1) "a macro" structs) (rk-params (rk-items (rk-nth xs 2)) structs))
+  (if (str-eq h "def") (rk-name (rk-nth xs 1) "a definition" structs)
+  (if (or (str-eq h "let") (str-eq h "let-mut"))
+    (match (rk-nth xs 1)
+      (AList b (rk-name (rk-nth b 0) "a binding" structs))
+      (_ (rk-name (rk-nth xs 1) "a binding" structs)))
+  (if (or (str-eq h "fn") (str-eq h "lambda")) (rk-params (rk-items (rk-nth xs 1)) structs)
+  (if (str-eq h "trait") (rk-name (rk-nth xs 1) "a trait" structs)
+  (if (str-eq h "alias") (rk-name (rk-nth xs 1) "an alias" structs)
+  (if (str-eq h "deftype")
+    (let _ (rk-name (rk-nth xs 1) "a type" structs) (rk-variants (rk-rest xs 2) structs))
+  (if (or (str-eq h "defstruct") (str-eq h "defstruct+"))
+    (let _ (rk-name (rk-nth xs 1) "a struct" structs) (rk-fields (rk-rest xs 2) structs))
+  (if (str-eq h "module") (rk-name (rk-nth xs 1) "a module" structs)
+    unit)))))))))))
+
+; A variant's name; Ok and Err are prelude constructors, E_DUPLICATE_VARIANT's case.
+(defn rk-variants (vs structs)
+  (match vs
+    (Nil unit)
+    (Cons v t
+      (let n (match v (AList ys (rk-nth ys 0)) (_ v))
+        (let _ (match n
+                 (AstIdent s (if (or (str-eq s "Ok") (str-eq s "Err")) unit (rk-name n "a variant" structs)))
+                 (_ unit))
+          (rk-variants t structs))))))
+
+(defn rk-fields (fs structs)
+  (match fs
+    (Nil unit)
+    (Cons f t
+      (let _ (match f
+               (AstIdent _ (rk-name f "a field" structs))
+               (AList ys (if (str-eq (rk-head f) ":derive") unit (rk-name (rk-nth ys 0) "a field" structs)))
+               (_ unit))
+        (rk-fields t structs)))))

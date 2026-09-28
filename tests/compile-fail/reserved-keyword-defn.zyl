@@ -1,0 +1,5 @@
+; expect-error: E_RESERVED_KEYWORD
+; expect-at: reserved-keyword-defn.zyl:4:7
+; A call of setup would be the special form, so the function could never run.
+(defn setup () 1)
+(defn main () 0)

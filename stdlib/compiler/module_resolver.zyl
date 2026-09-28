@@ -38,6 +38,7 @@
 (use compiler/package)
 (use compiler/parser)
 (use compiler/sexp_balance)
+(use compiler/reserved_check)
 (use compiler/qualify)
 (use compiler/store)
 (use compiler/error_report)
@@ -368,7 +369,8 @@
   (if (str-eq h "defstruct+") true
   (if (str-eq h "trait") true
   (if (str-eq h "macro") true
-  (if (str-eq h "defmacro") true false)))))))))
+  (if (str-eq h "defmacro") true
+  (if (str-eq h "alias") true false))))))))))
 
 (defn mr-named-defs (arena pkg module f head pub)
   (let args (mr-ast-args f)
@@ -963,12 +965,13 @@
 
 (defn mr-qualify-unit (arena disc units pkgs u)
   (let pkg (mr-unit-pkg pkgs (mru2-pkg u))
+    (let _ (if (or (str-eq (mrp-name pkg) (mr-stdlib-name)) (rt-mode-p)) unit (rk-check-forms (mru2-forms u)))
     (let ptab (st-make arena (mr-unit-table-pairs units u (mrp-features pkg)))
       (let itab (st-make arena (mr-import-pairs disc units pkg (mru2-uses u)))
         (let qualified (qf-forms (QT itab ptab) Nil
                          (dot-rewrite-forms (mr-no-nested-gates (mr-strip-module-forms (mrp-features pkg) (mru2-forms u)))))
           (let _ (mr-check-coherence qualified (mrp-name pkg))
-            qualified))))))
+            qualified)))))))
 
 ; ===========================================================================
 ; TRAIT COHERENCE (SS24.6)
