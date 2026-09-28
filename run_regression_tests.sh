@@ -233,7 +233,7 @@ run_diff_test() {
 }
 
 # Tests the differential run deliberately leaves out, with the reason:
-#   actors, actor-receive, concurrency — spawning an actor hands the runtime a native
+#   actors, actor-receive, concurrency, runtime-actors — spawning an actor hands the runtime a native
 #                          function pointer, which an interpreted
 #                          function does not have. The interpreter says
 #                          so (E_UNSUPPORTED_INTERPRETED) rather than
@@ -255,7 +255,7 @@ run_diff_test() {
 #   tail-calls           — 10^8-deep loops, far too slow interpreted.
 #   with-region-limits   — region byte limits; the interpreter allocates
 #                          in its own arenas and accounts no region bytes.
-DIFF_SKIP="actors actor-receive concurrency modules derive collections ffi-advanced package-system selfhost-codegen c-abi tail-calls with-region-limits"
+DIFF_SKIP="actors actor-receive concurrency runtime-actors modules derive collections ffi-advanced package-system selfhost-codegen c-abi tail-calls with-region-limits"
 
 diff_skipped() {
     local name="$1"

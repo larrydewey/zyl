@@ -3,60 +3,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
-#include <pthread.h>
 
-#define ZYL_MAX_ACTORS 1024
-#define ZYL_MAX_MAILBOX 256
-
-typedef enum {
-    ZYL_MSG_DATA = 0,
-    ZYL_MSG_CLOSURE = 1
-} ZylMessageKind;
-
-typedef struct ZylClosureMsg {
-    void (*fn)(void*);
-    void* state;
-} ZylClosureMsg;
-
-typedef struct ZylMessage {
-    ZylMessageKind kind;
-    void* data;
-    struct ZylMessage* next;
-} ZylMessage;
-
-typedef struct ZylActor {
-    void (*entry)(void*);
-    void* state;
-    ZylMessage* mailbox_head;
-    ZylMessage* mailbox_tail;
-    uint32_t mailbox_count;
-    pthread_t thread;
-    pthread_mutex_t lock;
-    pthread_cond_t cond;
-    int alive;
-    int running;
-    int joined;
-    int parked;
-} ZylActor;
-
-typedef struct {
-    ZylActor actors[ZYL_MAX_ACTORS];
-    uint32_t next_id;
-    int initialized;
-} ZylActorSystem;
-
-void zyl_actor_init(void);
-uint32_t zyl_actor_spawn(void (*entry)(void*), void* state);
-void zyl_actor_send(uint32_t actor_id, void* msg);
-long long zyl_actor_self(void);
-long long zyl_actor_receive(void);
-void zyl_actor_send_data(uint32_t actor_id, void* data);
-void zyl_actor_send_closure(uint32_t actor_id, void (*fn)(void*), void* state);
-void zyl_actor_wait_all(void);
-void* zyl_actor_thread_entry(void* arg);
-long long zyl_actor_is_alive(long long actor_id);
-long long zyl_actor_terminate(long long actor_id);
-long long zyl_actor_wait(long long actor_id);
 
 /* FFI pinning. */
 
@@ -92,6 +39,9 @@ long long zyl_itest_summary(long long passed, long long failed);
 long long zyl_now_ms(void);
 long long zyl_ffi_timed(long long fn, long long name, long long ms, long long argc, ...);
 long long zyl_ffi_timed_argv(long long fn, long long name, long long ms, long long argc, long long argv);
+long long zyl_ffi_lookup(long long name);
+long long zyl_call_argv(long long fn, long long argc, long long argv);
+long long zyl_ffi_invoke_wide(long long fn, long long argc, long long argv);
 long long zyl_array_new(long long arena, long long cap);
 long long zyl_array_cap(long long h);
 long long zyl_array_filled(long long h);
@@ -121,8 +71,6 @@ long long zyl_iglobal_clear(void);
 long long zyl_iglobal_ready(long long key);
 long long zyl_iglobal_get(long long key);
 long long zyl_iglobal_put(long long key, long long val);
-int zyl_ffi_abandoned(void);
-int zyl_ffi_on_worker(void);
 long long zyl_f_add(long long a, long long b);
 long long zyl_f_sub(long long a, long long b);
 long long zyl_f_mul(long long a, long long b);
@@ -388,5 +336,25 @@ long long zyl_term_atexit(void);
 
 long long zyl_ffi_pin(long long value);
 long long zyl_ffi_unpin(long long ptr);
+
+void zyl_actor_init(void);
+uint32_t zyl_actor_spawn(void (*entry)(void*), void* state);
+void zyl_actor_send(uint32_t actor_id, void* msg);
+long long zyl_actor_self(void);
+long long zyl_actor_receive(void);
+void zyl_actor_send_data(uint32_t actor_id, void* data);
+void zyl_actor_send_closure(uint32_t actor_id, void (*fn)(void*), void* state);
+void zyl_actor_wait_all(void);
+void* zyl_actor_thread_entry(void* arg);
+long long zyl_actor_is_alive(long long actor_id);
+long long zyl_actor_terminate(long long actor_id);
+long long zyl_actor_wait(long long actor_id);
+long long zyl_call_on_big_stack(long long (*fn)(void));
+long long zyl_bigstack_tramp(long long ctx);
+int zyl_ffi_abandoned(void);
+int zyl_ffi_on_worker(void);
+long long zyl_ffi_worker_main(long long w);
+long long zyl_ffi_timed(long long fn, long long name, long long ms, long long argc, ...);
+long long zyl_ffi_timed_argv(long long fn, long long name, long long ms, long long argc, long long argv);
 
 #endif
