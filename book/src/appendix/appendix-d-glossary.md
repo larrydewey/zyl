@@ -53,10 +53,9 @@ build path.
 Appendix C lists them all.
 
 **Bundle directory**: The directory holding the compiler binary, its
-`stdlib/` and the C runtime — `build/boot/` in a build tree,
-`~/.zyl/` once installed. The compiler resolves stdlib modules there.
-(Not to be confused with the single-file compiler source that
-`selfhost/assemble.py` used to produce; that was retired on 2026-09-24.)
+`stdlib/` and the Zyl runtime (`rt.zo`, `rt.o`, `start.o`) —
+`build/boot/` in a build tree, `~/.zyl/` once installed. The compiler
+resolves stdlib modules there.
 
 **ByteBuf**: A fixed-capacity, zero-initialised block of bytes in a
 named region, allocated with `(bytebuf Region capacity)`.

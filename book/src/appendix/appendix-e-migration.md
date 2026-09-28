@@ -21,7 +21,7 @@ than Rust's:
   runtime's `Int -> Float`, `(ffi-call "zyl_f_of_int" n 1000)`; there
   is no general `as`.
 - There is no `unsafe` block and no `transmute`. No form changes a
-  value's type; the only trusted code is the compiler and its C runtime.
+  value's type; the only trusted code is the compiler and its runtime.
 - A statement form (`print`, `set!`, `while`, an `if` without `else`)
   has type `Unit`, like Rust's `()`. `main` returns an `Int`, the exit
   status.

@@ -62,7 +62,7 @@ failure, occurs-check failure and type it cannot determine is a compile
 error, all of a program's type errors are reported, and then the compile
 fails.
 
-There is no cast form. The trusted base is the compiler, the C runtime,
+There is no cast form. The trusted base is the compiler, the runtime (`runtime/rt`),
 the runtime-signature table (`stdlib/compiler/ffi_sigs.zyl`) and a
 program's own `extern` declarations (§16).
 

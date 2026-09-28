@@ -4,7 +4,7 @@ Reference for Zyl's code generator, `stdlib/compiler/codegen.zyl` and
 its machine IR, `stdlib/compiler/mir.zyl`: how a function is chosen for
 one of the two emitters, how the native path allocates registers, how
 calls and stack frames are laid out, and how the generated program
-meets the C runtime. The design and its staging are recorded in
+meets the runtime. The design and its staging are recorded in
 `docs/native-backend-design.md`.
 
 ## 29.1 Code Generation Overview

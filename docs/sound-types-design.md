@@ -41,7 +41,7 @@ empty inferer were used.
 ## Decisions (with the user, 2026-09-24)
 
 - **No escape hatch.** There is no `unsafe` cast form. The trusted base is
-  the compiler, the C runtime, the runtime-signature table and a program's
+  the compiler, the runtime (`runtime/rt`), the runtime-signature table and a program's
   own `extern` declarations.
 - **Unit** is a real type. Statement forms (`print`, `set!`, `while`,
   `for`, `if` without else, `assert*`, `send`, ...) return Unit. `main`

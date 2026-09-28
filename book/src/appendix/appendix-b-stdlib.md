@@ -490,7 +490,7 @@ Chapter 35 covers what the server provides and what it cannot.
 
 ## B.11 Compiler (stdlib/compiler/)
 
-The 41 modules of the self-hosted compiler. `selfhost/driver.zyl`
+The 44 modules of the self-hosted compiler. `selfhost/driver.zyl`
 reaches them through ordinary `(use compiler/...)` imports, and the
 compiler is built from that entry file like any program.
 
@@ -516,10 +516,13 @@ compiler is built from that entry file like any program.
 | `closure_inline.zyl` | Closure inlining (retired; identity pass) |
 | `icnf.zyl` | ICNF lowering |
 | `icnf_print.zyl` | Canonical ICNF text, for the build's ICNF hash |
-| `optimization.zyl` | Safe-only optimizations: constant folding, dead branches, inlining of small functions (`ZYL_INLINE=0` turns it off) |
+| `optimization.zyl` | Safe-only optimizations: inlining of small functions (`ZYL_INLINE=0` turns it off), self-unrolling, early exits, copy propagation, constant folding, dead branches |
 | `reuse.zyl` | In-place reuse of a unique, dead value's block for the value built from it |
 | `mir.zyl` | The native backend's machine IR, liveness and linear-scan register allocation |
 | `codegen.zyl` | x86-64 code generation: through MIR for each function the native backend supports (`ZYL_MIR=0` turns it off), by the older stack-machine emitter for the rest |
+| `asm_x86.zyl` | The x86-64 assembler: every form the compiler emits, byte-identical to GNU as |
+| `elf_link.zyl` | The static ELF linker and the `rt.zo` runtime cache |
+| `rt_mode.zyl` | `--runtime-module`: the runtime's locked `%` primitives and exported entries |
 | `pipeline.zyl` | The pass sequence from source to assembly |
 | `error_codes.zyl` | The error-code catalog |
 | `error_report.zyl` | Error formatting and source snippets |
@@ -535,7 +538,7 @@ compiler is built from that entry file like any program.
 | `lock.zyl` | `zyl.lock` |
 | `index.zyl` | The package index and Ed25519 verification |
 | `store.zyl` | The content store and canonical archives |
-| `cli.zyl` | The `zyl` subcommands and linking |
+| `cli.zyl` | The package subcommands |
 | `doc.zyl` | Markdown from source comments (`zyl doc`) |
 
 ## B.12 Finding Stdlib Source
@@ -544,9 +547,10 @@ All stdlib source is in `stdlib/`:
 
 ```
 stdlib/
-├── core/          core.zyl, option.zyl, result.zyl, list.zyl, map.zyl
+├── core/          core.zyl, option.zyl, result.zyl, list.zyl, map.zyl, show.zyl
 ├── collections/   collections.zyl, vec.zyl, map.zyl, set.zyl, slice.zyl
 ├── text/          view.zyl
+├── simd/          simd.zyl
 ├── actor/         actor.zyl
 ├── atomic/        atomic.zyl
 ├── allocator/     allocator.zyl

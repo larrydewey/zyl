@@ -191,3 +191,71 @@ The unifier itself has no capability polarity.
 because Zyl's region system already handles lifetime tracking;
 capabilities add only the aliasing dimension needed for
 shared-state-free concurrency.
+
+---
+
+## A8: The Runtime Is Zyl, With No libc
+
+**Decision:** The runtime is written in Zyl and compiled by the
+self-hosted compiler; programs that call no foreign code run without
+libc.
+
+**Rationale:** C in the trusted base is code the fixed point does not
+cover and the language's checks never see. A libc under every program
+adds start-up, locale and allocator behaviour Zyl does not control.
+
+**Implementation:** `runtime/rt/*.zyl`, compiled with
+`--runtime-module`, the only compile in which the locked `%` primitives
+(raw loads and stores, syscalls, atomics, SIMD) exist
+(`stdlib/compiler/rt_mode.zyl`); programs get no `unsafe`. Its output
+`build/boot/rt.s` is a committed seed checked by `./boot.sh` like
+`stage2.s`. `docs/runtime-in-zyl-design.md` has the design.
+**Alternative considered:** Keeping a C runtime — rejected for the
+reasons above; an `unsafe` form for programs — rejected, since the
+runtime is the only code that needs the primitives.
+
+---
+
+## A9: Deterministic Concurrency Through Kahn Channels
+
+**Decision:** Actors communicate only over single-writer,
+single-reader channels with blocking receive and no select, so a
+program's output never depends on scheduling.
+
+**Rationale:** A multi-sender mailbox makes the receiver's input order,
+and so its output, a function of the scheduler (spec §27).
+
+**Implementation:** `runtime/rt/chan.zyl`, `actor.zyl`; typed in
+`type_annotate.zyl`. `ZYL_SCHED=deterministic` and
+`ZYL_SCHED_CHAOS=<seed>` are the test oracle.
+`docs/concurrency-determinism-design.md` has the design.
+**Alternative considered:** Mailboxes with a deterministic scheduler
+only — rejected, since the guarantee would then depend on the
+scheduler rather than on the program.
+
+---
+
+## A10: Deterministic Intrinsics Instead of Inline Assembly
+
+**Decision:** There is no inline assembly. Machine operations a program
+needs are typed builtins whose results never depend on the CPU
+(`bit-popcount`, `bit-clz`, `bit-ctz`, `bit-bswap`, `bit-rotl`,
+`bit-rotr`, `mul-hi`, `mul-hi-u`, `crc32c`, spec §21.13) and the portable
+lane vectors of `stdlib/simd`. `ffi-call` stays the escape hatch.
+
+**Rationale:** Raw assembly breaks determinism (`rdtsc`, `rdrand`,
+`cpuid`, CPU-feature dependence) and can write outside any region.
+
+---
+
+## A11: The Compiler Assembles and Links
+
+**Decision:** A freestanding program is assembled and linked by the
+compiler itself (`asm_x86.zyl`, `elf_link.zyl`) against the cached
+runtime `rt.zo`; no `cc`, `as` or `ld` runs.
+
+**Rationale:** The output binary is then a function of the compiler and
+its inputs alone, with no external toolchain version in the result.
+Both steps are byte-deterministic, and the assembler's encodings are
+checked against GNU as (`tests/scripts/asm-oracle.sh`). A program that
+calls foreign C still links with `cc` over libc's crt.

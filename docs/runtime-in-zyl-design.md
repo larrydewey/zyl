@@ -42,7 +42,7 @@ added to the language. This document records the design.
    the standard library and the compiler itself.
 4. Only the runtime's exported entries are visible to programs.
    These are the top-level `defn`s named `zyl_*`. Programs reach them
-   the way they reach the C runtime today: codegen calls them, and
+   the way they reached the C runtime: codegen calls them, and
    `ffi-call "zyl_..."` calls are typed by `ffi_sigs.zyl`, with the raw
    ones restricted to the standard library (`E_FFI_RESTRICTED`). Every
    other runtime function is a module-local label.

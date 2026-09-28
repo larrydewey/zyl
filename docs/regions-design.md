@@ -230,8 +230,6 @@ Measured when regions landed (2026-09-24):
 
 - Classes are field-insensitive and over-approximate: a local list of
   strings shares one level with its strings.
-- The `try`/`catch` frames `zyl_try_push` allocates are still `malloc`ed
-  per `try` and never freed (this predates regions).
 - The interpreter does not enforce `with-region` limits.
 - The Global and Circular regions remain names only. Global is the set of
   top-level `def` values, which live in the heap.

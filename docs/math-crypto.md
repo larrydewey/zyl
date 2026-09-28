@@ -152,10 +152,10 @@ python3 verify/crypto.py                                    # vs hashlib + pyca
 
 ## Not implemented
 
-- Automatic zeroization on scope exit
-  (`MATH_CRYPTO_IMPLEMENTATION_PLAN.md` Phase 0's codegen half). Erasure
-  is still explicit `zeroize`, with an `E_ZEROIZE_MISSING` warning when a
-  function consumes a `Secret` into a public result without it.
+- Automatic zeroization of heap memory. A function whose frame holds a
+  secret has the frame zeroed on return, but heap erasure is still
+  explicit `zeroize` (or `wipe`), with an `E_ZEROIZE_MISSING` warning
+  when a function consumes a `Secret` into a public result without it.
   Redaction exists only inside records: a derived `Show` or `Debug`
   prints a `Secret` field, or a value of a type implementing the
   `Secret` trait, as `<secret>` (book chapter 33.6), but `print` of a
