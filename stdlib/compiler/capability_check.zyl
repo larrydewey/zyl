@@ -9,7 +9,7 @@
 ;
 ;     io      core/io and everything under stdlib/io
 ;     ffi     ffi-call, ffi-pin, Pin-region allocation
-;     actor   spawn, send, receive
+;     actor   spawn, chan, chan-send, chan-recv
 ;     secret  the Secret capability type and stdlib/math/secret
 ;     native  shipping and compiling C sources (§31.10)
 ;     unsafe  :unsafe imports
@@ -163,10 +163,20 @@
     (_ unit)))
 
 (defn cc-check-owned (name body grants denied dnode)
-  (let pkg (ck-package-of name)
-    (match (cc-find-grant grants pkg)
-      (Some g (if (= (cg-enforced g) 0) unit (cc-walk body (cg-caps g) denied pkg name dnode)))
-      (None unit))))
+  (if (str-eq name "main")
+    (match (cc-find-main grants)
+      (Some g (if (= (cg-enforced g) 0) unit (cc-walk body (cg-caps g) denied (str-substring (cg-name g) 6 (- (str-length (cg-name g)) 6)) name dnode)))
+      (None unit))
+    (let pkg (ck-package-of name)
+      (match (cc-find-grant grants pkg)
+        (Some g (if (= (cg-enforced g) 0) unit (cc-walk body (cg-caps g) denied pkg name dnode)))
+        (None unit)))))
+
+; The root package's grant for its unqualified `main` (module_resolver's mr-main-grant).
+(defn cc-find-main (grants)
+  (match grants
+    (Nil None)
+    (Cons h t (if (and (> (str-length (cg-name h)) 6) (str-eq (str-substring (cg-name h) 0 6) "<main>")) (Some h) (cc-find-main t)))))
 
 ; Depth-first over the body. The first violation stops the build with the
 ; offending package, the construct's capability and the definition that

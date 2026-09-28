@@ -534,7 +534,7 @@ Inside a package (a directory with a `zyl.pkg`, Spec §31.9), `spawn`, `chan`, `
 PANIC: error[E_PKG_CAPABILITY_VIOLATION]: package book/actdemo uses actor in go without declaring it in zyl.pkg
 ```
 
-A single file compiled directly is not capability-checked. (The current checker also skips the body of the root package's `main`, so a `chan` or `spawn` written directly in `main` goes unreported; declare the capability anyway.)
+A single file compiled directly is not capability-checked.
 
 ---
 

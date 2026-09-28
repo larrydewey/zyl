@@ -505,7 +505,7 @@ as recorded below.
     `file-write` to fd 1 now goes through the stdout buffer, and an actor's
     fd 2 writes through its own stderr buffer, emitted after its stdout
     buffer. Only a foreign libc write bypasses them;
-  - `main` is still not capability-checked for `actor` inside a package.
+  - the root package's `main` was not capability-checked (it stays unqualified); fixed by a "<main>" grant (`mr-main-grant`), test `packages-fail/capability-main`.
 
 ## Session (2026-09-28, site) — GitHub Pages site and the book
 

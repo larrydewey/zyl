@@ -1,0 +1,2 @@
+; expect-error: E_PKG_CAPABILITY_VIOLATION
+(defn main () (let _ (spawn (fn () 1)) 0))

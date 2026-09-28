@@ -1,0 +1,5 @@
+; The root package's main is unqualified, yet still bound by the package's
+; capabilities (§31.9): the spawn below is E_PKG_CAPABILITY_VIOLATION.
+(package
+  (name "app/nocap") (version "0.1.0") (zyl "5.0") (edition "2026")
+  (capabilities))

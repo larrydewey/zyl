@@ -1272,6 +1272,9 @@
     (Nil Nil)
     (Cons p t (Cons (CG (mrp-name p) (mrp-caps p) (mrp-manifested p)) (mr-grants-of t)))))
 
+; `main` stays unqualified (mr-reserved-name), so the root package's grant is also filed under "<main>".
+(defn mr-main-grant (p) (CG (str-concat "<main>" (mrp-name p)) (mrp-caps p) (mrp-manifested p)))
+
 (defn mr-denied-of (arena pkg)
   (let path (str-concat (mrp-root pkg) "/zyl.pkg")
     (if (mr-file-exists path)
@@ -1297,7 +1300,7 @@
         (let disc (mr-add-unit disc1 root id)
           (let units (list-reverse (mrd-units disc))
             (MRR (convert-program (mr-impl-not (list-reverse (mr-qualify-units arena disc units (mrd-pkgs disc) units Nil))))
-                 (mr-grants-of (mrd-pkgs disc))
+                 (Cons (mr-main-grant pkg) (mr-grants-of (mrd-pkgs disc)))
                  (mr-denied-of arena pkg)))))))))
 
 (defn mr-resolve-root (arena pkg root uses)
