@@ -2699,8 +2699,8 @@
 (deftype MR (MR MS Int))
 (deftype MVar (MVar String Int))
 ; The function: its name, its parameters' vregs, the label after them,
-; its region flags.
-(deftype MCtx (MCtx String (List Int) Int Int))
+; its region flags, the accumulator's operator and vreg (-1: none).
+(deftype MCtx (MCtx String (List Int) Int Int Int Int))
 
 (defn ms-emit (ms i) (match ms (MS v l is bs (MS v l (Cons i is) bs))))
 (defn ms-vreg (ms) (match ms (MS v l is bs (MR (MS (+ v 1) l is bs) v))))
@@ -2728,13 +2728,16 @@
           (MR ms v)
           (let r (ms-vreg ms) (MR (ms-emit (mr-ms r) (MFnRef (mr-v r) n)) (mr-v r))))))
     (IBinop op l r
+      (if (and (mb-commutes op) (and (ml-imm-op op l) (not (ml-imm-op op r))))
+        ; a constant on the left of a commutative operator: no effect to order, so it becomes the immediate
+        (ml-expr st env venv ms (IBinop op r l))
       (let ra (ml-operand st env venv ms l (icnf-has-set r))
         (if (ml-imm-op op r)
           (let rd (ms-vreg (mr-ms ra))
             (MR (ms-emit (mr-ms rd) (MBinI op (mr-v rd) (mr-v ra) (ml-const-of r))) (mr-v rd)))
           (let rb (ml-expr st env venv (mr-ms ra) r)
             (let rd (ms-vreg (mr-ms rb))
-              (MR (ms-emit (mr-ms rd) (MBin op (mr-v rd) (mr-v ra) (mr-v rb))) (mr-v rd)))))))
+              (MR (ms-emit (mr-ms rd) (MBin op (mr-v rd) (mr-v ra) (mr-v rb))) (mr-v rd))))))))
     (ICall name args (ml-call st env venv ms name true args (cg-site-level e)))
     (IFfi sym args
       (if (>= (cg-raw-kind sym) 0)
@@ -2777,7 +2780,7 @@
       (let rs (ml-expr st env venv ms scr)
         (let rr (ms-vreg (mr-ms rs))
           (let le (ms-label (mr-ms rr))
-            (MR (ml-arms st env venv (mr-ms le) (mr-v rs) arms (mr-v le) (mr-v rr) false (MCtx "" Nil 0 0)) (mr-v rr))))))
+            (MR (ml-arms st env venv (mr-ms le) (mr-v rs) arms (mr-v le) (mr-v rr) false (MCtx "" Nil 0 0 -1 -1)) (mr-v rr))))))
     (IStr t (ml-def ms (fn (d) (MStr d t))))
     (IFlt t (ml-def ms (fn (d) (MFlt d t))))
     (ISymAddr t (ml-def ms (fn (d) (MSym d t))))
@@ -2814,6 +2817,10 @@
 ; tail position each body ends the function; otherwise its value goes to
 ; `r` and control to `lend`.
 (defn ml-arms (st env venv ms s arms lend r tail cx)
+  (ml-arms-t st env venv ms s arms lend r tail cx -1))
+
+; The tag is loaded once, before the first test (every later test is reached through it).
+(defn ml-arms-t (st env venv ms s arms lend r tail cx tv)
   (match arms
     (Nil (ml-arms-none ms lend r tail))
     (Cons a rest
@@ -2823,11 +2830,12 @@
             ; Matches everything: later arms are unreachable, but the join
             ; label still has to follow.
             (ml-arms-none (ml-arm-body st env venv ms s binds body lend r tail cx) lend r tail)
-            (let rt (ms-vreg ms)
+            (let rt (if (>= tv 0) (MR ms tv) (ms-vreg ms))
               (let ln (ms-label (mr-ms rt))
-                (let m1 (ms-emit (ms-emit (mr-ms ln) (MLoad (mr-v rt) s 0)) (MJfI 9 (mr-v rt) tag (mr-v ln)))
+                (let m0 (if (>= tv 0) (mr-ms ln) (ms-emit (mr-ms ln) (MLoad (mr-v rt) s 0)))
+                (let m1 (ms-emit m0 (MJfI 9 (mr-v rt) tag (mr-v ln)))
                   (let m2 (ml-arm-body st env venv m1 s binds body lend r tail cx)
-                    (ml-arms st env venv (ms-emit m2 (MLabel (mr-v ln))) s rest lend r tail cx)))))))))))
+                    (ml-arms-t st env venv (ms-emit m2 (MLabel (mr-v ln))) s rest lend r tail cx (mr-v rt)))))))))))))
 
 (defn ml-arms-none (ms lend r tail)
   (if tail
@@ -2924,7 +2932,7 @@
   (let kind (if (str-eq sym "zyl_load_byte") 0 (if (str-eq sym "zyl_load_byte_signed") 1 (if (str-eq sym "zyl_store_byte") 2 3)))
     (let off (match (ml-nth-icnf args 1) (Some o o) (None (IConst 0)))
       (let ro (ml-operand st env venv ms off (if (> kind 1) (match (ml-nth-icnf args 3) (Some v (icnf-has-set v)) (None false)) false))
-        (let rv (if (> kind 1) (match (ml-nth-icnf args 3) (Some v (ml-expr st env venv (mr-ms ro) v)) (None (MR (mr-ms ro) -1))) (MR (mr-ms ro) -1))
+        (let rv (if (> kind 1) (match (ml-nth-icnf args 3) (Some v (match v (IConst k (MR (mr-ms ro) (- -2 (bit-and k 255)))) (_ (ml-expr st env venv (mr-ms ro) v)))) (None (MR (mr-ms ro) -1))) (MR (mr-ms ro) -1))
           (let rd (ms-vreg (mr-ms rv))
             (MR (ms-emit (mr-ms rd) (MByteFast kind (mr-v rd) (mr-v ro)
                                      (ml-var (ffi-call "zyl_ref_get" ml-view-data 1000) p)
@@ -3007,6 +3015,16 @@
             (ml-tail st env venv ms cx h)
             (ml-tail st env venv (mr-ms (ml-expr st env venv ms h)) cx (ISeq t))))))
     (ICall name args (ml-tail-call st env venv ms cx name args (cg-site-level e) e))
+    (IBinop op x y
+      (match cx
+        (MCtx self _ _ _ aop acc
+          (if (and (>= acc 0) (and (= op aop) (ml-acc-chain-p y op self)))
+            ; x op (... (self args)): acc op= x, then the rest (x is evaluated first either way).
+            (let m2 (if (ml-imm-op op x)
+                      (ms-emit ms (MBinI op acc acc (ml-const-of x)))
+                      (let rx (ml-expr st env venv ms x) (ms-emit (mr-ms rx) (MBin op acc acc (mr-v rx)))))
+              (ml-tail st env venv m2 cx y))
+            (ml-ret ms (ml-expr st env venv ms e))))))
     (IFfi sym args
       (if (ml-c-tail-ok cx sym args e)
         (match (ml-args st env venv ms args Nil) (MRL m2 vs (ms-emit m2 (MTail sym vs -1))))
@@ -3021,7 +3039,7 @@
 ; A C call in tail position of an exported runtime entry (entered aligned, as C) jumps: MTail level -1.
 (defn ml-c-tail-ok (cx sym args e)
   (match cx
-    (MCtx self _ _ rflags
+    (MCtx self _ _ rflags _ _
       (and (and (= rflags 0) (and (rt-mode-p) (> (str-length (rt-export-label self)) 0)))
         (and (= (cg-site-level e) 0)
           (and (<= (list-length args) 6)
@@ -3030,7 +3048,7 @@
 
 (defn ml-tail-call (st env venv ms cx name args lvl _e)
   (match cx
-    (MCtx self ps head rflags
+    (MCtx self ps head rflags _ _
       (if (and (str-eq name self) (= (list-length args) (list-length ps)))
         ; Every argument into a fresh register first, then the parameters.
         ; A frame region is released and opened again, as the stack
@@ -3069,8 +3087,81 @@
   (let np (list-length params)
     (let m0 (ml-params (MS np 1 Nil Nil) 0 np)
       (let venv (ml-param-vars params 0)
-        (let m1 (ms-emit (ml-views m0 name params body 0) (MLabel 0))
-          (ml-tail st (cg-param-env params kinds 0 (EnvNil)) venv m1 (MCtx name (ml-range 0 np) 0 rflags) body))))))
+        (let aop (ml-acc-op name np body)
+          (let mv (ml-views m0 name params body 0)
+            (if (< aop 0)
+              (ml-tail st (cg-param-env params kinds 0 (EnvNil)) venv (ms-emit mv (MLabel 0)) (MCtx name (ml-range 0 np) 0 rflags -1 -1) body)
+              (let ra (ms-vreg mv)
+                (let m1 (ms-emit (ms-emit (mr-ms ra) (MConst (mr-v ra) (ml-acc-unit aop))) (MLabel 0))
+                  (ml-acc-rets (ml-tail st (cg-param-env params kinds 0 (EnvNil)) venv m1 (MCtx name (ml-range 0 np) 0 rflags aop (mr-v ra)) body)
+                               aop (mr-v ra)))))))))))
+
+; --- accumulator: a tail `x op (self args)` becomes acc op= x and a self jump ---
+; Every integer operator on this path wraps, so add, mul, and, or and xor are
+; associative; x still runs before the call's arguments. Returns acc op r.
+
+(defn ml-acc-unit (op) (if (= op 2) 1 (if (= op 11) -1 0)))
+
+(defn ml-acc-op-ok (op) (or (= op 0) (or (= op 2) (and (>= op 11) (<= op 13)))))
+
+(defn ml-self-call-p (e self) (match e (ICall n _ (str-eq n self)) (_ false)))
+
+; e is (self args) or x op e' with e' such a chain.
+(defn ml-acc-chain-p (e op self)
+  (match e
+    (ICall n _ (str-eq n self))
+    (IBinop o _ y (and (= o op) (ml-acc-chain-p y op self)))
+    (_ false)))
+
+; The one operator of every accumulating tail, or -1 (none, mixed, or another tail call).
+(defn ml-acc-op (name np body)
+  (let r (ml-acc-scan body name np -1)
+    (if (>= r 0) r -1)))
+
+; acc: -1 none yet, >= 0 the operator, -2 not eligible.
+(defn ml-acc-scan (e self np acc)
+  (if (= acc -2) -2
+    (match e
+      (IIf _ t f (ml-acc-scan f self np (ml-acc-scan t self np acc)))
+      (ILet _ _ b (ml-acc-scan b self np acc))
+      (ISeq es (match (list-reverse es) (Cons h _ (ml-acc-scan h self np acc)) (Nil acc)))
+      (IMatch _ arms (ml-acc-arms arms self np acc))
+      (ICall n args (if (and (str-eq n self) (= (list-length args) np)) acc -2))
+      (IFfi _ _ (if (rt-mode-p) -2 acc))
+      (IBinop op _ y
+        (if (and (ml-acc-op-ok op) (ml-acc-chain-p y op self))
+          (if (and (or (= acc -1) (= acc op)) (ml-acc-call-args y np)) op -2)
+          acc))
+      (_ acc))))
+
+(defn ml-acc-call-args (e np)
+  (match e
+    (ICall _ args (= (list-length args) np))
+    (IBinop _ _ y (ml-acc-call-args y np))
+    (_ false)))
+
+(defn ml-acc-arms (arms self np acc)
+  (match arms
+    (Nil acc)
+    (Cons a t (match a (IArm _ _ _ b (ml-acc-arms t self np (ml-acc-scan b self np acc)))))))
+
+; Each MRet r becomes t <- acc op r; MRet t.
+(defn ml-acc-rets (ms op acc)
+  (match ms
+    (MS v l is bs
+      (match (ml-acc-rets-go is op acc v Nil)
+        (MRL2 v2 is2 (MS v2 l is2 bs))))))
+
+(deftype MRL2 (MRL2 Int (List MI)))
+
+; is is newest first; so is the result.
+(defn ml-acc-rets-go (is op acc v acc-out)
+  (match is
+    (Nil (MRL2 v (list-reverse acc-out)))
+    (Cons i t
+      (match i
+        (MRet r (ml-acc-rets-go t op acc (+ v 1) (Cons (MBin op v acc r) (Cons (MRet v) acc-out))))
+        (_ (ml-acc-rets-go t op acc v (Cons i acc-out)))))))
 
 (defn ml-params (ms i n) (if (>= i n) ms (ml-params (ms-emit ms (MParam i i)) (+ i 1) n)))
 
@@ -3183,7 +3274,7 @@
   (if (>= v nv)
     (mb-sort-regs acc 6)
     (let l (alloc-loc al v)
-      (mb-used-callee al nv (+ v 1) (if (and (>= l 6) (not (me-int-in l acc))) (Cons l acc) acc)))))
+      (mb-used-callee al nv (+ v 1) (if (and (mir-callee-saved l) (not (me-int-in l acc))) (Cons l acc) acc)))))
 
 (defn me-int-in (x xs) (match xs (Nil false) (Cons h t (if (= h x) true (me-int-in x t)))))
 (defn mb-sort-regs (xs r) (if (> r 10) Nil (if (me-int-in r xs) (Cons r (mb-sort-regs xs (+ r 1))) (mb-sort-regs xs (+ r 1)))))
@@ -3197,14 +3288,17 @@
             (MS nv nl rev blocks (mb-alloc-emit st name nv nl (list-reverse rev) rflags (list-reverse blocks)))))))
     (_ st)))
 
-(defn mb-alloc-emit (st name nv nl instrs0 rflags blocks)
-  (let instrs (mir-dce instrs0 nv)
+(defn mb-alloc-emit (st name nv nl0 instrs0 rflags blocks)
+  (let nl (+ nl0 1)
+  (let instrs (mir-coalesce (mir-dce (mir-rotate instrs0 nl0) nv) nv)
   (let n (list-length instrs)
     (let a (mir-array instrs n)
       (let lin (mir-liveness a n nv (mir-label-pos a n nl))
-        (let al (mir-allocate (mir-intervals a n nv lin (mir-use-counts instrs nv)) nv (mir-hints a n nv))
+        (let u (mir-use-counts instrs nv)
+        (let rv (mir-ret-vregs a n nv u)
+        (let al (mir-set-locs (mir-allocate (mir-drop-ivs (mir-intervals a n nv lin u) rv) nv (mir-hints a n nv)) rv 11)
           (match (cg-label-new st)
-            (CGR st1 _ base (mb-emit-fn st1 name al nv base instrs rflags blocks)))))))))
+            (CGR st1 _ base (mb-emit-fn st1 name al nv base instrs rflags blocks))))))))))))
 
 (defn mb-emit-fn (st name al nv base instrs rflags blocks)
   (let saved (mb-used-callee al nv 0 Nil)
@@ -3249,7 +3343,7 @@
 ; The region prologue only uses rax, so the arguments are still in
 ; their registers for the parameter moves after it.
 (defn mb-prologue (st name fr fsz align)
-  (let st1 (cg-emit-line (cg-emit st (cg-sym-mangled (cg-arena-of st) name)) ":")
+  (let st1 (cg-emit-line (cg-emit (cg-emit-line st ".p2align 4") (cg-sym-mangled (cg-arena-of st) name)) ":")
     (let st2 (cg-emit-lines st1 (Cons "    push rbp" (Cons "    mov rbp, rsp" Nil)))
       (if (mf-pushes fr)
         (let st3 (mb-push-regs st2 (mf-saved fr))
@@ -3355,6 +3449,8 @@
     (MMov d s (if (mb-live fr d) (mb-mov st (mb-loc-text fr d) (mb-loc-text fr s)) st))
     (MBin op d a b
       (if (mb-live fr d)
+        (if (and (= op 0) (and (mb-all-regs fr d a b) (and (not (str-eq (mb-loc-text fr d) (mb-loc-text fr a))) (not (str-eq (mb-loc-text fr d) (mb-loc-text fr b))))))
+          (cg-emit-line st (str-concat "    lea " (str-concat (mb-loc-text fr d) (str-concat ", [" (str-concat (mb-loc-text fr a) (str-concat "+" (str-concat (mb-loc-text fr b) "]")))))))
         (if (and (mb-two-op op) (and (not (mb-in-mem fr d)) (not (str-eq (mb-loc-text fr d) (mb-loc-text fr b)))))
           ; d = a; d op= b
           (cg-emit-line (mb-mov st (mb-loc-text fr d) (mb-loc-text fr a))
@@ -3364,7 +3460,7 @@
           (cg-emit-line st (str-concat "    " (str-concat (mb-two-op-mnem op) (str-concat " " (str-concat (mb-loc-text fr d) (str-concat ", " (mb-loc-text fr a)))))))
           (let st2 (cg-emit-line (cg-emit-line st (str-concat "    mov rax, " (mb-loc-text fr a))) (str-concat "    mov rcx, " (mb-loc-text fr b)))
             (let st3 (if (< op 5) (cg-arith-mnem st2 op) (if (> op 10) (cg-bit-mnem st2 op) (cg-cmp-set st2 op)))
-              (mb-set st3 fr d "rax")))))
+              (mb-set st3 fr d "rax"))))))
         st))
     (MBinI op d a n
       (if (mb-live fr d)
@@ -3375,8 +3471,7 @@
             (mb-set (cg-emit-line (cg-emit-line st (str-concat "    mov rax, " (mb-loc-text fr a)))
                                   (str-concat "    " (str-concat (mb-two-op-mnem op) (str-concat " rax, " (ffi-call "zyl_int_text" n 1000)))))
                     fr d "rax")
-            (cg-emit-line (mb-mov st (mb-loc-text fr d) (mb-loc-text fr a))
-                          (str-concat "    " (str-concat (mb-two-op-mnem op) (str-concat " " (str-concat (mb-loc-text fr d) (str-concat ", " (ffi-call "zyl_int_text" n 1000))))))))
+            (mb-bini-reg st fr op d a n))
           ; a comparison: cmp against the immediate, then setcc
           (let st2 (cg-emit-line (cg-emit-line st (str-concat "    mov rax, " (mb-loc-text fr a))) (str-concat "    cmp rax, " (ffi-call "zyl_int_text" n 1000)))
             (mb-set (mb-setcc st2 op) fr d "rax"))))
@@ -3438,24 +3533,7 @@
     (MArr kind d a ix v (mb-array st fr kind d a ix v i))
     (MByteData d h (mb-byte-view st fr d h i true))
     (MByteBound d h (mb-byte-view st fr d h i false))
-    (MByteFast kind d o dt bd v
-      (let lf (str-concat (mf-base fr) (str-concat "_q" (ffi-call "zyl_int_text" i 1000)))
-        (let ld (str-concat lf "d")
-          (let st2 (cg-emit-lines st
-                     (Cons (str-concat "    mov rax, " (mb-loc-text fr o))
-                     (Cons (str-concat "    cmp rax, " (mb-loc-text fr bd))
-                     (Cons (str-concat "    jae " lf)
-                     (Cons (str-concat "    mov rdx, " (mb-loc-text fr dt)) Nil)))))
-            (let st3 (if (> kind 1)
-                       (cg-emit-lines st2 (Cons (str-concat "    mov rcx, " (mb-loc-text fr v))
-                                          (Cons "    mov byte ptr [rdx+rax], cl"
-                                          (Cons "    mov eax, 1" Nil))))
-                       (cg-emit-line st2 (if (= kind 1) "    movsx rax, byte ptr [rdx+rax]" "    movzx eax, byte ptr [rdx+rax]")))
-              (mb-set (cg-emit-lines st3 (Cons (str-concat "    jmp " ld)
-                                         (Cons (str-concat lf ":")
-                                         (Cons "    xor eax, eax"
-                                         (Cons (str-concat ld ":") Nil)))))
-                      fr d "rax"))))))
+    (MByteFast kind d o dt bd v (mb-byte-fast st fr kind d o dt bd v i))
     (MByte kind d o b v (mb-byte st fr kind d o b v i))
     (MRaw kind d vs (mb-raw st fr kind d vs))
     (MTls d sym vs
@@ -3480,9 +3558,66 @@
       (cg-emit-lines st (Cons (str-concat "    cmp " (str-concat (mb-loc-text fr a) ", 0"))
                         (Cons (str-concat "    je " (mb-label fr l)) Nil))))
     (MRet a
-      (let st2 (cg-emit-line st (str-concat "    mov rax, " (mb-loc-text fr a)))
+      (let st2 (mb-mov st "rax" (mb-loc-text fr a))
         (cg-emit-line (mb-leave (mb-exit-region st2 fr) fr) "    ret")))
     (MParam _ _ st)))
+
+(defn mb-reg8 (r)
+  (if (str-eq r "rsi") "sil" (if (str-eq r "rdi") "dil" (if (str-eq r "rbx") "bl" (if (str-eq r "rax") "al" (str-concat r "b"))))))
+
+(defn mb-reg32 (r)
+  (if (str-eq r "rsi") "esi" (if (str-eq r "rdi") "edi" (if (str-eq r "rbx") "ebx" (if (str-eq r "rax") "eax" (str-concat r "d"))))))
+
+; A view access: bound check, then [data+off]; out of bounds gives 0 (a store writes nothing).
+; A store value below -1 is the immediate -v-2.
+(defn mb-byte-fast (st fr kind d o dt bd v i)
+  (let lf (str-concat (mf-base fr) (str-concat "_q" (ffi-call "zyl_int_text" i 1000)))
+    (let ld (str-concat lf "d")
+      (let om (mb-in-mem fr o)
+        (let ot (if om "rax" (mb-loc-text fr o))
+          (let st1 (if om (cg-emit-line st (str-concat "    mov rax, " (mb-loc-text fr o))) st)
+            (let st2 (cg-emit-lines st1 (Cons (str-concat "    cmp " (str-concat ot (str-concat ", " (mb-loc-text fr bd))))
+                                        (Cons (str-concat "    jae " lf) Nil)))
+              (let dm (mb-in-mem fr dt)
+                (let dtt (if dm "rdx" (mb-loc-text fr dt))
+                  (let st3 (if dm (cg-emit-line st2 (str-concat "    mov rdx, " (mb-loc-text fr dt))) st2)
+                    (let addr (str-concat "byte ptr [" (str-concat dtt (str-concat "+" (str-concat ot "]"))))
+                      (if (> kind 1)
+                        (let st4 (if (< v -1)
+                                   (cg-emit-line st3 (str-concat "    mov " (str-concat addr (str-concat ", " (ffi-call "zyl_int_text" (- -2 v) 1000)))))
+                                   (if (mb-in-mem fr v)
+                                     (cg-emit-lines st3 (Cons (str-concat "    mov rcx, " (mb-loc-text fr v)) (Cons (str-concat "    mov " (str-concat addr ", cl")) Nil)))
+                                     (cg-emit-line st3 (str-concat "    mov " (str-concat addr (str-concat ", " (mb-reg8 (mb-loc-text fr v))))))))
+                          (if (mb-live fr d)
+                            (mb-set (cg-emit-lines st4 (Cons "    mov eax, 1" (Cons (str-concat "    jmp " ld) (Cons (str-concat lf ":") (Cons "    xor eax, eax" (Cons (str-concat ld ":") Nil))))))
+                                    fr d "rax")
+                            (cg-emit-line st4 (str-concat lf ":"))))
+                        (if (and (mb-live fr d) (not (mb-in-mem fr d)))
+                          (let dr (mb-loc-text fr d)
+                            (cg-emit-lines st3
+                              (Cons (if (= kind 1) (str-concat "    movsx " (str-concat dr (str-concat ", " addr)))
+                                      (str-concat "    movzx " (str-concat (mb-reg32 dr) (str-concat ", " addr))))
+                              (Cons (str-concat "    jmp " ld) (Cons (str-concat lf ":")
+                              (Cons (str-concat "    xor " (str-concat (mb-reg32 dr) (str-concat ", " (mb-reg32 dr))))
+                              (Cons (str-concat ld ":") Nil)))))))
+                          (mb-set (cg-emit-lines st3
+                                    (Cons (if (= kind 1) (str-concat "    movsx rax, " addr) (str-concat "    movzx eax, " addr))
+                                    (Cons (str-concat "    jmp " ld) (Cons (str-concat lf ":") (Cons "    xor eax, eax" (Cons (str-concat ld ":") Nil))))))
+                                  fr d "rax"))))))))))))))
+
+(defn mb-all-regs (fr d a b) (and (not (mb-in-mem fr d)) (and (not (mb-in-mem fr a)) (not (mb-in-mem fr b)))))
+
+; d <- a op n, d a register: lea for add/sub into another register, imul's three-operand form.
+(defn mb-bini-reg (st fr op d a n)
+  (let dt (mb-loc-text fr d)
+    (let at (mb-loc-text fr a)
+      (if (and (<= op 1) (and (not (str-eq dt at)) (and (not (mb-in-mem fr a)) (> n -2147483648))))
+        (let k (if (= op 0) n (- 0 n))
+          (cg-emit-line st (str-concat "    lea " (str-concat dt (str-concat ", [" (str-concat at (str-concat (if (< k 0) "-" "+") (str-concat (ffi-call "zyl_int_text" (if (< k 0) (- 0 k) k) 1000) "]"))))))))
+        (if (= op 2)
+          (cg-emit-line st (str-concat "    imul " (str-concat dt (str-concat ", " (str-concat at (str-concat ", " (ffi-call "zyl_int_text" n 1000)))))))
+          (cg-emit-line (mb-mov st dt at)
+                        (str-concat "    " (str-concat (mb-two-op-mnem op) (str-concat " " (str-concat dt (str-concat ", " (ffi-call "zyl_int_text" n 1000))))))))))))
 
 ; add, sub, imul, and, or, xor have a two-operand form d op= s. (Shifts,
 ; division and comparisons keep the fixed rax/rcx sequences above, which
@@ -3638,16 +3773,17 @@
     (let lb (str-concat (mf-base fr) (str-concat "_m" (ffi-call "zyl_int_text" i 1000)))
       (let lslow (str-concat lb "s")
         (let ldone (str-concat lb "d")
+          ; The frame region (1) is never null or scoped; an empty region has bump and end 0, so the end test sends it to the runtime.
           (let st2 (if (or (= lvl 1) (= lvl 2))
                      (cg-emit-lines st
-                       (Cons (if (= lvl 1) "    lea r11, [rbp-48]" "    mov r11, [rbp-16]")
-                       (Cons "    test r11, r11"
-                       (Cons (str-concat "    jz " lslow)
-                       (Cons "    test byte ptr [r11+24], 1"
-                       (Cons (str-concat "    jnz " lslow)
+                       (list-append
+                       (if (= lvl 1) (Cons "    lea r11, [rbp-48]" Nil)
+                         (Cons "    mov r11, [rbp-16]"
+                         (Cons "    test r11, r11"
+                         (Cons (str-concat "    jz " lslow)
+                         (Cons "    test byte ptr [r11+24], 1"
+                         (Cons (str-concat "    jnz " lslow) Nil))))))
                        (Cons "    mov rax, [r11+8]"
-                       (Cons "    test rax, rax"
-                       (Cons (str-concat "    jz " lslow)
                        (Cons (str-concat "    lea rdx, [rax+" (str-concat (ffi-call "zyl_int_text" need 1000) "]"))
                        (Cons "    cmp rdx, [r11+16]"
                        (Cons (str-concat "    ja " lslow)
@@ -3655,7 +3791,7 @@
                        (Cons (str-concat "    mov qword ptr [rax], " (ffi-call "zyl_int_text" (/ (+ n 7) 8) 1000))
                        (Cons "    add rax, 8"
                        (Cons (str-concat "    jmp " ldone)
-                       (Cons (str-concat lslow ":") Nil)))))))))))))))))
+                       (Cons (str-concat lslow ":") Nil)))))))))))
                      st)
             (let st3 (cg-emit-lines st2
                        (Cons "    push rsi"
