@@ -2229,10 +2229,11 @@
 (defn cg-label-def (st lbl)
   (cg-nl (cg-emit (cg-emit st lbl) ":")))
 
+; The literal's bit pattern from the runtime's correctly rounded parser, not the assembler's .double.
 (defn cg-flt-entry (st lbl text)
   (let st2 (cg-label-def st lbl)
-    (let st4 (cg-emit st2 "    .double ")
-      (cg-nl (cg-emit st4 text)))))
+    (let st4 (cg-emit st2 "    .quad ")
+      (cg-nl (cg-emit st4 (ffi-call "zyl_int_text" (ffi-call "zyl_float_bits" (ffi-call "zyl_f_parse" text 1000) 1000) 1000))))))
 
 (defn cg-rodata-emit-list (st xs)
   (match xs

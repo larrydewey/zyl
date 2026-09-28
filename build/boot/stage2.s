@@ -465947,7 +465947,8 @@ zy_zyl_x2Fstd_5__compiler_x2Fcodegen__cg_x2Dflt_x2Dentry:
     push rbp
     mov rbp, rsp
     push rbx
-    sub rsp, 8
+    push r12
+    and rsp, -16
     mov rbx, rdx
 .L9416_0:
     call zy_zyl_x2Fstd_5__compiler_x2Fcodegen__cg_x2Demit
@@ -465973,8 +465974,19 @@ zy_zyl_x2Fstd_5__compiler_x2Fcodegen__cg_x2Dflt_x2Dentry:
     mov rdi, rax
     call zy_zyl_x2Fstd_5__compiler_x2Fcodegen__cg_x2Demit
     mov rsi, rax
+    mov r12, rsi
+    mov rdi, rbx
+    call zyl_f_parse
+    mov rsi, rax
     mov rdi, rsi
-    mov rsi, rbx
+    call zyl_float_bits
+    mov rsi, rax
+    mov rdi, rsi
+    xor r11d, r11d
+    mov QWORD PTR fs:zyl_cur_region@tpoff, r11
+    call zyl_int_text_r
+    mov rsi, rax
+    mov rdi, r12
     call zy_zyl_x2Fstd_5__compiler_x2Fcodegen__cg_x2Demit
     mov rsi, rax
     lea rax, [rip+.L9420]
@@ -465983,6 +465995,7 @@ zy_zyl_x2Fstd_5__compiler_x2Fcodegen__cg_x2Dflt_x2Dentry:
     mov rsi, rdi
     mov rdi, rax
     mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
     mov rsp, rbp
     pop rbp
     jmp zy_zyl_x2Fstd_5__compiler_x2Fcodegen__cg_x2Demit
@@ -664978,7 +664991,7 @@ main:
 .L9418:
     .string "\n"
 .L9419:
-    .string "    .double "
+    .string "    .quad "
 .L9420:
     .string "\n"
 .L9425:

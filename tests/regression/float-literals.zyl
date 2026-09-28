@@ -1,0 +1,9 @@
+; Float literals are rounded correctly (round-half-even on the exact decimal value).
+
+(test "halfway-literal"
+  (begin
+    (assert-equal (ffi-call "zyl_float_bits" 9007199254740993.0 1000) (ffi-call "zyl_float_bits" 9007199254740992.0 1000))
+    (assert-equal (ffi-call "zyl_float_bits" 0.1 1000) 4591870180066957722)
+    (assert-equal (ffi-call "zyl_float_bits" 2.2250738585072014e-308 1000) 4503599627370496)))
+
+(run-tests)
