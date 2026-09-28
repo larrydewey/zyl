@@ -30,3 +30,4 @@
 (use io)
 (use thread)
 (use heap)
+(use out)

@@ -3,10 +3,9 @@
 (use heap)
 (use alloc)
 (use text)
+(use out)
 
 (extern "exit" (Int) Int)
-(extern "fputs" (Int Int) Int)
-(extern "fflush" (Int) Int)
 (extern "zyl_ffi_on_worker" () Int)
 (extern "zyl_rt_try_call" (Int Int) Int)
 (extern "zyl_rt_longjmp" (Int Int) Int)
@@ -14,12 +13,9 @@
 (defmacro rt-ld64 (a) (ffi-call "%load64" a 1))
 (defmacro rt-st64 (a v) (ffi-call "%store64" a v 1))
 
-(defn pn-stdout () (rt-ld64 (ffi-call "%fn" "stdout" 1)))
-(defn pn-stderr () (rt-ld64 (ffi-call "%fn" "stderr" 1)))
-
-; One fputs, so an unbuffered stderr sees a single write as fprintf gave it.
-(defn pn-err (s) (let _ (ffi-call "fputs" (rt-w s) (pn-stderr) 1) 0))
-(defn pn-out (s) (let _ (ffi-call "fputs" (rt-w s) (pn-stdout) 1) 0))
+; One write per message, as unbuffered stderr's fprintf gave it.
+(defn pn-err (s) (zyl_err_puts (rt-w s)))
+(defn pn-out (s) (zyl_out_puts (rt-w s)))
 
 (defn pn-s (w) (ffi-call "%str" w 1))
 
@@ -77,7 +73,7 @@
         (if (> failed 0) 1 0))
       (let e (+ (pn-tests) (* i 136))
         (let _ (pn-out (str-concat "test: " (str-concat (pn-s e) " ... ")))
-          (let _ (ffi-call "fflush" (pn-stdout) 1)
+          (let _ (zyl_out_flush)
             (let _ (rt-st64 (+ st 16) (zyl_region_mark))
               (let _ (rt-st64 (+ st 8) 1)
                 (if (= (ffi-call "zyl_rt_try_call" (pn-tbuf) (rt-ld64 (+ e 128)) 1) 0)
@@ -174,7 +170,7 @@
     (let n (rt-strlen m)
       (let w (pn-warn)
         (if (= (rt-ld64 (+ w 24)) 0)
-          (let _ (ffi-call "write" 2 (pn-s m) n 1) (let _ (ffi-call "write" 2 "\n" 1 1) 0))
+          (let _ (rt-write-fd 2 m n) (let _ (rt-write-fd 2 (rt-w "\n") 1) 0))
           (let len (rt-ld64 (+ w 8))
             (if (pn-warn-fit w (+ (+ len n) 2))
               (let b (rt-ld64 w)

@@ -18,7 +18,7 @@
     (let msg (str-concat "PANIC: error[E_OUT_OF_MEMORY]: " (str-concat why (str-concat "\n  = requested " (str-concat (rt-utext requested)
                (str-concat " bytes; " (str-concat (rt-utext (rt-ld64 (+ b 16))) (str-concat " bytes already allocated; budget "
                (str-concat (rt-utext (rt-ld64 (+ b 8))) " bytes\n  = help: set ZYL_MAX_MEMORY to a byte count to raise the budget, or ZYL_MAX_MEMORY=0 to remove it\n"))))))))
-      (let _ (ffi-call "write" 2 msg (rt-strlen (rt-w msg)) 1)
+      (let _ (rt-write-fd 2 (rt-w msg) (rt-strlen (rt-w msg)))
         (ffi-call "%syscall1" 231 1 1)))))
 
 ; --- arenas: {head, block_size, total_capacity, total_used, pthread mutex (40)}; a block is {mem, cap, used, next} ---
@@ -124,7 +124,7 @@
     (let _ (if (= (rt-ld64 (+ g 8)) 0) 0 (let _ (zyl_arena_destroy (rt-ld64 (+ g 8))) (rt-st64 (+ g 8) 0)))
       (let _ (if (= (rt-ld64 g) 0) 0 (let _ (zyl_arena_destroy (rt-ld64 g)) (rt-st64 g 0))) 0))))
 
-(defn rt-heap-fail (msg n) (let m (str-concat msg (str-concat (rt-utext n) "\n")) (let _ (ffi-call "write" 2 m (rt-strlen (rt-w m)) 1) 0)))
+(defn rt-heap-fail (msg n) (let m (str-concat msg (str-concat (rt-utext n) "\n")) (let _ (rt-write-fd 2 (rt-w m) (rt-strlen (rt-w m))) 0)))
 
 ; A hidden qword count before the payload (zyl_variant_eq reads it); single-threaded bumps skip the lock call chain.
 (defn zyl_heap_alloc (size)
@@ -322,4 +322,4 @@
 (defn zyl_ffi_unpin (ptr)
   (if (= ptr 0) 0
     (if (zyl_pin_owns ptr) (rt-ld64 ptr)
-      (let m "zyl: ffi-unpin: pointer not from ffi-pin/Pin arena\n" (let _ (ffi-call "write" 2 m (rt-strlen (rt-w m)) 1) 0)))))
+      (let m "zyl: ffi-unpin: pointer not from ffi-pin/Pin arena\n" (let _ (rt-write-fd 2 (rt-w m) (rt-strlen (rt-w m))) 0)))))

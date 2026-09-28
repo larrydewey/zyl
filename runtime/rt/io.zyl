@@ -1,49 +1,25 @@
-; Printing through stdio's stdout, the interpreter's test transcript, exit, read-line and the word cells.
+; The interpreter's test transcript, exit, read-line and the word cells; printing is out.zyl.
 (use base)
 (use heap)
 (use alloc)
-(use fmt)
+(use out)
 
 (extern "exit" (Int) Int)
-(extern "fputs" (Int Int) Int)
-(extern "fwrite" (Int Int Int Int) Int)
-(extern "fflush" (Int) Int)
 
 (defmacro rt-ld64 (a) (ffi-call "%load64" a 1))
 (defmacro rt-st64 (a v) (ffi-call "%store64" a v 1))
 
-(defn io-stdout () (rt-ld64 (ffi-call "%fn" "stdout" 1)))
-(defn io-stderr () (rt-ld64 (ffi-call "%fn" "stderr" 1)))
-(defn io-puts (w) (let _ (ffi-call "fputs" w (io-stdout) 1) 0))
-(defn io-put (s) (io-puts (rt-w s)))
+(defn io-put (s) (zyl_out_puts (rt-w s)))
 
 ; printf's "%s" of NULL.
-(defn io-puts-or-null (w) (if (= w 0) (io-put "(null)") (io-puts w)))
+(defn io-puts-or-null (w) (if (= w 0) (io-put "(null)") (zyl_out_puts w)))
 
-; "%lld" into a per-thread scratch, written with one fwrite.
-(defn io-put-int (n)
-  (let b (ffi-call "%tls" "io_int" 32 1)
-    (let e (+ b 32)
-      (let p (io-digits (if (< n 0) (- 0 n) n) e)
-        (let q (if (< n 0) (let _ (rt-st8 (- p 1) 45) (- p 1)) p)
-          (let _ (ffi-call "fwrite" q 1 (- e q) (io-stdout) 1) 0))))))
-
-; Unsigned digits of m ending before e; the start address.
-(defn io-digits (m e)
-  (let p (- e 1)
-    (let _ (rt-st8 p (+ 48 (ffi-call "%urem" m 10 1)))
-      (let q (ffi-call "%udiv" m 10 1) (if (= q 0) p (io-digits q p))))))
-
-; --- print, in the three shapes codegen emits ---
-
-(defn zyl_print_int (n) (let _ (io-put-int n) (io-put "\n")))
-(defn zyl_print_str (s) (let _ (io-puts-or-null s) (io-put "\n")))
-(defn zyl_print_float (bits) (let _ (io-puts (rt-w (zyl_f_text bits))) (io-put "\n")))
+(defn io-put-int (n) (zyl_out_int n))
 
 ; --- the lines zyl_run_tests writes, for the interpreter's own runner ---
 
 (defn zyl_itest_start (name)
-  (let _ (io-put "test: ") (let _ (io-puts-or-null name) (let _ (io-put " ... ") (let _ (ffi-call "fflush" (io-stdout) 1) 0)))))
+  (let _ (io-put "test: ") (let _ (io-puts-or-null name) (let _ (io-put " ... ") (zyl_out_flush)))))
 
 (defn zyl_itest_outcome (ok) (io-put (if (= ok 0) "FAIL\n" "ok\n")))
 
@@ -58,11 +34,11 @@
 
 ; (exit code): flush, then end the process.
 (defn zyl_exit (code)
-  (let _ (ffi-call "fflush" (io-stdout) 1) (let _ (ffi-call "fflush" (io-stderr) 1) (ffi-call "exit" code 1))))
+  (let _ (zyl_out_flush) (ffi-call "exit" code 1)))
 
 ; (read-line): one line from stdin without its newline (or a trailing CR); "" at end of input.
 (defn zyl_read_line ()
-  (let _ (ffi-call "fflush" (io-stdout) 1)
+  (let _ (zyl_out_flush)
     (let buf (zyl_rt_malloc 128)
       (if (= buf 0) (rt-w "")
         (let r (io-read-loop buf 128 0)

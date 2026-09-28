@@ -1,8 +1,8 @@
-; Start-up and shutdown: the stack limit, the arenas, the exit-time teardown; stdio's flush and atexit.
+; Start-up and shutdown: the stack limit, the arenas, the exit-time teardown; stdout's flush and atexit.
 (use base)
+(use out)
 
 (extern "atexit" (Int) Int)
-(extern "fflush" (Int) Int)
 (extern "zyl_arenas_init" () Int)
 (extern "zyl_arenas_destroy" () Int)
 (extern "zyl_ffi_abandoned" () Int)
@@ -28,11 +28,12 @@
              0)
       (let _ (ffi-call "%call0" (ffi-call "%fn" "zyl_actor_init" 1) 1) (let _ (ffi-call "zyl_arenas_init" 1) 0)))))
 
-; An abandoned FFI call may still be using arena memory.
+; Runs last at exit (after the actor drain): stdout's final flush, then the arenas unless an abandoned FFI call may use them.
 (defn zyl_runtime_cleanup ()
-  (if (= (bit-and (ffi-call "zyl_ffi_abandoned" 1) 4294967295) 0) (let _ (ffi-call "zyl_arenas_destroy" 1) 0) 0))
+  (let _ (zyl_out_flush)
+    (if (= (bit-and (ffi-call "zyl_ffi_abandoned" 1) 4294967295) 0) (let _ (ffi-call "zyl_arenas_destroy" 1) 0) 0)))
 
-(defn zyl_term_flush () (let _ (ffi-call "fflush" (sr-ld64 (ffi-call "%fn" "stdout" 1)) 1) 0))
+(defn zyl_term_flush () (zyl_out_flush))
 
 ; Registers the terminal restore handler (os.zyl calls this once, on the first raw_on).
 (defn zyl_term_atexit () (let _ (ffi-call "atexit" (ffi-call "%fn" "zyl_term_restore_atexit" 1) 1) 0))

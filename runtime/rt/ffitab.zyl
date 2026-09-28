@@ -48,7 +48,7 @@
 
 ; --- calls through a raw address (never a closure: libc lives above 4 GiB) ---
 
-(defn ft-note (m) (let _ (ffi-call "write" 2 m (rt-strlen (rt-w m)) 1) 0))
+(defn ft-note (m) (let _ (rt-write-fd 2 (rt-w m) (rt-strlen (rt-w m))) 0))
 
 ; Unsigned hex, as printf's %llx.
 (defn ft-hex (n acc)

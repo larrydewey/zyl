@@ -1,0 +1,127 @@
+; The one buffered stdout (glibc's policy: st_blksize up to 8192, line-buffered on a tty); stderr is raw write(2).
+(use base)
+(use alloc)
+(use fmt)
+
+(defmacro ou-ld64 (a) (ffi-call "%load64" a 1))
+(defmacro ou-st64 (a v) (ffi-call "%store64" a v 1))
+
+; {lock, len, mode 0 unset/1 full/2 line, size}.
+(defn ou-st () (ffi-call "%global" "out_state" 32 1))
+(defn ou-buf () (ffi-call "%global" "out_buf" 8192 1))
+
+(defn ou-lock (s)
+  (if (= (ffi-call "%xchg" s 1 1) 0) 0 (let _ (ffi-call "%syscall0" 24 1) (ou-lock s))))
+(defn ou-unlock (s) (let _ (ffi-call "%xchg" s 0 1) 0))
+
+; First use: fstat's st_blksize when in (0, 8192), else 8192; TCGETS decides line buffering.
+(defn ou-init (s)
+  (if (> (ou-ld64 (+ s 16)) 0) 0
+    (let b (ffi-call "%tls" "out_stat" 144 1)
+      (let bs (if (= (ffi-call "%syscall2" 5 1 b 1) 0) (ou-ld64 (+ b 56)) 0)
+        (let _ (ou-st64 (+ s 24) (if (and (> bs 0) (< bs 8192)) bs 8192))
+          (ou-st64 (+ s 16) (if (= (ffi-call "%syscall3" 16 1 21505 (ffi-call "%tls" "out_tios" 64 1) 1) 0) 2 1)))))))
+
+; write(2) until done; false on an error other than EINTR (EPIPE when SIGPIPE is ignored).
+(defn ou-sys-all (fd p n)
+  (if (<= n 0) true
+    (let r (ffi-call "%syscall3" 1 fd p n 1)
+      (if (> r 0) (ou-sys-all fd (+ p r) (- n r)) (if (= r -4) (ou-sys-all fd p n) false)))))
+
+; Empties the buffer; a failed write drops it, as glibc resets its write pointer.
+(defn ou-flush-locked (s)
+  (let n (ou-ld64 (+ s 8))
+    (if (= n 0) true (let _ (ou-st64 (+ s 8) 0) (ou-sys-all 1 (ou-buf) n)))))
+
+; Copies n bytes in, flushing each time the buffer fills.
+(defn ou-append (s p n)
+  (if (<= n 0) true
+    (let len (ou-ld64 (+ s 8))
+      (let room (- (ou-ld64 (+ s 24)) len)
+        (let k (if (< n room) n room)
+          (let _ (rt-copy (+ (ou-buf) len) p k)
+            (let _ (ou-st64 (+ s 8) (+ len k))
+              (if (= k room) (if (ou-flush-locked s) (ou-append s (+ p k) (- n k)) false) true))))))))
+
+; glibc's _IO_new_file_xsputn: fill, flush, write whole blocks direct, buffer the tail.
+(defn ou-put-full (s p n)
+  (let len (ou-ld64 (+ s 8))
+    (let size (ou-ld64 (+ s 24))
+      (if (<= n (- size len))
+        (let _ (rt-copy (+ (ou-buf) len) p n) (let _ (ou-st64 (+ s 8) (+ len n)) true))
+        (let k (- size len)
+          (let _ (rt-copy (+ (ou-buf) len) p k)
+            (let _ (ou-st64 (+ s 8) size)
+              (if (not (ou-flush-locked s)) false
+                (let rest (- n k)
+                  (let d (- rest (if (>= size 128) (% rest size) 0))
+                    (if (and (> d 0) (not (ou-sys-all 1 (+ p k) d))) false
+                      (ou-append s (+ p (+ k d)) (- rest d)))))))))))))
+
+; Offset of the last newline in p[0..n), or -1.
+(defn ou-last-nl (p i) (if (< i 0) -1 (if (= (rt-ld8 (+ p i)) 10) i (ou-last-nl p (- i 1)))))
+
+; Line mode: everything through the last newline goes out now.
+(defn ou-put-line (s p n)
+  (let k (ou-last-nl p (- n 1))
+    (if (< k 0) (ou-append s p n)
+      (if (and (ou-append s p (+ k 1)) (ou-flush-locked s)) (ou-append s (+ p (+ k 1)) (- n (+ k 1))) false))))
+
+(defn ou-put (s p n) (if (= (ou-ld64 (+ s 16)) 2) (ou-put-line s p n) (ou-put-full s p n)))
+
+(defn ou-puts (s w) (ou-put s w (rt-strlen w)))
+
+; n bytes at p onto stdout, contiguous with respect to other threads.
+(defn zyl_out_write (p n)
+  (let s (ou-st)
+    (let _ (ou-lock s) (let _ (ou-init s) (let _ (ou-put s p n) (ou-unlock s))))))
+
+(defn zyl_out_puts (w) (if (= w 0) 0 (zyl_out_write w (rt-strlen w))))
+
+(defn zyl_out_flush ()
+  (let s (ou-st)
+    (if (= (ou-ld64 (+ s 8)) 0) 0 (let _ (ou-lock s) (let _ (ou-flush-locked s) (ou-unlock s))))))
+
+; stderr is unbuffered: one write loop per call.
+(defn zyl_err_write (p n) (let _ (ou-sys-all 2 p n) 0))
+(defn zyl_err_puts (w) (if (= w 0) 0 (zyl_err_write w (rt-strlen w))))
+
+; --- print, in the three shapes codegen emits: "%lld\n", "%s\n", "%f\n" ---
+
+; Unsigned digits of m ending before e; the start address.
+(defn ou-digits (m e)
+  (let p (- e 1)
+    (let _ (rt-st8 p (+ 48 (ffi-call "%urem" m 10 1)))
+      (let q (ffi-call "%udiv" m 10 1) (if (= q 0) p (ou-digits q p))))))
+
+; "%lld" of n ending before e; the start address.
+(defn ou-int (n e)
+  (let p (ou-digits (if (< n 0) (- 0 n) n) e) (if (< n 0) (let _ (rt-st8 (- p 1) 45) (- p 1)) p)))
+
+(defn zyl_out_int (n)
+  (let e (+ (ffi-call "%tls" "out_int" 32 1) 31) (let q (ou-int n e) (zyl_out_write q (- e q)))))
+
+(defn zyl_print_int (n)
+  (let e (+ (ffi-call "%tls" "out_int" 32 1) 31)
+    (let _ (rt-st8 e 10) (let q (ou-int n e) (let _ (zyl_out_write q (- (+ e 1) q)) 0)))))
+
+; printf's "%s" of NULL is "(null)".
+(defn zyl_print_str (s)
+  (let w (rt-w s)
+    (let st (ou-st)
+      (let _ (ou-lock st)
+        (let _ (ou-init st)
+          (let _ (if (= w 0) (ou-puts st (rt-w "(null)")) (ou-puts st w))
+            (let _ (ou-put st (rt-w "\n") 1) (ou-unlock st))))))))
+
+; The text lives in a throwaway frame region, so a print loop does not grow the heap.
+(defn zyl_print_float (bits)
+  (let r (ffi-call "%tls" "out_frame" 32 1)
+    (let old (rt-cur-region)
+      (let _ (zyl_region_enter r)
+        (let _ (ffi-call "%tls-set" "zyl_cur_region" r 1)
+          (let t (rt-w (zyl_f_text_r bits))
+            (let n (rt-strlen t)
+              (let _ (rt-st8 (+ t n) 10)
+                (let _ (zyl_out_write t (+ n 1))
+                  (let _ (zyl_region_exit r) (let _ (ffi-call "%tls-set" "zyl_cur_region" old 1) 0)))))))))))

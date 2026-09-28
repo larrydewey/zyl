@@ -211,7 +211,7 @@
 (defn tb-bad (p)
   (if (< p 4096)
     (let msg (str-concat "zyl: str-append: invalid string pointer 0x" (str-concat (tb-uhex p "") "\n"))
-      (let _ (ffi-call "write" 2 msg (strlen-of msg) 1) true))
+      (let _ (rt-write-fd 2 (rt-w msg) (strlen-of msg)) true))
     false))
 
 ; cap > 0 also bounds the append, and names the codegen limit when hit.

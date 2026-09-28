@@ -67,7 +67,7 @@
 
 (defn ac-limit ()
   (let msg "zyl: actor limit reached (1024)\n"
-    (let _ (ffi-call "write" 2 msg (strlen-of msg) 1) 4294967295)))
+    (let _ (rt-write-fd 2 (rt-w msg) (strlen-of msg)) 4294967295)))
 
 ; Addresses compare unsigned: below 4096 is no pointer.
 (defn ac-ptr-p (w) (or (< w 0) (>= w 4096)))
