@@ -44449,16 +44449,23 @@ call zyl_rt_call7
     add rsp, 80
     jmp .L1306
 .L1305:
+    mov rax, [rbp-8]
     sub rsp, 8
-    sub rsp, 24
-    mov rdi, [rbp-8]
-    mov rsi, [rbp-16]
-    mov rdx, [rbp-24]
-    mov r12, rsp
-    and rsp, -16
-call zyl_ffi_invoke_wide
-    mov rsp, r12
-    add rsp, 32
+    mov [rsp], rax
+    mov rax, [rbp-16]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rdx, [rsp+0]
+    mov rsi, [rsp+8]
+    mov rdi, [rsp+16]
+    mov rbx, [rbp-120]
+    mov r12, [rbp-112]
+    mov rsp, rbp
+    pop rbp
+    jmp zyl_ffi_invoke_wide
 .L1306:
 .L1304:
 .L1302:
@@ -45781,6 +45788,1220 @@ zyl_ffi_timed_argv:
     mov rsp, rbp
     pop rbp
     jmp zy_local_x2Fmain_0__ffitimed__ff_x2Dcore
+.globl zyl_ffi_invoke_wide
+zyl_ffi_invoke_wide:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 120
+    mov [rbp-120], rbx
+    mov [rbp-112], r12
+    mov [rbp-8], rdi
+    mov [rbp-16], rsi
+    mov [rbp-24], rdx
+    mov rax, [rbp-16]
+    mov rcx, 8
+    cmp rax, rcx
+    jne .L1329
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 0
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 8
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 16
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 24
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 32
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 40
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 48
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 56
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov r10, [rsp+0]
+    push r10
+    mov r10, [rsp+16]
+    push r10
+    mov r10, [rsp+32]
+    push r10
+    mov r9, [rsp+48]
+    mov r8, [rsp+56]
+    mov rcx, [rsp+64]
+    mov rdx, [rsp+72]
+    mov rsi, [rsp+80]
+    mov rdi, [rsp+88]
+    mov r12, rsp
+    sub rsp, 24
+    and rsp, -16
+    mov r10, [r12+0]
+    mov [rsp+0], r10
+    mov r10, [r12+8]
+    mov [rsp+8], r10
+    mov r10, [r12+16]
+    mov [rsp+16], r10
+call zyl_rt_call8
+    mov rsp, r12
+    add rsp, 96
+    jmp .L1330
+.L1329:
+    mov rax, [rbp-16]
+    mov rcx, 9
+    cmp rax, rcx
+    jne .L1331
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 0
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 8
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 16
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 24
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 32
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 40
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 48
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 56
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 64
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov r10, [rsp+0]
+    push r10
+    mov r10, [rsp+16]
+    push r10
+    mov r10, [rsp+32]
+    push r10
+    mov r10, [rsp+48]
+    push r10
+    mov r9, [rsp+64]
+    mov r8, [rsp+72]
+    mov rcx, [rsp+80]
+    mov rdx, [rsp+88]
+    mov rsi, [rsp+96]
+    mov rdi, [rsp+104]
+    mov r12, rsp
+    sub rsp, 32
+    and rsp, -16
+    mov r10, [r12+0]
+    mov [rsp+0], r10
+    mov r10, [r12+8]
+    mov [rsp+8], r10
+    mov r10, [r12+16]
+    mov [rsp+16], r10
+    mov r10, [r12+24]
+    mov [rsp+24], r10
+call zyl_rt_call9
+    mov rsp, r12
+    add rsp, 112
+    jmp .L1332
+.L1331:
+    mov rax, [rbp-16]
+    mov rcx, 10
+    cmp rax, rcx
+    jne .L1333
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 0
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 8
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 16
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 24
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 32
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 40
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 48
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 56
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 64
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 72
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov r10, [rsp+0]
+    push r10
+    mov r10, [rsp+16]
+    push r10
+    mov r10, [rsp+32]
+    push r10
+    mov r10, [rsp+48]
+    push r10
+    mov r10, [rsp+64]
+    push r10
+    mov r9, [rsp+80]
+    mov r8, [rsp+88]
+    mov rcx, [rsp+96]
+    mov rdx, [rsp+104]
+    mov rsi, [rsp+112]
+    mov rdi, [rsp+120]
+    mov r12, rsp
+    sub rsp, 40
+    and rsp, -16
+    mov r10, [r12+0]
+    mov [rsp+0], r10
+    mov r10, [r12+8]
+    mov [rsp+8], r10
+    mov r10, [r12+16]
+    mov [rsp+16], r10
+    mov r10, [r12+24]
+    mov [rsp+24], r10
+    mov r10, [r12+32]
+    mov [rsp+32], r10
+call zyl_rt_call10
+    mov rsp, r12
+    add rsp, 128
+    jmp .L1334
+.L1333:
+    mov rax, [rbp-16]
+    mov rcx, 11
+    cmp rax, rcx
+    jne .L1335
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 0
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 8
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 16
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 24
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 32
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 40
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 48
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 56
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 64
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 72
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 80
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov r10, [rsp+0]
+    push r10
+    mov r10, [rsp+16]
+    push r10
+    mov r10, [rsp+32]
+    push r10
+    mov r10, [rsp+48]
+    push r10
+    mov r10, [rsp+64]
+    push r10
+    mov r10, [rsp+80]
+    push r10
+    mov r9, [rsp+96]
+    mov r8, [rsp+104]
+    mov rcx, [rsp+112]
+    mov rdx, [rsp+120]
+    mov rsi, [rsp+128]
+    mov rdi, [rsp+136]
+    mov r12, rsp
+    sub rsp, 48
+    and rsp, -16
+    mov r10, [r12+0]
+    mov [rsp+0], r10
+    mov r10, [r12+8]
+    mov [rsp+8], r10
+    mov r10, [r12+16]
+    mov [rsp+16], r10
+    mov r10, [r12+24]
+    mov [rsp+24], r10
+    mov r10, [r12+32]
+    mov [rsp+32], r10
+    mov r10, [r12+40]
+    mov [rsp+40], r10
+call zyl_rt_call11
+    mov rsp, r12
+    add rsp, 144
+    jmp .L1336
+.L1335:
+    mov rax, [rbp-16]
+    mov rcx, 12
+    cmp rax, rcx
+    jne .L1337
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 0
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 8
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 16
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 24
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 32
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 40
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 48
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 56
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 64
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 72
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 80
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 88
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov r10, [rsp+0]
+    push r10
+    mov r10, [rsp+16]
+    push r10
+    mov r10, [rsp+32]
+    push r10
+    mov r10, [rsp+48]
+    push r10
+    mov r10, [rsp+64]
+    push r10
+    mov r10, [rsp+80]
+    push r10
+    mov r10, [rsp+96]
+    push r10
+    mov r9, [rsp+112]
+    mov r8, [rsp+120]
+    mov rcx, [rsp+128]
+    mov rdx, [rsp+136]
+    mov rsi, [rsp+144]
+    mov rdi, [rsp+152]
+    mov r12, rsp
+    sub rsp, 56
+    and rsp, -16
+    mov r10, [r12+0]
+    mov [rsp+0], r10
+    mov r10, [r12+8]
+    mov [rsp+8], r10
+    mov r10, [r12+16]
+    mov [rsp+16], r10
+    mov r10, [r12+24]
+    mov [rsp+24], r10
+    mov r10, [r12+32]
+    mov [rsp+32], r10
+    mov r10, [r12+40]
+    mov [rsp+40], r10
+    mov r10, [r12+48]
+    mov [rsp+48], r10
+call zyl_rt_call12
+    mov rsp, r12
+    add rsp, 160
+    jmp .L1338
+.L1337:
+    mov rax, [rbp-16]
+    mov rcx, 13
+    cmp rax, rcx
+    jne .L1339
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 0
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 8
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 16
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 24
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 32
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 40
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 48
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 56
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 64
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 72
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 80
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 88
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 96
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov r10, [rsp+0]
+    push r10
+    mov r10, [rsp+16]
+    push r10
+    mov r10, [rsp+32]
+    push r10
+    mov r10, [rsp+48]
+    push r10
+    mov r10, [rsp+64]
+    push r10
+    mov r10, [rsp+80]
+    push r10
+    mov r10, [rsp+96]
+    push r10
+    mov r10, [rsp+112]
+    push r10
+    mov r9, [rsp+128]
+    mov r8, [rsp+136]
+    mov rcx, [rsp+144]
+    mov rdx, [rsp+152]
+    mov rsi, [rsp+160]
+    mov rdi, [rsp+168]
+    mov r12, rsp
+    sub rsp, 64
+    and rsp, -16
+    mov r10, [r12+0]
+    mov [rsp+0], r10
+    mov r10, [r12+8]
+    mov [rsp+8], r10
+    mov r10, [r12+16]
+    mov [rsp+16], r10
+    mov r10, [r12+24]
+    mov [rsp+24], r10
+    mov r10, [r12+32]
+    mov [rsp+32], r10
+    mov r10, [r12+40]
+    mov [rsp+40], r10
+    mov r10, [r12+48]
+    mov [rsp+48], r10
+    mov r10, [r12+56]
+    mov [rsp+56], r10
+call zyl_rt_call13
+    mov rsp, r12
+    add rsp, 176
+    jmp .L1340
+.L1339:
+    mov rax, [rbp-16]
+    mov rcx, 14
+    cmp rax, rcx
+    jne .L1341
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 0
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 8
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 16
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 24
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 32
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 40
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 48
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 56
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 64
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 72
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 80
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 88
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 96
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 104
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov r10, [rsp+0]
+    push r10
+    mov r10, [rsp+16]
+    push r10
+    mov r10, [rsp+32]
+    push r10
+    mov r10, [rsp+48]
+    push r10
+    mov r10, [rsp+64]
+    push r10
+    mov r10, [rsp+80]
+    push r10
+    mov r10, [rsp+96]
+    push r10
+    mov r10, [rsp+112]
+    push r10
+    mov r10, [rsp+128]
+    push r10
+    mov r9, [rsp+144]
+    mov r8, [rsp+152]
+    mov rcx, [rsp+160]
+    mov rdx, [rsp+168]
+    mov rsi, [rsp+176]
+    mov rdi, [rsp+184]
+    mov r12, rsp
+    sub rsp, 72
+    and rsp, -16
+    mov r10, [r12+0]
+    mov [rsp+0], r10
+    mov r10, [r12+8]
+    mov [rsp+8], r10
+    mov r10, [r12+16]
+    mov [rsp+16], r10
+    mov r10, [r12+24]
+    mov [rsp+24], r10
+    mov r10, [r12+32]
+    mov [rsp+32], r10
+    mov r10, [r12+40]
+    mov [rsp+40], r10
+    mov r10, [r12+48]
+    mov [rsp+48], r10
+    mov r10, [r12+56]
+    mov [rsp+56], r10
+    mov r10, [r12+64]
+    mov [rsp+64], r10
+call zyl_rt_call14
+    mov rsp, r12
+    add rsp, 192
+    jmp .L1342
+.L1341:
+    mov rax, [rbp-16]
+    mov rcx, 15
+    cmp rax, rcx
+    jne .L1343
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 0
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 8
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 16
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 24
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 32
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 40
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 48
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 56
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 64
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 72
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 80
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 88
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 96
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 104
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 112
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov r10, [rsp+0]
+    push r10
+    mov r10, [rsp+16]
+    push r10
+    mov r10, [rsp+32]
+    push r10
+    mov r10, [rsp+48]
+    push r10
+    mov r10, [rsp+64]
+    push r10
+    mov r10, [rsp+80]
+    push r10
+    mov r10, [rsp+96]
+    push r10
+    mov r10, [rsp+112]
+    push r10
+    mov r10, [rsp+128]
+    push r10
+    mov r10, [rsp+144]
+    push r10
+    mov r9, [rsp+160]
+    mov r8, [rsp+168]
+    mov rcx, [rsp+176]
+    mov rdx, [rsp+184]
+    mov rsi, [rsp+192]
+    mov rdi, [rsp+200]
+    mov r12, rsp
+    sub rsp, 80
+    and rsp, -16
+    mov r10, [r12+0]
+    mov [rsp+0], r10
+    mov r10, [r12+8]
+    mov [rsp+8], r10
+    mov r10, [r12+16]
+    mov [rsp+16], r10
+    mov r10, [r12+24]
+    mov [rsp+24], r10
+    mov r10, [r12+32]
+    mov [rsp+32], r10
+    mov r10, [r12+40]
+    mov [rsp+40], r10
+    mov r10, [r12+48]
+    mov [rsp+48], r10
+    mov r10, [r12+56]
+    mov [rsp+56], r10
+    mov r10, [r12+64]
+    mov [rsp+64], r10
+    mov r10, [r12+72]
+    mov [rsp+72], r10
+call zyl_rt_call15
+    mov rsp, r12
+    add rsp, 208
+    jmp .L1344
+.L1343:
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 0
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 8
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 16
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 24
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 32
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 40
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 48
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 56
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 64
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 72
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 80
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 88
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 96
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 104
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 112
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    mov rcx, 120
+    add rax, rcx
+    mov rdx, rax
+    mov rax, qword ptr [rdx]
+    sub rsp, 8
+    mov [rsp], rax
+    mov r10, [rsp+0]
+    push r10
+    mov r10, [rsp+16]
+    push r10
+    mov r10, [rsp+32]
+    push r10
+    mov r10, [rsp+48]
+    push r10
+    mov r10, [rsp+64]
+    push r10
+    mov r10, [rsp+80]
+    push r10
+    mov r10, [rsp+96]
+    push r10
+    mov r10, [rsp+112]
+    push r10
+    mov r10, [rsp+128]
+    push r10
+    mov r10, [rsp+144]
+    push r10
+    mov r10, [rsp+160]
+    push r10
+    mov r9, [rsp+176]
+    mov r8, [rsp+184]
+    mov rcx, [rsp+192]
+    mov rdx, [rsp+200]
+    mov rsi, [rsp+208]
+    mov rdi, [rsp+216]
+    mov r12, rsp
+    sub rsp, 88
+    and rsp, -16
+    mov r10, [r12+0]
+    mov [rsp+0], r10
+    mov r10, [r12+8]
+    mov [rsp+8], r10
+    mov r10, [r12+16]
+    mov [rsp+16], r10
+    mov r10, [r12+24]
+    mov [rsp+24], r10
+    mov r10, [r12+32]
+    mov [rsp+32], r10
+    mov r10, [r12+40]
+    mov [rsp+40], r10
+    mov r10, [r12+48]
+    mov [rsp+48], r10
+    mov r10, [r12+56]
+    mov [rsp+56], r10
+    mov r10, [r12+64]
+    mov [rsp+64], r10
+    mov r10, [r12+72]
+    mov [rsp+72], r10
+    mov r10, [r12+80]
+    mov [rsp+80], r10
+call zyl_rt_call16
+    mov rsp, r12
+    add rsp, 224
+.L1344:
+.L1342:
+.L1340:
+.L1338:
+.L1336:
+.L1334:
+.L1332:
+.L1330:
+    mov rbx, [rbp-120]
+    mov r12, [rbp-112]
+    mov rsp, rbp
+    pop rbp
+    ret
 zy_local_x2Fmain_0__variant__rt_x2Dwords_x2Dcmp_x7EInt_x2CInt_x2CInt_x2CInt_x2CInt_x2CInt:
     push rbp
     mov rbp, rsp
@@ -45792,11 +47013,11 @@ zy_local_x2Fmain_0__variant__rt_x2Dwords_x2Dcmp_x7EInt_x2CInt_x2CInt_x2CInt_x2CI
     mov r8, rdx
     mov rbx, r9
     mov r9, rcx
-.L1329_0:
+.L1345_0:
     cmp r8, r9
-    jl .L1329_1
+    jl .L1345_1
     cmp r10, rbx
-    jge .L1329_2
+    jge .L1345_2
     mov r12, -1
     mov rax, r12
     mov rbx, qword ptr [rbp-8]
@@ -45806,9 +47027,9 @@ zy_local_x2Fmain_0__variant__rt_x2Dwords_x2Dcmp_x7EInt_x2CInt_x2CInt_x2CInt_x2CI
     mov rsp, rbp
     pop rbp
     ret
-.L1329_2:
+.L1345_2:
     cmp r10, rbx
-    jle .L1329_3
+    jle .L1345_3
     mov r12, 1
     mov rax, r12
     mov rbx, qword ptr [rbp-8]
@@ -45818,7 +47039,7 @@ zy_local_x2Fmain_0__variant__rt_x2Dwords_x2Dcmp_x7EInt_x2CInt_x2CInt_x2CInt_x2CI
     mov rsp, rbp
     pop rbp
     ret
-.L1329_3:
+.L1345_3:
     mov r12, 0
     mov rax, r12
     mov rbx, qword ptr [rbp-8]
@@ -45828,7 +47049,7 @@ zy_local_x2Fmain_0__variant__rt_x2Dwords_x2Dcmp_x7EInt_x2CInt_x2CInt_x2CInt_x2CI
     mov rsp, rbp
     pop rbp
     ret
-.L1329_1:
+.L1345_1:
     mov r12, r8
     imul r12, 8
     add r12, rdi
@@ -45842,7 +47063,7 @@ zy_local_x2Fmain_0__variant__rt_x2Dwords_x2Dcmp_x7EInt_x2CInt_x2CInt_x2CInt_x2CI
     mov rax, qword ptr [rdx]
     mov r13, rax
     cmp r12, r13
-    jge .L1329_4
+    jge .L1345_4
     mov r14, -1
     mov rax, r14
     mov rbx, qword ptr [rbp-8]
@@ -45852,9 +47073,9 @@ zy_local_x2Fmain_0__variant__rt_x2Dwords_x2Dcmp_x7EInt_x2CInt_x2CInt_x2CInt_x2CI
     mov rsp, rbp
     pop rbp
     ret
-.L1329_4:
+.L1345_4:
     cmp r12, r13
-    jle .L1329_5
+    jle .L1345_5
     mov r12, 1
     mov rax, r12
     mov rbx, qword ptr [rbp-8]
@@ -45864,11 +47085,11 @@ zy_local_x2Fmain_0__variant__rt_x2Dwords_x2Dcmp_x7EInt_x2CInt_x2CInt_x2CInt_x2CI
     mov rsp, rbp
     pop rbp
     ret
-.L1329_5:
+.L1345_5:
     mov r12, r8
     add r12, 1
     mov r8, r12
-    jmp .L1329_0
+    jmp .L1345_0
 .section .rodata
 .Lfmtd:
     .string "%lld\n"
@@ -47177,4 +48398,193 @@ zyl_rt_call7:
     mov r9, [rsp+8]
     mov r11, [rsp+16]
     mov [rsp+8], r11
+    jmp rax
+zyl_rt_call8:
+    mov rax, rdi
+    mov rdi, rsi
+    mov rsi, rdx
+    mov rdx, rcx
+    mov rcx, r8
+    mov r8, r9
+    mov r9, [rsp+8]
+    mov r11, [rsp+16]
+    mov [rsp+8], r11
+    mov r11, [rsp+24]
+    mov [rsp+16], r11
+    jmp rax
+zyl_rt_call9:
+    mov rax, rdi
+    mov rdi, rsi
+    mov rsi, rdx
+    mov rdx, rcx
+    mov rcx, r8
+    mov r8, r9
+    mov r9, [rsp+8]
+    mov r11, [rsp+16]
+    mov [rsp+8], r11
+    mov r11, [rsp+24]
+    mov [rsp+16], r11
+    mov r11, [rsp+32]
+    mov [rsp+24], r11
+    jmp rax
+zyl_rt_call10:
+    mov rax, rdi
+    mov rdi, rsi
+    mov rsi, rdx
+    mov rdx, rcx
+    mov rcx, r8
+    mov r8, r9
+    mov r9, [rsp+8]
+    mov r11, [rsp+16]
+    mov [rsp+8], r11
+    mov r11, [rsp+24]
+    mov [rsp+16], r11
+    mov r11, [rsp+32]
+    mov [rsp+24], r11
+    mov r11, [rsp+40]
+    mov [rsp+32], r11
+    jmp rax
+zyl_rt_call11:
+    mov rax, rdi
+    mov rdi, rsi
+    mov rsi, rdx
+    mov rdx, rcx
+    mov rcx, r8
+    mov r8, r9
+    mov r9, [rsp+8]
+    mov r11, [rsp+16]
+    mov [rsp+8], r11
+    mov r11, [rsp+24]
+    mov [rsp+16], r11
+    mov r11, [rsp+32]
+    mov [rsp+24], r11
+    mov r11, [rsp+40]
+    mov [rsp+32], r11
+    mov r11, [rsp+48]
+    mov [rsp+40], r11
+    jmp rax
+zyl_rt_call12:
+    mov rax, rdi
+    mov rdi, rsi
+    mov rsi, rdx
+    mov rdx, rcx
+    mov rcx, r8
+    mov r8, r9
+    mov r9, [rsp+8]
+    mov r11, [rsp+16]
+    mov [rsp+8], r11
+    mov r11, [rsp+24]
+    mov [rsp+16], r11
+    mov r11, [rsp+32]
+    mov [rsp+24], r11
+    mov r11, [rsp+40]
+    mov [rsp+32], r11
+    mov r11, [rsp+48]
+    mov [rsp+40], r11
+    mov r11, [rsp+56]
+    mov [rsp+48], r11
+    jmp rax
+zyl_rt_call13:
+    mov rax, rdi
+    mov rdi, rsi
+    mov rsi, rdx
+    mov rdx, rcx
+    mov rcx, r8
+    mov r8, r9
+    mov r9, [rsp+8]
+    mov r11, [rsp+16]
+    mov [rsp+8], r11
+    mov r11, [rsp+24]
+    mov [rsp+16], r11
+    mov r11, [rsp+32]
+    mov [rsp+24], r11
+    mov r11, [rsp+40]
+    mov [rsp+32], r11
+    mov r11, [rsp+48]
+    mov [rsp+40], r11
+    mov r11, [rsp+56]
+    mov [rsp+48], r11
+    mov r11, [rsp+64]
+    mov [rsp+56], r11
+    jmp rax
+zyl_rt_call14:
+    mov rax, rdi
+    mov rdi, rsi
+    mov rsi, rdx
+    mov rdx, rcx
+    mov rcx, r8
+    mov r8, r9
+    mov r9, [rsp+8]
+    mov r11, [rsp+16]
+    mov [rsp+8], r11
+    mov r11, [rsp+24]
+    mov [rsp+16], r11
+    mov r11, [rsp+32]
+    mov [rsp+24], r11
+    mov r11, [rsp+40]
+    mov [rsp+32], r11
+    mov r11, [rsp+48]
+    mov [rsp+40], r11
+    mov r11, [rsp+56]
+    mov [rsp+48], r11
+    mov r11, [rsp+64]
+    mov [rsp+56], r11
+    mov r11, [rsp+72]
+    mov [rsp+64], r11
+    jmp rax
+zyl_rt_call15:
+    mov rax, rdi
+    mov rdi, rsi
+    mov rsi, rdx
+    mov rdx, rcx
+    mov rcx, r8
+    mov r8, r9
+    mov r9, [rsp+8]
+    mov r11, [rsp+16]
+    mov [rsp+8], r11
+    mov r11, [rsp+24]
+    mov [rsp+16], r11
+    mov r11, [rsp+32]
+    mov [rsp+24], r11
+    mov r11, [rsp+40]
+    mov [rsp+32], r11
+    mov r11, [rsp+48]
+    mov [rsp+40], r11
+    mov r11, [rsp+56]
+    mov [rsp+48], r11
+    mov r11, [rsp+64]
+    mov [rsp+56], r11
+    mov r11, [rsp+72]
+    mov [rsp+64], r11
+    mov r11, [rsp+80]
+    mov [rsp+72], r11
+    jmp rax
+zyl_rt_call16:
+    mov rax, rdi
+    mov rdi, rsi
+    mov rsi, rdx
+    mov rdx, rcx
+    mov rcx, r8
+    mov r8, r9
+    mov r9, [rsp+8]
+    mov r11, [rsp+16]
+    mov [rsp+8], r11
+    mov r11, [rsp+24]
+    mov [rsp+16], r11
+    mov r11, [rsp+32]
+    mov [rsp+24], r11
+    mov r11, [rsp+40]
+    mov [rsp+32], r11
+    mov r11, [rsp+48]
+    mov [rsp+40], r11
+    mov r11, [rsp+56]
+    mov [rsp+48], r11
+    mov r11, [rsp+64]
+    mov [rsp+56], r11
+    mov r11, [rsp+72]
+    mov [rsp+64], r11
+    mov r11, [rsp+80]
+    mov [rsp+72], r11
+    mov r11, [rsp+88]
+    mov [rsp+80], r11
     jmp rax

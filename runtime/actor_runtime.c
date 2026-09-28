@@ -18,7 +18,6 @@ long long zyl_ralloc(long long size, long long rp);
 #include <sys/syscall.h>
 #include <pthread.h>
 
-
 /* ==========================================================================
    try/catch — panic handler stack. Generated code allocates a frame, links
    it, calls setjmp on its buffer, and branches to its catch path when
@@ -529,23 +528,6 @@ long long zyl_itest_summary(long long passed, long long failed) {
    as observable external input; a timeout is one such result, exactly
    like a value the C function returns.
    ========================================================================== */
-/* The runtime's timed FFI (runtime/rt/ffitimed.zyl) calls here for 8..16 words: Zyl has no %call8+ primitive yet. */
-long long zyl_ffi_invoke_wide(long long fn, long long argc, long long argv) {
-    const long long* a = (const long long*)(size_t)argv;
-    void* f = (void*)(size_t)fn;
-    typedef long long W;
-    switch (argc) {
-        case 8: return ((W(*)(W,W,W,W,W,W,W,W))f)(a[0],a[1],a[2],a[3],a[4],a[5],a[6],a[7]);
-        case 9: return ((W(*)(W,W,W,W,W,W,W,W,W))f)(a[0],a[1],a[2],a[3],a[4],a[5],a[6],a[7],a[8]);
-        case 10: return ((W(*)(W,W,W,W,W,W,W,W,W,W))f)(a[0],a[1],a[2],a[3],a[4],a[5],a[6],a[7],a[8],a[9]);
-        case 11: return ((W(*)(W,W,W,W,W,W,W,W,W,W,W))f)(a[0],a[1],a[2],a[3],a[4],a[5],a[6],a[7],a[8],a[9],a[10]);
-        case 12: return ((W(*)(W,W,W,W,W,W,W,W,W,W,W,W))f)(a[0],a[1],a[2],a[3],a[4],a[5],a[6],a[7],a[8],a[9],a[10],a[11]);
-        case 13: return ((W(*)(W,W,W,W,W,W,W,W,W,W,W,W,W))f)(a[0],a[1],a[2],a[3],a[4],a[5],a[6],a[7],a[8],a[9],a[10],a[11],a[12]);
-        case 14: return ((W(*)(W,W,W,W,W,W,W,W,W,W,W,W,W,W))f)(a[0],a[1],a[2],a[3],a[4],a[5],a[6],a[7],a[8],a[9],a[10],a[11],a[12],a[13]);
-        case 15: return ((W(*)(W,W,W,W,W,W,W,W,W,W,W,W,W,W,W))f)(a[0],a[1],a[2],a[3],a[4],a[5],a[6],a[7],a[8],a[9],a[10],a[11],a[12],a[13],a[14]);
-        default: return ((W(*)(W,W,W,W,W,W,W,W,W,W,W,W,W,W,W,W))f)(a[0],a[1],a[2],a[3],a[4],a[5],a[6],a[7],a[8],a[9],a[10],a[11],a[12],a[13],a[14],a[15]);
-    }
-}
 
 /* Doubles, carried as their bit patterns. The interpreter stores every
    value in one machine word, so a Float is its IEEE-754 bits and every

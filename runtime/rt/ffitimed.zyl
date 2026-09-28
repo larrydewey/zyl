@@ -23,7 +23,6 @@
 (extern "pthread_attr_setdetachstate" (Int Int) Int)
 (extern "pthread_attr_destroy" (Int) Int)
 (extern "pthread_create" (Int Int Int Int) Int)
-(extern "zyl_ffi_invoke_wide" (Int Int Int) Int)
 
 (defmacro ff-ld (a) (ffi-call "%load64" a 1))
 (defmacro ff-st (a v) (ffi-call "%store64" a v 1))
@@ -51,7 +50,7 @@
   (if (= argc 5) (ffi-call "%call5" f (ff-ld a) (ff-ld (+ a 8)) (ff-ld (+ a 16)) (ff-ld (+ a 24)) (ff-ld (+ a 32)) 1)
   (if (= argc 6) (ffi-call "%call6" f (ff-ld a) (ff-ld (+ a 8)) (ff-ld (+ a 16)) (ff-ld (+ a 24)) (ff-ld (+ a 32)) (ff-ld (+ a 40)) 1)
   (if (= argc 7) (ffi-call "%call7" f (ff-ld a) (ff-ld (+ a 8)) (ff-ld (+ a 16)) (ff-ld (+ a 24)) (ff-ld (+ a 32)) (ff-ld (+ a 40)) (ff-ld (+ a 48)) 1)
-    (ffi-call "zyl_ffi_invoke_wide" f argc a 1))))))))))
+    (zyl_ffi_invoke_wide f argc a))))))))))
 
 (defn zyl_ffi_worker_main (w)
   (let _ (rt-actor-self-set (ff-ld (+ w 32)))
@@ -184,3 +183,17 @@
   (let b (ffi-call "%tls" "ffi_in" 128 1)
     (let _ (ff-copy-args b argv (if (> argc 16) 16 argc) 0)
       (ff-core f name ms argc b))))
+
+; A foreign call with 8..16 words from argv (argc above 16 calls with 16, as the C did).
+(defmacro fw (a i) (ffi-call "%load64" (+ a (* i 8)) 1))
+
+(defn zyl_ffi_invoke_wide (f argc a)
+  (if (= argc 8) (ffi-call "%call8" f (fw a 0) (fw a 1) (fw a 2) (fw a 3) (fw a 4) (fw a 5) (fw a 6) (fw a 7) 1)
+  (if (= argc 9) (ffi-call "%call9" f (fw a 0) (fw a 1) (fw a 2) (fw a 3) (fw a 4) (fw a 5) (fw a 6) (fw a 7) (fw a 8) 1)
+  (if (= argc 10) (ffi-call "%call10" f (fw a 0) (fw a 1) (fw a 2) (fw a 3) (fw a 4) (fw a 5) (fw a 6) (fw a 7) (fw a 8) (fw a 9) 1)
+  (if (= argc 11) (ffi-call "%call11" f (fw a 0) (fw a 1) (fw a 2) (fw a 3) (fw a 4) (fw a 5) (fw a 6) (fw a 7) (fw a 8) (fw a 9) (fw a 10) 1)
+  (if (= argc 12) (ffi-call "%call12" f (fw a 0) (fw a 1) (fw a 2) (fw a 3) (fw a 4) (fw a 5) (fw a 6) (fw a 7) (fw a 8) (fw a 9) (fw a 10) (fw a 11) 1)
+  (if (= argc 13) (ffi-call "%call13" f (fw a 0) (fw a 1) (fw a 2) (fw a 3) (fw a 4) (fw a 5) (fw a 6) (fw a 7) (fw a 8) (fw a 9) (fw a 10) (fw a 11) (fw a 12) 1)
+  (if (= argc 14) (ffi-call "%call14" f (fw a 0) (fw a 1) (fw a 2) (fw a 3) (fw a 4) (fw a 5) (fw a 6) (fw a 7) (fw a 8) (fw a 9) (fw a 10) (fw a 11) (fw a 12) (fw a 13) 1)
+  (if (= argc 15) (ffi-call "%call15" f (fw a 0) (fw a 1) (fw a 2) (fw a 3) (fw a 4) (fw a 5) (fw a 6) (fw a 7) (fw a 8) (fw a 9) (fw a 10) (fw a 11) (fw a 12) (fw a 13) (fw a 14) 1)
+    (ffi-call "%call16" f (fw a 0) (fw a 1) (fw a 2) (fw a 3) (fw a 4) (fw a 5) (fw a 6) (fw a 7) (fw a 8) (fw a 9) (fw a 10) (fw a 11) (fw a 12) (fw a 13) (fw a 14) (fw a 15) 1))))))))))

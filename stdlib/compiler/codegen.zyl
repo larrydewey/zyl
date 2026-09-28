@@ -2445,9 +2445,9 @@
         (RtGlobal name size
           (cg-rt-tls-exports (cg-emit-lines st (Cons (str-concat ".globl " name) (Cons ".p2align 3" (Cons (str-concat name ":") (Cons (str-concat "    .zero " (ffi-call "zyl_int_text" size 1000)) Nil))))) rest))))))
 
-; %callK f args...: zyl_rt_call<K> shifts the arguments down one register and jumps to f (the 7th comes from the stack).
+; %callK f args... (K <= 16): zyl_rt_call<K> shifts the arguments down one slot (registers, then stack words) and jumps to f.
 (defn cg-rt-call-stubs (st k)
-  (if (> k 7) st
+  (if (> k 16) st
     (cg-rt-call-stubs (cg-emit-lines st (cg-rt-call-stub k)) (+ k 1))))
 
 (defn cg-rt-call-stub (k)
@@ -2458,7 +2458,11 @@
 
 (defn cg-rt-shift-regs (k i)
   (if (>= i k) Nil
-    (if (= i 6) (Cons "    mov r11, [rsp+16]" (Cons "    mov [rsp+8], r11" Nil))
+    (if (>= i 6)
+      (let off (+ 8 (* 8 (- i 6)))
+        (Cons (str-concat "    mov r11, [rsp+" (str-concat (ffi-call "zyl_int_text" (+ off 8) 1000) "]"))
+          (Cons (str-concat "    mov [rsp+" (str-concat (ffi-call "zyl_int_text" off 1000) "], r11"))
+            (cg-rt-shift-regs k (+ i 1)))))
       (Cons (if (= i 5) "    mov r9, [rsp+8]" (str-concat "    mov " (str-concat (cg-reg-of i) (str-concat ", " (cg-reg-of (+ i 1))))))
         (cg-rt-shift-regs k (+ i 1))))))
 

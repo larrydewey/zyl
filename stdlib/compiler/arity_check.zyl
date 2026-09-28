@@ -182,7 +182,7 @@
           (if (< (ffi-literal-int (ffi-last-expr tail)) 1)
             (ffi-fail "E_FFI_TIMEOUT_REQUIRED" "the last argument of ffi-call must be a positive integer literal timeout"
                       "end the call with a timeout in milliseconds, e.g. 1000; a missing timeout would otherwise drop the real last argument" site)
-            (if (> (list-length tail) (+ (ffi-max-args) 1))
+            (if (and (not (rt-mode-p)) (> (list-length tail) (+ (ffi-max-args) 1)))
               (ffi-fail "E_ARITY_MISMATCH" "ffi-call passes more than 16 arguments"
                         "pass a pointer to a struct or buffer instead" site)
               0)))))))
