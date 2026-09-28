@@ -18,9 +18,9 @@
 > `selfhost/driver.zyl` are the
 > active implementation; `./boot.sh` builds it with only `cc` and verifies
 > the stage2 == stage3 fixed point (first reached 2026-08-25). The Rust
-> implementation referred to below (`src/ast.rs`, `src/icnf.rs`) is frozen
-> in `archive/rust-bootstrap-2026/` and can no longer compile the current
-> source. See `docs/rust-eviction-plan.md` and
+> implementation referred to below (`src/ast.rs`, `src/icnf.rs`) has been
+> removed from the tree; it is in git history at commit `b8bc283`
+> (`archive/rust-bootstrap-2026/`). See `docs/rust-eviction-plan.md` and
 > the Current State section of `PROGRESS.md` for the present architecture.
 > The constraints in §2 and the limitations in §6 describe the language as
 > it was on 2026-08-04, not as it is now: typing is sound Hindley-Milner

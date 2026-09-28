@@ -5,7 +5,7 @@ runtime know about. The catalog lives in `stdlib/compiler/error_codes.zyl`
 (`error-codes`, one `(EC name phase severity message)` per code: 127
 entries, 126 distinct codes, `E_OUT_OF_MEMORY` appearing twice); spec §28
 lists the normative subset. The catalog was originally transcribed from the
-Rust bootstrap's `ZylError` enum (`archive/rust-bootstrap-2026/`) and has
+Rust bootstrap's `ZylError` enum (since removed; git history at `b8bc283`) and has
 since gained the self-hosted-only and package-system (§31) codes.
 
 The catalog is data, not a dispatcher: each checker writes its own code

@@ -240,7 +240,7 @@ Each is a fixed input: the same source under the same settings compiles to the s
 
 ## 26.7 Bootstrapping and the Fixed Point
 
-The compiler is written in Zyl: `stdlib/compiler/*.zyl` plus `selfhost/driver.zyl`, built like any program from the entry file `selfhost/driver.zyl` through module resolution. No Rust is involved in any build. The original Rust implementation is frozen in `archive/rust-bootstrap-2026/` for the record; it cannot lex the current source.
+The compiler is written in Zyl: `stdlib/compiler/*.zyl` plus `selfhost/driver.zyl`, built like any program from the entry file `selfhost/driver.zyl` through module resolution. No Rust is involved in any build. The original Rust implementation has been removed from the tree (it is in git history at commit `b8bc283`); it could not lex the current source.
 
 ### What `./boot.sh` does
 
@@ -267,7 +267,7 @@ After a change to compiler source that alters the compiler's own output, re-seed
 ./boot.sh                         # verify a clean fixed point on the new seed
 ```
 
-Reseeding fails only when the old seed cannot parse the new source at all. Land new syntax in two steps: teach the compiler to accept it, reseed, then use it in the compiler's own source. (`--bootstrap-from-rust` is retired.)
+Reseeding fails only when the old seed cannot parse the new source at all. Land new syntax in two steps: teach the compiler to accept it, reseed, then use it in the compiler's own source. (`--bootstrap-from-rust` has been removed.)
 
 ### What the fixed point shows
 

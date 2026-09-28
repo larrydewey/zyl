@@ -2,10 +2,9 @@
 
 ## Overview
 
-Where things live in the active tree. The section `## Archived Rust
-bootstrap` at the end describes `archive/rust-bootstrap-2026/`, which
-is kept only as a last-resort reseed path and is not part of the build,
-the tests, or the use path.
+Where things live in the active tree. The original Rust bootstrap
+(`archive/rust-bootstrap-2026/`) has been removed; it is in git history
+at commit `b8bc283`.
 
 **Related:** `docs/compiler-pipeline.md` (phase-to-file mapping),
 `AGENTS.md` (build commands), `docs/regression-tests.md` (the test
@@ -65,7 +64,6 @@ bench/                   The benchmark matrix against C, C++, Rust and Go
 verify/                  Python cross-checks for stdlib/math
 spec/                    The specification, split by domain
 zyl_specification.txt    The canonical specification (v5.0)
-archive/rust-bootstrap-2026/   The frozen Rust bootstrap
 ```
 
 `boot.sh` writes its outputs to `build/boot/`: `stage2.bin` and
@@ -247,36 +245,10 @@ are Zyl code in `stdlib/math`, bundled into the compiler.
 
 ---
 
-## Archived Rust bootstrap
+## Removed Rust bootstrap
 
-`archive/rust-bootstrap-2026/` is frozen. It is never edited for a
-language change; `./boot.sh --bootstrap-from-self` is the normal reseed
-path and needs no Rust at all. `archive/rust-bootstrap-2026/README.md`
-describes the one case the archive exists for, and
-`docs/rust-eviction-plan.md` has the full history.
-
-Its sources, for orientation only (line counts as archived):
-
-| File | Lines | Role |
-|---|---|---|
-| `src/main.rs` | 486 | CLI and pipeline orchestration |
-| `src/error.rs` | 186 | Error model |
-| `src/lexer.rs` | 486 | Tokenizer |
-| `src/parser.rs` | 2047 | Recursive-descent parser |
-| `src/ast.rs` | 3061 | AST and the PostProcessor |
-| `src/macro_expander.rs` | 1482 | Macro expansion with gensym hygiene |
-| `src/module_resolver.rs` | 494 | `use` resolution |
-| `src/region_inference.rs` | 1192 | Region inference |
-| `src/type_system.rs` | 662 | Type definitions |
-| `src/type_inference.rs` | 2837 | HM inference |
-| `src/monomorphization.rs` | 1896 | Monomorphization |
-| `src/icnf.rs` | 4635 | SSA-form ICNF |
-| `src/optimization.rs` | 548 | Constant folding and DCE |
-| `src/codegen.rs` | 9245 | x86_64 code generation |
-| `src/contract_injection.rs` | 307 | Contract injection |
-| `src/zyl_source_gen.rs` | 599 | Zyl source generation |
-| `src/deterministic.rs` | 37 | Deterministic collections |
-| `src/repl.rs` | 323 | REPL |
-| `src/runtime.rs` | 17 | Runtime path |
-
-The archive has no runtime of its own; the one in `runtime/` is shared.
+The original Rust compiler (`archive/rust-bootstrap-2026/`) has been
+removed from the tree; retrieve it from git history at commit
+`b8bc283` if needed. `./boot.sh --bootstrap-from-self` is the reseed
+path and needs no Rust. `docs/rust-eviction-plan.md` has the full
+history.

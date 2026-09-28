@@ -224,13 +224,13 @@ itself end-to-end with a strict byte-identical fixed point, verified by
 package, script and language-server protocol tests. A self-compile
 takes about two seconds.
 
-The original Rust bootstrap compiler is archived at
-`archive/rust-bootstrap-2026/` (see its own README). The normal reseed
+The original Rust bootstrap compiler has been removed from the tree
+(it is in git history at commit `b8bc283`). The normal reseed
 path, `./boot.sh --bootstrap-from-self`, needs no Rust: it iterates the
 self-hosted compiler against its own new output until two consecutive
-rounds match. The archived compiler can no longer read the current
+rounds match. The Rust compiler could no longer read the current
 compiler source (its lexer rejects the `\e` string escape the REPL
-uses), so it is a historical record rather than a working fallback.
+uses), so it was not a working fallback.
 
 The Zyl-written compiler runs, in order (`stdlib/compiler/pipeline.zyl`):
 delimiter-balance check → parsing → module resolution (canonical
@@ -358,7 +358,6 @@ specifications/               # Historical specification versions
 docs/                         # Architecture, design rationale, status
 bench/                        # Benchmarks in Zyl, C, C++, Rust and Go (matrix.py)
 verify/                       # Python cross-checks for stdlib/math, timing harness
-archive/rust-bootstrap-2026/  # The original Rust compiler, frozen
 
 tests/
 ├── smoke/                    # Quick checks (--quick)

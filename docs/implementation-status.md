@@ -125,6 +125,6 @@ Design, rationale and the original phased plan for the package system:
 Earlier versions of this file recorded the phase-by-phase build-out of
 the Rust bootstrap (lexer, parser, PostProcessor, region inference,
 SSA-form ICNF, a register-allocating code generator). That
-implementation is frozen in `archive/rust-bootstrap-2026/` and none of
-it describes the active compiler; the detail is preserved in version
-control history and in `specifications/`.
+implementation has been removed from the tree (it is in git history at
+commit `b8bc283`) and none of it describes the active compiler; the
+detail is preserved in version control history and in `specifications/`.

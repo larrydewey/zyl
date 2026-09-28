@@ -1,9 +1,9 @@
 # Research: ICNF Closure Call Bug
 
 > **Status (2026-09-23): historical, fixed.** This note describes a bug
-> in the Rust bootstrap compiler, which now lives, frozen, in
-> `archive/rust-bootstrap-2026/` — every `src/...` path below is
-> relative to that directory. It was fixed there (a `closure_ssa_ids`
+> in the Rust bootstrap compiler, which has been removed from the tree
+> (git history at commit `b8bc283`, under `archive/rust-bootstrap-2026/`)
+> — every `src/...` path below is relative to that directory. It was fixed there (a `closure_ssa_ids`
 > set so that only values known to be closures are called indirectly;
 > see `PROGRESS.md`). The active, self-hosted compiler
 > (`stdlib/compiler/icnf.zyl`, `ICallClosure`) handles the pattern: a

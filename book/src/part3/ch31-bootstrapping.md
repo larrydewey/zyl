@@ -244,17 +244,18 @@ else runs.
 
 **Fixed point**: ✅ Holding
 **Build input**: `selfhost/driver.zyl` through module resolution (the single-file bundle was retired on 2026-09-24)
-**Rust bootstrap**: Archived (`archive/rust-bootstrap-2026/`) — no longer part of the build, and unable to lex the current source
+**Rust bootstrap**: Removed from the tree (git history at `b8bc283`); it was unable to lex the current source
 
-## 31.10 Rust Bootstrap: Archived
+## 31.10 Rust Bootstrap: Removed
 
 What was tracked here as future work is done:
 
 1. ✅ All Zyl passes verified through the fixed point, and through the
    full regression suite (43/43 via the self-hosted compiler at the
    time of eviction — see `docs/rust-eviction-plan.md`; 260 tests now)
-2. ✅ `src/` archived to `archive/rust-bootstrap-2026/` (self-contained:
-   its own `Cargo.toml`, kept buildable in place)
+2. ✅ `src/` archived to `archive/rust-bootstrap-2026/` (self-contained,
+   with its own `Cargo.toml`), later removed from the tree (git history
+   at `b8bc283`)
 3. ✅ `boot.sh` (default) starts from the committed Zyl-compiled seed
    only — no Rust, no Cargo, `cc` is the only requirement
 4. ✅ Reseeding is also Rust-free now: `./boot.sh --bootstrap-from-self`
@@ -271,9 +272,9 @@ git add -f build/boot/stage2.s build/boot/stage2.bin && git commit
 ```
 
 Self-hosted reseeding cannot cross one kind of change: new syntax the
-previous seed cannot parse. The archived Rust bootstrap is no answer to
-that (it cannot lex the current source, and `--bootstrap-from-rust` now
-only prints a pointer to `archive/rust-bootstrap-2026/README.md`).
+previous seed cannot parse. The Rust bootstrap was no answer to that
+(it cannot lex the current source, and it and `--bootstrap-from-rust`
+have been removed).
 Land new syntax in two steps: teach the compiler to accept it, reseed,
 then use it in the compiler's own source.
 

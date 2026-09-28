@@ -347,8 +347,8 @@ lexer, rather than the token stream):
 
 Historical: this plan was written as Phase A.8 of
 `docs/rust-eviction-plan.md`, as a prerequisite for the REPL (Phase C).
-The Rust bootstrap has since been evicted (`archive/rust-bootstrap-2026/`
-is frozen), `sexp_balance.zyl` replaced the Python balance scripts, and
+The Rust bootstrap has since been evicted and removed from the tree (it
+is in git history at `b8bc283`), `sexp_balance.zyl` replaced the Python balance scripts, and
 the REPL shipped (`docs/repl.md`) with the located diagnostics above
 rather than waiting for the rest of this plan.
 

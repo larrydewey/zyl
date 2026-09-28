@@ -4,8 +4,8 @@ The decisions below are settled and are not to be reversed (see
 `AGENTS.md`). Each one names where the active, self-hosted compiler
 (`stdlib/compiler/*.zyl` + `selfhost/`) implements it, and says plainly
 where the implementation does not yet deliver all of it. The Rust
-bootstrap that first implemented these decisions is frozen in
-`archive/rust-bootstrap-2026/`.
+bootstrap that first implemented these decisions has been removed from
+the tree; it is in git history at commit `b8bc283`.
 
 ---
 

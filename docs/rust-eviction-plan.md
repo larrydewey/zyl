@@ -5,11 +5,12 @@
 > (41 modules) plus `selfhost/` (`driver.zyl`, `lsp_main.zyl`);
 > `./boot.sh` builds it from the committed seed `build/boot/stage2.s`
 > with nothing but `cc` and verifies the stage2 == stage3 fixed point;
-> `./boot.sh --bootstrap-from-self` reseeds. The Rust implementation is
-> frozen in `archive/rust-bootstrap-2026/` and is no longer a working
-> fallback: it cannot lex the current source (it rejects the `\e`
-> string escape), and `./boot.sh --bootstrap-from-rust` now only exits
-> with a pointer to `--bootstrap-from-self`. New syntax is introduced in
+> `./boot.sh --bootstrap-from-self` reseeds. The Rust implementation
+> (`archive/rust-bootstrap-2026/`) has been removed from the tree; it is
+> in git history at commit `b8bc283`. It was no longer a working
+> fallback (it cannot lex the current source: it rejects the `\e`
+> string escape), and `./boot.sh --bootstrap-from-rust` no longer
+> exists. New syntax is introduced in
 > two steps instead (teach the compiler to accept it, reseed, then use
 > it in the compiler's own source; see `AGENTS.md`). The feature-parity
 > survey below closed at 43/43; the suite has since grown to 260 tests
@@ -46,8 +47,8 @@
 > written (newest survey first, the original plan last), with dated
 > status notes where a later change made a statement stale. Commands in
 > them that name `target/debug/zyl`, `target/release/zyl`, `src/*.rs`
-> or `--bootstrap-from-rust` refer to the Rust tree, which now lives,
-> unusable, under the archive.
+> or `--bootstrap-from-rust` refer to the Rust tree, which has been
+> removed (git history at `b8bc283`).
 
 ## Self-hosted compiler feature-parity survey (2026-09-16)
 

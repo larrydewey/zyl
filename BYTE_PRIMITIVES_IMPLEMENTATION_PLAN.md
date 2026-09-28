@@ -69,11 +69,10 @@ these primitives to `archive/rust-bootstrap-2026/src/` and a "30-Iteration Red
 Team Audit" / "120 CVEs Mitigated" section. Neither reflected anything that
 actually happened:
 
-- `archive/rust-bootstrap-2026/` is a frozen fallback, not part of the active
-  compiler (see `AGENTS.md`) — it is never touched for language feature work,
-  and `boot.sh --bootstrap-from-rust` exists only as a last resort for
-  genuinely new unparseable syntax, not the normal workflow. That step has
-  been removed from this plan.
+- The Rust bootstrap was never part of the active compiler (see
+  `AGENTS.md`) and has since been removed from the tree (git history at
+  `b8bc283`); it was never touched for language feature work. That step
+  has been removed from this plan.
 - The audit numbers did not correspond to any actual review process on this
   codebase and have been removed rather than carried forward as if they were
   real.
@@ -437,7 +436,7 @@ plain cascade) but is not a universal rule — catchall arms are common
 elsewhere in this codebase's smaller helper matches.
 
 `build/boot/stage2.s`/`stage2.bin` must be regenerated after any change
-here, via `./boot.sh --bootstrap-from-self` (not `--bootstrap-from-rust`),
+here, via `./boot.sh --bootstrap-from-self`,
 and committed once verified. The seed has since been re-cut and committed
 many times; the current committed seed contains all of this work.
 

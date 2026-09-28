@@ -20,9 +20,9 @@ stage2.bin (cc of stage2.s) ──compiles──▶ stage3.s
 The build uses nothing but `cc`. `./boot.sh` (default, no arguments)
 builds and verifies the whole compiler starting from the committed
 seed `build/boot/stage2.s`. The Rust bootstrap that produced the very
-first seed is archived at `archive/rust-bootstrap-2026/` for the
-record only: it can no longer lex the current source, so it is not a
-fallback for anything (§27.9).
+first seed has been removed from the tree (it is in git history at
+commit `b8bc283`); it could no longer lex the current source, so it was
+not a fallback for anything (§27.9).
 
 ## 27.2 Compiler Architecture
 
@@ -64,10 +64,10 @@ flat namespace was the only reason for those workarounds, and the
 one-line file is what made a diagnostic snippet exhaust memory; both
 files are gone.
 
-### Rust Bootstrap (archived: `archive/rust-bootstrap-2026/`)
+### Rust Bootstrap (removed)
 
-Frozen, not built by anything in the normal workflow. See
-`archive/rust-bootstrap-2026/README.md`.
+The original Rust compiler (`archive/rust-bootstrap-2026/`) has been
+removed from the tree; it is in git history at commit `b8bc283`.
 
 ## 27.3 Bootstrapping Process (`boot.sh`)
 
@@ -248,12 +248,12 @@ of `docs/rust-eviction-plan.md`'s latest survey, it's complete:
 3. ✅ `./boot.sh` builds and verifies with nothing but `cc`
 4. ✅ Reseeding no longer needs Rust either (`--bootstrap-from-self`, §27.3)
 5. ✅ `src/` archived to `archive/rust-bootstrap-2026/`, `Cargo.toml`/
-   `Cargo.lock`/`target/` removed from the active tree
+   `Cargo.lock`/`target/` removed from the active tree; the archive
+   itself was later removed too (git history at `b8bc283`)
 
-The archived Rust bootstrap is not a fallback. It cannot lex the current
+The Rust bootstrap was not a fallback. It cannot lex the current
 source (it rejects the `\e` string escape), and `./boot.sh
---bootstrap-from-rust` now only exits with a pointer to
-`archive/rust-bootstrap-2026/README.md`. New syntax is landed in two
+--bootstrap-from-rust` no longer exists. New syntax is landed in two
 steps instead (§27.3).
 
 Porting to another architecture does not need it either: add a back end
