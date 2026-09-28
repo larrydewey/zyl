@@ -66,7 +66,7 @@ P9. Testability
     such as #, @ or $, is E_INVALID_CHAR.
 
 1.3 Keywords:
-    def, defn, defun, let, let-mut, if, try, catch, spawn, send,
+    def, defn, defun, let, let-mut, if, try, catch, spawn, chan-send,
     ffi-call, ffi-pin, ffi-unpin, assert, trait, impl, fn, lambda, 
     while, for, cond, begin, pub, use, export, requires, ensures, invariant,
     recover, checkpoint, contracts, defmacro, alias, defstruct, defstruct+,
@@ -110,7 +110,7 @@ Expr :=
   
   ;; Concurrency & FFI
   | (spawn Expr)
-  | (send Expr Expr)
+  | (chan-send Expr Expr)
   | (ffi-call String Expr* Integer)
   | (ffi-pin Expr)
   | (ffi-unpin Expr)
@@ -244,9 +244,6 @@ ResultValue:
     There is no cast form. The trusted base is the compiler, the C
     runtime, the runtime-signature table (stdlib/compiler/ffi_sigs.zyl)
     and a program's own extern declarations (§16).
-    Known exception: `receive` returns a value of any type, because an
-    actor mailbox holds whatever any sender put there (§15). Typed
-    single-sender channels are to replace mailboxes and remove it.
     ZYL_STRICT_TYPES=report prints the errors as W_TYPE_STRICT warnings
     and continues; it is a tool for counting, never a way to run an
     ill-typed program.
@@ -306,8 +303,9 @@ ResultValue:
     exit, error     do not return: any type
     main            () -> Int
     spawn           the entry is () -> a
-    Actors          spawn : Actor;  actor-self : Actor;
-                    send : Actor a -> Unit;  receive : a (§4.8)
+    Actors          spawn : (() -> a) -> Actor;  chan : Int -> (Chan a);
+                    chan-tx : (Chan a) -> (Tx a);  chan-rx : (Chan a) -> (Rx a);
+                    chan-send : (Tx a) a -> Unit;  chan-recv : (Rx a) -> a
     FFI             a runtime symbol (zyl_*) has the type in the
                     signature table; a foreign symbol the type of its
                     (extern "sym" (T1..Tn) R) declaration (§16);
@@ -700,16 +698,46 @@ The compiler guarantees that deep recursion never causes stack overflow
 ================================================================================
 
 Actor:
-    private state + FIFO mailbox
+    a sequential process: private state, a thread of control
+
+Channel (Kahn process network):
+    (chan n)            a FIFO buffering 1..n values of one type (Chan T);
+                        n outside 1..16777216 is E_CHANNEL_CAPACITY
+    (chan-tx c)         its sending end (Tx T); (chan-rx c) its receiving end (Rx T)
+    (chan-send tx v)    appends v, blocking while the buffer is full
+    (chan-recv rx)      removes the oldest value, blocking while it is empty
+    There is no select, no non-blocking receive and no emptiness test.
 
 Operations:
-    spawn, send
+    spawn, chan, chan-tx, chan-rx, chan-send, chan-recv, and (actor/actor)
+    actor-wait (join) and actor-is-alive (true until joined)
 
 Rules:
     no shared mutable state
-    messages must be Send-capable
-    deterministic FIFO per actor
+    channel values must be Send-capable
+    one writer and one reader per channel: each endpoint has one owner.
+        The creator owns both ends. Ownership moves only when a spawned
+        closure captures the endpoint directly, or when the endpoint is
+        itself sent on a channel (it belongs to whoever receives it).
+        Any other use is E_CHANNEL_NOT_OWNER.
+    when the actor owning a Tx finishes (main: when its program ends),
+        the channel closes; chan-recv on a closed, drained channel is
+        E_CHANNEL_CLOSED
+    when every live actor is blocked on a channel or a join, the program
+        fails with E_DEADLOCK
+    an actor's output is buffered and emitted when it is joined, or at
+        exit, in spawn order, for actors never joined; exit joins every
+        actor
+    an actor's uncaught panic ends only that actor; actor-wait re-raises
+        it, and at exit the first unjoined one (spawn order) is reported
+        and the exit status is 1
+    after an uncaught panic on main, actors are abandoned and their
+        buffered output is dropped
+    at most 1024 actors per program (E_ACTOR_LIMIT)
     actors are isolated; no direct memory sharing.
+
+Consequence: a process's output sequence is a function of its input
+sequences, so observable output never depends on scheduling (§27).
 
 ================================================================================
 16. FFI MODEL
@@ -1035,7 +1063,7 @@ Core modules:
     result: Result (Ok, Err), is-ok, unwrap, map
     io: file-open, file-read, file-write, file-close
     atomic: load, store, add
-    actor: spawn, send, receive
+    actor: spawn, chan, chan-send, chan-recv, actor-wait
     ffi: ffi-call, ffi-pin, ffi-unpin
     testing: test-suite, test, assert-*, test-property, run-tests
 
@@ -1134,6 +1162,11 @@ Errors:
     E_CONTRACT_VIOLATION        — contract failed
     E_OVERFLOW                  — integer overflow
     E_DIVISION_BY_ZERO          — div by zero
+    E_CHANNEL_NOT_OWNER         — channel endpoint used by an actor that does not own it
+    E_CHANNEL_CLOSED            — chan-recv on a closed, drained channel
+    E_CHANNEL_CAPACITY          — (chan n) outside 1..16777216
+    E_DEADLOCK                  — every live actor blocked on a channel or a join
+    E_ACTOR_LIMIT               — more than 1024 actors spawned
     E_TEST_FAILURE              — test assertion failed
     E_TEST_RUNNER_ERROR         — test harness error
     E_TRAIT_NOT_DERIVABLE       — cannot derive trait
@@ -1446,7 +1479,7 @@ A package declares the capabilities it may use. Absent means none.
 
     io      core/io and everything under stdlib/io
     ffi     ffi-call, ffi-pin, Pin-region allocation
-    actor   spawn, send, receive
+    actor   spawn, chan, chan-send, chan-recv
     secret  the Secret capability type and stdlib/math/secret
     native  shipping and compiling C sources (§31.10)
     unsafe  :unsafe imports

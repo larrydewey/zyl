@@ -286,7 +286,7 @@
       (begin
         (mc-expr actor mutscope lets)
         (if (mc-refs-any msg mutscope)
-          (mc-fail-leak e msg mutscope lets "message sent to an actor references let-mut (TMut) variable `" "messages must be Send-capable; send a copy bound with plain `let`")
+          (mc-fail-leak e msg mutscope lets "value sent on a channel references let-mut (TMut) variable `" "channel values must be Send-capable; send a copy bound with plain `let`")
           0)
         (mc-expr msg mutscope lets)))
     (ESendClosure actor closure _

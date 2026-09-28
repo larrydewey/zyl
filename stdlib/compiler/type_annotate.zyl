@@ -1021,10 +1021,12 @@
           r)))
     ; An actor's entry takes no arguments.
     (ESpawn b (let _ (ta-unify st (ta-expr st ctx env b) (TaF Nil (ta-fresh st))) (TaC "Actor" Nil)))
+    ; (chan-send tx v): v has the channel's element type.
     (ESend a m
       (let ta (ta-expr st ctx env a)
-        (let _ (ta-unify st ta (TaC "Actor" Nil))
-          (let _ (ta-expr st ctx env m) (ta-stmt)))))
+        (let el (ta-fresh st)
+          (let _ (ta-unify st ta (TaC "Tx" (Cons el Nil)))
+            (let _ (ta-unify st (ta-expr st ctx env m) el) (ta-stmt))))))
     (ESendClosure a c _ (ta-walk-stmt st ctx env (ta-l2 a c)))
     (ETryCatch tb cv h
       (let tt (ta-expr st ctx env tb)
@@ -1365,12 +1367,11 @@
   ; A def getter's cell (expr_inner.zyl, def-getter). The read is the
   ; only generic result here: its one caller joins it, in the same `if`,
   ; with the value the getter stores under the same key.
-  ; The actor forms. `receive` is the one generic result a program can
-  ; reach: a mailbox holds whatever any sender put there. Typed
-  ; single-sender channels replace mailboxes (docs/sound-types-design.md,
-  ; "Known hole"); until then this is the only unchecked typing left.
-  (if (ta-key-is n "actor-self") (ta-sig-parse st "-> Actor")
-  (if (ta-key-is n "receive") (ta-sig-parse st "-> a")
+  ; Channels (docs/concurrency-determinism-design.md): one element type per channel.
+  (if (ta-key-is n "chan") (ta-sig-parse st "Int -> (Chan a)")
+  (if (ta-key-is n "chan-tx") (ta-sig-parse st "(Chan a) -> (Tx a)")
+  (if (ta-key-is n "chan-rx") (ta-sig-parse st "(Chan a) -> (Rx a)")
+  (if (ta-key-is n "chan-recv") (ta-sig-parse st "(Rx a) -> a")
   ; Contract lowering's helpers (expr_inner.zyl): report, test an error
   ; code, re-raise a caught error.
   (if (and (ta-streq n "zyl-repl-global") (ffi-call "zyl_ref_get" repl-compiling 1000)) (ta-sig-parse st "String -> a")
@@ -1386,7 +1387,7 @@
   (if (ta-key-is n "collections/vec::array-get") (ta-sig-parse st "(Array a) Int -> a")
   (if (ta-key-is n "collections/vec::array-set") (ta-sig-parse st "(Array a) Int a -> Unit")
   (if (ta-key-is n "collections/vec::array-cap") (ta-sig-parse st "(Array a) -> Int")
-  (ta-no-type))))))))))))))))))))))
+  (ta-no-type))))))))))))))))))))))))
 
 (defn ta-call-named (st ctx env e n args)
   (let lt (ta-env-get env n)

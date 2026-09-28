@@ -1,9 +1,9 @@
-; Compile-fail: a slice of a Stack bytebuf sent to another actor would
+; Compile-fail: a slice of a Stack bytebuf sent over a channel would
 ; outlive the frame that owns its bytes.
 ; expect-error: E_REGION_ESCAPE
 
-(defn leak (target)
+(defn leak (tx)
   (let b (bytebuf Stack 16)
-    (send target (byteslice b 0 4))))
+    (chan-send tx (byteslice b 0 4))))
 
-(defn main () (begin (leak (actor-self)) 0))
+(defn main () (begin (leak (chan-tx (chan 1))) 0))

@@ -834,9 +834,7 @@
 ; function. Under the interpreter there is no address, so the call is
 ; refused with an explanation rather than jumping to a number.
 (defn in-actor-sym-p (sym)
-  (if (str-eq sym "zyl_actor_spawn") true
-  (if (str-eq sym "zyl_actor_send_closure") true
-  false)))
+  (str-eq sym "zyl_actor_spawn"))
 
 (defn in-register-test (fns env args)
   (let vals (in-args-eval fns env args)

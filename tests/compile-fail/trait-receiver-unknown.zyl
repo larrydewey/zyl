@@ -4,4 +4,4 @@
 (defstruct Sq (s Int))
 (trait Area (area (self) Int))
 (impl Area Sq (defn area (self) (* (struct-get self "s") (struct-get self "s"))))
-(defn main () (Area.area (receive)))
+(defn main () (Area.area (chan-recv (chan-rx (chan 1)))))

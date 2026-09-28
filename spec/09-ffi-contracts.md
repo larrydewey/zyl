@@ -188,7 +188,7 @@ Not normative.
   16 bytes.
 - A C callback into Zyl (for example a `qsort` comparator, declared with
   an `(Fn (A B) R)` parameter) runs on the worker thread. It sees the
-  caller's `actor-self`; a panic inside it that no `try` in the callback
+  caller's actor identity (its channel ownership and output buffer); a panic inside it that no `try` in the callback
   catches ends the process.
 - **Pinning.** The Pin region is not required for ordinary arguments.
   Only a `Secret` argument must go through `ffi-pin`

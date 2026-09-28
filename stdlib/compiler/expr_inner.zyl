@@ -1152,10 +1152,10 @@
     (match (parse-spawn rest)
       (Some expr expr)
       (None (Expr (EUnknown "spawn" (convert-ast-list rest)))))
-  (if (str-eq n "send")
+  (if (str-eq n "chan-send")
     (match (parse-send rest)
       (Some expr expr)
-      (None (Expr (EUnknown "send" (convert-ast-list rest)))))
+      (None (Expr (EUnknown "chan-send" (convert-ast-list rest)))))
   (if (str-eq n "ffi-pin")
     (match (parse-ffi-pin rest)
       (Some expr expr)
@@ -2787,7 +2787,7 @@
     (Some (Expr (ESpawn (convert-ast (ast-nth args 0 (AstInt 0))))))))
 
 (defn parse-send (args)
-  (if (ast-has-at-least args 2)
+  (if (= (ast-count args) 2)
     (Some
       (Expr
         (ESend

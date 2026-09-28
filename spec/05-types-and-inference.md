@@ -66,9 +66,6 @@ There is no cast form. The trusted base is the compiler, the C runtime,
 the runtime-signature table (`stdlib/compiler/ffi_sigs.zyl`) and a
 program's own `extern` declarations (§16).
 
-**Known exception:** `receive` returns a value of any type, because an
-actor mailbox holds whatever any sender put there (§15). Typed
-single-sender channels are to replace mailboxes and remove it.
 
 `ZYL_STRICT_TYPES=report` prints the errors as `W_TYPE_STRICT` warnings
 and continues; it is a tool for counting, never a way to run an ill-typed
@@ -106,7 +103,7 @@ top-level `def` values are monomorphic (the value restriction). A type variable 
 | `exit`, `error` | Do not return: any type |
 | `main` | () -> Int |
 | `spawn` | The entry is () -> a |
-| Actors | `spawn` : Actor; `actor-self` : Actor; `send` : Actor a -> Unit; `receive` : a (§4.8) |
+| Actors | `spawn` : (() -> a) -> Actor; `chan` : Int -> (Chan a); `chan-tx`/`chan-rx` : (Chan a) -> (Tx a)/(Rx a); `chan-send` : (Tx a) a -> Unit; `chan-recv` : (Rx a) -> a |
 | FFI | A runtime symbol (`zyl_*`) has the type in the signature table; a foreign symbol the type of its `(extern "sym" (T1..Tn) R)` declaration (§16); `(ffi-pin v)` : `(Pin a)` for v : a; `(ffi-unpin p)` : a for p : `(Pin a)`; pinning a function is `E_FFI_TYPE_NOT_PINNABLE` |
 | List literal | `(list e1 .. en)` and `[e1 .. en]` are `(Cons e1 (Cons .. (Cons en Nil)))`: e1..en are evaluated left to right, every ei : τ ⊢ `(List τ)`. `(list)`, `[]` : `(List a)`. Mixed element types are `E_TYPE_MISMATCH` |
 | `quote` | `(quote d)`, `'d`: an Int, Float, String or Bool datum is itself; a list datum is the list literal of its quoted elements, so `'((1 2) (3))` : `(List (List Int))` and `'()` : `(List a)`. A name inside d, or a `quote` without exactly one operand, is `E_MALFORMED_FORM` (there is no symbol type) |
@@ -406,13 +403,13 @@ falls short of §4–§6 and §17.
 - A few standard-library functions have fixed signatures in the pass
   (`ta-builtin-sig`): `str-concat`, `str-length`, `str-substring`,
   `str-equal`/`str-eq` (Bool), `print-string` and `print-float` (Unit),
-  `receive` (`-> a`), `actor-self` (`-> Actor`), the contract helpers,
+  the channel forms (`chan`, `chan-tx`, `chan-rx`, `chan-recv`), the contract helpers,
   the `def` getters' cell operations (whose names contain spaces, so no
   source can call them) and `collections/vec`'s typed arrays.
   `zyl-repl-global` is typed (`String -> a`) only while the REPL compiles
   its own generated program.
 - Statement forms (`print`, `set!`, `while`, `for`, the assertions,
-  `send`, `test`) are Unit; `ffi-pin` is `a -> (Pin a)` and
+  `chan-send`, `test`) are Unit; `ffi-pin` is `a -> (Pin a)` and
   `ffi-unpin` `(Pin a) -> a` (`Pin` is a handle type, so an `extern` can
   take one for an out-parameter); `exit` takes an Int and, like
   `error`, has any type.
@@ -505,8 +502,8 @@ falls short of §4–§6 and §17.
 
 ### Known holes
 
-`receive` (§4.8) is the only one. Holes found while porting and since
-closed: an ambiguous `struct-get` (above), a generalized top-level `def`,
+None are known. Holes found while porting and since closed: `receive`,
+whose result took any type (typed channels replaced mailboxes), an ambiguous `struct-get` (above), a generalized top-level `def`,
 an `extern` retyping a runtime entry (now `E_FFI_RESTRICTED`),
 `ffi-pin` typed as its argument although it gives a Pin slot's address,
 byte-operation offsets and values that were not required to be Int (a

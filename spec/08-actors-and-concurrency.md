@@ -1,70 +1,69 @@
 # Zyl Specification — Actors and Concurrency
 
-**Canonical authority:** `zyl_specification.txt` §15 (also §7.4, §9.1 R2/R3, §31.9 `actor`)
-**Related:** `spec/06-capability-types.md`, `spec/07-region-memory-model.md`
-**Implementation:** `stdlib/compiler/expr_inner.zyl` (`parse-spawn`, `parse-send`), `stdlib/compiler/icnf.zyl` (lowering), `stdlib/compiler/mutability_check.zyl` (capture checks), `runtime/rt/actor.zyl` and `thread.zyl` (runtime), `stdlib/actor/actor.zyl` (library)
+**Canonical authority:** `zyl_specification.txt` §15 (also §7.4, §9.1 R2/R3, §27, §31.9 `actor`)
+**Related:** `spec/06-capability-types.md`, `spec/07-region-memory-model.md`, `docs/concurrency-determinism-design.md`
+**Implementation:** `stdlib/compiler/expr_inner.zyl` (`parse-spawn`, `parse-send` for `chan-send`), `stdlib/compiler/type_annotate.zyl` (channel types), `stdlib/compiler/icnf.zyl` (lowering), `stdlib/compiler/mutability_check.zyl` and `secret_check.zyl` (capture and send checks), `runtime/rt/chan.zyl`, `actor.zyl`, `out.zyl` and `thread.zyl` (runtime), `stdlib/actor/actor.zyl` (library)
 
 ---
 
-## Actor Model
+## Model: Kahn process networks
 
-An actor consists of:
-- Private state
-- FIFO mailbox
+An actor is a sequential process with private state. Actors communicate
+only through channels. Each channel is a FIFO with exactly one writer and
+one reader, and a read blocks until a value arrives. No process can test
+whether a channel is empty. So each process's output sequence is a
+function of its input sequences, and the program's observable output
+does not depend on scheduling (§27).
 
 ### Operations
 
-| Operation | Description |
-|-----------|-------------|
-| `spawn` | Create a new actor running the given closure |
-| `send` | Send a message to an actor's mailbox |
+| Form | Type | Meaning |
+|------|------|---------|
+| `(spawn f)` | `(() -> a) -> Actor` | start an actor running `f` |
+| `(chan n)` | `Int -> (Chan a)` | a channel buffering 1..n values; otherwise `E_CHANNEL_CAPACITY` |
+| `(chan-tx c)` | `(Chan a) -> (Tx a)` | the sending end |
+| `(chan-rx c)` | `(Chan a) -> (Rx a)` | the receiving end |
+| `(chan-send tx v)` | `(Tx a) a -> Unit` | append, blocking while full |
+| `(chan-recv rx)` | `(Rx a) -> a` | remove the oldest, blocking while empty |
+| `(actor-wait a)` | `Actor -> Unit` | join (from `actor/actor`) |
+| `(actor-is-alive a)` | `Actor -> Bool` | true until joined |
+
+There is no select, no non-blocking receive and no emptiness test.
 
 ### Rules
 
-1. No shared mutable state between actors.
-2. Messages must be Send-capable (TCap or TAtomic).
-3. Deterministic FIFO per actor.
-4. Actors are isolated; no direct memory sharing.
+1. No shared mutable state between actors. Channel values and spawned
+   captures must be Send-capable (TCap or TAtomic, §7.4). A `let-mut`
+   binding is rejected (`E_CAPABILITY_LEAK`), and so is a `Secret`
+   (`E_SECRET_ESCAPE`).
+2. **One owner per endpoint.** The creator owns both ends. Ownership
+   moves only at two points:
+   - a spawned closure that captures the endpoint directly (as a free
+     variable), which moves it to the new actor;
+   - an endpoint sent on a channel, which belongs to its receiver.
 
-### Region Rules for Actors
+   Any other use is `E_CHANNEL_NOT_OWNER`. An endpoint nested inside
+   another captured value does not move.
+3. **Closing.** When the owner of a `Tx` finishes, the channel closes.
+   Main finishes when its program ends. A `chan-recv` on a closed,
+   drained channel is `E_CHANNEL_CLOSED`.
+4. **Deadlock.** When every live actor is blocked on a channel or a join,
+   the program prints what the actors wrote so far (spawn order), then
+   `PANIC: E_DEADLOCK`, and exits with status 1.
+5. **Output.** An actor's stdout is buffered and emitted when the actor
+   is joined, or at exit, in spawn order, for actors that were never
+   joined. Program exit joins every actor.
+6. **Panics.** An actor's uncaught panic ends only that actor.
+   `actor-wait` re-raises it, and it can be caught. At exit, the first
+   unjoined actor panic in spawn order is reported and the status is 1.
+   After an uncaught panic on main, actors are abandoned and their output
+   is dropped.
+7. At most 1024 actors per program (`E_ACTOR_LIMIT`).
 
-- **R2:** A value sent to an actor escapes → Heap.
-- **R3:** spawn/send requires a Send-capable type.
-- Spawned closures must only capture Send-capable variables (TCap/TAtomic) (§7.4).
+### Region rules
 
----
-
-## Elaborated Model
-
-The canonical §15 states only the rules above. The model below is this
-document's elaboration of them.
-
-### Actor State
-
-```
-Actor = { state: Region, mailbox: FIFO<Message> }
-```
-
-### Spawn Semantics
-
-```
-spawn Expr → ActorRef(ID)
-```
-
-1. Evaluate Expr to closure.
-2. Create new actor with isolated state.
-3. Capture Send-capable variables from enclosing environment.
-4. Return ActorRef pointing to new actor.
-
-### Send Semantics
-
-```
-send ActorRef Expr
-```
-
-1. Evaluate Expr to message value.
-2. Enqueue message in actor's FIFO mailbox.
-3. Message must be Send-capable.
+- **R2:** a value sent on a channel escapes, so it goes to the Heap.
+- **R3:** spawn and chan-send require a Send-capable type.
 
 ---
 
@@ -72,39 +71,17 @@ send ActorRef Expr
 
 Not normative.
 
-### What works
-
-- `(spawn (fn () body))` starts an actor and returns its id; `(send a msg)`
-  enqueues a message. They lower to the runtime calls `zyl_actor_spawn` and
-  `zyl_actor_send`.
-- Each actor is an OS thread (`pthread_create`) with its own mutex,
-  condition variable and linked-list mailbox; messages are delivered in
-  FIFO order per actor.
-- `stdlib/actor/actor.zyl` adds `actor-spawn`, `actor-send`,
-  `actor-send-with-timeout`, `actor-is-alive`, `actor-wait` and
-  `actor-terminate`.
-- `mutability_check.zyl` rejects a spawned closure or a sent message that
-  refers to an in-scope `let-mut` binding (`E_CAPABILITY_LEAK`), and
-  `secret_check.zyl` rejects a Secret reaching `spawn` or `send`
-  (`E_SECRET_ESCAPE`). In a package, `spawn`, `send` and `receive` need the
-  `actor` capability (§31.9).
-
-### Differences from §15
-
-- **`(receive)` takes the next data message** from the running actor's
-  mailbox (`zyl_actor_receive`), blocking until one arrives, and
-  `(actor-self)` is the running actor's id; `main` has a mailbox too, so
-  actors can exchange structured messages and replies
-  (`tests/regression/actor-receive.zyl`).
-- **Typing.** `spawn` and `actor-self` are `Actor`, `send` requires an
-  `Actor` as its target and is `Unit`, and the entry passed to `spawn`
-  is `() -> a`. `receive` is `a`: a mailbox holds whatever any sender put
-  there, so its result takes whatever type the receiver uses it at. This
-  is the one exception spec §4.8 names to the soundness guarantee; typed
-  single-sender channels are to replace mailboxes and remove it.
-- **Scheduling is not deterministic.** Actors are scheduled by the
-  operating system; nothing orders the interleaving of output from two
-  actors. This is at odds with P1 and §27 for programs whose observable
-  output depends on that interleaving.
-- **Send-capability is checked syntactically** (the `let-mut` rule above),
-  not by type; no type carries Send-capability.
+- Each actor is a thread. The thread comes from `clone` when the program
+  links freestanding, and from `pthread_create` when it links hosted.
+- One scheduler lock and condition word serves every channel. Each owner
+  id has a record of what it waits on: room in a channel, a value or a
+  close, or another owner finishing. Before blocking, the runtime checks
+  whether any live owner can proceed. If none can, that is the deadlock.
+- An endpoint is recognized in a closure environment only as a heap
+  block with its magic word, whose channel points back at it, so an
+  integer can never be taken for one.
+- The interpreter (`zyl repl`, `zyl eval`) cannot spawn: an interpreted
+  function has no native entry. Channels work there on main alone.
+- Not yet enforced by type: Send-capability is still the syntactic
+  `let-mut` rule, so a mutable collection reached through an immutable
+  binding can still be shared.

@@ -139,7 +139,7 @@ Core modules:
 | result | Result (Ok, Err), is-ok, unwrap, map |
 | io | file-open, file-read, file-write, file-close |
 | atomic | load, store, add |
-| actor | spawn, send, receive |
+| actor | spawn, chan, chan-send, chan-recv |
 | ffi | ffi-call, ffi-pin, ffi-unpin |
 | testing | test-suite, test, assert-*, test-property, run-tests |
 

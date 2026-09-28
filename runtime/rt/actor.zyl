@@ -1,37 +1,25 @@
-; Actors (mailboxes, threads, the atexit drain) and the big-stack main thread.
+; Actors: a thread per spawned body, joined in spawn order at exit; channels (chan.zyl) are the only communication.
 (use base)
 (use thread)
 (use heap)
 (use alloc)
+(use out)
+(use chan)
 
 (extern "zyl_rt_atexit" (Int) Int)
+(extern "zyl_rt_try_call" (Int Int) Int)
+(extern "zyl_try_push" () Int)
 
 (defmacro ac-ld (a) (ffi-call "%load64" a 1))
 (defmacro ac-st (a v) (ffi-call "%store64" a v 1))
 
-; A C int result: its low 32 bits.
-(defn ac-int (x) (bit-and x 4294967295))
-
-; --- the system: {next_id, initialized}; 1024 slots of 96 bytes ---
-; slot: entry 0, state 8, head 16, tail 24, count 32, thread 40, lock 48, cond 56, alive 64, running 72, joined 80, parked 88
-; message: {kind (0 data, 1 closure), data, next}; closure message: {fn, state}
+; --- the system: {next_id, initialized, exit abandoned}; 1024 slots of {entry, state, thread, joined} ---
 
 (defn ac-max () 1024)
-(defn ac-sys () (ffi-call "%global" "actor_sys" 16 1))
-(defn ac-slot (id) (+ (ffi-call "%global" "actor_slots" 98304 1) (* id 96)))
+(defn ac-sys () (ffi-call "%global" "actor_sys" 24 1))
+(defn ac-slot (id) (+ (ffi-call "%global" "actor_slots" 32768 1) (* id 32)))
 (defn ac-inited () (not (= (ac-ld (+ (ac-sys) 8)) 0)))
 (defn ac-next () (ac-ld (ac-sys)))
-
-(defn ac-lock (a) (zyl_rt_mutex_lock (ac-ld (+ a 48))))
-(defn ac-unlock (a) (zyl_rt_mutex_unlock (ac-ld (+ a 48))))
-(defn ac-cond (a) (ac-ld (+ a 56)))
-(defn ac-field (a off) (ac-ld (+ a off)))
-(defn ac-set (a off v) (ac-st (+ a off) v))
-
-; The running actor's id, stored plus one so the zeroed block reads -1.
-(defn ac-self-cell () (ffi-call "%tls" "actor_self" 8 1))
-(defn rt-actor-self-id () (- (ac-ld (ac-self-cell)) 1))
-(defn rt-actor-self-set (id) (ac-st (ac-self-cell) (+ id 1)))
 
 (defn zyl_actor_init ()
   (if (ac-inited) 0
@@ -40,261 +28,89 @@
         (let _ (ac-st (+ s 8) 1)
           (let _ (ffi-call "zyl_rt_atexit" (ffi-call "%fn" "zyl_actor_wait_all" 1) 1) 0))))))
 
-(defn ac-init-if () (if (ac-inited) 0 (zyl_actor_init)))
-
-; Malloc'd futex mutex and cond words; the lock pointer is published last.
-(defn ac-sync-init (a)
-  (let m (zyl_rt_malloc 40)
-    (let c (zyl_rt_malloc 48)
-      (if (or (= m 0) (= c 0))
-        (let _ (zyl_rt_free m) (let _ (zyl_rt_free c) (ffi-call "zyl_panic" "E_OUT_OF_MEMORY: no memory for an actor" 1)))
-        (let _ (ffi-call "%store64" m 0 1)
-          (let _ (ffi-call "%store64" c 0 1)
-            (let _ (ac-set a 56 c) (ac-set a 48 m))))))))
-
-(defn ac-limit ()
-  (let msg "zyl: actor limit reached (1024)\n"
-    (let _ (rt-write-fd 2 (rt-w msg) (strlen-of msg)) 4294967295)))
+; An uncaught panic on main: actors are abandoned, their buffered output dropped.
+(defn zyl_actor_abandon () (let _ (ac-st (+ (ac-sys) 16) 1) 0))
 
 ; Addresses compare unsigned: below 4096 is no pointer.
 (defn ac-ptr-p (w) (or (< w 0) (>= w 4096)))
 
 ; A capturing lambda is a [2051230803, code, env] triple: spawn its code with its env.
 (defn zyl_actor_spawn (entry state)
-  (let _ (ac-init-if)
+  (let _ (zyl_actor_init)
     (if (and (ac-ptr-p entry) (= (ac-ld entry) 2051230803))
-      (ac-spawn (ac-ld (+ entry 8)) (ac-ld (+ entry 16)))
-      (ac-spawn entry state))))
+      (ac-spawn (ac-ld (+ entry 8)) (ac-ld (+ entry 16)) (ac-ld (+ entry 16)))
+      (ac-spawn entry state 0))))
 
-(defn ac-spawn (entry state)
-  (let id (ac-next)
-    (if (>= id (ac-max)) (ac-limit)
+; Spawns are serialized by the channel lock's owner bookkeeping; ids are handed out in program order per spawner.
+(defn ac-spawn (entry state env)
+  (let id (ffi-call "%fetch-add" (ac-sys) 1 1)
+    (if (>= id (ac-max)) (ffi-call "zyl_panic" "E_ACTOR_LIMIT: at most 1024 actors per program" 1)
       (let a (ac-slot id)
-        (let _ (ac-set a 0 entry)
-          (let _ (ac-set a 8 state)
-            (let _ (ac-set a 16 0)
-              (let _ (ac-set a 24 0)
-                (let _ (ac-set a 32 0)
-                  (let _ (ac-set a 64 1)
-                    (let _ (ac-set a 72 0)
-                      (let _ (ac-set a 80 0)
-                        (let _ (ac-sync-init a)
-                          (let _ (zyl_threads_started_mark)
-                            (let _ (ac-set a 40 (zyl_rt_thread_create (ffi-call "%fn" "zyl_actor_thread_entry" 1) id 0 0))
-                              (let _ (ac-st (ac-sys) (+ id 1)) id))))))))))))))))
+        (let _ (ac-st a entry)
+          (let _ (ac-st (+ a 8) state)
+            (let _ (ac-st (+ a 24) 0)
+              (let _ (zyl_chan_actor_spawn (+ id 2) env)
+                (let _ (zyl_threads_started_mark)
+                  (let t (zyl_rt_thread_create (ffi-call "%fn" "zyl_actor_thread_entry" 1) id 0 0)
+                    (if (= t 0)
+                      (let _ (zyl_chan_actor_done (+ id 2) 0) (ffi-call "zyl_panic" "E_OUT_OF_MEMORY: no thread for an actor" 1))
+                      (let _ (ac-st (+ a 16) t) id))))))))))))
 
-; A known actor slot, or 0; the id is a uint32 as in C.
-(defn ac-target (id0)
-  (let id (ac-int id0)
-    (if (or (not (ac-inited)) (or (>= id (ac-max)) (>= id (ac-next)))) 0 (ac-slot id))))
-
-; Appends m under the lock; a stopped actor drops it (and its closure block c).
-(defn ac-enqueue (a m c)
-  (let _ (ac-lock a)
-    (if (= (ac-field a 64) 0)
-      (let _ (ac-unlock a) (let _ (zyl_rt_free m) (let _ (if (= c 0) 0 (zyl_rt_free c)) 0)))
-      (let t (ac-field a 24)
-        (let _ (if (= t 0) (ac-set a 16 m) (ac-st (+ t 16) m))
-          (let _ (ac-set a 24 m)
-            (let _ (ac-set a 32 (ac-int (+ (ac-field a 32) 1)))
-              (let _ (ac-tick)
-              (let _ (zyl_rt_cond_signal (ac-cond a))
-                (let _ (ac-unlock a) 0))))))))))
-
-(defn ac-msg (kind data)
-  (let m (zyl_rt_malloc 24)
-    (if (= m 0) 0 (let _ (ac-st m kind) (let _ (ac-st (+ m 8) data) (let _ (ac-st (+ m 16) 0) m))))))
-
-; msg is caller-owned and never freed here.
-(defn zyl_actor_send (id msg)
-  (let a (ac-target id)
-    (if (= a 0) 0
-      (let m (ac-msg 0 msg) (if (= m 0) 0 (ac-enqueue a m 0))))))
-
-(defn zyl_actor_send_data (id data) (zyl_actor_send id data))
-
-(defn zyl_actor_send_closure (id f state)
-  (let a (ac-target id)
-    (if (= a 0) 0
-      (let c (zyl_rt_malloc 16)
-        (if (= c 0) 0
-          (let _ (ac-st c f)
-            (let _ (ac-st (+ c 8) state)
-              (let m (ac-msg 1 c)
-                (if (= m 0) (let _ (zyl_rt_free c) 0) (ac-enqueue a m c))))))))))
-
-; On the main thread the first call opens a threadless mailbox so actors can reply.
-(defn zyl_actor_self ()
-  (let s (rt-actor-self-id)
-    (if (>= s 0) s
-      (let _ (ac-init-if)
-        (let id (ac-next)
-          (if (>= id (ac-max)) -1
-            (let a (ac-slot id)
-              (let _ (ffi-call "%fill" a 0 96 1)
-                (let _ (ac-set a 64 1)
-                  (let _ (ac-sync-init a)
-                    (let _ (ac-st (ac-sys) (+ id 1))
-                      (let _ (rt-actor-self-set id) id))))))))))))
-
-; Locked: waits (parked) while alive with an empty mailbox; returns locked.
-(defn ac-wait-mail (a)
-  (if (and (not (= (ac-field a 64) 0)) (= (ac-field a 16) 0))
-    (let _ (ac-set a 88 1)
-      (let _ (zyl_rt_cond_wait (ac-cond a) (ac-field a 48)) (ac-wait-mail a)))
-    (ac-set a 88 0)))
-
-; Locked, mailbox non-empty: unlinks the head and unlocks.
-(defn ac-pop (a)
-  (let m (ac-field a 16)
-    (let h (ac-ld (+ m 16))
-      (let _ (ac-set a 16 h)
-        (let _ (if (= h 0) (ac-set a 24 0) 0)
-          (let _ (ac-set a 32 (ac-int (- (ac-field a 32) 1)))
-            (let _ (ac-tick) (let _ (ac-unlock a) m))))))))
-
-(defn ac-run-closure (c)
-  (if (= c 0) 0
-    (let f (ac-ld c) (if (= f 0) 0 (ffi-call "%call1" f (ac-ld (+ c 8)) 1)))))
-
-; The next data message; closure messages ahead of it run first.
-(defn zyl_actor_receive ()
-  (let id (zyl_actor_self)
-    (if (< id 0) 0 (ac-recv (ac-slot id)))))
-
-(defn ac-recv (a)
-  (let _ (ac-lock a)
-    (let _ (ac-wait-mail a)
-      (if (= (ac-field a 64) 0)
-        (let threaded (not (= (ac-field a 40) 0))
-          (let _ (if threaded (ac-set a 72 0) 0)
-            (let _ (ac-unlock a)
-              (if threaded (let _ (zyl_rt_thread_exit) 0) 0))))
-        (let m (ac-pop a)
-          (if (= (ac-ld m) 0)
-            (let v (ac-ld (+ m 8)) (let _ (zyl_rt_free m) v))
-            (let c (ac-ld (+ m 8))
-              (let _ (ac-run-closure c)
-                (let _ (zyl_rt_free c)
-                  (let _ (zyl_rt_free m) (ac-recv a)))))))))))
+; The body under a try frame: a panic ends only this actor, and its message waits for the joiner.
+(defn zyl_actor_body ()
+  (let a (ac-slot (- (zyl_owner_self) 2)) (ffi-call "%call1" (ac-ld a) (ac-ld (+ a 8)) 1)))
 
 (defn zyl_actor_thread_entry (arg)
-  (let id (ac-int arg)
-    (if (>= id (ac-max)) 0
-      (let _ (rt-actor-self-set id)
-        (let a (ac-slot id)
-          (let _ (ac-lock a)
-            (let _ (ac-set a 72 1)
-              (let _ (ac-unlock a)
-                (let e (ac-field a 0)
-                  (let _ (if (= e 0) 0 (ffi-call "%call1" e (ac-field a 8) 1))
-                    (let _ (ac-serve a)
-                      (let _ (ac-lock a)
-                        (let _ (ac-set a 72 0) (let _ (ac-unlock a) 0))))))))))))))
+  (let id (bit-and arg 4294967295)
+    (let _ (zyl_owner_set (+ id 2))
+      (let f (zyl_try_push)
+        (let prev (ac-ld (+ f 64))
+          (if (= (ffi-call "zyl_rt_try_call" f (ffi-call "%fn" "zyl_actor_body" 1) 1) 0)
+            (let _ (ac-st (ffi-call "%tls" "try_top" 8 1) prev)
+              (let _ (zyl_rt_free f) (zyl_chan_actor_done (+ id 2) 0)))
+            (let m (ac-ld (+ f 72))
+              (let c (rt-strdup (if (= m 0) (rt-w "error") m))
+                (let _ (zyl_rt_free f) (zyl_chan_actor_done (+ id 2) (if (= c 0) (rt-w "error") c)))))))))))
 
-; Mailbox FIFO until wait_all stops the actor.
-(defn ac-serve (a)
-  (let _ (ac-lock a)
-    (let _ (ac-wait-mail a)
-      (if (= (ac-field a 64) 0) (ac-unlock a)
-        (let m (ac-pop a)
-          (let _ (if (= (ac-ld m) 1)
-                   (let c (ac-ld (+ m 8)) (let _ (ac-run-closure c) (zyl_rt_free c)))
-                   0)
-            (let _ (zyl_rt_free m) (ac-serve a))))))))
+; A known actor id, or -1.
+(defn ac-valid (id) (and (ac-inited) (and (>= id 0) (< id (if (> (ac-next) (ac-max)) (ac-max) (ac-next))))))
 
-; --- the exit drain: drain, check quiescence under each lock, then stop and join all ---
-
-; Every enqueue and pop bumps the epoch; a quiescence scan counts only when no message moved during it.
-(defn ac-epoch () (ffi-call "%global" "actor_epoch" 8 1))
-(defn ac-tick () (ffi-call "%fetch-add" (ac-epoch) 1 1))
-
-(defn ac-live-p (a) (and (= (ac-field a 80) 0) (not (= (ac-field a 40) 0))))
-
-; A never-used slot has no lock and is never active.
-(defn ac-pending (i)
-  (if (>= i (ac-max)) false
-    (let a (ac-slot i)
-      (if (= (ac-field a 48) 0) (ac-pending (+ i 1))
-        (let _ (ac-lock a)
-          (let act (and (ac-live-p a) (> (ac-field a 32) 0))
-            (let _ (ac-unlock a)
-              (if act true (ac-pending (+ i 1))))))))))
-
-; nanosleep 1 ms (usleep(1000)).
-(defn ac-nap ()
-  (let ts (ffi-call "%tls" "actor_ts" 16 1)
-    (let _ (ac-st ts 0) (let _ (ac-st (+ ts 8) 1000000) (ffi-call "%syscall2" 35 ts 0 1)))))
-
-(defn ac-drain () (if (ac-pending 0) (let _ (ac-nap) (ac-drain)) 0))
-
-(defn ac-quiesced (i)
-  (if (>= i (ac-max)) true
-    (let a (ac-slot i)
-      (if (= (ac-field a 48) 0) (ac-quiesced (+ i 1))
-        (let _ (ac-lock a)
-          (let busy (and (ac-live-p a) (or (> (ac-field a 32) 0) (= (ac-field a 88) 0)))
-            (let _ (ac-unlock a)
-              (if busy false (ac-quiesced (+ i 1))))))))))
-
-; Wakes the stopped actor's thread t, joins it and marks it joined.
-(defn ac-join (a t)
-  (let _ (zyl_rt_cond_broadcast (ac-cond a))
-    (let _ (zyl_rt_thread_join t)
-      (let _ (ac-lock a) (let _ (ac-set a 80 1) (ac-unlock a))))))
-
-(defn ac-stop-all (i)
-  (if (>= i (ac-max)) 0
-    (let a (ac-slot i)
-      (if (= (ac-field a 48) 0) (ac-stop-all (+ i 1))
-        (let _ (ac-lock a)
-          (let act (ac-live-p a)
-            (let _ (if act (let _ (ac-set a 64 0) (ac-set a 88 0)) 0)
-              (let t (ac-field a 40)
-                (let _ (ac-unlock a)
-                  (let _ (if act (ac-join a t) 0) (ac-stop-all (+ i 1))))))))))))
-
-; A live actor with mail, or not parked (running, or its thread not started yet), is busy.
-(defn zyl_actor_wait_all ()
-  (let _ (ac-drain)
-    (let e1 (ffi-call "%load64" (ac-epoch) 1)
-      (if (and (ac-quiesced 0) (= e1 (ffi-call "%load64" (ac-epoch) 1))) (ac-stop-all 0) (let _ (ac-nap) (zyl_actor_wait_all))))))
-
-; --- lifecycle queries (the id is a signed Int) ---
-
-(defn ac-query (id)
-  (if (or (not (ac-inited)) (or (< id 0) (or (>= id (ac-max)) (>= id (ac-next))))) 0 (ac-slot id)))
-
-(defn zyl_actor_is_alive (id)
-  (let a (ac-query id)
-    (if (= a 0) 0
-      (let _ (ac-lock a)
-        (let v (if (= (ac-field a 64) 0) 0 1) (let _ (ac-unlock a) v))))))
-
-(defn zyl_actor_terminate (id)
-  (let a (ac-query id)
-    (if (= a 0) 0
-      (let _ (ac-lock a)
-        (let act (ac-live-p a)
-          (let _ (if act (ac-set a 64 0) 0)
-            (let t (ac-field a 40)
-              (let _ (ac-unlock a)
-                (let _ (if act (ac-join a t) 0) 0)))))))))
-
+; Joined means its output is emitted and its panic re-raised here; a second wait does nothing.
 (defn zyl_actor_wait (id)
-  (let a (ac-query id)
-    (if (= a 0) 0
-      (let _ (ac-lock a)
-        (let need (ac-live-p a)
-          (let t (ac-field a 40)
-            (let _ (if (and need (not (= (ac-field a 64) 0)))
-                     (let _ (ac-set a 64 0) (zyl_rt_cond_signal (ac-cond a)))
-                     0)
-              (let _ (ac-unlock a)
-                (if need
-                  (let _ (zyl_rt_thread_join t)
-                    (let _ (ac-lock a) (let _ (ac-set a 80 1) (let _ (ac-unlock a) 0))))
-                  0)))))))))
+  (if (not (ac-valid id)) 0
+    (let a (ac-slot id)
+      (if (not (= (ac-ld (+ a 24)) 0)) 0
+        (let m (zyl_chan_actor_join (+ id 2))
+          (let _ (zyl_rt_thread_join (ac-ld (+ a 16)))
+            (let _ (ac-st (+ a 24) 1)
+              (let _ (zyl_out_actor_emit (+ id 2))
+                (if (= m 0) 0 (ffi-call "zyl_panic" (ffi-call "%str" m 1) 1))))))))))
+
+; Deterministic: true until this program joins the actor.
+(defn zyl_actor_is_alive (id) (if (not (ac-valid id)) 0 (if (= (ac-ld (+ (ac-slot id) 24)) 0) 1 0)))
+
+; --- exit: main's channels close, then every unjoined actor is joined in spawn order ---
+
+(defn ac-join-rest (i n first)
+  (if (>= i n) first
+    (let a (ac-slot i)
+      (if (not (= (ac-ld (+ a 24)) 0)) (ac-join-rest (+ i 1) n first)
+        (let m (zyl_chan_actor_join (+ i 2))
+          (let _ (zyl_rt_thread_join (ac-ld (+ a 16)))
+            (let _ (ac-st (+ a 24) 1)
+              (let _ (zyl_out_actor_emit (+ i 2))
+                (ac-join-rest (+ i 1) n (if (= first 0) m first))))))))))
+
+; The first unjoined panic (spawn order) is reported after every actor's output, and the exit code becomes 1.
+(defn zyl_actor_wait_all ()
+  (if (or (not (ac-inited)) (not (= (ac-ld (+ (ac-sys) 16)) 0))) 0
+    (let _ (zyl_chan_main_done)
+      (let n (if (> (ac-next) (ac-max)) (ac-max) (ac-next))
+        (let m (ac-join-rest 0 n 0)
+          (if (= m 0) 0
+            (let _ (zyl_out_flush)
+              (let _ (zyl_err_puts (rt-w "PANIC: "))
+                (let _ (zyl_err_puts m) (let _ (zyl_err_puts (rt-w "\n")) (zyl_chan_exit 1)))))))))))
 
 ; --- main on a big stack: mmap ladder 64G..1G with a low guard page, else inline ---
 

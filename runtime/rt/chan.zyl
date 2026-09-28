@@ -1,0 +1,186 @@
+; Kahn channels (docs/concurrency-determinism-design.md): one writer, one reader, blocking FIFO, closing, deadlock detection.
+(use base)
+(use thread)
+(use heap)
+(use alloc)
+(use out)
+
+(defmacro ch-ld (a) (ffi-call "%load64" a 1))
+(defmacro ch-st (a v) (ffi-call "%store64" a v 1))
+
+; --- the scheduler: one lock and cond, {lock 0, cond 8, top owner 16} ---
+
+(defn ch-g () (ffi-call "%global" "chan_sched" 24 1))
+(defn ch-lock () (zyl_rt_mutex_lock (ch-g)))
+(defn ch-unlock () (zyl_rt_mutex_unlock (ch-g)))
+(defn ch-wake () (zyl_rt_cond_broadcast (+ (ch-g) 8)))
+
+; Per owner id: {state 0 (0 none, 1 live, 2 finished), wait kind 8, wait object 16, panic message 24}.
+(defn ch-rec (o) (+ (ffi-call "%global" "chan_owners" 32832 1) (* o 32)))
+
+; Wait kinds: 0 running, 1 room in channel, 2 a value or close, 3 owner finished.
+(defn ch-ready-p (k x)
+  (if (= k 1) (< (ch-ld (+ x 24)) (ch-ld (+ x 8)))
+    (if (= k 2) (or (> (ch-ld (+ x 24)) 0) (= (ch-ld (+ x 32)) 1))
+      (if (= k 3) (= (ch-ld (ch-rec x)) 2) true))))
+
+; Main (owner 1) is live until the process ends.
+(defn ch-live-p (o) (if (= o 1) true (= (ch-ld (ch-rec o)) 1)))
+
+; Locked: some live owner is running or can proceed.
+(defn ch-progress-p (o top)
+  (if (> o top) false
+    (let r (ch-rec o)
+      (if (and (ch-live-p o) (ch-ready-p (ch-ld (+ r 8)) (ch-ld (+ r 16)))) true (ch-progress-p (+ o 1) top)))))
+
+; Locked: waits until kind k on x is ready; every live owner stuck is E_DEADLOCK, a whole-program error.
+(defn ch-wait (k x)
+  (if (ch-ready-p k x) 0
+    (let r (ch-rec (zyl_owner_self))
+      (let _ (ch-st (+ r 8) k)
+        (let _ (ch-st (+ r 16) x)
+          (let _ (if (ch-progress-p 1 (ch-ld (+ (ch-g) 16))) 0 (ch-deadlock))
+            (let _ (zyl_rt_cond_wait (+ (ch-g) 8) (ch-g))
+              (let _ (ch-st (+ r 8) 0) (ch-wait k x)))))))))
+
+; Everything written so far, in spawn order, straight to stdout, then the report; the lock stays held so no one else runs.
+(defn ch-deadlock ()
+  (let _ (zyl_owner_set 1)
+  (let _ (ch-emit-all 2 (ch-ld (+ (ch-g) 16)))
+    (let _ (zyl_out_flush)
+      (let _ (zyl_err_puts (rt-w "PANIC: E_DEADLOCK: every live actor is blocked on a channel or a join\n"))
+        (zyl_chan_exit 1))))))
+
+(defn ch-emit-all (o top) (if (> o top) 0 (let _ (zyl_out_actor_emit o) (ch-emit-all (+ o 1) top))))
+
+; Flushes both stdio layers, then exit_group (no atexit: this may run inside one).
+(defn zyl_chan_exit (code)
+  (let _ (zyl_out_flush)
+    (let f (ffi-call "%fn-weak" "fflush" 1)
+      (let _ (if (and (zyl_rt_hosted_p) (> f 0)) (ffi-call "%call1" f 0 1) 0)
+        (ffi-call "%syscall1" 231 code 1)))))
+
+; --- objects: channel {magic, cap, head, count, closed, tx, rx, buf}; endpoint {magic, chan, owner} ---
+
+(defn ch-magic () 1514357326)
+(defn tx-magic () 1514363992)
+(defn rx-magic () 1514360920)
+
+(defn ch-panic (m) (ffi-call "zyl_panic" m 1))
+
+(defn ch-endpoint (magic c o)
+  (let e (zyl_heap_alloc 24) (let _ (ch-st e magic) (let _ (ch-st (+ e 8) c) (let _ (ch-st (+ e 16) o) e)))))
+
+(defn zyl_chan_new (n)
+  (if (or (< n 1) (> n 16777216)) (ch-panic "E_CHANNEL_CAPACITY: a channel buffer holds 1 to 16777216 values")
+    (let c (zyl_heap_alloc 64)
+      (let buf (zyl_heap_alloc (* n 8))
+        (if (or (= c 0) (= buf 0)) (ch-panic "E_OUT_OF_MEMORY: no memory for a channel")
+          (let me (zyl_owner_self)
+            (let _ (ch-st c (ch-magic))
+              (let _ (ch-st (+ c 8) n)
+                (let _ (ch-st (+ c 16) 0)
+                  (let _ (ch-st (+ c 24) 0)
+                    (let _ (ch-st (+ c 32) 0)
+                      (let _ (ch-st (+ c 40) (ch-endpoint (tx-magic) c me))
+                        (let _ (ch-st (+ c 48) (ch-endpoint (rx-magic) c me))
+                          (let _ (ch-st (+ c 56) buf) (let _ (zyl_chan_register c) c)))))))))))))))
+
+(defn zyl_chan_tx (c) (ch-ld (+ c 40)))
+(defn zyl_chan_rx (c) (ch-ld (+ c 48)))
+
+; Whether word w is an endpoint: a heap block is checked before any read, and its channel must point back at it.
+(defn ch-endpoint-p (w)
+  (if (not (and (zyl_heap_block_p w) (zyl_heap_block_p (+ w 16)))) false
+    (let m (ch-ld w)
+      (if (not (or (= m (tx-magic)) (= m (rx-magic)))) false
+        (let c (ch-ld (+ w 8))
+          (if (not (and (zyl_heap_block_p c) (zyl_heap_block_p (+ c 56)))) false
+            (and (= (ch-ld c) (ch-magic)) (= (ch-ld (+ c (if (= m (tx-magic)) 40 48))) w))))))))
+
+(defn ch-own-check (e) (if (= (ch-ld (+ e 16)) (zyl_owner_self)) 0 (ch-panic "E_CHANNEL_NOT_OWNER: this actor does not own the channel endpoint")))
+
+; Appends v, blocking while full; a sent endpoint is in transit (owner 0) until received.
+(defn zyl_chan_send (tx v)
+  (let _ (ch-own-check tx)
+    (let ep (ch-endpoint-p v)
+      (let _ (if ep (ch-own-check v) 0)
+        (let c (ch-ld (+ tx 8))
+          (let _ (ch-lock)
+            (let _ (ch-wait 1 c)
+              (let _ (if ep (ch-st (+ v 16) 0) 0)
+                (let slot (% (+ (ch-ld (+ c 16)) (ch-ld (+ c 24))) (ch-ld (+ c 8)))
+                  (let _ (ch-st (+ (ch-ld (+ c 56)) (* slot 8)) v)
+                    (let _ (ch-st (+ c 24) (+ (ch-ld (+ c 24)) 1))
+                      (let _ (ch-wake) (let _ (ch-unlock) 0)))))))))))))
+
+; Removes the oldest value, blocking while empty; closed and empty is E_CHANNEL_CLOSED.
+(defn zyl_chan_recv (rx)
+  (let _ (ch-own-check rx)
+    (let c (ch-ld (+ rx 8))
+      (let _ (ch-lock)
+        (let _ (ch-wait 2 c)
+          (if (= (ch-ld (+ c 24)) 0)
+            (let _ (ch-unlock) (ch-panic "E_CHANNEL_CLOSED: the channel's sender finished and every value was received"))
+            (let h (ch-ld (+ c 16))
+              (let v (ch-ld (+ (ch-ld (+ c 56)) (* h 8)))
+                (let _ (ch-st (+ c 16) (% (+ h 1) (ch-ld (+ c 8))))
+                  (let _ (ch-st (+ c 24) (- (ch-ld (+ c 24)) 1))
+                    (let _ (if (and (ch-endpoint-p v) (= (ch-ld (+ v 16)) 0)) (ch-st (+ v 16) (zyl_owner_self)) 0)
+                      (let _ (ch-wake) (let _ (ch-unlock) v)))))))))))))
+
+; --- the channel registry, in creation order (walked only to close) {ptr, len, cap} ---
+
+(defn ch-reg () (ffi-call "%global" "chan_reg" 24 1))
+
+(defn zyl_chan_register (c)
+  (let r (ch-reg)
+    (let _ (ch-lock)
+      (let n (ch-ld (+ r 8))
+        (let ok (if (< n (ch-ld (+ r 16))) true
+                  (let cap (if (= n 0) 64 (* n 2))
+                    (let q (zyl_rt_realloc (ch-ld r) (* cap 8))
+                      (if (= q 0) false (let _ (ch-st r q) (let _ (ch-st (+ r 16) cap) true))))))
+          (if ok (let _ (ch-st (+ (ch-ld r) (* n 8)) c) (let _ (ch-st (+ r 8) (+ n 1)) (ch-unlock)))
+            (let _ (ch-unlock) (ch-panic "E_OUT_OF_MEMORY: no memory for a channel"))))))))
+
+; Locked: closes every channel whose sending end owner o holds.
+(defn ch-close-owned (o i)
+  (let r (ch-reg)
+    (if (>= i (ch-ld (+ r 8))) 0
+      (let c (ch-ld (+ (ch-ld r) (* i 8)))
+        (let _ (if (= (ch-ld (+ (ch-ld (+ c 40)) 16)) o) (ch-st (+ c 32) 1) 0)
+          (ch-close-owned o (+ i 1)))))))
+
+; --- actor lifecycle (actor.zyl): owner o = actor id + 2 ---
+
+; Before the thread starts: the closure's directly captured endpoints that the spawner owns move to o.
+(defn zyl_chan_actor_spawn (o env)
+  (let _ (ch-lock)
+    (let _ (ch-st (ch-rec o) 1)
+      (let _ (ch-st (+ (ch-rec o) 8) 0)
+        (let _ (ch-st (+ (ch-rec o) 24) 0)
+          (let _ (if (> o (ch-ld (+ (ch-g) 16))) (ch-st (+ (ch-g) 16) o) 0)
+            (let _ (if (= env 0) 0 (ch-move-words env 0 (ch-ld (- env 8)) (zyl_owner_self) o))
+              (ch-unlock))))))))
+
+(defn ch-move-words (env i n from o)
+  (if (>= i n) 0
+    (let w (ch-ld (+ env (* i 8)))
+      (let _ (if (and (ch-endpoint-p w) (= (ch-ld (+ w 16)) from)) (ch-st (+ w 16) o) 0)
+        (ch-move-words env (+ i 1) n from o)))))
+
+; The actor's body returned or panicked (msg, malloc'd, else 0): its channels close and joiners wake.
+(defn zyl_chan_actor_done (o msg)
+  (let _ (ch-lock)
+    (let _ (ch-close-owned o 0)
+      (let _ (ch-st (+ (ch-rec o) 24) msg)
+        (let _ (ch-st (ch-rec o) 2)
+          (let _ (ch-wake) (ch-unlock)))))))
+
+; Blocks until owner o is finished (deadlock-aware); its panic message, or 0.
+(defn zyl_chan_actor_join (o)
+  (let _ (ch-lock) (let _ (ch-wait 3 o) (let m (ch-ld (+ (ch-rec o) 24)) (let _ (ch-unlock) m)))))
+
+; Main's program is over: its sending ends close.
+(defn zyl_chan_main_done () (let _ (ch-lock) (let _ (ch-close-owned 1 0) (let _ (ch-wake) (ch-unlock)))))

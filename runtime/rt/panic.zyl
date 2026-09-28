@@ -9,6 +9,7 @@
 
 (extern "zyl_rt_exit" (Int) Int)
 (extern "zyl_ffi_on_worker" () Int)
+(extern "zyl_actor_abandon" () Int)
 (extern "zyl_rt_try_call" (Int Int) Int)
 (extern "zyl_rt_longjmp" (Int Int) Int)
 
@@ -107,9 +108,10 @@
       (let _ (rt-st64 (+ st 8) 0)
         (let _ (zyl_region_unwind (rt-ld64 (+ st 16)))
           (ffi-call "zyl_rt_longjmp" (pn-tbuf) 1 1)))
+      (let _ (zyl_actor_abandon)
       (let w (if (= m 0) (rt-w "assertion failed") m)
         (let _ (if (= (zyl_diag_json) 0) (pn-err (str-concat "PANIC: " (str-concat (pn-s w) "\n"))) (pn-panic-json w))
-          (ffi-call "zyl_rt_exit" 1 1))))))
+          (ffi-call "zyl_rt_exit" 1 1)))))))
 
 ; JSON mode: a rendered object passes through; "E_CODE: text" and "error[E_CODE]: text" split off the code.
 (defn pn-panic-json (m)

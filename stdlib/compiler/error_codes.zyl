@@ -94,6 +94,11 @@
                                                             (Cons (EC "E_MODULE_NOT_FOUND" 9 1 "module: module M not found at P")
 (Cons (EC "E_MUT_CONFLICT" 13 1 "aliasing: mutable reference conflict at S")
                                                                       (Cons (EC "E_NULL_POINTER" 10 1 "runtime: null pointer dereference")
+                                                                  (Cons (EC "E_CHANNEL_NOT_OWNER" 10 1 "runtime: this actor does not own the channel endpoint")
+                                                                  (Cons (EC "E_CHANNEL_CLOSED" 10 1 "runtime: the channel's sender finished and every value was received")
+                                                                  (Cons (EC "E_CHANNEL_CAPACITY" 10 1 "runtime: a channel buffer holds 1 to 16777216 values")
+                                                                  (Cons (EC "E_DEADLOCK" 10 1 "runtime: every live actor is blocked on a channel or a join")
+                                                                  (Cons (EC "E_ACTOR_LIMIT" 10 1 "runtime: at most 1024 actors per program")
                                                                   (Cons (EC "E_OUT_OF_MEMORY" 10 1 "runtime: out of memory")
                                                                   (Cons (EC "E_OVERFLOW" 15 1 "numeric: integer overflow at S")
                                                                   (Cons (EC "E_REGION_ESCAPE" 6 1 "region: value escapes region constraint at S")
@@ -157,7 +162,7 @@
                                                           (Cons (EC "E_PKG_ORPHAN_IMPL" 12 1 "trait: impl of T for U where neither the trait nor the type is local to N")
                                                           (Cons (EC "E_PKG_CAPABILITY_VIOLATION" 13 1 "capability: package N uses M without declaring the C capability")
                                                           (Cons (EC "E_PKG_CAPABILITY_GROWTH" 13 1 "capability: capability closure grew under --locked: C")
-                                                          Nil))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+                                                          Nil)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 ; ---------------------------------------------------------------------------
 ; ACCESSORS
 ; ---------------------------------------------------------------------------

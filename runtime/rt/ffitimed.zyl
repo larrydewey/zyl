@@ -36,7 +36,7 @@
     (zyl_ffi_invoke_wide f argc a))))))))))
 
 (defn zyl_ffi_worker_main (w)
-  (let _ (rt-actor-self-set (ff-ld (+ w 32)))
+  (let _ (zyl_owner_set (ff-ld (+ w 32)))
     (let _ (ff-st (ff-on-worker-cell) 1)
       (let _ (ff-lock w) (ff-serve w)))))
 
@@ -90,7 +90,7 @@
                           (let _ (zyl_rt_free ca)
                             (let _ (ff-st w m)
                               (let _ (ff-st (+ w 8) c)
-                                (let _ (ff-st (+ w 32) (rt-actor-self-id))
+                                (let _ (ff-st (+ w 32) (zyl_owner_self))
                                   (ff-start cell w at))))))))))))))))))
 
 (defn ff-start (cell w at)

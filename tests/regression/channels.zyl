@@ -1,0 +1,123 @@
+; Channel Regression Tests: Kahn channels (docs/concurrency-determinism-design.md).
+; One writer, one reader, blocking FIFO; endpoints move at spawn capture or when sent.
+
+(use actor/actor)
+
+(deftype ChMsg (ChAdd Int) (ChGet) (ChStop))
+
+(defn ch-counter (rx tx total)
+  (match (chan-recv rx)
+    (ChAdd n (ch-counter rx tx (+ total n)))
+    (ChGet (begin (chan-send tx total) (ch-counter rx tx total)))
+    (ChStop (chan-send tx (- 0 total)))))
+
+(test "request-reply"
+  (let req (chan 4)
+    (let rep (chan 4)
+      (let rtx (chan-tx req)
+        (let prx (chan-rx rep)
+          (let crx (chan-rx req)
+            (let ctx (chan-tx rep)
+              (let c (spawn (fn () (ch-counter crx ctx 0)))
+                (begin
+                  (chan-send rtx (ChAdd 5))
+                  (chan-send rtx (ChAdd 7))
+                  (chan-send rtx (ChGet))
+                  (assert-equal (chan-recv prx) 12)
+                  (chan-send rtx (ChAdd 30))
+                  (chan-send rtx (ChStop))
+                  (assert-equal (chan-recv prx) -42)
+                  (actor-wait c))))))))))
+
+(defn ch-send-range (tx i n) (if (>= i n) 0 (let _ (chan-send tx i) (ch-send-range tx (+ i 1) n))))
+
+; Each value must arrive after its predecessor: a gap returns -1.
+(defn ch-in-order (rx k want)
+  (if (= k 0) want (let v (chan-recv rx) (if (= v want) (ch-in-order rx (- k 1) (+ want 1)) -1))))
+
+(test "fifo-through-a-small-buffer"
+  (let c (chan 2)
+    (let tx (chan-tx c)
+      (let rx (chan-rx c)
+        (let a (spawn (fn () (ch-send-range tx 0 500)))
+          (begin
+            (assert-equal (ch-in-order rx 500 0) 500)
+            (actor-wait a)))))))
+
+(test "pipeline-of-actors"
+  (let c1 (chan 1)
+    (let c2 (chan 1)
+      (let t1 (chan-tx c1)
+        (let r1 (chan-rx c1)
+          (let t2 (chan-tx c2)
+            (let r2 (chan-rx c2)
+              (let _ (spawn (fn () (ch-send-range t1 0 100)))
+                (let _ (spawn (fn () (ch-double r1 t2 100)))
+                  (assert-equal (ch-sum r2 100 0) 9900))))))))))
+
+(defn ch-double (rx tx n) (if (= n 0) 0 (let _ (chan-send tx (* 2 (chan-recv rx))) (ch-double rx tx (- n 1)))))
+(defn ch-sum (rx n acc) (if (= n 0) acc (ch-sum rx (- n 1) (+ acc (chan-recv rx)))))
+
+(test "fan-in-one-channel-per-producer"
+  (let ca (chan 3)
+    (let cb (chan 3)
+      (let ta (chan-tx ca)
+        (let tb (chan-tx cb)
+          (let ra (chan-rx ca)
+            (let rb (chan-rx cb)
+              (let _ (spawn (fn () (ch-send-range ta 0 50)))
+                (let _ (spawn (fn () (ch-send-range tb 100 150)))
+                  (assert-equal (+ (ch-sum ra 50 0) (ch-sum rb 50 0)) 7450))))))))))
+
+(test "strings-and-floats-cross"
+  (let c (chan 2)
+    (let d (chan 2)
+      (let tx (chan-tx c)
+        (let dtx (chan-tx d)
+          (let rx (chan-rx c)
+            (let drx (chan-rx d)
+              (let _ (spawn (fn () (let _ (chan-send tx "hello") (chan-send dtx 2.5))))
+                (begin
+                  (assert-equal (chan-recv rx) "hello")
+                  (assert-equal (chan-recv drx) 2.5))))))))))
+
+(test "an-endpoint-sent-over-a-channel-moves"
+  (let data (chan 4)
+    (let meta (chan 1)
+      (let dtx (chan-tx data)
+        (let drx (chan-rx data)
+          (let mtx (chan-tx meta)
+            (let mrx (chan-rx meta)
+              (let _ (spawn (fn () (chan-send mtx drx)))
+                (let r (chan-recv mrx)
+                  (begin
+                    (chan-send dtx 41)
+                    (assert-equal (+ 1 (chan-recv r)) 42)))))))))))
+
+(test "closed-and-drained-is-an-error"
+  (let c (chan 2)
+    (let tx (chan-tx c)
+      (let rx (chan-rx c)
+        (let a (spawn (fn () (chan-send tx 7)))
+          (begin
+            (actor-wait a)
+            (assert-equal (chan-recv rx) 7)
+            (assert-equal (try (begin (chan-recv rx) "no error") (catch e (str-substring e 0 16))) "E_CHANNEL_CLOSED")))))))
+
+(test "a-moved-endpoint-is-not-the-spawners"
+  (let c (chan 1)
+    (let rx (chan-rx c)
+      (let tx (chan-tx c)
+        (let _ (spawn (fn () (chan-recv rx)))
+          (begin
+            (chan-send tx 1)
+            (assert-equal (try (begin (chan-recv rx) "no error") (catch e (str-substring e 0 19))) "E_CHANNEL_NOT_OWNER")))))))
+
+(test "an-actor-panic-is-raised-at-its-join"
+  (let a (spawn (fn () (error "boom")))
+    (assert-equal (try (begin (actor-wait a) "no error") (catch e e)) "boom")))
+
+(test "capacity-must-be-positive"
+  (assert-equal (try (begin (chan-tx (chan 0)) "no error") (catch e (str-substring e 0 18))) "E_CHANNEL_CAPACITY"))
+
+(run-tests)

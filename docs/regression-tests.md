@@ -145,7 +145,7 @@ them at eval time — a difference in when, not in what.
 
 Some tests are deliberately left out of this comparison, and
 `DIFF_SKIP` in the runner records why for each: programs that spawn
-actors (`actors`, `actor-receive`, `concurrency`, and `modules`, one of
+actors (`actors`, `channels`, `concurrency`, and `modules`, one of
 whose tests spawns an actor; an interpreted function has no native entry
 point, so the interpreter reports `E_UNSUPPORTED_INTERPRETED`), one that
 prints a value's address (`derive`), one that prints the bytes at a
@@ -217,9 +217,9 @@ tests/
 │   ├── try-catch.zyl          # error inside a called function, caught
 │   ├── with-resource.zyl      # lexically scoped resources
 │   ├── unwrap-error.zyl       # Result/Option unwrapping, error propagation
-│   ├── actors.zyl             # spawn, send, message patterns
-│   ├── actor-receive.zyl      # (receive) and (actor-self)
-│   ├── concurrency.zyl        # spawn, send, send-closure, mailboxes
+│   ├── actors.zyl             # spawn, join, output at join
+│   ├── channels.zyl           # Kahn channels: chan, chan-send, chan-recv
+│   ├── concurrency.zyl        # spawn, join, atomics across actors
 │   ├── ffi.zyl                # ffi-call, ffi-pin, ffi-unpin, timeout
 │   ├── ffi-advanced.zyl       # pinning, timeouts
 │   ├── ffi-timeout.zyl        # a foreign call that overruns raises E_FFI_TIMEOUT

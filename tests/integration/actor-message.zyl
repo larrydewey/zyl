@@ -3,19 +3,24 @@
 ; Integration Test: multi-actor message passing
 
 ; Multi-actor message passing
-(test "actor-multi-message"
-  (let actor1 (spawn (fn () 0))
-    (let actor2 (spawn (fn () 0))
-      (send actor1 1)
-      (send actor2 2)
-      (actor-wait actor1)
-      (actor-wait actor2)
-      (assert-true true))))
+(defn am-twice (rx tx) (chan-send tx (* 2 (chan-recv rx))))
 
-(test "actor-terminate-all"
-  (let actor (spawn (fn () 0))
-    (actor-terminate actor)
-    (actor-wait actor)
-    (assert-true true)))
+(test "actor-multi-message"
+  (let in1 (chan 1)
+    (let in2 (chan 1)
+      (let out1 (chan 1)
+        (let out2 (chan 1)
+          (let r1 (chan-rx in1)
+            (let r2 (chan-rx in2)
+              (let t1 (chan-tx out1)
+                (let t2 (chan-tx out2)
+                  (let actor1 (spawn (fn () (am-twice r1 t1)))
+                    (let actor2 (spawn (fn () (am-twice r2 t2)))
+                      (begin
+                        (chan-send (chan-tx in1) 1)
+                        (chan-send (chan-tx in2) 2)
+                        (assert-equal (+ (chan-recv (chan-rx out1)) (chan-recv (chan-rx out2))) 6)
+                        (actor-wait actor1)
+                        (actor-wait actor2)))))))))))))
 
 (run-tests)

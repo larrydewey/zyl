@@ -1,49 +1,20 @@
 ; === Zyl Standard Library — Actor Operations ===
 ; Module: actor/actor
-; Provides: spawn, send, and actor lifecycle operations backed by the C runtime.
+; Provides: spawn and join. Actors communicate only through channels
+; (chan, chan-tx, chan-rx, chan-send, chan-recv); see
+; docs/concurrency-determinism-design.md.
 
-; ===========================================================================
-; SPAWN
-; ===========================================================================
-
-; Spawn a new actor with the given closure
+; Spawn a new actor running the closure.
 ; Returns: Actor
 (defn actor-spawn (closure)
   (spawn closure))
 
-; ===========================================================================
-; SEND
-; ===========================================================================
-
-; Send a message to an actor
-; Returns: Unit
-(defn actor-send (actor message)
-  (send actor message))
-
-; Send a message, wrapped in a Result. The timeout is not implemented:
-; send never blocks on a mailbox, so there is nothing to time out yet.
-; Returns: Result<Unit, String>
-(defn actor-send-with-timeout (actor message _timeout)
-  (try
-    (Ok (send actor message))
-    (catch e
-      (Err e))))
-
-; ===========================================================================
-; ACTOR LIFECYCLE
-; ===========================================================================
-
-; Check if an actor is alive (has not been terminated).
+; True until this program joins the actor (deterministic, never a race).
 ; Returns: Bool
 (defn actor-is-alive (actor)
   (ffi-call "zyl_actor_is_alive" actor 1000))
 
-; Wait for an actor to finish its thread (blocks until it exits).
+; Wait for the actor to finish; its output is emitted here and its panic re-raised here.
 ; Returns: Unit
 (defn actor-wait (actor)
   (ffi-call "zyl_actor_wait" actor 1000))
-
-; Terminate an actor: stop its message loop and join its thread.
-; Returns: Unit
-(defn actor-terminate (actor)
-  (ffi-call "zyl_actor_terminate" actor 1000))

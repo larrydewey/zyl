@@ -150,8 +150,8 @@
   (if (str-eq word "impl") true
   (if (str-eq word "use") true
   (if (str-eq word "spawn") true
-  (if (str-eq word "send") true
-  (if (str-eq word "receive") true
+  (if (str-eq word "chan-send") true
+  (if (str-eq word "chan-recv") true
   (if (str-eq word "try") true
   (if (str-eq word "catch") true
   (if (str-eq word "ffi-call") true
@@ -159,7 +159,7 @@
   (if (str-eq word "assert") true
   (if (str-eq word "assert-equal") true
   (if (str-eq word "impl-not") true
-  (if (str-eq word "actor-self") true
+  (if (str-eq word "chan") true
   (if (str-eq word "requires") true
   (if (str-eq word "ensures") true
   (if (str-eq word "invariant") true

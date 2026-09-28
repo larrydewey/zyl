@@ -9,31 +9,20 @@
 (extern "strtol" (String Int Int) Int)
 (extern "getpid" () Int)
 
-(defn sum-n (k total)
-  (if (= k 0) total (sum-n (- k 1) (+ total (receive)))))
+(defn send-range (tx i n) (if (>= i n) 0 (let _ (chan-send tx i) (send-range tx (+ i 1) n))))
 
-; Each message must arrive after its predecessor: a gap returns -1.
-(defn in-order (k want)
-  (if (= k 0) want (let v (receive) (if (= v want) (in-order (- k 1) (+ want 1)) -1))))
-
-(defn send-range (a i n) (if (>= i n) 0 (let _ (send a i) (send-range a (+ i 1) n))))
-
-(test "fifo-many"
-  (let me (actor-self)
-    (let a (spawn (fn () (send me (in-order 500 0))))
-      (let _ (send-range a 0 500)
-        (assert-equal (receive) 500)))))
+(defn sum-n (rx k total)
+  (if (= k 0) total (sum-n rx (- k 1) (+ total (chan-recv rx)))))
 
 (test "capturing-spawn"
-  (let me (actor-self)
-    (let base 40
-      (let a (spawn (fn () (send me (+ base (sum-n 2 0)))))
-        (let _ (send a 1)
-          (let _ (send a 1)
-            (assert-equal (receive) 42)))))))
-
-(test "self-is-stable"
-  (assert-equal (actor-self) (actor-self)))
+  (let c (chan 2)
+    (let r (chan 1)
+      (let rx (chan-rx c)
+        (let rtx (chan-tx r)
+          (let base 40
+            (let _ (spawn (fn () (chan-send rtx (+ base (sum-n rx 2 0)))))
+              (let _ (send-range (chan-tx c) 0 2)
+                (assert-equal (chan-recv (chan-rx r)) 41)))))))))
 
 (test "wait-then-dead"
   (let a (spawn (fn () 0))
@@ -41,11 +30,9 @@
       (let _ (actor-wait a)
         (assert-equal (actor-is-alive a) false)))))
 
-(test "terminate-then-send-dropped"
-  (let a (spawn (fn () (receive)))
-    (let _ (actor-terminate a)
-      (let _ (send a 5)
-        (assert-equal (actor-is-alive a) false)))))
+(test "nested-join-output-order"
+  (let a (spawn (fn () (let b (spawn (fn () (print "inner"))) (let _ (print "outer") (actor-wait b)))))
+    (let _ (actor-wait a) (assert-true true))))
 
 (defn fmt (buf n) (let _ n (alloc-cstr buf)))
 
@@ -60,8 +47,9 @@
                     "1,2,3,4,5,6,7,8,9,10,11,12,13"))))
 
 (test "ffi-in-actor"
-  (let me (actor-self)
-    (let _ (spawn (fn () (send me (ffi-call "labs" -11 1000))))
-      (assert-equal (receive) 11))))
+  (let c (chan 1)
+    (let tx (chan-tx c)
+      (let _ (spawn (fn () (chan-send tx (ffi-call "labs" -11 1000))))
+        (assert-equal (chan-recv (chan-rx c)) 11)))))
 
 (run-tests)

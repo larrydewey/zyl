@@ -207,13 +207,17 @@
 (defn builtins-actors ()
   (Cons (ZB "spawn" "special-form" "(spawn expr)"
           "Spawn an actor. Rejected on a `Secret` operand: a secret must not cross an actor boundary.")
-  (Cons (ZB "send" "special-form" "(send actor message)"
-          "Send a message to an actor; FIFO per sender. Rejected on a `Secret` operand.")
-  (Cons (ZB "receive" "special-form" "(receive)"
-          "The next data message in the running actor's mailbox, blocking until one arrives. Queued closure messages run first.")
-  (Cons (ZB "actor-self" "special-form" "(actor-self)"
-          "The running actor's id. On main, opens main's mailbox so actors can reply to it.")
-  Nil)))))
+  (Cons (ZB "chan" "builtin" "(chan n)"
+          "A channel buffering 1 to n values of one type. Its ends are `chan-tx` and `chan-rx`; the creating actor owns both.")
+  (Cons (ZB "chan-tx" "builtin" "(chan-tx c)"
+          "The sending end. It moves to a spawned actor that captures it, or to whoever receives it over a channel.")
+  (Cons (ZB "chan-rx" "builtin" "(chan-rx c)"
+          "The receiving end. It moves like `chan-tx`.")
+  (Cons (ZB "chan-send" "special-form" "(chan-send tx value)"
+          "Append a value, blocking while the buffer is full. Rejected on a `Secret` operand and on a let-mut value.")
+  (Cons (ZB "chan-recv" "builtin" "(chan-recv rx)"
+          "Remove the oldest value, blocking while empty. E_CHANNEL_CLOSED once the sender finished and the channel is drained.")
+  Nil)))))))
 
 (defn builtins-ffi ()
   (Cons (ZB "ffi-call" "special-form" "(ffi-call \"symbol\" arg ... timeout)"

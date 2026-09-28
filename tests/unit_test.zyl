@@ -503,23 +503,20 @@
       (let actor (spawn (fn () 0))
         (assert-true (actor-is-alive actor))))
 
-(test "actor terminate"
-      (let actor (spawn (fn () 0))
-        (begin
-         (actor-terminate actor)
-         0)))
-
 (test "actor wait"
       (let actor (spawn (fn () 0))
         (begin
          (actor-wait actor)
          0)))
 
-(test "send-basic"
-      (let actor (spawn (fn () 0))
-        (send actor 42)
-        (actor-wait actor)
-        0))
+(test "chan-send-basic"
+      (let c (chan 1)
+        (let rx (chan-rx c)
+          (let actor (spawn (fn () (chan-recv rx)))
+            (begin
+             (chan-send (chan-tx c) 42)
+             (actor-wait actor)
+             0)))))
 
 (test "file-open"
       (let fd (file-open "/tmp/zyl_test.txt" "w")

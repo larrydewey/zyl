@@ -1,4 +1,4 @@
-; Actor Concurrency Regression Tests — spawn, send, message patterns
+; Actor Regression Tests: spawn and join (channels are tests/regression/channels.zyl)
 ; Spec §15, §513-524
 
 (use core/core)
@@ -16,12 +16,6 @@
     0))
 
 ; Send message to actor
-(test "actor-send-basic"
-  (let a (spawn (fn () 0))
-    (send a 42)
-    (actor-wait a)
-    0))
-
 ; Multiple actors
 (test "actor-multiple"
   (let a1 (spawn (fn () 1))
@@ -37,14 +31,6 @@
     0))
 
 ; Send multiple messages
-(test "actor-multiple-send"
-  (let a (spawn (fn () 0))
-    (send a 1)
-    (send a 2)
-    (send a 3)
-    (actor-wait a)
-    0))
-
 ; Actor that spawns another actor
 (test "actor-spawn-nested"
   (let outer (spawn
@@ -56,32 +42,9 @@
     0))
 
 ; Actor with Int message (Send-capable)
-(test "actor-int-message"
-  (let a (spawn (fn () 0))
-    (send a 123)
-    (actor-wait a)
-    0))
-
 ; Actor with Float message (Send-capable)
-(test "actor-float-message"
-  (let a (spawn (fn () 0))
-    (send a 3.14)
-    (actor-wait a)
-    0))
-
 ; Actor with Bool message (Send-capable)
-(test "actor-bool-message"
-  (let a (spawn (fn () 0))
-    (send a true)
-    (actor-wait a)
-    0))
-
 ; Actor termination
-(test "actor-terminate"
-  (let a (spawn (fn () 0))
-    (actor-terminate a)
-    0))
-
 ; Actor wait returns
 (test "actor-wait-returns"
   (let a (spawn (fn () 42))
@@ -89,5 +52,25 @@
     0))
 
 
+
+; Int, Float and Bool values cross a channel (all Send-capable)
+(test "actor-typed-values"
+  (let ci (chan 1)
+    (let cf (chan 1)
+      (let cb (chan 1)
+        (let ti (chan-tx ci)
+          (let tf (chan-tx cf)
+            (let tb (chan-tx cb)
+              (let a (spawn (fn () (begin (chan-send ti 123) (chan-send tf 3.14) (chan-send tb true))))
+                (begin
+                  (assert-equal (chan-recv (chan-rx ci)) 123)
+                  (assert-equal (chan-recv (chan-rx cf)) 3.14)
+                  (assert-true (chan-recv (chan-rx cb)))
+                  (actor-wait a))))))))))
+
+; Output is buffered per actor and emitted at its join
+(test "actor-output-at-join"
+  (let a (spawn (fn () (print "from the actor")))
+    (begin (actor-wait a) (assert-false (actor-is-alive a)))))
 
 (run-tests)

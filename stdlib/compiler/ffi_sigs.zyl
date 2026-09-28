@@ -139,7 +139,6 @@
   (Cons (FSig "%word" "a -> Int")
   (Cons (FSig "%str" "Int -> String")
   (Cons (FSig "zyl_actor_is_alive" "Actor -> Bool")
-  (Cons (FSig "zyl_actor_terminate" "Actor -> Unit")
   (Cons (FSig "zyl_actor_wait" "Actor -> Unit")
   (Cons (FSig "zyl_aes_encrypt_block" "Words Int Words Words -> Bool")
   (Cons (FSig "zyl_aesni_available" "-> Bool")
@@ -333,4 +332,4 @@
   (Cons (FSig "zyl_words_set" "Words Int Int -> Int")
   (Cons (FSig "zyl_words_view" "Arena Words Int Int -> Words")
   (Cons (FSig "zyl_zeroize" "Int Int -> Int")
-  Nil))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+  Nil)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))

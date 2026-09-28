@@ -2,6 +2,7 @@
 (use base)
 (use alloc)
 (use fmt)
+(use heap)
 
 (defmacro ou-ld64 (a) (ffi-call "%load64" a 1))
 (defmacro ou-st64 (a v) (ffi-call "%store64" a v 1))
@@ -67,7 +68,41 @@
     (if (< k 0) (ou-append s p n)
       (if (and (ou-append s p (+ k 1)) (ou-flush-locked s)) (ou-append s (+ p (+ k 1)) (- n (+ k 1))) false))))
 
-(defn ou-put (s p n) (if (= (ou-ld64 (+ s 16)) 2) (ou-put-line s p n) (ou-put-full s p n)))
+; --- actor output: an actor's writes go to its own buffer, emitted when it is joined or at exit ---
+
+; The calling thread's owner id: 1 for main and non-actor threads, actor i is i+2.
+(defn ou-owner-cell () (ffi-call "%tls" "owner_id" 8 1))
+(defn zyl_owner_self () (let v (ou-ld64 (ou-owner-cell)) (if (= v 0) 1 v)))
+(defn zyl_owner_set (o) (let _ (ou-st64 (ou-owner-cell) o) 0))
+
+; {ptr, len, cap} per owner id (1026 of them).
+(defn ou-abuf (o) (+ (ffi-call "%global" "actor_out" 24624 1) (* o 24)))
+
+; Only the owning thread appends; its joiner reads after the join.
+(defn ou-abuf-put (b p n)
+  (let len (ou-ld64 (+ b 8))
+    (let cap (ou-ld64 (+ b 16))
+      (let ok (if (<= (+ len n) cap) true
+                (let nc (if (< (* cap 2) (+ len n)) (+ len (+ n 256)) (* cap 2))
+                  (let q (zyl_rt_realloc (ou-ld64 b) nc)
+                    (if (= q 0) false (let _ (ou-st64 b q) (let _ (ou-st64 (+ b 16) nc) true))))))
+        (if ok (let _ (rt-copy (+ (ou-ld64 b) len) p n) (let _ (ou-st64 (+ b 8) (+ len n)) true)) false)))))
+
+; Writes owner o's buffer through the caller's own output (so a nested join lands in the joiner's buffer), then frees it.
+(defn zyl_out_actor_emit (o)
+  (if (or (< o 2) (> o 1025)) 0
+    (let b (ou-abuf o)
+      (let p (ou-ld64 b)
+        (let n (ou-ld64 (+ b 8))
+          (let _ (ou-st64 b 0)
+            (let _ (ou-st64 (+ b 8) 0)
+              (let _ (ou-st64 (+ b 16) 0)
+                (if (= p 0) 0 (let _ (zyl_out_write p n) (let _ (zyl_rt_free p) 0)))))))))))
+
+(defn ou-put (s p n)
+  (let o (zyl_owner_self)
+    (if (>= o 2) (ou-abuf-put (ou-abuf o) p n)
+      (if (= (ou-ld64 (+ s 16)) 2) (ou-put-line s p n) (ou-put-full s p n)))))
 
 (defn ou-puts (s w) (ou-put s w (rt-strlen w)))
 

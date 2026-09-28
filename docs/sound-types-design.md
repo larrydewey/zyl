@@ -185,15 +185,10 @@ written. Each is now an error or does what it says:
 
 ## Known hole
 
-The byte-operation and `file-write` holes above were found after strict
-checking became the default and closed on 2026-09-25; `receive` is again
-the only one.
-
-`receive` returns a value of any type: an actor mailbox holds whatever
-any sender put there, so no type can be given to what comes out without
-effect typing. The deterministic-concurrency work replaces mailboxes with
-typed single-sender channels, which removes it. Until then it is the only
-unchecked typing a program can reach.
+None. The last one was `receive`, whose result took any type because an
+actor mailbox held whatever any sender put there. Typed single-sender
+channels (`(Chan T)`, `(Tx T)`, `(Rx T)`,
+docs/concurrency-determinism-design.md) replaced mailboxes on 2026-09-28.
 
 ## Not done
 

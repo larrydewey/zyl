@@ -330,6 +330,9 @@ have landed, stages 3 to 5 are partial.
   `--sched=deterministic` and is the test oracle against a seeded chaos
   mode (byte-identical output required). Breaking change to
   `ActorRef`/`send`; the spec gains a concurrency-determinism section.
+  Stage 1 done 2026-09-28 (channels, ownership, closing, deadlock,
+  per-actor output, panic isolation, mailboxes removed); the schedulers
+  are next.
 - **Inline assembly: rejected.** Raw asm breaks determinism (rdtsc,
   rdrand, cpuid, CPU-feature dependence, writes outside regions).
   Deterministic typed intrinsics instead (popcnt, clz/ctz, bswap, rotl,
@@ -437,6 +440,42 @@ as recorded below.
 ---
 
 # Session log (newest first)
+
+## Session (2026-09-28, concurrency) — Kahn channels replace mailboxes
+
+- New: `runtime/rt/chan.zyl`, which holds channels, endpoint ownership,
+  closing, deadlock detection and the scheduler lock. Also
+  `docs/concurrency-determinism-design.md` and
+  `tests/regression/channels.zyl` (renamed from `actor-receive.zyl`).
+- Language:
+  - `(chan n)`, `chan-tx`, `chan-rx`, `(chan-send tx v)` and
+    `(chan-recv rx)` are typed `(Chan a)`, `(Tx a)` and `(Rx a)`.
+  - `send`, `receive`, `actor-self` and `actor-terminate` are removed,
+    along with stdlib `actor-send` and `actor-send-with-timeout`.
+  - `chan-send` reuses the `ESend` node, so the let-mut and Secret
+    checks carry over.
+  - `receive` was the last known type hole (spec §4.8); it is closed.
+- Runtime:
+  - actors no longer have mailboxes;
+  - an actor's stdout is buffered per owner (`out.zyl`) and emitted when
+    it is joined, or at exit in spawn order;
+  - an actor body runs under a try frame, and `actor-wait` re-raises its
+    panic;
+  - exit joins every actor and reports the first unjoined panic;
+  - after main's own panic, actors are abandoned;
+  - FFI workers inherit the caller's owner id.
+- Errors: E_CHANNEL_NOT_OWNER, E_CHANNEL_CLOSED, E_CHANNEL_CAPACITY,
+  E_DEADLOCK and E_ACTOR_LIMIT (spec §28, `error_codes.zyl`).
+- Spec §1.3, the grammar, §4.8, §15, §25 and §31.9 are updated, as are
+  `spec/05`, `08`, `09` and `16`.
+- Checked: 200 runs each of a 50-actor pipeline, a deadlock, exit
+  ordering, panic and fan-in gave byte-identical output. Hosted and
+  freestanding links match.
+- Limitations:
+  - an endpoint nested inside a captured value does not move at spawn;
+  - Send-capability is still the syntactic let-mut rule;
+  - `--sched=deterministic` and the chaos mode are not done yet;
+  - the book's actor chapters still describe mailboxes.
 
 ## Session (2026-09-28, site) — GitHub Pages site and the book
 

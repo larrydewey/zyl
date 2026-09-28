@@ -646,28 +646,10 @@
     (EFor bindings cond body (ic-for arena bindings cond body vt))
     (EFfiPin e (IFfi "zyl_ffi_pin" (Cons (ic-expr arena e vt) Nil)))
     (EFfiUnpin e (IFfi "zyl_ffi_unpin" (Cons (ic-expr arena e vt) Nil)))
-    ; (spawn (fn () body)): had NO icnf.zyl lowering at all (unlike
-    ; EFfiPin/EFor before their own fixes, ESpawn wasn't even mentioned
-    ; as a known gap) — silently fell to the universal (IConst 0)
-    ; fallback, so `spawn` always returned 0 instead of a real actor id;
-    ; every actor test that "passed" was operating on actor slot 0 by
-    ; coincidence, not a genuinely spawned actor. zyl_actor_spawn wants a
-    ; plain `void(*)(void*)` entry point plus a state pointer (used for
-    ; captures) — every spawn body in this corpus is non-capturing, so
-    ; state is always a hardcoded 0/null; (ic-expr body) for an EFn
-    ; already goes through ic-lambda/ic-hoist exactly like a plain `fn`
-    ; value would (see EFn below), no separate spawn-specific closure-
-    ; conversion needed. A CAPTURING spawn body is not supported:
-    ; ic-lambda lowers it to a closure value (function plus captured
-    ; environment, via ic-lambda-closure), not a bare function pointer,
-    ; and zyl_actor_spawn calls whatever it is handed as code -- such a
-    ; program segfaults at run time.
+    ; (spawn f): the runtime takes a plain entry or a closure triple (its env's endpoints move to the actor).
     (ESpawn body (IFfi "zyl_actor_spawn" (Cons (ic-expr arena body vt) (Cons (IConst 0) Nil))))
-    ; (send actor msg): same gap, no lowering at all. Mirrors the archived
-    ; Rust bootstrap — msg is passed straight through as an opaque
-    ; value, never boxed/heap-allocated, since none of this corpus's
-    ; send calls need to survive being freed on an error path.
-    (ESend actor msg (IFfi "zyl_actor_send" (Cons (ic-expr arena actor vt) (Cons (ic-expr arena msg vt) Nil))))
+    ; (chan-send tx v): v is passed as its word.
+    (ESend actor msg (IFfi "zyl_chan_send" (Cons (ic-expr arena actor vt) (Cons (ic-expr arena msg vt) Nil))))
     ; (try body (catch e handler)): lowers to ITryCatch, which codegen's
     ; cg-trycatch turns into the runtime's zyl_rt_setjmp panic-frame
     ; mechanism (zyl_try_push/zyl_try_pop, used by zyl_panic to unwind to
@@ -1281,17 +1263,19 @@
       (ic-call-or-variant-go arena fname args vt))))
 
 ; Runtime ops reached by name: def getters' cells (expr_inner.zyl's
-; def-getter) and the actor forms (receive) / (actor-self).
+; def-getter) and the channel forms.
 (defn ic-global-sym (n)
   (if (str-eq n "zyl global ready") "zyl_global_ready"
     (if (str-eq n "zyl global get") "zyl_global_get"
       (if (str-eq n "zyl global put") "zyl_global_put"
-        (if (str-eq n "receive") "zyl_actor_receive"
-          (if (str-eq n "actor-self") "zyl_actor_self"
+        (if (str-eq n "chan") "zyl_chan_new"
+          (if (str-eq n "chan-tx") "zyl_chan_tx"
+          (if (str-eq n "chan-rx") "zyl_chan_rx"
+          (if (str-eq n "chan-recv") "zyl_chan_recv"
             (if (str-eq n "zyl-contract-warn") "zyl_contract_warn"
               (if (str-eq n "zyl-err-is") "zyl_err_is"
                 (if (str-eq n "zyl-reraise") "zyl_panic"
-                  (if (str-eq n "zyl-repl-global") "zyl_repl_global_get" ""))))))))))
+                  (if (str-eq n "zyl-repl-global") "zyl_repl_global_get" ""))))))))))))
 
 (defn ic-call-or-variant-go (arena fname args vt)
   (let tag (vt-tag-of vt (str-intern arena fname))
