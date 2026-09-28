@@ -438,6 +438,38 @@ as recorded below.
 
 # Session log (newest first)
 
+## Session (2026-09-28, wave 2) — the allocator and frame regions move to Zyl
+
+- `runtime/rt/alloc.zyl` (mine):
+  - the memory budget: `ZYL_MAX_MEMORY`, else 80% of MemAvailable read
+    from /proc/meminfo by syscall, else sysinfo; a %cas once; charges
+    through %fetch-add; the OOM report exits with exit_group;
+  - arenas, with the same layout including the pthread mutex, locked
+    only once `zyl_threads_started_mark` has run (C calls it before
+    pthread_create);
+  - the heap and pin arenas (`zyl_arenas_init`/`_destroy`, called from
+    C's `zyl_ensure_arenas` and destructor), `zyl_heap_alloc` (with a
+    lock-free single-threaded bump path), `zyl_heap_swap`,
+    `zyl_session_arena`, `zyl_heap_block_p`, the pin arena
+    (`zyl_pin_alloc`, `zyl_pin_word`/`zyl_pin_owns` behind C's
+    `ffi_pin`/`ffi_unpin`) and `zyl_mlock` (syscall 149);
+  - every frame-region entry (`zyl_ralloc`, enter/scope/free/recycle/
+    exit/unwind/mark/live): per-thread class pools in `%tls`, blocks
+    mapped with the mmap syscall, and the four-word layout that
+    generated code inlines unchanged.
+- C keeps only the two `__thread` chain heads generated code names:
+  `zyl_cur_region` and `zyl_region_top`.
+- Perf, like-for-like:
+  - self-compile about +3.5% (2.10 s vs 2.03 s);
+  - trees and list at parity;
+  - vec about +8% (0.075 s vs 0.069 s). What remains is zeroing that C
+    did with `memset`; a `rep stosb` primitive comes after the AES
+    merge;
+  - `zyl_ralloc` is a bare dispatch, so the heap path pays no prologue
+    (MIR saves callee-saved registers on every path; shrink-wrapping is
+    backend work).
+- The suite passes 287/287.
+
 ## Session (2026-09-28, wave 2 prep) — shared primitives, float entries, a NaN fix
 
 - Fixed a compiler bug: native Float comparisons ignored the unordered

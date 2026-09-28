@@ -20,9 +20,6 @@ static volatile int g_threads_started; /* see ZYL_ARENA_LOCK */
 #include <sys/wait.h>
 extern char** environ;
 
-#define ZYL_HEAP_ARENA_DEFAULT_BLOCK (1024 * 1024)
-#define ZYL_PIN_ARENA_DEFAULT_BLOCK (256 * 1024)
-
 /* Lowest address the kernel will ever map on Linux by default
  * (/proc/sys/vm/mmap_min_addr, 0x10000 on most distros; 0x1000 is the
  * conservative floor even on the most permissive configs). Used to reject
@@ -30,8 +27,6 @@ extern char** environ;
 #define ZYL_MIN_CALL_ADDR 0x1000LL
 
 static ZylActorSystem g_system;
-static void* g_heap_arena = NULL;
-static void* g_pin_arena = NULL;
 
 #include <sys/resource.h>
 #include <sys/mman.h>
@@ -140,26 +135,14 @@ void zyl_ensure_arenas(void) {
        in every generated main prologue, so every compiled program
        drains its actors before exit. */
     zyl_actor_init();
-    if (!g_heap_arena) {
-        g_heap_arena = (void*)(size_t)zyl_arena_create(ZYL_HEAP_ARENA_DEFAULT_BLOCK);
-    }
-    if (!g_pin_arena) {
-        g_pin_arena = (void*)(size_t)zyl_arena_create(ZYL_PIN_ARENA_DEFAULT_BLOCK);
-    }
+    zyl_arenas_init();
 }
 
 __attribute__((destructor))
 static void zyl_runtime_cleanup(void) {
     /* An abandoned FFI call may still be using arena memory. */
     if (zyl_ffi_abandoned()) return;
-    if (g_pin_arena) {
-        zyl_arena_destroy((long long)(size_t)g_pin_arena);
-        g_pin_arena = NULL;
-    }
-    if (g_heap_arena) {
-        zyl_arena_destroy((long long)(size_t)g_heap_arena);
-        g_heap_arena = NULL;
-    }
+    zyl_arenas_destroy();
 }
 
 void zyl_actor_init(void) {
@@ -211,6 +194,7 @@ uint32_t zyl_actor_spawn(void (*entry)(void*), void* state) {
     pthread_cond_init(&actor->cond, NULL);
 
     g_threads_started = 1;
+    zyl_threads_started_mark();
     pthread_create(&actor->thread, NULL, zyl_actor_thread_entry, (void*)(size_t)id);
     g_system.next_id++;
 
@@ -589,8 +573,6 @@ struct ZylTryFrame {
     const char* msg;
     void* region_mark;   /* zyl_region_top when the handler was installed */
 };
-void* zyl_region_mark(void);
-void zyl_region_unwind(void* mark);
 
 /* Thread-local: each actor runs its own thread with independent try/catch
  * nesting. A process-global here would let one actor's zyl_try_pop/
@@ -635,20 +617,16 @@ long long zyl_try_frame_msg(long long frame) {
  * arbitrary-address 8-byte read: any Int a zyl program computed (leaked
  * address, brute-forced offset) could be handed to ffi-unpin regardless of
  * whether ffi-pin ever produced it. */
-static int zyl_ptr_in_pin_arena(long long ptr);
 
 void* ffi_pin(long long value) {
-    if (!g_pin_arena) return NULL;
-    long long* slot = (long long*)zyl_arena_alloc((long long)(size_t)g_pin_arena, sizeof(long long));
-    if (slot) *slot = value;
-    return (void*)slot;
+    return (void*)(size_t)zyl_pin_word(value);
 }
 
 /* Unpinning returns the pinned value; the Pin arena reclaims storage in
  * bulk, so individual slots are never freed here. */
 long long ffi_unpin(long long ptr) {
     if (!ptr) return 0;
-    if (!zyl_ptr_in_pin_arena(ptr)) {
+    if (!zyl_pin_owns(ptr)) {
         fprintf(stderr, "zyl: ffi-unpin: pointer not from ffi-pin/Pin arena\n");
         return 0;
     }
@@ -717,285 +695,6 @@ void zyl_cstr_byte_set(long long ptr, long long i, long long b) {
    Deterministic: decodes left-to-right in source order. */
 
 /* ==========================================================================
-   Region-based arena allocator.
-
-   Deterministic reclamation: arena-reset frees every block at once and the
-   handle stays valid for reuse; arena-destroy frees everything including the
-   handle. Allocations are 16-byte aligned bump allocations from a growable
-   block list — no per-object free, no fragmentation bookkeeping, no
-   scheduling-dependent behavior. Arenas are single-threaded by design
-   (consistent with actor isolation: one arena per actor/scope).
-   ========================================================================== */
-
-#define ZYL_ARENA_DEFAULT_BLOCK 65536
-#define ZYL_ARENA_ALIGN 16
-/* Reject sizes that could overflow zyl_arena_align_up's `n + 15` or any
- * caller's own size arithmetic (e.g. zyl_heap_alloc's qwords*8+8 header
- * calc) before they ever reach this layer. Centralized here instead of
- * only in zyl_heap_alloc so every direct zyl_arena_alloc(_zeroed) caller
- * gets the same bound, not just the one wrapper that happened to add it. */
-#define ZYL_ARENA_MAX_ALLOC (1LL << 48)
-
-typedef struct ZylArenaBlock {
-    char* mem;
-    size_t cap;
-    size_t used;
-    struct ZylArenaBlock* next;
-} ZylArenaBlock;
-
-/* Arenas are locked only once a second thread can touch them: an actor
-   or an FFI worker (a foreign callback may run Zyl code there). The flag
-   goes 0 -> 1 on the one mutator thread before pthread_create, which is
-   a memory barrier for the new thread, and never goes back. */
-#define ZYL_ARENA_LOCK(a) do { if (g_threads_started) pthread_mutex_lock(&(a)->lock); } while (0)
-#define ZYL_ARENA_UNLOCK(a) do { if (g_threads_started) pthread_mutex_unlock(&(a)->lock); } while (0)
-
-typedef struct ZylArena {
-    ZylArenaBlock* head;
-    size_t block_size;
-    size_t total_capacity;
-    size_t total_used;
-    /* g_heap_arena/g_pin_arena are process-global, shared by every actor
-     * thread (despite the "one arena per actor/scope" isolation this type
-     * was originally meant to provide -- that per-actor split was never
-     * actually implemented). Without this lock, two actors allocating
-     * concurrently race on `head`/`used`/`total_used`: both can read the
-     * same `used` before either writes it back, so both get a pointer into
-     * the SAME bytes -- two logically distinct heap objects silently
-     * aliasing, in ordinary concurrent-actor usage, not an edge case. */
-    pthread_mutex_t lock;
-} ZylArena;
-
-static size_t zyl_arena_align_up(size_t n) {
-    return (n + (ZYL_ARENA_ALIGN - 1)) & ~(size_t)(ZYL_ARENA_ALIGN - 1);
-}
-
-/* --------------------------------------------------------------------------
-   Arena memory budget.
-
-   A failed malloc here used to return 0, and every caller dereferenced it:
-   a segfault with no diagnosis. Worse, Linux overcommits, so malloc rarely
-   fails at all -- the process simply grows until the kernel OOM killer takes
-   it, which is not a diagnosis either. A compiler bug that allocates without
-   bound (type inference used to be exponential in a function body's
-   statement count) therefore took the machine's memory with it instead of
-   reporting anything.
-
-   The budget is deliberately not a fixed constant, which would be wrong for
-   both small machines and large programs. It is:
-     ZYL_MAX_MEMORY (bytes) when set -- 0 disables the budget entirely;
-     otherwise 80% of this machine's MemAvailable at first allocation;
-     otherwise 80% of total RAM; otherwise unlimited.
-   It binds only where the kernel would have killed the process anyway, and
-   it cannot change the output of a compile that succeeds -- only how one
-   that was already doomed reports itself.
-   -------------------------------------------------------------------------- */
-
-static size_t g_arena_budget = 0;      /* 0 = unlimited */
-static size_t g_arena_bytes = 0;       /* live bytes across every arena */
-static pthread_once_t g_arena_budget_once = PTHREAD_ONCE_INIT;
-
-static size_t zyl_meminfo_available(void) {
-    FILE* f = fopen("/proc/meminfo", "r");
-    if (!f) return 0;
-    char line[256];
-    size_t avail = 0, total = 0;
-    while (fgets(line, sizeof line, f)) {
-        unsigned long long kb;
-        if (sscanf(line, "MemAvailable: %llu kB", &kb) == 1) { avail = (size_t)kb * 1024; break; }
-        if (sscanf(line, "MemTotal: %llu kB", &kb) == 1) total = (size_t)kb * 1024;
-    }
-    fclose(f);
-    return avail ? avail : total;
-}
-
-static void zyl_arena_budget_init(void) {
-    const char* env = getenv("ZYL_MAX_MEMORY");
-    if (env && *env) {
-        char* end = NULL;
-        unsigned long long v = strtoull(env, &end, 10);
-        g_arena_budget = (size_t)v;   /* 0 means "no budget" */
-        return;
-    }
-    size_t avail = zyl_meminfo_available();
-    if (!avail) {
-        long pages = sysconf(_SC_PHYS_PAGES), psz = sysconf(_SC_PAGESIZE);
-        if (pages > 0 && psz > 0) avail = (size_t)pages * (size_t)psz;
-    }
-    g_arena_budget = avail ? avail / 5 * 4 : 0;
-}
-
-/* Out of memory is not recoverable here: unwinding through zyl_panic runs
- * handlers that allocate. Report and stop. */
-void zyl_arena_oom(size_t requested, const char* why) {
-    fprintf(stderr,
-            "PANIC: error[E_OUT_OF_MEMORY]: %s\n"
-            "  = requested %zu bytes; %zu bytes already allocated; budget %zu bytes\n"
-            "  = help: set ZYL_MAX_MEMORY to a byte count to raise the budget, "
-            "or ZYL_MAX_MEMORY=0 to remove it\n",
-            why, requested, g_arena_bytes, g_arena_budget);
-    fflush(stderr);
-    _exit(1);
-}
-
-/* Charge `n` bytes against the budget before they are handed to malloc. */
-static int zyl_arena_charge(size_t n) {
-    pthread_once(&g_arena_budget_once, zyl_arena_budget_init);
-    size_t now = __atomic_add_fetch(&g_arena_bytes, n, __ATOMIC_RELAXED);
-    if (g_arena_budget && now > g_arena_budget) {
-        __atomic_sub_fetch(&g_arena_bytes, n, __ATOMIC_RELAXED);
-        return 0;
-    }
-    return 1;
-}
-
-static void zyl_arena_refund(size_t n) {
-    __atomic_sub_fetch(&g_arena_bytes, n, __ATOMIC_RELAXED);
-}
-
-static ZylArenaBlock* zyl_arena_new_block_of(ZylArena* a, size_t cap) {
-    if (cap < a->block_size) cap = a->block_size;
-    if (!zyl_arena_charge(cap))
-        zyl_arena_oom(cap, "memory budget exhausted");
-    ZylArenaBlock* b = (ZylArenaBlock*)malloc(sizeof(ZylArenaBlock));
-    if (!b) {
-        zyl_arena_refund(cap);
-        zyl_arena_oom(sizeof(ZylArenaBlock), "out of memory allocating an arena block header");
-    }
-    b->mem = (char*)malloc(cap);
-    if (!b->mem) {
-        free(b);
-        zyl_arena_refund(cap);
-        zyl_arena_oom(cap, "out of memory allocating an arena block");
-    }
-    b->cap = cap;
-    b->used = 0;
-    b->next = a->head;
-    a->head = b;
-    a->total_capacity += cap;
-    return b;
-}
-
-long long zyl_arena_create(long long block_size) {
-    size_t bs = (size_t)block_size;
-    if (bs < 16) bs = ZYL_ARENA_DEFAULT_BLOCK;
-    ZylArena* a = (ZylArena*)malloc(sizeof(ZylArena));
-    if (!a) return 0;
-    a->head = NULL;
-    a->block_size = bs;
-    a->total_capacity = 0;
-    a->total_used = 0;
-    pthread_mutex_init(&a->lock, NULL);
-    ZylArenaBlock* b = zyl_arena_new_block_of(a, bs);
-    if (!b) {
-        pthread_mutex_destroy(&a->lock);
-        free(a);
-        return 0;
-    }
-    return (long long)(size_t)a;
-}
-
-long long zyl_arena_alloc(long long arena, long long size) {
-    if (!arena || size < 0 || size > ZYL_ARENA_MAX_ALLOC) return 0;
-    ZylArena* a = (ZylArena*)(size_t)arena;
-    size_t need = zyl_arena_align_up((size_t)size);
-    ZYL_ARENA_LOCK(a);
-    ZylArenaBlock* b = a->head;
-    if (!b || need > b->cap - b->used) {
-        b = zyl_arena_new_block_of(a, need);
-        if (!b) { ZYL_ARENA_UNLOCK(a); return 0; }
-    }
-    char* p = b->mem + b->used;
-    b->used += need;
-    a->total_used += need;
-    ZYL_ARENA_UNLOCK(a);
-    return (long long)(size_t)p;
-}
-
-long long zyl_arena_alloc_zeroed(long long arena, long long size) {
-    if (!arena || size < 0 || size > ZYL_ARENA_MAX_ALLOC) return 0;
-    ZylArena* a = (ZylArena*)(size_t)arena;
-    size_t need = zyl_arena_align_up((size_t)size);
-    ZYL_ARENA_LOCK(a);
-    ZylArenaBlock* b = a->head;
-    if (!b || need > b->cap - b->used) {
-        b = zyl_arena_new_block_of(a, need);
-        if (!b) { ZYL_ARENA_UNLOCK(a); return 0; }
-    }
-    char* p = b->mem + b->used;
-    b->used += need;
-    a->total_used += need;
-    ZYL_ARENA_UNLOCK(a);
-    /* p is exclusively ours from here: `used` was already advanced past it
-     * under the lock, so no concurrent allocator can hand out an
-     * overlapping range -- safe to zero without holding the lock. */
-    memset(p, 0, (size_t)size);
-    return (long long)(size_t)p;
-}
-
-long long zyl_arena_reset(long long arena) {
-    if (!arena) return 0;
-    ZylArena* a = (ZylArena*)(size_t)arena;
-    ZYL_ARENA_LOCK(a);
-    ZylArenaBlock* b = a->head;
-    while (b) {
-        ZylArenaBlock* next = b->next;
-        /* Poison before free: any zyl-level pointer into this block that
-         * outlived the reset (nothing in the current compiler tracks or
-         * invalidates such pointers -- see region-inference gap) reads
-         * obvious garbage and is far more likely to crash fast than to
-         * silently read/corrupt whatever libc reuses this memory for. */
-        memset(b->mem, 0xDE, b->used);
-        zyl_arena_refund(b->cap);
-        free(b->mem);
-        free(b);
-        b = next;
-    }
-    a->head = NULL;
-    a->total_capacity = 0;
-    a->total_used = 0;
-    ZYL_ARENA_UNLOCK(a);
-    return 0;
-}
-
-long long zyl_arena_destroy(long long arena) {
-    if (!arena) return 0;
-    ZylArena* a = (ZylArena*)(size_t)arena;
-    ZYL_ARENA_LOCK(a);
-    ZylArenaBlock* b = a->head;
-    while (b) {
-        ZylArenaBlock* next = b->next;
-        memset(b->mem, 0xDE, b->used);
-        zyl_arena_refund(b->cap);
-        free(b->mem);
-        free(b);
-        b = next;
-    }
-    ZYL_ARENA_UNLOCK(a);
-    pthread_mutex_destroy(&a->lock);
-    free(a);
-    return 0;
-}
-
-long long zyl_arena_used(long long arena) {
-    if (!arena) return 0;
-    ZylArena* a = (ZylArena*)(size_t)arena;
-    ZYL_ARENA_LOCK(a);
-    long long v = (long long)a->total_used;
-    ZYL_ARENA_UNLOCK(a);
-    return v;
-}
-
-long long zyl_arena_capacity(long long arena) {
-    if (!arena) return 0;
-    ZylArena* a = (ZylArena*)(size_t)arena;
-    ZYL_ARENA_LOCK(a);
-    long long v = (long long)a->total_capacity;
-    ZYL_ARENA_UNLOCK(a);
-    return v;
-}
-
-/* ==========================================================================
    Source spans.
 
    Ast nodes (compiler/ast.zyl) carry no position field. Giving them one
@@ -1037,7 +736,7 @@ long long zyl_uf_new(long long level) {
         long long nc = g_uf_cap ? g_uf_cap * 2 : 4096;
         long long* np = (long long*)realloc(g_uf_parent, (size_t)nc * sizeof(long long));
         long long* nl = (long long*)realloc(g_uf_level, (size_t)nc * sizeof(long long));
-        if (!np || !nl) zyl_arena_oom((size_t)nc * 16, "union-find table");
+        if (!np || !nl) zyl_arena_oom((long long)nc * 16, (long long)(size_t)"union-find table");
         g_uf_parent = np;
         g_uf_level = nl;
         g_uf_cap = nc;
@@ -1201,375 +900,9 @@ static long long zyl_pl_join(ZylPathList l) {
     return (long long)(size_t)buf;
 }
 
-/* True if `ptr` falls within an in-use byte range of some block of
- * g_pin_arena. Used by ffi_unpin to reject pointers that were never
- * handed out by ffi_pin. */
-static int zyl_ptr_in_pin_arena(long long ptr) {
-    if (!ptr || !g_pin_arena) return 0;
-    ZylArena* a = (ZylArena*)(size_t)g_pin_arena;
-    ZYL_ARENA_LOCK(a);
-    int found = 0;
-    for (ZylArenaBlock* b = a->head; b; b = b->next) {
-        char* p = (char*)(size_t)ptr;
-        if (p >= b->mem && p + sizeof(long long) <= b->mem + b->used) { found = 1; break; }
-    }
-    ZYL_ARENA_UNLOCK(a);
-    return found;
-}
-
-/* ==========================================================================
-   Region-specific arena allocation wrappers for codegen.
-   Heap arena: for escaped values, structs, variants, closures, actor data.
-   Pin arena: for FFI-safe stable memory (non-moving).
-   ========================================================================== */
-
-long long zyl_heap_alloc(long long size) {
-    if (!g_heap_arena || size <= 0) return 0;
-    /* Reject sizes that could overflow the (qwords*8+8) header-size
-     * calculation below (signed overflow is UB in C; relying on wraparound
-     * to be caught downstream is not a validated bound). No legitimate
-     * allocation needs anywhere near this much. */
-    if (size > (1LL << 48)) {
-        fprintf(stderr, "zyl_heap_alloc: size too large size=%lld\n", size);
-        return 0;
-    }
-    /* Reserve a hidden 8-byte header before the returned pointer holding the
-     * payload size (in qwords). This enables structural equality checks
-     * (zyl_variant_eq) without changing any field offsets — all consumers
-     * see the same address as before. */
-    long long qwords = (size + 7) / 8;
-    /* Checked arithmetic: qwords * 8 + 8 must not overflow */
-    if (qwords > (SIZE_MAX - 8) / 8) {
-        fprintf(stderr, "zyl_heap_alloc: header size overflow\n");
-        return 0;
-    }
-    long long alloc_size = qwords * 8 + 8;
-    long long base = zyl_arena_alloc((long long)(size_t)g_heap_arena, alloc_size);
-    if (!base) {
-        fprintf(stderr, "zyl_heap_alloc: FAILED size=%lld\n", size);
-        return 0;
-    }
-    *(long long*)(size_t)base = qwords;
-    return base + 8;
-}
-
-/* ==========================================================================
-   Frame regions (docs/regions-design.md).
-
-   A region is a four-word header the compiler reserves in a function's
-   frame. Values the compiler proves do not outlive the call (level L) are
-   allocated in it; values that may reach the call's result (level R) go
-   into the region the caller chose for that result, which the caller
-   passes in zyl_cur_region; everything else (level H) goes to the heap.
-
-   Blocks come from a per-thread pool carved out of mmap'd chunks. The
-   chunks sit far above 4 GiB, which matters: zyl_callN and generated code
-   tell a closure object from a code address partly by where it lies.
-   ========================================================================== */
-/* Block size classes: a region's first block is small, and each further
-   block is the next class up, so a deep recursion whose every frame keeps
-   a little local data costs about 1 KiB a frame, not a whole block. */
-#define ZYL_RCLASSES 4
-static const size_t g_rclass_size[ZYL_RCLASSES] = { 1024, 4096, 16384, 65536 };
-#define ZYL_RCHUNK_BYTES (1024 * 1024)
-
-typedef struct ZylRBlock {
-    struct ZylRBlock* next;
-    size_t size;          /* bytes, header included */
-    int big;              /* its own mapping, unmapped on release */
-    int cls;              /* size class, when not big */
-} ZylRBlock;
-
-typedef struct ZylRegion {
-    struct ZylRegion* prev;
-    char* bump;
-    char* end;
-    ZylRBlock* blocks;   /* low bit set: a with-region scope, whose kind,
-                            block, align, limit and bytes used follow in
-                            the next five words of its header */
-} ZylRegion;
-
-/* The four-word layout is shared with generated code (codegen.zyl's
-   cg-region-prologue), including code from the committed seed, so a
-   scope is marked in `blocks` rather than by a fifth word. */
-#define ZYL_RBLOCKS(r) ((ZylRBlock*)((uintptr_t)(r)->blocks & ~(uintptr_t)1))
-#define ZYL_RSCOPED(r) (((uintptr_t)(r)->blocks & 1) != 0)
-#define ZYL_RSET_BLOCKS(r, b) ((r)->blocks = (ZylRBlock*)((uintptr_t)(b) | ((uintptr_t)(r)->blocks & 1)))
-#define ZYL_RPOLICY(r) ((long long*)(r) + 4)
-
-__thread ZylRegion* zyl_cur_region = 0;
-__thread ZylRegion* zyl_region_top = 0;
-static __thread ZylRBlock* g_rpool[ZYL_RCLASSES];
-static long long g_region_live = 0;   /* bytes in blocks handed to regions */
-
-static void* zyl_rmap(size_t n) {
-    if (!zyl_arena_charge(n)) zyl_arena_oom(n, "memory budget exhausted");
-    void* p = mmap(NULL, n, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    if (p == MAP_FAILED) {
-        zyl_arena_refund(n);
-        zyl_arena_oom(n, "mmap failed for a region block");
-    }
-    return p;
-}
-
-/* A block for a region that already holds `nblocks` blocks. */
-static ZylRBlock* zyl_rblock_get(size_t need, int nblocks) {
-    size_t hdr = sizeof(ZylRBlock);
-    int cls = nblocks < ZYL_RCLASSES ? nblocks : ZYL_RCLASSES - 1;
-    while (cls < ZYL_RCLASSES && need + hdr > g_rclass_size[cls]) cls++;
-    if (cls >= ZYL_RCLASSES) {
-        size_t n = (need + hdr + 4095) & ~(size_t)4095;
-        ZylRBlock* b = (ZylRBlock*)zyl_rmap(n);
-        b->size = n;
-        b->big = 1;
-        b->cls = -1;
-        b->next = 0;
-        return b;
-    }
-    if (!g_rpool[cls]) {
-        size_t sz = g_rclass_size[cls];
-        char* c = (char*)zyl_rmap(ZYL_RCHUNK_BYTES);
-        for (size_t off = 0; off + sz <= ZYL_RCHUNK_BYTES; off += sz) {
-            ZylRBlock* b = (ZylRBlock*)(c + off);
-            b->size = sz;
-            b->big = 0;
-            b->cls = cls;
-            b->next = g_rpool[cls];
-            g_rpool[cls] = b;
-        }
-    }
-    ZylRBlock* b = g_rpool[cls];
-    g_rpool[cls] = b->next;
-    b->next = 0;
-    return b;
-}
-
-enum { ZYL_RP_KIND, ZYL_RP_BLOCK, ZYL_RP_ALIGN, ZYL_RP_LIMIT, ZYL_RP_USED };
-
-/* A with-region scope (compiler/region_inference, the region extension
-   registry): kind 1 arena (blocks of `block` bytes, at most `limit` in
-   all, 0 meaning no limit), kind 2 fixed (one block of `block` bytes).
-   Every decision depends only on the sequence of requests: blocks are
-   page-aligned, so alignment padding is the same on every run, and the
-   limit counts requested bytes plus that padding. */
-static long long zyl_policy_alloc(ZylRegion* r, long long size) {
-    long long* p = ZYL_RPOLICY(r);
-    size_t align = (size_t)p[ZYL_RP_ALIGN];
-    size_t payload = (size_t)((size + 7) / 8) * 8;
-    for (int attempt = 0; attempt < 2; attempt++) {
-        if (r->bump) {
-            uintptr_t at = ((uintptr_t)r->bump + 8 + align - 1) & ~(uintptr_t)(align - 1);
-            char* end = (char*)at + payload;
-            if (end <= r->end) {
-                long long used = p[ZYL_RP_USED] + (long long)(end - r->bump);
-                /* fixed: the limit is its :size, so a block rounded up to
-                   whole pages still holds exactly that many bytes */
-                if (p[ZYL_RP_LIMIT] > 0 && used > p[ZYL_RP_LIMIT]) break;
-                p[ZYL_RP_USED] = used;
-                r->bump = end;
-                *(long long*)(at - 8) = (long long)(payload / 8);
-                return (long long)at;
-            }
-        }
-        if (p[ZYL_RP_KIND] == 2 && ZYL_RBLOCKS(r)) break;
-        size_t want = (size_t)p[ZYL_RP_BLOCK];
-        size_t need = payload + 8 + align + sizeof(ZylRBlock);
-        if (want < need) want = need;
-        if (p[ZYL_RP_KIND] == 2) want = (size_t)p[ZYL_RP_BLOCK] + 8 + align + sizeof(ZylRBlock);
-        want = (want + 4095) & ~(size_t)4095;
-        ZylRBlock* b = (ZylRBlock*)zyl_rmap(want);
-        b->size = want;
-        b->big = 1;
-        b->next = ZYL_RBLOCKS(r);
-        ZYL_RSET_BLOCKS(r, b);
-        __atomic_add_fetch(&g_region_live, (long long)want, __ATOMIC_RELAXED);
-        r->bump = (char*)b + sizeof(ZylRBlock);
-        r->end = (char*)b + want;
-    }
-    char* m = (char*)malloc(160);
-    snprintf(m, 160, "E_REGION_EXHAUSTED: %s region of %lld bytes is full",
-             p[ZYL_RP_KIND] == 2 ? "fixed" : "arena",
-             p[ZYL_RP_KIND] == 2 ? p[ZYL_RP_BLOCK] : p[ZYL_RP_LIMIT]);
-    zyl_panic(m);
-    return 0;
-}
-
-/* Allocate `size` bytes in region `rp` (0: the heap), with the hidden
-   qword-count header zyl_heap_alloc writes, so zyl_variant_eq and the
-   value helpers read region blocks the same way. */
-long long zyl_ralloc(long long size, long long rp) {
-    ZylRegion* r = (ZylRegion*)(size_t)rp;
-    if (!r) return zyl_heap_alloc(size);
-    if (size <= 0) return 0;
-    if (ZYL_RSCOPED(r)) return zyl_policy_alloc(r, size);
-    if (size > (1LL << 48)) {
-        fprintf(stderr, "zyl_ralloc: size too large size=%lld\n", size);
-        return 0;
-    }
-    size_t need = (size_t)((size + 7) / 8) * 8 + 8;
-    if (!r->bump || (size_t)(r->end - r->bump) < need) {
-        int nb = 0;
-        for (ZylRBlock* q = ZYL_RBLOCKS(r); q && nb < ZYL_RCLASSES; q = q->next) nb++;
-        ZylRBlock* b = zyl_rblock_get(need, nb);
-        b->next = ZYL_RBLOCKS(r);
-        ZYL_RSET_BLOCKS(r, b);
-        __atomic_add_fetch(&g_region_live, (long long)b->size, __ATOMIC_RELAXED);
-        r->bump = (char*)b + sizeof(ZylRBlock);
-        r->end = (char*)b + b->size;
-    }
-    char* base = r->bump;
-    r->bump += need;
-    *(long long*)base = (long long)((size + 7) / 8);
-    return (long long)(size_t)(base + 8);
-}
-
-static void zyl_region_free_blocks(ZylRegion* r) {
-    ZylRBlock* b = ZYL_RBLOCKS(r);
-    while (b) {
-        ZylRBlock* next = b->next;
-        __atomic_sub_fetch(&g_region_live, (long long)b->size, __ATOMIC_RELAXED);
-        if (b->big) {
-            size_t n = b->size;
-            munmap(b, n);
-            zyl_arena_refund(n);
-        } else {
-            /* Pool blocks are reused, never unmapped: a chunk is one
-               mapping, so its blocks cannot be returned one by one. */
-            b->next = g_rpool[b->cls];
-            g_rpool[b->cls] = b;
-        }
-        b = next;
-    }
-    ZYL_RSET_BLOCKS(r, 0);
-    r->bump = 0;
-    r->end = 0;
-}
-
-/* Function entry: push the frame's region on this thread's chain. */
-void zyl_region_enter(long long rp) {
-    ZylRegion* r = (ZylRegion*)(size_t)rp;
-    r->prev = zyl_region_top;
-    r->bump = 0;
-    r->end = 0;
-    r->blocks = 0;
-    zyl_region_top = r;
-}
-
-/* Enter a with-region scope; `hp` is a ten-word header in the frame. */
-void zyl_region_scope_enter(long long hp, long long kind, long long block,
-                            long long align, long long limit) {
-    ZylRegion* r = (ZylRegion*)(size_t)hp;
-    long long* p = ZYL_RPOLICY(r);
-    r->prev = zyl_region_top;
-    r->bump = 0;
-    r->end = 0;
-    r->blocks = (ZylRBlock*)(uintptr_t)1;
-    p[ZYL_RP_KIND] = kind;
-    p[ZYL_RP_BLOCK] = block;
-    p[ZYL_RP_ALIGN] = align < 8 ? 8 : align;
-    p[ZYL_RP_LIMIT] = limit;
-    p[ZYL_RP_USED] = 0;
-    zyl_region_top = r;
-}
-
-/* Release a frame region's blocks; generated code pops the chain and
-   clears zyl_cur_region inline, calling this only when blocks were
-   taken. */
-void zyl_region_free(long long rp) {
-    ZylRegion* r = (ZylRegion*)(size_t)rp;
-    if (ZYL_RBLOCKS(r)) zyl_region_free_blocks(r);
-}
-
-/* A self tail call in a function with a frame region (the native
-   backend's MRegionCycle): the region's contents are dead, since region
-   inference places every tail-call argument outside the frame region,
-   but the frame stays. Its first block (the oldest, smallest) is kept and
-   emptied; any others are released. Releasing and re-acquiring a block
-   on every iteration of a loop cost more than the loop body. */
-void zyl_region_recycle(long long rp) {
-    ZylRegion* r = (ZylRegion*)(size_t)rp;
-    ZylRBlock* b = ZYL_RBLOCKS(r);
-    if (!b) return;
-    ZylRBlock* keep = b;
-    while (keep->next) keep = keep->next;
-    if (keep->big) { zyl_region_free_blocks(r); return; }
-    while (b != keep) {
-        ZylRBlock* next = b->next;
-        __atomic_sub_fetch(&g_region_live, (long long)b->size, __ATOMIC_RELAXED);
-        if (b->big) {
-            size_t n = b->size;
-            munmap(b, n);
-            zyl_arena_refund(n);
-        } else {
-            b->next = g_rpool[b->cls];
-            g_rpool[b->cls] = b;
-        }
-        b = next;
-    }
-    ZYL_RSET_BLOCKS(r, keep);
-    r->bump = (char*)keep + sizeof(ZylRBlock);
-    r->end = (char*)keep + keep->size;
-}
-
-/* Function exit (and before a tail jump): pop and release. The result
-   region pointer must never name a dead frame, so it is cleared if it
-   names this one. */
-void zyl_region_exit(long long rp) {
-    ZylRegion* r = (ZylRegion*)(size_t)rp;
-    if (ZYL_RBLOCKS(r)) zyl_region_free_blocks(r);
-    zyl_region_top = r->prev;
-    if (zyl_cur_region == r) zyl_cur_region = 0;
-}
-
-/* Unwinding (a caught panic, a failed test): release every region pushed
-   after `mark`, the chain top when the handler was installed. */
-void zyl_region_unwind(void* mark) {
-    ZylRegion* stop = (ZylRegion*)mark;
-    while (zyl_region_top && zyl_region_top != stop) {
-        ZylRegion* r = zyl_region_top;
-        if (ZYL_RBLOCKS(r)) zyl_region_free_blocks(r);
-        zyl_region_top = r->prev;
-    }
-    zyl_cur_region = 0;
-}
-
-void* zyl_region_mark(void) { return (void*)zyl_region_top; }
-
-/* Bytes currently held by live regions, across all threads. */
-long long zyl_region_live_bytes(void) {
-    return __atomic_load_n(&g_region_live, __ATOMIC_RELAXED);
-}
-
-long long zyl_pin_alloc(long long size) {
-    if (!g_pin_arena || size <= 0) return 0;
-    long long p = zyl_arena_alloc((long long)(size_t)g_pin_arena, size);
-    /* Pin means "this memory must not reach a swap file or a core
-       dump": an FFI callee holds a raw pointer to it for the duration
-       of the call, and anything pinned here is by construction the
-       kind of value (key material, a scalar, a buffer handed to C)
-       whose appearance in swap would outlive the process that owned
-       it. mlock is best-effort on purpose -- RLIMIT_MEMLOCK is 64 KiB
-       by default on many systems, so a hard failure here would turn a
-       hardening measure into a crash for ordinary FFI use. The pin
-       itself (a stable address for the callee) is correct either
-       way. */
-    if (p) zyl_mlock(p, size);
-    return p;
-}
-
-/* Best-effort page-locking of an address range. Page-granular, so it
-   rounds down to the containing page; overlapping calls are harmless
-   (mlock is idempotent per page). Returns 1 on success, 0 otherwise --
-   callers that genuinely require locked memory must check. */
-long long zyl_mlock(long long addr, long long len) {
-    if (!addr || len <= 0) return 0;
-    size_t page = (size_t)sysconf(_SC_PAGESIZE);
-    if (page == 0 || page == (size_t)-1) page = 4096;
-    size_t a = (size_t)addr;
-    size_t start = a & ~(page - 1);
-    size_t span = (a - start) + (size_t)len;
-    return mlock((void*)start, span) == 0 ? 1 : 0;
-}
+/* Frame-region chain heads, named by generated code; the regions themselves are runtime/rt/alloc.zyl. */
+__thread void* zyl_cur_region = 0;
+__thread void* zyl_region_top = 0;
 
 /* ==========================================================================
    AES-NI (math/crypto/symmetric/aesgcm.zyl).
@@ -2605,62 +1938,6 @@ long long zyl_word_of_cstr(long long s) { return s; }
    entries would name two unrelated lambdas `_lambda_1234` and a closure
    stored from the first would call the second. A counter that never
    resets cannot do that. */
-/* The heap arena the runtime allocates from, swapped for the duration
-   of one REPL entry. Compiling a program allocates a great deal of
-   string garbage through zyl_cstr_concat and friends -- the qualifier
-   alone builds a canonical key per identifier -- and a bump allocator
-   never gives it back. The REPL compiles a program per entry, so it
-   runs each one against an arena it can throw away, and keeps the
-   session's own arena for the entries that bind something.
-
-   Returns the arena that was in place, for the caller to restore. */
-long long zyl_heap_swap(long long arena) {
-    long long old = (long long)(size_t)g_heap_arena;
-    if (arena) g_heap_arena = (void*)(size_t)arena;
-    return old;
-}
-
-/* The arena that holds everything a session keeps: the values bound by
-   `def`, and whatever they point at. Created once, never destroyed. */
-long long zyl_session_arena(void) {
-    static void* session = NULL;
-    if (!session) {
-        session = (void*)(size_t)zyl_arena_create(ZYL_HEAP_ARENA_DEFAULT_BLOCK);
-    }
-    return (long long)(size_t)session;
-}
-
-/* Whether `w` addresses a live block in one of the arenas the
-   interpreter allocates values from. It has to ask: a variant's field
-   is just a machine word, and the interpreter cannot tell an Int from a
-   pointer by looking at it -- `(Cons 1 Nil)` holds the integer 1 where
-   another value would hold an address. Dereferencing that 1 to read a
-   tag is what this prevents.
-
-   Conservative in the safe direction: an integer that happens to land
-   inside a live block is treated as a pointer (and then read as a
-   block, which is harmless -- it yields a wrong tag, not a crash),
-   while a pointer into an arena that has been destroyed reads as not a
-   pointer, which is exactly right. */
-static int zyl_addr_in_arena(void* arenap, long long ptr) {
-    if (!arenap) return 0;
-    ZylArena* a = (ZylArena*)arenap;
-    char* p = (char*)(size_t)ptr;
-    int found = 0;
-    ZYL_ARENA_LOCK(a);
-    for (ZylArenaBlock* b = a->head; b; b = b->next) {
-        if (p >= b->mem && p + sizeof(long long) <= b->mem + b->used) { found = 1; break; }
-    }
-    ZYL_ARENA_UNLOCK(a);
-    return found;
-}
-
-long long zyl_heap_block_p(long long w) {
-    if (w < 4096) return 0;
-    if (w & 7) return 0;
-    if (zyl_addr_in_arena(g_heap_arena, w)) return 1;
-    return zyl_addr_in_arena((void*)(size_t)zyl_session_arena(), w) ? 1 : 0;
-}
 
 /* The interpreter's test registry. A `(test "name" ...)` form lowers to
    a zyl_register_test call whose second argument is the address of the
@@ -3103,6 +2380,7 @@ static ZylFfiWorker* zyl_ffi_worker_get(void) {
     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
     pthread_t t;
     g_threads_started = 1;
+    zyl_threads_started_mark();
     int rc = pthread_create(&t, &attr, zyl_ffi_worker_main, w);
     pthread_attr_destroy(&attr);
     if (rc != 0) zyl_panic("E_FFI_TIMEOUT: could not start the FFI worker thread");

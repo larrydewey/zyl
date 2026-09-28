@@ -93,19 +93,9 @@ void zyl_cstr_byte_set(long long ptr, long long i, long long b);
    Deterministic reclamation: arena-reset frees every block at once; the
    handle stays valid for reuse. Arenas are single-threaded by design
    (consistent with actor isolation — one arena per actor/scope). */
-long long zyl_arena_create(long long block_size);
-long long zyl_arena_alloc(long long arena, long long size);
-long long zyl_arena_alloc_zeroed(long long arena, long long size);
-long long zyl_arena_reset(long long arena);
-long long zyl_arena_destroy(long long arena);
-long long zyl_arena_used(long long arena);
-long long zyl_arena_capacity(long long arena);
 
 /* Region-specific arena allocation wrappers for codegen. */
 void zyl_ensure_arenas(void);
-long long zyl_heap_alloc(long long size);
-long long zyl_pin_alloc(long long size);
-long long zyl_mlock(long long addr, long long len);
 long long zyl_zeroize(long long addr, long long len);
 long long zyl_random_fill(long long addr, long long len);
 long long zyl_random_words(long long base, long long n);
@@ -138,9 +128,6 @@ long long zyl_cc_compile_log(long long path, long long logpath);
 
 /* Interpreter support (stdlib/repl/interp.zyl). */
 long long zyl_word_of_cstr(long long s);
-long long zyl_heap_swap(long long arena);
-long long zyl_session_arena(void);
-long long zyl_heap_block_p(long long w);
 long long zyl_itest_start(long long name);
 long long zyl_itest_outcome(long long ok);
 long long zyl_itest_summary(long long passed, long long failed);
@@ -344,5 +331,34 @@ long long zyl_atomic_max(long long addr, long long value);
 long long zyl_atomic_min(long long addr, long long value);
 long long zyl_atomic_cas(long long addr, long long expected, long long new_value);
 long long zyl_atomic_fetch_add(long long addr, long long value);
+
+long long zyl_arena_create(long long block_size);
+long long zyl_arena_alloc(long long arena, long long size);
+long long zyl_arena_alloc_zeroed(long long arena, long long size);
+long long zyl_arena_reset(long long arena);
+long long zyl_arena_destroy(long long arena);
+long long zyl_arena_used(long long arena);
+long long zyl_arena_capacity(long long arena);
+long long zyl_arena_oom(long long requested, long long why);
+long long zyl_threads_started_mark(void);
+long long zyl_arenas_init(void);
+long long zyl_arenas_destroy(void);
+long long zyl_heap_alloc(long long size);
+long long zyl_heap_swap(long long arena);
+long long zyl_session_arena(void);
+long long zyl_heap_block_p(long long w);
+long long zyl_pin_owns(long long ptr);
+long long zyl_pin_word(long long value);
+long long zyl_mlock(long long addr, long long len);
+long long zyl_pin_alloc(long long size);
+long long zyl_ralloc(long long size, long long rp);
+long long zyl_region_enter(long long rp);
+long long zyl_region_scope_enter(long long hp, long long kind, long long block, long long align, long long limit);
+long long zyl_region_free(long long rp);
+long long zyl_region_recycle(long long rp);
+long long zyl_region_exit(long long rp);
+long long zyl_region_unwind(void* mark);
+void* zyl_region_mark(void);
+long long zyl_region_live_bytes(void);
 
 #endif

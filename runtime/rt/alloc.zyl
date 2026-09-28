@@ -1,0 +1,417 @@
+; Arenas, the memory budget, the heap and pin arenas, and frame regions (docs/regions-design.md).
+(use base)
+
+(extern "malloc" (Int) Int)
+(extern "calloc" (Int Int) Int)
+(extern "free" (Int) Int)
+(extern "pthread_mutex_lock" (Int) Int)
+(extern "pthread_mutex_unlock" (Int) Int)
+
+(defmacro rt-ld64 (a) (ffi-call "%load64" a 1))
+(defmacro rt-st64 (a v) (ffi-call "%store64" a v 1))
+
+; --- memory budget: {once state, budget bytes, live bytes} ---
+
+(defn rt-budget () (ffi-call "%global" "budget" 24 1))
+
+; strtoull of a decimal prefix after spaces and an optional '+'.
+(defn rt-parse-u (p v) (let c (rt-ld8 p) (if (and (>= c 48) (<= c 57)) (rt-parse-u (+ p 1) (+ (* v 10) (- c 48))) v)))
+
+(defn rt-skip-ws (p) (let c (rt-ld8 p) (if (or (= c 32) (and (>= c 9) (<= c 13))) (rt-skip-ws (+ p 1)) p)))
+
+(defn rt-strtoull (p) (let q (rt-skip-ws p) (rt-parse-u (if (= (rt-ld8 q) 43) (+ q 1) q) 0)))
+
+; The value in kB of the /proc/meminfo line starting with key, or -1.
+(defn rt-meminfo-field (buf n key)
+  (let i (rt-meminfo-find buf n key (rt-strlen (rt-w key)) 0)
+    (if (< i 0) -1 (rt-strtoull (+ buf i)))))
+
+(defn rt-meminfo-find (buf n key kl i)
+  (if (> (+ i kl) n) -1
+    (if (and (or (= i 0) (= (rt-ld8 (+ buf (- i 1))) 10)) (rt-mem-eq (+ buf i) (rt-w key) kl))
+      (+ i kl)
+      (rt-meminfo-find buf n key kl (+ i 1)))))
+
+(defn rt-read-all (fd buf cap n)
+  (if (>= n cap) n
+    (let r (ffi-call "%syscall3" 0 fd (+ buf n) (- cap n) 1)
+      (if (> r 0) (rt-read-all fd buf cap (+ n r)) n))))
+
+; MemAvailable, else MemTotal, in bytes; 0 when /proc/meminfo cannot be read.
+(defn rt-meminfo-available ()
+  (let fd (ffi-call "%syscall3" 2 (rt-w "/proc/meminfo") 524288 0 1)
+    (if (< fd 0) 0
+      (let buf (ffi-call "malloc" 16384 1)
+        (if (= buf 0) (let _ (ffi-call "%syscall1" 3 fd 1) 0)
+          (let n (rt-read-all fd buf 16383 0)
+            (let _ (ffi-call "%syscall1" 3 fd 1)
+              (let _ (rt-st8 (+ buf n) 0)
+                (let avail (rt-meminfo-field buf n "MemAvailable:")
+                  (let total (rt-meminfo-field buf n "MemTotal:")
+                    (let _ (ffi-call "free" buf 1)
+                      (if (> avail 0) (* avail 1024) (if (> total 0) (* total 1024) 0)))))))))))))
+
+; sysinfo: totalram * mem_unit (what sysconf's phys pages times page size gives).
+(defn rt-sysinfo-total ()
+  (let si (ffi-call "%tls" "sysinfo" 128 1)
+    (if (not (= (ffi-call "%syscall1" 99 si 1) 0)) 0
+      (* (rt-ld64 (+ si 32)) (ffi-call "%load32" (+ si 104) 1)))))
+
+; ZYL_MAX_MEMORY bytes when set (0: no budget); else 80% of available memory; else unlimited.
+(defn rt-budget-value ()
+  (let env (rt-w (ffi-call "zyl_getenv_str" "ZYL_MAX_MEMORY" 1))
+    (if (and (> env 0) (> (rt-ld8 env) 0)) (rt-strtoull env)
+      (let a (rt-meminfo-available)
+        (let avail (if (> a 0) a (rt-sysinfo-total))
+          (if (> avail 0) (* (/ avail 5) 4) 0))))))
+
+; pthread_once: 0 unset, 1 running, 2 done.
+(defn rt-budget-once ()
+  (let b (rt-budget)
+    (if (= (rt-ld64 b) 2) 0
+      (if (= (ffi-call "%cas" b 0 1 1) 0)
+        (let _ (rt-st64 (+ b 8) (rt-budget-value)) (ffi-call "%xchg" b 2 1))
+        (rt-budget-wait b)))))
+
+(defn rt-budget-wait (b) (if (= (rt-ld64 b) 2) 0 (rt-budget-wait b)))
+
+; Charges n bytes before they are mapped; false when over budget.
+(defn rt-charge (n)
+  (let _ (rt-budget-once)
+    (let b (rt-budget)
+      (let now (+ (ffi-call "%fetch-add" (+ b 16) n 1) n)
+        (if (and (> (rt-ld64 (+ b 8)) 0) (> now (rt-ld64 (+ b 8))))
+          (let _ (ffi-call "%fetch-add" (+ b 16) (- 0 n) 1) false)
+          true)))))
+
+(defn rt-refund (n) (ffi-call "%fetch-add" (+ (rt-budget) 16) (- 0 n) 1))
+
+(defn rt-utext (n) (ffi-call "zyl_int_text" n 1))
+
+(defn rt-oom (requested why) (zyl_arena_oom requested why))
+
+; Out of memory cannot unwind (handlers allocate): report and exit(1).
+(defn zyl_arena_oom (requested why)
+  (let b (rt-budget)
+    (let msg (str-concat "PANIC: error[E_OUT_OF_MEMORY]: " (str-concat why (str-concat "\n  = requested " (str-concat (rt-utext requested)
+               (str-concat " bytes; " (str-concat (rt-utext (rt-ld64 (+ b 16))) (str-concat " bytes already allocated; budget "
+               (str-concat (rt-utext (rt-ld64 (+ b 8))) " bytes\n  = help: set ZYL_MAX_MEMORY to a byte count to raise the budget, or ZYL_MAX_MEMORY=0 to remove it\n"))))))))
+      (let _ (ffi-call "write" 2 msg (rt-strlen (rt-w msg)) 1)
+        (ffi-call "%syscall1" 231 1 1)))))
+
+; --- arenas: {head, block_size, total_capacity, total_used, pthread mutex (40)}; a block is {mem, cap, used, next} ---
+
+(defn rt-threads () (ffi-call "%global" "threads_started" 8 1))
+
+; C sets it (before pthread_create) when a second thread can reach an arena; it never goes back.
+(defn zyl_threads_started_mark () (let _ (rt-st64 (rt-threads) 1) 0))
+
+; Macros: a is always a plain variable.
+(defmacro rt-lock (a) (if (= (ffi-call "%load64" (ffi-call "%global" "threads_started" 8 1) 1) 0) 0 (ffi-call "pthread_mutex_lock" (+ a 32) 1)))
+(defmacro rt-unlock (a) (if (= (ffi-call "%load64" (ffi-call "%global" "threads_started" 8 1) 1) 0) 0 (ffi-call "pthread_mutex_unlock" (+ a 32) 1)))
+
+(defn rt-align16 (n) (bit-and (+ n 15) -16))
+
+(defn rt-new-block (a cap0)
+  (let cap (if (< cap0 (rt-ld64 (+ a 8))) (rt-ld64 (+ a 8)) cap0)
+    (let _ (if (rt-charge cap) 0 (rt-oom cap "memory budget exhausted"))
+      (let b (ffi-call "malloc" 32 1)
+        (if (= b 0) (let _ (rt-refund cap) (rt-oom 32 "out of memory allocating an arena block header"))
+          (let m (ffi-call "malloc" cap 1)
+            (if (= m 0) (let _ (ffi-call "free" b 1) (let _ (rt-refund cap) (rt-oom cap "out of memory allocating an arena block")))
+              (let _ (rt-st64 b m)
+                (let _ (rt-st64 (+ b 8) cap)
+                  (let _ (rt-st64 (+ b 16) 0)
+                    (let _ (rt-st64 (+ b 24) (rt-ld64 a))
+                      (let _ (rt-st64 a b)
+                        (let _ (rt-st64 (+ a 16) (+ (rt-ld64 (+ a 16)) cap)) b)))))))))))))
+
+(defn zyl_arena_create (block-size)
+  (let bs (if (< block-size 16) 65536 block-size)
+    (let a (ffi-call "calloc" 1 72 1)
+      (if (= a 0) 0 (let _ (rt-st64 (+ a 8) bs) (let _ (rt-new-block a bs) a))))))
+
+; A 16-aligned bump allocation, or 0 for a bad arena or size (over 2^48).
+(defn rt-arena-bump (arena size)
+  (if (or (= arena 0) (or (< size 0) (> size 281474976710656))) 0
+    (let need (rt-align16 size)
+      (let _ (rt-lock arena)
+        (let b0 (rt-ld64 arena)
+          (let b (if (or (= b0 0) (> need (- (rt-ld64 (+ b0 8)) (rt-ld64 (+ b0 16))))) (rt-new-block arena need) b0)
+            (let p (+ (rt-ld64 b) (rt-ld64 (+ b 16)))
+              (let _ (rt-st64 (+ b 16) (+ (rt-ld64 (+ b 16)) need))
+                (let _ (rt-st64 (+ arena 24) (+ (rt-ld64 (+ arena 24)) need))
+                  (let _ (rt-unlock arena) p))))))))))
+
+(defn zyl_arena_alloc (arena size) (rt-arena-bump arena size))
+
+; Zeroed after the lock: the range is already exclusively ours.
+(defn zyl_arena_alloc_zeroed (arena size)
+  (let p (rt-arena-bump arena size) (if (= p 0) 0 (let _ (rt-fill0 p size) p))))
+
+; Zeroing: 64 bytes per step from a zero .bss block, then words, then bytes.
+(defn rt-fill0 (p n) (rt-fill0-64 p n (ffi-call "%global" "zero64" 64 1)))
+
+(defn rt-fill0-64 (p n z)
+  (if (>= n 64)
+    (let _ (ffi-call "%v128-copy" p z 1)
+      (let _ (ffi-call "%v128-copy" (+ p 16) z 1)
+        (let _ (ffi-call "%v128-copy" (+ p 32) z 1)
+          (let _ (ffi-call "%v128-copy" (+ p 48) z 1) (rt-fill0-64 (+ p 64) (- n 64) z)))))
+    (rt-fill0-tail p n)))
+
+(defn rt-fill0-tail (p n)
+  (if (>= n 8) (let _ (rt-st64 p 0) (rt-fill0-tail (+ p 8) (- n 8)))
+    (if (> n 0) (let _ (rt-st8 p 0) (rt-fill0-tail (+ p 1) (- n 1))) 0)))
+
+; 0xDE poison: 32 bytes per copy from a pattern block, then words, then bytes.
+(defn rt-de-block ()
+  (let g (ffi-call "%global" "de32" 32 1)
+    (let _ (if (= (rt-ld64 g) 0) (rt-fill-de-words g 32) 0) g)))
+
+(defn rt-fill-de-words (p n) (if (>= n 8) (let _ (rt-st64 p -2387225703656530210) (rt-fill-de-words (+ p 8) (- n 8))) (rt-fill-de-bytes p n)))
+
+(defn rt-fill-de-bytes (p n) (if (> n 0) (let _ (rt-st8 p 222) (rt-fill-de-bytes (+ p 1) (- n 1))) 0))
+
+(defn rt-fill-de (p n) (if (>= n 32) (rt-fill-de-32 p n (rt-de-block)) (rt-fill-de-words p n)))
+
+(defn rt-fill-de-32 (p n src)
+  (if (>= n 32) (let _ (ffi-call "%v128-copy" p src 1) (let _ (ffi-call "%v128-copy" (+ p 16) src 1) (rt-fill-de-32 (+ p 32) (- n 32) src)))
+    (rt-fill-de-words p n)))
+
+; Poisons, refunds and frees every block (a stale pointer then reads 0xDE garbage).
+(defn rt-free-blocks (b)
+  (if (= b 0) 0
+    (let next (rt-ld64 (+ b 24))
+      (let _ (rt-fill-de (rt-ld64 b) (rt-ld64 (+ b 16)))
+        (let _ (rt-refund (rt-ld64 (+ b 8)))
+          (let _ (ffi-call "free" (rt-ld64 b) 1) (let _ (ffi-call "free" b 1) (rt-free-blocks next))))))))
+
+(defn zyl_arena_reset (arena)
+  (if (= arena 0) 0
+    (let _ (rt-lock arena)
+      (let _ (rt-free-blocks (rt-ld64 arena))
+        (let _ (rt-st64 arena 0) (let _ (rt-st64 (+ arena 16) 0) (let _ (rt-st64 (+ arena 24) 0) (let _ (rt-unlock arena) 0))))))))
+
+(defn zyl_arena_destroy (arena)
+  (if (= arena 0) 0
+    (let _ (rt-lock arena) (let _ (rt-free-blocks (rt-ld64 arena)) (let _ (rt-unlock arena) (let _ (ffi-call "free" arena 1) 0))))))
+
+(defn zyl_arena_used (arena)
+  (if (= arena 0) 0 (let _ (rt-lock arena) (let v (rt-ld64 (+ arena 24)) (let _ (rt-unlock arena) v)))))
+
+(defn zyl_arena_capacity (arena)
+  (if (= arena 0) 0 (let _ (rt-lock arena) (let v (rt-ld64 (+ arena 16)) (let _ (rt-unlock arena) v)))))
+
+; Whether ptr..ptr+8 lies within the used bytes of some block of arena.
+(defn rt-in-blocks (b p)
+  (if (= b 0) false
+    (if (and (>= p (rt-ld64 b)) (<= (+ p 8) (+ (rt-ld64 b) (rt-ld64 (+ b 16))))) true (rt-in-blocks (rt-ld64 (+ b 24)) p))))
+
+(defn rt-addr-in-arena (arena p)
+  (if (= arena 0) false (let _ (rt-lock arena) (let f (rt-in-blocks (rt-ld64 arena) p) (let _ (rt-unlock arena) f)))))
+
+; --- the heap and pin arenas ---
+
+(defn rt-arenas () (ffi-call "%global" "arenas" 24 1))
+(defn rt-heap () (rt-ld64 (rt-arenas)))
+(defn rt-pin () (rt-ld64 (+ (rt-arenas) 8)))
+
+(defn zyl_arenas_init ()
+  (let g (rt-arenas)
+    (let _ (if (= (rt-ld64 g) 0) (rt-st64 g (zyl_arena_create 1048576)) 0)
+      (let _ (if (= (rt-ld64 (+ g 8)) 0) (rt-st64 (+ g 8) (zyl_arena_create 262144)) 0) 0))))
+
+(defn zyl_arenas_destroy ()
+  (let g (rt-arenas)
+    (let _ (if (= (rt-ld64 (+ g 8)) 0) 0 (let _ (zyl_arena_destroy (rt-ld64 (+ g 8))) (rt-st64 (+ g 8) 0)))
+      (let _ (if (= (rt-ld64 g) 0) 0 (let _ (zyl_arena_destroy (rt-ld64 g)) (rt-st64 g 0))) 0))))
+
+(defn rt-heap-fail (msg n) (let m (str-concat msg (str-concat (rt-utext n) "\n")) (let _ (ffi-call "write" 2 m (rt-strlen (rt-w m)) 1) 0)))
+
+; A hidden qword count before the payload (zyl_variant_eq reads it); single-threaded bumps skip the lock call chain.
+(defn zyl_heap_alloc (size)
+  (let a (rt-heap)
+    (if (or (= a 0) (<= size 0)) 0
+      (if (> size 281474976710656) (rt-heap-fail "zyl_heap_alloc: size too large size=" size)
+        (let q (/ (+ size 7) 8)
+          (let need (rt-align16 (+ (* q 8) 8))
+            (let b (rt-ld64 a)
+              (if (and (= (rt-ld64 (rt-threads)) 0) (and (> b 0) (<= need (- (rt-ld64 (+ b 8)) (rt-ld64 (+ b 16))))))
+                (let base (+ (rt-ld64 b) (rt-ld64 (+ b 16)))
+                  (let _ (rt-st64 (+ b 16) (+ (rt-ld64 (+ b 16)) need))
+                    (let _ (rt-st64 (+ a 24) (+ (rt-ld64 (+ a 24)) need))
+                      (let _ (rt-st64 base q) (+ base 8)))))
+                (let base (rt-arena-bump a (+ (* q 8) 8))
+                  (if (= base 0) (rt-heap-fail "zyl_heap_alloc: FAILED size=" size)
+                    (let _ (rt-st64 base q) (+ base 8))))))))))))
+
+(defn zyl_heap_swap (arena)
+  (let g (rt-arenas) (let old (rt-ld64 g) (let _ (if (= arena 0) 0 (rt-st64 g arena)) old))))
+
+(defn zyl_session_arena ()
+  (let g (+ (rt-arenas) 16) (let _ (if (= (rt-ld64 g) 0) (rt-st64 g (zyl_arena_create 1048576)) 0) (rt-ld64 g))))
+
+(defn zyl_heap_block_p (w)
+  (if (or (< w 4096) (not (= (bit-and w 7) 0))) false
+    (if (rt-addr-in-arena (rt-heap) w) true (rt-addr-in-arena (zyl_session_arena) w))))
+
+; Whether ptr came from ffi-pin (lies in a live pin block).
+(defn zyl_pin_owns (ptr) (if (or (= ptr 0) (= (rt-pin) 0)) false (rt-addr-in-arena (rt-pin) ptr)))
+
+(defn zyl_pin_word (value)
+  (if (= (rt-pin) 0) 0 (let s (rt-arena-bump (rt-pin) 8) (let _ (if (= s 0) 0 (rt-st64 s value)) s))))
+
+; Best-effort mlock of the pages under [addr, addr+len); 1 on success.
+(defn zyl_mlock (addr len)
+  (if (or (= addr 0) (<= len 0)) 0
+    (let start (bit-and addr -4096)
+      (if (= (ffi-call "%syscall2" 149 start (+ (- addr start) len) 1) 0) 1 0))))
+
+(defn zyl_pin_alloc (size)
+  (if (or (= (rt-pin) 0) (<= size 0)) 0
+    (let p (rt-arena-bump (rt-pin) size) (let _ (if (= p 0) 0 (zyl_mlock p size)) p))))
+
+; --- frame regions: {prev, bump, end, blocks|scope bit}, then a scope's {kind, block, align, limit, used} ---
+
+; Size classes 1K/4K/16K/64K, carved from 1 MiB mappings kept per thread.
+(defn rt-class-size (c) (if (= c 0) 1024 (if (= c 1) 4096 (if (= c 2) 16384 65536))))
+
+(defn rt-rpool () (ffi-call "%tls" "rpool" 32 1))
+(defn rt-live () (ffi-call "%global" "region_live" 8 1))
+
+(defn rt-rmap (n)
+  (let _ (if (rt-charge n) 0 (rt-oom n "memory budget exhausted"))
+    (let p (ffi-call "%syscall6" 9 0 n 3 34 -1 0 1)
+      (if (and (< p 0) (> p -4096)) (let _ (rt-refund n) (rt-oom n "mmap failed for a region block")) p))))
+
+; A block header is {next, size, big (int), cls (int)}: 24 bytes.
+(defn rt-rblock-init (b size big cls)
+  (let _ (rt-st64 b 0)
+    (let _ (rt-st64 (+ b 8) size)
+      (let _ (ffi-call "%store32" (+ b 16) big 1) (let _ (ffi-call "%store32" (+ b 20) (bit-and cls 4294967295) 1) b)))))
+
+(defn rt-carve (c chunk sz off)
+  (if (> (+ off sz) 1048576) 0
+    (let b (rt-rblock-init (+ chunk off) sz 0 c)
+      (let slot (+ (rt-rpool) (* c 8))
+        (let _ (rt-st64 b (rt-ld64 slot)) (let _ (rt-st64 slot b) (rt-carve c chunk sz (+ off sz))))))))
+
+(defn rt-pick-class (need c) (if (and (< c 4) (> (+ need 24) (rt-class-size c))) (rt-pick-class need (+ c 1)) c))
+
+; A block for a region that already holds nblocks blocks.
+(defn rt-rblock-get (need nblocks)
+  (let c (rt-pick-class need (if (< nblocks 4) nblocks 3))
+    (if (>= c 4)
+      (let n (bit-and (+ (+ need 24) 4095) -4096) (rt-rblock-init (rt-rmap n) n 1 -1))
+      (let slot (+ (rt-rpool) (* c 8))
+        (let _ (if (= (rt-ld64 slot) 0) (rt-carve c (rt-rmap 1048576) (rt-class-size c) 0) 0)
+          (let b (rt-ld64 slot) (let _ (rt-st64 slot (rt-ld64 b)) (let _ (rt-st64 b 0) b))))))))
+
+(defmacro rt-rblocks (r) (bit-and (ffi-call "%load64" (+ r 24) 1) -2))
+(defmacro rt-rscoped (r) (= (bit-and (ffi-call "%load64" (+ r 24) 1) 1) 1))
+(defn rt-rset-blocks (r b) (rt-st64 (+ r 24) (bit-or b (bit-and (rt-ld64 (+ r 24)) 1))))
+
+(defn rt-count-blocks (b n) (if (or (= b 0) (>= n 4)) n (rt-count-blocks (rt-ld64 b) (+ n 1))))
+
+(defn rt-push-block (r b)
+  (let _ (rt-st64 b (rt-rblocks r))
+    (let _ (rt-rset-blocks r b)
+      (let _ (ffi-call "%fetch-add" (rt-live) (rt-ld64 (+ b 8)) 1)
+        (let _ (rt-st64 (+ r 8) (+ b 24)) (rt-st64 (+ r 16) (+ b (rt-ld64 (+ b 8)))))))))
+
+(defn rt-exhausted (p)
+  (let kind (rt-ld64 p)
+    (ffi-call "zyl_panic" (str-concat "E_REGION_EXHAUSTED: " (str-concat (if (= kind 2) "fixed" "arena")
+      (str-concat " region of " (str-concat (rt-utext (if (= kind 2) (rt-ld64 (+ p 8)) (rt-ld64 (+ p 24)))) " bytes is full")))) 1)))
+
+; with-region scope: kind 1 arena (blocks of `block`, at most `limit`), kind 2 fixed; page-aligned blocks keep padding deterministic.
+(defn rt-policy-alloc (r size attempt)
+  (let p (+ r 32)
+    (let align (rt-ld64 (+ p 16))
+      (let payload (* (/ (+ size 7) 8) 8)
+        (let bump (rt-ld64 (+ r 8))
+          (let at (bit-and (- (+ (+ bump 8) align) 1) (- 0 align))
+            (let end (+ at payload)
+              (if (and (> bump 0) (<= end (rt-ld64 (+ r 16))))
+                (let used (+ (rt-ld64 (+ p 32)) (- end bump))
+                  (if (and (> (rt-ld64 (+ p 24)) 0) (> used (rt-ld64 (+ p 24)))) (rt-exhausted p)
+                    (let _ (rt-st64 (+ p 32) used) (let _ (rt-st64 (+ r 8) end) (let _ (rt-st64 (- at 8) (/ payload 8)) at)))))
+                (if (or (>= attempt 1) (and (= (rt-ld64 p) 2) (> (rt-rblocks r) 0))) (rt-exhausted p)
+                  (let need (+ (+ (+ payload 8) align) 24)
+                    (let want0 (if (= (rt-ld64 p) 2) (+ (+ (+ (rt-ld64 (+ p 8)) 8) align) 24) (if (< (rt-ld64 (+ p 8)) need) need (rt-ld64 (+ p 8))))
+                      (let want (bit-and (+ want0 4095) -4096)
+                        (let b (rt-rblock-init (rt-rmap want) want 1 0)
+                          (let _ (rt-push-block r b) (rt-policy-alloc r size (+ attempt 1))))))))))))))))
+
+; size bytes in region rp (0: the heap) with the hidden qword count before them.
+; A bare dispatch, so the heap path pays no prologue.
+(defn zyl_ralloc (size rp) (if (= rp 0) (zyl_heap_alloc size) (rt-ralloc-in size rp)))
+
+(defn rt-ralloc-in (size rp)
+    (if (<= size 0) 0
+      (if (rt-rscoped rp) (rt-policy-alloc rp size 0)
+        (if (> size 281474976710656) (rt-heap-fail "zyl_ralloc: size too large size=" size)
+          (let need (+ (* (/ (+ size 7) 8) 8) 8)
+            (let _ (if (or (= (rt-ld64 (+ rp 8)) 0) (< (- (rt-ld64 (+ rp 16)) (rt-ld64 (+ rp 8))) need))
+                     (rt-push-block rp (rt-rblock-get need (rt-count-blocks (rt-rblocks rp) 0))) 0)
+              (let base (rt-ld64 (+ rp 8))
+                (let _ (rt-st64 (+ rp 8) (+ base need)) (let _ (rt-st64 base (/ (+ size 7) 8)) (+ base 8))))))))))
+
+; Returns one block: a big one is unmapped, a pool block goes back to this thread's pool.
+(defn rt-release-block (b)
+  (let _ (ffi-call "%fetch-add" (rt-live) (- 0 (rt-ld64 (+ b 8))) 1)
+    (if (= (ffi-call "%load32" (+ b 16) 1) 1)
+      (let n (rt-ld64 (+ b 8)) (let _ (ffi-call "%syscall2" 11 b n 1) (rt-refund n)))
+      (let slot (+ (rt-rpool) (* (ffi-call "%load32" (+ b 20) 1) 8)) (let _ (rt-st64 b (rt-ld64 slot)) (rt-st64 slot b))))))
+
+(defn rt-release-chain (b stop) (if (or (= b 0) (= b stop)) 0 (let next (rt-ld64 b) (let _ (rt-release-block b) (rt-release-chain next stop)))))
+
+(defn rt-region-free-blocks (r)
+  (let _ (rt-release-chain (rt-rblocks r) 0) (let _ (rt-rset-blocks r 0) (let _ (rt-st64 (+ r 8) 0) (rt-st64 (+ r 16) 0)))))
+
+(defn zyl_region_enter (rp)
+  (let _ (rt-st64 rp (ffi-call "%tls-get" "zyl_region_top" 1))
+    (let _ (rt-st64 (+ rp 8) 0) (let _ (rt-st64 (+ rp 16) 0) (let _ (rt-st64 (+ rp 24) 0) (let _ (ffi-call "%tls-set" "zyl_region_top" rp 1) 0))))))
+
+(defn zyl_region_scope_enter (hp kind block align limit)
+  (let _ (rt-st64 hp (ffi-call "%tls-get" "zyl_region_top" 1))
+    (let _ (rt-st64 (+ hp 8) 0)
+      (let _ (rt-st64 (+ hp 16) 0)
+        (let _ (rt-st64 (+ hp 24) 1)
+          (let _ (rt-st64 (+ hp 32) kind)
+            (let _ (rt-st64 (+ hp 40) block)
+              (let _ (rt-st64 (+ hp 48) (if (< align 8) 8 align))
+                (let _ (rt-st64 (+ hp 56) limit)
+                  (let _ (rt-st64 (+ hp 64) 0) (let _ (ffi-call "%tls-set" "zyl_region_top" hp 1) 0)))))))))))
+
+(defn zyl_region_free (rp) (let _ (if (> (rt-rblocks rp) 0) (rt-region-free-blocks rp) 0) 0))
+
+(defn rt-last-block (b) (if (= (rt-ld64 b) 0) b (rt-last-block (rt-ld64 b))))
+
+; A self tail call: keep the oldest (smallest) block, emptied; release the rest.
+(defn zyl_region_recycle (rp)
+  (let b (rt-rblocks rp)
+    (if (= b 0) 0
+      (let keep (rt-last-block b)
+        (if (= (ffi-call "%load32" (+ keep 16) 1) 1) (let _ (rt-region-free-blocks rp) 0)
+          (let _ (rt-release-chain b keep)
+            (let _ (rt-rset-blocks rp keep)
+              (let _ (rt-st64 (+ rp 8) (+ keep 24)) (let _ (rt-st64 (+ rp 16) (+ keep (rt-ld64 (+ keep 8)))) 0)))))))))
+
+; Pop and release; the result region never names a dead frame.
+(defn zyl_region_exit (rp)
+  (let _ (if (> (rt-rblocks rp) 0) (rt-region-free-blocks rp) 0)
+    (let _ (ffi-call "%tls-set" "zyl_region_top" (rt-ld64 rp) 1)
+      (let _ (if (= (ffi-call "%tls-get" "zyl_cur_region" 1) rp) (ffi-call "%tls-set" "zyl_cur_region" 0 1) 0) 0))))
+
+; Unwinding: release every region pushed after mark.
+(defn zyl_region_unwind (mark)
+  (let top (ffi-call "%tls-get" "zyl_region_top" 1)
+    (if (or (= top 0) (= top mark)) (let _ (ffi-call "%tls-set" "zyl_cur_region" 0 1) 0)
+      (let _ (if (> (rt-rblocks top) 0) (rt-region-free-blocks top) 0)
+        (let _ (ffi-call "%tls-set" "zyl_region_top" (rt-ld64 top) 1) (zyl_region_unwind mark))))))
+
+(defn zyl_region_mark () (ffi-call "%tls-get" "zyl_region_top" 1))
+
+(defn zyl_region_live_bytes () (rt-ld64 (rt-live)))
