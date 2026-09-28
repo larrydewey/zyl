@@ -1,0 +1,29 @@
+; Structural equality and order of heap aggregates (a hidden qword count sits at -8).
+(use base)
+
+(defmacro rt-ld64 (a) (ffi-call "%load64" a 1))
+
+(defn rt-words-eq (a b i n)
+  (if (>= i n) true (if (= (rt-ld64 (+ a (* i 8))) (rt-ld64 (+ b (* i 8)))) (rt-words-eq a b (+ i 1) n) false)))
+
+(defn zyl_variant_eq (a b)
+  (if (= a b) true
+    (if (or (= a 0) (= b 0)) false
+      (let ha (rt-ld64 (- a 8))
+        (if (= ha (rt-ld64 (- b 8))) (rt-words-eq a b 0 ha) false)))))
+
+; Field order from index 1 (index 0 is the shared discriminant), then the shorter first.
+(defn rt-words-cmp (a b i n ha hb)
+  (if (>= i n) (if (< ha hb) -1 (if (> ha hb) 1 0))
+    (let x (rt-ld64 (+ a (* i 8)))
+      (let y (rt-ld64 (+ b (* i 8)))
+        (if (< x y) -1 (if (> x y) 1 (rt-words-cmp a b (+ i 1) n ha hb)))))))
+
+(defn zyl_variant_cmp (a b)
+  (if (= a b) 0
+    (if (or (= a 0) (= b 0)) (if (= a 0) -1 1)
+      (let ha (rt-ld64 (- a 8))
+        (let hb (rt-ld64 (- b 8))
+          (rt-words-cmp a b 1 (if (< ha hb) ha hb) ha hb))))))
+
+(defn zyl_variant_field (p idx) (if (= p 0) 0 (rt-ld64 (+ p (* 8 (+ idx 1))))))

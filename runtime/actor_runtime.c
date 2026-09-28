@@ -2382,58 +2382,6 @@ long long zyl_region_live_bytes(void) {
     return __atomic_load_n(&g_region_live, __ATOMIC_RELAXED);
 }
 
-/* Structural equality for heap-allocated aggregates (ADT variants and
- * structs): equal hidden sizes AND identical payload qwords (discriminant +
- * fields). Pointer/string fields compare by identity — flat Int/Bool
- * payloads compare by value. */
-long long zyl_variant_eq(long long a, long long b) {
-    if (a == b) return 1;
-    if (!a || !b) return 0;
-    long long ha = *(long long*)(size_t)(a - 8);
-    long long hb = *(long long*)(size_t)(b - 8);
-    if (ha != hb) return 0;
-    long long* pa = (long long*)(size_t)a;
-    long long* pb = (long long*)(size_t)b;
-    for (long long i = 0; i < ha; i++) {
-        if (pa[i] != pb[i]) return 0;
-    }
-    return 1;
-}
-
-/* Lexicographic ordering for heap-allocated aggregates (derived Ord):
- * compares payload qwords field by field, skipping index 0 (the shared
- * discriminant, identical for every value of the same variant/struct
- * and meaningless to order on). Returns -1/0/1. Pointer/string fields
- * compare by raw address, same identity-not-content caveat as
- * zyl_variant_eq's docs above. */
-long long zyl_variant_cmp(long long a, long long b) {
-    if (a == b) return 0;
-    if (!a || !b) return a ? 1 : -1;
-    long long ha = *(long long*)(size_t)(a - 8);
-    long long hb = *(long long*)(size_t)(b - 8);
-    long long* pa = (long long*)(size_t)a;
-    long long* pb = (long long*)(size_t)b;
-    long long n = ha < hb ? ha : hb;
-    for (long long i = 1; i < n; i++) {
-        if (pa[i] < pb[i]) return -1;
-        if (pa[i] > pb[i]) return 1;
-    }
-    if (ha < hb) return -1;
-    if (ha > hb) return 1;
-    return 0;
-}
-
-/* Field `idx` (0-based, skipping the discriminant at index 0 — same
- * layout zyl_variant_eq/zyl_variant_cmp document above) of a heap-
- * allocated aggregate. Used by closure conversion (icnf.zyl's
- * ic-lambda-closure/ic-wrap-env-binds) to read a captured value back
- * out of a closure's env block; not something the tag is ever checked
- * for here, since a closure's env is never `match`ed by user code. */
-long long zyl_variant_field(long long ptr, long long idx) {
-    if (!ptr) return 0;
-    return *(long long*)(size_t)(ptr + 8 * (idx + 1));
-}
-
 long long zyl_pin_alloc(long long size) {
     if (!g_pin_arena || size <= 0) return 0;
     long long p = zyl_arena_alloc((long long)(size_t)g_pin_arena, size);

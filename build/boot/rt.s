@@ -3974,6 +3974,273 @@ zyl_cstr_escapes_ok:
     mov rsp, rbp
     pop rbp
     jmp zy_local_x2Fmain_0__text__rt_x2Descapes_x2Dloop
+zy_local_x2Fmain_0__variant__rt_x2Dwords_x2Deq:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    sub rsp, 8
+    mov r8, rdx
+    mov r9, rcx
+.L108_0:
+    cmp r8, r9
+    jl .L108_1
+    mov r10, 1
+    mov rax, r10
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L108_1:
+    mov r10, r8
+    imul r10, 8
+    add r10, rdi
+    mov rdx, r10
+    mov rax, qword ptr [rdx]
+    mov r10, rax
+    mov rbx, r8
+    imul rbx, 8
+    add rbx, rsi
+    mov rdx, rbx
+    mov rax, qword ptr [rdx]
+    mov rbx, rax
+    cmp r10, rbx
+    jne .L108_2
+    mov r10, r8
+    add r10, 1
+    mov r8, r10
+    jmp .L108_0
+.L108_2:
+    mov rsi, 0
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    ret
+.globl zyl_variant_eq
+zyl_variant_eq:
+    push rbp
+    mov rbp, rsp
+.L109_0:
+    cmp rdi, rsi
+    jne .L109_1
+    mov r8, 1
+    mov rax, r8
+    mov rsp, rbp
+    pop rbp
+    ret
+.L109_1:
+    cmp rdi, 0
+    jne .L109_3
+    jmp .L109_4
+.L109_3:
+    cmp rsi, 0
+    jne .L109_2
+.L109_4:
+    mov r8, 0
+    mov rax, r8
+    mov rsp, rbp
+    pop rbp
+    ret
+.L109_2:
+    mov r8, rdi
+    sub r8, 8
+    mov rdx, r8
+    mov rax, qword ptr [rdx]
+    mov r8, rax
+    mov r9, rsi
+    sub r9, 8
+    mov rdx, r9
+    mov rax, qword ptr [rdx]
+    mov r9, rax
+    cmp r8, r9
+    jne .L109_5
+    mov r9, 0
+    mov rdx, r9
+    mov rcx, r8
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__variant__rt_x2Dwords_x2Deq
+.L109_5:
+    mov rsi, 0
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+.globl zyl_variant_cmp
+zyl_variant_cmp:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    sub rsp, 8
+.L110_0:
+    cmp rdi, rsi
+    jne .L110_1
+    mov r8, 0
+    mov rax, r8
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L110_1:
+    cmp rdi, 0
+    jne .L110_3
+    jmp .L110_4
+.L110_3:
+    cmp rsi, 0
+    jne .L110_2
+.L110_4:
+    cmp rdi, 0
+    jne .L110_5
+    mov r8, -1
+    mov rax, r8
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L110_5:
+    mov r8, 1
+    mov rax, r8
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L110_2:
+    mov r8, rdi
+    sub r8, 8
+    mov rdx, r8
+    mov rax, qword ptr [rdx]
+    mov r8, rax
+    mov r9, rsi
+    sub r9, 8
+    mov rdx, r9
+    mov rax, qword ptr [rdx]
+    mov r9, rax
+    mov r10, 1
+    cmp r8, r9
+    jge .L110_6
+    mov rbx, r8
+    jmp .L110_7
+.L110_6:
+    mov rbx, r9
+.L110_7:
+    mov rdx, r10
+    mov rcx, rbx
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__variant__rt_x2Dwords_x2Dcmp_x7EInt_x2CInt_x2CInt_x2CInt_x2CInt_x2CInt
+.globl zyl_variant_field
+zyl_variant_field:
+    push rbp
+    mov rbp, rsp
+.L111_0:
+    cmp rdi, 0
+    jne .L111_1
+    mov r8, 0
+    mov rax, r8
+    mov rsp, rbp
+    pop rbp
+    ret
+.L111_1:
+    mov r8, 8
+    add rsi, 1
+    imul rsi, r8
+    add rsi, rdi
+    mov rdx, rsi
+    mov rax, qword ptr [rdx]
+    mov rsi, rax
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__variant__rt_x2Dwords_x2Dcmp_x7EInt_x2CInt_x2CInt_x2CInt_x2CInt_x2CInt:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    push r14
+    mov r10, r8
+    mov r8, rdx
+    mov rbx, r9
+    mov r9, rcx
+.L112_0:
+    cmp r8, r9
+    jl .L112_1
+    cmp r10, rbx
+    jge .L112_2
+    mov r12, -1
+    mov rax, r12
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L112_2:
+    cmp r10, rbx
+    jle .L112_3
+    mov r12, 1
+    mov rax, r12
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L112_3:
+    mov r12, 0
+    mov rax, r12
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L112_1:
+    mov r12, r8
+    imul r12, 8
+    add r12, rdi
+    mov rdx, r12
+    mov rax, qword ptr [rdx]
+    mov r12, rax
+    mov r13, r8
+    imul r13, 8
+    add r13, rsi
+    mov rdx, r13
+    mov rax, qword ptr [rdx]
+    mov r13, rax
+    cmp r12, r13
+    jge .L112_4
+    mov r14, -1
+    mov rax, r14
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L112_4:
+    cmp r12, r13
+    jle .L112_5
+    mov r12, 1
+    mov rax, r12
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L112_5:
+    mov r12, r8
+    add r12, 1
+    mov r8, r12
+    jmp .L112_0
 .section .rodata
 .Lfmtd:
     .string "%lld\n"

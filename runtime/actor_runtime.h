@@ -245,5 +245,8 @@ long long zyl_view_cmp(long long a, long long aoff, long long alen, long long b,
 long long zyl_view_find(long long s, long long off, long long len, long long from, long long byte);
 long long zyl_view_copy(long long s, long long off, long long len);
 long long zyl_dirname_cstr(long long path);
+long long zyl_variant_eq(long long a, long long b);
+long long zyl_variant_cmp(long long a, long long b);
+long long zyl_variant_field(long long p, long long idx);
 
 #endif
