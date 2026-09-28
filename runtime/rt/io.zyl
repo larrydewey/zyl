@@ -1,11 +1,9 @@
 ; Printing through stdio's stdout, the interpreter's test transcript, exit, read-line and the word cells.
 (use base)
+(use heap)
 (use alloc)
 (use fmt)
 
-(extern "malloc" (Int) Int)
-(extern "realloc" (Int Int) Int)
-(extern "free" (Int) Int)
 (extern "exit" (Int) Int)
 (extern "fputs" (Int Int) Int)
 (extern "fwrite" (Int Int Int Int) Int)
@@ -65,7 +63,7 @@
 ; (read-line): one line from stdin without its newline (or a trailing CR); "" at end of input.
 (defn zyl_read_line ()
   (let _ (ffi-call "fflush" (io-stdout) 1)
-    (let buf (ffi-call "malloc" 128 1)
+    (let buf (zyl_rt_malloc 128)
       (if (= buf 0) (rt-w "")
         (let r (io-read-loop buf 128 0)
           (let b (rt-ld64 r)
@@ -73,7 +71,7 @@
               (let n (if (and (> n0 0) (= (rt-ld8 (+ b (- n0 1))) 13)) (- n0 1) n0)
                 (let out (rt-w (zyl_heap_alloc (+ n 1)))
                   (let _ (if (= out 0) 0 (let _ (rt-copy out b n) (rt-st8 (+ out n) 0)))
-                    (let _ (ffi-call "free" b 1)
+                    (let _ (zyl_rt_free b)
                       (if (= out 0) (rt-w "") out))))))))))))
 
 ; Bytes until newline or end of input; the result {buf, n} is a per-thread pair.
@@ -81,7 +79,7 @@
   (let c (ffi-call "%tls" "io_rl" 24 1)
     (if (and (= (ffi-call "%syscall3" 0 0 (+ c 16) 1 1) 1) (not (= (rt-ld8 (+ c 16)) 10)))
       (if (>= (+ n 1) cap)
-        (let nb (ffi-call "realloc" buf (* cap 2) 1)
+        (let nb (zyl_rt_realloc buf (* cap 2))
           (if (= nb 0) (io-read-done c buf n)
             (let _ (rt-st8 (+ nb n) (rt-ld8 (+ c 16))) (io-read-loop nb (* cap 2) (+ n 1)))))
         (let _ (rt-st8 (+ buf n) (rt-ld8 (+ c 16))) (io-read-loop buf cap (+ n 1))))

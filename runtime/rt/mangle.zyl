@@ -1,5 +1,6 @@
 ; Symbol escaping and canonical-key mangling (spec §31.2).
 (use base)
+(use heap)
 (use blake3)
 
 (defn mg-upper-hex () "0123456789ABCDEF")
@@ -62,16 +63,16 @@
     (if (<= need 200)
       (let d (rt-w (ffi-call "zyl_arena_alloc_zeroed" arena (+ need 1) 1))
         (let _ (mg-write d pkg pl maj ml mod mdl sym sl) (ffi-call "%str" d 1)))
-      (let full (ffi-call "malloc" (+ need 1) 1)
+      (let full (zyl_rt_malloc (+ need 1))
         (if (= full 0) (ffi-call "%str" 0 1)
           (let _ (mg-write full pkg pl maj ml mod mdl sym sl)
             (if (not (rt-blake3-raw k klen (+ full 192) 8))
-              (let _ (ffi-call "free" full 1) (ffi-call "%str" 0 1))
+              (let _ (zyl_rt_free full) (ffi-call "%str" 0 1))
               (let d (rt-w (ffi-call "zyl_arena_alloc_zeroed" arena 201 1))
                 (let _ (rt-copy d full 184)
                   (let _ (rt-hex-bytes (+ d 184) (+ full 192) 0 8)
                     (let _ (rt-st8 (+ d 200) 0)
-                      (let _ (ffi-call "free" full 1) (ffi-call "%str" d 1)))))))))))))
+                      (let _ (zyl_rt_free full) (ffi-call "%str" d 1)))))))))))))
 
 ; §31.2 mangle(): `<package>@<major>::<module>::<symbol>`; a key with no '@' is a bare symbol.
 (defn zyl_mangle_key (arena key)

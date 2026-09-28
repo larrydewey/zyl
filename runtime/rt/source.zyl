@@ -1,9 +1,7 @@
 ; Registered source files and the line, column and snippet queries of diagnostics.
 (use base)
+(use heap)
 
-(extern "strdup" (String) Int)
-(extern "free" (Int) Int)
-(extern "malloc" (Int) Int)
 
 (defmacro rt-ld64 (a) (ffi-call "%load64" a 1))
 (defmacro rt-st64 (a v) (ffi-call "%store64" a v 1))
@@ -16,7 +14,7 @@
 (defn rt-src-find (p i n) (if (>= i n) -1 (if (= (rt-strcmp (rt-ld64 (rt-src i)) p) 0) i (rt-src-find p (+ i 1) n))))
 
 (defn rt-src-set-text (f t)
-  (let c (ffi-call "strdup" (ffi-call "%str" t 1) 1)
+  (let c (rt-strdup (ffi-call "%str" t 1))
     (let _ (rt-st64 (+ f 8) c) (rt-st64 (+ f 16) (if (= c 0) 0 (rt-strlen c))))))
 
 ; A path seen before keeps its id; its text is replaced when it changed (REPL and language-server edits).
@@ -28,11 +26,11 @@
           (if (>= i 0)
             (let f (rt-src i)
               (let old (if (= (rt-ld64 (+ f 8)) 0) (rt-w "") (rt-ld64 (+ f 8)))
-                (let _ (if (= (rt-strcmp old t) 0) 0 (let _ (ffi-call "free" (rt-ld64 (+ f 8)) 1) (rt-src-set-text f t))) i)))
+                (let _ (if (= (rt-strcmp old t) 0) 0 (let _ (zyl_rt_free (rt-ld64 (+ f 8))) (rt-src-set-text f t))) i)))
             (if (>= n 256) -1
               (let f (rt-src n)
                 (let _ (rt-st64 (+ (rt-srcs) 6144) (+ n 1))
-                  (let _ (rt-st64 f (ffi-call "strdup" (ffi-call "%str" p 1) 1))
+                  (let _ (rt-st64 f (rt-strdup (ffi-call "%str" p 1)))
                     (let _ (rt-src-set-text f t) n)))))))))))
 
 ; The file's record when fid is registered, else 0.
@@ -59,7 +57,7 @@
 
 ; A fresh malloc'd copy of n bytes at src (never freed: diagnostics end the process); "" on failure.
 (defn rt-mcopy (src n pre post)
-  (let b (ffi-call "malloc" (+ n 7) 1)
+  (let b (zyl_rt_malloc (+ n 7))
     (if (= b 0) ""
       (let j (if pre (let _ (rt-copy b (rt-w "...") 3) 3) 0)
         (let _ (rt-copy (+ b j) src n)

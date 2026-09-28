@@ -1,11 +1,8 @@
 ; Word arrays, typed arrays, attribute tables, refs, StrBuf and str-append.
 (use base)
+(use heap)
 (use text)
 
-(extern "calloc" (Int Int) Int)
-(extern "malloc" (Int) Int)
-(extern "free" (Int) Int)
-(extern "memset" (Int Int Int) Int)
 (extern "getenv" (Int) Int)
 (extern "zyl_arena_oom" (Int String) Int)
 (extern "zyl_str_append_scan" (Int Int Int) Int)
@@ -116,7 +113,7 @@
       (let x2 (* (bit-xor x1 (bit-and (shr x1 27) 137438953471)) -7723592293110705685)
         (bit-xor x2 (bit-and (shr x2 31) 8589934591))))))
 
-(defn zyl_attrh_new () (ffi-call "calloc" 1 24 1))
+(defn zyl_attrh_new () (zyl_rt_calloc 1 24))
 
 ; The slot for k: its own, or the first empty one.
 (defn tb-probe (slots m i k)
@@ -135,10 +132,10 @@
 (defn tb-grow (t)
   (let cap (tb-ld (+ t 8))
     (let ncap (if (> cap 0) (* cap 8) 4096)
-      (let ns (ffi-call "calloc" ncap 16 1)
+      (let ns (zyl_rt_calloc ncap 16)
         (let _ (if (= ns 0) (ffi-call "zyl_arena_oom" (* ncap 16) "attribute table" 1) 0)
           (let _ (tb-rehash (tb-ld t) 0 cap ns (- ncap 1))
-            (let _ (ffi-call "free" (tb-ld t) 1)
+            (let _ (zyl_rt_free (tb-ld t))
               (let _ (tb-st t ns) (tb-st (+ t 8) ncap)))))))))
 
 (defn tb-attr-set (t node val)
@@ -175,12 +172,12 @@
 
 (defn zyl_attrh_clear (th)
   (if (or (= th 0) (= (tb-ld (+ th 8)) 0)) 0
-    (let _ (ffi-call "memset" (tb-ld th) 0 (* (tb-ld (+ th 8)) 16) 1) (let _ (tb-st (+ th 16) 0) 0))))
+    (let _ (ffi-call "%fill" (tb-ld th) 0 (* (tb-ld (+ th 8)) 16) 1) (let _ (tb-st (+ th 16) 0) 0))))
 
 ; --- refs, ids, environment ---
 
 (defn zyl_ref_new (v)
-  (let r (ffi-call "malloc" 8 1)
+  (let r (zyl_rt_malloc 8)
     (let _ (if (= r 0) (ffi-call "zyl_arena_oom" 8 "ref cell" 1) 0) (let _ (tb-st r v) r))))
 
 (defn zyl_ref_get (r) (tb-ld r))

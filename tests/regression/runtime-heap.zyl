@@ -1,0 +1,60 @@
+; The runtime's own allocator (runtime/rt/heap.zyl): size classes, big mappings, reuse, memmove overlap.
+(use allocator/allocator)
+
+(defn rh-size (i)
+  (if (= i 0) 0 (if (= i 1) 1 (if (= i 2) 15 (if (= i 3) 16 (if (= i 4) 17 (if (= i 5) 100 (if (= i 6) 1000
+  (if (= i 7) 4080 (if (= i 8) 4096 (if (= i 9) 32752 (if (= i 10) 65520 (if (= i 11) 65521 (if (= i 12) 200000
+  (if (= i 13) 1048576 -1)))))))))))))))
+
+; Writes the first and last word of an n-byte block, reads them back, frees it.
+(defn rh-one (n)
+  (let p (alloc-malloc n)
+    (let last (alloc-offset p (if (< n 16) 8 (- n 8)))
+      (let _ (if (>= n 16) (begin (alloc-write-int p n) (alloc-write-int last (+ n 1))) 0)
+        (let ok (if (>= n 16) (and (= (alloc-read-int p) n) (= (alloc-read-int last) (+ n 1))) true)
+          (let _ (alloc-free p) ok))))))
+
+(defn rh-all (i) (let n (rh-size i) (if (< n 0) true (if (rh-one n) (rh-all (+ i 1)) false))))
+
+(defn rh-rounds (k) (if (= k 0) true (if (rh-all 0) (rh-rounds (- k 1)) false)))
+
+; Two live blocks of one class never share memory.
+(defn rh-distinct (n)
+  (let a (alloc-malloc n)
+    (let b (alloc-malloc n)
+      (let _ (alloc-write-int a 11)
+        (let _ (alloc-write-int b 22)
+          (let ok (and (= (alloc-read-int a) 11) (= (alloc-read-int b) 22))
+            (let _ (alloc-free a) (let _ (alloc-free b) ok))))))))
+
+(test "sizes-and-reuse"
+  (begin
+    (assert-equal (rh-rounds 200) true)
+    (assert-equal (rh-distinct 24) true)
+    (assert-equal (rh-distinct 100000) true)))
+
+(defn rh-pattern ((b ByteBuf) i n) (if (>= i n) 0 (let _ (store-u8 :le b i (+ i 1)) (rh-pattern b (+ i 1) n))))
+
+; Bytes at..at+n-1 of b equal from+1 .. from+n.
+(defn rh-shifted ((b ByteBuf) at from n)
+  (if (= n 0) true (if (= (load-u8 :le b at) (+ from 1)) (rh-shifted b (+ at 1) (+ from 1) (- n 1)) false)))
+
+(test "append-overlap-backward"
+  (let b (bytebuf Heap 64)
+    (begin
+      (rh-pattern b 0 64)
+      (assert-equal (bytebuf-append b (byteslice b 0 3)) 1)
+      (assert-equal (bytebuf-append b (byteslice b 1 40)) 1)
+      (assert-equal (bytebuf-len b) 43)
+      (assert-equal (rh-shifted b 3 1 40) true))))
+
+(test "append-overlap-forward"
+  (let b (bytebuf Heap 64)
+    (begin
+      (rh-pattern b 0 64)
+      (assert-equal (bytebuf-append b (byteslice b 0 3)) 1)
+      (assert-equal (bytebuf-append b (byteslice b 10 37)) 1)
+      (assert-equal (bytebuf-len b) 40)
+      (assert-equal (rh-shifted b 3 10 37) true))))
+
+(run-tests)
