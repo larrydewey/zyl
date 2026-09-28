@@ -16,7 +16,7 @@
 (test "spawn"
   (begin
     (assert-equal (ffi-call "zyl_system_cmd" "command -v sh > /dev/null" 5000) 0)
-    (assert-equal (ffi-call "zyl_run_bin" "/bin/sh" 5000) 0)
+    (assert-equal (ffi-call "zyl_run_bin" "/bin/true" 5000) 0)
     (assert-equal (ffi-call "zyl_run_bin" "/" 5000) -1)
     (assert-equal (ffi-call "zyl_run_bin" "" 5000) -1)))
 

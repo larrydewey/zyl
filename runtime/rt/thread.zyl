@@ -141,7 +141,8 @@
 
 (defn rt-thread-free (h) (ffi-call "%syscall2" 11 h 4096 1))
 
-(defn rt-join-wait (h) (let t (ffi-call "%load32" h 1) (if (= t 0) 0 (let _ (rt-futex-wait h t 0) (rt-join-wait h)))))
+; The kernel's CHILD_CLEARTID wake is a shared futex, so the join waits without the private flag.
+(defn rt-join-wait (h) (let t (ffi-call "%load32" h 1) (if (= t 0) 0 (let _ (ffi-call "%syscall4" 202 h 0 t 0 1) (rt-join-wait h)))))
 
 ; Waits for the thread, then releases its stack (when the runtime made it), TLS and handle.
 (defn zyl_rt_thread_join (h)

@@ -148,9 +148,9 @@
 (defn cli-link-child (asmpath outpath extra)
   (ffi-call "zyl_system_cmd" (cli-link-command asmpath outpath extra) 1000))
 
-; Freestanding (start.o + rt.o, no libc) unless the program calls foreign code or links native objects; ZYL_FREESTANDING=1 gates it for now.
+; Freestanding (start.o + rt.o, static, no libc) unless the program calls foreign code or links native objects.
 (defn cli-link-command (asmpath outpath extra)
-  (if (and (str-eq (ffi-call "zyl_getenv_str" "ZYL_FREESTANDING" 1000) "1") (and (= (str-length extra) 0) (not (rt-foreign-p))))
+  (if (and (= (str-length extra) 0) (not (rt-foreign-p)))
     (str-concat "cc -nostdlib -static -no-pie " (str-concat asmpath (str-concat " start.o rt.o -o " outpath)))
     (cli-link-hosted asmpath outpath extra)))
 

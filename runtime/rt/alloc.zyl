@@ -206,7 +206,7 @@
 
 (defmacro rt-rblocks (r) (bit-and (ffi-call "%load64" (+ r 24) 1) -2))
 (defmacro rt-rscoped (r) (= (bit-and (ffi-call "%load64" (+ r 24) 1) 1) 1))
-(defn rt-rset-blocks (r b) (rt-st64 (+ r 24) (bit-or b (bit-and (rt-ld64 (+ r 24)) 1))))
+(defmacro rt-rset-blocks (r b) (ffi-call "%store64" (+ r 24) (bit-or b (bit-and (ffi-call "%load64" (+ r 24) 1) 1)) 1))
 
 (defn rt-count-blocks (b n) (if (or (= b 0) (>= n 4)) n (rt-count-blocks (rt-ld64 b) (+ n 1))))
 
@@ -242,7 +242,15 @@
 
 ; size bytes in region rp (0: the heap) with the hidden qword count before them.
 ; A bare dispatch, so the heap path pays no prologue.
-(defn zyl_ralloc (size rp) (if (= rp 0) (zyl_heap_alloc size) (rt-ralloc-in size rp)))
+; A bare dispatch with an inline bump: the heap path pays no prologue, a fitting frame-region block no call.
+(defn zyl_ralloc (size rp)
+  (if (= rp 0) (zyl_heap_alloc size)
+    (if (or (<= size 0) (> size 65536)) (rt-ralloc-in size rp)
+      (let bump (rt-ld64 (+ rp 8))
+        (let need (+ (bit-and (+ size 7) -8) 8)
+          (if (and (> bump 0) (and (not (rt-rscoped rp)) (<= (+ bump need) (rt-ld64 (+ rp 16)))))
+            (let _ (rt-st64 (+ rp 8) (+ bump need)) (let _ (rt-st64 bump (shr (+ size 7) 3)) (+ bump 8)))
+            (rt-ralloc-in size rp)))))))
 
 (defn rt-ralloc-in (size rp)
     (if (<= size 0) 0
@@ -289,11 +297,14 @@
 (defn zyl_region_recycle (rp)
   (let b (rt-rblocks rp)
     (if (= b 0) 0
+      (if (and (= (rt-ld64 b) 0) (= (ffi-call "%load32" (+ b 16) 1) 0))
+        ; One pool block: just empty it.
+        (let _ (rt-st64 (+ rp 8) (+ b 24)) 0)
       (let keep (rt-last-block b)
         (if (= (ffi-call "%load32" (+ keep 16) 1) 1) (let _ (rt-region-free-blocks rp) 0)
           (let _ (rt-release-chain b keep)
             (let _ (rt-rset-blocks rp keep)
-              (let _ (rt-st64 (+ rp 8) (+ keep 24)) (let _ (rt-st64 (+ rp 16) (+ keep (rt-ld64 (+ keep 8)))) 0)))))))))
+              (let _ (rt-st64 (+ rp 8) (+ keep 24)) (let _ (rt-st64 (+ rp 16) (+ keep (rt-ld64 (+ keep 8)))) 0))))))))))
 
 ; Pop and release; the result region never names a dead frame.
 (defn zyl_region_exit (rp)
