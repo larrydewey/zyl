@@ -667,7 +667,7 @@
 ; A foreign symbol's address, loaded through the GOT so it resolves the
 ; same way for a libc function and for a native-dependency object.
 (defn cg-sym-addr (st s)
-  (if (rt-tls-label-p s)
+  (if (or (rt-tls-label-p s) (rt-tls-export-p s))
     (cg-emit-line (cg-emit-line st "    mov rax, QWORD PTR fs:0") (str-concat "    lea rax, [rax+" (str-concat s "@tpoff]")))
   (if (rt-global-label-p s)
     (cg-emit-line st (str-concat "    lea rax, [rip+" (str-concat s "]")))
@@ -2279,7 +2279,7 @@
 ;; RAW RUNTIME PRIMITIVES (runtime module only, docs/runtime-in-zyl-design.md)
 ;; ===========================================================================
 
-; Primitive kind, or -1: loads 0-3, stores 4-7, %word 8, %str 9, SSE2 10-13, AVX2 14-17, %ctz 18, cpuid 19-22, %xgetbv 23, %global 24, %tls-get/set 25/26, %v128-diff-mask 27, %cas 28, %fetch-add 29, %xchg 30, %fence 31, %f64/%f64-bits 32/33, %tls 34, int-float 35/36, AES-NI 37-41; %syscallK lowers to stubs.
+; Primitive kind, or -1: loads 0-3, stores 4-7, %word 8, %str 9, SSE2 10-13, AVX2 14-17, %ctz 18, cpuid 19-22, %xgetbv 23, %global 24, %tls-get/set 25/26, %v128-diff-mask 27, %cas 28, %fetch-add 29, %xchg 30, %fence 31, %f64/%f64-bits 32/33, %tls 34, int-float 35/36, AES-NI 37-41; %syscallK lowers to stubs. Also %fn 42, %udiv/%urem/%mulhi 43-45, %clz 46, %fill 47; %callK lowers to stubs.
 (defn cg-raw-kind (sym)
   (if (not (rt-prim-p sym)) -1 (cg-raw-kind-in sym cg-raw-names 0)))
 
@@ -2293,7 +2293,8 @@
   (Cons "%global" (Cons "%tls-get" (Cons "%tls-set" (Cons "%v128-diff-mask"
   (Cons "%cas" (Cons "%fetch-add" (Cons "%xchg" (Cons "%fence"
   (Cons "%f64" (Cons "%f64-bits" (Cons "%tls" (Cons "%f64-of-int" (Cons "%f64-to-int"
-  (Cons "%aes-enc" (Cons "%aes-enclast" (Cons "%v128-xor" (Cons "%aes-expand-128" (Cons "%aes-expand-256" Nil)))))))))))))))))))))))))))))))))))))))))))
+  (Cons "%aes-enc" (Cons "%aes-enclast" (Cons "%v128-xor" (Cons "%aes-expand-128" (Cons "%aes-expand-256"
+  (Cons "%fn" (Cons "%udiv" (Cons "%urem" (Cons "%mulhi" (Cons "%clz" (Cons "%fill" Nil)))))))))))))))))))))))))))))))))))))))))))))))))
 
 (defn cg-raw-kind-in (sym names i)
   (match names
@@ -2334,12 +2335,17 @@
   (if (and (>= kind 37) (< kind 40)) (cg-aes-round-lines kind)
   (if (= kind 40) (cg-aes-128-lines)
   (if (= kind 41) (cg-aes-256-lines)
+  (if (= kind 43) (Cons "    mov rax, rdx" (Cons "    xor edx, edx" (Cons "    div rcx" Nil)))
+  (if (= kind 44) (Cons "    mov rax, rdx" (Cons "    xor edx, edx" (Cons "    div rcx" (Cons "    mov rax, rdx" Nil))))
+  (if (= kind 45) (Cons "    mov rax, rdx" (Cons "    mul rcx" (Cons "    mov rax, rdx" Nil)))
+  (if (= kind 46) (Cons "    mov ecx, 127" (Cons "    bsr rax, rdx" (Cons "    cmovz rax, rcx" (Cons "    xor rax, 63" Nil))))
+  (if (= kind 47) (Cons "    push rdi" (Cons "    mov rdi, rdx" (Cons "    mov rax, rcx" (Cons "    mov rcx, r11" (Cons "    rep stosb" (Cons "    pop rdi" (Cons "    xor eax, eax" Nil)))))))
     (Cons "    mov eax, edx" (Cons "    mov r11, rbx" (Cons "    cpuid"
       (Cons (if (= kind 19) "    mov eax, eax" (if (= kind 20) "    mov eax, ebx" (if (= kind 21) "    mov eax, ecx" "    mov eax, edx")))
-      (Cons "    mov rbx, r11" Nil)))))))))))))))))))))))))))))))))))
+      (Cons "    mov rbx, r11" Nil))))))))))))))))))))))))))))))))))))))))
 
 (defn cg-raw-arity (kind)
-  (if (< kind 4) 1 (if (< kind 8) 2 (if (< kind 11) 1 (if (< kind 14) 2 (if (= kind 14) 1 (if (< kind 18) 2 (if (= kind 18) 1 (if (< kind 23) 2 (if (= kind 23) 0 (if (< kind 28) 2 (if (= kind 28) 3 (if (< kind 31) 2 (if (< kind 35) 0 (if (< kind 37) 1 2)))))))))))))))
+  (if (< kind 4) 1 (if (< kind 8) 2 (if (< kind 11) 1 (if (< kind 14) 2 (if (= kind 14) 1 (if (< kind 18) 2 (if (= kind 18) 1 (if (< kind 23) 2 (if (= kind 23) 0 (if (< kind 28) 2 (if (= kind 28) 3 (if (< kind 31) 2 (if (< kind 35) 0 (if (< kind 37) 1 (if (< kind 42) 2 (if (= kind 42) 0 (if (< kind 46) 2 (if (= kind 46) 1 3)))))))))))))))))))
 
 ;; AES-NI kinds (the caller checks zyl_aesni_available); every xmm used is cleared so no key material is left in a register.
 (defn cg-aes-wipe () (Cons "    pxor xmm0, xmm0" (Cons "    pxor xmm1, xmm1" (Cons "    pxor xmm2, xmm2" (Cons "    pxor xmm3, xmm3" (Cons "    mov rax, rdx" Nil))))))
@@ -2389,7 +2395,14 @@
 ; SSE2 kinds 10-13 and 27 are baseline x86-64; AVX2 kinds 14-17 need the runtime's cpuid check.
 
 ; %global (.bss, shared) or %tls (.tbss, per thread) block: "name" size literals, 64-byte aligned, zeroed.
-(defn cg-raw-block-label (kind args) (cg-raw-block (if (= kind 34) "zyl_rtt_" "zyl_rtg_") args))
+(defn cg-raw-block-label (kind args)
+  (if (= kind 42) (cg-raw-sym-arg args)
+    (if (and (= kind 34) (rt-export-name-p (cg-raw-sym-arg args))) (cg-raw-tls-export args)
+      (cg-raw-block (if (= kind 34) "zyl_rtt_" "zyl_rtg_") args))))
+
+; A zyl_* %tls block is an exported thread-local named exactly so (generated code names it).
+(defn cg-raw-tls-export (args)
+  (match args (Cons _ rest (match rest (Cons sz _ (match sz (IConst k (rt-tls-export-add (cg-raw-sym-arg args) k)) (_ (cg-raw-global-bad)))) (Nil (cg-raw-global-bad)))) (Nil (cg-raw-global-bad))))
 
 (defn cg-raw-global-label (args) (cg-raw-block "zyl_rtg_" args))
 
@@ -2409,8 +2422,8 @@
 (defn cg-rt-bss (st)
   (if (rt-mode-p)
     (let st2 (cg-rt-bss-list (cg-emit-line st ".bss") (rt-globals) "zyl_rtg_")
-      (let st3 (cg-rt-bss-list (cg-emit-line st2 ".section .tbss,\"awT\",@nobits") (rt-globals) "zyl_rtt_")
-        (cg-rt-syscall-stubs (cg-emit-line st3 ".text") (rt-syscalls))))
+      (let st3 (cg-rt-tls-exports (cg-rt-bss-list (cg-emit-line st2 ".section .tbss,\"awT\",@nobits") (rt-globals) "zyl_rtt_") (rt-tls-exports))
+        (cg-rt-call-stubs (cg-rt-syscall-stubs (cg-emit-line st3 ".text") (rt-syscalls)) 0)))
     st))
 
 (defn cg-rt-bss-list (st gs prefix)
@@ -2422,6 +2435,31 @@
           (if (str-eq (str-substring name 0 8) prefix)
             (cg-rt-bss-list (cg-emit-lines st (Cons ".p2align 6" (Cons (str-concat name ":") (Cons (str-concat "    .zero " (ffi-call "zyl_int_text" size 1000)) Nil)))) rest prefix)
             (cg-rt-bss-list st rest prefix)))))))
+
+(defn cg-rt-tls-exports (st gs)
+  (match gs
+    (Nil st)
+    (Cons g rest
+      (match g
+        (RtGlobal name size
+          (cg-rt-tls-exports (cg-emit-lines st (Cons (str-concat ".globl " name) (Cons ".p2align 3" (Cons (str-concat name ":") (Cons (str-concat "    .zero " (ffi-call "zyl_int_text" size 1000)) Nil))))) rest))))))
+
+; %callK f args...: zyl_rt_call<K> shifts the arguments down one register and jumps to f (the 7th comes from the stack).
+(defn cg-rt-call-stubs (st k)
+  (if (> k 7) st
+    (cg-rt-call-stubs (cg-emit-lines st (cg-rt-call-stub k)) (+ k 1))))
+
+(defn cg-rt-call-stub (k)
+  (Cons (str-concat "zyl_rt_call" (str-concat (ffi-call "zyl_int_text" k 1000) ":"))
+    (Cons "    mov rax, rdi"
+      (list-append (cg-rt-shift-regs k 0)
+        (Cons "    jmp rax" Nil)))))
+
+(defn cg-rt-shift-regs (k i)
+  (if (>= i k) Nil
+    (if (= i 6) (Cons "    mov r11, [rsp+16]" (Cons "    mov [rsp+8], r11" Nil))
+      (Cons (if (= i 5) "    mov r9, [rsp+8]" (str-concat "    mov " (str-concat (cg-reg-of i) (str-concat ", " (cg-reg-of (+ i 1))))))
+        (cg-rt-shift-regs k (+ i 1))))))
 
 ; %syscallK n args...: a C call of zyl_rt_sys_<n>, which moves arg 4 to r10 and traps.
 (defn cg-rt-syscall-stubs (st ns)
@@ -2437,7 +2475,7 @@
 (defn cg-inline-raw (st env kind args)
   (if (cg-raw-identity-p kind)
     (match args (Cons a _ (cg-expr st env a)) (Nil st))
-  (if (or (= kind 24) (= kind 34))
+  (if (or (= kind 24) (or (= kind 34) (= kind 42)))
     (cg-sym-addr st (cg-raw-block-label kind args))
   (if (= kind 25)
     (cg-emit-line st (cg-tls-get-line (cg-raw-sym-arg args)))
@@ -2479,7 +2517,7 @@
 (defn ml-raw (st env venv ms kind args)
   (if (cg-raw-identity-p kind)
     (match args (Cons a _ (ml-expr st env venv ms a)) (Nil (ml-expr st env venv ms (IConst 0))))
-    (if (or (= kind 24) (= kind 34))
+    (if (or (= kind 24) (or (= kind 34) (= kind 42)))
       (let rd (ms-vreg ms) (MR (ms-emit (mr-ms rd) (MSym (mr-v rd) (cg-raw-block-label kind args))) (mr-v rd)))
     (if (or (= kind 25) (= kind 26))
       (match (ml-args st env venv ms (match args (Cons _ t t) (Nil Nil)) Nil)

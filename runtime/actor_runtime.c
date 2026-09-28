@@ -487,70 +487,6 @@ void zyl_actor_wait_all(void) {
    the scheduler happened to run the actor before main returned". */
 
 /* ==========================================================================
-   Dynamic closure invocation. A closure value is either a raw code pointer
-   (static binary text, low addresses) or an env-block pointer (heap, high
-   addresses) whose first qword is the code pointer and which takes the env
-   as an extra leading argument. These helpers dispatch dynamically so call
-   sites whose callee shape is unknown at compile time work for both.
-   ========================================================================== */
-
-#define ZYL_HEAP_THRESHOLD 0x100000000LL
-
-/* Lowest address the kernel will ever map on Linux by default
- * (/proc/sys/vm/mmap_min_addr, 0x10000 on most distros; 0x1000 is the
- * conservative floor even on the most permissive configs). Neither branch
- * below does executable-page validation -- that needs parsing
- * /proc/self/maps or similar on every call, too costly for a hot path --
- * but a callee address under this floor can only be a null/uninitialized
- * slot or a small bogus integer misused as code, never a real function or
- * env-block pointer. Reject those before the indirect call/deref instead
- * of segfaulting (or worse, "succeeding") on attacker-influenced data. */
-
-static long long zyl_call_guard(long long v) {
-    if (v < ZYL_MIN_CALL_ADDR) {
-        fprintf(stderr, "zyl: invalid callee address 0x%llx\n", (unsigned long long)v);
-        exit(1);
-    }
-    return v;
-}
-
-long long zyl_call0(long long v) {
-    v = zyl_call_guard(v);
-    if (v < ZYL_HEAP_THRESHOLD) return ((long long (*)(void))v)();
-    return ((long long (*)(void*))*(long long*)(size_t)v)((void*)v);
-}
-long long zyl_call1(long long v, long long a) {
-    v = zyl_call_guard(v);
-    if (v < ZYL_HEAP_THRESHOLD) return ((long long (*)(long long))v)(a);
-    return ((long long (*)(void*, long long))*(long long*)(size_t)v)((void*)v, a);
-}
-long long zyl_call2(long long v, long long a, long long b) {
-    v = zyl_call_guard(v);
-    if (v < ZYL_HEAP_THRESHOLD) return ((long long (*)(long long, long long))v)(a, b);
-    return ((long long (*)(void*, long long, long long))*(long long*)(size_t)v)((void*)v, a, b);
-}
-long long zyl_call3(long long v, long long a, long long b, long long c) {
-    v = zyl_call_guard(v);
-    if (v < ZYL_HEAP_THRESHOLD) return ((long long (*)(long long, long long, long long))v)(a, b, c);
-    return ((long long (*)(void*, long long, long long, long long))*(long long*)(size_t)v)((void*)v, a, b, c);
-}
-long long zyl_call4(long long v, long long a, long long b, long long c, long long d) {
-    v = zyl_call_guard(v);
-    if (v < ZYL_HEAP_THRESHOLD) return ((long long (*)(long long, long long, long long, long long))v)(a, b, c, d);
-    return ((long long (*)(void*, long long, long long, long long, long long))*(long long*)(size_t)v)((void*)v, a, b, c, d);
-}
-long long zyl_call5(long long v, long long a, long long b, long long c, long long d, long long e) {
-    v = zyl_call_guard(v);
-    if (v < ZYL_HEAP_THRESHOLD) return ((long long (*)(long long, long long, long long, long long, long long))v)(a, b, c, d, e);
-    return ((long long (*)(void*, long long, long long, long long, long long, long long))*(long long*)(size_t)v)((void*)v, a, b, c, d, e);
-}
-long long zyl_call6(long long v, long long a, long long b, long long c, long long d, long long e, long long f) {
-    v = zyl_call_guard(v);
-    if (v < ZYL_HEAP_THRESHOLD) return ((long long (*)(long long, long long, long long, long long, long long, long long))v)(a, b, c, d, e, f);
-    return ((long long (*)(void*, long long, long long, long long, long long, long long, long long))*(long long*)(size_t)v)((void*)v, a, b, c, d, e, f);
-}
-
-/* ==========================================================================
    try/catch — panic handler stack. Generated code allocates a frame, links
    it, calls setjmp on its buffer, and branches to its catch path when
    siglongjmp returns nonzero. zyl_panic unwinds to the innermost frame.
@@ -675,10 +611,6 @@ typedef struct { uintptr_t key; long long val; } ZylAttrSlot;
 
 #include <sys/stat.h>
 long long zyl_heap_alloc(long long size);
-
-/* Frame-region chain heads, named by generated code; the regions themselves are runtime/rt/alloc.zyl. */
-__thread void* zyl_cur_region = 0;
-__thread void* zyl_region_top = 0;
 
 /* ==========================================================================
    FFI pinning — copy an 8-byte value to a stable Pin arena location and back.
@@ -1290,41 +1222,6 @@ long long zyl_ffi_addr(long long name) { return zyl_ffi_lookup(name); }
 
 /* Decimal text of an integer, heap-allocated. zyl_cstr_from_int needs
    an arena; the interpreter has heap values and no arena of its own. */
-/* Signed division by a constant (Hacker's Delight, 10-1): the magic
-   multiplier and shift the native backend uses instead of idiv for a
-   constant divisor d, |d| >= 2. q = mulhi(M, n), corrected by n when the
-   signs of d and M differ, shifted right by s, plus 1 when negative. The
-   compiler calls these while compiling; the results are exact for every
-   n (checked against idiv). */
-static void zyl_div_magic_of(long long d, long long* m, long long* sh) {
-    const unsigned long long two63 = 1ULL << 63;
-    unsigned long long ad = d < 0 ? 0 - (unsigned long long)d : (unsigned long long)d;
-    unsigned long long t = two63 + ((unsigned long long)d >> 63);
-    unsigned long long anc = t - 1 - t % ad;
-    int p = 63;
-    unsigned long long q1 = two63 / anc, r1 = two63 - q1 * anc, q2 = two63 / ad, r2 = two63 - q2 * ad, delta;
-    do {
-        p++;
-        q1 = 2 * q1; r1 = 2 * r1; if (r1 >= anc) { q1++; r1 -= anc; }
-        q2 = 2 * q2; r2 = 2 * r2; if (r2 >= ad) { q2++; r2 -= ad; }
-        delta = ad - r2;
-    } while (q1 < delta || (q1 == delta && r1 == 0));
-    long long mm = (long long)(q2 + 1);
-    *m = d < 0 ? -mm : mm;
-    *sh = p - 64;
-}
-
-long long zyl_div_magic(long long d) {
-    long long m = 0, sh = 0;
-    if (d > 1 || d < -1) zyl_div_magic_of(d, &m, &sh);
-    return m;
-}
-
-long long zyl_div_shift(long long d) {
-    long long m = 0, sh = 0;
-    if (d > 1 || d < -1) zyl_div_magic_of(d, &m, &sh);
-    return sh;
-}
 
 /* Every runtime symbol the compiler can emit an `ffi-call` to, by name.
    dlsym alone would need the whole program linked with -rdynamic, which

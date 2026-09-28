@@ -63,3 +63,18 @@
 (defn rt-int-member (n xs) (match xs (Nil false) (Cons h t (if (= h n) true (rt-int-member n t)))))
 
 (defn rt-syscall-p (s) (and (> (str-length s) 8) (str-eq (str-substring s 0 8) "%syscall")))
+
+(defn rt-export-name-p (s) (and (> (str-length s) 4) (str-eq (str-substring s 0 4) "zyl_")))
+
+; Exported thread-locals (a zyl_* %tls), in first-use order.
+(def rt-tls-exports-cell (ffi-call "zyl_ref_new" Nil 1000))
+
+(defn rt-tls-exports () (list-reverse-rt (ffi-call "zyl_ref_get" rt-tls-exports-cell 1000) Nil))
+
+(defn rt-tls-export-add (name size)
+  (if (rt-global-known (ffi-call "zyl_ref_get" rt-tls-exports-cell 1000) name) name
+    (let _ (ffi-call "zyl_ref_set" rt-tls-exports-cell (Cons (RtGlobal name size) (ffi-call "zyl_ref_get" rt-tls-exports-cell 1000)) 1000) name)))
+
+(defn rt-tls-export-p (s) (rt-global-known (ffi-call "zyl_ref_get" rt-tls-exports-cell 1000) s))
+
+(defn rt-call-p (s) (and (> (str-length s) 5) (str-eq (str-substring s 0 5) "%call")))

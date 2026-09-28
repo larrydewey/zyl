@@ -70,13 +70,6 @@ long long zyl_cstr_key_matches(long long key, long long name);
 long long zyl_cpuid_features(void);
 long long zyl_aesni_available(void);
 long long zyl_variant_eq(long long a, long long b);
-long long zyl_call0(long long);
-long long zyl_call1(long long, long long);
-long long zyl_call2(long long, long long, long long);
-long long zyl_call3(long long, long long, long long, long long);
-long long zyl_call4(long long, long long, long long, long long, long long);
-long long zyl_call5(long long, long long, long long, long long, long long, long long);
-long long zyl_call6(long long, long long, long long, long long, long long, long long, long long);
 void* zyl_try_push(void);
 void zyl_try_pop(void);
 const char* zyl_try_last_msg(void);
@@ -383,5 +376,15 @@ long long zyl_random_fill(long long addr, long long len);
 long long zyl_random_words(long long base, long long n);
 long long zyl_aes_encrypt_block(long long keybase, long long keybytes,
                                 long long inbase, long long outbase);
+
+long long zyl_call0(long long v);
+long long zyl_call1(long long v, long long a0);
+long long zyl_call2(long long v, long long a0, long long a1);
+long long zyl_call3(long long v, long long a0, long long a1, long long a2);
+long long zyl_call4(long long v, long long a0, long long a1, long long a2, long long a3);
+long long zyl_call5(long long v, long long a0, long long a1, long long a2, long long a3, long long a4);
+long long zyl_call6(long long v, long long a0, long long a1, long long a2, long long a3, long long a4, long long a5);
+long long zyl_div_magic(long long d);
+long long zyl_div_shift(long long d);
 
 #endif

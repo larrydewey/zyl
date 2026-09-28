@@ -149,35 +149,10 @@
 (defn zyl_arena_alloc_zeroed (arena size)
   (let p (rt-arena-bump arena size) (if (= p 0) 0 (let _ (rt-fill0 p size) p))))
 
-; Zeroing: 64 bytes per step from a zero .bss block, then words, then bytes.
-(defn rt-fill0 (p n) (rt-fill0-64 p n (ffi-call "%global" "zero64" 64 1)))
+; rep stosb zeroing and 0xDE poisoning.
+(defn rt-fill0 (p n) (if (> n 0) (ffi-call "%fill" p 0 n 1) 0))
 
-(defn rt-fill0-64 (p n z)
-  (if (>= n 64)
-    (let _ (ffi-call "%v128-copy" p z 1)
-      (let _ (ffi-call "%v128-copy" (+ p 16) z 1)
-        (let _ (ffi-call "%v128-copy" (+ p 32) z 1)
-          (let _ (ffi-call "%v128-copy" (+ p 48) z 1) (rt-fill0-64 (+ p 64) (- n 64) z)))))
-    (rt-fill0-tail p n)))
-
-(defn rt-fill0-tail (p n)
-  (if (>= n 8) (let _ (rt-st64 p 0) (rt-fill0-tail (+ p 8) (- n 8)))
-    (if (> n 0) (let _ (rt-st8 p 0) (rt-fill0-tail (+ p 1) (- n 1))) 0)))
-
-; 0xDE poison: 32 bytes per copy from a pattern block, then words, then bytes.
-(defn rt-de-block ()
-  (let g (ffi-call "%global" "de32" 32 1)
-    (let _ (if (= (rt-ld64 g) 0) (rt-fill-de-words g 32) 0) g)))
-
-(defn rt-fill-de-words (p n) (if (>= n 8) (let _ (rt-st64 p -2387225703656530210) (rt-fill-de-words (+ p 8) (- n 8))) (rt-fill-de-bytes p n)))
-
-(defn rt-fill-de-bytes (p n) (if (> n 0) (let _ (rt-st8 p 222) (rt-fill-de-bytes (+ p 1) (- n 1))) 0))
-
-(defn rt-fill-de (p n) (if (>= n 32) (rt-fill-de-32 p n (rt-de-block)) (rt-fill-de-words p n)))
-
-(defn rt-fill-de-32 (p n src)
-  (if (>= n 32) (let _ (ffi-call "%v128-copy" p src 1) (let _ (ffi-call "%v128-copy" (+ p 16) src 1) (rt-fill-de-32 (+ p 32) (- n 32) src)))
-    (rt-fill-de-words p n)))
+(defn rt-fill-de (p n) (if (> n 0) (ffi-call "%fill" p 222 n 1) 0))
 
 ; Poisons, refunds and frees every block (a stale pointer then reads 0xDE garbage).
 (defn rt-free-blocks (b)
@@ -415,3 +390,6 @@
 (defn zyl_region_mark () (ffi-call "%tls-get" "zyl_region_top" 1))
 
 (defn zyl_region_live_bytes () (rt-ld64 (rt-live)))
+
+; Defines the chain heads generated code names (fs:zyl_cur_region@tpoff); never called.
+(defn rt-region-tls () (+ (ffi-call "%tls" "zyl_cur_region" 8 1) (ffi-call "%tls" "zyl_region_top" 8 1)))

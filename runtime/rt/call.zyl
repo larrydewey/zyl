@@ -1,0 +1,58 @@
+; Dynamic closure calls and the division magic numbers the native backend uses.
+(use base)
+
+(extern "exit" (Int) Int)
+
+(defmacro rt-ld64 (a) (ffi-call "%load64" a 1))
+
+; A code address lies below 4 GiB; above it is an env block whose first word is the code, taking the env first.
+(defn rt-guard (v)
+  (if (< v 4096)
+    (let m (str-concat "zyl: invalid callee address 0x" (str-concat (rt-hex v "") "\n"))
+      (let _ (ffi-call "write" 2 m (rt-strlen (rt-w m)) 1) (ffi-call "exit" 1 1)))
+    0))
+
+(defn rt-code-p (v) (< v 4294967296))
+
+(defn zyl_call0 (v) (let _ (rt-guard v) (if (rt-code-p v) (ffi-call "%call0" v 1) (ffi-call "%call1" (rt-ld64 v) v 1))))
+(defn zyl_call1 (v a) (let _ (rt-guard v) (if (rt-code-p v) (ffi-call "%call1" v a 1) (ffi-call "%call2" (rt-ld64 v) v a 1))))
+(defn zyl_call2 (v a b) (let _ (rt-guard v) (if (rt-code-p v) (ffi-call "%call2" v a b 1) (ffi-call "%call3" (rt-ld64 v) v a b 1))))
+(defn zyl_call3 (v a b c) (let _ (rt-guard v) (if (rt-code-p v) (ffi-call "%call3" v a b c 1) (ffi-call "%call4" (rt-ld64 v) v a b c 1))))
+(defn zyl_call4 (v a b c d) (let _ (rt-guard v) (if (rt-code-p v) (ffi-call "%call4" v a b c d 1) (ffi-call "%call5" (rt-ld64 v) v a b c d 1))))
+(defn zyl_call5 (v a b c d e) (let _ (rt-guard v) (if (rt-code-p v) (ffi-call "%call5" v a b c d e 1) (ffi-call "%call6" (rt-ld64 v) v a b c d e 1))))
+(defn zyl_call6 (v a b c d e f) (let _ (rt-guard v) (if (rt-code-p v) (ffi-call "%call6" v a b c d e f 1) (ffi-call "%call7" (rt-ld64 v) v a b c d e f 1))))
+
+; --- signed division by a constant (Hacker's Delight 10-1), |d| >= 2 ---
+
+(defn rt-min64 () (- -9223372036854775807 1))
+(defn rt-ult (a b) (< (bit-xor a (rt-min64)) (bit-xor b (rt-min64))))
+
+(defn rt-magic-loop (d ad anc p q1 r1 q2 r2 want-shift)
+  (let p2 (+ p 1)
+    (let q1a (* q1 2)
+      (let r1a (* r1 2)
+        (let up1 (not (rt-ult r1a anc))
+          (let q1b (if up1 (+ q1a 1) q1a)
+            (let r1b (if up1 (- r1a anc) r1a)
+              (let q2a (* q2 2)
+                (let r2a (* r2 2)
+                  (let up2 (not (rt-ult r2a ad))
+                    (let q2b (if up2 (+ q2a 1) q2a)
+                      (let r2b (if up2 (- r2a ad) r2a)
+                        (let delta (- ad r2b)
+                          (if (or (rt-ult q1b delta) (and (= q1b delta) (= r1b 0)))
+                            (rt-magic-loop d ad anc p2 q1b r1b q2b r2b want-shift)
+                            (if want-shift (- p2 64) (if (< d 0) (- 0 (+ q2b 1)) (+ q2b 1)))))))))))))))))
+
+(defn rt-magic (d want-shift)
+  (if (and (<= d 1) (>= d -1)) 0
+    (let two63 (rt-min64)
+      (let ad (if (< d 0) (- 0 d) d)
+        (let t (+ two63 (bit-and (shr d 63) 1))
+          (let anc (- (- t 1) (ffi-call "%urem" t ad 1))
+            (let q1 (ffi-call "%udiv" two63 anc 1)
+              (let q2 (ffi-call "%udiv" two63 ad 1)
+                (rt-magic-loop d ad anc 63 q1 (- two63 (* q1 anc)) q2 (- two63 (* q2 ad)) want-shift)))))))))
+
+(defn zyl_div_magic (d) (rt-magic d false))
+(defn zyl_div_shift (d) (rt-magic d true))

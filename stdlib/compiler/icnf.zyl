@@ -1413,6 +1413,8 @@
           (let real (butlast-expr tail Nil)
             (if (rt-syscall-p name)
               (ic-syscall arena (ic-expr-list arena real vt))
+            (if (rt-call-p name)
+              (IFfi (str-intern arena (str-concat "zyl_rt_call" (str-substring name 5 (- (str-length name) 5)))) (ic-expr-list arena real vt))
             (if (or (rt-mode-p) (or (rt-prim-p name) (and (ic-ffi-runtime-p name) (not (option-is-some (extern-sig-of name))))))
               (IFfi name (ic-expr-list arena real vt))
               (IFfi "zyl_ffi_timed"
@@ -1420,7 +1422,7 @@
                   (Cons (IStr name)
                     (Cons (IConst (ffi-literal-int (ffi-last-expr tail)))
                       (Cons (IConst (list-length real))
-                        (ic-expr-list arena real vt))))))))))))
+                        (ic-expr-list arena real vt)))))))))))))
     (Nil (let _ (ffi-check-call args (Expr (EAtom (ANil)))) (IFfi "?" Nil)))))
 
 ; (%syscallK n args...) with a literal n: a call of the zyl_rt_sys_<n> stub the runtime module emits.
