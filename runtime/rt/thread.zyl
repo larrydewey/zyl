@@ -1,0 +1,156 @@
+; Futex locks, threads (clone when freestanding, weak pthreads when hosted), static TLS, and the freestanding entry.
+(use base)
+
+(extern "zyl_rt_clone" (Int Int Int Int Int) Int)
+
+(defmacro th-ld (a) (ffi-call "%load64" a 1))
+(defmacro th-st (a v) (ffi-call "%store64" a v 1))
+
+; --- futex (private) ---
+
+(defn rt-futex-wait (a v ts) (ffi-call "%syscall4" 202 a 128 v ts 1))
+(defn rt-futex-wake (a n) (ffi-call "%syscall3" 202 a 129 n 1))
+
+; A mutex word: 0 free, 1 held, 2 held with waiters (Drepper's second mutex).
+(defn zyl_rt_mutex_lock (m) (if (= (ffi-call "%cas" m 0 1 1) 0) 0 (rt-mutex-contend m)))
+
+(defn rt-mutex-contend (m) (if (= (ffi-call "%xchg" m 2 1) 0) 0 (let _ (rt-futex-wait m 2 0) (rt-mutex-contend m))))
+
+(defn zyl_rt_mutex_unlock (m)
+  (if (= (ffi-call "%fetch-add" m -1 1) 1) 0 (let _ (ffi-call "%xchg" m 0 1) (let _ (rt-futex-wake m 1) 0))))
+
+; A condition word is a sequence number; a waiter sleeps while it is unchanged.
+(defn zyl_rt_cond_wait (c m)
+  (let seq (bit-and (th-ld c) 4294967295)
+    (let _ (zyl_rt_mutex_unlock m) (let _ (rt-futex-wait c seq 0) (rt-mutex-contend m)))))
+
+(defn zyl_rt_cond_signal (c) (let _ (ffi-call "%fetch-add" c 1 1) (let _ (rt-futex-wake c 1) 0)))
+
+(defn zyl_rt_cond_broadcast (c) (let _ (ffi-call "%fetch-add" c 1 1) (let _ (rt-futex-wake c 2147483647) 0)))
+
+; Waits until the CLOCK_MONOTONIC deadline {sec, nsec} at abs; 110 (ETIMEDOUT) once it has passed, else 0. The mutex is held on return.
+(defn zyl_rt_cond_timedwait (c m abs)
+  (let seq (bit-and (th-ld c) 4294967295)
+    (let now (ffi-call "%tls" "cond_now" 32 1)
+      (let _ (ffi-call "%syscall2" 228 1 now 1)
+        (let dsec (- (th-ld abs) (th-ld now))
+          (let dns (- (th-ld (+ abs 8)) (th-ld (+ now 8)))
+            (let rsec (if (< dns 0) (- dsec 1) dsec)
+              (let rns (if (< dns 0) (+ dns 1000000000) dns)
+                (if (< rsec 0)
+                  110
+                  (let rel (+ now 16)
+                    (let _ (th-st rel rsec)
+                      (let _ (th-st (+ rel 8) rns)
+                        (let _ (zyl_rt_mutex_unlock m)
+                          (let r (rt-futex-wait c seq rel)
+                            (let _ (rt-mutex-contend m) (if (= r -110) 110 0))))))))))))))))
+
+; --- the static TLS template (x86-64 variant II): {image, filesz, memsz, align} ---
+
+(defn rt-tls-info () (ffi-call "%global" "tls_info" 32 1))
+(defn rt-freestanding () (ffi-call "%global" "freestanding" 8 1))
+
+; Hosted (libc's crt ran) unless the runtime's own _start did.
+(defn zyl_rt_hosted_p () (= (th-ld (rt-freestanding)) 0))
+
+(defn rt-mmap (n) (ffi-call "%syscall6" 9 0 n 3 34 -1 0 1))
+
+(defn rt-align-up (n a) (bit-and (+ n (- a 1)) (- 0 a)))
+
+; A zeroed TLS block with the image copied in; returns the thread pointer, whose TCB holds {self, mapping, size}.
+(defn rt-tls-new ()
+  (let ti (rt-tls-info)
+    (let al (if (< (th-ld (+ ti 24)) 64) 64 (th-ld (+ ti 24)))
+      (let tsz (rt-align-up (th-ld (+ ti 16)) al)
+        (let size (rt-align-up (+ (+ tsz 64) al) 4096)
+          (let mem (rt-mmap size)
+            (if (and (< mem 0) (> mem -4096)) 0
+              (let tp (rt-align-up (+ mem tsz) al)
+                (let _ (rt-copy (- tp tsz) (th-ld ti) (th-ld (+ ti 8)))
+                  (let _ (th-st tp tp) (let _ (th-st (+ tp 8) mem) (let _ (th-st (+ tp 16) size) tp))))))))))))
+
+(defn rt-tls-free (tp) (ffi-call "%syscall2" 11 (th-ld (+ tp 8)) (th-ld (+ tp 16)) 1))
+
+; PT_TLS from the program headers (Elf64_Phdr is 56 bytes).
+(defn rt-find-tls (ph n i)
+  (if (>= i n) 0
+    (let p (+ ph (* i 56))
+      (if (= (ffi-call "%load32" p 1) 7)
+        (let ti (rt-tls-info)
+          (let _ (th-st ti (th-ld (+ p 16)))
+            (let _ (th-st (+ ti 8) (th-ld (+ p 32)))
+              (let _ (th-st (+ ti 16) (th-ld (+ p 40))) (th-st (+ ti 24) (th-ld (+ p 48)))))))
+        (rt-find-tls ph n (+ i 1))))))
+
+(defn rt-auxv (a key) (let t (th-ld a) (if (= t 0) 0 (if (= t key) (th-ld (+ a 8)) (rt-auxv (+ a 16) key)))))
+
+(defn rt-skip-env (e) (if (= (th-ld e) 0) (+ e 8) (rt-skip-env (+ e 8))))
+
+; The freestanding entry (_start's callee): argc, argv, envp and auxv from the initial stack; TLS; then main.
+(defn zyl_rt_start (sp)
+  (let argc (th-ld sp)
+    (let argv (+ sp 8)
+      (let envp (+ argv (* 8 (+ argc 1)))
+        (let auxv (rt-skip-env envp)
+          (let _ (rt-find-tls (rt-auxv auxv 3) (rt-auxv auxv 5) 0)
+            (let tp (rt-tls-new)
+              (let _ (ffi-call "%syscall2" 158 4098 tp 1)
+                (let _ (th-st (rt-freestanding) 1)
+                  (let code (ffi-call "%call3" (ffi-call "%fn" "main" 1) argc argv envp 1)
+                    (ffi-call "zyl_exit" code 1)))))))))))
+
+; --- threads: a handle is {ctid word, stack, stack size, thread pointer, pthread_t, owns stack} in its own page ---
+
+; CLONE_VM|FS|FILES|SIGHAND|THREAD|SYSVSEM|SETTLS|PARENT_SETTID|CHILD_CLEARTID
+(defn rt-clone-flags () 4001536)
+
+(defn rt-stack-new (size)
+  (let p (rt-mmap size)
+    (if (and (< p 0) (> p -4096)) 0 (let _ (ffi-call "%syscall3" 10 p 4096 0 1) p))))
+
+; Starts fn(arg) on a new thread; stack 0 means a fresh 8 MiB one (guard page below). Returns the handle, or 0.
+(defn zyl_rt_thread_create (fn arg stack size)
+  (let h (rt-mmap 4096)
+    (if (and (< h 0) (> h -4096)) 0
+      (if (zyl_rt_hosted_p) (rt-thread-pthread h fn arg stack size) (rt-thread-clone h fn arg stack size)))))
+
+(defn rt-thread-clone (h fn arg stack0 size0)
+  (let size (if (= stack0 0) 8388608 size0)
+    (let stack (if (= stack0 0) (rt-stack-new size) stack0)
+      (let tp (rt-tls-new)
+        (if (or (= stack 0) (= tp 0)) (let _ (rt-thread-free h) 0)
+          (let top (bit-and (+ stack size) -16)
+            (let _ (th-st (- top 16) fn)
+              (let _ (th-st (- top 8) arg)
+                (let _ (th-st (+ h 8) stack)
+                  (let _ (th-st (+ h 16) size)
+                    (let _ (th-st (+ h 24) tp)
+                      (let _ (th-st (+ h 40) (if (= stack0 0) 1 0))
+                        (let r (ffi-call "zyl_rt_clone" (rt-clone-flags) (- top 16) h h tp 1)
+                          (if (< r 0) (let _ (rt-tls-free tp) (let _ (rt-thread-free h) 0)) h))))))))))))))
+
+(defn rt-thread-pthread (h fn arg stack size)
+  (let at (+ h 64)
+    (let _ (ffi-call "%call1" (ffi-call "%fn-weak" "pthread_attr_init" 1) at 1)
+      (let _ (if (= stack 0) 0 (ffi-call "%call3" (ffi-call "%fn-weak" "pthread_attr_setstack" 1) at stack size 1))
+        (let r (bit-and (ffi-call "%call4" (ffi-call "%fn-weak" "pthread_create" 1) (+ h 32) at fn arg 1) 4294967295)
+          (let _ (ffi-call "%call1" (ffi-call "%fn-weak" "pthread_attr_destroy" 1) at 1)
+            (if (= r 0) h (let _ (rt-thread-free h) 0))))))))
+
+(defn rt-thread-free (h) (ffi-call "%syscall2" 11 h 4096 1))
+
+(defn rt-join-wait (h) (let t (ffi-call "%load32" h 1) (if (= t 0) 0 (let _ (rt-futex-wait h t 0) (rt-join-wait h)))))
+
+; Waits for the thread, then releases its stack (when the runtime made it), TLS and handle.
+(defn zyl_rt_thread_join (h)
+  (if (= h 0) 0
+    (if (zyl_rt_hosted_p)
+      (let _ (ffi-call "%call2" (ffi-call "%fn-weak" "pthread_join" 1) (th-ld (+ h 32)) 0 1) (let _ (rt-thread-free h) 0))
+      (let _ (rt-join-wait h)
+        (let _ (if (= (th-ld (+ h 40)) 1) (ffi-call "%syscall2" 11 (th-ld (+ h 8)) (th-ld (+ h 16)) 1) 0)
+          (let _ (rt-tls-free (th-ld (+ h 24))) (let _ (rt-thread-free h) 0)))))))
+
+; Ends the calling thread (its joiner frees the stack).
+(defn zyl_rt_thread_exit ()
+  (if (zyl_rt_hosted_p) (ffi-call "%call1" (ffi-call "%fn-weak" "pthread_exit" 1) 0 1) (ffi-call "%syscall1" 60 0 1)))

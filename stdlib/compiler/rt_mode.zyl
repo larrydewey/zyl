@@ -78,3 +78,21 @@
 (defn rt-tls-export-p (s) (rt-global-known (ffi-call "zyl_ref_get" rt-tls-exports-cell 1000) s))
 
 (defn rt-call-p (s) (and (> (str-length s) 5) (str-eq (str-substring s 0 5) "%call")))
+
+; Symbols named by %fn-weak (0 when absent from the link), in first-use order.
+(def rt-weaks-cell (ffi-call "zyl_ref_new" Nil 1000))
+
+(defn rt-weaks () (list-reverse-rt (ffi-call "zyl_ref_get" rt-weaks-cell 1000) Nil))
+
+(defn rt-weak-add (name)
+  (if (rt-str-member name (ffi-call "zyl_ref_get" rt-weaks-cell 1000)) name
+    (let _ (ffi-call "zyl_ref_set" rt-weaks-cell (Cons name (ffi-call "zyl_ref_get" rt-weaks-cell 1000)) 1000) name)))
+
+(defn rt-str-member (s xs) (match xs (Nil false) (Cons h t (if (str-eq h s) true (rt-str-member s t)))))
+
+; Set when a program lowers a foreign ffi-call: it then links hosted (libc's crt), else freestanding.
+(def rt-foreign-cell (ffi-call "zyl_ref_new" 0 1000))
+
+(defn rt-foreign-mark () (ffi-call "zyl_ref_set" rt-foreign-cell 1 1000))
+
+(defn rt-foreign-p () (= (ffi-call "zyl_ref_get" rt-foreign-cell 1000) 1))

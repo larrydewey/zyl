@@ -74,6 +74,10 @@ step() { echo -e "\033[1;34m==>\033[0m $*"; }
 ok()   { echo -e "  \033[0;32m✓\033[0m $*"; }
 die()  { echo -e "  \033[0;31m✗\033[0m $*"; exit 1; }
 
+# A freestanding program starts here: sp in rdi, aligned, into the runtime (runtime/rt/thread.zyl).
+printf '.intel_syntax noprefix\n.globl _start\n.text\n_start:\n    xor ebp, ebp\n    mov rdi, rsp\n    and rsp, -16\n    call zyl_rt_start\n    ud2\n.section .note.GNU-stack,"",@progbits\n' > "${OUT}/start.s"
+cc -c "${OUT}/start.s" -o "${OUT}/start.o"
+
 # The Zyl runtime: the committed rt.s is its seed, as stage2.s is the compiler's.
 RT_O="${OUT}/rt.o"
 use_rt() { # use_rt <rt.s>: assemble it as the rt.o every link uses

@@ -2270,7 +2270,7 @@
 ;; RAW RUNTIME PRIMITIVES (runtime module only, docs/runtime-in-zyl-design.md)
 ;; ===========================================================================
 
-; Primitive kind, or -1: loads 0-3, stores 4-7, %word 8, %str 9, SSE2 10-13, AVX2 14-17, %ctz 18, cpuid 19-22, %xgetbv 23, %global 24, %tls-get/set 25/26, %v128-diff-mask 27, %cas 28, %fetch-add 29, %xchg 30, %fence 31, %f64/%f64-bits 32/33, %tls 34, int-float 35/36, AES-NI 37-41; %syscallK lowers to stubs. Also %fn 42, %udiv/%urem/%mulhi 43-45, %clz 46, %fill 47; %callK lowers to stubs.
+; Primitive kind, or -1: loads 0-3, stores 4-7, %word 8, %str 9, SSE2 10-13, AVX2 14-17, %ctz 18, cpuid 19-22, %xgetbv 23, %global 24, %tls-get/set 25/26, %v128-diff-mask 27, %cas 28, %fetch-add 29, %xchg 30, %fence 31, %f64/%f64-bits 32/33, %tls 34, int-float 35/36, AES-NI 37-41; %syscallK lowers to stubs. Also %fn 42, %udiv/%urem/%mulhi 43-45, %clz 46, %fill 47; %callK lowers to stubs. %fn-weak 48.
 (defn cg-raw-kind (sym)
   (if (not (rt-prim-p sym)) -1 (cg-raw-kind-in sym cg-raw-names 0)))
 
@@ -2285,7 +2285,7 @@
   (Cons "%cas" (Cons "%fetch-add" (Cons "%xchg" (Cons "%fence"
   (Cons "%f64" (Cons "%f64-bits" (Cons "%tls" (Cons "%f64-of-int" (Cons "%f64-to-int"
   (Cons "%aes-enc" (Cons "%aes-enclast" (Cons "%v128-xor" (Cons "%aes-expand-128" (Cons "%aes-expand-256"
-  (Cons "%fn" (Cons "%udiv" (Cons "%urem" (Cons "%mulhi" (Cons "%clz" (Cons "%fill" Nil)))))))))))))))))))))))))))))))))))))))))))))))))
+  (Cons "%fn" (Cons "%udiv" (Cons "%urem" (Cons "%mulhi" (Cons "%clz" (Cons "%fill" (Cons "%fn-weak" Nil))))))))))))))))))))))))))))))))))))))))))))))))))
 
 (defn cg-raw-kind-in (sym names i)
   (match names
@@ -2336,7 +2336,7 @@
       (Cons "    mov rbx, r11" Nil))))))))))))))))))))))))))))))))))))))))
 
 (defn cg-raw-arity (kind)
-  (if (< kind 4) 1 (if (< kind 8) 2 (if (< kind 11) 1 (if (< kind 14) 2 (if (= kind 14) 1 (if (< kind 18) 2 (if (= kind 18) 1 (if (< kind 23) 2 (if (= kind 23) 0 (if (< kind 28) 2 (if (= kind 28) 3 (if (< kind 31) 2 (if (< kind 35) 0 (if (< kind 37) 1 (if (< kind 42) 2 (if (= kind 42) 0 (if (< kind 46) 2 (if (= kind 46) 1 3)))))))))))))))))))
+  (if (< kind 4) 1 (if (< kind 8) 2 (if (< kind 11) 1 (if (< kind 14) 2 (if (= kind 14) 1 (if (< kind 18) 2 (if (= kind 18) 1 (if (< kind 23) 2 (if (= kind 23) 0 (if (< kind 28) 2 (if (= kind 28) 3 (if (< kind 31) 2 (if (< kind 35) 0 (if (< kind 37) 1 (if (< kind 42) 2 (if (= kind 42) 0 (if (< kind 46) 2 (if (= kind 46) 1 (if (= kind 47) 3 0))))))))))))))))))))
 
 ;; AES-NI kinds (the caller checks zyl_aesni_available); every xmm used is cleared so no key material is left in a register.
 (defn cg-aes-wipe () (Cons "    pxor xmm0, xmm0" (Cons "    pxor xmm1, xmm1" (Cons "    pxor xmm2, xmm2" (Cons "    pxor xmm3, xmm3" (Cons "    mov rax, rdx" Nil))))))
@@ -2387,9 +2387,10 @@
 
 ; %global (.bss, shared) or %tls (.tbss, per thread) block: "name" size literals, 64-byte aligned, zeroed.
 (defn cg-raw-block-label (kind args)
+  (if (= kind 48) (rt-weak-add (cg-raw-sym-arg args))
   (if (= kind 42) (cg-raw-sym-arg args)
     (if (and (= kind 34) (rt-export-name-p (cg-raw-sym-arg args))) (cg-raw-tls-export args)
-      (cg-raw-block (if (= kind 34) "zyl_rtt_" "zyl_rtg_") args))))
+      (cg-raw-block (if (= kind 34) "zyl_rtt_" "zyl_rtg_") args)))))
 
 ; A zyl_* %tls block is an exported thread-local named exactly so (generated code names it).
 (defn cg-raw-tls-export (args)
@@ -2414,7 +2415,7 @@
   (if (rt-mode-p)
     (let st2 (cg-rt-bss-list (cg-emit-line st ".bss") (rt-globals) "zyl_rtg_")
       (let st3 (cg-rt-tls-exports (cg-rt-bss-list (cg-emit-line st2 ".section .tbss,\"awT\",@nobits") (rt-globals) "zyl_rtt_") (rt-tls-exports))
-        (cg-emit-lines (cg-rt-call-stubs (cg-rt-syscall-stubs (cg-emit-line st3 ".text") (rt-syscalls)) 0) (cg-rt-jmp-stubs))))
+        (cg-rt-weaks (cg-emit-lines (cg-emit-lines (cg-rt-call-stubs (cg-rt-syscall-stubs (cg-emit-line st3 ".text") (rt-syscalls)) 0) (cg-rt-jmp-stubs)) (cg-rt-clone-stub)) (rt-weaks))))
     st))
 
 (defn cg-rt-bss-list (st gs prefix)
@@ -2434,6 +2435,14 @@
       (match g
         (RtGlobal name size
           (cg-rt-tls-exports (cg-emit-lines st (Cons (str-concat ".globl " name) (Cons ".p2align 3" (Cons (str-concat name ":") (Cons (str-concat "    .zero " (ffi-call "zyl_int_text" size 1000)) Nil))))) rest))))))
+
+;; zyl_rt_clone(flags, stack, ptid, ctid, tls): the child pops fn and arg the caller left on its stack, calls fn(arg), then exits the thread.
+(defn cg-rt-clone-stub ()
+  (Cons ".globl zyl_rt_clone" (Cons "zyl_rt_clone:" (Cons "    mov r10, rcx" (Cons "    mov eax, 56" (Cons "    syscall"
+  (Cons "    test rax, rax" (Cons "    jnz .Lzyl_rt_clone_parent" (Cons "    xor ebp, ebp" (Cons "    pop rax" (Cons "    pop rdi" (Cons "    call rax"
+  (Cons "    mov edi, eax" (Cons "    mov eax, 60" (Cons "    syscall" (Cons "    ud2" (Cons ".Lzyl_rt_clone_parent:" (Cons "    ret" Nil))))))))))))))))))
+
+(defn cg-rt-weaks (st ws) (match ws (Nil st) (Cons w rest (cg-rt-weaks (cg-emit-line st (str-concat ".weak " w)) rest))))
 
 ; %callK f args... (K <= 16): zyl_rt_call<K> shifts the arguments down one slot (registers, then stack words) and jumps to f.
 (defn cg-rt-call-stubs (st k)
@@ -2479,7 +2488,7 @@
 (defn cg-inline-raw (st env kind args)
   (if (cg-raw-identity-p kind)
     (match args (Cons a _ (cg-expr st env a)) (Nil st))
-  (if (or (= kind 24) (or (= kind 34) (= kind 42)))
+  (if (or (= kind 24) (or (= kind 34) (or (= kind 42) (= kind 48))))
     (cg-sym-addr st (cg-raw-block-label kind args))
   (if (= kind 25)
     (cg-emit-line st (cg-tls-get-line (cg-raw-sym-arg args)))
@@ -2521,7 +2530,7 @@
 (defn ml-raw (st env venv ms kind args)
   (if (cg-raw-identity-p kind)
     (match args (Cons a _ (ml-expr st env venv ms a)) (Nil (ml-expr st env venv ms (IConst 0))))
-    (if (or (= kind 24) (or (= kind 34) (= kind 42)))
+    (if (or (= kind 24) (or (= kind 34) (or (= kind 42) (= kind 48))))
       (let rd (ms-vreg ms) (MR (ms-emit (mr-ms rd) (MSym (mr-v rd) (cg-raw-block-label kind args))) (mr-v rd)))
     (if (or (= kind 25) (= kind 26))
       (match (ml-args st env venv ms (match args (Cons _ t t) (Nil Nil)) Nil)

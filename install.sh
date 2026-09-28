@@ -64,7 +64,7 @@ mkdir -p "$TARGET/bin"
 rm -rf "$TARGET/stdlib"
 cp -r "$SCRIPT_DIR/stdlib" "$TARGET/stdlib"
 # The Zyl runtime, built by boot.sh from the committed rt.s.
-cp "$SCRIPT_DIR/build/boot/rt.o" "$TARGET/rt.o"
+cp "$SCRIPT_DIR/build/boot/rt.o" "$SCRIPT_DIR/build/boot/start.o" "$TARGET/"
 cp "$SCRIPT_DIR/build/boot/stage2.bin" "$TARGET/bin/stage2.bin"
 
 # Both tools below are compiled BY the compiler just installed, against

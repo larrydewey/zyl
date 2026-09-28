@@ -2,7 +2,6 @@
 (use base)
 (use ctab)
 
-(extern "dlsym" (Int Int) Int)
 (extern "sched_yield" () Int)
 
 (defmacro ft-ld64 (a) (ffi-call "%load64" a 1))
@@ -43,7 +42,7 @@
 (defn zyl_ffi_lookup (name)
   (let n (rt-w name)
     (if (= n 0) 0
-      (let s (ft-find n) (if (> s 0) (ft-ld64 (+ s 8)) (ffi-call "dlsym" 0 n 1))))))
+      (let s (ft-find n) (if (> s 0) (ft-ld64 (+ s 8)) (ft-dlsym n))))))
 
 (defn zyl_ffi_addr (name) (zyl_ffi_lookup name))
 
@@ -398,3 +397,6 @@
 
 (defn ft-fill (t) (let _ (ft-fill-0 t) (let _ (ft-fill-1 t) (let _ (ft-fill-2 t) (let _ (ft-fill-3 t) (let _ (ft-fill-4 t) (let _ (ft-fill-5 t) (let _ (ft-fill-6 t) (let _ (ft-fill-7 t) (let _ (ft-fill-8 t) (let _ (ft-fill-9 t) (let _ (ft-fill-10 t) (let _ (ft-fill-11 t) (let _ (ft-fill-12 t) (let _ (ft-fill-13 t) (let _ (ft-fill-14 t) (let _ (ft-fill-15 t) (let _ (ft-fill-16 t) 0))))))))))))))))))
 
+; dlsym(RTLD_DEFAULT, n) when libc is linked (hosted); a freestanding program has no foreign symbols.
+(defn ft-dlsym (n)
+  (let f (ffi-call "%fn-weak" "dlsym" 1) (if (= f 0) 0 (ffi-call "%call2" f 0 n 1))))

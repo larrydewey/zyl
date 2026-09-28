@@ -28,3 +28,4 @@
 (use ffitimed)
 (use panic)
 (use io)
+(use thread)
