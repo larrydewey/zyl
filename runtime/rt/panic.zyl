@@ -36,15 +36,16 @@
           (let _ (rt-st64 (+ f 80) (zyl_region_mark))
             (let _ (rt-st64 t f) f))))))))
 
+; The frame is dead once popped (normal exit) or once its message is read (catch): free it there.
 (defn zyl_try_pop ()
   (let t (pn-top)
-    (let f (rt-ld64 t) (if (= f 0) 0 (let _ (rt-st64 t (rt-ld64 (+ f 64))) 0)))))
+    (let f (rt-ld64 t) (if (= f 0) 0 (let _ (rt-st64 t (rt-ld64 (+ f 64))) (let _ (zyl_rt_free f) 0))))))
 
 (defn zyl_try_last_msg ()
   (let f (rt-ld64 (pn-top)) (if (= f 0) 0 (rt-ld64 (+ f 72)))))
 
 ; The msg of a frame already unlinked by zyl_panic; the catch path holds its pointer.
-(defn zyl_try_frame_msg (frame) (if (= frame 0) 0 (rt-ld64 (+ frame 72))))
+(defn zyl_try_frame_msg (frame) (if (= frame 0) 0 (let m (rt-ld64 (+ frame 72)) (let _ (zyl_rt_free frame) m))))
 
 ; --- compiled test harness: state {count, in_test, region mark, jmp buf[8], fn result} ---
 

@@ -51831,14 +51831,17 @@ zyl_try_pop:
     pop rbp
     ret
 .L1453_1:
-    add rdi, 64
-    mov rdx, rdi
+    mov r8, rdi
+    add r8, 64
+    mov rdx, r8
     mov rax, qword ptr [rdx]
-    mov rdi, rax
+    mov r8, rax
     mov rdx, rsi
-    mov rcx, rdi
+    mov rcx, r8
     mov qword ptr [rdx], rcx
     mov rax, rcx
+    mov rsi, rax
+    call zyl_rt_free
     mov rsi, rax
     mov rsi, 0
     mov rax, rsi
@@ -51876,11 +51879,14 @@ zyl_try_last_msg:
 zyl_try_frame_msg:
     push rbp
     mov rbp, rsp
+    push rbx
+    sub rsp, 8
 .L1455_0:
     cmp rdi, 0
     jne .L1455_1
     mov rsi, 0
     mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
     mov rsp, rbp
     pop rbp
     ret
@@ -51890,7 +51896,11 @@ zyl_try_frame_msg:
     mov rdx, rsi
     mov rax, qword ptr [rdx]
     mov rsi, rax
-    mov rax, rsi
+    mov rbx, rsi
+    call zyl_rt_free
+    mov rsi, rax
+    mov rax, rbx
+    mov rbx, qword ptr [rbp-8]
     mov rsp, rbp
     pop rbp
     ret
