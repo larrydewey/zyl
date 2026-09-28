@@ -138,6 +138,10 @@ carries as `zyl_build_hash`).
 - **Capability types** (TCap/TMut) for compile-time aliasing control
 - **Structs immutable by default** (rebinding only)
 - **Safe-only optimizations** (constant folding, DCE, small-function inlining, copy propagation, in-place reuse — no reordering)
+- **The runtime is Zyl** (`runtime/rt/`), with no C and no libc under freestanding programs; the `%` primitives exist only in the runtime's own compile, and programs get no `unsafe`
+- **Kahn channels** (single writer, single reader, blocking receive, no select) are the only way actors communicate
+- **No inline assembly**: deterministic typed intrinsics (spec §21.13) and `stdlib/simd` instead; `ffi-call` is the escape hatch
+- **The compiler assembles and links** freestanding programs itself (`asm_x86.zyl`, `elf_link.zyl`)
 
 ## Development Commands
 
