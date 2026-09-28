@@ -11,7 +11,7 @@ fail() { echo "FAIL: $*"; exit 1; }
 json() { "$ZYL" "$1" -o "$SCRATCH/out" --error-format=json 2>&1 || true; }
 
 # A Stack bytebuf passed on to a function that keeps it.
-printf '(defn keep (b) (send (actor-self) b))\n(defn leak ()\n  (let b (bytebuf Stack 16)\n    (let _ (keep b) 0)))\n(defn main () (begin (leak) 0))\n' > "$SCRATCH/esc.zyl"
+printf '(defn keep (b) (chan-send (chan-tx (chan 1)) b))\n(defn leak ()\n  (let b (bytebuf Stack 16)\n    (let _ (keep b) 0)))\n(defn main () (begin (leak) 0))\n' > "$SCRATCH/esc.zyl"
 out="$(json "$SCRATCH/esc.zyl")"
 printf '%s\n' "$out" | grep -q '"code":"E_REGION_ESCAPE".*"line":3,"column":10,"labels":\[{"message":"escapes here[^"]*","file":"[^"]*esc.zyl","line":4,' \
   || fail "region escape label: $out"
