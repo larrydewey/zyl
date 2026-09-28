@@ -74,6 +74,17 @@ ran out of input.
    span onto its replacement (`zyl_span_copy`), which is how a
    codegen-stage error still reports `file:line:col`.
 
+### Parse-tree rewrites
+
+`desugar.zyl` (`ds-program`, called by `zyl-parse-file` for every file)
+rewrites `with-resource` (a `let`, a `try`, and `Drop.drop` on both exits),
+`assert-fail` (a `try`), top-level `test-suite` forms (flattened into
+`suite/test` tests wrapped in their `setup`/`teardown` forms) and
+`test-property` (a test calling `property-check-1`..`3`). It runs before
+module resolution, so every name it introduces is qualified like
+hand-written code; generated nodes carry the span of the form they
+replace.
+
 ## Phase 3: Module resolution and qualification
 
 **Implementation:** `module_resolver.zyl`
@@ -123,6 +134,13 @@ package's capability grants for Phase 5.
 The walk covers every `ExprInner` shape, so a macro call expands in any
 position, and a parameter is substituted in binder and `set!`-target
 positions as well as in value position.
+
+## Phase 4b: test-compile
+
+`tc-resolve` (`pipeline.zyl`) decides each top-level `test-compile` right
+after macro expansion: a probe program (the expression as a function body,
+no other `test-compile`) runs through the checks and the type checker with
+its diagnostics captured, and the form becomes a test with the verdict.
 
 ## Phase 5: Checks
 

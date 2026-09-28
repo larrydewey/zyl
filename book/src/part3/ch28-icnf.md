@@ -108,7 +108,7 @@ so `(+ a b c)` becomes `(IBinop 0 (IBinop 0 a b) c)`.
 | integer, `true`/`false`, byte literal | `IConst` |
 | string / float literal | `IStr` / `IFlt` |
 | variable reference | `ILoad name` |
-| `let`, `let-mut`, `with-resource` | `ILet` (mutability is gone below source level) |
+| `let`, `let-mut` | `ILet` (mutability is gone below source level; `with-resource` was rewritten into a `let` and a `try` on the parse tree) |
 | `set!` | `ISet` |
 | `begin` | `ISeq` |
 | `if`, `while` | `IIf`, `IWhile` |

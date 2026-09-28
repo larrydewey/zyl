@@ -318,9 +318,14 @@ order; none of it reorders a side effect.
 
 ### `with-resource`
 
-`(with-resource (name init) body)` lowers to a plain `let`. Neither
-`close` nor a `Drop` method is called on exit, so §12.9 steps 4 and 5
-and guarantee G11 are not met.
+`(with-resource (name init) body)` is rewritten on the parse tree
+(`compiler/desugar.zyl`) into a `let` of `name`, a `try` around `body`,
+and a call of `(Drop.drop name)` on both exits: after `body`, and before
+an error from `body` propagates (re-raised with `zyl-reraise`). `Drop`
+is a prelude trait (`core/resource`, `(drop (self) Unit)`); an `Int`
+resource is a file descriptor, dropped with `file-close`, and a type
+with no `Drop` impl is `E_TRAIT_NOT_FOUND` at the form. This meets §12.9
+and G11.
 
 ### Assertions
 
@@ -330,20 +335,38 @@ error code; `E_ASSERT_FAIL` is catalogued but not printed.
 `assert-equal` unifies its two sides. On ADT or struct values the type
 pass renames it to the type's generated `T.==`, the same content
 comparison as `==`; a Float type selects an epsilon comparison
-(`|a - b| <= 1e-5`); anything else is `=`. `assert-fail` evaluates its
-argument and checks nothing.
+(`|a - b| <= 1e-5`); anything else is `=`. `(assert-fail e msg?)` is
+rewritten on the parse tree into a `try` of `e`: it fails, with `msg` or
+a fixed message, unless `e` raises.
 
 ### Testing framework
 
 - `(test "name" body)` becomes a function registered with the runtime, and
   `(run-tests)` runs every registered test, each under its own panic
-  handler, printing `test: name ... ok` or `FAIL` and a summary line.
+  handler, printing `test: name ... ok` or `FAIL: <first line of the
+  panic message>` and a summary line.
   Tests run sequentially in registration order; there is no parallel
   runner, and no fresh environment beyond each test being its own
   function.
-- `test-suite`, `setup`, `teardown`, `test-property` and `test-compile`
-  are parsed and then dropped; only definitions, tests and `run-tests`
-  survive to code generation at top level.
+- A top-level `test-suite` is flattened on the parse tree into its tests,
+  named `suite/test` (nested suites add their names), each wrapped in the
+  suite's `setup` forms (outer suite first) and `teardown` forms (inner
+  first, run also when the test fails). `setup`/`teardown` outside a
+  suite and a suite that is not top-level are `E_MALFORMED_FORM`.
+- `(test-property "p" gen fn)` becomes a test calling
+  `property-check-1`..`3` (`core/property`) with the generator's fixed
+  samples (edge cases, then a seeded sequence); `fn` takes one to three
+  parameters and returns a `Bool`; a rejected sample fails the test,
+  named in the message.
+- `(test-compile e)` / `(test-compile e (:expect-error b))` is decided at
+  compile time, right after macro expansion (`pipeline.zyl`'s
+  `tc-resolve`): the program with `e` as a function body, and no other
+  `test-compile`, runs through the checks and the type checker with its
+  diagnostics captured, and the form becomes a test that passes when the
+  outcome matches. Only a top-level one is accepted.
+- Keyword options on `run-tests` are ignored: tests run sequentially in
+  registration order, which is the deterministic order §20.5.5 asks
+  for.
 - `stdlib/testing/testing.zyl` provides wrappers (`test-run`,
   `assert-equal-values`, `property-int` and similar). Its
   `run-tests-parallel`, `run-tests-filtered` and `run-tests-with-timeout`

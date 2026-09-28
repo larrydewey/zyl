@@ -34,12 +34,13 @@ selfhost/
                          driver.zyl directly, and its (use ...) tree is
                          resolved from stdlib/ like any program's.
 
-stdlib/compiler/         The compiler itself (44 files, ~29,500 lines)
+stdlib/compiler/         The compiler itself (45 files, ~29,700 lines)
 stdlib/repl/             The REPL and its ICNF interpreter (8 files, ~4,200 lines)
 stdlib/lsp/              The language server (20 files, ~5,600 lines)
 stdlib/math/             Cryptography and number libraries (28 files, ~7,700 lines)
 stdlib/core/             core (facade), list, option, result, map, show
-                         (the derivable traits and their primitive impls)
+                         (the derivable traits and their primitive impls),
+                         resource (Drop), property (test-property samples)
 stdlib/collections/      collections (Assoc + list utilities), vec, map, set,
                          slice (zero-copy Vec slices)
 stdlib/text/             view: StrView (zero-copy substrings) and Cursor
@@ -90,6 +91,7 @@ in `docs/compiler-pipeline.md`.
 | `lexer.zyl` | Tokenizer; every token carries its source byte offset |
 | `sexp_balance.zyl` | Delimiter balance check with the location of the first fault |
 | `parser.zyl` | Dispatch-free reader: tokens to nested `Ast` lists |
+| `desugar.zyl` | Parse-tree rewrites of `with-resource`, `assert-fail`, `test-suite` (with fixtures) and `test-property` into ordinary forms |
 | `ast.zyl` | `Token`, `Ast`, and the immutable `Env`/`VTable` chains |
 | `expr_inner.zyl` | `Ast` to `ExprInner`: recognizes every special form (`convert-ast`, `dispatch-special`); records declared field types and `extern` signatures (`extern-table`) for the type pass; lowers contracts |
 | `module_resolver.zyl` | Resolves the `use` graph into one compilation unit (discovery, then qualification) |

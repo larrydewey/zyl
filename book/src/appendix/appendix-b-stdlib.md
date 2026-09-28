@@ -393,17 +393,15 @@ C.14). `testing/testing` adds:
 
 ```lisp
 (use testing/testing)
-;(test-run test-name test-body) (test-suite-run suite-name tests)
 ;(assert-equal-values expected actual) (assert-true-value value)
-;(assert-false-value value) (assert-fail-expr expr)
-;(property-int name gen-fn property-fn) (property-bool name gen-fn property-fn)
-;(property-string name gen-fn property-fn) (property-float name gen-fn property-fn)
+;(assert-false-value value) (assert-fail-call thunk)
 ```
 
-> `test-count`, `run-tests-filtered`, `run-tests-parallel` and
-> `run-tests-with-timeout` exist only as **placeholders** that call
-> `error` until runtime support lands. The `property-*` helpers build on
-> `test-property`, which is itself a stub today.
+The assertions as functions, for passing where a function value is
+wanted. Property tests need no import: their samples and checks are in
+`core/property` (`property-samples-int`, `-bool`, `-string`, `-float`,
+`property-check-1` to `-3`), which the prelude loads. `core/resource`
+holds the `Drop` trait that `with-resource` calls.
 
 ## B.8 Mathematics and Cryptography (stdlib/math/)
 
@@ -490,7 +488,7 @@ Chapter 35 covers what the server provides and what it cannot.
 
 ## B.11 Compiler (stdlib/compiler/)
 
-The 44 modules of the self-hosted compiler. `selfhost/driver.zyl`
+The 45 modules of the self-hosted compiler. `selfhost/driver.zyl`
 reaches them through ordinary `(use compiler/...)` imports, and the
 compiler is built from that entry file like any program.
 
@@ -498,6 +496,7 @@ compiler is built from that entry file like any program.
 |--------|---------|
 | `lexer.zyl` | Tokenizer |
 | `parser.zyl` | Parser |
+| `desugar.zyl` | Parse-tree rewrites: `with-resource`, `assert-fail`, `test-suite`, `test-property` |
 | `ast.zyl` | AST definitions |
 | `expr_inner.zyl` | ExprInner ADT and the post-processor from raw AST |
 | `sexp_balance.zyl` | S-expression balance check, with line/column tracking |

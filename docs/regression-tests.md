@@ -228,7 +228,7 @@ tests/
 │   ├── reuse.zyl              # in-place reuse is never visible
 │   ├── contracts.zyl          # requires, ensures, invariant, recover, checkpoint
 │   ├── try-catch.zyl          # error inside a called function, caught
-│   ├── with-resource.zyl      # lexically scoped resources
+│   ├── with-resource.zyl      # Drop on normal exit and before an error
 │   ├── unwrap-error.zyl       # Result/Option unwrapping, error propagation
 │   ├── actors.zyl             # spawn, join, output at join
 │   ├── channels.zyl           # Kahn channels: chan, chan-send, chan-recv
@@ -242,7 +242,8 @@ tests/
 │   ├── collections.zyl        # Vec, Map, Set, StringBuffer, allocator
 │   ├── modules.zyl            # module imports from stdlib
 │   ├── package-system.zyl     # spec v5.0 §31 building blocks
-│   ├── testing-framework.zyl  # test, assert-*, run-tests, test-suite, test-property
+│   ├── testing-framework.zyl  # test, assert-*, test-suite fixtures,
+│   │                          #   test-property, test-compile
 │   ├── secret-capability.zyl  # Secret / constant-time checker, accepting side
 │   ├── secret-types.zyl       # Secret types and impl-not, accepting side
 │   ├── compiler.zyl           # stdlib/compiler: lexer, parser, AST types

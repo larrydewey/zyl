@@ -337,7 +337,7 @@ Notes on the harness (Chapter 11 has the details):
 
 - `str-eq` is a `Bool`, so the string checks use `assert-true`; `assert-equal` is for two values of the same type, such as two counts.
 - The file has no `main`; the compiler generates one. A file with both tests and its own `main` is rejected with `E_TOPLEVEL_STMTS_WITH_EXPLICIT_MAIN`.
-- Only flat top-level `(test "name" body)` forms run. `test-suite`, `setup`/`teardown`, `test-property`, and keyword options such as `:filter` are accepted but do nothing yet.
+- Tests can also be grouped in a `test-suite` with `setup`/`teardown` fixtures, and `test-property` checks a property over generated inputs (Chapter 11, §11.5). Keyword options on `run-tests`, such as `:filter`, are ignored.
 - Read the summary line: the program's exit status is 0 even when a test fails.
 
 ## 13.10 A Concurrent Variation?

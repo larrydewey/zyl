@@ -284,7 +284,7 @@ does not take) → linking (the Zyl assembler and static ELF linker, or
 - **The `Secret` capability** — a compile-time constant-time discipline: a secret may not steer a branch, index memory, divide, print, escape to an actor, or cross FFI unpinned
 - **Cryptography library** — `stdlib/math`, ~7,600 lines of pure Zyl: SHA-2/3, BLAKE2b/3, HMAC, ChaCha20-Poly1305, AES-GCM, X25519, Ed25519, ECDSA, RSA-PSS/OAEP, HKDF, PBKDF2, Argon2id, big-number arithmetic, system and seeded random numbers
 - **Package system** — spec v5.0 §31: manifests, MVS, a lock file, a content-addressed store, signed index entries, declared capabilities, features, workspaces
-- **Testing framework** — `(test "name" ...)` with `assert-equal` and friends, `zyl test` for packages
+- **Testing framework** — `(test "name" ...)` with `assert-equal`, `assert-fail` and friends, `test-suite` with `setup`/`teardown`, `test-property` over deterministic generators, compile-time `test-compile`, and `zyl test` for packages
 - **REPL** — `zyl repl`, backed by an ICNF interpreter, with a line editor written in Zyl
 - **Language server** — `zyl-lsp`, written in Zyl, plus a VS Code extension
 - **Contracts** — `requires`/`ensures`/`invariant` are checked at run time (`E_CONTRACT_VIOLATION`), `ensures` sees the return value as `result`, `recover` supplies fallbacks by error code, `checkpoint` rolls back `let-mut` state, and the profile (`--contracts=strict|warn|off|...` or `(contracts P)`) decides whether a violation panics, warns or is compiled out
@@ -330,9 +330,9 @@ runtime/rt/                   # Zyl runtime linked into every compiled binary
 ├── rt.zyl                    # Entry module (built with --runtime-module)
 └── *.zyl                     # heap, alloc, thread, chan, actor, panic, out, os, ... (rt.s seed)
 
-stdlib/compiler/              # The compiler, written in Zyl (44 modules)
+stdlib/compiler/              # The compiler, written in Zyl (45 modules)
 ├── pipeline.zyl              # Phase order shared by the CLI and the REPL
-├── lexer.zyl, parser.zyl, sexp_balance.zyl, ast.zyl, expr_inner.zyl,
+├── lexer.zyl, parser.zyl, desugar.zyl, sexp_balance.zyl, ast.zyl, expr_inner.zyl,
 │   node_tables.zyl
 ├── module_resolver.zyl, qualify.zyl, resolver.zyl, macro_expand.zyl
 ├── capability_check.zyl, duplicate_check.zyl, arity_check.zyl,
@@ -351,7 +351,7 @@ stdlib/compiler/              # The compiler, written in Zyl (44 modules)
 └── error_codes.zyl, error_report.zyl   # Error catalog and rendering
 
 stdlib/                       # The implicit standard library (package zyl/std)
-├── core/                     # core, list, option, result, map, show (auto-loaded)
+├── core/                     # core, list, option, result, map, show, resource, property (auto-loaded)
 ├── collections/              # vec, map, set, slice
 ├── text/                     # view: StrView, Cursor
 ├── simd/                     # Portable lane vectors

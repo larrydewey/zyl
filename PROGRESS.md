@@ -13,8 +13,8 @@ compile with `build/boot/zyl-self` on 2026-09-28.
 
 ### Build and verification
 
-- The compiler is self-hosted: `stdlib/compiler/*.zyl` (44 modules,
-  about 29,500 lines) plus `selfhost/` (`driver.zyl`, `lsp_main.zyl`).
+- The compiler is self-hosted: `stdlib/compiler/*.zyl` (45 modules,
+  about 29,700 lines) plus `selfhost/` (`driver.zyl`, `lsp_main.zyl`).
   The runtime is Zyl too: `runtime/rt/*.zyl` (35 modules, about 5,600
   lines), compiled with `--runtime-module`. There is no C and no Rust in
   the build; the only C in the tree is `bench/*.c` and one package-test
@@ -24,10 +24,10 @@ compile with `build/boot/zyl-self` on 2026-09-28.
   that stage2 == stage3, builds `rt.zo`, `zyl-self` and `zyl-lsp`, and
   refreshes an existing install. `./boot.sh --bootstrap-from-self`
   reseeds; see `docs/self-hosting.md`. A self-compile takes about 2.2 s.
-- `./run_regression_tests.sh --full --no-boot` passes **352/352** in
-  about 22 s: 103 regression, 85 interpreter (compiled vs interpreted
+- `./run_regression_tests.sh --full --no-boot` passes **361/361** in
+  about 25 s: 103 regression, 85 interpreter (compiled vs interpreted
   output, the interpreter in its tag-checking mode), 4 sched (actor
-  tests under `ZYL_SCHED=deterministic` and chaos seeds), 120
+  tests under `ZYL_SCHED=deterministic` and chaos seeds), 129
   compile-fail, 7 integration, 4 stress, 2 packages, 9 packages-fail, 1
   packages-build, 15 scripts, the LSP protocol test (110 checks) and the
   unit test. A compile-fail test may pin its code (`; expect-error:
@@ -37,7 +37,8 @@ compile with `build/boot/zyl-self` on 2026-09-28.
 
 ### Compiler
 
-- Phase order (`stdlib/compiler/pipeline.zyl`): balance check, parse,
+- Phase order (`stdlib/compiler/pipeline.zyl`): balance check, parse
+  (with the `desugar.zyl` rewrites), test-compile resolution after macro expansion,
   module resolution and qualification, macro expansion, the checks
   (capability, duplicate definition, arity, malformed forms, restricted
   FFI entries, mutability/aliasing, exhaustiveness, unused, secret),
@@ -79,6 +80,15 @@ compile with `build/boot/zyl-self` on 2026-09-28.
 - Macros (spec §19): gensym hygiene, innermost-first, `&rest` spliced
   with `,@name`, `E_MACRO_NON_TERMINATION`, `E_MACRO_ILLEGAL_ACCESS`.
   Quasiquote builds lists of data.
+- Testing (spec 20.5): `test`, the assertions (`assert-fail` fails
+  unless its expression raises), `test-suite` with `setup`/`teardown`
+  fixtures, `test-property` over fixed `gen-int`/`gen-bool`/`gen-string`/
+  `gen-float` samples (`core/property`), and `test-compile`, decided at
+  compile time by a probe of the checks and the type checker
+  (`pipeline.zyl`'s `tc-resolve`). `with-resource` calls the prelude
+  `Drop` trait on both exits (spec 12.9, G11). The suite, property,
+  `with-resource` and `assert-fail` rewrites run on the parse tree
+  (`compiler/desugar.zyl`). A failing test prints `FAIL: <message>`.
 - Contracts (spec §23): `requires`/`ensures`/`invariant` checks,
   `recover` arms by error code, `checkpoint` rollback of `let-mut`
   state, profiles (`--contracts=P`, `(contracts P)`).
@@ -163,11 +173,11 @@ compile with `build/boot/zyl-self` on 2026-09-28.
 
 Language and compiler:
 
-- The spec §24 forms `test-suite`, `test-property`, `test-compile`,
-  `setup` and `teardown` are parsed and then lower to nothing: a program
-  using them compiles, and they do not run. `with-resource` binds like
-  `let` but releases nothing (spec G11). `make-struct` is not typed
-  (`E_CANNOT_INFER`).
+- `make-struct` is not typed (`E_CANNOT_INFER`); call the constructor.
+  Keyword options on `run-tests` (`:parallel`, `:filter`) are ignored.
+- A `defn` named after a special form (`setup`, say) is accepted, but a
+  call of it is the special form, not the function (no
+  `E_RESERVED_KEYWORD` yet).
 - Match guards work only on literal arms: after a `range` a guard is
   `E_ARITY_MISMATCH`, on a constructor arm `E_NESTED_PATTERN`, and a
   guard naming a top-level `def` is `E_UNBOUND_VARIABLE` (book §6.5).
@@ -233,23 +243,19 @@ REPL and language server:
 
 ## Open Work (prioritized)
 
-1. **Spec §24 test forms and `with-resource` cleanup**: lower
-   `test-suite`, `setup`/`teardown`, `test-property` and `test-compile`,
-   or reject them until they are; release `with-resource` bindings on
-   every exit path.
-2. **Native backend**: Float arithmetic in `xmm` registers, `print`,
+1. **Native backend**: Float arithmetic in `xmm` registers, `print`,
    closures and indirect calls, `try` and `with-region` on MIR, then
    remove the stack machine's expression code; MIR-level optimization
    and bounds-check elimination.
-3. **Match guards** on range and constructor arms, and guards that name
+2. **Match guards** on range and constructor arms, and guards that name
    a top-level `def`.
-4. **Concurrency**: move endpoints nested in captured values; a typed
+3. **Concurrency**: move endpoints nested in captured values; a typed
    Send capability; capability-mediated sharing.
-5. **Tooling**: capability check and inferred-type hover in the language
+4. **Tooling**: capability check and inferred-type hover in the language
    server, UTF-16 positions; typed printing of opaque handles in the
    REPL.
-6. **Packages**: host the default index.
-7. **Runtime**: SIMD BLAKE3; hosted links through the Zyl linker.
+5. **Packages**: host the default index.
+6. **Runtime**: SIMD BLAKE3; hosted links through the Zyl linker.
 
 Decisions already taken (do not reopen): inline assembly is rejected in
 favour of the deterministic intrinsics (`bit-popcount` and friends, spec

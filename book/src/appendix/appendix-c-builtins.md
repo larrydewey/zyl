@@ -189,7 +189,7 @@ it a `_` prefix, to mark it unused; `_` may repeat.
 | `match` | `(match subject (Variant binding ... body) ... (_ body))` | exhaustive or it is a compile error |
 | `begin` | `(begin expr ...)` | value is the last expression |
 | `try` | `(try body (catch e handler ...))` | catches a runtime panic, binding its message to `e`; the handler may be several forms and has the body's type |
-| `with-resource` | `(with-resource (name init) body)` | binds `name` for `body`; no release step is run yet |
+| `with-resource` | `(with-resource (name init) body ...)` | binds `name` for `body`, then calls `(Drop.drop name)` on the way out, normally or before an error propagates; an `Int` is a file descriptor (`file-close`); a type with no `Drop` impl is `E_TRAIT_NOT_FOUND` |
 | `assert` | `(assert expr)` or `(assert expr "message")` | `expr` is `Bool`; a false `expr` panics with the message (a string literal), else `assert failed`. `Unit` |
 | `unwrap` | `(unwrap expr)` | `expr` is an `Option`; the value of `Some`, and `None` panics with `unwrap on None`. A `Result` is `E_TYPE_MISMATCH`: use `result-expect` or `result-unwrap` |
 | `error` | `(error "message")` | library function (`allocator/allocator`); panics with the message |
@@ -408,11 +408,11 @@ ownership, regions or scheduling. `--contracts=P` sets the build's profile.
 | `run-tests` | `(run-tests)` | runs every top-level `test` and prints a summary |
 | `assert-equal` | `(assert-equal actual expected)` | `=` comparison, structural on structs and ADTs; when the operands are `Float` it passes if they differ by at most 1e-5. Compare a `Bool` result with `true`, or use `assert-true` |
 | `assert-true` / `assert-false` | `(assert-true expr)` | |
-| `assert-fail` | `(assert-fail expr)` | evaluates `expr`; does not yet check that it fails |
-| `test-suite` | `(test-suite "name" test ...)` | parsed, but the tests inside it are not registered |
-| `setup` / `teardown` | `(setup expr ...)` | parsed; not run |
-| `test-property` | `(test-property "name" generator body)` | parsed as a stub; not run |
-| `test-compile` | `(test-compile expr)` | parsed as a stub; not run |
+| `assert-fail` | `(assert-fail expr)` or `(assert-fail expr "message")` | fails unless evaluating `expr` raises an error |
+| `test-suite` | `(test-suite "name" item ...)` | top level only; items are `test`, nested `test-suite`, `test-property`, `setup` and `teardown`; tests register as `name/test` |
+| `setup` / `teardown` | `(setup expr ...)` | inside a `test-suite`: run before / after each of its tests (teardown also on failure) |
+| `test-property` | `(test-property "name" gen-int (fn (x) bool))` | runs the property over the generator's fixed samples (`gen-int`, `gen-bool`, `gen-string`, `gen-float`); one to three parameters; fails naming the first rejected sample |
+| `test-compile` | `(test-compile expr)` or `(test-compile expr (:expect-error true))` | top level only; decided at compile time: passes when `expr` compiles (or, expecting an error, does not) |
 
 ```lisp
 (test "adds" (assert-equal (+ 2 3) 5))

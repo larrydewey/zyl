@@ -181,9 +181,11 @@ requires becomes an `EUnknown` node, which the arity pass reports as
 - **`extern`**, `(extern "sym" (T ...) R)`, declares a foreign symbol's C
   signature (§16, `spec/09-ffi-contracts.md`). It is a top-level form of
   type Unit that emits no code.
-- **`test-suite`, `test-property` and `test-compile` are parsed but
-  discard their arguments** (placeholder nodes). `setup` and `teardown`
-  are parsed.
+- **`with-resource`, `assert-fail`, `test-suite` (with `setup` and
+  `teardown`) and `test-property` are rewritten on the parse tree**
+  (`compiler/desugar.zyl`) into ordinary forms before module resolution;
+  `test-compile` is decided after macro expansion
+  (`spec/04-evaluation-semantics.md`).
 - **`contracts`, `requires`, `ensures`, `invariant`, `checkpoint` and
   `recover`** are lowered to ordinary code while the tree is converted;
   see `spec/09-ffi-contracts.md`.

@@ -39,7 +39,7 @@ You can define any number of tests; each one is another top-level form:
 (run-tests)
 ```
 
-> **Note on `test-suite` (Spec §20.5.1):** the specification groups tests with `(test-suite "name" (test ...) ...)`. The form compiles, but the tests nested inside it are silently dropped: they are neither registered nor run. Use flat top-level `test` forms.
+Tests can also be grouped in a `test-suite` (§11.5).
 
 ## 11.2 Assertions
 
@@ -77,7 +77,7 @@ A test has exactly one body form. To make several assertions, wrap them in `begi
 - **Strings** compare by content: `(assert-equal "ab" (str-concat "a" "b"))` passes.
 - **Structs and ADT values** compare by content, exactly like `==`: the variant, then each field, recursing into nested values and strings. `(assert-equal (Cons 1 Nil) (Cons 1 Nil))` and `(assert-equal (Some (Some 1)) (Some (Some 1)))` pass; `(assert-equal (Some (Some 1)) (Some (Some 2)))` fails. A type with a `Secret` field is the exception: it is compared one level deep, with pointer fields by address.
 
-> **`assert` and `assert-fail`:** a false `(assert expr "msg")` panics with your message when it is a string literal (`assert failed` otherwise), and `(assert-true expr "msg")` does the same; outside a test that prints `PANIC: msg`, inside one the harness prints `FAIL`. `assert-fail` is still not enforced: it evaluates its expression and always passes, so avoid it until the runtime check lands.
+> **`assert` and `assert-fail`:** a false `(assert expr "msg")` panics with your message when it is a string literal (`assert failed` otherwise), and `(assert-true expr "msg")` does the same; outside a test that prints `PANIC: msg`, inside one the harness prints `FAIL: msg`. `(assert-fail expr)` or `(assert-fail expr "msg")` fails unless evaluating `expr` raises an error; the message, when given, must be a string literal.
 
 ## 11.3 Running Tests
 
@@ -97,7 +97,7 @@ There is no command-line filter; tests always run in source order. A failing tes
 
 ```
 test: addition ... ok
-test: multiplication ... FAIL
+test: multiplication ... FAIL: assert-equal failed
 
 test result: 1 passed, 1 failed, 2 total
 ```
@@ -140,17 +140,36 @@ test: vector-push ... ok
 test result: 3 passed, 0 failed, 3 total
 ```
 
-## 11.5 On the Roadmap (Spec §20.5)
+## 11.5 Suites, Properties and Compile-Time Tests (Spec §20.5)
 
-The following parts of the specification's testing design **compile today but are not executed**:
+**Suites and fixtures.** A top-level `test-suite` groups tests, nested suites and property tests. Its `setup` forms run before each test in it and its `teardown` forms after, even when the test fails; an inner suite's fixtures run inside the outer one's.
 
-- **`test-suite` grouping**: nested tests are dropped (§11.1).
-- **`setup` / `teardown` fixtures**: accepted at top level, never run.
-- **Property-based testing**: `(test-property "name" generator property-fn)` with `gen-int`/`gen-bool`/`gen-string`/`gen-float` generators compiles and is never run. The wrappers in `stdlib/testing/testing.zyl` (`property-int` and friends) only forward to it.
-- **`test-compile`** compile-time tests: accepted, no effect.
-- **Keyword options**: `:parallel`, `:filter`, `:verbose` and similar keywords on `test` and `run-tests` are accepted and ignored. The `run-tests-filtered`, `run-tests-parallel`, and `run-tests-with-timeout` helpers in `stdlib/testing/testing.zyl` are placeholders that raise an error.
+```lisp
+(test-suite "parser"
+  (setup (print "fresh state"))
+  (teardown (print "cleaned up"))
+  (test "empty" (assert-equal (list-length Nil) 0))
+  (test-suite "numbers"
+    (test "one" (assert-equal (+ 0 1) 1))))
+(run-tests)
+```
 
-Build suites from flat `test` forms today, which is exactly how Zyl's own `tests/regression/*.zyl` files work.
+The tests register as `parser/empty` and `parser/numbers/one`, in source order. `setup` and `teardown` belong inside a suite, and a suite is a top-level form (anything else is `E_MALFORMED_FORM`).
+
+**Property tests.** `(test-property "name" generator (fn (params) body))` runs the property, a function of one to three parameters that returns a `Bool`, over the generator's samples, and fails on the first sample it rejects, naming it: `test: name ... FAIL: property `name` failed for 4294967295`. The generators are `gen-int`, `gen-bool`, `gen-string` and `gen-float`. Their samples are fixed, edge cases first (0, ±1, the Int limits, the empty string, and so on), then a seeded sequence, so a run is the same on every machine. With two or three parameters, each sample is paired with the list rotated by 7 and by 13.
+
+```lisp
+(test-property "addition commutes" gen-int (fn (a b) (= (+ a b) (+ b a))))
+```
+
+**Compile-time tests.** `(test-compile expr)` checks that `expr` compiles, and `(test-compile expr (:expect-error true))` that it does not. The compiler decides it while compiling your file, by running the checks and the type checker on the program with `expr` as the body of a function, and registers a test named `test-compile line N` that passes when the outcome is the expected one. A failing one says why: `test: test-compile line 12 ... FAIL: did not compile: error[E_TYPE_MISMATCH]: cannot unify String with Int`.
+
+```lisp
+(test-compile (+ 1 2))
+(test-compile (+ 1 "a") (:expect-error true))
+```
+
+**Options.** A keyword option on `test` is `E_MALFORMED_FORM`. Keywords on `run-tests` (`:parallel`, `:filter`) are ignored: tests run one after another in registration order, which gives the deterministic ordering §20.5.5 requires.
 
 ## 11.6 Testing Actors
 
@@ -238,9 +257,9 @@ The tests live under `tests/` (`tests/regression/` for the `test`-based files). 
 - There is no `try` boundary between assertions in the same test: the first failure abandons the rest of that test's body.
 - Tests share one process and one heap; there is no fresh environment per test yet (Spec §11 calls for one).
 
-### Why Suites Are Pending
+### How Suites and Properties Run
 
-`zyl_run_tests` iterates a flat registry. Supporting `test-suite`, fixtures, and property tests means either flattening suites into ordinary registrations at compile time or teaching the runtime about grouping. Compile-time flattening is the likely first step.
+`zyl_run_tests` iterates a flat registry. The compiler flattens each suite into ordinary registrations before anything else sees the program (`compiler/desugar.zyl`), wrapping each test body in its fixtures, and turns each property into a test that calls `property-check-1`, `-2` or `-3` from `core/property`.
 
 ---
 
