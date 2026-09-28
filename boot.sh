@@ -90,13 +90,15 @@ link_cc() { # link_cc <asm> <out-bin>
     cc -no-pie "$1" "$RT_O" "$RUNTIME_O" -o "$2" -lpthread
 }
 
-# Reseed links pair the committed rt.s with the C runtime it was built against (HEAD's), so moved entries resolve.
+# Reseed links pair the committed rt.s with the C runtime of the commit that wrote it, so moved entries resolve.
 SEED_C_O="${OUT}/seed_actor_runtime.o"
 seed_c_runtime() {
     local d="${OUT}/seed_c"
     rm -rf "$d"; mkdir -p "$d"
-    if git -C "$SCRIPT_DIR" show HEAD:runtime/actor_runtime.c > "$d/actor_runtime.c" 2>/dev/null &&
-       git -C "$SCRIPT_DIR" show HEAD:runtime/actor_runtime.h > "$d/actor_runtime.h" 2>/dev/null; then
+    local rev
+    rev=$(git -C "$SCRIPT_DIR" log -1 --format=%H -- build/boot/rt.s 2>/dev/null)
+    if [ -n "$rev" ] && git -C "$SCRIPT_DIR" show "$rev":runtime/actor_runtime.c > "$d/actor_runtime.c" 2>/dev/null &&
+       git -C "$SCRIPT_DIR" show "$rev":runtime/actor_runtime.h > "$d/actor_runtime.h" 2>/dev/null; then
         cc -O2 -c "$d/actor_runtime.c" -o "$SEED_C_O"
     else
         cp "$RUNTIME_O" "$SEED_C_O"
@@ -104,7 +106,7 @@ seed_c_runtime() {
     rm -rf "$d"
 }
 
-link_seed() { # link_seed <asm> <out-bin>: the seed rt.s with the current C runtime, else with HEAD's
+link_seed() { # link_seed <asm> <out-bin>: the seed rt.s with the current C runtime, else with the seed's own
     cc -c "${OUT}/rt.s" -o "${OUT}/seed_rt.o"
     cc -no-pie "$1" "${OUT}/seed_rt.o" "$RUNTIME_O" -o "$2" -lpthread 2>/dev/null ||
         cc -no-pie "$1" "${OUT}/seed_rt.o" "$SEED_C_O" -o "$2" -lpthread
