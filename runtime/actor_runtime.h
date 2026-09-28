@@ -271,6 +271,7 @@ long long zyl_word_load(long long a);
 long long zyl_word_store(long long a, long long w);
 long long zyl_ptr_add(long long p, long long n);
 long long zyl_ptr_cstr(long long p);
+long long zyl_now_ms(void);
 long long zyl_global_clear(void);
 long long zyl_iglobal_clear(void);
 long long zyl_iglobal_ready(long long key);

@@ -47,3 +47,19 @@
 
 (defn rt-global-label-p (s)
   (and (> (str-length s) 8) (str-eq (str-substring s 0 8) "zyl_rtg_")))
+
+(defn rt-tls-label-p (s)
+  (and (> (str-length s) 8) (str-eq (str-substring s 0 8) "zyl_rtt_")))
+
+; Syscall numbers %syscallK used, in first-use order (one stub each).
+(def rt-syscalls-cell (ffi-call "zyl_ref_new" Nil 1000))
+
+(defn rt-syscalls () (list-reverse-rt (ffi-call "zyl_ref_get" rt-syscalls-cell 1000) Nil))
+
+(defn rt-syscall-add (n)
+  (if (rt-int-member n (ffi-call "zyl_ref_get" rt-syscalls-cell 1000)) n
+    (let _ (ffi-call "zyl_ref_set" rt-syscalls-cell (Cons n (ffi-call "zyl_ref_get" rt-syscalls-cell 1000)) 1000) n)))
+
+(defn rt-int-member (n xs) (match xs (Nil false) (Cons h t (if (= h n) true (rt-int-member n t)))))
+
+(defn rt-syscall-p (s) (and (> (str-length s) 8) (str-eq (str-substring s 0 8) "%syscall")))

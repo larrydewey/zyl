@@ -1017,7 +1017,6 @@ long long zyl_arena_capacity(long long arena) {
    miss returns -1 and the diagnostic simply prints without a location.
    ========================================================================== */
 
-
 /* Node attribute tables, string maps and word vectors for compiler passes.
    Keyed by address or content, probed only (never iterated); a miss reads 0. */
 
@@ -2700,7 +2699,6 @@ long long zyl_itest_summary(long long passed, long long failed) {
    interpreter rebuilds it for each program it runs. Lookup order never
    affects a result, so nothing here can make a run non-deterministic. */
 
-
 /* A heap block for the interpreter: the same payload compiled code
    builds -- [tag][field]... with zyl_heap_alloc's qword-count header
    right in front of it, which is what zyl_variant_eq and
@@ -2733,11 +2731,6 @@ long long zyl_itest_summary(long long passed, long long failed) {
    sensitive paths through any other name, and nothing in the compiler
    calls it. */
 #include <time.h>
-long long zyl_now_ms(void) {
-    struct timespec ts;
-    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) return 0;
-    return (long long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
-}
 
 /* The other direction, for a word the interpreter knows points at
    NUL-terminated bytes. Also the identity; also there for the type
@@ -3202,34 +3195,6 @@ long long zyl_f_parse(long long text) {
     if (!s) return 0;
     return zyl_bits_of(strtod(s, NULL));
 }
-
-long long zyl_f_add(long long a, long long b) { return zyl_bits_of(zyl_d_of(a) + zyl_d_of(b)); }
-long long zyl_f_sub(long long a, long long b) { return zyl_bits_of(zyl_d_of(a) - zyl_d_of(b)); }
-long long zyl_f_mul(long long a, long long b) { return zyl_bits_of(zyl_d_of(a) * zyl_d_of(b)); }
-long long zyl_f_div(long long a, long long b) { return zyl_bits_of(zyl_d_of(a) / zyl_d_of(b)); }
-/* Truncated remainder without libm: x - trunc(x/y)*y. Written this way
-   so that nothing linking this runtime has to link -lm for a case the
-   language barely exercises (float `%`). */
-long long zyl_f_rem(long long a, long long b) {
-    double x = zyl_d_of(a), y = zyl_d_of(b);
-    if (y == 0.0) return zyl_bits_of(0.0);
-    double q = x / y;
-    if (q > -9.22e18 && q < 9.22e18) q = (double)(long long)q;
-    return zyl_bits_of(x - q * y);
-}
-
-/* -1, 0 or 1. NaN compares as 2, so that every ordering built on this
-   answers false for it rather than accidentally answering true. */
-long long zyl_f_cmp(long long a, long long b) {
-    double x = zyl_d_of(a), y = zyl_d_of(b);
-    if (x < y) return -1;
-    if (x > y) return 1;
-    if (x == y) return 0;
-    return 2;
-}
-
-long long zyl_f_of_int(long long n) { return zyl_bits_of((double)n); }
-long long zyl_f_to_int(long long bits) { return (long long)zyl_d_of(bits); }
 
 /* The same text printf's "%f" would produce, for a REPL result line. */
 long long zyl_f_text(long long bits) {

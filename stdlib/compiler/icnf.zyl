@@ -1411,6 +1411,8 @@
       (let _ (ffi-check-call args sym)
         (let name (ic-ffi-sym sym)
           (let real (butlast-expr tail Nil)
+            (if (rt-syscall-p name)
+              (ic-syscall arena (ic-expr-list arena real vt))
             (if (or (rt-mode-p) (or (rt-prim-p name) (and (ic-ffi-runtime-p name) (not (option-is-some (extern-sig-of name))))))
               (IFfi name (ic-expr-list arena real vt))
               (IFfi "zyl_ffi_timed"
@@ -1418,8 +1420,17 @@
                   (Cons (IStr name)
                     (Cons (IConst (ffi-literal-int (ffi-last-expr tail)))
                       (Cons (IConst (list-length real))
-                        (ic-expr-list arena real vt)))))))))))
+                        (ic-expr-list arena real vt))))))))))))
     (Nil (let _ (ffi-check-call args (Expr (EAtom (ANil)))) (IFfi "?" Nil)))))
+
+; (%syscallK n args...) with a literal n: a call of the zyl_rt_sys_<n> stub the runtime module emits.
+(defn ic-syscall (arena args)
+  (match args
+    (Cons n rest
+      (match n
+        (IConst k (IFfi (str-intern arena (str-concat "zyl_rt_sys_" (ffi-call "zyl_int_text" (rt-syscall-add k) 1000))) rest))
+        (_ (ffi-call "zyl_panic" "E_FFI_RESTRICTED: %syscall takes an integer literal syscall number" 1000))))
+    (Nil (ffi-call "zyl_panic" "E_FFI_RESTRICTED: %syscall takes an integer literal syscall number" 1000))))
 
 (defn ic-ffi-runtime-p (name)
   (if (>= (str-length name) 4)

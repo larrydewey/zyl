@@ -1,0 +1,8 @@
+; Linux system calls made directly (x86-64 numbers).
+(use base)
+
+; Milliseconds on the monotonic clock (REPL :time only; never reaches a compile's output).
+(defn zyl_now_ms ()
+  (let ts (ffi-call "%tls" "timespec" 16 1)
+    (if (not (= (ffi-call "%syscall2" 228 1 ts 1) 0)) 0
+      (+ (* (ffi-call "%load64" ts 1) 1000) (/ (ffi-call "%load64" (+ ts 8) 1) 1000000)))))

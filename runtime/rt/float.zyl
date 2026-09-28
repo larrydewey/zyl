@@ -1,0 +1,26 @@
+; Float arithmetic entries for the interpreter; a Float travels as its IEEE-754 bits.
+(use base)
+
+(defmacro rt-f (b) (ffi-call "%f64" b 1))
+(defmacro rt-b (x) (ffi-call "%f64-bits" x 1))
+
+(defn zyl_f_add (a b) (rt-b (+ (rt-f a) (rt-f b))))
+(defn zyl_f_sub (a b) (rt-b (- (rt-f a) (rt-f b))))
+(defn zyl_f_mul (a b) (rt-b (* (rt-f a) (rt-f b))))
+(defn zyl_f_div (a b) (rt-b (/ (rt-f a) (rt-f b))))
+
+(defn zyl_f_of_int (n) (ffi-call "%f64-of-int" n 1))
+(defn zyl_f_to_int (b) (ffi-call "%f64-to-int" b 1))
+
+; Truncated remainder x - trunc(x/y)*y without libm; 0 for y = 0.
+(defn zyl_f_rem (a b)
+  (let x (rt-f a)
+    (let y (rt-f b)
+      (if (= y 0.0) (rt-b 0.0)
+        (let q (/ x y)
+          (let qt (if (and (> q -9.22e18) (< q 9.22e18)) (rt-f (ffi-call "%f64-of-int" (ffi-call "%f64-to-int" (rt-b q) 1) 1)) q)
+            (rt-b (- x (* qt y)))))))))
+
+; -1, 0 or 1; NaN is 2 so every ordering built on it answers false.
+(defn zyl_f_cmp (a b)
+  (let x (rt-f a) (let y (rt-f b) (if (< x y) -1 (if (> x y) 1 (if (= x y) 0 2))))))

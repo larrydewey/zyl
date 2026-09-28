@@ -1,0 +1,26 @@
+; IEEE comparisons: with a NaN operand every ordering and == is false, != is true.
+
+(defn nan () (/ 0.0 0.0))
+
+(test "nan-orderings"
+  (let n (nan)
+    (begin
+      (assert-equal (< n 1.0) false)
+      (assert-equal (> n 1.0) false)
+      (assert-equal (<= n 1.0) false)
+      (assert-equal (>= n 1.0) false)
+      (assert-equal (< 1.0 n) false)
+      (assert-equal (>= 1.0 n) false)
+      (assert-equal (= n n) false)
+      (assert-equal (!= n n) true)
+      (assert-equal (= n 0.0) false))))
+
+(test "ordinary-floats"
+  (begin
+    (assert-equal (< 1.5 2.5) true)
+    (assert-equal (<= 2.5 2.5) true)
+    (assert-equal (>= -1.0 -2.0) true)
+    (assert-equal (= 0.0 -0.0) true)
+    (assert-equal (!= 1.0 1.0) false)))
+
+(run-tests)

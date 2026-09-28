@@ -438,6 +438,32 @@ as recorded below.
 
 # Session log (newest first)
 
+## Session (2026-09-28, wave 2 prep) — shared primitives, float entries, a NaN fix
+
+- Fixed a compiler bug: native Float comparisons ignored the unordered
+  flag, so `(< x NaN)`, `(<= x NaN)` and `(= NaN 0.0)` were true.
+  `cg-fcmp` now uses NaN-correct `ucomisd` sequences: orderings and `==`
+  are false when unordered, and `!=` is true. New test
+  `regression/float-nan`.
+- New locked primitives:
+  - `%f64`/`%f64-bits`: identity casts, so the runtime uses native Float
+    ops;
+  - `%f64-of-int`/`%f64-to-int`: cvtsi2sd/cvttsd2si;
+  - `%tls "name" size`: a per-thread `.tbss` block, addressed through
+    fs:0 + @tpoff;
+  - `%syscall0`..`%syscall6`: lower to a per-number stub
+    `zyl_rt_sys_<n>` that the runtime module emits (mov r10, rcx; mov
+    eax, n; syscall).
+- Ported:
+  - `zyl_f_add`/`sub`/`mul`/`div`/`rem`/`cmp`/`of_int`/`to_int`
+    (`runtime/rt/float.zyl`);
+  - `zyl_now_ms`, a direct `clock_gettime` syscall
+    (`runtime/rt/sys.zyl`).
+
+  A scratch differential check against C semantics found 0 mismatches
+  over a grid of specials (±0, NaN, ±inf, huge values). The suite
+  passes 287/287.
+
 ## Session (2026-09-28, parallel) — runtime in Zyl: BLAKE3, tables, bytes and atomics, interpreter helpers
 
 Three worktree agents ported sections in parallel. Each branch was
