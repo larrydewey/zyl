@@ -193,3 +193,39 @@
 
 (defn zyl_bytebuf_atomic_cas (buf off expected new)
   (let p (bb-slot buf off) (if (= p 0) 0 (if (= (ffi-call "%cas" p expected new 1) expected) 1 0))))
+
+; --- whole files as buffers (the assembler and linker; stdlib only) ---
+
+(defn bb-read-all (fd p n off)
+  (if (>= off n) off
+    (let r (ffi-call "%syscall3" 0 fd (+ p off) (- n off) 1)
+      (if (> r 0) (bb-read-all fd p n (+ off r)) (if (= r -4) (bb-read-all fd p n off) off)))))
+
+(defn bb-write-all (fd p n off)
+  (if (>= off n) off
+    (let r (ffi-call "%syscall3" 1 fd (+ p off) (- n off) 1)
+      (if (> r 0) (bb-write-all fd p n (+ off r)) (if (= r -4) (bb-write-all fd p n off) off)))))
+
+; A file's bytes as a heap ByteBuf (len = size), or 0 when it cannot be read whole.
+(defn zyl_bytebuf_read_file (path)
+  (let p (rt-w path)
+    (if (< p 4096) 0
+      (let fd (ffi-call "%syscall3" 2 p 0 0 1)
+        (if (< fd 0) 0
+          (let n (ffi-call "%syscall3" 8 fd 0 2 1)
+            (let h (if (or (< n 0) (< (ffi-call "%syscall3" 8 fd 0 0 1) 0)) 0 (zyl_bytebuf_new 0 n))
+              (let got (if (= h 0) -1 (bb-read-all fd (bb-data h) n 0))
+                (let _ (ffi-call "%syscall1" 3 fd 1)
+                  (if (= got n) (let _ (ffi-call "%store64" (+ h 16) n 1) h) 0))))))))))
+
+; Replaces path with the first n bytes of buf, mode 0755 less the umask; 0, or -1 on failure.
+(defn zyl_bytebuf_write_exec (path buf n)
+  (let p (rt-w path)
+    (let h (bb-buf buf)
+      (if (or (< p 4096) (or (= h 0) (not (bb-ok 0 n (bb-cap h))))) -1
+        (let _ (ffi-call "%syscall1" 87 p 1)
+          (let fd (ffi-call "%syscall3" 2 p 577 493 1)
+            (if (< fd 0) -1
+              (let w (bb-write-all fd (bb-data h) n 0)
+                (let c (ffi-call "%syscall1" 3 fd 1)
+                  (if (and (= w n) (= c 0)) 0 -1))))))))))
