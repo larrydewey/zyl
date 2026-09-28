@@ -269,7 +269,7 @@ The full reseed sequence after a compiler change:
 ```bash
 ./boot.sh --bootstrap-from-self
 ./boot.sh
-git add -f build/boot/stage2.s build/boot/stage2.bin && git commit
+git add -f build/boot/stage2.s build/boot/stage2.bin build/boot/rt.s && git commit
 ```
 
 Self-hosted reseeding cannot cross one kind of change: new syntax the

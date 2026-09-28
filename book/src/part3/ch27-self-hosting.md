@@ -109,7 +109,7 @@ seed"):
 ```bash
 ./boot.sh --bootstrap-from-self  # reseed via the self-hosted compiler
 ./boot.sh                        # verify the new seed is clean
-git add -f build/boot/stage2.s build/boot/stage2.bin && git commit
+git add -f build/boot/stage2.s build/boot/stage2.bin build/boot/rt.s && git commit
 ```
 
 `--bootstrap-from-self` links the *current* committed seed and repeats
