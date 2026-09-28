@@ -231,8 +231,8 @@ behaves the same on every machine.
 ```bash
 cd editors/vscode
 npm install
-npx vsce package              # type-checks and bundles; produces zyl-0.4.0.vsix
-code --install-extension zyl-0.4.0.vsix
+npx vsce package              # type-checks and bundles; produces zyl-0.5.0.vsix
+code --install-extension zyl-0.5.0.vsix
 ```
 
 The build tasks (the file build, and `zyl build`/`test`/`fetch` for each

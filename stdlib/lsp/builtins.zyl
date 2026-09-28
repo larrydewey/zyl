@@ -100,12 +100,14 @@
   (Cons (ZB "error" "special-form" "(error \"message\")"
           "Raise a runtime error with a literal message.")
   (Cons (ZB "assert" "special-form" "(assert expr)"
-          "Abort unless `expr` is true. Lowered by the assert-lowering pass, not a library call.")
+          "Panic unless `expr` is true. A condition is a Bool.")
   (Cons (ZB "range" "special-form" "(range start end)"
           "Match pattern for an integer range, inclusive at both ends: `((range 1 9) body)` as a match arm.")
-  (Cons (ZB "with-resource" "special-form" "(with-resource name acquire body)"
-          "Bind an acquired resource and release it when `body` ends, on every exit path.")
-  Nil))))))))))))))
+  (Cons (ZB "with-resource" "special-form" "(with-resource (name acquire) body)"
+          "Bind `name` to `acquire` for `body`, like `let`. The release on every exit path (spec G11) is not implemented yet.")
+  (Cons (ZB "with-region" "special-form" "(with-region (arena :block N :align A :limit L) body)  (with-region (fixed :size N :align A) body)"
+          "Allocate `body`'s values in an explicit region, released when `body` ends. A value that would outlive it is E_REGION_ESCAPE; a bad spec is E_REGION_SPEC; running out is E_REGION_EXHAUSTED.")
+  Nil)))))))))))))))
 
 (defn builtins-data ()
   (Cons (ZB "deftype" "special-form" "(deftype Name (Variant Field ...) ...)"
@@ -117,8 +119,8 @@
   (Cons (ZB "struct-get" "special-form" "(struct-get value \"field\")"
           "Read a struct field. It is a read only -- there is no field-assignment form.")
   (Cons (ZB "make-struct" "special-form" "(make-struct Name field ...)"
-          "Construct a struct from positional field values.")
-  (Cons (ZB "make-variant" "special-form" "(make-variant Type Variant field ...)"
+          "Construct a struct from positional field values. Not typed by the checker yet (E_CANNOT_INFER): call the constructor instead.")
+  (Cons (ZB "make-variant" "special-form" "(make-variant (Type) Variant field ...)"
           "Construct an ADT variant explicitly; usually written as the bare constructor call.")
   (Cons (ZB "trait" "special-form" "(trait Name (method (param ...) ReturnType) ...)"
           "Declare a trait: a set of method signatures a type can implement.")
@@ -136,7 +138,9 @@
           "A list literal: the Cons chain of the elements in order, evaluated left to right. Every element has one type; `[]` is Nil.")
   (Cons (ZB "quote" "special-form" "(quote data)  'data"
           "Constant data: an Int, Float, String or Bool, or a list of them (nested lists allowed). A name inside is E_MALFORMED_FORM.")
-  Nil)))))))))))))))
+  (Cons (ZB "quasiquote" "special-form" "`data  ,expr  ,@list"
+          "A list built from constant data, with `,e` inserting a value and `,@e` splicing a list. A bare name inside is E_MALFORMED_FORM. Macro templates are plain forms, not quasiquotes.")
+  Nil))))))))))))))))
 
 (defn builtins-modules ()
   (Cons (ZB "use" "special-form" "(use path/to/module)"
@@ -152,12 +156,12 @@
   Nil))))))
 
 (defn builtins-operators ()
-  (Cons (ZB "+" "operator" "(+ a b)" "Integer or float addition.")
+  (Cons (ZB "+" "operator" "(+ a b)" "Int or Float addition; both operands have one type (no conversion).")
   (Cons (ZB "-" "operator" "(- a b)" "Subtraction.")
   (Cons (ZB "*" "operator" "(* a b)" "Multiplication.")
   (Cons (ZB "/" "operator" "(/ a b)" "Division. Rejected on a `Secret` operand: the divider is variable-latency.")
   (Cons (ZB "%" "operator" "(% a b)" "Remainder. Rejected on a `Secret` operand, same reason as `/`.")
-  (Cons (ZB "=" "operator" "(= a b)" "Equality. On two dynamically built strings this compares pointers -- use `str-eq`.")
+  (Cons (ZB "=" "operator" "(= a b)" "Equality: numbers, Bools, string contents, and ADTs structurally (a generated `T.==`). `<` on an ADT is a type error; use `Ord.compare`.")
   (Cons (ZB "!=" "operator" "(!= a b)" "Inequality.")
   (Cons (ZB "<" "operator" "(< a b)" "Less than.")
   (Cons (ZB ">" "operator" "(> a b)" "Greater than.")
@@ -202,7 +206,7 @@
   (Cons (ZB "str-length" "builtin" "(str-length s)" "Length of a string in bytes.")
   (Cons (ZB "str-len" "builtin" "(str-len s)" "Length of a string in bytes; a spelling of `str-length`.")
   (Cons (ZB "str-substring" "builtin" "(str-substring s start len)" "Byte-indexed substring.")
-  (Cons (ZB "str-eq" "builtin" "(str-eq a b)" "Compare string CONTENTS, returning 1 or 0. `=` compares pointers.")
+  (Cons (ZB "str-eq" "builtin" "(str-eq a b)" "Compare string contents; a Bool. `=` does the same on strings.")
   (Cons (ZB "str-intern" "builtin" "(str-intern arena s)" "Intern a string in an arena so `=` on it is meaningful.")
   Nil)))))))
 
@@ -210,8 +214,8 @@
   (Cons (ZB "print" "special-form" "(print expr ...)"
           "Write values to stdout. Rejected on a `Secret` operand -- a debug sink is still a sink.")
   (Cons (ZB "read-line" "special-form" "(read-line)" "Read one line from stdin.")
-  (Cons (ZB "exit" "special-form" "(exit code)" "Terminate the process with a status code.")
-  (Cons (ZB "close" "special-form" "(close handle)" "Close a handle.")
+  (Cons (ZB "exit" "special-form" "(exit code)" "Flush output and end the process with a status code.")
+  (Cons (ZB "close" "special-form" "(close handle)" "Close a file descriptor; a spelling of `file-close`.")
   (Cons (ZB "file-open" "special-form" "(file-open path mode)" "Open a file, returning a descriptor.")
   (Cons (ZB "file-read" "special-form" "(file-read fd nbytes)" "Read up to `nbytes` from a descriptor.")
   (Cons (ZB "file-write" "special-form" "(file-write fd text)"
@@ -221,8 +225,8 @@
   Nil))))))))))
 
 (defn builtins-actors ()
-  (Cons (ZB "spawn" "special-form" "(spawn expr)"
-          "Spawn an actor. Rejected on a `Secret` operand: a secret must not cross an actor boundary.")
+  (Cons (ZB "spawn" "special-form" "(spawn (fn () body))"
+          "Start an actor running a zero-argument function or closure; an Actor. Endpoints it captures move to it. Join it with `actor-wait` (actor/actor), which re-raises its panic. Rejected on a `Secret` or a captured let-mut. At most 1024 actors per program (E_ACTOR_LIMIT).")
   (Cons (ZB "chan" "builtin" "(chan n)"
           "A channel buffering 1 to n values of one type. Its ends are `chan-tx` and `chan-rx`; the creating actor owns both.")
   (Cons (ZB "chan-tx" "builtin" "(chan-tx c)"
@@ -232,21 +236,23 @@
   (Cons (ZB "chan-send" "special-form" "(chan-send tx value)"
           "Append a value, blocking while the buffer is full. Rejected on a `Secret` operand and on a let-mut value.")
   (Cons (ZB "chan-recv" "builtin" "(chan-recv rx)"
-          "Remove the oldest value, blocking while empty. E_CHANNEL_CLOSED once the sender finished and the channel is drained.")
+          "Remove the oldest value, blocking while empty. E_CHANNEL_CLOSED once the sender finished and the channel is drained; E_DEADLOCK when every live actor is blocked.")
   Nil)))))))
 
 (defn builtins-ffi ()
   (Cons (ZB "ffi-call" "special-form" "(ffi-call \"symbol\" arg ... timeout)"
-          "Call a C symbol. The trailing argument is a mandatory timeout in milliseconds.")
+          "Call a C symbol (a string literal, typed by an `extern`). The trailing argument is a positive integer literal timeout in milliseconds; an overrun raises E_FFI_TIMEOUT. Needs the `ffi` capability in a package.")
+  (Cons (ZB "extern" "special-form" "(extern \"symbol\" (ParamType ...) ResultType)"
+          "Declare a foreign C function's type for `ffi-call`: concrete, word-sized types, `Fn` for a callback. A runtime `zyl_*` entry may not be retyped (E_FFI_RESTRICTED).")
   (Cons (ZB "ffi-pin" "special-form" "(ffi-pin value)"
           "Move a value into the Pin region for the duration of an FFI call. A `Secret` reaches C only this way.")
   (Cons (ZB "ffi-unpin" "special-form" "(ffi-unpin value)" "Release a pinned value.")
-  Nil))))
+  Nil)))))
 
 (defn builtins-bytes ()
   (Cons (ZB "byte" "special-form" "(byte n)" "A single byte literal, 0..255.")
   (Cons (ZB "bytebuf" "special-form" "(bytebuf region capacity)"
-          "Allocate a byte buffer in a region: Stack, Heap, Global, Circular or Pin.")
+          "Allocate a byte buffer. A Stack buffer lives in the call's frame region and may not escape it (E_REGION_ESCAPE); the other region names allocate on the heap.")
   (Cons (ZB "bytebuf-append" "special-form" "(bytebuf-append buf slice)" "Append a byte slice's contents, growing the length. Capacity is fixed: a slice that does not fit leaves the buffer unchanged.")
   (Cons (ZB "bytebuf-len" "special-form" "(bytebuf-len buf)" "Bytes currently in the buffer.")
   (Cons (ZB "bytebuf-cap" "special-form" "(bytebuf-cap buf)" "Allocated capacity of the buffer.")
@@ -306,16 +312,16 @@
 
 (defn builtins-testing ()
   (Cons (ZB "test" "special-form" "(test \"name\" body)" "One test case.")
-  (Cons (ZB "test-suite" "special-form" "(test-suite \"name\" test ...)" "Group test cases and nested suites.")
+  (Cons (ZB "test-suite" "special-form" "(test-suite \"name\" (test ...) ...)" "Spec §24. Parsed but not lowered yet: it compiles to nothing.")
   (Cons (ZB "assert-equal" "special-form" "(assert-equal actual expected)" "Assert two values are equal.")
   (Cons (ZB "assert-true" "special-form" "(assert-true expr)" "Assert a value is true.")
   (Cons (ZB "assert-false" "special-form" "(assert-false expr)" "Assert a value is false.")
   (Cons (ZB "assert-fail" "special-form" "(assert-fail expr)" "Assert an expression fails.")
-  (Cons (ZB "test-property" "special-form" "(test-property \"name\" generator body)" "Property test over generated inputs.")
-  (Cons (ZB "test-compile" "special-form" "(test-compile expr)" "Assert a fragment does or does not compile.")
-  (Cons (ZB "setup" "special-form" "(setup expr ...)" "Run before each test in the enclosing suite.")
-  (Cons (ZB "teardown" "special-form" "(teardown expr ...)" "Run after each test in the enclosing suite.")
-  (Cons (ZB "run-tests" "special-form" "(run-tests)" "Run every declared suite and report.")
+  (Cons (ZB "test-property" "special-form" "(test-property \"name\" generator body)" "Spec §24. Parsed but not lowered yet: it compiles to nothing.")
+  (Cons (ZB "test-compile" "special-form" "(test-compile expr)" "Spec §24. Parsed but not lowered yet: it compiles to nothing.")
+  (Cons (ZB "setup" "special-form" "(setup expr ...)" "Spec §24. Parsed but not lowered yet: it compiles to nothing.")
+  (Cons (ZB "teardown" "special-form" "(teardown expr ...)" "Spec §24. Parsed but not lowered yet: it compiles to nothing.")
+  (Cons (ZB "run-tests" "special-form" "(run-tests)" "Run every `test` registered so far and report.")
   Nil))))))))))))
 
 (defn builtins-types ()
@@ -333,18 +339,18 @@
   (Cons (ZB "ByteSlice" "type" "ByteSlice" "A byte slice handle, from `byteslice`.")
   (Cons (ZB "Secret" "capability" "(Secret T)"
           "Secret capability. A secret may not steer control flow, index memory, divide, print, spawn, send or be written to a file, and reaches FFI only through `ffi-pin`. Leave it with `declassify`, `ct-eq-bool` or `ct-eq-words-bool`.")
-  (Cons (ZB "TCap" "capability" "TCap" "Shared immutable access; any number of references may coexist.")
-  (Cons (ZB "TMut" "capability" "TMut" "Exclusive mutable ownership; exactly one reference exists.")
+  (Cons (ZB "TCap" "capability" "TCap" "Capability of a shared immutable value; any number of references may coexist. Inferred, not written.")
+  (Cons (ZB "TMut" "capability" "TMut" "Capability of exclusive mutable ownership (a let-mut). Inferred, not written.")
   (Cons (ZB "declassify" "builtin" "(declassify value)"
           "Deliberately drop the Secret capability. The one explicit escape hatch; every use is a decision worth a comment.")
   Nil)))))))))))))))))
 
 (defn builtins-regions ()
-  (Cons (ZB "Stack" "region" "Stack" "Stack region: reclaimed at scope exit. Promoted to Heap if a value escapes.")
-  (Cons (ZB "Heap" "region" "Heap" "Heap region: reclaimed when its owning region ends.")
-  (Cons (ZB "Global" "region" "Global" "Global region: lives for the whole program.")
-  (Cons (ZB "Circular" "region" "Circular" "Circular region: a fixed-size ring, reused in order.")
-  (Cons (ZB "Pin" "region" "Pin" "Pin region: a fixed address for the duration of an FFI call. Required for every FFI argument.")
+  (Cons (ZB "Stack" "region" "Stack" "The call's frame region, released on return. A Stack value that would escape is E_REGION_ESCAPE.")
+  (Cons (ZB "Heap" "region" "Heap" "The process heap: values that escape every frame live here until exit.")
+  (Cons (ZB "Global" "region" "Global" "A name only: top-level `def` values, which are heap.")
+  (Cons (ZB "Circular" "region" "Circular" "A name only; allocates like Heap.")
+  (Cons (ZB "Pin" "region" "Pin" "Pinned memory at a fixed address, from `ffi-pin`, for data a foreign call reads.")
   Nil))))))
 
 ; ===========================================================================
@@ -418,10 +424,10 @@
 
 (defn builtin-stdlib-core ()
   (Cons "core/core" (Cons "core/list" (Cons "core/option" (Cons "core/result"
-  (Cons "core/map" (Cons "collections/collections" (Cons "collections/map"
-  (Cons "collections/set" (Cons "collections/vec" (Cons "allocator/allocator"
+  (Cons "core/map" (Cons "core/show" (Cons "collections/collections" (Cons "collections/map"
+  (Cons "collections/set" (Cons "collections/vec" (Cons "collections/slice" (Cons "allocator/allocator"
   (Cons "actor/actor" (Cons "atomic/atomic" (Cons "ffi/ffi" (Cons "io/io"
-  (Cons "testing/testing" Nil))))))))))))))))
+  (Cons "simd/simd" (Cons "text/view" (Cons "testing/testing" Nil))))))))))))))))))))
 
 (defn builtin-stdlib-math ()
   (Cons "math/math" (Cons "math/bits" (Cons "math/words"

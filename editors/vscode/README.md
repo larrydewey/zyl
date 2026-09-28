@@ -21,9 +21,9 @@ which claims the same language id and would otherwise shadow this one:
 ```bash
 cd editors/vscode
 npm install
-npx vsce package                       # type-checks and bundles, produces zyl-0.4.0.vsix
+npx vsce package                       # type-checks and bundles, produces zyl-0.5.0.vsix
 code --uninstall-extension zyl-lang.zyl-lang   # only if 0.1.0 is installed
-code --install-extension zyl-0.4.0.vsix
+code --install-extension zyl-0.5.0.vsix
 ```
 
 Requires VS Code 1.91 or later (vscode-languageclient 10).
@@ -65,9 +65,10 @@ that builds your program, so the editor and `zyl` never disagree):
 | Formatting | Re-indent by parenthesis depth, for the whole document or a range |
 
 **From the extension itself:** a TextMate grammar covering every special
-form, bitwise and byte operation, atomic, region, capability and
+form, bitwise operation and intrinsic, byte operation, atomic, channel
+operation, region, capability and
 built-in; highlighting for `zyl.pkg` manifests (their own language,
-`zyl-pkg`, so the server never compiles a manifest as a program); 17
+`zyl-pkg`, so the server never compiles a manifest as a program); 19
 snippets; build tasks — `build <file>` for each open file, and `build`,
 `test` and `fetch` for every `zyl.pkg` in the workspace, run from the
 package's directory; and **Zyl: Run Current File**

@@ -129,42 +129,13 @@
     (let b (term-byte-at word 0)
       (if (>= b 65) (if (<= b 90) true false) false))))
 
+; The special forms (lsp/builtins documents each one).
+(def hl-keywords ["defn" "def" "deftype" "defstruct" "defstruct+" "defmacro" "macro" "let" "let-mut" "set!" "if" "cond" "match" "begin" "while" "for" "fn" "lambda" "trait" "impl" "impl-not" "derive" "use" "module" "export" "pub" "feature-gate" "extern" "spawn" "chan-send" "try" "catch" "unwrap" "error" "assert" "with-resource" "with-region" "ffi-call" "ffi-pin" "ffi-unpin" "test" "assert-equal" "assert-true" "assert-false" "assert-fail" "run-tests" "requires" "ensures" "invariant" "recover" "checkpoint" "contracts" "print" "quote" "list"])
+
 (defn hl-keyword-p (word)
-  (if (str-eq word "defn") true
-  (if (str-eq word "def") true
-  (if (str-eq word "deftype") true
-  (if (str-eq word "defstruct") true
-  (if (str-eq word "defstruct+") true
-  (if (str-eq word "defmacro") true
-  (if (str-eq word "let") true
-  (if (str-eq word "let-mut") true
-  (if (str-eq word "set!") true
-  (if (str-eq word "if") true
-  (if (str-eq word "match") true
-  (if (str-eq word "begin") true
-  (if (str-eq word "while") true
-  (if (str-eq word "for") true
-  (if (str-eq word "fn") true
-  (if (str-eq word "lambda") true
-  (if (str-eq word "trait") true
-  (if (str-eq word "impl") true
-  (if (str-eq word "use") true
-  (if (str-eq word "spawn") true
-  (if (str-eq word "chan-send") true
-  (if (str-eq word "chan-recv") true
-  (if (str-eq word "try") true
-  (if (str-eq word "catch") true
-  (if (str-eq word "ffi-call") true
-  (if (str-eq word "test") true
-  (if (str-eq word "assert") true
-  (if (str-eq word "assert-equal") true
-  (if (str-eq word "impl-not") true
-  (if (str-eq word "chan") true
-  (if (str-eq word "requires") true
-  (if (str-eq word "ensures") true
-  (if (str-eq word "invariant") true
-  (if (str-eq word "recover") true
-  (if (str-eq word "checkpoint") true
-  (if (str-eq word "contracts") true
-  (if (str-eq word "print") true
-  false))))))))))))))))))))))))))))))))))))))
+  (hl-member word hl-keywords))
+
+(defn hl-member (word ws)
+  (match ws
+    (Nil false)
+    (Cons w rest (if (str-eq w word) true (hl-member word rest)))))

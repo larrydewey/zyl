@@ -2,7 +2,7 @@
   "name": "zyl",
   "displayName": "Zyl",
   "description": "Language support for Zyl: a deterministic Lisp systems language with region-based memory, capability types, and actor concurrency.",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "publisher": "zyl-lang",
   "license": "MIT",
   "repository": {

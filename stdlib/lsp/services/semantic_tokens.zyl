@@ -40,13 +40,6 @@
 (use lsp/builtins)
 (use compiler/sexp_balance)
 
-; Array literal syntax (`[...]`) reliably crashes or mislinks under the
-; current self-hosted compiler (confirmed: even `(defn f () ["x"])`
-; alone fails with "undefined reference to `_ZYL_`" at link time, or a
-; deep stack overflow in monomorphize-loop depending on context) --
-; explicit Cons/Nil chains are the proven-safe equivalent used
-; throughout this LSP's own code.
-;
 ; The type names are the standard LSP ones, so a client theme that
 ; knows nothing about Zyl still colours a Zyl file correctly.
 (defn semantic-tokens-legend ()
