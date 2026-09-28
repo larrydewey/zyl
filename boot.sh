@@ -132,10 +132,12 @@ if [ "$BOOTSTRAP_SELF" -eq 1 ]; then
         timeout "$STAGE_TIMEOUT" "$PREV_BIN" "$SRC" -o "$NEXT_S" --emit-asm
         [ -f "$NEXT_S" ] || die "round $i produced no output"
         NEXT_BIN="${OUT}/reseed_round${i}.bin"
-        link_seed "$NEXT_S" "$NEXT_BIN"
+        # One compiler emits both halves, so inline setjmps and the runtime longjmp agree.
         NEXT_RT="${OUT}/reseed_round${i}.rt.s"
-        gen_rt "$NEXT_BIN" "$NEXT_RT"
+        gen_rt "$PREV_BIN" "$NEXT_RT"
         [ -f "$NEXT_RT" ] || die "round $i produced no runtime"
+        use_rt "$NEXT_RT"
+        link_cc "$NEXT_S" "$NEXT_BIN"
         if cmp -s "$PREV_S" "$NEXT_S" && cmp -s "$PREV_RT" "$NEXT_RT"; then
             ok "converged after $i round$([ "$i" -eq 1 ] && echo "" || echo "s")"
             cp "$NEXT_S" "${OUT}/stage2.s"
@@ -149,8 +151,6 @@ if [ "$BOOTSTRAP_SELF" -eq 1 ]; then
             echo "  git add -f build/boot/stage2.s build/boot/stage2.bin build/boot/rt.s && git commit"
             exit 0
         fi
-        use_rt "$NEXT_RT"
-        link_cc "$NEXT_S" "$NEXT_BIN"
         PREV_RT="$NEXT_RT"
         PREV_S="$NEXT_S"
         PREV_BIN="$NEXT_BIN"

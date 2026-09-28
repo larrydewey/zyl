@@ -40974,15 +40974,16 @@ zyl_rt_call16:
 .globl zyl_rt_setjmp
 zyl_rt_setjmp:
     mov [rdi], rbx
-    mov [rdi+8], rbp
+    mov rax, rbp
+    mov [rdi+8], rax
     mov [rdi+16], r12
     mov [rdi+24], r13
     mov [rdi+32], r14
     mov [rdi+40], r15
-    lea rdx, [rsp+8]
-    mov [rdi+48], rdx
-    mov rdx, [rsp]
-    mov [rdi+56], rdx
+    lea rax, [rsp+8]
+    mov [rdi+48], rax
+    mov rax, [rsp]
+    mov [rdi+56], rax
     xor eax, eax
     ret
 zyl_rt_longjmp:
@@ -40996,18 +40997,22 @@ zyl_rt_longjmp:
     mov r13, [rdi+24]
     mov r14, [rdi+32]
     mov r15, [rdi+40]
-    mov rsp, [rdi+48]
-    jmp qword ptr [rdi+56]
+    mov rdx, [rdi+48]
+    mov rcx, [rdi+56]
+    mov rsp, rdx
+    jmp rcx
 zyl_rt_try_call:
     mov [rdi], rbx
-    mov [rdi+8], rbp
+    mov rax, rbp
+    mov [rdi+8], rax
     mov [rdi+16], r12
     mov [rdi+24], r13
     mov [rdi+32], r14
     mov [rdi+40], r15
-    mov [rdi+48], rsp
-    lea rdx, [rip+.Lzyl_rt_try_land]
-    mov [rdi+56], rdx
+    mov rax, rsp
+    mov [rdi+48], rax
+    lea rax, [rip+.Lzyl_rt_try_land]
+    mov [rdi+56], rax
     push rbp
     mov rbp, rsp
     push rdi
@@ -41022,6 +41027,16 @@ zyl_rt_try_call:
 .Lzyl_rt_try_land:
     mov eax, 1
     ret
+.globl zyl_rt_guard_set
+zyl_rt_guard_set:
+    mov qword ptr [rip+zyl_ptr_guard], rdi
+    ret
+.bss
+.globl zyl_ptr_guard
+.p2align 3
+zyl_ptr_guard:
+    .zero 8
+.text
 .globl zyl_rt_clone
 zyl_rt_clone:
     mov r10, rcx
