@@ -475,8 +475,14 @@ as recorded below.
   package builds alike (`ZYL_EXTERNAL_LD=1` uses cc). The runtime is cached
   as `rt.zo` (`zyl rt-cache`, run by `boot.sh`, shipped by `install.sh`):
   rt.s + start.s assembled once, relocations pre-resolved, keyed by their
-  BLAKE3, rebuilt when stale or torn. A hello-world links in about 30 ms;
-  the full suite takes 26 s (23 s with cc).
+  BLAKE3, rebuilt when stale or torn. A hello-world links in about 26 ms;
+  the full suite takes 21 s.
+- Encoder fixes: REX for spl/bpl/sil/dil in the reg field (they read
+  ah..bh without it), the displacement after `index*scale`, every
+  jcc/setcc/cmovcc alias, and a general 2/3-byte VEX (vmovdqu stores,
+  high registers). `tests/scripts/asm-oracle.sh` diffs an 18.7k-line
+  every-register x every-form sweep against GNU as (bytes, relocation
+  sites and kinds); `tests/regression/asm-x86.zyl` pins the fixed cases.
 - Line extraction uses `zyl_view_copy` and byte reads `zyl_view_byte`
   (`str-substring`/`zyl_cstr_byte_at` re-measure the whole source).
 - Limitations:
