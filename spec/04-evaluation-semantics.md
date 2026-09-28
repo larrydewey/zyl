@@ -304,8 +304,8 @@ order; none of it reorders a side effect.
   otherwise to the test runner if a test is running, otherwise it prints
   `PANIC: msg` to stderr and exits with status 1. This contradicts §3,
   §12.10 and §21.8.
-- **`try`/`catch`** is implemented with `setjmp` and a runtime stack of try
-  frames. `(try body (catch e handler))` evaluates `body`; if anything in
+- **`try`/`catch`** is implemented with a runtime stack of try frames
+  whose saved registers are pointer-mangled. `(try body (catch e handler))` evaluates `body`; if anything in
   it panics (including `error`), `e` is bound to the panic message and
   `handler` is evaluated. It does not inspect a `Result` value, so an
   `Err` returned normally from `body` passes through unchanged. §12.2

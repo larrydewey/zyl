@@ -388,7 +388,6 @@ PANIC: error[E_PKG_CAPABILITY_VIOLATION]: c-len uses ffi, which the root package
 ### Limits of the current implementation
 
 - **Manifest-bearing packages only.** The standard library holds every capability and is never checked. A lone file compiled without a `zyl.pkg` has declared nothing, so nothing is enforced against it. `deny-capabilities` likewise applies only to manifest-bearing packages.
-- **Only `defn` and `def` bodies are walked.** A capability-bearing construct in `main`, or in a top-level `(test ...)` form, is not checked. `main` is never qualified, so it has no owning package. A `test` form is not a definition when the pass runs. A package declaring `(capabilities)` can therefore call `ffi-call` or `spawn` directly from `main` and still build.
 - **`unsafe` is not enforced**, because `:unsafe` imports are not acted on (§25.2).
 
 ## 25.12 Features

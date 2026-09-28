@@ -179,8 +179,8 @@ them`. Tab completion offers the long forms of the commands except
 
 A relative path in `:load` or `:save` resolves against the directory you
 started in, not the working directory — the REPL moved to the bundle
-before the first prompt, because compiling needs `stdlib/` and
-`rt.o` to be there.
+before the first prompt, because compiling needs `stdlib/` and the
+runtime to be there.
 
 The same commands work when input is piped, so a script can end with
 `:defs` or start with `:load`.
@@ -189,13 +189,6 @@ The same commands work when input is piped, so a script can end with
 expression, generalized: after `(use collections/vec)`, `:type (vec-push (vec-create-default 1) "a")`
 is `(Vec String)`, `:type (fn (x) x)` is `(a -> a)`. A type the pass
 could not pin down prints as `a` (unconstrained) or `?` (conflicting).
-
-Known bug (2026-09-25): once the session holds a `def` binding, `:type`
-fails with `E_UNBOUND_VARIABLE` on `zyl-repl-global`. The type-only path
-compiles the session's generated `(def ...)` lines without setting the
-flag (`repl-compiling`) that types that internal form, which only
-`eval.zyl`'s compile of an entry sets. Evaluating entries is not
-affected.
 
 ## What carries over between sessions
 
@@ -322,10 +315,17 @@ suite's interpreter section always runs in this mode.
 
 And what the interpreter does not do:
 
-- **Actors.** `spawn` hands the runtime the address of an entry
-  function, and an interpreted function does not have one. The
-  interpreter says so (`E_UNSUPPORTED_INTERPRETED`) rather than jumping
-  to a number. Compile the program to run actors.
+- **Actors outliving their entry.** A `spawn` runs a compiled closure
+  that interprets the body on a new actor thread, and the endpoints the
+  interpreted closure captures move to it, as in compiled code. But
+  each entry runs in a scratch heap that is released afterwards, so the
+  REPL joins every actor the entry spawned before the prompt returns
+  (`zyl_actor_join_unjoined`); an actor's panic is the entry's error. A
+  deadlock ends the session, as it ends a program, and the 1024-actor
+  limit counts the whole session. `zyl eval` runs actors exactly as a
+  compiled program does.
+- **Typed printing of opaque handles.** A channel, an endpoint, an
+  Actor or a byte buffer prints as the number behind it.
 - **Heavy numeric work at native speed.** An AST interpreter allocates
   per operation and never reclaims within a run, so an Ed25519
   verification that takes milliseconds compiled takes tens of seconds

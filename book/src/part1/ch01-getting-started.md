@@ -24,8 +24,9 @@ Zyl is a **deterministic Lisp systems language** designed for building reliable,
 ### Prerequisites
 
 - **Linux x86_64** (other platforms are not tested)
-- `cc` (GCC or Clang) — the only compiler you need; Zyl is self-hosting
-- `pthread` library (for the actor runtime)
+- `cc` (GCC or Clang), to link the committed compiler seed and to link
+  programs that call foreign C; Zyl is self-hosting, and other programs
+  need no toolchain at all
 
 ### Building from Source
 
@@ -260,8 +261,9 @@ runs:
 │ Code generation and linking                                     │
 │   x86_64 assembly (System V AMD64 ABI): machine IR with         │
 │   linear-scan register allocation where a function fits it,     │
-│   the stack-machine generator otherwise; then cc +              │
-│   the runtime (rt.o)                                            │
+│   the stack-machine generator otherwise; then Zyl's own         │
+│   assembler and static linker with the runtime (rt.zo): a       │
+│   static binary with no libc (cc + libc if it calls foreign C)  │
 └─────────────────────────────────────────────────────────────────┘
 ```
 

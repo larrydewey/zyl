@@ -236,7 +236,7 @@ footer img { width: 72px; height: auto; }
       <img class="hero-mark" src="assets/zyl-mark.svg" alt="Zyl logo: a Z between parentheses" width="116" height="83">
       <h1><span class="paren">(</span>Deterministic Power. <em>Expressive Safety.</em><span class="paren">)</span></h1>
       <p class="sub">Hygienic · Homoiconic · Hardened</p>
-      <p class="lede">Zyl is a Lisp for systems programming. It has region-based memory, capability types and sound type inference, and it compiles to native x86_64. Same source, same binary, every time. The compiler is written in Zyl and builds itself with nothing but <code>cc</code>.</p>
+      <p class="lede">Zyl is a Lisp for systems programming. It has region-based memory, capability types and sound type inference, and it compiles to static x86_64 executables with no libc, assembled and linked by the compiler itself. Same source, same binary, every time. The compiler is written in Zyl and builds itself with nothing but <code>cc</code>.</p>
       <div class="install">
         <pre id="install-cmd"><span class="p">$ </span>git clone https://github.com/larrydewey/zyl.git
 <span class="p">$ </span>cd zyl &amp;&amp; ./boot.sh</pre>
@@ -346,7 +346,7 @@ footer img { width: 72px; height: auto; }
       <div class="feat">
         <code class="form">(spawn (fn () ...))</code>
         <h3>Actor concurrency</h3>
-        <p>Actors own isolated state and talk through FIFO mailboxes. A message cannot carry a <code>let-mut</code> variable, so there is no shared mutable state to race on.</p>
+        <p>Actors own isolated state and talk over typed single-sender channels, a Kahn process network: receive blocks and there is no select, so the output is the same under every schedule. A message cannot carry a <code>let-mut</code> variable.</p>
         <a href="book/part1/ch09-actors.html">Chapter 9</a>
       </div>
       <div class="feat">
@@ -401,14 +401,14 @@ footer img { width: 72px; height: auto; }
 <span class="arrow">==&gt;</span> stage1: cc from committed stage2.s
   <span class="tick">✓</span> stage1 linked
 <span class="arrow">==&gt;</span> stage2: stage1 compiles the selfhost source
-  <span class="tick">✓</span> reproduced committed seed exactly (sha256 79e6076012d17ab7)
+  <span class="tick">✓</span> reproduced committed seed exactly (sha256 fa6f9882c37031dd)
   <span class="tick">✓</span> reproduced committed runtime exactly
   <span class="tick">✓</span> stage2 linked
 <span class="arrow">==&gt;</span> stage3: stage2 compiles the selfhost source
   <span class="tick">✓</span> stage3 emitted
   <span class="tick">✓</span> runtime fixed point holds
 <span class="arrow">==&gt;</span> Fixed-point check: stage2 output == stage3 output
-  <span class="tick">✓</span> deterministic (sha256 79e6076012d17ab7)
+  <span class="tick">✓</span> deterministic (sha256 fa6f9882c37031dd)
 
 <span class="done">Self-hosting verified: fixed point holds.</span></pre>
     </div>
@@ -519,9 +519,9 @@ footer img { width: 72px; height: auto; }
       out: '500500'
     },
     actor: {
-      src: '(deftype CounterMsg (Add Int) (Get Actor) (Stop Actor))\n\n(defn counter-loop (total)\n  (match (receive)\n    (Add n (counter-loop (+ total n)))\n    (Get reply-to (begin (send reply-to total) (counter-loop total)))\n    (Stop reply-to (send reply-to total))))\n\n(defn main ()\n  (let me (actor-self)\n    (let c (spawn (fn () (counter-loop 0)))\n      (begin\n        (send c (Add 5))\n        (send c (Add 7))\n        (send c (Get me))\n        (print (receive))\n        (send c (Add 30))\n        (send c (Stop me))\n        (print (receive))\n        0))))',
+      src: '(use actor/actor)\n\n;; Adds what arrives on rx and reports each running total on tx.\n(defn counter (rx tx total)\n  (let n (chan-recv rx)\n    (if (= n 0)\n      0\n      (let t (+ total n)\n        (begin (chan-send tx t) (counter rx tx t))))))\n\n(defn main ()\n  (let jobs (chan 4)\n    (let totals (chan 4)\n      (let r (chan-rx jobs)\n        (let w (chan-tx totals)\n          (let a (spawn (fn () (counter r w 0)))\n            (let tx (chan-tx jobs)\n              (let rx (chan-rx totals)\n                (begin\n                  (chan-send tx 5)\n                  (chan-send tx 7)\n                  (chan-send tx 30)\n                  (chan-send tx 0)\n                  (print (chan-recv rx))\n                  (print (chan-recv rx))\n                  (print (chan-recv rx))\n                  (actor-wait a)\n                  0)))))))))',
       cmd: 'zyl counter.zyl -o counter && ./counter',
-      out: '12\n42'
+      out: '5\n12\n42'
     },
     contract: {
       src: '(defn safe-div (a b)\n  (requires (> b 0))\n  (ensures (<= result a))\n  (/ a b))\n\n(defn main ()\n  (print (safe-div 10 2))\n  (print (safe-div 10 -1))\n  0)',
@@ -530,7 +530,7 @@ footer img { width: 72px; height: auto; }
     }
   };
 
-  var KEYWORDS = /^(defn|deftype|defmacro|def|match|let|let-mut|if|begin|fn|with-region|requires|ensures|spawn|send|receive|actor-self|print|set!)$/;
+  var KEYWORDS = /^(defn|deftype|defmacro|def|match|let|let-mut|if|begin|fn|with-region|requires|ensures|spawn|chan|chan-tx|chan-rx|chan-send|chan-recv|actor-wait|use|print|set!)$/;
 
   function esc(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 

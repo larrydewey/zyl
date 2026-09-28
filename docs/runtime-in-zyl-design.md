@@ -1,9 +1,11 @@
 # The Runtime in Zyl: Design
 
-Status (2026-09-28): the runtime is Zyl (runtime/actor_runtime.c deleted) and libc-free: programs without foreign calls link static with no libc; foreign-calling programs link hosted. Freestanding programs now assemble and link with a Zyl assembler + static ELF linker (compiler/asm_x86 + compiler/elf_link) — no cc/as/ld (port order item 11 below). This document covers how
-`runtime/actor_runtime.c` (5.5k lines of C, about 400 entry points) is
-replaced by a runtime written in Zyl, `runtime/rt/*.zyl`, without adding
-any unsafe construct to the language.
+Status: done (2026-09-28). The runtime is Zyl, `runtime/rt/*.zyl`; the
+C runtime (`runtime/actor_runtime.c`, 5.5k lines, about 400 entry
+points) is deleted. Programs without foreign calls are static
+executables with no libc, assembled and linked by the compiler itself;
+foreign-calling programs link hosted over libc. No unsafe construct was
+added to the language. This document records the design.
 
 ## Goal and constraint
 
@@ -22,8 +24,8 @@ any unsafe construct to the language.
   thread-local storage itself and does its own number formatting and
   parsing. Binaries are static. Only a program that `ffi-call`s a
   foreign C library links the system's libc and dynamic loader, because
-  that library needs them. While the port is under way, the remaining
-  C and libc are used as a bridge.
+  that library needs them. (During the port, the remaining C and libc
+  were used as a bridge.)
 
 ## The lock
 
@@ -59,19 +61,27 @@ type checks by design, which is why they are locked.
 | `(%store8 a v)` ... `(%store64 a v)` | store; result is `v` |
 | `(%word x)` | any value as its machine word |
 | `(%str w)` | a word as a `String` (NUL-terminated bytes) |
-| `(%cas a expect new)`, `(%fetch-add a v)` | seq-cst atomics |
-| `(%global "name" size)`, `(%tls "name" size)` | zeroed static / thread-local storage, per name |
-| `(%fn "sym")`, `(%call f args...)` | a code address; an indirect call |
-| `(%syscall n a1..a6)` | Linux x86-64 syscall |
+| `(%cas a expect new)`, `(%fetch-add a v)`, `(%xchg a v)`, `(%fence)` | seq-cst atomics |
+| `(%global "name" size)`, `(%tls "name" size)`, `%tls-get`, `%tls-set` | zeroed static / thread-local storage, per name |
+| `(%fn "sym")`, `(%fn-weak "sym")`, `(%call0 f)` .. `(%call16 f args...)` | a code address (0 for a missing weak one); an indirect call |
+| `(%syscall0 n)` .. `(%syscall6 n a1..a6)` | Linux x86-64 syscall |
+| `%f64`, `%f64-bits`, `%f64-of-int`, `%f64-to-int` | Float/word casts and conversions |
+| `%udiv`, `%urem`, `%mul`, `%mulhi`, `%mulhi-s` | unsigned division, full products |
+| `%popcnt`, `%clz`, `%ctz`, `%bswap`, `%rotl`, `%rotr` (and 32-bit forms), `%crc32c-u8`, `%crc32c-u64` | bit operations; the language's bit intrinsics lower to these |
+| `%cpuid-eax` .. `%cpuid-edx`, `%xgetbv` | CPU feature probes |
+| `%aes-enc`, `%aes-enclast`, `%aes-expand-128`, `%aes-expand-256` | AES-NI rounds |
+| `%v128-*`, `%v256-*`, `%fill` | the SIMD family (below) and a block fill |
 
 In a runtime module, `(ffi-call "sym" ... t)` to a C symbol is a direct
-call, without the timeout worker. That is the libc bridge used during
-the port. The timeout literal is still required, but it is ignored.
+call, without the timeout worker (the hosted flavour's weak libc
+references). The timeout literal is still required, but it is ignored.
 Primitive failures are `E_FFI_RESTRICTED`: a `%` symbol outside the
 runtime module is refused with that code, and no new code is added.
 
-Later stages add `%f64-bits`/`%bits-f64`, `%cpuid`, AES-NI rounds and the
-unwind primitive that replaces `setjmp`/`longjmp` for `try`.
+`try` needs no primitive: the runtime emits `zyl_rt_setjmp`,
+`zyl_rt_longjmp` and `zyl_rt_try_call`, generated code saves its frame
+inline, and the saved rbp, rsp and rip are mangled with a per-process
+getrandom guard (XOR, then rotate left 17).
 
 ## SIMD
 
@@ -119,91 +129,65 @@ AES-GCM) need vector code to match glibc and the C versions.
 - `boot.sh` compiles `runtime/rt/rt.zyl` with each stage compiler and
   requires the result to match the committed `build/boot/rt.s`, just as
   it does for `stage2.s`. `--bootstrap-from-self` regenerates it every
-  round. `rt.s` is assembled once into `rt.o` and linked into every stage
-  and every program, next to what is left of `actor_runtime.o`.
-- `install.sh` ships `rt.o`. The driver's link line adds it.
-- The C runtime's symbol table for the interpreter (`zyl_ffi_lookup`)
-  keeps its entries. The names are declared `extern` in
-  `actor_runtime.h`, and the ported entries resolve to `rt.o`.
+  round, with the same compiler as that round's compiler, so generated
+  code and the runtime agree on shared formats. `boot.sh` fails when a
+  `zyl_*` defn is not emitted.
+- `rt.s` is assembled into `rt.o` (every compiler stage links with it)
+  and, with `start.s`, into the cache `rt.zo` for the Zyl linker.
+  `install.sh` ships `rt.s`, `start.s`, `rt.zo`, `rt.o` and `start.o`.
+- The interpreter's symbol table (`ffitab.zyl`, `zyl_ffi_lookup`) maps
+  every runtime entry the REPL may call to its address (`%fn`).
 
-## Port order
+## How it was ported
 
-Leaf-first, one section per commit. Each commit passes `./boot.sh`,
-`./run_regression_tests.sh --full --no-boot`, and `bench/matrix.py` with
-no regression against the C version before that C code is deleted.
+Leaf-first, one section per commit, each passing `./boot.sh`, the full
+suite and `bench/matrix.py` against the C before that C was deleted:
+C-string leaves; the SIMD family and vector string scans; strings,
+number text and BLAKE3; the compiler's data structures; the allocator
+and frame regions; try frames and panics (replacing setjmp/longjmp);
+files, processes, environment and the terminal; FFI pinning, timed
+calls, actors and threads; deleting `actor_runtime.c`; the libc-free
+phase below; and last, the Zyl assembler (`compiler/asm_x86`) and static
+ELF linker (`compiler/elf_link`), so no external tool is left for a
+freestanding program.
 
-1. Infrastructure (done): the flag, the lock, the primitives, exports, the
-   build. First entries: the C-string leaf functions (`zyl_cstr_len`,
-   `_eq`, `_cmp`, `_byte_at`, `_key_matches`).
-2. The SIMD family (SSE2, then AVX2 dispatch) and vector string scans (done).
-3. Strings and formatting: concat/substr/int text/sanitize/mangle,
-   spans, BLAKE3.
-4. Data structures: smap, wvec, typed arrays, attr tables, refs, cells.
-5. The allocator and regions (it may not allocate itself).
-6. `try`/panic through the unwind primitive, contracts, the test runner.
-7. Files, processes, environment, the terminal (REPL line editor).
-8. FFI pinning and timed calls, actors and threads, the big-stack entry.
-9. Delete `actor_runtime.c`.
-10. Go libc-free: `_start`, syscalls in place of every libc call
-    (mmap, write, clone, futex, execve, ioctl), and Zyl number
-    formatting and parsing, which must be correctly rounded. Link
-    statically with `ld`, or dynamically only for `ffi-call` programs.
-11. Done: a Zyl assembler and static ELF linker, so no external tool is
-    left. `compiler/asm_x86` parses exactly the assembly the native
-    backend emits (Intel noprefix: the full GPR/SSE/AVX set the compiler
-    uses, `sym@GOTPCREL`, `fs:sym@tpoff`, `.tbss`, and the rest of the
-    corpus) and encodes it, with placeholder relocations; per-form bytes
-    match GNU `as`. `compiler/elf_link` assembles prog.s + rt.s +
-    start.s, lays out a r-x text segment (headers, `.text`, `.rodata`, a
-    synthesized GOT), a rw data/bss segment, a PT_TLS for `.tbss` (tpoff
-    = offset − aligned block size, as `zyl_rt_start` expects) and a
-    non-exec PT_GNU_STACK, resolves every relocation against a fixed
-    load base (weak-undefined → 0, strong-undefined → error), and writes
-    a static ET_EXEC. The driver's freestanding path (single files and
-    package builds) uses it by default, with no cc/as/ld;
-    `ZYL_EXTERNAL_LD=1` restores the cc link. The runtime is assembled
-    once into `rt.zo` in the bundle (`zyl rt-cache`, run by `boot.sh`;
-    `install.sh` ships it): the bytes of rt.s + start.s, their relocations
-    pre-resolved (same-section pc refs patched, the rest kept as
-    section + offset), the exported globals, weak names and thread-locals.
-    It is keyed by the BLAKE3 of rt.s and start.s and carries its own
-    length, so a stale or torn cache is rebuilt (and rewritten, best
-    effort) in memory; a hit and a miss give byte-identical binaries. A
-    hello-world links in about 30 ms. Hosted (foreign-calling) programs
-    still link over libc's crt with cc. `boot.sh`/`install.sh` ship
-    `rt.s`, `start.s` and `rt.zo` beside `rt.o`/`start.o`.
+The linker lays out a r-x text segment (headers, `.text`, `.rodata`, a
+synthesized GOT), a rw data/bss segment, a PT_TLS for `.tbss` (tpoff =
+offset − aligned block size, as `zyl_rt_start` expects) and a non-exec
+PT_GNU_STACK, resolves every relocation against a fixed load base
+(weak-undefined → 0, strong-undefined → error), and writes a static
+ET_EXEC. `rt.zo` holds the bytes of rt.s + start.s with their
+relocations pre-resolved (same-section pc refs patched, the rest kept as
+section + offset), the exported globals, weak names and thread-locals;
+it is keyed by the BLAKE3 of rt.s and start.s and carries its own
+length, so a stale or torn cache is rebuilt in memory, and a hit and a
+miss give byte-identical binaries. A hello-world links in about 26 ms.
 
-## The libc-free phase
-
-After runtime/actor_runtime.c is gone, the runtime still reaches libc
-through `extern`: malloc, pthreads, stdio, dlsym, posix_spawn and
-atexit. Removing libc means providing each of
-these, and it splits programs into two link modes.
+## Link modes
 
 - **Freestanding (default):** a program with no `ffi-call` to foreign
-  code. The runtime emits `_start`. It reads argc, argv, envp and auxv
-  from the initial stack, allocates the static TLS block from PT_TLS
-  (found through AT_PHDR), and sets fs with arch_prctl, including the
-  x86-64 TCB self pointer at fs:0, which `%tls` relies on. It then calls
-  main. The replacements for the libc pieces:
-  - malloc: mmap-backed size classes;
+  code. The runtime's `_start` reads argc, argv, envp and auxv from the
+  initial stack, allocates the static TLS block from PT_TLS (found
+  through AT_PHDR), and sets fs with arch_prctl, including the x86-64
+  TCB self pointer at fs:0, which `%tls` relies on. It then calls main.
+  In place of libc:
+  - malloc: mmap-backed size classes (`heap.zyl`);
   - threads: clone with CLONE_SETTLS and CLONE_CHILD_CLEARTID, a TLS
     block per thread, and futex-based mutexes, condition variables and
-    joins;
-  - stdio: a buffered stdout/stderr writer, which generated code's print
-    calls too, and which is flushed at exit and before reads and execs;
-  - the environment: getenv scans envp;
-  - process spawning: fork/execve for spawn;
-  - exit: an own atexit registry, then exit_group.
-
-  The binary is linked with `ld -static`, with no libc.
+    joins (`thread.zyl`);
+  - stdio: one buffered stdout writer, which generated code's print
+    calls too, flushed at exit and before reads and execs (`out.zyl`);
+  - the environment: getenv scans envp (`env.zyl`);
+  - process spawning: clone(CLONE_VM|CLONE_VFORK) plus execve, with
+    glibc's PATH search (`proc.zyl`);
+  - exit: the runtime's own exit registry, then exit_group.
 - **Hosted:** a program that calls foreign C code. That code needs
-  libc's own start-up and TLS, and needs pthreads if a foreign callback
-  runs on an FFI worker. So the program keeps libc's crt, and the
-  runtime is built in a hosted flavour whose thread and memory entries
-  call libc. The flavour is a link-time choice. The compiler picks it
-  from whether the program's graph uses `ffi-call` on a non-runtime
-  symbol, and both flavours must give identical observable behaviour.
+  libc's own start-up and TLS, so the program keeps libc's crt and links
+  with `cc`. `rt.o` references libc only weakly: pthreads (so a foreign
+  callback on an FFI worker works), `dlsym`, `__cxa_atexit`, and
+  malloc/free for `alloc-malloc` memory, so foreign C may free it. The
+  observable behaviour is the same in both modes; on the runtime's own
+  exit paths a foreign library's `atexit` handlers do not run.
 
 The `stdout` ordering rule holds in both: every write to fd 1 goes
 through one buffer.
@@ -211,7 +195,6 @@ through one buffer.
 ## Performance
 
 Perf is the project's top priority (see `docs/native-backend-design.md`).
-The C runtime is built with `-O2`. During the port, a section may call
-libc for its hot inner loops through the bridge. The finished runtime
-uses the SIMD family instead. When a section cannot reach parity, the
-fix goes into the backend, and the C version is kept until then.
+Each ported section was measured against the `-O2` C before the C was
+deleted; where it fell behind (strings, byte microbenchmarks), the fix
+went into the backend. The runtime's hot loops use the SIMD family.

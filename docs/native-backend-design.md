@@ -5,7 +5,7 @@ benchmark matrix below: Zyl gets a real optimizing native backend of its
 own (no C or LLVM backend), and Vec updates in place when the compiler
 proves the old value unique. Stages 1 and 2 and in-place reuse have
 landed, with parts of stages 3–5; "Where it stands" below records exactly
-what (as of 2026-09-25, commit f4213bc).
+what (as of 2026-09-28).
 
 ## Starting point
 
@@ -117,13 +117,50 @@ sends every function through the stack machine.
   recycling a loop's frame region on a self tail call with
   `zyl_region_recycle` instead of releasing and re-opening it (93ab380).
 
-There is no separate MIR optimization pass: the "optimize" step of the
-pipeline above is, so far, the ICNF passes before lowering and the
-instruction selection done during emission.
+- **The 2026-09-28 performance wave**, all on the native path unless
+  noted:
+  - registers: r11 allocatable where no sequence uses it as scratch; a
+    value crosses a call only when live after it; a value read once
+    right after its definition lives in rax; pure definitions nothing
+    reads are dropped; two-address coalescing;
+  - frames: frameless functions (no pushes or pops without spills,
+    blocks, regions or C calls); loop heads aligned to 16, padding only
+    unreached ones;
+  - control: `(if c t f)` with cheap `c` and `t` sets `t` first and
+    skips `f` (one branch, no jump); `(or a b)` and `(not c)` as
+    branches; loop rotation; accumulator tails spread `acc op=` over the
+    operand's lets, ifs and op chains; a guarded loop copy for a modular
+    accumulator and for byte loops proven `j < n <= bound`, which drops
+    their bounds checks;
+  - memory: raw loads and stores fold `[x+k]`; a byte handle's data
+    pointer and bound come from one check; a byte load only compared for
+    equality compares in memory;
+  - arithmetic: times 2^k as a shift; constant shifts; constant division
+    corrects with the dividend's sign, off the multiply's path;
+  - ICNF (`optimization.zyl`): one-level unrolling of small tree
+    recursion (`ZYL_UNROLL`), and early exits at loop call sites;
+  - runtime: short strings as whole words, 64-byte AVX2 copies, one
+    match per `vec-push`/`vec-get`, unzeroed array data.
 
-Latest measurements, from each commit's run of the matrix (seconds;
-the table above is the starting point): fib 0.30, loop 0.52, list
-0.19, trees about 1.27, str 0.11, sieve 0.16, vec 0.07.
+There is no separate MIR optimization pass: the "optimize" step of the
+pipeline above is the ICNF passes before lowering and the instruction
+selection done during emission.
+
+Measurements on 2026-09-28 (`bench/matrix.py`, best of 3, seconds; C
+and C++ at -O2, Rust at opt-level 3):
+
+| benchmark | Zyl | C | C++ | Rust | Go |
+|---|---|---|---|---|---|
+| fib | 0.11 | 0.08 | 0.08 | 0.18 | 0.33 |
+| loop | 0.14 | 0.40 | 0.40 | 0.48 | 0.48 |
+| list | 0.20 | 0.34 | 0.38 | 0.38 | 0.69 |
+| trees | 1.01 | 2.58 | 3.76 | 5.34 | 2.69 |
+| str | 0.08 | 0.13 | 0.04 | 0.08 | 0.09 |
+| sieve | 0.14 | 0.14 | 0.14 | 0.14 | 0.14 |
+| vec | 0.04 | 0.01 | 0.02 | 0.01 | 0.03 |
+
+Zyl is behind C on `fib` (1.3x) and `vec` (4.3x, and 2.6x its peak
+memory); `str` is behind C++.
 
 ## Staging
 
@@ -170,4 +207,5 @@ after stage 2, and then applied to the other persistent collections.
 
 `bench/` holds each benchmark in Zyl, C, C++, Rust and Go, and
 `bench/matrix.py` runs them (best of 3, peak RSS, output compared across
-languages). The table above is its output on 2026-09-25.
+languages). The table under "Where it stands" is its output on
+2026-09-28; `bench/build.sh` builds the binaries first.

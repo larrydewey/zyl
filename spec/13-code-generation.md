@@ -40,14 +40,14 @@ they call each other freely (`docs/native-backend-design.md`):
 ## Implementation: Output Format
 
 - Intel syntax: `.intel_syntax noprefix`.
-- Sections: `.text` for code; `.rodata` for the print formats (`%lld`,
-  `%f`, `%s`), string literals (`.string`) and float literals
-  (`.double`). No `.data` or `.bss` section is emitted; a package build
-  appends a `.zyl_build` section holding `zyl_build_hash`.
+- Sections: `.text` for code; `.rodata` for string literals
+  (`.string`) and float literals (their exact bits, `.quad`). No
+  `.data` or `.bss` section is emitted; a package build appends a
+  `.zyl_build` section holding `zyl_build_hash`.
 - Labels: `.L<N>`, unique per compile.
-- The assembly is linked against the runtime (`rt.o`, from `runtime/rt`): static with
-  the runtime's own `_start` and no libc, or over libc's crt when the program calls
-  foreign C.
+- The assembly is linked against the runtime (`runtime/rt`): by the compiler's own
+  assembler and static ELF linker against `rt.zo`, with the runtime's `_start` and no
+  libc, or with `cc` and `rt.o` over libc's crt when the program calls foreign C.
 
 ## Implementation: Symbols
 
@@ -170,9 +170,11 @@ guarantees.
   their `_r` entry points, which allocate in `zyl_cur_region`.
 - **Shifts:** counts outside 0–63 are defined: logical shifts give 0,
   `ashr` saturates to the sign bit.
-- **`print`:** `printf` with `%lld`, `%f` or `%s` chosen by the value's
-  kind, one value per line.
-- **`try`/`catch`:** inline `setjmp` with `zyl_try_push`/`zyl_try_pop`.
+- **`print`:** a call of the runtime's `zyl_print_int`, `zyl_print_float`
+  or `zyl_print_str`, chosen by the value's kind, one value per line,
+  through the runtime's buffered stdout.
+- **`try`/`catch`:** the frame is saved inline (`cg-inline-setjmp`, rbp,
+  rsp and rip pointer-mangled) with `zyl_try_push`/`zyl_try_pop`.
 
 ---
 

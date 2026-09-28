@@ -166,9 +166,7 @@ two written impls of one trait for one type are `E_DUPLICATE_IMPL`.
 Each impl method becomes a top-level function named `Trait.method_Type`
 (for example `OutputStream.write_Stdout`) whose first parameter is
 annotated with the impl's type; the impl block stays for the type pass's
-trait tables. This replaced `monomorphization.zyl` and
-`type_inference.zyl`, which with an empty inference context did only
-this. `closure_inline.zyl` (`ci-expand-program`) then runs as an
+trait tables. `closure_inline.zyl` (`ci-expand-program`) then runs as an
 identity pass: beta-reducing a lambda into its callers is not hygienic,
 and closures are real values (Phase 9).
 
@@ -274,8 +272,10 @@ IRegion
   (`cg-call-indirect`), so either kind can be passed, stored and
   returned. `ICallClosure` is no longer produced.
 - `try`/`catch` lowers to `ITryCatch`, which uses the runtime's
-  `zyl_try_push`/`zyl_try_pop` frames and `setjmp`; `zyl_panic` unwinds
-  to the nearest one.
+  `zyl_try_push`/`zyl_try_pop` frames; codegen saves the registers
+  inline (`cg-inline-setjmp`, rbp/rsp/rip mangled with the per-process
+  guard) and `zyl_panic` unwinds to the nearest frame
+  (`zyl_rt_longjmp`).
 - `IFn` carries each parameter's representation kind (Int/pointer,
   String, Float) so codegen can print and compare it correctly. Every
   node's kind comes from its inferred type (`ta-kind`), and `ta-scalar`
@@ -298,13 +298,17 @@ IRegion
    is not `main`, does not call itself, takes only word-kind parameters,
    contains no `try`, region scope, lambda, closure call or `print`, and
    has at most 6 ICNF nodes (`ZYL_INLINE_LIMIT`); a leaf that calls only
-   the runtime may be three times that size but is inlined only into a
-   function that calls itself. A call inside a `try` body, a call whose
+   the runtime may be four times that size. A call inside a `try` body, a call whose
    name is a local at the site, and a body naming a global that a local
    at the site would shadow are left alone. Two rounds run, then
    **copy propagation** removes the `(ILet n (ILoad x) ...)` bindings
    inlining leaves, when neither name is `set!` and nothing is captured.
-   `ZYL_INLINE=0` turns inlining off.
+   `ZYL_INLINE=0` turns inlining off. Between them, two local rewrites:
+   a small tree-recursive function's inner self call is replaced by one
+   copy of its body (`opt-self-unroll-fns`, depth `ZYL_UNROLL`, default
+   1), and inside a loop a call of a function that returns at once on a
+   cheap test runs the test first and calls only when it fails
+   (`opt-early-exit-fns`). Both bind arguments in order, like inlining.
 2. **Constant folding** (`opt-optimize-fns`, one bottom-up walk) of
    `IBinop` arithmetic (opcodes 0-4) and comparisons (5-10) whose
    operands are both integer constants. Bitwise operators, floats, and
@@ -444,25 +448,36 @@ There are two emitters with one ABI, chosen per function by
   spelling (the user's `_ZYL_main`) keep a `_ZYL_` prefix.
 - **Entry stub:** `main` calls `zyl_save_args` and
   `zyl_ensure_arenas`, then runs `_ZYL_main` through
-  `zyl_call_on_big_stack`, whose result becomes the exit code.
+  `zyl_call_on_big_stack`, whose result becomes the exit code. A
+  freestanding binary starts at the runtime's `_start`
+  (`zyl_rt_start`: TLS, then `main`); a hosted one at libc's crt.
 - An unbound identifier is reported by Phase 8; codegen's own
   `E_UNBOUND_VARIABLE` remains as a backstop. Output larger than the
   codegen buffer is `E_CODEGEN_BUFFER_FULL`.
 
 ## Phase 13: Linking
 
-**Implementation:** `cli-link-command` in `selfhost/driver.zyl`, `cc`
+**Implementation:** `cli-link-command` in `selfhost/driver.zyl`;
+`asm_x86.zyl` and `elf_link.zyl`
 
-The CLI writes `<out>.s` and runs:
+A program that lowers no foreign `ffi-call` and links no native objects
+is **freestanding**: the compiler assembles its own output
+(`asm_x86.zyl`) and links a static executable (`elf_link.zyl`: ET_EXEC,
+PT_TLS, a non-exec stack, a synthesized GOT) against `rt.zo`, the
+runtime (`rt.s` + `start.s`) assembled once with its relocations
+pre-resolved. `rt.zo` is keyed by the BLAKE3 of its sources and rebuilt
+when stale or torn (`zyl rt-cache`, run by `./boot.sh`). No `cc`, `as`
+or `ld` runs, and there is no libc. With `ZYL_EXTERNAL_LD=1` the same
+program links with `cc -nostdlib -static -no-pie <out>.s start.o rt.o`.
+
+A program that calls foreign C, or a package build with native objects
+and libraries (§31.10), links **hosted** over libc's crt:
 
 ```
 cc -no-pie <out>.s rt.o -o <out> -lpthread
 ```
 
-from the bundle directory, where the runtime sits. `rt.o` is the Zyl
-runtime (`runtime/rt/`), assembled by `./boot.sh` from the committed
-seed `build/boot/rt.s` and copied by `./install.sh`. A package
-build appends its native objects and libraries (§31.10). With
+Both run from the bundle directory, where the runtime sits. With
 `--emit-asm`, the assembly is written to the output path and nothing is
 linked.
 
@@ -527,7 +542,8 @@ Source (.zyl)
   -> [11b] In-place reuse marks         reuse
           (compile-to-fns stops here; zyl eval and the REPL interpret this)
   -> [12] Code generation               codegen, mir         -> assembly
-  -> [13] Linking                       cc + rt.o            -> binary
+  -> [13] Linking                       asm_x86, elf_link + rt.zo
+                                        (cc + rt.o if hosted) -> binary
   -> [15] zyl.buildinfo                 package builds only
 ```
 

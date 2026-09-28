@@ -104,7 +104,8 @@ Rule: no phase may depend on a later phase.
 14. Reuse                ru-reuse: in-place update of a unique, dead value's block
 15. Code generation      cg-program-file → x86_64 assembly text (MIR + linear scan,
                          or the stack machine; §26.5)
-16. Linking              cc -no-pie out.s rt.o -o out -lpthread
+16. Linking              asm_x86 + elf_link against rt.zo (static, no libc);
+                         a program calling foreign C: cc -no-pie out.s rt.o -lpthread
 ```
 
 `zyl build` adds native-object compilation before the link and writes `<name>.buildinfo` after it (§26.5, Phase 11).
@@ -174,11 +175,18 @@ Nothing is reordered: arguments bound by inlining are evaluated in call order, a
 
 ### Linking
 
+A program with no foreign `ffi-call` and no native objects is assembled
+(`asm_x86.zyl`) and linked (`elf_link.zyl`) by the compiler itself into a
+static executable, against `rt.zo`: the Zyl runtime (`runtime/rt/`,
+committed as `build/boot/rt.s`) and `start.s`, assembled once and keyed
+by their BLAKE3. Both are byte-deterministic. A program that calls
+foreign C links hosted:
+
 ```bash
 cc -no-pie out.s rt.o -o out -lpthread
 ```
 
-`rt.o` is the Zyl runtime (`runtime/rt/`), assembled by `./boot.sh` from the committed seed `build/boot/rt.s`; `install.sh` copies it. `zyl build` appends the objects and libraries from the package's `native` block.
+`zyl build` appends the objects and libraries from the package's `native` block, which makes the link hosted.
 
 ### Phase 11: hash finalization
 
@@ -230,10 +238,11 @@ The argument parser is strict about order and loose about content:
 
 Environment variables that affect compilation:
 
-- `ZYL_HOME` selects the directory that holds `stdlib/` and `rt.o`. When it has no `stdlib/`, the compiler tries `~/.zyl`, and then the compiler's own directory.
+- `ZYL_HOME` selects the directory that holds `stdlib/` and the runtime. When it has no `stdlib/`, the compiler tries `~/.zyl`, and then the compiler's own directory.
 - `ZYL_DEBUG_STAGES`, when set, appends each stage name to `/tmp/dbg` as the compiler reaches it.
 - `ZYL_STRICT_TYPES=report` prints type errors as `W_TYPE_STRICT` warnings instead of failing, for counting them.
-- `ZYL_REGIONS=0`, `ZYL_INLINE=0`, `ZYL_REUSE=0` and `ZYL_MIR=0` turn off region inference, inlining, reuse and the native backend, for bisecting a suspected miscompilation; `ZYL_INLINE_LIMIT` sets the inlining size limit.
+- `ZYL_REGIONS=0`, `ZYL_INLINE=0`, `ZYL_REUSE=0` and `ZYL_MIR=0` turn off region inference, inlining, reuse and the native backend, for bisecting a suspected miscompilation; `ZYL_INLINE_LIMIT` sets the inlining size limit and `ZYL_UNROLL` the self-unrolling depth.
+- `ZYL_EXTERNAL_LD=1` links with `cc` instead of the Zyl linker.
 - `ZYL_MAX_MEMORY` caps the compiler's allocation (default 80% of available memory; `E_OUT_OF_MEMORY` beyond it).
 
 Each is a fixed input: the same source under the same settings compiles to the same assembly.
@@ -250,12 +259,14 @@ The compiler is written in Zyl: `stdlib/compiler/*.zyl` plus `selfhost/driver.zy
    cc links the committed seed build/boot/stage2.s        → stage1.bin
 2. stage1.bin compiles selfhost/driver.zyl --emit-asm      → stage2_gen.s
    cmp stage2_gen.s stage2.s     (else: "reproduced asm differs from committed seed")
+   stage1.bin compiles runtime/rt/rt.zyl; cmp with rt.s
 3. cc links stage2.s                                       → stage2.bin
 4. stage2.bin compiles the same source                     → stage3.s
-   cmp stage2.s stage3.s         (else: "FIXED POINT BROKEN")
-5. smoke test: compile and run a small program
-6. write the zyl-self wrapper and build zyl-lsp in build/boot/
-7. refresh an existing install (~/.zyl) with uninstall.sh + install.sh
+   cmp stage2.s stage3.s         (else: "FIXED POINT BROKEN"); the runtime too
+5. stage2.bin rt-cache                                     → rt.zo
+6. smoke test: compile and run a small program
+7. write the zyl-self wrapper and build zyl-lsp in build/boot/
+8. refresh an existing install (~/.zyl) with uninstall.sh + install.sh
 ```
 
 The comparisons are byte comparisons (`cmp`) of assembly text, not of binaries. Short SHA-256 prefixes are printed for display only. Each stage has a timeout, `ZYL_STAGE_TIMEOUT`, which defaults to 2400 seconds, and an allocation ceiling, `ZYL_STAGE_MEMORY`, which defaults to 4 GB. `ZYL_NO_INSTALL_REFRESH=1` skips step 7. The resulting assembly does not depend on where the checkout lives or which directory `boot.sh` runs from.

@@ -207,7 +207,7 @@ Four details:
 
 ### Building a Single File
 
-Plain `zyl file.zyl` links only the runtime and libc. To add your own C code, emit the assembly and link it yourself:
+Plain `zyl file.zyl` links only the runtime (and libc, once the program calls foreign C). To add your own C code, emit the assembly and link it yourself:
 
 ```bash
 zyl ffi-demo.zyl -o ffi-demo.s --emit-asm
@@ -345,18 +345,20 @@ Most of libc is reachable with one `extern` each: `(extern "strlen" (String) Int
 
 ## 12.9 Linking
 
-Every program produced by `zyl` is linked with:
-
-- the Zyl runtime (actors, heap and Pin arenas, strings, the test harness), as `rt.o`
-- `libc` and `libpthread`
-
-The link command `zyl` runs is:
+A program with no foreign `ffi-call` is a static executable with no
+libc: `zyl` assembles and links it itself, against the runtime cached as
+`rt.zo`, and runs no `cc`. A program that calls foreign C, like every
+program in this chapter, links **hosted** over libc, because the C
+library needs it:
 
 ```bash
 cc -no-pie program.s rt.o -o program -lpthread
 ```
 
-`rt.o` is the Zyl runtime (`runtime/rt/`), assembled by `./boot.sh` from the committed seed `build/boot/rt.s` and copied into `~/.zyl` by `./install.sh`.
+`rt.o` is the Zyl runtime (`runtime/rt/`: actors, the heap and Pin
+arenas, strings, the test harness), assembled by `./boot.sh` from the
+committed seed `build/boot/rt.s` and copied into `~/.zyl` by
+`./install.sh`.
 
 To link your own objects into a single-file program, use `--emit-asm` and run that command yourself with your `.c` or `.o` files added (§12.4). In a package, use `(native ...)` instead.
 
@@ -390,11 +392,11 @@ IFfi "zyl_ffi_timed" (ISymAddr "sym", IStr "sym", IConst timeout, IConst 2, a, b
 
 ### Pin Region Implementation
 
-The runtime keeps one Pin arena (`g_pin_arena`), created alongside the heap arena before the program's own code runs. `ffi_pin` allocates an 8-byte slot from it and stores the value; `ffi_unpin` validates the address against the arena's live blocks and returns the stored word. The arena is destroyed in a destructor when the process exits.
+The runtime keeps one Pin arena (`runtime/rt/alloc.zyl`), created alongside the heap arena before the program's own code runs. `zyl_ffi_pin` allocates an 8-byte slot from it and stores the value; `zyl_ffi_unpin` checks that the address lies in the arena and returns the stored word. The arena is released at exit.
 
 ### Timeout Implementation
 
-`zyl_ffi_timed` in `runtime/rt/ffitimed.zyl` looks up the calling thread's worker (creating it on first use), hands it the function address and arguments, and waits with `pthread_cond_timedwait` against a `CLOCK_MONOTONIC` deadline. On expiry it marks the worker abandoned, forgets it, records that some call has been abandoned (which disables the exit-time arena teardown), and raises `E_FFI_TIMEOUT`. The interpreter calls the same code through `zyl_ffi_timed_argv`, which takes the arguments as an array.
+`zyl_ffi_timed` in `runtime/rt/ffitimed.zyl` looks up the calling thread's worker (creating it on first use), hands it the function address and arguments, and waits on the runtime's futex condition variable (`zyl_rt_cond_timedwait`, `runtime/rt/thread.zyl`) against a monotonic deadline. On expiry it marks the worker abandoned, forgets it, records that some call has been abandoned (which disables the exit-time arena teardown), and raises `E_FFI_TIMEOUT`. The interpreter calls the same code through `zyl_ffi_timed_argv`, which takes the arguments as an array.
 
 ---
 

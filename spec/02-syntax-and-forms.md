@@ -28,7 +28,7 @@ Expr :=
 
   ;; Concurrency & FFI
   | (spawn Expr)
-  | (send Expr Expr)
+  | (chan-send Expr Expr)
   | (ffi-call String Expr* Integer)
   | (ffi-pin Expr)
   | (ffi-unpin Expr)

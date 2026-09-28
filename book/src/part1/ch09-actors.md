@@ -560,7 +560,7 @@ The check lives in `stdlib/compiler/mutability_check.zyl`. It reports `E_CAPABIL
 
 ### The Interpreter
 
-`zyl repl` and `zyl eval` cannot spawn, because an interpreted function has no native entry. Channels work there on `main` alone.
+`zyl repl` and `zyl eval` run actors as compiled programs do. The REPL joins an entry's actors before the prompt returns, so an actor started at the prompt finishes (or deadlocks) within that entry.
 
 ---
 

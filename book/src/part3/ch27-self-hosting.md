@@ -79,14 +79,18 @@ Default flow — verifies the fixed point, no Rust anywhere:
 #    the committed runtime seed build/boot/rt.s into build/boot/rt.o
 # 1. cc links the committed seed build/boot/stage2.s -> stage1.bin
 # 2. stage1 compiles selfhost/driver.zyl -> stage2_gen.s
-#    (must byte-match the committed seed); stage2.s is linked -> stage2.bin
-# 3. stage2 compiles the same source -> stage3.s
+#    (must byte-match the committed seed), and runtime/rt/rt.zyl
+#    (must byte-match rt.s); stage2.s is linked -> stage2.bin
+# 3. stage2 compiles the same source -> stage3.s, and the runtime again
 # 4. stage3.s must be byte-identical to stage2.s (fixed point)
-# 5. smoke test: stage2 compiles, links and runs a small program
-# 6. writes the build/boot/zyl-self wrapper and builds build/boot/zyl-lsp
+# 5. stage2 builds the runtime cache rt.zo for the Zyl linker
+# 6. smoke test: stage2 compiles, links and runs a small program
+# 7. writes the build/boot/zyl-self wrapper and builds build/boot/zyl-lsp
 ```
 
-Each link is `cc -no-pie <asm> build/boot/rt.o -o <bin> -lpthread`.
+Each link of a compiler stage is `cc -no-pie <asm> build/boot/rt.o -o
+<bin> -lpthread`: the compiler itself links hosted, because the REPL
+interpreter's FFI uses `dlsym`.
 The script exports `ZYL_HOME=build/boot` so the build resolves the
 standard library from this checkout rather than from an installed
 `~/.zyl`; the copy in step 0 is what makes each stage compile this
@@ -244,7 +248,7 @@ is complete (`docs/self-hosting.md` describes the build as it is now):
 
 1. ✅ Every compiler phase ported to Zyl (`stdlib/compiler/*.zyl`)
 2. ✅ Full regression suite passes through the self-hosted compiler
-   (43/43 at eviction; the suite has since grown to 260 tests)
+   (43/43 at eviction; the suite has since grown to 352 tests)
 3. ✅ `./boot.sh` builds and verifies with nothing but `cc`
 4. ✅ Reseeding no longer needs Rust either (`--bootstrap-from-self`, §27.3)
 5. ✅ `src/` archived to `archive/rust-bootstrap-2026/`, `Cargo.toml`/

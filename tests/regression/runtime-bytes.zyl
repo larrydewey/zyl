@@ -118,6 +118,6 @@
     (assert-equal (align-check -16 8) 1)
     (assert-equal (align-check 5 1) 1)))
 
-; The multi-actor atomics test is in concurrency.zyl (the interpreter cannot spawn).
+; The multi-actor atomics test is in concurrency.zyl.
 
 (run-tests)

@@ -56,7 +56,8 @@ heap, and raises `E_REGION_ESCAPE`; see `docs/regions-design.md`) →
 in-place reuse (`reuse.zyl`) → codegen (the native backend: MIR and
 linear-scan register allocation in `mir.zyl`, with the stack machine
 for functions it does not take; `docs/native-backend-design.md`) →
-`cc` link. Contracts are lowered where forms are recognized
+linking (the Zyl assembler and ELF linker, or `cc` for a hosted
+program; see Link modes below). Contracts are lowered where forms are recognized
 (`convert-ast`, `expr_inner.zyl`): `requires`/`ensures`/`invariant`
 become checks raising `E_CONTRACT_VIOLATION`, `ensures` binds `result`,
 `recover` is `try`/`catch` with arms by error code, `checkpoint` rolls
@@ -228,7 +229,7 @@ Full test infrastructure documented in `docs/regression-tests.md`. All tests use
   interpreter's FFI uses `dlsym`).
 
 - Entry point: `selfhost/driver.zyl`, compiled like any program (its `(use ...)` tree resolved from `stdlib/`, names qualified per module) to `build/boot/stage2.bin`/`zyl-self`. `boot.sh` caps each stage at 4 GB of allocation (`ZYL_STAGE_MEMORY`). The phase order shared by the CLI and the REPL is `stdlib/compiler/pipeline.zyl`.
-- Language server: `selfhost/lsp_main.zyl` + `stdlib/lsp/` (and `services/`), built by `./boot.sh` as `build/boot/zyl-lsp`; the VS Code client is `editors/vscode/` (0.4.0, esbuild-bundled, `$zyl` problem matcher). Protocol tests: `tests/lsp/lsp_protocol_test.py`.
+- Language server: `selfhost/lsp_main.zyl` + `stdlib/lsp/` (and `services/`), built by `./boot.sh` as `build/boot/zyl-lsp`; the VS Code client is `editors/vscode/` (0.5.0, esbuild-bundled, `$zyl` problem matcher). Protocol tests: `tests/lsp/lsp_protocol_test.py`.
 - REPL: `stdlib/repl/` (reader, line editor, highlighting, history, ICNF interpreter `interp.zyl`, session `eval.zyl`/`repl.zyl`), reached through `zyl repl`; `tools/repl.zyl` is only the standalone `main`. It is a working tool — see `docs/repl.md`.
 - Single binary — no workspace, no crates, no Cargo anywhere in the active path
 - The package system (spec v5.0 §31) IS implemented: manifests, canonical

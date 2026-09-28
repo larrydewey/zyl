@@ -20,10 +20,14 @@ meets the C runtime. The design and its staging are recorded in
   from that; every other function goes through the older stack-machine
   emitter. Both use the same calling convention and frame-region layout,
   so they call each other freely (§29.2)
-- **Assemble and link**: `cc -no-pie <prog>.s rt.o -o <prog> -lpthread`,
-  run from the compiler's bundle directory. `rt.o` is the Zyl runtime
-  (`runtime/rt/`), assembled by `./boot.sh` from the committed seed
-  `build/boot/rt.s` and copied by `./install.sh`.
+- **Assemble and link**: a program with no foreign `ffi-call` is
+  assembled by `asm_x86.zyl` and linked by `elf_link.zyl` into a static
+  executable against `rt.zo`, the Zyl runtime (`runtime/rt/`) assembled
+  once from the committed seed `build/boot/rt.s` and `start.s`; no `cc`
+  runs and there is no libc. A program that calls foreign C links hosted:
+  `cc -no-pie <prog>.s rt.o -o <prog> -lpthread`, run from the
+  compiler's bundle directory. `ZYL_EXTERNAL_LD=1` links every program
+  with `cc`.
 
 ```bash
 zyl prog.zyl -o prog              # writes prog.s, then links prog
@@ -897,7 +901,7 @@ main:
     ret
 ```
 
-`zyl_call_on_big_stack` runs the user's `main` on a pthread whose stack
+`zyl_call_on_big_stack` runs the user's `main` on a thread whose stack
 is reserved with `mmap` — 64 GiB, falling back to 16, 4 and 1 GiB —
 with a guard page at the bottom, and returns its result as the
 process's exit code. `main` returns an `Int`, usually a final `0`;
@@ -947,8 +951,8 @@ zyl prog.zyl -o prog.s --emit-asm
 # The normal build leaves the assembly next to the binary
 zyl prog.zyl -o prog && less prog.s
 
-# Link it yourself with the runtime object
-cc -g -no-pie prog.s ~/.zyl/rt.o -o prog -lpthread
+# Link it yourself with the runtime objects (a program with no foreign calls)
+cc -g -nostdlib -static -no-pie prog.s ~/.zyl/start.o ~/.zyl/rt.o -o prog
 gdb ./prog
 ```
 

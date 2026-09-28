@@ -230,7 +230,7 @@ There is no way to stop an actor from outside. Stopping an actor partway through
 
 - At most 1024 actors per program, counted over its whole lifetime, since ids are never reused. The 1025th `spawn` raises `E_ACTOR_LIMIT: at most 1024 actors per program`.
 - A channel holds 1 to 16777216 values.
-- The interpreter (`zyl repl`, `zyl eval`) cannot spawn, because an interpreted function has no native entry. Channels work there on `main` alone.
+- The interpreter (`zyl repl`, `zyl eval`) runs actors too: a spawn runs a compiled closure that interprets the body, and the endpoints the closure captures move with it. The REPL joins an entry's actors before the prompt returns.
 
 ## 21.10 Capabilities
 
@@ -240,7 +240,7 @@ In a package with a `zyl.pkg`, `spawn`, `chan`, `chan-send` and `chan-recv`, and
 PANIC: error[E_PKG_CAPABILITY_VIOLATION]: package demo/nocap uses actor in helper without declaring it in zyl.pkg
 ```
 
-A lone file compiled without a manifest is not checked. The current pass also does not check the body of `main` (see Chapter 25, §25.11).
+A lone file compiled without a manifest is not checked. The root package's `main` and its top-level `test` forms are checked like any definition.
 
 ## 21.11 Runtime Implementation
 

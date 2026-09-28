@@ -8,12 +8,13 @@ recorded in PROGRESS.md ("Deferred design work"): Kahn process networks
 replace multi-sender mailboxes, so a program's observable output never
 depends on scheduling (spec §27).
 
-## Why the current model is not deterministic
+## Why mailboxes were not deterministic
 
-Today an actor has one mailbox that any actor may send to, and `receive`
-takes whatever arrived first. With two senders, the arrival order depends
-on the scheduler, and so does everything the receiver computes from it.
-`receive` is also untyped (spec §4.8's one known hole).
+Before 2026-09-28 an actor had one mailbox that any actor could send to,
+and `receive` took whatever arrived first. With two senders, the arrival
+order depended on the scheduler, and so did everything the receiver
+computed from it. `receive` was also untyped (spec §4.8's one known
+hole).
 
 ## Model
 
@@ -90,18 +91,20 @@ scheduling.
 - The stdlib (`stdlib/actor`), tests, examples, book, spec §15 and §27, and
   the LSP builtin list are updated together.
 
-## Implementation plan
+## Implementation
 
-1. Runtime: channel objects are a futex-guarded ring buffer with
-   `{owner-tx, owner-rx, closed}`. There is a per-actor output buffer,
-   blocked-actor accounting for deadlock detection, and the deterministic
-   and chaos schedulers.
-2. Compiler:
-   - builtins `chan`, `chan-tx`, `chan-rx`, `chan-send` and `chan-recv`,
-     typed `(Chan T)`, `(Tx T)` and `(Rx T)` (type_annotate.zyl);
-   - spawn lowering transfers the ownership of captured endpoints;
-   - E_CHANNEL_NOT_OWNER, E_CHANNEL_CLOSED and E_DEADLOCK join the spec
-     §28 error catalog.
-3. The old mailbox API is removed and the tests are ported. New tests cover
-   pipelines, fan-in through one channel per producer, closing, deadlock,
-   ownership errors and output ordering, under all three schedules.
+- Runtime (`runtime/rt/chan.zyl`): a channel is a ring buffer under the
+  scheduler's one lock and condition variable, with its owners and a
+  closed flag; per-owner blocked state for deadlock detection; the
+  deterministic baton and the chaos seed. Per-actor output buffers are
+  in `out.zyl`, spawn and join in `actor.zyl`.
+- Compiler: the builtins are typed in `type_annotate.zyl`; `chan-send`
+  reuses the `ESend` node, so the let-mut and Secret checks apply; spawn
+  moves the endpoints a closure captures directly. An endpoint nested
+  inside a captured value does not move (open).
+- The REPL interpreter spawns a compiled closure that interprets the
+  body; `zyl_chan_spawn_moves` names the interpreted closure's env block,
+  whose endpoints move at the same spawn.
+- Tests: `tests/regression/channels.zyl`, `concurrency.zyl`,
+  `actors.zyl`, `runtime-actors.zyl`, the `sched` category and
+  `tests/scripts/actor-schedules.sh`.

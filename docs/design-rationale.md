@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document explains why key architectural choices were made in the Zyl compiler. It captures tradeoffs, rejected alternatives, and constraints that future developers should understand. Where the self-hosted compiler (`stdlib/compiler/*.zyl`) does not yet deliver a decision in full, a **Current implementation** note says so; `docs/implementation-status.md` has the complete list of gaps.
+This document explains why key architectural choices were made in the Zyl compiler. It captures tradeoffs, rejected alternatives, and constraints that future developers should understand. Where the self-hosted compiler (`stdlib/compiler/*.zyl`) does not yet deliver a decision in full, a **Current implementation** note says so; `PROGRESS.md` has the complete list of gaps.
 
 **Related:** `docs/architecture-decisions.md` (the decisions themselves), `zyl_specification.txt` (the formal spec)
 
@@ -258,7 +258,7 @@ This document explains why key architectural choices were made in the Zyl compil
 - Exception-based (try/catch/throw): non-deterministic stack unwinding, harder to reason about regions
 - Option types (Some/None): no error message, less informative
 
-**Current implementation:** the implementation departs from this decision. `(error msg)` calls the runtime's `zyl_panic`, which unwinds to the innermost `try` (implemented with `setjmp` and a runtime stack of try frames), or to the test runner, or ends the process with `PANIC: msg`. `(try body (catch e handler))` catches a panic rather than inspecting a `Result`, so an `Err` returned normally from `body` passes through unchanged. `Result` values and `stdlib/core/result.zyl` remain the way to handle errors as values. See the implementation notes in `spec/04-evaluation-semantics.md`.
+**Current implementation:** the implementation departs from this decision. `(error msg)` calls the runtime's `zyl_panic`, which unwinds to the innermost `try` (a runtime stack of try frames whose saved registers are pointer-mangled), or to the test runner, or ends the process with `PANIC: msg`. `(try body (catch e handler))` catches a panic rather than inspecting a `Result`, so an `Err` returned normally from `body` passes through unchanged. `Result` values and `stdlib/core/result.zyl` remain the way to handle errors as values. See the implementation notes in `spec/04-evaluation-semantics.md`.
 
 **Spec reference:** `zyl_specification.txt` §12.2 and §12.10, `spec/04-evaluation-semantics.md`
 

@@ -84,8 +84,10 @@ Not normative.
   passes one baton, so only one actor runs at a time, and
   `ZYL_SCHED_CHAOS=<seed>` adds seeded yields and sleeps at channel
   operations. The test suite requires identical output under all three.
-- The interpreter (`zyl repl`, `zyl eval`) cannot spawn: an interpreted
-  function has no native entry. Channels work there on main alone.
+- The interpreter (`zyl repl`, `zyl eval`) spawns a compiled closure
+  that interprets the body; the interpreted closure's captured endpoints
+  move with it (`zyl_chan_spawn_moves`). The REPL joins an entry's
+  actors before the prompt returns.
 - Not yet enforced by type: Send-capability is still the syntactic
   `let-mut` rule, so a mutable collection reached through an immutable
   binding can still be shared.

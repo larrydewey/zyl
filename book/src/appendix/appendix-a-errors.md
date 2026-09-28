@@ -383,7 +383,7 @@ entry:
 | `E_NON_EXHAUSTIVE_MATCH`, `E_UNREACHABLE_MATCH_ARM` | `exhaustiveness_check.zyl` |
 | `E_DUPLICATE_PARAMETER` | `unused_check.zyl` |
 | `E_UNBALANCED_OPEN_STRING` | the language server's balance check (`lsp/compiler_bridge.zyl`) |
-| `E_UNDEFINED_FUNCTION`, `E_NOT_CALLABLE`, `E_UNSUPPORTED_INTERPRETED`, `E_FFI_SYMBOL_NOT_FOUND`, `E_NO_MAIN` | the REPL's ICNF interpreter (`repl/interp.zyl`); `E_FFI_SYMBOL_NOT_FOUND` also the runtime's symbol lookup for the interpreter |
+| `E_UNDEFINED_FUNCTION`, `E_NOT_CALLABLE`, `E_FFI_SYMBOL_NOT_FOUND`, `E_NO_MAIN` | the REPL's ICNF interpreter (`repl/interp.zyl`); `E_FFI_SYMBOL_NOT_FOUND` also the runtime's symbol lookup for the interpreter |
 | `E_INTERNAL` | the REPL evaluator (`repl/eval.zyl`) |
 
 **Duplicates and synonyms.** `E_OUT_OF_MEMORY` appears twice in the

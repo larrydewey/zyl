@@ -19,8 +19,8 @@ build it with `./boot.sh` first.
 ./run_regression_tests.sh --dry-run          # list the selected tests without running them
 ```
 
-A `--full --no-boot` run is 260 tests and takes well under a minute on a
-current machine (18 s as of 2026-09-25). `--full` adds one more entry,
+A `--full --no-boot` run is 352 tests and takes well under a minute on a
+current machine (22 s as of 2026-09-28). `--full` adds one more entry,
 `boot/fixed-point`, which runs `./boot.sh` and takes as long as a
 bootstrap does.
 
@@ -29,7 +29,7 @@ bootstrap does.
 | Flag | Description |
 |------|-------------|
 | `--quick` | Run `tests/unit_test.zyl`, `tests/smoke/*.zyl` and the LSP protocol test (default) |
-| `--full` | Run the unit test, regression, stress, integration, interpreter-agreement, package, compile-fail, script and LSP sections, then the fixed-point check |
+| `--full` | Run the unit test, regression, stress, integration, interpreter-agreement, schedule-agreement, package, compile-fail, script and LSP sections, then the fixed-point check |
 | `--dry-run` | List the tests the same mode and `--filter` would run, without running them |
 | `--filter N` | Run only tests whose name contains N, case-insensitively (see below) |
 | `--boot` | Run the fixed-point check (`./boot.sh`) in any mode |
@@ -91,22 +91,23 @@ check copies its log to `build/boot/boot_check.log`. The runner sets
 `ZYL_HOME` to `build/boot`, so the suite always compiles against this
 checkout's standard library, not an installed one.
 
-### Sections and counts (`--full --no-boot`, 2026-09-25)
+### Sections and counts (`--full --no-boot`, 2026-09-28)
 
 | Section | Source | Tests |
 |---------|--------|-------|
 | unit test | `tests/unit_test.zyl` | 1 |
-| regression | `tests/regression/*.zyl` | 77 |
+| regression | `tests/regression/*.zyl` | 103 |
 | stress | `tests/stress/*.zyl` | 4 |
 | integration | `tests/integration/*.zyl` | 7 |
-| interpreter agreement | regression + smoke, minus `DIFF_SKIP` | 55 |
+| interpreter agreement | regression + smoke, minus `DIFF_SKIP` | 85 |
+| schedule agreement | the four actor regression files | 4 |
 | packages | `tests/packages/*/app/main.zyl` | 2 |
-| packages-fail | `tests/packages-fail/*/app/main.zyl` | 8 |
+| packages-fail | `tests/packages-fail/*/app/main.zyl` | 9 |
 | packages-build | `tests/packages-build/*/app` via `zyl build` | 1 |
-| compile-fail | `tests/compile-fail/*.zyl` | 97 |
-| scripts | `tests/scripts/*.sh` | 7 |
+| compile-fail | `tests/compile-fail/*.zyl` | 120 |
+| scripts | `tests/scripts/*.sh` | 15 |
 | LSP protocol | `tests/lsp/lsp_protocol_test.py` | 1 |
-| **total** | | **260** |
+| **total** | | **352** |
 
 `--quick` is 7 tests: the unit test, the five smoke tests and the LSP
 protocol test.
@@ -147,10 +148,7 @@ compiled run emits them at build time while the interpreted run emits
 them at eval time — a difference in when, not in what.
 
 Some tests are deliberately left out of this comparison, and
-`DIFF_SKIP` in the runner records why for each: programs that spawn
-actors (`actors`, `channels`, `concurrency`, and `modules`, one of
-whose tests spawns an actor; an interpreted function has no native entry
-point, so the interpreter reports `E_UNSUPPORTED_INTERPRETED`), one that
+`DIFF_SKIP` in the runner records why for each: one that
 prints a value's address (`derive`), one that prints the bytes at a
 pinned address (`ffi-advanced`), one that assumes a fresh `alloc-malloc`
 block reads back as zeroes (`collections`), `package-system` (its
@@ -159,8 +157,8 @@ a C callback, which needs a native function pointer), `tail-calls`
 (10^8-deep loops, far too slow interpreted), `with-region-limits` (the
 interpreter accounts no region bytes), and every `math-*` file, which is
 minutes of interpreted arithmetic for what the compiled run already
-covers in seconds. That is 27 of the 82 regression and smoke files,
-leaving 55. (`DIFF_SKIP` also names `selfhost-codegen`, an integration
+covers in seconds. Actor programs are compared too: the interpreter
+runs `spawn` and channels. (`DIFF_SKIP` also names `selfhost-codegen`, an integration
 test the section never reaches.)
 
 `docs/repl.md` lists the places the two back ends differ on purpose.
@@ -184,7 +182,7 @@ panic.
 ```
 tests/
 ├── unit_test.zyl              # Harness + stdlib tests (runs in --quick and --full)
-├── regression/                # 77 domain-specific regression files (--full)
+├── regression/                # 103 domain-specific regression files (--full)
 │   ├── arithmetic.zyl         # +, -, *, /, multi-operand, float chains
 │   ├── bitwise.zyl            # bit-and/or/xor/not, shifts, n-ary folding
 │   ├── eval-order.zyl         # strict left-to-right evaluation
@@ -248,6 +246,18 @@ tests/
 │   ├── secret-capability.zyl  # Secret / constant-time checker, accepting side
 │   ├── secret-types.zyl       # Secret types and impl-not, accepting side
 │   ├── compiler.zyl           # stdlib/compiler: lexer, parser, AST types
+│   ├── intrinsics.zyl         # bit-popcount, clz/ctz, bswap, rotl/rotr,
+│   │                          #   mul-hi, crc32c against reference models
+│   ├── simd.zyl               # simd/simd lane vectors
+│   ├── float-literals.zyl, float-nan.zyl  # exact float bits; NaN compares
+│   ├── exit.zyl               # exit flushes and ends the process
+│   ├── asm-x86.zyl            # the Zyl assembler's encodings
+│   ├── native-*.zyl           # native-backend shapes: accumulators,
+│   │                          #   division by constants, modular loops, shifts
+│   ├── vec-growth.zyl         # vec-push growth and reuse
+│   ├── runtime-*.zyl          # the Zyl runtime by area: actors, blake3,
+│   │                          #   bytes, crypto, ctab, env, fmt, heap, os,
+│   │                          #   panic, proc, shortstr, strings, tables, text
 │   └── math-*.zyl             # Published NIST/FIPS/RFC vectors, one file per
 │                              #   algorithm family (16 files)
 ├── smoke/                     # Quick sanity checks (--quick)
@@ -269,7 +279,7 @@ tests/
 │   ├── parser-verify.zyl      # reader/parser structure checks
 │   ├── pv_min.zyl             # minimal reader smoke test
 │   └── selfhost-codegen.zyl   # compiler/icnf + codegen end to end
-├── compile-fail/              # 97 programs that MUST be rejected; 55 carry
+├── compile-fail/              # 120 programs that MUST be rejected; 78 carry
 │   │                          #   a `; expect-error: CODE` line
 │   ├── unclosed-opener.zyl    # balance errors
 │   ├── unexpected-close.zyl
@@ -293,18 +303,23 @@ tests/
 │   ├── features/              #   (each case: app/ plus path dependencies)
 │   └── two-parses/
 ├── packages-fail/             # multi-package builds that must be rejected
-│   ├── bad-requirement/  capability/  feature-nested/  feature-unknown/
-│   └── orphan-impl/  private-symbol/  undeclared-dep/  unknown-edition/
+│   ├── bad-requirement/  capability/  capability-main/  feature-nested/
+│   └── feature-unknown/  orphan-impl/  private-symbol/  undeclared-dep/
+│       unknown-edition/
 ├── packages-build/            # built with `zyl build` (native block, lock,
 │   └── native/                #   <out>.buildinfo, embedded build hash)
 ├── scripts/                   # shell checks of the repository's scripts,
-│   ├── build-cache.sh         #   against scratch directories
-│   ├── deterministic-link.sh
-│   ├── package-index.sh
-│   ├── repl-session.sh
-│   ├── uninstall.sh
-│   ├── vscode-problem-matcher.sh
-│   └── zyl-doc.sh
+│   ├── actor-schedules.sh     #   against scratch directories: failing
+│   │                          #   actor programs under every schedule
+│   ├── asm-oracle.sh          # the Zyl assembler against GNU as
+│   │                          #   (asm_oracle.py generates the sweep)
+│   ├── self-link.sh           # freestanding self-link and rt.zo
+│   ├── deterministic-link.sh, stdout-buffer.sh, ffi-stdio-order.sh
+│   ├── json-diagnostics.sh, located-diagnostics.sh
+│   ├── runtime-module-lock.sh # --runtime-module is refused elsewhere
+│   ├── build-cache.sh, package-index.sh
+│   ├── repl-session.sh, uninstall.sh
+│   └── vscode-problem-matcher.sh, zyl-doc.sh
 ├── lsp/
 │   └── lsp_protocol_test.py   # real JSON-RPC against build/boot/zyl-lsp
 ├── manual/
@@ -451,12 +466,8 @@ to `DIFF_SKIP` in `run_regression_tests.sh` with the reason.
 
 ## Manual Tests
 
-`tests/manual/read-line.zyl` needs interactive input and is not run by
-the suite. Its header gives the `build/boot/zyl-self` command, and says
-what is still true: the file does not link. It is a bare top-level `let`
-with no `main`, and only top-level `test` forms cause a `main` to be
-generated, so the link fails with `undefined reference to _ZYL_main`.
-Wrapping the body in `(defn main () ... 0)` makes it build.
+`tests/manual/read-line.zyl` needs input on stdin and is not run by
+the suite; its header gives the command and the expected output.
 
 ---
 
@@ -464,6 +475,7 @@ Wrapping the body in `(defn main () ... 0)` makes it build.
 
 - [ ] Golden output comparison (tracked as future work)
 - [ ] Parallel test execution
-- [ ] Every compile-fail test asserting its expected error code (55 of
-      the 97 carry `; expect-error: CODE`; no packages-fail case does)
+- [ ] Every compile-fail test asserting its expected error code (78 of
+      the 120 carry `; expect-error: CODE`, and 7 of the 9 packages-fail
+      cases)
 - [ ] CI integration

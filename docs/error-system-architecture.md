@@ -4,10 +4,10 @@
 
 The most incredible developer experience for a systems Lisp. Every error is actionable, every location is precise, every suggestion is correct. No Python scripts, no guesswork, no "figure it out yourself."
 
-## Current State (as of 2026-09-25)
+## Current State (as of 2026-09-28)
 
 ### What Works
-- **Catalog**: `stdlib/compiler/error_codes.zyl` holds 126 distinct codes
+- **Catalog**: `stdlib/compiler/error_codes.zyl` holds 130 distinct codes
   (phase, severity, default message), covering spec §28 and the §31
   package codes; `docs/errors.md` lists every one, which module raises
   it, and which are catalog-only. The catalog is data: checkers write the
@@ -152,7 +152,7 @@ error[E0308]: type mismatch at tests/example.zyl:12:15
 #### 2.4 Fix-It Hints
 ```zyl
 ; E_TYPE_MISMATCH
-  = help: try `(cast x Int)` or change `x` to type Int
+  = help: change `x` to type Int (there is no cast form)
 
 ; E_MATCH_NONEXHAUSTIVE
   = fix: add `(Triangle t ...)` arm or add `(_ ...)` catch-all
@@ -163,7 +163,7 @@ error[E0308]: type mismatch at tests/example.zyl:12:15
 
 ### 3. Error Code Catalog (Complete)
 
-**Current**: 126 codes in `stdlib/compiler/error_codes.zyl`, listed with
+**Current**: 130 codes in `stdlib/compiler/error_codes.zyl`, listed with
 their raising module in `docs/errors.md`, plus the warnings and
 REPL-interpreter codes the catalog does not contain  
 **Target**: All codes with:
@@ -327,7 +327,8 @@ lexer, rather than the token stream):
       pipeline split out of the driver since)*
 
 ### Phase 2: Intelligence
-- [ ] `error_suggest.zyl` - "did you mean?" engine
+- [x] "Did you mean?" on unbound identifiers and undefined functions
+      (edit distance over in-scope names)
 - [ ] `error_fixit.zyl` - fix-it hints for top 20 errors
 - [ ] Error recovery (continue past errors)
 - [ ] Multiple error aggregation (partly: the type pass reports every
@@ -341,7 +342,8 @@ lexer, rather than the token stream):
       module in `docs/errors.md`; per-code causes, examples and fixes are
       not written)
 - [ ] Color-blind safe mode
-- [ ] CLI flags: `--color`, `--error-format`, `--max-errors`
+- [x] `--error-format=json` (one JSON object per diagnostic on stderr)
+- [ ] CLI flags: `--color`, `--max-errors`
 
 ## Testing Requirements
 
@@ -353,9 +355,8 @@ lexer, rather than the token stream):
 
 ## Success Criteria
 
-- [ ] Zero Python scripts in build/test path (the build uses none;
-      `selfhost/assemble.py` was retired on 2026-09-24, but the LSP
-      protocol test and the timing harness are Python)
+- [ ] Zero Python scripts in build/test path (the build uses none; the
+      LSP protocol test and the timing harness are Python)
 - [ ] Every error has location + snippet + suggestion + fix-it
 - [ ] First-time user can fix any error without docs
 - [ ] Color output works in all terminals

@@ -229,7 +229,7 @@ The tests live under `tests/` (`tests/regression/` for the `test`-based files). 
 
 1. **Registration**: the compiler lowers each top-level `test` into a named test function plus a `zyl_register_test(name, fn)` call, made from the generated `main` before anything else runs.
 2. **Execution**: `(run-tests)` lowers to a `zyl_run_tests()` call, which runs the tests sequentially in registration order and prints `ok` or `FAIL` for each, then the summary. It returns 1 if any test failed, but that value does not currently become the process exit status.
-3. **Panic containment**: each test runs under a `setjmp` guard. `zyl_panic`, which every failed assertion calls, `longjmp`s back to the harness, so a failure marks that test as failed instead of ending the process. Outside a test, the same failure prints `PANIC: assert-equal failed` and exits with status 1.
+3. **Panic containment**: each test runs under a try frame. `zyl_panic`, which every failed assertion calls, unwinds back to the harness, so a failure marks that test as failed instead of ending the process. Outside a test, the same failure prints `PANIC: assert-equal failed` and exits with status 1.
 4. **Deterministic**: there is no parallelism, and output order is fixed by the source.
 
 ### Isolation

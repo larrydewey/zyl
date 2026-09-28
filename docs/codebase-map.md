@@ -34,8 +34,8 @@ selfhost/
                          driver.zyl directly, and its (use ...) tree is
                          resolved from stdlib/ like any program's.
 
-stdlib/compiler/         The compiler itself (41 files, ~26,200 lines)
-stdlib/repl/             The REPL and its ICNF interpreter (8 files, ~4,100 lines)
+stdlib/compiler/         The compiler itself (44 files, ~29,500 lines)
+stdlib/repl/             The REPL and its ICNF interpreter (8 files, ~4,200 lines)
 stdlib/lsp/              The language server (20 files, ~5,600 lines)
 stdlib/math/             Cryptography and number libraries (28 files, ~7,700 lines)
 stdlib/core/             core (facade), list, option, result, map, show
@@ -43,8 +43,10 @@ stdlib/core/             core (facade), list, option, result, map, show
 stdlib/collections/      collections (Assoc + list utilities), vec, map, set,
                          slice (zero-copy Vec slices)
 stdlib/text/             view: StrView (zero-copy substrings) and Cursor
+stdlib/simd/             I64x2, I32x4, U8x16 lane vectors (portable SWAR)
 stdlib/allocator/        Raw memory arenas
-stdlib/actor/            spawn/send and actor lifecycle over the C runtime
+stdlib/actor/            actor-spawn, actor-wait, actor-is-alive (channels
+                         are builtins)
 stdlib/ffi/              FFI pinning helpers
 stdlib/io/               File I/O, stdin/stdout helpers, OutputStream trait
 stdlib/atomic/           Atomic load/store/add/sub/max/min/cas
@@ -52,13 +54,14 @@ stdlib/testing/          The test harness (`test`, `run-tests`, asserts)
 stdlib/mlib/             deep.zyl: a small deep-call fixture module
 
 runtime/rt/              The Zyl runtime every compiled binary links against
-                         (rt.zyl + one module per area; seed build/boot/rt.s)
+                         (rt.zyl + 34 modules, ~5,600 lines; seed build/boot/rt.s)
 tools/repl.zyl           Standalone REPL entry point (a thin `main`)
-editors/vscode/          VS Code extension (0.4.0)
+editors/vscode/          VS Code extension (0.5.0)
 book/                    The book (mdBook: book.toml, src/, examples/)
 tests/                   smoke, regression, compile-fail, integration,
                          stress, packages, packages-fail, packages-build,
                          scripts, lsp, manual, debug; plus unit_test.zyl
+site/                    The website (landing page; site/build.sh adds the book)
 bench/                   The benchmark matrix against C, C++, Rust and Go
                          (matrix.py; see docs/native-backend-design.md)
 verify/                  Python cross-checks for stdlib/math
@@ -70,8 +73,10 @@ zyl_specification.txt    The canonical specification (v5.0)
 `stage2.s` (the committed seed), `zyl-self` (a wrapper that execs
 `stage2.bin`), `zyl-lsp`, and a copy of `stdlib/` and the runtime next
 to them so the compiler finds both relative to its own location. The
-runtime's committed seed `rt.s` is assembled into `rt.o`, which every
-link uses (`install.sh` copies it to the install directory).
+runtime's committed seed `rt.s` and `start.s` (the `_start` stub) are
+assembled into `rt.zo` for the Zyl linker, and into `rt.o`/`start.o`
+for a `cc` link (hosted programs, `ZYL_EXTERNAL_LD=1`); `install.sh`
+copies them to the install directory. See `docs/self-hosting.md`.
 
 ### Compiler, file by file
 
@@ -110,7 +115,7 @@ in `docs/compiler-pipeline.md`.
 |---|---|
 | `type_system.zyl` | 26 lines: the generic `Pair` and the `Region` family (`RStack` ... `RPin`) used by the parser and ICNF lowering |
 | `derive.zyl` | Expands `(derive T Trait...)` into impl blocks for Show, Debug, Eq, Ord, Hash and Clone; `E_TRAIT_NOT_DERIVABLE`, `E_DUPLICATE_IMPL` |
-| `lift_impls.zyl` | Lifts impl bodies to top-level `Trait.method_Type` functions (replaced `monomorphization.zyl` and `type_inference.zyl`) |
+| `lift_impls.zyl` | Lifts impl bodies to top-level `Trait.method_Type` functions |
 | `closure_inline.zyl` | Retired closure-inlining pass, now an identity step (closures are real values) |
 | `type_annotate.zyl` | The type checker (spec §4.8–§4.10): HM inference with SCC generalization, every type error reported then fatal, static trait resolution, per-type instances of trait-generic functions (generic originals dropped), generated structural `T.==`, codegen kinds and scalar marks |
 | `ffi_sigs.zyl` | The type of every runtime function reached through `ffi-call` (`ffi-sig`), and the raw entries only the standard library may call (`ffi-raw-p`) |
@@ -122,6 +127,9 @@ in `docs/compiler-pipeline.md`.
 | `reuse.zyl` | In-place reuse: marks a construction that may take the block of a unique, dead value (`ru-reuse`), with owning clones `f~own` |
 | `codegen.zyl` | `Icnf` to x86_64 GAS Intel-syntax assembly: chooses per function between the native path (lowering to MIR, `ml-expr`; emission, `mb-emit-one`) and the stack-machine emitter |
 | `mir.zyl` | The native backend's machine IR (`deftype MI`), liveness, and linear-scan register allocation (`mir-allocate`) |
+| `asm_x86.zyl` | x86-64 assembler for every form the compiler emits; byte-identical to GNU as per instruction |
+| `elf_link.zyl` | Static ELF linker (PT_TLS, non-exec stack, synthesized GOT) and the `rt.zo` runtime cache |
+| `rt_mode.zyl` | `--runtime-module`: the locked `%` primitives, exported `zyl_*` labels, and the bit intrinsics' lowering |
 | `pipeline.zyl` | The one implementation of the phase order (`compile-to-fns`, `compile-to-asm`) |
 | `doc.zyl` | `zyl doc`: Markdown from source comments |
 
@@ -210,21 +218,23 @@ dudect-style timing-leak check. See `docs/math-crypto.md`.
 
 ### The runtime
 
-The runtime, `runtime/rt/*.zyl` (as `rt.o`), is linked into every binary. Besides the
-pthread actor system it holds the try/catch frame stack, closure
-invocation, FFI pinning and timed foreign calls (`zyl_ffi_timed`),
-arenas and the memory budget, the region allocator (`zyl_ralloc`,
-`zyl_region_free`, `zyl_region_recycle`, size-class block pools),
-the division magic numbers the backend uses (`zyl_div_magic`,
-`zyl_div_shift`), string and byte
-primitives, atomics, the source-span table used for located
-diagnostics, AES-NI and system entropy for `stdlib/math`, the test
-harness, file and process helpers (`zyl_cc_compile`, `zyl_exec_cmd`,
-`zyl_run_bin`), the terminal primitives and interpreter support the
-REPL uses (value headers, float helpers, dynamic C calls), and the
-package system's BLAKE3 hash and canonical-key mangler
-(`zyl_blake3_hex`, `zyl_mangle_key`). Ed25519 signing and verification
-are Zyl code in `stdlib/math`, bundled into the compiler.
+`runtime/rt/*.zyl` is linked into every binary; `docs/runtime-in-zyl-design.md`
+has the design. By module:
+
+| Module | Contents |
+|---|---|
+| `rt.zyl` | The entry: `use`s every module |
+| `base`, `cpu`, `cstr`, `text`, `misc` | Raw word and byte helpers, `cpuid` features, C strings with SSE2/AVX2 scans, string and number text, raw memory for `stdlib/allocator` |
+| `heap`, `alloc` | The allocator (size classes over mmap), the memory budget, arenas, frame regions (`zyl_ralloc`, `zyl_region_*`), the pin arena |
+| `thread`, `start`, `sys`, `env`, `proc`, `os` | `clone` threads with TLS and futex locks, start-up and shutdown, syscalls, environment and the exit registry, child processes, files, directories and the terminal |
+| `out`, `io`, `panic`, `source` | Buffered stdout and per-actor output; exit, `read-line` and the interpreter's test transcript; try frames (pointer-mangled) and panics in text and JSON; registered sources and diagnostic snippets |
+| `chan`, `actor`, `ffitimed`, `call`, `ffitab` | Kahn channels and the schedulers, actors, the timed FFI worker and foreign calls, closure calls and division magic numbers, the interpreter's symbol table |
+| `float`, `fmt` | Float arithmetic entries and exact float text and parsing |
+| `tables`, `ctab`, `variant`, `uf`, `interp` | Word arrays, maps and vectors the compiler uses, variant equality and fields, union-find, the interpreter's value headers and interned names |
+| `bytes`, `crc`, `crypto`, `blake3`, `mangle` | ByteBuf/ByteSlice and atomics, CRC-32C, AES-NI and entropy, BLAKE3, canonical-key mangling |
+
+Ed25519 signing and verification are Zyl code in `stdlib/math`, bundled
+into the compiler.
 
 ### Tests
 

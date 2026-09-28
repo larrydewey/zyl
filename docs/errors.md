@@ -2,8 +2,8 @@
 
 Every diagnostic code the self-hosted compiler, the REPL interpreter and the
 runtime know about. The catalog lives in `stdlib/compiler/error_codes.zyl`
-(`error-codes`, one `(EC name phase severity message)` per code: 127
-entries, 126 distinct codes, `E_OUT_OF_MEMORY` appearing twice); spec §28
+(`error-codes`, one `(EC name phase severity message)` per code: 131
+entries, 130 distinct codes, `E_OUT_OF_MEMORY` appearing twice); spec §28
 lists the normative subset. The catalog was originally transcribed from the
 Rust bootstrap's `ZylError` enum (since removed; git history at `b8bc283`) and has
 since gained the self-hosted-only and package-system (§31) codes.
@@ -224,6 +224,11 @@ parts with `let` or move the sum into a helper function.
 | `E_INTERP_TAG` | runtime: the checking interpreter found an operand of the wrong tag at S (a type-checker bug) | `stdlib/repl/interp.zyl`: under `ZYL_INTERP_CHECK=1`, an operator whose operand tags break its rule, or a condition that is not 0 or 1 |
 | `E_OUT_OF_MEMORY` | runtime: memory budget exhausted - raise or remove it with ZYL_MAX_MEMORY | `runtime/rt/alloc.zyl` (`PANIC: error[E_OUT_OF_MEMORY]: ...`); a second catalog entry reads "runtime: out of memory" |
 | `E_USER_ERROR` (§28) | runtime: user error - M at S | catalog only |
+| `E_CHANNEL_NOT_OWNER` (§28) | runtime: this actor does not own the channel endpoint | `runtime/rt/chan.zyl`: a send or receive on an endpoint another actor owns |
+| `E_CHANNEL_CLOSED` (§28) | runtime: the channel's sender finished and every value was received | `runtime/rt/chan.zyl`: a receive on a closed, drained channel |
+| `E_CHANNEL_CAPACITY` (§28) | runtime: a channel buffer holds 1 to 16777216 values | `runtime/rt/chan.zyl`: `(chan n)` with n out of range |
+| `E_DEADLOCK` (§28) | runtime: every live actor is blocked on a channel or a join | `runtime/rt/chan.zyl`: after every actor's output, status 1 (not catchable) |
+| `E_ACTOR_LIMIT` (§28) | runtime: at most 1024 actors per program | `runtime/rt/actor.zyl`: the 1025th spawn |
 
 What a compiled program prints at runtime today: `(error "boom")` prints
 `PANIC: boom` and exits 1; outside a `test`, a failed `assert-true` or
@@ -341,7 +346,6 @@ All raised by the package modules named; all are §28 codes except
 | `W_SHADOWED_BINDING` | warning | `unused_check.zyl` | a binding shadows an outer binding of the same name |
 | `E_UNDEFINED_FUNCTION` | error | `stdlib/repl/interp.zyl` | a call names no function (the compiled path reports `E_UNBOUND_VARIABLE` from the type pass) |
 | `E_NOT_CALLABLE` | error | `stdlib/repl/interp.zyl` | a call's head is not a function or closure |
-| `E_UNSUPPORTED_INTERPRETED` | error | `stdlib/repl/interp.zyl` | spawning an actor, which needs a native entry point; compile the program instead |
 | `E_FFI_SYMBOL_NOT_FOUND` | error | `stdlib/repl/interp.zyl`, `runtime/rt/ffitimed.zyl` | an `ffi-call` names a symbol the REPL process does not export |
 | `E_NO_MAIN` | error | `stdlib/repl/interp.zyl` | the interpreted program defines no `main` (`zyl eval`) |
 | `E_INTERNAL` | error | `stdlib/repl/eval.zyl` | a REPL entry's wrapper function did not survive lowering (an internal fault) |

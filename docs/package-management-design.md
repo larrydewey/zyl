@@ -766,11 +766,8 @@ already holds; published versions are immutable) and
 ## 14. Implementation plan
 
 Every phase changes the compiler's own source, so every phase ends with
-`python3 selfhost/assemble.py`, `./boot.sh --bootstrap-from-self`,
-`./boot.sh`, and a committed seed, per `AGENTS.md`. (`assemble.py` and
-its single-file bundle were removed on 2026-09-24; the compiler is now
-built through ordinary module resolution, so the step is only the
-reseed and the verification.) Each phase is
+`./boot.sh --bootstrap-from-self`, `./boot.sh`, and a committed seed,
+per `AGENTS.md`. Each phase is
 independently useful and independently fixed-point-verified.
 
 *Status (2026-09-23): all five phases landed in one implementation
@@ -899,14 +896,11 @@ found by reading the modules.
   instances in the order the checker reaches them, so the design's
   "qualified type arguments in instance names" holds without an
   alphabetical instance sort.
-- **Qualified names are copied per occurrence.** This was done because
-  the old `type_inference.zyl` compared names with `=` (a pointer
-  comparison) and a shared key pointer woke a dormant, broken code path.
-  That module has since been deleted; `qualify.zyl` (`qf-ident`) still
-  copies.
+- **Qualified names are copied per occurrence** (`qualify.zyl`,
+  `qf-ident`).
 - **Capabilities, as enforced.** `ffi` guards `ffi-call`, `ffi-pin`,
-  `ffi-unpin` and `use` of `ffi/*`; `actor` guards `spawn`, `send`,
-  `receive`, `actor-self` and `actor/*`; `io` guards `file-open`, `file-read`,
+  `ffi-unpin` and `use` of `ffi/*`; `actor` guards `spawn`, `chan`,
+  `chan-send`, `chan-recv` and `actor/*`; `io` guards `file-open`, `file-read`,
   `file-write`, `file-close`, `read-line`, `core/io` and `io/*`;
   `secret` guards `use` of `math/secret/*` (not the `Secret` annotation
   itself); `native` is checked by `zyl build` when a manifest has a

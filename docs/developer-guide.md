@@ -509,29 +509,37 @@ rest of the suite, and `run-tests` prints a pass/fail summary.
 
 ## 14. Actors
 
-Lightweight, isolated concurrency: `spawn` starts an actor running a
-closure, `send` delivers a message to its mailbox, and `actor-wait`
-blocks until it finishes.
+`spawn` starts an actor running a closure, and actors talk over typed
+channels. `(chan n)` makes a channel with room for `n` values;
+`chan-tx` and `chan-rx` are its two ends, each owned by one actor at a
+time. A closure that captures an end takes it along to the new actor.
+`chan-send` blocks while the channel is full and `chan-recv` while it is
+empty, and there is no way to ask which channel is ready, so the output
+is the same under every schedule. `actor-wait` joins an actor and
+re-raises its panic.
 
 ```zyl
 (use actor/actor)
 
 (defn main ()
-  (let greeting "hello from an actor"
-    (let a (spawn (fn () (begin (print greeting) 0)))
-      (begin
-        (send a 42)
-        (actor-wait a))))
-  0)
+  (let c (chan 2)
+    (let tx (chan-tx c)
+      (let rx (chan-rx c)
+        (let a (spawn (fn () (begin (chan-send tx 20) (chan-send tx 22))))
+          (let x (chan-recv rx)
+            (let y (chan-recv rx)
+              (begin
+                (actor-wait a)
+                (print (+ x y))
+                0))))))))
 ```
 
-Actors don't share mutable state with each other or the spawning code;
-they communicate through messages. A `spawn` body may capture immutable
-values from the enclosing scope, as `greeting` is here; capturing a
-`let-mut` variable is `E_CAPABILITY_LEAK`. Inside an actor, `(receive)`
-takes the next message and `(actor-self)` names the actor. Actors run
-only in compiled code; the REPL's interpreter reports
-`E_UNSUPPORTED_INTERPRETED`.
+This prints `42`. Using an end the actor does not own is
+`E_CHANNEL_NOT_OWNER`, receiving from a closed and drained channel is
+`E_CHANNEL_CLOSED`, and when every live actor is blocked the program
+stops with `E_DEADLOCK`. A `spawn` body may capture immutable values;
+capturing a `let-mut` variable is `E_CAPABILITY_LEAK`. Actors also run
+in the REPL and under `zyl eval`.
 
 ## 15. FFI
 
