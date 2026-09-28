@@ -2,7 +2,6 @@
 (use base)
 (use ctab)
 
-(extern "sched_yield" () Int)
 
 (defmacro ft-ld64 (a) (ffi-call "%load64" a 1))
 (defmacro ft-st64 (a v) (ffi-call "%store64" a v 1))
@@ -27,7 +26,7 @@
       (if (= v 2) (ft-slots)
         (if (and (= v 0) (= (ffi-call "%cas" g 0 1 1) 0))
           (let _ (ft-fill (ft-slots)) (let _ (ffi-call "%fence" 1) (let _ (ffi-call "%xchg" g 2 1) (ft-slots))))
-          (let _ (ffi-call "sched_yield" 1) (ft-table)))))))
+          (let _ (ffi-call "%syscall0" 24 1) (ft-table)))))))
 
 ; The slot holding name, or 0.
 (defn ft-find (n)

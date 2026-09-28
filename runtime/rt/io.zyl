@@ -4,7 +4,7 @@
 (use alloc)
 (use out)
 
-(extern "exit" (Int) Int)
+(extern "zyl_rt_exit" (Int) Int)
 
 (defmacro rt-ld64 (a) (ffi-call "%load64" a 1))
 (defmacro rt-st64 (a v) (ffi-call "%store64" a v 1))
@@ -34,7 +34,7 @@
 
 ; (exit code): flush, then end the process.
 (defn zyl_exit (code)
-  (let _ (zyl_out_flush) (ffi-call "exit" code 1)))
+  (let _ (zyl_out_flush) (ffi-call "zyl_rt_exit" code 1)))
 
 ; (read-line): one line from stdin without its newline (or a trailing CR); "" at end of input.
 (defn zyl_read_line ()

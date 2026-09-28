@@ -3,7 +3,7 @@
 (use heap)
 (use text)
 
-(extern "getenv" (Int) Int)
+(extern "zyl_rt_getenv" (Int) Int)
 (extern "zyl_arena_oom" (Int String) Int)
 (extern "zyl_str_append_scan" (Int Int Int) Int)
 
@@ -187,7 +187,7 @@
 
 ; An unset variable reads as "", never 0.
 (defn zyl_getenv_str (name)
-  (let v (if (= (rt-w name) 0) 0 (ffi-call "getenv" (rt-w name) 1)) (if (= v 0) (rt-w "") v)))
+  (let v (if (= (rt-w name) 0) 0 (ffi-call "zyl_rt_getenv" (rt-w name) 1)) (if (= v 0) (rt-w "") v)))
 
 ; --- StrBuf: a String with {magic "ZYLSBUF1", len, cap} in front ---
 

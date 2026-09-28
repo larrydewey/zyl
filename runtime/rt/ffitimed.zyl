@@ -5,7 +5,6 @@
 (use alloc)
 (use actor)
 
-(extern "clock_gettime" (Int Int) Int)
 
 (defmacro ff-ld (a) (ffi-call "%load64" a 1))
 (defmacro ff-st (a v) (ffi-call "%store64" a v 1))
@@ -103,7 +102,7 @@
 ; CLOCK_MONOTONIC now plus ms, normalised.
 (defn ff-deadline (ms)
   (let ts (ffi-call "%tls" "ffi_ts" 16 1)
-    (let _ (ffi-call "clock_gettime" 1 ts 1)
+    (let _ (ffi-call "%syscall2" 228 1 ts 1)
       (let s (+ (ff-ld ts) (/ ms 1000))
         (let ns (+ (ff-ld (+ ts 8)) (* (% ms 1000) 1000000))
           (if (>= ns 1000000000)

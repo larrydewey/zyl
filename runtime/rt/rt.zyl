@@ -31,3 +31,4 @@
 (use thread)
 (use heap)
 (use out)
+(use env)

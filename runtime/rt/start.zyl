@@ -1,8 +1,9 @@
 ; Start-up and shutdown: the stack limit, the arenas, the exit-time teardown; stdout's flush and atexit.
 (use base)
+(use thread)
 (use out)
 
-(extern "atexit" (Int) Int)
+(extern "zyl_rt_atexit" (Int) Int)
 (extern "zyl_arenas_init" () Int)
 (extern "zyl_arenas_destroy" () Int)
 (extern "zyl_ffi_abandoned" () Int)
@@ -20,11 +21,12 @@
       0)))
 
 ; Every generated main calls this first; the teardown is registered before the actor drain, so it runs after it.
+; libc's exit (main returning to crt) reaches the registry through the one libc atexit hook.
 (defn zyl_ensure_arenas ()
   (let g (ffi-call "%global" "start_once" 8 1)
     (let _ (if (= (sr-ld64 g) 0)
              (let _ (sr-st64 g 1)
-               (let _ (sr-raise-stack-limit) (ffi-call "atexit" (ffi-call "%fn" "zyl_runtime_cleanup" 1) 1)))
+               (let _ (sr-raise-stack-limit) (let _ (sr-libc-atexit) (ffi-call "zyl_rt_atexit" (ffi-call "%fn" "zyl_runtime_cleanup" 1) 1))))
              0)
       (let _ (ffi-call "%call0" (ffi-call "%fn" "zyl_actor_init" 1) 1) (let _ (ffi-call "zyl_arenas_init" 1) 0)))))
 
@@ -36,4 +38,9 @@
 (defn zyl_term_flush () (zyl_out_flush))
 
 ; Registers the terminal restore handler (os.zyl calls this once, on the first raw_on).
-(defn zyl_term_atexit () (let _ (ffi-call "atexit" (ffi-call "%fn" "zyl_term_restore_atexit" 1) 1) 0))
+(defn zyl_term_atexit () (let _ (ffi-call "zyl_rt_atexit" (ffi-call "%fn" "zyl_term_restore_atexit" 1) 1) 0))
+
+; Hosted, main returns into libc's exit: hand it the registry (__cxa_atexit; atexit lives in libc_nonshared.a). Freestanding, zyl_rt_start runs it through zyl_rt_exit.
+(defn sr-libc-atexit ()
+  (let f (ffi-call "%fn-weak" "__cxa_atexit" 1)
+    (if (and (zyl_rt_hosted_p) (> f 0)) (ffi-call "%call3" f (ffi-call "%fn" "zyl_rt_run_atexit" 1) 0 0 1) 0)))

@@ -1,6 +1,7 @@
 ; Futex locks, threads (clone when freestanding, weak pthreads when hosted), static TLS, and the freestanding entry.
 (use base)
 
+(extern "zyl_rt_exit" (Int) Int)
 (extern "zyl_rt_clone" (Int Int Int Int Int) Int)
 
 (defmacro th-ld (a) (ffi-call "%load64" a 1))
@@ -98,7 +99,7 @@
               (let _ (ffi-call "%syscall2" 158 4098 tp 1)
                 (let _ (th-st (rt-freestanding) 1)
                   (let code (ffi-call "%call3" (ffi-call "%fn" "main" 1) argc argv envp 1)
-                    (ffi-call "zyl_exit" code 1)))))))))))
+                    (ffi-call "zyl_rt_exit" code 1)))))))))))
 
 ; --- threads: a handle is {ctid word, stack, stack size, thread pointer, pthread_t, owns stack} in its own page ---
 
