@@ -1,5 +1,8 @@
 # Zyl LSP Server — Architecture Plan
 
+> Note (2026-09-28): `runtime/actor_runtime.c` was replaced by the Zyl runtime in `runtime/rt/` (see `docs/runtime-in-zyl-design.md`); references to it below are historical.
+
+
 ## Current Status (verified against the code, 2026-09-25)
 
 **Status (2026-09-25):** since this section was first written the server

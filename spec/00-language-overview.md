@@ -6,7 +6,7 @@
 `spec/` is a structured reference copy of the canonical specification,
 organised by topic. The canonical text wins wherever the two disagree.
 Sections headed "Implementation Notes" describe the self-hosted compiler
-(`stdlib/compiler/*.zyl`, `selfhost/driver.zyl`, `runtime/actor_runtime.c`)
+(`stdlib/compiler/*.zyl`, `selfhost/driver.zyl`, `runtime/rt/*.zyl`)
 and are not normative; they record where the implementation departs from
 the specification rather than correcting the specification to match.
 

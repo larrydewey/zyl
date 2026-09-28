@@ -2,7 +2,7 @@
 
 **Canonical authority:** `zyl_specification.txt` §15 (also §7.4, §9.1 R2/R3, §31.9 `actor`)
 **Related:** `spec/06-capability-types.md`, `spec/07-region-memory-model.md`
-**Implementation:** `stdlib/compiler/expr_inner.zyl` (`parse-spawn`, `parse-send`), `stdlib/compiler/icnf.zyl` (lowering), `stdlib/compiler/mutability_check.zyl` (capture checks), `runtime/actor_runtime.c` (runtime), `stdlib/actor/actor.zyl` (library)
+**Implementation:** `stdlib/compiler/expr_inner.zyl` (`parse-spawn`, `parse-send`), `stdlib/compiler/icnf.zyl` (lowering), `stdlib/compiler/mutability_check.zyl` (capture checks), `runtime/rt/actor.zyl` and `thread.zyl` (runtime), `stdlib/actor/actor.zyl` (library)
 
 ---
 

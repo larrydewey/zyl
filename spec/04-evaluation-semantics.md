@@ -2,7 +2,7 @@
 
 **Canonical authority:** `zyl_specification.txt` §3, §7, §11, §12, §20.5
 **Related:** `spec/02-syntax-and-forms.md`, `spec/10-structs-and-data-types.md` (pattern matching)
-**Implementation:** all phases (evaluation order); `stdlib/compiler/icnf.zyl` and `stdlib/compiler/codegen.zyl` (lowering); `runtime/actor_runtime.c` (`zyl_panic`, try frames, test runner)
+**Implementation:** all phases (evaluation order); `stdlib/compiler/icnf.zyl` and `stdlib/compiler/codegen.zyl` (lowering); `runtime/rt/panic.zyl` (`zyl_panic`, try frames, test runner)
 
 ---
 

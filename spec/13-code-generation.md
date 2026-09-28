@@ -2,7 +2,7 @@
 
 **Canonical authority:** `zyl_specification.txt` §21 (Built-In Operations semantics), §22 steps 8–9
 **Related:** `spec/11-icnf-ir.md`, `spec/07-region-memory-model.md`
-**Implementation:** `stdlib/compiler/codegen.zyl`, `stdlib/compiler/mir.zyl` (MIR, liveness, linear-scan allocation), `runtime/actor_runtime.c`
+**Implementation:** `stdlib/compiler/codegen.zyl`, `stdlib/compiler/mir.zyl` (MIR, liveness, linear-scan allocation), `runtime/rt/*.zyl`
 
 ---
 
@@ -45,8 +45,9 @@ they call each other freely (`docs/native-backend-design.md`):
   (`.double`). No `.data` or `.bss` section is emitted; a package build
   appends a `.zyl_build` section holding `zyl_build_hash`.
 - Labels: `.L<N>`, unique per compile.
-- The assembly is linked by `cc` against `runtime/actor_runtime.c` (with
-  `pthread`).
+- The assembly is linked against the runtime (`rt.o`, from `runtime/rt`): static with
+  the runtime's own `_start` and no libc, or over libc's crt when the program calls
+  foreign C.
 
 ## Implementation: Symbols
 

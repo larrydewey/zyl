@@ -2,7 +2,7 @@
 
 **Canonical authority:** `zyl_specification.txt` §28
 **Related:** `spec/00-language-overview.md` (Formal Guarantees)
-**Implementation:** `stdlib/compiler/error_codes.zyl` (catalog), `stdlib/compiler/error_report.zyl` (rendering), `runtime/actor_runtime.c` (`zyl_panic`)
+**Implementation:** `stdlib/compiler/error_codes.zyl` (catalog), `stdlib/compiler/error_report.zyl` (rendering), `runtime/rt/panic.zyl` (`zyl_panic`)
 
 ---
 

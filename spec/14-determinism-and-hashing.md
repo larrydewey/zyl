@@ -2,7 +2,7 @@
 
 **Canonical authority:** `zyl_specification.txt` §20, §22 (step 11), §27, §31.12
 **Related:** `docs/architecture-decisions.md` §A3, `docs/design-rationale.md` §D10, `spec/16-package-system.md`
-**Implementation:** all phases; `selfhost/driver.zyl` (`drv-write-buildinfo`), `stdlib/compiler/lock.zyl` (graph hash), BLAKE3 in `runtime/actor_runtime.c`
+**Implementation:** all phases; `selfhost/driver.zyl` (`drv-write-buildinfo`), `stdlib/compiler/lock.zyl` (graph hash), BLAKE3 in `runtime/rt/blake3.zyl`
 
 ---
 

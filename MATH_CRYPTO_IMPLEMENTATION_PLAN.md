@@ -1,5 +1,8 @@
 # Zyl Math/Crypto Libraries — Implementation Plan
 
+> Note (2026-09-28): `runtime/actor_runtime.c` was replaced by the Zyl runtime in `runtime/rt/` (see `docs/runtime-in-zyl-design.md`); references to it below are historical.
+
+
 ## Current Status (verified against the code, 2026-09-25)
 
 **Phases 1-5 are implemented; Phase 0's enforcement half is implemented;

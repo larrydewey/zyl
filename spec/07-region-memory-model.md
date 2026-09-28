@@ -2,7 +2,7 @@
 
 **Canonical authority:** `zyl_specification.txt` §9, §10, §13, §14
 **Related:** `spec/06-capability-types.md`, `spec/09-ffi-contracts.md` (Pin region)
-**Implementation:** `stdlib/compiler/region_inference.zyl`, `runtime/actor_runtime.c` (arenas, big stack)
+**Implementation:** `stdlib/compiler/region_inference.zyl`, `runtime/rt/alloc.zyl` (arenas, regions), `runtime/rt/actor.zyl` (big stack)
 
 ---
 

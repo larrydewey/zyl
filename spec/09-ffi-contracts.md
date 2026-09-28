@@ -2,7 +2,7 @@
 
 **Canonical authority:** `zyl_specification.txt` §16, §23 (also §9.1 R4/R8, §31.9 `ffi`, §31.10 native dependencies)
 **Related:** `spec/07-region-memory-model.md`, `spec/06-capability-types.md`, `spec/16-package-system.md`
-**Implementation:** `stdlib/compiler/type_annotate.zyl` (`ta-ffi-typed`, `ta-ffi-extern`), `stdlib/compiler/ffi_sigs.zyl` (runtime signature table, `ffi-raw-p`), `stdlib/compiler/expr_inner.zyl` (`parse-extern`), `stdlib/compiler/arity_check.zyl` (`ffi-check-call`, `ffi-check-raw`), `stdlib/compiler/icnf.zyl` (`ic-ffi`), `stdlib/compiler/codegen.zyl` (`cg-fire-ext`), `runtime/actor_runtime.c` (pin arena, `zyl_ffi_timed`); contracts: `stdlib/compiler/expr_inner.zyl` (`contract-defn-body`)
+**Implementation:** `stdlib/compiler/type_annotate.zyl` (`ta-ffi-typed`, `ta-ffi-extern`), `stdlib/compiler/ffi_sigs.zyl` (runtime signature table, `ffi-raw-p`), `stdlib/compiler/expr_inner.zyl` (`parse-extern`), `stdlib/compiler/arity_check.zyl` (`ffi-check-call`, `ffi-check-raw`), `stdlib/compiler/icnf.zyl` (`ic-ffi`), `stdlib/compiler/codegen.zyl` (`cg-fire-ext`), `runtime/rt/alloc.zyl` (pin arena), `runtime/rt/ffitimed.zyl` (`zyl_ffi_timed`); contracts: `stdlib/compiler/expr_inner.zyl` (`contract-defn-body`)
 
 ---
 

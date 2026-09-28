@@ -104,7 +104,7 @@ Over 200 bytes, truncate the prefix to 184 and append 16 hex digits of
 BLAKE3 over the full key.
 
 > **Lossy sanitizing is forbidden here.** `zyl_cstr_sanitize`
-> (`runtime/actor_runtime.c`) maps every byte outside `[A-Za-z0-9_]` to
+> (`runtime/rt/mangle.zyl`) maps every byte outside `[A-Za-z0-9_]` to
 > `_`, so `acme/json`, `acme.json` and `acme-json` all collapse to
 > `acme_json`. Using it on the label path would silently merge distinct
 > functions. The code generator applies `zyl_mangle_key` to every
