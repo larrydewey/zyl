@@ -150,6 +150,41 @@ no regression against the C version before that C code is deleted.
     statically with `ld`, or dynamically only for `ffi-call` programs.
 11. Stretch: a Zyl assembler and ELF linker, so no external tool is left.
 
+## The libc-free phase
+
+After runtime/actor_runtime.c is gone, the runtime still reaches libc
+through `extern`: malloc, pthreads, stdio, dlsym, posix_spawn and
+atexit. Removing libc means providing each of
+these, and it splits programs into two link modes.
+
+- **Freestanding (default):** a program with no `ffi-call` to foreign
+  code. The runtime emits `_start`. It reads argc, argv, envp and auxv
+  from the initial stack, allocates the static TLS block from PT_TLS
+  (found through AT_PHDR), and sets fs with arch_prctl, including the
+  x86-64 TCB self pointer at fs:0, which `%tls` relies on. It then calls
+  main. The replacements for the libc pieces:
+  - malloc: mmap-backed size classes;
+  - threads: clone with CLONE_SETTLS and CLONE_CHILD_CLEARTID, a TLS
+    block per thread, and futex-based mutexes, condition variables and
+    joins;
+  - stdio: a buffered stdout/stderr writer, which generated code's print
+    calls too, and which is flushed at exit and before reads and execs;
+  - the environment: getenv scans envp;
+  - process spawning: fork/execve for spawn;
+  - exit: an own atexit registry, then exit_group.
+
+  The binary is linked with `ld -static`, with no libc.
+- **Hosted:** a program that calls foreign C code. That code needs
+  libc's own start-up and TLS, and needs pthreads if a foreign callback
+  runs on an FFI worker. So the program keeps libc's crt, and the
+  runtime is built in a hosted flavour whose thread and memory entries
+  call libc. The flavour is a link-time choice. The compiler picks it
+  from whether the program's graph uses `ffi-call` on a non-runtime
+  symbol, and both flavours must give identical observable behaviour.
+
+The `stdout` ordering rule holds in both: every write to fd 1 goes
+through one buffer.
+
 ## Performance
 
 Perf is the project's top priority (see `docs/native-backend-design.md`).
