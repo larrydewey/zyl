@@ -17,3 +17,4 @@
 (use alloc)
 (use os)
 (use uf)
+(use misc)

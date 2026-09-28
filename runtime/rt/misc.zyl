@@ -1,0 +1,46 @@
+; Raw memory for stdlib/allocator, the header-less str-append path, environment lookups.
+(use base)
+
+(extern "malloc" (Int) Int)
+(extern "free" (Int) Int)
+(extern "getenv" (Int) Int)
+
+(defmacro rt-ld64 (a) (ffi-call "%load64" a 1))
+(defmacro rt-st64 (a v) (ffi-call "%store64" a v 1))
+
+(defn rt-note (msg) (let _ (ffi-call "write" 2 msg (rt-strlen (rt-w msg)) 1) 0))
+
+(defn zyl_mem_alloc (size) (ffi-call "malloc" size 1))
+(defn zyl_mem_free (ptr) (let _ (ffi-call "free" ptr 1) 0))
+(defn zyl_mem_read (ptr) (if (= ptr 0) (rt-note "zyl: mem-read: null pointer\n") (rt-ld64 ptr)))
+(defn zyl_mem_write (ptr value) (if (= ptr 0) (let _ (rt-note "zyl: mem-write: null pointer\n") value) (let _ (rt-st64 ptr value) value)))
+
+; Writes byte b at index i (the terminator is not managed).
+(defn zyl_cstr_byte_set (ptr i b)
+  (if (or (= ptr 0) (< i 0)) 0 (if (< ptr 4096) (let _ (rt-bad-str ptr "cstr-byte-set") 0) (let _ (rt-st8 (+ ptr i) (bit-and b 255)) 0))))
+
+; The variable's value, or 0 when unset.
+(defn zyl_getenv (name) (ffi-call "getenv" (rt-w name) 1))
+
+; Regions are on unless ZYL_REGIONS=0 at compile time.
+(defn zyl_regions_enabled ()
+  (let e (ffi-call "getenv" (rt-w "ZYL_REGIONS") 1) (not (and (> e 0) (and (= (rt-ld8 e) 48) (= (rt-ld8 (+ e 1)) 0))))))
+
+; --- str-append without a StrBuf header: a per-thread 64-slot end cache {dst[64], end[64]} ---
+
+(defn rt-lshr64 (x n) (bit-and (shr x n) (- (shl 1 (- 64 n)) 1)))
+
+(defn rt-zsa-index (dst)
+  (let x1 (* (bit-xor dst (rt-lshr64 dst 33)) -49064778989728563)
+    (let x2 (* (bit-xor x1 (rt-lshr64 x1 33)) -4265267296055464877)
+      (bit-and (bit-xor x2 (rt-lshr64 x2 33)) 63))))
+
+(defn zyl_str_append_scan (dst src cap)
+  (let c (ffi-call "%tls" "zsa" 1024 1)
+    (let i (rt-zsa-index dst)
+      (let d (if (= (rt-ld64 (+ c (* i 8))) dst) (rt-ld64 (+ (+ c 512) (* i 8))) (+ dst (rt-strlen dst)))
+        (let n (rt-strlen src)
+          (if (and (> cap 0) (> (+ (+ (- d dst) n) 1) cap)) (ffi-call "zyl_panic" "codegen buffer limit exceeded" 1)
+            (let _ (rt-copy d src n)
+              (let _ (rt-st8 (+ d n) 0)
+                (let _ (rt-st64 (+ c (* i 8)) dst) (let _ (rt-st64 (+ (+ c 512) (* i 8)) (+ d n)) dst))))))))))

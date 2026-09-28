@@ -63,10 +63,6 @@ void* ffi_pin(long long value);
 long long ffi_unpin(long long ptr);
 
 /* Raw memory arena. */
-long long zyl_mem_alloc(long long size);
-long long zyl_mem_free(long long ptr);
-long long zyl_mem_read(long long ptr);
-long long zyl_mem_write(long long ptr, long long value);
 long long zyl_cstr_len(long long ptr);
 long long zyl_cstr_eq(long long p1, long long p2);
 long long zyl_cstr_cmp(long long p1, long long p2);
@@ -87,7 +83,6 @@ const char* zyl_try_last_msg(void);
 void zyl_panic(const char* msg);
 /* Character-level string access (self-hosting lexer substrate). */
 long long zyl_cstr_byte_at(long long ptr, long long i);
-void zyl_cstr_byte_set(long long ptr, long long i, long long b);
 
 /* Region-based arena allocator.
    Deterministic reclamation: arena-reset frees every block at once; the
@@ -377,5 +372,14 @@ long long zyl_uf_find(long long a);
 long long zyl_uf_union(long long a, long long b);
 long long zyl_uf_raise(long long a, long long level);
 long long zyl_uf_level(long long a);
+
+long long zyl_mem_alloc(long long size);
+long long zyl_mem_free(long long ptr);
+long long zyl_mem_read(long long ptr);
+long long zyl_mem_write(long long ptr, long long value);
+long long zyl_cstr_byte_set(long long ptr, long long i, long long b);
+long long zyl_getenv(long long name);
+long long zyl_regions_enabled(void);
+long long zyl_str_append_scan(long long dst, long long src, long long cap);
 
 #endif

@@ -6,7 +6,6 @@ long long zyl_ralloc(long long size, long long rp);
    annotated, with zyl_cur_region set just before the call. Every other
    caller (the interpreter, C code inside this runtime) gets the heap. */
 static __thread long long g_result_region = 0;
-long long zyl_regions_enabled(void);
 #define ZYL_RESULT_ALLOC(n) zyl_ralloc((long long)(n), g_result_region)
 static volatile int g_threads_started; /* see ZYL_ARENA_LOCK */
 #include <stdint.h>
@@ -638,40 +637,6 @@ long long ffi_unpin(long long ptr) {
    Pointers are passed to/from Zyl as Int (64-bit).
    ========================================================================== */
 
-/* Same rationale as zyl_call_guard (zyl_callN, above): every one of these
- * "string pointer" arguments is a Zyl Int that can be corrupted, brute-
- * forced, or simply a wrong value the program computed -- 0 is already a
- * valid "empty string" sentinel these helpers special-case, but a non-zero
- * value under ZYL_MIN_CALL_ADDR is never a real mapping and would run
- * strlen/strcmp/indexing off into unmapped memory (CWE-125 over-read).
- * Rejects that range cheaply before any of it runs. */
-static int zyl_cstr_valid(long long ptr, const char* who) {
-    if (ptr && ptr < ZYL_MIN_CALL_ADDR) {
-        fprintf(stderr, "zyl: %s: invalid string pointer 0x%llx\n", who, (unsigned long long)ptr);
-        return 0;
-    }
-    return 1;
-}
-
-long long zyl_mem_alloc(long long size) {
-    return (long long)(size_t)malloc((size_t)size);
-}
-
-long long zyl_mem_free(long long ptr) {
-    free((void*)(size_t)ptr);
-    return 0;
-}
-
-long long zyl_mem_read(long long ptr) {
-    if (!ptr) { fprintf(stderr, "zyl: mem-read: null pointer\n"); return 0; }
-    return *(volatile long long*)(size_t)ptr;
-}
-
-long long zyl_mem_write(long long ptr, long long value) {
-    if (!ptr) { fprintf(stderr, "zyl: mem-write: null pointer\n"); return value; }
-    *(volatile long long*)(size_t)ptr = value;
-    return value;
-}
 
 /* ==========================================================================
    Character-level string access — substrate for the self-hosting lexer.
@@ -682,12 +647,6 @@ long long zyl_mem_write(long long ptr, long long value) {
    made. The accessors below trust that invariant and never call strlen,
    so they are restricted to the standard library (ffi-raw-p). */
 
-/* Write byte `b` at index `i` of a buffer (does not manage the terminator). */
-void zyl_cstr_byte_set(long long ptr, long long i, long long b) {
-    if (!ptr || i < 0) return;
-    if (!zyl_cstr_valid(ptr, "cstr-byte-set")) return;
-    ((unsigned char*)(size_t)ptr)[i] = (unsigned char)b;
-}
 
 /* Decode a Zyl string literal body (src[start..end], `start` points past the
    opening quote): handle \n \t \" \\ escapes. Returns a NUL-terminated buffer
@@ -720,7 +679,6 @@ void zyl_cstr_byte_set(long long ptr, long long i, long long b) {
    Keyed by address or content, probed only (never iterated); a miss reads 0. */
 
 typedef struct { uintptr_t key; long long val; } ZylAttrSlot;
-
 
 /* Process-wide instances, created on first use. */
 
@@ -1214,58 +1172,10 @@ long long zyl_f_error(long long msg) {
  * different buffers that hash to the same slot would otherwise race on a
  * shared cache entry and could write through a stale cached end-pointer
  * into memory they don't own. Use SipHash-like mixing for better distribution. */
-#define ZSA_CACHE_SLOTS 64
-static _Thread_local long long zsa_cache_dst[ZSA_CACHE_SLOTS];
-static _Thread_local char* zsa_cache_end[ZSA_CACHE_SLOTS];
 
-static inline size_t zsa_cache_index(long long dst) {
-    /* SipHash-like mixing for better distribution across cache slots */
-    uintptr_t x = (uintptr_t)dst;
-    x ^= x >> 33;
-    x *= 0xff51afd7ed558ccdULL;
-    x ^= x >> 33;
-    x *= 0xc4ceb9fe1a85ec53ULL;
-    x ^= x >> 33;
-    return (size_t)(x % ZSA_CACHE_SLOTS);
-}
-
-/* str-append's non-StrBuf path (rt/tables.zyl); C until Zyl can address a thread-local block. */
-long long zyl_str_append_scan(long long dst, long long src, long long cap) {
-    size_t idx = zsa_cache_index(dst);
-    char* base = (char*)(size_t)dst;
-    char* d;
-    if (zsa_cache_dst[idx] == dst) {
-        d = zsa_cache_end[idx];
-    } else {
-        d = base;
-        while (*d) d++;
-    }
-    const char* s = (const char*)(size_t)src;
-    size_t slen = strlen(s);
-    if (cap > 0 && (size_t)(d - base) + slen + 1 > (size_t)cap) {
-        zyl_panic("codegen buffer limit exceeded");
-    }
-    while (*s) { *d++ = *s++; }
-    *d = 0;
-    zsa_cache_dst[idx] = dst;
-    zsa_cache_end[idx] = d;
-    return dst;
-}
 
 /* ── CLI helpers (used by the self-hosted driver) ─────────────────────── */
 #include <unistd.h>
-
-/* Returns the value of environment variable `name`, or 0 (null) if
-   unset. Contents valid until the next call (matches zyl_getcwd/
-   zyl_dirname_cstr's own static-buffer convention) -- getenv's own
-   returned pointer is not copied since its storage is already stable
-   for the process's lifetime, but callers must still copy out (e.g.
-   via str-concat) before any other env-touching call if they need the
-   value to survive one. */
-long long zyl_getenv(long long name) {
-    const char* v = getenv((const char*)(size_t)name);
-    return v ? (long long)(size_t)v : 0;
-}
 
 /* Diagnostic format: 1 = JSON (one object per diagnostic), 0 = text.
  * Set only by the compiler (--error-format=json); programs keep text. */
@@ -2089,12 +1999,6 @@ long long zyl_print_float(long long bits) { printf("%f\n", zyl_d_of(bits)); retu
 #define ZYL_R_BEGIN long long saved_ = g_result_region; g_result_region = (long long)(size_t)zyl_cur_region;
 #define ZYL_R_END g_result_region = saved_;
 long long zyl_f_text_r(long long bits) { ZYL_R_BEGIN long long v = zyl_f_text(bits); ZYL_R_END return v; }
-
-/* Regions are on unless ZYL_REGIONS=0 was set for the compile. */
-long long zyl_regions_enabled(void) {
-    const char* e = getenv("ZYL_REGIONS");
-    return (e && e[0] == '0' && e[1] == 0) ? 0 : 1;
-}
 
 /* Sixteen process-wide word cells for compiler passes (the type pass's
    strict-mode flag and current node). */
