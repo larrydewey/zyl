@@ -413,7 +413,7 @@
       (let en (w-alloc (mir-arena) (+ nv 1))
         (let _ (mir-iv-init st en 0 nv)
           (let _ (mir-iv-scan a n words lin st en 0 nv u)
-            (mir-iv-list a n st en 0 nv)))))))
+            (mir-iv-list a n st en 0 nv lin words)))))))
 
 (defn mir-iv-init (st en v nv)
   (if (>= v nv) unit (let _ (w-set st v -1) (let _ (w-set en v -1) (mir-iv-init st en (+ v 1) nv)))))
@@ -444,19 +444,22 @@
     (let _ (if (bs-get lin words i v) (mir-iv-touch st en v i) unit)
       (mir-iv-live words lin st en i (+ v 1) nv))))
 
-(defn mir-iv-list (a n st en v nv)
+(defn mir-iv-list (a n st en v nv lin words)
   (if (>= v nv)
     Nil
     (if (< (w-get st v) 0)
-      (mir-iv-list a n st en (+ v 1) nv)
-      (Cons (Iv v (w-get st v) (w-get en v) (mir-crosses a (+ (w-get st v) 1) (w-get en v)))
-            (mir-iv-list a n st en (+ v 1) nv)))))
+      (mir-iv-list a n st en (+ v 1) nv lin words)
+      (Cons (Iv v (w-get st v) (w-get en v) (mir-crosses a (w-get st v) (w-get en v) lin words v n))
+            (mir-iv-list a n st en (+ v 1) nv lin words)))))
 
-; A call at a position in [from, to): the value is live after it.
-(defn mir-crosses (a from to)
+; A call at a position in [from, to) after which the value is still live.
+(defn mir-crosses (a from to lin words v n)
   (if (>= from to)
     false
-    (if (mi-is-call (ffi-call "zyl_array_get" a from 1000)) true (mir-crosses a (+ from 1) to))))
+    (if (and (mi-is-call (ffi-call "zyl_array_get" a from 1000))
+             (and (not (= (mi-def (ffi-call "zyl_array_get" a from 1000)) v)) (and (< (+ from 1) n) (bs-get lin words (+ from 1) v))))
+      true
+      (mir-crosses a (+ from 1) to lin words v n))))
 
 ; --- linear scan ------------------------------------------------------------
 

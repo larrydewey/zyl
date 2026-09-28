@@ -3745,10 +3745,12 @@
                          (Cons "    xor eax, eax"
                          (Cons (str-concat "    jmp " ldone)
                          (Cons (str-concat lslow ":")
+                         ; the value first: it may live in rsi or rdi
+                         (Cons (str-concat "    mov r11, " (mb-loc-text fr v))
                          (Cons "    mov rdi, rdx"
                          (Cons "    mov rsi, rax"
-                         (Cons (str-concat "    mov rdx, " (mb-loc-text fr v))
-                         (Cons "    call zyl_array_set" Nil))))))))))))))))))
+                         (Cons "    mov rdx, r11"
+                         (Cons "    call zyl_array_set" Nil)))))))))))))))))))
                        (cg-emit-lines st2
                          (Cons "    mov rax, [rdx+8]"
                          (Cons (str-concat "    jmp " ldone)

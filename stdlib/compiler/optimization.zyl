@@ -217,7 +217,7 @@
 (defn opt-self-unrollable (name _params body kinds)
   (and (not (str-eq name "main"))
     (and (opt-kinds-int kinds)
-      (and (<= (opt-size body 0) (opt-leaf-limit))
+      (and (<= (opt-size body 0) 18)
         (and (opt-plain body) (opt-nontail-self body name true))))))
 
 (defn opt-acc-op (op) (or (= op 0) (or (= op 2) (and (>= op 11) (<= op 13)))))
@@ -458,7 +458,7 @@
 
 ; A leaf (no calls but runtime ones) may be larger: copying it adds no
 ; call sites, and it is typically an accessor with a bounds check.
-(defn opt-leaf-limit () (* 3 (opt-inline-limit)))
+(defn opt-leaf-limit () (* 4 (opt-inline-limit)))
 
 ; A candidate small enough anywhere, or a leaf small enough for a loop.
 (defn opt-inlinable (name _params body kinds)
