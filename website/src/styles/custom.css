@@ -1,0 +1,130 @@
+/* Zyl branding (assets/BRANDING.md): teal on navy, Inter for text, JetBrains Mono for code. */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+:root {
+	--sl-font: 'Inter', system-ui, sans-serif;
+	--sl-font-mono: 'JetBrains Mono', ui-monospace, monospace;
+	--zyl-teal: #00B4A6;
+	--zyl-teal-bright: #41E5B7;
+	--zyl-teal-light: #ADE8DE;
+	--zyl-navy: #0A2540;
+	--zyl-dark: #0F172A;
+}
+
+/* Dark: Neutral Dark ground, navy panels, teal accent. */
+:root[data-theme='dark'] {
+	--sl-color-white: #F4FAF9;
+	--sl-color-gray-1: #E4EFEE;
+	--sl-color-gray-2: #C3D6D6;
+	--sl-color-gray-3: #8EA7AE;
+	--sl-color-gray-4: #5E7A86;
+	--sl-color-gray-5: #1E3450;
+	--sl-color-gray-6: #0E1B2E;
+	--sl-color-black: #0F172A;
+	--sl-color-accent-low: #0A2540;
+	--sl-color-accent: #00B4A6;
+	--sl-color-accent-high: #ADE8DE;
+	--sl-color-bg-nav: #0B1422;
+	--sl-color-bg-sidebar: #0B1422;
+	--sl-color-bg-inline-code: #0A2540;
+	--sl-color-hairline-light: #1E3450;
+	--sl-color-hairline: #172a42;
+	--sl-color-hairline-shade: #081020;
+}
+
+/* Light: navy ink on off-white, a darker teal for contrast. */
+:root[data-theme='light'] {
+	--sl-color-white: #0A2540;
+	--sl-color-gray-1: #0F2A45;
+	--sl-color-gray-2: #23405A;
+	--sl-color-gray-3: #4B6470;
+	--sl-color-gray-4: #7C949E;
+	--sl-color-gray-5: #C9DCD8;
+	--sl-color-gray-6: #E3EFEC;
+	--sl-color-gray-7: #F2F7F6;
+	--sl-color-black: #FFFFFF;
+	--sl-color-accent-low: #ADE8DE;
+	--sl-color-accent: #00857B;
+	--sl-color-accent-high: #0A2540;
+	--sl-color-text: #1B3045;
+	--sl-color-bg-nav: #FFFFFF;
+	--sl-color-bg-sidebar: #F6FAF9;
+	--sl-color-bg-inline-code: #E3EFEC;
+	--sl-color-hairline-light: #DCE9E6;
+	--sl-color-hairline: #DCE9E6;
+	--sl-color-hairline-shade: #C9DCD8;
+}
+
+.site-title img {
+	height: 2.1rem;
+	width: auto;
+}
+
+.site-title {
+	font-weight: 800;
+	letter-spacing: -0.01em;
+}
+
+h1, h2, h3 {
+	font-weight: 800;
+	letter-spacing: -0.015em;
+}
+
+/* The hero: the full logo, and the tagline in balanced parentheses. */
+.hero {
+	padding-block: 3rem 2rem;
+}
+
+.hero img.zyl-hero {
+	width: min(16rem, 55vw);
+	height: auto;
+}
+
+.paren {
+	color: var(--zyl-teal);
+	font-weight: 400;
+}
+
+.tagline-sub {
+	font-family: var(--sl-font-mono);
+	color: var(--sl-color-accent);
+	letter-spacing: 0.08em;
+	font-size: var(--sl-text-sm);
+	text-transform: uppercase;
+}
+
+.parry {
+	float: right;
+	width: 96px;
+	margin: 0 0 1rem 1.5rem;
+}
+
+/* Gradient rule under page titles, from the logo's Z. */
+.content-panel:first-of-type h1#_top::after {
+	content: '';
+	display: block;
+	width: 3.5rem;
+	height: 3px;
+	margin-top: 0.6rem;
+	border-radius: 2px;
+	background: linear-gradient(90deg, #41E5B7, #22B8CC);
+}
+
+/* Sidebar topic switcher and active link in brand teal. */
+:root[data-theme='dark'] .sidebar-content a[aria-current='page'] {
+	background: linear-gradient(90deg, rgba(0, 180, 166, 0.22), rgba(0, 180, 166, 0.06));
+	color: var(--zyl-teal-light);
+	border-left: 2px solid var(--zyl-teal-bright);
+}
+
+:root[data-theme='light'] .sidebar-content a[aria-current='page'] {
+	background: #D7F3EE;
+	color: #0A2540;
+	border-left: 2px solid #00857B;
+}
+
+/* Cards: every icon in brand teal instead of Starlight's rotating hues. */
+.card {
+	--sl-card-border: var(--sl-color-accent);
+	--sl-card-bg: var(--sl-color-accent-low);
+}

@@ -1,0 +1,28 @@
+(use actor/actor)
+
+;; Adds what arrives on rx and reports each running total on tx.
+(defn counter (rx tx total)
+  (let n (chan-recv rx)
+    (if (= n 0)
+      0
+      (let t (+ total n)
+        (begin (chan-send tx t) (counter rx tx t))))))
+
+(defn main ()
+  (let jobs (chan 4)
+    (let totals (chan 4)
+      (let r (chan-rx jobs)
+        (let w (chan-tx totals)
+          (let a (spawn (fn () (counter r w 0)))
+            (let tx (chan-tx jobs)
+              (let rx (chan-rx totals)
+                (begin
+                  (chan-send tx 5)
+                  (chan-send tx 7)
+                  (chan-send tx 30)
+                  (chan-send tx 0)
+                  (print (chan-recv rx))
+                  (print (chan-recv rx))
+                  (print (chan-recv rx))
+                  (actor-wait a)
+                  0)))))))))

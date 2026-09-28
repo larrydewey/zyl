@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.astro/
+# Generated from book/src by scripts/import_book.py
+src/content/docs/learn/
+src/content/docs/reference/
+src/content/docs/internals/
+src/content/docs/systems/
+src/content/docs/tooling/
+src/content/docs/appendix/
+src/sidebar.json
+public/book/

@@ -19,7 +19,7 @@ build it with `./boot.sh` first.
 ./run_regression_tests.sh --dry-run          # list the selected tests without running them
 ```
 
-A `--full --no-boot` run is 376 tests and takes well under a minute on a
+A `--full --no-boot` run is 377 tests and takes well under a minute on a
 current machine (22 s as of 2026-09-28). `--full` adds one more entry,
 `boot/fixed-point`, which runs `./boot.sh` and takes as long as a
 bootstrap does.
@@ -105,9 +105,9 @@ checkout's standard library, not an installed one.
 | packages-fail | `tests/packages-fail/*/app/main.zyl` | 9 |
 | packages-build | `tests/packages-build/*/app` via `zyl build` | 1 |
 | compile-fail | `tests/compile-fail/*.zyl` | 138 |
-| scripts | `tests/scripts/*.sh` | 16 |
+| scripts | `tests/scripts/*.sh` | 17 |
 | LSP protocol | `tests/lsp/lsp_protocol_test.py` | 1 |
-| **total** | | **376** |
+| **total** | | **377** |
 
 `--quick` is 7 tests: the unit test, the five smoke tests and the LSP
 protocol test.
@@ -327,6 +327,7 @@ tests/
 │   ├── runtime-module-lock.sh # --runtime-module is refused elsewhere
 │   ├── build-cache.sh, package-index.sh
 │   ├── repl-session.sh, uninstall.sh
+│   ├── site-examples.sh       # website/examples compile and print their .out/.err
 │   └── vscode-problem-matcher.sh, zyl-doc.sh
 ├── lsp/
 │   └── lsp_protocol_test.py   # real JSON-RPC against build/boot/zyl-lsp

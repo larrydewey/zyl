@@ -1,0 +1,150 @@
+---
+title: Zyl
+description: Deterministic Power. Expressive Safety. A self-hosting Lisp systems language.
+template: splash
+tableOfContents: false
+editUrl: false
+lastUpdated: false
+hero:
+  title: '<span class="paren">(</span>Deterministic Power. Expressive Safety.<span class="paren">)</span>'
+  tagline: '<span class="tagline-sub">Hygienic · Homoiconic · Hardened</span><br/><br/>Zyl is a Lisp for systems programming: region-based memory, capability types and sound type inference, compiled to static x86_64 executables with no libc, assembled and linked by the compiler itself. Same source, same binary, every time.'
+  image:
+    html: '<img src="/zyl/zyl-logo.png" alt="The Zyl logo: a Z between balanced parentheses" class="zyl-hero" />'
+  actions:
+    - text: Learn Zyl
+      link: /zyl/learn/getting-started/
+      icon: right-arrow
+    - text: Reference
+      link: /zyl/reference/lexical-structure/
+      variant: minimal
+    - text: GitHub
+      link: https://github.com/larrydewey/zyl
+      icon: github
+      variant: minimal
+---
+
+import { Card, CardGrid, LinkCard, Steps, Tabs, TabItem, Code } from '@astrojs/starlight/components';
+import helloSrc from '../../../examples/hello.zyl?raw';
+import helloOut from '../../../examples/hello.out?raw';
+import shapesSrc from '../../../examples/shapes.zyl?raw';
+import shapesOut from '../../../examples/shapes.out?raw';
+import arenaSrc from '../../../examples/arena.zyl?raw';
+import arenaOut from '../../../examples/arena.out?raw';
+import counterSrc from '../../../examples/counter.zyl?raw';
+import counterOut from '../../../examples/counter.out?raw';
+import contractsSrc from '../../../examples/contracts.zyl?raw';
+import contractsOut from '../../../examples/contracts.out?raw';
+import contractsErr from '../../../examples/contracts.err?raw';
+
+export const run = (name, out, err = '') => ('$ zyl ' + name + '.zyl -o ' + name + ' && ./' + name + String.fromCharCode(10) + out + err).trimEnd();
+
+## A Lisp that knows where every byte lives
+
+
+<Tabs>
+	<TabItem label="hello.zyl">
+		<Code code={helloSrc} lang="zyl" title="hello.zyl" />
+		<Code code={run('hello', helloOut)} lang="text" title="Output" />
+	</TabItem>
+	<TabItem label="shapes.zyl">
+		<Code code={shapesSrc} lang="zyl" title="shapes.zyl" />
+		<Code code={run('shapes', shapesOut)} lang="text" title="Output" />
+	</TabItem>
+	<TabItem label="arena.zyl">
+		<Code code={arenaSrc} lang="zyl" title="arena.zyl" />
+		<Code code={run('arena', arenaOut)} lang="text" title="Output" />
+	</TabItem>
+	<TabItem label="counter.zyl">
+		<Code code={counterSrc} lang="zyl" title="counter.zyl" />
+		<Code code={run('counter', counterOut)} lang="text" title="Output" />
+	</TabItem>
+	<TabItem label="contracts.zyl">
+		<Code code={contractsSrc} lang="zyl" title="contracts.zyl" />
+		<Code code={run('contracts', contractsOut, contractsErr)} lang="text" title="Output" mark={['rolled back', 'PANIC']} />
+
+		The second transfer credits `to` and then fails the debit's precondition. `checkpoint` undoes every `set!` its body made, so the books still balance at 100 and 0; without it, `to` would keep 500 that never left `from`. The last call has no `recover`, so the violation ends the program.
+	</TabItem>
+</Tabs>
+
+<CardGrid>
+	<Card title="Region-based memory" icon="seti:db">
+		No garbage collector and no `free`. Escape analysis places each
+		allocation in the call's own region, the caller's result region or the
+		heap, and a call's region is released when it returns.
+	</Card>
+	<Card title="Capability types" icon="approve-check">
+		Shared values are immutable. Only a `let-mut` binding is exclusive and
+		assignable, and struct fields cannot be mutated in place.
+	</Card>
+	<Card title="Sound type inference" icon="seti:config">
+		Hindley-Milner inference with traits resolved statically. Write no
+		annotations and still get every type error reported at once.
+	</Card>
+	<Card title="Deterministic actors" icon="random">
+		Typed single-sender channels form a Kahn process network: receive
+		blocks, there is no select, and the output is the same under every
+		schedule.
+	</Card>
+	<Card title="Hygienic macros" icon="seti:clojure">
+		Innermost-first expansion with gensym hygiene, quasiquote and
+		splicing. Code is data, and generated names never capture yours.
+	</Card>
+	<Card title="Bounded FFI and secrets" icon="seti:lock">
+		Every foreign call names its symbol and carries a timeout. A `Secret`
+		type and a constant-time cryptography library guard key material.
+	</Card>
+</CardGrid>
+
+## Mistakes stop at compile time
+
+Each diagnostic carries its error code from the specification. The language
+server runs the same compiler, so your editor shows these as you type.
+
+```zyl
+(defn area (s)
+  (match s
+    (Circle r (* 3 (* r r)))))
+```
+
+```text
+error[E_NON_EXHAUSTIVE_MATCH]: match over `Shape` does not cover variant `Rect`
+  --> shapes.zyl:4:3
+   |
+ 4 |   (match s
+   |   ^
+   = help: add an arm for that variant, or a `_` catch-all
+```
+
+## The compiler reproduces itself, byte for byte
+
+<img src="/zyl/parry.svg" alt="Parry the Owl, the Zyl mascot" class="parry" />
+
+Zyl's compiler and runtime are written in Zyl. The repository commits the
+compiler's own assembly as a seed, and every build checks that the seed is
+still a fixed point.
+
+<Steps>
+
+1. **Link the seed.** The committed assembly, `stage2.s`, is linked with `cc` into stage 1. No other toolchain is involved.
+
+2. **Rebuild from source.** Stage 1 compiles the compiler's source. The assembly it emits, and the runtime's, must match the committed seed exactly.
+
+3. **Close the loop.** Stage 2 compiles the same source again. If its output differs by a single byte, the build fails.
+
+</Steps>
+
+```sh
+git clone https://github.com/larrydewey/zyl.git
+cd zyl && ./boot.sh
+```
+
+## The book
+
+<CardGrid>
+	<LinkCard title="Learn Zyl" href="/zyl/learn/getting-started/" description="A tutorial from installing the compiler to actors, macros, testing and a complete project." />
+	<LinkCard title="Language Reference" href="/zyl/reference/lexical-structure/" description="Syntax, types, regions, capabilities, traits, actors, FFI, macros, contracts and modules in depth." />
+	<LinkCard title="Compiler Internals" href="/zyl/internals/self-hosting/" description="Self-hosting, ICNF, the x86_64 backend, writing compiler passes and the fixed point." />
+	<LinkCard title="Low-Level & Crypto" href="/zyl/systems/bits-and-bytes/" description="Bits, bytes and buffers, secrets and constant-time code, and the cryptography library." />
+	<LinkCard title="Tooling" href="/zyl/tooling/tooling/" description="The command line, the REPL and the editor." />
+	<LinkCard title="Appendices" href="/zyl/appendix/errors/" description="Error codes, the standard library, built-ins, a glossary, migration and the spec at a glance." />
+</CardGrid>

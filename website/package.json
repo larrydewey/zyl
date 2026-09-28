@@ -1,0 +1,16 @@
+{
+  "name": "zyl-website",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "import-book": "python3 scripts/import_book.py",
+    "dev": "python3 scripts/import_book.py && astro dev",
+    "build": "python3 scripts/import_book.py && astro build",
+    "preview": "astro preview"
+  },
+  "dependencies": {
+    "@astrojs/starlight": "^0.42.4",
+    "astro": "^7.3.5",
+    "starlight-sidebar-topics": "^0.9.0"
+  }
+}

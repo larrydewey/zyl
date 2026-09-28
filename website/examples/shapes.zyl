@@ -1,0 +1,11 @@
+(deftype Shape (Circle Int) (Rect Int Int))
+
+(defn area (s)
+  (match s
+    (Circle r (* 3 (* r r)))
+    (Rect w h (* w h))))
+
+(defn main ()
+  (print (area (Circle 2)))
+  (print (area (Rect 3 5)))
+  0)

@@ -24,12 +24,12 @@ compile with `build/boot/zyl-self` on 2026-09-28.
   that stage2 == stage3, builds `rt.zo`, `zyl-self` and `zyl-lsp`, and
   refreshes an existing install. `./boot.sh --bootstrap-from-self`
   reseeds; see `docs/self-hosting.md`. A self-compile takes about 2.2 s.
-- `./run_regression_tests.sh --full --no-boot` passes **376/376** in
+- `./run_regression_tests.sh --full --no-boot` passes **377/377** in
   about 25 s: 106 regression, 87 interpreter (compiled vs interpreted
   output, the interpreter in its tag-checking mode), 4 sched (actor
   tests under `ZYL_SCHED=deterministic` and chaos seeds), 138
   compile-fail, 7 integration, 4 stress, 2 packages, 9 packages-fail, 1
-  packages-build, 16 scripts, the LSP protocol test (110 checks) and the
+  packages-build, 17 scripts, the LSP protocol test (126 checks) and the
   unit test. A compile-fail test may pin its code (`; expect-error:
   CODE`) and location (`; expect-at: FILE:LINE:COL`).
 - The specification is `zyl_specification.txt` **v5.0** (§0–§31);
@@ -185,8 +185,10 @@ compile with `build/boot/zyl-self` on 2026-09-28.
   math (bits, words, bignum, hashes, symmetric and asymmetric
   cryptography, KDFs, RNG, secret), mlib, simd, testing, text (view),
   plus compiler, lsp and repl.
-- Book (`book/`, mdBook) and website (`site/`), published by
-  `.github/workflows/pages.yml`.
+- Book (`book/src/`) and website (`website/`, Astro Starlight, which
+  imports the book at build time), published by
+  `.github/workflows/pages.yml`; `tests/scripts/site-examples.sh` runs the
+  landing page's examples.
 
 ## Open Limitations (each confirmed open on 2026-09-28)
 

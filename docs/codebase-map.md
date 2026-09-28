@@ -58,11 +58,12 @@ runtime/rt/              The Zyl runtime every compiled binary links against
                          (rt.zyl + 34 modules, ~5,600 lines; seed build/boot/rt.s)
 tools/repl.zyl           Standalone REPL entry point (a thin `main`)
 editors/vscode/          VS Code extension (0.5.0)
-book/                    The book (mdBook: book.toml, src/, examples/)
+book/                    The book (src/ Markdown with SUMMARY.md, examples/)
 tests/                   smoke, regression, compile-fail, integration,
                          stress, packages, packages-fail, packages-build,
                          scripts, lsp, manual, debug; plus unit_test.zyl
-site/                    The website (landing page; site/build.sh adds the book)
+website/                 The website and book (Astro Starlight; scripts/import_book.py
+                         imports book/src; examples/ are the landing page's programs)
 bench/                   The benchmark matrix against C, C++, Rust and Go
                          (matrix.py; see docs/native-backend-design.md)
 verify/                  Python cross-checks for stdlib/math

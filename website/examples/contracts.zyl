@@ -1,0 +1,26 @@
+(defn withdraw (balance amount)
+  (requires (<= amount balance))
+  (ensures (>= result 0))
+  (- balance amount))
+
+;; Credit first, then debit: if the debit's contract fails,
+;; checkpoint puts both balances back before recover answers.
+(defn transfer (amount)
+  (let-mut from 100
+    (let-mut to 0
+      (begin
+        (recover
+          (checkpoint
+            (begin
+              (set! to (+ to amount))
+              (set! from (withdraw from amount))
+              (print "transferred")))
+          ((E_CONTRACT_VIOLATION) (print "rolled back")))
+        (print from)
+        (print to)))))
+
+(defn main ()
+  (transfer 30)
+  (transfer 500)
+  (print (withdraw 10 20))
+  0)

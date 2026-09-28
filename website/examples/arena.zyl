@@ -1,0 +1,18 @@
+(deftype Nums (End) (Link Int Nums))
+
+(defn build (n acc)
+  (if (= n 0) acc (build (- n 1) (Link n acc))))
+
+(defn total (l)
+  (match l
+    (End 0)
+    (Link h t (+ h (total t)))))
+
+;; The list lives in the arena; only the Int leaves it.
+(defn arena-total (n)
+  (with-region (arena :block 65536 :limit 1048576)
+    (total (build n (End)))))
+
+(defn main ()
+  (print (arena-total 1000))
+  0)

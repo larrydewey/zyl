@@ -2,9 +2,6 @@
 /build/
 /target
 
-# Book build output
-/book-build/
-
 # Compiler output
 *.bin
 *.s

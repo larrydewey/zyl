@@ -3,7 +3,7 @@
   <p><strong>Deterministic Power. Expressive Safety.</strong></p>
   <p>
     <a href="https://larrydewey.github.io/zyl/">Website</a> ·
-    <a href="https://larrydewey.github.io/zyl/book/">The Book</a> ·
+    <a href="https://larrydewey.github.io/zyl/learn/getting-started/">The Book</a> ·
     <a href="zyl_specification.txt">Specification</a>
   </p>
 </div>
@@ -369,8 +369,8 @@ stdlib/                       # The implicit standard library (package zyl/std)
 
 tools/repl.zyl                # Standalone REPL `main` (install.sh builds it)
 editors/vscode/               # VS Code extension (grammars, snippets, client)
-book/                         # "The Zyl Programming Language" (mdBook)
-site/                         # The website (GitHub Pages; site/build.sh adds the book)
+book/                         # "The Zyl Programming Language": src/ (Markdown), examples/
+website/                      # The website and book (Astro Starlight; imports book/src)
 spec/                         # Structured copy of the specification
 docs/                         # Architecture, design rationale, status
 bench/                        # Benchmarks in Zyl, C, C++, Rust and Go (matrix.py)
@@ -395,7 +395,7 @@ tests/
   toolchain at all
 - Linux x86_64 (the only target; other platforms are untested)
 - `python3` only for the LSP protocol tests
-- Node.js/npm only for building the VS Code extension
+- Node.js/npm only for building the VS Code extension and the website
 
 ## Examples
 
@@ -403,13 +403,21 @@ See `tests/regression/` for example Zyl programs covering the language features,
 
 ## Website and Book
 
-The website at <https://larrydewey.github.io/zyl/> and the book under
-[`/book/`](https://larrydewey.github.io/zyl/book/) are published by
-`.github/workflows/pages.yml` on every push to `master` that touches
-`site/` or `book/`. To build both locally (needs `mdbook` 0.5):
+The website at <https://larrydewey.github.io/zyl/>, with the book, is an
+[Astro Starlight](https://starlight.astro.build/) site in `website/`,
+published by `.github/workflows/pages.yml` on every push to `master` that
+touches `website/`, `book/` or the VS Code grammar. The book's source stays
+in `book/src/` (chapter order in `SUMMARY.md`); `website/scripts/import_book.py`
+turns it into site pages at build time, and redirects the old `/zyl/book/`
+URLs. The landing page's examples are `website/examples/*.zyl`, checked with
+their expected output by `tests/scripts/site-examples.sh`. To build and
+preview locally (needs Node.js 24):
 
 ```bash
-site/build.sh            # writes build/site; open build/site/index.html
+cd website
+npm ci
+npm run dev              # http://localhost:4321/zyl/, rebuilds on edit
+npm run build            # writes website/dist
 ```
 
 ## Specification
@@ -419,7 +427,7 @@ The canonical language specification is `zyl_specification.txt` (v5.0; §31 is t
 ## Resources
 
 - [Zyl website](https://larrydewey.github.io/zyl/)
-- [The Zyl Programming Language](https://larrydewey.github.io/zyl/book/) — the book, online (source in [`book/src/`](book/src/SUMMARY.md))
+- [The Zyl Programming Language](https://larrydewey.github.io/zyl/learn/getting-started/) — the book, online (source in [`book/src/`](book/src/SUMMARY.md))
 - [Architecture Decisions](docs/architecture-decisions.md)
 - [Compiler Pipeline](docs/compiler-pipeline.md)
 - [Implementation Status](PROGRESS.md)
