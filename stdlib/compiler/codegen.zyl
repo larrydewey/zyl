@@ -3850,7 +3850,10 @@
         (let st3 (if (and (> n 0) (< m 0)) (cg-emit-line st2 "    add rdx, rcx")
                    (if (and (< n 0) (> m 0)) (cg-emit-line st2 "    sub rdx, rcx") st2))
           (let st4 (if (> sh 0) (cg-emit-line st3 (str-concat "    sar rdx, " (ffi-call "zyl_int_text" sh 1000))) st3)
-            (let st5 (cg-emit-lines st4 (Cons "    mov rax, rdx" (Cons "    shr rax, 63" (Cons "    add rdx, rax" Nil))))
+            ; q += (dividend < 0): for n > 0 the estimate has the dividend's sign, taken off the multiply's path
+            (let st5 (if (> n 0)
+                       (cg-emit-lines st4 (Cons "    mov rax, rcx" (Cons "    sar rax, 63" (Cons "    sub rdx, rax" Nil))))
+                       (cg-emit-lines st4 (Cons "    mov rax, rdx" (Cons "    shr rax, 63" (Cons "    add rdx, rax" Nil)))))
               (if (= op 3)
                 (cg-emit-line st5 "    mov rax, rdx")
                 (cg-emit-lines st5

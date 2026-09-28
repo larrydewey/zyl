@@ -209,7 +209,7 @@
       (Cons (match f
               (IFn name params body kinds
                 (if (opt-self-unrollable name params body kinds)
-                  (IFn name params (opt-su body f name true params) kinds)
+                  (IFn name params (opt-su body f name true params (opt-unroll-depth)) kinds)
                   f))
               (_ f))
             (opt-self-unroll-fns rest)))))
@@ -253,36 +253,46 @@
 (defn opt-nts-arms (arms name tail)
   (match arms (Nil false) (Cons a t (match a (IArm _ _ _ b (if (opt-nontail-self b name tail) true (opt-nts-arms t name tail)))))))
 
-(defn opt-su (e f name tail locals) (opt-keep (opt-su-node e f name tail locals) e))
+(def opt-unroll-cell
+  (ffi-call "zyl_ref_new"
+    (let t (ffi-call "zyl_getenv_str" "ZYL_UNROLL" 1000)
+      (if (> (str-length t) 0) (ffi-call "zyl_cstr_to_int" t 1000) 1))
+    1000))
+(defn opt-unroll-depth () (ffi-call "zyl_ref_get" opt-unroll-cell 1000))
 
-(defn opt-su-node (e f name tail locals)
+; d: copies still allowed below this point; the last level only tests the base case.
+(defn opt-su (e f name tail locals d) (opt-keep (opt-su-node e f name tail locals d) e))
+
+(defn opt-su-node (e f name tail locals d)
   (match e
     (ICall n args
-      (let args2 (opt-su-list args f name locals)
+      (let args2 (opt-su-list args f name locals d)
         (if (and (str-eq n name) (not tail))
-          (opt-base-in (opt-expand f args2 locals e) f name locals)
+          (if (> d 1)
+            (opt-su (opt-expand f args2 locals e) f name false locals (- d 1))
+            (opt-base-in (opt-expand f args2 locals e) f name locals))
           (ICall n args2))))
-    (IIf c t fl (IIf (opt-su c f name false locals) (opt-su t f name tail locals) (opt-su fl f name tail locals)))
-    (ILet n v b (ILet n (opt-su v f name false locals) (opt-su b f name tail (Cons n locals))))
-    (ISeq es (ISeq (opt-su-seq es f name tail locals)))
-    (IMatch s arms (IMatch (opt-su s f name false locals) (opt-su-arms arms f name tail locals)))
+    (IIf c t fl (IIf (opt-su c f name false locals d) (opt-su t f name tail locals d) (opt-su fl f name tail locals d)))
+    (ILet n v b (ILet n (opt-su v f name false locals d) (opt-su b f name tail (Cons n locals) d)))
+    (ISeq es (ISeq (opt-su-seq es f name tail locals d)))
+    (IMatch s arms (IMatch (opt-su s f name false locals d) (opt-su-arms arms f name tail locals d)))
     (IBinop op l r
-      (IBinop op (opt-su l f name false locals)
-                 (opt-su r f name (and tail (and (opt-acc-op op) (opt-self-chain r op name))) locals)))
-    (IFfi n args (IFfi n (opt-su-list args f name locals)))
-    (IVariant nm tag fs (IVariant nm tag (opt-su-list fs f name locals)))
-    (ISet n v (ISet n (opt-su v f name false locals)))
-    (IWhile c b (IWhile (opt-su c f name false locals) (opt-su b f name false locals)))
+      (IBinop op (opt-su l f name false locals d)
+                 (opt-su r f name (and tail (and (opt-acc-op op) (opt-self-chain r op name))) locals d)))
+    (IFfi n args (IFfi n (opt-su-list args f name locals d)))
+    (IVariant nm tag fs (IVariant nm tag (opt-su-list fs f name locals d)))
+    (ISet n v (ISet n (opt-su v f name false locals d)))
+    (IWhile c b (IWhile (opt-su c f name false locals d) (opt-su b f name false locals d)))
     (_ e)))
 
-(defn opt-su-list (es f name locals)
-  (match es (Nil Nil) (Cons h t (Cons (opt-su h f name false locals) (opt-su-list t f name locals)))))
-(defn opt-su-seq (es f name tail locals)
-  (match es (Nil Nil) (Cons h t (Cons (opt-su h f name (and tail (is-nil t)) locals) (opt-su-seq t f name tail locals)))))
-(defn opt-su-arms (arms f name tail locals)
+(defn opt-su-list (es f name locals d)
+  (match es (Nil Nil) (Cons h t (Cons (opt-su h f name false locals d) (opt-su-list t f name locals d)))))
+(defn opt-su-seq (es f name tail locals d)
+  (match es (Nil Nil) (Cons h t (Cons (opt-su h f name (and tail (is-nil t)) locals d) (opt-su-seq t f name tail locals d)))))
+(defn opt-su-arms (arms f name tail locals d)
   (match arms
     (Nil Nil)
-    (Cons a t (match a (IArm v tag bs b (Cons (IArm v tag bs (opt-su b f name tail (list-append bs locals))) (opt-su-arms t f name tail locals)))))))
+    (Cons a t (match a (IArm v tag bs b (Cons (IArm v tag bs (opt-su b f name tail (list-append bs locals) d)) (opt-su-arms t f name tail locals d)))))))
 
 ; Inside a copy: each self call becomes (if c b (self ...)) over its bound arguments, when f's body starts so.
 (defn opt-base-in (e f name locals)

@@ -1,0 +1,35 @@
+; Division and remainder by a constant (multiply sequences) agree with idiv.
+
+(defn dv ((x Int) (d Int)) (/ x d))
+(defn md ((x Int) (d Int)) (% x d))
+
+; Every x in [lo, hi) with a stride, against the idiv results.
+(defn chk ((x Int) (hi Int) (s Int) (bad Int))
+  (if (>= x hi) bad
+    (chk (+ x s) hi s
+      (+ bad (+ (if (= (/ x 7) (dv x 7)) 0 1)
+             (+ (if (= (% x 7) (md x 7)) 0 1)
+             (+ (if (= (/ x 1000000007) (dv x 1000000007)) 0 1)
+             (+ (if (= (% x 1000000007) (md x 1000000007)) 0 1)
+             (+ (if (= (/ x -3) (dv x -3)) 0 1)
+             (+ (if (= (% x -3) (md x -3)) 0 1)
+             (+ (if (= (/ x 641) (dv x 641)) 0 1)
+                (if (= (% x 100) (md x 100)) 0 1))))))))))))
+
+(defn edge ((x Int))
+  (+ (if (= (/ x 7) (dv x 7)) 0 1)
+  (+ (if (= (% x 1000000007) (md x 1000000007)) 0 1)
+  (+ (if (= (/ x -3) (dv x -3)) 0 1)
+     (if (= (% x 641) (md x 641)) 0 1)))))
+
+(test "divconst"
+  (begin
+    (assert-equal (chk -5000 5000 1 0) 0)
+    (assert-equal (chk -4611686018427387904 4611686018427387904 9007199254740993 0) 0)
+    (assert-equal (edge 9223372036854775807) 0)
+    (assert-equal (edge (- -9223372036854775807 1)) 0)
+    (assert-equal (edge -1) 0)
+    (assert-equal (edge -1000000007) 0)
+    (assert-equal (edge -1000000008) 0)))
+
+(run-tests)
