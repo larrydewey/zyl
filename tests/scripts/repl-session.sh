@@ -53,4 +53,16 @@ plain3="$(printf '%s' "$out3" | sed 's/\x1b\[[0-9;]*m//g')"
 for want in '(+ n 1) : Int' 'from actor' '=> 42'; do
   printf '%s' "$plain3" | grep -qF -- "$want" || fail "missing '$want' in: $out3"
 done
+# An alias entry stays in the session and is transparent; a reserved name is refused.
+out4="$(printf '%s\n' \
+  '(alias RsM Int)' \
+  '(defn rs-m ((x RsM)) x)' \
+  '(rs-m "s")' \
+  '(defn setup () 1)' \
+  '(rs-m 7)' \
+  | timeout 60 "$ZYL" repl 2>&1)" || fail "repl exited non-zero: $out4"
+plain4="$(printf '%s' "$out4" | sed 's/\x1b\[[0-9;]*m//g')"
+for want in 'cannot unify Int with String' 'error[E_RESERVED_KEYWORD]' '=> 7'; do
+  printf '%s' "$plain4" | grep -qF -- "$want" || fail "missing '$want' in: $out4"
+done
 echo "repl-session: ok"

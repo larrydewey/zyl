@@ -77,7 +77,7 @@ later entry. It is an immutable binding, like any other in the language;
 
 ### Definitions
 
-`defn`, `deftype`, `defstruct`, `defmacro`, `trait` and `impl` entries
+`defn`, `deftype`, `defstruct`, `defstruct+`, `defmacro`, `trait`, `impl`, `derive` and `alias` entries
 are added to the session's text and checked by compiling the session
 with them. Nothing runs — a definition has no effect until something
 calls it. A name can be defined only once per session: entering a second

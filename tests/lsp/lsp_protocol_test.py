@@ -310,6 +310,14 @@ DIAGNOSTIC_CASES = [
      "(defn oops (x)\n  (+ x 1)\n"),
     ("type", "E_TYPE_MISMATCH",
      "(defn g () (+ 1 \"a\"))\n(defn main () 0)\n"),
+    ("reserved", "E_RESERVED_KEYWORD",
+     "(defn setup () 1)\n(defn main () 0)\n"),
+    ("alias", "E_TYPE_MISMATCH",
+     "(alias Meters Int)\n(defn run ((d Meters)) d)\n(defn main () (begin (run \"x\") 0))\n"),
+    ("alias-unknown", "E_UNKNOWN_TYPE",
+     "(alias Meters Intt)\n(defn main () 0)\n"),
+    ("run-tests-option", "E_MALFORMED_FORM",
+     "(test \"t\" (assert-true true))\n(run-tests (:bogus 1))\n"),
 ]
 
 

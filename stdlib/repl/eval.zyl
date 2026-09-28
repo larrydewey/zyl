@@ -211,7 +211,8 @@
     (if (str-eq head "trait") true
     (if (str-eq head "impl") true
     (if (str-eq head "derive") true
-    false))))))))))
+    (if (str-eq head "alias") true
+    false)))))))))))
 
 ; ===========================================================================
 ; BUILDING THE PROGRAM

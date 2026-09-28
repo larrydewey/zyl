@@ -554,8 +554,11 @@
   (if (str-eq w "def") true
   (if (str-eq w "deftype") true
   (if (str-eq w "defstruct") true
+  (if (str-eq w "defstruct+") true
   (if (str-eq w "defmacro") true
-  false))))))
+  (if (str-eq w "trait") true
+  (if (str-eq w "alias") true
+  false)))))))))
 
 (defn repl-skip-word (text i n)
   (if (>= i n)

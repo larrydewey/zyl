@@ -108,7 +108,8 @@ compile with `build/boot/zyl-self` on 2026-09-28.
   checker reads the alias as its target; bad targets and cycles are
   `E_UNKNOWN_TYPE`). `run-tests` takes `(:filter "s")`, which runs only
   the tests whose names contain `s`, and `(:parallel b)`; any other
-  option is `E_MALFORMED_FORM`.
+  option is `E_MALFORMED_FORM`. The REPL keeps `alias` entries as
+  definitions, and `zyl-lsp` publishes all three errors.
 - Diagnostics: `error[CODE]`, `--> file:line:col`, the source line, a
   caret and a `= help:` line for every diagnostic that has a source
   node; "did you mean" on unbound names; labelled secondary spans on
