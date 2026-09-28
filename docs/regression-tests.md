@@ -167,6 +167,18 @@ test the section never reaches.)
 
 ---
 
+## Schedule agreement
+
+The `sched` category (`--full`) compiles `actors`, `channels`,
+`concurrency` and `runtime-actors` once each. It runs every binary under
+the default thread schedule, under `ZYL_SCHED=deterministic` (one actor
+at a time), and under `ZYL_SCHED_CHAOS=1`, `2` and `3` (seeded yields and
+sleeps at channel operations). Stdout, stderr and the exit status must be
+byte-identical across all of them (docs/concurrency-determinism-design.md).
+`tests/scripts/actor-schedules.sh` does the same for programs that are
+meant to fail: a deadlock, an actor panic reported at exit, and main's
+panic.
+
 ## Test Directory Structure
 
 ```

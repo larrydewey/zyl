@@ -347,9 +347,9 @@ have landed, stages 3 to 5 are partial.
   `--sched=deterministic` and is the test oracle against a seeded chaos
   mode (byte-identical output required). Breaking change to
   `ActorRef`/`send`; the spec gains a concurrency-determinism section.
-  Stage 1 done 2026-09-28 (channels, ownership, closing, deadlock,
-  per-actor output, panic isolation, mailboxes removed); the schedulers
-  are next.
+  Done 2026-09-28: channels, ownership, closing, deadlock, per-actor
+  output, panic isolation, mailboxes removed, and the deterministic and
+  chaos schedules (run-time `ZYL_SCHED`, not a compiler flag).
 - **Inline assembly: rejected.** Raw asm breaks determinism (rdtsc,
   rdrand, cpuid, CPU-feature dependence, writes outside regions).
   Deterministic typed intrinsics instead (popcnt, clz/ctz, bswap, rotl,
@@ -497,7 +497,10 @@ as recorded below.
 - Limitations:
   - an endpoint nested inside a captured value does not move at spawn;
   - Send-capability is still the syntactic let-mut rule;
-  - `--sched=deterministic` and the chaos mode are not done yet;
+  - the schedulers landed in stage 2, the same day: `ZYL_SCHED=deterministic`,
+    `ZYL_SCHED_CHAOS=<seed>`, the runner's `sched` category and
+    `tests/scripts/actor-schedules.sh`. A deadlock is now also detected
+    when an actor finishes;
   - the book's actor chapters still describe mailboxes.
 
 ## Session (2026-09-28, site) — GitHub Pages site and the book

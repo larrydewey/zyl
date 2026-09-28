@@ -1,8 +1,9 @@
 # Deterministic Concurrency: Design
 
-Status: stage 1 done (2026-09-28): channels, ownership, closing, deadlock
-detection, per-actor output, actor panic isolation, and the mailbox API removed.
-Next: the deterministic and chaos schedulers. This implements the decision
+Status: done (2026-09-28). Stage 1 covers channels, ownership, closing,
+deadlock detection, per-actor output, actor panic isolation, and removing
+the mailbox API. Stage 2 adds the deterministic and chaos schedules and a
+test category that compares them. This implements the decision
 recorded in PROGRESS.md ("Deferred design work"): Kahn process networks
 replace multi-sender mailboxes, so a program's observable output never
 depends on scheduling (spec §27).
@@ -64,13 +65,20 @@ scheduling.
 
 - The default is one thread per actor (runtime/rt/thread.zyl). Kahn
   determinism makes the output independent of the interleaving.
-- `--sched=deterministic` runs the same program with exactly one actor
-  running at a time. Control passes in a fixed order at each blocking
-  point, which makes the run reproducible even when debugging.
-- A seeded chaos mode, `ZYL_SCHED_CHAOS=<seed>` (tests only), inserts
-  yields at channel operations. The test suite runs every actor test
-  under the default, deterministic and several chaos schedules, and
-  requires byte-identical output.
+- `ZYL_SCHED=deterministic` runs the same binary with exactly one actor
+  running at a time. It is a run-time setting, not a compiler flag, so
+  the binary is the same in every mode. A baton passes, at each blocking
+  point and when an actor finishes, to the next ready owner in id order.
+  That makes the interleaving itself reproducible, which helps when
+  debugging.
+- `ZYL_SCHED_CHAOS=<seed>` (for tests) gives each channel operation a
+  seeded choice: nothing, a yield, or a 20 or 200 µs sleep. The test
+  suite's `sched` category runs the actor tests under the default, the
+  deterministic and three chaos schedules, and requires byte-identical
+  stdout, stderr and exit status. `tests/scripts/actor-schedules.sh`
+  does the same for deadlock, exit order and panics.
+- Deadlock is checked when an actor blocks, and again when one finishes,
+  since a finishing reader can leave its writers stuck.
 
 ## Migration
 

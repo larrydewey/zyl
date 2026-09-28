@@ -25,8 +25,9 @@
   (if (ac-inited) 0
     (let s (ac-sys)
       (let _ (ac-st s 0)
+        (let _ (zyl_chan_init)
         (let _ (ac-st (+ s 8) 1)
-          (let _ (ffi-call "zyl_rt_atexit" (ffi-call "%fn" "zyl_actor_wait_all" 1) 1) 0))))))
+          (let _ (ffi-call "zyl_rt_atexit" (ffi-call "%fn" "zyl_actor_wait_all" 1) 1) 0)))))))
 
 ; An uncaught panic on main: actors are abandoned, their buffered output dropped.
 (defn zyl_actor_abandon () (let _ (ac-st (+ (ac-sys) 16) 1) 0))
@@ -63,6 +64,7 @@
 (defn zyl_actor_thread_entry (arg)
   (let id (bit-and arg 4294967295)
     (let _ (zyl_owner_set (+ id 2))
+    (let _ (zyl_chan_actor_enter)
       (let f (zyl_try_push)
         (let prev (ac-ld (+ f 64))
           (if (= (ffi-call "zyl_rt_try_call" f (ffi-call "%fn" "zyl_actor_body" 1) 1) 0)
@@ -70,7 +72,7 @@
               (let _ (zyl_rt_free f) (zyl_chan_actor_done (+ id 2) 0)))
             (let m (ac-ld (+ f 72))
               (let c (rt-strdup (if (= m 0) (rt-w "error") m))
-                (let _ (zyl_rt_free f) (zyl_chan_actor_done (+ id 2) (if (= c 0) (rt-w "error") c)))))))))))
+                (let _ (zyl_rt_free f) (zyl_chan_actor_done (+ id 2) (if (= c 0) (rt-w "error") c))))))))))))
 
 ; A known actor id, or -1.
 (defn ac-valid (id) (and (ac-inited) (and (>= id 0) (< id (if (> (ac-next) (ac-max)) (ac-max) (ac-next))))))

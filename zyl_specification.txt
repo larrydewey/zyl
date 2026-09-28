@@ -742,6 +742,9 @@ Rules:
 
 Consequence: a process's output sequence is a function of its input
 sequences, so observable output never depends on scheduling (§27).
+ZYL_SCHED=deterministic runs one actor at a time, and ZYL_SCHED_CHAOS=<seed>
+perturbs the interleaving. Both must give the same observable output as
+the default schedule.
 
 ================================================================================
 16. FFI MODEL

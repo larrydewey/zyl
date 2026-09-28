@@ -80,6 +80,10 @@ Not normative.
 - An endpoint is recognized in a closure environment only as a heap
   block with its magic word, whose channel points back at it, so an
   integer can never be taken for one.
+- Schedules: the default gives each actor a thread. `ZYL_SCHED=deterministic`
+  passes one baton, so only one actor runs at a time, and
+  `ZYL_SCHED_CHAOS=<seed>` adds seeded yields and sleeps at channel
+  operations. The test suite requires identical output under all three.
 - The interpreter (`zyl repl`, `zyl eval`) cannot spawn: an interpreted
   function has no native entry. Channels work there on main alone.
 - Not yet enforced by type: Send-capability is still the syntactic

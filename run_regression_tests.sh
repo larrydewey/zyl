@@ -215,6 +215,42 @@ run_fail_test() {
 # operator checks its operands' tags and every condition must be a Bool,
 # so a type the checker got wrong shows up as an E_INTERP_TAG failure
 # (docs/sound-types-design.md, "Evidence").
+# Schedule test: the program's stdout, stderr and exit status must be
+# byte-identical under the default threads, ZYL_SCHED=deterministic and
+# seeded chaos schedules (docs/concurrency-determinism-design.md).
+SCHED_TESTS="actors channels concurrency runtime-actors"
+SCHED_MODES="ZYL_SCHED=deterministic ZYL_SCHED_CHAOS=1 ZYL_SCHED_CHAOS=2 ZYL_SCHED_CHAOS=3"
+run_sched_test() {
+    local name="$1"
+    local file="$2"
+
+    dry_listed "$name" && return
+    TOTAL=$((TOTAL + 1))
+
+    local bin="$RUN_TMP/zyl_sched_${TOTAL}.bin"
+    if ! "${ZYL_BIN}" "$file" -o "$bin" >/dev/null 2>&1; then
+        echo -e "  ${RED}✗${NC} ${name}: does not compile"
+        FAIL=$((FAIL + 1))
+        return
+    fi
+
+    local ref out mode
+    ref=$(timeout "$TIMEOUT" "$bin" 2>&1; echo "exit $?")
+    for mode in $SCHED_MODES; do
+        out=$(env "$mode" timeout "$TIMEOUT" "$bin" 2>&1; echo "exit $?")
+        if [ "$out" != "$ref" ]; then
+            echo -e "  ${RED}✗${NC} ${name}: output under ${mode} differs from the default schedule"
+            if [ "$VERBOSE" -eq 1 ]; then
+                diff <(echo "$ref") <(echo "$out") | head -20
+            fi
+            FAIL=$((FAIL + 1))
+            return
+        fi
+    done
+    echo -e "  ${GREEN}✓${NC} ${name}"
+    PASS=$((PASS + 1))
+}
+
 run_diff_test() {
     local name="$1"
     local file="$2"
@@ -336,6 +372,18 @@ if [ "$MODE" = "full" ]; then
         local_name=$(basename "$f" .zyl)
         if [ -z "$FILTER" ] || echo "$local_name" | grep -qi -- "$FILTER"; then
             run_test "integration/${local_name}" "$f"
+        fi
+    done
+fi
+
+# Actor programs agree across schedules (see run_sched_test).
+if [ "$MODE" = "full" ]; then
+    echo ""
+    echo "=== Actor output is the same under every schedule ==="
+    for local_name in $SCHED_TESTS; do
+        f="${TESTS_DIR}/regression/${local_name}.zyl"
+        if [ -z "$FILTER" ] || echo "sched ${local_name}" | grep -qi -- "$FILTER"; then
+            run_sched_test "sched/${local_name}" "$f"
         fi
     done
 fi

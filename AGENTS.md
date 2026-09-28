@@ -198,7 +198,8 @@ and selects nothing. `--full` runs `./boot.sh` after the suites unless `--no-boo
 is given. Other flags: `--verbose`, `--timeout N`, `--boot`,
 `--dry-run` (lists exactly the tests a real run with the same mode and
 `--filter` would run). Categories in `--full`: regression, interpreter
-(differential REPL-interpreter-vs-codegen runs), compile-fail,
+(differential REPL-interpreter-vs-codegen runs), sched (actor tests
+must match under `ZYL_SCHED=deterministic` and chaos seeds), compile-fail,
 integration, stress, packages, packages-fail, packages-build, scripts
 (shell checks of the repository's own scripts), lsp, and
 the unit test.

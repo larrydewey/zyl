@@ -8,17 +8,53 @@
 (defmacro ch-ld (a) (ffi-call "%load64" a 1))
 (defmacro ch-st (a v) (ffi-call "%store64" a v 1))
 
-; --- the scheduler: one lock and cond, {lock 0, cond 8, top owner 16} ---
+(extern "zyl_rt_getenv" (Int) Int)
 
-(defn ch-g () (ffi-call "%global" "chan_sched" 24 1))
+; --- the scheduler: one lock and cond, {lock 0, cond 8, top owner 16, mode 24, baton 32, chaos seed 40, chaos count 48} ---
+
+(defn ch-g () (ffi-call "%global" "chan_sched" 56 1))
 (defn ch-lock () (zyl_rt_mutex_lock (ch-g)))
 (defn ch-unlock () (zyl_rt_mutex_unlock (ch-g)))
 (defn ch-wake () (zyl_rt_cond_broadcast (+ (ch-g) 8)))
 
+; Mode: 1 threads, 2 ZYL_SCHED=deterministic (one actor runs at a time), 3 ZYL_SCHED_CHAOS=<seed>.
+(defn ch-mode () (ch-ld (+ (ch-g) 24)))
+
+; Read once at startup (zyl_actor_init), before any thread: main holds the baton.
+(defn zyl_chan_init ()
+  (let d (zyl_rt_getenv (rt-w "ZYL_SCHED"))
+    (let c (zyl_rt_getenv (rt-w "ZYL_SCHED_CHAOS"))
+      (let _ (ch-st (+ (ch-g) 32) 1)
+        (let _ (ch-st (+ (ch-g) 40) (bit-or (ch-digits c 0) 1))
+          (ch-st (+ (ch-g) 24) (if (and (> d 0) (= (rt-strcmp d (rt-w "deterministic")) 0)) 2 (if (> c 0) 3 1))))))))
+
+(defn ch-digits (p acc)
+  (if (= p 0) 0
+    (let b (rt-ld8 p) (if (and (>= b 48) (<= b 57)) (ch-digits (+ p 1) (+ (* acc 10) (- b 48))) acc))))
+
+(defn ch-det-p () (= (ch-mode) 2))
+
+; Chaos: a seeded pick per channel operation of nothing, a yield, or a 20 or 200 microsecond sleep.
+(defn ch-chaos ()
+  (if (not (= (ch-mode) 3)) 0
+    (let n (ffi-call "%fetch-add" (+ (ch-g) 48) 1 1)
+      (let h (ch-mix (bit-xor (ch-ld (+ (ch-g) 40)) (* n -7046029254386353131)))
+        (let k (bit-and h 7)
+          (if (< k 4) 0
+            (if (< k 6) (ffi-call "%syscall0" 24 1)
+              (let ts (ffi-call "%tls" "chan_ts" 16 1)
+                (let _ (ch-st ts 0) (let _ (ch-st (+ ts 8) (if (= k 6) 20000 200000)) (ffi-call "%syscall2" 35 ts 0 1)))))))))))
+
+; splitmix64's finalizer.
+(defn ch-mix (z0)
+  (let z1 (* (bit-xor z0 (ch-shr z0 30)) -4658895280553007687)
+    (let z2 (* (bit-xor z1 (ch-shr z1 27)) -7723592293110705685) (bit-xor z2 (ch-shr z2 31)))))
+(defn ch-shr (x n) (shr x n))
+
 ; Per owner id: {state 0 (0 none, 1 live, 2 finished), wait kind 8, wait object 16, panic message 24}.
 (defn ch-rec (o) (+ (ffi-call "%global" "chan_owners" 32832 1) (* o 32)))
 
-; Wait kinds: 0 running, 1 room in channel, 2 a value or close, 3 owner finished.
+; Wait kinds: 0 running, 1 room in channel, 2 a value or close, 3 owner finished, 4 only the baton.
 (defn ch-ready-p (k x)
   (if (= k 1) (< (ch-ld (+ x 24)) (ch-ld (+ x 8)))
     (if (= k 2) (or (> (ch-ld (+ x 24)) 0) (= (ch-ld (+ x 32)) 1))
@@ -33,15 +69,32 @@
     (let r (ch-rec o)
       (if (and (ch-live-p o) (ch-ready-p (ch-ld (+ r 8)) (ch-ld (+ r 16)))) true (ch-progress-p (+ o 1) top)))))
 
-; Locked: waits until kind k on x is ready; every live owner stuck is E_DEADLOCK, a whole-program error.
+; Locked: waits until kind k on x is ready (and, deterministic, the baton is ours); every live owner stuck is E_DEADLOCK.
 (defn ch-wait (k x)
-  (if (ch-ready-p k x) 0
-    (let r (ch-rec (zyl_owner_self))
-      (let _ (ch-st (+ r 8) k)
-        (let _ (ch-st (+ r 16) x)
-          (let _ (if (ch-progress-p 1 (ch-ld (+ (ch-g) 16))) 0 (ch-deadlock))
-            (let _ (zyl_rt_cond_wait (+ (ch-g) 8) (ch-g))
-              (let _ (ch-st (+ r 8) 0) (ch-wait k x)))))))))
+  (let me (zyl_owner_self)
+    (let r (ch-rec me)
+      (if (and (ch-ready-p k x) (or (not (ch-det-p)) (= (ch-ld (+ (ch-g) 32)) me)))
+        (ch-st (+ r 8) 0)
+        (let _ (ch-st (+ r 8) k)
+          (let _ (ch-st (+ r 16) x)
+            (let _ (ch-check)
+              (let _ (if (and (ch-det-p) (= (ch-ld (+ (ch-g) 32)) me)) (ch-pass me) 0)
+                (let _ (zyl_rt_cond_wait (+ (ch-g) 8) (ch-g)) (ch-wait k x))))))))))
+
+(defn ch-check () (if (ch-progress-p 1 (ch-ld (+ (ch-g) 16))) 0 (ch-deadlock)))
+
+; Deterministic: the baton goes to the next ready live owner after me, in id order.
+(defn ch-pass (me)
+  (let top (ch-ld (+ (ch-g) 16))
+    (let o (ch-next-ready (ch-succ me top) me top)
+      (let _ (if (= o 0) 0 (ch-st (+ (ch-g) 32) o)) (ch-wake)))))
+
+(defn ch-succ (o top) (if (>= o top) 1 (+ o 1)))
+
+(defn ch-next-ready (o me top)
+  (if (= o me) 0
+    (let r (ch-rec o)
+      (if (and (ch-live-p o) (ch-ready-p (ch-ld (+ r 8)) (ch-ld (+ r 16)))) o (ch-next-ready (ch-succ o top) me top)))))
 
 ; Everything written so far, in spawn order, straight to stdout, then the report; the lock stays held so no one else runs.
 (defn ch-deadlock ()
@@ -102,6 +155,7 @@
 
 ; Appends v, blocking while full; a sent endpoint is in transit (owner 0) until received.
 (defn zyl_chan_send (tx v)
+  (let _ (ch-chaos)
   (let _ (ch-own-check tx)
     (let ep (ch-endpoint-p v)
       (let _ (if ep (ch-own-check v) 0)
@@ -112,10 +166,11 @@
                 (let slot (% (+ (ch-ld (+ c 16)) (ch-ld (+ c 24))) (ch-ld (+ c 8)))
                   (let _ (ch-st (+ (ch-ld (+ c 56)) (* slot 8)) v)
                     (let _ (ch-st (+ c 24) (+ (ch-ld (+ c 24)) 1))
-                      (let _ (ch-wake) (let _ (ch-unlock) 0)))))))))))))
+                      (let _ (ch-wake) (let _ (ch-unlock) 0))))))))))))))
 
 ; Removes the oldest value, blocking while empty; closed and empty is E_CHANNEL_CLOSED.
 (defn zyl_chan_recv (rx)
+  (let _ (ch-chaos)
   (let _ (ch-own-check rx)
     (let c (ch-ld (+ rx 8))
       (let _ (ch-lock)
@@ -127,7 +182,7 @@
                 (let _ (ch-st (+ c 16) (% (+ h 1) (ch-ld (+ c 8))))
                   (let _ (ch-st (+ c 24) (- (ch-ld (+ c 24)) 1))
                     (let _ (if (and (ch-endpoint-p v) (= (ch-ld (+ v 16)) 0)) (ch-st (+ v 16) (zyl_owner_self)) 0)
-                      (let _ (ch-wake) (let _ (ch-unlock) v)))))))))))))
+                      (let _ (ch-wake) (let _ (ch-unlock) v))))))))))))))
 
 ; --- the channel registry, in creation order (walked only to close) {ptr, len, cap} ---
 
@@ -158,7 +213,7 @@
 (defn zyl_chan_actor_spawn (o env)
   (let _ (ch-lock)
     (let _ (ch-st (ch-rec o) 1)
-      (let _ (ch-st (+ (ch-rec o) 8) 0)
+      (let _ (ch-st (+ (ch-rec o) 8) 4)
         (let _ (ch-st (+ (ch-rec o) 24) 0)
           (let _ (if (> o (ch-ld (+ (ch-g) 16))) (ch-st (+ (ch-g) 16) o) 0)
             (let _ (if (= env 0) 0 (ch-move-words env 0 (ch-ld (- env 8)) (zyl_owner_self) o))
@@ -170,13 +225,17 @@
       (let _ (if (and (ch-endpoint-p w) (= (ch-ld (+ w 16)) from)) (ch-st (+ w 16) o) 0)
         (ch-move-words env (+ i 1) n from o)))))
 
-; The actor's body returned or panicked (msg, malloc'd, else 0): its channels close and joiners wake.
+; The new thread waits for the baton (deterministic) before its body runs.
+(defn zyl_chan_actor_enter () (let _ (ch-chaos) (let _ (ch-lock) (let _ (ch-wait 4 0) (ch-unlock)))))
+
+; The actor's body returned or panicked (msg, malloc'd, else 0): its channels close, joiners wake, the baton moves on.
 (defn zyl_chan_actor_done (o msg)
   (let _ (ch-lock)
     (let _ (ch-close-owned o 0)
       (let _ (ch-st (+ (ch-rec o) 24) msg)
         (let _ (ch-st (ch-rec o) 2)
-          (let _ (ch-wake) (ch-unlock)))))))
+          (let _ (ch-check)
+            (let _ (if (ch-det-p) (ch-pass o) (ch-wake)) (ch-unlock))))))))
 
 ; Blocks until owner o is finished (deadlock-aware); its panic message, or 0.
 (defn zyl_chan_actor_join (o)
