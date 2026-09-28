@@ -39,7 +39,10 @@
   (let w (rt-w buf)
     (if (= w 0) -1
       (if (os-bad w "file-write") -1
-        (os-ret (ffi-call "%syscall3" 1 fd w (rt-strlen w) 1))))))
+        (let n (rt-strlen w)
+          (if (= fd 1) (let _ (zyl_out_write w n) n)
+            (if (and (= fd 2) (>= (zyl_owner_self) 2)) (let _ (zyl_err_write w n) n)
+              (os-ret (ffi-call "%syscall3" 1 fd w n 1)))))))))
 
 (defn zyl_file_close_c (fd) (os-ret (ffi-call "%syscall1" 3 fd 1)))
 

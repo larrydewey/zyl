@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Kahn actors (runtime/rt/chan.zyl): deadlock, exit order, panics and main's panic give fixed output under every schedule.
+# Kahn actors (runtime/rt/chan.zyl): file-write buffering, deadlock, exit order and panics give fixed output under every schedule.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 export ZYL_HOME="${ZYL_HOME:-$ROOT/build/boot}"
@@ -61,6 +61,19 @@ cat > "$SCRATCH/late.zyl" <<'EOF'
 EOF
 build late
 
+cat > "$SCRATCH/fw.zyl" <<'EOF'
+(use actor/actor)
+(defn main ()
+  (let a (spawn (fn () (begin (file-write 1 "a-out\n") (file-write 2 "a-err\n") (print "a-print"))))
+    (begin (print "main-1") (file-write 1 "main-2\n") (actor-wait a) (print "main-3") 0)))
+EOF
+build fw
+
+check fw "main-1
+main-2
+a-out
+a-print
+main-3" 0 "a-err"
 check dl "main waits
 child waits" 1 "PANIC: E_DEADLOCK: every live actor is blocked on a channel or a join"
 check exit "main end

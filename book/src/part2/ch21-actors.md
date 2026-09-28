@@ -201,9 +201,9 @@ Spec §27 counts actor output as observable and scheduling as not observable. Th
 - An actor's `print`s go to a buffer of its own. The buffer is emitted when the actor is joined, or at exit, in spawn order, for actors that were never joined. A nested join writes the joined actor's output into the joiner's buffer.
 - The values each actor receives, and their order, are fixed by the single-writer, single-reader rule.
 
-So what a program `print`s is the same byte sequence on every run. What is not deterministic is timing itself: how long a program takes, and which thread the kernel runs first. Only `print` goes through the actor buffers. `file-write` (to fd 1 or 2) and foreign calls write directly, so an actor's writes through them interleave with other output by timing.
+So what a program `print`s is the same byte sequence on every run. What is not deterministic is timing itself: how long a program takes, and which thread the kernel runs first. `print` and `file-write` to fd 1 go through the actor's stdout buffer, and `file-write` to fd 2 goes through its stderr buffer. The stderr buffer is emitted right after the stdout one. Only foreign calls that write through libc bypass the buffers.
 
-A deterministic scheduler (`--sched=deterministic`, one actor at a time in a fixed order) and a seeded chaos mode for tests are part of the design and not implemented.
+`ZYL_SCHED=deterministic` runs one actor at a time. A baton passes to the next ready actor in id order at each blocking point and when an actor finishes. `ZYL_SCHED_CHAOS=<seed>` gives each channel operation a seeded yield or short sleep. Both are environment variables read once at startup, so the binary is the same in every mode. The test suite's `sched` category requires byte-identical stdout, stderr and exit status across the default, deterministic and chaos schedules.
 
 ## 21.7 Actor Lifecycle
 

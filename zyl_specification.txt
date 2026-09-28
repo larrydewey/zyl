@@ -542,8 +542,8 @@ Regions R:
 
 9.1 REGION RULES (DETERMINISTIC)
 R1. Local stack allocation: If variable does not escape → Stack.
-R2. Escape allocation: If returned, captured by escaping closure, or sent to actor → Heap.
-R3. Actor transfer: spawn/send requires Send-capable type.
+R2. Escape allocation: If returned, captured by escaping closure, or sent on a channel → Heap.
+R3. Actor transfer: spawn and chan-send require a Send-capable type.
 R4. FFI rule: ffi-call requires Pin region AND FFI_Pinnable type.
 R5. Closure capture promotion: Escaping closure captures promoted to Heap.
 R6. Cyclic structures: Cyclic references detected among heap values → Circular region.
@@ -729,7 +729,8 @@ Rules:
         E_CHANNEL_CLOSED
     when every live actor is blocked on a channel or a join, the program
         fails with E_DEADLOCK
-    an actor's output is buffered and emitted when it is joined, or at
+    an actor's output (print, and file-write to fd 1 and 2) is buffered
+        and emitted when it is joined, or at
         exit, in spawn order, for actors never joined; exit joins every
         actor
     an actor's uncaught panic ends only that actor; actor-wait re-raises

@@ -501,7 +501,11 @@ as recorded below.
     `ZYL_SCHED_CHAOS=<seed>`, the runner's `sched` category and
     `tests/scripts/actor-schedules.sh`. A deadlock is now also detected
     when an actor finishes;
-  - the book's actor chapters still describe mailboxes.
+  - the book's actor chapters were rewritten (27 files, samples verified).
+    `file-write` to fd 1 now goes through the stdout buffer, and an actor's
+    fd 2 writes through its own stderr buffer, emitted after its stdout
+    buffer. Only a foreign libc write bypasses them;
+  - `main` is still not capability-checked for `actor` inside a package.
 
 ## Session (2026-09-28, site) — GitHub Pages site and the book
 

@@ -270,7 +270,7 @@ The `actor/actor` module provides:
 - when the actor is joined with `actor-wait`, or
 - when the program exits, for actors that were never joined, in spawn order.
 
-`main`'s own output goes straight to stdout. Only `print` is buffered this way: `file-write` and foreign calls write directly, so an actor that uses them interleaves with other output by timing. A program need not join its actors, since exit joins every one of them:
+`main`'s own output goes straight to stdout. `print` and `file-write` to fd 1 and 2 are all buffered this way. Only a foreign C call that writes through libc bypasses the buffer. A program need not join its actors, since exit joins every one of them:
 
 ```lisp
 (defn main ()
@@ -400,7 +400,7 @@ The runtime runs every actor on its own operating-system thread, and the kernel 
 
 The fan-out program in §9.10, run 100 times, gave byte-identical output every time.
 
-A deterministic scheduler (one actor running at a time, in a fixed order) and a seeded chaos scheduler for tests are part of the design (`docs/concurrency-determinism-design.md`) but are not implemented yet.
+Two run-time schedules make this checkable. `ZYL_SCHED=deterministic` runs one actor at a time, handing control on in a fixed order at each blocking point. `ZYL_SCHED_CHAOS=<seed>` adds seeded yields and sleeps at channel operations. The same binary must print the same bytes under both and under the default schedule, and the test suite checks that.
 
 ## 9.10 Common Patterns
 

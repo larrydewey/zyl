@@ -41,7 +41,7 @@ The specification assigns every value to one of five **regions**:
 ```
 R1. Local stack allocation: If variable does not escape → Stack.
 R2. Escape allocation: If returned, captured by escaping closure, or sent to actor → Heap.
-R3. Actor transfer: spawn/send requires Send-capable type (TCap/TAtomic).
+R3. Actor transfer: spawn and chan-send require a Send-capable type (TCap/TAtomic).
 R4. FFI rule: ffi-call requires Pin region AND FFI_Pinnable type.
 R5. Closure capture promotion: Escaping closure captures promoted to Heap.
 R6. Cyclic structures: Cyclic references detected among heap values → Circular region.

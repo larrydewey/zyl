@@ -75,8 +75,9 @@
 (defn zyl_owner_self () (let v (ou-ld64 (ou-owner-cell)) (if (= v 0) 1 v)))
 (defn zyl_owner_set (o) (let _ (ou-st64 (ou-owner-cell) o) 0))
 
-; {ptr, len, cap} per owner id (1026 of them).
+; {ptr, len, cap} per owner id (1026 of them), for stdout and for stderr.
 (defn ou-abuf (o) (+ (ffi-call "%global" "actor_out" 24624 1) (* o 24)))
+(defn ou-ebuf (o) (+ (ffi-call "%global" "actor_err" 24624 1) (* o 24)))
 
 ; Only the owning thread appends; its joiner reads after the join.
 (defn ou-abuf-put (b p n)
@@ -88,16 +89,18 @@
                     (if (= q 0) false (let _ (ou-st64 b q) (let _ (ou-st64 (+ b 16) nc) true))))))
         (if ok (let _ (rt-copy (+ (ou-ld64 b) len) p n) (let _ (ou-st64 (+ b 8) (+ len n)) true)) false)))))
 
-; Writes owner o's buffer through the caller's own output (so a nested join lands in the joiner's buffer), then frees it.
+; Writes owner o's stdout then stderr buffers through the caller's own output (a nested join lands in the joiner's buffers).
 (defn zyl_out_actor_emit (o)
   (if (or (< o 2) (> o 1025)) 0
-    (let b (ou-abuf o)
-      (let p (ou-ld64 b)
-        (let n (ou-ld64 (+ b 8))
-          (let _ (ou-st64 b 0)
-            (let _ (ou-st64 (+ b 8) 0)
-              (let _ (ou-st64 (+ b 16) 0)
-                (if (= p 0) 0 (let _ (zyl_out_write p n) (let _ (zyl_rt_free p) 0)))))))))))
+    (let _ (ou-emit (ou-abuf o) false) (ou-emit (ou-ebuf o) true))))
+
+(defn ou-emit (b err)
+  (let p (ou-ld64 b)
+    (let n (ou-ld64 (+ b 8))
+      (let _ (ou-st64 b 0)
+        (let _ (ou-st64 (+ b 8) 0)
+          (let _ (ou-st64 (+ b 16) 0)
+            (if (= p 0) 0 (let _ (if err (zyl_err_write p n) (zyl_out_write p n)) (let _ (zyl_rt_free p) 0)))))))))
 
 (defn ou-put (s p n)
   (let o (zyl_owner_self)
@@ -117,8 +120,9 @@
   (let s (ou-st)
     (if (= (ou-ld64 (+ s 8)) 0) 0 (let _ (ou-lock s) (let _ (ou-flush-locked s) (ou-unlock s))))))
 
-; stderr is unbuffered: one write loop per call.
-(defn zyl_err_write (p n) (let _ (ou-sys-all 2 p n) 0))
+; stderr is unbuffered on main (one write loop per call); an actor's goes to its stderr buffer.
+(defn zyl_err_write (p n)
+  (let o (zyl_owner_self) (if (>= o 2) (let _ (ou-abuf-put (ou-ebuf o) p n) 0) (let _ (ou-sys-all 2 p n) 0))))
 (defn zyl_err_puts (w) (if (= w 0) 0 (zyl_err_write w (rt-strlen w))))
 
 ; --- print, in the three shapes codegen emits: "%lld\n", "%s\n", "%f\n" ---
