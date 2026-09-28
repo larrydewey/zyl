@@ -178,12 +178,15 @@
     (Cons a rest
       (begin
         (match (Expr.inner a)
-          (ELambda _ _ _
-            (ffi-call "zyl_panic" "E_INVALID_CAPABILITY: ffi-call argument is a closure, which is not FFI_Pinnable (Int/Float/Bool/String/composed only) -- pin its result data explicitly instead of passing the closure itself" 1000))
-          (EFn _ _ _
-            (ffi-call "zyl_panic" "E_INVALID_CAPABILITY: ffi-call argument is a closure, which is not FFI_Pinnable (Int/Float/Bool/String/composed only) -- pin its result data explicitly instead of passing the closure itself" 1000))
+          (ELambda _ _ _ (mc-fail-ffi-closure a))
+          (EFn _ _ _ (mc-fail-ffi-closure a))
           (_ 0))
         (mc-check-ffi-args rest)))))
+
+(defn mc-fail-ffi-closure (a)
+  (ffi-call "zyl_panic"
+    (err-at "E_INVALID_CAPABILITY" "ffi-call argument is a closure, which is not FFI_Pinnable (Int/Float/Bool/String/composed only) -- pin its result data explicitly instead of passing the closure itself"
+            (ffi-call "zyl_span_file" a 1000) (ffi-call "zyl_span_off" a 1000) "") 1000))
 
 ; --- the actual check ---------------------------------------------------
 

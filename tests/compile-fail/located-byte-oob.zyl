@@ -1,0 +1,9 @@
+; Compile-fail: a byte literal above 255.
+; The diagnostic is located (P1).
+; expect-error: E_BYTE_VALUE_OOB
+; expect-at: located-byte-oob.zyl:8:12
+
+(defn main ()
+  (begin
+    (print (byte 300))
+    0))

@@ -1,0 +1,8 @@
+; Compile-fail: bytebuf without a capacity.
+; The diagnostic is located (P1).
+; expect-error: E_ARITY_MISMATCH
+; expect-at: located-bytebuf-arity.zyl:7:10
+
+(defn main ()
+  (let b (bytebuf Stack)
+    0))

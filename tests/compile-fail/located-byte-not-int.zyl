@@ -1,0 +1,9 @@
+; Compile-fail: a byte form whose argument is not an integer.
+; The diagnostic is located (P1).
+; expect-error: E_BYTE_VALUE_OOB
+; expect-at: located-byte-not-int.zyl:8:18
+
+(defn main ()
+  (begin
+    (print (byte "a"))
+    0))

@@ -4,3 +4,5 @@
   (defn describe (self) 1))
 
 (defn main () 0)
+; expect-error: E_PKG_ORPHAN_IMPL
+; expect-at: main.zyl:3:1

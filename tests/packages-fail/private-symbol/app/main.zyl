@@ -1,3 +1,5 @@
 ; E_PKG_PRIVATE_SYMBOL: private-helper is not `pub` in acme/lib.
 (use acme/lib { private-helper })
 (defn main () (private-helper 1))
+; expect-error: E_PKG_PRIVATE_SYMBOL
+; expect-at: main.zyl:2:17

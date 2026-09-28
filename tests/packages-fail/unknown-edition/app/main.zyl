@@ -1,1 +1,3 @@
 (defn main () 0)
+; expect-error: E_PKG_UNKNOWN_EDITION
+; expect-at: zyl.pkg:2:1

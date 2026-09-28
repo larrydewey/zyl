@@ -1,0 +1,8 @@
+; Compile-fail: a load with an endian selector other than :le or :be.
+; The diagnostic is located (P1).
+; expect-error: E_UNEXPECTED_TOKEN_IN_EXPR
+; expect-at: located-load-endian.zyl:8:5
+
+(defn main ()
+  (let b (bytebuf Heap 16)
+    (load-u8 :xx b 0)))

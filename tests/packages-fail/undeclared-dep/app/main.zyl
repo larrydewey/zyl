@@ -1,3 +1,5 @@
 ; E_PKG_UNDECLARED_DEP: the manifest declares no dependencies at all.
 (use acme/nothing:parser { parse })
 (defn main () (parse 1))
+; expect-error: E_PKG_UNDECLARED_DEP
+; expect-at: main.zyl:2:1

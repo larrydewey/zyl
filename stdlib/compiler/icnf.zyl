@@ -299,7 +299,7 @@
     (let h (ic-hoist (ic-expr arena body vt))
       (let tbody (ISeq (Cons (hoist-node h) (Cons (IConst 0) Nil)))
         (let acc2 (tlacc-push-fns (Cons (IFn tname (no-strs) tbody (no-ints)) (hoist-fns h)) acc)
-          (tlacc-push-stmt (IFfi "zyl_register_test" (Cons (IStr name) (Cons (ILoad tname) Nil))) acc2))))))
+          (tlacc-push-stmt (ic-keep-span (IFfi "zyl_register_test" (Cons (IStr name) (Cons (ILoad tname) Nil))) body) acc2))))))
 
 ; If there are leftover top-level statements, wrap them in an implicit
 ; `main` (the entry stub always calls f_main) unless the source already
@@ -335,7 +335,7 @@
     (Nil fns)
     (Cons _ _
       (if (ic-has-main fns)
-        (ffi-call "zyl_panic" "E_TOPLEVEL_STMTS_WITH_EXPLICIT_MAIN: top-level test/run-tests forms alongside an explicit (defn main ...)" 1000)
+        (match stmts (Cons s0 _ (ic-fail-at s0 "E_TOPLEVEL_STMTS_WITH_EXPLICIT_MAIN" "top-level test/run-tests forms alongside an explicit (defn main ...)" "")) (Nil fns))
         (Cons (IFn "main" (no-strs) (ISeq (list-append stmts (Cons (IConst 0) Nil))) (no-ints)) fns)))))
 
 (defn ic-has-main (fns)
@@ -416,6 +416,13 @@
     (Cons v rest
       (if (str-eq (AV.name v) nm) true (av-list-has-name rest nm)))))
 
+; The repeat of `nm` in `variants` (one exists), for locating the error.
+(defn av-list-find (variants nm dflt)
+  (match variants
+    (Nil dflt)
+    (Cons v rest
+      (if (str-eq (AV.name v) nm) v (av-list-find rest nm dflt)))))
+
 ; Link one variant entry per variant; tail = next entry chain. Tags
 ; assigned in declaration order (first variant gets the lowest tag).
 ;
@@ -443,7 +450,7 @@
       (let tail (vt-from-adtvariants rest vt (+ tag 1) gid)
         (let nm (AV.name v)
           (if (av-list-has-name rest nm)
-            (ffi-call "zyl_panic" "E_DUPLICATE_VARIANT: variant name defined more than once in the same deftype" 1000)
+            (ic-fail-at (av-list-find rest nm v) "E_DUPLICATE_VARIANT" "variant name defined more than once in the same deftype" "")
             (VTEntry nm
                      tag
                      (AV.fields v)
@@ -509,11 +516,36 @@
 ; -- that is what lets codegen's unbound-identifier error point at the
 ; identifier instead of at nothing. See qf-form for the same note.
 (defn ic-expr (arena expr vt)
-  (let out (ic-expr-node arena expr vt)
-    (let _ (ffi-call "zyl_span_copy" out expr 1000)
-      (let _ (if (ta-scalar expr) (icnf-scalar-set out 1) unit)
-        (let _ (if (ta-adt expr) (icnf-adt-set out 1) unit)
-          (ic-mark-kind out (ta-kind expr)))))))
+  (let depth (ffi-call "zyl_wvec_len" ic-cur-store 1000)
+    (let _ (ffi-call "zyl_wvec_push" ic-cur-store expr 1000)
+      (let out (ic-expr-node arena expr vt)
+        (let _ (ffi-call "zyl_wvec_truncate" ic-cur-store depth 1000)
+          (ic-expr-done out expr))))))
+
+; Expressions being lowered, innermost last, so a lowering error is located.
+(def ic-cur-store (ffi-call "zyl_wvec_new" 1000))
+
+(defn ic-cur ()
+  (let n (ffi-call "zyl_wvec_len" ic-cur-store 1000)
+    (if (= n 0) (Expr (EAtom ANil)) (ffi-call "zyl_wvec_get" ic-cur-store (- n 1) 1000))))
+
+; At `at` when it has a span, else at the expression being lowered.
+(defn ic-fail-at (at code msg help)
+  (if (>= (ffi-call "zyl_span_off" at 1000) 0)
+    (ffi-call "zyl_panic"
+      (err-at code msg (ffi-call "zyl_span_file" at 1000) (ffi-call "zyl_span_off" at 1000) help) 1000)
+    (ic-fail code msg help)))
+
+(defn ic-fail (code msg help)
+  (let site (ic-cur)
+    (ffi-call "zyl_panic"
+      (err-at code msg (ffi-call "zyl_span_file" site 1000) (ffi-call "zyl_span_off" site 1000) help) 1000)))
+
+(defn ic-expr-done (out expr)
+  (let _ (ffi-call "zyl_span_copy" out expr 1000)
+    (let _ (if (ta-scalar expr) (icnf-scalar-set out 1) unit)
+      (let _ (if (ta-adt expr) (icnf-adt-set out 1) unit)
+        (ic-mark-kind out (ta-kind expr))))))
 
 ; Codegen kind from type annotation (attr table 1); 0 is left unrecorded.
 (defn ic-mark-kind (out k)
@@ -1299,10 +1331,10 @@
 ; (Int, String, ...) to the first such impl; the type pass resolves every
 ; call it can reach, so one left over is an error.
 (defn ic-trait-unresolved (fname)
-  (ffi-call "zyl_panic"
-    (str-concat "error[E_CANNOT_INFER]: cannot tell which impl `"
+  (ic-fail "E_CANNOT_INFER"
+    (str-concat "cannot tell which impl `"
       (str-concat (err-name fname) "` calls: the receiver's type is not known here; give it a type annotation"))
-    1000))
+    ""))
 
 ; A call through a local holding a function value is still an ICall:
 ; codegen sees the name bound to a slot and emits cg-call-indirect.
@@ -1344,9 +1376,9 @@
       (ic-binop-arity op))))
 
 (defn ic-binop-arity (op)
-  (ffi-call "zyl_panic"
-    (str-concat "error[E_ARITY_MISMATCH]: operator " (str-concat (ffi-call "zyl_int_text" op 1000) " needs two operands"))
-    1000))
+  (ic-fail "E_ARITY_MISMATCH"
+    (str-concat "operator " (str-concat (ffi-call "zyl_int_text" op 1000) " needs two operands"))
+    ""))
 
 ; bit-not is the one bitwise op with no two-operand machine form here:
 ; `(bit-not x)` lowers to `x XOR -1`, which is exactly one's complement
@@ -1357,7 +1389,7 @@
 (defn ic-bit-not (arena args vt)
   (if (= (list-length args) 1)
     (IBinop 13 (ic-expr arena (first-expr args) vt) (IConst -1))
-    (ffi-call "zyl_panic" "E_ARITY_MISMATCH: bit-not takes exactly one argument" 1000)))
+    (ic-fail "E_ARITY_MISMATCH" "bit-not takes exactly one argument" "")))
 
 ; Left-associative n-ary fold: (op a b c) -> (op (op a b) c).
 ; The tree must nest LEFT so subtraction/division evaluate in source
@@ -1424,8 +1456,8 @@
     (Cons n rest
       (match n
         (IConst k (IFfi (str-intern arena (str-concat "zyl_rt_sys_" (ffi-call "zyl_int_text" (rt-syscall-add k) 1000))) rest))
-        (_ (ffi-call "zyl_panic" "E_FFI_RESTRICTED: %syscall takes an integer literal syscall number" 1000))))
-    (Nil (ffi-call "zyl_panic" "E_FFI_RESTRICTED: %syscall takes an integer literal syscall number" 1000))))
+        (_ (ic-fail "E_FFI_RESTRICTED" "%syscall takes an integer literal syscall number" ""))))
+    (Nil (ic-fail "E_FFI_RESTRICTED" "%syscall takes an integer literal syscall number" ""))))
 
 (defn ic-ffi-runtime-p (name)
   (if (>= (str-length name) 4)
@@ -1480,8 +1512,8 @@
     (Cons arm rest
       (let iname (MA.variant arm)
         (if (= (vt-tag-of vt iname) -1)
-          (let msg (str-concat "E_MATCH_NONEXHAUSTIVE: unknown variant `" (str-concat iname "` in match arm"))
-            (ffi-call "zyl_panic" msg 1000))
+          (let msg (str-concat "unknown variant `" (str-concat iname "` in match arm"))
+            (ic-fail-at arm "E_MATCH_NONEXHAUSTIVE" msg ""))
           (ic-check-variants-exist rest vt))))))
 
 ; Real exhaustiveness, using VTEntry's gid (see ast.zyl): every variant
@@ -1538,7 +1570,7 @@
           (if (not (ic-arms-all-gid arms vt gid))
             0
             (if (ic-names-uncovered (vt-names-with-gid vt gid) arms)
-              (ffi-call "zyl_panic" "E_MATCH_NONEXHAUSTIVE: match does not cover every variant" 1000)
+              (ic-fail "E_MATCH_NONEXHAUSTIVE" "match does not cover every variant" "")
               0)))))))
 
 ; Exhaustiveness check: if no catch-all arm, verify each arm's variant is

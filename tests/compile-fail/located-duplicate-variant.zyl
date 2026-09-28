@@ -1,0 +1,8 @@
+; Compile-fail: a variant repeated in one deftype.
+; The diagnostic is located (P1).
+; expect-error: E_DUPLICATE_VARIANT
+; expect-at: located-duplicate-variant.zyl:6:30
+
+(deftype Color (Red) (Green) (Red))
+
+(defn main () 0)

@@ -214,9 +214,9 @@
       (str-concat "E_MANIFEST_INVALID: package: " (str-concat root
         (str-concat " declares package " (str-concat (mf-name m)
           (str-concat ", required as " (pd-name dep)))))) 1000)
-    (let _ (pk-check-edition (mf-edition m) (mf-name m))
-      (let _ (pk-check-compiler (mf-zyl m) (mf-name m))
-        (pk-check-capabilities (mf-capabilities m) (mf-name m))))))
+    (let _ (pk-check-edition (mf-edition m) (mf-name m) m)
+      (let _ (pk-check-compiler (mf-zyl m) (mf-name m) m)
+        (pk-check-capabilities (mf-capabilities m) (mf-name m) m)))))
 
 ; The features a dependency edge asks for, plus whatever the selection
 ; already carries: features are additive and unified across the graph

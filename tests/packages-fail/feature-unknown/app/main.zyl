@@ -1,2 +1,4 @@
 (use acme/plain { base })
 (defn main () (base 0))
+; expect-error: E_PKG_FEATURE_UNKNOWN
+; expect-at: zyl.pkg:4:9

@@ -20,6 +20,7 @@
 (use compiler/ast)
 (use compiler/lexer)
 (use compiler/parser)
+(use compiler/error_report)
 (use core/list)
 (use core/option)
 
@@ -411,13 +412,20 @@
 
 ; A required field: absence is E_MANIFEST_INVALID, which names the field
 ; so the diagnostic points at what is missing rather than at the file.
-(defn pk-required-str (forms field path)
+(defn pk-required-str (forms field path site)
   (let v (pk-field-str forms field)
     (if (= (str-length v) 0)
-      (ffi-call "zyl_panic"
-        (str-concat "E_MANIFEST_INVALID: package: zyl.pkg is missing required field "
-          (str-concat field (str-concat " at " path))) 1000)
+      (pk-fail-at site "E_MANIFEST_INVALID"
+        (str-concat "package: zyl.pkg is missing required field "
+          (str-concat field (str-concat " at " path))))
       v)))
+
+; A manifest error located at its form in zyl.pkg.
+(defn pk-fail-at (at code msg)
+  (ffi-call "zyl_panic"
+    (err-at code msg (ffi-call "zyl_span_file" at 1000) (ffi-call "zyl_span_off" at 1000) "") 1000))
+
+(defn pk-spanned (node from) (let _ (ffi-call "zyl_span_copy" node from 1000) node))
 
 ; `(capabilities io ffi)` — bare identifiers, never strings, so a typo
 ; cannot silently become an unknown capability spelled as data.
@@ -429,13 +437,13 @@
 ; A requirement is a bare version (§31.3). Range operators are rejected
 ; here rather than parsed-and-ignored: MVS takes minimums, and silently
 ; treating "^1.2" as "1.2" would give a caret a meaning it does not have.
-(defn pk-check-requirement (s name)
+(defn pk-check-requirement (s name at)
   (if (not (pk-req-operator-p s))
     s
-    (ffi-call "zyl_panic"
-      (str-concat "E_PKG_BAD_REQUIREMENT: package: requirement "
+    (pk-fail-at at "E_PKG_BAD_REQUIREMENT"
+      (str-concat "package: requirement "
         (str-concat s (str-concat " on " (str-concat name
-          " uses a range operator - MVS takes bare minimum versions")))) 1000)))
+          " uses a range operator - MVS takes bare minimum versions")))))))
 
 (defn pk-req-operator-p (s)
   (if (= (pk-len s) 0)
@@ -456,12 +464,12 @@
         (let name (pk-check-name (pk-ast-str a))
           (match rest
             (Cons b rest2
-              (let ver (pk-version-of (pk-check-requirement (pk-ast-str b) name))
-                (PD name ver (pk-dep-features rest2) (pk-dep-source rest2))))
-            (Nil (ffi-call "zyl_panic"
-                   (str-concat "E_MANIFEST_INVALID: package: dep entry for "
-                     (str-concat name " has no version")) 1000)))))
-      (Nil (ffi-call "zyl_panic" "E_MANIFEST_INVALID: package: dep entry has no name" 1000)))))
+              (let ver (pk-version-of (pk-check-requirement (pk-ast-str b) name b))
+                (pk-spanned (PD name ver (pk-dep-features rest2) (pk-dep-source rest2)) form)))
+            (Nil (pk-fail-at form "E_MANIFEST_INVALID"
+                   (str-concat "package: dep entry for "
+                     (str-concat name " has no version")))))))
+      (Nil (pk-fail-at form "E_MANIFEST_INVALID" "package: dep entry has no name")))))
 
 (defn pk-dep-features (forms)
   (match (pk-find-form forms "features")
@@ -506,9 +514,15 @@
     (Nil 0)
     (Cons h t
       (if (pk-dep-named t (pd-name h))
-        (ffi-call "zyl_panic"
-          (str-concat "E_PKG_DUPLICATE_DEP: package: duplicate dep entry for " (pd-name h)) 1000)
+        (pk-fail-at (pk-dep-second t (pd-name h)) "E_PKG_DUPLICATE_DEP"
+          (str-concat "package: duplicate dep entry for " (pd-name h)))
         (pk-check-dup-deps t)))))
+
+; The repeated entry, for locating E_PKG_DUPLICATE_DEP.
+(defn pk-dep-second (deps name)
+  (match deps
+    (Nil (PD "" (PV 0 0 0 "") Nil (PSRegistry)))
+    (Cons h t (if (str-eq (pd-name h) name) h (pk-dep-second t name)))))
 
 (defn pk-dep-named (deps name)
   (match deps
@@ -535,7 +549,7 @@
   (let args (pk-ast-args form)
     (match args
       (Cons a rest (PF (pk-ast-str a) (pk-parse-deps rest "deps")))
-      (Nil (ffi-call "zyl_panic" "E_MANIFEST_INVALID: package: feature entry has no name" 1000)))))
+      (Nil (pk-fail-at form "E_MANIFEST_INVALID" "package: feature entry has no name")))))
 
 ; (native (sources "c/x.c") (cflags "-O2") (link-libs "m") (include-dirs "c"))
 (defn pk-parse-native (forms)
@@ -571,13 +585,13 @@
       (Cons a rest
         (let name (pk-check-name (pk-ast-str a))
           (POv name (pk-override-version rest name) (pk-dep-source rest))))
-      (Nil (ffi-call "zyl_panic" "E_MANIFEST_INVALID: package: override entry has no name" 1000)))))
+      (Nil (pk-fail-at form "E_MANIFEST_INVALID" "package: override entry has no name")))))
 
 (defn pk-override-version (rest name)
   (match rest
     (Cons b dot1
       (let s (pk-ast-str b)
-        (if (= (str-length s) 0) (PV 0 0 0 "") (pk-version-of (pk-check-requirement s name)))))
+        (if (= (str-length s) 0) (PV 0 0 0 "") (pk-version-of (pk-check-requirement s name b)))))
     (Nil (PV 0 0 0 ""))))
 
 ; Read and validate a manifest from `path`. Every error raised here is a
@@ -591,19 +605,19 @@
           (pk-manifest-of-source arena src path))))))
 
 (defn pk-manifest-of-source (arena src path)
-  (let forms (zyl-parse arena src)
+  (let forms (zyl-parse-file arena src path)
     (match (pk-find-form forms "package")
-      (Some f (pk-manifest-of-form (pk-ast-args f) path))
+      (Some f (pk-manifest-of-form (pk-ast-args f) path f))
       (None (ffi-call "zyl_panic"
               (str-concat "E_MANIFEST_INVALID: package: no (package ...) form in " path) 1000)))))
 
-(defn pk-manifest-of-form (forms path)
-  (let name (pk-check-name (pk-required-str forms "name" path))
-    (let version (pk-version-of (pk-required-str forms "version" path))
+(defn pk-manifest-of-form (forms path site)
+  (let name (pk-check-name (pk-required-str forms "name" path site))
+    (let version (pk-version-of (pk-required-str forms "version" path site))
       (let deps (pk-parse-deps forms "deps")
         (let _ (pk-check-dup-deps deps)
-          (MF (PM name version (pk-required-str forms "zyl" path)
-                  (pk-required-str forms "edition" path))
+          (pk-spanned (MF (PM name version (pk-required-str forms "zyl" path site)
+                  (pk-required-str forms "edition" path site))
               (PDoc (pk-field-str forms "description")
                     (pk-field-str forms "license")
                     (pk-field-str forms "repository"))
@@ -611,7 +625,7 @@
                      (pk-ident-list forms "deny-capabilities"))
               (PDeps deps (pk-parse-deps forms "dev-deps")
                      (pk-parse-features forms) (pk-parse-overrides forms))
-              (PBuild (pk-parse-native forms) (pk-str-list forms "exclude"))))))))
+              (PBuild (pk-parse-native forms) (pk-str-list forms "exclude"))) site))))))
 
 ; ===========================================================================
 ; EDITIONS AND COMPILER VERSION (§31.11)
@@ -624,23 +638,24 @@
 (defn pk-known-edition (e)
   (if (str-eq e "2026") true false))
 
-(defn pk-check-edition (e name)
+; `site` is the manifest (spanned at its package form).
+(defn pk-check-edition (e name site)
   (if (pk-known-edition e)
     1
-    (ffi-call "zyl_panic"
-      (str-concat "E_PKG_UNKNOWN_EDITION: package: edition "
-        (str-concat e (str-concat " declared by " (str-concat name " is not known to this compiler")))) 1000)))
+    (pk-fail-at site "E_PKG_UNKNOWN_EDITION"
+      (str-concat "package: edition "
+        (str-concat e (str-concat " declared by " (str-concat name " is not known to this compiler")))))))
 
 ; `(zyl "5.0")` is a MINIMUM compiler version. A two-component spelling is
 ; accepted and read as "5.0.0", since that is how the spec writes it.
-(defn pk-check-compiler (req name)
+(defn pk-check-compiler (req name site)
   (let want (pk-normalize-req req)
     (if (<= (pv-cmp want (pk-version-of (pk-compiler-version))) 0)
       1
-      (ffi-call "zyl_panic"
-        (str-concat "E_PKG_COMPILER_TOO_OLD: package: " (str-concat name
+      (pk-fail-at site "E_PKG_COMPILER_TOO_OLD"
+        (str-concat "package: " (str-concat name
           (str-concat " requires compiler version " (str-concat req
-            (str-concat ", this is " (pk-compiler-version)))))) 1000))))
+            (str-concat ", this is " (pk-compiler-version))))))))))
 
 (defn pk-normalize-req (req)
   (match (pk-parse-version req)
@@ -661,15 +676,15 @@
   (if (str-eq c "native") true
   (if (str-eq c "unsafe") true false)))))))
 
-(defn pk-check-capabilities (caps name)
+(defn pk-check-capabilities (caps name site)
   (match caps
     (Nil 1)
     (Cons c t
       (if (pk-known-capability c)
-        (pk-check-capabilities t name)
-        (ffi-call "zyl_panic"
-          (str-concat "E_MANIFEST_INVALID: package: unknown capability "
-            (str-concat c (str-concat " declared by " name))) 1000)))))
+        (pk-check-capabilities t name site)
+        (pk-fail-at site "E_MANIFEST_INVALID"
+          (str-concat "package: unknown capability "
+            (str-concat c (str-concat " declared by " name))))))))
 
 ; One package's capability ceiling, as the resolver discovers it and the
 ; enforcement pass reads it: the package name, what it granted itself,

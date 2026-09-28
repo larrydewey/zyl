@@ -827,7 +827,8 @@
 (defn qf-variants (tab locals xs)
   (match xs
     (Nil Nil)
-    (Cons h t (Cons (qf-variant tab locals h) (qf-variants tab locals t)))))
+    (Cons h t (Cons (let out (qf-variant tab locals h) (let _ (ffi-call "zyl_span_copy" out h 1000) out))
+                    (qf-variants tab locals t)))))
 
 (defn qf-variant (tab locals v)
   (match v
