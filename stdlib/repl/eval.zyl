@@ -371,12 +371,15 @@
     (Err msg (Err (eval-copy-str msg)))
     (Ok text (Ok (eval-copy-str text)))))
 
+; The session's defs are typed through zyl-repl-global, as eval-lower does.
 (defn eval-type-run (_scratch sess text gs)
   (let arena (eval-entry-arena)
-    (let out (try (Ok (eval-type-infer arena sess text gs)) (catch e (Err e)))
-      (begin
-        (arena-destroy arena)
-        out))))
+    (let _ (ffi-call "zyl_ref_set" repl-compiling true 1000)
+      (let out (try (Ok (eval-type-infer arena sess text gs)) (catch e (Err e)))
+        (let _ (ffi-call "zyl_ref_set" repl-compiling false 1000)
+          (begin
+            (arena-destroy arena)
+            out))))))
 
 (defn eval-type-infer (arena sess text gs)
   (let exprs (dv-expand-program (compile-to-exprs arena (eval-program-expr sess text gs) "<repl>"))

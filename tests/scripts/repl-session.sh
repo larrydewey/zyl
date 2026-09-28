@@ -38,4 +38,19 @@ for want in '=> 15' '=> 16' '=> "hi!"'; do
   printf '%s' "$plain" | grep -qF -- "$want" || fail "missing '$want' in: $out2"
 done
 [ "$(printf '%s' "$plain" | grep -c computed)" = "1" ] || fail "a def's expression must run once: $out2"
+# :type sees the session's defs; an entry's actors are joined before the prompt.
+out3="$(printf '%s\n' \
+  '(def n 3)' \
+  ':type (+ n 1)' \
+  '(use actor/actor)' \
+  '(def c (chan 2))' \
+  '(def tx (chan-tx c))' \
+  '(def rx (chan-rx c))' \
+  '(spawn (fn () (begin (print "from actor") (chan-send tx 41))))' \
+  '(+ (chan-recv rx) 1)' \
+  | timeout 60 "$ZYL" repl 2>&1)" || fail "repl exited non-zero: $out3"
+plain3="$(printf '%s' "$out3" | sed 's/\x1b\[[0-9;]*m//g')"
+for want in '(+ n 1) : Int' 'from actor' '=> 42'; do
+  printf '%s' "$plain3" | grep -qF -- "$want" || fail "missing '$want' in: $out3"
+done
 echo "repl-session: ok"

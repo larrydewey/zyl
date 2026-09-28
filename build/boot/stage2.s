@@ -663034,9 +663034,9 @@ zy_zyl_x2Fstd_5__repl_x2Feval__eval_x2Dcopy_x2Dtype:
 zy_zyl_x2Fstd_5__repl_x2Feval__eval_x2Dtype_x2Drun:
     push rbp
     mov rbp, rsp
-    sub rsp, 184
-    mov [rbp-184], rbx
-    mov [rbp-176], r12
+    sub rsp, 200
+    mov [rbp-200], rbx
+    mov [rbp-192], r12
     mov [rbp-8], rdi
     mov [rbp-16], rsi
     mov [rbp-24], rdx
@@ -663054,11 +663054,22 @@ call zyl_arena_create
     mov [rbp-56], rax
     mov rax, [rbp-56]
     mov [rbp-40], rax
+    sub rsp, 16
+call zy_zyl_x2Fstd_5__compiler_x2Fnode_5Ftables__repl_x2Dcompiling
+    add rsp, 0
+    mov rdi, rax
+    mov rsi, 1
+    mov r12, rsp
+    and rsp, -16
+call zyl_ref_set
+    mov rsp, r12
+    add rsp, 16
+    mov [rbp-64], rax
     mov r12, rsp
     and rsp, -16
     call zyl_try_push
     mov rsp, r12
-    mov [rbp-72], rax
+    mov [rbp-80], rax
     mov rdi, rax
     mov [rdi], rbx
     mov rax, rbp
@@ -663109,14 +663120,14 @@ call zy_zyl_x2Fstd_5__repl_x2Feval__eval_x2Dtype_x2Dinfer
     pop rax
     jmp .L16540
 .L16539:
-    mov rax, [rbp-72]
+    mov rax, [rbp-80]
     mov rdi, rax
     mov r12, rsp
     and rsp, -16
     call zyl_try_frame_msg
     mov rsp, r12
-    mov [rbp-72], rax
-    mov rax, [rbp-72]
+    mov [rbp-80], rax
+    mov rax, [rbp-80]
     push rax
     mov r12, rsp
     and rsp, -16
@@ -663129,7 +663140,18 @@ call zy_zyl_x2Fstd_5__repl_x2Feval__eval_x2Dtype_x2Dinfer
     mov [rbx+8], rax
     mov rax, rbx
 .L16540:
-    mov [rbp-64], rax
+    mov [rbp-72], rax
+    sub rsp, 16
+call zy_zyl_x2Fstd_5__compiler_x2Fnode_5Ftables__repl_x2Dcompiling
+    add rsp, 0
+    mov rdi, rax
+    mov rsi, 0
+    mov r12, rsp
+    and rsp, -16
+call zyl_ref_set
+    mov rsp, r12
+    add rsp, 16
+    mov [rbp-88], rax
     sub rsp, 8
     sub rsp, 8
     mov rdi, [rbp-40]
@@ -663138,11 +663160,11 @@ call zy_zyl_x2Fstd_5__repl_x2Feval__eval_x2Dtype_x2Dinfer
 call zyl_arena_destroy
     mov rsp, r12
     add rsp, 16
-    mov [rbp-80], rax
-    mov rax, [rbp-80]
-    mov rax, [rbp-64]
-    mov rbx, [rbp-184]
-    mov r12, [rbp-176]
+    mov [rbp-96], rax
+    mov rax, [rbp-96]
+    mov rax, [rbp-72]
+    mov rbx, [rbp-200]
+    mov r12, [rbp-192]
     mov rsp, rbp
     pop rbp
     ret
