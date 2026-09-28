@@ -1,6 +1,6 @@
 # The Runtime in Zyl: Design
 
-Status (2026-09-28): the runtime is Zyl (runtime/actor_runtime.c deleted) and libc-free: programs without foreign calls link static with no libc; foreign-calling programs link hosted. Stretch: a Zyl assembler and linker. This document covers how
+Status (2026-09-28): the runtime is Zyl (runtime/actor_runtime.c deleted) and libc-free: programs without foreign calls link static with no libc; foreign-calling programs link hosted. Freestanding programs now assemble and link with a Zyl assembler + static ELF linker (compiler/asm_x86 + compiler/elf_link) — no cc/as/ld (port order item 11 below). This document covers how
 `runtime/actor_runtime.c` (5.5k lines of C, about 400 entry points) is
 replaced by a runtime written in Zyl, `runtime/rt/*.zyl`, without adding
 any unsafe construct to the language.
@@ -148,7 +148,22 @@ no regression against the C version before that C code is deleted.
     (mmap, write, clone, futex, execve, ioctl), and Zyl number
     formatting and parsing, which must be correctly rounded. Link
     statically with `ld`, or dynamically only for `ffi-call` programs.
-11. Stretch: a Zyl assembler and ELF linker, so no external tool is left.
+11. Done: a Zyl assembler and static ELF linker, so no external tool is
+    left. `compiler/asm_x86` parses exactly the assembly the native
+    backend emits (Intel noprefix: the full GPR/SSE/AVX set the compiler
+    uses, `sym@GOTPCREL`, `fs:sym@tpoff`, `.tbss`, and the rest of the
+    corpus) and encodes it, with placeholder relocations; per-form bytes
+    match GNU `as`. `compiler/elf_link` assembles prog.s + rt.s +
+    start.s, lays out a r-x text segment (headers, `.text`, `.rodata`, a
+    synthesized GOT), a rw data/bss segment, a PT_TLS for `.tbss` (tpoff
+    = offset − aligned block size, as `zyl_rt_start` expects) and a
+    non-exec PT_GNU_STACK, resolves every relocation against a fixed
+    load base (weak-undefined → 0, strong-undefined → error), and writes
+    a static ET_EXEC. The driver's freestanding path uses it by default,
+    with no cc/as/ld; `ZYL_EXTERNAL_LD=1` restores the cc command for
+    debugging. Hosted (foreign-calling) programs still link over libc's
+    crt with cc. Output is byte-deterministic. `boot.sh`/`install.sh`
+    ship `rt.s` and `start.s` beside `rt.o`/`start.o`.
 
 ## The libc-free phase
 
