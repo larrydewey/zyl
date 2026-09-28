@@ -3128,9 +3128,7 @@
         (MCtx self _ _ _ aop acc
           (if (and (>= acc 0) (and (= op aop) (ml-acc-chain-p y op self)))
             ; x op (... (self args)): acc op= x, then the rest (x is evaluated first either way).
-            (let m2 (if (ml-imm-op op x)
-                      (ms-emit ms (MBinI op acc acc (ml-const-of x)))
-                      (let rx (ml-expr st env venv ms x) (ms-emit (mr-ms rx) (MBin op acc acc (mr-v rx)))))
+            (let m2 (ml-acc-add st env venv ms op acc x)
               (ml-tail st env venv m2 cx y))
             (ml-ret ms (ml-expr st env venv ms e))))))
     (IFfi sym args
@@ -3362,6 +3360,30 @@
 (defn ml-acc-op-ok (op) (or (= op 0) (or (= op 2) (and (>= op 11) (<= op 13)))))
 
 (defn ml-self-call-p (e self) (match e (ICall n _ (str-eq n self)) (_ false)))
+
+; acc op= x, with x's own ifs, lets and x1 op x2 spread over acc (associativity; x's order kept).
+(defn ml-acc-add (st env venv ms op acc x)
+  (match x
+    (IConst k (if (ml-imm-op op x) (ms-emit ms (MBinI op acc acc k)) (ml-acc-add-plain st env venv ms op acc x)))
+    (IBinop o y z (if (= o op) (ml-acc-add st env venv (ml-acc-add st env venv ms op acc y) op acc z) (ml-acc-add-plain st env venv ms op acc x)))
+    (IIf c t f
+      (if (and (ml-cheap c) (and (ml-cheap t) (ml-cmp-p c)))
+        (ml-acc-add-plain st env venv ms op acc x)
+      (let lf (ms-label ms)
+        (let le (ms-label (mr-ms lf))
+          (let m1 (ml-cond st env venv (mr-ms le) c (mr-v lf))
+            (let m2 (ml-acc-add st env venv m1 op acc t)
+              (let m3 (ml-acc-add st env venv (ms-emit (ms-emit m2 (MJmp (mr-v le))) (MLabel (mr-v lf))) op acc f)
+                (ms-emit m3 (MLabel (mr-v le))))))))))
+    (ILet n v b
+      (let rv (ml-expr st env venv ms v)
+        (let rx (ms-vreg (mr-ms rv))
+          (ml-acc-add st (EnvBind n -8 (kind-of st env v) env) (Cons (MVar n (mr-v rx)) venv)
+                      (ms-emit (mr-ms rx) (MMov (mr-v rx) (mr-v rv))) op acc b))))
+    (_ (ml-acc-add-plain st env venv ms op acc x))))
+
+(defn ml-acc-add-plain (st env venv ms op acc x)
+  (let rx (ml-expr st env venv ms x) (ms-emit (mr-ms rx) (MBin op acc acc (mr-v rx)))))
 
 ; e is (self args) or x op e' with e' such a chain.
 (defn ml-acc-chain-p (e op self)
