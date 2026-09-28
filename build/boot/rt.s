@@ -9258,6 +9258,6608 @@ zyl_ptr_cstr:
     mov rsp, rbp
     pop rbp
     ret
+zy_local_x2Fmain_0__blake3__b3_x2Dsize:
+    push rbp
+    mov rbp, rsp
+.L246_0:
+    mov rsi, 2208
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__blake3__b3_x2Dcompress:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    push r14
+    push r15
+    sub rsp, 872
+    mov qword ptr [rbp-56], rdi
+    mov qword ptr [rbp-64], rsi
+    mov qword ptr [rbp-120], rcx
+    mov qword ptr [rbp-72], r8
+    mov r8, rdx
+    mov qword ptr [rbp-48], r9
+.L247_0:
+    mov r12, qword ptr [rbp-56]
+    add r12, 0
+    mov rdx, r12
+    mov eax, dword ptr [rdx]
+    mov r12, rax
+    mov r13, qword ptr [rbp-56]
+    add r13, 4
+    mov rdx, r13
+    mov eax, dword ptr [rdx]
+    mov r13, rax
+    mov r14, qword ptr [rbp-56]
+    add r14, 8
+    mov rdx, r14
+    mov eax, dword ptr [rdx]
+    mov r14, rax
+    mov r15, qword ptr [rbp-56]
+    add r15, 12
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    mov qword ptr [rbp-88], r15
+    mov rbx, qword ptr [rbp-56]
+    add rbx, 16
+    mov rdx, rbx
+    mov eax, dword ptr [rdx]
+    mov rbx, rax
+    mov rdi, qword ptr [rbp-56]
+    add rdi, 20
+    mov rdx, rdi
+    mov eax, dword ptr [rdx]
+    mov rdi, rax
+    mov rsi, qword ptr [rbp-56]
+    add rsi, 24
+    mov rdx, rsi
+    mov eax, dword ptr [rdx]
+    mov rsi, rax
+    mov qword ptr [rbp-96], rsi
+    mov r10, qword ptr [rbp-56]
+    add r10, 28
+    mov rdx, r10
+    mov eax, dword ptr [rdx]
+    mov r10, rax
+    mov qword ptr [rbp-80], r10
+    mov r10, 1779033703
+    mov r15, 3144134277
+    mov rsi, 1013904242
+    mov qword ptr [rbp-104], rsi
+    mov rsi, 2773480762
+    mov qword ptr [rbp-112], rsi
+    mov rsi, 4294967295
+    and rsi, r8
+    mov r9, 32
+    mov rax, r8
+    mov rcx, r9
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r8, rax
+    mov r9, 4294967295
+    and r8, r9
+    mov r9, r12
+    add r9, rbx
+    mov r12, qword ptr [rbp-64]
+    add r12, 0
+    mov rdx, r12
+    mov eax, dword ptr [rdx]
+    mov r12, rax
+    add r9, r12
+    xor rsi, r9
+    mov r12, 16
+    mov rax, rsi
+    mov rcx, r12
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r12, rax
+    and r12, 65535
+    imul rsi, 65536
+    or rsi, r12
+    add r10, rsi
+    xor rbx, r10
+    mov r12, 12
+    mov rax, rbx
+    mov rcx, r12
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r12, rax
+    and r12, 1048575
+    imul rbx, 1048576
+    or rbx, r12
+    add r9, rbx
+    mov r12, qword ptr [rbp-64]
+    add r12, 4
+    mov rdx, r12
+    mov eax, dword ptr [rdx]
+    mov r12, rax
+    add r9, r12
+    xor rsi, r9
+    mov r12, 8
+    mov rax, rsi
+    mov rcx, r12
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r12, rax
+    and r12, 16777215
+    imul rsi, 16777216
+    or rsi, r12
+    add r10, rsi
+    mov qword ptr [rbp-144], r10
+    xor rbx, qword ptr [rbp-144]
+    mov r12, 7
+    mov rax, rbx
+    mov rcx, r12
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r12, rax
+    and r12, 33554431
+    imul rbx, 33554432
+    or rbx, r12
+    mov qword ptr [rbp-128], rbx
+    mov r12, r13
+    add r12, rdi
+    mov r13, qword ptr [rbp-64]
+    add r13, 8
+    mov rdx, r13
+    mov eax, dword ptr [rdx]
+    mov r13, rax
+    add r12, r13
+    xor r8, r12
+    mov r13, 16
+    mov rax, r8
+    mov rcx, r13
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r13, rax
+    and r13, 65535
+    imul r8, 65536
+    or r8, r13
+    mov r13, r15
+    add r13, r8
+    xor rdi, r13
+    mov r15, 12
+    mov rax, rdi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 1048575
+    imul rdi, 1048576
+    or rdi, r15
+    add r12, rdi
+    mov r15, qword ptr [rbp-64]
+    add r15, 12
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add r12, r15
+    xor r8, r12
+    mov r15, 8
+    mov rax, r8
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 16777215
+    imul r8, 16777216
+    or r8, r15
+    mov qword ptr [rbp-160], r8
+    add r13, qword ptr [rbp-160]
+    mov qword ptr [rbp-136], r13
+    xor rdi, qword ptr [rbp-136]
+    mov r15, 7
+    mov rax, rdi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul rdi, 33554432
+    or rdi, r15
+    add r14, qword ptr [rbp-96]
+    mov r15, qword ptr [rbp-64]
+    add r15, 16
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add r14, r15
+    mov r15, qword ptr [rbp-120]
+    xor r15, r14
+    mov rbx, 16
+    mov rax, r15
+    mov rcx, rbx
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov rbx, rax
+    and rbx, 65535
+    imul r15, 65536
+    or rbx, r15
+    mov r15, qword ptr [rbp-104]
+    add r15, rbx
+    mov r13, qword ptr [rbp-96]
+    xor r13, r15
+    mov r10, 12
+    mov rax, r13
+    mov rcx, r10
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r10, rax
+    and r10, 1048575
+    imul r13, 1048576
+    or r10, r13
+    mov r13, r14
+    add r13, r10
+    mov r14, qword ptr [rbp-64]
+    add r14, 20
+    mov rdx, r14
+    mov eax, dword ptr [rdx]
+    mov r14, rax
+    add r13, r14
+    mov qword ptr [rbp-168], r13
+    xor rbx, qword ptr [rbp-168]
+    mov r14, 8
+    mov rax, rbx
+    mov rcx, r14
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r14, rax
+    and r14, 16777215
+    imul rbx, 16777216
+    or rbx, r14
+    mov qword ptr [rbp-152], rbx
+    mov r14, r15
+    add r14, qword ptr [rbp-152]
+    xor r10, r14
+    mov r15, 7
+    mov rax, r10
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul r10, 33554432
+    or r10, r15
+    mov qword ptr [rbp-176], r10
+    mov r15, qword ptr [rbp-88]
+    add r15, qword ptr [rbp-80]
+    mov rbx, qword ptr [rbp-64]
+    add rbx, 24
+    mov rdx, rbx
+    mov eax, dword ptr [rdx]
+    mov rbx, rax
+    add rbx, r15
+    mov r15, qword ptr [rbp-72]
+    xor r15, rbx
+    mov r8, 16
+    mov rax, r15
+    mov rcx, r8
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r8, rax
+    and r8, 65535
+    imul r15, 65536
+    or r8, r15
+    mov r15, qword ptr [rbp-112]
+    add r15, r8
+    mov r13, qword ptr [rbp-80]
+    xor r13, r15
+    mov r10, 12
+    mov rax, r13
+    mov rcx, r10
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r10, rax
+    and r10, 1048575
+    imul r13, 1048576
+    or r10, r13
+    add rbx, r10
+    mov r13, qword ptr [rbp-64]
+    add r13, 28
+    mov rdx, r13
+    mov eax, dword ptr [rdx]
+    mov r13, rax
+    add rbx, r13
+    xor r8, rbx
+    mov r13, 8
+    mov rax, r8
+    mov rcx, r13
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r13, rax
+    and r13, 16777215
+    imul r8, 16777216
+    or r8, r13
+    mov r13, r15
+    add r13, r8
+    xor r10, r13
+    mov r15, 7
+    mov rax, r10
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul r10, 33554432
+    or r10, r15
+    add r9, rdi
+    mov r15, qword ptr [rbp-64]
+    add r15, 32
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add r9, r15
+    xor r8, r9
+    mov r15, 16
+    mov rax, r8
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 65535
+    imul r8, 65536
+    or r8, r15
+    add r14, r8
+    xor rdi, r14
+    mov r15, 12
+    mov rax, rdi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 1048575
+    imul rdi, 1048576
+    or rdi, r15
+    add r9, rdi
+    mov r15, qword ptr [rbp-64]
+    add r15, 36
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add r9, r15
+    xor r8, r9
+    mov r15, 8
+    mov rax, r8
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 16777215
+    imul r8, 16777216
+    or r8, r15
+    mov qword ptr [rbp-184], r8
+    add r14, qword ptr [rbp-184]
+    mov qword ptr [rbp-208], r14
+    xor rdi, qword ptr [rbp-208]
+    mov r15, 7
+    mov rax, rdi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul rdi, 33554432
+    or rdi, r15
+    mov qword ptr [rbp-232], rdi
+    add r12, qword ptr [rbp-176]
+    mov r15, qword ptr [rbp-64]
+    add r15, 40
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add r12, r15
+    xor rsi, r12
+    mov r15, 16
+    mov rax, rsi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 65535
+    imul rsi, 65536
+    or rsi, r15
+    add r13, rsi
+    mov r15, qword ptr [rbp-176]
+    xor r15, r13
+    mov r8, 12
+    mov rax, r15
+    mov rcx, r8
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r8, rax
+    and r8, 1048575
+    imul r15, 1048576
+    or r8, r15
+    add r12, r8
+    mov r15, qword ptr [rbp-64]
+    add r15, 44
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add r12, r15
+    xor rsi, r12
+    mov r15, 8
+    mov rax, rsi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 16777215
+    imul rsi, 16777216
+    or rsi, r15
+    add r13, rsi
+    mov qword ptr [rbp-192], r13
+    xor r8, qword ptr [rbp-192]
+    mov r15, 7
+    mov rax, r8
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul r8, 33554432
+    or r8, r15
+    mov qword ptr [rbp-200], r8
+    mov r15, qword ptr [rbp-168]
+    add r15, r10
+    mov r13, qword ptr [rbp-64]
+    add r13, 48
+    mov rdx, r13
+    mov eax, dword ptr [rdx]
+    mov r13, rax
+    add r13, r15
+    mov r15, qword ptr [rbp-160]
+    xor r15, r13
+    mov r8, 16
+    mov rax, r15
+    mov rcx, r8
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r8, rax
+    and r8, 65535
+    imul r15, 65536
+    or r8, r15
+    mov r15, qword ptr [rbp-144]
+    add r15, r8
+    xor r10, r15
+    mov r14, 12
+    mov rax, r10
+    mov rcx, r14
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r14, rax
+    and r14, 1048575
+    imul r10, 1048576
+    or r10, r14
+    add r13, r10
+    mov r14, qword ptr [rbp-64]
+    add r14, 52
+    mov rdx, r14
+    mov eax, dword ptr [rdx]
+    mov r14, rax
+    add r13, r14
+    mov qword ptr [rbp-224], r13
+    xor r8, qword ptr [rbp-224]
+    mov r14, 8
+    mov rax, r8
+    mov rcx, r14
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r14, rax
+    and r14, 16777215
+    imul r8, 16777216
+    or r8, r14
+    mov r14, r15
+    add r14, r8
+    xor r10, r14
+    mov r15, 7
+    mov rax, r10
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul r10, 33554432
+    or r10, r15
+    mov qword ptr [rbp-216], r10
+    add rbx, qword ptr [rbp-128]
+    mov r15, qword ptr [rbp-64]
+    add r15, 56
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add rbx, r15
+    mov r15, qword ptr [rbp-152]
+    xor r15, rbx
+    mov r10, 16
+    mov rax, r15
+    mov rcx, r10
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r10, rax
+    and r10, 65535
+    imul r15, 65536
+    or r10, r15
+    mov r15, qword ptr [rbp-136]
+    add r15, r10
+    mov r13, qword ptr [rbp-128]
+    xor r13, r15
+    mov rdi, 12
+    mov rax, r13
+    mov rcx, rdi
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov rdi, rax
+    and rdi, 1048575
+    imul r13, 1048576
+    or rdi, r13
+    add rbx, rdi
+    mov r13, qword ptr [rbp-64]
+    add r13, 60
+    mov rdx, r13
+    mov eax, dword ptr [rdx]
+    mov r13, rax
+    add rbx, r13
+    xor r10, rbx
+    mov r13, 8
+    mov rax, r10
+    mov rcx, r13
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r13, rax
+    and r13, 16777215
+    imul r10, 16777216
+    or r10, r13
+    mov r13, r15
+    add r13, r10
+    xor rdi, r13
+    mov r15, 7
+    mov rax, rdi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul rdi, 33554432
+    or rdi, r15
+    add r9, rdi
+    mov r15, qword ptr [rbp-64]
+    add r15, 8
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add r9, r15
+    xor rsi, r9
+    mov r15, 16
+    mov rax, rsi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 65535
+    imul rsi, 65536
+    or rsi, r15
+    add r14, rsi
+    xor rdi, r14
+    mov r15, 12
+    mov rax, rdi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 1048575
+    imul rdi, 1048576
+    or rdi, r15
+    add r9, rdi
+    mov r15, qword ptr [rbp-64]
+    add r15, 24
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add r9, r15
+    xor rsi, r9
+    mov r15, 8
+    mov rax, rsi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 16777215
+    imul rsi, 16777216
+    or rsi, r15
+    add r14, rsi
+    mov qword ptr [rbp-256], r14
+    xor rdi, qword ptr [rbp-256]
+    mov r15, 7
+    mov rax, rdi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul rdi, 33554432
+    or rdi, r15
+    mov qword ptr [rbp-240], rdi
+    add r12, qword ptr [rbp-232]
+    mov r15, qword ptr [rbp-64]
+    add r15, 12
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add r12, r15
+    xor r8, r12
+    mov r15, 16
+    mov rax, r8
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 65535
+    imul r8, 65536
+    or r8, r15
+    add r13, r8
+    mov r15, qword ptr [rbp-232]
+    xor r15, r13
+    mov rdi, 12
+    mov rax, r15
+    mov rcx, rdi
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov rdi, rax
+    and rdi, 1048575
+    imul r15, 1048576
+    or rdi, r15
+    add r12, rdi
+    mov r15, qword ptr [rbp-64]
+    add r15, 40
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add r12, r15
+    xor r8, r12
+    mov r15, 8
+    mov rax, r8
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 16777215
+    imul r8, 16777216
+    or r8, r15
+    mov qword ptr [rbp-264], r8
+    add r13, qword ptr [rbp-264]
+    mov qword ptr [rbp-248], r13
+    xor rdi, qword ptr [rbp-248]
+    mov r15, 7
+    mov rax, rdi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul rdi, 33554432
+    or rdi, r15
+    mov r15, qword ptr [rbp-224]
+    add r15, qword ptr [rbp-200]
+    mov r13, qword ptr [rbp-64]
+    add r13, 28
+    mov rdx, r13
+    mov eax, dword ptr [rdx]
+    mov r13, rax
+    add r13, r15
+    xor r10, r13
+    mov r15, 16
+    mov rax, r10
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 65535
+    imul r10, 65536
+    or r10, r15
+    mov r15, qword ptr [rbp-208]
+    add r15, r10
+    mov r14, qword ptr [rbp-200]
+    xor r14, r15
+    mov r8, 12
+    mov rax, r14
+    mov rcx, r8
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r8, rax
+    and r8, 1048575
+    imul r14, 1048576
+    or r8, r14
+    add r13, r8
+    mov r14, qword ptr [rbp-64]
+    add r14, 0
+    mov rdx, r14
+    mov eax, dword ptr [rdx]
+    mov r14, rax
+    add r13, r14
+    mov qword ptr [rbp-280], r13
+    xor r10, qword ptr [rbp-280]
+    mov r14, 8
+    mov rax, r10
+    mov rcx, r14
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r14, rax
+    and r14, 16777215
+    imul r10, 16777216
+    or r10, r14
+    mov qword ptr [rbp-272], r10
+    mov r14, r15
+    add r14, qword ptr [rbp-272]
+    xor r8, r14
+    mov r15, 7
+    mov rax, r8
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul r8, 33554432
+    or r8, r15
+    mov qword ptr [rbp-288], r8
+    add rbx, qword ptr [rbp-216]
+    mov r15, qword ptr [rbp-64]
+    add r15, 16
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add rbx, r15
+    mov r15, qword ptr [rbp-184]
+    xor r15, rbx
+    mov r10, 16
+    mov rax, r15
+    mov rcx, r10
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r10, rax
+    and r10, 65535
+    imul r15, 65536
+    or r10, r15
+    mov r15, qword ptr [rbp-192]
+    add r15, r10
+    mov r13, qword ptr [rbp-216]
+    xor r13, r15
+    mov r8, 12
+    mov rax, r13
+    mov rcx, r8
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r8, rax
+    and r8, 1048575
+    imul r13, 1048576
+    or r8, r13
+    add rbx, r8
+    mov r13, qword ptr [rbp-64]
+    add r13, 52
+    mov rdx, r13
+    mov eax, dword ptr [rdx]
+    mov r13, rax
+    add rbx, r13
+    xor r10, rbx
+    mov r13, 8
+    mov rax, r10
+    mov rcx, r13
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r13, rax
+    and r13, 16777215
+    imul r10, 16777216
+    or r10, r13
+    mov r13, r15
+    add r13, r10
+    xor r8, r13
+    mov r15, 7
+    mov rax, r8
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul r8, 33554432
+    or r8, r15
+    add r9, rdi
+    mov r15, qword ptr [rbp-64]
+    add r15, 4
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add r9, r15
+    xor r10, r9
+    mov r15, 16
+    mov rax, r10
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 65535
+    imul r10, 65536
+    or r10, r15
+    add r14, r10
+    xor rdi, r14
+    mov r15, 12
+    mov rax, rdi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 1048575
+    imul rdi, 1048576
+    or rdi, r15
+    add r9, rdi
+    mov r15, qword ptr [rbp-64]
+    add r15, 44
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add r9, r15
+    xor r10, r9
+    mov r15, 8
+    mov rax, r10
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 16777215
+    imul r10, 16777216
+    or r10, r15
+    mov qword ptr [rbp-296], r10
+    add r14, qword ptr [rbp-296]
+    mov qword ptr [rbp-320], r14
+    xor rdi, qword ptr [rbp-320]
+    mov r15, 7
+    mov rax, rdi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul rdi, 33554432
+    or rdi, r15
+    mov qword ptr [rbp-344], rdi
+    add r12, qword ptr [rbp-288]
+    mov r15, qword ptr [rbp-64]
+    add r15, 48
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add r12, r15
+    xor rsi, r12
+    mov r15, 16
+    mov rax, rsi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 65535
+    imul rsi, 65536
+    or rsi, r15
+    add r13, rsi
+    mov r15, qword ptr [rbp-288]
+    xor r15, r13
+    mov r10, 12
+    mov rax, r15
+    mov rcx, r10
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r10, rax
+    and r10, 1048575
+    imul r15, 1048576
+    or r10, r15
+    add r12, r10
+    mov r15, qword ptr [rbp-64]
+    add r15, 20
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add r12, r15
+    xor rsi, r12
+    mov r15, 8
+    mov rax, rsi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 16777215
+    imul rsi, 16777216
+    or rsi, r15
+    add r13, rsi
+    mov qword ptr [rbp-304], r13
+    xor r10, qword ptr [rbp-304]
+    mov r15, 7
+    mov rax, r10
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul r10, 33554432
+    or r10, r15
+    mov qword ptr [rbp-312], r10
+    mov r15, qword ptr [rbp-280]
+    add r15, r8
+    mov r13, qword ptr [rbp-64]
+    add r13, 36
+    mov rdx, r13
+    mov eax, dword ptr [rdx]
+    mov r13, rax
+    add r13, r15
+    mov r15, qword ptr [rbp-264]
+    xor r15, r13
+    mov r10, 16
+    mov rax, r15
+    mov rcx, r10
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r10, rax
+    and r10, 65535
+    imul r15, 65536
+    or r10, r15
+    mov r15, qword ptr [rbp-256]
+    add r15, r10
+    xor r8, r15
+    mov r14, 12
+    mov rax, r8
+    mov rcx, r14
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r14, rax
+    and r14, 1048575
+    imul r8, 1048576
+    or r8, r14
+    add r13, r8
+    mov r14, qword ptr [rbp-64]
+    add r14, 56
+    mov rdx, r14
+    mov eax, dword ptr [rdx]
+    mov r14, rax
+    add r13, r14
+    mov qword ptr [rbp-336], r13
+    xor r10, qword ptr [rbp-336]
+    mov r14, 8
+    mov rax, r10
+    mov rcx, r14
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r14, rax
+    and r14, 16777215
+    imul r10, 16777216
+    or r10, r14
+    mov r14, r15
+    add r14, r10
+    xor r8, r14
+    mov r15, 7
+    mov rax, r8
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul r8, 33554432
+    or r8, r15
+    mov qword ptr [rbp-328], r8
+    add rbx, qword ptr [rbp-240]
+    mov r15, qword ptr [rbp-64]
+    add r15, 60
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add rbx, r15
+    mov r15, qword ptr [rbp-272]
+    xor r15, rbx
+    mov r8, 16
+    mov rax, r15
+    mov rcx, r8
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r8, rax
+    and r8, 65535
+    imul r15, 65536
+    or r8, r15
+    mov r15, qword ptr [rbp-248]
+    add r15, r8
+    mov r13, qword ptr [rbp-240]
+    xor r13, r15
+    mov rdi, 12
+    mov rax, r13
+    mov rcx, rdi
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov rdi, rax
+    and rdi, 1048575
+    imul r13, 1048576
+    or rdi, r13
+    add rbx, rdi
+    mov r13, qword ptr [rbp-64]
+    add r13, 32
+    mov rdx, r13
+    mov eax, dword ptr [rdx]
+    mov r13, rax
+    add rbx, r13
+    xor r8, rbx
+    mov r13, 8
+    mov rax, r8
+    mov rcx, r13
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r13, rax
+    and r13, 16777215
+    imul r8, 16777216
+    or r8, r13
+    mov r13, r15
+    add r13, r8
+    xor rdi, r13
+    mov r15, 7
+    mov rax, rdi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul rdi, 33554432
+    or rdi, r15
+    add r9, rdi
+    mov r15, qword ptr [rbp-64]
+    add r15, 12
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add r9, r15
+    xor rsi, r9
+    mov r15, 16
+    mov rax, rsi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 65535
+    imul rsi, 65536
+    or rsi, r15
+    add r14, rsi
+    xor rdi, r14
+    mov r15, 12
+    mov rax, rdi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 1048575
+    imul rdi, 1048576
+    or rdi, r15
+    add r9, rdi
+    mov r15, qword ptr [rbp-64]
+    add r15, 16
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add r9, r15
+    xor rsi, r9
+    mov r15, 8
+    mov rax, rsi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 16777215
+    imul rsi, 16777216
+    or rsi, r15
+    add r14, rsi
+    mov qword ptr [rbp-368], r14
+    xor rdi, qword ptr [rbp-368]
+    mov r15, 7
+    mov rax, rdi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul rdi, 33554432
+    or rdi, r15
+    mov qword ptr [rbp-352], rdi
+    add r12, qword ptr [rbp-344]
+    mov r15, qword ptr [rbp-64]
+    add r15, 40
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add r12, r15
+    xor r10, r12
+    mov r15, 16
+    mov rax, r10
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 65535
+    imul r10, 65536
+    or r10, r15
+    add r13, r10
+    mov r15, qword ptr [rbp-344]
+    xor r15, r13
+    mov rdi, 12
+    mov rax, r15
+    mov rcx, rdi
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov rdi, rax
+    and rdi, 1048575
+    imul r15, 1048576
+    or rdi, r15
+    add r12, rdi
+    mov r15, qword ptr [rbp-64]
+    add r15, 48
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add r12, r15
+    xor r10, r12
+    mov r15, 8
+    mov rax, r10
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 16777215
+    imul r10, 16777216
+    or r10, r15
+    mov qword ptr [rbp-376], r10
+    add r13, qword ptr [rbp-376]
+    mov qword ptr [rbp-360], r13
+    xor rdi, qword ptr [rbp-360]
+    mov r15, 7
+    mov rax, rdi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul rdi, 33554432
+    or rdi, r15
+    mov r15, qword ptr [rbp-336]
+    add r15, qword ptr [rbp-312]
+    mov r13, qword ptr [rbp-64]
+    add r13, 52
+    mov rdx, r13
+    mov eax, dword ptr [rdx]
+    mov r13, rax
+    add r13, r15
+    xor r8, r13
+    mov r15, 16
+    mov rax, r8
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 65535
+    imul r8, 65536
+    or r8, r15
+    mov r15, qword ptr [rbp-320]
+    add r15, r8
+    mov r14, qword ptr [rbp-312]
+    xor r14, r15
+    mov r10, 12
+    mov rax, r14
+    mov rcx, r10
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r10, rax
+    and r10, 1048575
+    imul r14, 1048576
+    or r10, r14
+    add r13, r10
+    mov r14, qword ptr [rbp-64]
+    add r14, 8
+    mov rdx, r14
+    mov eax, dword ptr [rdx]
+    mov r14, rax
+    add r13, r14
+    mov qword ptr [rbp-392], r13
+    xor r8, qword ptr [rbp-392]
+    mov r14, 8
+    mov rax, r8
+    mov rcx, r14
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r14, rax
+    and r14, 16777215
+    imul r8, 16777216
+    or r8, r14
+    mov qword ptr [rbp-384], r8
+    mov r14, r15
+    add r14, qword ptr [rbp-384]
+    xor r10, r14
+    mov r15, 7
+    mov rax, r10
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul r10, 33554432
+    or r10, r15
+    mov qword ptr [rbp-400], r10
+    add rbx, qword ptr [rbp-328]
+    mov r15, qword ptr [rbp-64]
+    add r15, 28
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add rbx, r15
+    mov r15, qword ptr [rbp-296]
+    xor r15, rbx
+    mov r8, 16
+    mov rax, r15
+    mov rcx, r8
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r8, rax
+    and r8, 65535
+    imul r15, 65536
+    or r8, r15
+    mov r15, qword ptr [rbp-304]
+    add r15, r8
+    mov r13, qword ptr [rbp-328]
+    xor r13, r15
+    mov r10, 12
+    mov rax, r13
+    mov rcx, r10
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r10, rax
+    and r10, 1048575
+    imul r13, 1048576
+    or r10, r13
+    add rbx, r10
+    mov r13, qword ptr [rbp-64]
+    add r13, 56
+    mov rdx, r13
+    mov eax, dword ptr [rdx]
+    mov r13, rax
+    add rbx, r13
+    xor r8, rbx
+    mov r13, 8
+    mov rax, r8
+    mov rcx, r13
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r13, rax
+    and r13, 16777215
+    imul r8, 16777216
+    or r8, r13
+    mov r13, r15
+    add r13, r8
+    xor r10, r13
+    mov r15, 7
+    mov rax, r10
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul r10, 33554432
+    or r10, r15
+    add r9, rdi
+    mov r15, qword ptr [rbp-64]
+    add r15, 24
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add r9, r15
+    xor r8, r9
+    mov r15, 16
+    mov rax, r8
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 65535
+    imul r8, 65536
+    or r8, r15
+    add r14, r8
+    xor rdi, r14
+    mov r15, 12
+    mov rax, rdi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 1048575
+    imul rdi, 1048576
+    or rdi, r15
+    add r9, rdi
+    mov r15, qword ptr [rbp-64]
+    add r15, 20
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add r9, r15
+    xor r8, r9
+    mov r15, 8
+    mov rax, r8
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 16777215
+    imul r8, 16777216
+    or r8, r15
+    mov qword ptr [rbp-408], r8
+    add r14, qword ptr [rbp-408]
+    mov qword ptr [rbp-432], r14
+    xor rdi, qword ptr [rbp-432]
+    mov r15, 7
+    mov rax, rdi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul rdi, 33554432
+    or rdi, r15
+    mov qword ptr [rbp-456], rdi
+    add r12, qword ptr [rbp-400]
+    mov r15, qword ptr [rbp-64]
+    add r15, 36
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add r12, r15
+    xor rsi, r12
+    mov r15, 16
+    mov rax, rsi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 65535
+    imul rsi, 65536
+    or rsi, r15
+    add r13, rsi
+    mov r15, qword ptr [rbp-400]
+    xor r15, r13
+    mov r8, 12
+    mov rax, r15
+    mov rcx, r8
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r8, rax
+    and r8, 1048575
+    imul r15, 1048576
+    or r8, r15
+    add r12, r8
+    mov r15, qword ptr [rbp-64]
+    add r15, 0
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add r12, r15
+    xor rsi, r12
+    mov r15, 8
+    mov rax, rsi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 16777215
+    imul rsi, 16777216
+    or rsi, r15
+    add r13, rsi
+    mov qword ptr [rbp-416], r13
+    xor r8, qword ptr [rbp-416]
+    mov r15, 7
+    mov rax, r8
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul r8, 33554432
+    or r8, r15
+    mov qword ptr [rbp-424], r8
+    mov r15, qword ptr [rbp-392]
+    add r15, r10
+    mov r13, qword ptr [rbp-64]
+    add r13, 44
+    mov rdx, r13
+    mov eax, dword ptr [rdx]
+    mov r13, rax
+    add r13, r15
+    mov r15, qword ptr [rbp-376]
+    xor r15, r13
+    mov r8, 16
+    mov rax, r15
+    mov rcx, r8
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r8, rax
+    and r8, 65535
+    imul r15, 65536
+    or r8, r15
+    mov r15, qword ptr [rbp-368]
+    add r15, r8
+    xor r10, r15
+    mov r14, 12
+    mov rax, r10
+    mov rcx, r14
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r14, rax
+    and r14, 1048575
+    imul r10, 1048576
+    or r10, r14
+    add r13, r10
+    mov r14, qword ptr [rbp-64]
+    add r14, 60
+    mov rdx, r14
+    mov eax, dword ptr [rdx]
+    mov r14, rax
+    add r13, r14
+    mov qword ptr [rbp-448], r13
+    xor r8, qword ptr [rbp-448]
+    mov r14, 8
+    mov rax, r8
+    mov rcx, r14
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r14, rax
+    and r14, 16777215
+    imul r8, 16777216
+    or r8, r14
+    mov r14, r15
+    add r14, r8
+    xor r10, r14
+    mov r15, 7
+    mov rax, r10
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul r10, 33554432
+    or r10, r15
+    mov qword ptr [rbp-440], r10
+    add rbx, qword ptr [rbp-352]
+    mov r15, qword ptr [rbp-64]
+    add r15, 32
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add rbx, r15
+    mov r15, qword ptr [rbp-384]
+    xor r15, rbx
+    mov r10, 16
+    mov rax, r15
+    mov rcx, r10
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r10, rax
+    and r10, 65535
+    imul r15, 65536
+    or r10, r15
+    mov r15, qword ptr [rbp-360]
+    add r15, r10
+    mov r13, qword ptr [rbp-352]
+    xor r13, r15
+    mov rdi, 12
+    mov rax, r13
+    mov rcx, rdi
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov rdi, rax
+    and rdi, 1048575
+    imul r13, 1048576
+    or rdi, r13
+    add rbx, rdi
+    mov r13, qword ptr [rbp-64]
+    add r13, 4
+    mov rdx, r13
+    mov eax, dword ptr [rdx]
+    mov r13, rax
+    add rbx, r13
+    xor r10, rbx
+    mov r13, 8
+    mov rax, r10
+    mov rcx, r13
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r13, rax
+    and r13, 16777215
+    imul r10, 16777216
+    or r10, r13
+    mov r13, r15
+    add r13, r10
+    xor rdi, r13
+    mov r15, 7
+    mov rax, rdi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul rdi, 33554432
+    or rdi, r15
+    add r9, rdi
+    mov r15, qword ptr [rbp-64]
+    add r15, 40
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add r9, r15
+    xor rsi, r9
+    mov r15, 16
+    mov rax, rsi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 65535
+    imul rsi, 65536
+    or rsi, r15
+    add r14, rsi
+    xor rdi, r14
+    mov r15, 12
+    mov rax, rdi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 1048575
+    imul rdi, 1048576
+    or rdi, r15
+    add r9, rdi
+    mov r15, qword ptr [rbp-64]
+    add r15, 28
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add r9, r15
+    xor rsi, r9
+    mov r15, 8
+    mov rax, rsi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 16777215
+    imul rsi, 16777216
+    or rsi, r15
+    add r14, rsi
+    mov qword ptr [rbp-480], r14
+    xor rdi, qword ptr [rbp-480]
+    mov r15, 7
+    mov rax, rdi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul rdi, 33554432
+    or rdi, r15
+    mov qword ptr [rbp-464], rdi
+    add r12, qword ptr [rbp-456]
+    mov r15, qword ptr [rbp-64]
+    add r15, 48
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add r12, r15
+    xor r8, r12
+    mov r15, 16
+    mov rax, r8
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 65535
+    imul r8, 65536
+    or r8, r15
+    add r13, r8
+    mov r15, qword ptr [rbp-456]
+    xor r15, r13
+    mov rdi, 12
+    mov rax, r15
+    mov rcx, rdi
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov rdi, rax
+    and rdi, 1048575
+    imul r15, 1048576
+    or rdi, r15
+    add r12, rdi
+    mov r15, qword ptr [rbp-64]
+    add r15, 36
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add r12, r15
+    xor r8, r12
+    mov r15, 8
+    mov rax, r8
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 16777215
+    imul r8, 16777216
+    or r8, r15
+    mov qword ptr [rbp-488], r8
+    add r13, qword ptr [rbp-488]
+    mov qword ptr [rbp-472], r13
+    xor rdi, qword ptr [rbp-472]
+    mov r15, 7
+    mov rax, rdi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul rdi, 33554432
+    or rdi, r15
+    mov r15, qword ptr [rbp-448]
+    add r15, qword ptr [rbp-424]
+    mov r13, qword ptr [rbp-64]
+    add r13, 56
+    mov rdx, r13
+    mov eax, dword ptr [rdx]
+    mov r13, rax
+    add r13, r15
+    xor r10, r13
+    mov r15, 16
+    mov rax, r10
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 65535
+    imul r10, 65536
+    or r10, r15
+    mov r15, qword ptr [rbp-432]
+    add r15, r10
+    mov r14, qword ptr [rbp-424]
+    xor r14, r15
+    mov r8, 12
+    mov rax, r14
+    mov rcx, r8
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r8, rax
+    and r8, 1048575
+    imul r14, 1048576
+    or r8, r14
+    add r13, r8
+    mov r14, qword ptr [rbp-64]
+    add r14, 12
+    mov rdx, r14
+    mov eax, dword ptr [rdx]
+    mov r14, rax
+    add r13, r14
+    mov qword ptr [rbp-504], r13
+    xor r10, qword ptr [rbp-504]
+    mov r14, 8
+    mov rax, r10
+    mov rcx, r14
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r14, rax
+    and r14, 16777215
+    imul r10, 16777216
+    or r10, r14
+    mov qword ptr [rbp-496], r10
+    mov r14, r15
+    add r14, qword ptr [rbp-496]
+    xor r8, r14
+    mov r15, 7
+    mov rax, r8
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul r8, 33554432
+    or r8, r15
+    mov qword ptr [rbp-512], r8
+    add rbx, qword ptr [rbp-440]
+    mov r15, qword ptr [rbp-64]
+    add r15, 52
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add rbx, r15
+    mov r15, qword ptr [rbp-408]
+    xor r15, rbx
+    mov r10, 16
+    mov rax, r15
+    mov rcx, r10
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r10, rax
+    and r10, 65535
+    imul r15, 65536
+    or r10, r15
+    mov r15, qword ptr [rbp-416]
+    add r15, r10
+    mov r13, qword ptr [rbp-440]
+    xor r13, r15
+    mov r8, 12
+    mov rax, r13
+    mov rcx, r8
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r8, rax
+    and r8, 1048575
+    imul r13, 1048576
+    or r8, r13
+    add rbx, r8
+    mov r13, qword ptr [rbp-64]
+    add r13, 60
+    mov rdx, r13
+    mov eax, dword ptr [rdx]
+    mov r13, rax
+    add rbx, r13
+    xor r10, rbx
+    mov r13, 8
+    mov rax, r10
+    mov rcx, r13
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r13, rax
+    and r13, 16777215
+    imul r10, 16777216
+    or r10, r13
+    mov r13, r15
+    add r13, r10
+    xor r8, r13
+    mov r15, 7
+    mov rax, r8
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul r8, 33554432
+    or r8, r15
+    add r9, rdi
+    mov r15, qword ptr [rbp-64]
+    add r15, 16
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add r9, r15
+    xor r10, r9
+    mov r15, 16
+    mov rax, r10
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 65535
+    imul r10, 65536
+    or r10, r15
+    add r14, r10
+    xor rdi, r14
+    mov r15, 12
+    mov rax, rdi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 1048575
+    imul rdi, 1048576
+    or rdi, r15
+    add r9, rdi
+    mov r15, qword ptr [rbp-64]
+    add r15, 0
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add r9, r15
+    xor r10, r9
+    mov r15, 8
+    mov rax, r10
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 16777215
+    imul r10, 16777216
+    or r10, r15
+    mov qword ptr [rbp-520], r10
+    add r14, qword ptr [rbp-520]
+    mov qword ptr [rbp-544], r14
+    xor rdi, qword ptr [rbp-544]
+    mov r15, 7
+    mov rax, rdi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul rdi, 33554432
+    or rdi, r15
+    mov qword ptr [rbp-568], rdi
+    add r12, qword ptr [rbp-512]
+    mov r15, qword ptr [rbp-64]
+    add r15, 44
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add r12, r15
+    xor rsi, r12
+    mov r15, 16
+    mov rax, rsi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 65535
+    imul rsi, 65536
+    or rsi, r15
+    add r13, rsi
+    mov r15, qword ptr [rbp-512]
+    xor r15, r13
+    mov r10, 12
+    mov rax, r15
+    mov rcx, r10
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r10, rax
+    and r10, 1048575
+    imul r15, 1048576
+    or r10, r15
+    add r12, r10
+    mov r15, qword ptr [rbp-64]
+    add r15, 8
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add r12, r15
+    xor rsi, r12
+    mov r15, 8
+    mov rax, rsi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 16777215
+    imul rsi, 16777216
+    or rsi, r15
+    add r13, rsi
+    mov qword ptr [rbp-528], r13
+    xor r10, qword ptr [rbp-528]
+    mov r15, 7
+    mov rax, r10
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul r10, 33554432
+    or r10, r15
+    mov qword ptr [rbp-536], r10
+    mov r15, qword ptr [rbp-504]
+    add r15, r8
+    mov r13, qword ptr [rbp-64]
+    add r13, 20
+    mov rdx, r13
+    mov eax, dword ptr [rdx]
+    mov r13, rax
+    add r13, r15
+    mov r15, qword ptr [rbp-488]
+    xor r15, r13
+    mov r10, 16
+    mov rax, r15
+    mov rcx, r10
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r10, rax
+    and r10, 65535
+    imul r15, 65536
+    or r10, r15
+    mov r15, qword ptr [rbp-480]
+    add r15, r10
+    xor r8, r15
+    mov r14, 12
+    mov rax, r8
+    mov rcx, r14
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r14, rax
+    and r14, 1048575
+    imul r8, 1048576
+    or r8, r14
+    add r13, r8
+    mov r14, qword ptr [rbp-64]
+    add r14, 32
+    mov rdx, r14
+    mov eax, dword ptr [rdx]
+    mov r14, rax
+    add r13, r14
+    mov qword ptr [rbp-560], r13
+    xor r10, qword ptr [rbp-560]
+    mov r14, 8
+    mov rax, r10
+    mov rcx, r14
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r14, rax
+    and r14, 16777215
+    imul r10, 16777216
+    or r10, r14
+    mov r14, r15
+    add r14, r10
+    xor r8, r14
+    mov r15, 7
+    mov rax, r8
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul r8, 33554432
+    or r8, r15
+    mov qword ptr [rbp-552], r8
+    add rbx, qword ptr [rbp-464]
+    mov r15, qword ptr [rbp-64]
+    add r15, 4
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add rbx, r15
+    mov r15, qword ptr [rbp-496]
+    xor r15, rbx
+    mov r8, 16
+    mov rax, r15
+    mov rcx, r8
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r8, rax
+    and r8, 65535
+    imul r15, 65536
+    or r8, r15
+    mov r15, qword ptr [rbp-472]
+    add r15, r8
+    mov r13, qword ptr [rbp-464]
+    xor r13, r15
+    mov rdi, 12
+    mov rax, r13
+    mov rcx, rdi
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov rdi, rax
+    and rdi, 1048575
+    imul r13, 1048576
+    or rdi, r13
+    add rbx, rdi
+    mov r13, qword ptr [rbp-64]
+    add r13, 24
+    mov rdx, r13
+    mov eax, dword ptr [rdx]
+    mov r13, rax
+    add rbx, r13
+    xor r8, rbx
+    mov r13, 8
+    mov rax, r8
+    mov rcx, r13
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r13, rax
+    and r13, 16777215
+    imul r8, 16777216
+    or r8, r13
+    mov r13, r15
+    add r13, r8
+    xor rdi, r13
+    mov r15, 7
+    mov rax, rdi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul rdi, 33554432
+    or rdi, r15
+    add r9, rdi
+    mov r15, qword ptr [rbp-64]
+    add r15, 48
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add r9, r15
+    xor rsi, r9
+    mov r15, 16
+    mov rax, rsi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 65535
+    imul rsi, 65536
+    or rsi, r15
+    add r14, rsi
+    xor rdi, r14
+    mov r15, 12
+    mov rax, rdi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 1048575
+    imul rdi, 1048576
+    or rdi, r15
+    add r9, rdi
+    mov r15, qword ptr [rbp-64]
+    add r15, 52
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add r9, r15
+    xor rsi, r9
+    mov r15, 8
+    mov rax, rsi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 16777215
+    imul rsi, 16777216
+    or rsi, r15
+    add r14, rsi
+    mov qword ptr [rbp-592], r14
+    xor rdi, qword ptr [rbp-592]
+    mov r15, 7
+    mov rax, rdi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul rdi, 33554432
+    or rdi, r15
+    mov qword ptr [rbp-576], rdi
+    add r12, qword ptr [rbp-568]
+    mov r15, qword ptr [rbp-64]
+    add r15, 36
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add r12, r15
+    xor r10, r12
+    mov r15, 16
+    mov rax, r10
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 65535
+    imul r10, 65536
+    or r10, r15
+    add r13, r10
+    mov r15, qword ptr [rbp-568]
+    xor r15, r13
+    mov rdi, 12
+    mov rax, r15
+    mov rcx, rdi
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov rdi, rax
+    and rdi, 1048575
+    imul r15, 1048576
+    or rdi, r15
+    add r12, rdi
+    mov r15, qword ptr [rbp-64]
+    add r15, 44
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add r12, r15
+    xor r10, r12
+    mov r15, 8
+    mov rax, r10
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 16777215
+    imul r10, 16777216
+    or r10, r15
+    mov qword ptr [rbp-600], r10
+    add r13, qword ptr [rbp-600]
+    mov qword ptr [rbp-584], r13
+    xor rdi, qword ptr [rbp-584]
+    mov r15, 7
+    mov rax, rdi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul rdi, 33554432
+    or rdi, r15
+    mov r15, qword ptr [rbp-560]
+    add r15, qword ptr [rbp-536]
+    mov r13, qword ptr [rbp-64]
+    add r13, 60
+    mov rdx, r13
+    mov eax, dword ptr [rdx]
+    mov r13, rax
+    add r13, r15
+    xor r8, r13
+    mov r15, 16
+    mov rax, r8
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 65535
+    imul r8, 65536
+    or r8, r15
+    mov r15, qword ptr [rbp-544]
+    add r15, r8
+    mov r14, qword ptr [rbp-536]
+    xor r14, r15
+    mov r10, 12
+    mov rax, r14
+    mov rcx, r10
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r10, rax
+    and r10, 1048575
+    imul r14, 1048576
+    or r10, r14
+    add r13, r10
+    mov r14, qword ptr [rbp-64]
+    add r14, 40
+    mov rdx, r14
+    mov eax, dword ptr [rdx]
+    mov r14, rax
+    add r13, r14
+    mov qword ptr [rbp-616], r13
+    xor r8, qword ptr [rbp-616]
+    mov r14, 8
+    mov rax, r8
+    mov rcx, r14
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r14, rax
+    and r14, 16777215
+    imul r8, 16777216
+    or r8, r14
+    mov qword ptr [rbp-608], r8
+    mov r14, r15
+    add r14, qword ptr [rbp-608]
+    xor r10, r14
+    mov r15, 7
+    mov rax, r10
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul r10, 33554432
+    or r10, r15
+    mov qword ptr [rbp-624], r10
+    add rbx, qword ptr [rbp-552]
+    mov r15, qword ptr [rbp-64]
+    add r15, 56
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add rbx, r15
+    mov r15, qword ptr [rbp-520]
+    xor r15, rbx
+    mov r8, 16
+    mov rax, r15
+    mov rcx, r8
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r8, rax
+    and r8, 65535
+    imul r15, 65536
+    or r8, r15
+    mov r15, qword ptr [rbp-528]
+    add r15, r8
+    mov r13, qword ptr [rbp-552]
+    xor r13, r15
+    mov r10, 12
+    mov rax, r13
+    mov rcx, r10
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r10, rax
+    and r10, 1048575
+    imul r13, 1048576
+    or r10, r13
+    add rbx, r10
+    mov r13, qword ptr [rbp-64]
+    add r13, 32
+    mov rdx, r13
+    mov eax, dword ptr [rdx]
+    mov r13, rax
+    add rbx, r13
+    xor r8, rbx
+    mov r13, 8
+    mov rax, r8
+    mov rcx, r13
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r13, rax
+    and r13, 16777215
+    imul r8, 16777216
+    or r8, r13
+    mov r13, r15
+    add r13, r8
+    xor r10, r13
+    mov r15, 7
+    mov rax, r10
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul r10, 33554432
+    or r10, r15
+    add r9, rdi
+    mov r15, qword ptr [rbp-64]
+    add r15, 28
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add r9, r15
+    xor r8, r9
+    mov r15, 16
+    mov rax, r8
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 65535
+    imul r8, 65536
+    or r8, r15
+    add r14, r8
+    xor rdi, r14
+    mov r15, 12
+    mov rax, rdi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 1048575
+    imul rdi, 1048576
+    or rdi, r15
+    add r9, rdi
+    mov r15, qword ptr [rbp-64]
+    add r15, 8
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add r9, r15
+    xor r8, r9
+    mov r15, 8
+    mov rax, r8
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 16777215
+    imul r8, 16777216
+    or r8, r15
+    mov qword ptr [rbp-632], r8
+    add r14, qword ptr [rbp-632]
+    mov qword ptr [rbp-656], r14
+    xor rdi, qword ptr [rbp-656]
+    mov r15, 7
+    mov rax, rdi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul rdi, 33554432
+    or rdi, r15
+    mov qword ptr [rbp-680], rdi
+    add r12, qword ptr [rbp-624]
+    mov r15, qword ptr [rbp-64]
+    add r15, 20
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add r12, r15
+    xor rsi, r12
+    mov r15, 16
+    mov rax, rsi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 65535
+    imul rsi, 65536
+    or rsi, r15
+    add r13, rsi
+    mov r15, qword ptr [rbp-624]
+    xor r15, r13
+    mov r8, 12
+    mov rax, r15
+    mov rcx, r8
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r8, rax
+    and r8, 1048575
+    imul r15, 1048576
+    or r8, r15
+    add r12, r8
+    mov r15, qword ptr [rbp-64]
+    add r15, 12
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add r12, r15
+    xor rsi, r12
+    mov r15, 8
+    mov rax, rsi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 16777215
+    imul rsi, 16777216
+    or rsi, r15
+    add r13, rsi
+    mov qword ptr [rbp-640], r13
+    xor r8, qword ptr [rbp-640]
+    mov r15, 7
+    mov rax, r8
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul r8, 33554432
+    or r8, r15
+    mov qword ptr [rbp-648], r8
+    mov r15, qword ptr [rbp-616]
+    add r15, r10
+    mov r13, qword ptr [rbp-64]
+    add r13, 0
+    mov rdx, r13
+    mov eax, dword ptr [rdx]
+    mov r13, rax
+    add r13, r15
+    mov r15, qword ptr [rbp-600]
+    xor r15, r13
+    mov r8, 16
+    mov rax, r15
+    mov rcx, r8
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r8, rax
+    and r8, 65535
+    imul r15, 65536
+    or r8, r15
+    mov r15, qword ptr [rbp-592]
+    add r15, r8
+    xor r10, r15
+    mov r14, 12
+    mov rax, r10
+    mov rcx, r14
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r14, rax
+    and r14, 1048575
+    imul r10, 1048576
+    or r10, r14
+    add r13, r10
+    mov r14, qword ptr [rbp-64]
+    add r14, 4
+    mov rdx, r14
+    mov eax, dword ptr [rdx]
+    mov r14, rax
+    add r13, r14
+    mov qword ptr [rbp-672], r13
+    xor r8, qword ptr [rbp-672]
+    mov r14, 8
+    mov rax, r8
+    mov rcx, r14
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r14, rax
+    and r14, 16777215
+    imul r8, 16777216
+    or r8, r14
+    mov r14, r15
+    add r14, r8
+    xor r10, r14
+    mov r15, 7
+    mov rax, r10
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul r10, 33554432
+    or r10, r15
+    mov qword ptr [rbp-664], r10
+    add rbx, qword ptr [rbp-576]
+    mov r15, qword ptr [rbp-64]
+    add r15, 24
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add rbx, r15
+    mov r15, qword ptr [rbp-608]
+    xor r15, rbx
+    mov r10, 16
+    mov rax, r15
+    mov rcx, r10
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r10, rax
+    and r10, 65535
+    imul r15, 65536
+    or r10, r15
+    mov r15, qword ptr [rbp-584]
+    add r15, r10
+    mov r13, qword ptr [rbp-576]
+    xor r13, r15
+    mov rdi, 12
+    mov rax, r13
+    mov rcx, rdi
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov rdi, rax
+    and rdi, 1048575
+    imul r13, 1048576
+    or rdi, r13
+    add rbx, rdi
+    mov r13, qword ptr [rbp-64]
+    add r13, 16
+    mov rdx, r13
+    mov eax, dword ptr [rdx]
+    mov r13, rax
+    add rbx, r13
+    xor r10, rbx
+    mov r13, 8
+    mov rax, r10
+    mov rcx, r13
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r13, rax
+    and r13, 16777215
+    imul r10, 16777216
+    or r10, r13
+    mov r13, r15
+    add r13, r10
+    xor rdi, r13
+    mov r15, 7
+    mov rax, rdi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul rdi, 33554432
+    or rdi, r15
+    add r9, rdi
+    mov r15, qword ptr [rbp-64]
+    add r15, 36
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add r9, r15
+    xor rsi, r9
+    mov r15, 16
+    mov rax, rsi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 65535
+    imul rsi, 65536
+    or rsi, r15
+    add r14, rsi
+    xor rdi, r14
+    mov r15, 12
+    mov rax, rdi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 1048575
+    imul rdi, 1048576
+    or rdi, r15
+    add r9, rdi
+    mov r15, qword ptr [rbp-64]
+    add r15, 56
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add r9, r15
+    xor rsi, r9
+    mov r15, 8
+    mov rax, rsi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 16777215
+    imul rsi, 16777216
+    or rsi, r15
+    add r14, rsi
+    mov qword ptr [rbp-704], r14
+    xor rdi, qword ptr [rbp-704]
+    mov r15, 7
+    mov rax, rdi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul rdi, 33554432
+    or rdi, r15
+    mov qword ptr [rbp-688], rdi
+    add r12, qword ptr [rbp-680]
+    mov r15, qword ptr [rbp-64]
+    add r15, 44
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add r12, r15
+    xor r8, r12
+    mov r15, 16
+    mov rax, r8
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 65535
+    imul r8, 65536
+    or r8, r15
+    add r13, r8
+    mov r15, qword ptr [rbp-680]
+    xor r15, r13
+    mov rdi, 12
+    mov rax, r15
+    mov rcx, rdi
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov rdi, rax
+    and rdi, 1048575
+    imul r15, 1048576
+    or rdi, r15
+    add r12, rdi
+    mov r15, qword ptr [rbp-64]
+    add r15, 20
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add r12, r15
+    xor r8, r12
+    mov r15, 8
+    mov rax, r8
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 16777215
+    imul r8, 16777216
+    or r8, r15
+    mov qword ptr [rbp-712], r8
+    add r13, qword ptr [rbp-712]
+    mov qword ptr [rbp-696], r13
+    xor rdi, qword ptr [rbp-696]
+    mov r15, 7
+    mov rax, rdi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul rdi, 33554432
+    or rdi, r15
+    mov r15, qword ptr [rbp-672]
+    add r15, qword ptr [rbp-648]
+    mov r13, qword ptr [rbp-64]
+    add r13, 32
+    mov rdx, r13
+    mov eax, dword ptr [rdx]
+    mov r13, rax
+    add r13, r15
+    xor r10, r13
+    mov r15, 16
+    mov rax, r10
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 65535
+    imul r10, 65536
+    or r10, r15
+    mov r15, qword ptr [rbp-656]
+    add r15, r10
+    mov r14, qword ptr [rbp-648]
+    xor r14, r15
+    mov r8, 12
+    mov rax, r14
+    mov rcx, r8
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r8, rax
+    and r8, 1048575
+    imul r14, 1048576
+    or r8, r14
+    add r13, r8
+    mov r14, qword ptr [rbp-64]
+    add r14, 48
+    mov rdx, r14
+    mov eax, dword ptr [rdx]
+    mov r14, rax
+    add r13, r14
+    mov qword ptr [rbp-728], r13
+    xor r10, qword ptr [rbp-728]
+    mov r14, 8
+    mov rax, r10
+    mov rcx, r14
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r14, rax
+    and r14, 16777215
+    imul r10, 16777216
+    or r10, r14
+    mov qword ptr [rbp-720], r10
+    mov r14, r15
+    add r14, qword ptr [rbp-720]
+    xor r8, r14
+    mov r15, 7
+    mov rax, r8
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul r8, 33554432
+    or r8, r15
+    mov qword ptr [rbp-736], r8
+    add rbx, qword ptr [rbp-664]
+    mov r15, qword ptr [rbp-64]
+    add r15, 60
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add rbx, r15
+    mov r15, qword ptr [rbp-632]
+    xor r15, rbx
+    mov r10, 16
+    mov rax, r15
+    mov rcx, r10
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r10, rax
+    and r10, 65535
+    imul r15, 65536
+    or r10, r15
+    mov r15, qword ptr [rbp-640]
+    add r15, r10
+    mov r13, qword ptr [rbp-664]
+    xor r13, r15
+    mov r8, 12
+    mov rax, r13
+    mov rcx, r8
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r8, rax
+    and r8, 1048575
+    imul r13, 1048576
+    or r8, r13
+    add rbx, r8
+    mov r13, qword ptr [rbp-64]
+    add r13, 4
+    mov rdx, r13
+    mov eax, dword ptr [rdx]
+    mov r13, rax
+    add rbx, r13
+    xor r10, rbx
+    mov r13, 8
+    mov rax, r10
+    mov rcx, r13
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r13, rax
+    and r13, 16777215
+    imul r10, 16777216
+    or r10, r13
+    mov r13, r15
+    add r13, r10
+    xor r8, r13
+    mov r15, 7
+    mov rax, r8
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul r8, 33554432
+    or r8, r15
+    add r9, rdi
+    mov r15, qword ptr [rbp-64]
+    add r15, 52
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add r9, r15
+    xor r10, r9
+    mov r15, 16
+    mov rax, r10
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 65535
+    imul r10, 65536
+    or r10, r15
+    add r14, r10
+    xor rdi, r14
+    mov r15, 12
+    mov rax, rdi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 1048575
+    imul rdi, 1048576
+    or rdi, r15
+    add r9, rdi
+    mov r15, qword ptr [rbp-64]
+    add r15, 12
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add r9, r15
+    xor r10, r9
+    mov r15, 8
+    mov rax, r10
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 16777215
+    imul r10, 16777216
+    or r10, r15
+    mov qword ptr [rbp-744], r10
+    add r14, qword ptr [rbp-744]
+    mov qword ptr [rbp-768], r14
+    xor rdi, qword ptr [rbp-768]
+    mov r15, 7
+    mov rax, rdi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul rdi, 33554432
+    or rdi, r15
+    mov qword ptr [rbp-792], rdi
+    add r12, qword ptr [rbp-736]
+    mov r15, qword ptr [rbp-64]
+    add r15, 0
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add r12, r15
+    xor rsi, r12
+    mov r15, 16
+    mov rax, rsi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 65535
+    imul rsi, 65536
+    or rsi, r15
+    add r13, rsi
+    mov r15, qword ptr [rbp-736]
+    xor r15, r13
+    mov r10, 12
+    mov rax, r15
+    mov rcx, r10
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r10, rax
+    and r10, 1048575
+    imul r15, 1048576
+    or r10, r15
+    add r12, r10
+    mov r15, qword ptr [rbp-64]
+    add r15, 40
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add r12, r15
+    xor rsi, r12
+    mov r15, 8
+    mov rax, rsi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 16777215
+    imul rsi, 16777216
+    or rsi, r15
+    add r13, rsi
+    mov qword ptr [rbp-752], r13
+    xor r10, qword ptr [rbp-752]
+    mov r15, 7
+    mov rax, r10
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul r10, 33554432
+    or r10, r15
+    mov qword ptr [rbp-760], r10
+    mov r15, qword ptr [rbp-728]
+    add r15, r8
+    mov r13, qword ptr [rbp-64]
+    add r13, 8
+    mov rdx, r13
+    mov eax, dword ptr [rdx]
+    mov r13, rax
+    add r13, r15
+    mov r15, qword ptr [rbp-712]
+    xor r15, r13
+    mov r10, 16
+    mov rax, r15
+    mov rcx, r10
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r10, rax
+    and r10, 65535
+    imul r15, 65536
+    or r10, r15
+    mov r15, qword ptr [rbp-704]
+    add r15, r10
+    xor r8, r15
+    mov r14, 12
+    mov rax, r8
+    mov rcx, r14
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r14, rax
+    and r14, 1048575
+    imul r8, 1048576
+    or r8, r14
+    add r13, r8
+    mov r14, qword ptr [rbp-64]
+    add r14, 24
+    mov rdx, r14
+    mov eax, dword ptr [rdx]
+    mov r14, rax
+    add r13, r14
+    mov qword ptr [rbp-784], r13
+    xor r10, qword ptr [rbp-784]
+    mov r14, 8
+    mov rax, r10
+    mov rcx, r14
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r14, rax
+    and r14, 16777215
+    imul r10, 16777216
+    or r10, r14
+    mov r14, r15
+    add r14, r10
+    xor r8, r14
+    mov r15, 7
+    mov rax, r8
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul r8, 33554432
+    or r8, r15
+    mov qword ptr [rbp-776], r8
+    add rbx, qword ptr [rbp-688]
+    mov r15, qword ptr [rbp-64]
+    add r15, 16
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add rbx, r15
+    mov r15, qword ptr [rbp-720]
+    xor r15, rbx
+    mov r8, 16
+    mov rax, r15
+    mov rcx, r8
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r8, rax
+    and r8, 65535
+    imul r15, 65536
+    or r8, r15
+    mov r15, qword ptr [rbp-696]
+    add r15, r8
+    mov r13, qword ptr [rbp-688]
+    xor r13, r15
+    mov rdi, 12
+    mov rax, r13
+    mov rcx, rdi
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov rdi, rax
+    and rdi, 1048575
+    imul r13, 1048576
+    or rdi, r13
+    add rbx, rdi
+    mov r13, qword ptr [rbp-64]
+    add r13, 28
+    mov rdx, r13
+    mov eax, dword ptr [rdx]
+    mov r13, rax
+    add rbx, r13
+    xor r8, rbx
+    mov r13, 8
+    mov rax, r8
+    mov rcx, r13
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r13, rax
+    and r13, 16777215
+    imul r8, 16777216
+    or r8, r13
+    mov r13, r15
+    add r13, r8
+    xor rdi, r13
+    mov r15, 7
+    mov rax, rdi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul rdi, 33554432
+    or rdi, r15
+    add r9, rdi
+    mov r15, qword ptr [rbp-64]
+    add r15, 44
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add r9, r15
+    xor rsi, r9
+    mov r15, 16
+    mov rax, rsi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 65535
+    imul rsi, 65536
+    or rsi, r15
+    add r14, rsi
+    xor rdi, r14
+    mov r15, 12
+    mov rax, rdi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 1048575
+    imul rdi, 1048576
+    or rdi, r15
+    add r9, rdi
+    mov r15, qword ptr [rbp-64]
+    add r15, 60
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add r9, r15
+    xor rsi, r9
+    mov r15, 8
+    mov rax, rsi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 16777215
+    imul rsi, 16777216
+    or rsi, r15
+    add r14, rsi
+    mov qword ptr [rbp-816], r14
+    xor rdi, qword ptr [rbp-816]
+    mov r15, 7
+    mov rax, rdi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul rdi, 33554432
+    or rdi, r15
+    mov qword ptr [rbp-800], rdi
+    add r12, qword ptr [rbp-792]
+    mov r15, qword ptr [rbp-64]
+    add r15, 20
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add r12, r15
+    xor r10, r12
+    mov r15, 16
+    mov rax, r10
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 65535
+    imul r10, 65536
+    or r10, r15
+    add r13, r10
+    mov r15, qword ptr [rbp-792]
+    xor r15, r13
+    mov rdi, 12
+    mov rax, r15
+    mov rcx, rdi
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov rdi, rax
+    and rdi, 1048575
+    imul r15, 1048576
+    or rdi, r15
+    add r12, rdi
+    mov r15, qword ptr [rbp-64]
+    add r15, 0
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add r12, r15
+    xor r10, r12
+    mov r15, 8
+    mov rax, r10
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 16777215
+    imul r10, 16777216
+    or r10, r15
+    mov qword ptr [rbp-824], r10
+    add r13, qword ptr [rbp-824]
+    mov qword ptr [rbp-808], r13
+    xor rdi, qword ptr [rbp-808]
+    mov r15, 7
+    mov rax, rdi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul rdi, 33554432
+    or rdi, r15
+    mov r15, qword ptr [rbp-784]
+    add r15, qword ptr [rbp-760]
+    mov r13, qword ptr [rbp-64]
+    add r13, 4
+    mov rdx, r13
+    mov eax, dword ptr [rdx]
+    mov r13, rax
+    add r13, r15
+    xor r8, r13
+    mov r15, 16
+    mov rax, r8
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 65535
+    imul r8, 65536
+    or r8, r15
+    mov r15, qword ptr [rbp-768]
+    add r15, r8
+    mov r14, qword ptr [rbp-760]
+    xor r14, r15
+    mov r10, 12
+    mov rax, r14
+    mov rcx, r10
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r10, rax
+    and r10, 1048575
+    imul r14, 1048576
+    or r10, r14
+    add r13, r10
+    mov r14, qword ptr [rbp-64]
+    add r14, 36
+    mov rdx, r14
+    mov eax, dword ptr [rdx]
+    mov r14, rax
+    add r13, r14
+    mov qword ptr [rbp-840], r13
+    xor r8, qword ptr [rbp-840]
+    mov r14, 8
+    mov rax, r8
+    mov rcx, r14
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r14, rax
+    and r14, 16777215
+    imul r8, 16777216
+    or r8, r14
+    mov qword ptr [rbp-832], r8
+    mov r14, r15
+    add r14, qword ptr [rbp-832]
+    xor r10, r14
+    mov r15, 7
+    mov rax, r10
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul r10, 33554432
+    or r10, r15
+    mov qword ptr [rbp-848], r10
+    add rbx, qword ptr [rbp-776]
+    mov r15, qword ptr [rbp-64]
+    add r15, 32
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add rbx, r15
+    mov r15, qword ptr [rbp-744]
+    xor r15, rbx
+    mov r8, 16
+    mov rax, r15
+    mov rcx, r8
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r8, rax
+    and r8, 65535
+    imul r15, 65536
+    or r8, r15
+    mov r15, qword ptr [rbp-752]
+    add r15, r8
+    mov r13, qword ptr [rbp-776]
+    xor r13, r15
+    mov r10, 12
+    mov rax, r13
+    mov rcx, r10
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r10, rax
+    and r10, 1048575
+    imul r13, 1048576
+    or r10, r13
+    add rbx, r10
+    mov r13, qword ptr [rbp-64]
+    add r13, 24
+    mov rdx, r13
+    mov eax, dword ptr [rdx]
+    mov r13, rax
+    add rbx, r13
+    xor r8, rbx
+    mov r13, 8
+    mov rax, r8
+    mov rcx, r13
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r13, rax
+    and r13, 16777215
+    imul r8, 16777216
+    or r8, r13
+    mov r13, r15
+    add r13, r8
+    xor r10, r13
+    mov r15, 7
+    mov rax, r10
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul r10, 33554432
+    or r10, r15
+    add r9, rdi
+    mov r15, qword ptr [rbp-64]
+    add r15, 56
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add r9, r15
+    xor r8, r9
+    mov r15, 16
+    mov rax, r8
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 65535
+    imul r8, 65536
+    or r8, r15
+    add r14, r8
+    xor rdi, r14
+    mov r15, 12
+    mov rax, rdi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 1048575
+    imul rdi, 1048576
+    or rdi, r15
+    add r9, rdi
+    mov r15, qword ptr [rbp-64]
+    add r15, 40
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add r9, r15
+    xor r8, r9
+    mov r15, 8
+    mov rax, r8
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 16777215
+    imul r8, 16777216
+    or r8, r15
+    mov qword ptr [rbp-856], r8
+    add r14, qword ptr [rbp-856]
+    xor rdi, r14
+    mov r15, 7
+    mov rax, rdi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul rdi, 33554432
+    or rdi, r15
+    mov qword ptr [rbp-872], rdi
+    add r12, qword ptr [rbp-848]
+    mov r15, qword ptr [rbp-64]
+    add r15, 8
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add r12, r15
+    xor rsi, r12
+    mov r15, 16
+    mov rax, rsi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 65535
+    imul rsi, 65536
+    or rsi, r15
+    add r13, rsi
+    mov r15, qword ptr [rbp-848]
+    xor r15, r13
+    mov r8, 12
+    mov rax, r15
+    mov rcx, r8
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r8, rax
+    and r8, 1048575
+    imul r15, 1048576
+    or r8, r15
+    add r12, r8
+    mov r15, qword ptr [rbp-64]
+    add r15, 48
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add r12, r15
+    xor rsi, r12
+    mov r15, 8
+    mov rax, rsi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 16777215
+    imul rsi, 16777216
+    or rsi, r15
+    mov qword ptr [rbp-880], rsi
+    add r13, qword ptr [rbp-880]
+    mov qword ptr [rbp-904], r13
+    xor r8, qword ptr [rbp-904]
+    mov r15, 7
+    mov rax, r8
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul r8, 33554432
+    or r8, r15
+    mov qword ptr [rbp-864], r8
+    mov r15, qword ptr [rbp-840]
+    add r15, r10
+    mov r8, qword ptr [rbp-64]
+    add r8, 12
+    mov rdx, r8
+    mov eax, dword ptr [rdx]
+    mov r8, rax
+    add r8, r15
+    mov r15, qword ptr [rbp-824]
+    xor r15, r8
+    mov rdi, 16
+    mov rax, r15
+    mov rcx, rdi
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov rdi, rax
+    and rdi, 65535
+    imul r15, 65536
+    or rdi, r15
+    mov r15, qword ptr [rbp-816]
+    add r15, rdi
+    xor r10, r15
+    mov rsi, 12
+    mov rax, r10
+    mov rcx, rsi
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov rsi, rax
+    and rsi, 1048575
+    imul r10, 1048576
+    or rsi, r10
+    add r8, rsi
+    mov r10, qword ptr [rbp-64]
+    add r10, 16
+    mov rdx, r10
+    mov eax, dword ptr [rdx]
+    mov r10, rax
+    add r8, r10
+    xor rdi, r8
+    mov r10, 8
+    mov rax, rdi
+    mov rcx, r10
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r10, rax
+    and r10, 16777215
+    imul rdi, 16777216
+    or rdi, r10
+    mov qword ptr [rbp-896], rdi
+    mov r10, r15
+    add r10, qword ptr [rbp-896]
+    xor rsi, r10
+    mov r15, 7
+    mov rax, rsi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul rsi, 33554432
+    or rsi, r15
+    mov qword ptr [rbp-888], rsi
+    add rbx, qword ptr [rbp-800]
+    mov r15, qword ptr [rbp-64]
+    add r15, 28
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    add rbx, r15
+    mov r15, qword ptr [rbp-832]
+    xor r15, rbx
+    mov rsi, 16
+    mov rax, r15
+    mov rcx, rsi
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov rsi, rax
+    and rsi, 65535
+    imul r15, 65536
+    or rsi, r15
+    mov r15, qword ptr [rbp-808]
+    add r15, rsi
+    mov rdi, qword ptr [rbp-800]
+    xor rdi, r15
+    mov r13, 12
+    mov rax, rdi
+    mov rcx, r13
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r13, rax
+    and r13, 1048575
+    imul rdi, 1048576
+    or rdi, r13
+    add rbx, rdi
+    mov r13, qword ptr [rbp-64]
+    add r13, 52
+    mov rdx, r13
+    mov eax, dword ptr [rdx]
+    mov r13, rax
+    add rbx, r13
+    xor rsi, rbx
+    mov r13, 8
+    mov rax, rsi
+    mov rcx, r13
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r13, rax
+    and r13, 16777215
+    imul rsi, 16777216
+    or rsi, r13
+    mov qword ptr [rbp-912], rsi
+    mov r13, r15
+    add r13, qword ptr [rbp-912]
+    xor rdi, r13
+    mov r15, 7
+    mov rax, rdi
+    mov rcx, r15
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r15, rax
+    and r15, 33554431
+    imul rdi, 33554432
+    or rdi, r15
+    mov r15, qword ptr [rbp-48]
+    add r15, 32
+    mov rsi, qword ptr [rbp-56]
+    add rsi, 0
+    mov rdx, rsi
+    mov eax, dword ptr [rdx]
+    mov rsi, rax
+    xor rsi, r10
+    mov rdx, r15
+    mov rcx, rsi
+    mov dword ptr [rdx], ecx
+    mov rax, rcx
+    mov rsi, rax
+    mov rsi, qword ptr [rbp-48]
+    add rsi, 36
+    mov r15, qword ptr [rbp-56]
+    add r15, 4
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    xor r15, r13
+    mov rdx, rsi
+    mov rcx, r15
+    mov dword ptr [rdx], ecx
+    mov rax, rcx
+    mov rsi, rax
+    mov rsi, qword ptr [rbp-48]
+    add rsi, 40
+    mov r15, qword ptr [rbp-56]
+    add r15, 8
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    xor r15, r14
+    mov rdx, rsi
+    mov rcx, r15
+    mov dword ptr [rdx], ecx
+    mov rax, rcx
+    mov rsi, rax
+    mov rsi, qword ptr [rbp-48]
+    add rsi, 44
+    mov r15, qword ptr [rbp-56]
+    add r15, 12
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    xor r15, qword ptr [rbp-904]
+    mov rdx, rsi
+    mov rcx, r15
+    mov dword ptr [rdx], ecx
+    mov rax, rcx
+    mov rsi, rax
+    mov rsi, qword ptr [rbp-48]
+    add rsi, 48
+    mov r15, qword ptr [rbp-56]
+    add r15, 16
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    xor r15, qword ptr [rbp-880]
+    mov rdx, rsi
+    mov rcx, r15
+    mov dword ptr [rdx], ecx
+    mov rax, rcx
+    mov rsi, rax
+    mov rsi, qword ptr [rbp-48]
+    add rsi, 52
+    mov r15, qword ptr [rbp-56]
+    add r15, 20
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    xor r15, qword ptr [rbp-896]
+    mov rdx, rsi
+    mov rcx, r15
+    mov dword ptr [rdx], ecx
+    mov rax, rcx
+    mov rsi, rax
+    mov rsi, qword ptr [rbp-48]
+    add rsi, 56
+    mov r15, qword ptr [rbp-56]
+    add r15, 24
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    xor r15, qword ptr [rbp-912]
+    mov rdx, rsi
+    mov rcx, r15
+    mov dword ptr [rdx], ecx
+    mov rax, rcx
+    mov rsi, rax
+    mov rsi, qword ptr [rbp-48]
+    add rsi, 60
+    mov r15, qword ptr [rbp-56]
+    add r15, 28
+    mov rdx, r15
+    mov eax, dword ptr [rdx]
+    mov r15, rax
+    xor r15, qword ptr [rbp-856]
+    mov rdx, rsi
+    mov rcx, r15
+    mov dword ptr [rdx], ecx
+    mov rax, rcx
+    mov rsi, rax
+    mov rsi, qword ptr [rbp-48]
+    add rsi, 0
+    xor r9, r10
+    mov rdx, rsi
+    mov rcx, r9
+    mov dword ptr [rdx], ecx
+    mov rax, rcx
+    mov rsi, rax
+    mov rsi, qword ptr [rbp-48]
+    add rsi, 4
+    mov r9, r12
+    xor r9, r13
+    mov rdx, rsi
+    mov rcx, r9
+    mov dword ptr [rdx], ecx
+    mov rax, rcx
+    mov rsi, rax
+    mov rsi, qword ptr [rbp-48]
+    add rsi, 8
+    xor r8, r14
+    mov rdx, rsi
+    mov rcx, r8
+    mov dword ptr [rdx], ecx
+    mov rax, rcx
+    mov rsi, rax
+    mov rsi, qword ptr [rbp-48]
+    add rsi, 12
+    mov r8, rbx
+    xor r8, qword ptr [rbp-904]
+    mov rdx, rsi
+    mov rcx, r8
+    mov dword ptr [rdx], ecx
+    mov rax, rcx
+    mov rsi, rax
+    mov rsi, qword ptr [rbp-48]
+    add rsi, 16
+    xor rdi, qword ptr [rbp-880]
+    mov rdx, rsi
+    mov rcx, rdi
+    mov dword ptr [rdx], ecx
+    mov rax, rcx
+    mov rsi, rax
+    mov rsi, qword ptr [rbp-48]
+    add rsi, 20
+    mov rdi, qword ptr [rbp-872]
+    xor rdi, qword ptr [rbp-896]
+    mov rdx, rsi
+    mov rcx, rdi
+    mov dword ptr [rdx], ecx
+    mov rax, rcx
+    mov rsi, rax
+    mov rsi, qword ptr [rbp-48]
+    add rsi, 24
+    mov rdi, qword ptr [rbp-864]
+    xor rdi, qword ptr [rbp-912]
+    mov rdx, rsi
+    mov rcx, rdi
+    mov dword ptr [rdx], ecx
+    mov rax, rcx
+    mov rsi, rax
+    mov rsi, qword ptr [rbp-48]
+    add rsi, 28
+    mov rdi, qword ptr [rbp-888]
+    xor rdi, qword ptr [rbp-856]
+    mov rdx, rsi
+    mov rcx, rdi
+    mov dword ptr [rdx], ecx
+    mov rax, rcx
+    mov rsi, rax
+    mov rax, qword ptr [rbp-48]
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov r15, qword ptr [rbp-40]
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__blake3__b3_x2Dzero64:
+    push rbp
+    mov rbp, rsp
+.L248_0:
+    cmp rsi, 64
+    jl .L248_1
+    mov rax, rdi
+    mov rsp, rbp
+    pop rbp
+    ret
+.L248_1:
+    mov r8, rdi
+    add r8, rsi
+    mov r9, 0
+    mov rdx, r8
+    mov rcx, r9
+    mov qword ptr [rdx], rcx
+    mov rax, rcx
+    mov r8, rax
+    mov r8, rsi
+    add r8, 8
+    mov rsi, r8
+    jmp .L248_0
+zy_local_x2Fmain_0__blake3__b3_x2Dinit:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    sub rsp, 8
+    mov rbx, rdi
+.L249_0:
+    mov rsi, rbx
+    add rsi, 1728
+    mov rdi, 0
+    mov rdx, rsi
+    mov rcx, rdi
+    mov qword ptr [rdx], rcx
+    mov rax, rcx
+    mov rsi, rax
+    mov rsi, rbx
+    add rsi, 1768
+    mov rdi, 0
+    mov rdx, rsi
+    mov rcx, rdi
+    mov qword ptr [rdx], rcx
+    mov rax, rcx
+    mov rsi, rax
+    mov rsi, rbx
+    add rsi, 1840
+    mov rdi, 0
+    mov rdx, rsi
+    mov rcx, rdi
+    mov qword ptr [rdx], rcx
+    mov rax, rcx
+    mov rsi, rax
+    mov rsi, rbx
+    add rsi, 1848
+    mov rdi, 0
+    mov rdx, rsi
+    mov rcx, rdi
+    mov qword ptr [rdx], rcx
+    mov rax, rcx
+    mov rsi, rax
+    mov rsi, rbx
+    add rsi, 1776
+    mov rdi, 0
+    mov rax, rsi
+    mov rsi, rdi
+    mov rdi, rax
+    call zy_local_x2Fmain_0__blake3__b3_x2Dzero64
+    mov rsi, rax
+    mov rsi, rbx
+    add rsi, 2016
+    mov rdi, 1779033703
+    mov rdx, rsi
+    mov rcx, rdi
+    mov dword ptr [rdx], ecx
+    mov rax, rcx
+    mov rdi, rax
+    mov rdi, rsi
+    add rdi, 4
+    mov r8, 3144134277
+    mov rdx, rdi
+    mov rcx, r8
+    mov dword ptr [rdx], ecx
+    mov rax, rcx
+    mov rdi, rax
+    mov rdi, rsi
+    add rdi, 8
+    mov r8, 1013904242
+    mov rdx, rdi
+    mov rcx, r8
+    mov dword ptr [rdx], ecx
+    mov rax, rcx
+    mov rdi, rax
+    mov rdi, rsi
+    add rdi, 12
+    mov r8, 2773480762
+    mov rdx, rdi
+    mov rcx, r8
+    mov dword ptr [rdx], ecx
+    mov rax, rcx
+    mov rdi, rax
+    mov rdi, rsi
+    add rdi, 16
+    mov r8, 1359893119
+    mov rdx, rdi
+    mov rcx, r8
+    mov dword ptr [rdx], ecx
+    mov rax, rcx
+    mov rdi, rax
+    mov rdi, rsi
+    add rdi, 20
+    mov r8, 2600822924
+    mov rdx, rdi
+    mov rcx, r8
+    mov dword ptr [rdx], ecx
+    mov rax, rcx
+    mov rdi, rax
+    mov rdi, rsi
+    add rdi, 24
+    mov r8, 528734635
+    mov rdx, rdi
+    mov rcx, r8
+    mov dword ptr [rdx], ecx
+    mov rax, rcx
+    mov rdi, rax
+    mov rdi, rsi
+    add rdi, 28
+    mov r8, 1541459225
+    mov rdx, rdi
+    mov rcx, r8
+    mov dword ptr [rdx], ecx
+    mov rax, rcx
+    mov rdi, rax
+    mov rdi, rbx
+    add rdi, 1736
+    mov r8, 32
+    mov rdx, r8
+    call zy_local_x2Fmain_0__base__rt_x2Dcopy
+    mov rsi, rax
+    mov rax, rbx
+    mov rbx, qword ptr [rbp-8]
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__blake3__b3_x2Dstart_x2Dflag:
+    push rbp
+    mov rbp, rsp
+.L250_0:
+    mov rsi, rdi
+    add rsi, 1848
+    mov rdx, rsi
+    mov rax, qword ptr [rdx]
+    mov rsi, rax
+    cmp rsi, 0
+    jne .L250_1
+    mov rsi, 1
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+.L250_1:
+    mov rsi, 0
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__blake3__b3_x2Dpush_x2Dcv:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    push r14
+    push r15
+    sub rsp, 8
+    mov rbx, rdi
+    mov r12, rsi
+    mov r13, rdx
+.L251_0:
+    mov rsi, rbx
+    add rsi, 1728
+    mov rdx, rsi
+    mov rax, qword ptr [rdx]
+    mov rsi, rax
+    mov r14, rsi
+    mov rsi, r13
+    and rsi, 1
+    cmp rsi, 0
+    jne .L251_1
+    cmp r14, 0
+    jle .L251_1
+    mov rsi, rbx
+    add rsi, 1920
+    mov r15, rsi
+    mov rsi, r14
+    sub rsi, 1
+    imul rsi, 32
+    add rsi, rbx
+    mov rdi, 32
+    mov rdx, rdi
+    mov rdi, r15
+    call zy_local_x2Fmain_0__base__rt_x2Dcopy
+    mov rsi, rax
+    mov rsi, r15
+    add rsi, 32
+    mov rdi, 32
+    mov rdx, rdi
+    mov rdi, rsi
+    mov rsi, r12
+    call zy_local_x2Fmain_0__base__rt_x2Dcopy
+    mov rsi, rax
+    mov rsi, rbx
+    add rsi, 1728
+    mov rdi, r14
+    sub rdi, 1
+    mov rdx, rsi
+    mov rcx, rdi
+    mov qword ptr [rdx], rcx
+    mov rax, rcx
+    mov rsi, rax
+    mov rsi, rbx
+    add rsi, 2016
+    mov rdi, 0
+    mov r8, 64
+    mov r9, 4
+    mov r10, rbx
+    add r10, 1856
+    mov rdx, rdi
+    mov rdi, rsi
+    mov rsi, r15
+    mov rcx, r8
+    mov r8, r9
+    mov r9, r10
+    call zy_local_x2Fmain_0__blake3__b3_x2Dcompress
+    mov rsi, rax
+    mov rsi, rbx
+    add rsi, 1856
+    mov rdi, 1
+    mov rax, r13
+    mov rcx, rdi
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov rdi, rax
+    mov r12, rsi
+    mov r13, rdi
+    jmp .L251_0
+.L251_1:
+    mov rsi, r14
+    imul rsi, 32
+    add rsi, rbx
+    mov rdi, 32
+    mov rdx, rdi
+    mov rdi, rsi
+    mov rsi, r12
+    call zy_local_x2Fmain_0__base__rt_x2Dcopy
+    mov rsi, rax
+    mov rsi, rbx
+    add rsi, 1728
+    mov rdi, r14
+    add rdi, 1
+    mov rdx, rsi
+    mov rcx, rdi
+    mov qword ptr [rdx], rcx
+    mov rax, rcx
+    mov rsi, rax
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov r15, qword ptr [rbp-40]
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__blake3__b3_x2Dflush:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    push r14
+    push r15
+    sub rsp, 8
+    mov qword ptr [rbp-48], rdi
+.L252_0:
+    mov rsi, qword ptr [rbp-48]
+    add rsi, 1768
+    mov rdx, rsi
+    mov rax, qword ptr [rdx]
+    mov rsi, rax
+    mov r12, rsi
+    mov rsi, qword ptr [rbp-48]
+    add rsi, 1848
+    mov rdx, rsi
+    mov rax, qword ptr [rdx]
+    mov rsi, rax
+    cmp rsi, 15
+    jne .L252_1
+    mov r13, qword ptr [rbp-48]
+    add r13, 1736
+    mov r14, qword ptr [rbp-48]
+    add r14, 1776
+    mov r15, 64
+    mov rdi, qword ptr [rbp-48]
+    call zy_local_x2Fmain_0__blake3__b3_x2Dstart_x2Dflag
+    mov rsi, rax
+    or rsi, 2
+    mov rdi, qword ptr [rbp-48]
+    add rdi, 1856
+    mov rdx, r12
+    mov rcx, r15
+    mov r8, rsi
+    mov rsi, r14
+    mov r9, rdi
+    mov rdi, r13
+    call zy_local_x2Fmain_0__blake3__b3_x2Dcompress
+    mov rsi, rax
+    mov rsi, qword ptr [rbp-48]
+    add rsi, 1856
+    mov rdi, r12
+    add rdi, 1
+    mov rdx, rdi
+    mov rdi, qword ptr [rbp-48]
+    call zy_local_x2Fmain_0__blake3__b3_x2Dpush_x2Dcv
+    mov rsi, rax
+    mov rsi, qword ptr [rbp-48]
+    add rsi, 1768
+    mov rdi, r12
+    add rdi, 1
+    mov rdx, rsi
+    mov rcx, rdi
+    mov qword ptr [rdx], rcx
+    mov rax, rcx
+    mov rsi, rax
+    mov rsi, qword ptr [rbp-48]
+    add rsi, 1736
+    mov rdi, qword ptr [rbp-48]
+    add rdi, 2016
+    mov r8, 32
+    mov rdx, r8
+    mov rax, rsi
+    mov rsi, rdi
+    mov rdi, rax
+    call zy_local_x2Fmain_0__base__rt_x2Dcopy
+    mov rsi, rax
+    mov rsi, qword ptr [rbp-48]
+    add rsi, 1848
+    mov rdi, 0
+    mov rdx, rsi
+    mov rcx, rdi
+    mov qword ptr [rdx], rcx
+    mov rax, rcx
+    mov rsi, rax
+    mov r13, rsi
+    jmp .L252_2
+.L252_1:
+    mov r14, qword ptr [rbp-48]
+    add r14, 1736
+    mov r15, qword ptr [rbp-48]
+    add r15, 1776
+    mov rbx, 64
+    mov rdi, qword ptr [rbp-48]
+    call zy_local_x2Fmain_0__blake3__b3_x2Dstart_x2Dflag
+    mov rsi, rax
+    mov rdi, qword ptr [rbp-48]
+    add rdi, 1856
+    mov rdx, r12
+    mov rcx, rbx
+    mov r8, rsi
+    mov rsi, r15
+    mov r9, rdi
+    mov rdi, r14
+    call zy_local_x2Fmain_0__blake3__b3_x2Dcompress
+    mov rsi, rax
+    mov rsi, qword ptr [rbp-48]
+    add rsi, 1736
+    mov rdi, qword ptr [rbp-48]
+    add rdi, 1856
+    mov r8, 32
+    mov rdx, r8
+    mov rax, rsi
+    mov rsi, rdi
+    mov rdi, rax
+    call zy_local_x2Fmain_0__base__rt_x2Dcopy
+    mov rsi, rax
+    mov rsi, qword ptr [rbp-48]
+    add rsi, 1848
+    mov rdi, qword ptr [rbp-48]
+    add rdi, 1848
+    mov rdx, rdi
+    mov rax, qword ptr [rdx]
+    mov rdi, rax
+    add rdi, 1
+    mov rdx, rsi
+    mov rcx, rdi
+    mov qword ptr [rdx], rcx
+    mov rax, rcx
+    mov rsi, rax
+    mov r13, rsi
+.L252_2:
+    mov rsi, qword ptr [rbp-48]
+    add rsi, 1840
+    mov rdi, 0
+    mov rdx, rsi
+    mov rcx, rdi
+    mov qword ptr [rdx], rcx
+    mov rax, rcx
+    mov rsi, rax
+    mov rsi, qword ptr [rbp-48]
+    add rsi, 1776
+    mov rdi, 0
+    mov rax, rsi
+    mov rsi, rdi
+    mov rdi, rax
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov r15, qword ptr [rbp-40]
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__blake3__b3_x2Dzero64
+zy_local_x2Fmain_0__blake3__b3_x2Dupdate:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    push r14
+    push r15
+    sub rsp, 8
+    mov rbx, rdi
+    mov r12, rsi
+    mov r13, rdx
+.L253_0:
+    cmp r13, 0
+    jg .L253_1
+    mov rax, rbx
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov r15, qword ptr [rbp-40]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L253_1:
+    mov rsi, rbx
+    add rsi, 1840
+    mov rdx, rsi
+    mov rax, qword ptr [rdx]
+    mov rsi, rax
+    cmp rsi, 64
+    jne .L253_2
+    mov rdi, rbx
+    call zy_local_x2Fmain_0__blake3__b3_x2Dflush
+    mov rsi, rax
+    jmp .L253_3
+.L253_2:
+    mov rdi, 0
+    mov rsi, rdi
+.L253_3:
+    mov rsi, rbx
+    add rsi, 1840
+    mov rdx, rsi
+    mov rax, qword ptr [rdx]
+    mov rsi, rax
+    mov r14, rsi
+    mov rsi, 64
+    sub rsi, r14
+    cmp rsi, r13
+    jle .L253_4
+    mov rsi, r13
+    jmp .L253_5
+.L253_4:
+    mov rdi, 64
+    sub rdi, r14
+    mov rsi, rdi
+.L253_5:
+    mov r15, rsi
+    mov rsi, rbx
+    add rsi, 1776
+    add rsi, r14
+    mov rdi, rsi
+    mov rsi, r12
+    mov rdx, r15
+    call zy_local_x2Fmain_0__base__rt_x2Dcopy
+    mov rsi, rax
+    mov rsi, rbx
+    add rsi, 1840
+    mov rdi, r14
+    add rdi, r15
+    mov rdx, rsi
+    mov rcx, rdi
+    mov qword ptr [rdx], rcx
+    mov rax, rcx
+    mov rsi, rax
+    mov rsi, r12
+    add rsi, r15
+    mov rdi, r13
+    sub rdi, r15
+    mov r12, rsi
+    mov r13, rdi
+    jmp .L253_0
+zy_local_x2Fmain_0__blake3__b3_x2Dfold:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    push r14
+    push r15
+    sub rsp, 24
+    mov qword ptr [rbp-56], rdi
+    mov r12, rsi
+    mov r13, rdx
+    mov r14, rcx
+    mov r15, r8
+    mov qword ptr [rbp-48], r9
+.L254_0:
+    cmp r12, 0
+    jne .L254_1
+    mov rsi, 0
+    mov rdi, r15
+    or rdi, 8
+    mov r8, 0
+    mov rdx, r14
+    mov rcx, rdi
+    mov rdi, qword ptr [rbp-56]
+    mov r9, qword ptr [rbp-48]
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov r15, qword ptr [rbp-40]
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__blake3__b3_x2Demit
+.L254_1:
+    mov rsi, qword ptr [rbp-56]
+    add rsi, 2080
+    mov rbx, rsi
+    mov rsi, qword ptr [rbp-56]
+    add rsi, 2048
+    mov rdi, qword ptr [rbp-56]
+    add rdi, 1856
+    mov rdx, r13
+    mov rcx, r14
+    mov r8, r15
+    mov r9, rdi
+    mov rdi, rsi
+    mov rsi, rbx
+    call zy_local_x2Fmain_0__blake3__b3_x2Dcompress
+    mov rsi, rax
+    mov rsi, r12
+    sub rsi, 1
+    imul rsi, 32
+    add rsi, qword ptr [rbp-56]
+    mov rdi, 32
+    mov rdx, rdi
+    mov rdi, rbx
+    call zy_local_x2Fmain_0__base__rt_x2Dcopy
+    mov rsi, rax
+    mov rsi, rbx
+    add rsi, 32
+    mov rdi, qword ptr [rbp-56]
+    add rdi, 1856
+    mov r8, 32
+    mov rdx, r8
+    mov rax, rsi
+    mov rsi, rdi
+    mov rdi, rax
+    call zy_local_x2Fmain_0__base__rt_x2Dcopy
+    mov rsi, rax
+    mov rsi, qword ptr [rbp-56]
+    add rsi, 2048
+    mov rdi, qword ptr [rbp-56]
+    add rdi, 2016
+    mov r8, 32
+    mov rdx, r8
+    mov rax, rsi
+    mov rsi, rdi
+    mov rdi, rax
+    call zy_local_x2Fmain_0__base__rt_x2Dcopy
+    mov rsi, rax
+    mov rsi, r12
+    sub rsi, 1
+    mov rdi, 0
+    mov r8, 64
+    mov r9, 4
+    mov r12, rsi
+    mov r13, rdi
+    mov r14, r8
+    mov r15, r9
+    jmp .L254_0
+zy_local_x2Fmain_0__blake3__b3_x2Demit:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    push r14
+    push r15
+    sub rsp, 24
+    mov qword ptr [rbp-56], rdi
+    mov r12, rsi
+    mov r13, rdx
+    mov r14, rcx
+    mov r15, r8
+    mov qword ptr [rbp-48], r9
+.L255_0:
+    cmp r15, qword ptr [rbp-48]
+    jl .L255_1
+    mov rax, qword ptr [rbp-56]
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov r15, qword ptr [rbp-40]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L255_1:
+    mov rsi, qword ptr [rbp-56]
+    add rsi, 2048
+    mov rdi, qword ptr [rbp-56]
+    add rdi, 2080
+    mov r8, qword ptr [rbp-56]
+    add r8, 1856
+    mov rdx, r12
+    mov rcx, r13
+    mov r9, r8
+    mov r8, r14
+    mov rax, rsi
+    mov rsi, rdi
+    mov rdi, rax
+    call zy_local_x2Fmain_0__blake3__b3_x2Dcompress
+    mov rsi, rax
+    mov rsi, qword ptr [rbp-48]
+    sub rsi, r15
+    cmp rsi, 64
+    jle .L255_2
+    mov rsi, 64
+    jmp .L255_3
+.L255_2:
+    mov rdi, qword ptr [rbp-48]
+    sub rdi, r15
+    mov rsi, rdi
+.L255_3:
+    mov rbx, rsi
+    mov rsi, qword ptr [rbp-56]
+    add rsi, 2144
+    add rsi, r15
+    mov rdi, qword ptr [rbp-56]
+    add rdi, 1856
+    mov rdx, rbx
+    mov rax, rsi
+    mov rsi, rdi
+    mov rdi, rax
+    call zy_local_x2Fmain_0__base__rt_x2Dcopy
+    mov rsi, rax
+    mov rsi, r12
+    add rsi, 1
+    mov rdi, r15
+    add rdi, rbx
+    mov r12, rsi
+    mov r15, rdi
+    jmp .L255_0
+zy_local_x2Fmain_0__blake3__b3_x2Dfinalize:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    push r14
+    push r15
+    sub rsp, 8
+    mov rbx, rdi
+    mov r12, rsi
+.L256_0:
+    mov rsi, rbx
+    add rsi, 2048
+    mov rdi, rbx
+    add rdi, 1736
+    mov r8, 32
+    mov rdx, r8
+    mov rax, rsi
+    mov rsi, rdi
+    mov rdi, rax
+    call zy_local_x2Fmain_0__base__rt_x2Dcopy
+    mov rsi, rax
+    mov rsi, rbx
+    add rsi, 2080
+    mov rdi, rbx
+    add rdi, 1776
+    mov r8, 64
+    mov rdx, r8
+    mov rax, rsi
+    mov rsi, rdi
+    mov rdi, rax
+    call zy_local_x2Fmain_0__base__rt_x2Dcopy
+    mov rsi, rax
+    mov rsi, rbx
+    add rsi, 1728
+    mov rdx, rsi
+    mov rax, qword ptr [rdx]
+    mov r13, rax
+    mov rsi, rbx
+    add rsi, 1768
+    mov rdx, rsi
+    mov rax, qword ptr [rdx]
+    mov r14, rax
+    mov rsi, rbx
+    add rsi, 1840
+    mov rdx, rsi
+    mov rax, qword ptr [rdx]
+    mov r15, rax
+    mov rdi, rbx
+    call zy_local_x2Fmain_0__blake3__b3_x2Dstart_x2Dflag
+    mov rsi, rax
+    or rsi, 2
+    mov rdi, rbx
+    mov rdx, r14
+    mov rcx, r15
+    mov r8, rsi
+    mov rsi, r13
+    mov r9, r12
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov r15, qword ptr [rbp-40]
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__blake3__b3_x2Dfold
+zy_local_x2Fmain_0__blake3__b3_x2Dnew:
+    push rbp
+    mov rbp, rsp
+    and rsp, -16
+.L257_0:
+    mov rsi, 2208
+    mov rdi, rsi
+    call malloc
+    mov rsi, rax
+    cmp rsi, 0
+    jne .L257_1
+    mov rdi, 0
+    mov rax, rdi
+    mov rsp, rbp
+    pop rbp
+    ret
+.L257_1:
+    mov rdi, rsi
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__blake3__b3_x2Dinit
+zy_local_x2Fmain_0__blake3__rt_x2Dblake3_x2Draw:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    push r14
+    push r15
+    and rsp, -16
+    sub rsp, 16
+    mov rbx, rdi
+    mov r12, rsi
+    mov r13, rdx
+    mov r14, rcx
+.L258_0:
+    call zy_local_x2Fmain_0__blake3__b3_x2Dnew
+    mov rsi, rax
+    mov r15, rsi
+    cmp r15, 0
+    jne .L258_1
+    mov rsi, 0
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov r15, qword ptr [rbp-40]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L258_1:
+    mov rdi, r15
+    mov rsi, rbx
+    mov rdx, r12
+    call zy_local_x2Fmain_0__blake3__b3_x2Dupdate
+    mov rsi, rax
+    mov rdi, r15
+    mov rsi, r14
+    call zy_local_x2Fmain_0__blake3__b3_x2Dfinalize
+    mov rsi, rax
+    mov rsi, r15
+    add rsi, 2144
+    mov rdi, r13
+    mov rdx, r14
+    call zy_local_x2Fmain_0__base__rt_x2Dcopy
+    mov rsi, rax
+    mov rdi, r15
+    call free
+    mov rsi, rax
+    mov rsi, 1
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov r15, qword ptr [rbp-40]
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__blake3__b3_x2Dhexdigits:
+    push rbp
+    mov rbp, rsp
+.L259_0:
+    lea rax, [rip+.L260]
+    mov rsi, rax
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__blake3__rt_x2Dhex_x2Dbytes:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    sub rsp, 8
+    mov r8, rdx
+    mov r9, rcx
+.L261_0:
+    cmp r8, r9
+    jl .L261_1
+    mov rax, rdi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L261_1:
+    mov r10, rsi
+    add r10, r8
+    mov rdx, r10
+    movzx eax, byte ptr [rdx]
+    mov r10, rax
+    lea rax, [rip+.L262]
+    mov rbx, rax
+    mov r12, r8
+    imul r12, 2
+    add r12, rdi
+    mov r13, 4
+    mov rax, r10
+    mov rcx, r13
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r13, rax
+    add r13, rbx
+    mov rdx, r13
+    movzx eax, byte ptr [rdx]
+    mov r13, rax
+    mov rdx, r12
+    mov rcx, r13
+    mov byte ptr [rdx], cl
+    mov rax, rcx
+    mov r12, rax
+    mov r12, r8
+    imul r12, 2
+    add r12, 1
+    add r12, rdi
+    and r10, 15
+    add r10, rbx
+    mov rdx, r10
+    movzx eax, byte ptr [rdx]
+    mov r10, rax
+    mov rdx, r12
+    mov rcx, r10
+    mov byte ptr [rdx], cl
+    mov rax, rcx
+    mov r10, rax
+    mov r10, r8
+    add r10, 1
+    mov r8, r10
+    jmp .L261_0
+zy_local_x2Fmain_0__blake3__b3_x2Dclamp:
+    push rbp
+    mov rbp, rsp
+.L263_0:
+    cmp rdi, 0
+    jg .L263_1
+    mov rsi, 32
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+.L263_1:
+    cmp rdi, 64
+    jle .L263_2
+    mov rsi, 64
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+.L263_2:
+    mov rax, rdi
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__blake3__b3_x2Dhex_x2Dout:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    and rsp, -16
+    sub rsp, 16
+    mov rbx, rdi
+    mov r12, rsi
+    mov r13, rdx
+.L264_0:
+    mov rdi, r12
+    mov rsi, r13
+    call zy_local_x2Fmain_0__blake3__b3_x2Dfinalize
+    mov rsi, rax
+    mov rsi, r13
+    imul rsi, 2
+    add rsi, 1
+    mov rdi, rbx
+    call zyl_arena_alloc_zeroed
+    mov rsi, rax
+    mov rbx, rsi
+    mov rsi, r12
+    add rsi, 2144
+    mov rdi, 0
+    mov rdx, rdi
+    mov rdi, rbx
+    mov rcx, r13
+    call zy_local_x2Fmain_0__blake3__rt_x2Dhex_x2Dbytes
+    mov rsi, rax
+    mov rsi, r13
+    imul rsi, 2
+    add rsi, rbx
+    mov rdi, 0
+    mov rdx, rsi
+    mov rcx, rdi
+    mov byte ptr [rdx], cl
+    mov rax, rcx
+    mov rsi, rax
+    mov rdi, r12
+    call free
+    mov rsi, rax
+    mov rax, rbx
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov rsp, rbp
+    pop rbp
+    ret
+.globl zyl_blake3_hex
+zyl_blake3_hex:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    push r14
+    push r15
+    sub rsp, 8
+    mov rbx, rdi
+    mov r12, rdx
+    mov r13, rcx
+.L265_0:
+    mov r14, rsi
+    cmp r14, 0
+    jne .L265_1
+    mov rsi, 0
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov r15, qword ptr [rbp-40]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L265_1:
+    cmp r12, 0
+    jge .L265_2
+    mov rdi, r14
+    call zy_local_x2Fmain_0__base__rt_x2Dstrlen
+    mov rsi, rax
+    jmp .L265_3
+.L265_2:
+    mov rsi, r12
+.L265_3:
+    mov r12, rsi
+    call zy_local_x2Fmain_0__blake3__b3_x2Dnew
+    mov rsi, rax
+    mov r15, rsi
+    cmp r15, 0
+    jne .L265_4
+    mov rsi, 0
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov r15, qword ptr [rbp-40]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L265_4:
+    mov rdi, r15
+    mov rsi, r14
+    mov rdx, r12
+    call zy_local_x2Fmain_0__blake3__b3_x2Dupdate
+    mov rsi, rax
+    mov rdi, r13
+    call zy_local_x2Fmain_0__blake3__b3_x2Dclamp
+    mov rsi, rax
+    mov rdi, rbx
+    mov rdx, rsi
+    mov rsi, r15
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov r15, qword ptr [rbp-40]
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__blake3__b3_x2Dhex_x2Dout
+zy_local_x2Fmain_0__blake3__b3_x2Dread_x2Dall:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    and rsp, -16
+    sub rsp, 16
+    mov rbx, rdi
+    mov r12, rsi
+    mov r13, rdx
+.L266_0:
+    mov rsi, 1
+    mov rdi, 65536
+    mov rdx, rdi
+    mov rdi, r13
+    mov rcx, r12
+    call fread
+    mov rsi, rax
+    cmp rsi, 0
+    jle .L266_1
+    mov rdi, rbx
+    mov rdx, rsi
+    mov rsi, r13
+    call zy_local_x2Fmain_0__blake3__b3_x2Dupdate
+    mov rsi, rax
+    jmp .L266_0
+.L266_1:
+    mov rax, rbx
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov rsp, rbp
+    pop rbp
+    ret
+.globl zyl_blake3_file_hex
+zyl_blake3_file_hex:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    push r14
+    push r15
+    and rsp, -16
+    sub rsp, 16
+    mov qword ptr [rbp-48], rdi
+    mov r12, rdx
+.L267_0:
+    cmp rsi, 0
+    jne .L267_1
+    mov rdi, 0
+    mov rax, rdi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov r15, qword ptr [rbp-40]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L267_1:
+    lea rax, [rip+.L268]
+    mov rdi, rax
+    mov rax, rsi
+    mov rsi, rdi
+    mov rdi, rax
+    call fopen
+    mov rsi, rax
+    mov r13, rsi
+    cmp r13, 0
+    jne .L267_2
+    mov rsi, 0
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov r15, qword ptr [rbp-40]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L267_2:
+    call zy_local_x2Fmain_0__blake3__b3_x2Dnew
+    mov rsi, rax
+    mov r14, rsi
+    cmp r14, 0
+    jne .L267_3
+    mov rsi, 0
+    mov r15, rsi
+    jmp .L267_4
+.L267_3:
+    mov rsi, 65536
+    mov rdi, rsi
+    call malloc
+    mov rsi, rax
+    mov r15, rsi
+.L267_4:
+    cmp r15, 0
+    jne .L267_5
+    cmp r14, 0
+    jne .L267_6
+    mov rsi, 0
+    mov rbx, rsi
+    jmp .L267_7
+.L267_6:
+    mov rdi, r14
+    call free
+    mov rsi, rax
+    mov rbx, rsi
+.L267_7:
+    mov rdi, r13
+    call fclose
+    mov rsi, rax
+    mov rsi, 0
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov r15, qword ptr [rbp-40]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L267_5:
+    mov rdi, r14
+    mov rsi, r13
+    mov rdx, r15
+    call zy_local_x2Fmain_0__blake3__b3_x2Dread_x2Dall
+    mov rsi, rax
+    mov rdi, r15
+    call free
+    mov rsi, rax
+    mov rdi, r13
+    call fclose
+    mov rsi, rax
+    mov rdi, r12
+    call zy_local_x2Fmain_0__blake3__b3_x2Dclamp
+    mov rsi, rax
+    mov rdi, qword ptr [rbp-48]
+    mov rdx, rsi
+    mov rsi, r14
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov r15, qword ptr [rbp-40]
+    mov rsp, rbp
+    pop rbp
+    jmp zy_local_x2Fmain_0__blake3__b3_x2Dhex_x2Dout
+zy_local_x2Fmain_0__mangle__mg_x2Dupper_x2Dhex:
+    push rbp
+    mov rbp, rsp
+.L269_0:
+    lea rax, [rip+.L270]
+    mov rsi, rax
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__mangle__mg_x2Dwidths:
+    push rbp
+    mov rbp, rsp
+.L271_0:
+    lea rax, [rip+.L272]
+    mov rsi, rax
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__mangle__mg_x2Desc_x2Dlen:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    mov r8, rdx
+    mov r9, rcx
+.L273_0:
+    cmp rsi, r8
+    jl .L273_1
+    mov rax, r9
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L273_1:
+    mov r10, rsi
+    add r10, 1
+    lea rax, [rip+.L274]
+    mov rbx, rax
+    mov r12, rdi
+    add r12, rsi
+    mov rdx, r12
+    movzx eax, byte ptr [rdx]
+    mov r12, rax
+    add rbx, r12
+    mov rdx, rbx
+    movzx eax, byte ptr [rdx]
+    mov rbx, rax
+    add rbx, r9
+    mov rsi, r10
+    mov r9, rbx
+    jmp .L273_0
+zy_local_x2Fmain_0__mangle__mg_x2Desc:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    push r14
+    mov r9, rcx
+    mov r10, r8
+    mov r8, rdx
+.L275_0:
+    cmp rsi, r8
+    jl .L275_1
+    mov rax, r10
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L275_1:
+    mov rbx, rdi
+    add rbx, rsi
+    mov rdx, rbx
+    movzx eax, byte ptr [rdx]
+    mov rbx, rax
+    lea rax, [rip+.L276]
+    mov r12, rax
+    add r12, rbx
+    mov rdx, r12
+    movzx eax, byte ptr [rdx]
+    mov r12, rax
+    cmp r12, 1
+    jne .L275_2
+    mov r13, r9
+    add r13, r10
+    mov rdx, r13
+    mov rcx, rbx
+    mov byte ptr [rdx], cl
+    mov rax, rcx
+    mov r13, rax
+    mov r13, rsi
+    add r13, 1
+    mov r14, r10
+    add r14, 1
+    mov rsi, r13
+    mov r10, r14
+    jmp .L275_0
+.L275_2:
+    cmp r12, 3
+    jne .L275_3
+    mov r12, r9
+    add r12, r10
+    mov r13, 95
+    mov rdx, r12
+    mov rcx, r13
+    mov byte ptr [rdx], cl
+    mov rax, rcx
+    mov r12, rax
+    mov r12, r10
+    add r12, 1
+    add r12, r9
+    mov r13, 53
+    mov rdx, r12
+    mov rcx, r13
+    mov byte ptr [rdx], cl
+    mov rax, rcx
+    mov r12, rax
+    mov r12, r10
+    add r12, 2
+    add r12, r9
+    mov r13, 70
+    mov rdx, r12
+    mov rcx, r13
+    mov byte ptr [rdx], cl
+    mov rax, rcx
+    mov r12, rax
+    mov r12, rsi
+    add r12, 1
+    mov r13, r10
+    add r13, 3
+    mov rsi, r12
+    mov r10, r13
+    jmp .L275_0
+.L275_3:
+    lea rax, [rip+.L277]
+    mov r12, rax
+    mov r13, r9
+    add r13, r10
+    mov r14, 95
+    mov rdx, r13
+    mov rcx, r14
+    mov byte ptr [rdx], cl
+    mov rax, rcx
+    mov r13, rax
+    mov r13, r10
+    add r13, 1
+    add r13, r9
+    mov r14, 120
+    mov rdx, r13
+    mov rcx, r14
+    mov byte ptr [rdx], cl
+    mov rax, rcx
+    mov r13, rax
+    mov r13, r10
+    add r13, 2
+    add r13, r9
+    mov r14, 4
+    mov rax, rbx
+    mov rcx, r14
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    mov r14, rax
+    add r14, r12
+    mov rdx, r14
+    movzx eax, byte ptr [rdx]
+    mov r14, rax
+    mov rdx, r13
+    mov rcx, r14
+    mov byte ptr [rdx], cl
+    mov rax, rcx
+    mov r13, rax
+    mov r13, r10
+    add r13, 3
+    add r13, r9
+    and rbx, 15
+    add rbx, r12
+    mov rdx, rbx
+    movzx eax, byte ptr [rdx]
+    mov rbx, rax
+    mov rdx, r13
+    mov rcx, rbx
+    mov byte ptr [rdx], cl
+    mov rax, rcx
+    mov rbx, rax
+    mov rbx, rsi
+    add rbx, 1
+    mov r12, r10
+    add r12, 4
+    mov rsi, rbx
+    mov r10, r12
+    jmp .L275_0
+.globl zyl_sym_escape
+zyl_sym_escape:
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    push r14
+    and rsp, -16
+    mov rbx, rdi
+.L278_0:
+    mov r12, rsi
+    cmp r12, 0
+    jne .L278_1
+    mov rsi, 0
+    mov rax, rsi
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L278_1:
+    mov rdi, r12
+    call zy_local_x2Fmain_0__base__rt_x2Dstrlen
+    mov rsi, rax
+    mov r13, rsi
+    mov rsi, 0
+    mov rdi, 0
+    mov rdx, r13
+    mov rcx, rdi
+    mov rdi, r12
+    call zy_local_x2Fmain_0__mangle__mg_x2Desc_x2Dlen
+    mov rsi, rax
+    mov r14, rsi
+    mov rsi, r14
+    add rsi, 1
+    mov rdi, rbx
+    call zyl_arena_alloc_zeroed
+    mov rsi, rax
+    mov rbx, rsi
+    mov rsi, 0
+    mov rdi, 0
+    mov rdx, r13
+    mov rcx, rbx
+    mov r8, rdi
+    mov rdi, r12
+    call zy_local_x2Fmain_0__mangle__mg_x2Desc
+    mov rsi, rax
+    mov rsi, rbx
+    add rsi, r14
+    mov rdi, 0
+    mov rdx, rsi
+    mov rcx, rdi
+    mov byte ptr [rdx], cl
+    mov rax, rcx
+    mov rsi, rax
+    mov rax, rbx
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__mangle__mg_x2Dsep:
+    push rbp
+    mov rbp, rsp
+    mov r8, rdx
+.L279_0:
+    mov r9, rsi
+    add r9, 1
+    cmp r9, r8
+    jl .L279_1
+    mov r9, -1
+    mov rax, r9
+    mov rsp, rbp
+    pop rbp
+    ret
+.L279_1:
+    mov r9, rdi
+    add r9, rsi
+    mov rdx, r9
+    movzx eax, byte ptr [rdx]
+    mov r9, rax
+    cmp r9, 58
+    jne .L279_2
+    mov r9, rsi
+    add r9, 1
+    add r9, rdi
+    mov rdx, r9
+    movzx eax, byte ptr [rdx]
+    mov r9, rax
+    cmp r9, 58
+    jne .L279_2
+    mov rax, rsi
+    mov rsp, rbp
+    pop rbp
+    ret
+.L279_2:
+    mov r9, rsi
+    add r9, 1
+    mov rsi, r9
+    jmp .L279_0
+zy_local_x2Fmain_0__mangle__mg_x2Dwrite:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 280
+    mov [rbp-280], rbx
+    mov [rbp-272], r12
+    mov [rbp-8], rdi
+    mov [rbp-16], rsi
+    mov [rbp-24], rdx
+    mov [rbp-32], rcx
+    mov [rbp-40], r8
+    mov [rbp-48], r9
+    mov r10, [rbp+16]
+    mov [rbp-56], r10
+    mov r10, [rbp+24]
+    mov [rbp-64], r10
+    mov r10, [rbp+32]
+    mov [rbp-72], r10
+    mov rax, [rbp-8]
+    push rax
+    mov rax, 122
+    mov rcx, rax
+    pop rdx
+    mov byte ptr [rdx], cl
+    mov rax, rcx
+    mov [rbp-80], rax
+    mov rax, [rbp-8]
+    mov rcx, 1
+    add rax, rcx
+    push rax
+    mov rax, 121
+    mov rcx, rax
+    pop rdx
+    mov byte ptr [rdx], cl
+    mov rax, rcx
+    mov [rbp-88], rax
+    mov rax, [rbp-8]
+    mov rcx, 2
+    add rax, rcx
+    push rax
+    mov rax, 95
+    mov rcx, rax
+    pop rdx
+    mov byte ptr [rdx], cl
+    mov rax, rcx
+    mov [rbp-96], rax
+    sub rsp, 8
+    sub rsp, 40
+    mov rdi, [rbp-16]
+    mov rsi, 0
+    mov rdx, [rbp-24]
+    mov rcx, [rbp-8]
+    mov r8, 3
+call zy_local_x2Fmain_0__mangle__mg_x2Desc
+    add rsp, 48
+    mov [rbp-104], rax
+    mov rax, [rbp-8]
+    mov rcx, [rbp-104]
+    add rax, rcx
+    push rax
+    mov rax, 95
+    mov rcx, rax
+    pop rdx
+    mov byte ptr [rdx], cl
+    mov rax, rcx
+    mov [rbp-112], rax
+    sub rsp, 8
+    sub rsp, 24
+    mov rax, [rbp-104]
+    mov rcx, 1
+    add rax, rcx
+    mov rcx, rax
+    mov rax, [rbp-8]
+    add rax, rcx
+    mov rdi, rax
+    mov rsi, [rbp-32]
+    mov rdx, [rbp-40]
+call zy_local_x2Fmain_0__base__rt_x2Dcopy
+    add rsp, 32
+    mov [rbp-120], rax
+    mov rax, [rbp-40]
+    mov rcx, 1
+    add rax, rcx
+    mov rcx, rax
+    mov rax, [rbp-104]
+    add rax, rcx
+    mov [rbp-128], rax
+    mov rax, [rbp-8]
+    mov rcx, [rbp-128]
+    add rax, rcx
+    push rax
+    mov rax, 95
+    mov rcx, rax
+    pop rdx
+    mov byte ptr [rdx], cl
+    mov rax, rcx
+    mov [rbp-136], rax
+    mov rax, [rbp-128]
+    mov rcx, 1
+    add rax, rcx
+    mov rcx, rax
+    mov rax, [rbp-8]
+    add rax, rcx
+    push rax
+    mov rax, 95
+    mov rcx, rax
+    pop rdx
+    mov byte ptr [rdx], cl
+    mov rax, rcx
+    mov [rbp-144], rax
+    sub rsp, 8
+    sub rsp, 40
+    mov rax, [rbp-128]
+    mov rcx, 2
+    add rax, rcx
+    mov r8, rax
+    mov rdi, [rbp-48]
+    mov rsi, 0
+    mov rdx, [rbp-56]
+    mov rcx, [rbp-8]
+call zy_local_x2Fmain_0__mangle__mg_x2Desc
+    add rsp, 48
+    mov [rbp-152], rax
+    mov rax, [rbp-8]
+    mov rcx, [rbp-152]
+    add rax, rcx
+    push rax
+    mov rax, 95
+    mov rcx, rax
+    pop rdx
+    mov byte ptr [rdx], cl
+    mov rax, rcx
+    mov [rbp-160], rax
+    mov rax, [rbp-152]
+    mov rcx, 1
+    add rax, rcx
+    mov rcx, rax
+    mov rax, [rbp-8]
+    add rax, rcx
+    push rax
+    mov rax, 95
+    mov rcx, rax
+    pop rdx
+    mov byte ptr [rdx], cl
+    mov rax, rcx
+    mov [rbp-168], rax
+    sub rsp, 8
+    sub rsp, 40
+    mov rax, [rbp-152]
+    mov rcx, 2
+    add rax, rcx
+    mov r8, rax
+    mov rdi, [rbp-64]
+    mov rsi, 0
+    mov rdx, [rbp-72]
+    mov rcx, [rbp-8]
+call zy_local_x2Fmain_0__mangle__mg_x2Desc
+    add rsp, 48
+    mov [rbp-176], rax
+    mov rax, [rbp-8]
+    mov rcx, [rbp-176]
+    add rax, rcx
+    push rax
+    mov rax, 0
+    mov rcx, rax
+    pop rdx
+    mov byte ptr [rdx], cl
+    mov rax, rcx
+    mov [rbp-184], rax
+    mov rax, [rbp-176]
+    mov rbx, [rbp-280]
+    mov r12, [rbp-272]
+    mov rsp, rbp
+    pop rbp
+    ret
+zy_local_x2Fmain_0__mangle__mg_x2Demit:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 280
+    mov [rbp-280], rbx
+    mov [rbp-272], r12
+    mov [rbp-8], rdi
+    mov [rbp-16], rsi
+    mov [rbp-24], rdx
+    mov [rbp-32], rcx
+    mov [rbp-40], r8
+    mov [rbp-48], r9
+    mov r10, [rbp+16]
+    mov [rbp-56], r10
+    mov r10, [rbp+24]
+    mov [rbp-64], r10
+    mov r10, [rbp+32]
+    mov [rbp-72], r10
+    mov r10, [rbp+40]
+    mov [rbp-80], r10
+    mov r10, [rbp+48]
+    mov [rbp-88], r10
+    sub rsp, 32
+    mov rdi, [rbp-32]
+    mov rsi, 0
+    mov rdx, [rbp-40]
+    mov rcx, 0
+call zy_local_x2Fmain_0__mangle__mg_x2Desc_x2Dlen
+    add rsp, 32
+    mov rcx, rax
+    mov rax, 3
+    add rax, rcx
+    push rax
+    mov rax, 1
+    mov rcx, [rbp-56]
+    add rax, rcx
+    mov rcx, 2
+    add rax, rcx
+    mov rcx, rax
+    pop rax
+    add rax, rcx
+    push rax
+    sub rsp, 32
+    mov rdi, [rbp-64]
+    mov rsi, 0
+    mov rdx, [rbp-72]
+    mov rcx, 0
+call zy_local_x2Fmain_0__mangle__mg_x2Desc_x2Dlen
+    add rsp, 32
+    mov rcx, 2
+    add rax, rcx
+    push rax
+    sub rsp, 32
+    mov rdi, [rbp-80]
+    mov rsi, 0
+    mov rdx, [rbp-88]
+    mov rcx, 0
+call zy_local_x2Fmain_0__mangle__mg_x2Desc_x2Dlen
+    add rsp, 32
+    mov rcx, rax
+    pop rax
+    add rax, rcx
+    mov rcx, rax
+    pop rax
+    add rax, rcx
+    mov [rbp-96], rax
+    mov rax, [rbp-96]
+    mov rcx, 200
+    cmp rax, rcx
+    jg .L280
+    sub rsp, 16
+    mov rax, [rbp-96]
+    mov rcx, 1
+    add rax, rcx
+    mov rsi, rax
+    mov rdi, [rbp-8]
+    mov r12, rsp
+    and rsp, -16
+call zyl_arena_alloc_zeroed
+    mov rsp, r12
+    add rsp, 16
+    mov rdx, rax
+    mov rax, rdx
+    mov [rbp-104], rax
+    mov rax, [rbp-104]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-32]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-40]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-48]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-56]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-64]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-72]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-80]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-88]
+    sub rsp, 8
+    mov [rsp], rax
+    mov r10, [rsp+0]
+    push r10
+    mov r10, [rsp+16]
+    push r10
+    mov r10, [rsp+32]
+    push r10
+    mov r9, [rsp+48]
+    mov r8, [rsp+56]
+    mov rcx, [rsp+64]
+    mov rdx, [rsp+72]
+    mov rsi, [rsp+80]
+    mov rdi, [rsp+88]
+call zy_local_x2Fmain_0__mangle__mg_x2Dwrite
+    add rsp, 96
+    mov [rbp-112], rax
+    mov rax, [rbp-104]
+    mov rdx, rax
+    mov rax, rdx
+    jmp .L281
+.L280:
+    sub rsp, 8
+    sub rsp, 8
+    mov rax, [rbp-96]
+    mov rcx, 1
+    add rax, rcx
+    mov rdi, rax
+    mov r12, rsp
+    and rsp, -16
+call malloc
+    mov rsp, r12
+    add rsp, 16
+    mov [rbp-120], rax
+    mov rax, [rbp-120]
+    mov rcx, 0
+    cmp rax, rcx
+    jne .L282
+    mov rax, 0
+    mov rdx, rax
+    mov rax, rdx
+    jmp .L283
+.L282:
+    mov rax, [rbp-120]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-32]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-40]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-48]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-56]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-64]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-72]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-80]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-88]
+    sub rsp, 8
+    mov [rsp], rax
+    mov r10, [rsp+0]
+    push r10
+    mov r10, [rsp+16]
+    push r10
+    mov r10, [rsp+32]
+    push r10
+    mov r9, [rsp+48]
+    mov r8, [rsp+56]
+    mov rcx, [rsp+64]
+    mov rdx, [rsp+72]
+    mov rsi, [rsp+80]
+    mov rdi, [rsp+88]
+call zy_local_x2Fmain_0__mangle__mg_x2Dwrite
+    add rsp, 96
+    mov [rbp-128], rax
+    sub rsp, 32
+    mov rax, [rbp-120]
+    mov rcx, 192
+    add rax, rcx
+    mov rdx, rax
+    mov rdi, [rbp-16]
+    mov rsi, [rbp-24]
+    mov rcx, 8
+call zy_local_x2Fmain_0__blake3__rt_x2Dblake3_x2Draw
+    add rsp, 32
+    test rax, rax
+    je .L286
+    mov rax, 0
+    jmp .L287
+.L286:
+    mov rax, 1
+.L287:
+    test rax, rax
+    je .L284
+    sub rsp, 8
+    sub rsp, 8
+    mov rdi, [rbp-120]
+    mov r12, rsp
+    and rsp, -16
+call free
+    mov rsp, r12
+    add rsp, 16
+    mov [rbp-136], rax
+    mov rax, 0
+    mov rdx, rax
+    mov rax, rdx
+    jmp .L285
+.L284:
+    sub rsp, 16
+    mov rdi, [rbp-8]
+    mov rsi, 201
+    mov r12, rsp
+    and rsp, -16
+call zyl_arena_alloc_zeroed
+    mov rsp, r12
+    add rsp, 16
+    mov rdx, rax
+    mov rax, rdx
+    mov [rbp-144], rax
+    sub rsp, 8
+    sub rsp, 24
+    mov rdi, [rbp-144]
+    mov rsi, [rbp-120]
+    mov rdx, 184
+call zy_local_x2Fmain_0__base__rt_x2Dcopy
+    add rsp, 32
+    mov [rbp-152], rax
+    mov rax, [rbp-144]
+    mov rcx, 184
+    add rax, rcx
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-120]
+    mov rcx, 192
+    add rax, rcx
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, 0
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, 8
+    sub rsp, 8
+    mov [rsp], rax
+    mov rcx, [rsp+0]
+    mov rdx, [rsp+8]
+    mov rsi, [rsp+16]
+    mov rdi, [rsp+24]
+call zy_local_x2Fmain_0__blake3__rt_x2Dhex_x2Dbytes
+    add rsp, 32
+    mov [rbp-160], rax
+    mov rax, [rbp-144]
+    mov rcx, 200
+    add rax, rcx
+    push rax
+    mov rax, 0
+    mov rcx, rax
+    pop rdx
+    mov byte ptr [rdx], cl
+    mov rax, rcx
+    mov [rbp-168], rax
+    sub rsp, 8
+    sub rsp, 8
+    mov rdi, [rbp-120]
+    mov r12, rsp
+    and rsp, -16
+call free
+    mov rsp, r12
+    add rsp, 16
+    mov [rbp-176], rax
+    mov rax, [rbp-144]
+    mov rdx, rax
+    mov rax, rdx
+.L285:
+.L283:
+.L281:
+    mov rbx, [rbp-280]
+    mov r12, [rbp-272]
+    mov rsp, rbp
+    pop rbp
+    ret
+.globl zyl_mangle_key
+zyl_mangle_key:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 184
+    mov [rbp-184], rbx
+    mov [rbp-176], r12
+    mov [rbp-8], rdi
+    mov [rbp-16], rsi
+    mov rax, [rbp-16]
+    mov rdx, rax
+    mov rax, rdx
+    mov [rbp-24], rax
+    mov rax, [rbp-24]
+    mov rcx, 0
+    cmp rax, rcx
+    jne .L288
+    mov rax, 0
+    mov rdx, rax
+    mov rax, rdx
+    jmp .L289
+.L288:
+    sub rsp, 8
+    sub rsp, 8
+    mov rdi, [rbp-24]
+call zy_local_x2Fmain_0__base__rt_x2Dstrlen
+    add rsp, 16
+    mov [rbp-32], rax
+    sub rsp, 32
+    mov rdi, [rbp-24]
+    mov rsi, [rbp-32]
+    mov rdx, 64
+    mov rcx, 0
+call zy_local_x2Fmain_0__base__rt_x2Dfind_x2Dbyte
+    add rsp, 32
+    mov [rbp-40], rax
+    mov rax, [rbp-40]
+    mov rcx, 0
+    cmp rax, rcx
+    jge .L290
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-32]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, 0
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L292]
+    mov rdx, rax
+    mov rax, rdx
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, 1
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, 0
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-32]
+    sub rsp, 8
+    mov [rsp], rax
+    mov r10, [rsp+0]
+    push r10
+    mov r10, [rsp+16]
+    push r10
+    mov r10, [rsp+32]
+    push r10
+    mov r10, [rsp+48]
+    push r10
+    mov r10, [rsp+64]
+    push r10
+    mov r9, [rsp+80]
+    mov r8, [rsp+88]
+    mov rcx, [rsp+96]
+    mov rdx, [rsp+104]
+    mov rsi, [rsp+112]
+    mov rdi, [rsp+120]
+call zy_local_x2Fmain_0__mangle__mg_x2Demit
+    add rsp, 128
+    jmp .L291
+.L290:
+    mov rax, [rbp-40]
+    mov rcx, 1
+    add rax, rcx
+    mov rcx, rax
+    mov rax, [rbp-24]
+    add rax, rcx
+    mov [rbp-48], rax
+    mov rax, [rbp-40]
+    mov rcx, 1
+    add rax, rcx
+    mov rcx, rax
+    mov rax, [rbp-32]
+    sub rax, rcx
+    mov [rbp-56], rax
+    sub rsp, 8
+    sub rsp, 24
+    mov rdi, [rbp-48]
+    mov rsi, 0
+    mov rdx, [rbp-56]
+call zy_local_x2Fmain_0__mangle__mg_x2Dsep
+    add rsp, 32
+    mov [rbp-64], rax
+    mov rax, [rbp-64]
+    mov rcx, 0
+    cmp rax, rcx
+    jge .L293
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-32]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-40]
+    sub rsp, 8
+    mov [rsp], rax
+    lea rax, [rip+.L295]
+    mov rdx, rax
+    mov rax, rdx
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, 1
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, 0
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-48]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-56]
+    sub rsp, 8
+    mov [rsp], rax
+    mov r10, [rsp+0]
+    push r10
+    mov r10, [rsp+16]
+    push r10
+    mov r10, [rsp+32]
+    push r10
+    mov r10, [rsp+48]
+    push r10
+    mov r10, [rsp+64]
+    push r10
+    mov r9, [rsp+80]
+    mov r8, [rsp+88]
+    mov rcx, [rsp+96]
+    mov rdx, [rsp+104]
+    mov rsi, [rsp+112]
+    mov rdi, [rsp+120]
+call zy_local_x2Fmain_0__mangle__mg_x2Demit
+    add rsp, 128
+    jmp .L294
+.L293:
+    mov rax, [rbp-64]
+    mov rcx, 2
+    add rax, rcx
+    mov rcx, rax
+    mov rax, [rbp-48]
+    add rax, rcx
+    mov [rbp-72], rax
+    mov rax, [rbp-64]
+    mov rcx, 2
+    add rax, rcx
+    mov rcx, rax
+    mov rax, [rbp-56]
+    sub rax, rcx
+    mov [rbp-80], rax
+    sub rsp, 8
+    sub rsp, 24
+    mov rdi, [rbp-72]
+    mov rsi, 0
+    mov rdx, [rbp-80]
+call zy_local_x2Fmain_0__mangle__mg_x2Dsep
+    add rsp, 32
+    mov [rbp-88], rax
+    mov rax, [rbp-88]
+    mov rcx, 0
+    cmp rax, rcx
+    jge .L296
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-32]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-40]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-48]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-64]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, 0
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-72]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-80]
+    sub rsp, 8
+    mov [rsp], rax
+    mov r10, [rsp+0]
+    push r10
+    mov r10, [rsp+16]
+    push r10
+    mov r10, [rsp+32]
+    push r10
+    mov r10, [rsp+48]
+    push r10
+    mov r10, [rsp+64]
+    push r10
+    mov r9, [rsp+80]
+    mov r8, [rsp+88]
+    mov rcx, [rsp+96]
+    mov rdx, [rsp+104]
+    mov rsi, [rsp+112]
+    mov rdi, [rsp+120]
+call zy_local_x2Fmain_0__mangle__mg_x2Demit
+    add rsp, 128
+    jmp .L297
+.L296:
+    mov rax, [rbp-8]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-32]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-24]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-40]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-48]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-64]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-72]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-88]
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-88]
+    mov rcx, 2
+    add rax, rcx
+    mov rcx, rax
+    mov rax, [rbp-72]
+    add rax, rcx
+    sub rsp, 8
+    mov [rsp], rax
+    mov rax, [rbp-88]
+    mov rcx, 2
+    add rax, rcx
+    mov rcx, rax
+    mov rax, [rbp-80]
+    sub rax, rcx
+    sub rsp, 8
+    mov [rsp], rax
+    mov r10, [rsp+0]
+    push r10
+    mov r10, [rsp+16]
+    push r10
+    mov r10, [rsp+32]
+    push r10
+    mov r10, [rsp+48]
+    push r10
+    mov r10, [rsp+64]
+    push r10
+    mov r9, [rsp+80]
+    mov r8, [rsp+88]
+    mov rcx, [rsp+96]
+    mov rdx, [rsp+104]
+    mov rsi, [rsp+112]
+    mov rdi, [rsp+120]
+call zy_local_x2Fmain_0__mangle__mg_x2Demit
+    add rsp, 128
+.L297:
+.L294:
+.L291:
+.L289:
+    mov rbx, [rbp-184]
+    mov r12, [rbp-176]
+    mov rsp, rbp
+    pop rbp
+    ret
 zy_local_x2Fmain_0__variant__rt_x2Dwords_x2Dcmp_x7EInt_x2CInt_x2CInt_x2CInt_x2CInt_x2CInt:
     push rbp
     mov rbp, rsp
@@ -9269,11 +15871,11 @@ zy_local_x2Fmain_0__variant__rt_x2Dwords_x2Dcmp_x7EInt_x2CInt_x2CInt_x2CInt_x2CI
     mov r8, rdx
     mov rbx, r9
     mov r9, rcx
-.L246_0:
+.L298_0:
     cmp r8, r9
-    jl .L246_1
+    jl .L298_1
     cmp r10, rbx
-    jge .L246_2
+    jge .L298_2
     mov r12, -1
     mov rax, r12
     mov rbx, qword ptr [rbp-8]
@@ -9283,9 +15885,9 @@ zy_local_x2Fmain_0__variant__rt_x2Dwords_x2Dcmp_x7EInt_x2CInt_x2CInt_x2CInt_x2CI
     mov rsp, rbp
     pop rbp
     ret
-.L246_2:
+.L298_2:
     cmp r10, rbx
-    jle .L246_3
+    jle .L298_3
     mov r12, 1
     mov rax, r12
     mov rbx, qword ptr [rbp-8]
@@ -9295,7 +15897,7 @@ zy_local_x2Fmain_0__variant__rt_x2Dwords_x2Dcmp_x7EInt_x2CInt_x2CInt_x2CInt_x2CI
     mov rsp, rbp
     pop rbp
     ret
-.L246_3:
+.L298_3:
     mov r12, 0
     mov rax, r12
     mov rbx, qword ptr [rbp-8]
@@ -9305,7 +15907,7 @@ zy_local_x2Fmain_0__variant__rt_x2Dwords_x2Dcmp_x7EInt_x2CInt_x2CInt_x2CInt_x2CI
     mov rsp, rbp
     pop rbp
     ret
-.L246_1:
+.L298_1:
     mov r12, r8
     imul r12, 8
     add r12, rdi
@@ -9319,7 +15921,7 @@ zy_local_x2Fmain_0__variant__rt_x2Dwords_x2Dcmp_x7EInt_x2CInt_x2CInt_x2CInt_x2CI
     mov rax, qword ptr [rdx]
     mov r13, rax
     cmp r12, r13
-    jge .L246_4
+    jge .L298_4
     mov r14, -1
     mov rax, r14
     mov rbx, qword ptr [rbp-8]
@@ -9329,9 +15931,9 @@ zy_local_x2Fmain_0__variant__rt_x2Dwords_x2Dcmp_x7EInt_x2CInt_x2CInt_x2CInt_x2CI
     mov rsp, rbp
     pop rbp
     ret
-.L246_4:
+.L298_4:
     cmp r12, r13
-    jle .L246_5
+    jle .L298_5
     mov r12, 1
     mov rax, r12
     mov rbx, qword ptr [rbp-8]
@@ -9341,11 +15943,11 @@ zy_local_x2Fmain_0__variant__rt_x2Dwords_x2Dcmp_x7EInt_x2CInt_x2CInt_x2CInt_x2CI
     mov rsp, rbp
     pop rbp
     ret
-.L246_5:
+.L298_5:
     mov r12, r8
     add r12, 1
     mov r8, r12
-    jmp .L246_0
+    jmp .L298_0
 .section .rodata
 .Lfmtd:
     .string "%lld\n"
@@ -9433,6 +16035,26 @@ zy_local_x2Fmain_0__variant__rt_x2Dwords_x2Dcmp_x7EInt_x2CInt_x2CInt_x2CInt_x2CI
     .string ""
 .L212:
     .string ""
+.L260:
+    .string "0123456789abcdef"
+.L262:
+    .string "0123456789abcdef"
+.L268:
+    .string "rb"
+.L270:
+    .string "0123456789ABCDEF"
+.L272:
+    .string ""
+.L274:
+    .string ""
+.L276:
+    .string ""
+.L277:
+    .string "0123456789ABCDEF"
+.L292:
+    .string "0"
+.L295:
+    .string "0"
 .bss
 .p2align 6
 zyl_rtg_cpu_avx2:

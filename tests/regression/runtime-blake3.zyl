@@ -1,0 +1,59 @@
+; BLAKE3 and label mangling in the Zyl runtime (runtime/rt/blake3.zyl, mangle.zyl); expected values from the old C.
+
+(defn alpha-rep (s k) (if (= k 0) s (alpha-rep (str-concat s "abcdefghijklmnopqrstuvwxyz") (- k 1))))
+
+(defn alpha (n) (str-substring (alpha-rep "" 700) 0 n))
+
+(defn b3 (n) (ffi-call "zyl_blake3_hex" (ffi-call "zyl_arena_create" 0 1000) (alpha n) n 32 1000))
+
+(test "official-vectors"
+  (let a (ffi-call "zyl_arena_create" 0 1000)
+    (begin
+      (assert-equal (ffi-call "zyl_blake3_hex" a "" 0 32 1000) "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262")
+      (assert-equal (ffi-call "zyl_blake3_hex" a "hello world" -1 0 1000) "d74981efa70a0c880b8d8c1985d075dbcbf679b99a5f9914e5aaf96b831a9e24"))))
+
+(test "chunks-and-trees"
+  (begin
+    (assert-equal (b3 0) "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262")
+    (assert-equal (b3 1) "17762fddd969a453925d65717ac3eea21320b66b54342fde15128d6caf21215f")
+    (assert-equal (b3 63) "7777f8ee959a6b4caf8881411d3a36d27f063b471e48170ae2b2eac7b7318067")
+    (assert-equal (b3 64) "3da64fbf97c1bd01c02f8e892434209762f6ead6a4f678d8f1681fea0fa71590")
+    (assert-equal (b3 65) "2efc808eb80b2d35d322b01448d03a9e66f82e71fb276f7e8ecd790114ec006c")
+    (assert-equal (b3 1023) "3c4e0819335df1fcd0961f29ffc25fd7daca1e8c47f12a5b476ac13d4e7f2447")
+    (assert-equal (b3 1024) "515e3c4cae03ab4c7839f5fd3724ae7324a361654264a27e25161ffbd4e9f620")
+    (assert-equal (b3 1025) "0c1ac49ca7fdf7f26a5253862d57a8d97b39064b2e0b9a7992caf4ed0bf7a035")
+    (assert-equal (b3 2048) "61bba5cf428b7d633089effc5cb910cbb62e720c25abfc0e8c2fea99f17b5d4c")
+    (assert-equal (b3 2049) "c5c5627b6090a6aeb07185eaa601f846b39e34366f148afb96ac5e8beac37182")
+    (assert-equal (b3 3000) "6f5015f9756cf771583847039d22c69de6685d7aef9ba736a673cbe77a5b6cd0")
+    (assert-equal (b3 3072) "e4bf1404c611651f3f01b6de740c9f757d16a80933849a57e712f5c084e4da02")
+    (assert-equal (b3 4097) "83a0a68d3762b9be576cc45305b71272b305b59a42baedb475d7fa8f138c0bbb")
+    (assert-equal (b3 8192) "01181601f2ef07cd7c3217b1f9b9182a531ce594e14fcdddb7645e01656f1a5f")
+    (assert-equal (b3 9000) "73b5bcaff82491e0ce82ff687d1bf3b7e884e9b57c9633d7fe7b339cbbef36db")
+    (assert-equal (b3 17409) "4fee29d27944f1715d9f4f8b3bd39532c34d5da1d3d37b148600511990cb3bc8")))
+
+(test "output-length"
+  (let a (ffi-call "zyl_arena_create" 0 1000)
+    (begin
+      (assert-equal (ffi-call "zyl_blake3_hex" a (alpha 100) 100 64 1000) "458e54c6e0a4ed1ceb38e5a9bed0978054805b878b05238f44ad0c9d231d4fb8e675bb07287c44e02850e85b16d3fba710bc16b4d3bd38db7f95320c51b7cffe")
+      (assert-equal (ffi-call "zyl_blake3_hex" a (alpha 100) 100 99 1000) "458e54c6e0a4ed1ceb38e5a9bed0978054805b878b05238f44ad0c9d231d4fb8e675bb07287c44e02850e85b16d3fba710bc16b4d3bd38db7f95320c51b7cffe")
+      (assert-equal (ffi-call "zyl_blake3_hex" a (alpha 100) 100 5 1000) "458e54c6e0"))))
+
+(test "file-matches-memory"
+  (let fd (file-open "/tmp/zyl_regression_blake3.txt" "w")
+    (let _ (file-write fd (alpha 5000))
+      (let _ (file-close fd)
+        (assert-equal (ffi-call "zyl_blake3_file_hex" (ffi-call "zyl_arena_create" 0 1000) "/tmp/zyl_regression_blake3.txt" 32 1000) (b3 5000))))))
+
+(test "mangle"
+  (let a (ffi-call "zyl_arena_create" 0 1000)
+    (begin
+      (assert-equal (ffi-call "zyl_mangle_key" a "acme/json@1::json/parser::parse" 1000) "zy_acme_x2Fjson_1__json_x2Fparser__parse")
+      (assert-equal (ffi-call "zyl_mangle_key" a "plain_name" 1000) "zy__0____plain_5Fname")
+      (assert-equal (ffi-call "zyl_mangle_key" a "p@1" 1000) "zy_p_0____1")
+      (assert-equal (ffi-call "zyl_mangle_key" a "p@1::m" 1000) "zy_p_1____m")
+      (assert-equal (ffi-call "zyl_mangle_key" a "zyl/std@0::core::str-concat" 1000) "zy_zyl_x2Fstd_0__core__str_x2Dconcat")
+      (assert-equal (ffi-call "zyl_mangle_key" a (str-concat "big/pkg@7::some/mod::" (alpha 150)) 1000) "zy_big_x2Fpkg_7__some_x2Fmod__abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrst")
+      (assert-equal (ffi-call "zyl_mangle_key" a (str-concat "big/pkg@7::some/mod::" (alpha 250)) 1000) "zy_big_x2Fpkg_7__some_x2Fmod__abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwx4fa6167ba6f2c78e")
+      (assert-equal (str-length (ffi-call "zyl_mangle_key" a (str-concat "big/pkg@7::some/mod::" (alpha 250)) 1000)) 200))))
+
+(run-tests)

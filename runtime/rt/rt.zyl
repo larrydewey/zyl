@@ -8,3 +8,5 @@
 (use ctab)
 (use source)
 (use interp)
+(use blake3)
+(use mangle)
