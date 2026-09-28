@@ -1,0 +1,30 @@
+; Shifts by a constant count agree with the register sequences, counts outside [0, 63] included.
+
+(defn sl ((x Int) (k Int)) (shl x k))
+(defn sr ((x Int) (k Int)) (shr x k))
+(defn sa ((x Int) (k Int)) (ashr x k))
+
+(defn chk ((x Int))
+  (+ (if (= (shl x 0) (sl x 0)) 0 1)
+  (+ (if (= (shl x 5) (sl x 5)) 0 1)
+  (+ (if (= (shl x 63) (sl x 63)) 0 1)
+  (+ (if (= (shl x 64) (sl x 64)) 0 1)
+  (+ (if (= (shl x -1) (sl x -1)) 0 1)
+  (+ (if (= (shr x 3) (sr x 3)) 0 1)
+  (+ (if (= (shr x 63) (sr x 63)) 0 1)
+  (+ (if (= (shr x 100) (sr x 100)) 0 1)
+  (+ (if (= (ashr x 7) (sa x 7)) 0 1)
+  (+ (if (= (ashr x 64) (sa x 64)) 0 1)
+     (if (= (ashr x -3) (sa x -3)) 0 1))))))))))))
+
+(test "const-shifts"
+  (begin
+    (assert-equal (chk 1) 0)
+    (assert-equal (chk -1) 0)
+    (assert-equal (chk 12345678901) 0)
+    (assert-equal (chk (- -9223372036854775807 1)) 0)
+    (assert-equal (shr -1 60) 15)
+    (assert-equal (ashr -64 3) -8)
+    (assert-equal (shl 3 64) 0)))
+
+(run-tests)

@@ -190,7 +190,219 @@
 (defn opt-inline-fns (fns)
   (if (str-eq (ffi-call "zyl_getenv_str" "ZYL_INLINE" 1000) "0")
     fns
-    (opt-copyprop-fns (opt-inline-round (opt-inline-round fns)))))
+    (opt-copyprop-fns (opt-early-exit-fns (opt-self-unroll-fns (opt-inline-round (opt-inline-round fns)))))))
+
+; --- early exits at the call site ---------------------------------------------
+;
+; Inside a loop, a call of a loop whose body is (if c b ...) with c and b cheap
+; arithmetic on its parameters binds the arguments (in order, as any inlined call),
+; tests c itself and calls only when c fails: the call's early return costs no call.
+
+(defn opt-early-exit-fns (fns)
+  (let tab (ffi-call "zyl_smap_new" 1000)
+    (let _ (opt-collect-early fns tab)
+      (opt-early-all fns tab))))
+
+(defn opt-collect-early (fns tab)
+  (match fns
+    (Nil unit)
+    (Cons f rest
+      (let _ (match f
+               (IFn name params body kinds
+                 (match body
+                   (IIf c b _
+                     ; only loops: their exits are where a call is most often immediately done
+                     (if (and (not (str-eq name "main")) (and (opt-kinds-int kinds) (and (opt-calls body name) (and (opt-cheap c params) (opt-cheap b params)))))
+                       (let _ (ffi-call "zyl_smap_put" tab name (IFn name params (IIf c b (ICall name (opt-loads params))) kinds) 1000) unit)
+                       unit))
+                   (_ unit)))
+               (_ unit))
+        (opt-collect-early rest tab)))))
+
+(defn opt-early-all (fns tab)
+  (match fns
+    (Nil Nil)
+    (Cons f rest
+      (Cons (match f
+              (IFn name params body kinds
+                (if (opt-calls body name) (IFn name params (opt-ee body tab name params) kinds) f))
+              (_ f))
+            (opt-early-all rest tab)))))
+
+; Calls of other candidates (not the loop itself) get the test in front.
+(defn opt-ee (e tab self locals) (opt-keep (opt-ee-node e tab self locals) e))
+
+(defn opt-ee-node (e tab self locals)
+  (match e
+    (ICall n args
+      (let args2 (opt-ee-list args tab self locals)
+        (if (and (not (str-eq n self)) (and (ffi-call "zyl_smap_has" tab n 1000) (not (opt-member n locals))))
+          (opt-expand (ffi-call "zyl_smap_get_or" tab n e 1000) args2 locals e)
+          (ICall n args2))))
+    (IIf c t f (IIf (opt-ee c tab self locals) (opt-ee t tab self locals) (opt-ee f tab self locals)))
+    (ILet n v b (ILet n (opt-ee v tab self locals) (opt-ee b tab self (Cons n locals))))
+    (ISeq es (ISeq (opt-ee-list es tab self locals)))
+    (IMatch s arms (IMatch (opt-ee s tab self locals) (opt-ee-arms arms tab self locals)))
+    (IBinop op l r (IBinop op (opt-ee l tab self locals) (opt-ee r tab self locals)))
+    (IFfi n args (IFfi n (opt-ee-list args tab self locals)))
+    (IVariant nm tag fs (IVariant nm tag (opt-ee-list fs tab self locals)))
+    (ISet n v (ISet n (opt-ee v tab self locals)))
+    (IWhile c b (IWhile (opt-ee c tab self locals) (opt-ee b tab self locals)))
+    (_ e)))
+
+(defn opt-ee-list (es tab self locals) (match es (Nil Nil) (Cons h t (Cons (opt-ee h tab self locals) (opt-ee-list t tab self locals)))))
+(defn opt-ee-arms (arms tab self locals)
+  (match arms
+    (Nil Nil)
+    (Cons a t (match a (IArm v tag bs b (Cons (IArm v tag bs (opt-ee b tab self (list-append bs locals))) (opt-ee-arms t tab self locals)))))))
+
+; --- self unrolling -----------------------------------------------------------
+;
+; A small tree-recursive function (a self call outside tail position) gets
+; that call replaced by one copy of its own body, arguments bound first in
+; order as for any inlined call; inside the copy each self call whose
+; callee would return at once (the body is (if c b ...) with c and b
+; cheap arithmetic on the parameters) tests c itself and calls only when
+; it fails. Tail self calls, including the last operand of an
+; accumulating x op (self ...), stay calls: the backend makes them loops.
+
+(defn opt-self-unroll-fns (fns)
+  (match fns
+    (Nil Nil)
+    (Cons f rest
+      (Cons (match f
+              (IFn name params body kinds
+                (if (opt-self-unrollable name params body kinds)
+                  (IFn name params (opt-su body f name true params (opt-unroll-depth)) kinds)
+                  f))
+              (_ f))
+            (opt-self-unroll-fns rest)))))
+
+(defn opt-self-unrollable (name _params body kinds)
+  (and (not (str-eq name "main"))
+    (and (opt-kinds-int kinds)
+      (and (<= (opt-size body 0) 18)
+        (and (opt-plain body) (opt-nontail-self body name true))))))
+
+(defn opt-acc-op (op) (or (= op 0) (or (= op 2) (and (>= op 11) (<= op 13)))))
+
+; e is (name ...) or x op e' with e' such a chain.
+(defn opt-self-chain (e op name)
+  (match e
+    (ICall n _ (str-eq n name))
+    (IBinop o _ y (and (= o op) (opt-self-chain y op name)))
+    (_ false)))
+
+; Whether e has a self call outside tail position.
+(defn opt-nontail-self (e name tail)
+  (match e
+    (ICall n args (or (and (str-eq n name) (not tail)) (opt-nts-list args name)))
+    (IIf c t f (or (opt-nontail-self c name false) (or (opt-nontail-self t name tail) (opt-nontail-self f name tail))))
+    (ILet _ v b (or (opt-nontail-self v name false) (opt-nontail-self b name tail)))
+    (ISeq es (opt-nts-seq es name tail))
+    (IMatch s arms (or (opt-nontail-self s name false) (opt-nts-arms arms name tail)))
+    (IBinop op l r
+      (if (and tail (and (opt-acc-op op) (opt-self-chain r op name)))
+        (or (opt-nontail-self l name false) (opt-nontail-self r name true))
+        (or (opt-nontail-self l name false) (opt-nontail-self r name false))))
+    (IFfi _ args (opt-nts-list args name))
+    (IVariant _ _ fs (opt-nts-list fs name))
+    (ISet _ v (opt-nontail-self v name false))
+    (IWhile c b (or (opt-nontail-self c name false) (opt-nontail-self b name false)))
+    (_ false)))
+
+(defn opt-nts-list (es name) (match es (Nil false) (Cons h t (if (opt-nontail-self h name false) true (opt-nts-list t name)))))
+(defn opt-nts-seq (es name tail)
+  (match es (Nil false) (Cons h t (if (opt-nontail-self h name (and tail (is-nil t))) true (opt-nts-seq t name tail)))))
+(defn opt-nts-arms (arms name tail)
+  (match arms (Nil false) (Cons a t (match a (IArm _ _ _ b (if (opt-nontail-self b name tail) true (opt-nts-arms t name tail)))))))
+
+(def opt-unroll-cell
+  (ffi-call "zyl_ref_new"
+    (let t (ffi-call "zyl_getenv_str" "ZYL_UNROLL" 1000)
+      (if (> (str-length t) 0) (ffi-call "zyl_cstr_to_int" t 1000) 1))
+    1000))
+(defn opt-unroll-depth () (ffi-call "zyl_ref_get" opt-unroll-cell 1000))
+
+; d: copies still allowed below this point; the last level only tests the base case.
+(defn opt-su (e f name tail locals d) (opt-keep (opt-su-node e f name tail locals d) e))
+
+(defn opt-su-node (e f name tail locals d)
+  (match e
+    (ICall n args
+      (let args2 (opt-su-list args f name locals d)
+        (if (and (str-eq n name) (not tail))
+          (if (> d 1)
+            (opt-su (opt-expand f args2 locals e) f name false locals (- d 1))
+            (opt-base-in (opt-expand f args2 locals e) f name locals))
+          (ICall n args2))))
+    (IIf c t fl (IIf (opt-su c f name false locals d) (opt-su t f name tail locals d) (opt-su fl f name tail locals d)))
+    (ILet n v b (ILet n (opt-su v f name false locals d) (opt-su b f name tail (Cons n locals) d)))
+    (ISeq es (ISeq (opt-su-seq es f name tail locals d)))
+    (IMatch s arms (IMatch (opt-su s f name false locals d) (opt-su-arms arms f name tail locals d)))
+    (IBinop op l r
+      (IBinop op (opt-su l f name false locals d)
+                 (opt-su r f name (and tail (and (opt-acc-op op) (opt-self-chain r op name))) locals d)))
+    (IFfi n args (IFfi n (opt-su-list args f name locals d)))
+    (IVariant nm tag fs (IVariant nm tag (opt-su-list fs f name locals d)))
+    (ISet n v (ISet n (opt-su v f name false locals d)))
+    (IWhile c b (IWhile (opt-su c f name false locals d) (opt-su b f name false locals d)))
+    (_ e)))
+
+(defn opt-su-list (es f name locals d)
+  (match es (Nil Nil) (Cons h t (Cons (opt-su h f name false locals d) (opt-su-list t f name locals d)))))
+(defn opt-su-seq (es f name tail locals d)
+  (match es (Nil Nil) (Cons h t (Cons (opt-su h f name (and tail (is-nil t)) locals d) (opt-su-seq t f name tail locals d)))))
+(defn opt-su-arms (arms f name tail locals d)
+  (match arms
+    (Nil Nil)
+    (Cons a t (match a (IArm v tag bs b (Cons (IArm v tag bs (opt-su b f name tail (list-append bs locals) d)) (opt-su-arms t f name tail locals d)))))))
+
+; Inside a copy: each self call becomes (if c b (self ...)) over its bound arguments, when f's body starts so.
+(defn opt-base-in (e f name locals)
+  (match f
+    (IFn _ params body kinds
+      (match body
+        (IIf c b _
+          (if (and (opt-cheap c params) (opt-cheap b params))
+            (opt-bi e (IFn name params (IIf c b (ICall name (opt-loads params))) kinds) name locals)
+            e))
+        (_ e)))
+    (_ e)))
+
+(defn opt-loads (ps) (match ps (Nil Nil) (Cons p t (Cons (ILoad p) (opt-loads t)))))
+
+; Constants, parameters and arithmetic that cannot trap.
+(defn opt-cheap (e ps)
+  (match e
+    (IConst _ true)
+    (ILoad n (opt-member n ps))
+    (IBinop op l r (and (not (or (= op 3) (= op 4))) (and (opt-cheap l ps) (opt-cheap r ps))))
+    (_ false)))
+
+(defn opt-bi (e g name locals) (opt-keep (opt-bi-node e g name locals) e))
+
+(defn opt-bi-node (e g name locals)
+  (match e
+    (ICall n args
+      (let args2 (opt-bi-list args g name locals)
+        (if (str-eq n name) (opt-expand g args2 locals e) (ICall n args2))))
+    (IIf c t fl (IIf (opt-bi c g name locals) (opt-bi t g name locals) (opt-bi fl g name locals)))
+    (ILet n v b (ILet n (opt-bi v g name locals) (opt-bi b g name (Cons n locals))))
+    (ISeq es (ISeq (opt-bi-list es g name locals)))
+    (IMatch s arms (IMatch (opt-bi s g name locals) (opt-bi-arms arms g name locals)))
+    (IBinop op l r (IBinop op (opt-bi l g name locals) (opt-bi r g name locals)))
+    (IFfi n args (IFfi n (opt-bi-list args g name locals)))
+    (IVariant nm tag fs (IVariant nm tag (opt-bi-list fs g name locals)))
+    (ISet n v (ISet n (opt-bi v g name locals)))
+    (IWhile c b (IWhile (opt-bi c g name locals) (opt-bi b g name locals)))
+    (_ e)))
+
+(defn opt-bi-list (es g name locals) (match es (Nil Nil) (Cons h t (Cons (opt-bi h g name locals) (opt-bi-list t g name locals)))))
+(defn opt-bi-arms (arms g name locals)
+  (match arms
+    (Nil Nil)
+    (Cons a t (match a (IArm v tag bs b (Cons (IArm v tag bs (opt-bi b g name (list-append bs locals))) (opt-bi-arms t g name locals)))))))
 
 ; (let n x body) where x is a local read: body with n replaced by x, when
 ; neither is set! in body and body binds no x (which the replacement
@@ -310,7 +522,7 @@
 
 ; A leaf (no calls but runtime ones) may be larger: copying it adds no
 ; call sites, and it is typically an accessor with a bounds check.
-(defn opt-leaf-limit () (* 3 (opt-inline-limit)))
+(defn opt-leaf-limit () (* 4 (opt-inline-limit)))
 
 ; A candidate small enough anywhere, or a leaf small enough for a loop.
 (defn opt-inlinable (name _params body kinds)

@@ -8,11 +8,24 @@
 (defmacro rt-zmask (a) (ffi-call "%v128-zero-mask" a 1))
 (defmacro rt-eqmask (a b) (ffi-call "%v128-eq-mask" a b 1))
 (defmacro rt-ctz (x) (ffi-call "%ctz" x 1))
+; The high bit of each zero byte of x (its lowest set bit marks the first one).
+(defmacro rt-zero-bytes (x) (let zb-x x (bit-and (bit-and (- zb-x 72340172838076673) (bit-not zb-x)) -9187201950435737472)))
 
 ; --- SIMD scans (SSE2: aligned loads never cross a page) ---
 
-; Length of the NUL-terminated bytes at w.
+; Length of the NUL-terminated bytes at w: the first 8 bytes as one word when that stays in the page
+; (a word load forwards from a string's own word store), then 16-byte blocks.
 (defn rt-strlen (w)
+  (if (<= (bit-and w 4095) 4080)
+    (let z (rt-zero-bytes (ffi-call "%load64" w 1))
+      (if (= z 0)
+        (let z2 (rt-zero-bytes (ffi-call "%load64" (+ w 8) 1))
+          (if (= z2 0) (+ 16 (rt-strlen-v (+ w 16))) (+ 8 (shr (rt-ctz z2) 3))))
+        (shr (rt-ctz z) 3)))
+    (rt-strlen-v w)))
+
+
+(defn rt-strlen-v (w)
   (let base (bit-and w -16)
     (let m (shr (rt-zmask base) (bit-and w 15))
       (if (= m 0) (rt-strlen-from w (+ base 16)) (rt-ctz m)))))
@@ -87,10 +100,24 @@
           (let _ (ffi-call "%store32" (+ dst (- n 4)) (ffi-call "%load32" (+ src (- n 4)) 1) 1) dst))
         (rt-copy-bytes dst src n)))))
 
-; 16-byte blocks, then one last block ending exactly at n (it may overlap the previous one).
+; 16-byte blocks, then one last block ending exactly at n (it may overlap the previous one); 64 a step when large.
 (defn rt-copy-16 (dst src n)
+  (if (>= n 256) (rt-copy-64 dst src n)
+    (rt-copy-16s dst src n)))
+
+(defn rt-copy-64 (dst src n)
+  (if (>= n 64)
+    (let _ (ffi-call "%v128-copy" dst src 1)
+      (let _ (ffi-call "%v128-copy" (+ dst 16) (+ src 16) 1)
+        (let _ (ffi-call "%v128-copy" (+ dst 32) (+ src 32) 1)
+          (let _ (ffi-call "%v128-copy" (+ dst 48) (+ src 48) 1)
+            (rt-copy-64 (+ dst 64) (+ src 64) (- n 64))))))
+    (if (> n 16) (rt-copy-16s dst src n)
+      (if (> n 0) (ffi-call "%v128-copy" (+ dst (- n 16)) (+ src (- n 16)) 1) dst))))
+
+(defn rt-copy-16s (dst src n)
   (if (> n 16)
-    (let _ (ffi-call "%v128-copy" dst src 1) (rt-copy-16 (+ dst 16) (+ src 16) (- n 16)))
+    (let _ (ffi-call "%v128-copy" dst src 1) (rt-copy-16s (+ dst 16) (+ src 16) (- n 16)))
     (ffi-call "%v128-copy" (+ dst (- n 16)) (+ src (- n 16)) 1)))
 
 (defn rt-copy-bytes (dst src n)

@@ -1,0 +1,76 @@
+; Native backend: accumulator tails, loop rotation, coalesced moves, view bytes.
+
+(deftype T (Lf) (Nd T T))
+
+(defn fib ((n Int)) (if (< n 2) n (+ (fib (- n 1)) (fib (- n 2)))))
+(defn fact ((n Int)) (if (= n 0) 1 (* n (fact (- n 1)))))
+(defn xsum ((n Int)) (if (= n 0) 0 (bit-xor (* n 3) (xsum (- n 1)))))
+(defn band ((n Int)) (if (= n 0) -1 (bit-and (+ n 255) (band (- n 1)))))
+(defn mk ((d Int)) (if (= d 0) (Lf) (Nd (mk (- d 1)) (mk (- d 1)))))
+(defn cnt ((t T)) (match t (Lf 1) (Nd l r (+ 1 (+ (cnt l) (cnt r))))))
+; mixed tails: an accumulating one, a plain return and a self call
+(defn mix ((n Int) (k Int))
+  (if (<= n 0) k (if (= (% n 3) 0) (mix (- n 1) (+ k 1)) (+ n (mix (- n 2) k)))))
+; wrapping stays exact under reassociation
+(defn big ((n Int)) (if (= n 0) 0 (+ 4611686018427387904 (big (- n 1)))))
+(defn swp ((a Int) (b Int) (n Int)) (if (= n 0) (- a b) (swp b a (- n 1))))
+(defn marks ((b ByteBuf) (j Int) (s Int) (n Int))
+  (if (>= j n) 0 (begin (store-u8 :le b j 7) (marks b (+ j s) s n))))
+(defn bsum ((b ByteBuf) (i Int) (n Int) (acc Int))
+  (if (>= i n) acc (bsum b (+ i 1) n (+ acc (load-u8 :le b i)))))
+
+; tree recursion with a Float result and an ADT result (self unrolling)
+(defn ff ((n Int)) (if (< n 2) 1.0 (+ (ff (- n 1)) (ff (- n 2)))))
+(defn depth ((t T)) (match t (Lf 0) (Nd l r (let a (depth l) (let b (depth r) (+ 1 (if (> a b) a b)))))))
+(defn tri ((n Int) (k Int)) (if (<= n k) (* n 2) (- (tri (- n 1) k) (tri (- n 3) (+ k 1)))))
+
+(test "unroll"
+  (begin
+    (assert-equal (ff 10) 89.0)
+    (assert-equal (depth (mk 7)) 7)
+    (assert-equal (tri 20 0) 182)))
+
+(test "accumulate"
+  (begin
+    (assert-equal (fib 25) 75025)
+    (assert-equal (fact 20) 2432902008176640000)
+    (assert-equal (fact 21) -4249290049419214848)
+    (assert-equal (xsum 1000) 2000)
+    (assert-equal (band 3) 256)
+    (assert-equal (cnt (mk 10)) 2047)
+    (assert-equal (mix 50 0) 458)
+    (assert-equal (big 5) 4611686018427387904)
+    (assert-equal (swp 3 10 5) 7)))
+
+; guarded loops: the unchecked copy runs only when j >= 0, n <= the bound and 0 <= s < 2^31
+(defn fillk ((b ByteBuf) (j Int) (s Int) (n Int) (c Int))
+  (if (>= j n) c (begin (store-u8 :le b j 1) (fillk b (+ j s) s n (+ c 1)))))
+(defn cnt1 ((b ByteBuf) (i Int) (n Int) (c Int))
+  (if (< i n) (cnt1 b (+ i 1) n (+ c (load-u8 :le b i))) c))
+; a let shadowing the view parameter reads the other buffer
+(defn shadow ((b ByteBuf) (o ByteBuf) (i Int) (n Int) (acc Int))
+  (if (>= i n) acc (shadow b o (+ i 1) n (+ acc (+ (load-u8 :le b i) (let b o (load-u8 :le b i)))))))
+
+(test "guarded-loops"
+  (let b (bytebuf Heap 32)
+    (let o (bytebuf Heap 32)
+      (begin
+        (assert-equal (fillk b 0 3 32 0) 11)
+        (assert-equal (cnt1 b 0 32 0) 11)
+        (assert-equal (fillk b 30 1 40 0) 10)
+        (assert-equal (cnt1 b 0 40 0) 12)
+        (assert-equal (fillk b -5 2 4 0) 5)
+        (assert-equal (cnt1 b 0 32 0) 13)
+        (assert-equal (fillk b 1 4611686018427387904 32 0) 1)
+        (assert-equal (cnt1 b -3 3 0) 2)
+        (assert-equal (store-u8 :le o 5 9) 1)
+        (assert-equal (shadow b o 0 8 0) 13)))))
+
+(test "view-bytes"
+  (let b (bytebuf Heap 64)
+    (begin
+      (assert-equal (marks b 1 3 64) 0)
+      (assert-equal (bsum b 0 64 0) 147)
+      (assert-equal (bsum b 60 70 0) 7))))
+
+(run-tests)

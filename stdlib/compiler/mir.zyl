@@ -58,7 +58,9 @@
   (MByteBound Int Int)                ; d bound, handle
   (MByteFast Int Int Int Int Int Int) ; kind, d, off, data, bound, val (-1)
   (MRaw Int Int (List Int))           ; runtime primitive kind (cg-raw-kind), d, operands
-  (MTls Int String (List Int)))       ; d <- thread-local sym, or sym <- the operand (then d gets it)
+  (MTls Int String (List Int))        ; d <- thread-local sym, or sym <- the operand (then d gets it)
+  (MMem Int Int Int Int Int)          ; raw kind 0-7 (loads, stores), d, base, displacement, value (-1 for a load)
+  (MCSub Int Int Int))                ; d <- a - m when a >= m, else a (m an imm32 > 0; branch-free)
 
 ; Vregs an instruction reads, and the one it writes (-1 for none).
 (defn mi-uses (i)
@@ -93,7 +95,9 @@
     (MByteBound _ h (Cons h Nil))
     (MByteFast _ _ o dt bd v (Cons o (Cons dt (Cons bd (mir-opt-use v Nil)))))
     (MRaw _ _ vs vs)
-    (MTls _ _ vs vs)))
+    (MTls _ _ vs vs)
+    (MMem _ _ b _ v (Cons b (mir-opt-use v Nil)))
+    (MCSub _ a _ (Cons a Nil))))
 
 (defn mir-opt-use (v rest) (if (< v 0) rest (Cons v rest)))
 
@@ -120,6 +124,8 @@
     (MByteBound d _ d)
     (MRaw _ d _ d)
     (MTls d _ _ d)
+    (MMem _ d _ _ _ d)
+    (MCSub d _ _ d)
     (_ -1)))
 
 ; Instructions that call C (or other code) and so clobber the
@@ -136,6 +142,207 @@
 (def mir-arena-cell (ffi-call "zyl_ref_new" (ffi-call "zyl_arena_create" 0 1000) 1000))
 (defn mir-arena () (ffi-call "zyl_ref_get" mir-arena-cell 1000))
 (defn mir-reset () (ffi-call "zyl_arena_reset" (mir-arena) 1000))
+
+; --- dead definitions -------------------------------------------------------
+
+; Use counts per vreg over an instruction list.
+(defn mir-use-counts (xs nv)
+  (let u (w-alloc (mir-arena) (+ nv 1))
+    (let _ (mir-count-list xs u) u)))
+
+(defn mir-count-list (xs u)
+  (match xs
+    (Nil unit)
+    (Cons i t (let _ (mir-count-uses (mi-uses i) u 1) (mir-count-list t u)))))
+
+(defn mir-count-uses (vs u k)
+  (match vs
+    (Nil unit)
+    (Cons v t (let _ (w-set u v (+ (w-get u v) k)) (mir-count-uses t u k)))))
+
+; No effect but its result: dropped when the result is never read.
+(defn mi-pure (i)
+  (match i
+    (MConst _ _ true)
+    (MMov _ _ true)
+    (MBin op _ _ _ (not (or (= op 3) (= op 4))))
+    (MBinI _ _ _ _ true)
+    (MFnRef _ _ true)
+    (MLoad _ _ _ true)
+    (MStackBlk _ _ true)
+    (MStr _ _ true)
+    (MFlt _ _ true)
+    (MSym _ _ true)
+    (MByteData _ _ true)
+    (MByteBound _ _ true)
+    (MRaw k _ _ (or (<= k 3) (or (= k 18) (= k 46))))
+    (MTls _ _ vs (is-nil vs))
+    (MMem k _ _ _ _ (<= k 3))
+    (MCSub _ _ _ true)
+    (_ false)))
+
+; Drops pure instructions whose result is never read, last first, so a
+; chain feeding only dead code goes too (a def before its use in order).
+(defn mir-dce (instrs nv)
+  (let u (mir-use-counts instrs nv)
+    (mir-dce-rev (list-reverse instrs) u Nil)))
+
+(defn mir-dce-rev (rev u acc)
+  (match rev
+    (Nil acc)
+    (Cons i t
+      (let d (mi-def i)
+        (if (and (>= d 0) (and (= (w-get u d) 0) (mi-pure i)))
+          (let _ (mir-count-uses (mi-uses i) u -1) (mir-dce-rev t u acc))
+          (mir-dce-rev t u (Cons i acc)))))))
+
+; --- loop rotation ----------------------------------------------------------
+
+; When a loop head (label h) is a conditional jump, a self jump repeats
+; that test instead: the same registers are read, so the same branch is
+; taken, one jump sooner. Label `nl` (unused) marks the head's fall-through.
+(defn mir-rotate (instrs h nl)
+  (match (mir-head-test instrs h)
+    (Some t (mir-rot-go instrs t h nl))
+    (None instrs)))
+
+(defn mir-head-test (xs h)
+  (match xs
+    (Nil None)
+    (Cons i t
+      (match i
+        (MLabel l (if (= l h) (match t (Cons j _ (if (mir-cond-jump j) (Some j) None)) (Nil None)) (mir-head-test t h)))
+        (_ (mir-head-test t h))))))
+
+(defn mir-cond-jump (i) (match i (MJf _ _ _ _ true) (MJfI _ _ _ _ true) (MJz _ _ true) (_ false)))
+
+(defn mir-rot-go (xs t h nl)
+  (match xs
+    (Nil Nil)
+    (Cons i rest
+      (match i
+        (MJmp l (if (= l h) (Cons t (Cons (MJmp nl) (mir-rot-go rest t h nl))) (Cons i (mir-rot-go rest t h nl))))
+        (MLabel l (if (= l h)
+                    (match rest (Cons j r2 (Cons i (Cons j (Cons (MLabel nl) (mir-rot-go r2 t h nl))))) (Nil xs))
+                    (Cons i (mir-rot-go rest t h nl))))
+        (_ (Cons i (mir-rot-go rest t h nl)))))))
+
+; --- copy coalescing ------------------------------------------------------
+
+; `MMov p s` where s is defined once, read only here, by an instruction at
+; most 16 back in the same straight line that nothing between reads or
+; writes p: that instruction writes p itself and the move goes.
+; Moves first, then two-address operands over the final destinations.
+(defn mir-coalesce (instrs nv) (mir-coalesce-pass (mir-coalesce-pass instrs nv false) nv true))
+
+(defn mir-coalesce-pass (instrs nv two)
+  (let n (list-length instrs)
+    (let a (mir-array instrs n)
+      (let u (mir-use-counts instrs nv)
+        (let dc (w-alloc (mir-arena) (+ nv 1))
+          (let di (w-alloc (mir-arena) (+ nv 1))
+            (let _ (mir-def-index a n dc di 0)
+              (let drop (w-alloc (mir-arena) (+ n 1))
+                (let nd (w-alloc (mir-arena) (+ n 1))
+                  (let _ (mir-co-scan a n u dc di drop nd 0 two)
+                    (mir-co-emit a n drop nd 0)))))))))))
+
+(defn mir-def-index (a n dc di i)
+  (if (>= i n) unit
+    (let d (mi-def (ffi-call "zyl_array_get" a i 1000))
+      (let _ (if (>= d 0) (let _ (w-set dc d (+ (w-get dc d) 1)) (let _ (w-set di d i) unit)) unit)
+        (mir-def-index a n dc di (+ i 1))))))
+
+; nd holds the new destination + 1 (0: unchanged).
+(defn mir-co-scan (a n u dc di drop nd j two)
+  (if (>= j n) unit
+    (let _ (match (ffi-call "zyl_array_get" a j 1000)
+             (MMov p s
+               (if (and (not two) (and (not (= p s)) (and (= (w-get u s) 1) (= (w-get dc s) 1))))
+                 (let i (w-get di s)
+                   (if (and (< i j) (and (<= (- j i) 16) (= (w-get drop i) 0)))
+                     (if (mir-co-clear a (+ i 1) j p)
+                       (let _ (w-set drop j 1)
+                         (let _ (w-set nd i (+ p 1))
+                           ; p's only def was this move: instruction i defines it now (chains).
+                           (if (= (w-get dc p) 1) (let _ (w-set di p i) unit) unit)))
+                       unit)
+                     unit))
+                 unit))
+             ; d <- x op y with x defined just before and read only here: x's def writes d (two-address form)
+             (MBin op d x y (if (and two (and (mir-two-addr op) (and (not (= d y)) (not (= x y))))) (mir-co-operand a u dc di drop nd j d x) unit))
+             (MBinI op d x _ (if (and two (not (or (= op 3) (= op 4)))) (mir-co-operand a u dc di drop nd j d x) unit))
+             (_ unit))
+      (mir-co-scan a n u dc di drop nd (+ j 1) two))))
+
+(defn mir-two-addr (op) (or (<= op 2) (and (>= op 11) (<= op 13))))
+
+; drop 2 marks an instruction whose first operand becomes its destination.
+(defn mir-co-operand (a u dc di drop nd j d x)
+  (if (and (not (= d x)) (and (= (w-get u x) 1) (= (w-get dc x) 1)))
+    (let i (w-get di x)
+      (if (and (< i j) (and (<= (- j i) 16) (and (= (w-get drop i) 0) (mir-co-clear a (+ i 1) j d))))
+        (let _ (w-set drop j 2) (let _ (w-set nd i (+ d 1)) unit))
+        unit))
+    unit))
+
+; No control flow, and no read or write of p, in [k, j).
+(defn mir-co-clear (a k j p)
+  (if (>= k j) true
+    (let ins (ffi-call "zyl_array_get" a k 1000)
+      (if (or (mir-co-barrier ins) (or (= (mi-def ins) p) (mir-int-in p (mi-uses ins))))
+        false
+        (mir-co-clear a (+ k 1) j p)))))
+
+(defn mir-co-barrier (i)
+  (match i
+    (MLabel _ true) (MJmp _ true) (MJf _ _ _ _ true) (MJfI _ _ _ _ true) (MJz _ _ true)
+    (MRet _ true) (MTail _ _ _ true)
+    (_ false)))
+
+(defn mir-co-emit (a n drop nd i)
+  (if (>= i n) Nil
+    (if (= (w-get drop i) 2)
+      (Cons (mir-self-operand (ffi-call "zyl_array_get" a i 1000)) (mir-co-emit a n drop nd (+ i 1)))
+    (if (= (w-get drop i) 1)
+      (mir-co-emit a n drop nd (+ i 1))
+      (let ins (ffi-call "zyl_array_get" a i 1000)
+        (Cons (if (> (w-get nd i) 0) (mi-with-def ins (- (w-get nd i) 1)) ins)
+              (mir-co-emit a n drop nd (+ i 1))))))))
+
+(defn mir-self-operand (i)
+  (match i
+    (MBin op d _ y (MBin op d d y))
+    (MBinI op d _ k (MBinI op d d k))
+    (_ i)))
+
+; The instruction writing d instead.
+(defn mi-with-def (i d)
+  (match i
+    (MConst _ n (MConst d n))
+    (MMov _ s (MMov d s))
+    (MBin op _ x y (MBin op d x y))
+    (MBinI op _ x k (MBinI op d x k))
+    (MParam _ k (MParam d k))
+    (MCall _ sym u args l (MCall d sym u args l))
+    (MByte k _ o b v (MByte k d o b v))
+    (MFnRef _ nm (MFnRef d nm))
+    (MAlloc _ k l (MAlloc d k l))
+    (MLoad _ b o (MLoad d b o))
+    (MStackBlk _ k (MStackBlk d k))
+    (MStr _ t (MStr d t))
+    (MFlt _ t (MFlt d t))
+    (MSym _ t (MSym d t))
+    (MArr k _ x ix v (MArr k d x ix v))
+    (MReuse _ x b l (MReuse d x b l))
+    (MByteData _ h (MByteData d h))
+    (MByteBound _ h (MByteBound d h))
+    (MByteFast k _ o dt bd v (MByteFast k d o dt bd v))
+    (MRaw k _ vs (MRaw k d vs))
+    (MTls _ sym vs (MTls d sym vs))
+    (MMem k _ b o v (MMem k d b o v))
+    (MCSub _ a m (MCSub d a m))
+    (_ i)))
 
 ; --- liveness -------------------------------------------------------------
 
@@ -235,13 +442,13 @@
 ; strictly inside the interval (the value must then survive the call).
 (deftype Iv (Iv Int Int Int Bool))  ; vreg, start, end, crosses a call
 
-(defn mir-intervals (a n nv lin)
+(defn mir-intervals (a n nv lin u)
   (let words (+ (/ nv 64) 1)
     (let st (w-alloc (mir-arena) (+ nv 1))
       (let en (w-alloc (mir-arena) (+ nv 1))
         (let _ (mir-iv-init st en 0 nv)
-          (let _ (mir-iv-scan a n words lin st en 0 nv)
-            (mir-iv-list a n st en 0 nv)))))))
+          (let _ (mir-iv-scan a n words lin st en 0 nv u)
+            (mir-iv-list a n st en 0 nv lin words)))))))
 
 (defn mir-iv-init (st en v nv)
   (if (>= v nv) unit (let _ (w-set st v -1) (let _ (w-set en v -1) (mir-iv-init st en (+ v 1) nv)))))
@@ -251,14 +458,15 @@
     (if (or (< (w-get st v) 0) (< i (w-get st v))) (let _ (w-set st v i) unit) unit)
     (if (> i (w-get en v)) (let _ (w-set en v i) unit) unit)))
 
-(defn mir-iv-scan (a n words lin st en i nv)
+; A result nothing reads gets no interval (no register, no move).
+(defn mir-iv-scan (a n words lin st en i nv u)
   (if (>= i n)
     unit
     (let ins (ffi-call "zyl_array_get" a i 1000)
       (let _ (mir-iv-live words lin st en i 0 nv)
-        (let _ (if (>= (mi-def ins) 0) (mir-iv-touch st en (mi-def ins) i) unit)
+        (let _ (if (and (>= (mi-def ins) 0) (> (w-get u (mi-def ins)) 0)) (mir-iv-touch st en (mi-def ins) i) unit)
           (let _ (mir-iv-uses st en (mi-uses ins) i)
-            (mir-iv-scan a n words lin st en (+ i 1) nv)))))))
+            (mir-iv-scan a n words lin st en (+ i 1) nv u)))))))
 
 (defn mir-iv-uses (st en us i)
   (match us
@@ -271,30 +479,85 @@
     (let _ (if (bs-get lin words i v) (mir-iv-touch st en v i) unit)
       (mir-iv-live words lin st en i (+ v 1) nv))))
 
-(defn mir-iv-list (a n st en v nv)
+(defn mir-iv-list (a n st en v nv lin words)
   (if (>= v nv)
     Nil
     (if (< (w-get st v) 0)
-      (mir-iv-list a n st en (+ v 1) nv)
-      (Cons (Iv v (w-get st v) (w-get en v) (mir-crosses a (+ (w-get st v) 1) (w-get en v)))
-            (mir-iv-list a n st en (+ v 1) nv)))))
+      (mir-iv-list a n st en (+ v 1) nv lin words)
+      (Cons (Iv v (w-get st v) (w-get en v) (mir-crosses a (w-get st v) (w-get en v) lin words v n))
+            (mir-iv-list a n st en (+ v 1) nv lin words)))))
 
-; A call at a position in [from, to): the value is live after it.
-(defn mir-crosses (a from to)
+; A call at a position in [from, to) after which the value is still live.
+(defn mir-crosses (a from to lin words v n)
   (if (>= from to)
     false
-    (if (mi-is-call (ffi-call "zyl_array_get" a from 1000)) true (mir-crosses a (+ from 1) to))))
+    (if (and (mi-is-call (ffi-call "zyl_array_get" a from 1000))
+             (and (not (= (mi-def (ffi-call "zyl_array_get" a from 1000)) v)) (and (< (+ from 1) n) (bs-get lin words (+ from 1) v))))
+      true
+      (mir-crosses a (+ from 1) to lin words v n))))
 
 ; --- linear scan ------------------------------------------------------------
 
 ; Locations: 1..5 caller-saved (rsi rdi r8 r9 r10), 6..10 callee-saved
 ; (rbx r12 r13 r14 r15); a spill slot is -(k+1). rax, rcx, rdx and r11
 ; are never allocated: the emitter uses them as scratch.
+; Location 11 is rax, only for a result the next instruction returns (mir-ret-vregs).
 (defn mir-reg-name (r)
   (if (= r 1) "rsi" (if (= r 2) "rdi" (if (= r 3) "r8" (if (= r 4) "r9" (if (= r 5) "r10"
-  (if (= r 6) "rbx" (if (= r 7) "r12" (if (= r 8) "r13" (if (= r 9) "r14" "r15"))))))))))
+  (if (= r 6) "rbx" (if (= r 7) "r12" (if (= r 8) "r13" (if (= r 9) "r14" (if (= r 10) "r15" (if (= r 12) "r11" "rax"))))))))))))
 
-(defn mir-callee-saved (r) (>= r 6))
+(defn mir-callee-saved (r) (and (>= r 6) (<= r 10)))
+
+; Vregs defined once and read once, right after, by a consumer that is safe with rax: they live in rax.
+(defn mir-ret-vregs (a n nv u)
+  (let dc (w-alloc (mir-arena) (+ nv 1))
+    (let _ (mir-def-counts a n dc 0)
+      (mir-ret-scan a n u dc 0 Nil))))
+
+(defn mir-def-counts (a n dc i)
+  (if (>= i n) unit
+    (let d (mi-def (ffi-call "zyl_array_get" a i 1000))
+      (let _ (if (>= d 0) (let _ (w-set dc d (+ (w-get dc d) 1)) unit) unit)
+        (mir-def-counts a n dc (+ i 1))))))
+
+(defn mir-ret-scan (a n u dc i acc)
+  (if (>= (+ i 1) n) acc
+    (let ins (ffi-call "zyl_array_get" a i 1000)
+      (let d (mi-def ins)
+        (mir-ret-scan a n u dc (+ i 1)
+          (if (and (>= d 0) (and (mir-rax-def-ok ins) (and (= (w-get u d) 1) (= (w-get dc d) 1))))
+            (if (mir-rax-use-ok (ffi-call "zyl_array_get" a (+ i 1) 1000) d) (Cons d acc) acc)
+            acc))))))
+
+; Consumers whose sequence reads an operand held in rax before any scratch use of rax.
+(defn mir-rax-use-ok (i d)
+  (match i
+    (MRet r (= r d))
+    (MJfI _ a _ _ (= a d))
+    (MJz a _ (= a d))
+    (MMov _ s (= s d))
+    (MBinI op _ a _ (and (= a d) (not (or (= op 3) (= op 4)))))
+    (MJf _ a b _ (or (= a d) (= b d)))
+    (_ false)))
+
+; Emitters that write their result last, so rax as the result is safe.
+(defn mir-rax-def-ok (i)
+  (match i
+    (MConst _ _ true) (MMov _ _ true) (MBin _ _ _ _ true) (MBinI _ _ _ _ true)
+    (MLoad _ _ _ true) (MCall _ _ _ _ _ true) (MRaw _ _ _ true) (MMem k _ _ _ _ (<= k 3))
+    (_ false)))
+
+(defn mir-drop-ivs (ivs vs)
+  (match ivs
+    (Nil Nil)
+    (Cons iv t (if (mir-int-in (iv-v iv) vs) (mir-drop-ivs t vs) (Cons iv (mir-drop-ivs t vs))))))
+
+(defn mir-int-in (x xs) (match xs (Nil false) (Cons h t (if (= h x) true (mir-int-in x t)))))
+
+(defn mir-set-locs (al vs r)
+  (match vs
+    (Nil al)
+    (Cons v t (match al (Alloc w _ (let _ (w-set w v r) (mir-set-locs al t r)))))))
 
 ; The allocatable location of argument register k (rdi rsi rdx rcx r8
 ; r9), or 0 for the two that are scratch (rdx, rcx).
@@ -331,11 +594,13 @@
 
 ; `hint`: per vreg, a vreg + 1 whose register it would like (the source
 ; of the move that defines it), or 0.
-(defn mir-allocate (ivs nv hint)
+; r11 (location 12) is allocatable only when `r11` says no emitted sequence uses it as scratch.
+(defn mir-allocate (ivs nv hint r11)
   (let loc (w-alloc (mir-arena) (+ nv 1))
-    (let busy (w-alloc (mir-arena) 11)   ; register -> vreg + 1 while taken
-      (let nsp (mir-scan (mir-sort-iv ivs) Nil loc busy 0 hint)
-        (Alloc loc nsp)))))
+    (let busy (w-alloc (mir-arena) 13)   ; register -> vreg + 1 while taken
+      (let _ (if r11 unit (let _ (w-set busy 12 -1) unit))
+        (let nsp (mir-scan (mir-sort-iv ivs) Nil loc busy 0 hint)
+          (Alloc loc nsp))))))
 
 ; The source of each MMov, recorded against its destination.
 (defn mir-hints (a n nv)
@@ -351,8 +616,19 @@
     (let _ (match (ffi-call "zyl_array_get" a i 1000)
              (MMov d s (if (= (w-get h d) 0) (let _ (w-set h d (+ s 1)) unit) unit))
              (MParam d k (let r (mir-arg-reg-loc k) (if (> r 0) (let _ (w-set h d (- 0 r)) unit) unit)))
+             (MCall _ _ _ args _ (mir-hint-args h args 0))
+             (MTail _ args _ (mir-hint-args h args 0))
              (_ unit))
       (mir-hint-scan a n h (+ i 1)))))
+
+; An unhinted call argument would like its argument register.
+(defn mir-hint-args (h args k)
+  (match args
+    (Nil unit)
+    (Cons v t
+      (let r (mir-arg-reg-loc k)
+        (let _ (if (and (> r 0) (= (w-get h v) 0)) (let _ (w-set h v (- 0 r)) unit) unit)
+          (mir-hint-args h t (+ k 1)))))))
 
 ; `active`: intervals holding registers, in the order they were given one.
 (defn mir-scan (ivs active loc busy nsp hint)
@@ -371,7 +647,7 @@
 (defn mir-pick-reg (busy crosses loc hint v)
   (let h (w-get hint v)
     (let hr (if (> h 0) (w-get loc (- h 1)) (if (< h 0) (- 0 h) 0))
-      (if (and (> hr 0) (and (= (w-get busy hr) 0) (or (not crosses) (mir-callee-saved hr))))
+      (if (and (> hr 0) (and (not (= hr 11)) (and (= (w-get busy hr) 0) (or (not crosses) (mir-callee-saved hr)))))
         hr
         (mir-free-reg busy crosses)))))
 
@@ -392,7 +668,7 @@
   (if crosses
     (mir-first-free busy 6 10)
     (let r (mir-first-free busy 1 5)
-      (if (> r 0) r (mir-first-free busy 6 10)))))
+      (if (> r 0) r (if (= (w-get busy 12) 0) 12 (mir-first-free busy 6 10))))))
 
 (defn mir-first-free (busy lo hi)
   (if (> lo hi) 0 (if (= (w-get busy lo) 0) lo (mir-first-free busy (+ lo 1) hi))))

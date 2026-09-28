@@ -71,7 +71,8 @@
 (defn zyl_array_new (arena cap0)
   (let cap (if (< cap0 0) 0 cap0)
     (let a (tb-zalloc arena 32)
-      (let d (tb-zalloc arena (* (if (> cap 0) cap 1) 8))
+      ; Data is not zeroed: a slot is read only below filled, which every write reaches in order.
+      (let d (rt-w (ffi-call "zyl_arena_alloc" arena (* (if (> cap 0) cap 1) 8) 1))
         (let _ (if (or (= a 0) (= d 0)) (ffi-call "zyl_panic" "E_OUT_OF_MEMORY: array" 1) 0)
           (let _ (tb-st a (tb-array-magic))
             (let _ (tb-st (+ a 8) cap) (let _ (tb-st (+ a 16) 0) (let _ (tb-st (+ a 24) d) a)))))))))

@@ -7,7 +7,8 @@
 (defmacro rt-st64 (a v) (ffi-call "%store64" a v 1))
 
 ; Logical right shift.
-(defn rt-lshr (x n) (bit-and (shr x n) (- (shl 1 (- 64 n)) 1)))
+; shr is logical: the mask the C port kept is redundant.
+(defmacro rt-lshr (x n) (shr x n))
 
 ; A C int field, sign-extended.
 (defn rt-ld32s (a) (let v (ffi-call "%load32" a 1) (if (> v 2147483647) (- v 4294967296) v)))
