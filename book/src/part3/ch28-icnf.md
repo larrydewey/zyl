@@ -115,7 +115,7 @@ so `(+ a b c)` becomes `(IBinop 0 (IBinop 0 a b) c)`.
 | `for` | nested `ILet`s around an `IWhile` |
 | call of a known function | `ICall` |
 | `ffi-call` | a `zyl_*` runtime symbol: `IFfi sym args`, the timeout dropped; any other symbol: `IFfi "zyl_ffi_timed"` with `ISymAddr sym`, the name, the timeout and the argument count ahead of the arguments (Chapter 29, §29.10) |
-| string builtins, file I/O, byte buffers, atomics, `spawn`, `send`, `ffi-pin` | `IFfi` to a named runtime function (`zyl_cstr_concat`, `zyl_file_open_c`, `zyl_bytebuf_new`, `zyl_actor_spawn`, ...) |
+| string builtins, file I/O, byte buffers, atomics, `spawn`, the channel forms, `ffi-pin` | `IFfi` to a named runtime function (`zyl_cstr_concat`, `zyl_file_open_c`, `zyl_bytebuf_new`, `zyl_actor_spawn`, `zyl_chan_send`, ...) |
 | constructor application, struct construction | `IVariant` with the constructor's tag |
 | `match` | `IMatch` of `IArm`s |
 | `struct-get` | an `IMatch` with one arm per struct type that has the field |

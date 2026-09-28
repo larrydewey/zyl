@@ -2,24 +2,20 @@
 
 Complete reference for Zyl's actor system: the model the specification defines, the forms the compiler accepts, the runtime that executes them, and the compile-time checks on what may cross between actors.
 
-The normative text is spec v5.0 §15 (concurrency model), §7.4 (closures and concurrency), §9.1 rules R2 and R3, §27 (determinism) and §31.9 (the `actor` capability). The implementation is split across `stdlib/compiler/expr_inner.zyl` and `icnf.zyl` (parsing and lowering of `spawn` and `send`), `stdlib/compiler/mutability_check.zyl` (the send checks), `runtime/rt/actor.zyl` (threads and mailboxes) and `stdlib/actor/actor.zyl` (library wrappers).
+The normative text is spec v5.0 §15 (concurrency model), §7.4 (closures and concurrency), §9.1 rules R2 and R3, §27 (determinism) and §31.9 (the `actor` capability). The implementation is split across `stdlib/compiler/expr_inner.zyl` and `icnf.zyl` (parsing and lowering of `spawn` and the channel forms), `stdlib/compiler/type_annotate.zyl` (the channel types), `stdlib/compiler/mutability_check.zyl` and `secret_check.zyl` (the capture and send checks), `runtime/rt/actor.zyl`, `chan.zyl`, `out.zyl` and `thread.zyl` (threads, channels and actor output) and `stdlib/actor/actor.zyl` (joining). The design rationale is `docs/concurrency-determinism-design.md`.
 
-**Implementation status.** `spawn` starts a thread; `send` queues a message; `(receive)` takes the next one from the running actor's mailbox, and `(actor-self)` is the running actor's id, so actors exchange structured messages (ADT values) and reply to each other or to `main`. The runtime's other message kind, closure messages (§21.4), cannot be sent from a Zyl program. Output from several actors printing at once is not deterministic. This chapter documents what works, and marks what the specification promises but the implementation does not yet provide.
+**Implementation status.** Actors, typed channels, endpoint ownership, closing, deadlock detection, per-actor output buffering and actor panic isolation are implemented. The deterministic and chaos schedulers of the design are not. The type-based Send check is not either: Send-capability is still the syntactic `let-mut` rule (§21.4).
 
-## 21.1 Actor Model Overview
+## 21.1 The Model
 
-Spec §15: an actor is private state plus a FIFO mailbox.
+Spec §15 defines concurrency as a Kahn process network:
 
-- **No shared mutable state**
-- **Messages must be Send-capable**
-- **Deterministic FIFO per actor**
-- **Isolation**: no direct memory sharing between actors
+- An **actor** is a sequential process with private state and its own thread of control.
+- Actors communicate only through **channels**. A channel is a FIFO buffer with exactly one writer and one reader.
+- A read blocks until a value arrives. No actor can test whether a channel is empty.
+- There is no shared mutable state, and values that cross a channel must be Send-capable.
 
-```
-Actor = (State, Mailbox, Behaviour)
-```
-
-In the implementation, an actor is an operating-system thread with a mailbox. The thread handles one message at a time, in the order the messages were queued.
+Under these rules, each actor's output sequence is a function of its input sequences. The program's observable output therefore does not depend on scheduling (§27), even though the implementation runs every actor on its own operating-system thread.
 
 ## 21.2 Spawning Actors
 
@@ -31,10 +27,10 @@ spawn ::= "(" "spawn" Expression ")"
 (spawn entry)
 ```
 
-- `entry` is a named function or a `fn`, which may capture immutable variables (by value, like any closure). It must take no parameters.
-- The runtime creates one pthread for the actor and calls `entry` once on it. When `entry` returns, the thread stays alive, idling on its mailbox until the actor is stopped (§21.7).
-- `spawn` returns the actor's id, a value of type `Actor`. Ids are numbered 0, 1, 2, … and never reused, but an `Actor` is not an `Int`: arithmetic on it, or passing an `Int` where an actor is expected, is `E_TYPE_MISMATCH`.
-- At most 1024 actors can exist in one process. Beyond that, `spawn` prints `zyl: actor limit reached` and returns an invalid id.
+- `entry` is a named function or a `fn`, which may capture immutable variables (by value, like any closure). Its type must be `() -> a`. An entry that takes a parameter is `E_TYPE_MISMATCH` at the `spawn`.
+- The runtime creates one thread for the actor and calls `entry` once on it. When `entry` returns (or panics), the actor is finished.
+- `spawn` returns the actor's id, a value of type `Actor`. Ids are numbered 0, 1, 2, … and never reused. An `Actor` is not an `Int`: arithmetic on it, or passing an `Int` where an actor is expected, is `E_TYPE_MISMATCH`.
+- Endpoints that the closure captures directly move to the new actor before its thread starts (§21.3).
 
 ```lisp
 (use actor/actor)
@@ -58,13 +54,15 @@ actor finished
 main done
 ```
 
-An entry function that takes a parameter is `E_TYPE_MISMATCH` at the `spawn`. An entry is not a message handler; loop on `(receive)` instead (§21.3).
+The order is fixed: `main` prints straight to stdout, and the actor's line is emitted when `main` joins it (§21.6).
 
 ### State
 
 An actor's state lives in its own entry function. A `let-mut` local inside that function is private to the actor:
 
 ```lisp
+(use actor/actor)
+
 (defn counter-actor ()
   (let-mut count 0
     (begin
@@ -75,114 +73,85 @@ An actor's state lives in its own entry function. A `let-mut` local inside that 
       (print "counter done"))))
 
 (defn main ()
-  (let _ (spawn counter-actor)
+  (let a (spawn counter-actor)
     (begin
-      (ffi-call "zyl_actor_wait_all" 1000)
+      (print "main first")
+      (actor-wait a)
       (print "main done")
       0)))
 ```
 
-Output: `1` through `5`, then `counter done`, then `main done`, one per line.
+Output: `main first`, then `1` through `5`, then `counter done`, then `main done`, one per line.
 
-`zyl_actor_wait_all` is a runtime entry, so `ffi-call` needs no declaration for it: the compiler's signature table gives it the type `-> Unit` (Chapter 22, §22.2). §21.5 lists it with the other ways to wait.
+A `let-mut` from the *spawning* scope cannot be captured. The compiler rejects that with `E_CAPABILITY_LEAK` (§21.4).
 
-A `let-mut` from the *spawning* scope cannot be captured. The compiler rejects that with `E_CAPABILITY_LEAK` (§21.3).
-
-## 21.3 Sending Messages
+## 21.3 Channels
 
 ```
-send ::= "(" "send" Expression Expression ")"
+chan      ::= "(" "chan" Expression ")"
+chan-tx   ::= "(" "chan-tx" Expression ")"
+chan-rx   ::= "(" "chan-rx" Expression ")"
+chan-send ::= "(" "chan-send" Expression Expression ")"
+chan-recv ::= "(" "chan-recv" Expression ")"
 ```
 
-```lisp
-(send actor message)
-```
+| Form | Type | Meaning |
+|------|------|---------|
+| `(chan n)` | `Int -> (Chan a)` | a channel buffering 1..n values; `n` outside 1..16777216 is `E_CHANNEL_CAPACITY` |
+| `(chan-tx c)` | `(Chan a) -> (Tx a)` | the sending end |
+| `(chan-rx c)` | `(Chan a) -> (Rx a)` | the receiving end |
+| `(chan-send tx v)` | `(Tx a) a -> Unit` | append `v`, blocking while the buffer is full |
+| `(chan-recv rx)` | `(Rx a) -> a` | remove the oldest value, blocking while the buffer is empty |
 
-Specified: asynchronous, FIFO per actor, and the message must be Send-capable.
+There is no select, no non-blocking receive and no emptiness test.
 
-Implemented:
+A channel carries one type, inferred like any other type variable, so what a reader receives is checked against what the writer sends. To carry several kinds of message, make them variants of one ADT and `match` on the received value. `book/examples/actor-counter/counter.zyl` is the standard example: requests `(Add Int)`, `(Get)` and `(Stop)` on one channel, answers on another (Chapter 9, §9.5).
 
-- `send` takes an `Actor` and a message, and returns Unit.
-- `send` is asynchronous and returns immediately.
-- The message is passed as a single 64-bit word, either an `Int` or a pointer to an (immutable) heap value such as an ADT. It is not copied.
-- Messages are delivered in the order each sender sent them.
-- Sending to an id that does not name a live actor does nothing.
+### Ownership
 
-### Receiving: `receive` and `actor-self`
+Each endpoint belongs to exactly one actor at a time (spec §15 rule "one writer and one reader per channel"):
 
-```lisp
-(receive)       ; the next data message in this actor's mailbox; blocks until one arrives
-(actor-self)    ; this actor's id
-```
+- The actor that calls `chan` owns both ends.
+- A spawned closure that captures an endpoint **directly** (as a free variable) takes it over. An endpoint nested inside another captured value does not move.
+- An endpoint sent on a channel is in transit until it is received, and then belongs to the receiver.
 
-`actor-self` has type `Actor`. `receive` returns the message word. Match on it to handle structured
-messages. On the main thread, the first `actor-self` or
-`receive` opens a mailbox for `main`, so an actor can reply to it:
+`chan-send` or `chan-recv` on an endpoint the running actor does not own is `E_CHANNEL_NOT_OWNER` (`this actor does not own the channel endpoint`). Ownership changes only at those program points, so the error does not depend on timing. `chan-tx` and `chan-rx` are not ownership-checked: they return the channel's endpoint objects, and the check happens when one is used.
 
-```lisp
-(deftype CounterMsg (Add Int) (Get Actor) (Stop Actor))
+### Closing
 
-(defn counter-loop (total)
-  (match (receive)
-    (Add n (counter-loop (+ total n)))
-    (Get reply-to (begin (send reply-to total) (counter-loop total)))
-    (Stop reply-to (send reply-to total))))
+When the actor that owns a channel's `Tx` finishes, normally or by a panic, the channel closes. `main` finishes when its program ends. Values still buffered can be received. A `chan-recv` on a closed channel with nothing left in it is `E_CHANNEL_CLOSED` (`the channel's sender finished and every value was received`), which can be caught with `try`.
 
-(defn main ()
-  (let me (actor-self)
-    (let c (spawn (fn () (counter-loop 0)))
-      (begin
-        (send c (Add 5))
-        (send c (Add 7))
-        (send c (Get me))
-        (print (receive))          ; 12
-        (send c (Stop me))
-        (print (receive))          ; 12
-        0))))
-```
+A consequence: an actor that loops on `chan-recv` from a channel `main` writes fails with `E_CHANNEL_CLOSED` once `main` returns, and exit reports that panic with status 1. Give such a loop a stop message, or catch the close and treat it as the end of input.
 
-The loop is a tail call, so it runs in constant stack. An actor still
-blocked in `receive` when the program ends does not hold up the exit:
-it counts as idle, and the runtime stops it. `receive` on `main` with no
-message coming blocks forever, like any receive nobody answers.
-`book/examples/actor-counter/counter.zyl` is this program in full.
+### Deadlock
 
-A field that carries an actor id is typed `Actor`, as `Get` and `Stop`
-are here. With `(Get Int)` the program is rejected: `send reply-to`
-needs an `Actor`, and `(Get me)` passes one.
+When every live actor, `main` included, is blocked on a channel or a join, the runtime prints what the actors have buffered so far (in spawn order), then `PANIC: E_DEADLOCK: every live actor is blocked on a channel or a join`, and exits with status 1. In a Kahn network the set of blocked actors does not depend on scheduling, so a program that deadlocks does so on every run.
 
-**`receive` is not type-checked.** It is the one known hole in the
-checker. The mailbox holds untyped words, so `(receive)` has whatever
-type its use needs: above, the `match` treats it as a `CounterMsg`, and
-`main` prints it as an `Int`. Nothing checks that the sender sent that
-type; a mismatch is a wrong value at run time, not a compile error.
-Mailboxes are to be replaced by typed channels, which close this hole.
-Until then, give each actor one message type and keep its senders to it.
-`receive`, `send` and `actor-self` need the `actor` capability in a
-package.
+## 21.4 Send-Capability Checks
 
-### Send-capability checks
-
-Spec §9.1 R3 and §7.4 require every value that crosses into another actor to be Send-capable. The implemented check is syntactic (`mutability_check.zyl`). It rejects a message, or a spawned expression, that names a `let-mut` variable of the enclosing scope:
+Spec §9.1 R3 and §7.4 require every value that crosses into another actor to be Send-capable. The implemented check is syntactic (`mutability_check.zyl`). It rejects a value sent on a channel, or a spawned expression, that names a `let-mut` variable of the enclosing scope:
 
 ```lisp
 (use actor/actor)
 
 (defn main ()
-  (let a (spawn (fn () 0))
-    (let-mut x 10
-      (begin (send a x) (actor-wait a) 0))))
+  (let-mut x 10
+    (let c (chan 1)
+      (let tx (chan-tx c)
+        (begin
+          (chan-send tx x)
+          0)))))
 ```
 
 ```
-PANIC: error[E_CAPABILITY_LEAK]: message sent to an actor references let-mut (TMut) variable `x` from the enclosing scope
-  --> main.zyl:6:14
+PANIC: error[E_CAPABILITY_LEAK]: value sent on a channel references let-mut (TMut) variable `x` from the enclosing scope
+  --> main.zyl:8:11
    |
- 6 |       (begin (send a x) (actor-wait a) 0))))
-   |              ^
- 5 |     (let-mut x 10
-   |     - declared `let-mut` here
-   = help: messages must be Send-capable; send a copy bound with plain `let`
+ 8 |           (chan-send tx x)
+   |           ^
+ 4 |   (let-mut x 10
+   |   - declared `let-mut` here
+   = help: channel values must be Send-capable; send a copy bound with plain `let`
 ```
 
 ```lisp
@@ -204,78 +173,68 @@ PANIC: error[E_CAPABILITY_LEAK]: spawned closure captures let-mut (TMut) variabl
 
 Limits of the check:
 
-- It is name-based. Copying the value into an immutable binding first (`(let y x (send a y))`) passes, which is sound for an `Int`.
-- There is no type-based Send check. The type checker has no Send trait or predicate, so a closure, a `(Pin a)` or any other value the specification counts as non-Send is not rejected by its type.
-- A `Secret` value in a message or spawn capture is rejected separately, with `E_SECRET_ESCAPE`.
+- It is name-based. Copying the value into an immutable binding first (`(let y x (chan-send tx y))`) passes, which is sound for an `Int`.
+- There is no type-based Send check. The type checker has no Send trait or predicate, so a mutable collection reached through an immutable binding, a `(Pin a)`, or any other value the specification counts as non-Send is not rejected by its type.
+- A `Secret` value sent on a channel or captured by a spawn is rejected separately, with `E_SECRET_ESCAPE` (Chapter 33).
 
-## 21.4 Closure Messages
+Region rule R2 applies to every sent value: it escapes its frame, so region inference places it on the heap.
 
-The runtime has a second message kind besides the data messages of `send`. Its C entry is
+## 21.5 Joining Actors
 
-```c
-void zyl_actor_send_closure(uint32_t actor_id, void (*fn)(void*), void* state);
-```
+`stdlib/actor/actor.zyl` provides:
 
-It queues the pair `fn`, `state` on the actor, and the actor's thread calls `fn(state)` when it reaches the message: `zyl_actor_receive` runs closure messages it finds ahead of the next data message, and an actor whose entry function has returned runs them from its idle loop. Nothing in the compiler or the standard library sends one.
+| Function | Type | Effect |
+|----------|------|--------|
+| `(actor-wait a)` | `Actor -> Unit` | blocks until `a` has finished, emits its buffered output, and re-raises its panic; a second wait does nothing |
+| `(actor-is-alive a)` | `Actor -> Bool` | `true` until the program joins `a` |
+| `(actor-spawn f)` | `(() -> a) -> Actor` | a function wrapper around `spawn` |
 
-A Zyl program cannot call it. The entry is a runtime export with no signature in `stdlib/compiler/ffi_sigs.zyl`, so `(ffi-call "zyl_actor_send_closure" ...)` is `E_CANNOT_INFER` ("no type for untyped ffi result"). Declaring it with `extern` does not help: an `extern` for a runtime entry is `E_FFI_RESTRICTED`. Use `send` and `receive` (§21.3) for every message.
+`actor-is-alive` answers whether the actor has been joined, not whether its thread is still running, so its result does not depend on timing.
 
-## 21.5 Waiting for Actors
+At exit, the runtime closes `main`'s channels and joins every actor not yet joined, in spawn order. Returning from `main` therefore waits for every actor. An explicit `actor-wait` is needed only to place an actor's output, or to catch its panic, at a particular point.
 
-There is no `wait_all` form; `(wait_all a)` is rejected with `E_UNBOUND_VARIABLE: call to undefined function`. The available operations are:
+## 21.6 Output and Determinism
 
-| Operation | Effect |
-|-----------|--------|
-| `(ffi-call "zyl_actor_wait_all" 1000)` | polls until every mailbox is empty and every actor is idle, then stops and joins **every** actor; also runs automatically at exit |
-| `(actor-wait a)` (`actor/actor`) | marks `a` stopped and joins its thread; messages still queued are **discarded** |
-| `(actor-terminate a)` | marks `a` stopped |
-| `(actor-is-alive a)` | whether `a` is still running |
+Spec §27 counts actor output as observable and scheduling as not observable. The implementation meets this for stdout:
 
-Every compiled program registers `zyl_actor_wait_all` to run at exit, so when `main` returns, remaining actors drain their mailboxes before the process ends. Call it (or `actor-wait`) explicitly only where output order matters.
+- `main`'s own output goes straight to stdout.
+- An actor's `print`s go to a buffer of its own. The buffer is emitted when the actor is joined, or at exit, in spawn order, for actors that were never joined. A nested join writes the joined actor's output into the joiner's buffer.
+- The values each actor receives, and their order, are fixed by the single-writer, single-reader rule.
 
-`stdlib/actor/actor.zyl` also provides `actor-spawn` and `actor-send`, wrappers around `spawn` and `send`, and `actor-send-with-timeout`, which ignores its timeout.
+So what a program `print`s is the same byte sequence on every run. What is not deterministic is timing itself: how long a program takes, and which thread the kernel runs first. Only `print` goes through the actor buffers. `file-write` (to fd 1 or 2) and foreign calls write directly, so an actor's writes through them interleave with other output by timing.
 
-## 21.6 Determinism
-
-Spec: §15 promises deterministic FIFO per actor, and §27 counts actor outputs as observable while scheduling is not. Together, the same program with the same inputs should produce the same actor output.
-
-**The implementation does not meet this.** Every actor is its own pthread, and interleaving is up to the operating system scheduler. There is no scheduler loop, quantum or fixed order. Two actors that each print 200 lines produced 16 different outputs in 20 runs.
-
-What does hold:
-
-- **FIFO from one sender to one actor.** The mailbox is protected by a mutex, and messages are taken in queue order.
-- **Sequential handling.** One actor runs one message at a time.
-
-To get deterministic output from an actor program today, have exactly one actor produce output, or collect results and print them from `main` after `zyl_actor_wait_all`.
+A deterministic scheduler (`--sched=deterministic`, one actor at a time in a fixed order) and a seeded chaos mode for tests are part of the design and not implemented.
 
 ## 21.7 Actor Lifecycle
 
 ```
-spawn             → thread created; entry function runs once
-entry returns     → thread idles on its mailbox until stopped
-stopped by        → zyl_actor_wait_all, actor-wait, actor-terminate,
-                    or the drain at process exit (main returning)
+spawn           → id allocated; captured endpoints move; thread started
+entry runs      → blocks only in chan-send, chan-recv or actor-wait
+entry returns   → the actor is finished: the channels whose Tx it owns close
+  (or panics)     and its panic message is kept for the joiner
+actor-wait      → output emitted, panic re-raised; actor-is-alive becomes false
+program exit    → main's channels close; unjoined actors joined in spawn order
 ```
 
-An actor does not stop when its entry function returns. There is no `Shutdown` message convention in the runtime: stopping is an operation on the actor, not a message to it.
+There is no way to stop an actor from outside. Stopping an actor partway through would make what it had done depend on timing, so an actor ends only when its entry returns or panics. Tell an actor to stop with a message, or by closing its input.
 
-## 21.8 Mailbox Implementation
+## 21.8 Errors in Actors
 
-- **Unbounded**: a linked list, one allocation per message.
-- **Mutex and condition variable**: many producers, one consumer. The mailbox is not lock-free.
-- **No backpressure**: build it into your protocol if you need it (for example, reply messages that grant credit).
+- An uncaught panic in an actor ends only that actor. `actor-wait` re-raises it in the joiner, where `try` can catch it. If the actor is never joined, exit reports the first such panic in spawn order, after every actor's output, and the exit status is 1.
+- After an uncaught panic on `main`, actors are abandoned and their buffered output is dropped.
+- `E_DEADLOCK` is a whole-program error: it ends the process.
+- Actor threads get an 8 MiB stack. `main` runs on a very large reserved stack, so deep recursion that works in `main` can overflow in an actor.
+- There is no supervision or restart mechanism.
 
-Two message kinds exist in the runtime: data messages from `send`, which `receive` returns (one still queued after the entry function returns is dropped), and closure messages from `zyl_actor_send_closure`, which run a C function on the actor's thread and which a Zyl program cannot send (§21.4).
+## 21.9 Limits
 
-## 21.9 Errors in Actors
-
-- A panic in an actor (for example a failed `assert-true`) **exits the whole process** with status 1. It does not stop just the one actor.
-- Actor threads get the default pthread stack, about 8 MB. `main` runs on a very large reserved stack, so deep recursion that works in `main` can overflow in an actor.
-- There is no supervision, failure notification or restart mechanism.
+- At most 1024 actors per program, counted over its whole lifetime, since ids are never reused. The 1025th `spawn` raises `E_ACTOR_LIMIT: at most 1024 actors per program`.
+- A channel holds 1 to 16777216 values.
+- The interpreter (`zyl repl`, `zyl eval`) cannot spawn, because an interpreted function has no native entry. Channels work there on `main` alone.
 
 ## 21.10 Capabilities
 
-In a package with a `zyl.pkg`, `spawn`, `send`, `receive` and `actor-self`, and any call into `stdlib/actor`, require the `actor` capability (§31.9):
+In a package with a `zyl.pkg`, `spawn`, `chan`, `chan-send` and `chan-recv`, and any call into `stdlib/actor`, require the `actor` capability (§31.9):
 
 ```
 PANIC: error[E_PKG_CAPABILITY_VIOLATION]: package demo/nocap uses actor in helper without declaring it in zyl.pkg
@@ -283,38 +242,38 @@ PANIC: error[E_PKG_CAPABILITY_VIOLATION]: package demo/nocap uses actor in helpe
 
 A lone file compiled without a manifest is not checked. The current pass also does not check the body of `main` (see Chapter 25, §25.11).
 
-## 21.11 Performance Characteristics
+## 21.11 Runtime Implementation
 
-Measured on the current runtime (x86_64 Linux). These are orders of magnitude, not guarantees.
-
-| Operation | Cost |
-|-----------|------|
-| `spawn` | one `pthread_create`, about 10 µs |
-| `send` | mutex-protected enqueue plus allocation, about 250 ns |
-| `zyl_actor_wait_all` | polls every 1 ms until the mailboxes drain |
-| context switch | operating-system thread switch |
-
-There are no tuning knobs: no quantum, no thread pool and no stack-size setting.
+- **Threads.** `zyl_actor_spawn` creates each actor's thread with `clone` in a freestanding program and with `pthread_create` in a hosted one. A capturing closure is unpacked into its code and environment, and the environment becomes the thread's state.
+- **Owner ids.** `main` is owner 1 and actor *i* is owner *i* + 2. Before the thread starts, `zyl_chan_actor_spawn` scans the closure environment and moves each endpoint the spawner owns to the new actor. A word counts as an endpoint only if it is a heap block with an endpoint's magic word whose channel points back at it, so an integer is never taken for one.
+- **Channels** are ring buffers. `zyl_chan_send` and `zyl_chan_recv` check the caller's owner id, then append or remove under the lock. A sent endpoint has owner 0 while in transit.
+- **Scheduling.** One lock and one condition word serve every channel. Each owner records what it waits for: room in a channel, a value or a close, or another owner finishing. Before blocking, the runtime checks whether any live owner can proceed; if none can, it reports the deadlock.
+- **Output.** Each owner has its own output buffer, and `zyl_out_actor_emit` writes it through the joiner's output.
+- **Panics.** The actor's entry runs under a try frame. `zyl_chan_actor_done` closes the channels whose `Tx` the actor owns, records the panic message, and wakes joiners.
 
 ## 21.12 Errors
 
 | Error | Cause |
 |-------|-------|
-| `E_TYPE_MISMATCH` | an `Int` (or anything else) where `send`, `actor-wait` or another actor operation needs an `Actor` |
-| `E_CAPABILITY_LEAK` | a message or spawned expression names a `let-mut` of the enclosing scope (§28: "TMut leaked") |
-| `E_SECRET_ESCAPE` | a `Secret` value crosses into an actor |
-| `E_PKG_CAPABILITY_VIOLATION` | actor operation in a package without the `actor` capability |
-
-The runtime defines no error for sending to a stopped actor: a `send` to a stopped actor, or to an id that was never spawned, is dropped silently.
+| `E_TYPE_MISMATCH` | a spawn entry that takes a parameter; a received value used at a different type than was sent; an `Int` where an `Actor` is needed |
+| `E_CAPABILITY_LEAK` | a sent value or spawned expression names a `let-mut` of the enclosing scope (§28: "TMut leaked") |
+| `E_SECRET_ESCAPE` | a `Secret` value crosses into another actor |
+| `E_CHANNEL_NOT_OWNER` | an endpoint used by an actor that does not own it |
+| `E_CHANNEL_CLOSED` | `chan-recv` on a closed, drained channel |
+| `E_CHANNEL_CAPACITY` | `(chan n)` with `n` outside 1..16777216 |
+| `E_DEADLOCK` | every live actor blocked on a channel or a join |
+| `E_ACTOR_LIMIT` | more than 1024 actors spawned |
+| `E_PKG_CAPABILITY_VIOLATION` | an actor or channel operation in a package without the `actor` capability |
 
 ## 21.13 Comparison with Other Models
 
-| Feature | Erlang/Elixir | Go | Rust (Actix) | Zyl (spec) | Zyl (implemented) |
-|---------|---------------|-----|--------------|------------|-------------------|
-| Unit | process | goroutine | actor | actor | pthread per actor |
-| Receive | `receive` | channel read | handler | `receive` | `(receive)` |
-| Scheduling | preemptive | runtime M:N | async executor | not observable (§27) | OS threads |
-| FIFO per actor | ✅ | per channel | ✅ | ✅ | ✅ (per sender) |
-| Shared memory | ❌ | yes | ❌ | ❌ | messages shared by pointer |
-| Supervision | built in | manual | built in | not specified | none |
-| Deterministic output | ❌ | ❌ | ❌ | ✅ | ❌ |
+| Feature | Erlang/Elixir | Go | Rust (std) | Zyl |
+|---------|---------------|-----|------------|-----|
+| Unit | process | goroutine | thread | actor (one thread each) |
+| Communication | mailbox, any sender | channel, many senders and readers | `mpsc` channel, many senders | channel, one writer and one reader |
+| Receive | `receive`, selective | `<-ch`, `select` | `recv`, `try_recv` | `chan-recv` only |
+| Channel typed | no | yes | yes | yes |
+| Scheduling | preemptive | runtime M:N | OS threads | OS threads |
+| Shared memory | no | yes | yes (`Arc`, `Mutex`) | no |
+| Supervision | built in | manual | manual | none |
+| Deterministic output | no | no | no | yes |

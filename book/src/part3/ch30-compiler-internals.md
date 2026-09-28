@@ -103,7 +103,7 @@ when `expr_inner.zyl` converts `Ast` to `Expr`.
   (EStructGet Expr String)
   (EDeftype String (List ADTVariant) (List String) (Option String))
   (ESpawn Expr)
-  (ESend Expr Expr)
+  (ESend Expr Expr)                     ; chan-send
   (ETryCatch Expr String Expr)
   ...                                   ; 83 variants in all, including
   (ELoadByte Endian Expr Expr)          ; the byte and atomic primitives

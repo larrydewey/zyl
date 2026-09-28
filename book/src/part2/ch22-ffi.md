@@ -96,7 +96,7 @@ These checks run when a call to the symbol is typed, so an `extern` that no call
 
 The `extern` is a promise about C, not a check of it. Nothing compares it with the C prototype, so declaring `(extern "strlen" (Int) Int)` compiles and passes an integer where C reads a pointer. Declare what the C code actually takes.
 
-The `zyl_*` runtime functions need no `extern`: the compiler has a signature for each one it expects programs to call (`stdlib/compiler/ffi_sigs.zyl`), such as `-> Unit` for `zyl_actor_wait_all`. An `extern` is only for foreign code: declaring one for a symbol the runtime exports is `E_FFI_RESTRICTED` ("`zyl_actor_wait_all` is a runtime entry; its type comes from the compiler's signature table, not from an extern"), whatever type it gives. A runtime export with no entry in the table, such as `zyl_actor_send_closure`, is `E_CANNOT_INFER` ("no type for untyped ffi result"), and cannot be called from a program at all. A few raw entries that would turn any word into any type, such as `zyl_cstr_of_word`, are reserved to the standard library: naming one in a user program is `E_FFI_RESTRICTED`.
+The `zyl_*` runtime functions need no `extern`: the compiler has a signature for each one it expects programs to call (`stdlib/compiler/ffi_sigs.zyl`), such as `Int -> String` for `zyl_int_text`. An `extern` is only for foreign code: declaring one for a symbol the runtime exports is `E_FFI_RESTRICTED` ("`zyl_int_text` is a runtime entry; its type comes from the compiler's signature table, not from an extern"), whatever type it gives. A runtime export with no entry in the table, such as the channel internal `zyl_chan_main_done`, is `E_CANNOT_INFER` ("no type for ffi-call to `zyl_chan_main_done`, which has no (extern ...) declaration"), and cannot be called from a program at all. A few raw entries that would turn any word into any type, such as `zyl_cstr_of_word`, are reserved to the standard library: naming one in a user program is `E_FFI_RESTRICTED`.
 
 ## 22.3 Pinning
 
@@ -400,7 +400,7 @@ A top-level function named as an `ffi-call` argument is passed as its code addre
 (extern "qsort" (Ptr Int Int (Fn (Ptr Ptr) Int)) Unit)
 ```
 
-`(ffi-call "qsort" p 64 8 compare 1000)` then sorts with a Zyl comparator `compare` whose two parameters are `Ptr`s, read with `alloc-read-int` (`tests/regression/c-abi.zyl`). The callback runs on the FFI worker thread that is running the foreign call (§22.7). It sees the caller's `actor-self`, but a panic inside it that no `try` within the callback catches ends the process, since it cannot unwind into the caller, which is waiting on another thread. Closures are rejected as FFI arguments (§22.4).
+`(ffi-call "qsort" p 64 8 compare 1000)` then sorts with a Zyl comparator `compare` whose two parameters are `Ptr`s, read with `alloc-read-int` (`tests/regression/c-abi.zyl`). The callback runs on the FFI worker thread that is running the foreign call (§22.7). It runs as the calling actor, owning the same channel endpoints, but a panic inside it that no `try` within the callback catches ends the process, since it cannot unwind into the caller, which is waiting on another thread. Closures are rejected as FFI arguments (§22.4).
 
 When C needs to deliver events without calling back, have Zyl poll a C function that returns an integer code:
 

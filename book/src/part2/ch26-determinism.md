@@ -32,7 +32,7 @@ For a package build, "same program" means the same resolved graph: same `zyl.pkg
 | Same source → same assembly | **holds**: `.s` output is byte-identical across runs, and independent of the working directory and the `-o` path |
 | Same source → same binary | **holds** for the same toolchain: two builds, from any directory to any `-o` path, are byte-identical (see §26.10) |
 | Same inputs → same program output, single-threaded | holds, unless the program reads the environment through the FFI (§26.2) |
-| Same inputs → same actor output | **does not hold**: actors are OS threads (§26.2) |
+| Same inputs → same actor output | **holds** for `print`: channels have one writer and one reader, and actor output is buffered until the actor is joined (§26.2) |
 | Compiler self-application is a fixed point | **holds**: checked by `./boot.sh` (§26.7) |
 
 ## 26.2 Sources of Non-Determinism
@@ -42,13 +42,13 @@ For a package build, "same program" means the same resolved graph: same `zyl.pkg
 | Map iteration order | deterministic iteration (§21.5) | `stdlib/core/map.zyl` is an association list, iterated in a fixed order (most recently inserted first); no hashing, no seed |
 | Monomorphization naming | alphabetical canonical names (§17) | an instance is named `f~T1,T2` from the canonical text of its argument types, in argument order (§6.4); the name is a function of the types alone |
 | Symbol order | total order over canonical keys (§31.2) | qualification tables are sorted by name |
-| Thread scheduling | "not observable" (§27) | each actor is its own pthread, and interleaving of output between actors varies from run to run |
+| Thread scheduling | "not observable" (§27) | each actor is its own OS thread, but actors communicate only over Kahn channels (one writer, one reader, blocking reads, no emptiness test), and an actor's `print` output is buffered and emitted when it is joined, or at exit in spawn order (Chapter 21, §21.6). An actor's `file-write` and foreign calls bypass the buffer |
 | Heap addresses | not observable | vary per run (ASLR applies to arena memory); code addresses are fixed by `-no-pie` |
 | Time, process ID, environment | not provided by the core language | reachable through `ffi-call` (`time`, `getpid`, `zyl_now_ms`, `getenv`) |
 | Random numbers | not in the core language | `stdlib/math/rand/deterministic.zyl` is a seedable ChaCha20 generator (reproducible); `stdlib/math/rand/crypto.zyl` draws kernel entropy (not reproducible) |
 | Floating point | IEEE-754 binary64 (§20.2), bit-reproducible (§20.4) | codegen emits separate SSE2 multiply and add, never a fused multiply-add, and passes no `-march` flag; this holds by construction, not by a checked rule |
 
-A program that stays out of the FFI and out of actors is deterministic in its output. A program that reads the clock, the environment or kernel entropy, or that prints from more than one actor, is not, and the compiler does not warn about it.
+A program that stays out of the FFI is deterministic in what it `print`s, actors included. A program that reads the clock, the environment or kernel entropy is not, and the compiler does not warn about it.
 
 ## 26.3 Deterministic Data Structures
 
@@ -370,7 +370,7 @@ still depends on the C compiler and C library that link it.
 
 | Source | Status |
 |--------|--------|
-| Actor output interleaving | varies per run (one pthread per actor) |
+| Actor output through `file-write` or the FFI | not buffered per actor, so it interleaves by timing; `print` output is deterministic |
 | Heap addresses | vary per run; printing a pointer is non-deterministic |
 | Clock, PID, environment | reachable through `ffi-call` |
 | Kernel entropy | `stdlib/math/rand/crypto.zyl` |

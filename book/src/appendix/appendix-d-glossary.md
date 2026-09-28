@@ -6,11 +6,10 @@ what the specification says, the entry says so.
 
 ## A
 
-**Actor**: Isolated concurrent entity with private state and a FIFO
-mailbox, created with `(spawn (fn () ...))` and addressed with `send`
-(§15). Its id has type `Actor`, the type of `spawn` and `actor-self`
-and the first argument of `send`. What `receive` returns is not yet
-type-checked.
+**Actor**: A sequential process with private state and its own thread,
+created with `(spawn (fn () ...))` (§15). Actors communicate only
+through channels. `spawn` returns an `Actor`, which can be joined
+(`actor-wait`) or queried (`actor-is-alive`, true until joined).
 
 **ADT (Algebraic Data Type)**: Sum type declared with `deftype`. One of
 several variants, each with an optional payload (§8).
@@ -96,6 +95,11 @@ re-granted to its dependencies.
 
 **Capture**: A closure's reference to a variable of an enclosing scope.
 
+**Channel**: A typed FIFO buffer, `(chan n)`, with one sending end
+(`Tx`) and one receiving end (`Rx`), each owned by one actor at a time
+(§15). `chan-send` blocks while it is full and `chan-recv` while it is
+empty. It closes when the owner of its `Tx` finishes.
+
 **Closure**: First-class function with a captured environment:
 `(fn (params) body)` or `(lambda (params) body)`.
 
@@ -128,6 +132,9 @@ design, since actors share no memory.
 
 **Dead code elimination (DCE)**: Optimisation that removes unreachable
 code.
+
+**Deadlock**: Every live actor blocked on a channel or a join. The
+runtime detects it and ends the program with `E_DEADLOCK` (§15).
 
 **Declassify**: The explicit, greppable way to drop the `Secret`
 capability — `declassify`, `ct-eq-bool`, `ct-eq-words-bool`.
@@ -162,7 +169,7 @@ dynamic dispatch through trait objects.
 in its manifest. v5.0 defines exactly one edition, `2026`; an unknown
 one is `E_PKG_UNKNOWN_EDITION` (§31.11).
 
-**Effect**: An observable side effect (I/O, mutation, FFI, actor
+**Effect**: An observable side effect (I/O, mutation, FFI, channel
 send).
 
 **Escape analysis**: Determining whether a value outlives its defining
@@ -275,6 +282,11 @@ generic one.
 **Integer**: `Int`, 64-bit signed (−2^63 to 2^63−1).
 
 ## K
+
+**Kahn process network**: Processes that communicate only through
+FIFO channels with one writer and one reader, where a read blocks and
+emptiness cannot be tested. Each process's output depends only on its
+inputs, not on scheduling. Zyl's actor model is one (§15).
 
 **Key pinning (TOFU)**: Trust on first use. The first resolution of a
 package pins its publisher's Ed25519 key in the lock; a later key
@@ -460,8 +472,8 @@ reseeding replaces it after a change to the compiler's own output.
 resolved meaning — keyword, function, type, variant — rather than by
 regular expression.
 
-**Send**: The property a value needs to cross an actor boundary —
-`TCap` or `TAtomic`, never `TMut`.
+**Send**: The property a value needs to cross an actor boundary, by a
+spawn capture or `chan-send` — `TCap` or `TAtomic`, never `TMut`.
 
 **Signature (package)**: The publisher's Ed25519 signature over a
 package archive's BLAKE3 hash. Verification is mandatory and has no

@@ -351,7 +351,7 @@ A package declares the capabilities it may use. An absent `(capabilities ...)` f
 |------------|--------|
 | `io` | `file-open`, `file-read`, `file-write`, `file-close`, `read-line`; `core/io` and everything under `stdlib/io` |
 | `ffi` | `ffi-call`, `ffi-pin`, `ffi-unpin`; everything under `stdlib/ffi` |
-| `actor` | `spawn`, `send`, `receive`; everything under `stdlib/actor` |
+| `actor` | `spawn`, `chan`, `chan-send`, `chan-recv`; everything under `stdlib/actor` |
 | `secret` | the `Secret` capability type and `stdlib/math/secret` |
 | `native` | shipping and compiling C sources (§25.13) |
 | `unsafe` | `:unsafe` imports |
@@ -550,7 +550,7 @@ The standard library is package `zyl/std` at the compiler's major. It is implici
 | `collections/collections` | `Assoc`, `assoc-put`, `assoc-get`, `list-map`, `list-filter`, `list-fold` |
 | `allocator/allocator` | `alloc-malloc`, `alloc-free`, `arena-create`, `arena-alloc`, `buf-append`, `alloc-strlen` |
 | `atomic/atomic` | `atomic-load`, `atomic-store`, `atomic-add`, `atomic-cas` |
-| `actor/actor` | `actor-spawn`, `actor-send`, `actor-wait`, `actor-terminate` |
+| `actor/actor` | `actor-spawn`, `actor-wait`, `actor-is-alive` |
 | `ffi/ffi` | `ffi-pin-value`, `ffi-unpin-value`, `ffi-safe-call` |
 | `io/io` | `io-file-open-read`, `io-file-read`, `io-file-write`, `io-read-line`, `io-print` |
 | `testing/testing` | the `test`/`run-tests` harness, `assert-equal-values`, `property-int` |

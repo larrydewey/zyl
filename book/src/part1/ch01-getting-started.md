@@ -11,7 +11,7 @@ Zyl is a **deterministic Lisp systems language** designed for building reliable,
 - **Deterministic**: Same source code + same inputs → identical binaries and identical outputs, every time. No randomness in compilation, no unordered hash maps, no timing-dependent behavior.
 - **Region-based memory**: Instead of a garbage collector or manual `malloc`/`free`, Zyl's design assigns every value to a **region** (Stack, Heap, Global, Circular, or Pin). The current compiler infers Stack and Heap placement, reclaims short-lived values when their call returns, and implements Pin; Chapter 5 says exactly which part.
 - **Capability types**: Two key capabilities control aliasing: `TCap` (shared, immutable access — any number of references) and `TMut` (exclusive, mutable ownership — exactly one reference). Only a `let-mut` binding is `TMut`, and the compiler rejects a `set!` on anything else.
-- **Actor concurrency**: Lightweight actors with isolated state and deterministic FIFO mailboxes. No shared mutable state between actors.
+- **Actor concurrency**: Actors with isolated state that communicate over typed channels, each with one writer and one reader, so output does not depend on scheduling. No shared mutable state between actors.
 - **Self-hosting**: The Zyl compiler is written in Zyl and compiles itself, verified by a byte-identical fixed point. The original Rust bootstrap is archived and no longer part of the build, test, or use path at all — building Zyl needs nothing but a C compiler.
 
 **Who is Zyl for?**

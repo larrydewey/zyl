@@ -65,7 +65,7 @@ The declaration is a top-level form, and it describes the C function; it does no
 
 The types must be concrete: a type variable, such as `(extern "abs" (a) b)`, would let one call pretend C returned any type at all, so it is `E_TYPE_MISMATCH`. `Float` is refused too (§12.2). There is no cast form in Zyl, so the `extern` is the only place a C value's type is decided: get it right, because the compiler takes it on trust.
 
-The Zyl runtime's own `zyl_*` functions need no declaration: the compiler types each one from its signature table, `stdlib/compiler/ffi_sigs.zyl`, so `(ffi-call "zyl_actor_wait_all" 1000)` needs no `extern` and has type `Unit`. An `extern` is only for foreign code. Calling a runtime entry declared with one, such as `(extern "zyl_actor_wait_all" () Int)`, is `E_FFI_RESTRICTED`: the program may not retype the runtime. A few runtime functions that read raw memory or reinterpret a machine word as another type (an arbitrary `Int` as a pointer or a `String`, say) are reserved for the standard library; calling one from a program is `E_FFI_RESTRICTED`.
+The Zyl runtime's own `zyl_*` functions need no declaration: the compiler types each one from its signature table, `stdlib/compiler/ffi_sigs.zyl`, so `(ffi-call "zyl_int_text" 42 1000)` needs no `extern` and has type `String`. An `extern` is only for foreign code. Calling a runtime entry declared with one, such as `(extern "zyl_int_text" (Int) Int)`, is `E_FFI_RESTRICTED`: the program may not retype the runtime. A few runtime functions that read raw memory or reinterpret a machine word as another type (an arbitrary `Int` as a pointer or a `String`, say) are reserved for the standard library; calling one from a program is `E_FFI_RESTRICTED`.
 
 **The timeout is positional, and it must be a literal.** The compiler takes the last argument of every `ffi-call` as the timeout and requires it to be a positive integer literal. Anything else is rejected at compile time with `E_FFI_TIMEOUT_REQUIRED`, so a forgotten timeout cannot silently swallow your last real argument:
 
@@ -288,7 +288,7 @@ A top-level function named as an argument is passed to C as a function pointer, 
 (extern "qsort" (Ptr Int Int (Fn (Ptr Ptr) Int)) Unit)
 ```
 
-Then `(ffi-call "qsort" p 64 8 compare 1000)` sorts with a Zyl comparator `compare`, which must take two `Ptr`s (read them with `alloc-read-int`) and return an `Int`. Because the foreign call runs on its FFI worker thread (§12.7), the callback runs there too. It sees the caller's `actor-self`, but a panic inside it that no `try` within the callback catches ends the process. A `fn` written inline is not a top-level function: passing one is `E_INVALID_CAPABILITY`, because a closure is not FFI-pinnable.
+Then `(ffi-call "qsort" p 64 8 compare 1000)` sorts with a Zyl comparator `compare`, which must take two `Ptr`s (read them with `alloc-read-int`) and return an `Int`. Because the foreign call runs on its FFI worker thread (§12.7), the callback runs there too. It runs as the calling actor, owning the same channel endpoints, but a panic inside it that no `try` within the callback catches ends the process. A `fn` written inline is not a top-level function: passing one is `E_INVALID_CAPABILITY`, because a closure is not FFI-pinnable.
 
 ## 12.7 Timeout and Safety
 

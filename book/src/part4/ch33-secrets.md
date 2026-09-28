@@ -71,7 +71,7 @@ and every taint query answers no.
 | address memory — the index argument of `w-get`, `w-set`, `list-nth`, `alloc-read-int`, or a load/store offset | the address touched is visible in the data cache | `E_CT_VIOLATION` |
 | go through `/` or `mod` | the divider's latency depends on its operands | `E_CT_VIOLATION` |
 | reach `print`, an `error` message, or the text a `show` returns | a debug sink is still a sink | `E_SECRET_DEBUG` |
-| leave the process or the actor — `spawn`, `send`, `file-write` | that is the leak the capability exists to prevent | `E_SECRET_ESCAPE` |
+| leave the process or the actor — `spawn`, `chan-send`, `file-write` | that is the leak the capability exists to prevent | `E_SECRET_ESCAPE` |
 
 And one obligation: a secret reaches C only through `ffi-pin`, in the
 Pin region, or the compiler reports `E_FFI_PIN_REQUIRED`.
@@ -79,7 +79,7 @@ Pin region, or the compiler reports `E_FFI_PIN_REQUIRED`.
 `Secret` is deliberately **not** `Send`. A secret crossing into another
 actor is exactly the escape the capability is for. The type checker
 has no `Send` rule of its own; what refuses a secret at `spawn` or
-`send` is the checker's `E_SECRET_ESCAPE`.
+`chan-send` is the checker's `E_SECRET_ESCAPE`.
 
 ## 33.3 Writing Branchless Code
 

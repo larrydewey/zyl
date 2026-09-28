@@ -487,7 +487,7 @@ implicit `begin`.
 
 Words such as `defn`, `let`, `if`, `match`, `begin`, `while`, `for`,
 `cond`, `try`, `fn`, `lambda`, `deftype`, `defstruct`, `trait`, `impl`,
-`use`, `spawn`, `send` and `ffi-call` are recognized when they appear at
+`use`, `spawn`, `chan-send` and `ffi-call` are recognized when they appear at
 the head of a list. The complete set is what `:doc` answers for in the
 REPL.
 
