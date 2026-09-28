@@ -220,8 +220,11 @@ Full test infrastructure documented in `docs/regression-tests.md`. All tests use
   there the locked `%` primitives are allowed and `zyl_*` defns are exported. Its output
   `build/boot/rt.s` is a committed seed like `stage2.s`. There is no `unsafe` for programs.
 - Link modes: a program with no foreign `ffi-call` and no native objects links
-  freestanding (`start.o` + `rt.o`, `-nostdlib -static`: no libc; the runtime's `_start`
-  sets up TLS, threads are `clone` + futex). A program that calls foreign C links hosted
+  freestanding with no cc/as/ld: the Zyl assembler (`asm_x86.zyl`) and static ELF linker
+  (`elf_link.zyl`) link it against the cached runtime `rt.zo` (built by `zyl rt-cache`,
+  keyed by the BLAKE3 of `rt.s` + `start.s`). There is no libc: the runtime's `_start`
+  sets up TLS, and threads are `clone` + futex. `ZYL_EXTERNAL_LD=1` uses cc with
+  `start.o` + `rt.o` instead. A program that calls foreign C links hosted
   over libc's crt (weak pthreads). The compiler binaries themselves are hosted (the REPL
   interpreter's FFI uses `dlsym`).
 
