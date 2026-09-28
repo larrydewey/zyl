@@ -1,0 +1,112 @@
+; AES-NI block encryption (hardware only, no software fallback), system entropy and zeroization.
+(use base)
+(use cpu)
+(use tables)
+
+(defmacro cr-ld (a) (ffi-call "%load64" a 1))
+
+; --- zeroization ---
+
+; Byte-at-a-time zero stores; each is a primitive call, so none is dropped.
+(defn zyl_zeroize (addr len)
+  (if (or (= addr 0) (<= len 0)) 0 (let _ (cr-zero-bytes addr len) len)))
+
+(defn cr-zero-bytes (p n) (if (<= n 0) 0 (let _ (rt-st8 p 0) (cr-zero-bytes (+ p 1) (- n 1)))))
+
+; n (a multiple of 8) bytes at p, one word at a time.
+(defn cr-wipe (p n) (if (<= n 0) 0 (let _ (ffi-call "%store64" p 0 1) (cr-wipe (+ p 8) (- n 8)))))
+
+; --- math/words byte packing: one byte per 8-byte word ---
+
+; The low byte of each of n words at src into n bytes at dst.
+(defn cr-pack (dst src n i)
+  (if (>= i n) 0 (let _ (rt-st8 (+ dst i) (cr-ld (+ src (* i 8)))) (cr-pack dst src n (+ i 1)))))
+
+; n bytes at src into n words at dst.
+(defn cr-unpack (dst src n i)
+  (if (>= i n) 0 (let _ (ffi-call "%store64" (+ dst (* i 8)) (rt-ld8 (+ src i)) 1) (cr-unpack dst src n (+ i 1)))))
+
+(defn cr-words-data (h) (cr-ld (+ (tb-words-of h "words") 16)))
+
+(defn cr-need-block (h) (let n (zyl_words_len h) (if (< n 16) (tb-oob "aes block" 15 n) 0)))
+
+; --- AES-NI ---
+
+; Per-thread scratch: round keys 0-239, key 240-271, block 272-287; wiped before every return.
+(defn cr-aes-scratch () (ffi-call "%tls" "aes" 288 1))
+
+; Rounds 1..rounds-1 of aesenc, then aesenclast with round key `rounds`.
+(defn cr-aes-rounds (blk rk i rounds)
+  (if (< i rounds)
+    (let _ (ffi-call "%aes-enc" blk (+ rk (* i 16)) 1) (cr-aes-rounds blk rk (+ i 1) rounds))
+    (ffi-call "%aes-enclast" blk (+ rk (* rounds 16)) 1)))
+
+; Encrypts ONE 16-byte block (math/words byte arrays); keybytes 16 or 32. 1 on success, 0 without AES-NI or for another key size.
+(defn zyl_aes_encrypt_block (keybase keybytes inbase outbase)
+  (if (not (zyl_aesni_available)) 0
+    (if (not (or (= keybytes 16) (= keybytes 32))) 0
+      (let kn (zyl_words_len keybase)
+        (let _ (if (< kn keybytes) (tb-oob "aes key" (- keybytes 1) (zyl_words_len keybase)) 0)
+          (let kw (cr-words-data keybase)
+            (let _ (cr-need-block inbase)
+              (let iw (cr-words-data inbase)
+                ; out is validated before any key material is written, so a panic leaves nothing behind.
+                (let _ (cr-need-block outbase)
+                  (let ow (cr-words-data outbase)
+                    (let s (cr-aes-scratch)
+                      (let key (+ s 240)
+                        (let blk (+ s 272)
+                          (let _ (cr-pack key kw keybytes 0)
+                            (let _ (cr-pack blk iw 16 0)
+                              (let rounds (if (= keybytes 16) 10 14)
+                                (let _ (if (= keybytes 16) (ffi-call "%aes-expand-128" s key 1) (ffi-call "%aes-expand-256" s key 1))
+                                  (let _ (ffi-call "%v128-xor" blk s 1)
+                                    (let _ (cr-aes-rounds blk s 1 rounds)
+                                      (let _ (cr-unpack ow blk 16 0)
+                                        (let _ (cr-wipe s 288) 1)))))))))))))))))))))
+
+; --- system entropy ---
+
+; getrandom(2) until len bytes or an error other than EINTR; the byte count reached.
+(defn cr-getrandom (p len done)
+  (if (>= done len) done
+    (let r (ffi-call "%syscall3" 318 (+ p done) (- len done) 0 1)
+      (if (< r 0)
+        (if (= r -4) (cr-getrandom p len done) done)
+        (cr-getrandom p len (+ done r))))))
+
+(defn cr-read-all (fd p len done)
+  (if (>= done len) done
+    (let r (ffi-call "%syscall3" 0 fd (+ p done) (- len done) 1)
+      (if (> r 0) (cr-read-all fd p len (+ done r)) (if (= r -4) (cr-read-all fd p len done) done)))))
+
+; The /dev/urandom fallback for kernels without getrandom (O_RDONLY|O_CLOEXEC).
+(defn cr-urandom (p len done)
+  (let fd (ffi-call "%syscall3" 2 (rt-w "/dev/urandom") 524288 0 1)
+    (if (< fd 0) -1
+      (let got (cr-read-all fd p len done)
+        (let _ (ffi-call "%syscall1" 3 fd 1)
+          (if (= got len) got -1))))))
+
+; Fills len raw bytes at addr; len, or -1 when entropy could not be obtained.
+(defn zyl_random_fill (addr len)
+  (if (or (= addr 0) (<= len 0)) -1
+    (let done (cr-getrandom addr len 0)
+      (if (= done len) done (cr-urandom addr len done)))))
+
+(defn cr-rand-chunks (out n done buf)
+  (if (>= done n) done
+    (let want (if (> (- n done) 256) 256 (- n done))
+      (if (not (= (zyl_random_fill buf want) want)) -1
+        (let _ (cr-unpack (+ out (* done 8)) buf want 0)
+          (cr-rand-chunks out n (+ done want) buf))))))
+
+; n random bytes as one-per-word Ints at base; n, or -1 (callers must check).
+(defn zyl_random_words (base n)
+  (if (or (= base 0) (<= n 0)) -1
+    (let out (cr-words-data base)
+      (let len (zyl_words_len base)
+        (let _ (if (> n len) (tb-oob "random-words" (- n 1) (zyl_words_len base)) 0)
+          (let buf (ffi-call "%tls" "rand" 256 1)
+            (let r (cr-rand-chunks out n 0 buf)
+              (let _ (cr-wipe buf 256) r))))))))

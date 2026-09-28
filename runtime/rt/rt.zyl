@@ -14,3 +14,4 @@
 (use bytes)
 (use float)
 (use sys)
+(use crypto)

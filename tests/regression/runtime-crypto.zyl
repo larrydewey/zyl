@@ -1,0 +1,82 @@
+; AES-NI block encryption, system entropy and zeroization (runtime/rt/crypto.zyl).
+
+(use math/words)
+
+(defn arena () (ffi-call "zyl_arena_create" 0 1000))
+
+(defn aes-ok () (ffi-call "zyl_aesni_available" 1000))
+
+; The ciphertext hex of one block, or expect on a CPU without AES-NI.
+(defn aes-hex (keyhex pthex expect)
+  (if (not (aes-ok)) expect
+    (let a (arena)
+      (let key (w-from-hex a keyhex)
+        (let out (ffi-call "zyl_words_new" a 16 1000)
+          (if (ffi-call "zyl_aes_encrypt_block" key (w-hex-len keyhex) (w-from-hex a pthex) out 1000)
+            (w-hex-bytes out 16)
+            "failed"))))))
+
+(test "fips-197-aes-128"
+  (begin
+    (assert-equal (aes-hex "000102030405060708090a0b0c0d0e0f" "00112233445566778899aabbccddeeff" "69c4e0d86a7b0430d8cdb78070b4c55a") "69c4e0d86a7b0430d8cdb78070b4c55a")
+    (assert-equal (aes-hex "2b7e151628aed2a6abf7158809cf4f3c" "3243f6a8885a308d313198a2e0370734" "3925841d02dc09fbdc118597196a0b32") "3925841d02dc09fbdc118597196a0b32")
+    (assert-equal (aes-hex "00000000000000000000000000000000" "00000000000000000000000000000000" "66e94bd4ef8a2c3b884cfa59ca342b2e") "66e94bd4ef8a2c3b884cfa59ca342b2e")))
+
+(test "fips-197-aes-256"
+  (begin
+    (assert-equal (aes-hex "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f" "00112233445566778899aabbccddeeff" "8ea2b7ca516745bfeafc49904b496089") "8ea2b7ca516745bfeafc49904b496089")
+    (assert-equal (aes-hex "603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4" "6bc1bee22e409f96e93d7e117393172a" "f3eed1bdb5d2a03c064b5a7e3db181f8") "f3eed1bdb5d2a03c064b5a7e3db181f8")))
+
+(test "aes-edges"
+  (let a (arena)
+    (let key (ffi-call "zyl_words_new" a 32 1000)
+      (let blk (ffi-call "zyl_words_new" a 16 1000)
+        (begin
+          ; Only the low byte of each word counts.
+          (assert-equal (if (aes-ok)
+                          (let k2 (w-from-hex a "000102030405060708090a0b0c0d0e0f")
+                            (let _ (ffi-call "zyl_words_set" k2 1 257 1000)
+                              (let p (w-from-hex a "00112233445566778899aabbccddeeff")
+                                (let _ (ffi-call "zyl_aes_encrypt_block" k2 16 p blk 1000) (w-hex-bytes blk 16)))))
+                          "69c4e0d86a7b0430d8cdb78070b4c55a")
+                        "69c4e0d86a7b0430d8cdb78070b4c55a")
+          (assert-equal (ffi-call "zyl_aes_encrypt_block" key 24 blk blk 1000) false)
+          (assert-equal (ffi-call "zyl_aes_encrypt_block" key 0 blk blk 1000) false)
+          (assert-equal (try (begin (ffi-call "zyl_aes_encrypt_block" blk 32 blk blk 1000) "")
+                          (catch e e))
+                        (if (aes-ok) "E_INDEX_OUT_OF_BOUNDS: aes key: index 31 outside a word array of length 16" ""))
+          (assert-equal (try (begin (ffi-call "zyl_aes_encrypt_block" key 16 (ffi-call "zyl_words_new" a 15 1000) blk 1000) "")
+                          (catch e e))
+                        (if (aes-ok) "E_INDEX_OUT_OF_BOUNDS: aes block: index 15 outside a word array of length 15" ""))
+          (assert-equal (try (begin (ffi-call "zyl_aes_encrypt_block" key 16 blk (ffi-call "zyl_words_new" a 3 1000) 1000) "")
+                          (catch e e))
+                        (if (aes-ok) "E_INDEX_OUT_OF_BOUNDS: aes block: index 15 outside a word array of length 3" "")))))))
+
+(defn all-bytes (w i n) (if (>= i n) true (let v (ffi-call "zyl_words_get" w i 1000) (if (and (>= v 0) (< v 256)) (all-bytes w (+ i 1) n) false))))
+
+(defn same-words (x y i n) (if (>= i n) true (if (= (ffi-call "zyl_words_get" x i 1000) (ffi-call "zyl_words_get" y i 1000)) (same-words x y (+ i 1) n) false)))
+
+(test "random-words"
+  (let a (arena)
+    (let w (ffi-call "zyl_words_new" a 1000 1000)
+      (let v (ffi-call "zyl_words_new" a 1000 1000)
+        (begin
+          (assert-equal (ffi-call "zyl_random_words" w 0 1000) -1)
+          (assert-equal (ffi-call "zyl_random_words" w -5 1000) -1)
+          (assert-equal (ffi-call "zyl_random_words" w 1 1000) 1)
+          (assert-equal (ffi-call "zyl_random_words" w 256 1000) 256)
+          (assert-equal (ffi-call "zyl_random_words" w 257 1000) 257)
+          (assert-equal (ffi-call "zyl_random_words" w 1000 1000) 1000)
+          (assert-equal (ffi-call "zyl_random_words" v 1000 1000) 1000)
+          (assert-equal (all-bytes w 0 1000) true)
+          (assert-equal (same-words w v 0 1000) false)
+          (assert-equal (try (begin (ffi-call "zyl_random_words" w 1001 1000) "") (catch e e))
+                        "E_INDEX_OUT_OF_BOUNDS: random-words: index 1000 outside a word array of length 1000"))))))
+
+(test "zeroize"
+  (begin
+    (assert-equal (ffi-call "zyl_zeroize" 0 16 1000) 0)
+    (assert-equal (ffi-call "zyl_zeroize" 4096 0 1000) 0)
+    (assert-equal (ffi-call "zyl_zeroize" 4096 -1 1000) 0)))
+
+(run-tests)
