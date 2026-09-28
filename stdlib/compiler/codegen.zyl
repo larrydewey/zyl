@@ -3705,7 +3705,48 @@
     (Cons ins rest
       (match ins
         (MParam _ _ (mb-params st fr instrs Nil))
+        (MByteData d h
+          (match rest
+            (Cons nx rest2
+              (match nx
+                (MByteBound d2 h2 (if (and (= h h2) (and (mb-live fr d) (mb-live fr d2)))
+                                    (mb-emit-all (mb-byte-view2 st fr d d2 h i) fr rest2 (+ i 2))
+                                    (mb-emit-all (mb-emit-one st fr ins i) fr rest (+ i 1))))
+                (_ (mb-emit-all (mb-emit-one st fr ins i) fr rest (+ i 1)))))
+            (Nil (mb-emit-one st fr ins i))))
         (_ (mb-emit-all (mb-emit-one st fr ins i) fr rest (+ i 1)))))))
+
+; Data pointer and bound of one byte handle with one check (mb-byte-view twice, fused).
+(defn mb-byte-view2 (st fr d d2 h i)
+  (let lb (str-concat (mf-base fr) (str-concat "_w" (ffi-call "zyl_int_text" i 1000)))
+    (let lslice (str-concat lb "s")
+      (let lfail (str-concat lb "f")
+        (let ldone (str-concat lb "d")
+          (let st2 (cg-emit-lines st
+                     (Cons (str-concat "    mov rdx, " (mb-loc-text fr h))
+                     (Cons "    cmp rdx, 4096"
+                     (Cons (str-concat "    jb " lfail)
+                     (Cons "    test rdx, 7"
+                     (Cons (str-concat "    jnz " lfail)
+                     (Cons "    mov r11, [rdx]"
+                     (Cons "    movabs rcx, 6510318584122966017"
+                     (Cons "    cmp r11, rcx"
+                     (Cons (str-concat "    jne " lslice)
+                     (Cons "    mov rax, [rdx+8]"
+                     (Cons "    mov rcx, [rdx+24]"
+                     (Cons (str-concat "    jmp " ldone)
+                     (Cons (str-concat lslice ":")
+                     (Cons "    movabs rcx, 6510318584122966018"
+                     (Cons "    cmp r11, rcx"
+                     (Cons (str-concat "    jne " lfail)
+                     (Cons "    mov rax, [rdx+8]"
+                     (Cons "    mov rcx, [rdx+16]"
+                     (Cons (str-concat "    jmp " ldone)
+                     (Cons (str-concat lfail ":")
+                     (Cons "    xor eax, eax"
+                     (Cons "    xor ecx, ecx"
+                     (Cons (str-concat ldone ":") Nil))))))))))))))))))))))))
+            (mb-set (mb-set st2 fr d "rax") fr d2 "rcx")))))))
 
 (defn mb-params (st fr instrs acc)
   (match instrs
