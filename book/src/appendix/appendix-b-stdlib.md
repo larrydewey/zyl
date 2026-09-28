@@ -257,6 +257,24 @@ implements `Show`, `Debug`, `Eq`, `Ord` and `Hash` (the same hash as the
 equal String). The raw runtime accessors behind it are standard-library
 only (`E_FFI_RESTRICTED`).
 
+### `simd/simd` — Fixed-Width Lane Vectors
+
+```lisp
+(use simd/simd)
+(deftype I64x2 (I64x2C Int Int))   ; two 64-bit lanes
+(deftype I32x4 (I32x4C Int Int))   ; four signed 32-bit lanes, packed two per word
+(deftype U8x16 (U8x16C Int Int))   ; sixteen unsigned bytes, packed eight per word
+;(i64x2 a b) (i32x4 a b c d) (u8x16 b0 .. b15) (u8x16-of-words lo hi) and -splat
+;<T>-get v i, <T>-set v i x, <T>-add/-sub/-and/-or/-xor/-eq/-min/-max a b, <T>-hsum v
+;(u8x16-movemask v)
+```
+
+Vectors are immutable values. add and sub wrap within a lane, eq gives
+an all-ones lane (-1, or 255 for U8), I64/I32 lanes compare signed and
+U8 lanes unsigned; a lane index outside the vector is
+`E_INDEX_OUT_OF_BOUNDS`. Sub-word lanes run as SWAR over the two words,
+so every CPU gives the same result; there is no SSE path.
+
 ## B.3 Concurrency
 
 ### `actor/actor` — Actor System

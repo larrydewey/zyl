@@ -1,0 +1,41 @@
+; CRC-32C (Castagnoli) steps behind the crc32c builtins: SSE4.2 crc32 when the CPU has it, else a table giving identical results.
+(use base)
+
+; 2 when SSE4.2 is present, 1 when not; probed once (CPUID leaf 1, ECX bit 20).
+(defn rt-sse42 ()
+  (let g (ffi-call "%global" "cpu_sse42" 8 1)
+    (let v (ffi-call "%load64" g 1)
+      (if (= v 0)
+        (let f (if (> (bit-and (ffi-call "%cpuid-ecx" 1 0 1) 1048576) 0) 2 1) (let _ (ffi-call "%store64" g f 1) (= f 2)))
+        (= v 2)))))
+
+; The 256-entry reflected table (polynomial 0x82F63B78), built once; concurrent builders write the same words.
+(defn crc-tab ()
+  (let t (ffi-call "%global" "crc32c_tab" 2048 1)
+    (let ok (ffi-call "%global" "crc32c_tab_ok" 8 1)
+      (if (= (ffi-call "%load64" ok 1) 1) t
+        (let _ (crc-fill t 0) (let _ (ffi-call "%store64" ok 1 1) t))))))
+
+(defn crc-fill (t i)
+  (if (> i 255) 0
+    (let _ (ffi-call "%store64" (+ t (* i 8)) (crc-bits i 8) 1) (crc-fill t (+ i 1)))))
+
+(defn crc-bits (c k)
+  (if (= k 0) c
+    (crc-bits (if (= (bit-and c 1) 1) (bit-xor (shr c 1) 2197175160) (shr c 1)) (- k 1))))
+
+(defn crc-byte (t c b) (bit-xor (ffi-call "%load64" (+ t (* (bit-and (bit-xor c b) 255) 8)) 1) (shr c 8)))
+
+(defn crc-soft-bytes (t c x k)
+  (if (= k 0) c (crc-soft-bytes t (crc-byte t c (bit-and x 255)) (shr x 8) (- k 1))))
+
+; The table path for 8 bytes of x, least significant first; crc's low 32 bits are the state.
+(defn zyl_crc32c_soft (crc x) (crc-soft-bytes (crc-tab) (bit-and crc 4294967295) x 8))
+
+; One crc32 instruction step over the 8 bytes of x (no pre- or post-inversion).
+(defn zyl_crc32c_u64 (crc x)
+  (if (rt-sse42) (ffi-call "%crc32c-u64" crc x 1) (zyl_crc32c_soft crc x)))
+
+; One step over the byte b (its low 8 bits).
+(defn zyl_crc32c_u8 (crc b)
+  (if (rt-sse42) (ffi-call "%crc32c-u8" crc b 1) (crc-byte (crc-tab) (bit-and crc 4294967295) (bit-and b 255))))

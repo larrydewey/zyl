@@ -274,6 +274,25 @@ Compiler generates field accessors for every defstruct.
 
 Explicit extraction (usually implicit).
 
+### 21.13 Bit Intrinsics
+
+Defined for every input and identical on every CPU; there is no inline
+assembly, and a program cannot name the primitives behind them.
+
+| Builtin | Result |
+|---------|--------|
+| `(bit-popcount x)` | set bits (0..64) |
+| `(bit-clz x)`, `(bit-ctz x)` | leading / trailing zero bits, 64 for 0 |
+| `(bit-bswap x)` | the 8 bytes reversed |
+| `(bit-rotl x n)`, `(bit-rotr x n)` | rotation by n mod 64 |
+| `(mul-hi a b)`, `(mul-hi-u a b)` | high 64 bits of the signed / unsigned 128-bit product |
+| `(crc32c crc x)` | one CRC-32C step over x's 8 bytes, low byte first; state is crc's low 32 bits; no inversion |
+| `(crc32c-u8 crc b)` | the same step over b's low byte |
+
+The `32` forms (`bit-popcount32`, `bit-clz32`, `bit-ctz32`, `bit-bswap32`,
+`bit-rotl32`, `bit-rotr32`) act on the low 32 bits, count mod 32, and
+return 0..2^32-1 (clz/ctz give 32 for 0).
+
 ---
 
 ## Implementation Notes on §21
@@ -283,6 +302,14 @@ Not normative. Probed with `build/boot/zyl-self`.
 - The comparison operators accept `=` as a synonym for `==`.
 - The bitwise operators `bit-and`, `bit-or`, `bit-xor`, `bit-not`, `shl`,
   `shr` (logical) and `ashr` are built in; §21 does not list them.
+- The §21.13 intrinsics lower to locked primitives (`%popcnt`, `%rotl`,
+  ...; `stdlib/compiler/rt_mode.zyl`, `intrinsic-prim`) that codegen
+  emits inline with baseline x86-64 instructions only: popcount is a SWAR
+  sequence (no `popcnt`), clz/ctz are `bsr`/`bsf` with a zero fix-up (no
+  `lzcnt`/`tzcnt`). `crc32c` calls the runtime (`runtime/rt/crc.zyl`),
+  which uses SSE4.2 `crc32` when CPUID reports it and a 256-entry table
+  otherwise; `zyl_crc32c_soft` is the table path. The interpreter
+  computes each bit by bit.
 - `(- x)` is the negation of `x`, and `(+ x)` and `(* x)` are `x`.
   `(+)` and `(*)` with no operands are rejected with `E_ARITY_MISMATCH`
   ("operator N needs two operands"); §21.1 gives the empty sum as 0 and

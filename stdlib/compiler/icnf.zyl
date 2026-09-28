@@ -1200,12 +1200,20 @@
     (let strb (ic-str-builtin-sym arena fname)
       (if (> (str-length strb) 0)
         (IFfi strb (ic-expr-list arena args vt))
+      (if (> (intrinsic-arity fname) 0)
+        (ic-intrinsic arena fname args vt)
         (if (ic-starts-with-make fname)
           (ic-make-struct arena fname args vt)
           (let op (ic-op-of arena fname)
             (if (> op -1)
               (ic-binop arena op args vt)
-              (ic-call-or-variant arena fname args vt)))))))))
+              (ic-call-or-variant arena fname args vt))))))))))
+
+; A bit intrinsic (rt_mode.zyl, intrinsic-prim): its locked primitive, which users cannot name, applied to its operands.
+(defn ic-intrinsic (arena fname args vt)
+  (if (= (list-length args) (intrinsic-arity fname))
+    (IFfi (intrinsic-prim fname) (ic-expr-list arena args vt))
+    (ffi-call "zyl_panic" (str-concat "error[E_ARITY_MISMATCH]: wrong operand count for " fname) 1000)))
 
 ; (assert c "msg") panics with msg; any other message form keeps the fixed text.
 (defn ic-assert-msg (m)

@@ -135,6 +135,7 @@ Core modules:
 | core | identity, compose, arithmetic, bool, type-predicates, I/O |
 | collections | Vec, Map (deterministic iteration), Slice (zero-copy window on a Vec) |
 | text | StrView (zero-copy substring), Cursor (parsing position) |
+| simd | I64x2, I32x4, U8x16 lane vectors (lane-wise add, sub, and, or, xor, eq, min, max, horizontal sum, get/set) |
 | option | Option (Some, None), is-some, unwrap, map |
 | result | Result (Ok, Err), is-ok, unwrap, map |
 | io | file-open, file-read, file-write, file-close |

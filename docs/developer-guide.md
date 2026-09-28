@@ -130,7 +130,9 @@ also compare structs and ADTs, by content rather than by address; the
 orderings `<`, `>`, `<=`, `>=` take Int, Float and String only (order an
 ADT with `Ord.compare`, see [Traits and derive](#11-traits-and-derive)).
 Integers also have `bit-and`, `bit-or`, `bit-xor`, `bit-not`, `shl`,
-`shr` and `ashr`.
+`shr` and `ashr`. The intrinsics `bit-popcount`, `bit-clz`, `bit-ctz`,
+`bit-bswap`, `bit-rotl`, `bit-rotr` (and `32` forms), `mul-hi`, `mul-hi-u`,
+`crc32c` and `crc32c-u8` are spec §21.13; `simd/simd` has lane vectors.
 
 ## 4. Control flow
 

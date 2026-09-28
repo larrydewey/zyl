@@ -33,7 +33,8 @@ it compiles and runs correctly; the notes say where it stops.
 | Zero-copy views | Works: `text/view` (`StrView`, `Cursor`) and `collections/slice` (`Slice`). Making, splitting and trimming a view copies nothing; bounds are checked once when a view is made from a String; `view-to-string` and `slice-to-vec` copy. A view holds its base, so region inference keeps the base alive. The raw `zyl_view_*` accessors are `E_FFI_RESTRICTED` outside the standard library (`zyl_view_ok` is not) |
 | `let`, `let-mut`/`set!`, `if`, `cond`, `while`, `for`, `begin` | Works. `set!` on a plain `let` binding or on a field is `E_MUT_CONFLICT` |
 | Functions, recursion | Works. Direct calls with the wrong argument count are `E_ARITY_MISMATCH` |
-| Integers, 64-bit | Works, including bitwise `bit-and`/`bit-or`/`bit-xor`/`shl`/`shr`/`ashr` |
+| Integers, 64-bit | Works, including bitwise `bit-and`/`bit-or`/`bit-xor`/`shl`/`shr`/`ashr` and the §21.13 intrinsics (`bit-popcount`, `bit-clz`, `bit-ctz`, `bit-bswap`, `bit-rotl`/`bit-rotr`, their `32` forms, `mul-hi`/`mul-hi-u`, `crc32c`/`crc32c-u8`): inline baseline x86-64 code (crc32c: a runtime step, SSE4.2 or a table), the same on every CPU; no inline assembly |
+| SIMD | `simd/simd`: `I64x2`, `I32x4`, `U8x16` immutable lane vectors, portable SWAR over two words (no SSE path: the SSE2 primitives work on addresses) |
 | Float64 | Works: literals, arithmetic, comparisons, printing |
 | Structs | Works: `defstruct`, `make-<Name>`, `struct-get`, rebinding with `let-mut` |
 | ADTs and `match` | Works, including literal patterns, OR-patterns, range patterns and guards. A non-exhaustive ADT match is `E_NON_EXHAUSTIVE_MATCH`; a literal match needs a trailing `_` |
