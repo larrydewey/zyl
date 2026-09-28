@@ -29,7 +29,7 @@ compile with `build/boot/zyl-self` on 2026-09-28.
   output, the interpreter in its tag-checking mode), 4 sched (actor
   tests under `ZYL_SCHED=deterministic` and chaos seeds), 120
   compile-fail, 7 integration, 4 stress, 2 packages, 9 packages-fail, 1
-  packages-build, 15 scripts, the LSP protocol test (108 checks) and the
+  packages-build, 15 scripts, the LSP protocol test (110 checks) and the
   unit test. A compile-fail test may pin its code (`; expect-error:
   CODE`) and location (`; expect-at: FILE:LINE:COL`).
 - The specification is `zyl_specification.txt` **v5.0** (§0–§31);

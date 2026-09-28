@@ -5,7 +5,7 @@
 `./boot.sh` builds it as `build/boot/zyl-lsp`; `./install.sh` installs it
 as `~/.zyl/bin/zyl-lsp`. It speaks JSON-RPC over stdio.
 `tests/lsp/lsp_protocol_test.py` drives the real binary and checks the
-responses (108 checks; `./run_regression_tests.sh --filter lsp`, in
+responses (110 checks, one of them that the server answers while stdin stays open; `./run_regression_tests.sh --filter lsp`, in
 quick and full mode).
 
 ## Requests
