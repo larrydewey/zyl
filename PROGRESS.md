@@ -464,6 +464,24 @@ as recorded below.
 
 # Session log (newest first)
 
+## Session (2026-09-28, hardening) — try-frame pointer mangling
+
+- The saved rbp, rsp and rip in every try frame are mangled the way
+  glibc's PTR_MANGLE does it: XOR with the per-process `zyl_ptr_guard`,
+  then a left rotate by 17. This covers the inline setjmp in generated
+  code (`cg-inline-setjmp`), `zyl_rt_setjmp` and `zyl_rt_try_call`.
+  `zyl_rt_longjmp` demangles. So a heap write, from foreign C for
+  example, cannot aim a longjmp at an address of its choosing without
+  knowing the guard.
+- The guard is 8 bytes of getrandom, read once in `zyl_ensure_arenas`
+  (`sr-guard-init`). It is never observable: output and binaries stay
+  deterministic.
+- `boot.sh --bootstrap-from-self` now emits each round's compiler and its
+  runtime from the same compiler. Pairing a new compiler with the old
+  seed's runtime broke as soon as the two disagreed on the frame format.
+  The change landed in two steps: first the guard word and its setter,
+  then the mangling.
+
 ## Session (2026-09-28, self-link) — a Zyl assembler and static ELF linker
 
 - New: `stdlib/compiler/asm_x86.zyl` (an x86-64 assembler covering every

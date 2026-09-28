@@ -5,6 +5,7 @@
 
 (extern "zyl_rt_atexit" (Int) Int)
 (extern "zyl_arenas_init" () Int)
+(extern "zyl_rt_guard_set" (Int) Int)
 (extern "zyl_arenas_destroy" () Int)
 (extern "zyl_ffi_abandoned" () Int)
 
@@ -20,13 +21,20 @@
       (let _ (sr-st64 rl (sr-ld64 (+ rl 8))) (let _ (ffi-call "%syscall2" 160 3 rl 1) 0))
       0)))
 
+; The try-frame pointer guard: 8 bytes of getrandom (retried on EINTR); never observable.
+(defn sr-guard-init ()
+  (let b (ffi-call "%tls" "start_guard" 8 1)
+    (let r (ffi-call "%syscall3" 318 b 8 0 1)
+      (if (= r -4) (sr-guard-init) (ffi-call "zyl_rt_guard_set" (if (= r 8) (sr-ld64 b) 0) 1)))))
+
 ; Every generated main calls this first; the teardown is registered before the actor drain, so it runs after it.
 ; libc's exit (main returning to crt) reaches the registry through the one libc atexit hook.
 (defn zyl_ensure_arenas ()
   (let g (ffi-call "%global" "start_once" 8 1)
     (let _ (if (= (sr-ld64 g) 0)
              (let _ (sr-st64 g 1)
-               (let _ (sr-raise-stack-limit) (let _ (sr-libc-atexit) (ffi-call "zyl_rt_atexit" (ffi-call "%fn" "zyl_runtime_cleanup" 1) 1))))
+               (let _ (sr-guard-init)
+               (let _ (sr-raise-stack-limit) (let _ (sr-libc-atexit) (ffi-call "zyl_rt_atexit" (ffi-call "%fn" "zyl_runtime_cleanup" 1) 1)))))
              0)
       (let _ (ffi-call "%call0" (ffi-call "%fn" "zyl_actor_init" 1) 1) (let _ (ffi-call "zyl_arenas_init" 1) 0)))))
 

@@ -1614,12 +1614,12 @@
 
 ; glibc's PTR_MANGLE: rax xor zyl_ptr_guard, rotated left 17, stored at [rdi+off].
 (defn cg-mangle-rax (off tail)
-  (Cons (str-concat "    mov [rdi+" (str-concat off "], rax")) tail))
+  (Cons "    xor rax, qword ptr [rip+zyl_ptr_guard]" (Cons "    rol rax, 17" (Cons (str-concat "    mov [rdi+" (str-concat off "], rax")) tail))))
 
 ; The inverse into reg from [rdi+off].
 (defn cg-demangle (reg off tail)
   (Cons (str-concat "    mov " (str-concat reg (str-concat ", [rdi+" (str-concat off "]"))))
-    tail))
+    (Cons (str-concat "    ror " (str-concat reg ", 17")) (Cons (str-concat "    xor " (str-concat reg ", qword ptr [rip+zyl_ptr_guard]")) tail))))
 
 ; rt_setjmp gave 0: run the body, then pop our frame so a later error doesn't unwind here.
 (defn cg-trycatch-try (st env tbody cvar cbody lcatch ldone cvar-off)
