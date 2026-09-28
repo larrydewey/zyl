@@ -1,0 +1,113 @@
+; Registered source files and the line, column and snippet queries of diagnostics.
+(use base)
+
+(extern "strdup" (String) Int)
+(extern "free" (Int) Int)
+(extern "malloc" (Int) Int)
+
+(defmacro rt-ld64 (a) (ffi-call "%load64" a 1))
+(defmacro rt-st64 (a v) (ffi-call "%store64" a v 1))
+
+; Up to 256 files of {path, text, len}, then the count at +6144.
+(defn rt-srcs () (ffi-call "%global" "src_files" 6152 1))
+(defn rt-src-count () (rt-ld64 (+ (rt-srcs) 6144)))
+(defn rt-src (fid) (+ (rt-srcs) (* fid 24)))
+
+(defn rt-src-find (p i n) (if (>= i n) -1 (if (= (rt-strcmp (rt-ld64 (rt-src i)) p) 0) i (rt-src-find p (+ i 1) n))))
+
+(defn rt-src-set-text (f t)
+  (let c (ffi-call "strdup" (ffi-call "%str" t 1) 1)
+    (let _ (rt-st64 (+ f 8) c) (rt-st64 (+ f 16) (if (= c 0) 0 (rt-strlen c))))))
+
+; A path seen before keeps its id; its text is replaced when it changed (REPL and language-server edits).
+(defn zyl_source_register (path text)
+  (let p (if (= (rt-w path) 0) (rt-w "<input>") (rt-w path))
+    (let t (if (= (rt-w text) 0) (rt-w "") (rt-w text))
+      (let n (rt-src-count)
+        (let i (rt-src-find p 0 n)
+          (if (>= i 0)
+            (let f (rt-src i)
+              (let old (if (= (rt-ld64 (+ f 8)) 0) (rt-w "") (rt-ld64 (+ f 8)))
+                (let _ (if (= (rt-strcmp old t) 0) 0 (let _ (ffi-call "free" (rt-ld64 (+ f 8)) 1) (rt-src-set-text f t))) i)))
+            (if (>= n 256) -1
+              (let f (rt-src n)
+                (let _ (rt-st64 (+ (rt-srcs) 6144) (+ n 1))
+                  (let _ (rt-st64 f (ffi-call "strdup" (ffi-call "%str" p 1) 1))
+                    (let _ (rt-src-set-text f t) n)))))))))))
+
+; The file's record when fid is registered, else 0.
+(defn rt-src-ok (fid) (if (or (< fid 0) (>= fid (rt-src-count))) 0 (rt-src fid)))
+
+(defn zyl_source_path (fid) (let f (rt-src-ok fid) (if (= f 0) "<input>" (ffi-call "%str" (rt-ld64 f) 1))))
+
+; The record when off lies within its text, else 0.
+(defn rt-src-at (fid off)
+  (let f (rt-src-ok fid) (if (or (= f 0) (< off 0)) 0 (if (or (= (rt-ld64 (+ f 8)) 0) (> off (rt-ld64 (+ f 16)))) 0 f))))
+
+(defn rt-count-lines (t i off line) (if (>= i off) line (rt-count-lines t (+ i 1) off (if (= (rt-ld8 (+ t i)) 10) (+ line 1) line))))
+
+; 1-based line containing off; 0 when unknown.
+(defn zyl_span_line (fid off)
+  (let f (rt-src-at fid off) (if (= f 0) 0 (rt-count-lines (rt-ld64 (+ f 8)) 0 off 1))))
+
+(defn rt-line-start (t i) (if (and (> i 0) (not (= (rt-ld8 (+ t (- i 1))) 10))) (rt-line-start t (- i 1)) i))
+
+(defn rt-line-end (t i len) (if (and (< i len) (not (= (rt-ld8 (+ t i)) 10))) (rt-line-end t (+ i 1) len) i))
+
+(defn zyl_span_col (fid off)
+  (let f (rt-src-at fid off) (if (= f 0) 0 (+ (- off (rt-line-start (rt-ld64 (+ f 8)) off)) 1))))
+
+; A fresh malloc'd copy of n bytes at src (never freed: diagnostics end the process); "" on failure.
+(defn rt-mcopy (src n pre post)
+  (let b (ffi-call "malloc" (+ n 7) 1)
+    (if (= b 0) ""
+      (let j (if pre (let _ (rt-copy b (rt-w "...") 3) 3) 0)
+        (let _ (rt-copy (+ b j) src n)
+          (let k (+ j n)
+            (let k2 (if post (let _ (rt-copy (+ b k) (rt-w "...") 3) (+ k 3)) k)
+              (let _ (rt-st8 (+ b k2) 0) (ffi-call "%str" b 1)))))))))
+
+(defn zyl_span_line_text (fid off)
+  (let f (rt-src-at fid off)
+    (if (= f 0) ""
+      (let t (rt-ld64 (+ f 8))
+        (let s (rt-line-start t off) (rt-mcopy (+ t s) (- (rt-line-end t off (rt-ld64 (+ f 16))) s) false false))))))
+
+; At most 120 bytes of the line around off, "..."-marked where cut: {start, end, pre, post}.
+(deftype RtSnip (RtSnip Int Int Bool Bool) (RtNoSnip))
+
+(defn rt-snip (fid off)
+  (let f (rt-src-at fid off)
+    (if (= f 0) (RtNoSnip)
+      (let t (rt-ld64 (+ f 8))
+        (let start (rt-line-start t off)
+          (let end (rt-line-end t off (rt-ld64 (+ f 16)))
+            (if (<= (- end start) 120) (RtSnip start end false false)
+              (let s0 (if (< (- off 60) start) start (- off 60))
+                (let s (if (> (+ s0 120) end) (- end 120) s0)
+                  (let e (if (> (+ s0 120) end) end (+ s0 120)) (RtSnip s e (> s start) (< e end))))))))))))
+
+(defn zyl_span_snippet (fid off)
+  (match (rt-snip fid off)
+    (RtSnip s e pre post (rt-mcopy (+ (rt-ld64 (+ (rt-src fid) 8)) s) (- e s) pre post))
+    (RtNoSnip "")))
+
+(defn zyl_span_snippet_col (fid off)
+  (match (rt-snip fid off)
+    (RtSnip s _ pre _ (+ (+ (- off s) 1) (if pre 3 0)))
+    (RtNoSnip 0)))
+
+(defn rt-skip-lines (t i l line len)
+  (if (>= l line) i
+    (let nl (rt-find-byte t len 10 i)
+      (if (< nl 0) -1 (rt-skip-lines t (+ nl 1) (+ l 1) line len)))))
+
+; Inverse of line and column (sexp_balance's 1-based positions); -1 when unknown.
+(defn zyl_span_offset_at (fid line col)
+  (let f (rt-src-ok fid)
+    (if (or (= f 0) (or (< line 1) (< col 1))) -1
+      (let t (rt-ld64 (+ f 8))
+        (if (= t 0) -1
+          (let len (rt-ld64 (+ f 16))
+            (let i (rt-skip-lines t 0 1 line len)
+              (if (< i 0) -1 (let off (+ i (- col 1)) (if (<= off len) off len))))))))))
