@@ -40,6 +40,7 @@
 (use compiler/expr_inner)
 (use compiler/error_report)
 (use compiler/ffi_sigs)
+(use compiler/rt_mode)
 
 ; Top-level function arities by name, stored plus one (0 = unknown). A
 ; later definition of a name replaces an earlier one, as the list this
@@ -191,11 +192,15 @@
   (match args
     (Nil unit)
     (Cons sym _
+      (if (and (rt-prim-p (ffi-literal-str sym)) (not (rt-mode-p)))
+        (ffi-fail "E_FFI_RESTRICTED"
+                  (str-concat "`" (str-concat (ffi-literal-str sym) "` is a runtime internal; only the runtime itself may use it"))
+                  "use the typed standard-library function built on it" site)
       (if (and (ffi-raw-p (ffi-literal-str sym)) (not (ac-in-stdlib)))
         (ffi-fail "E_FFI_RESTRICTED"
                   (str-concat "`" (str-concat (ffi-literal-str sym) "` is a raw runtime entry (it reads memory or reinterprets a machine word) and only the standard library may call it"))
                   "use the typed standard-library function built on it" site)
-        unit))))
+        unit)))))
 
 ; Standard-library definitions carry the package key `zyl/std@N::`.
 (defn ac-in-stdlib ()

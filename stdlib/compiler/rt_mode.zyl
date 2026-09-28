@@ -1,0 +1,24 @@
+; compiler/rt_mode: runtime-module mode, set only for the bundle's runtime/rt/rt.zyl (docs/runtime-in-zyl-design.md).
+
+; 1 while compiling the runtime module, else 0.
+(def rt-mode-cell (ffi-call "zyl_ref_new" 0 1000))
+
+(defn rt-mode-p () (= (ffi-call "zyl_ref_get" rt-mode-cell 1000) 1))
+
+(defn rt-mode-set () (ffi-call "zyl_ref_set" rt-mode-cell 1 1000))
+
+; A raw primitive symbol: "%load64" and friends.
+(defn rt-prim-p (s)
+  (and (> (str-length s) 1) (= (ffi-call "zyl_cstr_byte_at" s 0 1000) 37)))
+
+; The bare export label of a runtime definition: the part after the last "::" when it starts "zyl_", else "".
+(defn rt-export-label (name)
+  (let tail (rt-after-colons name 0 0 (str-length name))
+    (if (and (>= (str-length tail) 4) (str-eq (str-substring tail 0 4) "zyl_")) tail "")))
+
+(defn rt-after-colons (s i start n)
+  (if (>= (+ i 1) n)
+    (str-substring s start (- n start))
+    (if (and (= (ffi-call "zyl_cstr_byte_at" s i 1000) 58) (= (ffi-call "zyl_cstr_byte_at" s (+ i 1) 1000) 58))
+      (rt-after-colons s (+ i 2) (+ i 2) n)
+      (rt-after-colons s (+ i 1) start n))))

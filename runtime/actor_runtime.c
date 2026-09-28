@@ -677,12 +677,6 @@ static int zyl_cstr_valid(long long ptr, const char* who) {
     return 1;
 }
 
-long long zyl_cstr_len(long long ptr) {
-    if (!ptr) return 0;
-    if (!zyl_cstr_valid(ptr, "cstr-len")) return 0;
-    return (long long)strlen((const char*)(size_t)ptr);
-}
-
 /* Concatenate two NUL-terminated strings into freshly heap-allocated
    storage (zyl_heap_alloc). Either argument may be NULL (treated as ""). */
 long long zyl_cstr_concat(long long a, long long b) {
@@ -720,38 +714,6 @@ long long zyl_cstr_substr(long long src, long long start, long long len) {
     return (long long)(size_t)buf;
 }
 
-/* Non-zero if the two NUL-terminated strings are byte-identical. */
-long long zyl_cstr_eq(long long p1, long long p2) {
-    if (p1 == p2) return 1;
-    if (!p1 || !p2) return 0;
-    if (!zyl_cstr_valid(p1, "cstr-eq") || !zyl_cstr_valid(p2, "cstr-eq")) return 0;
-    const char* s1 = (const char*)(size_t)p1;
-    const char* s2 = (const char*)(size_t)p2;
-    return (long long)(strcmp(s1, s2) == 0);
-}
-
-/* 1 when `key` equals `name` or is a qualified key ending in "::name".
- * Allocation-free: type inference calls it inside every linear lookup. */
-long long zyl_cstr_key_matches(long long key, long long name) {
-    if (key == name) return 1;
-    if (!key || !name) return 0;
-    const char* k = (const char*)(size_t)key;
-    const char* n = (const char*)(size_t)name;
-    size_t kl = strlen(k), nl = strlen(n);
-    if (kl == nl) return (long long)(memcmp(k, n, kl) == 0);
-    if (kl < nl + 2) return 0;
-    const char* tail = k + (kl - nl);
-    return (long long)(tail[-1] == ':' && tail[-2] == ':' && memcmp(tail, n, nl) == 0);
-}
-
-/* Byte-wise ordering of two strings: -1, 0 or 1 (NULL sorts first). */
-long long zyl_cstr_cmp(long long p1, long long p2) {
-    if (p1 == p2) return 0;
-    if (!p1 || !p2) return p1 ? 1 : -1;
-    int c = strcmp((const char*)(size_t)p1, (const char*)(size_t)p2);
-    return c < 0 ? -1 : (c > 0 ? 1 : 0);
-}
-
 long long zyl_mem_alloc(long long size) {
     return (long long)(size_t)malloc((size_t)size);
 }
@@ -775,15 +737,6 @@ long long zyl_mem_write(long long ptr, long long value) {
 /* ==========================================================================
    Character-level string access — substrate for the self-hosting lexer.
    ========================================================================== */
-
-/* Byte at index `i` of a NUL-terminated string, or -1 if past the terminator. */
-long long zyl_cstr_byte_at(long long ptr, long long i) {
-    if (!ptr || i < 0) return -1;
-    if (!zyl_cstr_valid(ptr, "cstr-byte-at")) return -1;
-    const char* s = (const char*)(size_t)ptr;
-    if (i >= (long long)strlen(s)) return -1;
-    return (long long)(unsigned char)s[i];
-}
 
 /* String views (stdlib text/view): a view is {base, off, len} with
    off + len <= strlen(base), checked once by zyl_view_ok when the view is

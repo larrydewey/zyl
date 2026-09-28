@@ -7,11 +7,10 @@
 ;      `(use module/name)` resolves `stdlib/module/name.zyl` relative to
 ;      the compiler binary's own bundle dir, not the caller's cwd.
 ;   2. Legacy fixed-path protocol (`argc < 2`): reads
-;      /tmp/zyl_boot_in.zyl, writes /tmp/zyl_boot_out.s. Once used by the
-;      now-retired `boot.sh --bootstrap-from-rust` reseed step; kept as a
-;      dependency-free smoke path.
+;      /tmp/zyl_boot_in.zyl, writes /tmp/zyl_boot_out.s; a dependency-free smoke path.
 
 (use compiler/node_tables)
+(use compiler/rt_mode)
 (use allocator/allocator)
 (use compiler/lexer)
 (use compiler/parser)
@@ -123,12 +122,14 @@
     (let a (ffi-call "zyl_arg_str" i 1000)
       (if (str-eq a "--emit-asm")
         (match acc (CliOpts out _ (cli-parse-opts (+ i 1) argc (CliOpts out 1))))
+      (if (str-eq a "--runtime-module")
+        (match acc (CliOpts out _ (cli-parse-opts (+ i 1) argc (CliOpts out 2))))
       (if (or (str-eq a "--error-format=json") (drv-contracts-flag-p a))
         (cli-parse-opts (+ i 1) argc acc)
         (if (str-eq a "-o")
           (let nxt (ffi-call "zyl_arg_str" (+ i 1) 1000)
             (match acc (CliOpts _ flag (cli-parse-opts (+ i 2) argc (CliOpts nxt flag)))))
-          (match acc (CliOpts _ flag (cli-parse-opts (+ i 1) argc (CliOpts a flag))))))))))
+          (match acc (CliOpts _ flag (cli-parse-opts (+ i 1) argc (CliOpts a flag)))))))))))
 
 ; Link `asmpath` into a binary at `outpath` via the system `cc`, expecting
 ; actor_runtime.c to sit next to it (cwd is the bundle dir at this point).
@@ -147,14 +148,12 @@
 (defn cli-link-child (asmpath outpath extra)
   (ffi-call "zyl_system_cmd" (cli-link-command asmpath outpath extra) 1000))
 
-; The runtime is linked as the object boot.sh/install.sh build next to its
-; source (actor_runtime.o, -O2) when that is newer than the source; else
-; the source is compiled here, with the same flags.
+; Links rt.o (the Zyl runtime) and actor_runtime.o, or its source when the object is stale.
 (defn cli-link-command (asmpath outpath extra)
   (str-concat "if [ actor_runtime.o -nt actor_runtime.c ]; then ZYL_RT=actor_runtime.o; else ZYL_RT='-O2 actor_runtime.c'; fi; cc "
     (str-concat "-no-pie "
       (str-concat asmpath
-        (str-concat " $ZYL_RT -o "
+        (str-concat " rt.o $ZYL_RT -o "
           (str-concat outpath (str-concat " -lpthread" extra)))))))
 
 ; Where to find `actor_runtime.c` and `stdlib/` at runtime. Prefers a
@@ -202,6 +201,7 @@
                       (if (> (str-len outraw) 0)
                         (cli-resolve-path cwd outraw)
                         (cli-default-out src))
+                      (let _ (if (= emitflag 2) (cli-runtime-module src bundledir) unit)
                       (let _ (ffi-call "zyl_chdir" bundledir 1000)
                         (let fd (file-open src "r")
                           (if (> fd 0)
@@ -215,7 +215,13 @@
                                         (cli-link asmpath outbase)))))))
                             (begin
                               (print "zyl: error: cannot open source file")
-                              1)))))))))))))))
+                              1))))))))))))))))
+
+;; `--runtime-module` (boot.sh only): the entry must be the bundle's runtime/rt/rt.zyl.
+(defn cli-runtime-module (src bundledir)
+  (if (str-eq src (str-concat bundledir "/runtime/rt/rt.zyl"))
+    (rt-mode-set)
+    (ffi-call "zyl_panic" "E_FFI_RESTRICTED: --runtime-module compiles only the bundled runtime/rt/rt.zyl" 1000)))
 
 ; ===========================================================================
 ; `zyl eval <file.zyl>` — run a program without building one

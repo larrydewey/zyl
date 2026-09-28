@@ -50,6 +50,10 @@ case "$TARGET" in
         ;;
 esac
 
+[ -f "$SCRIPT_DIR/build/boot/rt.o" ] || {
+    echo "error: build/boot/rt.o missing -- run ./boot.sh first" >&2
+    exit 1
+}
 [ -f "$SCRIPT_DIR/build/boot/stage2.bin" ] || {
     echo "error: build/boot/stage2.bin missing -- run ./boot.sh first" >&2
     exit 1
@@ -62,6 +66,8 @@ cp -r "$SCRIPT_DIR/stdlib" "$TARGET/stdlib"
 cp "$SCRIPT_DIR/runtime/actor_runtime.c" "$SCRIPT_DIR/runtime/actor_runtime.h" "$TARGET/"
 # Compiled once; the compiler links this object (driver.zyl's cli-link-command).
 cc -O2 -c "$TARGET/actor_runtime.c" -o "$TARGET/actor_runtime.o"
+# The Zyl runtime, built by boot.sh from the committed rt.s.
+cp "$SCRIPT_DIR/build/boot/rt.o" "$TARGET/rt.o"
 cp "$SCRIPT_DIR/build/boot/stage2.bin" "$TARGET/bin/stage2.bin"
 
 # Both tools below are compiled BY the compiler just installed, against

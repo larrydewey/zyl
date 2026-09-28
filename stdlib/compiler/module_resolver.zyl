@@ -40,6 +40,7 @@
 (use compiler/qualify)
 (use compiler/store)
 (use compiler/error_report)
+(use compiler/rt_mode)
 (use core/list)
 (use core/option)
 
@@ -1225,11 +1226,15 @@
             (mr-resolve-root arena pkg root (mr-root-uses main-forms uses))))))))
 
 (defn mr-root-uses (main-forms uses)
+  (if (rt-mode-p)
+    (match uses
+      (Nil Nil)
+      (_ (ffi-call "zyl_panic" "E_FFI_RESTRICTED: the runtime module may not use other modules" 1000)))
   (if (> (mr-bundle-source main-forms) 0)
     uses
     (if (mr-core-loaded uses)
       uses
-      (Cons (MRU "" "core/core" 1 Nil 0) uses))))
+      (Cons (MRU "" "core/core" 1 Nil 0) uses)))))
 
 ; What the resolver knows once it is done: the spliced program, the
 ; capability ceiling of every package in it, and the root's graph-wide

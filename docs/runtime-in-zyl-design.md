@@ -1,0 +1,149 @@
+# The Runtime in Zyl: Design
+
+Status: in progress (started 2026-09-28). This document covers how
+`runtime/actor_runtime.c` (5.5k lines of C, about 400 entry points) is
+replaced by a runtime written in Zyl, `runtime/rt/*.zyl`, without adding
+any unsafe construct to the language.
+
+## Goal and constraint
+
+- The runtime is Zyl source, compiled by the self-hosted compiler and
+  covered by the fixed point, just like the compiler.
+- Zyl gets no `unsafe` form, capability or flag that a program can use.
+  The raw machine operations the runtime needs are compiler builtins,
+  and they exist only inside the runtime's own compile.
+- The model is the one Resid used to retire its C runtime (Resid
+  PROGRESS.md §0zg–§0zl). Raw primitives are compiler-only builtins
+  that a runtime-module compile lowers directly.
+- The end state has no C at all. No C source is left in the repo, and
+  no libc sits under Zyl programs. The runtime talks to Linux through
+  `%syscall`, starts at its own `_start`, allocates with `mmap`, starts
+  threads with `clone` and blocks on `futex`. It also sets up
+  thread-local storage itself and does its own number formatting and
+  parsing. Binaries are static. Only a program that `ffi-call`s a
+  foreign C library links the system's libc and dynamic loader, because
+  that library needs them. While the port is under way, the remaining
+  C and libc are used as a bridge.
+
+## The lock
+
+1. `zyl-self <entry> --runtime-module -o out.s` compiles a runtime
+   module. The driver refuses the flag unless `<entry>` is the bundle's
+   own `runtime/rt/rt.zyl` (the checkout or `$ZYL_HOME`). The flag is
+   not listed in the usage text.
+2. In a runtime module, `(use ...)` is refused. The runtime is
+   self-contained, so a standard-library file never gets compiled with
+   the privilege.
+3. The raw primitives (all named `%...`, listed below) are
+   `E_RT_INTERNAL` in any other compile. That includes user programs,
+   the standard library and the compiler itself.
+4. Only the runtime's exported entries are visible to programs.
+   These are the top-level `defn`s named `zyl_*`. Programs reach them
+   the way they reach the C runtime today: codegen calls them, and
+   `ffi-call "zyl_..."` calls are typed by `ffi_sigs.zyl`, with the raw
+   ones restricted to the standard library (`E_FFI_RESTRICTED`). Every
+   other runtime function is a module-local label.
+
+A program therefore cannot load or store an arbitrary address, make a
+syscall, or reinterpret a word. It can only call the typed runtime API.
+
+## Primitives (runtime-module only)
+
+Addresses and machine words are `Int`. The primitives bypass bounds and
+type checks by design, which is why they are locked.
+
+| Form | Meaning |
+|------|---------|
+| `(%load8 a)` `(%load16 a)` `(%load32 a)` `(%load64 a)` | zero-extended load |
+| `(%store8 a v)` ... `(%store64 a v)` | store; result is `v` |
+| `(%word x)` | any value as its machine word |
+| `(%str w)` | a word as a `String` (NUL-terminated bytes) |
+| `(%cas a expect new)`, `(%fetch-add a v)` | seq-cst atomics |
+| `(%global "name" size)`, `(%tls "name" size)` | zeroed static / thread-local storage, per name |
+| `(%fn "sym")`, `(%call f args...)` | a code address; an indirect call |
+| `(%syscall n a1..a6)` | Linux x86-64 syscall |
+
+In a runtime module, `(ffi-call "sym" ... t)` to a C symbol is a direct
+call, without the timeout worker. That is the libc bridge used during
+the port. The timeout literal is still required, but it is ignored.
+Primitive failures are `E_FFI_RESTRICTED`: a `%` symbol outside the
+runtime module is refused with that code, and no new code is added.
+
+Later stages add `%f64-bits`/`%bits-f64`, `%cpuid`, AES-NI rounds and the
+unwind primitive that replaces `setjmp`/`longjmp` for `try`.
+
+## SIMD
+
+The runtime's hot loops (`strlen`, `memchr`, `memcmp`, `memcpy`, BLAKE3,
+AES-GCM) need vector code to match glibc and the C versions.
+
+- A locked vector family works on 128-bit (SSE2, always present on
+  x86-64) and 256-bit (AVX2) lanes held in xmm/ymm registers. It covers
+  `%v128-load`/`%v128-store` (unaligned), `%v128-splat8`, `%v128-cmpeq8`,
+  `%v128-movemask8`, `%v128-and`/`or`/`xor`, `%v128-add32`,
+  `%v128-shuffle8` and `%v128-aesenc`, plus the `%v256-*` twins.
+  A vector value is a new MIR register class, allocated like the others.
+- AVX2 code is chosen once at start-up from `%cpuid` and kept in a
+  runtime global. Every vector routine keeps an SSE2 twin, and both
+  produce identical results. SIMD only changes speed, never output,
+  so determinism holds across machines.
+- Aligned loads may read past the end of a string, but never past the
+  end of its page. This is the same bound glibc relies on.
+- User-facing SIMD is a separate, safe API: typed fixed-width lane
+  vectors in `stdlib/simd`, with a scalar fallback and no raw addresses.
+  It is the "later SIMD" step of the intrinsics plan, and it lowers to
+  the same MIR vector instructions.
+
+## Runtime-module compile rules
+
+- No `main`, and the core prelude is not loaded.
+- Region inference is off. There are no frame regions and no
+  `zyl_cur_region` traffic. An allocating form goes to the heap through
+  the runtime's own allocator entry.
+- A top-level `defn` named `zyl_*` is emitted under that exact label with
+  `.globl`, using the ordinary Zyl/SysV ABI.
+  Everything else keeps its mangled local label.
+- Integer `+ - *` wrap, as they already do in generated code.
+
+## Build
+
+- `boot.sh` compiles `runtime/rt/rt.zyl` with each stage compiler and
+  requires the result to match the committed `build/boot/rt.s`, just as
+  it does for `stage2.s`. `--bootstrap-from-self` regenerates it every
+  round. `rt.s` is assembled once into `rt.o` and linked into every stage
+  and every program, next to what is left of `actor_runtime.o`.
+- `install.sh` ships `rt.o`. The driver's link line adds it.
+- The C runtime's symbol table for the interpreter (`zyl_ffi_lookup`)
+  keeps its entries. The names are declared `extern` in
+  `actor_runtime.h`, and the ported entries resolve to `rt.o`.
+
+## Port order
+
+Leaf-first, one section per commit. Each commit passes `./boot.sh`,
+`./run_regression_tests.sh --full --no-boot`, and `bench/matrix.py` with
+no regression against the C version before that C code is deleted.
+
+1. Infrastructure: the flag, the lock, the primitives, exports, the
+   build. First entries: the C-string leaf functions (`zyl_cstr_len`,
+   `_eq`, `_cmp`, `_byte_at`, `_key_matches`).
+2. The SIMD family (SSE2, then AVX2 dispatch) and vector string scans.
+3. Strings and formatting: concat/substr/int text/sanitize/mangle,
+   spans, BLAKE3.
+4. Data structures: smap, wvec, typed arrays, attr tables, refs, cells.
+5. The allocator and regions (it may not allocate itself).
+6. `try`/panic through the unwind primitive, contracts, the test runner.
+7. Files, processes, environment, the terminal (REPL line editor).
+8. FFI pinning and timed calls, actors and threads, the big-stack entry.
+9. Delete `actor_runtime.c`.
+10. Go libc-free: `_start`, syscalls in place of every libc call
+    (mmap, write, clone, futex, execve, ioctl), and Zyl number
+    formatting and parsing, which must be correctly rounded. Link
+    statically with `ld`, or dynamically only for `ffi-call` programs.
+
+## Performance
+
+Perf is the project's top priority (see `docs/native-backend-design.md`).
+The C runtime is built with `-O2`. During the port, a section may call
+libc for its hot inner loops through the bridge. The finished runtime
+uses the SIMD family instead. When a section cannot reach parity, the
+fix goes into the backend, and the C version is kept until then.

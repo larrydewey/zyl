@@ -24,6 +24,7 @@
 (use compiler/type_annotate)
 (use compiler/arity_check)
 (use compiler/error_report)
+(use compiler/rt_mode)
 
 ; --- Instruction tree -------------------------------------------------------
 
@@ -1410,7 +1411,7 @@
       (let _ (ffi-check-call args sym)
         (let name (ic-ffi-sym sym)
           (let real (butlast-expr tail Nil)
-            (if (and (ic-ffi-runtime-p name) (not (option-is-some (extern-sig-of name))))
+            (if (or (rt-mode-p) (or (rt-prim-p name) (and (ic-ffi-runtime-p name) (not (option-is-some (extern-sig-of name))))))
               (IFfi name (ic-expr-list arena real vt))
               (IFfi "zyl_ffi_timed"
                 (Cons (ISymAddr name)

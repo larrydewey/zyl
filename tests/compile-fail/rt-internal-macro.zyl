@@ -1,0 +1,7 @@
+; expect-error: E_FFI_RESTRICTED
+; A macro cannot smuggle a runtime primitive past the check.
+(defmacro peek (a) (ffi-call "%store8" a 0 1))
+(defn main ()
+  (begin
+    (peek 4096)
+    0))

@@ -20,9 +20,10 @@ history, or a probe compile with `build/boot/zyl-self` on 2026-09-25.
   the single-file bundle and `assemble.py` were retired on 2026-09-24.
   `./boot.sh` builds with nothing but `cc`, caps each stage at 4 GB
   (`ZYL_STAGE_MEMORY`), and verifies the stage2 == stage3 fixed point;
-  `./boot.sh --bootstrap-from-self` reseeds. The Rust implementation is
-  frozen in `archive/rust-bootstrap-2026/` for the record only: it cannot
-  lex the current source, and `--bootstrap-from-rust` is retired.
+  `./boot.sh --bootstrap-from-self` reseeds. The Rust implementation
+  (`archive/rust-bootstrap-2026/`) has been removed from the tree; it is
+  in git history at `b8bc283`, and `--bootstrap-from-rust` no longer
+  exists.
 - `./boot.sh` produces `build/boot/{zyl-self, stage2.bin, zyl-lsp,
   stdlib/, actor_runtime.c, actor_runtime.h, actor_runtime.o}`; it does
   not build the REPL (`zyl-self repl` runs it, `install.sh` builds
@@ -436,6 +437,45 @@ as recorded below.
 ---
 
 # Session log (newest first)
+
+## Session (2026-09-28) — the runtime moves to Zyl, stage 1
+
+Plan: `docs/runtime-in-zyl-design.md`. The goal is no C at all: every
+`actor_runtime.c` section is ported to `runtime/rt/*.zyl`, then the port
+goes libc-free (syscalls, its own `_start`, `clone`/`futex`, SIMD). There
+is no `unsafe` in the language. The raw primitives exist only in the
+runtime's own compile.
+
+- New `stdlib/compiler/rt_mode.zyl`. `zyl-self <entry> --runtime-module`
+  sets it, and the driver refuses the flag unless the entry is the
+  bundle's `runtime/rt/rt.zyl` (`cli-runtime-module`). In runtime mode:
+  - a `use` is refused and the core prelude is not loaded;
+  - region inference is off;
+  - there is no `main`;
+  - a `defn` named `zyl_*` keeps that bare label and is `.globl`;
+  - `ffi-call` to a C symbol is direct (no timeout worker).
+- Primitives `%load8/16/32/64`, `%store8/16/32/64`, `%word`, `%str`
+  (typed in `ffi_sigs.zyl`). They are inlined by both backends: MIR
+  `MRaw`, and `cg-inline-raw` on the stack machine. Anywhere outside
+  runtime mode they are `E_FFI_RESTRICTED` (arity pass, after macro
+  expansion).
+- Ported: `zyl_cstr_len`, `_eq`, `_cmp`, `_byte_at`, `_key_matches`,
+  deleted from the C. A C `int` result has only its low 32 bits defined:
+  `strcmp` returning -1 read as 4294967295 until masked (`rt-lo32`).
+- `boot.sh` assembles the committed `build/boot/rt.s` into `rt.o` for
+  every link. Each stage must reproduce `rt.s` too, and
+  `--bootstrap-from-self` converges `stage2.s` and `rt.s` together.
+  `install.sh` ships `rt.o`, and the driver links `rt.o` next to
+  `actor_runtime.o`.
+- Tests: compile-fail `rt-internal-restricted`, `rt-internal-macro`;
+  script `runtime-module-lock`. 273/273 pass with `--full --no-boot`.
+- Perf: a self-compile is about 1.5% slower (2.29 s vs 2.26 s, three
+  runs each), almost all of it in `zyl_cstr_eq`. The backend work that
+  closes it: tail calls into C, dropping the frame on leaf wrappers, and
+  removing redundant `mov` pairs.
+- Removed `archive/rust-bootstrap-2026/` (in git history at `b8bc283`)
+  and `boot.sh --bootstrap-from-rust`, and updated the docs that pointed
+  to them.
 
 ## Session (2026-09-25, later still) — bugs found by the skill audit
 
@@ -1103,8 +1143,8 @@ stripping, whitespace collapse, a whole-bundle depth check) are gone with
 `selfhost/assemble.py` and `selfhost/zyl_selfhost_compiler.zyl`.
 `driver.zyl` lost an unused `(use compiler/contract_injection)`, the only
 thing that stopped it compiling this way. The output does not depend on
-the checkout path or the working directory. `--bootstrap-from-rust` is
-retired.
+the checkout path or the working directory. `--bootstrap-from-rust` has
+since been removed.
 
 **Diagnostics.** `error_report.zyl` gained `err-at-labels` (secondary
 spans), `err-warn-at`, `err-suggest-help` (Levenshtein distance), and a

@@ -11,7 +11,7 @@
 3. **`docs/rust-eviction-plan.md`** — Self-hosting status, the fixed-point invariant, and the survey of self-hosted-compiler gaps (mostly closed as of this writing — see the doc for current state)
 4. **`PROGRESS.md`** — Current implementation state and next priorities
 5. **`docs/`/** — Architecture decisions, implementation history, design rationale
-6. **Source code** — Authority for implemented behavior (overrides specification on implementation details). The compiler is self-hosted: `stdlib/compiler/*.zyl` + `selfhost/` is the ACTIVE implementation. `archive/rust-bootstrap-2026/` is the original Rust implementation, frozen and kept only as a reseed fallback — never the thing to edit for a language change.
+6. **Source code** — Authority for implemented behavior (overrides specification on implementation details). The compiler is self-hosted: `stdlib/compiler/*.zyl` + `selfhost/` is the ACTIVE implementation. The original Rust implementation has been removed from the tree; it is in git history at commit `b8bc283` (`archive/rust-bootstrap-2026/`).
 
 ## Session Protocol
 
@@ -148,26 +148,26 @@ build/boot/zyl-self hello.zyl -o hello   # Compile a program
 ./hello                         # Run it
 ```
 
-After editing anything under `stdlib/compiler/*.zyl`, `selfhost/`, or
-`runtime/actor_runtime.c`, re-run `./boot.sh` — a source change that
+After editing anything under `stdlib/compiler/*.zyl`, `selfhost/`,
+`runtime/rt/` or `runtime/actor_runtime.c`, re-run `./boot.sh` — a source change that
 alters the compiler's own output breaks the fixed point (`FIXED POINT
 BROKEN` or `reproduced asm differs from committed seed`), which needs
 reseeding before anything else will trust the new `build/boot/stage2.s`:
 
 ```bash
-./boot.sh --bootstrap-from-self # Reseed using the self-hosted compiler (no Rust)
+./boot.sh --bootstrap-from-self # Reseed stage2.s and rt.s using the self-hosted compiler
 ./boot.sh                       # Verify the new seed reaches a clean fixed point
-git add -f build/boot/stage2.s build/boot/stage2.bin && git commit
+git add -f build/boot/stage2.s build/boot/stage2.bin build/boot/rt.s && git commit
 ```
 
 `--bootstrap-from-self` fails only when a change is so large the old
 seed can't even parse the new source (new syntax, not just new
-behavior). The archived Rust compiler can no longer lex the current
-source (it rejects the `\e` string escape), so it is not a working
-fallback: introduce new syntax in two steps instead — teach the
-compiler to accept it, reseed, and only then use it in the compiler's
-own source. See `archive/rust-bootstrap-2026/README.md` and
-`docs/rust-eviction-plan.md` for the history.
+behavior). There is no Rust fallback (the Rust bootstrap was removed
+from the tree; it is in git history at `b8bc283`, and could not lex the
+current source anyway): introduce new syntax in two steps instead —
+teach the compiler to accept it, reseed, and only then use it in the
+compiler's own source. See `docs/rust-eviction-plan.md` for the
+history.
 
 A verified `./boot.sh` ends by refreshing an existing install (`~/.zyl`,
 or `$ZYL_INSTALL_HOME`) with `uninstall.sh` + `install.sh`, so the
@@ -213,6 +213,12 @@ Full test infrastructure documented in `docs/regression-tests.md`. All tests use
 **S-expression balance** is critical — always run `./run_regression_tests.sh --full --no-boot --filter balanced-parens` after modifying parser/lexer (the delimiter compile-fail tests are `unclosed-opener`, `unexpected-close` and `mismatched-bracket`).
 
 ## Architecture Notes
+
+- Runtime: being ported from `runtime/actor_runtime.c` to Zyl in `runtime/rt/`
+  (`docs/runtime-in-zyl-design.md`; the goal is no C and no libc). It is compiled with
+  `--runtime-module`, which only the bundle's `runtime/rt/rt.zyl` may use. There the
+  locked `%` primitives are allowed, and `zyl_*` defns are exported. Its output
+  `build/boot/rt.s` is a committed seed like `stage2.s`. There is no `unsafe` for programs.
 
 - Entry point: `selfhost/driver.zyl`, compiled like any program (its `(use ...)` tree resolved from `stdlib/`, names qualified per module) to `build/boot/stage2.bin`/`zyl-self`. `boot.sh` caps each stage at 4 GB of allocation (`ZYL_STAGE_MEMORY`). The phase order shared by the CLI and the REPL is `stdlib/compiler/pipeline.zyl`.
 - Language server: `selfhost/lsp_main.zyl` + `stdlib/lsp/` (and `services/`), built by `./boot.sh` as `build/boot/zyl-lsp`; the VS Code client is `editors/vscode/` (0.4.0, esbuild-bundled, `$zyl` problem matcher). Protocol tests: `tests/lsp/lsp_protocol_test.py`.

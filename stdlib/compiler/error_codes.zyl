@@ -9,7 +9,7 @@
 ; Severity: 1 error | 2 warning | 3 note
 ;
 ; The code names, phases, and default messages started as a mirror of the
-; Rust bootstrap's src/error.rs (now archive/rust-bootstrap-2026/), plus
+; removed Rust bootstrap's src/error.rs (git history, b8bc283), plus
 ; the codes only the self-hosted compiler raises. Structural format: one
 ; form per line.
 ; ===========================================================================

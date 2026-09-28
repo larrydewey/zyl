@@ -1,0 +1,6 @@
+; expect-error: E_FFI_RESTRICTED
+; %load64 reads any address; only the runtime module may use it.
+(defn main ()
+  (begin
+    (print (ffi-call "%load64" 4096 1000))
+    0))

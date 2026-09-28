@@ -56,7 +56,8 @@
   ; fails as the runtime's would), and an access through them.
   (MByteData Int Int)                 ; d data, handle
   (MByteBound Int Int)                ; d bound, handle
-  (MByteFast Int Int Int Int Int Int)) ; kind, d, off, data, bound, val (-1)
+  (MByteFast Int Int Int Int Int Int) ; kind, d, off, data, bound, val (-1)
+  (MRaw Int Int Int Int))             ; kind (0-3 load, 4-7 store; 8/16/32/64), d, addr, val (-1)
 
 ; Vregs an instruction reads, and the one it writes (-1 for none).
 (defn mi-uses (i)
@@ -89,7 +90,8 @@
     (MReuse _ x _ _ (Cons x Nil))
     (MByteData _ h (Cons h Nil))
     (MByteBound _ h (Cons h Nil))
-    (MByteFast _ _ o dt bd v (Cons o (Cons dt (Cons bd (mir-opt-use v Nil)))))))
+    (MByteFast _ _ o dt bd v (Cons o (Cons dt (Cons bd (mir-opt-use v Nil)))))
+    (MRaw _ _ a v (Cons a (mir-opt-use v Nil)))))
 
 (defn mir-opt-use (v rest) (if (< v 0) rest (Cons v rest)))
 
@@ -114,6 +116,7 @@
     (MByteFast _ d _ _ _ _ d)
     (MByteData d _ d)
     (MByteBound d _ d)
+    (MRaw _ d _ _ d)
     (_ -1)))
 
 ; Instructions that call C (or other code) and so clobber the

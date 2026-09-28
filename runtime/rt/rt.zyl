@@ -1,0 +1,79 @@
+; The Zyl runtime, compiled only with --runtime-module; zyl_* defns are the exported entries.
+
+; libc bridge, removed in the libc-free phase.
+(extern "strlen" (String) Int)
+(extern "strcmp" (String String) Int)
+(extern "memcmp" (Int Int Int) Int)
+(extern "write" (Int String Int) Int)
+
+(defmacro rt-w (x) (ffi-call "%word" x 1))
+(defmacro rt-ld8 (a) (ffi-call "%load8" a 1))
+
+; --- C strings ---
+
+(defn rt-hex (n acc)
+  (let d (str-substring "0123456789abcdef" (bit-and n 15) 1)
+    (if (< n 16) (str-concat d acc) (rt-hex (shr n 4) (str-concat d acc)))))
+
+; A non-null pointer below the first page is never a string; report it like the C runtime did.
+(defn rt-bad-str (w who)
+  (let msg (str-concat "zyl: " (str-concat who (str-concat ": invalid string pointer 0x" (str-concat (rt-hex w "") "\n"))))
+    (let _ (ffi-call "write" 2 msg (strlen-of msg) 1)
+      false)))
+
+(defn strlen-of (s) (ffi-call "strlen" s 1))
+
+; Low 32 bits of a C int result.
+(defmacro rt-lo32 (x) (bit-and x 4294967295))
+
+(defn zyl_cstr_len (s)
+  (let w (rt-w s)
+    (if (< w 4096)
+      (if (= w 0) 0 (rt-bad-len w))
+      (strlen-of s))))
+
+(defn rt-bad-len (w) (let _ (rt-bad-str w "cstr-len") 0))
+
+(defn zyl_cstr_eq (a b)
+  (let wa (rt-w a)
+    (let wb (rt-w b)
+      (if (= wa wb) true
+        (if (< wa 4096) (if (= wa 0) false (rt-bad-str wa "cstr-eq"))
+          (if (< wb 4096) (if (= wb 0) false (rt-bad-str wb "cstr-eq"))
+            (= (rt-lo32 (ffi-call "strcmp" a b 1)) 0)))))))
+
+(defn zyl_cstr_cmp (a b)
+  (let wa (rt-w a)
+    (let wb (rt-w b)
+      (if (= wa wb) 0
+        (if (= wa 0) -1
+          (if (= wb 0) 1
+            (let c (rt-lo32 (ffi-call "strcmp" a b 1))
+              (if (= c 0) 0 (if (> c 2147483647) -1 1)))))))))
+
+(defn zyl_cstr_byte_at (s i)
+  (let w (rt-w s)
+    (if (< i 0) -1
+      (if (< w 4096)
+        (if (= w 0) -1 (rt-bad-at w))
+        (if (>= i (strlen-of s)) -1 (rt-ld8 (+ w i)))))))
+
+(defn rt-bad-at (w) (let _ (rt-bad-str w "cstr-byte-at") -1))
+
+; key equals name, or is a qualified key ending in "::name"; allocation-free.
+(defn zyl_cstr_key_matches (key name)
+  (let wk (rt-w key)
+    (let wn (rt-w name)
+      (if (= wk wn) true
+        (if (or (= wk 0) (= wn 0)) false
+          (let kl (strlen-of key)
+            (let nl (strlen-of name)
+              (if (= kl nl)
+                (= (rt-lo32 (ffi-call "memcmp" wk wn kl 1)) 0)
+                (if (< kl (+ nl 2)) false
+                  (let t (+ wk (- kl nl))
+                    (if (= (rt-ld8 (- t 1)) 58)
+                      (if (= (rt-ld8 (- t 2)) 58)
+                        (= (rt-lo32 (ffi-call "memcmp" t wn nl 1)) 0)
+                        false)
+                      false)))))))))))
