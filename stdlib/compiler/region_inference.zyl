@@ -320,7 +320,7 @@
 ; listed here are trusted; any other symbol keeps its arguments and
 ; result in the heap. 1: allocates a fresh result in zyl_cur_region and
 ; keeps no argument; 2: result is (part of) the first argument; 0: no
-; allocation and no argument kept. Must agree with actor_runtime.c:
+; allocation and no argument kept. Must agree with the runtime:
 ; every level-1 function allocates only through zyl_result_alloc.
 (defn rg-ffi-kind (s)
   (if (str-eq s "zyl_cstr_concat") 1

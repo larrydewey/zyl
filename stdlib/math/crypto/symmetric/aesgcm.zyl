@@ -3,7 +3,7 @@
 ; Provides: AES-128/256-GCM authenticated encryption (NIST SP 800-38D)
 ;
 ; AES itself is HARDWARE ONLY (AES-NI, via zyl_aes_encrypt_block in
-; runtime/actor_runtime.c). There is no software fallback and that is
+; runtime/rt/crypto.zyl). There is no software fallback and that is
 ; deliberate: every portable AES is a table lookup indexed by
 ; key-dependent bytes, which leaks the key through the data cache.
 ; `aes-available` reports whether the CPU can do it, and every entry

@@ -2,7 +2,7 @@
 
 Complete reference for Zyl's actor system: the model the specification defines, the forms the compiler accepts, the runtime that executes them, and the compile-time checks on what may cross between actors.
 
-The normative text is spec v5.0 §15 (concurrency model), §7.4 (closures and concurrency), §9.1 rules R2 and R3, §27 (determinism) and §31.9 (the `actor` capability). The implementation is split across `stdlib/compiler/expr_inner.zyl` and `icnf.zyl` (parsing and lowering of `spawn` and `send`), `stdlib/compiler/mutability_check.zyl` (the send checks), `runtime/actor_runtime.c` (threads and mailboxes) and `stdlib/actor/actor.zyl` (library wrappers).
+The normative text is spec v5.0 §15 (concurrency model), §7.4 (closures and concurrency), §9.1 rules R2 and R3, §27 (determinism) and §31.9 (the `actor` capability). The implementation is split across `stdlib/compiler/expr_inner.zyl` and `icnf.zyl` (parsing and lowering of `spawn` and `send`), `stdlib/compiler/mutability_check.zyl` (the send checks), `runtime/rt/actor.zyl` (threads and mailboxes) and `stdlib/actor/actor.zyl` (library wrappers).
 
 **Implementation status.** `spawn` starts a thread; `send` queues a message; `(receive)` takes the next one from the running actor's mailbox, and `(actor-self)` is the running actor's id, so actors exchange structured messages (ADT values) and reply to each other or to `main`. The runtime's other message kind, closure messages (§21.4), cannot be sent from a Zyl program. Output from several actors printing at once is not deterministic. This chapter documents what works, and marks what the specification promises but the implementation does not yet provide.
 

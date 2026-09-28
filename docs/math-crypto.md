@@ -1,7 +1,7 @@
 # stdlib/math — cryptography and number libraries
 
 Every algorithm under `stdlib/math/` is pure Zyl, with two exceptions
-that call into `runtime/actor_runtime.c`: AES (hardware AES-NI only,
+that call into the runtime (`runtime/rt/crypto.zyl`): AES (hardware AES-NI only,
 `zyl_aesni_available` / `zyl_aes_encrypt_block`) and system entropy
 (`zyl_random_words`, which uses `getrandom(2)`). Beyond those, the
 library calls the runtime only for plumbing: `math/words` keeps its

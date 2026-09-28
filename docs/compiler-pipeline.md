@@ -456,13 +456,12 @@ There are two emitters with one ABI, chosen per function by
 The CLI writes `<out>.s` and runs:
 
 ```
-cc -no-pie <out>.s actor_runtime.o -o <out> -lpthread
+cc -no-pie <out>.s rt.o -o <out> -lpthread
 ```
 
-from the bundle directory, where the runtime sits. `./boot.sh` and
-`./install.sh` compile `actor_runtime.c` once, at `-O2`, into
-`actor_runtime.o`; when that object is not newer than the source, the
-link compiles `-O2 actor_runtime.c` instead. A package
+from the bundle directory, where the runtime sits. `rt.o` is the Zyl
+runtime (`runtime/rt/`), assembled by `./boot.sh` from the committed
+seed `build/boot/rt.s` and copied by `./install.sh`. A package
 build appends its native objects and libraries (§31.10). With
 `--emit-asm`, the assembly is written to the output path and nothing is
 linked.
@@ -528,7 +527,7 @@ Source (.zyl)
   -> [11b] In-place reuse marks         reuse
           (compile-to-fns stops here; zyl eval and the REPL interpret this)
   -> [12] Code generation               codegen, mir         -> assembly
-  -> [13] Linking                       cc + actor_runtime.o -> binary
+  -> [13] Linking                       cc + rt.o            -> binary
   -> [15] zyl.buildinfo                 package builds only
 ```
 

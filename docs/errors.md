@@ -13,7 +13,7 @@ name into the message it raises, and nothing looks the code up at raise
 time. As a result the catalog contains codes that no current module emits,
 and a few modules emit codes the catalog does not contain. Both are listed
 below; the "Raised by" column was produced by searching the active sources
-(`stdlib/`, `selfhost/driver.zyl`, `runtime/actor_runtime.c`), not by
+(`stdlib/`, `selfhost/driver.zyl`, `runtime/rt/`), not by
 running every path.
 
 ## How a diagnostic looks
@@ -219,10 +219,10 @@ parts with `let` or move the sum into a helper function.
 | `E_BYTEBUF_OVERLAP` | runtime: bytebuf append overlapping slice | catalog only |
 | `E_LIST_NTH_OOB` | runtime: list-nth index out of bounds at S | catalog only |
 | `E_NULL_POINTER` | runtime: null pointer dereference | catalog only |
-| `E_REGION_EXHAUSTED` (§28) | runtime: a with-region region ran out of its fixed size or limit | `actor_runtime.c` (`E_REGION_EXHAUSTED: <kind> region of N bytes is full`; catchable with `try`; deterministic for a given request sequence) |
-| `E_INDEX_OUT_OF_BOUNDS` (§28) | runtime: index outside a word array | `actor_runtime.c` (a vector index or pop, a word array or Array index, a full string buffer), `collections/vec.zyl`, `collections/slice.zyl`, `text/view.zyl` (an index or range outside the value) |
+| `E_REGION_EXHAUSTED` (§28) | runtime: a with-region region ran out of its fixed size or limit | `runtime/rt/alloc.zyl` (`E_REGION_EXHAUSTED: <kind> region of N bytes is full`; catchable with `try`; deterministic for a given request sequence) |
+| `E_INDEX_OUT_OF_BOUNDS` (§28) | runtime: index outside a word array | `runtime/rt/tables.zyl` (a vector index or pop, a word array or Array index, a full string buffer), `collections/vec.zyl`, `collections/slice.zyl`, `text/view.zyl` (an index or range outside the value) |
 | `E_INTERP_TAG` | runtime: the checking interpreter found an operand of the wrong tag at S (a type-checker bug) | `stdlib/repl/interp.zyl`: under `ZYL_INTERP_CHECK=1`, an operator whose operand tags break its rule, or a condition that is not 0 or 1 |
-| `E_OUT_OF_MEMORY` | runtime: memory budget exhausted - raise or remove it with ZYL_MAX_MEMORY | `actor_runtime.c` (`PANIC: error[E_OUT_OF_MEMORY]: ...`); a second catalog entry reads "runtime: out of memory" |
+| `E_OUT_OF_MEMORY` | runtime: memory budget exhausted - raise or remove it with ZYL_MAX_MEMORY | `runtime/rt/alloc.zyl` (`PANIC: error[E_OUT_OF_MEMORY]: ...`); a second catalog entry reads "runtime: out of memory" |
 | `E_USER_ERROR` (§28) | runtime: user error - M at S | catalog only |
 
 What a compiled program prints at runtime today: `(error "boom")` prints
@@ -283,7 +283,7 @@ themselves.
 | `E_FFI_PIN_REQUIRED` | ffi: Secret argument to F must be handed over through ffi-pin (Pin region) at S | `secret_check.zyl` (located) |
 | `E_FFI_TYPE_NOT_PINNABLE` | ffi: value has type T which is not FFI_Pinnable | `type_annotate.zyl` (located: `ffi-pin` of a function) |
 | `E_FFI_RESTRICTED` (§28) | ffi: raw runtime entry F may only be called by the standard library at S | `arity_check.zyl` (located, `ffi-check-raw`): an `ffi-call` outside the standard library naming an entry in `ffi-raw-p` (`ffi_sigs.zyl`), one that reads raw memory or reinterprets a machine word, or trusts bounds its caller checked (the string-view accessors `zyl_view_byte`, `zyl_view_cmp`, `zyl_view_find`, `zyl_view_copy`); `type_annotate.zyl` (located): an `ffi-call` to a symbol the runtime exports (`zyl_runtime_export_p`) that the program also declares with `extern`, since runtime entries are typed only by `ffi_sigs.zyl` |
-| `E_FFI_TIMEOUT` (§28) | ffi: call exceeded timeout of M ms at S | `actor_runtime.c` (`zyl_ffi_timed`), at run time: ``E_FFI_TIMEOUT: ffi call `sym` exceeded its timeout of M ms`` |
+| `E_FFI_TIMEOUT` (§28) | ffi: call exceeded timeout of M ms at S | `runtime/rt/ffitimed.zyl` (`zyl_ffi_timed`), at run time: ``E_FFI_TIMEOUT: ffi call `sym` exceeded its timeout of M ms`` |
 | `E_FFI_TIMEOUT_REQUIRED` (§28) | ffi: ffi-call must end with a positive integer literal timeout in milliseconds at S | `arity_check.zyl` (`ffi-check-call`, located, with a help line) |
 | `E_FFI_SYMBOL_REQUIRED` (§28) | ffi: ffi-call must name its C symbol with a string literal at S | `arity_check.zyl` (`ffi-check-call`, located) |
 | `E_NESTED_PATTERN` (§28) | match: nested pattern in a constructor arm at S | `expr_inner.zyl` (located): a constructor arm whose field position holds anything but a plain name, including a constructor used as a binder, `(Some Nil ...)` or `(Node v Leaf v)` for the program's own `Leaf` (`qualify.zyl` qualifies a capitalized binder that names a known symbol) |
@@ -342,7 +342,7 @@ All raised by the package modules named; all are §28 codes except
 | `E_UNDEFINED_FUNCTION` | error | `stdlib/repl/interp.zyl` | a call names no function (the compiled path reports `E_UNBOUND_VARIABLE` from the type pass) |
 | `E_NOT_CALLABLE` | error | `stdlib/repl/interp.zyl` | a call's head is not a function or closure |
 | `E_UNSUPPORTED_INTERPRETED` | error | `stdlib/repl/interp.zyl` | spawning an actor, which needs a native entry point; compile the program instead |
-| `E_FFI_SYMBOL_NOT_FOUND` | error | `stdlib/repl/interp.zyl`, `actor_runtime.c` | an `ffi-call` names a symbol the REPL process does not export |
+| `E_FFI_SYMBOL_NOT_FOUND` | error | `stdlib/repl/interp.zyl`, `runtime/rt/ffitimed.zyl` | an `ffi-call` names a symbol the REPL process does not export |
 | `E_NO_MAIN` | error | `stdlib/repl/interp.zyl` | the interpreted program defines no `main` (`zyl eval`) |
 | `E_INTERNAL` | error | `stdlib/repl/eval.zyl` | a REPL entry's wrapper function did not survive lowering (an internal fault) |
 

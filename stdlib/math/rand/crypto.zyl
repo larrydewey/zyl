@@ -3,7 +3,7 @@
 ; Provides: SystemRng — cryptographically secure random bytes
 ;
 ; Every call goes to the kernel (getrandom(2) on Linux, /dev/urandom
-; otherwise; see zyl_random_fill in runtime/actor_runtime.c). There is
+; otherwise; see zyl_random_fill in runtime/rt/crypto.zyl). There is
 ; no userspace pool, no buffer and no internal state, which makes this
 ; fork-safe by construction: a forked child shares no buffered bytes
 ; with its parent, because there are none. That is the failure mode

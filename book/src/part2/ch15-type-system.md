@@ -374,6 +374,6 @@ structural equality function that `type_annotate` generates per type
 (`T.==`), which compares fields by content and recurses into nested ADTs
 and Strings. The hidden size word is what lets the runtime compare two
 separately allocated aggregates of a type with a `Secret` field
-(`zyl_variant_eq`, in `runtime/actor_runtime.c`). That runtime
+(`zyl_variant_eq`, in `runtime/rt/variant.zyl`). That runtime
 comparison is shallow: fields that are pointers, including strings, are
 compared by address.

@@ -75,8 +75,8 @@ Default flow — verifies the fixed point, no Rust anywhere:
 
 ```bash
 ./boot.sh
-# 0. copies stdlib/ and the runtime into build/boot/, and compiles the
-#    runtime once (-O2) into build/boot/actor_runtime.o
+# 0. copies stdlib/ and runtime/rt/ into build/boot/, and assembles
+#    the committed runtime seed build/boot/rt.s into build/boot/rt.o
 # 1. cc links the committed seed build/boot/stage2.s -> stage1.bin
 # 2. stage1 compiles selfhost/driver.zyl -> stage2_gen.s
 #    (must byte-match the committed seed); stage2.s is linked -> stage2.bin
@@ -86,7 +86,7 @@ Default flow — verifies the fixed point, no Rust anywhere:
 # 6. writes the build/boot/zyl-self wrapper and builds build/boot/zyl-lsp
 ```
 
-Each link is `cc -no-pie <asm> build/boot/actor_runtime.o -o <bin> -lpthread`.
+Each link is `cc -no-pie <asm> build/boot/rt.o -o <bin> -lpthread`.
 The script exports `ZYL_HOME=build/boot` so the build resolves the
 standard library from this checkout rather than from an installed
 `~/.zyl`; the copy in step 0 is what makes each stage compile this

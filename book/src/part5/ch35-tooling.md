@@ -30,7 +30,7 @@ It does not build a standalone REPL binary; in a checkout, use
 | `bin/zyl-repl` | the REPL, built from `tools/repl.zyl` |
 | `bin/zyl-lsp` | the language server |
 | `bin/stage2.bin`, `bin/zyl-repl-bin`, `bin/zyl-lsp-bin` | the binaries the three wrappers run |
-| `stdlib/`, `actor_runtime.c`, `actor_runtime.h`, `actor_runtime.o` | what every compile needs; the object is the runtime compiled once at `-O2`, which every link uses |
+| `stdlib/`, `rt.o` | what every compile needs; `rt.o` is the Zyl runtime, which every link uses |
 | `env`, `env.fish` | one line each that puts `bin/` on `PATH`; the script never edits your shell profile |
 
 The REPL and the server are compiled by the just-installed compiler
@@ -96,16 +96,15 @@ on, but a program built that way is not one the compiler vouches for.
 Leave the variable unset for real builds.
 
 The compiler changes directory to its bundle (the directory holding
-`stdlib/` and `actor_runtime.c`: `$ZYL_HOME` or `~/.zyl` if it holds a
+`stdlib/` and `rt.o`: `$ZYL_HOME` or `~/.zyl` if it holds a
 `stdlib/`, else the directory the binary is in) before it compiles, and
 resolves relative paths against the directory you ran it from first.
 Because an installed `~/.zyl` wins that search, running a checkout's
 `build/boot/zyl-self` on a machine with an older install compiles
 against the *installed* standard library; set
 `ZYL_HOME=$PWD/build/boot` to use the checkout's (this is what
-`./boot.sh` does). Linking runs `cc -no-pie` with the prebuilt runtime
-object (or, when that is older than `actor_runtime.c`, the source at
-`-O2`) and `-lpthread` (Chapter 29, §29.1).
+`./boot.sh` does). Linking runs `cc -no-pie` with the runtime object
+`rt.o` and `-lpthread` (Chapter 29, §29.1).
 
 `zyl eval file.zyl` runs a program through the REPL's interpreter
 instead: no assembly, no linker, a few milliseconds for a small

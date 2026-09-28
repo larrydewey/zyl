@@ -51,8 +51,8 @@ stdlib/atomic/           Atomic load/store/add/sub/max/min/cas
 stdlib/testing/          The test harness (`test`, `run-tests`, asserts)
 stdlib/mlib/             deep.zyl: a small deep-call fixture module
 
-runtime/actor_runtime.c  The C runtime every compiled binary links against
-runtime/actor_runtime.h  Its header
+runtime/rt/              The Zyl runtime every compiled binary links against
+                         (rt.zyl + one module per area; seed build/boot/rt.s)
 tools/repl.zyl           Standalone REPL entry point (a thin `main`)
 editors/vscode/          VS Code extension (0.4.0)
 book/                    The book (mdBook: book.toml, src/, examples/)
@@ -70,9 +70,8 @@ zyl_specification.txt    The canonical specification (v5.0)
 `stage2.s` (the committed seed), `zyl-self` (a wrapper that execs
 `stage2.bin`), `zyl-lsp`, and a copy of `stdlib/` and the runtime next
 to them so the compiler finds both relative to its own location. The
-runtime is also compiled once, at `-O2`, into `actor_runtime.o`, which
-every link uses while it is newer than `actor_runtime.c` (`install.sh`
-does the same in the install directory).
+runtime's committed seed `rt.s` is assembled into `rt.o`, which every
+link uses (`install.sh` copies it to the install directory).
 
 ### Compiler, file by file
 
@@ -211,7 +210,7 @@ dudect-style timing-leak check. See `docs/math-crypto.md`.
 
 ### The runtime
 
-`runtime/actor_runtime.c` is linked into every binary. Besides the
+The runtime, `runtime/rt/*.zyl` (as `rt.o`), is linked into every binary. Besides the
 pthread actor system it holds the try/catch frame stack, closure
 invocation, FFI pinning and timed foreign calls (`zyl_ffi_timed`),
 arenas and the memory budget, the region allocator (`zyl_ralloc`,

@@ -205,7 +205,7 @@ Zyl's test suite is written with this framework:
 ./run_regression_tests.sh --filter structs  # Only tests whose name contains "structs"
 ```
 
-The tests live under `tests/` (`tests/regression/` for the `test`-based files). The harness itself is part of the compiler (the lowering of `test` and `run-tests`) and the runtime (`runtime/actor_runtime.c`). `stdlib/testing/testing.zyl` holds only thin helper wrappers around the built-in forms.
+The tests live under `tests/` (`tests/regression/` for the `test`-based files). The harness itself is part of the compiler (the lowering of `test` and `run-tests`) and the runtime (`runtime/rt/panic.zyl`). `stdlib/testing/testing.zyl` holds only thin helper wrappers around the built-in forms.
 
 ---
 

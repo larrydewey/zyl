@@ -180,7 +180,7 @@ them`. Tab completion offers the long forms of the commands except
 A relative path in `:load` or `:save` resolves against the directory you
 started in, not the working directory — the REPL moved to the bundle
 before the first prompt, because compiling needs `stdlib/` and
-`actor_runtime.c` to be there.
+`rt.o` to be there.
 
 The same commands work when input is piped, so a script can end with
 `:defs` or start with `:load`.

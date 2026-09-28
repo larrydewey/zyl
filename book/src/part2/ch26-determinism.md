@@ -104,7 +104,7 @@ Rule: no phase may depend on a later phase.
 14. Reuse                ru-reuse: in-place update of a unique, dead value's block
 15. Code generation      cg-program-file → x86_64 assembly text (MIR + linear scan,
                          or the stack machine; §26.5)
-16. Linking              cc -no-pie out.s actor_runtime.o -o out -lpthread
+16. Linking              cc -no-pie out.s rt.o -o out -lpthread
 ```
 
 `zyl build` adds native-object compilation before the link and writes `<name>.buildinfo` after it (§26.5, Phase 11).
@@ -175,10 +175,10 @@ Nothing is reordered: arguments bound by inlining are evaluated in call order, a
 ### Linking
 
 ```bash
-cc -no-pie out.s actor_runtime.o -o out -lpthread
+cc -no-pie out.s rt.o -o out -lpthread
 ```
 
-`actor_runtime.o` is the runtime compiled once at `-O2` by `./boot.sh` or `install.sh`; when it is missing or older than `actor_runtime.c`, the source is compiled into the link with the same flags. `zyl build` appends the objects and libraries from the package's `native` block.
+`rt.o` is the Zyl runtime (`runtime/rt/`), assembled by `./boot.sh` from the committed seed `build/boot/rt.s`; `install.sh` copies it. `zyl build` appends the objects and libraries from the package's `native` block.
 
 ### Phase 11: hash finalization
 
@@ -230,7 +230,7 @@ The argument parser is strict about order and loose about content:
 
 Environment variables that affect compilation:
 
-- `ZYL_HOME` selects the directory that holds `stdlib/` and `actor_runtime.c`. When it has no `stdlib/`, the compiler tries `~/.zyl`, and then the compiler's own directory.
+- `ZYL_HOME` selects the directory that holds `stdlib/` and `rt.o`. When it has no `stdlib/`, the compiler tries `~/.zyl`, and then the compiler's own directory.
 - `ZYL_DEBUG_STAGES`, when set, appends each stage name to `/tmp/dbg` as the compiler reaches it.
 - `ZYL_STRICT_TYPES=report` prints type errors as `W_TYPE_STRICT` warnings instead of failing, for counting them.
 - `ZYL_REGIONS=0`, `ZYL_INLINE=0`, `ZYL_REUSE=0` and `ZYL_MIR=0` turn off region inference, inlining, reuse and the native backend, for bisecting a suspected miscompilation; `ZYL_INLINE_LIMIT` sets the inlining size limit.
@@ -245,9 +245,9 @@ The compiler is written in Zyl: `stdlib/compiler/*.zyl` plus `selfhost/driver.zy
 ### What `./boot.sh` does
 
 ```
-0. copy stdlib/ and actor_runtime.c into build/boot/       (the source the stages resolve)
-   cc -O2 -c actor_runtime.c                               → actor_runtime.o
-1. cc links the committed seed build/boot/stage2.s        → stage1.bin
+0. copy stdlib/ and runtime/rt/ into build/boot/          (the source the stages resolve)
+1. cc -c the committed runtime seed build/boot/rt.s       → rt.o
+   cc links the committed seed build/boot/stage2.s        → stage1.bin
 2. stage1.bin compiles selfhost/driver.zyl --emit-asm      → stage2_gen.s
    cmp stage2_gen.s stage2.s     (else: "reproduced asm differs from committed seed")
 3. cc links stage2.s                                       → stage2.bin

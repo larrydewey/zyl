@@ -43,7 +43,7 @@
 
 ; `dir` is the directory the user started in, which is not the working
 ; directory by the time this runs: the REPL compiles code, so it has
-; already moved to the bundle (stdlib/ and actor_runtime.c live there).
+; already moved to the bundle (stdlib/ and rt.o live there).
 ; The saved session belongs to the user's directory, not the compiler's.
 ;
 ; A terminal session picks up where the last one in that directory left
@@ -336,7 +336,7 @@
 
 ; A path the user typed resolves against the directory they started in,
 ; not against the working directory: the REPL moved to the bundle before
-; the first prompt, because compiling needs stdlib/ and actor_runtime.c
+; the first prompt, because compiling needs stdlib/ and rt.o
 ; to be there. `:load lib.zyl` means the lib.zyl next to them.
 (defn repl-path (sess path)
   (if (= (str-length path) 0)
@@ -645,7 +645,7 @@
 ; ===========================================================================
 
 ; The REPL compiles code, which means it needs the bundle directory --
-; stdlib/ for module resolution and actor_runtime.c for linking -- on
+; stdlib/ for module resolution and rt.o for linking -- on
 ; whatever machine it runs on. Prefer a real installed ~/.zyl (or
 ; $ZYL_HOME) and fall back to the directory the binary itself sits in,
 ; the same resolution order the compiler driver uses.

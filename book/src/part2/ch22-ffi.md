@@ -2,7 +2,7 @@
 
 Complete reference for Zyl's Foreign Function Interface: `ffi-call`, `extern` declarations, pinning, FFI-pinnable types, how values are represented on the C side, linking C code, and which of the specification's safety rules the compiler enforces today.
 
-The normative text is spec v5.0 §16 (FFI model), §9.1 rules R4 and R8, §13.4 (Pin region), §31.9 (the `ffi` capability) and §31.10 (native dependencies). The implementation lives in `stdlib/compiler/icnf.zyl` (lowering), `stdlib/compiler/codegen.zyl` (the call itself), `stdlib/compiler/type_annotate.zyl` (the `extern` and pinnability checks), `stdlib/compiler/ffi_sigs.zyl` (runtime signatures), `stdlib/compiler/capability_check.zyl`, `stdlib/compiler/arity_check.zyl` (`ffi-check-call`), and `runtime/actor_runtime.c` (`ffi_pin`, `ffi_unpin`, `zyl_ffi_timed`). This chapter describes both, and says plainly where they differ: the FFI is one of the areas where the implementation lags furthest behind the specification.
+The normative text is spec v5.0 §16 (FFI model), §9.1 rules R4 and R8, §13.4 (Pin region), §31.9 (the `ffi` capability) and §31.10 (native dependencies). The implementation lives in `stdlib/compiler/icnf.zyl` (lowering), `stdlib/compiler/codegen.zyl` (the call itself), `stdlib/compiler/type_annotate.zyl` (the `extern` and pinnability checks), `stdlib/compiler/ffi_sigs.zyl` (runtime signatures), `stdlib/compiler/capability_check.zyl`, `stdlib/compiler/arity_check.zyl` (`ffi-check-call`), and the runtime (`zyl_ffi_pin`/`zyl_ffi_unpin` in `runtime/rt/alloc.zyl`, `zyl_ffi_timed` in `runtime/rt/ffitimed.zyl`). This chapter describes both, and says plainly where they differ: the FFI is one of the areas where the implementation lags furthest behind the specification.
 
 ## 22.1 FFI Overview
 
@@ -108,7 +108,7 @@ The `zyl_*` runtime functions need no `extern`: the compiler has a signature for
 
 Spec §16: `ffi-pin` copies the value to the Pin region (a non-moving arena) and returns a stable pointer. Pin lifetime is tied to the FFI call scope unless the program manages it manually.
 
-Implementation (`ffi_pin`, `actor_runtime.c`): `ffi-pin` allocates one 8-byte slot in the process-wide Pin arena, stores the value's word in it, and returns the slot. When `value` has type `a`, `(ffi-pin value)` has type `(Pin a)`. The C function therefore receives a **pointer to the value**, not the value, and the `extern` parameter that takes it is declared `(Pin a)`:
+Implementation (`zyl_ffi_pin`, `runtime/rt/alloc.zyl`): `ffi-pin` allocates one 8-byte slot in the process-wide Pin arena, stores the value's word in it, and returns the slot. When `value` has type `a`, `(ffi-pin value)` has type `(Pin a)`. The C function therefore receives a **pointer to the value**, not the value, and the `extern` parameter that takes it is declared `(Pin a)`:
 
 | Pinned value | Zyl type | C receives |
 |--------------|----------|------------|
@@ -327,7 +327,7 @@ The implementation enforces it. ICNF lowering (`ic-ffi`) turns a call of a forei
 IFfi "zyl_ffi_timed" (ISymAddr sym, IStr sym, IConst timeout-ms, IConst argc, arg...)
 ```
 
-`zyl_ffi_timed` (`runtime/actor_runtime.c`) runs the C function on a worker thread that belongs to the calling thread. The worker is created on first use and kept, so thread-local C state such as `errno` stays consistent between calls. The caller waits on `CLOCK_MONOTONIC`; if the function has not returned by the deadline, the caller raises:
+`zyl_ffi_timed` (`runtime/rt/ffitimed.zyl`) runs the C function on a worker thread that belongs to the calling thread. The worker is created on first use and kept, so thread-local C state such as `errno` stays consistent between calls. The caller waits on `CLOCK_MONOTONIC`; if the function has not returned by the deadline, the caller raises:
 
 ```
 E_FFI_TIMEOUT: ffi call `usleep` exceeded its timeout of 50 ms
@@ -421,10 +421,10 @@ When C needs to deliver events without calling back, have Zyl poll a C function 
 A single-file compile always links with the same command:
 
 ```bash
-cc -no-pie prog.s actor_runtime.o -o prog -lpthread
+cc -no-pie prog.s rt.o -o prog -lpthread
 ```
 
-`actor_runtime.o` is the runtime compiled with `-O2`, which `./boot.sh` and `install.sh` build next to `actor_runtime.c`; when the object is missing or older than the source, the driver compiles `actor_runtime.c` with `-O2` in its place. The link reaches libc, libpthread and the runtime's own `zyl_*` symbols. Besides `-o <file>` and `--emit-asm`, the command line accepts only `--contracts=P` and `--error-format=json`: there is no way to add object files, libraries or `-lm`, and any other word after the source file is taken as the output path. A symbol that is not found is an ordinary linker error, `undefined reference to 'name'`.
+`rt.o` is the Zyl runtime (`runtime/rt/`), which `./boot.sh` assembles from the committed seed `build/boot/rt.s` and `install.sh` copies. The link reaches libc, libpthread and the runtime's own `zyl_*` symbols. Besides `-o <file>` and `--emit-asm`, the command line accepts only `--contracts=P` and `--error-format=json`: there is no way to add object files, libraries or `-lm`, and any other word after the source file is taken as the output path. A symbol that is not found is an ordinary linker error, `undefined reference to 'name'`.
 
 Two ways to link your own C:
 
@@ -433,10 +433,10 @@ Two ways to link your own C:
 
    ```bash
    zyl prog.zyl --emit-asm -o prog.s
-   cc -no-pie prog.s ~/.zyl/actor_runtime.c mylib.c -o prog -lpthread -lm
+   cc -no-pie prog.s ~/.zyl/rt.o mylib.c -o prog -lpthread -lm
    ```
 
-   The runtime can be linked from source, `actor_runtime.c` (or its prebuilt `actor_runtime.o`), found in the install (`~/.zyl`) or next to the compiler (`build/boot/`). The `-no-pie` flag is required.
+   The runtime is `rt.o`, found in the install (`~/.zyl`) or next to the compiler (`build/boot/`). The `-no-pie` flag is required.
 
 ## 22.11 Capabilities
 

@@ -51,12 +51,13 @@ export ZYL_MAX_MEMORY="${ZYL_STAGE_MEMORY:-4294967296}"   # per-stage ceiling
 
 # First: stdlib/ and the runtime are copied into build/boot/, so every
 # stage compiles this checkout's compiler source; the runtime is
-# compiled once, and every stage and every program links the object
+# assembled from its committed seed rt.s, and every stage and every
+# program links the object
 rm -rf "$OUT/stdlib"; cp -R stdlib "$OUT/stdlib"
-cp runtime/actor_runtime.c runtime/actor_runtime.h "$OUT/"
-cc -O2 -c "$OUT/actor_runtime.c" -o "$OUT/actor_runtime.o"
+rm -rf "$OUT/runtime"; mkdir -p "$OUT/runtime"; cp -R runtime/rt "$OUT/runtime/rt"
+cc -c "$OUT/rt.s" -o "$OUT/rt.o"
 
-link_cc() { cc -no-pie "$1" "$OUT/actor_runtime.o" -o "$2" -lpthread; }
+link_cc() { cc -no-pie "$1" "$OUT/rt.o" -o "$2" -lpthread; }
 
 # Stage 1: cc links the committed seed
 link_cc "$OUT/stage2.s" "$OUT/stage1.bin"
@@ -141,8 +142,8 @@ at both checks.
 
 `boot.sh` does not link `stage3.s`; the comparison is on assembly,
 which is the compiler's actual output. The linked `stage2.bin` is
-rebuilt by `cc` on every run, and it changes whenever
-`runtime/actor_runtime.c` changes even when the assembly does not.
+rebuilt by `cc` on every run. The runtime has its own seed, `rt.s`:
+each stage recompiles `runtime/rt/rt.zyl` and must reproduce it.
 
 ### Regression test verification
 

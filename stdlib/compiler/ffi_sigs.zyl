@@ -8,7 +8,7 @@
 ; (E_FFI_RESTRICTED). Syntax: parameter types, `->`, the result type; a
 ; capitalized name with arguments in parentheses is a type constructor,
 ; e.g. "(SMap v)", and a lowercase name is a type variable shared across
-; the signature. Must agree with runtime/actor_runtime.c. Opaque handle
+; the signature. Must agree with runtime/rt. Opaque handle
 ; types: Arena, Ptr (a raw address), Words (math/words arrays), StrBuf,
 ; (SMap v), (WVec v), UF, Actor, Fd, FileId, FnPtr.
 ;

@@ -300,7 +300,7 @@
     ; but field-for-field-identical values (e.g. a derived-Eq struct's
     ; make-<Name> called twice with the same arguments) live at different
     ; addresses, so pointer equality silently said "not equal" regardless
-    ; of content. zyl_variant_eq (actor_runtime.c) already does real
+    ; of content. zyl_variant_eq (rt/variant.zyl) already does real
     ; structural comparison and was already used by cg-variant's own
     ; comment describing the encoding it depends on -- just never actually
     ; called from anywhere. Kind 3 marks a value as struct/variant-typed
@@ -863,7 +863,7 @@
 ; so which one comes out "less" depended on allocation order, not
 ; content -- e.g. two structs built with the same field values compared
 ; as `<` true just because the first one built happened to land at a
-; lower address). zyl_variant_cmp (actor_runtime.c) does a real
+; lower address). zyl_variant_cmp (rt/variant.zyl) does a real
 ; lexicographic field-by-field comparison (skipping the shared
 ; discriminant word, which never differs between same-type values) and
 ; returns -1/0/1; cg-variant-cmp-set turns that into the right bool for
@@ -1376,7 +1376,7 @@
 ; Variant construction: [tag][f0]..[fn-1], allocated via zyl_heap_alloc
 ; (not raw malloc) so the runtime's hidden qword-count header lands
 ; before the block — the same mechanism the archived Rust bootstrap used,
-; which zyl_variant_eq (actor_runtime.c) reads to do structural equality
+; which zyl_variant_eq (rt/variant.zyl) reads to do structural equality
 ; on two separately-allocated ADT/struct values without a runtime type
 ; tag. Fields are evaluated and pushed, then popped into the block
 ; (right to left). Alignment for the call is forced via rsp itself
@@ -1647,7 +1647,7 @@
           (Cons (str-concat "    lea rax, [rip+" (str-concat lbl "]")) (Cons "    mov [rdi+56], rax" (Cons "    xor eax, eax" Nil)))))))))))
     lbl))
 
-; setjmp returned 0: run the body, then pop our frame so a later error doesn't unwind here.
+; rt_setjmp gave 0: run the body, then pop our frame so a later error doesn't unwind here.
 (defn cg-trycatch-try (st env tbody cvar cbody lcatch ldone cvar-off)
   (let st3 (cg-expr st env tbody)
     (let st4 (cg-emit-line st3 "    push rax")
@@ -2107,7 +2107,7 @@
   ; returns a nonzero Int exits with it. Top-level (run-tests) does NOT
   ; get this: the implicit `main` icnf.zyl's ic-finish-program builds
   ; around top-level statements ends in a constant 0, so zyl_run_tests'
-  ; pass/fail result (actor_runtime.c: 0 if all passed, 1 if any failed)
+  ; pass/fail result (rt/panic.zyl: 0 if all passed, 1 if any failed)
   ; is discarded and a failing test file still exits 0.
   (let st1 (cg-emit-line st "main:")
     (let st2 (cg-emit-line st1 "    push rbp")
@@ -2550,7 +2550,7 @@
 ; ===========================================================================
 
 ; (load-u8 ...), (load-i8 ...), (store-u8 ...), (store-i8 ...) are the
-; runtime's zyl_load_byte/zyl_store_byte (actor_runtime.c) without the
+; runtime's zyl_load_byte/zyl_store_byte (rt/bytes.zyl) without the
 ; call: the handle's magic word picks the bound (a ByteBuf's cap at +24,
 ; a ByteSlice's len at +16; the data pointer is at +8 in both), and an
 ; offset outside it, an invalid handle or a 0 handle gives what the
@@ -3574,7 +3574,7 @@
                                               (Cons (str-concat ldone ":") Nil)))))
                     (mb-set st4 fr d "rax")))))))))))
 
-; zyl_array_get/set/cap (actor_runtime.c, ZylArray {magic, cap, filled,
+; zyl_array_get/set/cap (rt/tables.zyl, ZylArray {magic, cap, filled,
 ; data}) inline. Anything the runtime would reject (a bad handle, an
 ; index outside [0, filled), or for a set outside [0, filled] or at cap)
 ; calls the runtime entry, which panics with its own message.

@@ -26,7 +26,7 @@
 
 ; The REPL's own state directory: ~/.zyl, or ZYL_STATE_DIR when set.
 ; Deliberately NOT ZYL_HOME -- that names where the compiler's bundle
-; (stdlib/ and actor_runtime.c) lives, which during a build is a
+; (stdlib/ and rt.o) lives, which during a build is a
 ; throwaway output directory, and history does not belong there.
 (defn hist-dir ()
   (let sd (ffi-call "zyl_getenv_str" "ZYL_STATE_DIR" 1000)

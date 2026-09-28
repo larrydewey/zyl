@@ -211,11 +211,11 @@ Plain `zyl file.zyl` links only the runtime and libc. To add your own C code, em
 
 ```bash
 zyl ffi-demo.zyl -o ffi-demo.s --emit-asm
-cc -no-pie ffi-demo.s mylib.c ~/.zyl/actor_runtime.o -o ffi-demo -lpthread
+cc -no-pie ffi-demo.s mylib.c ~/.zyl/rt.o -o ffi-demo -lpthread
 ./ffi-demo
 ```
 
-With `--emit-asm`, the assembly is written to exactly the `-o` path, and nothing is assembled or linked. `actor_runtime.o` is the runtime, compiled with `-O2` from `actor_runtime.c`: both are in `~/.zyl` after `./install.sh`, or in `build/boot/` in a source checkout (`./boot.sh` builds the object). The `cc` line is the same one `zyl` itself runs (§12.9), plus `mylib.c`. Output:
+With `--emit-asm`, the assembly is written to exactly the `-o` path, and nothing is assembled or linked. `rt.o` is the runtime, written in Zyl (`runtime/rt/`): it is in `~/.zyl` after `./install.sh`, or in `build/boot/` in a source checkout (`./boot.sh` assembles it from the committed `rt.s`). The `cc` line is the same one `zyl` itself runs (§12.9), plus `mylib.c`. Output:
 
 ```
 factorial of 5:
@@ -347,16 +347,16 @@ Most of libc is reachable with one `extern` each: `(extern "strlen" (String) Int
 
 Every program produced by `zyl` is linked with:
 
-- the Zyl runtime (actors, heap and Pin arenas, strings, the test harness), as `actor_runtime.o`
+- the Zyl runtime (actors, heap and Pin arenas, strings, the test harness), as `rt.o`
 - `libc` and `libpthread`
 
 The link command `zyl` runs is:
 
 ```bash
-cc -no-pie program.s actor_runtime.o -o program -lpthread
+cc -no-pie program.s rt.o -o program -lpthread
 ```
 
-`actor_runtime.o` is built with `-O2` from `actor_runtime.c` by `./boot.sh` and `./install.sh`. When the object is missing or older than the source, `zyl` compiles the source in its place (`-O2 actor_runtime.c`).
+`rt.o` is the Zyl runtime (`runtime/rt/`), assembled by `./boot.sh` from the committed seed `build/boot/rt.s` and copied into `~/.zyl` by `./install.sh`.
 
 To link your own objects into a single-file program, use `--emit-asm` and run that command yourself with your `.c` or `.o` files added (§12.4). In a package, use `(native ...)` instead.
 
@@ -394,7 +394,7 @@ The runtime keeps one Pin arena (`g_pin_arena`), created alongside the heap aren
 
 ### Timeout Implementation
 
-`zyl_ffi_timed` in `runtime/actor_runtime.c` looks up the calling thread's worker (creating it on first use), hands it the function address and arguments, and waits with `pthread_cond_timedwait` against a `CLOCK_MONOTONIC` deadline. On expiry it marks the worker abandoned, forgets it, records that some call has been abandoned (which disables the exit-time arena teardown), and raises `E_FFI_TIMEOUT`. The interpreter calls the same code through `zyl_ffi_timed_argv`, which takes the arguments as an array.
+`zyl_ffi_timed` in `runtime/rt/ffitimed.zyl` looks up the calling thread's worker (creating it on first use), hands it the function address and arguments, and waits with `pthread_cond_timedwait` against a `CLOCK_MONOTONIC` deadline. On expiry it marks the worker abandoned, forgets it, records that some call has been abandoned (which disables the exit-time arena teardown), and raises `E_FFI_TIMEOUT`. The interpreter calls the same code through `zyl_ffi_timed_argv`, which takes the arguments as an array.
 
 ---
 

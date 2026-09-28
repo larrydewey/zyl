@@ -156,11 +156,11 @@
         (str-concat " rt.o -o "
           (str-concat outpath (str-concat " -lpthread" extra)))))))
 
-; Where to find `actor_runtime.c` and `stdlib/` at runtime. Prefers a
+; Where to find `rt.o` and `stdlib/` at runtime. Prefers a
 ; real, packaged install (checked via a ZYL_HOME override, else
 ; $HOME/.zyl) over "next to argv0" -- the latter only works for this
 ; repo's own dev/build workflow (build/boot/ carries its own stdlib +
-; actor_runtime.c copies alongside the binary), and breaks the moment
+; rt.o copies alongside the binary), and breaks the moment
 ; this is ever packaged for a real Linux distro: package managers
 ; install executables into /usr/bin/ alongside a hundred unrelated
 ; packages' binaries and never let a package drop support files right
@@ -621,7 +621,7 @@
 (defn drv-contracts-flag-p (a)
   (and (> (str-length a) 12) (ffi-call "zyl_cstr_eq" (str-substring a 0 12) "--contracts=" 1000)))
 
-; The bundle dir holds stdlib/ and actor_runtime.c; the compiler chdirs
+; The bundle dir holds stdlib/ and rt.o; the compiler chdirs
 ; there so module resolution and linking find them. A subcommand needs
 ; the user's own directory too, since that is where the package is, so
 ; both are resolved before anything moves.

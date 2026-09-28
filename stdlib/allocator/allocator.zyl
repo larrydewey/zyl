@@ -156,7 +156,7 @@
 
 ; Zyl-level error: unwind to the nearest active try/catch, or print and
 ; exit if there is none (zyl_panic already implements exactly this via
-; the runtime's g_try_top frame stack -- see runtime/actor_runtime.c).
+; the runtime's g_try_top frame stack -- see runtime/rt/panic.zyl).
 (defn error (msg)
   (ffi-call "zyl_panic" msg 1000))
 

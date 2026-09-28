@@ -63,7 +63,7 @@
   ; try-body, catch-var name, catch-body. See cg-trycatch: uses the
   ; runtime's existing zyl_try_push/zyl_try_pop/zyl_panic frame-stack
   ; machinery (added for the test harness, never wired to anything else
-  ; until now) via an inline `call setjmp` in generated code.
+  ; until now) via an inline zyl_rt_setjmp in generated code.
   (ITryCatch Icnf String Icnf)
   ; Same shape and runtime layout as IVariant (variant name, tag, field
   ; values) but allocated directly in the current function's own stack
@@ -623,7 +623,7 @@
           (IConst 0)))
     ; assert-fail: "assert that this would fail" — the Rust bootstrap
     ; just evaluates the expr and discards it too (a real check needs
-    ; the same setjmp/longjmp panic-catching this backend doesn't have,
+    ; the same zyl_rt_setjmp panic-catching this backend lacked,
     ; per ETryCatch above). Not dispatched at parse time at all until
     ; now — testing/testing.zyl's assert-fail-expr called a plain
     ; "assert-fail" function that was never defined anywhere, an
@@ -669,7 +669,7 @@
     ; send calls need to survive being freed on an error path.
     (ESend actor msg (IFfi "zyl_actor_send" (Cons (ic-expr arena actor vt) (Cons (ic-expr arena msg vt) Nil))))
     ; (try body (catch e handler)): lowers to ITryCatch, which codegen's
-    ; cg-trycatch turns into the runtime's setjmp/longjmp panic-frame
+    ; cg-trycatch turns into the runtime's zyl_rt_setjmp panic-frame
     ; mechanism (zyl_try_push/zyl_try_pop, used by zyl_panic to unwind to
     ; the nearest try instead of killing the process; first added for the
     ; test harness's own panic recovery). `error` (allocator.zyl) calls
@@ -1586,7 +1586,7 @@
 ; flakiness is now understood to be an unrelated ASLR/stack-collision
 ; bug in the self-hosted worker thread's stack allocation (originally
 ; worked around with boot.sh's `setarch -R`, since fixed for real in
-; zyl_call_on_big_stack -- see runtime/actor_runtime.c), not a defect
+; zyl_call_on_big_stack -- see runtime/rt/actor.zyl), not a defect
 ; in this lowering — retried now that the real cause is fixed.
 (defn ic-arm (arena arm vt)
   (let iname (str-intern arena (MA.variant arm))

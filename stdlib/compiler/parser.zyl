@@ -102,7 +102,7 @@
 ; the node instead of inside it -- Ast has no span field, and giving it one
 ; would mean editing every one of the ~470 sites that name an Ast
 ; constructor, in a compiler that then has to go on compiling itself. See
-; the span table in runtime/actor_runtime.c for why keying on the node's
+; the span table in runtime/rt/ctab.zyl for why keying on the node's
 ; own address is sound here.
 (defn ast-at (fid off node)
   (let _ (ffi-call "zyl_span_set" node off fid 1000)

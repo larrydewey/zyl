@@ -6,7 +6,7 @@
 ; Evaluate a document's current text by shelling out to the real `zyl`
 ; CLI (same self-hosted compiler the LSP server itself runs on) via
 ; zyl_system_cmd (a real spawn+wait through `/bin/sh -c`, implemented
-; with posix_spawn in runtime/actor_runtime.c -- NOT zyl_exec_cmd, which
+; with posix_spawn in runtime/rt/proc.zyl -- NOT zyl_exec_cmd, which
 ; execl()s and replaces the calling process image entirely; that's fine
 ; for driver.zyl's own cli-link, its last action before exiting anyway,
 ; but would silently kill this long-running LSP server on the first

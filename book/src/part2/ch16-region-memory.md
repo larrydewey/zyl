@@ -5,7 +5,7 @@ the rules that assign values to them, escape analysis and reclamation.
 The normative text is `zyl_specification.txt` §9 (region system), §13
 (memory operations), §14 (stack safety) and principle P4 in §0. The
 implementation is `stdlib/compiler/region_inference.zyl` together with the
-allocators in `runtime/actor_runtime.c`.
+allocators in `runtime/rt/alloc.zyl`.
 
 The specification describes a complete static region system. The
 self-hosted compiler implements the Stack, Heap and Pin regions with

@@ -289,7 +289,7 @@ does not take) → linking with `cc`.
 | 8. Optimization | ✅ | Inlining of small functions, copy propagation, constant folding, dead-branch elimination |
 | 9. Region Inference | ✅ | Escape analysis over ICNF: frame, result or heap region per allocation; then in-place reuse |
 | 10. Code Generation | ✅ | x86_64, System V AMD64 ABI; MIR + linear scan, stack machine for the rest |
-| 11. Linking | ✅ | cc + prebuilt `actor_runtime.o` (or `actor_runtime.c`) + pthread |
+| 11. Linking | ✅ | cc + `rt.o` (the Zyl runtime, assembled from `build/boot/rt.s`) + pthread |
 | — Contract Injection | ✅ | Lowered to checks during parsing (`expr_inner.zyl`), under a profile |
 
 The implementation's order differs from spec §22's (which puts region
@@ -312,9 +312,9 @@ selfhost/                     # Self-hosted compiler entry points
 build/boot/                   # Committed seed (stage2.s, stage2.bin) and
                               # everything boot.sh produces (zyl-self, zyl-lsp)
 
-runtime/                      # C runtime linked into every compiled binary
-├── actor_runtime.c           # Actors, regions, I/O, FFI helpers, panics
-└── actor_runtime.h           # (boot.sh and install.sh prebuild actor_runtime.o)
+runtime/rt/                   # Zyl runtime linked into every compiled binary
+├── rt.zyl                    # Entry module (built with --runtime-module)
+└── *.zyl                     # alloc, actor, panic, io, ffitimed, os, ... (rt.s seed)
 
 stdlib/compiler/              # The compiler, written in Zyl (41 modules)
 ├── pipeline.zyl              # Phase order shared by the CLI and the REPL

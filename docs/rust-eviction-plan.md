@@ -1068,8 +1068,8 @@ eviction. Current state: the reseed command is
 `AGENTS.md`); exhaustiveness and region inference both landed; and the
 `setarch -R` requirement is gone — the runtime allocates the big stack
 itself with `mmap(MAP_NORESERVE)` instead of relying on ASLR being off
-(see the comment above `zyl_call_on_big_stack` in
-`runtime/actor_runtime.c`).*
+(see `zyl_call_on_big_stack` in
+`runtime/rt/actor.zyl`).*
 - **Fixed point fragility**: every compiler-source edit changes what
   self-compiled binaries look like. Must re-run assemble.py + boot.sh and
   see stage2==stage3 before committing each batch. As of 2026-09-16 this

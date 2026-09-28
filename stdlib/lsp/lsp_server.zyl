@@ -844,7 +844,7 @@
 ; captured stdout+stderr as the command result. Only command this server
 ; knows; only real dependency is repl_integration.zyl's repl-eval-text,
 ; unusable until zyl_system_cmd stopped segfaulting on every call (see
-; that file's own header comment -- fixed in runtime/actor_runtime.c by
+; that file's own header comment -- fixed in the runtime by
 ; replacing its vfork-via-system() body with posix_spawn, same fix
 ; zyl_cc_compile/zyl_run_bin already had).
 (defn lsp-req-execute-command (arena dm ws id paramsOpt)

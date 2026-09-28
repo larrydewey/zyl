@@ -561,7 +561,7 @@ required only for `Secret` values.
 
 This is the same mechanism the standard library itself is built on —
 `str-length`, `str-concat`, arena allocation, and file I/O are all thin
-Zyl wrappers over `ffi-call`s into `runtime/actor_runtime.c`.
+Zyl wrappers over `ffi-call`s into the runtime (`runtime/rt/`).
 
 ## 16. Where to go next
 

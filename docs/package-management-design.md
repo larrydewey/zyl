@@ -115,7 +115,7 @@ total order regardless of which packages enter the graph.
 ### Mangling
 
 Assembly labels must be injective functions of the canonical key.
-`zyl_cstr_sanitize` (`runtime/actor_runtime.c`) is **not** usable for
+`zyl_cstr_sanitize` (`runtime/rt/text.zyl`) is **not** usable for
 this: it maps every byte outside `[A-Za-z0-9_]` to `_`, so `acme/json`,
 `acme.json` and `acme-json` all collapse to `acme_json`. A lossy encoder
 at this point would silently merge distinct functions.
@@ -142,8 +142,8 @@ acme/json@1::json/parser::parse
 The escape is injective, so the mangle is. When the result exceeds 200
 bytes the readable prefix is truncated to 184 bytes and 16 hex digits of
 BLAKE3 over the full canonical key are appended. *Implemented as
-`zyl_mangle_key` / `zyl_sym_escape` in `runtime/actor_runtime.c`, with a
-C BLAKE3 (`zyl_blake3_hex`) beside it, rather than reusing
+`zyl_mangle_key` / `zyl_sym_escape` in the runtime (now
+`runtime/rt/mangle.zyl`), with a runtime BLAKE3 (`zyl_blake3_hex`), rather than reusing
 `stdlib/math/hash/blake3.zyl` as planned: the runtime copy is the one
 implementation on the build path (mangling and the archive, lock and
 graph hashes), and the two agree on test vectors.*
@@ -399,7 +399,7 @@ over manifests — but it pins what the library's own CI builds and tests.
 ## 7. Fetching and the content store
 
 The runtime has no sockets. It has `zyl_exec_cmd` and `zyl_system_cmd`
-(`runtime/actor_runtime.c`), which is enough, and keeps every network
+(`runtime/rt/proc.zyl`), which is enough, and keeps every network
 operation outside the deterministic path.
 
 ```

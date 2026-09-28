@@ -126,7 +126,7 @@
 
 ; `cwd` is the directory the user ran the command in. The compiler chdirs
 ; to its own bundle directory before any subcommand runs — that is how
-; module resolution and linking find stdlib/ and actor_runtime.c — so a
+; module resolution and linking find stdlib/ and rt.o — so a
 ; relative path here would create the package next to the compiler.
 (defn cli-new (arena cwd name)
   (let _ (pk-check-name name)

@@ -18,7 +18,7 @@ Building Zyl needs `cc` and `pthread` and nothing else.
 | REPL | `stdlib/repl/`, ~4,100 lines of Zyl, with an ICNF interpreter; `zyl repl` and `zyl eval` |
 | Language server | `stdlib/lsp/`, ~5,600 lines of Zyl, built by `boot.sh` as `zyl-lsp` |
 | Package system | Spec §31, implemented (see below) |
-| Runtime | `runtime/actor_runtime.c` (~5,500 lines of C); `boot.sh` and `install.sh` compile it once to `actor_runtime.o` (`-O2`), which every link uses while it is newer than the source |
+| Runtime | `runtime/rt/*.zyl` (~4,800 lines of Zyl); `boot.sh` compiles it with `--runtime-module`, checks it against the committed `build/boot/rt.s`, and assembles `rt.o`, which every link uses |
 | Tests | 260/260 passing on `./run_regression_tests.sh --full --no-boot` (compile-fail 97, regression 77, interpreter 55, packages-fail 8, integration 7, scripts 7, stress 4, packages 2, packages-build 1, lsp 1, unit test 1); `--full` adds the fixed-point check |
 
 ### Language features

@@ -4,7 +4,7 @@
 ; Raw-mode terminal access and key decoding for the REPL's line editor.
 ; The runtime side is four primitives (raw on/off, one byte with and
 ; without a timeout, window size, direct unbuffered write -- see
-; runtime/actor_runtime.c); everything above them, including the whole
+; runtime/rt/os.zyl); everything above them, including the whole
 ; escape-sequence grammar, lives here.
 ;
 ; Decoding an escape sequence needs the timeout read: pressing Escape

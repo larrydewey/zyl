@@ -261,7 +261,7 @@ runs:
 │   x86_64 assembly (System V AMD64 ABI): machine IR with         │
 │   linear-scan register allocation where a function fits it,     │
 │   the stack-machine generator otherwise; then cc +              │
-│   actor_runtime.c                                               │
+│   the runtime (rt.o)                                            │
 └─────────────────────────────────────────────────────────────────┘
 ```
 

@@ -18,7 +18,7 @@
 >   are typed top-level `def`s (per-pass defs, and the node side tables
 >   in `node_tables.zyl` on `(Attr k v)` handles from `zyl_attrh_new`), and
 >   the qualifier's symbol table is two typed arrays rather than raw
->   words. The C entries still exist in `runtime/actor_runtime.c`.
+>   words. The entries still exist, now in `runtime/rt/ctab.zyl`.
 > - The interpreter's `VStr` holds a String (`stdlib/repl/interp.zyl`).
 > - Finding 1 (the 32-bit publisher seed) is fixed: `cli.zyl` fills the
 >   seed with `zyl_random_words` (commit `7f58292`). The `void` results

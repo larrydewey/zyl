@@ -20,11 +20,10 @@ meets the C runtime. The design and its staging are recorded in
   from that; every other function goes through the older stack-machine
   emitter. Both use the same calling convention and frame-region layout,
   so they call each other freely (§29.2)
-- **Assemble and link**: `cc -no-pie <prog>.s actor_runtime.o -o <prog> -lpthread`,
-  run from the compiler's bundle directory. `./boot.sh` and
-  `./install.sh` compile the runtime once, at `-O2`, into
-  `actor_runtime.o`; when that object is older than `actor_runtime.c`,
-  the link compiles the source with the same flag instead.
+- **Assemble and link**: `cc -no-pie <prog>.s rt.o -o <prog> -lpthread`,
+  run from the compiler's bundle directory. `rt.o` is the Zyl runtime
+  (`runtime/rt/`), assembled by `./boot.sh` from the committed seed
+  `build/boot/rt.s` and copied by `./install.sh`.
 
 ```bash
 zyl prog.zyl -o prog              # writes prog.s, then links prog
@@ -865,7 +864,7 @@ String literals and float literals are interned into `.rodata`
 
 ## 29.8 Actor Runtime Integration
 
-`spawn` and `send` lower to plain C calls into `runtime/actor_runtime.c`:
+`spawn` and `send` lower to plain calls into the runtime (`runtime/rt/actor.zyl`):
 
 | Form | Runtime call | What it does |
 |------|--------------|--------------|
@@ -943,14 +942,14 @@ zyl prog.zyl -o prog.s --emit-asm
 # The normal build leaves the assembly next to the binary
 zyl prog.zyl -o prog && less prog.s
 
-# Link it yourself with debug info for the runtime
-cc -g -no-pie prog.s ~/.zyl/actor_runtime.c -o prog -lpthread
+# Link it yourself with the runtime object
+cc -g -no-pie prog.s ~/.zyl/rt.o -o prog -lpthread
 gdb ./prog
 ```
 
-In a checkout, the runtime source is `runtime/actor_runtime.c` (also
-copied to `build/boot/actor_runtime.c` by `./boot.sh`). The generated
-assembly carries no DWARF line information of its own.
+In a checkout, the runtime source is `runtime/rt/*.zyl` (its assembly,
+the committed seed, is `build/boot/rt.s`). Neither the generated
+assembly nor `rt.s` carries DWARF line information.
 
 When a program misbehaves only when compiled, these compile-time
 switches turn one transformation off at a time, each leaving the

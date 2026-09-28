@@ -322,7 +322,7 @@
 ; starts with no recorded position. Carry the original's over, or every
 ; diagnostic after module resolution -- which is all of them -- loses its
 ; location. Same reason, same one-line shape, as convert-ast and
-; me-rewrite. See the span table in runtime/actor_runtime.c.
+; me-rewrite. See the span table in runtime/rt/ctab.zyl.
 (defn qf-form (tab locals form)
   (let out (qf-form-node tab locals form)
     (let _ (ffi-call "zyl_span_copy" out form 1000)

@@ -309,7 +309,7 @@ Pipelines and worker pools are loops over `receive` that forward work with `send
 
 ## 9.10 Mailboxes and Limits
 
-Mailboxes are **unbounded** linked lists on the heap: if a producer outruns its consumer, memory grows. A program can have at most 1024 actors over its lifetime (`ZYL_MAX_ACTORS` in `runtime/actor_runtime.h`). Actor ids are never reused, and once the limit is reached `spawn` prints `zyl: actor limit reached (1024)` and returns an invalid reference.
+Mailboxes are **unbounded** linked lists on the heap: if a producer outruns its consumer, memory grows. A program can have at most 1024 actors over its lifetime (`ac-max` in `runtime/rt/actor.zyl`). Actor ids are never reused, and once the limit is reached `spawn` prints `zyl: actor limit reached (1024)` and returns an invalid reference.
 
 ## 9.11 Testing Actors
 
@@ -353,11 +353,11 @@ A single file compiled directly is not capability-checked. (The current checker 
 
 ## For Experts: Under the Hood
 
-### Runtime Implementation (`runtime/actor_runtime.c`)
+### Runtime Implementation (`runtime/rt/actor.zyl`)
 
 - **One POSIX thread per actor**, created by `zyl_actor_spawn`, which receives the spawned closure's code pointer and a state pointer. For a capturing closure it unpacks the closure block into its code and environment, so the environment arrives as that state pointer.
 - **Mailbox**: a singly linked FIFO list protected by a per-actor mutex, with a condition variable to wake the actor thread.
-- **Thread body**: run the entry function once, then loop, dequeuing messages until the actor is marked dead. A message is either a *data* message (what `send` produces; `receive` returns it, and one left unread when the body returns is dropped) or a *closure* message (`zyl_actor_send_closure`, a C entry a Zyl program cannot call, which runs a C function in the actor's thread). `zyl_actor_receive` runs closure messages it finds ahead of the next data message. `main` gets a mailbox, without a thread, the first time it calls `actor-self` or `receive`.
+- **Thread body**: run the entry function once, then loop, dequeuing messages until the actor is marked dead. A message is either a *data* message (what `send` produces; `receive` returns it, and one left unread when the body returns is dropped) or a *closure* message (`zyl_actor_send_closure`, a runtime entry a Zyl program cannot call, which runs a function in the actor's thread). `zyl_actor_receive` runs closure messages it finds ahead of the next data message. `main` gets a mailbox, without a thread, the first time it calls `actor-self` or `receive`.
 
 ### Message Representation
 
