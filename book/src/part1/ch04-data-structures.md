@@ -613,7 +613,7 @@ Rules that follow from this design:
   `vec-push` with spare capacity write into the same storage, so the
   previous value sees the change. Rebind to the result (`let-mut` +
   `set!`) and treat the old value as used up.
-- **Sending a collection to an actor shares it; it is not copied.**
+- **Sending a collection on a channel shares it; it is not copied.**
   Allocation from one arena is locked, so two actors may allocate from
   it safely, but writing to one collection from two actors is a race.
   Give each actor its own arena, or send immutable data.

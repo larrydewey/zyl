@@ -279,28 +279,26 @@ so every CPU gives the same result; there is no SSE path.
 
 ### `actor/actor` — Actor System
 
-`spawn` and `send` are compiler special forms. `actor/actor` wraps them
-and adds lifecycle operations backed by the C runtime:
+`spawn` and the channel forms (`chan`, `chan-tx`, `chan-rx`,
+`chan-send`, `chan-recv`) are compiler special forms (Appendix C).
+`actor/actor` adds joining:
 
 ```lisp
 (use actor/actor)
-;(actor-spawn closure) (actor-send actor message)
-;(actor-send-with-timeout actor message timeout)   ; Result; timeout not yet used
-;(actor-is-alive actor) (actor-wait actor) (actor-terminate actor)
+;(actor-spawn closure)   ; the same as (spawn closure)
+;(actor-wait actor)      ; join: emit its output, re-raise its panic
+;(actor-is-alive actor)  ; Bool: true until joined
 ```
 
 `spawn` takes a zero-argument closure, `(spawn (fn () ...))`, and
-returns an `Actor`; `send`, `actor-is-alive`, `actor-wait` and
-`actor-terminate` take one, and `actor-is-alive` returns `Bool`. The
-actor reads messages with the `(receive)` form and names itself with
-`(actor-self)`, also an `Actor` (Chapter 9). `receive` is not
-type-checked yet: its result takes whatever type its use needs, until
-typed channels replace mailboxes. `actor-wait`
-stops an actor and joins its thread. When `main` returns, the program
-drains every mailbox and stops all actors; the runtime's
-`zyl_actor_wait_all`, reachable through `ffi-call` (the compiler's
-signature table types it), does the same earlier. Using this module from a package requires
-the `actor` capability (§31.9).
+returns an `Actor`; `actor-wait` and `actor-is-alive` take one. An
+actor's output is buffered until it is joined, and `actor-is-alive`
+reports whether it has been joined, not whether its thread is running,
+so neither depends on timing. When `main` returns, the program joins
+every actor not yet joined, in spawn order (Chapter 9). Actors
+communicate only through channels. Using this module, or `spawn`,
+`chan`, `chan-send` or `chan-recv`, from a package requires the `actor`
+capability (§31.9).
 
 ### `atomic/atomic` — Atomic Operations on Addresses
 

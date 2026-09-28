@@ -204,7 +204,7 @@ it a `_` prefix, to mark it unused; `_` may repeat.
 ```
 
 A form evaluated only for its effect — `print`, `set!`, `while`, `for`,
-`assert`, `send`, an `if` with no `else` — has type
+`assert`, `chan-send`, an `if` with no `else` — has type
 `Unit`, written `unit` as a value. A function whose last form is one of
 these returns `Unit`. `main` must return an `Int`, the exit status, so
 it usually ends with `0`; `(defn main () (print 1))` is
@@ -332,16 +332,20 @@ shows `3.500000`. A `Bool` prints as `1` or `0`.
 | Form | Syntax | Notes |
 |---|---|---|
 | `spawn` | `(spawn (fn () body))` | returns an `Actor`; rejected on a `Secret` operand |
-| `send` | `(send actor message)` | `actor` is an `Actor`; queued FIFO per sender; `Unit`; rejected on a `Secret` operand |
-| `receive` | `(receive)` | next data message of the running actor, blocking. Not type-checked: its result takes whatever type its use needs |
-| `actor-self` | `(actor-self)` | the running actor's `Actor`; on `main`, opens its mailbox |
+| `chan` | `(chan n)` | a `(Chan a)` buffering 1..n values; `n` outside 1..16777216 is `E_CHANNEL_CAPACITY` |
+| `chan-tx` | `(chan-tx c)` | the sending end, a `(Tx a)` |
+| `chan-rx` | `(chan-rx c)` | the receiving end, an `(Rx a)` |
+| `chan-send` | `(chan-send tx v)` | appends `v`, an `a`, blocking while the buffer is full; `Unit`; rejected on a `let-mut` (`E_CAPABILITY_LEAK`) or `Secret` operand |
+| `chan-recv` | `(chan-recv rx)` | removes and returns the oldest value, an `a`, blocking while the buffer is empty; `E_CHANNEL_CLOSED` once the channel is closed and drained |
 | `ffi-call` | `(ffi-call "symbol" arg ... timeout)` | the symbol is a string literal and the trailing timeout a positive integer literal in milliseconds (`E_FFI_SYMBOL_REQUIRED`, `E_FFI_TIMEOUT_REQUIRED`); a foreign call that overruns it raises `E_FFI_TIMEOUT`. A foreign symbol needs an `extern` declaration; a `zyl_*` runtime symbol is typed by the compiler's signature table |
 | `ffi-pin` | `(ffi-pin value)` | copies `value`, an `a`, into a Pin-region slot and returns the slot, a `(Pin a)`; C receives its address. A function is `E_FFI_TYPE_NOT_PINNABLE` |
 | `ffi-unpin` | `(ffi-unpin pinned)` | takes a `(Pin a)` and returns the `a` in the slot, which C may have written; frees nothing |
 
-`receive` is the one place a value's type is not checked: a message
-of the wrong type is read as whatever the receiver expects. Typed
-channels will replace mailboxes and close that hole.
+Each channel endpoint has one owner: the actor that made the channel,
+until a spawned closure captures the endpoint or it is sent on a
+channel. Any other use is `E_CHANNEL_NOT_OWNER`. There is no select and
+no emptiness test (Chapter 9). Joining an actor is `actor-wait`, from
+`actor/actor` (Appendix B).
 
 ```lisp
 (extern "abs" (Int) Int)

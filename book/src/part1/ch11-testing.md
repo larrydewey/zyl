@@ -170,18 +170,32 @@ A test can check an actor's lifecycle after an explicit `actor-wait`:
 (run-tests)
 ```
 
-A test can also talk to an actor: the test's own `(actor-self)` is a mailbox the actor can reply to, and `(receive)` waits for the reply (Chapter 9, §9.3):
+A test can also talk to an actor over channels: the test gives the actor the ends it needs, keeps the others, and waits for the reply with `chan-recv` (Chapter 9, §9.5):
 
 ```lisp
-(defn doubler ()
-  (let from (receive)
-    (begin (send from 42) (doubler))))
+(use actor/actor)
+
+(defn doubler (rx tx)
+  (chan-send tx (* 2 (chan-recv rx))))
 
 (test "actor-replies"
-  (let d (spawn doubler)
-    (begin
-      (send d (actor-self))
-      (assert-equal (receive) 42))))
+  (let in (chan 1)
+    (let out (chan 1)
+      (let in-rx (chan-rx in)
+        (let out-tx (chan-tx out)
+          (let d (spawn (fn () (doubler in-rx out-tx)))
+            (begin
+              (chan-send (chan-tx in) 21)
+              (assert-equal (chan-recv (chan-rx out)) 42)
+              (actor-wait d))))))))
+
+(run-tests)
+```
+
+```
+test: actor-replies ... ok
+
+test result: 1 passed, 0 failed, 1 total
 ```
 
 For the logic itself, keep it in ordinary functions (like `work` above) and test those directly, leaving a thin actor wrapper on top.

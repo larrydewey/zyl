@@ -148,7 +148,7 @@ Macro expansion also reports `E_ARITY_MISMATCH` (wrong argument count, or too fe
 | `E_DUPLICATE_DEFINITION` | A name defined more than once at top level |
 | `E_DUPLICATE_VARIANT` | A variant name repeated within one `deftype`, or a program type that reuses a prelude constructor name (`Some`, `None`, `Ok`, `Err`, `Cons`, `Nil`) — the standard library's unqualified uses of those names would otherwise resolve to it |
 | `E_DUPLICATE_PARAMETER` | A parameter name repeated in one signature (`_` and `_`-prefixed names may repeat). *Raised by `unused_check.zyl`; not in the catalog.* |
-| `E_TYPE_MISMATCH` | Two types that must be equal are not: an `Int` condition where `Bool` is required, `Int` and `Float` mixed in arithmetic, a `String` passed where a field or parameter wants an `Int`, an `Int` given to `send` where an `Actor` is required, a `Float` in an `extern` signature, a `file-open` mode that is not a literal, a list literal with elements of two types, a non-`Int` byte offset, a slice where a `ByteBuf` is required, an `Int` given to `file-write` as its data. Raised by `type_annotate.zyl` for every unification failure, with both types in the message |
+| `E_TYPE_MISMATCH` | Two types that must be equal are not: an `Int` condition where `Bool` is required, `Int` and `Float` mixed in arithmetic, a `String` passed where a field or parameter wants an `Int`, an `Int` given to `actor-wait` where an `Actor` is required, a value received from a channel used at a different type than was sent, a `Float` in an `extern` signature, a `file-open` mode that is not a literal, a list literal with elements of two types, a non-`Int` byte offset, a slice where a `ByteBuf` is required, an `Int` given to `file-write` as its data. Raised by `type_annotate.zyl` for every unification failure, with both types in the message |
 | `E_INFINITE_TYPE` | A type that would have to contain itself, found by the occurs check, such as a function applied to itself, `(x x)` |
 | `E_RETURN_TYPE_MISMATCH` | A body that does not match its declared return type. *Catalogued only.* |
 | `E_UNKNOWN_TYPE` | A lowercase name as a field type in `deftype`: it is neither a type nor a type parameter (those are uppercase) |
@@ -215,6 +215,11 @@ an inferred placement is always one the value cannot escape (Chapter
 | `E_BYTEBUF_OVERLAP` | An append from a slice overlapping its own buffer. *Catalogued only.* |
 | `E_BYTEBUF_INVALID` | A buffer handle whose magic tag does not match. *Catalogued only.* |
 | `E_INDEX_OUT_OF_BOUNDS` | An index outside a vector or word array |
+| `E_CHANNEL_NOT_OWNER` | `chan-send` or `chan-recv` on an endpoint the running actor does not own (Chapter 9, §9.4) |
+| `E_CHANNEL_CLOSED` | `chan-recv` on a channel whose sender has finished and whose buffer is empty. Catchable with `try` |
+| `E_CHANNEL_CAPACITY` | `(chan n)` with `n` outside 1..16777216 |
+| `E_DEADLOCK` | Every live actor, `main` included, is blocked on a channel or a join. Ends the process after emitting the actors' buffered output |
+| `E_ACTOR_LIMIT` | A 1025th `spawn`: at most 1024 actors per program |
 | `E_ALIGNMENT_FAILED` / `E_ALIGN_CHECK_FAILED` | An alignment check that did not hold. *Both catalogued only: `align-check` returns a Bool rather than failing.* |
 | `E_INTERP_TAG` | The REPL interpreter's checking mode (`ZYL_INTERP_CHECK=1`) found an operand of the wrong tag, or a condition that is not 0 or 1. Such a program type-checked, so this is a type-checker bug; the interpreter regression tests run in this mode |
 
@@ -241,10 +246,10 @@ an inferred placement is always one the value cannot escape (Chapter
 | Code | Cause |
 |---|---|
 | `E_MUT_CONFLICT` | `set!` on a name that is not a `let-mut` binding in scope, on a `let-mut` of an enclosing scope from inside a closure (captures are by value), or on anything other than a plain name — direct field mutation included |
-| `E_CAPABILITY_LEAK` | A spawned closure or a sent message refers to a `let-mut` (`TMut`) variable of the enclosing scope |
+| `E_CAPABILITY_LEAK` | A spawned closure or a value sent with `chan-send` refers to a `let-mut` (`TMut`) variable of the enclosing scope |
 | `E_INVALID_CAPABILITY` | A closure written inline as an `ffi-call` argument |
 | `E_CT_VIOLATION` | A `Secret` steered a branch, indexed memory, or went through a divider |
-| `E_SECRET_ESCAPE` | A `Secret` reached `spawn`, `send` or `file-write` |
+| `E_SECRET_ESCAPE` | A `Secret` reached `spawn`, `chan-send` or `file-write` |
 | `E_SECRET_DEBUG` | A `Secret` reached `print` |
 | `E_ZEROIZE_MISSING` | *(warning, severity 2)* A function takes a `Secret` parameter and never zeroizes it |
 | `E_PKG_CAPABILITY_VIOLATION` | A package uses a construct, or a stdlib module, without declaring the capability it needs (§31.9) |
@@ -343,7 +348,7 @@ language server publishes them as Warning diagnostics (Chapter 35).
 
 ## A.17 Catalog Versus Implementation
 
-**In the catalog, never raised.** 37 of the catalog's 126 distinct
+**In the catalog, never raised.** 37 of the catalog's 130 distinct
 codes are not raised anywhere in the compiler, runtime or REPL:
 
 - Lexer and parser: `E_UNEXPECTED_EOF`,

@@ -342,7 +342,7 @@ Notes on the harness (Chapter 11 has the details):
 
 ## 13.10 A Concurrent Variation?
 
-The natural concurrent design gives each file to a worker actor, which parses it and sends its `Stats` back to a collector. With `receive` and `actor-self` (Chapter 21, §21.3) that design works: main sends each worker a message carrying a file name and its own id (a field of type `Actor`), the worker parses the file and `send`s its `Stats` back, and main `receive`s one reply per worker. For a single sample file it adds nothing over calling `report` directly, so the sequential version is the one shown here.
+The natural concurrent design gives each file to a worker actor, which parses it and sends its `Stats` back to the collector. With channels (Chapter 9) that design works: `main` gives each worker a channel for its result, the spawned closure captures the file name and that channel's `Tx`, and `main` calls `chan-recv` on each worker's channel in turn. Because each worker has its own channel and `main` reads them in a fixed order, the report comes out the same on every run. For a single sample file it adds nothing over calling `report` directly, so the sequential version is the one shown here.
 
 ## 13.11 Key Zyl Features Demonstrated
 
@@ -383,7 +383,7 @@ This part of the book covered:
 6. Pattern Matching & Error Handling: exhaustive `match`, `Result` patterns
 7. Generics & Traits: parametric and ad-hoc polymorphism
 8. Closures: explicit syntax, capture by value, higher-order functions
-9. Actors: spawning, sending, and waiting
+9. Actors: spawning, channels, and joining
 10. Macros: template macros, expansion order, current limits
 11. Testing: the built-in framework and assertions
 12. FFI: calling C, pinning, native package dependencies

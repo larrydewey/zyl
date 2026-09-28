@@ -189,32 +189,43 @@ h.join().unwrap();
 ```
 
 ```lisp
-;; Zyl: actors
+;; Zyl: actors and channels
 (use actor/actor)
 
-(let a (spawn (fn () (print "working")))
-  (begin
-    (send a 42)
-    (actor-wait a)))
+(defn main ()
+  (let c (chan 1)
+    (let tx (chan-tx c)
+      (let rx (chan-rx c)
+        (let h (spawn (fn () (let v (chan-recv rx) (print (* v 2)))))
+          (begin
+            (chan-send tx 42)
+            (actor-wait h)
+            0))))))
 ```
 
 **Differences**:
-- No shared memory between actors, and messages must be Send-capable:
-  a `let-mut` variable may not cross (`E_CAPABILITY_LEAK`).
-- `spawn` takes a zero-argument closure and returns an `Actor`, the
-  type `send` requires. The actor's work is that closure.
-- An actor reads its messages with `(receive)`, which blocks until one
-  arrives, and `(actor-self)` is its own handle, so a request can carry
-  where to send the reply; a message field that carries it is typed
-  `Actor`. `main` has a mailbox too. There is no selective receive or
-  receive timeout: messages come out in FIFO order.
-- Unlike an `mpsc::Receiver<T>`, a mailbox is not typed yet: `receive`
-  returns whatever type its use expects, and nothing checks that the
-  sender agreed. Typed channels will replace mailboxes.
-- There is no `wait-all` form, but every program drains and stops its
-  actors when `main` returns. `actor-wait` stops one actor and joins its
-  thread; `(ffi-call "zyl_actor_wait_all" 1000)` drains every mailbox and
-  then stops all actors.
+- `(chan n)` makes a channel buffering up to `n` values, and
+  `chan-tx`/`chan-rx` give its two ends, `(Tx a)` and `(Rx a)`. Like
+  `mpsc`, the channel is typed. Unlike `mpsc`, it is bounded, and
+  `chan-send` blocks while the buffer is full.
+- Each end has exactly one owner: one writer and one reader per channel,
+  so a `Tx` cannot be cloned. An end moves to another actor when a
+  spawned closure captures it (as `rx` above) or when it is sent on a
+  channel. Using an end the actor does not own is `E_CHANNEL_NOT_OWNER`.
+- There is no `try_recv`, `select` or receive timeout. `chan-recv`
+  blocks until a value arrives, or fails with `E_CHANNEL_CLOSED` once the
+  writer has finished and the buffer is empty.
+- No shared memory between actors, and sent values must be
+  Send-capable: a `let-mut` variable may not cross
+  (`E_CAPABILITY_LEAK`).
+- `spawn` takes a zero-argument closure and returns an `Actor`, which
+  can only be joined (`actor-wait`) or queried (`actor-is-alive`, true
+  until joined). `actor-wait` re-raises the actor's panic, as
+  `join().unwrap()` would.
+- An actor's `print`s are buffered and emitted when it is joined, so
+  output does not interleave. Returning from `main` joins every actor
+  that was not joined, in spawn order. When every actor is blocked, the
+  program fails with `E_DEADLOCK` instead of hanging.
 
 ### Macros → Macros (Different)
 
@@ -399,8 +410,8 @@ pthread_mutex_unlock(&lock);
 
 **No mutexes** — actors are isolated, and a spawned closure may not
 capture a `let-mut` variable from outside it. State that several parts
-of a program update lives in one actor, and the others `send` it
-messages (E.1).
+of a program update lives in one actor, and the others send it
+messages over channels (E.1).
 
 ### Macros → Macros (Different)
 
@@ -448,7 +459,7 @@ identical binary (§27, §31.12). Builds never touch the network.
 | Generics | Monomorphised | Templates | Monomorphised, canonical names |
 | Traits | Traits | Virtual fns | Traits, `(Trait.method x)` |
 | Macros | Procedural/declarative | Textual | AST templates |
-| Concurrency | Threads + channels | pthreads | Actors |
+| Concurrency | Threads + channels | pthreads | Actors + one-writer, one-reader channels |
 | Determinism | Configurable | No | Mandatory |
 | Truth values | `bool` | Any scalar | `Bool` only |
 | Numeric conversion | `as` | Implicit | Explicit only (`zyl_f_of_int`); `Int` and `Float` never mix |

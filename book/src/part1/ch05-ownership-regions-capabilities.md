@@ -398,7 +398,7 @@ return new values instead.
 
 ## 5.7 Send Capability — Actor Safety
 
-Actors communicate by message passing (Chapter 9). The specification
+Actors communicate over channels (Chapter 9). The specification
 requires everything that crosses an actor boundary to be
 **Send-capable**:
 
@@ -411,29 +411,31 @@ requires everything that crosses an actor boundary to be
 | `TPin<T>` | No | FFI-pinned — not for actor transfer |
 
 The compiler checks the case you can actually write: a `spawn` closure
-or a `send` message that refers to a `let-mut` variable in scope is
+or a `chan-send` value that refers to a `let-mut` variable in scope is
 `E_CAPABILITY_LEAK`.
 
 ```lisp
+(use actor/actor)
+
 (defn main ()
-  (let a (spawn (fn () 0))
-    (let-mut x 10
-      (begin
-        (send a 42)            ; OK
-        (send a (Some "hi"))   ; OK
-        (send a x)             ; compile error: x is let-mut
-        0))))
+  (let c (chan 4)
+    (let tx (chan-tx c)
+      (let-mut x 10
+        (begin
+          (chan-send tx 42)      ; OK
+          (chan-send tx x)       ; compile error: x is let-mut
+          0)))))
 ```
 
 ```
-PANIC: error[E_CAPABILITY_LEAK]: message sent to an actor references let-mut (TMut) variable `x` from the enclosing scope
+PANIC: error[E_CAPABILITY_LEAK]: value sent on a channel references let-mut (TMut) variable `x` from the enclosing scope
 ```
 
-The error is located at the `send`, with a second label at the
+The error is located at the `chan-send`, with a second label at the
 `let-mut`. A `spawn` whose closure captures a `let-mut` variable gets
 the matching message, "spawned closure captures let-mut (TMut)
 variable `x` from the enclosing scope". To send the current value of a mutable variable, bind
-it with `let` first: `(let snapshot x (send a snapshot))`.
+it with `let` first: `(let snapshot x (chan-send tx snapshot))`.
 
 ## 5.8 FFI Safety — The Pin Region
 
@@ -545,7 +547,7 @@ the tutorial.
 | Error | Cause | Fix |
 |-------|-------|-----|
 | `E_MUT_CONFLICT` | `set!` on a `let` binding, a parameter or a struct field | Use `let-mut`, or rebind the whole value |
-| `E_CAPABILITY_LEAK` | A `let-mut` variable in a `spawn` closure or a `send` message | Send a `let`-bound copy |
+| `E_CAPABILITY_LEAK` | A `let-mut` variable in a `spawn` closure or a `chan-send` value | Send a `let`-bound copy |
 | `E_INVALID_CAPABILITY` | A closure written inline as an `ffi-call` argument | Pass a named top-level function, typed `(Fn ...)` in the `extern` |
 | `E_FFI_TYPE_NOT_PINNABLE` | A function given to `ffi-pin` | Pin data, not code |
 | `E_REGION_ESCAPE` | A value allocated inside `with-region`, or a `(bytebuf Stack N)`, outlives its region | Return data that does not point into the region |
@@ -554,7 +556,7 @@ the tutorial.
 | `E_CT_VIOLATION`, `E_SECRET_DEBUG`, `E_SECRET_ESCAPE`, `E_FFI_PIN_REQUIRED` | Misuse of a `Secret` | See Chapter 17 |
 
 `E_MUT_CONFLICT` and `E_CAPABILITY_LEAK` are located: they point at the
-`set!`, `spawn` or `send`, and a second label points at the binding
+`set!`, `spawn` or `chan-send`, and a second label points at the binding
 involved. The Secret diagnostics, `E_FFI_TYPE_NOT_PINNABLE` and the
 region errors are located too. `E_INVALID_CAPABILITY` still prints as a
 single `PANIC:` line naming the code.
@@ -610,7 +612,7 @@ and code generation turns them into region pushes, pops and
 `stdlib/compiler/mutability_check.zyl` runs before lowering. It walks the
 program tracking which names are in-scope `let-mut` bindings, rejects a
 `set!` of anything else (`E_MUT_CONFLICT`), and rejects a `spawn` or
-`send` that mentions one (`E_CAPABILITY_LEAK`). The field-mutation form
+`chan-send` that mentions one (`E_CAPABILITY_LEAK`). The field-mutation form
 `(set! (struct-get ...) ...)` is rejected earlier, by the parser.
 The same pass rejects a closure written inline as an `ffi-call` argument
 (`E_INVALID_CAPABILITY`); the type pass rejects a pinned function

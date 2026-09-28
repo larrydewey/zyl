@@ -180,24 +180,31 @@ from closures instead.
 
 ### Actor transfer (§7.4, §9.1 R3, §15)
 
-A spawned closure may capture only Send-capable values, and a message
-must be Send-capable. The compiler checks one concrete shape: if the
-closure passed to `spawn`, or the message passed to `send`, refers to any
-`let-mut` variable in scope, it is `E_CAPABILITY_LEAK`.
+A spawned closure may capture only Send-capable values, and a value sent
+on a channel must be Send-capable. The compiler checks one concrete
+shape: if the closure passed to `spawn`, or the value passed to
+`chan-send`, refers to any `let-mut` variable in scope, it is
+`E_CAPABILITY_LEAK`.
 
 ```lisp
+(use actor/actor)
+
 (defn main ()
-  (let a (spawn (fn () 0))
-    (let-mut x 10
-      (begin
-        (send a 42)          ; ok
-        (send a (Some 1))    ; ok
-        (send a x)           ; E_CAPABILITY_LEAK: x is let-mut
-        0))))
+  (let c (chan 4)
+    (let tx (chan-tx c)
+      (let-mut x 10
+        (begin
+          (chan-send tx 42)      ; ok
+          (chan-send tx x)       ; E_CAPABILITY_LEAK: x is let-mut
+          0)))))
 ```
 
 There is no type-level Send predicate. A `Secret` reaching `spawn` or
-`send` is rejected separately (17.8).
+`chan-send` is rejected separately (17.8).
+
+Channel endpoints are a separate kind of exclusivity, checked at run
+time: each `Tx` and `Rx` has one owning actor, and a use by any other
+actor is `E_CHANNEL_NOT_OWNER` (Chapter 21, §21.3).
 
 ### FFI (§16, §9.1 R4)
 
@@ -240,7 +247,7 @@ arithmetic, constructors and byte loads, and rejects the following:
 | an index, or a byte-load/store offset | `E_CT_VIOLATION` |
 | an operand of `/` or `mod` | `E_CT_VIOLATION` |
 | an argument to `print` | `E_SECRET_DEBUG` |
-| part of a `spawn`, a `send` or a `file-write` | `E_SECRET_ESCAPE` |
+| part of a `spawn`, a `chan-send` or a `file-write` | `E_SECRET_ESCAPE` |
 | a raw `ffi-call` argument (not through `ffi-pin`) | `E_FFI_PIN_REQUIRED` |
 | consumed into a public result without a call to `zeroize` | `E_ZEROIZE_MISSING` (a warning) |
 
@@ -307,7 +314,7 @@ What the specification infers, and how each rule is met today:
 | Code | Raised for |
 |------|------------|
 | `E_MUT_CONFLICT` | `set!` on a binding that is not `let-mut`, or on a struct field |
-| `E_CAPABILITY_LEAK` | a `let-mut` variable referenced by a `spawn` closure or a `send` message |
+| `E_CAPABILITY_LEAK` | a `let-mut` variable referenced by a `spawn` closure or a `chan-send` value |
 | `E_INVALID_CAPABILITY` | a `fn` written directly as an `ffi-call` argument |
 | `E_CT_VIOLATION`, `E_SECRET_DEBUG`, `E_SECRET_ESCAPE`, `E_FFI_PIN_REQUIRED` | Secret misuse (17.8) |
 | `E_ZEROIZE_MISSING` | warning: a Secret consumed without `zeroize` |

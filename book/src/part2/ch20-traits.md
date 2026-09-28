@@ -153,9 +153,9 @@ with (Chapter 19), and each instance resolves the call. An impl for a
 generic type, `(impl Show Vec ...)`, is handled the same way per element
 type.
 
-There is no run-time fallback. A receiver whose type nothing fixes, such
-as the result of an untyped `receive`, is `E_CANNOT_INFER` ("cannot
-tell which impl of `Area.area` to call"); annotate the value's type.
+There is no run-time fallback. A receiver whose type nothing fixes is
+`E_CANNOT_INFER` ("cannot tell which impl of `Area.area` to call");
+annotate the value's type.
 Data mixing two types, such as a list
 holding a `Circle` and a `Rect`, is already `E_TYPE_MISMATCH`. Wrap such
 data in one ADT (20.5).

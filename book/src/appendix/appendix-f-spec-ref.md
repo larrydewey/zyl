@@ -26,7 +26,7 @@ Appendices A–C record the differences.
 | 12 | Control Flow | if, try/catch, match, assert, while, for, cond, begin, with-resource, error (§12.1–§12.10) | Ch. 3, 6 |
 | 13 | Memory Operations | Stack, Heap, Circular, Pin, Global | Ch. 16 |
 | 14 | Stack Safety Guarantee | Deep recursion never overflows | Ch. 29 |
-| 15 | Concurrency Model (Actors) | Private state, FIFO mailbox, spawn/send, isolation | Ch. 9, 21 |
+| 15 | Concurrency Model (Actors) | Kahn channels (one writer, one reader), endpoint ownership, closing, deadlock, buffered actor output, isolation | Ch. 9, 21 |
 | 16 | FFI Model | `ffi-call`, `ffi-pin`, `ffi-unpin`; FFI_Pinnable types; pin semantics | Ch. 12, 22 |
 | 17 | Monomorphization | Alphabetical canonical specialization names | Ch. 19 |
 | 18 | ICNF (Intermediate Canonical Normal Form) | SSA IR with region annotations | Ch. 28 |
@@ -114,7 +114,7 @@ Special Forms   ::= (let Name Expr Body)
                   | (fn (Param*) Body+)
                   | (lambda (Param*) Body+)
                   | (spawn Expr)
-                  | (send Expr Expr)
+                  | (chan-send Expr Expr)
                   | (ffi-call String Expr* Int)
                   | (ffi-pin Expr)
                   | (ffi-unpin Expr)
@@ -146,7 +146,7 @@ strict: every failure is a compile error, and there is no cast form.
 | `+ - * / %` | Both operands `Int` or both `Float`; the result has their type; no implicit conversion |
 | `< > <= >=` | Both operands one type: `Int`, `Float` or `String`; result `Bool`. An ADT is ordered with `Ord.compare` |
 | `= != and or not` and the predicates | Result `Bool`; `and`, `or`, `not` take `Bool` |
-| `print`, `set!`, `while`, `for`, `assert`, `send` | `Unit` |
+| `print`, `set!`, `while`, `for`, `assert`, `chan-send` | `Unit` |
 | `list`, `[...]`, `'(...)` | `(List τ)`: every element one type τ; a quoted datum holds no name |
 | Byte operations | Offsets, lengths and stored values `Int`; each takes the handle kind its runtime entry accepts (`ByteBuf`, `ByteSlice`, or either for a load or store) |
 | `file-read`, `file-write`, `file-close` | `Int Int -> String`, `Int String -> Int`, `Int -> Int` |
@@ -155,8 +155,8 @@ strict: every failure is a compile error, and there is no cast form.
 | `trait` | `Self` in a method signature is the implementing type |
 | `ffi-call` | A `zyl_*` symbol has a type in the compiler's table; any other symbol needs an `extern` with concrete, word-sized types (no `Float`); `(Fn (A ...) R)` types a callback |
 | `file-open` | The mode is a literal `"r"`, `"w"` or `"a"`, optionally with `+` or `b` |
-| `spawn`, `actor-self` | `Actor`; `send`'s first argument is an `Actor` |
-| `receive` | Not checked: it takes whatever type its use needs, until typed channels replace mailboxes |
+| `spawn` | `(() -> a) -> Actor` |
+| Channels | `chan : Int -> (Chan a)`, `chan-tx : (Chan a) -> (Tx a)`, `chan-rx : (Chan a) -> (Rx a)`, `chan-send : (Tx a) a -> Unit`, `chan-recv : (Rx a) -> a` |
 | `deftype` | May not reuse `Some`, `None`, `Ok`, `Err`, `Cons` or `Nil` (`E_DUPLICATE_VARIANT`) |
 
 ## F.3 Key Invariants and Guarantees (Normative)
@@ -284,7 +284,7 @@ raise.
 | `collections/collections` | `assoc-*`, `list-map`, `list-filter`, `list-fold`, `list-nth`, `list-range` |
 | `collections/slice` | `Slice`, `slice-vec`, `slice-of-vec`, `slice-sub`, `slice-get`, `slice-len`, `slice-fold`, `slice-to-vec` |
 | `text/view` | `StrView`, `view-of`, `view-slice`, `view-sub`, `view-split`, `view-trim`, `view-parse-int`, `view-to-string`; `Cursor`, `cursor-of`, `cursor-take-while`, `cursor-expect` |
-| `actor/actor` | `actor-spawn`, `actor-send`, `actor-wait`, `actor-is-alive`, `actor-terminate` |
+| `actor/actor` | `actor-spawn`, `actor-wait`, `actor-is-alive` |
 | `atomic/atomic` | `atomic-load`, `atomic-store`, `atomic-add`, `atomic-cas`, `atomic-fetch-add` |
 | `ffi/ffi` | `ffi-pin-value`, `ffi-unpin-value`, `ffi-safe-call`, `ffi-pin-call-unpin` |
 | `io/io` | `io-file-open-read`, `io-file-write`, `io-read-line`, `make-string-buffer`, `OutputStream` |
@@ -292,7 +292,7 @@ raise.
 | `testing/testing` | `test-run`, `assert-equal-values`, `property-int` |
 | `math/...` | hashes, AEADs, curves, RSA, KDFs, bignums, RNGs, `math/secret/secret` |
 
-Special forms such as `spawn`, `send`, `ffi-call`, `file-open`,
+Special forms such as `spawn`, `chan-send`, `ffi-call`, `file-open`,
 `test` and `run-tests` belong to the compiler, not to a module.
 Appendix B has the full listing.
 

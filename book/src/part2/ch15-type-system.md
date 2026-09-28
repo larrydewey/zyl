@@ -43,7 +43,7 @@ ill-typed program. Section 15.7 lists the errors.
   `Bool`, so they are used directly: `(if (str-eq a b) ...)`.
 - **Unit** is a real type, and its one value is written `unit`. The
   statement forms are `Unit`: `print`, `set!`, `while`, `assert`,
-  `send`, an `if` without an else, and a `cond` with no
+  `chan-send`, an `if` without an else, and a `cond` with no
   `true` or `else` clause. A form whose two branches are a `Unit` and an
   `Int` does not type-check, so a statement-only `match` arm next to an
   arm that returns a number needs a value of its own. `main` must have
@@ -281,13 +281,15 @@ A list holding a `Circle` and a `Rect` has no single element type, so it
 is rejected too: build a sum type (`(deftype Shape (C Circle) (R Rect))`)
 instead.
 
-### The one hole
+### Actors and channels
 
-`receive` is not typed yet: its result takes whatever type its use
-needs, so a message of the wrong type is not caught at compile time.
-Mailboxes are to be replaced by typed channels; until then, the message
-ADT you `match` on is your contract (Chapter 21). `send` and `spawn` are
-typed: an actor id has type `Actor`, and `send` needs one.
+Concurrency is typed like everything else. `spawn` has type
+`(() -> a) -> Actor`, and a channel carries one type: `chan` gives a
+`(Chan a)`, `chan-tx` a `(Tx a)`, `chan-rx` an `(Rx a)`, `chan-send`
+takes a `(Tx a)` and an `a`, and `chan-recv` returns the `a` of its
+`(Rx a)`. A value received at a different type than was sent is
+`E_TYPE_MISMATCH` (Chapter 21, §21.3). To send several kinds of
+message on one channel, make them variants of one ADT.
 
 ### Annotations
 

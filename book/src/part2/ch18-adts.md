@@ -300,20 +300,30 @@ plain `print` formats each one correctly (Chapter 15).
 
 ## 18.7 ADTs and Capabilities
 
-§7.4 and §15 require an actor message to be Send-capable. The spec-level
-rule for an ADT is that it is Send when all of its fields are.
+§7.4 and §15 require a value sent on a channel to be Send-capable. The
+spec-level rule for an ADT is that it is Send when all of its fields
+are.
 
 There is no type predicate that decides this. What is enforced is the
-syntactic rule from Chapter 17: a `send` whose
-message mentions a `let-mut` variable, or a `Secret`, is rejected.
+syntactic rule from Chapter 17: a `chan-send` whose value mentions a
+`let-mut` variable, or a `Secret`, is rejected.
 
 ```lisp
+(use actor/actor)
+
 (defn main ()
-  (let a (spawn (fn () 0))
-    (begin
-      (send a (Some "hello"))      ; accepted
-      0)))
+  (let c (chan 1)
+    (let tx (chan-tx c)
+      (let rx (chan-rx c)
+        (let a (spawn (fn () (match (chan-recv rx) (Some s (print s)) (None (print "none")))))
+          (begin
+            (chan-send tx (Some "hello"))   ; accepted
+            (actor-wait a)
+            0))))))
 ```
+
+ADTs are the usual way to carry several kinds of message on one
+channel, since a channel carries values of one type (Chapter 9, §9.5).
 
 ## 18.8 Equality, Ordering and Derivation
 

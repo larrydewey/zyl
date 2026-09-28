@@ -864,17 +864,22 @@ String literals and float literals are interned into `.rodata`
 
 ## 29.8 Actor Runtime Integration
 
-`spawn` and `send` lower to plain calls into the runtime (`runtime/rt/actor.zyl`):
+`spawn` and the channel forms lower to plain calls into the runtime
+(`runtime/rt/actor.zyl` and `chan.zyl`):
 
 | Form | Runtime call | What it does |
 |------|--------------|--------------|
-| `(spawn (fn () ...))` | `zyl_actor_spawn(entry, state)` | Starts one pthread per actor; returns its id |
-| `(send actor msg)` | `zyl_actor_send(id, msg)` | Appends to the actor's mailbox, a linked list guarded by a mutex and a condition variable |
-| `actor-wait` (stdlib `actor/actor`) | `zyl_actor_wait(id)` | Joins one actor |
+| `(spawn f)` | `zyl_actor_spawn(f, 0)` | Moves the endpoints `f` captures to the new actor, starts its thread, returns its id |
+| `(chan n)` | `zyl_chan_new(n)` | Allocates a ring buffer of `n` words and its two endpoints |
+| `(chan-tx c)`, `(chan-rx c)` | `zyl_chan_tx(c)`, `zyl_chan_rx(c)` | Load the endpoint from the channel |
+| `(chan-send tx v)` | `zyl_chan_send(tx, v)` | Checks ownership, then appends under the scheduler lock, blocking while full |
+| `(chan-recv rx)` | `zyl_chan_recv(rx)` | Checks ownership, then removes the oldest value, blocking while empty |
+| `actor-wait` (stdlib `actor/actor`) | `zyl_actor_wait(id)` | Joins one actor, emits its output, re-raises its panic |
 
-The spawn body is lifted like any other `fn`; its state pointer is
-always 0, so a spawn body cannot capture. The message is passed as the
-raw word, not boxed.
+The spawn body is lifted like any other `fn`. A capturing closure is
+passed as its closure block, which `zyl_actor_spawn` unpacks into code
+and environment. A sent value is passed as its raw word, not boxed or
+copied.
 
 ## 29.9 The Entry Stub
 
