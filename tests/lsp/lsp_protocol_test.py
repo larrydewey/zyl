@@ -11,6 +11,7 @@ Run it directly, or through `./run_regression_tests.sh --filter lsp`.
 
 import json
 import os
+import select
 import subprocess
 import sys
 
@@ -430,6 +431,25 @@ def test_utf8():
           f"expected a type error, got {escaped}")
 
 
+def test_interactive():
+    """Each reply is written before the server blocks on the next read."""
+    proc = subprocess.Popen(
+        [SERVER], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    )
+    try:
+        proc.stdin.write(frame({"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                                "params": {"capabilities": {}}}))
+        proc.stdin.flush()
+        ready, _, _ = select.select([proc.stdout], [], [], 30)
+        check("interactive", bool(ready), "no reply to initialize while stdin stays open")
+        if ready:
+            check("interactive", b"Content-Length:" in os.read(proc.stdout.fileno(), 65536),
+                  "the reply is not a framed message")
+    finally:
+        proc.kill()
+        proc.communicate()
+
+
 TESTS = [
     ("capabilities", test_capabilities),
     ("hover", test_hover),
@@ -442,6 +462,7 @@ TESTS = [
     ("package forms", test_package_forms),
     ("large document", test_large_document),
     ("utf-8", test_utf8),
+    ("interactive", test_interactive),
 ]
 
 

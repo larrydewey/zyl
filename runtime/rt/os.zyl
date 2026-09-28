@@ -32,8 +32,9 @@
         (let n (ffi-call "%syscall3" 0 fd p k 1)
           (let _ (rt-st8 (+ p (if (< n 0) 0 n)) 0) (ffi-call "%str" p 1)))))))
 
-(defn zyl_file_read_c (fd count) (os-read fd count 0))
-(defn zyl_file_read_c_r (fd count) (os-read fd count (rt-cur-region)))
+; Reading stdin flushes stdout first, so a reply is out before its process blocks for the next request.
+(defn zyl_file_read_c (fd count) (let _ (if (= fd 0) (zyl_out_flush) 0) (os-read fd count 0)))
+(defn zyl_file_read_c_r (fd count) (let _ (if (= fd 0) (zyl_out_flush) 0) (os-read fd count (rt-cur-region))))
 
 (defn zyl_file_write_c (fd buf)
   (let w (rt-w buf)

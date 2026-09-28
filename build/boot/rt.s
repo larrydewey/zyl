@@ -23869,16 +23869,46 @@ zy_local_x2Fmain_0__os__os_x2Dread:
     ret
 .globl zyl_file_read_c
 zyl_file_read_c:
+    push rbx
+    push r12
+    mov rbx, rdi
+    mov r12, rsi
 .L786_0:
-    mov r8, 0
-    mov rdx, r8
+    cmp rbx, 0
+    jne .L786_1
+.L786_3:
+    call zyl_out_flush
+    jmp .L786_2
+.L786_1:
+.L786_2:
+    mov rsi, 0
+    mov rdi, rbx
+    mov rdx, rsi
+    mov rsi, r12
+    pop r12
+    pop rbx
     jmp zy_local_x2Fmain_0__os__os_x2Dread
 .globl zyl_file_read_c_r
 zyl_file_read_c_r:
+    push rbx
+    push r12
+    mov rbx, rdi
+    mov r12, rsi
 .L787_0:
+    cmp rbx, 0
+    jne .L787_1
+.L787_3:
+    call zyl_out_flush
+    jmp .L787_2
+.L787_1:
+.L787_2:
     mov rax, QWORD PTR fs:zyl_cur_region@tpoff
-    mov r8, rax
-    mov rdx, r8
+    mov rsi, rax
+    mov rdi, rbx
+    mov rdx, rsi
+    mov rsi, r12
+    pop r12
+    pop rbx
     jmp zy_local_x2Fmain_0__os__os_x2Dread
 .globl zyl_file_write_c
 zyl_file_write_c:
