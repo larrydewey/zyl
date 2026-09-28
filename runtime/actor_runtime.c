@@ -2751,18 +2751,6 @@ long long zyl_mlock(long long addr, long long len) {
 #include <immintrin.h>
 #include <cpuid.h>
 
-long long zyl_cpuid_features(void) {
-    unsigned int eax, ebx, ecx, edx;
-    if (!__get_cpuid(1, &eax, &ebx, &ecx, &edx)) return 0;
-    long long f = 0;
-    if (ecx & (1u << 25)) f |= 1;  /* AES-NI   */
-    if (ecx & (1u << 1))  f |= 2;  /* PCLMULQDQ */
-    if (ecx & (1u << 19)) f |= 4;  /* SSE4.1   */
-    if (ecx & (1u << 28)) f |= 8;  /* AVX      */
-    return f;
-}
-
-long long zyl_aesni_available(void) { return (zyl_cpuid_features() & 1) ? 1 : 0; }
 
 static long long* zyl_words_data(long long h);
 long long zyl_words_len(long long h);
@@ -2894,8 +2882,6 @@ long long zyl_aes_encrypt_block(long long keybase, long long keybytes,
 
 #else /* not x86_64 */
 
-long long zyl_cpuid_features(void) { return 0; }
-long long zyl_aesni_available(void) { return 0; }
 long long zyl_aes_encrypt_block(long long keybase, long long keybytes,
                                 long long inbase, long long outbase) {
     (void)keybase; (void)keybytes; (void)inbase; (void)outbase;

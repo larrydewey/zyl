@@ -438,6 +438,34 @@ as recorded below.
 
 # Session log (newest first)
 
+## Session (2026-09-28, later) — runtime in Zyl, stage 2: SIMD
+
+- New primitives:
+  - SSE2 `%v128-zero-mask`, `-byte-mask`, `-eq-mask` and `-copy`, with
+    AVX2 `%v256-*` twins;
+  - `%ctz`, `%cpuid-eax`/`ebx`/`ecx`/`edx` and `%xgetbv`;
+  - `%global` (a runtime `.bss` block, `rt-globals` in `rt_mode.zyl`).
+
+  `MRaw` now takes an operand list. Operands go in `rdx`/`rcx` and the
+  result in `rax`; `cg-raw-lines` is shared by MIR and the stack machine.
+- `rt.zyl` scans strings itself: `rt-strlen` (SSE2, then an AVX2 loop
+  behind a `cpuid` probe cached in `%global`), `rt-strcmp` (page-safe
+  16-byte blocks) and `rt-mem-eq`. The libc `strlen`/`strcmp`/`memcmp`
+  bridge is gone. `zyl_cpuid_features` and `zyl_aesni_available` are
+  ported and deleted from the C.
+- MIR: a C call in tail position of an exported runtime entry is a
+  `jmp` (`MTail` level -1). It is only safe there, because Zyl-to-Zyl
+  calls do not align the stack.
+- `boot.sh --bootstrap-from-self` stubs `zyl_*` symbols the old `rt.s`
+  lacks with `ud2`, and builds each round's runtime with that round's
+  compiler, so a function can move from C to Zyl in one reseed.
+- Verified: a C fuzz harness (scratch only, not committed) ran 2M random
+  cases per build. Strings sat against `PROT_NONE` pages, lengths
+  0–400, high-bit bytes; both the AVX2 and SSE2-only builds matched
+  libc. New test `regression/runtime-strings`; the suite passes 275/275.
+- Perf: a self-compile is at parity with the all-C runtime (2.30–2.33 s
+  over 5 runs each). bench/ is at parity too (str 0.105 s vs 0.110 s).
+
 ## Session (2026-09-28) — the runtime moves to Zyl, stage 1
 
 Plan: `docs/runtime-in-zyl-design.md`. The goal is no C at all: every

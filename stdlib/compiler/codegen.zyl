@@ -667,9 +667,11 @@
 ; A foreign symbol's address, loaded through the GOT so it resolves the
 ; same way for a libc function and for a native-dependency object.
 (defn cg-sym-addr (st s)
+  (if (rt-global-label-p s)
+    (cg-emit-line st (str-concat "    lea rax, [rip+" (str-concat s "]")))
   (let st2 (cg-emit st "    mov rax, QWORD PTR [rip+")
     (let st3 (cg-emit st2 s)
-      (cg-nl (cg-emit st3 "@GOTPCREL]")))))
+      (cg-nl (cg-emit st3 "@GOTPCREL]"))))))
 
 (defn cg-load-fnref (st n)
   (let st2 (cg-emit st "    lea rax, [rip+")
@@ -2077,7 +2079,7 @@
     (let st2 (cg-functions st1 fns)
       (let st3 (if (rt-mode-p) st2 (cg-entry-stub st2))
         (let st4 (cg-format-strings st3)
-          (cg-rodata-emit-list st4 (cg-reverse-rodata (cg-rodata-of st4))))))))
+          (cg-rt-bss (cg-rodata-emit-list st4 (cg-reverse-rodata (cg-rodata-of st4)))))))))
 
 ; Reverse the collected rodata list so entries emit in creation order.
 (defn cg-reverse-rodata (xs)
@@ -2289,54 +2291,115 @@
 ;; RAW RUNTIME PRIMITIVES (runtime module only, docs/runtime-in-zyl-design.md)
 ;; ===========================================================================
 
-; 0-3 load 8/16/32/64, 4-7 store 8/16/32/64, 8 %word, 9 %str, -1 not a primitive.
+; Primitive kind, or -1: loads 0-3, stores 4-7, %word 8, %str 9, SSE2 10-13, AVX2 14-17, %ctz 18, cpuid 19-22, %xgetbv 23, %global 24.
 (defn cg-raw-kind (sym)
-  (if (not (rt-prim-p sym)) -1
-  (if (str-eq sym "%load8") 0 (if (str-eq sym "%load16") 1 (if (str-eq sym "%load32") 2 (if (str-eq sym "%load64") 3
-  (if (str-eq sym "%store8") 4 (if (str-eq sym "%store16") 5 (if (str-eq sym "%store32") 6 (if (str-eq sym "%store64") 7
-  (if (str-eq sym "%word") 8 (if (str-eq sym "%str") 9 -1))))))))))))
+  (if (not (rt-prim-p sym)) -1 (cg-raw-kind-in sym cg-raw-names 0)))
 
-(defn cg-raw-load-text (kind)
-  (if (= kind 0) "    movzx eax, byte ptr [rdx]"
-  (if (= kind 1) "    movzx eax, word ptr [rdx]"
-  (if (= kind 2) "    mov eax, dword ptr [rdx]" "    mov rax, qword ptr [rdx]"))))
+(def cg-raw-names
+  (Cons "%load8" (Cons "%load16" (Cons "%load32" (Cons "%load64"
+  (Cons "%store8" (Cons "%store16" (Cons "%store32" (Cons "%store64"
+  (Cons "%word" (Cons "%str"
+  (Cons "%v128-zero-mask" (Cons "%v128-byte-mask" (Cons "%v128-eq-mask" (Cons "%v128-copy"
+  (Cons "%v256-zero-mask" (Cons "%v256-byte-mask" (Cons "%v256-eq-mask" (Cons "%v256-copy"
+  (Cons "%ctz" (Cons "%cpuid-eax" (Cons "%cpuid-ebx" (Cons "%cpuid-ecx" (Cons "%cpuid-edx" (Cons "%xgetbv"
+  (Cons "%global" Nil))))))))))))))))))))))))))
 
-(defn cg-raw-store-text (kind)
-  (if (= kind 4) "    mov byte ptr [rdx], cl"
-  (if (= kind 5) "    mov word ptr [rdx], cx"
-  (if (= kind 6) "    mov dword ptr [rdx], ecx" "    mov qword ptr [rdx], rcx"))))
+(defn cg-raw-kind-in (sym names i)
+  (match names
+    (Nil -1)
+    (Cons n rest (if (str-eq n sym) i (cg-raw-kind-in sym rest (+ i 1))))))
 
-; Stack machine: address (then value) left to right, result in rax.
-(defn cg-inline-raw (st env kind args)
+; The primitive's code with operands in rdx, rcx and the result in rax.
+(defn cg-raw-lines (kind)
+  (if (= kind 0) (Cons "    movzx eax, byte ptr [rdx]" Nil)
+  (if (= kind 1) (Cons "    movzx eax, word ptr [rdx]" Nil)
+  (if (= kind 2) (Cons "    mov eax, dword ptr [rdx]" Nil)
+  (if (= kind 3) (Cons "    mov rax, qword ptr [rdx]" Nil)
+  (if (= kind 4) (Cons "    mov byte ptr [rdx], cl" (Cons "    mov rax, rcx" Nil))
+  (if (= kind 5) (Cons "    mov word ptr [rdx], cx" (Cons "    mov rax, rcx" Nil))
+  (if (= kind 6) (Cons "    mov dword ptr [rdx], ecx" (Cons "    mov rax, rcx" Nil))
+  (if (= kind 7) (Cons "    mov qword ptr [rdx], rcx" (Cons "    mov rax, rcx" Nil))
+  (if (< kind 10) (Cons "    mov rax, rdx" Nil)
+  (if (= kind 10) (Cons "    movdqu xmm0, [rdx]" (Cons "    pxor xmm1, xmm1" (Cons "    pcmpeqb xmm0, xmm1" (Cons "    pmovmskb eax, xmm0" Nil))))
+  (if (= kind 11) (Cons "    movd xmm1, ecx" (Cons "    punpcklbw xmm1, xmm1" (Cons "    punpcklwd xmm1, xmm1" (Cons "    pshufd xmm1, xmm1, 0"
+                  (Cons "    movdqu xmm0, [rdx]" (Cons "    pcmpeqb xmm0, xmm1" (Cons "    pmovmskb eax, xmm0" Nil)))))))
+  (if (= kind 12) (Cons "    movdqu xmm0, [rdx]" (Cons "    movdqu xmm1, [rcx]" (Cons "    pcmpeqb xmm0, xmm1" (Cons "    pmovmskb eax, xmm0" Nil))))
+  (if (= kind 13) (Cons "    movdqu xmm0, [rcx]" (Cons "    movdqu [rdx], xmm0" (Cons "    mov rax, rdx" Nil)))
+  (if (= kind 14) (Cons "    vmovdqu ymm0, [rdx]" (Cons "    vpxor xmm1, xmm1, xmm1" (Cons "    vpcmpeqb ymm0, ymm0, ymm1" (Cons "    vpmovmskb eax, ymm0" (Cons "    vzeroupper" Nil)))))
+  (if (= kind 15) (Cons "    vmovd xmm1, ecx" (Cons "    vpbroadcastb ymm1, xmm1" (Cons "    vmovdqu ymm0, [rdx]" (Cons "    vpcmpeqb ymm0, ymm0, ymm1"
+                  (Cons "    vpmovmskb eax, ymm0" (Cons "    vzeroupper" Nil))))))
+  (if (= kind 16) (Cons "    vmovdqu ymm0, [rdx]" (Cons "    vmovdqu ymm1, [rcx]" (Cons "    vpcmpeqb ymm0, ymm0, ymm1" (Cons "    vpmovmskb eax, ymm0" (Cons "    vzeroupper" Nil)))))
+  (if (= kind 17) (Cons "    vmovdqu ymm0, [rcx]" (Cons "    vmovdqu [rdx], ymm0" (Cons "    vzeroupper" (Cons "    mov rax, rdx" Nil))))
+  (if (= kind 18) (Cons "    bsf rax, rdx" (Cons "    mov ecx, 64" (Cons "    cmovz rax, rcx" Nil)))
+  (if (= kind 23) (Cons "    xor ecx, ecx" (Cons "    xgetbv" (Cons "    mov eax, eax" Nil)))
+    (Cons "    mov eax, edx" (Cons "    mov r11, rbx" (Cons "    cpuid"
+      (Cons (if (= kind 19) "    mov eax, eax" (if (= kind 20) "    mov eax, ebx" (if (= kind 21) "    mov eax, ecx" "    mov eax, edx")))
+      (Cons "    mov rbx, r11" Nil)))))))))))))))))))))))))
+
+(defn cg-raw-arity (kind)
+  (if (< kind 4) 1 (if (< kind 8) 2 (if (< kind 11) 1 (if (< kind 14) 2 (if (= kind 14) 1 (if (< kind 18) 2 (if (= kind 18) 1 (if (< kind 23) 2 (if (= kind 23) 0 2))))))))))
+
+; %global "name" size: a zeroed, 64-byte aligned .bss block of the runtime module.
+(defn cg-raw-global-label (args)
   (match args
-    (Nil st)
-    (Cons a rest
-      (if (> kind 7)
-        (cg-expr st env a)
-        (if (< kind 4)
-          (cg-emit-line (cg-emit-line (cg-expr st env a) "    mov rdx, rax") (cg-raw-load-text kind))
+    (Cons n rest
+      (match n
+        (IStr name
           (match rest
-            (Nil st)
-            (Cons v _
-              (let st2 (cg-emit-line (cg-expr st env a) "    push rax")
-                (let st3 (cg-emit-line (cg-expr st2 env v) "    mov rcx, rax")
-                  (cg-emit-lines st3 (Cons "    pop rdx" (Cons (cg-raw-store-text kind) (Cons "    mov rax, rcx" Nil)))))))))))))
+            (Cons sz _ (match sz (IConst k (rt-global-add (str-concat "zyl_rtg_" name) k)) (_ (cg-raw-global-bad))))
+            (Nil (cg-raw-global-bad))))
+        (_ (cg-raw-global-bad))))
+    (Nil (cg-raw-global-bad))))
 
-; MIR: %word and %str are the argument itself; loads and stores are one MRaw.
+(defn cg-raw-global-bad () (ffi-call "zyl_panic" "E_FFI_RESTRICTED: %global takes a string literal name and an integer literal size" 1000))
+
+(defn cg-rt-bss (st)
+  (if (rt-mode-p) (cg-rt-bss-list (cg-emit-line st ".bss") (rt-globals)) st))
+
+(defn cg-rt-bss-list (st gs)
+  (match gs
+    (Nil st)
+    (Cons g rest
+      (match g
+        (RtGlobal name size
+          (cg-rt-bss-list (cg-emit-lines st (Cons ".p2align 6" (Cons (str-concat name ":") (Cons (str-concat "    .zero " (ffi-call "zyl_int_text" size 1000)) Nil)))) rest))))))
+
+; Stack machine: operands left to right into rdx, rcx; result in rax.
+(defn cg-inline-raw (st env kind args)
+  (if (= kind 24)
+    (cg-sym-addr st (cg-raw-global-label args))
+    (let n (cg-raw-arity kind)
+      (let st2 (if (= n 0) st
+                 (if (= n 1)
+                   (match args (Cons a _ (cg-emit-line (cg-expr st env a) "    mov rdx, rax")) (Nil st))
+                   (match args
+                     (Cons a rest
+                       (match rest
+                         (Cons b _
+                           (let s1 (cg-emit-line (cg-expr st env a) "    push rax")
+                             (cg-emit-lines (cg-expr s1 env b) (Cons "    mov rcx, rax" (Cons "    pop rdx" Nil)))))
+                         (Nil st)))
+                     (Nil st))))
+        (cg-emit-lines st2 (cg-raw-lines kind))))))
+
+; MIR: %word and %str are the argument itself; %global is a symbol address; the rest is one MRaw.
 (defn ml-raw (st env venv ms kind args)
-  (if (> kind 7)
+  (if (or (= kind 8) (= kind 9))
     (match args (Cons a _ (ml-expr st env venv ms a)) (Nil (ml-expr st env venv ms (IConst 0))))
-    (match (ml-args st env venv ms args Nil)
-      (MRL m2 vs
-        (let rd (ms-vreg m2)
-          (MR (ms-emit (mr-ms rd) (MRaw kind (mr-v rd) (ml-nth vs 0) (if (> kind 3) (ml-nth vs 1) -1))) (mr-v rd)))))))
+    (if (= kind 24)
+      (let rd (ms-vreg ms) (MR (ms-emit (mr-ms rd) (MSym (mr-v rd) (cg-raw-global-label args))) (mr-v rd)))
+      (match (ml-args st env venv ms args Nil)
+        (MRL m2 vs
+          (let rd (ms-vreg m2)
+            (MR (ms-emit (mr-ms rd) (MRaw kind (mr-v rd) vs)) (mr-v rd))))))))
 
-(defn mb-raw (st fr kind d a v)
-  (let st2 (cg-emit-line st (str-concat "    mov rdx, " (mb-loc-text fr a)))
-    (if (< kind 4)
-      (mb-set (cg-emit-line st2 (cg-raw-load-text kind)) fr d "rax")
-      (let st3 (cg-emit-line st2 (str-concat "    mov rcx, " (mb-loc-text fr v)))
-        (mb-set (cg-emit-lines st3 (Cons (cg-raw-store-text kind) (Cons "    mov rax, rcx" Nil))) fr d "rax")))))
+(defn mb-raw (st fr kind d vs)
+  (let st2 (match vs
+             (Nil st)
+             (Cons a rest
+               (let s1 (cg-emit-line st (str-concat "    mov rdx, " (mb-loc-text fr a)))
+                 (match rest (Cons b _ (cg-emit-line s1 (str-concat "    mov rcx, " (mb-loc-text fr b)))) (Nil s1)))))
+    (mb-set (cg-emit-lines st2 (cg-raw-lines kind)) fr d "rax")))
 
 ; ===========================================================================
 ; ONE-BYTE LOADS AND STORES, INLINE
@@ -2795,12 +2858,26 @@
             (ml-tail st env venv ms cx h)
             (ml-tail st env venv (mr-ms (ml-expr st env venv ms h)) cx (ISeq t))))))
     (ICall name args (ml-tail-call st env venv ms cx name args (cg-site-level e) e))
+    (IFfi sym args
+      (if (ml-c-tail-ok cx sym args e)
+        (match (ml-args st env venv ms args Nil) (MRL m2 vs (ms-emit m2 (MTail sym vs -1))))
+        (ml-ret ms (ml-expr st env venv ms e))))
     (IMatch scr arms
       (let rs (ml-expr st env venv ms scr)
         (ml-arms st env venv (mr-ms rs) (mr-v rs) arms 0 0 true cx)))
     (_ (ml-ret ms (ml-expr st env venv ms e)))))
 
 (defn ml-ret (_ms r) (ms-emit (mr-ms r) (MRet (mr-v r))))
+
+; A C call in tail position of an exported runtime entry (entered aligned, as C) jumps: MTail level -1.
+(defn ml-c-tail-ok (cx sym args e)
+  (match cx
+    (MCtx self _ _ rflags
+      (and (and (= rflags 0) (and (rt-mode-p) (> (str-length (rt-export-label self)) 0)))
+        (and (= (cg-site-level e) 0)
+          (and (<= (list-length args) 6)
+            (and (< (cg-raw-kind sym) 0)
+              (and (not (cg-inline-byte-p sym args)) (not (ml-array-p sym args))))))))))
 
 (defn ml-tail-call (st env venv ms cx name args lvl _e)
   (match cx
@@ -3167,7 +3244,7 @@
                  (mb-moves (mb-region-release (mb-stage-args st fr args 0) fr) (mb-unstage-moves fr args 0))
                  (mb-moves st (mb-arg-moves fr args 0)))
         (let st3 (mb-cur-region st2 lvl)
-          (cg-emit-line (mb-leave st3 fr) (str-concat "    jmp " (cg-sym-for (cg-arena-of st) sym true))))))
+          (cg-emit-line (mb-leave st3 fr) (str-concat "    jmp " (if (< lvl 0) (ffi-call "zyl_cstr_sanitize" (cg-arena-of st) sym 1000) (cg-sym-for (cg-arena-of st) sym true)))))))
     (MAlloc d n lvl (mb-alloc st fr d n lvl i))
     (MReuse d x n lvl
       ; The old block when its size header (qwords) covers the new one.
@@ -3230,7 +3307,7 @@
                                          (Cons (str-concat ld ":") Nil)))))
                       fr d "rax"))))))
     (MByte kind d o b v (mb-byte st fr kind d o b v i))
-    (MRaw kind d a v (mb-raw st fr kind d a v))
+    (MRaw kind d vs (mb-raw st fr kind d vs))
     (MFnRef d name
       (mb-set (cg-emit-line st (str-concat "    lea rax, [rip+" (str-concat (cg-sym-mangled (cg-arena-of st) name) "]"))) fr d "rax"))
     (MLabel l (cg-emit-line st (str-concat (mb-label fr l) ":")))
@@ -3283,7 +3360,7 @@
 ; zyl_cur_region for a site: 1 the frame region, 2 the result region,
 ; 3 the heap (cg-set-cur-region's levels 1-3).
 (defn mb-cur-region (st lvl)
-  (if (= lvl 0)
+  (if (<= lvl 0)
     st
     (cg-emit-lines st
       (Cons (if (= lvl 1) "    lea r11, [rbp-48]" (if (= lvl 2) "    mov r11, [rbp-16]" "    xor r11d, r11d"))

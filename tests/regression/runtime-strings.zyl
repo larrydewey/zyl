@@ -1,0 +1,29 @@
+; The Zyl runtime's SIMD string scans: lengths, equality and order across 16- and 32-byte blocks.
+
+(defn rs-rep (s n) (if (= n 0) "" (str-concat s (rs-rep s (- n 1)))))
+
+(defn rs-lengths-ok (n)
+  (if (> n 130) true
+    (if (= (str-length (rs-rep "a" n)) n) (rs-lengths-ok (+ n 1)) false)))
+
+(defn rs-order-ok (n)
+  (if (> n 130) true
+    (let s (rs-rep "a" n)
+      (let t (str-concat (rs-rep "a" n) "")
+        (if (and (= s t) (and (< s (str-concat s "a")) (> (str-concat s "b") (str-concat s "a"))))
+          (rs-order-ok (+ n 1))
+          false)))))
+
+(test "lengths"
+  (assert-equal (rs-lengths-ok 0) true))
+
+(test "equality-and-order"
+  (assert-equal (rs-order-ok 0) true))
+
+(test "differ-late"
+  (let a (str-concat (rs-rep "xy" 40) "p")
+    (let b (str-concat (rs-rep "xy" 40) "q")
+      (begin
+        (assert-equal (= a b) false)
+        (assert-equal (< a b) true)
+        (assert-equal (str-length a) 81)))))

@@ -22,3 +22,25 @@
     (if (and (= (ffi-call "zyl_cstr_byte_at" s i 1000) 58) (= (ffi-call "zyl_cstr_byte_at" s (+ i 1) 1000) 58))
       (rt-after-colons s (+ i 2) (+ i 2) n)
       (rt-after-colons s (+ i 1) start n))))
+
+; %global blocks of the runtime module, in first-use order.
+(deftype RtGlobal (RtGlobal String Int))
+
+(def rt-globals-cell (ffi-call "zyl_ref_new" Nil 1000))
+
+(defn rt-globals () (list-reverse-rt (ffi-call "zyl_ref_get" rt-globals-cell 1000) Nil))
+
+(defn list-reverse-rt (xs acc) (match xs (Nil acc) (Cons h t (list-reverse-rt t (Cons h acc)))))
+
+; Registers the block once and returns its label.
+(defn rt-global-add (label size)
+  (if (rt-global-known (ffi-call "zyl_ref_get" rt-globals-cell 1000) label)
+    label
+    (let _ (ffi-call "zyl_ref_set" rt-globals-cell (Cons (RtGlobal label size) (ffi-call "zyl_ref_get" rt-globals-cell 1000)) 1000)
+      label)))
+
+(defn rt-global-known (gs label)
+  (match gs (Nil false) (Cons g t (match g (RtGlobal n _ (if (str-eq n label) true (rt-global-known t label)))))))
+
+(defn rt-global-label-p (s)
+  (and (> (str-length s) 8) (str-eq (str-substring s 0 8) "zyl_rtg_")))

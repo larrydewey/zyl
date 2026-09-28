@@ -77,22 +77,30 @@ unwind primitive that replaces `setjmp`/`longjmp` for `try`.
 The runtime's hot loops (`strlen`, `memchr`, `memcmp`, `memcpy`, BLAKE3,
 AES-GCM) need vector code to match glibc and the C versions.
 
-- A locked vector family works on 128-bit (SSE2, always present on
-  x86-64) and 256-bit (AVX2) lanes held in xmm/ymm registers. It covers
-  `%v128-load`/`%v128-store` (unaligned), `%v128-splat8`, `%v128-cmpeq8`,
-  `%v128-movemask8`, `%v128-and`/`or`/`xor`, `%v128-add32`,
-  `%v128-shuffle8` and `%v128-aesenc`, plus the `%v256-*` twins.
-  A vector value is a new MIR register class, allocated like the others.
-- AVX2 code is chosen once at start-up from `%cpuid` and kept in a
-  runtime global. Every vector routine keeps an SSE2 twin, and both
-  produce identical results. SIMD only changes speed, never output,
-  so determinism holds across machines.
-- Aligned loads may read past the end of a string, but never past the
-  end of its page. This is the same bound glibc relies on.
+- Stage 2 (done) adds memory-operand forms whose result is an `Int`.
+  They use `xmm0`/`xmm1` and `ymm0`/`ymm1` as scratch, which is free
+  because MIR keeps Floats in general registers:
+  - `%v128-zero-mask a` gives the `pmovmskb` mask of the bytes at `a`
+    that are 0;
+  - `%v128-byte-mask a b` does the same for bytes equal to `b`;
+  - `%v128-eq-mask a b` compares 16 bytes at `a` with 16 at `b`;
+  - `%v128-copy dst src` copies 16 bytes;
+  - `%v256-*` are the AVX2 twins, each ending in `vzeroupper`.
+
+  They sit beside `%ctz` (64 for 0), `%cpuid-eax`/`ebx`/`ecx`/`edx`
+  (leaf, subleaf), `%xgetbv` and `%global "name" size` (a zeroed,
+  64-byte-aligned `.bss` block).
+- AVX2 is probed once, through `cpuid` leaves 1 and 7 and XCR0, and
+  cached in `%global "cpu_avx2"`. Every vector routine has an SSE2 path
+  and both give identical results, so SIMD changes speed, never output.
+- Aligned loads may read past the end of a string, but never past its
+  page, the same bound glibc relies on. `strcmp` falls back to bytes
+  near a page end, and `memcmp` reads only within the given length.
+- Vector values in registers (a MIR register class) come with the
+  BLAKE3/AES-GCM port, which keeps state across rounds.
 - User-facing SIMD is a separate, safe API: typed fixed-width lane
   vectors in `stdlib/simd`, with a scalar fallback and no raw addresses.
-  It is the "later SIMD" step of the intrinsics plan, and it lowers to
-  the same MIR vector instructions.
+  It lowers to the same MIR vector instructions.
 
 ## Runtime-module compile rules
 
@@ -123,10 +131,10 @@ Leaf-first, one section per commit. Each commit passes `./boot.sh`,
 `./run_regression_tests.sh --full --no-boot`, and `bench/matrix.py` with
 no regression against the C version before that C code is deleted.
 
-1. Infrastructure: the flag, the lock, the primitives, exports, the
+1. Infrastructure (done): the flag, the lock, the primitives, exports, the
    build. First entries: the C-string leaf functions (`zyl_cstr_len`,
    `_eq`, `_cmp`, `_byte_at`, `_key_matches`).
-2. The SIMD family (SSE2, then AVX2 dispatch) and vector string scans.
+2. The SIMD family (SSE2, then AVX2 dispatch) and vector string scans (done).
 3. Strings and formatting: concat/substr/int text/sanitize/mangle,
    spans, BLAKE3.
 4. Data structures: smap, wvec, typed arrays, attr tables, refs, cells.
@@ -139,6 +147,7 @@ no regression against the C version before that C code is deleted.
     (mmap, write, clone, futex, execve, ioctl), and Zyl number
     formatting and parsing, which must be correctly rounded. Link
     statically with `ld`, or dynamically only for `ffi-call` programs.
+11. Stretch: a Zyl assembler and ELF linker, so no external tool is left.
 
 ## Performance
 

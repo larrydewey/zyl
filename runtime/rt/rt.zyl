@@ -1,13 +1,92 @@
 ; The Zyl runtime, compiled only with --runtime-module; zyl_* defns are the exported entries.
 
 ; libc bridge, removed in the libc-free phase.
-(extern "strlen" (String) Int)
-(extern "strcmp" (String String) Int)
-(extern "memcmp" (Int Int Int) Int)
 (extern "write" (Int String Int) Int)
 
 (defmacro rt-w (x) (ffi-call "%word" x 1))
 (defmacro rt-ld8 (a) (ffi-call "%load8" a 1))
+(defmacro rt-zmask (a) (ffi-call "%v128-zero-mask" a 1))
+(defmacro rt-eqmask (a b) (ffi-call "%v128-eq-mask" a b 1))
+(defmacro rt-ctz (x) (ffi-call "%ctz" x 1))
+
+; --- SIMD scans (SSE2: aligned loads never cross a page) ---
+
+; Length of the NUL-terminated bytes at w.
+(defn rt-strlen (w)
+  (let base (bit-and w -16)
+    (let m (shr (rt-zmask base) (bit-and w 15))
+      (if (= m 0) (rt-strlen-from w (+ base 16)) (rt-ctz m)))))
+
+; p is 16-aligned; one more 16-byte block reaches 32-alignment for the AVX2 loop.
+(defn rt-strlen-from (w p)
+  (let m (rt-zmask p)
+    (if (= m 0)
+      (if (= (bit-and p 31) 0)
+        (rt-strlen-from w (+ p 16))
+        (if (rt-avx2) (rt-strlen-32 w (+ p 16)) (rt-strlen-16 w (+ p 16))))
+      (- (+ p (rt-ctz m)) w))))
+
+(defn rt-strlen-16 (w p)
+  (let m (rt-zmask p)
+    (if (= m 0) (rt-strlen-16 w (+ p 16)) (- (+ p (rt-ctz m)) w))))
+
+(defn rt-strlen-32 (w p)
+  (let m (ffi-call "%v256-zero-mask" p 1)
+    (if (= m 0) (rt-strlen-32 w (+ p 32)) (- (+ p (rt-ctz m)) w))))
+
+; --- CPU features ---
+
+; AVX2 usable (CPU and OS), probed once: the cached word is 0 unknown, 1 no, 2 yes.
+(defn rt-avx2 ()
+  (let g (ffi-call "%global" "cpu_avx2" 8 1)
+    (let v (ffi-call "%load64" g 1)
+      (if (= v 0)
+        (let f (if (rt-avx2-probe) 2 1) (let _ (ffi-call "%store64" g f 1) (= f 2)))
+        (= v 2)))))
+
+(defn rt-avx2-probe ()
+  (if (< (ffi-call "%cpuid-eax" 0 0 1) 7) false
+    (let c (ffi-call "%cpuid-ecx" 1 0 1)
+      (if (= (bit-and c 402653184) 402653184)
+        (if (= (bit-and (ffi-call "%xgetbv" 1) 6) 6)
+          (> (bit-and (ffi-call "%cpuid-ebx" 7 0 1) 32) 0)
+          false)
+        false))))
+
+; Bit 0 AES-NI, 1 PCLMULQDQ, 2 SSE4.1, 3 AVX (CPUID leaf 1, ECX).
+(defn zyl_cpuid_features ()
+  (let c (ffi-call "%cpuid-ecx" 1 0 1)
+    (bit-or (if (> (bit-and c 33554432) 0) 1 0)
+      (bit-or (if (> (bit-and c 2) 0) 2 0)
+        (bit-or (if (> (bit-and c 524288) 0) 4 0) (if (> (bit-and c 268435456) 0) 8 0))))))
+
+(defn zyl_aesni_available () (> (bit-and (zyl_cpuid_features) 1) 0))
+
+; Whether n bytes at a and b are equal.
+(defn rt-mem-eq (a b n)
+  (if (>= n 16)
+    (if (= (rt-eqmask a b) 65535) (rt-mem-eq (+ a 16) (+ b 16) (- n 16)) false)
+    (rt-bytes-eq a b n)))
+
+(defn rt-bytes-eq (a b n)
+  (if (= n 0) true (if (= (rt-ld8 a) (rt-ld8 b)) (rt-bytes-eq (+ a 1) (+ b 1) (- n 1)) false)))
+
+; strcmp: the first differing byte (or NUL) decides; -1, 0 or 1.
+(defn rt-strcmp (a b)
+  (if (or (> (bit-and a 4095) 4080) (> (bit-and b 4095) 4080))
+    (rt-strcmp-bytes a b 16)
+    (let d (bit-and (bit-or (bit-xor (rt-eqmask a b) 65535) (rt-zmask a)) 65535)
+      (if (= d 0) (rt-strcmp (+ a 16) (+ b 16)) (rt-byte-order (+ a (rt-ctz d)) (+ b (rt-ctz d)))))))
+
+; Near a page end: up to k bytes one at a time, then back to 16-byte blocks.
+(defn rt-strcmp-bytes (a b k)
+  (if (= k 0) (rt-strcmp a b)
+    (let x (rt-ld8 a)
+      (let y (rt-ld8 b)
+        (if (or (not (= x y)) (= x 0)) (rt-byte-order a b) (rt-strcmp-bytes (+ a 1) (+ b 1) (- k 1)))))))
+
+(defn rt-byte-order (a b)
+  (let x (rt-ld8 a) (let y (rt-ld8 b) (if (< x y) -1 (if (> x y) 1 0)))))
 
 ; --- C strings ---
 
@@ -21,10 +100,7 @@
     (let _ (ffi-call "write" 2 msg (strlen-of msg) 1)
       false)))
 
-(defn strlen-of (s) (ffi-call "strlen" s 1))
-
-; Low 32 bits of a C int result.
-(defmacro rt-lo32 (x) (bit-and x 4294967295))
+(defn strlen-of (s) (rt-strlen (rt-w s)))
 
 (defn zyl_cstr_len (s)
   (let w (rt-w s)
@@ -40,7 +116,7 @@
       (if (= wa wb) true
         (if (< wa 4096) (if (= wa 0) false (rt-bad-str wa "cstr-eq"))
           (if (< wb 4096) (if (= wb 0) false (rt-bad-str wb "cstr-eq"))
-            (= (rt-lo32 (ffi-call "strcmp" a b 1)) 0)))))))
+            (= (rt-strcmp wa wb) 0)))))))
 
 (defn zyl_cstr_cmp (a b)
   (let wa (rt-w a)
@@ -48,8 +124,7 @@
       (if (= wa wb) 0
         (if (= wa 0) -1
           (if (= wb 0) 1
-            (let c (rt-lo32 (ffi-call "strcmp" a b 1))
-              (if (= c 0) 0 (if (> c 2147483647) -1 1)))))))))
+            (rt-strcmp wa wb)))))))
 
 (defn zyl_cstr_byte_at (s i)
   (let w (rt-w s)
@@ -69,11 +144,11 @@
           (let kl (strlen-of key)
             (let nl (strlen-of name)
               (if (= kl nl)
-                (= (rt-lo32 (ffi-call "memcmp" wk wn kl 1)) 0)
+                (rt-mem-eq wk wn kl)
                 (if (< kl (+ nl 2)) false
                   (let t (+ wk (- kl nl))
                     (if (= (rt-ld8 (- t 1)) 58)
                       (if (= (rt-ld8 (- t 2)) 58)
-                        (= (rt-lo32 (ffi-call "memcmp" t wn nl 1)) 0)
+                        (rt-mem-eq t wn nl)
                         false)
                       false)))))))))))

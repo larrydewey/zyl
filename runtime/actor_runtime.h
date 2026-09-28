@@ -73,6 +73,8 @@ long long zyl_cstr_substr(long long src, long long start, long long len);
 long long zyl_cstr_eq(long long p1, long long p2);
 long long zyl_cstr_cmp(long long p1, long long p2);
 long long zyl_cstr_key_matches(long long key, long long name);
+long long zyl_cpuid_features(void);
+long long zyl_aesni_available(void);
 long long zyl_variant_eq(long long a, long long b);
 long long zyl_call0(long long);
 long long zyl_call1(long long, long long);
