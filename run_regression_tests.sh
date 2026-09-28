@@ -281,11 +281,6 @@ run_diff_test() {
 }
 
 # Tests the differential run deliberately leaves out, with the reason:
-#   actors, channels, concurrency, runtime-actors — spawning an actor hands the runtime a native
-#                          function pointer, which an interpreted
-#                          function does not have. The interpreter says
-#                          so (E_UNSUPPORTED_INTERPRETED) rather than
-#                          jumping to a number.
 #   derive               — one of its tests prints a value's address,
 #                          which is not the same number in two different
 #                          runtimes and is not meant to be.
@@ -293,7 +288,6 @@ run_diff_test() {
 #                          back as zeroes, which malloc does not promise.
 #   ffi-advanced         — prints the bytes at a pinned address, which
 #                          are not the same bytes in two runtimes.
-#   modules              — one of its tests spawns an actor.
 #   package-system       — its signature tests are Ed25519.
 #   c-abi                — hands a function to qsort as a C callback,
 #                          which needs a native function pointer.
@@ -303,7 +297,7 @@ run_diff_test() {
 #   tail-calls           — 10^8-deep loops, far too slow interpreted.
 #   with-region-limits   — region byte limits; the interpreter allocates
 #                          in its own arenas and accounts no region bytes.
-DIFF_SKIP="actors channels concurrency runtime-actors modules derive collections ffi-advanced package-system selfhost-codegen c-abi tail-calls with-region-limits"
+DIFF_SKIP="derive collections ffi-advanced package-system selfhost-codegen c-abi tail-calls with-region-limits"
 
 diff_skipped() {
     local name="$1"

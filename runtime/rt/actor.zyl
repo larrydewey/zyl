@@ -42,6 +42,9 @@
       (ac-spawn (ac-ld (+ entry 8)) (ac-ld (+ entry 16)) (ac-ld (+ entry 16)))
       (ac-spawn entry state 0))))
 
+; An Actor as its id word (the REPL interpreter's view of a spawn result).
+(defn zyl_actor_id (a) a)
+
 ; Spawns are serialized by the channel lock's owner bookkeeping; ids are handed out in program order per spawner.
 (defn ac-spawn (entry state env)
   (let id (ffi-call "%fetch-add" (ac-sys) 1 1)
@@ -102,6 +105,12 @@
             (let _ (ac-st (+ a 24) 1)
               (let _ (zyl_out_actor_emit (+ i 2))
                 (ac-join-rest (+ i 1) n (if (= first 0) m first))))))))))
+
+; The REPL's end of an entry: join every unjoined actor in spawn order, then re-raise the first panic.
+(defn zyl_actor_join_unjoined ()
+  (if (not (ac-inited)) 0
+    (let m (ac-join-rest 0 (if (> (ac-next) (ac-max)) (ac-max) (ac-next)) 0)
+      (if (= m 0) 0 (ffi-call "zyl_panic" (ffi-call "%str" m 1) 1)))))
 
 ; The first unjoined panic (spawn order) is reported after every actor's output, and the exit code becomes 1.
 (defn zyl_actor_wait_all ()

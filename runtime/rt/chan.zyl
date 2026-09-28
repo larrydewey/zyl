@@ -217,7 +217,13 @@
         (let _ (ch-st (+ (ch-rec o) 24) 0)
           (let _ (if (> o (ch-ld (+ (ch-g) 16))) (ch-st (+ (ch-g) 16) o) 0)
             (let _ (if (= env 0) 0 (ch-move-words env 0 (ch-ld (- env 8)) (zyl_owner_self) o))
-              (ch-unlock))))))))
+              (let m (ch-ld (ch-moves))
+                (let _ (if (= m 0) 0 (let _ (ch-st (ch-moves) 0) (ch-move-words m 0 (ch-ld (- m 8)) (zyl_owner_self) o)))
+                  (ch-unlock))))))))))
+
+; A block whose endpoint words also move at this thread's next spawn (the interpreter's closure env).
+(defn ch-moves () (ffi-call "%tls" "chan_moves" 8 1))
+(defn zyl_chan_spawn_moves (env) (let _ (ch-st (ch-moves) env) 0))
 
 (defn ch-move-words (env i n from o)
   (if (>= i n) 0

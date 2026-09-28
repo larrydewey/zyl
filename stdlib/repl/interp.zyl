@@ -800,8 +800,7 @@
     (if (str-eq sym "zyl_run_tests")
       (in-run-tests fns)
       (if (in-actor-sym-p sym)
-        (VInt (in-fail "E_UNSUPPORTED_INTERPRETED"
-                       "spawning an actor needs compiled code: the entry point is a native function pointer, which an interpreted function does not have. Compile this program with `zyl <file>` and run the binary."))
+        (in-spawn fns env (in-args-eval fns env args))
         (if (in-global-sym-p sym)
           (in-ffi-call (str-concat "zyl_iglobal_" (str-substring sym 11 (- (str-length sym) 11))) (in-args-eval fns env args))
         (if (str-eq sym "zyl_ffi_timed")
@@ -898,11 +897,23 @@
       (Nil Nil)
       (Cons _ t (in-drop-vals t (- n 1))))))
 
-; Actor spawn hands the runtime the address of the actor's entry
-; function. Under the interpreter there is no address, so the call is
-; refused with an explanation rather than jumping to a number.
+; Actor spawn: the runtime runs a compiled closure that interprets the
+; body. The endpoints the interpreted closure captures move to the new
+; actor as a compiled closure's would (zyl_chan_spawn_moves).
 (defn in-actor-sym-p (sym)
   (str-eq sym "zyl_actor_spawn"))
+
+(defn in-spawn (fns env vals)
+  (let clo (in-nth-val vals 0)
+    (let _ (ffi-call "zyl_chan_spawn_moves" (in-spawn-env (val-word clo)) 1000)
+      (VInt (ffi-call "zyl_actor_id" (spawn (fn () (in-actor-body fns env clo))) 1000)))))
+
+; A capturing closure's env block, else 0.
+(defn in-spawn-env (p)
+  (if (and (in-block-p p) (not (in-is-fun p))) (in-block-field p 1) 0))
+
+(defn in-actor-body (fns env clo)
+  (let _ (in-closure-apply fns env clo Nil) 0))
 
 (defn in-register-test (fns env args)
   (let vals (in-args-eval fns env args)

@@ -52,7 +52,10 @@
   (or (str-eq s "zyl_bytebuf_new")
   (or (str-eq s "zyl_bytebuf_read_file")
   (or (str-eq s "zyl_bytebuf_write_exec")
-      (str-eq s "zyl_repl_global_set")))))))))))))))))))))))))))
+  (or (str-eq s "zyl_actor_id")
+  (or (str-eq s "zyl_actor_join_unjoined")
+  (or (str-eq s "zyl_chan_spawn_moves")
+      (str-eq s "zyl_repl_global_set"))))))))))))))))))))))))))))))
 
 ; Built once, before the compiler's main runs.
 (def ffi-sig-tab (ffi-sig-table))
@@ -155,7 +158,10 @@
   (Cons (FSig "%word" "a -> Int")
   (Cons (FSig "%str" "Int -> String")
   (Cons (FSig "zyl_actor_is_alive" "Actor -> Bool")
+  (Cons (FSig "zyl_actor_id" "Actor -> Int")
+  (Cons (FSig "zyl_actor_join_unjoined" "-> Unit")
   (Cons (FSig "zyl_actor_wait" "Actor -> Unit")
+  (Cons (FSig "zyl_chan_spawn_moves" "Int -> Int")
   (Cons (FSig "zyl_aes_encrypt_block" "Words Int Words Words -> Bool")
   (Cons (FSig "zyl_aesni_available" "-> Bool")
   (Cons (FSig "zyl_arena_alloc" "Arena Int -> Ptr")
@@ -354,4 +360,4 @@
   (Cons (FSig "zyl_bytebuf_new" "Int Int -> ByteBuf")
   (Cons (FSig "zyl_bytebuf_read_file" "String -> ByteBuf")
   (Cons (FSig "zyl_bytebuf_write_exec" "String ByteBuf Int -> Int")
-  Nil))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+  Nil)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))

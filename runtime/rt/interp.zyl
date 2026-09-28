@@ -2,6 +2,7 @@
 (use base)
 (use heap)
 (use ctab)
+(use thread)
 
 
 (defmacro rt-ld64 (a) (ffi-call "%load64" a 1))
@@ -89,7 +90,13 @@
       (let k (rt-ld64 s)
         (if (or (= k 0) (= (rt-strcmp k n) 0)) s (rt-names-probe t n i (+ probe 1)))))))
 
+; Locked once actors run: the interpreter may intern from several threads.
 (defn zyl_intern_name (s)
+  (let l (ffi-call "%global" "names_lock" 8 1)
+    (if (= (rt-ld64 (ffi-call "%global" "threads_started" 8 1)) 0) (rt-intern s)
+      (let _ (zyl_rt_mutex_lock l) (let r (rt-intern s) (let _ (zyl_rt_mutex_unlock l) r))))))
+
+(defn rt-intern (s)
   (let n (rt-w s)
     (if (= n 0) 0
       (let t (rt-names)
