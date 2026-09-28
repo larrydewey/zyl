@@ -190,7 +190,71 @@
 (defn opt-inline-fns (fns)
   (if (str-eq (ffi-call "zyl_getenv_str" "ZYL_INLINE" 1000) "0")
     fns
-    (opt-copyprop-fns (opt-self-unroll-fns (opt-inline-round (opt-inline-round fns))))))
+    (opt-copyprop-fns (opt-early-exit-fns (opt-self-unroll-fns (opt-inline-round (opt-inline-round fns)))))))
+
+; --- early exits at the call site ---------------------------------------------
+;
+; Inside a loop, a call of a loop whose body is (if c b ...) with c and b cheap
+; arithmetic on its parameters binds the arguments (in order, as any inlined call),
+; tests c itself and calls only when c fails: the call's early return costs no call.
+
+(defn opt-early-exit-fns (fns)
+  (let tab (ffi-call "zyl_smap_new" 1000)
+    (let _ (opt-collect-early fns tab)
+      (opt-early-all fns tab))))
+
+(defn opt-collect-early (fns tab)
+  (match fns
+    (Nil unit)
+    (Cons f rest
+      (let _ (match f
+               (IFn name params body kinds
+                 (match body
+                   (IIf c b _
+                     ; only loops: their exits are where a call is most often immediately done
+                     (if (and (not (str-eq name "main")) (and (opt-kinds-int kinds) (and (opt-calls body name) (and (opt-cheap c params) (opt-cheap b params)))))
+                       (let _ (ffi-call "zyl_smap_put" tab name (IFn name params (IIf c b (ICall name (opt-loads params))) kinds) 1000) unit)
+                       unit))
+                   (_ unit)))
+               (_ unit))
+        (opt-collect-early rest tab)))))
+
+(defn opt-early-all (fns tab)
+  (match fns
+    (Nil Nil)
+    (Cons f rest
+      (Cons (match f
+              (IFn name params body kinds
+                (if (opt-calls body name) (IFn name params (opt-ee body tab name params) kinds) f))
+              (_ f))
+            (opt-early-all rest tab)))))
+
+; Calls of other candidates (not the loop itself) get the test in front.
+(defn opt-ee (e tab self locals) (opt-keep (opt-ee-node e tab self locals) e))
+
+(defn opt-ee-node (e tab self locals)
+  (match e
+    (ICall n args
+      (let args2 (opt-ee-list args tab self locals)
+        (if (and (not (str-eq n self)) (and (ffi-call "zyl_smap_has" tab n 1000) (not (opt-member n locals))))
+          (opt-expand (ffi-call "zyl_smap_get_or" tab n e 1000) args2 locals e)
+          (ICall n args2))))
+    (IIf c t f (IIf (opt-ee c tab self locals) (opt-ee t tab self locals) (opt-ee f tab self locals)))
+    (ILet n v b (ILet n (opt-ee v tab self locals) (opt-ee b tab self (Cons n locals))))
+    (ISeq es (ISeq (opt-ee-list es tab self locals)))
+    (IMatch s arms (IMatch (opt-ee s tab self locals) (opt-ee-arms arms tab self locals)))
+    (IBinop op l r (IBinop op (opt-ee l tab self locals) (opt-ee r tab self locals)))
+    (IFfi n args (IFfi n (opt-ee-list args tab self locals)))
+    (IVariant nm tag fs (IVariant nm tag (opt-ee-list fs tab self locals)))
+    (ISet n v (ISet n (opt-ee v tab self locals)))
+    (IWhile c b (IWhile (opt-ee c tab self locals) (opt-ee b tab self locals)))
+    (_ e)))
+
+(defn opt-ee-list (es tab self locals) (match es (Nil Nil) (Cons h t (Cons (opt-ee h tab self locals) (opt-ee-list t tab self locals)))))
+(defn opt-ee-arms (arms tab self locals)
+  (match arms
+    (Nil Nil)
+    (Cons a t (match a (IArm v tag bs b (Cons (IArm v tag bs (opt-ee b tab self (list-append bs locals))) (opt-ee-arms t tab self locals)))))))
 
 ; --- self unrolling -----------------------------------------------------------
 ;
