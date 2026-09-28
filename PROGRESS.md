@@ -464,6 +464,21 @@ as recorded below.
 
 # Session log (newest first)
 
+## Session (2026-09-28, self-link) — a Zyl assembler and static ELF linker
+
+- New: `stdlib/compiler/asm_x86.zyl` (an x86-64 assembler covering every
+  form in the compiler's own output) and `stdlib/compiler/elf_link.zyl` (a
+  static ET_EXEC with PT_TLS, a non-exec stack and a synthesized GOT). Both
+  are byte-deterministic, and their per-instruction bytes match GNU as.
+  Also `tests/scripts/self-link.sh`.
+- `ZYL_SELF_LINK=1` links a freestanding single-file program with no
+  cc/as/ld. It is opt-in, because each link reassembles `rt.s` (about
+  2.0 s, against 0.04 s for cc). Next is caching the assembled runtime so
+  it can become the default.
+- Limitations:
+  - package builds still link with cc, and so do hosted programs;
+  - jumps are always rel32.
+
 ## Session (2026-09-28, concurrency) — Kahn channels replace mailboxes
 
 - New: `runtime/rt/chan.zyl`, which holds channels, endpoint ownership,

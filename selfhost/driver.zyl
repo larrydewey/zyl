@@ -140,12 +140,11 @@
 ; `extra` carries a package's native objects and libraries (SS31.10),
 ; already quoted by compiler/cli; an ordinary single-file compile passes
 ; the empty string and the command is what it always was.
-; Freestanding single-file link: the Zyl assembler + ELF linker write the
-; executable directly (no cc/as/ld). ZYL_EXTERNAL_LD=1 restores the cc path.
+; Freestanding single-file link through the Zyl assembler + ELF linker (no cc/as/ld), opt-in with ZYL_SELF_LINK=1 until rt is cached.
 (defn cli-freestanding-p (extra)
   (and (= (str-length extra) 0)
     (and (not (rt-foreign-p))
-      (= (str-length (ffi-call "zyl_getenv_str" "ZYL_EXTERNAL_LD" 1000)) 0))))
+      (> (str-length (ffi-call "zyl_getenv_str" "ZYL_SELF_LINK" 1000)) 0))))
 
 (defn cli-link-with (asmpath outpath extra)
   (if (cli-freestanding-p extra)

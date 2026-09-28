@@ -159,9 +159,10 @@ no regression against the C version before that C code is deleted.
     = offset − aligned block size, as `zyl_rt_start` expects) and a
     non-exec PT_GNU_STACK, resolves every relocation against a fixed
     load base (weak-undefined → 0, strong-undefined → error), and writes
-    a static ET_EXEC. The driver's freestanding path uses it by default,
-    with no cc/as/ld; `ZYL_EXTERNAL_LD=1` restores the cc command for
-    debugging. Hosted (foreign-calling) programs still link over libc's
+    a static ET_EXEC. The driver's freestanding path uses it when
+    `ZYL_SELF_LINK=1` is set, with no cc/as/ld. It is not the default yet,
+    because each link reassembles `rt.s` (about 2 s, against 0.04 s for
+    cc). Caching the assembled runtime will make it the default. Hosted (foreign-calling) programs still link over libc's
     crt with cc. Output is byte-deterministic. `boot.sh`/`install.sh`
     ship `rt.s` and `start.s` beside `rt.o`/`start.o`.
 
