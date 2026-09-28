@@ -21,3 +21,6 @@
 (use fmt)
 (use crypto)
 (use call)
+(use ffitab)
+(use proc)
+(use start)
