@@ -1,0 +1,45 @@
+; Edge cases of the runtime's string and number text entries (runtime/rt/rt.zyl).
+
+(test "int-text"
+  (begin
+    (assert-equal (ffi-call "zyl_int_text" 0 1000) "0")
+    (assert-equal (ffi-call "zyl_int_text" -5 1000) "-5")
+    (assert-equal (ffi-call "zyl_int_text" 1234567890 1000) "1234567890")
+    (assert-equal (ffi-call "zyl_int_text" 9223372036854775807 1000) "9223372036854775807")
+    (assert-equal (ffi-call "zyl_int_text" (- -9223372036854775807 1) 1000) "-9223372036854775808")))
+
+(test "to-int"
+  (begin
+    (assert-equal (ffi-call "zyl_cstr_to_int" "-42" 1000) -42)
+    (assert-equal (ffi-call "zyl_cstr_to_int" "12ab" 1000) 12)
+    (assert-equal (ffi-call "zyl_cstr_to_int" "99999999999999999999" 1000) 0)
+    (assert-equal (ffi-call "zyl_cstr_to_int_base" "0x1F" 1000) 31)
+    (assert-equal (ffi-call "zyl_cstr_to_int_base" "0b101" 1000) 5)
+    (assert-equal (ffi-call "zyl_cstr_to_int_base" "-0o17" 1000) -15)
+    (assert-equal (ffi-call "zyl_cstr_to_int_base" "0x" 1000) 0)))
+
+(test "substr-clamps"
+  (begin
+    (assert-equal (str-substring "hello" 1 3) "ell")
+    (assert-equal (str-substring "hello" 3 99) "lo")
+    (assert-equal (str-substring "hello" 9 2) "")
+    (assert-equal (str-substring "hello" -3 2) "he")))
+
+(test "decode-and-escapes"
+  (let a (ffi-call "zyl_arena_create" 0 1000)
+    (begin
+      (assert-equal (ffi-call "zyl_cstr_decode" a "a\\tb\\x41\\\\" 0 11 1000) "a\tbA\\")
+      (assert-equal (ffi-call "zyl_cstr_escapes_ok" "x\\q" 0 3 1000) false)
+      (assert-equal (ffi-call "zyl_cstr_escapes_ok" "x\\x4g" 0 5 1000) false)
+      (assert-equal (ffi-call "zyl_cstr_escapes_ok" "\\e\\n" 0 4 1000) true)
+      (assert-equal (ffi-call "zyl_cstr_sanitize" a "a-b.c_9" 1000) "a_b_c_9")
+      (assert-equal (ffi-call "zyl_cstr_from_int" a -17 1000) "-17")
+      (assert-equal (ffi-call "zyl_cstr_sub" a "abcdef" 2 10 1000) "cdef"))))
+
+(test "lines-and-paths"
+  (begin
+    (assert-equal (ffi-call "zyl_dirname_cstr" "/usr/lib/x.zyl" 1000) "/usr/lib/")
+    (assert-equal (ffi-call "zyl_dirname_cstr" "x.zyl" 1000) "x")
+    (assert-equal (str-concat (str-concat "ab" "") (str-concat "" "cd")) "abcd")))
+
+(run-tests)

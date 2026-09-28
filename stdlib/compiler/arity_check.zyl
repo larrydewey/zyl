@@ -192,7 +192,8 @@
   (match args
     (Nil unit)
     (Cons sym _
-      (if (and (rt-prim-p (ffi-literal-str sym)) (not (rt-mode-p)))
+      (if (rt-mode-p) unit
+      (if (or (rt-prim-p (ffi-literal-str sym)) (rt-only-p (ffi-literal-str sym)))
         (ffi-fail "E_FFI_RESTRICTED"
                   (str-concat "`" (str-concat (ffi-literal-str sym) "` is a runtime internal; only the runtime itself may use it"))
                   "use the typed standard-library function built on it" site)
@@ -200,7 +201,7 @@
         (ffi-fail "E_FFI_RESTRICTED"
                   (str-concat "`" (str-concat (ffi-literal-str sym) "` is a raw runtime entry (it reads memory or reinterprets a machine word) and only the standard library may call it"))
                   "use the typed standard-library function built on it" site)
-        unit)))))
+        unit))))))
 
 ; Standard-library definitions carry the package key `zyl/std@N::`.
 (defn ac-in-stdlib ()

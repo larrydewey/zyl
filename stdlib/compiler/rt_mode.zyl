@@ -7,6 +7,9 @@
 
 (defn rt-mode-set () (ffi-call "zyl_ref_set" rt-mode-cell 1 1000))
 
+; Runtime entries only the runtime module may call.
+(defn rt-only-p (s) (str-eq s "zyl_ralloc"))
+
 ; A raw primitive symbol: "%load64" and friends.
 (defn rt-prim-p (s)
   (and (> (str-length s) 1) (= (ffi-call "zyl_cstr_byte_at" s 0 1000) 37)))

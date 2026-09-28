@@ -2291,7 +2291,7 @@
 ;; RAW RUNTIME PRIMITIVES (runtime module only, docs/runtime-in-zyl-design.md)
 ;; ===========================================================================
 
-; Primitive kind, or -1: loads 0-3, stores 4-7, %word 8, %str 9, SSE2 10-13, AVX2 14-17, %ctz 18, cpuid 19-22, %xgetbv 23, %global 24.
+; Primitive kind, or -1: loads 0-3, stores 4-7, %word 8, %str 9, SSE2 10-13, AVX2 14-17, %ctz 18, cpuid 19-22, %xgetbv 23, %global 24, %tls-get/set 25/26, %v128-diff-mask 27.
 (defn cg-raw-kind (sym)
   (if (not (rt-prim-p sym)) -1 (cg-raw-kind-in sym cg-raw-names 0)))
 
@@ -2302,7 +2302,7 @@
   (Cons "%v128-zero-mask" (Cons "%v128-byte-mask" (Cons "%v128-eq-mask" (Cons "%v128-copy"
   (Cons "%v256-zero-mask" (Cons "%v256-byte-mask" (Cons "%v256-eq-mask" (Cons "%v256-copy"
   (Cons "%ctz" (Cons "%cpuid-eax" (Cons "%cpuid-ebx" (Cons "%cpuid-ecx" (Cons "%cpuid-edx" (Cons "%xgetbv"
-  (Cons "%global" Nil))))))))))))))))))))))))))
+  (Cons "%global" (Cons "%tls-get" (Cons "%tls-set" (Cons "%v128-diff-mask" Nil)))))))))))))))))))))))))))))
 
 (defn cg-raw-kind-in (sym names i)
   (match names
@@ -2332,12 +2332,16 @@
   (if (= kind 17) (Cons "    vmovdqu ymm0, [rcx]" (Cons "    vmovdqu [rdx], ymm0" (Cons "    vzeroupper" (Cons "    mov rax, rdx" Nil))))
   (if (= kind 18) (Cons "    bsf rax, rdx" (Cons "    mov ecx, 64" (Cons "    cmovz rax, rcx" Nil)))
   (if (= kind 23) (Cons "    xor ecx, ecx" (Cons "    xgetbv" (Cons "    mov eax, eax" Nil)))
+  (if (= kind 27) (Cons "    movdqu xmm0, [rdx]" (Cons "    movdqu xmm1, [rcx]" (Cons "    pcmpeqb xmm1, xmm0" (Cons "    pxor xmm2, xmm2"
+                  (Cons "    pcmpeqb xmm2, xmm0" (Cons "    pmovmskb eax, xmm1" (Cons "    pmovmskb ecx, xmm2" (Cons "    xor eax, 65535" (Cons "    or eax, ecx" Nil)))))))))
     (Cons "    mov eax, edx" (Cons "    mov r11, rbx" (Cons "    cpuid"
       (Cons (if (= kind 19) "    mov eax, eax" (if (= kind 20) "    mov eax, ebx" (if (= kind 21) "    mov eax, ecx" "    mov eax, edx")))
-      (Cons "    mov rbx, r11" Nil)))))))))))))))))))))))))
+      (Cons "    mov rbx, r11" Nil))))))))))))))))))))))))))
 
 (defn cg-raw-arity (kind)
   (if (< kind 4) 1 (if (< kind 8) 2 (if (< kind 11) 1 (if (< kind 14) 2 (if (= kind 14) 1 (if (< kind 18) 2 (if (= kind 18) 1 (if (< kind 23) 2 (if (= kind 23) 0 2))))))))))
+
+; SSE2 kinds 10-13 and 27 are baseline x86-64; AVX2 kinds 14-17 need the runtime's cpuid check.
 
 ; %global "name" size: a zeroed, 64-byte aligned .bss block of the runtime module.
 (defn cg-raw-global-label (args)
@@ -2368,6 +2372,12 @@
 (defn cg-inline-raw (st env kind args)
   (if (= kind 24)
     (cg-sym-addr st (cg-raw-global-label args))
+  (if (= kind 25)
+    (cg-emit-line st (cg-tls-get-line (cg-raw-sym-arg args)))
+  (if (= kind 26)
+    (match args
+      (Cons _ rest (match rest (Cons v _ (cg-emit-line (cg-expr st env v) (cg-tls-set-line (cg-raw-sym-arg args) "rax"))) (Nil st)))
+      (Nil st))
     (let n (cg-raw-arity kind)
       (let st2 (if (= n 0) st
                  (if (= n 1)
@@ -2380,7 +2390,15 @@
                              (cg-emit-lines (cg-expr s1 env b) (Cons "    mov rcx, rax" (Cons "    pop rdx" Nil)))))
                          (Nil st)))
                      (Nil st))))
-        (cg-emit-lines st2 (cg-raw-lines kind))))))
+        (cg-emit-lines st2 (cg-raw-lines kind))))))))
+
+; A thread-local of the runtime, named by a string literal.
+(defn cg-raw-sym-arg (args)
+  (match args (Cons n _ (match n (IStr name name) (_ (cg-raw-global-bad)))) (Nil (cg-raw-global-bad))))
+
+(defn cg-tls-get-line (sym) (str-concat "    mov rax, QWORD PTR fs:" (str-concat sym "@tpoff")))
+
+(defn cg-tls-set-line (sym reg) (str-concat "    mov QWORD PTR fs:" (str-concat sym (str-concat "@tpoff, " reg))))
 
 ; MIR: %word and %str are the argument itself; %global is a symbol address; the rest is one MRaw.
 (defn ml-raw (st env venv ms kind args)
@@ -2388,10 +2406,15 @@
     (match args (Cons a _ (ml-expr st env venv ms a)) (Nil (ml-expr st env venv ms (IConst 0))))
     (if (= kind 24)
       (let rd (ms-vreg ms) (MR (ms-emit (mr-ms rd) (MSym (mr-v rd) (cg-raw-global-label args))) (mr-v rd)))
+    (if (or (= kind 25) (= kind 26))
+      (match (ml-args st env venv ms (match args (Cons _ t t) (Nil Nil)) Nil)
+        (MRL m2 vs
+          (let rd (ms-vreg m2)
+            (MR (ms-emit (mr-ms rd) (MTls (mr-v rd) (cg-raw-sym-arg args) vs)) (mr-v rd)))))
       (match (ml-args st env venv ms args Nil)
         (MRL m2 vs
           (let rd (ms-vreg m2)
-            (MR (ms-emit (mr-ms rd) (MRaw kind (mr-v rd) vs)) (mr-v rd))))))))
+            (MR (ms-emit (mr-ms rd) (MRaw kind (mr-v rd) vs)) (mr-v rd)))))))))
 
 (defn mb-raw (st fr kind d vs)
   (let st2 (match vs
@@ -2831,7 +2854,22 @@
             (let rb (ml-expr st env venv (mr-ms ra) r)
               (ms-emit (mr-ms rb) (MJf op (mr-v ra) (mr-v rb) lf)))))
         (ml-cond-plain st env venv ms c lf)))
+    (IIf a t f
+      (if (ml-const-true t)
+        ; (or a f): a true skips f.
+        (let le (ms-label ms)
+          (let lt (ms-label (mr-ms le))
+            (let m1 (ml-cond st env venv (mr-ms lt) a (mr-v le))
+              (let m2 (ml-cond st env venv (ms-emit (ms-emit m1 (MJmp (mr-v lt))) (MLabel (mr-v le))) f lf)
+                (ms-emit m2 (MLabel (mr-v lt)))))))
+        (if (ml-const-zero f)
+          ; (and a t)
+          (ml-cond st env venv (ml-cond st env venv ms a lf) t lf)
+          (ml-cond-plain st env venv ms c lf))))
     (_ (ml-cond-plain st env venv ms c lf))))
+
+(defn ml-const-true (e) (match e (IConst k (not (= k 0))) (_ false)))
+(defn ml-const-zero (e) (match e (IConst k (= k 0)) (_ false)))
 
 (defn ml-cond-plain (st env venv ms c lf)
   (let r (ml-expr st env venv ms c)
@@ -3308,6 +3346,12 @@
                       fr d "rax"))))))
     (MByte kind d o b v (mb-byte st fr kind d o b v i))
     (MRaw kind d vs (mb-raw st fr kind d vs))
+    (MTls d sym vs
+      (match vs
+        (Nil (mb-set (cg-emit-line st (cg-tls-get-line sym)) fr d "rax"))
+        (Cons v _
+          (let st2 (cg-emit-line st (str-concat "    mov rax, " (mb-loc-text fr v)))
+            (mb-set (cg-emit-line st2 (cg-tls-set-line sym "rax")) fr d "rax")))))
     (MFnRef d name
       (mb-set (cg-emit-line st (str-concat "    lea rax, [rip+" (str-concat (cg-sym-mangled (cg-arena-of st) name) "]"))) fr d "rax"))
     (MLabel l (cg-emit-line st (str-concat (mb-label fr l) ":")))

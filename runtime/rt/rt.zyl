@@ -75,8 +75,8 @@
 (defn rt-strcmp (a b)
   (if (or (> (bit-and a 4095) 4080) (> (bit-and b 4095) 4080))
     (rt-strcmp-bytes a b 16)
-    (let d (bit-and (bit-or (bit-xor (rt-eqmask a b) 65535) (rt-zmask a)) 65535)
-      (if (= d 0) (rt-strcmp (+ a 16) (+ b 16)) (rt-byte-order (+ a (rt-ctz d)) (+ b (rt-ctz d)))))))
+    (let d (ffi-call "%v128-diff-mask" a b 1)
+      (if (= d 0) (rt-strcmp (+ a 16) (+ b 16)) (let k (rt-ctz d) (rt-byte-order (+ a k) (+ b k)))))))
 
 ; Near a page end: up to k bytes one at a time, then back to 16-byte blocks.
 (defn rt-strcmp-bytes (a b k)
@@ -152,3 +152,298 @@
                         (rt-mem-eq t wn nl)
                         false)
                       false)))))))))))
+
+; --- memory ---
+
+(defmacro rt-st8 (a v) (ffi-call "%store8" a v 1))
+
+; Copies n bytes from src to dst (the ranges do not overlap); returns dst.
+(defn rt-copy (dst src n)
+  (if (>= n 16) (let _ (rt-copy-16 dst src n) dst)
+    (if (>= n 8)
+      (let _ (ffi-call "%store64" dst (ffi-call "%load64" src 1) 1)
+        (let _ (ffi-call "%store64" (+ dst (- n 8)) (ffi-call "%load64" (+ src (- n 8)) 1) 1) dst))
+      (if (>= n 4)
+        (let _ (ffi-call "%store32" dst (ffi-call "%load32" src 1) 1)
+          (let _ (ffi-call "%store32" (+ dst (- n 4)) (ffi-call "%load32" (+ src (- n 4)) 1) 1) dst))
+        (rt-copy-bytes dst src n)))))
+
+; 16-byte blocks, then one last block ending exactly at n (it may overlap the previous one).
+(defn rt-copy-16 (dst src n)
+  (if (> n 16)
+    (let _ (ffi-call "%v128-copy" dst src 1) (rt-copy-16 (+ dst 16) (+ src 16) (- n 16)))
+    (ffi-call "%v128-copy" (+ dst (- n 16)) (+ src (- n 16)) 1)))
+
+(defn rt-copy-bytes (dst src n)
+  (if (= n 0) dst (let _ (rt-st8 dst (rt-ld8 src)) (let _ (rt-copy-bytes (+ dst 1) (+ src 1) (- n 1)) dst))))
+
+; memcmp's sign over n bytes.
+(defn rt-mem-cmp (a b n)
+  (if (>= n 16)
+    (let m (bit-xor (rt-eqmask a b) 65535)
+      (if (= m 0) (rt-mem-cmp (+ a 16) (+ b 16) (- n 16)) (rt-byte-order (+ a (rt-ctz m)) (+ b (rt-ctz m)))))
+    (if (= n 0) 0 (if (= (rt-ld8 a) (rt-ld8 b)) (rt-mem-cmp (+ a 1) (+ b 1) (- n 1)) (rt-byte-order a b)))))
+
+; Offset of byte c in the n bytes at p, or -1.
+(defn rt-find-byte (p n c i)
+  (if (>= (- n i) 16)
+    (let m (ffi-call "%v128-byte-mask" (+ p i) c 1)
+      (if (= m 0) (rt-find-byte p n c (+ i 16)) (+ i (rt-ctz m))))
+    (if (>= i n) -1 (if (= (rt-ld8 (+ p i)) c) i (rt-find-byte p n c (+ i 1))))))
+
+; A block in the current result region (0: the heap).
+(defn rt-alloc (n rp) (ffi-call "zyl_ralloc" n rp 1))
+
+(defn rt-cur-region () (ffi-call "%tls-get" "zyl_cur_region" 1))
+
+; The NUL-terminated copy of n bytes at src.
+(defn rt-str-of (src n rp)
+  (let p (rt-alloc (+ n 1) rp)
+    (let _ (rt-copy p src n) (let _ (rt-st8 (+ p n) 0) (ffi-call "%str" p 1)))))
+
+; --- string entries ---
+
+(defn rt-concat (a b rp)
+  (let wa (rt-w a)
+    (let wb (rt-w b)
+      (if (and (> wa 0) (< wa 4096)) (rt-bad-null wa "cstr-concat")
+        (if (and (> wb 0) (< wb 4096)) (rt-bad-null wb "cstr-concat")
+          (let la (if (= wa 0) 0 (rt-strlen wa))
+            (let lb (if (= wb 0) 0 (rt-strlen wb))
+              (let p (rt-alloc (+ (+ la lb) 1) rp)
+                (let _ (rt-copy p wa la)
+                  (let _ (rt-copy (+ p la) wb lb)
+                    (let _ (rt-st8 (+ p (+ la lb)) 0) (ffi-call "%str" p 1))))))))))))
+
+(defn rt-bad-null (w who) (let _ (rt-bad-str w who) (ffi-call "%str" 0 1)))
+
+(defn zyl_cstr_concat (a b) (rt-concat a b 0))
+(defn zyl_cstr_concat_r (a b) (rt-concat a b (rt-cur-region)))
+
+(defn rt-substr (s start len rp)
+  (let w (rt-w s)
+    (if (and (> w 0) (< w 4096)) (rt-bad-null w "cstr-substr")
+      (let n (if (= w 0) 0 (rt-strlen w))
+        (let st (if (< start 0) 0 (if (> start n) n start))
+          (let ln (if (< len 0) 0 (if (> len (- n st)) (- n st) len))
+            (rt-str-of (+ w st) ln rp)))))))
+
+(defn zyl_cstr_substr (s start len) (rt-substr s start len 0))
+(defn zyl_cstr_substr_r (s start len) (rt-substr s start len (rt-cur-region)))
+
+(defn rt-from-byte (b rp)
+  (let p (rt-alloc 2 rp)
+    (if (= p 0) (ffi-call "%str" 0 1)
+      (let _ (rt-st8 p (bit-and b 255)) (let _ (rt-st8 (+ p 1) 0) (ffi-call "%str" p 1))))))
+
+(defn zyl_cstr_from_byte (b) (rt-from-byte b 0))
+(defn zyl_cstr_from_byte_r (b) (rt-from-byte b (rt-cur-region)))
+
+;; Digits are produced from v <= 0 so INT64_MIN needs no special case.
+(defn rt-ndigits (v) (rt-nd v -10 1))
+
+(defn rt-nd (v t k) (if (or (> v t) (= k 19)) k (rt-nd v (* t 10) (+ k 1))))
+
+; "00".."99", two bytes per pair.
+(defn rt-digit-pairs () "00010203040506070809101112131415161718192021222324252627282930313233343536373839404142434445464748495051525354555657585960616263646566676869707172737475767778798081828384858687888990919293949596979899")
+
+; Writes the digits of v ending at offset k: two per division by 100.
+(defn rt-put-digits (p v k)
+  (if (<= v -100)
+    (let q (/ v 100)
+      (let r (- (* q 100) v)
+        (let t (+ (rt-w (rt-digit-pairs)) (* r 2))
+          (let _ (rt-st8 (+ p (- k 1)) (rt-ld8 t))
+            (let _ (rt-st8 (+ p k) (rt-ld8 (+ t 1)))
+              (rt-put-digits p q (- k 2)))))))
+    (if (<= v -10)
+      (let t (+ (rt-w (rt-digit-pairs)) (* (- 0 v) 2))
+        (let _ (rt-st8 (+ p (- k 1)) (rt-ld8 t)) (rt-st8 (+ p k) (rt-ld8 (+ t 1)))))
+      (rt-st8 (+ p k) (- 48 v)))))
+
+(defn rt-int-text (n rp)
+  (let v (if (> n 0) (- 0 n) n)
+    (let sign (if (< n 0) 1 0)
+      (let len (+ (rt-ndigits v) sign)
+        (let p (rt-alloc (+ len 1) rp)
+          (let _ (if (= sign 1) (rt-st8 p 45) 0)
+            (let _ (rt-put-digits p v (- len 1))
+              (let _ (rt-st8 (+ p len) 0) (ffi-call "%str" p 1)))))))))
+
+(defn zyl_int_text (n) (rt-int-text n 0))
+(defn zyl_int_text_r (n) (rt-int-text n (rt-cur-region)))
+
+(defn rt-arena-str (arena n)
+  (ffi-call "%word" (ffi-call "zyl_arena_alloc_zeroed" arena n 1) 1))
+
+(defn zyl_cstr_sub (arena s start len)
+  (let w (rt-w s)
+    (if (or (= w 0) (or (< start 0) (< len 0))) (ffi-call "%str" 0 1)
+      (if (< w 4096) (rt-bad-null w "cstr-sub")
+        (let n (rt-strlen w)
+          (let ln (if (> (+ start len) n) (if (< (- n start) 0) 0 (- n start)) len)
+            (let p (rt-arena-str arena (+ ln 1))
+              (let _ (rt-copy p (+ w start) ln) (let _ (rt-st8 (+ p ln) 0) (ffi-call "%str" p 1))))))))))
+
+(defn zyl_cstr_from_int (arena value)
+  (let t (rt-w (rt-int-text value 0))
+    (let n (rt-strlen t)
+      (let p (rt-arena-str arena (+ n 1))
+        (let _ (rt-copy p t (+ n 1)) (ffi-call "%str" p 1))))))
+
+(defn rt-llong-min () (- -9223372036854775807 1))
+
+(defn rt-digit-of (c) (if (and (>= c 48) (<= c 57)) (- c 48) (if (and (>= c 97) (<= c 102)) (- c 87) (if (and (>= c 65) (<= c 70)) (- c 55) -1))))
+
+; C's overflow tests, kept exactly (v stays positive, so the negative test never fires).
+(defn rt-acc-ok (neg v digit base)
+  (if neg (not (< v (/ (+ (rt-llong-min) digit) base))) (not (> v (/ (- 9223372036854775807 digit) base)))))
+
+(defn rt-to-int-loop (p neg v)
+  (let c (rt-ld8 p)
+    (if (and (>= c 48) (<= c 57))
+      (if (rt-acc-ok neg v (- c 48) 10) (rt-to-int-loop (+ p 1) neg (+ (* v 10) (- c 48))) 0)
+      (if neg (- 0 v) v))))
+
+(defn zyl_cstr_to_int (s)
+  (let w (rt-w s)
+    (if (= w 0) 0
+      (if (< w 4096) (let _ (rt-bad-str w "cstr-to-int") 0)
+        (if (= (rt-ld8 w) 45) (rt-to-int-loop (+ w 1) true 0) (rt-to-int-loop w false 0))))))
+
+(defn rt-to-int-base-loop (p neg v base)
+  (let d (rt-digit-of (rt-ld8 p))
+    (if (or (< d 0) (>= d base))
+      (if neg (- 0 v) v)
+      (if (rt-acc-ok neg v d base) (rt-to-int-base-loop (+ p 1) neg (+ (* v base) d) base) 0))))
+
+(defn rt-base-of (p)
+  (if (= (rt-ld8 p) 48)
+    (let c (rt-ld8 (+ p 1))
+      (if (or (= c 120) (= c 88)) 16 (if (or (= c 111) (= c 79)) 8 (if (or (= c 98) (= c 66)) 2 10))))
+    10))
+
+(defn zyl_cstr_to_int_base (s)
+  (let w (rt-w s)
+    (if (= w 0) 0
+      (if (< w 4096) (let _ (rt-bad-str w "cstr-to-int-base") 0)
+        (let neg (= (rt-ld8 w) 45)
+          (let p (if neg (+ w 1) w)
+            (let base (rt-base-of p)
+              (rt-to-int-base-loop (if (= base 10) p (+ p 2)) neg 0 base))))))))
+
+(defn rt-ident-byte (c)
+  (if (or (and (>= c 65) (<= c 90)) (or (and (>= c 97) (<= c 122)) (or (and (>= c 48) (<= c 57)) (= c 95)))) c 95))
+
+(defn rt-sanitize-loop (d s i n)
+  (if (>= i n) 0 (let _ (rt-st8 (+ d i) (rt-ident-byte (rt-ld8 (+ s i)))) (rt-sanitize-loop d s (+ i 1) n))))
+
+(defn zyl_cstr_sanitize (arena s)
+  (let w (rt-w s)
+    (if (= w 0) (ffi-call "%str" 0 1)
+      (if (< w 4096) (rt-bad-null w "cstr-sanitize")
+        (let n (rt-strlen w)
+          (let p (rt-arena-str arena (+ n 1))
+            (let _ (rt-sanitize-loop p w 0 n) (ffi-call "%str" p 1))))))))
+
+(defn rt-hexval (c) (if (and (>= c 48) (<= c 57)) (- c 48) (if (and (>= c 97) (<= c 102)) (- c 87) (if (and (>= c 65) (<= c 70)) (- c 55) -1))))
+
+; The byte an escape \c stands for, or -1 (\x is handled apart).
+(defn rt-escape-byte (c)
+  (if (= c 110) 10 (if (= c 116) 9 (if (= c 114) 13 (if (= c 48) 0 (if (= c 34) 34 (if (= c 92) 92 (if (= c 101) 27 -1))))))))
+
+(defn rt-hex-escape-ok (s i end)
+  (and (< (+ i 3) end) (and (>= (rt-hexval (rt-ld8 (+ s (+ i 2)))) 0) (>= (rt-hexval (rt-ld8 (+ s (+ i 3)))) 0))))
+
+; Returns the end offset in out, or -1 on a bad escape.
+(defn rt-decode-loop (s i end out o)
+  (if (>= i end) o
+    (let c (rt-ld8 (+ s i))
+      (if (= c 92)
+        (if (>= (+ i 1) end) -1
+          (let n (rt-ld8 (+ s (+ i 1)))
+            (let e (rt-escape-byte n)
+              (if (>= e 0)
+                (let _ (rt-st8 (+ out o) e) (rt-decode-loop s (+ i 2) end out (+ o 1)))
+                (if (and (= n 120) (rt-hex-escape-ok s i end))
+                  (let _ (rt-st8 (+ out o) (+ (* 16 (rt-hexval (rt-ld8 (+ s (+ i 2))))) (rt-hexval (rt-ld8 (+ s (+ i 3))))))
+                    (rt-decode-loop s (+ i 4) end out (+ o 1)))
+                  -1)))))
+        (let _ (rt-st8 (+ out o) c) (rt-decode-loop s (+ i 1) end out (+ o 1)))))))
+
+(defn zyl_cstr_decode (arena s start end)
+  (let w (rt-w s)
+    (if (= w 0) (ffi-call "%str" 0 1)
+      (if (< w 4096) (rt-bad-null w "cstr-decode")
+        (let p (rt-arena-str arena (+ (+ (- end start) 1) 1))
+          (let o (rt-decode-loop w start end p 0)
+            (if (< o 0) (ffi-call "%str" 0 1) (let _ (rt-st8 (+ p o) 0) (ffi-call "%str" p 1)))))))))
+
+(defn rt-count-nl (s i end n)
+  (if (>= i end) n (let c (rt-ld8 (+ s i)) (if (= c 0) n (rt-count-nl s (+ i 1) end (if (= c 10) (+ n 1) n))))))
+
+(defn zyl_cstr_count_newlines (s end)
+  (let w (rt-w s)
+    (if (= w 0) 0 (if (< w 4096) (let _ (rt-bad-str w "cstr-count-newlines") 0) (rt-count-nl w 0 end 0)))))
+
+(defn rt-last-nl (s i) (if (< i 0) -1 (if (= (rt-ld8 (+ s i)) 10) i (rt-last-nl s (- i 1)))))
+
+(defn zyl_cstr_last_newline (s end)
+  (let w (rt-w s)
+    (if (= w 0) -1 (if (< w 4096) (let _ (rt-bad-str w "cstr-last-newline") -1) (rt-last-nl w (- end 1))))))
+
+(defn rt-escapes-loop (s i end)
+  (if (>= i end) true
+    (if (= (rt-ld8 (+ s i)) 92)
+      (if (>= (+ i 1) end) false
+        (if (>= (rt-escape-byte (rt-ld8 (+ s (+ i 1)))) 0) (rt-escapes-loop s (+ i 2) end)
+          (if (and (= (rt-ld8 (+ s (+ i 1))) 120) (rt-hex-escape-ok s i end)) (rt-escapes-loop s (+ i 4) end) false)))
+      (rt-escapes-loop s (+ i 1) end))))
+
+(defn zyl_cstr_escapes_ok (s start end)
+  (let w (rt-w s) (if (= w 0) false (rt-escapes-loop w start end))))
+
+; --- string views ---
+
+(defn zyl_view_ok (s off len)
+  (if (or (< off 0) (< len 0)) false
+    (let w (rt-w s)
+      (if (and (> w 0) (< w 4096)) (rt-bad-str w "view")
+        (let n (if (= w 0) 0 (rt-strlen w)) (and (<= off n) (<= len (- n off))))))))
+
+(defn zyl_view_byte (s off len i)
+  (if (or (= (rt-w s) 0) (or (< i 0) (>= i len))) -1 (rt-ld8 (+ (rt-w s) (+ off i)))))
+
+; A null view base reads as the empty string.
+(defn rt-view-base (s off) (if (= (rt-w s) 0) (ffi-call "%global" "empty" 64 1) (+ (rt-w s) off)))
+
+(defn zyl_view_cmp (a aoff alen b boff blen)
+  (let n (if (< alen blen) alen blen)
+    (let c (if (> n 0) (rt-mem-cmp (rt-view-base a aoff) (rt-view-base b boff) n) 0)
+      (if (not (= c 0)) c (if (< alen blen) -1 (if (> alen blen) 1 0))))))
+
+(defn zyl_view_find (s off len from byte)
+  (if (or (= (rt-w s) 0) (or (< from 0) (>= from len))) -1
+    (rt-find-byte (+ (rt-w s) off) len (bit-and byte 255) from)))
+
+(defn rt-view-copy (s off len rp)
+  (let p (rt-alloc (+ len 1) rp)
+    (let _ (if (and (> (rt-w s) 0) (> len 0)) (rt-copy p (+ (rt-w s) off) len) 0)
+      (let _ (rt-st8 (+ p len) 0) (ffi-call "%str" p 1)))))
+
+(defn zyl_view_copy (s off len) (rt-view-copy s off len 0))
+(defn zyl_view_copy_r (s off len) (rt-view-copy s off len (rt-cur-region)))
+
+; --- paths ---
+
+(defn rt-last-slash (s i last) (let c (rt-ld8 (+ s i)) (if (= c 0) last (rt-last-slash s (+ i 1) (if (= c 47) i last)))))
+
+; Everything up to and including the last '/'; with no '/', the first byte (C behaviour kept).
+(defn zyl_dirname_cstr (path)
+  (let w (rt-w path)
+    (if (= w 0) (ffi-call "%str" 0 1)
+      (let sl (rt-last-slash w 0 -1)
+        (let len (if (< sl 0) (if (= (rt-ld8 w) 0) 0 1) (+ sl 1))
+          (let p (rt-w (ffi-call "zyl_heap_alloc" (+ len 1) 1))
+            (if (= p 0) (ffi-call "%str" 0 1)
+              (let _ (rt-copy p w len) (let _ (rt-st8 (+ p len) 0) (ffi-call "%str" p 1))))))))))

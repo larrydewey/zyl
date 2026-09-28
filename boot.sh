@@ -90,15 +90,24 @@ link_cc() { # link_cc <asm> <out-bin>
     cc -no-pie "$1" "$RT_O" "$RUNTIME_O" -o "$2" -lpthread
 }
 
-link_seed() { # link_seed <asm> <out-bin>: reseed only; zyl_* entries the old rt.s lacks become trapping stubs
-    local obj="${OUT}/seed_link.o" stub="${OUT}/seed_stub.s"
-    cc -c "$1" -o "$obj"
-    : > "$stub"
-    comm -23 <(nm -u "$obj" "$RT_O" "$RUNTIME_O" 2>/dev/null | awk '$NF ~ /^zyl_/ {print $NF}' | sort -u) \
-             <(nm --defined-only "$RT_O" "$RUNTIME_O" 2>/dev/null | awk '{print $NF}' | sort -u) |
-        while read -r sym; do printf '.globl %s\n%s:\n    ud2\n' "$sym" "$sym" >> "$stub"; done
-    cc -no-pie "$obj" "$stub" "$RT_O" "$RUNTIME_O" -o "$2" -lpthread
-    rm -f "$obj" "$stub"
+# Reseed links pair the committed rt.s with the C runtime it was built against (HEAD's), so moved entries resolve.
+SEED_C_O="${OUT}/seed_actor_runtime.o"
+seed_c_runtime() {
+    local d="${OUT}/seed_c"
+    rm -rf "$d"; mkdir -p "$d"
+    if git -C "$SCRIPT_DIR" show HEAD:runtime/actor_runtime.c > "$d/actor_runtime.c" 2>/dev/null &&
+       git -C "$SCRIPT_DIR" show HEAD:runtime/actor_runtime.h > "$d/actor_runtime.h" 2>/dev/null; then
+        cc -O2 -c "$d/actor_runtime.c" -o "$SEED_C_O"
+    else
+        cp "$RUNTIME_O" "$SEED_C_O"
+    fi
+    rm -rf "$d"
+}
+
+link_seed() { # link_seed <asm> <out-bin>: the seed rt.s with the current C runtime, else with HEAD's
+    cc -c "${OUT}/rt.s" -o "${OUT}/seed_rt.o"
+    cc -no-pie "$1" "${OUT}/seed_rt.o" "$RUNTIME_O" -o "$2" -lpthread 2>/dev/null ||
+        cc -no-pie "$1" "${OUT}/seed_rt.o" "$SEED_C_O" -o "$2" -lpthread
 }
 
 gen_rt() { # gen_rt <compiler> <out.s>
@@ -111,7 +120,7 @@ if [ "$BOOTSTRAP_SELF" -eq 1 ]; then
     step "Bootstrap: reseeding from the self-hosted compiler"
     [ -f "${OUT}/stage2.s" ] || die "missing committed seed ${OUT}/stage2.s — restore it with: git checkout -- build/boot/stage2.s"
     [ -f "${OUT}/rt.s" ] || die "missing committed runtime seed ${OUT}/rt.s — restore it with: git checkout -- build/boot/rt.s"
-    use_rt "${OUT}/rt.s"
+    seed_c_runtime
     link_seed "${OUT}/stage2.s" "${OUT}/stage1.bin"
     PREV_S="${OUT}/stage2.s"
     PREV_RT="${OUT}/rt.s"
@@ -132,7 +141,7 @@ if [ "$BOOTSTRAP_SELF" -eq 1 ]; then
             cp "$NEXT_RT" "${OUT}/rt.s"
             use_rt "${OUT}/rt.s"
             link_cc "${OUT}/stage2.s" "${OUT}/stage2.bin"
-            rm -f "${OUT}"/reseed_round*.s "${OUT}"/reseed_round*.bin
+            rm -f "${OUT}"/reseed_round*.s "${OUT}"/reseed_round*.bin "$SEED_C_O" "${OUT}/seed_rt.o"
             ok "stage2 and rt seeded from the self-hosted compiler"
             echo ""
             echo "Verify with a clean ./boot.sh (no args) and commit the new seed:"

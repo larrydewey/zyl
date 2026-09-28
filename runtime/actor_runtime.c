@@ -118,8 +118,6 @@ long long zyl_call_on_big_stack(long long (*fn)(void)) {
     return fn();
 }
 
-
-
 /* Raise the main-thread stack soft limit to the hard limit so deep
    recursion in self-hosted compiler runs can grow beyond 8MB. Must run
    before deep recursion starts; called from zyl_ensure_arenas (invoked
@@ -677,43 +675,6 @@ static int zyl_cstr_valid(long long ptr, const char* who) {
     return 1;
 }
 
-/* Concatenate two NUL-terminated strings into freshly heap-allocated
-   storage (zyl_heap_alloc). Either argument may be NULL (treated as ""). */
-long long zyl_cstr_concat(long long a, long long b) {
-    if (!zyl_cstr_valid(a, "cstr-concat") || !zyl_cstr_valid(b, "cstr-concat")) return 0;
-    const char* sa = a ? (const char*)(size_t)a : "";
-    const char* sb = b ? (const char*)(size_t)b : "";
-    size_t la = strlen(sa);
-    size_t lb = strlen(sb);
-    /* Checked arithmetic: la + lb + 1 must not overflow */
-    if (la > SIZE_MAX - lb - 1) {
-        zyl_panic("string concatenation length overflow");
-    }
-    char* buf = (char*)(size_t)ZYL_RESULT_ALLOC(la + lb + 1);
-    memcpy(buf, sa, la);
-    memcpy(buf + la, sb, lb);
-    buf[la + lb] = '\0';
-    return (long long)(size_t)buf;
-}
-
-/* Copy a substring [start, start+len) of a NUL-terminated string into
-   freshly heap-allocated storage (zyl_heap_alloc). Clamps len to the
-   remaining bytes. NULL src is treated as "". */
-long long zyl_cstr_substr(long long src, long long start, long long len) {
-    if (!zyl_cstr_valid(src, "cstr-substr")) return 0;
-    const char* s = src ? (const char*)(size_t)src : "";
-    size_t slen = strlen(s);
-    if (start < 0) start = 0;
-    if ((size_t)start > slen) start = (long long)slen;
-    size_t avail = slen - (size_t)start;
-    if (len < 0) len = 0;
-    if ((size_t)len > avail) len = (long long)avail;
-    char* buf = (char*)(size_t)ZYL_RESULT_ALLOC(len + 1);
-    memcpy(buf, s + start, (size_t)len);
-    buf[len] = '\0';
-    return (long long)(size_t)buf;
-}
-
 long long zyl_mem_alloc(long long size) {
     return (long long)(size_t)malloc((size_t)size);
 }
@@ -743,130 +704,11 @@ long long zyl_mem_write(long long ptr, long long value) {
    made. The accessors below trust that invariant and never call strlen,
    so they are restricted to the standard library (ffi-raw-p). */
 
-/* Whether [off, off+len) lies within the string: 1 or 0. */
-long long zyl_view_ok(long long s, long long off, long long len) {
-    if (off < 0 || len < 0) return 0;
-    if (!zyl_cstr_valid(s, "view")) return 0;
-    long long n = s ? (long long)strlen((const char*)(size_t)s) : 0;
-    return off <= n && len <= n - off;
-}
-
-/* Byte `i` of the view, or -1 outside [0, len). */
-long long zyl_view_byte(long long s, long long off, long long len, long long i) {
-    if (!s || i < 0 || i >= len) return -1;
-    return (long long)((const unsigned char*)(size_t)s)[off + i];
-}
-
-/* Three-way byte comparison of two views: -1, 0 or 1 (shorter first on a
-   common prefix), like zyl_cstr_cmp. */
-long long zyl_view_cmp(long long a, long long aoff, long long alen,
-                       long long b, long long boff, long long blen) {
-    const unsigned char* pa = a ? (const unsigned char*)(size_t)a + aoff : (const unsigned char*)"";
-    const unsigned char* pb = b ? (const unsigned char*)(size_t)b + boff : (const unsigned char*)"";
-    long long n = alen < blen ? alen : blen;
-    int c = n > 0 ? memcmp(pa, pb, (size_t)n) : 0;
-    if (c != 0) return c < 0 ? -1 : 1;
-    return alen < blen ? -1 : (alen > blen ? 1 : 0);
-}
-
-/* Index of the first `byte` at or after `from` in the view, or -1. */
-long long zyl_view_find(long long s, long long off, long long len, long long from, long long byte) {
-    if (!s || from < 0 || from >= len) return -1;
-    const unsigned char* p = (const unsigned char*)(size_t)s + off;
-    const void* hit = memchr(p + from, (int)(unsigned char)byte, (size_t)(len - from));
-    return hit ? (long long)((const unsigned char*)hit - p) : -1;
-}
-
-/* A fresh String holding the view's bytes. */
-long long zyl_view_copy(long long s, long long off, long long len) {
-    char* out = (char*)(size_t)ZYL_RESULT_ALLOC(len + 1);
-    if (s && len > 0) memcpy(out, (const char*)(size_t)s + off, (size_t)len);
-    out[len] = 0;
-    return (long long)(size_t)out;
-}
-
 /* Write byte `b` at index `i` of a buffer (does not manage the terminator). */
 void zyl_cstr_byte_set(long long ptr, long long i, long long b) {
     if (!ptr || i < 0) return;
     if (!zyl_cstr_valid(ptr, "cstr-byte-set")) return;
     ((unsigned char*)(size_t)ptr)[i] = (unsigned char)b;
-}
-
-/* Copy bytes [start, start+len) of `src` into a fresh NUL-terminated buffer
-   in `arena`, returning the new buffer pointer. Deterministic (copy order). */
-long long zyl_cstr_sub(long long arena, long long src, long long start, long long len) {
-    if (!src || start < 0 || len < 0) return 0;
-    if (!zyl_cstr_valid(src, "cstr-sub")) return 0;
-    const char* s = (const char*)(size_t)src;
-    long long n = (long long)strlen(s);
-    if (start + len > n) len = n - start < 0 ? 0 : n - start;
-    long long buf = zyl_arena_alloc_zeroed(arena, len + 1);
-    memcpy((void*)(size_t)buf, s + start, (size_t)len);
-    ((char*)(size_t)buf)[len] = 0;
-    return buf;
-}
-
-/* Parse a decimal integer string (optional leading '-') to a value.
-   Returns 0 on overflow and sets errno to ERANGE. */
-long long zyl_cstr_to_int(long long ptr) {
-    if (!ptr) return 0;
-    if (!zyl_cstr_valid(ptr, "cstr-to-int")) return 0;
-    const char* s = (const char*)(size_t)ptr;
-    long long neg = 0, v = 0;
-    if (*s == '-') { neg = 1; s++; }
-    while (*s >= '0' && *s <= '9') {
-        int digit = *s - '0';
-        /* Check for overflow before multiplying/adding */
-        if (neg) {
-            if (v < (LLONG_MIN + digit) / 10) {
-                errno = ERANGE;
-                return 0;
-            }
-        } else {
-            if (v > (LLONG_MAX - digit) / 10) {
-                errno = ERANGE;
-                return 0;
-            }
-        }
-        v = v * 10 + digit;
-        s++;
-    }
-    return neg ? -v : v;
-}
-
-/* Convert a radix-prefixed integer literal ("0xFF", "-0xFF", "0b1010",
-   "0o777", plain decimal) to its value. The single leading radix prefix
-   (0x/0o/0b, any case) is consumed; everything after it is parsed in that
-   base. No prefix means decimal. Used by the byte-primitive lexer (the
-   `(byte 0xFF)` radix forms from BYTE_PRIMITIVES_IMPLEMENTATION_PLAN.md). */
-long long zyl_cstr_to_int_base(long long ptr) {
-    if (!ptr) return 0;
-    if (!zyl_cstr_valid(ptr, "cstr-to-int-base")) return 0;
-    const char* s = (const char*)(size_t)ptr;
-    long long neg = 0, v = 0;
-    if (*s == '-') { neg = 1; s++; }
-    int base = 10;
-    if (s[0] == '0') {
-        char p = s[1];
-        if (p == 'x' || p == 'X') { base = 16; s += 2; }
-        else if (p == 'o' || p == 'O') { base = 8; s += 2; }
-        else if (p == 'b' || p == 'B') { base = 2; s += 2; }
-    }
-    for (; *s; s++) {
-        int digit;
-        if (*s >= '0' && *s <= '9') digit = *s - '0';
-        else if (*s >= 'a' && *s <= 'f') digit = *s - 'a' + 10;
-        else if (*s >= 'A' && *s <= 'F') digit = *s - 'A' + 10;
-        else break;
-        if (digit >= base) break;
-        if (neg) {
-            if (v < (LLONG_MIN + digit) / base) { errno = ERANGE; return 0; }
-        } else {
-            if (v > (LLONG_MAX - digit) / base) { errno = ERANGE; return 0; }
-        }
-        v = v * base + digit;
-    }
-    return neg ? -v : v;
 }
 
 /* ==========================================================================
@@ -1173,113 +1015,10 @@ long long zyl_bytebuf_atomic_cas(long long buf, long long offset, long long expe
     return p ? zyl_atomic_cas((long long)(size_t)p, expected, new_value) : 0;
 }
 
-/* Convert a non-negative integer to its decimal string form in `arena`.
-   Used for spans/error messages in the lexer/parser. */
-long long zyl_cstr_from_int(long long arena, long long value) {
-    char tmp[32];
-    snprintf(tmp, sizeof tmp, "%lld", value);
-    long long n = (long long)strlen(tmp);
-    long long buf = zyl_arena_alloc_zeroed(arena, n + 1);
-    memcpy((void*)(size_t)buf, tmp, (size_t)n + 1);
-    return buf;
-}
-
-/* Sanitize an identifier for use as an assembler/C symbol: every byte
-   outside [A-Za-z0-9_] becomes '_'. Returns a NUL-terminated buffer in
-   `arena`. Deterministic: copied left-to-right. */
-long long zyl_cstr_sanitize(long long arena, long long src) {
-    if (!src) return 0;
-    if (!zyl_cstr_valid(src, "cstr-sanitize")) return 0;
-    const char* s = (const char*)(size_t)src;
-    long long n = (long long)strlen(s);
-    long long buf = zyl_arena_alloc_zeroed(arena, n + 1);
-    char* d = (char*)(size_t)buf;
-    for (long long i = 0; i < n; i++) {
-        char c = s[i];
-        int ok = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
-                 (c >= '0' && c <= '9') || c == '_';
-        d[i] = ok ? c : '_';
-    }
-    return buf;
-}
-
 /* Decode a Zyl string literal body (src[start..end], `start` points past the
    opening quote): handle \n \t \" \\ escapes. Returns a NUL-terminated buffer
    in `arena`, or 0 if an escape is unterminated (caller reports a lex error).
    Deterministic: decodes left-to-right in source order. */
-/* Hex digit value, or -1. Used by zyl_cstr_decode's \xNN escape. */
-static int zyl_hexval(char c) {
-    if (c >= '0' && c <= '9') return c - '0';
-    if (c >= 'a' && c <= 'f') return 10 + (c - 'a');
-    if (c >= 'A' && c <= 'F') return 10 + (c - 'A');
-    return -1;
-}
-
-long long zyl_cstr_decode(long long arena, long long src, long long start, long long end) {
-    if (!src) return 0;
-    if (!zyl_cstr_valid(src, "cstr-decode")) return 0;
-    const char* s = (const char*)(size_t)src;
-    long long cap = (end - start) + 1;
-    long long buf = zyl_arena_alloc_zeroed(arena, cap + 1);
-    char* out = (char*)(size_t)buf;
-    long long o = 0;
-    long long i = start;
-    while (i < end) {
-        unsigned char c = (unsigned char)s[i];
-        if (c == '\\' && i + 1 < end) {
-            char n = s[i + 1];
-            if (n == 'n') { out[o++] = '\n'; i += 2; }
-            else if (n == 't') { out[o++] = '\t'; i += 2; }
-            else if (n == 'r') { out[o++] = '\r'; i += 2; }
-            else if (n == '0') { out[o++] = '\0'; i += 2; }
-            else if (n == '"') { out[o++] = '"'; i += 2; }
-            else if (n == '\\') { out[o++] = '\\'; i += 2; }
-            /* \e is ESC (0x1b). Every ANSI control sequence a terminal
-               program emits starts with it, and without this escape the
-               REPL's line editor could not write one as a string literal
-               at all -- it would have to build each sequence byte by byte
-               at runtime. \xNN covers the rest of the non-printables. */
-            else if (n == 'e') { out[o++] = (char)27; i += 2; }
-            else if (n == 'x' && i + 3 < end
-                     && zyl_hexval(s[i + 2]) >= 0 && zyl_hexval(s[i + 3]) >= 0) {
-                out[o++] = (char)((zyl_hexval(s[i + 2]) << 4) | zyl_hexval(s[i + 3]));
-                i += 4;
-            }
-            else return 0;
-        } else if (c == '\\') {
-            return 0; /* backslash at very end — unterminated escape */
-        } else {
-            out[o++] = (char)c;
-            i += 1;
-        }
-    }
-    out[o] = 0;
-    return buf;
-}
-
-/* Count the number of '\n' characters in src[0..end). Used for line/col. */
-long long zyl_cstr_count_newlines(long long src, long long end) {
-    if (!src) return 0;
-    if (!zyl_cstr_valid(src, "cstr-count-newlines")) return 0;
-    const char* s = (const char*)(size_t)src;
-    long long n = 0;
-    for (long long i = 0; i < end && s[i]; i++) {
-        if (s[i] == '\n') n++;
-    }
-    return n;
-}
-
-/* Index of the last '\n' in src[0..end), or -1 if none. Used for column. */
-long long zyl_cstr_last_newline(long long src, long long end) {
-    if (!src) return -1;
-    if (!zyl_cstr_valid(src, "cstr-last-newline")) return -1;
-    const char* s = (const char*)(size_t)src;
-    for (long long i = end - 1; i >= 0; i--) {
-        if (s[i] == '\n') return i;
-        if (i == 0) break;
-    }
-    return -1;
-}
 
 /* ==========================================================================
    Region-based arena allocator.
@@ -2400,7 +2139,6 @@ typedef struct ZylRegion {
 #define ZYL_RSET_BLOCKS(r, b) ((r)->blocks = (ZylRBlock*)((uintptr_t)(b) | ((uintptr_t)(r)->blocks & 1)))
 #define ZYL_RPOLICY(r) ((long long*)(r) + 4)
 
-
 __thread ZylRegion* zyl_cur_region = 0;
 __thread ZylRegion* zyl_region_top = 0;
 static __thread ZylRBlock* g_rpool[ZYL_RCLASSES];
@@ -2750,7 +2488,6 @@ long long zyl_mlock(long long addr, long long len) {
 #if defined(__x86_64__)
 #include <immintrin.h>
 #include <cpuid.h>
-
 
 static long long* zyl_words_data(long long h);
 long long zyl_words_len(long long h);
@@ -3395,30 +3132,6 @@ long long zyl_argc(void) {
 long long zyl_arg_str(long long i) {
     if (i < 0 || i >= (long long)zyl_saved_argc) return 0;
     return (long long)(size_t)zyl_saved_argv[(int)i];
-}
-
-long long zyl_dirname_cstr(long long path) {
-    const char* p = (const char*)(size_t)path;
-    if (!p) return 0;
-    /* Find last '/'; dirname is everything up to and including it. */
-    const char* slash = NULL;
-    for (const char* s = p; *s; s++) {
-        if (*s == '/') slash = s;
-    }
-    size_t len;
-    if (!slash) {
-        len = (p[0] == 0) ? 0 : 1;
-    } else {
-        len = (size_t)(slash - p) + 1;
-    }
-    /* A fresh heap string: a reused buffer made the next call overwrite
-     * the last result, and passing a result back in (workspace.zyl walks
-     * upward this way) copied the buffer onto itself. */
-    char* out = (char*)(size_t)zyl_heap_alloc((long long)len + 1);
-    if (!out) return 0;
-    memcpy(out, p, len);
-    out[len] = 0;
-    return (long long)(size_t)out;
 }
 
 /* Returns 1 if `path` exists (any type), 0 otherwise. Used to probe for
@@ -4302,19 +4015,6 @@ long long zyl_mkdir_p(long long path) {
     return 0;
 }
 
-/* One-byte string, heap-allocated and NUL-terminated. The line editor
-   builds output a byte at a time (an escape sequence's parameters, a
-   typed character) and Zyl has no character type -- every such byte has
-   to become a one-character string before str-concat can join it. */
-long long zyl_cstr_from_byte(long long b) {
-    long long p = ZYL_RESULT_ALLOC(2);
-    if (!p) return 0;
-    char* s = (char*)(size_t)p;
-    s[0] = (char)(b & 0xFF);
-    s[1] = 0;
-    return p;
-}
-
 /* ── Interpreter support (stdlib/repl/interp.zyl) ───────────────────────
    The REPL evaluates a lowered ICNF program in this process instead of
    generating machine code for it. Three things only C can provide:
@@ -4682,19 +4382,6 @@ long long zyl_div_shift(long long d) {
     long long m = 0, sh = 0;
     if (d > 1 || d < -1) zyl_div_magic_of(d, &m, &sh);
     return sh;
-}
-
-long long zyl_int_text(long long n) {
-    char tmp[24];
-    int k = 0;
-    unsigned long long u = n < 0 ? 0ULL - (unsigned long long)n : (unsigned long long)n;
-    do { tmp[k++] = (char)('0' + (int)(u % 10)); u /= 10; } while (u);
-    if (n < 0) tmp[k++] = '-';
-    char* p = (char*)(size_t)ZYL_RESULT_ALLOC(k + 1);
-    if (!p) return 0;
-    for (int i = 0; i < k; i++) p[i] = tmp[k - 1 - i];
-    p[k] = 0;
-    return (long long)(size_t)p;
 }
 
 /* Every runtime symbol the compiler can emit an `ffi-call` to, by name.
@@ -5146,12 +4833,7 @@ long long zyl_print_float(long long bits) { printf("%f\n", zyl_d_of(bits)); retu
    annotated (compiler/region_inference, rg-ffi-kind 1). */
 #define ZYL_R_BEGIN long long saved_ = g_result_region; g_result_region = (long long)(size_t)zyl_cur_region;
 #define ZYL_R_END g_result_region = saved_;
-long long zyl_cstr_concat_r(long long a, long long b) { ZYL_R_BEGIN long long v = zyl_cstr_concat(a, b); ZYL_R_END return v; }
-long long zyl_cstr_substr_r(long long s, long long st, long long n) { ZYL_R_BEGIN long long v = zyl_cstr_substr(s, st, n); ZYL_R_END return v; }
-long long zyl_cstr_from_byte_r(long long b) { ZYL_R_BEGIN long long v = zyl_cstr_from_byte(b); ZYL_R_END return v; }
-long long zyl_int_text_r(long long n) { ZYL_R_BEGIN long long v = zyl_int_text(n); ZYL_R_END return v; }
 long long zyl_f_text_r(long long bits) { ZYL_R_BEGIN long long v = zyl_f_text(bits); ZYL_R_END return v; }
-long long zyl_view_copy_r(long long s, long long o, long long n) { ZYL_R_BEGIN long long v = zyl_view_copy(s, o, n); ZYL_R_END return v; }
 long long zyl_file_read_c_r(long long fd, long long n) { ZYL_R_BEGIN long long v = zyl_file_read_c(fd, n); ZYL_R_END return v; }
 
 /* Regions are on unless ZYL_REGIONS=0 was set for the compile. */
@@ -5430,20 +5112,3 @@ static ZylStrBufHdr* zyl_strbuf_hdr(long long dst) {
 /* A union-find class's id, for ordering classes by creation. */
 long long zyl_uf_id(long long a) { return a; }
 
-/* Whether src[start, end) holds only escapes zyl_cstr_decode accepts
-   (the lexer asks before decoding, so decode's 0 is never a String). */
-long long zyl_cstr_escapes_ok(long long src, long long start, long long end) {
-    if (!src) return 0;
-    const char* s = (const char*)(size_t)src;
-    long long i = start;
-    while (i < end) {
-        if (s[i] == '\\') {
-            if (i + 1 >= end) return 0;
-            char n = s[i + 1];
-            if (n == 'n' || n == 't' || n == 'r' || n == '0' || n == '"' || n == '\\' || n == 'e') i += 2;
-            else if (n == 'x' && i + 3 < end && zyl_hexval(s[i + 2]) >= 0 && zyl_hexval(s[i + 3]) >= 0) i += 4;
-            else return 0;
-        } else i += 1;
-    }
-    return 1;
-}

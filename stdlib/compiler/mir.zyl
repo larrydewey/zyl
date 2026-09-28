@@ -57,7 +57,8 @@
   (MByteData Int Int)                 ; d data, handle
   (MByteBound Int Int)                ; d bound, handle
   (MByteFast Int Int Int Int Int Int) ; kind, d, off, data, bound, val (-1)
-  (MRaw Int Int (List Int)))          ; runtime primitive kind (cg-raw-kind), d, operands
+  (MRaw Int Int (List Int))           ; runtime primitive kind (cg-raw-kind), d, operands
+  (MTls Int String (List Int)))       ; d <- thread-local sym, or sym <- the operand (then d gets it)
 
 ; Vregs an instruction reads, and the one it writes (-1 for none).
 (defn mi-uses (i)
@@ -91,7 +92,8 @@
     (MByteData _ h (Cons h Nil))
     (MByteBound _ h (Cons h Nil))
     (MByteFast _ _ o dt bd v (Cons o (Cons dt (Cons bd (mir-opt-use v Nil)))))
-    (MRaw _ _ vs vs)))
+    (MRaw _ _ vs vs)
+    (MTls _ _ vs vs)))
 
 (defn mir-opt-use (v rest) (if (< v 0) rest (Cons v rest)))
 
@@ -117,6 +119,7 @@
     (MByteData d _ d)
     (MByteBound d _ d)
     (MRaw _ d _ d)
+    (MTls d _ _ d)
     (_ -1)))
 
 ; Instructions that call C (or other code) and so clobber the

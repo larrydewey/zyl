@@ -438,6 +438,43 @@ as recorded below.
 
 # Session log (newest first)
 
+## Session (2026-09-28, later still) — runtime in Zyl, stage 3a: strings and number text
+
+- Ported to `runtime/rt/rt.zyl` and deleted from the C (prototypes now
+  in `actor_runtime.h`):
+  - `zyl_cstr_concat`, `_substr` and `_from_byte`, `zyl_int_text` and
+    `zyl_view_copy`, each with its `_r` variant; the `_r` entries read
+    `zyl_cur_region` through `%tls-get`;
+  - `_sub`, `_from_int`, `_to_int`, `_to_int_base`, `_sanitize`,
+    `_decode`, `_count_newlines`, `_last_newline` and `_escapes_ok`;
+  - `zyl_view_ok`, `_byte`, `_cmp` and `_find`, and `zyl_dirname_cstr`.
+
+  The C behaviour is kept exactly, including the quirks: `to_int`'s
+  negative overflow test never fires, and `dirname` of "x.zyl" is "x".
+- New primitives: `%tls-get`/`%tls-set` (MIR `MTls`) and
+  `%v128-diff-mask`, which is strcmp's "differs or NUL" mask in one pass.
+  `zyl_ralloc` is callable only from the runtime (`rt-only-p`), and
+  `zyl_heap_alloc` only from the standard library. A runtime module is
+  exempt from the stdlib-only restriction.
+- Integer text writes two digits per division by 100 from a pair table,
+  counts digits without dividing, and works on v <= 0 so `INT64_MIN`
+  needs no special case. `rt-copy` does overlapping 16/8/4-byte moves.
+- MIR: a condition that is `or`/`and` (`IIf` with a constant arm)
+  branches instead of materialising 0/1. This speeds up the stdlib
+  prelude.
+- `--bootstrap-from-self` links the seed with the current C runtime, or
+  with `HEAD`'s when that fails, so entries the compiler itself uses can
+  move in one reseed.
+- Tests: `regression/runtime-text`. `regression/runtime-strings` was
+  missing its `(run-tests)` and so ran nothing; it runs now. The suite
+  passes 277/277. A C fuzz harness (scratch, not committed) ran 300k
+  random concat/substr/int-text cases against libc and snprintf.
+- Perf, with the compiler held fixed and only the runtime swapped:
+  - fib, loop, list, trees, sieve and vec are at parity;
+  - str is 0.121 s vs 0.110 s (+10%): each operation adds call layers
+    and non-inlined helpers. Open; the fix is backend inlining;
+  - a self-compile is +0.6%.
+
 ## Session (2026-09-28, later) — runtime in Zyl, stage 2: SIMD
 
 - New primitives:

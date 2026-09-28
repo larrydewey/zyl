@@ -68,8 +68,6 @@ long long zyl_mem_free(long long ptr);
 long long zyl_mem_read(long long ptr);
 long long zyl_mem_write(long long ptr, long long value);
 long long zyl_cstr_len(long long ptr);
-long long zyl_cstr_concat(long long a, long long b);
-long long zyl_cstr_substr(long long src, long long start, long long len);
 long long zyl_cstr_eq(long long p1, long long p2);
 long long zyl_cstr_cmp(long long p1, long long p2);
 long long zyl_cstr_key_matches(long long key, long long name);
@@ -90,12 +88,6 @@ void zyl_panic(const char* msg);
 /* Character-level string access (self-hosting lexer substrate). */
 long long zyl_cstr_byte_at(long long ptr, long long i);
 void zyl_cstr_byte_set(long long ptr, long long i, long long b);
-long long zyl_cstr_sub(long long arena, long long src, long long start, long long len);
-long long zyl_cstr_to_int(long long ptr);
-long long zyl_cstr_from_int(long long arena, long long value);
-long long zyl_cstr_decode(long long arena, long long src, long long start, long long end);
-long long zyl_cstr_count_newlines(long long src, long long end);
-long long zyl_cstr_last_newline(long long src, long long end);
 
 /* Region-based arena allocator.
    Deterministic reclamation: arena-reset frees every block at once; the
@@ -136,7 +128,6 @@ long long zyl_atomic_fetch_add(long long addr, long long value);
 void zyl_save_args(int argc, char** argv);
 long long zyl_argc(void);
 long long zyl_arg_str(long long i);
-long long zyl_dirname_cstr(long long path);
 long long zyl_chdir(long long path);
 long long zyl_getcwd(void);
 long long zyl_system_cmd(long long cmd);
@@ -159,7 +150,6 @@ long long zyl_term_height(void);
 long long zyl_term_write(long long s);
 long long zyl_term_flush(void);
 long long zyl_mkdir_p(long long path);
-long long zyl_cstr_from_byte(long long b);
 long long zyl_cc_compile_log(long long path, long long logpath);
 
 /* Interpreter support (stdlib/repl/interp.zyl). */
@@ -186,7 +176,6 @@ long long zyl_now_ms(void);
 long long zyl_val_arity(long long p);
 long long zyl_val_kind(long long p, long long i);
 long long zyl_cstr_of_word(long long w);
-long long zyl_int_text(long long n);
 long long zyl_ffi_lookup(long long name);
 long long zyl_call_argv(long long fn, long long argc, long long argv);
 long long zyl_ffi_timed(long long fn, long long name, long long ms, long long argc, ...);
@@ -205,7 +194,6 @@ long long zyl_iglobal_put(long long key, long long val);
 long long zyl_strbuf_new(long long arena, long long n);
 long long zyl_strbuf_str(long long b);
 long long zyl_uf_id(long long a);
-long long zyl_cstr_escapes_ok(long long src, long long start, long long end);
 long long zyl_attrh_new(void);
 long long zyl_attrh_set(long long th, long long node, long long val);
 long long zyl_attrh_get_or(long long th, long long node, long long dflt);
@@ -236,5 +224,26 @@ long long zyl_f_text(long long bits);
 long long zyl_print_int(long long n);
 long long zyl_print_str(long long s);
 long long zyl_print_float(long long bits);
+
+/* Entries implemented in Zyl (runtime/rt/rt.zyl). */
+long long zyl_cstr_concat(long long a, long long b);
+long long zyl_cstr_substr(long long s, long long start, long long len);
+long long zyl_cstr_sub(long long arena, long long s, long long start, long long len);
+long long zyl_cstr_from_byte(long long b);
+long long zyl_cstr_from_int(long long arena, long long value);
+long long zyl_int_text(long long n);
+long long zyl_cstr_to_int(long long s);
+long long zyl_cstr_to_int_base(long long s);
+long long zyl_cstr_sanitize(long long arena, long long s);
+long long zyl_cstr_decode(long long arena, long long s, long long start, long long end);
+long long zyl_cstr_count_newlines(long long s, long long end);
+long long zyl_cstr_last_newline(long long s, long long end);
+long long zyl_cstr_escapes_ok(long long s, long long start, long long end);
+long long zyl_view_ok(long long s, long long off, long long len);
+long long zyl_view_byte(long long s, long long off, long long len, long long i);
+long long zyl_view_cmp(long long a, long long aoff, long long alen, long long b, long long boff, long long blen);
+long long zyl_view_find(long long s, long long off, long long len, long long from, long long byte);
+long long zyl_view_copy(long long s, long long off, long long len);
+long long zyl_dirname_cstr(long long path);
 
 #endif

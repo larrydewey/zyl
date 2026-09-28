@@ -27,3 +27,5 @@
         (assert-equal (= a b) false)
         (assert-equal (< a b) true)
         (assert-equal (str-length a) 81)))))
+
+(run-tests)
