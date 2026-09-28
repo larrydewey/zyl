@@ -2,7 +2,13 @@
 (use base)
 
 ;; Digits are produced from v <= 0 so INT64_MIN needs no special case.
-(defn rt-ndigits (v) (rt-nd v -10 1))
+; Compares against constants, not a multiply chain (v <= 0).
+(defn rt-ndigits (v)
+  (if (> v -10000)
+    (if (> v -100) (if (> v -10) 1 2) (if (> v -1000) 3 4))
+    (if (> v -100000000)
+      (if (> v -1000000) (if (> v -100000) 5 6) (if (> v -10000000) 7 8))
+      (rt-nd v -1000000000 9))))
 
 (defn rt-nd (v t k) (if (or (> v t) (= k 19)) k (rt-nd v (* t 10) (+ k 1))))
 
@@ -23,14 +29,32 @@
         (let _ (rt-st8 (+ p (- k 1)) (rt-ld8 t)) (rt-st8 (+ p k) (rt-ld8 (+ t 1)))))
       (rt-st8 (+ p k) (- 48 v)))))
 
+; Up to 7 characters: the text and its NUL as one word, stored once (blocks are 8-byte rounded).
+(defmacro rt-pair (p) (ffi-call "%load16" (+ (rt-w (rt-digit-pairs)) (* p 2)) 1))
+
+; The k <= 7 digits of v (-10^7 < v <= 0) as a word, first digit in byte 0: eight digits
+; from three independent divisions, then the k-8 leading zeros shifted out (their place is the NUL).
+(defn rt-text-word (v k)
+  (let q1 (/ v 100)
+    (let q2 (/ v 10000)
+      (let q3 (/ v 1000000)
+        (let w8 (bit-or (rt-pair (- 0 q3))
+                  (bit-or (shl (rt-pair (- (* q3 100) q2)) 16)
+                    (bit-or (shl (rt-pair (- (* q2 100) q1)) 32) (shl (rt-pair (- (* q1 100) v)) 48))))
+          (shr w8 (* 8 (- 8 k))))))))
+
 (defn rt-int-text (n rp)
   (let v (if (> n 0) (- 0 n) n)
     (let sign (if (< n 0) 1 0)
       (let len (+ (rt-ndigits v) sign)
+        (if (<= len 7)
+          (let p (rt-alloc (+ len 1) rp)
+            (let w (rt-text-word v (- len sign))
+              (let _ (ffi-call "%store64" p (if (= sign 1) (bit-or (shl w 8) 45) w) 1) (ffi-call "%str" p 1))))
         (let p (rt-alloc (+ len 1) rp)
           (let _ (if (= sign 1) (rt-st8 p 45) 0)
             (let _ (rt-put-digits p v (- len 1))
-              (let _ (rt-st8 (+ p len) 0) (ffi-call "%str" p 1)))))))))
+              (let _ (rt-st8 (+ p len) 0) (ffi-call "%str" p 1))))))))))
 
 (defn zyl_int_text (n) (rt-int-text n 0))
 (defn zyl_int_text_r (n) (rt-int-text n (rt-cur-region)))

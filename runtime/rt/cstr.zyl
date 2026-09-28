@@ -62,9 +62,32 @@
           (let la (if (= wa 0) 0 (rt-strlen wa))
             (let lb (if (= wb 0) 0 (rt-strlen wb))
               (let p (rt-alloc (+ (+ la lb) 1) rp)
+                (if (and (< (+ la lb) 16) (and (rt-word-safe wa la) (rt-word-safe wb lb)))
+                  (let _ (rt-concat-words p wa la wb lb) (ffi-call "%str" p 1))
                 (let _ (rt-copy p wa la)
                   (let _ (rt-copy (+ p la) wb lb)
-                    (let _ (rt-st8 (+ p (+ la lb)) 0) (ffi-call "%str" p 1))))))))))))
+                    (let _ (rt-st8 (+ p (+ la lb)) 0) (ffi-call "%str" p 1)))))))))))))
+
+; --- short results as whole words: one or two word stores a later word load forwards from ---
+
+; Reading the words covering n < 16 bytes at w stays inside w's page (a 0 w has n 0: nothing read).
+(defmacro rt-word-safe (w n) (let ws-w w (let ws-n n (or (= ws-n 0) (<= (bit-and ws-w 4095) (if (> ws-n 8) 4080 4088))))))
+
+; The low n bytes of x (n in [0, 8]).
+(defmacro rt-low-bytes (x n) (let lb-x x (let lb-n n (if (>= lb-n 8) lb-x (bit-and lb-x (- (shl 1 (* lb-n 8)) 1))))))
+
+; a (la bytes) then b (lb bytes) then NUL, la + lb < 16: as words lo, hi (bytes past the end are 0).
+(defn rt-concat-words (p wa la wb lb)
+  (let a0 (if (= la 0) 0 (rt-low-bytes (ffi-call "%load64" wa 1) la))
+    (let a1 (if (> la 8) (rt-low-bytes (ffi-call "%load64" (+ wa 8) 1) (- la 8)) 0)
+      (let b0 (if (= lb 0) 0 (rt-low-bytes (ffi-call "%load64" wb 1) lb))
+        (let b1 (if (> lb 8) (rt-low-bytes (ffi-call "%load64" (+ wb 8) 1) (- lb 8)) 0)
+          (let s (* la 8)
+            ; b shifted up by s bits across the two words (a shift of 64 or more gives 0)
+            (let lo (bit-or a0 (shl b0 s))
+              (let hi (bit-or a1 (bit-or (shl b1 s) (bit-or (shr b0 (- 64 s)) (shl b0 (- s 64)))))
+                (let _ (ffi-call "%store64" p lo 1)
+                  (if (>= (+ la lb) 8) (ffi-call "%store64" (+ p 8) hi 1) 0))))))))))
 
 (defn zyl_cstr_concat (a b) (rt-concat a b 0))
 (defn zyl_cstr_concat_r (a b) (rt-concat a b (rt-cur-region)))

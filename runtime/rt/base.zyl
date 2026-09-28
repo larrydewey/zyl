@@ -8,11 +8,24 @@
 (defmacro rt-zmask (a) (ffi-call "%v128-zero-mask" a 1))
 (defmacro rt-eqmask (a b) (ffi-call "%v128-eq-mask" a b 1))
 (defmacro rt-ctz (x) (ffi-call "%ctz" x 1))
+; The high bit of each zero byte of x (its lowest set bit marks the first one).
+(defmacro rt-zero-bytes (x) (let zb-x x (bit-and (bit-and (- zb-x 72340172838076673) (bit-not zb-x)) -9187201950435737472)))
 
 ; --- SIMD scans (SSE2: aligned loads never cross a page) ---
 
-; Length of the NUL-terminated bytes at w.
+; Length of the NUL-terminated bytes at w: the first 8 bytes as one word when that stays in the page
+; (a word load forwards from a string's own word store), then 16-byte blocks.
 (defn rt-strlen (w)
+  (if (<= (bit-and w 4095) 4080)
+    (let z (rt-zero-bytes (ffi-call "%load64" w 1))
+      (if (= z 0)
+        (let z2 (rt-zero-bytes (ffi-call "%load64" (+ w 8) 1))
+          (if (= z2 0) (+ 16 (rt-strlen-v (+ w 16))) (+ 8 (shr (rt-ctz z2) 3))))
+        (shr (rt-ctz z) 3)))
+    (rt-strlen-v w)))
+
+
+(defn rt-strlen-v (w)
   (let base (bit-and w -16)
     (let m (shr (rt-zmask base) (bit-and w 15))
       (if (= m 0) (rt-strlen-from w (+ base 16)) (rt-ctz m)))))

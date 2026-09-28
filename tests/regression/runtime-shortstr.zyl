@@ -1,0 +1,40 @@
+; Short strings built as whole words: int text up to 7 characters, concat results under 16 bytes, word-at-a-time strlen.
+
+(defn rep ((s String) (n Int) (acc String)) (if (= n 0) acc (rep s (- n 1) (str-concat acc s))))
+
+(test "int-text-words"
+  (begin
+    (assert-equal (Show.show 0) "0")
+    (assert-equal (Show.show 7) "7")
+    (assert-equal (Show.show -7) "-7")
+    (assert-equal (Show.show 10) "10")
+    (assert-equal (Show.show 99) "99")
+    (assert-equal (Show.show -100) "-100")
+    (assert-equal (Show.show 123456) "123456")
+    (assert-equal (Show.show -123456) "-123456")
+    (assert-equal (Show.show 1234567) "1234567")
+    (assert-equal (Show.show 9999999) "9999999")
+    (assert-equal (Show.show -1234567) "-1234567")
+    (assert-equal (Show.show 10000000) "10000000")
+    (assert-equal (str-length (Show.show 1000001)) 7)
+    (assert-equal (str-length (Show.show -999999)) 7)))
+
+(test "concat-words"
+  (begin
+    (assert-equal (str-concat "" "") "")
+    (assert-equal (str-length (str-concat "" "")) 0)
+    (assert-equal (str-concat "a" "") "a")
+    (assert-equal (str-concat "" "b") "b")
+    (assert-equal (str-concat "abcdefg" "h") "abcdefgh")
+    (assert-equal (str-length (str-concat "abcdefg" "h")) 8)
+    (assert-equal (str-concat "abcdefgh" "ijklmno") "abcdefghijklmno")
+    (assert-equal (str-length (str-concat "abcdefgh" "ijklmno")) 15)
+    (assert-equal (str-concat "abcdefghi" "jklmnop") "abcdefghijklmnop")
+    (assert-equal (str-length (str-concat "abcdefghi" "jklmnop")) 16)
+    (assert-equal (str-concat "item-" (Show.show 1234567)) "item-1234567")
+    (assert-equal (str-concat "abcdefghijklm" "no") "abcdefghijklmno")
+    (assert-equal (str-concat "x" "abcdefghijklmn") "xabcdefghijklmn")
+    (assert-equal (str-length (rep "ab" 20 "")) 40)
+    (assert-equal (str-length (rep "abcdefg" 5 "")) 35)))
+
+(run-tests)
