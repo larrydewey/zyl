@@ -1,5 +1,7 @@
 ; Panics, try frames, the diagnostic format, the warning sink and the compiled test harness.
 (use base)
+
+(extern "zyl_arena_oom" (Int String) Int)
 (use heap)
 (use alloc)
 (use text)
@@ -24,13 +26,15 @@
 ; Per-thread: each actor has its own try nesting.
 (defn pn-top () (ffi-call "%tls" "try_top" 8 1))
 
+; Out of memory here cannot unwind to a handler that does not exist yet: report and exit.
 (defn zyl_try_push ()
   (let f (zyl_rt_malloc 88)
+    (let _ (if (= f 0) (ffi-call "zyl_arena_oom" 88 "out of memory allocating a try frame" 1) 0)
     (let t (pn-top)
       (let _ (rt-st64 (+ f 64) (rt-ld64 t))
         (let _ (rt-st64 (+ f 72) 0)
           (let _ (rt-st64 (+ f 80) (zyl_region_mark))
-            (let _ (rt-st64 t f) f)))))))
+            (let _ (rt-st64 t f) f))))))))
 
 (defn zyl_try_pop ()
   (let t (pn-top)
