@@ -5,7 +5,7 @@
 
 (extern "malloc" (Int) Int)
 (extern "realloc" (Int Int) Int)
-(extern "exit" (Int) Int)
+(extern "zyl_rt_exit" (Int) Int)
 (extern "fputs" (Int Int) Int)
 (extern "fflush" (Int) Int)
 (extern "zyl_ffi_on_worker" () Int)
@@ -109,7 +109,7 @@
           (ffi-call "zyl_rt_longjmp" (pn-tbuf) 1 1)))
       (let w (if (= m 0) (rt-w "assertion failed") m)
         (let _ (if (= (zyl_diag_json) 0) (pn-err (str-concat "PANIC: " (str-concat (pn-s w) "\n"))) (pn-panic-json w))
-          (ffi-call "exit" 1 1))))))
+          (ffi-call "zyl_rt_exit" 1 1))))))
 
 ; JSON mode: a rendered object passes through; "E_CODE: text" and "error[E_CODE]: text" split off the code.
 (defn pn-panic-json (m)
@@ -155,7 +155,7 @@
 (defn zyl_f_error (msg)
   (let m (rt-w msg)
     (let _ (if (= m 0) (pn-err "error\n") (pn-err (str-concat "error: " (str-concat (pn-s m) "\n"))))
-      (ffi-call "exit" 1 1))))
+      (ffi-call "zyl_rt_exit" 1 1))))
 
 ; --- diagnostic format: 1 JSON, 0 text; set only by the compiler ---
 

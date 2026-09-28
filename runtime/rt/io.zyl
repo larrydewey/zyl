@@ -6,7 +6,7 @@
 (extern "malloc" (Int) Int)
 (extern "realloc" (Int Int) Int)
 (extern "free" (Int) Int)
-(extern "exit" (Int) Int)
+(extern "zyl_rt_exit" (Int) Int)
 (extern "fputs" (Int Int) Int)
 (extern "fwrite" (Int Int Int Int) Int)
 (extern "fflush" (Int) Int)
@@ -60,7 +60,7 @@
 
 ; (exit code): flush, then end the process.
 (defn zyl_exit (code)
-  (let _ (ffi-call "fflush" (io-stdout) 1) (let _ (ffi-call "fflush" (io-stderr) 1) (ffi-call "exit" code 1))))
+  (let _ (ffi-call "fflush" (io-stdout) 1) (let _ (ffi-call "fflush" (io-stderr) 1) (ffi-call "zyl_rt_exit" code 1))))
 
 ; (read-line): one line from stdin without its newline (or a trailing CR); "" at end of input.
 (defn zyl_read_line ()

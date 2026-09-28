@@ -1,7 +1,7 @@
 ; Dynamic closure calls and the division magic numbers the native backend uses.
 (use base)
 
-(extern "exit" (Int) Int)
+(extern "zyl_rt_exit" (Int) Int)
 
 (defmacro rt-ld64 (a) (ffi-call "%load64" a 1))
 
@@ -9,7 +9,7 @@
 (defn rt-guard (v)
   (if (< v 4096)
     (let m (str-concat "zyl: invalid callee address 0x" (str-concat (rt-hex v "") "\n"))
-      (let _ (ffi-call "write" 2 m (rt-strlen (rt-w m)) 1) (ffi-call "exit" 1 1)))
+      (let _ (ffi-call "write" 2 m (rt-strlen (rt-w m)) 1) (ffi-call "zyl_rt_exit" 1 1)))
     0))
 
 (defn rt-code-p (v) (< v 4294967296))

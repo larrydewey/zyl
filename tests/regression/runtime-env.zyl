@@ -1,0 +1,23 @@
+; The environment (runtime/rt/env.zyl): envp from zyl_save_args, the Zyl getenv, envp reaching children; proc.zyl's spawn.
+
+(test "getenv"
+  (begin
+    (assert-equal (> (str-length (ffi-call "zyl_getenv_str" "PATH" 1000)) 0) true)
+    (assert-equal (ffi-call "zyl_getenv_str" "" 1000) "")
+    (assert-equal (ffi-call "zyl_getenv_str" "PAT" 1000) "")
+    (assert-equal (ffi-call "zyl_getenv_str" "PATH=" 1000) "")
+    (assert-equal (ffi-call "zyl_getenv_str" "ZYL_RT_ENV_SURELY_UNSET" 1000) "")))
+
+(test "env-reaches-child"
+  (begin
+    (assert-equal (ffi-call "zyl_system_cmd" (str-concat "test \"$PATH\" = '" (str-concat (ffi-call "zyl_getenv_str" "PATH" 1000) "'")) 5000) 0)
+    (assert-equal (ffi-call "zyl_system_cmd" "test -n \"$PATH\"" 5000) 0)))
+
+(test "spawn"
+  (begin
+    (assert-equal (ffi-call "zyl_system_cmd" "command -v sh > /dev/null" 5000) 0)
+    (assert-equal (ffi-call "zyl_run_bin" "/bin/sh" 5000) 0)
+    (assert-equal (ffi-call "zyl_run_bin" "/" 5000) -1)
+    (assert-equal (ffi-call "zyl_run_bin" "" 5000) -1)))
+
+(run-tests)

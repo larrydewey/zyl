@@ -3,7 +3,7 @@
 
 (extern "malloc" (Int) Int)
 (extern "free" (Int) Int)
-(extern "getenv" (Int) Int)
+(extern "zyl_rt_getenv" (Int) Int)
 
 (defmacro rt-ld64 (a) (ffi-call "%load64" a 1))
 (defmacro rt-st64 (a v) (ffi-call "%store64" a v 1))
@@ -20,11 +20,11 @@
   (if (or (= ptr 0) (< i 0)) 0 (if (< ptr 4096) (let _ (rt-bad-str ptr "cstr-byte-set") 0) (let _ (rt-st8 (+ ptr i) (bit-and b 255)) 0))))
 
 ; The variable's value, or 0 when unset.
-(defn zyl_getenv (name) (ffi-call "getenv" (rt-w name) 1))
+(defn zyl_getenv (name) (ffi-call "zyl_rt_getenv" (rt-w name) 1))
 
 ; Regions are on unless ZYL_REGIONS=0 at compile time.
 (defn zyl_regions_enabled ()
-  (let e (ffi-call "getenv" (rt-w "ZYL_REGIONS") 1) (not (and (> e 0) (and (= (rt-ld8 e) 48) (= (rt-ld8 (+ e 1)) 0))))))
+  (let e (ffi-call "zyl_rt_getenv" (rt-w "ZYL_REGIONS") 1) (not (and (> e 0) (and (= (rt-ld8 e) 48) (= (rt-ld8 (+ e 1)) 0))))))
 
 ; --- str-append without a StrBuf header: a per-thread 64-slot end cache {dst[64], end[64]} ---
 

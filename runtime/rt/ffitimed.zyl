@@ -6,7 +6,6 @@
 (extern "malloc" (Int) Int)
 (extern "calloc" (Int Int) Int)
 (extern "free" (Int) Int)
-(extern "clock_gettime" (Int Int) Int)
 (extern "pthread_mutex_init" (Int Int) Int)
 (extern "pthread_mutex_lock" (Int) Int)
 (extern "pthread_mutex_unlock" (Int) Int)
@@ -123,7 +122,7 @@
 ; CLOCK_MONOTONIC now plus ms, normalised.
 (defn ff-deadline (ms)
   (let ts (ffi-call "%tls" "ffi_ts" 16 1)
-    (let _ (ffi-call "clock_gettime" 1 ts 1)
+    (let _ (ffi-call "%syscall2" 228 1 ts 1)
       (let s (+ (ff-ld ts) (/ ms 1000))
         (let ns (+ (ff-ld (+ ts 8)) (* (% ms 1000) 1000000))
           (if (>= ns 1000000000)

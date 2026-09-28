@@ -4,8 +4,7 @@
 
 (extern "malloc" (Int) Int)
 (extern "free" (Int) Int)
-(extern "atexit" (Int) Int)
-(extern "usleep" (Int) Int)
+(extern "zyl_rt_atexit" (Int) Int)
 (extern "pthread_mutex_init" (Int Int) Int)
 (extern "pthread_mutex_lock" (Int) Int)
 (extern "pthread_mutex_unlock" (Int) Int)
@@ -52,7 +51,7 @@
     (let s (ac-sys)
       (let _ (ac-st s 0)
         (let _ (ac-st (+ s 8) 1)
-          (let _ (ffi-call "atexit" (ffi-call "%fn" "zyl_actor_wait_all" 1) 1) 0))))))
+          (let _ (ffi-call "zyl_rt_atexit" (ffi-call "%fn" "zyl_actor_wait_all" 1) 1) 0))))))
 
 (defn ac-init-if () (if (ac-inited) 0 (zyl_actor_init)))
 
@@ -230,7 +229,12 @@
             (let _ (ac-unlock a)
               (if act true (ac-pending (+ i 1))))))))))
 
-(defn ac-drain () (if (ac-pending 0) (let _ (ffi-call "usleep" 1000 1) (ac-drain)) 0))
+; nanosleep 1 ms (usleep(1000)).
+(defn ac-nap ()
+  (let ts (ffi-call "%tls" "actor_ts" 16 1)
+    (let _ (ac-st ts 0) (let _ (ac-st (+ ts 8) 1000000) (ffi-call "%syscall2" 35 ts 0 1)))))
+
+(defn ac-drain () (if (ac-pending 0) (let _ (ac-nap) (ac-drain)) 0))
 
 (defn ac-quiesced (i)
   (if (>= i (ac-max)) true
