@@ -1,0 +1,17 @@
+; Child processes (runtime/rt/proc.zyl); the interpreter run of this file exercises ffitab.zyl.
+
+(test "system-cmd"
+  (begin
+    (assert-equal (ffi-call "zyl_system_cmd" "true" 5000) 0)
+    (assert-equal (ffi-call "zyl_system_cmd" "exit 3" 5000) 3)
+    (assert-equal (ffi-call "zyl_system_cmd" "echo hi > /dev/null && exit 7" 5000) 7)
+    (assert-equal (ffi-call "zyl_system_cmd" "exit 300" 5000) 44)
+    (assert-equal (ffi-call "zyl_system_cmd" "kill -9 $$" 5000) -1)))
+
+(test "run-bin"
+  (begin
+    (assert-equal (ffi-call "zyl_run_bin" "/bin/true" 5000) 0)
+    (assert-equal (ffi-call "zyl_run_bin" "/bin/false" 5000) 1)
+    (assert-equal (ffi-call "zyl_run_bin" "/nonexistent/zyl-no-such-bin" 5000) -1)))
+
+(run-tests)

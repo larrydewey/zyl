@@ -1,0 +1,157 @@
+; Child processes: /bin/sh -c, cc, a compiled binary; posix_spawn, never fork (main runs on a big-stack thread).
+(use base)
+
+(extern "posix_spawn" (Int Int Int Int Int Int) Int)
+(extern "posix_spawnp" (Int Int Int Int Int Int) Int)
+(extern "posix_spawn_file_actions_init" (Int) Int)
+(extern "posix_spawn_file_actions_addopen" (Int Int Int Int Int) Int)
+(extern "posix_spawn_file_actions_adddup2" (Int Int Int) Int)
+(extern "posix_spawn_file_actions_destroy" (Int) Int)
+(extern "waitpid" (Int Int Int) Int)
+(extern "mkstemp" (Int) Int)
+(extern "getenv" (Int) Int)
+(extern "malloc" (Int) Int)
+(extern "free" (Int) Int)
+
+(defmacro pr-ld64 (a) (ffi-call "%load64" a 1))
+(defmacro pr-st64 (a v) (ffi-call "%store64" a v 1))
+
+; A C int result, sign-extended.
+(defn pr-int (x) (let v (bit-and x 4294967295) (if (> v 2147483647) (- v 4294967296) v)))
+
+(defn pr-environ () (pr-ld64 (ffi-call "%fn" "environ" 1)))
+
+; Per-thread scratch: pid, status, argv[8], out_path[512], file actions[128].
+(defn pr-scratch () (ffi-call "%tls" "proc_scratch" 736 1))
+(defn pr-pid (s) s)
+(defn pr-status (s) (+ s 8))
+(defn pr-argv (s) (+ s 16))
+(defn pr-out (s) (+ s 80))
+(defn pr-fa (s) (+ s 592))
+
+; The exit status of the spawned child (spawn result rc), or -1.
+(defn pr-wait (s rc)
+  (if (not (= (pr-int rc) 0)) -1
+    (if (< (pr-int (ffi-call "waitpid" (pr-int (ffi-call "%load32" (pr-pid s) 1)) (pr-status s) 0 1)) 0) -1
+      (let st (ffi-call "%load32" (pr-status s) 1)
+        (if (= (bit-and st 127) 0) (bit-and (shr st 8) 255) -1)))))
+
+; /bin/sh -c cmd, so callers keep pipes, redirection and && as system() gave them.
+(defn zyl_system_cmd (cmd)
+  (let c (rt-w cmd)
+    (if (= c 0) -1
+      (let s (pr-scratch)
+        (let a (pr-argv s)
+          (let _ (pr-st64 a (rt-w "sh"))
+            (let _ (pr-st64 (+ a 8) (rt-w "-c"))
+              (let _ (pr-st64 (+ a 16) c)
+                (let _ (pr-st64 (+ a 24) 0)
+                  (pr-wait s (ffi-call "posix_spawn" (pr-pid s) (rt-w "/bin/sh") 0 0 a (pr-environ) 1)))))))))))
+
+; --- zyl_exec_cmd: cmd as a /bin/sh script in $TMPDIR (else /tmp), then exec; returns only on failure ---
+
+; snprintf's cut: the first lim-1 bytes of a ++ b.
+(defn pr-cat2 (a b lim)
+  (let la (rt-strlen a)
+    (let lb (rt-strlen b)
+      (let n (let t (+ la lb) (if (> t (- lim 1)) (- lim 1) t))
+        (let p (ffi-call "malloc" (+ n 1) 1)
+          (if (= p 0) 0
+            (let ka (if (> la n) n la)
+              (let _ (rt-copy p a ka)
+                (let _ (rt-copy (+ p ka) b (- n ka)) (let _ (rt-st8 (+ p n) 0) p))))))))))
+
+(defn pr-write-all (fd p len)
+  (if (<= len 0) 0
+    (let n (ffi-call "%syscall3" 1 fd p len 1)
+      (if (> n 0) (pr-write-all fd (+ p n) (- len n)) (if (= n -4) (pr-write-all fd p len) 0)))))
+
+(defn pr-write-str (fd w) (pr-write-all fd w (rt-strlen w)))
+
+(defn zyl_exec_cmd (cmd)
+  (let c (rt-w cmd)
+    (let td (ffi-call "getenv" (rt-w "TMPDIR") 1)
+      (let path (pr-cat2 (if (= td 0) (rt-w "/tmp") td) (rt-w "/zyl_link_XXXXXX") 512)
+        (if (= path 0) -1
+          (let fd (pr-int (ffi-call "mkstemp" path 1))
+            (if (< fd 0) (let _ (ffi-call "free" path 1) -1)
+              (let _ (pr-write-str fd (rt-w "#!/bin/sh\n"))
+                (let _ (pr-write-str fd (if (= c 0) (rt-w "(null)") c))
+                  (let _ (pr-write-str fd (rt-w "\n"))
+                    (let _ (ffi-call "%syscall1" 3 fd 1)
+                      (let _ (ffi-call "%syscall2" 90 path 493 1)
+                        (let a (pr-argv (pr-scratch))
+                          (let _ (pr-st64 a (rt-w "sh"))
+                            (let _ (pr-st64 (+ a 8) path)
+                              (let _ (pr-st64 (+ a 16) 0)
+                                (let _ (ffi-call "%syscall3" 59 (rt-w "/bin/sh") a (pr-environ) 1)
+                                  (let _ (ffi-call "%syscall1" 87 path 1)
+                                    (let _ (ffi-call "free" path 1) -1)))))))))))))))))))
+
+; --- cc: asm path to a binary next to it ---
+
+; st_mtim of path into {sec, nsec} at out; false when stat fails.
+(defn pr-mtime (path out)
+  (let b (ffi-call "%tls" "proc_stat" 144 1)
+    (if (not (= (ffi-call "%syscall2" 4 path b 1) 0)) false
+      (let _ (pr-st64 out (pr-ld64 (+ b 88))) (let _ (pr-st64 (+ out 8) (pr-ld64 (+ b 96))) true)))))
+
+; The prebuilt actor_runtime.o in the cwd is used when it is newer than actor_runtime.c there.
+(defn pr-rt-obj-fresh ()
+  (let t (ffi-call "%tls" "proc_mtimes" 32 1)
+    (if (not (pr-mtime (rt-w "actor_runtime.o") t)) false
+      (if (not (pr-mtime (rt-w "actor_runtime.c") (+ t 16))) false
+        (if (not (= (pr-ld64 t) (pr-ld64 (+ t 16)))) (> (pr-ld64 t) (pr-ld64 (+ t 16)))
+          (> (pr-ld64 (+ t 8)) (pr-ld64 (+ t 24))))))))
+
+(defn pr-cc-argv (a asm out)
+  (let _ (pr-st64 a (rt-w "cc"))
+    (let _ (pr-st64 (+ a 8) (rt-w "-no-pie"))
+      (let _ (pr-st64 (+ a 16) asm)
+        (let k (if (pr-rt-obj-fresh) (let _ (pr-st64 (+ a 24) (rt-w "actor_runtime.o")) 4)
+                 (let _ (pr-st64 (+ a 24) (rt-w "-O2")) (let _ (pr-st64 (+ a 32) (rt-w "actor_runtime.c")) 5)))
+          (let _ (pr-st64 (+ a (* k 8)) (rt-w "-o"))
+            (let _ (pr-st64 (+ a (* (+ k 1) 8)) out)
+              (let _ (pr-st64 (+ a (* (+ k 2) 8)) (rt-w "-lpthread")) (pr-st64 (+ a (* (+ k 3) 8)) 0)))))))))
+
+; out = asm minus ".s", else asm ++ ".bin"; false when it would not fit 512 bytes.
+(defn pr-out-path (asm out)
+  (let len (rt-strlen asm)
+    (if (and (>= len 2) (and (= (rt-ld8 (+ asm (- len 2))) 46) (= (rt-ld8 (+ asm (- len 1))) 115)))
+      (if (>= (- len 2) 512) false (let _ (rt-copy out asm (- len 2)) (let _ (rt-st8 (+ out (- len 2)) 0) true)))
+      (if (>= (+ len 4) 512) false
+        (let _ (rt-copy out asm len) (let _ (rt-copy (+ out len) (rt-w ".bin") 5) true))))))
+
+(defn zyl_cc_compile (path)
+  (let asm (rt-w path)
+    (if (= asm 0) -1
+      (let s (pr-scratch)
+        (if (not (pr-out-path asm (pr-out s))) -1
+          (let _ (pr-cc-argv (pr-argv s) asm (pr-out s))
+            (pr-wait s (ffi-call "posix_spawnp" (pr-pid s) (rt-w "cc") 0 0 (pr-argv s) (pr-environ) 1))))))))
+
+; The toolchain's stdout and stderr go to logpath (O_WRONLY|O_CREAT|O_TRUNC, 0644).
+(defn zyl_cc_compile_log (path logpath)
+  (let asm (rt-w path)
+    (let lp (rt-w logpath)
+      (if (or (= asm 0) (= lp 0)) -1
+        (let s (pr-scratch)
+          (if (not (pr-out-path asm (pr-out s))) -1
+            (let fa (pr-fa s)
+              (if (not (= (pr-int (ffi-call "posix_spawn_file_actions_init" fa 1)) 0)) -1
+                (let _ (ffi-call "posix_spawn_file_actions_addopen" fa 1 lp 577 420 1)
+                  (let _ (ffi-call "posix_spawn_file_actions_adddup2" fa 1 2 1)
+                    (let _ (pr-cc-argv (pr-argv s) asm (pr-out s))
+                      (let rc (ffi-call "posix_spawnp" (pr-pid s) (rt-w "cc") fa 0 (pr-argv s) (pr-environ) 1)
+                        (let _ (ffi-call "posix_spawn_file_actions_destroy" fa 1)
+                          (pr-wait s rc))))))))))))))
+
+; Runs a compiled binary to completion; its exit status or -1.
+(defn zyl_run_bin (path)
+  (let b (rt-w path)
+    (if (= b 0) -1
+      (let s (pr-scratch)
+        (let a (pr-argv s)
+          (let _ (pr-st64 a b)
+            (let _ (pr-st64 (+ a 8) 0)
+              (pr-wait s (ffi-call "posix_spawn" (pr-pid s) b 0 0 a (pr-environ) 1)))))))))

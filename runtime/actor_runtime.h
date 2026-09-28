@@ -83,18 +83,8 @@ long long zyl_cstr_byte_at(long long ptr, long long i);
    (consistent with actor isolation — one arena per actor/scope). */
 
 /* Region-specific arena allocation wrappers for codegen. */
-void zyl_ensure_arenas(void);
 long long zyl_cpuid_features(void);
 long long zyl_aesni_available(void);
-
-/* CLI helpers. */
-long long zyl_system_cmd(long long cmd);
-long long zyl_exec_cmd(long long cmd);
-
-/* Interactive terminal primitives (REPL line editor). */
-long long zyl_term_flush(void);
-long long zyl_term_atexit(void);
-long long zyl_cc_compile_log(long long path, long long logpath);
 
 /* Interpreter support (stdlib/repl/interp.zyl). */
 long long zyl_word_of_cstr(long long s);
@@ -102,8 +92,6 @@ long long zyl_itest_start(long long name);
 long long zyl_itest_outcome(long long ok);
 long long zyl_itest_summary(long long passed, long long failed);
 long long zyl_now_ms(void);
-long long zyl_ffi_lookup(long long name);
-long long zyl_call_argv(long long fn, long long argc, long long argv);
 long long zyl_ffi_timed(long long fn, long long name, long long ms, long long argc, ...);
 long long zyl_ffi_timed_argv(long long fn, long long name, long long ms, long long argc, long long argv);
 long long zyl_array_new(long long arena, long long cap);
@@ -386,5 +374,18 @@ long long zyl_call5(long long v, long long a0, long long a1, long long a2, long 
 long long zyl_call6(long long v, long long a0, long long a1, long long a2, long long a3, long long a4, long long a5);
 long long zyl_div_magic(long long d);
 long long zyl_div_shift(long long d);
+long long zyl_ffi_lookup(long long name);
+long long zyl_ffi_addr(long long name);
+long long zyl_runtime_export_p(long long name);
+long long zyl_call_argv(long long fn, long long argc, long long argv);
+long long zyl_system_cmd(long long cmd);
+long long zyl_exec_cmd(long long cmd);
+long long zyl_cc_compile(long long path);
+long long zyl_cc_compile_log(long long path, long long logpath);
+long long zyl_run_bin(long long path);
+void zyl_ensure_arenas(void);
+long long zyl_runtime_cleanup(void);
+long long zyl_term_flush(void);
+long long zyl_term_atexit(void);
 
 #endif
