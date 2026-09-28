@@ -337,7 +337,13 @@ have landed, stages 3 to 5 are partial.
   rdrand, cpuid, CPU-feature dependence, writes outside regions).
   Deterministic typed intrinsics instead (popcnt, clz/ctz, bswap, rotl,
   crc32, mul-hi; later SIMD with a baseline fallback); `ffi-call` stays
-  the escape hatch.
+  the escape hatch. Done 2026-09-28:
+  - builtins `bit-popcount`, `bit-clz`, `bit-ctz`, `bit-bswap`,
+    `bit-rotl`, `bit-rotr`, `mul-hi`, `mul-hi-u`, `crc32c` and
+    `crc32c-u8`, plus their 32-bit forms (spec §21.13);
+  - `stdlib/simd`: the I64x2, I32x4 and U8x16 lane vectors, portable
+    SWAR, so results never depend on the CPU;
+  - tests in `tests/regression/intrinsics.zyl` and `simd.zyl`.
 - **Byte-level primitives:** 8-, 16-, 32- and 64-bit loads and stores,
   `bytebuf`, `byteslice`/`byteslice-sub`, atomics and `align-check` are
   done, and so are views tied to their base by escape analysis (below).

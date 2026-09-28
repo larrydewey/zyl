@@ -1390,7 +1390,7 @@
   (if (ta-key-is n "collections/vec::array-get") (ta-sig-parse st "(Array a) Int -> a")
   (if (ta-key-is n "collections/vec::array-set") (ta-sig-parse st "(Array a) Int a -> Unit")
   (if (ta-key-is n "collections/vec::array-cap") (ta-sig-parse st "(Array a) -> Int")
-  (ta-no-type))))))))))))))))))))))))
+  (ta-no-type))))))))))))))))))))))))))
 
 (defn ta-call-named (st ctx env e n args)
   (let lt (ta-env-get env n)
