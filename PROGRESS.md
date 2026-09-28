@@ -438,6 +438,24 @@ as recorded below.
 
 # Session log (newest first)
 
+## Session (2026-09-28, site) — GitHub Pages site and the book
+
+- New: `site/index.html` (landing page), `site/404.html`, `site/build.sh`
+  (assembles the landing page plus `mdbook build` of `book/` under
+  `book/`, default output `build/site`), `.github/workflows/pages.yml`
+  (builds with mdBook 0.5.4 and deploys to Pages on pushes to `master`
+  that touch `site/` or `book/`), `book/zyl-home.js` (a "zyl home" link
+  in the book's menu bar, wired through `additional-js` in `book.toml`).
+- `site/assets/zyl-mark.svg` and `site/assets/parry.svg` are Inkscape
+  plain-SVG exports of `assets/logo-only.svg` and `assets/parry.svg`.
+  The source SVGs translate their paths off the page, so browsers and
+  rsvg render them blank; the site copy crops to the mark (no wordmark).
+  `site/assets/zyl-logo.png` is `assets/logo.png` (social preview image).
+- Every code sample and its output on the page was compiled and run with
+  `zyl-self`; the two diagnostics are the compiler's real output.
+- Limitation: Pages must be set to "GitHub Actions" as its source in the
+  repository settings before the first deploy.
+
 ## Session (2026-09-28, final) — runtime/actor_runtime.c is gone
 
 - Merged:

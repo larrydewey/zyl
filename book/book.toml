@@ -18,6 +18,7 @@ no-section-label = false
 git-repository-url = "https://github.com/larrydewey/zyl"
 git-repository-icon = "fab-github"
 edit-url-template = "https://github.com/larrydewey/zyl/edit/master/book/src/{path}"
+additional-js = ["zyl-home.js"]
 
 [output.html.fold]
 enable = true

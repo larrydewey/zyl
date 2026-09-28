@@ -1,6 +1,11 @@
 <div align="center">
   <img src="assets/logo.png" alt="Zyl Logo" width="150px"></img>
   <p><strong>Deterministic Power. Expressive Safety.</strong></p>
+  <p>
+    <a href="https://larrydewey.github.io/zyl/">Website</a> ·
+    <a href="https://larrydewey.github.io/zyl/book/">The Book</a> ·
+    <a href="zyl_specification.txt">Specification</a>
+  </p>
 </div>
 
 
@@ -264,7 +269,7 @@ does not take) → linking with `cc`.
 - **Float64 support** — IEEE-754 arithmetic, SSE code generation, comparisons, print
 - **Closures** — `fn`/`lambda` with free-variable capture
 - **List literals and views** — `(list ...)`, `[...]` and quoted constant data `'(...)`; zero-copy views `text/view` (`StrView`, `Cursor`) and `collections/slice` (`Slice`)
-- **Try/catch** — `(try expr (catch e handler))`, backed by the runtime's setjmp/longjmp panic frames
+- **Try/catch** — `(try expr (catch e handler))`, backed by the runtime's panic frames (setjmp/longjmp-style stubs written in Zyl, `runtime/rt/panic.zyl`)
 - **I/O** — `read-line`, file open/read/write/close
 - **Bitwise, byte and atomic operations** — `bit-and`/`bit-or`/`bit-xor`/`bit-not`, `shl`/`shr`/`ashr` (each one instruction, with defined out-of-range shift counts), byte and byte-buffer primitives with explicit endianness, and seq-cst atomics (`atomic/atomic`)
 - **The `Secret` capability** — a compile-time constant-time discipline: a secret may not steer a branch, index memory, divide, print, escape to an actor, or cross FFI unpinned
@@ -316,7 +321,7 @@ runtime/rt/                   # Zyl runtime linked into every compiled binary
 ├── rt.zyl                    # Entry module (built with --runtime-module)
 └── *.zyl                     # alloc, actor, panic, io, ffitimed, os, ... (rt.s seed)
 
-stdlib/compiler/              # The compiler, written in Zyl (41 modules)
+stdlib/compiler/              # The compiler, written in Zyl (42 modules)
 ├── pipeline.zyl              # Phase order shared by the CLI and the REPL
 ├── lexer.zyl, parser.zyl, sexp_balance.zyl, ast.zyl, expr_inner.zyl,
 │   node_tables.zyl
@@ -353,6 +358,7 @@ stdlib/                       # The implicit standard library (package zyl/std)
 tools/repl.zyl                # Standalone REPL `main` (install.sh builds it)
 editors/vscode/               # VS Code extension (grammars, snippets, client)
 book/                         # "The Zyl Programming Language" (mdBook)
+site/                         # The website (GitHub Pages; site/build.sh adds the book)
 spec/                         # Structured copy of the specification
 specifications/               # Historical specification versions
 docs/                         # Architecture, design rationale, status
@@ -382,13 +388,25 @@ tests/
 
 See `tests/regression/` for example Zyl programs covering the language features, and `book/examples/log-processor/` for a complete example program with its tests.
 
+## Website and Book
+
+The website at <https://larrydewey.github.io/zyl/> and the book under
+[`/book/`](https://larrydewey.github.io/zyl/book/) are published by
+`.github/workflows/pages.yml` on every push to `master` that touches
+`site/` or `book/`. To build both locally (needs `mdbook` 0.5):
+
+```bash
+site/build.sh            # writes build/site; open build/site/index.html
+```
+
 ## Specification
 
 The canonical language specification is `zyl_specification.txt` (v5.0; §31 is the package system). Structured reference copies are in `spec/`. Historical specification versions are in `specifications/`.
 
 ## Resources
 
-- [The Zyl Programming Language](book/src/SUMMARY.md) — the book
+- [Zyl website](https://larrydewey.github.io/zyl/)
+- [The Zyl Programming Language](https://larrydewey.github.io/zyl/book/) — the book, online (source in [`book/src/`](book/src/SUMMARY.md))
 - [Architecture Decisions](docs/architecture-decisions.md)
 - [Compiler Pipeline](docs/compiler-pipeline.md)
 - [Implementation Status](docs/implementation-status.md)
