@@ -2518,10 +2518,56 @@
         (MRL m2 vs
           (let rd (ms-vreg m2)
             (MR (ms-emit (mr-ms rd) (MTls (mr-v rd) (cg-raw-sym-arg args) vs)) (mr-v rd)))))
+      (if (and (<= kind 7) (= (list-length args) (if (<= kind 3) 1 2)))
+        (ml-mem st env venv ms kind args)
       (match (ml-args st env venv ms args Nil)
         (MRL m2 vs
           (let rd (ms-vreg m2)
-            (MR (ms-emit (mr-ms rd) (MRaw kind (mr-v rd) vs)) (mr-v rd)))))))))
+            (MR (ms-emit (mr-ms rd) (MRaw kind (mr-v rd) vs)) (mr-v rd))))))))))
+
+; %loadN/%storeN: an address (+ x k) becomes [x+k]; the value is evaluated after the address, as the call's order.
+(defn ml-mem (st env venv ms kind args)
+  (match args
+    (Cons a rest
+      (let later (icnf-list-has-set rest)
+        (let bo (match a
+                  (IBinop op x y (match y (IConst k (if (and (= op 0) (and (>= k -2147483648) (<= k 2147483647))) (Some (MVar "" k)) None)) (_ None)))
+                  (_ None))
+          (let rb (match bo
+                    (Some _ (match a (IBinop _ x _ (ml-operand st env venv ms x later)) (_ (ml-operand st env venv ms a later))))
+                    (None (ml-operand st env venv ms a later)))
+            (let off (match bo (Some mv (match mv (MVar _ k k))) (None 0))
+              (let rv (match rest (Cons v _ (ml-expr st env venv (mr-ms rb) v)) (Nil (MR (mr-ms rb) -1)))
+                (let rd (ms-vreg (mr-ms rv))
+                  (MR (ms-emit (mr-ms rd) (MMem kind (mr-v rd) (mr-v rb) off (mr-v rv))) (mr-v rd)))))))))
+    (Nil (ml-const ms 0))))
+
+(defn mb-reg16 (r)
+  (if (str-eq r "rsi") "si" (if (str-eq r "rdi") "di" (if (str-eq r "rbx") "bx" (if (str-eq r "rax") "ax" (if (str-eq r "rcx") "cx" (str-concat r "w")))))))
+
+(defn mb-mem (st fr kind d b off v)
+  (let bm (mb-in-mem fr b)
+    (let st1 (if bm (cg-emit-line st (str-concat "    mov rdx, " (mb-loc-text fr b))) st)
+      (let bt (if bm "rdx" (mb-loc-text fr b))
+        (let sz (let k (bit-and kind 3) (if (= k 0) "byte" (if (= k 1) "word" (if (= k 2) "dword" "qword"))))
+          (let addr (str-concat sz (str-concat " ptr [" (str-concat bt (str-concat (if (< off 0) "-" "+") (str-concat (ffi-call "zyl_int_text" (if (< off 0) (- 0 off) off) 1000) "]")))))
+            (if (<= kind 3)
+              (if (mb-live fr d)
+                (let dm (mb-in-mem fr d)
+                  (let dr (if dm "rax" (mb-loc-text fr d))
+                    (let line (if (= kind 0) (str-concat "    movzx " (str-concat (mb-reg32 dr) (str-concat ", " addr)))
+                                (if (= kind 1) (str-concat "    movzx " (str-concat (mb-reg32 dr) (str-concat ", " addr)))
+                                  (if (= kind 2) (str-concat "    mov " (str-concat (mb-reg32 dr) (str-concat ", " addr)))
+                                    (str-concat "    mov " (str-concat dr (str-concat ", " addr))))))
+                      (let st2 (cg-emit-line st1 line) (if dm (mb-set st2 fr d "rax") st2)))))
+                st1)
+              (let vm (mb-in-mem fr v)
+                (let st2 (if vm (cg-emit-line st1 (str-concat "    mov rcx, " (mb-loc-text fr v))) st1)
+                  (let vr (if vm "rcx" (mb-loc-text fr v))
+                    (let k (bit-and kind 3)
+                      (let vt (if (= k 0) (mb-reg8 vr) (if (= k 1) (mb-reg16 vr) (if (= k 2) (mb-reg32 vr) vr)))
+                        (let st3 (cg-emit-line st2 (str-concat "    mov " (str-concat addr (str-concat ", " vt))))
+                          (mb-set st3 fr d vr))))))))))))))
 
 (defn mb-raw (st fr kind d vs)
   (let st2 (match vs
@@ -2893,7 +2939,7 @@
 (defn ml-imm-op (op r)
   (match r
     (IConst n (and (and (>= n -2147483648) (<= n 2147483647))
-                   (or (<= op 2) (or (and (>= op 5) (<= op 10)) (or (and (>= op 11) (<= op 13))
+                   (or (<= op 2) (or (and (>= op 5) (<= op 10)) (or (and (>= op 11) (<= op 16))
                      ; division by a constant other than 0 and -1 (whose
                      ; traps idiv keeps) is a multiply (mb-divmod-const)
                      (and (or (= op 3) (= op 4)) (not (or (= n 0) (= n -1)))))))))
@@ -3017,8 +3063,30 @@
         (if (ml-const-zero f)
           ; (and a t)
           (ml-cond st env venv (ml-cond st env venv ms a lf) t lf)
-          (ml-cond-plain st env venv ms c lf))))
+          (if (and (ml-const-zero t) (ml-const-one f))
+            ; (not a): false exactly when a holds
+            (ml-cond-t st env venv ms a lf)
+            (ml-cond-plain st env venv ms c lf)))))
     (_ (ml-cond-plain st env venv ms c lf))))
+
+(defn ml-const-one (e) (match e (IConst k (= k 1)) (_ false)))
+
+; Jump to lt when c is true.
+(defn ml-cond-t (st env venv ms c lt)
+  (match c
+    (IBinop op l r
+      (if (and (>= op 5) (<= op 10))
+        (ml-cond st env venv ms (IBinop (ml-neg-cmp op) l r) lt)
+        (ml-cond-t-plain st env venv ms c lt)))
+    (IIf a t f
+      (if (and (ml-const-zero t) (ml-const-one f))
+        (ml-cond st env venv ms a lt)
+        (ml-cond-t-plain st env venv ms c lt)))
+    (_ (ml-cond-t-plain st env venv ms c lt))))
+
+(defn ml-cond-t-plain (st env venv ms c lt)
+  (let r (ml-expr st env venv ms c)
+    (ms-emit (mr-ms r) (MJfI 9 (mr-v r) 0 lt))))
 
 (defn ml-const-true (e) (match e (IConst k (not (= k 0))) (_ false)))
 (defn ml-const-zero (e) (match e (IConst k (= k 0)) (_ false)))
@@ -3651,6 +3719,8 @@
       (if (mb-live fr d)
        (if (or (= op 3) (= op 4))
         (mb-set (mb-divmod-const st fr op a n) fr d "rax")
+       (if (>= op 14)
+        (mb-shift-imm st fr op d a n)
         (if (mb-two-op op)
           (if (mb-in-mem fr d)
             (mb-set (cg-emit-line (cg-emit-line st (str-concat "    mov rax, " (mb-loc-text fr a)))
@@ -3659,7 +3729,7 @@
             (mb-bini-reg st fr op d a n))
           ; a comparison: cmp against the immediate, then setcc
           (let st2 (cg-emit-line (cg-emit-line st (str-concat "    mov rax, " (mb-loc-text fr a))) (str-concat "    cmp rax, " (ffi-call "zyl_int_text" n 1000)))
-            (mb-set (mb-setcc st2 op) fr d "rax"))))
+            (mb-set (mb-setcc st2 op) fr d "rax")))))
         st))
     (MCall d sym user args lvl
       (let st2 (mb-moves st (mb-arg-moves fr args 0))
@@ -3721,6 +3791,7 @@
     (MByteFast kind d o dt bd v (mb-byte-fast st fr kind d o dt bd v i))
     (MByte kind d o b v (mb-byte st fr kind d o b v i))
     (MRaw kind d vs (mb-raw st fr kind d vs))
+    (MMem kind d b off v (mb-mem st fr kind d b off v))
     (MTls d sym vs
       (match vs
         (Nil (mb-set (cg-emit-line st (cg-tls-get-line sym)) fr d "rax"))
@@ -3748,10 +3819,10 @@
     (MParam _ _ st)))
 
 (defn mb-reg8 (r)
-  (if (str-eq r "rsi") "sil" (if (str-eq r "rdi") "dil" (if (str-eq r "rbx") "bl" (if (str-eq r "rax") "al" (str-concat r "b"))))))
+  (if (str-eq r "rsi") "sil" (if (str-eq r "rdi") "dil" (if (str-eq r "rbx") "bl" (if (str-eq r "rax") "al" (if (str-eq r "rcx") "cl" (str-concat r "b")))))))
 
 (defn mb-reg32 (r)
-  (if (str-eq r "rsi") "esi" (if (str-eq r "rdi") "edi" (if (str-eq r "rbx") "ebx" (if (str-eq r "rax") "eax" (str-concat r "d"))))))
+  (if (str-eq r "rsi") "esi" (if (str-eq r "rdi") "edi" (if (str-eq r "rbx") "ebx" (if (str-eq r "rax") "eax" (if (str-eq r "rcx") "ecx" (str-concat r "d")))))))
 
 ; A view access: bound check, then [data+off]; out of bounds gives 0 (a store writes nothing).
 ; A store value below -1 is the immediate -v-2.
@@ -3796,6 +3867,19 @@
   (if proven Nil
     (Cons (str-concat "    jmp " ld) (Cons (str-concat lf ":")
     (Cons (str-concat "    xor " (str-concat r32 (str-concat ", " r32))) (Cons (str-concat ld ":") Nil))))))
+
+; A shift by a constant: the count is not data, so the immediate form is as constant-time; out of
+; [0, 63] a logical shift gives 0 and an arithmetic one shifts by 63, as the register sequences do.
+(defn mb-shift-imm (st fr op d a n)
+  (let mn (if (= op 14) "shl" (if (= op 15) "shr" "sar"))
+    (if (and (< (+ n 0) 64) (>= n 0))
+      (if (mb-in-mem fr d)
+        (mb-set (cg-emit-lines st (Cons (str-concat "    mov rax, " (mb-loc-text fr a)) (Cons (str-concat "    " (str-concat mn (str-concat " rax, " (ffi-call "zyl_int_text" n 1000)))) Nil))) fr d "rax")
+        (cg-emit-line (mb-mov st (mb-loc-text fr d) (mb-loc-text fr a))
+                      (str-concat "    " (str-concat mn (str-concat " " (str-concat (mb-loc-text fr d) (str-concat ", " (ffi-call "zyl_int_text" n 1000))))))))
+      (if (= op 16)
+        (mb-set (cg-emit-lines st (Cons (str-concat "    mov rax, " (mb-loc-text fr a)) (Cons "    sar rax, 63" Nil))) fr d "rax")
+        (mb-set (cg-emit-line st "    xor eax, eax") fr d "rax")))))
 
 (defn mb-all-regs (fr d a b) (and (not (mb-in-mem fr d)) (and (not (mb-in-mem fr a)) (not (mb-in-mem fr b)))))
 
