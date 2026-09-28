@@ -495,13 +495,10 @@ A special form written in a shape its parser does not accept — a
 `let` with no value, an `if` with no branches — is a compile error,
 `E_MALFORMED_FORM`.
 
-The compiler does not stop you from using one as a variable name —
-`(let begin 5 begin)` compiles — but code that does is hard to read,
-and some names (such as `when`) are also core library functions. Treat
-them as reserved.
-
-The error code `E_RESERVED_KEYWORD` is catalogued for reserved names but
-is not raised today.
+They are reserved (spec §1.3.1): `(let begin 5 begin)`, a parameter
+named `test` or a function named `setup` is `E_RESERVED_KEYWORD`,
+located at the name. Some other names (such as `when`) are core library
+functions; shadowing those is allowed but hard to read.
 
 ## 2.10 Style Conventions
 

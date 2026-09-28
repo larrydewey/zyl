@@ -13,7 +13,7 @@ compile with `build/boot/zyl-self` on 2026-09-28.
 
 ### Build and verification
 
-- The compiler is self-hosted: `stdlib/compiler/*.zyl` (45 modules,
+- The compiler is self-hosted: `stdlib/compiler/*.zyl` (46 modules,
   about 29,700 lines) plus `selfhost/` (`driver.zyl`, `lsp_main.zyl`).
   The runtime is Zyl too: `runtime/rt/*.zyl` (35 modules, about 5,600
   lines), compiled with `--runtime-module`. There is no C and no Rust in
@@ -24,10 +24,10 @@ compile with `build/boot/zyl-self` on 2026-09-28.
   that stage2 == stage3, builds `rt.zo`, `zyl-self` and `zyl-lsp`, and
   refreshes an existing install. `./boot.sh --bootstrap-from-self`
   reseeds; see `docs/self-hosting.md`. A self-compile takes about 2.2 s.
-- `./run_regression_tests.sh --full --no-boot` passes **366/366** in
-  about 25 s: 105 regression, 86 interpreter (compiled vs interpreted
+- `./run_regression_tests.sh --full --no-boot` passes **376/376** in
+  about 25 s: 106 regression, 87 interpreter (compiled vs interpreted
   output, the interpreter in its tag-checking mode), 4 sched (actor
-  tests under `ZYL_SCHED=deterministic` and chaos seeds), 130
+  tests under `ZYL_SCHED=deterministic` and chaos seeds), 138
   compile-fail, 7 integration, 4 stress, 2 packages, 9 packages-fail, 1
   packages-build, 16 scripts, the LSP protocol test (110 checks) and the
   unit test. A compile-fail test may pin its code (`; expect-error:
@@ -102,6 +102,13 @@ compile with `build/boot/zyl-self` on 2026-09-28.
   files are read whole (the 1 MiB cap is gone). `zyl balance [file | dir
   ...]` runs the check alone (text or JSON, status 1 on a fault);
   `.claude/settings.json` runs it after every agent edit.
+- Reserved keywords (spec 1.3.1, `reserved_check.zyl`): a keyword as the
+  name a definition introduces is `E_RESERVED_KEYWORD`, outside the
+  standard library and the runtime. `alias` is transparent (the type
+  checker reads the alias as its target; bad targets and cycles are
+  `E_UNKNOWN_TYPE`). `run-tests` takes `(:filter "s")`, which runs only
+  the tests whose names contain `s`, and `(:parallel b)`; any other
+  option is `E_MALFORMED_FORM`.
 - Diagnostics: `error[CODE]`, `--> file:line:col`, the source line, a
   caret and a `= help:` line for every diagnostic that has a source
   node; "did you mean" on unbound names; labelled secondary spans on
@@ -185,10 +192,6 @@ compile with `build/boot/zyl-self` on 2026-09-28.
 Language and compiler:
 
 - `make-struct` is not typed (`E_CANNOT_INFER`); call the constructor.
-  Keyword options on `run-tests` (`:parallel`, `:filter`) are ignored.
-- A `defn` named after a special form (`setup`, say) is accepted, but a
-  call of it is the special form, not the function (no
-  `E_RESERVED_KEYWORD` yet).
 - Match guards work only on literal arms: after a `range` a guard is
   `E_ARITY_MISMATCH`, on a constructor arm `E_NESTED_PATTERN`, and a
   guard naming a top-level `def` is `E_UNBOUND_VARIABLE` (book §6.5).

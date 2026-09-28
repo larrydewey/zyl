@@ -93,7 +93,7 @@ zyl test-file.zyl -o test-file
 
 `zyl` works from any directory: it finds the standard library in `~/.zyl` (or `$ZYL_HOME`) after `./install.sh`, and otherwise next to the compiler binary. `(use name)` also finds your own modules next to the file being compiled (Chapter 13).
 
-There is no command-line filter; tests always run in source order. A failing test does not stop the others, and the harness prints a summary at the end:
+There is no command-line filter (use `(run-tests (:filter "..."))`, §11.5); tests always run in source order. A failing test does not stop the others, and the harness prints a summary at the end:
 
 ```
 test: addition ... ok
@@ -169,7 +169,7 @@ The tests register as `parser/empty` and `parser/numbers/one`, in source order. 
 (test-compile (+ 1 "a") (:expect-error true))
 ```
 
-**Options.** A keyword option on `test` is `E_MALFORMED_FORM`. Keywords on `run-tests` (`:parallel`, `:filter`) are ignored: tests run one after another in registration order, which gives the deterministic ordering §20.5.5 requires.
+**Options.** `(run-tests (:filter "parse"))` runs, and counts, only the tests whose names contain `parse`; `(:parallel true)` is accepted, and tests still run one after another in registration order, the deterministic ordering §20.5.5 requires. Any other option, and any keyword option on `test`, is `E_MALFORMED_FORM`.
 
 ## 11.6 Testing Actors
 

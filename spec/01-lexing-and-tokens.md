@@ -149,6 +149,10 @@ Only `;` line comments exist. A character the lexer does not recognise
 
 ### Reserved keywords (§1.3.1)
 
-Not enforced. `E_RESERVED_KEYWORD` is catalogued and not raised. Binding a §1.3 keyword as a
-name, for example `(let match 3 ...)`, compiles. The canonical §30 lists
-this enforcement under FUTURE.
+Enforced by `stdlib/compiler/reserved_check.zyl` on the raw forms of
+every module outside the standard library and the runtime, during module
+resolution (`mr-qualify-unit`): a §1.3 keyword as the name a definition
+form introduces (a function, macro, parameter, `let`/`let-mut`/`def`
+binding, type, variant, struct field, trait, alias or module) is a
+located `E_RESERVED_KEYWORD`. So is `make-S` for a struct `S` declared in
+the same file. `Ok` and `Err` as variant names stay `E_DUPLICATE_VARIANT`.

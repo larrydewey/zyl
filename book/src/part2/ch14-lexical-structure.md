@@ -341,7 +341,7 @@ ImportSpec ::= "{" ( Identifier | Identifier "=>" Identifier )* "}"
 `E_RESERVED_KEYWORD`, to bind one of them in a definition form:
 
 ```
-def, defn, defun, let, let-mut, if, try, catch, spawn, send,
+def, defn, defun, let, let-mut, if, try, catch, spawn, chan-send,
 ffi-call, ffi-pin, ffi-unpin, assert, trait, impl, fn, lambda,
 while, for, cond, begin, pub, use, export, requires, ensures,
 invariant, recover, checkpoint, contracts, defmacro, alias,
@@ -351,18 +351,21 @@ assert-equal, assert-fail, assert-true, assert-false,
 test-property, setup, teardown, run-tests, test-compile
 ```
 
-§30 lists this enforcement under FUTURE, and the compiler does not
-enforce it. This program compiles and prints `3`:
+The rule covers every name a definition introduces: functions, macros,
+parameters, `let`, `let-mut` and `def` bindings, types, variants, struct
+fields, traits, aliases and modules. `make-S` is reserved for the
+generated constructor of a struct `S`. The standard library and the
+runtime, which implement some of these forms under their own names, are
+exempt. A reserved name would be unreachable anyway: a call of it is the
+keyword's form, not your definition.
 
 ```lisp
 (defn main ()
-  (let match 3
-    (begin
+  (let match 3        ; error[E_RESERVED_KEYWORD]: `match` is a reserved keyword
+    (begin            ;   (spec 1.3.1) and cannot name a binding
       (print match)
       0)))
 ```
-
-`E_RESERVED_KEYWORD` is catalogued but not raised today.
 
 ## 14.7 Precedence and Associativity
 

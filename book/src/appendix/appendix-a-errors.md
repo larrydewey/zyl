@@ -111,7 +111,7 @@ with its code split off the front of the message.
 | `E_MALFORMED_PARAMETER` | A parameter that is neither a name nor `(name Type)` — usually a missing `)` |
 | `E_MALFORMED_FORM` | A special form whose arguments do not have the shape it requires, such as `(if c)` with no branches, or `(quote a b)`; also a name inside quoted data, `'(1 x)`, since there is no symbol type, and the same in quasiquoted data outside an unquote, `` `(1 x) ``; a quasiquote inside a quasiquote; a `,` or `,@` outside a quasiquote and a macro template; and in a template, a `,@` where a form takes a fixed number of expressions, or of anything but the `&rest` parameter. Such a form used to compile to the constant 0, which let some tests pass without testing anything. Raised by `arity_check.zyl`. |
 | `E_UNEXPECTED_TOKEN_IN_EXPR` | A token that cannot appear in expression position |
-| `E_RESERVED_KEYWORD` | A reserved keyword used as an identifier (spec §1.3.1). *Catalogued only.* |
+| `E_RESERVED_KEYWORD` | A reserved keyword (spec §1.3) as the name a definition introduces, or `make-S` for a struct `S`; located at the name |
 | `E_UNBALANCED_PARENS` | Open and close counts differ. *Catalogued only; the three `E_UNBALANCED_*` codes above replace it.* |
 | `E_EXPECTED_RPAREN` / `E_EXPECTED_RBRACKET` / `E_EXPECTED_RCURLY` | A specific closer was required. *Catalogued only.* |
 | `E_EXPECTED_EXPRESSION` | An expression was required here. *Catalogued only.* |
@@ -126,11 +126,7 @@ and it also enforces the layout rule of spec §1.6: an opener in column 1
 while a form is still open is `E_UNBALANCED_UNCLOSED` at that form, which
 catches a missing closer that an extra one elsewhere balances.
 
-Spec §1.3.1 makes every keyword in §1.3 reserved as an identifier, but
-enforcing that in definition forms is listed under FUTURE in §30, and
-nothing raises `E_RESERVED_KEYWORD` today. (It used to reject the 16-,
-32- and 64-bit `load-*`/`store-*` names; those forms are implemented
-now, Appendix C.12.)
+Spec §1.3.1 makes every keyword in §1.3 reserved as an identifier, and `compiler/reserved_check.zyl` enforces it outside the standard library and the runtime.
 
 ## A.4 Macro Expansion (phase 3)
 
@@ -350,14 +346,13 @@ language server publishes them as Warning diagnostics (Chapter 35).
 
 ## A.17 Catalog Versus Implementation
 
-**In the catalog, never raised.** 37 of the catalog's 130 distinct
+**In the catalog, never raised.** 36 of the catalog's 130 distinct
 codes are not raised anywhere in the compiler, runtime or REPL:
 
 - Lexer and parser: `E_UNEXPECTED_EOF`,
   `E_INTEGER_OVERFLOW`, `E_FLOAT_OVERFLOW`, `E_UNBALANCED_PARENS`,
   `E_EXPECTED_RPAREN`, `E_EXPECTED_RBRACKET`, `E_EXPECTED_RCURLY`,
-  `E_EXPECTED_EXPRESSION`, `E_EMPTY_LIST`, `E_ATOM_AS_OPERATOR`,
-  `E_RESERVED_KEYWORD`.
+  `E_EXPECTED_EXPRESSION`, `E_EMPTY_LIST`, `E_ATOM_AS_OPERATOR`.
 - Types: `E_RETURN_TYPE_MISMATCH`, `E_UNKNOWN_GENERIC_PARAM`.
 - Regions and buffers: `E_UNINITIALIZED_USE`,
   `E_ATOMIC_ABA`, `E_BYTEBUF_NOT_PIN`, `E_STACK_BYTEBUF_RETURN`,
@@ -371,9 +366,9 @@ codes are not raised anywhere in the compiler, runtime or REPL:
 - Traits: `E_TRAIT_BOUND_NOT_SATISFIED`.
 - Numerics: `E_OVERFLOW`.
 
-Seven of these are codes spec §28 requires: `E_USER_ERROR`,
-`E_ASSERT_FAIL`, `E_UNINITIALIZED_USE`, `E_OVERFLOW`, `E_TEST_FAILURE`,
-`E_TEST_RUNNER_ERROR` and `E_RESERVED_KEYWORD`. `E_DIVISION_BY_ZERO` is
+Six of these are codes spec §28 requires: `E_USER_ERROR`,
+`E_ASSERT_FAIL`, `E_UNINITIALIZED_USE`, `E_OVERFLOW`, `E_TEST_FAILURE` and
+`E_TEST_RUNNER_ERROR`. `E_DIVISION_BY_ZERO` is
 raised only by the REPL interpreter. Every other code in §28, the 36
 package codes included, is both catalogued and raised.
 

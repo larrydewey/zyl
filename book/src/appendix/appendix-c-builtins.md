@@ -405,7 +405,7 @@ ownership, regions or scheduling. `--contracts=P` sets the build's profile.
 | Form | Syntax | Notes |
 |---|---|---|
 | `test` | `(test "name" body)` | top level only; exactly one body form (use `begin` for several) |
-| `run-tests` | `(run-tests)` | runs every top-level `test` and prints a summary |
+| `run-tests` | `(run-tests)` or `(run-tests (:filter "text") (:parallel true))` | runs every top-level `test` (with `:filter`, only those whose names contain the text) in registration order and prints a summary |
 | `assert-equal` | `(assert-equal actual expected)` | `=` comparison, structural on structs and ADTs; when the operands are `Float` it passes if they differ by at most 1e-5. Compare a `Bool` result with `true`, or use `assert-true` |
 | `assert-true` / `assert-false` | `(assert-true expr)` | |
 | `assert-fail` | `(assert-fail expr)` or `(assert-fail expr "message")` | fails unless evaluating `expr` raises an error |

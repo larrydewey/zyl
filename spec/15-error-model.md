@@ -209,8 +209,7 @@ package-system code. Raised at run time: `E_FFI_TIMEOUT`,
 and `E_CONTRACT_VIOLATION` (the prefix of a failed contract check's
 message).
 
-Catalogued but never raised: `E_RESERVED_KEYWORD` (see
-`spec/01-lexing-and-tokens.md`), `E_USER_ERROR`, `E_ASSERT_FAIL`,
+Catalogued but never raised: `E_USER_ERROR`, `E_ASSERT_FAIL`,
 `E_UNINITIALIZED_USE`, `E_OVERFLOW`, `E_TEST_FAILURE`,
 `E_TEST_RUNNER_ERROR`, and from §6.7 `E_TRAIT_BOUND_NOT_SATISFIED` and
 `E_UNKNOWN_GENERIC_PARAM`. `E_DIVISION_BY_ZERO` is raised only by the

@@ -34,7 +34,7 @@ selfhost/
                          driver.zyl directly, and its (use ...) tree is
                          resolved from stdlib/ like any program's.
 
-stdlib/compiler/         The compiler itself (45 files, ~29,700 lines)
+stdlib/compiler/         The compiler itself (46 files, ~29,800 lines)
 stdlib/repl/             The REPL and its ICNF interpreter (8 files, ~4,200 lines)
 stdlib/lsp/              The language server (20 files, ~5,600 lines)
 stdlib/math/             Cryptography and number libraries (28 files, ~7,700 lines)
@@ -103,6 +103,7 @@ in `docs/compiler-pipeline.md`.
 
 | File | Responsibility |
 |---|---|
+| `reserved_check.zyl` | `E_RESERVED_KEYWORD` (spec §1.3.1) on the raw forms of every module outside the standard library and the runtime |
 | `capability_check.zyl` | Package capability enforcement (§31.9) |
 | `duplicate_check.zyl` | `E_DUPLICATE_DEFINITION` for repeated top-level `defn`/`deftype`; `E_DUPLICATE_VARIANT` for a program type that reuses a prelude constructor name |
 | `arity_check.zyl` | `E_ARITY_MISMATCH` for direct calls to known top-level functions; `E_MALFORMED_FORM` for a special form its parser rejected; the `ffi-call` shape checks and `E_FFI_RESTRICTED` for a raw runtime entry named outside the standard library |

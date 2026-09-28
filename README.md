@@ -330,7 +330,7 @@ runtime/rt/                   # Zyl runtime linked into every compiled binary
 ├── rt.zyl                    # Entry module (built with --runtime-module)
 └── *.zyl                     # heap, alloc, thread, chan, actor, panic, out, os, ... (rt.s seed)
 
-stdlib/compiler/              # The compiler, written in Zyl (45 modules)
+stdlib/compiler/              # The compiler, written in Zyl (46 modules)
 ├── pipeline.zyl              # Phase order shared by the CLI and the REPL
 ├── lexer.zyl, parser.zyl, desugar.zyl, sexp_balance.zyl, ast.zyl, expr_inner.zyl,
 │   node_tables.zyl

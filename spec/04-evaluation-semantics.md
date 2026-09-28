@@ -364,9 +364,11 @@ a fixed message, unless `e` raises.
   `test-compile`, runs through the checks and the type checker with its
   diagnostics captured, and the form becomes a test that passes when the
   outcome matches. Only a top-level one is accepted.
-- Keyword options on `run-tests` are ignored: tests run sequentially in
-  registration order, which is the deterministic order §20.5.5 asks
-  for.
+- `(run-tests (:filter "s"))` runs, and counts, only the tests whose
+  names contain `s` (`zyl_run_tests_matching`); `(:parallel b)` is
+  accepted and tests run sequentially in registration order, the
+  deterministic order §20.5.5 asks for. Any other option is
+  `E_MALFORMED_FORM`.
 - `stdlib/testing/testing.zyl` provides wrappers (`test-run`,
   `assert-equal-values`, `property-int` and similar). Its
   `run-tests-parallel`, `run-tests-filtered` and `run-tests-with-timeout`

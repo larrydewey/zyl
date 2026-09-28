@@ -119,7 +119,7 @@ it:
 | `List<T>` | `(deftype List (Cons T (List T)) Nil)` in `core/list`. |
 | Tuple | Not implemented. `(tuple 1 2)` is an undefined function. |
 | Struct | `defstruct`; see 15.5. |
-| Alias | `(alias Name Type)` is accepted and ignored; see 15.5. |
+| Alias | `(alias Name Type)`: a transparent second name for `Type`; see 15.5. |
 
 The angle-bracket spelling `Vec<T>` is notation in this book and in the
 specification, not source syntax: `<` and `>` are identifier characters,
@@ -224,12 +224,12 @@ left to right before the call.
 
 ### Aliases
 
-§4.7 and §10 specify aliases as transparent and zero-cost. The
-post-processor does not recognize `alias`: `(alias UserId Int)` is
-accepted, has no effect, and does not introduce `UserId` as a name.
-An unknown capitalized name in an annotation is a type variable (15.6),
-so writing `(id UserId)` in a parameter list is also accepted: the
-parameter is generic, not an `Int`.
+§4.7 and §10 specify aliases as transparent and zero-cost, and they
+are: after `(alias UserId Int)`, `(id UserId)` in a parameter list means
+exactly `(id Int)`, in field types and `extern` signatures too, and no
+code is emitted. The target must name existing types: `(alias Meters
+Intt)` is `E_UNKNOWN_TYPE` at the alias, and so is an alias that reaches
+itself. An alias may name another alias; it takes no type parameters.
 
 ## 15.6 Type Inference
 

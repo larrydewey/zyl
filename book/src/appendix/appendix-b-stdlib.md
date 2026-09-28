@@ -488,7 +488,7 @@ Chapter 35 covers what the server provides and what it cannot.
 
 ## B.11 Compiler (stdlib/compiler/)
 
-The 45 modules of the self-hosted compiler. `selfhost/driver.zyl`
+The 46 modules of the self-hosted compiler. `selfhost/driver.zyl`
 reaches them through ordinary `(use compiler/...)` imports, and the
 compiler is built from that entry file like any program.
 
@@ -504,6 +504,7 @@ compiler is built from that entry file like any program.
 | `resolver.zyl` | Name resolution |
 | `module_resolver.zyl` | Module and package resolution; splices the program |
 | `qualify.zyl` | Canonical symbol keys (§31.2) |
+| `reserved_check.zyl` | Reserved keywords (§1.3.1) |
 | `capability_check.zyl` | Package capability enforcement (§31.9) |
 | `type_system.zyl` | Shared declarations: `Pair` and the `Region` family |
 | `type_annotate.zyl` | The type checker: Hindley–Milner inference, trait resolution, per-type instances; every type error is reported |

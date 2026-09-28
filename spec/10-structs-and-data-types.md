@@ -160,11 +160,14 @@ Not normative.
 
 ### Aliases
 
-`alias` has no parser entry, so `(alias Name T)` is a top-level no-op
-rather than a new name for `T`. An annotation that names the alias is
-then an undeclared uppercase name, which the type checker treats as a
-type parameter, so `((m Meters))` accepts any type rather than exactly
-`T`. `(unwrap x)` takes an `Option`: `(Some v)` gives `v` and `None`
+`(alias Name T)` is transparent: the type checker reads `Name` as `T`
+wherever a type is written (parameter annotations, field types, `extern`
+signatures), so `((m Meters))` after `(alias Meters Int)` takes exactly
+an `Int` and a value of either spelling fits the other. It emits no code.
+The target must name existing types (`E_UNKNOWN_TYPE` otherwise, located
+at the alias), an alias may name another, and one that reaches itself is
+`E_UNKNOWN_TYPE`. An alias takes no type parameters. `alias` names are
+definitions (qualified, `pub`-able, importable). `(unwrap x)` takes an `Option`: `(Some v)` gives `v` and `None`
 panics with `unwrap on None`; the library functions `result-unwrap` and
 `option-unwrap` (which take a default) cover `Result` and defaults.
 
