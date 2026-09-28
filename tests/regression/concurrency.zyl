@@ -39,4 +39,33 @@
     (actor-wait actor)
     (assert-false (actor-is-alive actor))))
 
+; Workers hammer one slot; only the final value is checked.
+(defn rb-work ((b ByteBuf) n)
+  (if (= n 0) 0
+    (let _ (bytebuf-atomic-add b 0 1)
+      (let _ (bytebuf-atomic-fetch-add b 8 2)
+        (let _ (bytebuf-atomic-max b 16 n)
+          (rb-work b (- n 1)))))))
+
+(defn rb-cas-inc ((b ByteBuf))
+  (let v (bytebuf-atomic-load b 24)
+    (if (= (bytebuf-atomic-cas b 24 v (+ v 1)) 1) 0 (rb-cas-inc b))))
+
+(defn rb-cas-work ((b ByteBuf) n)
+  (if (= n 0) 0 (let _ (rb-cas-inc b) (rb-cas-work b (- n 1)))))
+
+(test "atomics-across-actors"
+  (let b (bytebuf Heap 32)
+    (let a1 (spawn (fn () (let _ (rb-work b 20000) (rb-cas-work b 5000))))
+      (let a2 (spawn (fn () (let _ (rb-work b 20000) (rb-cas-work b 5000))))
+        (let a3 (spawn (fn () (let _ (rb-work b 20000) (rb-cas-work b 5000))))
+          (begin
+            (actor-wait a1)
+            (actor-wait a2)
+            (actor-wait a3)
+            (assert-equal (bytebuf-atomic-load b 0) 60000)
+            (assert-equal (bytebuf-atomic-load b 8) 120000)
+            (assert-equal (bytebuf-atomic-load b 16) 20000)
+            (assert-equal (bytebuf-atomic-load b 24) 15000)))))))
+
 (run-tests)

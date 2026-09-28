@@ -1,0 +1,123 @@
+; Edge cases of the runtime's ByteBuf/ByteSlice and atomic entries (runtime/rt/bytes.zyl).
+(use atomic/atomic)
+(use allocator/allocator)
+
+(defn rb-fill ((b ByteBuf))
+  (begin
+    (store-u64 :be b 0 81985529216486895)
+    (store-i32 :be b 8 -2)
+    (store-u16 :le b 12 43981)
+    b))
+
+(test "big-endian-byte-order"
+  (let b (rb-fill (bytebuf Heap 16))
+    (begin
+      (assert-equal (load-u8 :le b 0) 1)
+      (assert-equal (load-u8 :le b 7) 239)
+      (assert-equal (load-u64 :be b 0) 81985529216486895)
+      (assert-equal (load-u64 :le b 0) -1167088121787636991)
+      (assert-equal (load-u32 :be b 4) 2309737967)
+      (assert-equal (load-i32 :be b 8) -2)
+      (assert-equal (load-u32 :be b 8) 4294967294)
+      (assert-equal (load-u8 :le b 11) 254)
+      (assert-equal (load-u16 :be b 12) 52651)
+      (assert-equal (load-i16 :le b 12) -21555)
+      (assert-equal (load-i64 :be b 8) -5139398656))))
+
+(test "wide-bounds"
+  (let b (bytebuf Heap 8)
+    (begin
+      (assert-equal (store-u64 :le b 0 -1) 1)
+      (assert-equal (store-u64 :le b 1 5) 0)
+      (assert-equal (store-u32 :be b 5 5) 0)
+      (assert-equal (store-u32 :be b 4 5) 1)
+      (assert-equal (load-u64 :le b 1) 0)
+      (assert-equal (load-u16 :le b -1) 0)
+      (assert-equal (store-u16 :le b -2 1) 0)
+      (assert-equal (load-u8 :le b 8) 0)
+      (assert-equal (store-u8 :le b 8 1) 0)
+      (assert-equal (store-i8 :le b 7 -1) 1)
+      (assert-equal (load-i8 :le b 7) -1)
+      (assert-equal (load-u32 :be b 4) 255))))
+
+(test "slices"
+  (let b (bytebuf Heap 16)
+    (let s (byteslice b 4 8)
+      (begin
+        (store-u32 :le s 0 305419896)
+        (assert-equal (load-u32 :le b 4) 305419896)
+        (assert-equal (load-u32 :le s 5) 0)
+        (assert-equal (store-u32 :le s 5 1) 0)
+        (assert-equal (store-u32 :le s 4 1) 1)
+        (assert-equal (load-u8 :le (byteslice-sub s 4 4) 0) 1)
+        (assert-equal (load-u8 :le (byteslice-sub s 6 4) 0) 0)
+        (assert-equal (load-u8 :le (byteslice b 14 4) 0) 0)
+        (assert-equal (store-u8 :le (byteslice b 17 0) 0 1) 0)
+        (assert-equal (load-u8 :le (byteslice b 16 0) 0) 0)))))
+
+(test "append"
+  (let b (bytebuf Heap 6)
+    (let s (byteslice b 0 4)
+      (begin
+        (store-u32 :le b 0 67305985)
+        (assert-equal (bytebuf-append b s) 1)
+        (assert-equal (bytebuf-len b) 4)
+        (assert-equal (bytebuf-append b s) 0)
+        (assert-equal (bytebuf-len b) 4)
+        (assert-equal (bytebuf-append b (byteslice b 0 2)) 1)
+        (assert-equal (bytebuf-len b) 6)
+        (assert-equal (load-u16 :le b 4) 513)
+        (assert-equal (bytebuf-append b (byteslice b 0 0)) 1)
+        (assert-equal (bytebuf-append b (byteslice b 9 1)) 0)))))
+
+(test "cap-and-ptr"
+  (let b (bytebuf Heap 0)
+    (begin
+      (assert-equal (bytebuf-cap b) 0)
+      (assert-equal (load-u8 :le b 0) 0)
+      (assert-equal (store-u8 :le b 0 1) 0)
+      (assert-true (> (bytebuf-ptr b) 4096))
+      (assert-equal (bytebuf-cap (bytebuf Stack 24)) 24))))
+
+(test "atomic-slot-checks"
+  (let b (bytebuf Heap 16)
+    (begin
+      (assert-equal (bytebuf-atomic-store b 8 -7) 1)
+      (assert-equal (bytebuf-atomic-load b 8) -7)
+      (assert-equal (bytebuf-atomic-store b 4 1) 0)
+      (assert-equal (bytebuf-atomic-store b 16 1) 0)
+      (assert-equal (bytebuf-atomic-store b -8 1) 0)
+      (assert-equal (bytebuf-atomic-load b 12) 0)
+      (assert-equal (bytebuf-atomic-add b 3 1) 0)
+      (assert-equal (bytebuf-atomic-sub b 8 3) -10)
+      (assert-equal (bytebuf-atomic-fetch-add b 8 4) -10)
+      (assert-equal (bytebuf-atomic-max b 8 -20) -6)
+      (assert-equal (bytebuf-atomic-min b 8 -20) -20)
+      (assert-equal (bytebuf-atomic-max b 16 1) 0)
+      (assert-equal (bytebuf-atomic-cas b 8 -20 5) 1)
+      (assert-equal (bytebuf-atomic-cas b 8 -20 6) 0)
+      (assert-equal (bytebuf-atomic-load b 8) 5)
+      (assert-equal (bytebuf-atomic-cas b 9 5 6) 0))))
+
+(test "raw-atomics"
+  (let p (alloc-malloc 8)
+    (begin
+      (assert-equal (atomic-store p 9223372036854775807) 9223372036854775807)
+      (assert-equal (atomic-add p 1) (- -9223372036854775807 1))
+      (assert-equal (atomic-sub p 1) 9223372036854775807)
+      (assert-equal (atomic-fetch-add p 3) 9223372036854775807)
+      (assert-equal (atomic-min p 4) (+ (- -9223372036854775807 1) 2))
+      (assert-equal (atomic-max p 4) 4)
+      (assert-false (atomic-cas p 5 1))
+      (assert-equal (atomic-load p) 4))))
+
+(test "align-check"
+  (begin
+    (assert-equal (align-check 16 8) 1)
+    (assert-equal (align-check 12 8) 0)
+    (assert-equal (align-check -16 8) 1)
+    (assert-equal (align-check 5 1) 1)))
+
+; The multi-actor atomics test is in concurrency.zyl (the interpreter cannot spawn).
+
+(run-tests)

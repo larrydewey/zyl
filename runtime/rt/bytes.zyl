@@ -1,0 +1,199 @@
+; ByteBuf/ByteSlice entries (load/store, slices, append) and the seq-cst atomics.
+(use base)
+
+; libc bridge, removed in the libc-free phase.
+(extern "malloc" (Int) Int)
+(extern "free" (Int) Int)
+(extern "memset" (Int Int Int) Int)
+(extern "memmove" (Int Int Int) Int)
+
+; Header layouts: ByteBuf {magic, data, len, cap}; ByteSlice {magic, data, len}.
+(defn bb-magic-buf () 6510318584122966017)
+(defn bb-magic-slice () 6510318584122966018)
+(defn bb-max-cap () 1099511627776)
+
+; Hot helpers are macros (the runtime compile does not inline calls); arguments must be plain variables.
+; The handle if it is a live header with this magic, else 0; small, negative or unaligned words are rejected.
+(defmacro bb-of (h magic)
+  (if (or (< h 4096) (not (= (bit-and h 7) 0))) 0
+    (if (= (ffi-call "%load64" h 1) magic) h 0)))
+
+(defmacro bb-buf (h) (bb-of h (bb-magic-buf)))
+(defmacro bb-slice (h) (bb-of h (bb-magic-slice)))
+
+(defmacro bb-data (h) (ffi-call "%load64" (+ h 8) 1))
+(defmacro bb-len (h) (ffi-call "%load64" (+ h 16) 1))
+(defmacro bb-cap (h) (ffi-call "%load64" (+ h 24) 1))
+
+; off, size, bound >= 0 and off+size <= bound, without overflow.
+(defmacro bb-ok (off size bound)
+  (if (or (< off 0) (or (< size 0) (or (< bound 0) (> size bound)))) false (<= off (- bound size))))
+
+; The address of size bytes at off in a buf (bound: cap) or slice (bound: len), or 0.
+(defmacro bb-at (h off size)
+  (if (or (< h 4096) (not (= (bit-and h 7) 0))) 0
+    (let m (ffi-call "%load64" h 1)
+      (let b (if (= m (bb-magic-buf)) (bb-cap h) (if (= m (bb-magic-slice)) (bb-len h) -1))
+        (if (and (>= b 0) (bb-ok off size b)) (+ (bb-data h) off) 0)))))
+
+(defn zyl_load_byte (_endian off buf)
+  (let a (bb-at buf off 1) (if (= a 0) 0 (rt-ld8 a))))
+
+(defn zyl_load_byte_signed (_endian off buf)
+  (let a (bb-at buf off 1) (if (= a 0) 0 (let v (rt-ld8 a) (if (> v 127) (- v 256) v)))))
+
+(defn zyl_store_byte (_endian off buf val)
+  (let a (bb-at buf off 1) (if (= a 0) 0 (let _ (rt-st8 a val) 1))))
+
+(defn zyl_store_byte_signed (_endian off buf val)
+  (let a (bb-at buf off 1) (if (= a 0) 0 (let _ (rt-st8 a val) 1))))
+
+; 2-, 4- and 8-byte accesses; endian 0 little, anything else big.
+(defmacro bb-width-ok (w) (or (= w 2) (or (= w 4) (= w 8))))
+
+; Byte-reverses the low w bytes of v (w is 2, 4 or 8).
+(defmacro bb-swap (v w)
+  (let x1 (bit-or (bit-and (shr v 8) 71777214294589695) (shl (bit-and v 71777214294589695) 8))
+    (let x2 (bit-or (bit-and (shr x1 16) 281470681808895) (shl (bit-and x1 281470681808895) 16))
+      (let x3 (bit-or (bit-and (shr x2 32) 4294967295) (shl x2 32))
+        (if (= w 8) x3 (if (= w 4) (bit-and (shr x3 32) 4294967295) (bit-and (shr x3 48) 65535)))))))
+
+(defmacro bb-load-le (w a)
+  (if (= w 2) (ffi-call "%load16" a 1) (if (= w 4) (ffi-call "%load32" a 1) (ffi-call "%load64" a 1))))
+
+(defn zyl_load_n (width endian off buf)
+  (if (not (bb-width-ok width)) 0
+    (let a (bb-at buf off width)
+      (if (= a 0) 0 (let r (bb-load-le width a) (if (= endian 0) r (bb-swap r width)))))))
+
+(defn zyl_load_n_signed (width endian off buf)
+  (let r (zyl_load_n width endian off buf)
+    (if (or (>= width 8) (not (bb-width-ok width))) r
+      (let sign (shl 1 (- (* width 8) 1)) (- (bit-xor r sign) sign)))))
+
+(defmacro bb-store-le (w a v)
+  (if (= w 2) (ffi-call "%store16" a v 1) (if (= w 4) (ffi-call "%store32" a v 1) (ffi-call "%store64" a v 1))))
+
+(defn zyl_store_n (width endian off buf val)
+  (if (not (bb-width-ok width)) 0
+    (let a (bb-at buf off width)
+      (if (= a 0) 0
+        (let v (if (= endian 0) val (bb-swap val width)) (let _ (bb-store-le width a v) 1))))))
+
+; A new slice header over len bytes at data, or 0.
+(defn bb-new-slice (data len)
+  (let s (ffi-call "malloc" 24 1)
+    (if (= s 0) 0
+      (let _ (ffi-call "%store64" s (bb-magic-slice) 1)
+        (let _ (ffi-call "%store64" (+ s 8) data 1)
+          (let _ (ffi-call "%store64" (+ s 16) len 1) s))))))
+
+(defn zyl_byte_slice (buf start len)
+  (let h (bb-buf buf)
+    (if (or (= h 0) (not (bb-ok start len (bb-cap h)))) 0 (bb-new-slice (+ (bb-data h) start) len))))
+
+(defn zyl_byte_slice_sub (slice start len)
+  (let p (bb-slice slice)
+    (if (or (= p 0) (not (bb-ok start len (bb-len p)))) 0 (bb-new-slice (+ (bb-data p) start) len))))
+
+(defn bb-init (h data cap)
+  (let _ (ffi-call "%store64" h (bb-magic-buf) 1)
+    (let _ (ffi-call "%store64" (+ h 8) data 1)
+      (let _ (ffi-call "%store64" (+ h 16) 0 1)
+        (let _ (ffi-call "%store64" (+ h 24) cap 1) h)))))
+
+(defn bb-cap-ok (cap) (and (>= cap 0) (<= cap (bb-max-cap))))
+
+; Heap buffer: zeroed malloc'd storage of cap bytes (1 for cap 0); region ignored.
+(defn zyl_bytebuf_new (_region cap)
+  (if (not (bb-cap-ok cap)) 0
+    (let h (ffi-call "malloc" 32 1)
+      (if (= h 0) 0
+        (let n (if (> cap 0) cap 1)
+          (let d (ffi-call "malloc" n 1)
+            (if (= d 0) (let _ (ffi-call "free" h 1) 0)
+              (let _ (ffi-call "memset" d 0 n 1) (bb-init h d cap)))))))))
+
+; (bytebuf Stack N): header and bytes in the current result region.
+(defn zyl_bytebuf_new_r (_region cap)
+  (if (not (bb-cap-ok cap)) 0
+    (let rp (rt-cur-region)
+      (let h (rt-alloc 32 rp)
+        (if (= h 0) 0
+          (let n (if (> cap 0) cap 1)
+            (let d (rt-alloc n rp)
+              (if (= d 0) 0
+                (let _ (ffi-call "memset" d 0 n 1) (bb-init h d cap))))))))))
+
+; Appends a whole slice (it may alias the buf) or fails closed past cap.
+(defn zyl_bytebuf_append (buf slice)
+  (let h (bb-buf buf)
+    (let s (bb-slice slice)
+      (if (or (= h 0) (= s 0)) 0
+        (let hl (bb-len h)
+          (let sl (bb-len s)
+            (if (not (bb-ok hl sl (bb-cap h))) 0
+              (let _ (ffi-call "memmove" (+ (bb-data h) hl) (bb-data s) sl 1)
+                (let _ (ffi-call "%store64" (+ h 16) (+ hl sl) 1) 1)))))))))
+
+(defn zyl_bytebuf_len (buf) (let h (bb-buf buf) (if (= h 0) 0 (bb-len h))))
+(defn zyl_bytebuf_cap (buf) (let h (bb-buf buf) (if (= h 0) 0 (bb-cap h))))
+(defn zyl_bytebuf_ptr (buf) (let h (bb-buf buf) (if (= h 0) 0 (bb-data h))))
+
+(defn zyl_align_check (expr align)
+  (if (<= align 0) 0 (if (= (% expr align) 0) 1 0)))
+
+; --- atomics on 64-bit words (seq-cst) ---
+
+(defn zyl_atomic_load (addr) (ffi-call "%load64" (rt-w addr) 1))
+
+(defn zyl_atomic_store (addr v) (let _ (ffi-call "%xchg" (rt-w addr) v 1) v))
+
+(defn zyl_atomic_fetch_add (addr v) (ffi-call "%fetch-add" (rt-w addr) v 1))
+
+(defn zyl_atomic_add (addr v) (+ (ffi-call "%fetch-add" (rt-w addr) v 1) v))
+
+(defn zyl_atomic_sub (addr v) (- (ffi-call "%fetch-add" (rt-w addr) (- 0 v) 1) v))
+
+(defn zyl_atomic_cas (addr expected new) (= (ffi-call "%cas" (rt-w addr) expected new 1) expected))
+
+; CAS loop storing max (or min) of the slot and v; returns the stored value.
+(defn bb-atomic-pick (a old v want-max)
+  (let c (if want-max (if (> old v) old v) (if (< old v) old v))
+    (let prev (ffi-call "%cas" a old c 1)
+      (if (= prev old) c (bb-atomic-pick a prev v want-max)))))
+
+(defn zyl_atomic_max (addr v) (let a (rt-w addr) (bb-atomic-pick a (ffi-call "%load64" a 1) v true)))
+
+(defn zyl_atomic_min (addr v) (let a (rt-w addr) (bb-atomic-pick a (ffi-call "%load64" a 1) v false)))
+
+; --- atomics on a ByteBuf slot: 8-aligned offset, whole word within cap ---
+
+(defmacro bb-slot (buf off)
+  (let h (bb-buf buf)
+    (if (or (= h 0) (or (< off 0) (not (= (bit-and off 7) 0)))) 0
+      (if (bb-ok off 8 (bb-cap h)) (+ (bb-data h) off) 0))))
+
+(defn zyl_bytebuf_atomic_load (buf off)
+  (let p (bb-slot buf off) (if (= p 0) 0 (ffi-call "%load64" p 1))))
+
+(defn zyl_bytebuf_atomic_store (buf off v)
+  (let p (bb-slot buf off) (if (= p 0) 0 (let _ (ffi-call "%xchg" p v 1) 1))))
+
+(defn zyl_bytebuf_atomic_add (buf off v)
+  (let p (bb-slot buf off) (if (= p 0) 0 (+ (ffi-call "%fetch-add" p v 1) v))))
+
+(defn zyl_bytebuf_atomic_sub (buf off v)
+  (let p (bb-slot buf off) (if (= p 0) 0 (- (ffi-call "%fetch-add" p (- 0 v) 1) v))))
+
+(defn zyl_bytebuf_atomic_fetch_add (buf off v)
+  (let p (bb-slot buf off) (if (= p 0) 0 (ffi-call "%fetch-add" p v 1))))
+
+(defn zyl_bytebuf_atomic_max (buf off v)
+  (let p (bb-slot buf off) (if (= p 0) 0 (zyl_atomic_max p v))))
+
+(defn zyl_bytebuf_atomic_min (buf off v)
+  (let p (bb-slot buf off) (if (= p 0) 0 (zyl_atomic_min p v))))
+
+(defn zyl_bytebuf_atomic_cas (buf off expected new)
+  (let p (bb-slot buf off) (if (= p 0) 0 (if (= (ffi-call "%cas" p expected new 1) expected) 1 0))))
