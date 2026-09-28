@@ -44,9 +44,11 @@
 ; Element i. An index outside the Vec is E_INDEX_OUT_OF_BOUNDS.
 ; Returns: T
 (defn vec-get (v (i Int))
-  (if (or (< i 0) (>= i (vec-len v)))
-    (ffi-call "zyl_panic" "E_INDEX_OUT_OF_BOUNDS: vec-get index outside the Vec" 1000)
-    (array-get (vec-store v) i)))
+  (match v
+    (VecC s n _
+      (if (or (< i 0) (>= i n))
+        (ffi-call "zyl_panic" "E_INDEX_OUT_OF_BOUNDS: vec-get index outside the Vec" 1000)
+        (array-get s i)))))
 
 ; Element i, or `default` when i is outside the Vec.
 ; Returns: T
@@ -69,14 +71,19 @@
 ; Push a value, moving to storage twice the size when full.
 ; Returns: Vec
 (defn vec-push (v value)
-  (let n (vec-len v)
-    (if (< n (vec-cap v))
-      (let _ (array-set (vec-store v) n value)
-        (VecC (vec-store v) (+ n 1) (vec-arena v)))
-      (let bigger (array-new (vec-arena v) (if (<= (vec-cap v) 0) 16 (* (vec-cap v) 2)))
-        (let _ (ffi-call "zyl_array_copy" (vec-store v) bigger n 1000)
-          (let _ (array-set bigger n value)
-            (VecC bigger (+ n 1) (vec-arena v))))))))
+  (match v
+    (VecC s n a
+      (let c (array-cap s)
+        (if (< n c)
+          (let _ (array-set s n value) (VecC s (+ n 1) a))
+          (vec-grow s n a c value))))))
+
+; The full case, apart so the common one keeps no registers across calls.
+(defn vec-grow (s (n Int) (a Arena) (c Int) value)
+  (let bigger (array-new a (if (<= c 0) 16 (* c 2)))
+    (let _ (ffi-call "zyl_array_copy" s bigger n 1000)
+      (let _ (array-set bigger n value)
+        (VecC bigger (+ n 1) a)))))
 
 (defn vec-copy-into (from to (i Int) (n Int))
   (if (>= i n)

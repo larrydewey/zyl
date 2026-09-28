@@ -1,0 +1,18 @@
+; Vec growth copies every element (AVX2 block copy for large arrays) and reads only what was written.
+(use collections/vec)
+
+(defn fill (v (i Int) (n Int)) (if (>= i n) v (fill (vec-push v (* i 3)) (+ i 1) n)))
+(defn total (v (i Int) (n Int) (acc Int)) (if (>= i n) acc (total v (+ i 1) n (+ acc (vec-get v i)))))
+(defn ok-all (v (i Int) (n Int)) (if (>= i n) true (if (= (vec-get v i) (* i 3)) (ok-all v (+ i 1) n) false)))
+
+(test "vec-growth"
+  (let v (fill (vec-create-default 1) 0 5000)
+    (begin
+      (assert-equal (vec-len v) 5000)
+      (assert-equal (total v 0 5000 0) 37492500)
+      (assert-equal (ok-all v 0 5000) true)
+      (assert-equal (vec-get-or v 5000 -1) -1)
+      (assert-equal (ok-all (fill (vec-create-default 0) 0 33) 0 33) true)
+      (assert-equal (ok-all (fill (vec-create-default 16) 0 257) 0 257) true))))
+
+(run-tests)
