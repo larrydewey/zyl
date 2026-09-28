@@ -3197,13 +3197,14 @@
             (MS nv nl rev blocks (mb-alloc-emit st name nv nl (list-reverse rev) rflags (list-reverse blocks)))))))
     (_ st)))
 
-(defn mb-alloc-emit (st name nv nl instrs rflags blocks)
+(defn mb-alloc-emit (st name nv nl instrs0 rflags blocks)
+  (let instrs (mir-dce instrs0 nv)
   (let n (list-length instrs)
     (let a (mir-array instrs n)
       (let lin (mir-liveness a n nv (mir-label-pos a n nl))
-        (let al (mir-allocate (mir-intervals a n nv lin) nv (mir-hints a n nv))
+        (let al (mir-allocate (mir-intervals a n nv lin (mir-use-counts instrs nv)) nv (mir-hints a n nv))
           (match (cg-label-new st)
-            (CGR st1 _ base (mb-emit-fn st1 name al nv base instrs rflags blocks))))))))
+            (CGR st1 _ base (mb-emit-fn st1 name al nv base instrs rflags blocks)))))))))
 
 (defn mb-emit-fn (st name al nv base instrs rflags blocks)
   (let saved (mb-used-callee al nv 0 Nil)

@@ -137,6 +137,57 @@
 (defn mir-arena () (ffi-call "zyl_ref_get" mir-arena-cell 1000))
 (defn mir-reset () (ffi-call "zyl_arena_reset" (mir-arena) 1000))
 
+; --- dead definitions -------------------------------------------------------
+
+; Use counts per vreg over an instruction list.
+(defn mir-use-counts (xs nv)
+  (let u (w-alloc (mir-arena) (+ nv 1))
+    (let _ (mir-count-list xs u) u)))
+
+(defn mir-count-list (xs u)
+  (match xs
+    (Nil unit)
+    (Cons i t (let _ (mir-count-uses (mi-uses i) u 1) (mir-count-list t u)))))
+
+(defn mir-count-uses (vs u k)
+  (match vs
+    (Nil unit)
+    (Cons v t (let _ (w-set u v (+ (w-get u v) k)) (mir-count-uses t u k)))))
+
+; No effect but its result: dropped when the result is never read.
+(defn mi-pure (i)
+  (match i
+    (MConst _ _ true)
+    (MMov _ _ true)
+    (MBin op _ _ _ (not (or (= op 3) (= op 4))))
+    (MBinI _ _ _ _ true)
+    (MFnRef _ _ true)
+    (MLoad _ _ _ true)
+    (MStackBlk _ _ true)
+    (MStr _ _ true)
+    (MFlt _ _ true)
+    (MSym _ _ true)
+    (MByteData _ _ true)
+    (MByteBound _ _ true)
+    (MRaw k _ _ (or (<= k 3) (or (= k 18) (= k 46))))
+    (MTls _ _ vs (is-nil vs))
+    (_ false)))
+
+; Drops pure instructions whose result is never read, last first, so a
+; chain feeding only dead code goes too (a def before its use in order).
+(defn mir-dce (instrs nv)
+  (let u (mir-use-counts instrs nv)
+    (mir-dce-rev (list-reverse instrs) u Nil)))
+
+(defn mir-dce-rev (rev u acc)
+  (match rev
+    (Nil acc)
+    (Cons i t
+      (let d (mi-def i)
+        (if (and (>= d 0) (and (= (w-get u d) 0) (mi-pure i)))
+          (let _ (mir-count-uses (mi-uses i) u -1) (mir-dce-rev t u acc))
+          (mir-dce-rev t u (Cons i acc)))))))
+
 ; --- liveness -------------------------------------------------------------
 
 ; Instructions are held in an (Array MI) for indexed access; live sets
@@ -235,12 +286,12 @@
 ; strictly inside the interval (the value must then survive the call).
 (deftype Iv (Iv Int Int Int Bool))  ; vreg, start, end, crosses a call
 
-(defn mir-intervals (a n nv lin)
+(defn mir-intervals (a n nv lin u)
   (let words (+ (/ nv 64) 1)
     (let st (w-alloc (mir-arena) (+ nv 1))
       (let en (w-alloc (mir-arena) (+ nv 1))
         (let _ (mir-iv-init st en 0 nv)
-          (let _ (mir-iv-scan a n words lin st en 0 nv)
+          (let _ (mir-iv-scan a n words lin st en 0 nv u)
             (mir-iv-list a n st en 0 nv)))))))
 
 (defn mir-iv-init (st en v nv)
@@ -251,14 +302,15 @@
     (if (or (< (w-get st v) 0) (< i (w-get st v))) (let _ (w-set st v i) unit) unit)
     (if (> i (w-get en v)) (let _ (w-set en v i) unit) unit)))
 
-(defn mir-iv-scan (a n words lin st en i nv)
+; A result nothing reads gets no interval (no register, no move).
+(defn mir-iv-scan (a n words lin st en i nv u)
   (if (>= i n)
     unit
     (let ins (ffi-call "zyl_array_get" a i 1000)
       (let _ (mir-iv-live words lin st en i 0 nv)
-        (let _ (if (>= (mi-def ins) 0) (mir-iv-touch st en (mi-def ins) i) unit)
+        (let _ (if (and (>= (mi-def ins) 0) (> (w-get u (mi-def ins)) 0)) (mir-iv-touch st en (mi-def ins) i) unit)
           (let _ (mir-iv-uses st en (mi-uses ins) i)
-            (mir-iv-scan a n words lin st en (+ i 1) nv)))))))
+            (mir-iv-scan a n words lin st en (+ i 1) nv u)))))))
 
 (defn mir-iv-uses (st en us i)
   (match us
