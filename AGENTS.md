@@ -214,12 +214,15 @@ Full test infrastructure documented in `docs/regression-tests.md`. All tests use
 
 ## Architecture Notes
 
-- Runtime: written in Zyl in `runtime/rt/` (no C source; `docs/runtime-in-zyl-design.md`;
-  libc is still called through `extern` until the libc-free phase). It is compiled with
-  `--runtime-module`, which only the bundle's `runtime/rt/rt.zyl` may use. There the
-  locked `%` primitives are allowed, and `zyl_*` defns are exported. Its output
-  `build/boot/rt.s` is a committed seed like `stage2.s`, and every program links its
-  `rt.o`. There is no `unsafe` for programs.
+- Runtime: written in Zyl in `runtime/rt/` (no C; `docs/runtime-in-zyl-design.md`). It is
+  compiled with `--runtime-module`, which only the bundle's `runtime/rt/rt.zyl` may use;
+  there the locked `%` primitives are allowed and `zyl_*` defns are exported. Its output
+  `build/boot/rt.s` is a committed seed like `stage2.s`. There is no `unsafe` for programs.
+- Link modes: a program with no foreign `ffi-call` and no native objects links
+  freestanding (`start.o` + `rt.o`, `-nostdlib -static`: no libc; the runtime's `_start`
+  sets up TLS, threads are `clone` + futex). A program that calls foreign C links hosted
+  over libc's crt (weak pthreads). The compiler binaries themselves are hosted (the REPL
+  interpreter's FFI uses `dlsym`).
 
 - Entry point: `selfhost/driver.zyl`, compiled like any program (its `(use ...)` tree resolved from `stdlib/`, names qualified per module) to `build/boot/stage2.bin`/`zyl-self`. `boot.sh` caps each stage at 4 GB of allocation (`ZYL_STAGE_MEMORY`). The phase order shared by the CLI and the REPL is `stdlib/compiler/pipeline.zyl`.
 - Language server: `selfhost/lsp_main.zyl` + `stdlib/lsp/` (and `services/`), built by `./boot.sh` as `build/boot/zyl-lsp`; the VS Code client is `editors/vscode/` (0.4.0, esbuild-bundled, `$zyl` problem matcher). Protocol tests: `tests/lsp/lsp_protocol_test.py`.

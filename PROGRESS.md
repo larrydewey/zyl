@@ -456,6 +456,44 @@ as recorded below.
 - Limitation: Pages must be set to "GitHub Actions" as its source in the
   repository settings before the first deploy.
 
+## Session (2026-09-28, libc-free) — programs link static with no libc
+
+- Four parallel groups, merged and verified:
+  - memory: `heap.zyl`, size classes over mmap with futex locks and the
+    budget kept;
+  - stdio: `out.zyl`, one buffered stdout, line-buffered on a tty, with
+    glibc's flush points; generated print calls `zyl_print_*`, and printf
+    is gone;
+  - environment, exit and processes: `env.zyl` (envp getenv, an exit
+    registry, nanosleep/yield/clock by syscall, mkstemp; spawn via
+    clone(CLONE_VM|CLONE_VFORK) plus execve, with glibc's PATH search);
+  - threads (mine): `thread.zyl` (futex mutex/cond with a monotonic timed
+    wait; clone threads with a TLS block each and a join on the shared
+    CHILD_CLEARTID futex; weak pthreads when hosted; the PT_TLS static
+    block and TCB; `zyl_rt_start`).
+- Codegen: `%fn-weak` and the `zyl_rt_clone` stub. `boot.sh` builds
+  `start.o` (the `_start` that calls `zyl_rt_start`), and `install.sh`
+  ships it.
+- The driver links a program freestanding (`-nostdlib -static`,
+  `start.o` + `rt.o`) unless it lowers a foreign `ffi-call` or links
+  native objects; those link hosted. `rt.o` references libc only
+  weakly: pthreads, `dlsym`, `__cxa_atexit` (glibc's `atexit` is in
+  libc_nonshared.a, where a weak reference never pulls it in), and
+  malloc/free for `alloc-malloc` memory when hosted.
+- The suite passes 305/305 with static binaries: actors run on clone
+  threads, and foreign-call tests stay hosted. The actor tests ran 1600
+  times under parallel load with identical output every time. An agent
+  reported a 2% drain race it had seen with the old runtime too; it did
+  not reproduce here.
+- Bench (static vs the old all-C build):
+  - fib, loop, list and sieve at parity; trees faster;
+  - vec +5%;
+  - str +17% (0.128 vs 0.109 s, after region fast paths; digits and
+    strlen remain).
+- Hosted caveat: `zyl_exit`/panic exit through the runtime's registry
+  and exit_group, so a foreign library's own atexit handlers do not run
+  on those paths.
+
 ## Session (2026-09-28, final) — runtime/actor_runtime.c is gone
 
 - Merged:
