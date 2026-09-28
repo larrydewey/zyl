@@ -1,0 +1,39 @@
+; The runtime's string maps, word vectors and spans (runtime/rt/ctab.zyl): growth, clearing, bounds.
+
+(defn rc-key (i) (str-concat "key-" (ffi-call "zyl_int_text" i 1000)))
+
+(defn rc-fill (m i n) (if (>= i n) 0 (let _ (ffi-call "zyl_smap_put" m (rc-key i) (* i 3) 1000) (rc-fill m (+ i 1) n))))
+
+(defn rc-check (m i n) (if (>= i n) true (if (= (ffi-call "zyl_smap_get" m (rc-key i) 1000) (* i 3)) (rc-check m (+ i 1) n) false)))
+
+(defn rc-push (v i n) (if (>= i n) 0 (let _ (ffi-call "zyl_wvec_push" v (* i i) 1000) (rc-push v (+ i 1) n))))
+
+(test "smap-growth"
+  (let m (ffi-call "zyl_smap_new" 1000)
+    (begin
+      (rc-fill m 0 5000)
+      (assert-equal (rc-check m 0 5000) true)
+      (assert-equal (ffi-call "zyl_smap_has" m "key-4999" 1000) true)
+      (assert-equal (ffi-call "zyl_smap_has" m "key-5000" 1000) false)
+      (assert-equal (ffi-call "zyl_smap_get_or" m "absent" 77 1000) 77)
+      (ffi-call "zyl_smap_put" m "key-7" 1 1000)
+      (assert-equal (ffi-call "zyl_smap_get" m "key-7" 1000) 1)
+      (ffi-call "zyl_smap_clear" m 1000)
+      (assert-equal (ffi-call "zyl_smap_has" m "key-7" 1000) false)
+      (rc-fill m 0 10)
+      (assert-equal (rc-check m 0 10) true))))
+
+(test "wvec"
+  (let v (ffi-call "zyl_wvec_new" 1000)
+    (begin
+      (rc-push v 0 10000)
+      (assert-equal (ffi-call "zyl_wvec_len" v 1000) 10000)
+      (assert-equal (ffi-call "zyl_wvec_get" v 9999 1000) 99980001)
+      (ffi-call "zyl_wvec_set" v 3 -1 1000)
+      (assert-equal (ffi-call "zyl_wvec_get" v 3 1000) -1)
+      (assert-equal (ffi-call "zyl_wvec_pop" v 1000) 99980001)
+      (ffi-call "zyl_wvec_truncate" v 5 1000)
+      (assert-equal (ffi-call "zyl_wvec_len" v 1000) 5)
+      (assert-equal (try (ffi-call "zyl_wvec_get" v 5 1000) (catch e (if (str-eq e "E_INDEX_OUT_OF_BOUNDS: vector index 5 outside length 5") -7 0))) -7))))
+
+(run-tests)

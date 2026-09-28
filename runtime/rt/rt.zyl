@@ -5,3 +5,4 @@
 (use cstr)
 (use text)
 (use variant)
+(use ctab)

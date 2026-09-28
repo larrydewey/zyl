@@ -1,0 +1,304 @@
+; Compiler side tables: source spans, node attributes, string maps, word vectors, def cells. Probed by key, never iterated.
+(use base)
+
+(extern "calloc" (Int Int) Int)
+(extern "realloc" (Int Int) Int)
+(extern "malloc" (Int) Int)
+(extern "free" (Int) Int)
+(extern "strdup" (String) Int)
+
+(defmacro rt-ld64 (a) (ffi-call "%load64" a 1))
+(defmacro rt-st64 (a v) (ffi-call "%store64" a v 1))
+
+; Logical right shift.
+(defn rt-lshr (x n) (bit-and (shr x n) (- (shl 1 (- 64 n)) 1)))
+
+; A C int field, sign-extended.
+(defn rt-ld32s (a) (let v (ffi-call "%load32" a 1) (if (> v 2147483647) (- v 4294967296) v)))
+
+; splitmix64 finalizer: addresses are 16-byte aligned, so identity would cluster.
+(defn rt-addr-hash (k)
+  (let x1 (* (bit-xor k (rt-lshr k 30)) -4658895280553007687)
+    (let x2 (* (bit-xor x1 (rt-lshr x1 27)) -7723592293110705685)
+      (bit-xor x2 (rt-lshr x2 31)))))
+
+(defn rt-int-text-heap (n) (ffi-call "zyl_int_text" n 1))
+
+; --- open-addressed address table: {slots, cap, len}; a slot is {key, a 16-byte payload word} ---
+
+; Grows by eight: millions of spans reach their size in four steps.
+(defn rt-atab-grow (t first)
+  (let cap (rt-ld64 (+ t 8))
+    (let ncap (if (= cap 0) first (* cap 8))
+      (let ns (ffi-call "calloc" ncap 16 1)
+        (if (= ns 0) 0
+          (let old (rt-ld64 t)
+            (let _ (rt-atab-rehash old cap ns (- ncap 1) 0)
+              (let _ (ffi-call "free" old 1)
+                (let _ (rt-st64 t ns) (rt-st64 (+ t 8) ncap))))))))))
+
+(defn rt-atab-rehash (old cap ns m i)
+  (if (>= i cap) 0
+    (let s (+ old (* i 16))
+      (let k (rt-ld64 s)
+        (let _ (if (= k 0) 0
+                 (let j (rt-atab-free-slot ns m (bit-and (rt-addr-hash k) m))
+                   (let _ (rt-st64 (+ ns (* j 16)) k) (rt-st64 (+ ns (+ (* j 16) 8)) (rt-ld64 (+ s 8))))))
+          (rt-atab-rehash old cap ns m (+ i 1)))))))
+
+(defn rt-atab-free-slot (ns m i) (if (= (rt-ld64 (+ ns (* i 16))) 0) i (rt-atab-free-slot ns m (bit-and (+ i 1) m))))
+
+; Slot address for key k, inserting it (len + 1) when absent; 0 when the table cannot grow.
+(defn rt-atab-slot (t k first)
+  (let _ (if (>= (* (rt-ld64 (+ t 16)) 10) (* (rt-ld64 (+ t 8)) 7)) (rt-atab-grow t first) 0)
+    (let cap (rt-ld64 (+ t 8))
+      (if (= cap 0) 0
+        (let s (rt-atab-probe (rt-ld64 t) (- cap 1) k (bit-and (rt-addr-hash k) (- cap 1)))
+          (if (= (rt-ld64 s) 0) (let _ (rt-st64 s k) (let _ (rt-st64 (+ t 16) (+ (rt-ld64 (+ t 16)) 1)) s)) s))))))
+
+; The slot holding k or the empty slot where k would go.
+(defn rt-atab-probe (slots m k i)
+  (let s (+ slots (* i 16))
+    (let sk (rt-ld64 s)
+      (if (or (= sk 0) (= sk k)) s (rt-atab-probe slots m k (bit-and (+ i 1) m))))))
+
+; The slot holding k, or 0.
+(defn rt-atab-find (t k)
+  (let cap (rt-ld64 (+ t 8))
+    (if (or (= k 0) (= cap 0)) 0
+      (let s (rt-atab-probe (rt-ld64 t) (- cap 1) k (bit-and (rt-addr-hash k) (- cap 1)))
+        (if (= (rt-ld64 s) 0) 0 s)))))
+
+; --- source spans: payload is {int off, int fid} ---
+
+(defn rt-spans () (ffi-call "%global" "spans" 24 1))
+
+(defn zyl_span_set (node off fid)
+  (if (= (rt-w node) 0) 0
+    (let s (rt-atab-slot (rt-spans) (rt-w node) 4096)
+      (if (= s 0) 0
+        (let _ (ffi-call "%store32" (+ s 8) (bit-and off 4294967295) 1)
+          (let _ (ffi-call "%store32" (+ s 12) (bit-and fid 4294967295) 1) 0))))))
+
+(defn zyl_span_off (node) (let s (rt-atab-find (rt-spans) (rt-w node)) (if (= s 0) -1 (rt-ld32s (+ s 8)))))
+
+(defn zyl_span_file (node) (let s (rt-atab-find (rt-spans) (rt-w node)) (if (= s 0) -1 (rt-ld32s (+ s 12)))))
+
+; Fields are read before the set, which may rehash.
+(defn zyl_span_copy (dst src)
+  (let s (rt-atab-find (rt-spans) (rt-w src))
+    (if (= s 0) 0 (zyl_span_set dst (rt-ld32s (+ s 8)) (rt-ld32s (+ s 12))))))
+
+; --- node attribute tables 0..5 ---
+
+(defn rt-attr-tab (t) (+ (ffi-call "%global" "attrs" 144 1) (* t 24)))
+
+(defn zyl_attr_set (t node val)
+  (if (or (= (rt-w node) 0) (or (< t 0) (>= t 6))) 0
+    (let s (rt-atab-slot (rt-attr-tab t) (rt-w node) 4096)
+      (if (= s 0) 0 (let _ (rt-st64 (+ s 8) val) 0)))))
+
+(defn zyl_attr_get (t node)
+  (if (or (< t 0) (>= t 6)) 0
+    (let s (rt-atab-find (rt-attr-tab t) (rt-w node)) (if (= s 0) 0 (rt-ld64 (+ s 8))))))
+
+(defn zyl_attr_clear (t)
+  (if (or (< t 0) (>= t 6)) 0
+    (let tb (rt-attr-tab t)
+      (if (= (rt-ld64 (+ tb 8)) 0) 0
+        (let _ (rt-zero (rt-ld64 tb) (* (rt-ld64 (+ tb 8)) 16)) (let _ (rt-st64 (+ tb 16) 0) 0))))))
+
+(defn rt-zero (p n) (if (<= n 0) 0 (let _ (rt-st64 p 0) (rt-zero (+ p 8) (- n 8)))))
+
+(defn zyl_attr_copy (t dst src)
+  (let v (zyl_attr_get t src) (if (= v 0) 0 (let _ (zyl_attr_set t dst v) 0))))
+
+; --- string maps: handle {slots, cap, len}; a slot is {key copy, val, hash} ---
+
+; Eight bytes per step, then the tail, then the splitmix finalizer; layout-only, never observable.
+(defn rt-str-hash (p) (rt-str-hash-n p (rt-strlen p) 0 -3750763034362895579))
+
+(defn rt-str-hash-n (p n i h)
+  (if (<= (+ i 8) n)
+    (rt-str-hash-n p n (+ i 8) (* (bit-xor h (ffi-call "%load64" (+ p i) 1)) -7046029254386353131))
+    (if (< i n) (rt-str-hash-n p n (+ i 1) (* (bit-xor h (rt-ld8 (+ p i))) 1099511628211)) (rt-addr-hash (bit-xor h n)))))
+
+(defn zyl_smap_new () (ffi-call "calloc" 1 24 1))
+
+(defn rt-smap-grow (m)
+  (let cap (rt-ld64 (+ m 8))
+    (let ncap (if (= cap 0) 1024 (* cap 4))
+      (let ns (ffi-call "calloc" ncap 24 1)
+        (if (= ns 0) 0
+          (let old (rt-ld64 m)
+            (let _ (rt-smap-rehash old cap ns (- ncap 1) 0)
+              (let _ (ffi-call "free" old 1) (let _ (rt-st64 m ns) (rt-st64 (+ m 8) ncap))))))))))
+
+(defn rt-smap-rehash (old cap ns mask i)
+  (if (>= i cap) 0
+    (let s (+ old (* i 24))
+      (let _ (if (= (rt-ld64 s) 0) 0
+               (let d (+ ns (* (rt-smap-empty ns mask (bit-and (rt-ld64 (+ s 16)) mask)) 24))
+                 (let _ (rt-st64 d (rt-ld64 s)) (let _ (rt-st64 (+ d 8) (rt-ld64 (+ s 8))) (rt-st64 (+ d 16) (rt-ld64 (+ s 16)))))))
+        (rt-smap-rehash old cap ns mask (+ i 1))))))
+
+(defn rt-smap-empty (ns mask i) (if (= (rt-ld64 (+ ns (* i 24))) 0) i (rt-smap-empty ns mask (bit-and (+ i 1) mask))))
+
+; The slot holding key k (hash h) or the empty slot where it would go.
+(defn rt-smap-probe (slots mask k h i)
+  (let s (+ slots (* i 24))
+    (let sk (rt-ld64 s)
+      (if (= sk 0) s
+        (if (and (= (rt-ld64 (+ s 16)) h) (= (rt-strcmp sk k) 0)) s (rt-smap-probe slots mask k h (bit-and (+ i 1) mask)))))))
+
+(defn rt-smap-find (m k)
+  (if (or (= m 0) (or (= k 0) (= (rt-ld64 (+ m 8)) 0))) 0
+    (let mask (- (rt-ld64 (+ m 8)) 1)
+      (let h (rt-str-hash k)
+        (let s (rt-smap-probe (rt-ld64 m) mask k h (bit-and h mask))
+          (if (= (rt-ld64 s) 0) 0 s))))))
+
+; Keys are copied: a REPL entry's arena (and its strings) is released.
+(defn zyl_smap_put (m key val)
+  (let k (rt-w key)
+    (if (or (= m 0) (= k 0)) 0
+      (let _ (if (>= (* (rt-ld64 (+ m 16)) 10) (* (rt-ld64 (+ m 8)) 7)) (rt-smap-grow m) 0)
+        (let cap (rt-ld64 (+ m 8))
+          (if (= cap 0) 0
+            (let h (rt-str-hash k)
+              (let s (rt-smap-probe (rt-ld64 m) (- cap 1) k h (bit-and h (- cap 1)))
+                (if (= (rt-ld64 s) 0)
+                  (let c (ffi-call "strdup" key 1)
+                    (if (= c 0) 0
+                      (let _ (rt-st64 s c) (let _ (rt-st64 (+ s 16) h) (let _ (rt-st64 (+ m 16) (+ (rt-ld64 (+ m 16)) 1)) (let _ (rt-st64 (+ s 8) val) 0))))))
+                  (let _ (rt-st64 (+ s 8) val) 0))))))))))
+
+(defn zyl_smap_get (m key) (let s (rt-smap-find m (rt-w key)) (if (= s 0) 0 (rt-ld64 (+ s 8)))))
+
+(defn zyl_smap_has (m key) (not (= (rt-smap-find m (rt-w key)) 0)))
+
+(defn zyl_smap_get_or (m key dflt) (let s (rt-smap-find m (rt-w key)) (if (= s 0) dflt (rt-ld64 (+ s 8)))))
+
+(defn rt-free-keys (slots i cap) (if (>= i cap) 0 (let _ (ffi-call "free" (rt-ld64 (+ slots (* i 24))) 1) (rt-free-keys slots (+ i 1) cap))))
+
+(defn zyl_smap_clear (m)
+  (if (= m 0) 0
+    (let cap (rt-ld64 (+ m 8))
+      (let _ (rt-free-keys (rt-ld64 m) 0 cap)
+        (let _ (if (> cap 0) (rt-zero (rt-ld64 m) (* cap 24)) 0) (let _ (rt-st64 (+ m 16) 0) 0))))))
+
+; --- word vectors: handle {data, len, cap} ---
+
+(defn zyl_wvec_new () (ffi-call "calloc" 1 24 1))
+
+; Appends x and returns its index; -1 when memory runs out.
+(defn zyl_wvec_push (v x)
+  (if (= v 0) -1
+    (let len (rt-ld64 (+ v 8))
+      (let ok (if (>= len (rt-ld64 (+ v 16)))
+                (let ncap (if (= (rt-ld64 (+ v 16)) 0) 4096 (* (rt-ld64 (+ v 16)) 2))
+                  (let nd (ffi-call "realloc" (rt-ld64 v) (* ncap 8) 1)
+                    (if (= nd 0) false (let _ (rt-st64 v nd) (let _ (rt-st64 (+ v 16) ncap) true)))))
+                true)
+        (if ok (let _ (rt-st64 (+ (rt-ld64 v) (* len 8)) x) (let _ (rt-st64 (+ v 8) (+ len 1)) len)) -1)))))
+
+(defn zyl_wvec_get (v i)
+  (let len (if (= v 0) 0 (rt-ld64 (+ v 8)))
+    (if (or (= v 0) (or (< i 0) (>= i len)))
+      (ffi-call "zyl_panic" (str-concat "E_INDEX_OUT_OF_BOUNDS: vector index " (str-concat (rt-int-text-heap i) (str-concat " outside length " (rt-int-text-heap len)))) 1)
+      (rt-ld64 (+ (rt-ld64 v) (* i 8))))))
+
+(defn zyl_wvec_set (v i x)
+  (if (or (= v 0) (or (< i 0) (>= i (rt-ld64 (+ v 8))))) 0 (let _ (rt-st64 (+ (rt-ld64 v) (* i 8)) x) 0)))
+
+(defn zyl_wvec_len (v) (if (= v 0) 0 (rt-ld64 (+ v 8))))
+
+(defn zyl_wvec_pop (v)
+  (if (or (= v 0) (<= (rt-ld64 (+ v 8)) 0))
+    (ffi-call "zyl_panic" "E_INDEX_OUT_OF_BOUNDS: pop from an empty vector" 1)
+    (let n (- (rt-ld64 (+ v 8)) 1) (let _ (rt-st64 (+ v 8) n) (rt-ld64 (+ (rt-ld64 v) (* n 8)))))))
+
+(defn zyl_wvec_truncate (v n)
+  (if (and (> v 0) (and (>= n 0) (< n (rt-ld64 (+ v 8))))) (let _ (rt-st64 (+ v 8) n) 0) 0))
+
+; Process-wide instances 0..7, created on first use.
+(defn rt-global-handle (tab i mk)
+  (if (or (< i 0) (>= i 8)) 0
+    (let c (+ tab (* i 8))
+      (if (= (rt-ld64 c) 0) (let _ (rt-st64 c (if mk (zyl_wvec_new) (zyl_smap_new))) (rt-ld64 c)) (rt-ld64 c)))))
+
+(defn zyl_wvec_global (i) (rt-global-handle (ffi-call "%global" "gwvecs" 64 1) i true))
+(defn zyl_smap_global (i) (rt-global-handle (ffi-call "%global" "gsmaps" 64 1) i false))
+
+; --- def cells: a map from canonical key to a one-word cell ---
+
+; Getters pass the same rodata literal each time, so the cell is cached by key address; cleared with the cells.
+(defn rt-cells-cached (slot key)
+  (let c (rt-atab-find (+ slot 8) (rt-w key))
+    (if (> c 0) (rt-ld64 (+ c 8))
+      (let m (rt-ld64 slot)
+        (let cell (if (= m 0) 0 (zyl_smap_get m key))
+          (let _ (if (= cell 0) 0 (rt-cache-cell slot key cell)) cell))))))
+
+(defn rt-cache-cell (slot key cell)
+  (let s (rt-atab-slot (+ slot 8) (rt-w key) 1024) (if (= s 0) 0 (rt-st64 (+ s 8) cell))))
+
+; Interpreter keys may be arena strings whose addresses get reused, so only compiled getters use the cache.
+(defn rt-cells-cell (slot key cached)
+  (if cached (rt-cells-cached slot key) (let m (rt-ld64 slot) (if (= m 0) 0 (zyl_smap_get m key)))))
+
+(defn rt-cells-get (slot key cached) (let c (rt-cells-cell slot key cached) (if (= c 0) 0 (rt-ld64 c))))
+
+(defn rt-cells-ready (slot key cached) (not (= (rt-cells-cell slot key cached) 0)))
+
+(defn rt-cells-put (slot key val cached)
+  (let _ (if (= (rt-ld64 slot) 0) (rt-st64 slot (zyl_smap_new)) 0)
+    (let c (ffi-call "malloc" 8 1)
+      (if (= c 0) val
+        (let _ (rt-st64 c val)
+          (let _ (zyl_smap_put (rt-ld64 slot) key c)
+            (let _ (if cached (rt-cache-cell slot key (zyl_smap_get (rt-ld64 slot) key)) 0) val)))))))
+
+(defn rt-cells-clear (slot)
+  (let _ (if (= (rt-ld64 slot) 0) 0 (zyl_smap_clear (rt-ld64 slot)))
+    (let t (+ slot 8)
+      (let _ (if (= (rt-ld64 (+ t 8)) 0) 0 (rt-zero (rt-ld64 t) (* (rt-ld64 (+ t 8)) 16))) (let _ (rt-st64 (+ t 16) 0) 0)))))
+
+; {map, cache slots, cache cap, cache len}
+(defn rt-defs () (ffi-call "%global" "def_cells" 32 1))
+(defn rt-idefs () (ffi-call "%global" "idef_cells" 32 1))
+(defn rt-repl-defs () (ffi-call "%global" "repl_globals" 8 1))
+
+(defn zyl_global_clear () (rt-cells-clear (rt-defs)))
+(defn zyl_global_ready (key) (rt-cells-ready (rt-defs) key true))
+(defn zyl_global_get (key) (rt-cells-get (rt-defs) key true))
+(defn zyl_global_put (key val) (rt-cells-put (rt-defs) key val true))
+
+(defn zyl_iglobal_clear () (rt-cells-clear (rt-idefs)))
+(defn zyl_iglobal_ready (key) (rt-cells-ready (rt-idefs) key false))
+(defn zyl_iglobal_get (key) (rt-cells-get (rt-idefs) key false))
+(defn zyl_iglobal_put (key val) (rt-cells-put (rt-idefs) key val false))
+
+(defn zyl_repl_global_set (name word)
+  (let s (rt-repl-defs)
+    (let _ (if (= (rt-ld64 s) 0) (rt-st64 s (zyl_smap_new)) 0) (let _ (zyl_smap_put (rt-ld64 s) name word) 0))))
+
+(defn zyl_repl_global_get (name) (let m (rt-ld64 (rt-repl-defs)) (if (= m 0) 0 (zyl_smap_get m name))))
+
+; --- diagnostics helpers ---
+
+(defn zyl_contract_warn (msg)
+  (let m (if (= (rt-w msg) 0) "contract violated" msg)
+    (let line (str-concat "warning: " (str-concat m "\n"))
+      (let _ (ffi-call "write" 2 line (rt-strlen (rt-w line)) 1) 0))))
+
+; A recover arm naming a code matches a message starting with it, then ':' or the end.
+(defn zyl_err_is (msg code)
+  (let m (rt-w msg)
+    (let c (rt-w code)
+      (if (or (= m 0) (= c 0)) false
+        (let n (rt-strlen c)
+          (if (rt-prefix-eq m c n) (let t (rt-ld8 (+ m n)) (or (= t 58) (= t 0))) false))))))
+
+; strncmp(m, c, n) == 0 where c has length n.
+(defn rt-prefix-eq (m c n) (if (= n 0) true (if (= (rt-ld8 m) (rt-ld8 c)) (rt-prefix-eq (+ m 1) (+ c 1) (- n 1)) false)))

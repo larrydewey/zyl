@@ -438,6 +438,31 @@ as recorded below.
 
 # Session log (newest first)
 
+## Session (2026-09-28, later still) — runtime in Zyl: variants, compiler tables, modules
+
+- The runtime is split into modules under runtime/rt/ (base, cpu, cstr,
+  text, variant, ctab), and rt.zyl is only the entry. A runtime module
+  may `use` its siblings only; a standard-library module is refused at
+  every level (`mr-target-pkg`, `scripts/runtime-module-lock`).
+- Ported and deleted from the C:
+  - `zyl_variant_eq`, `_cmp` and `_field`;
+  - the span table, node attribute tables 0-5, string maps, word
+    vectors, the global handles and the `def` cells
+    (`zyl_global_*`, `zyl_iglobal_*`, `zyl_repl_global_*`);
+  - `zyl_contract_warn` and `zyl_err_is`.
+- Smap hashing is word-at-a-time and each slot stores its hash, so a
+  mismatch skips `strcmp`. The slot layout is private to the runtime,
+  and the table is never iterated, so no output changes.
+- A compiled `def` getter passes the same rodata literal on every call,
+  so the def cells are cached by key address. The cache is cleared with
+  the cells. Interpreter keys may be reused arena addresses, so the
+  `iglobal_*` path stays uncached.
+- Perf, like-for-like (same stage2.s, only the runtime swapped): a
+  self-compile takes 2.19 s with the Zyl runtime vs 2.42 s with HEAD's
+  C, 5 runs each. Before, `zyl_smap_get` alone was 33% of the C
+  compiler's time, most of it the def-cell lookups.
+- Test: `regression/runtime-ctab`. The suite passes 279/279.
+
 ## Session (2026-09-28, later still) — runtime in Zyl, stage 3a: strings and number text
 
 - Ported to `runtime/rt/rt.zyl` and deleted from the C (prototypes now
