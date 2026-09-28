@@ -100,16 +100,18 @@
           (let _ (ffi-call "%store32" (+ dst (- n 4)) (ffi-call "%load32" (+ src (- n 4)) 1) 1) dst))
         (rt-copy-bytes dst src n)))))
 
-; 16-byte blocks, then one last block ending exactly at n (it may overlap the previous one); 64 at a time with AVX2 when large.
+; 16-byte blocks, then one last block ending exactly at n (it may overlap the previous one); 64 a step when large.
 (defn rt-copy-16 (dst src n)
-  (if (and (>= n 256) (rt-avx2)) (rt-copy-64 dst src n)
+  (if (>= n 256) (rt-copy-64 dst src n)
     (rt-copy-16s dst src n)))
 
 (defn rt-copy-64 (dst src n)
   (if (>= n 64)
-    (let _ (ffi-call "%v256-copy" dst src 1)
-      (let _ (ffi-call "%v256-copy" (+ dst 32) (+ src 32) 1)
-        (rt-copy-64 (+ dst 64) (+ src 64) (- n 64))))
+    (let _ (ffi-call "%v128-copy" dst src 1)
+      (let _ (ffi-call "%v128-copy" (+ dst 16) (+ src 16) 1)
+        (let _ (ffi-call "%v128-copy" (+ dst 32) (+ src 32) 1)
+          (let _ (ffi-call "%v128-copy" (+ dst 48) (+ src 48) 1)
+            (rt-copy-64 (+ dst 64) (+ src 64) (- n 64))))))
     (if (> n 16) (rt-copy-16s dst src n)
       (if (> n 0) (ffi-call "%v128-copy" (+ dst (- n 16)) (+ src (- n 16)) 1) dst))))
 

@@ -2561,7 +2561,8 @@
                                     (str-concat "    mov " (str-concat dr (str-concat ", " addr))))))
                       (let st2 (cg-emit-line st1 line) (if dm (mb-set st2 fr d "rax") st2)))))
                 st1)
-              (let vm (mb-in-mem fr v)
+              ; a byte of rsi/rdi goes through cl (sil/dil need a REX prefix the Zyl assembler omits)
+              (let vm (or (mb-in-mem fr v) (and (= (bit-and kind 3) 0) (mb-no-low8 (mb-loc-text fr v))))
                 (let st2 (if vm (cg-emit-line st1 (str-concat "    mov rcx, " (mb-loc-text fr v))) st1)
                   (let vr (if vm "rcx" (mb-loc-text fr v))
                     (let k (bit-and kind 3)
@@ -4177,9 +4178,8 @@
                   (Cons (str-concat "    mov rax, " (mb-loc-text fr a))
                   (Cons "    mov rcx, rax"
                   (Cons (str-concat "    sub rcx, " (ffi-call "zyl_int_text" m 1000))
-                  (Cons (str-concat "    cmp rax, " (ffi-call "zyl_int_text" m 1000))
-                  (Cons "    cmovge rax, rcx" Nil))))))
-                fr d "rax")
+                  (Cons "    cmovs rcx, rax" Nil)))))
+                fr d "rcx")
         st))
     (MTls d sym vs
       (match vs
@@ -4208,6 +4208,8 @@
         (cg-emit-line (mb-leave (mb-exit-region st2 fr) fr) "    ret")))
     (MParam _ _ st)))
 
+(defn mb-no-low8 (r) (or (str-eq r "rsi") (str-eq r "rdi")))
+
 (defn mb-reg8 (r)
   (if (str-eq r "rsi") "sil" (if (str-eq r "rdi") "dil" (if (str-eq r "rbx") "bl" (if (str-eq r "rax") "al" (if (str-eq r "rcx") "cl" (str-concat r "b")))))))
 
@@ -4234,7 +4236,7 @@
                       (if (> kind 1)
                         (let st4 (if (< v -1)
                                    (cg-emit-line st3 (str-concat "    mov " (str-concat addr (str-concat ", " (ffi-call "zyl_int_text" (- -2 v) 1000)))))
-                                   (if (mb-in-mem fr v)
+                                   (if (or (mb-in-mem fr v) (mb-no-low8 (mb-loc-text fr v)))
                                      (cg-emit-lines st3 (Cons (str-concat "    mov rcx, " (mb-loc-text fr v)) (Cons (str-concat "    mov " (str-concat addr ", cl")) Nil)))
                                      (cg-emit-line st3 (str-concat "    mov " (str-concat addr (str-concat ", " (mb-reg8 (mb-loc-text fr v))))))))
                           (if (mb-live fr d)
