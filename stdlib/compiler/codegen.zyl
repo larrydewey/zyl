@@ -2748,6 +2748,8 @@
           (ml-array st env venv ms sym args)
           (ml-call st env venv ms sym false args (cg-site-level e))))))
     (IIf c t f
+      (if (and (ml-cheap c) (and (ml-cheap t) (ml-cmp-p c)))
+        (ml-if-cheap st env venv ms c t f)
       (let rr (ms-vreg ms)
         (let le (ms-label (mr-ms rr))
           (let lx (ms-label (mr-ms le))
@@ -2755,7 +2757,7 @@
               (let rt (ml-expr st env venv m1 t)
                 (let m2 (ms-emit (ms-emit (mr-ms rt) (MMov (mr-v rr) (mr-v rt))) (MJmp (mr-v lx)))
                   (let rf (ml-expr st env venv (ms-emit m2 (MLabel (mr-v le))) f)
-                    (MR (ms-emit (ms-emit (mr-ms rf) (MMov (mr-v rr) (mr-v rf))) (MLabel (mr-v lx))) (mr-v rr))))))))))
+                    (MR (ms-emit (ms-emit (mr-ms rf) (MMov (mr-v rr) (mr-v rf))) (MLabel (mr-v lx))) (mr-v rr)))))))))))
     (IWhile c b
       (let rr (ms-vreg ms)
         (let ls (ms-label (mr-ms rr))
@@ -2785,6 +2787,33 @@
     (IFlt t (ml-def ms (fn (d) (MFlt d t))))
     (ISymAddr t (ml-def ms (fn (d) (MSym d t))))
     (_ (ml-const ms 0))))
+
+; Constants, locals and arithmetic that cannot trap: no effect, so evaluating one early changes nothing.
+(defn ml-cheap (e)
+  (match e
+    (IConst _ true)
+    (ILoad _ true)
+    (IBinop op l r (and (not (or (= op 3) (= op 4))) (and (<= op 16) (and (ml-cheap-leaf l) (ml-cheap-leaf r)))))
+    (_ false)))
+
+(defn ml-cheap-leaf (e) (match e (IConst _ true) (ILoad _ true) (_ false)))
+
+(defn ml-cmp-p (c) (match c (IBinop op _ _ (and (>= op 5) (<= op 10))) (_ false)))
+
+(defn ml-neg-cmp (op) (if (= op 5) 8 (if (= op 8) 5 (if (= op 6) 7 (if (= op 7) 6 (if (= op 9) 10 9))))))
+
+; (if c t f), c and t cheap: r <- t, then skip f when c holds (one branch, no jump over f).
+(defn ml-if-cheap (st env venv ms c t f)
+  (let rr (ms-vreg ms)
+    (let lx (ms-label (mr-ms rr))
+      (let rt (ml-expr st env venv (mr-ms lx) t)
+        (let m1 (ms-emit (mr-ms rt) (MMov (mr-v rr) (mr-v rt)))
+          (match c
+            (IBinop op l r
+              (let m2 (ml-cond st env venv m1 (IBinop (ml-neg-cmp op) l r) (mr-v lx))
+                (let rf (ml-expr st env venv m2 f)
+                  (MR (ms-emit (ms-emit (mr-ms rf) (MMov (mr-v rr) (mr-v rf))) (MLabel (mr-v lx))) (mr-v rr)))))
+            (_ (MR m1 (mr-v rr)))))))))
 
 ; Fields first, in order, then the block, then the stores.
 (defn ml-variant (st env venv ms tag fs lvl reuse)
