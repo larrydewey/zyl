@@ -474,7 +474,7 @@
 ; Location 11 is rax, only for a result the next instruction returns (mir-ret-vregs).
 (defn mir-reg-name (r)
   (if (= r 1) "rsi" (if (= r 2) "rdi" (if (= r 3) "r8" (if (= r 4) "r9" (if (= r 5) "r10"
-  (if (= r 6) "rbx" (if (= r 7) "r12" (if (= r 8) "r13" (if (= r 9) "r14" (if (= r 10) "r15" "rax")))))))))))
+  (if (= r 6) "rbx" (if (= r 7) "r12" (if (= r 8) "r13" (if (= r 9) "r14" (if (= r 10) "r15" (if (= r 12) "r11" "rax"))))))))))))
 
 (defn mir-callee-saved (r) (and (>= r 6) (<= r 10)))
 
@@ -555,11 +555,13 @@
 
 ; `hint`: per vreg, a vreg + 1 whose register it would like (the source
 ; of the move that defines it), or 0.
-(defn mir-allocate (ivs nv hint)
+; r11 (location 12) is allocatable only when `r11` says no emitted sequence uses it as scratch.
+(defn mir-allocate (ivs nv hint r11)
   (let loc (w-alloc (mir-arena) (+ nv 1))
-    (let busy (w-alloc (mir-arena) 11)   ; register -> vreg + 1 while taken
-      (let nsp (mir-scan (mir-sort-iv ivs) Nil loc busy 0 hint)
-        (Alloc loc nsp)))))
+    (let busy (w-alloc (mir-arena) 13)   ; register -> vreg + 1 while taken
+      (let _ (if r11 unit (let _ (w-set busy 12 -1) unit))
+        (let nsp (mir-scan (mir-sort-iv ivs) Nil loc busy 0 hint)
+          (Alloc loc nsp))))))
 
 ; The source of each MMov, recorded against its destination.
 (defn mir-hints (a n nv)
@@ -627,7 +629,7 @@
   (if crosses
     (mir-first-free busy 6 10)
     (let r (mir-first-free busy 1 5)
-      (if (> r 0) r (mir-first-free busy 6 10)))))
+      (if (> r 0) r (if (= (w-get busy 12) 0) 12 (mir-first-free busy 6 10))))))
 
 (defn mir-first-free (busy lo hi)
   (if (> lo hi) 0 (if (= (w-get busy lo) 0) lo (mir-first-free busy (+ lo 1) hi))))

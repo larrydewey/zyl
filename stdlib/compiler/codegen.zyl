@@ -3549,7 +3549,7 @@
       (let lin (mir-liveness a n nv (mir-label-pos a n nl))
         (let u (mir-use-counts instrs nv)
         (let rv (mir-ret-vregs a n nv u)
-        (let al (mir-set-locs (mir-allocate (mir-drop-ivs (mir-intervals a n nv lin u) rv) nv (mir-hints a n nv)) rv 11)
+        (let al (mir-set-locs (mir-allocate (mir-drop-ivs (mir-intervals a n nv lin u) rv) nv (mir-hints a n nv) (and (= rflags 0) (mb-r11-free instrs))) rv 11)
           (match (cg-label-new st)
             (CGR st1 _ base (mb-emit-fn st1 name al nv base instrs rflags blocks)))))))))))))
 
@@ -3562,6 +3562,26 @@
             (let fr (MF al saved rflags base bstart boffs)
               (let fsz (* 16 (/ (+ bend 15) 16))
                 (mb-emit-all (mb-prologue st name fr fsz (mb-needs-align instrs rflags)) fr instrs 0)))))))))
+
+; No instruction's sequence uses r11 as scratch (region sites, inline allocation, byte handles, array set, cas/fill/cpuid).
+(defn mb-r11-free (instrs)
+  (match instrs
+    (Nil true)
+    (Cons i t
+      (if (match i
+            (MCall _ _ _ _ lvl (> lvl 0))
+            (MTail _ _ lvl (> lvl 0))
+            (MAlloc _ _ _ true)
+            (MReuse _ _ _ _ true)
+            (MByte _ _ _ _ _ true)
+            (MByteData _ _ true)
+            (MByteBound _ _ true)
+            (MArr k _ _ _ _ (= k 1))
+            (MRaw k _ vs (or (>= (list-length vs) 3) (or (and (>= k 19) (<= k 22)) (or (= k 28) (= k 47)))))
+            (MRegionCycle true)
+            (_ false))
+        false
+        (mb-r11-free t)))))
 
 ; The frame is aligned to 16 only when the function itself calls C: a
 ; runtime call, an allocation or array slow path, a region operation. A
