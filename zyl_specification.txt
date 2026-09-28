@@ -87,6 +87,22 @@ P9. Testability
 
 1.5 Whitespace: token separator only.
 
+1.6 Delimiters and layout:
+    Outside a string or comment, every "(", "[" and "{" is closed by the
+    matching ")", "]" or "}", innermost first. A top-level form begins in
+    column 1 and no nested opener does: an opener in column 1 while a
+    form is still open means a closer is missing in that form. The check
+    runs on each file before it is read:
+        unclosed opener, or an opener in column 1 inside a form
+                                        -> E_UNBALANCED_UNCLOSED (at the
+                                           opener of the open form)
+        a closer with no opener         -> E_UNBALANCED_UNEXPECTED_CLOSE
+        a closer of the wrong kind      -> E_UNBALANCED_MISMATCHED_BRACKET
+        a string with no closing quote  -> E_UNTERMINATED_STRING (at its
+                                           opening quote)
+        a NUL byte                      -> E_INVALID_CHAR
+    Each is reported with its line and column (§28).
+
 ================================================================================
 2. ABSTRACT SYNTAX (AST)
 ================================================================================

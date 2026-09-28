@@ -89,7 +89,7 @@ in `docs/compiler-pipeline.md`.
 | File | Responsibility |
 |---|---|
 | `lexer.zyl` | Tokenizer; every token carries its source byte offset |
-| `sexp_balance.zyl` | Delimiter balance check with the location of the first fault |
+| `sexp_balance.zyl` | Delimiter check (spec §1.6): the lexer's string and comment rules, bracket kinds, the column-1 layout rule, the indentation hint, NUL detection and the whole-file reader; `zyl balance` runs it on its own |
 | `parser.zyl` | Dispatch-free reader: tokens to nested `Ast` lists |
 | `desugar.zyl` | Parse-tree rewrites of `with-resource`, `assert-fail`, `test-suite` (with fixtures) and `test-property` into ordinary forms |
 | `ast.zyl` | `Token`, `Ast`, and the immutable `Env`/`VTable` chains |

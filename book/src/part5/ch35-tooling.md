@@ -110,7 +110,13 @@ does links with `cc -no-pie`, `rt.o` and `-lpthread` (Chapter 29,
 
 `zyl eval file.zyl` runs a program through the REPL's interpreter
 instead: no assembly, no linker, a few milliseconds for a small
-program. It cannot run actors.
+program. Actors and channels run as in a compiled program.
+
+`zyl balance [file.zyl | dir ...]` checks delimiters, strings and the
+top-level layout (spec §1.6) without compiling: every `.zyl` file under
+a directory, each fault located, `--error-format=json` for machines, and
+status 1 when anything is unbalanced. It is the check every compile runs
+first, so use it after editing rather than counting brackets.
 
 `zyl doc` writes Markdown documentation from the source's comments,
 for one file or every `.zyl` file under a directory (sorted, so the

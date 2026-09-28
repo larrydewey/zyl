@@ -24,12 +24,12 @@ compile with `build/boot/zyl-self` on 2026-09-28.
   that stage2 == stage3, builds `rt.zo`, `zyl-self` and `zyl-lsp`, and
   refreshes an existing install. `./boot.sh --bootstrap-from-self`
   reseeds; see `docs/self-hosting.md`. A self-compile takes about 2.2 s.
-- `./run_regression_tests.sh --full --no-boot` passes **361/361** in
-  about 25 s: 103 regression, 85 interpreter (compiled vs interpreted
+- `./run_regression_tests.sh --full --no-boot` passes **366/366** in
+  about 25 s: 105 regression, 86 interpreter (compiled vs interpreted
   output, the interpreter in its tag-checking mode), 4 sched (actor
-  tests under `ZYL_SCHED=deterministic` and chaos seeds), 129
+  tests under `ZYL_SCHED=deterministic` and chaos seeds), 130
   compile-fail, 7 integration, 4 stress, 2 packages, 9 packages-fail, 1
-  packages-build, 15 scripts, the LSP protocol test (110 checks) and the
+  packages-build, 16 scripts, the LSP protocol test (110 checks) and the
   unit test. A compile-fail test may pin its code (`; expect-error:
   CODE`) and location (`; expect-at: FILE:LINE:COL`).
 - The specification is `zyl_specification.txt` **v5.0** (§0–§31);
@@ -92,6 +92,16 @@ compile with `build/boot/zyl-self` on 2026-09-28.
 - Contracts (spec §23): `requires`/`ensures`/`invariant` checks,
   `recover` arms by error code, `checkpoint` rollback of `let-mut`
   state, profiles (`--contracts=P`, `(contracts P)`).
+- Delimiters (spec §1.6, `sexp_balance.zyl`): every file is checked
+  before it is read, with the lexer's own rules (an agreement test
+  mutates real sources and compares with the lexer's tokens), bracket
+  kinds, and the column-1 layout rule that catches a missing closer
+  balanced by an extra one; the fix-it names the line where the
+  indentation first contradicts the nesting. Unterminated strings are
+  located at their quote, a NUL byte is `E_INVALID_CHAR`, and source
+  files are read whole (the 1 MiB cap is gone). `zyl balance [file | dir
+  ...]` runs the check alone (text or JSON, status 1 on a fault);
+  `.claude/settings.json` runs it after every agent edit.
 - Diagnostics: `error[CODE]`, `--> file:line:col`, the source line, a
   caret and a `= help:` line for every diagnostic that has a source
   node; "did you mean" on unbound names; labelled secondary spans on
@@ -148,7 +158,8 @@ compile with `build/boot/zyl-self` on 2026-09-28.
 ### Tools
 
 - CLI (`drv-usage`): `zyl <file.zyl> [-o out] [--emit-asm]`, the package
-  subcommands, `repl`, `eval <file.zyl>`, `doc [file|dir] [-o out.md]`.
+  subcommands, `repl`, `eval <file.zyl>`, `doc [file|dir] [-o out.md]`,
+  `balance [file|dir ...]`.
   The installed `zyl` starts the REPL when given no arguments.
 - REPL (`stdlib/repl/`, `docs/repl.md`): a line editor written in Zyl,
   history, highlighting, completion, and an ICNF interpreter that keeps
@@ -274,8 +285,9 @@ the zyl-skill repository (`~/git/larry/zyl-skill`).
    from the unused, shadowing and duplicate-parameter checks.
 3. Prefer flat `begin` sequences and recursion over deep nesting.
 4. `buf-append` appends at `strlen(dst)`; start from fresh buffers.
-5. Parens must balance per file; every module is balance-checked as its
-   own file (`sexp_balance.zyl`).
+5. Parens must balance per file, and a nested opener never starts in
+   column 1 (spec §1.6); check with `build/boot/zyl-self balance <file>`,
+   which the Claude Code hook also runs, never by counting.
 6. A match-arm body that combines a constant with two or more calls is
    `E_MATCH_ARM_COMPLEX`; bind the calls with `let` first.
 7. New syntax, and a new runtime entry the compiler itself calls, land

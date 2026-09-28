@@ -19,7 +19,7 @@ build it with `./boot.sh` first.
 ./run_regression_tests.sh --dry-run          # list the selected tests without running them
 ```
 
-A `--full --no-boot` run is 352 tests and takes well under a minute on a
+A `--full --no-boot` run is 366 tests and takes well under a minute on a
 current machine (22 s as of 2026-09-28). `--full` adds one more entry,
 `boot/fixed-point`, which runs `./boot.sh` and takes as long as a
 bootstrap does.
@@ -96,18 +96,18 @@ checkout's standard library, not an installed one.
 | Section | Source | Tests |
 |---------|--------|-------|
 | unit test | `tests/unit_test.zyl` | 1 |
-| regression | `tests/regression/*.zyl` | 103 |
+| regression | `tests/regression/*.zyl` | 105 |
 | stress | `tests/stress/*.zyl` | 4 |
 | integration | `tests/integration/*.zyl` | 7 |
-| interpreter agreement | regression + smoke, minus `DIFF_SKIP` | 85 |
+| interpreter agreement | regression + smoke, minus `DIFF_SKIP` | 86 |
 | schedule agreement | the four actor regression files | 4 |
 | packages | `tests/packages/*/app/main.zyl` | 2 |
 | packages-fail | `tests/packages-fail/*/app/main.zyl` | 9 |
 | packages-build | `tests/packages-build/*/app` via `zyl build` | 1 |
-| compile-fail | `tests/compile-fail/*.zyl` | 120 |
-| scripts | `tests/scripts/*.sh` | 15 |
+| compile-fail | `tests/compile-fail/*.zyl` | 130 |
+| scripts | `tests/scripts/*.sh` | 16 |
 | LSP protocol | `tests/lsp/lsp_protocol_test.py` | 1 |
-| **total** | | **352** |
+| **total** | | **366** |
 
 `--quick` is 7 tests: the unit test, the five smoke tests and the LSP
 protocol test.
@@ -182,7 +182,7 @@ panic.
 ```
 tests/
 ├── unit_test.zyl              # Harness + stdlib tests (runs in --quick and --full)
-├── regression/                # 103 domain-specific regression files (--full)
+├── regression/                # 105 domain-specific regression files (--full)
 │   ├── arithmetic.zyl         # +, -, *, /, multi-operand, float chains
 │   ├── bitwise.zyl            # bit-and/or/xor/not, shifts, n-ary folding
 │   ├── eval-order.zyl         # strict left-to-right evaluation
@@ -247,6 +247,10 @@ tests/
 │   ├── secret-capability.zyl  # Secret / constant-time checker, accepting side
 │   ├── secret-types.zyl       # Secret types and impl-not, accepting side
 │   ├── compiler.zyl           # stdlib/compiler: lexer, parser, AST types
+│   ├── balance.zyl            # the delimiter check: every fault, the column-1
+│   │                          #   rule, the indentation hint, strings, CRLF
+│   ├── balance-agreement.zyl  # the delimiter check against the lexer's tokens
+│   │                          #   on mutated compiler sources
 │   ├── intrinsics.zyl         # bit-popcount, clz/ctz, bswap, rotl/rotr,
 │   │                          #   mul-hi, crc32c against reference models
 │   ├── simd.zyl               # simd/simd lane vectors
@@ -280,11 +284,12 @@ tests/
 │   ├── parser-verify.zyl      # reader/parser structure checks
 │   ├── pv_min.zyl             # minimal reader smoke test
 │   └── selfhost-codegen.zyl   # compiler/icnf + codegen end to end
-├── compile-fail/              # 120 programs that MUST be rejected; 78 carry
+├── compile-fail/              # 130 programs that MUST be rejected; 88 carry
 │   │                          #   a `; expect-error: CODE` line
 │   ├── unclosed-opener.zyl    # balance errors
 │   ├── unexpected-close.zyl
 │   ├── mismatched-bracket.zyl
+│   ├── misplaced-paren.zyl    # a missing ) balanced by an extra one
 │   ├── type-*.zyl             # 10 type errors (mismatch, infinite type,
 │   │                          #   Bool conditions, Int/Float mixing, ...)
 │   ├── match-*.zyl            # 5 match errors (non-exhaustive, duplicate
@@ -315,6 +320,7 @@ tests/
 │   ├── asm-oracle.sh          # the Zyl assembler against GNU as
 │   │                          #   (asm_oracle.py generates the sweep)
 │   ├── self-link.sh           # freestanding self-link and rt.zo
+│   ├── balance-cli.sh         # zyl balance: files, directories, JSON, status
 │   ├── deterministic-link.sh, stdout-buffer.sh, ffi-stdio-order.sh
 │   ├── json-diagnostics.sh, located-diagnostics.sh
 │   ├── runtime-module-lock.sh # --runtime-module is refused elsewhere
@@ -476,7 +482,7 @@ the suite; its header gives the command and the expected output.
 
 - [ ] Golden output comparison (tracked as future work)
 - [ ] Parallel test execution
-- [ ] Every compile-fail test asserting its expected error code (78 of
-      the 120 carry `; expect-error: CODE`, and 7 of the 9 packages-fail
+- [ ] Every compile-fail test asserting its expected error code (88 of
+      the 130 carry `; expect-error: CODE`, and 7 of the 9 packages-fail
       cases)
 - [ ] CI integration

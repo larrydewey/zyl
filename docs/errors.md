@@ -106,9 +106,9 @@ codes spec §28 lists by name.
 | `E_FLOAT_OVERFLOW` | lexer: float overflow in literal L at S | catalog only |
 | `E_INTEGER_OVERFLOW` | lexer: integer overflow in literal L at S | catalog only |
 | `E_INVALID_ESCAPE` (§28) | lexer: invalid escape sequence in a string literal at S | `parser.zyl` (located): a backslash escape other than `\n`, `\t`, `\r`, `\0`, `\"`, `\\`, `\e` and `\xNN`, checked before the string is decoded |
-| `E_INVALID_CHAR` | lexer: invalid character C at S | `parser.zyl` (located): a character that begins no token, such as `#`, `$` or a lone `@` outside a string or comment (`'`, `` ` ``, `,` and `,@` are the quote, quasiquote, unquote and splice tokens) |
+| `E_INVALID_CHAR` | lexer: invalid character C at S | `parser.zyl` (located): a character that begins no token, such as `#`, `$` or a lone `@` outside a string or comment (`'`, `` ` ``, `,` and `,@` are the quote, quasiquote, unquote and splice tokens); also a NUL byte in a source file (`check-no-nul`) |
 | `E_UNEXPECTED_EOF` | lexer: unexpected EOF while expecting C at S | catalog only |
-| `E_UNTERMINATED_STRING` | lexer: unterminated string at S | `parser.zyl` (balance check, located) |
+| `E_UNTERMINATED_STRING` | lexer: unterminated string at S | `sexp_balance.zyl` (located at the opening quote; the compiler, the language server and `zyl balance`) |
 
 ### Parser (phase 2)
 
@@ -124,9 +124,9 @@ codes spec §28 lists by name.
 | `E_MALFORMED_FORM` (§28) | parser: special form F has arguments of the wrong shape at S | `arity_check.zyl` (located): a special form whose parser rejected its shape (`expr_inner.zyl` builds an `EUnknown` node for it), such as `(let x 1)` with no body, a trait method whose parameters are not a list, `test` or `defmacro` with more than one body, a malformed `extern`, or `(quote)`/`(quote a b)`. Such a form used to compile to the constant 0. `expr_inner.zyl` (located, `quote-name-fail`): a name inside quoted data, `'(1 x)`, which has no value since there is no symbol type; `expr_inner.zyl` (located, `parse-quasiquote`): a malformed quasiquote (a name outside an unquote, a nested quasiquote, a `,@e` that is not a list element, an unquote or splice without one operand); `arity_check.zyl` (located): a `,` or `,@` outside a quasiquote and a macro template; `macro_expand.zyl` (located): in a template, a `,@` into a form that takes a fixed number of expressions (`me-kids`), or of anything but the `&rest` parameter (`me-splice-of`); `parser.zyl` (located, `prefix-alone-fail`): a quote or unquote with no form after it, as in `{ a, }`; `module_resolver.zyl` (located, `mr-sym-ident`): a non-name in an import list, as in `{ a, b }`; `expr_inner.zyl` (located, `if-extra-fail`): a form after an `if`'s else branch |
 | `E_RESERVED_KEYWORD` (§28) | parser: reserved keyword K cannot be used as identifier at S | catalog only |
 | `E_UNBALANCED_PARENS` | parser: unbalanced parens - open and close counts differ | catalog only (the old depth-counter check; superseded by the three below) |
-| `E_UNBALANCED_UNCLOSED` | parser: unclosed opener - opened at S, never reached its matching closer | `parser.zyl` via `sexp_balance.zyl` (located at the opener) |
+| `E_UNBALANCED_UNCLOSED` | parser: unclosed opener - opened at S, never reached its matching closer | `sexp_balance.zyl` (located at the opener): an opener never closed, or an opener in column 1 while a form is still open (spec §1.6), which is how a missing closer balanced by an extra one is caught; the help names the line where the indentation first contradicts the nesting |
 | `E_UNBALANCED_UNEXPECTED_CLOSE` | parser: unexpected closing delimiter at S - no opener is open here | `parser.zyl` via `sexp_balance.zyl` (located) |
-| `E_UNBALANCED_MISMATCHED_BRACKET` | parser: closing delimiter at S does not match its opener | `parser.zyl` via `sexp_balance.zyl` (located), e.g. `(...]` |
+| `E_UNBALANCED_MISMATCHED_BRACKET` | parser: closing delimiter at S does not match its opener | `sexp_balance.zyl` (located at the closer, with a label at the opener), e.g. `(defn main (] ...)` |
 | `E_UNEXPECTED_TOKEN_IN_EXPR` | parser: unexpected token T in expression context at S | `expr_inner.zyl` (endian keyword, `bytebuf` capacity) |
 
 The balance check runs on the whole source before parsing
@@ -342,7 +342,6 @@ All raised by the package modules named; all are §28 codes except
 | `E_DUPLICATE_PARAMETER` | error | `unused_check.zyl` | two parameters of one `defn`/`fn`/`lambda` share a name |
 | `E_ASM_UNSUPPORTED` | error | `asm_x86.zyl` | the Zyl assembler met an instruction or operand form it does not encode (a codegen or runtime change emitted one; `ZYL_EXTERNAL_LD=1` links with `cc` instead) |
 | `E_LINK_UNDEFINED`, `E_LINK_UNDEFINED_GOT` | error | `elf_link.zyl` | a strong symbol (or a GOT entry's symbol) is defined neither by the program nor by `rt.zo` |
-| `E_UNBALANCED_OPEN_STRING` | error | `stdlib/lsp/compiler_bridge.zyl` | the language server's balance check: a string literal is still open at the end of the document |
 | `W_UNUSED_FUNCTION` | warning | `unused_check.zyl` | catalogued, not raised: the check cannot yet tell the program's functions from the standard library's |
 | `W_UNUSED_PARAMETER` | warning | `unused_check.zyl` | a parameter is never used (`_` and `_`-prefixed names are exempt) |
 | `W_UNUSED_VARIABLE` | warning | `unused_check.zyl` | a `let`/`let-mut`/`for` binding is never used |

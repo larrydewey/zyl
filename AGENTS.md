@@ -185,7 +185,7 @@ minute.
 The CLI (`selfhost/driver.zyl`, `drv-usage`): `zyl <file.zyl> [-o out]
 [--emit-asm]`, `new`, `add`, `fetch`, `build [--locked]`, `test`,
 `update`, `vendor`, `audit`, `publish`, `key`, `repl`, `eval <file.zyl>`,
-`doc [file|dir] [-o out.md]`.
+`doc [file|dir] [-o out.md]`, `balance [file|dir ...]`.
 
 ## Regression Tests
 
@@ -215,7 +215,22 @@ the unit test.
 
 Full test infrastructure documented in `docs/regression-tests.md`. All tests use the `(test "name" (assert-equal ...))` harness defined in `stdlib/testing/testing.zyl`.
 
-**S-expression balance** is critical — always run `./run_regression_tests.sh --full --no-boot --filter balanced-parens` after modifying parser/lexer (the delimiter compile-fail tests are `unclosed-opener`, `unexpected-close` and `mismatched-bracket`).
+**S-expression balance** is critical. After editing any `.zyl` file, check it with
+the compiler's own balancer, never by counting delimiters by hand or with a script:
+
+```bash
+build/boot/zyl-self balance path/to/file.zyl    # or a directory; exit 1 with a located report
+```
+
+It follows the lexer's rules exactly and enforces spec §1.6: a top-level form starts
+in column 1 and no nested opener does, which catches a missing `)` balanced by an extra
+one elsewhere. The project's Claude Code hook (`.claude/settings.json`,
+`tools/hooks/balance-check.sh`) runs it after every edit and shell command that changes
+a `.zyl` file and returns the report. After modifying the lexer, parser or
+`sexp_balance.zyl`, run `./run_regression_tests.sh --full --no-boot --filter balance`
+(the unit tests, the agreement test against the lexer, `scripts/balance-cli`) and the
+compile-fail tests `unclosed-opener`, `unexpected-close`, `mismatched-bracket` and
+`misplaced-paren`.
 
 ## Architecture Notes
 

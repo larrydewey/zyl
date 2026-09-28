@@ -222,6 +222,23 @@ every opener has a closer of the same kind. It reports
 `E_UNBALANCED_UNCLOSED`, `E_UNBALANCED_UNEXPECTED_CLOSE` or
 `E_UNBALANCED_MISMATCHED_BRACKET` with the offending position and a hint.
 
+It also enforces one layout rule (spec §1.6): a top-level form starts in
+column 1, and no nested opener does. A misplaced paren that leaves the
+count even, a missing `)` balanced by an extra one later, is still
+caught, because the form after it starts in column 1 while the broken
+one is open:
+
+```
+error[E_UNBALANCED_UNCLOSED]: this form is still open where a new top-level form starts at line 3
+  --> main.zyl:1:1
+   |
+ 1 | (defn g (x)
+   | ^
+   = help: insert ')' to close this form before line 3
+```
+
+Run the check on its own with `zyl balance file.zyl` (or a directory).
+
 ## 14.3 Comments and Unrecognized Characters
 
 ```

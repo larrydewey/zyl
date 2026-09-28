@@ -126,10 +126,21 @@ are no vector or map literals.
 `(unquote-splicing d)` (`read-prefixed`). The lexer reads `,@` as one
 token when `@` follows the comma directly (`lex-c3`).
 
-Before reading, `stdlib/compiler/sexp_balance.zyl` checks that every
-opener has a matching closer of the same kind and reports
-`E_UNBALANCED_UNCLOSED`, `E_UNBALANCED_UNEXPECTED_CLOSE` or
-`E_UNBALANCED_MISMATCHED_BRACKET` with the offending position.
+Before reading, `stdlib/compiler/sexp_balance.zyl` checks each file
+(§1.6). It follows the lexer's rules exactly (a `;` comment to the end of
+the line, a string to its unescaped `"`, a backslash taking the next byte,
+a newline included), and `tests/regression/balance-agreement.zyl` holds
+it to them on mutated compiler sources. Every opener needs a matching
+closer of the same kind (`E_UNBALANCED_UNCLOSED`,
+`E_UNBALANCED_UNEXPECTED_CLOSE`, `E_UNBALANCED_MISMATCHED_BRACKET`, the
+last with a label at the opener). An opener in column 1 while a form is
+still open is `E_UNBALANCED_UNCLOSED` at that form: this is what catches
+a missing closer that an extra one later balances, which no count can
+see. The fix-it names the line where the indentation first contradicts
+the nesting. An unterminated string is `E_UNTERMINATED_STRING` at its
+quote, and a NUL byte `E_INVALID_CHAR`. `zyl balance [file | dir ...]`
+runs the same check on its own. The REPL decides whether an entry is
+complete with the net check only (`sb-check-nets`).
 
 ### Comments
 

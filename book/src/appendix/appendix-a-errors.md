@@ -93,7 +93,7 @@ with its code split off the front of the message.
 
 | Code | Cause |
 |---|---|
-| `E_UNTERMINATED_STRING` | A string literal reached end of input with no closing quote |
+| `E_UNTERMINATED_STRING` | A string literal reached end of input with no closing quote; located at the quote |
 | `E_BYTE_VALUE_OOB` | A `byte` literal outside 0..255, or a non-integer argument to `byte` |
 | `E_INVALID_ESCAPE` | A backslash escape in a string literal that the lexer does not know |
 | `E_INVALID_CHAR` | A character that cannot begin any token, such as `#`, `$` or a lone `@` outside a string or comment, located at that byte. (`'`, `` ` ``, `,` and `,@` are the quote, quasiquote, unquote and splice tokens.) |
@@ -105,7 +105,7 @@ with its code split off the front of the message.
 
 | Code | Cause |
 |---|---|
-| `E_UNBALANCED_UNCLOSED` | An opener never reached its matching closer |
+| `E_UNBALANCED_UNCLOSED` | An opener never reached its matching closer, or an opener in column 1 inside a still-open form (spec §1.6) |
 | `E_UNBALANCED_UNEXPECTED_CLOSE` | A closing delimiter with no opener open |
 | `E_UNBALANCED_MISMATCHED_BRACKET` | A closer that does not match its opener |
 | `E_MALFORMED_PARAMETER` | A parameter that is neither a name nor `(name Type)` — usually a missing `)` |
@@ -121,8 +121,10 @@ with its code split off the front of the message.
 The balance check (`sexp_balance.zyl`) runs before parsing and is what
 an editor shows while you are still typing. Its diagnostics carry a
 fix-it hint, which the language server turns into a quick-fix code
-action. The language server also reports `E_UNBALANCED_OPEN_STRING`, an
-unterminated string found by that check; it is not in the catalog.
+action. The same check runs on its own as `zyl balance [file | dir ...]`,
+and it also enforces the layout rule of spec §1.6: an opener in column 1
+while a form is still open is `E_UNBALANCED_UNCLOSED` at that form, which
+catches a missing closer that an extra one elsewhere balances.
 
 Spec §1.3.1 makes every keyword in §1.3 reserved as an identifier, but
 enforcing that in definition forms is listed under FUTURE in §30, and
@@ -382,7 +384,6 @@ entry:
 |---|---|
 | `E_NON_EXHAUSTIVE_MATCH`, `E_UNREACHABLE_MATCH_ARM` | `exhaustiveness_check.zyl` |
 | `E_DUPLICATE_PARAMETER` | `unused_check.zyl` |
-| `E_UNBALANCED_OPEN_STRING` | the language server's balance check (`lsp/compiler_bridge.zyl`) |
 | `E_UNDEFINED_FUNCTION`, `E_NOT_CALLABLE`, `E_FFI_SYMBOL_NOT_FOUND`, `E_NO_MAIN` | the REPL's ICNF interpreter (`repl/interp.zyl`); `E_FFI_SYMBOL_NOT_FOUND` also the runtime's symbol lookup for the interpreter |
 | `E_INTERNAL` | the REPL evaluator (`repl/eval.zyl`) |
 
