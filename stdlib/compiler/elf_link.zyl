@@ -1,0 +1,189 @@
+; === Zyl Compiler — static ET_EXEC ELF64 linker for the native backend's output ===
+; Module: compiler/elf_link
+;
+; Assembles prog.s + rt.s + start.s (compiler/asm_x86), lays out one r-x
+; text segment (headers, .text, .rodata, .got), one rw data/bss segment,
+; a PT_TLS for .tbss and a non-exec PT_GNU_STACK, resolves every
+; relocation against a fixed load base, and writes a runnable static
+; binary. No external as/ld/cc. Deterministic: input order only.
+
+(use allocator/allocator)
+(use compiler/asm_x86)
+
+(defn el-base () 4194304)   ; 0x400000
+
+(def el-arena (ffi-call "zyl_ref_new" (ffi-call "zyl_arena_create" 0 1000) 1000))
+(def el-gotmap (ffi-call "zyl_ref_new" (ffi-call "zyl_smap_new" 1000) 1000))  ; name -> slot
+(def el-gotsyms (ffi-call "zyl_ref_new" (ffi-call "zyl_wvec_new" 1000) 1000)) ; (WVec String) slot order
+(def el-gotn (ffi-call "zyl_ref_new" 0 1000))
+(def el-secva (ffi-call "zyl_ref_new" (ffi-call "zyl_words_new" (ffi-call "zyl_arena_create" 0 1000) 8 1000) 1000))
+(def el-gsyms (ffi-call "zyl_ref_new" (ffi-call "zyl_smap_new" 1000) 1000))   ; global name -> va
+(def el-lsyms (ffi-call "zyl_ref_new" (ffi-call "zyl_wvec_new" 1000) 1000))   ; (WVec (SMap Int)) per-file local name -> va
+(def el-tpsize (ffi-call "zyl_ref_new" 0 1000))
+
+(defn el-getw (c) (ffi-call "zyl_ref_get" c 1000))
+(defn el-align (n a) (bit-and (+ n (- a 1)) (- 0 a)))
+
+(defn el-read (path)
+  (let fd (file-open path "r")
+    (if (< fd 0) ""
+      (let t (file-read fd 60000000) (let _ (file-close fd) t)))))
+
+; ---- byte writers into a ByteBuf ----
+(defn el-w8 ((b ByteBuf) (off Int) (v Int)) (store-u8 :le b off (bit-and v 255)))
+(defn el-ld8 ((b ByteBuf) (off Int)) (load-u8 :le b off))
+(defn el-wle (b off v n) (if (= n 0) off (let _ (el-w8 b off v) (el-wle b (+ off 1) (ashr v 8) (- n 1)))))
+(defn el-copy (dst doff src n i) (if (>= i n) unit (let _ (el-w8 dst (+ doff i) (el-ld8 src i)) (el-copy dst doff src n (+ i 1)))))
+
+; ---- GOT slot collection ----
+(defn el-got-slot (name)
+  (if (ffi-call "zyl_smap_has" (el-getw el-gotmap) name 1000)
+    (ffi-call "zyl_smap_get_or" (el-getw el-gotmap) name 0 1000)
+    (let s (ffi-call "zyl_ref_get" el-gotn 1000)
+      (let _ (ffi-call "zyl_smap_put" (el-getw el-gotmap) name s 1000)
+        (let _ (ffi-call "zyl_wvec_push" (el-getw el-gotsyms) name 1000)
+          (let _ (ffi-call "zyl_ref_set" el-gotn (+ s 1) 1000) s))))))
+
+(defn el-collect-got (v i n)
+  (if (>= i n) unit
+    (let r (ffi-call "zyl_wvec_get" v i 1000)
+      (let _ (match r (Reloc _ _ _ kind sym _ (if (= kind 3) (let _ (el-got-slot sym) unit) unit)))
+        (el-collect-got v (+ i 1) n)))))
+
+; ---- symbol VA table ----
+(defn el-secva-n (i) (ffi-call "zyl_words_get" (el-getw el-secva) i 1000))
+(defn el-secva-set (i v) (let _ (ffi-call "zyl_words_set" (el-getw el-secva) i v 1000) unit))
+
+(defn el-build-syms (v i n)
+  (if (>= i n) unit
+    (let d (ffi-call "zyl_wvec_get" v i 1000)
+      (let _ (match d (SymDef g f name sec off
+                (let va (+ (el-secva-n sec) off)
+                  (if (= g 1) (let _ (ffi-call "zyl_smap_put" (el-getw el-gsyms) name va 1000) unit)
+                    (let _ (ffi-call "zyl_smap_put" (ffi-call "zyl_wvec_get" (el-getw el-lsyms) f 1000) name va 1000) unit)))))
+        (el-build-syms v (+ i 1) n)))))
+
+; resolve a symbol to its VA; -1 if undefined
+(defn el-resolve (file name)
+  (let lm (ffi-call "zyl_wvec_get" (el-getw el-lsyms) file 1000)
+    (if (ffi-call "zyl_smap_has" lm name 1000) (ffi-call "zyl_smap_get_or" lm name 0 1000)
+      (if (ffi-call "zyl_smap_has" (el-getw el-gsyms) name 1000) (ffi-call "zyl_smap_get_or" (el-getw el-gsyms) name 0 1000)
+        -1))))
+
+; ---- relocation patching ----
+
+(defn el-w32sec (sec off v) (let _ (el-wle (ax-buf sec) off v 4) unit))
+
+(defn el-patch1 (r gotva)
+  (match r (Reloc file sec off kind sym addend
+    (let rva (+ (el-secva-n sec) off)
+      (if (= kind 1)
+        (let sv (el-resolve file sym)
+          (if (< sv 0)
+            (if (ffi-call "zyl_smap_has" (el-getw el-gotmap) sym 1000) unit
+              (if (ax-weak-p sym) (el-w32sec sec off (- (+ 0 addend) rva))
+                (ffi-call "zyl_panic" (str-concat "E_LINK_UNDEFINED: " sym) 1000)))
+            (el-w32sec sec off (- (+ sv addend) rva))))
+        (if (= kind 2)
+          (el-w32sec sec off (- (ax-tls-off sym) (ffi-call "zyl_ref_get" el-tpsize 1000)))
+          (if (= kind 3)
+            (el-w32sec sec off (- (+ (+ gotva (* (el-got-slot sym) 8)) addend) rva))
+            unit)))))))
+
+(defn el-patch-all (v i n gotva) (if (>= i n) unit (let _ (el-patch1 (ffi-call "zyl_wvec_get" v i 1000) gotva) (el-patch-all v (+ i 1) n gotva))))
+
+; ---- fill GOT slots with absolute symbol addresses ----
+(defn el-fill-got (out gotoff i n)
+  (if (>= i n) unit
+    (let name (ffi-call "zyl_wvec_get" (el-getw el-gotsyms) i 1000)
+      (let va (if (ffi-call "zyl_smap_has" (el-getw el-gsyms) name 1000) (ffi-call "zyl_smap_get_or" (el-getw el-gsyms) name 0 1000)
+                (if (ax-weak-p name) 0 (ffi-call "zyl_panic" (str-concat "E_LINK_UNDEFINED_GOT: " name) 1000)))
+        (let _ (el-wle out (+ gotoff (* i 8)) va 8)
+          (el-fill-got out gotoff (+ i 1) n))))))
+
+; ---- ELF headers ----
+(defn el-hdr (out entry phoff phnum)
+  (let _ (el-w8 out 0 127) (let _ (el-w8 out 1 69) (let _ (el-w8 out 2 76) (let _ (el-w8 out 3 70)
+    (let _ (el-w8 out 4 2) (let _ (el-w8 out 5 1) (let _ (el-w8 out 6 1)
+      (let _ (el-wle out 16 2 2)          ; ET_EXEC
+        (let _ (el-wle out 18 62 2)       ; x86-64
+          (let _ (el-wle out 20 1 4)
+            (let _ (el-wle out 24 entry 8)
+              (let _ (el-wle out 32 phoff 8)
+                (let _ (el-wle out 52 64 2)     ; ehsize
+                  (let _ (el-wle out 54 56 2)   ; phentsize
+                    (el-wle out 56 phnum 2))))))))))))))))
+
+(defn el-phdr (out i typ flags off va filesz memsz align)
+  (let b (+ 64 (* i 56))
+    (let _ (el-wle out b typ 4)
+      (let _ (el-wle out (+ b 4) flags 4)
+        (let _ (el-wle out (+ b 8) off 8)
+          (let _ (el-wle out (+ b 16) va 8)
+            (let _ (el-wle out (+ b 24) va 8)
+              (let _ (el-wle out (+ b 32) filesz 8)
+                (let _ (el-wle out (+ b 40) memsz 8)
+                  (el-wle out (+ b 48) align 8))))))))))
+
+(defn el-init ()
+  (let _ (ffi-call "zyl_ref_set" el-gotmap (ffi-call "zyl_smap_new" 1000) 1000)
+    (let _ (ffi-call "zyl_ref_set" el-gotsyms (ffi-call "zyl_wvec_new" 1000) 1000)
+      (let _ (ffi-call "zyl_ref_set" el-gotn 0 1000)
+        (let _ (ffi-call "zyl_ref_set" el-gsyms (ffi-call "zyl_smap_new" 1000) 1000)
+          (let lv (ffi-call "zyl_wvec_new" 1000)
+            (let _ (ffi-call "zyl_wvec_push" lv (ffi-call "zyl_smap_new" 1000) 1000)
+            (let _ (ffi-call "zyl_wvec_push" lv (ffi-call "zyl_smap_new" 1000) 1000)
+            (let _ (ffi-call "zyl_wvec_push" lv (ffi-call "zyl_smap_new" 1000) 1000)
+              (let _ (ffi-call "zyl_ref_set" el-lsyms lv 1000)
+                (ffi-call "zyl_ref_set" el-secva (ffi-call "zyl_words_new" (el-getw el-arena) 8 1000) 1000)))))))))))
+
+; ---- driver: assemble the three inputs, lay out, resolve, write executable ----
+(defn el-link (progpath rtpath startpath outpath)
+  (let prog (el-read progpath)
+    (let rt (el-read rtpath)
+      (let start (el-read startpath)
+        (let bound (+ 64 (+ (str-length prog) (+ (str-length rt) (str-length start))))
+          (let _ (ax-reset bound)
+            (let _ (el-init)
+              (let _ (ax-scan-globls prog) (let _ (ax-scan-globls rt) (let _ (ax-scan-globls start)
+              (let _ (ax-assemble-file prog 0) (let _ (ax-assemble-file rt 1) (let _ (ax-assemble-file start 2)
+                (el-finish outpath))))))))))))))
+
+(defn el-finish (outpath)
+  (let rv (ax-relocs-vec)
+    (let _ (el-collect-got rv 0 (ffi-call "zyl_wvec_len" rv 1000))
+      (let tsz (ax-size 0) (let rod (ax-size 1) (let dat (ax-size 2) (let bss (ax-size 3) (let tls (ax-size 4)
+        (let gotn (ffi-call "zyl_ref_get" el-gotn 1000)
+          (let gotsz (* gotn 8)
+            (let base (el-base)
+              (let text-off (el-align 288 16)
+                (let rod-off (el-align (+ text-off tsz) 16)
+                  (let got-off (el-align (+ rod-off rod) 8)
+                    (let text-end (+ got-off gotsz)
+                      (let data-va (el-align (+ base text-end) 4096)
+                        (let talign (ax-tls-align)
+                          (let tpsize (el-align tls talign)
+                            (let _ (ffi-call "zyl_ref_set" el-tpsize tpsize 1000)
+                              (let _ (el-secva-set 0 (+ base text-off))
+                                (let _ (el-secva-set 1 (+ base rod-off))
+                                  (let _ (el-secva-set 2 data-va)
+                                    (let _ (el-secva-set 3 (+ data-va dat))
+                                      (let _ (el-build-syms (ax-syms-vec) 0 (ffi-call "zyl_wvec_len" (ax-syms-vec) 1000))
+                                        (el-emit outpath tsz rod dat bss tls gotn gotsz base text-off rod-off got-off text-end data-va talign)))))))))))))))))))))))))
+
+(defn el-emit (outpath tsz rod dat bss tls gotn _gotsz base text-off rod-off got-off text-end data-va talign)
+  (let entry (ffi-call "zyl_smap_get_or" (el-getw el-gsyms) "_start" 0 1000)
+    (let got-va (+ base got-off)
+      (let _ (el-patch-all (ax-relocs-vec) 0 (ffi-call "zyl_wvec_len" (ax-relocs-vec) 1000) got-va)
+        (let out (ffi-call "zyl_bytebuf_new" 1 (if (> text-end 0) text-end 1) 1000)
+          (let _ (el-hdr out entry 64 4)
+            (let _ (el-phdr out 0 1 5 0 base text-end text-end 4096)          ; PT_LOAD r-x
+              (let _ (el-phdr out 1 1 6 text-end data-va 0 (+ dat bss) 4096)  ; PT_LOAD rw (bss)
+                (let tls-va (el-align (+ (+ data-va dat) bss) (if (> talign 0) talign 1))
+                  (let _ (el-phdr out 2 7 4 text-end tls-va 0 tls (if (> talign 0) talign 1)) ; PT_TLS
+                    (let _ (el-phdr out 3 1685382481 6 0 0 0 0 16)            ; PT_GNU_STACK
+                      (let _ (el-copy out text-off (ax-buf 0) tsz 0)
+                        (let _ (el-copy out rod-off (ax-buf 1) rod 0)
+                          (let _ (el-fill-got out got-off 0 gotn)
+                            (let r (ffi-call "zyl_bytebuf_write_exec" outpath out text-end 1000)
+                              r)))))))))))))))

@@ -46,6 +46,7 @@
 (use compiler/sexp_balance)
 (use compiler/error_codes)
 (use compiler/error_report)
+(use compiler/elf_link)
 
 (def __zyl_boot_bundle 1)
 
@@ -139,8 +140,17 @@
 ; `extra` carries a package's native objects and libraries (SS31.10),
 ; already quoted by compiler/cli; an ordinary single-file compile passes
 ; the empty string and the command is what it always was.
+; Freestanding single-file link: the Zyl assembler + ELF linker write the
+; executable directly (no cc/as/ld). ZYL_EXTERNAL_LD=1 restores the cc path.
+(defn cli-freestanding-p (extra)
+  (and (= (str-length extra) 0)
+    (and (not (rt-foreign-p))
+      (= (str-length (ffi-call "zyl_getenv_str" "ZYL_EXTERNAL_LD" 1000)) 0))))
+
 (defn cli-link-with (asmpath outpath extra)
-  (ffi-call "zyl_exec_cmd" (cli-link-command asmpath outpath extra) 1000))
+  (if (cli-freestanding-p extra)
+    (el-link asmpath "rt.s" "start.s" outpath)
+    (ffi-call "zyl_exec_cmd" (cli-link-command asmpath outpath extra) 1000)))
 
 ; Same command, run as a CHILD: a package build has work left to do after
 ; linking (zyl.buildinfo, and `zyl test` runs the binary), and
