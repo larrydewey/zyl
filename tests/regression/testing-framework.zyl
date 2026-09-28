@@ -1,43 +1,39 @@
-; Testing Framework Regression Tests — test, assert-*, run-tests, test-suite, test-property.
-; Spec §25: testing harness built into the language.
+; Testing framework (spec 20.5): test, the assertions, test-suite with
+; setup and teardown, test-property and test-compile.
 
 (use core/core)
 
-; Basic test with assert-equal.
-(
-  test
-  "tf-basic"
-  (
-    assert-equal
-    (+ 2 2)
-    4
-  )
-)
+(test "tf-basic" (assert-equal (+ 2 2) 4))
 
-; assert-true / assert-false.
-(
-  test
-  "tf-assert-bool"
-  (
-    begin
+(test "tf-assert-bool"
+  (begin
     (assert-true (> 5 3))
-    (assert-false (< 10 1))
-    1
-  )
-)
+    (assert-false (< 10 1))))
 
-; Multiple assertions in one test (via begin).
-(
-  test
-  "tf-multi-assert"
-  (
-    begin
-    (assert-equal 1 1)
-    (assert-equal 2 2)
-    (assert-true true)
-    1
-  )
-)
+(test "tf-assert-fail" (assert-fail (error "expected")))
 
-; run-tests at end of file.
+(test "tf-assert-fail-message" (assert-fail (unwrap None) "unwrap of None raises"))
+
+; setup runs before and teardown after each test, outer suite first.
+(test-suite "suite"
+  (setup (print "setup outer"))
+  (teardown (print "teardown outer"))
+  (test "one" (assert-equal 1 1))
+  (test-suite "inner"
+    (setup (print "setup inner"))
+    (teardown (print "teardown inner"))
+    (test "two" (assert-equal 2 2)))
+  (test-property "commutes" gen-int (fn (a b) (= (+ a b) (+ b a)))))
+
+(test-property "int-identity" gen-int (fn (x) (= (- (+ x 1) 1) x)))
+(test-property "bool-excluded-middle" gen-bool (fn (b) (or b (not b))))
+(test-property "string-concat-length" gen-string
+  (fn (s t) (= (str-length (str-concat s t)) (+ (str-length s) (str-length t)))))
+(test-property "float-add-zero" gen-float (fn (x) (= (+ x 0.0) x)))
+(test-property "int-assoc" gen-int (fn (a b c) (= (+ (+ a b) c) (+ a (+ b c)))))
+
+(test-compile (+ 1 2))
+(test-compile (+ 1 "a") (:expect-error true))
+(test-compile (let-mut x 1 (set! x 2)))
+
 (run-tests)

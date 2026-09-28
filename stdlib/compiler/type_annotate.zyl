@@ -973,7 +973,6 @@
     (EApply fname args (ta-call st ctx env e fname args))
     (ELet name val body (ta-let st ctx env name val body))
     (ELetMut name val body (ta-let st ctx env name val body))
-    (EWithResource name val body (ta-let st ctx env name val body))
     (EIf c t eb
       (let _ (ta-cond-bool st (ta-expr st ctx env c))
         (let tt (ta-expr st ctx env t)
@@ -1004,7 +1003,6 @@
             (ta-stmt)))))
     (EAssertTrue x _ (ta-assert-bool st ctx env x))
     (EAssertFalse x _ (ta-assert-bool st ctx env x))
-    (EAssertFail x _ (ta-walk-stmt st ctx env (Cons x Nil)))
     (EUnwrap x (ta-unwrap st ctx env x))
     (EStructGet se field (ta-struct-get st ctx env se field e))
     (EFor bindings cond body (ta-for st ctx env bindings cond body))
@@ -1064,12 +1062,8 @@
     (EError _ (ta-fresh st))
     (EClose x (ta-walk-int st ctx env (Cons x Nil)))
     (ETestDecl _ body _ (let _ (ta-expr st ctx env body) (ta-stmt)))
-    (ESetup xs (ta-walk-stmt st ctx env xs))
-    (ETeardown xs (ta-walk-stmt st ctx env xs))
     (ERunTests _ (ta-int))
     ; Parsed as placeholders that carry no code (expr_inner.zyl).
-    (ETestSuite _ _ _ (ta-stmt))
-    (ETestProperty _ _ _ (ta-stmt))
     (ETestCompile _ _ (ta-stmt))
     (_ (ta-dk st "form not typed"))))
 
@@ -2349,9 +2343,7 @@
     (EFileWrite x0 x1 (Expr (EFileWrite (ta-copy x0) (ta-copy x1))))
     (EFileClose x0 (Expr (EFileClose (ta-copy x0))))
     (EBufAppend x0 x1 (Expr (EBufAppend (ta-copy x0) (ta-copy x1))))
-    (EWithResource x0 x1 x2 (Expr (EWithResource x0 (ta-copy x1) (ta-copy x2))))
     (EAssertEqual x0 x1 (Expr (EAssertEqual (ta-copy x0) (ta-copy x1))))
-    (EAssertFail x0 x1 (Expr (EAssertFail (ta-copy x0) x1)))
     (EAssertTrue x0 x1 (Expr (EAssertTrue (ta-copy x0) x1)))
     (EAssertFalse x0 x1 (Expr (EAssertFalse (ta-copy x0) x1)))
     (EApply x0 x1 (Expr (EApply x0 (ta-copy-list x1))))

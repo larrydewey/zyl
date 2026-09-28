@@ -21,6 +21,7 @@
 (use compiler/sexp_balance)
 (use compiler/error_codes)
 (use compiler/error_report)
+(use compiler/desugar)
 
 ; Result wrapper: parsed Ast + remaining tokens.
 (deftype AstTok (AstOf Ast (List Token)))
@@ -379,7 +380,7 @@
       (let toks (zyl-lex arena src)
         (begin
           (check-lexed-to-end toks src fid)
-          (parse-program arena toks fid))))))
+          (ds-program (parse-program arena toks fid)))))))
 
 ; The lexer stops at a byte it cannot tokenize; its final TkEof then sits
 ; before the end of the source. Report that instead of dropping the rest.

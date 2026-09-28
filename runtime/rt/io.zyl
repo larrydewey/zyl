@@ -23,6 +23,15 @@
 
 (defn zyl_itest_outcome (ok) (io-put (if (= ok 0) "FAIL\n" "ok\n")))
 
+; A failed interpreted test, with the first line of its panic message, as zyl_run_tests writes it.
+(defn zyl_itest_fail (msg)
+  (let m (rt-w msg)
+    (let _ (io-put "FAIL: ") (let _ (io-line m 0) (io-put "\n")))))
+
+(defn io-line (m i)
+  (let b (ffi-call "%load8" (+ m i) 1)
+    (if (or (= b 0) (= b 10)) 0 (let _ (zyl_out_write (+ m i) 1) (io-line m (+ i 1))))))
+
 (defn zyl_itest_summary (passed failed)
   (let _ (io-put "\ntest result: ")
     (let _ (io-put-int passed)

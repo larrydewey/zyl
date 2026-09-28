@@ -576,16 +576,6 @@
     (EApply fname args (ic-apply-renamed arena expr fname args vt))
     (ELet name val body (ic-lower-let arena name val body vt))
     (ELetMut name val body (ic-lower-let arena name val body vt))
-    ; (with-resource (name init) body): regression/with-resource.zyl's
-    ; own tests only exercise lexical-scoping and value semantics
-    ; (bind, evaluate body, return body's value, proper shadowing) --
-    ; identical to plain `let`, no separate cleanup/destructor behavior
-    ; tested or implied anywhere. EWithResource had no case here at all
-    ; (confirmed by grep before this fix), so every use fell through to
-    ; the universal (IConst 0) fallback below, silently discarding both
-    ; the binding and the body.
-    (EWithResource name val body
-      (ILet (str-intern arena name) (ic-expr arena val vt) (ic-expr arena body vt)))
     (EIf c t eb
       (IIf (ic-expr arena c vt) (ic-expr arena t vt) (ic-expr arena eb vt)))
     (EWhile c body
@@ -660,7 +650,6 @@
     ; now — testing/testing.zyl's assert-fail-expr called a plain
     ; "assert-fail" function that was never defined anywhere, an
     ; undefined-reference link error rather than a silent no-op.
-    (EAssertFail e _ (ISeq (Cons (ic-expr arena e vt) (Cons (IConst 0) Nil))))
     ; assert: (assert e) lowers to if e then 0 else panic (item 22).
     (EAssert e m (IIf (ic-expr arena e vt) (IConst 0) (IFfi "zyl_panic" (Cons (IStr (ic-assert-msg m)) Nil))))
     ; unwrap: (unwrap e) lowers to match on Some tag 0 (item 23).
@@ -965,7 +954,6 @@
   (match xs
     (Nil false)
     (Cons h t (if (str-eq name h) true (ic-name-in-list name t)))))
-
 
 ; --- hoist embedded IFn nodes (from `fn`) out to the top level -------------
 ;

@@ -1,0 +1,4 @@
+; expect-error: E_MALFORMED_FORM
+; expect-at: assert-fail-message.zyl:3:11
+(test "t" (assert-fail 1 x))
+(run-tests)

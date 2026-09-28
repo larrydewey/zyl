@@ -1,0 +1,4 @@
+; expect-error: E_MALFORMED_FORM
+; expect-at: test-property-generator.zyl:3:20
+(test-property "p" gen-list (fn (x) true))
+(run-tests)

@@ -160,7 +160,13 @@
 (defn dm-frontend (arena path text)
   (let _ (field-types-clear)
     (let prog (zyl-parse-file arena text (dm-source-path path))
-      (me-expand-program (mr-resolve-program arena prog path)))))
+      (dm-drop-test-compiles (me-expand-program (mr-resolve-program arena prog path))))))
+
+; A top-level test-compile is decided by a compile (pipeline.zyl's tc-resolve), not in the editor.
+(defn dm-drop-test-compiles (xs)
+  (match xs
+    (Nil Nil)
+    (Cons e t (match (Expr.inner e) (ETestCompile _ _ (dm-drop-test-compiles t)) (_ (Cons e (dm-drop-test-compiles t)))))))
 
 (defn dm-source-path (path) (if (= (str-length path) 0) "<input>" path))
 

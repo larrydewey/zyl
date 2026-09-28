@@ -256,8 +256,6 @@
       (let _ (cc-walk a caps denied pkg fname dnode) (cc-walk b caps denied pkg fname dnode)))
     (EFileClose b (cc-walk b caps denied pkg fname dnode))
     (EClose b (cc-walk b caps denied pkg fname dnode))
-    (EWithResource _ a b
-      (let _ (cc-walk a caps denied pkg fname dnode) (cc-walk b caps denied pkg fname dnode)))
     (EUnwrap b (cc-walk b caps denied pkg fname dnode))
     (EMakeStruct _ args (cc-walk-list args caps denied pkg fname dnode))
     (EMakeVariant _ _ args (cc-walk-list args caps denied pkg fname dnode))

@@ -486,8 +486,6 @@
     (EMakeVariant _ _ _ true)
     (EFfiCall _ _ _ true)
     (EUnknown _ _ true)
-    (ESetup _ true)
-    (ETeardown _ true)
     (_ false)))
 
 (defn me-k1 (e a cx n) (me-kids e (Cons a Nil) cx n))
@@ -530,11 +528,8 @@
     (EBufAppend _ _ (EBufAppend k0 k1))
     (EAliasDecl name _ (EAliasDecl name k0))
     (EAssertEqual _ _ (EAssertEqual k0 k1))
-    (EAssertFail _ msg (EAssertFail k0 msg))
     (EAssertTrue _ msg (EAssertTrue k0 msg))
     (EAssertFalse _ msg (EAssertFalse k0 msg))
-    (ESetup _ (ESetup ks))
-    (ETeardown _ (ETeardown ks))
     (ETestCompile _ o (ETestCompile k0 o))
     (EUnknown name _ (EUnknown name ks))
     (ELoadByte en _ _ (ELoadByte en k0 k1))
@@ -600,7 +595,6 @@
     (EFileWrite a b (me-k2 e a b cx n))
     (EFileClose a (me-k1 e a cx n))
     (EBufAppend a b (me-k2 e a b cx n))
-    (EWithResource name init body (me-with e name init body cx n))
     (EDeftype name variants tps der (me-deftype e name variants tps der cx n))
     (ETraitDecl _ _ _ (MeR e n))
     (EImplBlock _ _ bodies (me-impl e bodies cx n))
@@ -608,15 +602,10 @@
     (EStructDefPlus _ _ (MeR e n))
     (EAliasDecl _ a (me-k1 e a cx n))
     (EDerive _ _ (MeR e n))
-    (ETestSuite name tests meta (me-suite name tests meta cx n))
     (ETestDecl name body meta (me-test name body meta cx n))
     (EAssertEqual l r (me-k2 e l r cx n))
-    (EAssertFail a _ (me-k1 e a cx n))
     (EAssertTrue a _ (me-k1 e a cx n))
     (EAssertFalse a _ (me-k1 e a cx n))
-    (ETestProperty name g body (me-property name g body cx n))
-    (ESetup exprs (me-kids e exprs cx n))
-    (ETeardown exprs (me-kids e exprs cx n))
     (ERunTests _ (MeR e n))
     (ETestCompile a _ (me-k1 e a cx n))
     (EApply fname args (me-apply e fname args cx n))
@@ -700,14 +689,6 @@
         (MeB nm cx2 n3
           (match (me-rewrite handler cx2 n3)
             (MeR h2 n4 (MeR (Expr (ETryCatch b2 nm h2)) n4))))))))
-
-(defn me-with (e name init body cx n)
-  (match (me-rewrite init cx n)
-    (MeR i2 n2
-      (match (me-bind e name cx n2)
-        (MeB nm cx2 n3
-          (match (me-rewrite body cx2 n3)
-            (MeR b2 n4 (MeR (Expr (EWithResource nm i2 b2)) n4))))))))
 
 ; (for (name init) ... cond body): each init is rewritten in the scope the
 ; bindings before it established, then its name is bound for the rest.
@@ -863,43 +844,6 @@
 (defn me-test (name body meta cx n)
   (match (me-rewrite body cx n)
     (MeR b2 n2 (MeR (Expr (ETestDecl name b2 meta)) n2))))
-
-(defn me-property (name g body cx n)
-  (match (me-rewrite body cx n)
-    (MeR b2 n2 (MeR (Expr (ETestProperty name g b2)) n2))))
-
-(defn me-suite (name tests meta cx n)
-  (match (me-suite-items tests cx n Nil)
-    (MeR out n2 (MeR (me-suite-node name out meta) n2))))
-
-; The rewritten items travel inside a throwaway ETestSuite node so one
-; result type serves.
-(defn me-suite-node (name holder meta)
-  (match (Expr.inner holder)
-    (ETestSuite _ items _ (Expr (ETestSuite name items meta)))
-    (_ holder)))
-
-(defn me-suite-items (items cx n acc)
-  (match items
-    (Nil (MeR (Expr (ETestSuite "" (list-reverse acc) None)) n))
-    (Cons it rest
-      (match it
-        (Test td
-          (match td
-            (TD tn body meta
-              (match (me-rewrite body cx n)
-                (MeR b2 n2 (me-suite-items rest cx n2 (Cons (Test (TD tn b2 meta)) acc)))))))
-        (Suite sn
-          (match sn
-            (TSN sname sitems smeta
-              (match (me-suite-items sitems cx n Nil)
-                (MeR holder n2
-                  (me-suite-items rest cx n2 (Cons (Suite (TSN sname (me-suite-items-of holder) smeta)) acc)))))))))))
-
-(defn me-suite-items-of (holder)
-  (match (Expr.inner holder)
-    (ETestSuite _ items _ items)
-    (_ Nil)))
 
 ; --- macro calls -----------------------------------------------------------------
 

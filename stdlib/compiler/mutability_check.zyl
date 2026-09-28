@@ -267,8 +267,6 @@
     (EFileWrite a b (begin (mc-expr a mutscope lets) (mc-expr b mutscope lets)))
     (EFileClose e2 (mc-expr e2 mutscope lets))
     (EBufAppend a b (begin (mc-expr a mutscope lets) (mc-expr b mutscope lets)))
-    (EWithResource _ init body
-      (begin (mc-expr init mutscope lets) (mc-expr body mutscope lets)))
     ; spec/07 R3 / spec/06 rule 5: a spawned closure must only capture
     ; Send-capable (TCap/TAtomic) variables, and a sent message must
     ; itself be Send-capable -- a let-mut (TMut) variable escaping into
@@ -296,12 +294,8 @@
       (begin (mc-expr actor mutscope lets) (mc-expr closure mutscope lets)))
     (ETestDecl _ body _ (mc-expr body mutscope lets))
     (EAssertEqual l r (begin (mc-expr l mutscope lets) (mc-expr r mutscope lets)))
-    (EAssertFail e2 _ (mc-expr e2 mutscope lets))
     (EAssertTrue e2 _ (mc-expr e2 mutscope lets))
     (EAssertFalse e2 _ (mc-expr e2 mutscope lets))
-    (ETestProperty _ _ body (mc-expr body mutscope lets))
-    (ESetup exprs (mc-list exprs mutscope lets))
-    (ETeardown exprs (mc-list exprs mutscope lets))
     (ETestCompile e2 _ (mc-expr e2 mutscope lets))
     (EDefn _ _ body (mc-expr body Nil Nil))
     (_ 0)))
@@ -375,6 +369,4 @@
     (EPrint exprs (mc-or-list exprs names))
     (ESpawn closure (mc-refs-any closure names))
     (ESend actor msg (if (mc-refs-any actor names) true (mc-refs-any msg names)))
-    (EWithResource _ init body
-      (if (mc-refs-any init names) true (mc-refs-any body names)))
     (_ false)))

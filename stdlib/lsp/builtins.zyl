@@ -104,7 +104,7 @@
   (Cons (ZB "range" "special-form" "(range start end)"
           "Match pattern for an integer range, inclusive at both ends: `((range 1 9) body)` as a match arm.")
   (Cons (ZB "with-resource" "special-form" "(with-resource (name acquire) body)"
-          "Bind `name` to `acquire` for `body`, like `let`. The release on every exit path (spec G11) is not implemented yet.")
+          "Bind `name` to `acquire` for `body`, then call `(Drop.drop name)` on the way out, normally or before an error propagates (spec 12.9). An Int is a file descriptor, closed with file-close.")
   (Cons (ZB "with-region" "special-form" "(with-region (arena :block N :align A :limit L) body)  (with-region (fixed :size N :align A) body)"
           "Allocate `body`'s values in an explicit region, released when `body` ends. A value that would outlive it is E_REGION_ESCAPE; a bad spec is E_REGION_SPEC; running out is E_REGION_EXHAUSTED.")
   Nil)))))))))))))))
@@ -312,15 +312,15 @@
 
 (defn builtins-testing ()
   (Cons (ZB "test" "special-form" "(test \"name\" body)" "One test case.")
-  (Cons (ZB "test-suite" "special-form" "(test-suite \"name\" (test ...) ...)" "Spec §24. Parsed but not lowered yet: it compiles to nothing.")
+  (Cons (ZB "test-suite" "special-form" "(test-suite \"name\" item ...)" "Top level. Groups tests, nested suites and test-property forms; they register as `name/test`, each run between the suite's setup and teardown forms.")
   (Cons (ZB "assert-equal" "special-form" "(assert-equal actual expected)" "Assert two values are equal.")
   (Cons (ZB "assert-true" "special-form" "(assert-true expr)" "Assert a value is true.")
   (Cons (ZB "assert-false" "special-form" "(assert-false expr)" "Assert a value is false.")
-  (Cons (ZB "assert-fail" "special-form" "(assert-fail expr)" "Assert an expression fails.")
-  (Cons (ZB "test-property" "special-form" "(test-property \"name\" generator body)" "Spec §24. Parsed but not lowered yet: it compiles to nothing.")
-  (Cons (ZB "test-compile" "special-form" "(test-compile expr)" "Spec §24. Parsed but not lowered yet: it compiles to nothing.")
-  (Cons (ZB "setup" "special-form" "(setup expr ...)" "Spec §24. Parsed but not lowered yet: it compiles to nothing.")
-  (Cons (ZB "teardown" "special-form" "(teardown expr ...)" "Spec §24. Parsed but not lowered yet: it compiles to nothing.")
+  (Cons (ZB "assert-fail" "special-form" "(assert-fail expr \"message\")" "Fails unless evaluating `expr` raises an error; the message is optional.")
+  (Cons (ZB "test-property" "special-form" "(test-property \"name\" gen-int (fn (x) bool))" "Runs the property (one to three parameters) over the generator's fixed samples: gen-int, gen-bool, gen-string or gen-float. Fails naming the first rejected sample.")
+  (Cons (ZB "test-compile" "special-form" "(test-compile expr (:expect-error true))" "Top level. Decided at compile time: a test that passes when `expr` compiles, or with :expect-error true, when it does not.")
+  (Cons (ZB "setup" "special-form" "(setup expr ...)" "Inside a test-suite: runs before each of its tests.")
+  (Cons (ZB "teardown" "special-form" "(teardown expr ...)" "Inside a test-suite: runs after each of its tests, also when the test fails.")
   (Cons (ZB "run-tests" "special-form" "(run-tests)" "Run every `test` registered so far and report.")
   Nil))))))))))))
 
@@ -424,10 +424,10 @@
 
 (defn builtin-stdlib-core ()
   (Cons "core/core" (Cons "core/list" (Cons "core/option" (Cons "core/result"
-  (Cons "core/map" (Cons "core/show" (Cons "collections/collections" (Cons "collections/map"
+  (Cons "core/map" (Cons "core/show" (Cons "core/resource" (Cons "core/property" (Cons "collections/collections" (Cons "collections/map"
   (Cons "collections/set" (Cons "collections/vec" (Cons "collections/slice" (Cons "allocator/allocator"
   (Cons "actor/actor" (Cons "atomic/atomic" (Cons "ffi/ffi" (Cons "io/io"
-  (Cons "simd/simd" (Cons "text/view" (Cons "testing/testing" Nil))))))))))))))))))))
+  (Cons "simd/simd" (Cons "text/view" (Cons "testing/testing" Nil))))))))))))))))))))))
 
 (defn builtin-stdlib-math ()
   (Cons "math/math" (Cons "math/bits" (Cons "math/words"

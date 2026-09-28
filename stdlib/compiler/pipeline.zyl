@@ -81,10 +81,73 @@
       ; path to find the package this file belongs to (§31.3).
       (let resolved (mr-resolve-program-full arena prog srcpath)
         (dbg-log "macros\n")
-        (let exprs (me-expand-program (mrr-exprs resolved))
+        (let exprs (tc-resolve arena (me-expand-program (mrr-exprs resolved)) resolved)
           (begin
             (compile-run-checks exprs resolved)
             exprs))))))
+
+;; --- test-compile (spec 20.5.6) ----------------------------------------------
+; Each top-level (test-compile e) is decided before the checks: a probe, the
+; program with e as (defn zyl-test-compile-probe () e) and no other
+; test-compile, runs the checks and the type checker with its diagnostics
+; captured. The form becomes a test that passes when e compiled or failed
+; as expected; a failing one reports the reason. A nested one is
+; E_MALFORMED_FORM (arity_check.zyl).
+(defn tc-resolve (arena exprs resolved)
+  (if (tc-any exprs) (tc-map arena exprs exprs resolved 0) exprs))
+
+(defn tc-any (xs)
+  (match xs (Nil false) (Cons e t (match (Expr.inner e) (ETestCompile _ _ true) (_ (tc-any t))))))
+
+(defn tc-map (arena all xs resolved (i Int))
+  (match xs
+    (Nil Nil)
+    (Cons e t
+      (Cons (match (Expr.inner e) (ETestCompile x b (tc-decide arena all i x b e resolved)) (_ e))
+            (tc-map arena all t resolved (+ i 1))))))
+
+(defn tc-probe (xs (i Int) (j Int) x)
+  (match xs
+    (Nil Nil)
+    (Cons e t
+      (if (= j i) (Cons (Expr (EDefn "zyl-test-compile-probe" Nil x)) (tc-probe t i (+ j 1) x))
+        (match (Expr.inner e)
+          (ETestCompile _ _ (tc-probe t i (+ j 1) x))
+          (_ (Cons e (tc-probe t i (+ j 1) x))))))))
+
+; "" when the probe compiles, else its first error line.
+(defn tc-run (arena probe resolved)
+  (let _ (ffi-call "zyl_warn_capture" true 1000)
+    (let r (try (begin (compile-run-checks probe resolved)
+                       (let _ (ta-annotate (ci-expand-program arena (lift-impls (dv-expand-program probe)))) ""))
+                (catch err err))
+      (let w (ffi-call "zyl_warn_take" 1000)
+        (let _ (ffi-call "zyl_warn_capture" false 1000)
+          (if (= (str-length r) 0) ""
+            (let fw (tc-error-line w 0 (str-length w))
+              (if (> (str-length fw) 0) fw (tc-error-line r 0 (str-length r))))))))))
+
+; The first line of s holding "error[", from that point, else "".
+(defn tc-error-line ((s String) (i Int) (n Int))
+  (if (> (+ i 6) n) ""
+    (if (str-eq (str-substring s i 6) "error[") (str-substring s i (- (tc-line-end s i n) i))
+      (tc-error-line s (+ i 1) n))))
+
+(defn tc-line-end ((s String) (i Int) (n Int))
+  (if (>= i n) n (if (str-eq (str-substring s i 1) "\n") i (tc-line-end s (+ i 1) n))))
+
+(defn tc-decide (arena all (i Int) x (expect Bool) e resolved)
+  (let err (tc-run arena (tc-probe all i 0 x) resolved)
+    (let compiled (= (str-length err) 0)
+      (let base (str-concat "test-compile line " (ffi-call "zyl_int_text"
+                  (ffi-call "zyl_span_line" (ffi-call "zyl_span_file" e 1000) (ffi-call "zyl_span_off" e 1000) 1000) 1000))
+        (if (= compiled (not expect))
+          (Expr (ETestDecl base (Expr (EAtom ANil)) None))
+          (Expr (ETestDecl base
+                           (Expr (EAssertTrue (Expr (EAtom (ABool false)))
+                                              (Some (if compiled "compiled, but an error was expected"
+                                                        (str-concat "did not compile: " err)))))
+                           None)))))))
 
 ; A file whose delimiters do not balance is reported here rather than
 ; left for the parser: the balance checker knows which opener was never

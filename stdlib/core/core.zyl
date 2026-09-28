@@ -13,6 +13,8 @@
 (use core/option)
 (use core/result)
 (use core/list)
+(use core/resource)
+(use core/property)
 
 ; ===========================================================================
 ; CROSS-CONVERSIONS (option <-> result)

@@ -306,6 +306,7 @@
 (defn ft-fill-12 (t)
   (let _ (ft-put t "zyl_itest_name" (ffi-call "%fn" "zyl_itest_name" 1))
     (let _ (ft-put t "zyl_itest_outcome" (ffi-call "%fn" "zyl_itest_outcome" 1))
+    (let _ (ft-put t "zyl_itest_fail" (ffi-call "%fn" "zyl_itest_fail" 1))
     (let _ (ft-put t "zyl_itest_reset" (ffi-call "%fn" "zyl_itest_reset" 1))
     (let _ (ft-put t "zyl_itest_start" (ffi-call "%fn" "zyl_itest_start" 1))
     (let _ (ft-put t "zyl_itest_summary" (ffi-call "%fn" "zyl_itest_summary" 1))
@@ -320,7 +321,7 @@
     (let _ (ft-put t "zyl_mkdir_p" (ffi-call "%fn" "zyl_mkdir_p" 1))
     (let _ (ft-put t "zyl_mlock" (ffi-call "%fn" "zyl_mlock" 1))
     (let _ (ft-put t "zyl_panic" (ffi-call "%fn" "zyl_panic" 1))
-    0)))))))))))))))))
+    0))))))))))))))))))
 
 (defn ft-fill-13 (t)
   (let _ (ft-put t "zyl_path_exists" (ffi-call "%fn" "zyl_path_exists" 1))

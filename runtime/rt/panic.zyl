@@ -53,6 +53,18 @@
 (defn pn-tstate () (ffi-call "%global" "test_state" 96 1))
 (defn pn-tests () (ffi-call "%global" "tests" 34816 1))
 (defn pn-tbuf () (+ (pn-tstate) 24))
+; The failing test's panic message, copied before its regions are unwound (0: none).
+(defn pn-tmsg () (ffi-call "%global" "test_msg" 8 1))
+
+; A test's failure line: FAIL, then the first line of its panic message.
+(defn pn-fail-line ()
+  (let m (rt-ld64 (pn-tmsg))
+    (if (= m 0) "FAIL\n"
+      (let _ (rt-st64 (pn-tmsg) 0)
+        (let line (str-concat "FAIL: " (str-concat (rt-str-of m (pn-line-len m 0) 0) "\n"))
+          (let _ (zyl_rt_free m) line))))))
+
+(defn pn-line-len (p i) (let b (rt-ld8 (+ p i)) (if (or (= b 0) (= b 10)) i (pn-line-len p (+ i 1)))))
 
 ; strncpy to 127 bytes plus a NUL; the 257th registration is dropped.
 (defn zyl_register_test (name fn)
@@ -86,8 +98,8 @@
                   (let _ (rt-st64 (+ st 8) 0)
                     (if (= (bit-and (rt-ld64 (+ (pn-tbuf) 64)) 4294967295) 0)
                       (let _ (pn-out "ok\n") (pn-run-tests (+ i 1) (+ passed 1) failed))
-                      (let _ (pn-out "FAIL\n") (pn-run-tests (+ i 1) passed (+ failed 1)))))
-                  (let _ (pn-out "FAIL\n") (pn-run-tests (+ i 1) passed (+ failed 1))))))))))))
+                      (let _ (pn-out (pn-fail-line)) (pn-run-tests (+ i 1) passed (+ failed 1)))))
+                  (let _ (pn-out (pn-fail-line)) (pn-run-tests (+ i 1) passed (+ failed 1))))))))))))
 
 ; --- panic ---
 
@@ -106,8 +118,9 @@
   (let st (pn-tstate)
     (if (and (not (= (rt-ld64 (+ st 8)) 0)) (= (bit-and (ffi-call "zyl_ffi_on_worker" 1) 4294967295) 0))
       (let _ (rt-st64 (+ st 8) 0)
-        (let _ (zyl_region_unwind (rt-ld64 (+ st 16)))
-          (ffi-call "zyl_rt_longjmp" (pn-tbuf) 1 1)))
+        (let _ (rt-st64 (pn-tmsg) (if (= m 0) 0 (rt-strdup m)))
+          (let _ (zyl_region_unwind (rt-ld64 (+ st 16)))
+            (ffi-call "zyl_rt_longjmp" (pn-tbuf) 1 1))))
       (let _ (zyl_actor_abandon)
       (let w (if (= m 0) (rt-w "assertion failed") m)
         (let _ (if (= (zyl_diag_json) 0) (pn-err (str-concat "PANIC: " (str-concat (pn-s w) "\n"))) (pn-panic-json w))

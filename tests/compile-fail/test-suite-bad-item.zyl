@@ -1,0 +1,4 @@
+; expect-error: E_MALFORMED_FORM
+; expect-at: test-suite-bad-item.zyl:3:17
+(test-suite "s" (print 1))
+(run-tests)

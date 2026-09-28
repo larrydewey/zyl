@@ -65,7 +65,6 @@
   (EFileWrite Expr Expr)
   (EFileClose Expr)
   (EBufAppend Expr Expr)
-  (EWithResource String Expr Expr)
   (EDeftype String (List ADTVariant) (List String) (Option String))
   (ETraitDecl String (List TraitMethod) (Option (Pair String String)))
   (EImplBlock String String (List ImplBody))
@@ -73,17 +72,12 @@
   (EStructDefPlus StructDef (Option StructDef))
   (EAliasDecl String Expr)
   (EDerive String (List String))
-  (ETestSuite String (List TestOrSuite) (Option (Pair String Atom)))
   (ETestDecl String Expr (Option (Pair String Atom)))
   (EAssertEqual Expr Expr)
-  (EAssertFail Expr (Option String))
   (EAssertTrue Expr (Option String))
   (EAssertFalse Expr (Option String))
-  (ETestProperty String Generator Expr)
-  (ESetup (List Expr))
-  (ETeardown (List Expr))
   (ERunTests (Option (Pair String Atom)))
-  (ETestCompile Expr (Option Bool))
+  (ETestCompile Expr Bool)
   (EApply String (List Expr))
   (EMacroDef String (List Expr) Expr)
   (EUnknown String (List Expr))
@@ -165,14 +159,6 @@
 (defn DN.body (d) (match d (DN _ _ b b)))
 
 (deftype StructDef (SD String (List (Pair String (Option String)))))
-
-(deftype Generator (GenInt) (GenBool) (GenStr) (GenFloat))
-
-(deftype TestDecl (TD String Expr (Option (Pair String Atom))))
-
-(deftype TestSuiteNode (TSN String (List TestOrSuite) (Option (Pair String Atom))))
-
-(deftype TestOrSuite (Test TestDecl) (Suite TestSuiteNode))
 
 ; --- Expr wrapper: every pass reads a node's form through Expr.inner --------
 
@@ -2788,14 +2774,9 @@
           None)))
     None))
 
-(defn parse-assert-fail (args)
-  (if (ast-has-at-least args 1)
-    (Some
-      (Expr
-        (EAssertFail
-          (convert-ast (ast-nth args 0 (AstInt 0)))
-          None)))
-    None))
+; A well-formed assert-fail is rewritten before conversion (compiler/desugar.zyl).
+(defn parse-assert-fail (_args)
+  (ei-fail "E_MALFORMED_FORM" "`assert-fail` takes an expression and an optional message string"))
 
 (defn parse-spawn (args)
   (if (not (= (ast-count args) 1))
@@ -2960,44 +2941,19 @@
           None)))
     None))
 
+; Top-level suites are flattened before conversion (compiler/desugar.zyl); these are the stray ones.
 (defn parse-test-suite (_args)
-  (Some (Expr (ETestSuite "___" Nil None))))
+  (ei-fail "E_MALFORMED_FORM" "`test-suite` is a top-level form"))
 
-(defn parse-setup (args)
-  (Some (Expr (ESetup (convert-ast-list args)))))
+(defn parse-setup (_args)
+  (ei-fail "E_MALFORMED_FORM" "`setup` belongs inside a top-level test-suite"))
 
-(defn parse-teardown (args)
-  (Some (Expr (ETeardown (convert-ast-list args)))))
+(defn parse-teardown (_args)
+  (ei-fail "E_MALFORMED_FORM" "`teardown` belongs inside a top-level test-suite"))
 
-; (with-resource (name init) body): the binding is a single parenthesized
-; (name init) pair -- both this file's own header comment and every
-; regression/with-resource.zyl call site use exactly that shape, same
-; convention as parse-let's `(let (name value) body)` form. The
-; previous version expected three flat top-level args (name, init,
-; body) with no such call site anywhere, so `(ast-has-at-least args 3)`
-; was false for the real (2-arg: binding-pair, body) syntax, parsing
-; always fell through to `(Expr (EUnknown "with-resource" ...))`, and
-; EUnknown -- like every other unhandled/malformed shape -- lowers to a
-; harmless (IConst 0) in icnf.zyl's ic-expr, silently discarding both
-; the binding and the body instead of erroring.
-(defn parse-with-resource (args)
-  (match (ast-nth args 0 (AstInt 0))
-    (AList blist
-      (match blist
-        (Cons bname _
-          (match bname
-            (AstIdent bn
-              (if (ast-has-at-least args 2)
-                (Some
-                  (Expr
-                    (EWithResource
-                      bn
-                      (convert-ast (ast-nth blist 1 (AstInt 0)))
-                      (parse-body-from args 1))))
-                None))
-            (_ None)))
-        (_ None)))
-    (_ None)))
+; A well-formed with-resource is rewritten before conversion (compiler/desugar.zyl).
+(defn parse-with-resource (_args)
+  (ei-fail "E_MALFORMED_FORM" "`with-resource` takes a (name value) binding and a body"))
 
 (defn parse-make-struct (args)
   (if (ast-has-at-least args 1)
@@ -3038,11 +2994,25 @@
     None
     (Some (Expr (EUnwrap (convert-ast (ast-nth args 0 (AstInt 0))))))))
 
+; Properties are rewritten into tests before conversion (compiler/desugar.zyl); this is a stray one.
 (defn parse-test-property (_args)
-  (Some (Expr (ETestProperty "___" (GenInt) (Expr (EAtom ANil))))))
+  (ei-fail "E_MALFORMED_FORM" "`test-property` is a top-level form or an item of a test-suite"))
 
-(defn parse-test-compile (_args)
-  (Some (Expr (ETestCompile (Expr (EAtom ANil)) None))))
+; (test-compile e) or (test-compile e (:expect-error b)); pipeline.zyl's tc-resolve decides it.
+(defn parse-test-compile (args)
+  (let n (ast-count args)
+    (if (= n 1) (Some (Expr (ETestCompile (convert-ast (ast-nth args 0 (AstInt 0))) false)))
+      (if (= n 2)
+        (match (ast-nth args 1 (AstInt 0))
+          (AList opt
+            (match (ast-nth opt 1 (AstInt 0))
+              (AstBool b
+                (if (and (= (ast-count opt) 2) (str-eq (ast-head (ast-nth args 1 (AstInt 0))) ":expect-error"))
+                  (Some (Expr (ETestCompile (convert-ast (ast-nth args 0 (AstInt 0))) b)))
+                  None))
+              (_ None)))
+          (_ None))
+        None))))
 
 ; ===========================================================================
 ; UTILITY HELPERS

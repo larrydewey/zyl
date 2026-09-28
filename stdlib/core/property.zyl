@@ -1,0 +1,113 @@
+; === Zyl Standard Library — Property-based testing ===
+; Module: core/property
+; Provides: the samples behind test-property's generators (spec 20.5.4)
+; and the checks a test-property runs. The compiler rewrites
+; (test-property "name" gen-int (fn (x) ...)) into a test that calls
+; property-check-1 with property-samples-int (compiler/desugar.zyl).
+;
+; Samples are fixed: edge cases first, then a seeded sequence, so a run
+; is the same on every machine (spec 27). A property of two or three
+; parameters pairs each sample with the list rotated by 7 and by 13.
+
+(use allocator/allocator)
+(use core/show)
+(use core/list)
+
+; SplitMix64's output function over wrapping Int arithmetic.
+(defn property-mix ((z Int))
+  (let a (* (bit-xor z (shr z 30)) -4658895280553007687)
+    (let b (* (bit-xor a (shr a 27)) -7723592293110705685)
+      (bit-xor b (shr b 31)))))
+
+; The i-th word of the seeded sequence.
+(defn property-word ((i Int)) (property-mix (* (+ i 1) -7046029254386353131)))
+
+; A value in [0, n) from the i-th word.
+(defn property-below ((i Int) (n Int))
+  (let w (bit-and (property-word i) 9223372036854775807) (% w n)))
+
+(defn property-ints-from ((i Int) (n Int) acc)
+  (if (>= i n) acc
+    (property-ints-from (+ i 1) n
+      (Cons (if (< i 40) (- (property-below i 2001) 1000) (property-word i)) acc))))
+
+; 22 edge cases, 40 small values, 40 full-range words.
+(defn property-samples-int ()
+  (list-append
+    [0 1 -1 2 -2 7 -7 10 -10 100 -100 127 128 255 256 65535 65536
+     2147483647 -2147483648 4294967295 9223372036854775807 (- -9223372036854775807 1)]
+    (list-reverse (property-ints-from 0 80 Nil))))
+
+(defn property-floats-from ((i Int) (n Int) acc)
+  (if (>= i n) acc
+    (property-floats-from (+ i 1) n
+      (Cons (/ (ffi-call "zyl_f_of_int" (- (property-below (+ i 100) 20001) 10000) 1000) 64.0) acc))))
+
+; 12 edge cases, 30 values k/64 for k in [-10000, 10000]; no NaN or infinity.
+(defn property-samples-float ()
+  (list-append
+    [0.0 1.0 -1.0 0.5 -0.5 2.0 0.1 -0.1 3.14159 1000000.0 0.001 -123.25]
+    (list-reverse (property-floats-from 0 30 Nil))))
+
+(defn property-samples-bool () [false true])
+
+(defn property-chars ((i Int) (k Int) (s String))
+  (if (<= k 0) s
+    (property-chars (+ i 1) (- k 1)
+      (str-concat s (ffi-call "zyl_cstr_from_byte" (+ 32 (property-below i 95)) 1000)))))
+
+(defn property-strings-from ((i Int) (n Int) acc)
+  (if (>= i n) acc
+    (property-strings-from (+ i 1) n
+      (Cons (property-chars (* (+ i 200) 16) (property-below (+ i 300) 13) "") acc))))
+
+; 12 edge cases, 30 printable-ASCII strings of length 0 to 12.
+(defn property-samples-string ()
+  (list-append
+    ["" "a" "Z" "0" " " "hello" "Hello, World" "a b c" "\n" "\t" "tab\there" "\"quoted\""]
+    (list-reverse (property-strings-from 0 30 Nil))))
+
+(defn property-take (xs (k Int))
+  (if (<= k 0) Nil (match xs (Nil Nil) (Cons h t (Cons h (property-take t (- k 1)))))))
+
+(defn property-drop (xs (k Int))
+  (if (<= k 0) xs (match xs (Nil Nil) (Cons _ t (property-drop t (- k 1))))))
+
+; xs with its first k elements moved to the end.
+(defn property-rotate (xs (k Int))
+  (list-append (property-drop xs k) (property-take xs k)))
+
+(defn property-fail ((name String) (args String))
+  (error (str-concat "property `" (str-concat name (str-concat "` failed for " args)))))
+
+(defn property-check-1 (name f xs)
+  (match xs
+    (Nil unit)
+    (Cons x t (if (f x) (property-check-1 name f t) (property-fail name (Debug.debug x))))))
+
+(defn property-check-2 (name f xs ys)
+  (match xs
+    (Nil unit)
+    (Cons x t
+      (match ys
+        (Nil unit)
+        (Cons y u
+          (if (f x y)
+            (property-check-2 name f t u)
+            (property-fail name (str-concat (Debug.debug x) (str-concat ", " (Debug.debug y))))))))))
+
+(defn property-check-3 (name f xs ys zs)
+  (match xs
+    (Nil unit)
+    (Cons x t
+      (match ys
+        (Nil unit)
+        (Cons y u
+          (match zs
+            (Nil unit)
+            (Cons z v
+              (if (f x y z)
+                (property-check-3 name f t u v)
+                (property-fail name
+                  (str-concat (Debug.debug x)
+                    (str-concat ", " (str-concat (Debug.debug y) (str-concat ", " (Debug.debug z))))))))))))))

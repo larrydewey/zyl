@@ -1,0 +1,237 @@
+; === Zyl Compiler — Source desugaring ===
+; Module: compiler/desugar
+;
+; Rewrites the forms the spec defines in terms of others, on the raw
+; parse tree of every file (zyl-parse-file), before module resolution, so
+; each name a rewrite introduces is qualified like hand-written code:
+;
+;   (with-resource (r init) body...)   spec 12.9: body, then (Drop.drop r)
+;                                      on the way out, normally or by an
+;                                      error, before the error propagates
+;   (assert-fail e msg?)               spec 20.5.2: fails unless e raises
+;   (test-suite "s" item...)           spec 20.5.1/20.5.3: its tests become
+;                                      top-level tests "s/t", each run
+;                                      between the suite's setup and
+;                                      teardown forms (teardown on failure too)
+;   (test-property "p" gen fn)         spec 20.5.4: a test running fn over
+;                                      the generator's samples (core/property)
+;
+; A generated node carries the span of the form it replaces, so a
+; diagnostic about it points at that form. Quoted data is not rewritten.
+
+(use allocator/allocator)
+(use compiler/ast)
+(use compiler/error_report)
+
+(defn ds-program (forms)
+  (match forms
+    (Nil Nil)
+    (Cons f rest
+      (let h (ds-head f)
+        (if (str-eq h "test-suite") (list-append (ds-suite f "" Nil Nil) (ds-program rest))
+          (if (str-eq h "test-property") (Cons (ds-property f (ds-str-arg f) Nil Nil) (ds-program rest))
+            (if (or (str-eq h "setup") (str-eq h "teardown"))
+              (ds-fail f (str-concat "`" (str-concat h "` belongs inside a test-suite")))
+              (Cons (if (ds-needs f) (ds-form f) f) (ds-program rest)))))))))
+
+; --- helpers ---------------------------------------------------------------
+
+(defn ds-head (a)
+  (match a (AList xs (match xs (Cons h _ (match h (AstIdent n n) (_ ""))) (Nil ""))) (_ "")))
+
+(defn ds-items (a) (match a (AList xs xs) (_ Nil)))
+
+(defn ds-count (xs) (match xs (Nil 0) (Cons _ t (+ 1 (ds-count t)))))
+
+(defn ds-nth (xs (i Int))
+  (match xs (Nil (AstInt 0)) (Cons h t (if (<= i 0) h (ds-nth t (- i 1))))))
+
+(defn ds-rest (xs (i Int))
+  (match xs (Nil Nil) (Cons _ t (if (<= i 0) xs (ds-rest t (- i 1))))))
+
+; The suite or property name, "" when it is not a string literal.
+(defn ds-str-arg (a) (match (ds-nth (ds-items a) 1) (AString s s) (_ "")))
+
+; `node` with the span of `at`.
+(defn ds-at (node at) (let _ (ffi-call "zyl_span_copy" node at 1000) node))
+
+(defn ds-id (n at) (ds-at (AstIdent n) at))
+(defn ds-list (xs at) (ds-at (AList xs) at))
+
+(defn ds-fail (at msg)
+  (ffi-call "zyl_panic"
+    (err-at "E_MALFORMED_FORM" msg (ffi-call "zyl_span_file" at 1000) (ffi-call "zyl_span_off" at 1000) "") 1000))
+
+; One form from a body: the form itself, or (begin forms...).
+(defn ds-body (forms at)
+  (match forms
+    (Cons f t (match t (Nil f) (Cons _ _ (ds-list (Cons (ds-id "begin" at) forms) at))))
+    (Nil (ds-id "unit" at))))
+
+; (let v body-in-try (begin cleanup... v)), running cleanup also when body
+; raises, then re-raising. `v` and `e` are the rewrite's own names.
+(defn ds-guard (body cleanup v e at)
+  (ds-list [(ds-id "let" at) (ds-id v at)
+            (ds-list [(ds-id "try" at) body
+                      (ds-list [(ds-id "catch" at) (ds-id e at)
+                                (ds-body (list-append cleanup [(ds-list [(ds-id "zyl-reraise" at) (ds-id e at)] at)]) at)] at)] at)
+            (ds-body (list-append cleanup [(ds-id v at)]) at)] at))
+
+; --- the rewrite of any form -------------------------------------------------
+
+; Whether a with-resource or assert-fail occurs anywhere in `a`.
+(defn ds-needs (a)
+  (match a
+    (AList xs
+      (let h (ds-head a)
+        (if (or (str-eq h "quote") (str-eq h "quasiquote")) false
+          (if (or (str-eq h "with-resource") (str-eq h "assert-fail")) true
+            (ds-needs-list xs)))))
+    (_ false)))
+
+(defn ds-needs-list (xs) (match xs (Nil false) (Cons h t (if (ds-needs h) true (ds-needs-list t)))))
+
+(defn ds-form (a)
+  (match a
+    (AList xs
+      (let h (ds-head a)
+        (if (or (str-eq h "quote") (str-eq h "quasiquote")) a
+          (if (str-eq h "with-resource") (ds-with a xs)
+            (if (str-eq h "assert-fail") (ds-assert-fail a xs)
+              (if (ds-needs-list xs) (ds-list (ds-forms xs) a) a))))))
+    (_ a)))
+
+(defn ds-forms (xs) (match xs (Nil Nil) (Cons h t (Cons (ds-form h) (ds-forms t)))))
+
+; (with-resource (r init) body...) =>
+; (let r init (let _wr_v (try body (catch _wr_e (begin (Drop.drop r) (zyl-reraise _wr_e))))
+;               (begin (Drop.drop r) _wr_v)))
+(defn ds-with (a xs)
+  (let b (ds-nth xs 1)
+    (match b
+      (AList bs
+        (match (ds-nth bs 0)
+          (AstIdent r
+            (if (and (= (ds-count bs) 2) (>= (ds-count xs) 3))
+              (ds-list [(ds-id "let" a) (ds-id r a) (ds-form (ds-nth bs 1))
+                        (ds-guard (ds-body (ds-forms (ds-rest xs 2)) a)
+                                  [(ds-list [(ds-id "Drop.drop" a) (ds-id r a)] a)] "_wr_v" "_wr_e" a)] a)
+              (ds-with-shape a)))
+          (_ (ds-with-shape a))))
+      (_ (ds-with-shape a)))))
+
+(defn ds-with-shape (a) (ds-fail a "`with-resource` takes a (name value) binding and a body"))
+
+; (assert-fail e msg?) => (if (try (begin e false) (catch _af_e true)) unit (error msg))
+(defn ds-assert-fail (a xs)
+  (let n (ds-count xs)
+    (if (or (< n 2) (> n 3)) (ds-fail a "`assert-fail` takes an expression and an optional message string")
+      (let msg (if (= n 3) (ds-nth xs 2) (ds-at (AString "assert-fail: the expression did not raise an error") a))
+        (match msg
+          (AString _
+            (ds-list [(ds-id "if" a)
+                      (ds-list [(ds-id "try" a) (ds-list [(ds-id "begin" a) (ds-form (ds-nth xs 1)) (ds-at (AstBool false) a)] a)
+                                (ds-list [(ds-id "catch" a) (ds-id "_af_e" a) (ds-at (AstBool true) a)] a)] a)
+                      (ds-id "unit" a)
+                      (ds-list [(ds-id "error" a) msg] a)] a))
+          (_ (ds-fail a "the message of `assert-fail` is a string literal")))))))
+
+; --- test-suite ----------------------------------------------------------------
+
+; The tests of one suite, flattened. `pre` is the enclosing name prefix,
+; `setups` the enclosing setup forms (outermost first) and `teardowns` the
+; enclosing teardown forms (innermost first).
+(defn ds-suite (a pre setups teardowns)
+  (let xs (ds-items a)
+    (let name (ds-str-arg a)
+      (if (or (= (str-length name) 0) (< (ds-count xs) 2))
+        (ds-fail a "`test-suite` takes a name string, then its tests")
+        (let items (ds-rest xs 2)
+          (let full (str-concat pre (str-concat name "/"))
+            (let s2 (list-append setups (ds-fixtures items "setup"))
+              (let t2 (list-append (ds-fixtures items "teardown") teardowns)
+                (ds-suite-items items full s2 t2)))))))))
+
+; The body forms of every (kind form...) item, in order.
+(defn ds-fixtures (items kind)
+  (match items
+    (Nil Nil)
+    (Cons i t
+      (if (str-eq (ds-head i) kind)
+        (let body (ds-rest (ds-items i) 1)
+          (if (= (ds-count body) 0) (ds-fail i (str-concat "`" (str-concat kind "` takes one or more forms")))
+            (list-append (ds-forms body) (ds-fixtures t kind))))
+        (ds-fixtures t kind)))))
+
+(defn ds-suite-items (items pre setups teardowns)
+  (match items
+    (Nil Nil)
+    (Cons i t
+      (let h (ds-head i)
+        (let rest (ds-suite-items t pre setups teardowns)
+          (if (str-eq h "test") (Cons (ds-suite-test i pre setups teardowns) rest)
+            (if (str-eq h "test-suite") (list-append (ds-suite i pre setups teardowns) rest)
+              (if (str-eq h "test-property") (Cons (ds-property i (str-concat pre (ds-str-arg i)) setups teardowns) rest)
+                (if (or (str-eq h "setup") (str-eq h "teardown")) rest
+                  (ds-fail i "a test-suite holds test, test-suite, test-property, setup and teardown forms"))))))))))
+
+; (test "t" body) inside a suite => (test "pre/t" fixtures-around-body).
+(defn ds-suite-test (i pre setups teardowns)
+  (let xs (ds-items i)
+    (match (ds-nth xs 1)
+      (AString n
+        (if (= (ds-count xs) 3)
+          (ds-list [(ds-id "test" i) (ds-at (AString (str-concat pre n)) i)
+                    (ds-fixture-wrap (ds-form (ds-nth xs 2)) setups teardowns i)] i)
+          i))
+      (_ i))))
+
+; setup... then body, then teardown... (also when body raises).
+(defn ds-fixture-wrap (body setups teardowns at)
+  (let guarded (match teardowns (Nil body) (_ (ds-guard body teardowns "_td_v" "_td_e" at)))
+    (match setups (Nil guarded) (_ (ds-body (list-append setups [guarded]) at)))))
+
+; --- test-property ---------------------------------------------------------------
+
+; (test-property "p" gen (fn (x ...) body)) => (test "p" (property-check-K "p" fn samples...)),
+; with up to three parameters; the second and third samples are rotated by 7 and 13.
+(defn ds-property (a name setups teardowns)
+  (let xs (ds-items a)
+    (if (or (= (str-length name) 0) (not (= (ds-count xs) 4)))
+      (ds-fail a "`test-property` takes a name string, a generator (gen-int, gen-bool, gen-string or gen-float) and a (fn (params) body)")
+      (let samples (ds-samples (ds-nth xs 2) a)
+        (let f (ds-nth xs 3)
+          (let k (ds-fn-arity f)
+            (if (or (< k 1) (> k 3))
+              (ds-fail f "the property of a `test-property` is a (fn (params) body) of one to three parameters")
+              (ds-list [(ds-id "test" a) (ds-at (AString name) a)
+                        (ds-fixture-wrap
+                          (ds-list (list-append [(ds-id (str-concat "property-check-" (ds-digit k)) a) (ds-at (AString name) a) (ds-form f)]
+                                                (ds-sample-args samples k a)) a)
+                          setups teardowns a)] a))))))))
+
+(defn ds-digit ((k Int)) (if (= k 1) "1" (if (= k 2) "2" "3")))
+
+(defn ds-samples (g a)
+  (match g
+    (AstIdent n
+      (if (str-eq n "gen-int") "property-samples-int"
+        (if (str-eq n "gen-bool") "property-samples-bool"
+          (if (str-eq n "gen-string") "property-samples-string"
+            (if (str-eq n "gen-float") "property-samples-float"
+              (ds-fail g "a test-property generator is gen-int, gen-bool, gen-string or gen-float"))))))
+    (_ (ds-fail a "a test-property generator is gen-int, gen-bool, gen-string or gen-float"))))
+
+; Parameter count of a (fn (params) body) or (lambda (params) body), else 0.
+(defn ds-fn-arity (f)
+  (let h (ds-head f)
+    (if (or (str-eq h "fn") (str-eq h "lambda"))
+      (match (ds-nth (ds-items f) 1) (AList ps (ds-count ps)) (_ 0))
+      0)))
+
+(defn ds-sample-args (samples (k Int) a)
+  (let call (ds-list [(ds-id samples a)] a)
+    (if (= k 1) [call]
+      (let r7 (ds-list [(ds-id "property-rotate" a) (ds-list [(ds-id samples a)] a) (ds-at (AstInt 7) a)] a)
+        (if (= k 2) [call r7]
+          [call r7 (ds-list [(ds-id "property-rotate" a) (ds-list [(ds-id samples a)] a) (ds-at (AstInt 13) a)] a)])))))

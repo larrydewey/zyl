@@ -5,7 +5,7 @@
 (defn put (path text)
   (let fd (file-open path "w") (begin (file-write fd text) (file-close fd) 0)))
 
-(defn setup ()
+(defn make-tree ()
   (begin
     (ffi-call "zyl_system_cmd" "rm -rf /tmp/zyl_rt_os_test" 1000)
     (ffi-call "zyl_mkdir_p" "/tmp/zyl_rt_os_test/sub/deeper" 1000)
@@ -22,7 +22,7 @@
     (put "/tmp/zyl_rt_os_test/sub/deeper/x.zyl" "x")
     0))
 
-(def _setup (setup))
+(def _setup (make-tree))
 
 (test "file-round-trip"
   (let p "/tmp/zyl_rt_os_test/rt.txt"

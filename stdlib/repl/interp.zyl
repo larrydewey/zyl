@@ -947,10 +947,12 @@
   (begin
     (ffi-call "zyl_itest_start" (ffi-call "zyl_itest_name" i 1000) 1000)
     (let outcome (try (Ok (in-call-value fns Nil (VPtr (ffi-call "zyl_itest_fn" i 1000)) Nil))
-                      (catch _e (Err 1)))
+                      (catch e (Err e)))
       (let ok (in-test-ok outcome)
         (begin
-          (ffi-call "zyl_itest_outcome" ok 1000)
+          (match outcome
+            (Err e (ffi-call "zyl_itest_fail" e 1000))
+            (Ok _ (ffi-call "zyl_itest_outcome" ok 1000)))
           ok)))))
 
 ; A test function returns 0 for success; anything else, or a panic, is a

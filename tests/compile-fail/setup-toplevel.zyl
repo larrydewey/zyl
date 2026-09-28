@@ -1,0 +1,5 @@
+; expect-error: E_MALFORMED_FORM
+; expect-at: setup-toplevel.zyl:4:1
+; setup belongs inside a test-suite.
+(setup (print 1))
+(run-tests)

@@ -298,19 +298,15 @@
     (EFileWrite a b (begin (ac-expr a arities shadowed) (ac-expr b arities shadowed)))
     (EFileClose e2 (ac-expr e2 arities shadowed))
     (EBufAppend a b (begin (ac-expr a arities shadowed) (ac-expr b arities shadowed)))
-    (EWithResource _ init body (begin (ac-expr init arities shadowed) (ac-expr body arities shadowed)))
     (ESpawn closure (ac-expr closure arities shadowed))
     (ESend actor msg (begin (ac-expr actor arities shadowed) (ac-expr msg arities shadowed)))
     (ESendClosure actor closure _ (begin (ac-expr actor arities shadowed) (ac-expr closure arities shadowed)))
     (ETestDecl _ body _ (ac-expr body arities shadowed))
     (EAssertEqual l r (begin (ac-expr l arities shadowed) (ac-expr r arities shadowed)))
-    (EAssertFail e2 _ (ac-expr e2 arities shadowed))
     (EAssertTrue e2 _ (ac-expr e2 arities shadowed))
     (EAssertFalse e2 _ (ac-expr e2 arities shadowed))
-    (ETestProperty _ _ body (ac-expr body arities shadowed))
-    (ESetup exprs (ac-list exprs arities shadowed))
-    (ETeardown exprs (ac-list exprs arities shadowed))
-    (ETestCompile e2 _ (ac-expr e2 arities shadowed))
+    (ETestCompile _ _
+      (ffi-fail "E_MALFORMED_FORM" "`test-compile` is a top-level form" "move it out to the top level of the file" e))
     ; A nested top-level-style `defn` is its own function scope (no
     ; closure capture for plain `defn`, only `fn`/`lambda` are
     ; closures -- see codegen.zyl), so it does NOT inherit the

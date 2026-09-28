@@ -1,0 +1,9 @@
+; === Zyl Standard Library — Resources ===
+; Module: core/resource
+; Provides: Drop, the trait with-resource calls when its body exits
+; (spec 12.9), normally or by an error, before the error propagates.
+; An Int resource is a file descriptor, released with file-close.
+
+(trait Drop (drop (self) Unit))
+
+(impl Drop Int (defn drop (self) (let _ (file-close self) unit)))

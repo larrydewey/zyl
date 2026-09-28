@@ -1,0 +1,4 @@
+; expect-error: E_MALFORMED_FORM
+; expect-at: test-property-arity.zyl:3:28
+(test-property "p" gen-int (fn (a b c d) true))
+(run-tests)

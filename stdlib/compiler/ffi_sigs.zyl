@@ -233,6 +233,7 @@
   (Cons (FSig "zyl_itest_count" "-> Int")
   (Cons (FSig "zyl_itest_name" "Int -> String")
   (Cons (FSig "zyl_itest_outcome" "Bool -> Unit")
+  (Cons (FSig "zyl_itest_fail" "String -> Unit")
   (Cons (FSig "zyl_itest_reset" "-> Unit")
   (Cons (FSig "zyl_itest_start" "String -> Unit")
   (Cons (FSig "zyl_itest_summary" "Int Int -> Int")
@@ -360,4 +361,4 @@
   (Cons (FSig "zyl_bytebuf_new" "Int Int -> ByteBuf")
   (Cons (FSig "zyl_bytebuf_read_file" "String -> ByteBuf")
   (Cons (FSig "zyl_bytebuf_write_exec" "String ByteBuf Int -> Int")
-  Nil)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+  Nil))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
