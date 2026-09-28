@@ -1,0 +1,63 @@
+; Edge cases of the runtime's try frames, panic path, JSON quoting and warning sink (runtime/rt/panic.zyl).
+
+(defn rp-mk (n) (if (= n 0) Nil (Cons n (rp-mk (- n 1)))))
+(defn rp-sum (l) (match l (Nil 0) (Cons h t (+ h (rp-sum t)))))
+(defn rp-deep (n) (let l (rp-mk 20) (if (= n 0) (error "E_DEEP: bottom") (+ (rp-sum l) (rp-deep (- n 1))))))
+
+(test "nested-try-rethrow"
+  (begin
+    (assert-equal (try (+ 1 (try (rp-deep 4) (catch e (str-length e)))) (catch e 100)) 15)
+    (assert-equal (try (+ (try (rp-deep 2) (catch e 1)) (rp-deep 3)) (catch e -1)) -1)
+    (assert-true (str-eq (try (begin (rp-deep 6) "") (catch e e)) "E_DEEP: bottom"))))
+
+(test "frames-pop-after-body"
+  (begin
+    (assert-equal (try 5 (catch e 0)) 5)
+    (assert-equal (try (try 6 (catch e 0)) (catch e 1)) 6)
+    (assert-equal (try (begin (try 7 (catch e 0)) (rp-deep 1)) (catch e 9)) 9)))
+
+(test "catch-in-region"
+  (assert-equal (try (with-region (arena :block 65536 :align 16 :limit 1048576)
+                       (if (> (rp-sum (rp-mk 30)) 0) (error "in-region") 1))
+                     (catch e (+ 40 (rp-sum (rp-mk 2)))))
+                43))
+
+(test "loop-of-catches"
+  (assert-equal (rp-catch-loop 0 0) 1000))
+
+(defn rp-catch-loop (i acc)
+  (if (>= i 1000) acc (rp-catch-loop (+ i 1) (+ acc (try (rp-deep 0) (catch e 1))))))
+
+(test "json-quote"
+  (begin
+    (assert-equal (ffi-call "zyl_json_quote" "" 1000) "\"\"")
+    (assert-equal (ffi-call "zyl_json_quote" "a\"b\\c" 1000) "\"a\\\"b\\\\c\"")
+    (assert-equal (ffi-call "zyl_json_quote" "l1\nl2\tt\rr" 1000) "\"l1\\nl2\\tt\\rr\"")
+    (assert-equal (ffi-call "zyl_json_quote" (str-concat "x" (ffi-call "zyl_cstr_from_byte" 1 1000)) 1000) "\"x\\u0001\"")
+    (assert-equal (ffi-call "zyl_json_quote" (ffi-call "zyl_cstr_from_byte" 31 1000) 1000) "\"\\u001f\"")
+    (assert-equal (ffi-call "zyl_json_quote" "é~" 1000) "\"é~\"")))
+
+(defn rp-repeat (s n) (if (= n 0) "" (str-concat s (rp-repeat s (- n 1)))))
+
+(test "warn-capture"
+  (begin
+    (ffi-call "zyl_warn_capture" true 1000)
+    (ffi-call "zyl_warn_emit" "w1" 1000)
+    (ffi-call "zyl_warn_emit" "" 1000)
+    (ffi-call "zyl_warn_emit" "w3" 1000)
+    (assert-equal (ffi-call "zyl_warn_take" 1000) "w1\n\nw3\n")
+    (assert-equal (ffi-call "zyl_warn_take" 1000) "")
+    (ffi-call "zyl_warn_emit" (rp-repeat "abcdefgh" 300) 1000)
+    (assert-equal (str-length (ffi-call "zyl_warn_take" 1000)) 2401)
+    (ffi-call "zyl_warn_capture" false 1000)
+    (assert-equal (ffi-call "zyl_warn_take" 1000) "")))
+
+(test "diag-flag"
+  (begin
+    (assert-false (ffi-call "zyl_diag_json" 1000))
+    (ffi-call "zyl_diag_json_set" true 1000)
+    (assert-true (ffi-call "zyl_diag_json" 1000))
+    (ffi-call "zyl_diag_json_set" false 1000)
+    (assert-false (ffi-call "zyl_diag_json" 1000))))
+
+(run-tests)

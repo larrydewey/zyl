@@ -1,0 +1,96 @@
+; Printing through stdio's stdout, the interpreter's test transcript, exit, read-line and the word cells.
+(use base)
+(use alloc)
+(use fmt)
+
+(extern "malloc" (Int) Int)
+(extern "realloc" (Int Int) Int)
+(extern "free" (Int) Int)
+(extern "exit" (Int) Int)
+(extern "fputs" (Int Int) Int)
+(extern "fwrite" (Int Int Int Int) Int)
+(extern "fflush" (Int) Int)
+
+(defmacro rt-ld64 (a) (ffi-call "%load64" a 1))
+(defmacro rt-st64 (a v) (ffi-call "%store64" a v 1))
+
+(defn io-stdout () (rt-ld64 (ffi-call "%fn" "stdout" 1)))
+(defn io-stderr () (rt-ld64 (ffi-call "%fn" "stderr" 1)))
+(defn io-puts (w) (let _ (ffi-call "fputs" w (io-stdout) 1) 0))
+(defn io-put (s) (io-puts (rt-w s)))
+
+; printf's "%s" of NULL.
+(defn io-puts-or-null (w) (if (= w 0) (io-put "(null)") (io-puts w)))
+
+; "%lld" into a per-thread scratch, written with one fwrite.
+(defn io-put-int (n)
+  (let b (ffi-call "%tls" "io_int" 32 1)
+    (let e (+ b 32)
+      (let p (io-digits (if (< n 0) (- 0 n) n) e)
+        (let q (if (< n 0) (let _ (rt-st8 (- p 1) 45) (- p 1)) p)
+          (let _ (ffi-call "fwrite" q 1 (- e q) (io-stdout) 1) 0))))))
+
+; Unsigned digits of m ending before e; the start address.
+(defn io-digits (m e)
+  (let p (- e 1)
+    (let _ (rt-st8 p (+ 48 (ffi-call "%urem" m 10 1)))
+      (let q (ffi-call "%udiv" m 10 1) (if (= q 0) p (io-digits q p))))))
+
+; --- print, in the three shapes codegen emits ---
+
+(defn zyl_print_int (n) (let _ (io-put-int n) (io-put "\n")))
+(defn zyl_print_str (s) (let _ (io-puts-or-null s) (io-put "\n")))
+(defn zyl_print_float (bits) (let _ (io-puts (rt-w (zyl_f_text bits))) (io-put "\n")))
+
+; --- the lines zyl_run_tests writes, for the interpreter's own runner ---
+
+(defn zyl_itest_start (name)
+  (let _ (io-put "test: ") (let _ (io-puts-or-null name) (let _ (io-put " ... ") (let _ (ffi-call "fflush" (io-stdout) 1) 0)))))
+
+(defn zyl_itest_outcome (ok) (io-put (if (= ok 0) "FAIL\n" "ok\n")))
+
+(defn zyl_itest_summary (passed failed)
+  (let _ (io-put "\ntest result: ")
+    (let _ (io-put-int passed)
+      (let _ (io-put " passed, ")
+        (let _ (io-put-int failed)
+          (let _ (io-put " failed, ")
+            (let _ (io-put-int (+ passed failed))
+              (let _ (io-put " total\n") (if (> failed 0) 1 0)))))))))
+
+; (exit code): flush, then end the process.
+(defn zyl_exit (code)
+  (let _ (ffi-call "fflush" (io-stdout) 1) (let _ (ffi-call "fflush" (io-stderr) 1) (ffi-call "exit" code 1))))
+
+; (read-line): one line from stdin without its newline (or a trailing CR); "" at end of input.
+(defn zyl_read_line ()
+  (let _ (ffi-call "fflush" (io-stdout) 1)
+    (let buf (ffi-call "malloc" 128 1)
+      (if (= buf 0) (rt-w "")
+        (let r (io-read-loop buf 128 0)
+          (let b (rt-ld64 r)
+            (let n0 (rt-ld64 (+ r 8))
+              (let n (if (and (> n0 0) (= (rt-ld8 (+ b (- n0 1))) 13)) (- n0 1) n0)
+                (let out (rt-w (zyl_heap_alloc (+ n 1)))
+                  (let _ (if (= out 0) 0 (let _ (rt-copy out b n) (rt-st8 (+ out n) 0)))
+                    (let _ (ffi-call "free" b 1)
+                      (if (= out 0) (rt-w "") out))))))))))))
+
+; Bytes until newline or end of input; the result {buf, n} is a per-thread pair.
+(defn io-read-loop (buf cap n)
+  (let c (ffi-call "%tls" "io_rl" 24 1)
+    (if (and (= (ffi-call "%syscall3" 0 0 (+ c 16) 1 1) 1) (not (= (rt-ld8 (+ c 16)) 10)))
+      (if (>= (+ n 1) cap)
+        (let nb (ffi-call "realloc" buf (* cap 2) 1)
+          (if (= nb 0) (io-read-done c buf n)
+            (let _ (rt-st8 (+ nb n) (rt-ld8 (+ c 16))) (io-read-loop nb (* cap 2) (+ n 1)))))
+        (let _ (rt-st8 (+ buf n) (rt-ld8 (+ c 16))) (io-read-loop buf cap (+ n 1))))
+      (io-read-done c buf n))))
+
+(defn io-read-done (c buf n) (let _ (rt-st64 c buf) (let _ (rt-st64 (+ c 8) n) c)))
+
+; --- sixteen process-wide word cells for compiler passes ---
+
+(defn io-cells () (ffi-call "%global" "cells" 128 1))
+(defn zyl_cell_get (i) (if (and (>= i 0) (< i 16)) (rt-ld64 (+ (io-cells) (* i 8))) 0))
+(defn zyl_cell_set (i v) (let _ (if (and (>= i 0) (< i 16)) (rt-st64 (+ (io-cells) (* i 8)) v) 0) 0))

@@ -70,10 +70,6 @@ long long zyl_cstr_key_matches(long long key, long long name);
 long long zyl_cpuid_features(void);
 long long zyl_aesni_available(void);
 long long zyl_variant_eq(long long a, long long b);
-void* zyl_try_push(void);
-void zyl_try_pop(void);
-const char* zyl_try_last_msg(void);
-void zyl_panic(const char* msg);
 /* Character-level string access (self-hosting lexer substrate). */
 long long zyl_cstr_byte_at(long long ptr, long long i);
 
@@ -98,9 +94,6 @@ long long zyl_cc_compile_log(long long path, long long logpath);
 
 /* Interpreter support (stdlib/repl/interp.zyl). */
 long long zyl_word_of_cstr(long long s);
-long long zyl_itest_start(long long name);
-long long zyl_itest_outcome(long long ok);
-long long zyl_itest_summary(long long passed, long long failed);
 long long zyl_now_ms(void);
 long long zyl_ffi_lookup(long long name);
 long long zyl_call_argv(long long fn, long long argc, long long argv);
@@ -145,9 +138,6 @@ long long zyl_f_rem(long long a, long long b);
 long long zyl_f_cmp(long long a, long long b);
 long long zyl_f_of_int(long long n);
 long long zyl_f_to_int(long long bits);
-long long zyl_print_int(long long n);
-long long zyl_print_str(long long s);
-long long zyl_print_float(long long bits);
 
 /* Entries implemented in Zyl (runtime/rt/rt.zyl). */
 long long zyl_cstr_concat(long long a, long long b);
@@ -386,5 +376,30 @@ long long zyl_call5(long long v, long long a0, long long a1, long long a2, long 
 long long zyl_call6(long long v, long long a0, long long a1, long long a2, long long a3, long long a4, long long a5);
 long long zyl_div_magic(long long d);
 long long zyl_div_shift(long long d);
+
+void* zyl_try_push(void);
+void zyl_try_pop(void);
+const char* zyl_try_last_msg(void);
+long long zyl_try_frame_msg(long long frame);
+void zyl_panic(const char* msg);
+long long zyl_f_error(long long msg);
+long long zyl_diag_json(void);
+long long zyl_diag_json_set(long long on);
+long long zyl_warn_capture(long long on);
+long long zyl_warn_emit(long long msg);
+long long zyl_warn_take(void);
+long long zyl_json_quote(long long s);
+void zyl_register_test(const char* name, int (*fn)(void));
+int zyl_run_tests(void);
+long long zyl_exit(long long code);
+long long zyl_read_line(void);
+long long zyl_itest_start(long long name);
+long long zyl_itest_outcome(long long ok);
+long long zyl_itest_summary(long long passed, long long failed);
+long long zyl_print_int(long long n);
+long long zyl_print_str(long long s);
+long long zyl_print_float(long long bits);
+long long zyl_cell_get(long long i);
+long long zyl_cell_set(long long i, long long v);
 
 #endif

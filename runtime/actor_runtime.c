@@ -6,6 +6,8 @@ static volatile int g_threads_started; /* see ZYL_ARENA_LOCK */
 #include <string.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <sys/stat.h>
 #include <errno.h>
 #include <limits.h>
 #include <spawn.h>
@@ -487,55 +489,6 @@ void zyl_actor_wait_all(void) {
    the scheduler happened to run the actor before main returned". */
 
 /* ==========================================================================
-   try/catch — panic handler stack. Generated code allocates a frame, links
-   it, calls setjmp on its buffer, and branches to its catch path when
-   siglongjmp returns nonzero. zyl_panic unwinds to the innermost frame.
-   ========================================================================== */
-
-#include <setjmp.h>
-#include <stdlib.h>
-
-struct ZylTryFrame {
-    jmp_buf buf;
-    struct ZylTryFrame* prev;
-    const char* msg;
-    void* region_mark;   /* zyl_region_top when the handler was installed */
-};
-
-/* Thread-local: each actor runs its own thread with independent try/catch
- * nesting. A process-global here would let one actor's zyl_try_pop/
- * zyl_panic unlink or longjmp into another actor's frame/stack. */
-static _Thread_local struct ZylTryFrame* g_try_top = 0;
-
-void* zyl_try_push(void) {
-    struct ZylTryFrame* f = (struct ZylTryFrame*)malloc(sizeof *f);
-    f->prev = g_try_top;
-    f->msg = 0;
-    f->region_mark = zyl_region_mark();
-    g_try_top = f;
-    return (void*)f;
-}
-
-void zyl_try_pop(void) {
-    if (g_try_top) g_try_top = g_try_top->prev;
-}
-
-const char* zyl_try_last_msg(void) {
-    return g_try_top ? g_try_top->msg : 0;
-}
-
-/* The `msg` field of a specific frame (the pointer zyl_try_push returned
- * for it) -- unlike zyl_try_last_msg, valid to call AFTER a longjmp has
- * already unlinked that frame from g_try_top (zyl_panic pops before it
- * jumps), which is exactly when generated try/catch code needs it: the
- * frame pointer it saved across the longjmp is the only remaining
- * reference to it. */
-long long zyl_try_frame_msg(long long frame) {
-    if (!frame) return 0;
-    return (long long)(size_t)((struct ZylTryFrame*)(size_t)frame)->msg;
-}
-
-/* ==========================================================================
    FFI pinning — copy an 8-byte value to a stable heap location and back.
    ========================================================================== */
 
@@ -674,169 +627,6 @@ long long zyl_actor_wait(long long actor_id) {
     return 0;
 }
 
-/* === Test Harness === */
-
-#include <setjmp.h>
-
-#define ZYL_MAX_TESTS 256
-#define ZYL_TEST_NAME_LEN 128
-
-typedef struct {
-    char name[ZYL_TEST_NAME_LEN];
-    int (*fn)(void);
-} ZylTestEntry;
-
-static ZylTestEntry g_tests[ZYL_MAX_TESTS];
-static int g_test_count = 0;
-
-/* Recovery point for panics raised inside a running test. */
-static jmp_buf g_test_jmp;
-static int g_in_test = 0;
-static void* g_test_region_mark = 0;
-
-void zyl_register_test(const char* name, int (*fn)(void)) {
-    if (g_test_count < ZYL_MAX_TESTS) {
-        strncpy(g_tests[g_test_count].name, name, ZYL_TEST_NAME_LEN - 1);
-        g_tests[g_test_count].name[ZYL_TEST_NAME_LEN - 1] = '\0';
-        g_tests[g_test_count].fn = fn;
-        g_test_count++;
-    }
-}
-
-long long zyl_diag_json(void);
-long long zyl_json_quote(long long s);
-
-/* JSON-mode panic: a message err-diag already rendered as JSON passes
- * through; a bare "E_CODE: text" or "error[E_CODE]: text" is wrapped
- * with its code split off. */
-static void zyl_panic_json(const char* msg) {
-    if (msg[0] == '{') { fprintf(stderr, "%s\n", msg); return; }
-    size_t k = 0;
-    if ((msg[0] == 'E' || msg[0] == 'W') && msg[1] == '_') {
-        k = 2;
-        while ((msg[k] >= 'A' && msg[k] <= 'Z') || (msg[k] >= '0' && msg[k] <= '9') || msg[k] == '_') k++;
-        if (msg[k] != ':') k = 0;
-    }
-    char code[128] = "";
-    const char* text = msg;
-    if (k && k < sizeof(code)) {
-        memcpy(code, msg, k);
-        code[k] = 0;
-        text = msg + k + 1;
-        while (*text == ' ') text++;
-    } else if (strncmp(msg, "error[", 6) == 0) {
-        /* "error[E_CODE]: text", as the type pass's summary is written. */
-        const char* e = strchr(msg + 6, ']');
-        if (e && e[1] == ':' && (size_t)(e - msg - 6) < sizeof(code)) {
-            memcpy(code, msg + 6, (size_t)(e - msg - 6));
-            code[e - msg - 6] = 0;
-            text = e + 2;
-            while (*text == ' ') text++;
-        }
-    }
-    fprintf(stderr,
-        "{\"severity\":\"error\",\"code\":%s,\"message\":%s,\"file\":\"\",\"line\":0,\"column\":0,\"labels\":[],\"help\":\"\"}\n",
-        (const char*)(size_t)zyl_json_quote((long long)(size_t)code),
-        (const char*)(size_t)zyl_json_quote((long long)(size_t)text));
-}
-
-void zyl_panic(const char* msg) {
-    if (g_try_top) {
-        struct ZylTryFrame* f = g_try_top;
-        g_try_top = f->prev;
-        f->msg = msg ? msg : "error";
-        zyl_region_unwind(f->region_mark);
-        longjmp(f->buf, 1);
-    }
-    if (g_in_test && !zyl_ffi_on_worker()) {
-        /* Panic inside a test: unwind to the runner and mark it failed
-         * instead of killing the whole process. */
-        g_in_test = 0;
-        zyl_region_unwind(g_test_region_mark);
-        longjmp(g_test_jmp, 1);
-    }
-    if (zyl_diag_json()) {
-        zyl_panic_json(msg ? msg : "assertion failed");
-        exit(1);
-    }
-    fprintf(stderr, "PANIC: %s\n", msg ? msg : "assertion failed");
-    exit(1);
-}
-
-int zyl_run_tests(void) {
-    int passed = 0;
-    int failed = 0;
-
-    for (int i = 0; i < g_test_count; i++) {
-        const char* name = g_tests[i].name;
-        int (*fn)(void) = g_tests[i].fn;
-
-        /* Print test name (as C string via print-int trick — use file-write) */
-        printf("test: %s ... ", name);
-        fflush(stdout);
-
-        g_test_region_mark = zyl_region_mark();
-        if (setjmp(g_test_jmp) == 0) {
-            g_in_test = 1;
-            int result = fn();
-            g_in_test = 0;
-            if (result == 0) {
-                printf("ok\n");
-                passed++;
-            } else {
-                printf("FAIL\n");
-                failed++;
-            }
-        } else {
-            /* Landed here via zyl_panic longjmp. */
-            printf("FAIL\n");
-            failed++;
-        }
-    }
-
-    printf("\ntest result: %d passed, %d failed, %d total\n", passed, failed, passed + failed);
-
-    return (failed > 0) ? 1 : 0;
-}
-
-/* ── Boot-build file helpers (used by the self-hosted driver) ───────── */
-#include <fcntl.h>
-#include <sys/stat.h>
-
-/* (exit code): flush buffered output, then end the process. */
-long long zyl_exit(long long code) {
-    fflush(stdout);
-    fflush(stderr);
-    exit((int)code);
-}
-
-/* (read-line): one line from stdin without its newline; "" at end of input. */
-long long zyl_read_line(void) {
-    fflush(stdout);
-    size_t cap = 128, n = 0;
-    char* buf = (char*)malloc(cap);
-    if (!buf) return (long long)(size_t)"";
-    char c;
-    while (read(0, &c, 1) == 1 && c != '\n') {
-        if (n + 1 >= cap) { char* nb = (char*)realloc(buf, cap * 2); if (!nb) break; buf = nb; cap *= 2; }
-        buf[n++] = c;
-    }
-    if (n > 0 && buf[n - 1] == '\r') n--;
-    char* out = (char*)(size_t)zyl_heap_alloc((long long)n + 1);
-    if (out) { memcpy(out, buf, n); out[n] = 0; }
-    free(buf);
-    return out ? (long long)(size_t)out : (long long)(size_t)"";
-}
-
-/* Stub: Zyl-level (error msg) — print and exit(1).
-   Named zyl_f_error (not f_error) so the codegen label `f_error` for a
-   user Zyl function named `error` cannot shadow/self-recursively bind it. */
-long long zyl_f_error(long long msg) {
-    if (msg) fprintf(stderr, "error: %s\n", (const char*)(size_t)msg);
-    else fprintf(stderr, "error\n");
-    exit(1);
-}
-
 /* Append src at the end of the NUL-terminated string in dst.
    Used by the Zyl-level buf-append wrapper so repeated appends
    accumulate (matching the Rust bootstrap's StringBuffer backend).
@@ -857,87 +647,6 @@ long long zyl_f_error(long long msg) {
 
 /* ── CLI helpers (used by the self-hosted driver) ─────────────────────── */
 #include <unistd.h>
-
-/* Diagnostic format: 1 = JSON (one object per diagnostic), 0 = text.
- * Set only by the compiler (--error-format=json); programs keep text. */
-static int g_diag_json = 0;
-
-long long zyl_diag_json(void) {
-    return g_diag_json;
-}
-
-long long zyl_diag_json_set(long long on) {
-    g_diag_json = on ? 1 : 0;
-    return 0;
-}
-
-/* Warning sink: stderr by default; a capturing caller (the LSP) collects
- * them instead and drains the buffer with zyl_warn_take. */
-static char* g_warn_buf = NULL;
-static size_t g_warn_len = 0, g_warn_cap = 0;
-static int g_warn_capture = 0;
-
-long long zyl_warn_capture(long long on) {
-    g_warn_capture = on ? 1 : 0;
-    g_warn_len = 0;
-    return 0;
-}
-
-long long zyl_warn_emit(long long msg) {
-    const char* m = msg ? (const char*)(size_t)msg : "";
-    size_t n = strlen(m);
-    if (!g_warn_capture) {
-        ssize_t w = write(2, m, n);
-        w = write(2, "\n", 1);
-        (void)w;
-        return 0;
-    }
-    if (g_warn_len + n + 2 > g_warn_cap) {
-        size_t nc = g_warn_cap ? g_warn_cap : 1024;
-        while (g_warn_len + n + 2 > nc) nc *= 2;
-        char* nb = (char*)realloc(g_warn_buf, nc);
-        if (!nb) return 0;
-        g_warn_buf = nb;
-        g_warn_cap = nc;
-    }
-    memcpy(g_warn_buf + g_warn_len, m, n);
-    g_warn_len += n;
-    g_warn_buf[g_warn_len++] = '\n';
-    g_warn_buf[g_warn_len] = 0;
-    return 0;
-}
-
-/* Captured warnings, newline-separated; the buffer is reset. */
-long long zyl_warn_take(void) {
-    char* out = (char*)malloc(g_warn_len + 1);
-    if (!out) return (long long)(size_t)"";
-    if (g_warn_len) memcpy(out, g_warn_buf, g_warn_len);
-    out[g_warn_len] = 0;
-    g_warn_len = 0;
-    return (long long)(size_t)out;
-}
-
-/* `s` as a quoted JSON string literal (malloc'd). */
-long long zyl_json_quote(long long s) {
-    const unsigned char* p = s ? (const unsigned char*)(size_t)s : (const unsigned char*)"";
-    size_t n = strlen((const char*)p);
-    char* out = (char*)malloc(n * 6 + 3);
-    if (!out) return (long long)(size_t)"\"\"";
-    size_t j = 0;
-    out[j++] = '"';
-    for (size_t i = 0; i < n; i++) {
-        unsigned char c = p[i];
-        if (c == '"' || c == '\\') { out[j++] = '\\'; out[j++] = (char)c; }
-        else if (c == '\n') { out[j++] = '\\'; out[j++] = 'n'; }
-        else if (c == '\t') { out[j++] = '\\'; out[j++] = 't'; }
-        else if (c == '\r') { out[j++] = '\\'; out[j++] = 'r'; }
-        else if (c < 0x20) { j += (size_t)sprintf(out + j, "\\u%04x", c); }
-        else out[j++] = (char)c;
-    }
-    out[j++] = '"';
-    out[j] = 0;
-    return (long long)(size_t)out;
-}
 
 /* Was `system((const char*)(size_t)cmd)` -- confirmed by gdb to
    segfault on EVERY call in this runtime, including the simplest
@@ -1133,25 +842,6 @@ long long zyl_word_of_cstr(long long s) { return s; }
    zyl_run_tests prints, character for character, because the regression
    suite compares the two outputs. */
 
-/* The two lines zyl_run_tests writes, so that an interpreted run and a
-   compiled run produce the same transcript. */
-long long zyl_itest_start(long long name) {
-    printf("test: %s ... ", (const char*)(size_t)name);
-    fflush(stdout);
-    return 0;
-}
-
-long long zyl_itest_outcome(long long ok) {
-    printf(ok ? "ok\n" : "FAIL\n");
-    return 0;
-}
-
-long long zyl_itest_summary(long long passed, long long failed) {
-    printf("\ntest result: %lld passed, %lld failed, %lld total\n",
-           passed, failed, passed + failed);
-    return (failed > 0) ? 1 : 0;
-}
-
 /* Name-to-value map for the interpreter's function table. Finding the
    callee by walking a list is fine for one expression at a prompt and
    hopeless for a program that makes millions of calls: a lowered
@@ -1324,9 +1014,6 @@ long long zyl_f_cmp(long long a, long long b);
 long long zyl_f_of_int(long long n);
 long long zyl_f_to_int(long long bits);
 long long zyl_f_text(long long bits);
-long long zyl_print_int(long long n);
-long long zyl_print_str(long long s);
-long long zyl_print_float(long long bits);
 
 struct ZylFfiEntry { const char* name; void* fn; };
 
@@ -1602,28 +1289,6 @@ long long zyl_ffi_timed_argv(long long fn, long long name, long long ms,
     for (long long i = 0; i < argc && i < ZYL_FFI_MAX_ARGS; i++) buf[i] = a[i];
     return zyl_ffi_timed_core(fn, name, ms, argc, buf);
 }
-
-/* Doubles, carried as their bit patterns. The interpreter stores every
-   value in one machine word, so a Float is its IEEE-754 bits and every
-   operation on it crosses through here. Compiled code uses the SSE unit
-   on the same bit patterns, so the results agree bit for bit. */
-static double zyl_d_of(long long bits) {
-    double d;
-    memcpy(&d, &bits, sizeof(d));
-    return d;
-}
-
-/* print, in each of the three shapes codegen emits, so that interpreted
-   output is byte-identical to compiled output. */
-long long zyl_print_int(long long n) { printf("%lld\n", n); return 0; }
-long long zyl_print_str(long long s) { printf("%s\n", (const char*)(size_t)s); return 0; }
-long long zyl_print_float(long long bits) { printf("%f\n", zyl_d_of(bits)); return 0; }
-
-/* Sixteen process-wide word cells for compiler passes (the type pass's
-   strict-mode flag and current node). */
-static long long g_cells[16];
-long long zyl_cell_get(long long i) { return (i >= 0 && i < 16) ? g_cells[i] : 0; }
-long long zyl_cell_set(long long i, long long v) { if (i >= 0 && i < 16) g_cells[i] = v; return 0; }
 
 /* ==========================================================================
    Word arrays (math/words): a bounds-checked handle instead of a raw base
