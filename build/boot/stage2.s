@@ -703419,7 +703419,7 @@ zy_local_x2Fmain_0__driver__cli_x2Dfreestanding_x2Dp:
     mov rsi, rax
     mov rax, rsi
     cmp rax, 0
-    sete al
+    setg al
     movzx rax, al
     mov rsi, rax
     mov rax, rsi
@@ -728041,7 +728041,7 @@ main:
 .L18031:
     .string ""
 .L18033:
-    .string "ZYL_EXTERNAL_LD"
+    .string "ZYL_SELF_LINK"
 .L18035:
     .string "rt.s"
 .L18036:
