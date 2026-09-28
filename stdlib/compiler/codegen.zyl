@@ -3548,12 +3548,14 @@
   (let instrs (mir-coalesce (mir-dce (mir-rotate (if (>= fh 0) (mir-rotate instrs0 fh (+ nl0 1)) instrs0) 0 nl0) nv) nv)
   (let n (list-length instrs)
     (let a (mir-array instrs n)
-      (let lin (mir-liveness a n nv (mir-label-pos a n nl))
+      (let lpos (mir-label-pos a n nl)
+      (let _ (ffi-call "zyl_ref_set" mb-loop-heads (mb-back-targets a n lpos nl) 1000)
+      (let lin (mir-liveness a n nv lpos)
         (let u (mir-use-counts instrs nv)
         (let rv (mir-ret-vregs a n nv u)
         (let al (mir-set-locs (mir-allocate (mir-drop-ivs (mir-intervals a n nv lin u) rv) nv (mir-hints a n nv) (and (= rflags 0) (mb-r11-free instrs))) rv 11)
           (match (cg-label-new st)
-            (CGR st1 _ base (mb-emit-fn st1 name al nv base instrs rflags blocks)))))))))))))
+            (CGR st1 _ base (mb-emit-fn st1 name al nv base instrs rflags blocks)))))))))))))))
 
 (defn mb-emit-fn (st name al nv base instrs rflags blocks)
   (let saved (mb-used-callee al nv 0 Nil)
@@ -3565,6 +3567,20 @@
             (let fr (MF al saved rflags base bstart boffs (and (= rflags 0) (and (not align) (= bend (* 8 (list-length saved))))))
               (let fsz (* 16 (/ (+ bend 15) 16))
                 (mb-emit-all (mb-prologue st name fr fsz align) fr instrs 0))))))))))
+
+; Labels some later jump goes back to (loop heads), aligned to 16.
+(def mb-loop-heads (ffi-call "zyl_ref_new" (w-alloc (mir-arena) 1) 1000))
+
+(defn mb-back-targets (a n lpos nl)
+  (let w (w-alloc (mir-arena) (if (> nl 0) nl 1))
+    (let _ (mb-back-scan a n lpos w 0) w)))
+
+(defn mb-back-scan (a n lpos w i)
+  (if (>= i n) unit
+    (let l (match (ffi-call "zyl_array_get" a i 1000)
+             (MJmp l l) (MJf _ _ _ l l) (MJfI _ _ _ l l) (MJz _ l l) (_ -1))
+      (let _ (if (and (>= l 0) (<= (w-get lpos l) i)) (let _ (w-set w l 1) unit) unit)
+        (mb-back-scan a n lpos w (+ i 1))))))
 
 ; No instruction's sequence uses r11 as scratch (region sites, inline allocation, byte handles, array set, cas/fill/cpuid).
 (defn mb-r11-free (instrs)
@@ -3830,7 +3846,8 @@
             (mb-set (cg-emit-line st2 (cg-tls-set-line sym "rax")) fr d "rax")))))
     (MFnRef d name
       (mb-set (cg-emit-line st (str-concat "    lea rax, [rip+" (str-concat (cg-sym-mangled (cg-arena-of st) name) "]"))) fr d "rax"))
-    (MLabel l (cg-emit-line st (str-concat (mb-label fr l) ":")))
+    (MLabel l (cg-emit-line (if (> (w-get (ffi-call "zyl_ref_get" mb-loop-heads 1000) l) 0) (cg-emit-line st ".p2align 4") st)
+                            (str-concat (mb-label fr l) ":")))
     (MJmp l (cg-emit-line st (str-concat "    jmp " (mb-label fr l))))
     (MJf op a b l
       (let st2 (if (and (mb-in-mem fr a) (mb-in-mem fr b))
