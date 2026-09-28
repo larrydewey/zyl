@@ -97,8 +97,9 @@
         (let _ (if (= t 0) (ac-set a 16 m) (ac-st (+ t 16) m))
           (let _ (ac-set a 24 m)
             (let _ (ac-set a 32 (ac-int (+ (ac-field a 32) 1)))
+              (let _ (ac-tick)
               (let _ (zyl_rt_cond_signal (ac-cond a))
-                (let _ (ac-unlock a) 0)))))))))
+                (let _ (ac-unlock a) 0))))))))))
 
 (defn ac-msg (kind data)
   (let m (zyl_rt_malloc 24)
@@ -150,7 +151,7 @@
       (let _ (ac-set a 16 h)
         (let _ (if (= h 0) (ac-set a 24 0) 0)
           (let _ (ac-set a 32 (ac-int (- (ac-field a 32) 1)))
-            (let _ (ac-unlock a) m)))))))
+            (let _ (ac-tick) (let _ (ac-unlock a) m))))))))
 
 (defn ac-run-closure (c)
   (if (= c 0) 0
@@ -204,6 +205,10 @@
 
 ; --- the exit drain: drain, check quiescence under each lock, then stop and join all ---
 
+; Every enqueue and pop bumps the epoch; a quiescence scan counts only when no message moved during it.
+(defn ac-epoch () (ffi-call "%global" "actor_epoch" 8 1))
+(defn ac-tick () (ffi-call "%fetch-add" (ac-epoch) 1 1))
+
 (defn ac-live-p (a) (and (= (ac-field a 80) 0) (not (= (ac-field a 40) 0))))
 
 ; A never-used slot has no lock and is never active.
@@ -212,7 +217,7 @@
     (let a (ac-slot i)
       (if (= (ac-field a 48) 0) (ac-pending (+ i 1))
         (let _ (ac-lock a)
-          (let act (and (ac-live-p a) (and (not (= (ac-field a 72) 0)) (> (ac-field a 32) 0)))
+          (let act (and (ac-live-p a) (> (ac-field a 32) 0))
             (let _ (ac-unlock a)
               (if act true (ac-pending (+ i 1))))))))))
 
@@ -228,7 +233,7 @@
     (let a (ac-slot i)
       (if (= (ac-field a 48) 0) (ac-quiesced (+ i 1))
         (let _ (ac-lock a)
-          (let busy (and (ac-live-p a) (and (not (= (ac-field a 72) 0)) (or (> (ac-field a 32) 0) (= (ac-field a 88) 0))))
+          (let busy (and (ac-live-p a) (or (> (ac-field a 32) 0) (= (ac-field a 88) 0)))
             (let _ (ac-unlock a)
               (if busy false (ac-quiesced (+ i 1))))))))))
 
@@ -249,9 +254,11 @@
                 (let _ (ac-unlock a)
                   (let _ (if act (ac-join a t) 0) (ac-stop-all (+ i 1))))))))))))
 
+; A live actor with mail, or not parked (running, or its thread not started yet), is busy.
 (defn zyl_actor_wait_all ()
   (let _ (ac-drain)
-    (if (ac-quiesced 0) (ac-stop-all 0) (zyl_actor_wait_all))))
+    (let e1 (ffi-call "%load64" (ac-epoch) 1)
+      (if (and (ac-quiesced 0) (= e1 (ffi-call "%load64" (ac-epoch) 1))) (ac-stop-all 0) (let _ (ac-nap) (zyl_actor_wait_all))))))
 
 ; --- lifecycle queries (the id is a signed Int) ---
 
