@@ -478,7 +478,7 @@
 
 (defn mir-callee-saved (r) (and (>= r 6) (<= r 10)))
 
-; Vregs defined once, read once, by the MRet right after the def: they live in rax.
+; Vregs defined once and read once, right after, by a consumer that is safe with rax: they live in rax.
 (defn mir-ret-vregs (a n nv u)
   (let dc (w-alloc (mir-arena) (+ nv 1))
     (let _ (mir-def-counts a n dc 0)
@@ -496,10 +496,19 @@
       (let d (mi-def ins)
         (mir-ret-scan a n u dc (+ i 1)
           (if (and (>= d 0) (and (mir-rax-def-ok ins) (and (= (w-get u d) 1) (= (w-get dc d) 1))))
-            (match (ffi-call "zyl_array_get" a (+ i 1) 1000)
-              (MRet r (if (= r d) (Cons d acc) acc))
-              (_ acc))
+            (if (mir-rax-use-ok (ffi-call "zyl_array_get" a (+ i 1) 1000) d) (Cons d acc) acc)
             acc))))))
+
+; Consumers whose sequence reads an operand held in rax before any scratch use of rax.
+(defn mir-rax-use-ok (i d)
+  (match i
+    (MRet r (= r d))
+    (MJfI _ a _ _ (= a d))
+    (MJz a _ (= a d))
+    (MMov _ s (= s d))
+    (MBinI op _ a _ (and (= a d) (not (or (= op 3) (= op 4)))))
+    (MJf _ a b _ (or (= a d) (= b d)))
+    (_ false)))
 
 ; Emitters that write their result last, so rax as the result is safe.
 (defn mir-rax-def-ok (i)
@@ -608,7 +617,7 @@
 (defn mir-pick-reg (busy crosses loc hint v)
   (let h (w-get hint v)
     (let hr (if (> h 0) (w-get loc (- h 1)) (if (< h 0) (- 0 h) 0))
-      (if (and (> hr 0) (and (= (w-get busy hr) 0) (or (not crosses) (mir-callee-saved hr))))
+      (if (and (> hr 0) (and (not (= hr 11)) (and (= (w-get busy hr) 0) (or (not crosses) (mir-callee-saved hr)))))
         hr
         (mir-free-reg busy crosses)))))
 
