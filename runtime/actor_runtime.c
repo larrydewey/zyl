@@ -1131,7 +1131,7 @@ static void zyl_arena_budget_init(void) {
 
 /* Out of memory is not recoverable here: unwinding through zyl_panic runs
  * handlers that allocate. Report and stop. */
-static void zyl_arena_oom(size_t requested, const char* why) {
+void zyl_arena_oom(size_t requested, const char* why) {
     fprintf(stderr,
             "PANIC: error[E_OUT_OF_MEMORY]: %s\n"
             "  = requested %zu bytes; %zu bytes already allocated; budget %zu bytes\n"
@@ -1321,16 +1321,6 @@ long long zyl_arena_capacity(long long arena) {
    miss returns -1 and the diagnostic simply prints without a location.
    ========================================================================== */
 
-static size_t zyl_span_hash(uintptr_t k) {
-    /* splitmix64 finalizer: addresses are 16-byte aligned, so the low bits
-     * are always zero and the identity hash would cluster every key into
-     * one sixteenth of the table. */
-    uint64_t x = (uint64_t)k;
-    x ^= x >> 30; x *= 0xbf58476d1ce4e5b9ULL;
-    x ^= x >> 27; x *= 0x94d049bb133111ebULL;
-    x ^= x >> 31;
-    return (size_t)x;
-}
 
 /* Node attribute tables, string maps and word vectors for compiler passes.
    Keyed by address or content, probed only (never iterated); a miss reads 0. */
@@ -2460,10 +2450,6 @@ long long zyl_f_error(long long msg) {
  * different buffers that hash to the same slot would otherwise race on a
  * shared cache entry and could write through a stale cached end-pointer
  * into memory they don't own. Use SipHash-like mixing for better distribution. */
-/* StrBuf header (see zyl_strbuf_new). */
-#define ZYL_STRBUF_MAGIC 0x5A594C5342554631ULL /* "ZYLSBUF1" */
-typedef struct { unsigned long long magic; long long len; long long cap; } ZylStrBufHdr;
-
 #define ZSA_CACHE_SLOTS 64
 static _Thread_local long long zsa_cache_dst[ZSA_CACHE_SLOTS];
 static _Thread_local char* zsa_cache_end[ZSA_CACHE_SLOTS];
@@ -2479,30 +2465,8 @@ static inline size_t zsa_cache_index(long long dst) {
     return (size_t)(x % ZSA_CACHE_SLOTS);
 }
 
-/* Shared implementation: `cap` is the total usable size of the `dst`
- * buffer (including its NUL), or 0 for "no known bound" (preserves the
- * original unchecked behavior for every existing caller that has no
- * capacity to hand it). When a real cap is given and the append would
- * write past it, panics instead of writing out of bounds. */
-static ZylStrBufHdr* zyl_strbuf_hdr(long long dst);
-
-static long long zyl_str_append_impl(long long dst, long long src, long long cap) {
-    if (!dst) return dst;
-    if (!src) return dst;
-    if (!zyl_cstr_valid(dst, "str-append") || !zyl_cstr_valid(src, "str-append")) return dst;
-    ZylStrBufHdr* hb = zyl_strbuf_hdr(dst);
-    if (hb) {
-        size_t n = strlen((const char*)(size_t)src);
-        long long limit = hb->cap;
-        if (cap > 0 && cap < limit) limit = cap;
-        if (hb->len + (long long)n + 1 > limit)
-            zyl_panic(cap > 0 ? "codegen buffer limit exceeded" : "E_INDEX_OUT_OF_BOUNDS: string buffer full");
-        char* d = (char*)(size_t)dst + hb->len;
-        memcpy(d, (const char*)(size_t)src, n);
-        d[n] = 0;
-        hb->len += (long long)n;
-        return dst;
-    }
+/* str-append's non-StrBuf path (rt/tables.zyl); C until Zyl can address a thread-local block. */
+long long zyl_str_append_scan(long long dst, long long src, long long cap) {
     size_t idx = zsa_cache_index(dst);
     char* base = (char*)(size_t)dst;
     char* d;
@@ -2522,18 +2486,6 @@ static long long zyl_str_append_impl(long long dst, long long src, long long cap
     zsa_cache_dst[idx] = dst;
     zsa_cache_end[idx] = d;
     return dst;
-}
-
-long long zyl_str_append(long long dst, long long src) {
-    return zyl_str_append_impl(dst, src, 0);
-}
-
-/* Bounds-checked variant for fixed-capacity buffers (e.g. the codegen
- * output buffer): same cache-accelerated append as zyl_str_append, but
- * panics before writing past `cap` instead of silently overrunning the
- * underlying malloc'd block (CWE-787). */
-long long zyl_str_append_capped(long long dst, long long src, long long cap) {
-    return zyl_str_append_impl(dst, src, cap);
 }
 
 /* ── CLI helpers (used by the self-hosted driver) ─────────────────────── */
@@ -3230,7 +3182,6 @@ long long zyl_div_shift(long long d) {
    calls the symbol directly -- so a missing name costs only the
    interpreter, and shows up as E_FFI_SYMBOL_NOT_FOUND rather than as
    anything silent. */
-long long zyl_array_copy(long long from, long long to, long long n);
 #define ZYL_FFI_SYMBOLS(X) \
     X(ffi_pin) X(ffi_unpin) X(zyl_actor_init) \
     X(zyl_actor_is_alive) X(zyl_actor_send) X(zyl_actor_send_closure) \
@@ -3718,223 +3669,6 @@ static void zyl_words_oob(const char* who, long long i, long long len) {
     zyl_panic(m);
 }
 
-/* `n` zeroed words from `arena`. */
-long long zyl_words_new(long long arena, long long n) {
-    if (n < 0) n = 0;
-    ZylWords* w = (ZylWords*)(size_t)zyl_arena_alloc_zeroed(arena, (long long)sizeof(ZylWords));
-    long long* d = (long long*)(size_t)zyl_arena_alloc_zeroed(arena, (n > 0 ? n : 1) * 8);
-    if (!w || !d) zyl_panic("E_OUT_OF_MEMORY: word array");
-    w->magic = ZYL_WORDS_MAGIC;
-    w->len = n;
-    w->data = d;
-    return (long long)(size_t)w;
-}
-
+/* The entries moved to runtime/rt/tables.zyl; AES and entropy still use these helpers. */
 static long long* zyl_words_data(long long h) { return zyl_words_of(h, "words")->data; }
-long long zyl_words_len(long long h) { return zyl_words_of(h, "w-len")->len; }
-
-long long zyl_words_get(long long h, long long i) {
-    ZylWords* w = zyl_words_of(h, "w-get");
-    if (i < 0 || i >= w->len) zyl_words_oob("w-get", i, w->len);
-    return w->data[i];
-}
-
-long long zyl_words_set(long long h, long long i, long long v) {
-    ZylWords* w = zyl_words_of(h, "w-set");
-    if (i < 0 || i >= w->len) zyl_words_oob("w-set", i, w->len);
-    w->data[i] = v;
-    return v;
-}
-
-/* Words [off, off+len) of `h`, sharing its storage; the view's header is
-   allocated in `arena`. */
-long long zyl_words_view(long long arena, long long h, long long off, long long len) {
-    ZylWords* w = zyl_words_of(h, "w-view");
-    if (off < 0 || len < 0 || off > w->len || len > w->len - off) zyl_words_oob("w-view", off + len, w->len);
-    ZylWords* v = (ZylWords*)(size_t)zyl_arena_alloc_zeroed(arena, (long long)sizeof(ZylWords));
-    if (!v) zyl_panic("E_OUT_OF_MEMORY: word array view");
-    v->magic = ZYL_WORDS_MAGIC;
-    v->len = len;
-    v->data = w->data + off;
-    return (long long)(size_t)v;
-}
-
-/* ==========================================================================
-   Typed arrays (collections/vec): `(Array a)` in compiler/ffi_sigs. Slots
-   are filled contiguously from 0 -- a set may overwrite a filled slot or
-   append at `filled` -- and only filled slots can be read, so a slot that
-   was never written is never read as a value of the element type. Out of
-   range is E_INDEX_OUT_OF_BOUNDS. Storage comes from an arena.
-   ========================================================================== */
-#define ZYL_ARRAY_MAGIC 0x5A594C4152524159LL  /* "ZYLARRAY" */
-typedef struct { long long magic; long long cap; long long filled; long long* data; } ZylArray;
-
-static ZylArray* zyl_array_of(long long h, const char* who) {
-    ZylArray* a = (ZylArray*)(size_t)h;
-    if (h < ZYL_MIN_CALL_ADDR || (h & 7) || a->magic != ZYL_ARRAY_MAGIC) {
-        char* m = (char*)malloc(96);
-        snprintf(m, 96, "E_INDEX_OUT_OF_BOUNDS: %s: not an array", who);
-        zyl_panic(m);
-    }
-    return a;
-}
-
-long long zyl_array_new(long long arena, long long cap) {
-    if (cap < 0) cap = 0;
-    ZylArray* a = (ZylArray*)(size_t)zyl_arena_alloc_zeroed(arena, (long long)sizeof(ZylArray));
-    long long* d = (long long*)(size_t)zyl_arena_alloc_zeroed(arena, (cap > 0 ? cap : 1) * 8);
-    if (!a || !d) zyl_panic("E_OUT_OF_MEMORY: array");
-    a->magic = ZYL_ARRAY_MAGIC;
-    a->cap = cap;
-    a->filled = 0;
-    a->data = d;
-    return (long long)(size_t)a;
-}
-
-long long zyl_array_cap(long long h) { return zyl_array_of(h, "array-cap")->cap; }
-long long zyl_array_filled(long long h) { return zyl_array_of(h, "array-filled")->filled; }
-
-long long zyl_array_get(long long h, long long i) {
-    ZylArray* a = zyl_array_of(h, "array-get");
-    if (i < 0 || i >= a->filled) zyl_words_oob("array-get", i, a->filled);
-    return a->data[i];
-}
-
-/* The first n elements of `from` into the empty array `to` (vec-push,
-   when the storage grows): one memcpy instead of n gets and sets. Both
-   bounds are checked as array-get and array-set check them. */
-long long zyl_array_copy(long long from, long long to, long long n) {
-    ZylArray* a = zyl_array_of(from, "array-copy");
-    ZylArray* b = zyl_array_of(to, "array-copy");
-    if (n < 0 || n > a->filled) zyl_words_oob("array-copy", n, a->filled);
-    if (b->filled != 0 || n > b->cap) zyl_words_oob("array-copy", n, b->cap);
-    memcpy(b->data, a->data, (size_t)n * 8);
-    b->filled = n;
-    return 0;
-}
-
-long long zyl_array_set(long long h, long long i, long long v) {
-    ZylArray* a = zyl_array_of(h, "array-set");
-    if (i < 0 || i > a->filled || i >= a->cap) zyl_words_oob("array-set", i, a->filled);
-    a->data[i] = v;
-    if (i == a->filled) a->filled++;
-    return 0;
-}
-
-/* ==========================================================================
-   Typed side tables and cells (docs/sound-types-design.md). A handle-based
-   node-keyed attribute table, `(Attr k v)`: the index-based zyl_attr_* stay
-   for code the committed seed emitted. A `(Ref a)` is a one-word mutable
-   cell. zyl_getenv_str gives "" for an unset variable, never 0.
-   ========================================================================== */
-typedef struct { ZylAttrSlot* slots; size_t cap; size_t len; } ZylAttrTab;
-
-long long zyl_attrh_new(void) {
-    return (long long)(size_t)calloc(1, sizeof(ZylAttrTab));
-}
-
-static void zyl_attrh_grow(ZylAttrTab* t) {
-    size_t ncap = t->cap ? t->cap * 8 : 4096;
-    ZylAttrSlot* ns = (ZylAttrSlot*)calloc(ncap, sizeof(ZylAttrSlot));
-    if (!ns) zyl_arena_oom(ncap * sizeof(ZylAttrSlot), "attribute table");
-    for (size_t i = 0; i < t->cap; i++) {
-        if (!t->slots[i].key) continue;
-        size_t j = zyl_span_hash(t->slots[i].key) & (ncap - 1);
-        while (ns[j].key) j = (j + 1) & (ncap - 1);
-        ns[j] = t->slots[i];
-    }
-    free(t->slots);
-    t->slots = ns;
-    t->cap = ncap;
-}
-
-long long zyl_attrh_set(long long th, long long node, long long val) {
-    ZylAttrTab* t = (ZylAttrTab*)(size_t)th;
-    if (!t || !node) return 0;
-    if (t->len * 10 >= t->cap * 7) zyl_attrh_grow(t);
-    uintptr_t k = (uintptr_t)(size_t)node;
-    size_t m = t->cap - 1;
-    size_t i = zyl_span_hash(k) & m;
-    while (t->slots[i].key && t->slots[i].key != k) i = (i + 1) & m;
-    if (!t->slots[i].key) { t->slots[i].key = k; t->len++; }
-    t->slots[i].val = val;
-    return 0;
-}
-
-static ZylAttrSlot* zyl_attrh_find(ZylAttrTab* t, long long node) {
-    if (!t || !node || !t->cap) return NULL;
-    uintptr_t k = (uintptr_t)(size_t)node;
-    size_t m = t->cap - 1;
-    size_t i = zyl_span_hash(k) & m;
-    while (t->slots[i].key) {
-        if (t->slots[i].key == k) return &t->slots[i];
-        i = (i + 1) & m;
-    }
-    return NULL;
-}
-
-long long zyl_attrh_get_or(long long th, long long node, long long dflt) {
-    ZylAttrSlot* s = zyl_attrh_find((ZylAttrTab*)(size_t)th, node);
-    return s ? s->val : dflt;
-}
-
-long long zyl_attrh_has(long long th, long long node) {
-    return zyl_attrh_find((ZylAttrTab*)(size_t)th, node) ? 1 : 0;
-}
-
-long long zyl_attrh_copy(long long th, long long dst, long long src) {
-    ZylAttrSlot* s = zyl_attrh_find((ZylAttrTab*)(size_t)th, src);
-    if (s) zyl_attrh_set(th, dst, s->val);
-    return 0;
-}
-
-long long zyl_attrh_clear(long long th) {
-    ZylAttrTab* t = (ZylAttrTab*)(size_t)th;
-    if (!t || !t->cap) return 0;
-    memset(t->slots, 0, t->cap * sizeof(ZylAttrSlot));
-    t->len = 0;
-    return 0;
-}
-
-long long zyl_ref_new(long long v) {
-    long long* r = (long long*)malloc(sizeof(long long));
-    if (!r) zyl_arena_oom(8, "ref cell");
-    *r = v;
-    return (long long)(size_t)r;
-}
-long long zyl_ref_get(long long r) { return *(long long*)(size_t)r; }
-long long zyl_ref_set(long long r, long long v) { *(long long*)(size_t)r = v; return 0; }
-
-long long zyl_getenv_str(long long name) {
-    const char* v = name ? getenv((const char*)(size_t)name) : NULL;
-    return (long long)(size_t)(v ? v : "");
-}
-
-/* A zeroed text buffer of `n` bytes from `arena` (`StrBuf`), and the same
-   buffer read as a String: a StrBuf is a NUL-terminated char buffer that
-   zyl_str_append extends in place, so both views are the same pointer. */
-/* A StrBuf is a String with a header in front: {magic, len, cap}. The
-   header makes an append O(length of what is appended) and bounds it by
-   the capacity; the String is the data pointer, NUL-terminated. */
-
-long long zyl_strbuf_new(long long arena, long long n) {
-    long long cap = n > 0 ? n : 1;
-    char* p = (char*)(size_t)zyl_arena_alloc_zeroed(arena, cap + (long long)sizeof(ZylStrBufHdr));
-    if (!p) return 0;
-    ZylStrBufHdr* h = (ZylStrBufHdr*)p;
-    h->magic = ZYL_STRBUF_MAGIC; h->len = 0; h->cap = cap;
-    return (long long)(size_t)(p + sizeof(ZylStrBufHdr));
-}
-long long zyl_strbuf_str(long long b) { return b; }
-
-/* The header of a buffer zyl_strbuf_new made, or NULL for any other
-   string (which appends the old way). */
-static ZylStrBufHdr* zyl_strbuf_hdr(long long dst) {
-    if ((unsigned long long)dst < ZYL_MIN_CALL_ADDR + sizeof(ZylStrBufHdr) || (dst & 7) != 0) return NULL;
-    ZylStrBufHdr* h = (ZylStrBufHdr*)(size_t)(dst - (long long)sizeof(ZylStrBufHdr));
-    return h->magic == ZYL_STRBUF_MAGIC ? h : NULL;
-}
-
-/* A union-find class's id, for ordering classes by creation. */
-long long zyl_uf_id(long long a) { return a; }
 

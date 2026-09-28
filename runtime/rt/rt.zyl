@@ -10,3 +10,4 @@
 (use interp)
 (use blake3)
 (use mangle)
+(use tables)

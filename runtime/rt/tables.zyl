@@ -1,0 +1,239 @@
+; Word arrays, typed arrays, attribute tables, refs, StrBuf and str-append.
+(use base)
+(use text)
+
+(extern "calloc" (Int Int) Int)
+(extern "malloc" (Int) Int)
+(extern "free" (Int) Int)
+(extern "memset" (Int Int Int) Int)
+(extern "getenv" (Int) Int)
+(extern "zyl_arena_oom" (Int String) Int)
+(extern "zyl_str_append_scan" (Int Int Int) Int)
+
+(defmacro tb-ld (a) (ffi-call "%load64" a 1))
+(defmacro tb-st (a v) (ffi-call "%store64" a v 1))
+
+(defn tb-zalloc (arena n) (rt-w (ffi-call "zyl_arena_alloc_zeroed" arena n 1)))
+
+; A header at h: at or above the first page, 8-aligned, with this magic (h must be a variable).
+(defmacro tb-is (h magic) (and (>= h 4096) (and (= (bit-and h 7) 0) (= (tb-ld h) magic))))
+
+(defn tb-oob (who i len)
+  (ffi-call "zyl_panic" (str-concat "E_INDEX_OUT_OF_BOUNDS: " (str-concat who (str-concat ": index " (str-concat (rt-int-text i 0) (str-concat " outside a word array of length " (rt-int-text len 0)))))) 1))
+
+; --- word arrays: {magic "ZYLWORDS", len, data} ---
+
+(defn tb-words-magic () 6510318674217419859)
+
+(defn tb-not-words (who) (ffi-call "zyl_panic" (str-concat "E_INDEX_OUT_OF_BOUNDS: " (str-concat who ": not a word array")) 1))
+
+(defn tb-words-of (h who) (if (tb-is h 6510318674217419859) h (let _ (tb-not-words who) h)))
+
+(defn tb-words-hdr (arena n d)
+  (let w (tb-zalloc arena 24)
+    (let _ (if (= w 0) (ffi-call "zyl_panic" "E_OUT_OF_MEMORY: word array view" 1) 0)
+      (let _ (tb-st w (tb-words-magic)) (let _ (tb-st (+ w 8) n) (let _ (tb-st (+ w 16) d) w))))))
+
+(defn zyl_words_new (arena n0)
+  (let n (if (< n0 0) 0 n0)
+    (let w (tb-zalloc arena 24)
+      (let d (tb-zalloc arena (* (if (> n 0) n 1) 8))
+        (let _ (if (or (= w 0) (= d 0)) (ffi-call "zyl_panic" "E_OUT_OF_MEMORY: word array" 1) 0)
+          (let _ (tb-st w (tb-words-magic)) (let _ (tb-st (+ w 8) n) (let _ (tb-st (+ w 16) d) w))))))))
+
+(defn zyl_words_len (h) (if (tb-is h 6510318674217419859) (tb-ld (+ h 8)) (tb-not-words "w-len")))
+
+; The failing check's panic: not a word array, or i out of range.
+(defn tb-words-fail (h i who) (if (tb-is h 6510318674217419859) (tb-oob who i (tb-ld (+ h 8))) (tb-not-words who)))
+
+(defn zyl_words_get (h i)
+  (if (and (tb-is h 6510318674217419859) (and (>= i 0) (< i (tb-ld (+ h 8)))))
+    (tb-ld (+ (tb-ld (+ h 16)) (* i 8)))
+    (tb-words-fail h i "w-get")))
+
+(defn zyl_words_set (h i v)
+  (if (and (tb-is h 6510318674217419859) (and (>= i 0) (< i (tb-ld (+ h 8)))))
+    (let _ (tb-st (+ (tb-ld (+ h 16)) (* i 8)) v) v)
+    (tb-words-fail h i "w-set")))
+
+; Words [off, off+len) of h, sharing its storage; the header comes from arena.
+(defn zyl_words_view (arena h off len)
+  (let w (tb-words-of h "w-view")
+    (let n (tb-ld (+ w 8))
+      (let _ (if (or (or (< off 0) (< len 0)) (or (> off n) (> len (- n off)))) (tb-oob "w-view" (+ off len) n) 0)
+        (tb-words-hdr arena len (+ (tb-ld (+ w 16)) (* off 8)))))))
+
+; --- typed arrays: {magic "ZYLARRAY", cap, filled, data}; codegen inlines this layout ---
+
+(defn tb-array-magic () 6510318579778470233)
+
+(defn tb-not-array (who) (ffi-call "zyl_panic" (str-concat "E_INDEX_OUT_OF_BOUNDS: " (str-concat who ": not an array")) 1))
+
+(defn tb-array-of (h who) (if (tb-is h 6510318579778470233) h (let _ (tb-not-array who) h)))
+
+(defn zyl_array_new (arena cap0)
+  (let cap (if (< cap0 0) 0 cap0)
+    (let a (tb-zalloc arena 32)
+      (let d (tb-zalloc arena (* (if (> cap 0) cap 1) 8))
+        (let _ (if (or (= a 0) (= d 0)) (ffi-call "zyl_panic" "E_OUT_OF_MEMORY: array" 1) 0)
+          (let _ (tb-st a (tb-array-magic))
+            (let _ (tb-st (+ a 8) cap) (let _ (tb-st (+ a 16) 0) (let _ (tb-st (+ a 24) d) a)))))))))
+
+(defn zyl_array_cap (h) (if (tb-is h 6510318579778470233) (tb-ld (+ h 8)) (tb-not-array "array-cap")))
+(defn zyl_array_filled (h) (if (tb-is h 6510318579778470233) (tb-ld (+ h 16)) (tb-not-array "array-filled")))
+
+(defn tb-array-get-fail (h i) (if (tb-is h 6510318579778470233) (tb-oob "array-get" i (tb-ld (+ h 16))) (tb-not-array "array-get")))
+
+(defn zyl_array_get (h i)
+  (if (and (tb-is h 6510318579778470233) (and (>= i 0) (< i (tb-ld (+ h 16)))))
+    (tb-ld (+ (tb-ld (+ h 24)) (* i 8)))
+    (tb-array-get-fail h i)))
+
+; The first n elements of from into the empty array to.
+(defn zyl_array_copy (from to n)
+  (let a (tb-array-of from "array-copy")
+    (let b (tb-array-of to "array-copy")
+      (let af (tb-ld (+ a 16))
+        (let _ (if (or (< n 0) (> n af)) (tb-oob "array-copy" n af) 0)
+          (let bc (tb-ld (+ b 8))
+            (let _ (if (or (not (= (tb-ld (+ b 16)) 0)) (> n bc)) (tb-oob "array-copy" n bc) 0)
+              (let _ (rt-copy (tb-ld (+ b 24)) (tb-ld (+ a 24)) (* n 8))
+                (let _ (tb-st (+ b 16) n) 0)))))))))
+
+(defn zyl_array_set (h i v)
+  (let a (tb-array-of h "array-set")
+    (let f (tb-ld (+ a 16))
+      (let _ (if (or (or (< i 0) (> i f)) (>= i (tb-ld (+ a 8)))) (tb-oob "array-set" i f) 0)
+        (let _ (tb-st (+ (tb-ld (+ a 24)) (* i 8)) v)
+          (let _ (if (= i f) (tb-st (+ a 16) (+ f 1)) 0) 0))))))
+
+; --- attribute tables: {slots, cap, len}, slots {key, val}, linear probing ---
+
+; splitmix64 finalizer (logical shifts).
+(defmacro tb-hash (x)
+  (let x0 x
+    (let x1 (* (bit-xor x0 (bit-and (shr x0 30) 17179869183)) -4658895280553007687)
+      (let x2 (* (bit-xor x1 (bit-and (shr x1 27) 137438953471)) -7723592293110705685)
+        (bit-xor x2 (bit-and (shr x2 31) 8589934591))))))
+
+(defn zyl_attrh_new () (ffi-call "calloc" 1 24 1))
+
+; The slot for k: its own, or the first empty one.
+(defn tb-probe (slots m i k)
+  (let s (+ slots (* i 16))
+    (let key (tb-ld s) (if (or (= key 0) (= key k)) s (tb-probe slots m (bit-and (+ i 1) m) k)))))
+
+(defn tb-rehash (old i cap ns m)
+  (if (>= i cap) 0
+    (let s (+ old (* i 16))
+      (let key (tb-ld s)
+        (let _ (if (= key 0) 0
+                 (let d (tb-probe ns m (bit-and (tb-hash key) m) key)
+                   (let _ (tb-st d key) (tb-st (+ d 8) (tb-ld (+ s 8))))))
+          (tb-rehash old (+ i 1) cap ns m))))))
+
+(defn tb-grow (t)
+  (let cap (tb-ld (+ t 8))
+    (let ncap (if (> cap 0) (* cap 8) 4096)
+      (let ns (ffi-call "calloc" ncap 16 1)
+        (let _ (if (= ns 0) (ffi-call "zyl_arena_oom" (* ncap 16) "attribute table" 1) 0)
+          (let _ (tb-rehash (tb-ld t) 0 cap ns (- ncap 1))
+            (let _ (ffi-call "free" (tb-ld t) 1)
+              (let _ (tb-st t ns) (tb-st (+ t 8) ncap)))))))))
+
+(defn tb-attr-set (t node val)
+  (if (or (= t 0) (= node 0)) 0
+    (let _ (if (>= (* (tb-ld (+ t 16)) 10) (* (tb-ld (+ t 8)) 7)) (tb-grow t) 0)
+      (let m (- (tb-ld (+ t 8)) 1)
+        (let s (tb-probe (tb-ld t) m (bit-and (tb-hash node) m) node)
+          (let _ (if (= (tb-ld s) 0) (let _ (tb-st s node) (tb-st (+ t 16) (+ (tb-ld (+ t 16)) 1))) 0)
+            (let _ (tb-st (+ s 8) val) 0)))))))
+
+(defn zyl_attrh_set (th node val) (tb-attr-set th node val))
+
+; The slot holding node, or 0.
+(defmacro tb-find (t node)
+  (if (or (or (= t 0) (= node 0)) (= (tb-ld (+ t 8)) 0)) 0
+    (let m (- (tb-ld (+ t 8)) 1)
+      (let s (tb-probe (tb-ld t) m (bit-and (tb-hash node) m) node)
+        (if (= (tb-ld s) 0) 0 s)))))
+
+; Probes for k and returns its value, or dflt at the first empty slot.
+(defn tb-get-loop (slots m i k dflt)
+  (let s (+ slots (* i 16))
+    (let key (tb-ld s)
+      (if (= key k) (tb-ld (+ s 8)) (if (= key 0) dflt (tb-get-loop slots m (bit-and (+ i 1) m) k dflt))))))
+
+(defn zyl_attrh_get_or (th node dflt)
+  (if (or (or (= th 0) (= node 0)) (= (tb-ld (+ th 8)) 0)) dflt
+    (let m (- (tb-ld (+ th 8)) 1) (tb-get-loop (tb-ld th) m (bit-and (tb-hash node) m) node dflt))))
+
+(defn zyl_attrh_has (th node) (not (= (tb-find th node) 0)))
+
+(defn zyl_attrh_copy (th dst src)
+  (let s (tb-find th src) (if (= s 0) 0 (tb-attr-set th dst (tb-ld (+ s 8))))))
+
+(defn zyl_attrh_clear (th)
+  (if (or (= th 0) (= (tb-ld (+ th 8)) 0)) 0
+    (let _ (ffi-call "memset" (tb-ld th) 0 (* (tb-ld (+ th 8)) 16) 1) (let _ (tb-st (+ th 16) 0) 0))))
+
+; --- refs, ids, environment ---
+
+(defn zyl_ref_new (v)
+  (let r (ffi-call "malloc" 8 1)
+    (let _ (if (= r 0) (ffi-call "zyl_arena_oom" 8 "ref cell" 1) 0) (let _ (tb-st r v) r))))
+
+(defn zyl_ref_get (r) (tb-ld r))
+(defn zyl_ref_set (r v) (let _ (tb-st r v) 0))
+
+(defn zyl_uf_id (a) a)
+
+; An unset variable reads as "", never 0.
+(defn zyl_getenv_str (name)
+  (let v (if (= (rt-w name) 0) 0 (ffi-call "getenv" (rt-w name) 1)) (if (= v 0) (rt-w "") v)))
+
+; --- StrBuf: a String with {magic "ZYLSBUF1", len, cap} in front ---
+
+(defn tb-sbuf-magic () 6510318656819643953)
+
+(defn zyl_strbuf_new (arena n)
+  (let cap (if (> n 0) n 1)
+    (let p (tb-zalloc arena (+ cap 24))
+      (if (= p 0) 0
+        (let _ (tb-st p (tb-sbuf-magic)) (let _ (tb-st (+ p 8) 0) (let _ (tb-st (+ p 16) cap) (+ p 24))))))))
+
+(defn zyl_strbuf_str (b) b)
+
+(defmacro tb-sbuf-p (dst) (and (>= dst 4120) (and (= (bit-and dst 7) 0) (= (tb-ld (- dst 24)) 6510318656819643953))))
+
+(defn tb-uhex (n acc)
+  (let d (str-substring "0123456789abcdef" (bit-and n 15) 1)
+    (let r (bit-and (shr n 4) 1152921504606846975) (if (= r 0) (str-concat d acc) (tb-uhex r (str-concat d acc))))))
+
+; A nonzero word below the first page (or negative) is not a string.
+(defn tb-bad (p)
+  (if (< p 4096)
+    (let msg (str-concat "zyl: str-append: invalid string pointer 0x" (str-concat (tb-uhex p "") "\n"))
+      (let _ (ffi-call "write" 2 msg (strlen-of msg) 1) true))
+    false))
+
+; cap > 0 also bounds the append, and names the codegen limit when hit.
+(defn tb-sbuf-append (dst src cap)
+  (let n (rt-strlen src)
+    (let len (tb-ld (- dst 16))
+      (let hc (tb-ld (- dst 8))
+        (let limit (if (and (> cap 0) (< cap hc)) cap hc)
+          (let _ (if (> (+ (+ len n) 1) limit)
+                   (ffi-call "zyl_panic" (if (> cap 0) "codegen buffer limit exceeded" "E_INDEX_OUT_OF_BOUNDS: string buffer full") 1) 0)
+            (let _ (rt-copy (+ dst len) src n)
+              (let _ (rt-st8 (+ dst (+ len n)) 0)
+                (let _ (tb-st (- dst 16) (+ len n)) dst)))))))))
+
+; A string without a StrBuf header takes the C scan with its per-thread end cache.
+(defn tb-append (dst src cap)
+  (if (or (= dst 0) (= src 0)) dst
+    (if (and (>= dst 4096) (>= src 4096)) (if (tb-sbuf-p dst) (tb-sbuf-append dst src cap) (ffi-call "zyl_str_append_scan" dst src cap 1))
+      (let _ (or (tb-bad dst) (tb-bad src)) dst))))
+
+(defn zyl_str_append (dst src) (tb-append dst src 0))
+(defn zyl_str_append_capped (dst src cap) (tb-append dst src cap))

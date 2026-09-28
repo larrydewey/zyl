@@ -1,0 +1,123 @@
+; Edge cases of the runtime's word arrays, typed arrays, attribute tables, refs and StrBuf (runtime/rt/tables.zyl).
+
+(defn arena () (ffi-call "zyl_arena_create" 0 1000))
+
+(test "words"
+  (let a (arena)
+    (let w (ffi-call "zyl_words_new" a 4 1000)
+      (begin
+        (assert-equal (ffi-call "zyl_words_len" (ffi-call "zyl_words_new" a -3 1000) 1000) 0)
+        (assert-equal (ffi-call "zyl_words_len" w 1000) 4)
+        (assert-equal (ffi-call "zyl_words_get" w 3 1000) 0)
+        (assert-equal (ffi-call "zyl_words_set" w 2 77 1000) 77)
+        (let v (ffi-call "zyl_words_view" a w 1 3 1000)
+          (begin
+            (assert-equal (ffi-call "zyl_words_len" v 1000) 3)
+            (assert-equal (ffi-call "zyl_words_get" v 1 1000) 77)
+            (ffi-call "zyl_words_set" v 0 5 1000)
+            (assert-equal (ffi-call "zyl_words_get" w 1 1000) 5)))
+        (assert-equal (ffi-call "zyl_words_len" (ffi-call "zyl_words_view" a w 4 0 1000) 1000) 0)))))
+
+(test "words-bounds"
+  (let a (arena)
+    (let w (ffi-call "zyl_words_new" a 4 1000)
+      (begin
+        (assert-equal (try (begin (ffi-call "zyl_words_get" w 4 1000) "") (catch e e))
+          "E_INDEX_OUT_OF_BOUNDS: w-get: index 4 outside a word array of length 4")
+        (assert-equal (try (begin (ffi-call "zyl_words_set" w -1 0 1000) "") (catch e e))
+          "E_INDEX_OUT_OF_BOUNDS: w-set: index -1 outside a word array of length 4")
+        (assert-equal (try (begin (ffi-call "zyl_words_len" (ffi-call "zyl_words_view" a w 3 2 1000) 1000) "") (catch e e))
+          "E_INDEX_OUT_OF_BOUNDS: w-view: index 5 outside a word array of length 4")
+        (assert-equal (try (begin (ffi-call "zyl_words_len" (ffi-call "zyl_words_view" a w -1 1 1000) 1000) "") (catch e e))
+          "E_INDEX_OUT_OF_BOUNDS: w-view: index 0 outside a word array of length 4")))))
+
+(test "arrays"
+  (let a (arena)
+    (let x (ffi-call "zyl_array_new" a 3 1000)
+      (begin
+        (assert-equal (ffi-call "zyl_array_cap" (ffi-call "zyl_array_new" a -1 1000) 1000) 0)
+        (assert-equal (ffi-call "zyl_array_filled" x 1000) 0)
+        (ffi-call "zyl_array_set" x 0 10 1000)
+        (ffi-call "zyl_array_set" x 1 20 1000)
+        (ffi-call "zyl_array_set" x 0 11 1000)
+        (assert-equal (ffi-call "zyl_array_filled" x 1000) 2)
+        (assert-equal (ffi-call "zyl_array_get" x 0 1000) 11)
+        (assert-equal (try (begin (ffi-call "zyl_array_get" x 2 1000) "") (catch e e))
+          "E_INDEX_OUT_OF_BOUNDS: array-get: index 2 outside a word array of length 2")
+        (assert-equal (try (begin (ffi-call "zyl_array_set" x 3 0 1000) "") (catch e e))
+          "E_INDEX_OUT_OF_BOUNDS: array-set: index 3 outside a word array of length 2")
+        (ffi-call "zyl_array_set" x 2 30 1000)
+        (assert-equal (try (begin (ffi-call "zyl_array_set" x 3 0 1000) "") (catch e e))
+          "E_INDEX_OUT_OF_BOUNDS: array-set: index 3 outside a word array of length 3")
+        (let y (ffi-call "zyl_array_new" a 5 1000)
+          (begin
+            (ffi-call "zyl_array_copy" x y 3 1000)
+            (assert-equal (ffi-call "zyl_array_filled" y 1000) 3)
+            (assert-equal (ffi-call "zyl_array_get" y 2 1000) 30)
+            (assert-equal (try (begin (ffi-call "zyl_array_copy" x y 1 1000) "") (catch e e))
+              "E_INDEX_OUT_OF_BOUNDS: array-copy: index 1 outside a word array of length 5")
+            (assert-equal (try (begin (ffi-call "zyl_array_copy" x (ffi-call "zyl_array_new" a 5 1000) 4 1000) "") (catch e e))
+              "E_INDEX_OUT_OF_BOUNDS: array-copy: index 4 outside a word array of length 3")
+            (assert-equal (try (begin (ffi-call "zyl_array_copy" x (ffi-call "zyl_array_new" a 2 1000) 3 1000) "") (catch e e))
+              "E_INDEX_OUT_OF_BOUNDS: array-copy: index 3 outside a word array of length 2")))))))
+
+(defn attr-fill (t i n) (if (>= i n) 0 (begin (ffi-call "zyl_attrh_set" t i (* i 3) 1000) (attr-fill t (+ i 1) n))))
+
+(defn attr-check (t i n) (if (>= i n) true (if (= (ffi-call "zyl_attrh_get_or" t i -1 1000) (* i 3)) (attr-check t (+ i 1) n) false)))
+
+(test "attr-tables"
+  (let t (ffi-call "zyl_attrh_new" 1000)
+    (begin
+      (assert-equal (ffi-call "zyl_attrh_get_or" t 5 -1 1000) -1)
+      (assert-equal (ffi-call "zyl_attrh_has" t 5 1000) false)
+      (ffi-call "zyl_attrh_set" t 0 9 1000)
+      (assert-equal (ffi-call "zyl_attrh_has" t 0 1000) false)
+      (attr-fill t 1 20001)
+      (assert-equal (attr-check t 1 20001) true)
+      (ffi-call "zyl_attrh_set" t 7 100 1000)
+      (assert-equal (ffi-call "zyl_attrh_get_or" t 7 -1 1000) 100)
+      (ffi-call "zyl_attrh_copy" t 30000 7 1000)
+      (ffi-call "zyl_attrh_copy" t 30001 40000 1000)
+      (assert-equal (ffi-call "zyl_attrh_get_or" t 30000 -1 1000) 100)
+      (assert-equal (ffi-call "zyl_attrh_has" t 30001 1000) false)
+      (ffi-call "zyl_attrh_clear" t 1000)
+      (assert-equal (ffi-call "zyl_attrh_has" t 7 1000) false)
+      (ffi-call "zyl_attrh_set" t 7 1 1000)
+      (assert-equal (ffi-call "zyl_attrh_get_or" t 7 -1 1000) 1))))
+
+(test "refs-and-env"
+  (let r (ffi-call "zyl_ref_new" 41 1000)
+    (begin
+      (assert-equal (ffi-call "zyl_ref_get" r 1000) 41)
+      (ffi-call "zyl_ref_set" r 42 1000)
+      (assert-equal (ffi-call "zyl_ref_get" r 1000) 42)
+      (assert-equal (ffi-call "zyl_getenv_str" "ZYL_RT_TABLES_SURELY_UNSET" 1000) ""))))
+
+(test "strbuf"
+  (let b (ffi-call "zyl_strbuf_new" (arena) 8 1000)
+    (begin
+      (ffi-call "zyl_str_append" b "abc" 1000)
+      (ffi-call "zyl_str_append" b "" 1000)
+      (ffi-call "zyl_str_append" b "defg" 1000)
+      (assert-equal (ffi-call "zyl_strbuf_str" b 1000) "abcdefg")
+      (assert-equal (try (begin (ffi-call "zyl_str_append" b "h" 1000) "") (catch e e))
+        "E_INDEX_OUT_OF_BOUNDS: string buffer full")
+      (assert-equal (ffi-call "zyl_strbuf_str" b 1000) "abcdefg"))))
+
+(test "strbuf-capped"
+  (let b (ffi-call "zyl_strbuf_new" (arena) 64 1000)
+    (begin
+      (ffi-call "zyl_str_append_capped" b "12345" 8 1000)
+      (assert-equal (try (begin (ffi-call "zyl_str_append_capped" b "678" 8 1000) "") (catch e e))
+        "codegen buffer limit exceeded")
+      (ffi-call "zyl_str_append_capped" b "67" 8 1000)
+      (assert-equal (ffi-call "zyl_strbuf_str" b 1000) "1234567")
+      (ffi-call "zyl_str_append_capped" b "89" 100 1000)
+      (assert-equal (ffi-call "zyl_strbuf_str" b 1000) "123456789"))))
+
+(test "strbuf-zero-size"
+  (let b (ffi-call "zyl_strbuf_new" (arena) 0 1000)
+    (assert-equal (try (begin (ffi-call "zyl_str_append" b "x" 1000) "") (catch e e))
+      "E_INDEX_OUT_OF_BOUNDS: string buffer full")))
+
+(run-tests)
