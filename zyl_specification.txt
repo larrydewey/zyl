@@ -279,6 +279,10 @@ ResultValue:
     Equality        = == !=: two operands of one type -> Bool
                     (structural for ADTs and Strings)
     Bits            bit-and bit-or bit-xor shl shr ashr bit-not: Int
+    Intrinsics      bit-popcount bit-clz bit-ctz bit-bswap (and their 32
+                    suffixes): Int -> Int; bit-rotl bit-rotr bit-rotl32
+                    bit-rotr32 mul-hi mul-hi-u crc32c crc32c-u8:
+                    Int Int -> Int (§21.13)
     Constructor     for (deftype T (C F1..Fn) ...): C : ∀ā. (F1..Fn) -> (T ā),
                     ā the type parameters.  An untyped struct field is an
                     implicit type parameter of its struct.
@@ -967,6 +971,30 @@ Design rationale and the implementation plan: docs/package-management-design.md
 21.12 Alias Accessors:
     (unwrap alias-val) — explicit extraction (usually implicit).
 
+21.13 Bit Intrinsics:
+    Defined for every input and identical on every CPU (§27); there is no
+    inline assembly. Each compiles to inline machine code or one runtime
+    step; a program cannot name the primitives behind them.
+    (bit-popcount x)  — set bits of x (0..64)
+    (bit-clz x)       — leading zero bits (64 for 0)
+    (bit-ctz x)       — trailing zero bits (64 for 0)
+    (bit-bswap x)     — the 8 bytes of x in reverse order
+    (bit-rotl x n)    — x rotated left by n mod 64 (n & 63; -1 is 63)
+    (bit-rotr x n)    — x rotated right by n mod 64
+    (mul-hi a b)      — high 64 bits of the signed 128-bit product
+    (mul-hi-u a b)    — high 64 bits of the unsigned 128-bit product
+    (crc32c crc x)    — one CRC-32C (Castagnoli, reflected polynomial
+                        0x82F63B78) step over the 8 bytes of x, low byte
+                        first; the state is crc's low 32 bits, the result
+                        is in 0..2^32-1, and there is no pre- or
+                        post-inversion. SSE4.2's crc32 when present, else
+                        a table with the same results.
+    (crc32c-u8 crc b) — the same step over one byte, b's low 8 bits
+    32-bit variants act on x's low 32 bits and return a value in
+    0..2^32-1: bit-popcount32, bit-clz32 and bit-ctz32 (32 for 0),
+    bit-bswap32, and bit-rotl32/bit-rotr32 (count mod 32).
+    A definition of the same name in a module shadows the builtin there.
+
 ================================================================================
 22. COMPILATION PIPELINE
 ================================================================================
@@ -1059,6 +1087,8 @@ Core modules:
     collections: Vec, Map (deterministic iteration), Slice (zero-copy
                  window on a Vec)
     text: StrView (zero-copy substring), Cursor (parsing position)
+    simd: I64x2, I32x4, U8x16 lane vectors (immutable values; lane-wise
+          add, sub, and, or, xor, eq, min, max, horizontal sum, get/set)
     option: Option (Some, None), is-some, unwrap, map
     result: Result (Ok, Err), is-ok, unwrap, map
     io: file-open, file-read, file-write, file-close

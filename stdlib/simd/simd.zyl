@@ -1,0 +1,218 @@
+; === Zyl Standard Library — Fixed-width lane vectors ===
+; Module: simd/simd
+; Provides: I64x2, I32x4 and U8x16, 128-bit vectors as ordinary immutable values
+;
+; A vector is two 64-bit words, lanes packed little-endian: lane 0 is the
+; low bits of the first word. Every operation is lane-wise and defined for
+; every input: add and sub wrap within the lane, eq gives an all-ones lane
+; where the lanes are equal (-1 as an I64/I32 lane, 255 as a U8 lane), min
+; and max compare I64/I32 lanes signed and U8 lanes unsigned. A lane index
+; outside the vector is E_INDEX_OUT_OF_BOUNDS.
+;
+; The code is portable scalar Zyl: sub-word lanes run as SWAR over the two
+; words (carries kept inside each lane), so an operation is a handful of
+; word instructions on any CPU, with the same result everywhere. There is
+; no SSE path: a vector is a heap value, not an address, and the locked
+; SSE2 primitives work on addresses.
+
+(use core/core)
+(use core/list)
+
+(deftype I64x2 (I64x2C Int Int))
+(deftype I32x4 (I32x4C Int Int))
+(deftype U8x16 (U8x16C Int Int))
+
+; ===========================================================================
+; WORD-LEVEL SWAR (h = the lanes' top bits)
+; ===========================================================================
+
+(defn simd-h8 () -9187201950435737472)   ; 0x8080808080808080
+(defn simd-h32 () -9223372034707292160)  ; 0x8000000080000000
+
+(defn swar-add ((a Int) (b Int) (h Int))
+  (let m (bit-not h) (bit-xor (+ (bit-and a m) (bit-and b m)) (bit-and (bit-xor a b) h))))
+
+(defn swar-sub ((a Int) (b Int) (h Int))
+  (bit-xor (- (bit-or a h) (bit-and b (bit-not h))) (bit-and (bit-xor a (bit-not b)) h)))
+
+; The top bit of each lane where the lanes of a and b are equal.
+(defn swar-eq-top ((a Int) (b Int) (h Int))
+  (let x (bit-xor a b)
+    (let m (bit-not h)
+      (bit-xor (bit-and (bit-or (+ (bit-and x m) m) x) h) h))))
+
+; The top bit of each lane where a's lane is below b's, unsigned (the borrow out of the lane).
+(defn swar-ltu-top ((a Int) (b Int) (h Int))
+  (bit-and (bit-or (bit-and (bit-not a) b) (bit-and (bit-not (bit-xor a b)) (swar-sub a b h))) h))
+
+; Lane tops (bit w-1 of each w-bit lane) widened to all-ones lanes.
+(defn swar-widen ((t Int) (w Int))
+  (if (= w 8) (* (shr t 7) 255) (* (shr t 31) 4294967295)))
+
+(defn swar-sel ((m Int) (a Int) (b Int)) (bit-or (bit-and a m) (bit-and b (bit-not m))))
+
+(defn lane-panic ((what String))
+  (ffi-call "zyl_panic" (str-concat "E_INDEX_OUT_OF_BOUNDS: " (str-concat what " lane index outside the vector")) 1000))
+
+; ===========================================================================
+; I64x2
+; ===========================================================================
+
+; Returns: I64x2
+(defn i64x2 ((a Int) (b Int)) (I64x2C a b))
+(defn i64x2-splat ((x Int)) (I64x2C x x))
+(defn i64x2-lo ((v I64x2)) (match v (I64x2C a _ a)))
+(defn i64x2-hi ((v I64x2)) (match v (I64x2C _ b b)))
+
+; Lane i (0 or 1).
+; Returns: Int
+(defn i64x2-get ((v I64x2) (i Int))
+  (if (= i 0) (i64x2-lo v) (if (= i 1) (i64x2-hi v) (lane-panic "i64x2-get"))))
+
+; v with lane i replaced by x.
+; Returns: I64x2
+(defn i64x2-set ((v I64x2) (i Int) (x Int))
+  (if (= i 0) (I64x2C x (i64x2-hi v)) (if (= i 1) (I64x2C (i64x2-lo v) x) (lane-panic "i64x2-set"))))
+
+(defn i64x2-add ((a I64x2) (b I64x2)) (I64x2C (+ (i64x2-lo a) (i64x2-lo b)) (+ (i64x2-hi a) (i64x2-hi b))))
+(defn i64x2-sub ((a I64x2) (b I64x2)) (I64x2C (- (i64x2-lo a) (i64x2-lo b)) (- (i64x2-hi a) (i64x2-hi b))))
+(defn i64x2-and ((a I64x2) (b I64x2)) (I64x2C (bit-and (i64x2-lo a) (i64x2-lo b)) (bit-and (i64x2-hi a) (i64x2-hi b))))
+(defn i64x2-or ((a I64x2) (b I64x2)) (I64x2C (bit-or (i64x2-lo a) (i64x2-lo b)) (bit-or (i64x2-hi a) (i64x2-hi b))))
+(defn i64x2-xor ((a I64x2) (b I64x2)) (I64x2C (bit-xor (i64x2-lo a) (i64x2-lo b)) (bit-xor (i64x2-hi a) (i64x2-hi b))))
+(defn i64x2-eq ((a I64x2) (b I64x2))
+  (I64x2C (if (= (i64x2-lo a) (i64x2-lo b)) -1 0) (if (= (i64x2-hi a) (i64x2-hi b)) -1 0)))
+(defn i64x2-min ((a I64x2) (b I64x2))
+  (I64x2C (if (< (i64x2-lo a) (i64x2-lo b)) (i64x2-lo a) (i64x2-lo b)) (if (< (i64x2-hi a) (i64x2-hi b)) (i64x2-hi a) (i64x2-hi b))))
+(defn i64x2-max ((a I64x2) (b I64x2))
+  (I64x2C (if (> (i64x2-lo a) (i64x2-lo b)) (i64x2-lo a) (i64x2-lo b)) (if (> (i64x2-hi a) (i64x2-hi b)) (i64x2-hi a) (i64x2-hi b))))
+
+; The wrapping sum of the lanes.
+; Returns: Int
+(defn i64x2-hsum ((v I64x2)) (+ (i64x2-lo v) (i64x2-hi v)))
+
+; ===========================================================================
+; I32x4 (signed 32-bit lanes)
+; ===========================================================================
+
+(defn pack32 ((a Int) (b Int)) (bit-or (bit-and a 4294967295) (shl b 32)))
+(defn sext32 ((x Int)) (ashr (shl x 32) 32))
+
+; Lanes from the low 32 bits of a, b, c, d.
+; Returns: I32x4
+(defn i32x4 ((a Int) (b Int) (c Int) (d Int)) (I32x4C (pack32 a b) (pack32 c d)))
+(defn i32x4-splat ((x Int)) (let w (pack32 x x) (I32x4C w w)))
+(defn i32x4-lo ((v I32x4)) (match v (I32x4C a _ a)))
+(defn i32x4-hi ((v I32x4)) (match v (I32x4C _ b b)))
+
+; Lane i (0..3), sign-extended.
+; Returns: Int
+(defn i32x4-get ((v I32x4) (i Int))
+  (if (or (< i 0) (> i 3)) (lane-panic "i32x4-get")
+    (sext32 (shr (if (< i 2) (i32x4-lo v) (i32x4-hi v)) (* 32 (bit-and i 1))))))
+
+; v with lane i replaced by the low 32 bits of x.
+; Returns: I32x4
+(defn i32x4-set ((v I32x4) (i Int) (x Int))
+  (if (or (< i 0) (> i 3)) (lane-panic "i32x4-set")
+    (let s (* 32 (bit-and i 1))
+      (if (< i 2) (I32x4C (put-bits (i32x4-lo v) s 4294967295 x) (i32x4-hi v)) (I32x4C (i32x4-lo v) (put-bits (i32x4-hi v) s 4294967295 x))))))
+
+; w with the lane mask m at bit s replaced by x's low bits.
+(defn put-bits ((w Int) (s Int) (m Int) (x Int)) (bit-or (bit-and w (bit-not (shl m s))) (shl (bit-and x m) s)))
+
+(defn i32x4-add ((a I32x4) (b I32x4))
+  (I32x4C (swar-add (i32x4-lo a) (i32x4-lo b) (simd-h32)) (swar-add (i32x4-hi a) (i32x4-hi b) (simd-h32))))
+(defn i32x4-sub ((a I32x4) (b I32x4))
+  (I32x4C (swar-sub (i32x4-lo a) (i32x4-lo b) (simd-h32)) (swar-sub (i32x4-hi a) (i32x4-hi b) (simd-h32))))
+(defn i32x4-and ((a I32x4) (b I32x4)) (I32x4C (bit-and (i32x4-lo a) (i32x4-lo b)) (bit-and (i32x4-hi a) (i32x4-hi b))))
+(defn i32x4-or ((a I32x4) (b I32x4)) (I32x4C (bit-or (i32x4-lo a) (i32x4-lo b)) (bit-or (i32x4-hi a) (i32x4-hi b))))
+(defn i32x4-xor ((a I32x4) (b I32x4)) (I32x4C (bit-xor (i32x4-lo a) (i32x4-lo b)) (bit-xor (i32x4-hi a) (i32x4-hi b))))
+(defn i32x4-eq ((a I32x4) (b I32x4))
+  (I32x4C (swar-widen (swar-eq-top (i32x4-lo a) (i32x4-lo b) (simd-h32)) 32)
+          (swar-widen (swar-eq-top (i32x4-hi a) (i32x4-hi b) (simd-h32)) 32)))
+
+; All-ones lanes where a's lane is below b's, signed (top bits flipped, then unsigned).
+(defn lt32-mask ((a Int) (b Int))
+  (swar-widen (swar-ltu-top (bit-xor a (simd-h32)) (bit-xor b (simd-h32)) (simd-h32)) 32))
+
+(defn i32x4-min ((a I32x4) (b I32x4))
+  (I32x4C (swar-sel (lt32-mask (i32x4-lo a) (i32x4-lo b)) (i32x4-lo a) (i32x4-lo b))
+          (swar-sel (lt32-mask (i32x4-hi a) (i32x4-hi b)) (i32x4-hi a) (i32x4-hi b))))
+(defn i32x4-max ((a I32x4) (b I32x4))
+  (I32x4C (swar-sel (lt32-mask (i32x4-lo a) (i32x4-lo b)) (i32x4-lo b) (i32x4-lo a))
+          (swar-sel (lt32-mask (i32x4-hi a) (i32x4-hi b)) (i32x4-hi b) (i32x4-hi a))))
+
+; The exact sum of the four sign-extended lanes.
+; Returns: Int
+(defn i32x4-hsum ((v I32x4))
+  (+ (+ (sext32 (i32x4-lo v)) (sext32 (shr (i32x4-lo v) 32))) (+ (sext32 (i32x4-hi v)) (sext32 (shr (i32x4-hi v) 32)))))
+
+; ===========================================================================
+; U8x16 (unsigned 8-bit lanes)
+; ===========================================================================
+
+(defn pack8 ((a Int) (b Int) (c Int) (d Int) (e Int) (f Int) (g Int) (h Int))
+  (bit-or (bit-or (bit-or (bit-and a 255) (shl (bit-and b 255) 8)) (bit-or (shl (bit-and c 255) 16) (shl (bit-and d 255) 24)))
+          (bit-or (bit-or (shl (bit-and e 255) 32) (shl (bit-and f 255) 40)) (bit-or (shl (bit-and g 255) 48) (shl (bit-and h 255) 56)))))
+
+; Lanes from the low 8 bits of each argument, lane 0 first.
+; Returns: U8x16
+(defn u8x16 ((b0 Int) (b1 Int) (b2 Int) (b3 Int) (b4 Int) (b5 Int) (b6 Int) (b7 Int)
+             (b8 Int) (b9 Int) (b10 Int) (b11 Int) (b12 Int) (b13 Int) (b14 Int) (b15 Int))
+  (U8x16C (pack8 b0 b1 b2 b3 b4 b5 b6 b7) (pack8 b8 b9 b10 b11 b12 b13 b14 b15)))
+
+; Lanes 0-7 from the bytes of lo, 8-15 from hi, least significant first.
+; Returns: U8x16
+(defn u8x16-of-words ((lo Int) (hi Int)) (U8x16C lo hi))
+(defn u8x16-splat ((x Int)) (let w (* (bit-and x 255) 72340172838076673) (U8x16C w w)))
+(defn u8x16-lo ((v U8x16)) (match v (U8x16C a _ a)))
+(defn u8x16-hi ((v U8x16)) (match v (U8x16C _ b b)))
+
+; Lane i (0..15), 0..255.
+; Returns: Int
+(defn u8x16-get ((v U8x16) (i Int))
+  (if (or (< i 0) (> i 15)) (lane-panic "u8x16-get")
+    (bit-and (shr (if (< i 8) (u8x16-lo v) (u8x16-hi v)) (* 8 (bit-and i 7))) 255)))
+
+; v with lane i replaced by the low 8 bits of x.
+; Returns: U8x16
+(defn u8x16-set ((v U8x16) (i Int) (x Int))
+  (if (or (< i 0) (> i 15)) (lane-panic "u8x16-set")
+    (let s (* 8 (bit-and i 7))
+      (if (< i 8) (U8x16C (put-bits (u8x16-lo v) s 255 x) (u8x16-hi v)) (U8x16C (u8x16-lo v) (put-bits (u8x16-hi v) s 255 x))))))
+
+(defn u8x16-add ((a U8x16) (b U8x16))
+  (U8x16C (swar-add (u8x16-lo a) (u8x16-lo b) (simd-h8)) (swar-add (u8x16-hi a) (u8x16-hi b) (simd-h8))))
+(defn u8x16-sub ((a U8x16) (b U8x16))
+  (U8x16C (swar-sub (u8x16-lo a) (u8x16-lo b) (simd-h8)) (swar-sub (u8x16-hi a) (u8x16-hi b) (simd-h8))))
+(defn u8x16-and ((a U8x16) (b U8x16)) (U8x16C (bit-and (u8x16-lo a) (u8x16-lo b)) (bit-and (u8x16-hi a) (u8x16-hi b))))
+(defn u8x16-or ((a U8x16) (b U8x16)) (U8x16C (bit-or (u8x16-lo a) (u8x16-lo b)) (bit-or (u8x16-hi a) (u8x16-hi b))))
+(defn u8x16-xor ((a U8x16) (b U8x16)) (U8x16C (bit-xor (u8x16-lo a) (u8x16-lo b)) (bit-xor (u8x16-hi a) (u8x16-hi b))))
+(defn u8x16-eq ((a U8x16) (b U8x16))
+  (U8x16C (swar-widen (swar-eq-top (u8x16-lo a) (u8x16-lo b) (simd-h8)) 8)
+          (swar-widen (swar-eq-top (u8x16-hi a) (u8x16-hi b) (simd-h8)) 8)))
+
+(defn lt8-mask ((a Int) (b Int)) (swar-widen (swar-ltu-top a b (simd-h8)) 8))
+
+(defn u8x16-min ((a U8x16) (b U8x16))
+  (U8x16C (swar-sel (lt8-mask (u8x16-lo a) (u8x16-lo b)) (u8x16-lo a) (u8x16-lo b))
+          (swar-sel (lt8-mask (u8x16-hi a) (u8x16-hi b)) (u8x16-hi a) (u8x16-hi b))))
+(defn u8x16-max ((a U8x16) (b U8x16))
+  (U8x16C (swar-sel (lt8-mask (u8x16-lo a) (u8x16-lo b)) (u8x16-lo b) (u8x16-lo a))
+          (swar-sel (lt8-mask (u8x16-hi a) (u8x16-hi b)) (u8x16-hi b) (u8x16-hi a))))
+
+; Byte sum of one word: pairs into 16-bit lanes, then one multiply gathers them in the top 16 bits.
+(defn hsum8-word ((w Int))
+  (let t (+ (bit-and w 71777214294589695) (bit-and (shr w 8) 71777214294589695))
+    (shr (* t 281479271743489) 48)))
+
+; The sum of the sixteen lanes (0..4080).
+; Returns: Int
+(defn u8x16-hsum ((v U8x16)) (+ (hsum8-word (u8x16-lo v)) (hsum8-word (u8x16-hi v))))
+
+; Bit i set when lane i's top bit is set (an eq result gives the equal lanes).
+; Returns: Int
+(defn u8x16-movemask ((v U8x16)) (u8x16-movemask-from v 0 0))
+
+(defn u8x16-movemask-from ((v U8x16) (i Int) (acc Int))
+  (if (> i 15) acc (u8x16-movemask-from v (+ i 1) (bit-or acc (shl (shr (u8x16-get v i) 7) i)))))

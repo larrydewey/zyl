@@ -1,0 +1,130 @@
+; Bit intrinsics (spec §21.13): edge cases, and agreement with bit-by-bit references over pseudo-random words.
+
+(defn int-min () (- -9223372036854775807 1))
+
+(defn ref-popcnt (x i) (if (> i 63) 0 (+ (bit-and (shr x i) 1) (ref-popcnt x (+ i 1)))))
+(defn ref-clz (x i) (if (< i 0) 64 (if (= (bit-and (shr x i) 1) 1) (- 63 i) (ref-clz x (- i 1)))))
+(defn ref-ctz (x i) (if (> i 63) 64 (if (= (bit-and (shr x i) 1) 1) i (ref-ctz x (+ i 1)))))
+(defn ref-bswap (x k acc) (if (= k 0) acc (ref-bswap (shr x 8) (- k 1) (bit-or (shl acc 8) (bit-and x 255)))))
+(defn ref-rotl (x n) (let k (% (+ (% n 64) 64) 64) (if (= k 0) x (bit-or (shl x k) (shr x (- 64 k))))))
+
+; Unsigned high product from 16-bit limbs, column by column.
+(defn limb (x i) (bit-and (shr x (* 16 i)) 65535))
+(defn ref-mh-sum (a b k i acc)
+  (if (> i k) acc
+    (ref-mh-sum a b k (+ i 1) (if (and (< i 4) (< (- k i) 4)) (+ acc (* (limb a i) (limb b (- k i)))) acc))))
+(defn ref-mh-col (a b k carry hi)
+  (if (> k 7) hi
+    (let t (+ carry (ref-mh-sum a b k 0 0))
+      (ref-mh-col a b (+ k 1) (shr t 16) (if (>= k 4) (bit-or hi (shl (bit-and t 65535) (* 16 (- k 4)))) hi)))))
+(defn ref-mulhi-u (a b) (ref-mh-col a b 0 0 0))
+(defn ref-mulhi (a b) (- (- (ref-mulhi-u a b) (if (< a 0) b 0)) (if (< b 0) a 0)))
+
+(defn ref-crc-bits (c k) (if (= k 0) c (ref-crc-bits (if (= (bit-and c 1) 1) (bit-xor (shr c 1) 2197175160) (shr c 1)) (- k 1))))
+(defn ref-crc (c x k) (if (= k 0) c (ref-crc (ref-crc-bits (bit-xor c (bit-and x 255)) 8) (shr x 8) (- k 1))))
+
+(defn next-rand (x) (+ (* x 6364136223846793005) 1442695040888963407))
+
+; Number of words among n pseudo-random ones where a builtin and its reference disagree.
+(defn mismatches (x n bad)
+  (if (= n 0) bad
+    (let y (next-rand x)
+      (let s (bit-and y 127)
+        (let ok (and (= (bit-popcount x) (ref-popcnt x 0))
+                (and (= (bit-clz (shr x s)) (ref-clz (shr x s) 63))
+                (and (= (bit-ctz (shl x s)) (ref-ctz (shl x s) 0))
+                (and (= (bit-bswap x) (ref-bswap x 8 0))
+                (and (= (bit-rotl x (- s 64)) (ref-rotl x (- s 64)))
+                (and (= (bit-rotr x s) (ref-rotl x (- 0 s)))
+                (and (= (mul-hi x y) (ref-mulhi x y))
+                (and (= (mul-hi-u x y) (ref-mulhi-u x y))
+                (and (= (crc32c y x) (ref-crc (bit-and y 4294967295) x 8))
+                (and (= (crc32c y x) (ffi-call "zyl_crc32c_soft" y x 1000))
+                     (= (crc32c-u8 y x) (ref-crc (bit-and y 4294967295) x 1))))))))))))
+          (mismatches y (- n 1) (if ok bad (+ bad 1))))))))
+
+; CRC-32C of a string: initial and final inversion, one byte at a time.
+(defn crc-str (s i c)
+  (if (>= i (str-length s)) (bit-xor c 4294967295)
+    (crc-str s (+ i 1) (crc32c-u8 c (ffi-call "zyl_cstr_byte_at" s i 1000)))))
+
+(test "popcount"
+  (begin
+    (assert-equal (bit-popcount 0) 0)
+    (assert-equal (bit-popcount -1) 64)
+    (assert-equal (bit-popcount (int-min)) 1)
+    (assert-equal (bit-popcount 255) 8)
+    (assert-equal (bit-popcount32 -1) 32)
+    (assert-equal (bit-popcount32 (shl 1 40)) 0)))
+
+(test "clz-ctz"
+  (begin
+    (assert-equal (bit-clz 0) 64)
+    (assert-equal (bit-clz 1) 63)
+    (assert-equal (bit-clz -1) 0)
+    (assert-equal (bit-clz (int-min)) 0)
+    (assert-equal (bit-ctz 0) 64)
+    (assert-equal (bit-ctz -1) 0)
+    (assert-equal (bit-ctz (int-min)) 63)
+    (assert-equal (bit-clz32 0) 32)
+    (assert-equal (bit-clz32 1) 31)
+    (assert-equal (bit-clz32 -1) 0)
+    (assert-equal (bit-clz32 (shl 1 32)) 32)
+    (assert-equal (bit-ctz32 0) 32)
+    (assert-equal (bit-ctz32 (shl 1 32)) 32)
+    (assert-equal (bit-ctz32 (shl 1 31)) 31)))
+
+(test "bswap"
+  (begin
+    (assert-equal (bit-bswap 72623859790382856) 578437695752307201)
+    (assert-equal (bit-bswap 0) 0)
+    (assert-equal (bit-bswap -1) -1)
+    (assert-equal (bit-bswap 1) (shl 1 56))
+    (assert-equal (bit-bswap (int-min)) 128)
+    (assert-equal (bit-bswap32 16909060) 67305985)
+    (assert-equal (bit-bswap32 -1) 4294967295)))
+
+(test "rotate"
+  (begin
+    (assert-equal (bit-rotl 1 0) 1)
+    (assert-equal (bit-rotl 1 63) (int-min))
+    (assert-equal (bit-rotl 1 64) 1)
+    (assert-equal (bit-rotl 1 65) 2)
+    (assert-equal (bit-rotl 1 -1) (int-min))
+    (assert-equal (bit-rotr 1 1) (int-min))
+    (assert-equal (bit-rotr 1 64) 1)
+    (assert-equal (bit-rotr 2 65) 1)
+    (assert-equal (bit-rotl -1 17) -1)
+    (assert-equal (bit-rotl32 1 31) 2147483648)
+    (assert-equal (bit-rotl32 2147483648 1) 1)
+    (assert-equal (bit-rotl32 1 32) 1)
+    (assert-equal (bit-rotr32 1 33) 2147483648)
+    (assert-equal (bit-rotl32 -1 5) 4294967295)))
+
+(test "mul-hi"
+  (begin
+    (assert-equal (mul-hi -1 -1) 0)
+    (assert-equal (mul-hi-u -1 -1) -2)
+    (assert-equal (mul-hi -1 5) -1)
+    (assert-equal (mul-hi-u -1 5) 4)
+    (assert-equal (mul-hi (int-min) (int-min)) 4611686018427387904)
+    (assert-equal (mul-hi-u (int-min) (int-min)) 4611686018427387904)
+    (assert-equal (mul-hi (int-min) -1) 0)
+    (assert-equal (mul-hi (int-min) 1) -1)
+    (assert-equal (mul-hi-u 4294967296 4294967296) 1)
+    (assert-equal (mul-hi 0 -1) 0)
+    (assert-equal (mul-hi 9223372036854775807 9223372036854775807) 4611686018427387903)))
+
+(test "crc32c"
+  (begin
+    (assert-equal (crc-str "123456789" 0 4294967295) 3808858755)
+    (assert-equal (crc32c 0 0) 0)
+    (assert-equal (crc32c-u8 0 0) 0)
+    (assert-equal (crc32c (shl 1 40) 0) (crc32c 0 0))
+    (assert-equal (crc32c-u8 4294967295 256) (crc32c-u8 4294967295 0))
+    (assert-equal (crc32c -1 -1) (ref-crc 4294967295 -1 8))))
+
+(test "reference-agreement"
+  (assert-equal (mismatches 12345 2000 0) 0))
+
+(run-tests)

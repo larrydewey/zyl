@@ -96,3 +96,28 @@
 (defn rt-foreign-mark () (ffi-call "zyl_ref_set" rt-foreign-cell 1 1000))
 
 (defn rt-foreign-p () (= (ffi-call "zyl_ref_get" rt-foreign-cell 1000) 1))
+
+; The locked primitive (or runtime entry) a bit intrinsic builtin lowers to, else "".
+(defn intrinsic-prim (n)
+  (if (str-eq n "bit-popcount") "%popcnt"
+  (if (str-eq n "bit-popcount32") "%popcnt32"
+  (if (str-eq n "bit-clz") "%clz"
+  (if (str-eq n "bit-clz32") "%clz32"
+  (if (str-eq n "bit-ctz") "%ctz"
+  (if (str-eq n "bit-ctz32") "%ctz32"
+  (if (str-eq n "bit-bswap") "%bswap"
+  (if (str-eq n "bit-bswap32") "%bswap32"
+  (if (str-eq n "bit-rotl") "%rotl"
+  (if (str-eq n "bit-rotr") "%rotr"
+  (if (str-eq n "bit-rotl32") "%rotl32"
+  (if (str-eq n "bit-rotr32") "%rotr32"
+  (if (str-eq n "mul-hi") "%mulhi-s"
+  (if (str-eq n "mul-hi-u") "%mulhi"
+  (if (str-eq n "crc32c") "zyl_crc32c_u64"
+  (if (str-eq n "crc32c-u8") "zyl_crc32c_u8" "")))))))))))))))))
+
+; Operand count of a bit intrinsic builtin (every operand and result Int), 0 for any other name.
+(defn intrinsic-arity (n)
+  (let p (intrinsic-prim n)
+    (if (= (str-length p) 0) 0
+      (if (or (str-eq (str-substring p 0 4) "%rot") (or (str-eq (str-substring p 0 4) "%mul") (str-eq (str-substring p 0 4) "zyl_"))) 2 1))))

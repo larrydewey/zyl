@@ -806,7 +806,75 @@
           (in-ffi-call (str-concat "zyl_iglobal_" (str-substring sym 11 (- (str-length sym) 11))) (in-args-eval fns env args))
         (if (str-eq sym "zyl_ffi_timed")
           (in-ffi-timed (in-args-eval fns env args))
-          (in-ffi-call sym (in-args-eval fns env args))))))))
+        (if (in-intrinsic-p sym)
+          (in-intrinsic sym (in-args-eval fns env args))
+          (in-ffi-call sym (in-args-eval fns env args)))))))))
+
+; ===========================================================================
+; BIT INTRINSICS (rt_mode.zyl, intrinsic-prim): a portable reference, bit by bit
+; ===========================================================================
+
+(defn in-intrinsic-p (sym)
+  (or (str-eq sym "zyl_crc32c_u64") (or (str-eq sym "zyl_crc32c_u8") (or (str-eq sym "zyl_crc32c_soft")
+    (and (> (str-length sym) 1) (str-eq (str-substring sym 0 1) "%"))))))
+
+(defn in-intrinsic (sym vals)
+  (let a (val-word (in-nth-val vals 0))
+    (let b (val-word (in-nth-val vals 1))
+      (VInt
+        (if (str-eq sym "%popcnt") (in-popcnt a 0 64)
+        (if (str-eq sym "%popcnt32") (in-popcnt a 0 32)
+        (if (str-eq sym "%clz") (in-clz a 63 0)
+        (if (str-eq sym "%clz32") (in-clz a 31 0)
+        (if (str-eq sym "%ctz") (in-ctz a 0 64)
+        (if (str-eq sym "%ctz32") (in-ctz a 0 32)
+        (if (str-eq sym "%bswap") (in-bswap a 8 0)
+        (if (str-eq sym "%bswap32") (in-bswap a 4 0)
+        (if (str-eq sym "%rotl") (in-rotl a (bit-and b 63) 64)
+        (if (str-eq sym "%rotr") (in-rotl a (bit-and (- 64 (bit-and b 63)) 63) 64)
+        (if (str-eq sym "%rotl32") (in-rotl (bit-and a 4294967295) (bit-and b 31) 32)
+        (if (str-eq sym "%rotr32") (in-rotl (bit-and a 4294967295) (bit-and (- 32 (bit-and b 31)) 31) 32)
+        (if (str-eq sym "%mulhi") (in-mulhi-u a b)
+        (if (str-eq sym "%mulhi-s") (- (- (in-mulhi-u a b) (if (< a 0) b 0)) (if (< b 0) a 0))
+        (if (or (str-eq sym "zyl_crc32c_u64") (str-eq sym "zyl_crc32c_soft")) (in-crc-bytes (bit-and a 4294967295) b 8)
+        (if (str-eq sym "zyl_crc32c_u8") (in-crc-bytes (bit-and a 4294967295) (bit-and b 255) 1)
+          (in-fail "E_FFI_RESTRICTED" (str-concat "a runtime primitive the interpreter does not run: " sym))))))))))))))))))))))
+
+(defn in-popcnt (x i w)
+  (if (>= i w) 0 (+ (bit-and (shr x i) 1) (in-popcnt x (+ i 1) w))))
+
+; Zeros above the highest set bit, from bit i down.
+(defn in-clz (x i n)
+  (if (< i 0) n (if (= (bit-and (shr x i) 1) 1) n (in-clz x (- i 1) (+ n 1)))))
+
+(defn in-ctz (x i w)
+  (if (>= i w) w (if (= (bit-and (shr x i) 1) 1) i (in-ctz x (+ i 1) w))))
+
+(defn in-bswap (x k acc)
+  (if (= k 0) acc (in-bswap (shr x 8) (- k 1) (bit-or (shl acc 8) (bit-and x 255)))))
+
+(defn in-rotl (x n w)
+  (if (= n 0) x
+    (let r (bit-or (shl x n) (shr x (- w n)))
+      (if (= w 32) (bit-and r 4294967295) r))))
+
+; High 64 bits of the unsigned 128-bit product, from 32-bit halves.
+(defn in-mulhi-u (a b)
+  (let a0 (bit-and a 4294967295)
+    (let a1 (shr a 32)
+      (let b0 (bit-and b 4294967295)
+        (let b1 (shr b 32)
+          (let p01 (* a0 b1)
+            (let p10 (* a1 b0)
+              (let mid (+ (+ (shr (* a0 b0) 32) (bit-and p01 4294967295)) (bit-and p10 4294967295))
+                (+ (+ (+ (* a1 b1) (shr p01 32)) (shr p10 32)) (shr mid 32))))))))))
+
+; CRC-32C over the k low bytes of x, least significant first, bit by bit (reflected polynomial 0x82F63B78).
+(defn in-crc-bytes (c x k)
+  (if (= k 0) c (in-crc-bytes (in-crc-bits (bit-xor c (bit-and x 255)) 8) (shr x 8) (- k 1))))
+
+(defn in-crc-bits (c k)
+  (if (= k 0) c (in-crc-bits (if (= (bit-and c 1) 1) (bit-xor (shr c 1) 2197175160) (shr c 1)) (- k 1))))
 
 ; An interpreted program's `def` cells (zyl_global_*) are kept apart from
 ; the host's (zyl_iglobal_*, runtime).

@@ -32,3 +32,4 @@
 (use heap)
 (use out)
 (use env)
+(use crc)

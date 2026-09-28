@@ -16,6 +16,7 @@
 (use compiler/expr_inner)
 (use compiler/error_report)
 (use compiler/ffi_sigs)
+(use compiler/rt_mode)
 (use compiler/node_tables)
 
 ; Types. Negative TaV ids are template slots (see ta-inst).
@@ -1357,6 +1358,8 @@
 
 ; Standard-library string and print functions whose types codegen relies on.
 (defn ta-builtin-sig (st n)
+  (if (= (intrinsic-arity n) 1) (TaF (Cons (ta-int) Nil) (ta-int))
+  (if (= (intrinsic-arity n) 2) (ta-sig2 (ta-int) (ta-int) (ta-int))
   (if (ta-key-is n "str-concat") (ta-sig2 (ta-str) (ta-str) (ta-str))
   (if (ta-key-is n "str-length") (TaF (Cons (ta-str) Nil) (ta-int))
   (if (ta-key-is n "str-substring") (TaF (ta-l3 (ta-str) (ta-int) (ta-int)) (ta-str))
