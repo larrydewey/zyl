@@ -228,7 +228,10 @@
 ; `MMov p s` where s is defined once, read only here, by an instruction at
 ; most 16 back in the same straight line that nothing between reads or
 ; writes p: that instruction writes p itself and the move goes.
-(defn mir-coalesce (instrs nv)
+; Moves first, then two-address operands over the final destinations.
+(defn mir-coalesce (instrs nv) (mir-coalesce-pass (mir-coalesce-pass instrs nv false) nv true))
+
+(defn mir-coalesce-pass (instrs nv two)
   (let n (list-length instrs)
     (let a (mir-array instrs n)
       (let u (mir-use-counts instrs nv)
@@ -237,7 +240,7 @@
             (let _ (mir-def-index a n dc di 0)
               (let drop (w-alloc (mir-arena) (+ n 1))
                 (let nd (w-alloc (mir-arena) (+ n 1))
-                  (let _ (mir-co-scan a n u dc di drop nd 0)
+                  (let _ (mir-co-scan a n u dc di drop nd 0 two)
                     (mir-co-emit a n drop nd 0)))))))))))
 
 (defn mir-def-index (a n dc di i)
@@ -247,11 +250,11 @@
         (mir-def-index a n dc di (+ i 1))))))
 
 ; nd holds the new destination + 1 (0: unchanged).
-(defn mir-co-scan (a n u dc di drop nd j)
+(defn mir-co-scan (a n u dc di drop nd j two)
   (if (>= j n) unit
     (let _ (match (ffi-call "zyl_array_get" a j 1000)
              (MMov p s
-               (if (and (not (= p s)) (and (= (w-get u s) 1) (= (w-get dc s) 1)))
+               (if (and (not two) (and (not (= p s)) (and (= (w-get u s) 1) (= (w-get dc s) 1))))
                  (let i (w-get di s)
                    (if (and (< i j) (and (<= (- j i) 16) (= (w-get drop i) 0)))
                      (if (mir-co-clear a (+ i 1) j p)
@@ -262,8 +265,22 @@
                        unit)
                      unit))
                  unit))
+             ; d <- x op y with x defined just before and read only here: x's def writes d (two-address form)
+             (MBin op d x y (if (and two (and (mir-two-addr op) (and (not (= d y)) (not (= x y))))) (mir-co-operand a u dc di drop nd j d x) unit))
+             (MBinI op d x _ (if (and two (not (or (= op 3) (= op 4)))) (mir-co-operand a u dc di drop nd j d x) unit))
              (_ unit))
-      (mir-co-scan a n u dc di drop nd (+ j 1)))))
+      (mir-co-scan a n u dc di drop nd (+ j 1) two))))
+
+(defn mir-two-addr (op) (or (<= op 2) (and (>= op 11) (<= op 13))))
+
+; drop 2 marks an instruction whose first operand becomes its destination.
+(defn mir-co-operand (a u dc di drop nd j d x)
+  (if (and (not (= d x)) (and (= (w-get u x) 1) (= (w-get dc x) 1)))
+    (let i (w-get di x)
+      (if (and (< i j) (and (<= (- j i) 16) (and (= (w-get drop i) 0) (mir-co-clear a (+ i 1) j d))))
+        (let _ (w-set drop j 2) (let _ (w-set nd i (+ d 1)) unit))
+        unit))
+    unit))
 
 ; No control flow, and no read or write of p, in [k, j).
 (defn mir-co-clear (a k j p)
@@ -281,11 +298,19 @@
 
 (defn mir-co-emit (a n drop nd i)
   (if (>= i n) Nil
+    (if (= (w-get drop i) 2)
+      (Cons (mir-self-operand (ffi-call "zyl_array_get" a i 1000)) (mir-co-emit a n drop nd (+ i 1)))
     (if (= (w-get drop i) 1)
       (mir-co-emit a n drop nd (+ i 1))
       (let ins (ffi-call "zyl_array_get" a i 1000)
         (Cons (if (> (w-get nd i) 0) (mi-with-def ins (- (w-get nd i) 1)) ins)
-              (mir-co-emit a n drop nd (+ i 1)))))))
+              (mir-co-emit a n drop nd (+ i 1))))))))
+
+(defn mir-self-operand (i)
+  (match i
+    (MBin op d _ y (MBin op d d y))
+    (MBinI op d _ k (MBinI op d d k))
+    (_ i)))
 
 ; The instruction writing d instead.
 (defn mi-with-def (i d)

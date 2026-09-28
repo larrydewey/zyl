@@ -3055,11 +3055,10 @@
     (IIf a t f
       (if (ml-const-true t)
         ; (or a f): a true skips f.
-        (let le (ms-label ms)
-          (let lt (ms-label (mr-ms le))
-            (let m1 (ml-cond st env venv (mr-ms lt) a (mr-v le))
-              (let m2 (ml-cond st env venv (ms-emit (ms-emit m1 (MJmp (mr-v lt))) (MLabel (mr-v le))) f lf)
-                (ms-emit m2 (MLabel (mr-v lt)))))))
+        (let lt (ms-label ms)
+          (let m1 (ml-cond-t st env venv (mr-ms lt) a (mr-v lt))
+            (let m2 (ml-cond st env venv m1 f lf)
+              (ms-emit m2 (MLabel (mr-v lt))))))
         (if (ml-const-zero f)
           ; (and a t)
           (ml-cond st env venv (ml-cond st env venv ms a lf) t lf)
@@ -3081,7 +3080,15 @@
     (IIf a t f
       (if (and (ml-const-zero t) (ml-const-one f))
         (ml-cond st env venv ms a lt)
-        (ml-cond-t-plain st env venv ms c lt)))
+        (if (ml-const-true t)
+          ; (or a f) true: either holds
+          (ml-cond-t st env venv (ml-cond-t st env venv ms a lt) f lt)
+          (if (ml-const-zero f)
+            ; (and a t) true: a false skips the test of t
+            (let lx (ms-label ms)
+              (let m1 (ml-cond st env venv (mr-ms lx) a (mr-v lx))
+                (ms-emit (ml-cond-t st env venv m1 t lt) (MLabel (mr-v lx)))))
+            (ml-cond-t-plain st env venv ms c lt)))))
     (_ (ml-cond-t-plain st env venv ms c lt))))
 
 (defn ml-cond-t-plain (st env venv ms c lt)
@@ -3575,12 +3582,18 @@
   (let w (w-alloc (mir-arena) (if (> nl 0) nl 1))
     (let _ (mb-back-scan a n lpos w 0) w)))
 
+; Only a label no instruction falls into: the padding is never executed.
 (defn mb-back-scan (a n lpos w i)
   (if (>= i n) unit
     (let l (match (ffi-call "zyl_array_get" a i 1000)
              (MJmp l l) (MJf _ _ _ l l) (MJfI _ _ _ l l) (MJz _ l l) (_ -1))
-      (let _ (if (and (>= l 0) (<= (w-get lpos l) i)) (let _ (w-set w l 1) unit) unit)
+      (let _ (if (and (>= l 0) (and (<= (w-get lpos l) i) (mb-no-fall a (w-get lpos l)))) (let _ (w-set w l 1) unit) unit)
         (mb-back-scan a n lpos w (+ i 1))))))
+
+(defn mb-no-fall (a p)
+  (if (<= p 0) false
+    (match (ffi-call "zyl_array_get" a (- p 1) 1000)
+      (MJmp _ true) (MRet _ true) (MTail _ _ _ true) (_ false))))
 
 ; No instruction's sequence uses r11 as scratch (region sites, inline allocation, byte handles, array set, cas/fill/cpuid).
 (defn mb-r11-free (instrs)
@@ -3978,10 +3991,16 @@
       (if (and (<= op 1) (and (not (str-eq dt at)) (and (not (mb-in-mem fr a)) (> n -2147483648))))
         (let k (if (= op 0) n (- 0 n))
           (cg-emit-line st (str-concat "    lea " (str-concat dt (str-concat ", [" (str-concat at (str-concat (if (< k 0) "-" "+") (str-concat (ffi-call "zyl_int_text" (if (< k 0) (- 0 k) k) 1000) "]"))))))))
+        (if (and (= op 2) (and (> n 1) (and (= (bit-and n (- n 1)) 0) (not (mb-in-mem fr a)))))
+          ; times 2^k: a shift (the same wrapped product)
+          (let k (mb-log2 n 0)
+            (if (and (<= k 3) (not (str-eq dt at)))
+              (cg-emit-line st (str-concat "    lea " (str-concat dt (str-concat ", [" (str-concat at (str-concat "*" (str-concat (ffi-call "zyl_int_text" n 1000) "]")))))))
+              (cg-emit-line (mb-mov st dt at) (str-concat "    shl " (str-concat dt (str-concat ", " (ffi-call "zyl_int_text" k 1000)))))))
         (if (= op 2)
           (cg-emit-line st (str-concat "    imul " (str-concat dt (str-concat ", " (str-concat at (str-concat ", " (ffi-call "zyl_int_text" n 1000)))))))
           (cg-emit-line (mb-mov st dt at)
-                        (str-concat "    " (str-concat (mb-two-op-mnem op) (str-concat " " (str-concat dt (str-concat ", " (ffi-call "zyl_int_text" n 1000))))))))))))
+                        (str-concat "    " (str-concat (mb-two-op-mnem op) (str-concat " " (str-concat dt (str-concat ", " (ffi-call "zyl_int_text" n 1000)))))))))))))
 
 ; add, sub, imul, and, or, xor have a two-operand form d op= s. (Shifts,
 ; division and comparisons keep the fixed rax/rcx sequences above, which
