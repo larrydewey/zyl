@@ -3559,10 +3559,11 @@
       (let _ (ffi-call "zyl_ref_set" mb-loop-heads (mb-back-targets a n lpos nl) 1000)
       (let lin (mir-liveness a n nv lpos)
         (let u (mir-use-counts instrs nv)
+        (let _ (ffi-call "zyl_ref_set" mb-uses u 1000)
         (let rv (mir-ret-vregs a n nv u)
         (let al (mir-set-locs (mir-allocate (mir-drop-ivs (mir-intervals a n nv lin u) rv) nv (mir-hints a n nv) (and (= rflags 0) (mb-r11-free instrs))) rv 11)
           (match (cg-label-new st)
-            (CGR st1 _ base (mb-emit-fn st1 name al nv base instrs rflags blocks)))))))))))))))
+            (CGR st1 _ base (mb-emit-fn st1 name al nv base instrs rflags blocks))))))))))))))))
 
 (defn mb-emit-fn (st name al nv base instrs rflags blocks)
   (let saved (mb-used-callee al nv 0 Nil)
@@ -3718,6 +3719,18 @@
     (Cons ins rest
       (match ins
         (MParam _ _ (mb-params st fr instrs Nil))
+        (MByteFast k d o dt _ _
+          (match rest
+            (Cons nx rest2
+              (match nx
+                (MJfI op a imm l
+                  (if (and (or (= k 4) (= k 5)) (and (= a d) (and (or (= op 9) (= op 10))
+                        (and (>= imm 0) (and (<= imm (if (= k 4) 255 127)) (= (w-get (ffi-call "zyl_ref_get" mb-uses 1000) d) 1))))))
+                    ; a proven byte load only compared: cmp the byte itself
+                    (mb-emit-all (mb-byte-cmp st fr o dt imm op l) fr rest2 (+ i 2))
+                    (mb-emit-all (mb-emit-one st fr ins i) fr rest (+ i 1))))
+                (_ (mb-emit-all (mb-emit-one st fr ins i) fr rest (+ i 1)))))
+            (Nil (mb-emit-one st fr ins i))))
         (MByteData d h
           (match rest
             (Cons nx rest2
@@ -3728,6 +3741,17 @@
                 (_ (mb-emit-all (mb-emit-one st fr ins i) fr rest (+ i 1)))))
             (Nil (mb-emit-one st fr ins i))))
         (_ (mb-emit-all (mb-emit-one st fr ins i) fr rest (+ i 1)))))))
+
+(def mb-uses (ffi-call "zyl_ref_new" (w-alloc (mir-arena) 1) 1000))
+
+(defn mb-byte-cmp (st fr o dt imm op l)
+  (let st1 (if (mb-in-mem fr o) (cg-emit-line st (str-concat "    mov rax, " (mb-loc-text fr o))) st)
+    (let ot (if (mb-in-mem fr o) "rax" (mb-loc-text fr o))
+      (let st2 (if (mb-in-mem fr dt) (cg-emit-line st1 (str-concat "    mov rdx, " (mb-loc-text fr dt))) st1)
+        (let dtt (if (mb-in-mem fr dt) "rdx" (mb-loc-text fr dt))
+          (cg-emit-lines st2
+            (Cons (str-concat "    cmp byte ptr [" (str-concat dtt (str-concat "+" (str-concat ot (str-concat "], " (ffi-call "zyl_int_text" imm 1000))))))
+            (Cons (str-concat (cg-jump-unless op) (mb-label fr l)) Nil))))))))
 
 ; Data pointer and bound of one byte handle with one check (mb-byte-view twice, fused).
 (defn mb-byte-view2 (st fr d d2 h i)
