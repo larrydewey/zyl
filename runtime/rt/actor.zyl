@@ -1,0 +1,336 @@
+; Actors (mailboxes, threads, the atexit drain) and the big-stack main thread.
+(use base)
+(use alloc)
+
+(extern "malloc" (Int) Int)
+(extern "free" (Int) Int)
+(extern "atexit" (Int) Int)
+(extern "usleep" (Int) Int)
+(extern "pthread_mutex_init" (Int Int) Int)
+(extern "pthread_mutex_lock" (Int) Int)
+(extern "pthread_mutex_unlock" (Int) Int)
+(extern "pthread_cond_init" (Int Int) Int)
+(extern "pthread_cond_wait" (Int Int) Int)
+(extern "pthread_cond_signal" (Int) Int)
+(extern "pthread_cond_broadcast" (Int) Int)
+(extern "pthread_create" (Int Int Int Int) Int)
+(extern "pthread_join" (Int Int) Int)
+(extern "pthread_exit" (Int) Int)
+(extern "pthread_attr_init" (Int) Int)
+(extern "pthread_attr_setstack" (Int Int Int) Int)
+(extern "pthread_attr_destroy" (Int) Int)
+
+(defmacro ac-ld (a) (ffi-call "%load64" a 1))
+(defmacro ac-st (a v) (ffi-call "%store64" a v 1))
+
+; A C int result: its low 32 bits.
+(defn ac-int (x) (bit-and x 4294967295))
+
+; --- the system: {next_id, initialized}; 1024 slots of 96 bytes ---
+; slot: entry 0, state 8, head 16, tail 24, count 32, thread 40, lock 48, cond 56, alive 64, running 72, joined 80, parked 88
+; message: {kind (0 data, 1 closure), data, next}; closure message: {fn, state}
+
+(defn ac-max () 1024)
+(defn ac-sys () (ffi-call "%global" "actor_sys" 16 1))
+(defn ac-slot (id) (+ (ffi-call "%global" "actor_slots" 98304 1) (* id 96)))
+(defn ac-inited () (not (= (ac-ld (+ (ac-sys) 8)) 0)))
+(defn ac-next () (ac-ld (ac-sys)))
+
+(defn ac-lock (a) (ffi-call "pthread_mutex_lock" (ac-ld (+ a 48)) 1))
+(defn ac-unlock (a) (ffi-call "pthread_mutex_unlock" (ac-ld (+ a 48)) 1))
+(defn ac-cond (a) (ac-ld (+ a 56)))
+(defn ac-field (a off) (ac-ld (+ a off)))
+(defn ac-set (a off v) (ac-st (+ a off) v))
+
+; The running actor's id, stored plus one so the zeroed block reads -1.
+(defn ac-self-cell () (ffi-call "%tls" "actor_self" 8 1))
+(defn rt-actor-self-id () (- (ac-ld (ac-self-cell)) 1))
+(defn rt-actor-self-set (id) (ac-st (ac-self-cell) (+ id 1)))
+
+(defn zyl_actor_init ()
+  (if (ac-inited) 0
+    (let s (ac-sys)
+      (let _ (ac-st s 0)
+        (let _ (ac-st (+ s 8) 1)
+          (let _ (ffi-call "atexit" (ffi-call "%fn" "zyl_actor_wait_all" 1) 1) 0))))))
+
+(defn ac-init-if () (if (ac-inited) 0 (zyl_actor_init)))
+
+; Malloc'd pthread mutex (40 bytes) and cond (48); the lock pointer is published last.
+(defn ac-sync-init (a)
+  (let m (ffi-call "malloc" 40 1)
+    (let c (ffi-call "malloc" 48 1)
+      (if (or (= m 0) (= c 0))
+        (let _ (ffi-call "free" m 1) (let _ (ffi-call "free" c 1) (ffi-call "zyl_panic" "E_OUT_OF_MEMORY: no memory for an actor" 1)))
+        (let _ (ffi-call "pthread_mutex_init" m 0 1)
+          (let _ (ffi-call "pthread_cond_init" c 0 1)
+            (let _ (ac-set a 56 c) (ac-set a 48 m))))))))
+
+(defn ac-limit ()
+  (let msg "zyl: actor limit reached (1024)\n"
+    (let _ (ffi-call "write" 2 msg (strlen-of msg) 1) 4294967295)))
+
+; Addresses compare unsigned: below 4096 is no pointer.
+(defn ac-ptr-p (w) (or (< w 0) (>= w 4096)))
+
+; A capturing lambda is a [2051230803, code, env] triple: spawn its code with its env.
+(defn zyl_actor_spawn (entry state)
+  (let _ (ac-init-if)
+    (if (and (ac-ptr-p entry) (= (ac-ld entry) 2051230803))
+      (ac-spawn (ac-ld (+ entry 8)) (ac-ld (+ entry 16)))
+      (ac-spawn entry state))))
+
+(defn ac-spawn (entry state)
+  (let id (ac-next)
+    (if (>= id (ac-max)) (ac-limit)
+      (let a (ac-slot id)
+        (let _ (ac-set a 0 entry)
+          (let _ (ac-set a 8 state)
+            (let _ (ac-set a 16 0)
+              (let _ (ac-set a 24 0)
+                (let _ (ac-set a 32 0)
+                  (let _ (ac-set a 64 1)
+                    (let _ (ac-set a 72 0)
+                      (let _ (ac-set a 80 0)
+                        (let _ (ac-sync-init a)
+                          (let _ (zyl_threads_started_mark)
+                            (let _ (ffi-call "pthread_create" (+ a 40) 0 (ffi-call "%fn" "zyl_actor_thread_entry" 1) id 1)
+                              (let _ (ac-st (ac-sys) (+ id 1)) id))))))))))))))))
+
+; A known actor slot, or 0; the id is a uint32 as in C.
+(defn ac-target (id0)
+  (let id (ac-int id0)
+    (if (or (not (ac-inited)) (or (>= id (ac-max)) (>= id (ac-next)))) 0 (ac-slot id))))
+
+; Appends m under the lock; a stopped actor drops it (and its closure block c).
+(defn ac-enqueue (a m c)
+  (let _ (ac-lock a)
+    (if (= (ac-field a 64) 0)
+      (let _ (ac-unlock a) (let _ (ffi-call "free" m 1) (let _ (if (= c 0) 0 (ffi-call "free" c 1)) 0)))
+      (let t (ac-field a 24)
+        (let _ (if (= t 0) (ac-set a 16 m) (ac-st (+ t 16) m))
+          (let _ (ac-set a 24 m)
+            (let _ (ac-set a 32 (ac-int (+ (ac-field a 32) 1)))
+              (let _ (ffi-call "pthread_cond_signal" (ac-cond a) 1)
+                (let _ (ac-unlock a) 0)))))))))
+
+(defn ac-msg (kind data)
+  (let m (ffi-call "malloc" 24 1)
+    (if (= m 0) 0 (let _ (ac-st m kind) (let _ (ac-st (+ m 8) data) (let _ (ac-st (+ m 16) 0) m))))))
+
+; msg is caller-owned and never freed here.
+(defn zyl_actor_send (id msg)
+  (let a (ac-target id)
+    (if (= a 0) 0
+      (let m (ac-msg 0 msg) (if (= m 0) 0 (ac-enqueue a m 0))))))
+
+(defn zyl_actor_send_data (id data) (zyl_actor_send id data))
+
+(defn zyl_actor_send_closure (id f state)
+  (let a (ac-target id)
+    (if (= a 0) 0
+      (let c (ffi-call "malloc" 16 1)
+        (if (= c 0) 0
+          (let _ (ac-st c f)
+            (let _ (ac-st (+ c 8) state)
+              (let m (ac-msg 1 c)
+                (if (= m 0) (let _ (ffi-call "free" c 1) 0) (ac-enqueue a m c))))))))))
+
+; On the main thread the first call opens a threadless mailbox so actors can reply.
+(defn zyl_actor_self ()
+  (let s (rt-actor-self-id)
+    (if (>= s 0) s
+      (let _ (ac-init-if)
+        (let id (ac-next)
+          (if (>= id (ac-max)) -1
+            (let a (ac-slot id)
+              (let _ (ffi-call "%fill" a 0 96 1)
+                (let _ (ac-set a 64 1)
+                  (let _ (ac-sync-init a)
+                    (let _ (ac-st (ac-sys) (+ id 1))
+                      (let _ (rt-actor-self-set id) id))))))))))))
+
+; Locked: waits (parked) while alive with an empty mailbox; returns locked.
+(defn ac-wait-mail (a)
+  (if (and (not (= (ac-field a 64) 0)) (= (ac-field a 16) 0))
+    (let _ (ac-set a 88 1)
+      (let _ (ffi-call "pthread_cond_wait" (ac-cond a) (ac-field a 48) 1) (ac-wait-mail a)))
+    (ac-set a 88 0)))
+
+; Locked, mailbox non-empty: unlinks the head and unlocks.
+(defn ac-pop (a)
+  (let m (ac-field a 16)
+    (let h (ac-ld (+ m 16))
+      (let _ (ac-set a 16 h)
+        (let _ (if (= h 0) (ac-set a 24 0) 0)
+          (let _ (ac-set a 32 (ac-int (- (ac-field a 32) 1)))
+            (let _ (ac-unlock a) m)))))))
+
+(defn ac-run-closure (c)
+  (if (= c 0) 0
+    (let f (ac-ld c) (if (= f 0) 0 (ffi-call "%call1" f (ac-ld (+ c 8)) 1)))))
+
+; The next data message; closure messages ahead of it run first.
+(defn zyl_actor_receive ()
+  (let id (zyl_actor_self)
+    (if (< id 0) 0 (ac-recv (ac-slot id)))))
+
+(defn ac-recv (a)
+  (let _ (ac-lock a)
+    (let _ (ac-wait-mail a)
+      (if (= (ac-field a 64) 0)
+        (let threaded (not (= (ac-field a 40) 0))
+          (let _ (if threaded (ac-set a 72 0) 0)
+            (let _ (ac-unlock a)
+              (if threaded (let _ (ffi-call "pthread_exit" 0 1) 0) 0))))
+        (let m (ac-pop a)
+          (if (= (ac-ld m) 0)
+            (let v (ac-ld (+ m 8)) (let _ (ffi-call "free" m 1) v))
+            (let c (ac-ld (+ m 8))
+              (let _ (ac-run-closure c)
+                (let _ (ffi-call "free" c 1)
+                  (let _ (ffi-call "free" m 1) (ac-recv a)))))))))))
+
+(defn zyl_actor_thread_entry (arg)
+  (let id (ac-int arg)
+    (if (>= id (ac-max)) 0
+      (let _ (rt-actor-self-set id)
+        (let a (ac-slot id)
+          (let _ (ac-lock a)
+            (let _ (ac-set a 72 1)
+              (let _ (ac-unlock a)
+                (let e (ac-field a 0)
+                  (let _ (if (= e 0) 0 (ffi-call "%call1" e (ac-field a 8) 1))
+                    (let _ (ac-serve a)
+                      (let _ (ac-lock a)
+                        (let _ (ac-set a 72 0) (let _ (ac-unlock a) 0))))))))))))))
+
+; Mailbox FIFO until wait_all stops the actor.
+(defn ac-serve (a)
+  (let _ (ac-lock a)
+    (let _ (ac-wait-mail a)
+      (if (= (ac-field a 64) 0) (ac-unlock a)
+        (let m (ac-pop a)
+          (let _ (if (= (ac-ld m) 1)
+                   (let c (ac-ld (+ m 8)) (let _ (ac-run-closure c) (ffi-call "free" c 1)))
+                   0)
+            (let _ (ffi-call "free" m 1) (ac-serve a))))))))
+
+; --- the exit drain: drain, check quiescence under each lock, then stop and join all ---
+
+(defn ac-live-p (a) (and (= (ac-field a 80) 0) (not (= (ac-field a 40) 0))))
+
+; A never-used slot has no lock and is never active.
+(defn ac-pending (i)
+  (if (>= i (ac-max)) false
+    (let a (ac-slot i)
+      (if (= (ac-field a 48) 0) (ac-pending (+ i 1))
+        (let _ (ac-lock a)
+          (let act (and (ac-live-p a) (and (not (= (ac-field a 72) 0)) (> (ac-field a 32) 0)))
+            (let _ (ac-unlock a)
+              (if act true (ac-pending (+ i 1))))))))))
+
+(defn ac-drain () (if (ac-pending 0) (let _ (ffi-call "usleep" 1000 1) (ac-drain)) 0))
+
+(defn ac-quiesced (i)
+  (if (>= i (ac-max)) true
+    (let a (ac-slot i)
+      (if (= (ac-field a 48) 0) (ac-quiesced (+ i 1))
+        (let _ (ac-lock a)
+          (let busy (and (ac-live-p a) (and (not (= (ac-field a 72) 0)) (or (> (ac-field a 32) 0) (= (ac-field a 88) 0))))
+            (let _ (ac-unlock a)
+              (if busy false (ac-quiesced (+ i 1))))))))))
+
+; Wakes the stopped actor's thread t, joins it and marks it joined.
+(defn ac-join (a t)
+  (let _ (ffi-call "pthread_cond_broadcast" (ac-cond a) 1)
+    (let _ (ffi-call "pthread_join" t 0 1)
+      (let _ (ac-lock a) (let _ (ac-set a 80 1) (ac-unlock a))))))
+
+(defn ac-stop-all (i)
+  (if (>= i (ac-max)) 0
+    (let a (ac-slot i)
+      (if (= (ac-field a 48) 0) (ac-stop-all (+ i 1))
+        (let _ (ac-lock a)
+          (let act (ac-live-p a)
+            (let _ (if act (let _ (ac-set a 64 0) (ac-set a 88 0)) 0)
+              (let t (ac-field a 40)
+                (let _ (ac-unlock a)
+                  (let _ (if act (ac-join a t) 0) (ac-stop-all (+ i 1))))))))))))
+
+(defn zyl_actor_wait_all ()
+  (let _ (ac-drain)
+    (if (ac-quiesced 0) (ac-stop-all 0) (zyl_actor_wait_all))))
+
+; --- lifecycle queries (the id is a signed Int) ---
+
+(defn ac-query (id)
+  (if (or (not (ac-inited)) (or (< id 0) (or (>= id (ac-max)) (>= id (ac-next))))) 0 (ac-slot id)))
+
+(defn zyl_actor_is_alive (id)
+  (let a (ac-query id)
+    (if (= a 0) 0
+      (let _ (ac-lock a)
+        (let v (if (= (ac-field a 64) 0) 0 1) (let _ (ac-unlock a) v))))))
+
+(defn zyl_actor_terminate (id)
+  (let a (ac-query id)
+    (if (= a 0) 0
+      (let _ (ac-lock a)
+        (let act (ac-live-p a)
+          (let _ (if act (ac-set a 64 0) 0)
+            (let t (ac-field a 40)
+              (let _ (ac-unlock a)
+                (let _ (if act (ac-join a t) 0) 0)))))))))
+
+(defn zyl_actor_wait (id)
+  (let a (ac-query id)
+    (if (= a 0) 0
+      (let _ (ac-lock a)
+        (let need (ac-live-p a)
+          (let t (ac-field a 40)
+            (let _ (if (and need (not (= (ac-field a 64) 0)))
+                     (let _ (ac-set a 64 0) (ffi-call "pthread_cond_signal" (ac-cond a) 1))
+                     0)
+              (let _ (ac-unlock a)
+                (if need
+                  (let _ (ffi-call "pthread_join" t 0 1)
+                    (let _ (ac-lock a) (let _ (ac-set a 80 1) (let _ (ac-unlock a) 0))))
+                  0)))))))))
+
+; --- main on a big stack: mmap ladder 64G..1G with a low guard page, else inline ---
+
+(defn bs-size (i)
+  (if (= i 0) 68719476736 (if (= i 1) 17179869184 (if (= i 2) 4294967296 1073741824))))
+
+; ctx: {fn, result, pthread_t}
+(defn zyl_bigstack_tramp (ctx) (let _ (ac-st (+ ctx 8) (ffi-call "%call0" (ac-ld ctx) 1)) 0))
+
+(defn bs-free (ctx at) (let _ (ffi-call "free" ctx 1) (ffi-call "free" at 1)))
+
+(defn zyl_call_on_big_stack (f)
+  (let ctx (ffi-call "malloc" 24 1)
+    (let at (ffi-call "malloc" 56 1)
+      (if (or (= ctx 0) (= at 0))
+        (let _ (bs-free ctx at) (ffi-call "%call0" f 1))
+        (let _ (ac-st ctx f) (bs-try f ctx at 0))))))
+
+(defn bs-unmap (p sz) (ffi-call "%syscall2" 11 p sz 1))
+
+(defn bs-try (f ctx at i)
+  (if (>= i 4)
+    (let _ (bs-free ctx at) (ffi-call "%call0" f 1))
+    (let sz (bs-size i)
+      (let p (ffi-call "%syscall6" 9 0 sz 3 16418 -1 0 1)
+        (if (and (< p 0) (> p -4096)) (bs-try f ctx at (+ i 1))
+          (let _ (ffi-call "%syscall3" 10 p 4096 0 1)
+            (let _ (ffi-call "pthread_attr_init" at 1)
+              (if (not (= (ac-int (ffi-call "pthread_attr_setstack" at p sz 1)) 0))
+                (let _ (ffi-call "pthread_attr_destroy" at 1) (let _ (bs-unmap p sz) (bs-try f ctx at (+ i 1))))
+                (let _ (ac-st (+ ctx 8) 0)
+                  (if (not (= (ac-int (ffi-call "pthread_create" (+ ctx 16) at (ffi-call "%fn" "zyl_bigstack_tramp" 1) ctx 1)) 0))
+                    (let _ (ffi-call "pthread_attr_destroy" at 1) (let _ (bs-unmap p sz) (bs-try f ctx at (+ i 1))))
+                    (let _ (ffi-call "pthread_join" (ac-ld (+ ctx 16)) 0 1)
+                      (let _ (ffi-call "pthread_attr_destroy" at 1)
+                        (let _ (bs-unmap p sz)
+                          (let r (ac-ld (+ ctx 8)) (let _ (bs-free ctx at) r)))))))))))))))

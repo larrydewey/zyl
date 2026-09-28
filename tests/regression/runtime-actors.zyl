@@ -1,0 +1,67 @@
+; Edge cases of the runtime's actors and timed FFI (runtime/rt/actor.zyl, runtime/rt/ffitimed.zyl).
+
+(use core/core)
+(use actor/actor)
+
+(extern "snprintf" (Ptr Int String Int Int Int Int Int Int Int Int Int Int Int Int Int) Int)
+(extern "labs" (Int) Int)
+(extern "sprintf" (Ptr String Int Int Int Int Int) Int)
+(extern "strtol" (String Int Int) Int)
+(extern "getpid" () Int)
+
+(defn sum-n (k total)
+  (if (= k 0) total (sum-n (- k 1) (+ total (receive)))))
+
+; Each message must arrive after its predecessor: a gap returns -1.
+(defn in-order (k want)
+  (if (= k 0) want (let v (receive) (if (= v want) (in-order (- k 1) (+ want 1)) -1))))
+
+(defn send-range (a i n) (if (>= i n) 0 (let _ (send a i) (send-range a (+ i 1) n))))
+
+(test "fifo-many"
+  (let me (actor-self)
+    (let a (spawn (fn () (send me (in-order 500 0))))
+      (let _ (send-range a 0 500)
+        (assert-equal (receive) 500)))))
+
+(test "capturing-spawn"
+  (let me (actor-self)
+    (let base 40
+      (let a (spawn (fn () (send me (+ base (sum-n 2 0)))))
+        (let _ (send a 1)
+          (let _ (send a 1)
+            (assert-equal (receive) 42)))))))
+
+(test "self-is-stable"
+  (assert-equal (actor-self) (actor-self)))
+
+(test "wait-then-dead"
+  (let a (spawn (fn () 0))
+    (let _ (actor-wait a)
+      (let _ (actor-wait a)
+        (assert-equal (actor-is-alive a) false)))))
+
+(test "terminate-then-send-dropped"
+  (let a (spawn (fn () (receive)))
+    (let _ (actor-terminate a)
+      (let _ (send a 5)
+        (assert-equal (actor-is-alive a) false)))))
+
+(defn fmt (buf n) (let _ n (alloc-cstr buf)))
+
+(test "ffi-arg-counts"
+  (let buf (alloc-malloc 128)
+    (begin
+      (assert-equal (> (ffi-call "getpid" 1000) 0) true)
+      (assert-equal (ffi-call "labs" -7 1000) 7)
+      (assert-equal (ffi-call "strtol" "-42" 0 10 1000) -42)
+      (assert-equal (fmt buf (ffi-call "sprintf" buf "%lld,%lld,%lld,%lld,%lld" 1 2 3 4 5 1000)) "1,2,3,4,5")
+      (assert-equal (fmt buf (ffi-call "snprintf" buf 128 "%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld" 1 2 3 4 5 6 7 8 9 10 11 12 13 1000))
+                    "1,2,3,4,5,6,7,8,9,10,11,12,13"))))
+
+(test "ffi-in-actor"
+  (let me (actor-self)
+    (let _ (spawn (fn () (send me (ffi-call "labs" -11 1000))))
+      (assert-equal (receive) 11))))
+
+(run-tests)
