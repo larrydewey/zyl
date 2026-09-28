@@ -109,6 +109,7 @@
 ; --- the identities the type system needs (a word is a word) ---
 
 (defn zyl_cstr_of_word (w) w)
+(defn zyl_word_of_cstr (s) s)
 (defn zyl_float_bits (w) w)
 (defn zyl_float_of_bits (w) w)
 (defn zyl_word_load (a) (rt-ld64 a))

@@ -148,8 +148,8 @@ build/boot/zyl-self hello.zyl -o hello   # Compile a program
 ./hello                         # Run it
 ```
 
-After editing anything under `stdlib/compiler/*.zyl`, `selfhost/`,
-`runtime/rt/` or `runtime/actor_runtime.c`, re-run `./boot.sh` — a source change that
+After editing anything under `stdlib/compiler/*.zyl`, `selfhost/` or
+`runtime/rt/`, re-run `./boot.sh` — a source change that
 alters the compiler's own output breaks the fixed point (`FIXED POINT
 BROKEN` or `reproduced asm differs from committed seed`), which needs
 reseeding before anything else will trust the new `build/boot/stage2.s`:
@@ -214,11 +214,12 @@ Full test infrastructure documented in `docs/regression-tests.md`. All tests use
 
 ## Architecture Notes
 
-- Runtime: being ported from `runtime/actor_runtime.c` to Zyl in `runtime/rt/`
-  (`docs/runtime-in-zyl-design.md`; the goal is no C and no libc). It is compiled with
+- Runtime: written in Zyl in `runtime/rt/` (no C source; `docs/runtime-in-zyl-design.md`;
+  libc is still called through `extern` until the libc-free phase). It is compiled with
   `--runtime-module`, which only the bundle's `runtime/rt/rt.zyl` may use. There the
   locked `%` primitives are allowed, and `zyl_*` defns are exported. Its output
-  `build/boot/rt.s` is a committed seed like `stage2.s`. There is no `unsafe` for programs.
+  `build/boot/rt.s` is a committed seed like `stage2.s`, and every program links its
+  `rt.o`. There is no `unsafe` for programs.
 
 - Entry point: `selfhost/driver.zyl`, compiled like any program (its `(use ...)` tree resolved from `stdlib/`, names qualified per module) to `build/boot/stage2.bin`/`zyl-self`. `boot.sh` caps each stage at 4 GB of allocation (`ZYL_STAGE_MEMORY`). The phase order shared by the CLI and the REPL is `stdlib/compiler/pipeline.zyl`.
 - Language server: `selfhost/lsp_main.zyl` + `stdlib/lsp/` (and `services/`), built by `./boot.sh` as `build/boot/zyl-lsp`; the VS Code client is `editors/vscode/` (0.4.0, esbuild-bundled, `$zyl` problem matcher). Protocol tests: `tests/lsp/lsp_protocol_test.py`.

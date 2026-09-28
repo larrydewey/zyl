@@ -22,7 +22,6 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # `(use ...)` resolved from the stdlib/ tree synced into OUT below.
 SRC="${SCRIPT_DIR}/selfhost/driver.zyl"
 OUT="${SCRIPT_DIR}/build/boot"
-RUNTIME="${SCRIPT_DIR}/runtime/actor_runtime.c"
 
 # Force stdlib resolution to this checkout's freshly-synced build/boot/stdlib
 # (see cli-resolve-bundledir in selfhost/driver.zyl) instead of silently
@@ -64,16 +63,11 @@ cd "$SCRIPT_DIR"
 # plan.md).
 rm -rf "${OUT}/stdlib"
 cp -R "${SCRIPT_DIR}/stdlib" "${OUT}/stdlib"
-cp "${SCRIPT_DIR}/runtime/actor_runtime.c" "${OUT}/actor_runtime.c"
-cp "${SCRIPT_DIR}/runtime/actor_runtime.h" "${OUT}/actor_runtime.h"
+rm -f "${OUT}/actor_runtime.c" "${OUT}/actor_runtime.h" "${OUT}/actor_runtime.o"
 rm -rf "${OUT}/runtime"
 mkdir -p "${OUT}/runtime"
 cp -R "${SCRIPT_DIR}/runtime/rt" "${OUT}/runtime/rt"
 RT_SRC="${OUT}/runtime/rt/rt.zyl"
-# The runtime, compiled once (-O2): every stage and every program the
-# compiler links uses this object (driver.zyl's cli-link-command).
-RUNTIME_O="${OUT}/actor_runtime.o"
-cc -O2 -c "${OUT}/actor_runtime.c" -o "${RUNTIME_O}.tmp" && mv -f "${RUNTIME_O}.tmp" "${RUNTIME_O}"
 
 
 step() { echo -e "\033[1;34m==>\033[0m $*"; }
@@ -87,29 +81,26 @@ use_rt() { # use_rt <rt.s>: assemble it as the rt.o every link uses
 }
 
 link_cc() { # link_cc <asm> <out-bin>
-    cc -no-pie "$1" "$RT_O" "$RUNTIME_O" -o "$2" -lpthread
+    cc -no-pie "$1" "$RT_O" -o "$2" -lpthread
 }
 
-# Reseed links pair the committed rt.s with the C runtime of the commit that wrote it, so moved entries resolve.
+# A seed rt.s from before the C runtime was deleted still needs that commit's C beside it.
 SEED_C_O="${OUT}/seed_actor_runtime.o"
 seed_c_runtime() {
-    local d="${OUT}/seed_c"
-    rm -rf "$d"; mkdir -p "$d"
-    local rev
+    local d="${OUT}/seed_c" rev
+    rm -rf "$d" "$SEED_C_O"; mkdir -p "$d"
     rev=$(git -C "$SCRIPT_DIR" log -1 --format=%H -- build/boot/rt.s 2>/dev/null)
     if [ -n "$rev" ] && git -C "$SCRIPT_DIR" show "$rev":runtime/actor_runtime.c > "$d/actor_runtime.c" 2>/dev/null &&
        git -C "$SCRIPT_DIR" show "$rev":runtime/actor_runtime.h > "$d/actor_runtime.h" 2>/dev/null; then
         cc -O2 -c "$d/actor_runtime.c" -o "$SEED_C_O"
-    else
-        cp "$RUNTIME_O" "$SEED_C_O"
     fi
     rm -rf "$d"
 }
 
-link_seed() { # link_seed <asm> <out-bin>: the seed rt.s with the current C runtime, else with the seed's own
+link_seed() { # link_seed <asm> <out-bin>: the seed rt.s alone, else with its commit's C runtime
     cc -c "${OUT}/rt.s" -o "${OUT}/seed_rt.o"
-    cc -no-pie "$1" "${OUT}/seed_rt.o" "$RUNTIME_O" -o "$2" -lpthread 2>/dev/null ||
-        cc -no-pie "$1" "${OUT}/seed_rt.o" "$SEED_C_O" -o "$2" -lpthread
+    cc -no-pie "$1" "${OUT}/seed_rt.o" -o "$2" -lpthread 2>/dev/null ||
+        { [ -f "$SEED_C_O" ] && cc -no-pie "$1" "${OUT}/seed_rt.o" "$SEED_C_O" -o "$2" -lpthread; }
 }
 
 gen_rt() { # gen_rt <compiler> <out.s>; every zyl_* defn must be exported (an uncalled Num-generic one is not emitted)

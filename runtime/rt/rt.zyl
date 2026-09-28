@@ -26,3 +26,5 @@
 (use start)
 (use actor)
 (use ffitimed)
+(use panic)
+(use io)

@@ -1610,29 +1610,10 @@
   (cg-nl (cg-emit (cg-emit st lbl) ":")))
 
 ; ===========================================================================
-; TRY / CATCH — inline setjmp/longjmp via the runtime's existing panic-
-; frame stack (zyl_try_push/zyl_try_pop/zyl_panic, added for the test
-; harness's own recovery, never wired to anything else until now).
-;
-; `error` (allocator.zyl) now calls zyl_panic, which — if a frame is
-; active — pops it and longjmps to its buffer instead of exiting.
-; setjmp/longjmp only work correctly when the function that calls
-; setjmp is still on the stack when the corresponding longjmp fires, so
-; setjmp is called INLINE here in the generated code itself, not via an
-; FFI wrapper function (which would return and pop its own frame before
-; any later longjmp could target it).
-;
-; Every bare `call` below (zyl_try_push/setjmp/zyl_try_pop/
-; zyl_try_frame_msg) is wrapped in cg-call0-aligned's save-rsp/and-16/
-; restore dance, mirroring cg-variant's own alignment fix elsewhere in
-; this file — this call site's own stack depth (mid-expression, with
-; earlier pushes already live) isn't guaranteed 16-aligned otherwise.
-; This is safe across the longjmp specifically because setjmp/longjmp's
-; whole contract is to save and restore every callee-saved register
-; (including r12, used here to stash the pre-alignment rsp) as of the
-; setjmp call site — the "mov rsp, r12" right after `call setjmp`
-; behaves identically whether we got there by falling through or by
-; landing via a later longjmp, regardless of what r12 held in between.
+; TRY / CATCH: zyl_try_push's frame starts with a zyl_rt_setjmp buffer
+; {rbx rbp r12-r15 rsp rip}, filled inline here so it needs no symbol at link.
+; zyl_panic pops the frame, unwinds its regions and zyl_rt_longjmps to it with rax 1.
+; Aligned C call: r12 keeps the pre-alignment rsp (callee-saved).
 (defn cg-call0-aligned (st sym)
   (let st2 (cg-emit-line st "    mov r12, rsp")
     (let st3 (cg-emit-line st2 "    and rsp, -16")
@@ -1651,11 +1632,20 @@
   (let st2 (cg-call0-aligned st "zyl_try_push")
     (let st3 (cg-store-rax-slot st2 cvar-off)
       (let st4 (cg-emit-line st3 "    mov rdi, rax")
-        (let st5 (cg-call0-aligned st4 "setjmp")
+        (let st5 (cg-inline-setjmp st4 (str-concat lcatch "_j"))
           (let st6 (cg-emit-line st5 "    cmp rax, 0")
             (let st7 (cg-emit st6 "    jne ")
               (let st8 (cg-nl (cg-emit st7 lcatch))
                 (cg-trycatch-try st8 env tbody cvar cbody lcatch ldone cvar-off)))))))))
+
+; zyl_rt_setjmp inline on the buffer at rdi: 0 now, the longjmp value at the landing label.
+(defn cg-inline-setjmp (st lbl)
+  (cg-emit-label
+    (cg-emit-lines st
+      (Cons "    mov [rdi], rbx" (Cons "    mov [rdi+8], rbp" (Cons "    mov [rdi+16], r12" (Cons "    mov [rdi+24], r13"
+        (Cons "    mov [rdi+32], r14" (Cons "    mov [rdi+40], r15" (Cons "    mov [rdi+48], rsp"
+          (Cons (str-concat "    lea rax, [rip+" (str-concat lbl "]")) (Cons "    mov [rdi+56], rax" (Cons "    xor eax, eax" Nil)))))))))))
+    lbl))
 
 ; setjmp returned 0: run the body, then pop our frame so a later error doesn't unwind here.
 (defn cg-trycatch-try (st env tbody cvar cbody lcatch ldone cvar-off)
@@ -2424,7 +2414,7 @@
   (if (rt-mode-p)
     (let st2 (cg-rt-bss-list (cg-emit-line st ".bss") (rt-globals) "zyl_rtg_")
       (let st3 (cg-rt-tls-exports (cg-rt-bss-list (cg-emit-line st2 ".section .tbss,\"awT\",@nobits") (rt-globals) "zyl_rtt_") (rt-tls-exports))
-        (cg-rt-call-stubs (cg-rt-syscall-stubs (cg-emit-line st3 ".text") (rt-syscalls)) 0)))
+        (cg-emit-lines (cg-rt-call-stubs (cg-rt-syscall-stubs (cg-emit-line st3 ".text") (rt-syscalls)) 0) (cg-rt-jmp-stubs))))
     st))
 
 (defn cg-rt-bss-list (st gs prefix)
@@ -2465,6 +2455,15 @@
             (cg-rt-shift-regs k (+ i 1)))))
       (Cons (if (= i 5) "    mov r9, [rsp+8]" (str-concat "    mov " (str-concat (cg-reg-of i) (str-concat ", " (cg-reg-of (+ i 1))))))
         (cg-rt-shift-regs k (+ i 1))))))
+
+; zyl_rt_setjmp/longjmp over {rbx rbp r12-r15 rsp rip}; zyl_rt_try_call(buf, fn) runs fn aligned: 0 on return (result at buf+64), 1 on a longjmp.
+(defn cg-rt-jmp-stubs ()
+  (list-append (Cons ".globl zyl_rt_setjmp" (Cons "zyl_rt_setjmp:" (cg-rt-jmp-save (Cons "    lea rdx, [rsp+8]" (Cons "    mov [rdi+48], rdx" (Cons "    mov rdx, [rsp]" (Cons "    mov [rdi+56], rdx" (Cons "    xor eax, eax" (Cons "    ret" Nil)))))))))
+    (list-append (Cons "zyl_rt_longjmp:" (Cons "    mov rax, rsi" (Cons "    mov edx, 1" (Cons "    test rax, rax" (Cons "    cmove rax, rdx" (Cons "    mov rbx, [rdi]" (Cons "    mov rbp, [rdi+8]" (Cons "    mov r12, [rdi+16]" (Cons "    mov r13, [rdi+24]" (Cons "    mov r14, [rdi+32]" (Cons "    mov r15, [rdi+40]" (Cons "    mov rsp, [rdi+48]" (Cons "    jmp qword ptr [rdi+56]" Nil)))))))))))))
+      (Cons "zyl_rt_try_call:" (cg-rt-jmp-save (Cons "    mov [rdi+48], rsp" (Cons "    lea rdx, [rip+.Lzyl_rt_try_land]" (Cons "    mov [rdi+56], rdx" (Cons "    push rbp" (Cons "    mov rbp, rsp" (Cons "    push rdi" (Cons "    and rsp, -16" (Cons "    call rsi" (Cons "    mov rdi, [rbp-8]" (Cons "    mov [rdi+64], rax" (Cons "    mov rsp, rbp" (Cons "    pop rbp" (Cons "    xor eax, eax" (Cons "    ret" (Cons ".Lzyl_rt_try_land:" (Cons "    mov eax, 1" (Cons "    ret" Nil))))))))))))))))))))))
+
+(defn cg-rt-jmp-save (tail)
+  (Cons "    mov [rdi], rbx" (Cons "    mov [rdi+8], rbp" (Cons "    mov [rdi+16], r12" (Cons "    mov [rdi+24], r13" (Cons "    mov [rdi+32], r14" (Cons "    mov [rdi+40], r15" tail)))))))
 
 ; %syscallK n args...: a C call of zyl_rt_sys_<n>, which moves arg 4 to r10 and traps.
 (defn cg-rt-syscall-stubs (st ns)

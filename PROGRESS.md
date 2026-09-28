@@ -25,7 +25,7 @@ history, or a probe compile with `build/boot/zyl-self` on 2026-09-25.
   in git history at `b8bc283`, and `--bootstrap-from-rust` no longer
   exists.
 - `./boot.sh` produces `build/boot/{zyl-self, stage2.bin, zyl-lsp,
-  stdlib/, actor_runtime.c, actor_runtime.h, actor_runtime.o}`; it does
+  stdlib/, runtime/rt/, rt.s, rt.o}`; it does
   not build the REPL (`zyl-self repl` runs it, `install.sh` builds
   `zyl-repl`). The runtime is compiled once at -O2 into
   `actor_runtime.o`, and a link uses it when it is newer than the
@@ -437,6 +437,37 @@ as recorded below.
 ---
 
 # Session log (newest first)
+
+## Session (2026-09-28, final) — runtime/actor_runtime.c is gone
+
+- Merged:
+  - panic/io: try frames, panic in text and JSON modes, diagnostics and
+    warnings, `json_quote`, the test harness, the print entries,
+    exit/read_line, and the cells;
+  - actor/ffitimed: actors, the timed FFI workers and the big stack;
+  - ffitab/proc/start: the interpreter's symbol table plus `dlsym`,
+    `call_argv`, process spawning, start-up and exit hooks, and the
+    terminal flush.
+
+  Mine: the pin primitives are renamed to `zyl_ffi_pin`/`zyl_ffi_unpin`
+  and moved to Zyl; `%call8`..`%call16` stubs; `zyl_ffi_invoke_wide`;
+  `zyl_word_of_cstr`.
+- setjmp/longjmp are gone. The runtime emits `zyl_rt_setjmp`,
+  `zyl_rt_longjmp` and `zyl_rt_try_call`, and generated try code saves
+  its eight words inline.
+- `runtime/actor_runtime.c`/`.h` are deleted. `boot.sh`, `install.sh`,
+  the driver's link line and `zyl_cc_compile` link `rt.o` only.
+  (`zyl_cc_compile` never linked `rt.o` before; it only worked while the
+  C runtime was complete.) A reseed from a seed older than the deletion
+  still links that seed's C, taken from git history.
+- Also fixed: float literals are emitted as exact bits (`.quad`), not
+  `.double` text, which the assembler rounded wrongly.
+- The only C left in the tree is `bench/*.c` (comparison benchmarks) and
+  the package-system native-dependency test fixture.
+- The suite passes 300/300; the fixed point holds; `~/.zyl` is
+  refreshed and working.
+- Next: the libc-free phase (docs/runtime-in-zyl-design.md), and
+  comments across the compiler that still name actor_runtime.c.
 
 ## Session (2026-09-28, wave 2 merges) — float text/parse, union-find, misc
 

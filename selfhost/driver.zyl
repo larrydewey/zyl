@@ -132,7 +132,7 @@
           (match acc (CliOpts _ flag (cli-parse-opts (+ i 1) argc (CliOpts a flag)))))))))))
 
 ; Link `asmpath` into a binary at `outpath` via the system `cc`, expecting
-; actor_runtime.c to sit next to it (cwd is the bundle dir at this point).
+; rt.o next to it (cwd is the bundle dir at this point).
 (defn cli-link (asmpath outpath)
   (cli-link-with asmpath outpath ""))
 
@@ -148,12 +148,12 @@
 (defn cli-link-child (asmpath outpath extra)
   (ffi-call "zyl_system_cmd" (cli-link-command asmpath outpath extra) 1000))
 
-; Links rt.o (the Zyl runtime) and actor_runtime.o, or its source when the object is stale.
+; Links rt.o, the whole runtime (runtime/rt, compiled by boot.sh).
 (defn cli-link-command (asmpath outpath extra)
-  (str-concat "if [ actor_runtime.o -nt actor_runtime.c ]; then ZYL_RT=actor_runtime.o; else ZYL_RT='-O2 actor_runtime.c'; fi; cc "
+  (str-concat "cc "
     (str-concat "-no-pie "
       (str-concat asmpath
-        (str-concat " rt.o $ZYL_RT -o "
+        (str-concat " rt.o -o "
           (str-concat outpath (str-concat " -lpthread" extra)))))))
 
 ; Where to find `actor_runtime.c` and `stdlib/` at runtime. Prefers a

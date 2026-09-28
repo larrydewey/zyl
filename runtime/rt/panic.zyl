@@ -1,0 +1,237 @@
+; Panics, try frames, the diagnostic format, the warning sink and the compiled test harness.
+(use base)
+(use alloc)
+(use text)
+
+(extern "malloc" (Int) Int)
+(extern "realloc" (Int Int) Int)
+(extern "exit" (Int) Int)
+(extern "fputs" (Int Int) Int)
+(extern "fflush" (Int) Int)
+(extern "zyl_ffi_on_worker" () Int)
+(extern "zyl_rt_try_call" (Int Int) Int)
+(extern "zyl_rt_longjmp" (Int Int) Int)
+
+(defmacro rt-ld64 (a) (ffi-call "%load64" a 1))
+(defmacro rt-st64 (a v) (ffi-call "%store64" a v 1))
+
+(defn pn-stdout () (rt-ld64 (ffi-call "%fn" "stdout" 1)))
+(defn pn-stderr () (rt-ld64 (ffi-call "%fn" "stderr" 1)))
+
+; One fputs, so an unbuffered stderr sees a single write as fprintf gave it.
+(defn pn-err (s) (let _ (ffi-call "fputs" (rt-w s) (pn-stderr) 1) 0))
+(defn pn-out (s) (let _ (ffi-call "fputs" (rt-w s) (pn-stdout) 1) 0))
+
+(defn pn-s (w) (ffi-call "%str" w 1))
+
+; --- try frames: {rbx rbp r12 r13 r14 r15 rsp rip}[0..64], prev 64, msg 72, region mark 80 ---
+
+; Per-thread: each actor has its own try nesting.
+(defn pn-top () (ffi-call "%tls" "try_top" 8 1))
+
+(defn zyl_try_push ()
+  (let f (ffi-call "malloc" 88 1)
+    (let t (pn-top)
+      (let _ (rt-st64 (+ f 64) (rt-ld64 t))
+        (let _ (rt-st64 (+ f 72) 0)
+          (let _ (rt-st64 (+ f 80) (zyl_region_mark))
+            (let _ (rt-st64 t f) f)))))))
+
+(defn zyl_try_pop ()
+  (let t (pn-top)
+    (let f (rt-ld64 t) (if (= f 0) 0 (let _ (rt-st64 t (rt-ld64 (+ f 64))) 0)))))
+
+(defn zyl_try_last_msg ()
+  (let f (rt-ld64 (pn-top)) (if (= f 0) 0 (rt-ld64 (+ f 72)))))
+
+; The msg of a frame already unlinked by zyl_panic; the catch path holds its pointer.
+(defn zyl_try_frame_msg (frame) (if (= frame 0) 0 (rt-ld64 (+ frame 72))))
+
+; --- compiled test harness: state {count, in_test, region mark, jmp buf[8], fn result} ---
+
+(defn pn-tstate () (ffi-call "%global" "test_state" 96 1))
+(defn pn-tests () (ffi-call "%global" "tests" 34816 1))
+(defn pn-tbuf () (+ (pn-tstate) 24))
+
+; strncpy to 127 bytes plus a NUL; the 257th registration is dropped.
+(defn zyl_register_test (name fn)
+  (let st (pn-tstate)
+    (let n (rt-ld64 st)
+      (if (>= n 256) 0
+        (let e (+ (pn-tests) (* n 136))
+          (let s (rt-w name)
+            (let len (rt-strlen s)
+              (let k (if (> len 127) 127 len)
+                (let _ (rt-copy e s k)
+                  (let _ (rt-st8 (+ e k) 0)
+                    (let _ (rt-st64 (+ e 128) fn)
+                      (let _ (rt-st64 st (+ n 1)) 0))))))))))))
+
+(defn pn-int-text (n) (zyl_int_text n))
+
+(defn zyl_run_tests () (pn-run-tests 0 0 0))
+
+(defn pn-run-tests (i passed failed)
+  (let st (pn-tstate)
+    (if (>= i (rt-ld64 st))
+      (let _ (pn-out (str-concat "\ntest result: " (str-concat (pn-int-text passed) (str-concat " passed, " (str-concat (pn-int-text failed) (str-concat " failed, " (str-concat (pn-int-text (+ passed failed)) " total\n")))))))
+        (if (> failed 0) 1 0))
+      (let e (+ (pn-tests) (* i 136))
+        (let _ (pn-out (str-concat "test: " (str-concat (pn-s e) " ... ")))
+          (let _ (ffi-call "fflush" (pn-stdout) 1)
+            (let _ (rt-st64 (+ st 16) (zyl_region_mark))
+              (let _ (rt-st64 (+ st 8) 1)
+                (if (= (ffi-call "zyl_rt_try_call" (pn-tbuf) (rt-ld64 (+ e 128)) 1) 0)
+                  (let _ (rt-st64 (+ st 8) 0)
+                    (if (= (bit-and (rt-ld64 (+ (pn-tbuf) 64)) 4294967295) 0)
+                      (let _ (pn-out "ok\n") (pn-run-tests (+ i 1) (+ passed 1) failed))
+                      (let _ (pn-out "FAIL\n") (pn-run-tests (+ i 1) passed (+ failed 1)))))
+                  (let _ (pn-out "FAIL\n") (pn-run-tests (+ i 1) passed (+ failed 1))))))))))))
+
+; --- panic ---
+
+(defn zyl_panic (msg)
+  (let m (rt-w msg)
+    (let t (pn-top)
+      (let f (rt-ld64 t)
+        (if (= f 0) (pn-panic-test m)
+          (let _ (rt-st64 t (rt-ld64 (+ f 64)))
+            (let _ (rt-st64 (+ f 72) (if (= m 0) (rt-w "error") m))
+              (let _ (zyl_region_unwind (rt-ld64 (+ f 80)))
+                (ffi-call "zyl_rt_longjmp" f 1 1)))))))))
+
+; Inside a test (not on an FFI worker): unwind to the runner, which marks it failed.
+(defn pn-panic-test (m)
+  (let st (pn-tstate)
+    (if (and (not (= (rt-ld64 (+ st 8)) 0)) (= (bit-and (ffi-call "zyl_ffi_on_worker" 1) 4294967295) 0))
+      (let _ (rt-st64 (+ st 8) 0)
+        (let _ (zyl_region_unwind (rt-ld64 (+ st 16)))
+          (ffi-call "zyl_rt_longjmp" (pn-tbuf) 1 1)))
+      (let w (if (= m 0) (rt-w "assertion failed") m)
+        (let _ (if (= (zyl_diag_json) 0) (pn-err (str-concat "PANIC: " (str-concat (pn-s w) "\n"))) (pn-panic-json w))
+          (ffi-call "exit" 1 1))))))
+
+; JSON mode: a rendered object passes through; "E_CODE: text" and "error[E_CODE]: text" split off the code.
+(defn pn-panic-json (m)
+  (if (= (rt-ld8 m) 123) (pn-err (str-concat (pn-s m) "\n"))
+    (let k (pn-code-len m)
+      (if (and (> k 0) (< k 128))
+        (pn-json-diag (rt-str-of m k 0) (pn-skip-sp (+ m (+ k 1))))
+        (if (pn-error-bracket-p m)
+          (let e (pn-find-close (+ m 6))
+            (if (and (> e 0) (and (= (rt-ld8 (+ e 1)) 58) (< (- (- e m) 6) 128)))
+              (pn-json-diag (rt-str-of (+ m 6) (- (- e m) 6) 0) (pn-skip-sp (+ e 2)))
+              (pn-json-diag "" m)))
+          (pn-json-diag "" m))))))
+
+(defn pn-json-diag (code tw)
+  (pn-err (str-concat "{\"severity\":\"error\",\"code\":" (str-concat (pn-s (zyl_json_quote (rt-w code))) (str-concat ",\"message\":" (str-concat (pn-s (zyl_json_quote tw)) ",\"file\":\"\",\"line\":0,\"column\":0,\"labels\":[],\"help\":\"\"}\n"))))))
+
+; Length of a leading E_/W_ code ended by ':', else 0.
+(defn pn-code-len (m)
+  (let c (rt-ld8 m)
+    (if (and (or (= c 69) (= c 87)) (= (rt-ld8 (+ m 1)) 95))
+      (let k (pn-code-scan m 2) (if (= (rt-ld8 (+ m k)) 58) k 0))
+      0)))
+
+(defn pn-code-scan (m k)
+  (let c (rt-ld8 (+ m k))
+    (if (or (and (>= c 65) (<= c 90)) (or (and (>= c 48) (<= c 57)) (= c 95))) (pn-code-scan m (+ k 1)) k)))
+
+(defn pn-skip-sp (p) (if (= (rt-ld8 p) 32) (pn-skip-sp (+ p 1)) p))
+
+(defn pn-error-bracket-p (m) (pn-prefix-p m (rt-w "error[") 6))
+
+(defn pn-prefix-p (m p n)
+  (if (= n 0) true
+    (let c (rt-ld8 m)
+      (if (not (= c (rt-ld8 p))) false (if (= c 0) true (pn-prefix-p (+ m 1) (+ p 1) (- n 1)))))))
+
+; strchr(p, ']'), or 0.
+(defn pn-find-close (p)
+  (let c (rt-ld8 p) (if (= c 93) p (if (= c 0) 0 (pn-find-close (+ p 1))))))
+
+; (error msg): print and exit(1).
+(defn zyl_f_error (msg)
+  (let m (rt-w msg)
+    (let _ (if (= m 0) (pn-err "error\n") (pn-err (str-concat "error: " (str-concat (pn-s m) "\n"))))
+      (ffi-call "exit" 1 1))))
+
+; --- diagnostic format: 1 JSON, 0 text; set only by the compiler ---
+
+(defn pn-diag () (ffi-call "%global" "diag_json" 8 1))
+(defn zyl_diag_json () (rt-ld64 (pn-diag)))
+(defn zyl_diag_json_set (on) (let _ (rt-st64 (pn-diag) (if (= on 0) 0 1)) 0))
+
+; --- warning sink: stderr, or a {buf, len, cap, capture} buffer drained by zyl_warn_take ---
+
+(defn pn-warn () (ffi-call "%global" "warn" 32 1))
+
+(defn zyl_warn_capture (on)
+  (let w (pn-warn) (let _ (rt-st64 (+ w 24) (if (= on 0) 0 1)) (let _ (rt-st64 (+ w 8) 0) 0))))
+
+(defn zyl_warn_emit (msg)
+  (let m (if (= (rt-w msg) 0) (rt-w "") (rt-w msg))
+    (let n (rt-strlen m)
+      (let w (pn-warn)
+        (if (= (rt-ld64 (+ w 24)) 0)
+          (let _ (ffi-call "write" 2 (pn-s m) n 1) (let _ (ffi-call "write" 2 "\n" 1 1) 0))
+          (let len (rt-ld64 (+ w 8))
+            (if (pn-warn-fit w (+ (+ len n) 2))
+              (let b (rt-ld64 w)
+                (let _ (rt-copy (+ b len) m n)
+                  (let _ (rt-st8 (+ b (+ len n)) 10)
+                    (let _ (rt-st8 (+ b (+ len (+ n 1))) 0)
+                      (let _ (rt-st64 (+ w 8) (+ len (+ n 1))) 0)))))
+              0)))))))
+
+; Grows the buffer (doubling from 1024) to hold need bytes; false when realloc fails.
+(defn pn-warn-fit (w need)
+  (let cap (rt-ld64 (+ w 16))
+    (if (<= need cap) true
+      (let nc (pn-double (if (= cap 0) 1024 cap) need)
+        (let nb (ffi-call "realloc" (rt-ld64 w) nc 1)
+          (if (= nb 0) false (let _ (rt-st64 w nb) (let _ (rt-st64 (+ w 16) nc) true))))))))
+
+(defn pn-double (nc need) (if (> need nc) (pn-double (* nc 2) need) nc))
+
+(defn zyl_warn_take ()
+  (let w (pn-warn)
+    (let len (rt-ld64 (+ w 8))
+      (let out (ffi-call "malloc" (+ len 1) 1)
+        (if (= out 0) (rt-w "")
+          (let _ (if (> len 0) (rt-copy out (rt-ld64 w) len) 0)
+            (let _ (rt-st8 (+ out len) 0)
+              (let _ (rt-st64 (+ w 8) 0) out))))))))
+
+; s as a quoted JSON string literal (malloc'd).
+(defn zyl_json_quote (s)
+  (let p (if (= s 0) (rt-w "") s)
+    (let n (rt-strlen p)
+      (let out (ffi-call "malloc" (+ (* n 6) 3) 1)
+        (if (= out 0) (rt-w "\"\"")
+          (let _ (rt-st8 out 34)
+            (let j (pn-quote-loop p n 0 out 1)
+              (let _ (rt-st8 (+ out j) 34)
+                (let _ (rt-st8 (+ out (+ j 1)) 0) out)))))))))
+
+(defn pn-quote-loop (p n i out j)
+  (if (>= i n) j
+    (let c (rt-ld8 (+ p i))
+      (pn-quote-loop p n (+ i 1) out
+        (if (or (= c 34) (= c 92)) (pn-esc out j c)
+          (if (= c 10) (pn-esc out j 110)
+            (if (= c 9) (pn-esc out j 116)
+              (if (= c 13) (pn-esc out j 114)
+                (if (< c 32) (pn-esc-u out j c)
+                  (let _ (rt-st8 (+ out j) c) (+ j 1)))))))))))
+
+(defn pn-esc (out j c) (let _ (rt-st8 (+ out j) 92) (let _ (rt-st8 (+ out (+ j 1)) c) (+ j 2))))
+
+; \u00XX with lowercase hex.
+(defn pn-esc-u (out j c)
+  (let _ (rt-copy (+ out j) (rt-w "\\u00") 4)
+    (let _ (rt-st8 (+ out (+ j 4)) (pn-hexd (shr c 4)))
+      (let _ (rt-st8 (+ out (+ j 5)) (pn-hexd (bit-and c 15))) (+ j 6)))))
+
+(defn pn-hexd (d) (if (< d 10) (+ d 48) (+ d 87)))

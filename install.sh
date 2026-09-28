@@ -63,9 +63,6 @@ echo "Installing to $TARGET"
 mkdir -p "$TARGET/bin"
 rm -rf "$TARGET/stdlib"
 cp -r "$SCRIPT_DIR/stdlib" "$TARGET/stdlib"
-cp "$SCRIPT_DIR/runtime/actor_runtime.c" "$SCRIPT_DIR/runtime/actor_runtime.h" "$TARGET/"
-# Compiled once; the compiler links this object (driver.zyl's cli-link-command).
-cc -O2 -c "$TARGET/actor_runtime.c" -o "$TARGET/actor_runtime.o"
 # The Zyl runtime, built by boot.sh from the committed rt.s.
 cp "$SCRIPT_DIR/build/boot/rt.o" "$TARGET/rt.o"
 cp "$SCRIPT_DIR/build/boot/stage2.bin" "$TARGET/bin/stage2.bin"

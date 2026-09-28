@@ -96,20 +96,11 @@
     (if (not (= (ffi-call "%syscall2" 4 path b 1) 0)) false
       (let _ (pr-st64 out (pr-ld64 (+ b 88))) (let _ (pr-st64 (+ out 8) (pr-ld64 (+ b 96))) true)))))
 
-; The prebuilt actor_runtime.o in the cwd is used when it is newer than actor_runtime.c there.
-(defn pr-rt-obj-fresh ()
-  (let t (ffi-call "%tls" "proc_mtimes" 32 1)
-    (if (not (pr-mtime (rt-w "actor_runtime.o") t)) false
-      (if (not (pr-mtime (rt-w "actor_runtime.c") (+ t 16))) false
-        (if (not (= (pr-ld64 t) (pr-ld64 (+ t 16)))) (> (pr-ld64 t) (pr-ld64 (+ t 16)))
-          (> (pr-ld64 (+ t 8)) (pr-ld64 (+ t 24))))))))
-
 (defn pr-cc-argv (a asm out)
   (let _ (pr-st64 a (rt-w "cc"))
     (let _ (pr-st64 (+ a 8) (rt-w "-no-pie"))
       (let _ (pr-st64 (+ a 16) asm)
-        (let k (if (pr-rt-obj-fresh) (let _ (pr-st64 (+ a 24) (rt-w "actor_runtime.o")) 4)
-                 (let _ (pr-st64 (+ a 24) (rt-w "-O2")) (let _ (pr-st64 (+ a 32) (rt-w "actor_runtime.c")) 5)))
+        (let k (let _ (pr-st64 (+ a 24) (rt-w "rt.o")) 4)
           (let _ (pr-st64 (+ a (* k 8)) (rt-w "-o"))
             (let _ (pr-st64 (+ a (* (+ k 1) 8)) out)
               (let _ (pr-st64 (+ a (* (+ k 2) 8)) (rt-w "-lpthread")) (pr-st64 (+ a (* (+ k 3) 8)) 0)))))))))

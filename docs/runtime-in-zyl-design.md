@@ -1,6 +1,6 @@
 # The Runtime in Zyl: Design
 
-Status: in progress (started 2026-09-28). This document covers how
+Status: the runtime is Zyl; runtime/actor_runtime.c was deleted on 2026-09-28. The libc-free phase is next. This document covers how
 `runtime/actor_runtime.c` (5.5k lines of C, about 400 entry points) is
 replaced by a runtime written in Zyl, `runtime/rt/*.zyl`, without adding
 any unsafe construct to the language.
