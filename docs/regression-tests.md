@@ -74,6 +74,9 @@ prints their count.
   the compiler's output, so an unrelated failure such as a crash or an
   out-of-memory stop does not count as a pass. Without such a line the
   runner does not check which code was reported.
+  A `; expect-at: FILE:LINE:COL` line also pins the location: the
+  `-->` line under that code's `error[CODE]` header must end in it
+  (FILE is the basename, e.g. `main.zyl` or `zyl.pkg`).
 - **Package builds** (`tests/packages-build/`): `zyl build` in the
   case's `app/` directory must succeed, the resulting binary must run
   without printing `FAIL`, the `.buildinfo` file must record a

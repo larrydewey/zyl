@@ -239,6 +239,8 @@
 (deftype RgSite (RgSite Icnf UF Int))
 ; A Stack bytebuf allocation: node, class.
 (deftype RgStk (RgStk Icnf UF))
+; An escape event (rec pass only): node, class, level, label text.
+(deftype RgEsc (RgEsc Icnf UF Int String))
 
 (def rg-summary-table (ffi-call "zyl_smap_new" 1000))
 (def rg-site-store (ffi-call "zyl_wvec_new" 1000))
@@ -246,6 +248,7 @@
 (def rg-scope-stack-store (ffi-call "zyl_wvec_new" 1000))
 (def rg-scope-node-store (ffi-call "zyl_wvec_new" 1000))
 (def rg-stack-site-store (ffi-call "zyl_wvec_new" 1000))
+(def rg-esc-store (ffi-call "zyl_wvec_new" 1000))
 
 (defn rg-summaries () rg-summary-table)
 
@@ -417,16 +420,63 @@
     (Nil 0)
     (Cons c rest (let _ (rg-raise c lvl) (rg-raise-all rest lvl)))))
 
+; Record where class `c` reaches `lvl`, for E_REGION_ESCAPE's label.
+(defn rg-esc (rec e c lvl text)
+  (if (> rec 0)
+    (let _ (ffi-call "zyl_wvec_push" rg-esc-store (RgEsc e c lvl text) 1000) 0)
+    0))
+
+(defn rg-esc-all (rec e cs lvl text)
+  (match cs
+    (Nil 0)
+    (Cons c rest (let _ (rg-esc rec e c lvl text) (rg-esc-all rec e rest lvl text)))))
+
+(defn rg-raise-at (rec e cs lvl text)
+  (let _ (rg-esc-all rec e cs lvl text) (rg-raise-all cs lvl)))
+
+; First recorded event on `c`'s class at `lvl`, off the primary span `self`, as a label list.
+(defn rg-esc-label (c lvl self i n)
+  (if (>= i n)
+    Nil
+    (match (ffi-call "zyl_wvec_get" rg-esc-store i 1000)
+      (RgEsc node ec el text
+        (if (and (= el lvl)
+                 (and (= (ffi-call "zyl_uf_id" (ffi-call "zyl_uf_find" ec 1000) 1000)
+                         (ffi-call "zyl_uf_id" (ffi-call "zyl_uf_find" c 1000) 1000))
+                      (and (>= (ffi-call "zyl_span_off" node 1000) 0)
+                           (not (rg-same-span node self)))))
+          (Cons (err-label-at node text) Nil)
+          (rg-esc-label c lvl self (+ i 1) n))))))
+
+(defn rg-same-span (a b)
+  (and (= (ffi-call "zyl_span_off" a 1000) (ffi-call "zyl_span_off" b 1000))
+       (= (ffi-call "zyl_span_file" a 1000) (ffi-call "zyl_span_file" b 1000))))
+
+(defn rg-esc-labels (c lvl self)
+  (rg-esc-label c lvl self 0 (ffi-call "zyl_wvec_len" rg-esc-store 1000)))
+
+; The value a body returns: through let and seq to its last expression.
+(defn rg-tail-node (e)
+  (match e
+    (ILet _ _ body (rg-tail-or body e))
+    (ISeq es (match (rg-last es) (Cons h _ (rg-tail-or h e)) (Nil e)))
+    (_ e)))
+
+(defn rg-tail-or (inner outer)
+  (let t (rg-tail-node inner)
+    (if (>= (ffi-call "zyl_span_off" t 1000) 0) t outer)))
+
 ; Arguments against the callee's summary; in tail position each is at
 ; least R, since the frame is released before the callee runs.
-(defn rg-apply-summary (cs summary i c tail)
+(defn rg-apply-summary (cs summary i c tail e rec)
   (match cs
     (Nil 0)
     (Cons a rest
       (let lvl (rg-param-level summary i)
-        (let _ (if (= lvl 1) (let _ (rg-union a c) unit) (if (= lvl 2) (rg-raise a 2) unit))
-          (let _ (if (> tail 0) (rg-raise a 1) unit)
-            (rg-apply-summary rest summary (+ i 1) c tail)))))))
+        (let _ (if (= lvl 1) (let _ (rg-union a c) unit)
+                 (if (= lvl 2) (let _ (rg-esc rec e a 2 "escapes here: passed to a function that keeps it") (rg-raise a 2)) unit))
+          (let _ (if (> tail 0) (let _ (rg-esc rec e a 1 "escapes here: passed to a tail call, after the frame is released") (rg-raise a 1)) unit)
+            (rg-apply-summary rest summary (+ i 1) c tail e rec)))))))
 
 (defn rg-call (e name args env tail rec)
   (let cs (rg-list args env rec)
@@ -434,17 +484,18 @@
       ; Through a function value: whatever it is may keep its arguments,
       ; and its result may point into the closure.
       (Some local
-        (let _ (rg-raise-all cs 2)
+        (let _ (rg-raise-at rec e cs 2 "escapes here: passed to a function value that may keep it")
           (let c (rg-union (rg-new 0) local)
             (let _ (rg-site rec e c) c))))
       (None
         (let s (rg-summary name)
           (if (< s 0)
-            (let _ (rg-raise-all cs 2)
+            (let _ (rg-raise-at rec e cs 2 "escapes here: passed to code that may keep it")
               (let c (rg-new 2)
-                (let _ (rg-site rec e c) c)))
+                (let _ (rg-esc rec e c 2 "escapes here: joined with this call's heap result")
+                (let _ (rg-site rec e c) c))))
             (let c (rg-new 0)
-              (let _ (rg-apply-summary cs s 0 c tail)
+              (let _ (rg-apply-summary cs s 0 c tail e rec)
                 (let _ (if (> (rg-res-alloc s) 0) (rg-site rec e c) 0) c)))))))))
 
 (defn rg-first (cs)
@@ -472,10 +523,12 @@
             (if (= k 2)
               (rg-first cs)
               (if (= k 4)
-                (let _ (rg-raise-all (rg-last cs) 2) (rg-new 0))
+                (let _ (rg-raise-at rec e (rg-last cs) 2 "escapes here: stored into a buffer") (rg-new 0))
                 (if (= k 5)
-                  (let _ (rg-raise-all (rg-rest cs) 2) (rg-new 0))
-                  (let _ (rg-raise-all cs 2) (rg-new 2)))))))))))
+                  (let _ (rg-raise-at rec e (rg-rest cs) 2 "escapes here: stored into a buffer") (rg-new 0))
+                  (let _ (rg-raise-at rec e cs 2 "escapes here: passed to a runtime call that may keep it")
+                    (let c (rg-new 2)
+                      (let _ (rg-esc rec e c 2 "escapes here: joined with this call's heap result") c))))))))))))
 
 (defn rg-fields (fs c env rec)
   (match fs
@@ -535,7 +588,7 @@
       (let cv (rg-expr v env 0 rec)
         (let _ (match (rg-lookup env n)
                  (Some cn (let _ (rg-union cn cv) unit))
-                 (None (rg-raise cv 2)))
+                 (None (let _ (rg-esc rec e cv 2 "escapes here: stored in a binding that outlives the frame") (rg-raise cv 2))))
           (rg-new 0))))
     (ILet n v body
       (let cv (rg-expr v env 0 rec)
@@ -548,10 +601,12 @@
     (IMatch scr arms
       (let sc (rg-expr scr env 0 rec)
         (rg-arms arms sc (rg-new 0) env tail rec)))
-    (IFn _ _ _ _ (rg-new 2))
+    (IFn _ _ _ _ (let c (rg-new 2) (let _ (rg-esc rec e c 2 "escapes here: joined with a closure") c)))
     (ITryCatch tbody cvar cbody
       (let tc (rg-expr tbody env 0 rec)
-        (rg-union tc (rg-expr cbody (Cons (RgB cvar (rg-new 2)) env) 0 rec))))
+        (let cc (rg-new 2)
+          (let _ (rg-esc rec e cc 2 "escapes here: joined with a caught error value")
+            (rg-union tc (rg-expr cbody (Cons (RgB cvar cc) env) 0 rec))))))
     (IRegion _ _ _ _ body (rg-region e body env rec))))
 
 (defn rg-param-env (params env acc)
@@ -581,10 +636,12 @@
         (let _ (ffi-call "zyl_wvec_truncate" (rg-scope-starts) 0 1000)
         (let _ (ffi-call "zyl_wvec_truncate" (rg-scope-nodes) 0 1000)
         (let _ (ffi-call "zyl_wvec_truncate" (rg-scope-stack) 0 1000)
+        (let _ (ffi-call "zyl_wvec_truncate" rg-esc-store 0 1000)
         (match (rg-param-env params Nil Nil)
           (RgPE env cs
             (let ret (rg-new 1)
               (let bc (rg-expr body env 1 rec)
+                (let _ (rg-esc rec (rg-tail-node body) ret 1 "escapes here: returned from the function")
                 (let _ (rg-union bc ret)
                   (let flags (rg-mark-sites 0 (ffi-call "zyl_wvec_len" (rg-sites) 1000) 0 rec)
                   (let old (rg-summary name)
@@ -601,7 +658,7 @@
                         (if (= packed old)
                           false
                           (let _ (ffi-call "zyl_smap_put" (rg-summaries) name (+ packed 1) 1000)
-                            true)))))))))))))))))
+                            true)))))))))))))))))))
     (_ false)))
 
 ; Per-parameter maximum of two summaries, and the OR of bit 62.
@@ -653,10 +710,10 @@
           (let off (ffi-call "zyl_span_off" node 1000)
             (let fid (ffi-call "zyl_span_file" node 1000)
               (ffi-call "zyl_panic"
-                (err-at "E_REGION_ESCAPE"
+                (err-at-labels "E_REGION_ESCAPE"
                         (if (= lvl 1) "a Stack bytebuf is returned from the function that allocates it"
                             "a Stack bytebuf escapes its frame (stored, sent or passed to code that may keep it)")
-                        fid off
+                        fid off (rg-esc-labels c (if (= lvl 1) 1 2) node)
                         "allocate it in the Heap region, or keep it and every slice of it inside this function")
                 1000)))
           (rg-check-stack (+ i 1) n)))))))
@@ -673,7 +730,7 @@
               ; Placed in the with-region scope: no frame or result region.
               (let _ (if (> rec 0) (icnf-region-set node (+ 4 scope)) unit)
                 (rg-mark-sites (+ i 1) n flags rec))
-              (let _ (if (and (> rec 0) (>= scope 0)) (rg-scope-escape (rg-located node scope) lvl) 0)
+              (let _ (if (and (> rec 0) (>= scope 0)) (rg-scope-escape (rg-located node scope) lvl c scope) 0)
                 (let _ (if (> rec 0) (icnf-region-set node (+ lvl 1)) unit)
                   (rg-mark-sites (+ i 1) n
                     (bit-or flags (if (= lvl 0) 1 (if (= lvl 1) 2 0))) rec)))))))))
@@ -684,19 +741,29 @@
     (>= (ffi-call "zyl_uf_id" (ffi-call "zyl_uf_find" c 1000) 1000)
         (ffi-call "zyl_uf_id" (ffi-call "zyl_wvec_get" (rg-scope-starts) scope 1000) 1000))))
 
+; Where it escapes, else the region it outlives.
+(defn rg-scope-labels (c lvl scope self)
+  (let ls (if (> lvl 0) (rg-esc-labels c lvl self) Nil)
+    (if (is-nil ls)
+      (let r (ffi-call "zyl_wvec_get" (rg-scope-nodes) scope 1000)
+        (if (>= (ffi-call "zyl_span_off" r 1000) 0)
+          (Cons (err-label-at r "the region opened here ends before the value is last used") Nil)
+          Nil))
+      ls)))
+
 (defn rg-located (node scope)
   (if (>= (ffi-call "zyl_span_off" node 1000) 0)
     node
     (ffi-call "zyl_wvec_get" (rg-scope-nodes) scope 1000)))
 
-(defn rg-scope-escape (node lvl)
+(defn rg-scope-escape (node lvl c scope)
   (let off (ffi-call "zyl_span_off" node 1000)
     (let fid (ffi-call "zyl_span_file" node 1000)
       (ffi-call "zyl_panic"
-        (err-at "E_REGION_ESCAPE"
+        (err-at-labels "E_REGION_ESCAPE"
                 (if (= lvl 2) "a value allocated inside with-region escapes to the heap (stored, sent or passed to code that may keep it)"
                     "a value allocated inside with-region outlives it")
-                fid off
+                fid off (rg-scope-labels c lvl scope node)
                 "compute a result that does not point into the region (a number, or data built outside it)")
         1000))))
 

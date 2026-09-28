@@ -51,7 +51,9 @@
 (defn lift-variants (variants)
   (match variants
     (Nil Nil)
-    (Cons v rest (Cons (AV (AV.name v) (lift-fields (AV.fields v))) (lift-variants rest)))))
+    (Cons v rest (Cons (lift-spanned (AV (AV.name v) (lift-fields (AV.fields v))) v) (lift-variants rest)))))
+
+(defn lift-spanned (n from) (let _ (ffi-call "zyl_span_copy" n from 1000) n))
 
 (defn lift-fields (fields)
   (match fields

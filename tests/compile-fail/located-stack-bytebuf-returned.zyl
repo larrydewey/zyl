@@ -1,0 +1,10 @@
+; Compile-fail: a Stack bytebuf returned through a let; the label points at the return.
+; The diagnostic is located (P1).
+; expect-error: E_REGION_ESCAPE
+; expect-at: located-stack-bytebuf-returned.zyl:7:10
+
+(defn make-buf ()
+  (let b (bytebuf Stack 16)
+    b))
+
+(defn main () (begin (print (bytebuf-cap (make-buf))) 0))

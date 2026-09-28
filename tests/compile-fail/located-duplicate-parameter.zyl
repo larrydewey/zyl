@@ -1,0 +1,8 @@
+; Compile-fail: a parameter name repeated in one list.
+; The diagnostic is located (P1).
+; expect-error: E_DUPLICATE_PARAMETER
+; expect-at: located-duplicate-parameter.zyl:6:14
+
+(defn f (a b a) (+ a b))
+
+(defn main () (begin (print (f 1 2 3)) 0))

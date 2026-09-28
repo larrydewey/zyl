@@ -1,0 +1,8 @@
+; Compile-fail: bytebuf naming no region.
+; The diagnostic is located (P1).
+; expect-error: E_UNEXPECTED_TOKEN_IN_EXPR
+; expect-at: located-bytebuf-region.zyl:7:10
+
+(defn main ()
+  (let b (bytebuf Nowhere 16)
+    0))

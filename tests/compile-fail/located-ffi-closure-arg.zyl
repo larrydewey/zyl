@@ -1,0 +1,9 @@
+; Compile-fail: a closure passed to ffi-call is not FFI_Pinnable.
+; The diagnostic is located (P1).
+; expect-error: E_INVALID_CAPABILITY
+; expect-at: located-ffi-closure-arg.zyl:8:30
+
+(defn main ()
+  (begin
+    (ffi-call "zyl_cstr_len" (fn (x) x) 1000)
+    0))

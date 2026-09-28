@@ -830,7 +830,10 @@
     (Nil Nil)
     (Cons v rest
       (match v
-        (AV vn fields (Cons (AV (me-name-subst e vn cx) fields) (me-variants e rest cx)))))))
+        (AV vn fields
+          (let nv (AV (me-name-subst e vn cx) fields)
+            (let _ (ffi-call "zyl_span_copy" nv v 1000)
+              (Cons nv (me-variants e rest cx)))))))))
 
 (defn me-impl (e bodies cx n)
   (match (me-impl-bodies e bodies cx n Nil)

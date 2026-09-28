@@ -1,0 +1,10 @@
+; Compile-fail: set! on an expression rather than a name.
+; The diagnostic is located (P1).
+; expect-error: E_MUT_CONFLICT
+; expect-at: located-set-expression.zyl:9:13
+
+(defn main ()
+  (let-mut p 1
+    (begin
+      (set! (+ p 1) 5)
+      0)))

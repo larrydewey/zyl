@@ -1,0 +1,6 @@
+; Compile-fail: bit-not with two operands.
+; The diagnostic is located (P1).
+; expect-error: E_ARITY_MISMATCH
+; expect-at: located-bit-not-arity.zyl:6:29
+
+(defn main () (begin (print (bit-not 1 2)) 0))

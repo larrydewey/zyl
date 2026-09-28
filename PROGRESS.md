@@ -245,10 +245,24 @@ by recent sessions. The completed roadmap items are kept, annotated, under
 
 ### P1: Diagnostics
 
-- [ ] Locate the remaining diagnostics (the checks listed above): thread
+- [x] Locate the remaining diagnostics (the checks listed above): thread
       the offending node to the failure and call `err-at`. Done
       2026-09-24 for `mutability_check`, `capability_check` and
       `unused_check`.
+      Done 2026-09-28 for the rest: `E_DUPLICATE_PARAMETER`, the ffi-call
+      closure `E_INVALID_CAPABILITY`, the byte-form errors and literal
+      `match`/`set!` errors in `expr_inner` (at the innermost form being
+      converted), the ICNF lowering errors (at the expression being
+      lowered; `E_DUPLICATE_VARIANT` at the repeat, spans now survive
+      qualify/lift/macro rebuilds of a variant), `E_ZEROIZE_MISSING` (a
+      located warning), the module resolver's use/symbol/orphan/feature
+      errors (at the `use` form or name) and the manifest errors that
+      have a form (`zyl.pkg` is now parsed under its own path).
+      `; expect-at: FILE:LINE:COL` in a compile-fail test pins the
+      location; `tests/scripts/located-diagnostics.sh` checks the JSON.
+      Still unlocated, having no source node: `--locked` capability
+      growth, `E_CODEGEN_BUFFER_FULL`, and the lock/store/index/CLI and
+      MVS errors about files rather than forms.
 - [x] Resolve call targets before linking, so an undefined function is a
       located error (codegen's `cg-call-user`, 2026-09-23; an earlier
       phase would be better still).
@@ -259,6 +273,9 @@ by recent sessions. The completed roadmap items are kept, annotated, under
       `E_CAPABILITY_LEAK` and `E_PKG_CAPABILITY_VIOLATION`.
       `E_REGION_ESCAPE` (raised since 2026-09-24) is located but has no
       secondary label yet.
+      Done 2026-09-28: `E_REGION_ESCAPE` labels where the value escapes
+      (the call, store, return or closure that raised its class; for
+      `with-region`, else the region it outlives).
 - [x] "Did you mean" (edit distance over in-scope names) on unbound
       identifiers and undefined functions.
 - [x] `--error-format=json`: one JSON object per diagnostic on stderr.

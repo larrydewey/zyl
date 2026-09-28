@@ -1,0 +1,11 @@
+; Compile-fail: a literal-pattern match with no `_` arm.
+; The diagnostic is located (P1).
+; expect-error: E_MATCH_NONEXHAUSTIVE
+; expect-at: located-literal-match.zyl:7:3
+
+(defn f (n)
+  (match n
+    (1 10)
+    (2 20)))
+
+(defn main () (begin (print (f 1)) 0))

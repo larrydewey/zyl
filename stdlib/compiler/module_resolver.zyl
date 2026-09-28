@@ -231,20 +231,37 @@
 (defn mr-sym-list (xs)
   (match xs
     (Nil Nil)
-    (Cons h t (mr-sym-entry (mr-sym-ident h) t))))
+    (Cons h t (mr-sym-entry h t))))
 
-(defn mr-sym-entry (name rest)
-  (match rest
-    (Nil (Cons (MRS name name) Nil))
-    (Cons a t
-      (if (str-eq (mr-ident-of a) "=>")
-        (mr-sym-alias name t)
-        (Cons (MRS name name) (mr-sym-entry (mr-sym-ident a) t))))))
+; `at` is the name's Ast, whose span each MRS keeps.
+(defn mr-sym-entry (at rest)
+  (let name (mr-sym-ident at)
+    (match rest
+      (Nil (Cons (mr-spanned (MRS name name) at) Nil))
+      (Cons a t
+        (if (str-eq (mr-ident-of a) "=>")
+          (mr-sym-alias name at t)
+          (Cons (mr-spanned (MRS name name) at) (mr-sym-entry a t)))))))
 
-(defn mr-sym-alias (name rest)
+(defn mr-sym-alias (name at rest)
   (match rest
-    (Nil (Cons (MRS name name) Nil))
-    (Cons a t (Cons (MRS name (mr-sym-ident a)) (mr-sym-list t)))))
+    (Nil (Cons (mr-spanned (MRS name name) at) Nil))
+    (Cons a t (Cons (mr-spanned (MRS name (mr-sym-ident a)) at) (mr-sym-list t)))))
+
+(defn mr-spanned (node from) (let _ (ffi-call "zyl_span_copy" node from 1000) node))
+
+; Use forms being resolved, innermost last, so a resolution error is located.
+(def mr-use-store (ffi-call "zyl_wvec_new" 1000))
+
+(defn mr-fail (code msg) (mr-fail-at (mr-cur-use) code msg))
+
+(defn mr-cur-use ()
+  (let n (ffi-call "zyl_wvec_len" mr-use-store 1000)
+    (if (= n 0) (MRU "" "" 0 Nil 0) (ffi-call "zyl_wvec_get" mr-use-store (- n 1) 1000))))
+
+(defn mr-fail-at (at code msg)
+  (ffi-call "zyl_panic"
+    (err-at code msg (ffi-call "zyl_span_file" at 1000) (ffi-call "zyl_span_off" at 1000) "") 1000))
 
 ; An import list holds names only; `{ a, b }` reads `,b` as an unquote.
 (defn mr-sym-ident (a)
@@ -272,7 +289,7 @@
     (Nil Nil)
     (Cons f rest
       (if (str-eq (mr-ast-head f) "use")
-        (Cons (mr-parse-use (mr-ast-args f)) (mr-collect-uses rest))
+        (Cons (mr-spanned (mr-parse-use (mr-ast-args f)) f) (mr-collect-uses rest))
         (mr-collect-uses rest)))))
 
 ; ===========================================================================
@@ -331,7 +348,7 @@
   (match defs
     (Nil Nil)
     (Cons d t
-      (Cons (MRDF (mrd-name d) (mrd-key d) (mrd-pub d) feature)
+      (Cons (mr-spanned (MRDF (mrd-name d) (mrd-key d) (mrd-pub d) feature) d)
             (mr-tag-feature t feature)))))
 
 ; `pub` prefixes a definition INLINE — `(pub defn f ...)`, not
@@ -363,7 +380,7 @@
             (if (mr-reserved-name n)
               Nil
               (list-append
-                (Cons (MRDF n (ck-key arena (mrp-name pkg) (mrp-major pkg) module n) pub "") Nil)
+                (Cons (mr-spanned (MRDF n (ck-key arena (mrp-name pkg) (mrp-major pkg) module n) pub "") nameast) Nil)
                 (mr-variant-defs arena pkg module head rest pub)))))))))
 
 ; A deftype's variants are definitions in their own right: they become
@@ -381,7 +398,7 @@
       (let n (mr-variant-name h)
         (if (= (str-length n) 0)
           (mr-variant-list arena pkg module t pub)
-          (Cons (MRDF n (ck-key arena (mrp-name pkg) (mrp-major pkg) module n) pub "")
+          (Cons (mr-spanned (MRDF n (ck-key arena (mrp-name pkg) (mrp-major pkg) module n) pub "") h)
                 (mr-variant-list arena pkg module t pub)))))))
 
 (defn mr-variant-name (v)
@@ -424,11 +441,11 @@
     (Cons d t
       (if (str-eq (mrd-name d) (mrd-name gated))
         (if (= (str-length (mrd-feature d)) 0)
-          (ffi-call "zyl_panic"
-            (str-concat "E_PKG_FEATURE_COLLISION: package: gated definition "
+          (mr-fail-at gated "E_PKG_FEATURE_COLLISION"
+            (str-concat "package: gated definition "
               (str-concat (mrd-name gated)
                 (str-concat " collides with a base definition of the same name (feature "
-                  (str-concat (mrd-feature gated) ")")))) 1000)
+                  (str-concat (mrd-feature gated) ")")))))
           (mr-check-collision gated t))
         (mr-check-collision gated t)))))
 
@@ -462,7 +479,7 @@
 (defn mr-parse-file (arena path)
   (let fd (file-open path "r")
     (if (< fd 1)
-      (ffi-call "zyl_panic" (str-concat "E_MODULE_NOT_FOUND: module: cannot open " path) 1000)
+      (mr-fail "E_MODULE_NOT_FOUND" (str-concat "module: cannot open " path))
       (let srcbuf (file-read fd 1048576)
         (let _ (file-close fd)
           (zyl-parse-file arena srcbuf path))))))
@@ -479,7 +496,7 @@
   (if (rt-mode-p)
     (if (and (= (str-length (mru-pkg u)) 0) (mr-file-exists (mr-module-file pkg (mru-module u))))
       pkg
-      (ffi-call "zyl_panic" (str-concat "E_FFI_RESTRICTED: the runtime module may use only runtime/rt modules, not " (mru-module u)) 1000))
+      (mr-fail-at u "E_FFI_RESTRICTED" (str-concat "the runtime module may use only runtime/rt modules, not " (mru-module u))))
   (if (> (str-length (mru-pkg u)) 0)
     (mr-dep-pkg disc pkg (mru-pkg u))
     (mr-implicit-pkg disc pkg (mru-module u)))))
@@ -498,9 +515,9 @@
 (defn mr-dep-pkg (disc pkg name)
   (match (mr-find-pkg (mrd-pkgs disc) name)
     (Some p p)
-    (None (ffi-call "zyl_panic"
-            (str-concat "E_PKG_UNDECLARED_DEP: module: use names package "
-              (str-concat name (str-concat ", absent from the manifest of " (mrp-name pkg)))) 1000))))
+    (None (mr-fail "E_PKG_UNDECLARED_DEP"
+            (str-concat "module: use names package "
+              (str-concat name (str-concat ", absent from the manifest of " (mrp-name pkg))))))))
 
 (defn mr-target-module (disc pkg u)
   (let target (mr-target-pkg disc pkg u)
@@ -520,8 +537,8 @@
 ; the marker has to win (§24.2).
 (defn mr-check-module-name (module pkgname)
   (if (str-eq module "unsafe")
-    (ffi-call "zyl_panic"
-      (str-concat "E_PKG_RESERVED_MODULE: module: unsafe is a reserved module name, used in " pkgname) 1000)
+    (mr-fail "E_PKG_RESERVED_MODULE"
+      (str-concat "module: unsafe is a reserved module name, used in " pkgname))
     1))
 
 (defn mr-discover (arena disc stack pkg module)
@@ -536,8 +553,8 @@
 ; re-enters a package is E_PKG_CYCLE (§24.5).
 (defn mr-cycle-error (id stack)
   (if (mr-same-pkg-cycle id stack)
-    (ffi-call "zyl_panic" (str-concat "E_MODULE_CYCLE: module: module graph is not a DAG at " id) 1000)
-    (ffi-call "zyl_panic" (str-concat "E_PKG_CYCLE: package: dependency graph is not a DAG at " id) 1000)))
+    (mr-fail "E_MODULE_CYCLE" (str-concat "module: module graph is not a DAG at " id))
+    (mr-fail "E_PKG_CYCLE" (str-concat "package: dependency graph is not a DAG at " id))))
 
 (defn mr-same-pkg-cycle (id stack)
   (let p (mr-id-pkg id)
@@ -561,12 +578,12 @@
 
 (defn mr-missing-module (pkg module path)
   (if (> (mrp-manifested pkg) 0)
-    (ffi-call "zyl_panic"
-      (str-concat "E_PKG_UNKNOWN_MODULE: module: module " (str-concat module
-        (str-concat " does not exist in package " (mrp-name pkg)))) 1000)
-    (ffi-call "zyl_panic"
-      (str-concat "E_MODULE_NOT_FOUND: module: module " (str-concat module
-        (str-concat " not found at " path))) 1000)))
+    (mr-fail "E_PKG_UNKNOWN_MODULE"
+      (str-concat "module: module " (str-concat module
+        (str-concat " does not exist in package " (mrp-name pkg)))))
+    (mr-fail "E_MODULE_NOT_FOUND"
+      (str-concat "module: module " (str-concat module
+        (str-concat " not found at " path))))))
 
 (defn mr-discover-forms (arena disc stack pkg module)
   (let forms (mr-parse-file arena (mr-module-file pkg module))
@@ -588,8 +605,11 @@
       (mr-discover-deps arena (mr-discover-use arena disc stack pkg u) stack pkg rest))))
 
 (defn mr-discover-use (arena disc stack pkg u)
-  (let target (mr-target-pkg disc pkg u)
-    (mr-discover arena disc stack target (mr-target-module disc pkg u))))
+  (let depth (ffi-call "zyl_wvec_len" mr-use-store 1000)
+    (let _ (ffi-call "zyl_wvec_push" mr-use-store u 1000)
+      (let target (mr-target-pkg disc pkg u)
+        (let r (mr-discover arena disc stack target (mr-target-module disc pkg u))
+          (let _ (ffi-call "zyl_wvec_truncate" mr-use-store depth 1000) r))))))
 
 ; ===========================================================================
 ; DEPENDENCY PACKAGES
@@ -660,17 +680,17 @@
       (if (not (mr-file-exists path))
         1
         (mr-check-features-in (mf-features (pk-read-manifest arena path))
-                              (pd-features d) (pd-name d))))))
+                              (pd-features d) (pd-name d) d)))))
 
-(defn mr-check-features-in (declared wanted name)
+(defn mr-check-features-in (declared wanted name site)
   (match wanted
     (Nil 1)
     (Cons f t
       (if (mr-feature-declared declared f)
-        (mr-check-features-in declared t name)
-        (ffi-call "zyl_panic"
-          (str-concat "E_PKG_FEATURE_UNKNOWN: package: feature " (str-concat f
-            (str-concat " is not declared by " name))) 1000)))))
+        (mr-check-features-in declared t name site)
+        (mr-fail-at site "E_PKG_FEATURE_UNKNOWN"
+          (str-concat "package: feature " (str-concat f
+            (str-concat " is not declared by " name))))))))
 
 (defn mr-feature-declared (declared f)
   (match declared
@@ -857,16 +877,16 @@
 (defn mr-one-named-import (target munit s)
   (match (mr-find-def (mr-active-defs (mrp-features target) (mru2-defs munit)) (mrs-remote s))
     (Some d (mr-checked-import target munit d s))
-    (None (ffi-call "zyl_panic"
-            (str-concat "E_PKG_UNKNOWN_SYMBOL: module: symbol " (str-concat (mrs-remote s)
-              (str-concat " does not exist in " (mru2-module munit)))) 1000))))
+    (None (mr-fail-at s "E_PKG_UNKNOWN_SYMBOL"
+            (str-concat "module: symbol " (str-concat (mrs-remote s)
+              (str-concat " does not exist in " (mru2-module munit))))))))
 
 (defn mr-checked-import (target munit d s)
   (if (> (mr-def-visible target d) 0)
     (QP (mrs-local s) (mrd-key d))
-    (ffi-call "zyl_panic"
-      (str-concat "E_PKG_PRIVATE_SYMBOL: module: symbol " (str-concat (mrd-name d)
-        (str-concat " imported from " (str-concat (mru2-module munit) " is not pub")))) 1000)))
+    (mr-fail-at s "E_PKG_PRIVATE_SYMBOL"
+      (str-concat "module: symbol " (str-concat (mrd-name d)
+        (str-concat " imported from " (str-concat (mru2-module munit) " is not pub")))))))
 
 ; ===========================================================================
 ; SPLICING
@@ -1124,19 +1144,19 @@
     (Cons traitast rest
       (match rest
         (Cons typeast _
-          (mr-orphan-verdict (mr-ident-of traitast) (mr-ident-of typeast) pkgname))
+          (mr-orphan-verdict (mr-ident-of traitast) (mr-ident-of typeast) pkgname f))
         (Nil 1)))
     (Nil 1)))
 
-(defn mr-orphan-verdict (trait type pkgname)
+(defn mr-orphan-verdict (trait type pkgname f)
   (if (mr-local-name trait pkgname)
     1
     (if (mr-local-name type pkgname)
       1
-      (ffi-call "zyl_panic"
-        (str-concat "E_PKG_ORPHAN_IMPL: trait: impl of " (str-concat (ck-symbol-of trait)
+      (mr-fail-at f "E_PKG_ORPHAN_IMPL"
+        (str-concat "trait: impl of " (str-concat (ck-symbol-of trait)
           (str-concat " for " (str-concat (ck-symbol-of type)
-            (str-concat " where neither the trait nor the type is local to " pkgname))))) 1000))))
+            (str-concat " where neither the trait nor the type is local to " pkgname)))))))))
 
 (defn mr-local-name (n pkgname)
   (if (str-eq (ck-package-of n) pkgname) true false))
@@ -1168,9 +1188,9 @@
 
 (defn mr-manifest-pkg (arena srcdir)
   (let m (pk-read-manifest arena (str-concat srcdir "/zyl.pkg"))
-    (let _ (pk-check-edition (mf-edition m) (mf-name m))
-      (let _ (pk-check-compiler (mf-zyl m) (mf-name m))
-        (let _ (pk-check-capabilities (mf-capabilities m) (mf-name m))
+    (let _ (pk-check-edition (mf-edition m) (mf-name m) m)
+      (let _ (pk-check-compiler (mf-zyl m) (mf-name m) m)
+        (let _ (pk-check-capabilities (mf-capabilities m) (mf-name m) m)
           (MRP (mf-name m) (mf-major m) srcdir 1 (mf-capabilities m) Nil))))))
 
 (defn mr-dirname (path)
@@ -1269,6 +1289,7 @@
             (mr-resolve-full arena pkg root (mr-root-uses main-forms uses))))))))
 
 (defn mr-resolve-full (arena pkg root uses)
+  (let _ (ffi-call "zyl_wvec_truncate" mr-use-store 0 1000)
   (let disc0 (MRD Nil Nil (Cons pkg (Cons (mr-stdlib-pkg) Nil)))
     (let id (mr-unit-id (mrp-name pkg) (mru2-module root))
       (let disc1 (mr-discover-deps arena (mr-with-pkgs disc0 arena pkg)
@@ -1277,13 +1298,14 @@
           (let units (list-reverse (mrd-units disc))
             (MRR (convert-program (mr-impl-not (list-reverse (mr-qualify-units arena disc units (mrd-pkgs disc) units Nil))))
                  (mr-grants-of (mrd-pkgs disc))
-                 (mr-denied-of arena pkg))))))))
+                 (mr-denied-of arena pkg)))))))))
 
 (defn mr-resolve-root (arena pkg root uses)
+  (let _ (ffi-call "zyl_wvec_truncate" mr-use-store 0 1000)
   (let disc0 (MRD Nil Nil (Cons pkg (Cons (mr-stdlib-pkg) Nil)))
     (let id (mr-unit-id (mrp-name pkg) (mru2-module root))
       (let disc1 (mr-discover-deps arena (mr-with-pkgs disc0 arena pkg)
                                    (Cons id Nil) pkg uses)
         (let disc (mr-add-unit disc1 root id)
           (let units (list-reverse (mrd-units disc))
-            (convert-program (mr-impl-not (list-reverse (mr-qualify-units arena disc units (mrd-pkgs disc) units Nil))))))))))
+            (convert-program (mr-impl-not (list-reverse (mr-qualify-units arena disc units (mrd-pkgs disc) units Nil)))))))))))

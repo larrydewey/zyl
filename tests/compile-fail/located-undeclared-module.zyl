@@ -1,0 +1,8 @@
+; Compile-fail: a use naming a package that does not exist.
+; The diagnostic is located (P1).
+; expect-error: E_PKG_UNDECLARED_DEP
+; expect-at: located-undeclared-module.zyl:6:1
+
+(use no/such/module)
+
+(defn main () 0)

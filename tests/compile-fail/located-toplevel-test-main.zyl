@@ -1,0 +1,10 @@
+; Compile-fail: a top-level test next to an explicit main.
+; The diagnostic is located (P1).
+; expect-error: E_TOPLEVEL_STMTS_WITH_EXPLICIT_MAIN
+; expect-at: located-toplevel-test-main.zyl:8:11
+
+(use testing/testing)
+
+(test "t" (assert-equal 1 1))
+
+(defn main () 0)

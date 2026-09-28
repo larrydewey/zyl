@@ -185,6 +185,18 @@ run_fail_test() {
         return
     fi
 
+    # `; expect-at: FILE:LINE:COL` pins where that diagnostic points.
+    local at
+    at=$(sed -n 's/^; expect-at: *\([^ ]*\).*/\1/p' "$file" | head -1)
+    if [ -n "$at" ] && ! echo "$output" | grep -A1 -- "error\[${expected}\]" | grep -- '-->' | grep -qE -- "[ /]${at}\$"; then
+        echo -e "  ${RED}✗${NC} ${name}: expected ${expected} at ${at}, got another location"
+        if [ "$VERBOSE" -eq 1 ]; then
+            echo "    $output"
+        fi
+        FAIL=$((FAIL + 1))
+        return
+    fi
+
     echo -e "  ${GREEN}✓${NC} ${name}"
     PASS=$((PASS + 1))
 }
