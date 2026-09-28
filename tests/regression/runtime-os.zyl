@@ -1,0 +1,86 @@
+; Edge cases of the runtime's OS entries (runtime/rt/os.zyl): files, mkdir -p, directory walks.
+
+(defn root () "/tmp/zyl_rt_os_test")
+
+(defn put (path text)
+  (let fd (file-open path "w") (begin (file-write fd text) (file-close fd) 0)))
+
+(defn setup ()
+  (begin
+    (ffi-call "zyl_system_cmd" "rm -rf /tmp/zyl_rt_os_test" 1000)
+    (ffi-call "zyl_mkdir_p" "/tmp/zyl_rt_os_test/sub/deeper" 1000)
+    (ffi-call "zyl_mkdir_p" "/tmp/zyl_rt_os_test/.hdir" 1000)
+    (put "/tmp/zyl_rt_os_test/b.zyl" "b")
+    (put "/tmp/zyl_rt_os_test/a.zyl" "a")
+    (put "/tmp/zyl_rt_os_test/B.zyl" "B")
+    (put "/tmp/zyl_rt_os_test/a-b.zyl" "ab")
+    (put "/tmp/zyl_rt_os_test/a.zyl.bak" "x")
+    (put "/tmp/zyl_rt_os_test/c.txt" "c")
+    (put "/tmp/zyl_rt_os_test/.hidden.zyl" "h")
+    (put "/tmp/zyl_rt_os_test/.hdir/y.zyl" "y")
+    (put "/tmp/zyl_rt_os_test/sub/z.zyl" "z")
+    (put "/tmp/zyl_rt_os_test/sub/deeper/x.zyl" "x")
+    0))
+
+(def _setup (setup))
+
+(test "file-round-trip"
+  (let p "/tmp/zyl_rt_os_test/rt.txt"
+    (begin
+      (put p "hello\nworld")
+      (let fd (file-open p "a") (begin (file-write fd "!") (file-close fd)))
+      (let fd (file-open p "r")
+        (begin
+          (assert-equal (file-read fd 100) "hello\nworld!")
+          (assert-equal (file-read fd 100) "")
+          (assert-equal (file-close fd) 0)))
+      (let fd (file-open p "r")
+        (begin (assert-equal (file-read fd 5) "hello") (file-close fd)))
+      (let fd (file-open p "r")
+        (begin (assert-equal (file-read fd -3) "") (file-close fd))))))
+
+(test "missing-file"
+  (begin
+    (assert-equal (file-open "/tmp/zyl_rt_os_test/nope/missing.txt" "r") -1)
+    (assert-equal (file-read -1 10) "")
+    (assert-equal (file-close -1) -1)
+    (assert-equal (file-write -1 "x") -1)
+    (assert-equal (ffi-call "zyl_path_exists" "/tmp/zyl_rt_os_test/nope" 1000) false)
+    (assert-equal (ffi-call "zyl_path_exists" "/tmp/zyl_rt_os_test/sub" 1000) true)))
+
+(test "list-order"
+  (begin
+    (assert-equal (ffi-call "zyl_list_zyl_files" "/tmp/zyl_rt_os_test" 1000)
+      "B.zyl\na-b.zyl\na.zyl\nb.zyl\nsub/deeper/x.zyl\nsub/z.zyl\n")
+    (assert-equal (ffi-call "zyl_list_files" "/tmp/zyl_rt_os_test" " .txt  .zyl " 1000)
+      "B.zyl\na-b.zyl\na.zyl\nb.zyl\nc.txt\nrt.txt\nsub/deeper/x.zyl\nsub/z.zyl\n")
+    (assert-equal (ffi-call "zyl_list_files" "/tmp/zyl_rt_os_test/sub" ".zyl" 1000) "deeper/x.zyl\nz.zyl\n")
+    (assert-equal (ffi-call "zyl_list_files" "/tmp/zyl_rt_os_test" "" 1000) "")
+    (assert-equal (ffi-call "zyl_list_zyl_files" "/tmp/zyl_rt_os_test/missing" 1000) "")))
+
+(test "mkdir-p"
+  (begin
+    (assert-equal (ffi-call "zyl_mkdir_p" "/tmp/zyl_rt_os_test/m/n/o/" 1000) 0)
+    (assert-equal (ffi-call "zyl_path_exists" "/tmp/zyl_rt_os_test/m/n/o" 1000) true)
+    (assert-equal (ffi-call "zyl_mkdir_p" "/tmp/zyl_rt_os_test/m/n" 1000) 0)
+    (assert-equal (ffi-call "zyl_mkdir_p" "" 1000) -1)
+    (assert-equal (ffi-call "zyl_mkdir_p" "/tmp/zyl_rt_os_test/b.zyl/q" 1000) -1)))
+
+(test "cwd"
+  (let d (ffi-call "zyl_getcwd" 1000)
+    (begin
+      (assert-equal (str-substring d 0 1) "/")
+      (assert-equal (ffi-call "zyl_chdir" "/tmp/zyl_rt_os_test/missing" 1000) -1)
+      (assert-equal (ffi-call "zyl_chdir" "/tmp/zyl_rt_os_test/sub" 1000) 0)
+      (assert-equal (ffi-call "zyl_getcwd" 1000) "/tmp/zyl_rt_os_test/sub")
+      (assert-equal (ffi-call "zyl_chdir" d 1000) 0))))
+
+(test "argv-and-term"
+  (begin
+    (assert-true (>= (ffi-call "zyl_argc" 1000) 1))
+    (assert-equal (ffi-call "zyl_arg_str" 0 1000) (ffi-call "zyl_arg_str" 0 1000))
+    (assert-equal (ffi-call "zyl_term_is_tty" -1 1000) false)
+    (assert-true (> (ffi-call "zyl_term_width" 1000) 0))
+    (assert-true (> (ffi-call "zyl_term_height" 1000) 0))))
+
+(run-tests)

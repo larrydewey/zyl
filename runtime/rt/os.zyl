@@ -1,0 +1,304 @@
+; OS entries: files, directory walks, argv, cwd, mkdir -p and the terminal, over direct syscalls.
+(use base)
+
+; libc bridge, removed in the libc-free phase.
+(extern "malloc" (Int) Int)
+(extern "realloc" (Int Int) Int)
+(extern "free" (Int) Int)
+(extern "zyl_term_atexit" () Int)
+
+(defmacro os-ld64 (a) (ffi-call "%load64" a 1))
+(defmacro os-st64 (a v) (ffi-call "%store64" a v 1))
+
+; A failed syscall (-errno) as libc's -1.
+(defn os-ret (r) (if (< r 0) -1 r))
+
+; A non-null pointer below the first page: reported, never dereferenced.
+(defn os-bad (w who) (if (and (> w 0) (< w 4096)) (let _ (rt-bad-str w who) true) false))
+
+; --- files ---
+
+(defn zyl_file_open_c (path mode)
+  (let m (rt-w mode)
+    (let c (if (< m 4096) 0 (rt-ld8 m))
+      (let flags (if (= c 114) 0 (if (= c 97) 1089 577))
+        (os-ret (ffi-call "%syscall3" 2 (rt-w path) flags 420 1))))))
+
+; Each read gets its own buffer (64 MiB ceiling); a failed read is empty.
+(defn os-read (fd count rp)
+  (let k (if (< count 0) 0 (if (> count 67108864) 67108864 count))
+    (let p (rt-alloc (+ k 1) rp)
+      (if (= p 0) (ffi-call "%str" 0 1)
+        (let n (ffi-call "%syscall3" 0 fd p k 1)
+          (let _ (rt-st8 (+ p (if (< n 0) 0 n)) 0) (ffi-call "%str" p 1)))))))
+
+(defn zyl_file_read_c (fd count) (os-read fd count 0))
+(defn zyl_file_read_c_r (fd count) (os-read fd count (rt-cur-region)))
+
+(defn zyl_file_write_c (fd buf)
+  (let w (rt-w buf)
+    (if (= w 0) -1
+      (if (os-bad w "file-write") -1
+        (os-ret (ffi-call "%syscall3" 1 fd w (rt-strlen w) 1))))))
+
+(defn zyl_file_close_c (fd) (os-ret (ffi-call "%syscall1" 3 fd 1)))
+
+(defn zyl_path_exists (path) (if (= (ffi-call "%syscall2" 21 (rt-w path) 0 1) 0) 1 0))
+
+(defn zyl_chdir (path) (os-ret (ffi-call "%syscall1" 80 (rt-w path) 1)))
+
+; glibc's rule kept: an unreachable cwd (no leading '/') is a failure.
+(defn zyl_getcwd ()
+  (let b (ffi-call "%tls" "os_cwd" 4096 1)
+    (let r (ffi-call "%syscall2" 79 b 4096 1)
+      (if (or (<= r 0) (not (= (rt-ld8 b) 47))) (ffi-call "%str" 0 1)
+        (let n (rt-strlen b)
+          (let p (rt-w (ffi-call "zyl_heap_alloc" (+ n 1) 1))
+            (if (= p 0) (ffi-call "%str" 0 1) (let _ (rt-copy p b (+ n 1)) (ffi-call "%str" p 1)))))))))
+
+; 0 if the directory exists afterwards, -1 otherwise.
+(defn zyl_mkdir_p (path)
+  (let w (rt-w path)
+    (if (or (= w 0) (os-bad w "mkdir-p")) -1
+      (if (= (rt-ld8 w) 0) -1
+        (let len (rt-strlen w)
+          (if (>= len 4096) -1
+            (let b (ffi-call "%tls" "os_mkdir" 4096 1)
+              (let _ (rt-copy b w (+ len 1))
+                (if (os-mkdir-parents b len 1) (if (os-mkdir-one b) 0 -1) -1)))))))))
+
+(defn os-mkdir-one (b) (let r (ffi-call "%syscall2" 83 b 493 1) (or (= r 0) (= r -17))))
+
+(defn os-mkdir-parents (b len i)
+  (if (>= i len) true
+    (if (= (rt-ld8 (+ b i)) 47)
+      (let _ (rt-st8 (+ b i) 0)
+        (let ok (os-mkdir-one b)
+          (let _ (rt-st8 (+ b i) 47) (if ok (os-mkdir-parents b len (+ i 1)) false))))
+      (os-mkdir-parents b len (+ i 1)))))
+
+; --- argv ---
+
+(defn zyl_save_args (argc argv)
+  (let g (ffi-call "%global" "os_args" 16 1)
+    (let c (bit-and argc 4294967295)
+      (let _ (os-st64 g (if (> c 2147483647) (- c 4294967296) c)) (os-st64 (+ g 8) argv)))))
+
+(defn zyl_argc () (os-ld64 (ffi-call "%global" "os_args" 16 1)))
+
+(defn zyl_arg_str (i)
+  (let g (ffi-call "%global" "os_args" 16 1)
+    (if (or (< i 0) (>= i (os-ld64 g))) (ffi-call "%str" 0 1)
+      (ffi-call "%str" (os-ld64 (+ (os-ld64 (+ g 8)) (* i 8))) 1))))
+
+; --- directory walks: paths relative to dir, hidden entries skipped, sorted bytewise ---
+
+; malloc'd a ++ b ++ c, cut to lim-1 bytes like snprintf.
+(defn os-cat3 (a b c lim)
+  (let la (rt-strlen a)
+    (let lb (rt-strlen b)
+      (let lc (rt-strlen c)
+        (let n (let t (+ la (+ lb lc)) (if (> t (- lim 1)) (- lim 1) t))
+          (let p (ffi-call "malloc" (+ n 1) 1)
+            (if (= p 0) 0
+              (let _ (os-put p 0 a la n)
+                (let _ (os-put p la b lb n)
+                  (let _ (os-put p (+ la lb) c lc n) (let _ (rt-st8 (+ p n) 0) p)))))))))))
+
+; The part of the k bytes at s that fits at offset at below n.
+(defn os-put (p at s k n) (if (>= at n) 0 (rt-copy (+ p at) s (if (> (+ at k) n) (- n at) k))))
+
+(defn os-sep (rel) (if (= (rt-ld8 rel) 0) (rt-w "") (rt-w "/")))
+
+; `suffixes` is space-separated, e.g. ".c .h".
+(defn os-has-suffix (s n p)
+  (let q0 (os-skip-sp p)
+    (if (= (rt-ld8 q0) 0) false
+      (let q (os-word-end q0)
+        (let k (- q q0)
+          (if (and (> k 0) (and (> n k) (rt-mem-eq (+ s (- n k)) q0 k))) true (os-has-suffix s n q)))))))
+
+(defn os-skip-sp (p) (if (= (rt-ld8 p) 32) (os-skip-sp (+ p 1)) p))
+(defn os-word-end (p) (let c (rt-ld8 p) (if (or (= c 0) (= c 32)) p (os-word-end (+ p 1)))))
+
+; List header {vec, n, cap}; a failed grow drops the entry.
+(defn os-push (l s)
+  (let n (os-ld64 (+ l 8))
+    (let cap (os-ld64 (+ l 16))
+      (if (= n cap)
+        (let nc (if (= cap 0) 64 (* cap 2))
+          (let nv (ffi-call "realloc" (os-ld64 l) (* nc 8) 1)
+            (if (= nv 0) (ffi-call "free" s 1)
+              (let _ (os-st64 l nv) (let _ (os-st64 (+ l 16) nc) (os-push l s))))))
+        (let _ (os-st64 (+ (os-ld64 l) (* n 8)) s) (os-st64 (+ l 8) (+ n 1)))))))
+
+; O_RDONLY|O_NONBLOCK|O_DIRECTORY|O_CLOEXEC, as opendir opens it.
+(defn os-walk (root rel sfx l)
+  (let path (os-cat3 root (os-sep rel) rel 4096)
+    (if (= path 0) 0
+      (let fd (ffi-call "%syscall3" 2 path 591872 0 1)
+        (let _ (ffi-call "free" path 1)
+          (if (< fd 0) 0
+            (let buf (ffi-call "malloc" 32768 1)
+              (let _ (if (= buf 0) 0 (os-walk-fill root rel sfx l fd buf))
+                (let _ (ffi-call "free" buf 1) (ffi-call "%syscall1" 3 fd 1))))))))))
+
+(defn os-walk-fill (root rel sfx l fd buf)
+  (let n (ffi-call "%syscall3" 217 fd buf 32768 1)
+    (if (<= n 0) 0
+      (let _ (os-walk-ents root rel sfx l buf 0 n) (os-walk-fill root rel sfx l fd buf)))))
+
+; linux_dirent64: d_reclen at 16, d_name at 19.
+(defn os-walk-ents (root rel sfx l buf at n)
+  (if (>= at n) 0
+    (let e (+ buf at)
+      (let name (+ e 19)
+        (let _ (if (= (rt-ld8 name) 46) 0 (os-walk-one root rel sfx l name))
+          (os-walk-ents root rel sfx l buf (+ at (ffi-call "%load16" (+ e 16) 1)) n))))))
+
+(defn os-walk-one (root rel sfx l name)
+  (let sub (os-cat3 rel (os-sep rel) name 4096)
+    (if (= sub 0) 0
+      (let full (os-cat3 root (rt-w "/") sub 8200)
+        (if (= full 0) (ffi-call "free" sub 1)
+          (let st (ffi-call "%tls" "os_stat" 144 1)
+            (let r (ffi-call "%syscall2" 4 full st 1)
+              (let _ (ffi-call "free" full 1)
+                (if (not (= r 0)) (ffi-call "free" sub 1)
+                  (if (= (bit-and (ffi-call "%load32" (+ st 24) 1) 61440) 16384)
+                    (let _ (os-walk root sub sfx l) (ffi-call "free" sub 1))
+                    (if (os-has-suffix sub (rt-strlen sub) sfx) (os-push l sub) (ffi-call "free" sub 1))))))))))))
+
+; Top-down merge sort by strcmp over words lo..hi-1, using tmp.
+(defn os-sort (v tmp lo hi)
+  (if (< (- hi lo) 2) 0
+    (let mid (+ lo (/ (- hi lo) 2))
+      (let _ (os-sort v tmp lo mid)
+        (let _ (os-sort v tmp mid hi)
+          (let _ (os-merge v tmp lo mid mid hi lo)
+            (rt-copy (+ v (* lo 8)) (+ tmp (* lo 8)) (* (- hi lo) 8))))))))
+
+(defn os-merge (v tmp i ie j je k)
+  (if (and (>= i ie) (>= j je)) 0
+    (if (or (>= j je) (and (< i ie) (<= (rt-strcmp (os-ld64 (+ v (* i 8))) (os-ld64 (+ v (* j 8)))) 0)))
+      (let _ (os-st64 (+ tmp (* k 8)) (os-ld64 (+ v (* i 8)))) (os-merge v tmp (+ i 1) ie j je (+ k 1)))
+      (let _ (os-st64 (+ tmp (* k 8)) (os-ld64 (+ v (* j 8)))) (os-merge v tmp i ie (+ j 1) je (+ k 1))))))
+
+(defn os-total (v i n acc) (if (>= i n) acc (os-total v (+ i 1) n (+ acc (+ (rt-strlen (os-ld64 (+ v (* i 8)))) 1)))))
+
+(defn os-emit (v i n buf at)
+  (if (>= i n) at
+    (let s (os-ld64 (+ v (* i 8)))
+      (let k (rt-strlen s)
+        (let _ (rt-copy (+ buf at) s k)
+          (let _ (rt-st8 (+ buf (+ at k)) 10)
+            (let _ (ffi-call "free" s 1) (os-emit v (+ i 1) n buf (+ at (+ k 1))))))))))
+
+(defn os-free-all (v i n) (if (>= i n) 0 (let _ (ffi-call "free" (os-ld64 (+ v (* i 8))) 1) (os-free-all v (+ i 1) n))))
+
+; One path per line, each ending in '\n'; "" when nothing matched.
+(defn os-join (l)
+  (let v (os-ld64 l)
+    (let n (os-ld64 (+ l 8))
+      (let tmp (if (< n 2) 0 (ffi-call "malloc" (* n 8) 1))
+        (let _ (if (= tmp 0) 0 (let _ (os-sort v tmp 0 n) (ffi-call "free" tmp 1)))
+          (let buf (rt-w (ffi-call "zyl_heap_alloc" (os-total v 0 n 1) 1))
+            (if (= buf 0)
+              (let _ (os-free-all v 0 n) (let _ (ffi-call "free" v 1) (let _ (ffi-call "free" l 1) (ffi-call "%str" 0 1))))
+              (let at (os-emit v 0 n buf 0)
+                (let _ (rt-st8 (+ buf at) 0)
+                  (let _ (ffi-call "free" v 1) (let _ (ffi-call "free" l 1) (ffi-call "%str" buf 1))))))))))))
+
+(defn os-list (dir sfx)
+  (let l (ffi-call "malloc" 24 1)
+    (if (= l 0) (ffi-call "%str" 0 1)
+      (let _ (os-st64 l 0)
+        (let _ (os-st64 (+ l 8) 0)
+          (let _ (os-st64 (+ l 16) 0)
+            (let _ (if (or (= dir 0) (= sfx 0)) 0 (os-walk dir (rt-w "") sfx l)) (os-join l))))))))
+
+(defn zyl_list_zyl_files (dir)
+  (let d (rt-w dir) (if (os-bad d "list-zyl-files") (os-list 0 0) (os-list d (rt-w ".zyl")))))
+
+(defn zyl_list_files (dir suffixes)
+  (let d (rt-w dir)
+    (let s (rt-w suffixes)
+      (if (or (os-bad d "list-files") (os-bad s "list-files")) (os-list 0 0) (os-list d s)))))
+
+; --- terminal (kernel termios: iflag 0, lflag 12, c_cc at 17) ---
+
+(defn os-term-state () (ffi-call "%global" "os_term_state" 16 1))
+(defn os-term-saved () (ffi-call "%global" "os_term_saved" 64 1))
+
+; TCGETS succeeds only on a terminal, which is how isatty decides.
+(defn zyl_term_is_tty (fd)
+  (if (= (ffi-call "%syscall3" 16 fd 21505 (ffi-call "%tls" "os_tios" 64 1) 1) 0) 1 0))
+
+; TCSETSF: drain output, discard pending input, then set (TCSAFLUSH).
+(defn os-tcset (t) (ffi-call "%syscall3" 16 0 21508 t 1))
+
+; Registered with atexit on first raw_on; restores the terminal on any exit path.
+(defn zyl_term_restore_atexit ()
+  (let g (os-term-state)
+    (if (and (= (os-ld64 (+ g 8)) 1) (= (os-ld64 g) 1))
+      (let _ (os-tcset (os-term-saved))
+        (let _ (os-st64 (+ g 8) 0)
+          (let _ (ffi-call "%syscall3" 1 1 (rt-w "\e[?2004l\e[0m") 12 1) 0)))
+      0)))
+
+(defn zyl_term_raw_on ()
+  (if (= (zyl_term_is_tty 0) 0) -1
+    (let g (os-term-state)
+      (if (= (os-ld64 (+ g 8)) 1) 0
+        (let ok (if (= (os-ld64 g) 1) true
+                  (if (= (ffi-call "%syscall3" 16 0 21505 (os-term-saved) 1) 0)
+                    (let _ (os-st64 g 1) (let _ (ffi-call "zyl_term_atexit" 1) true))
+                    false))
+          (if (not ok) -1
+            (let raw (ffi-call "%tls" "os_tios" 64 1)
+              (let _ (rt-copy raw (os-term-saved) 64)
+                (let _ (ffi-call "%store32" raw (bit-and (ffi-call "%load32" raw 1) (bit-xor 4294967295 1330)) 1)
+                  (let _ (ffi-call "%store32" (+ raw 12) (bit-and (ffi-call "%load32" (+ raw 12) 1) (bit-xor 4294967295 32779)) 1)
+                    (let _ (rt-st8 (+ raw 23) 1)
+                      (let _ (rt-st8 (+ raw 22) 0)
+                        (if (not (= (os-tcset raw) 0)) -1 (let _ (os-st64 (+ g 8) 1) 0))))))))))))))
+
+(defn zyl_term_raw_off ()
+  (let g (os-term-state)
+    (if (or (not (= (os-ld64 (+ g 8)) 1)) (not (= (os-ld64 g) 1))) 0
+      (if (not (= (os-tcset (os-term-saved)) 0)) -1 (let _ (os-st64 (+ g 8) 0) 0)))))
+
+; A byte, -1 at EOF or error, -2 when interrupted (EINTR).
+(defn zyl_term_read_byte ()
+  (let b (ffi-call "%tls" "os_byte" 8 1)
+    (let n (ffi-call "%syscall3" 0 0 b 1 1)
+      (if (= n 1) (rt-ld8 b) (if (= n -4) -2 -1)))))
+
+; -3 after ms milliseconds with nothing to read.
+(defn zyl_term_read_byte_timeout (ms)
+  (let p (ffi-call "%tls" "os_pollfd" 8 1)
+    (let _ (os-st64 p 4294967296)
+      (let r (ffi-call "%syscall3" 7 p 1 ms 1)
+        (if (= r 0) -3 (if (< r 0) (if (= r -4) -2 -1) (zyl_term_read_byte)))))))
+
+; TIOCGWINSZ on stdout: {row, col} u16; 80x24 when the kernel will not say.
+(defn os-winsz (off dflt)
+  (let ws (ffi-call "%tls" "os_winsz" 8 1)
+    (if (= (ffi-call "%syscall3" 16 1 21523 ws 1) 0)
+      (let v (ffi-call "%load16" (+ ws off) 1) (if (> v 0) v dflt))
+      dflt)))
+
+(defn zyl_term_width () (os-winsz 2 80))
+(defn zyl_term_height () (os-winsz 0 24))
+
+; Flushes stdio's stdout first so escapes keep their order with printf output.
+(defn zyl_term_write (s)
+  (let w (rt-w s)
+    (if (= w 0) 0
+      (if (os-bad w "term-write") 0
+        (let _ (ffi-call "zyl_term_flush" 1) (os-write-all w (rt-strlen w) 0))))))
+
+(defn os-write-all (p len off)
+  (if (>= off len) off
+    (let n (ffi-call "%syscall3" 1 1 (+ p off) (- len off) 1)
+      (if (> n 0) (os-write-all p len (+ off n)) (if (= n -4) (os-write-all p len off) off)))))

@@ -1086,120 +1086,8 @@ long long zyl_uf_level(long long a) {
 
 /* Process-wide instances, created on first use. */
 
-/* Every `.zyl` file under `dir`, recursively, as newline-separated paths
-   relative to `dir`, sorted bytewise (so the listing is deterministic).
-   Hidden entries are skipped. Returns "" for a missing directory. */
-#include <dirent.h>
 #include <sys/stat.h>
 long long zyl_heap_alloc(long long size);
-typedef struct { char** v; size_t n, cap; } ZylPathList;
-
-static void zyl_pl_push(ZylPathList* l, const char* s) {
-    if (l->n == l->cap) {
-        size_t nc = l->cap ? l->cap * 2 : 64;
-        char** nv = (char**)realloc(l->v, nc * sizeof(char*));
-        if (!nv) return;
-        l->v = nv; l->cap = nc;
-    }
-    l->v[l->n++] = strdup(s);
-}
-
-static int zyl_has_suffix(const char* s, const char* suffixes) {
-    /* `suffixes` is a space-separated list, e.g. ".c .h". */
-    size_t n = strlen(s);
-    const char* p = suffixes;
-    while (*p) {
-        while (*p == ' ') p++;
-        const char* q = p;
-        while (*q && *q != ' ') q++;
-        size_t k = (size_t)(q - p);
-        if (k > 0 && n > k && strncmp(s + n - k, p, k) == 0) return 1;
-        p = q;
-    }
-    return 0;
-}
-
-static void zyl_walk_suffix(const char* root, const char* rel, const char* suffixes, ZylPathList* out) {
-    char path[4096];
-    snprintf(path, sizeof path, "%s%s%s", root, rel[0] ? "/" : "", rel);
-    DIR* d = opendir(path);
-    if (!d) return;
-    struct dirent* e;
-    while ((e = readdir(d)) != NULL) {
-        if (e->d_name[0] == '.') continue;
-        char sub[4096];
-        snprintf(sub, sizeof sub, "%s%s%s", rel, rel[0] ? "/" : "", e->d_name);
-        char full[8200];
-        snprintf(full, sizeof full, "%s/%s", root, sub);
-        struct stat st;
-        if (stat(full, &st) != 0) continue;
-        if (S_ISDIR(st.st_mode)) zyl_walk_suffix(root, sub, suffixes, out);
-        else if (zyl_has_suffix(sub, suffixes)) zyl_pl_push(out, sub);
-    }
-    closedir(d);
-}
-
-static void zyl_walk_zyl(const char* root, const char* rel, ZylPathList* out) {
-    char path[4096];
-    snprintf(path, sizeof path, "%s%s%s", root, rel[0] ? "/" : "", rel);
-    DIR* d = opendir(path);
-    if (!d) return;
-    struct dirent* e;
-    while ((e = readdir(d)) != NULL) {
-        if (e->d_name[0] == '.') continue;
-        char sub[4096];
-        snprintf(sub, sizeof sub, "%s%s%s", rel, rel[0] ? "/" : "", e->d_name);
-        char full[8200];
-        snprintf(full, sizeof full, "%s/%s", root, sub);
-        struct stat st;
-        if (stat(full, &st) != 0) continue;
-        if (S_ISDIR(st.st_mode)) zyl_walk_zyl(root, sub, out);
-        else {
-            size_t n = strlen(sub);
-            if (n > 4 && strcmp(sub + n - 4, ".zyl") == 0) zyl_pl_push(out, sub);
-        }
-    }
-    closedir(d);
-}
-
-static int zyl_pl_cmp(const void* a, const void* b) {
-    return strcmp(*(char* const*)a, *(char* const*)b);
-}
-
-static long long zyl_pl_join(ZylPathList l);
-
-long long zyl_list_zyl_files(long long dir) {
-    ZylPathList l = {0};
-    if (dir) zyl_walk_zyl((const char*)(size_t)dir, "", &l);
-    return zyl_pl_join(l);
-}
-
-/* Like zyl_list_zyl_files, for any of the space-separated `suffixes`. */
-long long zyl_list_files(long long dir, long long suffixes) {
-    ZylPathList l = {0};
-    if (dir && suffixes) zyl_walk_suffix((const char*)(size_t)dir, "", (const char*)(size_t)suffixes, &l);
-    return zyl_pl_join(l);
-}
-
-static long long zyl_pl_join(ZylPathList l) {
-    qsort(l.v, l.n, sizeof(char*), zyl_pl_cmp);
-    size_t total = 1;
-    for (size_t i = 0; i < l.n; i++) total += strlen(l.v[i]) + 1;
-    char* buf = (char*)(size_t)zyl_heap_alloc((long long)total);
-    if (!buf) return 0;
-    buf[0] = 0;
-    size_t at = 0;
-    for (size_t i = 0; i < l.n; i++) {
-        size_t n = strlen(l.v[i]);
-        memcpy(buf + at, l.v[i], n);
-        at += n;
-        buf[at++] = '\n';
-        free(l.v[i]);
-    }
-    buf[at] = 0;
-    free(l.v);
-    return (long long)(size_t)buf;
-}
 
 /* True if `ptr` falls within an in-use byte range of some block of
  * g_pin_arena. Used by ffi_unpin to reject pointers that were never
@@ -2002,41 +1890,6 @@ int zyl_run_tests(void) {
 /* ── Boot-build file helpers (used by the self-hosted driver) ───────── */
 #include <fcntl.h>
 #include <sys/stat.h>
-long long zyl_file_open_c(long long path, long long mode) {
-    const char* m = (const char*)(size_t)mode;
-    if (m && m[0] == 'r') return (long long)open((const char*)(size_t)path, O_RDONLY);
-    if (m && m[0] == 'a')
-        return (long long)open((const char*)(size_t)path,
-                               O_WRONLY | O_CREAT | O_APPEND, 0644);
-    return (long long)open((const char*)(size_t)path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-}
-/* Each read gets its OWN buffer, allocated from the heap arena.
-   It used to return a single static thread-local buffer, so every read
-   clobbered the one before it: reading a manifest after reading the
-   source being compiled replaced the source text in place, and the
-   compiler then compiled the manifest instead — silently, since both are
-   valid S-expressions. Any two live reads alias under that scheme, so
-   the fix is ownership, not ordering. It also lifts the old silent 1 MiB
-   truncation: a read now returns what was asked for. */
-long long zyl_file_read_c(long long fd, long long count) {
-    if (count < 0) count = 0;
-    if (count > (1LL << 26)) count = 1LL << 26;   /* 64 MiB ceiling */
-    long long buf = ZYL_RESULT_ALLOC(count + 1);
-    if (!buf) return 0;
-    char* p = (char*)(size_t)buf;
-    long long n = read((int)fd, p, (size_t)count);
-    if (n < 0) n = 0;
-    p[n] = 0;
-    return buf;
-}
-long long zyl_file_write_c(long long fd, long long buf) {
-    if (!buf) return -1;
-    return (long long)write((int)fd, (const void*)(size_t)buf,
-                            strlen((const char*)(size_t)buf));
-}
-long long zyl_file_close_c(long long fd) {
-    return (long long)close((int)fd);
-}
 
 /* (exit code): flush buffered output, then end the process. */
 long long zyl_exit(long long code) {
@@ -2129,30 +1982,6 @@ long long zyl_str_append_scan(long long dst, long long src, long long cap) {
 
 /* ── CLI helpers (used by the self-hosted driver) ─────────────────────── */
 #include <unistd.h>
-int zyl_saved_argc = 0;
-char** zyl_saved_argv = NULL;
-
-void zyl_save_args(int argc, char** argv) {
-    zyl_saved_argc = argc;
-    zyl_saved_argv = argv;
-}
-
-long long zyl_argc(void) {
-    return (long long)zyl_saved_argc;
-}
-
-long long zyl_arg_str(long long i) {
-    if (i < 0 || i >= (long long)zyl_saved_argc) return 0;
-    return (long long)(size_t)zyl_saved_argv[(int)i];
-}
-
-/* Returns 1 if `path` exists (any type), 0 otherwise. Used to probe for
-   an installed ~/.zyl before falling back to the argv0-relative bundle
-   dir -- see cli-resolve-bundledir (driver.zyl) and repl-resolve-
-   bundledir (tools/repl.zyl). */
-long long zyl_path_exists(long long path) {
-    return (access((const char*)(size_t)path, F_OK) == 0) ? 1 : 0;
-}
 
 /* Returns the value of environment variable `name`, or 0 (null) if
    unset. Contents valid until the next call (matches zyl_getcwd/
@@ -2244,22 +2073,6 @@ long long zyl_json_quote(long long s) {
     }
     out[j++] = '"';
     out[j] = 0;
-    return (long long)(size_t)out;
-}
-
-long long zyl_chdir(long long path) {
-    return (long long)chdir((const char*)(size_t)path);
-}
-
-long long zyl_getcwd(void) {
-    char buf[4096];
-    if (getcwd(buf, sizeof(buf)) == NULL) {
-        return 0;
-    }
-    size_t n = strlen(buf);
-    char* out = (char*)(size_t)zyl_heap_alloc((long long)n + 1);
-    if (!out) return 0;
-    memcpy(out, buf, n + 1);
     return (long long)(size_t)out;
 }
 
@@ -2410,172 +2223,15 @@ long long zyl_run_bin(long long path) {
     return WIFEXITED(status) ? (long long)WEXITSTATUS(status) : -1;
 }
 
-/* ── Interactive terminal primitives (REPL line editor) ─────────────────
-   The REPL's line editor is written in Zyl (stdlib/repl/line_editor.zyl)
-   and needs exactly four things the language cannot express on its own:
-   putting the terminal into raw mode, reading one byte at a time with an
-   optional timeout (an escape sequence has to be distinguished from a
-   lone ESC by whether more bytes follow immediately), asking the kernel
-   how wide the window is, and guaranteeing the terminal is restored even
-   if the process dies somewhere the editor's own cleanup never runs.
-
-   No readline/libedit dependency: those pull an external library (GPL,
-   in readline's case) into every binary that links this runtime, and the
-   editor needs key handling this runtime can hand it directly. */
-#include <termios.h>
-#include <sys/ioctl.h>
-#include <poll.h>
-
-static struct termios g_term_saved;
-static int g_term_saved_valid = 0;
-static int g_term_raw_active = 0;
-
-/* Restores the terminal from whatever exit path the process takes --
-   a normal return, exit(), or zyl_f_error/zyl_panic's own exit(1).
-   Without this, a REPL that dies mid-edit leaves the user's shell in
-   raw mode with no echo, which looks exactly like a hung terminal. */
-static void zyl_term_restore_atexit(void) {
-    if (g_term_raw_active && g_term_saved_valid) {
-        tcsetattr(STDIN_FILENO, TCSAFLUSH, &g_term_saved);
-        g_term_raw_active = 0;
-        /* Leave bracketed paste and any pending SGR behind us. */
-        (void)!write(STDOUT_FILENO, "\033[?2004l\033[0m", 12);
-    }
-}
-
-/* 1 if fd is a terminal. A REPL reading from a pipe must not try to
-   raw-mode it: there is nothing to put in raw mode, and the editor's
-   redraw escapes would end up in the captured output. */
-long long zyl_term_is_tty(long long fd) {
-    return isatty((int)fd) ? 1 : 0;
-}
-
-/* Raw mode: no canonical line buffering, no echo, no signal generation
-   (so Ctrl-C arrives as byte 3 for the editor to interpret rather than
-   killing the REPL), no XON/XOFF (so Ctrl-S is a key, not a terminal
-   freeze). Output post-processing (OPOST) stays ON: the editor emits
-   "\r\n" itself, and turning OPOST off gains nothing while making every
-   other library's printf output in the same process misalign.
-   VMIN=1/VTIME=0 makes a read block until exactly one byte is there.
-   Returns 0 on success, -1 if stdin is not a terminal or tcsetattr
-   fails. Idempotent: calling it twice does not overwrite the saved
-   original with the raw settings. */
-long long zyl_term_raw_on(void) {
-    struct termios raw;
-    if (!isatty(STDIN_FILENO)) return -1;
-    if (g_term_raw_active) return 0;
-    if (!g_term_saved_valid) {
-        if (tcgetattr(STDIN_FILENO, &g_term_saved) != 0) return -1;
-        g_term_saved_valid = 1;
-        atexit(zyl_term_restore_atexit);
-    }
-    raw = g_term_saved;
-    raw.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
-    raw.c_lflag &= ~(ECHO | ICANON | IEXTEN | ISIG);
-    raw.c_cc[VMIN] = 1;
-    raw.c_cc[VTIME] = 0;
-    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) != 0) return -1;
-    g_term_raw_active = 1;
-    return 0;
-}
-
-long long zyl_term_raw_off(void) {
-    if (!g_term_raw_active || !g_term_saved_valid) return 0;
-    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &g_term_saved) != 0) return -1;
-    g_term_raw_active = 0;
-    return 0;
-}
-
-/* One byte from stdin. -1 means real EOF (Ctrl-D on an empty line at the
-   tty, or the end of a piped script); -2 means the read was interrupted
-   and the caller should simply ask again. Both are outside 0..255, so
-   neither can collide with a real byte. */
-long long zyl_term_read_byte(void) {
-    unsigned char c;
-    for (;;) {
-        ssize_t n = read(STDIN_FILENO, &c, 1);
-        if (n == 1) return (long long)c;
-        if (n == 0) return -1;
-        if (errno == EINTR) return -2;
-        return -1;
-    }
-}
-
-/* Same, but gives up after `ms` milliseconds and returns -3. This is
-   what makes a bare ESC keypress distinguishable from the start of an
-   arrow key's "\033[A": a real escape sequence's remaining bytes are
-   already in the buffer, while a lone ESC is followed by nothing. */
-long long zyl_term_read_byte_timeout(long long ms) {
-    struct pollfd p;
-    p.fd = STDIN_FILENO;
-    p.events = POLLIN;
-    p.revents = 0;
-    int r = poll(&p, 1, (int)ms);
-    if (r == 0) return -3;
-    if (r < 0) return (errno == EINTR) ? -2 : -1;
-    return zyl_term_read_byte();
-}
-
-/* Window size, for wrapping a long line across rows and for placing the
-   cursor after a redraw. 80x24 when the kernel will not say (not a tty,
-   or a terminal that does not implement TIOCGWINSZ). */
-long long zyl_term_width(void) {
-    struct winsize ws;
-    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_col > 0)
-        return (long long)ws.ws_col;
-    return 80;
-}
-
-long long zyl_term_height(void) {
-    struct winsize ws;
-    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_row > 0)
-        return (long long)ws.ws_row;
-    return 24;
-}
-
-/* Write with no trailing newline and no stdio buffering in between.
-   The editor redraws by emitting escape sequences that must reach the
-   terminal in the same order as any printf output around them, so it
-   flushes stdout first and then writes directly. */
-long long zyl_term_write(long long s) {
-    if (!s) return 0;
-    const char* p = (const char*)(size_t)s;
-    size_t len = strlen(p);
-    size_t off = 0;
-    fflush(stdout);
-    while (off < len) {
-        ssize_t n = write(STDOUT_FILENO, p + off, len - off);
-        if (n <= 0) {
-            if (n < 0 && errno == EINTR) continue;
-            break;
-        }
-        off += (size_t)n;
-    }
-    return (long long)off;
-}
-
+/* Terminal entries live in runtime/rt/os.zyl; stdio's flush and atexit stay here. */
 long long zyl_term_flush(void) {
     fflush(stdout);
     return 0;
 }
 
-/* mkdir -p, for the REPL's own state directory (~/.zyl). Returns 0 if
-   the directory exists afterwards, -1 otherwise. */
-long long zyl_mkdir_p(long long path) {
-    const char* p = (const char*)(size_t)path;
-    if (!p || !*p) return -1;
-    size_t len = strlen(p);
-    if (len >= PATH_MAX) return -1;
-    char buf[PATH_MAX];
-    memcpy(buf, p, len + 1);
-    for (size_t i = 1; i < len; i++) {
-        if (buf[i] == '/') {
-            buf[i] = 0;
-            if (mkdir(buf, 0755) != 0 && errno != EEXIST) return -1;
-            buf[i] = '/';
-        }
-    }
-    if (mkdir(buf, 0755) != 0 && errno != EEXIST) return -1;
+/* Registers the Zyl restore handler once (no code-address primitive yet). */
+long long zyl_term_atexit(void) {
+    atexit(zyl_term_restore_atexit);
     return 0;
 }
 
@@ -3216,7 +2872,6 @@ long long zyl_print_float(long long bits) { printf("%f\n", zyl_d_of(bits)); retu
 #define ZYL_R_BEGIN long long saved_ = g_result_region; g_result_region = (long long)(size_t)zyl_cur_region;
 #define ZYL_R_END g_result_region = saved_;
 long long zyl_f_text_r(long long bits) { ZYL_R_BEGIN long long v = zyl_f_text(bits); ZYL_R_END return v; }
-long long zyl_file_read_c_r(long long fd, long long n) { ZYL_R_BEGIN long long v = zyl_file_read_c(fd, n); ZYL_R_END return v; }
 
 /* Regions are on unless ZYL_REGIONS=0 was set for the compile. */
 long long zyl_regions_enabled(void) {
