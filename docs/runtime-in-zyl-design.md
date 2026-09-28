@@ -38,7 +38,7 @@ added to the language. This document records the design.
    on. A standard-library module is refused at every level, so a file
    outside the runtime is never compiled with the privilege.
 3. The raw primitives (all named `%...`, listed below) are
-   `E_RT_INTERNAL` in any other compile. That includes user programs,
+   `E_FFI_RESTRICTED` in any other compile. That includes user programs,
    the standard library and the compiler itself.
 4. Only the runtime's exported entries are visible to programs.
    These are the top-level `defn`s named `zyl_*`. Programs reach them
