@@ -1,0 +1,117 @@
+; Entries the ICNF interpreter uses: test registry, function map, value headers, interned names, raw words.
+(use base)
+(use ctab)
+
+(extern "malloc" (Int) Int)
+
+(defmacro rt-ld64 (a) (ffi-call "%load64" a 1))
+(defmacro rt-st64 (a v) (ffi-call "%store64" a v 1))
+
+; --- interpreted tests: up to 4096 {name, fn}, count at +65536 ---
+
+(defn rt-itests () (ffi-call "%global" "itests" 65544 1))
+(defn rt-itest-n () (rt-ld64 (+ (rt-itests) 65536)))
+
+(defn zyl_itest_add (name fn)
+  (let n (rt-itest-n)
+    (if (>= n 4096) -1
+      (let e (+ (rt-itests) (* n 16))
+        (let _ (rt-st64 e name) (let _ (rt-st64 (+ e 8) fn) (let _ (rt-st64 (+ (rt-itests) 65536) (+ n 1)) n)))))))
+
+(defn zyl_itest_count () (rt-itest-n))
+(defn zyl_itest_name (i) (if (or (< i 0) (>= i (rt-itest-n))) 0 (rt-ld64 (+ (rt-itests) (* i 16)))))
+(defn zyl_itest_fn (i) (if (or (< i 0) (>= i (rt-itest-n))) 0 (rt-ld64 (+ (+ (rt-itests) (* i 16)) 8))))
+(defn zyl_itest_reset () (let _ (rt-st64 (+ (rt-itests) 65536) 0) 0))
+
+; --- function map: 16384 {name, value} slots, used count at +262144; first writer wins ---
+
+(defn rt-fnmap () (ffi-call "%global" "fnmap" 262152 1))
+(defn rt-fnmap-used () (rt-ld64 (+ (rt-fnmap) 262144)))
+
+(defn zyl_fnmap_reset () (let _ (rt-zero (rt-fnmap) 262152) 0))
+
+; The slot holding name n or the empty one where it would go; 0 after a full sweep.
+(defn rt-fnmap-probe (t n i probe)
+  (if (>= probe 16384) 0
+    (let s (+ t (* (bit-and (+ i probe) 16383) 16))
+      (let k (rt-ld64 s)
+        (if (or (= k 0) (= (rt-strcmp k n) 0)) s (rt-fnmap-probe t n i (+ probe 1)))))))
+
+(defn zyl_fnmap_put (name value)
+  (let n (rt-w name)
+    (if (or (= n 0) (>= (rt-fnmap-used) 8192)) 0
+      (let s (rt-fnmap-probe (rt-fnmap) n (bit-and (rt-str-hash n) 16383) 0)
+        (if (or (= s 0) (not (= (rt-ld64 s) 0))) 0
+          (let _ (rt-st64 s n)
+            (let _ (rt-st64 (+ s 8) value)
+              (let _ (rt-st64 (+ (rt-fnmap) 262144) (+ (rt-fnmap-used) 1)) 1))))))))
+
+(defn zyl_fnmap_get (name)
+  (let n (rt-w name)
+    (if (or (= n 0) (= (rt-fnmap-used) 0)) 0
+      (let s (rt-fnmap-probe (rt-fnmap) n (bit-and (rt-str-hash n) 16383) 0)
+        (if (or (= s 0) (= (rt-ld64 s) 0)) 0 (rt-ld64 (+ s 8)))))))
+
+; --- interpreter value blocks: {name, kinds word, qword count} before the payload ---
+
+; 'ZKND' in the high half of the kinds word.
+(defn rt-kinds-magic () 1514885700)
+
+(defn zyl_val_alloc (nwords kinds name)
+  (let n (if (< nwords 0) 0 nwords)
+    (if (> n 1048576) 0
+      (let raw (rt-w (ffi-call "zyl_heap_alloc" (* (+ n 3) 8) 1))
+        (if (= raw 0) 0
+          (let _ (rt-st64 raw name)
+            (let _ (rt-st64 (+ raw 8) (bit-or (shl (rt-kinds-magic) 32) (bit-and kinds 4294967295)))
+              (let _ (rt-st64 (+ raw 16) n) (+ raw 24)))))))))
+
+(defn rt-kinds-word (p)
+  (if (= p 0) 0
+    (if (ffi-call "zyl_heap_block_p" (- p 16) 1)
+      (let w (rt-ld64 (- p 16)) (if (= (shr w 32) (rt-kinds-magic)) w 0))
+      0)))
+
+(defn zyl_val_kind (p i)
+  (if (or (< i 0) (>= i 31)) 0 (let w (rt-kinds-word p) (if (= w 0) 0 (bit-and (shr w (* 2 i)) 3)))))
+
+(defn zyl_val_name (p) (if (= (rt-kinds-word p) 0) 0 (rt-ld64 (- p 24))))
+
+(defn zyl_val_arity (p) (if (= p 0) 0 (if (ffi-call "zyl_heap_block_p" (- p 8) 1) (rt-ld64 (- p 8)) 0)))
+
+; --- interned constructor names: 4096 slots, used count at +32768; never shrinks ---
+
+(defn rt-names () (ffi-call "%global" "names" 32776 1))
+
+(defn rt-names-probe (t n i probe)
+  (if (>= probe 4096) 0
+    (let s (+ t (* (bit-and (+ i probe) 4095) 8))
+      (let k (rt-ld64 s)
+        (if (or (= k 0) (= (rt-strcmp k n) 0)) s (rt-names-probe t n i (+ probe 1)))))))
+
+(defn zyl_intern_name (s)
+  (let n (rt-w s)
+    (if (= n 0) 0
+      (let t (rt-names)
+        (let slot (rt-names-probe t n (bit-and (rt-str-hash n) 4095) 0)
+          (if (= slot 0) 0
+            (if (not (= (rt-ld64 slot) 0)) (rt-ld64 slot)
+              (if (>= (rt-ld64 (+ t 32768)) 2048) 0
+                (let len (rt-strlen n)
+                  (let c (ffi-call "malloc" (+ len 1) 1)
+                    (if (= c 0) 0
+                      (let _ (rt-copy c n (+ len 1))
+                        (let _ (rt-st64 slot c) (let _ (rt-st64 (+ t 32768) (+ (rt-ld64 (+ t 32768)) 1)) c))))))))))))))
+
+(defn zyl_fresh_id ()
+  (let c (ffi-call "%global" "fresh_id" 8 1) (let v (+ (rt-ld64 c) 1) (let _ (rt-st64 c v) v))))
+
+; --- the identities the type system needs (a word is a word) ---
+
+(defn zyl_cstr_of_word (w) w)
+(defn zyl_float_bits (w) w)
+(defn zyl_float_of_bits (w) w)
+(defn zyl_word_load (a) (rt-ld64 a))
+(defn zyl_word_store (a w) (let _ (rt-st64 a w) 0))
+(defn zyl_ptr_add ((p Int) (n Int)) (+ p n))
+(defn zyl_ptr_cstr (p) p)

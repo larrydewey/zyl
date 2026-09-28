@@ -110,8 +110,12 @@ link_seed() { # link_seed <asm> <out-bin>: the seed rt.s with the current C runt
         cc -no-pie "$1" "${OUT}/seed_rt.o" "$SEED_C_O" -o "$2" -lpthread
 }
 
-gen_rt() { # gen_rt <compiler> <out.s>
-    timeout "$STAGE_TIMEOUT" "$1" "$RT_SRC" -o "$2" --runtime-module
+gen_rt() { # gen_rt <compiler> <out.s>; every zyl_* defn must be exported (an uncalled Num-generic one is not emitted)
+    timeout "$STAGE_TIMEOUT" "$1" "$RT_SRC" -o "$2" --runtime-module || return 1
+    local missing
+    missing=$(comm -23 <(grep -ho '^(defn zyl_[a-z0-9_]*' "${OUT}"/runtime/rt/*.zyl | sed 's/(defn //' | sort -u) \
+                       <(grep -o '^\.globl zyl_[a-z0-9_]*' "$2" | sed 's/\.globl //' | sort -u))
+    [ -z "$missing" ] || die "runtime entries not emitted (annotate their parameter types): $missing"
 }
 
 # ── Re-seed path: iterate the self-hosted compiler to a new fixed point ──

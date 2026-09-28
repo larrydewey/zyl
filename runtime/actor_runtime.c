@@ -3526,27 +3526,6 @@ long long zyl_heap_block_p(long long w) {
    own registry of those values and runs the tests itself, printing what
    zyl_run_tests prints, character for character, because the regression
    suite compares the two outputs. */
-#define ZYL_ITEST_MAX 4096
-static struct { long long name; long long fn; } g_itests[ZYL_ITEST_MAX];
-static long long g_itest_count = 0;
-
-long long zyl_itest_add(long long name, long long fn) {
-    if (g_itest_count >= ZYL_ITEST_MAX) return -1;
-    g_itests[g_itest_count].name = name;
-    g_itests[g_itest_count].fn = fn;
-    return g_itest_count++;
-}
-
-long long zyl_itest_count(void) { return g_itest_count; }
-long long zyl_itest_name(long long i) {
-    if (i < 0 || i >= g_itest_count) return 0;
-    return g_itests[i].name;
-}
-long long zyl_itest_fn(long long i) {
-    if (i < 0 || i >= g_itest_count) return 0;
-    return g_itests[i].fn;
-}
-long long zyl_itest_reset(void) { g_itest_count = 0; return 0; }
 
 /* The two lines zyl_run_tests writes, so that an interpreted run and a
    compiled run produce the same transcript. */
@@ -3576,52 +3555,7 @@ long long zyl_itest_summary(long long passed, long long failed) {
    Open addressing, no deletion, contents replaced wholesale -- the
    interpreter rebuilds it for each program it runs. Lookup order never
    affects a result, so nothing here can make a run non-deterministic. */
-#define ZYL_FNMAP_CAP 16384
-static struct { long long name; long long value; } g_fnmap[ZYL_FNMAP_CAP];
-static long long g_fnmap_used = 0;
 
-static size_t zyl_str_hash(const char* s) {
-    size_t h = 1469598103934665603ULL;           /* FNV-1a */
-    while (*s) { h ^= (unsigned char)*s++; h *= 1099511628211ULL; }
-    return h;
-}
-
-long long zyl_fnmap_reset(void) {
-    memset(g_fnmap, 0, sizeof(g_fnmap));
-    g_fnmap_used = 0;
-    return 0;
-}
-
-/* First writer wins: the interpreter inserts newest-definition-first, so
-   a redefinition entered at the prompt shadows the earlier one. */
-long long zyl_fnmap_put(long long name, long long value) {
-    const char* n = (const char*)(size_t)name;
-    if (!n || g_fnmap_used >= ZYL_FNMAP_CAP / 2) return 0;
-    size_t i = zyl_str_hash(n) & (ZYL_FNMAP_CAP - 1);
-    for (size_t probe = 0; probe < ZYL_FNMAP_CAP; probe++) {
-        size_t j = (i + probe) & (ZYL_FNMAP_CAP - 1);
-        if (!g_fnmap[j].name) {
-            g_fnmap[j].name = name;
-            g_fnmap[j].value = value;
-            g_fnmap_used++;
-            return 1;
-        }
-        if (strcmp((const char*)(size_t)g_fnmap[j].name, n) == 0) return 0;
-    }
-    return 0;
-}
-
-long long zyl_fnmap_get(long long name) {
-    const char* n = (const char*)(size_t)name;
-    if (!n || g_fnmap_used == 0) return 0;
-    size_t i = zyl_str_hash(n) & (ZYL_FNMAP_CAP - 1);
-    for (size_t probe = 0; probe < ZYL_FNMAP_CAP; probe++) {
-        size_t j = (i + probe) & (ZYL_FNMAP_CAP - 1);
-        if (!g_fnmap[j].name) return 0;
-        if (strcmp((const char*)(size_t)g_fnmap[j].name, n) == 0) return g_fnmap[j].value;
-    }
-    return 0;
-}
 
 /* A heap block for the interpreter: the same payload compiled code
    builds -- [tag][field]... with zyl_heap_alloc's qword-count header
@@ -3636,51 +3570,6 @@ long long zyl_fnmap_get(long long name) {
    keeps what it needs to. The magic tag is what makes the word safe to
    read: a block that came from anywhere else answers "no kinds", and
    its fields read back as Int exactly as before. */
-#define ZYL_KINDS_MAGIC 0x5A4B4E44LL   /* 'ZKND' */
-
-long long zyl_val_alloc(long long nwords, long long kinds, long long name) {
-    if (nwords < 0) nwords = 0;
-    if (nwords > (1LL << 20)) return 0;
-    /* Three extra words in front of the payload: the constructor's name,
-       the kinds record, and a second copy of the qword count where
-       zyl_variant_eq expects to find it (immediately before the pointer
-       that is handed out). */
-    long long raw = zyl_heap_alloc((nwords + 3) * 8);
-    if (!raw) return 0;
-    long long* w = (long long*)(size_t)raw;
-    w[0] = name;
-    w[1] = (ZYL_KINDS_MAGIC << 32) | (kinds & 0xFFFFFFFFLL);
-    w[2] = nwords;
-    return raw + 24;
-}
-
-/* The kind of field `i` of `p`, or 0 (Int) when `p` was not built here. */
-long long zyl_val_kind(long long p, long long i) {
-    if (!p || i < 0 || i >= 31) return 0;
-    if (!zyl_heap_block_p(p - 16)) return 0;
-    long long w = *(long long*)(size_t)(p - 16);
-    if ((w >> 32) != ZYL_KINDS_MAGIC) return 0;
-    return (w >> (2 * i)) & 3;
-}
-
-/* The constructor's name, or 0 when `p` was not built by the
-   interpreter. This is what lets a value print as `(Cons 1 Nil)`
-   instead of as an address: the tag alone cannot say, since every ADT
-   numbers its own variants from zero. */
-long long zyl_val_name(long long p) {
-    if (!p) return 0;
-    if (!zyl_heap_block_p(p - 16)) return 0;
-    long long w = *(long long*)(size_t)(p - 16);
-    if ((w >> 32) != ZYL_KINDS_MAGIC) return 0;
-    return *(long long*)(size_t)(p - 24);
-}
-
-/* Number of fields in a block built here (or handed out by
-   zyl_heap_alloc, whose header this reads). */
-long long zyl_val_arity(long long p) {
-    if (!p || !zyl_heap_block_p(p - 8)) return 0;
-    return *(long long*)(size_t)(p - 8);
-}
 
 /* A stable copy of a constructor's name, deduplicated by content.
 
@@ -3694,30 +3583,6 @@ long long zyl_val_arity(long long p) {
    The table never shrinks, which is what "stable" requires: something
    is still pointing at every entry. Names are few -- one per
    constructor in the program. */
-#define ZYL_NAMES_CAP 4096
-static struct { char* text; } g_names[ZYL_NAMES_CAP];
-static long long g_names_used = 0;
-
-long long zyl_intern_name(long long s) {
-    const char* n = (const char*)(size_t)s;
-    if (!n) return 0;
-    size_t i = zyl_str_hash(n) & (ZYL_NAMES_CAP - 1);
-    for (size_t probe = 0; probe < ZYL_NAMES_CAP; probe++) {
-        size_t j = (i + probe) & (ZYL_NAMES_CAP - 1);
-        if (!g_names[j].text) {
-            if (g_names_used >= ZYL_NAMES_CAP / 2) return 0;
-            size_t len = strlen(n);
-            char* copy = (char*)malloc(len + 1);
-            if (!copy) return 0;
-            memcpy(copy, n, len + 1);
-            g_names[j].text = copy;
-            g_names_used++;
-            return (long long)(size_t)copy;
-        }
-        if (strcmp(g_names[j].text, n) == 0) return (long long)(size_t)g_names[j].text;
-    }
-    return 0;
-}
 
 /* Milliseconds on a monotonic clock. The REPL's `:time` uses it; it is
    deliberately not available to a compiled program's determinism-
@@ -3730,37 +3595,25 @@ long long zyl_now_ms(void) {
     return (long long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
 }
 
-long long zyl_fresh_id(void) {
-    static long long counter = 0;
-    return ++counter;
-}
-
 /* The other direction, for a word the interpreter knows points at
    NUL-terminated bytes. Also the identity; also there for the type
    system rather than the machine. */
-long long zyl_cstr_of_word(long long w) { return w; }
 
 /* The IEEE-754 bit pattern of a Float, as an Int (a Float travels in a
    general register as its bits, so this is the identity too). Typed
    Float -> Int, it is how Hash hashes a Float without a cast. */
-long long zyl_float_bits(long long w) { return w; }
 
 /* The Float whose IEEE-754 bit pattern is `w`. Every 64-bit pattern is
    some double (a NaN at worst), so this is total and safe to expose. */
-long long zyl_float_of_bits(long long w) { return w; }
 
 /* Raw word access for the interpreter, which runs word-level ICNF: the
    word at address `a`, and a store to it. Typed Int -> Int and
    Int Int -> Unit; they are raw memory access, so the checker only lets
    the standard library call them (arity_check.zyl, E_FFI_RESTRICTED). */
-long long zyl_word_load(long long a) { return *(long long*)(size_t)a; }
-long long zyl_word_store(long long a, long long w) { *(long long*)(size_t)a = w; return 0; }
 
 /* `p` advanced by `n` bytes. */
-long long zyl_ptr_add(long long p, long long n) { return p + n; }
 
 /* The NUL-terminated bytes at `p`, as a String (the identity). */
-long long zyl_ptr_cstr(long long p) { return p; }
 
 /* zyl_ffi_lookup as an address word, for the interpreter's ISymAddr and
    its calls through zyl_call_argv (FnPtr is opaque to Zyl code). */
