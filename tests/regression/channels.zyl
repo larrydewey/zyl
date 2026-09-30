@@ -114,7 +114,7 @@
             (assert-equal (try (begin (chan-recv rx) "no error") (catch e (str-substring e 0 19))) "E_CHANNEL_NOT_OWNER")))))))
 
 (test "an-actor-panic-is-raised-at-its-join"
-  (let a (spawn (fn () (error "boom")))
+  (let a (spawn (fn () (panic "boom")))
     (assert-equal (try (begin (actor-wait a) "no error") (catch e e)) "boom")))
 
 (test "capacity-must-be-positive"

@@ -12,7 +12,7 @@
   (with-resource (r (Res "a"))
     (begin
       (print "body a")
-      (if fail (error "boom") 7))))
+      (if fail (panic "boom") 7))))
 
 (test "wr-value" (assert-equal (value-of false) 7))
 

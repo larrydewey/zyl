@@ -294,7 +294,7 @@ hi from actor
 (use actor/actor)
 
 (defn main ()
-  (let a (spawn (fn () (begin (print "working") (error "boom"))))
+  (let a (spawn (fn () (begin (print "working") (panic "boom"))))
     (begin
       (print (try (begin (actor-wait a) "no error") (catch e (str-concat "caught: " e))))
       (print (if (actor-is-alive a) "still alive" "joined"))
@@ -510,7 +510,7 @@ Keep the logic in plain functions and test it directly. For the actors themselve
       (assert-false (actor-is-alive a)))))
 
 (test "actor-panic-reaches-the-joiner"
-  (let a (spawn (fn () (error "boom")))
+  (let a (spawn (fn () (panic "boom")))
     (assert-equal (try (begin (actor-wait a) "no error") (catch e e)) "boom")))
 
 (run-tests)

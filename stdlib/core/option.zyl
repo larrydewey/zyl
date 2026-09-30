@@ -51,7 +51,7 @@
 (defn option-expect (opt msg)
   (match opt
     (Some v v)
-    (None (error msg))))
+    (None (panic msg))))
 
 (defn option-unwrap-or (opt default)
   (match opt

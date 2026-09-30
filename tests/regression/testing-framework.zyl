@@ -10,7 +10,7 @@
     (assert-true (> 5 3))
     (assert-false (< 10 1))))
 
-(test "tf-assert-fail" (assert-fail (error "expected")))
+(test "tf-assert-fail" (assert-fail (panic "expected")))
 
 (test "tf-assert-fail-message" (assert-fail (unwrap None) "unwrap of None raises"))
 

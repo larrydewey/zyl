@@ -244,6 +244,8 @@ guarantees.
 
 ```
 (error msg)       — returns (Err msg). Does not throw.
+(panic msg)       — unwinds to the nearest (try ... (catch ...)), or
+                    prints `error: msg` and exits 1 when there is none.
 ```
 
 ### 21.9 Sequencing
@@ -326,9 +328,8 @@ Not normative. Probed with `build/boot/zyl-self`.
   `stdlib/core/map.zyl`).
 - There is no `Iterator` trait (§21.10); `for` is a counted loop
   (`spec/04-evaluation-semantics.md`).
-- `(error msg)` aborts rather than returning `(Err msg)`, and `(unwrap x)`
-  takes an `Option` and panics on `None` rather than extracting an alias
-  (§21.12); see `spec/04-evaluation-semantics.md`.
+- `(unwrap x)` takes an `Option` and panics on `None` rather than
+  extracting an alias (§21.12); see `spec/04-evaluation-semantics.md`.
 - Byte and atomic primitives (`(byte N)`; the loads `load-u8`,
   `load-i8`, `load-u16` .. `load-u64` and `load-i16` .. `load-i64`, and
   the matching stores, each taking a `:le`/`:be` endianness selector as

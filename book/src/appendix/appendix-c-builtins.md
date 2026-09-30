@@ -192,7 +192,8 @@ it a `_` prefix, to mark it unused; `_` may repeat.
 | `with-resource` | `(with-resource (name init) body ...)` | binds `name` for `body`, then calls `(Drop.drop name)` on the way out, normally or before an error propagates; an `Int` is a file descriptor (`file-close`); a type with no `Drop` impl is `E_TRAIT_NOT_FOUND` |
 | `assert` | `(assert expr)` or `(assert expr "message")` | `expr` is `Bool`; a false `expr` panics with the message (a string literal), else `assert failed`. `Unit` |
 | `unwrap` | `(unwrap expr)` | `expr` is an `Option`; the value of `Some`, and `None` panics with `unwrap on None`. A `Result` is `E_TYPE_MISMATCH`: use `result-expect` or `result-unwrap` |
-| `error` | `(error "message")` | library function (`allocator/allocator`); panics with the message |
+| `error` | `(error "message")` | library function (`core/result`); returns `(Err "message")` and does not raise |
+| `panic` | `(panic "message")` | library function (`allocator/allocator`); raises, unwinding to the nearest `try` or exiting 1 |
 | `when` | `(when cond body)` | library function (`core/core`); `body` is a `Unit` statement, evaluated even when `cond` is false — to skip it, use `(if cond stmt)` |
 
 `for` does not step for you:
@@ -210,9 +211,14 @@ these returns `Unit`. `main` must return an `Int`, the exit status, so
 it usually ends with `0`; `(defn main () (print 1))` is
 `E_TYPE_MISMATCH`.
 
-`try` works with `error`: `(try (error "x") (catch e 7))` is 7. Spec
-§12.10 describes `error` as returning `(Err msg)`; the implementation
-panics instead, and the panic unwinds to the nearest `try`.
+`try` catches a `panic`, not an `Err`. `(try (panic "x") (catch e 7))` is
+7. An `Err` returned normally passes straight through and the handler
+never runs: `(try (error "x") (catch e (Err "y")))` is `Err(x)`. And
+because the body and the handler must have one type, `(try (error "x")
+(catch e 7))` does not compile at all — `try` cannot be used to intercept
+an `Err`, so `match` is the only way to handle one. Spec §12.2 describes
+`try` as sugar for matching on `Result`; the implementation unwinds
+instead.
 
 Where the failure message matters, use the test assertions (C.14) or an
 explicit `if` with `error` instead of `assert`, and `result-expect`, or

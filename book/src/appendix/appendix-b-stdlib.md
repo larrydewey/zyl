@@ -342,7 +342,7 @@ Using this module from a package requires the `ffi` capability.
 ;(arena-reset arena) (arena-destroy arena) (arena-used arena) (arena-capacity arena)
 ;(str-len ptr) (str-length s) (str-concat a b) (str-substring s start len)
 ;(str-eq p1 p2) (str-intern arena s) (buf-append dst src)
-;(error msg)
+;(panic msg)
 ```
 
 `str-eq` compares contents and returns a `Bool`, so it is a condition

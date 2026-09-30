@@ -40,6 +40,7 @@ Expr :=
   | (cond Clause*)
   | (begin Expr+)
   | (error String)
+  | (panic String)
   | (unwrap Expr)
 
   ;; Trait & Type System

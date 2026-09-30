@@ -26,7 +26,7 @@
 
 (defn adder (n) (let k (RC n (RN)) (fn (x) (+ x (rl-sum k)))))
 
-(defn noisy-fail (n) (let _ (build n (RN)) (error "boom")))
+(defn noisy-fail (n) (let _ (build n (RN)) (panic "boom")))
 
 (def kept (keep 5))
 

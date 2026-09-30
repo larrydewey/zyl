@@ -422,13 +422,18 @@ The core helpers mirror the `Result` ones: `option-map`,
 and `option-to-result`. As with `Result`, the `Option` comes first and
 the function second: `(option-map (Some 21) (fn (x) (* x 2)))`.
 
-## 6.8 `error`, `try` and `catch`
+## 6.8 `error`, `panic`, `try` and `catch`
 
-For a failure the program cannot sensibly continue from, `(error "message")`
-stops it: it prints `PANIC: message` to standard error and exits with
-status 1.
+A failure the caller can handle is a value: `(error "message")` returns
+`(Err "message")` and does not stop anything, so the caller matches on it
+like any other `Result`.
 
-`try` intercepts an `error` raised while its expression runs, directly
+`(panic "message")` is for a failure the program cannot sensibly continue
+from. It stops the program, printing `PANIC: message` to standard error
+and exiting with status 1 — unless a `try` is active, in which case
+control passes to its `catch`.
+
+`try` intercepts a `panic` raised while its expression runs, directly
 or in any function it calls:
 
 ```lisp
@@ -438,7 +443,7 @@ or in any function it calls:
 ```lisp
 (defn percent-of (n)
   (if (== n 0)
-    (error "division by zero")
+    (panic "division by zero")
     (/ 100 n)))
 
 (defn report ((msg String))
@@ -486,7 +491,7 @@ instead of `assert`, and `result-expect`/`option-expect` (or
 ```lisp
 (defn checked-half (n)
   (if (is-odd n)
-    (error "checked-half: odd input")
+    (panic "checked-half: odd input")
     (/ n 2)))
 
 (defn main ()

@@ -226,7 +226,7 @@
   (let-mut x 10
     (let-mut y 1
       (begin
-        (try (checkpoint (begin (set! x 20) (set! y 2) (error "fail"))) (catch e 0))
+        (try (checkpoint (begin (set! x 20) (set! y 2) (panic "fail"))) (catch e 0))
         (+ (* x 10) y)))))
 
 (test "checkpoint-rolls-back"
@@ -236,7 +236,7 @@
 (test "recover-typed-arms"
   (begin
     (assert-equal (recover (_ct-div 1 0) ((E_CONTRACT_VIOLATION) -1) ((String) -2)) -1)
-    (assert-equal (recover (error "E_OTHER: boom") ((E_CONTRACT_VIOLATION) -1) (_ -2)) -2)
-    (assert-equal (try (recover (error "E_OTHER: x") ((E_CONTRACT_VIOLATION) -1)) (catch e 99)) 99)))
+    (assert-equal (recover (panic "E_OTHER: boom") ((E_CONTRACT_VIOLATION) -1) (_ -2)) -2)
+    (assert-equal (try (recover (panic "E_OTHER: x") ((E_CONTRACT_VIOLATION) -1)) (catch e 99)) 99)))
 
 (run-tests)

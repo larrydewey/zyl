@@ -154,10 +154,12 @@
 (defn buf-append (dst src)
   (ffi-call "zyl_str_append" dst src 1000))
 
-; Zyl-level error: unwind to the nearest active try/catch, or print and
+; Zyl-level panic: unwind to the nearest active try/catch, or print and
 ; exit if there is none (zyl_panic already implements exactly this via
 ; the runtime's g_try_top frame stack -- see runtime/rt/panic.zyl).
-(defn error (msg)
+; This is the raising half of error reporting. `error` in core/result is
+; the other half: it returns an Err and does not unwind (spec 21.8).
+(defn panic (msg)
   (ffi-call "zyl_panic" msg 1000))
 
 ; A zeroed text buffer of `n` bytes in `arena`, extended in place by

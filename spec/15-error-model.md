@@ -62,7 +62,7 @@ reported before the compile fails (§4.8).
 
 | Error Code | Condition | Specification Reference |
 |------------|-----------|----------------------|
-| `E_USER_ERROR` | `(error msg)` | §12.10 |
+| `E_USER_ERROR` | `(panic msg)` | §12.10 |
 | `E_ASSERT_FAIL` | Assertion condition is false | §12.4 |
 | `E_FFI_TIMEOUT` | FFI call exceeded timeout | §16 |
 | `E_INDEX_OUT_OF_BOUNDS` | Index outside a word array | §13 |

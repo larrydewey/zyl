@@ -1,0 +1,7 @@
+; expect-error: E_TYPE_MISMATCH
+; `try` catches a panic, not an Err, and the type checker is what stops you
+; from pretending otherwise: the body yields a Result and the handler an Int,
+; so the two branches cannot have one type. Handle an Err with `match`.
+; (tests/regression/error-as-value.zyl covers the runtime halves.)
+(defn main ()
+  (print (try (error "x") (catch e 7))))

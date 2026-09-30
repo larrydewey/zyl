@@ -205,7 +205,7 @@ an inferred placement is always one the value cannot escape (Chapter
 | `E_OUT_OF_MEMORY` | The memory budget is exhausted. Raise or remove it with `ZYL_MAX_MEMORY` (a byte count; `0` disables it). *Listed twice in the catalog, with two messages.* |
 | `E_LIST_NTH_OOB` | The compiler's internal `list-nth` given an out-of-range index. *Catalogued only.* |
 | `E_REGION_EXHAUSTED` | A `with-region` scope ran out: a `fixed` region's `:size` or an `arena`'s `:limit` was exceeded. Catchable with `try`, and deterministic: it depends only on the sequence of allocation requests. Enforced in compiled code only; the REPL interpreter ignores region limits. |
-| `E_USER_ERROR` | `(error "...")`. *Catalogued only: `error` panics with its message, printed as `PANIC: <message>`, and unwinds to the nearest `try` if there is one.* |
+| `E_USER_ERROR` | `(panic "...")`. *Catalogued only: `panic` raises with its message, printed as `PANIC: <message>`, and unwinds to the nearest `try` if there is one. `(error "...")` returns `(Err "...")` and raises nothing.* |
 | `E_ASSERT_FAIL` | A failed `assert`. *Catalogued only: a failed `assert` panics as `PANIC: <message>` when the message is a string literal, else `PANIC: assert failed`, without this code (Appendix C.7). The test assertions panic with `assert-equal failed` and similar.* |
 | `E_NULL_POINTER` | A null dereference. *Catalogued only.* |
 | `E_BYTE_OOB` | A byte offset outside its buffer. *Catalogued only.* |

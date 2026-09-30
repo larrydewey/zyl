@@ -78,7 +78,7 @@
   (list-append (property-drop xs k) (property-take xs k)))
 
 (defn property-fail ((name String) (args String))
-  (error (str-concat "property `" (str-concat name (str-concat "` failed for " args)))))
+  (panic (str-concat "property `" (str-concat name (str-concat "` failed for " args)))))
 
 (defn property-check-1 (name f xs)
   (match xs

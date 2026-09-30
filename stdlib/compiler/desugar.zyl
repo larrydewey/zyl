@@ -122,7 +122,7 @@
 
 (defn ds-with-shape (a) (ds-fail a "`with-resource` takes a (name value) binding and a body"))
 
-; (assert-fail e msg?) => (if (try (begin e false) (catch _af_e true)) unit (error msg))
+; (assert-fail e msg?) => (if (try (begin e false) (catch _af_e true)) unit (panic msg))
 (defn ds-assert-fail (a xs)
   (let n (ds-count xs)
     (if (or (< n 2) (> n 3)) (ds-fail a "`assert-fail` takes an expression and an optional message string")
@@ -133,7 +133,7 @@
                       (ds-list [(ds-id "try" a) (ds-list [(ds-id "begin" a) (ds-form (ds-nth xs 1)) (ds-at (AstBool false) a)] a)
                                 (ds-list [(ds-id "catch" a) (ds-id "_af_e" a) (ds-at (AstBool true) a)] a)] a)
                       (ds-id "unit" a)
-                      (ds-list [(ds-id "error" a) msg] a)] a))
+                      (ds-list [(ds-id "panic" a) msg] a)] a))
           (_ (ds-fail a "the message of `assert-fail` is a string literal")))))))
 
 ; --- test-suite ----------------------------------------------------------------

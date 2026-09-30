@@ -20,7 +20,7 @@
    "ffi-call" "ffi-pin" "ffi-unpin" "assert" "trait" "impl" "fn" "lambda"
    "while" "for" "cond" "begin" "pub" "use" "export" "requires" "ensures" "invariant"
    "recover" "checkpoint" "contracts" "defmacro" "alias" "defstruct" "defstruct+"
-   "with-resource" "derive" "unwrap" "error" "Ok" "Err" "match" "struct-get"
+   "with-resource" "derive" "unwrap" "error" "panic" "Ok" "Err" "match" "struct-get"
    "test-suite" "test" "assert-equal" "assert-fail" "assert-true"
    "assert-false" "test-property" "setup" "teardown" "run-tests" "test-compile"])
 

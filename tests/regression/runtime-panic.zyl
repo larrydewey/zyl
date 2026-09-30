@@ -2,7 +2,7 @@
 
 (defn rp-mk (n) (if (= n 0) Nil (Cons n (rp-mk (- n 1)))))
 (defn rp-sum (l) (match l (Nil 0) (Cons h t (+ h (rp-sum t)))))
-(defn rp-deep (n) (let l (rp-mk 20) (if (= n 0) (error "E_DEEP: bottom") (+ (rp-sum l) (rp-deep (- n 1))))))
+(defn rp-deep (n) (let l (rp-mk 20) (if (= n 0) (panic "E_DEEP: bottom") (+ (rp-sum l) (rp-deep (- n 1))))))
 
 (test "nested-try-rethrow"
   (begin
@@ -18,7 +18,7 @@
 
 (test "catch-in-region"
   (assert-equal (try (with-region (arena :block 65536 :align 16 :limit 1048576)
-                       (if (> (rp-sum (rp-mk 30)) 0) (error "in-region") 1))
+                       (if (> (rp-sum (rp-mk 30)) 0) (panic "in-region") 1))
                      (catch e (+ 40 (rp-sum (rp-mk 2)))))
                 43))
 

@@ -178,7 +178,7 @@
     let
     r
     (try
-      (error "boom")
+      (panic "boom")
       (catch e (result-err e)))
     (
       assert-true

@@ -134,7 +134,7 @@ Implemented: if `E` raises, every `let-mut` variable bound outside `E` that `E` 
 ```lisp
 (let-mut x 10
   (begin
-    (try (checkpoint (begin (set! x 20) (error "fail")))
+    (try (checkpoint (begin (set! x 20) (panic "fail")))
       (catch e 0))
     (print x)))
 ;; prints 10

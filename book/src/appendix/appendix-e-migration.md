@@ -134,8 +134,10 @@ let n = parse(s)?;
 
 **No `?` operator.** Match on the `Result`, or use `core/result`'s
 helpers (`result-map`, `result-and-then`, `result-unwrap` with a
-default). `try`/`catch` catches a *panic* — what `(error "msg")` raises
-— rather than an `Err` value; it is the counterpart of
+default). `(error "msg")` returns `(Err "msg")` rather than raising, so
+`try`/`catch` is not the counterpart of `?` for it — use `match`.
+`try`/`catch` catches a *panic* — what `(panic "msg")` raises — and is
+the counterpart of
 `std::panic::catch_unwind`, not of `?`. The `unwrap` form takes an `Option` only
 and panics on `None` with `unwrap on None`; for a `Result`, use
 `result-expect`, which panics with your message, or `result-unwrap`

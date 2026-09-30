@@ -700,6 +700,9 @@ Test execution:
 
 12.10 ERROR:
     (error msg) returns (Err msg). Does not throw.
+    (panic msg) unwinds to the nearest enclosing (try ... (catch e ...)),
+    or prints the message and exits 1 when there is none. This is what
+    (assert-fail e) reports through, and what an E_ code raises.
 
 ================================================================================
 13. MEMORY OPERATIONS
@@ -981,6 +984,8 @@ Design rationale and the implementation plan: docs/package-management-design.md
 
 21.8 Error Signaling:
     (error msg)       — returns (Err msg). Does not throw.
+    (panic msg)       — unwinds to the nearest (try ... (catch ...)), or
+                        prints `error: msg` and exits 1 when there is none.
 
 21.9 Sequencing:
     (begin e1 ... en) — returns value of en

@@ -306,9 +306,11 @@ Zyl has two mechanisms, and they are for different things:
 - **Expected failures are values.** A function that can fail returns a
   `Result`: `(Ok value)` or `(Err reason)`. The caller decides what to
   do with it, usually with `match` (Chapter 6).
-- **`error` aborts.** `(error "message")` stops the program with
+- **`panic` aborts.** `(panic "message")` stops the program with
   `PANIC: message` and exit status 1 — unless a `try` is active, in
-  which case control passes to its `catch`.
+  which case control passes to its `catch`. `(error "message")` is the
+  other half: it returns `(Err "message")` and raises nothing, for a
+  failure the caller should handle.
 
 ### Results
 
@@ -351,7 +353,7 @@ message.
 ```lisp
 (defn percent-of-100 (n)
   (if (== n 0)
-    (error "division by zero")
+    (panic "division by zero")
     (/ 100 n)))
 
 (defn report ((msg String))
@@ -392,7 +394,7 @@ check with `error` instead of `assert`:
 ```lisp
 (defn checked-sqrt-floor (x)
   (if (< x 0)
-    (error "sqrt requires non-negative input")
+    (panic "sqrt requires non-negative input")
     (sqrt-floor x 0)))
 
 (defn sqrt-floor (x r)
@@ -536,8 +538,9 @@ prints as `(null)`). File I/O is in
 | `(while c b...)` | Loop while true | `Unit` |
 | `(for ((v init)...) c b)` | Loop with its own variables | `Unit` |
 | `(match v arms...)` | Case analysis (Chapter 6) | Value of the matching arm |
-| `(error msg)` | Abort, or jump to the nearest `catch` | Does not return |
-| `(try e (catch v h))` | Intercept `error` | Value of `e`, or of `h` after an `error` |
+| `(error msg)` | Report a failure as a value | `(Err msg)` |
+| `(panic msg)` | Abort, or jump to the nearest `catch` | Does not return |
+| `(try e (catch v h))` | Intercept a `panic` | Value of `e`, or of `h` after a `panic` |
 
 ---
 

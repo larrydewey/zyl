@@ -39,7 +39,7 @@ set +e; out=$("$SCRATCH/order" | cat); rc=${PIPESTATUS[0]}; set -e
 
 # A panic still delivers the buffered stdout, after the stderr text of the panic.
 cat > "$SCRATCH/panic.zyl" <<'EOF'
-(defn main () (let _ (print "before") (let _ (error "boom") 0)))
+(defn main () (let _ (print "before") (let _ (panic "boom") 0)))
 EOF
 build panic
 out=$("$SCRATCH/panic" 2>/dev/null | cat || true)

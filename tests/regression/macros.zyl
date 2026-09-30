@@ -109,7 +109,7 @@
   (let f (fn (z) (_m-double z)) (assert-equal (f 4) 8)))
 
 (test "macro-in-try"
-  (assert-equal (try (_m-double (error "boom")) (catch e (_m-double 3))) 6))
+  (assert-equal (try (_m-double (panic "boom")) (catch e (_m-double 3))) 6))
 
 (test "macro-in-for"
   (let-mut total 0

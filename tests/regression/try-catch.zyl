@@ -1,9 +1,9 @@
 ; Try/Catch Regression Tests — an `error` raised inside a called function
 ; unwinds to the enclosing try, whatever the callee's arity.
 
-(defn tc-one (b) (if (> b 0) b (error "one")))
-(defn tc-two (a b) (if (> b 0) (/ a b) (error "two")))
-(defn tc-four (a b c d) (if (> d 0) (+ a (+ b c)) (error "four")))
+(defn tc-one (b) (if (> b 0) b (panic "one")))
+(defn tc-two (a b) (if (> b 0) (/ a b) (panic "two")))
+(defn tc-four (a b c d) (if (> d 0) (+ a (+ b c)) (panic "four")))
 
 (test "catch-from-odd-and-even-arity"
   (begin

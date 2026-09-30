@@ -34,7 +34,7 @@ build dl
 cat > "$SCRATCH/exit.zyl" <<'EOF'
 (defn main ()
   (let _ (spawn (fn () (print "one")))
-    (let _ (spawn (fn () (let _ (print "two") (error "late"))))
+    (let _ (spawn (fn () (let _ (print "two") (panic "late"))))
       (let _ (spawn (fn () (print "three"))) (let _ (print "main end") 0)))))
 EOF
 build exit
@@ -44,7 +44,7 @@ cat > "$SCRATCH/mp.zyl" <<'EOF'
   (let c (chan 1)
     (let rx (chan-rx c)
       (let _ (spawn (fn () (let _ (print "never shown") (chan-recv rx))))
-        (let _ (print "main") (error "main fails"))))))
+        (let _ (print "main") (panic "main fails"))))))
 EOF
 build mp
 

@@ -124,7 +124,7 @@ Special Forms   ::= (let Name Expr Body)
 
 `Keyword` is `:name` and `Symbol` is `~name`. The specification also
 lists `defun`, `(let (Name Expr) Body)`, `(assert Expr String)`,
-`(unwrap Expr)`, `(error String)` and `(export Name)`. Of those, the
+`(unwrap Expr)`, `(error String)`, `(panic String)` and `(export Name)`. Of those, the
 compiler accepts the parenthesised `let`; lowers `assert`, which panics
 with its message, and `unwrap`, which takes an `Option` and panics with
 `unwrap on None`; parses `export` without lowering it; treats `error`
@@ -224,7 +224,7 @@ runtime event.
 
 | Code | Meaning |
 |-------|---------|
-| `E_USER_ERROR` | `(error msg)` |
+| `E_USER_ERROR` | `(panic msg)` |
 | `E_MUT_CONFLICT` | Aliasing violation |
 | `E_ASSERT_FAIL` | Assertion failure |
 | `E_FFI_TIMEOUT` | FFI call exceeded its timeout |

@@ -1,0 +1,43 @@
+; error-as-value vs panic (spec 12.10 / 21.8). `error` returns an Err and
+; raises nothing; `panic` unwinds to the nearest try/catch. The two are
+; separate functions on purpose -- `error` lives beside the Err it builds,
+; `panic` in the allocator, which cannot name Err.
+;
+; That try cannot intercept an Err is a compile-fail case, not a runtime
+; one: see tests/compile-fail/try-cannot-catch-err.zyl.
+
+(defn ev-msg (x) (match x (Ok v "ok") (Err m m)))
+
+(test "error-returns-err"
+  (assert-equal (ev-msg (error "boom")) "boom"))
+
+(test "error-does-not-raise"
+  ; A plain call keeps running: the Err is a value, not a jump. If `error`
+  ; unwound, this test would fail instead of reaching the assert.
+  (assert-equal
+    (str-concat (ev-msg (error "first")) (str-concat "/" (ev-msg (error "second"))))
+    "first/second"))
+
+(test "error-err-is-matchable"
+  (assert-equal (match (error "m") (Ok _ "wrong") (Err m m)) "m"))
+
+(test "panic-unwinds-to-try"
+  (assert-equal (try (panic "boom") (catch e e)) "boom"))
+
+(test "panic-value-reaches-nested-try"
+  (assert-equal (try (+ 1 (try (panic "inner") (catch e 10))) (catch e 100)) 11))
+
+(test "error-inside-try-body-does-not-trigger-catch"
+  ; The body returns normally, so the handler never runs and the Err is
+  ; reduced by the body's own match.
+  (assert-equal (try (ev-msg (error "e")) (catch e "handler ran")) "e"))
+
+(test "error-then-panic-in-one-body"
+  ; Both halves in one body: the error is handled and execution continues to
+  ; the panic, which is what the catch then sees. If `error` had raised, the
+  ; message here would be "handled" instead.
+  (assert-equal
+    (try (begin (ev-msg (error "handled")) (panic "raised")) (catch e e))
+    "raised"))
+
+(run-tests)

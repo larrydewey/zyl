@@ -245,7 +245,8 @@ This document explains why key architectural choices were made in the Zyl compil
 
 ## D13: Why Result-Based Error Handling Instead of Exceptions?
 
-**Decision:** `(error msg)` returns `(Err msg)`. No throw/catch.
+**Decision:** `(error msg)` returns `(Err msg)`. No throw/catch. Raising is
+a separate, explicitly-named form, `(panic msg)`.
 
 **Rationale:**
 - Errors are values, not control flow jumps
@@ -258,7 +259,9 @@ This document explains why key architectural choices were made in the Zyl compil
 - Exception-based (try/catch/throw): non-deterministic stack unwinding, harder to reason about regions
 - Option types (Some/None): no error message, less informative
 
-**Current implementation:** the implementation departs from this decision. `(error msg)` calls the runtime's `zyl_panic`, which unwinds to the innermost `try` (a runtime stack of try frames whose saved registers are pointer-mangled), or to the test runner, or ends the process with `PANIC: msg`. `(try body (catch e handler))` catches a panic rather than inspecting a `Result`, so an `Err` returned normally from `body` passes through unchanged. `Result` values and `stdlib/core/result.zyl` remain the way to handle errors as values. See the implementation notes in `spec/04-evaluation-semantics.md`.
+**Current implementation:** `(error msg)` is as decided — it returns `(Err msg)` and raises nothing. It lives in `stdlib/core/result.zyl`, beside the `Err` it constructs; the raising half, `(panic msg)`, is in `stdlib/allocator/allocator.zyl` and calls the runtime's `zyl_panic`, which unwinds to the innermost `try` (a runtime stack of try frames whose saved registers are pointer-mangled), or to the test runner, or ends the process with `PANIC: msg`. The two are split across modules because the allocator is the lowest module and cannot name `Err` without a dependency cycle.
+
+`try` remains the one deviation: `(try body (catch e handler))` catches a panic rather than inspecting a `Result`, so an `Err` returned normally from `body` passes through unchanged and the handler never runs. Because the body and handler must have one type, `try` cannot be used to intercept an `Err` at all — the type checker rejects it — so `match` is the only way to handle one. See the implementation notes in `spec/04-evaluation-semantics.md`.
 
 **Spec reference:** `zyl_specification.txt` §12.2 and §12.10, `spec/04-evaluation-semantics.md`
 

@@ -296,20 +296,26 @@ directly, and a right operand is evaluated first only when it contains no
 inlines small functions, binding the arguments by nested `let`s in call
 order; none of it reorders a side effect.
 
-### Errors: `error`, `try`, `unwrap`
+### Errors: `error`, `panic`, `try`, `unwrap`
 
-- **`(error msg)` aborts; it does not return `(Err msg)`.** It is a library
-  function (`stdlib/allocator/allocator.zyl`) that calls the runtime's
-  `zyl_panic`. `zyl_panic` unwinds to the innermost `try` if there is one,
-  otherwise to the test runner if a test is running, otherwise it prints
-  `PANIC: msg` to stderr and exits with status 1. This contradicts §3,
-  §12.10 and §21.8.
+- **`(error msg)` returns `(Err msg)` and does not raise**, as §3, §12.10
+  and §21.8 say. It is a library function in `stdlib/core/result.zyl`,
+  beside the `Ok`/`Err` it constructs.
+- **`(panic msg)` is the raising form**, in `stdlib/allocator/allocator.zyl`:
+  it calls the runtime's `zyl_panic`, which unwinds to the innermost `try`
+  if there is one, otherwise to the test runner if a test is running,
+  otherwise prints `PANIC: msg` to stderr and exits with status 1. Every
+  `E_` code, and `assert-fail`, reports through this.
+  The two live in different modules on purpose: `error` has to name `Err`,
+  which is declared in a module that depends on the allocator, so the
+  allocator cannot define `error` without a dependency cycle.
 - **`try`/`catch`** is implemented with a runtime stack of try frames
   whose saved registers are pointer-mangled. `(try body (catch e handler))` evaluates `body`; if anything in
-  it panics (including `error`), `e` is bound to the panic message and
+  it panics (including `panic`), `e` is bound to the panic message and
   `handler` is evaluated. It does not inspect a `Result` value, so an
-  `Err` returned normally from `body` passes through unchanged. §12.2
-  describes `try` as sugar for matching on `Result`.
+  `Err` returned normally from `body` -- including one `error` returned --
+  passes through unchanged. §12.2 describes `try` as sugar for matching on
+  `Result`; that remains the one deviation in this section.
 - **`(unwrap x)`** takes an `Option` (`(Option a) -> a`, `ta-unwrap`):
   `(Some v)` gives `v`, and `None` panics with `unwrap on None`
   (`ic-unwrap`). A `Result` argument is `E_TYPE_MISMATCH`.
@@ -380,6 +386,4 @@ a fixed message, unless `e` raises.
   deterministic order §20.5.5 asks for. Any other option is
   `E_MALFORMED_FORM`.
 - `stdlib/testing/testing.zyl` provides wrappers (`test-run`,
-  `assert-equal-values`, `property-int` and similar). Its
-  `run-tests-parallel`, `run-tests-filtered` and `run-tests-with-timeout`
-  are placeholders that call `error`.
+  `assert-equal-values`, `property-int` and similar).
