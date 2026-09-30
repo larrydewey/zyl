@@ -70,6 +70,17 @@ compile with `build/boot/zyl-self` on 2026-09-28.
   `try`, `with-region` scopes, `print`, Float arithmetic, Secret frame
   wiping, more than six parameters); one ABI, `ZYL_MIR=0` forces the
   stack machine. Tail calls are jumps and a self tail call is a loop.
+- Performance, re-verified 2026-09-30 for v0.2.0 with no regression: the
+  2026-09-29/30 change batch (tuples, `let*`, `len`, the `Vec`/`Map`
+  literals, `intmap`, the type predicates, the error and `panic` forms,
+  the `when`/`unless` short-circuit fix, the lexer's integer-overflow
+  error) leaves all seven `bench/` programs within noise of the previous
+  compiler, with `list` and `vec` slightly ahead and peak memory
+  unchanged. Method: both compilers on one machine (`8aaa646` built in a
+  worktree), the same `bench/*.zyl` compiled by each, the binaries run
+  alternately, min of 15. Ratios only compare within a single run — the
+  absolute times drift 10-30% with machine load, which is what made
+  `trees` look 12% worse against C when it had not changed at all.
 - Linking: a program with no foreign `ffi-call` and no native objects is
   a static executable with no libc, assembled and linked by the
   compiler itself (`asm_x86.zyl`, `elf_link.zyl`) against the cached

@@ -146,21 +146,64 @@ There is no separate MIR optimization pass: the "optimize" step of the
 pipeline above is the ICNF passes before lowering and the instruction
 selection done during emission.
 
-Measurements on 2026-09-28 (`bench/matrix.py`, best of 3, seconds; C
-and C++ at -O2, Rust at opt-level 3):
+Measurements on 2026-09-30 (`bench/matrix.py`, best of 3, seconds; C
+and C++ at -O2, Rust at opt-level 3), with the ratio to C and to Go
+beside each absolute number, because the absolute times only mean
+anything next to the C column measured in the same run:
 
-| benchmark | Zyl | C | C++ | Rust | Go |
-|---|---|---|---|---|---|
-| fib | 0.11 | 0.08 | 0.08 | 0.18 | 0.33 |
-| loop | 0.14 | 0.40 | 0.40 | 0.48 | 0.48 |
-| list | 0.20 | 0.34 | 0.38 | 0.38 | 0.69 |
-| trees | 1.01 | 2.58 | 3.76 | 5.34 | 2.69 |
-| str | 0.08 | 0.13 | 0.04 | 0.08 | 0.09 |
-| sieve | 0.14 | 0.14 | 0.14 | 0.14 | 0.14 |
-| vec | 0.04 | 0.01 | 0.02 | 0.01 | 0.03 |
+| benchmark | Zyl | C | C++ | Rust | Go | Zyl/C | Zyl/Go |
+|---|---|---|---|---|---|---|---|
+| fib | 0.11 | 0.09 | 0.09 | 0.19 | 0.35 | 1.3x | 0.3x |
+| loop | 0.15 | 0.42 | 0.42 | 0.50 | 0.50 | 0.4x | 0.3x |
+| list | 0.22 | 0.37 | 0.42 | 0.43 | 0.83 | 0.6x | 0.3x |
+| trees | 1.53 | 3.09 | 4.46 | 6.98 | 3.28 | 0.5x | 0.5x |
+| str | 0.08 | 0.14 | 0.04 | 0.09 | 0.10 | 0.6x | 0.8x |
+| sieve | 0.20 | 0.19 | 0.19 | 0.19 | 0.20 | 1.0x | 1.0x |
+| vec | 0.09 | 0.02 | 0.06 | 0.02 | 0.09 | 3.6x | 1.1x |
 
-Zyl is behind C on `fib` (1.3x) and `vec` (4.3x, and 2.6x its peak
-memory); `str` is behind C++.
+Peak memory: Zyl matches C on everything except `vec` (205 MB against
+78 MB, 2.6x) and `trees` (146 MB against 130 MB).
+
+Zyl is behind C on `vec` (3.6x, and 2.6x its peak memory); `str` is
+behind C++. `fib` is at parity and its sign flips with the method: the
+best-of-3 above puts C ahead by 1.3x, an interleaved min-of-11 puts Zyl
+ahead (0.95x). At 0.1 s per run, best-of-3 on a loaded machine is
+dominated by noise, so take the ratio, not the sign, from a
+best-of-N harness.
+
+### The regression check (2026-09-30, v0.2.0)
+
+Comparing two *different compilers* needs both binaries on one machine,
+so the baseline was rebuilt: `8aaa646` (the last commit of 2026-09-28,
+the day the previous table was measured) built in a `git worktree`,
+then every `bench/*.zyl` compiled by both compilers and the two binaries
+run alternately, min of 15 each. The `bench/*.zyl` sources are unchanged
+between the two commits, so this isolates the 2026-09-29/30 change
+batch (tuples, `let*`, `len`, the `Vec`/`Map` literals, `intmap`, the
+type predicates, the error and `panic` forms, the `when`/`unless`
+short-circuit fix, the lexer's integer-overflow error).
+
+| benchmark | old compiler | new compiler | new/old | peak RSS |
+|---|---|---|---|---|
+| fib | 0.107 | 0.107 | 1.00x | 6 -> 6 |
+| loop | 0.149 | 0.148 | 1.00x | 6 -> 6 |
+| list | 0.211 | 0.196 | 0.93x | 33 -> 33 |
+| trees | 1.176 | 1.178 | 1.00x | 146 -> 146 |
+| str | 0.078 | 0.078 | 0.99x | 6 -> 6 |
+| sieve | 0.172 | 0.170 | 0.99x | 48 -> 48 |
+| vec | 0.080 | 0.077 | 0.97x | 204 -> 205 |
+
+Nothing regressed: every benchmark is within noise of the old compiler,
+`list` and `vec` are slightly ahead, and peak memory is unchanged. All
+seven programs produce byte-identical output under both compilers, and
+`bench/matrix.py` reports the five languages agreeing.
+
+The one apparent loss in this batch was `trees` reading 12% worse
+against C than the 2026-09-28 table (0.39x -> 0.44x). It was machine
+drift, not code: the C control drifted +10% in the same direction (2.58
+-> 2.83), and old and new Zyl binaries are within 0.2% of each other.
+Compare ratios measured in the same run, or two compilers on the same
+run; never one table against another.
 
 ## Staging
 
