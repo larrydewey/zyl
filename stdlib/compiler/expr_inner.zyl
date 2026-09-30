@@ -2475,6 +2475,45 @@
         (ast-pattern-is-wildcard-alts (ast-pattern-alts arm))
         (ast-list-is-last-wildcard t)))))
 
+; Check if an arm has any literal pattern alternatives (Int, Float, String, Bool, range)
+(defn arm-has-literal-pattern (arm)
+  (let alts (ast-pattern-alts arm)
+    (match alts
+      (Nil false)
+      (Cons h rest
+        (if (ast-is-literal-head h)
+          true
+          (arm-has-literal-pattern-aux rest))))))
+
+(defn arm-has-literal-pattern-aux (alts)
+  (match alts
+    (Nil false)
+    (Cons h rest
+      (if (ast-is-literal-head h)
+        true
+        (arm-has-literal-pattern-aux rest)))))
+
+; Check if an arm has a constructor pattern (AstIdent variant or wrapped (Variant ...) form)
+; Excludes the wildcard `_` and range patterns which are literal patterns.
+(defn arm-has-constructor-pattern (arm)
+  (let middles (ast-arm-middles arm)
+    (match middles
+      (Nil false)
+      (Cons first _
+        (match first
+          (AstIdent n (if (str-eq n "_") false true))
+          (AList kids
+            (match kids
+              (Cons head _
+                (match head
+                  (AstIdent n2
+                    (if (or (str-eq n2 "_") (str-eq n2 "range"))
+                      false
+                      true))
+                  (_ false)))
+              (Nil false)))
+          (_ false))))))
+
 (defn literal-arm-body (arm)
   (match arm
     (AList kids (convert-ast (ast-list-last kids (AstInt 0))))
@@ -2565,14 +2604,40 @@
   (if (ast-has-at-least args 2)
     (let scrutinee-ast (ast-nth args 0 (AstInt 0))
       (let raw-arms (ast-list-nth-rest args 1)
-        (if (match-has-literal-head raw-arms)
-          (Some (parse-literal-match scrutinee-ast raw-arms))
-          (Some
-            (Expr
-              (EMatch
-                (convert-ast scrutinee-ast)
-                (parse-match-arms raw-arms)))))))
+        (if (arms-have-mixed-patterns raw-arms)
+          (begin
+            (ei-fail-at scrutinee-ast "E_MATCH_MIXED_PATTERNS" "literal patterns and constructor patterns cannot be mixed in the same match")
+            None)
+          (if (match-has-literal-head raw-arms)
+            (Some (parse-literal-match scrutinee-ast raw-arms))
+            (Some
+              (Expr
+                (EMatch
+                  (convert-ast scrutinee-ast)
+                  (parse-match-arms raw-arms))))))))
     None))
+
+; Scan all arms to detect if both literal and constructor patterns are present.
+(defn arms-have-mixed-patterns (raw-arms)
+  (let has-literal (arms-have-literal raw-arms)
+    (let has-constructor (arms-have-constructor raw-arms)
+      (and has-literal has-constructor))))
+
+(defn arms-have-literal (raw-arms)
+  (match raw-arms
+    (Nil false)
+    (Cons arm rest
+      (if (arm-has-literal-pattern arm)
+        true
+        (arms-have-literal rest)))))
+
+(defn arms-have-constructor (raw-arms)
+  (match raw-arms
+    (Nil false)
+    (Cons arm rest
+      (if (arm-has-constructor-pattern arm)
+        true
+        (arms-have-constructor rest)))))
 
 (defn parse-match-arms (arms)
   (match arms
