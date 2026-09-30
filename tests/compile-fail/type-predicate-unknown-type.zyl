@@ -1,0 +1,9 @@
+; expect-error: E_CANNOT_INFER
+; A generic function's parameter has no type yet, and a Zyl value carries
+; none at runtime, so there is nothing to decide the answer from. Reported,
+; rather than answered as false — a wrong "false" here would quietly invert
+; a branch.
+(use core/core)
+(defn describe (x) (int? x))
+(defn main ()
+  (print (describe 1)))

@@ -468,6 +468,10 @@
 
 ; (alias Name TypeExpr) forms by alias key; a written Name is its target (spec: alias transparency).
 (def ta-aliases (ffi-call "zyl_smap_new" 1000))
+; Type names that came from a `defstruct`, for `struct?`. The marker is on
+; the EDefn, and nothing kept the name, so it is recorded here where the
+; fields are already being registered.
+(def ta-structs (ffi-call "zyl_smap_new" 1000))
 (def ta-alias-depth (ffi-call "zyl_ref_new" 0 1000))
 
 (defn ta-collect-aliases (exprs)
@@ -1262,7 +1266,52 @@
     (ta-method-call st ctx env e args)
     (if (ta-streq n "len")
       (ta-len st ctx env e args)
-      (ta-call-go st ctx env e n args))))
+      (if (ta-pred-name-p n)
+        (if (ta-no-type-p (ta-env-get env n))
+          (ta-pred st ctx env e n args)
+          (ta-call-go st ctx env e n args))
+        (ta-call-go st ctx env e n args)))))
+
+; The type predicates of spec 21.4. A value in Zyl is an untyped word, so
+; there is nothing at runtime to ask: the answer is a property of the
+; operand's static type and is decided here, in the type pass. Lowering
+; emits the operand (so its effects still happen) and then the constant.
+(defn ta-pred-name-p (n)
+  (or (ta-streq n "int?") (or (ta-streq n "float?")
+    (or (ta-streq n "bool?") (or (ta-streq n "string?")
+      (or (ta-streq n "struct?") (ta-streq n "alias?")))))))
+
+(defn ta-pred (st ctx env e n args)
+  (match (ta-list st ctx env args)
+    (Nil (ta-pred-arity st e n))
+    (Cons x rest
+      (match rest
+        (Cons _ _ (ta-pred-arity st e n))
+        (Nil (ta-pred-go st e n (ta-short (ta-tc-name st x))))))))
+
+(defn ta-pred-arity (st e n)
+  (ta-strict (str-concat n " takes exactly one argument"))
+  (ta-bool))
+
+; A receiver whose type is not known yet cannot be answered: there is no
+; runtime type to fall back on, so this is reported rather than guessed.
+(defn ta-pred-go (st e n k)
+  (if (= (str-length k) 0)
+    (let _ (ta-type-error "E_CANNOT_INFER"
+            (str-concat n " cannot decide: the type of its argument is not known here, and a value carries no type at runtime")
+            (ffi-call "zyl_ref_get" ta-cur-node 1000) Nil "")
+      (ta-bool))
+    (let _ (ta-set-name e 2 (ta-pred-ans n k))
+      (ta-bool))))
+
+; The answer, as the text lowering reads back.
+(defn ta-pred-ans (n k)
+  (if (ta-streq n "int?") (if (ta-streq k "Int") "1" "0")
+  (if (ta-streq n "float?") (if (ta-streq k "Float") "1" "0")
+  (if (ta-streq n "bool?") (if (ta-streq k "Bool") "1" "0")
+  (if (ta-streq n "string?") (if (ta-streq k "String") "1" "0")
+  (if (ta-streq n "struct?") (if (ffi-call "zyl_smap_has" ta-structs k 1000) "1" "0")
+    (if (ffi-call "zyl_smap_has" ta-aliases k 1000) "1" "0")))))))
 
 ; The name of a resolved type, or "" when it is not a concrete named type.
 (defn ta-tc-name (st t)
@@ -1270,14 +1319,6 @@
     (TaC n _ n)
     (_ "")))
 
-; (len x): the spec's one name for "how long is this", for the four types
-; that have a length. Resolved here, on the argument's type, to that type's
-; own length function and the node renamed so lowering calls it. Renaming
-; rather than inlining is sound because naming a type already required
-; importing the module that defines it, so the length function for a type
-; in hand is always in scope (collections/vec for Vec, core/map for Map,
-; core/list for List; str-length is in the prelude). The four names stay
-; public: len is the uniform spelling, not a replacement.
 (defn ta-len (st ctx env e args)
   (match (ta-list st ctx env args)
     (Nil (ta-len-shape st e))
@@ -2409,10 +2450,18 @@
     (Cons e rest
       (begin
         (match (Expr.inner e)
-          (EDeftype _ variants _ sm
-            (if (ta-is-struct sm) (ta-register-struct-fields st variants) 0))
+          (EDeftype name variants _ sm
+            (if (ta-is-struct sm) (ta-register-struct st name variants) 0))
           (_ 0))
         (ta-register-fields st rest)))))
+
+; Keyed by short name, because the name at the definition (a canonical key,
+; zyl/std@5::collections/intmap::IntMap) is not the name the type carries
+; where it is used. Two modules with a struct of the same name therefore
+; share an answer here, which is the same ambiguity `len` has and no worse.
+(defn ta-register-struct (st name variants)
+  (let _ (ffi-call "zyl_smap_put" ta-structs (ta-short name) 1 1000)
+    (ta-register-struct-fields st variants)))
 
 (defn ta-register-struct-fields (st variants)
   (match variants
@@ -2464,6 +2513,7 @@
     (ffi-call "zyl_smap_clear" ta-eqv-table 1000)
     (ffi-call "zyl_smap_clear" ta-alias-table 1000)
     (ffi-call "zyl_smap_clear" ta-aliases 1000)
+    (ffi-call "zyl_smap_clear" ta-structs 1000)
     (ffi-call "zyl_ref_set" ta-alias-depth 0 1000)
     (ta-collect-aliases exprs)
     (ffi-call "zyl_smap_clear" ta-mcount-table 1000)

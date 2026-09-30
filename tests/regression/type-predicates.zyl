@@ -1,0 +1,78 @@
+; The type predicates of spec 21.4. A Zyl value is an untyped word, so
+; there is nothing to ask at runtime: each answer is the operand's static
+; type, decided while type checking. The interesting properties are that
+; the answer is right for every type, that the operand is still evaluated,
+; and that a receiver whose type is not known is reported rather than
+; guessed.
+(use core/core)
+
+(alias UserId Int)
+
+(defstruct Point (x Int) (y Int))
+(deftype Shape (Circle Int) (Square Int))
+
+(defn describe ((n Int)) (if (int? n) "int" "not-int"))
+(defn alias-of ((id UserId)) (alias? id))
+
+(test "int?"
+  (begin
+    (assert-true (int? 0))
+    (assert-true (int? -1))
+    (assert-false (int? 1.0))
+    (assert-false (int? "1"))
+    (assert-false (int? true))))
+
+(test "float?"
+  (begin
+    (assert-true (float? 0.0))
+    (assert-true (float? -2.5))
+    (assert-false (float? 1))
+    (assert-false (float? "1.0"))))
+
+(test "bool?"
+  (begin
+    (assert-true (bool? true))
+    ; true, not false: the question is what type false is, and false is a
+    ; Bool. Asking about a value's truth is `(if x ...)`, not `bool?`.
+    (assert-true (bool? false))
+    (assert-false (bool? 0))
+    (assert-false (bool? "true"))))
+
+(test "string?"
+  (begin
+    (assert-true (string? ""))
+    (assert-true (string? "abc"))
+    (assert-false (string? 0))))
+
+(test "struct?-is-a-defstruct-and-not-an-adt"
+  (begin
+    (assert-true (struct? (make-Point 1 2)))
+    (assert-false (struct? 1))
+    (assert-false (struct? "s"))
+    ; An ADT is not a struct: they are different constructors with
+    ; different field access, and the predicate says which one it is.
+    (assert-false (struct? (Circle 1)))))
+
+(test "struct?-follows-the-type-not-the-value"
+  ; A Point built two ways is the same type, so both answer true; the
+  ; predicate is about the type, not about this particular value.
+  (assert-true (struct? (make-Point 0 0))))
+
+(test "the-operand-is-still-evaluated"
+  ; The answer is known without running the operand, but the operand runs
+  ; anyway: a predicate must not silently drop a side effect.
+  (assert-false (int? (describe 1))))
+
+(test "usable-as-a-condition"
+  ; Because the answer is a Bool, it reads in an if and combines with and/or
+  ; the way any other Bool does.
+  (assert-equal (if (string? "s") "yes" "no") "yes"))
+
+(test "alias?-is-false-where-inference-has-resolved-the-alias"
+  ; Aliases are transparent (book 4.6), so a UserId parameter's type is
+  ; Int by the time anything asks, and alias? says so. See the note in
+  ; book 4.6: this is the one predicate of the six that cannot come out
+  ; true in a checked program.
+  (assert-false (alias? (alias-of 5))))
+
+(run-tests)

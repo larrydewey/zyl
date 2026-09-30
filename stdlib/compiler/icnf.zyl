@@ -1221,11 +1221,25 @@
   (let nm (ta-renamed expr)
     (if (= (str-length nm) 0) (ic-call-expr arena op args vt) (ic-renamed-call arena nm (expr-ident-name op "") args vt))))
 
+; The type predicates (spec 21.4) are decided in the type pass, which left
+; "1" or "0" as the node's rename. Emit the operand so its effects still
+; happen, then the constant: `(int? (print 1))` is false, but it still
+; prints. A sequence is only needed when there is an operand to keep.
+(defn ic-pred-ans (nm)
+  (if (str-eq nm "1") 1 (if (str-eq nm "0") 0 -1)))
+
 (defn ic-apply-renamed (arena expr fname args vt)
   (let nm (ta-renamed expr)
+    (if (ta-pred-name-p fname)
+      (let v (ic-pred-ans nm)
+        (if (< v 0)
+          (ic-apply arena fname args vt)
+          (match args
+            (Nil (IConst v))
+            (Cons _ _ (ISeq (list-append (ic-expr-list arena args vt) (Cons (IConst v) Nil)))))))
     (if (str-eq fname "zyl-method")
       (ic-method-call arena nm args vt)
-      (if (= (str-length nm) 0) (ic-apply arena fname args vt) (ic-renamed-call arena nm fname args vt)))))
+      (if (= (str-length nm) 0) (ic-apply arena fname args vt) (ic-renamed-call arena nm fname args vt))))))
 
 ; (zyl-method "m" recv args...): the type pass named the trait method or its impl.
 (defn ic-method-call (arena nm args vt)

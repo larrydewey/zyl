@@ -1,0 +1,14 @@
+; The type predicates are builtins, not reserved words: a definition of the
+; same name in scope wins and is called normally. This is its own file
+; because a top-level defn shadows the builtin for the whole file, and
+; regression/type-predicates needs the real ones.
+(use core/core)
+
+(defn int? (x) "shadowed")
+
+(test "a-local-definition-shadows-the-builtin"
+  (begin
+    (assert-equal (int? 1) "shadowed")
+    (assert-equal (int? "s") "shadowed")))
+
+(run-tests)

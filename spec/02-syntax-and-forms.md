@@ -45,6 +45,8 @@ Expr :=
   | (tuple Expr*)                     ; element types are part of the type
   | (tuple-get Expr Int)
   | (len Expr)                      ; String, List, Vec, or Map
+  | (int? Expr) (float? Expr) (bool? Expr) (string? Expr)
+  | (struct? Expr) (alias? Expr)    ; type predicates
   | (vec Expr...)                   ; element literal
   | (map Expr Expr ...)             ; key/value literal, even count
   | (unwrap Expr)

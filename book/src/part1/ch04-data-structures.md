@@ -759,6 +759,41 @@ the same thing. It is not defined for anything else: `len` of an `Int` or a
 tuple is a type error, and a tuple's length is fixed by the type, so
 `tuple-get` says so itself when you read past the end.
 
+## 4.5a Type Predicates
+
+Six predicates answer what type a value has: `int?`, `float?`, `bool?`,
+`string?`, `struct?` and `alias?`.
+
+```lisp
+(int? 1)            ; true
+(int? 1.0)          ; false
+(string? "abc")     ; true
+(struct? (make-Point 1 2))   ; true
+(struct? (Circle 1))         ; false — an ADT is not a struct
+```
+
+They are decided while type checking, not at runtime. A Zyl value is an
+untyped word, so there is nothing at runtime to ask — the answer is the
+operand's static type, and the compiler already knows it. Two consequences
+worth knowing:
+
+- **They ask about the type, not the value.** `(bool? false)` is `true`,
+  because `false` is a `Bool`. For a value's truth, use `(if x ...)`.
+- **The operand still runs.** The answer does not need the operand, but the
+  operand is evaluated anyway, so `(int? (print 1))` still prints.
+
+Where the type is not known — a generic function's parameter — the answer
+cannot be decided, and it is reported as `E_CANNOT_INFER` rather than
+answered `false`, which would quietly invert a branch.
+
+`alias?` is the odd one out. Aliases are transparent (4.6), so a value's
+type is the alias's target by the time anything asks, and `alias?` is
+`false` everywhere in a checked program. It is here because the spec lists
+it; it cannot come out `true`.
+
+These are builtins, not reserved words: a `defn` of the same name in scope
+is called instead.
+
 ## 4.6 Type Aliases
 
 ```lisp
