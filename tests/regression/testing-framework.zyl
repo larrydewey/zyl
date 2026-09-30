@@ -43,4 +43,11 @@
 (test-suite "expect-panic-suite"
   (test "carries-the-option" (assert-true false) (:expect-panic true)))
 
+; The option survives a multi-form body and a second option form.
+(test "begin-body" (begin (assert-equal 1 1) (assert-true false)) (:expect-panic true))
+(test "repeated-option" (assert-true false) (:expect-panic true) (:expect-panic true))
+
+; :expect-panic false is the default: the body must still not raise.
+(test "expect-panic-false" (assert-equal 1 1) (:expect-panic false))
+
 (run-tests)

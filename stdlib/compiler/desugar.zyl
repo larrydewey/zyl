@@ -175,22 +175,23 @@
                 (if (or (str-eq h "setup") (str-eq h "teardown")) rest
                   (ds-fail i "a test-suite holds test, test-suite, test-property, setup and teardown forms"))))))))))
 
-; A suite test's option list, carried through unchanged: a top-level test
-; keeps its own options here too, so `(:expect-panic true)` works inside a
-; suite. Only a fourth form counts; any other count is left alone and
-; reported as a malformed test by the arity pass.
-(defn ds-test-opts (xs)
-  (if (= (ds-count xs) 4) (Cons (ds-nth xs 3) Nil) Nil))
+; A suite test's option forms, carried through unchanged from index 3
+; (name and body are 1 and 2). A top-level test keeps its own options
+; here too, so `(:expect-panic true)` works inside a suite.
+(defn ds-test-opts (xs i)
+  (if (>= i (ds-count xs))
+    Nil
+    (Cons (ds-nth xs i) (ds-test-opts xs (+ i 1)))))
 
-; (test "t" body opt?) inside a suite => (test "pre/t" fixtures-around-body opt?).
+; (test "t" body opt...) inside a suite => (test "pre/t" fixtures-around-body opt...).
 (defn ds-suite-test (i pre setups teardowns)
   (let xs (ds-items i)
     (match (ds-nth xs 1)
       (AString n
-        (if (or (= (ds-count xs) 3) (= (ds-count xs) 4))
+        (if (>= (ds-count xs) 3)
           (ds-list (list-append [(ds-id "test" i) (ds-at (AString (str-concat pre n)) i)
                                  (ds-fixture-wrap (ds-form (ds-nth xs 2)) setups teardowns i)]
-                                (ds-test-opts xs)) i)
+                                (ds-test-opts xs 3)) i)
           i))
       (_ i))))
 

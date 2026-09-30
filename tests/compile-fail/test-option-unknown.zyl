@@ -1,0 +1,6 @@
+; expect-error: E_MALFORMED_FORM
+; An option a test does not define is a typo the user wants reported, not
+; something to drop: a test that "passed" because its option was ignored
+; would test nothing at all.
+(test "x" (assert-true true) (:expect-pnak true))
+(run-tests)

@@ -3073,24 +3073,33 @@
     (AString n n)
     (_ "")))
 
-; (:expect-panic b) in a test's option list: (Some b) when the option
-; list is exactly that one keyword and a Bool literal, (None) for
-; anything else -- a test's option slot takes no other shape, so an
-; unrecognized or malformed list leaves the whole form malformed.
-(defn test-panic-flag (opt)
-  (match opt
-    (AList kvs
-      (if (= (ast-count kvs) 2)
-        (match (ast-nth kvs 0 (AstInt 0))
+; One option form: (:expect-panic <Bool>) is (Some b). Any other pair
+; is None, so an unrecognized keyword leaves the test malformed instead
+; of being silently ignored -- a typo would otherwise test nothing.
+(defn test-opt-pair (kv)
+  (match kv
+    (AList parts
+      (if (= (ast-count parts) 2)
+        (match (ast-nth parts 0 (AstInt 0))
           (AstIdent k
             (if (str-eq k ":expect-panic")
-              (match (ast-nth kvs 1 (AstInt 0))
+              (match (ast-nth parts 1 (AstInt 0))
                 (AstBool b (Some b))
                 (_ None))
               None))
           (_ None))
         None))
     (_ None)))
+
+; A test's options are sibling forms after the body, as for run-tests, so
+; the scan starts at index 2. (Pair ok ep): ok is false as soon as one
+; option is malformed, and ep is the flag the well-formed ones name.
+(defn test-opts (args i ep)
+  (if (>= i (ast-count args))
+    (Pair true ep)
+    (match (test-opt-pair (ast-nth args i (AstInt 0)))
+      (Some b (test-opts args (+ i 1) b))
+      (None (Pair false ep)))))
 
 ; The ETestDecl for a test form: name, body, the expect-panic flag and
 ; no option metadata.
@@ -3102,17 +3111,17 @@
       ep
       None)))
 
-; (test "name" body) or (test "name" body (:expect-panic true)). A third
-; form that is not exactly one option list stays E_MALFORMED_FORM
-; (compile-fail/malformed-test-body): extra body forms are not dropped.
+; (test "name" body) or (test "name" body (:expect-panic true) ...).
+; Every form after the body must be one well-formed option; anything else
+; is E_MALFORMED_FORM (compile-fail/malformed-test-body), so extra body
+; forms are not dropped.
 (defn parse-test (args)
-  (if (= (ast-count args) 2)
-    (Some (test-decl-expr args false))
-    (if (= (ast-count args) 3)
-      (match (test-panic-flag (ast-nth args 2 (AstInt 0)))
-        (Some b (Some (test-decl-expr args b)))
-        (None None))
-      None)))
+  (if (ast-has-at-least args 2)
+    (match (test-opts args 2 false)
+      (Pair ok ep
+        (if ok (Some (test-decl-expr args ep)) None))
+      (_ None))
+    None))
 
 ; Top-level suites are flattened before conversion (compiler/desugar.zyl); these are the stray ones.
 (defn parse-test-suite (_args)
