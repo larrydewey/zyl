@@ -3,5 +3,4 @@
 ; (< x) is not a thing -- and the message says "needs two operands" rather
 ; than "supply one", because it already has one.
 (use core/core)
-(defn main ()
-  (print (< 1)))
+(defn main () (begin (print (< 1)) 0))
