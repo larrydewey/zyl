@@ -1,0 +1,42 @@
+; Every binary operator takes any number of operands and folds
+; left-associatively (book 2.6). One operand is the unary form where there
+; is one: (- x) negates, (+ x) and (* x) are x. These are the cases where
+; "one symbol, two meanings" could go wrong, so they are pinned here rather
+; than left to the arithmetic tests.
+(use core/core)
+
+(test "one-operand-is-unary-where-there-is-a-unary-form"
+  (begin
+    (assert-equal (- 10) -10)
+    (assert-equal (- 0) 0)
+    (assert-equal (+ 5) 5)
+    (assert-equal (* 5) 5)))
+
+(test "two-operands-is-the-plain-form"
+  (begin
+    (assert-equal (- 10 3) 7)
+    (assert-equal (- 10.0 3.0) 7.0)))
+
+(test "three-or-more-folds-left"
+  ; Left, not right: 10-(2-3) is 9, (10-2)-3 is 5. The fold nests left so
+  ; source order is the arithmetic.
+  (begin
+    (assert-equal (- 10 3 2) 5)
+    (assert-equal (- 10 2 2 2 2) 2)
+    (assert-equal (/ 100 5 2) 10)))
+
+(test "the-folds-they-share-agree"
+  ; Because every operator uses the same left fold, a chain of mixed
+  ; operators reads in source order throughout.
+  (begin
+    (assert-equal (+ 1 2 3 4 5) 15)
+    (assert-equal (* 2 3 4) 24)
+    (assert-equal (- 100 10 10 10) 70)
+    (assert-equal (/ 1000 10 5) 20)))
+
+(test "the-commutative-bit-operators-fold-too"
+  (begin
+    (assert-equal (bit-and 12 10 8) 8)
+    (assert-equal (bit-or 1 2 4) 7)))
+
+(run-tests)

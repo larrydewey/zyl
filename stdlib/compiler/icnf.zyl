@@ -1267,7 +1267,7 @@
           (ic-make-struct arena fname args vt)
           (let op (ic-op-of arena fname)
             (if (> op -1)
-              (ic-binop arena op args vt)
+              (ic-binop arena fname op args vt)
               (ic-call-or-variant arena fname args vt))))))))))
 
 ; A bit intrinsic (rt_mode.zyl, intrinsic-prim): its locked primitive, which users cannot name, applied to its operands.
@@ -1400,7 +1400,7 @@
 ; (matching the Rust bootstrap's convert_nary_fold). Anything else was
 ; previously lowered to (IConst 0) SILENTLY — the source of the
 ; "computed count is 0 in stage>=2 binaries" miscompile class.
-(defn ic-binop (arena op args vt)
+(defn ic-binop (arena fname op args vt)
   (if (= op 17)
     (ic-bit-not arena args vt)
   (if (= (list-length args) 2)
@@ -1408,24 +1408,35 @@
             (ic-expr arena (first-expr args) vt)
             (ic-expr arena (last-expr args) vt))
     (if (= (list-length args) 1)
-      (ic-unary arena op (first-expr args) vt)
+      (ic-unary arena fname op (first-expr args) vt)
       (if (> (list-length args) 2)
         (ic-binop-fold arena op args vt)
-        (ic-binop-arity op))))))
+        (ic-binop-arity fname))))))
 
 ; One operand: `(- x)` is 0 - x, with a Float zero for a Float x; `(+ x)`
 ; and `(* x)` are x. Any other operator needs two.
-(defn ic-unary (arena op x vt)
+(defn ic-unary (arena fname op x vt)
   (if (= op 1)
     (IBinop 1 (if (= (ta-kind x) 2) (IFlt "0.0") (IConst 0)) (ic-expr arena x vt))
     (if (or (= op 0) (= op 2))
       (ic-expr arena x vt)
-      (ic-binop-arity op))))
+      (ic-binop-unary fname))))
 
-(defn ic-binop-arity (op)
+; No operands at all. Distinct from ic-binop-unary below, which is one
+; operand of an operator that has no unary form: "(< 1)" has an operand,
+; so telling it to supply one would be nonsense.
+(defn ic-binop-arity (fname)
   (ic-fail "E_ARITY_MISMATCH"
-    (str-concat "operator " (str-concat (ffi-call "zyl_int_text" op 1000) " needs two operands"))
-    ""))
+    (str-concat fname " needs at least one operand")
+    "it takes any number: (- 10 3 2) is 10 - 3 - 2"))
+
+; One operand of an operator with no unary meaning. `(- x)` negates and
+; `(+ x)`/`(* x)` are x, so those are read as unary; a comparison has no
+; such reading.
+(defn ic-binop-unary (fname)
+  (ic-fail "E_ARITY_MISMATCH"
+    (str-concat fname " needs two operands")
+    "it has no one-operand form: write (op a b)"))
 
 ; bit-not is the one bitwise op with no two-operand machine form here:
 ; `(bit-not x)` lowers to `x XOR -1`, which is exactly one's complement
@@ -1441,6 +1452,22 @@
 ; Left-associative n-ary fold: (op a b c) -> (op (op a b) c).
 ; The tree must nest LEFT so subtraction/division evaluate in source
 ; order: 10-(2-3) != (10-2)-3.
+; Every binary operator takes any number of operands and folds
+; left-associatively: `(- 10 3 2)` is (10-3)-2. One rule for all of them,
+; which is what book 2.6 documents ("Arithmetic (n-ary,
+; left-associative)") and what regression/arithmetic.zyl pins — see
+; `int-modulo-like` for `(- 10 2 2 2 2)` = 2, `float-sub-3` for
+; `(- 1.0 2.0 3.0)` = -4.0, `float-div-3` for `(/ 1.0 2.0 3.0)`.
+;
+; Left nesting is the part that matters. `+` and `*` associate, so their
+; grouping is invisible; `-`, `/` and `%` do not, and 10-(2-3) is not
+; (10-2)-3, so the tree has to nest left for the source order to be the
+; arithmetic. Chained `-` is also how you spell modulo, which is the
+; ergonomic reason the multi-operand form is wanted at all.
+;
+; Spec 21.1's summary writes these as `(- a b)`, which reads as two
+; operands and is not what this does; the n-ary form is the one implemented
+; and documented.
 (defn ic-binop-fold (arena op args vt)
   (if (= (list-length args) 2)
     (IBinop op

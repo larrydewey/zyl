@@ -1,0 +1,7 @@
+; expect-error: E_ARITY_MISMATCH
+; A comparison has no one-operand form. (- x) negates and (+ x) is x, but
+; (< x) is not a thing -- and the message says "needs two operands" rather
+; than "supply one", because it already has one.
+(use core/core)
+(defn main ()
+  (print (< 1)))

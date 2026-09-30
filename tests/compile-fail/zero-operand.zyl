@@ -1,0 +1,6 @@
+; expect-error: E_ARITY_MISMATCH
+; Zero operands is the one arity no operator accepts: the identity for + and
+; * would be 0 and 1, which is arithmetic on a value nobody wrote.
+(use core/core)
+(defn main ()
+  (print (-)))
