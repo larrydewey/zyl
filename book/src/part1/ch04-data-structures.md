@@ -717,6 +717,23 @@ single-variant ADT:
     (MkPair a b (+ a b))))
 ```
 
+`len` gives the length of any of the four types that have one — a String,
+a List, a Vec, or a Map — so a length does not have to be reached through
+the name that type happens to use:
+
+```lisp
+(len "hello")                    ; 5   (also str-length)
+(len (list 1 2 3))               ; 3   (also list-length)
+(len (vec-create-default 4))     ; 0   (also vec-len)
+(len (map-new))                  ; 0   (also map-size)
+```
+
+`len` is resolved while type checking, by the argument's own type, to that
+type's length function — so the four names above still work and still mean
+the same thing. It is not defined for anything else: `len` of an `Int` or a
+tuple is a type error, and a tuple's length is fixed by the type, so
+`tuple-get` says so itself when you read past the end.
+
 ## 4.6 Type Aliases
 
 ```lisp

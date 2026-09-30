@@ -44,6 +44,7 @@ Expr :=
   | (panic String)
   | (tuple Expr*)                     ; element types are part of the type
   | (tuple-get Expr Int)
+  | (len Expr)                      ; String, List, Vec, or Map
   | (unwrap Expr)
 
   ;; Trait & Type System

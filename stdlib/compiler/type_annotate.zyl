@@ -1260,7 +1260,96 @@
 (defn ta-call (st ctx env e n args)
   (if (ta-streq n "zyl-method")
     (ta-method-call st ctx env e args)
-    (ta-call-go st ctx env e n args)))
+    (if (ta-streq n "len")
+      (ta-len st ctx env e args)
+      (ta-call-go st ctx env e n args))))
+
+; The name of a resolved type, or "" when it is not a concrete named type.
+(defn ta-tc-name (st t)
+  (match (ta-resolve st t)
+    (TaC n _ n)
+    (_ "")))
+
+; (len x): the spec's one name for "how long is this", for the four types
+; that have a length. Resolved here, on the argument's type, to that type's
+; own length function and the node renamed so lowering calls it. Renaming
+; rather than inlining is sound because naming a type already required
+; importing the module that defines it, so the length function for a type
+; in hand is always in scope (collections/vec for Vec, core/map for Map,
+; core/list for List; str-length is in the prelude). The four names stay
+; public: len is the uniform spelling, not a replacement.
+(defn ta-len (st ctx env e args)
+  (match (ta-list st ctx env args)
+    (Nil (ta-len-shape st e))
+    (Cons x rest
+      (match rest
+        (Cons _ _ (ta-len-shape st e))
+        (Nil (ta-len-go st e (ta-short (ta-tc-name st x))))))))
+
+; A type name is module-qualified (zyl/std@5::core/map::Map), so comparing
+; against a bare "Map" never matches. Keep only what follows the last "::".
+
+; (len x) asks for a type, and the type picks the function. The type name
+; reaching here is the short one, so the module is not readable off it; the
+; module is fixed per collection instead, below. Map exists twice in the
+; stdlib -- core/map counts with map-size, collections/map with map-len --
+; so which length `len` means depends on which of the two a program has
+; loaded, and that is decided by looking for both.
+(defn ta-len-go (st e k)
+  (let sym (ta-short k)
+    (if (ta-streq sym "String") (ta-len-pick st e "str-length" "")
+    (if (ta-streq sym "List") (ta-len-pick st e "list-length" "core/list")
+    (if (ta-streq sym "Vec") (ta-len-pick st e "vec-len" "collections/vec")
+    (if (ta-streq sym "Map") (ta-len-map st e)
+      (ta-len-none st k)))))))
+
+; Two Maps exist in the stdlib: core/map, an ADT over a list of entries,
+; and collections/map, an arena-backed defstruct. Both are named Map and
+; both are loaded by a program that uses collections/vec, and the short type
+; name does not say which one a value is. `len` takes core/map's, the one
+; that pairs with map-new and map-insert. A value of the other type is not
+; misread: map-size is typed to take a core/map Map, so the call is
+; rejected as a type mismatch rather than reading the wrong field.
+(defn ta-len-map (st e) (ta-len-pick st e "map-size" "core/map"))
+
+; The function to call for a length. A prelude function is registered under
+; its bare name; a module function under its canonical key
+; (zyl/std@5::collections/vec::vec-len), and that key is not derivable here
+; without knowing the package and version, so it is found by its tail. The
+; module is matched as well as the symbol, so a same-named function in
+; another module cannot be picked up by mistake.
+(defn ta-len-pick (st e short mod)
+  (let _ (ta-set-name e 2 (ta-len-find st short mod))
+    (ta-int)))
+
+(defn ta-len-find (st short mod)
+  (let fi (ta-sget (ta-fnmap st) short)
+    (if (> fi 0)
+      (ta-fn-name st (- fi 1))
+      (let i (ta-len-scan st (str-concat (str-concat mod "::") short) 0 -1)
+        (if (< i 0) short (ta-fn-name st i))))))
+
+(defn ta-len-scan (st suffix i found)
+  (if (or (>= i (ta-wlen (ta-fnexp st))) (>= found 0))
+    found
+    (ta-len-scan st suffix (+ i 1)
+      (if (ta-len-tail-p (ta-fn-name st i) suffix) i found))))
+
+(defn ta-len-tail-p (n suffix)
+  (let ln (str-length n)
+    (let ls (str-length suffix)
+      (if (< ln ls)
+        false
+        (str-eq (str-substring n (- ln ls) ls) suffix)))))
+
+(defn ta-len-shape (st e)
+  (ta-strict "len takes exactly one argument")
+  (ta-int))
+
+(defn ta-len-none (st k)
+  (ta-strict (str-concat (str-concat "len has no length for a value of type " k)
+    " (String, List, Vec, or Map)"))
+  (ta-int))
 
 ;; Dot method calls: how many trait methods are named m, and the dotted
 ;; name of the i-th under "m#i".

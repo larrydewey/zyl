@@ -1,0 +1,7 @@
+; expect-error: E_TYPE_MISMATCH
+; len is for the four types that have a length. It does not reach into a
+; tuple (use tuple-get, which is type-checked against the element types) or
+; count a number, and the message says so rather than guessing.
+(use core/core)
+(defn main ()
+  (print (len (tuple 1 2))))

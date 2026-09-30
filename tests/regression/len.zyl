@@ -1,0 +1,36 @@
+; (len x): the spec's one name for the length of a String, List, Vec, or
+; Map. It is resolved during type checking to the length function of the
+; argument's own type, so each of the four still keeps its own name
+; (str-length, list-length, vec-len, map-size) and `len` is the uniform
+; spelling rather than a replacement.
+(use core/core)
+(use core/list)
+(use core/map)
+(use collections/vec)
+
+(test "len-of-a-string"
+  (begin
+    (assert-equal (len "") 0)
+    (assert-equal (len "a") 1)
+    (assert-equal (len "hello") 5)))
+
+(test "len-of-a-list"
+  (begin
+    (assert-equal (len (list)) 0)
+    (assert-equal (len (list 1 2 3)) 3)))
+
+(test "len-of-a-vec"
+  (assert-equal (len (vec-create-default 4)) 0))
+
+(test "len-of-a-map"
+  (begin
+    (assert-equal (len (map-new)) 0)
+    (assert-equal (len (map-insert (map-new) "k" 1)) 1)))
+
+(test "len-is-the-type-s-own-length"
+  ; str-length and len agree, which is the point: len is the same answer
+  ; under the name the type already has.
+  (let s "hello"
+    (assert-equal (len s) (str-length s))))
+
+(run-tests)
