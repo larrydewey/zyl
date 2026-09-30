@@ -435,7 +435,11 @@
 
 (defn inline-derive-p (a) (str-eq (ast-head a) ":derive"))
 
+(defn all-derivable-traits-ast ()
+  (Cons (AstIdent "Show") (Cons (AstIdent "Debug") (Cons (AstIdent "Eq") (Cons (AstIdent "Ord") (Cons (AstIdent "Hash") (Cons (AstIdent "Clone") Nil)))))))
+
 ; (derive Name T ...) for a struct form whose last element is (:derive ...).
+; For defstruct+ without inline derive, auto-derive all 6 prelude traits.
 (defn inline-derive-of (f)
   (if (struct-head-p (ast-head f))
     (match f
@@ -443,7 +447,9 @@
         (let last (ast-list-last xs (AstInt 0))
           (if (inline-derive-p last)
             (Some (dot-spanned (AList (Cons (AstIdent "derive") (Cons (ast-arg1 f) (inline-derive-traits last)))) last))
-            None)))
+            (if (str-eq (ast-head f) "defstruct+")
+              (Some (dot-spanned (AList (Cons (AstIdent "derive") (Cons (ast-arg1 f) (all-derivable-traits-ast)))) f))
+              None))))
       (_ None))
     None))
 
