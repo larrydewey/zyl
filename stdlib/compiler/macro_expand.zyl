@@ -581,6 +581,7 @@
     (EFn name params body (me-lambda e 1 name params body cx n))
     (EStructGet se _ (me-k1 e se cx n))
     (EMakeStruct _ args (me-kids e args cx n))
+    (ETuple args (me-kids e args cx n))
     (EMakeVariant _ _ args (me-kids e args cx n))
     (ESetBang name val (me-set e name val cx n))
     (EModuleDecl _ (MeR e n))
@@ -602,7 +603,7 @@
     (EStructDefPlus _ _ (MeR e n))
     (EAliasDecl _ a (me-k1 e a cx n))
     (EDerive _ _ (MeR e n))
-    (ETestDecl name body meta (me-test name body meta cx n))
+    (ETestDecl name body ep meta (me-test name body ep meta cx n))
     (EAssertEqual l r (me-k2 e l r cx n))
     (EAssertTrue a _ (me-k1 e a cx n))
     (EAssertFalse a _ (me-k1 e a cx n))
@@ -841,9 +842,9 @@
     (EDefn name params body (DN name params body))
     (_ fallback)))
 
-(defn me-test (name body meta cx n)
+(defn me-test (name body ep meta cx n)
   (match (me-rewrite body cx n)
-    (MeR b2 n2 (MeR (Expr (ETestDecl name b2 meta)) n2))))
+    (MeR b2 n2 (MeR (Expr (ETestDecl name b2 ep meta)) n2))))
 
 ; --- macro calls -----------------------------------------------------------------
 

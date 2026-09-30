@@ -51,6 +51,7 @@
   (EFn String (List Param) Expr)
   (EStructGet Expr String)
   (EMakeStruct String (List Expr))
+  (ETuple (List Expr))
   (EMakeVariant String String (List Expr))
   (ESetBang String Expr)
   (EModuleDecl String)
@@ -72,7 +73,7 @@
   (EStructDefPlus StructDef (Option StructDef))
   (EAliasDecl String Expr)
   (EDerive String (List String))
-  (ETestDecl String Expr (Option (Pair String Atom)))
+  (ETestDecl String Expr Bool (Option (Pair String Atom)))
   (EAssertEqual Expr Expr)
   (EAssertTrue Expr (Option String))
   (EAssertFalse Expr (Option String))
@@ -1298,6 +1299,10 @@
     (match (parse-make-struct rest)
       (Some expr expr)
       (None (Expr (EUnknown "make-struct" (convert-ast-list rest)))))
+  (if (str-eq n "tuple")
+    (match (parse-tuple rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "tuple" (convert-ast-list rest)))))
   (if (str-eq n "struct-get")
     (match (parse-struct-get rest)
       (Some expr expr)
@@ -1329,7 +1334,7 @@
       (Some expr expr)
       (None (Expr (EUnknown "test-compile" (convert-ast-list rest)))))
     (if (str-eq n "alias") (parse-alias rest) (byte-form-dispatch n rest))
-  )))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+  ))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 
 ; --- Byte-level primitives (book chapter 32) ------
 ; Recognition happens here, not in the reader (no-dispatch arch). The 21
@@ -3060,19 +3065,54 @@
         None))
     (_ None)))
 
-; Exactly a name and one body expression.
+; The name of a test form's first argument: a bare name or a string
+; literal, "" for anything else (an unnamed test).
+(defn test-name (a)
+  (match a
+    (AstIdent n n)
+    (AString n n)
+    (_ "")))
+
+; (:expect-panic b) in a test's option list: (Some b) when the option
+; list is exactly that one keyword and a Bool literal, (None) for
+; anything else -- a test's option slot takes no other shape, so an
+; unrecognized or malformed list leaves the whole form malformed.
+(defn test-panic-flag (opt)
+  (match opt
+    (AList kvs
+      (if (= (ast-count kvs) 2)
+        (match (ast-nth kvs 0 (AstInt 0))
+          (AstIdent k
+            (if (str-eq k ":expect-panic")
+              (match (ast-nth kvs 1 (AstInt 0))
+                (AstBool b (Some b))
+                (_ None))
+              None))
+          (_ None))
+        None))
+    (_ None)))
+
+; The ETestDecl for a test form: name, body, the expect-panic flag and
+; no option metadata.
+(defn test-decl-expr (args ep)
+  (Expr
+    (ETestDecl
+      (test-name (ast-nth args 0 (AstInt 0)))
+      (convert-ast (ast-nth args 1 (AstInt 0)))
+      ep
+      None)))
+
+; (test "name" body) or (test "name" body (:expect-panic true)). A third
+; form that is not exactly one option list stays E_MALFORMED_FORM
+; (compile-fail/malformed-test-body): extra body forms are not dropped.
 (defn parse-test (args)
   (if (= (ast-count args) 2)
-    (Some
-      (Expr
-        (ETestDecl
-          (match (ast-nth args 0 (AstInt 0))
-            (AstIdent n n)
-            (AString n n)
-            (_ "___"))
-          (convert-ast (ast-list-last args (AstInt 0)))
-          None)))
-    None))
+    (Some (test-decl-expr args false))
+    (if (= (ast-count args) 3)
+      (match (test-panic-flag (ast-nth args 2 (AstInt 0)))
+        (Some b (Some (test-decl-expr args b)))
+        (None None))
+      None)))
 
 ; Top-level suites are flattened before conversion (compiler/desugar.zyl); these are the stray ones.
 (defn parse-test-suite (_args)
@@ -3096,6 +3136,9 @@
           (match (ast-nth args 0 (AstInt 0)) (AstIdent n n) (_ "___"))
           (convert-ast-list (ast-list-nth-rest args 1)))))
     None))
+
+(defn parse-tuple (args)
+  (Some (Expr (ETuple (convert-ast-list args)))))
 
 (defn parse-struct-get (args)
   (if (ast-has-at-least args 2)

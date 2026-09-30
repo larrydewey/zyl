@@ -348,6 +348,12 @@ a fixed message, unless `e` raises.
   Tests run sequentially in registration order; there is no parallel
   runner, and no fresh environment beyond each test being its own
   function.
+- A test may carry one option, `(:expect-panic true|false)`, which
+  inverts it: the body must raise, and a body that returns normally
+  fails with `expected a panic, but the test body returned normally`.
+  The option is carried through `test-suite` flattening, so a suite's
+  tests accept it too. Any other third form is `E_MALFORMED_FORM` —
+  extra body forms are not dropped.
 - A top-level `test-suite` is flattened on the parse tree into its tests,
   named `suite/test` (nested suites add their names), each wrapped in the
   suite's `setup` forms (outer suite first) and `teardown` forms (inner

@@ -311,7 +311,7 @@
   Nil)))))))
 
 (defn builtins-testing ()
-  (Cons (ZB "test" "special-form" "(test \"name\" body)" "One test case.")
+  (Cons (ZB "test" "special-form" "(test \"name\" body (:expect-panic true))" "One test case. With `(:expect-panic true)` the body must raise: raising passes, and returning normally fails with \"expected a panic, but the test body returned normally\".")
   (Cons (ZB "test-suite" "special-form" "(test-suite \"name\" item ...)" "Top level. Groups tests, nested suites and test-property forms; they register as `name/test`, each run between the suite's setup and teardown forms.")
   (Cons (ZB "assert-equal" "special-form" "(assert-equal actual expected)" "Assert two values are equal.")
   (Cons (ZB "assert-true" "special-form" "(assert-true expr)" "Assert a value is true.")

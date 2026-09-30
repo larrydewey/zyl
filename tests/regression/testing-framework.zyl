@@ -36,4 +36,11 @@
 (test-compile (+ 1 "a") (:expect-error true))
 (test-compile (let-mut x 1 (set! x 2)))
 
+; --- expect-panic (spec 20.5.2): the body must raise; returning normally
+; fails. Uses assert-true, which panics via zyl_panic.
+(test "expect-panic-body-raises" (assert-true false) (:expect-panic true))
+
+(test-suite "expect-panic-suite"
+  (test "carries-the-option" (assert-true false) (:expect-panic true)))
+
 (run-tests)

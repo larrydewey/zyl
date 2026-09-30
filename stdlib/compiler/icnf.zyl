@@ -280,8 +280,8 @@
       (match (Expr.inner e)
         (EDefn name params body
           (ic-toplevel arena rest vt (tlacc-push-fns (ic-defn arena name params body vt) acc)))
-        (ETestDecl name body _
-          (ic-toplevel arena rest vt (ic-toplevel-test arena name body vt acc)))
+        (ETestDecl name body ep _
+          (ic-toplevel arena rest vt (ic-toplevel-test arena name body ep vt acc)))
         (ERunTests f
           (ic-toplevel arena rest vt
             (tlacc-push-stmt (if (= (str-length f) 0) (IFfi "zyl_run_tests" Nil)
@@ -296,12 +296,30 @@
 ; function table to a `lea rax, [rip+f_<name>]` (used elsewhere for
 ; higher-order function values), so no separate function-pointer node kind
 ; is needed.
-(defn ic-toplevel-test (arena name body vt acc)
+(defn ic-toplevel-test (arena name body ep vt acc)
   (let tname (str-intern arena (str-concat "_test_" name))
     (let h (ic-hoist (ic-expr arena body vt))
-      (let tbody (ISeq (Cons (hoist-node h) (Cons (IConst 0) Nil)))
-        (let acc2 (tlacc-push-fns (Cons (IFn tname (no-strs) tbody (no-ints)) (hoist-fns h)) acc)
-          (tlacc-push-stmt (ic-keep-span (IFfi "zyl_register_test" (Cons (IStr name) (Cons (ILoad tname) Nil))) body) acc2))))))
+      (let node (hoist-node h)
+        (let inner (if ep (ic-expect-panic-wrap arena node) node)
+          (let tbody (ISeq (Cons inner (Cons (IConst 0) Nil)))
+            (let acc2 (tlacc-push-fns (Cons (IFn tname (no-strs) tbody (no-ints)) (hoist-fns h)) acc)
+              (tlacc-push-stmt (ic-keep-span (IFfi "zyl_register_test" (Cons (IStr name) (Cons (ILoad tname) Nil))) body) acc2))))))))
+
+; (:expect-panic true) inverts the test: the body must raise, and a body
+; that returns normally fails. The catch frame is popped before the
+; trailing zyl_panic runs, so the runner's own frame is what marks the
+; failure — the same path an assertion failure takes.
+(defn ic-expect-panic-wrap (arena inner)
+  (let c (str-intern arena "_ep_caught")
+    (ILet c (IConst 0)
+      (ISeq
+        (Cons
+          (ITryCatch inner (str-intern arena "_ep_e") (ISet c (IConst 1)))
+          (Cons
+            (IIf (ILoad c)
+                 (IConst 0)
+                 (IFfi "zyl_panic" (Cons (IStr "expected a panic, but the test body returned normally") Nil)))
+            (Cons (IConst 0) Nil)))))))
 
 ; If there are leftover top-level statements, wrap them in an implicit
 ; `main` (the entry stub always calls f_main) unless the source already

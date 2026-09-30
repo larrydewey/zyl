@@ -142,11 +142,12 @@
       (let base (str-concat "test-compile line " (ffi-call "zyl_int_text"
                   (ffi-call "zyl_span_line" (ffi-call "zyl_span_file" e 1000) (ffi-call "zyl_span_off" e 1000) 1000) 1000))
         (if (= compiled (not expect))
-          (Expr (ETestDecl base (Expr (EAtom ANil)) None))
+          (Expr (ETestDecl base (Expr (EAtom ANil)) false None))
           (Expr (ETestDecl base
                            (Expr (EAssertTrue (Expr (EAtom (ABool false)))
-                                              (Some (if compiled "compiled, but an error was expected"
+                                               (Some (if compiled "compiled, but an error was expected"
                                                         (str-concat "did not compile: " err)))))
+                           false
                            None)))))))
 
 ; A file whose delimiters do not balance is reported here rather than

@@ -114,7 +114,7 @@
     (Cons e rest
       (match (Expr.inner e)
         (EDefn name _ body (list-append (uc-filter-out name (uc-refs body)) (uc-collect-all-refs rest)))
-        (ETestDecl _ body _ (list-append (uc-refs body) (uc-collect-all-refs rest)))
+        (ETestDecl _ body _ _ (list-append (uc-refs body) (uc-collect-all-refs rest)))
         (_ (uc-collect-all-refs rest))))))
 
 (defn uc-filter-out (name xs)
@@ -198,6 +198,7 @@
     (ELambda _ _ body (uc-refs body))
     (EFn _ _ body (uc-refs body))
     (EStructGet se _ (uc-refs se))
+    (ETuple fields (uc-refs-list fields))
     (EMakeStruct _ fields (uc-refs-list fields))
     (EMakeVariant _ _ args (uc-refs-list args))
     (ESetBang name val (Cons name (uc-refs val)))
@@ -209,7 +210,7 @@
     (EFileWrite a b (list-append (uc-refs a) (uc-refs b)))
     (EFileClose e2 (uc-refs e2))
     (EBufAppend a b (list-append (uc-refs a) (uc-refs b)))
-    (ETestDecl _ body _ (uc-refs body))
+    (ETestDecl _ body _ _ (uc-refs body))
     (EAssertEqual l r (list-append (uc-refs l) (uc-refs r)))
     (EAssertTrue e2 _ (uc-refs e2))
     (EAssertFalse e2 _ (uc-refs e2))
@@ -315,7 +316,7 @@
       (begin
         (match (Expr.inner e)
           (EDefn name params body (uc-check-fn name params body))
-          (ETestDecl _ body _ (uc-check-fn-body body))
+          (ETestDecl _ body _ _ (uc-check-fn-body body))
           (_ 0))
         (uc-check-top rest)))))
 
@@ -428,6 +429,7 @@
     (EAssert c _ (uc-walk-scope c refs scope))
     (EUnwrap e2 (uc-walk-scope e2 refs scope))
     (EStructGet se _ (uc-walk-scope se refs scope))
+    (ETuple fields (uc-walk-list fields refs scope))
     (EMakeStruct _ fields (uc-walk-list fields refs scope))
     (EMakeVariant _ _ args (uc-walk-list args refs scope))
     (EPrint exprs (uc-walk-list exprs refs scope))
@@ -441,7 +443,7 @@
     (ESpawn closure (uc-walk-scope closure refs scope))
     (ESend actor msg (begin (uc-walk-scope actor refs scope) (uc-walk-scope msg refs scope)))
     (ESendClosure actor closure _ (begin (uc-walk-scope actor refs scope) (uc-walk-scope closure refs scope)))
-    (ETestDecl _ body _ (uc-walk-scope body refs scope))
+    (ETestDecl _ body _ _ (uc-walk-scope body refs scope))
     (EAssertEqual l r (begin (uc-walk-scope l refs scope) (uc-walk-scope r refs scope)))
     (EAssertTrue e2 _ (uc-walk-scope e2 refs scope))
     (EAssertFalse e2 _ (uc-walk-scope e2 refs scope))
