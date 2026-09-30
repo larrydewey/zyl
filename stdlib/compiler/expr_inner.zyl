@@ -51,6 +51,8 @@
   (EFn String (List Param) Expr)
   (EStructGet Expr String)
   (EMakeStruct String (List Expr))
+  (ETuple (List Expr))
+  (ETupleGet Expr Int)
   (EMakeVariant String String (List Expr))
   (ESetBang String Expr)
   (EModuleDecl String)
@@ -1298,6 +1300,14 @@
     (match (parse-make-struct rest)
       (Some expr expr)
       (None (Expr (EUnknown "make-struct" (convert-ast-list rest)))))
+  (if (str-eq n "tuple")
+    (match (parse-tuple rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "tuple" (convert-ast-list rest)))))
+  (if (str-eq n "tuple-get")
+    (match (parse-tuple-get rest)
+      (Some expr expr)
+      (None (Expr (EUnknown "tuple-get" (convert-ast-list rest)))))
   (if (str-eq n "struct-get")
     (match (parse-struct-get rest)
       (Some expr expr)
@@ -1329,7 +1339,7 @@
       (Some expr expr)
       (None (Expr (EUnknown "test-compile" (convert-ast-list rest)))))
     (if (str-eq n "alias") (parse-alias rest) (byte-form-dispatch n rest))
-  )))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+  )))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 
 ; --- Byte-level primitives (book chapter 32) ------
 ; Recognition happens here, not in the reader (no-dispatch arch). The 21
@@ -3139,6 +3149,26 @@
         (EMakeStruct
           (match (ast-nth args 0 (AstInt 0)) (AstIdent n n) (_ "___"))
           (convert-ast-list (ast-list-nth-rest args 1)))))
+    None))
+
+; (tuple e...) is sugar for a generated single-variant ADT, one per element
+; type list, so `(tuple 1 2)` and `(tuple "a" "b")` are different types. The
+; type pass picks the name and the type is that type; see type_annotate.zyl's
+; ta-tuple. Nothing here decides the type.
+(defn parse-tuple (args)
+  (Some (Expr (ETuple (convert-ast-list args)))))
+
+; (tuple-get t i) reads element i. The index is an Int literal because the
+; element count decides the shape of the match it lowers to, which is only
+; known here if it is written down.
+(defn parse-tuple-get (args)
+  (if (= (ast-count args) 2)
+    (match (ast-nth args 1 (AstInt 0))
+      (AstInt i
+        (if (>= i 0)
+          (Some (Expr (ETupleGet (convert-ast (ast-nth args 0 (AstInt 0))) i)))
+          (ei-fail-at (ast-nth args 1 (AstInt 0)) "E_INDEX_OUT_OF_BOUNDS" "a tuple index is 0 or more")))
+      (_ (ei-fail-at (ast-nth args 1 (AstInt 0)) "E_TYPE_MISMATCH" "a tuple index is an integer literal, as in (tuple-get t 0)")))
     None))
 
 (defn parse-struct-get (args)

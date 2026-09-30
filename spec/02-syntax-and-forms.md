@@ -42,6 +42,8 @@ Expr :=
   | (begin Expr+)
   | (error String)
   | (panic String)
+  | (tuple Expr*)                     ; element types are part of the type
+  | (tuple-get Expr Int)
   | (unwrap Expr)
 
   ;; Trait & Type System

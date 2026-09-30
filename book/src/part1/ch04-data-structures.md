@@ -681,8 +681,33 @@ way, and so does a named function. `option-to-result`, `result-to-option` and fr
 
 ## 4.5 Tuples
 
-The specification has anonymous tuples (`(tuple 1 "hello" 3.14)`);
-they are not implemented yet. Use a struct, or a single-variant ADT:
+A tuple groups a fixed number of values of known types. Build one with
+`tuple` and read an element by position with `tuple-get`, counting from 0:
+
+```lisp
+(let t (tuple 1 "hello" 3.14)
+  (print (tuple-get t 0))     ; 1
+  (print (tuple-get t 1)))    ; hello
+```
+
+**The element types are part of a tuple's type.** `(tuple 1 2)` and
+`(tuple "a" "b")` are different types that cannot be mixed, so element 0 is
+an `Int` in the first and a `String` in the second, and reading it is
+type-checked rather than a raw word. Each distinct element-type list is its
+own type, the way `List<Int>` and `List<String>` are.
+
+Reading past the end is a compile error naming the arity, not a panic:
+
+```lisp
+(tuple-get t 5)   ; error[E_INDEX_OUT_OF_BOUNDS]: this tuple has 3 element(s)
+```
+
+Two limits worth knowing. A tuple is a fixed shape with no named fields, so
+`struct-get` does not apply — use a `defstruct` when you want names. And a
+*generic* function cannot take a tuple, because there is no way to write that
+a type parameter is a tuple (see 15.5 on trait bounds): `tuple-get` on a type
+parameter is `E_CANNOT_INFER`. For a type you can name, use a struct or a
+single-variant ADT:
 
 ```lisp
 (deftype Pair (MkPair A B))

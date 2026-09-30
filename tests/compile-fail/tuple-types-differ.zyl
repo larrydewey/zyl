@@ -1,0 +1,11 @@
+; expect-error: E_TYPE_MISMATCH
+; The element types are part of a tuple's type, so two tuples built
+; differently are different types and cannot be mixed. This is what makes a
+; tuple safe to read positionally: element 0 is Int here and String there.
+(use core/core)
+(defn ints () (tuple 1 2))
+(defn strs () (tuple "a" "b"))
+(defn pick ((n Int))
+  (if (> n 0) (ints) (strs)))
+(defn main ()
+  (print (tuple-get (pick 1) 0)))

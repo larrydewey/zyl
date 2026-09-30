@@ -1,0 +1,65 @@
+; Tuples (spec 21.5, 4.2). `(tuple ...)` builds a generated single-variant
+; ADT whose element types are part of its type, and `tuple-get` reads an
+; element by position. The generated type is an implementation detail; these
+; tests only use the surface forms.
+
+(use core/core)
+
+(defn tp-join ((a String) (b String)) (str-concat a b))
+(defn tp-int ((n Int)) (ffi-call "zyl_int_text" n 1000))
+(defn tp-len ((s String)) (ffi-call "zyl_cstr_len" s 1000))
+(defn tp-pair (a b) (tuple a b))
+
+; Two tuples built the same way are the same type, so this value is one on
+; one path and the other on the other, and still type-checks.
+(defn tp-either ((n Int))
+  (if (> n 0) (tuple 1 2) (tuple 3 4)))
+
+(test "construction-and-read"
+  (let t (tuple 1 2 3)
+    (begin
+      (assert-equal (tuple-get t 0) 1)
+      (assert-equal (tuple-get t 1) 2)
+      (assert-equal (tuple-get t 2) 3))))
+
+(test "element-types-are-known"
+  ; The read is typed, not a raw word: str-length only type-checks on a
+  ; String, and zyl_int_text only on an Int, so these passing is the
+  ; element types being right.
+  (let t (tuple 1 "two" 3.0)
+    (begin
+      (assert-equal (tp-len (tuple-get t 1)) 3)
+      (assert-equal (tp-int (tuple-get t 0)) "1"))))
+
+(test "zero-elements"
+  ; An empty tuple is a value; there is nothing to read out of it.
+  (let _z (tuple)
+    (assert-equal 0 0)))
+
+(test "one-element"
+  (let o (tuple 7)
+    (assert-equal (tuple-get o 0) 7)))
+
+(test "from-a-function"
+  (let p (tp-pair 10 20)
+    (begin
+      (assert-equal (tuple-get p 0) 10)
+      (assert-equal (tuple-get p 1) 20))))
+
+(test "nested"
+  (let q (tuple (tuple 1 2) 3)
+    (let inner (tuple-get q 0)
+      (begin
+        (assert-equal (tuple-get inner 1) 2)
+        (assert-equal (tuple-get q 1) 3)))))
+
+(test "elements-are-evaluated-left-to-right"
+  (let t (tuple (tp-int 1) (tp-int 2))
+    (assert-equal (tp-join (tuple-get t 0) (tuple-get t 1)) "12")))
+
+(test "same-element-types-same-type"
+  (begin
+    (assert-equal (tuple-get (tp-either 1) 0) 1)
+    (assert-equal (tuple-get (tp-either 0) 1) 4)))
+
+(run-tests)

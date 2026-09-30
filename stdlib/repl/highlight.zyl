@@ -130,7 +130,7 @@
       (if (>= b 65) (if (<= b 90) true false) false))))
 
 ; The special forms (lsp/builtins documents each one).
-(def hl-keywords ["defn" "def" "deftype" "defstruct" "defstruct+" "defmacro" "macro" "let" "let-mut" "set!" "if" "cond" "match" "begin" "let*" "while" "for" "fn" "lambda" "trait" "impl" "impl-not" "derive" "alias" "use" "module" "export" "pub" "feature-gate" "extern" "spawn" "chan-send" "try" "catch" "unwrap" "error" "assert" "with-resource" "with-region" "ffi-call" "ffi-pin" "ffi-unpin" "test" "test-suite" "test-property" "test-compile" "setup" "teardown" "assert-equal" "assert-true" "assert-false" "assert-fail" "run-tests" "requires" "ensures" "invariant" "recover" "checkpoint" "contracts" "print" "quote" "list"])
+(def hl-keywords ["defn" "def" "deftype" "defstruct" "defstruct+" "defmacro" "macro" "let" "let-mut" "set!" "if" "cond" "match" "begin" "let*" "tuple" "tuple-get" "while" "for" "fn" "lambda" "trait" "impl" "impl-not" "derive" "alias" "use" "module" "export" "pub" "feature-gate" "extern" "spawn" "chan-send" "try" "catch" "unwrap" "error" "assert" "with-resource" "with-region" "ffi-call" "ffi-pin" "ffi-unpin" "test" "test-suite" "test-property" "test-compile" "setup" "teardown" "assert-equal" "assert-true" "assert-false" "assert-fail" "run-tests" "requires" "ensures" "invariant" "recover" "checkpoint" "contracts" "print" "quote" "list"])
 
 (defn hl-keyword-p (word)
   (hl-member word hl-keywords))

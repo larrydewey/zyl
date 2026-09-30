@@ -68,6 +68,10 @@
           "Bind a name at top level: an immutable global, initialized in source order before `main`. Its type is not generalized (one type for every use).")
   (Cons (ZB "let" "special-form" "(let name value body)"
           "Bind `name` to `value` for the extent of `body`. Immutable; shadowing an outer binding is allowed.")
+  (Cons (ZB "tuple" "special-form" "(tuple elem ...)"
+          "Build a tuple. The element types are part of its type, so `(tuple 1 2)` and `(tuple \"a\" \"b\")` are different types that cannot be mixed. Read elements with `tuple-get`.")
+  (Cons (ZB "tuple-get" "special-form" "(tuple-get t i)"
+          "Element `i` of a tuple, counting from 0. An index past the end is E_INDEX_OUT_OF_BOUNDS; a receiver that is not a tuple is E_TYPE_MISMATCH.")
   (Cons (ZB "let*" "special-form" "(let* ((name value) ...) body ...)"
           "Bind each name in turn, each in scope for the bindings after it and for `body`. Sugar for nested `let`, rewritten before module resolution.")
   (Cons (ZB "let-mut" "special-form" "(let-mut name value body)"
@@ -78,7 +82,7 @@
           "Anonymous closure. Identical to `lambda`; captures are analyzed at compile time and recorded on the closure.")
   (Cons (ZB "lambda" "special-form" "(lambda (param ...) body)"
           "Anonymous closure. Identical to `fn`.")
-  Nil)))))))))
+  Nil)))))))))))
 
 (defn builtins-control ()
   (Cons (ZB "if" "special-form" "(if cond then else)"

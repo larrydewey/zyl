@@ -278,6 +278,8 @@
     (EUnwrap e2 (ec-expr e2 dtypes vowners))
     (EStructGet se _ (ec-expr se dtypes vowners))
     (EMakeStruct _ fields (ec-list fields dtypes vowners))
+    (ETuple elems (ec-list elems dtypes vowners))
+    (ETupleGet tg _ (ec-expr tg dtypes vowners))
     (EMakeVariant _ _ args (ec-list args dtypes vowners))
     (EPrint exprs (ec-list exprs dtypes vowners))
     (EExit c (ec-expr c dtypes vowners))

@@ -581,6 +581,8 @@
     (EFn name params body (me-lambda e 1 name params body cx n))
     (EStructGet se _ (me-k1 e se cx n))
     (EMakeStruct _ args (me-kids e args cx n))
+    (ETuple elems (me-kids e elems cx n))
+    (ETupleGet a _ (me-k1 e a cx n))
     (EMakeVariant _ _ args (me-kids e args cx n))
     (ESetBang name val (me-set e name val cx n))
     (EModuleDecl _ (MeR e n))

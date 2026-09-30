@@ -117,7 +117,7 @@ it:
 | `Result<T,E>` | `(deftype Result (Ok T) (Err E))` in `core/result`. |
 | `Option<T>` | `(deftype Option (Some T) None)` in `core/option` (named in §25). |
 | `List<T>` | `(deftype List (Cons T (List T)) Nil)` in `core/list`. |
-| Tuple | Not implemented. `(tuple 1 2)` is an undefined function. |
+| Tuple | `(tuple e...)` and `(tuple-get t i)`. The element types are part of the type, so `(tuple 1 2)` and `(tuple "a" "b")` are different types; 4.5. |
 | Struct | `defstruct`; see 15.5. |
 | Alias | `(alias Name Type)`: a transparent second name for `Type`; see 15.5. |
 

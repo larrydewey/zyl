@@ -675,6 +675,8 @@
     ; unwrap: (unwrap e) lowers to match on Some tag 0 (item 23).
     (EUnwrap e (ic-unwrap arena e vt))
     (EStructGet se field (ic-struct-get arena se field vt))
+    (ETuple elems (ic-tuple arena expr elems vt))
+    (ETupleGet t i (ic-tuple-get arena expr t i vt))
     ; (for (name init)... cond body): no separate step clause — the
     ; corpus's own `for` bodies always `set!` the loop var themselves.
     ; Lowers to nested lets binding each (name, init) around a plain
@@ -1112,6 +1114,29 @@
     (if (is-nil arms)
       (IConst 0)
       (IMatch (ic-expr arena se vt) arms))))
+
+; The type pass named this tuple's generated type on the node (ta-tuple);
+; the deftype it registered put the variant in vt, so the tag resolves.
+(defn ic-tuple (arena node elems vt)
+  (let raw (ta-renamed node)
+    (if (= (str-length raw) 0)
+      (IConst 0)
+      (let name (str-intern arena raw)
+        (IVariant name (vt-tag-of vt name) (ic-expr-list arena elems vt))))))
+
+; (tuple-get t i) reads field i: a match binding every field and returning
+; the i-th. The type pass has already bounds-checked the index, so the
+; count here always covers it.
+(defn ic-tuple-get (arena node t i vt)
+  (let raw (ta-renamed node)
+    (if (= (str-length raw) 0)
+      (IConst 0)
+      (let name (str-intern arena raw)
+        (let tag (vt-tag-of vt name)
+          (let n (vt-arity-of vt name)
+            (let bs (ic-struct-binders n 0)
+              (IMatch (ic-expr arena t vt)
+                (Cons (IArm name tag bs (ILoad (ic-nth-str bs i))) Nil)))))))))
 
 (defn ic-struct-arms (arena vt field)
   (match vt

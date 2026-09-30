@@ -1,0 +1,7 @@
+; expect-error: E_INDEX_OUT_OF_BOUNDS
+; Reading past the end names the arity, so the bound is obvious. A tuple is
+; a fixed-arity value: there is no partial access and no panic.
+(use core/core)
+(defn main ()
+  (let t (tuple 1 2)
+    (print (tuple-get t 5))))

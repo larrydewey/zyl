@@ -258,6 +258,8 @@
     (EClose b (cc-walk b caps denied pkg fname dnode))
     (EUnwrap b (cc-walk b caps denied pkg fname dnode))
     (EMakeStruct _ args (cc-walk-list args caps denied pkg fname dnode))
+    (ETuple elems (cc-walk-list elems caps denied pkg fname dnode))
+    (ETupleGet tg _ (cc-walk tg caps denied pkg fname dnode))
     (EMakeVariant _ _ args (cc-walk-list args caps denied pkg fname dnode))
     (ESetBang _ v (cc-walk v caps denied pkg fname dnode))
     (EStructGet b _ (cc-walk b caps denied pkg fname dnode))

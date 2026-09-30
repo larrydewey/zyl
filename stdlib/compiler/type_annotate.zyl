@@ -1051,6 +1051,8 @@
     (EAssertFalse x _ (ta-assert-bool st ctx env x))
     (EUnwrap x (ta-unwrap st ctx env x))
     (EStructGet se field (ta-struct-get st ctx env se field e))
+    (ETuple elems (ta-tuple st ctx env e elems))
+    (ETupleGet t i (ta-tuple-get st ctx env e t i))
     (EFor bindings cond body (ta-for st ctx env bindings cond body))
     ; (ffi-pin v) copies v's word into a slot in the Pin region and gives
     ; the slot's address, a (Pin a); (ffi-unpin p) reads the value back.
@@ -1873,9 +1875,29 @@
 ; 1 when resolved (or impossible), 0 when it must wait.
 (defn ta-sg-try (st ts field r node)
   (match (ta-resolve st ts)
-    (TaC n args (ta-sg-struct st n args field r node))
+    ; A generated tuple type answers a positional read; `field` carries the
+    ; index as text for the pending case, and the type says which reading
+    ; it is, so no marker is needed to tell the two apart.
+    (TaC n args
+      (if (ta-tuple-name-p n)
+        (ta-sg-tuple st ts n field r node)
+        (ta-sg-struct st n args field r node)))
     (TaV i (if (< i 0) 1 (if (ta-poisoned st i) 1 (ta-sg-guess st ts field r node))))
     (_ 1)))
+
+; Element `field` of a generated tuple type. `r` is unified with the
+; element type recorded for the generated type, and the node is named so
+; lowering knows which variant to build the read from. 1 when settled.
+(defn ta-sg-tuple (st ts n field r node)
+  (let _ (ta-set-name node 2 n)
+    (match (ta-tuple-vd st n)
+      (Some vd (ta-tuple-slot st node n vd field r))
+      (None 1))))
+
+(defn ta-tuple-slot (st node n vd field r)
+  (match (ta-tuple-nth vd (ta-int-of-text field))
+    (Some ft (ta-seq (ta-unify st r ft) 1))
+    (None (ta-seq (ta-tuple-oob st node n (ta-int-of-text field)) 1))))
 
 (defn ta-sg-struct (st n args field r node)
   (match (ta-vd-find st n)
@@ -1892,6 +1914,141 @@
                     (ta-seq (ta-unify st r (ta-nth fts idx (ta-no-type))) 1)
                     (ta-seq (ta-dk st "struct field index") 1)))
                 (_ 1)))))))))
+
+; --- tuples ------------------------------------------------------------------
+;
+; `(tuple a b)` is a generated single-variant ADT, one per element type
+; list, so the element types are part of the type: `(tuple 1 2)` and
+; `(tuple "a" "b")` are different types that cannot be confused, and a
+; tuple can be read, matched, printed and compared like any other value.
+; The name is derived here because the element types are only known here
+; -- the parse cannot pick it, and lowering runs after this pass.
+;
+; The deftype form is pushed onto ta-extra, which ta-annotate returns as
+; part of the program, so ic-collect-vt registers the variant and lowering
+; finds its tag. It is marked as a struct so that tag is globally unique:
+; each generated type numbers its own tags from 0, and a match on one must
+; not be able to fire on another.
+
+; A tuple's type is the generated type's name. It has no type parameters,
+; because the element types are already in the name.
+(defn ta-tuple-type (_st name) (TaC name Nil))
+
+(defn ta-tuple (st ctx env node elems)
+  (let ets (ta-list st ctx env elems)
+    (let name (ta-tuple-name st (list-length ets) ets)
+      (let _ (ta-tuple-declare st name (list-length ets) ets)
+        (let _ (ta-set-name node 2 name)
+          (ta-tuple-type st name))))))
+
+(defn ta-tuple-name (st n ets)
+  (str-concat "__Tuple"
+    (str-concat (ffi-call "zyl_int_text" n 1000)
+      (str-concat "~" (ta-canon-list st ets)))))
+
+; Register the variant, and emit the deftype that gives it a tag, once per
+; name. A repeated element type list reuses the type already declared.
+(defn ta-tuple-declare (st name n ets)
+  (if (ta-shas (ta-variants st) name)
+    0
+    (begin
+      (ta-put2 (ta-variants st) name
+        (TaVd name 0 (TaF ets (TaC name Nil)) (ta-tuple-fields n 0) true 0))
+      (ta-wpush (ta-extra st) (ta-tuple-deftype name n))
+      0)))
+
+; Field names, "f0".."f{n-1}". Only positional reads are supported, so
+; these name positions rather than being written by anyone.
+(defn ta-tuple-fields (n i)
+  (if (>= i n)
+    Nil
+    (Cons (str-concat "f" (ffi-call "zyl_int_text" i 1000))
+      (ta-tuple-fields n (+ i 1)))))
+
+; The declaration itself. A deftype variant carries field NAMES, and its
+; field types live in ta-variants (ta-field-exprs), which is where the
+; element types above were recorded.
+(defn ta-tuple-deftype (name n)
+  (Expr
+    (EDeftype name
+      (Cons (AV name (ta-tuple-fields n 0)) Nil)
+      Nil
+      (Some "tuple"))))
+
+; (tuple-get t i) is a field read on a generated tuple type, so it
+; defers and flushes exactly as struct-get does: a receiver whose type is
+; not known yet is re-checked once the function group is done. That is what
+; lets a generic function read element 0 of whatever tuple it is handed --
+; the generic original defers, and each instance re-checks with a concrete
+; receiver.
+(defn ta-tuple-get (st ctx env node t i)
+  (let ts (ta-expr st ctx env t)
+    (let r (ta-fresh st)
+      (let idx (ta-tuple-pending-key i)
+        (let done (ta-sg-try st ts idx r node)
+          (if (> done 0)
+            r
+            (let _ (ta-wpush (ta-pending st) (TaPend ctx ts idx r node))
+              r)))))))
+
+; The generated type name of a value's type, "" when it is not one.
+(defn ta-tuple-type-name (st t)
+  (match (ta-resolve st t)
+    (TaC n _
+      (if (ta-tuple-name-p n) n ""))
+    (_ "")))
+
+(defn ta-tuple-name-p (n)
+  (if (> (str-length n) 7) (str-eq (str-substring n 0 7) "__Tuple") false))
+
+(defn ta-tuple-vd (st name)
+  (if (= (str-length name) 0) None (Some (ta-sget-or (ta-variants st) name (ta-no-vd)))))
+
+; Element i's type, when the generated type has one.
+(defn ta-tuple-nth (vd i)
+  (match vd
+    (TaVd _ _ t _ _ _
+      (match t
+        (TaF ps _ (ta-nth-ty ps i))
+        (_ None)))
+    (_ None)))
+
+; Element i by index, read back from the pending's text form.
+(defn ta-tuple-nth-by-name (vd field)
+  (ta-tuple-nth vd (ta-int-of-text field)))
+
+; A tuple read is tagged so the flush can tell it from a struct field read:
+; `@` cannot appear in an identifier, so no field name can collide with it.
+; Struct reads carry a bare field name, and route through the "sole struct
+; with this field" heuristic, which knows nothing about tuples.
+(defn ta-tuple-pending-key (i)
+  (str-concat "@t" (ffi-call "zyl_int_text" i 1000)))
+
+(defn ta-tuple-pending-p (s)
+  (if (> (str-length s) 2) (= (ffi-call "zyl_cstr_byte_at" s 0 1000) 64) false))
+
+; The index, recovered from the tag.
+(defn ta-int-of-text (s) (ffi-call "zyl_cstr_to_int" (str-substring s 2 (- (str-length s) 2)) 1000))
+
+(defn ta-nth-ty (ts i)
+  (match ts
+    (Nil None)
+    (Cons h t (if (<= i 0) (Some h) (ta-nth-ty t (- i 1))))))
+
+; An index past the end, naming the arity so the bound is obvious. The
+; error is recorded and a placeholder type returned, so the pass still has
+; a type for the node; compilation fails on the recorded error.
+(defn ta-tuple-oob (st node name i)
+  (let vd (ta-sget-or (ta-variants st) name (ta-no-vd))
+    (let n (match vd (TaVd _ _ _ names _ _ (list-length names)) (_ 0))
+      (ta-seq 0
+        (let _ (ta-type-error "E_INDEX_OUT_OF_BOUNDS"
+                (str-concat "this tuple has "
+                  (str-concat (ffi-call "zyl_int_text" n 1000)
+                    (str-concat " element(s), so index "
+                      (str-concat (ffi-call "zyl_int_text" i 1000) " is out of range"))))
+                node Nil "tuple indexes start at 0")
+          (ta-no-type))))))
 
 (defn ta-str-index (xs s i)
   (match xs
@@ -1936,10 +2093,28 @@
     0
     (match (ta-wget pv i)
       (TaPend _ ts field r node
-        (let _ (if (ta-streq field " bytes")
-                 (if (= (ta-bytes-try st ts node) 0) (ta-bytes-ambiguous node) unit)
-                 (if (= (ta-sg-try st ts field r node) 0) (ta-sg-ambiguous field node) unit))
+        (let _ (ta-flush-one st ts field r node)
           (ta-flush-loop st pv (+ i 1) n))))))
+
+; One deferred read, retried now that the function group is done. A tuple
+; read is tagged, so it gets the tuple message rather than being routed
+; through the struct-field heuristic, which knows nothing about tuples.
+(defn ta-flush-one (st ts field r node)
+  (if (ta-streq field " bytes")
+    (if (= (ta-bytes-try st ts node) 0) (ta-bytes-ambiguous node) unit)
+    (if (ta-tuple-pending-p field)
+      (if (= (ta-sg-try st ts field r node) 0) (ta-tuple-unresolved node) unit)
+      (if (= (ta-sg-try st ts field r node) 0) (ta-sg-ambiguous field node) unit))))
+
+; A tuple read whose receiver never resolved. A generic function cannot say
+; its type parameter is a tuple -- there are no trait bounds to write
+; (spec 6.1) -- so this is reported rather than deferred forever.
+; The pending already bound the node's type, so this only records the
+; error; the value is not used.
+(defn ta-tuple-unresolved (node)
+  (ta-type-error "E_CANNOT_INFER"
+    "`tuple-get` cannot tell this is a tuple: the receiver's type is still unknown here"
+    node Nil "take a concrete tuple, so its element types are known"))
 
 ; A field read whose record type is still unknown when its function
 ; group is done: several structs have the field, so the result would be

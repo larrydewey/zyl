@@ -21,7 +21,7 @@
    "while" "for" "cond" "begin" "pub" "use" "export" "requires" "ensures" "invariant"
    "recover" "checkpoint" "contracts" "defmacro" "alias" "defstruct" "defstruct+"
    "with-resource" "derive" "unwrap" "error" "panic" "Ok" "Err" "match" "struct-get"
-   "let*" "test-suite" "test" "assert-equal" "assert-fail" "assert-true"
+   "let*" "tuple" "tuple-get" "test-suite" "test" "assert-equal" "assert-fail" "assert-true"
    "assert-false" "test-property" "setup" "teardown" "run-tests" "test-compile"])
 
 (defn rk-member ((n String) xs) (match xs (Nil false) (Cons h t (if (str-eq h n) true (rk-member n t)))))
