@@ -1,0 +1,8 @@
+; expect-error: E_INTEGER_OVERFLOW
+; The negative side has one more value than the positive: -9223372036854775808
+; fits, and one past it does not. That used to wrap to 9223372036854775807,
+; which is worse than reading 0 -- the program carried on with a plausible
+; number of the wrong sign.
+(use core/core)
+(defn main ()
+  (print -9223372036854775809))

@@ -1,0 +1,52 @@
+; An Int is 64-bit signed, and every integer literal is range-checked when
+; it is lexed: the largest is 9223372036854775807, the smallest
+; -9223372036854775808. These are the values that must keep working -- the
+; boundaries are where an off-by-one in the check would show up, and the
+; compile-fail tests cover the other side.
+(use core/core)
+
+(test "decimal-boundaries"
+  (begin
+    (assert-equal 9223372036854775807 9223372036854775807)
+    (assert-equal -9223372036854775808 -9223372036854775808)
+    (assert-equal (bit-not 9223372036854775807) -9223372036854775808)))
+
+(test "leading-zeros-are-not-significant"
+  ; 007 is one digit, not three, so it is nowhere near the limit. A digit
+  ; count that included them would reject a long padded literal.
+  (begin
+    (assert-equal 007 7)
+    (assert-equal 0x007 7)
+    (assert-equal 0000000000000000000007 7)))
+
+(test "radix-boundaries-agree-with-decimal"
+  (begin
+    (assert-equal 0x7fffffffffffffff 9223372036854775807)
+    (assert-equal 0x7FFFFFFFFFFFFFFF 9223372036854775807)
+    (assert-equal 0o777777777777777777777 9223372036854775807)))
+
+(test "upper-and-lower-case-hex-are-the-same-value"
+  (begin
+    (assert-equal 0xaa 170)
+    (assert-equal 0xAA 170)
+    (assert-equal 0xaA 170)
+    (assert-equal 0xdeadbeef 3735928559)))
+
+(test "a-f-score-ten-to-fifteen-not-zero-to-five"
+  ; The check compares digits by value, and 'a' is ten. Scoring the letter
+  ; run from zero made 0xffff000000000000 look smaller than 0x7fff... and
+  ; let it through.
+  (assert-equal 0xf 15))
+
+(test "a-signed-radix-literal-is-checked-against-the-larger-magnitude"
+  ; -9223372036854775808 fits but has one more bit than the positive
+  ; maximum, so the negative bound is 2^63, not 2^63-1.
+  (assert-equal -0x8000000000000000 -9223372036854775808))
+
+(test "float-literals-are-not-ranged-the-same-way"
+  ; 1e400 overflows to infinity rather than failing: a Float has a wider
+  ; range than an Int and infinity is the IEEE answer, so it is left alone
+  ; here. See the note in book 2.7.
+  (assert-true (> 1e400 1e308)))
+
+(run-tests)

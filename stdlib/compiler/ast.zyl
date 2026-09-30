@@ -31,6 +31,11 @@
   (TkEof Int)
   (TkIdent String Int)
   (TkInt Int Int)
+  ; A decimal integer literal that does not fit an Int. It carries the text
+  ; and the offset rather than a value, because the value is the bug: the
+  ; parse would otherwise go on with 0. Nothing consumes it — the parser
+  ; reports it from the token stream before parsing (E_INTEGER_OVERFLOW).
+  (TkIntOverflow String Int)
   (TkFloat String Int)
   (TkString String Int)
   (TkBool Bool Int)

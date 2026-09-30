@@ -47,6 +47,7 @@
     (TkEof _ true)
     (TkIdent _ _ false)
     (TkInt _ _ false)
+    (TkIntOverflow _ _ false)
     (TkFloat _ _ false)
     (TkString _ _ false)
     (TkBool _ _ false)
@@ -81,6 +82,7 @@
     (TkEof o o)
     (TkIdent _ o o)
     (TkInt _ o o)
+    (TkIntOverflow _ o o)
     (TkFloat _ o o)
     (TkString _ o o)
     (TkBool _ o o)
@@ -131,6 +133,9 @@
         (TkColon _ (read-form-atom arena t rest fid))
         (TkEof _ (read-form-atom arena t rest fid))
         (TkInt _ _ (read-form-atom arena t rest fid))
+        ; Unreachable: check-int-literals reports every one of these before
+        ; parsing starts, so no token stream reaching the parser has one.
+        (TkIntOverflow _ _ (read-form-atom arena t rest fid))
         (TkFloat _ _ (read-form-atom arena t rest fid))
         (TkString _ _ (read-form-atom arena t rest fid))
         (TkBool _ _ (read-form-atom arena t rest fid))
@@ -143,6 +148,7 @@
 (defn read-form-atom (_arena t rest fid)
   (match t
     (TkInt v o (AstOf (ast-at fid o (AstInt v)) rest))
+    (TkIntOverflow _ o (AstOf (ast-at fid o (AList Nil)) rest))
     (TkBool b o (AstOf (ast-at fid o (AstBool b)) rest))
     (TkFloat s o (AstOf (ast-at fid o (AstFloat s)) rest))
     (TkString s o (AstOf (ast-at fid o (AString s)) rest))
@@ -184,6 +190,7 @@
     (TkEof _ false)
     (TkIdent _ _ false)
     (TkInt _ _ false)
+    (TkIntOverflow _ _ false)
     (TkFloat _ _ false)
     (TkString _ _ false)
     (TkBool _ _ false)
@@ -217,6 +224,7 @@
     (TkEof _ false)
     (TkIdent _ _ false)
     (TkInt _ _ false)
+    (TkIntOverflow _ _ false)
     (TkFloat _ _ false)
     (TkString _ _ false)
     (TkBool _ _ false)
@@ -282,6 +290,7 @@
     (TkEof _ false)
     (TkIdent _ _ false)
     (TkInt _ _ false)
+    (TkIntOverflow _ _ false)
     (TkFloat _ _ false)
     (TkString _ _ false)
     (TkBool _ _ false)
@@ -360,8 +369,38 @@
       (check-balanced src fid)
       (let toks (zyl-lex arena src)
         (begin
+          (check-int-literals toks fid)
           (check-lexed-to-end toks src fid)
           (ds-program (parse-program arena toks fid)))))))
+
+; A decimal integer literal too large for an Int. Reported from the token
+; stream, before parsing, because the lexer cannot: it has no file to name
+; in a diagnostic. Without this the literal became 0 and the program went on
+; to be wrong in whatever it computed.
+(defn check-int-literals (toks fid)
+  (match toks
+    (Nil 0)
+    (Cons t rest
+      (if (int-overflow-token-p t)
+        (let off (tok-offset t)
+          (let text (token-text t)
+            (ffi-call "zyl_panic"
+              (err-at "E_INTEGER_OVERFLOW"
+                (str-concat (str-concat "integer literal " text)
+                  " does not fit an Int (64-bit signed); the largest is 9223372036854775807 and the smallest -9223372036854775808")
+                fid off "write a value in range, or build it with shifts or arithmetic")
+              1000)))
+        (check-int-literals rest fid)))))
+
+(defn int-overflow-token-p (t)
+  (match t
+    (TkIntOverflow _ _ true)
+    (_ false)))
+
+(defn token-text (t)
+  (match t
+    (TkIntOverflow s _ s)
+    (_ "")))
 
 ; The lexer stops at a byte it cannot tokenize; its final TkEof then sits
 ; before the end of the source. Report that instead of dropping the rest.

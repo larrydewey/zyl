@@ -1,0 +1,8 @@
+; expect-error: E_INTEGER_OVERFLOW
+; A radix-prefixed literal is range-checked the same way. 0x8000000000000000
+; is 2^63, one past the largest Int; it used to read as 0, like the decimal
+; case. To write a negative Int, use a negative decimal literal, or
+; (bit-not 0) and friends.
+(use core/core)
+(defn main ()
+  (print 0xffffffffffffffff))

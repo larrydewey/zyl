@@ -347,11 +347,114 @@
 ; integer otherwise. Radix-prefixed literals (0x/0o/0b) are always
 ; integers -- their text carries neither '.' nor 'e', so they take the
 ; TkInt path, and zyl_cstr_to_int_base decodes the prefix.
+;
+; A decimal integer too large for an Int is a token of its own rather than
+; a value. zyl_cstr_to_int_base answers 0 for a literal it cannot hold, so
+; reading one as a TkInt made 9223372036854775808 silently the number zero;
+; the parser reports these as E_INTEGER_OVERFLOW before parsing starts.
 (defn lex-num-e (arena src len i acc e)
   (let text (lex-sub src len i (- e i))
     (if (text-float-marker-p text)
       (lex-loop arena src len e (Cons (TkFloat text i) acc))
-      (lex-loop arena src len e (Cons (TkInt (ffi-call "zyl_cstr_to_int_base" text 1000) i) acc)))))
+      (if (not (int-lit-fits-p text))
+        (lex-loop arena src len e (Cons (TkIntOverflow text i) acc))
+        (lex-loop arena src len e (Cons (TkInt (ffi-call "zyl_cstr_to_int_base" text 1000) i) acc))))))
+
+; Whether an integer literal fits an Int (64-bit, signed). Both the decimal
+; and the radix-prefixed forms are checked: zyl_cstr_to_int_base answers 0
+; for a value it cannot hold either way, so 0x10000000000000000 was as
+; silent as 18446744073709551616.
+;
+; All of this works on indices into the literal's own text rather than on
+; substrings of it. A literal's text is a view into the source, and
+; str-length on a substring of a substring of a view does not report the
+; length: that made the digit count wrong in both directions, so
+; 0xffff000000000000 passed and 0x7F00000000000000 was rejected.
+(defn int-lit-fits-p (text)
+  (let neg (= (lit-byte text 0) 45)
+    (let from (if neg 1 0)
+      (let end (str-length text)
+        (if (radix-lit-p text from)
+          (digits-fit-p text (+ from 2) end (radix-base text from) neg)
+          (digits-fit-p text from end 10 neg))))))
+
+; Leading zeros are not significant: 007 is one digit, and 0x007 is one.
+; `i` is where the digits begin, which for a radix literal is past the two
+; prefix bytes. The last digit is never skipped, so a literal that is all
+; zeros keeps one.
+(defn sig-start (text i end)
+  (if (and (< i (- end 1)) (= (lit-byte text i) 48))
+    (sig-start text (+ i 1) end)
+    i))
+
+; Compare the significant digits at [i, end) against 2^63-1, or 2^63 for the
+; negative side, written in `base`. Fewer digits than the bound fits; more
+; does not; the same number is compared digit by digit.
+(defn digits-fit-p (text i end base neg)
+  (let s0 (sig-start text i end)
+    (let n (- end s0)
+      (let bnd (digit-bound base neg)
+        (if (> n (str-length bnd))
+          false
+          (if (< n (str-length bnd)) true (digits-le-p text s0 bnd 0 base)))))))
+
+(defn digits-le-p (text i bnd k base)
+  (if (>= k (str-length bnd))
+    true
+    (let x (digit-v (lit-byte text (+ i k)) base)
+      (let y (digit-v (lit-byte bnd k) base)
+        (if (= x y) (digits-le-p text i bnd (+ k 1) base) (< x y))))))
+
+; 0-9, then A-F, then a-f — in that order, because the two letter runs are
+; not adjacent: testing "<= 102" first catches 'F' (70) in the a-f branch
+; and scores it -27.
+;
+; 'a' is ten, not zero: the runs are offset by 87 and 55 so that 'a'/'A'
+; land on 10 and 'f'/'F' on 15. One subtraction per line — `(- c 97 10)`
+; parses as (c-97)-10 rather than c-87, and the arity check does not catch
+; it.
+(defn digit-v (c base)
+  (if (<= c 57)
+    (- c 48)
+    (if (= base 16)
+      (if (<= c 70)
+        (if (< c 65) 0 (- c 55))
+        (if (<= c 102) (if (< c 97) 0 (- c 87)) 0))
+      0)))
+
+; 2^63-1, and 2^63 for the negative side, in base 10, 16, 8 and 2.
+(defn digit-bound (base neg)
+  (if (= base 10)
+    (if neg "9223372036854775808" "9223372036854775807")
+    (if (= base 16)
+      (if neg "8000000000000000" "7fffffffffffffff")
+      (if (= base 8)
+        (if neg "1000000000000000000000" "777777777777777777777")
+        (if neg "1000000000000000000000000000000000000000000000000000000000000000"
+                "111111111111111111111111111111111111111111111111111111111111111")))))
+
+; 0x / 0o / 0b, in either case, at the literal's digit start.
+(defn radix-lit-p (text from)
+  (if (< (- (str-length text) from) 2)
+    false
+    (if (= (lit-byte text from) 48)
+      (radix-mark-p (lit-byte text (+ from 1)))
+      false)))
+
+(defn radix-mark-p (c)
+  (if (= c 120) true
+    (if (= c 88) true
+      (if (= c 111) true
+        (if (= c 79) true
+          (if (= c 98) true (= c 66)))))))
+
+(defn radix-base (text from)
+  (let c (lit-byte text (+ from 1))
+    (if (= c 120) 16 (if (= c 88) 16 (if (= c 111) 8 2)))))
+
+; zyl_view_byte with an explicit length, as byte-at-n above does, and not
+; zyl_cstr_byte_at: the literal's text is a view into the source.
+(defn lit-byte (text i) (ffi-call "zyl_view_byte" text 0 (str-length text) i 1000))
 
 ; Identifier / boolean literal: i..e with text.
 (defn lex-ident-e (arena src len i acc e)

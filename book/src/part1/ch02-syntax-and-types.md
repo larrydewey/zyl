@@ -28,14 +28,29 @@ true            ; atom (boolean)
 42
 -17
 0
-0xff                   ; hexadecimal literal: 255
+0xff                   ; hexadecimal: 255
+0o17                   ; octal: 15
+0b1011                 ; binary: 11
 9223372036854775807    ; maximum Int
 -9223372036854775808   ; minimum Int
 ```
 
-Integer literals are decimal or hexadecimal (`0x` prefix). There are no
-suffixes and no octal literals. The bitwise operators (`bit-and`,
-`shl` and the rest) are built in; see §2.6 and Chapter 32.
+Integer literals are decimal, or prefixed with `0x`, `0o` or `0b`
+(either case). There are no suffixes. Leading zeros are not significant,
+so `007` is 7. The bitwise operators (`bit-and`, `shl` and the rest) are
+built in; see §2.6 and Chapter 32.
+
+**A literal outside the range is a compile error**, `E_INTEGER_OVERFLOW`,
+naming the value and the bounds — in every base. This is worth stating
+because the alternative is bad: a literal too large to hold used to read as
+**0**, and one below the minimum used to wrap to a positive number of the
+wrong sign, in both cases with the program carrying on. To build a value
+that does not fit in a literal, use arithmetic or the bit operators:
+
+```lisp
+(bit-not 0)             ; -1, the way to write a negative bit pattern
+(bit-or 9223372036854775807 1)   ; wraps, as bit operations do
+```
 
 ### Floats (`Float`)
 

@@ -1,0 +1,8 @@
+; expect-error: E_INTEGER_OVERFLOW
+; An Int is 64-bit signed, so the largest literal is 9223372036854775807 and
+; the smallest -9223372036854775808. This used to be read as 0 -- the
+; runtime parse answers 0 for a value it cannot hold -- and the program
+; went on to be wrong in whatever it computed, with nothing to point at.
+(use core/core)
+(defn main ()
+  (print 9223372036854775808))

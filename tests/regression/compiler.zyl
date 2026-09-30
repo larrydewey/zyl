@@ -50,6 +50,10 @@
     (TkUnquote (= 17 want))
     (TkSplice (= 18 want))
     (TkInt _ (= 2 want))
+    ; The overflow token carries no value: the parser reports it before
+    ; parsing, so a classified stream never holds one. Given 19 so the
+    ; numbering below is unchanged.
+    (TkIntOverflow _ (= 19 want))
     (TkFloat _ (= 3 want))
     (TkString _ (= 4 want))
     (TkBool _ (= 5 want))
