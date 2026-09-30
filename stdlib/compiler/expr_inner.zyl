@@ -951,6 +951,7 @@
     (Nil (Expr (EAtom ANil)))))
 
 (defn recover-chain (arms)
+  (recover-chain-warn arms)
   (match arms
     (Nil (AList (Cons (AstIdent "zyl-reraise") (Cons (AstIdent "_rc_err") Nil))))
     (Cons arm rest
@@ -960,6 +961,33 @@
             (AList (Cons (AstIdent "if") (Cons (ast-call2 "zyl-err-is" (AstIdent "_rc_err") (AString code))
               (Cons fb (Cons (recover-chain rest) Nil)))))
             fb))))))
+
+; Warn if a catch-all arm (empty code or "String") shadows later specific error code arms.
+(defn recover-chain-warn (arms)
+  (match arms
+    (Nil 0)
+    (Cons arm rest
+      (let code (recover-arm-code arm)
+        (if (= (str-length code) 0)
+          (if (recover-has-specific-code rest)
+            (ei-fail "W_RECOVER_SHADOW" (str-concat "catch-all arm shadows later arm " (recover-first-code rest)))
+            0)
+          0)
+        (recover-chain-warn rest)))))
+
+(defn recover-has-specific-code (arms)
+  (match arms
+    (Nil false)
+    (Cons arm rest
+      (let code (recover-arm-code arm)
+        (if (> (str-length code) 0) true (recover-has-specific-code rest))))))
+
+(defn recover-first-code (arms)
+  (match arms
+    (Nil "")
+    (Cons arm rest
+      (let code (recover-arm-code arm)
+        (if (> (str-length code) 0) code (recover-first-code rest))))))
 
 ; "E_..." for an arm naming an error code, "" for a catch-all arm.
 (defn recover-arm-code (arm)

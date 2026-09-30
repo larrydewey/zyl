@@ -163,7 +163,8 @@
                                                           (Cons (EC "E_PKG_ORPHAN_IMPL" 12 1 "trait: impl of T for U where neither the trait nor the type is local to N")
                                                           (Cons (EC "E_PKG_CAPABILITY_VIOLATION" 13 1 "capability: package N uses M without declaring the C capability")
                                                            (Cons (EC "E_PKG_CAPABILITY_GROWTH" 13 1 "capability: capability closure grew under --locked: C")
-                                                           Nil))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+                                                               (Cons (EC "W_RECOVER_SHADOW" 14 2 "recover: arm M shadows later arm N - move specific error codes before catch-all (String/_)")
+                                                           Nil)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 ; ---------------------------------------------------------------------------
 ; ACCESSORS
 ; ---------------------------------------------------------------------------
