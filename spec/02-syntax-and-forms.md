@@ -292,6 +292,17 @@ requires becomes an `EUnknown` node, which the arity pass reports as
   prints as `inf`, propagates through arithmetic, and compares false
   against anything finite. `regression/float-literal-range.zyl` pins both
   ends.
+- **`let*`** (`zyl_specification.txt` §1.3, §2 grammar, §4.9) is sugar
+  for nested `let`, with sequential bindings: `(let* ((a 1) (b (+ a 10)))
+  body)` is `(let a 1 (let b (+ a 10) body))`, so each binding is in scope
+  for the ones after it. It is desugared on the parse tree in
+  `desugar.zyl`, before module resolution, so the names it introduces are
+  qualified as if hand-written. At least one `(Name Expr)` binding and at
+  least one body form; anything else is `E_MALFORMED_FORM`. A desugared
+  `let*` type-checks exactly as the nested `let`s it becomes, so it adds
+  no typing rule of its own. Added to the spec by this note's commit: the
+  form had been implemented and documented in the book but the spec did
+  not mention it, not even in the §1.3 keyword list.
 - **Bodies.** Where a form has a body, several body forms are an implicit
   `begin` whose value is the last: `defn`, `fn` and `lambda` bodies, both
   shapes of `let` and `let-mut`, a `try`'s `catch` handler, a `cond`
