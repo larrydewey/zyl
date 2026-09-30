@@ -249,7 +249,7 @@ the same type.
 |---|---|---|
 | `deftype` | `(deftype Name (Variant Field ...) ...)` | |
 | `defstruct` | `(defstruct Name (field Type) ...)` | also defines the constructor `make-Name`; a field written without a type is a type parameter of the struct |
-| `defstruct+` | `(defstruct+ Name (field Type) ...)` | parsed the same way as `defstruct` |
+| `defstruct+` | `(defstruct+ Name (field Type) ...)` | like `defstruct`, plus auto-derives all 6 prelude traits when no inline `(:derive [...])` |
 | `struct-get` | `(struct-get value "field")`, or `value.field` | dot form chains: `v.a.b` |
 | `make-struct` | `(make-struct Name field ...)` | **not implemented** (`E_CANNOT_INFER`); use `(make-Name field ...)` |
 | `make-variant` | `(make-variant (Type) Variant field ...)` | **not implemented** (`E_CANNOT_INFER`); call the constructor, `(Variant field ...)` |

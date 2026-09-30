@@ -103,8 +103,22 @@ This creates a new `Point` and rebinds `p` to it. The old `Point` becomes unreac
 (defstruct+ Color (r) (g) (b))
 ```
 
-`defstruct+` is accepted and defines the struct exactly as `defstruct`
-does. To derive traits, use a standalone `derive` (§4.9).
+`defstruct+` defines the struct like `defstruct` **and automatically
+derives all six prelude traits** (`Show`, `Debug`, `Eq`, `Ord`, `Hash`,
+`Clone`) when no inline `(:derive [...])` is present.
+
+```lisp
+(defstruct+ Point (x) (y))           ; auto-derives all 6 traits
+(defstruct+ Pt2 (x Int) (y Int))     ; auto-derives all 6 traits
+```
+
+To derive only specific traits, use inline `(:derive [...])`:
+
+```lisp
+(defstruct+ Color (r) (g) (b) (:derive [Show Eq]))  ; only Show, Eq
+```
+
+A standalone `derive` also works (§4.9).
 
 ### Nested Structs
 

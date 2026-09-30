@@ -253,10 +253,16 @@ alternatives apply:
 §5.6 and §5.7:
 
 ```lisp
-(defstruct+ Point (x) (y) (:derive [Eq Ord]))   ; inline
+(defstruct+ Point (x) (y) (:derive [Eq Ord]))   ; inline: only Eq, Ord
+(defstruct+ Point (x) (y))                      ; inline derive omitted → auto-derives all 6 traits
 
 (derive Point Show)                             ; standalone; or (derive Point [Show Eq])
 ```
+
+`defstruct+` **without** inline `(:derive [...])` auto-derives all six
+prelude traits (`Show`, `Debug`, `Eq`, `Ord`, `Hash`, `Clone`). To
+select only some traits, use inline `(:derive [Trait...])`. `defstruct`
+does not auto-derive; use standalone `derive` or `defstruct+`.
 
 - `derive` takes the type name followed by the trait names, separated by
   spaces. The bracketed `[Eq Ord]` spelling of §5.7 also parses: elsewhere

@@ -354,13 +354,17 @@ a `defstruct` or `defstruct+`:
 ```lisp
 (derive Pt Show)            ; or (derive Pt [Show Eq])
 (defstruct+ Pt2 (x Int) (y Int) (:derive [Show Eq]))
+(defstruct+ Point (x) (y))  ; auto-derives all 6: Show, Debug, Eq, Ord, Hash, Clone
 ```
 
 `(derive T Show)` (or `(derive T [Show])`) generates a `Show` impl, and
 `print` then shows the value (Chapter 4, §4.9); an inline `(:derive
 ...)` is the same as a separate `derive` form after the struct. `Eq`,
 `Ord`, `Debug`, `Hash` and `Clone` derive the same way (Chapter 20,
-§20.6). Equality needs no derive: `==` and `!=` compare two
+§20.6).
+
+`defstruct+` **without** inline `(:derive [...])` auto-derives all six
+prelude traits. `defstruct` does not auto-derive. Equality needs no derive: `==` and `!=` compare two
 struct or ADT values field by field, by content, with nested values and
 strings compared recursively. Ordering does: `<`, `>`, `<=` and `>=`
 take only `Int`, `Float` and `String`, and on a struct they are

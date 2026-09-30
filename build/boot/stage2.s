@@ -753514,7 +753514,7 @@ main:
 .L15102:
     .string "(defstruct+ Name (field Type) ...)"
 .L15103:
-    .string "Declare a struct with generated accessors."
+    .string "Declare a struct. Auto-derives all 6 prelude traits (Show, Debug, Eq, Ord, Hash, Clone) when no inline (:derive [...]) is present."
 .L15104:
     .string "struct-get"
 .L15105:

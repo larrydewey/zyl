@@ -115,7 +115,7 @@
   (Cons (ZB "defstruct" "special-form" "(defstruct Name (field Type) ...)"
           "Declare a struct. Fields are immutable; build a changed copy rather than mutating.")
   (Cons (ZB "defstruct+" "special-form" "(defstruct+ Name (field Type) ...)"
-          "Declare a struct with generated accessors.")
+          "Declare a struct. Auto-derives all 6 prelude traits (Show, Debug, Eq, Ord, Hash, Clone) when no inline (:derive [...]) is present.")
   (Cons (ZB "struct-get" "special-form" "(struct-get value \"field\")"
           "Read a struct field. It is a read only -- there is no field-assignment form.")
   (Cons (ZB "make-struct" "special-form" "(make-struct Name field ...)"
