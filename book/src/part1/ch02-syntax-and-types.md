@@ -453,15 +453,15 @@ the current library.
 
 ```lisp
 (use collections/vec)
-(use collections/map)
+(use collections/intmap)
 
 (defn main ()
   (let v (vec-push (vec-push (vec-create-default 10) 42) 7)
     (begin
       (print (vec-len v))           ; 2
       (print (vec-get v 0))))       ; 42
-  (let m (map-put (map-create-default 10) 1 100)
-    (print (map-get m 1 0)))        ; 100
+  (let m (intmap-put (intmap-new 10) 1 100)
+    (print (intmap-get m 1 0)))        ; 100
   0)
 ```
 
@@ -542,7 +542,7 @@ true / false    ; Bool
 
 ;; Data structures
 (vec-create-default cap)        ; Vec (use collections/vec)
-(map-create-default cap)        ; Map (use collections/map)
+(intmap-new cap)        ; Map (use collections/intmap)
 (Ok val) / (Err err)            ; Result
 (Some val) / None               ; Option
 (Cons head tail) / Nil          ; List
@@ -597,7 +597,7 @@ ADT whose variant name is the struct's name.
 | Struct or ADT value that provably never escapes | The function's stack frame, or the call's own region, released when it returns |
 | Struct or ADT value returned to a caller | The region the caller chose for the result |
 | Any other struct or ADT value | The process heap, where it lives until the program exits |
-| `Vec` / `Map` buffers | An arena, passed to `vec-create` / `map-create`; the `-default` constructors create a private one |
+| `Vec` / `Map` buffers | An arena, passed to `vec-create` / `intmap-new-with`; the `-default` constructors create a private one |
 
 Details in [Chapter 5](ch05-ownership-regions-capabilities.md).
 

@@ -433,7 +433,7 @@
 
 (defn builtin-stdlib-core ()
   (Cons "core/core" (Cons "core/list" (Cons "core/option" (Cons "core/result"
-  (Cons "core/map" (Cons "core/show" (Cons "core/resource" (Cons "core/property" (Cons "collections/collections" (Cons "collections/map"
+  (Cons "core/map" (Cons "core/show" (Cons "core/resource" (Cons "core/property" (Cons "collections/collections" (Cons "collections/intmap"
   (Cons "collections/set" (Cons "collections/vec" (Cons "collections/slice" (Cons "allocator/allocator"
   (Cons "actor/actor" (Cons "atomic/atomic" (Cons "ffi/ffi" (Cons "io/io"
   (Cons "simd/simd" (Cons "text/view" (Cons "testing/testing" Nil))))))))))))))))))))))

@@ -223,7 +223,7 @@
   (assert-equal (st-count (qualify-symbol-table (pkg-arena) Nil)) 0))
 
 (test "the other definition of that name is reachable under an alias"
-  (assert-equal (st-is-known-fn (bridge-symbol-table Nil) "parse") 0))
+  (assert-false (st-is-known-fn (bridge-symbol-table Nil) "parse")))
 
 (test "an index entry is sharded by its own name"
   (assert-equal (idx-entry-path "/idx" "acme/json") "/idx/ac/me/acme/json.zyl"))

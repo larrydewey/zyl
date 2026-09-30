@@ -1,0 +1,36 @@
+; The stdlib had two `Map` types: core/map's generic Map<K, V> and an
+; arena-backed Int -> Int one in collections/map, which also exported
+; map-get/map-remove/map-has. Importing both was accepted and the three
+; shared names silently resolved to the Int-only one, so core/map's generic
+; versions were unreachable behind an arity error. The Int one is now IntMap
+; in collections/intmap, and this test is the proof: both are imported, and
+; each name means the one it says.
+(use core/core)
+(use core/map)
+(use collections/intmap)
+
+(test "generic-map-is-reachable-alongside-intmap"
+  (let m (map-insert (map-new) "k" 1)
+    (begin
+      (assert-equal (map-get m "k") (Some 1))
+      (assert-equal (map-get-or m "k" 0) 1)
+      (assert-equal (map-size m) 1)
+      (assert-true (map-has m "k")))))
+
+(test "intmap-is-reachable-alongside-generic-map"
+  (let m (intmap-put (intmap-new 4) 7 9)
+    (begin
+      (assert-equal (intmap-get m 7 0) 9)
+      (assert-equal (intmap-get m 8 0) 0)
+      (assert-equal (intmap-len m) 1)
+      (assert-true (intmap-has m 7)))))
+
+(test "the-two-types-are-different"
+  ; Not a compile-fail case: this is a runtime identity check, because the
+  ; point is that a Map is not an IntMap even though they were once the same
+  ; name. A Map value has no intmap-get, and the type checker says so.
+  (begin
+    (assert-equal (intmap-len (intmap-new 4)) 0)
+    (assert-equal (map-size (map-new)) 0)))
+
+(run-tests)

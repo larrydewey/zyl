@@ -112,7 +112,7 @@ it:
 | Spec type | In the implementation |
 |-----------|-----------------------|
 | `Vec<T>` | `(Vec T)`, a generic ADT in `collections/vec`: `(deftype Vec (VecC (Array T) Int Arena))` (a typed, bounds-checked runtime array, the length, the arena). Use `vec-create` (which takes an `Arena`) or `vec-create-default`, then `vec-push`, `vec-get`, `vec-len`; `vec-get` returns `T`. |
-| `Map<K,V>` | `(Map String V)`, a generic ADT in `core/map` (an association list; keys compared with `str-eq`), with `map-new`, `map-insert`, `map-get` (an `Option`), `map-has`, `map-remove`. `collections/map` is a separate Int-to-Int hash map (`map-create-default`). |
+| `Map<K,V>` | `(Map String V)`, a generic ADT in `core/map` (an association list; keys compared with `str-eq`), with `map-new`, `map-insert`, `map-get` (an `Option`), `map-has`, `map-remove`. `collections/intmap` is a separate Int-to-Int hash map (`IntMap`, `intmap-new`). |
 | `Set<T>` | `collections/set` (not in §4.2). |
 | `Result<T,E>` | `(deftype Result (Ok T) (Err E))` in `core/result`. |
 | `Option<T>` | `(deftype Option (Some T) None)` in `core/option` (named in §25). |

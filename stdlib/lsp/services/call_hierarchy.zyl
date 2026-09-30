@@ -107,7 +107,7 @@
       (let name (lsp-source-name raw)
         (if (str-eq name caller)
           (ch-refs-to-edges caller rest tbl)
-          (if (> (st-is-known-fn tbl name) 0)
+          (if (st-is-known-fn tbl name)
             (Cons (CE caller name) (ch-refs-to-edges caller rest tbl))
             (ch-refs-to-edges caller rest tbl)))))))
 
@@ -171,7 +171,7 @@
   (let word (si-word-at text line col)
     (if (= (str-length word) 0)
       Nil
-      (if (> (st-is-known-fn tbl word) 0)
+      (if (st-is-known-fn tbl word)
         (match (ch-item-for uri text word)
           (Some item (Cons item Nil))
           (None Nil))

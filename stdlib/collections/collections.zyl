@@ -9,7 +9,7 @@
 ; Requires core (List/Option ADTs) — inlined via the module resolver.
 
 (use core/core)
-(use collections/map)
+(use collections/intmap)
 (use collections/set)
 (use collections/vec)
 

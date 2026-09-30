@@ -160,7 +160,7 @@
           (ih-read-children text st len tbl closeCh Nil))))))
 
 (defn ih-fn-param-names (tbl name)
-  (if (> (st-is-known-fn tbl name) 0)
+  (if (st-is-known-fn tbl name)
     (match (st-lookup-fn tbl name)
       (Some info (match info (FI _ params (ih-param-name-list params))))
       (None Nil))

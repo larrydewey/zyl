@@ -1291,26 +1291,23 @@
 
 ; (len x) asks for a type, and the type picks the function. The type name
 ; reaching here is the short one, so the module is not readable off it; the
-; module is fixed per collection instead, below. Map exists twice in the
-; stdlib -- core/map counts with map-size, collections/map with map-len --
-; so which length `len` means depends on which of the two a program has
-; loaded, and that is decided by looking for both.
+; module is fixed per collection instead, below. That is sound because a
+; program cannot name a collection type without importing the module that
+; defines it, so the length function for a type in hand is always in
+; scope. Map is unambiguous: core/map is the canonical Map (what the spec
+; means by `len` and `(map key val...)`), and the arena-backed Int -> Int
+; structure that used to share the name is now IntMap in
+; collections/intmap; len accepts that too, since it also has a length.
 (defn ta-len-go (st e k)
   (let sym (ta-short k)
     (if (ta-streq sym "String") (ta-len-pick st e "str-length" "")
     (if (ta-streq sym "List") (ta-len-pick st e "list-length" "core/list")
     (if (ta-streq sym "Vec") (ta-len-pick st e "vec-len" "collections/vec")
-    (if (ta-streq sym "Map") (ta-len-map st e)
-      (ta-len-none st k)))))))
-
-; Two Maps exist in the stdlib: core/map, an ADT over a list of entries,
-; and collections/map, an arena-backed defstruct. Both are named Map and
-; both are loaded by a program that uses collections/vec, and the short type
-; name does not say which one a value is. `len` takes core/map's, the one
-; that pairs with map-new and map-insert. A value of the other type is not
-; misread: map-size is typed to take a core/map Map, so the call is
-; rejected as a type mismatch rather than reading the wrong field.
-(defn ta-len-map (st e) (ta-len-pick st e "map-size" "core/map"))
+    (if (ta-streq sym "Map") (ta-len-pick st e "map-size" "core/map")
+    ; IntMap is not the spec's Map, but it is a map with a length, and
+    ; rejecting it would be a surprise next to accepting Map.
+    (if (ta-streq sym "IntMap") (ta-len-pick st e "intmap-len" "collections/intmap")
+      (ta-len-none st k))))))))
 
 ; The function to call for a length. A prelude function is registered under
 ; its bare name; a module function under its canonical key

@@ -80,7 +80,7 @@
       (match (goto-owning-type text tbl uri word)
         (Some loc (Some loc))
         (None
-          (if (or (> (st-is-known-adt tbl word) 0) (> (st-is-known-struct tbl word) 0))
+          (if (or (st-is-known-adt tbl word) (st-is-known-struct tbl word))
             (goto-find-form text uri word)
             None))))))
 

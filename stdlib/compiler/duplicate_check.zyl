@@ -12,13 +12,20 @@
 ;
 ; Scoped to the SAME resolved `exprs` list arity_check/mutability_check
 ; run against (post module-resolution, post macro-expansion) -- i.e. only
-; names that collide WITHIN one actual compiled program. Confirmed by
-; direct repo-wide scan that several names (`main`, `list-map`, `map-get`,
-; ...) are legitimately reused across DIFFERENT top-level programs/
-; modules that are never `use`d together (driver.zyl's `main` vs
-; repl.zyl's `main`; stdlib/collections/map.zyl vs stdlib/core/map.zyl) --
-; checking the whole repo instead of one resolved program would have
-; produced constant false positives on already-correct code.
+; names that collide WITHIN one actual compiled program. Several names
+; (`main`, `list-map`, `map-get`, ...) are legitimately reused across
+; DIFFERENT top-level programs/modules that are never `use`d together
+; (driver.zyl's `main` vs repl.zyl's `main`) -- checking the whole repo
+; instead of one resolved program would have produced constant false
+; positives on already-correct code.
+;
+; "Never used together" was an assumption about which modules those were,
+; and it was wrong once: core/map and collections/map both exported `Map`,
+; `map-get`, `map-remove` and `map-has`, and a program that imported both
+; was accepted here, with the three shared names silently resolving to the
+; Int-only one. Nothing prevented the combination, so a name being reused
+; across modules is not by itself evidence that it is safe. That pair is
+; now core/map's Map and collections/intmap's IntMap.
 ;
 ; Undershoot posture, same as arity_check.zyl/mutability_check.zyl: this
 ; only looks at EDefn/EDeftype names, the two namespaces most likely to

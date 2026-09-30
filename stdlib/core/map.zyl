@@ -57,10 +57,12 @@
         (Some (ME.value e))
         (map-entries-find rest k)))))
 
+; Bool, like every other `has`/`is-` in the stdlib -- this returned 1/0, so
+; it could not be passed to assert-true or combined with and/or.
 (defn map-has (m k)
   (match (map-get m k)
-    (Some _ 1)
-    (None 0)))
+    (Some _ true)
+    (None false)))
 
 (defn map-get-or (m k default)
   (match (map-get m k)

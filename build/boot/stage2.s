@@ -356887,6 +356887,30 @@ zy_zyl_x2Fstd_5__compiler_x2Ftype_5Fannotate__ta_x2Dlen_x2Dgo:
     pop rbp
     jmp zy_zyl_x2Fstd_5__compiler_x2Ftype_5Fannotate__ta_x2Dlen_x2Dpick
 .L7583_4:
+    lea rax, [rip+.L7596]
+    mov rsi, rax
+    mov rdi, r14
+    call zyl_cstr_eq
+    cmp rax, 0
+    je .L7583_5
+    lea rax, [rip+.L7597]
+    mov rsi, rax
+    lea rax, [rip+.L7598]
+    mov rdi, rax
+    mov rdx, rsi
+    mov rsi, r12
+    mov rcx, rdi
+    mov rdi, rbx
+    mov r11, [rbp-16]
+    mov QWORD PTR fs:zyl_cur_region@tpoff, r11
+    mov rbx, qword ptr [rbp-56]
+    mov r12, qword ptr [rbp-64]
+    mov r13, qword ptr [rbp-72]
+    mov r14, qword ptr [rbp-80]
+    mov rsp, rbp
+    pop rbp
+    jmp zy_zyl_x2Fstd_5__compiler_x2Ftype_5Fannotate__ta_x2Dlen_x2Dpick
+.L7583_5:
     mov rdi, rbx
     mov rsi, r13
     mov r11, [rbp-16]
@@ -356898,25 +356922,6 @@ zy_zyl_x2Fstd_5__compiler_x2Ftype_5Fannotate__ta_x2Dlen_x2Dgo:
     mov rsp, rbp
     pop rbp
     jmp zy_zyl_x2Fstd_5__compiler_x2Ftype_5Fannotate__ta_x2Dlen_x2Dnone
-zy_zyl_x2Fstd_5__compiler_x2Ftype_5Fannotate__ta_x2Dlen_x2Dmap:
-    push rbp
-    mov rbp, rsp
-    and rsp, -16
-    sub rsp, 48
-    mov rax, QWORD PTR fs:zyl_cur_region@tpoff
-    mov [rbp-16], rax
-.L7596_0:
-    lea rax, [rip+.L7597]
-    mov r8, rax
-    lea rax, [rip+.L7598]
-    mov r9, rax
-    mov rdx, r8
-    mov rcx, r9
-    mov r11, [rbp-16]
-    mov QWORD PTR fs:zyl_cur_region@tpoff, r11
-    mov rsp, rbp
-    pop rbp
-    jmp zy_zyl_x2Fstd_5__compiler_x2Ftype_5Fannotate__ta_x2Dlen_x2Dpick
 zy_zyl_x2Fstd_5__compiler_x2Ftype_5Fannotate__ta_x2Dlen_x2Dpick:
     push rbp
     mov rbp, rsp
@@ -757398,10 +757403,12 @@ main:
     .string "map-size"
 .L7595:
     .string "core/map"
+.L7596:
+    .string "IntMap"
 .L7597:
-    .string "map-size"
+    .string "intmap-len"
 .L7598:
-    .string "core/map"
+    .string "collections/intmap"
 .L7600:
     .string "Int"
 .L7602:
@@ -765383,7 +765390,7 @@ main:
 .L15954:
     .string "collections/collections"
 .L15955:
-    .string "collections/map"
+    .string "collections/intmap"
 .L15956:
     .string "collections/set"
 .L15957:

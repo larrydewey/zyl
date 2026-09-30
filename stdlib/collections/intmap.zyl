@@ -1,0 +1,149 @@
+; === Zyl Standard Library — Arena-backed IntMap ===
+; Module: collections/intmap
+; Provides: IntMap, an arena-backed Int -> Int hash map
+
+; Named IntMap, not Map, and that is the point of the rename. core/map
+; already exports a generic Map<K, V> and the spec's `len` and
+; `(map key val...)` mean that one; this is a separate structure whose keys
+; and values are machine words. While both were called Map, a program that
+; imported both got no diagnostic and the three shared names (map-get,
+; map-remove, map-has) silently resolved to this Int-only version, making
+; core/map's generic versions unreachable behind an arity error.
+
+(use allocator/allocator)
+(use math/words)
+
+(defstruct IntMap (kptr Words) (vptr Words) (len Int) (cap Int) (arena Arena))
+
+; Create an empty IntMap with the given initial capacity on the given arena.
+; Returns: IntMap
+(defn intmap-new-with ((arena Arena) (cap Int))
+  (let c (if (< cap 0) 0 cap)
+    (make-IntMap (w-alloc arena c) (w-alloc arena c) 0 c arena)))
+
+; Create an empty IntMap with the given initial capacity in a new private
+; arena.
+; Returns: IntMap
+(defn intmap-new ((cap Int))
+  (intmap-new-with (arena-create 0) cap))
+
+; Get the number of entries.
+; Returns: Int
+(defn intmap-len ((m IntMap))
+  (struct-get m "len"))
+
+; Get the capacity.
+; Returns: Int
+(defn intmap-cap ((m IntMap))
+  (struct-get m "cap"))
+
+; Internal: lookup key `k` at index `i`. Returns 1-based index if found, 0 if not.
+(defn intmap-get-at ((m IntMap) (k Int) (i Int))
+  (let stored (w-get (struct-get m "kptr") i)
+    (if (== k stored)
+      (+ i 1)
+      0)))
+
+; Look up a key, returning the default when absent.
+; Returns: V
+(defn intmap-get ((m IntMap) (k Int) (default Int))
+  (let len (intmap-len m)
+    (if (<= len 0)
+      default
+      (intmap-get-loop m k default 0 len))))
+
+; Internal lookup loop.
+(defn intmap-get-loop ((m IntMap) (k Int) (default Int) (i Int) (len Int))
+  (if (>= i len)
+    default
+    (let result (intmap-get-at m k i)
+      (if (> result 0)
+        (w-get (struct-get m "vptr") (- result 1))
+        (intmap-get-loop m k default (+ i 1) len)))))
+
+; Put a key-value pair. If key exists, overwrites value in-place.
+; Returns: IntMap
+(defn intmap-put ((m IntMap) (k Int) (v Int))
+  (let existing (intmap-find m k 0 (intmap-len m))
+    (if (> existing 0)
+      (let idx (- existing 1)
+        (begin
+          (w-set (struct-get m "vptr") idx v)
+          m))
+      (intmap-put-inner m k v))))
+
+(defn intmap-put-inner ((m IntMap) (k Int) (v Int))
+  (let len (intmap-len m)
+    (let cap (intmap-cap m)
+      (if (>= len cap)
+        (let new-cap (if (<= cap 0) 16 (* cap 2))
+          (let new-kptr (w-alloc (struct-get m "arena") new-cap)
+            (let new-vptr (w-alloc (struct-get m "arena") new-cap)
+              (let old-kptr (struct-get m "kptr")
+                (let old-vptr (struct-get m "vptr")
+                  (begin
+                    (for (j 0) (< j len)
+                      (begin
+                        (w-set new-kptr j (w-get old-kptr j))
+                        (w-set new-vptr j (w-get old-vptr j))
+                        (set! j (+ j 1))))
+                    (w-set new-kptr len k)
+                    (w-set new-vptr len v)
+                    (make-IntMap new-kptr new-vptr (+ len 1) new-cap (struct-get m "arena"))))))))
+        (let new-kptr (struct-get m "kptr")
+          (begin
+            (w-set new-kptr len k)
+            (w-set (struct-get m "vptr") len v)
+            (make-IntMap new-kptr (struct-get m "vptr") (+ len 1) cap (struct-get m "arena"))))))))
+
+; Remove a key. Compacts the arrays in place (like set-remove), so the
+; capacity stays the real size of the backing storage and later puts
+; reuse the freed slot.
+; Returns: IntMap
+(defn intmap-remove ((m IntMap) (k Int))
+  (let len (intmap-len m)
+    (let removed (intmap-find m k 0 len)
+      (if (<= removed 0)
+        m
+        (let kptr (struct-get m "kptr")
+          (let vptr (struct-get m "vptr")
+            (begin
+              (for (j (- removed 1)) (< j (- len 1))
+                (begin
+                  (w-set kptr j (w-get kptr (+ j 1)))
+                  (w-set vptr j (w-get vptr (+ j 1)))
+                  (set! j (+ j 1))))
+              (make-IntMap kptr vptr (- len 1) (intmap-cap m) (struct-get m "arena")))))))))
+
+; Internal: 1-based index of key k in [i, len), or 0 if absent.
+(defn intmap-find ((m IntMap) (k Int) (i Int) (len Int))
+  (if (>= i len)
+    0
+    (let stored (w-get (struct-get m "kptr") i)
+      (if (== k stored)
+        (+ i 1)
+        (intmap-find m k (+ i 1) len)))))
+
+; Check if a key exists.
+; Returns: Bool
+(defn intmap-has ((m IntMap) (k Int))
+  (let len (intmap-len m)
+    (if (<= len 0)
+      false
+      (intmap-has-loop m k 0 len))))
+
+; Internal has-loop.
+(defn intmap-has-loop ((m IntMap) (k Int) (i Int) (len Int))
+  (if (>= i len)
+    false
+    (let stored (w-get (struct-get m "kptr") i)
+      (if (== k stored)
+        true
+        (intmap-has-loop m k (+ i 1) len)))))
+
+; Free all arena-allocated storage. IntMap becomes empty.
+; Returns: Unit
+; An empty IntMap in the same arena. The storage is the arena's (freeing it
+; with C free() was undefined behaviour); it returns at arena-reset.
+(defn intmap-free ((m IntMap))
+  (make-IntMap (w-alloc (struct-get m "arena") 0) (w-alloc (struct-get m "arena") 0) 0 0 (struct-get m "arena")))

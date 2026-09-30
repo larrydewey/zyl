@@ -542,9 +542,9 @@ The standard library is package `zyl/std` at the compiler's major. It is implici
 | `core/list` | `List`, `car`, `cdr`, `list-length`, `list-append`, `list-reverse` |
 | `core/option` | `Option`, `option-unwrap`, `option-is-some`, `option-map`, `option-unwrap-or` |
 | `core/result` | `Result`, `result-unwrap`, `result-is-ok`, `result-map`, `result-and-then` |
-| `core/map` | `Map`, `map-new`, `map-insert`, `map-get`, `map-has`, `map-remove` |
+| `core/map` | `Map`, `map-new`, `map-insert`, `intmap-get`, `intmap-has`, `intmap-remove` |
 | `collections/vec` | `vec-create`, `vec-push`, `vec-get`, `vec-set`, `vec-len`, `vec-pop` |
-| `collections/map` | `map-create`, `map-put`, `map-get`, `map-has`, `map-remove`, `map-len` |
+| `collections/intmap` | `intmap-new-with`, `intmap-put`, `intmap-get`, `intmap-has`, `intmap-remove`, `intmap-len` |
 | `collections/set` | `set-create`, `set-add`, `set-contains`, `set-remove`, `set-len` |
 | `collections/collections` | `Assoc`, `assoc-put`, `assoc-get`, `list-map`, `list-filter`, `list-fold` |
 | `allocator/allocator` | `alloc-malloc`, `alloc-free`, `arena-create`, `arena-alloc`, `buf-append`, `alloc-strlen` |

@@ -347,7 +347,7 @@ made it:
 
 ```zyl
 (use collections/vec)
-(use collections/map)
+(use collections/intmap)
 (use collections/set)
 
 (defn main ()
@@ -355,18 +355,18 @@ made it:
     (begin
       (print (vec-len v))                ; => 2
       (print (vec-get v 0))))            ; => 1
-  (let m (map-put (map-create-default 10) 1 42)
+  (let m (intmap-put (intmap-new 10) 1 42)
     (begin
-      (print (map-get m 1 0))            ; => 42
-      (print (map-has m 1))))            ; => 1 (bools print as 1/0)
+      (print (intmap-get m 1 0))            ; => 42
+      (print (intmap-has m 1))))            ; => 1 (bools print as 1/0)
   (let s (set-add (set-create-default 10) 42)
     (print (set-contains s 42)))         ; => 1
   0)
 ```
 
-`vec-create-default`, `map-create-default` and `set-create-default`
+`vec-create-default`, `intmap-new` and `set-create-default`
 take an initial capacity and give the collection a private arena of its
-own; `vec-create`, `map-create` and `set-create` take an `Arena` first,
+own; `vec-create`, `intmap-new-with` and `set-create` take an `Arena` first,
 for a collection that should live in an arena you manage. `Vec` is
 generic over its element type; `Map` and `Set` hold Int keys (and Int
 values). `Vec` and `Map` double their capacity when they fill up. For

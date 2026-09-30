@@ -4,7 +4,7 @@
 (use core/core)
 (use collections/collections)
 (use collections/vec)
-(use collections/map)
+(use collections/intmap)
 
 ; Alias with struct field (transparent)
 (defstruct _al_User (id Int) (name String))
@@ -32,9 +32,9 @@
     (assert-equal (vec-get v 2) 3)))
 
 (test "alias-in-map"
-  (let m (map-create-default 10)
-    (let m1 (map-put m 42 999)
-      (assert-equal (map-get m1 42 0) 999))))
+  (let m (intmap-new 10)
+    (let m1 (intmap-put m 42 999)
+      (assert-equal (intmap-get m1 42 0) 999))))
 
 ; Alias with pattern matching
 (deftype _al_Option (AlSome Int) AlNone)

@@ -291,11 +291,11 @@ Zyl's collections are library code, not built-in syntax. Import them:
 
 ```lisp
 (use collections/vec)
-(use collections/map)
+(use collections/intmap)
 (use collections/set)
 ```
 
-`Vec` holds elements of any one type, `(Vec T)`; `collections/map` is
+`Vec` holds elements of any one type, `(Vec T)`; `collections/intmap` is
 a table from Int keys to Int values and `collections/set` a set of
 Ints, both kept in insertion order and searched linearly. For a map with
 String keys and values of any type, use `core/map` (below). All of them
@@ -354,41 +354,45 @@ compared with `str-eq`, values may be any type, and lookup returns an
 (defn main ()
   (let m (map-insert (map-insert (map-new) "a" (Some 1)) "b" None)
     (begin
-      (match (map-get m "a")
+      (match (intmap-get m "a")
         (Some v (print v))             ; Some(1)
         (None (print "missing")))
       (print m)))                      ; {b: None, a: Some(1)}
   0)
 ```
 
-### Int maps (`Map`) — `collections/map.zyl`
+### Int maps (`IntMap`) — `collections/intmap.zyl`
 
-An association from Int keys to Int values, kept in insertion order.
+An association from Int keys to Int values, kept in insertion order. It is
+called `IntMap`, not `Map`: `Map` in `core/map` is the generic `Map<K, V>`
+above, and when both were called `Map` a program importing both got no
+diagnostic while the shared names (`map-get`, `map-has`, `map-remove`)
+silently resolved to this Int-only one.
 
 ```lisp
-(use collections/map)
+(use collections/intmap)
 
 (defn main ()
-  (let-mut m (map-create-default 10)
+  (let-mut m (intmap-new 10)
     (begin
-      (set! m (map-put m 1 100))
-      (set! m (map-put m 2 200))
-      (set! m (map-put m 1 111))     ; existing key: value replaced
-      (print (map-len m))            ; 2
-      (print (map-get m 1 0))        ; 111
-      (print (map-get m 3 -1))       ; -1 (the default: key missing)
-      (print (map-has m 2))          ; 1 (true)
-      (set! m (map-remove m 2))
-      (print (map-has m 2))))        ; 0 (false)
+      (set! m (intmap-put m 1 100))
+      (set! m (intmap-put m 2 200))
+      (set! m (intmap-put m 1 111))     ; existing key: value replaced
+      (print (intmap-len m))            ; 2
+      (print (intmap-get m 1 0))        ; 111
+      (print (intmap-get m 3 -1))       ; -1 (the default: key missing)
+      (print (intmap-has m 2))          ; true
+      (set! m (intmap-remove m 2))
+      (print (intmap-has m 2))))        ; false
   0)
 ```
 
 Lookup is a linear scan, which is fine for the small maps it is meant
 for. Entries are kept in insertion order, so iteration is deterministic.
-`map-put` on an existing key overwrites the value in the shared buffer,
+`intmap-put` on an existing key overwrites the value in the shared buffer,
 so, as with a Vec, the old version sees the change too.
 
-`map-remove` compacts the entries in the same shared buffer (as
+`intmap-remove` compacts the entries in the same shared buffer (as
 `set-remove` does), so the old version sees that too.
 
 ### Sets (`Set`) — `collections/set.zyl`
@@ -567,7 +571,7 @@ not restricted.
 
 ### Arenas: where collections keep their elements
 
-`Vec`, `collections/map`, `collections/set`, `str-intern` and every entry
+`Vec`, `collections/intmap`, `collections/set`, `str-intern` and every entry
 point in `stdlib/math` take an **arena** argument. An arena is a region
 of memory you own: a bump allocator (`allocator/allocator`) that hands
 out 16-byte-aligned chunks from growable blocks and frees them only all
@@ -582,14 +586,14 @@ cannot be passed where an arena is expected.
 | `(arena-reset a)` | Frees every block at once; `a` stays usable |
 | `(arena-destroy a)` | Frees everything; `a` must not be used again |
 
-**The `arena` argument** of `vec-create`, `map-create` and `set-create`
+**The `arena` argument** of `vec-create`, `intmap-new-with` and `set-create`
 is an `Arena` from `arena-create`: the collection's storage, and every
 reallocation as it grows, comes from that arena. Several collections
 may share one arena, and freeing it (`arena-reset`/`arena-destroy`)
 frees them all together. Passing `0` is a type error (expected `Arena`,
 found `Int`).
 
-`vec-create-default`, `map-create-default` and `set-create-default`
+`vec-create-default`, `intmap-new` and `set-create-default`
 create a new private arena for the one collection. A private arena is
 never freed: that is fine for a few long-lived collections, but inside
 a loop it leaks one arena per call.
@@ -819,7 +823,7 @@ values field by field, by content, with or without a derived `Eq`
 
 ```lisp
 (use collections/vec)           ; vec-create vec-push vec-get ...
-(use collections/map)           ; map-create map-put map-get ...
+(use collections/intmap)           ; intmap-new-with intmap-put intmap-get ...
 (use collections/set)           ; set-create set-add set-contains ...
 (use collections/collections)   ; list-map list-filter assoc-put ...
 (use collections/slice)         ; slice-vec slice-get slice-fold ...
@@ -866,7 +870,7 @@ its field count, and a generic ADT needs no per-type layout.
 | A struct or ADT value that does not outlive its call | The call's own region, released when the call returns |
 | A struct or ADT value that is returned but goes no further | The region the caller chose for the result |
 | Every other struct or ADT value (stored, sent, captured) | The process heap |
-| `(vec-create a 10)`, `(map-create-default 10)` | The arena `a`, or a private one |
+| `(vec-create a 10)`, `(intmap-new 10)` | The arena `a`, or a private one |
 
 Region inference decides the placement; anything it cannot prove
 short-lived goes to the heap, which is always safe. The heap is

@@ -57,7 +57,7 @@ The compiler's internal tables are ordered by construction, so the same source y
 - **Most tables are lists**, built and traversed in source order.
 - **Symbol tables** built during qualification (`qualify.zyl`) are sorted by name.
 - **`stdlib/core/map.zyl`** is the ordered `Map` offered to programs: an association list whose iteration order is a function of the insertion sequence alone.
-- **`stdlib/collections/map.zyl` and `set.zyl`** store keys and values in arena-backed arrays, searched linearly in insertion order.
+- **`stdlib/collections/intmap.zyl` and `set.zyl`** store keys and values in arena-backed arrays, searched linearly in insertion order.
 
 No part of the compiler iterates a hash table in hash order. The hash tables that do exist (the compiler's variant-table index, top-level arities and codegen's function kinds; the runtime's FNV-1a function map for the interpreter and its source-span table) are only probed by key, never iterated.
 

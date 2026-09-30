@@ -12,7 +12,7 @@
 (use core/list)
 (use collections/collections)
 (use collections/vec)
-(use collections/map)
+(use collections/intmap)
 (use collections/set)
 (use actor/actor)
 (use ffi/ffi)
@@ -454,29 +454,29 @@
 (test "vec-pop empty"
       (assert-equal (vec-len (vec-pop (vec-create-default 10))) 0))
 
-(test "map-create"
-      (assert-equal (map-len (map-create-default 10)) 0))
+(test "intmap-new-with"
+      (assert-equal (intmap-len (intmap-new 10)) 0))
 
-(test "map-len"
-      (assert-equal (map-len (map-create-default 10)) 0))
+(test "intmap-len"
+      (assert-equal (intmap-len (intmap-new 10)) 0))
 
-(test "map-put"
-      (assert-equal (map-len (map-put (map-create-default 10) 1 42)) 1))
+(test "intmap-put"
+      (assert-equal (intmap-len (intmap-put (intmap-new 10) 1 42)) 1))
 
-(test "map-get"
-      (assert-equal (map-get (map-put (map-create-default 10) 1 42) 1 0) 42))
+(test "intmap-get"
+      (assert-equal (intmap-get (intmap-put (intmap-new 10) 1 42) 1 0) 42))
 
-(test "map-get miss"
-      (assert-equal (map-get (map-create-default 10) 99 0) 0))
+(test "intmap-get miss"
+      (assert-equal (intmap-get (intmap-new 10) 99 0) 0))
 
-(test "map-has y"
-      (assert-true (map-has (map-put (map-create-default 10) 1 42) 1)))
+(test "intmap-has y"
+      (assert-true (intmap-has (intmap-put (intmap-new 10) 1 42) 1)))
 
-(test "map-has n"
-      (assert-false (map-has (map-create-default 10) 99)))
+(test "intmap-has n"
+      (assert-false (intmap-has (intmap-new 10) 99)))
 
-(test "map-remove"
-      (assert-equal (map-len (map-remove (map-put (map-create-default 10) 1 42) 1)) 0))
+(test "intmap-remove"
+      (assert-equal (intmap-len (intmap-remove (intmap-put (intmap-new 10) 1 42) 1)) 0))
 
 (test "set-create"
       (assert-equal (set-len (set-create-default 10)) 0))
