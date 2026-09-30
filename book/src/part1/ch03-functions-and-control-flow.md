@@ -123,8 +123,18 @@ Forward references work — all functions are collected before type inference.
 ### Local Helpers
 
 The specification's *named let* (`(let loop ((n 10) (acc 1)) ...)`) is
-not supported by the current compiler — don't use it. Write the helper
-as a top-level function instead, as `sum-to` does above.
+not supported — don't use it. Write the helper as a top-level function
+instead, as `sum-to` does above. Naming the loop and rebinding its state
+with `set!` inside a `let-mut` is also not a way around it: a closure that
+assigns to a captured `let-mut` is `E_MUT_CONFLICT`. Threading the state
+through parameters, as `sum-to` does, is the idiom.
+
+For a chain of bindings where each is in scope for the next, `let*` is
+sugar for nested `let`:
+
+```lisp
+(let* ((a 1) (b (+ a 10)) (c (* b 2))) (print c))   ; prints 22
+```
 
 ## 3.3 Anonymous Functions (`fn` / `lambda`)
 

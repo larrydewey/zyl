@@ -79,15 +79,21 @@
 
 ; --- the rewrite of any form -------------------------------------------------
 
-; Whether a with-resource or assert-fail occurs anywhere in `a`.
+; Whether a with-resource, assert-fail or let* occurs anywhere in `a`.
 (defn ds-needs (a)
   (match a
     (AList xs
       (let h (ds-head a)
         (if (or (str-eq h "quote") (str-eq h "quasiquote")) false
-          (if (or (str-eq h "with-resource") (str-eq h "assert-fail")) true
+          (if (ds-rewritten-h h) true
             (ds-needs-list xs)))))
     (_ false)))
+
+; The heads this pass rewrites in place. A form headed by one of these is
+; replaced wholesale rather than walked, so it is never also descended into.
+(defn ds-rewritten-h (h)
+  (if (str-eq h "with-resource") true
+    (if (str-eq h "assert-fail") true (str-eq h "let*"))))
 
 (defn ds-needs-list (xs) (match xs (Nil false) (Cons h t (if (ds-needs h) true (ds-needs-list t)))))
 
@@ -98,10 +104,40 @@
         (if (or (str-eq h "quote") (str-eq h "quasiquote")) a
           (if (str-eq h "with-resource") (ds-with a xs)
             (if (str-eq h "assert-fail") (ds-assert-fail a xs)
-              (if (ds-needs-list xs) (ds-list (ds-forms xs) a) a))))))
+              (if (str-eq h "let*") (ds-let* a xs)
+                (if (ds-needs-list xs) (ds-list (ds-forms xs) a) a)))))))
     (_ a)))
 
 (defn ds-forms (xs) (match xs (Nil Nil) (Cons h t (Cons (ds-form h) (ds-forms t)))))
+
+; (let* ((a x) (b y)) body...) => (let a x (let b y body...)).
+; Each binding is in scope for the bindings after it and for the body, which
+; is the only thing that separates let* from let -- so it is exactly sugar,
+; and needs no type pass or lowering of its own. The value of a binding is
+; rewritten first, so a let* inside it is handled before this one reaches it.
+(defn ds-let* (a xs)
+  (if (>= (ds-count xs) 3)
+    (match (ds-nth xs 1)
+      (AList bs
+        (if (>= (ds-count bs) 1)
+          (ds-let*-go a bs (ds-rest xs 2))
+          (ds-fail a "`let*` takes at least one (name value) binding")))
+      (_ (ds-fail a "`let*` takes a binding list, then a body")))
+    (ds-fail a "`let*` takes a binding list, then at least one body form")))
+
+; The remaining bindings wrapped around the body, innermost binding last.
+(defn ds-let*-go (a bs body)
+  (if (= (ds-count bs) 0)
+    (ds-body (ds-forms body) a)
+    (match (ds-nth bs 0)
+      (AList kv
+        (if (= (ds-count kv) 2)
+          (ds-list [(ds-id "let" a)
+                    (ds-nth kv 0)
+                    (ds-form (ds-nth kv 1))
+                    (ds-let*-go a (ds-rest bs 1) body)] a)
+          (ds-fail a "a `let*` binding is (name value)")))
+      (_ (ds-fail a "a `let*` binding is (name value)")))))
 
 ; (with-resource (r init) body...) =>
 ; (let r init (let _wr_v (try body (catch _wr_e (begin (Drop.drop r) (zyl-reraise _wr_e))))

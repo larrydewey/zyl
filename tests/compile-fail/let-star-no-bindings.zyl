@@ -1,0 +1,6 @@
+; expect-error: E_MALFORMED_FORM
+; `let*` with no bindings is a mistake, not an identity: it reads as if a
+; binding list were coming. `(let () body)` is the plain-`let` way to say
+; nothing is bound.
+(let* ()
+  1)

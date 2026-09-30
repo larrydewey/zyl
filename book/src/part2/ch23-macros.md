@@ -235,7 +235,7 @@ Both `and` and `or` short-circuit:
 
 Every operand is a `Bool`, and so is the result: `(or 5 6)` is `E_TYPE_MISMATCH`, since an `Int` is not a condition. A `cond` without a `true` or `else` clause is Unit, like an `if` without an else.
 
-`begin` is a core form. There is no `let*`, and no `when` or `unless` form (`when` is only a keyword inside `match` guards). User macros named `when`, `unless` and so on work as shown above.
+`begin` is a core form. `when` and `unless` are core forms too — `when` runs its body only if the condition holds, `unless` only if it does not, and both are short-circuiting, so the body is not evaluated at all when the condition says otherwise. (`when` is *also* a keyword inside `match` guards; the two are unrelated.) `let*` is a core form (sugar for nested `let`), so a macro cannot define one. A user macro named `when`, `unless` or `let*` cannot be called, because the core form of that name wins.
 
 ## 23.7 Macro Constraints (Spec §19.4)
 

@@ -1,0 +1,41 @@
+; let* (spec 2 desugar): sequential bindings, sugar for nested let. The
+; only thing that separates it from `let` is that each binding is in scope
+; for the ones after it, so these tests are about scope, not about the
+; desugar being applied at all.
+
+(defn ls-sum (a b c) (+ a (+ b c)))
+; `_`-prefixed so the shadowing warning stays out of the test output;
+; the shadowing still happens, which is what is under test.
+(defn ls-shadow (_x) (let* ((_x (+ _x 1)) (y _x)) (ls-sum _x y 0)))
+(defn ls-nested (v) (let* ((a v) (b (let* ((c 1) (d 2)) (+ c d)))) (+ a b)))
+
+(test "bindings-are-sequential"
+  ; b sees a, c sees b. With non-sequential scope this would not compile.
+  (assert-equal (let* ((a 1) (b (+ a 10)) (c (* b 2))) (+ a (+ b c))) 34))
+
+(test "one-binding"
+  (assert-equal (let* ((a 7)) (* a 6)) 42))
+
+(test "body-may-be-several-forms"
+  (let* ((a 2) (b 3))
+    (assert-equal (ls-sum a b 0) 5)
+    (assert-equal (* a b) 6)))
+
+(test "shadows-an-outer-binding"
+  (assert-equal (ls-shadow 10) 22))
+
+(test "nests-inside-a-value"
+  (assert-equal (ls-nested 5) 8))
+
+(test "value-is-evaluated-in-the-new-scope"
+  ; The value is rewritten before the binding exists, so a let* in a value
+  ; position still sees only what was in scope outside.
+  (assert-equal (let* ((a 1) (b (let* ((c 2) (d 3)) (* c d)))) (+ a b)) 7))
+
+(test "empty-body-is-unit-not-an-error"
+  ; No body forms: the rewrite yields `unit`, and a let* used as a
+  ; statement is fine.
+  (let* ((_a 1))
+    unit))
+
+(run-tests)

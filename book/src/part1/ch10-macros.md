@@ -307,7 +307,7 @@ Several forms that other Lisps define as macros are built into the compiler inst
 | `cond` | `(cond (test value) ... (else value))`, a chain of `if`s; a clause may hold several forms, run in order |
 | `begin` | Sequencing; the value is the last expression |
 
-`let*` is not available; nest `let` forms instead.
+`let*` is a core form — sugar for nested `let`, where each binding is in scope for the next. You cannot define your own: the core form of that name wins.
 
 ```lisp
 (defn say ((s String) r) (begin (print s) r))

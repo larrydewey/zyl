@@ -1,0 +1,5 @@
+; expect-error: E_MALFORMED_FORM
+; A binding is exactly (name value). A one-element list, or a bare name in
+; binding position, is a typo -- silently dropping it would bind nothing.
+(let* ((a))
+  a)

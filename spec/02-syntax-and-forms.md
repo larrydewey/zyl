@@ -15,6 +15,7 @@ Expr :=
   | (def Name Expr)
   | (defn Name (Params*) Body)   ; also 'defun'
   | (let (Name Expr) Body)
+  | (let* ((Name Expr)*) Body)          ; desugared to nested let
   | (let-mut (Name Expr) Body)
   | (if Expr Expr Expr)
   | (list Expr*)                 ; reader: [Expr*]
@@ -200,6 +201,14 @@ requires becomes an `EUnknown` node, which the arity pass reports as
 - **`let` accepts two shapes:** `(let x v body...)` and
   `(let (x v) body...)`. A `let` without a body is `E_MALFORMED_FORM`.
   `let-mut` is the same.
+- **`let*`** is sugar for nested `let`, rewritten on the parse tree
+  (`compiler/desugar.zyl`): `(let* ((a x) (b y)) body...)` becomes
+  `(let a x (let b y body...))`, so each binding is in scope for the ones
+  after it. It is not in the grammar above (§2 has no `let*`); it is a
+  convenience the implementation adds. A binding that is not exactly
+  `(name value)`, an empty binding list, or a missing body is
+  `E_MALFORMED_FORM` — the shapes are reported rather than dropped, since
+  dropping one would silently bind nothing.
 - **`if` may omit the else branch.** `(if c t)` is Unit, and `t` must be
   Unit.
 - **`for`** accepts the single-binding shorthand `(for (i 0) cond body...)`
