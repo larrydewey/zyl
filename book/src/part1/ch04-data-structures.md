@@ -361,6 +361,27 @@ compared with `str-eq`, values may be any type, and lookup returns an
   0)
 ```
 
+### Element literals: `(vec ...)` and `(map ...)`
+
+Both collections have a literal form, alongside the calls that build them:
+
+```lisp
+(vec 10 20 30)                 ; 3 elements, capacity 3
+(vec)                          ; empty
+(vec "a" "b")                  ; a Vec of String
+
+(map "a" 1 "b" 2)              ; two entries
+(map)                          ; empty
+(map "k" 1 "j" 2 "k" 3)        ; "k" -> 3: a repeated key keeps the later value
+```
+
+A `Vec` holds one element type, and the literal takes it from the first
+element, so `(vec 1 "two")` is a type error. `map` takes key/value pairs,
+so an odd argument count is a type error rather than a dropped key.
+
+These are literal constructors, like `(list ...)` — a `defn` of the same
+name in your file does not replace them.
+
 ### Int maps (`IntMap`) — `collections/intmap.zyl`
 
 An association from Int keys to Int values, kept in insertion order. It is

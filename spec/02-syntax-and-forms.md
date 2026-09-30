@@ -45,6 +45,8 @@ Expr :=
   | (tuple Expr*)                     ; element types are part of the type
   | (tuple-get Expr Int)
   | (len Expr)                      ; String, List, Vec, or Map
+  | (vec Expr...)                   ; element literal
+  | (map Expr Expr ...)             ; key/value literal, even count
   | (unwrap Expr)
 
   ;; Trait & Type System

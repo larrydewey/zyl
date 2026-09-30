@@ -1,0 +1,8 @@
+; expect-error: E_MALFORMED_FORM
+; map takes key/value pairs, so an odd argument count is rejected rather
+; than silently dropping the trailing key.
+(use core/core)
+(use core/map)
+(defn main ()
+  (let m (map "a" 1 "b")
+    (print (len m))))

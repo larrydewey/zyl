@@ -1,0 +1,46 @@
+; `(vec elem...)` and `(map key val...)`, spec 21.5. Both are literal
+; constructors like `(list ...)`, desugared to the collection's own build
+; calls: a chain of vec-push from vec-create-default, and a chain of
+; map-insert from map-new. They add no new stdlib API, and `len` and the
+; ordinary accessors read the results like any other Vec or Map.
+(use core/core)
+(use collections/vec)
+(use core/map)
+
+(test "vec-literal-elements-and-order"
+  (let v (vec 10 20 30)
+    (begin
+      (assert-equal (len v) 3)
+      (assert-equal (vec-get v 0) 10)
+      (assert-equal (vec-get v 1) 20)
+      (assert-equal (vec-get v 2) 30)
+      (assert-equal (vec-cap v) 3))))
+
+(test "vec-literal-of-zero-elements"
+  (assert-equal (len (vec)) 0))
+
+(test "vec-literal-carries-the-element-type"
+  ; A Vec of Strings, so vec-get is type-checked as a String read.
+  (let v (vec "a" "b")
+    (assert-equal (vec-get v 1) "b")))
+
+(test "map-literal-entries"
+  (let m (map "a" 1 "b" 2)
+    (begin
+      (assert-equal (len m) 2)
+      (assert-equal (map-get m "a") (Some 1))
+      (assert-equal (map-get m "b") (Some 2))
+      (assert-equal (map-get m "c") None))))
+
+(test "map-literal-of-zero-entries"
+  (assert-equal (len (map)) 0))
+
+(test "map-literal-last-write-wins"
+  ; map-insert replaces an existing key, so a repeated key keeps the later
+  ; value and the length counts it once.
+  (let m (map "k" 1 "j" 2 "k" 3)
+    (begin
+      (assert-equal (len m) 2)
+      (assert-equal (map-get m "k") (Some 3)))))
+
+(run-tests)

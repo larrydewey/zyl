@@ -93,7 +93,9 @@
 ; replaced wholesale rather than walked, so it is never also descended into.
 (defn ds-rewritten-h (h)
   (if (str-eq h "with-resource") true
-    (if (str-eq h "assert-fail") true (str-eq h "let*"))))
+  (if (str-eq h "assert-fail") true
+  (if (str-eq h "let*") true
+  (if (str-eq h "vec") true (str-eq h "map"))))))
 
 (defn ds-needs-list (xs) (match xs (Nil false) (Cons h t (if (ds-needs h) true (ds-needs-list t)))))
 
@@ -105,7 +107,9 @@
           (if (str-eq h "with-resource") (ds-with a xs)
             (if (str-eq h "assert-fail") (ds-assert-fail a xs)
               (if (str-eq h "let*") (ds-let* a xs)
-                (if (ds-needs-list xs) (ds-list (ds-forms xs) a) a)))))))
+              (if (str-eq h "vec") (ds-vec a xs)
+                (if (str-eq h "map") (ds-map a xs)
+                  (if (ds-needs-list xs) (ds-list (ds-forms xs) a) a)))))))))
     (_ a)))
 
 (defn ds-forms (xs) (match xs (Nil Nil) (Cons h t (Cons (ds-form h) (ds-forms t)))))
@@ -138,6 +142,41 @@
                     (ds-let*-go a (ds-rest bs 1) body)] a)
           (ds-fail a "a `let*` binding is (name value)")))
       (_ (ds-fail a "a `let*` binding is (name value)")))))
+
+; (vec e1 .. en) => (vec-push (vec-push .. (vec-create-default n) e1 ..) en)
+; spec 21.5's element literal. A chain of pushes rather than a call taking
+; the elements, because a function cannot be generic over the element type
+; (spec 11: no generic functions), so there is no one signature to rewrite
+; into. The chain also gets the element type from the first push, so a
+; heterogeneous literal is a type error at the push that disagrees rather
+; than a silently coerced Vec.
+(defn ds-vec (a xs)
+  (let elems (ds-rest xs 1)
+    (ds-vec-go a elems (ds-list [(ds-id "vec-create-default" a)
+                                 (AstInt (ds-count elems))] a))))
+
+(defn ds-vec-go (a elems acc)
+  (if (= (ds-count elems) 0)
+    acc
+    (ds-vec-go a (ds-rest elems 1)
+      (ds-list [(ds-id "vec-push" a) acc (ds-nth elems 0)] a))))
+
+; (map k1 v1 .. kn vn) => (map-insert (map-insert .. (map-new) k1 v1) .. kn vn)
+; spec 21.5's entry literal. Same reasoning as vec: the key and value types
+; are whatever the pairs carry, and map-insert is persistent, so the chain
+; is the map. An odd count is rejected here rather than dropping the last
+; key.
+(defn ds-map (a xs)
+  (let items (ds-rest xs 1)
+    (if (= (% (ds-count items) 2) 0)
+      (ds-map-go a items (ds-list [(ds-id "map-new" a)] a))
+      (ds-fail a "`map` takes key/value pairs, so an even number of arguments"))))
+
+(defn ds-map-go (a items acc)
+  (if (= (ds-count items) 0)
+    acc
+    (ds-map-go a (ds-rest items 2)
+      (ds-list [(ds-id "map-insert" a) acc (ds-nth items 0) (ds-nth items 1)] a))))
 
 ; (with-resource (r init) body...) =>
 ; (let r init (let _wr_v (try body (catch _wr_e (begin (Drop.drop r) (zyl-reraise _wr_e))))

@@ -1,0 +1,9 @@
+; expect-error: E_TYPE_MISMATCH
+; A Vec holds one element type. The literal takes its type from the first
+; push, so a mixed literal fails at the push that disagrees rather than
+; coercing or producing a Vec of Some-any-type.
+(use core/core)
+(use collections/vec)
+(defn main ()
+  (let v (vec 1 "two")
+    (print (vec-get v 1))))
