@@ -345,6 +345,9 @@
 (defn qf-call (tab locals hn rest)
   (AList (Cons (AstIdent (qf-head-name tab locals hn)) (qf-forms tab locals rest))))
 
+(defn qf-if-when-unless (tab locals hn rest)
+  (AList (Cons (AstIdent hn) (qf-forms tab locals rest))))
+
 (defn qf-special (tab locals hn rest)
   (if (str-eq hn "list")
     (qf-form tab locals (ast-list-literal rest))
@@ -374,6 +377,12 @@
     (qf-let tab locals hn rest)
   (if (str-eq hn "let-mut")
     (qf-let tab locals hn rest)
+  (if (str-eq hn "if")
+    (qf-if-when-unless tab locals hn rest)
+  (if (str-eq hn "when")
+    (qf-if-when-unless tab locals hn rest)
+  (if (str-eq hn "unless")
+    (qf-if-when-unless tab locals hn rest)
   (if (str-eq hn "match")
     (qf-match tab locals hn rest)
   (if (str-eq hn "for")
@@ -400,7 +409,7 @@
     (qf-pub tab locals rest)
   (if (qf-opaque-head hn)
     (AList (Cons (AstIdent hn) rest))
-    (qf-call tab locals hn rest))))))))))))))))))))))))))))
+    (qf-call tab locals hn rest)))))))))))))))))))))))))))))))
 
 ;; `(derive T [A B])`: the trait list is names, not a list literal.
 (defn qf-derive-flat (xs)
