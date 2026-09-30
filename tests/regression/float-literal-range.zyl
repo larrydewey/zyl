@@ -1,0 +1,32 @@
+; A Float literal outside the binary64 range is not an error. `1e400` is
+; `inf` and `1e-400` is `0.0`, which is IEEE 754 and what C, Python,
+; JavaScript and Rust all produce. There is deliberately no float-overflow
+; error code; see the header of error_codes.zyl.
+;
+; This is the opposite of the integer case, where an out-of-range literal is
+; E_INTEGER_OVERFLOW: there the alternative was a silent 0 or a silent wrap,
+; both plausible-looking wrong numbers. `inf` announces itself -- it prints
+; as inf, propagates through arithmetic, and compares false against anything
+; finite -- so a diagnostic would add noise without adding safety.
+(use core/core)
+
+(test "the-largest-representable-float-is-exact"
+  ; DBL_MAX. Written out, so the test is about the literal and not about a
+  ; computed approximation of it.
+  (assert-true (> 1.7976931348623157e308 1e308)))
+
+(test "overflow-is-infinity-not-an-error"
+  (begin
+    (assert-true (> 1e400 1e308))
+    (assert-true (> 1.8e308 1e308))))
+
+(test "underflow-is-zero-not-an-error"
+  (assert-equal 1e-400 0.0))
+
+(test "infinity-propagates-and-compares-as-infinity-does"
+  (begin
+    (assert-true (= (/ 1.0 0.0) (/ 2.0 0.0)))
+    (assert-false (< 1e400 1e308))
+    (assert-true (> 1e400 1e308))))
+
+(run-tests)

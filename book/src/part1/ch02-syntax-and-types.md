@@ -66,6 +66,21 @@ IEEE-754 binary64 (double precision). ~15-17 decimal digits of precision.
 `print` writes a Float with six decimal places: `(print 3.14)` prints
 `3.140000`.
 
+An out-of-range literal is **not** an error; it is the IEEE value:
+
+```lisp
+1e400                  ; inf   (overflow)
+1e-400                 ; 0.0   (underflow)
+1.7976931348623157e308 ; the largest Float, exactly
+(/ 1.0 0.0)            ; inf
+```
+
+This is the opposite of an out-of-range `Int`, which is
+`E_INTEGER_OVERFLOW`. There the alternative was a silent `0` or a silent
+wrap — plausible-looking wrong numbers. `inf` announces itself: it prints as
+`inf`, propagates through arithmetic, and compares false against anything
+finite, so a diagnostic would add noise without adding safety.
+
 **Int and Float do not mix.** There is no implicit conversion between
 them: `(+ 1 2.5)` is a compile error (`E_TYPE_MISMATCH`, "cannot unify
 Float with Int"). Write `1.0` when you mean a Float. There are no
@@ -85,6 +100,21 @@ per type it is called with, so it works for each:
   (print (half 5.0))     ; 2.500000
   0)
 ```
+
+An out-of-range literal is **not** an error: it is the IEEE value.
+
+```lisp
+1e400                  ; inf   (overflow)
+1e-400                 ; 0.0   (underflow)
+1.7976931348623157e308 ; the largest Float, exactly
+(/ 1.0 0.0)            ; inf
+```
+
+This is the opposite of an out-of-range `Int`, which is
+`E_INTEGER_OVERFLOW`. There, the alternative was a silent `0` or a silent
+wrap — plausible-looking wrong numbers. `inf` announces itself: it prints as
+`inf`, propagates through arithmetic, and compares false against anything
+finite, so a diagnostic would add noise without adding safety.
 
 ### Booleans (`Bool`)
 

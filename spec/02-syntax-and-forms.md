@@ -198,6 +198,100 @@ requires becomes an `EUnknown` node, which the arity pass reports as
 - **`contracts`, `requires`, `ensures`, `invariant`, `checkpoint` and
   `recover`** are lowered to ordinary code while the tree is converted;
   see `spec/09-ffi-contracts.md`.
+- **`tuple` / `tuple-get`** (§21.5, §4.2). `(tuple e...)` builds a
+  generated single-variant ADT — one per element type list, so the element
+  types are part of the type and `(tuple 1 2)` and `(tuple "a" "b")` cannot
+  be mixed. `(tuple-get t i)` reads element `i` from 0; an index past the
+  end is `E_INDEX_OUT_OF_BOUNDS` naming the arity, and a receiver that is
+  not a tuple is `E_TYPE_MISMATCH`. The generated type name is an
+  implementation detail. A type parameter cannot be shown to be a tuple, so
+  `tuple-get` on one is `E_CANNOT_INFER`; there are no trait bounds to
+  write (§6.1).
+- **`len`** (§21, §4.2). `(len x)` is one name for the length of the four
+  types that have one: String, List, Vec, Map. It is resolved during type
+  checking, on the argument's type, to that type's own length function, so
+  `str-length`, `list-length`, `vec-len` and `map-size` remain and mean the
+  same thing; `len` is the uniform spelling, not a replacement. Anything
+  else — an `Int`, a tuple — is `E_TYPE_MISMATCH` naming the type. A tuple
+  is excluded on purpose: its length is in the type, so `tuple-get` already
+  reports a read past the end as `E_INDEX_OUT_OF_BOUNDS`. `IntMap` is
+  accepted alongside `Map` since it also has a length.
+- **`vec` / `map` literals** (§21.5). `(vec e...)` and `(map k v ...)` are
+  desugared, in `desugar.zyl`, to the collections' own build calls: a chain
+  of `vec-push` from `vec-create-default n`, and a chain of `map-insert`
+  from `map-new`. Neither adds stdlib API, and `len` and the ordinary
+  accessors read the results like any other `Vec` or `Map`. A chain of
+  pushes rather than one call taking the elements, because a function
+  cannot be generic over an element type (§11), so there is no single
+  signature to desugar into. The `Vec` takes its element type from the
+  first push, so a mixed literal is `E_TYPE_MISMATCH` at the push that
+  disagrees; an odd `map` argument count is `E_MALFORMED_FORM`. Like
+  `(list ...)`, these are literal constructors and a `defn` of the same
+  name does not shadow them.
+- **The type predicates** (§21.4). `int?`, `float?`, `bool?`, `string?`,
+  `struct?` and `alias?` are decided in the type pass from the operand's
+  static type, because a Zyl value is an untyped word and there is nothing
+  at runtime to ask. Lowering emits the operand — so its effects still
+  happen — and then the constant, which is why `(int? (print 1))` is
+  `false` and still prints. They ask about the *type*: `(bool? false)` is
+  `true`. `struct?` is true for a `defstruct` type and false for an ADT;
+  the set of struct type names is recorded in `ta-structs` when the fields
+  are registered, keyed by short name, so two modules with a struct of one
+  name share an answer. `alias?` is false wherever inference has run,
+  because aliases are transparent (§4.6) and the type is the target by
+  then; it is present because the spec lists it. A receiver whose type is
+  not known (a generic function's parameter) is `E_CANNOT_INFER`, not
+  `false`. A `defn` of the same name in scope shadows them, as for any
+  builtin.
+- **`quote` and a bracketed datum** (§4.9, §21.5). `'d` reads constant
+  data: an Int, Float, String or Bool is itself, and a list datum is the
+  list literal of its quoted elements. The reader rewrites `[e ...]` to
+  `(list e ...)`, so a quoted bracket arrived carrying a `list` name and
+  was `E_MALFORMED_FORM` for containing one, while `'(1 2)` was accepted —
+  two spellings of one datum behaving differently. `ast-quote-unbracket`
+  drops the reader's own marker, in `ast.zyl` so the reader (`quote-check`),
+  the conversion (`ast-quote-data`) and the qualifier (`qf-quote-data-p`,
+  via `ast-quote-ok`) all agree. A name the writer typed is still
+  `E_MALFORMED_FORM`: only the marker is removed, not the check. Because the
+  reader no longer distinguishes the forms, `'(list 1 2)` is the same datum
+  as `'[1 2]`.
+- **Operator arity** (§21.1, §21.2, book §2.6). Every binary operator takes
+  *any number* of operands and folds left-associatively, so `(- 10 3 2)` is
+  `(10-3)-2`. §21.1 writes `-`, `/` and `%` as `(- a b)`, which reads as
+  two operands and is not what the language does; the n-ary form is
+  implemented, documented in book §2.6 ("Arithmetic (n-ary,
+  left-associative)") and pinned by `regression/arithmetic.zyl`
+  (`int-modulo-like`: `(- 10 2 2 2 2)` is 2, which is also how you spell
+  modulo; `float-sub-3`: `(- 1.0 2.0 3.0)` is -4.0; `float-div-3`:
+  `(/ 1.0 2.0 3.0)`). One operand is the unary form where one exists:
+  `(- x)` negates, `(+ x)` and `(* x)` are `x`. Zero operands is
+  `E_ARITY_MISMATCH`. Left nesting is load-bearing, not cosmetic: `+` and
+  `*` associate so their grouping is invisible, but `-`, `/` and `%` do
+  not, so `10-(2-3) != (10-2)-3`. Worth knowing when reading code — a
+  three-operand `-` is a fold, not a subtraction with a stray argument.
+- **Integer literal range** (§4.9). An `Int` is 64-bit signed, so every
+  integer literal is range-checked as it is lexed, in every base (decimal,
+  `0x`, `0o`, `0b`); one that does not fit is `E_INTEGER_OVERFLOW` at the
+  literal, reported from the token stream before parsing, because the lexer
+  has no file to name in a diagnostic. Checked rather than assumed:
+  `zyl_cstr_to_int_base` answers 0 for a value it cannot hold, so
+  `9223372036854775808` used to be the number zero and
+  `-9223372036854775809` used to wrap to a positive value of the wrong sign.
+  A `TkIntOverflow` token carries the text and offset; nothing consumes it.
+  The check works on indices into the literal's own text, because a
+  literal's text is a view into the source and `str-length` on a substring
+  of a substring of a view does not report the length.
+- **Float literal range** (§4.9). A `Float` literal outside binary64 is
+  *not* an error: `1e400` is `inf` and `1e-400` is `0.0`, per IEEE 754 and
+  as C, Python, JavaScript and Rust all produce. The catalog carried an
+  `E_FLOAT_OVERFLOW` code that nothing raised, and a documented code that
+  cannot happen implies a check that does not exist, so it is deleted
+  rather than implemented. This is the opposite of the integer case: there
+  the alternative to an error was a silent `0` or a silent wrap, both
+  plausible-looking wrong numbers. `inf` announces itself instead — it
+  prints as `inf`, propagates through arithmetic, and compares false
+  against anything finite. `regression/float-literal-range.zyl` pins both
+  ends.
 - **Bodies.** Where a form has a body, several body forms are an implicit
   `begin` whose value is the last: `defn`, `fn` and `lambda` bodies, both
   shapes of `let` and `let-mut`, a `try`'s `catch` handler, a `cond`
