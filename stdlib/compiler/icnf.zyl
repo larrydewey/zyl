@@ -338,7 +338,7 @@
     (Cons _ _
       (if (ic-has-main fns)
         (match stmts (Cons s0 _ (ic-fail-at s0 "E_TOPLEVEL_STMTS_WITH_EXPLICIT_MAIN" "top-level test/run-tests forms alongside an explicit (defn main ...)" "")) (Nil fns))
-        (Cons (IFn "main" (no-strs) (ISeq (list-append stmts (Cons (IConst 0) Nil))) (no-ints)) fns)))))
+        (Cons (IFn "main" (no-strs) (ISeq stmts) (no-ints)) fns)))))
 
 (defn ic-has-main (fns)
   (match fns
