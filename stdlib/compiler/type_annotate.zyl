@@ -948,17 +948,6 @@
     (Nil (ta-int))
     (Cons e t (let _ (ta-expect st ctx env e (ta-int)) (ta-walk-int st ctx env t)))))
 
-; Type a tuple: all elements must be typed, return Tuple<T1, T2, ...>
-(defn ta-tuple (st ctx env elems)
-  (let ets (ta-list st ctx env elems)
-    (ta-tuple-type st ets)))
-
-; Build a Tuple type from a list of element types.
-(defn ta-tuple-type (_st ets)
-  (match ets
-    (Nil (TaC "Tuple" Nil))
-    (Cons _ _ (TaC "Tuple" ets))))
-
 ; Type `e` and require `want`.
 (defn ta-expect (st ctx env e want)
   (let t (ta-expr st ctx env e)
@@ -1062,7 +1051,6 @@
     (EAssertFalse x _ (ta-assert-bool st ctx env x))
     (EUnwrap x (ta-unwrap st ctx env x))
     (EStructGet se field (ta-struct-get st ctx env se field e))
-    (ETuple elems (ta-tuple st ctx env elems))
     (EFor bindings cond body (ta-for st ctx env bindings cond body))
     ; (ffi-pin v) copies v's word into a slot in the Pin region and gives
     ; the slot's address, a (Pin a); (ffi-unpin p) reads the value back.

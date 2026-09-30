@@ -289,7 +289,6 @@
     (EUnwrap e2 (ac-expr e2 arities shadowed))
     (EStructGet se _ (ac-expr se arities shadowed))
     (EMakeStruct _ fields (ac-list fields arities shadowed))
-    (ETuple fields (ac-list fields arities shadowed))
     (EMakeVariant _ _ args (ac-list args arities shadowed))
     (EPrint exprs (ac-list exprs arities shadowed))
     (EExit c (ac-expr c arities shadowed))

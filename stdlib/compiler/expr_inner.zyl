@@ -51,7 +51,6 @@
   (EFn String (List Param) Expr)
   (EStructGet Expr String)
   (EMakeStruct String (List Expr))
-  (ETuple (List Expr))
   (EMakeVariant String String (List Expr))
   (ESetBang String Expr)
   (EModuleDecl String)
@@ -1299,10 +1298,6 @@
     (match (parse-make-struct rest)
       (Some expr expr)
       (None (Expr (EUnknown "make-struct" (convert-ast-list rest)))))
-  (if (str-eq n "tuple")
-    (match (parse-tuple rest)
-      (Some expr expr)
-      (None (Expr (EUnknown "tuple" (convert-ast-list rest)))))
   (if (str-eq n "struct-get")
     (match (parse-struct-get rest)
       (Some expr expr)
@@ -1334,7 +1329,7 @@
       (Some expr expr)
       (None (Expr (EUnknown "test-compile" (convert-ast-list rest)))))
     (if (str-eq n "alias") (parse-alias rest) (byte-form-dispatch n rest))
-  ))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+  )))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 
 ; --- Byte-level primitives (book chapter 32) ------
 ; Recognition happens here, not in the reader (no-dispatch arch). The 21
@@ -3145,9 +3140,6 @@
           (match (ast-nth args 0 (AstInt 0)) (AstIdent n n) (_ "___"))
           (convert-ast-list (ast-list-nth-rest args 1)))))
     None))
-
-(defn parse-tuple (args)
-  (Some (Expr (ETuple (convert-ast-list args)))))
 
 (defn parse-struct-get (args)
   (if (ast-has-at-least args 2)

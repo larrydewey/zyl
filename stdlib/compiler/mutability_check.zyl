@@ -257,7 +257,6 @@
     (EAssert c _ (mc-expr c mutscope lets))
     (EUnwrap e2 (mc-expr e2 mutscope lets))
     (EStructGet se _ (mc-expr se mutscope lets))
-    (ETuple fields (mc-list fields mutscope lets))
     (EMakeStruct _ fields (mc-list fields mutscope lets))
     (EMakeVariant _ _ args (mc-list args mutscope lets))
     (EPrint exprs (mc-list exprs mutscope lets))
@@ -365,7 +364,6 @@
     (ESetBang name val
       (if (mc-in-scope name names) true (mc-refs-any val names)))
     (EStructGet se _ (mc-refs-any se names))
-    (ETuple fields (mc-or-list fields names))
     (EMakeStruct _ fields (mc-or-list fields names))
     (EMakeVariant _ _ args (mc-or-list args names))
     (EPrint exprs (mc-or-list exprs names))
