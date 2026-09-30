@@ -241,12 +241,31 @@ The type checker gives every closure a function type, built from the parameter a
 
 ## 8.8 Recursive Closures
 
-A lambda cannot refer to itself, and there is no `TBox` or named-`let` form for building one. Write recursive helpers as top-level `defn` functions:
+A lambda cannot refer to itself. A named `let` exists — `(let (loop init)
+body)` binds `loop` for `body` — but not for `init`, so it cannot build a
+self-reference either. Write recursive helpers as top-level `defn`
+functions:
 
 ```lisp
 (defn fact (n)
   (if (<= n 1) 1 (* n (fact (- n 1)))))
 ```
+
+This follows from how closures capture rather than being an oversight. Zyl
+closures capture **by value** — the example in §8.7 would print `1`,
+because `f` is handed the value of `x` when it is built, before the
+`set!`. So a self-reference cannot be wired up by binding the name before
+the initializer is evaluated: the closure would capture an uninitialized
+slot, which compiles cleanly and then reads whatever is there. Two designs
+would fix it and both are language-wide:
+
+- capture enclosing locals **by reference**, so every closure gets an
+  environment — slower, and a change to every closure in the language; or
+- a one-slot mutable **cell**, which the closure captures by value and
+  dereferences when it is called. That needs a cell type the language does
+  not have, plus a reference-rewriting desugar that is shadowing-correct.
+
+Neither is a small addition, so the answer today is the top-level `defn`.
 
 ## 8.9 Closure Inlining
 

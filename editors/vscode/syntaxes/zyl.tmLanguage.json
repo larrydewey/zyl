@@ -220,7 +220,7 @@
       "patterns": [
         {
           "name": "keyword.control.zyl",
-          "match": "(?<![^\\s()\\[\\]{}\";])(defn|def|let|let-mut|set!|fn|lambda|if|cond|when|while|for|match|begin|try|catch|unwrap|error|assert|range|with-resource|deftype|defstruct\\+|defstruct|struct-get|make-struct|make-variant|trait|impl-not|impl|derive|defmacro|macro|alias|use|module|export|pub|feature-gate|print|read-line|exit|close|file-open|file-read|file-write|file-close|buf-append|spawn|chan-send|with-region|extern|quote|ffi-call|ffi-pin|ffi-unpin|requires|ensures|contracts|recover|checkpoint|invariant|test-suite|test-property|test-compile|test|assert-equal|assert-true|assert-false|assert-fail|setup|teardown|run-tests)(?![^\\s()\\[\\]{}\";])"
+          "match": "(?<![^\\s()\\[\\]{}\";])(defn|def|let|let-mut|set!|fn|lambda|if|cond|when|while|for|match|begin|try|catch|unwrap|error|assert|range|with-resource|deftype|defstruct\\+|defstruct|struct-get|make-struct|make-variant|trait|impl-not|impl|derive|defmacro|macro|alias|use|module|export|pub|feature-gate|print|read-line|exit|close|file-open|file-read|file-write|file-close|buf-append|spawn|chan-send|with-region|extern|quote|ffi-call|ffi-pin|ffi-unpin|requires|ensures|contracts|recover|checkpoint|invariant|test-suite|test-property|test-compile|test|assert-equal|assert-true|assert-false|assert-fail|setup|teardown|run-tests|let*|tuple|tuple-get|quasiquote|list|vec|map)(?![^\\s()\\[\\]{}\";])"
         }
       ]
     },
@@ -252,7 +252,7 @@
       "patterns": [
         {
           "name": "support.function.zyl",
-          "match": "(?<![^\\s()\\[\\]{}\";])(chan-recv|chan-tx|chan-rx|chan|actor-wait|str-concat|str-substring|str-length|str-len|str-eq|str-intern|declassify|ct-eq-bool|ct-eq-words-bool|ct-declassify|list-length|list-reverse|list-append|list-map|list-filter|list-nth|car|cdr|cadr|caddr|cddr|list-rest|is-nil|map-get|map-insert|map-remove|map-has|map-new|map-entries|vec-get|vec-set|vec-push|vec-pop|arena-create|arena-alloc|arena-reset|arena-destroy|min|max|abs|clamp|signum|square|cube|identity|compose|flip|apply)(?![^\\s()\\[\\]{}\";])"
+          "match": "(?<![^\\s()\\[\\]{}\";])(chan-recv|chan-tx|chan-rx|chan|actor-wait|str-concat|str-substring|str-length|str-len|str-eq|str-intern|declassify|ct-eq-bool|ct-eq-words-bool|ct-declassify|list-length|list-reverse|list-append|list-map|list-filter|list-nth|car|cdr|cadr|caddr|cddr|list-rest|is-nil|map-get|map-insert|map-remove|map-has|map-new|map-entries|vec-get|vec-set|vec-push|vec-pop|arena-create|arena-alloc|arena-reset|arena-destroy|min|max|abs|clamp|signum|square|cube|identity|compose|flip|apply|len|int?|float?|bool?|string?|struct?|alias?|vec-len|map-size|intmap-new|intmap-new-with|intmap-put|intmap-get|intmap-has|intmap-remove|intmap-len|intmap-cap|intmap-free)(?![^\\s()\\[\\]{}\";])"
         }
       ]
     },

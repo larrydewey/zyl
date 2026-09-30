@@ -321,6 +321,23 @@ is `E_TRAIT_NOT_FOUND`, located at the call; so is a call to a trait
 that has no impls at all. A receiver whose type is never known is
 `E_CANNOT_INFER`.
 
+**Why bounds are still deferred.** The surface syntax would be cheap: a
+colon distinguishes `((T : Ord) a)` from the ordinary `((x Int) a)`, so
+adding it breaks none of the typed parameters already written — there are
+3,867 of them across 166 files. The resolution machinery is also mostly
+there: a `Trait.method` call on a type parameter already resolves per
+specialization, so `(defn use-it (a) (MyCmp.cmp a))` called with an `Int`
+finds that impl.
+
+What is missing is the case §6.4 carves out — a type parameter with no
+evidence at any call site. A bound is meant to supply a *finite set* of
+candidates, which means searching the program's impls for the ones that
+unify, and reporting either no candidate or an ambiguous set. Until then a
+never-called generic function that uses a trait method reports
+`E_TYPE_MISMATCH: cannot unify Unit with Int` at an unrelated line, naming
+neither the trait nor the parameter. That diagnostic is worth fixing on its
+own terms, with or without bounds.
+
 ## 7.6 Monomorphization
 
 The specification generates a specialized copy of a generic function for

@@ -525,8 +525,10 @@ type can implement.
 
 **Trait object**: Dynamic dispatch through a trait — not supported.
 
-**Tuple**: An anonymous product value in the value model (§3). The
-`tuple` constructor of §21.5 is not implemented.
+**Tuple**: An anonymous product value in the value model (§3), built by
+the `tuple` constructor of §21.5 and read with `tuple-get`. The element
+types are part of a tuple's type, so `(tuple 1 2)` and `(tuple "a" "b")`
+are types that cannot be mixed (Chapter 4, §4.5).
 
 **Type inference**: Hindley–Milner with capability and trait
 constraints (phase 3). It is strict: every unification failure is an

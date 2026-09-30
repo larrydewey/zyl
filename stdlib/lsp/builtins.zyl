@@ -74,6 +74,14 @@
           "Element `i` of a tuple, counting from 0. An index past the end is E_INDEX_OUT_OF_BOUNDS; a receiver that is not a tuple is E_TYPE_MISMATCH.")
   (Cons (ZB "let*" "special-form" "(let* ((name value) ...) body ...)"
           "Bind each name in turn, each in scope for the bindings after it and for `body`. Sugar for nested `let`, rewritten before module resolution.")
+  (Cons (ZB "len" "builtin" "(len x)"
+          "Length of a String, List, Vec, Map or IntMap. Resolved while type checking to that type's own length function, so str-length, list-length, vec-len and map-size all still work. Anything else, including an Int or a tuple, is E_TYPE_MISMATCH naming the type.")
+  (Cons (ZB "vec" "special-form" "(vec elem ...)"
+          "Build a Vec from its elements. One element type, taken from the first, so `(vec 1 \"two\")` is E_TYPE_MISMATCH. Sugar for a chain of vec-push.")
+  (Cons (ZB "map" "special-form" "(map key value ...)"
+          "Build a Map from key/value pairs; an odd argument count is E_MALFORMED_FORM. Sugar for a chain of map-insert from map-new, so a repeated key keeps the later value.")
+  (Cons (ZB "int?" "builtin" "(int? x)"
+          "True when the operand's static type is Int. Decided while type checking, because a value carries no type at runtime, and the operand is still evaluated. A receiver whose type is not known is E_CANNOT_INFER. The same for float?, bool? and string?; struct? is true for a defstruct and false for an ADT; alias? is false wherever inference has run, since aliases are transparent.")
   (Cons (ZB "let-mut" "special-form" "(let-mut name value body)"
           "Bind a mutable name. `set!` may rebind it; this is the only route to mutation, since struct fields are immutable.")
   (Cons (ZB "set!" "special-form" "(set! name value)"
@@ -82,7 +90,7 @@
           "Anonymous closure. Identical to `lambda`; captures are analyzed at compile time and recorded on the closure.")
   (Cons (ZB "lambda" "special-form" "(lambda (param ...) body)"
           "Anonymous closure. Identical to `fn`.")
-  Nil)))))))))))
+  Nil)))))))))))))))
 
 (defn builtins-control ()
   (Cons (ZB "if" "special-form" "(if cond then else)"

@@ -129,18 +129,23 @@ An association list of `ME` entries with string keys, compared with
 as `{k: v, ...}` (newest entry first). Iteration order is deterministic, which is what lets the
 compiler use this map internally without breaking reproducible builds.
 `map-get` returns an `Option`.
-This `Map` is not the arena-backed `Map` of `collections/map`; a
-program should load one or the other.
+This `Map` is the generic one, and the only one called `Map`. The
+arena-backed structure that also used to be called `Map` is now `IntMap`, in
+`collections/intmap` — it is a separate Int-to-Int table, not a variant of
+this. While both carried the name `Map`, a program importing both compiled
+without complaint and the three shared function names (`map-get`,
+`map-remove`, `map-has`) silently resolved to the `IntMap` one, putting
+this module's generic versions out of reach.
 
 ## B.2 Collections
 
-`collections/vec`, `collections/map` and `collections/set` are
-arena-backed. `Vec` is generic, `(Vec T)`; `collections/map` and
+`collections/vec`, `collections/intmap` and `collections/set` are
+arena-backed. `Vec` is generic, `(Vec T)`; `collections/intmap` and
 `collections/set` hold `Int` keys and values. Each holds a pointer, a
 length, a capacity and the owning arena; an operation that changes the
 contents returns an updated value. The new struct can
 share its storage with the old one, so treat the old value as used up.
-The first argument of `vec-create`, `map-create` and `set-create` is an
+The first argument of `vec-create`, `intmap-new-with` and `set-create` is an
 `Arena`, from `(arena-create block-size)`; `0` is an `Int`, not an
 arena, and does not type-check. The `-default` constructors take only a
 capacity and make a private arena on the spot:
@@ -165,23 +170,25 @@ A Vec prints as `[a, b, ...]` (`Show`).
 
 There is no `vec-slice`, `vec-append` or `vec-clear`.
 
-### `collections/map` — Arena-Backed Maps
+### `collections/intmap` — Arena-Backed Int Maps
 
 ```lisp
-(use collections/map)
-(defstruct Map (kptr Words) (vptr Words) (len Int) (cap Int) (arena Arena))
-;(map-create (arena Arena) (cap Int)) (map-create-default (cap Int))
-;(map-len (m Map)) (map-cap (m Map))
-;(map-put (m Map) (k Int) (v Int))
-;(map-get (m Map) (k Int) (default Int))
-;(map-has (m Map) (k Int)) (map-remove (m Map) (k Int))
-;(map-find (m Map) (k Int) (i Int) (len Int))   ; index of k, searching from i
-;(map-free (m Map))                     ; an empty Map; storage returns at arena-reset
+(use collections/intmap)
+(defstruct IntMap (kptr Words) (vptr Words) (len Int) (cap Int) (arena Arena))
+;(intmap-new-with (arena Arena) (cap Int)) (intmap-new (cap Int))
+;(intmap-len (m IntMap)) (intmap-cap (m IntMap))
+;(intmap-put (m IntMap) (k Int) (v Int))
+;(intmap-get (m IntMap) (k Int) (default Int))
+;(intmap-has (m IntMap) (k Int)) (intmap-remove (m IntMap) (k Int))
+;(intmap-find (m IntMap) (k Int) (i Int) (len Int))  ; index of k, searching from i
+;(intmap-free (m IntMap))              ; an empty IntMap; storage returns at arena-reset
 ```
 
-`map-get` takes a default value. There are no `map-keys`, `map-values`
-or `map-entries` here; use `core/map` or the association lists in
-`collections/collections` when you need them.
+Keys and values are machine words, so this is an `Int` to `Int` table, not a
+generic map. `intmap-get` takes a default value. There are no
+`intmap-keys`, `intmap-values` or `intmap-entries`; use `core/map` for the
+generic `Map<K, V>`, or the association lists in `collections/collections`.
+`len` works on an `IntMap` as well as a `Map`.
 
 ### `collections/set` — Sets
 

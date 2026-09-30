@@ -510,8 +510,9 @@ the current library.
   0)
 ```
 
-There is no literal syntax for either (`[...]` is a `List`). Tuples are in the specification
-but are not implemented; use a struct.
+There is no literal syntax for either (`[...]` is a `List`). Tuples have
+their own constructor and reader, `(tuple 1 "two")` with `tuple-get`; see
+Chapter 4, §4.5. A struct is the choice when you want *named* fields.
 
 ## 2.8 The `begin` Form — Sequencing
 

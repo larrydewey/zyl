@@ -146,6 +146,8 @@ The operands and results are `Bool`. An `Int` is not a truth value:
 The four inlined names are reserved by the module resolver: they are
 never qualified, so they always mean the builtin.
 
+| `len` | `(len x)` | length of a String, List, Vec, Map or IntMap. Resolved while type checking to that type's own length function, so `str-length`, `list-length`, `vec-len` and `map-size` all still work and `len` is the uniform spelling rather than a replacement. Anything else, an `Int` or a tuple included, is `E_TYPE_MISMATCH` naming the type.
+
 ## C.6 Binding and Mutation
 
 | Form | Syntax |
@@ -302,6 +304,23 @@ expressions (call arguments, `begin`, `print`), and `name` alone is the
 list of them, `(defmacro sum (&rest xs) (+ 0 ,@xs))`. In a template `,x`
 is `x`; `,` and `,@` outside a quasiquote and a template are
 `E_MALFORMED_FORM`.
+
+## C.8a Tuples, Collection Literals and Type Predicates
+
+| Form | Syntax | Notes |
+|---|---|---|
+| `tuple` | `(tuple elem ...)` | the element types are part of a tuple's type, so `(tuple 1 2)` and `(tuple "a" "b")` are types that cannot be mixed. The generated type name is an implementation detail. Sugar for a chain of `vec-push`, so a mixed literal is `E_TYPE_MISMATCH` at the element that disagrees |
+| `tuple-get` | `(tuple-get t i)` | element `i` from 0. Past the end is `E_INDEX_OUT_OF_BOUNDS` naming the arity; a non-tuple receiver is `E_TYPE_MISMATCH`; a receiver whose type is unknown is `E_CANNOT_INFER`, since nothing can say a type parameter is a tuple (there are no trait bounds) |
+| `vec` | `(vec elem ...)` | element literal; one element type, from the first |
+| `map` | `(map key value ...)` | entry literal; an odd argument count is `E_MALFORMED_FORM`. A repeated key keeps the later value |
+| `int?` | `(int? x)` | true when the operand's *static type* is `Int`. Also `float?`, `bool?`, `string?`. Decided while type checking, because a value is an untyped word and there is nothing to ask at runtime |
+| `struct?` | `(struct? x)` | true for a `defstruct` type, false for an ADT |
+| `alias?` | `(alias? x)` | always false where inference has run: aliases are transparent, so the type is already the target. Present because the specification lists it |
+
+The type predicates ask about the operand's type, not its value, so
+`(bool? false)` is true — for a value's truth use `(if x ...)`. The operand
+is still evaluated, so `(int? (print 1))` is false and still prints. A
+`defn` of the same name in scope shadows them, as for any builtin.
 
 ## C.9 Modules and Packages
 
