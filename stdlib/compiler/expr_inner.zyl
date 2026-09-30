@@ -1020,7 +1020,7 @@
 
 (defn quote-check (d)
   (match d
-    (AList xs (quote-check-list xs))
+    (AList xs (quote-check-list (ast-quote-unbracket xs)))
     (AstIdent n (quote-name-fail d n))
     (_ unit)))
 

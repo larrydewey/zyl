@@ -1,0 +1,7 @@
+; expect-error: E_TYPE_MISMATCH
+; A quoted list datum is a list literal, so it obeys the list rule: one
+; element type. '[1 [2]] mixes an Int with a list, exactly as (list 1
+; (list 2)) would.
+(use core/core)
+(defn main ()
+  (print (len '[1 [2]])))

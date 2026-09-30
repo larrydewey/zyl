@@ -1,0 +1,46 @@
+; `(quote d)` and the reader's `'d` (spec 4.9, 21.5). A quoted datum is
+; constant data: an Int, Float, String or Bool is itself, and a list datum
+; is the list literal of its quoted elements. The reader turns [e ...] into
+; (list e ...), so a quoted bracket used to arrive carrying a `list` name
+; and was rejected for containing one -- while the same datum in parentheses
+; was fine. These pin that the two spellings are one datum.
+(use core/core)
+
+(test "scalar-data-is-itself"
+  (begin
+    (assert-equal (quote 1) 1)
+    (assert-equal (quote 1.5) 1.5)
+    (assert-equal (quote "abc") "abc")
+    (assert-equal (quote true) true)))
+
+(test "empty-list-datum"
+  (assert-equal (len '()) 0))
+
+(test "paren-and-bracket-spellings-agree"
+  (begin
+    (assert-equal (len '(1 2 3)) (len '[1 2 3]))
+    (assert-equal (len '((1 2) (3))) (len '[[1 2] [3]]))))
+
+(test "bracket-datum-elements"
+  (let d '[10 20 30]
+    (begin
+      (assert-equal (len d) 3)
+      (assert-equal (list-car d) (Some 10))
+      (assert-equal (list-car (list-rest d)) (Some 20)))))
+
+(test "a-nested-bracket-nests-rather-than-flattening"
+  ; '[[1] [2]] is a two-element list of two-element lists. The inner
+  ; brackets are elements, not spliced in, so the outer list has two
+  ; elements and not four.
+  (let d '[[1] [2]]
+    (begin
+      (assert-equal (len d) 2)
+      (assert-equal (len (list-rest d)) 1)
+      (assert-equal (len (list-rest (list-rest d))) 0))))
+
+(test "a-bracket-datum-is-immutable-data"
+  ; Two occurrences are equal in content: quoted data is built fresh from
+  ; constants, so there is nothing to alias.
+  (assert-equal '[1 2] '[1 2]))
+
+(run-tests)

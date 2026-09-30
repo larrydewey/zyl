@@ -1,0 +1,8 @@
+; expect-error: E_MALFORMED_FORM
+; Dropping the reader's `list` marker is not a licence to quote names: an
+; unbracket only removes the marker the reader itself added, so a name the
+; writer typed is still E_MALFORMED_FORM, bracket or not. There is no
+; symbol type to quote one as.
+(use core/core)
+(defn main ()
+  (print '[1 a]))

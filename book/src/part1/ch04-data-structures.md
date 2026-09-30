@@ -441,6 +441,16 @@ builds one: `(list 1 2 3)`, `[1 2 3]` and the quoted constant
 evaluated left to right and all of one type (Chapter 2, §2.7). `[]` is
 `Nil`.
 
+Quoted data (`'d`) is constant data: an Int, Float, String or Bool is
+itself, and a list datum is the list literal of its quoted elements, so
+`'(1 2 3)` and `'[1 2 3]` are the same value. The bracket spelling works
+because the reader turns `[e ...]` into `(list e ...)` and a quoted list
+drops that marker again — which also means `'(list 1 2)` is that same
+datum; the reader no longer tells the two spellings apart, so nothing
+downstream can. A **name** inside quoted data is `E_MALFORMED_FORM`,
+bracket or not: there is no symbol type to quote one as. A quoted list
+obeys the list rule of one element type, so `'[1 [2]]` is a type error.
+
 ```lisp
 (use core/list)
 

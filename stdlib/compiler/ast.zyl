@@ -253,18 +253,32 @@
 ; caller rejects one (ast-quote-ok, expr_inner.zyl's quote-check).
 (defn ast-quote-data (d)
   (match d
-    (AList xs (ast-span-like (ast-list-literal (ast-quote-list xs)) d))
+    (AList xs (ast-span-like (ast-list-literal (ast-quote-list (ast-quote-unbracket xs))) d))
     (_ d)))
+
+; The reader turns [e ...] into (list e ...), so a quoted datum written with
+; brackets arrives carrying a `list` element that is syntax, not a name.
+; Dropping it makes '[1 2] and '(1 2) the same datum, as the spec says: a
+; list datum is the list literal of its quoted elements, either way. It
+; also means '(list 1 2) is that same datum -- the reader no longer
+; distinguishes the two forms, so nothing downstream can. Both the reader
+; (expr_inner.zyl's quote-check) and the qualifier come through here.
+(defn ast-quote-unbracket (xs)
+  (match xs
+    (Nil Nil)
+    (Cons h t (if (match h (AstIdent n (str-eq n "list")) (_ false)) t xs))))
 
 (defn ast-quote-list (xs)
   (match xs
     (Nil Nil)
     (Cons h t (Cons (ast-quote-data h) (ast-quote-list t)))))
 
-; Whether quoted data holds no name.
+; Whether quoted data holds no name. The reader's `list` marker is dropped
+; first, for the same reason ast-quote-data drops it: it is not a name the
+; writer typed.
 (defn ast-quote-ok (d)
   (match d
-    (AList xs (ast-quote-ok-list xs))
+    (AList xs (ast-quote-ok-list (ast-quote-unbracket xs)))
     (AstIdent _ false)
     (_ true)))
 
