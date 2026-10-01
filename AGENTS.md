@@ -251,6 +251,18 @@ requires byte-identical seeds — the largest Zyl program, self-hosted:
 ./run_regression_tests.sh --full --no-boot --filter poison-selfhost
 ``` All tests use the `(test "name" (assert-equal ...))` harness defined in `stdlib/testing/testing.zyl`.
 
+**Determinism** is the reason the language exists, and it has a gate that
+checks both halves: 120 programs compiled twice in separate processes must be
+byte-identical, and `verify/model.py` exhaustively enumerates the region
+allocator's reachable state space, requiring its transition relation to be a
+function and its block accounting to balance. The checker's own detection
+path is exercised against an injected double free.
+
+```bash
+./run_regression_tests.sh --full --no-boot --filter determinism
+python3 verify/model.py            # stdlib only; ZYL_MODEL_DEPTH / _STATES widen it
+```
+
 **S-expression balance** is critical. After editing any `.zyl` file, check it with
 the compiler's own balancer, never by counting delimiters by hand or with a script:
 

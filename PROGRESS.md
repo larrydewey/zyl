@@ -117,6 +117,17 @@ compile with `build/boot/zyl-self` on 2026-09-28.
   path promotes the allocation rather than leaving it dead. It also records
   the honest comparison with Rust — Zyl's guarantee is
   unconditional where Rust's is conditional, and Zyl's is far less tested.
+- **The region core is machine-checked, not just observed.**
+  `verify/model.py` encodes the region allocator and the scope discipline
+  from `runtime/rt/alloc.zyl` as a finite transition system and enumerates the
+  reachable state space exhaustively (255,983 states at depth 10), proving
+  no block is both owned and free, none is released while owned, a scope's
+  blocks are all free once it exits, block counts balance, and the
+  transition relation is a function — the point determinism bottoms out at.
+  It re-reads the runtime source to confirm the model has not drifted, and
+  `verify/model_selftest.sh` injects a double free to prove the checker
+  fails when it should. `--filter determinism` runs it plus 120 programs
+  compiled twice byte-for-byte.
 - **The `TCap`/`TMut` aliasing invariant is enforced** on what the
   language can actually express. The invariant (§9.1: "either exactly one
   TMut reference OR any number of TCap references") needs two things to be

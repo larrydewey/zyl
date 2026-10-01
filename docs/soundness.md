@@ -234,6 +234,56 @@ through one handle is visible in another by design. Making that an error
 would mean making the collections non-persistent, contradicting
 `docs/sound-types-design.md` and every caller in the tree.
 
+## 4b. The machine-checked part
+
+Everything above is either enforced at compile time or observed at run time.
+One component is now *exhaustively* machine-checked, which is a different kind
+of statement: not "no interleaving we ran violated this" but "no interleaving
+in the reachable state space violated this, at the stated bounds".
+
+`verify/model.py` encodes the region allocator and the scope discipline as a
+finite transition system, transcribed from `runtime/rt/alloc.zyl` —
+`rt-class-size`, `rt-pick-class`, `rt-carve`, `rt-rblock-get`,
+`rt-release-block`, `zyl_region_scope_enter/exit` — and explores the
+reachable state space by breadth-first search, checking the invariants on
+every state. It proves, for the model:
+
+- **P1** a block is never both owned and free (structural: the class pool is
+  the only free list, and allocation removes from it while release adds);
+- **P2** a block is released only while owned;
+- **P3** every block a scope owned is free once it exits;
+- **P4** block conservation: free + owned equals created;
+- **D1** the transition relation is a *function* — one successor per (state,
+  operation). This is the layer determinism bottoms out at. If the allocator
+  could choose between two blocks, an allocation would depend on something
+  other than the program text.
+
+Results: 255,983 states explored at depth 10, 876,621 distinct states seen,
+all properties holding. Raising `ZYL_MODEL_DEPTH` and `ZYL_MODEL_STATES`
+widens the claim; the defaults are printed on every run so the coverage is
+never implicit.
+
+Two things keep this from being a proof of the runtime, and both are in the
+script:
+
+- **The model is checked against the source, not the binary.**
+  `cross_check_source` reads `rt-class-size`, `rt-pick-class` and
+  `rt-release-block` back out of `runtime/rt/alloc.zyl` and compares them with
+  the model, so a runtime change the model has not absorbed fails here rather
+  than being silently verified against a fiction. That covers the functions
+  that decide every block's size and fate; it does not cover all of them.
+- **The bounds are the claim.** A deeper or wider search covers more of the
+  model, not more of the runtime.
+
+The checker's own detection path is exercised by
+`verify/model_selftest.sh`, which injects a double free into a scratch copy
+and requires a counterexample trace. Without that, "all properties hold" would
+be indistinguishable from "the checker looks for nothing".
+
+`verify/determinism.sh` also checks determinism end to end: 120 programs
+compiled twice in separate processes, byte-identical every time. The
+self-hosting fixed point is the same property at far larger scale.
+
 ## 5. The comparison with Rust, stated carefully
 
 Zyl is **safer than Rust in one respect that matters**: Rust's memory
@@ -268,7 +318,14 @@ system and indefensible as a statement about the artifact.
 ./run_regression_tests.sh --full --no-boot --filter memcheck   # memory gate
 ./run_regression_tests.sh --full --no-boot --filter poison    # region gate
 ./run_regression_tests.sh --full --no-boot --filter poison-selfhost  # whole compiler
+./run_regression_tests.sh --full --no-boot --filter determinism      # + exhaustive model
+python3 verify/model.py                                              # model check alone
 ```
+
+`verify/model.py` needs only the standard library -- no solver, no build step.
+The state space is small enough to enumerate outright, which for a system
+this finite is a stronger statement than a bounded solver answer: nothing is
+assumed about a search depth being "deep enough".
 
 The memcheck gate checks its own positive control and its own detection
 path before reporting a result, so a green run means the measurement

@@ -605,6 +605,29 @@ if [ -n "$FILTER" ] && echo "poison-selfhost" | grep -qi -- "$FILTER" \
     fi
 fi
 
+# Determinism gate — OPT IN with `--filter determinism`.
+#
+# Determinism is the reason the language exists (spec 14), and it breaks in
+# two ways. End to end: the same program compiled twice, in separate
+# processes, must be byte-identical -- 120 programs. By construction:
+# verify/model.py explores the region allocator's reachable state space
+# exhaustively and requires the transition relation to be a function, so an
+# allocation cannot land in two different blocks. That check's own detection
+# path is exercised too, against a deliberately double-freeing allocator.
+if [ -n "$FILTER" ] && echo "determinism" | grep -qi -- "$FILTER" \
+   && ! dry_listed "determinism"; then
+    TOTAL=$((TOTAL + 1))
+    if "${SCRIPT_DIR}/verify/determinism.sh" > $RUN_TMP/zyl_determinism.log 2>&1; then
+        PASS=$((PASS + 1))
+        echo -e "  ${GREEN}✓${NC} determinism"
+        sed 's/^/      /' $RUN_TMP/zyl_determinism.log
+    else
+        FAIL=$((FAIL + 1))
+        echo -e "  ${RED}✗${NC} determinism"
+        sed 's/^/      /' $RUN_TMP/zyl_determinism.log
+    fi
+fi
+
 # Self-hosting fixed-point verification (default in --full; slow)
 if [ "$BOOT" -eq 1 ] && [ "$NO_BOOT" -eq 0 ] && ! dry_listed "boot/fixed-point"; then
     TOTAL=$((TOTAL + 1))
