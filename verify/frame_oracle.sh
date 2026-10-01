@@ -78,6 +78,36 @@ if ! diff -u "$TMP/zyl.txt" "$TMP/py.txt" > "$TMP/diff.txt" 2>&1; then
     exit 1
 fi
 
+# No bypass. The check above proves the verifier reaches the right verdict; this
+# proves anything reaches the verifier at all.
+#
+# The verifier was first placed in `compile-to-asm`, on the reasoning that
+# every path to an assembly goes through it. It does not: `drv-compile-uncached`
+# needs the IR before code generation in order to hash it, so it calls
+# `codegen-fns` directly, and `zyl build` and `zyl test` emitted binaries with
+# no verification while the docstring claimed otherwise. So the check lives in
+# `codegen-fns`, and what makes that safe is a structural fact rather than a
+# convention: `cg-buffer` is how generated assembly text is extracted from
+# codegen state, and it is read in exactly one place. If that stays true, no
+# path to an assembly can skip the verifier without writing a second code
+# generator.
+extractors=$(grep -rn "cg-buffer" --include='*.zyl' stdlib selfhost \
+    | grep -v "defn cg-buffer" | grep -v "^[^:]*:[0-9]*:;" | grep -v ";" || true)
+n_extract=$(printf '%s\n' "$extractors" | grep -c . || true)
+if [ "$n_extract" != "1" ]; then
+    echo -e "${RED}✗${NC} frame-oracle: cg-buffer is read in $n_extract places, expected 1"
+    printf '%s\n' "$extractors" | sed 's/^/      /'
+    echo "    Every path to generated assembly must go through the one function that verifies it."
+    exit 1
+fi
+
+# And that one function must actually verify.
+body=$(sed -n '/^(defn codegen-fns /,/^$/p' stdlib/compiler/pipeline.zyl)
+if ! printf '%s' "$body" | grep -q "verify-asm"; then
+    echo -e "${RED}✗${NC} frame-oracle: codegen-fns does not call verify-asm"
+    exit 1
+fi
+
 while read -r line; do
     case "$line" in
         *violations=0*) ;;
@@ -88,5 +118,5 @@ while read -r line; do
     esac
 done < "$TMP/zyl.txt"
 
-echo -e "${GREEN}✓${NC} frame-oracle: Zyl and Python agree on ${#SEEDS[@]} seeds (oracle selftest ok)"
+echo -e "${GREEN}✓${NC} frame-oracle: Zyl and Python agree on ${#SEEDS[@]} seeds; single verified path to assembly (oracle selftest ok)"
 sed 's/^/    /' "$TMP/zyl.txt"

@@ -563,6 +563,38 @@ running. That is the argument for planting faults rather than reasoning about
 coverage numbers, and the reason the test is wired into `run_regression_tests.sh`
 in quick mode rather than left for later.
 
+## The verifier was bypassed by `zyl build` and `zyl test`, and the docstring said otherwise
+
+The check was first placed in `compile-to-asm`, on the reasoning that every
+path to an assembly goes through it. That reasoning was wrong.
+`drv-compile-uncached` needs the IR *before* code generation, to hash it for
+the build record, so it calls `codegen-fns` directly:
+
+```
+selfhost/driver.zyl:490    (let buf (codegen-fns arena fns src)   ; zyl build, zyl test
+stdlib/compiler/pipeline.zyl:250  (codegen-fns ...)                 ; compile-to-asm
+```
+
+`zyl build` and `zyl test` therefore emitted binaries with no verification
+whatsoever, while the comment above the call claimed every path was covered.
+The comment was the only thing that was wrong about it, which is the most
+dangerous kind of wrong: it would have survived review.
+
+So the check moved into `codegen-fns`, the one place assembly text is
+produced. What makes that safe is structural rather than conventional:
+`cg-buffer` is how generated assembly is extracted from codegen state, and it
+is read in exactly one place, so no path to an assembly can skip the verifier
+without someone writing a second code generator. `verify/frame_oracle.sh`
+asserts both halves — that `cg-buffer` has exactly one reader, and that the
+function containing it calls `verify-asm` — because a check that can be
+bypassed is worse than no check, since it is reported as present.
+
+Worth recording how it was found, because it is not a story about reading the
+code carefully. It was found by going looking for *other* callers of
+`cg-buffer` and `codegen-fns` after deciding that a claim of complete coverage
+deserves a check rather than a comment. The cross-check work is what prompted
+the question.
+
 ## The cross-check: a second implementation that must agree
 
 `tests/verify_test.zyl` plants faults and proves the verifier *can* fail. That
