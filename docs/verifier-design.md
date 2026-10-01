@@ -97,10 +97,255 @@ job: being the reason a program is safe.
 Slices 1 and 2 are the whole safety argument. After them the trusted base is:
 the verifier, and the allocator, which is small and modelled.
 
-## Findings from implementing slice 1
+## THE DESIGN, AS MEASURED
 
-These replace guesses in the plan above. All four were measured on the
-compiler's own 778,094-line assembly before anything was wired in.
+Everything below supersedes the slice plan above. That plan was written from
+the shape of the emitted code rather than from the emitted code, and four of
+its load-bearing claims did not survive measurement. The measurements are on
+the compiler's own 778,094-line assembly (`build/boot/stage2.s`, 218,744
+memory operands) and on `build/boot/rt.s` (3,039), with nothing wired in.
+
+The stance is unchanged and is the right part: stop trusting the compiler,
+check the artifact. What changed is which obligations the artifact can
+actually discharge, and one axiom set.
+
+### The census, measured
+
+| class | stage2.s | share | rt.s | bound recoverable from text? |
+|---|---|---|---|---|
+| frame slot `[rbp-N]` | 111,096 | 50.8% | — | yes, with a symbolic stack (below) |
+| **stack scratch `[rsp+N]`** | 19,998 | 9.1% | 967 | yes, same model |
+| thread-local `fs:NAME@tpoff` | ~200 | 0.1% | ~200 | yes, fixed offsets |
+| dynamic `[reg+disp]` | 87,650 | 40.1% | 3,039 | 86% yes, 14% no |
+
+`[rsp+N]` is a **fourth class the enumeration above does not contain**, and
+it is 9% of the surface. The three-class table is the premise the whole
+argument rests on, and it was incomplete. The class is self-contained -- the
+staging area a function builds for its own outgoing calls -- and the same
+symbolic stack model discharges it.
+
+### Deviation 1: the kill set is far coarser than "any call"
+
+The invariant above says a `call` to a runtime entry kills every register
+holding a dynamic pointer. Measured against the 33,979 dynamic operands whose
+nearest establishing idiom is a literal-size allocation:
+
+| intervening calls between the allocation and the use | sites |
+|---|---|
+| none at all | 28,363 (83%) |
+| some, but none of them can release | 4,825 (14%) |
+| at least one genuine release | 791 (2%) |
+
+The doc's rule rejects 86% of the corpus to catch 2%. The kill set is
+narrowed to the entries that actually release a region -- `zyl_region_free`,
+`zyl_region_exit`, `zyl_region_recycle`, `zyl_region_unwind`,
+`zyl_arena_reset`/`_destroy` -- plus a tail `jmp` that recycles the frame
+region and the frame epilogue. Narrowing is a soundness-preserving
+refinement: it removes kills, so it can only admit more programs, and the
+programs it newly admits are exactly the ones where nothing released.
+
+### Deviation 2: the frame bound *is* recoverable, if the stack is modelled
+
+The table of false positives below is real, and so is the diagnosis of its
+four causes. But all four are artifacts of reading the bound off a single
+`sub rsp` rather than carrying the stack symbolically as `rsp = rbp - F - k`:
+
+- *frames grown by more than one `sub rsp`* -- accumulate into `k` instead of
+  overwriting `F`;
+- *742 red-zone leaves with no `sub rsp`* -- `k` starts at 0, not at `sub`;
+- *push-only frames* -- `k` starts at 8 per push;
+- *"a read of the return address is indistinguishable from a write"* -- it is
+  distinguishable: `[rbp+8]` is **above** the frame, so a read there is
+  legal and a write is a different rule, not the same offset.
+
+At a control-flow join the depth merges by maximum. So the frame bound is
+derived, and codegen *also* states it as `; frame N`. The verifier requires
+the two to agree. That is strictly stronger than either alone: it is two
+independent derivations that must match, and the mismatch -- an `fsz` that
+code generation intended and an operand it actually emitted -- is the exact
+bug class this exists to catch. A stated bound that is merely trusted proves
+nothing against a compiler that states a large one.
+
+### Deviation 3: the residue is a type fact, and needs an interprocedural fixpoint
+
+86% of the dynamic surface is provable from the text: a `mov rdi, <literal>`
+before `call zyl_ralloc` fixes the block's size; the inline region bump
+establishes its bound by `cmp rdx, [r11+16]` / `ja`; the array and byte
+fast paths establish theirs by a magic word plus `cmp rax, [rdx+16]` / `jae`;
+the 20 SIB sites each follow a dominating index compare.
+
+The remaining 12,236 sites (14% of dynamic in stage2.s) are accesses through
+a pointer that arrived as a parameter -- `mov r8, [rdi+0]`,
+`mov r13, [rdi+32]` -- or through a frame slot holding one. Their bound is
+the size of the aggregate the caller passed, which is a **property of the
+type, not of the instruction text**. Measured over the 5,689 functions with a
+dynamic access on an argument register, the largest displacement per
+(function, argument) is 0/8/16/24/32/40/48/64 bytes for all but a handful.
+That is a layout table, and layout tables are computed by the type checker,
+not recoverable from assembly.
+
+So the residue is discharged by an interprocedural summary: each function
+declares the minimum byte bound each pointer parameter requires, the
+summaries are joined over the direct call graph to a fixpoint, and every call
+site is checked to supply at least that. This is the shape
+`region_inference.zyl` already uses for regions -- per-function parameter
+summaries joined to a whole-program fixpoint -- so the precedent and much of
+the code shape exist. It is the bulk of the work.
+
+### Deviation 4: the axiom set is the `%` primitive table, not the allocator
+
+Verifying the runtime as well as programs (chosen over exempting it) makes
+the locked `%` primitives the axioms of the whole system, and that is a
+*smaller* trusted base than "the verifier and the allocator": roughly twenty
+contract entries instead of 42,000 lines of allocator. Each entry states what
+the primitive establishes and what it requires of a pointer operand.
+
+| primitive | establishes | requires |
+|---|---|---|
+| `%global "n" sz` / `%tls "n" sz` | a block of `sz` bytes, live for the program (TLS: for the thread) | -- |
+| `%loadN p` / `%storeN p` | nothing | `p` valid for `N` bytes |
+| `%cas p` / `%xchg p` / `%fill p n` | nothing | `p` valid for `n` bytes |
+| `%syscallN ...` | nothing; `mmap` (`nr 9`) yields `n` bytes, read from the argument | -- |
+| `%callN` | nothing; an indirect call | -- |
+| `%fn "sym" n` | a code address, not data | -- |
+
+The table is hand-written and **cross-checked against `runtime/rt` source**,
+the way `verify/model.py` cross-checks the allocator: a primitive whose real
+semantics drift from its contract fails here rather than being silently
+verified against a fiction.
+
+The runtime's own residue is 66% (2,008 of 3,039), against the program's 12%
+-- and that is the point rather than a cost. What is left over there is
+exactly the allocator's invariants: `rt-rblock-init` writing `[b+0..24]`,
+`rt-carve` walking `chunk+off` under `(+ off sz) <= 1048576`. Checking those
+instruction-for-instruction *is* the remaining step of the original slice 4,
+so slice 4 stops being a separate hand-written cross-check and becomes a
+consequence of the same machinery.
+
+### The checks
+
+| | check | how the bound is obtained |
+|---|---|---|
+| A | frame slots | derived by the symbolic stack, cross-checked against `; frame N` |
+| B | stack scratch | the same model; a class the original enumeration missed |
+| C | dynamic provenance and bounds | forward interval dataflow over the derivable idioms |
+| D | parameter bounds | interprocedural summary joined over the call graph to a fixpoint |
+| E | region liveness | the narrowed kill set |
+| F | trust boundaries | indirect calls kill provenance and are **counted**, never hidden |
+
+### Honest limits, restated for this design
+
+- **The verifier is itself unverified** until someone proves it in a proof
+  assistant. It is a few thousand lines of dataflow and a table of twenty
+  contracts, which is plausible to state completely -- but until then it is a
+  much smaller thing to trust than a compiler, not a trusted thing.
+- **The twenty contract entries are axioms.** A wrong entry is a hole. The
+  source cross-check bounds the drift; it does not prove the entry true.
+- **Concurrency** is a separate obligation: the single-writer/single-reader
+  rule is a property of the scheduler, not of a memory operand.
+- **FFI**: a foreign call can do anything. The invariant holds for Zyl's own
+  code; `ffi-call`'s Pin and timeout requirements are what stand at that
+  boundary.
+- **Bugs that are not memory bugs** -- integer overflow, a miscompiled `+` --
+  make programs wrong, not unsafe.
+
+### Gate behaviour
+
+A mandatory gate that rejects every build means nothing lands until the
+residue reaches zero, so the machinery lands first and reports an explicit
+uncovered-site count per check, and each check becomes fatal as its count
+reaches zero. Two coverage counters and two fatal conditions: a program
+binary, and the runtime. The runtime's residue is never hidden behind the
+program's zero. The evidence line always distinguishes *ran, 0 uncovered*
+from *not implemented*, and never prints the second as the first.
+
+### Ordering, which is forced rather than chosen
+
+The committed `stage2.s` seed recompiles the source, so the seed's assembler
+must accept whatever codegen emits. Comment support must therefore land, be
+reseeded, and only then may codegen emit `; frame N`. This is the two-step
+rule from `docs/self-hosting.md` applied to a new *output* syntax rather than a
+new input syntax.
+
+Note also that `;` already occurs 103 times in `stage2.s` and twice in
+`rt.s`, every one of them inside a `.string` literal. A comment stripper that
+scans for `;` before dispatching on the directive would truncate those
+strings, so the stripper is string-aware.
+
+## PHASE LOG
+
+### Phase 1 — assembler comments. Done.
+
+`;` now runs to end of line in `compiler/asm_x86`, in both entry points that
+read lines (`ax-line` and the `.globl`/`.weak` pre-scan), and a `;` inside a
+quoted string is data. Six regression tests in `tests/regression/asm-x86.zyl`
+cover the trailing comment, the whole-line comment, the annotation form, a
+semicolon inside a `.string`, a comment after a `.string`, and an escaped
+quote not ending the string. Seeds reseeded, fixed point verified.
+
+Two hazards, both of which cost real time and are worth stating because the
+rest of this work repeats them:
+
+**A `;` in a `.string` is not hypothetical.** All 103 semicolons in
+`stage2.s` are program text quoted into an error message. A stripper that
+scanned before dispatching on the directive would truncate them silently, in
+the emitted binary — a correctness bug with no symptom until some program's
+error message came out short. Hence the quote tracking.
+
+**The scan has to be bounded, and the obvious way to write it is not.** The
+first version passed `zyl_view_find` the same `1099511627776` sentinel that
+`ax-ch` uses for a single O(1) byte read. That sentinel is correct there and
+catastrophic for a search: `rt-find-byte` stops at the length it is given,
+**not** at the NUL, so every one of the 390,000 lines without a semicolon
+scanned onward through the rest of its region looking for a `0x3B`. The
+build went from seconds to minutes. Passing the string's real length fixed
+it:
+
+| | |
+|---|---|
+| assemble 15.9 MB `stage2.s` | 1895 ms |
+| assemble 848 KB `rt.s` | 92 ms |
+| `--bootstrap-from-self` | 11 s |
+| full `./boot.sh`, fixed point verified | 20.9 s |
+| `--full --no-boot` | 432/432 in 44 s |
+
+### What phase 1 implies for the rest
+
+The verifier goes on the same hot path: it runs on every build, over 218,744
+operands in 15 MB, and its cost is paid by every compile from here on. So the
+scanning primitives come first and get benchmarked before any dataflow is
+written.
+
+`stdlib/compiler/verify.zyl` is **untracked and used by nothing** — a prior
+attempt's V1 and V2, never committed, never in the pipeline. Its scanner is
+not reusable: `vy-find` allocates a one-character `str-substring` per byte
+scanned and re-measures `str-length` at each step, `vy-atoi` recurses through
+`str-substring` per digit, and `vy-trim`/`vy-word`/`vy-before-comma`/
+`vy-after-comma` each allocate per line. On this corpus that is minutes. Its
+V1 is also unsound in the way deviation 2 describes — it reads the frame bound
+off a single `sub rsp`. So phase 2 is a rewrite, not an extension.
+
+### Remaining phases, in order
+
+1. **Scanner.** Bulk primitives (`zyl_view_find` to search, `zyl_view_byte`
+   for O(1) reads), zero allocation per operand, no recursion per line.
+   *Gate: under ~1 s on `stage2.s`, measured before anything else is written.*
+2. **Checks A and B.** The symbolic stack model, which discharges frame slots
+   and stack scratch. Line-at-a-time parsing only; no CFG needed.
+3. **Check C.** The interval dataflow over the derivable idioms.
+4. **Check E.** The narrowed release kill set.
+5. **Check D.** The interprocedural parameter summaries and the call-graph
+   fixpoint. The bulk of the work, and the part that may not reach zero.
+6. **`; frame N` emission**, last, because the reseed ordering requires it.
+7. **The `%` contract table** and the runtime under it, with the
+   `runtime/rt` source cross-check.
+8. **Check F** and the two-gate pipeline wiring.
+
+## Findings from the first implementation attempt
+
+These are the measurements that produced the deviations above. All four were
+measured on the compiler's own 778,094-line assembly before anything was
+wired in.
 
 ### The scan is fast. That part is solved.
 
@@ -115,11 +360,13 @@ out to be unnecessary at all:
 - **all 110,718 frame-slot offsets are 8-aligned**, so an 8-byte alignment
   rule is exact rather than conservative.
 
-### The frame bound cannot be inferred from the assembly. This is the real result.
+### The frame bound cannot be inferred from the assembly — *superseded by deviation 2*
 
-The invariant is "every *write* through `[rbp-N]` lies inside the frame this
-function reserved". Deriving that from the prologue does not work. Each
-formulation, measured as false positives out of 110,718 slots:
+This was the first result, and it was right about the measurements and wrong
+about the conclusion. The invariant is "every *write* through `[rbp-N]` lies
+inside the frame this function reserved". Deriving that from the prologue
+does not work. Each formulation, measured as false positives out of 110,718
+slots:
 
 | bound taken from | false positives |
 |---|---|
@@ -136,19 +383,25 @@ anything; and a *read* of the return address is indistinguishable from a
 false positives, and wiring it anyway would have failed every build while
 looking like it found thousands of backend bugs.
 
-So the bound must be **stated, not inferred**.
+So the bound must be **stated** — but see deviation 2: stated *and* derived,
+which is strictly stronger than stated alone.
 
 ### The assembler has no comment syntax, so the statement needs a side channel
 
-The obvious carrier -- a `; frame N` annotation on the function -- does not
+The obvious carrier — a `; frame N` annotation on the function — does not
 work: Zyl's assembler has no comments at all. `build/boot/rt.s` contains
 zero comment lines, and both `; frame 360` and `; @frame 360` are rejected
 (`no such instruction`). A syntax assembler that cannot hold a comment is
 also a standing obstacle to anyone reading generated assembly.
 
-The fact already exists in code generation: `codegen.zyl` computes `fsz`
-from actual slot usage before emitting the prologue. The change is to record
-it and hand it to the verifier:
+**Resolved by adding comment support**, which is the better carrier of the
+two and is why this is no longer a side channel: the annotation travels
+*inside* the artifact, so a signed `.s` states the frame bound of every
+function in it, and the assembly hash covers it. A side table is not in the
+artifact and is not covered by any hash. The cost is the reseed ordering
+recorded above, and the string-awareness hazard.
+
+The side-table plan it replaces, for the record:
 
 1. `CGState` (`codegen.zyl:65`) is a 6-field record: arena, buffer,
    next-label, next-slot, rodata, fn-names. Add a seventh, `frames`, a list
@@ -165,8 +418,8 @@ it and hand it to the verifier:
 
 A mismatch between the `fsz` code generation intended and an operand it
 actually emitted is exactly the bug class this is for, and only a text-level
-check catches it -- which is why the table is a side channel rather than a
-replacement for checking the emitted text.
+check catches it -- which is why the statement is a cross-check on the
+emitted text rather than a replacement for reading it.
 
 ### What this changes about the plan
 
@@ -174,6 +427,11 @@ V1 is tractable and cheap **once the bound is stated rather than recovered**.
 Until then it is not implementable, and the honest order is: side table
 first, check second. V3 and V4 are unaffected -- they need provenance and
 liveness, not a frame bound.
+
+*(Superseded. The bound is both stated and derived, the carrier is a comment
+rather than a side table, and V3 turns out to need the interprocedural
+fixpoint of deviation 3. The measurements above stand; the conclusions drawn
+from them did not.)*
 
 ## What it still will not give
 

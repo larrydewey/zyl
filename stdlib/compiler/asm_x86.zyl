@@ -111,6 +111,63 @@
 
 (defn ax-ws (c) (or (= c 32) (= c 9)))
 
+; --- comments ---
+;
+; `;` starts a comment that runs to the end of the line, the one syntax every
+; other assembler in this world uses and the one generated assembly is
+; already full of intent to express. Two things make it less trivial than
+; stripping at the first `;`:
+;
+;   `;` is DATA inside a quoted string. build/boot/stage2.s holds 103 of them
+;   and every one is inside a `.string` literal -- program text quoted into
+;   an error message. A stripper that scanned for `;` before dispatching on
+;   the directive would truncate those strings, silently, in the emitted
+;   binary. So the scan tracks quoting.
+;
+;   The search has to be fast. The whole corpus is 15 MB and this runs on
+;   every build, so the `;` is located with the runtime's bulk byte search
+;   rather than a byte-at-a-time walk in Zyl.
+;
+; A backslash escapes the next byte, so "\"; is a semicolon in a string.
+;
+; Every scan below is bounded by the string's real length. The 1099511627776
+; sentinel ax-ch passes is right for a single O(1) byte read and catastrophic
+; for a search: rt-find-byte stops at `n`, not at the NUL, so an unbounded
+; length makes every line that has no semicolon scan on through the rest of
+; the region looking for one. That is a 15 MB corpus paying for 390,000
+; overruns, and it is the difference between a build that takes seconds and
+; one that takes minutes.
+
+(defn ax-semi (s n from) (ffi-call "zyl_view_find" s 0 n from 59 1000))
+
+; Is the byte at `at` inside a quoted string? Count the unescaped quotes
+; before it: an odd count means open. Only runs on the handful of lines that
+; hold a semicolon at all, so a byte-at-a-time count here is not on any path
+; that matters.
+(defn ax-in-string-p (s at) (ax-in-string-go s at 0 false))
+
+(defn ax-in-string-go (s at i inq)
+  (if (>= i at)
+    inq
+    (if (= (ax-ch s i) 92)
+      (ax-in-string-go s at (+ i 2) inq)
+      (if (= (ax-ch s i) 34)
+        (ax-in-string-go s at (+ i 1) (not inq))
+        (ax-in-string-go s at (+ i 1) inq)))))
+
+; The first `;` on the line that is a comment rather than data, or -1.
+(defn ax-comment-at (s n from)
+  (let p (ax-semi s n from)
+    (if (< p 0)
+      -1
+      (if (ax-in-string-p s p) (ax-comment-at s n (+ p 1)) p))))
+
+; The line with any trailing comment removed.
+(defn ax-strip-comment (s)
+  (let n (ax-len s)
+    (let p (ax-comment-at s n 0)
+      (if (< p 0) s (ax-sub s 0 p)))))
+
 ; index of first non-ws at/after i
 (defn ax-skip-ws (s i n) (if (>= i n) i (if (ax-ws (ax-ch s i)) (ax-skip-ws s (+ i 1) n) i)))
 
@@ -758,7 +815,7 @@
 
 ; ----- one line -----
 (defn ax-line (line0)
-  (let line (ax-trim line0)
+  (let line (ax-trim (ax-strip-comment line0))
     (let n (ax-len line)
       (if (= n 0) unit
         (if (= (ax-ch line (- n 1)) 58)
@@ -796,7 +853,7 @@
         (ax-each-line src (+ e2 1) n handler)))))
 
 (defn ax-scan-globl-line (line0)
-  (let line (ax-trim line0)
+  (let line (ax-trim (ax-strip-comment line0))
     (let n (ax-len line)
       (if (ax-starts-ci line 0 ".globl ")
         (let _ (ffi-call "zyl_smap_put" (ax-getw ax-globl) (ax-trim (ax-sub line 7 (- n 7))) 1 1000) unit)

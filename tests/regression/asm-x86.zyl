@@ -76,4 +76,23 @@
 (test "asm ror eax, 7"
   (assert-equal (ax-encode-hex "ror eax, 7") "c1c807"))
 
+; --- comments -------------------------------------------------------------
+; `;` runs to end of line, except inside a quoted string, where it is data.
+; That exception is not hypothetical: stage2.s holds 103 semicolons and every
+; one is inside a .string literal, because program text gets quoted into an
+; error message. A stripper that scanned before dispatching on the directive
+; would truncate those strings silently, in the emitted binary.
+(test "asm comment does not change an instruction"
+  (assert-equal (ax-encode-hex "mov rax, 1 ; a trailing comment") (ax-encode-hex "mov rax, 1")))
+(test "asm whole-line comment emits nothing"
+  (assert-equal (ax-encode-hex "; frame 360") ""))
+(test "asm frame annotation emits nothing"
+  (assert-equal (ax-encode-hex "; frame 360 ; and a note") ""))
+(test "asm semicolon inside a string is data"
+  (assert-equal (ax-encode-hex ".string \"a;b\"") "613b6200"))
+(test "asm comment after a string is stripped"
+  (assert-equal (ax-encode-hex ".string \"a\" ; trailing") "6100"))
+(test "asm escaped quote does not end the string"
+  (assert-equal (ax-encode-hex ".string \"a\\\";b\"") "61223b6200"))
+
 (run-tests)
