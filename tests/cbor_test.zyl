@@ -95,23 +95,22 @@
 ; chose that order. The provenance record relies on this: canonical form means
 ; sorted keys, and the burden of sorting is the record builder's.
 (test "cbor-map-of-two-entries"
-
-  (begin    (let b (buf 64)
-      (let o (cbor-map-head b 0 2)
-        (let o (cbor-text b o "n")
-          (let o (cbor-uint b o 1)
-            (let o (cbor-text b o "z")
-              (let o (cbor-uint b o (- 1))
+  (begin
+    (let b (buf 64)
+      (let o0 (cbor-map-head b 0 2)
+        (let o1 (cbor-text b o0 "n")
+          (let o2 (cbor-uint b o1 1)
+            (let o3 (cbor-text b o2 "z")
+              (let o4 (cbor-uint b o3 (- 1))
                 (begin
-                  (assert-equal o 7)
+                  (assert-equal o4 7)
                   (assert-equal (load-u8 :le b 0) 162)
                   (assert-equal (load-u8 :le b 1) 97)
                   (assert-equal (load-u8 :le b 2) 110)
                   (assert-equal (load-u8 :le b 3) 1)
                   (assert-equal (load-u8 :le b 4) 97)
                   (assert-equal (load-u8 :le b 5) 122)
-                  (assert-equal (load-u8 :le b 6) 32))))))))
-  ))
+                  (assert-equal (load-u8 :le b 6) 32))))))))))
 
 ; The sizing function and the writer are the same logic stated twice, and the
 ; failure mode is a record truncated after it was signed.

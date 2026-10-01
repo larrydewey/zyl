@@ -185,7 +185,16 @@ minute.
 The CLI (`selfhost/driver.zyl`, `drv-usage`): `zyl <file.zyl> [-o out]
 [--emit-asm]`, `new`, `add`, `fetch`, `build [--locked]`, `test`,
 `update`, `vendor`, `audit`, `publish`, `key`, `repl`, `eval <file.zyl>`,
-`doc [file|dir] [-o out.md]`, `balance [file|dir ...]`.
+`doc [file|dir] [-o out.md]`, `check [file|dir ...]`, `balance [file|dir ...]`.
+
+`zyl check` is the fast edit loop: parse, module resolution, macro expansion,
+the eight checks, derive expansion, impl lifting, closure inlining and type
+inference, then stop — no code generation, no linking. It runs the same front
+end a build does (`compile-front-end` is the shared body), so a clean check
+means the program builds. A file under `tests/compile-fail/` is skipped and the
+skip is reported. A **standard-library module cannot be checked**: it is a
+module rather than a program, and compiling it as the entry makes it both at
+once, so `zyl check` declines and points at `zyl build`.
 
 ## Regression Tests
 

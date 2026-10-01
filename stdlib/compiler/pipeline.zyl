@@ -192,52 +192,87 @@
 ; MIDDLE — ExprInner to lowered, optimized, region-annotated functions
 ; ===========================================================================
 
-; Type inference through region inference. Contracts were already lowered
-; to checks by the parse (expr_inner.zyl's contract-defn-body).
-; Returns: List(Icnf) — one IFn per function
-(defn lower-exprs (arena exprs0)
+; Derive expansion and impl lifting. Stops at expressions: type inference
+; comes next, in annotate-exprs.
+;
+; The docstring here used to claim this returned lowered functions, which it
+; did only because lowering happened further down the same body -- and which
+; stopped being true the moment the front end was split out to serve
+; `zyl check`, at which point the type checker correctly complained that an
+; expression was being passed where a lowered function was expected. The
+; annotation was not wrong when it was written; it was wrong later, and nothing
+; noticed for as long as the two phases stayed in one function.
+; Returns: the expression list
+(defn lower-exprs (exprs0)
   (let exprs (dv-expand-program exprs0)
-  (begin
-    ; Derived impls are expanded, then impl bodies are lifted into
-    ; Trait.method_Type functions; types come from type_annotate, which
-    ; runs in lower-after-mono just before ICNF lowering.
-    (let _ (dbg-log "lift-impls\n")
-      (lower-after-mono arena (lift-impls exprs))))))
+    (begin
+      ; Derived impls are expanded, then impl bodies are lifted into
+      ; Trait.method_Type functions; types come from type_annotate, which
+      ; runs in annotate-exprs just before ICNF lowering.
+      (dbg-log "lift-impls\n")
+      (lift-impls exprs))))
 
 (defn lower-after-mono (arena td-exprs)
+  (lower-icnf arena (annotate-exprs arena td-exprs)))
+
+; THE FRONT END. Closure inlining and type inference, and nothing else.
+;
+; Every diagnostic a program author can act on has been reported by the time
+; this returns, and nothing expensive has run: ICNF lowering, optimization,
+; region inference and in-place reuse are all after it. That is the whole
+; reason `zyl check` stops here -- it is not a subset chosen for speed, it is
+; the point where the compiler stops having anything to say.
+;
+; Split out of lower-after-mono so that a check and a compile run the *same*
+; front end rather than two copies of it that can drift. A checker that
+; quietly skipped a phase the compiler runs would report a clean program that
+; does not build, which is worse than no checker.
+(defn annotate-exprs (arena exprs)
   (begin
     (dbg-log "closure-inline\n")
-    (let ci-exprs (ci-expand-program arena td-exprs)
+    (ta-annotate (ci-expand-program arena exprs))))
+
+; Everything after type inference. None of these phases reports a diagnostic a
+; program author can act on: they either succeed or they are compiler bugs,
+; which is the other reason the check boundary is drawn above them.
+(defn lower-icnf (arena ann-exprs)
+  (begin
+    (dbg-log "lower\n")
+    (let fns (ic-program arena ann-exprs)
       (begin
-        (begin
-            (dbg-log "lower\n")
-            (let fns (ic-program arena (ta-annotate ci-exprs))
+        (dbg-log "optimize\n")
+        (let opt-fns (opt-optimize-fns (opt-inline-fns fns))
+          (begin
+            (dbg-log "region-infer\n")
+            (let reg-fns (rg-regions (ri-transform-fns opt-fns))
               (begin
-                ; Real constant folding + dead-branch elimination:
-                ; optimization.zyl was rewritten against this pipeline's
-                ; actual tree-shaped Icnf (see its own header comment for
-                ; why the old SSA-shaped version never did anything --
-                ; every function silently fell through its pattern match
-                ; and opt-optimize always returned Nil).
-                (dbg-log "optimize\n")
-                (let opt-fns (opt-optimize-fns (opt-inline-fns fns))
-                  (begin
-                    ; Real escape analysis: region_inference.zyl rewrites
-                    ; a provably-non-escaping IVariant let-binding to
-                    ; IStackVariant (stack-allocated, see
-                    ; cg-stack-variant) in place, then rg-regions places
-                    ; every allocation and call site in a region
-                    ; (docs/regions-design.md).
-                    (dbg-log "region-infer\n")
-                    (let reg-fns (rg-regions (ri-transform-fns opt-fns))
-                      (begin
-                        (dbg-log "reuse\n")
-                        (ru-reuse reg-fns))))))))))))
+                (dbg-log "reuse\n")
+                (ru-reuse reg-fns)))))))))
+
+; Source text to type-annotated expressions: balance, parse, module
+; resolution, macro expansion, the eight checks, derive expansion, impl
+; lifting, closure inlining, type inference. The whole of `zyl check`.
+; Returns: the annotated expression list (not used by the check itself)
+(defn compile-front-end (arena srcbuf srcpath)
+  (annotate-exprs arena (lower-exprs (compile-to-exprs arena srcbuf srcpath))))
+
+; Type-check a source file and stop. Returns Unit; a program that does not
+; check raises the diagnostics and fails the compile, exactly as a full build
+; would, so there is no separate error path to keep honest.
+;
+; The edit loop this exists for: read a diagnostic, fix it, read the next. At
+; the cost of a full build that loop is dominated by waiting, and the waiting
+; is what makes people batch edits and then discover four problems at once
+; instead of fixing one at a time.
+(defn compile-check (arena srcbuf srcpath)
+  (begin
+    (compile-front-end arena srcbuf srcpath)
+    0))
 
 ; Source text to lowered functions: everything except code generation.
 ; Returns: List(Icnf)
 (defn compile-to-fns (arena srcbuf srcpath)
-  (lower-exprs arena (compile-to-exprs arena srcbuf srcpath)))
+  (lower-after-mono arena (lower-exprs (compile-to-exprs arena srcbuf srcpath))))
 
 ; ===========================================================================
 ; BACK END — lowered functions to x86_64 assembly text
