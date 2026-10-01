@@ -143,7 +143,7 @@
           (ds-fail a "a `let*` binding is (name value)")))
       (_ (ds-fail a "a `let*` binding is (name value)")))))
 
-; (vec e1 .. en) => (vec-push (vec-push .. (vec-create-default n) e1 ..) en)
+; (vec e1 .. en) => (vec-push (vec-push .. (vec-new-cap n) e1 ..) en)
 ; spec 21.5's element literal. A chain of pushes rather than a call taking
 ; the elements, because a function cannot be generic over the element type
 ; (spec 11: no generic functions), so there is no one signature to rewrite
@@ -152,7 +152,7 @@
 ; than a silently coerced Vec.
 (defn ds-vec (a xs)
   (let elems (ds-rest xs 1)
-    (ds-vec-go a elems (ds-list [(ds-id "vec-create-default" a)
+    (ds-vec-go a elems (ds-list [(ds-id "vec-new-cap" a)
                                  (AstInt (ds-count elems))] a))))
 
 (defn ds-vec-go (a elems acc)

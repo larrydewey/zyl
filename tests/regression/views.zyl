@@ -70,14 +70,14 @@
         (assert-true (match (cursor-expect c "x") (Some _ false) (None true)))))))
 
 (test "slices of a Vec"
-  (let v (vec-push (vec-push (vec-push (vec-create-default 4) 10) 20) 30)
+  (let v (vec-push (vec-push (vec-push (vec-new-cap 4) 10) 20) 30)
     (let s (slice-vec v 1 2)
       (begin
         (assert-equal (slice-get s 1) 30)
         (assert-equal (slice-fold s (fn (a x) (+ a x)) 0) 50)
         (assert-equal (slice-len (slice-drop s 5)) 0)
         (assert-equal (slice-get (slice-sub s 1 1) 0) 30)
-        (assert-equal (vec-len (slice-to-vec s (arena-create 0))) 2)
+        (assert-equal (vec-len (slice-to-vec s)) 2)
         (assert-equal (try (slice-get s 2) (catch e (if (view-starts-with (view-of e) "E_INDEX_OUT_OF_BOUNDS") -7 0))) -7)))))
 
 (run-tests)

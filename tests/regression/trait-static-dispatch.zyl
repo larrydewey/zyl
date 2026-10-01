@@ -32,8 +32,8 @@
 
 (test "generic-impl-specialized-per-element-type"
   (begin
-    (assert-equal (TsDesc.desc (vec-push (vec-create-default 1) "e")) "vec of str:e")
-    (assert-equal (TsDesc.desc (vec-push (vec-create-default 1) 7)) "vec of int")))
+    (assert-equal (TsDesc.desc (vec-push (vec-new-cap 1) "e")) "vec of str:e")
+    (assert-equal (TsDesc.desc (vec-push (vec-new-cap 1) 7)) "vec of int")))
 
 (defn ts-show-it (x) (print x))
 

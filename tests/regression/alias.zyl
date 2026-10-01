@@ -25,7 +25,7 @@
 
 ; Alias in collections - using actual vec API (vec-create + vec-push)
 (test "alias-in-vec"
-  (let v (vec-push (vec-push (vec-push (vec-create-default 10) 1) 2) 3)
+  (let v (vec-push (vec-push (vec-push (vec-new-cap 10) 1) 2) 3)
     (assert-equal (vec-len v) 3)
     (assert-equal (vec-get v 0) 1)
     (assert-equal (vec-get v 1) 2)

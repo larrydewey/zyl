@@ -15,7 +15,7 @@ out="$(printf '%s\n' \
   '(defn g (t) (match t (RsA s s) (RsB _ "b")))' \
   '(g (RsA "x"))' \
   '(use collections/vec)' \
-  '(vec-get (vec-push (vec-create-default 2) "v") 0)' \
+  '(vec-get (vec-push (vec-new-cap 2) "v") 0)' \
   '(derive RsT Show)' \
   '(print (RsA "shown"))' \
   | timeout 60 "$ZYL" repl 2>&1)" || fail "repl exited non-zero: $out"

@@ -1,23 +1,18 @@
-; === Zyl Standard Library — Arena-backed Set<K> ===
+; === Zyl Standard Library — Set<K> ===
 ; Module: collections/set
-; Provides: Arena-backed Set<K> with deterministic insertion order.
+; Provides: region-backed Set<K> with deterministic insertion order.
 ; Inserting an already-present key is a no-op (ignored).
 
-(use allocator/allocator)
 (use math/words)
 
-(defstruct Set (ptr Words) (len Int) (cap Int) (arena Arena))
+(defstruct Set (ptr Words) (len Int) (cap Int))
 
-; Create an empty Set with the given initial capacity on the given arena.
+; Create an empty Set with the given initial capacity. Storage comes from
+; the region the calling frame runs in; `cap` is a hint, not a limit.
 ; Returns: Set
-(defn set-create ((arena Arena) (cap Int))
+(defn set-create ((cap Int))
   (let c (if (< cap 0) 0 cap)
-    (make-Set (w-alloc arena c) 0 c arena)))
-
-; Create an empty Set in a new private arena.
-; Returns: Set
-(defn set-create-default ((cap Int))
-  (set-create (arena-create 0) cap))
+    (make-Set (w-alloc-r c) 0 c)))
 
 ; Get the number of distinct elements.
 ; Returns: Int
@@ -51,7 +46,7 @@
     (let len (set-len s)
       (if (>= len (set-cap s))
         (let new-cap (if (<= (set-cap s) 0) 16 (* (set-cap s) 2))
-          (let new-ptr (w-alloc (struct-get s "arena") new-cap)
+          (let new-ptr (w-alloc-r new-cap)
             (let old-ptr (struct-get s "ptr")
               (begin
                 (for (j 0) (< j len)
@@ -59,11 +54,11 @@
                     (w-set new-ptr j (w-get old-ptr j))
                     (set! j (+ j 1))))
                 (w-set new-ptr len k)
-                (make-Set new-ptr (+ len 1) new-cap (struct-get s "arena"))))))
+                (make-Set new-ptr (+ len 1) new-cap)))))
         (let new-ptr (struct-get s "ptr")
           (begin
             (w-set new-ptr len k)
-            (make-Set new-ptr (+ len 1) (struct-get s "cap") (struct-get s "arena"))))))))
+            (make-Set new-ptr (+ len 1) (struct-get s "cap"))))))))
 
 ; Remove k. Compacts the array so iteration order stays dense.
 ; Returns: Set
@@ -78,4 +73,4 @@
               (begin
                 (w-set new-ptr j (w-get new-ptr (+ j 1)))
                 (set! j (+ j 1))))
-            (make-Set new-ptr (- len 1) (struct-get s "cap") (struct-get s "arena"))))))))
+            (make-Set new-ptr (- len 1) (struct-get s "cap"))))))))

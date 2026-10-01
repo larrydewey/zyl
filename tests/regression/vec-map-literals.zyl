@@ -1,6 +1,6 @@
 ; `(vec elem...)` and `(map key val...)`, spec 21.5. Both are literal
 ; constructors like `(list ...)`, desugared to the collection's own build
-; calls: a chain of vec-push from vec-create-default, and a chain of
+; calls: a chain of vec-push from vec-new-cap, and a chain of
 ; map-insert from map-new. They add no new stdlib API, and `len` and the
 ; ordinary accessors read the results like any other Vec or Map.
 (use core/core)

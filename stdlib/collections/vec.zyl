@@ -1,41 +1,47 @@
-; === Zyl Standard Library — Arena-backed Vec<T> ===
+; === Zyl Standard Library — Vec<T> ===
 ; Module: collections/vec
 ;
 ; A Vec is a runtime array (`(Array T)`, compiler/ffi_sigs) plus the
-; length this Vec sees, in an arena. The array is typed and bounds-checked
+; length this Vec sees. The array is typed and bounds-checked
 ; and its slots are filled in order, so a Vec only ever reads elements it
 ; wrote: there is no word-level cast anywhere (docs/sound-types-design.md).
 ; Updates return a new Vec; versions made from the same Vec share storage
 ; until one of them outgrows it.
+;
+; Storage comes from the region the allocating call runs in
+; (runtime/rt/tables.zyl's zyl_vec_alloc): a Vec that does not outlive its
+; frame is reclaimed on return, and one that does is placed in the
+; caller's region or the heap. There is no Arena here and none is
+; reachable from a program — see stdlib/allocator.
 
 (use core/show)
-(use allocator/allocator)
 
-(deftype Vec (VecC (Array T) Int Arena)) ; storage, length, arena
+(deftype Vec (VecC (Array T) Int)) ; storage, length
 
-(defn vec-store (v) (match v (VecC s _ _ s)))
-(defn vec-arena (v) (match v (VecC _ _ a a)))
+(defn vec-store (v) (match v (VecC s _ s)))
 
-(defn array-new ((arena Arena) (cap Int)) (ffi-call "zyl_array_new" arena cap 1000))
+(defn array-new ((cap Int)) (ffi-call "zyl_vec_alloc" cap 1000))
 (defn array-cap (a) (ffi-call "zyl_array_cap" a 1000))
 (defn array-get (a (i Int)) (ffi-call "zyl_array_get" a i 1000))
 (defn array-set (a (i Int) x) (ffi-call "zyl_array_set" a i x 1000))
 
-; Create an empty Vec with room for `cap` elements, stored in `arena`.
-; A negative `cap` means 0; the Vec grows by doubling, in the same arena.
+; An empty Vec. Storage is allocated on first push, in whatever region
+; this call runs in; a Vec that stays inside its frame is reclaimed when
+; that frame returns.
 ; Returns: Vec
-(defn vec-create ((arena Arena) (cap Int))
-  (let c (if (< cap 0) 0 cap)
-    (VecC (array-new arena c) 0 arena)))
+(defn vec-new () (VecC (array-new 0) 0))
 
-; Create an empty Vec with room for `cap` elements in a new private arena.
+; An empty Vec with room for `cap` elements, allocated and zeroed now.
+; `cap` is a hint, not a limit: the Vec still grows past it, by
+; doubling. A negative `cap` means 0.
 ; Returns: Vec
-(defn vec-create-default ((cap Int))
-  (vec-create (arena-create 0) cap))
+(defn vec-new-cap ((cap Int))
+  (let c (if (< cap 0) 0 cap)
+    (VecC (array-new c) 0)))
 
 ; Get the length of the Vec.
 ; Returns: Int
-(defn vec-len (v) (match v (VecC _ n _ n)))
+(defn vec-len (v) (match v (VecC _ n n)))
 
 ; Get the capacity of the Vec.
 ; Returns: Int
@@ -45,7 +51,7 @@
 ; Returns: T
 (defn vec-get (v (i Int))
   (match v
-    (VecC s n _
+    (VecC s n
       (if (or (< i 0) (>= i n))
         (ffi-call "zyl_panic" "E_INDEX_OUT_OF_BOUNDS: vec-get index outside the Vec" 1000)
         (array-get s i)))))
@@ -65,25 +71,25 @@
     v
     (let _ (array-set (vec-store v) i value)
       (if (= i (vec-len v))
-        (VecC (vec-store v) (+ i 1) (vec-arena v))
+        (VecC (vec-store v) (+ i 1))
         v))))
 
 ; Push a value, moving to storage twice the size when full.
 ; Returns: Vec
 (defn vec-push (v value)
   (match v
-    (VecC s n a
+    (VecC s n
       (let c (array-cap s)
         (if (< n c)
-          (let _ (array-set s n value) (VecC s (+ n 1) a))
-          (vec-grow s n a c value))))))
+          (let _ (array-set s n value) (VecC s (+ n 1)))
+          (vec-grow s n c value))))))
 
 ; The full case, apart so the common one keeps no registers across calls.
-(defn vec-grow (s (n Int) (a Arena) (c Int) value)
-  (let bigger (array-new a (if (<= c 0) 16 (* c 2)))
+(defn vec-grow (s (n Int) (c Int) value)
+  (let bigger (array-new (if (<= c 0) 16 (* c 2)))
     (let _ (ffi-call "zyl_array_copy" s bigger n 1000)
       (let _ (array-set bigger n value)
-        (VecC bigger (+ n 1) a)))))
+        (VecC bigger (+ n 1))))))
 
 (defn vec-copy-into (from to (i Int) (n Int))
   (if (>= i n)
@@ -97,18 +103,18 @@
 (defn vec-pop (v)
   (if (<= (vec-len v) 0)
     v
-    (VecC (vec-store v) (- (vec-len v) 1) (vec-arena v))))
+    (VecC (vec-store v) (- (vec-len v) 1))))
 
 ; The last value; an empty Vec is E_INDEX_OUT_OF_BOUNDS.
 ; Returns: T
 (defn vec-last (v)
   (vec-get v (- (vec-len v) 1)))
 
-; An empty Vec in the same arena. The old storage is the arena's; it
-; returns at arena-reset.
+; An empty Vec with no storage. The old storage belongs to the region it
+; was allocated in and is reclaimed with it.
 ; Returns: Vec
 (defn vec-free (v)
-  (VecC (array-new (vec-arena v) 0) 0 (vec-arena v)))
+  (vec-new))
 
 (impl Show Vec (defn show (self) (str-concat "[" (str-concat (vec-show-from self 0) "]"))))
 

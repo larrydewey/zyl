@@ -28,6 +28,12 @@
 (defn w-alloc ((arena Arena) (n Int))
   (ffi-call "zyl_words_new" arena n 1000))
 
+; Allocate `n` zeroed words in the region the calling frame runs in.
+; There is no Arena parameter: storage is reclaimed with the region.
+; Returns: Words
+(defn w-alloc-r ((n Int))
+  (ffi-call "zyl_words_alloc" n 1000))
+
 ; Number of words.
 ; Returns: Int
 (defn w-len ((base Words))

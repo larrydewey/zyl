@@ -75,10 +75,11 @@
     acc
     (slice-fold-from s f (f acc (slice-get s i)) (+ i 1))))
 
-; A new Vec in `arena` holding the slice's elements (a copy).
+; A new Vec holding the slice's elements (a copy), allocated in the region
+; the calling frame runs in.
 ; Returns: Vec
-(defn slice-to-vec (s (arena Arena))
-  (slice-push-from s (vec-create arena (slice-len s)) 0))
+(defn slice-to-vec (s)
+  (slice-push-from s (vec-new-cap (slice-len s)) 0))
 
 (defn slice-push-from (s v (i Int))
   (if (>= i (slice-len s))

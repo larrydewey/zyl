@@ -2,6 +2,7 @@
 (use base)
 (use heap)
 (use text)
+(use alloc)
 
 (extern "zyl_rt_getenv" (Int) Int)
 (extern "zyl_arena_oom" (Int String) Int)
@@ -37,6 +38,24 @@
       (let d (tb-zalloc arena (* (if (> n 0) n 1) 8))
         (let _ (if (or (= w 0) (= d 0)) (ffi-call "zyl_panic" "E_OUT_OF_MEMORY: word array" 1) 0)
           (let _ (tb-st w (tb-words-magic)) (let _ (tb-st (+ w 8) n) (let _ (tb-st (+ w 16) d) w))))))))
+
+; The region forms take no arena: they allocate from zyl_cur_region, so a
+; frame or result region reclaims them on return. rp = 0 is the heap, so
+; the same code is correct at an unannotated site. codegen.zyl appends _r
+; to a runtime name at a site whose level is above 0, so each needs a twin
+; of identical arity (the base form is what an unannotated site calls).
+(defn tb-rzalloc (n)
+  (let p (rt-alloc n (rt-cur-region))
+    (let _ (if (= p 0) 0 (rt-fill0 p n)) p)))
+
+(defn zyl_words_alloc (n0)
+  (let n (if (< n0 0) 0 n0)
+    (let w (tb-rzalloc 24)
+      (let d (tb-rzalloc (* (if (> n 0) n 1) 8))
+        (let _ (if (or (= w 0) (= d 0)) (ffi-call "zyl_panic" "E_OUT_OF_MEMORY: word array" 1) 0)
+          (let _ (tb-st w (tb-words-magic)) (let _ (tb-st (+ w 8) n) (let _ (tb-st (+ w 16) d) w))))))))
+
+(defn zyl_words_alloc_r (n0) (zyl_words_alloc n0))
 
 (defn zyl_words_len (h) (if (tb-is h 6510318674217419859) (tb-ld (+ h 8)) (tb-not-words "w-len")))
 
@@ -79,6 +98,28 @@
 
 (defn zyl_array_cap (h) (if (tb-is h 6510318579778470233) (tb-ld (+ h 8)) (tb-not-array "array-cap")))
 (defn zyl_array_filled (h) (if (tb-is h 6510318579778470233) (tb-ld (+ h 16)) (tb-not-array "array-filled")))
+
+; The region form; see zyl_words_alloc.
+(defn zyl_vec_alloc (cap0)
+  (let cap (if (< cap0 0) 0 cap0)
+    (let a (tb-rzalloc 32)
+      ; Data is not zeroed: a slot is read only below filled, which every write reaches in order.
+      (let d (rt-alloc (* (if (> cap 0) cap 1) 8) (rt-cur-region))
+        (let _ (if (or (= a 0) (= d 0)) (ffi-call "zyl_panic" "E_OUT_OF_MEMORY: array" 1) 0)
+          (let _ (tb-st a (tb-array-magic))
+            (let _ (tb-st (+ a 8) cap) (let _ (tb-st (+ a 16) 0) (let _ (tb-st (+ a 24) d) a)))))))))
+
+(defn zyl_vec_alloc_r (cap0) (zyl_vec_alloc cap0))
+
+; The _r form allocates from zyl_cur_region; see zyl_words_new_r.
+(defn zyl_array_new_r (cap0)
+  (let cap (if (< cap0 0) 0 cap0)
+    (let a (tb-rzalloc 32)
+      ; Data is not zeroed: a slot is read only below filled, which every write reaches in order.
+      (let d (rt-alloc (* (if (> cap 0) cap 1) 8) (rt-cur-region))
+        (let _ (if (or (= a 0) (= d 0)) (ffi-call "zyl_panic" "E_OUT_OF_MEMORY: array" 1) 0)
+          (let _ (tb-st a (tb-array-magic))
+            (let _ (tb-st (+ a 8) cap) (let _ (tb-st (+ a 16) 0) (let _ (tb-st (+ a 24) d) a)))))))))
 
 (defn tb-array-get-fail (h i) (if (tb-is h 6510318579778470233) (tb-oob "array-get" i (tb-ld (+ h 16))) (tb-not-array "array-get")))
 

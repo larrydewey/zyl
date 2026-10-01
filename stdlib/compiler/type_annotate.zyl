@@ -1556,7 +1556,7 @@
   (if (ta-streq n "zyl global put") (ta-sig-parse st "String a -> Unit")
   ; collections/vec's typed arrays, whose element type every Vec relies on
   ; (the runtime signatures apply only in strict mode for now).
-  (if (ta-key-is n "collections/vec::array-new") (ta-sig-parse st "Arena Int -> (Array a)")
+  (if (ta-key-is n "collections/vec::array-new") (ta-sig-parse st "Int -> (Array a)")
   (if (ta-key-is n "collections/vec::array-get") (ta-sig-parse st "(Array a) Int -> a")
   (if (ta-key-is n "collections/vec::array-set") (ta-sig-parse st "(Array a) Int a -> Unit")
   (if (ta-key-is n "collections/vec::array-cap") (ta-sig-parse st "(Array a) -> Int")

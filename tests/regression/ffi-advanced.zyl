@@ -67,7 +67,7 @@
     assert-equal
     (vec-len
       (vec-push
-        (vec-push (vec-create-default 10) 1)
+        (vec-push (vec-new-cap 10) 1)
         2))
     2
   )

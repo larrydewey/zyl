@@ -5,7 +5,7 @@
 (use collections/vec)
 
 (test "multi-module-vec"
-  (assert-equal (vec-len (vec-create-default 5)) 0))
+  (assert-equal (vec-len (vec-new-cap 5)) 0))
 
 (test "multi-module-alloc"
   (let p (alloc-malloc 64)

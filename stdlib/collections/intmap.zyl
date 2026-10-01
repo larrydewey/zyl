@@ -1,6 +1,6 @@
-; === Zyl Standard Library — Arena-backed IntMap ===
+; === Zyl Standard Library — IntMap ===
 ; Module: collections/intmap
-; Provides: IntMap, an arena-backed Int -> Int hash map
+; Provides: IntMap, a region-backed Int -> Int hash map
 
 ; Named IntMap, not Map, and that is the point of the rename. core/map
 ; already exports a generic Map<K, V> and the spec's `len` and
@@ -10,22 +10,16 @@
 ; map-remove, map-has) silently resolved to this Int-only version, making
 ; core/map's generic versions unreachable behind an arity error.
 
-(use allocator/allocator)
 (use math/words)
 
-(defstruct IntMap (kptr Words) (vptr Words) (len Int) (cap Int) (arena Arena))
+(defstruct IntMap (kptr Words) (vptr Words) (len Int) (cap Int))
 
-; Create an empty IntMap with the given initial capacity on the given arena.
-; Returns: IntMap
-(defn intmap-new-with ((arena Arena) (cap Int))
-  (let c (if (< cap 0) 0 cap)
-    (make-IntMap (w-alloc arena c) (w-alloc arena c) 0 c arena)))
-
-; Create an empty IntMap with the given initial capacity in a new private
-; arena.
+; Create an empty IntMap with the given initial capacity. Storage comes
+; from the region the calling frame runs in; `cap` is a hint, not a limit.
 ; Returns: IntMap
 (defn intmap-new ((cap Int))
-  (intmap-new-with (arena-create 0) cap))
+  (let c (if (< cap 0) 0 cap)
+    (make-IntMap (w-alloc-r c) (w-alloc-r c) 0 c)))
 
 ; Get the number of entries.
 ; Returns: Int
@@ -77,8 +71,8 @@
     (let cap (intmap-cap m)
       (if (>= len cap)
         (let new-cap (if (<= cap 0) 16 (* cap 2))
-          (let new-kptr (w-alloc (struct-get m "arena") new-cap)
-            (let new-vptr (w-alloc (struct-get m "arena") new-cap)
+          (let new-kptr (w-alloc-r new-cap)
+            (let new-vptr (w-alloc-r new-cap)
               (let old-kptr (struct-get m "kptr")
                 (let old-vptr (struct-get m "vptr")
                   (begin
@@ -89,12 +83,12 @@
                         (set! j (+ j 1))))
                     (w-set new-kptr len k)
                     (w-set new-vptr len v)
-                    (make-IntMap new-kptr new-vptr (+ len 1) new-cap (struct-get m "arena"))))))))
+                    (make-IntMap new-kptr new-vptr (+ len 1) new-cap)))))))
         (let new-kptr (struct-get m "kptr")
           (begin
             (w-set new-kptr len k)
             (w-set (struct-get m "vptr") len v)
-            (make-IntMap new-kptr (struct-get m "vptr") (+ len 1) cap (struct-get m "arena"))))))))
+            (make-IntMap new-kptr (struct-get m "vptr") (+ len 1) cap)))))))
 
 ; Remove a key. Compacts the arrays in place (like set-remove), so the
 ; capacity stays the real size of the backing storage and later puts
@@ -113,7 +107,7 @@
                   (w-set kptr j (w-get kptr (+ j 1)))
                   (w-set vptr j (w-get vptr (+ j 1)))
                   (set! j (+ j 1))))
-              (make-IntMap kptr vptr (- len 1) (intmap-cap m) (struct-get m "arena")))))))))
+              (make-IntMap kptr vptr (- len 1) (intmap-cap m)))))))))
 
 ; Internal: 1-based index of key k in [i, len), or 0 if absent.
 (defn intmap-find ((m IntMap) (k Int) (i Int) (len Int))
@@ -141,9 +135,8 @@
         true
         (intmap-has-loop m k (+ i 1) len)))))
 
-; Free all arena-allocated storage. IntMap becomes empty.
-; Returns: Unit
-; An empty IntMap in the same arena. The storage is the arena's (freeing it
-; with C free() was undefined behaviour); it returns at arena-reset.
+; An empty IntMap with no storage. The old storage belongs to the region
+; it was allocated in and is reclaimed with it.
+; Returns: IntMap
 (defn intmap-free ((m IntMap))
-  (make-IntMap (w-alloc (struct-get m "arena") 0) (w-alloc (struct-get m "arena") 0) 0 0 (struct-get m "arena")))
+  (make-IntMap (w-alloc-r 0) (w-alloc-r 0) 0 0))

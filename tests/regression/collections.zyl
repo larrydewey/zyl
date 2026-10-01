@@ -6,26 +6,26 @@
 
 ; Vec basic operations
 (test "vec-create"
-  (assert-equal (vec-len (vec-create-default 10)) 0))
+  (assert-equal (vec-len (vec-new-cap 10)) 0))
 (test "vec-len"
-  (assert-equal (vec-len (vec-create-default 10)) 0))
+  (assert-equal (vec-len (vec-new-cap 10)) 0))
 (test "vec-cap"
-  (assert-equal (vec-cap (vec-create-default 10)) 10))
+  (assert-equal (vec-cap (vec-new-cap 10)) 10))
 (test "vec-set"
-  (assert-equal (vec-get (vec-set (vec-create-default 10) 0 42) 0) 42))
+  (assert-equal (vec-get (vec-set (vec-new-cap 10) 0 42) 0) 42))
 (test "vec-get-oob"
-  (assert-equal (vec-get-or (vec-create-default 10) 99 -1) -1))
+  (assert-equal (vec-get-or (vec-new-cap 10) 99 -1) -1))
 (test "vec-push"
-  (assert-equal (vec-len (vec-push (vec-create-default 10) 1)) 1))
+  (assert-equal (vec-len (vec-push (vec-new-cap 10) 1)) 1))
 (test "vec-push-2"
-  (assert-equal (vec-len (vec-push (vec-push (vec-create-default 10) 1) 2)) 2))
+  (assert-equal (vec-len (vec-push (vec-push (vec-new-cap 10) 1) 2)) 2))
 (test "vec-pop"
-  (assert-equal (vec-len (vec-pop (vec-push (vec-create-default 10) 42))) 0))
+  (assert-equal (vec-len (vec-pop (vec-push (vec-new-cap 10) 42))) 0))
 (test "vec-pop-empty"
-  (assert-equal (vec-len (vec-pop (vec-create-default 10))) 0))
+  (assert-equal (vec-len (vec-pop (vec-new-cap 10))) 0))
 
 ; Map basic operations
-(test "intmap-new-with"
+(test "intmap-new"
   (assert-equal (intmap-len (intmap-new 10)) 0))
 (test "intmap-len"
   (assert-equal (intmap-len (intmap-new 10)) 0))
@@ -72,19 +72,19 @@
 
 ; Set basic operations
 (test "set-create"
-  (assert-equal (set-len (set-create-default 10)) 0))
+  (assert-equal (set-len (set-create 10)) 0))
 (test "set-len"
-  (assert-equal (set-len (set-create-default 10)) 0))
+  (assert-equal (set-len (set-create 10)) 0))
 (test "set-add"
-  (assert-equal (set-len (set-add (set-create-default 10) 42)) 1))
+  (assert-equal (set-len (set-add (set-create 10) 42)) 1))
 (test "set-add-dup"
-  (assert-equal (set-len (set-add (set-add (set-create-default 10) 42) 42)) 1))
+  (assert-equal (set-len (set-add (set-add (set-create 10) 42) 42)) 1))
 (test "set-has-y"
-  (assert-true (set-contains (set-add (set-create-default 10) 42) 42)))
+  (assert-true (set-contains (set-add (set-create 10) 42) 42)))
 (test "set-has-n"
-  (assert-false (set-contains (set-create-default 10) 42)))
+  (assert-false (set-contains (set-create 10) 42)))
 (test "set-remove"
-  (assert-equal (set-len (set-remove (set-add (set-create-default 10) 42) 42)) 0))
+  (assert-equal (set-len (set-remove (set-add (set-create 10) 42) 42)) 0))
 
 ; Allocator operations
 (test "alloc-malloc"
@@ -108,12 +108,11 @@
 
 ; A capacity of 0 or below is fine: the first push allocates room.
 (test "collections-accept-zero-and-negative-capacity"
-  (let a (arena-create 0)
+  (let v (vec-new)
     (begin
-      (assert-equal (vec-get (vec-push (vec-create a 0) 5) 0) 5)
-      (assert-equal (vec-get (vec-push (vec-create-default -3) 7) 0) 7)
-      (assert-equal (vec-len (vec-push (vec-push (vec-create a -1) 1) 2)) 2)
-      (arena-destroy a)
+      (assert-equal (vec-get (vec-push v 5) 0) 5)
+      (assert-equal (vec-get (vec-push (vec-new-cap -3) 7) 0) 7)
+      (assert-equal (vec-len (vec-push (vec-push (vec-new-cap -1) 1) 2)) 2)
       0)))
 
 (run-tests)

@@ -20,7 +20,7 @@
     (assert-equal (len (list 1 2 3)) 3)))
 
 (test "len-of-a-vec"
-  (assert-equal (len (vec-create-default 4)) 0))
+  (assert-equal (len (vec-new-cap 4)) 0))
 
 (test "len-of-a-map"
   (begin

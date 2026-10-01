@@ -24,7 +24,7 @@
     (assert-equal (Show.show "s") "s")))
 
 (test "show-vec"
-  (assert-equal (Show.show (vec-push (vec-push (vec-create-default 2) "Hello") "World")) "[Hello, World]"))
+  (assert-equal (Show.show (vec-push (vec-push (vec-new-cap 2) "Hello") "World")) "[Hello, World]"))
 
 (test "show-list-option-result"
   (begin
@@ -50,12 +50,12 @@
     (assert-equal (Show.show (StNode (StLeaf 1) (StNode (StLeaf 2) (StLeaf 3)))) "StNode(StLeaf(1), StNode(StLeaf(2), StLeaf(3)))")))
 
 (test "vec-of-derived"
-  (assert-equal (Show.show (vec-push (vec-create-default 1) (StRect 1 1))) "[StRect(1, 1)]"))
+  (assert-equal (Show.show (vec-push (vec-new-cap 1) (StRect 1 1))) "[StRect(1, 1)]"))
 
 ; print routes through Show; the differential run compares this output.
 (test "print-uses-show"
   (begin
-    (print (vec-push (vec-push (vec-create-default 2) "Hello") "World"))
+    (print (vec-push (vec-push (vec-new-cap 2) "Hello") "World"))
     (print (make-StPerson "Bo" 5))
     (print (Cons 1.5 Nil))
     0))

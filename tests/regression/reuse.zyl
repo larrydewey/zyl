@@ -13,14 +13,14 @@
 (defn fill ((v Vec) (i Int) (n Int)) (if (>= i n) v (fill (vec-push v i) (+ i 1) n)))
 
 (test "an old version used afterwards keeps its length"
-  (let v1 (vec-push (vec-push (vec-create-default 4) 1) 2)
+  (let v1 (vec-push (vec-push (vec-new-cap 4) 1) 2)
     (let v2 (vec-push v1 3)
       (begin
         (assert-equal (vec-len v1) 2)
         (assert-equal (vec-len v2) 3)))))
 
 (test "a value stored in another stays as stored"
-  (let v1 (vec-push (vec-create-default 4) 7)
+  (let v1 (vec-push (vec-new-cap 4) 7)
     (let pair (Cons v1 Nil)
       (let v2 (vec-push v1 8)
         (begin
@@ -28,7 +28,7 @@
           (assert-equal (vec-len v2) 2))))))
 
 (test "a loop that owns its vector"
-  (let v (fill (vec-create-default 2) 0 1000)
+  (let v (fill (vec-new-cap 2) 0 1000)
     (begin
       (assert-equal (vec-len v) 1000)
       (assert-equal (vec-get v 999) 999)
@@ -42,14 +42,14 @@
         (assert-equal (struct-get q "x") 2)))))
 
 (test "a value passed twice to one call"
-  (let v (vec-push (vec-create-default 4) 5)
+  (let v (vec-push (vec-new-cap 4) 5)
     (let w (vec-push v (vec-len v))
       (begin
         (assert-equal (vec-len v) 1)
         (assert-equal (vec-get w 1) 1)))))
 
 (test "a reuse inside a loop body sees each iteration's value"
-  (let-mut acc (vec-create-default 1)
+  (let-mut acc (vec-new-cap 1)
     (let-mut i 0
       (begin
         (while (< i 100)
