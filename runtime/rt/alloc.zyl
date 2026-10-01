@@ -89,9 +89,17 @@
       (let _ (rt-free-blocks (rt-ld64 arena))
         (let _ (rt-st64 arena 0) (let _ (rt-st64 (+ arena 16) 0) (let _ (rt-st64 (+ arena 24) 0) (let _ (rt-unlock arena) 0))))))))
 
+; Free every block and stop using the arena. The 72-byte handle itself is
+; NOT freed, and that is deliberate: a freed handle cannot be examined
+; without reading memory the allocator has released, so a second destroy
+; could not tell a stale handle from a live one. Keeping the header means
+; the block list can be emptied and re-read safely, which makes a repeat
+; destroy a no-op and a later allocation a fresh one (spec G2, no double
+; free). The cost is 72 bytes per destroyed arena, held to process exit;
+; only the compiler, the LSP and the REPL create arenas at all.
 (defn zyl_arena_destroy (arena)
   (if (= arena 0) 0
-    (let _ (rt-lock arena) (let _ (rt-free-blocks (rt-ld64 arena)) (let _ (rt-unlock arena) (let _ (zyl_rt_free arena) 0))))))
+    (let _ (rt-lock arena) (let _ (rt-free-blocks (rt-ld64 arena)) (let _ (rt-st64 arena 0) (let _ (rt-unlock arena) 0))))))
 
 (defn zyl_arena_used (arena)
   (if (= arena 0) 0 (let _ (rt-lock arena) (let v (rt-ld64 (+ arena 24)) (let _ (rt-unlock arena) v)))))

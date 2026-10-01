@@ -27,6 +27,7 @@
 ; ffi-call (arity_check.zyl, E_FFI_RESTRICTED): in a user program they
 ; would be the unchecked cast the language does not have.
 (defn ffi-raw-p (s)
+  (or (str-eq s "zyl_mem_alloc")
   (or (str-eq s "zyl_arena_create")
   (or (str-eq s "zyl_arena_alloc")
   (or (str-eq s "zyl_arena_alloc_zeroed")
@@ -62,7 +63,7 @@
   (or (str-eq s "zyl_actor_id")
   (or (str-eq s "zyl_actor_join_unjoined")
   (or (str-eq s "zyl_chan_spawn_moves")
-      (str-eq s "zyl_repl_global_set")))))))))))))))))))))))))))))))))))))
+      (str-eq s "zyl_repl_global_set"))))))))))))))))))))))))))))))))))))))
 
 ; Built once, before the compiler's main runs.
 (def ffi-sig-tab (ffi-sig-table))

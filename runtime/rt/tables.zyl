@@ -255,7 +255,13 @@
       (if (= p 0) 0
         (let _ (tb-st p (tb-sbuf-magic)) (let _ (tb-st (+ p 8) 0) (let _ (tb-st (+ p 16) cap) (+ p 24))))))))
 
-(defn zyl_strbuf_str (b) b)
+; The buffer's bytes. 0 is a released buffer: a StrBuf whose arena was
+; destroyed leaves 0 here, and reading it is a use-after-free that must
+; be reported rather than followed (spec G2).
+(defn zyl_strbuf_str (b)
+  (if (= b 0)
+    (ffi-call "zyl_panic" "E_USE_AFTER_FREE: string buffer used after it was destroyed" 1000)
+    b))
 
 ; The region form of zyl_strbuf_new: storage comes from zyl_cur_region.
 ; codegen.zyl appends _r to a runtime name at a site above level 0, so
