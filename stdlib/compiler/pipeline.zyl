@@ -27,6 +27,7 @@
 (use compiler/macro_expand)
 (use compiler/mutability_check)
 (use compiler/linearity)
+(use compiler/verify)
 (use compiler/arity_check)
 (use compiler/duplicate_check)
 (use compiler/exhaustiveness_check)
@@ -246,7 +247,15 @@
 ; sink.
 ; Returns: String (assembly)
 (defn compile-to-asm (arena srcbuf srcpath)
-  (codegen-fns arena (compile-to-fns arena srcbuf srcpath) srcpath))
+  (let buf (codegen-fns arena (compile-to-fns arena srcbuf srcpath) srcpath)
+    (begin
+      ; A phase, not a wrapper: on a violation it does not return, so no
+      ; assembly leaves here and no binary can be produced from it. Placed
+      ; here so every path to an assembly -- driver, LSP, REPL, package build
+      ; -- goes through it; a build that could skip the check was a
+      ; convention, not a boundary.
+      (verify-asm buf)
+      buf)))
 
 (defn codegen-fns (arena region-fns srcpath)
   (begin

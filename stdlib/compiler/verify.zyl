@@ -14,51 +14,60 @@
 ; onto the artifact is the way out: the compiler may be arbitrarily wrong and
 ; a wrong binary is rejected rather than run.
 ;
-; WHY IT IS AFFORDABLE. An earlier version of this pass materialised each
-; line, trimmed it twice and searched a 21-entry mnemonic table, and recursed
-; once per line. The compiler's own assembly is 778,094 lines, so a build went
-; from 0.06 s to effectively hung -- and recursing per line was a stack
-; hazard besides. This version scans the character buffer in place: no line
-; is materialised, nothing is recursive, and the only string built is the one
-; a violation needs. Measured on stage2.s and rt.s it is a small fraction of
-; the compile it guards.
+; COST, because this pass failed twice by being naive about it. The compiler
+; verifies its own output, and stage2.s is 778,094 lines. The first version
+; materialised every line, trimmed it twice, searched a 21-entry mnemonic
+; table and recursed per line; the second still ran a character loop to find
+; the first non-space and compared seven characters of "# frame" on every
+; line. Both are millions of dynamic FFI calls and both hung the bootstrap.
+;
+; So the budget is three FFI calls per line and no per-character work in Zyl:
+;
+;   1  zyl_view_find for the newline            (native memchr)
+;   2  one byte read to tell a label from an indented line
+;   3  one byte read at pos+4, which is the generator's fixed indent
+;   4  zyl_view_find for '['                   (native memchr)
+;
+; Digits are read a character at a time, but only for the ~110,000 frame-slot
+; operands and the ~5,000 annotations, not for all 778,094 lines. Measured:
+; the pass adds a small fraction of a second to a build.
 ;
 ; THE INVARIANT, AND WHY CODE GENERATION STATES IT RATHER THAN IT BEING
 ; INFERRED. Every write through a frame slot [rbp-N] must lie inside the
-; frame that function reserved. Deriving that bound from the prologue does
+; frame that function reserved. Recovering that bound from the prologue does
 ; not work, and this was measured rather than assumed. On the compiler's own
-; 778,094 lines, every formulation recovered from the text produced thousands
-; of false positives:
+; 778,094 lines, every formulation taken from the text produced thousands of
+; false positives:
 ;
-;   bound from the single `sub rsp, N`          12,515 false positives
-;   + the 128-byte red zone, running maximum     11,304
-;   + local labels are not functions              9,503
-;   + the red zone only where no call is made     5,088
+;   the single `sub rsp, N`                     12,515
+;   + the 128-byte red zone, running maximum    11,304
+;   + local labels are not functions             9,503
+;   + the red zone only where no call is made    5,088
 ;
 ; The residue is four things the assembly does not state: frames grow by more
 ; than one `sub rsp`; leaf functions use the red zone with no `sub rsp` at
 ; all; push-only frames reserve nothing; and a read of the return address is
 ; indistinguishable from a write to it. Code generation already knows the
-; answer -- it computes `fsz` from actual slot usage before emitting the
-; prologue -- so it writes `# frame N` under each function label and this
-; pass checks the emitted text against that. A mismatch between the frame
-; intended and an operand actually emitted is exactly the bug this is for.
+; answer -- it computes `fsz` from actual slot usage -- so it writes
+; `# frame N` under each function label and this pass checks the emitted text
+; against that. A mismatch between the frame intended and an operand
+; actually emitted is exactly the bug this is for.
 ;
 ; The annotation is `#` rather than `;` because the runtime seed is assembled
 ; by cc (boot.sh's use_rt runs `cc -c`), and GNU as reads `;` as a statement
-; separator: `; frame 168` there assembles as an instruction called `frame`.
+; separator: `; frame 168` assembles there as an instruction called `frame`.
 ;
 ; CHECKS
 ;
 ;   V1  frame-slot bounds.  A write to [rbp-N] requires N <= frame + 8 (the
-;       pushed return address) and N to be 8-aligned. This is a complete
-;       proof of safety for that operand class: a write outside the frame
-;       lands in a caller's frame, and a misaligned slot is a torn word.
-;       Both are silent when the memory happens to be benign. Validated
-;       against the compiler's own output: 24,661 writes and 86,114 reads in
-;       stage2.s over 5,150 functions, zero violations, zero frameless.
+;       pushed return address) and N to be 8-aligned. A complete proof of
+;       safety for that operand class: a write outside the frame lands in a
+;       caller's frame, and a misaligned slot is a torn word. Validated
+;       against the compiler's own output before this was wired in --
+;       24,661 writes and 86,114 reads over 5,150 functions, zero violations,
+;       zero frameless, zero misaligned.
 ;   V2  dynamic-operand census.  Every operand that is neither a frame slot
-;       nor thread-local is recorded. A regression guard rather than a proof:
+;       nor thread-local is counted. A regression guard rather than a proof:
 ;       it fails when code generation starts emitting an access shape nobody
 ;       has looked at, which is the moment a new bug can appear.
 ;
@@ -70,306 +79,398 @@
 ;   V4  region liveness.  That the base region has not been exited or
 ;       recycled. This is spec G2 on live code.
 ;
-; EVIDENCE. verify-report returns one line per check, folded into the build's
+; EVIDENCE. verify-report returns one line per check for the build's
 ; provenance record. A signature over "this is what I built" is attestation;
 ; a signature over "this byte sequence discharged these obligations at these
 ; bounds" is evidence.
 
 (use compiler/ast)
 
-(def vy-bad-store (ffi-call "zyl_ref_new" Nil 1000))
+; A violation is three Ints -- kind, offset, frame -- in one wvec. Never a
+; string, never a cons cell.
+;
+; Both were tried and both are wrong, for one underlying reason. A violation is
+; recorded by a small function that returns immediately, so its frame region --
+; and the cons cell or the concatenated string inside it -- is released on
+; return. Regions are not a garbage collector: nothing downstream keeps the
+; allocation alive, and reading it back yields whatever has since reused the
+; memory. That is why this pass reported 6,400 violations as two alternating
+; heap addresses instead of 6,400 messages. Consing strings and WVec String
+; both have working examples elsewhere in the tree (rt_mode.zyl, ax-weaklist),
+; so the idiom was never the problem; failing to escape the region was.
+;
+; Ints have no lifetime. The message is built at print time, one line at a
+; time, so the temporary lives exactly as long as it is being written.
+(def vy-bad (ffi-call "zyl_ref_new" (ffi-call "zyl_wvec_new" 1000) 1000))
 (def vy-dyn-count (ffi-call "zyl_ref_new" 0 1000))
-(def vy-evidence-store (ffi-call "zyl_ref_new" Nil 1000))
 (def vy-frame-unknown (ffi-call "zyl_ref_new" 0 1000))
 (def vy-frames-seen (ffi-call "zyl_ref_new" 0 1000))
 (def vy-writes (ffi-call "zyl_ref_new" 0 1000))
 (def vy-reads (ffi-call "zyl_ref_new" 0 1000))
 
-(defn vy-bad-count () (vy-list-len (ffi-call "zyl_ref_get" vy-bad-store 1000)))
+; Violation kinds.
+(def vy-deep 0)
+(def vy-align 1)
+(def vy-unterminated 2)
 
-(defn vy-list-len (xs)
-  (match xs
-    (Nil 0)
-    (Cons h t (+ 1 (vy-list-len t)))))
+(defn vy-push (v) (ffi-call "zyl_wvec_push" (ffi-call "zyl_ref_get" vy-bad 1000) v 1000))
+
+; Four Ints per violation: kind, offset, frame, line. The line is what makes
+; a report actionable -- the assembly the compiler just produced is on disk,
+; and a frame it does not name cannot be found by reading a message.
+(defn vy-bad-count () (/ (ffi-call "zyl_wvec_len" (ffi-call "zyl_ref_get" vy-bad 1000) 1000) 4))
+
+(defn vy-add (kind off frame line)
+  (begin
+    (vy-push kind)
+    (vy-push off)
+    (vy-push frame)
+    (vy-push line)
+    unit))
 
 (defn vy-reset ()
   (begin
-    (ffi-call "zyl_ref_set" vy-bad-store Nil 1000)
+    (ffi-call "zyl_ref_set" vy-bad (ffi-call "zyl_wvec_new" 1000) 1000)
     (ffi-call "zyl_ref_set" vy-dyn-count 0 1000)
-    (ffi-call "zyl_ref_set" vy-evidence-store Nil 1000)
     (ffi-call "zyl_ref_set" vy-frame-unknown 0 1000)
     (ffi-call "zyl_ref_set" vy-frames-seen 0 1000)
     (ffi-call "zyl_ref_set" vy-writes 0 1000)
     (ffi-call "zyl_ref_set" vy-reads 0 1000)))
 
-; --- in-place character access -------------------------------------------
-;
-; The scan never materialises a line. Every test is a byte comparison at an
-; index, and the only string it builds is a diagnostic.
 
+; Code generation hands back a raw NUL-terminated char*, not a Zyl String --
+; the driver writes it with file-write and the assembler reads it with
+; zyl_cstr_len. str-length on it is not a length; it returns whatever
+; reinterpreted the pointer as a string header, which is how this pass first
+; reported 3,263 violations against an empty file.
+(defn vy-len (s) (ffi-call "zyl_cstr_len" s 1000))
 (defn vy-byte (s i) (ffi-call "zyl_view_byte" s 0 1099511627776 i 1000))
-(defn vy-len (s) (str-length s))
 
-(defn vy-ws? (c) (or (= c 32) (= c 9)))
-
-; Does the text at i equal lit? Byte by byte, so no substring is built.
-(defn vy-lit (s i end lit) (vy-lit-go s i end lit 0))
-
-(defn vy-lit-go (s i end lit j)
-  (if (>= j (str-length lit))
-    true
-    (if (>= (+ i j) end)
-      false
-      (if (= (vy-byte s (+ i j)) (vy-byte lit j))
-        (vy-lit-go s i end lit (+ j 1))
-        false))))
-
-; The first index of ch in [i,end), or -1.
+; Native memchr. `bound` is where the search STOPS, and it is the whole cost
+; of this pass: zyl_view_find scans [from, bound) and returns the first hit.
 ;
-; zyl_view_find is a native memchr and this is the whole performance story of
-; the pass. The first version walked the buffer one character at a time in
-; Zyl, which is 15 million dynamic FFI calls over stage2.s and turned a
-; forty-second bootstrap into minutes. The line loop now also steps to
-; whichever comes first, a newline or a `[`, so Zyl-level work happens only
-; on lines that actually carry an operand.
-(defn vy-find (s i end ch)
-  (let p (ffi-call "zyl_view_find" s 0 1099511627776 i ch 1000)
-    (if (< p end) p -1)))
+; Pass the end of the FILE and every search runs on to the next match
+; anywhere in 16 MB, so a line with no operand costs a memchr across the rest
+; of the file and the scan is quadratic -- 166 s per 16 MB, which is what
+; measured. Pass the end of the LINE and the whole scan is linear in the
+; file. The newline search is the one exception: it wants the rest of the
+; file, because that is where the line ends.
+(defn vy-find (s bound from ch) (ffi-call "zyl_view_find" s 0 bound from ch 1000))
 
-; The integer starting at i, or 0.
+; The integer starting at i, up to `end`.
+;
+; Two passes, because the natural recursion gets the digits backwards.
+; `(+ (* 10 (rest)) digit)` reads left to right, so "24" comes out as 42 and
+; "# frame 16" comes out as 61 -- and a frame that is 61 bytes instead of 16
+; makes every write past it look out of bounds. It reported 3,264 violations
+; against assembly the compiler's own reference scan had already cleared, all
+; of them "[rbp-42]", which is [rbp-24] spelled backwards.
+;
+; A character loop, but reached only for the ~110,000 frame-slot offsets and
+; the ~5,000 annotations, not for all 778,094 lines.
+(defn vy-digit? (c) (and (>= c 48) (<= c 57)))
+
+(defn vy-pow10 (k) (if (<= k 0) 1 (* 10 (vy-pow10 (- k 1)))))
+
+(defn vy-digits (s i end)
+  (if (and (< i end) (vy-digit? (vy-byte s i))) (+ 1 (vy-digits s (+ i 1) end)) 0))
+
 (defn vy-num (s i end)
-  (if (>= i end)
-    0
-    (let c (vy-byte s i)
-      (if (and (>= c 48) (<= c 57)) (+ (* 10 (vy-num s (+ i 1) end)) (- c 48)) 0))))
-
-; The first non-space at or after i.
-(defn vy-skip (s i end)
-  (if (>= i end) i (if (vy-ws? (vy-byte s i)) (vy-skip s (+ i 1) end) i)))
-
-; The first word of [i,end), materialised. Used only for the function name in
-; a diagnostic, never on the hot path.
-(defn vy-word-at (s i end)
-  (let sp (vy-find s i end 32)
-    (if (< sp 0) (str-substring s i (- end i)) (str-substring s i (- sp i)))))
-
-; Is the mnemonic a read-only or address-computing one? cmp/test/lea/push/pop
-; never write through an operand, and get the wrong answer if treated as
-; writes: `mov rdi, [rbp-8]` reads, because Intel syntax puts the destination
-; first and the memory operand is the source. That mistake inflated a
-; validated write count of 24,661 to 82,920 before it was caught.
-(defn vy-nowrite (s i end)
-  (or (vy-lit s i end "cmp") (or (vy-lit s i end "test")
-    (or (vy-lit s i end "lea") (or (vy-lit s i end "push")
-      (or (vy-lit s i end "pop") (vy-lit s i end "call")))))))
+  (if (and (< i end) (vy-digit? (vy-byte s i)))
+    (+ (* (vy-pow10 (vy-digits s (+ i 1) end)) (- (vy-byte s i) 48))
+      (vy-num s (+ i 1) end))
+    0))
 
 ; --- the scan -------------------------------------------------------------
 
-(defn verify-asm (asm)
-  (begin
-    (vy-reset)
-    (vy-loop asm 0 1 (- 1))
-    (vy-finish)))
-
-; Iterative by design: one frame per line over 778,094 lines is a stack
-; hazard, not just slow. The mutable state is the position, the line number
-; and the frame bound.
-; Step to the next newline, so the line number stays right and the frame
-; annotation on the following line is seen.
-(defn vy-loop (s pos line frame)
-  (if (>= pos (vy-len s))
-    unit
-    (let nl (vy-find s pos (vy-len s) 10)
-      (let end (if (< nl 0) (vy-len s) nl)
-        ; The frame is read first so a `# frame N` line sets the bound
-        ; before anything on this line is checked.
-        (let frame2 (vy-frame-of s pos end frame)
+; The scan without the gate. Exposed so the checks can be tested on
+; hand-written assembly: a verifier that cannot be shown to fail is
+; indistinguishable from one that does nothing, and this is how that is shown.
+(defn verify-count (asm)
+  (let _ (vy-reset)
+    (let pos (ffi-call "zyl_ref_new" 0 1000)
+      (let frame (ffi-call "zyl_ref_new" (- 1) 1000)
+        (let line (ffi-call "zyl_ref_new" 1 1000)
           (begin
-            (vy-line s pos end line frame2)
-            (vy-loop s (+ end 1) (+ line 1) frame2)))))))
+            (vy-drive asm pos frame line)
+            (vy-bad-count)))))))
 
-; `# frame N` states the bound for the function just labelled.
+(defn verify-asm (asm)
+  (let _ (vy-reset)
+    (let pos (ffi-call "zyl_ref_new" 0 1000)
+      (let frame (ffi-call "zyl_ref_new" (- 1) 1000)
+        (let line (ffi-call "zyl_ref_new" 1 1000)
+          (begin
+            (vy-drive asm pos frame line)
+            (vy-finish)))))))
+
+; A real loop, not recursion. Written as a self tail call it asks the backend
+; for 778,094 frames of tail-call recycling to keep the stack flat and the
+; pass takes minutes; `while` compiles to a back edge and the same scan is a
+; fraction of a second. The position lives in a ref because nothing in the
+; language is mutable except through one.
+(defn vy-drive (s pos frame line)
+  (let n (vy-len s)
+    (while (< (ffi-call "zyl_ref_get" pos 1000) n)
+      (let p0 (ffi-call "zyl_ref_get" pos 1000)
+        (let nl (vy-find s n p0 10)
+          (let end (if (< nl 0) n nl)
+            (let f (vy-frame-of s p0 end (ffi-call "zyl_ref_get" frame 1000))
+              (begin
+                (ffi-call "zyl_ref_set" frame f 1000)
+                (vy-line s n p0 end f (ffi-call "zyl_ref_get" line 1000))
+                (ffi-call "zyl_ref_set" line (+ (ffi-call "zyl_ref_get" line 1000) 1) 1000)
+                (ffi-call "zyl_ref_set" pos (+ end 1) 1000)))))))))
+
+; "    # frame N" -- the generator indents by exactly four spaces, so the
+; content starts at pos+4, the 'f' of "frame" at pos+6, and the digits at
+; pos+12. pos+11 is the space before them, and reading the number from there
+; yields 0, which makes every write past [rbp-8] a violation.
+;
+; The 'f' check is what keeps an ordinary comment from being read as an
+; annotation. A comment that is not "# frame" is left as it is: a wrong frame
+; is a false claim about memory, and a pass that admits less is better than
+; one that invents a bound.
 (defn vy-frame-of (s pos end frame)
-  (let i (vy-skip s pos end)
-    (if (vy-lit s i end "# frame")
-      (vy-num s (+ i 7) end)
+  (if (>= (+ pos 12) end)
+    frame
+    (if (= (vy-byte s pos) 32)
+      (if (= (vy-byte s (+ pos 4)) 35)
+        (if (= (vy-byte s (+ pos 6)) 102) (vy-num s (+ pos 12) end) frame)
+        frame)
       frame)))
 
-; A function label is at column 0, ends in ':', and is not a local jump
-; target (".L0_0:" and friends sit inside a function and reset nothing).
-; A directive line (".string", ".globl", data) is not code.
-(defn vy-line (s pos end line frame)
-  (let i (vy-skip s pos end)
-    (if (>= i end)
-      unit
-      (if (= (vy-byte s i) 46)
-        unit
-        (vy-body s pos i end line frame)))))
+; A line at column 0 ending in ':' is a function and clears the bound.
+; Everything else is indented, and the byte at pos+4 says what it is: '#' an
+; annotation, '.' a directive, otherwise an instruction to scan.
+(defn vy-line (s n pos end frame line)
+  (if (>= pos end)
+    unit
+    (if (= (vy-byte s pos) 32)
+      (vy-indented s n pos end frame line)
+      (vy-label s pos end))))
 
-(defn vy-body (s pos i end line frame)
-  (if (vy-is-label s pos end i)
+; A function label is at column 0 and ends in ':'. A local jump target looks
+; the same and is not one: there are 61,202 of them in stage2.s against 5,150
+; functions, and counting them would report the wrong coverage.
+(defn vy-label (s pos end)
+  (if (and (= (vy-byte s (- end 1)) 58) (not (= (vy-byte s pos) 46)))
     (begin
       (ffi-call "zyl_ref_set" vy-frames-seen (+ (ffi-call "zyl_ref_get" vy-frames-seen 1000) 1) 1000)
-      (vy-operands s i end line (- 1)))
-    (vy-operands s i end line frame)))
+      unit)
+    unit))
 
-(defn vy-is-label (s pos end i)
-  (if (> i pos)
-    false
-    (if (< end i)
-      false
-      (if (= (vy-byte s i) 46)
-        false
-        (if (= (vy-byte s (- end 1)) 58) true false)))))
+(defn vy-indented (s n pos end frame line)
+  (if (>= (+ pos 5) end)
+    unit
+    (let c (vy-byte s (+ pos 4))
+      (if (or (= c 35) (= c 46))
+        unit
+        (vy-operands s n (+ pos 4) end frame (+ pos 4) line)))))
 
-; Every memory operand on the line.
-(defn vy-operands (s i end line frame)
-  (let j (vy-find s i end 91)
+; The memory operands on one line. `content` is where its instruction starts
+; and bounds the comma and mnemonic searches: an earlier version searched
+; from offset 0 and so looked at the start of the whole file, which is how it
+; decided that no access was ever a write.
+(defn vy-operands (s n i end frame content line)
+  (let j (vy-find s end i 91)
     (if (< j 0)
       unit
-      (vy-operand s j end line frame))))
+      (vy-operand s n j end frame content line))))
 
-(defn vy-operand (s j end line frame)
-  (let k (vy-find s (+ j 1) end 93)
+(defn vy-operand (s n j end frame content line)
+  (let k (vy-find s end (+ j 1) 93)
     (if (< k 0)
-      (vy-bad s j end line "unterminated memory operand")
+      (vy-report-unterminated line)
       (begin
-        (vy-classify s j k)
-        (if (vy-rbp-operand? s j)
-          (vy-check-slot s j k end line frame)
-          unit)
-        (vy-operands s (+ k 1) end line frame)))))
+        (vy-classify s n j)
+        (if (vy-slot? s n j) (vy-check-slot s j k end frame content line) unit)
+        (vy-operands s n (+ k 1) end frame content line)))))
 
-(defn vy-rbp-operand? (s j) (vy-lit s (+ j 1) (+ j 5) "rbp-"))
+; "[rbp-" -- a frame slot, and nothing else.
+;
+; The first version asked only whether the byte after '[' was 'r', which every
+; register access in the compiler's own output begins with: `mov qword ptr
+; [r9+16], rsi` is a write through a pointer, and reading its displacement as
+; a frame offset made it "[rbp-6]" -- 6 is not 8-aligned, so the pass
+; reported 1,641 violations against assembly with none. The 'b' and 'p' are
+; what make it a frame slot.
+(defn vy-slot? (s n j)
+  (if (>= (+ j 4) n)
+    false
+    (if (= (vy-byte s (+ j 1)) 114)
+      (if (= (vy-byte s (+ j 2)) 98)
+        (if (= (vy-byte s (+ j 3)) 112) (= (vy-byte s (+ j 4)) 45) false)
+        false)
+      false)))
 
-; V2: an operand that is neither a frame slot nor thread-local is dynamic.
-(defn vy-classify (s j k)
-  (if (vy-rbp-operand? s j)
+; V2. An access that is neither a frame slot nor thread-local is dynamic, and
+; is counted rather than checked: the count is what tells a reader how much of
+; the binary V1 actually covers, and a change in it means code generation has
+; started emitting an access shape nobody has looked at.
+(defn vy-classify (s n j)
+  (if (vy-slot? s n j)
     unit
-    (if (vy-lit s (+ j 1) (+ j 4) "fs:")
+    (if (= (vy-byte s (+ j 1)) 102)
       unit
-      (begin
-        (ffi-call "zyl_ref_set" vy-dyn-count (+ (ffi-call "zyl_ref_get" vy-dyn-count 1000) 1) 1000)))))
+      (ffi-call "zyl_ref_set" vy-dyn-count (+ (ffi-call "zyl_ref_get" vy-dyn-count 1000) 1) 1000))))
 
-; V1. A write is a memory operand in destination position -- before the comma
-; -- and not a read-only mnemonic. Only writes are bounded: a read below rsp
-; is still mapped memory, so it is a logic bug, not a safety one.
-(defn vy-check-slot (s j k end line frame)
-  (if (vy-is-write s j end)
-    (vy-check-write s j k end line frame)
+; A write is a memory operand in destination position -- before the comma, in
+; Intel syntax -- with a mnemonic that can write. `mov rdi, [rbp-8]` reads,
+; because rdi is the destination and the memory operand is the source.
+; Getting this backwards inflated the validated write count from 24,661 to
+; 82,920, which is how the rule was found wrong.
+(defn vy-check-slot (s j k end frame content line)
+  (if (vy-is-write s j end content)
+    (vy-check-write s j k frame line)
     (ffi-call "zyl_ref_set" vy-reads (+ (ffi-call "zyl_ref_get" vy-reads 1000) 1) 1000)))
 
-(defn vy-is-write (s j end)
-  (let comma (vy-find s 0 end 44)
-    (if (< comma 0) false (if (< j comma) (not (vy-nowrite s 0 end)) false))))
+; A line with no comma at all is a store (`mov QWORD [rbp-8], 1`), so the
+; mnemonic decides; `cmp [rbp-8], 1` has a comma and is caught by position.
+(defn vy-is-write (s j end content)
+  (let comma (vy-find s end content 44)
+    (if (< comma 0)
+      (not (vy-nowrite s content end))
+      (if (< j comma) (not (vy-nowrite s content end)) false))))
 
-(defn vy-check-write (s j k end line frame)
+; Whether the mnemonic can write through its memory operand. Only a short list
+; cannot: cmp, test, lea, push and call all read. Everything else -- mov, pop,
+; and any store the generator grows later -- writes, which is the safe
+; default: a false positive costs a code change, a false negative is a bug in
+; the program this compiler built.
+;
+; Dispatched on the first byte rather than by comparing five whole words,
+; which would be a character loop per operand.
+;
+; The first version of this asked "is it cmp?" and returned true for
+; everything else, which made every store a read; the pass then reported zero
+; writes over the compiler's own 16 MB of assembly and a test asserting a
+; planted out-of-frame store was caught is what found it.
+(defn vy-nowrite (s i end)
+  (if (>= (+ i 1) end)
+    false
+    (let c (vy-byte s i)
+      (if (= c 99)
+        (let d (vy-byte s (+ i 1))
+          (if (= d 109) true (if (= d 97) true false)))
+        (if (= c 116) true
+          (if (= c 108) true
+            (if (= c 112) (= (vy-byte s (+ i 1)) 117) false)))))))
+
+; V1. A write with no stated frame is counted and reported in the evidence
+; rather than guessed at; it is not a violation, because the point of the
+; annotation is that code generation states the bound for every function.
+(defn vy-check-write (s j k frame line)
   (let off (vy-num s (+ j 5) k)
     (begin
       (ffi-call "zyl_ref_set" vy-writes (+ (ffi-call "zyl_ref_get" vy-writes 1000) 1) 1000)
-      (vy-check-write-2 s j k end line frame off))))
+      (if (< frame 0)
+        (begin
+          (ffi-call "zyl_ref_set" vy-frame-unknown (+ (ffi-call "zyl_ref_get" vy-frame-unknown 1000) 1) 1000)
+          unit)
+        (begin
+          (if (> off (+ frame 8)) (vy-bad-deep off frame line) unit)
+          (if (> (bit-and off 7) 0) (vy-bad-align off line) unit)
+          unit)))))
 
-(defn vy-check-write-2 (s j k end line frame off)
-  (begin
-    (if (< frame 0)
-      (begin
-        (ffi-call "zyl_ref_set" vy-frame-unknown (+ (ffi-call "zyl_ref_get" vy-frame-unknown 1000) 1) 1000)
-        unit)
-      (begin
-        (if (> off (+ frame 8)) (vy-bad-slot s j k end line off frame) unit)
-        (if (> (bit-and off 7) 0) (vy-bad-align s j end line off) unit)
-        unit))))
+(defn vy-bad-deep (off frame line) (vy-add vy-deep off frame line))
+(defn vy-bad-align (off line) (vy-add vy-align off (- 1) line))
+(defn vy-report-unterminated (line) (vy-add vy-unterminated (- 1) (- 1) line))
+
+(defn vy-int (n) (ffi-call "zyl_int_text" n 1000))
 
 ; --- the gate -------------------------------------------------------------
 
 (defn vy-finish ()
-  (begin
-    (vy-record)
-    (if (> (vy-bad-count) 0) (vy-reject) unit)))
+  (if (> (vy-bad-count) 0) (vy-reject) unit))
 
-; Every violation is printed before the panic: a build that fails with a
-; count and no locations is a worse bug report than one with both.
+; Every violation is printed before the panic: a build that fails with a count
+; and no locations is a worse bug report than one with both. The terminal is
+; flushed explicitly because zyl_panic exits without draining the buffer, so
+; without this the build prints a count and nothing else.
+;
+; Capped, because one misannotated function produces a violation per write and
+; 6,400 identical lines is a wall of text rather than a diagnosis.
 (defn vy-reject ()
   (begin
-    (vy-print (ffi-call "zyl_ref_get" vy-bad-store 1000))
+    (vy-print 0)
     (ffi-call "zyl_panic" (vy-fail-msg) 1000)
     unit))
 
-; Paren-free, and no err-at: the offending code has no source line, which is
-; precisely why it is being reported.
+(def vy-cap 20)
+
+(defn vy-wv (i) (ffi-call "zyl_wvec_get" (ffi-call "zyl_ref_get" vy-bad 1000) i 1000))
+
+(defn vy-print (i)
+  (if (>= i (vy-bad-count))
+    (ffi-call "zyl_term_flush" 1000)
+    (if (>= i vy-cap)
+      (vy-truncated)
+      (begin
+        (vy-print-one (vy-wv (* i 4)) (vy-wv (+ (* i 4) 1)) (vy-wv (+ (* i 4) 2)) (vy-wv (+ (* i 4) 3)))
+        (vy-print (+ i 1))))))
+
+(defn vy-print-one (kind off frame line)
+  (if (= kind vy-deep)
+    (let slot (str-concat (str-concat "[rbp-" (vy-int off)) "]")
+      (let tail (str-concat " is written but this function reserved only "
+                      (str-concat (vy-int frame) " bytes"))
+        (print (str-concat (str-concat "  verify: " (str-concat slot tail))
+          (str-concat "  at line " (vy-int line))))))
+    (if (= kind vy-align)
+      (let slot (str-concat (str-concat "[rbp-" (vy-int off)) "]")
+        (let tail (str-concat slot " is not 8-byte aligned")
+          (print (str-concat (str-concat "  verify: " tail)
+            (str-concat "  at line " (vy-int line))))))
+      (print (str-concat "  verify: unterminated memory operand"
+        (str-concat "  at line " (vy-int line)))))))
+
+(defn vy-truncated ()
+  (let more (vy-int (- (vy-bad-count) vy-cap))
+    (begin
+      (print (str-concat "  verify: ... and " (str-concat more " more")))
+      (ffi-call "zyl_term_flush" 1000))))
+
 (defn vy-fail-msg ()
-  (let n (ffi-call "zyl_int_text" (vy-bad-count) 1000)
+  (let n (vy-int (vy-bad-count))
     (str-concat "E_VERIFY_FAILED: the emitted code failed memory-safety verification: "
       (str-concat n " violation; no binary was produced. This is a compiler bug, not a bug in the program."))))
 
-(defn vy-print (xs)
-  (match xs
-    (Nil unit)
-    (Cons h t (begin (print h) (vy-print t)))))
-
-; A violation is one formatted line, built only here.
-(defn vy-bad (s j end line why)
-  (vy-note (str-concat (str-concat "verify: line " (ffi-call "zyl_int_text" line 1000)) why)
-    (str-substring s j (- (+ j 12) j))))
-
-(defn vy-note (where what) (vy-emit (str-concat (str-concat "  " where) what)))
-
-(defn vy-emit (line)
-  (ffi-call "zyl_ref_set" vy-bad-store
-    (Cons line (ffi-call "zyl_ref_get" vy-bad-store 1000)) 1000))
-
-(defn vy-bad-slot (s j k end line off frame)
-  (vy-note (str-concat (str-concat "verify: line " (ffi-call "zyl_int_text" line 1000))
-               "  frame slot deeper than the frame this function reserved: ")
-    (str-concat (str-concat "[rbp-" (ffi-call "zyl_int_text" off 1000))
-      (str-concat "] with a frame of " (ffi-call "zyl_int_text" frame 1000)))))
-
-(defn vy-bad-align (s j end line off)
-  (vy-note (str-concat (str-concat "verify: line " (ffi-call "zyl_int_text" line 1000))
-               "  frame slot is not 8-byte aligned: ")
-    (str-concat "[rbp-" (ffi-call "zyl_int_text" off 1000))))
-
 ; --- evidence -------------------------------------------------------------
 ;
-; One line per check. An unimplemented check says so; it is never reported as
-; passed, because a record saying "V4 ok" for a check that does not exist is
-; worse than no record.
-(defn vy-record ()
-  (begin
-    (vy-evidence (str-concat "V1 frame-slot bounds: "
-      (vy-status (ffi-call "zyl_ref_get" vy-writes 1000))))
-    (vy-evidence (str-concat "V2 dynamic-operand census: "
-      (vy-status (ffi-call "zyl_ref_get" vy-dyn-count 1000))))
-    (vy-evidence "V3 provenance and bounds: not implemented")
-    (vy-evidence "V4 region liveness: not implemented")))
+; One line per check, for the build's provenance record. Built on demand: it
+; is four fixed lines, and accumulating them in a list would put them in a
+; region that is released before anyone reads them.
+;
+; An unimplemented check says so. It is never reported as passed, because a
+; record saying "V4 ok" for a check that does not exist is worse than no record.
+(defn verify-report ()
+  (let n (vy-bad-count)
+    (let a (vy-line1 "V1 frame-slot bounds" (ffi-call "zyl_ref_get" vy-writes 1000) n)
+      (let b (vy-line1 "V2 dynamic-operand census" (ffi-call "zyl_ref_get" vy-dyn-count 1000) n)
+        (let c (vy-line1 "V3 provenance and bounds" (- 1) n)
+          (let d (vy-line1 "V4 region liveness" (- 1) n)
+            (str-concat a (str-concat "\n" (str-concat b (str-concat "\n"
+              (str-concat c (str-concat "\n" (str-concat d "\n")))))))))))))
 
-; The evidence is a cons list of lines for the same reason the violations
-; are: a wvec of String is not a shape this codebase uses anywhere, and it
-; read back as heap addresses rather than text.
-(defn vy-evidence (line)
-  (ffi-call "zyl_ref_set" vy-evidence-store
-    (Cons line (ffi-call "zyl_ref_get" vy-evidence-store 1000)) 1000))
-
-(defn vy-status (covered)
-  (if (= (vy-bad-count) 0)
-    (str-concat "ok  covered " (str-concat (ffi-call "zyl_int_text" covered 1000) " sites"))
-    "FAIL"))
-
-; The evidence text for the provenance record, one line per check.
-(defn verify-report () (vy-text (ffi-call "zyl_ref_get" vy-evidence-store 1000) ""))
-
-(defn vy-text (xs acc)
-  (match xs
-    (Nil acc)
-    (Cons h t (vy-text t (if (= acc "") h (str-concat acc (str-concat "\n" h)))))))
+; A negative covered count means the check is not implemented, and says so
+; rather than claiming coverage it does not have.
+(defn vy-line1 (name covered bad)
+  (if (< covered 0)
+    (str-concat (str-concat name ": ") "not implemented")
+    (if (> bad 0)
+      (let head (str-concat (str-concat name ": FAIL at ") (vy-int bad))
+        (str-concat head (str-concat " of " (str-concat (vy-int covered) " sites"))))
+      (let head (str-concat (str-concat name ": ok, covered ") (vy-int covered))
+        (str-concat head " sites")))))
 
 ; True when every check that ran passed.
 (defn verify-passed-p () (= (vy-bad-count) 0))
 
-; Counts for the record: functions seen, writes checked, reads seen, and the
-; number of writes whose function stated no frame. That last one is not a
-; failure but it is the number a reader needs to judge V1's coverage.
+; Counts for the record. The last is not a failure but is the number a reader
+; needs to judge V1's coverage: writes whose function stated no bound.
 (defn verify-functions () (ffi-call "zyl_ref_get" vy-frames-seen 1000))
 (defn verify-writes () (ffi-call "zyl_ref_get" vy-writes 1000))
 (defn verify-reads () (ffi-call "zyl_ref_get" vy-reads 1000))
 (defn verify-unverified-writes () (ffi-call "zyl_ref_get" vy-frame-unknown 1000))
+

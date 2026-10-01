@@ -461,32 +461,101 @@ right for that number to mean anything, and both were wrong first:
   label. They are local jump targets inside a function and must not reset
   the bound.
 
-## Not landed: the verifier is not wired in
+## Landed: the verifier is wired in, and it is fast
 
-`stdlib/compiler/verify.zyl` exists and type-checks, but calling it from
-`compile-to-asm` makes the bootstrap glacial again, and I am not shipping a
-check that costs a build its speed. The cost is understood and it is the
-same mistake twice: the pass still reads the buffer a byte at a time
-through `zyl_view_byte`, which is a dynamic FFI call per character. The
-`vy-find` memchr fix removed the newline scan; the remaining per-character
-work -- `vy-skip`, `vy-lit`, the operand classification -- is on the order
-of twelve million FFI calls over stage2.s.
+`compile-to-asm` calls `(verify-asm buf)` and a violation panics before the
+assembly is returned, so no binary is produced. The placement is the point:
+every path to an assembly — driver, LSP, REPL, package build — goes through
+that one function. A check a build can skip with a flag is a convention, and
+this is a phase.
 
-The fix is to classify with memchr and substring comparisons rather than
-byte reads, so that Zyl-level work happens only on the ~150,000 lines that
-carry an operand instead of on all 778,094. A reference implementation of
-the same rules in Python runs the whole file in 0.036 s, which is the shape
-the Zyl has to reach.
+`./boot.sh` runs in 14 s and the full regression suite in 56 s with the pass
+in it. Scanning the compiler's own output takes **0.14 s**:
 
-The pass also reported four violations before that, with the diagnostics
-printing heap addresses rather than its own messages: a wvec of `String` is
-not a shape this codebase uses anywhere, and violations and evidence are now
-cons lists of strings instead. Those four were never seen in a readable
-form, so whether they were real is **unknown**, and the pass cannot be
-trusted until it runs clean and is then shown to fail on a planted
-violation.
+```
+stage2.s   787,325 lines   16,072,608 bytes
+           2,060,366 memchr calls over 26,926,187 bytes   0.14 s
+```
+
+That is ~115 MB/s, and the same rules as a Python reference take 0.036 s for
+the same file — the same order of magnitude, in a language whose FFI calls
+cost 2 ns and whose function calls cost 6 ns (both measured, because the
+first three explanations for a slow pass were all wrong).
+
+Getting there took four separate mistakes, each found by measurement:
+
+| Cost | Cause | Fix |
+|---|---|---|
+| 9 min | `vy-loop` was a self tail call over 778,094 lines, asking the backend to recycle that many frames | `while`, so the position lives in a ref and the loop is a back edge |
+| 9 min | `vy-frame-of` ran a character loop and a seven-character literal compare on *every* line | the generator indents by exactly four spaces, so one byte at `pos+4` classifies the line |
+| quadratic | every search passed the *file* length as `zyl_view_find`'s bound, so a line with no operand memchr'd on to the next match anywhere in 16 MB | pass the end of the *line*; the newline search is the only one that wants the rest of the file |
+| quadratic | `vy-slot?` called `(vy-len s)` per operand, and `vy-len` is a strlen over the whole 16 MB | the total length is already threaded through as `n` |
+
+### How the first three of those were measured wrong
+
+`zyl_view_find`'s third argument is the search *bound*, not a capacity, and
+`zyl_view_byte`'s third argument is a capacity. Copying the `2^40` from one to
+the other asks memchr to scan a terabyte per call. The symptom is a build
+that takes nine minutes and looks like an algorithmic problem.
+
+Worse, the numbers that pointed at it were not measurements of the current
+code. `boot.sh` exports `ZYL_HOME=build/boot` so the build uses this
+checkout's stdlib, and its refresh of `~/.zyl` is **conditional** on
+`~/.zyl/bin/zyl` existing. Without an install there, running
+`build/boot/zyl-self` directly resolves `~/.zyl/stdlib` — a copy that can be
+many commits stale. Every "the verifier is quadratic" number in the first
+three drafts of this section was the *old* verifier, measured through a
+stale install, which is why it looked quadratic when the current code is
+linear. Benchmark with `ZYL_HOME=$PWD/build/boot`, and check
+`build/boot/stdlib/compiler/verify.zyl` is the file you think it is.
+
+A full verification of the compiler's own output:
+
+```
+stage2.s  16,072,608 bytes   5,204 functions
+          24,774 frame-slot writes   86,509 reads   118,515 dynamic   0 unverified
+rt.s         862,052 bytes   1,103 functions
+             482 frame-slot writes    2,488 reads     4,935 dynamic   0 unverified
+```
+
+The write and read counts match the independent Python reference (24,661 /
+86,114) to within the new module's own delta, and `fns=1,103` is exactly the
+function count of `rt.s` — every runtime function is annotated, so nothing is
+checked against a bound nobody stated. V1 covers 24,774 of 140,000 memory
+accesses; the other 118,515 are dynamic and counted, not checked, which is
+what the evidence says.
+
+## The planted-violation test, and the five bugs it exists for
+
+A verifier run only on the compiler's own output cannot be told apart from one
+that does nothing: both report zero violations on correct code. `tests/verify_test.zyl`
+plants faults in hand-written assembly and requires them to be caught, and it
+is the reason four real defects in the verifier were found rather than shipped:
+
+- **`vy-num` read digits backwards.** `(+ (* 10 (rest)) digit)` makes `24`
+  come out as `42` and `# frame 16` as `61`. Every write then looked out of
+  bounds: 3,264 violations against assembly the reference scan had cleared,
+  all of them `[rbp-42]`, which is `[rbp-24]` spelled backwards.
+- **`vy-nowrite` was inverted.** It asked "is it `cmp`?" and answered *no
+  write* for everything else, so every store was a read. The pass reported
+  zero writes over 16 MB of assembly.
+- **`vy-slot?` accepted any `[r…`.** `mov qword ptr [r9+16], rsi` is a write
+  through a pointer; reading its displacement as a frame offset made it
+  `[rbp-6]`, and 6 is not 8-aligned, so 1,641 false violations.
+- **The annotation was read at `pos+11`**, the space before the digits, so
+  every frame parsed as 0 and every write past `[rbp-8]` looked out of bounds.
+- **Local jump targets counted as functions.** `.L0_0:` is at column 0 and
+  ends in `:` exactly like a function label; there are 61,202 of them in
+  `stage2.s` against 5,150 functions, so the reported coverage was wrong by
+  more than a factor of ten.
+
+Each of these produced a *passing* build with a check that was quietly not
+running. That is the argument for planting faults rather than reasoning about
+coverage numbers, and the reason the test is wired into `run_regression_tests.sh`
+in quick mode rather than left for later.
 
 ## What it still will not give
+
 
 Honesty about the residue, because a document that claims more than it has is
 worse than no document:

@@ -117,6 +117,27 @@ compile with `build/boot/zyl-self` on 2026-09-28.
   path promotes the allocation rather than leaving it dead. It also records
   the honest comparison with Rust — Zyl's guarantee is
   unconditional where Rust's is conditional, and Zyl's is far less tested.
+- **Generated code is verified, and the verification is a phase.**
+  `stdlib/compiler/verify.zyl` runs inside `compile-to-asm` on the emitted
+  assembly, so every path to a binary — driver, LSP, REPL, package build —
+  passes through it, and a violation aborts before any assembly is returned.
+  It checks what the compiler's own reference scan validated: a write
+  through `[rbp-M]` must have `M <= frame + 8` and be 8-aligned, where the
+  frame is the bound code generation states in a `# frame N` annotation. On
+  the compiler's own output that is 24,774 writes covered, zero violations,
+  zero writes against an unstated bound, and 118,515 dynamic accesses
+  *counted but not checked* — the census is reported as such, not as a pass.
+  V3 (provenance and bounds) and V4 (region liveness) are not implemented
+  and the evidence says so. Scanning stage2.s takes 0.14 s; `./boot.sh` runs
+  in 14 s and the full suite in 56 s with the pass in it.
+  `tests/verify_test.zyl` plants faults in hand-written assembly and is
+  wired into the quick suite: a verifier run only on the compiler's own
+  output cannot be told apart from one that does nothing, and that test is
+  what found five real defects in the verifier itself, each of which had
+  been producing a *passing* build with the check quietly not running
+  (digits read backwards, `cmp` detection inverted, any `[r…` mistaken for a
+  frame slot, the annotation read at the space before its digits, and local
+  jump labels counted as functions). See `docs/verifier-design.md`.
 - **The region core is machine-checked, not just observed.**
   `verify/model.py` encodes the region allocator and the scope discipline
   from `runtime/rt/alloc.zyl` as a finite transition system and enumerates the

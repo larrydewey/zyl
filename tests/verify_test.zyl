@@ -1,0 +1,82 @@
+; The binary-safety verifier, tested on hand-written assembly.
+;
+; A verifier that is only ever run on the compiler's own output cannot be
+; distinguished from one that does nothing: both report zero violations on
+; correct code, and only a planted fault shows the difference. Every case here
+; is assembly the generator would never emit, chosen so that a check which
+; silently stopped running would fail this file rather than the build.
+
+(use compiler/verify { verify-count => vy-count })
+(use compiler/verify { verify-functions => vy-fns })
+(use compiler/verify { verify-unverified-writes => vy-unverified })
+
+; A function that reserves 16 bytes and touches only slots inside it.
+(defn clean-asm ()
+  "foo:\n    # frame 16\n    push rbp\n    mov rbp, rsp\n    sub rsp, 16\n    mov rax, [rbp-8]\n    mov QWORD [rbp-8], rax\n    mov rax, [rbp-16]\n    leave\n    ret\n")
+
+(test "verify-clean-assembly-passes"
+  (assert-equal (vy-count (clean-asm)) 0))
+
+; The frame is 16 bytes plus the pushed return address, so [rbp-24] is the
+; deepest legal slot. One byte further out is the bug this exists to catch.
+(test "verify-catches-write-past-frame"
+  (assert-true (> (vy-count "foo:\n    # frame 16\n    mov QWORD [rbp-32], 1\n    ret\n") 0)))
+
+(test "verify-allows-deepest-legal-slot"
+  (assert-equal (vy-count "foo:\n    # frame 16\n    mov QWORD [rbp-24], 1\n    ret\n") 0))
+
+; A misaligned slot is a torn word whatever the frame says.
+(test "verify-catches-misaligned-slot"
+  (assert-true (> (vy-count "foo:\n    # frame 16\n    mov QWORD [rbp-7], 1\n    ret\n") 0)))
+
+; Reads are not bounded: the return address above the frame is read, not
+; written, and flagging it would be a false positive on correct code.
+(test "verify-ignores-reads-past-frame"
+  (assert-equal (vy-count "foo:\n    # frame 16\n    mov rax, [rbp-9999]\n    ret\n") 0))
+
+; The frame is read from the digits after "# frame ", not from the space
+; before them: 16 must not be read as 61, which would clear every write.
+(test "verify-reads-the-annotation-not-the-space"
+  (assert-equal (vy-count "foo:\n    # frame 16\n    mov QWORD [rbp-24], 1\n    ret\n") 0))
+
+(test "verify-uses-the-whole-frame-number"
+  (assert-equal (vy-count "foo:\n    # frame 61\n    mov QWORD [rbp-24], 1\n    ret\n") 0))
+
+; cmp, test and lea do not write through their memory operand, so a frame of
+; zero bytes is not a violation for them. Getting this backwards inflated the
+; validated write count from 24,661 to 82,920.
+(test "verify-does-not-treat-cmp-as-a-write"
+  (assert-equal (vy-count "foo:\n    # frame 0\n    cmp QWORD [rbp-8], 0\n    test rax, [rbp-8]\n    lea rax, [rbp-8]\n    ret\n") 0))
+
+(test "verify-treats-mov-to-slot-as-a-write"
+  (assert-true (> (vy-count "foo:\n    # frame 0\n    mov QWORD [rbp-16], 1\n    ret\n") 0)))
+
+; push reads its operand and pop writes it; treating both as reads would let a
+; pop past the frame through, and treating both as writes would flag a push.
+(test "verify-distinguishes-push-from-pop"
+  (assert-equal (vy-count "foo:\n    # frame 0\n    push QWORD [rbp-8]\n    ret\n") 0))
+
+; An ordinary comment is not an annotation. Reading "# note 4" as a frame
+; would claim a bound nobody stated.
+(test "verify-ignores-ordinary-comments"
+  (assert-true (> (vy-unverified-of "foo:\n    # note 16\n    mov QWORD [rbp-8], 1\n    ret\n") 0)))
+
+(test "verify-counts-a-stated-frame-as-verified"
+  (assert-equal (vy-unverified-of "foo:\n    # frame 16\n    mov QWORD [rbp-8], 1\n    ret\n") 0))
+
+; A local jump target sits at column 0 and ends in ':' exactly like a
+; function label, and there are 61,202 of them in stage2.s.
+(test "verify-does-not-count-local-labels-as-functions"
+  (assert-equal (vy-functions-of "foo:\n    # frame 16\n.L0_0:\n    ret\n") 1))
+
+(defn vy-functions-of (asm)
+  (begin
+    (vy-count asm)
+    (vy-fns)))
+
+(defn vy-unverified-of (asm)
+  (begin
+    (vy-count asm)
+    (vy-unverified)))
+
+(run-tests)

@@ -326,6 +326,13 @@ if [ "$MODE" = "full" ] || [ "$MODE" = "quick" ]; then
     if [ -z "$FILTER" ] || echo "unit_test" | grep -qi -- "$FILTER"; then
         run_test "unit_test" "${TESTS_DIR}/unit_test.zyl"
     fi
+    # The binary-safety verifier, on hand-written assembly. It runs in quick
+    # mode because a check that only ever sees the compiler's own output
+    # cannot be told apart from one that does nothing: these cases are the
+    # only thing here that plants a fault and requires it to be caught.
+    if [ -z "$FILTER" ] || echo "verify_test" | grep -qi -- "$FILTER"; then
+        run_test "verify_test" "${TESTS_DIR}/verify_test.zyl"
+    fi
 fi
 
 # Run smoke tests (always in quick mode)

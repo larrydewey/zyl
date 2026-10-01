@@ -214,6 +214,29 @@ an array's slots are filled in order so a collection only ever reads
 elements it wrote, and there is no word-level cast anywhere
 (`docs/sound-types-design.md`).
 
+### L7 — Generated code does not write outside the frame it reserved · *Enforced, on the artifact*
+
+Every function's emitted assembly carries `# frame N`, the bound code
+generation computed from actual slot usage, and `verify-asm` — a phase of
+`compile-to-asm`, not a check run afterwards — rejects the build if a write
+through `[rbp-M]` has `M > N + 8` or `M` is not 8-aligned. Both are complete
+for that operand class: a write outside the frame lands in a caller's frame,
+and a misaligned slot is a torn word.
+
+On the compiler's own output this covers 24,774 writes with zero violations
+and zero writes whose function stated no bound. The remaining 118,515
+dynamic accesses — a register plus a displacement — are **counted, not
+checked**; that census is V2, and `verify-report` says so rather than
+reporting a pass. The bound is stated rather than inferred because it cannot
+be recovered from the assembly: every formulation taken from the text
+produced thousands of false positives, measured in
+`docs/verifier-design.md`.
+
+What this is not: a proof of the verifier, which is itself unverified until
+someone checks it in a proof assistant. V3 (provenance and bounds for
+dynamic accesses) and V4 (region liveness) are not implemented, and the
+evidence reports them as absent rather than as passed.
+
 ## 4. What the aliasing that exists is
 
 Two `Vec` handles derived from one another share storage — that is the
