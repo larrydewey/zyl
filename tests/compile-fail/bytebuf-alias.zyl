@@ -1,0 +1,15 @@
+; spec 06's aliasing invariant: a location has exactly one TMut reference.
+; A bytebuf is the language's mutable location, so binding it to a second
+; name while the first is live is two references to one location.
+;
+; This compiled clean and the second write won, visible through the first
+; handle -- silent aliasing of mutable memory, which nothing else checked.
+; expect-error: E_MUT_CONFLICT
+(defn main ()
+  (let b (bytebuf Stack 16)
+    (let second b
+      (begin
+        (store-u8 :le second 0 65)
+        (store-u8 :le b 0 66)
+        (print (load-u8 :le second 0))
+        0))))

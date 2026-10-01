@@ -101,17 +101,46 @@ compile with `build/boot/zyl-self` on 2026-09-28.
   handler is conditional and does not consume, which is what makes the
   `with-resource` desugar sound. Regions made all of this *defined*; this
   makes it *prevented*, which is the difference G2 asks for.
-- **Not yet met, and stated plainly.** G2's third clause, *invalid
-  aliasing*, is not implemented, and the reason is structural rather than
-  a missing check: the `TCap`/`TMut` invariant (§9.1's "either exactly
-  one TMut reference OR any number of TCap references") has nothing to
-  range over. `TaTy` is `TaV | TaC | TaF` -- a type variable, a named type,
-  or a function -- with no capability dimension, and the language has no
-  reference or borrow type for `TMut` to qualify. Capability is entirely
-  syntactic today: a `let` binding is `TCap`, a `let-mut` is `TMut`, and
-  `mutability_check.zyl` enforces exactly that, which its own header says
-  is not a points-to analysis. Adding the invariant means adding the
-  dimension first.
+- **The `TCap`/`TMut` aliasing invariant is enforced** on what the
+  language can actually express. The invariant (§9.1: "either exactly one
+  TMut reference OR any number of TCap references") needs two things to be
+  meaningful, and Zyl has one of them. There is no reference or borrow
+  type -- `TaTy` is `TaV | TaC | TaF`, with no capability dimension -- so a
+  plain binding cannot be a `TMut` reference to alias with. What the
+  language *does* have is mutable locations: a `bytebuf`, written through
+  by `store-u8` and the atomic and `bytebuf-append` forms. Those are
+  `TMut` by use, and aliasing them is reachable, so it is checked:
+  **within one location, at most one name may be written.** A writer plus
+  any number of readers is one `TMut` and many `TCap`, which the invariant
+  permits.
+
+  This was not hypothetical. It compiled clean, and the second write won,
+  visible through the first handle:
+
+  ```scheme
+  (let b (bytebuf Stack 16)
+    (let second b
+      (begin (store-u8 :le second 0 65)
+             (store-u8 :le b 0 66))))   ; read back through `second`: 66
+  ```
+
+  A `byteslice` joins its base's class rather than starting a new one, so
+  `(let v (byteslice b 8 4))` written through both `v` and `b` is the same
+  violation. Naming a location twice is *not* itself an error -- only
+  writing through two names is.
+
+  Two implementation notes, both of which looked right and were wrong
+  first: alias classes must be keyed per allocation, not per name, or two
+  sibling buffers that share a name inherit each other's writer and a
+  legitimate store is rejected (`byte-primitives.zyl:92`); and a name only
+  becomes `TMut` by being *written*, so the check belongs on the storing
+  forms rather than on the binding.
+
+  The remaining gap is the *type* rather than the check: `TCap<T>` and
+  `TMut<T>` are still not written as types, so rules 3 and 4 (downgrade is
+  allowed, upgrade is not) hold structurally -- there is no conversion to
+  forbid -- rather than by unification. Rule 5's Send-capability and the
+  `TAtomic`/`TBox` wrappers are likewise unrepresented.
   What does alias today is the collection sharing documented in
   `vec.zyl` ("versions made from the same Vec share storage until one of
   them outgrows it"). It is memory-safe by construction -- the shared

@@ -57,6 +57,112 @@
 ; later use and the pass can be re-run.
 (def lin-moved-store (ffi-call "zyl_smap_new" 1000))
 
+; Roots of alias classes that name a MUTABLE LOCATION, and so carry the
+; spec 06 aliasing invariant: a location has exactly one TMut reference.
+;
+; A bytebuf is the language's mutable location -- you write through it with
+; store-u8 and the atomic ops -- so a second live name for one is "more
+; than one TMut reference to a location", which is E_MUT_CONFLICT. This
+; was reachable and compiled clean:
+;
+;   (let b (bytebuf Stack 16)
+;     (let second b
+;       (begin (store-u8 :le second 0 65)
+;              (store-u8 :le b 0 66))))        ; the second write wins
+;
+; Note the contrast with a RESOURCE alias above, which is legal and
+; required: two names for one descriptor are fine because the descriptor
+; is a value, but two names for one mutable location are not. That
+; distinction is the whole rule.
+(def lin-locs (ffi-call "zyl_ref_new" Nil 1000))
+
+(defn lin-loc-p (name)
+  (lin-any-suffix (lin-find-root name) (ffi-call "zyl_ref_get" lin-locs 1000)))
+
+(defn lin-mark-loc (name)
+  (let r (lin-find-root name)
+    (if (lin-any-suffix r (ffi-call "zyl_ref_get" lin-locs 1000))
+      unit
+      (ffi-call "zyl_ref_set" lin-locs (Cons r (ffi-call "zyl_ref_get" lin-locs 1000)) 1000))))
+
+; The spec 06 invariant is about references, and a name only becomes a TMut
+; reference by being WRITTEN through. So the rule is: within one alias
+; class, at most one name may be written. Two writers is two TMut
+; references to one location; a writer plus a reader is one TMut and any
+; number of TCap, which the invariant explicitly allows.
+;
+; That is why `(let second b)` on its own is NOT rejected -- naming a
+; location twice is harmless while only one name writes -- and why
+; `(let v (byteslice b 0 4))` followed by a store through each of `b` and
+; `v` is.
+(def lin-writers (ffi-call "zyl_ref_new" Nil 1000))
+
+; A class root already written through, and by which name. Split in two
+; with the pair destructured by a separate function: nesting a match
+; inside the Cons arm made the unifier's occurs check reject the
+; recursion as an infinite type.
+(defn lin-writer-of (root)
+  (lin-writer-go root (ffi-call "zyl_ref_get" lin-writers 1000)))
+
+(defn lin-writer-go (root xs)
+  (match xs
+    (Nil "")
+    (Cons p t (lin-writer-step root p t))))
+
+(defn lin-writer-step (root p t)
+  (match p
+    (Pair r n (if (= r root) n (lin-writer-go root t)))
+    (_ "")))
+
+(defn lin-note-write (name node)
+  (if (= name "")
+    unit
+    (let root (lin-find-root name)
+      (let prev (lin-writer-of root)
+        (if (= prev "")
+          (ffi-call "zyl_ref_set" lin-writers
+            (Cons (Pair root name) (ffi-call "zyl_ref_get" lin-writers 1000)) 1000)
+          (if (= prev name)
+            unit
+            (lin-report-conflict node prev)))))))
+
+; Is this expression a fresh mutable location, or a handle into one?
+(defn lin-location-value-p (e)
+  (match (Expr.inner e)
+    (EByteBuf region size true)
+    (EByteSlice base off len true)
+    (_ false)))
+
+; Each fresh allocation gets its OWN class root, not its name.
+;
+; Keying classes by name looked fine and was wrong: two sibling
+; `let b (bytebuf ...)` in different tests are two different locations
+; that share a name, so the writer recorded for the first was still in
+; force for the second and a legitimate store through a slice was
+; rejected (tests/regression/byte-primitives.zyl:92). Distinct roots make
+; distinct locations distinct, which is what the invariant is about.
+(def lin-root-seq (ffi-call "zyl_ref_new" 0 1000))
+
+(defn lin-unique-root (name)
+  (let n (ffi-call "zyl_ref_get" lin-root-seq 1000)
+    (begin
+      (ffi-call "zyl_ref_set" lin-root-seq (+ n 1) 1000)
+      (str-concat (str-concat name "#") (ffi-call "zyl_int_text" n 1000)))))
+
+; The name a value's location comes from, so a derived handle joins the
+; same alias class rather than starting a new one.
+;
+; A slice is the case that matters: `(byteslice b 0 4)` is a window onto
+; `b`'s memory, not a separate buffer. Giving it its own class let
+; `(let v (byteslice b 0 4))` followed by a store through each of `b` and
+; `v` look like two locations, when they are one -- so the aliasing
+; invariant did not fire. A bare `bytebuf` allocation has no source and
+; correctly starts a class of its own.
+(defn lin-source-of (e)
+  (match (Expr.inner e)
+    (EByteSlice base off len (lin-ident-of base))
+    (_ (lin-ident-of e))))
+
 ; Alias classes. `with-resource` binds the resource to a fresh name and an
 ; ordinary `(let copy fd)` is how a resource gets passed around, so several
 ; names can stand for one resource. A release has to reach all of them:
@@ -101,6 +207,9 @@
   (begin
     (ffi-call "zyl_smap_clear" lin-moved-store 1000)
     (ffi-call "zyl_smap_clear" lin-root-store 1000)
+    (ffi-call "zyl_ref_set" lin-locs Nil 1000)
+    (ffi-call "zyl_ref_set" lin-writers Nil 1000)
+    (ffi-call "zyl_ref_set" lin-root-seq 0 1000)
     (ffi-call "zyl_ref_set" lin-drop-types Nil 1000)
     (ffi-call "zyl_ref_set" lin-drop-ctors Nil 1000)))
 
@@ -346,23 +455,23 @@
     ; --- bytes, buffers and atomics ---
     (EByteSlice base off len (begin (lin-walk base env) (lin-walk off env) (lin-walk len env)))
     (EByteSliceSub base off len (begin (lin-walk base env) (lin-walk off env) (lin-walk len env)))
-    (EByteBufAppend buf x (begin (lin-walk buf env) (lin-walk x env)))
+    (EByteBufAppend buf x (begin (lin-walk buf env) (lin-walk x env) (lin-note-write (lin-ident-of buf) e)))
     (EByteBufLen e2 (lin-walk e2 env))
     (EByteBufCap e2 (lin-walk e2 env))
     (EByteBufPtr e2 (lin-walk e2 env))
     (EAlignCheck e2 align (lin-walk e2 env))
     (ELoadByte endian base off (begin (lin-walk base env) (lin-walk off env)))
     (ELoadByteSigned endian base off (begin (lin-walk base env) (lin-walk off env)))
-    (EStoreByte endian base off v (begin (lin-walk base env) (lin-walk off env) (lin-walk v env)))
-    (EStoreByteSigned endian base off v (begin (lin-walk base env) (lin-walk off env) (lin-walk v env)))
+    (EStoreByte endian base off v (begin (lin-walk base env) (lin-walk off env) (lin-walk v env) (lin-note-write (lin-ident-of base) e)))
+    (EStoreByteSigned endian base off v (begin (lin-walk base env) (lin-walk off env) (lin-walk v env) (lin-note-write (lin-ident-of base) e)))
     (EAtomicLoad p (lin-walk p env))
-    (EAtomicStore p v (begin (lin-walk p env) (lin-walk v env)))
-    (EAtomicAdd p a b (lin-walk3 p a b env))
-    (EAtomicSub p a b (lin-walk3 p a b env))
-    (EAtomicCAS p expected desired (lin-walk3 p expected desired env))
-    (EAtomicFetchAdd p a (lin-walk2 p a env))
-    (EAtomicMax p a (lin-walk2 p a env))
-    (EAtomicMin p a (lin-walk2 p a env))
+    (EAtomicStore p v (begin (lin-walk p env) (lin-walk v env) (lin-note-write (lin-ident-of p) e)))
+    (EAtomicAdd p a b (begin (lin-walk3 p a b env) (lin-note-write (lin-ident-of p) e)))
+    (EAtomicSub p a b (begin (lin-walk3 p a b env) (lin-note-write (lin-ident-of p) e)))
+    (EAtomicCAS p expected desired (begin (lin-walk3 p expected desired env) (lin-note-write (lin-ident-of p) e)))
+    (EAtomicFetchAdd p a (begin (lin-walk2 p a env) (lin-note-write (lin-ident-of p) e)))
+    (EAtomicMax p a (begin (lin-walk2 p a env) (lin-note-write (lin-ident-of p) e)))
+    (EAtomicMin p a (begin (lin-walk2 p a env) (lin-note-write (lin-ident-of p) e)))
     ; --- no sub-expressions, but listed rather than caught by a wildcard:
     ; the match is exhaustive by design, so a variant added to ExprInner
     ; later has to be dealt with here instead of quietly un-walked ---
@@ -404,16 +513,44 @@
 ; Rebinding a name that owned a resource produces a fresh one, so the old
 ; moved mark must not carry over to it.
 (defn lin-walk-let (name val body env)
-  (let src (lin-ident-of val)
-    ; An alias of a live resource is itself one; anything else has to
-    ; construct a fresh resource to be linear at all.
-    (let linear (if (str-eq src "") (lin-val-is-resource val env) (lin-local-p src env))
-      (let env2 (if linear (Cons name env) env)
-        (begin
-          (lin-clear name)
-          (if (if linear (str-eq src "") false) unit (lin-alias name src))
-          (lin-walk val env)
-          (lin-walk body env2))))))
+  (let src (lin-source-of val)
+    (begin
+      (lin-walk-let-rest name val body env src))))
+
+(defn lin-report-conflict (node other)
+  (let fid (ffi-call "zyl_span_file" node 1000)
+    (let off (ffi-call "zyl_span_off" node 1000)
+      (let m1 (str-concat "one mutable location is written through both " other)
+        (let msg (str-concat m1 " and the name used here; a location may have exactly one TMut reference, so only one name may write to it")
+          (ffi-call "zyl_panic"
+            (err-at "E_MUT_CONFLICT" msg fid off
+              "write through a single name, or read the bytes you need and copy them into a buffer of your own")
+            1000))))))
+
+(defn lin-walk-let-rest (name val body env src)
+  ; An alias of a live resource is itself one; anything else has to
+  ; construct a fresh resource to be linear at all.
+  (let linear (if (str-eq src "") (lin-val-is-resource val env) (lin-local-p src env))
+    (let env2 (if linear (Cons name env) env)
+      (begin
+        (lin-clear name)
+        (if (if linear (str-eq src "") false) unit (lin-alias name src))
+        ; A fresh allocation is a new location: give it a class of its own
+        ; so it cannot inherit a writer recorded under the same name. A
+        ; slice already joined its base's class above, via lin-source-of.
+        (if (lin-fresh-location-p val)
+          (lin-set-root name (lin-unique-root name))
+          unit)
+        (lin-walk val env)
+        (lin-walk body env2)))))
+
+(defn lin-fresh-location-p (e)
+  (match (Expr.inner e)
+    (EByteBuf region size true)
+    (_ false)))
+
+(defn lin-set-root (name root)
+  (ffi-call "zyl_smap_put" lin-root-store name root 1000))
 
 ; Does this value own a resource?
 ;

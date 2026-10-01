@@ -1,0 +1,38 @@
+; The other half of the spec 06 aliasing contract: the shapes that look
+; like two references but are not must keep compiling. Passing a bytebuf
+; to a function transfers the one reference rather than adding a second,
+; writing many times through one name is one reference throughout, and two
+; buffers in separate scopes are two locations, not two names for one.
+;
+; If this file stops compiling, the E_MUT_CONFLICT rule has become
+; unusable -- which is the failure mode a check like this usually has.
+
+(defn put ((b ByteBuf) off v) (store-u8 :le b off v))
+(defn put2 ((b ByteBuf) off v) (begin (put b off v) (put b (+ off 1) v)))
+
+(test "a bytebuf may be passed to a function and written through"
+  (assert-equal
+    (let b (bytebuf Heap 16)
+      (begin
+        (put b 0 65)
+        (put2 b 1 66)
+        (+ (load-u8 :le b 0) (load-u8 :le b 1))))
+    131))
+
+(test "many stores through one name are one reference"
+  (assert-equal
+    (let b (bytebuf Heap 16)
+      (begin
+        (store-u8 :le b 0 1)
+        (store-u8 :le b 1 2)
+        (store-u8 :le b 2 3)
+        (+ (load-u8 :le b 0) (+ (load-u8 :le b 1) (load-u8 :le b 2)))))
+    6))
+
+(test "two buffers in separate scopes are two locations"
+  (assert-equal
+    (let f (fn () (let b (bytebuf Heap 8) (begin (store-u8 :le b 0 7) (load-u8 :le b 0))))
+      (+ (f) (let c (bytebuf Heap 8) (begin (store-u8 :le c 0 9) (load-u8 :le c 0)))))
+    16))
+
+(run-tests)

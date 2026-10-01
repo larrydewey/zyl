@@ -96,9 +96,14 @@ lowering. It treats a `let` binding as `TCap` and a `let-mut` binding as
 rejected earlier by the parser with `E_MUT_CONFLICT`.
 
 A closure may read a captured `let-mut` (it sees the value at capture
-time). The pass does not track aliasing through the raw allocation,
-atomic or FFI primitives. Rules 3 and 4 above (downgrade and no upgrade) have no
-dedicated check.
+time). Aliasing through the raw allocation and atomic primitives is covered
+by `linearity.zyl` as described above; the FFI primitives cannot alias,
+because a program may not name a raw runtime entry (`E_FFI_RESTRICTED`).
+Rules 3 and 4 above (downgrade and no upgrade) have no dedicated check
+because there is no conversion to check: with no capability dimension in
+`TaTy` a value is never converted from TCap to TMut, so there is nothing to
+forbid. `TAtomic` and `TBox` are unrepresented, and rule 5's
+Send-capability is tracked syntactically as described above.
 
 ### Secret
 
