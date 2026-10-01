@@ -477,10 +477,19 @@ stage2.s   787,325 lines   16,072,608 bytes
            2,060,366 memchr calls over 26,926,187 bytes   0.14 s
 ```
 
-That is ~115 MB/s, and the same rules as a Python reference take 0.036 s for
-the same file — the same order of magnitude, in a language whose FFI calls
-cost 2 ns and whose function calls cost 6 ns (both measured, because the
-first three explanations for a slow pass were all wrong).
+That is ~115 MB/s, which is *faster* than a Python reference of the same
+rules on the same file: a per-line Python version takes 0.32 s and a
+whole-buffer `re.finditer` version 0.26 s. The three costs that make up the
+pass were each measured, because the first three explanations for a slow pass
+were all wrong — an FFI call is 2 ns, a Zyl function call 6 ns, and
+`zyl_view_find` over a 16 MB buffer 8 ns, so the 178 ns per line is ordinary
+per-line work and nothing is anomalous in it.
+
+An earlier draft of this document claimed a Python reference ran the same
+rules in 0.036 s, four times faster than this. It is not reproducible: two
+references written to the same rules take 0.26 s and 0.32 s. The 0.036 s
+figure came from a note and was not measured, and it is the one number here
+that was wrong.
 
 Getting there took four separate mistakes, each found by measurement:
 

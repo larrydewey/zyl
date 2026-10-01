@@ -128,7 +128,7 @@ compile with `build/boot/zyl-self` on 2026-09-28.
   zero writes against an unstated bound, and 118,515 dynamic accesses
   *counted but not checked* — the census is reported as such, not as a pass.
   V3 (provenance and bounds) and V4 (region liveness) are not implemented
-  and the evidence says so. Scanning stage2.s takes 0.14 s; `./boot.sh` runs
+  and the evidence says so. Scanning stage2.s takes 0.14 s (faster than a Python reference of the same rules, at 0.26-0.32 s); `./boot.sh` runs
   in 14 s and the full suite in 56 s with the pass in it.
   `tests/verify_test.zyl` plants faults in hand-written assembly and is
   wired into the quick suite: a verifier run only on the compiler's own
