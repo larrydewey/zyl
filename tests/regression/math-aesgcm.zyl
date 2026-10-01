@@ -3,14 +3,12 @@
 ;
 ; Every test first asks `aes-available`: these run on AES-NI hardware
 ; only, by design (see the module header), so on a CPU without it the
-; correct outcome is w-arena skipped test rather than w-arena failure.
+; correct outcome is a skipped test rather than a failure.
 
 (use math/crypto/symmetric/aesgcm)
 (use math/words)
 (use allocator/allocator)
 (use core/option)
-
-(defn _gcm_arena () w-arena)
 
 ; Encrypt and return the sealed hex, or the expected value when the CPU
 ; has no AES-NI so the assertion still passes on such w-arena machine.

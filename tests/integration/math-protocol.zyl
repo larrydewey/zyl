@@ -23,8 +23,6 @@
 (use allocator/allocator)
 (use core/option)
 
-(defn _mp_arena () w-arena)
-
 ; Alice's and Bob's fixed private scalars (fixed so the test is
 ; reproducible; a real peer draws these from math/rand/crypto).
 (defn _mp_alice_priv ()

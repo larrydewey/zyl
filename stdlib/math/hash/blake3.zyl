@@ -212,10 +212,10 @@
 
 ; The input chaining value (words 0..7), a view sharing the record.
 ; Returns: Words
-(defn blake3-out-cv-in ((out Words)) (w-view w-arena   out 0 8))
+(defn blake3-out-cv-in ((out Words)) (w-view   out 0 8))
 ; The block (words 8..23), a view sharing the record.
 ; Returns: Words
-(defn blake3-out-block ((out Words)) (w-view w-arena   out 8 16))
+(defn blake3-out-block ((out Words)) (w-view   out 8 16))
 ; Returns: Int
 (defn blake3-out-counter ((out Words)) (w-get out 24))
 ; Returns: Int
@@ -344,11 +344,11 @@
 ; Returns: Int
 (defn blake3-push ((stack Words) (depth Int) (cv Words) (total Int))
   (if (= (bit-and total 1) 0)
-    (let left (w-view w-arena   stack (* (- depth 1) 8) 8)
+    (let left (w-view   stack (* (- depth 1) 8) 8)
       (let merged (blake3-out-cv (blake3-parent-output left cv))
         (blake3-push stack (- depth 1) merged (shr total 1))))
     (begin
-      (w-copy (w-view w-arena   stack (* depth 8) 8) cv 8)
+      (w-copy (w-view   stack (* depth 8) 8) cv 8)
       (+ depth 1))))
 
 ; Fold the last chunk's Output into every parent still on the stack.
@@ -356,7 +356,7 @@
 (defn blake3-fold ((stack Words) (depth Int) (out Words))
   (if (<= depth 0)
     out
-    (let left (w-view w-arena   stack (* (- depth 1) 8) 8)
+    (let left (w-view   stack (* (- depth 1) 8) 8)
       (blake3-fold stack (- depth 1)
         (blake3-parent-output left (blake3-out-cv out))))))
 

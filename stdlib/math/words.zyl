@@ -45,15 +45,12 @@
 (defn w-set ((base Words) (i Int) (v Int))
   (ffi-call "zyl_words_set" base i v 1000))
 
-; One arena serves every view. Nothing is allocated from it -- the views
-; themselves come from the region -- so it holds no memory. It exists only
-; because w-view's signature still names an Arena; step two drops both.
-(def w-arena (ffi-call "zyl_arena_create" 0 1000))
-
-; Words [off, off + n) of `base`, sharing its storage.
+; Words [off, off + n) of `base`, sharing its storage. The view's header
+; comes from the region the calling frame runs in; the data it points at
+; belongs to `base`.
 ; Returns: Words
-(defn w-view ((arena Arena) (base Words) (off Int) (n Int))
-  (ffi-call "zyl_words_view" arena base off n 1000))
+(defn w-view ((base Words) (off Int) (n Int))
+  (ffi-call "zyl_words_view_r" base off n 1000))
 
 
 ; Set words [0, n) to v.

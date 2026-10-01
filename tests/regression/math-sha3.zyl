@@ -6,8 +6,6 @@
 (use math/words)
 (use allocator/allocator)
 
-(defn _sha3_arena () w-arena)
-
 (test "sha3-256-empty"
   (assert-equal (sha3-256-hex-of-string  "") "a7ffc6f8bf1ed76651c14756a061d662f580ff4de43b49fa82d80a4b80f8434a"))
 (test "sha3-256-abc"

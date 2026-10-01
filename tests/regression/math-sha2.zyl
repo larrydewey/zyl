@@ -10,8 +10,6 @@
 ; One arena for the whole file; every digest allocates from it and
 ; nothing is freed until the process exits, which is what w-arena test binary
 ; wants.
-(defn _sha_arena () w-arena)
-
 (defn _sha_hex ((s String))
   (sha256-hex-of-string  s))
 

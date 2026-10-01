@@ -7,8 +7,6 @@
 (use math/words)
 (use allocator/allocator)
 
-(defn _kdf_arena () w-arena)
-
 ; --- RFC 4231 HMAC-SHA256 -------------------------------------------------
 
 (test "hmac-rfc4231-case1"

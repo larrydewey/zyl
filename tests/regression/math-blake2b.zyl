@@ -4,8 +4,6 @@
 (use math/words)
 (use allocator/allocator)
 
-(defn _b2_arena () w-arena)
-
 (test "blake2b-empty"
   (assert-equal (blake2b-hex-of-string  "" 64) "786a02f742015903c6c6fd852552d272912f4740e15847618a86e217f71f5419d25e1031afee585313896444934eb04b903a685b1448b755d56f701afe9be2ce"))
 (test "blake2b-abc"

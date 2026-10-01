@@ -611,7 +611,7 @@
   (let sig (w-alloc 64)
     (begin
       (w-copy sig renc 32)
-      (bn-to-bytes-le (w-view w-arena   sig 32 32) 32 s 11)
+      (bn-to-bytes-le (w-view   sig 32 32) 32 s 11)
       sig)))
 
 ; A scalar as 32 little-endian bytes, the form ed-scalar-mul consumes.

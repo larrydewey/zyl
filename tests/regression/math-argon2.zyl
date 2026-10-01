@@ -10,8 +10,6 @@
 (use math/words)
 (use allocator/allocator)
 
-(defn _ar_arena () w-arena)
-
 (defn _ar_hash ((m Int) (t Int) (p Int) (taglen Int))
   (begin
     (let pwd (w-from-string "password")

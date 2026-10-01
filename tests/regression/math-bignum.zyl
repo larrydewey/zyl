@@ -9,8 +9,6 @@
 (use math/words)
 (use allocator/allocator)
 
-(defn _bn_arena () w-arena)
-
 (defn _bn_from ((hex String) (n Int))
   (let v (bn-alloc n)
     (bn-from-bytes-be v n (w-from-hex hex) (w-hex-len hex))))

@@ -73,11 +73,25 @@
     (tb-words-fail h i "w-set")))
 
 ; Words [off, off+len) of h, sharing its storage; the header comes from arena.
+(defn tb-words-hdr-r (n d)
+  (let w (tb-rzalloc 24)
+    (let _ (if (= w 0) (ffi-call "zyl_panic" "E_OUT_OF_MEMORY: word array view" 1) 0)
+      (let _ (tb-st w (tb-words-magic)) (let _ (tb-st (+ w 8) n) (let _ (tb-st (+ w 16) d) w))))))
+
 (defn zyl_words_view (arena h off len)
   (let w (tb-words-of h "w-view")
     (let n (tb-ld (+ w 8))
       (let _ (if (or (or (< off 0) (< len 0)) (or (> off n) (> len (- n off)))) (tb-oob "w-view" (+ off len) n) 0)
         (tb-words-hdr arena len (+ (tb-ld (+ w 16)) (* off 8)))))))
+
+; The region form of zyl_words_view: the header comes from zyl_cur_region.
+; codegen.zyl appends _r to a runtime name at a site above level 0, so
+; this twin takes no arena.
+(defn zyl_words_view_r (h off len)
+  (let w (tb-words-of h "w-view")
+    (let n (tb-ld (+ w 8))
+      (let _ (if (or (or (< off 0) (< len 0)) (or (> off n) (> len (- n off)))) (tb-oob "w-view" (+ off len) n) 0)
+        (tb-words-hdr-r len (+ (tb-ld (+ w 16)) (* off 8)))))))
 
 ; --- typed arrays: {magic "ZYLARRAY", cap, filled, data}; codegen inlines this layout ---
 

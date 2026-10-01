@@ -8,8 +8,6 @@
 (use allocator/allocator)
 (use core/option)
 
-(defn _cc_arena () w-arena)
-
 ; --- RFC 8439 s2.3.2: the block function ---------------------------------
 
 (test "chacha20-block-rfc-2.3.2"

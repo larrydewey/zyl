@@ -10,8 +10,6 @@
 (use math/words)
 (use allocator/allocator)
 
-(defn _ed_arena () w-arena)
-
 (test "ed25519-public-key-0"
   (begin
     (let seed (w-from-hex "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60")

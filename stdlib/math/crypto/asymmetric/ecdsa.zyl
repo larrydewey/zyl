@@ -470,7 +470,7 @@
           (bn-to-bytes-be seed nb priv (ec-limbs c))
           (bn-from-bytes-be z (ec-limbs c) h1 32)
           (ecn-reduce c z z)
-          (bn-to-bytes-be (w-view w-arena   seed nb nb) nb z (ec-limbs c))
+          (bn-to-bytes-be (w-view   seed nb nb) nb z (ec-limbs c))
           seed)))))
 
 ; K = HMAC_K(V || byte || seed); V = HMAC_K(V).
@@ -602,7 +602,7 @@
     (let out (w-alloc (* 2 nb))
       (begin
         (bn-to-bytes-be out nb r (ec-limbs c))
-        (bn-to-bytes-be (w-view w-arena   out nb nb) nb s (ec-limbs c))
+        (bn-to-bytes-be (w-view   out nb nb) nb s (ec-limbs c))
         out))))
 
 ; Verify a raw (r || s) signature over a 32-byte SHA-256 digest.
@@ -613,7 +613,7 @@
       (let s (bn-alloc (ec-limbs c))
         (begin
           (bn-from-bytes-be r (ec-limbs c) sig nb)
-          (bn-from-bytes-be s (ec-limbs c) (w-view w-arena   sig nb nb) nb)
+          (bn-from-bytes-be s (ec-limbs c) (w-view   sig nb nb) nb)
           (ecdsa-verify-range c pub hash r s))))))
 
 ; r and s must both lie in [1, n-1]; a zero or out-of-range value is
@@ -684,8 +684,8 @@
             (ecf-inv c zinv (ec-pt-z pt))
             (ecf-mul c t (ec-pt-x pt) zinv)
             (mont-from t t (ec-p c) (ec-limbs c) (ec-n0 c))
-            (bn-to-bytes-be (w-view w-arena   out 1 nb) nb t (ec-limbs c))
+            (bn-to-bytes-be (w-view   out 1 nb) nb t (ec-limbs c))
             (ecf-mul c t (ec-pt-y pt) zinv)
             (mont-from t t (ec-p c) (ec-limbs c) (ec-n0 c))
-            (bn-to-bytes-be (w-view w-arena   out (+ nb 1) nb) nb t (ec-limbs c))
+            (bn-to-bytes-be (w-view   out (+ nb 1) nb) nb t (ec-limbs c))
             out))))))

@@ -5,8 +5,6 @@
 (use allocator/allocator)
 (use core/option)
 
-(defn _x_arena () w-arena)
-
 (defn _x_hex ((khex String) (uhex String))
   (begin
     (let k (w-from-hex khex)

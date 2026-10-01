@@ -264,8 +264,9 @@
     (let _ (ft-put t "zyl_words_get" (ffi-call "%fn" "zyl_words_get" 1))
     (let _ (ft-put t "zyl_words_set" (ffi-call "%fn" "zyl_words_set" 1))
     (let _ (ft-put t "zyl_words_view" (ffi-call "%fn" "zyl_words_view" 1))
+    (let _ (ft-put t "zyl_words_view_r" (ffi-call "%fn" "zyl_words_view_r" 1))
     (let _ (ft-put t "zyl_smap_has" (ffi-call "%fn" "zyl_smap_has" 1))
-    0)))))))))))))))))))
+    0))))))))))))))))))))
 
 (defn ft-fill-10 (t)
   (let _ (ft-put t "zyl_smap_get_or" (ffi-call "%fn" "zyl_smap_get_or" 1))

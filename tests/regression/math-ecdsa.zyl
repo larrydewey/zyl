@@ -14,8 +14,6 @@
 (use allocator/allocator)
 (use core/option)
 
-(defn _ec_arena () w-arena)
-
 (defn _ec_priv ((hex String))
   (let v (bn-alloc 11)
     (bn-from-bytes-be v 11 (w-from-hex hex) 32)))

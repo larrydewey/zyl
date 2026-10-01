@@ -11,8 +11,6 @@
 (use math/words)
 (use allocator/allocator)
 
-(defn _b3_arena () w-arena)
-
 (defn _b3_hex ((hex String) (outlen Int))
   (begin
     (let msg (w-from-hex hex)

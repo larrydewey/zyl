@@ -25,7 +25,7 @@
 (use math/words)
 (use testing/testing)
 
-(defn pkg-arena () w-arena)
+(defn pkg-arena () (ffi-call "zyl_arena_create" 16777216 1000))
 
 ; --- versions (§31.1) -------------------------------------------------------
 
