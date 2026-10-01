@@ -559,6 +559,30 @@ if [ -n "$FILTER" ] && echo "memcheck" | grep -qi -- "$FILTER" \
     fi
 fi
 
+# Region-lifetime gate (released blocks filled with 0xDE) -- OPT IN with
+# `--filter poison`.
+#
+# This is the only dynamic check of L2 -- that no value outlives its region
+# -- which is otherwise an argued premise, and the weakest link in the
+# memory-safety story. The fill is the same 0xDE the runtime already uses
+# for arena blocks. Unlike memcheck, this gate has no positive control and
+# cannot have one: the violation it looks for is what the static checks
+# exist to prevent, so no test program expressing it compiles. verify/
+# poison.sh says so in full rather than papering over it.
+if [ -n "$FILTER" ] && echo "poison" | grep -qi -- "$FILTER" \
+   && ! dry_listed "poison"; then
+    TOTAL=$((TOTAL + 1))
+    if "${SCRIPT_DIR}/verify/poison.sh" > $RUN_TMP/zyl_poison.log 2>&1; then
+        PASS=$((PASS + 1))
+        echo -e "  ${GREEN}✓${NC} poison"
+        sed 's/^/      /' $RUN_TMP/zyl_poison.log
+    else
+        FAIL=$((FAIL + 1))
+        echo -e "  ${RED}✗${NC} poison"
+        sed 's/^/      /' $RUN_TMP/zyl_poison.log
+    fi
+fi
+
 # Self-hosting fixed-point verification (default in --full; slow)
 if [ "$BOOT" -eq 1 ] && [ "$NO_BOOT" -eq 0 ] && ! dry_listed "boot/fixed-point"; then
     TOTAL=$((TOTAL + 1))

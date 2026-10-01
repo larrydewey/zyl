@@ -83,11 +83,46 @@ The load-bearing premise is that escape analysis **over**-approximates: a
 value whose liveness the analysis cannot prove is placed in a longer-lived
 region or the heap. Over-approximation is the safe direction — it costs
 memory, never soundness. The residual risk is *under*-approximation, i.e.
-a value the analysis believes dead while a reference survives. That is an
-argument about `region_inference.zyl`, not a theorem, and it is the single
-weakest link in this document. It is also the part with the least external
-scrutiny, because a failure here is a use-after-free that only shows up
-under a particular allocation pattern.
+a value the analysis believes dead while a reference survives.
+
+This is still the weakest link in this document, and it is now *measured*
+rather than only argued — but read the caveat, because it is a real limit on
+what the measurement shows.
+
+`verify/poison.sh` runs all 125 regression and smoke programs with released
+region blocks overwritten with 0xDE — the same fill the runtime already
+applies to arena blocks — and requires unchanged behaviour. All 125 are
+unchanged. The failure mode this targets is the quietest one available: a
+region block returns to a size-class pool on release and is handed to the
+next allocation of that class, so a stale pointer does not fault, it reads
+whatever the next allocation wrote. A program can hold a pointer into a
+dead frame region and still produce the right answer.
+
+Two limits, both stated rather than glossed:
+
+- **It catches a stale read only when that read reaches observable
+  output.** A stale read whose value is overwritten before anyone inspects
+  it is invisible to it. This cannot be strengthened with page protection:
+  mprotect works in whole pages and rounds the length up, so protecting a
+  pooled block whose class size is not a page multiple denies three
+  still-live neighbours. That approach was built, measured, and withdrawn —
+  it reported 18 of 125 programs faulting, and bypassing the block pool to
+  check whether those were real made all of them pass, which is ambiguous
+  rather than informative. The reason is recorded at the bottom of
+  `runtime/rt/alloc.zyl` so nobody retries it blind.
+- **This gate has no positive control and cannot have one.** The violation
+  it looks for is exactly what the static checks exist to prevent: a test
+  program that reads released region memory does not compile, because
+  returning a `Stack` bytebuf from its frame is `E_REGION_ESCAPE` and using
+  a resource after release is `E_MOVE_VALUE`. So a failure here would be a
+  genuine escape from the static checks, and a green run is weaker evidence
+  than a validated detector would be.
+
+What this leaves: escape analysis under-approximation is no longer a bare
+assertion, and nothing in the suite depends on reading dead frame memory.
+It is still not a proof, and the cases it cannot see — a stale read that
+never reaches output, and interprocedural flows through a returned handle —
+remain open.
 
 ### L3 — A resource is released exactly once · *Enforced, plus a runtime floor*
 
@@ -206,8 +241,9 @@ system and indefensible as a statement about the artifact.
 
 ```bash
 ./boot.sh                                          # fixed point holds
-./run_regression_tests.sh --full                   # 432 tests
+./run_regression_tests.sh --full                   # 433 tests
 ./run_regression_tests.sh --full --no-boot --filter memcheck   # memory gate
+./run_regression_tests.sh --full --no-boot --filter poison    # region gate
 ```
 
 The memcheck gate checks its own positive control and its own detection

@@ -105,7 +105,11 @@ compile with `build/boot/zyl-self` on 2026-09-28.
   claim as lemmas and marks each for how it is established — *enforced* by
   a compiler check, *measured* by a dynamic run, or *argued* from those.
   The weakest link is named there: escape analysis under-approximation
-  (L2). It also records the honest comparison with Rust — Zyl's guarantee is
+  (L2), which now has a dynamic gate of its own (`verify/poison.sh`,
+  `--filter poison`: released region blocks refilled with `0xDE`, 125/125
+  unchanged) with its limits stated — it catches only a stale read that
+  reaches output, and it has no positive control, because the violation it
+  looks for is what the static checks already prevent. It also records the honest comparison with Rust — Zyl's guarantee is
   unconditional where Rust's is conditional, and Zyl's is far less tested.
 - **The `TCap`/`TMut` aliasing invariant is enforced** on what the
   language can actually express. The invariant (§9.1: "either exactly one

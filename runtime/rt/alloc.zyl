@@ -184,6 +184,32 @@
 (defn rt-rpool () (ffi-call "%tls" "rpool" 32 1))
 (defn rt-live () (ffi-call "%global" "region_live" 8 1))
 
+; x86_64 mprotect(2) is syscall 10. PROT_NONE = 0, PROT_READ|PROT_WRITE = 3.
+; Releasing a block fills it with 0xDE rather than protecting its pages.
+;
+; The page-protection version (mprotect PROT_NONE) was tried first and
+; withdrawn: mprotect works in whole pages and rounds the length up, so
+; protecting a pooled block whose class size is not a page multiple denies
+; three still-live neighbours, and protecting only the classes that are page
+; multiples still produced 18 of 125 programs faulting that all pass when
+; the pool is bypassed -- an ambiguous result that could not be
+; distinguished from the allocator's own bookkeeping. Filling cannot have
+; that failure mode: it writes only to memory the allocator has already
+; handed back, so a program that never reads a released block cannot notice
+; it at all, and one that does read a released block gets 0xDE garbage
+; instead of whatever the next allocation happened to leave.
+;
+; The runtime already poisons arena blocks this way (rt-fill-de, 0xDE), and
+; there it is deliberate: a stale arena pointer reads recognizable garbage.
+; Here it is a detector.
+;
+; Both are no-ops unless ZYL_REGION_POISON=1, so the normal build takes
+; neither the branch nor the syscall.
+(defn rt-poison (b)
+  (if (zyl_region_poison_enabled)
+    (let sz (rt-ld64 (+ b 8)) (let _ (rt-fill-de (+ b 24) (- sz 24)) 0))
+    0))
+
 (defn rt-rmap (n)
   (let _ (if (rt-charge n) 0 (rt-oom n "memory budget exhausted"))
     (let p (ffi-call "%syscall6" 9 0 n 3 34 -1 0 1)
@@ -204,13 +230,26 @@
 (defn rt-pick-class (need c) (if (and (< c 4) (> (+ need 24) (rt-class-size c))) (rt-pick-class need (+ c 1)) c))
 
 ; A block for a region that already holds nblocks blocks.
+; ZYL_REGION_POISON=2 turns the class pool off entirely: every block is its
+; own mmap and release is a real munmap, so a block is either owned or
+; unmapped and there is no free list to get wrong. Slower and far more
+; memory-hungry than mode 1, and that is the point -- it is the control
+; that separates "a read of memory the region no longer owns" from "my
+; poison bookkeeping left a live block protected". If a program faults in
+; mode 2 as well, the block was genuinely gone.
+(defn rt-region_unpooled-p () (= (zyl_region_poison_level) 2))
+
+
 (defn rt-rblock-get (need nblocks)
   (let c (rt-pick-class need (if (< nblocks 4) nblocks 3))
     (if (>= c 4)
       (let n (bit-and (+ (+ need 24) 4095) -4096) (rt-rblock-init (rt-rmap n) n 1 -1))
+      (if (rt-region_unpooled-p)
+        (let n2 (bit-and (+ (+ need 24) 4095) -4096) (rt-rblock-init (rt-rmap n2) n2 1 -1))
       (let slot (+ (rt-rpool) (* c 8))
         (let _ (if (= (rt-ld64 slot) 0) (rt-carve c (rt-rmap 1048576) (rt-class-size c) 0) 0)
-          (let b (rt-ld64 slot) (let _ (rt-st64 slot (rt-ld64 b)) (let _ (rt-st64 b 0) b))))))))
+          (let b (rt-ld64 slot)
+            (let _ (rt-st64 slot (rt-ld64 b)) (let _ (rt-st64 b 0) b)))))))))
 
 (defmacro rt-rblocks (r) (bit-and (ffi-call "%load64" (+ r 24) 1) -2))
 (defmacro rt-rscoped (r) (= (bit-and (ffi-call "%load64" (+ r 24) 1) 1) 1))
@@ -275,7 +314,8 @@
   (let _ (ffi-call "%fetch-add" (rt-live) (- 0 (rt-ld64 (+ b 8))) 1)
     (if (= (ffi-call "%load32" (+ b 16) 1) 1)
       (let n (rt-ld64 (+ b 8)) (let _ (ffi-call "%syscall2" 11 b n 1) (rt-refund n)))
-      (let slot (+ (rt-rpool) (* (ffi-call "%load32" (+ b 20) 1) 8)) (let _ (rt-st64 b (rt-ld64 slot)) (rt-st64 slot b))))))
+      (let slot (+ (rt-rpool) (* (ffi-call "%load32" (+ b 20) 1) 8))
+        (let _ (rt-st64 b (rt-ld64 slot)) (let _ (rt-st64 slot b) (rt-poison b)))))))
 
 (defn rt-release-chain (b stop) (if (or (= b 0) (= b stop)) 0 (let next (rt-ld64 b) (let _ (rt-release-block b) (rt-release-chain next stop)))))
 

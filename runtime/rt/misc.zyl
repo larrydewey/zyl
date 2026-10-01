@@ -30,6 +30,35 @@
 (defn zyl_regions_enabled ()
   (let e (ffi-call "zyl_rt_getenv" (rt-w "ZYL_REGIONS") 1) (not (and (> e 0) (and (= (rt-ld8 e) 48) (= (rt-ld8 (+ e 1)) 0))))))
 
+; Page poisoning, off unless ZYL_REGION_POISON=1.
+;
+; A region block goes back to its class pool on release and is handed out
+; again on the next allocation of that size, so a stale pointer into a
+; freed frame region does not fault: it reads whatever the next allocation
+; wrote there. That is the worst shape a use-after-free can take in a
+; bump allocator -- silent, and dependent on an allocation pattern nobody
+; thought to test -- and it is exactly the property region inference is
+; supposed to guarantee (docs/soundness.md L2).
+;
+; With this on, a released block's pages are mprotect(PROT_NONE) and are
+; restored on reuse. A block is therefore unmapped-accessible exactly while
+; it is free, and any access through a stale pointer becomes a SIGSEGV at
+; the faulting instruction instead of a plausible wrong answer.
+;
+; Off by default: it costs two syscalls per block lifetime, and the
+; project's determinism and performance requirements outrank a debug aid.
+; verify/memcheck.sh and the poison gate turn it on.
+(defn zyl_region_poison_enabled ()
+  (> (zyl_region_poison_level) 0))
+
+; 0 = off, 1 = poison freed pages, 2 = also disable the block pool.
+(defn zyl_region_poison_level ()
+  (let e (ffi-call "zyl_rt_getenv" (rt-w "ZYL_REGION_POISON") 1)
+    (if (= e 0)
+      0
+      (if (and (= (rt-ld8 e) 49) (= (rt-ld8 (+ e 1)) 0)) 1
+        (if (and (= (rt-ld8 e) 50) (= (rt-ld8 (+ e 1)) 0)) 2 0)))))
+
 ; --- str-append without a StrBuf header: a per-thread 64-slot end cache {dst[64], end[64]} ---
 
 (defn rt-lshr64 (x n) (bit-and (shr x n) (- (shl 1 (- 64 n)) 1)))

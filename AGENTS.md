@@ -228,7 +228,21 @@ and its own detection path first:
 It is opt-in (~50x slowdown). After changing anything under
 `runtime/rt/`, `stdlib/compiler/region_inference.zyl`, or the collection
 or resource code, run it: a memory error there is exactly the kind that
-`--full` will not notice. All tests use the `(test "name" (assert-equal ...))` harness defined in `stdlib/testing/testing.zyl`.
+`--full` will not notice.
+
+**Region lifetime** has its own gate, and it is the only dynamic check of
+the premise that no value outlives its region (`docs/soundness.md` L2 —
+otherwise an argued assumption):
+
+```bash
+./run_regression_tests.sh --full --no-boot --filter poison
+```
+
+It refills released region blocks with `0xDE` and requires unchanged
+behaviour. Read `verify/poison.sh` before trusting a green run: it has no
+positive control, because the violation it looks for is what the static
+checks already prevent, and it only catches a stale read that reaches
+output. All tests use the `(test "name" (assert-equal ...))` harness defined in `stdlib/testing/testing.zyl`.
 
 **S-expression balance** is critical. After editing any `.zyl` file, check it with
 the compiler's own balancer, never by counting delimiters by hand or with a script:
