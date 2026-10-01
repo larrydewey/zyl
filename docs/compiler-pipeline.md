@@ -156,9 +156,10 @@ diagnostic rather than rejecting a valid program.
 | 2 | `duplicate_check.zyl` | `E_DUPLICATE_DEFINITION`: two top-level `defn`s or `deftype`s with one name. `E_DUPLICATE_VARIANT`: a program type (outside the standard library) declaring a prelude constructor name (`Some`, `None`, `Ok`, `Err`, `Cons`, `Nil`) |
 | 3 | `arity_check.zyl` | `E_ARITY_MISMATCH`: a direct call to a known, unshadowed top-level function with the wrong argument count. `E_MALFORMED_FORM`: a special form whose shape its parser rejected (an `EUnknown` node, which used to lower to the constant 0). The `ffi-call` shape checks (`E_FFI_SYMBOL_REQUIRED`, `E_FFI_TIMEOUT_REQUIRED`, more than 16 arguments) and `E_FFI_RESTRICTED`: an `ffi-call` naming a raw runtime entry (`ffi-raw-p`, `ffi_sigs.zyl`) outside the standard library |
 | 4 | `mutability_check.zyl` | `E_MUT_CONFLICT`: `set!` on a name that is not a `let-mut` binding in scope |
-| 5 | `exhaustiveness_check.zyl` | `E_NON_EXHAUSTIVE_MATCH`, `E_UNREACHABLE_MATCH_ARM` for ADT matches; skipped for a match whose constructor names are ambiguous across deftypes |
-| 6 | `unused_check.zyl` | `W_UNUSED_PARAMETER`, `W_UNUSED_VARIABLE`, `W_SHADOWED_BINDING` (warnings); `E_DUPLICATE_PARAMETER` (error). `_` and `_`-prefixed names are exempt |
-| 7 | `secret_check.zyl` | Taint from `Secret` parameters: `E_CT_VIOLATION` (branch, index, divide), `E_SECRET_DEBUG` (`print`), `E_SECRET_ESCAPE` (`spawn`, `send`, `file-write`), `E_FFI_PIN_REQUIRED`. `declassify`, `ct-eq-bool` and `ct-eq-words-bool` remove taint |
+| 5 | `linearity.zyl` | `E_MOVE_VALUE`: a resource used after its release. Affine, per alias class: `file-close`, `Drop.drop` and `string-buffer-destroy` consume their resource argument, every name bound to the same resource dies with it, and a release inside an exception handler is conditional so it does not. Resource constructors are the dedicated `EFileOpen`/`EFileClose` forms plus any type the program gives a `Drop` impl (discovered from its own `impl` forms) |
+| 6 | `exhaustiveness_check.zyl` | `E_NON_EXHAUSTIVE_MATCH`, `E_UNREACHABLE_MATCH_ARM` for ADT matches; skipped for a match whose constructor names are ambiguous across deftypes |
+| 7 | `unused_check.zyl` | `W_UNUSED_PARAMETER`, `W_UNUSED_VARIABLE`, `W_SHADOWED_BINDING` (warnings); `E_DUPLICATE_PARAMETER` (error). `_` and `_`-prefixed names are exempt |
+| 8 | `secret_check.zyl` | Taint from `Secret` parameters: `E_CT_VIOLATION` (branch, index, divide), `E_SECRET_DEBUG` (`print`), `E_SECRET_ESCAPE` (`spawn`, `send`, `file-write`), `E_FFI_PIN_REQUIRED`. `declassify`, `ct-eq-bool` and `ct-eq-words-bool` remove taint |
 
 Literal-pattern matches never reach the exhaustiveness check: the
 parser requires a trailing `_` arm for them and lowers them to an `if`

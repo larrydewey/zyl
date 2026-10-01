@@ -260,6 +260,25 @@ Measured when regions landed (2026-09-24):
   memory barely moves: its data mostly escapes into its results or into
   global tables.
 
+## Release, not just lifetime
+
+Region inference answers "where does this live". It does not answer "may
+this still be used", which is a different question needing a different
+mechanism: `linearity.zyl`, `E_MOVE_VALUE`. A value that owns a resource
+is consumed by the release, and a use after it is an error -- across every
+alias of the resource, since `with-resource` binds it to a fresh name and
+`(let copy fd)` is how one gets passed around. A descriptor is the sharpest
+case: the number is recycled by the OS, so a stale handle writes into
+whatever opened next. That is a wrong-file bug rather than a crash, and
+nothing in the region system could have caught it.
+
+The runtime half still stands and is not redundant. `zyl_arena_destroy` is
+idempotent and a released `StringBuffer` raises `E_USE_AFTER_FREE`, so a
+release reached by a path the pass cannot see -- a builtin, or a value that
+crossed a function boundary -- stays defined instead of becoming undefined
+behaviour. Defined is the floor; the pass is what stops a program asking
+for it.
+
 ## Known limitations
 
 - Classes are field-insensitive and over-approximate: a local list of

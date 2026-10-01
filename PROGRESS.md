@@ -41,7 +41,8 @@ compile with `build/boot/zyl-self` on 2026-09-28.
   (with the `desugar.zyl` rewrites), test-compile resolution after macro expansion,
   module resolution and qualification, macro expansion, the checks
   (capability, duplicate definition, arity, malformed forms, restricted
-  FFI entries, mutability/aliasing, exhaustiveness, unused, secret),
+  FFI entries, mutability/aliasing, release linearity, exhaustiveness,
+  unused, secret),
   derive expansion, impl lifting, closure inlining (an identity step),
   type checking, ICNF lowering, optimization, region inference, in-place
   reuse, code generation, linking.
@@ -76,15 +77,53 @@ compile with `build/boot/zyl-self` on 2026-09-28.
   (G11), a read after release is `E_USE_AFTER_FREE`, and a second
   release is a no-op (`zyl_arena_destroy` keeps its 72-byte handle so a
   stale one is never dereferenced).
-- **Not yet met, and stated plainly.** G1/G2 are satisfied for the
-  shapes above, but the spec's `G2` also names *invalid aliasing* and the
-  language does not implement the `TCap`/`TMut` invariant (§9.1's "either
-  exactly one TMut reference OR any number of TCap references"). Two
-  `Vec` handles share storage, so a write through one is visible in the
-  other; `E_MUT_CONFLICT` as raised today covers `let-mut` leaks, not
-  capability aliasing (`mutability_check.zyl`'s own header says so).
-  Linear types and the capability invariant are the remaining work, and
-  both are type-system features rather than runtime checks.
+- **Release is checked statically** (`linearity.zyl`, `E_MOVE_VALUE`). The
+  rule is affine: a value that owns a resource is consumed by the release,
+  and any use after it is an error. This closes a hole that was neither
+  hypothetical nor a crash. A file handle is an `Int`, and an `Int` is a
+  copyable scalar, so this compiled clean and wrote into the wrong file:
+
+  ```scheme
+  (let fd (file-open "a.txt" "w")
+    (file-close fd)
+    (let other (file-open "secret.txt" "w")   ; the OS hands `fd` back
+      (file-write fd "leaked")))              ; lands in secret.txt
+  ```
+
+  I ran it; the bytes were in `secret.txt`. A stale descriptor aliasing an
+  unrelated file is a confused deputy, and no test caught it. Covered:
+  descriptors, `StringBuffer`, and any type the program gives a `Drop`
+  impl -- which the pass discovers from the program's own `impl` forms, so
+  a user resource needs nothing from the compiler. Consumption is tracked
+  per alias class, because `with-resource` binds the resource to a fresh
+  name and `(let copy fd)` is how one gets passed around; a release
+  reaches every name for the resource. A release inside an exception
+  handler is conditional and does not consume, which is what makes the
+  `with-resource` desugar sound. Regions made all of this *defined*; this
+  makes it *prevented*, which is the difference G2 asks for.
+- **Not yet met, and stated plainly.** G2's third clause, *invalid
+  aliasing*, is not implemented, and the reason is structural rather than
+  a missing check: the `TCap`/`TMut` invariant (§9.1's "either exactly
+  one TMut reference OR any number of TCap references") has nothing to
+  range over. `TaTy` is `TaV | TaC | TaF` -- a type variable, a named type,
+  or a function -- with no capability dimension, and the language has no
+  reference or borrow type for `TMut` to qualify. Capability is entirely
+  syntactic today: a `let` binding is `TCap`, a `let-mut` is `TMut`, and
+  `mutability_check.zyl` enforces exactly that, which its own header says
+  is not a points-to analysis. Adding the invariant means adding the
+  dimension first.
+  What does alias today is the collection sharing documented in
+  `vec.zyl` ("versions made from the same Vec share storage until one of
+  them outgrows it"). It is memory-safe by construction -- the shared
+  array is region-owned and bounds-checked, and a stale handle reads the
+  old array rather than freed memory -- and I verified it rather than
+  assuming: 300k iterations of a handle outliving its own reallocation,
+  reading every stale element under allocation pressure, returned exactly
+  the predicted sum (`90000900000`, no fault, no corruption). A write
+  through one handle being visible in another is that documented
+  semantics, not a defect. Turning it into an error would mean making the
+  collections non-persistent, which contradicts
+  `docs/sound-types-design.md` and every caller in the tree.
 - Optimization (all safe, none reorders effects): small-function
   inlining (`ZYL_INLINE`, `ZYL_INLINE_LIMIT`) and copy propagation,
   constant folding and dead-branch elimination, one-level unrolling of
