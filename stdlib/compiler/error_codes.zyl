@@ -102,7 +102,8 @@
                                                             (Cons (EC "E_MATCH_NONEXHAUSTIVE" 17 1 "match: non-exhaustive pattern match at S - missing cases: M")
                                                              (Cons (EC "E_MATCH_MIXED_PATTERNS" 17 1 "match: literal patterns and constructor patterns cannot be mixed in the same match at S")
                                                                (Cons (EC "E_MODULE_NOT_FOUND" 9 1 "module: module M not found at P")
-                                                              (Cons (EC "E_MUT_CONFLICT" 13 1 "aliasing: mutable reference conflict at S")
+                                                              (Cons (EC "E_MOVE_VALUE" 13 1 "ownership: X was already moved or released at S")
+                                                                  (Cons (EC "E_MUT_CONFLICT" 13 1 "aliasing: mutable reference conflict at S")
                                                                       (Cons (EC "E_NULL_POINTER" 10 1 "runtime: null pointer dereference")
                                                                   (Cons (EC "E_CHANNEL_NOT_OWNER" 10 1 "runtime: this actor does not own the channel endpoint")
                                                                   (Cons (EC "E_CHANNEL_CLOSED" 10 1 "runtime: the channel's sender finished and every value was received")
@@ -173,7 +174,7 @@
                                                           (Cons (EC "E_PKG_CAPABILITY_VIOLATION" 13 1 "capability: package N uses M without declaring the C capability")
                                                            (Cons (EC "E_PKG_CAPABILITY_GROWTH" 13 1 "capability: capability closure grew under --locked: C")
                                                                (Cons (EC "W_RECOVER_SHADOW" 14 2 "recover: arm M shadows later arm N - move specific error codes before catch-all (String/_)")
-                                                           Nil))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+                                                           Nil)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 ; ---------------------------------------------------------------------------
 ; ACCESSORS
 ; ---------------------------------------------------------------------------

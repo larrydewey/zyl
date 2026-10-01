@@ -1,0 +1,281 @@
+; === Zyl Compiler — Linearity ===
+; Module: compiler/linearity
+;
+; Spec G2 names three things: no use-after-free, no double free, no
+; invalid aliasing. Regions make the first two *defined* even when a
+; program asks for them — a released buffer is E_USE_AFTER_FREE and a
+; second release is a no-op — but neither stops the program from writing
+; the mistake. This pass does.
+;
+; The rule is affine. A value that owns a resource is consumed by the
+; operation that releases it or takes it over, and any use after that is
+; E_MOVE_VALUE.
+;
+; The hole this closes is not hypothetical. A file handle is an `Int`, and
+; an `Int` is a copyable scalar with no ownership, so this compiled clean
+; under the previous compiler:
+;
+;   (let fd (file-open "a.txt" "w")
+;     (file-close fd)
+;     (let other (file-open "secret.txt" "w")   ; the OS hands `fd` back
+;       (file-write fd "leaked")))              ; writes into secret.txt
+;
+; and it did write into secret.txt, because the number was recycled. A
+; stale handle silently aliases an unrelated file. Static release
+; tracking rejects the program at compile time instead.
+;
+; What is linear, narrowly:
+;
+;   - a file descriptor: `file-open` binds one, `file-close` and
+;     `with-resource` release one. The parser gives these dedicated forms
+;     (EFileOpen / EFileClose), so the rule does not depend on a name and
+;     cannot be dodged by qualification.
+;   - a StringBuffer: `make-string-buffer` binds one, `Drop.drop` (which
+;     is what `with-resource` desugars to, compiler/desugar.zyl) releases
+;     it. Every user `Drop` impl goes through `Drop.drop` too, so a type
+;     that declares one gets this for free.
+;
+; What is deliberately NOT linear, and why:
+;
+;   - `Vec`, `IntMap`, `Set`. These are persistent: an update returns a
+;     new value and the old one stays valid, which is the design
+;     (docs/sound-types-design.md). Making them linear would forbid
+;     reading a vector after deriving one from it, and every caller in
+;     the tree does exactly that. Their safety comes from regions plus
+;     bounds checks, not from linearity.
+;   - Scalars and Strings. Copying a word cannot cause a double free.
+;
+; So the pass is small on purpose. It covers the values whose whole point
+; is that they are released exactly once, and leaves the rest to the
+; region system. That is a real improvement over no check; it is not a
+; claim of full linearity, and PROGRESS.md records what is left.
+
+(use compiler/expr_inner)
+(use compiler/error_report)
+
+; name -> the node that consumed it, so a diagnostic can point at the
+; later use and the pass can be re-run.
+(def lin-moved-store (ffi-call "zyl_smap_new" 1000))
+
+(defn lin-reset ()
+  (ffi-call "zyl_smap_clear" lin-moved-store 1000))
+
+; Constructors whose result owns a resource. `file-open` is not here: it
+; has its own AST form. Matched on the tail of a canonical key, so
+; `zyl/std@N::io/io::make-string-buffer` matches as well.
+(def lin-ctors (Cons "make-string-buffer" Nil))
+
+; Calls that release a resource handed to them, consuming that argument.
+; `Drop.drop` is the one every `Drop` impl is reached through, including
+; the release with-resource generates.
+(def lin-consuming
+  (Cons "Drop.drop" (Cons "string-buffer-destroy" Nil)))
+
+(defn lin-in (x xs)
+  (match xs
+    (Nil false)
+    (Cons h t (if (= x h) true (lin-in x t)))))
+
+; The last `::`-separated component of a qualified key.
+(defn lin-tail (key)
+  (let n (str-length key)
+    (let i (lin-last-sep key (- n 1))
+      (if (< i 0) key (str-substring key (+ i 1) n)))))
+
+(defn lin-last-sep (s i)
+  (if (< i 0)
+    -1
+    (if (= (str-substring s i (+ i 1)) "::")
+      i
+      (lin-last-sep s (- i 1)))))
+
+(defn lin-ctor-p (name) (lin-in (lin-tail name) lin-ctors))
+(defn lin-consuming-p (name) (lin-in (lin-tail name) lin-consuming))
+
+; --- the moved set -------------------------------------------------------
+
+; `node` is where the release happened, kept in the signature so the
+; consuming walkers can pass the call site even though the diagnostic uses
+; the later use. Marked unused rather than dropped to keep the shape even.
+(defn lin-consume (name _node)
+  (ffi-call "zyl_smap_put" lin-moved-store name 1 1000))
+
+(defn lin-consumed-p (name)
+  (= (ffi-call "zyl_smap_get_or" lin-moved-store name 0 1000) 1))
+
+; A rebind gives a fresh resource, so the name is live again.
+(defn lin-clear (name)
+  (ffi-call "zyl_smap_put" lin-moved-store name 0 1000))
+
+(defn lin-report (node name)
+  (let fid (ffi-call "zyl_span_file" node 1000)
+    (let off (ffi-call "zyl_span_off" node 1000)
+      (let m1 (str-concat "the binding " name)
+        (let msg (str-concat m1 " was released by an earlier call, so it cannot be used again")
+          (ffi-call "zyl_panic"
+            (err-at "E_MOVE_VALUE" msg fid off
+              "a resource is released exactly once; if you need it again, open a second handle rather than reusing a released one")
+            1000))))))
+
+; --- environment ---------------------------------------------------------
+;
+; A chain of names that own a resource, innermost first. Every other name
+; is absent from it, which is what keeps the check from firing on ordinary
+; values.
+
+(defn lin-local-p (name env)
+  (match env
+    (Nil false)
+    (Cons n t (if (= n name) true (lin-local-p name t)))))
+
+; The name an expression refers to, or "" if it is not a bare reference.
+(defn lin-ident-of (e)
+  (match (Expr.inner e)
+    (EAtom a (match a (AIdent n n) (_ "")))
+    (_ "")))
+
+
+; --- the walker ----------------------------------------------------------
+;
+; One recursive pass. `env` is threaded through in evaluation order, so a
+; release earlier in a body is visible to a later use in it — which is
+; precisely where the mistake gets written.
+
+(defn lin-walk (e env)
+  (match (Expr.inner e)
+    (EAtom a (lin-walk-atom a e env))
+    (EBegin es (lin-walk-seq es env))
+    (ELet name val body (lin-walk-let name val body env))
+    (ELetMut name val body (begin (lin-walk val env) (lin-walk body env)))
+    (ECall op args (lin-walk-call op args env))
+    (EApply name args (lin-walk-apply name args env))
+    (EFileOpen path mode (begin (lin-walk path env) (lin-walk mode env)))
+    (EFileClose h (lin-walk-file-close h env))
+    (EFileWrite h data (begin (lin-walk h env) (lin-walk data env)))
+    (EFileRead h n (begin (lin-walk h env) (lin-walk n env)))
+    (EIf c t f (begin (lin-walk c env) (lin-walk t env) (lin-walk f env)))
+    (EWhile c body (begin (lin-walk c env) (lin-walk body env)))
+    (ETryCatch body name handler (begin (lin-walk body env) (lin-walk handler env)))
+    (EMatch scrut arms (lin-walk-match scrut arms env))
+    (EFn name params body (lin-walk-fn body env))
+    (ELambda name params body (lin-walk-fn body env))
+    (_ unit)))
+
+(defn lin-walk-atom (a e env)
+  (match a
+    (AIdent name tag
+      (if (if (lin-local-p name env) (lin-consumed-p name) false)
+        (lin-report e name)
+        unit))
+    (_ unit)))
+
+; A sequence evaluates left to right (spec: strict evaluation order), so a
+; release earlier in the body is visible to a use later in it.
+(defn lin-walk-seq (es env)
+  (match es
+    (Nil unit)
+    (Cons h t (begin (lin-walk h env) (if (is-nil t) unit (lin-walk-seq t env))))))
+
+; Rebinding a name that owned a resource produces a fresh one, so the old
+; moved mark must not carry over to it.
+(defn lin-walk-let (name val body env)
+  (let linear (lin-val-is-resource val)
+    (let env2 (if linear (Cons name env) env)
+      (begin
+        (if linear (lin-clear name) unit)
+        (lin-walk val env)
+        (lin-walk body env2)))))
+
+; Does this value own a resource? The dedicated form for `file-open`, or a
+; call to a resource constructor.
+(defn lin-val-is-resource (e)
+  (match (Expr.inner e)
+    (EFileOpen _ _ true)
+    (_ (lin-ctor-p (lin-callee-of e)))))
+
+; The callee of a call, as a name, or "" if it is not a plain reference.
+(defn lin-callee-of (e)
+  (match (Expr.inner e)
+    (EApply name args name)
+    (ECall op args (lin-ident-of op))
+    (_ "")))
+
+; A call whose arguments are walked in order; a call to a release function
+; consumes the resource arguments it is handed.
+(defn lin-walk-call (op args env)
+  (let name (lin-callee-of op)
+    (begin
+      (lin-walk op env)
+      (lin-walk-list args env)
+      (if (lin-consuming-p name) (lin-consume-args args env) unit))))
+
+(defn lin-walk-apply (name args env)
+  (begin
+    (lin-walk-list args env)
+    (if (lin-consuming-p name) (lin-consume-args args env) unit)))
+
+; Release every live resource argument. A release call takes the resource
+; by value, so two distinct handles are two distinct resources and each is
+; marked on its own.
+(defn lin-consume-args (args env)
+  (match args
+    (Nil unit)
+    (Cons h t
+      (let n (lin-ident-of h)
+        (begin
+          (if (lin-local-p n env) (lin-consume n h) unit)
+          (lin-consume-args t env))))))
+
+; `(file-close fd)` has its own form, so the fd rule does not depend on a
+; name that qualification could rewrite.
+(defn lin-walk-file-close (h env)
+  (let n (lin-ident-of h)
+    (begin
+      (lin-walk h env)
+      (if (lin-local-p n env) (lin-consume n h) unit))))
+
+(defn lin-walk-list (es env)
+  (match es
+    (Nil unit)
+    (Cons h t (begin (lin-walk h env) (lin-walk-list t env)))))
+
+(defn lin-walk-match (scrut arms env)
+  (begin
+    (lin-walk scrut env)
+    (lin-walk-arms arms env)))
+
+; Each arm body starts from the environment at the match, since an arm
+; binds its own pattern variables.
+(defn lin-walk-arms (arms env)
+  (match arms
+    (Nil unit)
+    (Cons h t (begin (lin-walk-arm h env) (lin-walk-arms t env)))))
+
+(defn lin-walk-arm (arm env)
+  (match arm
+    (MA variant patterns body tag (lin-walk body env))))
+
+; A closure body sees the bindings in scope where it is written. A release
+; inside it still consumes for uses after the closure is built, but the
+; closure's own later uses are checked against the same environment, which
+; is what stops `(let f (fn ... (file-close fd) ...) ) (file-close fd)`.
+(defn lin-walk-fn (body env) (lin-walk body env))
+
+; --- entry point ---------------------------------------------------------
+
+(defn lin-check-program (exprs)
+  (begin
+    (lin-reset)
+    (lin-top exprs)
+    0))
+
+(defn lin-top (forms)
+  (match forms
+    (Nil 0)
+    (Cons e rest
+      (begin
+        (match (Expr.inner e)
+          (EDefn name params body (lin-walk-fn body Nil))
+          (ETestDecl name body flag opts (lin-walk-fn body Nil))
+          (_ unit))
+        (lin-top rest)))))

@@ -1,0 +1,12 @@
+; A file descriptor is released by file-close. Using it afterwards is a
+; use-after-free: the OS recycles the number, so the write lands in
+; whatever file opened next. Spec G2, caught statically by the linearity
+; pass (compiler/linearity.zyl).
+; expect-error: E_MOVE_VALUE
+(use core/core)
+(defn main ()
+  (let fd (file-open "/tmp/zyl_lin_uaf.txt" "w")
+    (begin
+      (file-close fd)
+      (file-write fd "after release")
+      0)))

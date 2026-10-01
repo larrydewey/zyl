@@ -1,0 +1,16 @@
+; This compiled clean before the linearity pass, and silently wrote into
+; the wrong file: `fd` was released, the OS handed the same number to the
+; next open, and the write went there. A stale handle aliasing an
+; unrelated file is a confused deputy, not a crash — the worst shape a
+; memory-safety bug can take.
+; expect-error: E_MOVE_VALUE
+(use core/core)
+(defn main ()
+  (let fd (file-open "/tmp/zyl_lin_a.txt" "w")
+    (begin
+      (file-close fd)
+      (let other (file-open "/tmp/zyl_lin_secret.txt" "w")
+        (begin
+          (file-write fd "leaked into the other file")
+          (file-close other)
+          0)))))

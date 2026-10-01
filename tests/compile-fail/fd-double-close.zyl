@@ -1,0 +1,11 @@
+; Closing the same descriptor twice is a double free (spec G2). The
+; runtime tolerates it, which is exactly why it has to be a compile
+; error rather than a crash.
+; expect-error: E_MOVE_VALUE
+(use core/core)
+(defn main ()
+  (let fd (file-open "/tmp/zyl_lin_dbl.txt" "w")
+    (begin
+      (file-close fd)
+      (file-close fd)
+      0)))
