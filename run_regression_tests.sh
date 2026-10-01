@@ -532,6 +532,33 @@ if [ -n "$FILTER" ] && echo "timing-leakage" | grep -qi -- "$FILTER" \
     fi
 fi
 
+# Memory-safety gate (Valgrind memcheck) -- OPT IN with `--filter memcheck`.
+#
+# Also opt-in rather than part of a plain `--full`, because memcheck runs
+# every program ~50x slower than native and the sweep takes minutes. It is
+# here rather than in a shell history because "the programs have no memory
+# errors" is a property that has to keep being true, not a claim made once
+# in a commit message. The script checks its own positive control and then
+# its own detection path (`--self-test`), so a green result means the
+# measurement worked rather than that nothing was measured.
+#
+# Valgrind rather than ASan, deliberately: the runtime does not call malloc,
+# so ASan's heap interception would never see a region. See verify/memcheck.sh.
+if [ -n "$FILTER" ] && echo "memcheck" | grep -qi -- "$FILTER" \
+   && ! dry_listed "memcheck"; then
+    TOTAL=$((TOTAL + 1))
+    if "${SCRIPT_DIR}/verify/memcheck.sh" --self-test > $RUN_TMP/zyl_memcheck.log 2>&1 \
+       && "${SCRIPT_DIR}/verify/memcheck.sh" >> $RUN_TMP/zyl_memcheck.log 2>&1; then
+        PASS=$((PASS + 1))
+        echo -e "  ${GREEN}✓${NC} memcheck"
+        sed 's/^/      /' $RUN_TMP/zyl_memcheck.log
+    else
+        FAIL=$((FAIL + 1))
+        echo -e "  ${RED}✗${NC} memcheck"
+        sed 's/^/      /' $RUN_TMP/zyl_memcheck.log
+    fi
+fi
+
 # Self-hosting fixed-point verification (default in --full; slow)
 if [ "$BOOT" -eq 1 ] && [ "$NO_BOOT" -eq 0 ] && ! dry_listed "boot/fixed-point"; then
     TOTAL=$((TOTAL + 1))

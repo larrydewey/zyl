@@ -101,6 +101,12 @@ compile with `build/boot/zyl-self` on 2026-09-28.
   handler is conditional and does not consume, which is what makes the
   `with-resource` desugar sound. Regions made all of this *defined*; this
   makes it *prevented*, which is the difference G2 asks for.
+- **Memory safety is stated, not asserted.** `docs/soundness.md` gives the
+  claim as lemmas and marks each for how it is established — *enforced* by
+  a compiler check, *measured* by a dynamic run, or *argued* from those.
+  The weakest link is named there: escape analysis under-approximation
+  (L2). It also records the honest comparison with Rust — Zyl's guarantee is
+  unconditional where Rust's is conditional, and Zyl's is far less tested.
 - **The `TCap`/`TMut` aliasing invariant is enforced** on what the
   language can actually express. The invariant (§9.1: "either exactly one
   TMut reference OR any number of TCap references") needs two things to be

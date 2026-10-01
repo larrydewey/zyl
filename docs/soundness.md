@@ -1,0 +1,233 @@
+# Memory safety: what is enforced, argued, and still open
+
+This document states Zyl's memory-safety claim as precisely as the
+implementation allows, and marks each part for how it is established. It
+exists because the alternative has been worse: the claim "Zyl is 100%
+memory safe" was previously an assertion with no argument and no
+measurement behind it. Every "verified" statement in this repository's
+history until now came from reading code and writing targeted probes.
+
+Three kinds of statement appear below, and they are not
+interchangeable:
+
+- **Enforced** — a check in the compiler rejects the program. Decidable,
+  and re-checked on every build.
+- **Measured** — a dynamic check ran the programs and saw no error. True of
+  those programs on that run; silent about everything else.
+- **Argued** — a reasoning chain whose premises are themselves enforced or
+  measured. Sound if the premises hold; not machine-checked.
+
+Nothing here is a machine-checked proof. A real proof would need a
+verified compiler and a verified runtime, and Zyl has neither. What
+follows is the strongest honest statement.
+
+---
+
+## 1. The claim
+
+**Theorem (memory safety, informal).** For any program the compiler
+accepts, and any execution of it, the program performs no access to memory
+it should not access: no read or write outside a live allocation, no access
+to a released allocation, no double release, no access through a capability
+the program does not hold.
+
+Three corollaries the implementation goes further than this:
+
+- **Determinism.** The same binary produces the same output. There is no
+  randomness, no clock, and no scheduling dependence in the observable
+  behaviour of a program (spec 14). This is stronger than what most
+  memory-safe languages offer.
+- **Deterministic reclamation.** There is no collector and no cycle
+  collector. A region is released by construction, at a point the compiler
+  chose. A heap value lives until exit.
+- **No unsafe.** A program has no way to express a raw memory operation
+  outside the typed primitives, and cannot name a raw runtime entry.
+
+## 2. What a program can do to memory
+
+The set of memory operations available to a program is finite and small.
+This matters: safety follows from the *absence* of a feature, so the
+enumeration is the argument.
+
+| Operation | How a program reaches memory |
+|---|---|
+| allocate a region-owned value | `Vec`, `IntMap`, `Set`, `Slice`, `bytebuf`, string ops |
+| read/write a field | `struct-get`; fields are immutable, `set!` on one is `E_MUT_CONFLICT` |
+| index a collection | `vec-get` and friends; bounds-checked, out of range is an error |
+| load/store a byte | `load-u8`/`store-u8` and the wider forms; bounds-checked against the buffer |
+| atomic RMW | `atomic-*`; operand is a `ByteBuf` region slot |
+| write a file | `file-write`; a descriptor, released exactly once |
+| call foreign code | `ffi-call`; symbol must be a literal, timeout required, raw runtime entries refused |
+| spawn / send | actors; Kahn channels, single writer, single reader |
+
+There is no pointer arithmetic a program can name, no way to reinterpret a
+word as a different type, and no `unsafe`.
+
+## 3. Lemmas
+
+### L1 — Every allocation is owned by exactly one region · *Enforced*
+
+Region inference (`region_inference.zyl`) assigns each allocation to the
+frame region of the allocating call, to the caller-chosen result region, or
+to the process heap. Nothing is allocated outside those three, and a
+region is released only at a point the compiler determined: on return from
+its frame, before a tail jump, when a caught panic unwinds it, or at exit.
+
+### L2 — No value outlives the region that holds it · *Enforced + Argued*
+
+The static half is `E_REGION_ESCAPE`: a `(bytebuf Stack N)` or a
+`with-region` value that would outlive its region is rejected, located at
+the point of escape, and 165 compile-fail tests pin it.
+
+The load-bearing premise is that escape analysis **over**-approximates: a
+value whose liveness the analysis cannot prove is placed in a longer-lived
+region or the heap. Over-approximation is the safe direction — it costs
+memory, never soundness. The residual risk is *under*-approximation, i.e.
+a value the analysis believes dead while a reference survives. That is an
+argument about `region_inference.zyl`, not a theorem, and it is the single
+weakest link in this document. It is also the part with the least external
+scrutiny, because a failure here is a use-after-free that only shows up
+under a particular allocation pattern.
+
+### L3 — A resource is released exactly once · *Enforced, plus a runtime floor*
+
+Two independent mechanisms:
+
+*Static.* `linearity.zyl` rejects `E_MOVE_VALUE` for a resource used after
+its release. The rule is affine and per alias class: `file-close`,
+`Drop.drop` and `string-buffer-destroy` consume their argument, every name
+bound to the same resource dies with it, and a release inside an exception
+handler is conditional so it does not consume. Types are discovered from
+the program's own `impl Drop` forms, so a user resource is covered without
+compiler support.
+
+*Runtime.* `zyl_arena_destroy` is idempotent — it keeps its 72-byte handle
+rather than freeing it, because a released handle cannot otherwise be told
+apart from a live one — and a released `StringBuffer` raises
+`E_USE_AFTER_FREE`.
+
+The runtime half is not redundant. It is the floor: a release reached
+through a path the pass cannot see — a builtin, or a value that crossed a
+function boundary — stays *defined* rather than becoming undefined
+behaviour. The static half is what stops a program from asking.
+
+### L4 — One mutable location, one writer · *Enforced*
+
+spec 06's aliasing invariant ("either exactly one `TMut` reference or any
+number of `TCap` references") needs a `TMut` to hold. Zyl has no reference
+or borrow type: `TaTy` is `TaV | TaC | TaF`, with no capability dimension,
+so a plain binding cannot be a `TMut` reference to alias with. What the
+language has is mutable locations — a `bytebuf`, written through by
+`store-u8`, the atomic forms and `bytebuf-append`.
+
+A name becomes `TMut` by being *written*, so the rule is: within one
+location, at most one name may be written. A writer plus any number of
+readers is one `TMut` and many `TCap`, which the invariant permits, so
+naming a location twice is not itself an error.
+
+Both halves of this were wrong before they were right, in ways worth
+recording because the failure mode was silence:
+
+- Keying alias classes by *name* rather than per allocation let two
+  sibling buffers that shared a name inherit each other's writer.
+- Treating a `byteslice` as a new location rather than a window onto its
+  base's let `(let v (byteslice b 8 4))` written through both `v` and `b`
+  look like two locations.
+
+### L5 — A program cannot name a raw memory operation · *Enforced*
+
+`E_FFI_RESTRICTED` refuses an `ffi-call` naming a raw runtime entry
+(`ffi_sigs.zyl`'s `ffi-raw-p` — 37 entries covering `zyl_mem_alloc`,
+`zyl_arena_*`, `zyl_word_*`, `zyl_heap_alloc`, `zyl_val_*` and the rest).
+The allocator wrappers are refused by name at the call site, so all three
+routes are closed: the raw `ffi-call`, the wrapper, and reading an `Arena`
+field, which is nominal and will not unify with `Int`.
+
+A program also cannot obtain an arena. The collections allocate from
+regions and take no arena parameter; what still holds one is the compiler,
+the LSP and the REPL, whose parse trees and scratch outlive any frame, and
+those are compiled in an internal mode.
+
+### L6 — Indexed access is bounds-checked · *Enforced*
+
+`vec-set` returns the vector unchanged rather than writing when the index
+is out of range, and reads report rather than fault. Collections are typed:
+an array's slots are filled in order so a collection only ever reads
+elements it wrote, and there is no word-level cast anywhere
+(`docs/sound-types-design.md`).
+
+## 4. What the aliasing that exists is
+
+Two `Vec` handles derived from one another share storage — that is the
+documented design (`vec.zyl`: "versions made from the same Vec share
+storage until one of them outgrows it"), and it is *persistent*: an update
+returns a new value and the old one stays valid.
+
+This is not memory-unsafe. The shared array is region-owned and
+bounds-checked, and a stale handle reads the old array rather than freed
+memory. Measured rather than assumed: 300k iterations of a handle
+outliving its own reallocation, reading every stale element under
+allocation pressure, returned exactly the predicted sum
+(`90000900000`), with memcheck clean and flat RSS.
+
+It is a weaker *guarantee* than Rust's, though a safe one. Rust's aliasing
+model tells you which reads see which writes; Zyl's does not, and a write
+through one handle is visible in another by design. Making that an error
+would mean making the collections non-persistent, contradicting
+`docs/sound-types-design.md` and every caller in the tree.
+
+## 5. The comparison with Rust, stated carefully
+
+Zyl is **safer than Rust in one respect that matters**: Rust's memory
+safety is *conditional* on `unsafe` blocks being correct, and a large
+minority of the ecosystem contains them. A Zyl program has no `unsafe`, no
+raw pointer, and no way to express the operations that need one. The
+trusted computing base for a Zyl program is the runtime; for a Rust
+program it is the runtime plus every `unsafe` block in its dependency
+graph.
+
+Zyl is **weaker in three**:
+
+1. **Aliasing discipline.** Rust enforces one; Zyl has persistent sharing
+   and no discipline. Safe, but not the same guarantee.
+2. **Evidence.** Rust has Miri, decades of production use, and an enormous
+   body of fuzzing. Zyl had *no* dynamic memory-safety testing at all
+   until `verify/memcheck.sh` was added, and no proof effort at all.
+3. **Assortment.** The escape analysis underpinning L2 is a few thousand
+   lines of flow-insensitive approximation whose under-approximation cases
+   have not been hunted the way Rust's have.
+
+So the honest summary: **at the language level, Zyl's guarantee is
+unconditional where Rust's is conditional. In practice, Zyl's is far less
+tested.** "Safer than Rust" is defensible as a statement about the type
+system and indefensible as a statement about the artifact.
+
+## 6. How to re-establish all of this
+
+```bash
+./boot.sh                                          # fixed point holds
+./run_regression_tests.sh --full                   # 432 tests
+./run_regression_tests.sh --full --no-boot --filter memcheck   # memory gate
+```
+
+The memcheck gate checks its own positive control and its own detection
+path before reporting a result, so a green run means the measurement
+worked rather than that nothing was measured. `KEEP=1` leaves the scratch
+binaries for inspection.
+
+## 7. What is explicitly not claimed
+
+- `TCap<T>` and `TMut<T>` are not written as types. Rules 3 and 4
+  (downgrade allowed, upgrade forbidden) hold *structurally* — with no
+  conversion in the language there is none to forbid — not by unification.
+- `TAtomic`, `TBox`, and rule 5's Send-capability are unrepresented; Send
+  is tracked syntactically.
+- Aliasing through raw allocation is covered for `bytebuf` and the atomic
+  forms. Aliasing through a returned handle is not tracked
+  interprocedurally: `(let y (f b))` where `f` returns its parameter is
+  not followed.
+- No proof assistant is involved. Section 3 is a set of arguments with
+  named premises, not a machine-checked development.
+- The memcheck sweep covers `tests/regression` and `tests/smoke`. It says
+  nothing about `tests/stress`, the package suites, or the compiler
+  compiling a large program, none of which are in the gate.

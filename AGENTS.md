@@ -213,7 +213,22 @@ the unit test.
 ./run_regression_tests.sh --full --no-boot --filter structs
 ```
 
-Full test infrastructure documented in `docs/regression-tests.md`. All tests use the `(test "name" (assert-equal ...))` harness defined in `stdlib/testing/testing.zyl`.
+Full test infrastructure documented in `docs/regression-tests.md`.
+
+**Memory safety.** `docs/soundness.md` states the claim as lemmas, marking
+each *enforced*, *measured* or *argued`. A dynamic gate runs the regression
+and smoke programs under Valgrind memcheck — not ASan, which cannot work
+here because the runtime never calls malloc — and checks its own control
+and its own detection path first:
+
+```bash
+./run_regression_tests.sh --full --no-boot --filter memcheck
+```
+
+It is opt-in (~50x slowdown). After changing anything under
+`runtime/rt/`, `stdlib/compiler/region_inference.zyl`, or the collection
+or resource code, run it: a memory error there is exactly the kind that
+`--full` will not notice. All tests use the `(test "name" (assert-equal ...))` harness defined in `stdlib/testing/testing.zyl`.
 
 **S-expression balance** is critical. After editing any `.zyl` file, check it with
 the compiler's own balancer, never by counting delimiters by hand or with a script:
