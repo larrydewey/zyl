@@ -1793,7 +1793,34 @@
           (let st1 st
            (let st2 (cg-emit st1 (cg-sym-mangled (cg-arena-of st) name))
              (let st3 (cg-emit-line st2 ":")
-               (let st4 (cg-emit-line st3 "    push rbp")
+               ; The frame size, stated for the binary verifier.
+               ;
+               ; V1 in compiler/verify.zyl has to know the bound on a
+               ; [rbp-N] write, and recovering it from this prologue does not
+               ; work. Measured on the compiler's own 778k lines, every
+               ; formulation inferred from the text produced thousands of
+               ; false positives (12,515 / 11,304 / 9,503 / 5,088 as each
+               ; wrong assumption was corrected): frames are grown by more
+               ; than one `sub rsp`, 742 leaf functions use the red zone with
+               ; no `sub rsp` at all, push-only frames reserve nothing, and a
+               ; read of the return address is indistinguishable from a write
+               ; to it by operand position alone.
+               ;
+               ; `#` and not `;`: the runtime seed is assembled by cc, and
+               ; GNU as reads `;` as a statement separator, so `; frame 168`
+               ; becomes an instruction called `frame`. Zyl's own assembler
+               ; accepts both.
+               ;
+               ; Code generation already knows fsz -- it is computed directly
+               ; above from actual slot usage -- so it states it, and the
+               ; verifier checks the emitted text against that. A mismatch
+               ; between the frame intended here and an operand actually
+               ; emitted is exactly the bug this catches, which is why the
+               ; annotation supplements checking the text rather than
+               ; replacing it.
+               (let st3a (cg-emit-line st3
+                            (str-concat (str-concat "    # frame " (ffi-call "zyl_int_text" fsz 1000)) ""))
+                 (let st4 (cg-emit-line st3a "    push rbp")
                  (let st5 (cg-emit-line st4 "    mov rbp, rsp")
                    (let st6 (cg-emit st5 "    sub rsp, ")
                      (let st7 (cg-save-callee-saved (cg-nl (cg-emit-int st6 fsz)) fsz)
@@ -1803,7 +1830,7 @@
                             (let st10 (cg-body-exit st9 env body fsz (list-length params) (cg-wipes-frame name) rflags)
                               (let st11 (cg-emit-line st10 "    mov rsp, rbp")
                                 (let st12 (cg-emit-line st11 "    pop rbp")
-                                  (cg-emit-line st12 "    ret"))))))))))))))))))))
+                                  (cg-emit-line st12 "    ret")))))))))))))))))))))
     st))
 
 ; A function secret_check.zyl marked (Secret params or secret lets) zeroes its
@@ -2084,7 +2111,12 @@
   ; pass/fail result (rt/panic.zyl: 0 if all passed, 1 if any failed)
   ; is discarded and a failing test file still exits 0.
   (let st1 (cg-emit-line st "main:")
-    (let st2 (cg-emit-line st1 "    push rbp")
+    ; Frame 0: main spills nothing of its own, it hands off to
+    ; zyl_call_on_big_stack. Stating it means the verifier will say so rather
+    ; than leaving main unchecked, which is the point of annotating every
+    ; emitter rather than the one that happens to compute a size.
+    (let st1a (cg-emit-line st1 "    # frame 0")
+    (let st2 (cg-emit-line st1a "    push rbp")
       (let st3 (cg-emit-line st2 "    mov rbp, rsp")
         (let st3a (cg-emit-line st3 "    call zyl_save_args")
           (let st3b (cg-emit-line st3a "    call zyl_ensure_arenas")
@@ -2092,7 +2124,7 @@
               (let st5 (cg-emit-line st4 "    call zyl_call_on_big_stack")
                   (let st7 (cg-emit-line st5 "    pop rbp")
                     (let st8 (cg-emit-line st7 "    ret")
-                      st8))))))))))
+                      st8)))))))))))
 
 ; The rodata section the collected literals follow.
 (defn cg-format-strings (st) (cg-emit-line st ".section .rodata"))
@@ -3915,7 +3947,9 @@
 ; The region prologue only uses rax, so the arguments are still in
 ; their registers for the parameter moves after it.
 (defn mb-prologue (st name fr fsz align)
-  (let st1 (cg-emit-line (cg-emit st (cg-sym-mangled (cg-arena-of st) name)) ":")
+  (let st0 (cg-emit-line (cg-emit st (cg-sym-mangled (cg-arena-of st) name)) ":")
+    (let st1 (cg-emit-line st0
+                (str-concat "    # frame " (ffi-call "zyl_int_text" fsz 1000)))
     (if (mf-frameless fr) (mb-push-regs st1 (mf-saved fr))
     (let st2 (cg-emit-lines st1 (Cons "    push rbp" (Cons "    mov rbp, rsp" Nil)))
       (if (mf-pushes fr)
@@ -3926,7 +3960,7 @@
                 (if (> sub 0) (cg-emit-line st4 (str-concat "    sub rsp, " (ffi-call "zyl_int_text" sub 1000))) st4)))))
         (let st3 (if align (cg-emit-line st2 "    and rsp, -16") st2)
           (let st4 (if (> fsz 0) (cg-emit-line st3 (str-concat "    sub rsp, " (ffi-call "zyl_int_text" fsz 1000))) st3)
-            (cg-region-prologue (mb-save-regs st4 (mf-saved fr) (mf-top fr) 1) (mf-rflags fr)))))))))
+            (cg-region-prologue (mb-save-regs st4 (mf-saved fr) (mf-top fr) 1) (mf-rflags fr))))))))))
 
 (defn mb-push-regs (st rs)
   (match rs

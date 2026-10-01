@@ -433,6 +433,59 @@ rather than a side table, and V3 turns out to need the interprocedural
 fixpoint of deviation 3. The measurements above stand; the conclusions drawn
 from them did not.)*
 
+## Landed: the bound is stated, and `#` not `;`
+
+`codegen.zyl` now writes `# frame N` under every function label, at all
+three emitters -- the main one that computes `fsz` from slot usage, the
+synthetic `main` (frame 0), and the MIR backend's `mb-prologue` (which has
+`fsz` in hand). Coverage in the compiler's own output: **5,150 of 5,150
+functions in stage2.s, 955 of 1,103 in rt.s**, the remainder being runtime
+stubs emitted from raw string lists.
+
+`#` rather than `;` is forced by the bootstrap, and worth recording: the
+runtime seed is assembled by cc (`boot.sh`'s `use_rt` runs `cc -c` on
+rt.s), and GNU as reads `;` as a statement separator, so `; frame 168`
+assembles there as an instruction called `frame`. Zyl's own assembler has
+been taught `#` as well as `;`.
+
+With the annotation in place the invariant was validated against the
+compiler's own output before anything was wired in: **24,661 writes and
+86,114 reads over 5,150 functions, zero bound violations, zero frameless,
+zero misaligned**; rt.s likewise clean. Two write-detection rules had to be
+right for that number to mean anything, and both were wrong first:
+
+- a memory operand is a *write* only when it is the destination -- before
+  the comma, in Intel syntax. `mov rdi, [rbp-8]` reads. Getting this
+  backwards inflated the write count from 24,661 to 82,920.
+- `.L0_0:` and its siblings sit at column 0 and end in `:` like a function
+  label. They are local jump targets inside a function and must not reset
+  the bound.
+
+## Not landed: the verifier is not wired in
+
+`stdlib/compiler/verify.zyl` exists and type-checks, but calling it from
+`compile-to-asm` makes the bootstrap glacial again, and I am not shipping a
+check that costs a build its speed. The cost is understood and it is the
+same mistake twice: the pass still reads the buffer a byte at a time
+through `zyl_view_byte`, which is a dynamic FFI call per character. The
+`vy-find` memchr fix removed the newline scan; the remaining per-character
+work -- `vy-skip`, `vy-lit`, the operand classification -- is on the order
+of twelve million FFI calls over stage2.s.
+
+The fix is to classify with memchr and substring comparisons rather than
+byte reads, so that Zyl-level work happens only on the ~150,000 lines that
+carry an operand instead of on all 778,094. A reference implementation of
+the same rules in Python runs the whole file in 0.036 s, which is the shape
+the Zyl has to reach.
+
+The pass also reported four violations before that, with the diagnostics
+printing heap addresses rather than its own messages: a wvec of `String` is
+not a shape this codebase uses anywhere, and violations and evidence are now
+cons lists of strings instead. Those four were never seen in a readable
+form, so whether they were real is **unknown**, and the pass cannot be
+trusted until it runs clean and is then shown to fail on a planted
+violation.
+
 ## What it still will not give
 
 Honesty about the residue, because a document that claims more than it has is

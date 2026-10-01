@@ -156,8 +156,21 @@
         (ax-in-string-go s at (+ i 1) inq)))))
 
 ; The first `;` on the line that is a comment rather than data, or -1.
+;
+; `#` counts as well, and it is not redundant. The runtime seed is
+; assembled by cc, not by this module: boot.sh's use_rt() runs `cc -c` on
+; rt.s, and GNU as treats `;` as a statement separator rather than a
+; comment -- `; frame 360` assembles as an empty statement followed by an
+; instruction called `frame`, which is the error it produces. So an
+; annotation in generated assembly has to be `#` to survive that path, and
+; `#` is what codegen emits. `;` stays supported because it is what a reader
+; expects and what Zyl's own sources use.
+(defn ax-hash (s n from) (ffi-call "zyl_view_find" s 0 n from 35 1000))
+
+(defn ax-earliest (a b) (if (< a 0) b (if (< b 0) a (if (< a b) a b))))
+
 (defn ax-comment-at (s n from)
-  (let p (ax-semi s n from)
+  (let p (ax-earliest (ax-semi s n from) (ax-hash s n from))
     (if (< p 0)
       -1
       (if (ax-in-string-p s p) (ax-comment-at s n (+ p 1)) p))))
