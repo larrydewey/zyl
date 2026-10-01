@@ -109,7 +109,13 @@ compile with `build/boot/zyl-self` on 2026-09-28.
   `--filter poison`: released region blocks refilled with `0xDE`, 125/125
   unchanged) with its limits stated — it catches only a stale read that
   reaches output, and it has no positive control, because the violation it
-  looks for is what the static checks already prevent. It also records the honest comparison with Rust — Zyl's guarantee is
+  looks for is what the static checks already prevent. The stronger gate
+  rebuilds the entire compiler with regions poisoned and requires
+  byte-identical seeds (`--filter poison-selfhost`), and an attempt to
+  manufacture the violation using a scratch compiler with the escape
+  diagnostic suppressed did not produce a dangling read, because the escape
+  path promotes the allocation rather than leaving it dead. It also records
+  the honest comparison with Rust — Zyl's guarantee is
   unconditional where Rust's is conditional, and Zyl's is far less tested.
 - **The `TCap`/`TMut` aliasing invariant is enforced** on what the
   language can actually express. The invariant (§9.1: "either exactly one

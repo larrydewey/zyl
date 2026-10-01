@@ -242,7 +242,14 @@ It refills released region blocks with `0xDE` and requires unchanged
 behaviour. Read `verify/poison.sh` before trusting a green run: it has no
 positive control, because the violation it looks for is what the static
 checks already prevent, and it only catches a stale read that reaches
-output. All tests use the `(test "name" (assert-equal ...))` harness defined in `stdlib/testing/testing.zyl`.
+output.
+
+The stronger gate rebuilds the whole compiler with regions poisoned and
+requires byte-identical seeds — the largest Zyl program, self-hosted:
+
+```bash
+./run_regression_tests.sh --full --no-boot --filter poison-selfhost
+``` All tests use the `(test "name" (assert-equal ...))` harness defined in `stdlib/testing/testing.zyl`.
 
 **S-expression balance** is critical. After editing any `.zyl` file, check it with
 the compiler's own balancer, never by counting delimiters by hand or with a script:

@@ -583,6 +583,28 @@ if [ -n "$FILTER" ] && echo "poison" | grep -qi -- "$FILTER" \
     fi
 fi
 
+# Self-hosting under poisoned regions — OPT IN with `--filter poison-selfhost`.
+#
+# The strongest single check in the repository for L2 (no value outlives its
+# region). It rebuilds the entire compiler -- the largest Zyl program that
+# exists -- with released region blocks refilled with 0xDE, and requires the
+# seeds to come out byte-identical. If the compiler read dead frame memory
+# anywhere, the fill would corrupt a value and codegen output would differ
+# from the committed seed.
+if [ -n "$FILTER" ] && echo "poison-selfhost" | grep -qi -- "$FILTER" \
+   && ! dry_listed "poison-selfhost"; then
+    TOTAL=$((TOTAL + 1))
+    if "${SCRIPT_DIR}/verify/poison-selfhost.sh" > $RUN_TMP/zyl_poison_selfhost.log 2>&1; then
+        PASS=$((PASS + 1))
+        echo -e "  ${GREEN}✓${NC} poison-selfhost"
+        sed 's/^/      /' $RUN_TMP/zyl_poison_selfhost.log
+    else
+        FAIL=$((FAIL + 1))
+        echo -e "  ${RED}✗${NC} poison-selfhost"
+        sed 's/^/      /' $RUN_TMP/zyl_poison_selfhost.log
+    fi
+fi
+
 # Self-hosting fixed-point verification (default in --full; slow)
 if [ "$BOOT" -eq 1 ] && [ "$NO_BOOT" -eq 0 ] && ! dry_listed "boot/fixed-point"; then
     TOTAL=$((TOTAL + 1))

@@ -118,11 +118,34 @@ Two limits, both stated rather than glossed:
   genuine escape from the static checks, and a green run is weaker evidence
   than a validated detector would be.
 
+`verify/poison-selfhost.sh` is the stronger of the two. It rebuilds the
+entire compiler — the largest Zyl program in existence, ~100k lines,
+self-hosting — with released region blocks refilled, and requires the seeds
+to come out byte-identical. Byte-identity is already the property `boot.sh`
+checks, so a poisoned run reproducing the seeds is the same strong statement
+with the allocator no longer able to hide a stale read behind reused memory.
+If the compiler read dead frame memory anywhere, the fill would corrupt a
+value and codegen output would differ from the committed seed. It passes.
+
+**Trying to break it, and failing.** The adversarial version of this is to
+manufacture the violation the gate cannot otherwise see, so the gate has a
+positive control. That needs a compiler with the escape *diagnostic*
+suppressed, built in a scratch tree so the check never ships weakened. It
+was built, and the manufactured escape — a `Stack` bytebuf returned from its
+frame and then written and read by the caller — still read back the value it
+wrote, with and without poisoning. The reason is that the escape path
+*promotes* the allocation to a longer-lived region rather than leaving it
+dangling, which is the safe direction; `E_REGION_ESCAPE` is a guarantee to
+the programmer that their `Stack` request could not be honoured, not a
+report of a dangling pointer. So the failure mode this document worries
+about is largely designed out rather than merely unobserved.
+
 What this leaves: escape analysis under-approximation is no longer a bare
-assertion, and nothing in the suite depends on reading dead frame memory.
-It is still not a proof, and the cases it cannot see — a stale read that
-never reaches output, and interprocedural flows through a returned handle —
-remain open.
+assertion, it is checked on 125 programs and on the compiler's own full
+bootstrap, and an attempt to break it the obvious way did not succeed. It is
+still not a proof. The cases that remain open are a stale read that never
+reaches any output and is overwritten before anyone inspects it, and
+interprocedural flows through a returned handle.
 
 ### L3 — A resource is released exactly once · *Enforced, plus a runtime floor*
 
@@ -244,6 +267,7 @@ system and indefensible as a statement about the artifact.
 ./run_regression_tests.sh --full                   # 433 tests
 ./run_regression_tests.sh --full --no-boot --filter memcheck   # memory gate
 ./run_regression_tests.sh --full --no-boot --filter poison    # region gate
+./run_regression_tests.sh --full --no-boot --filter poison-selfhost  # whole compiler
 ```
 
 The memcheck gate checks its own positive control and its own detection
