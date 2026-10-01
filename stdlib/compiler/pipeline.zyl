@@ -247,16 +247,20 @@
 ; sink.
 ; Returns: String (assembly)
 (defn compile-to-asm (arena srcbuf srcpath)
-  (let buf (codegen-fns arena (compile-to-fns arena srcbuf srcpath) srcpath)
-    (begin
-      ; A phase, not a wrapper: on a violation it does not return, so no
-      ; assembly leaves here and no binary can be produced from it. Placed
-      ; here so every path to an assembly -- driver, LSP, REPL, package build
-      ; -- goes through it; a build that could skip the check was a
-      ; convention, not a boundary.
-      (verify-asm buf)
-      buf)))
+  (codegen-fns arena (compile-to-fns arena srcbuf srcpath) srcpath))
 
+; The one place assembly text is produced, and therefore the one place the
+; verifier has to run. It was in `compile-to-asm` first, on the reasoning that
+; every path to an assembly goes through it. That was wrong, and the way it was
+; wrong is the reason it is here: `drv-compile-uncached` needs the IR before
+; code generation, to hash it for the build record, so it calls `codegen-fns`
+; directly -- and `zyl build` and `zyl test` therefore emitted binaries with no
+; verification at all, while the docstring claimed otherwise. A check placed
+; one level above the thing it guards is a convention; a check at the point of
+; production cannot be bypassed without writing a second code generator.
+;
+; On a violation it does not return, so no assembly leaves here and no linker
+; can be handed anything to link.
 (defn codegen-fns (arena region-fns srcpath)
   (begin
     (dbg-log "codegen\n")
@@ -265,4 +269,6 @@
         (let blen (alloc-strlen buf)
           (if (> blen 66060288)
             (ffi-call "zyl_panic" "E_CODEGEN_BUFFER_FULL: generated assembly exceeded the codegen buffer" 1000)
-            buf))))))
+            (begin
+              (verify-asm buf)
+              buf)))))))

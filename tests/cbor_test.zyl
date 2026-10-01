@@ -1,0 +1,136 @@
+; CBOR encoder tests.
+;
+; Byte-for-byte against hand-computed canonical encodings, because a CBOR
+; encoder's whole job is to emit one specific byte string: a COSE signature is
+; over those bytes, so an encoder that is merely *valid* is not good enough.
+; A test that round-tripped through a decoder would pass for non-canonical
+; output, which is the failure this module exists to prevent.
+
+(use encoding/cbor)
+
+(defn buf (cap) (cbor-buf cap))
+
+; The bytes the encoder writes for a head, as a list of decimals. Recursive
+; rather than accumulated through a ref: a head is at most nine bytes, and a
+; ref plus a partial list is more state than this needs.
+(defn bytes-upto ((b ByteBuf) (e Int) (i Int))
+  (if (>= i e)
+    Nil
+    (Cons (load-u8 :le b i) (bytes-upto b e (+ i 1)))))
+
+(defn head (major arg)
+  (let b (cbor-buf 16)
+    (bytes-upto b (cbor-head b 0 major arg) 0)))
+
+(test "cbor-short-head-fits-the-head-byte"
+
+  (begin    (assert-equal (head 0 0) (Cons 0 Nil))
+    (assert-equal (head 0 23) (Cons 23 Nil))
+  ))
+
+; 24 is the first value that does not fit, so 0..23 is one byte and 24..255 is
+; two. Getting this boundary wrong is the classic way to produce valid but
+; non-canonical output.
+(test "cbor-one-byte-argument"
+
+  (begin    (assert-equal (head 0 24) (Cons 24 (Cons 24 Nil)))
+    (assert-equal (head 0 255) (Cons 24 (Cons 255 Nil)))
+  ))
+
+; CBOR arguments are big-endian, unlike the little-endian `store-u8` used to
+; write them: 256 is 19 01 00 and not 19 00 01.
+(test "cbor-two-byte-argument-is-big-endian"
+
+  (begin    (assert-equal (head 0 256) (Cons 25 (Cons 1 (Cons 0 Nil))))
+    (assert-equal (head 0 65535) (Cons 25 (Cons 255 (Cons 255 Nil))))
+  ))
+
+(test "cbor-four-and-eight-byte-arguments"
+
+  (begin    (assert-equal (head 0 65536) (Cons 26 (Cons 0 (Cons 1 (Cons 0 (Cons 0 Nil))))))
+    (assert-equal (head 0 4294967296)
+      (Cons 27 (Cons 0 (Cons 0 (Cons 0 (Cons 1 (Cons 0 (Cons 0 (Cons 0 (Cons 0 Nil))))))))))
+  ))
+
+; major<<5 | argument
+(test "cbor-major-types"
+
+  (begin    (assert-equal (head 2 3) (Cons 67 Nil))
+    (assert-equal (head 3 3) (Cons 99 Nil))
+    (assert-equal (head 4 3) (Cons 131 Nil))
+    (assert-equal (head 5 3) (Cons 163 Nil))
+  ))
+
+; Major 1 encodes one less than the magnitude, so -1 is argument 0.
+(test "cbor-negative-one-is-argument-zero"
+
+  (begin    (assert-equal (head 1 0) (Cons 32 Nil))
+  ))
+
+(test "cbor-simple-values-are-one-byte"
+
+  (begin    (let b (buf 4)
+      (begin
+        (assert-equal (cbor-bool b 0 1) 1)
+        (assert-equal (load-u8 :le b 0) 245)
+        (assert-equal (cbor-bool b 1 0) 2)
+        (assert-equal (load-u8 :le b 1) 244)
+        (assert-equal (cbor-null b 2) 3)
+        (assert-equal (load-u8 :le b 2) 246)))
+  ))
+
+(test "cbor-text-length-is-bytes-not-characters"
+
+  (begin    (let b (buf 32)
+      (let e (cbor-text b 0 "abc")
+        (begin
+          (assert-equal e 4)
+          (assert-equal (load-u8 :le b 0) 99)
+          (assert-equal (load-u8 :le b 1) 97)
+          (assert-equal (load-u8 :le b 2) 98)
+          (assert-equal (load-u8 :le b 3) 99))))
+  ))
+
+; a2 61 6e 01 61 7a 20 -- {"n": 1, "z": -1}, in that order because the caller
+; chose that order. The provenance record relies on this: canonical form means
+; sorted keys, and the burden of sorting is the record builder's.
+(test "cbor-map-of-two-entries"
+
+  (begin    (let b (buf 64)
+      (let o (cbor-map-head b 0 2)
+        (let o (cbor-text b o "n")
+          (let o (cbor-uint b o 1)
+            (let o (cbor-text b o "z")
+              (let o (cbor-uint b o (- 1))
+                (begin
+                  (assert-equal o 7)
+                  (assert-equal (load-u8 :le b 0) 162)
+                  (assert-equal (load-u8 :le b 1) 97)
+                  (assert-equal (load-u8 :le b 2) 110)
+                  (assert-equal (load-u8 :le b 3) 1)
+                  (assert-equal (load-u8 :le b 4) 97)
+                  (assert-equal (load-u8 :le b 5) 122)
+                  (assert-equal (load-u8 :le b 6) 32))))))))
+  ))
+
+; The sizing function and the writer are the same logic stated twice, and the
+; failure mode is a record truncated after it was signed.
+(test "cbor-head-size-agrees-with-the-writer"
+
+  (begin    (assert-equal (cbor-head-size 0) 1)
+    (assert-equal (cbor-head-size 23) 1)
+    (assert-equal (cbor-head-size 24) 2)
+    (assert-equal (cbor-head-size 255) 2)
+    (assert-equal (cbor-head-size 256) 3)
+    (assert-equal (cbor-head-size 65535) 3)
+    (assert-equal (cbor-head-size 65536) 5)
+    (assert-equal (cbor-head-size 4294967296) 9)
+  ))
+
+(test "cbor-budget-is-an-over-estimate"
+
+  (begin    (assert-equal (cbor-budget 0 0) 16)
+    (assert-true (> (cbor-budget 4 64) (cbor-budget 4 0)))
+  ))
+
+(run-tests)

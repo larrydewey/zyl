@@ -326,6 +326,12 @@ if [ "$MODE" = "full" ] || [ "$MODE" = "quick" ]; then
     if [ -z "$FILTER" ] || echo "unit_test" | grep -qi -- "$FILTER"; then
         run_test "unit_test" "${TESTS_DIR}/unit_test.zyl"
     fi
+    # The CBOR encoder, against hand-computed canonical encodings. A COSE
+    # signature is over these bytes, so an encoder that is merely valid is not
+    # good enough -- it has to be the one encoding.
+    if [ -z "$FILTER" ] || echo "cbor_test" | grep -qi -- "$FILTER"; then
+        run_test "cbor_test" "${TESTS_DIR}/cbor_test.zyl"
+    fi
     # The binary-safety verifier, on hand-written assembly. It runs in quick
     # mode because a check that only ever sees the compiler's own output
     # cannot be told apart from one that does nothing: these cases are the

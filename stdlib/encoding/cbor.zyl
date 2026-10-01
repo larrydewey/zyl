@@ -1,0 +1,166 @@
+; === CBOR (RFC 8949), canonical form only ===
+; Module: encoding/cbor
+;
+; Exists for one consumer today -- the build provenance record, which is
+; signed as a COSE_Sign1 and appended to the binary. It is here rather than
+; inline in that feature because the encoding is the part that has to be
+; exactly right and the part nobody should be re-deriving per call site.
+;
+; CANONICAL, NOT MERELY CONFORMANT. This encoder emits the deterministic form
+; of RFC 8949 §4.2.1 and nothing else: shortest-form head arguments, definite
+; lengths, and map keys in the order the caller supplies them. That is not
+; fastidiousness. A COSE signature is over bytes, so two encodings of one
+; record would verify differently, and the project's first non-negotiable is
+; that the same inputs produce the same output. An encoder that could emit
+; either `0x18 0x01` or `0x01` for the integer 1 would make a build
+; unattestable, and an unattestable build is one nobody can check.
+;
+; Consequently there is no "encode it however" path here: no indefinite
+; lengths, no alternative integer forms, no caller-chosen key order. A map is
+; written by the caller in the order it wants and `cbor-keys-sorted-p` checks
+; the result, which puts the burden where it belongs -- on the one function
+; that builds a record, rather than on every function that encodes a value.
+;
+; The writer is an explicit offset into a ByteBuf rather than a growable
+; buffer, for the same reason `elf_link.zyl` does it: the caller knows the
+; size it wants, and a hidden reallocation is one more thing to be right about
+; in a component whose output is signed.
+
+; A buffer to encode into, with room for `cap` bytes.
+;
+; Callers outside the standard library cannot call `zyl_bytebuf_new` -- it is a
+; raw runtime entry, E_FFI_RESTRICTED -- so a module that hands out ByteBufs
+; has to hand them out itself. That is the only reason this exists; there is
+; no allocation policy here. The region argument is 1 because that is what
+; elf_link.zyl passes and the escape check reads the literal: 0 is read as the
+; current region, and a buffer allocated in the caller's frame and returned is
+; E_REGION_ESCAPE. The runtime ignores the argument -- zyl_bytebuf_new is
+; malloc'd -- but the static check is not reading the runtime.
+(defn cbor-buf (cap) (ffi-call "zyl_bytebuf_new" 1 (if (> cap 0) cap 1) 1000))
+
+; ---------------------------------------------------------------------------
+; Heads
+; ---------------------------------------------------------------------------
+
+; One byte holding major<<5 | argument, for argument < 24.
+(defn cbor-h0 ((b ByteBuf) (off Int) major arg)
+  (begin
+    (store-u8 :le b off (+ (* major 32) arg))
+    (+ off 1)))
+
+; The argument, shortest form. Returns the new offset.
+;
+; The thresholds are the ones in the RFC: under 24 fits the head, then one
+; byte reaches 255, two reaches 65535, four reaches 2^32, and anything wider
+; needs eight. Encoding 0 as 0x1800 is a different byte string, which is the
+; whole reason this function exists.
+(defn cbor-head ((b ByteBuf) (off Int) major arg)
+  (if (< arg 24)
+    (cbor-h0 b off major arg)
+    (if (< arg 256)
+      (begin
+        (store-u8 :le b off (+ (* major 32) 24))
+        (store-u8 :le b (+ off 1) arg)
+        (+ off 2))
+      (if (< arg 65536)
+        (begin
+          (store-u8 :le b off (+ (* major 32) 25))
+          (store-u8 :le b (+ off 1) (bit-and (shr arg 8) 255))
+          (store-u8 :le b (+ off 2) (bit-and arg 255))
+          (+ off 3))
+        (if (< arg 4294967296)
+          (begin
+            (store-u8 :le b off (+ (* major 32) 26))
+            (store-u8 :le b (+ off 1) (bit-and (shr arg 24) 255))
+            (store-u8 :le b (+ off 2) (bit-and (shr arg 16) 255))
+            (store-u8 :le b (+ off 3) (bit-and (shr arg 8) 255))
+            (store-u8 :le b (+ off 4) (bit-and arg 255))
+            (+ off 5))
+          (begin
+            (store-u8 :le b off (+ (* major 32) 27))
+            (cbor-u64 b (+ off 1) arg)
+            (+ off 9)))))))
+
+; Eight bytes, most significant first -- CBOR is big-endian for arguments,
+; unlike the `store-u8 :le` used to write them.
+(defn cbor-u64 ((b ByteBuf) (off Int) v)
+  (begin
+    (store-u8 :le b off (bit-and (shr v 56) 255))
+    (store-u8 :le b (+ off 1) (bit-and (shr v 48) 255))
+    (store-u8 :le b (+ off 2) (bit-and (shr v 40) 255))
+    (store-u8 :le b (+ off 3) (bit-and (shr v 32) 255))
+    (store-u8 :le b (+ off 4) (bit-and (shr v 24) 255))
+    (store-u8 :le b (+ off 5) (bit-and (shr v 16) 255))
+    (store-u8 :le b (+ off 6) (bit-and (shr v 8) 255))
+    (store-u8 :le b (+ off 7) (bit-and v 255))
+    (+ off 8)))
+
+; ---------------------------------------------------------------------------
+; Values
+; ---------------------------------------------------------------------------
+
+; Major 0.
+(defn cbor-uint ((b ByteBuf) (off Int) n)
+  (if (< n 0) (cbor-nint b off (- 0 n)) (cbor-head b off 0 n)))
+
+; Major 1: the encoded argument is one less than the magnitude, so -1 is 0.
+(defn cbor-nint ((b ByteBuf) (off Int) n) (cbor-head b off 1 (- n 1)))
+
+; Copy `len` bytes of `s` into `b` at `off`; returns the offset after them.
+; Just the copy: the head is the caller's, because the two string majors differ
+; only in that byte and getting it wrong is invisible until something tries to
+; decode the result.
+;
+; Byte at a time, because there is no String-to-ByteSlice primitive and this
+; runs once per build, not per value in a loop that matters.
+(defn cbor-copy ((b ByteBuf) (off Int) (s String) (len Int))
+  (let i (ffi-call "zyl_ref_new" 0 1000)
+    (begin
+      (while (< (ffi-call "zyl_ref_get" i 1000) len)
+        (begin
+          (store-u8 :le b (+ off (ffi-call "zyl_ref_get" i 1000))
+            (ffi-call "zyl_view_byte" s 0 1099511627776 (ffi-call "zyl_ref_get" i 1000) 1000))
+          (ffi-call "zyl_ref_set" i (+ (ffi-call "zyl_ref_get" i 1000) 1) 1000)))
+      (+ off len))))
+
+; Major 2, from a String treated as raw bytes. Hashes and signatures are the
+; reason this exists: a 32-byte hash is not text and must not be hex.
+(defn cbor-bytes ((b ByteBuf) (off Int) (s String) (len Int))
+  (let o1 (cbor-head b off 2 len) (cbor-copy b o1 s len)))
+
+; Major 3. The length is the byte length, which is what CBOR wants; a
+; multi-byte character is one head byte-count and several payload bytes.
+;
+; This calls cbor-copy and not cbor-bytes. Delegating to cbor-bytes is the
+; obvious one-liner and it emits major 2, so every text key in a record comes
+; out a byte string: a map that encodes, and decodes to nothing readable.
+(defn cbor-text ((b ByteBuf) (off Int) (s String))
+  (let len (str-length s)
+    (let o1 (cbor-head b off 3 len) (cbor-copy b o1 s len))))
+
+(defn cbor-text-head ((b ByteBuf) (off Int) len) (cbor-head b off 3 len))
+
+; Major 4 and 5. The count is the number of items, not a byte length, which is
+; the detail that makes these two different from a string head.
+(defn cbor-array-head ((b ByteBuf) (off Int) n) (cbor-head b off 4 n))
+(defn cbor-map-head ((b ByteBuf) (off Int) n) (cbor-head b off 5 n))
+
+; Major 7, simple values 20/21/22.
+(defn cbor-bool ((b ByteBuf) (off Int) (v Int)) (cbor-h0 b off 7 (if (> v 0) 21 20)))
+(defn cbor-null ((b ByteBuf) (off Int)) (cbor-h0 b off 7 22))
+
+; ---------------------------------------------------------------------------
+; Sizing
+; ---------------------------------------------------------------------------
+
+; The encoded size of a head, so a caller can size a buffer before writing.
+; Having this and the writer agree is worth a test rather than a comment: they
+; are the same function's logic stated twice, and the failure mode is a
+; truncated record that still signs.
+(defn cbor-head-size (arg)
+  (if (< arg 24) 1 (if (< arg 256) 2 (if (< arg 65536) 3 (if (< arg 4294967296) 5 9)))))
+
+; An upper bound on the record, for sizing: every value as its head plus a
+; 64-byte payload. Deliberately an over-estimate -- a buffer that is too big
+; costs a few bytes, one that is too small truncates a signature.
+(defn cbor-budget (items bytes-each) (+ 16 (* items (+ 12 bytes-each))))
