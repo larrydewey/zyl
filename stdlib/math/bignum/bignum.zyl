@@ -58,8 +58,8 @@
 
 ; Allocate an n-limb Nat, zeroed.
 ; Returns: Words
-(defn bn-alloc ((arena Arena) (n Int))
-  (w-alloc arena n))
+(defn bn-alloc ((n Int))
+  (w-alloc n))
 
 ; Set every limb to zero.
 ; Returns: Words
@@ -153,8 +153,8 @@
 ; of a full-width subtraction into a scratch array, which is exactly
 ; the "did it go negative" bit and costs no branch.
 ; Returns: Int
-(defn bn-lt ((arena Arena) (a Words) (b Words) (n Int))
-  (let scratch (bn-alloc arena n)
+(defn bn-lt ((a Words) (b Words) (n Int))
+  (let scratch (bn-alloc n)
     (bn-sub scratch a b n)))
 
 ; dst = src when mask is all-ones, unchanged when mask is zero. The
@@ -173,8 +173,8 @@
 ; memory access pattern are identical either way. This is the primitive
 ; behind every "reduce once if the result overflowed" step.
 ; Returns: Int
-(defn bn-cond-sub ((arena Arena) (a Words) (b Words) (n Int) (cond Int))
-  (let scratch (bn-alloc arena n)
+(defn bn-cond-sub ((a Words) (b Words) (n Int) (cond Int))
+  (let scratch (bn-alloc n)
     (begin
       (bn-sub scratch a b n)
       (bn-cond-copy a scratch n (ct-mask cond))

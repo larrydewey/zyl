@@ -23,51 +23,51 @@
 ; T(i) = U(1) ^ U(2) ^ ... ^ U(c), U(1) = PRF(P, S || INT32BE(i)) and
 ; U(j) = PRF(P, U(j-1)).
 ; Returns: Words
-(defn pbkdf2-sha256 ((arena Arena) (pw Words) (pwlen Int) (salt Words) (saltlen Int) (iters Int) (dklen Int))
-  (let out (w-alloc arena (+ dklen 32))
+(defn pbkdf2-sha256 ((pw Words) (pwlen Int) (salt Words) (saltlen Int) (iters Int) (dklen Int))
+  (let out (w-alloc (+ dklen 32))
     (begin
       (for (i 0) (< (* i 32) dklen)
         (begin
-          (pbkdf2-block arena pw pwlen salt saltlen iters out i)
+          (pbkdf2-block pw pwlen salt saltlen iters out i)
           (set! i (+ i 1))))
       out)))
 
 ; One output block: the XOR of all `iters` chained HMAC results.
 ; Returns: Int
-(defn pbkdf2-block ((arena Arena) (pw Words) (pwlen Int) (salt Words) (saltlen Int) (iters Int) (out Words) (i Int))
-  (let first (pbkdf2-first-u arena pw pwlen salt saltlen (+ i 1))
-    (let acc (w-copy (w-alloc arena 32) first 32)
+(defn pbkdf2-block ((pw Words) (pwlen Int) (salt Words) (saltlen Int) (iters Int) (out Words) (i Int))
+  (let first (pbkdf2-first-u pw pwlen salt saltlen (+ i 1))
+    (let acc (w-copy (w-alloc 32) first 32)
       (begin
-        (pbkdf2-iterate arena pw pwlen first acc iters)
+        (pbkdf2-iterate pw pwlen first acc iters)
         (pbkdf2-copy-at out (* i 32) acc 32)
         0))))
 
 ; U(1) = HMAC(P, S || INT32BE(i)).
 ; Returns: Words
-(defn pbkdf2-first-u ((arena Arena) (pw Words) (pwlen Int) (salt Words) (saltlen Int) (index Int))
-  (let buf (w-alloc arena (+ saltlen 4))
+(defn pbkdf2-first-u ((pw Words) (pwlen Int) (salt Words) (saltlen Int) (index Int))
+  (let buf (w-alloc (+ saltlen 4))
     (begin
       (w-copy buf salt saltlen)
       (w-set buf saltlen (bit-and (shr index 24) 255))
       (w-set buf (+ saltlen 1) (bit-and (shr index 16) 255))
       (w-set buf (+ saltlen 2) (bit-and (shr index 8) 255))
       (w-set buf (+ saltlen 3) (bit-and index 255))
-      (hmac-sha256 arena pw pwlen buf (+ saltlen 4)))))
+      (hmac-sha256 pw pwlen buf (+ saltlen 4)))))
 
 ; Chain U(2)..U(c), accumulating the XOR into `acc`. `cur` is mutated
 ; in place to hold the running U.
 ; Returns: Int
-(defn pbkdf2-iterate ((arena Arena) (pw Words) (pwlen Int) (cur Words) (acc Words) (iters Int))
+(defn pbkdf2-iterate ((pw Words) (pwlen Int) (cur Words) (acc Words) (iters Int))
   (begin
     (for (j 1) (< j iters)
       (begin
-        (pbkdf2-step arena pw pwlen cur acc)
+        (pbkdf2-step pw pwlen cur acc)
         (set! j (+ j 1))))
     0))
 
 ; Returns: Int
-(defn pbkdf2-step ((arena Arena) (pw Words) (pwlen Int) (cur Words) (acc Words))
-  (let next (hmac-sha256 arena pw pwlen cur 32)
+(defn pbkdf2-step ((pw Words) (pwlen Int) (cur Words) (acc Words))
+  (let next (hmac-sha256 pw pwlen cur 32)
     (begin
       (w-copy cur next 32)
       (for (k 0) (< k 32)

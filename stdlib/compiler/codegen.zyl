@@ -3810,10 +3810,9 @@
 (defn mb-function (st f)
   (match f
     (IFn name params body kinds
-      (let _ (mir-reset)
-        (let rflags (cg-region-flags f)
-          (match (ml-function st name params kinds body rflags)
-            (MS nv nl rev blocks (mb-alloc-emit st name nv nl (list-reverse rev) rflags (list-reverse blocks)))))))
+      (let rflags (cg-region-flags f)
+        (match (ml-function st name params kinds body rflags)
+          (MS nv nl rev blocks (mb-alloc-emit st name nv nl (list-reverse rev) rflags (list-reverse blocks))))))
     (_ st)))
 
 (defn mb-alloc-emit (st name nv nl0 instrs0 rflags blocks)
@@ -3836,7 +3835,7 @@
   (let saved (mb-used-callee al nv 0 Nil)
     (let top (if (> rflags 0) 48 0)
       (let bstart (+ top (* 8 (+ (list-length saved) (+ (alloc-spills al) (if (> (bit-and rflags 1) 0) 6 0)))))
-        (let boffs (w-alloc (mir-arena) (+ (list-length blocks) 1))
+        (let boffs (w-alloc (+ (list-length blocks) 1))
           (let bend (mb-block-offsets boffs blocks 0 bstart)
             (let align (mb-needs-align instrs rflags)
             (let fr (MF al saved rflags base bstart boffs (and (= rflags 0) (and (not align) (= bend (* 8 (list-length saved))))))
@@ -3844,10 +3843,10 @@
                 (mb-emit-all (mb-prologue st name fr fsz align) fr instrs 0))))))))))
 
 ; Labels some later jump goes back to (loop heads), aligned to 16.
-(def mb-loop-heads (ffi-call "zyl_ref_new" (w-alloc (mir-arena) 1) 1000))
+(def mb-loop-heads (ffi-call "zyl_ref_new" (w-alloc 1) 1000))
 
 (defn mb-back-targets (a n lpos nl)
-  (let w (w-alloc (mir-arena) (if (> nl 0) nl 1))
+  (let w (w-alloc (if (> nl 0) nl 1))
     (let _ (mb-back-scan a n lpos w 0) w)))
 
 ; Only a label no instruction falls into: the padding is never executed.
@@ -4009,7 +4008,7 @@
             (Nil (mb-emit-one st fr ins i))))
         (_ (mb-emit-all (mb-emit-one st fr ins i) fr rest (+ i 1)))))))
 
-(def mb-uses (ffi-call "zyl_ref_new" (w-alloc (mir-arena) 1) 1000))
+(def mb-uses (ffi-call "zyl_ref_new" (w-alloc 1) 1000))
 
 (defn mb-byte-cmp (st fr o dt imm op l)
   (let st1 (if (mb-in-mem fr o) (cg-emit-line st (str-concat "    mov rax, " (mb-loc-text fr o))) st)

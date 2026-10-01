@@ -48,9 +48,9 @@
 ; 2^255 rather than written out as limbs, so the value is checkable by
 ; eye against its definition.
 ; Returns: Words
-(defn x25519-p ((arena Arena))
-  (let p (bn-alloc arena 11)
-    (let nineteen (bn-alloc arena 11)
+(defn x25519-p ()
+  (let p (bn-alloc 11)
+    (let nineteen (bn-alloc 11)
       (begin
         (bn-zero p 11)
         ; 2^255: bit 255 is bit 15 of limb 10 (10*24 = 240, 240+15 = 255).
@@ -62,9 +62,9 @@
 ; Decode 32 little-endian bytes as a field element, clearing the top
 ; bit as RFC 7748 s5 requires of a received u-coordinate.
 ; Returns: Words
-(defn x25519-decode-u ((arena Arena) (bytes Words))
-  (let be (w-alloc arena 32)
-    (let out (bn-alloc arena 11)
+(defn x25519-decode-u ((bytes Words))
+  (let be (w-alloc 32)
+    (let out (bn-alloc 11)
       (begin
         (for (i 0) (< i 32)
           (begin (w-set be i (w-get bytes (- 31 i))) (set! i (+ i 1))))
@@ -74,9 +74,9 @@
 
 ; Encode a field element as 32 little-endian bytes.
 ; Returns: Words
-(defn x25519-encode ((arena Arena) (v Words))
-  (let be (w-alloc arena 32)
-    (let out (w-alloc arena 32)
+(defn x25519-encode ((v Words))
+  (let be (w-alloc 32)
+    (let out (w-alloc 32)
       (begin
         (bn-to-bytes-be be 32 v 11)
         (for (i 0) (< i 32)
@@ -109,8 +109,8 @@
 
 ; A fresh ladder state of four zeroed 11-limb values.
 ; Returns: X25519Ladder
-(defn x25519-ladder-new ((arena Arena))
-  (X25519Ladder (bn-alloc arena 11) (bn-alloc arena 11) (bn-alloc arena 11) (bn-alloc arena 11)))
+(defn x25519-ladder-new ()
+  (X25519Ladder (bn-alloc 11) (bn-alloc 11) (bn-alloc 11) (bn-alloc 11)))
 
 ; Returns: Words
 (defn x25519-x2 ((st X25519Ladder)) (match st (X25519Ladder v _ _ _ v)))
@@ -123,63 +123,63 @@
 
 ; Conditional swap of (x2, z2) with (x3, z3).
 ; Returns: Int
-(defn x25519-cswap ((arena Arena) (st X25519Ladder) (b Int))
+(defn x25519-cswap ((st X25519Ladder) (b Int))
   (begin
-    (mont-cswap arena (x25519-x2 st) (x25519-x3 st) 11 b)
-    (mont-cswap arena (x25519-z2v st) (x25519-z3 st) 11 b)
+    (mont-cswap (x25519-x2 st) (x25519-x3 st) 11 b)
+    (mont-cswap (x25519-z2v st) (x25519-z3 st) 11 b)
     0))
 
 ; The arithmetic of one ladder step over (x2, z2) and (x3, z3).
 ; Returns: Int
-(defn x25519-core ((arena Arena) (st X25519Ladder) (x1 Words) (p Words) (n0 Int) (a24 Words))
-  (let a (bn-alloc arena 11)
-    (let b (bn-alloc arena 11)
-      (let c (bn-alloc arena 11)
-        (let d (bn-alloc arena 11)
+(defn x25519-core ((st X25519Ladder) (x1 Words) (p Words) (n0 Int) (a24 Words))
+  (let a (bn-alloc 11)
+    (let b (bn-alloc 11)
+      (let c (bn-alloc 11)
+        (let d (bn-alloc 11)
           (begin
-            (mod-add arena a (x25519-x2 st) (x25519-z2v st) p 11)
-            (mod-sub arena b (x25519-x2 st) (x25519-z2v st) p 11)
-            (mod-add arena c (x25519-x3 st) (x25519-z3 st) p 11)
-            (mod-sub arena d (x25519-x3 st) (x25519-z3 st) p 11)
-            (x25519-core2 arena st x1 p n0 a24 a b c d)))))))
+            (mod-add a (x25519-x2 st) (x25519-z2v st) p 11)
+            (mod-sub b (x25519-x2 st) (x25519-z2v st) p 11)
+            (mod-add c (x25519-x3 st) (x25519-z3 st) p 11)
+            (mod-sub d (x25519-x3 st) (x25519-z3 st) p 11)
+            (x25519-core2 st x1 p n0 a24 a b c d)))))))
 
 ; Returns: Int
-(defn x25519-core2 ((arena Arena) (st X25519Ladder) (x1 Words) (p Words) (n0 Int) (a24 Words) (a Words) (b Words) (c Words) (d Words))
-  (let aa (bn-alloc arena 11)
-    (let bb (bn-alloc arena 11)
-      (let da (bn-alloc arena 11)
-        (let cb (bn-alloc arena 11)
+(defn x25519-core2 ((st X25519Ladder) (x1 Words) (p Words) (n0 Int) (a24 Words) (a Words) (b Words) (c Words) (d Words))
+  (let aa (bn-alloc 11)
+    (let bb (bn-alloc 11)
+      (let da (bn-alloc 11)
+        (let cb (bn-alloc 11)
           (begin
-            (mont-mul arena aa a a p 11 n0)
-            (mont-mul arena bb b b p 11 n0)
-            (mont-mul arena da d a p 11 n0)
-            (mont-mul arena cb c b p 11 n0)
-            (x25519-core3 arena st x1 p n0 a24 aa bb da cb)))))))
+            (mont-mul aa a a p 11 n0)
+            (mont-mul bb b b p 11 n0)
+            (mont-mul da d a p 11 n0)
+            (mont-mul cb c b p 11 n0)
+            (x25519-core3 st x1 p n0 a24 aa bb da cb)))))))
 
 ; Returns: Int
-(defn x25519-core3 ((arena Arena) (st X25519Ladder) (x1 Words) (p Words) (n0 Int) (a24 Words) (aa Words) (bb Words) (da Words) (cb Words))
-  (let e (bn-alloc arena 11)
-    (let t1 (bn-alloc arena 11)
-      (let t2 (bn-alloc arena 11)
-        (let t3 (bn-alloc arena 11)
+(defn x25519-core3 ((st X25519Ladder) (x1 Words) (p Words) (n0 Int) (a24 Words) (aa Words) (bb Words) (da Words) (cb Words))
+  (let e (bn-alloc 11)
+    (let t1 (bn-alloc 11)
+      (let t2 (bn-alloc 11)
+        (let t3 (bn-alloc 11)
           (begin
-            (mod-sub arena e aa bb p 11)
-            (mod-add arena t1 da cb p 11)
-            (mod-sub arena t2 da cb p 11)
-            (mont-mul arena (x25519-x3 st) t1 t1 p 11 n0)
-            (mont-mul arena t3 t2 t2 p 11 n0)
-            (mont-mul arena (x25519-z3 st) t3 x1 p 11 n0)
-            (mont-mul arena (x25519-x2 st) aa bb p 11 n0)
-            (x25519-z2 arena st p n0 a24 e aa)))))))
+            (mod-sub e aa bb p 11)
+            (mod-add t1 da cb p 11)
+            (mod-sub t2 da cb p 11)
+            (mont-mul (x25519-x3 st) t1 t1 p 11 n0)
+            (mont-mul t3 t2 t2 p 11 n0)
+            (mont-mul (x25519-z3 st) t3 x1 p 11 n0)
+            (mont-mul (x25519-x2 st) aa bb p 11 n0)
+            (x25519-z2 st p n0 a24 e aa)))))))
 
 ; z2 = E * (AA + a24 * E)
 ; Returns: Int
-(defn x25519-z2 ((arena Arena) (st X25519Ladder) (p Words) (n0 Int) (a24 Words) (e Words) (aa Words))
-  (let t (bn-alloc arena 11)
+(defn x25519-z2 ((st X25519Ladder) (p Words) (n0 Int) (a24 Words) (e Words) (aa Words))
+  (let t (bn-alloc 11)
     (begin
-      (mont-mul arena t e a24 p 11 n0)
-      (mod-add arena t t aa p 11)
-      (mont-mul arena (x25519-z2v st) e t p 11 n0)
+      (mont-mul t e a24 p 11 n0)
+      (mod-add t t aa p 11)
+      (mont-mul (x25519-z2v st) e t p 11 n0)
       0)))
 
 ; ===========================================================================
@@ -190,95 +190,95 @@
 ; arrays; the result is a fresh 32-byte array. The scalar is clamped
 ; into a copy, so the caller's array is not modified.
 ; Returns: Words
-(defn x25519 ((arena Arena) (scalar Words) (upoint Words))
-  (let k (w-copy (w-alloc arena 32) scalar 32)
-    (let p (x25519-p arena)
+(defn x25519 ((scalar Words) (upoint Words))
+  (let k (w-copy (w-alloc 32) scalar 32)
+    (let p (x25519-p)
       (let n0 (mont-n0 p)
-        (let r2 (mont-r2 arena p 11)
+        (let r2 (mont-r2 p 11)
           (begin
             (x25519-clamp k)
-            (x25519-run arena k upoint p n0 r2)))))))
+            (x25519-run k upoint p n0 r2)))))))
 
 ; Returns: Words
-(defn x25519-run ((arena Arena) (k Words) (upoint Words) (p Words) (n0 Int) (r2 Words))
-  (let st (x25519-ladder-new arena)
-    (let x1 (bn-alloc arena 11)
-      (let one (mont-one arena p 11 n0 r2)
-        (let a24 (x25519-a24 arena p n0 r2)
+(defn x25519-run ((k Words) (upoint Words) (p Words) (n0 Int) (r2 Words))
+  (let st (x25519-ladder-new)
+    (let x1 (bn-alloc 11)
+      (let one (mont-one p 11 n0 r2)
+        (let a24 (x25519-a24 p n0 r2)
           (begin
-            (mont-to arena x1 (x25519-decode-u arena upoint) p 11 n0 r2)
+            (mont-to x1 (x25519-decode-u upoint) p 11 n0 r2)
             (bn-copy (x25519-x2 st) one 11)
             (bn-zero (x25519-z2v st) 11)
             (bn-copy (x25519-x3 st) x1 11)
             (bn-copy (x25519-z3 st) one 11)
-            (x25519-ladder arena st k x1 p n0 a24)
-            (x25519-finish arena st p n0 one)))))))
+            (x25519-ladder st k x1 p n0 a24)
+            (x25519-finish st p n0 one)))))))
 
 ; 121665 in Montgomery form, the curve constant (A-2)/4.
 ; Returns: Words
-(defn x25519-a24 ((arena Arena) (p Words) (n0 Int) (r2 Words))
-  (let v (bn-alloc arena 11)
-    (let out (bn-alloc arena 11)
+(defn x25519-a24 ((p Words) (n0 Int) (r2 Words))
+  (let v (bn-alloc 11)
+    (let out (bn-alloc 11)
       (begin
         (bn-zero v 11)
         (w-set v 0 (bit-and 121665 16777215))
         (w-set v 1 (bit-and (shr 121665 24) 16777215))
-        (mont-to arena out v p 11 n0 r2)
+        (mont-to out v p 11 n0 r2)
         out))))
 
 ; The 255 ladder iterations, most significant scalar bit first. The
 ; conditional-swap bookkeeping follows RFC 7748: the swap flag carries
 ; the XOR of successive bits so that only one swap happens per step.
 ; Returns: Int
-(defn x25519-ladder ((arena Arena) (st X25519Ladder) (k Words) (x1 Words) (p Words) (n0 Int) (a24 Words))
-  (x25519-ladder-loop arena st k x1 p n0 a24 254 0))
+(defn x25519-ladder ((st X25519Ladder) (k Words) (x1 Words) (p Words) (n0 Int) (a24 Words))
+  (x25519-ladder-loop st k x1 p n0 a24 254 0))
 
 ; Returns: Int
-(defn x25519-ladder-loop ((arena Arena) (st X25519Ladder) (k Words) (x1 Words) (p Words) (n0 Int) (a24 Words) (t Int) (swap Int))
+(defn x25519-ladder-loop ((st X25519Ladder) (k Words) (x1 Words) (p Words) (n0 Int) (a24 Words) (t Int) (swap Int))
   (if (< t 0)
     (begin
-      (x25519-cswap arena st swap)
+      (x25519-cswap st swap)
       0)
     (let kt (x25519-scalar-bit k t)
       (begin
-        (x25519-cswap arena st (bit-xor swap kt))
-        (x25519-core arena st x1 p n0 a24)
-        (x25519-ladder-loop arena st k x1 p n0 a24 (- t 1) kt)))))
+        (x25519-cswap st (bit-xor swap kt))
+        (x25519-core st x1 p n0 a24)
+        (x25519-ladder-loop st k x1 p n0 a24 (- t 1) kt)))))
 
 ; x2 * z2^(p-2), converted out of Montgomery form and encoded.
 ; Returns: Words
-(defn x25519-finish ((arena Arena) (st X25519Ladder) (p Words) (n0 Int) (one Words))
-  (let e (bn-alloc arena 11)
-    (let two (bn-alloc arena 11)
-      (let zinv (bn-alloc arena 11)
-        (let res (bn-alloc arena 11)
+(defn x25519-finish ((st X25519Ladder) (p Words) (n0 Int) (one Words))
+  (let e (bn-alloc 11)
+    (let two (bn-alloc 11)
+      (let zinv (bn-alloc 11)
+        (let res (bn-alloc 11)
           (begin
             (bn-set-small two 11 2)
             (bn-sub e p two 11)
-            (mont-exp-form arena zinv (x25519-z2v st) e 255 p 11 n0 one)
-            (mont-mul arena res (x25519-x2 st) zinv p 11 n0)
-            (mont-from arena res res p 11 n0)
-            (x25519-encode arena res)))))))
+            (mont-exp-form zinv (x25519-z2v st) e 255 p 11 n0 one)
+            (mont-mul res (x25519-x2 st) zinv p 11 n0)
+            (mont-from res res p 11 n0)
+            (x25519-encode res)))))))
 
 ; The RFC 7748 base point u = 9.
 ; Returns: Words
-(defn x25519-basepoint ((arena Arena))
-  (let b (w-alloc arena 32)
+(defn x25519-basepoint ()
+  (let b (w-alloc 32)
     (begin
       (w-set b 0 9)
       b)))
 
 ; The public key for a secret scalar: X25519(scalar, 9).
 ; Returns: Words
-(defn x25519-public ((arena Arena) (scalar Words))
-  (x25519 arena scalar (x25519-basepoint arena)))
+(defn x25519-public ((scalar Words))
+  (x25519 scalar (x25519-basepoint)))
 
 ; X25519 with the all-zero-output check RFC 7748 s6.1 allows. An
 ; all-zero shared secret means the peer supplied a low-order point and
 ; forced the result; returning None is the only safe response.
 ; Returns: (Option Words)
-(defn x25519-checked ((arena Arena) (scalar Words) (upoint Words))
-  (let out (x25519 arena scalar upoint)
+(defn x25519-checked ((scalar Words) (upoint Words))
+  (let out (x25519 scalar upoint)
     ; Declassified: RFC 7748 s6.1's all-zero check IS a published
     ; verdict -- the caller learns it as None either way. What stays
     ; secret is the shared secret itself, which the accumulator above

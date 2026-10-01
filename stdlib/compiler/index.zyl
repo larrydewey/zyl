@@ -274,10 +274,10 @@
       (idx-verify-sig arena name iv))))
 
 (defn idx-verify-sig (arena name iv)
-  (let pub (w-from-hex arena (idx-key-hex (iv-key iv)))
-    (let sig (w-from-hex arena (store-strip-prefix (iv-sig iv)))
-      (let msg (w-from-hex arena (store-strip-prefix (iv-hash iv)))
-        (if (ed25519-verify arena pub msg 32 sig)
+  (let pub (w-from-hex (idx-key-hex (iv-key iv)))
+    (let sig (w-from-hex (store-strip-prefix (iv-sig iv)))
+      (let msg (w-from-hex (store-strip-prefix (iv-hash iv)))
+        (if (ed25519-verify pub msg 32 sig)
           1
           (ffi-call "zyl_panic"
             (str-concat "E_PKG_SIGNATURE_INVALID: package: Ed25519 signature for "
@@ -286,12 +286,12 @@
 ; Sign an archive hash with a seed held in `keyfile` (64 hex characters).
 ; `zyl publish` uses this; nothing in a build path ever does.
 (defn idx-sign-hash (arena seedhex hash)
-  (let seed (w-from-hex arena seedhex)
-    (let msg (w-from-hex arena (store-strip-prefix hash))
-      (str-concat "ed25519:" (w-hex-bytes (ed25519-sign arena seed msg 32) 64)))))
+  (let seed (w-from-hex seedhex)
+    (let msg (w-from-hex (store-strip-prefix hash))
+      (str-concat "ed25519:" (w-hex-bytes (ed25519-sign seed msg 32) 64)))))
 
 (defn idx-public-key (arena seedhex)
-  (str-concat "ed25519:" (w-hex-bytes (ed25519-public-key arena (w-from-hex arena seedhex)) 32)))
+  (str-concat "ed25519:" (w-hex-bytes (ed25519-public-key (w-from-hex seedhex)) 32)))
 
 ; ===========================================================================
 ; SYNCHRONISATION

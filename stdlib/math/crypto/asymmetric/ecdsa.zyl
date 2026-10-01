@@ -98,35 +98,35 @@
 
 ; Load a big-endian hex constant into `limbs` limbs.
 ; Returns: Words
-(defn ec-const ((arena Arena) (hex String) (limbs Int))
-  (let v (bn-alloc arena limbs)
-    (bn-from-bytes-be v limbs (w-from-hex arena hex) (w-hex-len hex))))
+(defn ec-const ((hex String) (limbs Int))
+  (let v (bn-alloc limbs)
+    (bn-from-bytes-be v limbs (w-from-hex hex) (w-hex-len hex))))
 
 ; Build a curve context from its published parameters.
 ; Returns: EcCurve
-(defn ec-curve ((arena Arena) (phex String) (ahex String) (b3hex String) (nhex String) (gxhex String) (gyhex String) (muhex String) (limbs Int))
-  (let p (ec-const arena phex limbs)
+(defn ec-curve ((phex String) (ahex String) (b3hex String) (nhex String) (gxhex String) (gyhex String) (muhex String) (limbs Int))
+  (let p (ec-const phex limbs)
     (let n0 (mont-n0 p)
-      (let r2 (mont-r2 arena p limbs)
-        (let one (mont-one arena p limbs n0 r2)
-          (let a (ec-to-mont arena (ec-const arena ahex limbs) p limbs n0 r2)
-            (let b3 (ec-to-mont arena (ec-const arena b3hex limbs) p limbs n0 r2)
-              (let order (ec-const arena nhex limbs)
-                (let mu (ec-const arena muhex (+ limbs 1))
-                  (ec-finish-ctx arena p n0 r2 one a b3 order mu limbs (w-hex-len phex) gxhex gyhex))))))))))
+      (let r2 (mont-r2 p limbs)
+        (let one (mont-one p limbs n0 r2)
+          (let a (ec-to-mont (ec-const ahex limbs) p limbs n0 r2)
+            (let b3 (ec-to-mont (ec-const b3hex limbs) p limbs n0 r2)
+              (let order (ec-const nhex limbs)
+                (let mu (ec-const muhex (+ limbs 1))
+                  (ec-finish-ctx p n0 r2 one a b3 order mu limbs (w-hex-len phex) gxhex gyhex))))))))))
 
 ; Returns: EcCurve
-(defn ec-finish-ctx ((arena Arena) (p Words) (n0 Int) (r2 Words) (one Words) (a Words) (b3 Words) (order Words) (mu Words) (limbs Int) (nbytes Int) (gxhex String) (gyhex String))
+(defn ec-finish-ctx ((p Words) (n0 Int) (r2 Words) (one Words) (a Words) (b3 Words) (order Words) (mu Words) (limbs Int) (nbytes Int) (gxhex String) (gyhex String))
   (let n0n (mont-n0 order)
-    (let r2n (mont-r2 arena order limbs)
-      (let onen (mont-one arena order limbs n0n r2n)
-        (let g (ec-point-from-affine arena p n0 r2 one limbs (ec-const arena gxhex limbs) (ec-const arena gyhex limbs))
+    (let r2n (mont-r2 order limbs)
+      (let onen (mont-one order limbs n0n r2n)
+        (let g (ec-point-from-affine p n0 r2 one limbs (ec-const gxhex limbs) (ec-const gyhex limbs))
           (EcCurve p n0 r2 one a b3 order mu g limbs nbytes n0n r2n onen))))))
 
 ; Returns: Words
-(defn ec-to-mont ((arena Arena) (v Words) (p Words) (limbs Int) (n0 Int) (r2 Words))
-  (let out (bn-alloc arena limbs)
-    (mont-to arena out v p limbs n0 r2)))
+(defn ec-to-mont ((v Words) (p Words) (limbs Int) (n0 Int) (r2 Words))
+  (let out (bn-alloc limbs)
+    (mont-to out v p limbs n0 r2)))
 
 ; ===========================================================================
 ; NAMED CURVES
@@ -134,8 +134,8 @@
 
 ; NIST P-256 (secp256r1).
 ; Returns: EcCurve
-(defn ec-p256 ((arena Arena))
-  (ec-curve arena
+(defn ec-p256 ()
+  (ec-curve
     "ffffffff00000001000000000000000000000000ffffffffffffffffffffffff"
     "ffffffff00000001000000000000000000000000fffffffffffffffffffffffc"
     "1052a18afeafbbb61bc3380063c994352f57141164fb12e2b36ab4ba777720e2"
@@ -147,8 +147,8 @@
 
 ; secp256k1, the Bitcoin curve.
 ; Returns: EcCurve
-(defn ec-secp256k1 ((arena Arena))
-  (ec-curve arena
+(defn ec-secp256k1 ()
+  (ec-curve
     "fffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f"
     "0000000000000000000000000000000000000000000000000000000000000000"
     "0000000000000000000000000000000000000000000000000000000000000015"
@@ -160,8 +160,8 @@
 
 ; NIST P-384 (secp384r1).
 ; Returns: EcCurve
-(defn ec-p384 ((arena Arena))
-  (ec-curve arena
+(defn ec-p384 ()
+  (ec-curve
     "fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeffffffff0000000000000000ffffffff"
     "fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeffffffff0000000000000000fffffffc"
     "19938ef7a6bcb7adc9aa1043abe8874b4858d54cfb83c336093c19adf03a96125302acaa9e8c74d77f915ac77bc480cf"
@@ -176,24 +176,24 @@
 ; ===========================================================================
 
 ; Returns: Words
-(defn ecf-mul ((arena Arena) (c EcCurve) (out Words) (x Words) (y Words))
-  (mont-mul arena out x y (ec-p c) (ec-limbs c) (ec-n0 c)))
+(defn ecf-mul ((c EcCurve) (out Words) (x Words) (y Words))
+  (mont-mul out x y (ec-p c) (ec-limbs c) (ec-n0 c)))
 ; Returns: Words
-(defn ecf-add ((arena Arena) (c EcCurve) (out Words) (x Words) (y Words))
-  (mod-add arena out x y (ec-p c) (ec-limbs c)))
+(defn ecf-add ((c EcCurve) (out Words) (x Words) (y Words))
+  (mod-add out x y (ec-p c) (ec-limbs c)))
 ; Returns: Words
-(defn ecf-sub ((arena Arena) (c EcCurve) (out Words) (x Words) (y Words))
-  (mod-sub arena out x y (ec-p c) (ec-limbs c)))
+(defn ecf-sub ((c EcCurve) (out Words) (x Words) (y Words))
+  (mod-sub out x y (ec-p c) (ec-limbs c)))
 
 ; out = x^-1 mod p by Fermat.
 ; Returns: Words
-(defn ecf-inv ((arena Arena) (c EcCurve) (out Words) (x Words))
-  (let e (bn-alloc arena (ec-limbs c))
-    (let two (bn-alloc arena (ec-limbs c))
+(defn ecf-inv ((c EcCurve) (out Words) (x Words))
+  (let e (bn-alloc (ec-limbs c))
+    (let two (bn-alloc (ec-limbs c))
       (begin
         (bn-set-small two (ec-limbs c) 2)
         (bn-sub e (ec-p c) two (ec-limbs c))
-        (mont-exp-form arena out x e (* 24 (ec-limbs c)) (ec-p c) (ec-limbs c) (ec-n0 c) (ec-one c))
+        (mont-exp-form out x e (* 24 (ec-limbs c)) (ec-p c) (ec-limbs c) (ec-n0 c) (ec-one c))
         out))))
 
 ; ===========================================================================
@@ -201,8 +201,8 @@
 ; ===========================================================================
 
 ; Returns: EcPt
-(defn ec-pt-new ((arena Arena) (c EcCurve))
-  (EcPt (bn-alloc arena (ec-limbs c)) (bn-alloc arena (ec-limbs c)) (bn-alloc arena (ec-limbs c))))
+(defn ec-pt-new ((c EcCurve))
+  (EcPt (bn-alloc (ec-limbs c)) (bn-alloc (ec-limbs c)) (bn-alloc (ec-limbs c))))
 
 ; Returns: Words
 (defn ec-pt-x ((pt EcPt)) (match pt (EcPt v _ _ v)))
@@ -232,8 +232,8 @@
 
 ; The point at infinity, (0 : 1 : 0).
 ; Returns: EcPt
-(defn ec-pt-identity ((arena Arena) (c EcCurve))
-  (let pt (ec-pt-new arena c)
+(defn ec-pt-identity ((c EcCurve))
+  (let pt (ec-pt-new c)
     (begin
       (bn-zero (ec-pt-x pt) (ec-limbs c))
       (bn-copy (ec-pt-y pt) (ec-one c) (ec-limbs c))
@@ -243,11 +243,11 @@
 ; A point from plain affine coordinates, given the field's constants
 ; (it is used while the curve record is still being built).
 ; Returns: EcPt
-(defn ec-point-from-affine ((arena Arena) (p Words) (n0 Int) (r2 Words) (one Words) (limbs Int) (x Words) (y Words))
-  (let pt (EcPt (bn-alloc arena limbs) (bn-alloc arena limbs) (bn-alloc arena limbs))
+(defn ec-point-from-affine ((p Words) (n0 Int) (r2 Words) (one Words) (limbs Int) (x Words) (y Words))
+  (let pt (EcPt (bn-alloc limbs) (bn-alloc limbs) (bn-alloc limbs))
     (begin
-      (mont-to arena (ec-pt-x pt) x p limbs n0 r2)
-      (mont-to arena (ec-pt-y pt) y p limbs n0 r2)
+      (mont-to (ec-pt-x pt) x p limbs n0 r2)
+      (mont-to (ec-pt-y pt) y p limbs n0 r2)
       (bn-copy (ec-pt-z pt) one limbs)
       pt)))
 
@@ -256,11 +256,11 @@
 (deftype EcRegs (EcRegs Words Words Words Words Words Words Words Words Words Words Words))
 
 ; Returns: EcRegs
-(defn ec-regs ((arena Arena) (c EcCurve))
+(defn ec-regs ((c EcCurve))
   (let n (ec-limbs c)
-    (EcRegs (bn-alloc arena n) (bn-alloc arena n) (bn-alloc arena n) (bn-alloc arena n)
-            (bn-alloc arena n) (bn-alloc arena n) (bn-alloc arena n) (bn-alloc arena n)
-            (bn-alloc arena n) (bn-alloc arena n) (bn-alloc arena n))))
+    (EcRegs (bn-alloc n) (bn-alloc n) (bn-alloc n) (bn-alloc n)
+            (bn-alloc n) (bn-alloc n) (bn-alloc n) (bn-alloc n)
+            (bn-alloc n) (bn-alloc n) (bn-alloc n))))
 
 ; Register i. The index is always a literal of the formula, never data.
 ; Returns: Words
@@ -273,83 +273,83 @@
 ; (Algorithm 1, valid for any curve coefficient a). Every input pair is
 ; handled by this one sequence, including doubling and the identity.
 ; Returns: EcPt
-(defn ec-add ((arena Arena) (c EcCurve) (out EcPt) (pp EcPt) (qq EcPt))
-  (let r (ec-regs arena c)
+(defn ec-add ((c EcCurve) (out EcPt) (pp EcPt) (qq EcPt))
+  (let r (ec-regs c)
     (begin
-      (ec-add-stage1 arena c r pp qq)
-      (ec-add-stage2 arena c r pp qq)
-      (ec-add-stage3 arena c r)
-      (ec-add-stage4 arena c r out)
+      (ec-add-stage1 c r pp qq)
+      (ec-add-stage2 c r pp qq)
+      (ec-add-stage3 c r)
+      (ec-add-stage4 c r out)
       out)))
 
 ; t0 = X1*X2, t1 = Y1*Y2, t2 = Z1*Z2, t3 = (X1+Y1)*(X2+Y2) - t0 - t1
 ; Returns: Int
-(defn ec-add-stage1 ((arena Arena) (c EcCurve) (r EcRegs) (pp EcPt) (qq EcPt))
+(defn ec-add-stage1 ((c EcCurve) (r EcRegs) (pp EcPt) (qq EcPt))
   (let u (ec-reg r 9)
     (let v (ec-reg r 10)
       (begin
-        (ecf-mul arena c (ec-reg r 0) (ec-pt-x pp) (ec-pt-x qq))
-        (ecf-mul arena c (ec-reg r 1) (ec-pt-y pp) (ec-pt-y qq))
-        (ecf-mul arena c (ec-reg r 2) (ec-pt-z pp) (ec-pt-z qq))
-        (ecf-add arena c u (ec-pt-x pp) (ec-pt-y pp))
-        (ecf-add arena c v (ec-pt-x qq) (ec-pt-y qq))
-        (ecf-mul arena c (ec-reg r 3) u v)
-        (ecf-sub arena c (ec-reg r 3) (ec-reg r 3) (ec-reg r 0))
-        (ecf-sub arena c (ec-reg r 3) (ec-reg r 3) (ec-reg r 1))
+        (ecf-mul c (ec-reg r 0) (ec-pt-x pp) (ec-pt-x qq))
+        (ecf-mul c (ec-reg r 1) (ec-pt-y pp) (ec-pt-y qq))
+        (ecf-mul c (ec-reg r 2) (ec-pt-z pp) (ec-pt-z qq))
+        (ecf-add c u (ec-pt-x pp) (ec-pt-y pp))
+        (ecf-add c v (ec-pt-x qq) (ec-pt-y qq))
+        (ecf-mul c (ec-reg r 3) u v)
+        (ecf-sub c (ec-reg r 3) (ec-reg r 3) (ec-reg r 0))
+        (ecf-sub c (ec-reg r 3) (ec-reg r 3) (ec-reg r 1))
         0))))
 
 ; t4 = (X1+Z1)*(X2+Z2) - t0 - t2, t5 = (Y1+Z1)*(Y2+Z2) - t1 - t2
 ; Returns: Int
-(defn ec-add-stage2 ((arena Arena) (c EcCurve) (r EcRegs) (pp EcPt) (qq EcPt))
+(defn ec-add-stage2 ((c EcCurve) (r EcRegs) (pp EcPt) (qq EcPt))
   (let u (ec-reg r 9)
     (let v (ec-reg r 10)
       (begin
-        (ecf-add arena c u (ec-pt-x pp) (ec-pt-z pp))
-        (ecf-add arena c v (ec-pt-x qq) (ec-pt-z qq))
-        (ecf-mul arena c (ec-reg r 4) u v)
-        (ecf-sub arena c (ec-reg r 4) (ec-reg r 4) (ec-reg r 0))
-        (ecf-sub arena c (ec-reg r 4) (ec-reg r 4) (ec-reg r 2))
-        (ecf-add arena c u (ec-pt-y pp) (ec-pt-z pp))
-        (ecf-add arena c v (ec-pt-y qq) (ec-pt-z qq))
-        (ecf-mul arena c (ec-reg r 5) u v)
-        (ecf-sub arena c (ec-reg r 5) (ec-reg r 5) (ec-reg r 1))
-        (ecf-sub arena c (ec-reg r 5) (ec-reg r 5) (ec-reg r 2))
+        (ecf-add c u (ec-pt-x pp) (ec-pt-z pp))
+        (ecf-add c v (ec-pt-x qq) (ec-pt-z qq))
+        (ecf-mul c (ec-reg r 4) u v)
+        (ecf-sub c (ec-reg r 4) (ec-reg r 4) (ec-reg r 0))
+        (ecf-sub c (ec-reg r 4) (ec-reg r 4) (ec-reg r 2))
+        (ecf-add c u (ec-pt-y pp) (ec-pt-z pp))
+        (ecf-add c v (ec-pt-y qq) (ec-pt-z qq))
+        (ecf-mul c (ec-reg r 5) u v)
+        (ecf-sub c (ec-reg r 5) (ec-reg r 5) (ec-reg r 1))
+        (ecf-sub c (ec-reg r 5) (ec-reg r 5) (ec-reg r 2))
         0))))
 
 ; The curve-constant folding: registers 6, 7, 8 become the intermediate
 ; X3, Y3, Z3 of the reference algorithm.
 ; Returns: Int
-(defn ec-add-stage3 ((arena Arena) (c EcCurve) (r EcRegs))
+(defn ec-add-stage3 ((c EcCurve) (r EcRegs))
   (let u (ec-reg r 9)
     (begin
-      (ecf-mul arena c (ec-reg r 8) (ec-a c) (ec-reg r 4))
-      (ecf-mul arena c (ec-reg r 6) (ec-b3 c) (ec-reg r 2))
-      (ecf-add arena c (ec-reg r 8) (ec-reg r 6) (ec-reg r 8))
-      (ecf-sub arena c (ec-reg r 6) (ec-reg r 1) (ec-reg r 8))
-      (ecf-add arena c (ec-reg r 8) (ec-reg r 1) (ec-reg r 8))
-      (ecf-mul arena c (ec-reg r 7) (ec-reg r 6) (ec-reg r 8))
-      (ecf-add arena c u (ec-reg r 0) (ec-reg r 0))
-      (ecf-add arena c (ec-reg r 1) u (ec-reg r 0))
-      (ecf-mul arena c (ec-reg r 2) (ec-a c) (ec-reg r 2))
-      (ecf-mul arena c (ec-reg r 4) (ec-b3 c) (ec-reg r 4))
-      (ecf-add arena c (ec-reg r 1) (ec-reg r 1) (ec-reg r 2))
-      (ecf-sub arena c (ec-reg r 2) (ec-reg r 0) (ec-reg r 2))
-      (ecf-mul arena c (ec-reg r 2) (ec-a c) (ec-reg r 2))
-      (ecf-add arena c (ec-reg r 4) (ec-reg r 4) (ec-reg r 2))
+      (ecf-mul c (ec-reg r 8) (ec-a c) (ec-reg r 4))
+      (ecf-mul c (ec-reg r 6) (ec-b3 c) (ec-reg r 2))
+      (ecf-add c (ec-reg r 8) (ec-reg r 6) (ec-reg r 8))
+      (ecf-sub c (ec-reg r 6) (ec-reg r 1) (ec-reg r 8))
+      (ecf-add c (ec-reg r 8) (ec-reg r 1) (ec-reg r 8))
+      (ecf-mul c (ec-reg r 7) (ec-reg r 6) (ec-reg r 8))
+      (ecf-add c u (ec-reg r 0) (ec-reg r 0))
+      (ecf-add c (ec-reg r 1) u (ec-reg r 0))
+      (ecf-mul c (ec-reg r 2) (ec-a c) (ec-reg r 2))
+      (ecf-mul c (ec-reg r 4) (ec-b3 c) (ec-reg r 4))
+      (ecf-add c (ec-reg r 1) (ec-reg r 1) (ec-reg r 2))
+      (ecf-sub c (ec-reg r 2) (ec-reg r 0) (ec-reg r 2))
+      (ecf-mul c (ec-reg r 2) (ec-a c) (ec-reg r 2))
+      (ecf-add c (ec-reg r 4) (ec-reg r 4) (ec-reg r 2))
       0)))
 
 ; Returns: Int
-(defn ec-add-stage4 ((arena Arena) (c EcCurve) (r EcRegs) (out EcPt))
+(defn ec-add-stage4 ((c EcCurve) (r EcRegs) (out EcPt))
   (let u (ec-reg r 9)
     (begin
-      (ecf-mul arena c u (ec-reg r 1) (ec-reg r 4))
-      (ecf-add arena c (ec-reg r 7) (ec-reg r 7) u)
-      (ecf-mul arena c u (ec-reg r 5) (ec-reg r 4))
-      (ecf-mul arena c (ec-reg r 6) (ec-reg r 3) (ec-reg r 6))
-      (ecf-sub arena c (ec-reg r 6) (ec-reg r 6) u)
-      (ecf-mul arena c u (ec-reg r 3) (ec-reg r 1))
-      (ecf-mul arena c (ec-reg r 8) (ec-reg r 5) (ec-reg r 8))
-      (ecf-add arena c (ec-reg r 8) (ec-reg r 8) u)
+      (ecf-mul c u (ec-reg r 1) (ec-reg r 4))
+      (ecf-add c (ec-reg r 7) (ec-reg r 7) u)
+      (ecf-mul c u (ec-reg r 5) (ec-reg r 4))
+      (ecf-mul c (ec-reg r 6) (ec-reg r 3) (ec-reg r 6))
+      (ecf-sub c (ec-reg r 6) (ec-reg r 6) u)
+      (ecf-mul c u (ec-reg r 3) (ec-reg r 1))
+      (ecf-mul c (ec-reg r 8) (ec-reg r 5) (ec-reg r 8))
+      (ecf-add c (ec-reg r 8) (ec-reg r 8) u)
       (bn-copy (ec-pt-x out) (ec-reg r 6) (ec-limbs c))
       (bn-copy (ec-pt-y out) (ec-reg r 7) (ec-limbs c))
       (bn-copy (ec-pt-z out) (ec-reg r 8) (ec-limbs c))
@@ -359,40 +359,40 @@
 ; the full bit length: the addition happens on every iteration and only
 ; its result is selected, so the scalar's bits change no timing.
 ; Returns: EcPt
-(defn ec-scalar-mul ((arena Arena) (c EcCurve) (out EcPt) (pt EcPt) (k Words))
-  (let acc (ec-pt-identity arena c)
-    (let sum (ec-pt-new arena c)
+(defn ec-scalar-mul ((c EcCurve) (out EcPt) (pt EcPt) (k Words))
+  (let acc (ec-pt-identity c)
+    (let sum (ec-pt-new c)
       (begin
-        (ec-scalar-loop arena c acc sum pt k (- (* 24 (ec-limbs c)) 1))
+        (ec-scalar-loop c acc sum pt k (- (* 24 (ec-limbs c)) 1))
         (ec-pt-copy c out acc)
         out))))
 
 ; Returns: Int
-(defn ec-scalar-loop ((arena Arena) (c EcCurve) (acc EcPt) (sum EcPt) (pt EcPt) (k Words) (i Int))
+(defn ec-scalar-loop ((c EcCurve) (acc EcPt) (sum EcPt) (pt EcPt) (k Words) (i Int))
   (if (< i 0)
     0
     (begin
-      (ec-scalar-step arena c acc sum pt k i)
-      (ec-scalar-loop arena c acc sum pt k (- i 1)))))
+      (ec-scalar-step c acc sum pt k i)
+      (ec-scalar-loop c acc sum pt k (- i 1)))))
 
 ; Returns: Int
-(defn ec-scalar-step ((arena Arena) (c EcCurve) (acc EcPt) (sum EcPt) (pt EcPt) (k Words) (i Int))
+(defn ec-scalar-step ((c EcCurve) (acc EcPt) (sum EcPt) (pt EcPt) (k Words) (i Int))
   (let bit (bn-bit k i)
     (begin
-      (ec-add arena c acc acc acc)
-      (ec-add arena c sum acc pt)
+      (ec-add c acc acc acc)
+      (ec-add c sum acc pt)
       (ec-pt-cond-copy c acc sum (ct-mask bit))
       0)))
 
 ; The affine x-coordinate of a point, as a plain (non-Montgomery) Nat.
 ; Returns: Words
-(defn ec-affine-x ((arena Arena) (c EcCurve) (pt EcPt))
-  (let zinv (bn-alloc arena (ec-limbs c))
-    (let x (bn-alloc arena (ec-limbs c))
+(defn ec-affine-x ((c EcCurve) (pt EcPt))
+  (let zinv (bn-alloc (ec-limbs c))
+    (let x (bn-alloc (ec-limbs c))
       (begin
-        (ecf-inv arena c zinv (ec-pt-z pt))
-        (ecf-mul arena c x (ec-pt-x pt) zinv)
-        (mont-from arena x x (ec-p c) (ec-limbs c) (ec-n0 c))
+        (ecf-inv c zinv (ec-pt-z pt))
+        (ecf-mul c x (ec-pt-x pt) zinv)
+        (mont-from x x (ec-p c) (ec-limbs c) (ec-n0 c))
         x))))
 
 ; ===========================================================================
@@ -401,36 +401,36 @@
 
 ; out = a * b mod n.
 ; Returns: Words
-(defn ecn-mul ((arena Arena) (c EcCurve) (out Words) (a Words) (b Words))
-  (let am (bn-alloc arena (ec-limbs c))
+(defn ecn-mul ((c EcCurve) (out Words) (a Words) (b Words))
+  (let am (bn-alloc (ec-limbs c))
     (begin
-      (mont-to arena am a (ec-order c) (ec-limbs c) (ec-n0n c) (ec-r2n c))
-      (mont-mul arena out am b (ec-order c) (ec-limbs c) (ec-n0n c))
+      (mont-to am a (ec-order c) (ec-limbs c) (ec-n0n c) (ec-r2n c))
+      (mont-mul out am b (ec-order c) (ec-limbs c) (ec-n0n c))
       out)))
 
 ; out = a^-1 mod n, by Fermat (n is prime for every curve here).
 ; Returns: Words
-(defn ecn-inv ((arena Arena) (c EcCurve) (out Words) (a Words))
-  (let e (bn-alloc arena (ec-limbs c))
-    (let two (bn-alloc arena (ec-limbs c))
+(defn ecn-inv ((c EcCurve) (out Words) (a Words))
+  (let e (bn-alloc (ec-limbs c))
+    (let two (bn-alloc (ec-limbs c))
       (begin
         (bn-set-small two (ec-limbs c) 2)
         (bn-sub e (ec-order c) two (ec-limbs c))
-        (mont-exp arena out a e (* 24 (ec-limbs c)) (ec-order c) (ec-limbs c))
+        (mont-exp out a e (* 24 (ec-limbs c)) (ec-order c) (ec-limbs c))
         out))))
 
 ; out = a + b mod n.
 ; Returns: Words
-(defn ecn-add ((arena Arena) (c EcCurve) (out Words) (a Words) (b Words))
-  (mod-add arena out a b (ec-order c) (ec-limbs c)))
+(defn ecn-add ((c EcCurve) (out Words) (a Words) (b Words))
+  (mod-add out a b (ec-order c) (ec-limbs c)))
 
 ; Reduce a field-width value modulo the group order.
 ; Returns: Words
-(defn ecn-reduce ((arena Arena) (c EcCurve) (out Words) (v Words))
-  (let wide (bn-alloc arena (* 2 (ec-limbs c)))
+(defn ecn-reduce ((c EcCurve) (out Words) (v Words))
+  (let wide (bn-alloc (* 2 (ec-limbs c)))
     (begin
       (bn-copy wide v (ec-limbs c))
-      (barrett-reduce arena out wide (ec-order c) (ec-mu c) (ec-limbs c))
+      (barrett-reduce out wide (ec-order c) (ec-mu c) (ec-limbs c))
       out)))
 
 ; ===========================================================================
@@ -447,99 +447,99 @@
 ; exists because the specification requires it, and the bound exists so
 ; that a pathological input can never hang a signer.
 ; Returns: Words
-(defn ec-rfc6979-k ((arena Arena) (c EcCurve) (priv Words) (h1 Words))
+(defn ec-rfc6979-k ((c EcCurve) (priv Words) (h1 Words))
   (let nb (ec-nbytes c)
-    (let seed (ec-6979-seed arena c priv h1)
-      (let v (w-fill (w-alloc arena 32) 32 1)
-        (let kk (w-alloc arena 32)
+    (let seed (ec-6979-seed c priv h1)
+      (let v (w-fill (w-alloc 32) 32 1)
+        (let kk (w-alloc 32)
           (begin
-            (ec-6979-update arena kk v seed (* 2 nb) 0)
-            (ec-6979-update arena kk v seed (* 2 nb) 1)
-            (ec-6979-candidates arena c kk v 16)))))))
+            (ec-6979-update kk v seed (* 2 nb) 0)
+            (ec-6979-update kk v seed (* 2 nb) 1)
+            (ec-6979-candidates c kk v 16)))))))
 
 ; int2octets(x) || bits2octets(h1). bits2octets reduces the hash modulo
 ; the group order first, which is what keeps the two halves the same
 ; width even when the hash is narrower than the order (SHA-256 with
 ; P-384, for instance).
 ; Returns: Words
-(defn ec-6979-seed ((arena Arena) (c EcCurve) (priv Words) (h1 Words))
+(defn ec-6979-seed ((c EcCurve) (priv Words) (h1 Words))
   (let nb (ec-nbytes c)
-    (let seed (w-alloc arena (* 2 nb))
-      (let z (bn-alloc arena (ec-limbs c))
+    (let seed (w-alloc (* 2 nb))
+      (let z (bn-alloc (ec-limbs c))
         (begin
           (bn-to-bytes-be seed nb priv (ec-limbs c))
           (bn-from-bytes-be z (ec-limbs c) h1 32)
-          (ecn-reduce arena c z z)
-          (bn-to-bytes-be (w-view arena seed nb nb) nb z (ec-limbs c))
+          (ecn-reduce c z z)
+          (bn-to-bytes-be (w-view w-arena   seed nb nb) nb z (ec-limbs c))
           seed)))))
 
 ; K = HMAC_K(V || byte || seed); V = HMAC_K(V).
 ; Returns: Int
-(defn ec-6979-update ((arena Arena) (kk Words) (v Words) (seed Words) (seedlen Int) (byte Int))
-  (let buf (w-alloc arena (+ 33 seedlen))
+(defn ec-6979-update ((kk Words) (v Words) (seed Words) (seedlen Int) (byte Int))
+  (let buf (w-alloc (+ 33 seedlen))
     (begin
       (ec-copy-at buf 0 v 32)
       (w-set buf 32 byte)
       (ec-copy-at buf 33 seed seedlen)
-      (w-copy kk (hmac-sha256 arena kk 32 buf (+ 33 seedlen)) 32)
-      (w-copy v (hmac-sha256 arena kk 32 v 32) 32)
+      (w-copy kk (hmac-sha256 kk 32 buf (+ 33 seedlen)) 32)
+      (w-copy v (hmac-sha256 kk 32 v 32) 32)
       0)))
 
 ; K = HMAC_K(V || 0x00); V = HMAC_K(V) -- the reseed step taken when a
 ; candidate is rejected.
 ; Returns: Int
-(defn ec-6979-reseed ((arena Arena) (kk Words) (v Words))
-  (let buf (w-alloc arena 33)
+(defn ec-6979-reseed ((kk Words) (v Words))
+  (let buf (w-alloc 33)
     (begin
       (ec-copy-at buf 0 v 32)
       (w-set buf 32 0)
-      (w-copy kk (hmac-sha256 arena kk 32 buf 33) 32)
-      (w-copy v (hmac-sha256 arena kk 32 v 32) 32)
+      (w-copy kk (hmac-sha256 kk 32 buf 33) 32)
+      (w-copy v (hmac-sha256 kk 32 v 32) 32)
       0)))
 
 ; Draw candidates until one lies in [1, n-1].
 ; Returns: Words
-(defn ec-6979-candidates ((arena Arena) (c EcCurve) (kk Words) (v Words) (tries Int))
+(defn ec-6979-candidates ((c EcCurve) (kk Words) (v Words) (tries Int))
   (if (<= tries 0)
-    (bn-alloc arena (ec-limbs c))
-    (let k (ec-6979-candidate arena c kk v)
+    (bn-alloc (ec-limbs c))
+    (let k (ec-6979-candidate c kk v)
       ; Declassified: RFC 6979 3.2 step h3 is a rejection loop, so
       ; "this candidate was out of range" necessarily reaches control
       ; flow. What it reveals is only that a draw was discarded -- with
       ; probability under 2^-32 for every curve here -- and the
       ; discarded candidate is never used again; the accepted nonce's
       ; own value stays branch-free from here on.
-      (if (= (declassify (ec-6979-acceptable arena c k)) 1)
+      (if (= (declassify (ec-6979-acceptable c k)) 1)
         k
         (begin
-          (ec-6979-reseed arena kk v)
-          (ec-6979-candidates arena c kk v (- tries 1)))))))
+          (ec-6979-reseed kk v)
+          (ec-6979-candidates c kk v (- tries 1)))))))
 
 ; One candidate: T = V || V || ... until it is at least as wide as the
 ; order, read big-endian.
 ; Returns: Words
-(defn ec-6979-candidate ((arena Arena) (c EcCurve) (kk Words) (v Words))
+(defn ec-6979-candidate ((c EcCurve) (kk Words) (v Words))
   (let nb (ec-nbytes c)
-    (let t (w-alloc arena (+ nb 32))
-      (let k (bn-alloc arena (ec-limbs c))
+    (let t (w-alloc (+ nb 32))
+      (let k (bn-alloc (ec-limbs c))
         (begin
-          (ec-6979-fill arena kk v t nb 0)
+          (ec-6979-fill kk v t nb 0)
           (bn-from-bytes-be k (ec-limbs c) t nb)
           k)))))
 
 ; Returns: Int
-(defn ec-6979-fill ((arena Arena) (kk Words) (v Words) (t Words) (nb Int) (off Int))
+(defn ec-6979-fill ((kk Words) (v Words) (t Words) (nb Int) (off Int))
   (if (>= off nb)
     0
     (begin
-      (w-copy v (hmac-sha256 arena kk 32 v 32) 32)
+      (w-copy v (hmac-sha256 kk 32 v 32) 32)
       (ec-copy-at t off v 32)
-      (ec-6979-fill arena kk v t nb (+ off 32)))))
+      (ec-6979-fill kk v t nb (+ off 32)))))
 
 ; 1 when 0 < k < n.
 ; Returns: Int
-(defn ec-6979-acceptable ((arena Arena) (c EcCurve) (k Words))
-  (let scratch (bn-alloc arena (ec-limbs c))
+(defn ec-6979-acceptable ((c EcCurve) (k Words))
+  (let scratch (bn-alloc (ec-limbs c))
     (bit-and (- 1 (bn-is-zero k (ec-limbs c)))
              (bn-sub scratch k (ec-order c) (ec-limbs c)))))
 
@@ -557,135 +557,135 @@
 ; Sign a 32-byte SHA-256 digest. Returns the raw (r || s) signature,
 ; 2*nbytes long, or None in the (negligible) case that r or s is zero.
 ; Returns: (Option Words)
-(defn ecdsa-sign ((arena Arena) (c EcCurve) (priv Words) (hash Words))
-  (let z (bn-alloc arena (ec-limbs c))
-    (let k (ec-rfc6979-k arena c priv hash)
+(defn ecdsa-sign ((c EcCurve) (priv Words) (hash Words))
+  (let z (bn-alloc (ec-limbs c))
+    (let k (ec-rfc6979-k c priv hash)
       (begin
         (bn-from-bytes-be z (ec-limbs c) hash 32)
-        (ecn-reduce arena c z z)
-        (ecdsa-sign-with arena c priv z k)))))
+        (ecn-reduce c z z)
+        (ecdsa-sign-with c priv z k)))))
 
 ; Returns: (Option Words)
-(defn ecdsa-sign-with ((arena Arena) (c EcCurve) (priv Words) (z Words) (k Words))
-  (let rpt (ec-pt-new arena c)
-    (let r (bn-alloc arena (ec-limbs c))
+(defn ecdsa-sign-with ((c EcCurve) (priv Words) (z Words) (k Words))
+  (let rpt (ec-pt-new c)
+    (let r (bn-alloc (ec-limbs c))
       (begin
-        (ec-scalar-mul arena c rpt (ec-g c) k)
-        (ecn-reduce arena c r (ec-affine-x arena c rpt))
+        (ec-scalar-mul c rpt (ec-g c) k)
+        (ecn-reduce c r (ec-affine-x c rpt))
         ; Declassified: "r came out zero" is a retry condition on the
         ; NONCE, published by the resulting signature's absence, not by
         ; timing -- RFC 6979 6ad2 3.2 step h has the signer draw again.
         (if (= (declassify (bn-is-zero r (ec-limbs c))) 1)
           None
-          (ecdsa-sign-s arena c priv z k r))))))
+          (ecdsa-sign-s c priv z k r))))))
 
 ; s = k^-1 * (z + r*d) mod n
 ; Returns: (Option Words)
-(defn ecdsa-sign-s ((arena Arena) (c EcCurve) (priv Words) (z Words) (k Words) (r Words))
-  (let rd (bn-alloc arena (ec-limbs c))
-    (let sum (bn-alloc arena (ec-limbs c))
-      (let kinv (bn-alloc arena (ec-limbs c))
-        (let s (bn-alloc arena (ec-limbs c))
+(defn ecdsa-sign-s ((c EcCurve) (priv Words) (z Words) (k Words) (r Words))
+  (let rd (bn-alloc (ec-limbs c))
+    (let sum (bn-alloc (ec-limbs c))
+      (let kinv (bn-alloc (ec-limbs c))
+        (let s (bn-alloc (ec-limbs c))
           (begin
-            (ecn-mul arena c rd r priv)
-            (ecn-add arena c sum z rd)
-            (ecn-inv arena c kinv k)
-            (ecn-mul arena c s kinv sum)
+            (ecn-mul c rd r priv)
+            (ecn-add c sum z rd)
+            (ecn-inv c kinv k)
+            (ecn-mul c s kinv sum)
             ; Same public retry condition as the r == 0 test above.
             (if (= (declassify (bn-is-zero s (ec-limbs c))) 1)
               None
-              (Some (ecdsa-encode arena c r s)))))))))
+              (Some (ecdsa-encode c r s)))))))))
 
 ; Returns: Words
-(defn ecdsa-encode ((arena Arena) (c EcCurve) (r Words) (s Words))
+(defn ecdsa-encode ((c EcCurve) (r Words) (s Words))
   (let nb (ec-nbytes c)
-    (let out (w-alloc arena (* 2 nb))
+    (let out (w-alloc (* 2 nb))
       (begin
         (bn-to-bytes-be out nb r (ec-limbs c))
-        (bn-to-bytes-be (w-view arena out nb nb) nb s (ec-limbs c))
+        (bn-to-bytes-be (w-view w-arena   out nb nb) nb s (ec-limbs c))
         out))))
 
 ; Verify a raw (r || s) signature over a 32-byte SHA-256 digest.
 ; Returns: Bool
-(defn ecdsa-verify ((arena Arena) (c EcCurve) (pub EcPt) (hash Words) (sig Words))
+(defn ecdsa-verify ((c EcCurve) (pub EcPt) (hash Words) (sig Words))
   (let nb (ec-nbytes c)
-    (let r (bn-alloc arena (ec-limbs c))
-      (let s (bn-alloc arena (ec-limbs c))
+    (let r (bn-alloc (ec-limbs c))
+      (let s (bn-alloc (ec-limbs c))
         (begin
           (bn-from-bytes-be r (ec-limbs c) sig nb)
-          (bn-from-bytes-be s (ec-limbs c) (w-view arena sig nb nb) nb)
-          (ecdsa-verify-range arena c pub hash r s))))))
+          (bn-from-bytes-be s (ec-limbs c) (w-view w-arena   sig nb nb) nb)
+          (ecdsa-verify-range c pub hash r s))))))
 
 ; r and s must both lie in [1, n-1]; a zero or out-of-range value is
 ; rejected before any point arithmetic, since those are the degenerate
 ; signatures that verify against anything under a careless
 ; implementation.
 ; Returns: Bool
-(defn ecdsa-verify-range ((arena Arena) (c EcCurve) (pub EcPt) (hash Words) (r Words) (s Words))
-  (let scratch (bn-alloc arena (ec-limbs c))
+(defn ecdsa-verify-range ((c EcCurve) (pub EcPt) (hash Words) (r Words) (s Words))
+  (let scratch (bn-alloc (ec-limbs c))
     (let rok (bit-and (- 1 (bn-is-zero r (ec-limbs c))) (bn-sub scratch r (ec-order c) (ec-limbs c)))
       (let sok (bit-and (- 1 (bn-is-zero s (ec-limbs c))) (bn-sub scratch s (ec-order c) (ec-limbs c)))
         ; Declassified: verification's inputs (r, s, the hash, the
         ; public key) are all public, and the range verdict is part of
         ; the answer this function returns.
         (if (= (declassify (bit-and rok sok)) 1)
-          (ecdsa-verify-equation arena c pub hash r s)
+          (ecdsa-verify-equation c pub hash r s)
           false)))))
 
 ; Returns: Bool
-(defn ecdsa-verify-equation ((arena Arena) (c EcCurve) (pub EcPt) (hash Words) (r Words) (s Words))
-  (let z (bn-alloc arena (ec-limbs c))
-    (let sinv (bn-alloc arena (ec-limbs c))
-      (let u1 (bn-alloc arena (ec-limbs c))
-        (let u2 (bn-alloc arena (ec-limbs c))
+(defn ecdsa-verify-equation ((c EcCurve) (pub EcPt) (hash Words) (r Words) (s Words))
+  (let z (bn-alloc (ec-limbs c))
+    (let sinv (bn-alloc (ec-limbs c))
+      (let u1 (bn-alloc (ec-limbs c))
+        (let u2 (bn-alloc (ec-limbs c))
           (begin
             (bn-from-bytes-be z (ec-limbs c) hash 32)
-            (ecn-reduce arena c z z)
-            (ecn-inv arena c sinv s)
-            (ecn-mul arena c u1 z sinv)
-            (ecn-mul arena c u2 r sinv)
-            (ecdsa-verify-points arena c pub r u1 u2)))))))
+            (ecn-reduce c z z)
+            (ecn-inv c sinv s)
+            (ecn-mul c u1 z sinv)
+            (ecn-mul c u2 r sinv)
+            (ecdsa-verify-points c pub r u1 u2)))))))
 
 ; Returns: Bool
-(defn ecdsa-verify-points ((arena Arena) (c EcCurve) (pub EcPt) (r Words) (u1 Words) (u2 Words))
-  (let p1 (ec-pt-new arena c)
-    (let p2 (ec-pt-new arena c)
-      (let sum (ec-pt-new arena c)
-        (let got (bn-alloc arena (ec-limbs c))
+(defn ecdsa-verify-points ((c EcCurve) (pub EcPt) (r Words) (u1 Words) (u2 Words))
+  (let p1 (ec-pt-new c)
+    (let p2 (ec-pt-new c)
+      (let sum (ec-pt-new c)
+        (let got (bn-alloc (ec-limbs c))
           (begin
-            (ec-scalar-mul arena c p1 (ec-g c) u1)
-            (ec-scalar-mul arena c p2 pub u2)
-            (ec-add arena c sum p1 p2)
+            (ec-scalar-mul c p1 (ec-g c) u1)
+            (ec-scalar-mul c p2 pub u2)
+            (ec-add c sum p1 p2)
             ; Verification runs entirely on public data (signature,
             ; message, public key); the point-at-infinity test is part of
             ; the published verdict.
             (if (= (declassify (bn-is-zero (ec-pt-z sum) (ec-limbs c))) 1)
               false
               (begin
-                (ecn-reduce arena c got (ec-affine-x arena c sum))
+                (ecn-reduce c got (ec-affine-x c sum))
                 (= (declassify (bn-eq got r (ec-limbs c))) 1)))))))))
 
 ; The public key for a private scalar: the point d*G.
 ; Returns: EcPt
-(defn ecdsa-public-key ((arena Arena) (c EcCurve) (priv Words))
-  (let pt (ec-pt-new arena c)
-    (ec-scalar-mul arena c pt (ec-g c) priv)))
+(defn ecdsa-public-key ((c EcCurve) (priv Words))
+  (let pt (ec-pt-new c)
+    (ec-scalar-mul c pt (ec-g c) priv)))
 
 ; The affine encoding of a public key: 0x04 || X || Y (SEC1
 ; uncompressed), the form every interoperating implementation accepts.
 ; Returns: Words
-(defn ecdsa-encode-public ((arena Arena) (c EcCurve) (pt EcPt))
+(defn ecdsa-encode-public ((c EcCurve) (pt EcPt))
   (let nb (ec-nbytes c)
-    (let out (w-alloc arena (+ (* 2 nb) 1))
-      (let zinv (bn-alloc arena (ec-limbs c))
-        (let t (bn-alloc arena (ec-limbs c))
+    (let out (w-alloc (+ (* 2 nb) 1))
+      (let zinv (bn-alloc (ec-limbs c))
+        (let t (bn-alloc (ec-limbs c))
           (begin
             (w-set out 0 4)
-            (ecf-inv arena c zinv (ec-pt-z pt))
-            (ecf-mul arena c t (ec-pt-x pt) zinv)
-            (mont-from arena t t (ec-p c) (ec-limbs c) (ec-n0 c))
-            (bn-to-bytes-be (w-view arena out 1 nb) nb t (ec-limbs c))
-            (ecf-mul arena c t (ec-pt-y pt) zinv)
-            (mont-from arena t t (ec-p c) (ec-limbs c) (ec-n0 c))
-            (bn-to-bytes-be (w-view arena out (+ nb 1) nb) nb t (ec-limbs c))
+            (ecf-inv c zinv (ec-pt-z pt))
+            (ecf-mul c t (ec-pt-x pt) zinv)
+            (mont-from t t (ec-p c) (ec-limbs c) (ec-n0 c))
+            (bn-to-bytes-be (w-view w-arena   out 1 nb) nb t (ec-limbs c))
+            (ecf-mul c t (ec-pt-y pt) zinv)
+            (mont-from t t (ec-p c) (ec-limbs c) (ec-n0 c))
+            (bn-to-bytes-be (w-view w-arena   out (+ nb 1) nb) nb t (ec-limbs c))
             out))))))

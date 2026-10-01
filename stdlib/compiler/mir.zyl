@@ -138,16 +138,15 @@
 
 ; --- scratch memory -------------------------------------------------------
 
-; One arena for a function's tables, reset before the next function.
-(def mir-arena-cell (ffi-call "zyl_ref_new" (ffi-call "zyl_arena_create" 0 1000) 1000))
-(defn mir-arena () (ffi-call "zyl_ref_get" mir-arena-cell 1000))
-(defn mir-reset () (ffi-call "zyl_arena_reset" (mir-arena) 1000))
+; A function's tables are allocated in the frame region of mb-function
+; (codegen.zyl), which releases them when it returns, so the old per-arena
+; reset is no longer needed.
 
 ; --- dead definitions -------------------------------------------------------
 
 ; Use counts per vreg over an instruction list.
 (defn mir-use-counts (xs nv)
-  (let u (w-alloc (mir-arena) (+ nv 1))
+  (let u (w-alloc (+ nv 1))
     (let _ (mir-count-list xs u) u)))
 
 (defn mir-count-list (xs u)
@@ -239,11 +238,11 @@
   (let n (list-length instrs)
     (let a (mir-array instrs n)
       (let u (mir-use-counts instrs nv)
-        (let dc (w-alloc (mir-arena) (+ nv 1))
-          (let di (w-alloc (mir-arena) (+ nv 1))
+        (let dc (w-alloc (+ nv 1))
+          (let di (w-alloc (+ nv 1))
             (let _ (mir-def-index a n dc di 0)
-              (let drop (w-alloc (mir-arena) (+ n 1))
-                (let nd (w-alloc (mir-arena) (+ n 1))
+              (let drop (w-alloc (+ n 1))
+                (let nd (w-alloc (+ n 1))
                   (let _ (mir-co-scan a n u dc di drop nd 0 two)
                     (mir-co-emit a n drop nd 0)))))))))))
 
@@ -350,7 +349,7 @@
 ; are word vectors of 64-bit masks, one bit per vreg.
 
 (defn mir-array (instrs n)
-  (let a (ffi-call "zyl_array_new" (mir-arena) (if (> n 0) n 1) 1000)
+  (let a (ffi-call "zyl_vec_alloc" (if (> n 0) n 1) 1000)
     (let _ (mir-fill a instrs 0)
       a)))
 
@@ -361,7 +360,7 @@
 
 ; Position of each label, by label number.
 (defn mir-label-pos (a n nlabels)
-  (let w (w-alloc (mir-arena) (if (> nlabels 0) nlabels 1))
+  (let w (w-alloc (if (> nlabels 0) nlabels 1))
     (let _ (mir-label-scan a n w 0)
       w)))
 
@@ -385,7 +384,7 @@
 ; the live-in table (n rows).
 (defn mir-liveness (a n nv lpos)
   (let words (+ (/ nv 64) 1)
-    (let lin (w-alloc (mir-arena) (if (> n 0) (* n words) 1))
+    (let lin (w-alloc (if (> n 0) (* n words) 1))
       (let _ (mir-live-rounds a n words lin lpos)
         lin))))
 
@@ -444,8 +443,8 @@
 
 (defn mir-intervals (a n nv lin u)
   (let words (+ (/ nv 64) 1)
-    (let st (w-alloc (mir-arena) (+ nv 1))
-      (let en (w-alloc (mir-arena) (+ nv 1))
+    (let st (w-alloc (+ nv 1))
+      (let en (w-alloc (+ nv 1))
         (let _ (mir-iv-init st en 0 nv)
           (let _ (mir-iv-scan a n words lin st en 0 nv u)
             (mir-iv-list a n st en 0 nv lin words)))))))
@@ -510,7 +509,7 @@
 
 ; Vregs defined once and read once, right after, by a consumer that is safe with rax: they live in rax.
 (defn mir-ret-vregs (a n nv u)
-  (let dc (w-alloc (mir-arena) (+ nv 1))
+  (let dc (w-alloc (+ nv 1))
     (let _ (mir-def-counts a n dc 0)
       (mir-ret-scan a n u dc 0 Nil))))
 
@@ -596,15 +595,15 @@
 ; of the move that defines it), or 0.
 ; r11 (location 12) is allocatable only when `r11` says no emitted sequence uses it as scratch.
 (defn mir-allocate (ivs nv hint r11)
-  (let loc (w-alloc (mir-arena) (+ nv 1))
-    (let busy (w-alloc (mir-arena) 13)   ; register -> vreg + 1 while taken
+  (let loc (w-alloc (+ nv 1))
+    (let busy (w-alloc 13)   ; register -> vreg + 1 while taken
       (let _ (if r11 unit (let _ (w-set busy 12 -1) unit))
         (let nsp (mir-scan (mir-sort-iv ivs) Nil loc busy 0 hint)
           (Alloc loc nsp))))))
 
 ; The source of each MMov, recorded against its destination.
 (defn mir-hints (a n nv)
-  (let h (w-alloc (mir-arena) (+ nv 1))
+  (let h (w-alloc (+ nv 1))
     (let _ (mir-hint-scan a n h 0)
       h)))
 

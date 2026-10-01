@@ -243,6 +243,16 @@
 
 (defn zyl_strbuf_str (b) b)
 
+; The region form of zyl_strbuf_new: storage comes from zyl_cur_region.
+; codegen.zyl appends _r to a runtime name at a site above level 0, so
+; this twin takes no arena. Step one adds it with no caller; step two
+; moves asm_x86's listing buffer onto it.
+(defn zyl_strbuf_new_r (n)
+  (let cap (if (> n 0) n 1)
+    (let p (tb-rzalloc (+ cap 24))
+      (if (= p 0) 0
+        (let _ (tb-st p (tb-sbuf-magic)) (let _ (tb-st (+ p 8) 0) (let _ (tb-st (+ p 16) cap) (+ p 24))))))))
+
 (defmacro tb-sbuf-p (dst) (and (>= dst 4120) (and (= (bit-and dst 7) 0) (= (tb-ld (- dst 24)) 6510318656819643953))))
 
 (defn tb-uhex (n acc)

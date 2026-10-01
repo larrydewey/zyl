@@ -29,8 +29,8 @@
 
 ; The 24 round constants (FIPS 202 s3.2.5).
 ; Returns: Words
-(defn keccak-rc-table ((arena Arena))
-  (let p (w-alloc arena 24)
+(defn keccak-rc-table ()
+  (let p (w-alloc 24)
     (begin
       (w-set p 0 1)
       (w-set p 1 32898)
@@ -60,8 +60,8 @@
 
 ; Rotation offsets for rho, indexed by lane (x + 5*y).
 ; Returns: Words
-(defn keccak-rho-table ((arena Arena))
-  (let p (w-alloc arena 25)
+(defn keccak-rho-table ()
+  (let p (w-alloc 25)
     (begin
       (w-set p 0 0)
       (w-set p 1 1)
@@ -94,8 +94,8 @@
 ; B[i] = A[pi[i]], which is the lane-index form of
 ; B[y, 2x+3y] = A[x, y].
 ; Returns: Words
-(defn keccak-pi-table ((arena Arena))
-  (let p (w-alloc arena 25)
+(defn keccak-pi-table ()
+  (let p (w-alloc 25)
     (begin
       (w-set p 0 0)
       (w-set p 1 6)
@@ -207,10 +207,10 @@
 
 ; Keccak-f[1600]: 24 rounds over the 25-lane state, in place.
 ; Returns: Int
-(defn keccak-f ((arena Arena) (st Words) (rho Words) (pi Words) (rc Words))
-  (let b (w-alloc arena 25)
-    (let c (w-alloc arena 5)
-      (let d (w-alloc arena 5)
+(defn keccak-f ((st Words) (rho Words) (pi Words) (rc Words))
+  (let b (w-alloc 25)
+    (let c (w-alloc 5)
+      (let d (w-alloc 5)
         (begin
           (for (i 0) (< i 24)
             (begin
@@ -231,22 +231,22 @@
 
 ; XOR one rate-sized block into the state and permute.
 ; Returns: Int
-(defn keccak-absorb-block ((arena Arena) (st Words) (blk Words) (off Int) (rate Int) (rho Words) (pi Words) (rc Words))
+(defn keccak-absorb-block ((st Words) (blk Words) (off Int) (rate Int) (rho Words) (pi Words) (rc Words))
   (begin
     (for (i 0) (< (* i 8) rate)
       (begin
         (w-set st i (bit-xor (w-get st i) (keccak-le64 blk (+ off (* i 8)))))
         (set! i (+ i 1))))
-    (keccak-f arena st rho pi rc)
+    (keccak-f st rho pi rc)
     0))
 
 ; The padded message: pad10*1 with the domain-separation suffix folded
 ; into the first pad byte (0x06 for SHA-3, 0x1f for SHAKE -- FIPS 202
 ; s6.1/s6.2), and the high bit of the last byte set.
 ; Returns: Words
-(defn keccak-pad ((arena Arena) (msg Words) (len Int) (rate Int) (suffix Int))
+(defn keccak-pad ((msg Words) (len Int) (rate Int) (suffix Int))
   (let total (keccak-padded-len len rate)
-    (let p (w-alloc arena total)
+    (let p (w-alloc total)
       (begin
         (w-copy p msg len)
         (w-set p len suffix)
@@ -261,14 +261,14 @@
 
 ; Squeeze `outlen` bytes out of the state, permuting between blocks.
 ; Returns: Words
-(defn keccak-squeeze ((arena Arena) (st Words) (rate Int) (outlen Int) (rho Words) (pi Words) (rc Words))
-  (let out (w-alloc arena (+ outlen rate))
+(defn keccak-squeeze ((st Words) (rate Int) (outlen Int) (rho Words) (pi Words) (rc Words))
+  (let out (w-alloc (+ outlen rate))
     (begin
       (for (off 0) (< off outlen)
         (begin
           (keccak-squeeze-block st out off rate)
           (if (< (+ off rate) outlen)
-            (keccak-f arena st rho pi rc)
+            (keccak-f st rho pi rc)
             0)
           (set! off (+ off rate))))
       out)))
@@ -294,19 +294,19 @@
 ; The full sponge: absorb the padded message at the given rate, then
 ; squeeze `outlen` bytes.
 ; Returns: Words
-(defn keccak-sponge ((arena Arena) (msg Words) (len Int) (rate Int) (suffix Int) (outlen Int))
-  (let st (w-alloc arena 25)
-    (let rho (keccak-rho-table arena)
-      (let pi (keccak-pi-table arena)
-        (let rc (keccak-rc-table arena)
-          (let padded (keccak-pad arena msg len rate suffix)
+(defn keccak-sponge ((msg Words) (len Int) (rate Int) (suffix Int) (outlen Int))
+  (let st (w-alloc 25)
+    (let rho (keccak-rho-table)
+      (let pi (keccak-pi-table)
+        (let rc (keccak-rc-table)
+          (let padded (keccak-pad msg len rate suffix)
             (let total (keccak-padded-len len rate)
               (begin
                 (for (off 0) (< off total)
                   (begin
-                    (keccak-absorb-block arena st padded off rate rho pi rc)
+                    (keccak-absorb-block st padded off rate rho pi rc)
                     (set! off (+ off rate))))
-                (keccak-squeeze arena st rate outlen rho pi rc)))))))))
+                (keccak-squeeze st rate outlen rho pi rc)))))))))
 
 ; ===========================================================================
 ; NAMED FUNCTIONS
@@ -314,30 +314,30 @@
 
 ; SHA3-256: rate 136 bytes (1088 bits), 32-byte digest.
 ; Returns: Words
-(defn sha3-256-bytes ((arena Arena) (msg Words) (len Int))
-  (keccak-sponge arena msg len 136 6 32))
+(defn sha3-256-bytes ((msg Words) (len Int))
+  (keccak-sponge msg len 136 6 32))
 
 ; SHA3-512: rate 72 bytes (576 bits), 64-byte digest.
 ; Returns: Words
-(defn sha3-512-bytes ((arena Arena) (msg Words) (len Int))
-  (keccak-sponge arena msg len 72 6 64))
+(defn sha3-512-bytes ((msg Words) (len Int))
+  (keccak-sponge msg len 72 6 64))
 
 ; SHAKE128: rate 168 bytes, caller-chosen output length.
 ; Returns: Words
-(defn shake128-bytes ((arena Arena) (msg Words) (len Int) (outlen Int))
-  (keccak-sponge arena msg len 168 31 outlen))
+(defn shake128-bytes ((msg Words) (len Int) (outlen Int))
+  (keccak-sponge msg len 168 31 outlen))
 
 ; SHAKE256: rate 136 bytes, caller-chosen output length.
 ; Returns: Words
-(defn shake256-bytes ((arena Arena) (msg Words) (len Int) (outlen Int))
-  (keccak-sponge arena msg len 136 31 outlen))
+(defn shake256-bytes ((msg Words) (len Int) (outlen Int))
+  (keccak-sponge msg len 136 31 outlen))
 
 ; Returns: String
-(defn sha3-256-hex-of-string ((arena Arena) (s String))
-  (let msg (w-from-string arena s)
-    (w-hex-bytes (sha3-256-bytes arena msg (w-string-len s)) 32)))
+(defn sha3-256-hex-of-string ((s String))
+  (let msg (w-from-string s)
+    (w-hex-bytes (sha3-256-bytes msg (w-string-len s)) 32)))
 
 ; Returns: String
-(defn sha3-512-hex-of-string ((arena Arena) (s String))
-  (let msg (w-from-string arena s)
-    (w-hex-bytes (sha3-512-bytes arena msg (w-string-len s)) 64)))
+(defn sha3-512-hex-of-string ((s String))
+  (let msg (w-from-string s)
+    (w-hex-bytes (sha3-512-bytes msg (w-string-len s)) 64)))

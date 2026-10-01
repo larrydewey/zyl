@@ -30,15 +30,15 @@
 ; out = x mod m, where x has 2k limbs, m has k limbs, and mu has k+1
 ; limbs and equals floor(2^(24*2k) / m).
 ; Returns: Words
-(defn barrett-reduce ((arena Arena) (out Words) (x Words) (m Words) (mu Words) (k Int))
-  (let q1 (bn-alloc arena (+ k 1))
-    (let q2 (bn-alloc arena (* 2 (+ k 2)))
-      (let q3 (bn-alloc arena (+ k 1))
+(defn barrett-reduce ((out Words) (x Words) (m Words) (mu Words) (k Int))
+  (let q1 (bn-alloc (+ k 1))
+    (let q2 (bn-alloc (* 2 (+ k 2)))
+      (let q3 (bn-alloc (+ k 1))
         (begin
           (barrett-shift-limbs q1 x (- k 1) (+ k 1))
-          (barrett-mul-wide arena q2 q1 mu (+ k 1))
+          (barrett-mul-wide q2 q1 mu (+ k 1))
           (barrett-shift-limbs q3 q2 (+ k 1) (+ k 1))
-          (barrett-finish arena out x m q3 k))))))
+          (barrett-finish out x m q3 k))))))
 
 ; dst[0..n) = src[start .. start+n), i.e. a shift down by whole limbs.
 ; Returns: Words
@@ -51,29 +51,29 @@
 ; A plain schoolbook multiply of two n-limb values into 2n limbs,
 ; reusing bignum's own routine.
 ; Returns: Words
-(defn barrett-mul-wide ((_arena Arena) (out Words) (a Words) (b Words) (n Int))
+(defn barrett-mul-wide ((out Words) (a Words) (b Words) (n Int))
   (bn-mul out a b n))
 
 ; r = (x mod b^(k+1)) - (q3 * m mod b^(k+1)), corrected into [0, m).
 ; Returns: Words
-(defn barrett-finish ((arena Arena) (out Words) (x Words) (m Words) (q3 Words) (k Int))
+(defn barrett-finish ((out Words) (x Words) (m Words) (q3 Words) (k Int))
   (let w (+ k 1)
-    (let r1 (bn-alloc arena w)
-      (let r2full (bn-alloc arena (* 2 w))
-        (let r2 (bn-alloc arena w)
+    (let r1 (bn-alloc w)
+      (let r2full (bn-alloc (* 2 w))
+        (let r2 (bn-alloc w)
           (begin
             (barrett-shift-limbs r1 x 0 w)
-            (barrett-mul-mod-pow arena r2full q3 m w)
+            (barrett-mul-mod-pow r2full q3 m w)
             (barrett-shift-limbs r2 r2full 0 w)
             (bn-sub r1 r1 r2 w)
-            (barrett-correct arena out r1 m k)))))))
+            (barrett-correct out r1 m k)))))))
 
 ; q3 * m, truncated to the low w limbs by the caller. m has k limbs and
 ; q3 has w = k+1, so the operands are zero-extended to a common width
 ; before the schoolbook multiply.
 ; Returns: Words
-(defn barrett-mul-mod-pow ((arena Arena) (out Words) (q3 Words) (m Words) (w Int))
-  (let mm (bn-alloc arena w)
+(defn barrett-mul-mod-pow ((out Words) (q3 Words) (m Words) (w Int))
+  (let mm (bn-alloc w)
     (begin
       (bn-zero mm w)
       (barrett-copy-into mm m (- w 1))
@@ -90,22 +90,22 @@
 ; Two masked conditional subtractions bring r below m -- the textbook
 ; bound on how many the estimate can be off by. Both always execute.
 ; Returns: Words
-(defn barrett-correct ((arena Arena) (out Words) (r Words) (m Words) (k Int))
+(defn barrett-correct ((out Words) (r Words) (m Words) (k Int))
   (let w (+ k 1)
-    (let mm (bn-alloc arena w)
+    (let mm (bn-alloc w)
       (begin
         (bn-zero mm w)
         (barrett-copy-into mm m k)
-        (barrett-sub-once arena r mm w)
-        (barrett-sub-once arena r mm w)
+        (barrett-sub-once r mm w)
+        (barrett-sub-once r mm w)
         (barrett-copy-into out r k)
         out))))
 
 ; r = r - m when r >= m, unchanged otherwise; the subtraction always
 ; runs and only its write-back is masked.
 ; Returns: Int
-(defn barrett-sub-once ((arena Arena) (r Words) (m Words) (w Int))
-  (let scratch (bn-alloc arena w)
+(defn barrett-sub-once ((r Words) (m Words) (w Int))
+  (let scratch (bn-alloc w)
     (let borrow (bn-sub scratch r m w)
       (begin
         (bn-cond-copy r scratch w (ct-mask (- 1 borrow)))

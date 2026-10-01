@@ -290,6 +290,7 @@
 
 (defn ft-fill-11 (t)
   (let _ (ft-put t "zyl_strbuf_new" (ffi-call "%fn" "zyl_strbuf_new" 1))
+    (let _ (ft-put t "zyl_strbuf_new_r" (ffi-call "%fn" "zyl_strbuf_new_r" 1))
     (let _ (ft-put t "zyl_strbuf_str" (ffi-call "%fn" "zyl_strbuf_str" 1))
     (let _ (ft-put t "zyl_cstr_escapes_ok" (ffi-call "%fn" "zyl_cstr_escapes_ok" 1))
     (let _ (ft-put t "zyl_heap_alloc" (ffi-call "%fn" "zyl_heap_alloc" 1))
@@ -305,7 +306,7 @@
     (let _ (ft-put t "zyl_itest_add" (ffi-call "%fn" "zyl_itest_add" 1))
     (let _ (ft-put t "zyl_itest_count" (ffi-call "%fn" "zyl_itest_count" 1))
     (let _ (ft-put t "zyl_itest_fn" (ffi-call "%fn" "zyl_itest_fn" 1))
-    0)))))))))))))))))
+    0))))))))))))))))))
 
 (defn ft-fill-12 (t)
   (let _ (ft-put t "zyl_itest_name" (ffi-call "%fn" "zyl_itest_name" 1))

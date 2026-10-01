@@ -45,8 +45,8 @@
 ; Build the 16-word initial state: 4 constant words, 8 key words, the
 ; block counter, then 3 nonce words.
 ; Returns: Words
-(defn chacha20-state ((arena Arena) (key Words) (nonce Words) (counter Int))
-  (let st (w-alloc arena 16)
+(defn chacha20-state ((key Words) (nonce Words) (counter Int))
+  (let st (w-alloc 16)
     (begin
       (for (i 0) (< i 4)
         (begin (w-set st i (chacha20-constant i)) (set! i (+ i 1))))
@@ -111,9 +111,9 @@
 ; then the original state is added back in word by word and each word
 ; serialized little-endian.
 ; Returns: Words
-(defn chacha20-block ((arena Arena) (key Words) (nonce Words) (counter Int))
-  (let init (chacha20-state arena key nonce counter)
-    (let work (w-copy (w-alloc arena 16) init 16)
+(defn chacha20-block ((key Words) (nonce Words) (counter Int))
+  (let init (chacha20-state key nonce counter)
+    (let work (w-copy (w-alloc 16) init 16)
       (begin
         (for (r 0) (< r 10)
           (begin (chacha20-double-round work) (set! r (+ r 1))))
@@ -121,12 +121,12 @@
           (begin
             (w-set work i (add32 (w-get work i) (w-get init i)))
             (set! i (+ i 1))))
-        (chacha20-serialize arena work)))))
+        (chacha20-serialize work)))))
 
 ; Serialize 16 words little-endian into 64 bytes.
 ; Returns: Words
-(defn chacha20-serialize ((arena Arena) (work Words))
-  (let out (w-alloc arena 64)
+(defn chacha20-serialize ((work Words))
+  (let out (w-alloc 64)
     (begin
       (for (i 0) (< i 16)
         (begin
@@ -151,19 +151,19 @@
 ; starting at `counter`, returning a fresh byte array. Encryption and
 ; decryption are the same operation.
 ; Returns: Words
-(defn chacha20-xor ((arena Arena) (key Words) (nonce Words) (counter Int) (msg Words) (len Int))
-  (let out (w-alloc arena len)
+(defn chacha20-xor ((key Words) (nonce Words) (counter Int) (msg Words) (len Int))
+  (let out (w-alloc len)
     (begin
       (for (off 0) (< off len)
         (begin
-          (chacha20-xor-block arena key nonce (+ counter (/ off 64)) msg out off len)
+          (chacha20-xor-block key nonce (+ counter (/ off 64)) msg out off len)
           (set! off (+ off 64))))
       out)))
 
 ; XOR one block's worth of bytes (or fewer, at the end of the message).
 ; Returns: Int
-(defn chacha20-xor-block ((arena Arena) (key Words) (nonce Words) (counter Int) (msg Words) (out Words) (off Int) (len Int))
-  (let ks (chacha20-block arena key nonce counter)
+(defn chacha20-xor-block ((key Words) (nonce Words) (counter Int) (msg Words) (out Words) (off Int) (len Int))
+  (let ks (chacha20-block key nonce counter)
     (let n (if (< (- len off) 64) (- len off) 64)
       (begin
         (for (i 0) (< i n)

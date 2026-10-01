@@ -350,6 +350,7 @@
   (Cons (FSig "zyl_ref_set" "(Ref a) a -> Unit")
   (Cons (FSig "zyl_getenv_str" "String -> String")
   (Cons (FSig "zyl_strbuf_new" "Arena Int -> StrBuf")
+  (Cons (FSig "zyl_strbuf_new_r" "Int -> StrBuf")
   (Cons (FSig "zyl_strbuf_str" "StrBuf -> String")
   (Cons (FSig "zyl_uf_id" "UF -> Int")
   (Cons (FSig "zyl_cstr_escapes_ok" "String Int Int -> Bool")
@@ -365,4 +366,4 @@
   (Cons (FSig "zyl_bytebuf_new" "Int Int -> ByteBuf")
   (Cons (FSig "zyl_bytebuf_read_file" "String -> ByteBuf")
   (Cons (FSig "zyl_bytebuf_write_exec" "String ByteBuf Int -> Int")
-  Nil))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+  Nil)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))

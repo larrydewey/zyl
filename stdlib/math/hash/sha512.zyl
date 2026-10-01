@@ -35,8 +35,8 @@
 ; The 80 round constants: first 64 bits of the fractional parts of the
 ; cube roots of the first 80 primes (FIPS 180-4 s4.2.3).
 ; Returns: Words
-(defn sha512-k-table ((arena Arena))
-  (let p (w-alloc arena 80)
+(defn sha512-k-table ()
+  (let p (w-alloc 80)
     (begin
       (w-set p 0 4794697086780616226)
       (w-set p 1 8158064640168781261)
@@ -123,8 +123,8 @@
 ; Initial state: first 64 bits of the fractional parts of the square
 ; roots of the first 8 primes (FIPS 180-4 s5.3.5).
 ; Returns: Words
-(defn sha512-init ((arena Arena))
-  (let p (w-alloc arena 8)
+(defn sha512-init ()
+  (let p (w-alloc 8)
     (begin
       (w-set p 0 7640891576956012808)
       (w-set p 1 -4942790177534073029)
@@ -168,8 +168,8 @@
       (w-set wp t (bit-or (shl hi 32) lo)))))
 
 ; Returns: Words
-(defn sha512-load-block ((arena Arena) (msg Words) (off Int))
-  (let wp (w-alloc arena 80)
+(defn sha512-load-block ((msg Words) (off Int))
+  (let wp (w-alloc 80)
     (begin
       (for (t 0) (< t 16)
         (begin
@@ -220,9 +220,9 @@
                               (sha512-shift-vars wv a b c d e f g t1 t2))))))))))))))))
 
 ; Returns: Words
-(defn sha512-compress ((arena Arena) (state Words) (msg Words) (off Int) (kp Words))
-  (let wp (sha512-load-block arena msg off)
-    (let wv (w-alloc arena 8)
+(defn sha512-compress ((state Words) (msg Words) (off Int) (kp Words))
+  (let wp (sha512-load-block msg off)
+    (let wv (w-alloc 8)
       (begin
         (w-copy wv state 8)
         (for (i 0) (< i 80)
@@ -258,9 +258,9 @@
     p))
 
 ; Returns: Words
-(defn sha512-pad ((arena Arena) (msg Words) (len Int))
+(defn sha512-pad ((msg Words) (len Int))
   (let total (sha512-padded-len len)
-    (let p (w-alloc arena total)
+    (let p (w-alloc total)
       (begin
         (w-copy p msg len)
         (w-set p len 128)
@@ -274,15 +274,15 @@
 ; SHA-512 of `len` message bytes held one-per-word at `msg`, as an
 ; 8-word state (each word a 64-bit big-endian digest word).
 ; Returns: Words
-(defn sha512-words ((arena Arena) (msg Words) (len Int))
-  (let kp (sha512-k-table arena)
-    (let st (sha512-init arena)
-      (let padded (sha512-pad arena msg len)
+(defn sha512-words ((msg Words) (len Int))
+  (let kp (sha512-k-table)
+    (let st (sha512-init)
+      (let padded (sha512-pad msg len)
         (let total (sha512-padded-len len)
           (begin
             (for (off 0) (< off total)
               (begin
-                (sha512-compress arena st padded off kp)
+                (sha512-compress st padded off kp)
                 (set! off (+ off 128))))
             st))))))
 
@@ -298,9 +298,9 @@
 
 ; SHA-512 digest as a 64-entry byte array (one byte per word).
 ; Returns: Words
-(defn sha512-bytes ((arena Arena) (msg Words) (len Int))
-  (let st (sha512-words arena msg len)
-    (let out (w-alloc arena 64)
+(defn sha512-bytes ((msg Words) (len Int))
+  (let st (sha512-words msg len)
+    (let out (w-alloc 64)
       (begin
         (for (i 0) (< i 8)
           (begin
@@ -310,8 +310,8 @@
 
 ; SHA-512 of a String as a 128-character lowercase hex String.
 ; Returns: String
-(defn sha512-hex-of-string ((arena Arena) (s String))
-  (let msg (w-from-string arena s)
+(defn sha512-hex-of-string ((s String))
+  (let msg (w-from-string s)
     (let len (w-string-len s)
-      (let d (sha512-bytes arena msg len)
+      (let d (sha512-bytes msg len)
         (w-hex-bytes d 64)))))

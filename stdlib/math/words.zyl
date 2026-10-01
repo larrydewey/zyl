@@ -1,6 +1,6 @@
 ; === Zyl Standard Library — Flat Word Arrays ===
 ; Module: math/words
-; Provides: fixed-size arena-backed Int arrays for numeric/crypto code
+; Provides: fixed-size region-backed Int arrays for numeric/crypto code
 ;
 ; Everything in stdlib/math needs the same thing: a fixed-size, densely
 ; indexed, MUTABLE array of Ints (a hash's message schedule, a cipher's
@@ -8,30 +8,26 @@
 ;
 ;   - `List` is a linked structure with O(n) indexing and no in-place
 ;     update at all.
-;   - `Vec` (collections/vec) is arena-backed and indexable, but its
-;     length lives in the returned Vec STRUCT, not in the arena, so
+;   - `Vec` (collections/vec) is indexable, but its
+;     length lives in the returned Vec STRUCT, not in the storage, so
 ;     `vec-set` must be threaded through every call site; ignoring its
 ;     result leaves `vec-len` stale and makes `vec-get` return -1 for
 ;     the slots just written. A 64-round loop of `(vec-set v i x)`
 ;     inside a `begin` therefore silently reads back nothing.
 ;
 ; A word array is a `Words` handle: its length and its storage, allocated
-; in an arena. Every access is bounds-checked by the runtime
+; in the region the calling frame runs in. Every access is bounds-checked
+; by the runtime
 ; (E_INDEX_OUT_OF_BOUNDS), and a sub-array is a view (w-view) that shares
 ; its parent's storage, so no code here or in its callers does address
 ; arithmetic (docs/sound-types-design.md).
 
-(use allocator/allocator)
-
-; Allocate `n` zeroed words.
-; Returns: Words
-(defn w-alloc ((arena Arena) (n Int))
-  (ffi-call "zyl_words_new" arena n 1000))
 
 ; Allocate `n` zeroed words in the region the calling frame runs in.
-; There is no Arena parameter: storage is reclaimed with the region.
+; Storage is reclaimed with the region, so
+; a buffer that does not outlive its frame costs nothing to release.
 ; Returns: Words
-(defn w-alloc-r ((n Int))
+(defn w-alloc ((n Int))
   (ffi-call "zyl_words_alloc" n 1000))
 
 ; Number of words.
@@ -49,10 +45,16 @@
 (defn w-set ((base Words) (i Int) (v Int))
   (ffi-call "zyl_words_set" base i v 1000))
 
+; One arena serves every view. Nothing is allocated from it -- the views
+; themselves come from the region -- so it holds no memory. It exists only
+; because w-view's signature still names an Arena; step two drops both.
+(def w-arena (ffi-call "zyl_arena_create" 0 1000))
+
 ; Words [off, off + n) of `base`, sharing its storage.
 ; Returns: Words
 (defn w-view ((arena Arena) (base Words) (off Int) (n Int))
   (ffi-call "zyl_words_view" arena base off n 1000))
+
 
 ; Set words [0, n) to v.
 ; Returns: Words
@@ -85,9 +87,9 @@
 
 ; Copy a String's bytes into a fresh word array, one byte per word.
 ; Returns: Words
-(defn w-from-string ((arena Arena) (s String))
+(defn w-from-string ((s String))
   (let n (ffi-call "zyl_cstr_len" s 1000)
-    (let p (w-alloc arena n)
+    (let p (w-alloc n)
       (begin
         (for (i 0) (< i n)
           (begin
@@ -187,9 +189,9 @@
 
 ; Decode a hex String into a fresh byte array (one byte per word).
 ; Returns: Words
-(defn w-from-hex ((arena Arena) (s String))
+(defn w-from-hex ((s String))
   (let n (/ (ffi-call "zyl_cstr_len" s 1000) 2)
-    (let p (w-alloc arena n)
+    (let p (w-alloc n)
       (begin
         (for (i 0) (< i n)
           (begin

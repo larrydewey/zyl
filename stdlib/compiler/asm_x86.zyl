@@ -27,7 +27,7 @@
 (defstruct SymDef (glob Int) (file Int) (name String) (sec Int) (off Int))
 
 (def ax-secbuf (ffi-call "zyl_ref_new" (ffi-call "zyl_wvec_new" 1000) 1000))       ; (Ref (WVec ByteBuf))
-(def ax-cur (ffi-call "zyl_ref_new" (ffi-call "zyl_words_new" (ffi-call "zyl_arena_create" 0 1000) 1 1000) 1000)) ; (Ref Words)
+(def ax-cur (ffi-call "zyl_ref_new" (ffi-call "zyl_words_alloc" 1 1000) 1000)) ; (Ref Words), replaced by ax-reset
 (def ax-relocs (ffi-call "zyl_ref_new" (ffi-call "zyl_wvec_new" 1000) 1000))       ; (Ref (WVec Reloc))
 (def ax-syms (ffi-call "zyl_ref_new" (ffi-call "zyl_wvec_new" 1000) 1000))         ; (Ref (WVec SymDef))
 (def ax-tlsoff (ffi-call "zyl_ref_new" (ffi-call "zyl_smap_new" 1000) 1000))       ; (Ref (SMap Int))
@@ -39,13 +39,12 @@
 (def ax-weaklist (ffi-call "zyl_ref_new" (ffi-call "zyl_wvec_new" 1000) 1000))     ; (Ref (WVec String)) weak names in order
 (def ax-tlsalign (ffi-call "zyl_ref_new" 1 1000))
 (def ax-secactive (ffi-call "zyl_ref_new" 1 1000))
-(def ax-arena (ffi-call "zyl_ref_new" (ffi-call "zyl_arena_create" 0 1000) 1000))
 
 (defn ax-getw (cell) (ffi-call "zyl_ref_get" cell 1000))
 
 (defn ax-secbuf-n (i) (ffi-call "zyl_wvec_get" (ax-getw ax-secbuf) i 1000))
-(defn ax-cur-n (i) (ffi-call "zyl_words_get" (ax-getw ax-cur) i 1000))
-(defn ax-cur-set (i v) (let _ (ffi-call "zyl_words_set" (ax-getw ax-cur) i v 1000) unit))
+(defn ax-cur-n (i) (ffi-call "zyl_words_get" (ffi-call "zyl_ref_get" ax-cur 1000) i 1000))
+(defn ax-cur-set (i v) (let _ (ffi-call "zyl_words_set" (ffi-call "zyl_ref_get" ax-cur 1000) i v 1000) unit))
 (defn ax-store8 ((b ByteBuf) (off Int) (v Int)) (store-u8 :le b off v))
 (defn ax-load8 ((b ByteBuf) (off Int)) (load-u8 :le b off))
 
@@ -827,17 +826,17 @@
 
 (defn ax-mkbuf (bound) (ffi-call "zyl_bytebuf_new" 1 (if (> bound 0) bound 1) 1000))
 
+
 (defn ax-reset (bound)
   (let _ (ax-reg-init)
-    (let _ (ffi-call "zyl_ref_set" ax-arena (ffi-call "zyl_arena_create" 0 1000) 1000)
-      (let bv (ffi-call "zyl_wvec_new" 1000)
-        (let _ (ffi-call "zyl_wvec_push" bv (ax-mkbuf bound) 1000)
+    (let bv (ffi-call "zyl_wvec_new" 1000)
+      (let _ (ffi-call "zyl_wvec_push" bv (ax-mkbuf bound) 1000)
         (let _ (ffi-call "zyl_wvec_push" bv (ax-mkbuf bound) 1000)
         (let _ (ffi-call "zyl_wvec_push" bv (ax-mkbuf bound) 1000)
         (let _ (ffi-call "zyl_wvec_push" bv (ax-mkbuf 1) 1000)
         (let _ (ffi-call "zyl_wvec_push" bv (ax-mkbuf 1) 1000)
           (let _ (ffi-call "zyl_ref_set" ax-secbuf bv 1000)
-            (let _ (ffi-call "zyl_ref_set" ax-cur (ffi-call "zyl_words_new" (ax-getw ax-arena) 5 1000) 1000)
+            (let _ (ffi-call "zyl_ref_set" ax-cur (ffi-call "zyl_words_alloc" 5 1000) 1000)
               (let _ (ffi-call "zyl_ref_set" ax-relocs (ffi-call "zyl_wvec_new" 1000) 1000)
                 (let _ (ffi-call "zyl_ref_set" ax-syms (ffi-call "zyl_wvec_new" 1000) 1000)
                   (let _ (ffi-call "zyl_ref_set" ax-tlsoff (ffi-call "zyl_smap_new" 1000) 1000)
@@ -845,7 +844,7 @@
                       (let _ (ffi-call "zyl_ref_set" ax-weak (ffi-call "zyl_smap_new" 1000) 1000)
                       (let _ (ffi-call "zyl_ref_set" ax-weaklist (ffi-call "zyl_wvec_new" 1000) 1000)
                         (let _ (ffi-call "zyl_ref_set" ax-tlsalign 1 1000)
-                          (ffi-call "zyl_ref_set" ax-secactive 1 1000)))))))))))))))))))
+                          (ffi-call "zyl_ref_set" ax-secactive 1 1000))))))))))))))))))
 
 ; ----- getters for elf_link -----
 (defn ax-buf (sec) (ax-secbuf-n sec))
@@ -905,7 +904,7 @@
           (let _ (ax-scan-globls text)
             (let _ (ffi-call "zyl_ref_set" ax-file 0 1000)
               (let _ (ax-set-sec 0)
-                (let lst (buf-str (ax-list-l text 0 (ax-len text) (buf-new (ax-getw ax-arena) (+ 1000000 (* 2 (str-length text))))))
+                (let lst (buf-str (ax-list-l text 0 (ax-len text) (buf-new-r (+ 1000000 (* 2 (str-length text))))))
                   (let _ (ffi-call "zyl_bytebuf_write_exec" binout (ax-buf 0) (ax-size 0) 1000)
                     (let out (file-open relout "w")
                       (let _ (file-write out (ax-reloc-dump (ax-relocs-vec) 0 (ffi-call "zyl_wvec_len" (ax-relocs-vec) 1000) ""))

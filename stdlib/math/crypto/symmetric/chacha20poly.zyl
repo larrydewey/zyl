@@ -36,9 +36,9 @@
 ; The first 32 bytes of ChaCha20 block 0 under (key, nonce)
 ; (RFC 8439 s2.6). The remaining 32 bytes of that block are discarded.
 ; Returns: Words
-(defn aead-poly-key ((arena Arena) (key Words) (nonce Words))
-  (let blk (chacha20-block arena key nonce 0)
-    (let pk (w-alloc arena 32)
+(defn aead-poly-key ((key Words) (nonce Words))
+  (let blk (chacha20-block key nonce 0)
+    (let pk (w-alloc 32)
       (begin
         (for (i 0) (< i 32)
           (begin (w-set pk i (w-get blk i)) (set! i (+ i 1))))
@@ -66,9 +66,9 @@
 ; are what stops an attacker shifting bytes between the associated data
 ; and the ciphertext while keeping the concatenation identical.
 ; Returns: Words
-(defn aead-mac-input ((arena Arena) (aad Words) (aadlen Int) (ct Words) (ctlen Int))
+(defn aead-mac-input ((aad Words) (aadlen Int) (ct Words) (ctlen Int))
   (let total (aead-mac-len aadlen ctlen)
-    (let buf (w-alloc arena total)
+    (let buf (w-alloc total)
       (let capos (+ aadlen (aead-pad16 aadlen))
         (begin
           (w-copy buf aad aadlen)
@@ -102,12 +102,12 @@
 ; Encrypt and authenticate. Returns a byte array of `ptlen + 16` bytes:
 ; the ciphertext followed by the tag.
 ; Returns: Words
-(defn aead-encrypt ((arena Arena) (key Words) (nonce Words) (aad Words) (aadlen Int) (pt Words) (ptlen Int))
-  (let pk (aead-poly-key arena key nonce)
-    (let ct (chacha20-xor arena key nonce 1 pt ptlen)
-      (let macin (aead-mac-input arena aad aadlen ct ptlen)
-        (let tag (poly1305-mac arena pk macin (aead-mac-len aadlen ptlen))
-          (let out (w-alloc arena (+ ptlen 16))
+(defn aead-encrypt ((key Words) (nonce Words) (aad Words) (aadlen Int) (pt Words) (ptlen Int))
+  (let pk (aead-poly-key key nonce)
+    (let ct (chacha20-xor key nonce 1 pt ptlen)
+      (let macin (aead-mac-input aad aadlen ct ptlen)
+        (let tag (poly1305-mac pk macin (aead-mac-len aadlen ptlen))
+          (let out (w-alloc (+ ptlen 16))
             (begin
               (w-copy out ct ptlen)
               (aead-copy-at out ptlen tag 16)
@@ -115,10 +115,10 @@
 
 ; The tag Poly1305 would produce for this (key, nonce, aad, ciphertext).
 ; Returns: Words
-(defn aead-expected-tag ((arena Arena) (key Words) (nonce Words) (aad Words) (aadlen Int) (ct Words) (ctlen Int))
-  (let pk (aead-poly-key arena key nonce)
-    (let macin (aead-mac-input arena aad aadlen ct ctlen)
-      (poly1305-mac arena pk macin (aead-mac-len aadlen ctlen)))))
+(defn aead-expected-tag ((key Words) (nonce Words) (aad Words) (aadlen Int) (ct Words) (ctlen Int))
+  (let pk (aead-poly-key key nonce)
+    (let macin (aead-mac-input aad aadlen ct ctlen)
+      (poly1305-mac pk macin (aead-mac-len aadlen ctlen)))))
 
 ; Verify and decrypt a `ctlen + 16` byte sealed message (ciphertext
 ; followed by its tag). Returns Some(plaintext bytes) or None.
@@ -130,17 +130,17 @@
 ; reveals only the accept/reject bit the caller is about to learn
 ; anyway.
 ; Returns: (Option Words)
-(defn aead-decrypt ((arena Arena) (key Words) (nonce Words) (aad Words) (aadlen Int) (sealed Words) (ctlen Int))
-  (let expect (aead-expected-tag arena key nonce aad aadlen sealed ctlen)
-    (let given (aead-tag-of arena sealed ctlen)
+(defn aead-decrypt ((key Words) (nonce Words) (aad Words) (aadlen Int) (sealed Words) (ctlen Int))
+  (let expect (aead-expected-tag key nonce aad aadlen sealed ctlen)
+    (let given (aead-tag-of sealed ctlen)
       (if (ct-eq-words-bool expect given 16)
-        (Some (chacha20-xor arena key nonce 1 sealed ctlen))
+        (Some (chacha20-xor key nonce 1 sealed ctlen))
         None))))
 
 ; The trailing 16 tag bytes of a sealed message, as their own array.
 ; Returns: Words
-(defn aead-tag-of ((arena Arena) (sealed Words) (ctlen Int))
-  (let t (w-alloc arena 16)
+(defn aead-tag-of ((sealed Words) (ctlen Int))
+  (let t (w-alloc 16)
     (begin
       (for (i 0) (< i 16)
         (begin (w-set t i (w-get sealed (+ ctlen i))) (set! i (+ i 1))))

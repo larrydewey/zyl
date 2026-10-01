@@ -168,6 +168,11 @@
 (defn buf-new (arena n)
   (ffi-call "zyl_strbuf_new" arena n 1000))
 
+; A text buffer of `n` bytes in the region the calling frame runs in.
+; Returns: StrBuf
+(defn buf-new-r (n)
+  (ffi-call "zyl_strbuf_new_r" n 1000))
+
 ; Returns: String
 (defn buf-str (b)
   (ffi-call "zyl_strbuf_str" b 1000))

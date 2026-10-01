@@ -175,12 +175,12 @@
 (deftype Argon2Work (Argon2Work Words Words Words Words Words Words))
 
 ; Returns: Argon2Work
-(defn argon2-work ((arena Arena))
-  (let idx (w-alloc arena 256)
+(defn argon2-work ()
+  (let idx (w-alloc 256)
     (begin
       (argon2-build-idx idx)
-      (Argon2Work (w-alloc arena 128) (w-alloc arena 128) (w-alloc arena 128)
-                  (w-alloc arena 128) (w-alloc arena 16) idx))))
+      (Argon2Work (w-alloc 128) (w-alloc 128) (w-alloc 128)
+                  (w-alloc 128) (w-alloc 16) idx))))
 
 ; Returns: Words
 (defn argon2-w-r ((w Argon2Work)) (match w (Argon2Work x _ _ _ _ _ x)))
@@ -248,39 +248,39 @@
 ; bytes, otherwise a chain of 64-byte hashes contributing 32 bytes each
 ; until the final full block.
 ; Returns: Words
-(defn argon2-hprime ((arena Arena) (x Words) (xlen Int) (outlen Int))
-  (let input (w-alloc arena (+ xlen 4))
+(defn argon2-hprime ((x Words) (xlen Int) (outlen Int))
+  (let input (w-alloc (+ xlen 4))
     (begin
       (argon2-put32 input 0 outlen)
       (for (i 0) (< i xlen)
         (begin (w-set input (+ 4 i) (w-get x i)) (set! i (+ i 1))))
       (if (<= outlen 64)
-        (blake2b arena input (+ xlen 4) (w-alloc arena 1) 0 outlen)
-        (argon2-hprime-long arena input (+ xlen 4) outlen)))))
+        (blake2b input (+ xlen 4) (w-alloc 1) 0 outlen)
+        (argon2-hprime-long input (+ xlen 4) outlen)))))
 
 ; Returns: Words
-(defn argon2-hprime-long ((arena Arena) (input Words) (inlen Int) (outlen Int))
-  (let out (w-alloc arena (+ outlen 64))
-    (let v (blake2b arena input inlen (w-alloc arena 1) 0 64)
+(defn argon2-hprime-long ((input Words) (inlen Int) (outlen Int))
+  (let out (w-alloc (+ outlen 64))
+    (let v (blake2b input inlen (w-alloc 1) 0 64)
       (begin
         (argon2-copy-bytes out 0 v 32)
-        (argon2-hprime-chain arena out v outlen 1)
+        (argon2-hprime-chain out v outlen 1)
         out))))
 
 ; Each further block hashes the previous 64-byte value; the last one
 ; contributes its whole 64 bytes rather than 32.
 ; Returns: Int
-(defn argon2-hprime-chain ((arena Arena) (out Words) (v Words) (outlen Int) (i Int))
+(defn argon2-hprime-chain ((out Words) (v Words) (outlen Int) (i Int))
   (if (>= (* i 32) (- outlen 64))
-    (let final (blake2b arena v 64 (w-alloc arena 1) 0 (- outlen (* i 32)))
+    (let final (blake2b v 64 (w-alloc 1) 0 (- outlen (* i 32)))
       (begin
         (argon2-copy-bytes out (* i 32) final (- outlen (* i 32)))
         0))
-    (let next (blake2b arena v 64 (w-alloc arena 1) 0 64)
+    (let next (blake2b v 64 (w-alloc 1) 0 64)
       (begin
         (w-copy v next 64)
         (argon2-copy-bytes out (* i 32) next 32)
-        (argon2-hprime-chain arena out v outlen (+ i 1))))))
+        (argon2-hprime-chain out v outlen (+ i 1))))))
 
 ; Returns: Int
 (defn argon2-copy-bytes ((dst Words) (off Int) (src Words) (n Int))
@@ -307,8 +307,8 @@
 ; RFC 9106 s3.2 lists them. Every field is length-prefixed, so no two
 ; distinct parameter sets can produce the same H0.
 ; Returns: Words
-(defn argon2-h0 ((arena Arena) (pwd Words) (pwdlen Int) (salt Words) (saltlen Int) (m Int) (t Int) (p Int) (taglen Int))
-  (let buf (w-alloc arena (+ (+ pwdlen saltlen) 64))
+(defn argon2-h0 ((pwd Words) (pwdlen Int) (salt Words) (saltlen Int) (m Int) (t Int) (p Int) (taglen Int))
+  (let buf (w-alloc (+ (+ pwdlen saltlen) 64))
     (begin
       (argon2-put32 buf 0 p)
       (argon2-put32 buf 4 taglen)
@@ -318,17 +318,17 @@
       (argon2-put32 buf 20 2)
       (argon2-put32 buf 24 pwdlen)
       (argon2-copy-bytes buf 28 pwd pwdlen)
-      (argon2-h0-tail arena buf pwdlen salt saltlen))))
+      (argon2-h0-tail buf pwdlen salt saltlen))))
 
 ; Returns: Words
-(defn argon2-h0-tail ((arena Arena) (buf Words) (pwdlen Int) (salt Words) (saltlen Int))
+(defn argon2-h0-tail ((buf Words) (pwdlen Int) (salt Words) (saltlen Int))
   (let off (+ 28 pwdlen)
     (begin
       (argon2-put32 buf off saltlen)
       (argon2-copy-bytes buf (+ off 4) salt saltlen)
       (argon2-put32 buf (+ (+ off 4) saltlen) 0)
       (argon2-put32 buf (+ (+ off 8) saltlen) 0)
-      (blake2b arena buf (+ (+ off 12) saltlen) (w-alloc arena 1) 0 64))))
+      (blake2b buf (+ (+ off 12) saltlen) (w-alloc 1) 0 64))))
 
 ; ===========================================================================
 ; MEMORY FILL
@@ -337,24 +337,24 @@
 ; The first two blocks of each lane come straight from H0 with the
 ; block index and lane number appended.
 ; Returns: Int
-(defn argon2-init-blocks ((arena Arena) (mem Words) (h0 Words) (lanes Int) (lanelen Int))
+(defn argon2-init-blocks ((mem Words) (h0 Words) (lanes Int) (lanelen Int))
   (begin
     (for (l 0) (< l lanes)
       (begin
-        (argon2-init-one arena mem h0 lanelen l 0)
-        (argon2-init-one arena mem h0 lanelen l 1)
+        (argon2-init-one mem h0 lanelen l 0)
+        (argon2-init-one mem h0 lanelen l 1)
         (set! l (+ l 1))))
     0))
 
 ; Returns: Int
-(defn argon2-init-one ((arena Arena) (mem Words) (h0 Words) (lanelen Int) (lane Int) (idx Int))
-  (let buf (w-alloc arena 72)
+(defn argon2-init-one ((mem Words) (h0 Words) (lanelen Int) (lane Int) (idx Int))
+  (let buf (w-alloc 72)
     (begin
       (argon2-copy-bytes buf 0 h0 64)
       (argon2-put32 buf 64 idx)
       (argon2-put32 buf 68 lane)
       (argon2-store-block mem (argon2-block (+ (* lane lanelen) idx))
-                          (argon2-hprime arena buf 72 1024))
+                          (argon2-hprime buf 72 1024))
       0)))
 
 ; Pack 1024 bytes (one per word) into 128 little-endian 64-bit words,
@@ -380,8 +380,8 @@
 
 ; Unpack 128 words into 1024 bytes, one per word.
 ; Returns: Words
-(defn argon2-block-bytes ((arena Arena) (blk Words))
-  (let out (w-alloc arena 1024)
+(defn argon2-block-bytes ((blk Words))
+  (let out (w-alloc 1024)
     (begin
       (for (i 0) (< i 128)
         (begin
@@ -440,9 +440,9 @@
 ; independent of the password); everything after uses the previous
 ; block's own bits.
 ; Returns: Int
-(defn argon2-fill-segment ((arena Arena) (w Argon2Work) (mem Words) (pass Int) (lane Int) (slice Int) (lanes Int) (lanelen Int) (seglen Int) (passes Int))
+(defn argon2-fill-segment ((w Argon2Work) (mem Words) (pass Int) (lane Int) (slice Int) (lanes Int) (lanelen Int) (seglen Int) (passes Int))
   (let start (if (= (+ pass slice) 0) 2 0)
-    (let addr (argon2-addr-state arena w pass lane slice lanes lanelen seglen passes)
+    (let addr (argon2-addr-state w pass lane slice lanes lanelen seglen passes)
       (begin
         (for (i start) (< i seglen)
           (begin
@@ -454,9 +454,9 @@
 ; zero-filled input block carrying the position, plus a counter. None
 ; when this segment is data-dependent.
 ; Returns: (Option Words)
-(defn argon2-addr-state ((arena Arena) (w Argon2Work) (pass Int) (lane Int) (slice Int) (lanes Int) (lanelen Int) (seglen Int) (passes Int))
+(defn argon2-addr-state ((w Argon2Work) (pass Int) (lane Int) (slice Int) (lanes Int) (lanelen Int) (seglen Int) (passes Int))
   (if (argon2-data-independent pass slice)
-    (let st (w-alloc arena 256)
+    (let st (w-alloc 256)
       (begin
         (w-set st 0 pass)
         (w-set st 1 lane)
@@ -545,44 +545,44 @@
 ; specification requires -- which means a caller asking for a memory
 ; cost that is not such a multiple gets slightly less.
 ; Returns: Words
-(defn argon2id-hash ((arena Arena) (pwd Words) (pwdlen Int) (salt Words) (saltlen Int) (m Int) (t Int) (p Int) (taglen Int))
+(defn argon2id-hash ((pwd Words) (pwdlen Int) (salt Words) (saltlen Int) (m Int) (t Int) (p Int) (taglen Int))
   (let blocks (* (* 4 p) (/ m (* 4 p)))
     (let lanelen (/ blocks p)
       (let seglen (/ lanelen 4)
-        (let mem (w-alloc arena (* blocks 128))
-          (let h0 (argon2-h0 arena pwd pwdlen salt saltlen m t p taglen)
-            (let w (argon2-work arena)
+        (let mem (w-alloc (* blocks 128))
+          (let h0 (argon2-h0 pwd pwdlen salt saltlen m t p taglen)
+            (let w (argon2-work)
               (begin
-                (argon2-init-blocks arena mem h0 p lanelen)
-                (argon2-run arena w mem t p lanelen seglen)
-                (argon2-final arena mem p lanelen taglen)))))))))
+                (argon2-init-blocks mem h0 p lanelen)
+                (argon2-run w mem t p lanelen seglen)
+                (argon2-final mem p lanelen taglen)))))))))
 
 ; Every pass, every slice, every lane -- in that order, because a
 ; slice may reference blocks written by other lanes in earlier slices.
 ; Returns: Int
-(defn argon2-run ((arena Arena) (w Argon2Work) (mem Words) (passes Int) (lanes Int) (lanelen Int) (seglen Int))
+(defn argon2-run ((w Argon2Work) (mem Words) (passes Int) (lanes Int) (lanelen Int) (seglen Int))
   (begin
     (for (pass 0) (< pass passes)
       (begin
-        (argon2-run-pass arena w mem pass lanes lanelen seglen passes)
+        (argon2-run-pass w mem pass lanes lanelen seglen passes)
         (set! pass (+ pass 1))))
     0))
 
 ; Returns: Int
-(defn argon2-run-pass ((arena Arena) (w Argon2Work) (mem Words) (pass Int) (lanes Int) (lanelen Int) (seglen Int) (passes Int))
+(defn argon2-run-pass ((w Argon2Work) (mem Words) (pass Int) (lanes Int) (lanelen Int) (seglen Int) (passes Int))
   (begin
     (for (slice 0) (< slice 4)
       (begin
-        (argon2-run-slice arena w mem pass slice lanes lanelen seglen passes)
+        (argon2-run-slice w mem pass slice lanes lanelen seglen passes)
         (set! slice (+ slice 1))))
     0))
 
 ; Returns: Int
-(defn argon2-run-slice ((arena Arena) (w Argon2Work) (mem Words) (pass Int) (slice Int) (lanes Int) (lanelen Int) (seglen Int) (passes Int))
+(defn argon2-run-slice ((w Argon2Work) (mem Words) (pass Int) (slice Int) (lanes Int) (lanelen Int) (seglen Int) (passes Int))
   (begin
     (for (lane 0) (< lane lanes)
       (begin
-        (argon2-fill-segment arena w mem pass lane slice lanes lanelen seglen passes)
+        (argon2-fill-segment w mem pass lane slice lanes lanelen seglen passes)
         (set! lane (+ lane 1))))
     0))
 
@@ -591,19 +591,19 @@
 ; arena is not freed, so without this the whole hash's working set
 ; would sit in the process's address space until exit.
 ; Returns: Words
-(defn argon2-final ((arena Arena) (mem Words) (lanes Int) (lanelen Int) (taglen Int))
-  (let acc (w-alloc arena 128)
+(defn argon2-final ((mem Words) (lanes Int) (lanelen Int) (taglen Int))
+  (let acc (w-alloc 128)
     (begin
       (argon2-copy-block acc 0 mem (argon2-block (- lanelen 1)))
       (for (l 1) (< l lanes)
         (begin
           (argon2-xor-block acc 0 mem (argon2-block (+ (* l lanelen) (- lanelen 1))))
           (set! l (+ l 1))))
-      (argon2-emit arena mem acc lanes lanelen taglen))))
+      (argon2-emit mem acc lanes lanelen taglen))))
 
 ; Returns: Words
-(defn argon2-emit ((arena Arena) (mem Words) (acc Words) (lanes Int) (lanelen Int) (taglen Int))
-  (let tag (argon2-hprime arena (argon2-block-bytes arena acc) 1024 taglen)
+(defn argon2-emit ((mem Words) (acc Words) (lanes Int) (lanelen Int) (taglen Int))
+  (let tag (argon2-hprime (argon2-block-bytes acc) 1024 taglen)
     (begin
       (zeroize mem (* (* lanes lanelen) 128))
       (zeroize acc 128)

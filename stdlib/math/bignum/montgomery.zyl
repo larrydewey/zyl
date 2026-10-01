@@ -55,22 +55,22 @@
 ; doubling -- 2^(48n) mod m is R^2 mod m by definition. Each step is a
 ; shift and a masked conditional subtract, both constant-time.
 ; Returns: Words
-(defn mont-r2 ((arena Arena) (m Words) (n Int))
-  (let t (bn-alloc arena n)
+(defn mont-r2 ((m Words) (n Int))
+  (let t (bn-alloc n)
     (begin
       (bn-set-small t n 1)
       (for (i 0) (< i (* 48 n))
         (begin
-          (mont-double-mod arena t m n)
+          (mont-double-mod t m n)
           (set! i (+ i 1))))
       t)))
 
 ; t = 2t mod m. The doubling may overflow the top limb, so the
 ; conditional subtraction triggers on EITHER that overflow or t >= m.
 ; Returns: Int
-(defn mont-double-mod ((arena Arena) (t Words) (m Words) (n Int))
+(defn mont-double-mod ((t Words) (m Words) (n Int))
   (let carry (bn-shl1 t n)
-    (let scratch (bn-alloc arena n)
+    (let scratch (bn-alloc n)
       (let borrow (bn-sub scratch t m n)
         (let cond (bit-or (ct-is-nonzero carry) (- 1 borrow))
           (begin
@@ -85,20 +85,20 @@
 ; n+2 limbs supplied by the caller so a long exponentiation does not
 ; allocate per multiply.
 ; Returns: Words
-(defn mont-mul ((arena Arena) (out Words) (a Words) (b Words) (m Words) (n Int) (n0 Int))
-  (let t (bn-alloc arena (+ n 2))
+(defn mont-mul ((out Words) (a Words) (b Words) (m Words) (n Int) (n0 Int))
+  (let t (bn-alloc (+ n 2))
     (begin
       (for (i 0) (< i n)
         (begin
-          (mont-mul-step arena t a b m n n0 i)
+          (mont-mul-step t a b m n n0 i)
           (set! i (+ i 1))))
-      (mont-mul-final arena out t m n)
+      (mont-mul-final out t m n)
       out)))
 
 ; One outer iteration: accumulate a * b[i], then eliminate the bottom
 ; limb by adding the right multiple of m and shifting down one limb.
 ; Returns: Int
-(defn mont-mul-step ((_arena Arena) (t Words) (a Words) (b Words) (m Words) (n Int) (n0 Int) (i Int))
+(defn mont-mul-step ((t Words) (a Words) (b Words) (m Words) (n Int) (n0 Int) (i Int))
   (begin
     (mont-accumulate t a n (w-get b i))
     (mont-reduce-limb t m n n0)
@@ -159,8 +159,8 @@
 ; Copy the low n limbs out, subtracting m once if the accumulator is at
 ; or above it (or overflowed into limb n). Masked, not branched.
 ; Returns: Int
-(defn mont-mul-final ((arena Arena) (out Words) (t Words) (m Words) (n Int))
-  (let scratch (bn-alloc arena n)
+(defn mont-mul-final ((out Words) (t Words) (m Words) (n Int))
+  (let scratch (bn-alloc n)
     (let borrow (bn-sub scratch t m n)
       (let cond (bit-or (ct-is-nonzero (w-get t n)) (- 1 borrow))
         (begin
@@ -174,17 +174,17 @@
 
 ; out = a * R mod m (plain value into Montgomery form).
 ; Returns: Words
-(defn mont-to ((arena Arena) (out Words) (a Words) (m Words) (n Int) (n0 Int) (r2 Words))
-  (mont-mul arena out a r2 m n n0))
+(defn mont-to ((out Words) (a Words) (m Words) (n Int) (n0 Int) (r2 Words))
+  (mont-mul out a r2 m n n0))
 
 ; out = a * R^-1 mod m (Montgomery form back to a plain value), done by
 ; multiplying by 1 in the Montgomery domain.
 ; Returns: Words
-(defn mont-from ((arena Arena) (out Words) (a Words) (m Words) (n Int) (n0 Int))
-  (let one (bn-alloc arena n)
+(defn mont-from ((out Words) (a Words) (m Words) (n Int) (n0 Int))
+  (let one (bn-alloc n)
     (begin
       (bn-set-small one n 1)
-      (mont-mul arena out a one m n n0))))
+      (mont-mul out a one m n n0))))
 
 ; ===========================================================================
 ; MODULAR EXPONENTIATION
@@ -208,42 +208,42 @@
 ; it cannot absorb an operand that starts out larger; callers holding a
 ; possibly-oversized value must reduce it first.
 ; Returns: Words
-(defn mont-exp ((arena Arena) (out Words) (base Words) (exp Words) (expbits Int) (m Words) (n Int))
+(defn mont-exp ((out Words) (base Words) (exp Words) (expbits Int) (m Words) (n Int))
   (let n0 (mont-n0 m)
-    (let r2 (mont-r2 arena m n)
-      (let r0 (bn-alloc arena n)
-        (let r1 (bn-alloc arena n)
+    (let r2 (mont-r2 m n)
+      (let r0 (bn-alloc n)
+        (let r1 (bn-alloc n)
           (begin
             (bn-set-small r0 n 1)
-            (mont-to arena r0 r0 m n n0 r2)
-            (mont-to arena r1 base m n n0 r2)
-            (mont-ladder arena r0 r1 exp expbits m n n0)
-            (mont-from arena out r0 m n n0)
+            (mont-to r0 r0 m n n0 r2)
+            (mont-to r1 base m n n0 r2)
+            (mont-ladder r0 r1 exp expbits m n n0)
+            (mont-from out r0 m n n0)
             out))))))
 
 ; Returns: Int
-(defn mont-ladder ((arena Arena) (r0 Words) (r1 Words) (exp Words) (expbits Int) (m Words) (n Int) (n0 Int))
+(defn mont-ladder ((r0 Words) (r1 Words) (exp Words) (expbits Int) (m Words) (n Int) (n0 Int))
   (begin
     (for (i 0) (< i expbits)
       (begin
-        (mont-ladder-step arena r0 r1 exp (- (- expbits 1) i) m n n0)
+        (mont-ladder-step r0 r1 exp (- (- expbits 1) i) m n n0)
         (set! i (+ i 1))))
     0))
 
 ; Returns: Int
-(defn mont-ladder-step ((arena Arena) (r0 Words) (r1 Words) (exp Words) (k Int) (m Words) (n Int) (n0 Int))
+(defn mont-ladder-step ((r0 Words) (r1 Words) (exp Words) (k Int) (m Words) (n Int) (n0 Int))
   (let b (bn-bit exp k)
     (begin
-      (mont-cswap arena r0 r1 n b)
-      (mont-mul arena r1 r0 r1 m n n0)
-      (mont-mul arena r0 r0 r0 m n n0)
-      (mont-cswap arena r0 r1 n b)
+      (mont-cswap r0 r1 n b)
+      (mont-mul r1 r0 r1 m n n0)
+      (mont-mul r0 r0 r0 m n n0)
+      (mont-cswap r0 r1 n b)
       0)))
 
 ; Exchange a and b when `cond` is 1, leave them when it is 0. Both
 ; arrays are read and written either way.
 ; Returns: Int
-(defn mont-cswap ((_arena Arena) (a Words) (b Words) (n Int) (cond Int))
+(defn mont-cswap ((a Words) (b Words) (n Int) (cond Int))
   (let mask (ct-mask cond)
     (begin
       (for (i 0) (< i n)
@@ -271,13 +271,13 @@
 ; `one-mont` is R mod m, the Montgomery form of 1, which the caller
 ; already has from its own setup.
 ; Returns: Words
-(defn mont-exp-form ((arena Arena) (out Words) (base Words) (exp Words) (expbits Int) (m Words) (n Int) (n0 Int) (one-mont Words))
-  (let r0 (bn-alloc arena n)
-    (let r1 (bn-alloc arena n)
+(defn mont-exp-form ((out Words) (base Words) (exp Words) (expbits Int) (m Words) (n Int) (n0 Int) (one-mont Words))
+  (let r0 (bn-alloc n)
+    (let r1 (bn-alloc n)
       (begin
         (bn-copy r0 one-mont n)
         (bn-copy r1 base n)
-        (mont-ladder arena r0 r1 exp expbits m n n0)
+        (mont-ladder r0 r1 exp expbits m n n0)
         (bn-copy out r0 n)
         out))))
 
@@ -285,10 +285,10 @@
 ; Montgomery multiplication of R^2 by 1, which is the cheapest way to
 ; get it without a division.
 ; Returns: Words
-(defn mont-one ((arena Arena) (m Words) (n Int) (n0 Int) (r2 Words))
-  (let one (bn-alloc arena n)
-    (let out (bn-alloc arena n)
+(defn mont-one ((m Words) (n Int) (n0 Int) (r2 Words))
+  (let one (bn-alloc n)
+    (let out (bn-alloc n)
       (begin
         (bn-set-small one n 1)
-        (mont-mul arena out one r2 m n n0)
+        (mont-mul out one r2 m n n0)
         out))))

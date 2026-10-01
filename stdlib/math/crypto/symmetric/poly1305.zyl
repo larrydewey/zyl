@@ -45,12 +45,12 @@
 ; the low two bits of the upper three, which is what keeps the products
 ; inside the limb bounds this representation assumes.
 ; Returns: Words
-(defn poly1305-r ((arena Arena) (key Words))
+(defn poly1305-r ((key Words))
   (let t0 (poly1305-le32 key 0)
     (let t1 (poly1305-le32 key 4)
       (let t2 (poly1305-le32 key 8)
         (let t3 (poly1305-le32 key 12)
-          (let rp (w-alloc arena 5)
+          (let rp (w-alloc 5)
             (begin
               (w-set rp 0 (bit-and t0 67108863))
               (w-set rp 1 (bit-and (bit-or (shr t0 26) (shl t1 6)) 67108611))
@@ -63,8 +63,8 @@
 ; coefficients that fold the 2^130 overflow back down, since
 ; 2^130 = 5 mod (2^130 - 5).
 ; Returns: Words
-(defn poly1305-s ((arena Arena) (rp Words))
-  (let sp (w-alloc arena 5)
+(defn poly1305-s ((rp Words))
+  (let sp (w-alloc 5)
     (begin
       (for (i 1) (< i 5)
         (begin (w-set sp i (* 5 (w-get rp i))) (set! i (+ i 1))))
@@ -146,11 +146,11 @@
 ; when h < p, and an arithmetic shift of its sign bit becomes the
 ; select mask.
 ; Returns: Words
-(defn poly1305-finish ((arena Arena) (h Words) (key Words))
+(defn poly1305-finish ((h Words) (key Words))
   (begin
     (poly1305-final-carry h)
     (poly1305-select-reduced h)
-    (poly1305-emit arena h key)))
+    (poly1305-emit h key)))
 
 ; Returns: Int
 (defn poly1305-final-carry ((h Words))
@@ -202,20 +202,20 @@
 ; Repack the five 26-bit limbs into four 32-bit words, add the pad, and
 ; serialize the low 128 bits little-endian as the 16-byte tag.
 ; Returns: Words
-(defn poly1305-emit ((arena Arena) (h Words) (key Words))
+(defn poly1305-emit ((h Words) (key Words))
   (let f0 (bit-and (bit-or (w-get h 0) (shl (w-get h 1) 26)) 4294967295)
     (let f1 (bit-and (bit-or (shr (w-get h 1) 6) (shl (w-get h 2) 20)) 4294967295)
       (let f2 (bit-and (bit-or (shr (w-get h 2) 12) (shl (w-get h 3) 14)) 4294967295)
         (let f3 (bit-and (bit-or (shr (w-get h 3) 18) (shl (w-get h 4) 8)) 4294967295)
-          (poly1305-add-pad arena f0 f1 f2 f3 key))))))
+          (poly1305-add-pad f0 f1 f2 f3 key))))))
 
 ; Returns: Words
-(defn poly1305-add-pad ((arena Arena) (f0 Int) (f1 Int) (f2 Int) (f3 Int) (key Words))
+(defn poly1305-add-pad ((f0 Int) (f1 Int) (f2 Int) (f3 Int) (key Words))
   (let a0 (+ f0 (poly1305-le32 key 16))
     (let a1 (+ (+ f1 (poly1305-le32 key 20)) (shr a0 32))
       (let a2 (+ (+ f2 (poly1305-le32 key 24)) (shr a1 32))
         (let a3 (+ (+ f3 (poly1305-le32 key 28)) (shr a2 32))
-          (let out (w-alloc arena 16)
+          (let out (w-alloc 16)
             (begin
               (poly1305-put32 out 0 a0)
               (poly1305-put32 out 4 a1)
@@ -241,17 +241,17 @@
 ; partial block gets an explicit 0x01 byte instead, in a zero-padded
 ; scratch block.
 ; Returns: Words
-(defn poly1305-mac ((arena Arena) (key Words) (msg Words) (len Int))
-  (let rp (poly1305-r arena key)
-    (let sp (poly1305-s arena rp)
-      (let h (w-alloc arena 5)
+(defn poly1305-mac ((key Words) (msg Words) (len Int))
+  (let rp (poly1305-r key)
+    (let sp (poly1305-s rp)
+      (let h (w-alloc 5)
         (begin
-          (poly1305-full-blocks arena h rp sp msg len)
-          (poly1305-last-block arena h rp sp msg len)
-          (poly1305-finish arena h key))))))
+          (poly1305-full-blocks h rp sp msg len)
+          (poly1305-last-block h rp sp msg len)
+          (poly1305-finish h key))))))
 
 ; Returns: Int
-(defn poly1305-full-blocks ((arena Arena) (h Words) (rp Words) (sp Words) (msg Words) (len Int))
+(defn poly1305-full-blocks ((h Words) (rp Words) (sp Words) (msg Words) (len Int))
   (begin
     (for (off 0) (<= (+ off 16) len)
       (begin
@@ -263,11 +263,11 @@
 ; The trailing bytes, if any: copied into a zeroed 16-byte block with a
 ; 0x01 terminator, so the padding is unambiguous.
 ; Returns: Int
-(defn poly1305-last-block ((arena Arena) (h Words) (rp Words) (sp Words) (msg Words) (len Int))
+(defn poly1305-last-block ((h Words) (rp Words) (sp Words) (msg Words) (len Int))
   (let rem (% len 16)
     (if (= rem 0)
       0
-      (let blk (w-alloc arena 16)
+      (let blk (w-alloc 16)
         (let base (- len rem)
           (begin
             (for (i 0) (< i rem)
@@ -279,6 +279,6 @@
 
 ; Constant-time tag verification: 16 bytes compared with no early exit.
 ; Returns: Bool
-(defn poly1305-verify ((arena Arena) (key Words) (msg Words) (len Int) (tag Words))
-  (let computed (poly1305-mac arena key msg len)
+(defn poly1305-verify ((key Words) (msg Words) (len Int) (tag Words))
+  (let computed (poly1305-mac key msg len)
     (ct-eq-words-bool computed tag 16)))
