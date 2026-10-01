@@ -159,10 +159,14 @@
 (defn string-buffer-len ((sb StringBuffer))
   (sb-ref-get (struct-get sb "len")))
 
-; Destroy a StringBuffer, reclaiming its arena.
+; Reclaim a StringBuffer's arena. A StringBuffer outlives the frame that
+; writes to it -- it is a resource, like a file handle -- so it is
+; released through with-resource rather than by a frame region.
 ; Returns: Unit
 (defn string-buffer-destroy ((sb StringBuffer))
   (arena-destroy (struct-get sb "arena")))
+
+(impl Drop StringBuffer (defn drop (self) (string-buffer-destroy self)))
 
 ; Construct an arena-backed StringBuffer output stream.
 ; Starts with a 64-byte zeroed block; grows automatically on overflow.

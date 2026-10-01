@@ -93,11 +93,9 @@
 ; piece, which made a large response (a big document's semantic tokens)
 ; quadratic in time and memory.
 (defn jr-json-to-string (j)
-  (let sb (make-string-buffer)
+  (with-resource (sb (make-string-buffer))
     (let _ (jr-write-json sb j)
-      (let out (str-substring (string-buffer-str sb) 0 (string-buffer-len sb))
-        (let _ (string-buffer-destroy sb)
-          out)))))
+      (str-substring (string-buffer-str sb) 0 (string-buffer-len sb)))))
 
 (defn jr-put (sb (s String)) (OutputStream.write sb s))
 
@@ -324,11 +322,9 @@
     (let end (jr-plain-end s pos len)
       (if (and (< end len) (= (ffi-call "zyl_cstr_byte_at" s end 1000) 34))
         (JV (JStr (str-substring s pos (- end pos))) (+ end 1))
-        (let sb (make-string-buffer)
+        (with-resource (sb (make-string-buffer))
           (let after (jr-parse-string-loop sb s pos pos len)
-            (let out (str-substring (string-buffer-str sb) 0 (string-buffer-len sb))
-              (let _ (string-buffer-destroy sb)
-                (JV (JStr out) after)))))))))
+            (JV (JStr (str-substring (string-buffer-str sb) 0 (string-buffer-len sb))) after)))))))
 
 ; The first quote or backslash at or after i (or len).
 (defn jr-plain-end (s i len)
