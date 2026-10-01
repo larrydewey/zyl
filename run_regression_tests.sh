@@ -539,6 +539,30 @@ if [ -n "$FILTER" ] && echo "timing-leakage" | grep -qi -- "$FILTER" \
     fi
 fi
 
+# Verifier cross-check: the assembly verifier's verdict against an independent
+# implementation of the same rules.
+#
+# It runs in a plain `--full` and in `--quick`, because it costs about a second
+# and it guards the check the whole binary-safety argument rests on. A
+# verifier that is quietly wrong reports success, so it needs a second opinion
+# on every run rather than on request; the oracle has its own selftest with
+# planted violations, and the seed verdicts must match field for field,
+# including operand counts.
+if [ -z "$FILTER" ] || echo "frame-oracle" | grep -qi -- "$FILTER"; then
+    if ! dry_listed "frame-oracle"; then
+        TOTAL=$((TOTAL + 1))
+        if "${SCRIPT_DIR}/verify/frame_oracle.sh" > "$RUN_TMP/zyl_frame_oracle.log" 2>&1; then
+            PASS=$((PASS + 1))
+            echo -e "  ${GREEN}✓${NC} frame-oracle"
+            sed 's/^/      /' "$RUN_TMP/zyl_frame_oracle.log"
+        else
+            FAIL=$((FAIL + 1))
+            echo -e "  ${RED}✗${NC} frame-oracle"
+            sed 's/^/      /' "$RUN_TMP/zyl_frame_oracle.log"
+        fi
+    fi
+fi
+
 # Memory-safety gate (Valgrind memcheck) -- OPT IN with `--filter memcheck`.
 #
 # Also opt-in rather than part of a plain `--full`, because memcheck runs

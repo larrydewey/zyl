@@ -105,6 +105,7 @@
 (def vy-dyn-count (ffi-call "zyl_ref_new" 0 1000))
 (def vy-frame-unknown (ffi-call "zyl_ref_new" 0 1000))
 (def vy-frames-seen (ffi-call "zyl_ref_new" 0 1000))
+(def vy-last-line (ffi-call "zyl_ref_new" 1 1000))
 (def vy-writes (ffi-call "zyl_ref_new" 0 1000))
 (def vy-reads (ffi-call "zyl_ref_new" 0 1000))
 
@@ -134,6 +135,7 @@
     (ffi-call "zyl_ref_set" vy-dyn-count 0 1000)
     (ffi-call "zyl_ref_set" vy-frame-unknown 0 1000)
     (ffi-call "zyl_ref_set" vy-frames-seen 0 1000)
+    (ffi-call "zyl_ref_set" vy-last-line 1 1000)
     (ffi-call "zyl_ref_set" vy-writes 0 1000)
     (ffi-call "zyl_ref_set" vy-reads 0 1000)))
 
@@ -193,6 +195,7 @@
         (let line (ffi-call "zyl_ref_new" 1 1000)
           (begin
             (vy-drive asm pos frame line)
+            (ffi-call "zyl_ref_set" vy-last-line (ffi-call "zyl_ref_get" line 1000) 1000)
             (vy-bad-count)))))))
 
 (defn verify-asm (asm)
@@ -202,6 +205,7 @@
         (let line (ffi-call "zyl_ref_new" 1 1000)
           (begin
             (vy-drive asm pos frame line)
+            (ffi-call "zyl_ref_set" vy-last-line (ffi-call "zyl_ref_get" line 1000) 1000)
             (vy-finish)))))))
 
 ; A real loop, not recursion. Written as a self tail call it asks the backend
@@ -472,6 +476,11 @@
 (defn verify-functions () (ffi-call "zyl_ref_get" vy-frames-seen 1000))
 (defn verify-writes () (ffi-call "zyl_ref_get" vy-writes 1000))
 (defn verify-reads () (ffi-call "zyl_ref_get" vy-reads 1000))
+(defn verify-dynamic () (ffi-call "zyl_ref_get" vy-dyn-count 1000))
+
+; Lines the scan actually reached. A count that stops short of the file is how a
+; scan that silently matched nothing would look, so it belongs in the evidence.
+(defn verify-lines () (- (ffi-call "zyl_ref_get" vy-last-line 1000) 1))
 (defn verify-unverified-writes () (ffi-call "zyl_ref_get" vy-frame-unknown 1000))
 
 

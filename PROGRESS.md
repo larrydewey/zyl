@@ -138,6 +138,18 @@ compile with `build/boot/zyl-self` on 2026-09-28.
   (digits read backwards, `cmp` detection inverted, any `[r…` mistaken for a
   frame slot, the annotation read at the space before its digits, and local
   jump labels counted as functions). See `docs/verifier-design.md`.
+- **The verifier's verdict is cross-checked against a second
+  implementation.** `verify/frame_oracle.py` re-derives the same rules in
+  Python — a language this compiler does not emit, so a miscompilation cannot
+  hide from it — and `verify/frame_oracle.sh` requires the two to agree field
+  for field on the committed seeds, operand counts included: a scan that stops
+  early reports fewer operands and still reports zero violations. It runs on
+  every `--quick` and `--full`, and the oracle has its own selftest of eleven
+  planted cases, so a rule that stops firing fails there first. The two checks
+  have different targets and the distinction is the point:
+  `tests/verify_test.zyl` catches bugs in the verifier, the oracle catches
+  bugs in the compiler. Self-consistency is not evidence, because a subtly
+  wrong rule is wrong consistently.
 - **The region core is machine-checked, not just observed.**
   `verify/model.py` encodes the region allocator and the scope discipline
   from `runtime/rt/alloc.zyl` as a finite transition system and enumerates the

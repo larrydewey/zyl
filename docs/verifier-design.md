@@ -563,7 +563,80 @@ running. That is the argument for planting faults rather than reasoning about
 coverage numbers, and the reason the test is wired into `run_regression_tests.sh`
 in quick mode rather than left for later.
 
+## The cross-check: a second implementation that must agree
+
+`tests/verify_test.zyl` plants faults and proves the verifier *can* fail. That
+is necessary and not sufficient: the verifier agrees with itself on the
+compiler's own output, and a rule that is subtly wrong — a misread of
+destination position, an off-by-one on the frame — is wrong *consistently*, so
+self-consistency is not evidence. What is evidence is a second implementation
+of the same rules, in a language this compiler does not emit, reaching the
+same verdict.
+
+`verify/frame_oracle.py` is that second implementation, and
+`verify/frame_oracle.sh` requires the two to be equal field for field on the
+committed seeds — including the operand counts, because a scan that stops
+early reports fewer operands and still reports zero violations:
+
+```
+stage2.s bytes=16070335 lines=787090 functions=5207 writes=24766 reads=86503 dynamic=118506 unverified=0 violations=0
+rt.s        bytes=862052  lines=42907  functions=1103 writes=482   reads=2488  dynamic=4935   unverified=0 violations=0
+```
+
+It runs on every `--quick` and `--full`, and the oracle has its own selftest:
+eleven hand-written cases with the verdict each must produce, so a change to
+the rules that silences a violation fails there before it reaches a seed. That
+is the same shape as `verify/model_selftest.sh`, which injects a double free to
+prove the allocator model fails when it should.
+
+**Why the oracle is Python and not Zyl**, since "we already have Zyl, write it
+in Zyl" is the obvious objection and dogfooding is usually right. An oracle
+exists to catch bugs in the compiler. An oracle compiled by the compiler shares
+its code generation, so a miscompilation is invisible to it by construction —
+the one class of bug the whole arrangement exists to catch. That is L7's
+argument in `docs/soundness.md` applied to the checker: the obligation has to
+sit outside the thing being checked.
+
+The two checks are not alternatives, they have different targets:
+
+| | catches | language |
+|---|---|---|
+| `tests/verify_test.zyl` | bugs in the **verifier** — a rule that does not fire | Zyl |
+| `verify/frame_oracle.py` | bugs in the **compiler** — emitted code neither implementation can see | Python |
+
+Writing the second one in Zyl would have made it a third copy of the first.
+
+What this settled: an apparent disagreement of 29 violations and 31 operands
+between the verifier and a first draft of the oracle turned out to be two bugs
+in the draft — it classified writes by mnemonic alone, dropping the comma
+that says whether an operand is in destination position, and it counted the
+empty segment after a file's final newline as a line. The verifier was right
+on both counts. The gate exists so that the next such question is answered by
+running something rather than by reasoning.
+
 ## What it still will not give
+
+
+Honesty about the residue, because a document that claims more than it has is
+worse than no document:
+
+- **The verifier is itself unverified** until someone proves it in a proof
+  assistant. It is small enough that this is plausible — a few thousand lines
+  of dataflow — but until then it is a much smaller thing to trust than a
+  compiler, not a trusted thing.
+- **Concurrency.** Actors and channels are a separate obligation: the
+  single-writer/single-reader rule is a property of the scheduler, not of a
+  memory operand.
+- **FFI.** A foreign call can do anything. The invariant holds for Zyl's own
+  code; the boundary needs its own argument, and `ffi-call`'s Pin and timeout
+  requirements are what stands there today.
+- **Bugs that are not memory bugs.** Integer overflow, a wrong bounds check
+  that is too strict, a miscompiled `+`. This makes programs wrong, not
+  unsafe. Determinism catches the class of these that changes output.
+
+That list is shorter than the one we would have if we kept adding gates, and
+every item on it is a specific piece of work rather than an open question.
+
 
 
 Honesty about the residue, because a document that claims more than it has is

@@ -1,0 +1,52 @@
+; Print the verifier's verdict on an assembly file, one canonical line.
+;
+; The machine-readable bridge between `stdlib/compiler/verify.zyl` and
+; `verify/asm_oracle.py`. The oracle is a second implementation of the same
+; rules in a different language; the point of the pair is that they must
+; agree, and that is only a check if the Zyl's numbers can be read by
+; something that is not the Zyl.
+;
+; Both print:
+;   <path> lines=N functions=N writes=N reads=N dynamic=N unverified=N violations=N
+; and the gate requires the two lines to be equal.
+
+(use compiler/verify { verify-count => zyl-violations })
+(use compiler/verify { verify-functions => zyl-functions })
+(use compiler/verify { verify-writes => zyl-writes })
+(use compiler/verify { verify-reads => zyl-reads })
+(use compiler/verify { verify-dynamic => zyl-dynamic })
+(use compiler/verify { verify-lines => zyl-lines })
+(use compiler/verify { verify-unverified-writes => zyl-unverified })
+
+
+
+; One line per file, so the gate is a diff. `print` puts each value on its own
+; line, so the line is built here and printed once.
+(defn n (x) (ffi-call "zyl_int_text" x 1000))
+
+(defn field (acc label value)
+  (let tag (str-concat (str-concat " " label) "=")
+    (str-concat (str-concat acc tag) (n value))))
+
+; One line per file, so the gate is a diff. `print` puts every value on its
+; own line, so the line is built first and printed once.
+(defn show (path)
+  (let fd (file-open path "r")
+    (let text (file-read fd 20000000)
+      (let _ (file-close fd)
+        (let v (zyl-violations text)
+          (let a (str-concat (str-concat path " bytes=") (n (str-length text)))
+            (let a0 (field a "lines" (zyl-lines))
+            (let b (field a0 "functions" (zyl-functions))
+              (let c (field b "writes" (zyl-writes))
+                (let d (field c "reads" (zyl-reads))
+                  (let e (field d "dynamic" (zyl-dynamic))
+                    (let f (field e "unverified" (zyl-unverified))
+                      (let g (field f "violations" v)
+                        (begin (print g) 0))))))))))))))
+
+(defn main ()
+  (begin
+    (show "build/boot/stage2.s")
+    (show "build/boot/rt.s")
+    0))
