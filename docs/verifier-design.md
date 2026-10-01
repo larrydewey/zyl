@@ -97,6 +97,84 @@ job: being the reason a program is safe.
 Slices 1 and 2 are the whole safety argument. After them the trusted base is:
 the verifier, and the allocator, which is small and modelled.
 
+## Findings from implementing slice 1
+
+These replace guesses in the plan above. All four were measured on the
+compiler's own 778,094-line assembly before anything was wired in.
+
+### The scan is fast. That part is solved.
+
+A single forward pass over the character buffer, classifying each `[...]`
+operand in place, needs **0.036 s for 229,193 operands over 15 MB** with zero
+allocations and no recursion. The three costs that made the first attempt
+glacial -- six string allocations per line, a 21-entry mnemonic search per
+line, one recursion frame per line -- are all removable, and two of them turn
+out to be unnecessary at all:
+
+- only `mov` and `cmp` ever carry a frame-slot operand, and both are 8-byte;
+- **all 110,718 frame-slot offsets are 8-aligned**, so an 8-byte alignment
+  rule is exact rather than conservative.
+
+### The frame bound cannot be inferred from the assembly. This is the real result.
+
+The invariant is "every *write* through `[rbp-N]` lies inside the frame this
+function reserved". Deriving that from the prologue does not work. Each
+formulation, measured as false positives out of 110,718 slots:
+
+| bound taken from | false positives |
+|---|---|
+| the function's single `sub rsp, N` | 12,515 |
+| + the 128-byte red zone, running max | 11,304 |
+| + local labels are not functions | 9,503 |
+| + red zone only in functions that make no call | 5,088 |
+
+The residue is not noise. It is four independent things the text does not
+state: frames are grown by more than one `sub rsp`; 742 leaf functions use
+the red zone with no `sub rsp` at all; push-only frames never reserve
+anything; and a *read* of the return address is indistinguishable from a
+*write* to it by operand position alone. Guessing at any of them produces
+false positives, and wiring it anyway would have failed every build while
+looking like it found thousands of backend bugs.
+
+So the bound must be **stated, not inferred**.
+
+### The assembler has no comment syntax, so the statement needs a side channel
+
+The obvious carrier -- a `; frame N` annotation on the function -- does not
+work: Zyl's assembler has no comments at all. `build/boot/rt.s` contains
+zero comment lines, and both `; frame 360` and `; @frame 360` are rejected
+(`no such instruction`). A syntax assembler that cannot hold a comment is
+also a standing obstacle to anyone reading generated assembly.
+
+The fact already exists in code generation: `codegen.zyl` computes `fsz`
+from actual slot usage before emitting the prologue. The change is to record
+it and hand it to the verifier:
+
+1. `CGState` (`codegen.zyl:65`) is a 6-field record: arena, buffer,
+   next-label, next-slot, rodata, fn-names. Add a seventh, `frames`, a list
+   of `(name . fsz)`.
+2. At `codegen.zyl:1792`, where `fsz` is computed, push `(name, fsz)` onto
+   it.
+3. `verify-asm` takes the assembly **and** that table. It reads each
+   function name from the label in the text -- cheap, labels are at column 0
+   -- looks up `fsz`, and checks every write to `[rbp-N]` against
+   `fsz + 8` (the pushed return address).
+4. The same table is the evidence the provenance record needs: a signed
+   artifact can then state the frame bound of every function in it, not just
+   that a verifier ran.
+
+A mismatch between the `fsz` code generation intended and an operand it
+actually emitted is exactly the bug class this is for, and only a text-level
+check catches it -- which is why the table is a side channel rather than a
+replacement for checking the emitted text.
+
+### What this changes about the plan
+
+V1 is tractable and cheap **once the bound is stated rather than recovered**.
+Until then it is not implementable, and the honest order is: side table
+first, check second. V3 and V4 are unaffected -- they need provenance and
+liveness, not a frame bound.
+
 ## What it still will not give
 
 Honesty about the residue, because a document that claims more than it has is
