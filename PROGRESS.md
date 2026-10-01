@@ -59,6 +59,32 @@ compile with `build/boot/zyl-self` on 2026-09-28.
   `E_REGION_ESCAPE`, labelled where it escapes. `with-region` opens an
   explicit `arena` or `fixed` region. `ZYL_REGIONS=0` turns inference
   off.
+- **A program cannot obtain an `Arena`** (spec G2). The collections
+  (`Vec`, `IntMap`, `Set`, `Slice`) allocate from the region the
+  allocating call runs in, and `stdlib/math` takes no arena parameter at
+  all -- a hash's message schedule, a cipher's state and a bignum's limbs
+  are reclaimed with their frame. The arena entries are in `ffi-raw-p`,
+  and the `allocator/allocator` wrappers are refused by name at the call
+  site, so `E_FFI_RESTRICTED` answers all three routes (raw `ffi-call`,
+  the wrapper, reading an `Arena` field, which is nominal and will not
+  unify with `Int`). What still holds an arena is the compiler, the LSP,
+  the REPL and their tests: the parse tree and the REPL scratch outlive
+  any single frame, so they cannot use a frame region. Those entries are
+  recognized by source and compiled in an internal mode. `StringBuffer`
+  is the one user-facing type that keeps an `Arena`, and it is a
+  resource rather than scratch: it is released through `with-resource`
+  (G11), a read after release is `E_USE_AFTER_FREE`, and a second
+  release is a no-op (`zyl_arena_destroy` keeps its 72-byte handle so a
+  stale one is never dereferenced).
+- **Not yet met, and stated plainly.** G1/G2 are satisfied for the
+  shapes above, but the spec's `G2` also names *invalid aliasing* and the
+  language does not implement the `TCap`/`TMut` invariant (§9.1's "either
+  exactly one TMut reference OR any number of TCap references"). Two
+  `Vec` handles share storage, so a write through one is visible in the
+  other; `E_MUT_CONFLICT` as raised today covers `let-mut` leaks, not
+  capability aliasing (`mutability_check.zyl`'s own header says so).
+  Linear types and the capability invariant are the remaining work, and
+  both are type-system features rather than runtime checks.
 - Optimization (all safe, none reorders effects): small-function
   inlining (`ZYL_INLINE`, `ZYL_INLINE_LIMIT`) and copy propagation,
   constant folding and dead-branch elimination, one-level unrolling of

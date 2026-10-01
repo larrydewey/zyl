@@ -11,6 +11,40 @@ relies on it (55c9355), and the native backend (`docs/native-backend-design.md`)
 emits the same region frames, with inline bump allocation (0929426) and
 frame-region recycling in self tail calls (93ab380).
 
+## Arenas are not a program's to hold
+
+A program cannot obtain an `Arena` at all. This was the first thing
+removed from the language, because a handle the caller chooses and the
+type checker does not track is a use-after-free waiting to happen: the
+handle is one copyable word, `arena-destroy` frees it, and nothing
+notices the second use.
+
+- `Vec`, `IntMap`, `Set` and `Slice` allocate their storage from the
+  region the allocating call runs in (`zyl_vec_alloc`, `zyl_words_alloc`
+  and their `_r` twins in `runtime/rt/tables.zyl`), so a collection that
+  does not outlive its frame is reclaimed on return and one that does is
+  placed in the caller's region or on the heap. The `Arena` field is gone
+  from all three.
+- `stdlib/math` takes no arena parameter anywhere. `blake3-iv`,
+  `mont-add`, `sha256-init` and the rest are pure functions whose scratch
+  dies with the frame.
+- The arena entries are in `ffi-raw-p`, and the `allocator/allocator`
+  wrappers (`arena-create`, `arena-destroy`, `arena-reset`, `arena-alloc`,
+  `arena-used`, `arena-capacity`, `buf-new`) are refused by name at the
+  call site, so `E_FFI_RESTRICTED` answers every route. `Arena` is
+  nominal: it will not unify with `Int`, so a handle cannot be laundered
+  into a raw address.
+- The compiler, the LSP, the REPL and their tests keep one long-lived
+  arena, because the parse tree and the REPL scratch outlive any single
+  frame. The driver recognizes those entries by source and compiles them
+  in an internal mode.
+- `StringBuffer` is the one user-facing type that keeps an `Arena`, and it
+  is a resource rather than scratch. It is released through
+  `with-resource` (§12.9), a read after release is `E_USE_AFTER_FREE`, and
+  `zyl_arena_destroy` does not free its 72-byte handle -- a released
+  handle stays readable, so a second release is a no-op rather than a
+  fault on memory the allocator has given back.
+
 ## Starting point (before this work)
 
 - Every heap value (variants, structs, closures, strings built at run time)
