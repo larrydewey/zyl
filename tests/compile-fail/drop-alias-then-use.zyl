@@ -1,0 +1,13 @@
+; `copy` and `fd` are one resource under two names. Releasing through
+; `fd` releases `copy` too, so writing through the copy afterwards is a
+; use-after-release -- tracking only the name the release was called on
+; would let this through.
+; expect-error: E_MOVE_VALUE
+(use core/core)
+(defn main ()
+  (let fd (file-open "/tmp/zyl_lin_alias.txt" "w")
+    (let copy fd
+      (begin
+        (file-close fd)
+        (file-write copy "after release")
+        0))))

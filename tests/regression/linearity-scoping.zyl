@@ -1,0 +1,55 @@
+; The linearity pass (compiler/linearity.zyl) must reject every way of
+; using a resource after its release, and must not reject the shapes that
+; look similar but are fine. This file is the second half of that
+; contract: if a future change to the alias rule grows too eager, these
+; stop compiling and the check has become unusable.
+
+(use core/core)
+(use io/io)
+
+(deftype Conn (ConnC String))
+(impl Drop Conn (defn drop (self) (print "dropped")))
+
+; Release at the end: fine.
+(defn use-then-close ()
+  (let fd (file-open "/tmp/zyl_lin_ok.txt" "w")
+    (begin (file-write fd "d") (file-close fd) 0)))
+
+; Rebinding the same name after a release is a fresh resource, so the new
+; one is live and may be used. (A shadow, not an alias: the old binding is
+; gone.)
+(defn close-then-reopen ()
+  (let fd (file-open "/tmp/zyl_lin_ok.txt" "w")
+    (begin
+      (file-close fd)
+      (let fd (file-open "/tmp/zyl_lin_ok2.txt" "w")
+        (begin (file-write fd "d") (file-close fd) 0)))))
+
+; An alias made before the release is still usable before it.
+(defn alias-then-close ()
+  (let fd (file-open "/tmp/zyl_lin_ok.txt" "w")
+    (let copy fd
+      (begin (file-write copy "d") (file-close copy) 0))))
+
+; A release in an exception handler is conditional, so it does not consume:
+; the same body without the raise still has the resource. This is the
+; shape with-resource desugars to, so getting it wrong breaks the
+; compiler's own source.
+(defn close-in-handler (fail)
+  (let fd (file-open "/tmp/zyl_lin_ok.txt" "w")
+    (begin
+      (try (if fail (panic "boom") 0) (catch e (file-close fd)))
+      (file-close fd)
+      0)))
+
+; with-resource on a user Drop type, used inside the scope only.
+(defn scoped () (with-resource (c (ConnC "db")) (begin (print "inside") 0)))
+
+(test "lin-use-then-close" (assert-equal (use-then-close) 0))
+(test "lin-close-then-reopen" (assert-equal (close-then-reopen) 0))
+(test "lin-alias-then-close" (assert-equal (alias-then-close) 0))
+(test "lin-close-in-handler-no-raise" (assert-equal (close-in-handler false) 0))
+(test "lin-close-in-handler-raise" (assert-equal (try (close-in-handler true) (catch e 0)) 0))
+(test "lin-scoped" (assert-equal (scoped) 0))
+
+(run-tests)

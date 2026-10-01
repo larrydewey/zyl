@@ -1,0 +1,14 @@
+; with-resource desugars to a Drop.drop on a fresh name, so the resource is
+; released by the scope. Using the original binding afterwards is a
+; use-after-release: the alias rule has to reach through the rebinding,
+; which is the whole reason consumption is tracked per alias class.
+; expect-error: E_MOVE_VALUE
+(use core/core)
+(deftype Conn (ConnC String))
+(impl Drop Conn (defn drop (self) (print "released")))
+(defn main ()
+  (let c (ConnC "db")
+    (begin
+      (with-resource (r c) (print "using"))
+      (print c)
+      0)))

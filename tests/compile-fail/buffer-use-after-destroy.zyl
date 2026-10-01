@@ -1,0 +1,12 @@
+; A StringBuffer is released by string-buffer-destroy. Reading it after is
+; a use-after-free; the runtime also catches it (E_USE_AFTER_FREE), and
+; this is the static half.
+; expect-error: E_MOVE_VALUE
+(use core/core)
+(use io/io)
+(defn main ()
+  (let sb (make-string-buffer)
+    (begin
+      (string-buffer-destroy sb)
+      (string-buffer-str sb)
+      0)))

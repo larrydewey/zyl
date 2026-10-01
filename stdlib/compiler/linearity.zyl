@@ -57,8 +57,52 @@
 ; later use and the pass can be re-run.
 (def lin-moved-store (ffi-call "zyl_smap_new" 1000))
 
+; Alias classes. `with-resource` binds the resource to a fresh name and an
+; ordinary `(let copy fd)` is how a resource gets passed around, so several
+; names can stand for one resource. A release has to reach all of them:
+; tracking only the name it was called on lets `(with-resource (r fd) ...)`
+; followed by a use of `fd` compile clean, which is the same bug as before
+; with an extra binding in the way. name -> root, "" meaning "is its own
+; root".
+(def lin-root-store (ffi-call "zyl_smap_new" 1000))
+
+; Type names that have a `Drop` impl, and the constructor names that build
+; them. Filled from the program's own `impl Drop` and `deftype` forms, so a
+; user resource is covered without this pass knowing anything about it.
+; Lists rather than maps, matched by suffix. A name is spelled one way at
+; its `deftype` and another at the construction site -- the former may
+; carry the defining module and the latter not -- so an exact-match table
+; silently misses. Matching the way lin-ends-with does is what makes a user
+; `impl Drop` visible to a call site at all.
+(def lin-drop-types (ffi-call "zyl_ref_new" Nil 1000))
+(def lin-drop-ctors (ffi-call "zyl_ref_new" Nil 1000))
+
+; Nonzero while walking an exception handler.
+;
+; A release in a handler is conditional: it runs only if the body raised,
+; so the resource may still be live afterwards and must not be treated as
+; consumed. This is not a workaround, it is the rule that makes the
+; with-resource desugar sound -- that rewrite (compiler/desugar.zyl) puts
+; one `Drop.drop` in the catch and one after the try, and the two are
+; exclusive, so at most one runs per execution. Treating the handler's as
+; a consumption would report the tail's release as a use of a released
+; value, which is why the compiler's own source did not compile until
+; this was right. The same shape written by hand --
+;
+;   (try body (catch e (file-close fd)))
+;   (file-close fd)
+;
+; is correct for the same reason, and is accepted for the same reason.
+(def lin-suppress (ffi-call "zyl_ref_new" 0 1000))
+
+(defn lin-suppressed-p () (> (ffi-call "zyl_ref_get" lin-suppress 1000) 0))
+
 (defn lin-reset ()
-  (ffi-call "zyl_smap_clear" lin-moved-store 1000))
+  (begin
+    (ffi-call "zyl_smap_clear" lin-moved-store 1000)
+    (ffi-call "zyl_smap_clear" lin-root-store 1000)
+    (ffi-call "zyl_ref_set" lin-drop-types Nil 1000)
+    (ffi-call "zyl_ref_set" lin-drop-ctors Nil 1000)))
 
 ; Constructors whose result owns a resource. `file-open` is not here: it
 ; has its own AST form. Matched on the tail of a canonical key, so
@@ -76,36 +120,127 @@
     (Nil false)
     (Cons h t (if (= x h) true (lin-in x t)))))
 
-; The last `::`-separated component of a qualified key.
-(defn lin-tail (key)
+; Does `key` name `suffix`, either outright or as the tail of a qualified
+; key?
+;
+; Matching on a suffix rather than splitting on a separator is deliberate.
+; A resolved stdlib name carries a package key (`zyl/std@N::...`) and the
+; module path, and hard-coding the separator meant silently matching
+; nothing the moment qualification spelled it differently -- which is
+; exactly what happened: the rule looked right and fired on nothing. The
+; character before the suffix must not be an identifier character, so
+; `Drop.drop` matches `...::core/resource::Drop.drop` but not
+; `myDrop.drop`.
+(defn lin-ends-with (key suffix)
   (let n (str-length key)
-    (let i (lin-last-sep key (- n 1))
-      (if (< i 0) key (str-substring key (+ i 1) n)))))
+    (let m (str-length suffix)
+      (if (< n m)
+        false
+        (let i (- n m)
+          ; str-substring's second argument is a LENGTH, not an end index.
+          (if (str-eq (str-substring key i m) suffix)
+            (if (= i 0) true (str-eq (str-substring key (- i 1) 1) ":"))
+            false))))))
 
-(defn lin-last-sep (s i)
-  (if (< i 0)
-    -1
-    (if (= (str-substring s i (+ i 1)) "::")
-      i
-      (lin-last-sep s (- i 1)))))
+; Qualification separates with a colon (`zyl/std@N::io/io::name`), so a
+; match is either the whole key or a run preceded by one. Testing that one
+; character is enough and needs no character classification.
 
-(defn lin-ctor-p (name) (lin-in (lin-tail name) lin-ctors))
-(defn lin-consuming-p (name) (lin-in (lin-tail name) lin-consuming))
+
+(defn lin-tail (key) key)
+
+(defn lin-ctor-p (name)
+  (if (lin-any-suffix name lin-ctors)
+    true
+    (lin-marked-p lin-drop-ctors (lin-tail name))))
+
+(defn lin-consuming-p (name) (lin-any-suffix name lin-consuming))
+
+(defn lin-any-suffix (name names)
+  (match names
+    (Nil false)
+    (Cons h t (if (lin-ends-with name h) true (lin-any-suffix name t)))))
+
+; --- discovering the program's own resources -----------------------------
+;
+; Two steps over the top level, in this order: collect every type with a
+; `Drop` impl, then collect the constructors of those types. An `impl` may
+; precede or follow its `deftype`, and the constructor is what a call site
+; actually names.
+
+(defn lin-mark (ref name)
+  (ffi-call "zyl_ref_set" ref (Cons name (ffi-call "zyl_ref_get" ref 1000)) 1000))
+
+(defn lin-marked-p (ref name)
+  (lin-any-suffix name (ffi-call "zyl_ref_get" ref 1000)))
+
+; A `deftype` builds its variants directly, so the constructors are one
+; level down; a struct is built by a call named after the struct itself.
+(defn lin-collect-ctors (forms)
+  (match forms
+    (Nil unit)
+    (Cons e rest
+      (begin
+        (match (Expr.inner e)
+          (EDeftype name variants _ _
+            (if (lin-marked-p lin-drop-types name)
+              (lin-mark-variants variants)
+              unit))
+          (_ unit))
+        (lin-collect-ctors rest)))))
+
+(defn lin-mark-variants (variants)
+  (match variants
+    (Nil unit)
+    (Cons v rest (begin (lin-mark lin-drop-ctors (AV.name v)) (lin-mark-variants rest)))))
+
+(defn lin-collect-drops (forms)
+  (match forms
+    (Nil unit)
+    (Cons e rest
+      (begin
+        (match (Expr.inner e)
+          (EImplBlock trait self _
+            (if (lin-eq-tail trait "Drop") (lin-mark lin-drop-types self) unit))
+          (_ unit))
+        (lin-collect-drops rest)))))
+
+; `Drop` may be written bare or qualified by the module it came from, so
+; this has to be a suffix test and not `=`. Comparing the whole key against
+; "Drop" is why the first version of this pass found no user impls at all
+; while looking entirely correct.
+(defn lin-eq-tail (a b) (lin-ends-with a b))
 
 ; --- the moved set -------------------------------------------------------
 
 ; `node` is where the release happened, kept in the signature so the
 ; consuming walkers can pass the call site even though the diagnostic uses
 ; the later use. Marked unused rather than dropped to keep the shape even.
+; The name at the head of this alias class. A chain always terminates: an
+; entry equal to the name itself means "root", and "" means no entry.
+(defn lin-find-root (name)
+  (let r (ffi-call "zyl_smap_get_or" lin-root-store name "" 1000)
+    (if (str-eq r "")
+      name
+      (if (str-eq r name) name (lin-find-root r)))))
+
+; Record that `alias` names the same resource as `src`.
+(defn lin-alias (alias src)
+  (let r (lin-find-root src)
+    (ffi-call "zyl_smap_put" lin-root-store alias r 1000)))
+
 (defn lin-consume (name _node)
-  (ffi-call "zyl_smap_put" lin-moved-store name 1 1000))
+  (ffi-call "zyl_smap_put" lin-moved-store (lin-find-root name) 1 1000))
 
 (defn lin-consumed-p (name)
-  (= (ffi-call "zyl_smap_get_or" lin-moved-store name 0 1000) 1))
+  (= (ffi-call "zyl_smap_get_or" lin-moved-store (lin-find-root name) 0 1000) 1))
 
-; A rebind gives a fresh resource, so the name is live again.
+; A rebind produces a fresh resource, so the name is live again and any
+; alias it had is dropped.
 (defn lin-clear (name)
-  (ffi-call "zyl_smap_put" lin-moved-store name 0 1000))
+  (begin
+    (ffi-call "zyl_smap_put" lin-moved-store (lin-find-root name) 0 1000)
+    (ffi-call "zyl_smap_put" lin-root-store name name 1000)))
 
 (defn lin-report (node name)
   (let fid (ffi-call "zyl_span_file" node 1000)
@@ -141,25 +276,115 @@
 ; release earlier in a body is visible to a later use in it — which is
 ; precisely where the mistake gets written.
 
+; Every variant of ExprInner that carries an Expr has an arm here.
+;
+; That completeness is load-bearing, not tidiness. A catch-all that skips
+; a subtree does not merely miss a check, it HIDES one: `print` is its own
+; form (EPrint), not a call, so `(print fd)` after a release compiled clean
+; while `(file-write fd ...)` was correctly rejected. A missing arm is a
+; silent hole in the rule, so the variants with no Expr children
+; (EError, EByteLit, EModuleDecl, ...) fall through instead, and anything
+; added to ExprInner later shows up as one of those rather than quietly
+; disabling the check on a new syntax.
+;
+; Arms that only forward sub-expressions exist so no form can hide a use.
 (defn lin-walk (e env)
   (match (Expr.inner e)
+    ; --- atoms and binding ---
     (EAtom a (lin-walk-atom a e env))
     (EBegin es (lin-walk-seq es env))
     (ELet name val body (lin-walk-let name val body env))
     (ELetMut name val body (begin (lin-walk val env) (lin-walk body env)))
+    (EDef name val (lin-walk val env))
+    (EDefn name params body (lin-walk-fn body env))
+    (ELambda name params body (lin-walk-fn body env))
+    (EFn name params body (lin-walk-fn body env))
+    ; --- calls ---
     (ECall op args (lin-walk-call op args env))
     (EApply name args (lin-walk-apply name args env))
+    (EMakeStruct name args (lin-walk-list args env))
+    (EMakeVariant tyname variant args (lin-walk-list args env))
+    (EMacroDef name args body (begin (lin-walk-list args env) (lin-walk body env)))
+    (EUnknown name args (lin-walk-list args env))
+    ; --- control ---
+    (EIf c t f (begin (lin-walk c env) (lin-walk t env) (lin-walk f env)))
+    (EWhile c body (begin (lin-walk c env) (lin-walk body env)))
+    (ETryCatch body name handler (lin-walk-try body handler env))
+    (EMatch scrut arms (lin-walk-match scrut arms env))
+    (ECond clauses (lin-walk-cond clauses env))
+    (EFor bindings init body (begin (lin-walk init env) (lin-walk body env)))
+    (ESpawn e2 (lin-walk e2 env))
+    (ESend ch msg (begin (lin-walk ch env) (lin-walk msg env)))
+    (ESendClosure ch msg captures (begin (lin-walk ch env) (lin-walk msg env)))
+    ; --- files: the dedicated forms the fd rule keys on ---
     (EFileOpen path mode (begin (lin-walk path env) (lin-walk mode env)))
     (EFileClose h (lin-walk-file-close h env))
     (EFileWrite h data (begin (lin-walk h env) (lin-walk data env)))
     (EFileRead h n (begin (lin-walk h env) (lin-walk n env)))
-    (EIf c t f (begin (lin-walk c env) (lin-walk t env) (lin-walk f env)))
-    (EWhile c body (begin (lin-walk c env) (lin-walk body env)))
-    (ETryCatch body name handler (begin (lin-walk body env) (lin-walk handler env)))
-    (EMatch scrut arms (lin-walk-match scrut arms env))
-    (EFn name params body (lin-walk-fn body env))
-    (ELambda name params body (lin-walk-fn body env))
-    (_ unit)))
+    (EExit e2 (lin-walk e2 env))
+    (EClose e2 (lin-walk e2 env))
+    ; --- assertions and tests ---
+    (EPrint args (lin-walk-list args env))
+    (EAssert e2 msg (lin-walk e2 env))
+    (EAssertEqual a b (begin (lin-walk a env) (lin-walk b env)))
+    (EAssertTrue e2 msg (lin-walk e2 env))
+    (EAssertFalse e2 msg (lin-walk e2 env))
+    (EUnwrap e2 (lin-walk e2 env))
+    (ETestDecl name body flag opts (lin-walk body env))
+    (ETestCompile e2 flag (lin-walk e2 env))
+    (EAliasDecl name target (lin-walk target env))
+    ; --- data access ---
+    (EStructGet e2 field (lin-walk e2 env))
+    (ETupleGet e2 index (lin-walk e2 env))
+    (ETuple items (lin-walk-list items env))
+    (ESetBang name e2 (lin-walk e2 env))
+    (EBufAppend e2 x (begin (lin-walk e2 env) (lin-walk x env)))
+    ; --- ffi ---
+    (EFfiCall sym args timeout (lin-walk-list args env))
+    (EFfiPin e2 (lin-walk e2 env))
+    (EFfiUnpin e2 (lin-walk e2 env))
+    ; --- bytes, buffers and atomics ---
+    (EByteSlice base off len (begin (lin-walk base env) (lin-walk off env) (lin-walk len env)))
+    (EByteSliceSub base off len (begin (lin-walk base env) (lin-walk off env) (lin-walk len env)))
+    (EByteBufAppend buf x (begin (lin-walk buf env) (lin-walk x env)))
+    (EByteBufLen e2 (lin-walk e2 env))
+    (EByteBufCap e2 (lin-walk e2 env))
+    (EByteBufPtr e2 (lin-walk e2 env))
+    (EAlignCheck e2 align (lin-walk e2 env))
+    (ELoadByte endian base off (begin (lin-walk base env) (lin-walk off env)))
+    (ELoadByteSigned endian base off (begin (lin-walk base env) (lin-walk off env)))
+    (EStoreByte endian base off v (begin (lin-walk base env) (lin-walk off env) (lin-walk v env)))
+    (EStoreByteSigned endian base off v (begin (lin-walk base env) (lin-walk off env) (lin-walk v env)))
+    (EAtomicLoad p (lin-walk p env))
+    (EAtomicStore p v (begin (lin-walk p env) (lin-walk v env)))
+    (EAtomicAdd p a b (lin-walk3 p a b env))
+    (EAtomicSub p a b (lin-walk3 p a b env))
+    (EAtomicCAS p expected desired (lin-walk3 p expected desired env))
+    (EAtomicFetchAdd p a (lin-walk2 p a env))
+    (EAtomicMax p a (lin-walk2 p a env))
+    (EAtomicMin p a (lin-walk2 p a env))
+    ; --- no sub-expressions, but listed rather than caught by a wildcard:
+    ; the match is exhaustive by design, so a variant added to ExprInner
+    ; later has to be dealt with here instead of quietly un-walked ---
+    (EError msg unit)
+    (EReadLine unit)
+    (ERunTests name unit)
+    (EModuleDecl name unit)
+    (EExport name unit)
+    (EUseModule names alias flags unit)
+    (EDerive name traits unit)
+    (EByteLit v unit)
+    (EByteBuf region size unit)
+    (EDeftype name variants params parent unit)
+    (ETraitDecl name methods parent unit)
+    (EImplBlock trait self bodies unit)
+    (EStructDef sd parent unit)
+    (EStructDefPlus sd parent unit)))
+
+(defn lin-walk2 (a b env)
+  (begin (lin-walk a env) (lin-walk b env)))
+
+(defn lin-walk3 (a b c env) (lin-walk2 a b env) (lin-walk c env))
 
 (defn lin-walk-atom (a e env)
   (match a
@@ -179,25 +404,48 @@
 ; Rebinding a name that owned a resource produces a fresh one, so the old
 ; moved mark must not carry over to it.
 (defn lin-walk-let (name val body env)
-  (let linear (lin-val-is-resource val)
-    (let env2 (if linear (Cons name env) env)
-      (begin
-        (if linear (lin-clear name) unit)
-        (lin-walk val env)
-        (lin-walk body env2)))))
+  (let src (lin-ident-of val)
+    ; An alias of a live resource is itself one; anything else has to
+    ; construct a fresh resource to be linear at all.
+    (let linear (if (str-eq src "") (lin-val-is-resource val env) (lin-local-p src env))
+      (let env2 (if linear (Cons name env) env)
+        (begin
+          (lin-clear name)
+          (if (if linear (str-eq src "") false) unit (lin-alias name src))
+          (lin-walk val env)
+          (lin-walk body env2))))))
 
-; Does this value own a resource? The dedicated form for `file-open`, or a
-; call to a resource constructor.
-(defn lin-val-is-resource (e)
+; Does this value own a resource?
+;
+;   - the dedicated form for `file-open`
+;   - a construction of a type the program gave a `Drop` impl
+;   - a call to a resource constructor
+;   - a reference to another linear binding in scope
+;
+; The last case is what makes the rest work. `with-resource` desugars to
+; `(let r c ... (Drop.drop r))`, binding the resource to a fresh name, and
+; an ordinary `(let copy fd)` is how a program passes one around. Both are
+; aliases of the same resource, so both are consumed by the release and
+; both are dead afterwards; tracking only the original would let the alias
+; be used after the fact, which is the whole bug.
+(defn lin-val-is-resource (e env)
   (match (Expr.inner e)
     (EFileOpen _ _ true)
+    (EMakeStruct name args (lin-marked-p lin-drop-types name))
+    (EMakeVariant tyname variant args (lin-marked-p lin-drop-types tyname))
+    (EAtom a (match a
+      (AIdent name tag (lin-local-p name env))
+      (_ false)))
     (_ (lin-ctor-p (lin-callee-of e)))))
 
-; The callee of a call, as a name, or "" if it is not a plain reference.
+; The name of a reference, or the callee of a call: "" if neither. The
+; EAtom arm matters on its own -- a callee IS a bare reference, so without
+; it every call reads as unnamed and no release is ever recognised.
 (defn lin-callee-of (e)
   (match (Expr.inner e)
     (EApply name args name)
     (ECall op args (lin-ident-of op))
+    (EAtom a (lin-ident-of e))
     (_ "")))
 
 ; A call whose arguments are walked in order; a call to a release function
@@ -223,7 +471,7 @@
     (Cons h t
       (let n (lin-ident-of h)
         (begin
-          (if (lin-local-p n env) (lin-consume n h) unit)
+          (if (if (lin-local-p n env) (not (lin-suppressed-p)) false) (lin-consume n h) unit)
           (lin-consume-args t env))))))
 
 ; `(file-close fd)` has its own form, so the fd rule does not depend on a
@@ -232,12 +480,30 @@
   (let n (lin-ident-of h)
     (begin
       (lin-walk h env)
-      (if (lin-local-p n env) (lin-consume n h) unit))))
+      (if (if (lin-local-p n env) (not (lin-suppressed-p)) false) (lin-consume n h) unit))))
 
 (defn lin-walk-list (es env)
   (match es
     (Nil unit)
     (Cons h t (begin (lin-walk h env) (lin-walk-list t env)))))
+
+; The body runs normally; the handler with consumption suppressed.
+(defn lin-walk-try (body handler env)
+  (begin
+    (lin-walk body env)
+    (ffi-call "zyl_ref_set" lin-suppress 1 1000)
+    (lin-walk handler env)
+    (ffi-call "zyl_ref_set" lin-suppress 0 1000)))
+
+(defn lin-walk-cond (clauses env)
+  (match clauses
+    (Nil unit)
+    (Cons h t
+      (begin
+        (match h
+          (Pair c body (begin (lin-walk c env) (lin-walk body env)))
+          (_ unit))
+        (lin-walk-cond t env)))))
 
 (defn lin-walk-match (scrut arms env)
   (begin
@@ -266,6 +532,8 @@
 (defn lin-check-program (exprs)
   (begin
     (lin-reset)
+    (lin-collect-drops exprs)
+    (lin-collect-ctors exprs)
     (lin-top exprs)
     0))
 
@@ -279,3 +547,5 @@
           (ETestDecl name body flag opts (lin-walk-fn body Nil))
           (_ unit))
         (lin-top rest)))))
+
+

@@ -1,0 +1,13 @@
+; Dropping a resource by hand and then using it is the same mistake as
+; calling it after a with-resource; both go through Drop.drop, so both are
+; E_MOVE_VALUE.
+; expect-error: E_MOVE_VALUE
+(use core/core)
+(deftype Conn (ConnC String))
+(impl Drop Conn (defn drop (self) (print "released")))
+(defn main ()
+  (let c (ConnC "db")
+    (begin
+      (Drop.drop c)
+      (print c)
+      0)))
