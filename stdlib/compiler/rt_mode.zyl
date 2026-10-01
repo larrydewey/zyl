@@ -7,6 +7,18 @@
 
 (defn rt-mode-set () (ffi-call "zyl_ref_set" rt-mode-cell 1 1000))
 
+; 1 while compiling the compiler itself (its driver, the LSP and the REPL),
+; else 0. Those entries are the only programs that hold a long-lived Arena:
+; the parse tree and the REPL scratch outlive any single frame, so they
+; cannot use a call's frame region. A user program never gets this mode,
+; so the arena entry points in ffi-raw-p are unreachable from one.
+(def internal-mode-cell (ffi-call "zyl_ref_new" 0 1000))
+
+(defn internal-mode-p () (= (ffi-call "zyl_ref_get" internal-mode-cell 1000) 1))
+
+(defn internal-mode-set () (ffi-call "zyl_ref_set" internal-mode-cell 1 1000))
+
+
 ; Runtime entries only the runtime module may call.
 (defn rt-only-p (s) (str-eq s "zyl_ralloc"))
 

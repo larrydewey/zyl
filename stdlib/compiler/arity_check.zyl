@@ -102,6 +102,7 @@
 ; `site` is the call's own Expr node, carried only so the diagnostic can
 ; name the line it is on.
 (defn ac-check-call-by-name (name args arities shadowed site)
+  (ac-check-arena-wrapper name site)
   (if (> (str-length name) 0)
     (let local (ac-lookup-local name shadowed)
       (if (= local -2)
@@ -187,6 +188,39 @@
                         "pass a pointer to a struct or buffer instead" site)
               0)))))))
 
+; The arena wrappers in allocator/allocator. They hand out and reclaim raw
+; addresses, and a handle is copyable, so a program that could name one
+; could destroy memory another part of it still holds -- spec G2 forbids
+; that. Only the standard library and the compiler's own entry points
+; (--internal-module) may call these; every caller left in the tree is one
+; of those, so a user program simply cannot obtain an Arena.
+(defn ac-arena-wrapper-p (key)
+  (or (ac-key-is key "arena-create")
+  (or (ac-key-is key "arena-destroy")
+  (or (ac-key-is key "arena-reset")
+  (or (ac-key-is key "arena-alloc")
+  (or (ac-key-is key "arena-alloc-zeroed")
+  (or (ac-key-is key "arena-used")
+  (or (ac-key-is key "arena-capacity")
+      (ac-key-is key "buf-new")))))))))
+
+; Whether a canonical key ends in `::name` (or is exactly it).
+(defn ac-key-is (key name)
+  (let n (str-len name) (let m (str-len key)
+    (if (< m n) false
+      (if (= (ffi-call "zyl_cstr_substr" key (- m n) n 1000) name)
+        (or (= m n) (= (ffi-call "zyl_cstr_byte_at" key (- m n 1) 1000) 58))
+        false)))))
+
+(defn ac-arena-msg (name)
+  (str-concat "`" (str-concat name "` is a raw-memory entry: it is for the compiler, not for programs")))
+
+(defn ac-check-arena-wrapper (name site)
+  (if (ac-arena-wrapper-p name)
+    (if (ac-may-raw)
+      unit
+      (ffi-fail "E_FFI_RESTRICTED" (ac-arena-msg name) "use the typed standard-library collection it backs, which allocates in a region" site))))
+
 ; Run from the arity pass only, where ac-cur-fn names the definition.
 (defn ffi-check-raw (args site)
   (match args
@@ -197,7 +231,7 @@
         (ffi-fail "E_FFI_RESTRICTED"
                   (str-concat "`" (str-concat (ffi-literal-str sym) "` is a runtime internal; only the runtime itself may use it"))
                   "use the typed standard-library function built on it" site)
-      (if (and (ffi-raw-p (ffi-literal-str sym)) (not (ac-in-stdlib)))
+      (if (and (ffi-raw-p (ffi-literal-str sym)) (not (ac-may-raw)))
         (ffi-fail "E_FFI_RESTRICTED"
                   (str-concat "`" (str-concat (ffi-literal-str sym) "` is a raw runtime entry (it reads memory or reinterprets a machine word) and only the standard library may call it"))
                   "use the typed standard-library function built on it" site)
@@ -207,6 +241,14 @@
 (defn ac-in-stdlib ()
   (let n (ffi-call "zyl_ref_get" ac-cur-fn 1000)
     (and (>= (str-length n) 8) (str-eq (str-substring n 0 8) "zyl/std@"))))
+
+; Who may name a raw runtime entry: the standard library, and the compiler
+; itself (--internal-module, set for driver.zyl, lsp_main.zyl and the
+; REPL). The arena entries are raw because they hand out and reclaim raw
+; addresses; the compiler keeps one for the parse tree, which outlives any
+; frame, and a user program has no way to reach this.
+(defn ac-may-raw ()
+  (or (ac-in-stdlib) (internal-mode-p)))
 
 (defn ac-check-program (exprs)
   (let arities (ac-collect exprs)

@@ -99,6 +99,36 @@
     path
     (str-concat cwd (str-concat "/" path))))
 
+; The last `k` characters of `s`, as a string.
+(defn cli-tail-of (s k) (str-substring s (- (str-len s) k) (str-len s)))
+
+(defn cli-in-list (x xs)
+  (match xs
+    (Nil false)
+    (Cons h t (if (= x h) true (cli-in-list x t)))))
+
+; The compiler, the LSP, the REPL and the compiler's own tests are the only
+; entries that hold a long-lived Arena: the parse tree and the REPL scratch
+; outlive any single frame, so they cannot use a call's frame region.
+; A user program is not in this list, so it cannot obtain an Arena.
+(def cli-internal-entries
+  (Cons "selfhost/driver.zyl"
+  (Cons "selfhost/lsp_main.zyl"
+  (Cons "tools/repl.zyl"
+  (Cons "regression/compiler.zyl"
+  (Cons "regression/balance-agreement.zyl"
+  (Cons "regression/runtime-blake3.zyl"
+  (Cons "regression/runtime-crypto.zyl"
+  (Cons "regression/runtime-tables.zyl"
+  (Cons "regression/package-system.zyl"
+  (Cons "regression/collections.zyl"
+  (Cons "integration/parser-verify.zyl"
+  (Cons "integration/pv_min.zyl"
+  (Cons "integration/selfhost-codegen.zyl"
+  (Cons "integration/math-protocol.zyl"
+  (Cons "unit_test.zyl" Nil))))))))))))))))
+
+
 (defn cli-ends-with-zyl (s)
   (let n (str-len s)
     (if (< n 4)
@@ -219,6 +249,7 @@
                         (cli-resolve-path cwd outraw)
                         (cli-default-out src))
                       (let _ (if (= emitflag 2) (cli-runtime-module src bundledir) unit)
+                      (let _ (cli-internal-mode src) unit)
                       (let _ (ffi-call "zyl_chdir" bundledir 1000)
                         (let fd (file-open src "r")
                           (if (> fd 0)
@@ -234,7 +265,27 @@
                               (print "zyl: error: cannot open source file")
                               1))))))))))))))))
 
-;; `--runtime-module` (boot.sh only): the entry must be the bundle's runtime/rt/rt.zyl.
+;; Internal mode is keyed on the entry source, not a flag, so a seed that
+; predates it still compiles the driver: the driver is what sets it.
+; Whether some suffix of `src` is a listed internal entry. Probing every
+; length avoids any path arithmetic: str-substring on a length is exact,
+; and the longest listed name is 32 characters.
+(defn cli-internal-entry-p (src)
+  (cli-suffix-in src 32))
+
+(defn cli-suffix-in (src k)
+  (if (< k 1)
+    false
+    (if (cli-in-list (cli-tail-of src k) cli-internal-entries)
+      true
+      (cli-suffix-in src (- k 1)))))
+
+(defn cli-internal-mode (src)
+  (if (cli-internal-entry-p src)
+    (internal-mode-set)
+    unit))
+
+; `--runtime-module` (boot.sh only): the entry must be the bundle's runtime/rt/rt.zyl.
 (defn cli-runtime-module (src bundledir)
   (if (str-eq src (str-concat bundledir "/runtime/rt/rt.zyl"))
     (rt-mode-set)
@@ -253,6 +304,7 @@
 (defn drv-eval (arena cwd)
   (let src (cli-resolve-path cwd (drv-arg 2))
     (let fd (file-open src "r")
+      (let _ (if (> fd 0) (cli-internal-mode src) unit)
       (if (< fd 1)
         (begin
           (print "zyl: error: cannot open source file")
@@ -260,7 +312,7 @@
         (let srcbuf (sb-read-all fd "")
           (begin
             (file-close fd)
-            (drv-eval-src arena srcbuf src)))))))
+            (drv-eval-src arena srcbuf src))))))))
 
 (defn drv-eval-src (arena srcbuf src)
   (let fns (compile-to-fns arena srcbuf src)
