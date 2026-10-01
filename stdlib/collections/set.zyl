@@ -12,7 +12,7 @@
 ; Returns: Set
 (defn set-create ((cap Int))
   (let c (if (< cap 0) 0 cap)
-    (make-Set (w-alloc-r c) 0 c)))
+    (make-Set (w-alloc c) 0 c)))
 
 ; Get the number of distinct elements.
 ; Returns: Int
@@ -46,7 +46,7 @@
     (let len (set-len s)
       (if (>= len (set-cap s))
         (let new-cap (if (<= (set-cap s) 0) 16 (* (set-cap s) 2))
-          (let new-ptr (w-alloc-r new-cap)
+          (let new-ptr (w-alloc new-cap)
             (let old-ptr (struct-get s "ptr")
               (begin
                 (for (j 0) (< j len)

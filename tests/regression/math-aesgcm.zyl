@@ -3,27 +3,27 @@
 ;
 ; Every test first asks `aes-available`: these run on AES-NI hardware
 ; only, by design (see the module header), so on a CPU without it the
-; correct outcome is a skipped test rather than a failure.
+; correct outcome is w-arena skipped test rather than w-arena failure.
 
 (use math/crypto/symmetric/aesgcm)
 (use math/words)
 (use allocator/allocator)
 (use core/option)
 
-(defn _gcm_arena () (arena-create 0))
+(defn _gcm_arena () w-arena)
 
 ; Encrypt and return the sealed hex, or the expected value when the CPU
-; has no AES-NI so the assertion still passes on such a machine.
+; has no AES-NI so the assertion still passes on such w-arena machine.
 (defn _gcm_seal_hex ((keyhex String) (ivhex String) (aadhex String) (pthex String) (expect String))
   (if (not (aes-available))
     expect
-    (let a (_gcm_arena)
-      (let key (w-from-hex a keyhex)
-        (let iv (w-from-hex a ivhex)
-          (let aad (w-from-hex a aadhex)
-            (let pt (w-from-hex a pthex)
-              (let sealed (gcm-encrypt a key (w-hex-len keyhex) iv aad (w-hex-len aadhex) pt (w-hex-len pthex))
-                (w-hex-bytes (option-expect sealed "expected a value") (+ (w-hex-len pthex) 16))))))))))
+    (begin
+      (let key (w-from-hex keyhex)
+        (let iv (w-from-hex ivhex)
+          (let aad (w-from-hex aadhex)
+            (let pt (w-from-hex pthex)
+              (let sealed (gcm-encrypt key (w-hex-len keyhex) iv aad (w-hex-len aadhex) pt (w-hex-len pthex))
+                (w-hex-bytes (option-expect sealed "expected w-arena value") (+ (w-hex-len pthex) 16))))))))))
 
 (test "gcm-empty"
   (assert-equal (_gcm_seal_hex "00000000000000000000000000000000" "000000000000000000000000" "" "" "58e2fccefa7e3061367f1d57a4e7455a") "58e2fccefa7e3061367f1d57a4e7455a"))
@@ -36,31 +36,31 @@
 (test "gcm-aes256-short"
   (assert-equal (_gcm_seal_hex "0000000000000000000000000000000000000000000000000000000000000000" "000000000000000000000000" "616263" "68656c6c6f20776f726c64" "a6c22c5122401c017522a1cb1704ffc0ea6ad6225695a11a5e75a5") "a6c22c5122401c017522a1cb1704ffc0ea6ad6225695a11a5e75a5"))
 
-; Round-trip, and rejection of a tampered ciphertext. Both are skipped
+; Round-trip, and rejection of w-arena tampered ciphertext. Both are skipped
 ; (trivially true) without AES-NI.
 (test "gcm-decrypt-roundtrip"
   (if (not (aes-available))
     (assert-true true)
-    (let a (_gcm_arena)
-      (let key (w-from-hex a "feffe9928665731c6d6a8f9467308308")
-        (let iv (w-from-hex a "cafebabefacedbaddecaf888")
-          (let aad (w-from-hex a "feedfacedeadbeeffeedfacedeadbeefabaddad2")
-            (let pt (w-from-hex a "d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b39")
-              (let sealed (option-expect (gcm-encrypt a key 16 iv aad 20 pt 60) "expected a value")
-                (let got (gcm-decrypt a key 16 iv aad 20 sealed 60)
-                  (assert-equal (w-hex-bytes (option-expect got "expected a value") 60) "d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b39"))))))))))
+    (begin
+      (let key (w-from-hex "feffe9928665731c6d6a8f9467308308")
+        (let iv (w-from-hex "cafebabefacedbaddecaf888")
+          (let aad (w-from-hex "feedfacedeadbeeffeedfacedeadbeefabaddad2")
+            (let pt (w-from-hex "d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b39")
+              (let sealed (option-expect (gcm-encrypt key 16 iv aad 20 pt 60) "expected w-arena value")
+                (let got (gcm-decrypt key 16 iv aad 20 sealed 60)
+                  (assert-equal (w-hex-bytes (option-expect got "expected w-arena value") 60) "d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b39"))))))))))
 
 (test "gcm-decrypt-rejects-tampered"
   (if (not (aes-available))
     (assert-true true)
-    (let a (_gcm_arena)
-      (let key (w-from-hex a "feffe9928665731c6d6a8f9467308308")
-        (let iv (w-from-hex a "cafebabefacedbaddecaf888")
-          (let aad (w-from-hex a "feedfacedeadbeeffeedfacedeadbeefabaddad2")
-            (let pt (w-from-hex a "d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b39")
-              (let sealed (option-expect (gcm-encrypt a key 16 iv aad 20 pt 60) "expected a value")
+    (begin
+      (let key (w-from-hex "feffe9928665731c6d6a8f9467308308")
+        (let iv (w-from-hex "cafebabefacedbaddecaf888")
+          (let aad (w-from-hex "feedfacedeadbeeffeedfacedeadbeefabaddad2")
+            (let pt (w-from-hex "d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b39")
+              (let sealed (option-expect (gcm-encrypt key 16 iv aad 20 pt 60) "expected w-arena value")
                 (begin
                   (w-set sealed 3 (bit-xor (w-get sealed 3) 128))
-                  (assert-true (option-is-none (gcm-decrypt a key 16 iv aad 20 sealed 60))))))))))))
+                  (assert-true (option-is-none (gcm-decrypt key 16 iv aad 20 sealed 60))))))))))))
 
 (run-tests)

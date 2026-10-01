@@ -10,9 +10,9 @@
 (defn aes-hex (keyhex pthex expect)
   (if (not (aes-ok)) expect
     (let a (arena)
-      (let key (w-from-hex a keyhex)
+      (let key (w-from-hex keyhex)
         (let out (ffi-call "zyl_words_new" a 16 1000)
-          (if (ffi-call "zyl_aes_encrypt_block" key (w-hex-len keyhex) (w-from-hex a pthex) out 1000)
+          (if (ffi-call "zyl_aes_encrypt_block" key (w-hex-len keyhex) (w-from-hex pthex) out 1000)
             (w-hex-bytes out 16)
             "failed"))))))
 
@@ -34,9 +34,9 @@
         (begin
           ; Only the low byte of each word counts.
           (assert-equal (if (aes-ok)
-                          (let k2 (w-from-hex a "000102030405060708090a0b0c0d0e0f")
+                          (let k2 (w-from-hex "000102030405060708090a0b0c0d0e0f")
                             (let _ (ffi-call "zyl_words_set" k2 1 257 1000)
-                              (let p (w-from-hex a "00112233445566778899aabbccddeeff")
+                              (let p (w-from-hex "00112233445566778899aabbccddeeff")
                                 (let _ (ffi-call "zyl_aes_encrypt_block" k2 16 p blk 1000) (w-hex-bytes blk 16)))))
                           "69c4e0d86a7b0430d8cdb78070b4c55a")
                         "69c4e0d86a7b0430d8cdb78070b4c55a")

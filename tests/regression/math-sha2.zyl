@@ -8,12 +8,12 @@
 (use allocator/allocator)
 
 ; One arena for the whole file; every digest allocates from it and
-; nothing is freed until the process exits, which is what a test binary
+; nothing is freed until the process exits, which is what w-arena test binary
 ; wants.
-(defn _sha_arena () (arena-create 0))
+(defn _sha_arena () w-arena)
 
 (defn _sha_hex ((s String))
-  (sha256-hex-of-string (_sha_arena) s))
+  (sha256-hex-of-string  s))
 
 (test "sha256-empty"
   (assert-equal (_sha_hex "") "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"))
@@ -46,9 +46,9 @@
 
 ; Digest-as-bytes path (one byte per word) must agree with the hex path.
 (test "sha256-bytes-abc"
-  (let a (_sha_arena)
-    (let msg (w-from-string a "abc")
-      (let d (sha256-bytes a msg 3)
+  (begin
+    (let msg (w-from-string "abc")
+      (let d (sha256-bytes msg 3)
         (assert-equal (w-hex-bytes d 32) "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")))))
 
 (test "sha256-padded-len-0"

@@ -1,8 +1,8 @@
 ; BLAKE3 Known-Answer Tests.
 ;
 ; Inputs are the official BLAKE3 test pattern (byte i = i mod 251) at
-; the lengths that cross a block boundary (64) and a chunk boundary
-; (1024), which is where a tree-hash implementation goes wrong.
+; the lengths that cross w-arena block boundary (64) and w-arena chunk boundary
+; (1024), which is where w-arena tree-hash implementation goes wrong.
 ; Expected values match the published vectors for lengths 0, 1 and
 ; 1024 and were generated from the same reference construction for the
 ; rest.
@@ -11,12 +11,12 @@
 (use math/words)
 (use allocator/allocator)
 
-(defn _b3_arena () (arena-create 0))
+(defn _b3_arena () w-arena)
 
 (defn _b3_hex ((hex String) (outlen Int))
-  (let a (_b3_arena)
-    (let msg (w-from-hex a hex)
-      (w-hex-bytes (blake3-hash a msg (w-hex-len hex) outlen) outlen))))
+  (begin
+    (let msg (w-from-hex hex)
+      (w-hex-bytes (blake3-hash msg (w-hex-len hex) outlen) outlen))))
 
 (test "blake3-len-0"
   (assert-equal (_b3_hex "" 32) "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"))
@@ -53,6 +53,6 @@
   (assert-equal (_b3_hex "616263" 131) "6437b3ac38465133ffb63b75273a8db548c558465d79db03fd359c6cd5bd9d851fb250ae7393f5d02813b65d521a0d492d9ba09cf7ce7f4cffd900f23374bf0bc08a1fb0b38ed276181ccbd9f7b7edbddf9f86404ad7929605f6ffa3fb1ac87983105f013384f2f11d38879c985d47003804b905f0c38975e28d36804bb60d8c303653"))
 
 (test "blake3-string-abc"
-  (assert-equal (blake3-hex-of-string (_b3_arena) "abc") "6437b3ac38465133ffb63b75273a8db548c558465d79db03fd359c6cd5bd9d85"))
+  (assert-equal (blake3-hex-of-string  "abc") "6437b3ac38465133ffb63b75273a8db548c558465d79db03fd359c6cd5bd9d85"))
 
 (run-tests)

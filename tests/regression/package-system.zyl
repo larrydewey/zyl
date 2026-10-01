@@ -25,7 +25,7 @@
 (use math/words)
 (use testing/testing)
 
-(defn pkg-arena () (arena-create 16777216))
+(defn pkg-arena () w-arena)
 
 ; --- versions (§31.1) -------------------------------------------------------
 
@@ -203,19 +203,19 @@
 
 (test "a signature over an archive hash verifies under that key"
   (let a (pkg-arena)
-    (let sig (idx-sign-hash a (demo-seed) (demo-hash))
-      (assert-true (ed25519-verify a
-                     (w-from-hex a (store-strip-prefix (idx-public-key a (demo-seed))))
-                     (w-from-hex a (store-strip-prefix (demo-hash))) 32
-                     (w-from-hex a (store-strip-prefix sig)))))))
+    (let sig (idx-sign-hash (pkg-arena) (demo-seed) (demo-hash))
+      (assert-true (ed25519-verify
+                     (w-from-hex (store-strip-prefix (idx-public-key (pkg-arena) (demo-seed))))
+                     (w-from-hex (store-strip-prefix (demo-hash))) 32
+                     (w-from-hex (store-strip-prefix sig)))))))
 
 (test "a signature does not verify against a different hash"
   (let a (pkg-arena)
-    (let sig (idx-sign-hash a (demo-seed) (demo-hash))
-      (assert-false (ed25519-verify a
-                      (w-from-hex a (store-strip-prefix (idx-public-key a (demo-seed))))
-                      (w-from-hex a "6437b3ac38465133ffb63b75273a8db548c558465d79db03fd359c6cd5bd9d85") 32
-                      (w-from-hex a (store-strip-prefix sig)))))))
+    (let sig (idx-sign-hash (pkg-arena) (demo-seed) (demo-hash))
+      (assert-false (ed25519-verify
+                      (w-from-hex (store-strip-prefix (idx-public-key (pkg-arena) (demo-seed))))
+                      (w-from-hex "6437b3ac38465133ffb63b75273a8db548c558465d79db03fd359c6cd5bd9d85") 32
+                      (w-from-hex (store-strip-prefix sig)))))))
 
 ; --- intra-package name collisions (§31.2) ----------------------------------
 

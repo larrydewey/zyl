@@ -4,19 +4,19 @@
 ; The memory costs here are deliberately tiny (32-64 KiB). Real
 ; parameters start at 64 MiB and would make this suite take minutes;
 ; the algorithm is identical either way, and the memory cost is an
-; input to the hash rather than a mode switch.
+; input to the hash rather than w-arena mode switch.
 
 (use math/crypto/kdf/argon2)
 (use math/words)
 (use allocator/allocator)
 
-(defn _ar_arena () (arena-create 0))
+(defn _ar_arena () w-arena)
 
 (defn _ar_hash ((m Int) (t Int) (p Int) (taglen Int))
-  (let a (_ar_arena)
-    (let pwd (w-from-string a "password")
-      (let salt (w-from-string a "somesalt12345678")
-        (w-hex-bytes (argon2id-hash a pwd 8 salt 16 m t p taglen) taglen)))))
+  (begin
+    (let pwd (w-from-string "password")
+      (let salt (w-from-string "somesalt12345678")
+        (w-hex-bytes (argon2id-hash pwd 8 salt 16 m t p taglen) taglen)))))
 
 (test "argon2id-m32-t1-p1"
   (assert-equal (_ar_hash 32 1 1 32) "d9bc939174cecff705ca7bd6e2a66c00defa130d8f978d92a3fe0ce9bbc8dc03"))

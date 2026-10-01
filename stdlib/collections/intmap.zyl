@@ -19,7 +19,7 @@
 ; Returns: IntMap
 (defn intmap-new ((cap Int))
   (let c (if (< cap 0) 0 cap)
-    (make-IntMap (w-alloc-r c) (w-alloc-r c) 0 c)))
+    (make-IntMap (w-alloc c) (w-alloc c) 0 c)))
 
 ; Get the number of entries.
 ; Returns: Int
@@ -71,8 +71,8 @@
     (let cap (intmap-cap m)
       (if (>= len cap)
         (let new-cap (if (<= cap 0) 16 (* cap 2))
-          (let new-kptr (w-alloc-r new-cap)
-            (let new-vptr (w-alloc-r new-cap)
+          (let new-kptr (w-alloc new-cap)
+            (let new-vptr (w-alloc new-cap)
               (let old-kptr (struct-get m "kptr")
                 (let old-vptr (struct-get m "vptr")
                   (begin
@@ -139,4 +139,4 @@
 ; it was allocated in and is reclaimed with it.
 ; Returns: IntMap
 (defn intmap-free ((m IntMap))
-  (make-IntMap (w-alloc-r 0) (w-alloc-r 0) 0 0))
+  (make-IntMap (w-alloc 0) (w-alloc 0) 0 0))
