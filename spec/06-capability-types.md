@@ -95,6 +95,20 @@ lowering. It treats a `let` binding as `TCap` and a `let-mut` binding as
 `set!` on anything other than a plain name, such as a struct field, is
 rejected earlier by the parser with `E_MUT_CONFLICT`.
 
+The invariant itself is enforced where the language can express it, by
+`linearity.zyl`. The invariant needs two things to mean anything -- a way
+to hold a `TMut` reference, and a way to make two of them. There is no
+reference or borrow type, so a plain binding cannot be one; what the
+language does have is mutable locations, a `bytebuf`, written through by
+`store-u8`, the atomic forms and `bytebuf-append`. A name becomes `TMut` by
+being *written*, which is the distinction the rule turns on: within one
+location at most one name may be written. A writer plus any number of
+readers is one `TMut` and many `TCap`, which the invariant allows, so
+naming a location twice is not itself an error -- writing through two names
+is. Alias classes are per allocation rather than per name, and a
+`byteslice` joins its base's class, so two names writing one buffer's
+memory is `E_MUT_CONFLICT` however the second name was derived.
+
 A closure may read a captured `let-mut` (it sees the value at capture
 time). Aliasing through the raw allocation and atomic primitives is covered
 by `linearity.zyl` as described above; the FFI primitives cannot alias,
