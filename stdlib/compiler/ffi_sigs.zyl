@@ -375,4 +375,6 @@
   (Cons (FSig "zyl_bytebuf_new" "Int Int -> ByteBuf")
   (Cons (FSig "zyl_bytebuf_read_file" "String -> ByteBuf")
   (Cons (FSig "zyl_bytebuf_write_exec" "String ByteBuf Int -> Int")
+  (Cons (FSig "zyl_bytebuf_blake3_hex" "Int ByteBuf Int Int -> String")
   Nil))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+)
