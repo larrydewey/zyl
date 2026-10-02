@@ -20,6 +20,7 @@
 
 ```lisp
 (extern "name" (T1 ... Tn) R)
+(extern "name" (T1 ... Tn) R :timeout N)
 ```
 
 Declares the C signature of a foreign symbol; every `ffi-call` to it is
@@ -30,6 +31,15 @@ word: Int, Bool, String, Ptr, the runtime's opaque handle types, and
 `(Fn (A1 ... An) R)` for a C callback. Float is not allowed (the timed
 call passes every argument in an integer register), nor is Float
 returned. R may be Unit.
+
+A trailing `:timeout N`, N a positive integer literal in milliseconds,
+is the default timeout for calls to that symbol: an `ffi-call` with exactly
+as many arguments as the extern has parameters takes N as its timeout, and a
+call with one more ends with its own, which wins. With neither,
+`E_FFI_TIMEOUT_REQUIRED`, whose help names both places to write one. A
+`:timeout` that is not a positive integer literal is `E_FFI_TIMEOUT_REQUIRED`
+too. Runtime symbols (`zyl_*`) take no extern, so every call to one still
+ends with its own timeout.
 
 Runtime symbols (`zyl_*`) are typed by the compiler's signature table
 instead, and an `extern` for one is `E_FFI_RESTRICTED`; those that read
@@ -54,8 +64,9 @@ The following types are FFI_Pinnable:
 
 - **R4:** FFI → Pin region
 - `ffi-call` requires Pin region AND FFI_Pinnable type
-- Timeout parameter is mandatory on every `ffi-call`: `name` is a string
-  literal and `timeout` a positive integer literal in milliseconds
+- A timeout is mandatory on every `ffi-call`: `name` is a string
+  literal and `timeout` a positive integer literal in milliseconds, given
+  at the call or once as the symbol's `extern` `:timeout` default
   (`E_FFI_SYMBOL_REQUIRED` / `E_FFI_TIMEOUT_REQUIRED`)
 - A foreign call that has not returned within `timeout` raises
   `E_FFI_TIMEOUT`; the foreign code is abandoned, never interrupted, and
@@ -131,7 +142,10 @@ Not normative.
   `arity_check.zyl`, also run by ICNF lowering): the symbol must be a
   string literal (`E_FFI_SYMBOL_REQUIRED`), the last argument a positive
   integer literal in milliseconds (`E_FFI_TIMEOUT_REQUIRED`), and at most
-  16 arguments may be passed (`E_ARITY_MISMATCH`). The literal timeout is
+  16 arguments may be passed (`E_ARITY_MISMATCH`). Before that, a call
+  to a symbol whose `extern` has `:timeout N` and that passes exactly the
+  extern's parameter count gets `N` appended (`ffi-default-timeout`,
+  `expr_inner.zyl`; the externs are collected first, `extern-collect`). The literal timeout is
   what stops a forgotten timeout from silently swallowing the real last
   argument. The symbol is passed through `zyl_cstr_sanitize` before it
   reaches the assembly, so a crafted name cannot inject assembly text.

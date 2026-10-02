@@ -53,22 +53,22 @@ ffi-call ::= "(" "ffi-call" String Expression* Timeout ")"
 **The last argument is always the timeout, and it is checked.** `ffi-check-call` (`arity_check.zyl`, also run by ICNF lowering) rejects a call whose symbol is not a string literal with `E_FFI_SYMBOL_REQUIRED`, and a call whose last argument is not a positive integer literal with `E_FFI_TIMEOUT_REQUIRED`. The literal requirement is what keeps a forgotten timeout from silently consuming the real last argument:
 
 ```
-PANIC: error[E_FFI_TIMEOUT_REQUIRED]: the last argument of ffi-call must be a positive integer literal timeout
+PANIC: error[E_FFI_TIMEOUT_REQUIRED]: the call to `abs` has no timeout: its last argument is not a positive integer literal
   --> magnitude.zyl:1:21
    |
  1 | (defn magnitude (n) (ffi-call "abs" n))
    |                     ^
-   = help: end the call with a timeout in milliseconds, e.g. 1000; a missing timeout would otherwise drop the real last argument
+   = help: add the timeout here: (ffi-call "abs" args 1000), or once on the extern: (extern "abs" (...) R :timeout 1000)
 ```
 
-`(ffi-call "abs" -42)` and `(ffi-call "abs" -42 0)` are rejected the same way, since neither ends with a positive timeout. A call with more than 16 arguments is `E_ARITY_MISMATCH`.
+`(ffi-call "abs" -42)` and `(ffi-call "abs" -42 0)` are rejected the same way, since neither ends with a positive timeout, unless the `extern` gives a default (below); `(ffi-call "abs" -42 0)` is rejected even then. A call with more than 16 arguments is `E_ARITY_MISMATCH`.
 
 The result is whatever the function left in `rax`, as a 64-bit word (§22.5), with the type its `extern` declares.
 
 ### Declaring a foreign function: `extern`
 
 ```
-extern ::= "(" "extern" String "(" Type* ")" Type ")"
+extern ::= "(" "extern" String "(" Type* ")" Type ( ":timeout" Integer )? ")"
 ```
 
 ```lisp
@@ -78,6 +78,8 @@ extern ::= "(" "extern" String "(" Type* ")" Type ")"
 ```
 
 An `extern` names a C symbol, the types of its parameters and its result type. It must appear before any `ffi-call` to that symbol. The type pass then checks each call like a call of a Zyl function: the arguments unify with the parameter types (`E_TYPE_MISMATCH` otherwise, or when the count differs), and the call has the result type. The form itself evaluates to Unit.
+
+**A default timeout.** `(extern "abs" (Int) Int :timeout 1000)` makes 1000 ms the timeout of every call to `abs` that gives none. Before the arity check runs, the compiler collects the program's externs (`extern-collect`, `expr_inner.zyl`) and appends the default to each `ffi-call` of that symbol whose argument count equals the extern's parameter count (`ffi-default-timeout`); a call with one argument more keeps its own last argument as the timeout, so a call-site literal wins. The extern may come before or after the calls. A `:timeout` that is not a positive integer literal is `E_FFI_TIMEOUT_REQUIRED` at the extern. Because the count decides, a call that forgets an argument and ends with a timeout literal (`(ffi-call "f" a 500)` against a two-parameter `f` with a default) passes 500 as the second argument; the type check sees a well-typed call. `zyl_*` runtime calls are unchanged: they have no extern, so they always end with their own timeout.
 
 A call to a foreign symbol with no `extern` is rejected:
 

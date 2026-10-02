@@ -71,8 +71,14 @@ Auto-generated for every `defstruct` (§2, `make-Name`).
 (struct-get struct field-name)
 ```
 
-Retrieves a field value. The compiler generates accessors for every
-`defstruct` field.
+Retrieves a field value. `(defstruct Point (x) (y))` also defines one accessor per field,
+`Point.x` and `Point.y`: each is `(defn Point.x ((p Point)) (struct-get p "x"))`,
+an ordinary typed function generated before type checking, so it is a
+value like any other function and has the field's type. `defstruct+`
+generates them too. A program definition of the same name is
+`E_DUPLICATE_DEFINITION`, reported at the program's definition and naming
+the `defstruct`. In a package an accessor is visible as its struct is.
+`struct-get` and dot syntax are unchanged.
 
 ### Struct Immutability (§10)
 

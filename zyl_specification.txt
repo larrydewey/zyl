@@ -133,7 +133,7 @@ Expr :=
   ;; Concurrency & FFI
   | (spawn Expr)
   | (chan-send Expr Expr)
-  | (ffi-call String Expr* Integer)
+  | (ffi-call String Expr* Integer?) ; Integer omitted only with an extern :timeout
   | (ffi-pin Expr)
   | (ffi-unpin Expr)
   
@@ -158,6 +158,7 @@ Expr :=
   | (derive Name [Trait*])
   | (struct-get Expr FieldName)
   | (make-Name Expr*) ; Auto-generated constructor (e.g., make-Point)
+  | (Name.Field Expr) ; Auto-generated field accessor (e.g., Point.x)
   
   ;; Resource Management
   | (with-resource (Name Expr) Body)
@@ -327,6 +328,8 @@ ResultValue:
                     When p's type is not otherwise determined, the one
                     struct with a field f is taken; if several have one,
                     E_CANNOT_INFER.
+    accessor        for (defstruct S ... (f ...)): S.f : ∀ā. (S ā) -> τ,
+                    τ the type of f; a generated defn typed like any other.
     try             b : τ,  x : String ⊢ h : τ  ⊢  (try b (catch x h)) : τ
     Assertions      assert-true, assert-false, assert: a Bool -> Unit;
                     assert-equal l r: l and r of one type -> Unit
@@ -577,7 +580,8 @@ Regions R:
 R1. Local stack allocation: If variable does not escape → Stack.
 R2. Escape allocation: If returned, captured by escaping closure, or sent on a channel → Heap.
 R3. Actor transfer: spawn and chan-send require a Send-capable type.
-R4. FFI rule: ffi-call requires Pin region AND FFI_Pinnable type.
+R4. FFI rule: ffi-call requires Pin region AND FFI_Pinnable type, and a
+    timeout, at the call or as its extern's :timeout default (§16).
 R5. Closure capture promotion: Escaping closure captures promoted to Heap.
 R6. Cyclic structures: Cyclic references detected among heap values → Circular region.
 R7. Global Region: Immutable constants only. Eager initialization. No mutation allowed.
@@ -795,6 +799,8 @@ the default schedule.
 Timeout:
     name is a string literal; timeout is a positive integer literal in
     milliseconds (Compile Error E_FFI_SYMBOL_REQUIRED / E_FFI_TIMEOUT_REQUIRED).
+    The timeout may instead come from the symbol's extern (:timeout N,
+    below); a timeout at the call wins.
     A foreign call that has not returned within timeout raises E_FFI_TIMEOUT.
     The foreign code is abandoned, never interrupted: memory it was handed
     stays valid for the rest of the process.
@@ -802,6 +808,7 @@ Timeout:
 
 Signatures:
     (extern "name" (T1 ... Tn) R)
+    (extern "name" (T1 ... Tn) R :timeout N)
     declares the C signature of a foreign symbol; every ffi-call to it is
     type-checked against it (§4.9), and an ffi-call to a foreign symbol
     with no extern is a Compile Error (E_CANNOT_INFER). The types are
@@ -813,6 +820,11 @@ Signatures:
     compiler's signature table instead, and an extern for one is
     E_FFI_RESTRICTED; those that read raw memory or reinterpret a machine
     word may only be named by the standard library (E_FFI_RESTRICTED).
+    :timeout N (N a positive integer literal, milliseconds) is the default
+    timeout for that symbol: an ffi-call passing exactly n arguments takes
+    N; one passing n+1 ends with its own, which wins. With neither, or a
+    :timeout that is not a positive integer literal, E_FFI_TIMEOUT_REQUIRED.
+    zyl_* calls have no extern and always carry their own timeout.
 
 FFI_Pinnable types:
     Int, Float, Bool, String, Vec<T> (where T is FFI_Pinnable),
@@ -1008,7 +1020,11 @@ Design rationale and the implementation plan: docs/package-management-design.md
 
 21.11 Struct Accessors:
     (struct-get struct field-name) — retrieves field value.
-    Compiler generates these for every defstruct field.
+    (T.f p) — the accessor (defstruct T ... (f ...)) generates for every
+    field, also for defstruct+: (defn T.f ((p T)) (struct-get p "f")),
+    an ordinary typed function generated before type checking. A program
+    definition of the same name is E_DUPLICATE_DEFINITION. In a package
+    it is visible as its struct is.
 
 21.12 Alias Accessors:
     (unwrap alias-val) — explicit extraction (usually implicit).
@@ -1213,7 +1229,7 @@ Errors:
     E_MUT_CONFLICT              — aliasing violation
     E_ASSERT_FAIL               — assertion failure
     E_FFI_TIMEOUT               — FFI call exceeded timeout
-    E_FFI_TIMEOUT_REQUIRED      — ffi-call lacks a positive integer literal timeout
+    E_FFI_TIMEOUT_REQUIRED      — ffi-call lacks a positive integer literal timeout, and its extern has no :timeout
     E_FFI_SYMBOL_REQUIRED       — ffi-call symbol is not a string literal
     E_FFI_RESTRICTED            — ffi-call names a raw runtime entry outside the standard library,
                                   or an extern declares a runtime entry

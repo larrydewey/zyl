@@ -63,6 +63,29 @@ The declaration is a top-level form, and it describes the C function; it does no
 | `(Pin a)` | `a *`, the address of a one-word slot from `ffi-pin` (§12.1) |
 | `(Fn (A ...) R)` | a function pointer, for a C callback (§12.6) |
 
+### A Default Timeout on the `extern`
+
+When every call to a function wants the same budget, write it once on the declaration:
+
+```lisp
+(extern "abs" (Int) Int :timeout 1000)
+
+(defn main ()
+  (begin
+    (print (ffi-call "abs" -42))        ; uses the extern's 1000 ms
+    (print (ffi-call "abs" -7 50))      ; its own 50 ms wins
+    0))
+```
+
+The count of arguments decides which: a call passing exactly as many arguments as the `extern` has parameters takes the default, and one passing one more ends with its own timeout. The `:timeout` must be a positive integer literal, like a call's. With no timeout at the call and none on the `extern`, the compiler names both places:
+
+```
+error[E_FFI_TIMEOUT_REQUIRED]: the call to `abs` has no timeout: its last argument is not a positive integer literal
+   = help: add the timeout here: (ffi-call "abs" args 1000), or once on the extern: (extern "abs" (...) R :timeout 1000)
+```
+
+The runtime's `zyl_*` functions take no `extern`, so a call to one always ends with its own timeout.
+
 The types must be concrete: a type variable, such as `(extern "abs" (a) b)`, would let one call pretend C returned any type at all, so it is `E_TYPE_MISMATCH`. `Float` is refused too (§12.2). There is no cast form in Zyl, so the `extern` is the only place a C value's type is decided: get it right, because the compiler takes it on trust.
 
 The Zyl runtime's own `zyl_*` functions need no declaration: the compiler types each one from its signature table, `stdlib/compiler/ffi_sigs.zyl`, so `(ffi-call "zyl_int_text" 42 1000)` needs no `extern` and has type `String`. An `extern` is only for foreign code. Calling a runtime entry declared with one, such as `(extern "zyl_int_text" (Int) Int)`, is `E_FFI_RESTRICTED`: the program may not retype the runtime. A few runtime functions that read raw memory or reinterpret a machine word as another type (an arbitrary `Int` as a pointer or a `String`, say) are reserved for the standard library; calling one from a program is `E_FFI_RESTRICTED`.
