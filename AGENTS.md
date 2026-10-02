@@ -224,6 +224,22 @@ the unit test.
 
 Full test infrastructure documented in `docs/regression-tests.md`.
 
+**`zyl fmt`** reindents to paren depth and is a no-op on already-formatted
+source; `--check` reports and exits 1 without writing. `tools/fmt-hook.sh` is
+the git pre-commit form (`ln -sf "$PWD/tools/fmt-hook.sh"
+.git/hooks/pre-commit`) and is deliberately NOT installed: the tree is not
+uniformly formatted by this tool — it disagrees with hand-written styles like
+the flat `(Cons` chain in `drv-subcommand`, and all 511 files would be
+reformatted — so a hook that refuses unformatted source would block every
+commit until the whole tree was rewritten. That is a decision to make on
+purpose. The formatter lives in `stdlib/text/format.zyl`, not in the LSP
+service that first needed it. It reindents only and never counts delimiters,
+so it cannot rebalance a form; `zyl balance` is what tells you the form is
+wrong, and running `fmt` first makes that report about a file whose only
+problem is a missing paren. Its depth scan tracks strings AND comments: a
+paren in a comment once left the depth permanently high for every line after
+it, and formatting a file made it fail to balance.
+
 **Memory safety.** `docs/soundness.md` states the claim as lemmas, marking
 each *enforced*, *measured* or *argued`. A dynamic gate runs the regression
 and smoke programs under Valgrind memcheck — not ASan, which cannot work
