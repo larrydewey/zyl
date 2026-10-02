@@ -256,4 +256,47 @@
       (assert-equal (prov-find b 8) (- 1))
       (assert-equal (prov-find b 0) (- 1)))))
 
+; ---------------------------------------------------------------------------
+; Locating for verification
+; ---------------------------------------------------------------------------
+
+; prov-locate reports the header's fields, and prov-trailer-fits-p is the
+; judgement: the blob must account for every byte after the image.
+(test "a-located-trailer-fits-its-file-exactly"
+  (let n (t-signed 4096)
+    (let b (t-read t-path)
+      (let t (prov-locate b (t-len t-path))
+        (begin
+          (assert-equal (pt-at t) n)
+          (assert-equal (pt-format t) 1)
+          (assert-equal (pt-cose t) (+ n 20))
+          (assert-equal (+ (pt-cose t) (pt-clen t)) (t-len t-path))
+          (assert-true (prov-trailer-fits-p t (t-len t-path)))
+          ; one byte short, or one byte long, and it no longer fits
+          (assert-true (not (prov-trailer-fits-p t (- (t-len t-path) 1))))
+          (assert-true (not (prov-trailer-fits-p t (+ (t-len t-path) 1)))))))))
+
+; The record inside the blob reads back, and it is a provenance record whose
+; binary-hash is the image's.
+(test "the-record-in-a-trailer-reads-back"
+  (let n (t-signed 4096)
+    (let b (t-read t-path)
+      (let t (prov-locate b (t-len t-path))
+        (let r (prov-record-of b t)
+          (begin
+            (assert-true (prov-rec-is-provenance-p r))
+            (assert-equal (prov-rec-hash r "binary-hash") (t-hash t-path n))
+            (assert-equal (prov-rec-hash r "compiler-hash") h1)
+            (assert-equal (prov-kid b t) t-pub)
+            (assert-true (prov-signed-by-p b t t-pub))
+            (assert-true (prov-signed-by-p b t (str-concat "ed25519:" t-pub)))
+            (assert-true (not (prov-signed-by-p b t t-other)))))))))
+
+; A file with no trailer locates nothing, and says so with -1 rather than an
+; offset a caller might use.
+(test "an-image-without-a-trailer-locates-nothing"
+  (let _ (t-make-image t-path 4096)
+    (let b (t-read t-path)
+      (assert-equal (pt-at (prov-locate b 4096)) (- 1)))))
+
 (run-tests)

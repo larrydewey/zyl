@@ -26,13 +26,71 @@ strong:
   beyond "whoever signed this asserts it".
 
 A verifier that collapses the two into one boolean is how a signed-but-unsafe
-binary gets waved through, so `zyl verify` reports them separately:
+binary gets waved through, so `zyl verify` reports them separately, and within
+the evidence it says which claims it **re-derived** from the file in front of
+it and which it can only repeat from the record (**attested**):
 
 ```
-EVIDENCE     re-derived from <binary>: 0 violations, 24766 writes, 118506 dynamic
-             matches the record: yes
-ATTESTATION  COSE_Sign1 valid, kid ed25519:<hex>, trust level: ANCHORED
+zyl verify   ./provverify
+TRAILER      at 262144: format 1, COSE_Sign1 of 692 bytes, accounting for every byte after the image
+EVIDENCE     binary-hash    re-derived over [0, 262144): matches the record
+             compiler-hash  re-derived from this verifier's own image: the same compiler
+             buildinfo      ./provverify.buildinfo: all six hashes agree with the record, and final-hash recomputes from its four inputs
+             census         attested, not re-derived: the image also holds the runtime, which the build's census never covered
+                            functions 112, writes 2214, reads 6020, dynamic 9014, unverified 0
+                            V1 frame-slot bounds: ok, covered 2214 sites
+                            V2 dynamic-operand census: ok, covered 9014 sites
+                            V3 provenance and bounds: not implemented
+                            V4 region liveness: not implemented
+ATTESTATION  COSE_Sign1 valid under kid ed25519:d75a98…511a
+             trust: anchored -- the key pinned for package acme/provverify at ~/.zyl/keys/acme_provverify
+VERDICT      VERIFIED
 ```
+
+## What is re-derived, and what is only attested
+
+This is the decision the first handoff asked for, and it is weaker than the
+design first assumed. Three facts about the artifact decide it:
+
+1. **Zyl's ELF has no sections and no symbols.** The compiler's own linker
+   emits program headers only, so there is no `.text` to recover an
+   instruction stream from; `objdump -d` disassembles nothing. The executable
+   `PT_LOAD` can be disassembled as raw bytes, but there are no function
+   boundaries in it.
+2. **The frame bound is not in the image.** V1's `# frame N` is an assembler
+   comment, present in the `.s` and nowhere else. `compiler/verify.zyl`
+   measured four ways of recovering it from the code and every one produced
+   thousands of false positives.
+3. **The image holds more than the census covered.** The census ran over the
+   program's assembly; the linked image also holds the runtime (`rt.zo`). A
+   recount over the executable segment would differ from every honest record,
+   and a recount that subtracted the runtime would be trusting a second input
+   nobody signed.
+
+So the census — functions, writes, reads, dynamic, unverified, and the four
+check lines — is **attested**: the signer's claim about what the compiler
+checked, carried inside the signature and repeated by `zyl verify` in those
+words. What `zyl verify` **re-derives** is everything the file in front of it
+can answer for:
+
+| claim | re-derived from |
+|---|---|
+| `binary-hash` | BLAKE3 over `[0, T-16)` of the file being verified |
+| `compiler-hash` | BLAKE3 of the verifier's own image; equal means the chain from this binary to a verifiable compiler closes with no further assumption, unequal is reported as *a different compiler*, not as a failure |
+| `compiler-hash`, `graph-hash`, `objects-hash`, `icnf-hash`, `asm-hash`, `final-hash` | `<binary>.buildinfo`, when it is beside the binary: each compared with the record, and `final-hash` recomputed from the four input strings that file carries (§31.12 hashes the strings, so the record alone cannot recompute it) |
+
+A buildinfo that disagrees with the trailer is a **failure**: the two describe
+one build, and a reader who found them apart would have to pick one to
+believe. No buildinfo is weaker and is said so — the fields it would have
+checked are called attested — but is not a failure.
+
+The way to move the census from attested to re-derived is to put the frame
+table in the image: a `.zyl_frames` section of (function offset, frame size)
+pairs emitted by codegen and recovered by magic, plus the runtime's own census
+recorded at `rt-cache` time so the recount has something to compare against.
+That is a change to `codegen.zyl`, `asm_x86.zyl` and `elf_link.zyl`, a
+section in every binary and a reseed; it is recorded in `PROGRESS.md` as open
+work and nothing in the record or the report pretends it has been done.
 
 ## The chain
 
@@ -44,9 +102,11 @@ ATTESTATION  COSE_Sign1 valid, kid ed25519:<hex>, trust level: ANCHORED
 2. **Record.** A CBOR map: the four inputs of spec §31.12, the resolved graph
    hash, the asm hash, and the evidence.
 3. **Sign.** COSE_Sign1, Ed25519 (COSE algorithm `-8`).
-4. **Attach.** Appended past the last section of the ELF image.
-5. **Verify.** `zyl verify` re-derives the evidence from the binary and
-   checks the signature against an anchored key.
+4. **Attach.** Appended after the last byte of the image (`zyl build
+   --sign-with <key>`; an unsigned build is byte-identical to before).
+5. **Verify.** `zyl verify <binary>` re-derives what the file can answer for,
+   repeats the rest as attested, checks the signature under the key the trust
+   mode selects, and reports the two halves apart.
 
 ## Trailer layout
 
@@ -104,6 +164,7 @@ A CBOR map. Text keys, for legibility; the spec-visible field names match
   "graph-hash"  : <bstr>,
   "icnf-hash"   : <bstr>,
   "asm-hash"    : <bstr>,
+  "objects-hash": <bstr>,             ; BLAKE3 of the native-objects TEXT (see below)
   "binary-hash" : <bstr>,             ; BLAKE3 of the image, per the rule above
   "final-hash"  : <bstr>,             ; §31.12's four inputs, unchanged
   "evidence"    : {
@@ -122,6 +183,20 @@ hash, the native-object hashes and the ICNF hash, in that order. The evidence
 is a separate field and is deliberately **not** folded in: widening that hash
 would change the determinism contract rather than describe it.
 
+Three of §31.12's inputs are already `blake3:` hashes; the fourth is the text
+`zyl.buildinfo` records as `(native-objects ...)` — one `("path" "blake3:…")`
+per object, or nothing. The record's `objects-hash` is **BLAKE3 of that text**
+(BLAKE3 of the empty string for a build with no native code), so every hash
+field is 32 bytes of hash and `zyl verify` can recompute it from the buildinfo.
+An earlier record pushed the text itself through the hex decoder, which gave a
+well-formed 32-byte field that was a hash of nothing; no reader existed to
+notice.
+
+Every hash field is exactly 32 bytes. A hash that is absent on the build side
+— the graph hash of a build with no lock — is zero-padded, and the reader
+reports 32 zero bytes rather than guessing; the buildinfo beside it records the
+empty string, which is how the two are told apart.
+
 **No timestamps, no host, no paths.** The project's first non-negotiable is
 that the same source and inputs produce identical output, and a build
 attestation has to survive the same test or it is decoration. Anything that
@@ -135,15 +210,22 @@ still reproduces.
 `zyl verify` is configurable, because this project has no central authority: an
 index is a repository the operator chooses to trust, so a single rigid mode
 would be wrong. The modes are ordered by what they establish, and the tool
-**reports which one it used** — a single `PASS` across modes of very different
-strength is worse than no verdict, because it presents the weakest as the
-strongest.
+**reports which one it used**, with where the key came from — a single `PASS`
+across modes of very different strength is worse than no verdict, because it
+presents the weakest as the strongest.
 
-| mode | key source | establishes | verdict |
-|---|---|---|---|
-| `anchored` | supplied **and** bound to a trusted index entry | the package's own key signed this | `VERIFIED` |
-| `supplied` | supplied out of band | someone holding that key signed it; nothing binds it to this package | `ATTESTED` |
-| `self-asserted` | the record's own `kid` | internal consistency only | `SELF-ASSERTED` |
+| mode | flag | key source | establishes | verdict |
+|---|---|---|---|---|
+| `anchored` | `--package <name>` | the key pinned for that package on first fetch (§31.8, `~/.zyl/keys/<name>`) | the package's own publisher signed this | `VERIFIED` |
+| `supplied` | `--key <hex\|file>` | a public key the caller got some other way | someone holding that key signed it; nothing binds it to this binary | `ATTESTED` |
+| `self-asserted` | neither | the record's own `kid` | internal consistency only | `SELF-ASSERTED` |
+
+The verdict word is the mode's and never a stronger one. `--anchored` turns
+anything but the first mode into a failure, for a script that must not accept
+a weaker verdict by accident; a `--package` whose key is not pinned is an
+error, not a fall-through to a weaker mode. The exit status is 0 for any of
+the three verdicts and 1 for `FAILED` or `UNSIGNED`; a script that wants only
+`VERIFIED` passes `--anchored`.
 
 Mode 3 catches corruption and casual tampering, and catches nothing against a
 motivated attacker: anyone holding the binary can re-sign it with a key of
@@ -152,38 +234,45 @@ reported as `VERIFIED`.
 
 ## The verification workflow
 
-`zyl verify <binary>` does all of this, and fails if any step does:
+`zyl verify <binary> [--key k] [--package p] [--anchored]` does all of this
+(`prov-verify` in `compiler/provenance.zyl`; the driver only picks the mode),
+and fails if any step does:
 
-1. Locate the trailer by its magic; reject a truncated or oversized blob.
-2. Hash `[0, T-16)` and check it against `binary-hash` in the record.
-3. Decode the COSE_Sign1; verify the signature over `Sig_structure` with the
-   key the mode selects; reject an unknown or unsupported `alg`.
-4. Decode the record; check `final-hash` against the four recorded inputs.
-5. **Re-derive the evidence from the binary** — not from any `.s` the build
-   happened to leave behind. Recover the instruction stream from `.text`,
-   extract the memory operands, and run *both* verifier implementations over
-   them. Require zero violations, and require the coverage numbers to match
-   the record. A record that disagrees with the binary is worse than no
-   record.
-6. Report `EVIDENCE` and `ATTESTATION` separately, with the trust level.
+1. Locate the trailer by its magic in the last KiB of the file; require the
+   format it knows, and require the blob to account for exactly the bytes
+   after the header — one byte short or long is reported as truncated or
+   extended, before any cryptography runs.
+2. Require the blob to have the shape this tree's COSE module emits, and the
+   payload to be a provenance record of a known format.
+3. **Evidence.** Hash `[0, T-16)` and compare with `binary-hash`. Hash the
+   verifier's own image and compare with `compiler-hash`. Read
+   `<binary>.buildinfo` if it is there, compare its six hashes with the
+   record's, and recompute `final-hash` from the four input strings it
+   carries. Repeat the census as attested, in that word.
+4. **Attestation.** Verify the signature over `Sig_structure` under the key
+   the mode selects; the kid must equal that key.
+5. Report `EVIDENCE` and `ATTESTATION` on separate lines, name the trust mode
+   and where its key came from, and give the mode's verdict word.
 
-Step 5 is the reason the record is worth having, and the reason the verifier's
-input cannot stay assembly text. A verifier that only ever saw the `.s` would
-be attesting to a file the signer also controls.
-
-**Disassembly uses `objdump -d`.** Writing an x86 disassembler is not the
-problem worth solving here: the disassembler is not what is under test, the
-verifier is. `tests/scripts/asm_oracle.py` already cross-checks Zyl's own
-assembler against GNU as the same way, so this is precedented, and it keeps
-the effort on the safety argument. A consequence to state: the instruction
-stream comes from a different toolchain than the one that produced the binary,
-so step 5 is a cross-check against GNU's decoder rather than a first-principles
-one.
+The record is read by a CBOR reader (`encoding/cbor.zyl`, keyed lookup with
+every offset checked against the blob's extent) rather than by a positional
+walk: a first positional draft found five bugs in its own traversal, one of
+which inverted a bounds test and made it refuse every well-formed record while
+passing every test it had, because every test asked only whether it refuses.
+`tests/cbor_test.zyl` and `tests/provenance_test.zyl` state the "does it say
+yes" case first for that reason, and `tests/scripts/prov-verify.sh` drives the
+command end to end: the three modes, then one change at a time — a flipped
+byte in the image, a truncated and an extended trailer, a stale buildinfo, a
+key that signed nothing, an unsigned binary — each required to move the
+verdict.
 
 ## What this does not do
 
 - **It does not make a build reproducible by itself.** It records what was
   checked; reproducibility is §31.12 and the fixed point.
+- **It does not re-derive the census.** The frame bound is not in the image
+  and the image holds the runtime the census never saw; see "What is
+  re-derived, and what is only attested". The report says *attested*.
 - **It does not verify V3 or V4.** Dynamic accesses are counted, not checked,
   and the record says so in the same words the compiler does.
 - **It does not protect against a compromised signer.** Mode 1 narrows that to

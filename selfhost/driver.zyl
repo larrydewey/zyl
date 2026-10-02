@@ -597,6 +597,15 @@
 ; exists, which is the whole hashing rule. The four SS31.12 inputs and the asm
 ; hash come from `bi` and `buf`, the same values `zyl.buildinfo` records, so the
 ; two files cannot disagree about what was built.
+;
+; THE NATIVE-OBJECT INPUT IS HASHED HERE. The other three inputs are already
+; `blake3:` hashes; the fourth is the TEXT `drv-object-hashes` wrote --
+; `("lib.c" "blake3:...")` per object, or nothing -- and the record's field is
+; 32 bytes. Handing it the text had prov-bytes strip to the first colon and
+; hex-decode a path and a quote mark: a well-formed 32-byte field that was a
+; hash of nothing, and `zyl verify` could not have caught it because no reader
+; existed. Now the field is BLAKE3 of that text, which `zyl verify` recomputes
+; from the `(native-objects ...)` form in the buildinfo beside the binary.
 (defn drv-attach-provenance (arena out bi buf)
   (let seed (drv-get-seed)
     (if (= (str-length seed) 0)
@@ -606,7 +615,7 @@
           (prov-attach out
             (match bi (BH ch gh nh ih2 fh ch))
             (match bi (BH ch gh nh ih2 fh gh))
-            (match bi (BH ch gh nh ih2 fh nh))
+            (str-concat "blake3:" (ffi-call "zyl_blake3_hex" arena (match bi (BH ch gh nh ih2 fh nh)) -1 32 1000))
             (match bi (BH ch gh nh ih2 fh ih2))
             (str-concat "blake3:" (ffi-call "zyl_blake3_hex" arena buf -1 32 1000))
             (match bi (BH ch gh nh ih2 fh fh))
@@ -714,6 +723,10 @@
     (print "zyl build [--locked] [--sign-with key]  compile this package")
     (print "  --sign-with <key>                      append a signed provenance trailer")
     (print "zyl test                               compile and run this package")
+    (print "zyl verify <binary> [--key k] [--package p] [--anchored]  check a signed trailer")
+    (print "  --key <hex|file>                       an Ed25519 public key supplied out of band (ATTESTED)")
+    (print "  --package <name>                       the key pinned for that package (VERIFIED)")
+    (print "  --anchored                             fail unless a pinned key was used")
     (print "zyl update                             re-resolve and rewrite zyl.lock")
     (print "zyl vendor                             copy the graph into ./vendor")
     (print "zyl audit                              report capabilities per package")
@@ -750,6 +763,8 @@
       (drv-build arena (drv-package-dir cwd 16) (drv-has-flag 2 "--locked")))
   (if (str-eq cmd "test")
     (drv-test arena (drv-package-dir cwd 16))
+  (if (str-eq cmd "verify")
+    (drv-verify cwd)
   ; The REPL compiles code, so it runs from the bundle directory the
   ; same way a compile does -- drv-run-subcommand has already chdir'd
   ; there by the time this is reached.
@@ -771,7 +786,63 @@
     (drv-explain cwd)
   (if (str-eq cmd "balance")
     (drv-balance cwd)
-    (drv-usage))))))))))))))))))))
+    (drv-usage)))))))))))))))))))))
+
+; `zyl verify <binary> [--key k] [--package p] [--anchored]`.
+;
+; The driver chooses the TRUST MODE, because the keys live where the driver
+; keeps them, and compiler/provenance does the checking and the report
+; (prov-verify). Three sources, strongest first, and the report names the one
+; used:
+;
+;   --package <name>  the key pinned for that package on first fetch (§31.8,
+;                     ~/.zyl/keys): the package's own publisher signed this
+;                     binary, and nothing else was assumed.         VERIFIED
+;   --key <hex|file>  a public key the caller got some other way: whoever
+;                     holds it signed this, and nothing binds that key to
+;                     this binary.                                   ATTESTED
+;   neither           the record's own kid: the trailer is consistent with
+;                     itself, which anyone holding the binary could have
+;                     arranged.                                 SELF-ASSERTED
+;
+; `--anchored` turns anything but the first into a failure, for a script that
+; must not accept a weaker verdict by accident. A `--package` whose key is not
+; pinned is an error and not a fall-through to a weaker mode: the caller asked
+; for the strong check and must be told it could not run.
+(defn drv-verify (cwd)
+  (let target (drv-arg 2)
+    (if (= (str-length target) 0)
+      (begin (print "zyl verify: a binary to verify is required") 1)
+      (let path (cli-resolve-path cwd target)
+        (let pkg (drv-flag-value 3 "--package")
+          (let key (drv-flag-value 3 "--key")
+            (let anchored (drv-has-flag 3 "--anchored")
+              (if (> (str-length pkg) 0)
+                (drv-verify-pinned path pkg anchored)
+                (if (> (str-length key) 0)
+                  (prov-verify path prov-mode-supplied (drv-verify-key cwd key)
+                    "a key supplied with --key; nothing binds it to this binary" anchored)
+                  (prov-verify path prov-mode-self ""
+                    "the record's own kid; consistent with itself and vouched for by nobody" anchored))))))))))
+
+(defn drv-verify-pinned (path pkg anchored)
+  (let pinned (idx-pinned-key pkg)
+    (if (= (str-length pinned) 0)
+      (begin
+        (print (str-concat "zyl verify: no key is pinned for package " (str-concat pkg
+          (str-concat " (looked in " (str-concat (store-key-path pkg) "); fetch it once, or verify with --key")))))
+        1)
+      (prov-verify path prov-mode-anchored pinned
+        (str-concat "the key pinned for package " (str-concat pkg (str-concat " at " (store-key-path pkg)))) anchored))))
+
+; `--key` takes 64 hex characters, with or without `ed25519:`, or a file
+; holding them: the file `zyl key` prints the public key of, or one a
+; publisher handed out.
+(defn drv-verify-key (cwd key)
+  (let p (cli-resolve-path cwd key)
+    (if (ffi-call "zyl_path_exists" p 1000)
+      (drv-read-seed-file p)
+      key)))
 
 ; `zyl doc <file.zyl | dir> [-o out.md]`: Markdown from doc comments
 ; (compiler/doc.zyl); only `pub` items when a zyl.pkg sits beside them.

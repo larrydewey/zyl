@@ -332,8 +332,25 @@ compile with `build/boot/zyl-self` on 2026-09-28.
 
 - CLI (`drv-usage`): `zyl <file.zyl> [-o out] [--emit-asm]`, the package
   subcommands, `repl`, `eval <file.zyl>`, `doc [file|dir] [-o out.md]`,
-  `balance [file|dir ...]`.
+  `balance [file|dir ...]`, `verify <binary>`.
   The installed `zyl` starts the REPL when given no arguments.
+- Build provenance (`docs/build-provenance-design.md`, verified
+  2026-10-02): `zyl build --sign-with <key>` appends a trailer -- a
+  COSE_Sign1 (Ed25519) over a canonical CBOR record of §31.12's four
+  inputs, the asm hash, the image hash and the verifier's census -- and an
+  unsigned build is byte-identical to before. `zyl verify <binary> [--key
+  k] [--package p] [--anchored]` reads it back with a bounds-checked CBOR
+  reader (`encoding/cbor.zyl`) and reports EVIDENCE and ATTESTATION apart:
+  re-derived are the image hash, the verifier's own compiler hash and every
+  hash in `<binary>.buildinfo` with `final-hash` recomputed from its four
+  input strings; the census is reported as *attested*, because the frame
+  bound is not in the image and the image holds the runtime the census never
+  saw. Three trust modes, each with its own verdict word -- the pinned key
+  of `--package` is VERIFIED, a `--key` is ATTESTED, the record's own kid is
+  SELF-ASSERTED -- and `--anchored` fails anything weaker. Tests:
+  `cbor_test`, `cose_test`, `provenance_test`, `provenance_trailer_test`
+  (each with a cbor2/`cryptography` cross-check script) and
+  `tests/scripts/prov-sign.sh` / `prov-verify.sh` in the quick suite.
 - REPL (`stdlib/repl/`, `docs/repl.md`): a line editor written in Zyl,
   history, highlighting, completion, and an ICNF interpreter that keeps
   `def` bindings live. Actors run interpreted: a spawn runs a compiled
@@ -438,6 +455,11 @@ REPL and language server:
    REPL.
 5. **Packages**: host the default index.
 6. **Runtime**: SIMD BLAKE3; hosted links through the Zyl linker.
+7. **Provenance**: a frame table in the image (a `.zyl_frames` section of
+   (function offset, frame size) pairs, found by magic like the trailer)
+   and the runtime's census recorded at `rt-cache` time, so `zyl verify`
+   can re-derive the census it now only repeats as attested. Touches
+   `codegen.zyl`, `asm_x86.zyl`, `elf_link.zyl`; one reseed.
 
 Decisions already taken (do not reopen): inline assembly is rejected in
 favour of the deterministic intrinsics (`bit-popcount` and friends, spec

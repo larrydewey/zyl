@@ -375,3 +375,36 @@
     (if (= (load-u8 :le b (+ at i)) (w-get kid i))
       (cose-kid-eq b at kid (+ i 1))
       false)))
+
+; ---------------------------------------------------------------------------
+; Reading a blob without verifying it
+; ---------------------------------------------------------------------------
+;
+; Two things a verifier needs from a blob BEFORE it knows which key to check
+; it with: where the payload is, so the record can be read; and what kid the
+; signer named, so a reader with no key of its own can at least ask whether
+; the blob is consistent with itself. Neither is a verification and nothing
+; here says otherwise -- `zyl verify` reports a kid-only check as
+; SELF-ASSERTED, in those words.
+;
+; The shape checks are the same ones cose-verify-at makes, repeated rather
+; than shared, so that a blob whose payload this returns is one the verifier
+; would also have located there: the fixed prefix, the payload head, and the
+; signature accounting for every remaining byte.
+
+; The payload of the blob at `base`: its offset and length as (PLen off len),
+; or (PLen -1 0) when the blob is not one this module emits.
+(defn cose-payload-at ((b ByteBuf) (base Int) clen)
+  (if (and (>= clen cose-min-len) (cose-bytes-eq b base cose-fixed))
+    (let hd (cose-read-plen b (+ base cose-tail-off) (+ base clen))
+      (let plen (match hd (PLen alen _ alen))
+        (let poff (+ (+ base cose-tail-off) (match hd (PLen _ ahn ahn)))
+          (if (and (>= plen 0) (= (+ base clen) (+ poff plen 66)))
+            (PLen poff plen)
+            (PLen (- 1) 0)))))
+    (PLen (- 1) 0)))
+
+; The 32-byte kid of the blob at `base`, as lowercase hex. The caller has
+; already established the shape with cose-payload-at; this reads the bytes.
+(defn cose-kid-hex ((b ByteBuf) (base Int))
+  (w-hex-bytes (cose-words-of b (+ base cose-kid-off) 32) 32))

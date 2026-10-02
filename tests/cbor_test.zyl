@@ -132,4 +132,249 @@
     (assert-true (> (cbor-budget 4 64) (cbor-budget 4 0)))
   ))
 
+; ---------------------------------------------------------------------------
+; The reader
+; ---------------------------------------------------------------------------
+;
+; THE YES TESTS COME FIRST, AND THAT ORDER IS THE POINT.
+;
+; Every test above asks whether the encoder refuses to do something, and every
+; test of the reader used to be written that way too -- which is how a reader
+; whose bounds test was inverted passed all of them: it returned failure
+; precisely when the bytes DID fit, so it refused every well-formed record, and
+; every "does it reject a bad claim" test it had was satisfied by a reader
+; that rejects everything. A checker is only tested once it has been shown to
+; say yes to something real, so each block below starts by reading a map this
+; module wrote, and only then asks about malformed input.
+
+; A buffer and how much of it is used: the pairing the CBOR writer uses, and
+; the reader needs the same one. Not ProvOut, which is the provenance record's
+; own type and does not belong in a CBOR test.
+(deftype Rd (Rd ByteBuf Int))
+
+(defn rd-buf (m) (match m (Rd b _ b)))
+(defn rd-len (m) (match m (Rd _ n n)))
+
+; `n` pairs "k<i>": i, written from `off`.
+(defn rd-fill ((b ByteBuf) (off Int) (n Int))
+  (if (<= n 0)
+    off
+    (rd-fill b (cbor-map-text-uint b off (str-concat "k" (ffi-call "zyl_int_text" n 1000)) n) (- n 1))))
+
+; A two-pair map this module's own writer produced: kind=7, name="provenance".
+;
+; Built with the WRITER on purpose. A reader tested only against bytes a human
+; typed proves it agrees with the typing; tested against the encoder it proves
+; the two agree, which is what `zyl verify` depends on.
+(defn rd-map ()
+  (let b (cbor-buf 128)
+    (let o (cbor-map-head b 0 2)
+      (let o (cbor-map-text-uint b o "kind" 7)
+        (let o (cbor-map-text-text b o "name" "provenance")
+          (Rd b o))))))
+
+; The uint `key` names, or -1.
+(defn rd-uint (m key)
+  (let at (cbor-map-find (rd-buf m) 0 (rd-len m) cbor-max-nesting key)
+    (if (< at 0)
+      (- 1)
+      (match (cbor-uint-at (rd-buf m) at (rd-len m)) (CU v _ v)))))
+
+; The text `key` names, or "".
+(defn rd-text (m key)
+  (let at (cbor-map-find (rd-buf m) 0 (rd-len m) cbor-max-nesting key)
+    (if (< at 0)
+      ""
+      (match (cbor-text-at (rd-buf m) at (rd-len m)) (CT s _ s)))))
+
+; The three fields of a byte string, read out one at a time so a reader that
+; returned them in the wrong order could not pass by being compared to itself.
+(defn rd-boff (b len) (match (cbor-bytes-at b 0 len) (CS p _ p)))
+(defn rd-blen (b len) (match (cbor-bytes-at b 0 len) (CS _ l _ l)))
+(defn rd-bnext (b len) (match (cbor-bytes-at b 0 len) (CS _ _ n n)))
+
+; A well-formed map reads back as what went in.
+;
+; THE TEST THAT WAS MISSING. Without it every other test in this block could
+; be satisfied by a reader that refuses everything -- and this reader's
+; inverted bounds test did exactly that for a while.
+(test "cbor-reader-reads-a-map-the-encoder-wrote"
+  (begin
+    (let m (rd-map)
+      (begin
+        (assert-equal (rd-uint m "kind") 7)
+        (assert-equal (rd-text m "name") "provenance")))))
+
+; Both keys are findable and the map is canonical. "kind" is four bytes and
+; "name" five, so canonical order puts "kind" first even though "name" sorts
+; before it alphabetically; a reader that walked the pairs positionally would
+; read the values in the other order and this would not hold.
+(test "cbor-reader-finds-every-key-of-a-canonical-map"
+  (begin
+    (let m (rd-map)
+      (let b (rd-buf m)
+        (begin
+          (assert-true (cbor-keys-sorted-p b 0 2 (rd-len m)))
+          (assert-true (>= (cbor-map-find b 0 (rd-len m) cbor-max-nesting "kind") 0))
+          (assert-true (>= (cbor-map-find b 0 (rd-len m) cbor-max-nesting "name") 0)))))))
+
+; A key that is not in the map is not found, and "not found" is -1, which no
+; valid value offset can be. A prefix of a real key and a superstring of one
+; are both different keys: comparing only the first four bytes, which is what a
+; reader that stopped early would do, finds "kin" and "kinds" too.
+(test "cbor-reader-does-not-find-a-key-that-is-absent"
+  (begin
+    (let m (rd-map)
+      (let b (rd-buf m)
+        (begin
+          (assert-equal (cbor-map-find b 0 (rd-len m) cbor-max-nesting "absent") (- 1))
+          (assert-equal (cbor-map-find b 0 (rd-len m) cbor-max-nesting "kin") (- 1))
+          (assert-equal (cbor-map-find b 0 (rd-len m) cbor-max-nesting "kinds") (- 1)))))))
+
+; The length argument is a bound and is honoured exactly. A caller passes the
+; blob's own extent, not the buffer's capacity, so a reader that ignored it
+; would happily read a claim out of whatever follows the blob.
+(test "cbor-reader-honours-the-length-it-is-given"
+  (begin
+    (let m (rd-map)
+      (let b (rd-buf m)
+        (begin
+          (assert-equal (cbor-map-find b 0 2 cbor-max-nesting "kind") (- 1))
+          (assert-equal (cbor-uint-at b 0 0) (CU (- 1) (- 1)))
+          (assert-equal (cbor-uint-at b 0 (rd-len m)) (CU (- 1) (- 1))))))))
+
+; A uint is major 0 and nothing else. Every count in a record is a magnitude,
+; so a negative claim is a claim of the wrong shape: refused, not converted.
+(test "cbor-reader-reads-uints-and-refuses-other-majors"
+  (let b (cbor-buf 16)
+    (let e (cbor-uint b 0 300)
+      (let e (cbor-bytes b e "\001" 1)
+        (let e (cbor-text b e "z")
+          (begin
+            ; 300 uses the two-byte argument form, 0x19 0x01 0x2c
+            (assert-equal (cbor-uint-at b 0 3) (CU 300 3))
+            ; a byte string is not a uint
+            (assert-equal (cbor-uint-at b 3 e) (CU (- 1) (- 1)))
+            ; nor is a text string
+            (assert-equal (cbor-uint-at b 5 e) (CU (- 1) (- 1)))
+            ; and a uint whose head runs past the length given is not read
+            (assert-equal (cbor-uint-at b 0 2) (CU (- 1) (- 1)))))))))
+
+; A byte string yields payload offset, length and the offset past it, and a
+; text string in that position is refused. The values that carry meaning in a
+; record are 32-byte hashes: a hash spelled as text is a record this reader
+; refuses rather than guesses about.
+(test "cbor-reader-reads-byte-strings-and-refuses-text-in-their-place"
+  (let b (cbor-buf 64)
+    (let e (cbor-bytes b 0 "\x01\x02\x03" 3)
+      (let t (cbor-text b e "ab")
+        (begin
+          ; 0x43 then three bytes: a one-byte head, so the payload is at 1
+          (assert-equal e 4)
+          (assert-equal (rd-boff b t) 1)
+          (assert-equal (rd-blen b t) 3)
+          (assert-equal (rd-bnext b t) 4)
+          ; the text at 4 is not a byte string
+          (assert-equal (cbor-bytes-at b 4 t) (CS (- 1) (- 1) (- 1)))
+          ; and a payload that runs past the length given is not read: the
+          ; head fits in 3 bytes, the payload does not
+          (assert-equal (cbor-bytes-at b 0 3) (CS (- 1) (- 1) (- 1))))))))
+
+; The 32-byte form, which is the one a record actually uses: 0x58 0x20 then 32
+; bytes. A reader that read this head as a short form would be off by one for
+; every hash in every record.
+(test "cbor-reader-reads-the-long-byte-string-form"
+  (let b (cbor-buf 64)
+    (let e (cbor-head b 0 2 32)
+      (begin
+        (assert-equal e 2)
+        (assert-equal (cbor-bytes-at b 0 (+ e 32)) (CS 2 32 34))))))
+
+; Text reads back as the characters that went in, and the offset after it is
+; the one the writer returned. A text whose payload runs past the length given
+; is refused, like a byte string's.
+(test "cbor-reader-reads-text-and-honours-its-bound"
+  (let b (cbor-buf 32)
+    (let e (cbor-text b 0 "V1 frame-slot bounds")
+      (begin
+        (assert-equal (match (cbor-text-at b 0 e) (CT s _ s)) "V1 frame-slot bounds")
+        (assert-equal (match (cbor-text-at b 0 e) (CT _ n n)) e)
+        (assert-equal (match (cbor-text-at b 0 (- e 1)) (CT _ n n)) (- 1))))))
+
+; A key of the same LENGTH as the one wanted, but different bytes, is stepped
+; over value and all. The first reader continued from the end of such a key,
+; read the value as the next key, and could not find "name" in a map that held
+; "kind" -- four bytes each -- before it.
+(test "cbor-reader-steps-over-a-same-length-key"
+  (let b (cbor-buf 64)
+    (let o (cbor-map-head b 0 3)
+      (let o (cbor-map-text-uint b o "kind" 7)
+        (let o (cbor-map-text-uint b o "mode" 9)
+          (let o (cbor-map-text-text b o "name" "x")
+            (begin
+              (assert-equal (rd-uint (Rd b o) "mode") 9)
+              (assert-equal (rd-text (Rd b o) "name") "x"))))))))
+
+; The nesting limit bounds NESTING, not the pair count: a flat map wider than
+; the limit reads to its last key. Depth went down once per pair in the first
+; reader, so a map of more than sixteen pairs could not be read to its end;
+; the record has ten, which is how that stayed hidden.
+(test "cbor-reader-reads-a-map-wider-than-the-nesting-limit"
+  (let b (cbor-buf 512)
+    (let o (cbor-map-head b 0 (+ cbor-max-nesting 4))
+      (let o (rd-fill b o (+ cbor-max-nesting 3))
+        (let o (cbor-map-text-uint b o "last" 42)
+          (assert-equal (rd-uint (Rd b o) "last") 42))))))
+
+; An array reads as its count and the offset of its first item, and the items
+; follow each other: the shape the record's `checks` list has.
+(test "cbor-reader-reads-an-array-of-text"
+  (let b (cbor-buf 64)
+    (let o (cbor-map-head b 0 1)
+      (let o (cbor-map-text-strings b o "checks" (list "V1 ok" "V2 ok") 2)
+        (let at (cbor-map-find b 0 o cbor-max-nesting "checks")
+          (let a (cbor-array-at b at o)
+            (let first (cbor-text-at b (match a (CU _ p p)) o)
+              (begin
+                (assert-equal (match a (CU n _ n)) 2)
+                (assert-equal (match first (CT s _ s)) "V1 ok")
+                (assert-equal (match (cbor-text-at b (match first (CT _ n n)) o) (CT s _ s)) "V2 ok")
+                ; a uint where the array should be is not an array
+                (assert-equal (cbor-array-at b (- at 1) o) (CU (- 1) (- 1)))))))))))
+
+; THE LONGER LENGTH FORMS, read back. Every record so far was under 256 bytes,
+; so every head in it was the one-byte form, and the two- and four-byte forms
+; were never exercised by a reader -- which is how cose-read-plen lacked the
+; four-byte one while the encoder had been emitting it. A text of 300 bytes
+; has a two-byte head; a byte string of 70000 a four-byte one.
+(test "cbor-reader-reads-the-two-and-four-byte-length-forms"
+  (let b (cbor-buf 80000)
+    (let o (cbor-text-head b 0 300)
+      (let o2 (cbor-head b (+ o 300) 2 70000)
+        (begin
+          (assert-equal o 3)
+          (assert-equal (- o2 (+ o 300)) 5)
+          (assert-equal (match (cbor-text-at b 0 (+ o 300)) (CT _ n n)) 303)
+          (assert-equal (cbor-bytes-at b 303 (+ o2 70000)) (CS 308 70000 70308))
+          ; and a four-byte head whose payload is not all there is refused
+          (assert-equal (cbor-bytes-at b 303 (+ o2 69999)) (CS (- 1) (- 1) (- 1))))))))
+
+; Nesting is bounded. A blob that nests maps without end is reported as not
+; understood rather than walked until something gives out.
+(test "cbor-reader-stops-at-the-nesting-limit"
+  (let b (cbor-buf 64)
+    (let o (cbor-map-head b 0 2)
+      (let o (cbor-text b o "deep")
+        (let o (cbor-map-head b o 1)
+          (let o (cbor-text b o "x")
+            (let o (cbor-map-head b o 1)
+              (let o (cbor-text b o "y")
+                (let o (cbor-map-head b o 1)
+                  (let o (cbor-map-text-uint b o "z" 1)
+                    (let o (cbor-map-text-uint b o "kind" 7)
+                      (begin
+                        ; "deep" holds three maps; stepping over it needs depth for all three
+                        (assert-equal (cbor-map-find b 0 o 3 "kind") (- 1))
+                        (assert-equal (rd-uint (Rd b o) "kind") 7)))))))))))))
+
 (run-tests)

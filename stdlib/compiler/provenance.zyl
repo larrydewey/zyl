@@ -206,7 +206,7 @@
 ; signature still verifies and the record is no longer canonical -- which is
 ; exactly the drift this is here to catch.
 (defn prov-sorted-p (r)
-  (cbor-keys-sorted-p (match r (ProvOut b n b)) 1 10 (match r (ProvOut _ n n))))
+  (cbor-keys-sorted-p (match r (ProvOut b n b)) 0 10 (match r (ProvOut _ n n))))
 
 ; ---------------------------------------------------------------------------
 ; The trailer
@@ -500,3 +500,464 @@
 (defn prov-attach-failed (path why)
   (ffi-call "zyl_panic"
     (str-concat "E_PROV_ATTACH: " (str-concat why (str-concat " (" (str-concat path ")")))) 1000))
+
+
+; ---------------------------------------------------------------------------
+; Reading a trailer back: `zyl verify`
+; ---------------------------------------------------------------------------
+;
+; Everything above WRITES. From here down a binary somebody else produced is
+; read, and every offset in it is a claim the bytes make about themselves, so
+; each one is checked against the file's own extent before it is believed.
+;
+; EVIDENCE AND ATTESTATION ARE REPORTED SEPARATELY, and that is the whole
+; design (docs/build-provenance-design.md): a signature says who vouched, the
+; evidence says what is true of the bytes, and a verifier that folds the two
+; into one boolean is how a signed-but-unsafe binary gets waved through. So
+; each line below says which of the two it is, and -- the part the first draft
+; of this had wrong -- which claims are RE-DERIVED from the binary and which
+; are only ATTESTED by the signer:
+;
+;   re-derived   binary-hash (BLAKE3 over [0, T-16) of this very file)
+;                compiler-hash against this verifier's own image
+;                every hash in <binary>.buildinfo, and final-hash recomputed
+;                from the four inputs that file records
+;   attested     the census: functions, writes, reads, dynamic, unverified,
+;                and the four check lines
+;
+; WHY THE CENSUS IS NOT RE-DERIVED. The handoff that preceded this believed
+; the operand census could be recounted from the executable segment and
+; required to equal the record. It cannot: the build's census ran over the
+; PROGRAM's assembly, and the image also holds the runtime (rt.zo), whose
+; operands that census never saw. A recount over the image would differ from
+; every honest record, and a recount that subtracted the runtime would be
+; trusting a second input nobody signed. The frame bound (V1) is not in the
+; image at all -- `# frame N` is an assembler comment. So the census is
+; attested, this says so in the output, and the design doc records the
+; decision. Putting a frame table in the image is the way to change it.
+
+; The trailer located in a file of `flen` bytes: the magic offset, the format,
+; the COSE blob offset and its length. `at` is -1 when there is none.
+(deftype ProvTrailer (ProvTrailer Int Int Int Int))
+
+(defn pt-at (t) (match t (ProvTrailer a _ _ _ a)))
+(defn pt-format (t) (match t (ProvTrailer _ f _ _ f)))
+(defn pt-cose (t) (match t (ProvTrailer _ _ c _ c)))
+(defn pt-clen (t) (match t (ProvTrailer _ _ _ n n)))
+
+(defn prov-no-trailer () (ProvTrailer (- 1) 0 0 0))
+
+; Locate the trailer in `b`, a whole file of `flen` bytes.
+;
+; Found by magic, then the header is read by arithmetic from the magic and
+; nothing in it is yet believed: the format and the length are returned for
+; the caller to judge with prov-trailer-fits-p. A negative or absurd length
+; is reported as what it is rather than used as an offset.
+(defn prov-locate (b (flen Int))
+  (let at (prov-find b flen)
+    (if (< at 0)
+      (prov-no-trailer)
+      (ProvTrailer at (prov-load32 b (+ at 8)) (+ at prov-header-len) (prov-load64 b (+ at 12))))))
+
+; True when the trailer accounts for every byte after the image: the blob
+; begins after the header and ends exactly at the end of the file. A blob that
+; is shorter has had something appended after it; one that is longer has been
+; truncated. Both are refused before any cryptography runs.
+(defn prov-trailer-fits-p (t (flen Int))
+  (and (>= (pt-at t) 0)
+    (and (>= (pt-clen t) 0)
+      (= (+ (pt-cose t) (pt-clen t)) flen))))
+
+; A record inside a verified-shape blob: the buffer, the map head, and the
+; offset just past the record. `off` is -1 when the blob is not one this
+; tree's COSE module emits.
+(deftype ProvRec (ProvRec ByteBuf Int Int))
+
+(defn pr-buf (r) (match r (ProvRec b _ _ b)))
+(defn pr-off (r) (match r (ProvRec _ o _ o)))
+(defn pr-end (r) (match r (ProvRec _ _ e e)))
+
+; The record carried by the trailer `t` in `b`, located but not verified.
+(defn prov-record-of (b t)
+  (let p (cose-payload-at b (pt-cose t) (pt-clen t))
+    (let poff (match p (PLen o _ o))
+      (if (< poff 0)
+        (ProvRec b (- 1) (- 1))
+        (ProvRec b poff (+ poff (match p (PLen _ n n))))))))
+
+(defn prov-rec-ok-p (r) (>= (pr-off r) 0))
+
+; The offset of `key`'s value in the record's top-level map, or -1.
+(defn prov-rec-find (r (key String))
+  (cbor-map-find (pr-buf r) (pr-off r) (pr-end r) cbor-max-nesting key))
+
+; The text `key` names, or "".
+(defn prov-rec-text (r (key String))
+  (let at (prov-rec-find r key)
+    (if (< at 0) "" (match (cbor-text-at (pr-buf r) at (pr-end r)) (CT s _ s)))))
+
+; The unsigned integer `key` names, or -1.
+(defn prov-rec-uint (r (key String))
+  (let at (prov-rec-find r key)
+    (if (< at 0) (- 1) (match (cbor-uint-at (pr-buf r) at (pr-end r)) (CU v _ v)))))
+
+; The 32-byte hash `key` names, as bare hex, or "" when absent or not 32 bytes.
+;
+; Exactly 32 and nothing else: a hash of another width is a record of another
+; shape, and hex-encoding 31 bytes would produce a string that compares
+; unequal to everything for a reason the reader would have to guess at.
+(defn prov-rec-hash (r (key String))
+  (let at (prov-rec-find r key)
+    (if (< at 0)
+      ""
+      (let s (cbor-bytes-at (pr-buf r) at (pr-end r))
+        (if (= (match s (CS _ n _ n)) 32)
+          (let p (match s (CS p _ _ p))
+            (prov-hex (pr-buf r) p (+ p 32) ""))
+          "")))))
+
+; The offset of `key`'s value inside the nested `evidence` map, or -1.
+(defn prov-rec-evidence-find (r (key String))
+  (let ev (prov-rec-find r "evidence")
+    (if (< ev 0)
+      (- 1)
+      (cbor-map-find (pr-buf r) ev (pr-end r) cbor-max-nesting key))))
+
+(defn prov-rec-evidence-uint (r (key String))
+  (let at (prov-rec-evidence-find r key)
+    (if (< at 0) (- 1) (match (cbor-uint-at (pr-buf r) at (pr-end r)) (CU v _ v)))))
+
+; The `checks` lines, in the order the record carries them.
+(defn prov-rec-checks (r)
+  (let at (prov-rec-evidence-find r "checks")
+    (if (< at 0)
+      Nil
+      (let a (cbor-array-at (pr-buf r) at (pr-end r))
+        (if (< (match a (CU n _ n)) 0)
+          Nil
+          (prov-rec-texts r (match a (CU _ p p)) (match a (CU n _ n))))))))
+
+(defn prov-rec-texts (r (off Int) (n Int))
+  (if (<= n 0)
+    Nil
+    (let t (cbor-text-at (pr-buf r) off (pr-end r))
+      (if (< (match t (CT _ e e)) 0)
+        Nil
+        (Cons (match t (CT s _ s)) (prov-rec-texts r (match t (CT _ e e)) (- n 1)))))))
+
+; True when the record says it is a provenance record of the format this
+; verifier knows. Anything else is refused rather than guessed at: a record
+; with a newer format may carry keys this reader does not know how to check.
+(defn prov-rec-is-provenance-p (r)
+  (and (prov-rec-ok-p r)
+    (and (str-equal (prov-rec-text r "kind") "provenance")
+      (= (prov-rec-uint r "format") prov-format))))
+
+; The signer's kid, as bare hex.
+(defn prov-kid (b t) (cose-kid-hex b (pt-cose t)))
+
+; True when the blob verifies under the public key `pubhex`, with or without
+; an `ed25519:` prefix.
+(defn prov-signed-by-p (b t (pubhex String))
+  (cose-verify-at b (pt-cose t) (pt-clen t) (prov-strip pubhex)))
+
+; ---------------------------------------------------------------------------
+; The buildinfo beside the binary
+; ---------------------------------------------------------------------------
+;
+; `zyl build` writes <out>.buildinfo with the same four inputs the record
+; carries, as text, prefixed hashes and all -- and THAT is what makes the
+; record's final-hash checkable: §31.12's final hash is BLAKE3 over the four
+; input STRINGS joined by newlines, not over their 32-byte values, so a reader
+; holding only the record has the hash and nothing to recompute it from. With
+; the buildinfo it has everything, and the two files have to agree.
+
+; The text between `(<field> "` and the next `"`, or "".
+(defn prov-bi-field ((text String) (field String))
+  (let open (str-concat "(" (str-concat field " \""))
+    (let i (prov-find-sub text open 0)
+      (if (< i 0)
+        ""
+        (let start (+ i (prov-length open))
+          (let j (prov-index-of text 34 start)
+            (if (< j 0) "" (prov-sub text start (- j start)))))))))
+
+; The native-objects text: everything between `(native-objects` and the
+; `)` that precedes `(icnf-hash`. Extracted by its neighbours rather than by
+; paren matching, because the graph text just before it nests freely and the
+; objects text is exactly what drv-object-hashes wrote, parens included.
+(defn prov-bi-objects ((text String))
+  (let i (prov-find-sub text "(native-objects" 0)
+    (if (< i 0)
+      ""
+      (let start (+ i 15)
+        (let j (prov-find-sub text ")\n  (icnf-hash" start)
+          (if (< j 0) "" (prov-sub text start (- j start))))))))
+
+; The first offset of `sub` in `s` at or after `from`, or -1.
+(defn prov-find-sub ((s String) (sub String) (from Int))
+  (let n (prov-length s)
+    (let m (prov-length sub)
+      (if (> (+ from m) n)
+        (- 1)
+        (if (prov-sub-at-p s sub from 0 m)
+          from
+          (prov-find-sub s sub (+ from 1)))))))
+
+(defn prov-sub-at-p ((s String) (sub String) (at Int) (i Int) (m Int))
+  (if (>= i m)
+    true
+    (if (= (prov-byte-at s (+ at i)) (prov-byte-at sub i))
+      (prov-sub-at-p s sub at (+ i 1) m)
+      false)))
+
+; BLAKE3 over a string, as bare hex; the arena is made and destroyed here for
+; the reason prov-hash-file gives.
+(defn prov-hash-text ((s String))
+  (let a (arena-create 0)
+    (let h (ffi-call "zyl_blake3_hex" a s (- 1) 32 1000)
+      (let out (str-concat h "")
+        (begin (arena-destroy a) out)))))
+
+; §31.12's final hash from its four input strings, as bare hex.
+(defn prov-final-of ((ch String) (gh String) (nh String) (ih String))
+  (prov-hash-text (str-concat ch (str-concat "\n" (str-concat gh (str-concat "\n" (str-concat nh (str-concat "\n" ih))))))))
+
+; A build-side hash string as the 32 bytes the record would carry, as hex:
+; the same padding prov-bytes applies, so an absent graph hash compares equal
+; to the zero bytes the record holds for it.
+(defn prov-as-record-hex ((h String)) (prov-get-bytes (prov-bytes h) 0 32))
+
+; The whole of a text file, or "".
+(defn prov-read-text (path)
+  (if (not (ffi-call "zyl_path_exists" path 1000))
+    ""
+    (let fd (file-open path "r")
+      (if (< fd 1)
+        ""
+        (let s (prov-read-chunks fd "")
+          (let _ (file-close fd) s))))))
+
+(defn prov-read-chunks ((fd Int) (acc String))
+  (let chunk (file-read fd 1048576)
+    (let n (str-length chunk)
+      (if (= n 0)
+        acc
+        (let acc2 (str-concat acc chunk)
+          (if (< n 1048576) acc2 (prov-read-chunks fd acc2)))))))
+
+; ---------------------------------------------------------------------------
+; The verdict
+; ---------------------------------------------------------------------------
+;
+; `prov-verify` prints the report and returns the exit status: 0 when every
+; check that ran passed, 1 otherwise. The MODE is the caller's, because the
+; keys live where the caller keeps them:
+;
+;   0  anchored       the key pinned for a package (§31.8, ~/.zyl/keys)  VERIFIED
+;   1  supplied       a public key given out of band                     ATTESTED
+;   2  self-asserted  the record's own kid                               SELF-ASSERTED
+;
+; The verdict word is the mode's, never a stronger one, and the mode is
+; printed beside it with where the key came from. `anchored-only` makes any
+; mode but the first a failure, for a script that must not accept less.
+
+(def prov-mode-anchored 0)
+(def prov-mode-supplied 1)
+(def prov-mode-self 2)
+
+; One report line: a 12-column tag, then the text.
+(defn prov-say ((tag String) (text String))
+  (print (str-concat (prov-pad tag 13) text)))
+
+(defn prov-pad ((s String) (n Int))
+  (if (>= (str-length s) n) s (prov-pad (str-concat s " ") n)))
+
+(defn prov-int (n) (ffi-call "zyl_int_text" n 1000))
+
+(defn prov-verify (path (mode Int) (pubhex String) (key-source String) (anchored-only Bool))
+  (let b (prov-read-file path)
+    (let flen (bytebuf-len b)
+      (begin
+        (prov-say "zyl verify" path)
+        (if (= flen 0)
+          (begin
+            (prov-say "" (str-concat "cannot read " path))
+            (prov-say "VERDICT" "FAILED")
+            1)
+          (let t (prov-locate b flen)
+            (if (< (pt-at t) 0)
+              (begin
+                (prov-say "TRAILER" (str-concat "none: no ZYLPROV magic in the last "
+                  (str-concat (prov-int prov-scan-window) " bytes")))
+                (prov-say "VERDICT" "UNSIGNED")
+                1)
+              (prov-verify-trailer path b flen t mode pubhex key-source anchored-only))))))))
+
+; The trailer exists; is it whole, and is it one this verifier can read?
+(defn prov-verify-trailer (path b flen t (mode Int) (pubhex String) (key-source String) (anchored-only Bool))
+  (if (not (= (pt-format t) prov-format))
+    (begin
+      (prov-say "TRAILER" (str-concat "at " (str-concat (prov-int (pt-at t))
+        (str-concat ": format " (str-concat (prov-int (pt-format t)) ", which this verifier does not know")))))
+      (prov-say "VERDICT" "FAILED")
+      1)
+    (if (not (prov-trailer-fits-p t flen))
+      (begin
+        (prov-say "TRAILER" (str-concat "at " (str-concat (prov-int (pt-at t))
+          (str-concat ": the COSE blob claims " (str-concat (prov-int (pt-clen t))
+            (str-concat " bytes but the file ends " (str-concat (prov-int (- flen (pt-cose t))) " bytes after the header: truncated or extended")))))))
+        (prov-say "VERDICT" "FAILED")
+        1)
+      (let r (prov-record-of b t)
+        (if (not (prov-rec-is-provenance-p r))
+          (begin
+            (prov-say "TRAILER" (str-concat "at " (str-concat (prov-int (pt-at t)) ": the COSE blob is not a COSE_Sign1 over a provenance record this verifier knows")))
+            (prov-say "VERDICT" "FAILED")
+            1)
+          (begin
+            (prov-say "TRAILER" (str-concat "at " (str-concat (prov-int (pt-at t))
+              (str-concat ": format 1, COSE_Sign1 of " (str-concat (prov-int (pt-clen t)) " bytes, accounting for every byte after the image")))))
+            (prov-verify-body path b t r mode pubhex key-source anchored-only)))))))
+
+; The record reads. Evidence first, then the attestation, then the verdict.
+(defn prov-verify-body (path b t r (mode Int) (pubhex String) (key-source String) (anchored-only Bool))
+  (let e1 (prov-check-image path t r)
+    (let e2 (prov-check-compiler r)
+      (let e3 (prov-check-buildinfo path r)
+        (let _ (prov-say-census r)
+          (let a1 (prov-check-signature b t mode pubhex key-source)
+            (let a2 (prov-check-mode mode anchored-only)
+              (prov-verdict mode (and e1 (and e3 (and a1 a2))) e2))))))))
+
+; EVIDENCE 1: BLAKE3 over [0, T-16) of this file against binary-hash.
+(defn prov-check-image (path t r)
+  (let ours (prov-hash-file path (pt-at t))
+    (let theirs (prov-rec-hash r "binary-hash")
+      (if (str-equal ours theirs)
+        (begin
+          (prov-say "EVIDENCE" (str-concat "binary-hash    re-derived over [0, " (str-concat (prov-int (pt-at t)) "): matches the record")))
+          true)
+        (begin
+          (prov-say "EVIDENCE" (str-concat "binary-hash    re-derived over [0, " (str-concat (prov-int (pt-at t)) "): DIFFERS from the record -- the image was changed after it was signed")))
+          (prov-say "" (str-concat "               image  " ours))
+          (prov-say "" (str-concat "               record " theirs))
+          false)))))
+
+; EVIDENCE 2: the record's compiler-hash against this verifier's own image.
+;
+; Informational, not a failure: a binary built by another compiler is not
+; wrong, it is built by another compiler, and the line says which. But when it
+; matches, the chain from this verified binary to a verifiable compiler is
+; closed with no further assumption, and that is worth a line that says so.
+(defn prov-check-compiler (r)
+  (let own (prov-hash-text-file (ffi-call "zyl_arg_str" 0 1000))
+    (let theirs (prov-rec-hash r "compiler-hash")
+      (if (str-equal own theirs)
+        (begin
+          (prov-say "" "compiler-hash  re-derived from this verifier's own image: the same compiler")
+          true)
+        (begin
+          (prov-say "" "compiler-hash  re-derived from this verifier's own image: a different compiler (attested only)")
+          false)))))
+
+(defn prov-hash-text-file (path) (prov-hash-file path (- 1)))
+
+; EVIDENCE 3: <binary>.buildinfo, when it is there.
+;
+; Every hash it carries is compared with the record's, and §31.12's final hash
+; is recomputed from the four inputs it records. A buildinfo that disagrees
+; with the trailer is a failure: the two describe one build, and a reader who
+; found them apart would have to pick one to believe.
+(defn prov-check-buildinfo (path r)
+  (let bi (prov-read-text (str-concat path ".buildinfo"))
+    (if (= (prov-length bi) 0)
+      (begin
+        (prov-say "" (str-concat "buildinfo      no " (str-concat path ".buildinfo: final-hash, graph-hash, objects-hash, icnf-hash and asm-hash are attested only")))
+        true)
+      (let ch (prov-bi-field bi "compiler-hash")
+        (let gh (prov-bi-field bi "graph-hash")
+          (let nh (prov-bi-objects bi)
+            (let ih (prov-bi-field bi "icnf-hash")
+              (let bad (prov-bi-mismatches r ch gh nh ih (prov-bi-field bi "asm-hash") (prov-bi-field bi "final-hash"))
+                (if (= (list-length bad) 0)
+                  (begin
+                    (prov-say "" (str-concat "buildinfo      " (str-concat path ".buildinfo: all six hashes agree with the record, and final-hash recomputes from its four inputs")))
+                    true)
+                  (begin
+                    (prov-say "" (str-concat "buildinfo      " (str-concat path (str-concat ".buildinfo DISAGREES with the record on: " (prov-join bad)))))
+                    false))))))))))
+
+; The names of the record fields the buildinfo does not match.
+(defn prov-bi-mismatches (r ch gh nh ih ah fh)
+  (let a (prov-bi-one r "compiler-hash" ch)
+    (let b (prov-bi-one r "graph-hash" gh)
+      (let c (prov-bi-one r "objects-hash" (str-concat "blake3:" (prov-hash-text nh)))
+        (let d (prov-bi-one r "icnf-hash" ih)
+          (let e (prov-bi-one r "asm-hash" ah)
+            (let f (prov-bi-one r "final-hash" fh)
+              (let g (if (str-equal (prov-as-record-hex (str-concat "blake3:" (prov-final-of ch gh nh ih))) (prov-rec-hash r "final-hash"))
+                       Nil
+                       (Cons "final-hash recomputed from the four inputs" Nil))
+                (prov-cat a (prov-cat b (prov-cat c (prov-cat d (prov-cat e (prov-cat f g))))))))))))))
+
+(defn prov-bi-one (r (key String) (h String))
+  (if (str-equal (prov-as-record-hex h) (prov-rec-hash r key)) Nil (Cons key Nil)))
+
+(defn prov-cat (a b) (match a (Nil b) (Cons h t (Cons h (prov-cat t b)))))
+
+(defn prov-join (xs)
+  (match xs
+    (Nil "")
+    (Cons h t (if (= (list-length t) 0) h (str-concat h (str-concat ", " (prov-join t)))))))
+
+; The census, ATTESTED. Said in those words, with the reason.
+(defn prov-say-census (r)
+  (begin
+    (prov-say "" "census         attested, not re-derived: the image also holds the runtime, which the build's census never covered")
+    (prov-say "" (str-concat "               functions " (str-concat (prov-int (prov-rec-evidence-uint r "functions"))
+      (str-concat ", writes " (str-concat (prov-int (prov-rec-evidence-uint r "writes"))
+        (str-concat ", reads " (str-concat (prov-int (prov-rec-evidence-uint r "reads"))
+          (str-concat ", dynamic " (str-concat (prov-int (prov-rec-evidence-uint r "dynamic"))
+            (str-concat ", unverified " (prov-int (prov-rec-evidence-uint r "unverified"))))))))))))
+    (prov-say-checks (prov-rec-checks r))))
+
+(defn prov-say-checks (xs)
+  (match xs
+    (Nil unit)
+    (Cons h t (begin (prov-say "" (str-concat "               " h)) (prov-say-checks t)))))
+
+; ATTESTATION: the signature under the mode's key.
+(defn prov-check-signature (b t (mode Int) (pubhex String) (key-source String))
+  (let kid (prov-kid b t)
+    (let key (if (= mode prov-mode-self) kid (prov-strip pubhex))
+      (if (prov-signed-by-p b t key)
+        (begin
+          (prov-say "ATTESTATION" (str-concat "COSE_Sign1 valid under kid ed25519:" kid))
+          (prov-say "" (str-concat "trust: " (str-concat (prov-mode-name mode) (str-concat " -- " key-source))))
+          true)
+        (begin
+          (prov-say "ATTESTATION" (str-concat "COSE_Sign1 does NOT verify under ed25519:" (str-concat key
+            (if (str-equal key kid) "" (str-concat " (the record's kid is ed25519:" (str-concat kid ")"))))))
+          false)))))
+
+(defn prov-mode-name ((mode Int))
+  (if (= mode prov-mode-anchored) "anchored" (if (= mode prov-mode-supplied) "supplied" "self-asserted")))
+
+; `--anchored`: anything less than the pinned key is a failure, said so.
+(defn prov-check-mode ((mode Int) (anchored-only Bool))
+  (if (and anchored-only (not (= mode prov-mode-anchored)))
+    (begin
+      (prov-say "" "--anchored was given and the key is not one pinned for a package: that is a failure, not a weaker verdict")
+      false)
+    true))
+
+; The last line, and the exit status.
+(defn prov-verdict ((mode Int) (ok Bool) (same-compiler Bool))
+  (if (not ok)
+    (begin (prov-say "VERDICT" "FAILED") 1)
+    (begin
+      (prov-say "VERDICT"
+        (str-concat (if (= mode prov-mode-anchored) "VERIFIED" (if (= mode prov-mode-supplied) "ATTESTED" "SELF-ASSERTED"))
+          (if same-compiler "" " (built by a compiler other than this one)")))
+      0)))

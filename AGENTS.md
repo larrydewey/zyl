@@ -66,7 +66,9 @@ picks panic, warn or strip. Hash finalization exists only for
 package builds: `zyl build` writes `<out>.buildinfo` (compiler, graph,
 native-object and ICNF hashes, the resolved graph, the assembly hash,
 and the final hash of spec §31.12's four inputs, which the binary
-carries as `zyl_build_hash`).
+carries as `zyl_build_hash`); `zyl build --sign-with <key>` also appends
+a signed provenance trailer, and `zyl verify <binary>` reads it back
+(`docs/build-provenance-design.md`).
 
 ## Non-Negotiable Constraints
 
@@ -184,7 +186,7 @@ minute.
 
 The CLI (`selfhost/driver.zyl`, `drv-usage`): `zyl <file.zyl> [-o out]
 [--emit-asm]`, `new`, `add`, `fetch`, `build [--locked]`, `test`,
-`update`, `vendor`, `audit`, `publish`, `key`, `repl`, `eval <file.zyl>`,
+`update`, `vendor`, `audit`, `publish`, `key`, `verify <binary>`, `repl`, `eval <file.zyl>`,
 `doc [file|dir] [-o out.md]`, `check [file|dir ...]`, `explain [CODE]`, `fmt [file.zyl ...] [--check]`, `balance [file|dir ...]`.
 
 `zyl check` is the fast edit loop: parse, module resolution, macro expansion,

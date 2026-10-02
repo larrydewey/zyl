@@ -42,16 +42,22 @@
     (let o (cbor-map-head a 0 2)
       (let o (cbor-map-text-text a o "kind" "x")
         (let o (cbor-map-text-text a o "format" "y")
-          (assert-true (cbor-keys-sorted-p a 1 2 32)))))))
+          (assert-true (cbor-keys-sorted-p a 0 2 32)))))))
 
 ; The same two keys the other way round: "format" (6) before "kind" (4). A valid
 ; CBOR map, and not canonical.
+;
+; The offset is the map HEAD, 0, as it is for cbor-map-find. These three tests
+; passed `1`, the body, for as long as the checker took the body -- and when it
+; was changed to take the head, the two positive tests failed and this one kept
+; passing, because a checker handed a text head where it expects a map head
+; says "not sorted" about everything. A refusal test proves nothing on its own.
 (test "a-valid-but-unordered-pair-is-rejected"
   (let a (cbor-buf 32)
     (let o (cbor-map-head a 0 2)
       (let o (cbor-map-text-text a o "format" "y")
         (let o (cbor-map-text-text a o "kind" "x")
-          (assert-true (not (cbor-keys-sorted-p a 1 2 32))))))))
+          (assert-true (not (cbor-keys-sorted-p a 0 2 32))))))))
 
 ; Equal lengths fall through to the bytes: "checks" precedes "writes".
 (test "equal-length-keys-are-ordered-by-their-bytes"
@@ -59,7 +65,7 @@
     (let o (cbor-map-head a 0 2)
       (let o (cbor-map-text-text a o "checks" "x")
         (let o (cbor-map-text-text a o "writes" "y")
-          (assert-true (cbor-keys-sorted-p a 1 2 32)))))))
+          (assert-true (cbor-keys-sorted-p a 0 2 32)))))))
 
 ; TEN keys, so the head is 0xaa -- 0xa0 + 10. Written as the map(10) it is
 ; rather than as 170, because a bare 170 does not say what is being asserted and
@@ -95,5 +101,107 @@
       (str-contains-go s sub (+ i 1)))))
 
 (defn prov-length-of (s) (ffi-call "zyl_cstr_len" s 1000))
+
+; ---------------------------------------------------------------------------
+; Reading the record back
+; ---------------------------------------------------------------------------
+;
+; THE YES TEST COMES FIRST. A reader whose bounds test was inverted passed every
+; "does it refuse" test it had, because a reader that refuses everything
+; refuses the bad input too. So before anything is asked about malformed
+; records, a record this module wrote is read back field by field and has to
+; say what went in.
+
+(defn rec-of (r) (ProvRec (match r (ProvOut b n b)) 0 (match r (ProvOut _ n n))))
+
+(test "a-record-reads-back-as-what-was-written"
+  (let r (rec-of (sample))
+    (begin
+      (assert-true (prov-rec-is-provenance-p r))
+      (assert-equal (prov-rec-text r "kind") "provenance")
+      (assert-equal (prov-rec-uint r "format") 1)
+      (assert-equal (prov-rec-hash r "compiler-hash") h1)
+      (assert-equal (prov-rec-hash r "graph-hash") h2)
+      (assert-equal (prov-rec-hash r "objects-hash") h3)
+      (assert-equal (prov-rec-hash r "icnf-hash") h4)
+      (assert-equal (prov-rec-hash r "asm-hash") h5)
+      (assert-equal (prov-rec-hash r "final-hash") h6)
+      (assert-equal (prov-rec-hash r "binary-hash") h7))))
+
+; Every field is reached, so no two of them can have been read from one
+; place: the seven hashes are distinct and each comes back as itself above,
+; and the evidence map is a NESTED value in the middle of the keys, which a
+; reader that could not step over a map would have stopped at.
+(test "the-evidence-is-read-through-the-nested-map"
+  (let r (rec-of (sample))
+    (begin
+      (assert-true (>= (prov-rec-evidence-uint r "functions") 0))
+      (assert-true (>= (prov-rec-evidence-uint r "writes") 0))
+      (assert-true (>= (prov-rec-evidence-uint r "reads") 0))
+      (assert-true (>= (prov-rec-evidence-uint r "dynamic") 0))
+      (assert-true (>= (prov-rec-evidence-uint r "unverified") 0))
+      (assert-equal (list-length (prov-rec-checks r)) 4)
+      (assert-true (str-contains (list-head (prov-rec-checks r) "") "V1 frame-slot bounds"))
+      (assert-equal (prov-rec-evidence-uint r "absent") (- 1)))))
+
+(defn list-head (xs d) (match xs (Nil d) (Cons h _ h)))
+
+; A field that is not there is "", -1 or Nil, never a value from somewhere
+; else in the record.
+(test "an-absent-field-is-absent"
+  (let r (rec-of (sample))
+    (begin
+      (assert-equal (prov-rec-text r "nothing") "")
+      (assert-equal (prov-rec-uint r "nothing") (- 1))
+      (assert-equal (prov-rec-hash r "nothing") "")
+      ; the right key with the wrong shape is refused too: "kind" is text
+      (assert-equal (prov-rec-hash r "kind") "")
+      (assert-equal (prov-rec-uint r "kind") (- 1)))))
+
+; An absent graph hash is zero-padded on the way in (a build without a lock),
+; and reads back as 32 zero bytes rather than as a crash or a shorter field.
+(test "an-absent-graph-hash-reads-back-as-zeros"
+  (let r (rec-of (prov-record h1 "" h3 h4 h5 h6 h7))
+    (assert-equal (prov-rec-hash r "graph-hash")
+      "0000000000000000000000000000000000000000000000000000000000000000")))
+
+; A `blake3:` prefix on the way in is not in the record, so a hash compares
+; equal to its bare spelling.
+(test "a-prefixed-hash-reads-back-bare"
+  (let r (rec-of (prov-record (str-concat "blake3:" h1) h2 h3 h4 h5 h6 h7))
+    (assert-equal (prov-rec-hash r "compiler-hash") h1)))
+
+; A map that is not a provenance record says so, whether it is some other
+; kind, a format this reader does not know, or not a map at all.
+(test "a-record-of-another-kind-or-format-is-not-provenance"
+  (let b (cbor-buf 64)
+    (let o (cbor-map-head b 0 2)
+      (let o (cbor-map-text-text b o "kind" "manifest")
+        (let o (cbor-map-text-uint b o "format" 1)
+          (let b2 (cbor-buf 64)
+            (let o2 (cbor-map-head b2 0 2)
+              (let o2 (cbor-map-text-text b2 o2 "kind" "provenance")
+                (let o2 (cbor-map-text-uint b2 o2 "format" 2)
+                  (begin
+                    (assert-true (not (prov-rec-is-provenance-p (ProvRec b 0 o))))
+                    (assert-true (not (prov-rec-is-provenance-p (ProvRec b2 0 o2))))
+                    (assert-true (not (prov-rec-is-provenance-p (ProvRec b (- 1) (- 1)))))))))))))))
+
+; §31.12's final hash, recomputed from the four input strings the buildinfo
+; carries, and the field readers that pull them out of its text.
+(test "the-buildinfo-fields-are-read-and-the-final-hash-recomputes"
+  (let bi "(buildinfo\n  (compiler-hash \"blake3:aa\")\n  (graph-hash \"\")\n  (graph (x (y \"z\")))\n  (native-objects (\"lib.c\" \"blake3:bb\"))\n  (icnf-hash \"blake3:cc\")\n  (asm-hash \"blake3:dd\")\n  (final-hash \"blake3:ee\"))\n"
+    (begin
+      (assert-equal (prov-bi-field bi "compiler-hash") "blake3:aa")
+      (assert-equal (prov-bi-field bi "graph-hash") "")
+      (assert-equal (prov-bi-field bi "icnf-hash") "blake3:cc")
+      (assert-equal (prov-bi-field bi "final-hash") "blake3:ee")
+      (assert-equal (prov-bi-field bi "nothing") "")
+      (assert-equal (prov-bi-objects bi) " (\"lib.c\" \"blake3:bb\")")
+      (assert-equal (prov-final-of "blake3:aa" "" " (\"lib.c\" \"blake3:bb\")" "blake3:cc")
+        (prov-hash-text "blake3:aa\n\n (\"lib.c\" \"blake3:bb\")\nblake3:cc"))
+      ; BLAKE3 of the empty string, the objects-hash of a build with no native code
+      (assert-equal (prov-hash-text "")
+        "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"))))
 
 (run-tests)

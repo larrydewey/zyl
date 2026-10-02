@@ -383,6 +383,17 @@ if [ "$MODE" = "full" ] || [ "$MODE" = "quick" ]; then
         fi
         TOTAL=$((TOTAL+1))
     fi
+    # `zyl verify`: the three trust modes, EVIDENCE and ATTESTATION reported
+    # apart, and every way a trailer stops being true -- a changed image, a
+    # truncated blob, a stale buildinfo, a key that signed nothing.
+    if [ -z "$FILTER" ] || echo "prov_verify" | grep -qi -- "$FILTER"; then
+        if bash "${TESTS_DIR}/scripts/prov-verify.sh" >"$RUN_TMP/prov_verify.log" 2>&1; then
+            PASS=$((PASS+1)); printf "  \033[0;32m\xe2\x9c\x93\033[0m prov_verify\n"
+        else
+            FAIL=$((FAIL+1)); printf "  \033[0;31m\xe2\x9c\x97\033[0m prov_verify\n"
+        fi
+        TOTAL=$((TOTAL+1))
+    fi
     # `zyl fmt`: indentation recovered exactly, --check never writing.
     if [ -z "$FILTER" ] || echo "fmt_test" | grep -qi -- "$FILTER"; then
         if bash "$TESTS_DIR/fmt_test.sh" >"$RUN_TMP/fmt_test.log" 2>&1; then
