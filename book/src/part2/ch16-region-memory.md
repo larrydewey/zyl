@@ -302,7 +302,7 @@ rather than unbounded.
 | `E_INVALID_CAPABILITY` | Raised for a `fn` written directly as an `ffi-call` argument (R4). |
 | `E_FFI_PIN_REQUIRED` | Raised for a `Secret` passed to `ffi-call` without `ffi-pin` (Chapter 17). |
 | `E_OUT_OF_MEMORY` | Raised at runtime when an allocation fails or the budget is exhausted. |
-| `E_STACK_BYTEBUF_RETURN`, `E_GLOBAL_BYTEBUF_MUT`, `E_BYTEBUF_NOT_PIN` | Catalogued for the byte primitives; not raised. A returned Stack bytebuf is reported as `E_REGION_ESCAPE`. |
+| (none) | `bytebuf-ptr` outside Pin and mutating a Global buffer are not checked and have no code. A returned Stack bytebuf is reported as `E_REGION_ESCAPE`. |
 
 ## 16.8 Interaction with Capabilities
 

@@ -26,12 +26,12 @@ Two shapes are in use.
 help line:
 
 ```
-PANIC: error[E_ARITY_MISMATCH]: `f` called with 1 argument(s), but it takes 2
+error[E_ARITY_MISMATCH]: `f` takes 2 arguments, but this call gives it 1
   --> arity.zyl:2:15
    |
  2 | (defn main () (f 1) 0)
    |               ^
-   = help: supply the missing argument(s)
+   = help: add the missing argument
 ```
 
 The type pass prints each error in the same shape without the `PANIC:`

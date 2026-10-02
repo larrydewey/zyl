@@ -127,16 +127,17 @@
     (_ -1)))
 
 (defn ac-fail (name expected got site)
-  (let m1 "`"
-    (let m2 (str-concat m1 (err-name name))
-      (let m3 (str-concat m2 "` called with ")
-        (let m4 (str-concat m3 (int-to-str got))
-          (let m5 (str-concat m4 " argument(s), but it takes ")
-            (let m6 (str-concat m5 (int-to-str expected))
-              (ac-panic-at m6 got expected site))))))))
+  (let m1 (str-concat "`" (str-concat (err-name name) (str-concat "` takes " (ac-count expected))))
+    (ac-panic-at (str-concat m1 (str-concat ", but this call gives it " (int-to-str got))) got expected site)))
+
+; "1 argument", "2 arguments"
+(defn ac-count (n)
+  (str-concat (int-to-str n) (if (= n 1) " argument" " arguments")))
 
 (defn ac-panic-at (msg got expected site)
-  (let hint (if (> got expected) "remove the extra argument(s)" "supply the missing argument(s)")
+  (let hint (if (> got expected)
+              (str-concat "remove " (if (= (- got expected) 1) "the extra argument" (str-concat (int-to-str (- got expected)) " extra arguments")))
+              (str-concat "add " (if (= (- expected got) 1) "the missing argument" (str-concat (int-to-str (- expected got)) " missing arguments"))))
     (let off (ffi-call "zyl_span_off" site 1000)
       (let fid (ffi-call "zyl_span_file" site 1000)
         (let text (err-at "E_ARITY_MISMATCH" msg fid off hint)

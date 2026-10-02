@@ -42,7 +42,7 @@ program using them is rejected (`E_CANNOT_INFER`); they are flagged
 (/ -7 2)    ; -3
 (% -7 2)    ; -1
 (+ 1.5 2.0) ; 3.500000
-(+ 1 2.0)   ; error[E_TYPE_MISMATCH]: cannot unify Float with Int
+(+ 1 2.0)   ; error[E_TYPE_MISMATCH]: the operands of `+` must have one type
 ```
 
 Every operand of one arithmetic form has the same type, `Int` or

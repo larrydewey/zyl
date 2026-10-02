@@ -27,14 +27,15 @@ There is **no shorthand**. The spec rejects `((x) (* x x))`; you must write:
 (lambda (x) (* x x))     ; correct
 ```
 
-The compiler reads `((x) (* x x))` as a call whose head `(x)` is itself a call to `x`, so unless `x` is a function in scope it reports located errors, one for the call and one for each other use of `x`, and the compile fails:
+The compiler reads `((x) (* x x))` as a call whose head `(x)` is itself a call to `x`, so unless `x` is a function in scope it reports `x` once, at its first use, and says what was probably meant:
 
 ```
-error[E_UNBOUND_VARIABLE]: call to undefined function `x`
+error[E_UNBOUND_VARIABLE]: `x` is not defined
   --> sq.zyl:2:12
-   = help: define it, or bind it with `let`; an anonymous function is written (fn (params) body) -- ((params) body) is not lambda syntax (spec 7.1)
-...
-PANIC: error[E_UNBOUND_VARIABLE]: the program does not type-check (3 errors above)
+   |
+ 2 |   (print (((x) (* x x)) 3)))
+   |            ^
+   = help: define it with `(defn x (...) ...)`, or bind it with `let`; `((params) body)` is not a function: write `(fn (params) body)`
 ```
 
 A head that is an expression computing a function is ordinary application, not shorthand: `((make-adder 10) 5)` calls the closure `make-adder` returns.

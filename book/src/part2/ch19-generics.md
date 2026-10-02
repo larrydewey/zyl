@@ -115,7 +115,7 @@ For each call site of a generic function:
 1. Infer concrete types for all type parameters from the arguments. A
    parameter with no evidence at any call site is `E_CANNOT_INFER`,
    unless a trait bound selects a finite set.
-2. Verify the trait bounds (`E_TRAIT_BOUND_NOT_SATISFIED`).
+2. Verify the concrete types have the impls the body calls (`E_TRAIT_NOT_FOUND`).
 3. Generate a specialization named `functionName_Type1_Type2_...`, with
    the types sorted alphabetically, so `f<Int, String>` and
    `f<String, Int>` share one name, and distinct type maps get distinct
@@ -219,8 +219,6 @@ What the compiler derives from the body instead of from a declaration:
 | Code | Condition (§6.7) | Status |
 |------|------------------|--------|
 | `E_CANNOT_INFER` | a generic parameter with no call-site evidence | raised for other unknowns (an untyped `ffi-call`, more than 256 instances); an unconstrained parameter is left generic |
-| `E_TRAIT_BOUND_NOT_SATISFIED` | a concrete type violates a bound | catalogued; never raised |
-| `E_UNKNOWN_GENERIC_PARAM` | reference to an undeclared type parameter | catalogued; never raised |
 | `E_TRAIT_NOT_DERIVABLE` | a derive constraint fails | raised for a trait outside `Show`, `Debug`, `Eq`, `Ord`, `Hash`, `Clone` |
 | `E_MALFORMED_PARAMETER` | `((T) x)`: not a name or `(name Type)`; `((T : Ord) ...)`: the colon spelling; `((a Ord))`: a trait in type position | raised |
 

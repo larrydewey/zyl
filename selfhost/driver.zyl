@@ -1115,14 +1115,20 @@
           (drv-scan-error-format 1 argc)
           (try (drv-main-arg arena) (catch e (drv-report-failure e))))))))
 
-; Type-pass closing count prints plain (>1 error, not JSON); any other failure panics.
+; Type-pass count and located errors print plain (text mode); any other failure panics.
 (defn drv-report-failure (e)
   (if (ta-summary-p e)
     (let _ (if (and (> (ta-errors-reported) 1) (not (ffi-call "zyl_diag_json" 1000)))
              (ffi-call "zyl_warn_emit" e 1000)
              unit)
       1)
-    (ffi-call "zyl_panic" e 1000)))
+    (if (and (drv-rendered-p e) (not (ffi-call "zyl_diag_json" 1000)))
+      (let _ (ffi-call "zyl_warn_emit" e 1000) 1)
+      (ffi-call "zyl_panic" e 1000))))
+
+; A located diagnostic is already a full message; it needs no `PANIC:` in front.
+(defn drv-rendered-p (e)
+  (and (>= (str-length e) 6) (str-eq (str-substring e 0 6) "error[")))
 
 ; `--error-format=json` anywhere on the line switches every diagnostic to JSON.
 (defn drv-scan-error-format (i argc)

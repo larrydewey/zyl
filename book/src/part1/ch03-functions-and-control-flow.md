@@ -205,7 +205,7 @@ and the `if` can only be used for its effect:
 
 There is no truthiness: a condition is a comparison, a Bool, or a call
 that returns one. An Int is not a condition — `(if n ...)` is
-`E_TYPE_MISMATCH` (cannot unify Int with Bool); write `(if (!= n 0) ...)`.
+`E_TYPE_MISMATCH` (`` `if` needs a Bool condition, but this is `Int` ``); write `(if (!= n 0) ...)`.
 The same holds for `cond`, `when`, `while` and `for`.
 
 ### `cond` — Multi-Branch

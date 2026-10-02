@@ -224,9 +224,7 @@ runtime event.
 
 | Code | Meaning |
 |-------|---------|
-| `E_USER_ERROR` | `(panic msg)` |
 | `E_MUT_CONFLICT` | Aliasing violation |
-| `E_ASSERT_FAIL` | Assertion failure |
 | `E_FFI_TIMEOUT` | FFI call exceeded its timeout |
 | `E_FFI_TIMEOUT_REQUIRED` | `ffi-call` lacks a positive integer literal timeout |
 | `E_FFI_SYMBOL_REQUIRED` | `ffi-call` symbol is not a string literal |
@@ -240,7 +238,6 @@ runtime event.
 | `E_REGION_EXHAUSTED` | A `with-region` region exceeded its size or limit (runtime) |
 | `E_MACRO_NON_TERMINATION` | Macro expansion loop |
 | `E_MATCH_NONEXHAUSTIVE` | Missing match case |
-| `E_UNINITIALIZED_USE` | Variable used before initialisation |
 | `E_CAPABILITY_LEAK` | TMut leaked |
 | `E_TRAIT_NOT_FOUND` | Missing impl |
 | `E_DUPLICATE_IMPL` | Conflicting impls |
@@ -248,8 +245,6 @@ runtime event.
 | `E_CONTRACT_VIOLATION` | Contract failed |
 | `E_OVERFLOW` | Integer overflow |
 | `E_DIVISION_BY_ZERO` | Division by zero |
-| `E_TEST_FAILURE` | Test assertion failed |
-| `E_TEST_RUNNER_ERROR` | Test harness error |
 | `E_TRAIT_NOT_DERIVABLE` | Cannot derive trait |
 | `E_RESERVED_KEYWORD` | Reserved keyword used as an identifier |
 | `E_CANNOT_INFER` | No type for an expression: a generic parameter with no call-site evidence, or an `ffi-call` to an undeclared foreign symbol |

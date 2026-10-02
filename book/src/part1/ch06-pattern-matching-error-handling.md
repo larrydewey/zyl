@@ -472,13 +472,11 @@ What `try` is and is not:
 ## 6.9 `assert` and `unwrap`
 
 The specification defines `(assert condition "message")` (the condition
-is a `Bool`), which aborts
-with `E_ASSERT_FAIL` when the condition is false, and `(unwrap r)`, which
-extracts an `Ok`/`Some` value or aborts. Both work today, with two
-differences from the specification:
+is a `Bool`), which panics when the condition is false, and `(unwrap r)`, which
+extracts an `Ok`/`Some` value or aborts. Both work today:
 
 - A false `(assert c "msg")` panics with `msg` when it is a string
-  literal (`assert failed` otherwise); no `E_ASSERT_FAIL` code is shown.
+  literal (`assert failed` otherwise), with no error code.
 - `(unwrap x)` takes an `Option` only: of `None` it panics with
   `unwrap on None`, and applied to a `Result` it is `E_TYPE_MISMATCH`.
   Use `result-expect` for a `Result`.
