@@ -195,10 +195,10 @@
         (ec-fail-nonexhaustive tyname v site)))))
 
 (defn ec-fail-unreachable-bind (tag site)
-  (let m1 "catch-all arm `"
+  (let m1 "the arm `"
     (let m2 (str-concat m1 (err-name tag))
-      (let msg (str-concat m2 "` is followed by more arms that can never run")
-        (ec-panic-at "E_UNREACHABLE_MATCH_ARM" msg "move the catch-all arm to the end of the match" site)))))
+      (let msg (str-concat m2 "` matches every value, so the arms after it never run")
+        (ec-panic-at "E_UNREACHABLE_MATCH_ARM" msg "move it to the end of the match" site)))))
 
 (defn ec-fail-duplicate-arm (tag site)
   (let m1 "arm `"
@@ -212,7 +212,7 @@
       (let m3 (str-concat m2 "` does not cover variant `")
         (let m4 (str-concat m3 (err-name vname))
           (let msg (str-concat m4 "`")
-            (ec-panic-at "E_NON_EXHAUSTIVE_MATCH" msg "add an arm for that variant, or a `_` catch-all" site)))))))
+            (ec-panic-at "E_NON_EXHAUSTIVE_MATCH" msg "add an arm for that variant, or a final `_` arm" site)))))))
 
 (defn ec-panic-at (code msg hint site)
   (let off (ffi-call "zyl_span_off" site 1000)

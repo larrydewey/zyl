@@ -5,7 +5,7 @@
 ; and where in this tree it is raised -- with the diagnostic text that site
 ; produces, which is where the fix for it is written down.
 ;
-; WHY THIS IS A COMMAND. There are 135 codes, each raised from up to a dozen
+; WHY THIS IS A COMMAND. There are over a hundred codes, each raised from up to a dozen
 ; places, and the useful part of a code is not its name but the sentence that
 ; tells you what to do about it. That sentence already exists, once per raise
 ; site, as the `help` argument the compiler passes alongside the message. It
@@ -13,11 +13,7 @@
 ; that fired. So the knowledge was in the tree and unreachable until something
 ; failed.
 ;
-; Reading it back out of the source rather than from a hand-written table is
-; deliberate. A second table would be 135 entries to write and 135 to keep in
-; step with the code, and it would drift on the first change -- which is the
-; ordinary fate of documentation about diagnostics. This cannot drift: if a
-; site stops existing, the example stops appearing.
+; The common codes also carry a short table (explain-notes), kept honest by tests/scripts/explain-examples.sh.
 ;
 ; The scan is a substring search over the tree, not a parse. It has to cope
 ; with source that does not compile, with comments, and with a half-written
@@ -46,38 +42,31 @@
 (defn ec-severity (c) (match c (EC an ap as am as)))
 (defn ec-message (c) (match c (EC an ap as am am)))
 
-; Phase numbers are internal; a name is what a reader can act on.
-;
-; A flat match over literals, one arm per phase, all at the same level. The
-; first version was a chain of twenty nested `if`s, which reached twenty levels
-; of nesting and had the wrong number of closers; the second was a list of
-; pairs, which does not type because Cons is the LIST constructor and the
-; pairs hold an Int and a String. Literal match arms have neither problem.
+; The catalog's phase number, as words a reader can act on.
 (defn ec-phase-name (p)
   (match p
-    (1 "parse")
-    (2 "parse")
-    (3 "parse")
-    (4 "type")
-    (5 "type")
-    (6 "region")
-    (7 "optimization")
-    (8 "codegen")
-    (9 "link")
-    (10 "runtime")
-    (11 "codegen")
-    (12 "compile")
-    (13 "module")
-    (14 "package")
-    (16 "ffi")
-    (17 "compile")
-    (18 "compile")
-    (19 "compile")
-    (20 "compile")
-    (21 "package")
-    (_ "compile")))
+    (1 "reading the source")
+    (2 "reading the source")
+    (3 "macros")
+    (4 "types")
+    (5 "types")
+    (6 "memory regions")
+    (7 "code generation")
+    (8 "code generation and linking")
+    (9 "modules")
+    (10 "running the program")
+    (11 "tests")
+    (12 "traits")
+    (13 "capabilities")
+    (14 "contracts")
+    (15 "numbers")
+    (16 "foreign calls")
+    (17 "match")
+    (18 "definitions and bindings")
+    (19 "packages")
+    (_ "other")))
 
-(defn ec-severity-name (s) (if (= s 0) "note" (if (= s 1) "error" "warning")))
+(defn ec-severity-name (s) (if (= s 1) "error" (if (= s 2) "warning" "note")))
 
 (defn ec-find (name codes)
   (match codes
@@ -203,23 +192,48 @@
         1))
     (Some c
       (let sites (explain-sites code root files)
-        (let n (list-length sites)
-          (begin
-            (print code)
-            (print (field-line "phase" (ec-phase-name (ec-phase c))))
-            (print (field-line "severity" (ec-severity-name (ec-severity c))))
-            (print (field-line "meaning" (ec-message c)))
-            (print "")
-            (print (str-concat "  raised at "
-              (str-concat (ffi-call "zyl_int_text" n 1000)
-                (if (= n 1) " place in this tree:" " places in this tree:"))))
-            (if (= n 0)
-              (print (str-concat "  (scanned "
-                (str-concat (ffi-call "zyl_int_text" (ex-line-count files) 1000)
-                  " files and found no quoted occurrence)")))
-              unit)
-            (print-sites sites 0)
-            0))))))
+        (begin
+          (print (str-concat code (str-concat "  (" (str-concat (ec-phase-name (ec-phase c)) (str-concat ", " (str-concat (ec-severity-name (ec-severity c)) ")"))))))
+          (print "")
+          (match (exn-find code (explain-notes))
+            (Some x (print-note x))
+            (None (print (str-concat "  " (ec-message c)))))
+          (print-site-block sites)
+          0)))))
+
+; Meaning, then the wrong program and its correction, each line indented.
+(defn print-note (x)
+  (begin
+    (print (str-concat "  " (exn-meaning x)))
+    (print "")
+    (print "  wrong:")
+    (print-indented (exn-wrong x))
+    (print "  right:")
+    (print-indented (exn-right x))))
+
+(defn print-indented (src)
+  (print-indented-go src 0 (str-length src)))
+
+(defn print-indented-go (src i n)
+  (if (>= i n)
+    unit
+    (let j (index-of-nl src i n)
+      (let e (if (< j 0) n j)
+        (begin
+          (print (str-concat "    " (str-substring src i (- e i))))
+          (print-indented-go src (+ e 1) n))))))
+
+; Where the code is raised, when this tree has the compiler's source; nothing otherwise.
+(defn print-site-block (sites)
+  (let n (list-length sites)
+    (if (= n 0)
+      unit
+      (begin
+        (print "")
+        (print (str-concat "  raised at "
+          (str-concat (ffi-call "zyl_int_text" n 1000)
+            (if (= n 1) " place in this tree:" " places in this tree:"))))
+        (print-sites sites 0)))))
 
 ; A name that is not a code gets the codes that start with it, which is the
 ; question actually being asked far more often than "what does this mean".
@@ -252,7 +266,7 @@
   (if (>= n (ex-line-count files))
     (list-reverse acc)
     (let name (ex-file-at files n)
-      (if (= (str-length name) 0)
+      (if (or (= (str-length name) 0) (ex-skipped-p name))
         (explain-sites-go code root files (+ n 1) acc)
         (let full (str-concat (str-concat root "/") name)
           (match (read-source full)
@@ -260,6 +274,11 @@
             (Some src
               (let acc (add-hits acc src name (find-all src (quoted code)) 0)
                 (explain-sites-go code root files (+ n 1) acc)))))))))
+
+; Not raise sites: copies of the tree, tests that mention a code, and the catalog and this table.
+(defn ex-skipped-p (name)
+  (or (str-starts-with name "build/") (or (str-starts-with name ".claude/") (or (str-starts-with name "tests/")
+    (or (str-eq name "stdlib/compiler/explain.zyl") (str-eq name "stdlib/compiler/error_codes.zyl"))))))
 
 ; The needle carries its own quotes, so a comment or a doc string mentioning
 ; the code does not count as a place it is raised.
@@ -290,24 +309,46 @@
 
 (defn explain-list ()
   (begin
-    (print "zyl explain: pass a code for its meaning and where it is raised.")
-    (print "")
-    (print-list-codes (error-codes))
+    (print "zyl explain CODE: what a code means, with a wrong program and its fix.")
+    (print-phases (error-codes) 0)
     0))
 
-(defn print-list-codes (codes)
+; One heading per phase, in catalog order (the catalog is sorted by phase).
+(defn print-phases (codes last)
   (match codes
     (Nil unit)
     (Cons h t
       (begin
-        (print (code-line (ec-name h) (ec-message h)))
-        (print-list-codes t)))))
+        (if (str-eq (ec-phase-name (ec-phase h)) (ec-phase-name last))
+          unit
+          (begin (print "") (print (ec-phase-name (ec-phase h)))))
+        (print (code-line (ec-name h) (ex-short-meaning h)))
+        (print-phases t (ec-phase h))))))
+
+; The table's sentence when there is one, else the catalog text without its "phase: " tag.
+(defn ex-short-meaning (c)
+  (match (exn-find (ec-name c) (explain-notes))
+    (Some x (exn-meaning x))
+    (None
+      (let m (ec-message c)
+        (let i (index-of m ": " 0 (str-length m))
+          (ex-drop-at-s (if (and (>= i 0) (< i 16)) (str-substring m (+ i 2) (- (str-length m) (+ i 2))) m)))))))
+
+; The catalog's " at S" stands for a source position, which a listing has none of.
+(defn ex-drop-at-s (m)
+  (let i (index-of m " at S" 0 (str-length m))
+    (if (< i 0)
+      m
+      (let after (+ i 5)
+        (if (and (< after (str-length m)) (let b (byte-at m after) (or (and (>= b 65) (<= b 90)) (and (>= b 97) (<= b 122)))))
+          m
+          (ex-drop-at-s (str-concat (str-substring m 0 i) (str-substring m after (- (str-length m) after)))))))))
 
 ; One print per line: `print` puts every value on its own line, so a label and
 ; its value printed separately come out as two lines. Everything here builds the
 ; line and prints it once.
 (defn code-line (name message)
-  (str-concat (str-concat "  " name) (str-concat (pad name 28) message)))
+  (str-concat (str-concat "  " name) (str-concat (pad name 34) message)))
 
 (defn field-line (label value)
   (let tag (str-concat label ":")
@@ -317,7 +358,7 @@
 ; padding rather than printing it, because every caller is building a line.
 (defn pad (s width)
   (let n (- width (str-length s))
-    (if (<= n 0) "" (spaces n))))
+    (if (< n 2) "  " (spaces n))))
 
 (defn spaces (n)
   (spaces-go n ""))
@@ -361,3 +402,110 @@
       None
       (let s (sb-read-all fd "")
         (begin (file-close fd) (Some s))))))
+
+; Prose for the most common codes: meaning, a minimal wrong program, its correction.
+; tests/scripts/explain-examples.sh compiles every pair and requires the wrong one to raise its code.
+(deftype ExNote (ExN String String String String))
+
+(defn exn-code (x) (match x (ExN c _ _ _ c)))
+(defn exn-meaning (x) (match x (ExN _ m _ _ m)))
+(defn exn-wrong (x) (match x (ExN _ _ w _ w)))
+(defn exn-right (x) (match x (ExN _ _ _ r r)))
+
+(defn explain-notes ()
+  (Cons (ExN "E_TYPE_MISMATCH" "A value has a different type from the one this place needs."
+          "(defn main () (begin (print (+ 1 \"2\")) 0))"
+          "(defn main () (begin (print (+ 1 2)) 0))")
+  (Cons (ExN "E_MALFORMED_FORM" "A special form is missing a part, or has one too many."
+          "(defn main () (let x 1))"
+          "(defn main () (let x 0 x))")
+  (Cons (ExN "E_CANNOT_INFER" "Nothing in the program says what type this is; a foreign function needs an `extern` with its signature."
+          "(defn main () (begin (print (ffi-call \"abs\" -3 1000)) 0))"
+          "(extern \"abs\" (Int) Int)\n(defn main () (begin (print (ffi-call \"abs\" -3 1000)) 0))")
+  (Cons (ExN "E_MUT_CONFLICT" "`set!` changes only a `let-mut` binding; every other binding and every struct field is immutable."
+          "(defn main () (let n 1 (begin (set! n 2) n)))"
+          "(defn main () (let-mut n 1 (begin (set! n 2) (- n 2))))")
+  (Cons (ExN "E_UNBOUND_VARIABLE" "A name is used that nothing defines here: a typo, a missing `(use ...)`, or a binding out of scope."
+          "(defn main () (begin (print (str-lenght \"abc\")) 0))"
+          "(defn main () (begin (print (str-length \"abc\")) 0))")
+  (Cons (ExN "E_REGION_ESCAPE" "A value would outlive the region it was allocated in."
+          "(defn make-buf () (bytebuf Stack 16))\n(defn main () (begin (print (bytebuf-cap (make-buf))) 0))"
+          "(defn make-buf () (bytebuf Heap 16))\n(defn main () (begin (print (bytebuf-cap (make-buf))) 0))")
+  (Cons (ExN "E_MALFORMED_PARAMETER" "A parameter is not a name or a `(name Type)` pair with a concrete type."
+          "(defn f ((a Ord)) a)\n(defn main () (f 0))"
+          "(defn f ((a Int)) a)\n(defn main () (f 0))")
+  (Cons (ExN "E_ARITY_MISMATCH" "A function is called with a different number of arguments than it takes."
+          "(defn add (a b) (+ a b))\n(defn main () (add 1))"
+          "(defn add (a b) (+ a b))\n(defn main () (- (add 1 2) 3))")
+  (Cons (ExN "E_FFI_RESTRICTED" "A program called a locked runtime primitive, which only the runtime itself may use."
+          "(defn main () (begin (print (ffi-call \"%load64\" 4096 1000)) 0))"
+          "(defn main () (begin (print (ffi-call \"zyl_cstr_len\" \"abc\" 1000)) 0))")
+  (Cons (ExN "E_INVALID_CAPABILITY" "A value that cannot cross into foreign code, such as a closure, was passed to `ffi-call`."
+          "(defn main () (begin (ffi-call \"zyl_cstr_len\" (fn (x) x) 1000) 0))"
+          "(defn main () (begin (ffi-call \"zyl_cstr_len\" \"x\" 1000) 0))")
+  (Cons (ExN "E_MATCH_NONEXHAUSTIVE" "A match on literals has no arm for the values none of its patterns name."
+          "(defn f (n) (match n (1 10) (2 20)))\n(defn main () (begin (print (f 1)) 0))"
+          "(defn f (n) (match n (1 10) (2 20) (_ 0)))\n(defn main () (begin (print (f 1)) 0))")
+  (Cons (ExN "E_NON_EXHAUSTIVE_MATCH" "A match on a type's constructors leaves one of them without an arm."
+          "(deftype Shape (Circle Int) (Square Int))\n(defn area (s) (match s (Circle r (* r r))))\n(defn main () (area (Circle 0)))"
+          "(deftype Shape (Circle Int) (Square Int))\n(defn area (s) (match s (Circle r (* r r)) (Square w (* w w))))\n(defn main () (area (Circle 0)))")
+  (Cons (ExN "E_UNREACHABLE_MATCH_ARM" "An arm can never run, because an earlier arm already matches everything it would."
+          "(defn f (o) (match o (_ 0) (Some x x)))\n(defn main () (f (Some 0)))"
+          "(defn f (o) (match o (Some x x) (_ 0)))\n(defn main () (f (Some 0)))")
+  (Cons (ExN "E_FFI_TIMEOUT_REQUIRED" "Every `ffi-call` ends with a timeout: a positive whole number of milliseconds, written literally."
+          "(defn main () (begin (print (ffi-call \"zyl_cstr_len\" \"abc\" 0)) 0))"
+          "(defn main () (begin (print (ffi-call \"zyl_cstr_len\" \"abc\" 1000)) 0))")
+  (Cons (ExN "E_TRAIT_NOT_FOUND" "A trait method is used on a type that has no `impl` of that trait."
+          "(defn main () (with-resource (s \"text\") (begin (print s) 0)))"
+          "(defn main () (let s \"text\" (begin (print s) 0)))")
+  (Cons (ExN "E_NESTED_PATTERN" "A constructor arm binds plain names only; match the inner value in a second `match`."
+          "(defn f (o) (match o (Some (Some x) x) (_ 0)))\n(defn main () (f (Some (Some 0))))"
+          "(defn f (o) (match o (Some inner (match inner (Some x x) (None 0))) (None 0)))\n(defn main () (f (Some (Some 0))))")
+  (Cons (ExN "E_TRAIT_NOT_DERIVABLE" "`derive` names a trait it cannot write an impl for."
+          "(defstruct Point (x Int))\n(derive Point Frobnicate)\n(defn main () 0)"
+          "(defstruct Point (x Int))\n(derive Point Eq)\n(defn main () 0)")
+  (Cons (ExN "E_MACRO_NON_TERMINATION" "Macro expansion never finishes: the macros expand into each other forever."
+          "(defmacro ping (x) (pong x))\n(defmacro pong (x) (ping x))\n(defn main () (ping 0))"
+          "(defmacro ping (x) x)\n(defn main () (ping 0))")
+  (Cons (ExN "E_DUPLICATE_DEFINITION" "Two top-level definitions share one name."
+          "(defn f (x) x)\n(defn f (x) (+ x 1))\n(defn main () (f 0))"
+          "(defn f (x) x)\n(defn g (x) (+ x 1))\n(defn main () (f (- (g 0) 1)))")
+  (Cons (ExN "E_SECRET_ESCAPE" "A `Secret` value reaches output, a file or another observable place without `declassify`."
+          "(use core/core)\n(defn leak ((key Secret)) (file-write 2 key))\n(defn main () (begin (leak 5) 0))"
+          "(use core/core)\n(defn leak ((key Secret)) (file-write 2 \"<redacted>\"))\n(defn main () (begin (leak 5) 0))")
+  (Cons (ExN "E_RESERVED_KEYWORD" "A keyword of the language is used as a name."
+          "(defn f (test) test)\n(defn main () (f 0))"
+          "(defn f (t) t)\n(defn main () (f 0))")
+  (Cons (ExN "E_INDEX_OUT_OF_BOUNDS" "An index is outside the tuple, array or buffer it reads."
+          "(use core/core)\n(defn main () (let t (tuple 1 2) (begin (print (tuple-get t 5)) 0)))"
+          "(use core/core)\n(defn main () (let t (tuple 1 2) (begin (print (tuple-get t 1)) 0)))")
+  (Cons (ExN "E_CT_VIOLATION" "A branch, index or division depends on a `Secret`, which leaks it through timing."
+          "(use core/core)\n(defn check ((key Secret) (guess Int)) (if (= key guess) 1 0))\n(defn main () (- (check 7 7) 1))"
+          "(use core/core)\n(use math/secret/secret)\n(defn check ((key Secret) (guess Int)) (ct-eq key guess))\n(defn main () (- (check 7 7) 1))")
+  (Cons (ExN "E_FFI_PIN_REQUIRED" "A `Secret` passed to foreign code must go through `ffi-pin`."
+          "(use core/core)\n(extern \"abs\" (Int) Int)\n(defn raw ((key Secret)) (ffi-call \"abs\" key 1000))\n(defn main () (begin (raw 5) 0))"
+          "(use core/core)\n(defn raw ((key Secret)) (let p (ffi-pin key) (ffi-unpin p)))\n(defn main () (begin (raw 5) 0))")
+  (Cons (ExN "E_CONTRACT_VIOLATION" "A `requires`, `ensures` or `invariant` check was false when it ran."
+          "(defn half (n) (begin (requires (>= n 0)) (/ n 2)))\n(defn main () (half -4))"
+          "(defn half (n) (begin (requires (>= n 0)) (/ n 2)))\n(defn main () (half 0))")
+  (Cons (ExN "E_REGION_EXHAUSTED" "A `with-region` region ran out of the space its `:size` or `:limit` gives it."
+          "(defn main () (with-region (fixed :size 64) (begin (print (str-length (str-concat \"a\" (str-concat \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\" \"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\")))) 0)))"
+          "(defn main () (with-region (fixed :size 4096) (begin (print (str-length (str-concat \"a\" (str-concat \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\" \"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\")))) 0)))")
+  (Cons (ExN "E_CHANNEL_CLOSED" "`chan-recv` on a channel whose sender has finished and whose values are all taken."
+          "(use actor/actor)\n(defn main () (let c (chan 1) (let rx (chan-rx c) (let tx (chan-tx c) (let a (spawn (fn () (chan-send tx 7))) (begin (actor-wait a) (print (chan-recv rx)) (print (chan-recv rx)) 0))))))"
+          "(use actor/actor)\n(defn main () (let c (chan 1) (let rx (chan-rx c) (let tx (chan-tx c) (let a (spawn (fn () (chan-send tx 7))) (begin (actor-wait a) (print (chan-recv rx)) 0))))))")
+  (Cons (ExN "E_FFI_TIMEOUT" "A foreign call ran longer than its timeout; it is abandoned and this error raised."
+          "(extern \"usleep\" (Int) Int)\n(defn main () (begin (ffi-call \"usleep\" 300000 50) 0))"
+          "(extern \"usleep\" (Int) Int)\n(defn main () (begin (ffi-call \"usleep\" 1000 1000) 0))")
+  (Cons (ExN "E_DUPLICATE_PARAMETER" "A function declares the same parameter name twice."
+          "(defn f (a a) a)\n(defn main () (f 0 0))"
+          "(defn f (a b) (+ a b))\n(defn main () (f 0 0))")
+  (Cons (ExN "E_INTEGER_OVERFLOW" "An integer literal does not fit in a 64-bit Int."
+          "(defn main () (begin (print 99999999999999999999) 0))"
+          "(defn main () (begin (print 9223372036854775807) 0))")
+  Nil)))))))))))))))))))))))))))))))
+
+(defn exn-find (code xs)
+  (match xs
+    (Nil None)
+    (Cons h t (if (str-eq (exn-code h) code) (Some h) (exn-find code t)))))

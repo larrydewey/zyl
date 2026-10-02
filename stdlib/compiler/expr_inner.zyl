@@ -972,7 +972,7 @@
       (let code (recover-arm-code arm)
         (if (= (str-length code) 0)
           (if (recover-has-specific-code rest)
-            (ei-fail "W_RECOVER_SHADOW" (str-concat "catch-all arm shadows later arm " (recover-first-code rest)))
+            (ei-fail "W_RECOVER_SHADOW" (str-concat "this arm catches every error, so the arm for " (str-concat (recover-first-code rest) " after it never runs")))
             0)
           0)
         (recover-chain-warn rest)))))
