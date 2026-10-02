@@ -270,9 +270,10 @@ Neither carries the catalog code. A false `(assert c msg)` panics with
 | `E_MUT_CONFLICT` (§28) | aliasing: mutable reference conflict at S | `mutability_check.zyl` (located: `set!` on a non-`let-mut` binding, or on a `let-mut` captured by a closure), `expr_inner.zyl` (a `set!` target that is not a plain name, such as a field) |
 | `E_CT_VIOLATION` | constant-time: secret-dependent M at S - branches, memory indices and divisions must not depend on a Secret value | `secret_check.zyl` (located) |
 | `E_SECRET_ESCAPE` | secret: Secret value escapes through M at S | `secret_check.zyl` (located) |
+| `E_SECRET_UNANNOTATED` | secret: a Secret argument reaches parameter P of F, which is not marked Secret | `secret_check.zyl` (located at the argument; the fix names the parameter to annotate) |
 | `E_SECRET_DEBUG` | secret: Secret value reaches a debug/print sink at S | `secret_check.zyl` (located; also a `Show` impl whose text is derived from a Secret) |
 | `E_ZEROIZE_MISSING` (severity 2, warning) | secret: function F takes a Secret parameter but never zeroizes it | `secret_check.zyl` |
-| `E_PKG_CAPABILITY_VIOLATION` (§28) | capability: package N uses M without declaring the C capability | `capability_check.zyl` (located), `cli.zyl` |
+| `E_PKG_CAPABILITY_VIOLATION` (§28) | capability: M needs the C capability, and the package, file or session using it declares none | `capability_check.zyl` (located, with the `(capabilities ...)` line to write as the fix), `cli.zyl` |
 | `E_PKG_CAPABILITY_GROWTH` (§28) | capability: capability closure grew under --locked: C | `capability_check.zyl`, `mvs.zyl` |
 
 `E_ZEROIZE_MISSING` fires when a function consumes a `Secret` parameter into
@@ -342,6 +343,7 @@ All raised by the package modules named; all are §28 codes except
 |------|----------|-----------|---------|
 | `E_NON_EXHAUSTIVE_MATCH` | error | `exhaustiveness_check.zyl` (located) | a `match` over a `deftype` does not cover some variant and has no `_` arm |
 | `E_UNREACHABLE_MATCH_ARM` | error | `exhaustiveness_check.zyl` (located) | an arm after a catch-all, or a repeated constructor arm |
+| `E_UNKNOWN_CONSTRUCTOR` (§28) | error | `exhaustiveness_check.zyl` (located at the arm) | an arm head spelled like a constructor (A-Z first) that no type declares; suggests the nearest constructor within edit distance 2 |
 | `E_DUPLICATE_PARAMETER` | error | `unused_check.zyl` | two parameters of one `defn`/`fn`/`lambda` share a name |
 | `E_PANIC_UNMARKED` | error | `unused_check.zyl` (located, at the defn) | a `defn` in a program-facing standard-library module (not `compiler/`, `lsp/`, `repl/`) whose body calls `panic` or `zyl_panic` directly and whose name has no trailing `!`; `main` and the definition of `panic` are exempt; direct calls only (docs/soundness.md L8) |
 | `W_PANIC_UNMARKED` | warning | `unused_check.zyl` (located, at the defn) | the same condition in a program: help `rename it \`name!\` so callers can see it may stop the program, or return an Option` |

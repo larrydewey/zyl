@@ -97,6 +97,7 @@ grep -q 'FAIL: E_INDEX_OUT_OF_BOUNDS' "$SCRATCH/harness.out" || fail "harness: n
 
 # A program that calls foreign C links hosted over libc; the table and the walk are the same.
 cat > "$SCRATCH/hosted.zyl" <<'EOF'
+(capabilities ffi)
 (use collections/vec)
 (extern "abs" (Int) Int)
 
@@ -116,6 +117,7 @@ grep -q '^  in parse-line$' "$ERR" || fail "hosted: no parse-line frame"
 
 # An actor's panic ends only the actor and is re-raised at the join, so the backtrace is the joiner's.
 cat > "$SCRATCH/actor.zyl" <<'EOF'
+(capabilities actor)
 (use collections/vec)
 (use actor/actor)
 

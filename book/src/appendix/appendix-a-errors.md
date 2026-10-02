@@ -249,9 +249,10 @@ an inferred placement is always one the value cannot escape (Chapter
 | `E_INVALID_CAPABILITY` | A closure written inline as an `ffi-call` argument |
 | `E_CT_VIOLATION` | A `Secret` steered a branch, indexed memory, or went through a divider |
 | `E_SECRET_ESCAPE` | A `Secret` reached `spawn`, `chan-send` or `file-write` |
+| `E_SECRET_UNANNOTATED` | A `Secret` was passed to a function parameter not annotated `Secret` |
 | `E_SECRET_DEBUG` | A `Secret` reached `print` |
 | `E_ZEROIZE_MISSING` | *(warning, severity 2)* A function takes a `Secret` parameter and never zeroizes it |
-| `E_PKG_CAPABILITY_VIOLATION` | A package uses a construct, or a stdlib module, without declaring the capability it needs (§31.9) |
+| `E_PKG_CAPABILITY_VIOLATION` | A package, lone file or REPL session uses a construct, or a stdlib module, without declaring the capability it needs (§31.9) |
 | `E_PKG_CAPABILITY_GROWTH` | The capability closure grew under `--locked` |
 
 Chapter 17 covers the aliasing rules, Chapter 33 the `Secret` checks and
@@ -264,6 +265,7 @@ Chapter 25 package capabilities.
 | `E_MATCH_NONEXHAUSTIVE` | A `match` missing a variant, an unknown variant in an arm, or a literal-pattern match with no trailing `_` arm. Raised during parsing and lowering. |
 | `E_NON_EXHAUSTIVE_MATCH` | A `match` that does not cover every variant of its ADT. *Raised by `exhaustiveness_check.zyl`; not in the catalog.* |
 | `E_UNREACHABLE_MATCH_ARM` | An arm that no value can reach: a catch-all that is not last, or a repeated constructor. *Not in the catalog.* |
+| `E_UNKNOWN_CONSTRUCTOR` | A capitalized `match` arm head that no type declares; the message suggests the nearest constructor. A binder is lowercase. |
 | `E_NESTED_PATTERN` | A constructor arm whose field is itself a pattern, such as `(Some (Pair a b) ...)`. Bind the field to a name and match it inside the arm body. |
 | `E_DIVISION_BY_ZERO` | Integer division or remainder by zero. *Raised only by the REPL's ICNF interpreter. Compiled code does not check: the process dies with SIGFPE (exit status 136), which `try` cannot catch.* |
 | `E_OVERFLOW` | Checked integer overflow. *Catalogued only.* |

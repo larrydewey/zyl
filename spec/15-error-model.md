@@ -155,6 +155,7 @@ code plus implementation codes such as `E_ARITY_MISMATCH`,
 `E_UNBOUND_VARIABLE`, `E_DUPLICATE_DEFINITION`, `E_MALFORMED_PARAMETER`,
 `E_OUT_OF_MEMORY`, the `E_UNBALANCED_*` balance errors, the byte-buffer
 codes and the Secret codes (`E_CT_VIOLATION`, `E_SECRET_ESCAPE`,
+`E_SECRET_UNANNOTATED`,
 `E_SECRET_DEBUG`, `E_ZEROIZE_MISSING`, `E_FFI_PIN_REQUIRED`), and also
 `W_TYPE_STRICT` and the interpreter's `E_INTERP_TAG`. One entry is
 duplicated (`E_OUT_OF_MEMORY`) and two are near duplicates
@@ -221,7 +222,9 @@ REPL's ICNF interpreter; a compiled program traps with SIGFPE.
 
 Raised but not in the catalog: `E_NON_EXHAUSTIVE_MATCH` and
 `E_UNREACHABLE_MATCH_ARM` (from `exhaustiveness_check.zyl`) and
-`E_DUPLICATE_PARAMETER` (from `unused_check.zyl`).
+`E_DUPLICATE_PARAMETER` (from `unused_check.zyl`). `E_UNKNOWN_CONSTRUCTOR`
+(the same pass: a capitalized arm head that no type declares) is in the
+catalog and §28.
 `E_NON_EXHAUSTIVE_MATCH` is a second spelling of §28's
 `E_MATCH_NONEXHAUSTIVE`; the two are raised by different passes.
 

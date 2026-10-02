@@ -1,5 +1,7 @@
 ; C ABI regression tests: calls between C and generated code.
 
+(capabilities ffi)
+
 (use allocator/allocator)
 
 (defstruct _abi_Box (v Int) (w Int))

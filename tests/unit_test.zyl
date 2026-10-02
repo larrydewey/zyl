@@ -4,6 +4,9 @@
  ; (deftype Result (Ok Int) (Err Int))  ; shadows None — use stdlib Result
 
                                         ; --- Module Imports ---
+
+(capabilities io ffi actor)
+
 (use io/io)
 (use allocator/allocator)
 (use core/core)

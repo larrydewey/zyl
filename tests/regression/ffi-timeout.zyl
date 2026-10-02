@@ -1,6 +1,8 @@
 ; FFI timeouts (spec §16): a foreign call runs on a worker thread and
 ; raises E_FFI_TIMEOUT when it overruns its timeout in milliseconds.
 
+(capabilities ffi)
+
 (use core/core)
 
 (extern "usleep" (Int) Int)

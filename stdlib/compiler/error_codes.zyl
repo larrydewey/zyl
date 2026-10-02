@@ -59,6 +59,7 @@
           (Cons (EC "E_INTERP_TAG" 10 1 "runtime: the checking interpreter found an operand of the wrong tag at S (a type-checker bug)")
           (Cons (EC "E_CT_VIOLATION" 13 1 "constant-time: secret-dependent M at S - branches, memory indices and divisions must not depend on a Secret value")
           (Cons (EC "E_SECRET_ESCAPE" 13 1 "secret: Secret value escapes through M at S")
+          (Cons (EC "E_SECRET_UNANNOTATED" 13 1 "secret: a Secret argument reaches parameter P of F, which is not marked Secret")
           (Cons (EC "E_SECRET_DEBUG" 13 1 "secret: Secret value reaches a debug/print sink at S")
           (Cons (EC "E_ZEROIZE_MISSING" 13 2 "secret: function F takes a Secret parameter but never zeroizes it")
           (Cons (EC "E_FFI_PIN_REQUIRED" 16 1 "ffi: Secret argument to F must be handed over through ffi-pin (Pin region) at S")
@@ -72,6 +73,7 @@
           (Cons (EC "E_INVALID_ESCAPE" 1 1 "lexer: invalid escape sequence in a string literal at S")
           (Cons (EC "E_INDEX_OUT_OF_BOUNDS" 10 1 "runtime: index outside a word array")
           (Cons (EC "E_NESTED_PATTERN" 17 1 "match: nested pattern in a constructor arm at S")
+          (Cons (EC "E_UNKNOWN_CONSTRUCTOR" 17 1 "match: no type declares a constructor C at S; a binder is written in lowercase")
           (Cons (EC "E_REGION_EXHAUSTED" 10 1 "runtime: a with-region region ran out of its fixed size or limit")
           (Cons (EC "E_CAPABILITY_LEAK" 13 1 "capability: TMut leaked across boundary at S")
             (Cons (EC "E_CIRCULAR_MODULE" 9 1 "module: circular dependency: M")
@@ -171,12 +173,12 @@
                                                           (Cons (EC "E_PKG_UNDECLARED_DEP" 9 1 "module: use names package N, absent from the manifest")
                                                           (Cons (EC "E_PKG_RESERVED_MODULE" 9 1 "module: unsafe is a reserved module name")
                                                           (Cons (EC "E_PKG_ORPHAN_IMPL" 12 1 "trait: impl of T for U where neither the trait nor the type is local to N")
-                                                          (Cons (EC "E_PKG_CAPABILITY_VIOLATION" 13 1 "capability: package N uses M without declaring the C capability")
+                                                          (Cons (EC "E_PKG_CAPABILITY_VIOLATION" 13 1 "capability: M needs the C capability, and the package, file or session using it declares none; write (capabilities C) in zyl.pkg, at the top of the file, or at the prompt")
                                                            (Cons (EC "E_PKG_CAPABILITY_GROWTH" 13 1 "capability: capability closure grew under --locked: C")
                                                                (Cons (EC "W_RECOVER_SHADOW" 14 2 "recover: arm M shadows later arm N - move specific error codes before catch-all (String/_)")
                                                                 (Cons (EC "E_PANIC_UNMARKED" 12 1 "compile: standard-library function F can stop the program but its name has no trailing ! at S")
                                                                  (Cons (EC "W_PANIC_UNMARKED" 12 2 "compile: function F can stop the program but its name has no trailing ! at S")
-                                                           Nil)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+                                                           Nil)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 ; ---------------------------------------------------------------------------
 ; ACCESSORS
 ; ---------------------------------------------------------------------------

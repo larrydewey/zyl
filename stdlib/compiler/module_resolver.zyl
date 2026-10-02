@@ -587,12 +587,13 @@
 
 (defn mr-discover-forms (arena disc stack pkg module)
   (let forms (mr-parse-file arena (mr-module-file pkg module))
+    (let _ (mr-no-stray-caps pkg forms)
     (let uses (mr-collect-uses forms)
       (let defs (mr-collect-defs arena pkg module forms)
         (let id (mr-unit-id (mrp-name pkg) module)
           (let disc2 (mr-discover-deps arena (mr-with-pkgs disc arena pkg)
                                        (Cons id stack) pkg uses)
-            (mr-add-unit disc2 (MRUN (mrp-name pkg) module forms uses defs) id)))))))
+            (mr-add-unit disc2 (MRUN (mrp-name pkg) module forms uses defs) id))))))))
 
 (defn mr-add-unit (disc munit id)
   (match disc
@@ -902,6 +903,8 @@
       (let h (mr-ast-head f)
         (if (str-eq h "use")
           (mr-strip-module-forms feats rest)
+          (if (str-eq h "capabilities")
+          (mr-strip-module-forms feats rest)
           (if (str-eq h "module")
             (mr-strip-module-forms feats rest)
             (if (str-eq h "export")
@@ -910,7 +913,7 @@
                 (list-append (mr-unwrap-pub f) (mr-strip-module-forms feats rest))
                 (if (str-eq h "feature-gate")
                   (list-append (mr-unwrap-gate feats f) (mr-strip-module-forms feats rest))
-                  (Cons f (mr-strip-module-forms feats rest)))))))))))
+                  (Cons f (mr-strip-module-forms feats rest))))))))))))
 
 ;; `feature-gate` is valid at top level only (spec 31.10): one left inside a
 ;; form after the top-level ones were unwrapped is E_PKG_FEATURE_NESTED.
@@ -1176,16 +1179,29 @@
 ; package as far as §31.2 is concerned — it needs a name to key its
 ; symbols by — so it gets `local/main` at major 0, which no published
 ; package can collide with (a published name is scoped and registered).
-; A lone file compiled directly is still a package as far as §31.2 is
-; concerned — its symbols need a name to be keyed by — but it has
-; declared nothing, so nothing is enforced against it. It holds every
-; capability for that reason, not as a grant.
-(defn mr-root-pkg (arena srcdir)
+; Its capabilities are what its own top-level `(capabilities ...)` forms
+; declare, absent meaning none, enforced exactly as a manifest's (§31.9).
+(defn mr-root-pkg (arena srcdir main-forms)
   (if (mr-file-exists (str-concat srcdir "/zyl.pkg"))
-    (mr-manifest-pkg arena srcdir)
-    (MRP "local/main" 0 srcdir 0
-         (Cons "io" (Cons "ffi" (Cons "actor" (Cons "secret" (Cons "native" (Cons "unsafe" Nil))))))
-         Nil)))
+    (let pkg (mr-manifest-pkg arena srcdir)
+      (let _ (mr-no-stray-caps pkg main-forms)
+        pkg))
+    (MRP "local/main" 0 srcdir 0 (pk-lone-capabilities main-forms) Nil)))
+
+; A `(capabilities ...)` form counts only where the declaration lives: in
+; zyl.pkg for a package, in the compiled file itself for a lone file.
+(defn mr-no-stray-caps (pkg forms)
+  (match (pk-find-form forms "capabilities")
+    (None 1)
+    (Some f
+      (let caps (pk-ast-strs (pk-ast-args f))
+        (if (> (mrp-manifested pkg) 0)
+          (pk-fail-help f "E_MALFORMED_FORM"
+            (str-concat "`capabilities` is declared in zyl.pkg, not in a file of package " (mrp-name pkg))
+            (str-concat "Move `" (str-concat (pk-caps-form-text caps) "` into zyl.pkg.")))
+          (pk-fail-help f "E_MALFORMED_FORM"
+            "`capabilities` is declared by the file being compiled, not by a module it uses"
+            (str-concat "Write `" (str-concat (pk-caps-form-text caps) "` at the top of the file you compile."))))))))
 
 (defn mr-manifest-pkg (arena srcdir)
   (let m (pk-read-manifest arena (str-concat srcdir "/zyl.pkg"))
@@ -1242,7 +1258,7 @@
 ; Resolve `main-forms` (raw Ast, as parsed from `srcpath`) into one
 ; spliced, fully qualified expression list in dependency-first order.
 (defn mr-resolve-program (arena main-forms srcpath)
-  (let pkg (mr-root-pkg arena (mr-dirname srcpath))
+  (let pkg (mr-root-pkg arena (mr-dirname srcpath) main-forms)
     (let module (mr-basename-module srcpath)
       (let uses (mr-collect-uses main-forms)
         (let defs (mr-collect-defs arena pkg module main-forms)
@@ -1268,13 +1284,23 @@
 (defn mrr-grants (r) (match r (MRR _ g _ g)))
 (defn mrr-denied (r) (match r (MRR _ _ d d)))
 
-(defn mr-grants-of (pkgs)
+(defn mr-grants-of (pkgs kind)
   (match pkgs
     (Nil Nil)
-    (Cons p t (Cons (CG (mrp-name p) (mrp-caps p) (mrp-manifested p)) (mr-grants-of t)))))
+    (Cons p t (Cons (CG (mrp-name p) (mrp-caps p) (mr-enforced-of p kind)) (mr-grants-of t kind)))))
 
 ; `main` stays unqualified (mr-reserved-name), so the root package's grant is also filed under "<main>".
-(defn mr-main-grant (p) (CG (str-concat "<main>" (mrp-name p)) (mrp-caps p) (mrp-manifested p)))
+(defn mr-main-grant (p kind) (CG (str-concat "<main>" (mrp-name p)) (mrp-caps p) (mr-enforced-of p kind)))
+
+; Where a package's declaration lives (CapGrant): the stdlib and the
+; runtime provide the capabilities and are not policed; a manifest is 1;
+; the root without one is `kind`, 2 for a lone file or 3 for a REPL session.
+(defn mr-enforced-of (p kind)
+  (if (str-eq (mrp-name p) (mr-stdlib-name)) 0
+  (if (rt-mode-p) 0
+  (if (> (mrp-manifested p) 0) 1 kind))))
+
+(defn mr-root-kind (srcpath) (if (str-eq srcpath "<repl>") 3 2))
 
 (defn mr-denied-of (arena pkg)
   (let path (str-concat (mrp-root pkg) "/zyl.pkg")
@@ -1284,15 +1310,15 @@
 
 ; Same resolution, with the package facts the capability pass needs.
 (defn mr-resolve-program-full (arena main-forms srcpath)
-  (let pkg (mr-root-pkg arena (mr-dirname srcpath))
+  (let pkg (mr-root-pkg arena (mr-dirname srcpath) main-forms)
     (let module (mr-basename-module srcpath)
       (let uses (mr-collect-uses main-forms)
         (let defs (mr-collect-defs arena pkg module main-forms)
           (let root (MRUN (mrp-name pkg) module main-forms
                           (mr-root-uses main-forms uses) defs)
-            (mr-resolve-full arena pkg root (mr-root-uses main-forms uses))))))))
+            (mr-resolve-full arena pkg root (mr-root-uses main-forms uses) (mr-root-kind srcpath))))))))
 
-(defn mr-resolve-full (arena pkg root uses)
+(defn mr-resolve-full (arena pkg root uses kind)
   (let _ (ffi-call "zyl_wvec_truncate" mr-use-store 0 1000)
   (let disc0 (MRD Nil Nil (Cons pkg (Cons (mr-stdlib-pkg) Nil)))
     (let id (mr-unit-id (mrp-name pkg) (mru2-module root))
@@ -1301,7 +1327,7 @@
         (let disc (mr-add-unit disc1 root id)
           (let units (list-reverse (mrd-units disc))
             (MRR (convert-program (mr-impl-not (list-reverse (mr-qualify-units arena disc units (mrd-pkgs disc) units Nil))))
-                 (Cons (mr-main-grant pkg) (mr-grants-of (mrd-pkgs disc)))
+                 (Cons (mr-main-grant pkg kind) (mr-grants-of (mrd-pkgs disc) kind))
                  (mr-denied-of arena pkg)))))))))
 
 (defn mr-resolve-root (arena pkg root uses)

@@ -1,4 +1,5 @@
 ; A file descriptor is released by file-close. Using it afterwards is a
+(capabilities io)
 ; use-after-free: the OS recycles the number, so the write lands in
 ; whatever file opened next. Spec G2, caught statically by the linearity
 ; pass (compiler/linearity.zyl).

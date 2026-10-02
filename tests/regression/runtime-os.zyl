@@ -1,5 +1,7 @@
 ; Edge cases of the runtime's OS entries (runtime/rt/os.zyl): files, mkdir -p, directory walks.
 
+(capabilities io)
+
 (defn root () "/tmp/zyl_rt_os_test")
 
 (defn put (path text)

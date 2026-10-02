@@ -242,7 +242,10 @@ constructor names (`E_DUPLICATE_VARIANT`).
 
 A match must be exhaustive: every variant needs an arm, or the match
 needs a `_` catch-all. A missing variant is the compile-time error
-`E_NON_EXHAUSTIVE_MATCH`. Patterns do not nest: a constructor's fields
+`E_NON_EXHAUSTIVE_MATCH`. A catch-all is lowercase: an arm head spelled
+like a constructor that no type declares is `E_UNKNOWN_CONSTRUCTOR`, with
+the nearest constructor suggested, so `(Nnoe 0)` cannot stand in for
+`(None 0)`. Patterns do not nest: a constructor's fields
 are bound to names (`E_NESTED_PATTERN` otherwise).
 
 `match` also takes literal patterns. A literal match must end with a

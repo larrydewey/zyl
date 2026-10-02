@@ -161,10 +161,17 @@ python3 verify/crypto.py                                    # vs hashlib + pyca
   `Secret` trait, as `<secret>` (book chapter 33.6), but `print` of a
   secret-tainted value itself is rejected (`E_SECRET_DEBUG`) rather than
   redacted.
-- `Secret` annotations beyond `math/secret/secret` itself. Taint crosses
-  a call boundary only where the callee's own parameters are annotated,
-  so the AEAD, KDF, signature and bignum entry points are not yet under
-  the checker — annotating them is the next step in the plan.
+- `Secret` annotations on the AEAD, KDF and signature entry points. Taint
+  now fails closed across a call (`E_SECRET_UNANNOTATED`: a tainted
+  argument must meet a `Secret` parameter), and the library's own flows
+  are annotated where they are genuine: the mask parameters of
+  `bn-cond-copy`, `mont-cswap-limb`, `ed-pt-cond-copy` and
+  `ec-pt-cond-copy`, which receive `ct-mask` results. But nothing seeds
+  taint at the public entry points (a key passed to `aead-poly-key`
+  is a plain `Words`), so the checker polices those bodies only from the
+  masks inward. Calls through function values and trait methods are not
+  checked across. The annotated helpers now wipe their frames, which
+  takes them off the register-allocating backend.
 - BLAKE3's SIMD backend (the portable compression function is used).
 - ctgrind/valgrind instrumentation; `verify/timing.py` is the
   statistical substitute.

@@ -1,0 +1,4 @@
+; expect-error: E_PKG_CAPABILITY_VIOLATION
+; Declared io only; the fix names the whole line to write, (capabilities io actor).
+(capabilities io)
+(defn main () (let _ (spawn (fn () 1)) 0))

@@ -322,7 +322,9 @@ ResultValue:
     match           scrutinee : T ā; an arm (C x1..xn body) binds xi at
                     C's i-th field type; every body : τ  ⊢  match : τ.
                     Patterns are flat (E_NESTED_PATTERN); exhaustiveness
-                    is §12.
+                    is §12. A lowercase arm head that is no constructor
+                    binds the scrutinee (a catch-all); a capitalized one
+                    no type declares is E_UNKNOWN_CONSTRUCTOR.
     struct-get      p : S ā, f a field of S  ⊢  (struct-get p "f") : its type.
                     When p's type is not otherwise determined, the one
                     struct with a field f is taken; if several have one,
@@ -1253,6 +1255,8 @@ Errors:
     E_INVALID_ESCAPE            — invalid escape sequence in a string literal
     E_INDEX_OUT_OF_BOUNDS       — index outside a word array
     E_NESTED_PATTERN            — nested pattern in a constructor arm
+    E_UNKNOWN_CONSTRUCTOR       — a match arm head spelled like a constructor (A-Z first)
+                                  that no type declares; a binder is lowercase
     E_REGION_EXHAUSTED          — with-region region exceeded its size or limit
     E_MACRO_NON_TERMINATION     — macro expansion loop
     E_MATCH_NONEXHAUSTIVE       — missing match case (Compile Error)
@@ -1576,10 +1580,19 @@ resolutions only (E_PKG_YANKED), never an existing lock.
 
 31.9 CAPABILITIES
 --------------------------------------------------------------------------------
-A package declares the capabilities it may use. Absent means none.
+A program declares the capabilities it may use. Absent means none.
 
     (capabilities io)     ; may do IO; may not use FFI or spawn actors
     (capabilities)        ; pure computation only
+
+A package declares them in its manifest. A lone file compiled directly,
+which has no manifest, declares them with the same form among its own
+top-level forms, and a REPL session by entering the form; absent means
+none in every case, and the declaration is enforced exactly as a
+manifest's. The form is honoured only where the declaration lives: in a
+file of a manifested package, or in a module a lone file uses, it is
+E_MALFORMED_FORM, with the fix pointing at zyl.pkg or at the compiled
+file.
 
     io      core/io and everything under stdlib/io
     ffi     ffi-call, ffi-pin, Pin-region allocation
@@ -1592,7 +1605,11 @@ Enforcement runs after module resolution and before type inference. The
 resolver tags every top-level form with its owning package; the pass rejects
 a capability-bearing construct, or a `use` of a capability-bearing stdlib
 module, from a package lacking the grant. Violations are
-E_PKG_CAPABILITY_VIOLATION.
+E_PKG_CAPABILITY_VIOLATION, reported at the construct and naming the line
+that grants it. Only the providers are not policed: the implicit standard
+library (§25) and the runtime module. An `ffi-call` of a `zyl_*` runtime
+entry is the language's own, not a foreign call, and needs no `ffi`
+grant; the raw entries a program may not reach are E_FFI_RESTRICTED.
 
 A declared set is a ceiling on the declaring package. It is not re-granted
 per edge. The effective transitive closure is computed and written to the

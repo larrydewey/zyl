@@ -253,7 +253,7 @@
       0)))
 
 ; Returns: Int
-(defn mont-cswap-limb ((a Words) (b Words) (i Int) (mask Int))
+(defn mont-cswap-limb ((a Words) (b Words) (i Int) (mask (Secret Int)))
   (let d (bit-and mask (bit-xor (w-get a i) (w-get b i)))
     (begin
       (w-set a i (bit-xor (w-get a i) d))

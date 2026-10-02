@@ -1,0 +1,7 @@
+; expect-error: E_UNKNOWN_CONSTRUCTOR
+; `Nnoe` is no constructor; before this check it was a catch-all binder.
+(defn bump (o)
+  (match o
+    (Some x (+ x 1))
+    (Nnoe 0)))
+(defn main () (begin (print (bump (Some 1))) 0))

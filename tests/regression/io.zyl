@@ -1,6 +1,9 @@
 ; I/O Regression Tests — read-line, file-open/read/write/close
 
 ; File operations
+
+(capabilities io)
+
 (test "file-open"
   (let fd (file-open "/tmp/zyl_regression_test.txt" "w")
     (begin
