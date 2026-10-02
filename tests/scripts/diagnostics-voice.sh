@@ -62,4 +62,15 @@ printf '(defn main () (begin (print (+ 1 "a")) 0))\n' > "$work/one.zyl"
 one=$(cd "$work" && "$ZYL" one.zyl -o o 2>&1)
 printf '%s\n' "$one" | grep -q "errors; fix the first" && { echo "FAIL: a count line after one error: $one"; exit 1; }
 printf '%s\n' "$one" | grep -q "PANIC" && { echo "FAIL: PANIC after a type error: $one"; exit 1; }
+# A standard-library module's warnings are not the user's; ZYL_WARN_ALL=1 shows them.
+printf '(use compiler/provenance)\n(defn main () 0)\n' > "$work/w.zyl"
+n=$(cd "$work" && "$ZYL" w.zyl -o w 2>&1 | grep -c '^warning')
+[ "$n" -eq 0 ] || { echo "FAIL: $n stdlib warnings shown"; exit 1; }
+n=$(cd "$work" && ZYL_WARN_ALL=1 "$ZYL" w.zyl -o w 2>&1 | grep -c '^warning')
+[ "$n" -gt 0 ] || { echo "FAIL: ZYL_WARN_ALL=1 shows no stdlib warning"; exit 1; }
+# Output printed before a panic comes before the PANIC line, even through a pipe.
+printf '(defn main () (begin (print "before") (panic "boom") 0))\n' > "$work/pf.zyl"
+(cd "$work" && "$ZYL" pf.zyl -o pf) || { echo "FAIL: pf did not build"; exit 1; }
+order=$("$work/pf" 2>&1 | tr '\n' '|')
+[ "$order" = "before|PANIC: boom|" ] || { echo "FAIL: output order: $order"; exit 1; }
 echo "diagnostics voice: probe output pinned"
