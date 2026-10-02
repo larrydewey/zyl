@@ -254,6 +254,12 @@
 ; scope, the Zyl spelling of another Lisp's name, the stdlib module that
 ; defines it, and last how to define it.
 (defn ta-unbound-help (st env n)
+  (let h (ta-unbound-help-1 st env n)
+    (if (= (ffi-call "zyl_ref_get" ta-list-head 1000) 0)
+      h
+      (str-concat h "; `((params) body)` is not a function: write `(fn (params) body)`"))))
+
+(defn ta-unbound-help-1 (st env n)
   (let dym (err-suggest-help n (ta-visible-names st env) "")
     (if (> (str-length dym) 0)
       dym
@@ -276,10 +282,7 @@
   (str-concat "`" (str-concat short (str-concat "` is defined in `" (str-concat m (str-concat "`: add `(use " (str-concat m ")`")))))))
 
 (defn ta-define-help (short)
-  (let base (str-concat "define it with `(defn " (str-concat short " (...) ...)`, or bind it with `let`"))
-    (if (= (ffi-call "zyl_ref_get" ta-list-head 1000) 0)
-      base
-      (str-concat base "; `((params) body)` is not a function: write `(fn (params) body)`"))))
+  (str-concat "define it with `(defn " (str-concat short " (...) ...)`, or bind it with `let`")))
 
 ; Every name a did-you-mean may offer: locals, definitions (the program's
 ; and its imports'), constructors, and the built-in forms.

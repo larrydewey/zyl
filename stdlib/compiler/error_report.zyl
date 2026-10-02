@@ -412,7 +412,7 @@
       (_ (str-concat "did you mean " (str-concat (err-join-ticks xs) "?"))))))
 
 ; Up to three names close to `name` (docs/diagnostics.md): within edit
-; distance 2 (1 for a name under three letters), or the same letters apart
+; distance 2 (1 under three letters, none for one letter), or the same letters apart
 ; from hyphens and case. Nearest first, then alphabetical; never `name` itself.
 (defn err-suggest-list (name cands)
   (let short (err-name name)
@@ -455,8 +455,10 @@
       -1
       (if (str-eq (err-fold a) (err-fold b))
         0
-        (let d (err-edit-distance a b)
-          (if (<= d (if (< (str-length a) 3) 1 2)) d -1))))))
+        (if (or (< (str-length a) 2) (< (str-length b) 2))
+          -1
+          (let d (err-edit-distance a b)
+            (if (<= d (if (< (str-length a) 3) 1 2)) d -1)))))))
 
 ; `s` lower-cased with its hyphens and underscores removed.
 (defn err-fold (s)
