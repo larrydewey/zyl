@@ -300,6 +300,16 @@ compile with `build/boot/zyl-self` on 2026-09-28.
   the unwind without the guard. The guard is never observable.
 - An allocation failure is `E_OUT_OF_MEMORY`; the budget is
   `ZYL_MAX_MEMORY`, else 80% of available memory.
+- An uncaught panic prints a backtrace under its `PANIC:` line: the rbp
+  chain, each return address named through the `zyl_syms` table codegen
+  writes into every program, innermost first, 32 names at most, in both
+  link modes (an actor's panic is re-raised at `actor-wait`, so it shows
+  the joiner's frames); stdout is flushed first; nothing on a caught path, in JSON
+  mode, or under a rendered `error[...]` diagnostic. Runtime frames,
+  tail calls and inlined calls are not frames and are not listed; a
+  push-only MIR function that calls now keeps rbp (fib +3%). The table
+  is 113 KB (3.1%) of `zyl-self`. No source
+  lines (`docs/runtime-in-zyl-design.md`, "Panic backtrace").
 
 ### Concurrency (`docs/concurrency-determinism-design.md`)
 
@@ -459,7 +469,12 @@ REPL and language server:
    (function offset, frame size) pairs, found by magic like the trailer)
    and the runtime's census recorded at `rt-cache` time, so `zyl verify`
    can re-derive the census it now only repeats as attested. Touches
-   `codegen.zyl`, `asm_x86.zyl`, `elf_link.zyl`; one reseed.
+   `codegen.zyl`, `asm_x86.zyl`, `elf_link.zyl`; one reseed. The
+   `zyl_syms` table (a `.long sym - .` pair per function, found by a
+   weak symbol) is the shape to copy.
+8. **Backtrace source lines**: a per-call-site table (a label after
+   each `call`, its offset and the ICNF node's span) looked up like
+   `zyl_syms`; about 110k entries for the compiler. Not started.
 
 Decisions already taken (do not reopen): inline assembly is rejected in
 favour of the deterministic intrinsics (`bit-popcount` and friends, spec

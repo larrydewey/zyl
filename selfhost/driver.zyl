@@ -771,9 +771,9 @@
   (if (str-eq cmd "repl")
     ; `cwd` is the user's directory, captured before the chdir to the
     ; bundle: a saved session belongs to the project, not the compiler.
-    (repl-run-in arena cwd)
+    (let _ (ffi-call "zyl_backtrace_set" false 1000) (repl-run-in arena cwd))
   (if (str-eq cmd "eval")
-    (drv-eval arena cwd)
+    (let _ (ffi-call "zyl_backtrace_set" false 1000) (drv-eval arena cwd))
   (if (str-eq cmd "doc")
     (drv-doc arena cwd)
   (if (str-eq cmd "rt-cache")

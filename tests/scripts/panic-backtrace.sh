@@ -39,6 +39,11 @@ want='PANIC: E_INDEX_OUT_OF_BOUNDS: vec-get index outside the Vec
   in main'
 [ "$(cat "$ERR")" = "$want" ] || fail "nested: stderr: $(cat "$ERR")"
 
+# `zyl eval` interprets in the compiler binary: its frames are the interpreter's, so it prints none.
+set +e; "$ZYL" eval "$SCRATCH/nested.zyl" >/dev/null 2>"$SCRATCH/eval.err"; set -e
+grep -q '^PANIC: E_INDEX_OUT_OF_BOUNDS' "$SCRATCH/eval.err" || fail "eval: no PANIC line"
+[ "$(ins "$SCRATCH/eval.err")" = 0 ] || fail "eval: interpreter frames: $(grep '^  in ' "$SCRATCH/eval.err" | head -3)"
+
 # The same binary twice: the table is part of the image and must not vary.
 "$ZYL" "$SCRATCH/nested.zyl" -o "$SCRATCH/nested2" >/dev/null 2>&1 || fail "compile nested2"
 cmp -s "$SCRATCH/nested" "$SCRATCH/nested2" || fail "two compiles differ"

@@ -123,9 +123,11 @@ sends every function through the stack machine.
     value crosses a call only when live after it; a value read once
     right after its definition lives in rax; pure definitions nothing
     reads are dropped; two-address coalescing;
-  - frames: frameless functions (no pushes or pops without spills,
-    blocks, regions or C calls); loop heads aligned to 16, padding only
-    unreached ones;
+  - frames: push-only functions (no spills, blocks, regions or C
+    calls), frameless when they are leaves and otherwise with rbp pushed
+    too, so every caller is on the chain a panic's backtrace walks
+    (`docs/runtime-in-zyl-design.md`); loop heads aligned to 16, padding
+    only unreached ones;
   - control: `(if c t f)` with cheap `c` and `t` sets `t` first and
     skips `f` (one branch, no jump); `(or a b)` and `(not c)` as
     branches; loop rotation; accumulator tails spread `acc op=` over the

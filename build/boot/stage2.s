@@ -788714,6 +788714,8 @@ zy_local_x2Fmain_0__driver__drv_x2Dsubcommand:
     call zyl_cstr_eq
     cmp rax, 0
     je .L20557_12
+    mov rdi, 0
+    call zyl_backtrace_set
     mov rdi, rbx
     mov rsi, r13
     mov r11, [rbp-16]
@@ -788733,6 +788735,8 @@ zy_local_x2Fmain_0__driver__drv_x2Dsubcommand:
     call zyl_cstr_eq
     cmp rax, 0
     je .L20557_13
+    mov rdi, 0
+    call zyl_backtrace_set
     mov rdi, rbx
     mov rsi, r13
     mov r11, [rbp-16]
