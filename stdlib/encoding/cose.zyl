@@ -226,7 +226,7 @@
 ; Byte `v` at `off`.
 (defn cose-at ((b ByteBuf) off (v Int)) (= (load-u8 :le b off) v))
 
-; The first `n` bytes of `b` equal the first `n` of `xs`.
+; The `xs` bytes at `off` in `b`, in order.
 (defn cose-bytes-eq ((b ByteBuf) off xs)
   (match xs
     (Nil true)
@@ -248,6 +248,14 @@
     (Cons 88 (Cons 32 Nil)))))))))))))
 
 ; The payload length the head at `off` declares, and the head's width.
+;
+; The four forms canonical CBOR has for a length under 2^32: in the head, one
+; byte, two bytes, four bytes. The four-byte form is here because the encoder
+; emits it and a reader that stopped at two could not check a blob this module
+; had signed -- it would report a valid signature over a large payload as
+; malformed. Anything wider is rejected rather than guessed at, and the
+; eight-byte form cannot arise here because a payload that large is not a
+; payload this module produces.
 (deftype PLen (PLen Int Int))
 
 (defn cose-read-plen ((b ByteBuf) off len)
@@ -261,7 +269,31 @@
             (if (>= (+ off 2) len)
               (PLen (- 1) 0)
               (PLen (+ (* 256 (load-u8 :le b (+ off 1))) (load-u8 :le b (+ off 2))) 3))
-            (PLen (- 1) 0)))))))
+            (if (= arg 26)
+              (if (>= (+ off 4) len)
+                (PLen (- 1) 0)
+                (PLen (cose-rd32 b (+ off 1)) 5))
+              (PLen (- 1) 0))))))))
+
+; Four bytes at `off`, most significant first. CBOR lengths are big-endian, which
+; is why this is four shifts rather than the shift-and-add of the trailer's own
+; little-endian fields.
+(defn cose-rd32 ((b ByteBuf) off)
+  (+ (* 16777216 (load-u8 :le b off))
+    (+ (* 65536 (load-u8 :le b (+ off 1)))
+      (+ (* 256 (load-u8 :le b (+ off 2))) (load-u8 :le b (+ off 3))))))
+
+; The shortest blob this module can emit: the 44 fixed bytes, a one-byte
+; payload head, no payload, and the signature with its two-byte head.
+;
+; A CONSTANT THAT WAS WRONG. The guard was 117, and every blob of 117 bytes or
+; more was rejected before any cryptography ran -- which is every payload of six
+; bytes or more. The tests did not notice because every payload they signed was
+; four bytes or none. It is derived here rather than written down again, because
+; a number that must agree with a layout has no business being a literal in a
+; different place from the layout, and the comparison is `<=` because a blob
+; with an empty payload IS exactly this long.
+(def cose-min-len (+ cose-tail-off 1 2 64))
 
 ; 1 when the COSE_Sign1 in `b` is signed by the key `pubhex`.
 ;
@@ -270,22 +302,35 @@
 ; a reader would look up the wrong key for, so it is rejected even though the
 ; signature itself is sound. That is the difference between checking an
 ; attestation and checking that it is internally consistent.
+;
+; THE OFFSET IS A PARAMETER, AND IT WAS A CONSTANT ZERO. Every offset in this
+; function was absolute from the start of `b`, which is right for a blob that is
+; the whole buffer and wrong for the only blob this tree actually verifies in
+; anger: the one at the end of a binary, after a 20-byte header, in a file of
+; several hundred kilobytes. It reported such a trailer as unsigned -- no, worse,
+; it read the header as the array head and failed the shape check, so a signed
+; binary verified as unsigned. The three-argument form is kept because a
+; standalone blob is what most callers have, and forcing them all to pass a zero
+; is a way of getting this wrong again.
 (defn cose-verify ((b ByteBuf) clen pubhex)
+  (cose-verify-at b 0 clen pubhex))
+
+(defn cose-verify-at ((b ByteBuf) (base Int) clen pubhex)
   (if
 
-    (< clen 117)
+    (>= clen cose-min-len)
 
     (let kid (w-from-hex pubhex)
 
       (if
 
-        (cose-bytes-eq b 0 cose-fixed)
+        (cose-bytes-eq b base cose-fixed)
 
         (if
 
-          (cose-kid-eq b kid 0)
+          (cose-kid-eq b (+ base cose-kid-off) kid 0)
 
-          (let hd (cose-read-plen b cose-tail-off clen)
+          (let hd (cose-read-plen b (+ base cose-tail-off) (+ base clen))
 
             (let plen (match hd (PLen alen _ alen))
 
@@ -295,19 +340,19 @@
 
                   (>= plen 0)
 
-                  (let poff (+ cose-tail-off ahn)
+                  (let poff (+ (+ base cose-tail-off) ahn)
 
                     (let soff (+ poff plen)
 
                       (if
 
-                        (= clen (+ soff 66))
+                        (= (+ base clen) (+ soff 66))
 
                         (if
 
                           (= (+ (* 256 (load-u8 :le b soff)) (load-u8 :le b (+ soff 1))) 22592)
 
-                          (let ss (cose-sig-structure b 2 b poff plen)
+                          (let ss (cose-sig-structure b (+ base 2) b poff plen)
 
                             (let ssn (match ss (CB b2 un un))
 
@@ -323,10 +368,10 @@
         (cose-fail)))
     (cose-fail)))
 
-; The 32 kid bytes equal the 32 words of `kid`.
-(defn cose-kid-eq ((b ByteBuf) kid (i Int))
+; The 32 kid bytes starting at `at` equal the 32 words of `kid`.
+(defn cose-kid-eq ((b ByteBuf) at kid (i Int))
   (if (>= i 32)
     true
-    (if (= (load-u8 :le b (+ cose-kid-off i)) (w-get kid i))
-      (cose-kid-eq b kid (+ i 1))
+    (if (= (load-u8 :le b (+ at i)) (w-get kid i))
+      (cose-kid-eq b at kid (+ i 1))
       false)))

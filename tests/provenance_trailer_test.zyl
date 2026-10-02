@@ -1,0 +1,258 @@
+(use core/list)
+(use encoding/cbor)
+(use encoding/cose)
+(use math/words)
+(use math/crypto/asymmetric/ed25519)
+(use compiler/provenance)
+
+; The trailer: 20 bytes of header, then a COSE_Sign1 over the record.
+;
+; The bytes of the whole thing are cross-checked against an independent reader
+; in tests/scripts/provenance-trailer.sh, because a self-consistent test proves
+; only that this code agrees with itself -- and the trailer is a format another
+; tool has to find by magic and parse by arithmetic, so "agrees with itself" is
+; the one property it cannot be checked on.
+;
+; The tests are written flat, with one helper per step, rather than as deeply
+; nested lets. Nesting six deep and closing it by hand is how a paren goes
+; missing, and a missing paren in a test file reads as a balance error in a
+; module that is fine.
+
+; RFC 8032 test vector 1, the same key tests/cose_test.zyl signs with.
+(def t-seed "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60")
+(def t-pub "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a")
+(def t-other "1111111111111111111111111111111111111111111111111111111111111111")
+
+(def h1 "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
+(def h2 "1f1e1d1c1b1a191817161514131211100f0e0d0c0b0a09080706050403020100")
+(def h3 "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f")
+(def h4 "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f")
+(def h5 "606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f")
+
+(def t-path "/tmp/zyl-prov-trailer-test.bin")
+
+; ---------------------------------------------------------------------------
+; Helpers
+; ---------------------------------------------------------------------------
+
+(def digits "0123456789abcdef")
+
+(defn byte-hex (v)
+  (str-concat (str-substring digits (/ v 16) 1) (str-substring digits (bit-and v 15) 1)))
+
+(defn t-hex ((b ByteBuf) (n Int) (i Int) (acc String))
+  (if (>= i n)
+    acc
+    (t-hex b n (+ i 1) (str-concat acc (byte-hex (load-u8 :le b i))))))
+
+; Read a whole file as a ByteBuf.
+(defn t-read (path) (prov-read-file path))
+
+(defn t-len (path) (bytebuf-len (t-read path)))
+
+; The first n bytes of a file as hex, so "the image did not change" is a
+; comparison of bytes rather than of a length.
+
+
+; A file of n bytes, byte i being (i*7+3) mod 251: not text, no magic in it by
+; accident, and not a buffer of zeros.
+(defn t-make-image (path (n Int))
+  (let b (cbor-buf n)
+    (begin
+      (for (i 0) (< i n)
+        (begin (store-u8 :le b i (bit-and (+ (* i 7) 3) 251)) (set! i (+ i 1))))
+      (prov-write-file path b n))))
+
+; BLAKE3 over the first n bytes of a file, as bare hex.
+(defn t-hash (path (n Int)) (prov-hash-file path n))
+
+; The first n bytes of a file, compared by HASH rather than by hex text: a 4 KiB
+; prefix as hex is 8 KiB built by 4096 str-concats, which is quadratic and took
+; this test past two minutes. The hash asks the same question of the same bytes.
+(defn t-prefix (path (n Int)) (t-hash path n))
+
+; A fresh image of n bytes with a trailer already on it. The file the rest of
+; the tests read is always one of these.
+(defn t-signed (n)
+  (begin
+    (t-make-image t-path n)
+    (let ih (t-hash t-path n)
+      (begin (prov-attach t-path h1 h2 h3 h4 h5 ih t-seed) n))))
+
+; The offset of the trailer in the file at `path`, or -1.
+(defn t-at (path) (prov-find (t-read path) (t-len path)))
+
+; Does the trailer verify under this public key?
+;
+; The blob starts AFTER the 20-byte header, which is the thing a caller gets
+; wrong: cose-verify reads offset 0 as the array head, so handing it the magic
+; compares the signature against the header and fails for a reason that has
+; nothing to do with the key. prov-cose-at is where that offset lives.
+(defn t-verifies (key)
+  (let at (t-at t-path)
+    (let c (prov-cose-at (t-read t-path) at)
+      (cose-verify-at (t-read t-path) (match c (ProvCose off n off)) (match c (ProvCose off n n)) key))))
+
+; The public key of a seed, as hex.
+(defn t-pub-of (seed) (w-hex-bytes (ed25519-public-key (w-from-hex seed)) 32))
+
+; A trailer over an empty payload, as a buffer and its length.
+(defn t-blank-trailer ()
+  (let c (cose-sign t-seed (cbor-buf 8) 0)
+    (prov-trailer (match c (CoseOut b n b)) (match c (CoseOut _ n n)))))
+
+; ---------------------------------------------------------------------------
+; The header
+; ---------------------------------------------------------------------------
+
+; The header is 20 bytes and says so: magic, format, blob length.
+;
+; Checked field by field rather than as a whole, because a reader's first act is
+; to find the magic and its second is to trust the length. A trailer whose
+; length is wrong by one makes a reader read one byte of the next field, and the
+; failure then looks like a corrupt signature rather than a wrong length.
+(test "the-trailer-carries-magic-format-and-length"
+  (let t (t-blank-trailer)
+    (let b (match t (ProvOut b n b))
+      (begin
+        (assert-true (prov-magic-at b 0))
+        (assert-equal (prov-load32 b 8) prov-format)
+        (assert-equal (prov-load64 b 12) (- (match t (ProvOut _ n n)) prov-header-len))
+        (assert-equal prov-header-len 20)))))
+
+; The magic's eighth byte is a NUL and the other seven are not, which is what
+; makes "ZYLPROV\0" a magic rather than a prefix: an image holding the ASCII
+; "ZYLPROV" without the NUL does not match it.
+(test "the-magic-requires-its-nul"
+  (let t (t-blank-trailer)
+    (let b (match t (ProvOut b n b))
+      (begin
+        (assert-equal (load-u8 :le b 7) 0)
+        (assert-true (not (prov-magic-at b 1)))
+        (assert-true (not (prov-magic-at b 2)))))))
+
+; ---------------------------------------------------------------------------
+; Attaching
+; ---------------------------------------------------------------------------
+
+; The image is untouched and the trailer is on the end of it.
+;
+; This is what the whole hashing rule rests on. A reader locates the trailer by
+; its magic, hashes [0, T-16), and must arrive at `binary-hash`; if attaching
+; perturbed the image, every reader would fail for a reason that has nothing to
+; do with the signature.
+(test "attaching-leaves-the-image-byte-for-byte"
+  (begin (t-make-image t-path 4096)
+    (let before (t-prefix t-path 4096)
+      (begin (t-signed 4096)
+        (begin
+          (assert-equal (t-prefix t-path 4096) before)
+          (assert-true (> (t-len t-path) 4096)))))))
+
+; The file grew by exactly the trailer, and the magic is at the old length, so a
+; reader can find the end of the image from the file length alone.
+(test "the-trailer-is-appended-and-nothing-else-changes"
+  (begin (t-make-image t-path 1000)
+    (let was (t-len t-path)
+      (begin (t-signed 1000)
+        (let b (t-read t-path)
+          (begin
+            (assert-equal (t-at t-path) was)
+            (assert-equal (bytebuf-len b) (+ was prov-header-len (prov-load64 b (+ was 12))))))))))
+
+; The hash a reader computes over [0, T-16) is the one the record carries.
+;
+; The point of excluding the trailer, stated as a test: the reader's arithmetic
+; and the builder's must agree about where the image ends, or the record
+; describes bytes nobody can find.
+(test "the-image-hash-a-reader-derives-is-the-one-in-the-record"
+  (begin (t-make-image t-path 3000)
+    (let ih (t-hash t-path 3000)
+      (begin
+        (prov-attach t-path h1 h2 h3 h4 h5 ih t-seed)
+        (assert-equal (t-hash t-path (t-at t-path)) ih)))))
+
+; ---------------------------------------------------------------------------
+; The attestation
+; ---------------------------------------------------------------------------
+
+; The signature over the trailer verifies with the key that signed it: locate,
+; hash, decode, verify, in one assertion.
+(test "the-attached-trailer-verifies"
+  (begin (t-signed 4096) (assert-true (t-verifies t-pub))))
+
+; A trailer does not verify under another key. Without this the test above
+; proves only that some key signed something.
+(test "a-trailer-does-not-verify-under-another-key"
+  (begin (t-signed 4096) (assert-true (not (t-verifies (t-pub-of t-other))))))
+
+; One byte changed in the image, and the signature no longer verifies. This is
+; what makes the trailer evidence rather than decoration: the record commits to
+; the bytes, so the bytes cannot be edited afterwards.
+(test "editing-the-image-invalidates-the-trailer"
+  (begin (t-signed 4096)
+    (let b (t-read t-path)
+      (begin
+        (store-u8 :le b 100 (bit-xor (load-u8 :le b 100) 255))
+        (assert-true (not (cose-verify b (bytebuf-len b) t-pub)))))))
+
+; Two builds of the same inputs produce the same trailer, byte for byte.
+;
+; The project's first non-negotiable is that the same source produces the same
+; binary, and a signature that varied between them would make an attestation
+; unreproducible: there would be no such thing as checking it twice.
+(test "the-same-inputs-produce-the-same-trailer"
+  (begin (t-signed 1500)
+    (let a (t-hash t-path (t-len t-path))
+      (begin (t-signed 1500)
+        (assert-equal (t-hash t-path (t-len t-path)) a)))))
+
+; A different image gives a different trailer, so a signature is over something
+; rather than over a template.
+(test "a-different-image-produces-a-different-trailer"
+  (begin (t-signed 1500)
+    (let a (t-hash t-path (t-len t-path))
+      (begin (t-signed 1501)
+        (assert-true (not (= (t-hash t-path (t-len t-path)) a)))))))
+
+; ---------------------------------------------------------------------------
+; Finding
+; ---------------------------------------------------------------------------
+
+; A trailer is found, and an image without one has none.
+(test "prov-find-locates-a-real-trailer-and-refuses-an-image-without-one"
+  (begin (t-make-image t-path 2048)
+    (let plain (t-at t-path)
+      (begin (t-signed 2048)
+        (begin
+          (assert-equal plain (- 1))
+          (assert-equal (t-at t-path) 2048))))))
+
+; The scan is a window, and that is deliberate. A magic inside the image is not
+; an attestation, and searching a whole file for eight bytes would eventually
+; find one inside a string constant and report an unsigned binary as signed.
+(test "prov-find-does-not-search-the-whole-image"
+  (begin (t-make-image t-path (+ prov-scan-window 4096))
+    (let b (t-read t-path)
+      (let w prov-scan-window
+        (begin
+          (store-u8 :le b w 90)
+          (store-u8 :le b (+ w 1) 89)
+          (store-u8 :le b (+ w 2) 76)
+          (store-u8 :le b (+ w 3) 80)
+          (store-u8 :le b (+ w 4) 82)
+          (store-u8 :le b (+ w 5) 79)
+          (store-u8 :le b (+ w 6) 86)
+          (begin
+            (assert-equal (prov-find b (bytebuf-len b)) (- 1))
+            (assert-equal prov-scan-window 1024)))))))
+
+; A file shorter than a header has no trailer. A reader that indexes at len-20 on
+; a short file reads before its buffer.
+(test "a-file-shorter-than-the-header-has-no-trailer"
+  (let b (cbor-buf 8)
+    (begin
+      (assert-equal (prov-find b 8) (- 1))
+      (assert-equal (prov-find b 0) (- 1)))))
+
+(run-tests)

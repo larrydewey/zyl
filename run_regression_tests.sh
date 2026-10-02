@@ -360,6 +360,18 @@ if [ "$MODE" = "full" ] || [ "$MODE" = "quick" ]; then
         fi
         TOTAL=$((TOTAL+1))
     fi
+    # The trailer: attach, find, read back. The Zyl test round-trips it inside
+    # this compiler; the script locates it by MAGIC with no help from Zyl and
+    # asks cbor2 and `cryptography` whether it is a format another tool reads.
+    if [ -z "$FILTER" ] || echo "provenance_trailer" | grep -qi -- "$FILTER"; then
+        run_test "provenance_trailer_test" "${TESTS_DIR}/provenance_trailer_test.zyl"
+        if bash "${TESTS_DIR}/scripts/provenance-trailer.sh" >"$RUN_TMP/prov_trailer_cross.log" 2>&1; then
+            PASS=$((PASS+1)); printf "  \033[0;32m\xe2\x9c\x93\033[0m provenance_trailer_cross\n"
+        else
+            FAIL=$((FAIL+1)); printf "  \033[0;31m\xe2\x9c\x97\033[0m provenance_trailer_cross\n"
+        fi
+        TOTAL=$((TOTAL+1))
+    fi
     # `zyl fmt`: indentation recovered exactly, --check never writing.
     if [ -z "$FILTER" ] || echo "fmt_test" | grep -qi -- "$FILTER"; then
         if bash "$TESTS_DIR/fmt_test.sh" >"$RUN_TMP/fmt_test.log" 2>&1; then

@@ -25,6 +25,7 @@
 ; verify differently. `prov-sorted-p` checks it rather than trusting a comment.
 ;
 (use encoding/cbor)
+(use encoding/cose)
 (use math/words)
 (use compiler/verify)
 
@@ -43,11 +44,11 @@
 ; The byte at `i`, or -1.
 (defn prov-byte-at ((s String) (i Int)) (ffi-call "zyl_cstr_byte_at" s i 1000))
 
-(defn prov-length (s) (ffi-call "zyl_cstr_len" s 1000))
+(defn prov-length ((s String)) (ffi-call "zyl_cstr_len" s 1000))
 
-(defn prov-sub (s start (n Int)) (ffi-call "zyl_cstr_substr" s start n 1000))
+(defn prov-sub ((s String) start (n Int)) (ffi-call "zyl_cstr_substr" s start n 1000))
 
-(defn prov-index-of (s c (i Int))
+(defn prov-index-of ((s String) c (i Int))
   (if (>= i (prov-length s))
     (- 1)
     (if (= (prov-byte-at s i) c) i (prov-index-of s c (+ i 1)))))
@@ -57,11 +58,11 @@
 ; record carries them as 32 raw bytes: a hash is not text, and hex-encoding
 ; one into the record would double its size and make a byte string
 ; indistinguishable from a string that happens to look like one.
-(defn prov-strip (h)
+(defn prov-strip ((h String))
   (let i (prov-index-of h 58 0)
     (if (< i 0) h (prov-sub h (+ i 1) (- (prov-length h) (+ i 1))))))
 
-(defn prov-bytes (hex)
+(defn prov-bytes ((hex String))
   (let p (cbor-buf 32)
     (let w (w-from-hex (prov-strip hex))
       (begin
@@ -149,7 +150,7 @@
 ; Nine keys. `binary-hash` is BLAKE3 over the image up to the trailer's own
 ; magic, so the caller passes it in: the record cannot hash the image it is
 ; about to be appended to.
-(defn prov-record (compiler-hex graph-hex icnf-hex asm-hex final-hex binary-hex)
+(defn prov-record ((compiler-hex String) (graph-hex String) (icnf-hex String) (asm-hex String) (final-hex String) (binary-hex String))
   (let b (cbor-buf 1024)
 
     (let o (cbor-map-head b 0 9)
@@ -275,3 +276,200 @@
               (* 256 (+ (bit-and (load-u8 :le b (+ off 6)) 255)
                 (* 256 (bit-and (load-u8 :le b (+ off 7)) 255)))))))))))))
 )))
+
+; ---------------------------------------------------------------------------
+; Whole files
+; ---------------------------------------------------------------------------
+;
+; Wrappers, and not optional ones. `zyl_bytebuf_read_file` and
+; `zyl_bytebuf_write_exec` are raw runtime entries that a program may not
+; name (E_FFI_RESTRICTED), so this is the only way a caller outside the
+; standard library can get at a binary's bytes at all -- and reading them is
+; what both attaching a trailer and verifying one are made of. The real code
+; lives here rather than at the call site for the same reason.
+
+(defn prov-read-file (path) (ffi-call "zyl_bytebuf_read_file" path 1000))
+
+(defn prov-write-file (path b (n Int)) (ffi-call "zyl_bytebuf_write_exec" path b n 1000))
+
+; BLAKE3 over the first `n` bytes of a whole file, as bare hex. n < 0 is the
+; whole file.
+;
+; The arena is made HERE and not passed in. zyl_bytebuf_blake3_hex needs one and
+; a caller outside the standard library cannot make one -- arena-create is a raw
+; entry -- so a parameter would mean every caller had to have an arena it cannot
+; obtain, which is the wrapper existing for nothing. It is a 64 KiB block, the
+; default, and it is destroyed on the way out: the hash is one line of text.
+(defn prov-hash-file (path (n Int))
+  (let a (arena-create 0)
+    (let h (ffi-call "zyl_bytebuf_blake3_hex" a (prov-read-file path) n 32 1000)
+      ; COPIED OUT BEFORE THE ARENA GOES. zyl_bytebuf_blake3_hex writes the hex
+      ; into the arena it is handed, and arena-destroy frees those blocks, so
+      ; returning `h` directly hands back a pointer into freed memory. Every
+      ; other read of it still worked and the crash was somewhere else
+      ; entirely: str-concat with an empty string copies through the heap
+      ; region, which is what makes the returned String outlive the arena.
+      (let out (str-concat h "")
+        (begin (arena-destroy a) out)))))
+
+; ---------------------------------------------------------------------------
+; Assembling a trailer
+; ---------------------------------------------------------------------------
+
+; Copy `n` bytes from `src` at `soff` into `dst` at `doff`. Returns doff+n.
+;
+; Byte at a time because there is no bulk copy between two ByteBufs in this
+; tree's vocabulary, and a trailer is a few kilobytes.
+(defn prov-put ((dst ByteBuf) doff (src ByteBuf) soff (n Int))
+  (begin
+    (for (i 0) (< i n)
+      (begin
+        (store-u8 :le dst (+ doff i) (load-u8 :le src (+ soff i)))
+        (set! i (+ i 1))))
+    (+ doff n)))
+
+
+; The trailer: the header, then the COSE blob, in one buffer.
+;
+; Assembled whole before it is written rather than written in two calls. The
+; header carries the blob's length, so a reader locates the blob by arithmetic
+; from the magic; a file whose header and blob arrived separately has no
+; arrangement in which a reader can tell a truncated write from a short file.
+(defn prov-trailer (cose cose-len)
+  (let b (cbor-buf (+ prov-header-len cose-len))
+    (let o (prov-put b 0 (prov-header cose-len) 0 prov-header-len)
+      (ProvOut b (prov-put b o cose 0 cose-len)))))
+
+
+; ---------------------------------------------------------------------------
+; Finding a trailer in a file that has one
+; ---------------------------------------------------------------------------
+
+; The offset of the trailer's magic in a file of `flen` bytes, or -1.
+;
+; Scanned BACKWARD from the end, and only over the last `prov-scan-window`
+; bytes. Two facts make this a bounded search rather than a scan of the file:
+; the trailer is appended last, so it is at the end; and a magic that occurs
+; inside the image is not a trailer, so the search starts where a trailer can
+; be and stops early. A binary whose last KiB holds no magic has no trailer --
+; searching the whole image for eight bytes would eventually find one inside a
+; string constant and call a signed binary unsigned, or worse, call an unsigned
+; one signed.
+(defn prov-find (b (flen Int))
+  (let lo (if (> flen prov-scan-window) (- flen prov-scan-window) 0)
+    (prov-find-from b (- flen prov-header-len) lo)))
+
+
+; The largest suffix searched for a trailer's magic, in bytes.
+;
+; A trailer is a 20-byte header plus a COSE blob over a record of a few
+; hundred bytes, so a kilobyte is three orders of magnitude more than one needs
+; and keeps the window from ever reaching into code.
+(def prov-scan-window 1024)
+
+
+(defn prov-find-from (b (hi Int) (lo Int))
+  (if (< hi lo)
+    (- 1)
+    (if (prov-magic-at b hi) hi (prov-find-from b (- hi 1) lo))))
+
+
+; The COSE blob at a trailer found at `at`, and its length.
+;
+; A PAIR, because the two are one fact: the blob begins prov-header-len bytes
+; after the magic, and a caller that recomputes one of them from the other has
+; an opportunity to be off by the header. Returning them together is what keeps
+; "the blob" and "the blob's length" from being two independently-typed Ints
+; that a caller has to keep in agreement.
+(deftype ProvCose (ProvCose Int Int))
+
+(defn prov-cose-at (b (at Int))
+  (ProvCose (+ at prov-header-len) (prov-load64 b (+ at 12))))
+
+
+; The bytes of a field the record carries as raw bytes, as lowercase hex.
+;
+; For comparing a field against a hash the build already holds as hex. Reading
+; them back as bytes and re-encoding would be a second encoding to be right
+; about; this is the encoder's own alphabet, so a mismatch means the bytes
+; differ rather than that two hex routines disagree.
+(defn prov-get-bytes ((b ByteBuf) (off Int) (n Int))
+  (prov-hex b off n ""))
+
+
+(def prov-digits "0123456789abcdef")
+
+(defn prov-hex ((b ByteBuf) off n (acc String))
+  (if (>= off n)
+    acc
+    (prov-hex b (+ off 1) n
+      (str-concat acc
+        (str-concat (str-substring prov-digits (/ (load-u8 :le b off) 16) 1)
+          (str-substring prov-digits (bit-and (load-u8 :le b off) 15) 1))))))
+
+
+; ---------------------------------------------------------------------------
+; Attaching
+; ---------------------------------------------------------------------------
+
+; Append a signed trailer to the image at `path`; 0 on success, -1 on failure.
+;
+; THE ORDER HERE IS THE WHOLE CONTRACT. `binary-hash` is BLAKE3 over
+; [0, T-16) -- the image without the trailer -- so the hash must be taken
+; before anything is appended and the append must be the last write to the
+; file. Hashing afterwards would commit to the image plus the trailer, and no
+; reader could get back to the bytes the record describes.
+;
+; The file is read, extended and rewritten rather than appended to, because the
+; only way this tree can write a byte that is not part of a String is a
+; ByteBuf, and file-write stops at a NUL -- which a trailer has two of, in the
+; magic and in nearly every CBOR head. Rewriting is also what makes the last
+; write the append: there is no window in which the file is the image plus a
+; partial trailer.
+;
+; The six hashes are the record's inputs in the order prov-record takes them.
+; `image-hex` is BLAKE3 of the image alone and is passed in rather than read
+; here, because the driver is the one that measured it and two readers of a
+; file being rewritten would be a race with themselves.
+(defn prov-attach (path compiler-hex graph-hex icnf-hex asm-hex final-hex
+                   image-hex seedhex)
+  (let img (prov-read-file path)
+    (if (= (bytebuf-len img) 0)
+      (prov-attach-failed path "cannot read the image")
+      (let rec (prov-record compiler-hex graph-hex icnf-hex asm-hex final-hex image-hex)
+        (let rb (match rec (ProvOut b n b))
+          (let rn (match rec (ProvOut _ n n))
+            (let cose (cose-sign seedhex rb rn)
+              (let cn (match cose (CoseOut _ n n))
+                (let tr (prov-trailer (match cose (CoseOut b n b)) cn)
+                  (let tn (match tr (ProvOut _ n n))
+                    (prov-write-image path img
+                      (match tr (ProvOut b n b)) tn)))))))))))
+
+
+; `img` followed by `n` bytes of `tr`, written back over `path`.
+;
+; `zyl_bytebuf_write_exec` unlinks and recreates, so a failure part way leaves
+; no file rather than a truncated one. The buffer is sized exactly: a trailer
+; is the only thing ever added, and a capacity that could hold more would be a
+; length that could be wrong.
+(defn prov-write-image (path img tr (n Int))
+  (let total (+ (bytebuf-len img) n)
+    (let out (cbor-buf total)
+      (let _ (bytebuf-append out (byteslice img 0 (bytebuf-len img)))
+        (let _ (bytebuf-append out (byteslice tr 0 n))
+          (begin
+            (if (= (prov-write-file path out total) 0)
+              unit
+              (prov-attach-failed path "cannot write the image and its trailer"))))))))
+
+
+; A failed attach is a build failure, not a warning.
+;
+; A binary whose provenance could not be attached is a binary that will be
+; taken for an unsigned one, because there is nothing in it to say otherwise.
+; Continuing would mean the caller had to notice, and the caller is a driver
+; with a return code to spend on something else.
+(defn prov-attach-failed (path why)
+  (ffi-call "zyl_panic"
+    (str-concat "E_PROV_ATTACH: " (str-concat why (str-concat " (" (str-concat path ")")))) 1000))
