@@ -186,7 +186,91 @@
             (if (and (not (rt-mode-p)) (> (list-length tail) (+ (ffi-max-args) 1)))
               (ffi-fail "E_ARITY_MISMATCH" "ffi-call passes more than 16 arguments"
                         "pass a pointer to a struct or buffer instead" site)
-              0)))))))
+              (ffi-check-arity (ffi-literal-str sym) tail site))))))))
+
+; How many arguments a declared signature takes: the tokens before "->".
+;
+; `zyl_wvec_new` is declared "-> (WVec v)", so it takes ONE argument, which is
+; the timeout. Calling it as (ffi-call "zyl_wvec_new" 0 1000) therefore passes
+; two, and nothing noticed: the extra 0 became a silent second argument and
+; the call returned a value derived from the wrong stack slot. The signature
+; table already held the answer; no check read it.
+(defn ffi-declared-arity (sig)
+  (let arrow (ffi-arrow-at sig 0 (str-length sig))
+    (if (< arrow 0) -1 (ffi-arg-count sig 0 arrow))))
+
+(defn ffi-arrow-at ((sig String) (i Int) (n Int))
+  (if (>= i n)
+    -1
+    (if (= (ffi-byte sig i) 45)
+      (if (>= (+ i 1) n) -1 (if (= (ffi-byte sig (+ i 1)) 62) i -1))
+      (ffi-arrow-at sig (+ i 1) n))))
+
+(defn ffi-byte ((s String) (i Int)) (ffi-call "zyl_view_byte" s 0 1099511627776 i 1000))
+
+(defn ffi-space-p (c) (or (= c 32) (= c 9)))
+
+; How many arguments the domain of a declared signature lists.
+;
+; Spaces do not all separate arguments. The type language writes `(Attr k v)`
+; and `(WVec v)` as ONE argument, so parenthesis depth decides: a space at
+; depth 0 ends an argument and the next character starts a new one, while a
+; space inside parentheses is part of a type. "Int Int" is two, "(Attr k v)" is
+; one, "String" is one, "" is zero.
+;
+; Two earlier versions of this counted characters and then every space, and
+; each rejected correct code in the tree before this check had compiled
+; anything -- "(Attr k v) -> Unit" read first as eight arguments and then as
+; three, so every correct zyl_attrh_clear in the compiler was an error.
+;
+; `prev` starts true so the first argument counts, and an opening parenthesis
+; always begins one: it cannot be inside a type that is itself an argument.
+; Count an argument only when the parenthesis opens one, not one nested in a
+; type that is already the argument.
+(defn ffi-bump (n depth) (if (= depth 0) (+ n 1) n))
+
+(defn ffi-arg-count ((sig String) (i Int) (end Int))
+  (ffi-arg-count-go sig i end 0 0 1))
+
+(defn ffi-arg-count-go ((sig String) (i Int) (end Int) (n Int) (depth Int) (prev Int))
+  (if (>= i end)
+    n
+    (let c (ffi-byte sig i)
+      (if (= c 40)
+        ; An opening parenthesis starts an argument only at depth 0. Inside a
+        ; type it is part of that type: (WVec (Ref a)) is one argument, and
+        ; counting the inner paren made it two.
+        (ffi-arg-count-go sig (+ i 1) end (ffi-bump n depth) (+ depth 1) 0)
+        (if (= c 41)
+          (ffi-arg-count-go sig (+ i 1) end n (- depth 1) 1)
+          (if (> depth 0)
+            (ffi-arg-count-go sig (+ i 1) end n depth 0)
+            (if (ffi-space-p c)
+              (ffi-arg-count-go sig (+ i 1) end n 0 1)
+              (if (> prev 0)
+                (ffi-arg-count-go sig (+ i 1) end (+ n 1) 0 0)
+                (ffi-arg-count-go sig (+ i 1) end n 0 0))))))))); Only for a symbol the table declares. An undeclared one -- a `%` intrinsic,
+; or a runtime entry added without a signature -- is left alone rather than
+; guessed at, because a wrong guess here would reject correct code.
+(defn ffi-check-arity (sym args site)
+  (let sig (ffi-sig-lookup sym ffi-sig-tab)
+    (if (= (str-length sig) 0)
+      0
+      (let want (ffi-declared-arity sig)
+        (if (< want 0)
+          0
+          ; One of `args` is the timeout, so the declared arity counts the
+          ; call's own arguments and the timeout is not among them.
+          (let got (- (list-length args) 1)
+            (if (= got want)
+              0
+              (ffi-fail "E_ARITY_MISMATCH"
+                (str-concat "`" (str-concat sym (str-concat "` is declared as `"
+                  (str-concat sig (str-concat "` and takes "
+                    (str-concat (ffi-call "zyl_int_text" want 1000)
+                      (str-concat " argument(s) before the timeout, but this call passes "
+                        (ffi-call "zyl_int_text" got 1000))))))))
+                "match the call to the declared signature" site))))))))
 
 ; The arena wrappers in allocator/allocator. They hand out and reclaim raw
 ; addresses, and a handle is copyable, so a program that could name one

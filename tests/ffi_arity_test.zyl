@@ -1,0 +1,61 @@
+; ffi-call arity, checked against the declared signature.
+;
+; These pin the rule that decides how many arguments a declared signature
+; lists, because getting that number wrong rejects correct code. The check was
+; wrong three times before it was right, and each time the tree it guarded was
+; full of errors that were not: "(Attr k v) -> Unit" counted first as eight
+; arguments and then as three, which made every correct zyl_attrh_clear and
+; zyl_attrh_get_or in the compiler an error.
+
+(use compiler/arity_check { ffi-declared-arity => decl-arity })
+(use compiler/arity_check { ffi-arg-count => arg-count })
+
+(defn arity-of (sig) (decl-arity sig))
+
+(defn args-in ((sig String) (a Int) (b Int)) (arg-count sig a b))
+
+(test "simple-domains"
+
+  (begin    (assert-equal (arity-of "String -> Int") 1)
+    (assert-equal (arity-of "-> Unit") 0)
+    (assert-equal (arity-of "Int Int Int -> Int") 3)
+  ))
+
+(test "a-type-with-spaces-is-one-argument"
+
+  (begin    ; (Attr k v) and (WVec v) are single arguments. Counting spaces rather than
+    ; arguments made these eight and three.
+    (assert-equal (arity-of "(Attr k v) -> Unit") 1)
+    (assert-equal (arity-of "(WVec v) v -> v") 2)
+    (assert-equal (arity-of "(Attr k v) k v -> v") 3)
+  ))
+
+(test "nested-types"
+
+  (begin    (assert-equal (arity-of "((WVec v) Int) -> v") 1)
+    (assert-equal (arity-of "(WVec (Ref a)) -> v") 1)
+  ))
+
+(test "the-scanner-counts-a-domain-on-its-own"
+
+  (begin    (assert-equal (args-in "Int Int Int" 0 11) 3)
+    (assert-equal (args-in "(Attr k v) k v" 0 14) 3)
+    (assert-equal (args-in "" 0 0) 0)
+  ))
+
+(test "a-declaration-with-no-arrow-has-no-domain"
+
+  (begin    ; The check skips these rather than guessing: a wrong guess would reject
+    ; correct code, which is worse than not checking.
+    (assert-equal (arity-of "not a signature") -1)
+  ))
+
+(test "a-one-argument-declaration-is-the-timeout-alone"
+
+  (begin    ; zyl_wvec_new is declared "-> (WVec v)". Passing an extra 0 compiled
+    ; silently and returned a value derived from the wrong stack slot, which is
+    ; what this check exists to catch.
+    (assert-equal (arity-of "-> (WVec v)") 0)
+  ))
+
+(run-tests)
