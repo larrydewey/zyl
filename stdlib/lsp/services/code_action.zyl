@@ -3,15 +3,15 @@
 ;
 ; Code actions: quick-fixes built from the SAME data the diagnostic
 ; already carries (compiler_bridge.zyl's bridge-balance-diag stashes a
-; "fixIt" string in the diagnostic's `data` field) -- one real quickfix
+  ; "fixIt" string in the diagnostic's `data` field) -- one real quickfix
 ; per balance error, offering exactly the text sb-hint already computed.
 ; Non-balance diagnostics (caught compiler panics, see
-; lsp/document_manager) have no fix-it text yet -- no fabricated
+  ; lsp/document_manager) have no fix-it text yet -- no fabricated
 ; suggestions for those.
 ;
 ; Inlay hints moved to lsp/services/inlay_hints.zyl (parameter-name
-; hints via a dedicated recursive-descent text scan -- real TYPE hints
-; still aren't possible; see that file's header for why).
+  ; hints via a dedicated recursive-descent text scan -- real TYPE hints
+  ; still aren't possible; see that file's header for why).
 ;
 ; Format: a real, if simple, formatter -- reindents every line to
 ; (paren depth * 2) spaces, using the same character classification as
@@ -24,6 +24,9 @@
 (use core/option)
 (use core/map)
 (use lsp/lsp_types)
+; The formatter moved to text/format, where `zyl fmt` and a pre-commit hook
+; reach it too; this service is one of its callers, not its owner.
+(use text/format)
 (use compiler/sexp_balance)
 
 (defn code-actions-for (diagnostics)
@@ -73,91 +76,5 @@
 
 (defn ca-quickfix-action (d fixit)
   (CA (str-concat "Fix: " fixit) (Some (CAK "quickfix")) (Some d) None None
-      (Some (WE None (Some (Cons (WEE (TE (ca-range-of d) fixit)) Nil)) None))
-      None None None))
-
-; ===========================================================================
-; FORMAT — reindent by paren depth
-; ===========================================================================
-
-; Walks the text once, tracking paren/bracket/brace depth; whenever a
-; newline is crossed, remembers the depth AT THE START of the next
-; line, then re-emits every line with that many indent-units of leading
-; spaces (2 spaces per level), trimming whatever leading whitespace the
-; original line had.
-(defn format-document (text)
-  (fmt-emit (fmt-line-depths text) (fmt-raw-lines text)))
-
-(defn fmt-raw-lines (text)
-  (fmt-raw-lines-loop text 0 0 (str-length text) Nil))
-
-(defn fmt-raw-lines-loop (text i start len acc)
-  (if (>= i len)
-    (list-reverse (Cons (str-substring text start (- i start)) acc))
-    (if (= (sb-str-code (str-substring text i 1)) 10)
-      (fmt-raw-lines-loop text (+ i 1) (+ i 1) len (Cons (str-substring text start (- i start)) acc))
-      (fmt-raw-lines-loop text (+ i 1) start len acc))))
-
-; Depth at the START of each line (before that line's own opens count).
-(defn fmt-line-depths (text)
-  (list-reverse (fmt-depth-scan text 0 (str-length text) 0 0 (Cons 0 Nil))))
-
-(defn fmt-depth-scan (text i len depth in-string acc)
-  (if (>= i len)
-    acc
-    (let ch (str-substring text i 1)
-      (if (> in-string 0)
-        (if (sb-is-backslash (sb-str-code ch))
-          (fmt-depth-scan text (+ i 2) len depth in-string acc)
-          (if (sb-is-quote (sb-str-code ch))
-            (fmt-depth-scan text (+ i 1) len depth 0 acc)
-            (fmt-depth-scan text (+ i 1) len depth in-string acc)))
-        (if (sb-is-quote (sb-str-code ch))
-          (fmt-depth-scan text (+ i 1) len depth 1 acc)
-          (if (sb-is-newline (sb-str-code ch))
-            (fmt-depth-scan text (+ i 1) len depth in-string (Cons depth acc))
-            (if (or (sb-is-paren-open (sb-str-code ch)) (or (sb-is-bracket-open (sb-str-code ch)) (sb-is-brace-open (sb-str-code ch))))
-              (fmt-depth-scan text (+ i 1) len (+ depth 1) in-string acc)
-              (if (or (sb-is-paren-close (sb-str-code ch)) (or (sb-is-bracket-close (sb-str-code ch)) (sb-is-brace-close (sb-str-code ch))))
-                (fmt-depth-scan text (+ i 1) len (- depth 1) in-string acc)
-                (fmt-depth-scan text (+ i 1) len depth in-string acc)))))))))
-
-(defn fmt-emit (depths lines)
-  (match depths
-    (Nil "")
-    (Cons d drest
-      (match lines
-        (Nil "")
-        (Cons l lrest
-          (let indented (fmt-indent-line d l)
-            (match lrest
-              (Nil indented)
-              (Cons _ _ (str-concat indented (str-concat "\n" (fmt-emit drest lrest)))))))))))
-
-; A closing-only line (e.g. a lone ")))") is indented one level
-; shallower than its own start depth would suggest, matching how a
-; human would hand-format it -- otherwise every closer sits one level
-; too deep. Detected by the line's first non-whitespace char being a
-; closer.
-(defn fmt-indent-line (depth line)
-  (let trimmed (fmt-trim-left line)
-    (if (= (str-length trimmed) 0)
-      ""
-      (let effective (if (fmt-starts-with-closer trimmed) (- depth 1) depth)
-        (str-concat (fmt-spaces (* 2 (if (< effective 0) 0 effective))) trimmed)))))
-
-(defn fmt-starts-with-closer (s)
-  (let c (sb-str-code (str-substring s 0 1))
-    (or (= c 41) (or (= c 93) (= c 125)))))
-
-(defn fmt-trim-left (s)
-  (fmt-trim-left-loop s 0 (str-length s)))
-
-(defn fmt-trim-left-loop (s i len)
-  (if (>= i len)
-    ""
-    (let c (sb-str-code (str-substring s i 1))
-      (if (or (= c 32) (= c 9)) (fmt-trim-left-loop s (+ i 1) len) (str-substring s i (- len i))))))
-
-(defn fmt-spaces (n)
-  (if (<= n 0) "" (str-concat " " (fmt-spaces (- n 1)))))
+    (Some (WE None (Some (Cons (WEE (TE (ca-range-of d) fixit)) Nil)) None))
+    None None None))

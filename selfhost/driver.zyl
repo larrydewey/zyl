@@ -40,6 +40,7 @@
 (use compiler/codegen)
 (use compiler/pipeline)
 (use compiler/explain)
+(use text/format)
 (use compiler/icnf_print)
 (use compiler/doc)
 (use repl/repl)
@@ -603,6 +604,7 @@
     (print "zyl eval <file.zyl>                    run a program without building one")
     (print "zyl doc [file.zyl | dir] [-o out.md]   Markdown from doc comments")
     (print "zyl check [file.zyl | dir ...]          type-check without building; the fast edit loop")
+    (print "zyl fmt [file.zyl ...] [--check]      reindent to paren depth (--check: report only)")
     (print "zyl explain [CODE]                     what a diagnostic means and where it is raised")
     (print "zyl balance [file.zyl | dir ...]       check brackets, strings and top-level structure")
     0))
@@ -643,11 +645,13 @@
     (el-rt-cache "rt.s" "start.s" "rt.zo")
   (if (str-eq cmd "check")
     (drv-check arena cwd)
+  (if (str-eq cmd "fmt")
+    (drv-fmt cwd)
   (if (str-eq cmd "explain")
     (drv-explain cwd)
   (if (str-eq cmd "balance")
     (drv-balance cwd)
-    (drv-usage)))))))))))))))))))
+    (drv-usage))))))))))))))))))))
 
 ; `zyl doc <file.zyl | dir> [-o out.md]`: Markdown from doc comments
 ; (compiler/doc.zyl); only `pub` items when a zyl.pkg sits beside them.
@@ -786,6 +790,40 @@
             (if (> (drv-check-file arena src f) 0)
               (drv-check-each arena rest (+ bad 1))
               (drv-check-each arena rest bad))))))))
+
+(defn drv-fmt (cwd)
+  (let n (ffi-call "zyl_argc" 1000)
+    (let paths (drv-balance-args 2 n cwd)
+      (let files (drv-balance-files (match paths (Nil (Cons cwd Nil)) (_ paths)))
+        (let check (drv-has-flag 2 "--check")
+          (let bad (drv-fmt-each files check 0)
+            (let total (list-length files)
+              (let msg (if (= bad 0)
+                          " already formatted"
+                          (if check " would be reformatted" " reformatted"))
+                (print (str-concat "fmt: " (str-concat (ffi-call "zyl_int_text" total 1000) msg)))
+                (if check bad 0)))))))))
+
+(defn drv-fmt-each (files check (bad Int))
+  (match files
+    (Nil bad)
+    (Cons f rest
+      (match (sb-read-file f)
+        (None
+          (begin
+            (ffi-call "zyl_warn_emit" (str-concat "error: cannot read " f) 1000)
+            (drv-fmt-each rest check (+ bad 1))))
+        (Some src
+          (let out (format-document src)
+            (if (not (str-eq out src))
+              (begin
+                (if check
+                  (print (str-concat "  would reformat " f))
+                  ; cli-write-file hands back file-close's status, an Int, so it
+                  ; cannot be a branch opposite print's Unit.
+                  (let _ (cli-write-file f out) unit))
+                (drv-fmt-each rest check (+ bad 1)))
+              (drv-fmt-each rest check bad))))))))
 
 ; `zyl explain [CODE]`: what a diagnostic means and where it is raised.
 ;

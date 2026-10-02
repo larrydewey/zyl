@@ -1,0 +1,117 @@
+; === Formatting Zyl source ===
+; Module: text/format
+
+; Reindent every line to its paren depth: 2 spaces per level, computed from
+; the delimiters, with whatever leading whitespace the line had trimmed.
+;
+; This was in lsp/services/code_action.zyl, where the editor reached it and
+; nothing else could. A formatter is not an LSP concern -- `zyl fmt` needs it,
+; a pre-commit hook needs it -- so it lives with the other text tools and the
+; LSP service is one of its callers.
+;
+; It reindents; it never counts delimiters, so it cannot rebalance a form. A
+; missing paren is reported by `zyl balance`, which knows the lexer's rules.
+;
+; The scan tracks two things beyond depth, and both were bugs before they were
+; features: a string, so a paren inside one does not change the depth, and a
+; comment, so a paren in one does not either. The comment case is the one that
+; bites -- a comment mentioning `(checked via ...` leaves the depth one too
+; high for every line after it, reindents the rest of the file, and, because
+; spec 1.6 wants a top-level form in column 1 and no nested opener in it,
+; leaves a file that no longer balances.
+
+; ===========================================================================
+; FORMAT — reindent by paren depth
+; ===========================================================================
+
+; Walks the text once, tracking paren/bracket/brace depth; whenever a
+; newline is crossed, remembers the depth AT THE START of the next
+; line, then re-emits every line with that many indent-units of leading
+; spaces (2 spaces per level), trimming whatever leading whitespace the
+; original line had.
+(defn format-document (text)
+  (fmt-emit (fmt-line-depths text) (fmt-raw-lines text)))
+
+(defn fmt-raw-lines (text)
+  (fmt-raw-lines-loop text 0 0 (str-length text) Nil))
+
+(defn fmt-raw-lines-loop (text i start len acc)
+  (if (>= i len)
+    (list-reverse (Cons (str-substring text start (- i start)) acc))
+    (if (= (sb-str-code (str-substring text i 1)) 10)
+      (fmt-raw-lines-loop text (+ i 1) (+ i 1) len (Cons (str-substring text start (- i start)) acc))
+      (fmt-raw-lines-loop text (+ i 1) start len acc))))
+
+; Depth at the START of each line (before that line's own opens count).
+(defn fmt-line-depths (text)
+  (list-reverse (fmt-depth-scan text 0 (str-length text) 0 0 0 (Cons 0 Nil))))
+
+(defn fmt-depth-scan (text i len depth in-string com acc)
+  (if (>= i len)
+    acc
+    (let ch (str-substring text i 1)
+      (if (> in-string 0)
+        (if (sb-is-backslash (sb-str-code ch))
+          (fmt-depth-scan text (+ i 2) len depth in-string 0 acc)
+          (if (sb-is-quote (sb-str-code ch))
+            (fmt-depth-scan text (+ i 1) len depth 0 0 acc)
+            (fmt-depth-scan text (+ i 1) len depth in-string 0 acc)))
+        (if (> com 0)
+          (if (sb-is-newline (sb-str-code ch))
+            (fmt-depth-scan text (+ i 1) len depth 0 0 (Cons depth acc))
+            (fmt-depth-scan text (+ i 1) len depth 0 1 acc))
+          (if (sb-is-semicolon (sb-str-code ch))
+            (fmt-depth-scan text (+ i 1) len depth 0 1 acc)
+            (if (sb-is-quote (sb-str-code ch))
+              (fmt-depth-scan text (+ i 1) len depth 1 0 acc)
+              (if (sb-is-newline (sb-str-code ch))
+                (fmt-depth-scan text (+ i 1) len depth 0 0 (Cons depth acc))
+                (if (or (sb-is-paren-open (sb-str-code ch))
+                        (or (sb-is-bracket-open (sb-str-code ch))
+                            (sb-is-brace-open (sb-str-code ch))))
+                  (fmt-depth-scan text (+ i 1) len (+ depth 1) 0 0 acc)
+                  (if (or (sb-is-paren-close (sb-str-code ch))
+                          (or (sb-is-bracket-close (sb-str-code ch))
+                              (sb-is-brace-close (sb-str-code ch))))
+                    (fmt-depth-scan text (+ i 1) len (- depth 1) 0 0 acc)
+                    (fmt-depth-scan text (+ i 1) len depth 0 0 acc)))))))))))
+
+(defn fmt-emit (depths lines)
+  (match depths
+    (Nil "")
+    (Cons d drest
+      (match lines
+        (Nil "")
+        (Cons l lrest
+          (let indented (fmt-indent-line d l)
+            (match lrest
+              (Nil indented)
+              (Cons _ _ (str-concat indented (str-concat "\n" (fmt-emit drest lrest)))))))))))
+
+; A closing-only line (e.g. a lone ")))") is indented one level
+; shallower than its own start depth would suggest, matching how a
+; human would hand-format it -- otherwise every closer sits one level
+; too deep. Detected by the line's first non-whitespace char being a
+; closer.
+(defn fmt-indent-line (depth line)
+  (let trimmed (fmt-trim-left line)
+    (if (= (str-length trimmed) 0)
+      ""
+      (let effective (if (fmt-starts-with-closer trimmed) (- depth 1) depth)
+        (str-concat (fmt-spaces (* 2 (if (< effective 0) 0 effective))) trimmed)))))
+
+(defn fmt-starts-with-closer (s)
+  (let c (sb-str-code (str-substring s 0 1))
+    (or (= c 41) (or (= c 93) (= c 125)))))
+
+(defn fmt-trim-left (s)
+  (fmt-trim-left-loop s 0 (str-length s)))
+
+(defn fmt-trim-left-loop (s i len)
+  (if (>= i len)
+    ""
+    (let c (sb-str-code (str-substring s i 1))
+      (if (or (= c 32) (= c 9)) (fmt-trim-left-loop s (+ i 1) len) (str-substring s i (- len i))))))
+
+(defn fmt-spaces (n)
+  (if (<= n 0) "" (str-concat " " (fmt-spaces (- n 1)))))
