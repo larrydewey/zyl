@@ -35,3 +35,4 @@
   (assert-equal (result-unwrap-or (result-and-then (Ok 3) (fn (x) (Ok (* x 10)))) 0) 30))
 
 (run-tests)
+(numeric checked)

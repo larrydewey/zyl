@@ -3,6 +3,7 @@
 (use heap)
 (use text)
 (use alloc)
+(use numeric)
 
 (extern "zyl_rt_getenv" (Int) Int)
 (extern "zyl_arena_oom" (Int String) Int)
@@ -165,8 +166,8 @@
 ; splitmix64 finalizer (logical shifts).
 (defmacro tb-hash (x)
   (let x0 x
-    (let x1 (* (bit-xor x0 (bit-and (shr x0 30) 17179869183)) -4658895280553007687)
-      (let x2 (* (bit-xor x1 (bit-and (shr x1 27) 137438953471)) -7723592293110705685)
+    (let x1 (rt-wmul (bit-xor x0 (bit-and (shr x0 30) 17179869183)) -4658895280553007687)
+      (let x2 (rt-wmul (bit-xor x1 (bit-and (shr x1 27) 137438953471)) -7723592293110705685)
         (bit-xor x2 (bit-and (shr x2 31) 8589934591))))))
 
 (defn zyl_attrh_new () (zyl_rt_calloc 1 24))

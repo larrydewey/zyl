@@ -2,6 +2,7 @@
 ; Build:  zyl log-processor-tests.zyl -o log-processor-tests
 ; Run:    ./log-processor-tests
 
+(numeric checked)
 (use logstats)
 
 ; Helpers keep each test body to a single comparison.

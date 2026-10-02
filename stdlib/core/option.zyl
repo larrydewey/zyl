@@ -105,6 +105,6 @@
   (defn hash (self)
     (match self
       (None 1469598103934665603)
-      (Some x (* (bit-xor 1469598103934665603 (Hash.hash x)) 1099511628211)))))
+      (Some x (int-wrap-mul (bit-xor 1469598103934665603 (Hash.hash x)) 1099511628211)))))
 
 (impl Clone Option (defn clone (self) self))

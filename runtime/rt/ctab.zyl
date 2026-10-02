@@ -1,6 +1,7 @@
 ; Compiler side tables: source spans, node attributes, string maps, word vectors, def cells. Probed by key, never iterated.
 (use base)
 (use heap)
+(use numeric)
 
 
 (defmacro rt-ld64 (a) (ffi-call "%load64" a 1))
@@ -15,8 +16,8 @@
 
 ; splitmix64 finalizer: addresses are 16-byte aligned, so identity would cluster.
 (defn rt-addr-hash (k)
-  (let x1 (* (bit-xor k (rt-lshr k 30)) -4658895280553007687)
-    (let x2 (* (bit-xor x1 (rt-lshr x1 27)) -7723592293110705685)
+  (let x1 (rt-wmul (bit-xor k (rt-lshr k 30)) -4658895280553007687)
+    (let x2 (rt-wmul (bit-xor x1 (rt-lshr x1 27)) -7723592293110705685)
       (bit-xor x2 (rt-lshr x2 31)))))
 
 (defn rt-int-text-heap (n) (ffi-call "zyl_int_text" n 1))
@@ -117,8 +118,8 @@
 
 (defn rt-str-hash-n (p n i h)
   (if (<= (+ i 8) n)
-    (rt-str-hash-n p n (+ i 8) (* (bit-xor h (ffi-call "%load64" (+ p i) 1)) -7046029254386353131))
-    (if (< i n) (rt-str-hash-n p n (+ i 1) (* (bit-xor h (rt-ld8 (+ p i))) 1099511628211)) (rt-addr-hash (bit-xor h n)))))
+    (rt-str-hash-n p n (+ i 8) (rt-wmul (bit-xor h (ffi-call "%load64" (+ p i) 1)) -7046029254386353131))
+    (if (< i n) (rt-str-hash-n p n (+ i 1) (rt-wmul (bit-xor h (rt-ld8 (+ p i))) 1099511628211)) (rt-addr-hash (bit-xor h n)))))
 
 (defn zyl_smap_new () (zyl_rt_calloc 1 24))
 

@@ -2,3 +2,4 @@
 ; expect-error: E_REGION_SPEC
 
 (defn main () (begin (print (with-region (pool :block 4096) 1)) 0))
+(numeric checked)

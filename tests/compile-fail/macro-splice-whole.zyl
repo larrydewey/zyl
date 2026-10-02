@@ -2,3 +2,4 @@
 ; `,@` splices into a list of expressions; alone it is not one.
 (defmacro m (&rest xs) ,@xs)
 (defn main () (begin (print (m 1)) 0))
+(numeric checked)

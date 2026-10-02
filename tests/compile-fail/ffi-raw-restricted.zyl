@@ -6,3 +6,4 @@
   (begin
     (print (ffi-call "zyl_cstr_of_word" 4096 1000))
     0))
+(numeric checked)

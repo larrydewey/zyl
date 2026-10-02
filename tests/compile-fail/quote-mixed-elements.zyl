@@ -5,3 +5,4 @@
 (use core/core)
 (defn main ()
   (print (len '[1 [2]])))
+(numeric checked)

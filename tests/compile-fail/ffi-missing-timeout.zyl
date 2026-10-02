@@ -6,3 +6,4 @@
 (defn magnitude (n) (ffi-call "abs" n))
 
 (defn main () (begin (print (magnitude -5)) 0))
+(numeric checked)

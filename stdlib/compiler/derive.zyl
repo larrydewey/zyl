@@ -359,7 +359,8 @@
     (Nil acc)
     (Cons b t
       (dv-hash-fold call t
-        (dv-call2 "*" (dv-call2 "bit-xor" acc (dv-call call (Cons (dv-id b) Nil))) (dv-int 1099511628211))))))
+        ; a hash wraps by design, whatever the package's numeric policy
+        (dv-call2 "wrapping*" (dv-call2 "bit-xor" acc (dv-call call (Cons (dv-id b) Nil))) (dv-int 1099511628211))))))
 
 ; Variants order by declaration, then fields lexicographically.
 (defn dv-ord-arms (call all vs i)

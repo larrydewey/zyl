@@ -59,3 +59,4 @@
   (assert-equal (keccak-padded-len 0 136) 136))
 
 (run-tests)
+(numeric checked)

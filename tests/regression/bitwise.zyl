@@ -77,3 +77,4 @@
   (assert-equal (bit-and 66051 255) 3))
 
 (run-tests)
+(numeric checked)

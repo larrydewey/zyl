@@ -3,3 +3,4 @@
 ; Ord.compare (derivable), which compares its fields by their own Ord.
 (deftype Color (Red) (Blue))
 (defn main () (if (< Red Blue) 1 0))
+(numeric checked)

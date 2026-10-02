@@ -97,3 +97,4 @@
                 (assert-false (ed25519-verify (ed25519-public-key seed) other 32 sig))))))))))
 
 (run-tests)
+(numeric checked)

@@ -1,6 +1,7 @@
 ; Float text: strtod-exact parsing and printf "%f" formatting, by exact integer arithmetic.
 (use base)
 (use text)
+(use numeric)
 
 (defmacro fm-ld (a) (ffi-call "%load64" a 1))
 (defmacro fm-st (a v) (ffi-call "%store64" a v 1))
@@ -14,17 +15,17 @@
 
 ; --- 64-bit helpers ---
 
-; High word of the unsigned 128-bit product a*b.
+; High word of the unsigned 128-bit product a*b: the partial products are unsigned words, so every step wraps.
 (defn fm-mulhi (a b)
   (let a0 (bit-and a 4294967295)
     (let a1 (shr a 32)
       (let b0 (bit-and b 4294967295)
         (let b1 (shr b 32)
-          (let p00 (* a0 b0)
-            (let p01 (* a0 b1)
-              (let p10 (* a1 b0)
-                (let mid (+ (+ (shr p00 32) (bit-and p01 4294967295)) (bit-and p10 4294967295))
-                  (+ (+ (+ (* a1 b1) (shr p01 32)) (shr p10 32)) (shr mid 32)))))))))))
+          (let p00 (rt-wmul a0 b0)
+            (let p01 (rt-wmul a0 b1)
+              (let p10 (rt-wmul a1 b0)
+                (let mid (rt-wadd (rt-wadd (shr p00 32) (bit-and p01 4294967295)) (bit-and p10 4294967295))
+                  (rt-wadd (rt-wadd (rt-wadd (rt-wmul a1 b1) (shr p01 32)) (shr p10 32)) (shr mid 32)))))))))))
 
 ; Leading zero count of a nonzero word.
 (defn fm-clz (x) (fm-clz-go x 0 32))
@@ -44,7 +45,8 @@
         (let _ (fm-p10-fill (+ g 10416) 0 1.0)
           (let _ (ffi-call "%fence" 1) (let _ (fm-st (+ g 10600) 1) g)))))))
 
-(defn fm-hex16 (p i v) (if (= i 16) v (fm-hex16 p (+ i 1) (+ (* v 16) (rt-hexval (rt-ld8 (+ p i)))))))
+; Sixteen hex digits fill all 64 bits, so the digits are shifted in, not multiplied.
+(defn fm-hex16 (p i v) (if (= i 16) v (fm-hex16 p (+ i 1) (bit-or (shl v 4) (rt-hexval (rt-ld8 (+ p i)))))))
 
 (defn fm-tab-fill (g h i)
   (if (= i 1302) 0 (let _ (fm-st (+ g (* i 8)) (fm-hex16 (+ h (* i 16)) 0 0)) (fm-tab-fill g h (+ i 1)))))
@@ -121,8 +123,8 @@
   (let c (rt-ld8 p)
     (if (not (fm-hexval-ok c b)) (if over -1 v)
       (if over (fm-ull-go (+ p 1) b v true)
-        (let lo (* v b)
-          (let nv (+ lo (rt-hexval c))
+        (let lo (rt-wmul v b)
+          (let nv (rt-wadd lo (rt-hexval c))
             (if (or (not (= (fm-mulhi v b) 0)) (fm-ult nv lo)) (fm-ull-go (+ p 1) b v true) (fm-ull-go (+ p 1) b nv false))))))))
 
 ; Exponent after e/E or p/P, saturated at 10^15; 0 when no digits follow.
@@ -212,11 +214,11 @@
       (let lz (fm-clz w)
         (let wn (shl w lz)
           (let t (+ (fm-tab) (* (+ q 342) 16))
-            (let lo0 (* wn (fm-ld t))
+            (let lo0 (rt-wmul wn (fm-ld t))
               (let hi0 (fm-mulhi wn (fm-ld t))
                 (if (= (bit-and hi0 511) 511)
                   (let s2 (fm-mulhi wn (fm-ld (+ t 8)))
-                    (let lo (+ lo0 s2) (fm-el-round q lz lo (if (fm-ult lo lo0) (+ hi0 1) hi0))))
+                    (let lo (rt-wadd lo0 s2) (fm-el-round q lz lo (if (fm-ult lo lo0) (rt-wadd hi0 1) hi0))))
                   (fm-el-round q lz lo0 hi0))))))))))
 
 (defn fm-el-round (q lz lo hi)
@@ -401,7 +403,7 @@
   (if (>= k 76) (fm-text-small neg 0 0 rp)
     (let i (if (< k 64) (shr m k) 0)
       (let f (if (< k 64) (bit-and m (- (shl 1 k) 1)) m)
-        (let lo (* f 1000000)
+        (let lo (rt-wmul f 1000000)
           (let hi (fm-mulhi f 1000000)
             (let q (fm-frac-q k lo hi)
               (let q2 (if (fm-frac-up k lo hi (= (bit-and q 1) 1)) (+ q 1) q)

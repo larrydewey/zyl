@@ -1,3 +1,4 @@
 ; Compile-fail: the outer defn's opener is never closed.
 
 (defn main () (begin (print (+ 1 2)) 0)
+(numeric checked)

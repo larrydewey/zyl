@@ -96,6 +96,9 @@
     ""
     (str-concat "  (capabilities " (str-concat (cli-words (pk-caps-sorted caps)) ")\n"))))
 
+(defn cli-numeric-line (p)
+  (if (= (str-length p) 0) "" (str-concat "  (numeric " (str-concat p ")\n"))))
+
 (defn cli-manifest-str (arena m)
   (str-concat "(package\n"
     (str-concat "  (name " (str-concat (cli-quote (mf-name m))
@@ -109,8 +112,9 @@
     (str-concat (cli-opt-field "license" (pdoc-license (mf-docs m)))
       (str-concat (cli-opt-field "repository" (pdoc-repository (mf-docs m)))
         (str-concat (cli-caps-block (mf-capabilities m))
+          (str-concat (cli-numeric-line (mf-numeric m))
           (str-concat (cli-deps-block arena "deps" (mf-deps m))
-            (str-concat (cli-deps-block arena "dev-deps" (mf-dev-deps m)) ")\n")))))))
+            (str-concat (cli-deps-block arena "dev-deps" (mf-dev-deps m)) ")\n"))))))))
 
 (defn cli-write-manifest (arena dir m)
   (let out (file-open (str-concat dir "/zyl.pkg") "w")
@@ -134,7 +138,7 @@
       (let _ (store-mkdir dir)
         (let m (MF (PM name (PV 0 1 0 "") "5.0" "2026")
                    (PDoc "" "" "")
-                   (PCaps Nil Nil)
+                   (PCaps Nil Nil "checked")
                    (PDeps Nil Nil Nil Nil)
                    (PBuild (pn-empty) Nil))
           (let _ (cli-write-manifest arena dir m)

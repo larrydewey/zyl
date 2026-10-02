@@ -15,3 +15,4 @@
     (assert-equal (ffi-call "zyl_run_bin" "/nonexistent/zyl-no-such-bin" 5000) -1)))
 
 (run-tests)
+(numeric checked)

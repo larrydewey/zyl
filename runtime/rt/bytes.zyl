@@ -65,7 +65,7 @@
 (defn zyl_load_n_signed (width endian off buf)
   (let r (zyl_load_n width endian off buf)
     (if (or (>= width 8) (not (bb-width-ok width))) r
-      (let sign (shl 1 (- (* width 8) 1)) (- (bit-xor r sign) sign)))))
+      (let sign (shl 1 (- (* width 8) 1)) (rt-wsub (bit-xor r sign) sign)))))
 
 (defmacro bb-store-le (w a v)
   (if (= w 2) (ffi-call "%store16" a v 1) (if (= w 4) (ffi-call "%store32" a v 1) (ffi-call "%store64" a v 1))))
@@ -137,7 +137,7 @@
 (defn zyl_bytebuf_ptr (buf) (let h (bb-buf buf) (if (= h 0) 0 (bb-data h))))
 
 (defn zyl_align_check (expr align)
-  (if (<= align 0) 0 (if (= (% expr align) 0) 1 0)))
+  (if (<= align 0) 0 (if (= (rem! expr align) 0) 1 0)))
 
 ; --- atomics on 64-bit words (seq-cst) ---
 
@@ -147,9 +147,10 @@
 
 (defn zyl_atomic_fetch_add (addr v) (ffi-call "%fetch-add" (rt-w addr) v 1))
 
-(defn zyl_atomic_add (addr v) (+ (ffi-call "%fetch-add" (rt-w addr) v 1) v))
+; The hardware's add wraps the stored word, so the returned new value wraps the same way.
+(defn zyl_atomic_add (addr v) (rt-wadd (ffi-call "%fetch-add" (rt-w addr) v 1) v))
 
-(defn zyl_atomic_sub (addr v) (- (ffi-call "%fetch-add" (rt-w addr) (- 0 v) 1) v))
+(defn zyl_atomic_sub (addr v) (rt-wsub (ffi-call "%fetch-add" (rt-w addr) (rt-wsub 0 v) 1) v))
 
 (defn zyl_atomic_cas (addr expected new) (= (ffi-call "%cas" (rt-w addr) expected new 1) expected))
 

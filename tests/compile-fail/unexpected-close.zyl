@@ -1,3 +1,4 @@
 ; Compile-fail: an extra ')' with no matching opener.
 
 (defn main () (begin (print (+ 1 2)) 0)))
+(numeric checked)

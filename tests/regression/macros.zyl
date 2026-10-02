@@ -137,3 +137,4 @@
   (assert-equal (_MShow.mshow 21) 42))
 
 (run-tests)
+(numeric checked)

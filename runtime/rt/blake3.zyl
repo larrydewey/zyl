@@ -6,19 +6,20 @@
 (defmacro b3-ld (a) (ffi-call "%load32" a 1))
 (defmacro b3-st (a v) (ffi-call "%store32" a v 1))
 (defmacro b3-m (blk i) (ffi-call "%load32" (+ blk (* i 4)) 1))
-; rotr32 of the low 32 bits of x (mask = 2^(32-n)-1, p = 2^(32-n)); words stay unmasked until store32.
-(defmacro b3-rotr (x n mask p) (bit-or (bit-and (shr x n) mask) (* x p)))
+; rotr32 of a 32-bit-clean x (k = 32-n): every word is kept below 2^32, so no sum can overflow.
+(defmacro b3-rotr (x n k) (bit-or (shr x n) (bit-and (shl x k) 4294967295)))
+(defmacro b3-add (a b) (bit-and (+ a b) 4294967295))
 
 ; The G mix; a b c d are state names rebound for body.
 (defmacro b3-g (a b c d mx my body)
-  (let a (+ (+ a b) mx)
-    (let d (let _t (bit-xor d a) (b3-rotr _t 16 65535 65536))
-      (let c (+ c d)
-        (let b (let _t (bit-xor b c) (b3-rotr _t 12 1048575 1048576))
-          (let a (+ (+ a b) my)
-            (let d (let _t (bit-xor d a) (b3-rotr _t 8 16777215 16777216))
-              (let c (+ c d)
-                (let b (let _t (bit-xor b c) (b3-rotr _t 7 33554431 33554432)) body)))))))))
+  (let a (b3-add (b3-add a b) mx)
+    (let d (let _t (bit-xor d a) (b3-rotr _t 16 16))
+      (let c (b3-add c d)
+        (let b (let _t (bit-xor b c) (b3-rotr _t 12 20))
+          (let a (b3-add (b3-add a b) my)
+            (let d (let _t (bit-xor d a) (b3-rotr _t 8 24))
+              (let c (b3-add c d)
+                (let b (let _t (bit-xor b c) (b3-rotr _t 7 25)) body)))))))))
 
 ; Hasher layout (bytes): cv stack 54x32, then scalars and scratch blocks.
 (defmacro b3-slen (h) (+ h 1728))

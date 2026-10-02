@@ -4,3 +4,4 @@
 
 (defn main ()
   (begin (print #x) 0))
+(numeric checked)

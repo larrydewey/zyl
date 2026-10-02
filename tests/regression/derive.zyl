@@ -121,3 +121,4 @@
 )
 
 (run-tests)
+(numeric checked)

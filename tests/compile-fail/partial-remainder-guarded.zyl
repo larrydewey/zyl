@@ -1,0 +1,6 @@
+; expect-error: E_PARTIAL_OPERATION
+(numeric checked)
+; No guard is recognised: the if does not make % total, rem! would.
+(defn wrap (i n)
+  (if (= n 0) 0 (% i n)))
+(defn main () (wrap 7 3))

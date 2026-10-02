@@ -54,3 +54,4 @@
         (assert-true (option-is-some (x25519-checked k u)))))))
 
 (run-tests)
+(numeric checked)

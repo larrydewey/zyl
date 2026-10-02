@@ -12,3 +12,4 @@
     (begin (alloc-free p) (assert-true true))))
 
 (run-tests)
+(numeric checked)

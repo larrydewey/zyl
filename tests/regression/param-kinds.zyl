@@ -103,3 +103,4 @@
   (assert-equal (pk-print-string "printed") 1))
 
 (run-tests)
+(numeric checked)

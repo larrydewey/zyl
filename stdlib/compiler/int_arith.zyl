@@ -1,0 +1,68 @@
+; === Zyl Standard Library — Int arithmetic under the three policies ===
+; Module: compiler/int_arith
+;
+; Spec §20.1 for the compiler's own use: the constant folder decides at
+; compile time what the program would do at run time, and the REPL
+; interpreter does the same for one value at a time. Both must agree bit
+; for bit with the code the backend emits (codegen.zyl's cg-arith-mnem)
+; and with the runtime's entries (runtime/rt/numeric.zyl), of which this
+; is a copy in the compiler's own language: the compiler cannot call a
+; runtime entry it has not been reseeded with, and it is itself checked
+; code, so every test here runs before the operation it guards.
+
+(defn ia-int-max () 9223372036854775807)
+(defn ia-int-min () (- -9223372036854775807 1))
+
+; --- overflow tests, decided before the operation ---
+
+(defn ia-add-overflows (a b)
+  (if (> b 0) (> a (- (ia-int-max) b)) (if (< b 0) (< a (- (ia-int-min) b)) false)))
+
+(defn ia-sub-overflows (a b)
+  (if (< b 0) (> a (+ (ia-int-max) b)) (if (> b 0) (< a (+ (ia-int-min) b)) false)))
+
+; |a| > INT_MAX / |b| overflows, except the one negative product that is exactly INT_MIN.
+(defn ia-mul-overflows (a b)
+  (if (or (= a 0) (= b 0)) false
+    (if (or (= a (ia-int-min)) (= b (ia-int-min))) (not (or (= a 1) (= b 1)))
+      (let pa (if (< a 0) (- 0 a) a)
+        (let pb (if (< b 0) (- 0 b) b)
+          (let q (div! (ia-int-max) pb)
+            (if (<= pa q) false
+              (not (and (not (= (< a 0) (< b 0)))
+                        (and (= pa (+ q 1)) (= (rem! (ia-int-max) pb) (- pb 1))))))))))))
+
+(defn ia-overflows (op a b)
+  (if (= op 0) (ia-add-overflows a b) (if (= op 1) (ia-sub-overflows a b) (ia-mul-overflows a b))))
+
+; --- wrapping arithmetic: the operators of §20.1 ---
+
+(defn ia-wrap-add (a b) (wrapping+ a b))
+(defn ia-wrap-sub (a b) (wrapping- a b))
+(defn ia-wrap-mul (a b) (wrapping* a b))
+
+(defn ia-wrap (op a b)
+  (if (= op 0) (ia-wrap-add a b) (if (= op 1) (ia-wrap-sub a b) (ia-wrap-mul a b))))
+
+; --- saturating arithmetic: the clamp takes the sign the true result would have ---
+
+(defn ia-sat (op a b)
+  (if (ia-overflows op a b)
+    (if (if (= op 2) (= (< a 0) (< b 0)) (>= a 0)) (ia-int-max) (ia-int-min))
+    (if (= op 0) (+ a b) (if (= op 1) (- a b) (* a b)))))
+
+; --- the messages, the same words as runtime/rt/numeric.zyl's traps ---
+
+(defn ia-op-name (op)
+  (if (= op 0) "+" (if (= op 1) "-" (if (= op 2) "*" (if (= op 3) "div!" "rem!")))))
+
+(defn ia-overflow-text (op)
+  (if (> op 2)
+    (str-concat "the smallest Int divided by -1 has no Int result, in `" (str-concat (ia-op-name op)
+      "`\n  = help: `div!` and `rem!` cannot compute this one pair; test for -1 before dividing"))
+    (str-concat "integer overflow in `" (str-concat (ia-op-name op)
+      "`\n  = help: write `(numeric wrapping)` at the top of the file if wrap-around is intended, or `(numeric saturating)` to clamp"))))
+
+(defn ia-div-zero-text (op)
+  (str-concat "division by zero in `" (str-concat (ia-op-name op)
+    (str-concat "`\n  = help: write `(" (str-concat (if (= op 3) "div?" "rem?") " a b)` to get None for a zero divisor, or test the divisor first")))))

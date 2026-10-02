@@ -5,3 +5,4 @@
   (begin
     (peek 4096)
     0))
+(numeric checked)

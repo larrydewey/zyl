@@ -128,3 +128,5 @@
   (assert-equal (mismatches 12345 2000 0) 0))
 
 (run-tests)
+; wraps on purpose: the xorshift PRNG feeding the reference checks
+(numeric wrapping)

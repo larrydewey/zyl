@@ -3,3 +3,4 @@
 ; `self` used to read as no parameters at all.
 (trait Area (area self))
 (defn main () 0)
+(numeric checked)

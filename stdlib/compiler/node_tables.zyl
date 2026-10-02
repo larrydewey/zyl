@@ -28,6 +28,12 @@
 ;; nearest (contracts P) directive ("" when none).
 (def contract-profiles (ffi-call "zyl_smap_new" 1000))
 
+;; Numeric policies by package name ("" the root): "checked", "wrapping" or "saturating".
+(def numeric-policies (ffi-call "zyl_smap_new" 1000))
+
+;; Counter for the names `div?`/`rem?` bind their operands to (expr_inner.zyl).
+(def numeric-fresh (ffi-call "zyl_ref_new" 0 1000))
+
 ;; Names defined by a top-level `def` (expr_inner.zyl's def-key-p).
 (def def-names (ffi-call "zyl_smap_new" 1000))
 

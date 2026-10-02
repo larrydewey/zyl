@@ -83,3 +83,4 @@
 
 ; Helper struct for while test
 (defstruct _cf_Point (x) (y))
+(numeric checked)

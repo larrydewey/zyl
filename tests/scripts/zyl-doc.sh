@@ -28,6 +28,7 @@ cat > "$SCRATCH/lone/shapes.zyl" <<'ZYL'
 (defn perimeter (s) 0)
 
 (defn undocumented () 0)
+(numeric checked)
 ZYL
 out="$("$ZYL" doc "$SCRATCH/lone/shapes.zyl")"
 echo "$out" | grep -q '^# Module `shapes`' || fail "module title"
@@ -40,7 +41,7 @@ if echo "$out" | grep -q 'internal note'; then fail ";| should win over plain co
 echo "$out" | grep -q '(deftype Shape (Circle Int) (Rect Int Int))' || fail "type signature"
 
 cat > "$SCRATCH/pkg/zyl.pkg" <<'PKG'
-(package (name "acme/docs") (version "0.1.0") (zyl "5.0") (edition "2026"))
+(package (numeric checked) (name "acme/docs") (version "0.1.0") (zyl "5.0") (edition "2026"))
 PKG
 cat > "$SCRATCH/pkg/api.zyl" <<'ZYL'
 ; Exported.

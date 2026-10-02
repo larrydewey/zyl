@@ -3,3 +3,4 @@
 (alias Meters Int)
 (defn run ((d Meters)) d)
 (defn main () (begin (print (run "x")) 0))
+(numeric checked)

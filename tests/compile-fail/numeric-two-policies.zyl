@@ -1,0 +1,6 @@
+; expect-error: E_MALFORMED_FORM
+; Two (numeric ...) forms that disagree: one package, one policy.
+(numeric checked)
+(defn add (a b) (+ a b))
+(numeric wrapping)
+(defn main () (add 1 2))

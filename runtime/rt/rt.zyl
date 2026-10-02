@@ -1,6 +1,8 @@
 ; The Zyl runtime, compiled only with --runtime-module; zyl_* defns are the exported entries.
 
+(numeric checked)
 (use base)
+(use numeric)
 (use cpu)
 (use cstr)
 (use text)

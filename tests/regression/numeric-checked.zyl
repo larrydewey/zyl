@@ -1,0 +1,72 @@
+(numeric checked)
+; Spec 20.1 checked arithmetic: Int + - * stop the program with E_OVERFLOW
+; instead of wrapping, and nothing else changes. Spec 20.3: div!/rem! stop
+; on a zero divisor, div?/rem? give None, INT_MIN / -1 is E_OVERFLOW.
+
+(defn big () 9223372036854775807)
+(defn small () (- -9223372036854775807 1))
+(defn zero () 0)
+(defn minus-one () -1)
+
+; --- results that exist are unchanged ---
+(test "checked-plain-add" (assert-equal (+ 40 2) 42))
+(test "checked-edge-no-trap" (assert-equal (+ (big) 0) 9223372036854775807))
+(test "checked-edge-sub-no-trap" (assert-equal (- (small) 0) (small)))
+(test "checked-negate-max" (assert-equal (- (big)) -9223372036854775807))
+(test "checked-nary" (assert-equal (- 10 (big) (- 0 (big))) 10))
+(test "checked-mul-minus-one" (assert-equal (* (big) -1) -9223372036854775807))
+(test "checked-literal-fold" (assert-equal (+ 9223372036854775806 1) 9223372036854775807))
+
+; --- every emission path traps: register operands, immediates, literal-only, recursion ---
+(test "checked-add-traps" (assert-equal (+ (big) (big)) 0) (:expect-panic true))
+(test "checked-add-imm-traps" (assert-equal (+ (big) 1) 0) (:expect-panic true))
+(test "checked-sub-traps" (assert-equal (- (small) 1) 0) (:expect-panic true))
+(test "checked-sub-reg-traps" (assert-equal (- (small) (big)) 0) (:expect-panic true))
+(test "checked-mul-traps" (assert-equal (* (big) (big)) 0) (:expect-panic true))
+(test "checked-mul-imm-traps" (assert-equal (* (big) 2) 0) (:expect-panic true))
+(test "checked-mul-pow2-traps" (assert-equal (* (big) 8) 0) (:expect-panic true))
+(test "checked-negate-min-traps" (assert-equal (- (small)) 0) (:expect-panic true))
+(test "checked-literal-overflow-traps" (assert-equal (+ 9223372036854775807 1) 0) (:expect-panic true))
+(test "checked-literal-mul-traps" (assert-equal (* 4294967296 4294967296) 0) (:expect-panic true))
+
+(defn sum-big (n) (if (= n 0) 0 (+ (big) (sum-big (- n 1)))))
+(test "checked-recursive-sum-ok" (assert-equal (sum-big 1) 9223372036854775807))
+(test "checked-recursive-sum-traps" (assert-equal (sum-big 2) 0) (:expect-panic true))
+
+(defn count-up (i n acc) (if (>= i n) acc (count-up (+ i 1) n (+ acc i))))
+(test "checked-loop" (assert-equal (count-up 0 100 0) 4950))
+
+; --- a trap is a panic: try/catch sees it ---
+(test "checked-trap-is-caught"
+  (assert-equal (try (+ (big) 1) (catch _ -1)) -1))
+
+; --- division (spec 20.3) ---
+(test "div-bang-truncates" (assert-equal (div! 7 2) 3))
+(test "div-bang-negative" (assert-equal (div! -7 2) -3))
+(test "rem-bang-sign" (assert-equal (rem! -7 2) -1))
+(test "rem-bang-minus-one" (assert-equal (rem! (small) -1) 0))
+(test "div-bang-zero-traps" (assert-equal (div! 7 (zero)) 0) (:expect-panic true))
+(test "rem-bang-zero-traps" (assert-equal (rem! 7 (zero)) 0) (:expect-panic true))
+(test "div-bang-min-minus-one-traps" (assert-equal (div! (small) (minus-one)) 0) (:expect-panic true))
+(test "div-literal-min-minus-one-traps" (assert-equal (/ (small) -1) 0) (:expect-panic true))
+(test "div-zero-is-caught" (assert-equal (try (div! 1 (zero)) (catch _ -1)) -1))
+
+(test "div-literal-divisor" (assert-equal (/ -17 8) -2))
+(test "rem-literal-divisor" (assert-equal (% -17 8) -1))
+(test "div-literal-pow2" (assert-equal (/ (big) 1024) 9007199254740991))
+(test "div-literal-magic" (assert-equal (/ 1000000007 10) 100000000))
+
+(defn opt-text (o) (match o (Some v (str-concat "Some " (ffi-call "zyl_int_text" v 1000))) (None "None")))
+(test "div-opt-zero" (assert-equal (opt-text (div? 7 (zero))) "None"))
+(test "div-opt-value" (assert-equal (opt-text (div? 7 2)) "Some 3"))
+(test "rem-opt-zero" (assert-equal (opt-text (rem? 7 (zero))) "None"))
+(test "rem-opt-value" (assert-equal (opt-text (rem? -7 3)) "Some -1"))
+
+; div? evaluates both operands once, in order
+(def trace (ffi-call "zyl_ref_new" "" 1000))
+(defn note (s v) (let _ (ffi-call "zyl_ref_set" trace (str-concat (ffi-call "zyl_ref_get" trace 1000) s) 1000) v))
+(test "div-opt-order"
+  (let _ (div? (note "a" 9) (note "b" 3))
+    (assert-equal (ffi-call "zyl_ref_get" trace 1000) "ab")))
+
+(run-tests)

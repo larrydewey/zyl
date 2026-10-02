@@ -2,6 +2,7 @@
 (use base)
 (use thread)
 (use heap)
+(use numeric)
 (use alloc)
 (use out)
 
@@ -38,7 +39,7 @@
 (defn ch-chaos ()
   (if (not (= (ch-mode) 3)) 0
     (let n (ffi-call "%fetch-add" (+ (ch-g) 48) 1 1)
-      (let h (ch-mix (bit-xor (ch-ld (+ (ch-g) 40)) (* n -7046029254386353131)))
+      (let h (ch-mix (bit-xor (ch-ld (+ (ch-g) 40)) (rt-wmul n -7046029254386353131)))
         (let k (bit-and h 7)
           (if (< k 4) 0
             (if (< k 6) (ffi-call "%syscall0" 24 1)
@@ -47,8 +48,8 @@
 
 ; splitmix64's finalizer.
 (defn ch-mix (z0)
-  (let z1 (* (bit-xor z0 (ch-shr z0 30)) -4658895280553007687)
-    (let z2 (* (bit-xor z1 (ch-shr z1 27)) -7723592293110705685) (bit-xor z2 (ch-shr z2 31)))))
+  (let z1 (rt-wmul (bit-xor z0 (ch-shr z0 30)) -4658895280553007687)
+    (let z2 (rt-wmul (bit-xor z1 (ch-shr z1 27)) -7723592293110705685) (bit-xor z2 (ch-shr z2 31)))))
 (defn ch-shr (x n) (shr x n))
 
 ; Per owner id: {state 0 (0 none, 1 live, 2 finished), wait kind 8, wait object 16, panic message 24}.
@@ -163,7 +164,7 @@
           (let _ (ch-lock)
             (let _ (ch-wait 1 c)
               (let _ (if ep (ch-st (+ v 16) 0) 0)
-                (let slot (% (+ (ch-ld (+ c 16)) (ch-ld (+ c 24))) (ch-ld (+ c 8)))
+                (let slot (rem! (+ (ch-ld (+ c 16)) (ch-ld (+ c 24))) (ch-ld (+ c 8)))
                   (let _ (ch-st (+ (ch-ld (+ c 56)) (* slot 8)) v)
                     (let _ (ch-st (+ c 24) (+ (ch-ld (+ c 24)) 1))
                       (let _ (ch-wake) (let _ (ch-unlock) 0))))))))))))))
@@ -179,7 +180,7 @@
             (let _ (ch-unlock) (ch-panic "E_CHANNEL_CLOSED: the channel's sender finished and every value was received"))
             (let h (ch-ld (+ c 16))
               (let v (ch-ld (+ (ch-ld (+ c 56)) (* h 8)))
-                (let _ (ch-st (+ c 16) (% (+ h 1) (ch-ld (+ c 8))))
+                (let _ (ch-st (+ c 16) (rem! (+ h 1) (ch-ld (+ c 8))))
                   (let _ (ch-st (+ c 24) (- (ch-ld (+ c 24)) 1))
                     (let _ (if (and (ch-endpoint-p v) (= (ch-ld (+ v 16)) 0)) (ch-st (+ v 16) (zyl_owner_self)) 0)
                       (let _ (ch-wake) (let _ (ch-unlock) v))))))))))))))

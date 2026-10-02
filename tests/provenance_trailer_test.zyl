@@ -300,3 +300,4 @@
       (assert-equal (pt-at (prov-locate b 4096)) (- 1)))))
 
 (run-tests)
+(numeric checked)

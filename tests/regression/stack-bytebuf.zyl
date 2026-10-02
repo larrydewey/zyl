@@ -20,3 +20,4 @@
       (assert-equal (+ total (- (ffi-call "zyl_region_live_bytes" 1000) before)) 71000))))
 
 (run-tests)
+(numeric checked)

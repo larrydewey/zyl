@@ -1,7 +1,8 @@
 ; Division and remainder by a constant (multiply sequences) agree with idiv.
 
-(defn dv ((x Int) (d Int)) (/ x d))
-(defn md ((x Int) (d Int)) (% x d))
+(numeric checked)
+(defn dv ((x Int) (d Int)) (div! x d))
+(defn md ((x Int) (d Int)) (rem! x d))
 
 ; Every x in [lo, hi) with a stride, against the idiv results.
 (defn chk ((x Int) (hi Int) (s Int) (bad Int))

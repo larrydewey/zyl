@@ -12,3 +12,4 @@
       (with-resource (r c) (print "using"))
       (print c)
       0)))
+(numeric checked)

@@ -20,7 +20,7 @@ git -C "$SCRATCH/index" init -q
 git -C "$SCRATCH/index" commit -q --allow-empty -m init
 
 cat > "$SCRATCH/lib/zyl.pkg" <<'PKG'
-(package (name "acme/greet") (version "1.0.0") (zyl "5.0") (edition "2026"))
+(package (numeric checked) (name "acme/greet") (version "1.0.0") (zyl "5.0") (edition "2026"))
 PKG
 cat > "$SCRATCH/lib/greet.zyl" <<'ZYL'
 (pub defn greeting () "hello from the index")
@@ -33,7 +33,7 @@ again="$(cd "$SCRATCH/lib" && "$Z" publish --index "$SCRATCH/index" 2>&1 || true
 echo "$again" | grep -q E_PKG_VERSION_EXISTS || fail "republishing a version must be E_PKG_VERSION_EXISTS"
 
 cat > "$SCRATCH/app/zyl.pkg" <<'PKG'
-(package (name "app/hello") (version "0.1.0") (zyl "5.0") (edition "2026")
+(package (numeric checked) (name "app/hello") (version "0.1.0") (zyl "5.0") (edition "2026")
   (capabilities io)
   (deps (dep "acme/greet" "1.0.0")))
 PKG

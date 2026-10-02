@@ -27,3 +27,4 @@
   (assert-equal (option-unwrap-or (car (cddr (_la_list))) 0) 30))
 
 (run-tests)
+(numeric checked)

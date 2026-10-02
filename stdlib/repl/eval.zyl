@@ -68,17 +68,21 @@
 (defn Global.value (g) (match g (Global _ v _ v)))
 (defn Global.source (g) (match g (Global _ _ s s)))
 
-(deftype Session (Session (List String) String (List Global) (List Icnf) Int String))
+(deftype Session (Session (List String) String (List Global) (List Icnf) Int String String))
 
-(defn Session.uses (s) (match s (Session u _ _ _ _ _ u)))
-(defn Session.defs (s) (match s (Session _ d _ _ _ _ d)))
-(defn Session.globals (s) (match s (Session _ _ g _ _ _ g)))
-(defn Session.lifted (s) (match s (Session _ _ _ l _ _ l)))
-(defn Session.count (s) (match s (Session _ _ _ _ n _ n)))
+(defn Session.uses (s) (match s (Session u _ _ _ _ _ _ u)))
+(defn Session.defs (s) (match s (Session _ d _ _ _ _ _ d)))
+(defn Session.globals (s) (match s (Session _ _ g _ _ _ _ g)))
+(defn Session.lifted (s) (match s (Session _ _ _ l _ _ _ l)))
+(defn Session.count (s) (match s (Session _ _ _ _ n _ _ n)))
 
 ; The directory the session was started in: where its saved state
 ; lives, which is what makes that state per project rather than global.
-(defn Session.dir (s) (match s (Session _ _ _ _ _ d d)))
+(defn Session.dir (s) (match s (Session _ _ _ _ _ d _ d)))
+
+; The numeric policy (§20.1) the session's program is compiled under:
+; "checked" until a `(numeric P)` entry replaces it.
+(defn Session.numeric (s) (match s (Session _ _ _ _ _ _ p p)))
 
 ; The modules a session starts with. Deliberately small and additive:
 ; `(use collections/vec)` at the prompt extends it, and a module that
@@ -92,20 +96,24 @@
           (Cons "allocator/allocator" Nil))))))
 
 (defn session-new (dir)
-  (Session (session-default-uses) "" Nil Nil 0 dir))
+  (Session (session-default-uses) "" Nil Nil 0 dir "checked"))
 
 (defn session-reset (s)
-  (Session (session-default-uses) "" Nil Nil (Session.count s) (Session.dir s)))
+  (Session (session-default-uses) "" Nil Nil (Session.count s) (Session.dir s) "checked"))
 
 (defn session-with-defs (s text)
   (Session (Session.uses s) (str-concat (Session.defs s) (str-concat "\n" text))
            (Session.globals s) (Session.lifted s) (+ (Session.count s) 1)
-           (Session.dir s)))
+           (Session.dir s) (Session.numeric s)))
 
 (defn session-with-use (s module)
   (Session (list-append (Session.uses s) (Cons module Nil)) (Session.defs s)
            (Session.globals s) (Session.lifted s) (+ (Session.count s) 1)
-           (Session.dir s)))
+           (Session.dir s) (Session.numeric s)))
+
+(defn session-with-numeric (s policy)
+  (Session (Session.uses s) (Session.defs s) (Session.globals s) (Session.lifted s)
+           (+ (Session.count s) 1) (Session.dir s) policy))
 
 ; Newest last: a session's bindings are replayed in the order they were
 ; made, and one may well be built from another.
@@ -113,12 +121,12 @@
   (Session (Session.uses s) (Session.defs s)
            (list-append (session-drop-global (Session.globals s) name)
                         (Cons (Global name v src) Nil))
-           (Session.lifted s) (+ (Session.count s) 1) (Session.dir s)))
+           (Session.lifted s) (+ (Session.count s) 1) (Session.dir s) (Session.numeric s)))
 
 (defn session-with-lifted (s fns)
   (Session (Session.uses s) (Session.defs s) (Session.globals s)
            (list-append (eval-lifted-of fns) (Session.lifted s))
-           (Session.count s) (Session.dir s)))
+           (Session.count s) (Session.dir s) (Session.numeric s)))
 
 (defn is-nil-list (xs) (match xs (Nil true) (Cons _ _ false)))
 
@@ -155,7 +163,7 @@
 
 (defn session-bump (s)
   (Session (Session.uses s) (Session.defs s) (Session.globals s)
-           (Session.lifted s) (+ (Session.count s) 1) (Session.dir s)))
+           (Session.lifted s) (+ (Session.count s) 1) (Session.dir s) (Session.numeric s)))
 
 ; ===========================================================================
 ; READING AN ENTRY
@@ -299,23 +307,28 @@
       (str-concat "(def " (str-concat (Global.name g) (str-concat " (if false " (str-concat (Global.source g)
         (str-concat " (zyl-repl-global \"" (str-concat (Global.name g) (str-concat "\")))\n" (eval-global-defs rest)))))))))))
 
+(defn eval-numeric-line (sess)
+  (str-concat "(numeric " (str-concat (Session.numeric sess) ")\n")))
+
 (defn eval-program-expr (sess text gs)
+  (str-concat (eval-numeric-line sess)
   (str-concat (eval-use-lines (Session.uses sess))
     (str-concat (eval-global-defs (Session.globals sess))
     (str-concat (Session.defs sess)
       (str-concat "\n(defn " (str-concat (eval-entry-name)
         (str-concat " (" (str-concat (eval-param-list gs)
-          (str-concat ") " (str-concat text ")\n"))))))))))
+          (str-concat ") " (str-concat text ")\n")))))))))))
 
 ; The program for checking a definition: the same, with the new
 ; definition in place and a trivial entry so that something references
 ; the module set.
 (defn eval-program-defs (sess text)
+  (str-concat (eval-numeric-line sess)
   (str-concat (eval-use-lines (Session.uses sess))
     (str-concat (eval-global-defs (Session.globals sess))
     (str-concat (Session.defs sess)
       (str-concat "\n" (str-concat text
-        (str-concat "\n(defn " (str-concat (eval-entry-name) " () 0)\n"))))))))
+        (str-concat "\n(defn " (str-concat (eval-entry-name) " () 0)\n")))))))))
 
 ; ===========================================================================
 ; RUNNING AN ENTRY
@@ -411,11 +424,20 @@
       (EvalOutcome (EvalFailed "error[E_UNBOUND_VARIABLE]: `zyl-repl-global` is the REPL's own internal form") sess)
     (if (str-eq head "use")
       (eval-add-use sess text)
+    (if (str-eq head "numeric")
+      (eval-set-numeric sess text)
       (if (str-eq head "def")
         (eval-add-global sess text)
         (if (eval-definition-p text)
           (eval-add-definition sess text)
-          (eval-expression sess text)))))))
+          (eval-expression sess text))))))))
+
+; `(numeric P)` at the prompt: every later entry compiles under P (§20.1).
+(defn eval-set-numeric (sess text)
+  (let p (eval-second-word text)
+    (if (or (str-eq p "checked") (or (str-eq p "wrapping") (str-eq p "saturating")))
+      (EvalOutcome (EvalDefined (str-concat "numeric policy: " p)) (session-with-numeric sess p))
+      (EvalOutcome (EvalFailed (str-concat "error[E_MALFORMED_FORM]: `" (str-concat p "` is not a numeric policy\n  = help: write `(numeric checked)`, `(numeric wrapping)` or `(numeric saturating)`"))) sess))))
 
 ; The session-value read the REPL generates must not come from the user:
 ; with it a value could be read back at any type.

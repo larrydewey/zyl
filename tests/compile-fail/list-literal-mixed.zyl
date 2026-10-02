@@ -2,3 +2,4 @@
 ; A list literal's elements have one type.
 (use core/list)
 (defn main () (begin (print (list-length [1 "a"])) 0))
+(numeric checked)

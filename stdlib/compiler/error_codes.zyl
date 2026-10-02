@@ -79,7 +79,9 @@
                 (Cons (EC "E_CODEGEN_BUFFER_FULL" 8 1 "codegen: output buffer full at S")
                   (Cons (EC "E_CODEGEN_BUFFER_LIMIT" 8 1 "codegen: buffer limit reached: M")
                     (Cons (EC "E_CONTRACT_VIOLATION" 14 1 "contract: contract violation - M at S")
-                      (Cons (EC "E_DIVISION_BY_ZERO" 15 1 "numeric: division by zero at S")
+                      (Cons (EC "E_DIVISION_BY_ZERO" 15 1 "numeric: `div!` or `rem!` met a zero divisor at S")
+                        (Cons (EC "E_NUMERIC_POLICY_REQUIRED" 15 1 "numeric: Int arithmetic at S needs a (numeric checked|wrapping|saturating) declaration")
+                        (Cons (EC "E_PARTIAL_OPERATION" 15 1 "numeric: `/` or `%` at S has a divisor that may be zero - write div!, div? or a literal")
                         (Cons (EC "E_DUPLICATE_DEFINITION" 4 1 "type: duplicate definition of N at S. previously defined at P")
                           (Cons (EC "E_DUPLICATE_IMPL" 12 1 "trait: duplicate impl of T for U at S")
                             (Cons (EC "E_DUPLICATE_VARIANT" 4 1 "type: duplicate variant V in deftype at S")
@@ -111,7 +113,7 @@
                                                                   (Cons (EC "E_DEADLOCK" 10 1 "runtime: every live actor is blocked on a channel or a join")
                                                                   (Cons (EC "E_ACTOR_LIMIT" 10 1 "runtime: at most 1024 actors per program")
                                                                   (Cons (EC "E_OUT_OF_MEMORY" 10 1 "runtime: out of memory")
-                                                                  (Cons (EC "E_OVERFLOW" 15 1 "numeric: integer overflow at S")
+                                                                  (Cons (EC "E_OVERFLOW" 15 1 "numeric: Int arithmetic overflowed under (numeric checked) at S")
                                                                   (Cons (EC "E_REGION_ESCAPE" 6 1 "region: value escapes region constraint at S")
                                                                     (Cons (EC "E_RESERVED_KEYWORD" 2 1 "parser: reserved keyword K cannot be used as identifier at S")
                                                                       (Cons (EC "E_RETURN_TYPE_MISMATCH" 4 1 "type: return type mismatch in F - expected T, got U at S")
@@ -174,7 +176,7 @@
                                                           (Cons (EC "E_PKG_CAPABILITY_VIOLATION" 13 1 "capability: package N uses M without declaring the C capability")
                                                            (Cons (EC "E_PKG_CAPABILITY_GROWTH" 13 1 "capability: capability closure grew under --locked: C")
                                                                (Cons (EC "W_RECOVER_SHADOW" 14 2 "recover: arm M shadows later arm N - move specific error codes before catch-all (String/_)")
-                                                           Nil)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+                                                           Nil)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 ; ---------------------------------------------------------------------------
 ; ACCESSORS
 ; ---------------------------------------------------------------------------

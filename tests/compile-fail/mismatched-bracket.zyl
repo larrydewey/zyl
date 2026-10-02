@@ -1,3 +1,4 @@
 ; Compile-fail: the param list opens with '(' but closes with ']'.
 
 (defn main (] (begin (print (+ 1 2)) 0))
+(numeric checked)

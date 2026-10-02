@@ -55,7 +55,7 @@
             (let _ (ou-st64 (+ s 8) size)
               (if (not (ou-flush-locked s)) false
                 (let rest (- n k)
-                  (let d (- rest (if (>= size 128) (% rest size) 0))
+                  (let d (- rest (if (>= size 128) (rem! rest size) 0))
                     (if (and (> d 0) (not (ou-sys-all 1 (+ p k) d))) false
                       (ou-append s (+ p (+ k d)) (- rest d)))))))))))))
 

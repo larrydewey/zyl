@@ -204,3 +204,4 @@
   (assert-equal (w-hex-bytes (ed25519-public-key (w-from-hex cose-seed)) 32) cose-pub))
 
 (run-tests)
+(numeric checked)

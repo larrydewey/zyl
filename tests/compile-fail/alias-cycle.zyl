@@ -3,3 +3,4 @@
 (alias B A)
 (defn run ((x A)) x)
 (defn main () 0)
+(numeric checked)

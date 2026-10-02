@@ -147,9 +147,9 @@
     (let y (w-get wp (- i 2))
       (let s0 (bit-xor (rotr64 x 1) (rotr64 x 8) (shr x 7))
         (let s1 (bit-xor (rotr64 y 19) (rotr64 y 61) (shr y 6))
-          (let lhs (+ (w-get wp (- i 16)) s0)
-            (let rhs (+ (w-get wp (- i 7)) s1)
-              (w-set wp i (+ lhs rhs)))))))))
+          (let lhs (wrapping+ (w-get wp (- i 16)) s0)
+            (let rhs (wrapping+ (w-get wp (- i 7)) s1)
+              (w-set wp i (wrapping+ lhs rhs)))))))))
 
 ; Returns: Words
 (defn sha512-schedule ((wp Words))
@@ -184,9 +184,9 @@
 ; t1 = h + S1(e) + Ch(e,f,g) + K[i] + W[i], wrapping at 64 bits.
 ; Returns: Int
 (defn sha512-t1 ((h Int) (s1 Int) (ch Int) (k Int) (w Int))
-  (let p1 (+ h s1)
-    (let p2 (+ ch k)
-      (+ (+ p1 p2) w))))
+  (let p1 (wrapping+ h s1)
+    (let p2 (wrapping+ ch k)
+      (wrapping+ (wrapping+ p1 p2) w))))
 
 ; Returns: Int
 (defn sha512-shift-vars ((wv Words) (a Int) (b Int) (c Int) (d Int) (e Int) (f Int) (g Int) (t1 Int) (t2 Int))
@@ -194,11 +194,11 @@
     (w-set wv 7 g)
     (w-set wv 6 f)
     (w-set wv 5 e)
-    (w-set wv 4 (+ d t1))
+    (w-set wv 4 (wrapping+ d t1))
     (w-set wv 3 c)
     (w-set wv 2 b)
     (w-set wv 1 a)
-    (w-set wv 0 (+ t1 t2))
+    (w-set wv 0 (wrapping+ t1 t2))
     0))
 
 ; Returns: Int
@@ -216,7 +216,7 @@
                       (let s0 (bit-xor (rotr64 a 28) (rotr64 a 34) (rotr64 a 39))
                         (let mj (bit-xor (bit-and a b) (bit-and a c) (bit-and b c))
                           (let t1 (sha512-t1 h s1 ch (w-get kp i) (w-get wp i))
-                            (let t2 (+ s0 mj)
+                            (let t2 (wrapping+ s0 mj)
                               (sha512-shift-vars wv a b c d e f g t1 t2))))))))))))))))
 
 ; Returns: Words
@@ -231,7 +231,7 @@
             (set! i (+ i 1))))
         (for (j 0) (< j 8)
           (begin
-            (w-set state j (+ (w-get state j) (w-get wv j)))
+            (w-set state j (wrapping+ (w-get state j) (w-get wv j)))
             (set! j (+ j 1))))
         state))))
 

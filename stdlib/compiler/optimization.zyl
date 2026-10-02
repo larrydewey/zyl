@@ -65,6 +65,7 @@
 ; nothing about "is this expression pure" needs to be proven separately.
 
 (use compiler/icnf)
+(use compiler/int_arith)
 (use compiler/node_tables)
 (use core/list)
 
@@ -92,6 +93,7 @@
 
 ; op codes, matching codegen.zyl's cg-arith-mnem/cg-cmp-set exactly:
 ; 0 + , 1 - , 2 * , 3 / , 4 % , 5 < , 6 > , 7 <= , 8 >= , 9 = , 10 !=
+; 18-20 wrapping + - *, 21-23 saturating + - * (icnf.zyl).
 ;
 ; The bitwise family (11-16, cg-bit-mnem) is deliberately NOT folded,
 ; and the `op > 10` guard below is load-bearing: this chain's final
@@ -101,18 +103,33 @@
 ; HERE would mean writing bit-and in the compiler's own source, which
 ; the previous-generation seed binary (no bitwise ops) cannot compile.
 (defn opt-fold-binop (op a b)
-  (if (> op 10) (IBinop op (IConst a) (IConst b))
-  (if (= op 0) (IConst (+ a b))
-  (if (= op 1) (IConst (- a b))
-  (if (= op 2) (IConst (* a b))
-  (if (= op 3) (if (= b 0) (IBinop op (IConst a) (IConst b)) (IConst (/ a b)))
-  (if (= op 4) (if (= b 0) (IBinop op (IConst a) (IConst b)) (IConst (% a b)))
+  (if (and (> op 10) (< op 18)) (IBinop op (IConst a) (IConst b))
+  (if (>= op 18) (opt-fold-policy op a b)
+  (if (<= op 2) (opt-fold-checked op a b)
+  (if (= op 3) (if (opt-div-traps a b) (IBinop op (IConst a) (IConst b)) (IConst (div! a b)))
+  (if (= op 4) (if (opt-div-traps a b) (IBinop op (IConst a) (IConst b)) (IConst (rem! a b)))
   (if (= op 5) (IConst (if (< a b) 1 0))
   (if (= op 6) (IConst (if (> a b) 1 0))
   (if (= op 7) (IConst (if (<= a b) 1 0))
   (if (= op 8) (IConst (if (>= a b) 1 0))
   (if (= op 9) (IConst (if (= a b) 1 0))
-  (IConst (if (= a b) 0 1))))))))))))))
+  (IConst (if (= a b) 0 1)))))))))))))
+
+; Checked + - * fold only when the result exists; an overflowing one stays
+; an instruction, so the program stops where its author wrote it (§20.1).
+; The test runs before the operation: the compiler is itself checked code.
+(defn opt-fold-checked (op a b)
+  (if (ia-overflows op a b)
+    (IBinop op (IConst a) (IConst b))
+    (IConst (if (= op 0) (+ a b) (if (= op 1) (- a b) (* a b))))))
+
+; Wrapping (18-20) folds modulo 2^64, saturating (21-23) folds to the clamp.
+(defn opt-fold-policy (op a b)
+  (IConst (if (< op 21) (ia-wrap (- op 18) a b) (ia-sat (- op 21) a b))))
+
+; A zero divisor and INT_MIN / -1 trap at runtime (§20.3), so neither folds.
+(defn opt-div-traps (a b)
+  (or (= b 0) (and (= b -1) (= a (- -9223372036854775807 1)))))
 
 (defn opt-expr (e)
   (ic-keep-span (ic-keep-kind (opt-expr-node e) e) e))

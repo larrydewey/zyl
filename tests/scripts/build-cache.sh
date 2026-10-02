@@ -14,7 +14,7 @@ export HOME="$SCRATCH/home"
 unset ZYL_HOME ZYL_NO_BUILD_CACHE
 mkdir -p "$HOME" "$SCRATCH/app"
 cat > "$SCRATCH/app/zyl.pkg" <<'PKG'
-(package (name "app/cached") (version "0.1.0") (zyl "5.0") (edition "2026") (capabilities io))
+(package (numeric checked) (name "app/cached") (version "0.1.0") (zyl "5.0") (edition "2026") (capabilities io))
 PKG
 cat > "$SCRATCH/app/cached.zyl" <<'ZYL'
 (defn main () (begin (print 1) 0))

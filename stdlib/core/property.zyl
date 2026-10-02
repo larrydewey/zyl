@@ -15,16 +15,16 @@
 
 ; SplitMix64's output function over wrapping Int arithmetic.
 (defn property-mix ((z Int))
-  (let a (* (bit-xor z (shr z 30)) -4658895280553007687)
-    (let b (* (bit-xor a (shr a 27)) -7723592293110705685)
+  (let a (int-wrap-mul (bit-xor z (shr z 30)) -4658895280553007687)
+    (let b (int-wrap-mul (bit-xor a (shr a 27)) -7723592293110705685)
       (bit-xor b (shr b 31)))))
 
 ; The i-th word of the seeded sequence.
-(defn property-word ((i Int)) (property-mix (* (+ i 1) -7046029254386353131)))
+(defn property-word ((i Int)) (property-mix (int-wrap-mul (+ i 1) -7046029254386353131)))
 
 ; A value in [0, n) from the i-th word.
 (defn property-below ((i Int) (n Int))
-  (let w (bit-and (property-word i) 9223372036854775807) (% w n)))
+  (let w (bit-and (property-word i) 9223372036854775807) (rem! w n)))
 
 (defn property-ints-from ((i Int) (n Int) acc)
   (if (>= i n) acc

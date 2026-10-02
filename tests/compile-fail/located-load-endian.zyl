@@ -6,3 +6,4 @@
 (defn main ()
   (let b (bytebuf Heap 16)
     (load-u8 :xx b 0)))
+(numeric checked)

@@ -53,3 +53,4 @@
         0))))
 
 (run-tests)
+(numeric checked)

@@ -20,7 +20,7 @@ grep -q '^\.globl main' "$SCRATCH/ok.s" && fail "runtime module has a main"
 B="$SCRATCH/bundle"
 mkdir -p "$B/runtime/rt"
 ln -s "$ZYL_HOME/stdlib" "$B/stdlib"
-printf '(use core/list)\n(defn zyl_x () 0)\n' > "$B/runtime/rt/rt.zyl"
+printf '(use core/list)\n(defn zyl_x () 0)\n(numeric checked)\n' > "$B/runtime/rt/rt.zyl"
 out="$(ZYL_HOME="$B" "$ZYL" "$B/runtime/rt/rt.zyl" -o "$SCRATCH/b.s" --runtime-module 2>&1 || true)"
 printf '%s\n' "$out" | grep -q 'E_FFI_RESTRICTED' || fail "stdlib use was not refused: $out"
 echo ok

@@ -7,3 +7,4 @@
   (match (_cf_Circle "wide")
     (_cf_Circle r r)
     (_cf_Rect w _ w)))
+(numeric checked)

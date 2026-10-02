@@ -40,3 +40,4 @@
     (assert-equal (bit-or 1 2 4) 7)))
 
 (run-tests)
+(numeric checked)

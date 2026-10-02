@@ -258,9 +258,9 @@
 ; One half of G: a += b + m; d = rotr(d^a, r1); c += d; b = rotr(b^c, r2).
 ; Returns: Int
 (defn blake2b-g-half ((v Words) (ia Int) (ib Int) (ic Int) (id Int) (m Int) (r1 Int) (r2 Int))
-  (let a (+ (+ (w-get v ia) (w-get v ib)) m)
+  (let a (wrapping+ (wrapping+ (w-get v ia) (w-get v ib)) m)
     (let d (rotr64 (bit-xor (w-get v id) a) r1)
-      (let c (+ (w-get v ic) d)
+      (let c (wrapping+ (w-get v ic) d)
         (let b (rotr64 (bit-xor (w-get v ib) c) r2)
           (begin
             (w-set v ia a)

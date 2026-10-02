@@ -3,6 +3,7 @@
 ; retyped), sexp_balance finds the same first fault as a bracket walk over
 ; the lexer's own tokens. Too slow to interpret (DIFF_SKIP).
 
+(numeric checked)
 (use allocator/allocator)
 (use compiler/ast)
 (use compiler/lexer)
@@ -50,7 +51,7 @@
 ; The i-th deterministic mutation: delete, duplicate or retype one bracket or quote.
 (defn mutate ((src String) (i Int))
   (let n (str-length src)
-    (let p (% (bit-and (* (+ i 1) -7046029254386353131) 9223372036854775807) n)
+    (let p (rem! (bit-and (wrapping* (+ i 1) -7046029254386353131) 9223372036854775807) n)
       (let q (bracket-at src p n 0)
         (if (< q 0) src
           (let kind (% i 3)
@@ -62,7 +63,7 @@
 ; The first bracket or quote at or after p (wrapping once), or -1.
 (defn bracket-at ((src String) (p Int) (n Int) (k Int))
   (if (>= k n) -1
-    (let j (% (+ p k) n)
+    (let j (rem! (+ p k) n)
       (let c (ffi-call "zyl_cstr_byte_at" src j 1000)
         (if (or (= c 34) (or (= c 40) (or (= c 41) (or (= c 91) (or (= c 93) (or (= c 123) (= c 125)))))))
           j (bracket-at src p n (+ k 1)))))))

@@ -5,3 +5,4 @@
 (defn make-buf () (bytebuf Stack 16))
 
 (defn main () (begin (print (bytebuf-cap (make-buf))) 0))
+(numeric checked)

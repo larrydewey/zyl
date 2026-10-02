@@ -51,3 +51,5 @@
 (test "expect-panic-false" (assert-equal 1 1) (:expect-panic false))
 
 (run-tests)
+; wraps on purpose: the properties are wrap identities over every Int
+(numeric wrapping)

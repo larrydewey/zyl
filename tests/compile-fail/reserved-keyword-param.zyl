@@ -2,3 +2,4 @@
 ; expect-at: reserved-keyword-param.zyl:3:10
 (defn f (test) test)
 (defn main () 0)
+(numeric checked)

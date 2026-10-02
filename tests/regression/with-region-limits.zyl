@@ -37,3 +37,4 @@
                      (catch e (if (ffi-call "zyl_err_is" e "E_REGION_EXHAUSTED" 1000) 1 0))) 1))
 
 (run-tests)
+(numeric checked)

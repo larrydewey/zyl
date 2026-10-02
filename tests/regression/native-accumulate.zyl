@@ -74,3 +74,5 @@
       (assert-equal (bsum b 60 70 0) 7))))
 
 (run-tests)
+; wraps on purpose: (fact 21) pins the wrapped product
+(numeric wrapping)

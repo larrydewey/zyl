@@ -2,6 +2,7 @@
 (use base)
 (use thread)
 (use heap)
+(use numeric)
 
 (extern "zyl_rt_getenv" (Int) Int)
 
@@ -64,8 +65,8 @@
 (defn rt-lshr64 (x n) (bit-and (shr x n) (- (shl 1 (- 64 n)) 1)))
 
 (defn rt-zsa-index (dst)
-  (let x1 (* (bit-xor dst (rt-lshr64 dst 33)) -49064778989728563)
-    (let x2 (* (bit-xor x1 (rt-lshr64 x1 33)) -4265267296055464877)
+  (let x1 (rt-wmul (bit-xor dst (rt-lshr64 dst 33)) -49064778989728563)
+    (let x2 (rt-wmul (bit-xor x1 (rt-lshr64 x1 33)) -4265267296055464877)
       (bit-and (bit-xor x2 (rt-lshr64 x2 33)) 63))))
 
 (defn zyl_str_append_scan (dst src cap)

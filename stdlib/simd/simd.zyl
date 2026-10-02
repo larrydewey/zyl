@@ -17,6 +17,7 @@
 
 (use core/core)
 (use core/list)
+(use core/show)
 
 (deftype I64x2 (I64x2C Int Int))
 (deftype I32x4 (I32x4C Int Int))
@@ -29,17 +30,19 @@
 (defn simd-h8 () -9187201950435737472)   ; 0x8080808080808080
 (defn simd-h32 () -9223372034707292160)  ; 0x8000000080000000
 
+; Lane arithmetic carries across the whole word by design: every word-level
+; + and - here wraps (int-wrap-add/int-wrap-sub), as the hardware's would.
 (defn swar-add ((a Int) (b Int) (h Int))
-  (let m (bit-not h) (bit-xor (+ (bit-and a m) (bit-and b m)) (bit-and (bit-xor a b) h))))
+  (let m (bit-not h) (bit-xor (int-wrap-add (bit-and a m) (bit-and b m)) (bit-and (bit-xor a b) h))))
 
 (defn swar-sub ((a Int) (b Int) (h Int))
-  (bit-xor (- (bit-or a h) (bit-and b (bit-not h))) (bit-and (bit-xor a (bit-not b)) h)))
+  (bit-xor (int-wrap-sub (bit-or a h) (bit-and b (bit-not h))) (bit-and (bit-xor a (bit-not b)) h)))
 
 ; The top bit of each lane where the lanes of a and b are equal.
 (defn swar-eq-top ((a Int) (b Int) (h Int))
   (let x (bit-xor a b)
     (let m (bit-not h)
-      (bit-xor (bit-and (bit-or (+ (bit-and x m) m) x) h) h))))
+      (bit-xor (bit-and (bit-or (int-wrap-add (bit-and x m) m) x) h) h))))
 
 ; The top bit of each lane where a's lane is below b's, unsigned (the borrow out of the lane).
 (defn swar-ltu-top ((a Int) (b Int) (h Int))
@@ -47,7 +50,7 @@
 
 ; Lane tops (bit w-1 of each w-bit lane) widened to all-ones lanes.
 (defn swar-widen ((t Int) (w Int))
-  (if (= w 8) (* (shr t 7) 255) (* (shr t 31) 4294967295)))
+  (if (= w 8) (wrapping* (shr t 7) 255) (wrapping* (shr t 31) 4294967295)))
 
 (defn swar-sel ((m Int) (a Int) (b Int)) (bit-or (bit-and a m) (bit-and b (bit-not m))))
 
@@ -74,8 +77,8 @@
 (defn i64x2-set ((v I64x2) (i Int) (x Int))
   (if (= i 0) (I64x2C x (i64x2-hi v)) (if (= i 1) (I64x2C (i64x2-lo v) x) (lane-panic "i64x2-set"))))
 
-(defn i64x2-add ((a I64x2) (b I64x2)) (I64x2C (+ (i64x2-lo a) (i64x2-lo b)) (+ (i64x2-hi a) (i64x2-hi b))))
-(defn i64x2-sub ((a I64x2) (b I64x2)) (I64x2C (- (i64x2-lo a) (i64x2-lo b)) (- (i64x2-hi a) (i64x2-hi b))))
+(defn i64x2-add ((a I64x2) (b I64x2)) (I64x2C (int-wrap-add (i64x2-lo a) (i64x2-lo b)) (int-wrap-add (i64x2-hi a) (i64x2-hi b))))
+(defn i64x2-sub ((a I64x2) (b I64x2)) (I64x2C (int-wrap-sub (i64x2-lo a) (i64x2-lo b)) (int-wrap-sub (i64x2-hi a) (i64x2-hi b))))
 (defn i64x2-and ((a I64x2) (b I64x2)) (I64x2C (bit-and (i64x2-lo a) (i64x2-lo b)) (bit-and (i64x2-hi a) (i64x2-hi b))))
 (defn i64x2-or ((a I64x2) (b I64x2)) (I64x2C (bit-or (i64x2-lo a) (i64x2-lo b)) (bit-or (i64x2-hi a) (i64x2-hi b))))
 (defn i64x2-xor ((a I64x2) (b I64x2)) (I64x2C (bit-xor (i64x2-lo a) (i64x2-lo b)) (bit-xor (i64x2-hi a) (i64x2-hi b))))
@@ -88,7 +91,7 @@
 
 ; The wrapping sum of the lanes.
 ; Returns: Int
-(defn i64x2-hsum ((v I64x2)) (+ (i64x2-lo v) (i64x2-hi v)))
+(defn i64x2-hsum ((v I64x2)) (int-wrap-add (i64x2-lo v) (i64x2-hi v)))
 
 ; ===========================================================================
 ; I32x4 (signed 32-bit lanes)
@@ -164,7 +167,7 @@
 ; Lanes 0-7 from the bytes of lo, 8-15 from hi, least significant first.
 ; Returns: U8x16
 (defn u8x16-of-words ((lo Int) (hi Int)) (U8x16C lo hi))
-(defn u8x16-splat ((x Int)) (let w (* (bit-and x 255) 72340172838076673) (U8x16C w w)))
+(defn u8x16-splat ((x Int)) (let w (wrapping* (bit-and x 255) 72340172838076673) (U8x16C w w)))
 (defn u8x16-lo ((v U8x16)) (match v (U8x16C a _ a)))
 (defn u8x16-hi ((v U8x16)) (match v (U8x16C _ b b)))
 
@@ -204,7 +207,8 @@
 ; Byte sum of one word: pairs into 16-bit lanes, then one multiply gathers them in the top 16 bits.
 (defn hsum8-word ((w Int))
   (let t (+ (bit-and w 71777214294589695) (bit-and (shr w 8) 71777214294589695))
-    (shr (* t 281479271743489) 48)))
+    ; the product's high bits fall off by design (wrapping multiply)
+    (shr (int-wrap-mul t 281479271743489) 48)))
 
 ; The sum of the sixteen lanes (0..4080).
 ; Returns: Int

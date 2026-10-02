@@ -2,3 +2,4 @@
 ; Quoted data is constant: a name inside it has no value (there is no
 ; symbol type).
 (defn main () (begin (print '(1 x)) 0))
+(numeric checked)

@@ -3,3 +3,4 @@
 ; ordinary parameter named `&rest`.
 (defn f (&rest xs) 0)
 (defn main () (begin (print (f 1 2)) 0))
+(numeric checked)

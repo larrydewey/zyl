@@ -25,6 +25,7 @@
 (use compiler/arity_check)
 (use compiler/error_report)
 (use compiler/rt_mode)
+(use compiler/numeric_check)
 
 ; --- Instruction tree -------------------------------------------------------
 
@@ -156,6 +157,15 @@
 ; Binop opcodes (instruction payloads, not node kinds):
 ; 0 add 1 sub 2 mul 3 div 4 rem 5 lt 6 gt 7 le 8 ge 9 eq 10 ne
 ; 11 bit-and 12 bit-or 13 bit-xor 14 shl 15 shr (logical) 16 ashr
+; 18 19 20 wrapping add sub mul; 21 22 23 saturating add sub mul. The
+; explicit operators `wrapping+ wrapping- wrapping*` and `saturating+
+; saturating- saturating*` name them whatever the package's policy is.
+;
+; On Int, 0-2 are the CHECKED operators: overflow is E_OVERFLOW (spec
+; §20.1). The package's (numeric P) policy picks which family ic-binop
+; emits; on Float the operands decide and 0-4 stay IEEE. 3 and 4 are
+; `div!`/`rem!` and a `/`/`%` with a literal divisor: a zero divisor is
+; E_DIVISION_BY_ZERO, INT_MIN / -1 is E_OVERFLOW (codegen.zyl, interp.zyl).
 ;
 ; The bitwise family (11-16) is what makes hash/cipher/bignum code
 ; expressible at all -- every one of them was previously an ordinary
@@ -173,6 +183,8 @@
   (if (str-eq s (str-intern arena "*")) 2
   (if (str-eq s (str-intern arena "/")) 3
   (if (str-eq s (str-intern arena "%")) 4
+  (if (str-eq s (str-intern arena "div!")) 3
+  (if (str-eq s (str-intern arena "rem!")) 4
   (if (str-eq s (str-intern arena "<")) 5
   (if (str-eq s (str-intern arena ">")) 6
   (if (str-eq s (str-intern arena "<=")) 7
@@ -187,7 +199,13 @@
   (if (str-eq s (str-intern arena "shr")) 15
   (if (str-eq s (str-intern arena "ashr")) 16
   (if (str-eq s (str-intern arena "bit-not")) 17
-  -1))))))))))))))))))))
+  (if (str-eq s (str-intern arena "wrapping+")) 18
+  (if (str-eq s (str-intern arena "wrapping-")) 19
+  (if (str-eq s (str-intern arena "wrapping*")) 20
+  (if (str-eq s (str-intern arena "saturating+")) 21
+  (if (str-eq s (str-intern arena "saturating-")) 22
+  (if (str-eq s (str-intern arena "saturating*")) 23
+  -1))))))))))))))))))))))))))))
 
 ; Typed empty lists (bare `Nil` values unify ambiguously as Option vs
 ; List depending on module load order — always name the element type).
@@ -297,13 +315,14 @@
 ; higher-order function values), so no separate function-pointer node kind
 ; is needed.
 (defn ic-toplevel-test (arena name body ep vt acc)
+  (let _ (ic-set-policy "")
   (let tname (str-intern arena (str-concat "_test_" name))
     (let h (ic-hoist (ic-expr arena body vt))
       (let node (hoist-node h)
         (let inner (if ep (ic-expect-panic-wrap arena node) node)
           (let tbody (ISeq (Cons inner (Cons (IConst 0) Nil)))
             (let acc2 (tlacc-push-fns (Cons (IFn tname (no-strs) tbody (no-ints)) (hoist-fns h)) acc)
-              (tlacc-push-stmt (ic-keep-span (IFfi "zyl_register_test" (Cons (IStr name) (Cons (ILoad tname) Nil))) body) acc2))))))))
+              (tlacc-push-stmt (ic-keep-span (IFfi "zyl_register_test" (Cons (IStr name) (Cons (ILoad tname) Nil))) body) acc2)))))))))
 
 ; (:expect-panic true) inverts the test: the body must raise, and a body
 ; that returns normally fails. The catch frame is popped before the
@@ -482,9 +501,22 @@
 ; its body (see ic-hoist) — rather than a single IFn, since a `(fn ...)`
 ; anywhere inside the body lowers to an embedded IFn node that must land
 ; in the top-level function list, not stay nested inside an expression.
+; The numeric policy of the definition being lowered: 0 checked, 1 wrapping, 2 saturating.
+(def ic-policy (ffi-call "zyl_ref_new" 0 1000))
+
+(defn ic-set-policy (name)
+  (ffi-call "zyl_ref_set" ic-policy (nc-policy-code (nc-package-of name)) 1000))
+
+; An Int `+ - *` under the policy: 0-2 checked, 18-20 wrapping, 21-23 saturating.
+(defn ic-policy-op (op)
+  (if (> op 2) op
+    (let p (ffi-call "zyl_ref_get" ic-policy 1000)
+      (if (= p 1) (+ op 18) (if (= p 2) (+ op 21) op)))))
+
 (defn ic-defn (arena name params body vt)
+  (let _ (ic-set-policy name)
   (let h (ic-hoist (ic-expr arena body vt))
-    (Cons (IFn (str-intern arena name) (param-names params (no-strs)) (hoist-node h) (param-kinds params (no-ints))) (hoist-fns h))))
+    (Cons (IFn (str-intern arena name) (param-names params (no-strs)) (hoist-node h) (param-kinds params (no-ints))) (hoist-fns h)))))
 
 (defn param-names (params acc)
   (match params
@@ -1400,7 +1432,8 @@
 ; (matching the Rust bootstrap's convert_nary_fold). Anything else was
 ; previously lowered to (IConst 0) SILENTLY — the source of the
 ; "computed count is 0 in stage>=2 binaries" miscompile class.
-(defn ic-binop (arena fname op args vt)
+(defn ic-binop (arena fname op0 args vt)
+  (let op (if (ic-float-args args) op0 (ic-policy-op op0))
   (if (= op 17)
     (ic-bit-not arena args vt)
   (if (= (list-length args) 2)
@@ -1411,14 +1444,20 @@
       (ic-unary arena fname op (first-expr args) vt)
       (if (> (list-length args) 2)
         (ic-binop-fold arena op args vt)
-        (ic-binop-arity fname))))))
+        (ic-binop-arity fname)))))))
+
+; Any Float operand makes the operation IEEE arithmetic, outside the Int policy.
+(defn ic-float-args (args)
+  (match args
+    (Nil false)
+    (Cons a t (if (= (ta-kind a) 2) true (ic-float-args t)))))
 
 ; One operand: `(- x)` is 0 - x, with a Float zero for a Float x; `(+ x)`
 ; and `(* x)` are x. Any other operator needs two.
 (defn ic-unary (arena fname op x vt)
-  (if (= op 1)
-    (IBinop 1 (if (= (ta-kind x) 2) (IFlt "0.0") (IConst 0)) (ic-expr arena x vt))
-    (if (or (= op 0) (= op 2))
+  (if (or (= op 1) (or (= op 19) (= op 22)))
+    (IBinop op (if (= (ta-kind x) 2) (IFlt "0.0") (IConst 0)) (ic-expr arena x vt))
+    (if (or (= op 0) (or (= op 2) (or (= op 18) (or (= op 20) (or (= op 21) (= op 23))))))
       (ic-expr arena x vt)
       (ic-binop-unary fname))))
 

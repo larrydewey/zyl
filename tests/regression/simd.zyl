@@ -105,3 +105,5 @@
   (assert-equal (mismatches 777 400 0) 0))
 
 (run-tests)
+; wraps on purpose: the PRNG feeding the model checks
+(numeric wrapping)

@@ -36,3 +36,4 @@
   (assert-equal (sha512-padded-len 112) 256))
 
 (run-tests)
+(numeric checked)

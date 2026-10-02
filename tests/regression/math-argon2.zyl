@@ -25,3 +25,4 @@
 (test "argon2id-64-byte-tag"
   (assert-equal (_ar_hash 32 3 1 64) "cfd94b71a47aa3d5293110049006a26a4b8ad8e20a7f2d9b167e1b13bd2f9509ee8b2a9d68e6225f6d56253e9b1fbe95d21157ff88a1d2b3664c303f07f87c54"))
 (run-tests)
+(numeric checked)

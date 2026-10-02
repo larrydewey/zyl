@@ -165,7 +165,7 @@
 ; n * m zeroed bytes; 0 on overflow (past 2^48) or failure.
 (defn zyl_rt_calloc (n m)
   (if (or (< n 0) (< m 0)) 0
-    (if (and (> n 0) (> m (/ (hp-limit) n))) 0
+    (if (and (> n 0) (> m (div! (hp-limit) n))) 0
       (let t (* n m)
         (let p (zyl_rt_malloc t)
           (if (= p 0) 0

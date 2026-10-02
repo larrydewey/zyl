@@ -96,3 +96,4 @@
   (assert-equal (ax-encode-hex ".string \"a\\\";b\"") "61223b6200"))
 
 (run-tests)
+(numeric checked)

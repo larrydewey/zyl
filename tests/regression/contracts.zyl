@@ -2,6 +2,7 @@
 ; Spec §23: a violated requires/ensures/invariant raises E_CONTRACT_VIOLATION;
 ; a passing one leaves the program's value unchanged.
 
+(numeric checked)
 (use core/core)
 (use core/result)
 
@@ -127,7 +128,7 @@
     _ct-no-contract
     (a b)
     (
-      /
+      div!
       a
       b
     )
@@ -165,7 +166,7 @@
 ; Violations raise E_CONTRACT_VIOLATION, catchable like any error.
 (defn _ct-div (a b)
   (requires (> b 0))
-  (/ a b))
+  (div! a b))
 
 (defn _ct-abs (x)
   (ensures (>= result 0))

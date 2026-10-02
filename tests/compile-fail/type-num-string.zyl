@@ -2,3 +2,4 @@
 ; Arithmetic is on Int or Float only, also through a generic function.
 (defn add (a b) (+ a b))
 (defn main () (begin (print (add "x" "y")) 0))
+(numeric checked)

@@ -1,3 +1,4 @@
+(numeric checked)
 (defn mark ((b ByteBuf) (j Int) (step Int) (n Int))
   (if (>= j n) 0 (begin (store-u8 :le b j 1) (mark b (+ j step) step n))))
 (defn sv ((b ByteBuf) (i Int) (n Int) (cnt Int))

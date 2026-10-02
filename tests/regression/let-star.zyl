@@ -39,3 +39,4 @@
     unit))
 
 (run-tests)
+(numeric checked)

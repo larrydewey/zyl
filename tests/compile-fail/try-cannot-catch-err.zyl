@@ -5,3 +5,4 @@
 ; (tests/regression/error-as-value.zyl covers the runtime halves.)
 (defn main ()
   (print (try (error "x") (catch e 7))))
+(numeric checked)

@@ -69,7 +69,7 @@ P9. Testability
     def, defn, defun, let, let*, let-mut, if, try, catch, spawn, chan-send,
     ffi-call, ffi-pin, ffi-unpin, assert, trait, impl, fn, lambda, 
     while, for, cond, begin, pub, use, export, requires, ensures, invariant,
-    recover, checkpoint, contracts, defmacro, alias, defstruct, defstruct+,
+    recover, checkpoint, contracts, numeric, defmacro, alias, defstruct, defstruct+,
     with-resource, derive, unwrap, error, Ok, Err, match, struct-get, 
     make-, test-suite, test, assert-equal, assert-fail, assert-true, 
     assert-false, test-property, setup, teardown, run-tests, test-compile
@@ -888,14 +888,52 @@ Definition:
 20. NUMERIC MODEL
 ================================================================================
 
+    Principle: a runtime failure may only happen where the source
+    explicitly asked for it. Int arithmetic never fails silently and
+    never fails where the author could not see it coming.
+
 20.1 Integers:
-    Int64 signed. Overflow behavior: checked (default), wrapping, saturating.
+    Int64 signed. Each package declares what + - * on Int do when the
+    result does not fit, once, among the top-level forms of a lone file
+    or as a line of zyl.pkg:
+        (numeric checked)      ; E_OVERFLOW stops the program
+        (numeric wrapping)     ; modulo 2^64
+        (numeric saturating)   ; clamped to INT_MAX / INT_MIN by the true sign
+    The policy covers every module of the package; a (numeric P) in a
+    module file, in the root of a manifested package, a name other than
+    the three, or two disagreeing forms is E_MALFORMED_FORM. The implicit
+    standard library (§25) is checked. The REPL is checked until a
+    (numeric P) entry changes it.
+    A package with no declaration that applies + - * to a non-literal Int
+    is E_NUMERIC_POLICY_REQUIRED at the first such operation. Arithmetic
+    on literals alone needs none and is folded; a folded result that does
+    not fit stays an operation and is E_OVERFLOW under checked.
+    Unary minus is (- 0 x) under the policy.
+    The explicit operators wrapping+ wrapping- wrapping* and saturating+
+    saturating- saturating* name one behaviour for one operation under
+    any policy (Int operands only); a derived Hash uses wrapping*.
+    Checked arithmetic is checked in the emitted code (one never-taken
+    branch per operation). A checked or saturating operation may not be
+    reordered, reassociated or deleted by the optimizer; a wrapping one
+    may, like any pure operation.
 
 20.2 Floats:
-    IEEE-754 binary64.
+    IEEE-754 binary64. Overflow is ±Infinity; there is no float overflow
+    error. A Float operand makes + - * / a Float operation, outside the
+    Int policy.
 
-20.3 Division by Zero:
-    Int -> E_DIVISION_BY_ZERO. Float -> ±Infinity/NaN.
+20.3 Division:
+    Int / and % are total only with a nonzero integer literal divisor;
+    any other divisor is E_PARTIAL_OPERATION at that operand, and no
+    guard is recognised. The author chooses:
+        (/ a 8) (% a 8)        ; literal divisor, cannot be zero
+        (div! a b) (rem! a b)  ; a zero divisor is E_DIVISION_BY_ZERO
+        (div? a b) (rem? a b)  ; a zero divisor is None, else (Some q): (Option Int)
+    div? and rem? evaluate both operands once, left to right. INT_MIN
+    divided by -1 is E_OVERFLOW under every policy (/, div!, div?);
+    (rem! INT_MIN -1) is 0. Quotients truncate toward zero and the
+    remainder takes the dividend's sign.
+    Float / by zero is ±Infinity or NaN.
 
 20.4 Determinism:
     Bit-level reproducibility guaranteed.
@@ -1232,8 +1270,10 @@ Errors:
     E_DUPLICATE_IMPL            — conflicting impls
     E_MACRO_ILLEGAL_ACCESS      — macro accessed runtime value
     E_CONTRACT_VIOLATION        — contract failed
-    E_OVERFLOW                  — integer overflow
-    E_DIVISION_BY_ZERO          — div by zero
+    E_OVERFLOW                  — Int + - * under (numeric checked) whose result does not fit; INT_MIN / -1
+    E_DIVISION_BY_ZERO          — div! or rem! with a zero divisor
+    E_NUMERIC_POLICY_REQUIRED   — non-literal Int + - * in a package with no (numeric ...) (Compile Error)
+    E_PARTIAL_OPERATION         — / or % whose divisor is not a nonzero literal (Compile Error)
     E_CHANNEL_NOT_OWNER         — channel endpoint used by an actor that does not own it
     E_CHANNEL_CLOSED            — chan-recv on a closed, drained channel
     E_CHANNEL_CAPACITY          — (chan n) outside 1..16777216

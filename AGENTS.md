@@ -47,7 +47,12 @@ unused/secret checks → derive expansion → impl lifting → closure
 inlining (`closure_inline.zyl`, now an identity step) → type checking (`type_annotate.zyl`: sound HM, spec §4.8–§4.10;
 every type error is reported, then the compile fails; static trait
 resolution, per-type specialization of calls and function values,
-generated structural `T.==`) → ICNF lowering →
+generated structural `T.==`) → numeric check (`numeric_check.zyl`, spec
+§20: `E_NUMERIC_POLICY_REQUIRED` for Int `+ - *` in a package with no
+`(numeric checked|wrapping|saturating)`, `E_PARTIAL_OPERATION` for a `/`
+or `%` whose divisor is not a nonzero literal; `div!`/`rem!` trap on zero,
+`div?`/`rem?` give `(Option Int)`) → ICNF lowering (the policy picks the
+operator family; checked `+ - *` trap with `E_OVERFLOW`) →
 optimization (small-function inlining and copy propagation, then
 constant folding and dead-branch elimination) → region inference (the stack-variant rewrite, then
 `rg-regions`: escape analysis over ICNF that places every allocation and

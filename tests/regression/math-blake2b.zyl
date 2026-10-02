@@ -22,3 +22,4 @@
       (let key (w-from-hex "6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b")
         (assert-equal (w-hex-bytes (blake2b msg 3 key 32 64) 64) "2ca403f5c2ab8f47e1168b8432648cd87dfb5fb846204c7ff0ee4783926e74bffa97610aa84b22b0ca0d6a76171702b863c8c6cd97f3accd06d92b2d9ad571f8")))))
 (run-tests)
+(numeric checked)

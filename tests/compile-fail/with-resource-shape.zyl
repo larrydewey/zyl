@@ -1,3 +1,4 @@
 ; expect-error: E_MALFORMED_FORM
 ; expect-at: with-resource-shape.zyl:3:15
 (defn main () (with-resource s 1 2))
+(numeric checked)

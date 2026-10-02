@@ -4,3 +4,4 @@
 (def _cf_limit 10)
 
 (defn main () (begin (set! _cf_limit 20) 0))
+(numeric checked)

@@ -1,3 +1,4 @@
+(numeric checked)
 (deftype Tree (Leaf) (Node Tree Tree))
 (defn make ((d Int)) (if (= d 0) (Leaf) (Node (make (- d 1)) (make (- d 1)))))
 (defn check ((t Tree)) (match t (Leaf 1) (Node l r (+ 1 (+ (check l) (check r))))))

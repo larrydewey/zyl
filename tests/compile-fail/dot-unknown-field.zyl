@@ -4,3 +4,4 @@
 (defstruct _cf_P (x Int))
 
 (defn main () (let p (make-_cf_P 1) p.z))
+(numeric checked)

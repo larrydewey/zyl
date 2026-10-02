@@ -10,3 +10,4 @@
       (string-buffer-destroy sb)
       (string-buffer-str sb)
       0)))
+(numeric checked)

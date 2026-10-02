@@ -779,7 +779,7 @@
 ; rhs kept in rcx. Div/Rem use cqo/idiv with divisor safe in rcx.
 (defn cg-ibinop (st env op l r)
   (let st6 (cg-ibinop-operands st env l r)
-    (if (< op 5)
+    (if (or (< op 5) (>= op 18))
       (cg-arith-mnem st6 op)
       (if (> op 10)
         (cg-bit-mnem st6 op)
@@ -889,18 +889,67 @@
             (cg-setcc st3 "le al")
             (cg-setcc st3 "ge al")))))))
 
+; Int arithmetic with lhs in rax and rhs in rcx (spec §20.1, §20.3).
+; 0-2 are checked: the overflow flag after the operation jumps to the
+; runtime's trap, which raises E_OVERFLOW. 18-20 wrap, as the hardware
+; does. 21-23 clamp (cg-sat-arith). Division is cg-divmod. rdx is scratch
+; on both paths that reach here (idiv always clobbered it).
 (defn cg-arith-mnem (st op)
-  ; Div (3) and Rem (4) both sign-extend rax into rdx via cqo before idiv,
-  ; otherwise a stale rdx makes the 128-bit quotient overflow (SIGFPE).
-  (let st2 (if (> op 2) (cg-emit-line st "    cqo") st)
-    (let mnem (if (= op 0) "    add rax, rcx"
-              (if (= op 1) "    sub rax, rcx"
-                (if (= op 2) "    imul rax, rcx"
-                  "    idiv rcx")))
-      (let st3 (cg-emit-line st2 mnem)
-        (if (= op 4)
-          (cg-emit-line st3 "    mov rax, rdx")
-          st3)))))
+  (if (or (= op 3) (= op 4)) (cg-divmod st op)
+  (if (>= op 21) (cg-sat-arith st (- op 21))
+    (let base (if (>= op 18) (- op 18) op)
+      (let st2 (cg-emit-line st (cg-arith-text base))
+        (if (>= op 18) st2 (cg-emit-line st2 (cg-trap-jo base))))))))
+
+(defn cg-arith-text (base)
+  (if (= base 0) "    add rax, rcx" (if (= base 1) "    sub rax, rcx" "    imul rax, rcx")))
+
+; The trap for operator `op` (0-4), a stub in the runtime (cg-rt-trap-stubs).
+(defn cg-trap-jo (op) (str-concat "    jo zyl_rt_trap_ovf_" (ffi-call "zyl_int_text" op 1000)))
+
+; rax = rax / rcx (3) or rax % rcx (4). A zero divisor is E_DIVISION_BY_ZERO
+; and INT_MIN / -1 is E_OVERFLOW, both decided before idiv, which would
+; raise #DE for either. A quotient by -1 is a negation, and `neg` overflows
+; exactly for INT_MIN; a remainder by -1 is 0 for every dividend.
+(defn cg-divmod (st op)
+  (match (cg-label-new st)
+    (CGR st2 _ lok
+      (match (cg-label-new st2)
+        (CGR st3 _ ldone
+          (let t (ffi-call "zyl_int_text" op 1000)
+            (cg-emit-lines st3
+              (list-append
+                (Cons "    test rcx, rcx"
+                  (Cons (str-concat "    jz zyl_rt_trap_div0_" t)
+                    (Cons "    cmp rcx, -1"
+                      (Cons (str-concat "    jne " lok) Nil))))
+                (list-append
+                  (if (= op 4)
+                    (Cons "    xor eax, eax" Nil)
+                    (Cons "    neg rax" (Cons (str-concat "    jo zyl_rt_trap_ovf_" t) Nil)))
+                  (Cons (str-concat "    jmp " ldone)
+                    (Cons (str-concat lok ":")
+                      (Cons "    cqo"
+                        (Cons "    idiv rcx"
+                          (list-append
+                            (if (= op 4) (Cons "    mov rax, rdx" Nil) Nil)
+                            (Cons (str-concat ldone ":") Nil)))))))))))))))
+
+; Saturating + - * (base 0-2): INT_MAX xor the sign the true result would
+; have (the lhs's for + and -, the operands' xor for *) is prepared in rdx
+; and replaces an overflowed result.
+(defn cg-sat-arith (st base)
+  (match (cg-label-new st)
+    (CGR st2 _ lok
+      (cg-emit-lines st2
+        (Cons "    mov rdx, rax"
+        (list-append (if (= base 2) (Cons "    xor rdx, rcx" Nil) Nil)
+        (Cons (cg-arith-text base)
+        (Cons (str-concat "    jno " lok)
+        (Cons "    sar rdx, 63"
+        (Cons "    mov rax, 9223372036854775807"
+        (Cons "    xor rax, rdx"
+        (Cons (str-concat lok ":") Nil))))))))))))
 
 ; Bitwise ops (11 bit-and, 12 bit-or, 13 bit-xor, 14 shl, 15 shr,
 ; 16 ashr) with lhs in rax and rhs in rcx, same register contract as
@@ -2437,7 +2486,7 @@
   (if (rt-mode-p)
     (let st2 (cg-rt-bss-list (cg-emit-line st ".bss") (rt-globals) "zyl_rtg_")
       (let st3 (cg-rt-tls-exports (cg-rt-bss-list (cg-emit-line st2 ".section .tbss,\"awT\",@nobits") (rt-globals) "zyl_rtt_") (rt-tls-exports))
-        (cg-rt-weaks (cg-emit-lines (cg-emit-lines (cg-rt-call-stubs (cg-rt-syscall-stubs (cg-emit-line st3 ".text") (rt-syscalls)) 0) (cg-rt-jmp-stubs)) (cg-rt-clone-stub)) (rt-weaks))))
+        (cg-rt-weaks (cg-emit-lines (cg-emit-lines (cg-emit-lines (cg-rt-call-stubs (cg-rt-syscall-stubs (cg-emit-line st3 ".text") (rt-syscalls)) 0) (cg-rt-jmp-stubs)) (cg-rt-clone-stub)) (cg-rt-trap-stubs)) (rt-weaks))))
     st))
 
 (defn cg-rt-bss-list (st gs prefix)
@@ -2463,6 +2512,27 @@
   (Cons ".globl zyl_rt_clone" (Cons "zyl_rt_clone:" (Cons "    mov r10, rcx" (Cons "    mov eax, 56" (Cons "    syscall"
   (Cons "    test rax, rax" (Cons "    jnz .Lzyl_rt_clone_parent" (Cons "    xor ebp, ebp" (Cons "    pop rax" (Cons "    pop rdi" (Cons "    call rax"
   (Cons "    mov edi, eax" (Cons "    mov eax, 60" (Cons "    syscall" (Cons "    ud2" (Cons ".Lzyl_rt_clone_parent:" (Cons "    ret" Nil))))))))))))))))))
+
+;; The arithmetic traps compiled code jumps to (cg-arith-mnem): zyl_rt_trap_ovf_<op> for
+;; an overflow in operator op (0 + 1 - 2 * 3 div! 4 rem!), zyl_rt_trap_div0_<op> for a zero
+;; divisor. Each aligns the stack and calls the runtime's panic with the operator's code.
+(defn cg-rt-trap-stubs ()
+  (list-append (cg-rt-trap-stub "ovf" 0 "zyl_overflow_panic")
+  (list-append (cg-rt-trap-stub "ovf" 1 "zyl_overflow_panic")
+  (list-append (cg-rt-trap-stub "ovf" 2 "zyl_overflow_panic")
+  (list-append (cg-rt-trap-stub "ovf" 3 "zyl_overflow_panic")
+  (list-append (cg-rt-trap-stub "ovf" 4 "zyl_overflow_panic")
+  (list-append (cg-rt-trap-stub "div0" 3 "zyl_div_zero_panic")
+               (cg-rt-trap-stub "div0" 4 "zyl_div_zero_panic"))))))))
+
+(defn cg-rt-trap-stub (kind op entry)
+  (let name (str-concat "zyl_rt_trap_" (str-concat kind (str-concat "_" (ffi-call "zyl_int_text" op 1000))))
+    (Cons (str-concat ".globl " name)
+      (Cons (str-concat name ":")
+        (Cons (str-concat "    mov edi, " (ffi-call "zyl_int_text" op 1000))
+          (Cons "    and rsp, -16"
+            (Cons (str-concat "    call " entry)
+              (Cons "    ud2" Nil))))))))
 
 (defn cg-rt-weaks (st ws) (match ws (Nil st) (Cons w rest (cg-rt-weaks (cg-emit-line st (str-concat ".weak " w)) rest))))
 
@@ -2574,7 +2644,7 @@
     (Cons a rest
       (let later (icnf-list-has-set rest)
         (let bo (match a
-                  (IBinop op x y (match y (IConst k (if (and (= op 0) (and (>= k -2147483648) (<= k 2147483647))) (Some (MVar "" k)) None)) (_ None)))
+                  (IBinop op x y (match y (IConst k (if (and (or (= op 0) (= op 18)) (and (>= k -2147483648) (<= k 2147483647))) (Some (MVar "" k)) None)) (_ None)))
                   (_ None))
           (let rb (match bo
                     (Some _ (match a (IBinop _ x _ (ml-operand st env venv ms x later)) (_ (ml-operand st env venv ms a later))))
@@ -2743,7 +2813,7 @@
     (IConst _ true)
     (ILoad n (or (not (= (env-lookup env n) 0)) (= (cg-fn-known st n) 1)))
     (IBinop op l r
-      (and (and (>= op 0) (<= op 16))
+      (and (and (>= op 0) (<= op 23))
         (and (cg-int-operands st env l r) (and (ml-ok st env l) (ml-ok st env r)))))
     (ICall name args
       (and (= (env-lookup env name) 0)
@@ -2885,7 +2955,8 @@
   (match e
     (IConst _ true)
     (ILoad _ true)
-    (IBinop op l r (and (not (or (= op 3) (= op 4))) (and (<= op 16) (and (ml-cheap-leaf l) (ml-cheap-leaf r)))))
+    ; evaluated speculatively, so nothing that can trap: comparisons, bits, wrapping arithmetic
+    (IBinop op l r (and (or (and (>= op 5) (<= op 16)) (and (>= op 18) (<= op 20))) (and (ml-cheap-leaf l) (ml-cheap-leaf r))))
     (_ false)))
 
 (defn ml-cheap-leaf (e) (match e (IConst _ true) (ILoad _ true) (_ false)))
@@ -2985,7 +3056,7 @@
 (defn ml-imm-op (op r)
   (match r
     (IConst n (and (and (>= n -2147483648) (<= n 2147483647))
-                   (or (<= op 2) (or (and (>= op 5) (<= op 10)) (or (and (>= op 11) (<= op 16))
+                   (or (or (<= op 2) (and (>= op 18) (<= op 20))) (or (and (>= op 5) (<= op 10)) (or (and (>= op 11) (<= op 16))
                      ; division by a constant other than 0 and -1 (whose
                      ; traps idiv keeps) is a multiply (mb-divmod-const)
                      (and (or (= op 3) (= op 4)) (not (or (= n 0) (= n -1)))))))))
@@ -3537,9 +3608,9 @@
                         (if (= op 0)
                           (if (and (>= ll 0) (and (>= rl2 0) (<= lh (- 9223372036854775807 rh)))) (Rng (+ ll rl2) (+ lh rh) true) (ml-rng-unknown))
                           (if (= op 2)
-                            (if (and (>= ll 0) (and (>= rl2 0) (or (= rh 0) (<= lh (/ 9223372036854775807 rh))))) (Rng (* ll rl2) (* lh rh) true) (ml-rng-unknown))
+                            (if (and (>= ll 0) (and (>= rl2 0) (or (= rh 0) (<= lh (div! 9223372036854775807 rh))))) (Rng (* ll rl2) (* lh rh) true) (ml-rng-unknown))
                             (if (and (= op 4) (and (>= ll 0) (and (= rl2 rh) (> rl2 0)))) (Rng 0 (- rl2 1) true)
-                              (if (and (= op 3) (and (>= ll 0) (and (= rl2 rh) (> rl2 0)))) (Rng (/ ll rl2) (/ lh rl2) true)
+                              (if (and (= op 3) (and (>= ll 0) (and (= rl2 rh) (> rl2 0)))) (Rng (div! ll rl2) (div! lh rl2) true)
                                 (ml-rng-unknown)))))))))))))
         (_ (ml-rng-unknown))))))
 
@@ -3615,7 +3686,7 @@
   (if (and (= op 4) (= k m))
     (match l
       (IBinop o x y
-        (if (= o 0)
+        (if (or (= o 0) (= o 18))
           (if (and (match x (ILoad n (str-eq n a)) (_ false)) (ml-rng-nonneg (ml-rng y f))) (Some y)
             (if (and (match y (ILoad n (str-eq n a)) (_ false)) (ml-rng-nonneg (ml-rng x f))) (Some x) None))
           None))
@@ -3634,7 +3705,8 @@
 
 (defn ml-acc-unit (op) (if (= op 2) 1 (if (= op 11) -1 0)))
 
-(defn ml-acc-op-ok (op) (or (= op 0) (or (= op 2) (and (>= op 11) (<= op 13)))))
+; Reassociation moves where an overflow happens, so only wrapping + * and the bit ops qualify.
+(defn ml-acc-op-ok (op) (or (= op 18) (or (= op 20) (and (>= op 11) (<= op 13)))))
 
 (defn ml-self-call-p (e self) (match e (ICall n _ (str-eq n self)) (_ false)))
 
@@ -4126,29 +4198,30 @@
     (MMov d s (if (mb-live fr d) (mb-mov st (mb-loc-text fr d) (mb-loc-text fr s)) st))
     (MBin op d a b
       (if (mb-live fr d)
-        (if (and (= op 0) (and (mb-all-regs fr d a b) (and (not (str-eq (mb-loc-text fr d) (mb-loc-text fr a))) (not (str-eq (mb-loc-text fr d) (mb-loc-text fr b))))))
+        ; lea sets no flags, so only a wrapping add may use it
+        (if (and (= op 18) (and (mb-all-regs fr d a b) (and (not (str-eq (mb-loc-text fr d) (mb-loc-text fr a))) (not (str-eq (mb-loc-text fr d) (mb-loc-text fr b))))))
           (cg-emit-line st (str-concat "    lea " (str-concat (mb-loc-text fr d) (str-concat ", [" (str-concat (mb-loc-text fr a) (str-concat "+" (str-concat (mb-loc-text fr b) "]")))))))
         (if (and (mb-two-op op) (and (not (mb-in-mem fr d)) (not (str-eq (mb-loc-text fr d) (mb-loc-text fr b)))))
           ; d = a; d op= b
-          (cg-emit-line (mb-mov st (mb-loc-text fr d) (mb-loc-text fr a))
-                        (str-concat "    " (str-concat (mb-two-op-mnem op) (str-concat " " (str-concat (mb-loc-text fr d) (str-concat ", " (mb-loc-text fr b)))))))
-         (if (and (mb-commutes op) (and (not (mb-in-mem fr d)) (str-eq (mb-loc-text fr d) (mb-loc-text fr b))))
+          (mb-checked-tail (cg-emit-line (mb-mov st (mb-loc-text fr d) (mb-loc-text fr a))
+                        (str-concat "    " (str-concat (mb-two-op-mnem op) (str-concat " " (str-concat (mb-loc-text fr d) (str-concat ", " (mb-loc-text fr b))))))) op)
+         (if (and (mb-two-op op) (and (mb-commutes op) (and (not (mb-in-mem fr d)) (str-eq (mb-loc-text fr d) (mb-loc-text fr b)))))
           ; d already holds b: d op= a
-          (cg-emit-line st (str-concat "    " (str-concat (mb-two-op-mnem op) (str-concat " " (str-concat (mb-loc-text fr d) (str-concat ", " (mb-loc-text fr a)))))))
+          (mb-checked-tail (cg-emit-line st (str-concat "    " (str-concat (mb-two-op-mnem op) (str-concat " " (str-concat (mb-loc-text fr d) (str-concat ", " (mb-loc-text fr a))))))) op)
           (let st2 (cg-emit-line (cg-emit-line st (str-concat "    mov rax, " (mb-loc-text fr a))) (str-concat "    mov rcx, " (mb-loc-text fr b)))
-            (let st3 (if (< op 5) (cg-arith-mnem st2 op) (if (> op 10) (cg-bit-mnem st2 op) (cg-cmp-set st2 op)))
+            (let st3 (if (or (< op 5) (>= op 18)) (cg-arith-mnem st2 op) (if (> op 10) (cg-bit-mnem st2 op) (cg-cmp-set st2 op)))
               (mb-set st3 fr d "rax"))))))
         st))
     (MBinI op d a n
       (if (mb-live fr d)
        (if (or (or (= op 3) (= op 4)) (or (= op 103) (= op 104)))
         (mb-set (mb-divmod-const st fr op a n) fr d "rax")
-       (if (>= op 14)
+       (if (and (>= op 14) (<= op 16))
         (mb-shift-imm st fr op d a n)
         (if (mb-two-op op)
           (if (mb-in-mem fr d)
-            (mb-set (cg-emit-line (cg-emit-line st (str-concat "    mov rax, " (mb-loc-text fr a)))
-                                  (str-concat "    " (str-concat (mb-two-op-mnem op) (str-concat " rax, " (ffi-call "zyl_int_text" n 1000)))))
+            (mb-set (mb-checked-tail (cg-emit-line (cg-emit-line st (str-concat "    mov rax, " (mb-loc-text fr a)))
+                                  (str-concat "    " (str-concat (mb-two-op-mnem op) (str-concat " rax, " (ffi-call "zyl_int_text" n 1000))))) op)
                     fr d "rax")
             (mb-bini-reg st fr op d a n))
           ; a comparison: cmp against the immediate, then setcc
@@ -4320,31 +4393,37 @@
 (defn mb-all-regs (fr d a b) (and (not (mb-in-mem fr d)) (and (not (mb-in-mem fr a)) (not (mb-in-mem fr b)))))
 
 ; d <- a op n, d a register: lea for add/sub into another register, imul's three-operand form.
+; A checked (0-2) operation ends with the overflow test; nothing else can trap here.
+(defn mb-checked-tail (st op) (if (<= op 2) (cg-emit-line st (cg-trap-jo op)) st))
+
+; lea and shl set no flags, so those forms are for the wrapping operators only.
 (defn mb-bini-reg (st fr op d a n)
   (let dt (mb-loc-text fr d)
     (let at (mb-loc-text fr a)
-      (if (and (<= op 1) (and (not (str-eq dt at)) (and (not (mb-in-mem fr a)) (> n -2147483648))))
-        (let k (if (= op 0) n (- 0 n))
+      (if (and (and (>= op 18) (<= op 19)) (and (not (str-eq dt at)) (and (not (mb-in-mem fr a)) (> n -2147483648))))
+        (let k (if (= op 18) n (- 0 n))
           (cg-emit-line st (str-concat "    lea " (str-concat dt (str-concat ", [" (str-concat at (str-concat (if (< k 0) "-" "+") (str-concat (ffi-call "zyl_int_text" (if (< k 0) (- 0 k) k) 1000) "]"))))))))
-        (if (and (= op 2) (and (> n 1) (and (= (bit-and n (- n 1)) 0) (not (mb-in-mem fr a)))))
+        (if (and (= op 20) (and (> n 1) (and (= (bit-and n (- n 1)) 0) (not (mb-in-mem fr a)))))
           ; times 2^k: a shift (the same wrapped product)
           (let k (mb-log2 n 0)
             (if (and (<= k 3) (not (str-eq dt at)))
               (cg-emit-line st (str-concat "    lea " (str-concat dt (str-concat ", [" (str-concat at (str-concat "*" (str-concat (ffi-call "zyl_int_text" n 1000) "]")))))))
               (cg-emit-line (mb-mov st dt at) (str-concat "    shl " (str-concat dt (str-concat ", " (ffi-call "zyl_int_text" k 1000)))))))
-        (if (= op 2)
-          (cg-emit-line st (str-concat "    imul " (str-concat dt (str-concat ", " (str-concat at (str-concat ", " (ffi-call "zyl_int_text" n 1000)))))))
-          (cg-emit-line (mb-mov st dt at)
-                        (str-concat "    " (str-concat (mb-two-op-mnem op) (str-concat " " (str-concat dt (str-concat ", " (ffi-call "zyl_int_text" n 1000)))))))))))))
+        (if (or (= op 2) (= op 20))
+          (mb-checked-tail (cg-emit-line st (str-concat "    imul " (str-concat dt (str-concat ", " (str-concat at (str-concat ", " (ffi-call "zyl_int_text" n 1000))))))) op)
+          (mb-checked-tail (cg-emit-line (mb-mov st dt at)
+                        (str-concat "    " (str-concat (mb-two-op-mnem op) (str-concat " " (str-concat dt (str-concat ", " (ffi-call "zyl_int_text" n 1000))))))) op)))))))
 
 ; add, sub, imul, and, or, xor have a two-operand form d op= s. (Shifts,
 ; division and comparisons keep the fixed rax/rcx sequences above, which
 ; also keep the shift and bit sequences constant-time.)
-(defn mb-two-op (op) (or (<= op 2) (and (>= op 11) (<= op 13))))
-(defn mb-commutes (op) (or (= op 0) (or (= op 2) (and (>= op 11) (<= op 13)))))
+(defn mb-two-op (op) (or (<= op 2) (or (and (>= op 18) (<= op 20)) (and (>= op 11) (<= op 13)))))
+(defn mb-commutes (op)
+  (or (= op 0) (or (= op 2) (or (= op 18) (or (= op 20) (or (= op 21) (or (= op 23) (and (>= op 11) (<= op 13)))))))))
 
-(defn mb-two-op-mnem (op)
-  (if (= op 0) "add" (if (= op 1) "sub" (if (= op 2) "imul" (if (= op 11) "and" (if (= op 12) "or" "xor"))))))
+(defn mb-two-op-mnem (op0)
+  (let op (if (>= op0 18) (- op0 18) op0)
+    (if (= op 0) "add" (if (= op 1) "sub" (if (= op 2) "imul" (if (= op 11) "and" (if (= op 12) "or" "xor")))))))
 
 ; rax = the comparison op's result as 0 or 1, after a cmp.
 (defn mb-setcc (st op)

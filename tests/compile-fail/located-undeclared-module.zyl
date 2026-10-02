@@ -6,3 +6,4 @@
 (use no/such/module)
 
 (defn main () 0)
+(numeric checked)

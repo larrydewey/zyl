@@ -63,3 +63,4 @@
     (assert-equal (tuple-get (tp-either 0) 1) 4)))
 
 (run-tests)
+(numeric checked)

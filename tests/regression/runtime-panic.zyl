@@ -61,3 +61,4 @@
     (assert-false (ffi-call "zyl_diag_json" 1000))))
 
 (run-tests)
+(numeric checked)

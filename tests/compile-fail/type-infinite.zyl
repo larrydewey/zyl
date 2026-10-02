@@ -2,3 +2,4 @@
 ; A value applied to itself would need a type that contains itself.
 (defn self-apply (f) (f f))
 (defn main () 0)
+(numeric checked)

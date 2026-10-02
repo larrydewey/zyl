@@ -5,3 +5,4 @@
 (defn main ()
   (let input (read-line)
     (begin (print (str-concat "got: " input)) 0)))
+(numeric checked)

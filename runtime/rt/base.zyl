@@ -9,7 +9,12 @@
 (defmacro rt-eqmask (a b) (ffi-call "%v128-eq-mask" a b 1))
 (defmacro rt-ctz (x) (ffi-call "%ctz" x 1))
 ; The high bit of each zero byte of x (its lowest set bit marks the first one).
-(defmacro rt-zero-bytes (x) (let zb-x x (bit-and (bit-and (- zb-x 72340172838076673) (bit-not zb-x)) -9187201950435737472)))
+; a + b and a - b modulo 2^64 (spec §20.1's operators): the runtime is checked code.
+(defn rt-wadd (a b) (wrapping+ a b))
+(defn rt-wsub (a b) (wrapping- a b))
+
+; The zero-byte test borrows across lanes by design, so its subtraction wraps.
+(defmacro rt-zero-bytes (x) (let zb-x x (bit-and (bit-and (rt-wsub zb-x 72340172838076673) (bit-not zb-x)) -9187201950435737472)))
 
 ; --- SIMD scans (SSE2: aligned loads never cross a page) ---
 

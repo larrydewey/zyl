@@ -9,3 +9,4 @@
     (_cf_addk 1)))
 
 (defn main () (begin (print (_cf_f 2)) 0))
+(numeric checked)

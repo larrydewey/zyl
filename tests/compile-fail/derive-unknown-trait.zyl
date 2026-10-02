@@ -5,3 +5,4 @@
 (derive _cf_Q Frobnicate)
 
 (defn main () 0)
+(numeric checked)

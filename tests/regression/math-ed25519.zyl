@@ -77,3 +77,4 @@
             (assert-false (ed25519-verify pk msg 1 sig))))))))
 
 (run-tests)
+(numeric checked)

@@ -66,3 +66,4 @@
   (assert-equal (hits-in "\"E_X\"" "\"E_XY\"") 0))
 
 (run-tests)
+(numeric checked)

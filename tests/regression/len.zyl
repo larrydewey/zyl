@@ -34,3 +34,4 @@
     (assert-equal (len s) (str-length s))))
 
 (run-tests)
+(numeric checked)

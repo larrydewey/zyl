@@ -57,3 +57,4 @@
       (assert-equal (str-length (ffi-call "zyl_mangle_key" a (str-concat "big/pkg@7::some/mod::" (alpha 250)) 1000)) 200))))
 
 (run-tests)
+(numeric checked)

@@ -1,0 +1,36 @@
+(numeric wrapping)
+; Spec 20.1 wrapping arithmetic: Int + - * are modulo 2^64 on every
+; emission path; division is unchanged by the policy.
+
+(defn big () 9223372036854775807)
+(defn small () (- -9223372036854775807 1))
+(defn zero () 0)
+
+(test "wrap-add" (assert-equal (+ (big) 1) (small)))
+(test "wrap-add-reg" (assert-equal (+ (big) (big)) -2))
+(test "wrap-sub" (assert-equal (- (small) 1) (big)))
+(test "wrap-mul" (assert-equal (* (big) 2) -2))
+(test "wrap-mul-pow2" (assert-equal (* (big) 8) -8))
+(test "wrap-mul-reg" (assert-equal (* (big) (big)) 1))
+(test "wrap-negate-min" (assert-equal (- (small)) (small)))
+(test "wrap-literal-fold" (assert-equal (+ 9223372036854775807 1) (small)))
+(test "wrap-literal-mul-fold" (assert-equal (* 4294967296 4294967296) 0))
+(test "wrap-plain" (assert-equal (* 6 7) 42))
+
+(defn sum-big (n) (if (= n 0) 0 (+ (big) (sum-big (- n 1)))))
+(test "wrap-recursive-sum" (assert-equal (sum-big 2) -2))
+
+(defn count-up (i n acc) (if (>= i n) acc (count-up (+ i 1) n (+ acc i))))
+(test "wrap-loop" (assert-equal (count-up 0 100 0) 4950))
+
+; a hash the way C writes one: multiply and wrap
+(defn fnv (s i h)
+  (if (>= i (str-length s)) h
+    (fnv s (+ i 1) (* (bit-xor h (ffi-call "zyl_cstr_byte_at" s i 1000)) 1099511628211))))
+(test "wrap-fnv" (assert-equal (fnv "zyl" 0 -3750763034362895579) -3565709502158392912))
+
+(test "wrap-div-zero-still-traps" (assert-equal (div! 7 (zero)) 0) (:expect-panic true))
+(test "wrap-div-min-minus-one-still-traps" (assert-equal (/ (small) -1) 0) (:expect-panic true))
+(test "wrap-div-opt" (assert-equal (match (div? 9 (zero)) (Some _ 1) (None 0)) 0))
+
+(run-tests)

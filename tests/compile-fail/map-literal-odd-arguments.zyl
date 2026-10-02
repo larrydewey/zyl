@@ -6,3 +6,4 @@
 (defn main ()
   (let m (map "a" 1 "b")
     (print (len m))))
+(numeric checked)

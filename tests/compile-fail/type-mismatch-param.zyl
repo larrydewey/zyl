@@ -4,3 +4,4 @@
 (defn _cf_add ((a Int) (b Int)) (+ a b))
 
 (defn main () (_cf_add 1.5 2.0))
+(numeric checked)

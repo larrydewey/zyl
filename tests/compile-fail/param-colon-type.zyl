@@ -3,3 +3,4 @@
 ; used to be ignored, so `(+ a 1)` compiled.
 (defn f ((a : String)) (+ a 1))
 (defn main () (begin (print (f 1)) 0))
+(numeric checked)

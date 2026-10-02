@@ -3,3 +3,4 @@
 ; binding position, is a typo -- silently dropping it would bind nothing.
 (let* ((a))
   a)
+(numeric checked)

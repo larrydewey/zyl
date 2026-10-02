@@ -63,3 +63,4 @@
     (assert-equal (tc-closure-loop 2 30000000 0) 60000000)))
 
 (run-tests)
+(numeric checked)

@@ -1238,8 +1238,16 @@
     (let _ (ta-unify st tf (TaF ts r))
       r)))
 
-; 1 arithmetic, 2 comparison, 3 bitwise, 0 not an operator.
+; 1 arithmetic, 2 comparison, 3 Int-only (bitwise, div!/rem!), 0 not an operator.
 (defn ta-op-class (n)
+  (if (ta-streq n "div!") 3
+  (if (ta-streq n "rem!") 3
+  (if (ta-streq n "wrapping+") 3
+  (if (ta-streq n "wrapping-") 3
+  (if (ta-streq n "wrapping*") 3
+  (if (ta-streq n "saturating+") 3
+  (if (ta-streq n "saturating-") 3
+  (if (ta-streq n "saturating*") 3
   (if (ta-streq n "+") 1
   (if (ta-streq n "-") 1
   (if (ta-streq n "*") 1
@@ -1259,7 +1267,7 @@
   (if (ta-streq n "shl") 3
   (if (ta-streq n "shr") 3
   (if (ta-streq n "ashr") 3
-  0))))))))))))))))))))
+  0))))))))))))))))))))))))))))
 
 (defn ta-call (st ctx env e n args)
   (if (ta-streq n "zyl-method")

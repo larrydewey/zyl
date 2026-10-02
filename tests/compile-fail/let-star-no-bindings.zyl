@@ -4,3 +4,4 @@
 ; nothing is bound.
 (let* ()
   1)
+(numeric checked)

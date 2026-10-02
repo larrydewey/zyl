@@ -60,3 +60,4 @@
     (assert-true (str-eq (Show.show (make-DtPoint 1 2)) "DtPoint { x: 1, y: 2 }"))))
 
 (run-tests)
+(numeric checked)

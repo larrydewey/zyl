@@ -33,6 +33,7 @@
 ; the hash is computed.
 
 (use core/core)
+(use core/show)
 (use core/option)
 (use math/bits)
 (use math/words)
@@ -80,9 +81,10 @@
 ; that makes Argon2's permutation resist the cheap circuit
 ; implementations a pure XOR/rotate mixer would allow.
 ; Returns: Int
+; Every operation is modulo 2^64, as RFC 9106 writes it, so each one wraps.
 (defn argon2-blamka ((x Int) (y Int))
-  (let lo (* (bit-and x 4294967295) (bit-and y 4294967295))
-    (+ (+ x y) (* 2 lo))))
+  (let lo (int-wrap-mul (bit-and x 4294967295) (bit-and y 4294967295))
+    (int-wrap-add (int-wrap-add x y) (shl lo 1))))
 
 ; The G mixing step on four indexed words of a 16-word working vector.
 ; Returns: Int
@@ -424,11 +426,11 @@
 ; than recompute.
 ; Returns: Int
 (defn argon2-ref-index ((j1 Int) (area Int) (pass Int) (slice Int) (seglen Int) (lanelen Int))
-  (let x (shr (* j1 j1) 32)
+  (let x (shr (int-wrap-mul j1 j1) 32)
     (let y (shr (* area x) 32)
       (let z (- (- area 1) y)
         (let start (if (= pass 0) 0 (if (= slice 3) 0 (* (+ slice 1) seglen)))
-          (% (+ start z) lanelen))))))
+          (rem! (+ start z) lanelen))))))
 
 ; ===========================================================================
 ; SEGMENT FILL
@@ -517,7 +519,7 @@
 (defn argon2-fill-two ((w Argon2Work) (mem Words) (pass Int) (lane Int) (slice Int) (lanes Int) (lanelen Int) (seglen Int) (i Int) (cur Int) (prev Int) (rand Int))
   (let j1 (bit-and rand 4294967295)
     (let j2 (bit-and (shr rand 32) 4294967295)
-      (let reflane (if (= (+ pass slice) 0) lane (% j2 lanes))
+      (let reflane (if (= (+ pass slice) 0) lane (rem! j2 lanes))
         (let area (argon2-ref-area pass slice lane reflane i seglen lanelen)
           (let refidx (argon2-ref-index j1 area pass slice seglen lanelen)
             (argon2-fill-block w
@@ -546,8 +548,8 @@
 ; cost that is not such a multiple gets slightly less.
 ; Returns: Words
 (defn argon2id-hash ((pwd Words) (pwdlen Int) (salt Words) (saltlen Int) (m Int) (t Int) (p Int) (taglen Int))
-  (let blocks (* (* 4 p) (/ m (* 4 p)))
-    (let lanelen (/ blocks p)
+  (let blocks (* (* 4 p) (div! m (* 4 p)))
+    (let lanelen (div! blocks p)
       (let seglen (/ lanelen 4)
         (let mem (w-alloc (* blocks 128))
           (let h0 (argon2-h0 pwd pwdlen salt saltlen m t p taglen)

@@ -37,6 +37,7 @@
 (use compiler/icnf)
 (use compiler/closure_inline)
 (use compiler/type_annotate)
+(use compiler/numeric_check)
 (use compiler/derive)
 (use compiler/region_inference)
 (use compiler/optimization)
@@ -230,7 +231,12 @@
 (defn annotate-exprs (arena exprs)
   (begin
     (dbg-log "closure-inline\n")
-    (ta-annotate (ci-expand-program arena exprs))))
+    (let ann (ta-annotate (ci-expand-program arena exprs))
+      (begin
+        ; §20.1/§20.3: needs the types, so it follows inference and precedes lowering.
+        (dbg-log "numeric-check\n")
+        (nc-check-program ann)
+        ann))))
 
 ; Everything after type inference. None of these phases reports a diagnostic a
 ; program author can act on: they either succeed or they are compiler bugs,

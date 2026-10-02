@@ -9,3 +9,4 @@
   (if (> n 0) (ints) (strs)))
 (defn main ()
   (print (tuple-get (pick 1) 0)))
+(numeric checked)

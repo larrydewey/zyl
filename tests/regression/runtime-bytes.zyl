@@ -121,3 +121,4 @@
 ; The multi-actor atomics test is in concurrency.zyl.
 
 (run-tests)
+(numeric checked)

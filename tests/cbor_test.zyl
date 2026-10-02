@@ -378,3 +378,4 @@
                         (assert-equal (rd-uint (Rd b o) "kind") 7)))))))))))))
 
 (run-tests)
+(numeric checked)

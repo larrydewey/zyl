@@ -53,6 +53,21 @@ compile with `build/boot/zyl-self` on 2026-09-28.
   entries are typed by `ffi_sigs.zyl` and foreign functions by
   `(extern ...)`, and there is no cast form. The `receive` hole is gone
   with the mailboxes.
+- **The numeric model is implemented (spec §20, `docs/soundness.md` L8).**
+  A package chooses `(numeric checked|wrapping|saturating)` once (a
+  top-level form of a lone file, a line of `zyl.pkg`; the stdlib and the
+  REPL default are checked); a non-literal Int `+ - *` with no policy is
+  `E_NUMERIC_POLICY_REQUIRED`. Checked `+ - *` trap with `E_OVERFLOW`
+  (`add`/`sub`/`imul` then `jo` to a runtime stub) on every emission
+  path, wrapping is modulo 2^64, saturating clamps; `wrapping+ - *` and
+  `saturating+ - *` are explicit operators for any policy (a derived
+  `Hash` uses `wrapping*`). A `/` or `%` whose divisor is not a nonzero
+  literal is `E_PARTIAL_OPERATION`; `div!`/`rem!` stop with
+  `E_DIVISION_BY_ZERO`, `div?`/`rem?` give `(Option Int)`, `INT_MIN / -1`
+  is `E_OVERFLOW`, and no `idiv` can raise `#DE`. The folder and the REPL
+  interpreter decide overflow before operating (`int_arith.zyl`); the
+  accumulator transformation, speculative `if` arms and `lea` are limited
+  to wrapping arithmetic. The compiler and runtime run under checked.
 - Regions are real (`docs/regions-design.md`): each call that allocates
   short-lived values gets a frame region, results go into the region the
   caller chose, and only values that escape untracked go to the process

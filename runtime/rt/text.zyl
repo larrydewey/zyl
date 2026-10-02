@@ -10,7 +10,8 @@
       (if (> v -1000000) (if (> v -100000) 5 6) (if (> v -10000000) 7 8))
       (rt-nd v -1000000000 9))))
 
-(defn rt-nd (v t k) (if (or (> v t) (= k 19)) k (rt-nd v (* t 10) (+ k 1))))
+; The 19th digit is decided without forming -10^19, which no Int holds.
+(defn rt-nd (v t k) (if (> v t) k (if (= k 18) 19 (rt-nd v (* t 10) (+ k 1)))))
 
 ; "00".."99", two bytes per pair.
 (defn rt-digit-pairs () "00010203040506070809101112131415161718192021222324252627282930313233343536373839404142434445464748495051525354555657585960616263646566676869707172737475767778798081828384858687888990919293949596979899")
@@ -81,15 +82,19 @@
 
 (defn rt-digit-of (c) (if (and (>= c 48) (<= c 57)) (- c 48) (if (and (>= c 97) (<= c 102)) (- c 87) (if (and (>= c 65) (<= c 70)) (- c 55) -1))))
 
-; C's overflow tests, kept exactly (v stays positive, so the negative test never fires).
+; C's overflow tests, kept exactly: a negative literal accumulates downward, so
+; its one extra value, -9223372036854775808, fits without ever wrapping.
 (defn rt-acc-ok (neg v digit base)
-  (if neg (not (< v (/ (+ (rt-llong-min) digit) base))) (not (> v (/ (- 9223372036854775807 digit) base)))))
+  (if neg (not (< v (div! (+ (rt-llong-min) digit) base))) (not (> v (div! (- 9223372036854775807 digit) base)))))
+
+(defn rt-acc-step (neg v digit base)
+  (if neg (- (* v base) digit) (+ (* v base) digit)))
 
 (defn rt-to-int-loop (p neg v)
   (let c (rt-ld8 p)
     (if (and (>= c 48) (<= c 57))
-      (if (rt-acc-ok neg v (- c 48) 10) (rt-to-int-loop (+ p 1) neg (+ (* v 10) (- c 48))) 0)
-      (if neg (- 0 v) v))))
+      (if (rt-acc-ok neg v (- c 48) 10) (rt-to-int-loop (+ p 1) neg (rt-acc-step neg v (- c 48) 10)) 0)
+      v)))
 
 (defn zyl_cstr_to_int (s)
   (let w (rt-w s)
@@ -100,8 +105,8 @@
 (defn rt-to-int-base-loop (p neg v base)
   (let d (rt-digit-of (rt-ld8 p))
     (if (or (< d 0) (>= d base))
-      (if neg (- 0 v) v)
-      (if (rt-acc-ok neg v d base) (rt-to-int-base-loop (+ p 1) neg (+ (* v base) d) base) 0))))
+      v
+      (if (rt-acc-ok neg v d base) (rt-to-int-base-loop (+ p 1) neg (rt-acc-step neg v d base) base) 0))))
 
 (defn rt-base-of (p)
   (if (= (rt-ld8 p) 48)

@@ -587,12 +587,13 @@
 
 (defn mr-discover-forms (arena disc stack pkg module)
   (let forms (mr-parse-file arena (mr-module-file pkg module))
+    (let _ (mr-numeric-in-module forms pkg)
     (let uses (mr-collect-uses forms)
       (let defs (mr-collect-defs arena pkg module forms)
         (let id (mr-unit-id (mrp-name pkg) module)
           (let disc2 (mr-discover-deps arena (mr-with-pkgs disc arena pkg)
                                        (Cons id stack) pkg uses)
-            (mr-add-unit disc2 (MRUN (mrp-name pkg) module forms uses defs) id)))))))
+            (mr-add-unit disc2 (MRUN (mrp-name pkg) module forms uses defs) id))))))))
 
 (defn mr-add-unit (disc munit id)
   (match disc
@@ -668,8 +669,9 @@
     (let _ (mr-check-dep-features arena root d)
       (let entry (MRP (pd-name d) (mr-dep-major d) root 1 (mr-dep-caps arena root)
                       (pd-features d))
+        (let _ (mr-numeric-put (pd-name d) (mr-dep-numeric arena root))
         (match disc
-          (MRD units seen pkgs (MRD units seen (Cons entry pkgs))))))))
+          (MRD units seen pkgs (MRD units seen (Cons entry pkgs)))))))))
 
 ; A requested feature must be one the dependency declares (§31.10);
 ; otherwise the request is a typo that would silently enable nothing.
@@ -704,6 +706,87 @@
     (if (mr-file-exists path)
       (mf-capabilities (pk-read-manifest arena path))
       Nil)))
+
+(defn mr-dep-numeric (arena root)
+  (let path (str-concat root "/zyl.pkg")
+    (if (mr-file-exists path)
+      (mf-numeric (pk-read-manifest arena path))
+      "")))
+
+; ===========================================================================
+; NUMERIC POLICY (§20.1)
+; ===========================================================================
+; Every package compiles under one policy for Int `+ - *`: checked,
+; wrapping or saturating. A manifest states it with (numeric P); a lone
+; file states it with the same form among its top-level forms; the
+; implicit standard library is checked. The table is node_tables.zyl's
+; numeric-policies, keyed by package name, with the root also under "".
+; A package that states nothing gets "", and its first non-literal Int
+; operation is E_NUMERIC_POLICY_REQUIRED (numeric_check.zyl).
+
+(defn mr-numeric-put (pkg policy)
+  (ffi-call "zyl_smap_put" numeric-policies pkg policy 1000))
+
+(defn mr-numeric-root (arena pkg main-forms srcpath)
+  (let _ (mr-numeric-put (mr-stdlib-name) "checked")
+    (let declared (mr-numeric-declared main-forms)
+      (let policy (if (= (mrp-manifested pkg) 1)
+                    (mr-numeric-manifest arena pkg main-forms declared)
+                    (if (> (str-length declared) 0) declared
+                      (if (str-eq srcpath "<repl>") "checked" "")))
+        (let _ (mr-numeric-put (mrp-name pkg) policy)
+          (mr-numeric-put "" policy))))))
+
+; A manifested root takes its policy from zyl.pkg; a form in the file would be a second source.
+(defn mr-numeric-manifest (arena pkg main-forms declared)
+  (if (> (str-length declared) 0)
+    (mr-numeric-fail (mr-numeric-form main-forms)
+      (str-concat "`(numeric " (str-concat declared (str-concat ")` belongs in zyl.pkg, which already decides the policy of package " (mrp-name pkg))))
+      (str-concat "remove this line, and write `(numeric " (str-concat declared ")` in zyl.pkg instead")))
+    (mf-numeric (pk-read-manifest arena (str-concat (mrp-root pkg) "/zyl.pkg")))))
+
+; The policy a module file declares is the package's, so a form there is refused.
+(defn mr-numeric-in-module (forms pkg)
+  (let declared (mr-numeric-declared forms)
+    (if (= (str-length declared) 0) 0
+      (mr-numeric-fail (mr-numeric-form forms)
+        (str-concat "`(numeric " (str-concat declared (str-concat ")` in a module: the policy belongs to the whole package " (mrp-name pkg))))
+        (str-concat "move `(numeric " (str-concat declared (if (= (mrp-manifested pkg) 1) ")` to zyl.pkg" ")` to the file that is compiled")))))))
+
+; The one policy the forms declare ("" when none); two forms must agree, and a bad one is refused.
+(defn mr-numeric-declared (forms)
+  (match forms
+    (Nil "")
+    (Cons f rest
+      (if (str-eq (mr-ast-head f) "numeric")
+        (let p (mr-numeric-policy-of f)
+          (let other (mr-numeric-declared rest)
+            (if (or (= (str-length other) 0) (str-eq other p)) p
+              (mr-numeric-fail f
+                (str-concat "`(numeric " (str-concat p (str-concat ")` disagrees with a later `(numeric " (str-concat other ")`"))))
+                "keep one of the two lines"))))
+        (mr-numeric-declared rest)))))
+
+(defn mr-numeric-form (forms)
+  (match forms
+    (Nil (AstInt 0))
+    (Cons f rest (if (str-eq (mr-ast-head f) "numeric") f (mr-numeric-form rest)))))
+
+(defn mr-numeric-policy-of (f)
+  (match (mr-ast-args f)
+    (Cons a t
+      (match a
+        (AstIdent p
+          (if (and (is-nil t) (pk-numeric-policy-p p)) p
+            (mr-numeric-fail f (str-concat "`" (str-concat (ast-text f) "` is not a numeric policy")) (mr-numeric-help))))
+        (_ (mr-numeric-fail f (str-concat "`" (str-concat (ast-text f) "` is not a numeric policy")) (mr-numeric-help)))))
+    (Nil (mr-numeric-fail f "`(numeric)` names no policy" (mr-numeric-help)))))
+
+(defn mr-numeric-help () "write `(numeric checked)` to stop on overflow, `(numeric wrapping)` to wrap around, or `(numeric saturating)` to clamp")
+
+(defn mr-numeric-fail (at msg help)
+  (ffi-call "zyl_panic"
+    (err-at "E_MALFORMED_FORM" msg (ffi-call "zyl_span_file" at 1000) (ffi-call "zyl_span_off" at 1000) help) 1000))
 
 (defn mr-dep-major (d)
   (let pinned (pk-name-pinned-major (pd-name d))
@@ -1243,12 +1326,13 @@
 ; spliced, fully qualified expression list in dependency-first order.
 (defn mr-resolve-program (arena main-forms srcpath)
   (let pkg (mr-root-pkg arena (mr-dirname srcpath))
+    (let _ (mr-numeric-root arena pkg main-forms srcpath)
     (let module (mr-basename-module srcpath)
       (let uses (mr-collect-uses main-forms)
         (let defs (mr-collect-defs arena pkg module main-forms)
           (let root (MRUN (mrp-name pkg) module main-forms
                           (mr-root-uses main-forms uses) defs)
-            (mr-resolve-root arena pkg root (mr-root-uses main-forms uses))))))))
+            (mr-resolve-root arena pkg root (mr-root-uses main-forms uses)))))))))
 
 (defn mr-root-uses (main-forms uses)
   (if (rt-mode-p)
@@ -1285,12 +1369,13 @@
 ; Same resolution, with the package facts the capability pass needs.
 (defn mr-resolve-program-full (arena main-forms srcpath)
   (let pkg (mr-root-pkg arena (mr-dirname srcpath))
+    (let _ (mr-numeric-root arena pkg main-forms srcpath)
     (let module (mr-basename-module srcpath)
       (let uses (mr-collect-uses main-forms)
         (let defs (mr-collect-defs arena pkg module main-forms)
           (let root (MRUN (mrp-name pkg) module main-forms
                           (mr-root-uses main-forms uses) defs)
-            (mr-resolve-full arena pkg root (mr-root-uses main-forms uses))))))))
+            (mr-resolve-full arena pkg root (mr-root-uses main-forms uses)))))))))
 
 (defn mr-resolve-full (arena pkg root uses)
   (let _ (ffi-call "zyl_wvec_truncate" mr-use-store 0 1000)

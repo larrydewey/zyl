@@ -8,3 +8,4 @@
         (store-u8 :le v 0 65)
         (store-u8 :le b 0 66)
         0))))
+(numeric checked)

@@ -3,3 +3,4 @@
 (use core/list)
 (defmacro m (&rest xs) [0 ,@xs])
 (defn main () (begin (print (list-length (m 1 2))) 0))
+(numeric checked)

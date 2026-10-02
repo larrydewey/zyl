@@ -58,18 +58,90 @@ the resolved graph in canonical form.
 
 ## 20. Numeric Model
 
+The principle behind this section: **a runtime failure may only happen
+where the source explicitly asked for it.** Integer arithmetic therefore
+never fails silently (no wrap-around the author did not choose) and never
+fails where the author could not see it coming (no division whose divisor
+the source did not vouch for).
+
 ### 20.1 Integers
 
-Int64 signed. Overflow behavior: checked (default), wrapping, saturating.
+Int64 signed. Every package chooses what `+`, `-` and `*` on Int do when
+the mathematical result does not fit, with one declaration:
+
+```zyl
+(numeric checked)      ; the result does not exist: E_OVERFLOW stops the program
+(numeric wrapping)     ; modulo 2^64, as the hardware does
+(numeric saturating)   ; clamped to INT_MAX or INT_MIN, by the sign the true result would have
+```
+
+The form is written once, among the top-level forms of a lone file, or
+as a line of `zyl.pkg` for a package (`spec/16-package-system.md`). It
+is a property of the package: every module of the package compiles under
+it, and a `(numeric P)` form inside a module file, or in the root file of
+a manifested package, is `E_MALFORMED_FORM`, as is a name other than the
+three or two forms that disagree. The implicit standard library (§25) is
+checked. The REPL is checked until a `(numeric P)` entry changes it.
+
+A package that declares nothing and applies `+`, `-` or `*` to an Int
+operand that is not a literal is refused at that operation with
+`E_NUMERIC_POLICY_REQUIRED`. Arithmetic on literals alone needs no
+declaration: it is decided at compile time, and a literal result that
+does not fit is itself `E_OVERFLOW` when the program runs under
+`checked` (the folder keeps the operation rather than inventing a
+value). Unary minus is `(- 0 x)` and follows the policy; `(- INT_MIN)`
+is therefore `E_OVERFLOW`, `INT_MIN` or `INT_MAX` by policy.
+
+Whatever the policy, the explicit operators `wrapping+`, `wrapping-`,
+`wrapping*`, `saturating+`, `saturating-` and `saturating*` name one
+behaviour for one operation. They take Int operands only. A hash, a
+cipher or a lane-wise SIMD helper, which wraps by construction, is
+written with them inside checked code; a derived `Hash` impl uses
+`wrapping*`.
+
+Float `+ - * /` are IEEE-754 and outside the policy: a Float operand
+makes the operation a Float one.
+
+Checked arithmetic is checked in the emitted code: the add, subtract or
+multiply is followed by a test of the overflow flag that jumps to the
+runtime's trap, so a `checked` program pays one never-taken branch per
+operation. The optimizer may not move, merge or reassociate a checked or
+saturating operation (the result of `a + (b + c)` and `(a + b) + c` can
+differ in *where* they fail), and may not delete one whose result is
+unused. A wrapping operation is associative and may be reassociated and
+deleted like any pure operation.
 
 ### 20.2 Floats
 
-IEEE-754 binary64.
+IEEE-754 binary64. Overflow is ±Infinity, as the standard says; there is
+no float overflow error.
 
-### 20.3 Division by Zero
+### 20.3 Division
 
-- Int: `E_DIVISION_BY_ZERO`
-- Float: ±Infinity/NaN
+Int division is total only when its divisor is known: `/` and `%`
+accept a divisor that is a nonzero integer literal (`(/ n 8)`, `(% i
+60)`), and anything else, a variable, a call, a literal `0`, is refused
+at that operand with `E_PARTIAL_OPERATION`. No guard is recognised: an
+`if` around the division does not make `/` total. The author says what
+a zero divisor means:
+
+| form | zero divisor | result |
+|---|---|---|
+| `(/ a 8)`, `(% a 8)` | impossible, the literal is nonzero | Int |
+| `(div! a b)`, `(rem! a b)` | the program stops with `E_DIVISION_BY_ZERO` | Int |
+| `(div? a b)`, `(rem? a b)` | `None` | `(Option Int)` |
+
+`div?` and `rem?` evaluate both operands once, left to right, and are
+`(Some (div! a b))` otherwise. All four take Int operands only.
+
+`INT_MIN` divided by `-1` has no Int result in any policy; it is
+`E_OVERFLOW` from `/`, `div!` and `div?` alike (a quotient is a checked
+operation whatever the package's policy for `+ - *`, since no wrapping
+quotient is meaningful). `(rem! INT_MIN -1)` and `(% INT_MIN -1)` are
+`0`. Quotients truncate toward zero and a remainder takes the dividend's
+sign, as the hardware's `idiv` does.
+
+Float `/` by zero is ±Infinity or NaN, as the standard says.
 
 ---
 
@@ -134,10 +206,23 @@ Not normative.
 - There is no SHA-256 in the compiler or runtime; BLAKE3 is implemented in
   the runtime (`zyl_blake3_raw`, `zyl_blake3_hex`, `zyl_blake3_file_hex`).
   SHA-2 exists only as library code in `stdlib/math/hash/`.
-- **Numeric model (§20):** integer arithmetic wraps on overflow (there is
-  no checked mode and `E_OVERFLOW` is never raised); integer division by
-  zero, and `INT_MIN / -1`, raise SIGFPE rather than
-  `E_DIVISION_BY_ZERO`. Floats are IEEE-754 binary64 in SSE registers.
+- **Numeric model (§20):** implemented as written. `(numeric P)` is read by
+  the module resolver (`mr-numeric-root`, keyed per package in
+  `node_tables.zyl`'s `numeric-policies`), `numeric_check.zyl` raises
+  `E_NUMERIC_POLICY_REQUIRED` and `E_PARTIAL_OPERATION` after type
+  inference, and ICNF lowering picks the operator family (0-2 checked,
+  18-20 wrapping, 21-23 saturating; `icnf.zyl`). Checked `+ - *` are
+  `add`/`sub`/`imul` followed by `jo` to a runtime trap stub
+  (`zyl_rt_trap_ovf_<op>`), saturating ones compute the clamp before the
+  operation, and `idiv` is preceded by a zero test and an `INT_MIN / -1`
+  test, so no `#DE` can reach the program (`codegen.zyl`,
+  `cg-arith-mnem`). The MIR accumulator transformation and the speculative
+  evaluation of cheap `if` arms are limited to wrapping arithmetic, and
+  `lea` (which sets no flags) is used only for wrapping adds. The REPL
+  interpreter uses the same decision procedure (`int_arith.zyl`) and so
+  does the constant folder. `div?`/`rem?` are rewritten on the parse tree
+  into `let`/`if`/`Some`/`None` around `div!`/`rem!` (`expr_inner.zyl`).
+  Floats are IEEE-754 binary64 in SSE registers.
 - **Actors** are scheduled by the operating system
   (`spec/08-actors-and-concurrency.md`), so a program whose output depends
   on the interleaving of two actors is not deterministic.

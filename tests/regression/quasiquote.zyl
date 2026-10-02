@@ -45,3 +45,4 @@
     (assert-equal (qq-with-tmp (+ tmp 1)) 6)))
 
 (run-tests)
+(numeric checked)

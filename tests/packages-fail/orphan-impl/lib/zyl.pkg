@@ -1,1 +1,2 @@
 (package (name "acme/shapes") (version "1.0.0") (zyl "5.0") (edition "2026"))
+  (numeric checked)

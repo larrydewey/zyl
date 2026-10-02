@@ -9,6 +9,7 @@
 ;   2. Legacy fixed-path protocol (`argc < 2`): reads
 ;      /tmp/zyl_boot_in.zyl, writes /tmp/zyl_boot_out.s; a dependency-free smoke path.
 
+(numeric checked)
 (use compiler/node_tables)
 (use compiler/rt_mode)
 (use allocator/allocator)

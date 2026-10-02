@@ -682,11 +682,19 @@
   (match forms
     (Nil Nil)
     (Cons f rest
+      (if (numeric-directive-p f)
+        (convert-top-forms rest)
       (if (contract-off-directive-p f)
         (match rest
           (Nil Nil)
           (Cons g more (Cons (convert-under-profile (contract-directive-mode f) g) (convert-top-forms more))))
-        (Cons (convert-ast f) (convert-top-forms rest))))))
+        (Cons (convert-ast f) (convert-top-forms rest)))))))
+
+; (numeric P) at the top level: the module resolver read and checked it.
+(defn numeric-directive-p (f)
+  (match f
+    (AList xs (str-eq (ast-head f) "numeric"))
+    (_ false)))
 
 (defn contract-directive-mode (f)
   (match f
@@ -1072,6 +1080,8 @@
 (defn dispatch-special-form (n rest)
   (if (str-eq n "with-region")
     (parse-with-region rest)
+  (if (str-eq n "numeric")
+    (Expr (EUnknown "numeric" (convert-ast-list rest)))
   (if (str-eq n "extern")
     (match (parse-extern rest)
       (Some expr expr)
@@ -1339,7 +1349,7 @@
       (Some expr expr)
       (None (Expr (EUnknown "test-compile" (convert-ast-list rest)))))
     (if (str-eq n "alias") (parse-alias rest) (byte-form-dispatch n rest))
-  )))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+  ))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 
 ; --- Byte-level primitives (book chapter 32) ------
 ; Recognition happens here, not in the reader (no-dispatch arch). The 21

@@ -1,0 +1,224 @@
+; === Zyl Standard Library — Numeric Policy and Partial Operation Check ===
+; Module: compiler/numeric_check
+;
+; Spec §20.1 and §20.3. A runtime failure may only happen where the
+; source explicitly asked for it, so two things are decided here, after
+; type inference and before lowering:
+;
+;   1. Int `+ - *` on anything but literals needs the package to have
+;      chosen what overflow does: (numeric checked|wrapping|saturating)
+;      in the file or in zyl.pkg. Without one the first such operation
+;      is E_NUMERIC_POLICY_REQUIRED. The implicit standard library is
+;      checked (module_resolver.zyl registers the policies).
+;
+;   2. Int `/` and `%` are total only with a nonzero literal divisor.
+;      Any other divisor is E_PARTIAL_OPERATION, and the author picks:
+;      `div!`/`rem!` stop the program on zero (E_DIVISION_BY_ZERO),
+;      `div?`/`rem?` give None. No guard is recognised: an `if` around the
+;      division does not make `/` total, `div!` is what says so.
+;
+; The policy itself is applied in ICNF lowering (icnf.zyl's ic-binop),
+; which reads the same table. Both are keyed by the package half of the
+; definition's canonical key (§31.2); `main`, tests and anything else
+; unqualified belong to the root.
+
+(use compiler/node_tables)
+(use compiler/ast)
+(use compiler/expr_inner)
+(use compiler/qualify)
+(use compiler/type_annotate)
+(use compiler/error_report)
+(use core/list)
+(use core/option)
+
+; The policy of the package `pkg` ("" is the root), or "" when it declared none.
+(defn nc-policy-of (pkg)
+  (ffi-call "zyl_smap_get_or" numeric-policies pkg "" 1000))
+
+; The package a definition belongs to: the key's package half, else the root.
+(defn nc-package-of (name)
+  (let p (ck-package-of name)
+    (if (str-eq p "<main>") "" p)))
+
+; The policy as lowering uses it: 0 checked, 1 wrapping, 2 saturating; "" is checked.
+(defn nc-policy-code (pkg)
+  (let p (nc-policy-of pkg)
+    (if (str-eq p "wrapping") 1 (if (str-eq p "saturating") 2 0))))
+
+; The partial-operation rule (§20.3) is in force; it landed behind this
+; switch while the standard library and the runtime moved to div!/rem!.
+(defn nc-partial-enforced () true)
+
+; ===========================================================================
+; THE PASS
+; ===========================================================================
+
+(defn nc-check-program (exprs)
+  (match exprs
+    (Nil unit)
+    (Cons e rest
+      (let _ (nc-check-form e)
+        (nc-check-program rest)))))
+
+(defn nc-check-form (e)
+  (match (Expr.inner e)
+    (EDefn name _ body (nc-walk body (nc-policy-of (nc-package-of name))))
+    (EDef name value (nc-walk value (nc-policy-of (nc-package-of name))))
+    (ETestDecl _ body _ _ (nc-walk body (nc-policy-of "")))
+    (_ unit)))
+
+(defn nc-arith-p (n) (or (str-eq n "+") (or (str-eq n "-") (str-eq n "*"))))
+(defn nc-div-p (n) (or (str-eq n "/") (str-eq n "%")))
+
+; An Int result: the kind table says neither String nor Float.
+(defn nc-int-p (e) (= (ta-kind e) 0))
+
+; Arithmetic whose every leaf is an integer literal is decided at compile time.
+(defn nc-literal-only (e)
+  (match (Expr.inner e)
+    (EAtom a (match a (AInt _ true) (_ false)))
+    (EApply n args (and (or (nc-arith-p n) (nc-div-p n)) (nc-all-literal args)))
+    (_ false)))
+
+(defn nc-all-literal (xs)
+  (match xs
+    (Nil true)
+    (Cons h t (and (nc-literal-only h) (nc-all-literal t)))))
+
+(defn nc-nonzero-literal (e)
+  (match (Expr.inner e)
+    (EAtom a (match a (AInt n (not (= n 0))) (_ false)))
+    (_ false)))
+
+(defn nc-walk (e pol)
+  (let _ (nc-check-op e pol)
+    (nc-children e pol)))
+
+(defn nc-check-op (e pol)
+  (match (Expr.inner e)
+    (EApply n args
+      (if (nc-arith-p n)
+        (if (and (= (str-length pol) 0) (and (nc-int-p e) (not (nc-literal-only e))))
+          (nc-fail-policy e n)
+          unit)
+        (if (and (nc-div-p n) (and (nc-int-p e) (nc-partial-enforced)))
+          (match args
+            (Cons _ divisors (nc-check-divisors n divisors))
+            (Nil unit))
+          unit)))
+    (_ unit)))
+
+; Every operand after the first divides; each must be a nonzero literal.
+(defn nc-check-divisors (n ds)
+  (match ds
+    (Nil unit)
+    (Cons d t
+      (if (nc-nonzero-literal d)
+        (nc-check-divisors n t)
+        (nc-fail-partial d n)))))
+
+; ===========================================================================
+; DIAGNOSTICS
+; ===========================================================================
+
+(defn nc-fail-policy (e n)
+  (nc-fail e "E_NUMERIC_POLICY_REQUIRED"
+    (str-concat "`" (str-concat n "` on Int needs a numeric policy, and this package declares none"))
+    "write `(numeric checked)` at the top of the file (or in zyl.pkg) to stop on overflow, or `(numeric wrapping)` / `(numeric saturating)`"))
+
+(defn nc-fail-partial (d n)
+  (nc-fail d "E_PARTIAL_OPERATION"
+    (str-concat "`" (str-concat n "` has a divisor that may be zero"))
+    (str-concat "write `(" (str-concat (if (str-eq n "/") "div!" "rem!")
+      (str-concat " a b)` to stop the program on a zero divisor, `(" (str-concat (if (str-eq n "/") "div?" "rem?")
+        " a b)` to get None, or divide by a nonzero literal"))))))
+
+(defn nc-fail (site code msg help)
+  (ffi-call "zyl_panic"
+    (err-at code msg (ffi-call "zyl_span_file" site 1000) (ffi-call "zyl_span_off" site 1000) help)
+    1000))
+
+; ===========================================================================
+; STRUCTURAL RECURSION
+; ===========================================================================
+
+(defn nc-list (xs pol)
+  (match xs
+    (Nil unit)
+    (Cons h t (let _ (nc-walk h pol) (nc-list t pol)))))
+
+(defn nc-two (a b pol) (let _ (nc-walk a pol) (nc-walk b pol)))
+
+(defn nc-three (a b c pol) (let _ (nc-two a b pol) (nc-walk c pol)))
+
+(defn nc-opt (o pol) (match o (Some x (nc-walk x pol)) (None unit)))
+
+(defn nc-arms (arms pol)
+  (match arms
+    (Nil unit)
+    (Cons a rest (let _ (nc-walk (MA.body a) pol) (nc-arms rest pol)))))
+
+(defn nc-children (e pol)
+  (match (Expr.inner e)
+    (ECall f args (let _ (nc-walk f pol) (nc-list args pol)))
+    (EApply _ args (nc-list args pol))
+    (EDefn _ _ body (nc-walk body pol))
+    (EDef _ v (nc-walk v pol))
+    (ELet _ v b (nc-two v b pol))
+    (ELetMut _ v b (nc-two v b pol))
+    (EIf c t f (nc-three c t f pol))
+    (ETryCatch b _ h (nc-two b h pol))
+    (EMatch s arms (let _ (nc-walk s pol) (nc-arms arms pol)))
+    (EBegin xs (nc-list xs pol))
+    (EPrint xs (nc-list xs pol))
+    (EWhile c b (nc-two c b pol))
+    (EFor _ c b (nc-two c b pol))
+    (ELambda _ _ b (nc-walk b pol))
+    (EFn _ _ b (nc-walk b pol))
+    (ESpawn b (nc-walk b pol))
+    (ESend a b (nc-two a b pol))
+    (ESendClosure a b _ (nc-two a b pol))
+    (EFfiCall _ args _ (nc-list args pol))
+    (EFfiPin b (nc-walk b pol))
+    (EFfiUnpin b (nc-walk b pol))
+    (EAssert b m (let _ (nc-walk b pol) (nc-opt m pol)))
+    (EUnwrap b (nc-walk b pol))
+    (EExit b (nc-walk b pol))
+    (EClose b (nc-walk b pol))
+    (EFileOpen a b (nc-two a b pol))
+    (EFileRead a b (nc-two a b pol))
+    (EFileWrite a b (nc-two a b pol))
+    (EFileClose b (nc-walk b pol))
+    (EBufAppend a b (nc-two a b pol))
+    (EStructGet b _ (nc-walk b pol))
+    (EMakeStruct _ args (nc-list args pol))
+    (ETuple xs (nc-list xs pol))
+    (ETupleGet t _ (nc-walk t pol))
+    (EMakeVariant _ _ args (nc-list args pol))
+    (ESetBang _ v (nc-walk v pol))
+    (ETestDecl _ body _ _ (nc-walk body pol))
+    (EAssertEqual a b (nc-two a b pol))
+    (EAssertTrue a _ (nc-walk a pol))
+    (EAssertFalse a _ (nc-walk a pol))
+    (ETestCompile x _ (nc-walk x pol))
+    (EUnknown _ xs (nc-list xs pol))
+    (ELoadByte _ a b (nc-two a b pol))
+    (ELoadByteSigned _ a b (nc-two a b pol))
+    (EStoreByte _ a b c (nc-three a b c pol))
+    (EStoreByteSigned _ a b c (nc-three a b c pol))
+    (EByteSlice a b c (nc-three a b c pol))
+    (EByteSliceSub a b c (nc-three a b c pol))
+    (EByteBufAppend a b (nc-two a b pol))
+    (EByteBufLen b (nc-walk b pol))
+    (EByteBufCap b (nc-walk b pol))
+    (EByteBufPtr b (nc-walk b pol))
+    (EAlignCheck b _ (nc-walk b pol))
+    (EAtomicLoad a b (nc-two a b pol))
+    (EAtomicStore a b c (nc-three a b c pol))
+    (EAtomicAdd a b c (nc-three a b c pol))
+    (EAtomicSub a b c (nc-three a b c pol))
+    (EAtomicCAS a b c d (let _ (nc-three a b c pol) (nc-walk d pol)))
+    (EAtomicFetchAdd a b c (nc-three a b c pol))
+    (EAtomicMax a b c (nc-three a b c pol))
+    (EAtomicMin a b c (nc-three a b c pol))
+    (_ unit)))

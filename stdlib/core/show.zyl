@@ -55,7 +55,13 @@
 (impl Hash Bool (defn hash (self) (show-mix 1469598103934665603 (if self 1 0))))
 (impl Hash String (defn hash (self) (show-str-hash self 0 1469598103934665603)))
 
-(defn show-mix (h w) (* (bit-xor h w) 1099511628211))
+(defn show-mix (h w) (int-wrap-mul (bit-xor h w) 1099511628211))
+
+; The wrapping operators of spec §20.1 under their helper names: the standard
+; library is checked code, and a hash wraps by design.
+(defn int-wrap-add (a b) (wrapping+ a b))
+(defn int-wrap-sub (a b) (wrapping- a b))
+(defn int-wrap-mul (a b) (wrapping* a b))
 
 (defn show-str-hash (s i h)
   (if (>= i (ffi-call "zyl_cstr_len" s 1000))

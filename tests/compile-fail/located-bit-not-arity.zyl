@@ -4,3 +4,4 @@
 ; expect-at: located-bit-not-arity.zyl:6:29
 
 (defn main () (begin (print (bit-not 1 2)) 0))
+(numeric checked)

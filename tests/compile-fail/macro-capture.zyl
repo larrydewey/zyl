@@ -5,3 +5,4 @@
 (defmacro _cf_getv () v)
 
 (defn main () (let v 3 (begin (print (_cf_getv)) 0)))
+(numeric checked)

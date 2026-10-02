@@ -47,3 +47,4 @@
       (assert-equal (+ s (- (live) before)) 2002275))))
 
 (run-tests)
+(numeric checked)

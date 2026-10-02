@@ -40,6 +40,8 @@ SAMPLE = """(use core/core)
 
 (defn main ()
   (print (area (Circle 4))))
+
+(numeric checked)
 """
 
 FAILURES = []
@@ -308,6 +310,8 @@ DIAGNOSTIC_CASES = [
      "(defn leak ((k Secret))\n  (print k))\n(defn main () (leak 7))\n"),
     ("balance", "E_UNBALANCED_UNCLOSED",
      "(defn oops (x)\n  (+ x 1)\n"),
+    ("numeric", "E_NUMERIC_POLICY_REQUIRED",
+     "(defn add (a b) (+ a b))\n(defn main () (add 1 2))\n"),
     ("type", "E_TYPE_MISMATCH",
      "(defn g () (+ 1 \"a\"))\n(defn main () 0)\n"),
     ("reserved", "E_RESERVED_KEYWORD",
@@ -351,7 +355,7 @@ def test_diagnostics():
         check(f"diagnostics/{name}", first.get("severity") == 1, "should be an error")
         check(f"diagnostics/{name}", first.get("range") is not None, "should carry a range")
 
-    clean = diagnostics_for("(defn add (a b) (+ a b))\n(defn main () (begin (print (add 1 2)) 0))\n")
+    clean = diagnostics_for("(numeric checked)\n(defn add (a b) (+ a b))\n(defn main () (begin (print (add 1 2)) 0))\n")
     check("diagnostics/clean", clean == [], f"a valid program should be clean, got {clean}")
 
     # The type checker reports every type error, each where it is.
@@ -415,7 +419,7 @@ def test_package_forms():
 
 def test_large_document():
     # About 150 KB: encoding and decoding must stay linear in the size.
-    body = "".join(f"(defn f{i} ((x Int)) (+ x {i}))\n" for i in range(5000))
+    body = "(numeric checked)\n" + "".join(f"(defn f{i} ((x Int)) (+ x {i}))\n" for i in range(5000))
     text = body + "(defn main () (f1 1))\n"
     responses, notifications, _ = session(
         request(2, "textDocument/semanticTokens/full"), text=text)

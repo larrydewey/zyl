@@ -6,3 +6,4 @@
 (use core/core)
 (defn main ()
   (print '[1 a]))
+(numeric checked)

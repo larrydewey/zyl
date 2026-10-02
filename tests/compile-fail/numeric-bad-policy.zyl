@@ -1,0 +1,5 @@
+; expect-error: E_MALFORMED_FORM
+; `fast` is not one of checked, wrapping, saturating.
+(numeric fast)
+(defn add (a b) (+ a b))
+(defn main () (add 1 2))

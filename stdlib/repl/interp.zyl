@@ -46,6 +46,7 @@
 (use core/option)
 (use compiler/icnf)
 (use compiler/ffi_sigs)
+(use compiler/int_arith)
 
 ; ===========================================================================
 ; VALUES
@@ -419,28 +420,38 @@
     false))))))))
 
 (defn in-int-op (op x y)
-  (if (< op 5) (VInt (in-int-arith op x y))
+  (if (or (< op 5) (>= op 18)) (VInt (in-int-arith op x y))
   (if (< op 11) (VInt (if (in-int-compare op x y) 1 0))
   (VInt (in-int-bits op x y)))))
 
+; The three policies of §20.1, through the runtime's own entries so that
+; compiled and interpreted code agree bit for bit. A checked overflow is a
+; located error rather than the compiled trap: the REPL has to survive it.
 (defn in-int-arith (op x y)
-  (if (= op 0) (+ x y)
-  (if (= op 1) (- x y)
-  (if (= op 2) (* x y)
+  (if (<= op 2) (in-int-checked op x y)
   (if (= op 3) (in-int-div x y)
-  (in-int-rem x y))))))
+  (if (= op 4) (in-int-rem x y)
+  (if (< op 21) (ia-wrap (- op 18) x y)
+  (ia-sat (- op 21) x y))))))
+
+(defn in-int-checked (op x y)
+  (if (ia-overflows op x y)
+    (in-fail "E_OVERFLOW" (ia-overflow-text op))
+    (if (= op 0) (+ x y) (if (= op 1) (- x y) (* x y)))))
 
 ; Division by zero is a located error rather than a hardware trap: the
 ; REPL has to survive it, and #DE would take the process with it.
 (defn in-int-div (x y)
   (if (= y 0)
-    (in-fail "E_DIVISION_BY_ZERO" "division by zero")
-    (/ x y)))
+    (in-fail "E_DIVISION_BY_ZERO" (ia-div-zero-text 3))
+    (if (and (= y -1) (= x (- -9223372036854775807 1)))
+      (in-fail "E_OVERFLOW" (ia-overflow-text 3))
+      (div! x y))))
 
 (defn in-int-rem (x y)
   (if (= y 0)
-    (in-fail "E_DIVISION_BY_ZERO" "remainder by zero")
-    (% x y)))
+    (in-fail "E_DIVISION_BY_ZERO" (ia-div-zero-text 4))
+    (if (= y -1) 0 (rem! x y))))
 
 (defn in-int-compare (op x y)
   (if (= op 5) (if (< x y) true false)
@@ -491,11 +502,13 @@
 ; Arithmetic: two Ints or two Floats. Comparison: two values of one tag.
 ; Bit operations: two Ints.
 (defn in-check-binop (op a b)
+  (if (>= op 18)
+    (if (and (in-is-int a) (in-is-int b)) unit (in-tag-fail "arithmetic" a b))
   (if (< op 5)
     (if (and (in-same-tag a b) (or (in-is-int a) (in-is-float a))) unit (in-tag-fail "arithmetic" a b))
     (if (< op 11)
       (if (in-same-tag a b) unit (in-tag-fail "comparison" a b))
-      (if (and (in-is-int a) (in-is-int b)) unit (in-tag-fail "bit operation" a b)))))
+      (if (and (in-is-int a) (in-is-int b)) unit (in-tag-fail "bit operation" a b))))))
 
 (defn in-is-int (v) (match v (VInt _ true) (_ false)))
 
@@ -836,7 +849,7 @@
         (if (str-eq sym "%rotl32") (in-rotl (bit-and a 4294967295) (bit-and b 31) 32)
         (if (str-eq sym "%rotr32") (in-rotl (bit-and a 4294967295) (bit-and (- 32 (bit-and b 31)) 31) 32)
         (if (str-eq sym "%mulhi") (in-mulhi-u a b)
-        (if (str-eq sym "%mulhi-s") (- (- (in-mulhi-u a b) (if (< a 0) b 0)) (if (< b 0) a 0))
+        (if (str-eq sym "%mulhi-s") (ia-wrap-sub (ia-wrap-sub (in-mulhi-u a b) (if (< a 0) b 0)) (if (< b 0) a 0))
         (if (or (str-eq sym "zyl_crc32c_u64") (str-eq sym "zyl_crc32c_soft")) (in-crc-bytes (bit-and a 4294967295) b 8)
         (if (str-eq sym "zyl_crc32c_u8") (in-crc-bytes (bit-and a 4294967295) (bit-and b 255) 1)
           (in-fail "E_FFI_RESTRICTED" (str-concat "a runtime primitive the interpreter does not run: " sym))))))))))))))))))))))
@@ -865,10 +878,11 @@
     (let a1 (shr a 32)
       (let b0 (bit-and b 4294967295)
         (let b1 (shr b 32)
-          (let p01 (* a0 b1)
-            (let p10 (* a1 b0)
-              (let mid (+ (+ (shr (* a0 b0) 32) (bit-and p01 4294967295)) (bit-and p10 4294967295))
-                (+ (+ (+ (* a1 b1) (shr p01 32)) (shr p10 32)) (shr mid 32))))))))))
+          (let p01 (ia-wrap-mul a0 b1)
+            (let p10 (ia-wrap-mul a1 b0)
+              ; the partial products are unsigned 64-bit words, so they combine with wrapping ops
+              (let mid (ia-wrap-add (ia-wrap-add (shr (ia-wrap-mul a0 b0) 32) (bit-and p01 4294967295)) (bit-and p10 4294967295))
+                (ia-wrap-add (ia-wrap-add (ia-wrap-add (ia-wrap-mul a1 b1) (shr p01 32)) (shr p10 32)) (shr mid 32))))))))))
 
 ; CRC-32C over the k low bytes of x, least significant first, bit by bit (reflected polynomial 0x82F63B78).
 (defn in-crc-bytes (c x k)

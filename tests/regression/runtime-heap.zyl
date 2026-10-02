@@ -58,3 +58,4 @@
       (assert-equal (rh-shifted b 3 10 37) true))))
 
 (run-tests)
+(numeric checked)

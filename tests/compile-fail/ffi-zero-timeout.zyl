@@ -2,3 +2,4 @@
 ; expect-error: E_FFI_TIMEOUT_REQUIRED
 
 (defn main () (begin (print (ffi-call "abs" -5 0)) 0))
+(numeric checked)

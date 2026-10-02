@@ -10,7 +10,7 @@ SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/zyl_matcher_test.XXXXXX")"
 trap 'rm -rf "$SCRATCH"' EXIT
 command -v python3 >/dev/null || { echo "ok (python3 not installed; skipped)"; exit 0; }
 
-printf '(defn main ()\n  (let unused 1\n    (begin (print (undefined-fn 2)) 0)))\n' > "$SCRATCH/bad.zyl"
+printf '(defn main ()\n  (let unused 1\n    (begin (print (undefined-fn 2)) 0)))\n(numeric checked)\n' > "$SCRATCH/bad.zyl"
 "$ZYL" "$SCRATCH/bad.zyl" -o "$SCRATCH/bad" > "$SCRATCH/out.txt" 2>&1 || true
 python3 - "$ROOT/editors/vscode/package.json" "$SCRATCH/out.txt" <<'PY'
 import json, re, sys

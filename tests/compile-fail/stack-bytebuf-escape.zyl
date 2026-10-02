@@ -7,3 +7,4 @@
     (chan-send tx (byteslice b 0 4))))
 
 (defn main () (begin (leak (chan-tx (chan 1))) 0))
+(numeric checked)

@@ -24,6 +24,7 @@
 ; of that rule, not because of x86's own mod-64 count masking.
 
 (use core/core)
+(use core/show)
 
 ; ===========================================================================
 ; MASKS
@@ -60,12 +61,11 @@
 (defn sub32 ((a Int) (b Int))
   (u32 (- a b)))
 
-; Wrapping 32-bit multiplication. Both operands must already be 32-bit,
-; so the exact 64-bit product cannot overflow the machine word before
-; it is truncated.
+; Wrapping 32-bit multiplication: the low 32 bits of the product, whose
+; high bits fall off (a wrapping multiply, since the stdlib is checked code).
 ; Returns: Int
 (defn mul32 ((a Int) (b Int))
-  (u32 (* (u32 a) (u32 b))))
+  (u32 (int-wrap-mul (u32 a) (u32 b))))
 
 ; 32-bit left shift (bits shifted past bit 31 are dropped).
 ; Returns: Int

@@ -213,6 +213,7 @@ cat > "${OUT}/smoke.zyl" <<'SMOKE_EOF'
 (defn dbl (x) (* x 2))
 (defn applyit (f v) (f v))
 (defn main () (begin (print (applyit dbl 21)) (print (+ 1 2)) 0))
+(numeric checked)
 SMOKE_EOF
 timeout 120 "${OUT}/stage2.bin" "${OUT}/smoke.zyl" -o "${OUT}/smoke.bin" >/dev/null
 [ -x "${OUT}/smoke.bin" ] || die "smoke did not produce a linked binary"

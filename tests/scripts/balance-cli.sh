@@ -9,9 +9,9 @@ trap 'rm -rf "$SCRATCH"' EXIT
 fail() { echo "FAIL: $*"; exit 1; }
 
 mkdir -p "$SCRATCH/src/sub"
-printf '(defn f (x) (+ x 1))\n' > "$SCRATCH/src/good.zyl"
-printf '(defn g (x)\n  (if (> x 0) x 0)\n(defn h () 1))\n' > "$SCRATCH/src/sub/misplaced.zyl"
-printf '(defn k () "open)\n' > "$SCRATCH/src/sub/string.zyl"
+printf '(defn f (x) (+ x 1))\n(numeric checked)\n' > "$SCRATCH/src/good.zyl"
+printf '(defn g (x)\n  (if (> x 0) x 0)\n(defn h () 1))\n(numeric checked)\n' > "$SCRATCH/src/sub/misplaced.zyl"
+printf '(defn k () "open)\n(numeric checked)\n' > "$SCRATCH/src/sub/string.zyl"
 
 "$ZYL" balance "$SCRATCH/src/good.zyl" > "$SCRATCH/out" 2>&1 || fail "a balanced file failed: $(cat "$SCRATCH/out")"
 grep -q "1 file, balanced" "$SCRATCH/out" || fail "summary: $(cat "$SCRATCH/out")"

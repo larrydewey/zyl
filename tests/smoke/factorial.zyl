@@ -11,3 +11,4 @@
   (assert-equal (factorial 6) 720))
 
 (run-tests)
+(numeric checked)

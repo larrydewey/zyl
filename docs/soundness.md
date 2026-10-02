@@ -237,6 +237,58 @@ someone checks it in a proof assistant. V3 (provenance and bounds for
 dynamic accesses) and V4 (region liveness) are not implemented, and the
 evidence reports them as absent rather than as passed.
 
+### L8 — Integer arithmetic cannot fail silently · *Enforced + Measured*
+
+**Claim.** An Int `+`, `-` or `*` whose mathematical result does not fit
+produces the result the package declared (`checked`: the program stops
+with `E_OVERFLOW`; `wrapping`: modulo 2^64; `saturating`: the clamp), and
+never a wrapped value the author did not ask for. An Int `/` or `%`
+whose divisor could be zero does not compile unless the author wrote
+`div!`/`rem!` (stop with `E_DIVISION_BY_ZERO`) or `div?`/`rem?`
+(`None`), or divided by a nonzero literal. `INT_MIN / -1` is `E_OVERFLOW`.
+No arithmetic reaches the processor's `#DE` fault (spec §20).
+
+**Enforced (compile time).** `numeric_check.zyl` refuses a non-literal Int
+`+ - *` in a package with no `(numeric ...)` (`E_NUMERIC_POLICY_REQUIRED`)
+and a `/` or `%` whose divisor is not a nonzero literal
+(`E_PARTIAL_OPERATION`). The module resolver refuses a policy form in the
+wrong place or with the wrong name. The standard library is checked by
+construction (no manifest, no form), and its hashes, ciphers and SIMD
+lane helpers are written with `wrapping*`/`int-wrap-mul` and friends, so a
+wrap there is one the source spells.
+
+**Enforced (in the emitted code).** Every checked `add`/`sub`/`imul` is
+followed by `jo` to a runtime trap stub; every `idiv` with a non-literal
+divisor is preceded by `test rcx, rcx; jz` and a `-1`/`neg`/`jo` test
+(`cg-arith-mnem`, `codegen.zyl`). A literal divisor other than `0` and
+`-1` becomes a multiply or a shift, which cannot fault. The flag-less
+forms (`lea` for an add, `shl` for a multiply by a power of two) are
+emitted only for wrapping operations, and the optimizations that would
+move an overflow — reassociating an accumulating recursion, evaluating a
+cheap `if` arm speculatively, deleting an unread result — are limited to
+wrapping arithmetic (`ml-acc-op-ok`, `ml-cheap`, `mi-pure`). The
+constant folder decides overflow before folding (`int_arith.zyl`) and
+keeps an overflowing operation as an instruction.
+
+**Measured.** `tests/regression/numeric-checked.zyl`, `numeric-wrapping.zyl`
+and `numeric-saturating.zyl` exercise every emission path (register
+operands, immediates, powers of two, literal-only folds, the accumulating
+recursion, unary minus, `INT_MIN / -1`, zero divisors, `div?` order of
+evaluation) under each policy, compiled and interpreted; the compiler and
+the runtime compile and run themselves under `checked`, which found and
+removed eleven places that wrapped by accident in the runtime (hash
+mixers, the zero-byte scan, the magic-divisor search, `fm-mulhi`, the
+integer parser and printer at `INT_MIN`).
+
+**What this is not.** The soundness of the overflow tests themselves
+(`ia-mul-overflows`, the runtime's `zyl_mul_overflows`) is argued from
+their derivation, not proved. The address fold `[x+k]` for a `%load`/`%store`
+in the runtime's own code uses the hardware's wrapping address arithmetic;
+the runtime is the only code that can write those primitives, and a valid
+pointer plus a bounded offset cannot wrap. A policy is per package: a
+macro from one package expanded in another follows the expanding
+package's policy, since the operation ends up in its definition.
+
 ## 4. What the aliasing that exists is
 
 Two `Vec` handles derived from one another share storage — that is the

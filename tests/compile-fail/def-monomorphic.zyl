@@ -7,3 +7,4 @@
     (ffi-call "zyl_wvec_push" cells 42 1000)
     (print (str-length (ffi-call "zyl_wvec_get" cells 0 1000)))
     0))
+(numeric checked)

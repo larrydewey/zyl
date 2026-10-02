@@ -28,3 +28,4 @@
     (assert-equal (shl 3 64) 0)))
 
 (run-tests)
+(numeric checked)

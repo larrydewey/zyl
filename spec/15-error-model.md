@@ -68,8 +68,8 @@ reported before the compile fails (§4.8).
 | `E_INDEX_OUT_OF_BOUNDS` | Index outside a word array | §13 |
 | `E_UNINITIALIZED_USE` | Variable used before initialization | — |
 | `E_CONTRACT_VIOLATION` | Contract condition failed | §23 |
-| `E_OVERFLOW` | Integer overflow | §20.1 |
-| `E_DIVISION_BY_ZERO` | Division by zero (Int) | §20.3 |
+| `E_OVERFLOW` | Int `+ - *` under `(numeric checked)` whose result does not fit; `INT_MIN / -1` under any policy | §20.1, §20.3 |
+| `E_DIVISION_BY_ZERO` | `div!` or `rem!` with a zero divisor | §20.3 |
 | `E_REGION_EXHAUSTED` | A `with-region` region ran out of its fixed size or limit (catchable) | §9.2 |
 | `E_TEST_FAILURE` | Test assertion failed | §20.5 |
 | `E_TEST_RUNNER_ERROR` | Test harness error | §20.5 |
@@ -210,10 +210,16 @@ and `E_CONTRACT_VIOLATION` (the prefix of a failed contract check's
 message).
 
 Catalogued but never raised: `E_USER_ERROR`, `E_ASSERT_FAIL`,
-`E_UNINITIALIZED_USE`, `E_OVERFLOW`, `E_TEST_FAILURE`,
-`E_TEST_RUNNER_ERROR`, and from §6.7 `E_TRAIT_BOUND_NOT_SATISFIED` and
-`E_UNKNOWN_GENERIC_PARAM`. `E_DIVISION_BY_ZERO` is raised only by the
-REPL's ICNF interpreter; a compiled program traps with SIGFPE.
+`E_UNINITIALIZED_USE`, `E_TEST_FAILURE`, `E_TEST_RUNNER_ERROR`, and from
+§6.7 `E_TRAIT_BOUND_NOT_SATISFIED` and `E_UNKNOWN_GENERIC_PARAM`.
+`E_OVERFLOW` and `E_DIVISION_BY_ZERO` are raised by compiled code (the
+runtime's `zyl_overflow_panic` and `zyl_div_zero_panic`, reached from
+the trap stubs the code generator emits) and by the REPL interpreter,
+with the same message. Two compile-time codes belong to the numeric
+model (§20): `E_NUMERIC_POLICY_REQUIRED`, a non-literal Int `+ - *` in a
+package with no `(numeric ...)`, and `E_PARTIAL_OPERATION`, a `/` or `%`
+whose divisor is not a nonzero literal (`numeric_check.zyl`, after type
+inference, both located at the operation).
 
 Raised but not in the catalog: `E_NON_EXHAUSTIVE_MATCH` and
 `E_UNREACHABLE_MATCH_ARM` (from `exhaustiveness_check.zyl`) and

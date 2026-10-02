@@ -3,3 +3,4 @@
 (deftype Tree (Leaf) (Node Int Tree))
 (defn f (t) (match t (Leaf 0) (Node v Leaf v)))
 (defn main () (begin (print (f (Node 3 (Node 4 Leaf)))) 0))
+(numeric checked)

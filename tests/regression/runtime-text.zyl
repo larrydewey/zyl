@@ -43,3 +43,4 @@
     (assert-equal (str-concat (str-concat "ab" "") (str-concat "" "cd")) "abcd")))
 
 (run-tests)
+(numeric checked)

@@ -20,6 +20,7 @@
 ; diagnostic about it points at that form. Quoted data is not rewritten.
 
 (use allocator/allocator)
+(use compiler/node_tables)
 (use compiler/ast)
 (use compiler/error_report)
 
@@ -58,9 +59,11 @@
 (defn ds-id (n at) (ds-at (AstIdent n) at))
 (defn ds-list (xs at) (ds-at (AList xs) at))
 
-(defn ds-fail (at msg)
+(defn ds-fail (at msg) (ds-fail-help at msg ""))
+
+(defn ds-fail-help (at msg help)
   (ffi-call "zyl_panic"
-    (err-at "E_MALFORMED_FORM" msg (ffi-call "zyl_span_file" at 1000) (ffi-call "zyl_span_off" at 1000) "") 1000))
+    (err-at "E_MALFORMED_FORM" msg (ffi-call "zyl_span_file" at 1000) (ffi-call "zyl_span_off" at 1000) help) 1000))
 
 ; One form from a body: the form itself, or (begin forms...).
 (defn ds-body (forms at)
@@ -95,7 +98,9 @@
   (if (str-eq h "with-resource") true
   (if (str-eq h "assert-fail") true
   (if (str-eq h "let*") true
-  (if (str-eq h "vec") true (str-eq h "map"))))))
+  (if (str-eq h "div?") true
+  (if (str-eq h "rem?") true
+  (if (str-eq h "vec") true (str-eq h "map"))))))))
 
 (defn ds-needs-list (xs) (match xs (Nil false) (Cons h t (if (ds-needs h) true (ds-needs-list t)))))
 
@@ -107,10 +112,34 @@
           (if (str-eq h "with-resource") (ds-with a xs)
             (if (str-eq h "assert-fail") (ds-assert-fail a xs)
               (if (str-eq h "let*") (ds-let* a xs)
+              (if (or (str-eq h "div?") (str-eq h "rem?")) (ds-div-opt a xs)
               (if (str-eq h "vec") (ds-vec a xs)
                 (if (str-eq h "map") (ds-map a xs)
-                  (if (ds-needs-list xs) (ds-list (ds-forms xs) a) a)))))))))
+                  (if (ds-needs-list xs) (ds-list (ds-forms xs) a) a))))))))))
     (_ a)))
+
+; (div? a b) => (let x a (let y b (if (= y 0) None (Some (div! x y))))), spec
+; 20.3: a and b evaluated once, in order, and (Option Int) as the result;
+; rem? the same with rem!. Before qualification, so Some and None are the
+; prelude's, and the two names are fresh.
+(defn ds-div-opt (a xs)
+  (if (= (ds-count xs) 3)
+    (let x (ds-fresh "_dq")
+      (let y (ds-fresh "_dq")
+        (let op (if (str-eq (ds-head a) "div?") "div!" "rem!")
+          (let whole (ds-list (Cons (ds-id op a) (Cons (ds-id x a) (Cons (ds-id y a) Nil))) a)
+            (let test (ds-list (Cons (ds-id "=" a) (Cons (ds-id y a) (Cons (AstInt 0) Nil))) a)
+              (let some (ds-list (Cons (ds-id "Some" a) (Cons whole Nil)) a)
+                (let pick (ds-list (Cons (ds-id "if" a) (Cons test (Cons (ds-id "None" a) (Cons some Nil)))) a)
+                  (let inner (ds-list (Cons (ds-id "let" a) (Cons (ds-id y a) (Cons (ds-form (ds-nth xs 2)) (Cons pick Nil)))) a)
+                    (ds-list (Cons (ds-id "let" a) (Cons (ds-id x a) (Cons (ds-form (ds-nth xs 1)) (Cons inner Nil)))) a)))))))))
+    (ds-fail-help a (str-concat "`" (str-concat (ds-head a) "` takes a dividend and a divisor"))
+                  (str-concat "write `(" (str-concat (ds-head a) " a b)`, which is None when b is 0")))))
+
+(defn ds-fresh (prefix)
+  (let n (ffi-call "zyl_ref_get" numeric-fresh 1000)
+    (let _ (ffi-call "zyl_ref_set" numeric-fresh (+ n 1) 1000)
+      (str-concat prefix (ffi-call "zyl_int_text" n 1000)))))
 
 (defn ds-forms (xs) (match xs (Nil Nil) (Cons h t (Cons (ds-form h) (ds-forms t)))))
 

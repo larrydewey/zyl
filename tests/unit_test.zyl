@@ -693,3 +693,4 @@
 
 ; --- Run All Tests ---
 (run-tests)
+(numeric checked)

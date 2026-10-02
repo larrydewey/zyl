@@ -6,3 +6,4 @@
 (defn main ()
   (let b (bytebuf Stack)
     0))
+(numeric checked)

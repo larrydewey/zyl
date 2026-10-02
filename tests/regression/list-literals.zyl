@@ -36,3 +36,4 @@
   (assert-true (== (make-LPt 1 2) (make-LPt 1 2))))
 
 (run-tests)
+(numeric checked)

@@ -12,6 +12,7 @@ cat > "$SCRATCH/dump.zyl" <<'ZEOF'
 (use compiler/asm_x86)
 (defn arg (i) (ffi-call "zyl_arg_str" i 1000))
 (defn main () (let _ (ax-dump-list (arg 1) (str-concat (arg 2) "/my.text") (str-concat (arg 2) "/my.rel") (str-concat (arg 2) "/my.lst")) 0))
+(numeric checked)
 ZEOF
 ZYL_EXTERNAL_LD=1 "$ZYL" "$SCRATCH/dump.zyl" -o "$SCRATCH/dump" >/dev/null 2>&1 || { echo "FAIL: dumper did not build"; exit 1; }
 "$SCRATCH/dump" "$SCRATCH/sweep.s" "$SCRATCH" || { echo "FAIL: dumper"; exit 1; }

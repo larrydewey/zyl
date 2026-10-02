@@ -80,3 +80,4 @@
     (vy-unverified)))
 
 (run-tests)
+(numeric checked)

@@ -1,3 +1,4 @@
 ; expect-error: E_TYPE_MISMATCH
 ; main returns the process's Int exit status.
 (defn main () "done")
+(numeric checked)

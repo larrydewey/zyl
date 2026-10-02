@@ -1,6 +1,7 @@
 ; Show Regression Tests — the prelude Show trait, container impls,
 ; `(derive T Show)`, and `print` of a value whose type has a Show impl.
 
+(numeric checked)
 (use collections/vec)
 (use core/map)
 
@@ -60,7 +61,7 @@
     (print (Cons 1.5 Nil))
     0))
 
-(defn st-div (a b) (if (= b 0) (Err "div by zero") (Ok (/ a b))))
+(defn st-div (a b) (if (= b 0) (Err "div by zero") (Ok (div! a b))))
 
 (test "print-result"
   (begin

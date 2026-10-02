@@ -7,3 +7,4 @@
     (assert-equal (ffi-call "zyl_float_bits" 2.2250738585072014e-308 1000) 4503599627370496)))
 
 (run-tests)
+(numeric checked)

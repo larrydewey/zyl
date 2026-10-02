@@ -126,7 +126,7 @@
 (impl Hash Result
   (defn hash (self)
     (match self
-      (Ok x (* (bit-xor 1469598103934665603 (Hash.hash x)) 1099511628211))
-      (Err e (* (bit-xor 1099511628211 (Hash.hash e)) 1469598103934665603)))))
+      (Ok x (int-wrap-mul (bit-xor 1469598103934665603 (Hash.hash x)) 1099511628211))
+      (Err e (int-wrap-mul (bit-xor 1099511628211 (Hash.hash e)) 1469598103934665603)))))
 
 (impl Clone Result (defn clone (self) self))

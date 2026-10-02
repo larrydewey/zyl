@@ -2,3 +2,4 @@
 ; The option's value is a Bool; a bare keyword is not a test option.
 (test "x" (assert-true true) (:expect-panic))
 (run-tests)
+(numeric checked)

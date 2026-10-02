@@ -6,3 +6,4 @@
 (impl Show _cf_Q (defn show (self) "b"))
 
 (defn main () 0)
+(numeric checked)

@@ -58,6 +58,7 @@
 (use compiler/lift_impls)
 (use compiler/closure_inline)
 (use compiler/type_annotate)
+(use compiler/numeric_check)
 (use lsp/compiler_bridge)
 
 (deftype DocState
@@ -197,9 +198,14 @@
 ; zyl_warn_emit, captured here, and then panics; the panic only says how
 ; many there were, so it is dropped. A panic with nothing captured (a
 ; failure inside one of the earlier steps) is reported as itself.
+; Type inference and the numeric check (§20), as pipeline.zyl's annotate-exprs runs them.
+(defn dm-annotate (arena exprs)
+  (let ann (ta-annotate (ci-expand-program arena (lift-impls (dv-expand-program exprs))))
+    (begin (nc-check-program ann) ann)))
+
 (defn dm-type-diagnostics (arena exprs text path)
   (let _ (ffi-call "zyl_warn_capture" true 1000)
-    (let outcome (try (Ok (ta-annotate (ci-expand-program arena (lift-impls (dv-expand-program exprs))))) (catch e (Err e)))
+    (let outcome (try (Ok (dm-annotate arena exprs)) (catch e (Err e)))
       (let w (ffi-call "zyl_warn_take" 1000)
         (let _ (ffi-call "zyl_warn_capture" false 1000)
           (let found (diagnostics-from-errors w text path)

@@ -4,3 +4,4 @@
 (test "keep-two" (assert-true true))
 (test "skipped" (assert-true false))
 (run-tests (:filter "keep") (:parallel true))
+(numeric checked)

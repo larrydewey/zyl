@@ -26,3 +26,4 @@
                   (print (chan-recv rx))
                   (actor-wait a)
                   0)))))))))
+(numeric checked)

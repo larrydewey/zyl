@@ -148,3 +148,4 @@
   (assert-equal (cube 3) 27))
 
 (run-tests)
+(numeric checked)

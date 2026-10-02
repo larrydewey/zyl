@@ -29,3 +29,4 @@
         (assert-equal (str-length a) 81)))))
 
 (run-tests)
+(numeric checked)

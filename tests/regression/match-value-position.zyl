@@ -52,3 +52,4 @@
                         (MvpCi r (* r 10)))
                   (+ m m))
                 20))
+(numeric checked)

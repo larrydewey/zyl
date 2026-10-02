@@ -38,3 +38,4 @@
     (assert-equal (str-length (rep "abcdefg" 5 "")) 35)))
 
 (run-tests)
+(numeric checked)

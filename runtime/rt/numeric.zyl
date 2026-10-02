@@ -1,0 +1,67 @@
+; Integer arithmetic entries: wrapping and saturating + - *, the overflow tests, and the traps checked code jumps to.
+(use base)
+
+; --- wrapping multiply (rt-wadd and rt-wsub are in base.zyl, where the zero-byte scan needs them) ---
+
+(defn rt-wmul (a b) (wrapping* a b))
+
+(defn zyl_wrap_add ((a Int) (b Int)) (rt-wadd a b))
+(defn zyl_wrap_sub ((a Int) (b Int)) (rt-wsub a b))
+(defn zyl_wrap_mul ((a Int) (b Int)) (rt-wmul a b))
+
+; --- overflow tests, decided before the operation ---
+
+(defn rt-int-max () 9223372036854775807)
+(defn rt-int-min () (- -9223372036854775807 1))
+
+(defn zyl_add_overflows ((a Int) (b Int))
+  (if (> b 0) (> a (- (rt-int-max) b)) (if (< b 0) (< a (- (rt-int-min) b)) false)))
+
+(defn zyl_sub_overflows ((a Int) (b Int))
+  (if (< b 0) (> a (+ (rt-int-max) b)) (if (> b 0) (< a (+ (rt-int-min) b)) false)))
+
+; |a| > INT_MAX / |b| overflows, except the one negative product that is exactly INT_MIN.
+(defn zyl_mul_overflows ((a Int) (b Int))
+  (if (or (= a 0) (= b 0)) false
+    (if (or (= a (rt-int-min)) (= b (rt-int-min))) (not (or (= a 1) (= b 1)))
+      (let pa (if (< a 0) (- 0 a) a)
+        (let pb (if (< b 0) (- 0 b) b)
+          (let q (div! (rt-int-max) pb)
+            (if (<= pa q) false
+              (not (and (not (= (< a 0) (< b 0)))
+                        (and (= pa (+ q 1)) (= (rem! (rt-int-max) pb) (- pb 1))))))))))))
+
+; --- saturating arithmetic: the clamp takes the sign the true result would have ---
+
+(defn zyl_sat_add ((a Int) (b Int))
+  (if (zyl_add_overflows a b) (if (< a 0) (rt-int-min) (rt-int-max)) (+ a b)))
+
+(defn zyl_sat_sub ((a Int) (b Int))
+  (if (zyl_sub_overflows a b) (if (< a 0) (rt-int-min) (rt-int-max)) (- a b)))
+
+(defn zyl_sat_mul ((a Int) (b Int))
+  (if (zyl_mul_overflows a b) (if (= (< a 0) (< b 0)) (rt-int-max) (rt-int-min)) (* a b)))
+
+; --- the traps: compiled checked arithmetic jumps here with the operator's code in rdi ---
+
+(defn rt-op-name (op)
+  (if (= op 0) "+" (if (= op 1) "-" (if (= op 2) "*" (if (= op 3) "div!" "rem!")))))
+
+; The message of an overflow in operator `op`, shared with the REPL interpreter.
+(defn zyl_overflow_text ((op Int))
+  (if (> op 2)
+    (str-concat "the smallest Int divided by -1 has no Int result, in `" (str-concat (rt-op-name op)
+      "`\n  = help: `div!` and `rem!` cannot compute this one pair; test for -1 before dividing"))
+    (str-concat "integer overflow in `" (str-concat (rt-op-name op)
+      "`\n  = help: write `(numeric wrapping)` at the top of the file if wrap-around is intended, or `(numeric saturating)` to clamp"))))
+
+; The message of a zero divisor in `div!` (3) or `rem!` (4), shared with the REPL interpreter.
+(defn zyl_div_zero_text ((op Int))
+  (str-concat "division by zero in `" (str-concat (rt-op-name op)
+    (str-concat "`\n  = help: write `(" (str-concat (if (= op 3) "div?" "rem?") " a b)` to get None for a zero divisor, or test the divisor first")))))
+
+(defn zyl_overflow_panic ((op Int))
+  (ffi-call "zyl_panic" (str-concat "error[E_OVERFLOW]: " (zyl_overflow_text op)) 1))
+
+(defn zyl_div_zero_panic ((op Int))
+  (ffi-call "zyl_panic" (str-concat "error[E_DIVISION_BY_ZERO]: " (zyl_div_zero_text op)) 1))

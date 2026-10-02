@@ -45,10 +45,11 @@ binary, the REPL evaluates the lowered ICNF in its own process
 milliseconds instead of a `cc` invocation, and it is what lets a value —
 not just a definition — survive from one entry to the next.
 
-The session carries three things:
+The session carries four things:
 
 | | what it holds | how it is used |
 |---|---|---|
+| `numeric` | the numeric policy (spec §20.1), `checked` until a `(numeric wrapping)` or `(numeric saturating)` entry changes it | written as the program's first line, `(numeric P)`, so every entry and every definition compiles under it; `(numeric checked)` restores the default. An entry that overflows under `checked` is reported as `error[E_OVERFLOW]` and the session continues; so is a `div!` by zero |
 | `uses` | the modules in scope | prepended to each entry's program as `(use ...)` lines |
 | `defs` | the text of every definition entered | re-lowered with each entry, so type inference stays whole-program |
 | `globals` | the values bound by `(def name expr)` | passed to the entry as arguments, and readable by definitions as top-level defs |

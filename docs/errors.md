@@ -285,8 +285,10 @@ themselves.
 | Code | Catalog message | Raised by |
 |------|-----------------|-----------|
 | `E_CONTRACT_VIOLATION` (§28) | contract: contract violation - M at S | `expr_inner.zyl` (a failed `requires`/`ensures`/`invariant` check panics with `E_CONTRACT_VIOLATION: <what> failed: <condition>`, at run time) |
-| `E_DIVISION_BY_ZERO` (§28) | numeric: division by zero at S | REPL interpreter only; a compiled `(/ 1 0)` dies with SIGFPE |
-| `E_OVERFLOW` (§28) | numeric: integer overflow at S | catalog only |
+| `E_DIVISION_BY_ZERO` (§28) | numeric: `div!` or `rem!` met a zero divisor at S | `runtime/rt/numeric.zyl` (`zyl_div_zero_panic`, reached from the `zyl_rt_trap_div0_<op>` stubs `codegen.zyl` emits before every `idiv` with a non-literal divisor); `stdlib/repl/interp.zyl` (`in-int-div`, `in-int-rem`), with the same message |
+| `E_OVERFLOW` (§28) | numeric: Int arithmetic overflowed under (numeric checked) at S | `runtime/rt/numeric.zyl` (`zyl_overflow_panic`, reached from the `zyl_rt_trap_ovf_<op>` stubs after every checked `add`/`sub`/`imul` and from the `INT_MIN / -1` test before `idiv`); `stdlib/repl/interp.zyl` (`in-int-checked`) |
+| `E_NUMERIC_POLICY_REQUIRED` | numeric: Int arithmetic at S needs a (numeric checked\|wrapping\|saturating) declaration | `numeric_check.zyl` (located at the operator's form): a non-literal Int `+ - *` in a package that declared no policy |
+| `E_PARTIAL_OPERATION` | numeric: `/` or `%` at S has a divisor that may be zero - write div!, div? or a literal | `numeric_check.zyl` (located at the divisor): an Int `/` or `%` whose divisor is not a nonzero integer literal |
 | `E_FFI_PIN_REQUIRED` | ffi: Secret argument to F must be handed over through ffi-pin (Pin region) at S | `secret_check.zyl` (located) |
 | `E_FFI_TYPE_NOT_PINNABLE` | ffi: value has type T which is not FFI_Pinnable | `type_annotate.zyl` (located: `ffi-pin` of a function) |
 | `E_FFI_RESTRICTED` (§28) | ffi: raw runtime entry F may only be called by the standard library at S | `arity_check.zyl` (located, `ffi-check-raw`): an `ffi-call` outside the standard library naming an entry in `ffi-raw-p` (`ffi_sigs.zyl`), one that reads raw memory or reinterprets a machine word, or trusts bounds its caller checked (the string-view accessors `zyl_view_byte`, `zyl_view_cmp`, `zyl_view_find`, `zyl_view_copy`); `type_annotate.zyl` (located): an `ffi-call` to a symbol the runtime exports (`zyl_runtime_export_p`) that the program also declares with `extern`, since runtime entries are typed only by `ffi_sigs.zyl` |

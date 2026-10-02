@@ -164,8 +164,9 @@
   (match i
     (MConst _ _ true)
     (MMov _ _ true)
-    (MBin op _ _ _ (not (or (= op 3) (= op 4))))
-    (MBinI _ _ _ _ true)
+    ; checked arithmetic (0-2) and division trap, so they stay even when unread
+    (MBin op _ _ _ (or (and (>= op 5) (<= op 16)) (>= op 18)))
+    (MBinI op _ _ _ (> op 2))
     (MFnRef _ _ true)
     (MLoad _ _ _ true)
     (MStackBlk _ _ true)
@@ -274,7 +275,7 @@
              (_ unit))
       (mir-co-scan a n u dc di drop nd (+ j 1) two))))
 
-(defn mir-two-addr (op) (or (<= op 2) (and (>= op 11) (<= op 13))))
+(defn mir-two-addr (op) (or (<= op 2) (or (and (>= op 18) (<= op 20)) (and (>= op 11) (<= op 13)))))
 
 ; drop 2 marks an instruction whose first operand becomes its destination.
 (defn mir-co-operand (a u dc di drop nd j d x)

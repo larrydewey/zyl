@@ -257,7 +257,7 @@
 ; a whole number of rate-sized blocks.
 ; Returns: Int
 (defn keccak-padded-len ((len Int) (rate Int))
-  (* (+ (/ len rate) 1) rate))
+  (* (+ (div! len rate) 1) rate))
 
 ; Squeeze `outlen` bytes out of the state, permuting between blocks.
 ; Returns: Words

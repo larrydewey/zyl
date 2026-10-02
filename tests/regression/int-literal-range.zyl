@@ -50,3 +50,4 @@
   (assert-true (> 1e400 1e308)))
 
 (run-tests)
+(numeric checked)

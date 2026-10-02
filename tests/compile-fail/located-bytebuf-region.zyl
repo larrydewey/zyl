@@ -6,3 +6,4 @@
 (defn main ()
   (let b (bytebuf Nowhere 16)
     0))
+(numeric checked)

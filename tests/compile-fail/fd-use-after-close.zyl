@@ -10,3 +10,4 @@
       (file-close fd)
       (file-write fd "after release")
       0)))
+(numeric checked)

@@ -149,6 +149,12 @@ recorded here rather than silently corrected in the grammar above.
 `checkpoint` and `recover`, plus the byte primitives
 (`byte-form-dispatch`). `ffi-call` is not a dedicated node; it stays an
 application of the reserved name and is recognised during ICNF lowering.
+`div?` and `rem?` (§20.3) are rewritten here into `let`/`if`/`Some`/`None`
+around `div!`/`rem!`, so the type checker and the interpreter see only
+ordinary forms. A top-level `(numeric checked|wrapping|saturating)`
+(§20.1) is read by the module resolver, which checks its shape and
+records the package's policy, and converts to nothing here; one that is
+not at the top level is `E_MALFORMED_FORM`.
 
 `list` and `quote` produce no node of their own. `(list a b c)` becomes
 the constructor chain `(Cons a (Cons b (Cons c Nil)))`
@@ -198,6 +204,11 @@ requires becomes an `EUnknown` node, which the arity pass reports as
 - **`contracts`, `requires`, `ensures`, `invariant`, `checkpoint` and
   `recover`** are lowered to ordinary code while the tree is converted;
   see `spec/09-ffi-contracts.md`.
+- **`numeric`**, `div!`, `rem!`, `div?`, `rem?`, `wrapping+`, `wrapping-`,
+  `wrapping*`, `saturating+`, `saturating-`, `saturating*` are the
+  numeric-model forms of §20 (`spec/14-determinism-and-hashing.md`). The
+  operators are Int-only; `div!`/`rem!` and the six policy operators are
+  recognised by name in ICNF lowering like `+` is.
 - **`tuple` / `tuple-get`** (§21.5, §4.2). `(tuple e...)` builds a
   generated single-variant ADT — one per element type list, so the element
   types are part of the type and `(tuple 1 2)` and `(tuple "a" "b")` cannot
