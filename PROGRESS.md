@@ -281,6 +281,17 @@ compile with `build/boot/zyl-self` on 2026-09-28.
   `E_MUT_CONFLICT`, `E_CAPABILITY_LEAK`, `E_PKG_CAPABILITY_VIOLATION`
   and `E_REGION_ESCAPE`; `--error-format=json`. The self-build prints no
   warnings.
+- Partial operations are spelled (`docs/soundness.md`): a stdlib function
+  that can panic ends in `!` (`vec-get!`, `vec-set!`, `vec-last!`,
+  `slice-vec!`/`-sub!`/`-get!`, `view-slice!`/`-sub!`, the SIMD lane
+  `get!`/`set!`, `option-expect!`, `result-expect!`), its total sibling in
+  `?` (an Option), with no plain name. `vec-set!` at the length appends; past
+  it is `E_INDEX_OUT_OF_BOUNDS` (it used to drop the write silently). String
+  slicing stays total and clamps. `unused_check.zyl` makes a plain-named
+  `defn` that calls `panic`/`zyl_panic` directly `E_PANIC_UNMARKED` in a
+  program-facing stdlib module and `W_PANIC_UNMARKED` in a program; it sees
+  direct calls only, and built-ins (division by zero, region exhaustion)
+  are outside it.
 - Hash finalization: `zyl build` writes `<out>.buildinfo` and the binary
   carries `zyl_build_hash` (spec §31.12).
 
@@ -525,3 +536,4 @@ the zyl-skill repository (`~/git/larry/zyl-skill`).
 | Deterministic intrinsics | 2026-09-28 | bit intrinsics, `stdlib/simd` |
 | Zyl assembler and ELF linker | 2026-09-28 | no cc/as/ld for freestanding programs; cached `rt.zo` |
 | Interpreted actors | 2026-09-28 | the REPL and `zyl eval` run `spawn` and channels |
+| Partial operations spelled | 2026-10-02 | `!`/`?` stdlib pairs, `E_PANIC_UNMARKED` |
