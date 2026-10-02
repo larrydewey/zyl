@@ -3,4 +3,3 @@
 ; expect-error: E_INVALID_ESCAPE
 
 (defn main () (begin (print "bad \q escape") 0))
-(numeric checked)

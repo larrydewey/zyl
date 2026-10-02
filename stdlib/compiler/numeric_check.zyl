@@ -5,11 +5,9 @@
 ; source explicitly asked for it, so two things are decided here, after
 ; type inference and before lowering:
 ;
-;   1. Int `+ - *` on anything but literals needs the package to have
-;      chosen what overflow does: (numeric checked|wrapping|saturating)
-;      in the file or in zyl.pkg. Without one the first such operation
-;      is E_NUMERIC_POLICY_REQUIRED. The implicit standard library is
-;      checked (module_resolver.zyl registers the policies).
+;   1. Int `+ - *` overflow is checked unless the package opts out with
+;      (numeric wrapping) or (numeric saturating), in the file or in
+;      zyl.pkg (module_resolver.zyl registers the policies; "" is checked).
 ;
 ;   2. Int `/` and `%` are total only with a nonzero literal divisor.
 ;      Any other divisor is E_PARTIAL_OPERATION, and the author picks:
@@ -31,7 +29,7 @@
 (use core/list)
 (use core/option)
 
-; The policy of the package `pkg` ("" is the root), or "" when it declared none.
+; The policy of the package `pkg` ("" is the root), or "" (checked) when it declared none.
 (defn nc-policy-of (pkg)
   (ffi-call "zyl_smap_get_or" numeric-policies pkg "" 1000))
 
@@ -67,23 +65,10 @@
     (ETestDecl _ body _ _ (nc-walk body (nc-policy-of "")))
     (_ unit)))
 
-(defn nc-arith-p (n) (or (str-eq n "+") (or (str-eq n "-") (str-eq n "*"))))
 (defn nc-div-p (n) (or (str-eq n "/") (str-eq n "%")))
 
 ; An Int result: the kind table says neither String nor Float.
 (defn nc-int-p (e) (= (ta-kind e) 0))
-
-; Arithmetic whose every leaf is an integer literal is decided at compile time.
-(defn nc-literal-only (e)
-  (match (Expr.inner e)
-    (EAtom a (match a (AInt _ true) (_ false)))
-    (EApply n args (and (or (nc-arith-p n) (nc-div-p n)) (nc-all-literal args)))
-    (_ false)))
-
-(defn nc-all-literal (xs)
-  (match xs
-    (Nil true)
-    (Cons h t (and (nc-literal-only h) (nc-all-literal t)))))
 
 (defn nc-nonzero-literal (e)
   (match (Expr.inner e)
@@ -94,18 +79,14 @@
   (let _ (nc-check-op e pol)
     (nc-children e pol)))
 
-(defn nc-check-op (e pol)
+(defn nc-check-op (e _pol)
   (match (Expr.inner e)
     (EApply n args
-      (if (nc-arith-p n)
-        (if (and (= (str-length pol) 0) (and (nc-int-p e) (not (nc-literal-only e))))
-          (nc-fail-policy e n)
-          unit)
-        (if (and (nc-div-p n) (and (nc-int-p e) (nc-partial-enforced)))
-          (match args
-            (Cons _ divisors (nc-check-divisors n divisors))
-            (Nil unit))
-          unit)))
+      (if (and (nc-div-p n) (and (nc-int-p e) (nc-partial-enforced)))
+        (match args
+          (Cons _ divisors (nc-check-divisors n divisors))
+          (Nil unit))
+        unit))
     (_ unit)))
 
 ; Every operand after the first divides; each must be a nonzero literal.
@@ -120,11 +101,6 @@
 ; ===========================================================================
 ; DIAGNOSTICS
 ; ===========================================================================
-
-(defn nc-fail-policy (e n)
-  (nc-fail e "E_NUMERIC_POLICY_REQUIRED"
-    (str-concat "`" (str-concat n "` on Int needs a numeric policy, and this package declares none"))
-    "write `(numeric checked)` at the top of the file (or in zyl.pkg) to stop on overflow, or `(numeric wrapping)` / `(numeric saturating)`"))
 
 (defn nc-fail-partial (d n)
   (nc-fail d "E_PARTIAL_OPERATION"

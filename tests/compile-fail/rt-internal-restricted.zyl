@@ -4,4 +4,3 @@
   (begin
     (print (ffi-call "%load64" 4096 1000))
     0))
-(numeric checked)

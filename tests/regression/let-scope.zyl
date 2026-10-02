@@ -11,4 +11,3 @@
   (assert-equal (_ls-last-x) 10))
 
 (run-tests)
-(numeric checked)

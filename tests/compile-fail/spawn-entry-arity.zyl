@@ -5,4 +5,3 @@
 
 (defn entry (n) (print n))
 (defn main () (let _ (spawn entry) 0))
-(numeric checked)

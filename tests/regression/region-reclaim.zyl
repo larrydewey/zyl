@@ -64,4 +64,3 @@
   (assert-equal (rl-len (build 20000 (RN))) 20000))
 
 (run-tests)
-(numeric checked)

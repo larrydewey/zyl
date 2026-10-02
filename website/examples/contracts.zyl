@@ -24,4 +24,3 @@
   (transfer 500)
   (print (withdraw 10 20))
   0)
-(numeric checked)

@@ -5,4 +5,3 @@
 (use core/core)
 (defn main ()
   (print (len (tuple 1 2))))
-(numeric checked)

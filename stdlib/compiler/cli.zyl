@@ -138,7 +138,7 @@
       (let _ (store-mkdir dir)
         (let m (MF (PM name (PV 0 1 0 "") "5.0" "2026")
                    (PDoc "" "" "")
-                   (PCaps Nil Nil "checked")
+                   (PCaps Nil Nil "")
                    (PDeps Nil Nil Nil Nil)
                    (PBuild (pn-empty) Nil))
           (let _ (cli-write-manifest arena dir m)

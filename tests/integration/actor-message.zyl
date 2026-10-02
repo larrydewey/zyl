@@ -26,4 +26,3 @@
                         (actor-wait actor2)))))))))))))
 
 (run-tests)
-(numeric checked)

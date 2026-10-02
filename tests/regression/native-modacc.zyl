@@ -23,4 +23,3 @@
     (assert-equal (neg 0 100 0) -534)))
 
 (run-tests)
-(numeric checked)

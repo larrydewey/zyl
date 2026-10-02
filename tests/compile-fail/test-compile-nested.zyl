@@ -1,4 +1,3 @@
 ; expect-error: E_MALFORMED_FORM
 ; expect-at: test-compile-nested.zyl:3:22
 (defn main () (begin (test-compile 1) 0))
-(numeric checked)

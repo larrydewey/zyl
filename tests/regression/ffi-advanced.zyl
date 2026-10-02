@@ -78,4 +78,3 @@
 ; FFI callback not supported.
 
 (run-tests)
-(numeric checked)

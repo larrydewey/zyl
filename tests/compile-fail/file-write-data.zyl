@@ -5,4 +5,3 @@
 (capabilities io)
 
 (defn main () (begin (file-write 1 12345) 0))
-(numeric checked)

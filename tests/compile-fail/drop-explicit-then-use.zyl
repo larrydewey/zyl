@@ -11,4 +11,3 @@
       (Drop.drop c)
       (print c)
       0)))
-(numeric checked)

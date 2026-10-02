@@ -86,4 +86,3 @@
     (assert-true (> (ffi-call "zyl_term_height" 1000) 0))))
 
 (run-tests)
-(numeric checked)

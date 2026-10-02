@@ -43,4 +43,3 @@
   (run-selfhost-codegen))
 
 (run-tests)
-(numeric checked)

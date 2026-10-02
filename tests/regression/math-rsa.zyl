@@ -80,4 +80,3 @@
           (assert-true (option-is-none (rsa-oaep-decrypt (_rsa_priv) ct outlen))))))))
 
 (run-tests)
-(numeric checked)

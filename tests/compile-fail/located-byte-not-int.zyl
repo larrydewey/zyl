@@ -7,4 +7,3 @@
   (begin
     (print (byte "a"))
     0))
-(numeric checked)

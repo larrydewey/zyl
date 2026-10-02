@@ -2,7 +2,6 @@
 ; Spec §23: a violated requires/ensures/invariant raises E_CONTRACT_VIOLATION;
 ; a passing one leaves the program's value unchanged.
 
-(numeric checked)
 (use core/core)
 (use core/result)
 

@@ -4,7 +4,6 @@
 ; selfhost/driver.zyl) and this binary run the same code. This file is
 ; only the `main` that a standalone build needs.
 
-(numeric checked)
 (use allocator/allocator)
 (use repl/repl)
 

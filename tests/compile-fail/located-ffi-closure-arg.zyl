@@ -7,4 +7,3 @@
   (begin
     (ffi-call "zyl_cstr_len" (fn (x) x) 1000)
     0))
-(numeric checked)

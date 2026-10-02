@@ -86,4 +86,3 @@
     (assert-true (sb-result-balanced (sb-check-string "; only a comment (\n")))))
 
 (run-tests)
-(numeric checked)

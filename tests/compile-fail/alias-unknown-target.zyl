@@ -2,4 +2,3 @@
 ; expect-at: alias-unknown-target.zyl:3:1
 (alias Meters Intt)
 (defn main () 0)
-(numeric checked)

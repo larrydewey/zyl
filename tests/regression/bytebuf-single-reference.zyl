@@ -36,4 +36,3 @@
     16))
 
 (run-tests)
-(numeric checked)

@@ -10,4 +10,3 @@
       (file-close fd)
       (file-close fd)
       0)))
-(numeric checked)

@@ -9,4 +9,3 @@
 (defn _cf_f (q) (q.area))
 
 (defn main () (_cf_f (CfSq 1)))
-(numeric checked)

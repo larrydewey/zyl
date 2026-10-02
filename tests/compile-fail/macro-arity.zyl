@@ -5,4 +5,3 @@
 (defmacro _cf_inc (x) (+ x 1))
 
 (defn main () (begin (print (_cf_inc 1 2)) 0))
-(numeric checked)

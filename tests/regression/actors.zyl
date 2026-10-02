@@ -76,4 +76,3 @@
     (begin (actor-wait a) (assert-false (actor-is-alive a)))))
 
 (run-tests)
-(numeric checked)

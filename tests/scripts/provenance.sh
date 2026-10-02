@@ -47,7 +47,6 @@ cat > "$BIN/rec.zyl" <<'EOF'
         0))))
 
 (main)
-(numeric checked)
 EOF
 
 "$ZYL" "$BIN/rec.zyl" -o "$BIN/rec.bin" >/dev/null 2>&1

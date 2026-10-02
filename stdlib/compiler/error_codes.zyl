@@ -116,7 +116,6 @@
   (Cons (EC "E_CONTRACT_VIOLATION" 14 1 "contract: contract violation - M at S")
   (Cons (EC "W_RECOVER_SHADOW" 14 2 "recover: an arm that catches every error comes before arm N, which never runs - move N first")
   (Cons (EC "E_DIVISION_BY_ZERO" 15 1 "numeric: `div!` or `rem!` met a zero divisor at S")
-                        (Cons (EC "E_NUMERIC_POLICY_REQUIRED" 15 1 "numeric: Int arithmetic at S needs a (numeric checked|wrapping|saturating) declaration")
                         (Cons (EC "E_PARTIAL_OPERATION" 15 1 "numeric: `/` or `%` at S has a divisor that may be zero - write div!, div? or a literal")
   (Cons (EC "E_OVERFLOW" 15 1 "numeric: Int arithmetic overflowed under (numeric checked) at S")
   (Cons (EC "E_FFI_PIN_REQUIRED" 16 1 "ffi: Secret argument to F must be handed over through ffi-pin (Pin region) at S")
@@ -166,7 +165,7 @@
   (Cons (EC "E_PKG_FEATURE_NESTED" 19 1 "package: feature-gate is valid at top level only")
   (Cons (EC "E_PKG_FEATURE_COLLISION" 19 1 "package: gated definition D collides with a base definition")
   (Cons (EC "E_PROV_ATTACH" 19 1 "build: the provenance trailer could not be attached: M")
-  Nil))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+  Nil)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 ; ---------------------------------------------------------------------------
 ; ACCESSORS
 ; ---------------------------------------------------------------------------

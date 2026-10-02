@@ -3,4 +3,3 @@
 ; one-argument form that compiled to 0 and passed.
 (test "x" (assert-equal (+ 1 2)))
 (run-tests)
-(numeric checked)

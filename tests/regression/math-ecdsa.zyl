@@ -68,4 +68,3 @@
             (assert-false (ecdsa-verify c (ecdsa-public-key c d) hash sig))))))))
 
 (run-tests)
-(numeric checked)

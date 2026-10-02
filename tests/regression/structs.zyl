@@ -157,4 +157,3 @@
     (assert-equal (struct-get p "x") 10)))
 
 (run-tests)
-(numeric checked)

@@ -80,4 +80,3 @@
     (assert-equal (ffi-call "zyl_zeroize" 4096 -1 1000) 0)))
 
 (run-tests)
-(numeric checked)

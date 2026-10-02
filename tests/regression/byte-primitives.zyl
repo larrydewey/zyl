@@ -197,4 +197,3 @@
       (assert-equal (load-u16 :le (byteslice b 14 2) 0) 1))))
 
 (run-tests)
-(numeric checked)

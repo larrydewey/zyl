@@ -6,4 +6,3 @@
 (use core/core)
 (defn main ()
   (print 0xffffffffffffffff))
-(numeric checked)

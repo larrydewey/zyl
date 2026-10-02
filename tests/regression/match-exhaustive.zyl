@@ -149,4 +149,3 @@
 )
 
 (run-tests)
-(numeric checked)

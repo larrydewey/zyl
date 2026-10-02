@@ -11,4 +11,3 @@
     (Rect w h (* w h))))
 
 (defn main () (_cf_area (Circle 2)))
-(numeric checked)

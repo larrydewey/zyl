@@ -70,4 +70,3 @@
 (module "mod_dummy")
 
 (run-tests)
-(numeric checked)

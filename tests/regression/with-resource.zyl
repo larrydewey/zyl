@@ -35,4 +35,3 @@
     4))
 
 (run-tests)
-(numeric checked)

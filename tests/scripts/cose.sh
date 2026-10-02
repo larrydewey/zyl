@@ -62,7 +62,6 @@ cat > "$BIN/dump.zyl" <<'EOF'
     0))
 
 (main)
-(numeric checked)
 EOF
 
 "$ZYL" "$BIN/dump.zyl" -o "$BIN/dump.bin" >/dev/null 2>&1

@@ -2,4 +2,3 @@
 ; expect-at: test-suite-nested.zyl:4:22
 ; test-suite is a top-level form.
 (defn main () (begin (test-suite "s" (test "t" (assert-true true))) 0))
-(numeric checked)

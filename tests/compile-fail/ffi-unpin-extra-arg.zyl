@@ -4,4 +4,3 @@
 (capabilities ffi)
 
 (defn main () (let p (ffi-pin 5) (begin (ffi-unpin p (print "never")) 0)))
-(numeric checked)

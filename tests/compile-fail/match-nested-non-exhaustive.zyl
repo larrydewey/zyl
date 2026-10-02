@@ -13,4 +13,3 @@
         (Circle r r)))))
 
 (defn main () (_cf_radius (WShape (Circle 2))))
-(numeric checked)

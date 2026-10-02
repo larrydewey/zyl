@@ -58,4 +58,3 @@
         (assert-equal (vec-get! acc 50) 50)))))
 
 (run-tests)
-(numeric checked)

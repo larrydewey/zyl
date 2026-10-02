@@ -17,4 +17,3 @@
   (assert-true (str-eq (Show.show (_tgv-map _tgv-show (Cons true (Cons false Nil)))) "[true, false]")))
 
 (run-tests)
-(numeric checked)

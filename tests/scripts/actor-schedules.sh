@@ -29,7 +29,6 @@ cat > "$SCRATCH/dl.zyl" <<'EOF'
       (let tx (chan-tx c)
         (let _ (spawn (fn () (let _ (print "child waits") (chan-recv rx))))
           (let _ (print "main waits") (let _ (chan-recv (chan-rx (chan 1))) (let _ (chan-send tx 1) 0))))))))
-(numeric checked)
 EOF
 build dl
 
@@ -39,7 +38,6 @@ cat > "$SCRATCH/exit.zyl" <<'EOF'
   (let _ (spawn (fn () (print "one")))
     (let _ (spawn (fn () (let _ (print "two") (panic "late"))))
       (let _ (spawn (fn () (print "three"))) (let _ (print "main end") 0)))))
-(numeric checked)
 EOF
 build exit
 
@@ -50,7 +48,6 @@ cat > "$SCRATCH/mp.zyl" <<'EOF'
     (let rx (chan-rx c)
       (let _ (spawn (fn () (let _ (print "never shown") (chan-recv rx))))
         (let _ (print "main") (panic "main fails"))))))
-(numeric checked)
 EOF
 build mp
 
@@ -65,7 +62,6 @@ cat > "$SCRATCH/late.zyl" <<'EOF'
         (let a (spawn (fn () (let _ (chan-send tx 1) (chan-send tx 2))))
           (let _b (spawn (fn () (let _ rx (let _ (spin 30000000) (print "b done")))))
             (let _ (actor-wait a) 0)))))))
-(numeric checked)
 EOF
 build late
 
@@ -75,7 +71,6 @@ cat > "$SCRATCH/fw.zyl" <<'EOF'
 (defn main ()
   (let a (spawn (fn () (begin (file-write 1 "a-out\n") (file-write 2 "a-err\n") (print "a-print"))))
     (begin (print "main-1") (file-write 1 "main-2\n") (actor-wait a) (print "main-3") 0)))
-(numeric checked)
 EOF
 build fw
 

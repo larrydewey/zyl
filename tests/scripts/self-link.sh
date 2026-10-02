@@ -22,7 +22,6 @@ cat > "$SCRATCH/p.zyl" <<'ZEOF'
     (let tx (chan-tx c)
       (let a (spawn (fn () (let _ (print "feeding") (feed tx 0))))
         (let _ (print (sum (chan-rx c) 100 0)) (let _ (print 2.5) (let _ (actor-wait a) 0)))))))
-(numeric checked)
 ZEOF
 ZYL_EXTERNAL_LD=1 "$ZYL" "$SCRATCH/p.zyl" -o "$SCRATCH/cc" >/dev/null 2>&1 || fail "cc link"
 "$ZYL" "$SCRATCH/p.zyl" -o "$SCRATCH/self1" >/dev/null 2>&1 || fail "self link (cache miss)"

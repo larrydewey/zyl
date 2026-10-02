@@ -3,4 +3,3 @@
 ; would bind a variable named Nil and match every Some.
 (defn f (o) (match o (Some Nil -1) (None 0)))
 (defn main () (f (Some Nil)))
-(numeric checked)

@@ -12,7 +12,6 @@ cat > "$work/probe.zyl" <<'Z'
   (let r (classify (Some 4))
     (print (string-append "r=" (int->string r)))
     (print (string-append "t=" (int->string (twice "x"))))))
-(numeric checked)
 Z
 cat > "$work/want" <<'W'
 warning[W_SHADOWED_BINDING]: `n` shadows an outer binding of the same name

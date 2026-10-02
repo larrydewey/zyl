@@ -73,4 +73,3 @@
 (test "alias-field-type" (assert-equal (match (AlBox 3) (AlBox m (+ m 1))) 4))
 
 (run-tests)
-(numeric checked)

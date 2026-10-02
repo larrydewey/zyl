@@ -4,4 +4,3 @@
 ; would test nothing at all.
 (test "x" (assert-true true) (:expect-pnak true))
 (run-tests)
-(numeric checked)

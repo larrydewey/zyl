@@ -76,4 +76,3 @@
     (assert-equal (ptext "nan(0x12)") "nan")))
 
 (run-tests)
-(numeric checked)

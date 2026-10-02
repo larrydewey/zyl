@@ -2,4 +2,3 @@
 ; An if without an else is Unit; its branch cannot be an Int.
 (defn f (c) (if c 5))
 (defn main () (begin (print (+ (f true) 1)) 0))
-(numeric checked)

@@ -3,4 +3,3 @@
 (defstruct P (x Int))
 (defn make-P (x) x)
 (defn main () 0)
-(numeric checked)

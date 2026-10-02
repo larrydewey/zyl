@@ -6,4 +6,3 @@
 (defn f (a b a) (+ a b))
 
 (defn main () (begin (print (f 1 2 3)) 0))
-(numeric checked)

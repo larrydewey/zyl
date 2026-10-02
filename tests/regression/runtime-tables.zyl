@@ -121,4 +121,3 @@
       "E_INDEX_OUT_OF_BOUNDS: string buffer full")))
 
 (run-tests)
-(numeric checked)

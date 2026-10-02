@@ -3,4 +3,3 @@
 ; library's own uses of Some would resolve to it.
 (deftype MyOpt (Some Int) (None))
 (defn main () 0)
-(numeric checked)

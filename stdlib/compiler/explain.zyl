@@ -414,108 +414,105 @@
 
 (defn explain-notes ()
   (Cons (ExN "E_TYPE_MISMATCH" "A value has a different type from the one this place needs."
-          "(numeric checked)\n(defn main () (begin (print (+ 1 \"2\")) 0))"
-          "(numeric checked)\n(defn main () (begin (print (+ 1 2)) 0))")
+          "(defn main () (begin (print (+ 1 \"2\")) 0))"
+          "(defn main () (begin (print (+ 1 2)) 0))")
   (Cons (ExN "E_MALFORMED_FORM" "A special form is missing a part, or has one too many."
-          "(numeric checked)\n(defn main () (let x 1))"
-          "(numeric checked)\n(defn main () (let x 0 x))")
+          "(defn main () (let x 1))"
+          "(defn main () (let x 0 x))")
   (Cons (ExN "E_CANNOT_INFER" "Nothing in the program says what type this is; a foreign function needs an `extern` with its signature."
-          "(numeric checked)\n(capabilities ffi)\n(defn main () (begin (print (ffi-call \"abs\" -3 1000)) 0))"
-          "(numeric checked)\n(capabilities ffi)\n(extern \"abs\" (Int) Int)\n(defn main () (begin (print (ffi-call \"abs\" -3 1000)) 0))")
+          "(capabilities ffi)\n(defn main () (begin (print (ffi-call \"abs\" -3 1000)) 0))"
+          "(capabilities ffi)\n(extern \"abs\" (Int) Int)\n(defn main () (begin (print (ffi-call \"abs\" -3 1000)) 0))")
   (Cons (ExN "E_MUT_CONFLICT" "`set!` changes only a `let-mut` binding; every other binding and every struct field is immutable."
-          "(numeric checked)\n(defn main () (let n 1 (begin (set! n 2) n)))"
-          "(numeric checked)\n(defn main () (let-mut n 1 (begin (set! n 2) (- n 2))))")
+          "(defn main () (let n 1 (begin (set! n 2) n)))"
+          "(defn main () (let-mut n 1 (begin (set! n 2) (- n 2))))")
   (Cons (ExN "E_UNBOUND_VARIABLE" "A name is used that nothing defines here: a typo, a missing `(use ...)`, or a binding out of scope."
-          "(numeric checked)\n(defn main () (begin (print (str-lenght \"abc\")) 0))"
-          "(numeric checked)\n(defn main () (begin (print (str-length \"abc\")) 0))")
+          "(defn main () (begin (print (str-lenght \"abc\")) 0))"
+          "(defn main () (begin (print (str-length \"abc\")) 0))")
   (Cons (ExN "E_REGION_ESCAPE" "A value would outlive the region it was allocated in."
-          "(numeric checked)\n(defn make-buf () (bytebuf Stack 16))\n(defn main () (begin (print (bytebuf-cap (make-buf))) 0))"
-          "(numeric checked)\n(defn make-buf () (bytebuf Heap 16))\n(defn main () (begin (print (bytebuf-cap (make-buf))) 0))")
+          "(defn make-buf () (bytebuf Stack 16))\n(defn main () (begin (print (bytebuf-cap (make-buf))) 0))"
+          "(defn make-buf () (bytebuf Heap 16))\n(defn main () (begin (print (bytebuf-cap (make-buf))) 0))")
   (Cons (ExN "E_MALFORMED_PARAMETER" "A parameter is not a name or a `(name Type)` pair with a concrete type."
-          "(numeric checked)\n(defn f ((a Ord)) a)\n(defn main () (f 0))"
-          "(numeric checked)\n(defn f ((a Int)) a)\n(defn main () (f 0))")
+          "(defn f ((a Ord)) a)\n(defn main () (f 0))"
+          "(defn f ((a Int)) a)\n(defn main () (f 0))")
   (Cons (ExN "E_ARITY_MISMATCH" "A function is called with a different number of arguments than it takes."
-          "(numeric checked)\n(defn add (a b) (+ a b))\n(defn main () (add 1))"
-          "(numeric checked)\n(defn add (a b) (+ a b))\n(defn main () (- (add 1 2) 3))")
+          "(defn add (a b) (+ a b))\n(defn main () (add 1))"
+          "(defn add (a b) (+ a b))\n(defn main () (- (add 1 2) 3))")
   (Cons (ExN "E_FFI_RESTRICTED" "A program called a locked runtime primitive, which only the runtime itself may use."
-          "(numeric checked)\n(defn main () (begin (print (ffi-call \"%load64\" 4096 1000)) 0))"
-          "(numeric checked)\n(defn main () (begin (print (ffi-call \"zyl_cstr_len\" \"abc\" 1000)) 0))")
+          "(defn main () (begin (print (ffi-call \"%load64\" 4096 1000)) 0))"
+          "(defn main () (begin (print (ffi-call \"zyl_cstr_len\" \"abc\" 1000)) 0))")
   (Cons (ExN "E_INVALID_CAPABILITY" "A value that cannot cross into foreign code, such as a closure, was passed to `ffi-call`."
-          "(numeric checked)\n(defn main () (begin (ffi-call \"zyl_cstr_len\" (fn (x) x) 1000) 0))"
-          "(numeric checked)\n(defn main () (begin (ffi-call \"zyl_cstr_len\" \"x\" 1000) 0))")
+          "(defn main () (begin (ffi-call \"zyl_cstr_len\" (fn (x) x) 1000) 0))"
+          "(defn main () (begin (ffi-call \"zyl_cstr_len\" \"x\" 1000) 0))")
   (Cons (ExN "E_MATCH_NONEXHAUSTIVE" "A match on literals has no arm for the values none of its patterns name."
-          "(numeric checked)\n(defn f (n) (match n (1 10) (2 20)))\n(defn main () (begin (print (f 1)) 0))"
-          "(numeric checked)\n(defn f (n) (match n (1 10) (2 20) (_ 0)))\n(defn main () (begin (print (f 1)) 0))")
+          "(defn f (n) (match n (1 10) (2 20)))\n(defn main () (begin (print (f 1)) 0))"
+          "(defn f (n) (match n (1 10) (2 20) (_ 0)))\n(defn main () (begin (print (f 1)) 0))")
   (Cons (ExN "E_NON_EXHAUSTIVE_MATCH" "A match on a type's constructors leaves one of them without an arm."
-          "(numeric checked)\n(deftype Shape (Circle Int) (Square Int))\n(defn area (s) (match s (Circle r (* r r))))\n(defn main () (area (Circle 0)))"
-          "(numeric checked)\n(deftype Shape (Circle Int) (Square Int))\n(defn area (s) (match s (Circle r (* r r)) (Square w (* w w))))\n(defn main () (area (Circle 0)))")
+          "(deftype Shape (Circle Int) (Square Int))\n(defn area (s) (match s (Circle r (* r r))))\n(defn main () (area (Circle 0)))"
+          "(deftype Shape (Circle Int) (Square Int))\n(defn area (s) (match s (Circle r (* r r)) (Square w (* w w))))\n(defn main () (area (Circle 0)))")
   (Cons (ExN "E_UNREACHABLE_MATCH_ARM" "An arm can never run, because an earlier arm already matches everything it would."
-          "(numeric checked)\n(defn f (o) (match o (_ 0) (Some x x)))\n(defn main () (f (Some 0)))"
-          "(numeric checked)\n(defn f (o) (match o (Some x x) (_ 0)))\n(defn main () (f (Some 0)))")
+          "(defn f (o) (match o (_ 0) (Some x x)))\n(defn main () (f (Some 0)))"
+          "(defn f (o) (match o (Some x x) (_ 0)))\n(defn main () (f (Some 0)))")
   (Cons (ExN "E_FFI_TIMEOUT_REQUIRED" "Every `ffi-call` ends with a timeout: a positive whole number of milliseconds, written literally."
-          "(numeric checked)\n(defn main () (begin (print (ffi-call \"zyl_cstr_len\" \"abc\" 0)) 0))"
-          "(numeric checked)\n(defn main () (begin (print (ffi-call \"zyl_cstr_len\" \"abc\" 1000)) 0))")
+          "(defn main () (begin (print (ffi-call \"zyl_cstr_len\" \"abc\" 0)) 0))"
+          "(defn main () (begin (print (ffi-call \"zyl_cstr_len\" \"abc\" 1000)) 0))")
   (Cons (ExN "E_TRAIT_NOT_FOUND" "A trait method is used on a type that has no `impl` of that trait."
-          "(numeric checked)\n(defn main () (with-resource (s \"text\") (begin (print s) 0)))"
-          "(numeric checked)\n(defn main () (let s \"text\" (begin (print s) 0)))")
+          "(defn main () (with-resource (s \"text\") (begin (print s) 0)))"
+          "(defn main () (let s \"text\" (begin (print s) 0)))")
   (Cons (ExN "E_NESTED_PATTERN" "A constructor arm binds plain names only; match the inner value in a second `match`."
-          "(numeric checked)\n(defn f (o) (match o (Some (Some x) x) (_ 0)))\n(defn main () (f (Some (Some 0))))"
-          "(numeric checked)\n(defn f (o) (match o (Some inner (match inner (Some x x) (None 0))) (None 0)))\n(defn main () (f (Some (Some 0))))")
+          "(defn f (o) (match o (Some (Some x) x) (_ 0)))\n(defn main () (f (Some (Some 0))))"
+          "(defn f (o) (match o (Some inner (match inner (Some x x) (None 0))) (None 0)))\n(defn main () (f (Some (Some 0))))")
   (Cons (ExN "E_TRAIT_NOT_DERIVABLE" "`derive` names a trait it cannot write an impl for."
-          "(numeric checked)\n(defstruct Point (x Int))\n(derive Point Frobnicate)\n(defn main () 0)"
-          "(numeric checked)\n(defstruct Point (x Int))\n(derive Point Eq)\n(defn main () 0)")
+          "(defstruct Point (x Int))\n(derive Point Frobnicate)\n(defn main () 0)"
+          "(defstruct Point (x Int))\n(derive Point Eq)\n(defn main () 0)")
   (Cons (ExN "E_MACRO_NON_TERMINATION" "Macro expansion never finishes: the macros expand into each other forever."
-          "(numeric checked)\n(defmacro ping (x) (pong x))\n(defmacro pong (x) (ping x))\n(defn main () (ping 0))"
-          "(numeric checked)\n(defmacro ping (x) x)\n(defn main () (ping 0))")
+          "(defmacro ping (x) (pong x))\n(defmacro pong (x) (ping x))\n(defn main () (ping 0))"
+          "(defmacro ping (x) x)\n(defn main () (ping 0))")
   (Cons (ExN "E_DUPLICATE_DEFINITION" "Two top-level definitions share one name."
-          "(numeric checked)\n(defn f (x) x)\n(defn f (x) (+ x 1))\n(defn main () (f 0))"
-          "(numeric checked)\n(defn f (x) x)\n(defn g (x) (+ x 1))\n(defn main () (f (- (g 0) 1)))")
+          "(defn f (x) x)\n(defn f (x) (+ x 1))\n(defn main () (f 0))"
+          "(defn f (x) x)\n(defn g (x) (+ x 1))\n(defn main () (f (- (g 0) 1)))")
   (Cons (ExN "E_SECRET_ESCAPE" "A `Secret` value reaches output, a file or another observable place without `declassify`."
-          "(numeric checked)\n(capabilities io)\n(use core/core)\n(defn leak ((key Secret)) (file-write 2 key))\n(defn main () (begin (leak 5) 0))"
-          "(numeric checked)\n(capabilities io)\n(use core/core)\n(defn leak ((key Secret)) (file-write 2 \"<redacted>\"))\n(defn main () (begin (leak 5) 0))")
+          "(capabilities io)\n(use core/core)\n(defn leak ((key Secret)) (file-write 2 key))\n(defn main () (begin (leak 5) 0))"
+          "(capabilities io)\n(use core/core)\n(defn leak ((key Secret)) (file-write 2 \"<redacted>\"))\n(defn main () (begin (leak 5) 0))")
   (Cons (ExN "E_RESERVED_KEYWORD" "A keyword of the language is used as a name."
-          "(numeric checked)\n(defn f (test) test)\n(defn main () (f 0))"
-          "(numeric checked)\n(defn f (t) t)\n(defn main () (f 0))")
+          "(defn f (test) test)\n(defn main () (f 0))"
+          "(defn f (t) t)\n(defn main () (f 0))")
   (Cons (ExN "E_INDEX_OUT_OF_BOUNDS" "An index is outside the tuple, array or buffer it reads."
-          "(numeric checked)\n(use core/core)\n(defn main () (let t (tuple 1 2) (begin (print (tuple-get t 5)) 0)))"
-          "(numeric checked)\n(use core/core)\n(defn main () (let t (tuple 1 2) (begin (print (tuple-get t 1)) 0)))")
+          "(use core/core)\n(defn main () (let t (tuple 1 2) (begin (print (tuple-get t 5)) 0)))"
+          "(use core/core)\n(defn main () (let t (tuple 1 2) (begin (print (tuple-get t 1)) 0)))")
   (Cons (ExN "E_CT_VIOLATION" "A branch, index or division depends on a `Secret`, which leaks it through timing."
-          "(capabilities secret)\n(numeric checked)\n(use core/core)\n(defn check ((key Secret) (guess Int)) (if (= key guess) 1 0))\n(defn main () (- (check 7 7) 1))"
-          "(capabilities secret)\n(numeric checked)\n(use core/core)\n(use math/secret/secret)\n(defn check ((key Secret) (guess Int)) (ct-eq key guess))\n(defn main () (- (check 7 7) 1))")
+          "(capabilities secret)\n(use core/core)\n(defn check ((key Secret) (guess Int)) (if (= key guess) 1 0))\n(defn main () (- (check 7 7) 1))"
+          "(capabilities secret)\n(use core/core)\n(use math/secret/secret)\n(defn check ((key Secret) (guess Int)) (ct-eq key guess))\n(defn main () (- (check 7 7) 1))")
   (Cons (ExN "E_FFI_PIN_REQUIRED" "A `Secret` passed to foreign code must go through `ffi-pin`."
-          "(numeric checked)\n(capabilities ffi)\n(use core/core)\n(extern \"abs\" (Int) Int)\n(defn raw ((key Secret)) (ffi-call \"abs\" key 1000))\n(defn main () (begin (raw 5) 0))"
-          "(numeric checked)\n(capabilities ffi)\n(use core/core)\n(defn raw ((key Secret)) (let p (ffi-pin key) (ffi-unpin p)))\n(defn main () (begin (raw 5) 0))")
+          "(capabilities ffi)\n(use core/core)\n(extern \"abs\" (Int) Int)\n(defn raw ((key Secret)) (ffi-call \"abs\" key 1000))\n(defn main () (begin (raw 5) 0))"
+          "(capabilities ffi)\n(use core/core)\n(defn raw ((key Secret)) (let p (ffi-pin key) (ffi-unpin p)))\n(defn main () (begin (raw 5) 0))")
   (Cons (ExN "E_CONTRACT_VIOLATION" "A `requires`, `ensures` or `invariant` check was false when it ran."
-          "(numeric checked)\n(defn half (n) (begin (requires (>= n 0)) (/ n 2)))\n(defn main () (half -4))"
-          "(numeric checked)\n(defn half (n) (begin (requires (>= n 0)) (/ n 2)))\n(defn main () (half 0))")
+          "(defn half (n) (begin (requires (>= n 0)) (/ n 2)))\n(defn main () (half -4))"
+          "(defn half (n) (begin (requires (>= n 0)) (/ n 2)))\n(defn main () (half 0))")
   (Cons (ExN "E_REGION_EXHAUSTED" "A `with-region` region ran out of the space its `:size` or `:limit` gives it."
-          "(numeric checked)\n(defn main () (with-region (fixed :size 64) (begin (print (str-length (str-concat \"a\" (str-concat \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\" \"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\")))) 0)))"
-          "(numeric checked)\n(defn main () (with-region (fixed :size 4096) (begin (print (str-length (str-concat \"a\" (str-concat \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\" \"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\")))) 0)))")
+          "(defn main () (with-region (fixed :size 64) (begin (print (str-length (str-concat \"a\" (str-concat \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\" \"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\")))) 0)))"
+          "(defn main () (with-region (fixed :size 4096) (begin (print (str-length (str-concat \"a\" (str-concat \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\" \"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\")))) 0)))")
   (Cons (ExN "E_CHANNEL_CLOSED" "`chan-recv` on a channel whose sender has finished and whose values are all taken."
-          "(numeric checked)\n(capabilities actor)\n(use actor/actor)\n(defn main () (let c (chan 1) (let rx (chan-rx c) (let tx (chan-tx c) (let a (spawn (fn () (chan-send tx 7))) (begin (actor-wait a) (print (chan-recv rx)) (print (chan-recv rx)) 0))))))"
-          "(numeric checked)\n(capabilities actor)\n(use actor/actor)\n(defn main () (let c (chan 1) (let rx (chan-rx c) (let tx (chan-tx c) (let a (spawn (fn () (chan-send tx 7))) (begin (actor-wait a) (print (chan-recv rx)) 0))))))")
+          "(capabilities actor)\n(use actor/actor)\n(defn main () (let c (chan 1) (let rx (chan-rx c) (let tx (chan-tx c) (let a (spawn (fn () (chan-send tx 7))) (begin (actor-wait a) (print (chan-recv rx)) (print (chan-recv rx)) 0))))))"
+          "(capabilities actor)\n(use actor/actor)\n(defn main () (let c (chan 1) (let rx (chan-rx c) (let tx (chan-tx c) (let a (spawn (fn () (chan-send tx 7))) (begin (actor-wait a) (print (chan-recv rx)) 0))))))")
   (Cons (ExN "E_FFI_TIMEOUT" "A foreign call ran longer than its timeout; it is abandoned and this error raised."
-          "(numeric checked)\n(capabilities ffi)\n(extern \"usleep\" (Int) Int)\n(defn main () (begin (ffi-call \"usleep\" 300000 50) 0))"
-          "(numeric checked)\n(capabilities ffi)\n(extern \"usleep\" (Int) Int)\n(defn main () (begin (ffi-call \"usleep\" 1000 1000) 0))")
+          "(capabilities ffi)\n(extern \"usleep\" (Int) Int)\n(defn main () (begin (ffi-call \"usleep\" 300000 50) 0))"
+          "(capabilities ffi)\n(extern \"usleep\" (Int) Int)\n(defn main () (begin (ffi-call \"usleep\" 1000 1000) 0))")
   (Cons (ExN "E_DUPLICATE_PARAMETER" "A function declares the same parameter name twice."
-          "(numeric checked)\n(defn f (a a) a)\n(defn main () (f 0 0))"
-          "(numeric checked)\n(defn f (a b) (+ a b))\n(defn main () (f 0 0))")
-  (Cons (ExN "E_NUMERIC_POLICY_REQUIRED" "Int `+`, `-` or `*` on a value that is not a literal, in a package that has not said what overflow does."
-          "(defn add (a b) (+ a b))\n(defn main () (add 1 2))"
-          "(numeric checked)\n(defn add (a b) (+ a b))\n(defn main () (begin (print (add 1 2)) 0))")
-  (Cons (ExN "E_OVERFLOW" "An Int `+`, `-` or `*` under `(numeric checked)` whose result does not fit, or the smallest Int divided by -1."
-          "(numeric checked)\n(defn grow (n) (* n 4))\n(defn main () (begin (print (grow 9223372036854775807)) 0))"
-          "(numeric checked)\n(defn grow (n) (saturating* n 4))\n(defn main () (begin (print (grow 9223372036854775807)) 0))")
+          "(defn f (a a) a)\n(defn main () (f 0 0))"
+          "(defn f (a b) (+ a b))\n(defn main () (f 0 0))")
+  (Cons (ExN "E_OVERFLOW" "An Int `+`, `-` or `*` whose result does not fit, or the smallest Int divided by -1."
+          "(defn grow (n) (* n 4))\n(defn main () (begin (print (grow 9223372036854775807)) 0))"
+          "(defn grow (n) (saturating* n 4))\n(defn main () (begin (print (grow 9223372036854775807)) 0))")
   (Cons (ExN "E_PARTIAL_OPERATION" "An Int `/` or `%` whose divisor is not a nonzero literal, so it could be zero."
-          "(numeric checked)\n(defn mean (t n) (/ t n))\n(defn main () (mean 10 2))"
-          "(numeric checked)\n(defn mean (t n) (match (div? t n) (Some q q) (None 0)))\n(defn main () (begin (print (mean 10 0)) 0))")
+          "(defn mean (t n) (/ t n))\n(defn main () (mean 10 2))"
+          "(defn mean (t n) (match (div? t n) (Some q q) (None 0)))\n(defn main () (begin (print (mean 10 0)) 0))")
   (Cons (ExN "E_DIVISION_BY_ZERO" "`div!` or `rem!` met a zero divisor."
-          "(numeric checked)\n(defn per (t n) (div! t n))\n(defn main () (begin (print (per 10 0)) 0))"
-          "(numeric checked)\n(defn per (t n) (match (div? t n) (Some q q) (None 0)))\n(defn main () (begin (print (per 10 0)) 0))")
+          "(defn per (t n) (div! t n))\n(defn main () (begin (print (per 10 0)) 0))"
+          "(defn per (t n) (match (div? t n) (Some q q) (None 0)))\n(defn main () (begin (print (per 10 0)) 0))")
   (Cons (ExN "E_INTEGER_OVERFLOW" "An integer literal does not fit in a 64-bit Int."
-          "(numeric checked)\n(defn main () (begin (print 99999999999999999999) 0))"
-          "(numeric checked)\n(defn main () (begin (print 9223372036854775807) 0))")
-  Nil)))))))))))))))))))))))))))))))))))
+          "(defn main () (begin (print 99999999999999999999) 0))"
+          "(defn main () (begin (print 9223372036854775807) 0))")
+  Nil))))))))))))))))))))))))))))))))))
 
 (defn exn-find (code xs)
   (match xs

@@ -16,7 +16,6 @@ cat > "$SCRATCH/plain.zyl" <<'EOF'
 (defn parse (s)
   (if (str-eq s "") (panic "empty") 1))
 (defn main () (begin (print (parse "x")) 0))
-(numeric checked)
 EOF
 out="$(compile "$SCRATCH/plain.zyl")"
 printf '%s\n' "$out" | grep -q 'warning\[W_PANIC_UNMARKED\]: `parse` can stop the program but is not spelled `parse!`' \
@@ -38,7 +37,6 @@ cat > "$SCRATCH/exempt.zyl" <<'EOF'
 (defn count (s) (+ 1 (parse! s)))
 (test "a test body may panic" (assert-equal (try (parse! "") (catch _e 0)) 0))
 (defn main () (begin (if (= (count "x") 2) 0 (panic "unreachable"))))
-(numeric checked)
 EOF
 out="$(compile "$SCRATCH/exempt.zyl")"
 printf '%s\n' "$out" | grep -q 'W_PANIC_UNMARKED' && fail "exempt definition warned: $out"

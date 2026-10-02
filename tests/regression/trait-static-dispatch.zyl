@@ -60,4 +60,3 @@
     (assert-equal (TsDec.dec (make-TsId 0) 7) (Ok 7))))
 
 (run-tests)
-(numeric checked)

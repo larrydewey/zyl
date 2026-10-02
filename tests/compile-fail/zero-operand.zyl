@@ -3,4 +3,3 @@
 ; * would be 0 and 1, which is arithmetic on a value nobody wrote.
 (use core/core)
 (defn main () (begin (print (-)) 0))
-(numeric checked)

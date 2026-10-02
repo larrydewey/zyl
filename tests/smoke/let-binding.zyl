@@ -2,4 +2,3 @@
   (assert-equal (let x 42 x) 42))
 
 (run-tests)
-(numeric checked)

@@ -7,4 +7,3 @@
 (defn describe (x) (int? x))
 (defn main ()
   (print (describe 1)))
-(numeric checked)

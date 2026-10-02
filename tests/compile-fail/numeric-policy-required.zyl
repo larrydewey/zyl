@@ -1,6 +1,0 @@
-; expect-error: E_NUMERIC_POLICY_REQUIRED
-; expect-at: numeric-policy-required.zyl:5:17
-; No (numeric ...) form: Int arithmetic on anything but literals has no
-; agreed overflow behaviour, so the first such operation is refused.
-(defn add (a b) (+ a b))
-(defn main () (add 1 2))

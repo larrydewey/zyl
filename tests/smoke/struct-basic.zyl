@@ -5,4 +5,3 @@
   (assert-equal (let p (make-Point 10 20) (struct-get p "y")) 20))
 
 (run-tests)
-(numeric checked)

@@ -3,4 +3,3 @@
 ; setup belongs inside a test-suite.
 (setup (print 1))
 (run-tests)
-(numeric checked)

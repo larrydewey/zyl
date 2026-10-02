@@ -6,4 +6,3 @@
 (derive _cf_W Eq)
 
 (defn main () 0)
-(numeric checked)

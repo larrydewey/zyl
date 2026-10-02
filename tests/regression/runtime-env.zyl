@@ -21,4 +21,3 @@
     (assert-equal (ffi-call "zyl_run_bin" "" 5000) -1)))
 
 (run-tests)
-(numeric checked)

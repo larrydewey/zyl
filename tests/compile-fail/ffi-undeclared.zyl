@@ -4,4 +4,3 @@
 (capabilities ffi)
 
 (defn main () (begin (print (ffi-call "abs" -3 1000)) 0))
-(numeric checked)

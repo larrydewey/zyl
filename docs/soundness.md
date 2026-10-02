@@ -282,10 +282,10 @@ whose divisor could be zero does not compile unless the author wrote
 (`None`), or divided by a nonzero literal. `INT_MIN / -1` is `E_OVERFLOW`.
 No arithmetic reaches the processor's `#DE` fault (spec §20).
 
-**Enforced (compile time).** `numeric_check.zyl` refuses a non-literal Int
-`+ - *` in a package with no `(numeric ...)` (`E_NUMERIC_POLICY_REQUIRED`)
-and a `/` or `%` whose divisor is not a nonzero literal
-(`E_PARTIAL_OPERATION`). The module resolver refuses a policy form in the
+**Enforced (compile time).** Int `+ - *` is checked unless the package
+opts out by name with `(numeric wrapping)` or `(numeric saturating)`, so a
+wrap is always written in the source. `numeric_check.zyl` refuses a `/`
+or `%` whose divisor is not a nonzero literal (`E_PARTIAL_OPERATION`). The module resolver refuses a policy form in the
 wrong place or with the wrong name. The standard library is checked by
 construction (no manifest, no form), and its hashes, ciphers and SIMD
 lane helpers are written with `wrapping*`/`int-wrap-mul` and friends, so a

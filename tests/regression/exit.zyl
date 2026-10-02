@@ -5,4 +5,3 @@
     (exit 0)
     (print "FAIL: exit returned")
     1))
-(numeric checked)

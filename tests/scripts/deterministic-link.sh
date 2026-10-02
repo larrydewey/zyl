@@ -16,7 +16,6 @@ mkdir -p "$SCRATCH/a" "$SCRATCH/b"
 cat > "$SCRATCH/a/prog.zyl" <<'EOF'
 (defn sq (x) (* x x))
 (defn main () (begin (print (sq 7)) 0))
-(numeric checked)
 EOF
 cp "$SCRATCH/a/prog.zyl" "$SCRATCH/b/prog.zyl"
 

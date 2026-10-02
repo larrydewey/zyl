@@ -97,4 +97,3 @@
 ; Trait with associated type not supported (syntax error if attempted).
 
 (run-tests)
-(numeric checked)

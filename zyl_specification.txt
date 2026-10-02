@@ -917,10 +917,9 @@ Definition:
     the three, or two disagreeing forms is E_MALFORMED_FORM. The implicit
     standard library (§25) is checked. The REPL is checked until a
     (numeric P) entry changes it.
-    A package with no declaration that applies + - * to a non-literal Int
-    is E_NUMERIC_POLICY_REQUIRED at the first such operation. Arithmetic
-    on literals alone needs none and is folded; a folded result that does
-    not fit stays an operation and is E_OVERFLOW under checked.
+    A package with no declaration is checked. Arithmetic on literals is
+    folded; a folded result that does not fit stays an operation and is
+    E_OVERFLOW under checked.
     Unary minus is (- 0 x) under the policy.
     The explicit operators wrapping+ wrapping- wrapping* and saturating+
     saturating- saturating* name one behaviour for one operation under
@@ -1318,7 +1317,6 @@ Errors:
     E_CONTRACT_VIOLATION        — contract failed
     E_OVERFLOW                  — Int + - * under (numeric checked) whose result does not fit; INT_MIN / -1
     E_DIVISION_BY_ZERO          — div! or rem! with a zero divisor
-    E_NUMERIC_POLICY_REQUIRED   — non-literal Int + - * in a package with no (numeric ...) (Compile Error)
     E_PARTIAL_OPERATION         — / or % whose divisor is not a nonzero literal (Compile Error)
     E_CHANNEL_NOT_OWNER         — channel endpoint used by an actor that does not own it
     E_CHANNEL_CLOSED            — chan-recv on a closed, drained channel

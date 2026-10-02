@@ -9,4 +9,3 @@
     (Cons h t (+ h (_cf_sum t)))))
 
 (defn main () (_cf_sum (Cons "a" Nil)))
-(numeric checked)

@@ -7,4 +7,3 @@
   (match (Some (ONone))
     (Some (OSome x) x)
     (_ 0)))
-(numeric checked)

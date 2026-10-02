@@ -21,4 +21,3 @@
     (assert-true (option-is-some (option-some 1)))))
 
 (run-tests)
-(numeric checked)

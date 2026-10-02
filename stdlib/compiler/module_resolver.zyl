@@ -737,8 +737,7 @@
 ; file states it with the same form among its top-level forms; the
 ; implicit standard library is checked. The table is node_tables.zyl's
 ; numeric-policies, keyed by package name, with the root also under "".
-; A package that states nothing gets "", and its first non-literal Int
-; operation is E_NUMERIC_POLICY_REQUIRED (numeric_check.zyl).
+; A package that states nothing gets "", which lowering treats as checked.
 
 (defn mr-numeric-put (pkg policy)
   (ffi-call "zyl_smap_put" numeric-policies pkg policy 1000))

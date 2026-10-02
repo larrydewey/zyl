@@ -7,4 +7,3 @@
 (impl _cf_Dump _cf_Handle (defn dump (self) "fd"))
 
 (defn main () 0)
-(numeric checked)

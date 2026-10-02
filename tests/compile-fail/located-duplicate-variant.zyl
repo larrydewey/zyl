@@ -6,4 +6,3 @@
 (deftype Color (Red) (Green) (Red))
 
 (defn main () 0)
-(numeric checked)

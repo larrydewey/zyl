@@ -58,4 +58,3 @@
             (assert-equal (bytebuf-atomic-load b 24) 15000)))))))
 
 (run-tests)
-(numeric checked)

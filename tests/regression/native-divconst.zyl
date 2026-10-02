@@ -1,6 +1,5 @@
 ; Division and remainder by a constant (multiply sequences) agree with idiv.
 
-(numeric checked)
 (defn dv ((x Int) (d Int)) (div! x d))
 (defn md ((x Int) (d Int)) (rem! x d))
 

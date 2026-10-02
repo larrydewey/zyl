@@ -135,4 +135,3 @@
     (assert-equal (aead-pad16 17) 15)))
 
 (run-tests)
-(numeric checked)

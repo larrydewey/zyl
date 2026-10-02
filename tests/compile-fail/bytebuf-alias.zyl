@@ -13,4 +13,3 @@
         (store-u8 :le b 0 66)
         (print (load-u8 :le second 0))
         0))))
-(numeric checked)

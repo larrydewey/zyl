@@ -2,7 +2,6 @@
 ; Module: selfhost/lsp_main
 ; Entry point for zyl-lsp binary. Starts JSON-RPC stdio server.
 
-(numeric checked)
 (use allocator/allocator)
 (use lsp/lsp_server)
 

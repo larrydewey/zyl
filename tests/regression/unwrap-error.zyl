@@ -188,4 +188,3 @@
 )
 
 (run-tests)
-(numeric checked)

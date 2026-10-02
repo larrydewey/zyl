@@ -55,4 +55,3 @@
         (assert-equal (chan-recv (chan-rx c)) 11)))))
 
 (run-tests)
-(numeric checked)

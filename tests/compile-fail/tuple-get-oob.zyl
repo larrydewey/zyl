@@ -5,4 +5,3 @@
 (defn main ()
   (let t (tuple 1 2)
     (print (tuple-get t 5))))
-(numeric checked)

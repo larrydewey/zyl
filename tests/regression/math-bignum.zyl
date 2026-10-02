@@ -142,4 +142,3 @@
     (assert-false (mr-probably-prime (_bn_from "7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeb" 11) 11 2))))
 
 (run-tests)
-(numeric checked)

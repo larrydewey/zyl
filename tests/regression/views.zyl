@@ -81,4 +81,3 @@
         (assert-equal (try (slice-get! s 2) (catch e (if (view-starts-with (view-of e) "E_INDEX_OUT_OF_BOUNDS") -7 0))) -7)))))
 
 (run-tests)
-(numeric checked)

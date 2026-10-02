@@ -1,7 +1,6 @@
 ; Show Regression Tests — the prelude Show trait, container impls,
 ; `(derive T Show)`, and `print` of a value whose type has a Show impl.
 
-(numeric checked)
 (use collections/vec)
 (use core/map)
 

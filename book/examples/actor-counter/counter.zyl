@@ -9,7 +9,6 @@
 
 (capabilities actor)
 
-(numeric checked)
 (use actor/actor)
 
 (deftype CounterMsg (Add Int) (Get) (Stop))

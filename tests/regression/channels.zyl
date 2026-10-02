@@ -123,4 +123,3 @@
   (assert-equal (try (begin (chan-tx (chan 0)) "no error") (catch e (str-substring e 0 18))) "E_CHANNEL_CAPACITY"))
 
 (run-tests)
-(numeric checked)

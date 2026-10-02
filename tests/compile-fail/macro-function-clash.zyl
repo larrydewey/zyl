@@ -6,4 +6,3 @@
 (defn _cf_m (x) (+ x 2))
 
 (defn main () (begin (print (_cf_m 1)) 0))
-(numeric checked)

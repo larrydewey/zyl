@@ -4,4 +4,3 @@
 (defstruct _cf_P (x Int))
 
 (defn main () (begin (print (Show.show (make-_cf_P 1))) 0))
-(numeric checked)

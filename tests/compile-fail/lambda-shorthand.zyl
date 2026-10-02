@@ -3,4 +3,3 @@
 ; located E_UNBOUND_VARIABLE (codegen.zyl cg-call-user), not a link error.
 
 (defn main () (print (((x) (* x x)) 3)))
-(numeric checked)

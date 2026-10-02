@@ -96,4 +96,3 @@
       (assert-equal (struct-get p "age") 30))))
 
 (run-tests)
-(numeric checked)

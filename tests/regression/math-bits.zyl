@@ -81,4 +81,3 @@
     (assert-equal (be-pack32 (be-byte32 x 0) (be-byte32 x 1) (be-byte32 x 2) (be-byte32 x 3)) x)))
 
 (run-tests)
-(numeric checked)

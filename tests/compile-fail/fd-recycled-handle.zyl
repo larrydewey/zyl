@@ -15,4 +15,3 @@
           (file-write fd "leaked into the other file")
           (file-close other)
           0)))))
-(numeric checked)

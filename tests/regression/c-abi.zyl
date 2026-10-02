@@ -63,4 +63,3 @@
       (assert-equal (str-length (alloc-cstr buf)) 11))))
 
 (run-tests)
-(numeric checked)

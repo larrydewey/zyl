@@ -56,4 +56,3 @@
     (Boxed a (match a (A-Int n n) (_ 0)))) 7))
 
 (run-tests)
-(numeric checked)

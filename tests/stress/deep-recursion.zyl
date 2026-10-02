@@ -60,4 +60,3 @@
   (assert-equal (_dr_sum-list 0) 0))
 
 (run-tests)
-(numeric checked)

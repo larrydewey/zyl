@@ -35,4 +35,3 @@
 ; See docs/regression-tests.md for manual read-line test
 
 (run-tests)
-(numeric checked)

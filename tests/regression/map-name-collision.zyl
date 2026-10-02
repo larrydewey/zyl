@@ -34,4 +34,3 @@
     (assert-equal (map-size (map-new)) 0)))
 
 (run-tests)
-(numeric checked)

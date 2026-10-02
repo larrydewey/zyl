@@ -2,4 +2,3 @@
   (assert-equal (+ 1 2) 3))
 
 (run-tests)
-(numeric checked)

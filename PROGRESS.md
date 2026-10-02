@@ -54,10 +54,10 @@ compile with `build/boot/zyl-self` on 2026-09-28.
   `(extern ...)`, and there is no cast form. The `receive` hole is gone
   with the mailboxes.
 - **The numeric model is implemented (spec §20, `docs/soundness.md` L8).**
-  A package chooses `(numeric checked|wrapping|saturating)` once (a
-  top-level form of a lone file, a line of `zyl.pkg`; the stdlib and the
-  REPL default are checked); a non-literal Int `+ - *` with no policy is
-  `E_NUMERIC_POLICY_REQUIRED`. Checked `+ - *` trap with `E_OVERFLOW`
+  Int arithmetic is checked by default. A package opts out once with
+  `(numeric wrapping)` or `(numeric saturating)` (a top-level form of a
+  lone file, a line of `zyl.pkg`); `(numeric checked)` is legal and is
+  the default spelled out. Checked `+ - *` trap with `E_OVERFLOW`
   (`add`/`sub`/`imul` then `jo` to a runtime stub) on every emission
   path, wrapping is modulo 2^64, saturating clamps; `wrapping+ - *` and
   `saturating+ - *` are explicit operators for any policy (a derived

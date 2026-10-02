@@ -62,4 +62,3 @@
                   (assert-true (option-is-none (gcm-decrypt key 16 iv aad 20 sealed 60))))))))))))
 
 (run-tests)
-(numeric checked)

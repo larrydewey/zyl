@@ -83,10 +83,9 @@ a manifested package, is `E_MALFORMED_FORM`, as is a name other than the
 three or two forms that disagree. The implicit standard library (§25) is
 checked. The REPL is checked until a `(numeric P)` entry changes it.
 
-A package that declares nothing and applies `+`, `-` or `*` to an Int
-operand that is not a literal is refused at that operation with
-`E_NUMERIC_POLICY_REQUIRED`. Arithmetic on literals alone needs no
-declaration: it is decided at compile time, and a literal result that
+A package that declares nothing is checked: overflow is never silent
+unless the source says `(numeric wrapping)` or `(numeric saturating)`.
+Arithmetic on literals is decided at compile time, and a literal result that
 does not fit is itself `E_OVERFLOW` when the program runs under
 `checked` (the folder keeps the operation rather than inventing a
 value). Unary minus is `(- 0 x)` and follows the policy; `(- INT_MIN)`
@@ -209,7 +208,7 @@ Not normative.
 - **Numeric model (§20):** implemented as written. `(numeric P)` is read by
   the module resolver (`mr-numeric-root`, keyed per package in
   `node_tables.zyl`'s `numeric-policies`), `numeric_check.zyl` raises
-  `E_NUMERIC_POLICY_REQUIRED` and `E_PARTIAL_OPERATION` after type
+  `E_PARTIAL_OPERATION` after type
   inference, and ICNF lowering picks the operator family (0-2 checked,
   18-20 wrapping, 21-23 saturating; `icnf.zyl`). Checked `+ - *` are
   `add`/`sub`/`imul` followed by `jo` to a runtime trap stub

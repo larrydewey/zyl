@@ -8,4 +8,3 @@
 (impl _cf_Dump _cf_Conn (defn dump (self) (ffi-call "zyl_int_text" self.h.fd 1000)))
 
 (defn main () 0)
-(numeric checked)

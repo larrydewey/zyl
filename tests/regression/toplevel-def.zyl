@@ -39,4 +39,3 @@
   (assert-equal (+ _td_order _td_order) 2))
 
 (run-tests)
-(numeric checked)

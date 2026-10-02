@@ -6,4 +6,3 @@
   (let-mut c 0
     (let b (fn () (set! c (+ c 1)))
       (begin (b) (print c)))))
-(numeric checked)

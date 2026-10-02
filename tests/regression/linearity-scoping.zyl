@@ -54,4 +54,3 @@
 (test "lin-scoped" (assert-equal (scoped) 0))
 
 (run-tests)
-(numeric checked)

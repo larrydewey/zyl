@@ -59,4 +59,3 @@
   (assert-equal (sha256-padded-len 64) 128))
 
 (run-tests)
-(numeric checked)

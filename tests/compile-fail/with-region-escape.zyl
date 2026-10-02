@@ -9,4 +9,3 @@
 (defn leak () (with-region (arena :block 4096) (build 10 (WN))))
 
 (defn main () (begin (print (match (leak) (WN 0) (WC h _ h))) 0))
-(numeric checked)

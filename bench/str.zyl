@@ -1,4 +1,3 @@
-(numeric checked)
 (defn build ((i Int) (n Int) (acc Int))
   (if (>= i n) acc
     (build (+ i 1) n (+ acc (str-length (str-concat "item-" (Show.show i)))))))

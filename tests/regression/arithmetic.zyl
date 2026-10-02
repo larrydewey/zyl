@@ -138,4 +138,3 @@
   (assert-equal (let f (fn (x) (* x x)) (f (+ 1 2))) 9))
 
 (run-tests)
-(numeric checked)

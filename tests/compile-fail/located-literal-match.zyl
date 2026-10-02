@@ -9,4 +9,3 @@
     (2 20)))
 
 (defn main () (begin (print (f 1)) 0))
-(numeric checked)

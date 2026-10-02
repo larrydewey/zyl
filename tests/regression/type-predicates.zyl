@@ -76,4 +76,3 @@
   (assert-false (alias? (alias-of 5))))
 
 (run-tests)
-(numeric checked)

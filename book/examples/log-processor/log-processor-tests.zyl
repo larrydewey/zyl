@@ -4,7 +4,6 @@
 
 (capabilities io)
 
-(numeric checked)
 (use logstats)
 
 ; Helpers keep each test body to a single comparison.

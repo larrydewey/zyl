@@ -41,4 +41,3 @@
     "raised"))
 
 (run-tests)
-(numeric checked)

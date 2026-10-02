@@ -27,7 +27,6 @@ cat > "$SCRATCH/nested.zyl" <<'EOF2'
 (defn main ()
   (let v (vec-push (vec-new) 1)
     (let _ (print (parse-file v)) 0)))
-(numeric checked)
 EOF2
 build nested
 run nested
@@ -59,7 +58,6 @@ cat > "$SCRATCH/deep.zyl" <<'EOF'
 (defn main ()
   (let v (vec-push (vec-new) 1)
     (let _ (print (deep v 100)) 0)))
-(numeric checked)
 EOF
 build deep
 run deep
@@ -76,7 +74,6 @@ cat > "$SCRATCH/caught.zyl" <<'EOF'
   (let v (vec-push (vec-new) 1)
     (let r (try (vec-get! v 7) (catch e -1))
       (let _ (print r) 0))))
-(numeric checked)
 EOF
 build caught
 run caught
@@ -92,7 +89,6 @@ cat > "$SCRATCH/harness.zyl" <<'EOF'
     (assert-equal (vec-get! v 7) 1)))
 
 (run-tests)
-(numeric checked)
 EOF
 build harness
 run harness
@@ -111,7 +107,6 @@ cat > "$SCRATCH/hosted.zyl" <<'EOF'
 (defn main ()
   (let v (vec-push (vec-new) (ffi-call "abs" -1 1000))
     (let _ (print (parse-line v 2)) 0)))
-(numeric checked)
 EOF
 build hosted
 run hosted
@@ -133,7 +128,6 @@ cat > "$SCRATCH/actor.zyl" <<'EOF'
   (let v (vec-push (vec-new) 1)
     (let a (spawn (fn () (parse-line v 2)))
       (let _ (actor-wait a) 0))))
-(numeric checked)
 EOF
 build actor
 run actor

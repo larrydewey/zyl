@@ -275,4 +275,3 @@
 )
 
 (run-tests)
-(numeric checked)

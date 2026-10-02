@@ -7,4 +7,3 @@
 (defn f (s) (match s (DupA x x) (DupA y y) (DupB z z)))
 
 (defn main () (begin (print (f (DupA 1))) 0))
-(numeric checked)

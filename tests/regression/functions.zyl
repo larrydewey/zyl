@@ -88,4 +88,3 @@
     (assert-equal _f_counter 2)))
 
 (run-tests)
-(numeric checked)

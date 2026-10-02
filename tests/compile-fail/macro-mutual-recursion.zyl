@@ -5,4 +5,3 @@
 (defmacro _cf_pong (x) (_cf_ping x))
 
 (defn main () (begin (print (_cf_ping 1)) 0))
-(numeric checked)

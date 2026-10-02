@@ -52,4 +52,3 @@
     (assert-equal (+ (ds-seg).a.x (ds-seg).b.x) 4)))
 
 (run-tests)
-(numeric checked)

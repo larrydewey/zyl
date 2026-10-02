@@ -3,4 +3,3 @@
 ; A call of setup would be the special form, so the function could never run.
 (defn setup () 1)
 (defn main () 0)
-(numeric checked)

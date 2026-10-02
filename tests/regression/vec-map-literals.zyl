@@ -44,4 +44,3 @@
       (assert-equal (map-get m "k") (Some 3)))))
 
 (run-tests)
-(numeric checked)

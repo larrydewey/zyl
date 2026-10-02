@@ -37,4 +37,3 @@
       (assert-equal (try (ffi-call "zyl_wvec_get" v 5 1000) (catch e (if (str-eq e "E_INDEX_OUT_OF_BOUNDS: vector index 5 outside length 5") -7 0))) -7))))
 
 (run-tests)
-(numeric checked)

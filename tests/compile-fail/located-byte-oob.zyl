@@ -7,4 +7,3 @@
   (begin
     (print (byte 300))
     0))
-(numeric checked)

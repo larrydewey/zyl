@@ -5,4 +5,3 @@
 (defstruct B (x String))
 (defn getx (p) (struct-get p "x"))
 (defn main () (begin (print (+ 1 (getx (make-B "hi")))) 0))
-(numeric checked)

@@ -9,4 +9,3 @@
   (print (area (Circle 2)))
   (print (area (Rect 3 5)))
   0)
-(numeric checked)

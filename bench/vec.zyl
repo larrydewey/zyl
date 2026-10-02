@@ -1,4 +1,3 @@
-(numeric checked)
 (use collections/vec)
 (defn fill (v (i Int) (n Int)) (if (>= i n) v (fill (vec-push v i) (+ i 1) n)))
 (defn total (v (i Int) (n Int) (acc Int)) (if (>= i n) acc (total v (+ i 1) n (+ acc (vec-get! v i)))))

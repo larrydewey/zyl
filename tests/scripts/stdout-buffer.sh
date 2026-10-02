@@ -17,7 +17,6 @@ cat > "$SCRATCH/fmt.zyl" <<'EOF'
     (print "") (print "a b")
     (print 0.0) (print -0.0) (print 2.5e-7) (print 1e20) (print 0.1234565) (print (/ 1.0 0.0)) (print (/ -1.0 0.0))
     0))
-(numeric checked)
 EOF
 build fmt
 # The bytes glibc's printf gave before print moved to the runtime.
@@ -31,7 +30,6 @@ cat > "$SCRATCH/order.zyl" <<'EOF'
   (let _ (print "a")
     (let _ (ffi-call "zyl_system_cmd" "echo b" 5000)
       (let _ (print "c") (exit 3)))))
-(numeric checked)
 EOF
 build order
 set +e; out=$("$SCRATCH/order" | cat); rc=${PIPESTATUS[0]}; set -e
@@ -42,7 +40,6 @@ set +e; out=$("$SCRATCH/order" | cat); rc=${PIPESTATUS[0]}; set -e
 # A panic still delivers the buffered stdout, after the stderr text of the panic.
 cat > "$SCRATCH/panic.zyl" <<'EOF'
 (defn main () (let _ (print "before") (let _ (panic "boom") 0)))
-(numeric checked)
 EOF
 build panic
 out=$("$SCRATCH/panic" 2>/dev/null | cat || true)
@@ -55,7 +52,6 @@ cat > "$SCRATCH/actors.zyl" <<'EOF'
 (defn say (k i) (if (= i 2000) 0 (let _ (print (str-concat "actor-line-" (str-concat (ffi-call "zyl_int_text" k 1000) "-0123456789abcdefghijklmnopqrstuvwxyz"))) (say k (+ i 1)))))
 (defn go (k) (if (= k 8) 0 (let _ (spawn (fn () (say k 0))) (go (+ k 1)))))
 (defn main () (let _ (go 0) 0))
-(numeric checked)
 EOF
 build actors
 "$SCRATCH/actors" > "$SCRATCH/actors.out"
@@ -67,7 +63,6 @@ bad=$(grep -cvE '^actor-line-[0-7]-0123456789abcdefghijklmnopqrstuvwxyz$' "$SCRA
 cat > "$SCRATCH/big.zyl" <<'EOF'
 (defn loop (i) (if (< i 300000) (let _ (print i) (loop (+ i 1))) 0))
 (defn main () (loop 0))
-(numeric checked)
 EOF
 build big
 [ "$("$SCRATCH/big" | md5sum)" = "$(seq 0 299999 | md5sum)" ] || fail "big output differs"

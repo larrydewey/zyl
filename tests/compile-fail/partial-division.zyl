@@ -1,6 +1,5 @@
 ; expect-error: E_PARTIAL_OPERATION
-; expect-at: partial-division.zyl:6:19
-(numeric checked)
+; expect-at: partial-division.zyl:5:19
 ; A divisor the source does not vouch for: write div!, div? or a literal.
 (defn mean (total count)
   (let m (/ total count)

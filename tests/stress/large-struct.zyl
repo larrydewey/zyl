@@ -40,4 +40,3 @@
     (assert-equal (struct-get s "a30") 30)))
 
 (run-tests)
-(numeric checked)

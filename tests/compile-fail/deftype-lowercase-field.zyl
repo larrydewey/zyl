@@ -2,4 +2,3 @@
 ; expect-error: E_UNKNOWN_TYPE
 (deftype Box (Bx a))
 (defn main () (begin (print (+ 1 (match (Bx "s") (Bx v v)))) 0))
-(numeric checked)

@@ -88,4 +88,3 @@
 ; (Compile-time checked — no runtime test needed.)
 
 (run-tests)
-(numeric checked)

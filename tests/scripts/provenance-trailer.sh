@@ -57,7 +57,6 @@ cat > "$BIN/t.zyl" <<'EOF'
     (prov-attach path h1 h2 h3 h4 h5 h6 (prov-hash-file path imglen) seed)
     (print imglen)
     0))
-(numeric checked)
 EOF
 
 "$ZYL" "$BIN/t.zyl" -o "$BIN/t.bin"

@@ -28,7 +28,6 @@ cat > "$SCRATCH/lone/shapes.zyl" <<'ZYL'
 (defn perimeter (s) 0)
 
 (defn undocumented () 0)
-(numeric checked)
 ZYL
 out="$("$ZYL" doc "$SCRATCH/lone/shapes.zyl")"
 echo "$out" | grep -q '^# Module `shapes`' || fail "module title"

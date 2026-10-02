@@ -16,4 +16,3 @@
 (defn main ()
   (print (arena-total 1000))
   0)
-(numeric checked)

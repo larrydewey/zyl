@@ -12,4 +12,3 @@
     (assert-equal (int? "s") "shadowed")))
 
 (run-tests)
-(numeric checked)

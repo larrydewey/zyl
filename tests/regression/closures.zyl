@@ -107,4 +107,3 @@
   (assert-equal (clo-apply1 clo-dbl 21) 42))
 
 (run-tests)
-(numeric checked)

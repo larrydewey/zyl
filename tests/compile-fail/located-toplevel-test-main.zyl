@@ -8,4 +8,3 @@
 (test "t" (assert-equal 1 1))
 
 (defn main () 0)
-(numeric checked)

@@ -8,4 +8,3 @@
   (assert-true (if true (begin (print "then-branch") true) false)))
 
 (run-tests)
-(numeric checked)

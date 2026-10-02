@@ -12,4 +12,3 @@
         (file-close fd)
         (file-write copy "after release")
         0))))
-(numeric checked)

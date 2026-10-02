@@ -21,4 +21,3 @@
   (assert-equal (result-unwrap (ffi-pin-call-unpin 123) 0) 123))
 
 (run-tests)
-(numeric checked)
