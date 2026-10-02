@@ -130,7 +130,6 @@
   (Cons (EC "E_INTERNAL" 18 1 "compiler: an internal invariant failed - a compiler bug, please report it")
   (Cons (EC "E_NO_MAIN" 18 1 "program: no main function")
   (Cons (EC "W_SHADOWED_BINDING" 18 2 "binding: N shadows an outer binding of the same name")
-  (Cons (EC "W_UNUSED_FUNCTION" 18 2 "function: F is never called")
   (Cons (EC "W_UNUSED_PARAMETER" 18 2 "function: parameter P is never used")
   (Cons (EC "W_UNUSED_VARIABLE" 18 2 "binding: N is never used")
   (Cons (EC "E_MANIFEST_INVALID" 19 1 "package: zyl.pkg is malformed or missing required field F at P")
@@ -161,7 +160,7 @@
   (Cons (EC "E_PKG_FEATURE_NESTED" 19 1 "package: feature-gate is valid at top level only")
   (Cons (EC "E_PKG_FEATURE_COLLISION" 19 1 "package: gated definition D collides with a base definition")
   (Cons (EC "E_PROV_ATTACH" 19 1 "build: the provenance trailer could not be attached: M")
-  Nil)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+  Nil))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 ; ---------------------------------------------------------------------------
 ; ACCESSORS
 ; ---------------------------------------------------------------------------

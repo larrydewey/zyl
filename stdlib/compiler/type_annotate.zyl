@@ -260,7 +260,7 @@
       (str-concat h "; `((params) body)` is not a function: write `(fn (params) body)`"))))
 
 (defn ta-unbound-help-1 (st env n)
-  (let dym (err-suggest-help n (ta-visible-names st env) "")
+  (let dym (err-suggest-help-scoped n (ta-env-names env) (ta-visible-names st Nil) "")
     (if (> (str-length dym) 0)
       dym
       (match (err-synonym n)

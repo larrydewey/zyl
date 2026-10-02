@@ -152,7 +152,7 @@ Missing cases produce compile error `E_MATCH_NONEXHAUSTIVE`.
 (assert Expr String)
 ```
 
-If condition is false → runtime error `E_ASSERT_FAIL`.
+If condition is false → panic with the assertion's message (`assertion failed` when it has none).
 
 ### 12.5 WHILE
 
@@ -337,7 +337,7 @@ and G11.
 
 `assert`, `assert-equal`, `assert-true` and `assert-false` abort through
 `zyl_panic` with a fixed message (`assert-equal failed` and so on) and no
-error code; `E_ASSERT_FAIL` is catalogued but not printed.
+error code.
 `assert-equal` unifies its two sides. On ADT or struct values the type
 pass renames it to the type's generated `T.==`, the same content
 comparison as `==`; a Float type selects an epsilon comparison

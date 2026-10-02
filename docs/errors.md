@@ -35,17 +35,19 @@ PANIC: error[E_ARITY_MISMATCH]: `f` called with 1 argument(s), but it takes 2
 ```
 
 The type pass prints each error in the same shape without the `PANIC:`
-prefix, then panics once with a summary:
+prefix, and after more than one error ends with a count, no code
+(`docs/diagnostics.md` is the standard these messages are held to):
 
 ```
-error[E_UNBOUND_VARIABLE]: unbound identifier `y`
-  --> unbound.zyl:1:25
+error[E_UNBOUND_VARIABLE]: `lenght` is not defined
+  --> unbound.zyl:1:29
    |
- 1 | (defn main () (print (+ y 1)) 0)
-   |                         ^
-   = help: define it, or bind it with `let`; ...
-PANIC: error[E_UNBOUND_VARIABLE]: the program does not type-check (1 error above)
+ 1 | (defn main () (begin (print (lenght "abc")) 0))
+   |                             ^
+   = help: define it with `(defn lenght (...) ...)`, or bind it with `let`
 ```
+
+With two or more errors the last line is `N errors; fix the first one first`.
 
 A node with no recorded span (offset < 0, i.e. one a later phase
 synthesized) degrades to the header plus the `= help:` line. Names in the
@@ -95,35 +97,27 @@ Phase numbers are the ones `error_codes.zyl` assigns: 1 lexer, 2 parser,
 resolution, 10 runtime, 11 test, 12 trait, 13 capability, 14 contract,
 15 numeric, 16 FFI, 17 match, 19 package (the catalog header also
 reserves 18 for miscellaneous and user codes; no entry uses it). Severity is 1 (error) unless noted.
-"Catalog only" means no active module raises the code today. §28 marks the
-codes spec §28 lists by name.
+"Catalog only" means no active module raises the code today; only `E_OVERFLOW`,
+which another change is adding, is left. `verify/error-codes.sh` keeps it that
+way. §28 marks the codes spec §28 lists by name.
 
 ### Lexer (phase 1)
 
 | Code | Catalog message | Raised by |
 |------|-----------------|-----------|
 | `E_BYTE_VALUE_OOB` | lexer: byte literal out of range 0-255 | `expr_inner.zyl` (`(byte N)` forms) |
-| `E_FLOAT_OVERFLOW` | lexer: float overflow in literal L at S | catalog only |
-| `E_INTEGER_OVERFLOW` | lexer: integer overflow in literal L at S | catalog only |
+| `E_INTEGER_OVERFLOW` | lexer: integer overflow in literal L at S | `parser.zyl` (located): an integer literal outside the 64-bit range |
 | `E_INVALID_ESCAPE` (§28) | lexer: invalid escape sequence in a string literal at S | `parser.zyl` (located): a backslash escape other than `\n`, `\t`, `\r`, `\0`, `\"`, `\\`, `\e` and `\xNN`, checked before the string is decoded |
 | `E_INVALID_CHAR` | lexer: invalid character C at S | `parser.zyl` (located): a character that begins no token, such as `#`, `$` or a lone `@` outside a string or comment (`'`, `` ` ``, `,` and `,@` are the quote, quasiquote, unquote and splice tokens); also a NUL byte in a source file (`check-no-nul`) |
-| `E_UNEXPECTED_EOF` | lexer: unexpected EOF while expecting C at S | catalog only |
 | `E_UNTERMINATED_STRING` | lexer: unterminated string at S | `sexp_balance.zyl` (located at the opening quote; the compiler, the language server and `zyl balance`) |
 
 ### Parser (phase 2)
 
 | Code | Catalog message | Raised by |
 |------|-----------------|-----------|
-| `E_ATOM_AS_OPERATOR` | parser: atom cannot be used as operator in prefix position at S | catalog only |
-| `E_EMPTY_LIST` | parser: empty list is not a valid expression at S | catalog only |
-| `E_EXPECTED_EXPRESSION` | parser: expected an expression but found T at S | catalog only |
-| `E_EXPECTED_RBRACKET` | parser: expected ] but found T at S | catalog only |
-| `E_EXPECTED_RCURLY` | parser: expected } but found T at S | catalog only |
-| `E_EXPECTED_RPAREN` | parser: expected ) at S but found T | catalog only |
 | `E_MALFORMED_PARAMETER` | parser: P is not a parameter at S - write a name, or (name Type) | `expr_inner.zyl` (located): a parameter that is not a name or `(name Type)`, a colon annotation `(a : Int)`, or `&rest` in a function's parameter list; `type_annotate.zyl` (located, `ta-trait-as-type`): a trait name written in type position, such as `(a Ord)` or the §6.1 bound spelling `((T : Ord) x)` (`Secret`, also the secret-value annotation, is exempt); `macro_expand.zyl` (located, `me-check-rest`): a macro's `&rest` not followed by exactly one name at the end of its parameter list |
 | `E_MALFORMED_FORM` (§28) | parser: special form F has arguments of the wrong shape at S | `arity_check.zyl` (located): a special form whose parser rejected its shape (`expr_inner.zyl` builds an `EUnknown` node for it), such as `(let x 1)` with no body, a trait method whose parameters are not a list, `test` or `defmacro` with more than one body, a malformed `extern`, or `(quote)`/`(quote a b)`. Such a form used to compile to the constant 0. `expr_inner.zyl` (located, `quote-name-fail`): a name inside quoted data, `'(1 x)`, which has no value since there is no symbol type; `expr_inner.zyl` (located, `parse-quasiquote`): a malformed quasiquote (a name outside an unquote, a nested quasiquote, a `,@e` that is not a list element, an unquote or splice without one operand); `arity_check.zyl` (located): a `,` or `,@` outside a quasiquote and a macro template; `macro_expand.zyl` (located): in a template, a `,@` into a form that takes a fixed number of expressions (`me-kids`), or of anything but the `&rest` parameter (`me-splice-of`); `parser.zyl` (located, `prefix-alone-fail`): a quote or unquote with no form after it, as in `{ a, }`; `module_resolver.zyl` (located, `mr-sym-ident`): a non-name in an import list, as in `{ a, b }`; `expr_inner.zyl` (located, `if-extra-fail`): a form after an `if`'s else branch |
 | `E_RESERVED_KEYWORD` (§28) | parser: reserved keyword K cannot be used as identifier at S | `reserved_check.zyl` (located, during module resolution): a §1.3 keyword as a name a definition introduces, or `make-S` for a struct `S` in the same file; not in the standard library or the runtime |
-| `E_UNBALANCED_PARENS` | parser: unbalanced parens - open and close counts differ | catalog only (the old depth-counter check; superseded by the three below) |
 | `E_UNBALANCED_UNCLOSED` | parser: unclosed opener - opened at S, never reached its matching closer | `sexp_balance.zyl` (located at the opener): an opener never closed, or an opener in column 1 while a form is still open (spec §1.6), which is how a missing closer balanced by an extra one is caught; the help names the line where the indentation first contradicts the nesting |
 | `E_UNBALANCED_UNEXPECTED_CLOSE` | parser: unexpected closing delimiter at S - no opener is open here | `parser.zyl` via `sexp_balance.zyl` (located) |
 | `E_UNBALANCED_MISMATCHED_BRACKET` | parser: closing delimiter at S does not match its opener | `sexp_balance.zyl` (located at the closer, with a label at the opener), e.g. `(defn main (] ...)` |
@@ -146,16 +140,10 @@ over bracket type, and its `sb-hint` supplies the `= help:` text.
 | Code | Catalog message | Raised by |
 |------|-----------------|-----------|
 | `E_ARITY_MISMATCH` | type: function arity mismatch for F at S: expected E arguments, found G | `arity_check.zyl` (located; also an `ffi-call` with more than 16 arguments), `icnf.zyl` (also arithmetic with no operand, or one operand other than `(- x)`, `(+ x)`, `(* x)`), `expr_inner.zyl` (special forms), `macro_expand.zyl` (a macro call's argument count, or too few before `&rest`), REPL interpreter |
-| `E_ATOMIC_ABA` | region: atomic CAS on non-Pin memory is forbidden | catalog only |
-| `E_BYTEBUF_NOT_PIN` | type: bytebuf-ptr requires Pin region | catalog only |
-| `E_STACK_BYTEBUF_RETURN` | type: Stack ByteBuf cannot be returned | catalog only (a returned Stack bytebuf is `E_REGION_ESCAPE`) |
-| `E_GLOBAL_BYTEBUF_MUT` | type: Global ByteBuf must be immutable | catalog only |
 | `E_DUPLICATE_DEFINITION` | type: duplicate definition of N at S. previously defined at P | `duplicate_check.zyl` (located at the second definition) |
 | `E_DUPLICATE_VARIANT` | type: duplicate variant V in deftype at S | `duplicate_check.zyl` (located: a program type declaring a prelude constructor name, `Some`, `None`, `Ok`, `Err`, `Cons` or `Nil`, which the standard library's unqualified uses would resolve to; only the standard library may declare them), `icnf.zyl` (a variant name defined twice in one `deftype`) |
-| `E_RETURN_TYPE_MISMATCH` | type: return type mismatch in F - expected T, got U at S | catalog only |
 | `E_TYPE_MISMATCH` | type: type mismatch at S - expected E, found F | `type_annotate.zyl` (located): every unification failure, labelled with a declared parameter or field type where there is one; also a non-literal `file-open` mode, a field a known struct lacks, list-literal elements of different types, a non-Int byte offset, length or stored value, the wrong kind of byte handle (`bytebuf-len` of a slice), and a non-String `file-write` operand |
 | `E_UNBOUND_VARIABLE` | type: unbound variable V at S | `type_annotate.zyl` (located: an identifier or called function defined nowhere), `macro_expand.zyl`, `codegen.zyl` (backstop), REPL interpreter |
-| `E_UNKNOWN_GENERIC_PARAM` | type: unknown generic parameter G at S | catalog only |
 | `E_UNKNOWN_TYPE` | type: unknown type T at S | `type_annotate.zyl` (a lowercase field type in `deftype`), located |
 | `E_CANNOT_INFER` (§28, phase 5) | type: the program does not determine a type at S (an unresolved trait receiver, an ambiguous field, an undeclared foreign symbol) | `type_annotate.zyl` (located): a type the program does not determine, such as an `ffi-call` to a foreign symbol with no `extern` or to a runtime symbol missing from `ffi_sigs.zyl`, a trait call whose receiver type stays unknown, a `struct-get` whose record type is still unknown when several structs have the field, a byte load or store whose handle is still unknown after its function group (`ta-bytes-ambiguous`), or a function that would need more than 256 specialized instances; `icnf.zyl` (backstop for an unresolved trait call) |
 | `W_TYPE_STRICT` (phase 5, severity 1 in the catalog, printed as a warning) | type: a type error reported as a warning under ZYL_STRICT_TYPES=report at S | `type_annotate.zyl`: each type error, under `ZYL_STRICT_TYPES=report` |
@@ -163,10 +151,10 @@ over bracket type, and its `sb-hint` supplies the `= help:` text.
 
 The type pass is strict (spec §4.8-§4.10): `(+ 1 "a")` and `(+ 1 1.5)`
 are `E_TYPE_MISMATCH`. Its messages are its own, not the catalog text:
-``cannot unify T with U``, or ``mismatched types: expected `T`, found `U` ``
-for an argument that clashes with a declared parameter or field type.
-`E_RETURN_TYPE_MISMATCH` is never raised; a wrong return type is an
-ordinary unification failure.
+they name the reason where the site knows it (`` `f` takes `Int` as its
+1st argument (`n`), but this is `String` ``, the operands of an operator,
+an `if` condition, `main`'s result at its last expression), and otherwise
+``type mismatch: `T` and `U` must be the same type``.
 
 ### Region and ICNF (phases 6 and 7)
 
@@ -174,7 +162,6 @@ ordinary unification failure.
 |------|-----------------|-----------|
 | `E_REGION_ESCAPE` (§28) | region: value escapes region constraint at S | `region_inference.zyl` (located): a `(bytebuf Stack N)` that is returned, stored, sent or passed to code that may keep it, or a value allocated inside `with-region` that outlives it |
 | `E_REGION_SPEC` (§28) | region: malformed with-region specification at S | `expr_inner.zyl` (`parse-with-region`, located): unknown kind or option, block not a multiple of 4096 or above 64 MiB, alignment not a power of two from 8 to 4096 |
-| `E_UNINITIALIZED_USE` (§28) | variable: use of uninitialized variable V at S | catalog only |
 | `E_MATCH_ARM_COMPLEX` | match: arm combines a constant with multiple calls - bind to lets first | `icnf.zyl`, located |
 | `E_TOPLEVEL_STMTS_WITH_EXPLICIT_MAIN` | icnf: top-level statements combined with explicit main | `icnf.zyl` (top-level `test`/`run-tests` forms next to an explicit `(defn main ...)`) |
 
@@ -186,17 +173,14 @@ parts with `let` or move the sum into a helper function.
 
 | Code | Catalog message | Raised by |
 |------|-----------------|-----------|
-| `E_CODEGEN` | codegen: M | catalog only |
 | `E_CODEGEN_BUFFER_FULL` | codegen: output buffer full at S | `pipeline.zyl` (generated assembly exceeded the codegen text buffer) |
-| `E_CODEGEN_BUFFER_LIMIT` | codegen: buffer limit reached: M | catalog only (the runtime's bounded append panics with `codegen buffer limit exceeded` and no code) |
+| `E_CODEGEN_BUFFER_LIMIT` | codegen: buffer limit reached: M | `runtime/rt/tables.zyl`, `runtime/rt/misc.zyl` (a bounded append past its cap: `E_CODEGEN_BUFFER_LIMIT: codegen buffer limit exceeded`) |
 
 ### Modules and package resolution (phase 9)
 
 | Code | Catalog message | Raised by |
 |------|-----------------|-----------|
-| `E_CIRCULAR_MODULE` | module: circular dependency: M | catalog only (superseded by `E_MODULE_CYCLE`) |
 | `E_MODULE_NOT_FOUND` | module: module M not found at P | `module_resolver.zyl` |
-| `E_SYMBOL_NOT_EXPORTED` | module: symbol N not exported by M | catalog only (superseded by `E_PKG_PRIVATE_SYMBOL`) |
 | `E_PKG_CYCLE` (§28) | package: dependency graph is not a DAG: M | `mvs.zyl`, `module_resolver.zyl` |
 | `E_MODULE_CYCLE` (§28) | module: module graph within package N is not a DAG: M | `module_resolver.zyl` |
 | `E_PKG_VERSION_CONFLICT` (§28) | package: requirement on N cannot be satisfied within major V | `mvs.zyl`, `workspace.zyl` |
@@ -210,20 +194,10 @@ parts with `let` or move the sum into a helper function.
 
 | Code | Catalog message | Raised by |
 |------|-----------------|-----------|
-| `E_ALIGNMENT_FAILED` | runtime: alignment check failed | catalog only |
-| `E_ALIGN_CHECK_FAILED` | runtime: alignment check failed | catalog only (same message as the previous entry) |
-| `E_ASSERT_FAIL` (§28) | assertion: condition failed - M at S | catalog only (a failed assertion panics with its own message, see below) |
-| `E_BYTE_OOB` | runtime: byte offset out of bounds | catalog only |
-| `E_BYTEBUF_CAP_EXCEEDED` | runtime: bytebuf append exceeds capacity | catalog only (the runtime fails closed past capacity but prints no code) |
-| `E_BYTEBUF_INVALID` | runtime: bytebuf magic tag mismatch | catalog only |
-| `E_BYTEBUF_OVERLAP` | runtime: bytebuf append overlapping slice | catalog only |
-| `E_LIST_NTH_OOB` | runtime: list-nth index out of bounds at S | catalog only |
-| `E_NULL_POINTER` | runtime: null pointer dereference | catalog only |
 | `E_REGION_EXHAUSTED` (§28) | runtime: a with-region region ran out of its fixed size or limit | `runtime/rt/alloc.zyl` (`E_REGION_EXHAUSTED: <kind> region of N bytes is full`; catchable with `try`; deterministic for a given request sequence) |
 | `E_INDEX_OUT_OF_BOUNDS` (§28) | runtime: index outside a word array | `runtime/rt/tables.zyl` (a vector index or pop, a word array or Array index, a full string buffer), `collections/vec.zyl`, `collections/slice.zyl`, `text/view.zyl` (an index or range outside the value) |
 | `E_INTERP_TAG` | runtime: the checking interpreter found an operand of the wrong tag at S (a type-checker bug) | `stdlib/repl/interp.zyl`: under `ZYL_INTERP_CHECK=1`, an operator whose operand tags break its rule, or a condition that is not 0 or 1 |
-| `E_OUT_OF_MEMORY` | runtime: memory budget exhausted - raise or remove it with ZYL_MAX_MEMORY | `runtime/rt/alloc.zyl` (`PANIC: error[E_OUT_OF_MEMORY]: ...`); a second catalog entry reads "runtime: out of memory" |
-| `E_USER_ERROR` (§28) | runtime: user error - M at S | catalog only |
+| `E_OUT_OF_MEMORY` | runtime: memory budget exhausted - raise or remove it with ZYL_MAX_MEMORY | `runtime/rt/alloc.zyl` (`PANIC: error[E_OUT_OF_MEMORY]: ...`) |
 | `E_CHANNEL_NOT_OWNER` (§28) | runtime: this actor does not own the channel endpoint | `runtime/rt/chan.zyl`: a send or receive on an endpoint another actor owns |
 | `E_CHANNEL_CLOSED` (§28) | runtime: the channel's sender finished and every value was received | `runtime/rt/chan.zyl`: a receive on a closed, drained channel |
 | `E_CHANNEL_CAPACITY` (§28) | runtime: a channel buffer holds 1 to 16777216 values | `runtime/rt/chan.zyl`: `(chan n)` with n out of range |
@@ -242,19 +216,11 @@ Neither carries the catalog code. A false `(assert c msg)` panics with
 `assert-true` and `assert-false` must be a Bool, and the two sides of
 `assert-equal` must have one type (spec §4.9).
 
-### Test (phase 11)
-
-| Code | Catalog message | Raised by |
-|------|-----------------|-----------|
-| `E_TEST_FAILURE` (§28) | test: assertion failed - M | catalog only |
-| `E_TEST_RUNNER_ERROR` (§28) | test: runner error - M | catalog only |
-
 ### Traits (phase 12)
 
 | Code | Catalog message | Raised by |
 |------|-----------------|-----------|
 | `E_DUPLICATE_IMPL` (§28) | trait: duplicate impl of T for U at S | `derive.zyl` (located: two written impls of one trait for one type) |
-| `E_TRAIT_BOUND_NOT_SATISFIED` | type: unsatisfied trait bound T : U at S | catalog only |
 | `E_IMPL_FORBIDDEN` | trait: impl of T for U is forbidden by an impl-not declaration | `module_resolver.zyl` (located): an impl of a trait for a type that an `(impl-not Trait Target)` declaration forbids, directly or because the type implements `Target`; `secret_check.zyl` (located): an impl of a protected trait whose result is derived from a value the declaration protects |
 | `E_TRAIT_NOT_DERIVABLE` (§28) | trait: cannot derive T for type U at S | `derive.zyl` (located: a trait outside Show, Debug, Eq, Ord, Hash, Clone, a field whose type lacks the trait, or Eq/Ord/Hash/Clone on a type with a Secret field) |
 | `E_TRAIT_NOT_FOUND` (§28) | trait: no implementation found for T at S | `type_annotate.zyl` (located): a trait call on a concrete receiver type with no impl, a dot method no trait declares or none implements for the receiver, or one declared by several traits |
@@ -335,16 +301,17 @@ All raised by the package modules named; all are §28 codes except
 | `E_PKG_FEATURE_COLLISION` | package: gated definition D collides with a base definition | `module_resolver.zyl` |
 | `E_PKG_FEATURE_NESTED` | package: feature-gate is valid at top level only | `module_resolver.zyl` (located: a `feature-gate` inside another form) |
 
-## Codes raised but not in the catalog
+## Codes outside the original catalog
+
+These are now catalogued too (`error_codes.zyl`), so `zyl explain` knows them.
 
 | Code | Severity | Raised by | Meaning |
 |------|----------|-----------|---------|
 | `E_NON_EXHAUSTIVE_MATCH` | error | `exhaustiveness_check.zyl` (located) | a `match` over a `deftype` does not cover some variant and has no `_` arm |
-| `E_UNREACHABLE_MATCH_ARM` | error | `exhaustiveness_check.zyl` (located) | an arm after a catch-all, or a repeated constructor arm |
+| `E_UNREACHABLE_MATCH_ARM` | error | `exhaustiveness_check.zyl` (located) | an arm after one that matches every value, or a repeated constructor arm |
 | `E_DUPLICATE_PARAMETER` | error | `unused_check.zyl` | two parameters of one `defn`/`fn`/`lambda` share a name |
 | `E_ASM_UNSUPPORTED` | error | `asm_x86.zyl` | the Zyl assembler met an instruction or operand form it does not encode (a codegen or runtime change emitted one; `ZYL_EXTERNAL_LD=1` links with `cc` instead) |
 | `E_LINK_UNDEFINED`, `E_LINK_UNDEFINED_GOT` | error | `elf_link.zyl` | a strong symbol (or a GOT entry's symbol) is defined neither by the program nor by `rt.zo` |
-| `W_UNUSED_FUNCTION` | warning | `unused_check.zyl` | catalogued, not raised: the check cannot yet tell the program's functions from the standard library's |
 | `W_UNUSED_PARAMETER` | warning | `unused_check.zyl` | a parameter is never used (`_` and `_`-prefixed names are exempt) |
 | `W_UNUSED_VARIABLE` | warning | `unused_check.zyl` | a `let`/`let-mut`/`for` binding is never used |
 | `W_SHADOWED_BINDING` | warning | `unused_check.zyl` | a binding shadows an outer binding of the same name |

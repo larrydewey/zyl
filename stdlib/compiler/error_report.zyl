@@ -406,30 +406,33 @@
 
 ; "did you mean `a`, `b` or `c`?" or `fallback` when nothing is close.
 (defn err-suggest-help (name cands fallback)
-  (let xs (err-suggest-list name cands)
+  (err-suggest-help-scoped name Nil cands fallback))
+
+; As err-suggest-help, with `locals` offered before `cands` at equal distance.
+(defn err-suggest-help-scoped (name locals cands fallback)
+  (let xs (err-suggest-list name locals cands)
     (match xs
       (Nil fallback)
       (_ (str-concat "did you mean " (str-concat (err-join-ticks xs) "?"))))))
 
-; Up to three names close to `name` (docs/diagnostics.md): within edit
-; distance 2 (1 under three letters, none for one letter), or the same letters apart
-; from hyphens and case. Nearest first, then alphabetical; never `name` itself.
-(defn err-suggest-list (name cands)
+; Up to three names within edit distance 2 (1 under three letters, none for one), or equal apart from hyphens and case; nearest first, locals first, then alphabetical.
+(defn err-suggest-list (name locals cands)
   (let short (err-name name)
-    (err-take (err-rank-all short cands Nil) 3)))
+    (err-take (err-rank-all short cands 1 (err-rank-all short locals 0 Nil)) 3)))
 
 ; distance, candidate
 (deftype ErrRank (ERk Int String))
 
-(defn err-rank-all (short cands acc)
+; The rank is twice the distance, plus `bias` (0 local, 1 otherwise).
+(defn err-rank-all (short cands bias acc)
   (match cands
     (Nil acc)
     (Cons c rest
       (let cs (err-name c)
         (let d (err-near short cs)
           (if (< d 0)
-            (err-rank-all short rest acc)
-            (err-rank-all short rest (err-rank-insert acc d cs))))))))
+            (err-rank-all short rest bias acc)
+            (err-rank-all short rest bias (err-rank-insert acc (+ (* d 2) bias) cs))))))))
 
 ; Insert keeping (distance, name) order; a name already present is kept once.
 (defn err-rank-insert (xs d cs)
@@ -541,14 +544,13 @@
     (Nil None)
     (Cons h t (match h (ESyn theirs _ _ (if (str-eq theirs short) (Some h) (err-synonym-in short t)))))))
 
-; Names every program can use without a `use` line, for did-you-mean.
+; Functions every program can use without a `use` line, for did-you-mean (forms like `if` are not values).
 (defn err-builtin-names ()
   (Cons "+" (Cons "-" (Cons "*" (Cons "/" (Cons "%" (Cons "<" (Cons ">" (Cons "<=" (Cons ">=" (Cons "="
-  (Cons "!=" (Cons "and" (Cons "or" (Cons "not" (Cons "if" (Cons "let" (Cons "let-mut" (Cons "match" (Cons "cond" (Cons "when"
-  (Cons "unless" (Cons "while" (Cons "for" (Cons "begin" (Cons "set!" (Cons "fn" (Cons "print" (Cons "exit" (Cons "error" (Cons "read-line"
+  (Cons "!=" (Cons "and" (Cons "or" (Cons "not" (Cons "print" (Cons "exit" (Cons "error" (Cons "read-line"
   (Cons "str-concat" (Cons "str-length" (Cons "str-substring" (Cons "str-eq" (Cons "len" (Cons "list" (Cons "range" (Cons "unwrap" (Cons "Cons" (Cons "Nil"
   (Cons "Some" (Cons "None" (Cons "Ok" (Cons "Err" (Cons "tuple" (Cons "tuple-get" (Cons "struct-get" (Cons "file-open" (Cons "file-read" (Cons "file-write"
-  (Cons "file-close" (Cons "bytebuf" (Cons "chan" (Cons "chan-tx" (Cons "chan-rx" (Cons "chan-send" (Cons "chan-recv" (Cons "spawn" (Cons "with-region" (Cons "ffi-call"  Nil)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+  (Cons "file-close" (Cons "bytebuf" (Cons "chan" (Cons "chan-tx" (Cons "chan-rx" (Cons "chan-send" (Cons "chan-recv" (Cons "spawn" (Cons "with-region" (Cons "ffi-call"  Nil)))))))))))))))))))))))))))))))))))))))))))))))))
 
 ; The stdlib module whose file defines `name` as a function ("core/list" for
 ; stdlib/core/list.zyl), or "". The installed stdlib is scanned in its sorted

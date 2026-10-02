@@ -480,8 +480,8 @@ ResultValue:
        A single call site fixes every parameter it touches; a parameter
        with no evidence at any call site is an error (E_CANNOT_INFER)
        unless it carries a trait bound that selects a finite set.
-    2. Verifies all trait bounds are satisfied by the concrete types
-       (E_TRAIT_BOUND_NOT_SATISFIED otherwise).
+    2. Verifies that the concrete types have the impls the body calls
+       (E_TRAIT_NOT_FOUND otherwise, at the call).
     3. Generates a specialized function with canonical name:
            functionName~Type1,Type2,...
        the call's argument types in argument order, compound types
@@ -525,8 +525,6 @@ ResultValue:
 
 6.7 Error Cases:
     E_CANNOT_INFER                — generic param with no call-site evidence
-    E_TRAIT_BOUND_NOT_SATISFIED   — concrete type violates a bound
-    E_UNKNOWN_GENERIC_PARAM       — reference to an undeclared type parameter
     E_TRAIT_NOT_DERIVABLE         — derive constraint fails
 
 ================================================================================
@@ -667,7 +665,8 @@ Test execution:
     Matches variants in order. Exhaustiveness enforced at compile-time.
 
 12.4 ASSERT:
-    if condition false → runtime error E_ASSERT_FAIL
+    if condition false → panic with the assertion's message
+    ("assertion failed" when it has none)
 
 12.5 WHILE:
     (while condition body)
@@ -1209,9 +1208,7 @@ binaries. Network access is confined to `zyl fetch`; builds are offline.
 Error format: (code, location, message)
 
 Errors:
-    E_USER_ERROR                — (error msg)
     E_MUT_CONFLICT              — aliasing violation
-    E_ASSERT_FAIL               — assertion failure
     E_FFI_TIMEOUT               — FFI call exceeded timeout
     E_FFI_TIMEOUT_REQUIRED      — ffi-call lacks a positive integer literal timeout
     E_FFI_SYMBOL_REQUIRED       — ffi-call symbol is not a string literal
@@ -1226,7 +1223,6 @@ Errors:
     E_REGION_EXHAUSTED          — with-region region exceeded its size or limit
     E_MACRO_NON_TERMINATION     — macro expansion loop
     E_MATCH_NONEXHAUSTIVE       — missing match case (Compile Error)
-    E_UNINITIALIZED_USE         — variable used before init
     E_CAPABILITY_LEAK           — TMut leaked
     E_TRAIT_NOT_FOUND           — missing impl
     E_DUPLICATE_IMPL            — conflicting impls
@@ -1239,8 +1235,6 @@ Errors:
     E_CHANNEL_CAPACITY          — (chan n) outside 1..16777216
     E_DEADLOCK                  — every live actor blocked on a channel or a join
     E_ACTOR_LIMIT               — more than 1024 actors spawned
-    E_TEST_FAILURE              — test assertion failed
-    E_TEST_RUNNER_ERROR         — test harness error
     E_TRAIT_NOT_DERIVABLE       — cannot derive trait
     E_RESERVED_KEYWORD          — reserved keyword used as identifier (Compile Error)
     E_CANNOT_INFER              — a type the program does not determine (Compile Error)

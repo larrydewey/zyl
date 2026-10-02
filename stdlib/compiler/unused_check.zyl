@@ -1,16 +1,13 @@
 ; === Zyl Compiler — Unused Bindings / Shadowing / Duplicate Parameters ===
 ; Module: compiler/unused_check
 ;
-; Four checks living together because they share one machine: a flat,
+; Three checks living together because they share one machine: a flat,
 ; whole-function reference collector (uc-refs) plus a scope-threading
 ; walk (uc-walk-scope) with the exact same shape coverage and threading
 ; discipline as arity_check.zyl's ac-expr / mutability_check.zyl's
 ; mc-expr (same pipeline stage: post module-resolution, post macro-
 ; expansion).
 ;
-;   - W_UNUSED_FUNCTION: a top-level `defn` never referenced by name
-;     anywhere else in this resolved program (excluding its own body --
-;     self-recursion doesn't count as being "used").
 ;   - W_UNUSED_PARAMETER / W_UNUSED_VARIABLE: a `defn`/`fn`/`lambda`
 ;     parameter, or a `let`/`let-mut`/`for` binding, that never appears
 ;     as a plain identifier reference anywhere in its owning function
@@ -56,20 +53,6 @@
 (use compiler/expr_inner)
 (use compiler/error_report)
 
-; uc-check-unused-functions is NOT wired in here, even though it's fully
-; implemented below: core/core (compose, is-even, print-string, ...) is
-; auto-injected into every single program by module_resolver.zyl's
-; mr-resolve-program (see its own header comment), and the resolved
-; `exprs` this whole pipeline stage operates on has NO per-defn file-
-; provenance field to tell "the user's own dead helper" apart from "an
-; auto-injected stdlib function this particular tiny program doesn't
-; happen to call". Confirmed by direct testing: even a 5-line test file
-; produces a dozen-plus W_UNUSED_FUNCTION warnings for ordinary,
-; perfectly normal core/core entries -- pure noise, the opposite of the
-; "pleasant development experience" this whole file exists for. Wiring
-; this in for real needs the AST to carry which file each top-level form
-; came from (or scoping the check to only the entry file's own defns),
-; neither of which exists yet.
 (defn uc-check-program (exprs)
   (uc-check-top exprs))
 
@@ -86,59 +69,6 @@
   (match xs
     (Nil false)
     (Cons h t (if (str-eq h name) true (uc-in-list name t)))))
-
-; Warnings go through the runtime sink: stderr, or the LSP's capture buffer.
-(defn uc-warn-line (msg)
-  (ffi-call "zyl_warn_emit" msg 1000))
-
-; ===========================================================================
-; UNUSED TOP-LEVEL FUNCTION
-; ===========================================================================
-
-(defn uc-check-unused-functions (exprs)
-  (let names (uc-collect-defn-names exprs)
-    (let refs (uc-collect-all-refs exprs)
-      (uc-report-unused-fns names refs))))
-
-(defn uc-collect-defn-names (exprs)
-  (match exprs
-    (Nil Nil)
-    (Cons e rest
-      (match (Expr.inner e)
-        (EDefn name _ _ (Cons name (uc-collect-defn-names rest)))
-        (_ (uc-collect-defn-names rest))))))
-
-(defn uc-collect-all-refs (exprs)
-  (match exprs
-    (Nil Nil)
-    (Cons e rest
-      (match (Expr.inner e)
-        (EDefn name _ body (list-append (uc-filter-out name (uc-refs body)) (uc-collect-all-refs rest)))
-        (ETestDecl _ body _ _ (list-append (uc-refs body) (uc-collect-all-refs rest)))
-        (_ (uc-collect-all-refs rest))))))
-
-(defn uc-filter-out (name xs)
-  (match xs
-    (Nil Nil)
-    (Cons h t (if (str-eq h name) (uc-filter-out name t) (Cons h (uc-filter-out name t))))))
-
-(defn uc-should-check-fn (name)
-  (if (str-eq name "main") false (if (uc-is-exempt name) false true)))
-
-(defn uc-report-unused-fns (names refs)
-  (match names
-    (Nil 0)
-    (Cons n rest
-      (begin
-        (if (uc-should-check-fn n)
-          (if (uc-in-list n refs) unit (uc-warn-unused-fn n))
-          unit)
-        (uc-report-unused-fns rest refs)))))
-
-(defn uc-warn-unused-fn (name)
-  (let m1 "W_UNUSED_FUNCTION: `"
-    (let m2 (str-concat m1 name)
-      (uc-warn-line (str-concat m2 "` is defined but never called")))))
 
 ; ===========================================================================
 ; WHOLE-BODY REFERENCE COLLECTOR (flat, over-inclusive)
