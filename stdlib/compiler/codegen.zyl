@@ -2101,11 +2101,14 @@
         (SymEnt _ disp
           (cg-syms-names (cg-emit-line st (str-concat "    .string \"" (str-concat (cg-escape (cg-arena-of st) disp) "\""))) t))))))
 
-; The symbol after the last `::` of a canonical key; any other name as it is.
+; The source name: the symbol after the last `::` of a canonical key, cut at a specialization's `~`.
 (defn cg-display-name (nm)
-  (let len (ffi-call "zyl_cstr_len" nm 1000)
+  (let len (cg-before-tilde nm 0 (ffi-call "zyl_cstr_len" nm 1000))
     (let start (cg-after-last-colons nm 0 0 len)
-      (if (= start 0) nm (str-substring nm start (- len start))))))
+      (if (and (= start 0) (= len (ffi-call "zyl_cstr_len" nm 1000))) nm (str-substring nm start (- len start))))))
+
+(defn cg-before-tilde (nm i len)
+  (if (>= i len) len (if (= (ffi-call "zyl_cstr_byte_at" nm i 1000) 126) i (cg-before-tilde nm (+ i 1) len))))
 
 (defn cg-after-last-colons (nm i acc len)
   (if (>= (+ i 1) len)
