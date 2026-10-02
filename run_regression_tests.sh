@@ -547,7 +547,7 @@ if [ "$MODE" = "full" ]; then
     for f in "${TESTS_DIR}"/compile-fail/*.zyl; do
         [ -f "$f" ] || continue
         local_name=$(basename "$f" .zyl)
-        if [ -z "$FILTER" ] || echo "$local_name" | grep -qi -- "$FILTER"; then
+        if [ -z "$FILTER" ] || echo "compile-fail ${local_name}" | grep -qi -- "$FILTER"; then
             run_fail_test "compile-fail/${local_name}" "$f"
         fi
     done
