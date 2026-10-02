@@ -128,10 +128,11 @@
     (let _ (ft-put t "zyl_bytebuf_atomic_sub" (ffi-call "%fn" "zyl_bytebuf_atomic_sub" 1))
     (let _ (ft-put t "zyl_bytebuf_cap" (ffi-call "%fn" "zyl_bytebuf_cap" 1))
     (let _ (ft-put t "zyl_bytebuf_len" (ffi-call "%fn" "zyl_bytebuf_len" 1))
+    (let _ (ft-put t "zyl_bytebuf_blake3_hex" (ffi-call "%fn" "zyl_bytebuf_blake3_hex" 1))
     (let _ (ft-put t "zyl_bytebuf_new" (ffi-call "%fn" "zyl_bytebuf_new" 1))
     (let _ (ft-put t "zyl_bytebuf_ptr" (ffi-call "%fn" "zyl_bytebuf_ptr" 1))
     0)))))))))))))))))
-
+)
 (defn ft-fill-3 (t)
   (let _ (ft-put t "zyl_call0" (ffi-call "%fn" "zyl_call0" 1))
     (let _ (ft-put t "zyl_call1" (ffi-call "%fn" "zyl_call1" 1))
