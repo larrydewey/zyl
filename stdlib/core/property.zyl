@@ -77,13 +77,13 @@
 (defn property-rotate (xs (k Int))
   (list-append (property-drop xs k) (property-take xs k)))
 
-(defn property-fail ((name String) (args String))
+(defn property-fail! ((name String) (args String))
   (panic (str-concat "property `" (str-concat name (str-concat "` failed for " args)))))
 
 (defn property-check-1 (name f xs)
   (match xs
     (Nil unit)
-    (Cons x t (if (f x) (property-check-1 name f t) (property-fail name (Debug.debug x))))))
+    (Cons x t (if (f x) (property-check-1 name f t) (property-fail! name (Debug.debug x))))))
 
 (defn property-check-2 (name f xs ys)
   (match xs
@@ -94,7 +94,7 @@
         (Cons y u
           (if (f x y)
             (property-check-2 name f t u)
-            (property-fail name (str-concat (Debug.debug x) (str-concat ", " (Debug.debug y))))))))))
+            (property-fail! name (str-concat (Debug.debug x) (str-concat ", " (Debug.debug y))))))))))
 
 (defn property-check-3 (name f xs ys zs)
   (match xs
@@ -108,6 +108,6 @@
             (Cons z v
               (if (f x y z)
                 (property-check-3 name f t u v)
-                (property-fail name
+                (property-fail! name
                   (str-concat (Debug.debug x)
                     (str-concat ", " (str-concat (Debug.debug y) (str-concat ", " (Debug.debug z))))))))))))))

@@ -1,0 +1,8 @@
+; expect-error: E_UNKNOWN_CONSTRUCTOR
+; Nothing within edit distance 2 of `Zyxwvut`: the help names no constructor.
+(deftype Shape (Circle Int) (Square Int))
+(defn area (s)
+  (match s
+    (Circle r (* r r))
+    (Zyxwvut 0)))
+(defn main () (begin (print (area (Square 2))) 0))

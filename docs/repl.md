@@ -109,6 +109,14 @@ the session has no manifest entry for is reported as
 new session starts with `core/core`, `core/list`, `core/option`,
 `core/result` and `allocator/allocator`.
 
+### Capabilities
+
+A session declares nothing until you type a `(capabilities ...)` form
+(§31.9), kept like a definition: `(spawn ...)` before `(capabilities
+actor)` is `E_PKG_CAPABILITY_VIOLATION`, and the message gives the line to
+type. Several forms union. `zyl eval` runs a file, so it reads the file's
+own form.
+
 ## Editing
 
 The line editor is written in Zyl over four terminal primitives in the
@@ -326,6 +334,14 @@ And what the interpreter does not do:
   compiled program does.
 - **Typed printing of opaque handles.** A channel, an endpoint, an
   Actor or a byte buffer prints as the number behind it.
+- **A panic's backtrace.** A compiled program's uncaught panic lists its
+  functions under the `PANIC:` line (`docs/runtime-in-zyl-design.md`,
+  "Panic backtrace"). The REPL and `zyl eval` print none: the frames
+  under an interpreted panic are the interpreter's (`in-let`,
+  `in-call-indexed`), which belong to the compiler binary, not the
+  program, so both turn the backtrace off (`zyl_backtrace_set`) before
+  they run anything. The REPL reports an entry's panic as the entry's
+  error; `zyl eval` prints the `PANIC:` line alone.
 - **Heavy numeric work at native speed.** An AST interpreter allocates
   per operation and never reclaims within a run, so an Ed25519
   verification that takes milliseconds compiled takes tens of seconds

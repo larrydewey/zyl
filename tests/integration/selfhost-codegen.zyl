@@ -7,6 +7,8 @@
 ;   cc /tmp/zyl_selfhost.s -o prog && ./prog
 ; Expected output: 3 / 40 / hello / 3.750000 / 3
 
+(capabilities io)
+
 (use allocator/allocator)
 (use compiler/lexer)
 (use compiler/parser)

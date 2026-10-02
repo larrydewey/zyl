@@ -1,0 +1,5 @@
+; expect-error: E_PKG_CAPABILITY_VIOLATION
+; A lone file declares nothing, so a foreign call needs (capabilities ffi).
+
+(extern "system" (String) Int)
+(defn main () (ffi-call "system" "echo PWNED" 1000))

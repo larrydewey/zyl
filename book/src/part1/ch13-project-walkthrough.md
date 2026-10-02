@@ -55,7 +55,9 @@ log-processor/
 `(use logstats)` finds `logstats.zyl` next to the file being compiled; a subdirectory works the same way (`(use util/strings)` loads `util/strings.zyl`). Two rules for a module you `use`:
 
 - **It must not define `main`.** A `use`d file's definitions become part of the program that uses it, so its `main` would collide with the program's own (`E_DUPLICATE_DEFINITION`). It would also make every test file that uses it fail with `E_TOPLEVEL_STMTS_WITH_EXPLICIT_MAIN`, because a file may not contain both tests and a `main`. That is why the program and the tests are separate files that share one library.
-- **It must `use` what it constructs.** `logstats.zyl` builds `Cons`/`Nil` lists, so it starts with `(use core/list)`. Without that line, `Nil` is not known as a constructor inside the module, and `match` reports `E_UNREACHABLE_MATCH_ARM` for the arms that follow it.
+- **It must `use` what it constructs.** `logstats.zyl` builds `Cons`/`Nil` lists, so it starts with `(use core/list)`. Without that line, `Nil` is not known as a constructor inside the module, and `match` reports `E_UNKNOWN_CONSTRUCTOR` for it.
+
+The program and the tests read `sample.log`, so each starts with `(capabilities io)`. A lone file declares what it may do with that line, and declares nothing without it; the line belongs in the file being compiled, not in a module it uses.
 
 To build and run, from the project directory:
 

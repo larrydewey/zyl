@@ -303,7 +303,7 @@ calls itself (a loop). A call is left alone inside a `try` body (a
 caught panic releases the regions of the calls it unwinds), when its
 name is a local at the site, or when the body names a global that a
 local at the site would shadow. Two rounds run, so a wrapper of a
-wrapper (`vec-get` over `array-get`) flattens. `ZYL_INLINE=0` turns
+wrapper (`vec-get!` over `array-get`) flattens. `ZYL_INLINE=0` turns
 inlining off.
 
 Inlining binds every argument that is a variable to another variable,

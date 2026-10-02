@@ -192,6 +192,104 @@ miss give byte-identical binaries. A hello-world links in about 26 ms.
 The `stdout` ordering rule holds in both: every write to fd 1 goes
 through one buffer.
 
+## Panic backtrace
+
+An uncaught panic names where it happened. Under the `PANIC:` line the
+runtime prints the call chain to stderr, innermost first, one function
+per line, 32 lines at most, names only:
+
+```
+PANIC: E_INDEX_OUT_OF_BOUNDS: vec-get index outside the Vec
+  in parse-line
+  in parse-line
+  in parse-line
+  in parse-file
+  in main
+```
+
+(`vec-get` is not listed there: it is small enough to be inlined into
+`parse-line`, so it has no frame of its own.)
+
+It is printed only on the path that ends the process (`pn-panic-text`):
+a panic caught by `try`/`catch` or by the test harness prints nothing,
+the JSON diagnostic mode prints the object it always printed, and a
+panic whose text is a rendered diagnostic (`error[CODE]: ...`, the
+compiler reporting on the program it is compiling) gets no backtrace,
+since it reports a fault in another program. `zyl eval` and `zyl repl` switch it off
+(`zyl_backtrace_set false`), since an interpreted program's frames are
+the interpreter's. Nothing runs until a panic
+happens, so the walk costs nothing in a run that does not panic (the
+frame pointers below are a cost every run pays). Before the PANIC line
+stdout is flushed, so a program's output comes first.
+
+An actor's panic ends only the actor: its thread's try frame catches it,
+and the message is re-raised by `actor-wait` on the joining thread. The
+backtrace printed is therefore the joiner's (`in main` for a `main` that
+waits), not the actor's own frames, which are gone by then. Keeping the
+actor's frames would mean capturing them on a caught path, which this
+does not do.
+
+**The walk.** `zyl_rt_frame_addr` (an assembler stub, `mov rax, rbp`)
+gives the walker its own frame; from there each frame holds the caller's
+rbp at `[fp]` and a return address at `[fp+8]`. Every emitted function
+keeps rbp: the stack machine's prologue always has, the native backend's
+framed functions have, and a push-only MIR function that makes a call
+now pushes rbp as well (`mf-leaf`; a leaf, which cannot be on any chain,
+stays frameless). A tail call replaces its caller's frame and an inlined
+call has none, so neither appears -- the backtrace is of the frames that
+exist, as with any optimizing compiler. The walk stops at a saved rbp of
+0 (`_start` and the child side of `zyl_rt_clone` zero it, as glibc's
+clone does for a hosted thread, so a thread's chain ends at its entry),
+at a frame that is not above the current one or not 8-aligned, at a
+frame whose page `mincore` reports unmapped (so a corrupt chain stops
+the walk rather than faulting inside the panic), and after 4096 frames.
+Each return address is looked up at `ra - 1`, the byte inside the call.
+
+**The table.** Codegen writes `zyl_syms` into `.rodata` of every
+program (not of a runtime module): a count, then one pair per function
+in emission order -- which is address order -- of the function's offset
+from the pair (`.long sym - .`) and its name's offset from the table,
+an end pair at the entry stub `main`, then the names, NUL-terminated.
+A lookup is a binary search for the greatest start not above the
+address; an address outside `[first, main)` -- the runtime's own
+functions, libc, the entry stub -- is skipped, which is why runtime
+frames (`zyl_panic`, `zyl_vec_get`) are not listed. The name is the
+symbol after the last `::` of the canonical key, so a specialization
+is cut at its `~` (`parse-line`, not `parse-line~Vec<Int>,Int`) and a
+method keeps its `Trait.method` spelling. The
+runtime reaches the table through `%fn-weak "zyl_syms"`, 0 when the
+image has none. The Zyl assembler reads `.long sym - .` as a kind-1
+(pc-relative) relocation, the same it emits for a `[rip+sym]` operand
+with addend 0, and GNU as reads it natively, so the hosted and the
+freestanding link carry the same table. The table depends only on the
+functions and their order, so two compiles of one source stay
+byte-identical (the determinism gate checks this); its label is
+indented so that `verify.zyl`'s census does not count it as a function.
+It costs 8 bytes plus the name per function: in `zyl-self` it is 5478
+functions, 116,111 bytes (44 KB of pairs, 72 KB of names), 3.1% of the
+3.7 MB binary.
+
+**Cost of the frames.** Giving every calling push-only function a frame
+pointer costs `push rbp; mov rbp, rsp; pop rbp` per call. Measured on
+`bench/` (best of 6): fib +3%, trees +2%, vec +2%, loop and list within
+noise. The first version framed those functions fully (`sub rsp` and
+reloads from slots), which cost fib 11% and loop 14%; the light frame is
+what made it affordable.
+
+**Source lines** are not printed. The frame table planned for
+provenance (`PROGRESS.md`, open work) would not give them either: lines
+need a second table keyed by call site, not by function -- a label after
+each emitted `call` and a pair of (site offset, span) per label, where
+the span is what `zyl_span_file`/`zyl_span_off` already hold for the
+ICNF node being lowered. The walker would look up each return address
+in that table exactly as it does in `zyl_syms`. The mechanism is the
+one built here; the cost is one entry per call site rather than per
+function, which for the compiler is about 110k sites.
+
+`tests/scripts/panic-backtrace.sh` checks the exact lines, the cap, the
+two link modes, an actor's re-raise, the caught paths (`try`/`catch`
+and the test harness) and the byte identity of two compiles.
+
 ## Performance
 
 Perf is the project's top priority (see `docs/native-backend-design.md`).

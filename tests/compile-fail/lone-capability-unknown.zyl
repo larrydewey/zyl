@@ -1,0 +1,4 @@
+; expect-error: E_MALFORMED_FORM
+; The capabilities are io, ffi, actor, secret, native and unsafe.
+(capabilities network)
+(defn main () 0)

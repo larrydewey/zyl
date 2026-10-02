@@ -71,8 +71,14 @@ Auto-generated for every `defstruct` (§2, `make-Name`).
 (struct-get struct field-name)
 ```
 
-Retrieves a field value. The compiler generates accessors for every
-`defstruct` field.
+Retrieves a field value. `(defstruct Point (x) (y))` also defines one accessor per field,
+`Point.x` and `Point.y`: each is `(defn Point.x ((p Point)) (struct-get p "x"))`,
+an ordinary typed function generated before type checking, so it is a
+value like any other function and has the field's type. `defstruct+`
+generates them too. A program definition of the same name is
+`E_DUPLICATE_DEFINITION`, reported at the program's definition and naming
+the `defstruct`. In a package an accessor is visible as its struct is.
+`struct-get` and dot syntax are unchanged.
 
 ### Struct Immutability (§10)
 
@@ -177,9 +183,13 @@ panics with `unwrap on None`; the library functions `result-unwrap` and
   `((Variant field...) body)`. Each field is bound to a name or `_`; a
   nested pattern such as `(Wrap (Some x) x)` is `E_NESTED_PATTERN`
   (match on the field in the arm body instead).
-- **Catch-all:** `_`. Any identifier that is not a known variant also acts
-  as a catch-all, a consequence of how variant tags are looked up; the
-  convention is to write `_` or a `_`-prefixed name.
+- **Catch-all:** `_`. A lowercase identifier that is not a known variant
+  also acts as a catch-all, binding the subject; the convention is to
+  write `_` or a `_`-prefixed name. An arm head whose first letter is A-Z
+  that no type in the program declares is `E_UNKNOWN_CONSTRUCTOR`, so a
+  misspelled constructor cannot silently become a catch-all; the message
+  suggests the nearest declared constructor within edit distance 2
+  (smallest distance, then alphabetical).
 - **Literal patterns:** integer and string literals, `(0 body)`,
   `("x" body)`. A match with any literal arm is desugared into an `if`
   chain over the subject, evaluated once. It must end with a `_` arm,
@@ -192,8 +202,9 @@ panics with `unwrap on None`; the library functions `result-unwrap` and
   bind nothing), and a guard on the final `_` arm is ignored.
 - **Exhaustiveness (§8.3):** `exhaustiveness_check.zyl` rejects a
   constructor match that misses a variant with `E_NON_EXHAUSTIVE_MATCH`,
-  and a catch-all that is not last, or a duplicated arm, with
-  `E_UNREACHABLE_MATCH_ARM`. Other paths use the canonical spelling
+  a catch-all that is not last, or a duplicated arm, with
+  `E_UNREACHABLE_MATCH_ARM`, and a capitalized arm head that is not a
+  declared constructor with `E_UNKNOWN_CONSTRUCTOR`. Other paths use the canonical spelling
   `E_MATCH_NONEXHAUSTIVE`, which is the one in `error_codes.zyl`. The
   canonical grammar does not describe literal, OR or range patterns or
   guards.

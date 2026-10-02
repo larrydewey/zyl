@@ -33,8 +33,8 @@ The most incredible developer experience for a systems Lisp. Every error is acti
   text before parsing (`compile-check-balance` in `pipeline.zyl`,
   `check-balanced` in `parser.zyl`), with its own fix-it text
   (`sb-hint`).
-- **Warnings**: `unused_check.zyl` reports `W_UNUSED_PARAMETER`, `W_UNUSED_VARIABLE` and
-  `W_SHADOWED_BINDING` on stderr without failing the compile; `secret_check.zyl` reports
+- **Warnings**: `unused_check.zyl` reports `W_UNUSED_PARAMETER`, `W_UNUSED_VARIABLE`,
+  `W_SHADOWED_BINDING` and `W_PANIC_UNMARKED` on stderr without failing the compile; `secret_check.zyl` reports
   `E_ZEROIZE_MISSING` at severity 2.
 - **LSP diagnostics**: `stdlib/lsp/compiler_bridge.zyl` turns a balance
   result, a compiler panic message or the type checker's reports into an

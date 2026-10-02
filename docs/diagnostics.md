@@ -125,10 +125,10 @@ reported twice.
   category of `run_regression_tests.sh` as `scripts/error-codes`) fails
   when a code is defined in `error_codes.zyl` but raised nowhere, or
   raised but not defined. A raise is the code at the start of a string
-  literal, after `PANIC: `, or inside `[...]`, outside comment lines. Six
-  codes other changes are adding are exempt while they land
-  (`E_OVERFLOW`, `E_DIVISION_BY_ZERO`, `E_UNKNOWN_CONSTRUCTOR`,
-  `E_PARTIAL_OPERATION`, `E_NUMERIC_POLICY_REQUIRED`, `E_PANIC_UNMARKED`).
+  literal, after `PANIC: `, or inside `[...]`, outside comment lines. Four
+  numeric codes another change is adding are exempt while it lands
+  (`E_OVERFLOW`, `E_DIVISION_BY_ZERO`, `E_PARTIAL_OPERATION`,
+  `E_NUMERIC_POLICY_REQUIRED`).
   The 31 codes nothing raised were removed from the catalog, spec §28 and
   `spec/15-error-model.md`.
 

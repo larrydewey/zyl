@@ -71,7 +71,7 @@ and prints as `<secret>`; `impl-not` declarations here forbid it
 (deftype Option (Some T) None)
 ;(option-some x) (option-none)
 ;(option-is-some opt) (option-is-none opt)
-;(option-unwrap opt default) (option-unwrap-or opt default) (option-expect opt msg)
+;(option-unwrap opt default) (option-unwrap-or opt default) (option-expect! opt msg)
 ;(option-map opt f) (option-flatmap opt f)
 ;(option-and opt other) (option-or opt other) (option-inspect opt f)
 ```
@@ -79,7 +79,7 @@ and prints as `<secret>`; `impl-not` declarations here forbid it
 `option-unwrap` takes a default of the contents' type:
 `(option-unwrap opt default)`. A default of another type is
 `E_TYPE_MISMATCH`, not a sentinel; when there is no sensible default,
-use `option-expect`. `option-is-some` and `option-is-none` return
+use `option-expect!`. `option-is-some` and `option-is-none` return
 `Bool`.
 
 ### `core/result` — Error Handling
@@ -89,14 +89,14 @@ use `option-expect`. `option-is-some` and `option-is-none` return
 (deftype Result (Ok T) (Err E))
 ;(result-ok v) (result-err e)
 ;(result-is-ok res) (result-is-err res)
-;(result-unwrap res default) (result-unwrap-or res default) (result-expect res msg)
+;(result-unwrap res default) (result-unwrap-or res default) (result-expect! res msg)
 ;(result-map res f) (result-flatmap res f) (result-and-then res f) (result-or-else res f)
 ;(result-and res other) (result-or res other) (result-inspect res f)
 ```
 
 `result-unwrap` also takes a default of the `Ok` type. The compiler's
 `unwrap` form takes an `Option` only, so a `Result` needs one of these;
-`result-expect` panics with your message (Appendix C.7).
+`result-expect!` panics with your message (Appendix C.7).
 
 ### `core/list` — Singly-Linked Lists
 
@@ -158,15 +158,22 @@ capacity and make a private arena on the spot:
 (deftype Vec (VecC (Array T) Int Arena))  ; storage, length, arena
 ;(vec-create (arena Arena) (cap Int)) (vec-create-default (cap Int))
 ;(vec-len v) (vec-cap v)
-;(vec-get v (i Int))                    ; a T; E_INDEX_OUT_OF_BOUNDS outside the Vec
+;(vec-get! v (i Int))                   ; a T; E_INDEX_OUT_OF_BOUNDS outside the Vec
+;(vec-get? v (i Int))                   ; an (Option T); None outside the Vec
 ;(vec-get-or v (i Int) default)         ; a T; default outside the Vec
-;(vec-set v (i Int) value)              ; a write at len extends it, up to cap
+;(vec-set! v (i Int) value)             ; i = len appends (like vec-push); otherwise outside is E_INDEX_OUT_OF_BOUNDS
+;(vec-set? v (i Int) value)             ; (Some vec), or None outside the Vec
 ;(vec-push v value)                     ; reallocates when full
-;(vec-pop v) (vec-last v)               ; vec-last of an empty Vec is E_INDEX_OUT_OF_BOUNDS
+;(vec-pop v) (vec-last! v) (vec-last? v) ; vec-last! of an empty Vec is E_INDEX_OUT_OF_BOUNDS, vec-last? None
 ;(vec-free v)                           ; an empty Vec; storage returns at arena-reset
 ```
 
 A Vec prints as `[a, b, ...]` (`Show`).
+
+Partial operations are spelled (Chapter 4, Chapter 6 §6.9): a function
+that can stop the program ends in `!`, its total sibling ends in `?` and
+returns an `Option`, and there is no plain name. The compiler enforces
+this on the standard library (`E_PANIC_UNMARKED`).
 
 There is no `vec-slice`, `vec-append` or `vec-clear`.
 
@@ -224,15 +231,17 @@ Note the argument order: the collection comes last (`(list-nth n xs)`,
 ```lisp
 (use collections/slice)
 (deftype Slice (SliceC (Array T) Int Int))   ; storage, offset, length
-;(slice-of-vec v) (slice-vec v (off Int) (len Int))
-;(slice-sub s (off Int) (len Int)) (slice-take s (n Int)) (slice-drop s (n Int))
-;(slice-len s) (slice-get s (i Int)) (slice-get-or s (i Int) default)
+;(slice-of-vec v) (slice-vec! v (off Int) (len Int)) (slice-vec? v (off Int) (len Int))
+;(slice-sub! s (off Int) (len Int)) (slice-sub? s (off Int) (len Int))
+;(slice-take s (n Int)) (slice-drop s (n Int))
+;(slice-len s) (slice-get! s (i Int)) (slice-get? s (i Int)) (slice-get-or s (i Int) default)
 ;(slice-fold s f init) (slice-to-vec s (arena Arena))
 ```
 
 Making a slice copies nothing; `slice-to-vec` copies. A range or index
-outside the slice is `E_INDEX_OUT_OF_BOUNDS` (`slice-get-or` returns the
-default instead; take and drop clamp). The slice shares the Vec's
+outside the slice is `E_INDEX_OUT_OF_BOUNDS` from a `!` function and
+`None` from its `?` sibling (`slice-get-or` returns the default; take
+and drop clamp). The slice shares the Vec's
 storage and keeps it alive (Chapter 4). `Show` is implemented.
 
 ### `text/view` — String Views and a Parsing Cursor
@@ -242,8 +251,9 @@ storage and keeps it alive (Chapter 4). `Show` is implemented.
 (deftype StrView (StrViewC String Int Int))   ; base, offset, length
 (deftype Cursor (CursorC StrView Int))        ; input, position
 (deftype Taken (TakenC StrView Cursor))       ; bytes taken, cursor after
-;(view-of (s String)) (view-slice (s String) (off Int) (len Int))
-;(view-sub (v StrView) (off Int) (len Int)) (view-take v (n Int)) (view-drop v (n Int))
+;(view-of (s String)) (view-slice! (s String) (off Int) (len Int)) (view-slice? (s String) (off Int) (len Int))
+;(view-sub! (v StrView) (off Int) (len Int)) (view-sub? (v StrView) (off Int) (len Int))
+;(view-take v (n Int)) (view-drop v (n Int))
 ;(view-len v) (view-is-empty v) (view-byte-at v (i Int)) (view-find v (byte Int) (from Int))
 ;(view-eq a b) (view-eq-str v (s String)) (view-compare a b)
 ;(view-starts-with v (prefix String)) (view-ends-with v (suffix String))
@@ -256,7 +266,8 @@ storage and keeps it alive (Chapter 4). `Show` is implemented.
 ```
 
 The bounds are checked once, when a view is made from a String
-(`E_INDEX_OUT_OF_BOUNDS`); after that nothing is copied until
+(`E_INDEX_OUT_OF_BOUNDS` from `view-slice!`, `None` from `view-slice?`);
+after that nothing is copied until
 `view-to-string`. `view-byte-at` and `cursor-peek` return -1 outside
 the view, `view-find` -1 when the byte is absent, `view-parse-int` an
 `(Option Int)`, `cursor-expect` an `(Option Cursor)`. `StrView`
@@ -279,7 +290,8 @@ only (`E_FFI_RESTRICTED`).
 Vectors are immutable values. add and sub wrap within a lane, eq gives
 an all-ones lane (-1, or 255 for U8), I64/I32 lanes compare signed and
 U8 lanes unsigned; a lane index outside the vector is
-`E_INDEX_OUT_OF_BOUNDS`. Sub-word lanes run as SWAR over the two words,
+`E_INDEX_OUT_OF_BOUNDS` from a `!` accessor (`i64x2-get!`, `i32x4-set!`,
+`u8x16-get!`, ...) and `None` from its `?` sibling. Sub-word lanes run as SWAR over the two words,
 so every CPU gives the same result; there is no SSE path.
 
 ## B.3 Concurrency
@@ -401,7 +413,7 @@ C.14). `testing/testing` adds:
 ```lisp
 (use testing/testing)
 ;(assert-equal-values expected actual) (assert-true-value value)
-;(assert-false-value value) (assert-fail-call thunk)
+;(assert-false-value value) (assert-fail-call! thunk)
 ```
 
 The assertions as functions, for passing where a function value is

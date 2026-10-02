@@ -97,6 +97,7 @@ top-level `def` values are monomorphic (the value restriction). A type variable 
 | Constructor | For `(deftype T (C F1..Fn) ...)`: C : ∀ā. (F1..Fn) -> (T ā), ā the type parameters. An untyped struct field is an implicit type parameter of its struct |
 | `match` | Scrutinee : T ā; an arm `(C x1..xn body)` binds xi at C's i-th field type; every body : τ ⊢ match : τ. Patterns are flat (`E_NESTED_PATTERN`); exhaustiveness is §12 |
 | `struct-get` | p : S ā, f a field of S ⊢ `(struct-get p "f")` : its type. When p's type is not otherwise determined, the one struct with a field f is taken; if several have it, `E_CANNOT_INFER` |
+| Accessor | For `(defstruct S ... (f ...))`: `S.f` : ∀ā. (S ā) -> τ, τ the type of f (an untyped field is one of ā); it is a generated `defn` typed like any other |
 | `try` | b : τ, x : String ⊢ h : τ ⊢ `(try b (catch x h))` : τ |
 | Assertions | `assert-true`, `assert-false`, `assert`: a Bool -> Unit; `assert-equal l r`: l and r of one type -> Unit |
 | `print` | Any value -> Unit |
@@ -402,7 +403,8 @@ falls short of §4–§6 and §17.
 - A foreign symbol is typed by its `extern` declaration (see
   `spec/09-ffi-contracts.md`); an undeclared one is `E_CANNOT_INFER`.
 - A few standard-library functions have fixed signatures in the pass
-  (`ta-builtin-sig`): `str-concat`, `str-length`, `str-substring`,
+  (`ta-builtin-sig`): `str-concat`, `str-length`, `str-substring` (total:
+  it clamps its range to the string, §25),
   `str-equal`/`str-eq` (Bool), `print-string` and `print-float` (Unit),
   the channel forms (`chan`, `chan-tx`, `chan-rx`, `chan-recv`), the contract helpers,
   the `def` getters' cell operations (whose names contain spaces, so no

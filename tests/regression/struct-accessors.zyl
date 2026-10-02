@@ -1,0 +1,51 @@
+; Struct field accessors (spec §2, §4.9): `(defstruct Point (x) (y))`
+; also defines `Point.x` and `Point.y`, ordinary typed functions that
+; read the field. They exist for `defstruct+` and for a struct whose
+; untyped field is a type parameter, and they are values like any other
+; function.
+
+(defstruct AccPoint (x Int) (y Int))
+(defstruct AccBox (v))
+(defstruct+ AccRgb (r) (g) (b))
+(defstruct AccNamed (name String) (tags))
+(defstruct AccOuter (inner))
+
+(defn acc-map (f xs)
+  (match xs
+    (Nil Nil)
+    (Cons h t (Cons (f h) (acc-map f t)))))
+
+(test "accessor-typed-field"
+  (assert-equal (AccPoint.x (make-AccPoint 3 4)) 3))
+
+(test "accessor-second-field"
+  (assert-equal (AccPoint.y (make-AccPoint 3 4)) 4))
+
+(test "accessor-generic-field-int"
+  (assert-equal (AccBox.v (make-AccBox 9)) 9))
+
+(test "accessor-generic-field-string"
+  (assert-equal (AccBox.v (make-AccBox "hi")) "hi"))
+
+(test "accessor-defstruct-plus"
+  (assert-equal (AccRgb.g (make-AccRgb 1 2 3)) 2))
+
+(test "accessor-mixed-fields"
+  (let n (make-AccNamed "zyl" (list 1 2))
+    (assert-equal (str-concat (AccNamed.name n) (if (= (list-length (AccNamed.tags n)) 2) "!" "?")) "zyl!")))
+
+(test "accessor-as-function-value"
+  (assert-equal (acc-map AccPoint.x (list (make-AccPoint 1 0) (make-AccPoint 2 0))) (list 1 2)))
+
+(test "accessor-nested"
+  (assert-equal (AccPoint.y (AccOuter.inner (make-AccOuter (make-AccPoint 5 6)))) 6))
+
+(test "accessor-agrees-with-struct-get"
+  (let p (make-AccPoint 7 8)
+    (assert-equal (AccPoint.x p) (struct-get p "x"))))
+
+(test "accessor-agrees-with-dot-syntax"
+  (let p (make-AccPoint 7 8)
+    (assert-equal (AccPoint.y p) p.y)))
+
+(run-tests)

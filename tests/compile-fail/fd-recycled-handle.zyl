@@ -1,4 +1,5 @@
 ; This compiled clean before the linearity pass, and silently wrote into
+(capabilities io)
 ; the wrong file: `fd` was released, the OS handed the same number to the
 ; next open, and the write went there. A stale handle aliasing an
 ; unrelated file is a confused deputy, not a crash — the worst shape a

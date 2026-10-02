@@ -5,7 +5,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 CAT=stdlib/compiler/error_codes.zyl
 # Owned by other branches while they land; checked in neither direction.
-PENDING="E_OVERFLOW E_DIVISION_BY_ZERO E_UNKNOWN_CONSTRUCTOR E_PARTIAL_OPERATION E_NUMERIC_POLICY_REQUIRED E_PANIC_UNMARKED"
+PENDING="E_OVERFLOW E_DIVISION_BY_ZERO E_PARTIAL_OPERATION E_NUMERIC_POLICY_REQUIRED"
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
 grep -oE '\(EC "[EW]_[A-Z0-9_]+"' "$CAT" | sed 's/(EC "//;s/"//' | sort -u > "$tmp/defined"
 # A raise is the code at the start of a string literal, after `PANIC: `, or inside `[...]`; comment lines do not count.

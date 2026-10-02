@@ -212,7 +212,8 @@
     (if (str-eq head "impl") true
     (if (str-eq head "derive") true
     (if (str-eq head "alias") true
-    false)))))))))))
+    (if (str-eq head "capabilities") true
+    false))))))))))))
 
 ; ===========================================================================
 ; BUILDING THE PROGRAM
@@ -434,13 +435,17 @@
 ; A definition is checked in a throwaway arena: nothing it lowers to is
 ; kept, because the next entry re-lowers it from the session's text.
 (defn eval-add-definition (sess text)
-  (let name (eval-second-word text)
+  (let name (eval-definition-name text)
     (let arena (eval-entry-arena)
       (let scratch (arena-create 8388608)
         (let saved (eval-heap-swap scratch)
           (let res (eval-lower arena (eval-program-defs sess text))
             (let copied (eval-copy-result res saved scratch arena)
               (eval-definition-result copied sess text name))))))))
+
+; `(capabilities io ffi)` declares for the session (§31.9); it is kept like a definition.
+(defn eval-definition-name (text)
+  (if (str-eq (eval-head text) "capabilities") "capabilities" (eval-second-word text)))
 
 ; Leave the scratch window, carrying only the diagnostics out of it.
 (defn eval-copy-result (res saved scratch arena)

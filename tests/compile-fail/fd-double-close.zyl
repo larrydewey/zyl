@@ -1,4 +1,5 @@
 ; Closing the same descriptor twice is a double free (spec G2). The
+(capabilities io)
 ; runtime tolerates it, which is exactly why it has to be a compile
 ; error rather than a crash.
 ; expect-error: E_MOVE_VALUE

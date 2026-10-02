@@ -12,9 +12,11 @@
 (extern "zyl_actor_abandon" () Int)
 (extern "zyl_rt_try_call" (Int Int) Int)
 (extern "zyl_rt_longjmp" (Int Int) Int)
+(extern "zyl_rt_frame_addr" () Int)
 
 (defmacro rt-ld64 (a) (ffi-call "%load64" a 1))
 (defmacro rt-st64 (a v) (ffi-call "%store64" a v 1))
+(defmacro pn-ld32 (a) (ffi-call "%load32" a 1))
 
 ; One write per message, as unbuffered stderr's fprintf gave it.
 (defn pn-err (s) (zyl_err_puts (rt-w s)))
@@ -135,8 +137,52 @@
       (let _ (zyl_actor_abandon)
       (let w (if (= m 0) (rt-w "assertion failed") m)
         (let _ (zyl_out_flush)
-        (let _ (if (= (zyl_diag_json) 0) (pn-err (str-concat "PANIC: " (str-concat (pn-s w) "\n"))) (pn-panic-json w))
+        (let _ (if (= (zyl_diag_json) 0) (pn-panic-text w) (pn-panic-json w))
           (ffi-call "zyl_rt_exit" 1 1))))))))
+
+; The PANIC line, then the backtrace; a rendered diagnostic (`error[CODE]: ...`) reports on another program and gets none.
+(defn pn-panic-text (w)
+  (let _ (pn-err (str-concat "PANIC: " (str-concat (pn-s w) "\n")))
+    (if (pn-error-bracket-p w) 0 (pn-backtrace))))
+
+; --- backtrace: the rbp chain, each return address named through the program's zyl_syms table ---
+
+; Innermost first, 32 names at most, only functions in the table (the runtime's own frames are not); nothing without a table.
+(defn pn-backtrace ()
+  (let tab (ffi-call "%fn-weak" "zyl_syms" 1)
+    (if (or (= tab 0) (not (= (rt-ld64 (pn-bt-off)) 0))) 0 (pn-bt-walk (ffi-call "zyl_rt_frame_addr" 1) tab 0 0))))
+
+; One frame: [fp] the caller's fp, [fp+8] the return address. Stops at 0, a frame not above this one, or an unmapped page.
+(defn pn-bt-walk (fp tab shown depth)
+  (if (or (= fp 0) (or (>= shown 32) (or (>= depth 4096) (not (pn-mapped fp))))) shown
+    (let name (pn-sym-name tab (- (rt-ld64 (+ fp 8)) 1))
+      (let shown2 (if (= name 0) shown (let _ (pn-err (str-concat "  in " (str-concat (pn-s name) "\n"))) (+ shown 1)))
+        (let next (rt-ld64 fp)
+          (if (or (<= next fp) (not (= (bit-and next 7) 0))) shown2 (pn-bt-walk next tab shown2 (+ depth 1))))))))
+
+; mincore over [fp, fp+16): ENOMEM means the frame is not in mapped memory, so the walk stops instead of faulting.
+(defn pn-mapped (fp)
+  (let page (bit-and fp -4096)
+    (= (ffi-call "%syscall3" 27 page (- (+ fp 16) page) (ffi-call "%tls" "bt_vec" 8 1) 1) 0)))
+
+; The name of the function whose code holds ra, or 0 outside the table: the pair with the greatest address not above ra.
+(defn pn-sym-name (tab ra)
+  (let n (rt-ld64 tab)
+    (if (or (= n 0) (or (< ra (pn-sym-addr tab 0)) (>= ra (pn-sym-addr tab n)))) 0
+      (+ tab (pn-ld32 (+ (+ tab 12) (* 8 (pn-sym-find tab ra 0 n))))))))
+
+; Pair i sits at tab+8+8i and holds the function's offset from the pair, a signed 32-bit word.
+(defn pn-sym-addr (tab i)
+  (let e (+ (+ tab 8) (* 8 i))
+    (+ e (pn-s32 (pn-ld32 e)))))
+
+(defn pn-s32 (v) (if (>= v 2147483648) (- v 4294967296) v))
+
+; Greatest i in [lo, hi) with addr(i) <= ra, given addr(lo) <= ra < addr(hi).
+(defn pn-sym-find (tab ra lo hi)
+  (if (<= (- hi lo) 1) lo
+    (let mid (/ (+ lo hi) 2)
+      (if (<= (pn-sym-addr tab mid) ra) (pn-sym-find tab ra mid hi) (pn-sym-find tab ra lo mid)))))
 
 ; JSON mode: a rendered object passes through; "E_CODE: text" and "error[E_CODE]: text" split off the code.
 (defn pn-panic-json (m)
@@ -190,6 +236,10 @@
 (defn pn-diag () (ffi-call "%global" "diag_json" 8 1))
 (defn zyl_diag_json () (rt-ld64 (pn-diag)))
 (defn zyl_diag_json_set (on) (let _ (rt-st64 (pn-diag) (if (= on 0) 0 1)) 0))
+
+; Backtrace off: set by `zyl eval`/`zyl repl`, whose frames are the interpreter's, not the program's.
+(defn pn-bt-off () (ffi-call "%global" "bt_off" 8 1))
+(defn zyl_backtrace_set (on) (let _ (rt-st64 (pn-bt-off) (if (= on 0) 1 0)) 0))
 
 ; --- warning sink: stderr, or a {buf, len, cap, capture} buffer drained by zyl_warn_take ---
 

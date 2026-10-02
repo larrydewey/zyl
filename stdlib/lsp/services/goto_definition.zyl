@@ -35,9 +35,42 @@
   (let word (si-word-at text line col)
     (if (= (str-length word) 0)
       None
-      (match (goto-find-form text uri word)
-        (Some loc (Some loc))
-        (None (goto-owning-type text tbl uri word))))))
+      (match (st-accessor-of tbl word)
+        (Some a (goto-field text uri (Acc.struct a) (Acc.field a)))
+        (None
+          (match (goto-find-form text uri word)
+            (Some loc (Some loc))
+            (None (goto-owning-type text tbl uri word))))))))
+
+; A struct's accessor `T.f` is defined by the field `f` of its
+; `defstruct`: the first `f` inside that form, after the struct's name.
+(defn goto-field (text uri sname fname)
+  (match (goto-form-of (si-top-level-forms text) sname)
+    (Some f (goto-field-in text uri f fname (si-word-occurrences text fname)))
+    (None None)))
+
+(defn goto-form-of (forms word)
+  (match forms
+    (Nil None)
+    (Cons f rest (if (str-eq (TopForm.name f) word) (Some f) (goto-form-of rest word)))))
+
+(defn goto-field-in (text uri f fname occs)
+  (match occs
+    (Nil None)
+    (Cons o rest
+      (if (goto-in-form f (Pair2.line o) (Pair2.col o))
+        (Some (Loc uri (Rng (Pos (Pair2.line o) (Pair2.col o))
+                            (Pos (Pair2.line o) (+ (Pair2.col o) (str-length fname))))))
+        (goto-field-in text uri f fname rest)))))
+
+; Inside the form's lines, and past its name on the first.
+(defn goto-in-form (f line col)
+  (let start (+ (TopForm.col f) (+ 2 (str-length (TopForm.kind f))))
+    (if (< line (TopForm.line f))
+      false
+      (if (> line (TopForm.end-line f))
+        false
+        (if (= line (TopForm.line f)) (> col (+ start (str-length (TopForm.name f)))) true)))))
 
 ; A variant constructor has no top-level form of its own -- it is
 ; declared inside its `deftype`. Jumping to that deftype is the useful
@@ -82,7 +115,9 @@
         (None
           (if (or (st-is-known-adt tbl word) (st-is-known-struct tbl word))
             (goto-find-form text uri word)
-            None))))))
+            (match (st-accessor-of tbl word)
+              (Some a (goto-find-form text uri (Acc.struct a)))
+              (None None))))))))
 
 ; ===========================================================================
 ; IMPLEMENTATION — every `(impl Trait ...)` form naming the trait under

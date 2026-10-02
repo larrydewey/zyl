@@ -1,5 +1,7 @@
 ; Edge cases of the runtime's actors and timed FFI (runtime/rt/actor.zyl, runtime/rt/ffitimed.zyl).
 
+(capabilities ffi actor)
+
 (use core/core)
 (use actor/actor)
 

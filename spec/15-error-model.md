@@ -29,6 +29,7 @@ this document's reading of each code's meaning.
 | `E_INVALID_ESCAPE` | Invalid escape sequence in a string literal | §1 |
 | `E_MALFORMED_FORM` | A special form's arguments do not have its required shape | §2 |
 | `E_NESTED_PATTERN` | Nested pattern in a constructor arm | §4.9, §8 |
+| `E_PANIC_UNMARKED` | A standard-library `defn` that calls `panic` directly is not spelled with a trailing `!` | §25 |
 | `E_MATCH_NONEXHAUSTIVE` | Missing match case | §8.3 |
 | `E_MUT_CONFLICT` | Aliasing violation (TMut/TCap) | §10 |
 | `E_TRAIT_NOT_FOUND` | Missing impl for trait bound | §5.4 |
@@ -60,7 +61,7 @@ reported before the compile fails (§4.8).
 | Error Code | Condition | Specification Reference |
 |------------|-----------|----------------------|
 | `E_FFI_TIMEOUT` | FFI call exceeded timeout | §16 |
-| `E_INDEX_OUT_OF_BOUNDS` | Index outside a word array | §13 |
+| `E_INDEX_OUT_OF_BOUNDS` | Index outside a word array, or outside a Vec, slice, string view or SIMD vector through a standard-library `!` function | §13, §25 |
 | `E_CONTRACT_VIOLATION` | Contract condition failed | §23 |
 | `E_OVERFLOW` | Integer overflow | §20.1 |
 | `E_DIVISION_BY_ZERO` | Division by zero (Int) | §20.3 |
@@ -150,6 +151,7 @@ code plus implementation codes such as `E_ARITY_MISMATCH`,
 `E_UNBOUND_VARIABLE`, `E_DUPLICATE_DEFINITION`, `E_MALFORMED_PARAMETER`,
 `E_OUT_OF_MEMORY`, the `E_UNBALANCED_*` balance errors, the byte-buffer
 codes and the Secret codes (`E_CT_VIOLATION`, `E_SECRET_ESCAPE`,
+`E_SECRET_UNANNOTATED`,
 `E_SECRET_DEBUG`, `E_ZEROIZE_MISSING`, `E_FFI_PIN_REQUIRED`), and also
 `W_TYPE_STRICT` and the interpreter's `E_INTERP_TAG`. The catalog is
 exact: `verify/error-codes.sh` fails when a catalogued code is raised
@@ -180,8 +182,11 @@ the byte-primitive shape errors, the `set!`-target `E_MUT_CONFLICT` and
 the literal-match `E_MATCH_NONEXHAUSTIVE`, as well as the backstops in
 `icnf.zyl`. `docs/errors.md` marks which codes are located.
 
-Warnings are `W_UNUSED_PARAMETER`, `W_UNUSED_VARIABLE` and
-`W_SHADOWED_BINDING` (from `unused_check.zyl`; `W_UNUSED_FUNCTION` is
+Warnings are `W_UNUSED_PARAMETER`, `W_UNUSED_VARIABLE`,
+`W_SHADOWED_BINDING` and `W_PANIC_UNMARKED` (a program's `defn` that
+calls `panic` directly without a trailing `!`; the same condition in a
+program-facing standard-library module is the error `E_PANIC_UNMARKED`,
+both from `unused_check.zyl`; `W_UNUSED_FUNCTION` is
 catalogued but not raised), printed to stderr
 with a location in the same form (`warning[CODE]: ...`), plus
 `E_ZEROIZE_MISSING` at severity 2. Names that are `_` or start with `_`
@@ -210,6 +215,8 @@ Catalogued but never raised: `E_OVERFLOW`. `E_DIVISION_BY_ZERO` is
 raised only by the REPL's ICNF interpreter; a compiled program traps
 with SIGFPE.
 
+`E_UNKNOWN_CONSTRUCTOR` (`exhaustiveness_check.zyl`: a capitalized arm
+head that no type declares) is in the catalog and §28.
 `E_NON_EXHAUSTIVE_MATCH` (from `exhaustiveness_check.zyl`) is a second spelling of §28's
 `E_MATCH_NONEXHAUSTIVE`; the two are raised by different passes.
 

@@ -1,0 +1,4 @@
+; expect-error: E_PKG_CAPABILITY_VIOLATION
+; A test body is policed like a defn: file IO inside assert-equal needs (capabilities io).
+(test "t" (assert-equal 1 (begin (file-close (file-open "/tmp/zyl_lone_t.txt" "w")) 1)))
+(run-tests)

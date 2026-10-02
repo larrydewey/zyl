@@ -1,3 +1,5 @@
+(capabilities actor)
+
 (use actor/actor)
 ; Concurrency Regression Tests: spawn, join, atomics across actors
 

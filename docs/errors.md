@@ -2,8 +2,8 @@
 
 Every diagnostic code the self-hosted compiler, the REPL interpreter and the
 runtime know about. The catalog lives in `stdlib/compiler/error_codes.zyl`
-(`error-codes`, one `(EC name phase severity message)` per code: 131
-entries, 130 distinct codes, `E_OUT_OF_MEMORY` appearing twice); spec §28
+(`error-codes`, one `(EC name phase severity message)` per code: 133
+entries, 132 distinct codes, `E_OUT_OF_MEMORY` appearing twice); spec §28
 lists the normative subset. The catalog was originally transcribed from the
 Rust bootstrap's `ZylError` enum (since removed; git history at `b8bc283`) and has
 since gained the self-hosted-only and package-system (§31) codes.
@@ -140,7 +140,7 @@ over bracket type, and its `sb-hint` supplies the `= help:` text.
 | Code | Catalog message | Raised by |
 |------|-----------------|-----------|
 | `E_ARITY_MISMATCH` | type: function arity mismatch for F at S: expected E arguments, found G | `arity_check.zyl` (located; also an `ffi-call` with more than 16 arguments), `icnf.zyl` (also arithmetic with no operand, or one operand other than `(- x)`, `(+ x)`, `(* x)`), `expr_inner.zyl` (special forms), `macro_expand.zyl` (a macro call's argument count, or too few before `&rest`), REPL interpreter |
-| `E_DUPLICATE_DEFINITION` | type: duplicate definition of N at S. previously defined at P | `duplicate_check.zyl` (located at the second definition) |
+| `E_DUPLICATE_DEFINITION` | type: duplicate definition of N at S. previously defined at P | `duplicate_check.zyl` (located at the second definition; when one of the two is a struct's generated accessor `T.f`, at the program's own and naming the `defstruct`) |
 | `E_DUPLICATE_VARIANT` | type: duplicate variant V in deftype at S | `duplicate_check.zyl` (located: a program type declaring a prelude constructor name, `Some`, `None`, `Ok`, `Err`, `Cons` or `Nil`, which the standard library's unqualified uses would resolve to; only the standard library may declare them), `icnf.zyl` (a variant name defined twice in one `deftype`) |
 | `E_TYPE_MISMATCH` | type: type mismatch at S - expected E, found F | `type_annotate.zyl` (located): every unification failure, labelled with a declared parameter or field type where there is one; also a non-literal `file-open` mode, a field a known struct lacks, list-literal elements of different types, a non-Int byte offset, length or stored value, the wrong kind of byte handle (`bytebuf-len` of a slice), and a non-String `file-write` operand |
 | `E_UNBOUND_VARIABLE` | type: unbound variable V at S | `type_annotate.zyl` (located: an identifier or called function defined nowhere), `macro_expand.zyl`, `codegen.zyl` (backstop), REPL interpreter |
@@ -195,7 +195,7 @@ parts with `let` or move the sum into a helper function.
 | Code | Catalog message | Raised by |
 |------|-----------------|-----------|
 | `E_REGION_EXHAUSTED` (§28) | runtime: a with-region region ran out of its fixed size or limit | `runtime/rt/alloc.zyl` (`E_REGION_EXHAUSTED: <kind> region of N bytes is full`; catchable with `try`; deterministic for a given request sequence) |
-| `E_INDEX_OUT_OF_BOUNDS` (§28) | runtime: index outside a word array | `runtime/rt/tables.zyl` (a vector index or pop, a word array or Array index, a full string buffer), `collections/vec.zyl`, `collections/slice.zyl`, `text/view.zyl` (an index or range outside the value) |
+| `E_INDEX_OUT_OF_BOUNDS` (§28) | runtime: index outside a word array | `runtime/rt/tables.zyl` (a vector index or pop, a word array or Array index, a full string buffer), and the standard library's `!` functions in `collections/vec.zyl`, `collections/slice.zyl`, `text/view.zyl`, `simd/simd.zyl` (an index, range or lane outside the value; the message names the index and the bound and points at the `?` sibling) |
 | `E_INTERP_TAG` | runtime: the checking interpreter found an operand of the wrong tag at S (a type-checker bug) | `stdlib/repl/interp.zyl`: under `ZYL_INTERP_CHECK=1`, an operator whose operand tags break its rule, or a condition that is not 0 or 1 |
 | `E_OUT_OF_MEMORY` | runtime: memory budget exhausted - raise or remove it with ZYL_MAX_MEMORY | `runtime/rt/alloc.zyl` (`PANIC: error[E_OUT_OF_MEMORY]: ...`) |
 | `E_CHANNEL_NOT_OWNER` (§28) | runtime: this actor does not own the channel endpoint | `runtime/rt/chan.zyl`: a send or receive on an endpoint another actor owns |
@@ -205,7 +205,8 @@ parts with `let` or move the sum into a helper function.
 | `E_ACTOR_LIMIT` (§28) | runtime: at most 1024 actors per program | `runtime/rt/actor.zyl`: the 1025th spawn |
 
 What a compiled program prints at runtime today: `(panic "boom")` prints
-`PANIC: boom` and exits 1. (`(error "boom")` is the other half: it
+`PANIC: boom`, then one `  in <function>` line per frame, innermost
+first (`docs/runtime-in-zyl-design.md`, "Panic backtrace"), and exits 1. (`(error "boom")` is the other half: it
 returns `(Err "boom")` and prints nothing — see
 `docs/design-rationale.md` D13.); outside a `test`, a failed `assert-true` or
 `assert-equal` prints `PANIC: assert-true failed` or `PANIC: assert-equal
@@ -235,9 +236,10 @@ Neither carries the catalog code. A false `(assert c msg)` panics with
 | `E_MUT_CONFLICT` (§28) | aliasing: mutable reference conflict at S | `mutability_check.zyl` (located: `set!` on a non-`let-mut` binding, or on a `let-mut` captured by a closure), `expr_inner.zyl` (a `set!` target that is not a plain name, such as a field) |
 | `E_CT_VIOLATION` | constant-time: secret-dependent M at S - branches, memory indices and divisions must not depend on a Secret value | `secret_check.zyl` (located) |
 | `E_SECRET_ESCAPE` | secret: Secret value escapes through M at S | `secret_check.zyl` (located) |
+| `E_SECRET_UNANNOTATED` | secret: a Secret argument reaches parameter P of F, which is not marked Secret | `secret_check.zyl` (located at the argument; the fix names the parameter to annotate) |
 | `E_SECRET_DEBUG` | secret: Secret value reaches a debug/print sink at S | `secret_check.zyl` (located; also a `Show` impl whose text is derived from a Secret) |
 | `E_ZEROIZE_MISSING` (severity 2, warning) | secret: function F takes a Secret parameter but never zeroizes it | `secret_check.zyl` |
-| `E_PKG_CAPABILITY_VIOLATION` (§28) | capability: package N uses M without declaring the C capability | `capability_check.zyl` (located), `cli.zyl` |
+| `E_PKG_CAPABILITY_VIOLATION` (§28) | capability: M needs the C capability, and the package, file or session using it declares none | `capability_check.zyl` (located, with the `(capabilities ...)` line to write as the fix), `cli.zyl` |
 | `E_PKG_CAPABILITY_GROWTH` (§28) | capability: capability closure grew under --locked: C | `capability_check.zyl`, `mvs.zyl` |
 
 `E_ZEROIZE_MISSING` fires when a function consumes a `Secret` parameter into
@@ -257,7 +259,7 @@ themselves.
 | `E_FFI_TYPE_NOT_PINNABLE` | ffi: value has type T which is not FFI_Pinnable | `type_annotate.zyl` (located: `ffi-pin` of a function) |
 | `E_FFI_RESTRICTED` (§28) | ffi: raw runtime entry F may only be called by the standard library at S | `arity_check.zyl` (located, `ffi-check-raw`): an `ffi-call` outside the standard library naming an entry in `ffi-raw-p` (`ffi_sigs.zyl`), one that reads raw memory or reinterprets a machine word, or trusts bounds its caller checked (the string-view accessors `zyl_view_byte`, `zyl_view_cmp`, `zyl_view_find`, `zyl_view_copy`); `type_annotate.zyl` (located): an `ffi-call` to a symbol the runtime exports (`zyl_runtime_export_p`) that the program also declares with `extern`, since runtime entries are typed only by `ffi_sigs.zyl` |
 | `E_FFI_TIMEOUT` (§28) | ffi: call exceeded timeout of M ms at S | `runtime/rt/ffitimed.zyl` (`zyl_ffi_timed`), at run time: ``E_FFI_TIMEOUT: ffi call `sym` exceeded its timeout of M ms`` |
-| `E_FFI_TIMEOUT_REQUIRED` (§28) | ffi: ffi-call must end with a positive integer literal timeout in milliseconds at S | `arity_check.zyl` (`ffi-check-call`, located, with a help line) |
+| `E_FFI_TIMEOUT_REQUIRED` (§28) | ffi: ffi-call at S must end with a positive integer literal timeout in milliseconds, or its extern must carry one (:timeout N) | `arity_check.zyl` (`ffi-check-call`, located; the help names the call and the extern as the two places to write it), `expr_inner.zyl` (`extern-timeout-fail`: an extern `:timeout` that is not a positive integer literal) |
 | `E_FFI_SYMBOL_REQUIRED` (§28) | ffi: ffi-call must name its C symbol with a string literal at S | `arity_check.zyl` (`ffi-check-call`, located) |
 | `E_NESTED_PATTERN` (§28) | match: nested pattern in a constructor arm at S | `expr_inner.zyl` (located): a constructor arm whose field position holds anything but a plain name, including a constructor used as a binder, `(Some Nil ...)` or `(Node v Leaf v)` for the program's own `Leaf` (`qualify.zyl` qualifies a capitalized binder that names a known symbol) |
 | `E_MATCH_NONEXHAUSTIVE` (§28) | match: non-exhaustive pattern match at S - missing cases: M | `icnf.zyl` (unknown variant in an arm; residual non-exhaustive match), `expr_inner.zyl` (literal-pattern match without a final `_`), REPL interpreter |
@@ -309,7 +311,10 @@ These are now catalogued too (`error_codes.zyl`), so `zyl explain` knows them.
 |------|----------|-----------|---------|
 | `E_NON_EXHAUSTIVE_MATCH` | error | `exhaustiveness_check.zyl` (located) | a `match` over a `deftype` does not cover some variant and has no `_` arm |
 | `E_UNREACHABLE_MATCH_ARM` | error | `exhaustiveness_check.zyl` (located) | an arm after one that matches every value, or a repeated constructor arm |
+| `E_UNKNOWN_CONSTRUCTOR` (§28) | error | `exhaustiveness_check.zyl` (located at the arm) | an arm head spelled like a constructor (A-Z first) that no type declares; suggests the nearest constructor within edit distance 2 |
 | `E_DUPLICATE_PARAMETER` | error | `unused_check.zyl` | two parameters of one `defn`/`fn`/`lambda` share a name |
+| `E_PANIC_UNMARKED` | error | `unused_check.zyl` (located, at the defn) | a `defn` in a program-facing standard-library module (not `compiler/`, `lsp/`, `repl/`) whose body calls `panic` or `zyl_panic` directly and whose name has no trailing `!`; `main` and the definition of `panic` are exempt; direct calls only (docs/soundness.md L8) |
+| `W_PANIC_UNMARKED` | warning | `unused_check.zyl` (located, at the defn) | the same condition in a program: help `rename it \`name!\` so callers can see it may stop the program, or return an Option` |
 | `E_ASM_UNSUPPORTED` | error | `asm_x86.zyl` | the Zyl assembler met an instruction or operand form it does not encode (a codegen or runtime change emitted one; `ZYL_EXTERNAL_LD=1` links with `cc` instead) |
 | `E_LINK_UNDEFINED`, `E_LINK_UNDEFINED_GOT` | error | `elf_link.zyl` | a strong symbol (or a GOT entry's symbol) is defined neither by the program nor by `rt.zo` |
 | `W_UNUSED_PARAMETER` | warning | `unused_check.zyl` | a parameter is never used (`_` and `_`-prefixed names are exempt) |

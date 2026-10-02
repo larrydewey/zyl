@@ -1,6 +1,8 @@
 ; FFI Advanced Regression Tests — ffi-call, ffi-pin, ffi-unpin, pinning, timeouts.
 ; Spec §20: FFI calls require timeout parameter (last argument).
 
+(capabilities ffi)
+
 (use core/core)
 (use ffi/ffi)
 (use collections/vec)

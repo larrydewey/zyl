@@ -1,4 +1,5 @@
 ; `copy` and `fd` are one resource under two names. Releasing through
+(capabilities io)
 ; `fd` releases `copy` too, so writing through the copy afterwards is a
 ; use-after-release -- tracking only the name the release was called on
 ; would let this through.

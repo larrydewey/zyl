@@ -561,7 +561,8 @@
   (if (str-eq w "defmacro") true
   (if (str-eq w "trait") true
   (if (str-eq w "alias") true
-  false)))))))))
+  (if (str-eq w "capabilities") true
+  false))))))))))
 
 (defn repl-skip-word (text i n)
   (if (>= i n)

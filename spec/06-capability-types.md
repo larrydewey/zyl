@@ -138,11 +138,24 @@ loads, and across functions by a fixpoint. The pass rejects:
 | Secret operand of `/` or `mod` | `E_CT_VIOLATION` |
 | Secret reaching `print` | `E_SECRET_DEBUG` |
 | Secret reaching `spawn`, `send` or `file-write` | `E_SECRET_ESCAPE` |
+| Secret passed to a parameter of a top-level `defn` that is not annotated `Secret` | `E_SECRET_UNANNOTATED` |
 | Secret passed to `ffi-call` without `ffi-pin` | `E_FFI_PIN_REQUIRED` |
 | Secret consumed into a public result with no `zeroize` | `E_ZEROIZE_MISSING` (warning) |
 
 `declassify` in `stdlib/math/secret/secret.zyl` is the one named way out.
-Taint crosses a call only where the callee's parameters are annotated, so
-an unannotated helper launders a secret. Under the package system, calling
+Across a call the check fails closed: a tainted argument to a top-level
+`defn` must meet a parameter annotated `Secret`, else
+`E_SECRET_UNANNOTATED`, so a callee never holds key material it does not
+check. Exempt are the declassifiers (`declassify`, `ct-declassify`,
+`ct-eq-bool`, `ct-eq-words-bool`) and, when the callee is the standard
+library's own, the erasers (`zeroize`, `zeroize-bytes`, `wipe`) and the
+index-guarded memory primitives (`w-get`, `w-set`, `list-nth`, `vec-get`,
+`vec-set`, `str-nth`, `str-char-at`, `alloc-read-int`, `alloc-write-int`),
+whose index argument is checked here instead. Builtin operators,
+intrinsics and constructors propagate taint to their result as before.
+Not covered: a call through a function value or a trait method
+(`Trait.m`), whose callee is not a top-level `defn` at this stage. A
+scalar `(Secret Int)`, `(Secret Float)` or `(Secret Bool)` parameter is
+erased by the frame wipe, so it does not draw `E_ZEROIZE_MISSING`. Under the package system, calling
 into `stdlib/math/secret` needs the `secret` capability (§31.9); writing a
 `Secret` annotation does not. See `docs/math-crypto.md`.

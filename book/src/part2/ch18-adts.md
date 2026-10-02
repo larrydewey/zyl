@@ -117,11 +117,11 @@ Both arm shapes mean the same thing: `(Some x body)` and
   within an arm.
 - **Match as expression.** All arms produce the value of the `match`.
   Arms are tried in source order (§12.3).
-- **Catch-all arms.** `_` is the catch-all. The compiler treats *any*
-  identifier that is not a known constructor as a catch-all, and such an
-  arm binds nothing. A misspelled constructor in the last arm is
-  therefore a silent catch-all. A misspelled one earlier is caught,
-  because a catch-all followed by more arms is `E_UNREACHABLE_MATCH_ARM`.
+- **Catch-all arms.** `_` is the catch-all. A lowercase identifier that
+  is not a known constructor is a catch-all too. A capitalized arm head
+  that no type declares is `E_UNKNOWN_CONSTRUCTOR`, with the nearest
+  declared constructor within edit distance 2 suggested, so a misspelled
+  constructor cannot become a silent catch-all.
 
 ```lisp
 (defn to-result (opt)
@@ -239,6 +239,7 @@ For constructor matches, `exhaustiveness_check.zyl` enforces:
 |-----------|------|
 | a variant of the scrutinee's type has no arm, and there is no catch-all | `E_NON_EXHAUSTIVE_MATCH` |
 | a catch-all arm is followed by more arms, or an arm repeats a constructor | `E_UNREACHABLE_MATCH_ARM` |
+| a capitalized arm head names no declared constructor | `E_UNKNOWN_CONSTRUCTOR` |
 
 ```
 error[E_NON_EXHAUSTIVE_MATCH]: match over `Color` does not cover variant `Blue`

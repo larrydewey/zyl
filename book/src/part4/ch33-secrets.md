@@ -279,10 +279,13 @@ refactors later.
 
 Worth knowing before you rely on it:
 
-- **Annotations stop at `math/secret/secret`.** Taint crosses a call
-  boundary only where the callee's own parameters are annotated, so the
-  AEAD, KDF, signature and bignum entry points are not yet under the
-  checker. Annotating them is the next step.
+- **Taint fails closed across a call.** A secret passed to a function
+  whose parameter is not annotated `Secret` is `E_SECRET_UNANNOTATED`:
+  annotate the parameter, `(x Secret)`, or `declassify` the value. The
+  AEAD, KDF and signature entry points take plain `Words`, so nothing
+  seeds taint there yet; inside bignum, the `ct-mask` masks are
+  annotated. A call through a function value or a trait method is not
+  checked across.
 - **Heap erasure is manual**: frames are wiped, heap blocks need
   `zeroize` or `wipe`.
 - **A `let-mut` that is ever `set!` to a secret is secret for its whole

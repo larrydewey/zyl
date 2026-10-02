@@ -105,7 +105,7 @@ checkout's standard library, not an installed one.
 | packages-fail | `tests/packages-fail/*/app/main.zyl` | 9 |
 | packages-build | `tests/packages-build/*/app` via `zyl build` | 1 |
 | compile-fail | `tests/compile-fail/*.zyl` | 138 |
-| scripts | `tests/scripts/*.sh` | 17 |
+| scripts | `tests/scripts/*.sh` | 18 |
 | LSP protocol | `tests/lsp/lsp_protocol_test.py` | 1 |
 | **total** | | **377** |
 

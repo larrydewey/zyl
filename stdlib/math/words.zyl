@@ -10,9 +10,9 @@
 ;     update at all.
 ;   - `Vec` (collections/vec) is indexable, but its
 ;     length lives in the returned Vec STRUCT, not in the storage, so
-;     `vec-set` must be threaded through every call site; ignoring its
-;     result leaves `vec-len` stale and makes `vec-get` return -1 for
-;     the slots just written. A 64-round loop of `(vec-set v i x)`
+;     `vec-set!` must be threaded through every call site; ignoring its
+;     result leaves `vec-len` stale and makes `vec-get!` return -1 for
+;     the slots just written. A 64-round loop of `(vec-set! v i x)`
 ;     inside a `begin` therefore silently reads back nothing.
 ;
 ; A word array is a `Words` handle: its length and its storage, allocated

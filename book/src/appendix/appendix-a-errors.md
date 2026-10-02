@@ -143,6 +143,7 @@ Macro expansion also reports `E_ARITY_MISMATCH` (wrong argument count, or too fe
 | `E_DUPLICATE_DEFINITION` | A name defined more than once at top level |
 | `E_DUPLICATE_VARIANT` | A variant name repeated within one `deftype`, or a program type that reuses a prelude constructor name (`Some`, `None`, `Ok`, `Err`, `Cons`, `Nil`) — the standard library's unqualified uses of those names would otherwise resolve to it |
 | `E_DUPLICATE_PARAMETER` | A parameter name repeated in one signature (`_` and `_`-prefixed names may repeat). *Raised by `unused_check.zyl`; not in the catalog.* |
+| `E_PANIC_UNMARKED` | A standard-library `defn` (outside the compiler's own modules) that calls `panic` or `zyl_panic` directly without a trailing `!` in its name. The same condition in a program is the warning `W_PANIC_UNMARKED` (§A.16); `main`, the definition of `panic` and test bodies are exempt. Direct calls only |
 | `E_TYPE_MISMATCH` | Two types that must be equal are not: an `Int` condition where `Bool` is required, `Int` and `Float` mixed in arithmetic, a `String` passed where a field or parameter wants an `Int`, an `Int` given to `actor-wait` where an `Actor` is required, a value received from a channel used at a different type than was sent, a `Float` in an `extern` signature, a `file-open` mode that is not a literal, a list literal with elements of two types, a non-`Int` byte offset, a slice where a `ByteBuf` is required, an `Int` given to `file-write` as its data. Raised by `type_annotate.zyl` for every unification failure, with both types in the message |
 | `E_INFINITE_TYPE` | A type that would have to contain itself, found by the occurs check, such as a function applied to itself, `(x x)` |
 | `E_UNKNOWN_TYPE` | A lowercase name as a field type in `deftype`: it is neither a type nor a type parameter (those are uppercase) |
@@ -191,7 +192,7 @@ an inferred placement is always one the value cannot escape (Chapter
 |---|---|
 | `E_OUT_OF_MEMORY` | The memory budget is exhausted. Raise or remove it with `ZYL_MAX_MEMORY` (a byte count; `0` disables it). *Listed twice in the catalog, with two messages.* |
 | `E_REGION_EXHAUSTED` | A `with-region` scope ran out: a `fixed` region's `:size` or an `arena`'s `:limit` was exceeded. Catchable with `try`, and deterministic: it depends only on the sequence of allocation requests. Enforced in compiled code only; the REPL interpreter ignores region limits. |
-| `E_INDEX_OUT_OF_BOUNDS` | An index outside a vector or word array |
+| `E_INDEX_OUT_OF_BOUNDS` | An index or range outside a Vec, slice, string view, SIMD vector or word array. From a standard-library `!` function (`vec-get!`, `slice-sub!`, `view-slice!`, `u8x16-get!`, ...) the message names the index and the bound and points at the `?` sibling that returns `None` instead |
 | `E_CHANNEL_NOT_OWNER` | `chan-send` or `chan-recv` on an endpoint the running actor does not own (Chapter 9, §9.4) |
 | `E_CHANNEL_CLOSED` | `chan-recv` on a channel whose sender has finished and whose buffer is empty. Catchable with `try` |
 | `E_CHANNEL_CAPACITY` | `(chan n)` with `n` outside 1..16777216 |
@@ -223,9 +224,10 @@ an inferred placement is always one the value cannot escape (Chapter
 | `E_INVALID_CAPABILITY` | A closure written inline as an `ffi-call` argument |
 | `E_CT_VIOLATION` | A `Secret` steered a branch, indexed memory, or went through a divider |
 | `E_SECRET_ESCAPE` | A `Secret` reached `spawn`, `chan-send` or `file-write` |
+| `E_SECRET_UNANNOTATED` | A `Secret` was passed to a function parameter not annotated `Secret` |
 | `E_SECRET_DEBUG` | A `Secret` reached `print` |
 | `E_ZEROIZE_MISSING` | *(warning, severity 2)* A function takes a `Secret` parameter and never zeroizes it |
-| `E_PKG_CAPABILITY_VIOLATION` | A package uses a construct, or a stdlib module, without declaring the capability it needs (§31.9) |
+| `E_PKG_CAPABILITY_VIOLATION` | A package, lone file or REPL session uses a construct, or a stdlib module, without declaring the capability it needs (§31.9) |
 | `E_PKG_CAPABILITY_GROWTH` | The capability closure grew under `--locked` |
 
 Chapter 17 covers the aliasing rules, Chapter 33 the `Secret` checks and
@@ -238,6 +240,7 @@ Chapter 25 package capabilities.
 | `E_MATCH_NONEXHAUSTIVE` | A `match` missing a variant, an unknown variant in an arm, or a literal-pattern match with no trailing `_` arm. Raised during parsing and lowering. |
 | `E_NON_EXHAUSTIVE_MATCH` | A `match` that does not cover every variant of its ADT. *Raised by `exhaustiveness_check.zyl`; not in the catalog.* |
 | `E_UNREACHABLE_MATCH_ARM` | An arm that no value can reach: a catch-all that is not last, or a repeated constructor. *Not in the catalog.* |
+| `E_UNKNOWN_CONSTRUCTOR` | A capitalized `match` arm head that no type declares; the message suggests the nearest constructor. A binder is lowercase. |
 | `E_NESTED_PATTERN` | A constructor arm whose field is itself a pattern, such as `(Some (Pair a b) ...)`. Bind the field to a name and match it inside the arm body. |
 | `E_DIVISION_BY_ZERO` | Integer division or remainder by zero. *Raised only by the REPL's ICNF interpreter. Compiled code does not check: the process dies with SIGFPE (exit status 136), which `try` cannot catch.* |
 | `E_OVERFLOW` | Checked integer overflow. *Catalogued only.* |
@@ -309,15 +312,16 @@ Warnings are written to stderr and never stop a build:
 | `W_UNUSED_PARAMETER` | A parameter never read |
 | `W_UNUSED_VARIABLE` | A binding never read |
 | `W_SHADOWED_BINDING` | A binding that hides an outer one of the same name |
+| `W_PANIC_UNMARKED` | A `defn` whose body calls `panic` directly and whose name has no trailing `!` (§6.9). Help: rename it `name!`, or return an `Option` |
 | `E_ZEROIZE_MISSING` | See §A.12 — a warning despite the `E_` prefix |
 | `W_TYPE_STRICT` | A type error reported as a warning because `ZYL_STRICT_TYPES=report` is set (§A.1) |
 
 Name a binding `_`, or give it a `_` prefix (`_count`), to exempt it
 from the unused, shadowing and duplicate-parameter checks. The three
-unused and shadowing codes come from `unused_check.zyl`, and
-`W_TYPE_STRICT` from `type_annotate.zyl`. A warning about a standard
-library file is not shown while you compile a program;
-`ZYL_WARN_ALL=1` shows it. The
+unused and shadowing codes come from `unused_check.zyl`, as does
+`W_PANIC_UNMARKED`, and `W_TYPE_STRICT` from `type_annotate.zyl`. A
+warning about a standard library file is not shown while you compile a
+program; `ZYL_WARN_ALL=1` shows it. The
 language server publishes them as Warning diagnostics (Chapter 35).
 
 ## A.17 Catalog Versus Implementation

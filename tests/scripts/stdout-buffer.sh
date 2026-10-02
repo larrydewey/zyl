@@ -47,6 +47,7 @@ out=$("$SCRATCH/panic" 2>/dev/null | cat || true)
 
 # Actors print whole lines: every line intact, none lost, 8 x 2000 in all.
 cat > "$SCRATCH/actors.zyl" <<'EOF'
+(capabilities actor)
 (use actor/actor)
 (defn say (k i) (if (= i 2000) 0 (let _ (print (str-concat "actor-line-" (str-concat (ffi-call "zyl_int_text" k 1000) "-0123456789abcdefghijklmnopqrstuvwxyz"))) (say k (+ i 1)))))
 (defn go (k) (if (= k 8) 0 (let _ (spawn (fn () (say k 0))) (go (+ k 1)))))

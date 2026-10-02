@@ -29,12 +29,23 @@
 (use lsp/builtins)
 
 (defn completion-items-at (text tbl line col)
-  (match (si-call-context text line col)
-    (Some ctx
-      (if (str-eq (CallCtx.head ctx) "use")
-        (completion-modules)
-        (completion-general tbl)))
-    (None (completion-general tbl))))
+  (let before (si-word-before text line col)
+    (if (cmp-struct-dot-p tbl before)
+      (cmp-accessor-items (st-accessors-of tbl (cmp-before-dot before)))
+      (match (si-call-context text line col)
+        (Some ctx
+          (if (str-eq (CallCtx.head ctx) "use")
+            (completion-modules)
+            (completion-general tbl)))
+        (None (completion-general tbl))))))
+
+; `Point.` or `Point.x` typed so far, Point a struct of the document:
+; the candidates are its accessors and nothing else.
+(defn cmp-struct-dot-p (tbl before)
+  (let i (bridge-dot-at before 0)
+    (if (< i 1) false (st-is-known-struct tbl (str-substring before 0 i)))))
+
+(defn cmp-before-dot (before) (str-substring before 0 (bridge-dot-at before 0)))
 
 ; Kept for callers with no position to work from (and for tests): the
 ; full candidate set, no context filtering.
@@ -46,7 +57,8 @@
     (list-append (completion-fns tbl)
       (list-append (completion-adts tbl)
         (list-append (completion-variants tbl)
-          (list-append (completion-structs tbl) (completion-fields tbl)))))))
+          (list-append (completion-structs tbl)
+            (list-append (completion-accessors tbl) (completion-fields tbl))))))))
 
 ; ===========================================================================
 ; BUILT-INS
@@ -88,7 +100,7 @@
 ; ===========================================================================
 
 (defn completion-fns (tbl)
-  (cmp-fn-items (map-entries (st-fns tbl))))
+  (cmp-fn-items (cmp-not-accessors tbl (map-entries (st-fns tbl)))))
 
 (defn cmp-fn-items (entries)
   (match entries
@@ -139,6 +151,32 @@
     (Nil Nil)
     (Cons e rest
       (Cons (cmp-item (ME.key e) (Some CIKStruct) (Some "struct") None) (cmp-struct-items rest)))))
+
+; A struct's accessors are offered as its fields' readers, once each,
+; so they are left out of the plain function list.
+(defn cmp-not-accessors (tbl entries)
+  (match entries
+    (Nil Nil)
+    (Cons e rest
+      (match (st-accessor-of tbl (ME.key e))
+        (Some _ (cmp-not-accessors tbl rest))
+        (None (Cons e (cmp-not-accessors tbl rest)))))))
+
+(defn completion-accessors (tbl)
+  (cmp-struct-accessors tbl (map-entries (st-structs tbl))))
+
+(defn cmp-struct-accessors (tbl entries)
+  (match entries
+    (Nil Nil)
+    (Cons e rest (list-append (cmp-accessor-items (st-accessors-of tbl (ME.key e))) (cmp-struct-accessors tbl rest)))))
+
+(defn cmp-accessor-items (accs)
+  (match accs
+    (Nil Nil)
+    (Cons a rest
+      (Cons (cmp-item (str-concat (Acc.struct a) (str-concat "." (Acc.field a))) (Some CIKField)
+                      (Some (str-concat "reads field " (str-concat (Acc.field a) (str-concat " of struct " (Acc.struct a))))) None)
+            (cmp-accessor-items rest)))))
 
 (defn completion-fields (tbl)
   (cmp-field-items (map-entries (st-field-owners tbl))))

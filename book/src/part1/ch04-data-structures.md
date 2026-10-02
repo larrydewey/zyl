@@ -68,6 +68,36 @@ parameter or a `def`). After any expression, `.field` reads a field of
 its value: `(make-Point 3 4).x`, `(segment-of line).end.y`. Reading a field a known struct does not have is
 an error, `E_TYPE_MISMATCH: no field `z` on struct `Point``.
 
+**Accessors.** Every `defstruct` (and `defstruct+`) also defines one
+function per field, named after the struct and the field:
+
+```lisp
+(use collections/collections)
+
+(defstruct Point (x Int) (y Int))
+
+(defn main ()
+  (let p (make-Point 3 4)
+    (begin
+      (print (Point.x p))                                    ; 3
+      (print (list-map Point.y (list p (make-Point 0 9))))   ; [4, 9]
+      0)))
+```
+
+`Point.x` is generated as `(defn Point.x ((p Point)) (struct-get p "x"))`,
+so it is typed like any function: its argument must be a `Point` and its
+result has the field's type. Because it is a function, it can be passed
+where one is expected, as `list-map` takes it above, which `struct-get` and dot
+syntax cannot. A struct exported with `pub` exports its accessors too.
+
+The names belong to the struct: writing your own `(defn Point.x ...)` is a
+second definition, and the compiler says so:
+
+```
+error[E_DUPLICATE_DEFINITION]: function `Point.x` is already defined by `(defstruct Point ...)`, which defines an accessor for every field
+   = help: delete this definition and call the generated `(Point.x p)`, or rename it: `(defn get-x ...)`
+```
+
 ### Immutability by Default (Critical!)
 
 ```lisp
@@ -305,7 +335,7 @@ and you keep using the value it returns.
 ### Vectors (`Vec`) — `collections/vec.zyl`
 
 Growable arrays with O(1) indexing, generic in their element type:
-`(vec-get v i)` on a `(Vec String)` is a String.
+`(vec-get! v i)` on a `(Vec String)` is a String.
 
 | Function | Result |
 |----------|--------|
@@ -313,11 +343,24 @@ Growable arrays with O(1) indexing, generic in their element type:
 | `(vec-create-default cap)` | The same, in a new private arena |
 | `(vec-push v x)` | The Vec with `x` appended (grows as needed) |
 | `(vec-pop v)` | The Vec without its last element (an empty Vec is returned unchanged) |
-| `(vec-get v i)` | Element `i`; an `i` outside the Vec panics with `E_INDEX_OUT_OF_BOUNDS` |
+| `(vec-get! v i)` | Element `i`; an `i` outside the Vec stops the program with `E_INDEX_OUT_OF_BOUNDS` |
+| `(vec-get? v i)` | `(Some element)`, or `None` if `i` is outside the Vec |
 | `(vec-get-or v i default)` | Element `i`, or `default` (of the element type) if `i` is outside the Vec |
-| `(vec-set v i x)` | The Vec with element `i` replaced (`i` equal to the length, within capacity, appends; any other `i` outside the Vec leaves it unchanged) |
-| `(vec-last v)` | The last element; an empty Vec panics with `E_INDEX_OUT_OF_BOUNDS` |
+| `(vec-set! v i x)` | The Vec with element `i` replaced; `i` equal to the length appends, like `vec-push`; any other `i` outside the Vec stops the program with `E_INDEX_OUT_OF_BOUNDS` |
+| `(vec-set? v i x)` | `(Some vec)` with the element set or appended, or `None` if `i` is outside the Vec |
+| `(vec-last! v)` / `(vec-last? v)` | The last element; of an empty Vec, `E_INDEX_OUT_OF_BOUNDS` / `None` |
 | `(vec-len v)` / `(vec-cap v)` | Length / capacity |
+
+**Partial operations are spelled.** A standard-library function that can
+stop the program ends in `!`; its total sibling ends in `?` and returns an
+`Option`; there is no plain name. So `(vec-get! v i)` says, at the call
+site, that `i` had better be in range, and `(vec-get? v i)` says the
+caller will handle its absence. The same spelling covers slices, string
+views and SIMD lanes below, and `option-expect!`/`result-expect!` in
+Chapter 6; `grep` for `!`, `unwrap`, `panic` and `assert` finds every
+line of a program that can stop at run time. The compiler enforces the
+spelling on its own library (`E_PANIC_UNMARKED`) and warns about a plain
+name in your program (`W_PANIC_UNMARKED`, §6.9).
 
 Use `let-mut` to track the current version:
 
@@ -330,8 +373,9 @@ Use `let-mut` to track the current version:
       (set! v (vec-push v 42))
       (set! v (vec-push v 99))
       (print (vec-len v))           ; 2
-      (print (vec-get v 0))         ; 42
+      (print (vec-get! v 0))        ; 42
       (print (vec-get-or v 5 -1))   ; -1 (out of bounds)
+      (print (match (vec-get? v 5) (Some x x) (None -1)))   ; -1
       (set! v (vec-pop v))
       (print (vec-len v))))         ; 1
   0)
@@ -477,16 +521,16 @@ hold any value type.
 A `Slice` is a window on a Vec's storage: the storage, an offset and a
 length. Making a slice or a sub-slice copies nothing, and every read is
 checked against the slice's own bounds, so an index past the slice
-panics with `E_INDEX_OUT_OF_BOUNDS` even when the Vec has more
-elements.
+stops the program with `E_INDEX_OUT_OF_BOUNDS` even when the Vec has
+more elements; the `?` spelling of each returns `None` instead.
 
 | Function | Result |
 |----------|--------|
 | `(slice-of-vec v)` | All of `v` |
-| `(slice-vec v off len)` | The `len` elements of `v` from `off`; a range outside the Vec is `E_INDEX_OUT_OF_BOUNDS` |
-| `(slice-sub s off len)` | The same, within a slice |
+| `(slice-vec! v off len)` / `(slice-vec? v off len)` | The `len` elements of `v` from `off`; a range outside the Vec is `E_INDEX_OUT_OF_BOUNDS` / `None` |
+| `(slice-sub! s off len)` / `(slice-sub? s off len)` | The same, within a slice |
 | `(slice-take s n)` / `(slice-drop s n)` | The first `n` elements / all but the first `n` (clamped to the slice) |
-| `(slice-get s i)` / `(slice-get-or s i default)` | Element `i`; outside the slice, a panic / `default` |
+| `(slice-get! s i)` / `(slice-get? s i)` / `(slice-get-or s i default)` | Element `i`; outside the slice, `E_INDEX_OUT_OF_BOUNDS` / `None` / `default` |
 | `(slice-len s)` | The number of elements |
 | `(slice-fold s f init)` | `f` applied to an accumulator and each element in order |
 | `(slice-to-vec s arena)` | A new Vec in `arena` holding the elements (a copy) |
@@ -497,10 +541,10 @@ elements.
 
 (defn main ()
   (let v (vec-push (vec-push (vec-push (vec-create-default 4) 10) 20) 30)
-    (let s (slice-vec v 1 2)                        ; elements 1 and 2, no copy
+    (let s (slice-vec! v 1 2)                        ; elements 1 and 2, no copy
       (begin
         (print (slice-len s))                       ; 2
-        (print (slice-get s 0))                     ; 20
+        (print (slice-get! s 0))                     ; 20
         (print (slice-fold s (fn (a x) (+ a x)) 0)) ; 50
         (print (Show.show (slice-take s 1)))        ; [20]
         (print (vec-len (slice-to-vec s (arena-create 0))))  ; 2 (a copy)
@@ -517,15 +561,16 @@ still frees it (see *Arenas* below). `Show` is implemented for `Slice`.
 
 A `StrView` is a string, an offset and a length. Taking a view, a
 sub-view, splitting or trimming copies no bytes. The bounds are checked
-once, when a view is made from a `String` (`view-of`, `view-slice`;
-a range outside the string is `E_INDEX_OUT_OF_BOUNDS`), and every
+once, when a view is made from a `String` (`view-of`, `view-slice!`;
+a range outside the string is `E_INDEX_OUT_OF_BOUNDS`, and
+`view-slice?` returns `None` there instead), and every
 other operation stays inside them. `view-to-string` is the one
 operation that copies.
 
 | Function | Result |
 |----------|--------|
-| `(view-of s)` / `(view-slice s off len)` | All of `s` / `len` bytes of `s` from `off` |
-| `(view-sub v off len)`, `(view-take v n)`, `(view-drop v n)` | Narrower views (`view-sub` checks its range; take and drop clamp) |
+| `(view-of s)` / `(view-slice! s off len)` | All of `s` / `len` bytes of `s` from `off` |
+| `(view-sub! v off len)` / `(view-sub? v off len)`, `(view-take v n)`, `(view-drop v n)` | Narrower views (`view-sub!` stops on a range outside the view, `view-sub?` returns `None`; take and drop clamp) |
 | `(view-len v)`, `(view-is-empty v)` | Length in bytes; whether it is 0 |
 | `(view-byte-at v i)` | Byte `i` (0..255), or -1 outside the view |
 | `(view-find v byte from)` | Index of the first `byte` at or after `from`, or -1 |
@@ -647,7 +692,7 @@ allocated until the arena is reset.
     (let-mut v (vec-create a n)          ; room for n elements up front
       (begin
         (for (i 0) (< i n) (begin (set! v (vec-push v (* i i))) (set! i (+ i 1))))
-        (let last (vec-get v (- n 1))    ; read what we need first
+        (let last (vec-get! v (- n 1))    ; read what we need first
           (begin
             (arena-destroy a)            ; frees v's storage; v must not be used after this
             last))))))
@@ -658,7 +703,7 @@ Rules that follow from this design:
 - **A collection is only valid while its arena lives.** After
   `arena-reset` or `arena-destroy`, every collection built in that arena
   dangles. Return or keep a collection only if its arena outlives the use.
-- **An update may share storage with the old value.** `vec-set` and a
+- **An update may share storage with the old value.** `vec-set!` and a
   `vec-push` with spare capacity write into the same storage, so the
   previous value sees the change. Rebind to the result (`let-mut` +
   `set!`) and treat the old value as used up.
@@ -888,11 +933,11 @@ values field by field, by content, with or without a derived `Eq`
 ## 4.10 Module Imports for Stdlib Types
 
 ```lisp
-(use collections/vec)           ; vec-create vec-push vec-get ...
+(use collections/vec)           ; vec-create vec-push vec-get! ...
 (use collections/intmap)           ; intmap-new-with intmap-put intmap-get ...
 (use collections/set)           ; set-create set-add set-contains ...
 (use collections/collections)   ; list-map list-filter assoc-put ...
-(use collections/slice)         ; slice-vec slice-get slice-fold ...
+(use collections/slice)         ; slice-vec! slice-get! slice-fold ...
 (use text/view)                 ; view-of view-split cursor-of ...
 ```
 

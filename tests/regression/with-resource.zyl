@@ -2,6 +2,8 @@
 ; (Drop.drop r) runs on the way out, normally or by an error, before the
 ; error propagates. An Int resource is a file descriptor (file-close).
 
+(capabilities io)
+
 (use core/core)
 
 (deftype Res (Res String))

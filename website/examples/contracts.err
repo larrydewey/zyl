@@ -1,1 +1,3 @@
 PANIC: E_CONTRACT_VIOLATION: precondition of withdraw failed: (<= amount balance)
+  in withdraw
+  in main

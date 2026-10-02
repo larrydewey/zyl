@@ -13,6 +13,7 @@ ln -s "$BOOT/stdlib" "$H/stdlib"
 cp "$BOOT/rt.s" "$BOOT/start.s" "$BOOT/rt.o" "$BOOT/start.o" "$H/"
 export ZYL_HOME="$H"
 cat > "$SCRATCH/p.zyl" <<'ZEOF'
+(capabilities actor)
 (use actor/actor)
 (defn sum (rx n acc) (if (= n 0) acc (sum rx (- n 1) (+ acc (chan-recv rx)))))
 (defn feed (tx i) (if (= i 100) 0 (let _ (chan-send tx i) (feed tx (+ i 1)))))
