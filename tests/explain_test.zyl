@@ -38,10 +38,10 @@
 
 (test "phases-have-readable-names"
   (begin
-    (assert-equal (phase-name 4) "type")
-    (assert-equal (phase-name 6) "region")
-    (assert-equal (phase-name 16) "ffi")
-    (assert-equal (phase-name 999) "compile")))
+    (assert-equal (phase-name 4) "types")
+    (assert-equal (phase-name 6) "memory regions")
+    (assert-equal (phase-name 16) "foreign calls")
+    (assert-equal (phase-name 999) "other")))
 
 ; The site scan had four separate bugs that all looked like a working search:
 ; a needle compared against the rest of the file, a length that started at
