@@ -1,0 +1,23 @@
+; A struct's generated accessors are definitions of the struct's module,
+; visible as the struct is: `(pub defstruct Point ...)` in acme/geo
+; exports `Point.x` and `Point.y` along with `Point`, and `(use acme/geo)`
+; brings them in like any other `pub defn`.
+
+(use acme/geo)
+(use testing/testing)
+
+(defstruct Local (n Int))
+
+(test "accessor from a used package"
+  (assert-equal (Point.x (make-Point 3 4)) 3))
+
+(test "accessor of the second field"
+  (assert-equal (Point.y (make-Point 3 4)) 4))
+
+(test "the package's own helper agrees"
+  (assert-equal (point-sum (make-Point 3 4)) 7))
+
+(test "accessor of a struct of this module"
+  (assert-equal (Local.n (make-Local 5)) 5))
+
+(run-tests)

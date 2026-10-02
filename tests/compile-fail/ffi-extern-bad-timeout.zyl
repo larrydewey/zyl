@@ -1,0 +1,7 @@
+; Compile-fail: an extern's `:timeout` is a positive integer literal in
+; milliseconds, like the one at a call site; 0 is no timeout at all.
+; expect-error: E_FFI_TIMEOUT_REQUIRED
+
+(extern "abs" (Int) Int :timeout 0)
+
+(defn main () (begin (print (ffi-call "abs" -9)) 0))

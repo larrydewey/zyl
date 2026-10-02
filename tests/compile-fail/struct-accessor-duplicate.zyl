@@ -1,0 +1,10 @@
+; Compile-fail: `(defstruct Point ...)` defines the accessor `Point.x`
+; itself, so a function of that name is a second definition. The report
+; lands on the program's own defn and says where the name comes from.
+; expect-error: E_DUPLICATE_DEFINITION
+
+(defstruct Point (x Int) (y Int))
+
+(defn Point.x (p) 7)
+
+(defn main () (begin (print (Point.x (make-Point 1 2))) 0))

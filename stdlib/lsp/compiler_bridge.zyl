@@ -394,6 +394,44 @@
 (defn st-is-known-struct (t name) (map-has (st-structs t) name))
 (defn st-field-owner (t name) (map-get (st-field-owners t) name))
 
+; `T.f`, the accessor `(defstruct T ... (f ...))` generates (spec §2):
+; the struct and the field it reads, when `name` is one.
+(deftype Accessor (Acc String String))
+
+(defn Acc.struct (a) (match a (Acc s _ s)))
+(defn Acc.field (a) (match a (Acc _ f f)))
+
+(defn st-accessor-of (t name)
+  (let i (bridge-dot-at name 0)
+    (if (< i 1)
+      None
+      (let sname (str-substring name 0 i)
+        (let fname (str-substring name (+ i 1) (- (str-length name) (+ i 1)))
+          (match (st-lookup-struct t sname)
+            (Some info
+              (match info
+                (SI2 _ fields (if (bridge-has-name fname fields) (Some (Acc sname fname)) None))))
+            (None None)))))))
+
+(defn bridge-dot-at (s i)
+  (if (>= i (str-length s)) -1 (if (= (sb-str-code (str-substring s i 1)) 46) i (bridge-dot-at s (+ i 1)))))
+
+(defn bridge-has-name (x xs)
+  (match xs
+    (Nil false)
+    (Cons h t (if (str-eq h x) true (bridge-has-name x t)))))
+
+; Every accessor of struct `sname`, in field order.
+(defn st-accessors-of (t sname)
+  (match (st-lookup-struct t sname)
+    (Some info (match info (SI2 _ fields (bridge-accessor-names sname fields))))
+    (None Nil)))
+
+(defn bridge-accessor-names (sname fields)
+  (match fields
+    (Nil Nil)
+    (Cons f rest (Cons (Acc sname f) (bridge-accessor-names sname rest)))))
+
 ; ===========================================================================
 ; HOVER TEXT
 ; ===========================================================================
@@ -508,6 +546,9 @@
 ; language's built-ins. A user function named `min` should hover as
 ; that function, not as the table entry it happens to share a name with.
 (defn bridge-hover-for-name (t name)
+  (match (bridge-accessor-hover t name)
+    (Some h (Some h))
+    (None
   (match (bridge-fn-hover t name)
     (Some h (Some h))
     (None
@@ -522,7 +563,16 @@
                 (None
                   (match (bridge-field-hover t name)
                     (Some h (Some h))
-                    (None (bridge-builtin-hover name))))))))))))
+                    (None (bridge-builtin-hover name))))))))))))))
+
+; An accessor hovers as the field it reads, with its call shape.
+(defn bridge-accessor-hover (t name)
+  (match (st-accessor-of t name)
+    (Some a
+      (Some (str-concat "```zyl\n(" (str-concat name (str-concat " p)\n```\n\nField `" (str-concat (Acc.field a)
+              (str-concat "` of struct `" (str-concat (Acc.struct a)
+                (str-concat "`: the accessor `(defstruct " (str-concat (Acc.struct a) " ...)` defines for it."))))))))))
+    (None None)))
 
 (defn bridge-builtin-hover (name)
   (match (builtin-lookup name)
