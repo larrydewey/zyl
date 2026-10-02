@@ -238,6 +238,27 @@
         (let _ (rt-st8 (+ d (* ob 2)) 0)
           (let _ (zyl_rt_free h) (ffi-call "%str" d 1)))))))
 
+; BLAKE3 over a ByteBuf's first `len` bytes, as lowercase hex. len < 0 means
+; the whole buffer.
+;
+; This exists because the provenance trailer hashes a PREFIX of the image --
+; everything before the trailer's own magic -- and a program's only handle on
+; an ELF's bytes is a ByteBuf. zyl_blake3_hex takes a pointer and length, and a
+; program has no business forming a pointer; the bytebuf family already owns
+; this shape of access (zyl_bytebuf_read_file, zyl_bytebuf_write_exec), so this
+; is the same operation on the same handle rather than a new way to reach
+; memory. The prefix is the point: hashing the whole buffer would be a hash of
+; the record as well as of what the record describes.
+(defn zyl_bytebuf_blake3_hex (arena buf len outbytes)
+  (let h (bb-buf buf)
+    (if (= h 0) (ffi-call "%str" 0 1)
+      (let cap (bb-cap h)
+        (let n (if (< len 0) (bb-len h) len)
+          (if (or (< n 0) (> n cap)) (ffi-call "%str" 0 1)
+            (let b (b3-new)
+              (if (= b 0) (ffi-call "%str" 0 1)
+                (let _ (b3-update b (bb-data h) n) (b3-hex-out arena b (b3-clamp outbytes)))))))))))
+
 ; BLAKE3 over src[0..len) as outbytes bytes of lowercase hex; len < 0 means strlen.
 (defn zyl_blake3_hex (arena src len outbytes)
   (let s (rt-w src)
