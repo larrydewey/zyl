@@ -17,7 +17,7 @@
 ; (error msg) returns (Err msg) and does not raise (spec 21.8): the
 ; error-as-value half, and the one a caller handles by matching. To
 ; unwind to the nearest try/catch instead -- which is what `panic` in
-; allocator does, and what result-expect below wants -- say `panic`.
+; allocator does, and what result-expect! below wants -- say `panic`.
 ; The two live apart on purpose: this one has to name Err, and Err is
 ; declared here, in a module that depends on allocator, so allocator
 ; cannot define this without a dependency cycle.
@@ -58,7 +58,7 @@
     (Ok _ res)
     (Err _ other)))
 
-(defn result-expect (res msg)
+(defn result-expect! (res msg)
   (match res
     (Ok v v)
     (Err _ (panic msg))))

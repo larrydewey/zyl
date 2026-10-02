@@ -15,7 +15,7 @@ out="$(printf '%s\n' \
   '(defn g (t) (match t (RsA s s) (RsB _ "b")))' \
   '(g (RsA "x"))' \
   '(use collections/vec)' \
-  '(vec-get (vec-push (vec-new-cap 2) "v") 0)' \
+  '(vec-get! (vec-push (vec-new-cap 2) "v") 0)' \
   '(derive RsT Show)' \
   '(print (RsA "shown"))' \
   | timeout 60 "$ZYL" repl 2>&1)" || fail "repl exited non-zero: $out"
@@ -42,6 +42,7 @@ done
 out3="$(printf '%s\n' \
   '(def n 3)' \
   ':type (+ n 1)' \
+  '(capabilities actor)' \
   '(use actor/actor)' \
   '(def c (chan 2))' \
   '(def tx (chan-tx c))' \
@@ -62,7 +63,7 @@ out4="$(printf '%s\n' \
   '(rs-m 7)' \
   | timeout 60 "$ZYL" repl 2>&1)" || fail "repl exited non-zero: $out4"
 plain4="$(printf '%s' "$out4" | sed 's/\x1b\[[0-9;]*m//g')"
-for want in 'cannot unify Int with String' 'error[E_RESERVED_KEYWORD]' '=> 7'; do
+for want in 'takes `Int` as its 1st argument (`x`), but this is `String`' 'error[E_RESERVED_KEYWORD]' '=> 7'; do
   printf '%s' "$plain4" | grep -qF -- "$want" || fail "missing '$want' in: $out4"
 done
 echo "repl-session: ok"

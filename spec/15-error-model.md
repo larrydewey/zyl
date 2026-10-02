@@ -29,6 +29,7 @@ this document's reading of each code's meaning.
 | `E_INVALID_ESCAPE` | Invalid escape sequence in a string literal | §1 |
 | `E_MALFORMED_FORM` | A special form's arguments do not have its required shape | §2 |
 | `E_NESTED_PATTERN` | Nested pattern in a constructor arm | §4.9, §8 |
+| `E_PANIC_UNMARKED` | A standard-library `defn` that calls `panic` directly is not spelled with a trailing `!` | §25 |
 | `E_MATCH_NONEXHAUSTIVE` | Missing match case | §8.3 |
 | `E_MUT_CONFLICT` | Aliasing violation (TMut/TCap) | §10 |
 | `E_TRAIT_NOT_FOUND` | Missing impl for trait bound | §5.4 |
@@ -37,7 +38,7 @@ this document's reading of each code's meaning.
 | `E_MACRO_NON_TERMINATION` | Macro expansion loop | §19 |
 | `E_MACRO_ILLEGAL_ACCESS` | Macro accessed runtime value | §19.4 |
 | `E_CANNOT_INFER` | A type the program does not determine | §4.10, §6.7 |
-| `E_INFINITE_TYPE` | A type would contain itself (occurs check) | §4.10 |
+| `E_INFINITE_TYPE` | A type would contain itself | §4.10 |
 | `E_FFI_TIMEOUT_REQUIRED` | `ffi-call` does not end with a positive integer literal timeout | §16 |
 | `E_FFI_SYMBOL_REQUIRED` | `ffi-call` symbol is not a string literal | §16 |
 | `E_FFI_RESTRICTED` | `ffi-call` names a raw runtime entry outside the standard library, or an `extern` declares a runtime entry | §16 |
@@ -47,10 +48,7 @@ this document's reading of each code's meaning.
 
 §4.10 defines two further type errors that §28 does not repeat:
 `E_TYPE_MISMATCH` (two types that must be equal are not) and
-`E_UNBOUND_VARIABLE` (a name defined nowhere). §6.7 defines
-`E_TRAIT_BOUND_NOT_SATISFIED` (concrete type violates a bound) and
-`E_UNKNOWN_GENERIC_PARAM` (reference to an undeclared type parameter).
-§6.7 still words `E_CANNOT_INFER` as "generic param with no call-site
+`E_UNBOUND_VARIABLE` (a name defined nowhere). §6.7 words `E_CANNOT_INFER` as "generic param with no call-site
 evidence", a special case of §4.10's meaning.
 
 Compile-time errors abort compilation. The type errors of §4.10 are all
@@ -62,17 +60,16 @@ reported before the compile fails (§4.8).
 
 | Error Code | Condition | Specification Reference |
 |------------|-----------|----------------------|
-| `E_USER_ERROR` | `(panic msg)` | §12.10 |
-| `E_ASSERT_FAIL` | Assertion condition is false | §12.4 |
 | `E_FFI_TIMEOUT` | FFI call exceeded timeout | §16 |
-| `E_INDEX_OUT_OF_BOUNDS` | Index outside a word array | §13 |
-| `E_UNINITIALIZED_USE` | Variable used before initialization | — |
+| `E_INDEX_OUT_OF_BOUNDS` | Index outside a word array, or outside a Vec, slice, string view or SIMD vector through a standard-library `!` function | §13, §25 |
 | `E_CONTRACT_VIOLATION` | Contract condition failed | §23 |
 | `E_OVERFLOW` | Int `+ - *` under `(numeric checked)` whose result does not fit; `INT_MIN / -1` under any policy | §20.1, §20.3 |
 | `E_DIVISION_BY_ZERO` | `div!` or `rem!` with a zero divisor | §20.3 |
 | `E_REGION_EXHAUSTED` | A `with-region` region ran out of its fixed size or limit (catchable) | §9.2 |
-| `E_TEST_FAILURE` | Test assertion failed | §20.5 |
-| `E_TEST_RUNNER_ERROR` | Test harness error | §20.5 |
+
+A failed `assert` and a `(panic msg)` carry no code: they print `PANIC:`
+and their message (`assertion failed` for an assert without one), after
+flushing whatever the program already printed.
 
 Runtime errors abort execution or revert state (if checkpoint active).
 
@@ -154,10 +151,12 @@ code plus implementation codes such as `E_ARITY_MISMATCH`,
 `E_UNBOUND_VARIABLE`, `E_DUPLICATE_DEFINITION`, `E_MALFORMED_PARAMETER`,
 `E_OUT_OF_MEMORY`, the `E_UNBALANCED_*` balance errors, the byte-buffer
 codes and the Secret codes (`E_CT_VIOLATION`, `E_SECRET_ESCAPE`,
+`E_SECRET_UNANNOTATED`,
 `E_SECRET_DEBUG`, `E_ZEROIZE_MISSING`, `E_FFI_PIN_REQUIRED`), and also
-`W_TYPE_STRICT` and the interpreter's `E_INTERP_TAG`. One entry is
-duplicated (`E_OUT_OF_MEMORY`) and two are near duplicates
-(`E_ALIGNMENT_FAILED`, `E_ALIGN_CHECK_FAILED`).
+`W_TYPE_STRICT` and the interpreter's `E_INTERP_TAG`. The catalog is
+exact: `verify/error-codes.sh` fails when a catalogued code is raised
+nowhere or a raised code is not catalogued (the codes other branches are
+still adding are exempt while they land).
 
 A compile error aborts through the runtime's `zyl_panic`, which prints
 `PANIC: ` and the message to stderr and exits with status 1. Where the
@@ -183,8 +182,11 @@ the byte-primitive shape errors, the `set!`-target `E_MUT_CONFLICT` and
 the literal-match `E_MATCH_NONEXHAUSTIVE`, as well as the backstops in
 `icnf.zyl`. `docs/errors.md` marks which codes are located.
 
-Warnings are `W_UNUSED_PARAMETER`, `W_UNUSED_VARIABLE` and
-`W_SHADOWED_BINDING` (from `unused_check.zyl`; `W_UNUSED_FUNCTION` is
+Warnings are `W_UNUSED_PARAMETER`, `W_UNUSED_VARIABLE`,
+`W_SHADOWED_BINDING` and `W_PANIC_UNMARKED` (a program's `defn` that
+calls `panic` directly without a trailing `!`; the same condition in a
+program-facing standard-library module is the error `E_PANIC_UNMARKED`,
+both from `unused_check.zyl`; `W_UNUSED_FUNCTION` is
 catalogued but not raised), printed to stderr
 with a location in the same form (`warning[CODE]: ...`), plus
 `E_ZEROIZE_MISSING` at severity 2. Names that are `_` or start with `_`
@@ -209,9 +211,6 @@ package-system code. Raised at run time: `E_FFI_TIMEOUT`,
 and `E_CONTRACT_VIOLATION` (the prefix of a failed contract check's
 message).
 
-Catalogued but never raised: `E_USER_ERROR`, `E_ASSERT_FAIL`,
-`E_UNINITIALIZED_USE`, `E_TEST_FAILURE`, `E_TEST_RUNNER_ERROR`, and from
-§6.7 `E_TRAIT_BOUND_NOT_SATISFIED` and `E_UNKNOWN_GENERIC_PARAM`.
 `E_OVERFLOW` and `E_DIVISION_BY_ZERO` are raised by compiled code (the
 runtime's `zyl_overflow_panic` and `zyl_div_zero_panic`, reached from
 the trap stubs the code generator emits) and by the REPL interpreter,
@@ -221,32 +220,36 @@ package with no `(numeric ...)`, and `E_PARTIAL_OPERATION`, a `/` or `%`
 whose divisor is not a nonzero literal (`numeric_check.zyl`, after type
 inference, both located at the operation).
 
-Raised but not in the catalog: `E_NON_EXHAUSTIVE_MATCH` and
-`E_UNREACHABLE_MATCH_ARM` (from `exhaustiveness_check.zyl`) and
-`E_DUPLICATE_PARAMETER` (from `unused_check.zyl`).
-`E_NON_EXHAUSTIVE_MATCH` is a second spelling of §28's
+`E_UNKNOWN_CONSTRUCTOR` (`exhaustiveness_check.zyl`: a capitalized arm
+head that no type declares) is in the catalog and §28.
+`E_NON_EXHAUSTIVE_MATCH` (from `exhaustiveness_check.zyl`) is a second spelling of §28's
 `E_MATCH_NONEXHAUSTIVE`; the two are raised by different passes.
 
 ### Type errors
 
 The type pass (`type_annotate.zyl`, see
 `spec/05-types-and-inference.md`) reports every unification failure as a
-located `E_TYPE_MISMATCH` (`cannot unify A with B`, or `mismatched types:
-expected T, found U` with a label at the parameter or field declaration
-it clashes with), every failed occurs check as `E_INFINITE_TYPE`, every
+located `E_TYPE_MISMATCH` that names the reason when the site knows it
+(`` `twice` takes `Int` as its 1st argument (`n`), but this is `String` ``
+at the argument, the operands of an operator, an `if` condition, the
+return of `main` at its last expression), and otherwise both types
+(`` type mismatch: `A` and `B` must be the same type ``), every failed occurs check as `E_INFINITE_TYPE`, every
 type it cannot determine as `E_CANNOT_INFER` (a foreign `ffi-call` with no
 `extern`, a runtime symbol with no signature, a trait call whose receiver
 type stays unknown, a `struct-get` whose record type stays unknown when
 several structs have the field, a function needing more than 256
-specialized instances), and every unknown name as `E_UNBOUND_VARIABLE`. It does not
-stop at the first: it types the whole program, printing each error, and
-then fails with
+specialized instances), and every unknown name as `E_UNBOUND_VARIABLE`,
+once per name, with up to three close names in scope or the `(use ...)`
+line that imports it. An expression that mentions an unbound name raises
+nothing further. It does not stop at the first: it types the whole
+program, printing each error, and then fails with exit status 1 and,
+after more than one error, the line
 
 ```
-PANIC: error[E_TYPE_MISMATCH]: the program does not type-check (3 errors above)
+3 errors; fix the first one first
 ```
 
-where the code is the first error's. A `struct-get` of a field a known
+(`docs/diagnostics.md`). A `struct-get` of a field a known
 struct lacks (`E_TYPE_MISMATCH`), the trait-method errors
 (`E_TRAIT_NOT_FOUND`), `ffi-pin` of a function (`E_FFI_TYPE_NOT_PINNABLE`)
 and an `ffi-call` to a runtime entry the program also declares with

@@ -462,10 +462,58 @@ def test_interactive():
         proc.communicate()
 
 
+# ---------------------------------------------------------------------------
+# Struct field accessors: `Point.x` is defined by the field `x` of the
+# defstruct (spec §2), and the server resolves it to that field.
+# ---------------------------------------------------------------------------
+
+ACCESSOR_SAMPLE = """(defstruct Point
+  (x Int)
+  (y Int))
+
+(defn px (p)
+  (Point.x p))
+
+(defn py (p)
+  (Point. p))
+
+(defn main ()
+  (print (px (make-Point 1 2))))
+"""
+
+
+def test_accessors():
+    responses, _, _ = session(
+        request(70, "textDocument/hover", position=at(5, 5)),         # Point.x
+        request(71, "textDocument/definition", position=at(5, 5)),    # -> the field x
+        request(72, "textDocument/typeDefinition", position=at(5, 5)),  # -> the defstruct
+        request(73, "textDocument/completion", position=at(8, 9)),    # after `Point.`
+        request(74, "textDocument/completion", position=at(11, 9)),   # anywhere else
+        text=ACCESSOR_SAMPLE,
+    )
+    hover = (responses.get(70) or {}).get("contents", {}).get("value", "")
+    check("accessor/hover", "Field `x` of struct `Point`" in hover, hover)
+    check("accessor/hover", "(Point.x p)" in hover, hover)
+    definition = responses.get(71) or {}
+    start = definition.get("range", {}).get("start", {})
+    check("accessor/definition", start.get("line") == 1 and start.get("character") == 3,
+          f"the accessor should resolve to the field, got {json.dumps(definition)}")
+    type_def = responses.get(72) or {}
+    check("accessor/typeDefinition", type_def.get("range", {}).get("start", {}).get("line") == 0,
+          json.dumps(type_def))
+    after_dot = {item["label"] for item in (responses.get(73) or [])}
+    check("accessor/completion", after_dot == {"Point.x", "Point.y"},
+          f"after `Point.` only its accessors are offered, got {sorted(after_dot)}")
+    general = {item["label"] for item in (responses.get(74) or [])}
+    check("accessor/completion", "Point.x" in general and "px" in general,
+          f"accessors are offered with the document's functions, got {len(general)} items")
+
+
 TESTS = [
     ("capabilities", test_capabilities),
     ("hover", test_hover),
     ("navigation", test_navigation),
+    ("accessors", test_accessors),
     ("symbols", test_symbols),
     ("completion", test_completion),
     ("semantic tokens", test_semantic_tokens),

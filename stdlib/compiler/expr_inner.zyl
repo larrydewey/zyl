@@ -11,6 +11,7 @@
 ; directly (e.g. integration/selfhost-codegen.zyl) had an undefined
 ; `f_Pair` reference at link time.
 (use compiler/node_tables)
+(use compiler/ast)
 (use compiler/type_system)
 (use compiler/error_report)
 ;
@@ -430,8 +431,63 @@
     (Nil Nil)
     (Cons f rest
       (match (inline-derive-of f)
-        (Some d (Cons (dot-rewrite (strip-inline-derive f)) (Cons d (dot-rewrite-forms rest))))
-        (None (Cons (dot-rewrite f) (dot-rewrite-forms rest)))))))
+        (Some d (Cons (dot-rewrite (strip-inline-derive f)) (Cons d (struct-accessor-forms f (dot-rewrite-forms rest)))))
+        (None (Cons (dot-rewrite f) (struct-accessor-forms f (dot-rewrite-forms rest))))))))
+
+;; A struct's field accessors: `(defstruct Point (x) (y))` also defines
+;; `(defn Point.x ((p Point)) (struct-get p "x"))` and `Point.y`, placed
+;; right after the struct so the type pass sees ordinary typed functions.
+;; Each carries the struct form's span, which is how duplicate_check.zyl
+;; tells a generated accessor from one the program wrote.
+(defn struct-accessor-forms (f tail)
+  (if (struct-head-p (ast-head f))
+    (match f
+      (AList xs
+        (match xs
+          (Cons _ more
+            (match more
+              (Cons nm fields (struct-accessors f nm (struct-field-names fields) tail))
+              (Nil tail)))
+          (Nil tail)))
+      (_ tail))
+    tail))
+
+(defn struct-field-names (fields)
+  (match fields
+    (Nil Nil)
+    (Cons s rest
+      (let n (struct-field-name s)
+        (if (= (str-length n) 0)
+          (struct-field-names rest)
+          (Cons n (struct-field-names rest)))))))
+
+; `x` or `(x Type)`; a `(:derive ...)` or malformed spec names nothing.
+(defn struct-field-name (s)
+  (match s
+    (AstIdent n (if (struct-keyword-p n) "" n))
+    (AList xs (match xs (Cons h _ (match h (AstIdent n (if (struct-keyword-p n) "" n)) (_ ""))) (Nil "")))
+    (_ "")))
+
+(defn struct-keyword-p (n) (and (> (str-length n) 0) (= (ffi-call "zyl_cstr_byte_at" n 0 1000) 58)))
+
+(defn struct-accessors (f nm names tail)
+  (match nm
+    (AstIdent tn
+      (match names
+        (Nil tail)
+        (Cons n rest (Cons (struct-accessor-form f tn n) (struct-accessors f nm rest tail)))))
+    (_ tail)))
+
+(defn struct-accessor-name (tn n) (str-concat tn (str-concat "." n)))
+
+; (defn T.f ((p T)) (struct-get p "f")), spanned at the struct form.
+(defn struct-accessor-form (f tn n)
+  (dot-spanned
+    (AList (Cons (AstIdent "defn")
+      (Cons (AstIdent (struct-accessor-name tn n))
+        (Cons (AList (Cons (AList (Cons (AstIdent "p") (Cons (AstIdent tn) Nil))) Nil))
+          (Cons (AList (Cons (AstIdent "struct-get") (Cons (AstIdent "p") (Cons (AString n) Nil)))) Nil)))))
+    f))
 
 (defn struct-head-p (h) (or (str-eq h "defstruct") (str-eq h "defstruct+")))
 
@@ -593,7 +649,8 @@
 
 (defn convert-program (forms)
   (let _ (ffi-call "zyl_smap_clear" (def-table) 1000)
-    (convert-program-defs forms)))
+    (let _ (extern-collect forms)
+      (convert-program-defs forms))))
 
 (defn convert-program-defs (forms)
   (if (= (def-collect forms 0) 0)
@@ -980,7 +1037,7 @@
       (let code (recover-arm-code arm)
         (if (= (str-length code) 0)
           (if (recover-has-specific-code rest)
-            (ei-fail "W_RECOVER_SHADOW" (str-concat "catch-all arm shadows later arm " (recover-first-code rest)))
+            (ei-fail "W_RECOVER_SHADOW" (str-concat "this arm catches every error, so the arm for " (str-concat (recover-first-code rest) " after it never runs")))
             0)
           0)
         (recover-chain-warn rest)))))
@@ -1052,7 +1109,9 @@
       (parse-quote rest)
       (if (str-eq n "quasiquote")
         (parse-quasiquote rest)
-        (dispatch-special-form n rest)))))
+        (if (str-eq n "ffi-call")
+          (dispatch-special-form n (ffi-default-timeout rest))
+          (dispatch-special-form n rest))))))
 
 ;; `(quasiquote d)`: see ast-qq-data. `,e` and `,@e` outside one are
 ;; reported after macro expansion (arity_check.zyl), since a macro
@@ -1937,7 +1996,8 @@
 (defn field-types-clear ()
   (begin
     (ffi-call "zyl_smap_clear" field-type-table 1000)
-    (ffi-call "zyl_smap_clear" extern-table 1000)))
+    (ffi-call "zyl_smap_clear" extern-table 1000)
+    (ffi-call "zyl_smap_clear" extern-timeout-table 1000)))
 
 ; (extern "sym" (T ...) R): the C signature of a foreign symbol, which the
 ; type pass checks every ffi-call to it against (type_annotate.zyl,
@@ -1960,7 +2020,7 @@
             (Cons ps rest2
               (match rest2
                 (Cons ret rest3
-                  (if (nil? rest3)
+                  (if (extern-tail-ok sym ps rest3)
                     (match ps
                       (AList tys
                         (let _ (ffi-call "zyl_smap_put" extern-table sym (ExternSig (convert-ast-list tys) (convert-ast ret)) 1000)
@@ -1971,6 +2031,119 @@
             (Nil None)))
         (_ None)))
     (Nil None)))
+
+; `(extern "sym" (T ...) R :timeout N)`: N is the default timeout in
+; milliseconds for every ffi-call to sym that gives none of its own.
+; Recorded with the parameter count, which is what tells a call that
+; omitted its timeout from one that gave it: n arguments take the
+; default, n+1 end with their own. Emptied with extern-table.
+(def extern-timeout-table (ffi-call "zyl_smap_new" 1000))
+
+(deftype ExternTimeout (ExternTimeout Int Int))
+
+(defn extern-timeout-of (sym)
+  (if (ffi-call "zyl_smap_has" extern-timeout-table sym 1000)
+    (Some (ffi-call "zyl_smap_get_or" extern-timeout-table sym (ExternTimeout 0 0) 1000))
+    None))
+
+(defn extern-param-count (ps)
+  (match ps
+    (AList tys (list-length tys))
+    (_ 0)))
+
+; Nothing after R, or exactly `:timeout N` with N a positive integer literal.
+(defn extern-tail-ok (sym ps tail)
+  (match tail
+    (Nil true)
+    (Cons k more
+      (if (ast-ident-is k ":timeout")
+        (match more
+          (Cons nast rest
+            (if (nil? rest)
+              (match nast
+                (AstInt n
+                  (if (> n 0)
+                    (let _ (extern-record-timeout sym (extern-param-count ps) n) true)
+                    (extern-timeout-fail sym nast)))
+                (_ (extern-timeout-fail sym nast)))
+              false))
+          (Nil (extern-timeout-fail sym k)))
+        false))))
+
+(defn ast-ident-is (a name)
+  (match a
+    (AstIdent s (str-eq s name))
+    (_ false)))
+
+(defn extern-record-timeout (sym nparams ms)
+  (ffi-call "zyl_smap_put" extern-timeout-table sym (ExternTimeout nparams ms) 1000))
+
+(defn extern-timeout-fail (sym at)
+  (let site (match (ast-spanned at) (Some n n) (None (ei-form)))
+    (ffi-call "zyl_panic"
+      (err-at "E_FFI_TIMEOUT_REQUIRED"
+              (str-concat "the :timeout of extern `" (str-concat sym "` must be a positive integer literal in milliseconds"))
+              (ffi-call "zyl_span_file" site 1000) (ffi-call "zyl_span_off" site 1000)
+              (str-concat "write it as: (extern \"" (str-concat sym "\" (...) R :timeout 1000)")))
+      1000)))
+
+; The externs of a program, recorded before any call is converted, so a
+; call may come before its extern. Each top-level `extern` is read again
+; by parse-extern in turn, which is harmless.
+(defn extern-collect (forms)
+  (match forms
+    (Nil 0)
+    (Cons f rest
+      (begin
+        (if (str-eq (ast-head f) "extern")
+          (match f
+            (AList xs (extern-collect-at f xs))
+            (_ 0))
+          0)
+        (extern-collect rest)))))
+
+; The form is the located site while its tail is read.
+(defn extern-collect-at (f xs)
+  (let depth (ffi-call "zyl_wvec_len" ei-form-store 1000)
+    (let _ (ffi-call "zyl_wvec_push" ei-form-store f 1000)
+      (let r (extern-collect-one xs)
+        (let _ (ffi-call "zyl_wvec_truncate" ei-form-store depth 1000) r)))))
+
+(defn extern-collect-one (xs)
+  (match xs
+    (Cons _ args
+      (match args
+        (Cons s rest
+          (match s
+            (AString sym
+              (match rest
+                (Cons ps rest2
+                  (match rest2
+                    (Cons _ rest3 (if (extern-tail-ok sym ps rest3) 0 0))
+                    (Nil 0)))
+                (Nil 0)))
+            (_ 0)))
+        (Nil 0)))
+    (Nil 0)))
+
+; `(ffi-call "sym" args...)` with as many arguments as sym's extern
+; declares parameters takes the extern's default timeout; a call that
+; already ends with its own keeps it.
+(defn ffi-default-timeout (rest)
+  (match rest
+    (Cons s tail
+      (match s
+        (AString sym
+          (match (extern-timeout-of sym)
+            (Some et
+              (match et
+                (ExternTimeout nparams ms
+                  (if (= (list-length tail) nparams)
+                    (Cons s (list-append tail (Cons (AstInt ms) Nil)))
+                    rest))))
+            (None rest)))
+        (_ rest)))
+    (Nil rest)))
 
 ; An untyped struct field records `_` (unknown type).
 (defn parse-struct-field-types (specs)

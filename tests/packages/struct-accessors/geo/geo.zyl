@@ -1,0 +1,5 @@
+; Root module of acme/geo. The struct is pub, so its accessors are too.
+
+(pub defstruct Point (x Int) (y Int))
+
+(pub defn point-sum (p) (+ (Point.x p) (Point.y p)))

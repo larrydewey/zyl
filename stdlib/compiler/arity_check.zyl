@@ -127,16 +127,17 @@
     (_ -1)))
 
 (defn ac-fail (name expected got site)
-  (let m1 "`"
-    (let m2 (str-concat m1 (err-name name))
-      (let m3 (str-concat m2 "` called with ")
-        (let m4 (str-concat m3 (int-to-str got))
-          (let m5 (str-concat m4 " argument(s), but it takes ")
-            (let m6 (str-concat m5 (int-to-str expected))
-              (ac-panic-at m6 got expected site))))))))
+  (let m1 (str-concat "`" (str-concat (err-name name) (str-concat "` takes " (ac-count expected))))
+    (ac-panic-at (str-concat m1 (str-concat ", but this call gives it " (int-to-str got))) got expected site)))
+
+; "1 argument", "2 arguments"
+(defn ac-count (n)
+  (str-concat (int-to-str n) (if (= n 1) " argument" " arguments")))
 
 (defn ac-panic-at (msg got expected site)
-  (let hint (if (> got expected) "remove the extra argument(s)" "supply the missing argument(s)")
+  (let hint (if (> got expected)
+              (str-concat "remove " (if (= (- got expected) 1) "the extra argument" (str-concat (int-to-str (- got expected)) " extra arguments")))
+              (str-concat "add " (if (= (- expected got) 1) "the missing argument" (str-concat (int-to-str (- expected got)) " missing arguments"))))
     (let off (ffi-call "zyl_span_off" site 1000)
       (let fid (ffi-call "zyl_span_file" site 1000)
         (let text (err-at "E_ARITY_MISMATCH" msg fid off hint)
@@ -169,6 +170,11 @@
     (let fid (ffi-call "zyl_span_file" site 1000)
       (ffi-call "zyl_panic" (err-at code msg fid off help) 1000))))
 
+; Names the two places a timeout can be written: the call, or its extern.
+(defn ffi-timeout-help (sym)
+  (str-concat "add the timeout here: (ffi-call \"" (str-concat sym
+    (str-concat "\" args 1000), or once on the extern: (extern \"" (str-concat sym "\" (...) R :timeout 1000)")))))
+
 (defn ffi-check-call (args site)
   (match args
     (Nil (ffi-fail "E_FFI_SYMBOL_REQUIRED" "ffi-call has no symbol"
@@ -178,11 +184,11 @@
         (ffi-fail "E_FFI_SYMBOL_REQUIRED" "ffi-call needs its C symbol as a string literal"
                   "write the symbol name in double quotes" site)
         (if (is-nil tail)
-          (ffi-fail "E_FFI_TIMEOUT_REQUIRED" "ffi-call has no timeout"
-                    "end the call with a timeout in milliseconds, e.g. 1000" site)
+          (ffi-fail "E_FFI_TIMEOUT_REQUIRED" (str-concat "the call to `" (str-concat (ffi-literal-str sym) "` has no timeout"))
+                    (ffi-timeout-help (ffi-literal-str sym)) site)
           (if (< (ffi-literal-int (ffi-last-expr tail)) 1)
-            (ffi-fail "E_FFI_TIMEOUT_REQUIRED" "the last argument of ffi-call must be a positive integer literal timeout"
-                      "end the call with a timeout in milliseconds, e.g. 1000; a missing timeout would otherwise drop the real last argument" site)
+            (ffi-fail "E_FFI_TIMEOUT_REQUIRED" (str-concat "the call to `" (str-concat (ffi-literal-str sym) "` has no timeout: its last argument is not a positive integer literal"))
+                      (ffi-timeout-help (ffi-literal-str sym)) site)
             (if (and (not (rt-mode-p)) (> (list-length tail) (+ (ffi-max-args) 1)))
               (ffi-fail "E_ARITY_MISMATCH" "ffi-call passes more than 16 arguments"
                         "pass a pointer to a struct or buffer instead" site)

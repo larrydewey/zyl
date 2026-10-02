@@ -160,7 +160,7 @@
 ; dst = src when mask is all-ones, unchanged when mask is zero. The
 ; mask must be 0 or -1 (ct-mask produces exactly that).
 ; Returns: Int
-(defn bn-cond-copy ((dst Words) (src Words) (n Int) (mask Int))
+(defn bn-cond-copy ((dst Words) (src Words) (n Int) (mask (Secret Int)))
   (begin
     (for (i 0) (< i n)
       (begin

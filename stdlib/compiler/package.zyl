@@ -428,6 +428,11 @@
   (ffi-call "zyl_panic"
     (err-at code msg (ffi-call "zyl_span_file" at 1000) (ffi-call "zyl_span_off" at 1000) "") 1000))
 
+; The same, with a fix line.
+(defn pk-fail-help (at code msg help)
+  (ffi-call "zyl_panic"
+    (err-at code msg (ffi-call "zyl_span_file" at 1000) (ffi-call "zyl_span_off" at 1000) help) 1000))
+
 (defn pk-spanned (node from) (let _ (ffi-call "zyl_span_copy" node from 1000) node))
 
 ; `(capabilities io ffi)` — bare identifiers, never strings, so a typo
@@ -458,6 +463,38 @@
     (err-at "E_MALFORMED_FORM" "`numeric` takes one policy name"
             (ffi-call "zyl_span_file" f 1000) (ffi-call "zyl_span_off" f 1000)
             "write `(numeric checked)`, `(numeric wrapping)` or `(numeric saturating)`") 1000))
+
+; A lone file's own declaration (§31.9): the union of its top-level
+; `(capabilities ...)` forms, each name checked as a manifest's is.
+(defn pk-lone-capabilities (forms)
+  (pk-lone-caps-in (pk-find-forms forms "capabilities") Nil))
+
+(defn pk-lone-caps-in (fs acc)
+  (match fs
+    (Nil acc)
+    (Cons f t
+      (let caps (pk-ast-strs (pk-ast-args f))
+        (let _ (pk-check-lone-caps caps f)
+          (pk-lone-caps-in t (pk-caps-union acc caps)))))))
+
+(defn pk-check-lone-caps (caps site)
+  (match caps
+    (Nil 1)
+    (Cons c t
+      (if (pk-known-capability c)
+        (pk-check-lone-caps t site)
+        (pk-fail-help site "E_MALFORMED_FORM"
+          (str-concat "`" (str-concat c "` is not a capability"))
+          "write one or more of `io`, `ffi`, `actor`, `secret`, `native` and `unsafe` in `(capabilities ...)`")))))
+
+; The form a declaration is written as, for a fix line.
+(defn pk-caps-form-text (caps)
+  (str-concat "(capabilities" (str-concat (pk-caps-words caps) ")")))
+
+(defn pk-caps-words (caps)
+  (match caps
+    (Nil "")
+    (Cons h t (str-concat " " (str-concat h (pk-caps-words t))))))
 
 ; A requirement is a bare version (§31.3). Range operators are rejected
 ; here rather than parsed-and-ignored: MVS takes minimums, and silently
@@ -714,8 +751,9 @@
 
 ; One package's capability ceiling, as the resolver discovers it and the
 ; enforcement pass reads it: the package name, what it granted itself,
-; and whether it is manifest-backed. Only a package that wrote a zyl.pkg
-; has made a statement to enforce (§31.9).
+; and where the declaration lives, which is how the pass words the fix:
+; 0 not enforced (the stdlib, the runtime), 1 zyl.pkg, 2 a lone file's
+; own `(capabilities ...)` form, 3 a REPL session (§31.9).
 (deftype CapGrant (CG String (List String) Int))
 
 (defn cg-name (g) (match g (CG n dot1 dot2 n)))

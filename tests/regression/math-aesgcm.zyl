@@ -21,7 +21,7 @@
           (let aad (w-from-hex aadhex)
             (let pt (w-from-hex pthex)
               (let sealed (gcm-encrypt key (w-hex-len keyhex) iv aad (w-hex-len aadhex) pt (w-hex-len pthex))
-                (w-hex-bytes (option-expect sealed "expected w-arena value") (+ (w-hex-len pthex) 16))))))))))
+                (w-hex-bytes (option-expect! sealed "expected w-arena value") (+ (w-hex-len pthex) 16))))))))))
 
 (test "gcm-empty"
   (assert-equal (_gcm_seal_hex "00000000000000000000000000000000" "000000000000000000000000" "" "" "58e2fccefa7e3061367f1d57a4e7455a") "58e2fccefa7e3061367f1d57a4e7455a"))
@@ -44,9 +44,9 @@
         (let iv (w-from-hex "cafebabefacedbaddecaf888")
           (let aad (w-from-hex "feedfacedeadbeeffeedfacedeadbeefabaddad2")
             (let pt (w-from-hex "d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b39")
-              (let sealed (option-expect (gcm-encrypt key 16 iv aad 20 pt 60) "expected w-arena value")
+              (let sealed (option-expect! (gcm-encrypt key 16 iv aad 20 pt 60) "expected w-arena value")
                 (let got (gcm-decrypt key 16 iv aad 20 sealed 60)
-                  (assert-equal (w-hex-bytes (option-expect got "expected w-arena value") 60) "d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b39"))))))))))
+                  (assert-equal (w-hex-bytes (option-expect! got "expected w-arena value") 60) "d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b39"))))))))))
 
 (test "gcm-decrypt-rejects-tampered"
   (if (not (aes-available))
@@ -56,7 +56,7 @@
         (let iv (w-from-hex "cafebabefacedbaddecaf888")
           (let aad (w-from-hex "feedfacedeadbeeffeedfacedeadbeefabaddad2")
             (let pt (w-from-hex "d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b39")
-              (let sealed (option-expect (gcm-encrypt key 16 iv aad 20 pt 60) "expected w-arena value")
+              (let sealed (option-expect! (gcm-encrypt key 16 iv aad 20 pt 60) "expected w-arena value")
                 (begin
                   (w-set sealed 3 (bit-xor (w-get sealed 3) 128))
                   (assert-true (option-is-none (gcm-decrypt key 16 iv aad 20 sealed 60))))))))))))

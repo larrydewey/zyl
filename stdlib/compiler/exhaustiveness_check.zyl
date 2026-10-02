@@ -20,10 +20,14 @@
 ;   2. A `match` arm's tag is a bare `String` regardless of whether it's
 ;      a real constructor name or a catch-all bind (`_`, `other`,
 ;      ...) -- MatchArm has no separate "is this a bind or a tag" flag.
-;      This file tells them apart the only reliable way available
-;      without full type inference: is the tag a KNOWN constructor name
-;      anywhere in this program's own deftypes? If not, it's being used
-;      as a plain bind and the arm is a catch-all.
+;      This file tells them apart by spelling and by the program: a tag
+;      that is a KNOWN constructor name in this program's deftypes is a
+;      constructor; one spelled like a constructor (first byte A-Z) that
+;      no type declares is E_UNKNOWN_CONSTRUCTOR, with the nearest
+;      declared constructor suggested (edit distance at most 2, smallest
+;      first, then alphabetical); anything else is a plain bind and the
+;      arm is a catch-all. So a misspelled constructor in the last arm
+;      can no longer silently match everything.
 ;
 ; Undershoot posture: a repo-wide scan found a handful of short variant
 ; names (`CI`, `CF`, `FR`, `MC`) reused by two UNRELATED deftypes in
@@ -146,9 +150,11 @@
         (MA tag _ _
           (match (ec-owner-lookup tag vowners)
             (None
-              (if (> (list-length rest) 0)
-                (ec-fail-unreachable-bind tag site)
-                0))
+              (if (ec-constructor-case-p tag)
+                (ec-fail-unknown-constructor tag vowners a site)
+                (if (> (list-length rest) 0)
+                  (ec-fail-unreachable-bind tag site)
+                  0)))
             (Some owner
               (if (str-eq owner "")
                 0
@@ -194,11 +200,70 @@
         (ec-check-full-coverage tyname rest covered site)
         (ec-fail-nonexhaustive tyname v site)))))
 
+; A tag spelled like a constructor: its first byte is A-Z.
+(defn ec-constructor-case-p (tag)
+  (let s (err-name tag)
+    (if (= (str-length s) 0)
+      false
+      (let b (ffi-call "zyl_cstr_byte_at" s 0 1000)
+        (and (>= b 65) (<= b 90))))))
+
+; Located at the arm's body, the nearest spanned node to the arm head; else the match.
+(defn ec-fail-unknown-constructor (tag vowners arm site)
+  (let s (err-name tag)
+    (let near (ec-nearest s (ec-owner-names vowners))
+      (let msg (str-concat "no type declares a constructor `" (str-concat s "`"))
+        (if (< (ffi-call "zyl_span_off" (MA.body arm) 1000) 0)
+          (ec-panic-at "E_UNKNOWN_CONSTRUCTOR" msg (ec-unknown-help near) site)
+          (ec-panic-at "E_UNKNOWN_CONSTRUCTOR" msg (ec-unknown-help near) (MA.body arm)))))))
+
+(defn ec-unknown-help (near)
+  (if (= (str-length near) 0)
+    "write a constructor some deftype declares; a binder is written in lowercase"
+    (str-concat "write `" (str-concat near "` if you meant that constructor; a binder is written in lowercase"))))
+
+; Every declared constructor's own name, once.
+(defn ec-owner-names (vowners)
+  (match vowners
+    (Nil Nil)
+    (Cons pr rest
+      (match pr
+        (Pair v _
+          (let s (err-name v)
+            (let others (ec-owner-names rest)
+              (if (ec-in-list s others) others (Cons s others)))))))))
+
+; Closest name within edit distance 2: smallest distance, then alphabetical; "" when none.
+(defn ec-nearest (s names)
+  (ec-nearest-in s names "" 3))
+
+(defn ec-nearest-in (s names best bestd)
+  (match names
+    (Nil best)
+    (Cons n rest
+      (let d (err-edit-distance s n)
+        (if (< d bestd)
+          (ec-nearest-in s rest n d)
+          (if (and (= d bestd) (ec-str-lt n best))
+            (ec-nearest-in s rest n d)
+            (ec-nearest-in s rest best bestd)))))))
+
+(defn ec-str-lt (a b) (ec-str-lt-at a b 0))
+
+(defn ec-str-lt-at (a b i)
+  (if (>= i (str-length a))
+    (< i (str-length b))
+    (if (>= i (str-length b))
+      false
+      (let x (ffi-call "zyl_cstr_byte_at" a i 1000)
+        (let y (ffi-call "zyl_cstr_byte_at" b i 1000)
+          (if (< x y) true (if (> x y) false (ec-str-lt-at a b (+ i 1)))))))))
+
 (defn ec-fail-unreachable-bind (tag site)
-  (let m1 "catch-all arm `"
+  (let m1 "the arm `"
     (let m2 (str-concat m1 (err-name tag))
-      (let msg (str-concat m2 "` is followed by more arms that can never run")
-        (ec-panic-at "E_UNREACHABLE_MATCH_ARM" msg "move the catch-all arm to the end of the match" site)))))
+      (let msg (str-concat m2 "` matches every value, so the arms after it never run")
+        (ec-panic-at "E_UNREACHABLE_MATCH_ARM" msg "move it to the end of the match" site)))))
 
 (defn ec-fail-duplicate-arm (tag site)
   (let m1 "arm `"
@@ -212,7 +277,7 @@
       (let m3 (str-concat m2 "` does not cover variant `")
         (let m4 (str-concat m3 (err-name vname))
           (let msg (str-concat m4 "`")
-            (ec-panic-at "E_NON_EXHAUSTIVE_MATCH" msg "add an arm for that variant, or a `_` catch-all" site)))))))
+            (ec-panic-at "E_NON_EXHAUSTIVE_MATCH" msg "add an arm for that variant, or a final `_` arm" site)))))))
 
 (defn ec-panic-at (code msg hint site)
   (let off (ffi-call "zyl_span_off" site 1000)

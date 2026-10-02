@@ -294,7 +294,7 @@
       (let hc (tb-ld (- dst 8))
         (let limit (if (and (> cap 0) (< cap hc)) cap hc)
           (let _ (if (> (+ (+ len n) 1) limit)
-                   (ffi-call "zyl_panic" (if (> cap 0) "codegen buffer limit exceeded" "E_INDEX_OUT_OF_BOUNDS: string buffer full") 1) 0)
+                   (ffi-call "zyl_panic" (if (> cap 0) "E_CODEGEN_BUFFER_LIMIT: codegen buffer limit exceeded" "E_INDEX_OUT_OF_BOUNDS: string buffer full") 1) 0)
             (let _ (rt-copy (+ dst len) src n)
               (let _ (rt-st8 (+ dst (+ len n)) 0)
                 (let _ (tb-st (- dst 16) (+ len n)) dst)))))))))

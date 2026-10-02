@@ -1,7 +1,7 @@
 ; === Zyl Standard Library — Package Capability Enforcement ===
 ; Module: compiler/capability_check
 ;
-; Spec v5.0 §31.9. A package declares the capabilities it may use, and
+; Spec v5.0 §31.9. A program declares the capabilities it may use, and
 ; absence means none:
 ;
 ;     (capabilities io)   ; may do IO; may not use FFI or spawn actors
@@ -14,22 +14,26 @@
 ;     native  shipping and compiling C sources (§31.10)
 ;     unsafe  :unsafe imports
 ;
-; The pass runs after module resolution and before type inference, on the
-; qualified program: every top-level definition carries a canonical key
-; (§31.2) whose package half says who owns it, so no side table of
-; ownership is needed — the name IS the ownership record.
+; A package declares them in zyl.pkg; a lone file compiled directly
+; declares them with the same form among its own top-level forms; a REPL
+; session declares them by typing the form. The pass runs after module
+; resolution and before type inference, on the qualified program: every
+; top-level definition carries a canonical key (§31.2) whose package half
+; says who owns it, so no side table of ownership is needed — the name IS
+; the ownership record.
 ;
 ; A declared set is a CEILING on the declaring package. It is not
 ; re-granted per edge: a package that grants itself `ffi` does not hand
 ; `ffi` to the packages it depends on, and one that depends on an
 ; ffi-using package does not need `ffi` itself to call into it.
 ;
-; Enforcement applies to packages that HAVE a manifest. The implicit
-; standard library (§25) has none — it is what provides these
-; capabilities, and policing the provider would ban the allocator — and a
-; lone source file compiled directly has declared nothing to police. A
-; package that writes a `zyl.pkg` has made a statement about what it may
-; do, and that statement is enforced.
+; Only the providers are not policed: the implicit standard library (§25)
+; has no manifest — it is what provides these capabilities, and policing
+; the provider would ban the allocator — and the runtime module is
+; compiled the same way. An `ffi-call` of a `zyl_*` runtime entry is the
+; language's own, called directly with no worker and no timeout, so it is
+; not foreign and needs no `ffi` grant; the raw entries a program may not
+; reach are E_FFI_RESTRICTED (arity_check.zyl).
 
 (use compiler/ast)
 (use compiler/expr_inner)
@@ -60,7 +64,7 @@
 
 (defn cc-expr-capability (e)
   (match (Expr.inner e)
-    (EFfiCall _ _ _ "ffi")
+    (EFfiCall sym _ _ (cc-ffi-symbol-capability sym))
     (EFfiPin _ "ffi")
     (EFfiUnpin _ "ffi")
     (ESpawn _ "actor")
@@ -71,13 +75,39 @@
     (EFileWrite _ _ "io")
     (EFileClose _ "io")
     (EReadLine "io")
-    (EApply n _ (cc-name-capability n))
+    (EApply n args (cc-apply-capability n args))
     (EAtom a (cc-atom-capability a))
     (_ "")))
 
 (defn cc-atom-capability (a)
   (match a
     (AIdent n (cc-name-capability n))
+    (_ "")))
+
+; `(ffi-call "sym" ...)` as an application: the symbol decides.
+(defn cc-apply-capability (n args)
+  (if (str-eq n "ffi-call")
+    (cc-ffi-symbol-capability (cc-ffi-arg-symbol args))
+    (cc-name-capability n)))
+
+(defn cc-ffi-symbol-capability (sym)
+  (if (cc-runtime-symbol-p sym) "" "ffi"))
+
+; `zyl_*` is a runtime entry and `%` a locked primitive: the language's
+; own, not a foreign call (the latter is E_FFI_RESTRICTED outside the runtime).
+(defn cc-runtime-symbol-p (s)
+  (if (< (pk-len s) 1) false
+  (if (= (pk-byte-at s 0) 37) true
+  (if (< (pk-len s) 4) false (str-eq (pk-sub s 0 4) "zyl_")))))
+
+(defn cc-ffi-arg-symbol (args)
+  (match args
+    (Cons a _ (match (Expr.inner a) (EAtom at (cc-atom-str at)) (_ "")))
+    (Nil "")))
+
+(defn cc-atom-str (a)
+  (match a
+    (AStr s s)
     (_ "")))
 
 ; A call into a capability-bearing part of the standard library needs the
@@ -158,19 +188,37 @@
 
 (defn cc-check-form (e grants denied)
   (match (Expr.inner e)
-    (EDefn name _ body (cc-check-owned name body grants denied e))
-    (EDef name value (cc-check-owned name value grants denied e))
+    (EDefn name _ body (cc-check-owned name body grants denied))
+    (EDef name value (cc-check-owned name value grants denied))
+    (ETestDecl _ body _ _ (cc-check-owned "main" body grants denied))
+    (ETestCompile body _ (cc-check-owned "main" body grants denied))
+    (EImplBlock tr ty bodies (cc-check-impl tr ty bodies grants denied))
     (_ unit)))
 
-(defn cc-check-owned (name body grants denied dnode)
+; An impl's owner is its trait's or its type's package (the orphan rule); each user grant bounds it.
+(defn cc-check-impl (tr ty bodies grants denied)
+  (match bodies
+    (Nil unit)
+    (Cons b rest
+      (match b
+        (IB d
+          (match d
+            (DN _ _ body
+              (let _ (cc-check-owned tr body grants denied)
+                (let _ (if (str-eq (ck-package-of tr) (ck-package-of ty)) unit (cc-check-owned ty body grants denied))
+                  (cc-check-impl tr ty rest grants denied))))))))))
+
+(defn cc-check-owned (name body grants denied)
   (if (str-eq name "main")
     (match (cc-find-main grants)
-      (Some g (if (= (cg-enforced g) 0) unit (cc-walk body (cg-caps g) denied (str-substring (cg-name g) 6 (- (str-length (cg-name g)) 6)) name dnode)))
+      (Some g (cc-check-under g body denied))
       (None unit))
-    (let pkg (ck-package-of name)
-      (match (cc-find-grant grants pkg)
-        (Some g (if (= (cg-enforced g) 0) unit (cc-walk body (cg-caps g) denied pkg name dnode)))
-        (None unit)))))
+    (match (cc-find-grant grants (ck-package-of name))
+      (Some g (cc-check-under g body denied))
+      (None unit))))
+
+(defn cc-check-under (g body denied)
+  (if (= (cg-enforced g) 0) unit (cc-walk body g denied)))
 
 ; The root package's grant for its unqualified `main` (module_resolver's mr-main-grant).
 (defn cc-find-main (grants)
@@ -178,100 +226,221 @@
     (Nil None)
     (Cons h t (if (and (> (str-length (cg-name h)) 6) (str-eq (str-substring (cg-name h) 0 6) "<main>")) (Some h) (cc-find-main t)))))
 
-; Depth-first over the body. The first violation stops the build with the
-; offending package, the construct's capability and the definition that
-; used it, because a capability error is about a boundary and naming only
-; one side of it is useless.
-(defn cc-walk (e caps denied pkg fname dnode)
+; Depth-first over the body. The first violation stops the build at the
+; construct that needs the capability, with the line that grants it.
+(defn cc-walk (e g denied)
   (let need (cc-expr-capability e)
-    (let _ (cc-require need caps denied pkg fname dnode e)
-      (cc-walk-children e caps denied pkg fname dnode))))
+    (let _ (cc-require need g denied e)
+      (cc-walk-children e g denied))))
 
-(defn cc-require (need caps denied pkg fname dnode site)
+(defn cc-require (need g denied site)
   (if (= (str-length need) 0)
     unit
     (if (pk-has-capability denied need)
-      (cc-fail site dnode
-        (str-concat (err-name fname) (str-concat " uses " (str-concat need ", which the root package forbids with deny-capabilities")))
-        "remove the use, or lift the root package's deny-capabilities entry")
-      (if (pk-has-capability caps need)
+      (cc-fail site
+        (str-concat "`" (str-concat (cc-site-name site) (str-concat "` needs the " (str-concat need " capability, which the root package forbids with deny-capabilities"))))
+        (str-concat "remove the use, or drop `" (str-concat need "` from deny-capabilities in zyl.pkg")))
+      (if (pk-has-capability (cg-caps g) need)
         unit
-        (cc-fail site dnode
-          (str-concat "package " (str-concat pkg (str-concat " uses " (str-concat need (str-concat " in " (str-concat (err-name fname) " without declaring it in zyl.pkg"))))))
-          (str-concat "add `" (str-concat need "` to the package's (capabilities ...) in zyl.pkg")))))))
+        (cc-fail site
+          (str-concat "`" (str-concat (cc-site-name site) (str-concat "` needs the " (str-concat need (str-concat " capability, and " (cc-declares g))))))
+          (cc-fix g need))))))
 
-; Primary span at the construct; a secondary label at the definition using it.
-(defn cc-fail (site dnode msg hint)
-  (let labels (Cons (err-label-at dnode "in this definition") Nil)
-    (let off (ffi-call "zyl_span_off" site 1000)
-      (let fid (ffi-call "zyl_span_file" site 1000)
-        (ffi-call "zyl_panic" (err-at-labels "E_PKG_CAPABILITY_VIOLATION" msg fid off labels hint) 1000)))))
+; What the declaring side says today: "this file declares none" / "package P declares only io".
+(defn cc-declares (g)
+  (str-concat (cc-declarer g)
+    (match (cg-caps g)
+      (Nil " declares none")
+      (Cons _ _ (str-concat " declares only " (cc-caps-text (cg-caps g)))))))
 
-(defn cc-walk-list (xs caps denied pkg fname dnode)
+(defn cc-declarer (g)
+  (if (= (cg-enforced g) 2) "this file"
+  (if (= (cg-enforced g) 3) "this session"
+    (str-concat "package " (cc-pkg-of g)))))
+
+(defn cc-pkg-of (g)
+  (let n (cg-name g)
+    (if (and (> (str-length n) 6) (str-eq (str-substring n 0 6) "<main>"))
+      (str-substring n 6 (- (str-length n) 6))
+      n)))
+
+; The exact line to write: the declared set plus the missing capability.
+(defn cc-fix (g need)
+  (let form (pk-caps-form-text (pk-caps-union (cg-caps g) (Cons need Nil)))
+    (if (= (cg-enforced g) 2)
+      (str-concat "add `" (str-concat form "` at the top of the file"))
+    (if (= (cg-enforced g) 3)
+      (str-concat "type `" (str-concat form "` at the prompt"))
+      (str-concat "add `" (str-concat form "` to zyl.pkg"))))))
+
+; The user's own name for the construct: the foreign symbol, the form, or the function called.
+(defn cc-site-name (e)
+  (match (Expr.inner e)
+    (EFfiCall sym _ _ sym)
+    (EFfiPin _ "ffi-pin")
+    (EFfiUnpin _ "ffi-unpin")
+    (ESpawn _ "spawn")
+    (ESend _ _ "send")
+    (ESendClosure _ _ _ "send")
+    (EFileOpen _ _ "file-open")
+    (EFileRead _ _ "file-read")
+    (EFileWrite _ _ "file-write")
+    (EFileClose _ "file-close")
+    (EReadLine "read-line")
+    (EApply n args (if (str-eq n "ffi-call") (cc-ffi-arg-symbol args) (err-name n)))
+    (EAtom a (cc-atom-name a))
+    (_ "this form")))
+
+(defn cc-atom-name (a)
+  (match a
+    (AIdent n (err-name n))
+    (_ "this form")))
+
+; At the construct; the note says why a program declares at all.
+(defn cc-fail (site msg fix)
+  (let off (ffi-call "zyl_span_off" site 1000)
+    (let fid (ffi-call "zyl_span_file" site 1000)
+      (let why (Cons (ELbl fid (- 0 1) "a program names what it may do, so a reader sees it at the top") Nil)
+        (ffi-call "zyl_panic" (err-at-labels "E_PKG_CAPABILITY_VIOLATION" msg fid off why fix) 1000)))))
+
+(defn cc-walk-list (xs g denied)
   (match xs
     (Nil unit)
     (Cons h t
-      (let _ (cc-walk h caps denied pkg fname dnode)
-        (cc-walk-list t caps denied pkg fname dnode)))))
+      (let _ (cc-walk h g denied)
+        (cc-walk-list t g denied)))))
 
 ; Structural recursion over the expression forms that carry sub-terms.
 ; Anything not listed here holds no expression to walk into.
-(defn cc-walk-children (e caps denied pkg fname dnode)
+; Every variant is named, no catch-all: a new form must say how it is walked, so none slips past.
+(defn cc-walk-children (e g denied)
   (match (Expr.inner e)
-    (ECall f args
-      (let _ (cc-walk f caps denied pkg fname dnode) (cc-walk-list args caps denied pkg fname dnode)))
-    (EApply _ args (cc-walk-list args caps denied pkg fname dnode))
-    (EDefn _ _ body (cc-walk body caps denied pkg fname dnode))
-    (EDef _ v (cc-walk v caps denied pkg fname dnode))
-    (ELet _ v b
-      (let _ (cc-walk v caps denied pkg fname dnode) (cc-walk b caps denied pkg fname dnode)))
-    (ELetMut _ v b
-      (let _ (cc-walk v caps denied pkg fname dnode) (cc-walk b caps denied pkg fname dnode)))
-    (EIf c t f
-      (let _ (cc-walk c caps denied pkg fname dnode)
-        (let _ (cc-walk t caps denied pkg fname dnode) (cc-walk f caps denied pkg fname dnode))))
-    (ETryCatch b _ h
-      (let _ (cc-walk b caps denied pkg fname dnode) (cc-walk h caps denied pkg fname dnode)))
-    (EMatch s arms
-      (let _ (cc-walk s caps denied pkg fname dnode) (cc-walk-arms arms caps denied pkg fname dnode)))
-    (EBegin xs (cc-walk-list xs caps denied pkg fname dnode))
-    (EPrint xs (cc-walk-list xs caps denied pkg fname dnode))
-    (EWhile c b
-      (let _ (cc-walk c caps denied pkg fname dnode) (cc-walk b caps denied pkg fname dnode)))
-    (EFor _ c b
-      (let _ (cc-walk c caps denied pkg fname dnode) (cc-walk b caps denied pkg fname dnode)))
-    (ELambda _ _ b (cc-walk b caps denied pkg fname dnode))
-    (EFn _ _ b (cc-walk b caps denied pkg fname dnode))
-    (ESpawn b (cc-walk b caps denied pkg fname dnode))
-    (ESend a b
-      (let _ (cc-walk a caps denied pkg fname dnode) (cc-walk b caps denied pkg fname dnode)))
-    (EFfiCall _ args _ (cc-walk-list args caps denied pkg fname dnode))
-    (EFfiPin b (cc-walk b caps denied pkg fname dnode))
-    (EFfiUnpin b (cc-walk b caps denied pkg fname dnode))
-    (EFileOpen a b
-      (let _ (cc-walk a caps denied pkg fname dnode) (cc-walk b caps denied pkg fname dnode)))
-    (EFileRead a b
-      (let _ (cc-walk a caps denied pkg fname dnode) (cc-walk b caps denied pkg fname dnode)))
-    (EFileWrite a b
-      (let _ (cc-walk a caps denied pkg fname dnode) (cc-walk b caps denied pkg fname dnode)))
-    (EFileClose b (cc-walk b caps denied pkg fname dnode))
-    (EClose b (cc-walk b caps denied pkg fname dnode))
-    (EUnwrap b (cc-walk b caps denied pkg fname dnode))
-    (EMakeStruct _ args (cc-walk-list args caps denied pkg fname dnode))
-    (ETuple elems (cc-walk-list elems caps denied pkg fname dnode))
-    (ETupleGet tg _ (cc-walk tg caps denied pkg fname dnode))
-    (EMakeVariant _ _ args (cc-walk-list args caps denied pkg fname dnode))
-    (ESetBang _ v (cc-walk v caps denied pkg fname dnode))
-    (EStructGet b _ (cc-walk b caps denied pkg fname dnode))
-    (EAssert b _ (cc-walk b caps denied pkg fname dnode))
-    (_ unit)))
+    (EAtom _ unit)
+    (ECall f args (let _ (cc-walk f g denied) (cc-walk-list args g denied)))
+    (EDef _ v (cc-walk v g denied))
+    (EDefn _ ps body (let _ (cc-walk-params ps g denied) (cc-walk body g denied)))
+    (ELet _ v b (cc-walk-2 v b g denied))
+    (ELetMut _ v b (cc-walk-2 v b g denied))
+    (EIf c t f (let _ (cc-walk c g denied) (cc-walk-2 t f g denied)))
+    (ETryCatch b _ h (cc-walk-2 b h g denied))
+    (EMatch s arms (let _ (cc-walk s g denied) (cc-walk-arms arms g denied)))
+    (ESpawn b (cc-walk b g denied))
+    (ESend a b (cc-walk-2 a b g denied))
+    (ESendClosure a b _ (cc-walk-2 a b g denied))
+    (EFfiCall _ args _ (cc-walk-list args g denied))
+    (EFfiPin b (cc-walk b g denied))
+    (EFfiUnpin b (cc-walk b g denied))
+    (EAssert b m (let _ (cc-walk b g denied) (cc-walk-opt m g denied)))
+    (EError _ unit)
+    (EUnwrap b (cc-walk b g denied))
+    (EWhile c b (cc-walk-2 c b g denied))
+    (EFor bs c b (let _ (cc-walk-binds bs g denied) (cc-walk-2 c b g denied)))
+    (ECond cs (cc-walk-binds2 cs g denied))
+    (EBegin xs (cc-walk-list xs g denied))
+    (ELambda _ ps b (let _ (cc-walk-params ps g denied) (cc-walk b g denied)))
+    (EFn _ ps b (let _ (cc-walk-params ps g denied) (cc-walk b g denied)))
+    (EStructGet b _ (cc-walk b g denied))
+    (EMakeStruct _ args (cc-walk-list args g denied))
+    (ETuple elems (cc-walk-list elems g denied))
+    (ETupleGet tg _ (cc-walk tg g denied))
+    (EMakeVariant _ _ args (cc-walk-list args g denied))
+    (ESetBang _ v (cc-walk v g denied))
+    (EModuleDecl _ unit)
+    (EUseModule _ _ _ unit)
+    (EExport _ unit)
+    (EPrint xs (cc-walk-list xs g denied))
+    (EReadLine unit)
+    (EExit b (cc-walk b g denied))
+    (EClose b (cc-walk b g denied))
+    (EFileOpen a b (cc-walk-2 a b g denied))
+    (EFileRead a b (cc-walk-2 a b g denied))
+    (EFileWrite a b (cc-walk-2 a b g denied))
+    (EFileClose b (cc-walk b g denied))
+    (EBufAppend a b (cc-walk-2 a b g denied))
+    (EDeftype _ _ _ _ unit)
+    (ETraitDecl _ _ _ unit)
+    (EImplBlock _ _ bodies (cc-walk-impl bodies g denied))
+    (EStructDef _ _ unit)
+    (EStructDefPlus _ _ unit)
+    (EAliasDecl _ b (cc-walk b g denied))
+    (EDerive _ _ unit)
+    (ETestDecl _ b _ _ (cc-walk b g denied))
+    (EAssertEqual a b (cc-walk-2 a b g denied))
+    (EAssertTrue b _ (cc-walk b g denied))
+    (EAssertFalse b _ (cc-walk b g denied))
+    (ERunTests _ unit)
+    (ETestCompile b _ (cc-walk b g denied))
+    (EApply _ args (cc-walk-list args g denied))
+    (EMacroDef _ _ _ unit)
+    (EUnknown _ args (cc-walk-list args g denied))
+    (EByteLit _ unit)
+    (ELoadByte _ a b (cc-walk-2 a b g denied))
+    (ELoadByteSigned _ a b (cc-walk-2 a b g denied))
+    (EStoreByte _ a b c (cc-walk-3 a b c g denied))
+    (EStoreByteSigned _ a b c (cc-walk-3 a b c g denied))
+    (EByteSlice a b c (cc-walk-3 a b c g denied))
+    (EByteSliceSub a b c (cc-walk-3 a b c g denied))
+    (EByteBuf _ _ unit)
+    (EByteBufAppend a b (cc-walk-2 a b g denied))
+    (EByteBufLen b (cc-walk b g denied))
+    (EByteBufCap b (cc-walk b g denied))
+    (EByteBufPtr b (cc-walk b g denied))
+    (EAlignCheck b _ (cc-walk b g denied))
+    (EAtomicLoad a b (cc-walk-2 a b g denied))
+    (EAtomicStore a b c (cc-walk-3 a b c g denied))
+    (EAtomicAdd a b c (cc-walk-3 a b c g denied))
+    (EAtomicSub a b c (cc-walk-3 a b c g denied))
+    (EAtomicCAS a b c d (let _ (cc-walk a g denied) (cc-walk-3 b c d g denied)))
+    (EAtomicFetchAdd a b c (cc-walk-3 a b c g denied))
+    (EAtomicMax a b c (cc-walk-3 a b c g denied))
+    (EAtomicMin a b c (cc-walk-3 a b c g denied))))
 
-(defn cc-walk-arms (arms caps denied pkg fname dnode)
+(defn cc-walk-2 (a b g denied)
+  (let _ (cc-walk a g denied) (cc-walk b g denied)))
+
+(defn cc-walk-3 (a b c g denied)
+  (let _ (cc-walk a g denied) (cc-walk-2 b c g denied)))
+
+(defn cc-walk-opt (o g denied)
+  (match o (None unit) (Some x (cc-walk x g denied))))
+
+; A parameter's type annotation is an expression too.
+(defn cc-walk-params (ps g denied)
+  (match ps
+    (Nil unit)
+    (Cons p rest
+      (match p
+        (P _ t (let _ (cc-walk-opt t g denied) (cc-walk-params rest g denied)))))))
+
+(defn cc-walk-binds (bs g denied)
+  (match bs
+    (Nil unit)
+    (Cons pr rest
+      (match pr
+        (Pair _ o (let _ (cc-walk-opt o g denied) (cc-walk-binds rest g denied)))))))
+
+(defn cc-walk-binds2 (cs g denied)
+  (match cs
+    (Nil unit)
+    (Cons pr rest
+      (match pr
+        (Pair c b (let _ (cc-walk-2 c b g denied) (cc-walk-binds2 rest g denied)))))))
+
+(defn cc-walk-impl (bodies g denied)
+  (match bodies
+    (Nil unit)
+    (Cons b rest
+      (match b
+        (IB d
+          (match d
+            (DN _ _ body (let _ (cc-walk body g denied) (cc-walk-impl rest g denied)))))))))
+
+(defn cc-walk-arms (arms g denied)
   (match arms
     (Nil unit)
     (Cons a rest
-      (let _ (cc-walk (MA.body a) caps denied pkg fname dnode)
-        (cc-walk-arms rest caps denied pkg fname dnode)))))
+      (let _ (cc-walk (MA.body a) g denied)
+        (cc-walk-arms rest g denied)))))
 
 ; ===========================================================================
 ; CLOSURE REPORTING (§31.9)

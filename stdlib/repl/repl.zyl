@@ -195,11 +195,14 @@
 ; a static kind analysis, and a bare String PARAMETER is indistinguishable
 ; from an Int there (see kind-of in codegen.zyl), so `(print msg)` prints
 ; the pointer. term-write takes the pointer and writes the bytes.
+; An empty message is a failure already reported where it happened.
 (defn repl-error (msg)
-  (begin
-    (term-write msg)
-    (term-write "\n")
-    0))
+  (if (= (str-length msg) 0)
+    0
+    (begin
+      (term-write msg)
+      (term-write "\n")
+      0)))
 
 ; ===========================================================================
 ; META COMMANDS
@@ -558,7 +561,8 @@
   (if (str-eq w "defmacro") true
   (if (str-eq w "trait") true
   (if (str-eq w "alias") true
-  false)))))))))
+  (if (str-eq w "capabilities") true
+  false))))))))))
 
 (defn repl-skip-word (text i n)
   (if (>= i n)

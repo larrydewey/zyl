@@ -194,7 +194,7 @@
 ; closure call or print. A call is left alone inside a try body, when its
 ; name is a local at the site, or when the body names a function or
 ; global that a local at the site would shadow. Two rounds let a wrapper
-; of a wrapper (vec-get over array-get) flatten. ZYL_INLINE=0 turns it
+; of a wrapper (vec-get! over array-get) flatten. ZYL_INLINE=0 turns it
 ; off.
 
 (def opt-inline-limit-cell

@@ -7,6 +7,8 @@
 ; moves it to that actor. Each channel has one writer and one reader, so
 ; the output is the same on every run.
 
+(capabilities actor)
+
 (numeric checked)
 (use actor/actor)
 

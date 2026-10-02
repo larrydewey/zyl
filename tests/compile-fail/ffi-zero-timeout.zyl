@@ -1,5 +1,7 @@
 ; Compile-fail: an ffi-call timeout must be a positive number of milliseconds.
 ; expect-error: E_FFI_TIMEOUT_REQUIRED
 
+(capabilities ffi)
+
 (defn main () (begin (print (ffi-call "abs" -5 0)) 0))
 (numeric checked)

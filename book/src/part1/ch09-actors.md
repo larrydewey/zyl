@@ -97,12 +97,11 @@ Two rules for the function passed to `spawn`:
 ```
 
 ```
-error[E_TYPE_MISMATCH]: cannot unify String with Int
-  --> main.zyl:9:18
+error[E_TYPE_MISMATCH]: `str-concat` takes `String` as its 2nd argument, but this is `Int`
+  --> main.zyl:9:37
    |
  9 |           (print (str-concat "got " (chan-recv rx)))
-   |                  ^
-PANIC: error[E_TYPE_MISMATCH]: the program does not type-check (1 error above)
+   |                                     ^
 ```
 
 To carry several kinds of message on one channel, make them variants of one ADT (§9.5).

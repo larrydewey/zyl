@@ -1,4 +1,7 @@
 ; expect-error: E_TYPE_MISMATCH
 ; file-open's mode is a literal fopen mode, not a number.
+
+(capabilities io)
+
 (defn main () (let fd (file-open "/tmp/zyl-never-created" 0) (begin (file-close fd) 0)))
 (numeric checked)

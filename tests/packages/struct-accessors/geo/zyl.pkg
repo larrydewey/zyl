@@ -1,0 +1,5 @@
+(package (numeric checked)
+  (name "acme/geo") (version "1.0.0")
+  (zyl "5.0") (edition "2026")
+  (description "A test package exporting a struct and its accessors")
+  (license "MIT"))

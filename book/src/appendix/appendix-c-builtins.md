@@ -42,7 +42,7 @@ program using them is rejected (`E_CANNOT_INFER`); they are flagged
 (/ -7 2)    ; -3
 (% -7 2)    ; -1
 (+ 1.5 2.0) ; 3.500000
-(+ 1 2.0)   ; error[E_TYPE_MISMATCH]: cannot unify Float with Int
+(+ 1 2.0)   ; error[E_TYPE_MISMATCH]: the operands of `+` must have one type
 ```
 
 Every operand of one arithmetic form has the same type, `Int` or
@@ -136,7 +136,7 @@ The operands and results are `Bool`. An `Int` is not a truth value:
 |---|---|---|
 | `str-concat` | `(str-concat a b)` | returns a fresh string; inlined by the compiler |
 | `str-length` | `(str-length s)` | length in bytes; inlined |
-| `str-substring` | `(str-substring s start len)` | byte-indexed; inlined |
+| `str-substring` | `(str-substring s start len)` | byte-indexed; inlined; total: `start` is clamped into `0..(str-length s)` and `len` into what remains after it, so the result is the overlap of the requested range with the string and never an error (§25) |
 | `str-equal` | `(str-equal a b)` | compares contents, returns a `Bool`; inlined |
 | `str-eq` | `(str-eq a b)` | library function (`allocator/allocator`); same result as `str-equal` |
 | `str-len` | `(str-len s)` | library function; same result as `str-length` |
@@ -193,7 +193,7 @@ it a `_` prefix, to mark it unused; `_` may repeat.
 | `try` | `(try body (catch e handler ...))` | catches a runtime panic, binding its message to `e`; the handler may be several forms and has the body's type |
 | `with-resource` | `(with-resource (name init) body ...)` | binds `name` for `body`, then calls `(Drop.drop name)` on the way out, normally or before an error propagates; an `Int` is a file descriptor (`file-close`); a type with no `Drop` impl is `E_TRAIT_NOT_FOUND` |
 | `assert` | `(assert expr)` or `(assert expr "message")` | `expr` is `Bool`; a false `expr` panics with the message (a string literal), else `assert failed`. `Unit` |
-| `unwrap` | `(unwrap expr)` | `expr` is an `Option`; the value of `Some`, and `None` panics with `unwrap on None`. A `Result` is `E_TYPE_MISMATCH`: use `result-expect` or `result-unwrap` |
+| `unwrap` | `(unwrap expr)` | `expr` is an `Option`; the value of `Some`, and `None` panics with `unwrap on None`. A `Result` is `E_TYPE_MISMATCH`: use `result-expect!` or `result-unwrap` |
 | `error` | `(error "message")` | library function (`core/result`); returns `(Err "message")` and does not raise |
 | `panic` | `(panic "message")` | library function (`allocator/allocator`); raises, unwinding to the nearest `try` or exiting 1 |
 | `when` | `(when cond body)` | library function (`core/core`); `body` is a `Unit` statement, evaluated even when `cond` is false — to skip it, use `(if cond stmt)` |
@@ -223,7 +223,7 @@ an `Err`, so `match` is the only way to handle one. Spec §12.2 describes
 instead.
 
 Where the failure message matters, use the test assertions (C.14) or an
-explicit `if` with `error` instead of `assert`, and `result-expect`, or
+explicit `if` with `error` instead of `assert`, and `result-expect!`, or
 `result-unwrap`/`option-unwrap` with a default (Appendix B.1), instead
 of `unwrap`.
 

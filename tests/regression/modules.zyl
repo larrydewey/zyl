@@ -3,6 +3,8 @@
 ; (use "mod") imports a module from stdlib/. In a single file, only
 ; imports are testable; top-level def/export/module are no-ops for tests.
 
+(capabilities actor)
+
 (use core/core)
 (use core/list)
 (use core/option)

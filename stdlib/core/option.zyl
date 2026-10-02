@@ -48,7 +48,7 @@
     (Some _ opt)
     (None other)))
 
-(defn option-expect (opt msg)
+(defn option-expect! (opt msg)
   (match opt
     (Some v v)
     (None (panic msg))))

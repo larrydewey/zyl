@@ -1,0 +1,58 @@
+; E_PANIC_UNMARKED cannot be reached from a program -- it is the rule for
+; the standard library's own definitions -- so the check is driven here on
+; hand-built definitions whose names carry the stdlib key.
+
+(use core/core)
+(use core/list)
+(use text/view)
+(use compiler/ast)
+(use compiler/expr_inner)
+(use compiler/unused_check)
+
+; `(panic "boom")`, as module resolution leaves it.
+(defn call-panic () (Expr (ECall (Expr (EAtom (AIdent "panic"))) (Cons (Expr (EAtom (AStr "boom"))) Nil))))
+
+; `(ffi-call "zyl_panic" "boom" 1000)`, the runtime entry by name.
+(defn call-zyl-panic ()
+  (Expr (EApply "ffi-call" (Cons (Expr (EAtom (AStr "zyl_panic"))) (Cons (Expr (EAtom (AStr "boom"))) (Cons (Expr (EAtom (AInt 1000))) Nil))))))
+
+(defn defn-of (name body) (Expr (EDefn name Nil body)))
+
+; "ok" when the check passes, else the diagnostic it raised.
+(defn outcome (name body) (try (let _ (uc-check-program (Cons (defn-of name body) Nil)) "ok") (catch e e)))
+
+(defn is-unmarked (text sym)
+  (view-starts-with (view-of text)
+    (str-concat "error[E_PANIC_UNMARKED]: `" (str-concat sym (str-concat "` can stop the program but is not spelled `" (str-concat sym "!`"))))))
+
+(test "a plain stdlib name that calls panic is E_PANIC_UNMARKED"
+  (assert-true (is-unmarked (outcome "zyl/std@0::collections/vec::vec-get" (call-panic)) "vec-get")))
+
+(test "the runtime entry counts as a direct call"
+  (assert-true (is-unmarked (outcome "zyl/std@0::text/view::view-slice" (call-zyl-panic)) "view-slice")))
+
+(test "the help is the rename"
+  (assert-true (view-ends-with (view-of (outcome "zyl/std@0::collections/vec::vec-get" (call-panic)))
+                               "= help: rename it `vec-get!` so callers can see it may stop the program, or return an Option")))
+
+(test "a spelled stdlib name passes"
+  (assert-equal (outcome "zyl/std@0::collections/vec::vec-get!" (call-panic)) "ok"))
+
+(test "the compiler's own modules are exempt"
+  (begin
+    (assert-equal (outcome "zyl/std@0::compiler/icnf::ic-fail" (call-zyl-panic)) "ok")
+    (assert-equal (outcome "zyl/std@0::lsp/server::lsp-die" (call-panic)) "ok")
+    (assert-equal (outcome "zyl/std@0::repl/interp::interp-fail" (call-panic)) "ok")))
+
+(test "panic itself and main are exempt"
+  (begin
+    (assert-equal (outcome "zyl/std@0::allocator/allocator::panic" (call-zyl-panic)) "ok")
+    (assert-equal (outcome "main" (call-panic)) "ok")))
+
+(test "a program's definition is a warning, not an error"
+  (assert-equal (outcome "parse" (call-panic)) "ok"))
+
+(test "a body that does not panic passes"
+  (assert-equal (outcome "zyl/std@0::collections/vec::vec-len" (Expr (EAtom (AInt 0)))) "ok"))
+
+(run-tests)

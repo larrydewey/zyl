@@ -22,6 +22,7 @@ $4" ] || fail "$1 under $mode: $out"
 }
 
 cat > "$SCRATCH/dl.zyl" <<'EOF'
+(capabilities actor)
 (defn main ()
   (let c (chan 1)
     (let rx (chan-rx c)
@@ -33,6 +34,7 @@ EOF
 build dl
 
 cat > "$SCRATCH/exit.zyl" <<'EOF'
+(capabilities actor)
 (defn main ()
   (let _ (spawn (fn () (print "one")))
     (let _ (spawn (fn () (let _ (print "two") (panic "late"))))
@@ -42,6 +44,7 @@ EOF
 build exit
 
 cat > "$SCRATCH/mp.zyl" <<'EOF'
+(capabilities actor)
 (defn main ()
   (let c (chan 1)
     (let rx (chan-rx c)
@@ -52,6 +55,7 @@ EOF
 build mp
 
 cat > "$SCRATCH/late.zyl" <<'EOF'
+(capabilities actor)
 (use actor/actor)
 (defn spin (n) (if (= n 0) 0 (spin (- n 1))))
 (defn main ()
@@ -66,6 +70,7 @@ EOF
 build late
 
 cat > "$SCRATCH/fw.zyl" <<'EOF'
+(capabilities io actor)
 (use actor/actor)
 (defn main ()
   (let a (spawn (fn () (begin (file-write 1 "a-out\n") (file-write 2 "a-err\n") (print "a-print"))))
@@ -85,6 +90,7 @@ check exit "main end
 one
 two
 three" 1 "PANIC: late"
-check mp "main" 1 "PANIC: main fails"
+check mp "main" 1 "PANIC: main fails
+  in main"
 check late "b done" 1 "PANIC: E_DEADLOCK: every live actor is blocked on a channel or a join"
 echo ok

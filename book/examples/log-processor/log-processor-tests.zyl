@@ -2,6 +2,8 @@
 ; Build:  zyl log-processor-tests.zyl -o log-processor-tests
 ; Run:    ./log-processor-tests
 
+(capabilities io)
+
 (numeric checked)
 (use logstats)
 

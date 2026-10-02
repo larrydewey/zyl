@@ -110,11 +110,11 @@ unused-variable warning.
 catch-all could never run, and is a compile-time error
 (`E_UNREACHABLE_MATCH_ARM`).
 
-Be careful with spelling. The compiler treats any arm head that is not a
-known constructor as a catch-all, and such an arm binds nothing. A
-misspelled constructor in the *last* arm therefore silently matches
-everything the earlier arms did not; a misspelled one anywhere else is
-caught as `E_UNREACHABLE_MATCH_ARM`.
+A catch-all is written in lowercase. An arm head that starts with a
+capital letter must be a constructor some type declares; a misspelled one
+such as `(Nnoe 0)` is `E_UNKNOWN_CONSTRUCTOR`, and the message suggests the
+nearest constructor (`None`). A lowercase arm head that is not a
+constructor is a catch-all.
 
 ### One Level at a Time
 
@@ -392,7 +392,7 @@ capturing or not, works the same: `(option-map (Some 3) (fn (x) (+ x k)))`
 is `Some(13)`.
 
 The other core helpers: `result-map`, `result-or`, `result-unwrap`
-(value or a default), `result-expect` (value or `error`),
+(value or a default), `result-expect!` (the value, or a panic with your message),
 `result-is-ok`/`result-is-err`, and `result-to-option`.
 
 ## 6.7 The `Option` Type — Avoiding Null
@@ -418,7 +418,7 @@ There is no null. Use `Option` for "maybe a value":
 
 The core helpers mirror the `Result` ones: `option-map`,
 `option-flatmap`, `option-or`, `option-unwrap` (value or a default),
-`option-expect` (value or `error`), `option-is-some`/`option-is-none`
+`option-expect!` (the value, or a panic with your message), `option-is-some`/`option-is-none`
 and `option-to-result`. As with `Result`, the `Option` comes first and
 the function second: `(option-map (Some 21) (fn (x) (* x 2)))`.
 
@@ -464,7 +464,7 @@ What `try` is and is not:
 - **It catches `error`, not `Err`.** `try` is not sugar for matching on a
   `Result`: an `(Err ...)` value is an ordinary value and passes straight
   through `try` unchanged. Use `match` or `result-and-then` for Results,
-  and `result-expect` to turn an `Err` into an `error` on purpose.
+  and `result-expect!` to turn an `Err` into a panic on purpose.
 - The handler may be several forms, run in order, with `err-var` bound
   to the message String. Its last form is the value of the `try`, so it
   must have the same type as `expr`: here both are Int.
@@ -472,34 +472,67 @@ What `try` is and is not:
 ## 6.9 `assert` and `unwrap`
 
 The specification defines `(assert condition "message")` (the condition
-is a `Bool`), which aborts
-with `E_ASSERT_FAIL` when the condition is false, and `(unwrap r)`, which
-extracts an `Ok`/`Some` value or aborts. Both work today, with two
-differences from the specification:
+is a `Bool`), which panics when the condition is false, and `(unwrap r)`, which
+extracts an `Ok`/`Some` value or aborts. Both work today:
 
 - A false `(assert c "msg")` panics with `msg` when it is a string
-  literal (`assert failed` otherwise); no `E_ASSERT_FAIL` code is shown.
+  literal (`assert failed` otherwise), with no error code.
 - `(unwrap x)` takes an `Option` only: of `None` it panics with
   `unwrap on None`, and applied to a `Result` it is `E_TYPE_MISMATCH`.
-  Use `result-expect` for a `Result`.
+  Use `result-expect!` for a `Result`.
 
 Both unwind to the nearest `try`, and inside a `test` they fail that
 test. When the message matters, use an explicit check with `error`
-instead of `assert`, and `result-expect`/`option-expect` (or
+instead of `assert`, and `result-expect!`/`option-expect!` (or
 `result-unwrap`/`option-unwrap` with a default) instead of `unwrap`:
 
 ```lisp
-(defn checked-half (n)
+(defn checked-half! (n)
   (if (is-odd n)
-    (panic "checked-half: odd input")
+    (panic "checked-half!: odd input")
     (/ n 2)))
 
 (defn main ()
   (begin
-    (print (checked-half 10))                           ; 5
-    (print (result-expect (Ok 42) "expected a value"))  ; 42
+    (print (checked-half! 10))                          ; 5
+    (print (result-expect! (Ok 42) "expected a value"))  ; 42
     0))
 ```
+
+### Spelling a function that can stop
+
+`checked-half!` ends in `!` because it can stop the program. That is a
+rule, not a habit: in the standard library a function that can panic is
+spelled with a trailing `!`, its total sibling is spelled with `?` and
+returns an `Option` (or a `Result` where a message matters), and there
+is no plain name. `vec-get!`/`vec-get?`, `vec-set!`/`vec-set?`,
+`vec-last!`/`vec-last?`, `slice-get!`/`slice-get?`,
+`view-slice!`/`view-slice?`, `i32x4-get!`/`i32x4-get?` and the rest of
+Chapter 4 follow it, as do `option-expect!` and `result-expect!`. The
+explicit forms `panic`, `assert`, the `assert-*` test forms and `unwrap`
+keep their names: they already say what they do. The result is that
+`grep` for `!`, `unwrap`, `panic` and `assert` finds every line of a
+program that can stop at run time.
+
+The compiler holds its own library to this (`E_PANIC_UNMARKED`) and
+reminds you in yours: a `defn` whose body calls `panic` directly, and
+whose name has no trailing `!`, gets a warning at the definition.
+
+```
+warning[W_PANIC_UNMARKED]: `parse` can stop the program but is not spelled `parse!`
+  --> parse.zyl:1:1
+   |
+ 1 | (defn parse (s)
+   | ^
+   = help: rename it `parse!` so callers can see it may stop the program, or return an Option
+```
+
+The check reads direct calls only (a function that stops through a `!`
+callee is not flagged), and `main` and test bodies are exempt. When a
+`!` function of the library refuses an input, its message names the
+input and the bound and points at the `?` sibling:
+`E_INDEX_OUT_OF_BOUNDS: vec-get! index 7 is outside a Vec of 3 elements`,
+then `= help: use (vec-get? v i) and match its Option`.
 
 In tests, `assert-true`, `assert-false` and `assert-equal` do work
 (Chapter 11).
@@ -511,7 +544,8 @@ In tests, `assert-true`, `assert-false` and `assert-equal` do work
 | Expected failure (parsing, lookup) | Return a `Result`; handle with `match` or `result-and-then` |
 | Optional value | `Option` + `match` or `option-map` |
 | Default on failure | `result-unwrap` / `option-unwrap` with a default |
-| Unrecoverable condition | `error` |
+| Unrecoverable condition | `panic`, from a function whose name ends in `!` |
+| A lookup that may miss | the `?` spelling (`vec-get?`, `map-get`), matched like any `Option` |
 | Recovering from an `error` | `try` / `catch` |
 | Internal invariant | an `if` that calls `error` (not `assert`) |
 | Several kinds of error | `Result` whose `Err` holds your own ADT |

@@ -205,7 +205,7 @@ and the `if` can only be used for its effect:
 
 There is no truthiness: a condition is a comparison, a Bool, or a call
 that returns one. An Int is not a condition — `(if n ...)` is
-`E_TYPE_MISMATCH` (cannot unify Int with Bool); write `(if (!= n 0) ...)`.
+`E_TYPE_MISMATCH` (`` `if` needs a Bool condition, but this is `Int` ``); write `(if (!= n 0) ...)`.
 The same holds for `cond`, `when`, `while` and `for`.
 
 ### `cond` — Multi-Branch
@@ -307,7 +307,7 @@ The accepted binding forms:
 4. Go to step 2.
 
 **No iterator protocol yet** — `for` doesn't iterate over collections.
-Use an index with `vec-get`, or recursion over a `List`.
+Use an index with `vec-get!`, or recursion over a `List`.
 
 ## 3.6 Errors
 
@@ -316,7 +316,7 @@ Zyl has two mechanisms, and they are for different things:
 - **Expected failures are values.** A function that can fail returns a
   `Result`: `(Ok value)` or `(Err reason)`. The caller decides what to
   do with it, usually with `match` (Chapter 6).
-- **`panic` aborts.** `(panic "message")` stops the program with
+- **`panic` aborts, and a function that may call it ends in `!`.** `(panic "message")` stops the program with
   `PANIC: message` and exit status 1 — unless a `try` is active, in
   which case control passes to its `catch`. `(error "message")` is the
   other half: it returns `(Err "message")` and raises nothing, for a
@@ -346,9 +346,10 @@ printed while another returned a number would not type-check.
 
 The core library has helpers for the common cases:
 `(result-unwrap r default)` and `(option-unwrap o default)` return the
-value or a default, and `(result-expect r "msg")` /
-`(option-expect o "msg")` return the value or call `error` with the
-message.
+value or a default, and `(result-expect! r "msg")` /
+`(option-expect! o "msg")` return the value or stop the program with the
+message. The trailing `!` is how Zyl spells a function that can stop the
+program: name your own that way too (Chapter 6, §6.9).
 
 ### `error`, `try` and `catch`
 
@@ -361,7 +362,7 @@ message.
 3. The handler's value is the value of the `try`.
 
 ```lisp
-(defn percent-of-100 (n)
+(defn percent-of-100! (n)
   (if (== n 0)
     (panic "division by zero")
     (/ 100 n)))
@@ -372,7 +373,7 @@ message.
     -1))
 
 (defn safe-percent (n)
-  (try (percent-of-100 n)
+  (try (percent-of-100! n)
     (catch err (report err))))
 
 (defn main ()
@@ -398,11 +399,11 @@ Both work. A false `assert` panics with your message when it is a
 string literal (`assert failed` otherwise). `unwrap` takes an `Option`:
 of `None` it panics with `unwrap on None`, and applied to a `Result` it
 is `E_TYPE_MISMATCH`. Where the message matters, or for a `Result`, use
-`result-expect` / `option-expect` instead of `unwrap`, and an explicit
+`result-expect!` / `option-expect!` instead of `unwrap`, and an explicit
 check with `error` instead of `assert`:
 
 ```lisp
-(defn checked-sqrt-floor (x)
+(defn checked-sqrt-floor! (x)
   (if (< x 0)
     (panic "sqrt requires non-negative input")
     (sqrt-floor x 0)))
@@ -411,7 +412,7 @@ check with `error` instead of `assert`:
   (if (> (* (+ r 1) (+ r 1)) x) r (sqrt-floor x (+ r 1))))
 
 (defn main ()
-  (print (checked-sqrt-floor 17))    ; 4
+  (print (checked-sqrt-floor! 17))   ; 4
   0)
 ```
 

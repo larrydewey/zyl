@@ -111,7 +111,7 @@ it:
 
 | Spec type | In the implementation |
 |-----------|-----------------------|
-| `Vec<T>` | `(Vec T)`, a generic ADT in `collections/vec`: `(deftype Vec (VecC (Array T) Int Arena))` (a typed, bounds-checked runtime array, the length, the arena). Use `vec-create` (which takes an `Arena`) or `vec-create-default`, then `vec-push`, `vec-get`, `vec-len`; `vec-get` returns `T`. |
+| `Vec<T>` | `(Vec T)`, a generic ADT in `collections/vec`: `(deftype Vec (VecC (Array T) Int Arena))` (a typed, bounds-checked runtime array, the length, the arena). Use `vec-create` (which takes an `Arena`) or `vec-create-default`, then `vec-push`, `vec-get!`, `vec-len`; `vec-get!` returns `T`. |
 | `Map<K,V>` | `(Map String V)`, a generic ADT in `core/map` (an association list; keys compared with `str-eq`), with `map-new`, `map-insert`, `map-get` (an `Option`), `map-has`, `map-remove`. `collections/intmap` is a separate Int-to-Int hash map (`IntMap`, `intmap-new`). |
 | `Set<T>` | `collections/set` (not in §4.2). |
 | `Result<T,E>` | `(deftype Result (Ok T) (Err E))` in `core/result`. |
@@ -136,7 +136,7 @@ so `Some`, `Ok` and `Cons` need no `use`.
   (let v (vec-push (vec-push (vec-create-default 4) 10) 20)
     (begin
       (print (vec-len v))      ; 2
-      (print (vec-get v 1))    ; 20
+      (print (vec-get! v 1))    ; 20
       (print v)                ; [10, 20]
       0)))
 ```
@@ -249,14 +249,16 @@ program just before ICNF lowering.
   declarations all constrain inference; a type name in a field that is
   not a known type (an uppercase name like `T`) is a type parameter.
 - **Every failure is an error.** A unification failure is
-  `E_TYPE_MISMATCH` with both types, at the innermost expression being
-  checked. A failed occurs check, such as `(defn f (x) (x x))`, is
+  `E_TYPE_MISMATCH` with both types, at the offending expression, and
+  with the reason when the site knows one (the parameter an argument was
+  for, an operator, an `if` condition, `main`'s result). A failed occurs check, such as `(defn f (x) (x x))`, is
   `E_INFINITE_TYPE`. A name defined nowhere is `E_UNBOUND_VARIABLE`. A
   type the program does not determine, such as the result of an
   `ffi-call` to a symbol with no signature, is `E_CANNOT_INFER`. The pass keeps going after an error, so
-  one compile lists them all (a clash often shows up twice, once for the
-  argument and once for the whole call), and then fails with "the
-  program does not type-check (N errors above)".
+  one compile lists them all, each once: an undefined name is reported
+  at its first use only, and nothing that depends on it is reported as
+  well. After more than one error the compile ends with
+  "N errors; fix the first one first".
 - **The results are used**, not only computed. Every expression's type
   reaches code generation, which picks `print`'s format (`%lld`, `%f`,
   `%s`), String comparison and Float arithmetic from it. Trait calls are
@@ -271,8 +273,8 @@ program just before ICNF lowering.
 ```lisp
 (defn main ()
   (begin
-    (print (+ 1 "a"))       ; error[E_TYPE_MISMATCH]: cannot unify String with Int
-    (print (+ 1.5 2))       ; error[E_TYPE_MISMATCH]: cannot unify Int with Float
+    (print (+ 1 "a"))       ; error[E_TYPE_MISMATCH]: the operands of `+` must have one type
+    (print (+ 1.5 2))       ; error[E_TYPE_MISMATCH]: the operands of `+` must have one type
     0))
 ```
 
@@ -338,9 +340,7 @@ and no annotation on `let`.
 | `E_BYTE_VALUE_OOB` | **Raised** by the parser for `(byte N)` outside 0–255. |
 | `E_MALFORMED_FORM` | **Raised** for a special form whose shape its parser rejects (it used to compile to the constant 0). |
 | `E_MALFORMED_PARAMETER` | **Raised** for a parameter that is neither a name nor `(name Type)`, including the colon spelling `(a : Int)` and a trait name in type position, `(a Ord)`. |
-| `E_RETURN_TYPE_MISMATCH` | Catalogued; never raised (there are no return annotations). |
-| `E_UNKNOWN_TYPE` | Catalogued; never raised: an unknown type name is a type variable. |
-| `E_TRAIT_BOUND_NOT_SATISFIED` | In §6.7; never raised (Chapter 19). |
+| `E_UNKNOWN_TYPE` | **Raised** for a lowercase field type in a `deftype` and an alias that names no type; an unknown capitalised type name in a parameter is a type variable. |
 
 Other checks run before type inference, for example `E_ARITY_MISMATCH`,
 `E_MUT_CONFLICT` and the match checks of Chapter 18. They are covered in

@@ -224,9 +224,7 @@ runtime event.
 
 | Code | Meaning |
 |-------|---------|
-| `E_USER_ERROR` | `(panic msg)` |
 | `E_MUT_CONFLICT` | Aliasing violation |
-| `E_ASSERT_FAIL` | Assertion failure |
 | `E_FFI_TIMEOUT` | FFI call exceeded its timeout |
 | `E_FFI_TIMEOUT_REQUIRED` | `ffi-call` lacks a positive integer literal timeout |
 | `E_FFI_SYMBOL_REQUIRED` | `ffi-call` symbol is not a string literal |
@@ -240,7 +238,6 @@ runtime event.
 | `E_REGION_EXHAUSTED` | A `with-region` region exceeded its size or limit (runtime) |
 | `E_MACRO_NON_TERMINATION` | Macro expansion loop |
 | `E_MATCH_NONEXHAUSTIVE` | Missing match case |
-| `E_UNINITIALIZED_USE` | Variable used before initialisation |
 | `E_CAPABILITY_LEAK` | TMut leaked |
 | `E_TRAIT_NOT_FOUND` | Missing impl |
 | `E_DUPLICATE_IMPL` | Conflicting impls |
@@ -248,8 +245,6 @@ runtime event.
 | `E_CONTRACT_VIOLATION` | Contract failed |
 | `E_OVERFLOW` | Integer overflow |
 | `E_DIVISION_BY_ZERO` | Division by zero |
-| `E_TEST_FAILURE` | Test assertion failed |
-| `E_TEST_RUNNER_ERROR` | Test harness error |
 | `E_TRAIT_NOT_DERIVABLE` | Cannot derive trait |
 | `E_RESERVED_KEYWORD` | Reserved keyword used as an identifier |
 | `E_CANNOT_INFER` | No type for an expression: a generic parameter with no call-site evidence, or an `ffi-call` to an undeclared foreign symbol |
@@ -278,12 +273,12 @@ raise.
 | `core/result` | `Result`, `Ok`, `Err`, `result-is-ok`, `result-unwrap`, `result-map`, `result-and-then` |
 | `core/list` | `List`, `Cons`, `Nil`, `car`, `cdr`, `list-length`, `list-append`, `list-reverse` |
 | `core/map` | `map-new`, `map-insert`, `map-get`, `map-has`, `map-remove`, `map-entries` |
-| `collections/vec` | `vec-create`, `vec-push`, `vec-pop`, `vec-get`, `vec-set`, `vec-len`, `vec-cap`, `vec-last` |
+| `collections/vec` | `vec-create`, `vec-push`, `vec-pop`, `vec-get!`, `vec-set!`, `vec-len`, `vec-cap`, `vec-last!` |
 | `collections/intmap` | `intmap-new-with`, `intmap-put`, `intmap-get`, `intmap-len`, `intmap-has`, `intmap-remove` |
 | `collections/set` | `set-create`, `set-add`, `set-remove`, `set-len`, `set-contains` |
 | `collections/collections` | `assoc-*`, `list-map`, `list-filter`, `list-fold`, `list-nth`, `list-range` |
-| `collections/slice` | `Slice`, `slice-vec`, `slice-of-vec`, `slice-sub`, `slice-get`, `slice-len`, `slice-fold`, `slice-to-vec` |
-| `text/view` | `StrView`, `view-of`, `view-slice`, `view-sub`, `view-split`, `view-trim`, `view-parse-int`, `view-to-string`; `Cursor`, `cursor-of`, `cursor-take-while`, `cursor-expect` |
+| `collections/slice` | `Slice`, `slice-vec!`, `slice-of-vec`, `slice-sub!`, `slice-get!`, `slice-len`, `slice-fold`, `slice-to-vec` |
+| `text/view` | `StrView`, `view-of`, `view-slice!`, `view-sub!`, `view-split`, `view-trim`, `view-parse-int`, `view-to-string`; `Cursor`, `cursor-of`, `cursor-take-while`, `cursor-expect` |
 | `actor/actor` | `actor-spawn`, `actor-wait`, `actor-is-alive` |
 | `atomic/atomic` | `atomic-load`, `atomic-store`, `atomic-add`, `atomic-cas`, `atomic-fetch-add` |
 | `ffi/ffi` | `ffi-pin-value`, `ffi-unpin-value`, `ffi-safe-call`, `ffi-pin-call-unpin` |

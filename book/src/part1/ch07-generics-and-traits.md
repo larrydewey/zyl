@@ -334,7 +334,7 @@ evidence at any call site. A bound is meant to supply a *finite set* of
 candidates, which means searching the program's impls for the ones that
 unify, and reporting either no candidate or an ambiguous set. Until then a
 never-called generic function that uses a trait method reports
-`E_TYPE_MISMATCH: cannot unify Unit with Int` at an unrelated line, naming
+an `E_TYPE_MISMATCH` between `Unit` and `Int` at an unrelated line, naming
 neither the trait nor the parameter. That diagnostic is worth fixing on its
 own terms, with or without bounds.
 
@@ -458,7 +458,6 @@ one, use an ADT wrapper (§7.3):
 | `E_PKG_ORPHAN_IMPL` | impl where neither the trait nor the type is yours | raised |
 | `E_CANNOT_INFER` | a trait call whose receiver type is never known, or more than 256 instances | raised |
 | `E_TYPE_MISMATCH` | a trait call or impl that disagrees with the trait's signature, or two types for one parameter | raised |
-| `E_TRAIT_BOUND_NOT_SATISFIED` | concrete type lacks a bound's trait | in the specification; never raised |
 | `E_TRAIT_NOT_DERIVABLE` | a field lacks the derived trait, or the trait is not derivable | raised |
 | `E_DUPLICATE_IMPL` | two impls for one (Trait, Type) | raised |
 | `E_TRAIT_NOT_FOUND` | no impl for a known receiver type, or a dot call whose method several traits declare | raised |

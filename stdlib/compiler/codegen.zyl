@@ -609,12 +609,12 @@
       (FNNil (cg-fn-names (fntail fns))))))
 
 (defn cg-fail-undefined-fn (st env n site)
-  (let m1 "call to undefined function `"
+  (let m1 "`"
     (let m2 (str-concat m1 (err-name n))
-      (let msg (str-concat m2 "`")
+      (let msg (str-concat m2 "` is not defined")
         (let off (ffi-call "zyl_span_off" site 1000)
           (let fid (ffi-call "zyl_span_file" site 1000)
-            (let hint (err-suggest-help n (cg-visible-names st env) "define it, or bind it with `let`; an anonymous function is written (fn (params) body) -- ((params) body) is not lambda syntax (spec 7.1)")
+            (let hint (err-suggest-help n (cg-visible-names st env) "define it with `defn`, or bind it with `let`")
               (let text (err-at "E_UNBOUND_VARIABLE" msg fid off hint)
                 (ffi-call "zyl_panic" text 1000)))))))))
 
@@ -655,9 +655,9 @@
 ; failure at compile time, at the actual unbound reference, replaces
 ; that entire class of bug with a real error at the real location.
 (defn cg-fail-unbound (st env n site)
-  (let m1 "unbound identifier `"
+  (let m1 "`"
     (let m2 (str-concat m1 (err-name n))
-      (let msg (str-concat m2 "`")
+      (let msg (str-concat m2 "` is not defined")
         (let off (ffi-call "zyl_span_off" site 1000)
           (let fid (ffi-call "zyl_span_file" site 1000)
             (let hint (err-suggest-help n (cg-visible-names st env) "check the spelling, or bind it with `let` before this point")
@@ -2107,7 +2107,64 @@
     (let st2 (cg-functions st1 fns)
       (let st3 (if (rt-mode-p) st2 (cg-entry-stub st2))
         (let st4 (cg-format-strings st3)
-          (cg-rt-bss (cg-rodata-emit-list st4 (cg-reverse-rodata (cg-rodata-of st4)))))))))
+          (cg-rt-bss (cg-syms-table (cg-rodata-emit-list st4 (cg-reverse-rodata (cg-rodata-of st4))) fns)))))))
+
+; The function-name table zyl_panic's backtrace reads (docs/runtime-in-zyl-design.md), in .rodata:
+; a count, then per function (code offset from the pair, name offset from the table), in address
+; order since functions are emitted in order, an end pair at the entry stub, then the names.
+; The label is indented so the verifier's census does not count it as a function.
+(deftype SymEnt (SymEnt String String))  ; label, display name
+
+(defn cg-syms-table (st fns)
+  (if (rt-mode-p) st
+    (let es (cg-syms-entries-of st fns)
+      (let n (list-length es)
+        (let st2 (cg-emit-lines st (Cons "    .p2align 3" (Cons "    .globl zyl_syms" (Cons "    zyl_syms:" Nil))))
+          (let st3 (cg-emit-line st2 (str-concat "    .quad " (ffi-call "zyl_int_text" n 1000)))
+            (let st4 (cg-syms-pairs st3 es (+ 8 (* 8 (+ n 1))))
+              (let st5 (cg-emit-lines st4 (Cons "    .long main - ." (Cons "    .long 0" Nil)))
+                (cg-syms-names st5 es)))))))))
+
+(defn cg-syms-entries-of (st fns)
+  (if (is-nil fns) Nil
+    (match (fh-if fns)
+      (IFn nm _ _ (Cons (SymEnt (cg-sym-mangled (cg-arena-of st) nm) (cg-display-name nm)) (cg-syms-entries-of st (tl2 fns))))
+      (_ (cg-syms-entries-of st (tl2 fns))))))
+
+(defn cg-syms-pairs (st es off)
+  (match es
+    (Nil st)
+    (Cons e t
+      (match e
+        (SymEnt lbl disp
+          (cg-syms-pairs
+            (cg-emit-line (cg-emit-line st (str-concat "    .long " (str-concat lbl " - .")))
+                          (str-concat "    .long " (ffi-call "zyl_int_text" off 1000)))
+            t (+ off (+ (ffi-call "zyl_cstr_len" disp 1000) 1))))))))
+
+(defn cg-syms-names (st es)
+  (match es
+    (Nil st)
+    (Cons e t
+      (match e
+        (SymEnt _ disp
+          (cg-syms-names (cg-emit-line st (str-concat "    .string \"" (str-concat (cg-escape (cg-arena-of st) disp) "\""))) t))))))
+
+; The source name: the symbol after the last `::` of a canonical key, cut at a specialization's `~`.
+(defn cg-display-name (nm)
+  (let len (cg-before-tilde nm 0 (ffi-call "zyl_cstr_len" nm 1000))
+    (let start (cg-after-last-colons nm 0 0 len)
+      (if (and (= start 0) (= len (ffi-call "zyl_cstr_len" nm 1000))) nm (str-substring nm start (- len start))))))
+
+(defn cg-before-tilde (nm i len)
+  (if (>= i len) len (if (= (ffi-call "zyl_cstr_byte_at" nm i 1000) 126) i (cg-before-tilde nm (+ i 1) len))))
+
+(defn cg-after-last-colons (nm i acc len)
+  (if (>= (+ i 1) len)
+    acc
+    (if (and (= (ffi-call "zyl_cstr_byte_at" nm i 1000) 58) (= (ffi-call "zyl_cstr_byte_at" nm (+ i 1) 1000) 58))
+      (cg-after-last-colons nm (+ i 2) (+ i 2) len)
+      (cg-after-last-colons nm (+ i 1) acc len))))
 
 ; Reverse the collected rodata list so entries emit in creation order.
 (defn cg-reverse-rodata (xs)
@@ -2559,11 +2616,12 @@
 
 ; zyl_rt_setjmp/longjmp over {rbx rbp r12-r15 rsp rip}, rbp/rsp/rip mangled; zyl_rt_try_call(buf, fn) runs fn aligned: 0 on return (result at buf+64), 1 on a longjmp.
 (defn cg-rt-jmp-stubs ()
+  (Cons "zyl_rt_frame_addr:" (Cons "    mov rax, rbp" (Cons "    ret"
   (list-append (Cons ".globl zyl_rt_setjmp" (Cons "zyl_rt_setjmp:" (cg-rt-jmp-save (Cons "    lea rax, [rsp+8]" (cg-mangle-rax "48" (Cons "    mov rax, [rsp]" (cg-mangle-rax "56" (Cons "    xor eax, eax" (Cons "    ret" Nil)))))))))
     (list-append (Cons "zyl_rt_longjmp:" (Cons "    mov rax, rsi" (Cons "    mov edx, 1" (Cons "    test rax, rax" (Cons "    cmove rax, rdx" (Cons "    mov rbx, [rdi]" (cg-demangle "rbp" "8" (Cons "    mov r12, [rdi+16]" (Cons "    mov r13, [rdi+24]" (Cons "    mov r14, [rdi+32]" (Cons "    mov r15, [rdi+40]" (cg-demangle "rdx" "48" (cg-demangle "rcx" "56" (Cons "    mov rsp, rdx" (Cons "    jmp rcx" Nil)))))))))))))))
       (list-append (Cons "zyl_rt_try_call:" (cg-rt-jmp-save (Cons "    mov rax, rsp" (cg-mangle-rax "48" (Cons "    lea rax, [rip+.Lzyl_rt_try_land]" (cg-mangle-rax "56" (Cons "    push rbp" (Cons "    mov rbp, rsp" (Cons "    push rdi" (Cons "    and rsp, -16" (Cons "    call rsi" (Cons "    mov rdi, [rbp-8]" (Cons "    mov [rdi+64], rax" (Cons "    mov rsp, rbp" (Cons "    pop rbp" (Cons "    xor eax, eax" (Cons "    ret" (Cons ".Lzyl_rt_try_land:" (Cons "    mov eax, 1" (Cons "    ret" Nil))))))))))))))))))))
         ; The guard word and its one-time setter (zyl_ensure_arenas, from getrandom).
-        (Cons ".globl zyl_rt_guard_set" (Cons "zyl_rt_guard_set:" (Cons "    mov qword ptr [rip+zyl_ptr_guard], rdi" (Cons "    ret" (Cons ".bss" (Cons ".globl zyl_ptr_guard" (Cons ".p2align 3" (Cons "zyl_ptr_guard:" (Cons "    .zero 8" (Cons ".text" Nil))))))))))))))
+        (Cons ".globl zyl_rt_guard_set" (Cons "zyl_rt_guard_set:" (Cons "    mov qword ptr [rip+zyl_ptr_guard], rdi" (Cons "    ret" (Cons ".bss" (Cons ".globl zyl_ptr_guard" (Cons ".p2align 3" (Cons "zyl_ptr_guard:" (Cons "    .zero 8" (Cons ".text" Nil)))))))))))))))))
 
 (defn cg-rt-jmp-save (tail)
   (Cons "    mov [rdi], rbx" (Cons "    mov rax, rbp" (cg-mangle-rax "8" (Cons "    mov [rdi+16], r12" (Cons "    mov [rdi+24], r13" (Cons "    mov [rdi+32], r14" (Cons "    mov [rdi+40], r15" tail))))))))
@@ -3871,14 +3929,16 @@
 ; order rbx r12 r13 r14 r15), spill slots, six staging words for a tail
 ; call's arguments across the region release, and the stack-variant
 ; blocks.
-(deftype MF (MF Alloc (List Int) Int String Int Words Bool))  ; alloc, saved, region flags, label base, blocks start, block offsets, frameless
+(deftype MF (MF Alloc (List Int) Int String Int Words Bool Bool))  ; alloc, saved, region flags, label base, blocks start, block offsets, frameless, leaf
 
-(defn mf-alloc (f) (match f (MF a _ _ _ _ _ _ a)))
-(defn mf-saved (f) (match f (MF _ s _ _ _ _ _ s)))
-(defn mf-rflags (f) (match f (MF _ _ r _ _ _ _ r)))
-(defn mf-base (f) (match f (MF _ _ _ b _ _ _ b)))
-; No rbp frame: only pushes of the saved registers (no spills, blocks, regions or alignment).
-(defn mf-frameless (f) (match f (MF _ _ _ _ _ _ x x)))
+(defn mf-alloc (f) (match f (MF a _ _ _ _ _ _ _ a)))
+(defn mf-saved (f) (match f (MF _ s _ _ _ _ _ _ s)))
+(defn mf-rflags (f) (match f (MF _ _ r _ _ _ _ _ r)))
+(defn mf-base (f) (match f (MF _ _ _ b _ _ _ _ b)))
+; Only pushes of the saved registers (no spills, blocks, regions or alignment); rbp is pushed too unless the function is a leaf.
+(defn mf-frameless (f) (match f (MF _ _ _ _ _ _ x _ x)))
+; No call: nothing below this frame can panic, so it needs no place on the rbp chain zyl_panic walks.
+(defn mf-leaf (f) (match f (MF _ _ _ _ _ _ _ x x)))
 ; Without region words the saved registers are pushed right after rbp
 ; (the same slots) and reloaded from them on the way out. Measured on
 ; bench/: push to save and load to restore gave fib 0.31 s, trees
@@ -3888,7 +3948,7 @@
 (defn mf-ncs (f) (list-length (mf-saved f)))
 (defn mf-top (f) (if (> (mf-rflags f) 0) 48 0))
 (defn mf-stage (f k) (+ (mf-top f) (* 8 (+ (mf-ncs f) (+ (alloc-spills (mf-alloc f)) (+ k 1))))))
-(defn mf-block (f k) (match f (MF _ _ _ _ _ w _ (w-get w k))))
+(defn mf-block (f k) (match f (MF _ _ _ _ _ w _ _ (w-get w k))))
 
 (defn mb-slot (off) (str-concat "qword ptr [rbp-" (str-concat (ffi-call "zyl_int_text" off 1000) "]")))
 
@@ -3942,7 +4002,7 @@
         (let boffs (w-alloc (+ (list-length blocks) 1))
           (let bend (mb-block-offsets boffs blocks 0 bstart)
             (let align (mb-needs-align instrs rflags)
-            (let fr (MF al saved rflags base bstart boffs (and (= rflags 0) (and (not align) (= bend (* 8 (list-length saved))))))
+            (let fr (MF al saved rflags base bstart boffs (and (= rflags 0) (and (not align) (= bend (* 8 (list-length saved))))) (not (mb-any-call instrs)))
               (let fsz (* 16 (/ (+ bend 15) 16))
                 (mb-emit-all (mb-prologue st name fr fsz align) fr instrs 0))))))))))
 
@@ -3992,6 +4052,12 @@
 (defn mb-needs-align (instrs rflags)
   (if (> rflags 0) true (mb-any-c-call instrs)))
 
+; Any call: a function that calls keeps a frame pointer, so every caller is on the rbp chain zyl_panic walks.
+(defn mb-any-call (instrs)
+  (match instrs
+    (Nil false)
+    (Cons i t (match i (MCall _ _ _ _ _ true) (_ (mb-any-call t))))))
+
 (defn mb-any-c-call (instrs)
   (match instrs
     (Nil false)
@@ -4022,7 +4088,7 @@
   (let st0 (cg-emit-line (cg-emit st (cg-sym-mangled (cg-arena-of st) name)) ":")
     (let st1 (cg-emit-line st0
                 (str-concat "    # frame " (ffi-call "zyl_int_text" fsz 1000)))
-    (if (mf-frameless fr) (mb-push-regs st1 (mf-saved fr))
+    (if (mf-frameless fr) (mb-push-regs (if (mf-leaf fr) st1 (cg-emit-lines st1 (Cons "    push rbp" (Cons "    mov rbp, rsp" Nil)))) (mf-saved fr))
     (let st2 (cg-emit-lines st1 (Cons "    push rbp" (Cons "    mov rbp, rsp" Nil)))
       (if (mf-pushes fr)
         (let st3 (mb-push-regs st2 (mf-saved fr))
@@ -4050,7 +4116,7 @@
     (Cons r t (mb-restore-regs (cg-emit-line st (str-concat "    mov " (str-concat (mir-reg-name r) (str-concat ", " (mb-slot (+ top (* 8 k))))))) t top (+ k 1)))))
 
 (defn mb-leave (st fr)
-  (if (mf-frameless fr) (mb-pop-regs st (list-reverse (mf-saved fr)))
+  (if (mf-frameless fr) (let st2 (mb-pop-regs st (list-reverse (mf-saved fr))) (if (mf-leaf fr) st2 (cg-emit-line st2 "    pop rbp")))
     (cg-emit-lines (mb-restore-regs st (mf-saved fr) (mf-top fr) 1) (Cons "    mov rsp, rbp" (Cons "    pop rbp" Nil)))))
 
 (defn mb-pop-regs (st rs)

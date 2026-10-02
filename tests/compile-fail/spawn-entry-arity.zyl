@@ -1,5 +1,8 @@
 ; expect-error: E_TYPE_MISMATCH
 ; An actor's entry function takes no arguments.
+
+(capabilities actor)
+
 (defn entry (n) (print n))
 (defn main () (let _ (spawn entry) 0))
 (numeric checked)

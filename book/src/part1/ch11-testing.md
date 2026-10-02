@@ -162,7 +162,7 @@ The tests register as `parser/empty` and `parser/numbers/one`, in source order. 
 (test-property "addition commutes" gen-int (fn (a b) (= (+ a b) (+ b a))))
 ```
 
-**Compile-time tests.** `(test-compile expr)` checks that `expr` compiles, and `(test-compile expr (:expect-error true))` that it does not. The compiler decides it while compiling your file, by running the checks and the type checker on the program with `expr` as the body of a function, and registers a test named `test-compile line N` that passes when the outcome is the expected one. A failing one says why: `test: test-compile line 12 ... FAIL: did not compile: error[E_TYPE_MISMATCH]: cannot unify String with Int`.
+**Compile-time tests.** `(test-compile expr)` checks that `expr` compiles, and `(test-compile expr (:expect-error true))` that it does not. The compiler decides it while compiling your file, by running the checks and the type checker on the program with `expr` as the body of a function, and registers a test named `test-compile line N` that passes when the outcome is the expected one. A failing one says why: `test: test-compile line 12 ... FAIL: did not compile: error[E_TYPE_MISMATCH]: the operands of `+` must have one type: ...`.
 
 ```lisp
 (test-compile (+ 1 2))

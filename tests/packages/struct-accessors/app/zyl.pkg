@@ -1,0 +1,6 @@
+(package (numeric checked)
+  (name "app/struct-accessors") (version "0.1.0")
+  (zyl "5.0") (edition "2026")
+  (capabilities io)
+  (deps
+    (dep "acme/geo" "1.0.0" (path "../geo"))))

@@ -381,7 +381,6 @@ collection does today, and `for` is a condition loop (§12.6).
 | `E_IMPL_FORBIDDEN` | an impl or derive an `impl-not` forbids, or an impl whose result exposes a protected value | raised |
 | `E_TRAIT_NOT_FOUND` | no impl for a required (Trait, Type) | raised for a known receiver type, and for dot calls |
 | `E_DUPLICATE_IMPL` | two impls for one (Trait, Type) | raised |
-| `E_TRAIT_BOUND_NOT_SATISFIED` | a concrete type lacks a bound's trait (§6.7) | catalogued; never raised |
 | `E_TRAIT_NOT_DERIVABLE` | a derive constraint fails | raised |
 
 ## 20.11 Traits in the Standard Library

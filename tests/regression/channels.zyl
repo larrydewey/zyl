@@ -1,6 +1,8 @@
 ; Channel Regression Tests: Kahn channels (docs/concurrency-determinism-design.md).
 ; One writer, one reader, blocking FIFO; endpoints move at spawn capture or when sent.
 
+(capabilities actor)
+
 (use actor/actor)
 
 (deftype ChMsg (ChAdd Int) (ChGet) (ChStop))

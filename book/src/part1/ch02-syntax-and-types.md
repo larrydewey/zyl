@@ -82,8 +82,8 @@ wrap — plausible-looking wrong numbers. `inf` announces itself: it prints as
 finite, so a diagnostic would add noise without adding safety.
 
 **Int and Float do not mix.** There is no implicit conversion between
-them: `(+ 1 2.5)` is a compile error (`E_TYPE_MISMATCH`, "cannot unify
-Float with Int"). Write `1.0` when you mean a Float. There are no
+them: `(+ 1 2.5)` is a compile error (`E_TYPE_MISMATCH`, "the operands of `+`
+must have one type"). Write `1.0` when you mean a Float. There are no
 conversion built-ins yet; the runtime's `(ffi-call "zyl_f_of_int" n 1000)`
 turns an Int into a Float.
 
@@ -504,7 +504,7 @@ the current library.
   (let v (vec-push (vec-push (vec-create-default 10) 42) 7)
     (begin
       (print (vec-len v))           ; 2
-      (print (vec-get v 0))))       ; 42
+      (print (vec-get! v 0))))       ; 42
   (let m (intmap-put (intmap-new 10) 1 100)
     (print (intmap-get m 1 0)))        ; 100
   0)

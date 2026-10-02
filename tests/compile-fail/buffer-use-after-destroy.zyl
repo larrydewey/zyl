@@ -1,4 +1,5 @@
 ; A StringBuffer is released by string-buffer-destroy. Reading it after is
+(capabilities io)
 ; a use-after-free; the runtime also catches it (E_USE_AFTER_FREE), and
 ; this is the static half.
 ; expect-error: E_MOVE_VALUE

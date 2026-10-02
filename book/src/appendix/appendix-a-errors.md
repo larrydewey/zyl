@@ -45,9 +45,11 @@ error[E_MUT_CONFLICT]: set! target `x` is not a let-mut binding in scope
 ```
 
 A label in another file is introduced by a `::: file:line:col` line, and
-one without a recorded position prints as `= note:`. An unbound
-identifier or undefined function whose name is close to one in scope
-gets `= help: did you mean `count`?` instead of the generic hint. A very
+one without a recorded position prints as `= note:`. A name that is not
+defined gets up to three close names in scope (`= help: did you mean
+`count`?`), Zyl's spelling of a name another Lisp uses (`string-append`
+is `str-concat`), or the `(use ...)` line for the standard-library
+module that defines it. A very
 long source line is shown as a window of about 120 bytes around the
 column, with `...` where it is cut.
 
@@ -61,14 +63,16 @@ time. The exception is the type pass: it reports every type error in
 the program (`E_TYPE_MISMATCH`, `E_INFINITE_TYPE`, `E_CANNOT_INFER`,
 `E_UNBOUND_VARIABLE`, `E_UNKNOWN_TYPE`, `E_TRAIT_NOT_FOUND`,
 `E_FFI_TYPE_NOT_PINNABLE`, and `E_FFI_RESTRICTED` for an `extern` of a
-runtime entry), then stops
-with
+runtime entry), then stops.
+After more than one error the last line is a count, with no code:
 
 ```text
-PANIC: error[E_TYPE_MISMATCH]: the program does not type-check (3 errors above)
+3 errors; fix the first one first
 ```
 
-The code on that closing line is the first error's code.
+After a single error nothing follows it. Each name that is not defined is
+reported once, at its first use, and nothing that depends on it is
+reported as a type error.
 
 Setting `ZYL_STRICT_TYPES=report` turns those errors into
 `W_TYPE_STRICT` warnings (§A.16) so you can count what is left while
@@ -81,7 +85,7 @@ no setting makes the compiler accept an ill-typed program for real.
 included, as one JSON object per line on stderr instead:
 
 ```json
-{"severity":"error","code":"E_UNBOUND_VARIABLE","message":"unbound identifier `cont`","file":"prog.zyl","line":1,"column":45,"labels":[],"help":"did you mean `count`?"}
+{"severity":"error","code":"E_UNBOUND_VARIABLE","message":"`cont` is not defined","file":"prog.zyl","line":1,"column":45,"labels":[],"help":"did you mean `count`, `const` or `Cons`?"}
 ```
 
 `labels` holds `{"message", "file", "line", "column"}` for each
@@ -97,9 +101,7 @@ with its code split off the front of the message.
 | `E_BYTE_VALUE_OOB` | A `byte` literal outside 0..255, or a non-integer argument to `byte` |
 | `E_INVALID_ESCAPE` | A backslash escape in a string literal that the lexer does not know |
 | `E_INVALID_CHAR` | A character that cannot begin any token, such as `#`, `$` or a lone `@` outside a string or comment, located at that byte. (`'`, `` ` ``, `,` and `,@` are the quote, quasiquote, unquote and splice tokens.) |
-| `E_UNEXPECTED_EOF` | End of input while a token was still open. *Catalogued only.* |
-| `E_INTEGER_OVERFLOW` | An integer literal too large for `Int`. *Catalogued only.* |
-| `E_FLOAT_OVERFLOW` | A float literal too large for `Float`. *Catalogued only.* |
+| `E_INTEGER_OVERFLOW` | An integer literal too large for `Int`. |
 
 ## A.3 Parsing and S-Expression Balance (phase 2)
 
@@ -112,11 +114,6 @@ with its code split off the front of the message.
 | `E_MALFORMED_FORM` | A special form whose arguments do not have the shape it requires, such as `(if c)` with no branches, or `(quote a b)`; also a name inside quoted data, `'(1 x)`, since there is no symbol type, and the same in quasiquoted data outside an unquote, `` `(1 x) ``; a quasiquote inside a quasiquote; a `,` or `,@` outside a quasiquote and a macro template; and in a template, a `,@` where a form takes a fixed number of expressions, or of anything but the `&rest` parameter. Such a form used to compile to the constant 0, which let some tests pass without testing anything. Raised by `arity_check.zyl`. |
 | `E_UNEXPECTED_TOKEN_IN_EXPR` | A token that cannot appear in expression position |
 | `E_RESERVED_KEYWORD` | A reserved keyword (spec §1.3) as the name a definition introduces, or `make-S` for a struct `S`; located at the name |
-| `E_UNBALANCED_PARENS` | Open and close counts differ. *Catalogued only; the three `E_UNBALANCED_*` codes above replace it.* |
-| `E_EXPECTED_RPAREN` / `E_EXPECTED_RBRACKET` / `E_EXPECTED_RCURLY` | A specific closer was required. *Catalogued only.* |
-| `E_EXPECTED_EXPRESSION` | An expression was required here. *Catalogued only.* |
-| `E_EMPTY_LIST` | `()` is not an expression. *Catalogued only.* |
-| `E_ATOM_AS_OPERATOR` | An atom used in operator position. *Catalogued only.* |
 
 The balance check (`sexp_balance.zyl`) runs before parsing and is what
 an editor shows while you are still typing. Its diagnostics carry a
@@ -141,16 +138,15 @@ Macro expansion also reports `E_ARITY_MISMATCH` (wrong argument count, or too fe
 
 | Code | Cause |
 |---|---|
-| `E_UNBOUND_VARIABLE` | A name with no binding. The type pass reports every one it finds, located, with a "did you mean" suggestion when a close name is in scope |
+| `E_UNBOUND_VARIABLE` | A name with no binding. The type pass reports each such name once, at its first use, with a "did you mean" suggestion or the `(use ...)` line that imports it |
 | `E_ARITY_MISMATCH` | A call with the wrong number of arguments, a malformed byte, load, store or atomic form, or `/`, `%` or a bitwise operator given one operand (`operator 3 needs two operands`) |
 | `E_DUPLICATE_DEFINITION` | A name defined more than once at top level |
 | `E_DUPLICATE_VARIANT` | A variant name repeated within one `deftype`, or a program type that reuses a prelude constructor name (`Some`, `None`, `Ok`, `Err`, `Cons`, `Nil`) — the standard library's unqualified uses of those names would otherwise resolve to it |
 | `E_DUPLICATE_PARAMETER` | A parameter name repeated in one signature (`_` and `_`-prefixed names may repeat). *Raised by `unused_check.zyl`; not in the catalog.* |
+| `E_PANIC_UNMARKED` | A standard-library `defn` (outside the compiler's own modules) that calls `panic` or `zyl_panic` directly without a trailing `!` in its name. The same condition in a program is the warning `W_PANIC_UNMARKED` (§A.16); `main`, the definition of `panic` and test bodies are exempt. Direct calls only |
 | `E_TYPE_MISMATCH` | Two types that must be equal are not: an `Int` condition where `Bool` is required, `Int` and `Float` mixed in arithmetic, a `String` passed where a field or parameter wants an `Int`, an `Int` given to `actor-wait` where an `Actor` is required, a value received from a channel used at a different type than was sent, a `Float` in an `extern` signature, a `file-open` mode that is not a literal, a list literal with elements of two types, a non-`Int` byte offset, a slice where a `ByteBuf` is required, an `Int` given to `file-write` as its data. Raised by `type_annotate.zyl` for every unification failure, with both types in the message |
 | `E_INFINITE_TYPE` | A type that would have to contain itself, found by the occurs check, such as a function applied to itself, `(x x)` |
-| `E_RETURN_TYPE_MISMATCH` | A body that does not match its declared return type. *Catalogued only.* |
 | `E_UNKNOWN_TYPE` | A lowercase name as a field type in `deftype`: it is neither a type nor a type parameter (those are uppercase) |
-| `E_UNKNOWN_GENERIC_PARAM` | A reference to an undeclared type parameter. *Catalogued only.* |
 | `E_CANNOT_INFER` | The type pass has no type for an expression: an `ffi-call` to a foreign symbol with no `(extern ...)` declaration, a runtime entry with no signature, a trait call whose receiver type never resolves, or a byte load or store whose handle may be a `ByteBuf` or a `ByteSlice` and nothing decides which (annotate it: `((b ByteBuf))`) |
 
 ## A.6 Regions (phase 6) and Byte Buffers
@@ -159,11 +155,6 @@ Macro expansion also reports `E_ARITY_MISMATCH` (wrong argument count, or too fe
 |---|---|
 | `E_REGION_ESCAPE` | A value outlives the region it was allocated in: a `(bytebuf Stack N)` that is returned, stored, sent or passed to code that may keep it, or a value allocated inside `with-region` that reaches the body's result or anything longer-lived. Located at the allocation where one is known. |
 | `E_REGION_SPEC` | A malformed `with-region` spec: an unknown kind (only `arena` and `fixed` exist), an arena block size that is not a multiple of 4096 or exceeds 64 MiB, or an alignment that is not a power of two from 8 to 4096. Located. |
-| `E_UNINITIALIZED_USE` | A variable read before initialisation. *Catalogued only.* |
-| `E_ATOMIC_ABA` | An atomic compare-and-swap on non-Pin memory. *Catalogued only.* |
-| `E_BYTEBUF_NOT_PIN` | `bytebuf-ptr` on a buffer outside the Pin region. *Catalogued only.* |
-| `E_STACK_BYTEBUF_RETURN` | A Stack `ByteBuf` returned from its scope. *Catalogued only: a returned Stack bytebuf is reported as `E_REGION_ESCAPE`.* |
-| `E_GLOBAL_BYTEBUF_MUT` | A Global `ByteBuf` mutated. *Catalogued only.* |
 
 Region inference classifies every allocation as belonging to the
 current call's frame region, the caller's result region, or the heap,
@@ -179,8 +170,7 @@ an inferred placement is always one the value cannot escape (Chapter
 | `E_TOPLEVEL_STMTS_WITH_EXPLICIT_MAIN` | Top-level statements, or top-level `test`/`run-tests` forms, alongside an explicit `(defn main ...)` |
 | `E_MATCH_ARM_COMPLEX` | An arm body combining a constant with several calls — bind the calls to `let`s first |
 | `E_CODEGEN_BUFFER_FULL` | The generated assembly exceeded the code-generation buffer |
-| `E_CODEGEN` | A code-generation failure. *Catalogued only.* |
-| `E_CODEGEN_BUFFER_LIMIT` | The output buffer limit was reached. *Catalogued only.* |
+| `E_CODEGEN_BUFFER_LIMIT` | A bounded buffer append went past its limit. |
 
 ## A.8 Modules and Packages (phase 9)
 
@@ -195,38 +185,25 @@ an inferred placement is always one the value cannot escape (Chapter
 | `E_PKG_UNKNOWN_MODULE` | A module path that does not exist in that package |
 | `E_PKG_UNDECLARED_DEP` | A `use` naming a package absent from the manifest |
 | `E_PKG_RESERVED_MODULE` | A module named `unsafe` |
-| `E_CIRCULAR_MODULE` | A cycle in the module graph. *Catalogued only; `E_MODULE_CYCLE` is the code spec §28 names and the resolver raises.* |
-| `E_SYMBOL_NOT_EXPORTED` | A name the module does not export. *Catalogued only; `E_PKG_PRIVATE_SYMBOL` replaces it.* |
 
 ## A.9 Runtime (phase 10)
 
 | Code | Cause |
 |---|---|
 | `E_OUT_OF_MEMORY` | The memory budget is exhausted. Raise or remove it with `ZYL_MAX_MEMORY` (a byte count; `0` disables it). *Listed twice in the catalog, with two messages.* |
-| `E_LIST_NTH_OOB` | The compiler's internal `list-nth` given an out-of-range index. *Catalogued only.* |
 | `E_REGION_EXHAUSTED` | A `with-region` scope ran out: a `fixed` region's `:size` or an `arena`'s `:limit` was exceeded. Catchable with `try`, and deterministic: it depends only on the sequence of allocation requests. Enforced in compiled code only; the REPL interpreter ignores region limits. |
-| `E_USER_ERROR` | `(panic "...")`. *Catalogued only: `panic` raises with its message, printed as `PANIC: <message>`, and unwinds to the nearest `try` if there is one. `(error "...")` returns `(Err "...")` and raises nothing.* |
-| `E_ASSERT_FAIL` | A failed `assert`. *Catalogued only: a failed `assert` panics as `PANIC: <message>` when the message is a string literal, else `PANIC: assert failed`, without this code (Appendix C.7). The test assertions panic with `assert-equal failed` and similar.* |
-| `E_NULL_POINTER` | A null dereference. *Catalogued only.* |
-| `E_BYTE_OOB` | A byte offset outside its buffer. *Catalogued only.* |
-| `E_BYTEBUF_CAP_EXCEEDED` | An append past a buffer's fixed capacity. *Catalogued only: the append returns 0 and leaves the buffer unchanged.* |
-| `E_BYTEBUF_OVERLAP` | An append from a slice overlapping its own buffer. *Catalogued only.* |
-| `E_BYTEBUF_INVALID` | A buffer handle whose magic tag does not match. *Catalogued only.* |
-| `E_INDEX_OUT_OF_BOUNDS` | An index outside a vector or word array |
+| `E_INDEX_OUT_OF_BOUNDS` | An index or range outside a Vec, slice, string view, SIMD vector or word array. From a standard-library `!` function (`vec-get!`, `slice-sub!`, `view-slice!`, `u8x16-get!`, ...) the message names the index and the bound and points at the `?` sibling that returns `None` instead |
 | `E_CHANNEL_NOT_OWNER` | `chan-send` or `chan-recv` on an endpoint the running actor does not own (Chapter 9, §9.4) |
 | `E_CHANNEL_CLOSED` | `chan-recv` on a channel whose sender has finished and whose buffer is empty. Catchable with `try` |
 | `E_CHANNEL_CAPACITY` | `(chan n)` with `n` outside 1..16777216 |
 | `E_DEADLOCK` | Every live actor, `main` included, is blocked on a channel or a join. Ends the process after emitting the actors' buffered output |
 | `E_ACTOR_LIMIT` | A 1025th `spawn`: at most 1024 actors per program |
-| `E_ALIGNMENT_FAILED` / `E_ALIGN_CHECK_FAILED` | An alignment check that did not hold. *Both catalogued only: `align-check` returns a Bool rather than failing.* |
 | `E_INTERP_TAG` | The REPL interpreter's checking mode (`ZYL_INTERP_CHECK=1`) found an operand of the wrong tag, or a condition that is not 0 or 1. Such a program type-checked, so this is a type-checker bug; the interpreter regression tests run in this mode |
 
 ## A.10 Testing (phase 11)
 
 | Code | Cause |
 |---|---|
-| `E_TEST_FAILURE` | A test assertion failed. *Catalogued only.* |
-| `E_TEST_RUNNER_ERROR` | An error inside the test harness itself. *Catalogued only.* |
 
 ## A.11 Traits (phase 12)
 
@@ -234,7 +211,6 @@ an inferred placement is always one the value cannot escape (Chapter
 |---|---|
 | `E_PKG_ORPHAN_IMPL` | An `impl` where neither the trait nor the type is local to the package |
 | `E_TRAIT_NOT_FOUND` | A trait call, or a dot method call, whose receiver type is known and has no impl of the trait, located at the call |
-| `E_TRAIT_BOUND_NOT_SATISFIED` | A concrete type lacks a required trait. *Catalogued only.* |
 | `E_IMPL_FORBIDDEN` | An `impl` or `derive` that an `(impl-not Trait Target)` declaration forbids, or an impl of that trait whose result is derived from a protected value (Chapter 20). |
 | `E_TRAIT_NOT_DERIVABLE` | `derive` of a trait that is not derivable, or whose field requirement fails: a field type without the trait, or a `Secret` field under `Eq`/`Ord`/`Hash`. |
 | `E_DUPLICATE_IMPL` | Two implementations of one trait for one type, counting impls and derives |
@@ -248,9 +224,10 @@ an inferred placement is always one the value cannot escape (Chapter
 | `E_INVALID_CAPABILITY` | A closure written inline as an `ffi-call` argument |
 | `E_CT_VIOLATION` | A `Secret` steered a branch, indexed memory, or went through a divider |
 | `E_SECRET_ESCAPE` | A `Secret` reached `spawn`, `chan-send` or `file-write` |
+| `E_SECRET_UNANNOTATED` | A `Secret` was passed to a function parameter not annotated `Secret` |
 | `E_SECRET_DEBUG` | A `Secret` reached `print` |
 | `E_ZEROIZE_MISSING` | *(warning, severity 2)* A function takes a `Secret` parameter and never zeroizes it |
-| `E_PKG_CAPABILITY_VIOLATION` | A package uses a construct, or a stdlib module, without declaring the capability it needs (§31.9) |
+| `E_PKG_CAPABILITY_VIOLATION` | A package, lone file or REPL session uses a construct, or a stdlib module, without declaring the capability it needs (§31.9) |
 | `E_PKG_CAPABILITY_GROWTH` | The capability closure grew under `--locked` |
 
 Chapter 17 covers the aliasing rules, Chapter 33 the `Secret` checks and
@@ -263,6 +240,7 @@ Chapter 25 package capabilities.
 | `E_MATCH_NONEXHAUSTIVE` | A `match` missing a variant, an unknown variant in an arm, or a literal-pattern match with no trailing `_` arm. Raised during parsing and lowering. |
 | `E_NON_EXHAUSTIVE_MATCH` | A `match` that does not cover every variant of its ADT. *Raised by `exhaustiveness_check.zyl`; not in the catalog.* |
 | `E_UNREACHABLE_MATCH_ARM` | An arm that no value can reach: a catch-all that is not last, or a repeated constructor. *Not in the catalog.* |
+| `E_UNKNOWN_CONSTRUCTOR` | A capitalized `match` arm head that no type declares; the message suggests the nearest constructor. A binder is lowercase. |
 | `E_NESTED_PATTERN` | A constructor arm whose field is itself a pattern, such as `(Some (Pair a b) ...)`. Bind the field to a name and match it inside the arm body. |
 | `E_DIVISION_BY_ZERO` | Integer division or remainder by zero. *Raised only by the REPL's ICNF interpreter. Compiled code does not check: the process dies with SIGFPE (exit status 136), which `try` cannot catch.* |
 | `E_OVERFLOW` | Checked integer overflow. *Catalogued only.* |
@@ -331,62 +309,37 @@ Warnings are written to stderr and never stop a build:
 
 | Code | Cause |
 |---|---|
-| `W_UNUSED_FUNCTION` | Catalogued but not raised yet: the check cannot yet tell a program's own functions from the standard library's |
 | `W_UNUSED_PARAMETER` | A parameter never read |
 | `W_UNUSED_VARIABLE` | A binding never read |
 | `W_SHADOWED_BINDING` | A binding that hides an outer one of the same name |
+| `W_PANIC_UNMARKED` | A `defn` whose body calls `panic` directly and whose name has no trailing `!` (§6.9). Help: rename it `name!`, or return an `Option` |
 | `E_ZEROIZE_MISSING` | See §A.12 — a warning despite the `E_` prefix |
 | `W_TYPE_STRICT` | A type error reported as a warning because `ZYL_STRICT_TYPES=report` is set (§A.1) |
 
 Name a binding `_`, or give it a `_` prefix (`_count`), to exempt it
-from the unused, shadowing and duplicate-parameter checks. The four
-unused and shadowing codes come from `unused_check.zyl` and are not in
-the catalog; `W_TYPE_STRICT` comes from `type_annotate.zyl` and is. The
+from the unused, shadowing and duplicate-parameter checks. The three
+unused and shadowing codes come from `unused_check.zyl`, as does
+`W_PANIC_UNMARKED`, and `W_TYPE_STRICT` from `type_annotate.zyl`. A
+warning about a standard library file is not shown while you compile a
+program; `ZYL_WARN_ALL=1` shows it. The
 language server publishes them as Warning diagnostics (Chapter 35).
 
 ## A.17 Catalog Versus Implementation
 
-**In the catalog, never raised.** 36 of the catalog's 130 distinct
-codes are not raised anywhere in the compiler, runtime or REPL:
+The catalog (`stdlib/compiler/error_codes.zyl`) holds exactly the codes
+something raises. `verify/error-codes.sh`, run with the repository's
+script tests, fails when a catalogued code is raised nowhere or a raised
+code is missing from the catalog. One exception is allowed while it is
+being implemented: `E_OVERFLOW` is catalogued and not yet raised.
+`E_DIVISION_BY_ZERO` is raised only by the REPL interpreter; a compiled
+program traps instead.
 
-- Lexer and parser: `E_UNEXPECTED_EOF`,
-  `E_INTEGER_OVERFLOW`, `E_FLOAT_OVERFLOW`, `E_UNBALANCED_PARENS`,
-  `E_EXPECTED_RPAREN`, `E_EXPECTED_RBRACKET`, `E_EXPECTED_RCURLY`,
-  `E_EXPECTED_EXPRESSION`, `E_EMPTY_LIST`, `E_ATOM_AS_OPERATOR`.
-- Types: `E_RETURN_TYPE_MISMATCH`, `E_UNKNOWN_GENERIC_PARAM`.
-- Regions and buffers: `E_UNINITIALIZED_USE`,
-  `E_ATOMIC_ABA`, `E_BYTEBUF_NOT_PIN`, `E_STACK_BYTEBUF_RETURN`,
-  `E_GLOBAL_BYTEBUF_MUT`.
-- Code generation: `E_CODEGEN`, `E_CODEGEN_BUFFER_LIMIT`.
-- Modules: `E_CIRCULAR_MODULE`, `E_SYMBOL_NOT_EXPORTED`.
-- Runtime: `E_LIST_NTH_OOB`, `E_USER_ERROR`, `E_ASSERT_FAIL`, `E_NULL_POINTER`,
-  `E_BYTE_OOB`, `E_BYTEBUF_CAP_EXCEEDED`, `E_BYTEBUF_OVERLAP`,
-  `E_BYTEBUF_INVALID`, `E_ALIGNMENT_FAILED`, `E_ALIGN_CHECK_FAILED`.
-- Testing: `E_TEST_FAILURE`, `E_TEST_RUNNER_ERROR`.
-- Traits: `E_TRAIT_BOUND_NOT_SATISFIED`.
-- Numerics: `E_OVERFLOW`.
+A failed `assert` and a `(panic msg)` carry no code: they print `PANIC:`
+and the message, `assertion failed` for an `assert` without one.
 
-Six of these are codes spec §28 requires: `E_USER_ERROR`,
-`E_ASSERT_FAIL`, `E_UNINITIALIZED_USE`, `E_OVERFLOW`, `E_TEST_FAILURE` and
-`E_TEST_RUNNER_ERROR`. `E_DIVISION_BY_ZERO` is
-raised only by the REPL interpreter. Every other code in §28, the 36
-package codes included, is both catalogued and raised.
-
-**Raised, not in the catalog.** Ten codes are used without a catalog
-entry:
-
-| Code | Raised by |
-|---|---|
-| `E_NON_EXHAUSTIVE_MATCH`, `E_UNREACHABLE_MATCH_ARM` | `exhaustiveness_check.zyl` |
-| `E_DUPLICATE_PARAMETER` | `unused_check.zyl` |
-| `E_UNDEFINED_FUNCTION`, `E_NOT_CALLABLE`, `E_FFI_SYMBOL_NOT_FOUND`, `E_NO_MAIN` | the REPL's ICNF interpreter (`repl/interp.zyl`); `E_FFI_SYMBOL_NOT_FOUND` also the runtime's symbol lookup for the interpreter |
-| `E_INTERNAL` | the REPL evaluator (`repl/eval.zyl`) |
-
-**Duplicates and synonyms.** `E_OUT_OF_MEMORY` appears twice in the
-catalog; a lookup returns the first entry.
-`E_ALIGNMENT_FAILED` and `E_ALIGN_CHECK_FAILED` share one meaning, as do
-`E_CIRCULAR_MODULE` and `E_MODULE_CYCLE`, and `E_MATCH_NONEXHAUSTIVE`
-and `E_NON_EXHAUSTIVE_MATCH`.
+**Synonyms.** `E_MATCH_NONEXHAUSTIVE` (a literal match with no `_` arm)
+and `E_NON_EXHAUSTIVE_MATCH` (a constructor match missing a variant) are
+two spellings of one idea, raised by different checks.
 
 ## A.18 Exit Codes
 

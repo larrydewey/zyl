@@ -1,0 +1,9 @@
+; Compile-fail: the call gives no timeout and its extern carries no
+; `:timeout` default either, so the error stays, and its help names both
+; places one can be written.
+; expect-error: E_FFI_TIMEOUT_REQUIRED
+
+(capabilities ffi)
+(extern "abs" (Int) Int)
+
+(defn main () (begin (print (ffi-call "abs" -9)) 0))

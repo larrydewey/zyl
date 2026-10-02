@@ -97,6 +97,7 @@ top-level `def` values are monomorphic (the value restriction). A type variable 
 | Constructor | For `(deftype T (C F1..Fn) ...)`: C : ∀ā. (F1..Fn) -> (T ā), ā the type parameters. An untyped struct field is an implicit type parameter of its struct |
 | `match` | Scrutinee : T ā; an arm `(C x1..xn body)` binds xi at C's i-th field type; every body : τ ⊢ match : τ. Patterns are flat (`E_NESTED_PATTERN`); exhaustiveness is §12 |
 | `struct-get` | p : S ā, f a field of S ⊢ `(struct-get p "f")` : its type. When p's type is not otherwise determined, the one struct with a field f is taken; if several have it, `E_CANNOT_INFER` |
+| Accessor | For `(defstruct S ... (f ...))`: `S.f` : ∀ā. (S ā) -> τ, τ the type of f (an untyped field is one of ā); it is a generated `defn` typed like any other |
 | `try` | b : τ, x : String ⊢ h : τ ⊢ `(try b (catch x h))` : τ |
 | Assertions | `assert-true`, `assert-false`, `assert`: a Bool -> Unit; `assert-equal l r`: l and r of one type -> Unit |
 | `print` | Any value -> Unit |
@@ -231,7 +232,7 @@ For each call site of a generic function, the compiler:
 1. Infers concrete types for ALL type parameters from argument types.
    - A parameter with no evidence at any call site → `E_CANNOT_INFER`
      (unless a trait bound selects a finite set).
-2. Verifies all trait bounds are satisfied (`E_TRAIT_BOUND_NOT_SATISFIED`).
+2. Verifies the concrete types have the impls the body calls (`E_TRAIT_NOT_FOUND`, at the call).
 3. Generates a canonical specialization name:
    ```
    functionName~Type1,Type2,...     ; argument types in argument order
@@ -279,8 +280,6 @@ Deriving on a multi-param ADT is allowed; the impl is parameterized over the ADT
 | Code | Condition |
 |------|-----------|
 | `E_CANNOT_INFER` | generic param with no call-site evidence |
-| `E_TRAIT_BOUND_NOT_SATISFIED` | concrete type violates a bound |
-| `E_UNKNOWN_GENERIC_PARAM` | reference to undeclared type parameter |
 | `E_TRAIT_NOT_DERIVABLE` | derive constraint fails |
 
 ---
@@ -329,18 +328,20 @@ falls short of §4–§6 and §17.
 - Top-level functions are visited in Tarjan order and generalized per
   strongly connected component; `let`, `let-mut`, lambda and `for`
   bindings are monomorphic. `main` must be `() -> Int` (`ta-check-main`).
-- Unification has an occurs check. Every failure is reported where the
-  innermost expression being typed sits, with both types; a failed
+- Unification has an occurs check. Every failure is reported at the
+  offending expression (the argument, the operand, `main`'s last
+  expression), naming the reason when the site knows one and both types
+  always (`docs/diagnostics.md`); a failed
   occurs check is `E_INFINITE_TYPE`; a type the pass cannot determine
   (an FFI result with no signature, an unresolvable trait receiver, a
   function needing more than 256 instances) is `E_CANNOT_INFER`; an
-  unknown name is `E_UNBOUND_VARIABLE`. The variables involved in a
-  failure are then poisoned, only so that one mistake is not reported
-  many times; a poisoned type prints as `!` in messages and `?` in the
-  REPL's `:type`.
+  unknown name is `E_UNBOUND_VARIABLE`, reported once per name. The
+  variables involved in a failure, and the type of an unbound name, are
+  then poisoned, only so that one mistake is not reported many times; a
+  poisoned type prints as `!` in messages and `?` in the REPL's `:type`.
 - These errors are collected: the pass types the whole program, then
-  fails with `error[CODE]: the program does not type-check (N errors
-  above)`, CODE being the first error's. A `struct-get` of a field a
+  fails with exit status 1, ending with `N errors; fix the first one
+  first` after more than one error and nothing more after one. A `struct-get` of a field a
   known struct does not have (`E_TYPE_MISMATCH`, listing the fields), the
   trait-method errors (`E_TRAIT_NOT_FOUND`, below), `E_FFI_TYPE_NOT_PINNABLE`
   and an `extern` of a runtime entry (`E_FFI_RESTRICTED`) are collected
@@ -402,7 +403,8 @@ falls short of §4–§6 and §17.
 - A foreign symbol is typed by its `extern` declaration (see
   `spec/09-ffi-contracts.md`); an undeclared one is `E_CANNOT_INFER`.
 - A few standard-library functions have fixed signatures in the pass
-  (`ta-builtin-sig`): `str-concat`, `str-length`, `str-substring`,
+  (`ta-builtin-sig`): `str-concat`, `str-length`, `str-substring` (total:
+  it clamps its range to the string, §25),
   `str-equal`/`str-eq` (Bool), `print-string` and `print-float` (Unit),
   the channel forms (`chan`, `chan-tx`, `chan-rx`, `chan-recv`), the contract helpers,
   the `def` getters' cell operations (whose names contain spaces, so no
@@ -446,8 +448,7 @@ falls short of §4–§6 and §17.
   `E_MALFORMED_PARAMETER`, as are `(a : Int)` (the colon form) and a
   trait name used as a type (`(a Ord)`). Trait bounds are never declared
   or checked as such; a missing impl is found at the instance
-  (`E_TRAIT_NOT_FOUND`). `E_TRAIT_BOUND_NOT_SATISFIED` and
-  `E_UNKNOWN_GENERIC_PARAM` are catalogued but never raised.
+  (`E_TRAIT_NOT_FOUND`).
 - Generic ADTs and generic structs (§6.5) work: `(defstruct Box (v T))` is `(Box T)`, and an untyped
   struct field is an implicit type parameter of its struct (§4.9), so
   `(defstruct P (x) (y))` has two type parameters and each value's field

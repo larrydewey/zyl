@@ -10,6 +10,7 @@
 ;   <path> lines=N functions=N writes=N reads=N dynamic=N unverified=N violations=N
 ; and the gate requires the two lines to be equal.
 
+(capabilities io)
 (numeric checked)
 (use compiler/verify { verify-count => zyl-violations })
 (use compiler/verify { verify-functions => zyl-functions })

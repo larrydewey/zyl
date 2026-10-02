@@ -159,11 +159,11 @@ fine. Every other region gets the same stable, zero-initialized heap
 allocation, so nothing is unsound, but the remaining rules are not
 checked yet:
 
-| Rule | Designated error | Today |
-|---|---|---|
-| `bytebuf-ptr` only in the Pin region | `E_BYTEBUF_NOT_PIN` | Not checked; works on any buffer |
-| A Stack buffer may not escape its scope | `E_STACK_BYTEBUF_RETURN` | Checked, reported as `E_REGION_ESCAPE` |
-| A Global buffer may not be mutated | `E_GLOBAL_BYTEBUF_MUT` | Not checked |
+| Rule | Today |
+|---|---|
+| `bytebuf-ptr` only in the Pin region | Not checked; works on any buffer |
+| A Stack buffer may not escape its scope | Checked, reported as `E_REGION_ESCAPE` |
+| A Global buffer may not be mutated | Not checked |
 
 Write `Pin` when you mean to take an address, so the program stays
 correct when the check arrives.
@@ -272,13 +272,12 @@ returns 1 if it swapped and 0 if not; `bytebuf-atomic-store` returns 1.
 (bytebuf-atomic-load buf 3)          ; 0 -- offset not 8-aligned
 ```
 
-The design reserves `E_ATOMIC_ABA` for a compare-and-swap outside the
-Pin region — a CAS on memory that may move underneath it is the ABA
-hazard the name refers to — but that check is not implemented yet.
+A compare-and-swap outside the Pin region — on memory that may move
+underneath it, the ABA hazard — is not checked, and has no error code.
 
 `(align-check ptr alignment)` tests a pointer's alignment before a wide
 access. It *returns* 1 when `ptr` is a multiple of `alignment` and 0
-otherwise; it does not raise `E_ALIGNMENT_FAILED`, so act on the result.
+otherwise; it raises nothing, so act on the result.
 
 ## 32.9 What Is Ready
 
@@ -295,7 +294,7 @@ at different stages:
 | The atomic family | Working, on 8-aligned offsets |
 | `align-check` | Working, as a 1/0 test |
 | Stack escape (`E_REGION_ESCAPE`) | Enforced |
-| Other region rules (`E_BYTEBUF_NOT_PIN`, `E_GLOBAL_BYTEBUF_MUT`, `E_ATOMIC_ABA`) | **Not enforced** |
+| Other region rules (Pin-only `bytebuf-ptr`, immutable Global buffers, Pin-only CAS) | **Not enforced** |
 
 Two further caveats:
 

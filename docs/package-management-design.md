@@ -521,6 +521,22 @@ package half of the form's canonical key — and the pass rejects:
 All violations are `E_PKG_CAPABILITY_VIOLATION`. *As implemented, see
 §16 for which constructs each capability actually guards.*
 
+A lone file compiled directly has no manifest and is still policed: it
+declares with the same `(capabilities ...)` form among its own top-level
+forms, absent meaning none, and a REPL session declares by typing the
+form. The diagnostic is written at the construct — "`system` needs the
+ffi capability, and this file declares none" — with the exact line to
+write as the fix. Only the implicit standard library and the runtime
+module, the providers, are not policed; an `ffi-call` of a `zyl_*`
+runtime entry is the language's own and needs no `ffi` grant.
+
+The pass walks every expression form by name, with no default arm, so a
+form added later must state how it is walked. It covers `defn` and `def`
+bodies, `test` bodies (under the root's grant) and impl methods (under the
+grant of the trait's package and, when different, the type's package; an
+impl joining two user packages must satisfy both, which is stricter than
+ownership requires).
+
 A declared set is a ceiling on the package itself. It is not a grant a
 consumer must repeat — per-edge re-granting is noise that people learn to
 paste without reading. Instead the *effective transitive closure* is

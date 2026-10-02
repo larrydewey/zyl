@@ -53,7 +53,7 @@ enumeration is the argument.
 |---|---|
 | allocate a region-owned value | `Vec`, `IntMap`, `Set`, `Slice`, `bytebuf`, string ops |
 | read/write a field | `struct-get`; fields are immutable, `set!` on one is `E_MUT_CONFLICT` |
-| index a collection | `vec-get` and friends; bounds-checked, out of range is an error |
+| index a collection | `vec-get!` and friends; bounds-checked, out of range is an error |
 | load/store a byte | `load-u8`/`store-u8` and the wider forms; bounds-checked against the buffer |
 | atomic RMW | `atomic-*`; operand is a `ByteBuf` region slot |
 | write a file | `file-write`; a descriptor, released exactly once |
@@ -208,8 +208,13 @@ those are compiled in an internal mode.
 
 ### L6 — Indexed access is bounds-checked · *Enforced*
 
-`vec-set` returns the vector unchanged rather than writing when the index
-is out of range, and reads report rather than fault. Collections are typed:
+A read or write through `vec-get!`, `vec-set!`, `slice-get!` and the other
+`!` accessors checks the index first and, outside the collection, stops the
+program with `E_INDEX_OUT_OF_BOUNDS` (caught by `try`) instead of touching
+memory; the `?` siblings return `None` instead. `vec-set!` at an index equal
+to the length appends, as `vec-push` does. Before this, `vec-set` returned
+the vector unchanged on a bad index, which was memory-safe but lost the
+write silently. Collections are typed:
 an array's slots are filled in order so a collection only ever reads
 elements it wrote, and there is no word-level cast anywhere
 (`docs/sound-types-design.md`).
@@ -237,7 +242,36 @@ someone checks it in a proof assistant. V3 (provenance and bounds for
 dynamic accesses) and V4 (region liveness) are not implemented, and the
 evidence reports them as absent rather than as passed.
 
-### L8 — Integer arithmetic cannot fail silently · *Enforced + Measured*
+### L8 — Partial operations are spelled · *Enforced for direct calls*
+
+This is not a memory lemma; it is the rule that makes the places a program
+can stop visible. A standard-library function that can panic ends in `!`;
+its total sibling ends in `?` and returns an `Option` (or a `Result` where a
+message matters); there is no plain name. `panic`, `assert`, the `assert-*`
+test forms and `unwrap` keep their names, so `grep` for `!`, `unwrap`,
+`panic` and `assert` finds every library call that can stop the program.
+
+What is enforced: at the unused-binding stage (`unused_check.zyl`) a `defn`
+in a program-facing standard-library module whose body calls `panic` or the
+runtime's `zyl_panic` directly, and whose name has no trailing `!`, is
+`E_PANIC_UNMARKED`; in a program the same shape is the warning
+`W_PANIC_UNMARKED`. `main`, `test` bodies, the definition of `panic` and
+the compiler's own modules (`compiler/`, `lsp/`, `repl/`, the runtime) are
+exempt. `tests/panic_unmarked_test.zyl` and
+`tests/scripts/panic-unmarked.sh` exercise both.
+
+What is not: the check sees direct calls only, so a plain-named function
+that panics through a callee is not flagged (its callee is, which is where
+the `!` must then appear). Built-in forms and runtime primitives are outside
+the rule: exhausting a `fixed` region, running out of memory, and an FFI
+timeout still stop a program without a `!` in sight. Integer arithmetic is
+no longer among them (L9): a division that can stop is `div!`/`rem!`, and a
+checked `+ - *` stops only under a `(numeric checked)` the source wrote.
+String slicing (`str-substring`, `view-take`, `view-drop`) is total by
+definition: it clamps to the overlap of the asked range with the string
+(spec §25), so it is neither `!` nor `?`.
+
+### L9 — Integer arithmetic cannot fail silently · *Enforced + Measured*
 
 **Claim.** An Int `+`, `-` or `*` whose mathematical result does not fit
 produces the result the package declared (`checked`: the program stops

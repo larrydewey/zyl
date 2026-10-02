@@ -220,7 +220,8 @@
     (if (str-eq head "impl") true
     (if (str-eq head "derive") true
     (if (str-eq head "alias") true
-    false)))))))))))
+    (if (str-eq head "capabilities") true
+    false))))))))))))
 
 ; ===========================================================================
 ; BUILDING THE PROGRAM
@@ -336,11 +337,12 @@
 
 ; Compile to lowered functions, or hand back the diagnostics. Every
 ; reporting path in the compiler ends in zyl_panic, which unwinds to
-; here rather than ending the session.
+; here rather than ending the session. The type pass's closing count is
+; dropped: its errors were already printed where they are.
 ; Returns: Result(List(Icnf), String)
 (defn eval-lower (arena src)
   (let _ (ffi-call "zyl_ref_set" repl-compiling true 1000)
-    (let r (try (Ok (compile-to-fns arena src "<repl>")) (catch e (Err e)))
+    (let r (try (Ok (compile-to-fns arena src "<repl>")) (catch e (Err (if (ta-summary-p e) "" e))))
       (let _ (ffi-call "zyl_ref_set" repl-compiling false 1000)
         r))))
 
@@ -455,13 +457,17 @@
 ; A definition is checked in a throwaway arena: nothing it lowers to is
 ; kept, because the next entry re-lowers it from the session's text.
 (defn eval-add-definition (sess text)
-  (let name (eval-second-word text)
+  (let name (eval-definition-name text)
     (let arena (eval-entry-arena)
       (let scratch (arena-create 8388608)
         (let saved (eval-heap-swap scratch)
           (let res (eval-lower arena (eval-program-defs sess text))
             (let copied (eval-copy-result res saved scratch arena)
               (eval-definition-result copied sess text name))))))))
+
+; `(capabilities io ffi)` declares for the session (§31.9); it is kept like a definition.
+(defn eval-definition-name (text)
+  (if (str-eq (eval-head text) "capabilities") "capabilities" (eval-second-word text)))
 
 ; Leave the scratch window, carrying only the diagnostics out of it.
 (defn eval-copy-result (res saved scratch arena)

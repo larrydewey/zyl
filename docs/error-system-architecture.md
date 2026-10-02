@@ -33,8 +33,8 @@ The most incredible developer experience for a systems Lisp. Every error is acti
   text before parsing (`compile-check-balance` in `pipeline.zyl`,
   `check-balanced` in `parser.zyl`), with its own fix-it text
   (`sb-hint`).
-- **Warnings**: `unused_check.zyl` reports `W_UNUSED_PARAMETER`, `W_UNUSED_VARIABLE` and
-  `W_SHADOWED_BINDING` on stderr without failing the compile; `secret_check.zyl` reports
+- **Warnings**: `unused_check.zyl` reports `W_UNUSED_PARAMETER`, `W_UNUSED_VARIABLE`,
+  `W_SHADOWED_BINDING` and `W_PANIC_UNMARKED` on stderr without failing the compile; `secret_check.zyl` reports
   `E_ZEROIZE_MISSING` at severity 2.
 - **LSP diagnostics**: `stdlib/lsp/compiler_bridge.zyl` turns a balance
   result, a compiler panic message or the type checker's reports into an
@@ -75,18 +75,15 @@ The most incredible developer experience for a systems Lisp. Every error is acti
    exception: it reports every type error in the program, then fails.
 8. **No error recovery**: the parser and the checks cannot continue past
    an error.
-9. **Many catalog codes are never raised**: the strict type pass reports
-   every unification failure as `E_TYPE_MISMATCH`, so
-   `E_RETURN_TYPE_MISMATCH` is catalog-only, and several runtime codes
-   (`E_ASSERT_FAIL`, `E_USER_ERROR`, `E_DIVISION_BY_ZERO` in compiled
-   code) are not what a failing program prints. `docs/errors.md` has the
-   list.
+9. ~~**Many catalog codes are never raised**~~ FIXED (2026-10-02): the
+   31 codes nothing raised were removed from the catalog and spec §28, the
+   raised-but-uncatalogued ones were added, and `verify/error-codes.sh`
+   (scripts category) fails on either kind of drift. `E_DIVISION_BY_ZERO`
+   in compiled code is still a SIGFPE, not the code.
 10. **Name drift**: `exhaustiveness_check.zyl` raises
-    `E_NON_EXHAUSTIVE_MATCH` for a missing variant, while spec §28 and
-    the catalog name that `E_MATCH_NONEXHAUSTIVE`. The catalog also has
-    duplicate entries (`E_OUT_OF_MEMORY` twice with different messages,
-    `E_ALIGNMENT_FAILED` and `E_ALIGN_CHECK_FAILED` with the same
-    message).
+    `E_NON_EXHAUSTIVE_MATCH` for a missing variant, while spec §28 names
+    that `E_MATCH_NONEXHAUSTIVE`, which the literal-match check and ICNF
+    lowering raise; both are catalogued.
 11. ~~**No native balance validator**: Currently requires Python script~~
     FIXED (2026-09-19): `sexp_balance.zyl`, wired into the real compile
     path.

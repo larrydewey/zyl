@@ -4,7 +4,7 @@
 ;
 ; A StrView is a string, an offset and a length: taking a view, a sub-view,
 ; splitting or trimming never copies bytes. The bounds are checked once,
-; when a view is made from a String (`view-slice`, `view-of`); every other
+; when a view is made from a String (`view-slice!`, `view-of`); every other
 ; operation stays inside them. A view is an ordinary value holding its
 ; base string, so region inference keeps the base alive for as long as any
 ; view of it (docs/regions-design.md): a view returned from a function
@@ -34,21 +34,51 @@
 (defn view-of ((s String))
   (StrViewC s 0 (ffi-call "zyl_cstr_len" s 1000)))
 
-; The `len` bytes of `s` from `off`. A range outside `s` is
-; E_INDEX_OUT_OF_BOUNDS.
+; A partial operation is spelled: `name!` stops the program on a bad range
+; (E_INDEX_OUT_OF_BOUNDS, caught by `try`), `name?` returns an Option, and
+; there is no plain name (docs/soundness.md).
+
+; Stops the program: `who` was asked for off..off+len of `what` of n bytes.
+(defn view-range! ((who String) (alt String) (what String) (off Int) (len Int) (n Int))
+  (ffi-call "zyl_panic"
+    (str-concat "E_INDEX_OUT_OF_BOUNDS: " (str-concat who (str-concat " range " (str-concat (ffi-call "zyl_int_text" off 1000)
+      (str-concat ".." (str-concat (ffi-call "zyl_int_text" (+ off len) 1000) (str-concat " is outside a " (str-concat what
+        (str-concat " of " (str-concat (ffi-call "zyl_int_text" n 1000)
+          (str-concat " bytes\n  = help: use `" (str-concat alt "` and match its Option"))))))))))))
+    1000))
+
+; The `len` bytes of `s` from `off`. A range outside `s` stops the program
+; (E_INDEX_OUT_OF_BOUNDS).
 ; Returns: StrView
-(defn view-slice ((s String) (off Int) (len Int))
+(defn view-slice! ((s String) (off Int) (len Int))
   (if (ffi-call "zyl_view_ok" s off len 1000)
     (StrViewC s off len)
-    (ffi-call "zyl_panic" "E_INDEX_OUT_OF_BOUNDS: view-slice range outside the string" 1000)))
+    (view-range! "view-slice!" "(view-slice? s off len)" "string" off len (ffi-call "zyl_cstr_len" s 1000))))
 
-; The `len` bytes of `v` from `off`. A range outside `v` is
-; E_INDEX_OUT_OF_BOUNDS.
+; The `len` bytes of `s` from `off`, or None when the range is outside `s`.
+; Returns: Option StrView
+(defn view-slice? ((s String) (off Int) (len Int))
+  (if (ffi-call "zyl_view_ok" s off len 1000)
+    (Some (StrViewC s off len))
+    None))
+
+(defn view-range-ok ((off Int) (len Int) (n Int))
+  (not (or (< off 0) (or (< len 0) (> len (- n off))))))
+
+; The `len` bytes of `v` from `off`. A range outside `v` stops the program
+; (E_INDEX_OUT_OF_BOUNDS).
 ; Returns: StrView
-(defn view-sub ((v StrView) (off Int) (len Int))
-  (if (or (< off 0) (or (< len 0) (> len (- (view-len v) off))))
-    (ffi-call "zyl_panic" "E_INDEX_OUT_OF_BOUNDS: view-sub range outside the view" 1000)
-    (StrViewC (view-base v) (+ (view-off v) off) len)))
+(defn view-sub! ((v StrView) (off Int) (len Int))
+  (if (view-range-ok off len (view-len v))
+    (StrViewC (view-base v) (+ (view-off v) off) len)
+    (view-range! "view-sub!" "(view-sub? v off len)" "view" off len (view-len v))))
+
+; The `len` bytes of `v` from `off`, or None when the range is outside `v`.
+; Returns: Option StrView
+(defn view-sub? ((v StrView) (off Int) (len Int))
+  (if (view-range-ok off len (view-len v))
+    (Some (StrViewC (view-base v) (+ (view-off v) off) len))
+    None))
 
 ; The view without its first `n` bytes (empty when `n` >= its length).
 ; Returns: StrView
@@ -198,7 +228,7 @@
 ; Returns: Taken
 (defn cursor-take-while ((c Cursor) pred)
   (let end (cursor-scan c pred (cursor-pos c))
-    (TakenC (view-sub (cursor-view c) (cursor-pos c) (- end (cursor-pos c)))
+    (TakenC (view-sub! (cursor-view c) (cursor-pos c) (- end (cursor-pos c)))
             (CursorC (cursor-view c) end))))
 
 (defn cursor-scan ((c Cursor) pred (i Int))

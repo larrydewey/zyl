@@ -47,14 +47,33 @@
 ; Returns: Int
 (defn vec-cap (v) (array-cap (vec-store v)))
 
-; Element i. An index outside the Vec is E_INDEX_OUT_OF_BOUNDS.
+; A partial operation is spelled: `name!` stops the program on a bad index
+; (E_INDEX_OUT_OF_BOUNDS, caught by `try`), `name?` returns an Option, and
+; there is no plain name (docs/soundness.md, "Partial operations are spelled").
+
+; The message for `who` given index i on a Vec of n elements; the caller panics, so its frame is the one a backtrace shows.
+(defn vec-oob-text ((who String) (alt String) (i Int) (n Int))
+  (str-concat "E_INDEX_OUT_OF_BOUNDS: " (str-concat who (str-concat " index " (str-concat (ffi-call "zyl_int_text" i 1000)
+    (str-concat " is outside a Vec of " (str-concat (ffi-call "zyl_int_text" n 1000)
+      (str-concat " elements\n  = help: use `" (str-concat alt "` and match its Option, or check the index against `vec-len` first")))))))))
+
+; Element i. An index outside the Vec stops the program (E_INDEX_OUT_OF_BOUNDS).
 ; Returns: T
-(defn vec-get (v (i Int))
+(defn vec-get! (v (i Int))
   (match v
     (VecC s n
       (if (or (< i 0) (>= i n))
-        (ffi-call "zyl_panic" "E_INDEX_OUT_OF_BOUNDS: vec-get index outside the Vec" 1000)
+        (ffi-call "zyl_panic" (vec-oob-text "vec-get!" "(vec-get? v i)" i n) 1000)
         (array-get s i)))))
+
+; Element i, or None when i is outside the Vec.
+; Returns: Option T
+(defn vec-get? (v (i Int))
+  (match v
+    (VecC s n
+      (if (or (< i 0) (>= i n))
+        None
+        (Some (array-get s i))))))
 
 ; Element i, or `default` when i is outside the Vec.
 ; Returns: T
@@ -63,16 +82,30 @@
     default
     (array-get (vec-store v) i)))
 
-; Set element i. Setting element `len` (within capacity) extends the Vec by
-; one; any other index outside it leaves the Vec unchanged.
+; The Vec with element i set to `value`. An i equal to the length appends,
+; as vec-push does; any other i outside the Vec stops the program
+; (E_INDEX_OUT_OF_BOUNDS).
 ; Returns: Vec
-(defn vec-set (v (i Int) value)
-  (if (or (< i 0) (or (> i (vec-len v)) (>= i (vec-cap v))))
-    v
-    (let _ (array-set (vec-store v) i value)
-      (if (= i (vec-len v))
-        (VecC (vec-store v) (+ i 1))
-        v))))
+(defn vec-set! (v (i Int) value)
+  (match v
+    (VecC s n
+      (if (= i n)
+        (vec-push v value)
+        (if (or (< i 0) (> i n))
+          (ffi-call "zyl_panic" (vec-oob-text "vec-set!" "(vec-set? v i x)" i n) 1000)
+          (let _ (array-set s i value) v))))))
+
+; The Vec with element i set to `value`, or None when i is outside the Vec;
+; an i equal to the length appends.
+; Returns: Option Vec
+(defn vec-set? (v (i Int) value)
+  (match v
+    (VecC s n
+      (if (= i n)
+        (Some (vec-push v value))
+        (if (or (< i 0) (> i n))
+          None
+          (let _ (array-set s i value) (Some v)))))))
 
 ; Push a value, moving to storage twice the size when full.
 ; Returns: Vec
@@ -105,15 +138,26 @@
     v
     (VecC (vec-store v) (- (vec-len v) 1))))
 
-; The last value; an empty Vec is E_INDEX_OUT_OF_BOUNDS.
+; The last value; an empty Vec stops the program (E_INDEX_OUT_OF_BOUNDS).
 ; Returns: T
-(defn vec-last (v)
-  (vec-get v (- (vec-len v) 1)))
+(defn vec-last! (v)
+  (match v
+    (VecC s n
+      (if (<= n 0)
+        (ffi-call "zyl_panic" "E_INDEX_OUT_OF_BOUNDS: vec-last! of an empty Vec\n  = help: use `(vec-last? v)` and match its Option, or check `(vec-len v)` first" 1000)
+        (array-get s (- n 1))))))
+
+; The last value, or None for an empty Vec.
+; Returns: Option T
+(defn vec-last? (v)
+  (match v
+    (VecC s n
+      (if (<= n 0) None (Some (array-get s (- n 1)))))))
 
 ; An empty Vec with no storage. The old storage belongs to the region it
 ; was allocated in and is reclaimed with it.
 ; Returns: Vec
-(defn vec-free (v)
+(defn vec-free (_v)
   (vec-new))
 
 (impl Show Vec (defn show (self) (str-concat "[" (str-concat (vec-show-from self 0) "]"))))
@@ -121,7 +165,7 @@
 (defn vec-show-from (v (i Int))
   (if (>= i (vec-len v))
     ""
-    (let item (Show.show (vec-get v i))
+    (let item (Show.show (vec-get! v i))
       (if (= i (- (vec-len v) 1))
         item
         (str-concat item (str-concat ", " (vec-show-from v (+ i 1))))))))

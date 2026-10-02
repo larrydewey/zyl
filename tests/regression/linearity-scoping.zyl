@@ -1,3 +1,4 @@
+(capabilities io)
 ; The linearity pass (compiler/linearity.zyl) must reject every way of
 ; using a resource after its release, and must not reject the shapes that
 ; look similar but are fine. This file is the second half of that

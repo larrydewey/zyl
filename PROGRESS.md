@@ -250,6 +250,16 @@ compile with `build/boot/zyl-self` on 2026-09-28.
   alternately, min of 15. Ratios only compare within a single run — the
   absolute times drift 10-30% with machine load, which is what made
   `trees` look 12% worse against C when it had not changed at all.
+- Structs: `(defstruct T ... (f ...))` (and `defstruct+`) generates a typed
+  accessor `T.f` per field, `(defn T.f ((p T)) (struct-get p "f"))`, before
+  type checking (`struct-accessor-forms`, `expr_inner.zyl`); a program defn of
+  that name is `E_DUPLICATE_DEFINITION` naming the defstruct; in a package it
+  is visible as its struct is. The LSP resolves hover and definition of `T.f`
+  to the field and completes accessors after `T.`.
+- FFI: `(extern "sym" (T...) R :timeout N)` is a default timeout; an
+  `ffi-call` passing exactly the extern's parameter count takes it, one
+  passing one more keeps its own (`ffi-default-timeout`, `expr_inner.zyl`).
+  With neither, `E_FFI_TIMEOUT_REQUIRED` names both fixes.
 - Linking: a program with no foreign `ffi-call` and no native objects is
   a static executable with no libc, assembled and linked by the
   compiler itself (`asm_x86.zyl`, `elf_link.zyl`) against the cached
@@ -292,10 +302,37 @@ compile with `build/boot/zyl-self` on 2026-09-28.
   definitions, and `zyl-lsp` publishes all three errors.
 - Diagnostics: `error[CODE]`, `--> file:line:col`, the source line, a
   caret and a `= help:` line for every diagnostic that has a source
-  node; "did you mean" on unbound names; labelled secondary spans on
-  `E_MUT_CONFLICT`, `E_CAPABILITY_LEAK`, `E_PKG_CAPABILITY_VIOLATION`
-  and `E_REGION_ESCAPE`; `--error-format=json`. The self-build prints no
-  warnings.
+  node; labelled secondary spans on `E_MUT_CONFLICT`, `E_CAPABILITY_LEAK`,
+  `E_PKG_CAPABILITY_VIOLATION` and `E_REGION_ESCAPE`; `--error-format=json`.
+  The voice is held to `docs/diagnostics.md` (2026-10-02): an unbound name
+  is reported once, with up to three close names (locals first), Zyl's
+  spelling of another Lisp's name, or the `(use ...)` line that imports
+  it, and nothing depending on it is reported; a type mismatch names the
+  parameter, operator, condition or `main`'s result at the offending
+  expression; a failed compile ends with `N errors; fix the first one
+  first` (nothing after one error, nothing in JSON mode) and a located
+  error prints without `PANIC:`; a standard-library warning is hidden
+  while compiling a program (`ZYL_WARN_ALL=1` shows it); stdout is flushed
+  before a panic or a test failure line. `tests/scripts/diagnostics-voice.sh`
+  pins the probe program's output. `zyl explain CODE` gives a wrong
+  program and its fix for the 30 most used codes
+  (`tests/scripts/explain-examples.sh` compiles every pair); `zyl explain`
+  lists every code by phase. The catalog is exactly the raised codes:
+  31 dead codes were removed from it and from spec §28, and
+  `verify/error-codes.sh` (`scripts/error-codes`) fails on drift either
+  way. The self-build prints unused-parameter and shadowing warnings in
+  the compiler's own modules.
+- Partial operations are spelled (`docs/soundness.md`): a stdlib function
+  that can panic ends in `!` (`vec-get!`, `vec-set!`, `vec-last!`,
+  `slice-vec!`/`-sub!`/`-get!`, `view-slice!`/`-sub!`, the SIMD lane
+  `get!`/`set!`, `option-expect!`, `result-expect!`), its total sibling in
+  `?` (an Option), with no plain name. `vec-set!` at the length appends; past
+  it is `E_INDEX_OUT_OF_BOUNDS` (it used to drop the write silently). String
+  slicing stays total and clamps. `unused_check.zyl` makes a plain-named
+  `defn` that calls `panic`/`zyl_panic` directly `E_PANIC_UNMARKED` in a
+  program-facing stdlib module and `W_PANIC_UNMARKED` in a program; it sees
+  direct calls only, and built-ins (division by zero, region exhaustion)
+  are outside it.
 - Hash finalization: `zyl build` writes `<out>.buildinfo` and the binary
   carries `zyl_build_hash` (spec §31.12).
 
@@ -315,6 +352,16 @@ compile with `build/boot/zyl-self` on 2026-09-28.
   the unwind without the guard. The guard is never observable.
 - An allocation failure is `E_OUT_OF_MEMORY`; the budget is
   `ZYL_MAX_MEMORY`, else 80% of available memory.
+- An uncaught panic prints a backtrace under its `PANIC:` line: the rbp
+  chain, each return address named through the `zyl_syms` table codegen
+  writes into every program, innermost first, 32 names at most, in both
+  link modes (an actor's panic is re-raised at `actor-wait`, so it shows
+  the joiner's frames); stdout is flushed first; nothing on a caught path, in JSON
+  mode, or under a rendered `error[...]` diagnostic. Runtime frames,
+  tail calls and inlined calls are not frames and are not listed; a
+  push-only MIR function that calls now keeps rbp (fib +3%). The table
+  is 113 KB (3.1%) of `zyl-self`. No source
+  lines (`docs/runtime-in-zyl-design.md`, "Panic backtrace").
 
 ### Concurrency (`docs/concurrency-determinism-design.md`)
 
@@ -341,7 +388,10 @@ compile with `build/boot/zyl-self` on 2026-09-28.
   features, native dependencies, workspaces, the build cache, and `zyl
   new/add/fetch/build/test/update/vendor/audit/publish/key`.
 - The standard library is the implicit package `zyl/std` and has no
-  manifest; a lone file compiles as `local/main`@0.
+  manifest; a lone file compiles as `local/main`@0 and declares its
+  capabilities with a top-level `(capabilities ...)` form (absent means
+  none, enforced as a manifest's; a REPL session types the form). An
+  `ffi-call` of a `zyl_*` runtime entry needs no `ffi` grant.
 
 ### Tools
 
@@ -402,6 +452,14 @@ Language and compiler:
   not distinguish byte-buffer regions.
 - Types: `<` on ADTs is a type error (use `Ord.compare`); the
   interpreter's checking mode sees Bool, Unit and ADTs as words.
+- Checked arithmetic costs speed where the backend used to reassociate:
+  the accumulator transformation (`(+ x (self ...))` tails) applies only to
+  wrapping `+ *`, so `bench/fib.zyl` under `(numeric checked)` runs about
+  60% slower than the old wrapping build (0.114 s to 0.181 s); `loop` is
+  +4%, `sieve` unchanged. A checked accumulator would need an overflow test
+  that fails at the same operation the source order would.
+- `atomic-add`/`atomic-sub` wrap like the hardware's `xadd` whatever the
+  numeric policy; they are not covered by `(numeric checked)`.
 - Native backend: Float arithmetic, `print`, closures, `try` and
   `with-region` scopes keep a function on the stack machine; no MIR
   optimization pass and no general bounds-check elimination; jumps are
@@ -410,8 +468,12 @@ Language and compiler:
   inside `try`/`catch` or `while`, or in frame-wiping (Secret)
   functions. The interpreter runs tail calls in constant stack unless
   the result is a String or Float.
-- `Secret`: heap erasure is explicit (`zeroize`, `wipe`); taint crosses
-  a call only where the callee's parameters are annotated.
+- `Secret`: heap erasure is explicit (`zeroize`, `wipe`). Taint fails
+  closed across a call to a top-level `defn` (`E_SECRET_UNANNOTATED`),
+  but not across a call through a function value or a trait method, and
+  the crypto entry points take plain `Words`, so nothing seeds taint
+  there. The annotated bignum/curve mask helpers wipe their frames and
+  so run on the stack machine, not the MIR backend.
 - Diagnostics with no source node stay unlocated: `--locked` capability
   growth, `E_CODEGEN_BUFFER_FULL`, and the lock/store/index/CLI/MVS
   errors about files.
@@ -474,7 +536,12 @@ REPL and language server:
    (function offset, frame size) pairs, found by magic like the trailer)
    and the runtime's census recorded at `rt-cache` time, so `zyl verify`
    can re-derive the census it now only repeats as attested. Touches
-   `codegen.zyl`, `asm_x86.zyl`, `elf_link.zyl`; one reseed.
+   `codegen.zyl`, `asm_x86.zyl`, `elf_link.zyl`; one reseed. The
+   `zyl_syms` table (a `.long sym - .` pair per function, found by a
+   weak symbol) is the shape to copy.
+8. **Backtrace source lines**: a per-call-site table (a label after
+   each `call`, its offset and the ICNF node's span) looked up like
+   `zyl_syms`; about 110k entries for the compiler. Not started.
 
 Decisions already taken (do not reopen): inline assembly is rejected in
 favour of the deterministic intrinsics (`bit-popcount` and friends, spec
@@ -486,9 +553,9 @@ The full list, with examples, is `rules/boot-lifted-constraints.md` in
 the zyl-skill repository (`~/git/larry/zyl-skill`).
 
 1. Exhaustiveness is checked per ADT (`E_NON_EXHAUSTIVE_MATCH`). A
-   catch-all arm must come last (`E_UNREACHABLE_MATCH_ARM`). An arm head
-   that names no constructor is a catch-all binding, so a misspelled
-   constructor in the last arm matches everything.
+   catch-all arm must come last (`E_UNREACHABLE_MATCH_ARM`). A lowercase
+   arm head that names no constructor is a catch-all binding; a
+   capitalized one that no type declares is `E_UNKNOWN_CONSTRUCTOR`.
 2. `_` is the discard and may repeat; `_`-prefixed names are exempt
    from the unused, shadowing and duplicate-parameter checks.
 3. Prefer flat `begin` sequences and recursion over deep nesting.
@@ -540,3 +607,4 @@ the zyl-skill repository (`~/git/larry/zyl-skill`).
 | Deterministic intrinsics | 2026-09-28 | bit intrinsics, `stdlib/simd` |
 | Zyl assembler and ELF linker | 2026-09-28 | no cc/as/ld for freestanding programs; cached `rt.zo` |
 | Interpreted actors | 2026-09-28 | the REPL and `zyl eval` run `spawn` and channels |
+| Partial operations spelled | 2026-10-02 | `!`/`?` stdlib pairs, `E_PANIC_UNMARKED` |

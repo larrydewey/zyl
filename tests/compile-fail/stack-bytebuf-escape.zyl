@@ -2,6 +2,8 @@
 ; outlive the frame that owns its bytes.
 ; expect-error: E_REGION_ESCAPE
 
+(capabilities actor)
+
 (defn leak (tx)
   (let b (bytebuf Stack 16)
     (chan-send tx (byteslice b 0 4))))

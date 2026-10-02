@@ -109,7 +109,7 @@
     (begin
       (ffi-call "zyl_str_append_capped" b "12345" 8 1000)
       (assert-equal (try (begin (ffi-call "zyl_str_append_capped" b "678" 8 1000) "") (catch e e))
-        "codegen buffer limit exceeded")
+        "E_CODEGEN_BUFFER_LIMIT: codegen buffer limit exceeded")
       (ffi-call "zyl_str_append_capped" b "67" 8 1000)
       (assert-equal (ffi-call "zyl_strbuf_str" b 1000) "1234567")
       (ffi-call "zyl_str_append_capped" b "89" 100 1000)

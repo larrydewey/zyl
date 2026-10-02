@@ -6,5 +6,5 @@
 (use collections/vec)
 (defn main ()
   (let v (vec 1 "two")
-    (print (vec-get v 1))))
+    (print (vec-get! v 1))))
 (numeric checked)

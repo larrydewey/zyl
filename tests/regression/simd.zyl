@@ -20,9 +20,9 @@
   (if (= op 0) (u8x16-add a b) (if (= op 1) (u8x16-sub a b) (if (= op 2) (u8x16-eq a b) (if (= op 3) (u8x16-min a b) (u8x16-max a b))))))
 
 (defn lanes32-ok (op a b r i)
-  (if (> i 3) true (and (= (i32x4-get r i) (m32 op (i32x4-get a i) (i32x4-get b i))) (lanes32-ok op a b r (+ i 1)))))
+  (if (> i 3) true (and (= (i32x4-get! r i) (m32 op (i32x4-get! a i) (i32x4-get! b i))) (lanes32-ok op a b r (+ i 1)))))
 (defn lanes8-ok (op a b r i)
-  (if (> i 15) true (and (= (u8x16-get r i) (m8 op (u8x16-get a i) (u8x16-get b i))) (lanes8-ok op a b r (+ i 1)))))
+  (if (> i 15) true (and (= (u8x16-get! r i) (m8 op (u8x16-get! a i) (u8x16-get! b i))) (lanes8-ok op a b r (+ i 1)))))
 (defn ops-ok (a b c d op)
   (if (> op 4) true
     (and (lanes32-ok op (i32x4-of a b) (i32x4-of c d) (op32 op (i32x4-of a b) (i32x4-of c d)) 0)
@@ -31,7 +31,7 @@
 
 (defn i32x4-of (lo hi) (i32x4 lo (shr lo 32) hi (shr hi 32)))
 
-(defn sum8 (v i) (if (> i 15) 0 (+ (u8x16-get v i) (sum8 v (+ i 1)))))
+(defn sum8 (v i) (if (> i 15) 0 (+ (u8x16-get! v i) (sum8 v (+ i 1)))))
 
 ; Pseudo-random words with shared lanes mixed in, so eq and min/max see equal lanes too.
 (defn mismatches (x n bad)
@@ -47,9 +47,9 @@
   (let a (i64x2 (int-min) -1)
     (let b (i64x2 -1 9223372036854775807)
       (begin
-        (assert-equal (i64x2-get (i64x2-add a b) 0) 9223372036854775807)
-        (assert-equal (i64x2-get (i64x2-add a b) 1) 9223372036854775806)
-        (assert-equal (i64x2-get (i64x2-sub a b) 0) -9223372036854775807)
+        (assert-equal (i64x2-get! (i64x2-add a b) 0) 9223372036854775807)
+        (assert-equal (i64x2-get! (i64x2-add a b) 1) 9223372036854775806)
+        (assert-equal (i64x2-get! (i64x2-sub a b) 0) -9223372036854775807)
         (assert-equal (i64x2-min a b) (i64x2 (int-min) -1))
         (assert-equal (i64x2-max a b) (i64x2 -1 9223372036854775807))
         (assert-equal (i64x2-eq a (i64x2 (int-min) 0)) (i64x2 -1 0))
@@ -57,7 +57,7 @@
         (assert-equal (i64x2-and a b) (i64x2 (int-min) 9223372036854775807))
         (assert-equal (i64x2-or (i64x2 1 2) (i64x2 4 8)) (i64x2 5 10))
         (assert-equal (i64x2-hsum b) 9223372036854775806)
-        (assert-equal (i64x2-get (i64x2-set a 1 7) 1) 7)))))
+        (assert-equal (i64x2-get! (i64x2-set! a 1 7) 1) 7)))))
 
 (test "i32x4"
   (let a (i32x4 2147483647 -2147483648 -1 0)
@@ -66,15 +66,15 @@
         (assert-equal (i32x4-add a b) (i32x4 -2147483648 -2147483647 -2 -1))
         (assert-equal (i32x4-sub a b) (i32x4 2147483646 2147483647 0 1))
         (assert-equal (i32x4-eq a b) (i32x4 0 0 -1 0))
-        (assert-equal (i32x4-get (i32x4-eq a b) 2) -1)
+        (assert-equal (i32x4-get! (i32x4-eq a b) 2) -1)
         (assert-equal (i32x4-min a b) (i32x4 1 -2147483648 -1 -1))
         (assert-equal (i32x4-max a b) (i32x4 2147483647 1 -1 0))
-        (assert-equal (i32x4-get a 1) -2147483648)
-        (assert-equal (i32x4-get (i32x4 4294967295 0 0 0) 0) -1)
+        (assert-equal (i32x4-get! a 1) -2147483648)
+        (assert-equal (i32x4-get! (i32x4 4294967295 0 0 0) 0) -1)
         (assert-equal (i32x4-hsum a) -2)
         (assert-equal (i32x4-hsum (i32x4-splat -2147483648)) -8589934592)
-        (assert-equal (i32x4-get (i32x4-set a 3 5) 3) 5)
-        (assert-equal (i32x4-get (i32x4-set a 3 5) 2) -1)
+        (assert-equal (i32x4-get! (i32x4-set! a 3 5) 3) 5)
+        (assert-equal (i32x4-get! (i32x4-set! a 3 5) 2) -1)
         (assert-equal (i32x4-and a (i32x4-splat 255)) (i32x4 255 0 255 0))
         (assert-equal (i32x4-or (i32x4-xor a a) b) b)))))
 
@@ -82,24 +82,24 @@
   (let a (u8x16 0 1 2 3 4 5 6 7 8 9 10 11 12 13 254 255)
     (let b (u8x16-splat 1)
       (begin
-        (assert-equal (u8x16-get (u8x16-add a b) 15) 0)
-        (assert-equal (u8x16-get (u8x16-add a b) 14) 255)
-        (assert-equal (u8x16-get (u8x16-sub a b) 0) 255)
-        (assert-equal (u8x16-get (u8x16-sub a b) 7) 6)
+        (assert-equal (u8x16-get! (u8x16-add a b) 15) 0)
+        (assert-equal (u8x16-get! (u8x16-add a b) 14) 255)
+        (assert-equal (u8x16-get! (u8x16-sub a b) 0) 255)
+        (assert-equal (u8x16-get! (u8x16-sub a b) 7) 6)
         (assert-equal (u8x16-movemask (u8x16-eq a b)) 2)
         (assert-equal (u8x16-min a b) (u8x16 0 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1))
-        (assert-equal (u8x16-get (u8x16-max a b) 15) 255)
-        (assert-equal (u8x16-get (u8x16-max a b) 0) 1)
+        (assert-equal (u8x16-get! (u8x16-max a b) 15) 255)
+        (assert-equal (u8x16-get! (u8x16-max a b) 0) 1)
         (assert-equal (u8x16-hsum a) 600)
         (assert-equal (u8x16-hsum (u8x16-splat 255)) 4080)
         (assert-equal (u8x16-hsum (u8x16-splat 0)) 0)
-        (assert-equal (u8x16-get (u8x16-set a 9 300) 9) 44)
+        (assert-equal (u8x16-get! (u8x16-set! a 9 300) 9) 44)
         (assert-equal (u8x16-and a (u8x16-splat 15)) (u8x16 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15))
         (assert-equal (u8x16-xor (u8x16-or a b) (u8x16-or a b)) (u8x16-splat 0))
         (assert-equal (u8x16-movemask (u8x16-splat 128)) 65535)))))
 
 (test "lane-index"
-  (assert-equal (try (i32x4-get (i32x4-splat 0) 4) (catch _e 1)) 1))
+  (assert-equal (try (i32x4-get! (i32x4-splat 0) 4) (catch _e 1)) 1))
 
 (test "model-agreement"
   (assert-equal (mismatches 777 400 0) 0))

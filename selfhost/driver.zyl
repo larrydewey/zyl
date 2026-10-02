@@ -9,6 +9,8 @@
 ;   2. Legacy fixed-path protocol (`argc < 2`): reads
 ;      /tmp/zyl_boot_in.zyl, writes /tmp/zyl_boot_out.s; a dependency-free smoke path.
 
+(capabilities io)
+
 (numeric checked)
 (use compiler/node_tables)
 (use compiler/rt_mode)
@@ -772,9 +774,9 @@
   (if (str-eq cmd "repl")
     ; `cwd` is the user's directory, captured before the chdir to the
     ; bundle: a saved session belongs to the project, not the compiler.
-    (repl-run-in arena cwd)
+    (let _ (ffi-call "zyl_backtrace_set" false 1000) (repl-run-in arena cwd))
   (if (str-eq cmd "eval")
-    (drv-eval arena cwd)
+    (let _ (ffi-call "zyl_backtrace_set" false 1000) (drv-eval arena cwd))
   (if (str-eq cmd "doc")
     (drv-doc arena cwd)
   (if (str-eq cmd "rt-cache")
@@ -1114,7 +1116,22 @@
         (boot-run-legacy arena)
         (begin
           (drv-scan-error-format 1 argc)
-          (drv-main-arg arena))))))
+          (try (drv-main-arg arena) (catch e (drv-report-failure e))))))))
+
+; Type-pass count and located errors print plain (text mode); any other failure panics.
+(defn drv-report-failure (e)
+  (if (ta-summary-p e)
+    (let _ (if (and (> (ta-errors-reported) 1) (not (ffi-call "zyl_diag_json" 1000)))
+             (ffi-call "zyl_warn_emit" e 1000)
+             unit)
+      1)
+    (if (and (drv-rendered-p e) (not (ffi-call "zyl_diag_json" 1000)))
+      (let _ (ffi-call "zyl_warn_emit" e 1000) 1)
+      (ffi-call "zyl_panic" e 1000))))
+
+; A located diagnostic is already a full message; it needs no `PANIC:` in front.
+(defn drv-rendered-p (e)
+  (and (>= (str-length e) 6) (str-eq (str-substring e 0 6) "error[")))
 
 ; `--error-format=json` anywhere on the line switches every diagnostic to JSON.
 (defn drv-scan-error-format (i argc)

@@ -63,6 +63,7 @@ Expr :=
   | (derive Name [Trait*])
   | (struct-get Expr FieldName)
   | (make-Name Expr*) ; Auto-generated constructor (e.g., make-Point)
+  | (Name.Field Expr) ; Auto-generated field accessor (e.g., Point.x)
 
   ;; Resource Management
   | (with-resource (Name Expr) Body)
@@ -80,6 +81,15 @@ Expr :=
   | (run-tests (:keyword Value*)*)
   | (test-compile Expr (:expect-error Bool)?)
 ```
+
+**Field accessors.** `(defstruct Point (x) (y))` also defines one accessor per field,
+`Point.x` and `Point.y`: each is `(defn Point.x ((p Point)) (struct-get p "x"))`,
+an ordinary typed function generated before type checking, so it is a
+value like any other function and has the field's type. `defstruct+`
+generates them too. A program definition of the same name is
+`E_DUPLICATE_DEFINITION`, reported at the program's definition and naming
+the `defstruct`. In a package an accessor is visible as its struct is.
+`struct-get` and dot syntax are unchanged.
 
 ### Sub-form Definitions
 

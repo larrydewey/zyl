@@ -125,7 +125,7 @@ rebinds:
     (begin
       (for (i 0) (< i (vec-len v))
         (begin
-          (set! sum (+ sum (vec-get v i)))
+          (set! sum (+ sum (vec-get! v i)))
           (set! i (+ i 1))))
       sum)))
 
