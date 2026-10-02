@@ -207,8 +207,15 @@
 ; production.
 (def ta-report-mode (ffi-call "zyl_ref_new" false 1000))
 (def ta-error-count (ffi-call "zyl_ref_new" 0 1000))
-(def ta-first-code (ffi-call "zyl_ref_new" "E_TYPE_MISMATCH" 1000))
 (def ta-cur-node (ffi-call "zyl_ref_new" (Expr (EAtom ANil)) 1000))
+; Names already reported as unbound: each is reported once per program.
+(def ta-unbound-seen (ffi-call "zyl_smap_new" 1000))
+; 1 while the head of a call is itself a list, `((x) ...)`.
+(def ta-list-head (ffi-call "zyl_ref_new" 0 1000))
+; Constructor names in declaration order, for did-you-mean.
+(def ta-ctor-names (ffi-call "zyl_wvec_new" 1000))
+; 1 while main's result is unified with Int, so a clash names main.
+(def ta-in-main (ffi-call "zyl_ref_new" 0 1000))
 
 ; The checker is always strict; kept as a predicate for the call sites
 ; that once chose between the strict and the permissive rule.
@@ -229,16 +236,73 @@
       (if (ta-report-p)
         (ffi-call "zyl_warn_emit" (err-diag "warning" "W_TYPE_STRICT" msg fid off labels help) 1000)
         (begin
-          (if (= (ffi-call "zyl_ref_get" ta-error-count 1000) 0) (ffi-call "zyl_ref_set" ta-first-code code 1000) unit)
           (ffi-call "zyl_ref_set" ta-error-count (+ (ffi-call "zyl_ref_get" ta-error-count 1000) 1) 1000)
           (ffi-call "zyl_warn_emit" (err-diag "error" code msg fid off labels help) 1000))))))
 
-; A name defined nowhere: E_UNBOUND_VARIABLE, typed as a fresh variable
-; so the rest of the program is still checked.
-(defn ta-unbound (st msg)
-  (let _ (ta-type-error "E_UNBOUND_VARIABLE" msg (ffi-call "zyl_ref_get" ta-cur-node 1000) Nil
-           "define it, or bind it with `let`; an anonymous function is written (fn (params) body) -- ((params) body) is not lambda syntax (spec 7.1)")
-    (ta-fresh st)))
+; A name defined nowhere: E_UNBOUND_VARIABLE, reported once per program at
+; its first use (docs/diagnostics.md, 6), and typed as an absorbing unknown
+; so that nothing depending on it is reported as well.
+(defn ta-unbound (st env n)
+  (let _ (if (ta-shas ta-unbound-seen n)
+           unit
+           (let _ (ta-sput ta-unbound-seen n 1)
+             (ta-type-error "E_UNBOUND_VARIABLE" (str-concat "`" (str-concat (err-name n) "` is not defined"))
+                            (ffi-call "zyl_ref_get" ta-cur-node 1000) Nil (ta-unbound-help st env n))))
+    (ta-poisoned-var st)))
+
+; The help for an unbound name, in order of likelihood: a close name in
+; scope, the Zyl spelling of another Lisp's name, the stdlib module that
+; defines it, and last how to define it.
+(defn ta-unbound-help (st env n)
+  (let dym (err-suggest-help n (ta-visible-names st env) "")
+    (if (> (str-length dym) 0)
+      dym
+      (match (err-synonym n)
+        (Some syn (ta-synonym-help syn))
+        (None
+          (let m (err-stdlib-module-of n)
+            (if (> (str-length m) 0)
+              (ta-use-help (err-name n) m)
+              (ta-define-help (err-name n)))))))))
+
+(defn ta-synonym-help (syn)
+  (let z (err-syn-zyl syn)
+    (let m (err-syn-module syn)
+      (if (= (str-length m) 0)
+        (str-concat "Zyl spells it `" (str-concat z "`"))
+        (str-concat "Zyl spells it `" (str-concat z (str-concat "`, from `" (str-concat m (str-concat "`: add `(use " (str-concat m ")`"))))))))))
+
+(defn ta-use-help (short m)
+  (str-concat "`" (str-concat short (str-concat "` is defined in `" (str-concat m (str-concat "`: add `(use " (str-concat m ")`")))))))
+
+(defn ta-define-help (short)
+  (let base (str-concat "define it with `(defn " (str-concat short " (...) ...)`, or bind it with `let`"))
+    (if (= (ffi-call "zyl_ref_get" ta-list-head 1000) 0)
+      base
+      (str-concat base "; `((params) body)` is not a function: write `(fn (params) body)`"))))
+
+; Every name a did-you-mean may offer: locals, definitions (the program's
+; and its imports'), constructors, and the built-in forms.
+(defn ta-visible-names (st env)
+  (list-append (ta-env-names env)
+    (list-append (ta-fn-names st 0 (ta-wlen (ta-fnexp st)))
+      (list-append (ta-wvec-strings ta-ctor-names 0 (ffi-call "zyl_wvec_len" ta-ctor-names 1000))
+        (err-builtin-names)))))
+
+(defn ta-env-names (env)
+  (match env
+    (Nil Nil)
+    (Cons p rest (match p (Pair k _ (Cons k (ta-env-names rest)))))))
+
+(defn ta-fn-names (st i n)
+  (if (>= i n)
+    Nil
+    (match (Expr.inner (ta-wget (ta-fnexp st) i))
+      (EDefn name _ _ (Cons name (ta-fn-names st (+ i 1) n)))
+      (_ (ta-fn-names st (+ i 1) n)))))
+
+(defn ta-wvec-strings (v i n)
+  (if (>= i n) Nil (Cons (ffi-call "zyl_wvec_get" v i 1000) (ta-wvec-strings v (+ i 1) n))))
 
 ; A fresh variable standing for a type the pass does not know.
 (defn ta-dk (st why)
@@ -269,9 +333,15 @@
     (if (> ok 0)
       1
       (let _ (if (and (ta-strict-p) (= (ffi-call "zyl_ref_get" ta-error-count 1000) before))
-               (ta-strict (str-concat "cannot unify " (str-concat (ta-show st a) (str-concat " with " (ta-show st b)))))
+               (if (= (ffi-call "zyl_ref_get" ta-in-main 1000) 0)
+                 (ta-strict (ta-plain-mismatch st a b))
+                 (let _ (ta-main-mismatch st (ffi-call "zyl_ref_get" ta-cur-node 1000) a) unit))
                unit)
         (ta-seq (ta-poison st a) (ta-seq (ta-poison st b) 0)))))))
+
+; The message when no site knows why the two types had to agree.
+(defn ta-plain-mismatch (st a b)
+  (str-concat "type mismatch: `" (str-concat (ta-pretty st a) (str-concat "` and `" (str-concat (ta-pretty st b) "` must be the same type")))))
 
 (defn ta-unify-r (st ra rb)
   (match ra
@@ -288,7 +358,7 @@
       (match other
         (TaV j (if (= i j) 1 (ta-seq (ta-bind-set st i other) 1)))
         (_ (if (ta-occurs st i other)
-             (ta-seq (ta-strict "infinite type (occurs check)") (ta-seq (ta-wset (ta-vars st) i (TbPoison)) 1))
+             (ta-seq (ta-strict "infinite type: this value would have to contain itself") (ta-seq (ta-wset (ta-vars st) i (TbPoison)) 1))
              (ta-seq (ta-bind-set st i other) 1)))))))
 
 ; A poisoned class absorbs: an unbound var joining it becomes poisoned.
@@ -865,8 +935,9 @@
         (let raw (TaF fts (TaC tname (ta-slot-vars np 0)))
           (match (ta-gen st raw (ta-dummies np))
             (TaGen t seen
-              (ta-put2 (ta-variants st) (AV.name v)
-                       (TaVd tname (list-length seen) t (AV.fields v) isst np))))))))))
+              (let _ (ta-wpush ta-ctor-names (AV.name v))
+                (ta-put2 (ta-variants st) (AV.name v)
+                         (TaVd tname (list-length seen) t (AV.fields v) isst np)))))))))))
 
 ; Field types from their exprs; fields without a recorded type are unknown.
 (defn ta-field-tys (st tes scope n)
@@ -977,8 +1048,15 @@
   (let _ (ta-list st ctx env es)
     (ta-stmt)))
 
-(defn ta-cond-bool (st t)
-  (if (ta-strict-p) (ta-unify st t (ta-bool)) 0))
+; Type the condition `c` of `which` and require Bool, reported at `c`.
+(defn ta-cond-bool (st ctx env c which)
+  (let t (ta-expr st ctx env c)
+    (if (ta-clash st (ta-bool) t)
+      (ta-seq (ta-type-error "E_TYPE_MISMATCH"
+                (str-concat "`" (str-concat which (str-concat "` needs a Bool condition, but this is `" (str-concat (ta-pretty st t) "`"))))
+                c Nil (if (ta-streq (ta-pretty st t) "Int") "compare it, as in `(!= n 0)`" ""))
+              0)
+      (ta-unify st t (ta-bool)))))
 
 ; Arithmetic operand types, checked against the Num class {Int, Float}
 ; once the whole program is typed (ta-check-num).
@@ -1024,11 +1102,11 @@
     (ELet name val body (ta-let st ctx env name val body))
     (ELetMut name val body (ta-let st ctx env name val body))
     (EIf c t eb
-      (let _ (ta-cond-bool st (ta-expr st ctx env c))
+      (let _ (ta-cond-bool st ctx env c "if")
         (let tt (ta-expr st ctx env t)
           (ta-join st tt (ta-expr st ctx env eb)))))
     (EWhile c body
-      (let _ (ta-cond-bool st (ta-expr st ctx env c))
+      (let _ (ta-cond-bool st ctx env c "while")
         (let _ (ta-expr st ctx env body)
           (ta-stmt))))
     (ESetBang name val (ta-set st ctx env name val))
@@ -1138,7 +1216,7 @@
       (let fi (ta-sget (ta-fnmap st) n)
         (if (> fi 0)
           (ta-fn-value st ctx (- fi 1) e)
-          (ta-ctor-value st n)))
+          (ta-ctor-value st env n)))
       lt)))
 
 ; A top-level function used as a value, `(map f xs)`: like a call, a
@@ -1152,10 +1230,10 @@
         tf))))
 
 ; A bare constructor: its value (nullary) or its function type.
-(defn ta-ctor-value (st n)
+(defn ta-ctor-value (st env n)
   (let vd (ta-sget-or (ta-variants st) n (ta-no-vd))
     (if (not (ta-shas (ta-variants st) n))
-      (ta-unbound st (str-concat "unbound identifier `" (str-concat (err-name n) "`")))
+      (ta-unbound st env n)
       (match (ta-ctor-inst st vd)
         (TaF ps r (match ps (Nil r) (_ (TaF ps r))))
         (_ (ta-dk st "unknown identifier"))))))
@@ -1180,7 +1258,7 @@
     (Cons pr rest
       (match pr
         (Pair c body
-          (let _ (ta-cond-bool st (ta-expr st ctx env c))
+          (let _ (ta-cond-bool st ctx env c "cond")
             (let bt (ta-expr st ctx env body)
               (let _ (ta-unify st r bt)
                 (ta-cond st ctx env rest r)))))))))
@@ -1210,7 +1288,7 @@
 
 (defn ta-for (st ctx env bindings cond body)
   (match bindings
-    (Nil (let _ (ta-cond-bool st (ta-expr st ctx env cond))
+    (Nil (let _ (ta-cond-bool st ctx env cond "for")
            (let _ (ta-expr st ctx env body)
              (ta-stmt))))
     (Cons pr rest
@@ -1230,8 +1308,11 @@
     (_ (ta-call-value st ctx env op args))))
 
 (defn ta-call-value (st ctx env op args)
-  (let tf (ta-expr st ctx env op)
-    (ta-apply-type st tf (ta-list st ctx env args))))
+  (let prev (ffi-call "zyl_ref_get" ta-list-head 1000)
+    (let _ (ffi-call "zyl_ref_set" ta-list-head 1 1000)
+      (let tf (ta-expr st ctx env op)
+        (let _ (ffi-call "zyl_ref_set" ta-list-head prev 1000)
+          (ta-apply-type st tf (ta-list st ctx env args)))))))
 
 (defn ta-apply-type (st tf ts)
   (let r (ta-fresh st)
@@ -1498,15 +1579,52 @@
 (defn ta-op (st ctx env e n oc args)
   (let ts (ta-list st ctx env args)
     (if (= oc 3)
-      (ta-seq (ta-unify-all st ts (ta-int)) (ta-int))
+      (ta-seq (ta-op-ints st n args ts) (ta-int))
       (match ts
         (Nil (ta-int))
         (Cons h t
-          (let _ (ta-unify-all st t h)
+          (let _ (ta-op-operands st n (ta-rest-or-nil args) t h)
             (let _ (if (= oc 1) (ta-note-num st e h 1) (if (ta-order-op n) (ta-note-num st e h 2) 0))
             (let _ (ta-note-op st ctx h)
               (let _ (if (and (ta-eq-op n) (= (list-length ts) 2)) (ta-note st ctx e 5 "" (ta-sig2 h h (ta-bool)) -1) 0)
                 (if (= oc 2) (ta-bool) h))))))))))
+
+; Every later operand must have the first operand's type; a definite clash
+; is reported at that operand, naming both types.
+(defn ta-op-operands (st n args ts h)
+  (match ts
+    (Nil 0)
+    (Cons t trest
+      (match args
+        (Nil 0)
+        (Cons a arest
+          (let _ (if (ta-clash st h t)
+                   (ta-seq (ta-type-error "E_TYPE_MISMATCH"
+                             (str-concat "the operands of `" (str-concat n (str-concat "` must have one type: the first is `"
+                               (str-concat (ta-pretty st h) (str-concat "`, this one is `" (str-concat (ta-pretty st t) "`"))))))
+                             a Nil "")
+                           0)
+                   (ta-unify st t h))
+            (ta-op-operands st n arest trest h)))))))
+
+; A bitwise operator takes Ints.
+(defn ta-op-ints (st n args ts)
+  (match ts
+    (Nil 0)
+    (Cons t trest
+      (match args
+        (Nil 0)
+        (Cons a arest
+          (let _ (if (ta-clash st (ta-int) t)
+                   (ta-seq (ta-type-error "E_TYPE_MISMATCH"
+                             (str-concat "`" (str-concat n (str-concat "` takes Ints, but this is `" (str-concat (ta-pretty st t) "`"))))
+                             a Nil "")
+                           0)
+                   (ta-unify st t (ta-int)))
+            (ta-op-ints st n arest trest)))))))
+
+(defn ta-rest-or-nil (xs)
+  (match xs (Nil Nil) (Cons _ r r)))
 
 (defn ta-order-op (n)
   (or (ta-streq n "<") (or (ta-streq n ">") (or (ta-streq n "<=") (ta-streq n ">=")))))
@@ -1518,11 +1636,6 @@
   (match (ta-resolve st t)
     (TaV i (if (< i 0) 0 (ta-note st ctx (ta-no-node) 4 "" t -1)))
     (_ 0)))
-
-(defn ta-unify-all (st ts t)
-  (match ts
-    (Nil 0)
-    (Cons h rest (ta-seq (ta-unify st h t) (ta-unify-all st rest t)))))
 
 (defn ta-sig2 (a b r) (TaF (Cons a (Cons b Nil)) r))
 
@@ -1580,13 +1693,74 @@
 (defn ta-call-fn (st ctx env e fi args)
   (let tf (ta-fn-ref st ctx fi)
     (let ts (ta-list st ctx env args)
-      (let r (ta-seq (ta-check-params st fi args ts) (ta-fresh st))
+      (let r (ta-fresh st)
         (let ct (TaF ts r)
-          (let _ (ta-unify st tf ct)
+          (let _ (ta-unify-call st fi tf args ts ct)
             (let s (ta-wget (ta-fnstate st) fi)
               (if (or (= s 1) (> (ta-wget (ta-fntg st) fi) 0))
                 (ta-seq (ta-note st ctx e 1 "" ct fi) r)
                 r))))))))
+
+; A call against the callee's type: argument by argument when the arity
+; agrees, so a clash is reported at the argument and names the parameter it
+; was meant for; as a whole otherwise.
+(defn ta-unify-call (st fi tf args ts ct)
+  (match (ta-resolve st tf)
+    (TaF ps r0
+      (if (= (list-length ps) (list-length ts))
+        (let _ (ta-unify-args st fi (ta-fn-params st fi) ps args ts 1)
+          (match ct (TaF _ r (ta-unify st r0 r)) (_ 0)))
+        (ta-unify st tf ct)))
+    (_ (ta-unify st tf ct))))
+
+(defn ta-fn-params (st fi)
+  (match (Expr.inner (ta-wget (ta-fnexp st) fi))
+    (EDefn _ params _ params)
+    (_ Nil)))
+
+(defn ta-unify-args (st fi pnames ps args ts k)
+  (match ps
+    (Nil 0)
+    (Cons p prest
+      (match args
+        (Nil 0)
+        (Cons a arest
+          (match ts
+            (Nil 0)
+            (Cons t trest
+              (let _ (if (ta-clash st p t)
+                       (ta-arg-mismatch st fi (ta-param-at pnames k) k a p t)
+                       (ta-unify-at st a t p))
+                (ta-unify-args st fi pnames prest arest trest (+ k 1))))))))))
+
+; Unify with the report, if any, placed at `node`.
+(defn ta-unify-at (st node a b)
+  (let prev (ffi-call "zyl_ref_get" ta-cur-node 1000)
+    (let _ (ffi-call "zyl_ref_set" ta-cur-node node 1000)
+      (let ok (ta-unify st a b)
+        (let _ (ffi-call "zyl_ref_set" ta-cur-node prev 1000)
+          ok)))))
+
+(defn ta-param-at (ps k)
+  (match ps
+    (Nil None)
+    (Cons p rest (if (= k 1) (Some p) (ta-param-at rest (- k 1))))))
+
+; "`twice` takes `Int` as its 1st argument (`n`), but this is `String`",
+; at the argument, with the parameter labelled where it is declared.
+(defn ta-arg-mismatch (st fi p k a want got)
+  (let fname (err-name (ta-fn-name st fi))
+    (let pname (match p (None "") (Some pp (P.name pp)))
+      (let m1 (str-concat "`" (str-concat fname (str-concat "` takes `" (str-concat (ta-pretty st want) (str-concat "` as its " (ta-ordinal k))))))
+        (let m2 (if (= (str-length pname) 0) "" (str-concat " (`" (str-concat pname "`)")))
+          (let msg (str-concat m1 (str-concat " argument" (str-concat m2 (str-concat ", but this is `" (str-concat (ta-pretty st got) "`")))))
+            (let labels (match p
+                          (None Nil)
+                          (Some pp (Cons (err-label-at pp (str-concat "`" (str-concat pname "` is declared here"))) Nil)))
+              (ta-seq (ta-type-error "E_TYPE_MISMATCH" msg a labels "") 0))))))))
+
+(defn ta-ordinal (k)
+  (if (= k 1) "1st" (if (= k 2) "2nd" (if (= k 3) "3rd" (str-concat (ffi-call "zyl_int_text" k 1000) "th")))))
 
 (defn ta-trait-call (st ctx env e n sc args)
   (let ts (ta-list st ctx env args)
@@ -1613,7 +1787,7 @@
 
 (defn ta-call-ctor (st ctx env n args)
   (match (ta-ctor-lookup st n)
-    (None (ta-seq (ta-list st ctx env args) (ta-unbound st (str-concat "call to undefined function `" (str-concat (err-name n) "`")))))
+    (None (ta-seq (ta-list st ctx env args) (ta-unbound st env n)))
     (Some vd
       (let tc (ta-ctor-inst st vd)
         (let ts (ta-list st ctx env args)
@@ -2262,41 +2436,9 @@
     (Cons h t (ta-seq (ta-wpush pv h) (ta-repush pv t)))))
 
 ; --- annotation checks --------------------------------------------------------
-; An argument whose inferred type clashes with the declared type of its
-; parameter or constructor field is E_TYPE_MISMATCH. Only a definite clash
-; counts: unknown parts on either side never do.
-
-(defn ta-check-params (st fi args ts)
-  (match (Expr.inner (ta-wget (ta-fnexp st) fi))
-    (EDefn name params _ (ta-check-param-list st name params args ts))
-    (_ 0)))
-
-(defn ta-check-param-list (st fname params args ts)
-  (match params
-    (Nil 0)
-    (Cons p prest
-      (match args
-        (Nil 0)
-        (Cons a arest
-          (match ts
-            (Nil 0)
-            (Cons t trest
-              (begin
-                (ta-check-param st fname p a t)
-                (ta-check-param-list st fname prest arest trest)))))))))
-
-(defn ta-check-param (st fname p a t)
-  (match (P.type p)
-    (None unit)
-    (Some te
-      (match (ta-conv st te Nil)
-        (TaR want _
-          (if (ta-clash st want t)
-            (let what (str-concat "parameter `" (str-concat (P.name p) (str-concat "` of `" (str-concat (err-name fname) "`"))))
-              (ta-mismatch st a want t
-                (Cons (err-label-at p (str-concat what " declared here")) Nil)
-                (str-concat what (str-concat " is declared `" (str-concat (ta-pretty st want) "`")))))
-            unit))))))
+; An argument whose inferred type clashes with the declared type of a
+; constructor field is E_TYPE_MISMATCH (a parameter's is ta-unify-args).
+; Only a definite clash counts: unknown parts on either side never do.
 
 (defn ta-check-fields (st cname tc args ts)
   (match tc
@@ -2503,8 +2645,11 @@
   (begin
     (ffi-call "zyl_ref_set" ta-report-mode (ta-report-env (ffi-call "zyl_getenv_str" "ZYL_STRICT_TYPES" 1000)) 1000)
     (ffi-call "zyl_ref_set" ta-error-count 0 1000)
-    (ffi-call "zyl_ref_set" ta-first-code "E_TYPE_MISMATCH" 1000)
     (ffi-call "zyl_ref_set" ta-cur-node (ta-no-node) 1000)
+    (ffi-call "zyl_ref_set" ta-list-head 0 1000)
+    (ffi-call "zyl_ref_set" ta-in-main 0 1000)
+    (ffi-call "zyl_smap_clear" ta-unbound-seen 1000)
+    (ffi-call "zyl_wvec_truncate" ta-ctor-names 0 1000)
     (ffi-call "zyl_wvec_truncate" ta-num-note-store 0 1000)
     (node-tables-clear)
     (ffi-call "zyl_wvec_truncate" ta-var-store 0 1000)
@@ -2534,25 +2679,63 @@
         (ta-record-generic st 0 (ta-wlen (ta-fnstate st)))
         (ta-extra-list st 0 (ta-wlen (ta-extra st)))))))
 
-; `main` takes nothing and returns the process's Int exit status.
+; `main` takes nothing and returns the process's Int exit status; a body
+; of another type is reported at its last expression, not at the defn.
 (defn ta-check-main (st)
   (let fi (ta-sget (ta-fnmap st) "main")
     (if (> fi 0)
-      (let _ (ffi-call "zyl_ref_set" ta-cur-node (ta-wget (ta-fnexp st) (- fi 1)) 1000)
-        (ta-unify st (ta-inst st (ta-wget (ta-fnsc st) (- fi 1))) (TaF Nil (ta-int))))
+      (let e (ta-wget (ta-fnexp st) (- fi 1))
+        (match (ta-resolve st (ta-inst st (ta-wget (ta-fnsc st) (- fi 1))))
+          (TaF ps r
+            (match ps
+              (Nil (ta-check-main-result st (ta-last-expr (ta-defn-body e)) r))
+              (_ (ta-seq (ta-type-error "E_TYPE_MISMATCH" "main takes no parameters" e Nil "write `(defn main () ...)`") 0))))
+          (_ 0)))
       0)))
+
+(defn ta-check-main-result (st last r)
+  (if (ta-clash st (ta-int) r)
+    (ta-main-mismatch st last r)
+    (let _ (ffi-call "zyl_ref_set" ta-in-main 1 1000)
+      (let ok (ta-unify-at st last r (ta-int))
+        (let _ (ffi-call "zyl_ref_set" ta-in-main 0 1000) ok)))))
+
+; Reported at main's last expression, with the fix.
+(defn ta-main-mismatch (st node r)
+  (ta-seq (ta-type-error "E_TYPE_MISMATCH"
+            (str-concat "main must return the exit status, an Int, but this is `" (str-concat (ta-pretty st r) "`"))
+            node Nil "end its body with `0`")
+          0))
+
+(defn ta-defn-body (e)
+  (match (Expr.inner e) (EDefn _ _ body body) (_ e)))
+
+; The expression whose value a body returns: through let bodies and begins.
+(defn ta-last-expr (e)
+  (match (Expr.inner e)
+    (ELet _ _ body (ta-last-expr body))
+    (ELetMut _ _ body (ta-last-expr body))
+    (EBegin xs (match xs (Nil e) (_ (ta-last-expr (ta-last xs e)))))
+    (_ e)))
 
 (defn ta-report-env (v) (or (ta-streq v "report") (ta-streq v "1")))
 
+; How many errors the pass has reported in this program.
+(defn ta-errors-reported () (ffi-call "zyl_ref_get" ta-error-count 1000))
+
+; The closing line (docs/diagnostics.md, 8): a count, no code, no lecture.
+(defn ta-summary-text (n)
+  (if (= n 1) "1 error" (str-concat (ffi-call "zyl_int_text" n 1000) " errors; fix the first one first")))
+
+; Is `msg` the closing line this pass raised? The driver prints it plain.
+(defn ta-summary-p (msg)
+  (let n (ta-errors-reported)
+    (if (> n 0) (ta-streq msg (ta-summary-text n)) false)))
+
+; Every error was reported where it is; the compile ends with the count.
 (defn ta-fail-if-errors ()
-  (let n (ffi-call "zyl_ref_get" ta-error-count 1000)
-    (if (> n 0)
-      (ffi-call "zyl_panic"
-        (str-concat "error[" (str-concat (ffi-call "zyl_ref_get" ta-first-code 1000)
-          (str-concat "]: the program does not type-check ("
-            (str-concat (ffi-call "zyl_int_text" n 1000) (if (= n 1) " error above)" " errors above)")))))
-        1000)
-      unit)))
+  (let n (ta-errors-reported)
+    (if (> n 0) (ffi-call "zyl_panic" (ta-summary-text n) 1000) unit)))
 
 ; Codegen kind of an annotated Expr: 1 String, 2 Float, else 0.
 (defn ta-kind (e)

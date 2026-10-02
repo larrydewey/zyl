@@ -609,12 +609,12 @@
       (FNNil (cg-fn-names (fntail fns))))))
 
 (defn cg-fail-undefined-fn (st env n site)
-  (let m1 "call to undefined function `"
+  (let m1 "`"
     (let m2 (str-concat m1 (err-name n))
-      (let msg (str-concat m2 "`")
+      (let msg (str-concat m2 "` is not defined")
         (let off (ffi-call "zyl_span_off" site 1000)
           (let fid (ffi-call "zyl_span_file" site 1000)
-            (let hint (err-suggest-help n (cg-visible-names st env) "define it, or bind it with `let`; an anonymous function is written (fn (params) body) -- ((params) body) is not lambda syntax (spec 7.1)")
+            (let hint (err-suggest-help n (cg-visible-names st env) "define it with `defn`, or bind it with `let`")
               (let text (err-at "E_UNBOUND_VARIABLE" msg fid off hint)
                 (ffi-call "zyl_panic" text 1000)))))))))
 
@@ -655,9 +655,9 @@
 ; failure at compile time, at the actual unbound reference, replaces
 ; that entire class of bug with a real error at the real location.
 (defn cg-fail-unbound (st env n site)
-  (let m1 "unbound identifier `"
+  (let m1 "`"
     (let m2 (str-concat m1 (err-name n))
-      (let msg (str-concat m2 "`")
+      (let msg (str-concat m2 "` is not defined")
         (let off (ffi-call "zyl_span_off" site 1000)
           (let fid (ffi-call "zyl_span_file" site 1000)
             (let hint (err-suggest-help n (cg-visible-names st env) "check the spelling, or bind it with `let` before this point")

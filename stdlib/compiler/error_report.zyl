@@ -13,6 +13,10 @@
 ; ===========================================================================
 
 (use compiler/error_codes)
+; internal-mode-p: the compiler's own build keeps every warning.
+(use compiler/rt_mode)
+; sb-read-file, for the on-demand scan of the installed stdlib.
+(use compiler/sexp_balance)
 
 ; Int-first field order (like CheckState in sexp_balance): a workaround
 ; for the archived Rust bootstrap, which mis-laid records whose FIRST
@@ -176,11 +180,48 @@
     (err-json sev code msg fid off labels help)
     (err-text sev code msg fid off labels help)))
 
-; A warning at `node`, emitted through the runtime's warning sink.
+; A warning at `node`, emitted through the runtime's warning sink -- unless
+; it is about a file that is not the user's to fix (docs/diagnostics.md, 7).
 (defn err-warn-at (code msg node help)
   (let fid (ffi-call "zyl_span_file" node 1000)
     (let off (ffi-call "zyl_span_off" node 1000)
-      (ffi-call "zyl_warn_emit" (err-diag "warning" code msg fid off Nil help) 1000))))
+      (if (err-warn-hidden-p fid)
+        unit
+        (ffi-call "zyl_warn_emit" (err-diag "warning" code msg fid off Nil help) 1000)))))
+
+; A standard-library file's warnings are hidden while compiling a program;
+; ZYL_WARN_ALL=1 shows them, and the compiler's own entries always see them.
+(defn err-warn-hidden-p (fid)
+  (if (internal-mode-p)
+    false
+    (if (> (str-length (ffi-call "zyl_getenv_str" "ZYL_WARN_ALL" 1000)) 0)
+      false
+      (err-stdlib-path-p (ffi-call "zyl_source_path" fid 1000)))))
+
+; "stdlib/..." as the resolver names a module, or any "/stdlib/" component.
+(defn err-stdlib-path-p (path)
+  (if (err-prefix-p path "stdlib/" 0) true (>= (err-index-of path "/stdlib/" 0) 0)))
+
+; Byte offset of `needle` in `s` at or after `from`, or -1.
+(defn err-index-of (s needle from)
+  (if (> (+ from (str-length needle)) (str-length s))
+    -1
+    (if (err-prefix-p s needle from)
+      from
+      (err-index-of s needle (+ from 1)))))
+
+; Does `needle` match `s` byte for byte at offset `at`?
+(defn err-prefix-p (s needle at)
+  (if (> (+ at (str-length needle)) (str-length s))
+    false
+    (err-prefix-go s needle at 0 (str-length needle))))
+
+(defn err-prefix-go (s needle at i n)
+  (if (>= i n)
+    true
+    (if (= (ffi-call "zyl_cstr_byte_at" s (+ at i) 1000) (ffi-call "zyl_cstr_byte_at" needle i 1000))
+      (err-prefix-go s needle at (+ i 1) n)
+      false)))
 
 (defn err-text (sev code msg fid off labels help)
   (let open (str-concat sev "[")
@@ -363,13 +404,198 @@
               (err-suggest-best short rest limit cs d)
               (err-suggest-best short rest limit best bestd))))))))
 
-; "did you mean `x`?" or `fallback` when nothing is close.
+; "did you mean `a`, `b` or `c`?" or `fallback` when nothing is close.
 (defn err-suggest-help (name cands fallback)
-  (let s (err-suggest name cands)
-    (if (= (str-length s) 0)
-      fallback
-      (let m1 (str-concat "did you mean `" s)
-        (str-concat m1 "`?")))))
+  (let xs (err-suggest-list name cands)
+    (match xs
+      (Nil fallback)
+      (_ (str-concat "did you mean " (str-concat (err-join-ticks xs) "?"))))))
+
+; Up to three names close to `name` (docs/diagnostics.md): within edit
+; distance 2 (1 for a name under three letters), or the same letters apart
+; from hyphens and case. Nearest first, then alphabetical; never `name` itself.
+(defn err-suggest-list (name cands)
+  (let short (err-name name)
+    (err-take (err-rank-all short cands Nil) 3)))
+
+; distance, candidate
+(deftype ErrRank (ERk Int String))
+
+(defn err-rank-all (short cands acc)
+  (match cands
+    (Nil acc)
+    (Cons c rest
+      (let cs (err-name c)
+        (let d (err-near short cs)
+          (if (< d 0)
+            (err-rank-all short rest acc)
+            (err-rank-all short rest (err-rank-insert acc d cs))))))))
+
+; Insert keeping (distance, name) order; a name already present is kept once.
+(defn err-rank-insert (xs d cs)
+  (match xs
+    (Nil (Cons (ERk d cs) Nil))
+    (Cons h t
+      (match h
+        (ERk hd hs
+          (if (str-eq hs cs)
+            xs
+            (if (err-rank-before d cs hd hs)
+              (Cons (ERk d cs) xs)
+              (Cons h (err-rank-insert t d cs)))))))))
+
+(defn err-rank-before (d cs hd hs)
+  (if (< d hd) true (if (> d hd) false (< (ffi-call "zyl_cstr_cmp" cs hs 1000) 0))))
+
+; The distance when `b` is close enough to offer for `a`, else -1.
+(defn err-near (a b)
+  (if (str-eq a b)
+    -1
+    (if (= (str-length b) 0)
+      -1
+      (if (str-eq (err-fold a) (err-fold b))
+        0
+        (let d (err-edit-distance a b)
+          (if (<= d (if (< (str-length a) 3) 1 2)) d -1))))))
+
+; `s` lower-cased with its hyphens and underscores removed.
+(defn err-fold (s)
+  (err-fold-go s 0 (str-length s) ""))
+
+(defn err-fold-go (s i n acc)
+  (if (>= i n)
+    acc
+    (let c (ffi-call "zyl_cstr_byte_at" s i 1000)
+      (if (or (= c 45) (= c 95))
+        (err-fold-go s (+ i 1) n acc)
+        (if (and (>= c 65) (<= c 90))
+          (err-fold-go s (+ i 1) n (str-concat acc (str-substring "abcdefghijklmnopqrstuvwxyz" (- c 65) 1)))
+          (err-fold-go s (+ i 1) n (str-concat acc (str-substring s i 1))))))))
+
+(defn err-take (xs n)
+  (match xs
+    (Nil Nil)
+    (Cons h t (if (<= n 0) Nil (match h (ERk _ cs (Cons cs (err-take t (- n 1)))))))))
+
+; `a`, `b` or `c`
+(defn err-join-ticks (xs)
+  (match xs
+    (Nil "")
+    (Cons h t
+      (match t
+        (Nil (err-tick h))
+        (Cons h2 t2
+          (match t2
+            (Nil (str-concat (err-tick h) (str-concat " or " (err-tick h2))))
+            (_ (str-concat (err-tick h) (str-concat ", " (err-join-ticks t))))))))))
+
+(defn err-tick (s)
+  (str-concat "`" (str-concat s "`")))
+
+; ---------------------------------------------------------------------------
+; WHERE AN UNBOUND NAME MIGHT LIVE: what other Lisps call a Zyl built-in, and
+; the standard-library module that defines a name the program did not import.
+; ---------------------------------------------------------------------------
+
+; their name, Zyl's name, the module that defines it ("" = built in)
+(deftype ErrSyn (ESyn String String String))
+
+(defn err-syn-zyl (x) (match x (ESyn _ z _ z)))
+(defn err-syn-module (x) (match x (ESyn _ _ m m)))
+
+(defn err-synonyms ()
+  (Cons (ESyn "string-append" "str-concat" "")
+  (Cons (ESyn "string-concat" "str-concat" "")
+  (Cons (ESyn "concat" "str-concat" "")
+  (Cons (ESyn "string-length" "str-length" "")
+  (Cons (ESyn "substring" "str-substring" "")
+  (Cons (ESyn "string=?" "str-eq" "")
+  (Cons (ESyn "string-equal" "str-eq" "")
+  (Cons (ESyn "int->string" "Show.show" "")
+  (Cons (ESyn "number->string" "Show.show" "")
+  (Cons (ESyn "int-to-string" "Show.show" "")
+  (Cons (ESyn "to-string" "Show.show" "")
+  (Cons (ESyn "display" "print" "")
+  (Cons (ESyn "println" "print" "")
+  (Cons (ESyn "printf" "print" "")
+  (Cons (ESyn "define" "defn" "")
+  (Cons (ESyn "setq" "set!" "")
+  (Cons (ESyn "eq?" "=" "")
+  (Cons (ESyn "equal?" "=" "")
+  (Cons (ESyn "mod" "%" "")
+  (Cons (ESyn "modulo" "%" "")
+  (Cons (ESyn "length" "list-length" "core/list")
+  (Cons (ESyn "append" "list-append" "core/list")
+  (Cons (ESyn "reverse" "list-reverse" "core/list")
+  (Cons (ESyn "first" "car" "core/list")
+  (Cons (ESyn "rest" "cdr" "core/list")
+  Nil))))))))))))))))))))))))))
+
+(defn err-synonym (name)
+  (err-synonym-in (err-name name) (err-synonyms)))
+
+(defn err-synonym-in (short xs)
+  (match xs
+    (Nil None)
+    (Cons h t (match h (ESyn theirs _ _ (if (str-eq theirs short) (Some h) (err-synonym-in short t)))))))
+
+; Names every program can use without a `use` line, for did-you-mean.
+(defn err-builtin-names ()
+  (Cons "+" (Cons "-" (Cons "*" (Cons "/" (Cons "%" (Cons "<" (Cons ">" (Cons "<=" (Cons ">=" (Cons "="
+  (Cons "!=" (Cons "and" (Cons "or" (Cons "not" (Cons "if" (Cons "let" (Cons "let-mut" (Cons "match" (Cons "cond" (Cons "when"
+  (Cons "unless" (Cons "while" (Cons "for" (Cons "begin" (Cons "set!" (Cons "fn" (Cons "print" (Cons "exit" (Cons "error" (Cons "read-line"
+  (Cons "str-concat" (Cons "str-length" (Cons "str-substring" (Cons "str-eq" (Cons "len" (Cons "list" (Cons "range" (Cons "unwrap" (Cons "Cons" (Cons "Nil"
+  (Cons "Some" (Cons "None" (Cons "Ok" (Cons "Err" (Cons "tuple" (Cons "tuple-get" (Cons "struct-get" (Cons "file-open" (Cons "file-read" (Cons "file-write"
+  (Cons "file-close" (Cons "bytebuf" (Cons "chan" (Cons "chan-tx" (Cons "chan-rx" (Cons "chan-send" (Cons "chan-recv" (Cons "spawn" (Cons "with-region" (Cons "ffi-call"  Nil)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+
+; The stdlib module whose file defines `name` as a function ("core/list" for
+; stdlib/core/list.zyl), or "". The installed stdlib is scanned in its sorted
+; listing order, on demand: only an unbound-name report pays for it.
+(defn err-stdlib-module-of (name)
+  (let short (err-name name)
+    (if (= (str-length short) 0)
+      ""
+      (err-stdlib-scan short (ffi-call "zyl_list_zyl_files" "stdlib" 1000) 0))))
+
+(defn err-stdlib-scan (short listing i)
+  (let n (str-length listing)
+    (if (>= i n)
+      ""
+      (let j (err-line-end listing i n)
+        (let rel (str-substring listing i (- j i))
+          (if (err-stdlib-defines-p rel short)
+            (err-module-name rel)
+            (err-stdlib-scan short listing (+ j 1))))))))
+
+(defn err-line-end (s i n)
+  (if (>= i n) n (if (= (ffi-call "zyl_cstr_byte_at" s i 1000) 10) i (err-line-end s (+ i 1) n))))
+
+; A module the resolver would load: not the compiler, language server or REPL.
+(defn err-stdlib-defines-p (rel short)
+  (if (err-prefix-p rel "compiler/" 0)
+    false
+    (if (err-prefix-p rel "lsp/" 0)
+      false
+      (if (err-prefix-p rel "repl/" 0)
+        false
+        (match (sb-read-file (str-concat "stdlib/" rel))
+          (None false)
+          (Some src (err-defines-p src short)))))))
+
+; `(defn name ` or `(pub defn name ` at the start of a line.
+(defn err-defines-p (src short)
+  (let n1 (str-concat "\n(defn " (str-concat short " "))
+    (let n2 (str-concat "\n(pub defn " (str-concat short " "))
+      (if (err-prefix-p src (str-substring n1 1 (- (str-length n1) 1)) 0)
+        true
+        (if (>= (err-index-of src n1 0) 0) true (>= (err-index-of src n2 0) 0))))))
+
+; "core/list.zyl" -> "core/list"
+(defn err-module-name (rel)
+  (let n (str-length rel)
+    (if (and (> n 4) (str-eq (str-substring rel (- n 4) 4) ".zyl"))
+      (str-substring rel 0 (- n 4))
+      rel)))
 
 ; Levenshtein distance, one row at a time.
 (defn err-edit-distance (a b)

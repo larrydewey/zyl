@@ -323,11 +323,12 @@
 
 ; Compile to lowered functions, or hand back the diagnostics. Every
 ; reporting path in the compiler ends in zyl_panic, which unwinds to
-; here rather than ending the session.
+; here rather than ending the session. The type pass's closing count is
+; dropped: its errors were already printed where they are.
 ; Returns: Result(List(Icnf), String)
 (defn eval-lower (arena src)
   (let _ (ffi-call "zyl_ref_set" repl-compiling true 1000)
-    (let r (try (Ok (compile-to-fns arena src "<repl>")) (catch e (Err e)))
+    (let r (try (Ok (compile-to-fns arena src "<repl>")) (catch e (Err (if (ta-summary-p e) "" e))))
       (let _ (ffi-call "zyl_ref_set" repl-compiling false 1000)
         r))))
 

@@ -73,7 +73,7 @@
     (let i (rt-zsa-index dst)
       (let d (if (= (rt-ld64 (+ c (* i 8))) dst) (rt-ld64 (+ (+ c 512) (* i 8))) (+ dst (rt-strlen dst)))
         (let n (rt-strlen src)
-          (if (and (> cap 0) (> (+ (+ (- d dst) n) 1) cap)) (ffi-call "zyl_panic" "codegen buffer limit exceeded" 1)
+          (if (and (> cap 0) (> (+ (+ (- d dst) n) 1) cap)) (ffi-call "zyl_panic" "E_CODEGEN_BUFFER_LIMIT: codegen buffer limit exceeded" 1)
             (let _ (rt-copy d src n)
               (let _ (rt-st8 (+ d n) 0)
                 (let _ (rt-st64 (+ c (* i 8)) dst) (let _ (rt-st64 (+ (+ c 512) (* i 8)) (+ d n)) dst))))))))))

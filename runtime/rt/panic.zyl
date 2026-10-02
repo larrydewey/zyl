@@ -105,8 +105,11 @@
                   (let _ (rt-st64 (+ st 8) 0)
                     (if (= (bit-and (rt-ld64 (+ (pn-tbuf) 64)) 4294967295) 0)
                       (let _ (pn-out "ok\n") (pn-run-tests (+ i 1) (+ passed 1) failed f))
-                      (let _ (pn-out (pn-fail-line)) (pn-run-tests (+ i 1) passed (+ failed 1) f))))
-                  (let _ (pn-out (pn-fail-line)) (pn-run-tests (+ i 1) passed (+ failed 1) f))))))))))))
+                      (let _ (pn-fail) (pn-run-tests (+ i 1) passed (+ failed 1) f))))
+                  (let _ (pn-fail) (pn-run-tests (+ i 1) passed (+ failed 1) f))))))))))))
+
+; The failure line, flushed at once so it lands after the test's own output.
+(defn pn-fail () (let _ (pn-out (pn-fail-line)) (zyl_out_flush)))
 
 ; --- panic ---
 
@@ -121,6 +124,7 @@
                 (ffi-call "zyl_rt_longjmp" f 1 1)))))))))
 
 ; Inside a test (not on an FFI worker): unwind to the runner, which marks it failed.
+; Otherwise stdout is flushed first, so the PANIC line never precedes output that came before it.
 (defn pn-panic-test (m)
   (let st (pn-tstate)
     (if (and (not (= (rt-ld64 (+ st 8)) 0)) (= (bit-and (ffi-call "zyl_ffi_on_worker" 1) 4294967295) 0))
@@ -130,8 +134,9 @@
             (ffi-call "zyl_rt_longjmp" (pn-tbuf) 1 1))))
       (let _ (zyl_actor_abandon)
       (let w (if (= m 0) (rt-w "assertion failed") m)
+        (let _ (zyl_out_flush)
         (let _ (if (= (zyl_diag_json) 0) (pn-err (str-concat "PANIC: " (str-concat (pn-s w) "\n"))) (pn-panic-json w))
-          (ffi-call "zyl_rt_exit" 1 1)))))))
+          (ffi-call "zyl_rt_exit" 1 1))))))))
 
 ; JSON mode: a rendered object passes through; "E_CODE: text" and "error[E_CODE]: text" split off the code.
 (defn pn-panic-json (m)
@@ -173,11 +178,12 @@
 (defn pn-find-close (p)
   (let c (rt-ld8 p) (if (= c 93) p (if (= c 0) 0 (pn-find-close (+ p 1))))))
 
-; (error msg): print and exit(1).
+; (error msg): flush stdout, print and exit(1).
 (defn zyl_f_error (msg)
   (let m (rt-w msg)
+    (let _ (zyl_out_flush)
     (let _ (if (= m 0) (pn-err "error\n") (pn-err (str-concat "error: " (str-concat (pn-s m) "\n"))))
-      (ffi-call "zyl_rt_exit" 1 1))))
+      (ffi-call "zyl_rt_exit" 1 1)))))
 
 ; --- diagnostic format: 1 JSON, 0 text; set only by the compiler ---
 
