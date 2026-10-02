@@ -109,7 +109,9 @@ a signed provenance trailer, and `zyl verify <binary>` reads it back
 - FFI_Pinnable types: Int, Float, Bool, String, Vec<T>, composed types
 - Current enforcement: `(ffi-call "sym" args... timeout)` — the symbol
   must be a string literal (`E_FFI_SYMBOL_REQUIRED`) and the timeout a
-  positive integer literal in milliseconds (`E_FFI_TIMEOUT_REQUIRED`).
+  positive integer literal in milliseconds (`E_FFI_TIMEOUT_REQUIRED`), or
+  given once on the extern, `(extern "sym" (T...) R :timeout 1000)`, for
+  calls that omit it (a call-site literal wins).
   A foreign call runs on a per-thread worker through the runtime's
   `zyl_ffi_timed`; overrunning raises `E_FFI_TIMEOUT` and the call is
   abandoned, not killed. `zyl_*` runtime symbols are called directly.

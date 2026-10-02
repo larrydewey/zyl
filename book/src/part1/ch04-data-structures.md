@@ -68,6 +68,36 @@ parameter or a `def`). After any expression, `.field` reads a field of
 its value: `(make-Point 3 4).x`, `(segment-of line).end.y`. Reading a field a known struct does not have is
 an error, `E_TYPE_MISMATCH: no field `z` on struct `Point``.
 
+**Accessors.** Every `defstruct` (and `defstruct+`) also defines one
+function per field, named after the struct and the field:
+
+```lisp
+(use collections/collections)
+
+(defstruct Point (x Int) (y Int))
+
+(defn main ()
+  (let p (make-Point 3 4)
+    (begin
+      (print (Point.x p))                                    ; 3
+      (print (list-map Point.y (list p (make-Point 0 9))))   ; [4, 9]
+      0)))
+```
+
+`Point.x` is generated as `(defn Point.x ((p Point)) (struct-get p "x"))`,
+so it is typed like any function: its argument must be a `Point` and its
+result has the field's type. Because it is a function, it can be passed
+where one is expected, as `list-map` takes it above, which `struct-get` and dot
+syntax cannot. A struct exported with `pub` exports its accessors too.
+
+The names belong to the struct: writing your own `(defn Point.x ...)` is a
+second definition, and the compiler says so:
+
+```
+error[E_DUPLICATE_DEFINITION]: function `Point.x` is already defined by `(defstruct Point ...)`, which defines an accessor for every field
+   = help: delete this definition and call the generated `(Point.x p)`, or rename it: `(defn get-x ...)`
+```
+
 ### Immutability by Default (Critical!)
 
 ```lisp

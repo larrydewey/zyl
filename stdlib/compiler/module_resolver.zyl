@@ -384,15 +384,30 @@
               Nil
               (list-append
                 (Cons (mr-spanned (MRDF n (ck-key arena (mrp-name pkg) (mrp-major pkg) module n) pub "") nameast) Nil)
-                (mr-variant-defs arena pkg module head rest pub)))))))))
+                (mr-variant-defs arena pkg module head n rest pub)))))))))
 
 ; A deftype's variants are definitions in their own right: they become
 ; constructors, so they need keys of their own or two packages could not
 ; each define a `Node`.
-(defn mr-variant-defs (arena pkg module head rest pub)
+(defn mr-variant-defs (arena pkg module head n rest pub)
   (if (str-eq head "deftype")
     (mr-variant-list arena pkg module rest pub)
-    Nil))
+    (if (or (str-eq head "defstruct") (str-eq head "defstruct+"))
+      (mr-accessor-list arena pkg module n rest pub)
+      Nil)))
+
+; A struct's generated field accessors `T.f` (expr_inner.zyl,
+; struct-accessor-forms) are definitions too, visible as the struct is.
+(defn mr-accessor-list (arena pkg module tn fields pub)
+  (match fields
+    (Nil Nil)
+    (Cons h t
+      (let n (mr-variant-name h)
+        (if (or (= (str-length n) 0) (= (pk-byte-at n 0) 58))
+          (mr-accessor-list arena pkg module tn t pub)
+          (let an (str-concat tn (str-concat "." n))
+            (Cons (mr-spanned (MRDF an (ck-key arena (mrp-name pkg) (mrp-major pkg) module an) pub "") h)
+                  (mr-accessor-list arena pkg module tn t pub))))))))
 
 (defn mr-variant-list (arena pkg module xs pub)
   (match xs

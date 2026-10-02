@@ -235,6 +235,16 @@ compile with `build/boot/zyl-self` on 2026-09-28.
   alternately, min of 15. Ratios only compare within a single run — the
   absolute times drift 10-30% with machine load, which is what made
   `trees` look 12% worse against C when it had not changed at all.
+- Structs: `(defstruct T ... (f ...))` (and `defstruct+`) generates a typed
+  accessor `T.f` per field, `(defn T.f ((p T)) (struct-get p "f"))`, before
+  type checking (`struct-accessor-forms`, `expr_inner.zyl`); a program defn of
+  that name is `E_DUPLICATE_DEFINITION` naming the defstruct; in a package it
+  is visible as its struct is. The LSP resolves hover and definition of `T.f`
+  to the field and completes accessors after `T.`.
+- FFI: `(extern "sym" (T...) R :timeout N)` is a default timeout; an
+  `ffi-call` passing exactly the extern's parameter count takes it, one
+  passing one more keeps its own (`ffi-default-timeout`, `expr_inner.zyl`).
+  With neither, `E_FFI_TIMEOUT_REQUIRED` names both fixes.
 - Linking: a program with no foreign `ffi-call` and no native objects is
   a static executable with no libc, assembled and linked by the
   compiler itself (`asm_x86.zyl`, `elf_link.zyl`) against the cached

@@ -5,8 +5,10 @@
 
 (use core/core)
 
-(extern "usleep" (Int) Int)
-(extern "abs" (Int) Int)
+; `:timeout` on an extern is the default for a call that gives none;
+; a call that ends with its own keeps it.
+(extern "usleep" (Int) Int :timeout 50)
+(extern "abs" (Int) Int :timeout 1000)
 (extern "snprintf" (Ptr Int String Int Int Int Int Int Int Int Int) Int)
 
 ; usleep takes microseconds: 300 ms against a 50 ms budget overruns.
@@ -24,6 +26,18 @@
 
 (test "ffi-within-timeout"
   (assert-equal (ffi-call "usleep" 1000 1000) 0))
+
+; The same overrun, with the 50 ms coming from the extern.
+(defn slow-default () (ffi-call "usleep" 300000))
+
+(test "ffi-extern-default-timeout-fires"
+  (assert-equal (try (slow-default) (catch e (if (str-eq e "E_FFI_TIMEOUT: ffi call `usleep` exceeded its timeout of 50 ms") 1 0))) 1))
+
+(test "ffi-extern-default-timeout-omitted-at-call"
+  (assert-equal (ffi-call "abs" -9) 9))
+
+(test "ffi-call-site-timeout-wins-over-extern"
+  (assert-equal (ffi-call "usleep" 60000 1000) 0))
 
 (test "ffi-many-args"
   (let buf (alloc-malloc 64)

@@ -44,9 +44,22 @@
 
 (defn dc-check-program (exprs)
   (begin
-    (dc-check-names "function" (dc-collect-defn-names exprs) Nil)
-    (dc-check-names "type" (dc-collect-deftype-names exprs) Nil)
+    (dc-check-names "function" (dc-collect-defn-names exprs) Nil (dc-collect-structs exprs))
+    (dc-check-names "type" (dc-collect-deftype-names exprs) Nil Nil)
     (dc-check-prelude exprs)))
+
+; Struct deftypes, by name and node: a generated accessor `T.f`
+; (expr_inner.zyl, struct-accessor-forms) carries its struct's span.
+(defn dc-collect-structs (exprs)
+  (match exprs
+    (Nil Nil)
+    (Cons e rest
+      (match (Expr.inner e)
+        (EDeftype name _ _ marker
+          (match marker
+            (Some _ (Cons (Pair name e) (dc-collect-structs rest)))
+            (None (dc-collect-structs rest))))
+        (_ (dc-collect-structs rest))))))
 
 ; The prelude's constructors are used unqualified throughout the standard
 ; library, so a program type declaring one of those names would capture
@@ -102,20 +115,57 @@
 ; elsewhere in this pipeline -- fine for a few thousand top-level names.
 ; `names` is (List (Pair name node)): the node is carried only so the
 ; second definition can be reported at the line it is on.
-(defn dc-check-names (kind names seen)
+(defn dc-check-names (kind names seen structs)
   (match names
     (Nil 0)
     (Cons p rest
       (match p
         (Pair n site
-          (if (dc-in-list n seen)
-            (dc-fail kind n site)
-            (dc-check-names kind rest (Cons n seen))))))))
+          (match (dc-find n seen)
+            (Some first (dc-fail-pair kind n first site structs))
+            (None (dc-check-names kind rest (Cons p seen) structs))))))))
 
-(defn dc-in-list (name xs)
+(defn dc-find (name xs)
   (match xs
-    (Nil false)
-    (Cons h t (if (str-eq h name) true (dc-in-list name t)))))
+    (Nil None)
+    (Cons h t (match h (Pair n site (if (str-eq n name) (Some site) (dc-find name t)))))))
+
+; Two definitions of `n`: when one is a struct's generated accessor, the
+; program's own one is reported, and told where the name comes from.
+(defn dc-fail-pair (kind n first second structs)
+  (match (dc-struct-of first structs)
+    (Some sn (dc-fail-accessor n sn second))
+    (None
+      (match (dc-struct-of second structs)
+        (Some sn (dc-fail-accessor n sn first))
+        (None (dc-fail kind n second))))))
+
+; The struct whose form `site` was generated from, by span.
+(defn dc-struct-of (site structs)
+  (match structs
+    (Nil None)
+    (Cons s rest
+      (match s
+        (Pair sn se
+          (if (and (= (ffi-call "zyl_span_off" site 1000) (ffi-call "zyl_span_off" se 1000))
+                   (= (ffi-call "zyl_span_file" site 1000) (ffi-call "zyl_span_file" se 1000)))
+            (Some sn)
+            (dc-struct-of site rest)))))))
+
+(defn dc-fail-accessor (n sn site)
+  (let name (err-name n)
+    (let field (err-name (dc-after-dot name 0))
+      (dc-panic-code-at "E_DUPLICATE_DEFINITION"
+        (str-concat "function `" (str-concat name (str-concat "` is already defined by `(defstruct " (str-concat (err-name sn) " ...)`, which defines an accessor for every field"))))
+        (str-concat "delete this definition and call the generated `(" (str-concat name (str-concat " p)`, or rename it: `(defn get-" (str-concat field " ...)`"))))
+        site))))
+
+(defn dc-after-dot (s i)
+  (if (>= i (str-length s))
+    s
+    (if (= (ffi-call "zyl_cstr_byte_at" s i 1000) 46)
+      (str-substring s (+ i 1) (- (str-length s) (+ i 1)))
+      (dc-after-dot s (+ i 1)))))
 
 (defn dc-fail (kind name site)
   (let m1 ""

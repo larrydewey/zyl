@@ -64,7 +64,7 @@
           (Cons (EC "E_ZEROIZE_MISSING" 13 2 "secret: function F takes a Secret parameter but never zeroizes it")
           (Cons (EC "E_FFI_PIN_REQUIRED" 16 1 "ffi: Secret argument to F must be handed over through ffi-pin (Pin region) at S")
           (Cons (EC "E_FFI_TYPE_NOT_PINNABLE" 16 1 "ffi: value has type T which is not FFI_Pinnable")
-          (Cons (EC "E_FFI_TIMEOUT_REQUIRED" 16 1 "ffi: ffi-call must end with a positive integer literal timeout in milliseconds at S")
+          (Cons (EC "E_FFI_TIMEOUT_REQUIRED" 16 1 "ffi: ffi-call at S must end with a positive integer literal timeout in milliseconds, or its extern must carry one (:timeout N)")
           (Cons (EC "E_FFI_SYMBOL_REQUIRED" 16 1 "ffi: ffi-call must name its C symbol with a string literal at S")
           (Cons (EC "E_FFI_RESTRICTED" 16 1 "ffi: raw runtime entry F may only be called by the standard library at S")
           (Cons (EC "E_MALFORMED_FORM" 2 1 "parser: special form F has arguments of the wrong shape at S")
