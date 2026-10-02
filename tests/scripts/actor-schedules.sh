@@ -80,6 +80,7 @@ check exit "main end
 one
 two
 three" 1 "PANIC: late"
-check mp "main" 1 "PANIC: main fails"
+check mp "main" 1 "PANIC: main fails
+  in main"
 check late "b done" 1 "PANIC: E_DEADLOCK: every live actor is blocked on a channel or a join"
 echo ok
