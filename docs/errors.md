@@ -231,7 +231,8 @@ parts with `let` or move the sum into a helper function.
 | `E_ACTOR_LIMIT` (§28) | runtime: at most 1024 actors per program | `runtime/rt/actor.zyl`: the 1025th spawn |
 
 What a compiled program prints at runtime today: `(panic "boom")` prints
-`PANIC: boom` and exits 1. (`(error "boom")` is the other half: it
+`PANIC: boom`, then one `  in <function>` line per frame, innermost
+first (`docs/runtime-in-zyl-design.md`, "Panic backtrace"), and exits 1. (`(error "boom")` is the other half: it
 returns `(Err "boom")` and prints nothing — see
 `docs/design-rationale.md` D13.); outside a `test`, a failed `assert-true` or
 `assert-equal` prints `PANIC: assert-true failed` or `PANIC: assert-equal
