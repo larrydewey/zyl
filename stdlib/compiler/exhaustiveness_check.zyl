@@ -219,8 +219,8 @@
 
 (defn ec-unknown-help (near)
   (if (= (str-length near) 0)
-    "Write a constructor some deftype declares; a binder is written in lowercase."
-    (str-concat "Write `" (str-concat near "` if you meant that constructor; a binder is written in lowercase."))))
+    "write a constructor some deftype declares; a binder is written in lowercase"
+    (str-concat "write `" (str-concat near "` if you meant that constructor; a binder is written in lowercase"))))
 
 ; Every declared constructor's own name, once.
 (defn ec-owner-names (vowners)

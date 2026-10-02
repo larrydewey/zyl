@@ -239,7 +239,7 @@
     (if (pk-has-capability denied need)
       (cc-fail site
         (str-concat "`" (str-concat (cc-site-name site) (str-concat "` needs the " (str-concat need " capability, which the root package forbids with deny-capabilities"))))
-        (str-concat "Remove the use, or drop `" (str-concat need "` from deny-capabilities in zyl.pkg.")))
+        (str-concat "remove the use, or drop `" (str-concat need "` from deny-capabilities in zyl.pkg")))
       (if (pk-has-capability (cg-caps g) need)
         unit
         (cc-fail site

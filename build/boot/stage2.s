@@ -822135,7 +822135,7 @@ main:
 .L2656:
     .string "` is not a capability"
 .L2657:
-    .string "Write one or more of `io`, `ffi`, `actor`, `secret`, `native` and `unsafe` in `(capabilities ...)`."
+    .string "write one or more of `io`, `ffi`, `actor`, `secret`, `native` and `unsafe` in `(capabilities ...)`"
 .L2659:
     .string "(capabilities"
 .L2660:
@@ -823877,25 +823877,25 @@ main:
 .L4054:
     .string "`capabilities` is declared in zyl.pkg, not in a file of package "
 .L4055:
-    .string "Move `"
+    .string "move `"
 .L4056:
     .string "(capabilities"
 .L4057:
     .string ")"
 .L4058:
-    .string "` into zyl.pkg."
+    .string "` into zyl.pkg"
 .L4059:
     .string "E_MALFORMED_FORM"
 .L4060:
     .string "`capabilities` is declared by the file being compiled, not by a module it uses"
 .L4061:
-    .string "Write `"
+    .string "move `"
 .L4062:
     .string "(capabilities"
 .L4063:
     .string ")"
 .L4064:
-    .string "` at the top of the file you compile."
+    .string "` to the top of the file you compile"
 .L4066:
     .string "capabilities"
 .L4067:
@@ -823903,25 +823903,25 @@ main:
 .L4068:
     .string "`capabilities` is declared in zyl.pkg, not in a file of package "
 .L4069:
-    .string "Move `"
+    .string "move `"
 .L4070:
     .string "(capabilities"
 .L4071:
     .string ")"
 .L4072:
-    .string "` into zyl.pkg."
+    .string "` into zyl.pkg"
 .L4073:
     .string "E_MALFORMED_FORM"
 .L4074:
     .string "`capabilities` is declared by the file being compiled, not by a module it uses"
 .L4075:
-    .string "Write `"
+    .string "move `"
 .L4076:
     .string "(capabilities"
 .L4077:
     .string ")"
 .L4078:
-    .string "` at the top of the file you compile."
+    .string "` to the top of the file you compile"
 .L4080:
     .string "/zyl.pkg"
 .L4085:
@@ -824117,9 +824117,9 @@ main:
 .L4224:
     .string " capability, which the root package forbids with deny-capabilities"
 .L4225:
-    .string "Remove the use, or drop `"
+    .string "remove the use, or drop `"
 .L4226:
-    .string "` from deny-capabilities in zyl.pkg."
+    .string "` from deny-capabilities in zyl.pkg"
 .L4227:
     .string "`"
 .L4228:
@@ -827027,11 +827027,11 @@ main:
 .L6825:
     .string "E_UNKNOWN_CONSTRUCTOR"
 .L6827:
-    .string "Write a constructor some deftype declares; a binder is written in lowercase."
+    .string "write a constructor some deftype declares; a binder is written in lowercase"
 .L6828:
-    .string "Write `"
+    .string "write `"
 .L6829:
-    .string "` if you meant that constructor; a binder is written in lowercase."
+    .string "` if you meant that constructor; a binder is written in lowercase"
 .L6832:
     .string ""
 .L6837:
@@ -827451,13 +827451,13 @@ main:
 .L7205:
     .string "`, not marked Secret"
 .L7206:
-    .string "Pass `(declassify ...)` if the value is public."
+    .string "pass `(declassify ...)` if the value is public"
 .L7207:
-    .string "Write `("
+    .string "write `("
 .L7208:
     .string " Secret)` in the parameters of `"
 .L7209:
-    .string "`, or pass `(declassify ...)` if the value is public."
+    .string "`, or pass `(declassify ...)` if the value is public"
 .L7210:
     .string "E_SECRET_UNANNOTATED: "
 .L7211:
@@ -827465,9 +827465,9 @@ main:
 .L7212:
     .string "E_SECRET_UNANNOTATED"
 .L7213:
-    .string "Unmarked, `"
+    .string "unmarked, `"
 .L7214:
-    .string "` could branch on it or print it, and nothing would check."
+    .string "` could branch on it or print it, and nothing would check"
 .L7216:
     .string "an `if` condition"
 .L7217:

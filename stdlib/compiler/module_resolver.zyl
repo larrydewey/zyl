@@ -1213,10 +1213,10 @@
         (if (> (mrp-manifested pkg) 0)
           (pk-fail-help f "E_MALFORMED_FORM"
             (str-concat "`capabilities` is declared in zyl.pkg, not in a file of package " (mrp-name pkg))
-            (str-concat "Move `" (str-concat (pk-caps-form-text caps) "` into zyl.pkg.")))
+            (str-concat "move `" (str-concat (pk-caps-form-text caps) "` into zyl.pkg")))
           (pk-fail-help f "E_MALFORMED_FORM"
             "`capabilities` is declared by the file being compiled, not by a module it uses"
-            (str-concat "Write `" (str-concat (pk-caps-form-text caps) "` at the top of the file you compile."))))))))
+            (str-concat "move `" (str-concat (pk-caps-form-text caps) "` to the top of the file you compile"))))))))
 
 (defn mr-manifest-pkg (arena srcdir)
   (let m (pk-read-manifest arena (str-concat srcdir "/zyl.pkg"))

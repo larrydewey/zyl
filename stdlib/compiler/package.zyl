@@ -460,7 +460,7 @@
         (pk-check-lone-caps t site)
         (pk-fail-help site "E_MALFORMED_FORM"
           (str-concat "`" (str-concat c "` is not a capability"))
-          "Write one or more of `io`, `ffi`, `actor`, `secret`, `native` and `unsafe` in `(capabilities ...)`.")))))
+          "write one or more of `io`, `ffi`, `actor`, `secret`, `native` and `unsafe` in `(capabilities ...)`")))))
 
 ; The form a declaration is written as, for a fix line.
 (defn pk-caps-form-text (caps)
