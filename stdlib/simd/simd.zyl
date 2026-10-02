@@ -53,12 +53,11 @@
 
 ; A lane accessor is spelled: `name!` stops the program on a bad lane
 ; (E_INDEX_OUT_OF_BOUNDS, caught by `try`), `name?` returns an Option.
-(defn lane-panic! ((who String) (alt String) (i Int) (n Int))
-  (ffi-call "zyl_panic"
-    (str-concat "E_INDEX_OUT_OF_BOUNDS: " (str-concat who (str-concat " lane " (str-concat (ffi-call "zyl_int_text" i 1000)
-      (str-concat " is outside a vector of " (str-concat (ffi-call "zyl_int_text" n 1000)
-        (str-concat " lanes\n  = help: use `" (str-concat alt "` and match its Option"))))))))
-    1000))
+; lane-oob-text is the message only: the accessor panics itself, so the backtrace names it.
+(defn lane-oob-text ((who String) (alt String) (i Int) (n Int))
+  (str-concat "E_INDEX_OUT_OF_BOUNDS: " (str-concat who (str-concat " lane " (str-concat (ffi-call "zyl_int_text" i 1000)
+    (str-concat " is outside a vector of " (str-concat (ffi-call "zyl_int_text" n 1000)
+      (str-concat " lanes\n  = help: use `" (str-concat alt "` and match its Option")))))))))
 
 (defn lane-ok ((i Int) (n Int)) (and (>= i 0) (< i n)))
 
@@ -75,7 +74,7 @@
 ; Lane i (0 or 1); any other i stops the program (E_INDEX_OUT_OF_BOUNDS).
 ; Returns: Int
 (defn i64x2-get! ((v I64x2) (i Int))
-  (if (= i 0) (i64x2-lo v) (if (= i 1) (i64x2-hi v) (lane-panic! "i64x2-get!" "(i64x2-get? v i)" i 2))))
+  (if (= i 0) (i64x2-lo v) (if (= i 1) (i64x2-hi v) (ffi-call "zyl_panic" (lane-oob-text "i64x2-get!" "(i64x2-get? v i)" i 2) 1000))))
 
 ; Lane i (0 or 1), or None for any other i.
 ; Returns: Option Int
@@ -85,7 +84,7 @@
 ; v with lane i replaced by x; any other i stops the program (E_INDEX_OUT_OF_BOUNDS).
 ; Returns: I64x2
 (defn i64x2-set! ((v I64x2) (i Int) (x Int))
-  (if (= i 0) (I64x2C x (i64x2-hi v)) (if (= i 1) (I64x2C (i64x2-lo v) x) (lane-panic! "i64x2-set!" "(i64x2-set? v i x)" i 2))))
+  (if (= i 0) (I64x2C x (i64x2-hi v)) (if (= i 1) (I64x2C (i64x2-lo v) x) (ffi-call "zyl_panic" (lane-oob-text "i64x2-set!" "(i64x2-set? v i x)" i 2) 1000))))
 
 ; v with lane i replaced by x, or None for a lane outside the vector.
 ; Returns: Option I64x2
@@ -125,7 +124,7 @@
 ; Lane i (0..3), sign-extended; any other i stops the program (E_INDEX_OUT_OF_BOUNDS).
 ; Returns: Int
 (defn i32x4-get! ((v I32x4) (i Int))
-  (if (not (lane-ok i 4)) (lane-panic! "i32x4-get!" "(i32x4-get? v i)" i 4)
+  (if (not (lane-ok i 4)) (ffi-call "zyl_panic" (lane-oob-text "i32x4-get!" "(i32x4-get? v i)" i 4) 1000)
     (sext32 (shr (if (< i 2) (i32x4-lo v) (i32x4-hi v)) (* 32 (bit-and i 1))))))
 
 ; Lane i (0..3), sign-extended, or None for any other i.
@@ -137,7 +136,7 @@
 ; program (E_INDEX_OUT_OF_BOUNDS).
 ; Returns: I32x4
 (defn i32x4-set! ((v I32x4) (i Int) (x Int))
-  (if (not (lane-ok i 4)) (lane-panic! "i32x4-set!" "(i32x4-set? v i x)" i 4)
+  (if (not (lane-ok i 4)) (ffi-call "zyl_panic" (lane-oob-text "i32x4-set!" "(i32x4-set? v i x)" i 4) 1000)
     (let s (* 32 (bit-and i 1))
       (if (< i 2) (I32x4C (put-bits (i32x4-lo v) s 4294967295 x) (i32x4-hi v)) (I32x4C (i32x4-lo v) (put-bits (i32x4-hi v) s 4294967295 x))))))
 
@@ -200,7 +199,7 @@
 ; Lane i (0..15), 0..255; any other i stops the program (E_INDEX_OUT_OF_BOUNDS).
 ; Returns: Int
 (defn u8x16-get! ((v U8x16) (i Int))
-  (if (not (lane-ok i 16)) (lane-panic! "u8x16-get!" "(u8x16-get? v i)" i 16)
+  (if (not (lane-ok i 16)) (ffi-call "zyl_panic" (lane-oob-text "u8x16-get!" "(u8x16-get? v i)" i 16) 1000)
     (bit-and (shr (if (< i 8) (u8x16-lo v) (u8x16-hi v)) (* 8 (bit-and i 7))) 255)))
 
 ; Lane i (0..15), or None for any other i.
@@ -212,7 +211,7 @@
 ; program (E_INDEX_OUT_OF_BOUNDS).
 ; Returns: U8x16
 (defn u8x16-set! ((v U8x16) (i Int) (x Int))
-  (if (not (lane-ok i 16)) (lane-panic! "u8x16-set!" "(u8x16-set? v i x)" i 16)
+  (if (not (lane-ok i 16)) (ffi-call "zyl_panic" (lane-oob-text "u8x16-set!" "(u8x16-set? v i x)" i 16) 1000)
     (let s (* 8 (bit-and i 7))
       (if (< i 8) (U8x16C (put-bits (u8x16-lo v) s 255 x) (u8x16-hi v)) (U8x16C (u8x16-lo v) (put-bits (u8x16-hi v) s 255 x))))))
 

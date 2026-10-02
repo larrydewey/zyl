@@ -362,7 +362,7 @@ Enforcement (`capability_check.zyl`) runs after module resolution and before typ
 
 ```
 PANIC: error[E_PKG_CAPABILITY_VIOLATION]: `strlen` needs the ffi capability, and package acme/hello declares none
-   = help: Write `(capabilities ffi)` in zyl.pkg.
+   = help: add `(capabilities ffi)` to zyl.pkg
 ```
 
 The form is honoured only where the declaration lives: in a file of a manifested package, or in a module a lone file uses, it is `E_MALFORMED_FORM`. An `ffi-call` of a `zyl_*` runtime entry is the language's own and needs no `ffi` grant.

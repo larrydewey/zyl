@@ -2,6 +2,7 @@
 # Every `zyl explain` table entry: the wrong program raises its code, the corrected one builds and exits 0.
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+export ZYL_HOME="${ZYL_HOME:-$ROOT/build/boot}"
 Z="$ROOT/build/boot/zyl-self"
 work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
 codes=$(grep -oE '\(ExN "[EW]_[A-Z0-9_]+"' "$ROOT/stdlib/compiler/explain.zyl" | sed 's/(ExN "//;s/"//')

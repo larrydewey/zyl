@@ -33,7 +33,7 @@ run nested
 [ "$RC" = 1 ] || fail "nested: exit $RC"
 want='PANIC: E_INDEX_OUT_OF_BOUNDS: vec-get! index 7 is outside a Vec of 1 elements
   = help: use `(vec-get? v i)` and match its Option, or check the index against `vec-len` first
-  in vec-oob!
+  in vec-get!
   in parse-line
   in parse-file
   in main'
@@ -111,7 +111,7 @@ EOF
 build hosted
 run hosted
 [ "$RC" = 1 ] || fail "hosted: exit $RC"
-[ "$(grep -m1 "^  in " "$ERR")" = "  in vec-oob!" ] || fail "hosted: innermost frame: $(cat "$ERR")"
+[ "$(grep -m1 "^  in " "$ERR")" = "  in vec-get!" ] || fail "hosted: innermost frame: $(cat "$ERR")"
 grep -q '^  in parse-line$' "$ERR" || fail "hosted: no parse-line frame"
 [ "$(tail -1 "$ERR")" = "  in main" ] || fail "hosted: outermost frame: $(tail -1 "$ERR")"
 

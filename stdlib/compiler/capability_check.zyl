@@ -268,10 +268,10 @@
 (defn cc-fix (g need)
   (let form (pk-caps-form-text (pk-caps-union (cg-caps g) (Cons need Nil)))
     (if (= (cg-enforced g) 2)
-      (str-concat "Write `" (str-concat form "` at the top of the file."))
+      (str-concat "add `" (str-concat form "` at the top of the file"))
     (if (= (cg-enforced g) 3)
-      (str-concat "Type `" (str-concat form "` at the prompt."))
-      (str-concat "Write `" (str-concat form "` in zyl.pkg."))))))
+      (str-concat "type `" (str-concat form "` at the prompt"))
+      (str-concat "add `" (str-concat form "` to zyl.pkg"))))))
 
 ; The user's own name for the construct: the foreign symbol, the form, or the function called.
 (defn cc-site-name (e)
@@ -300,7 +300,7 @@
 (defn cc-fail (site msg fix)
   (let off (ffi-call "zyl_span_off" site 1000)
     (let fid (ffi-call "zyl_span_file" site 1000)
-      (let why (Cons (ELbl fid (- 0 1) "A program states what it may do so a reader can see it.") Nil)
+      (let why (Cons (ELbl fid (- 0 1) "a program names what it may do, so a reader sees it at the top") Nil)
         (ffi-call "zyl_panic" (err-at-labels "E_PKG_CAPABILITY_VIOLATION" msg fid off why fix) 1000)))))
 
 (defn cc-walk-list (xs g denied)

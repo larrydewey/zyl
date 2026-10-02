@@ -824143,17 +824143,17 @@ main:
 .L4241:
     .string ")"
 .L4242:
-    .string "Write `"
+    .string "add `"
 .L4243:
-    .string "` at the top of the file."
+    .string "` at the top of the file"
 .L4244:
-    .string "Type `"
+    .string "type `"
 .L4245:
-    .string "` at the prompt."
+    .string "` at the prompt"
 .L4246:
-    .string "Write `"
+    .string "add `"
 .L4247:
-    .string "` in zyl.pkg."
+    .string "` to zyl.pkg"
 .L4249:
     .string "ffi-pin"
 .L4250:
@@ -824183,7 +824183,7 @@ main:
 .L4263:
     .string "this form"
 .L4265:
-    .string "A program states what it may do so a reader can see it."
+    .string "a program names what it may do, so a reader sees it at the top"
 .L4266:
     .string "E_PKG_CAPABILITY_VIOLATION"
 .L4280:
@@ -835523,9 +835523,9 @@ main:
 .L16391:
     .string "Nothing in the program says what type this is; a foreign function needs an `extern` with its signature."
 .L16392:
-    .string "(defn main () (begin (print (ffi-call \"abs\" -3 1000)) 0))"
+    .string "(capabilities ffi)\n(defn main () (begin (print (ffi-call \"abs\" -3 1000)) 0))"
 .L16393:
-    .string "(extern \"abs\" (Int) Int)\n(defn main () (begin (print (ffi-call \"abs\" -3 1000)) 0))"
+    .string "(capabilities ffi)\n(extern \"abs\" (Int) Int)\n(defn main () (begin (print (ffi-call \"abs\" -3 1000)) 0))"
 .L16394:
     .string "E_MUT_CONFLICT"
 .L16395:
@@ -835659,9 +835659,9 @@ main:
 .L16459:
     .string "A `Secret` value reaches output, a file or another observable place without `declassify`."
 .L16460:
-    .string "(use core/core)\n(defn leak ((key Secret)) (file-write 2 key))\n(defn main () (begin (leak 5) 0))"
+    .string "(capabilities io)\n(use core/core)\n(defn leak ((key Secret)) (file-write 2 key))\n(defn main () (begin (leak 5) 0))"
 .L16461:
-    .string "(use core/core)\n(defn leak ((key Secret)) (file-write 2 \"<redacted>\"))\n(defn main () (begin (leak 5) 0))"
+    .string "(capabilities io)\n(use core/core)\n(defn leak ((key Secret)) (file-write 2 \"<redacted>\"))\n(defn main () (begin (leak 5) 0))"
 .L16462:
     .string "E_RESERVED_KEYWORD"
 .L16463:
@@ -835683,17 +835683,17 @@ main:
 .L16471:
     .string "A branch, index or division depends on a `Secret`, which leaks it through timing."
 .L16472:
-    .string "(use core/core)\n(defn check ((key Secret) (guess Int)) (if (= key guess) 1 0))\n(defn main () (- (check 7 7) 1))"
+    .string "(capabilities secret)\n(use core/core)\n(defn check ((key Secret) (guess Int)) (if (= key guess) 1 0))\n(defn main () (- (check 7 7) 1))"
 .L16473:
-    .string "(use core/core)\n(use math/secret/secret)\n(defn check ((key Secret) (guess Int)) (ct-eq key guess))\n(defn main () (- (check 7 7) 1))"
+    .string "(capabilities secret)\n(use core/core)\n(use math/secret/secret)\n(defn check ((key Secret) (guess Int)) (ct-eq key guess))\n(defn main () (- (check 7 7) 1))"
 .L16474:
     .string "E_FFI_PIN_REQUIRED"
 .L16475:
     .string "A `Secret` passed to foreign code must go through `ffi-pin`."
 .L16476:
-    .string "(use core/core)\n(extern \"abs\" (Int) Int)\n(defn raw ((key Secret)) (ffi-call \"abs\" key 1000))\n(defn main () (begin (raw 5) 0))"
+    .string "(capabilities ffi)\n(use core/core)\n(extern \"abs\" (Int) Int)\n(defn raw ((key Secret)) (ffi-call \"abs\" key 1000))\n(defn main () (begin (raw 5) 0))"
 .L16477:
-    .string "(use core/core)\n(defn raw ((key Secret)) (let p (ffi-pin key) (ffi-unpin p)))\n(defn main () (begin (raw 5) 0))"
+    .string "(capabilities ffi)\n(use core/core)\n(defn raw ((key Secret)) (let p (ffi-pin key) (ffi-unpin p)))\n(defn main () (begin (raw 5) 0))"
 .L16478:
     .string "E_CONTRACT_VIOLATION"
 .L16479:
@@ -835715,17 +835715,17 @@ main:
 .L16487:
     .string "`chan-recv` on a channel whose sender has finished and whose values are all taken."
 .L16488:
-    .string "(use actor/actor)\n(defn main () (let c (chan 1) (let rx (chan-rx c) (let tx (chan-tx c) (let a (spawn (fn () (chan-send tx 7))) (begin (actor-wait a) (print (chan-recv rx)) (print (chan-recv rx)) 0))))))"
+    .string "(capabilities actor)\n(use actor/actor)\n(defn main () (let c (chan 1) (let rx (chan-rx c) (let tx (chan-tx c) (let a (spawn (fn () (chan-send tx 7))) (begin (actor-wait a) (print (chan-recv rx)) (print (chan-recv rx)) 0))))))"
 .L16489:
-    .string "(use actor/actor)\n(defn main () (let c (chan 1) (let rx (chan-rx c) (let tx (chan-tx c) (let a (spawn (fn () (chan-send tx 7))) (begin (actor-wait a) (print (chan-recv rx)) 0))))))"
+    .string "(capabilities actor)\n(use actor/actor)\n(defn main () (let c (chan 1) (let rx (chan-rx c) (let tx (chan-tx c) (let a (spawn (fn () (chan-send tx 7))) (begin (actor-wait a) (print (chan-recv rx)) 0))))))"
 .L16490:
     .string "E_FFI_TIMEOUT"
 .L16491:
     .string "A foreign call ran longer than its timeout; it is abandoned and this error raised."
 .L16492:
-    .string "(extern \"usleep\" (Int) Int)\n(defn main () (begin (ffi-call \"usleep\" 300000 50) 0))"
+    .string "(capabilities ffi)\n(extern \"usleep\" (Int) Int)\n(defn main () (begin (ffi-call \"usleep\" 300000 50) 0))"
 .L16493:
-    .string "(extern \"usleep\" (Int) Int)\n(defn main () (begin (ffi-call \"usleep\" 1000 1000) 0))"
+    .string "(capabilities ffi)\n(extern \"usleep\" (Int) Int)\n(defn main () (begin (ffi-call \"usleep\" 1000 1000) 0))"
 .L16494:
     .string "E_DUPLICATE_PARAMETER"
 .L16495:

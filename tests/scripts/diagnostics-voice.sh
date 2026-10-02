@@ -72,5 +72,5 @@ n=$(cd "$work" && ZYL_WARN_ALL=1 "$ZYL" w.zyl -o w 2>&1 | grep -c '^warning')
 printf '(defn main () (begin (print "before") (panic "boom") 0))\n' > "$work/pf.zyl"
 (cd "$work" && "$ZYL" pf.zyl -o pf) || { echo "FAIL: pf did not build"; exit 1; }
 order=$("$work/pf" 2>&1 | tr '\n' '|')
-[ "$order" = "before|PANIC: boom|" ] || { echo "FAIL: output order: $order"; exit 1; }
+[ "$order" = "before|PANIC: boom|  in main|" ] || { echo "FAIL: output order: $order"; exit 1; }
 echo "diagnostics voice: probe output pinned"

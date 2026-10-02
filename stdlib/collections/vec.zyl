@@ -51,13 +51,11 @@
 ; (E_INDEX_OUT_OF_BOUNDS, caught by `try`), `name?` returns an Option, and
 ; there is no plain name (docs/soundness.md, "Partial operations are spelled").
 
-; Stops the program: `who` was given index i on a Vec of n elements.
-(defn vec-oob! ((who String) (alt String) (i Int) (n Int))
-  (ffi-call "zyl_panic"
-    (str-concat "E_INDEX_OUT_OF_BOUNDS: " (str-concat who (str-concat " index " (str-concat (ffi-call "zyl_int_text" i 1000)
-      (str-concat " is outside a Vec of " (str-concat (ffi-call "zyl_int_text" n 1000)
-        (str-concat " elements\n  = help: use `" (str-concat alt "` and match its Option, or check the index against `vec-len` first"))))))))
-    1000))
+; The message for `who` given index i on a Vec of n elements; the caller panics, so its frame is the one a backtrace shows.
+(defn vec-oob-text ((who String) (alt String) (i Int) (n Int))
+  (str-concat "E_INDEX_OUT_OF_BOUNDS: " (str-concat who (str-concat " index " (str-concat (ffi-call "zyl_int_text" i 1000)
+    (str-concat " is outside a Vec of " (str-concat (ffi-call "zyl_int_text" n 1000)
+      (str-concat " elements\n  = help: use `" (str-concat alt "` and match its Option, or check the index against `vec-len` first")))))))))
 
 ; Element i. An index outside the Vec stops the program (E_INDEX_OUT_OF_BOUNDS).
 ; Returns: T
@@ -65,7 +63,7 @@
   (match v
     (VecC s n
       (if (or (< i 0) (>= i n))
-        (vec-oob! "vec-get!" "(vec-get? v i)" i n)
+        (ffi-call "zyl_panic" (vec-oob-text "vec-get!" "(vec-get? v i)" i n) 1000)
         (array-get s i)))))
 
 ; Element i, or None when i is outside the Vec.
@@ -94,7 +92,7 @@
       (if (= i n)
         (vec-push v value)
         (if (or (< i 0) (> i n))
-          (vec-oob! "vec-set!" "(vec-set? v i x)" i n)
+          (ffi-call "zyl_panic" (vec-oob-text "vec-set!" "(vec-set? v i x)" i n) 1000)
           (let _ (array-set s i value) v))))))
 
 ; The Vec with element i set to `value`, or None when i is outside the Vec;

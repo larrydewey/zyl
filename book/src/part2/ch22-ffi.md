@@ -452,7 +452,7 @@ A lone file declares the grant itself with a top-level `(capabilities ffi)`; wit
 
 ```
 PANIC: error[E_PKG_CAPABILITY_VIOLATION]: `system` needs the ffi capability, and this file declares none
-   = help: Write `(capabilities ffi)` at the top of the file.
+   = help: add `(capabilities ffi)` at the top of the file
 ```
 
 An `ffi-call` of a `zyl_*` runtime entry is the language's own and needs no grant. A root package can forbid FFI for its whole graph with `(deny-capabilities ffi native)`; see Chapter 25, §25.11.
