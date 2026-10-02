@@ -45,8 +45,14 @@
   (let ln0 (- line 1)
     (let cl0 (- col 1)
       (let rng (Rng (Pos ln0 cl0) (Pos ln0 (+ cl0 1)))
+        ; The hint goes in as `hint`, NOT as `fixIt`. ca-quickfix-action uses
+        ; whatever `fixIt` holds as the REPLACEMENT TEXT for the diagnostic's
+        ; range, and this range is one character wide -- so offering the hint
+        ; as a fix would have an editor replace one character with a sentence
+        ; and corrupt the file. A quickfix has to be a real text edit; a
+        ; sentence describing the fix is not one.
         (Diag rng (Some DSError) None (Some (Left code)) None (Some "zyl") message None
-              (Some (LSPObject (map-insert (map-new) "fixIt" (LSPString hint)))))))))
+              (Some (LSPObject (map-insert (map-new) "hint" (LSPString hint)))))))))
 
 ; A caught compiler panic (see lsp/document_manager) reaches this server
 ; only as its message text: every checker in stdlib/compiler/ reports by

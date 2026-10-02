@@ -47,6 +47,27 @@
             (_ None)))
         (_ None)))))
 
+; WHAT A QUICKFIX NEEDS, AND WHY THERE ARE NONE YET.
+;
+; `fixIt` is the replacement text for the diagnostic's range, so a quickfix can
+; only be offered where the compiler knows an actual edit: the text to put
+; there. Everything mechanical -- rename a shadowed binding, underscore an
+; unused parameter, insert a missing `use`, show a declared signature that does
+; not match the call -- is known at the raise site and is none of it prose.
+;
+; The blocker is not the code actions, which are built and working. It is how
+; diagnostics reach this server at all. Every checker in stdlib/compiler/
+; reports by calling `zyl_panic` with a formatted message, so a diagnostic
+; arrives here as TEXT (see compiler_bridge.zl's diagnostic-from-panic). The
+; balance check is the exception: it returns a value, which is why it is the
+; only path that can carry a field at all -- and why what it carries had to be
+; corrected above.
+;
+; So the work is to give the checks that can have fixes a value-returning path,
+; the way the balance check has one, with the edit as a field beside the range.
+; Until then `ca-fixit-of` correctly finds nothing, and the editor offers no
+; quickfix rather than a corrupting one.
+
 (defn ca-range-of (d)
   (match d (Diag r _ _ _ _ _ _ _ _ r)))
 
