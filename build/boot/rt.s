@@ -12140,6 +12140,100 @@ zy_local_x2Fmain_0__blake3__b3_x2Dhex_x2Dout:
     mov rsp, rbp
     pop rbp
     ret
+.globl zyl_bytebuf_blake3_hex
+zyl_bytebuf_blake3_hex:
+    # frame 48
+    push rbx
+    push r12
+    push r13
+    push r14
+    push r15
+    mov rbx, rdi
+    mov rdi, rdx
+    mov r12, rcx
+.L348_0:
+    cmp rsi, 4096
+    jl .L348_3
+.L348_12:
+    mov rax, rsi
+    and rax, 7
+    cmp rax, 0
+    je .L348_1
+.L348_3:
+    mov r8, 0
+    jmp .L348_2
+.L348_1:
+    mov r9, qword ptr [rsi+0]
+    mov rax, 6510318584122966017
+    cmp r9, rax
+    jne .L348_4
+    jmp .L348_5
+.L348_4:
+    mov rsi, 0
+.L348_5:
+    mov r8, rsi
+.L348_2:
+    mov r13, r8
+    cmp r13, 0
+    jne .L348_6
+    mov rax, 0
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbx
+    ret
+.L348_6:
+    mov rsi, qword ptr [r13+24]
+    cmp rdi, 0
+    jge .L348_7
+    mov r8, qword ptr [r13+16]
+    jmp .L348_8
+.L348_7:
+    mov r8, rdi
+.L348_8:
+    mov r14, r8
+    cmp r14, 0
+    jl .L348_10
+    cmp r14, rsi
+    jle .L348_9
+.L348_10:
+    mov rax, 0
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbx
+    ret
+.L348_9:
+    call zy_local_x2Fmain_0__blake3__b3_x2Dnew
+    mov r15, rax
+    cmp r15, 0
+    jne .L348_11
+    mov rax, 0
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbx
+    ret
+.L348_11:
+    mov rsi, qword ptr [r13+8]
+    mov rdi, r15
+    mov rdx, r14
+    call zy_local_x2Fmain_0__blake3__b3_x2Dupdate
+    mov rdi, r12
+    call zy_local_x2Fmain_0__blake3__b3_x2Dclamp
+    mov rsi, rax
+    mov rdi, rbx
+    mov rdx, rsi
+    mov rsi, r15
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbx
+    jmp zy_local_x2Fmain_0__blake3__b3_x2Dhex_x2Dout
 .globl zyl_blake3_hex
 zyl_blake3_hex:
     # frame 48
@@ -12151,10 +12245,10 @@ zyl_blake3_hex:
     mov rbx, rdi
     mov rdi, rdx
     mov r12, rcx
-.L348_0:
+.L349_0:
     mov r13, rsi
     cmp r13, 0
-    jne .L348_1
+    jne .L349_1
     mov rax, 0
     pop r15
     pop r14
@@ -12162,21 +12256,21 @@ zyl_blake3_hex:
     pop r12
     pop rbx
     ret
-.L348_1:
+.L349_1:
     cmp rdi, 0
-    jge .L348_2
+    jge .L349_2
     mov rdi, r13
     call zy_local_x2Fmain_0__base__rt_x2Dstrlen
     mov rsi, rax
-    jmp .L348_3
-.L348_2:
+    jmp .L349_3
+.L349_2:
     mov rsi, rdi
-.L348_3:
+.L349_3:
     mov r14, rsi
     call zy_local_x2Fmain_0__blake3__b3_x2Dnew
     mov r15, rax
     cmp r15, 0
-    jne .L348_4
+    jne .L349_4
     mov rax, 0
     pop r15
     pop r14
@@ -12184,7 +12278,7 @@ zyl_blake3_hex:
     pop r12
     pop rbx
     ret
-.L348_4:
+.L349_4:
     mov rdi, r15
     mov rsi, r13
     mov rdx, r14
@@ -12213,7 +12307,7 @@ zy_local_x2Fmain_0__blake3__b3_x2Dread_x2Dall:
     mov rbx, rdi
     mov r12, rsi
     mov r13, rdx
-.L349_0:
+.L350_0:
     mov rsi, 65536
     mov rdi, r12
     mov rdx, rsi
@@ -12221,20 +12315,20 @@ zy_local_x2Fmain_0__blake3__b3_x2Dread_x2Dall:
     call zyl_rt_sys_0
     mov rsi, rax
     cmp rsi, 0
-    jle .L349_1
+    jle .L350_1
     cmp rsi, 0
-    jle .L349_2
+    jle .L350_2
     mov rdi, rbx
     mov rdx, rsi
     mov rsi, r13
     call zy_local_x2Fmain_0__blake3__b3_x2Dupdate
-.L349_2:
-    jmp .L349_0
-.L349_1:
+.L350_2:
+    jmp .L350_0
+.L350_1:
     cmp rsi, -4
-    jne .L349_3
-    jmp .L349_0
-.L349_3:
+    jne .L350_3
+    jmp .L350_0
+.L350_3:
     mov rax, rbx
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -12256,9 +12350,9 @@ zyl_blake3_file_hex:
     sub rsp, 16
     mov rbx, rdi
     mov r12, rdx
-.L350_0:
+.L351_0:
     cmp rsi, 0
-    jne .L350_1
+    jne .L351_1
     mov rax, 0
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -12268,7 +12362,7 @@ zyl_blake3_file_hex:
     mov rsp, rbp
     pop rbp
     ret
-.L350_1:
+.L351_1:
     mov rdi, 0
     mov r8, 0
     mov rdx, r8
@@ -12278,7 +12372,7 @@ zyl_blake3_file_hex:
     call zyl_rt_sys_2
     mov r13, rax
     cmp r13, 0
-    jge .L350_2
+    jge .L351_2
     mov rax, 0
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -12288,26 +12382,26 @@ zyl_blake3_file_hex:
     mov rsp, rbp
     pop rbp
     ret
-.L350_2:
+.L351_2:
     call zy_local_x2Fmain_0__blake3__b3_x2Dnew
     mov r14, rax
     mov rsi, 0
     cmp r14, 0
-    je .L350_3
+    je .L351_3
     mov rdi, 65536
     mov r8, 1
     mov rsi, r8
     call zy_local_x2Fmain_0__heap__hp_x2Dalloc
     mov rsi, rax
-.L350_3:
+.L351_3:
     mov r15, rsi
     cmp r15, 0
-    jne .L350_4
+    jne .L351_4
     cmp r14, 0
-    je .L350_5
+    je .L351_5
     mov rdi, r14
     call zyl_rt_free
-.L350_5:
+.L351_5:
     mov rdi, r13
     call zyl_rt_sys_3
     mov rax, 0
@@ -12319,7 +12413,7 @@ zyl_blake3_file_hex:
     mov rsp, rbp
     pop rbp
     ret
-.L350_4:
+.L351_4:
     mov rdi, r14
     mov rsi, r13
     mov rdx, r15
@@ -12344,15 +12438,15 @@ zyl_blake3_file_hex:
     jmp zy_local_x2Fmain_0__blake3__b3_x2Dhex_x2Dout
 zy_local_x2Fmain_0__mangle__mg_x2Dupper_x2Dhex:
     # frame 0
-.L351_0:
-    lea rax, [rip+.L352]
+.L352_0:
+    lea rax, [rip+.L353]
     mov rsi, rax
     mov rax, rsi
     ret
 zy_local_x2Fmain_0__mangle__mg_x2Dwidths:
     # frame 0
-.L353_0:
-    lea rax, [rip+.L354]
+.L354_0:
+    lea rax, [rip+.L355]
     mov rsi, rax
     mov rax, rsi
     ret
@@ -12361,17 +12455,17 @@ zy_local_x2Fmain_0__mangle__mg_x2Desc_x2Dlen:
     push rbx
     mov r8, rdx
     mov r9, rcx
-.L355_0:
+.L356_0:
     cmp rsi, r8
-    jl .L355_1
-.L355_2:
+    jl .L356_1
+.L356_2:
     mov rax, r9
     pop rbx
     ret
 .p2align 4
-.L355_1:
+.L356_1:
     lea r10, [rsi+1]
-    lea rax, [rip+.L356]
+    lea rax, [rip+.L357]
     mov r11, rax
     lea rbx, [rdi+rsi]
     movzx ebx, byte ptr [rbx+0]
@@ -12380,8 +12474,8 @@ zy_local_x2Fmain_0__mangle__mg_x2Desc_x2Dlen:
     add r9, r11
     mov rsi, r10
     cmp rsi, r8
-    jl .L355_1
-    jmp .L355_2
+    jl .L356_1
+    jmp .L356_2
 zy_local_x2Fmain_0__mangle__mg_x2Desc:
     # frame 32
     push rbx
@@ -12390,35 +12484,35 @@ zy_local_x2Fmain_0__mangle__mg_x2Desc:
     mov r9, rcx
     mov r10, r8
     mov r8, rdx
-.L357_0:
+.L358_0:
     cmp rsi, r8
-    jl .L357_1
-.L357_4:
+    jl .L358_1
+.L358_4:
     mov rax, r10
     pop r13
     pop r12
     pop rbx
     ret
 .p2align 4
-.L357_1:
+.L358_1:
     lea r11, [rdi+rsi]
     movzx r11d, byte ptr [r11+0]
-    lea rax, [rip+.L358]
+    lea rax, [rip+.L359]
     mov rbx, rax
     add rbx, r11
     movzx ebx, byte ptr [rbx+0]
     cmp rbx, 1
-    jne .L357_2
+    jne .L358_2
     lea r12, [r9+r10]
     mov byte ptr [r12+0], r11b
     add rsi, 1
     add r10, 1
     cmp rsi, r8
-    jl .L357_1
-    jmp .L357_4
-.L357_2:
+    jl .L358_1
+    jmp .L358_4
+.L358_2:
     cmp rbx, 3
-    jne .L357_3
+    jne .L358_3
     lea rbx, [r9+r10]
     mov r12, 95
     mov byte ptr [rbx+0], r12b
@@ -12433,10 +12527,10 @@ zy_local_x2Fmain_0__mangle__mg_x2Desc:
     add rsi, 1
     add r10, 3
     cmp rsi, r8
-    jl .L357_1
-    jmp .L357_4
-.L357_3:
-    lea rax, [rip+.L359]
+    jl .L358_1
+    jmp .L358_4
+.L358_3:
+    lea rax, [rip+.L360]
     mov rbx, rax
     lea r12, [r9+r10]
     mov r13, 95
@@ -12461,8 +12555,8 @@ zy_local_x2Fmain_0__mangle__mg_x2Desc:
     add rsi, 1
     add r10, 4
     cmp rsi, r8
-    jl .L357_1
-    jmp .L357_4
+    jl .L358_1
+    jmp .L358_4
 .globl zyl_sym_escape
 zyl_sym_escape:
     # frame 32
@@ -12474,10 +12568,10 @@ zyl_sym_escape:
     push r14
     and rsp, -16
     mov rbx, rdi
-.L360_0:
+.L361_0:
     mov r12, rsi
     cmp r12, 0
-    jne .L360_1
+    jne .L361_1
     mov rax, 0
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -12486,7 +12580,7 @@ zyl_sym_escape:
     mov rsp, rbp
     pop rbp
     ret
-.L360_1:
+.L361_1:
     mov rdi, r12
     call zy_local_x2Fmain_0__base__rt_x2Dstrlen
     mov r13, rax
@@ -12522,27 +12616,27 @@ zyl_sym_escape:
 zy_local_x2Fmain_0__mangle__mg_x2Dsep:
     # frame 0
     mov r8, rdx
-.L361_0:
+.L362_0:
     lea rax, [rsi+1]
     cmp rax, r8
-    jl .L361_1
+    jl .L362_1
     mov rax, -1
     ret
-.L361_1:
+.L362_1:
     lea r9, [rdi+rsi]
     movzx eax, byte ptr [r9+0]
     cmp rax, 58
-    jne .L361_2
+    jne .L362_2
     lea r9, [rsi+1]
     add r9, rdi
     movzx eax, byte ptr [r9+0]
     cmp rax, 58
-    jne .L361_2
+    jne .L362_2
     mov rax, rsi
     ret
-.L361_2:
+.L362_2:
     add rsi, 1
-    jmp .L361_0
+    jmp .L362_0
 zy_local_x2Fmain_0__mangle__mg_x2Dwrite:
     # frame 280
     push rbp
@@ -12789,7 +12883,7 @@ call zy_local_x2Fmain_0__mangle__mg_x2Desc_x2Dlen
     mov rax, [rbp-96]
     mov rcx, 200
     cmp rax, rcx
-    jg .L362
+    jg .L363
     sub rsp, 16
     mov rax, [rbp-96]
     mov rcx, 1
@@ -12845,8 +12939,8 @@ call zy_local_x2Fmain_0__mangle__mg_x2Dwrite
     add rsp, 96
     mov [rbp-112], rax
     mov rax, [rbp-104]
-    jmp .L363
-.L362:
+    jmp .L364
+.L363:
     mov rax, [rbp-96]
     mov rcx, 1
     add rax, rcx
@@ -12860,10 +12954,10 @@ call zy_local_x2Fmain_0__heap__hp_x2Dalloc
     mov rax, [rbp-120]
     mov rcx, 0
     cmp rax, rcx
-    jne .L364
+    jne .L365
     mov rax, 0
-    jmp .L365
-.L364:
+    jmp .L366
+.L365:
     mov rax, [rbp-120]
     sub rsp, 8
     mov [rsp], rax
@@ -12917,14 +13011,14 @@ call zy_local_x2Fmain_0__mangle__mg_x2Dwrite
 call zy_local_x2Fmain_0__blake3__rt_x2Dblake3_x2Draw
     add rsp, 32
     test rax, rax
-    je .L368
+    je .L369
     mov rax, 0
-    jmp .L369
-.L368:
-    mov rax, 1
+    jmp .L370
 .L369:
+    mov rax, 1
+.L370:
     test rax, rax
-    je .L366
+    je .L367
     sub rsp, 8
     sub rsp, 8
     mov rdi, [rbp-120]
@@ -12932,8 +13026,8 @@ call zyl_rt_free
     add rsp, 16
     mov [rbp-144], rax
     mov rax, 0
-    jmp .L367
-.L366:
+    jmp .L368
+.L367:
     sub rsp, 16
     mov rdi, [rbp-8]
     mov rsi, 201
@@ -12991,9 +13085,9 @@ call zyl_rt_free
     add rsp, 16
     mov [rbp-184], rax
     mov rax, [rbp-152]
-.L367:
-.L365:
-.L363:
+.L368:
+.L366:
+.L364:
     mov rbx, [rbp-280]
     mov r12, [rbp-272]
     mov rsp, rbp
@@ -13014,10 +13108,10 @@ zyl_mangle_key:
     mov rax, [rbp-24]
     mov rcx, 0
     cmp rax, rcx
-    jne .L370
+    jne .L371
     mov rax, 0
-    jmp .L371
-.L370:
+    jmp .L372
+.L371:
     sub rsp, 8
     sub rsp, 8
     mov rdi, [rbp-24]
@@ -13035,7 +13129,7 @@ call zy_local_x2Fmain_0__base__rt_x2Dfind_x2Dbyte
     mov rax, [rbp-40]
     mov rcx, 0
     cmp rax, rcx
-    jge .L372
+    jge .L373
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -13051,7 +13145,7 @@ call zy_local_x2Fmain_0__base__rt_x2Dfind_x2Dbyte
     mov rax, 0
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L374]
+    lea rax, [rip+.L375]
     sub rsp, 8
     mov [rsp], rax
     mov rax, 1
@@ -13087,8 +13181,8 @@ call zy_local_x2Fmain_0__base__rt_x2Dfind_x2Dbyte
     mov rdi, [rsp+120]
 call zy_local_x2Fmain_0__mangle__mg_x2Demit
     add rsp, 128
-    jmp .L373
-.L372:
+    jmp .L374
+.L373:
     mov rax, [rbp-40]
     mov rcx, 1
     add rax, rcx
@@ -13114,7 +13208,7 @@ call zy_local_x2Fmain_0__mangle__mg_x2Dsep
     mov rax, [rbp-64]
     mov rcx, 0
     cmp rax, rcx
-    jge .L375
+    jge .L376
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -13130,7 +13224,7 @@ call zy_local_x2Fmain_0__mangle__mg_x2Dsep
     mov rax, [rbp-40]
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L377]
+    lea rax, [rip+.L378]
     sub rsp, 8
     mov [rsp], rax
     mov rax, 1
@@ -13166,8 +13260,8 @@ call zy_local_x2Fmain_0__mangle__mg_x2Dsep
     mov rdi, [rsp+120]
 call zy_local_x2Fmain_0__mangle__mg_x2Demit
     add rsp, 128
-    jmp .L376
-.L375:
+    jmp .L377
+.L376:
     mov rax, [rbp-64]
     mov rcx, 2
     add rax, rcx
@@ -13193,7 +13287,7 @@ call zy_local_x2Fmain_0__mangle__mg_x2Dsep
     mov rax, [rbp-88]
     mov rcx, 0
     cmp rax, rcx
-    jge .L378
+    jge .L379
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -13245,8 +13339,8 @@ call zy_local_x2Fmain_0__mangle__mg_x2Dsep
     mov rdi, [rsp+120]
 call zy_local_x2Fmain_0__mangle__mg_x2Demit
     add rsp, 128
-    jmp .L379
-.L378:
+    jmp .L380
+.L379:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -13308,10 +13402,10 @@ call zy_local_x2Fmain_0__mangle__mg_x2Demit
     mov rdi, [rsp+120]
 call zy_local_x2Fmain_0__mangle__mg_x2Demit
     add rsp, 128
-.L379:
-.L376:
-.L373:
-.L371:
+.L380:
+.L377:
+.L374:
+.L372:
     mov rbx, [rbp-184]
     mov r12, [rbp-176]
     mov rsp, rbp
@@ -13322,14 +13416,14 @@ zy_local_x2Fmain_0__alloc__rt_x2Dutext:
     push rbp
     mov rbp, rsp
     and rsp, -16
-.L380_0:
+.L381_0:
     call zyl_int_text
     mov rsp, rbp
     pop rbp
     ret
 zy_local_x2Fmain_0__alloc__rt_x2Doom:
     # frame 0
-.L381_0:
+.L382_0:
     jmp zyl_arena_oom
 .globl zyl_arena_oom
 zyl_arena_oom:
@@ -13344,26 +13438,26 @@ zyl_arena_oom:
     and rsp, -16
     sub rsp, 32
     mov qword ptr [rbp-56], rsi
-.L382_0:
+.L383_0:
     lea rax, [rip+zyl_rtg_budget]
     mov r12, rax
-    lea rax, [rip+.L383]
-    mov qword ptr [rbp-48], rax
     lea rax, [rip+.L384]
+    mov qword ptr [rbp-48], rax
+    lea rax, [rip+.L385]
     mov qword ptr [rbp-64], rax
     call zyl_int_text
     mov r15, rax
-    lea rax, [rip+.L385]
+    lea rax, [rip+.L386]
     mov r13, rax
     mov rdi, qword ptr [r12+16]
     call zyl_int_text
     mov rbx, rax
-    lea rax, [rip+.L386]
+    lea rax, [rip+.L387]
     mov r14, rax
     mov rdi, qword ptr [r12+8]
     call zyl_int_text
     mov rdi, rax
-    lea rax, [rip+.L387]
+    lea rax, [rip+.L388]
     mov rsi, rax
     call zyl_cstr_concat
     mov rsi, rax
@@ -13407,7 +13501,7 @@ zyl_arena_oom:
     jmp zyl_rt_sys_231
 zy_local_x2Fmain_0__alloc__rt_x2Dthreads:
     # frame 0
-.L388_0:
+.L389_0:
     lea rax, [rip+zyl_rtg_threads_started]
     mov rsi, rax
     mov rax, rsi
@@ -13415,7 +13509,7 @@ zy_local_x2Fmain_0__alloc__rt_x2Dthreads:
 .globl zyl_threads_started_mark
 zyl_threads_started_mark:
     # frame 0
-.L389_0:
+.L390_0:
     lea rax, [rip+zyl_rtg_threads_started]
     mov rsi, rax
     mov rdi, 1
@@ -13424,7 +13518,7 @@ zyl_threads_started_mark:
     ret
 zy_local_x2Fmain_0__alloc__rt_x2Dalign16:
     # frame 0
-.L390_0:
+.L391_0:
     lea rsi, [rdi+15]
     and rsi, -16
     mov rax, rsi
@@ -13435,54 +13529,54 @@ zy_local_x2Fmain_0__alloc__rt_x2Dnew_x2Dblock:
     push r12
     push r13
     mov rbx, rdi
-.L391_0:
+.L392_0:
     mov rax, qword ptr [rbx+8]
     cmp rsi, rax
-    jge .L391_1
+    jge .L392_1
     mov rdi, qword ptr [rbx+8]
-    jmp .L391_2
-.L391_1:
+    jmp .L392_2
+.L392_1:
     mov rdi, rsi
-.L391_2:
+.L392_2:
     mov r12, rdi
     mov rdi, r12
     call zy_local_x2Fmain_0__heap__rt_x2Dcharge
     cmp rax, 0
-    je .L391_3
-    jmp .L391_4
-.L391_3:
-    lea rax, [rip+.L392]
+    je .L392_3
+    jmp .L392_4
+.L392_3:
+    lea rax, [rip+.L393]
     mov rsi, rax
     mov rdi, r12
     call zyl_arena_oom
-.L391_4:
+.L392_4:
     mov rdi, 32
     mov rsi, 0
     call zy_local_x2Fmain_0__heap__hp_x2Dalloc
     mov r13, rax
     cmp r13, 0
-    jne .L391_5
+    jne .L392_5
     mov rdi, r12
     call zy_local_x2Fmain_0__heap__rt_x2Drefund
     mov rdi, 32
-    lea rax, [rip+.L393]
+    lea rax, [rip+.L394]
     mov rsi, rax
     pop r13
     pop r12
     pop rbx
     jmp zyl_arena_oom
-.L391_5:
+.L392_5:
     mov rsi, 0
     mov rdi, r12
     call zy_local_x2Fmain_0__heap__hp_x2Dalloc
     mov rsi, rax
     cmp rsi, 0
-    jne .L391_6
+    jne .L392_6
     mov rdi, r13
     call zyl_rt_free
     mov rdi, r12
     call zy_local_x2Fmain_0__heap__rt_x2Drefund
-    lea rax, [rip+.L394]
+    lea rax, [rip+.L395]
     mov rdi, rax
     mov rsi, rdi
     mov rdi, r12
@@ -13490,7 +13584,7 @@ zy_local_x2Fmain_0__alloc__rt_x2Dnew_x2Dblock:
     pop r12
     pop rbx
     jmp zyl_arena_oom
-.L391_6:
+.L392_6:
     mov qword ptr [r13+0], rsi
     mov qword ptr [r13+8], r12
     mov rsi, 0
@@ -13511,24 +13605,24 @@ zyl_arena_create:
     # frame 16
     push rbx
     push r12
-.L395_0:
+.L396_0:
     mov rsi, 65536
     cmp rdi, 16
-    jl .L395_1
+    jl .L396_1
     mov rsi, rdi
-.L395_1:
+.L396_1:
     mov rbx, rsi
     mov rdi, 72
     mov rsi, 0
     call zy_local_x2Fmain_0__heap__hp_x2Dalloc
     mov r12, rax
     cmp r12, 0
-    jne .L395_2
+    jne .L396_2
     mov rax, 0
     pop r12
     pop rbx
     ret
-.L395_2:
+.L396_2:
     mov rsi, 72
     mov rdi, r12
     call zy_local_x2Fmain_0__alloc__rt_x2Dfill0
@@ -13546,52 +13640,52 @@ zy_local_x2Fmain_0__alloc__rt_x2Darena_x2Dbump:
     push r12
     push r13
     mov rbx, rdi
-.L396_0:
+.L397_0:
     cmp rbx, 0
-    je .L396_2
-.L396_11:
+    je .L397_2
+.L397_11:
     cmp rsi, 0
-    jl .L396_3
+    jl .L397_3
     mov rax, 281474976710656
     cmp rsi, rax
-    jle .L396_1
-.L396_3:
-.L396_2:
+    jle .L397_1
+.L397_3:
+.L397_2:
     mov rax, 0
     pop r13
     pop r12
     pop rbx
     ret
-.L396_1:
+.L397_1:
     lea r12, [rsi+15]
     and r12, -16
     lea rax, [rip+zyl_rtg_threads_started]
     mov rsi, rax
     mov rax, qword ptr [rsi+0]
     cmp rax, 0
-    jne .L396_4
-    jmp .L396_5
-.L396_4:
+    jne .L397_4
+    jmp .L397_5
+.L397_4:
     lea rdi, [rbx+32]
     call zyl_rt_mutex_lock
-.L396_5:
+.L397_5:
     mov rsi, qword ptr [rbx+0]
     cmp rsi, 0
-    je .L396_8
+    je .L397_8
     mov rdi, qword ptr [rsi+8]
     mov r8, qword ptr [rsi+16]
     sub rdi, r8
     cmp r12, rdi
-    jle .L396_6
-.L396_8:
+    jle .L397_6
+.L397_8:
     mov rdi, rbx
     mov rsi, r12
     call zy_local_x2Fmain_0__alloc__rt_x2Dnew_x2Dblock
     mov rdi, rax
-    jmp .L396_7
-.L396_6:
+    jmp .L397_7
+.L397_6:
     mov rdi, rsi
-.L396_7:
+.L397_7:
     mov r13, qword ptr [rdi+0]
     mov rsi, qword ptr [rdi+16]
     add r13, rsi
@@ -13605,12 +13699,12 @@ zy_local_x2Fmain_0__alloc__rt_x2Darena_x2Dbump:
     mov rsi, rax
     mov rax, qword ptr [rsi+0]
     cmp rax, 0
-    jne .L396_9
-    jmp .L396_10
-.L396_9:
+    jne .L397_9
+    jmp .L397_10
+.L397_9:
     lea rdi, [rbx+32]
     call zyl_rt_mutex_unlock
-.L396_10:
+.L397_10:
     mov rax, r13
     pop r13
     pop r12
@@ -13619,7 +13713,7 @@ zy_local_x2Fmain_0__alloc__rt_x2Darena_x2Dbump:
 .globl zyl_arena_alloc
 zyl_arena_alloc:
     # frame 0
-.L397_0:
+.L398_0:
     jmp zy_local_x2Fmain_0__alloc__rt_x2Darena_x2Dbump
 .globl zyl_arena_alloc_zeroed
 zyl_arena_alloc_zeroed:
@@ -13627,17 +13721,17 @@ zyl_arena_alloc_zeroed:
     push rbx
     push r12
     mov rbx, rsi
-.L398_0:
+.L399_0:
     mov rsi, rbx
     call zy_local_x2Fmain_0__alloc__rt_x2Darena_x2Dbump
     mov r12, rax
     cmp r12, 0
-    jne .L398_1
+    jne .L399_1
     mov rax, 0
     pop r12
     pop rbx
     ret
-.L398_1:
+.L399_1:
     mov rdi, r12
     mov rsi, rbx
     call zy_local_x2Fmain_0__alloc__rt_x2Dfill0
@@ -13647,32 +13741,11 @@ zyl_arena_alloc_zeroed:
     ret
 zy_local_x2Fmain_0__alloc__rt_x2Dfill0:
     # frame 0
-.L399_0:
-    cmp rsi, 0
-    jle .L399_1
-.L399_2:
-    mov r8, 0
-    mov rdx, rdi
-    mov rcx, r8
-    mov r11, rsi
-    push rdi
-    mov rdi, rdx
-    mov rax, rcx
-    mov rcx, r11
-    rep stosb
-    pop rdi
-    xor eax, eax
-    ret
-.L399_1:
-    mov rax, 0
-    ret
-zy_local_x2Fmain_0__alloc__rt_x2Dfill_x2Dde:
-    # frame 0
 .L400_0:
     cmp rsi, 0
     jle .L400_1
 .L400_2:
-    mov r8, 222
+    mov r8, 0
     mov rdx, rdi
     mov rcx, r8
     mov r11, rsi
@@ -13687,26 +13760,47 @@ zy_local_x2Fmain_0__alloc__rt_x2Dfill_x2Dde:
 .L400_1:
     mov rax, 0
     ret
+zy_local_x2Fmain_0__alloc__rt_x2Dfill_x2Dde:
+    # frame 0
+.L401_0:
+    cmp rsi, 0
+    jle .L401_1
+.L401_2:
+    mov r8, 222
+    mov rdx, rdi
+    mov rcx, r8
+    mov r11, rsi
+    push rdi
+    mov rdi, rdx
+    mov rax, rcx
+    mov rcx, r11
+    rep stosb
+    pop rdi
+    xor eax, eax
+    ret
+.L401_1:
+    mov rax, 0
+    ret
 zy_local_x2Fmain_0__alloc__rt_x2Dfree_x2Dblocks:
     # frame 16
     push rbx
     push r12
     mov rbx, rdi
-.L401_0:
+.L402_0:
     cmp rbx, 0
-    jne .L401_1
-.L401_4:
+    jne .L402_1
+.L402_4:
     mov rax, 0
     pop r12
     pop rbx
     ret
 .p2align 4
-.L401_1:
+.L402_1:
     mov r12, qword ptr [rbx+24]
     mov rsi, qword ptr [rbx+0]
     mov rdi, qword ptr [rbx+16]
     cmp rdi, 0
-    jle .L401_2
+    jle .L402_2
     mov r8, 222
     mov rdx, rsi
     mov rcx, r8
@@ -13718,9 +13812,9 @@ zy_local_x2Fmain_0__alloc__rt_x2Dfree_x2Dblocks:
     rep stosb
     pop rdi
     xor eax, eax
-    jmp .L401_3
-.L401_2:
-.L401_3:
+    jmp .L402_3
+.L402_2:
+.L402_3:
     mov rsi, qword ptr [rbx+8]
     lea rax, [rip+zyl_rtg_budget]
     mov rdi, rax
@@ -13737,54 +13831,10 @@ zy_local_x2Fmain_0__alloc__rt_x2Dfree_x2Dblocks:
     call zyl_rt_free
     mov rbx, r12
     cmp rbx, 0
-    jne .L401_1
-    jmp .L401_4
+    jne .L402_1
+    jmp .L402_4
 .globl zyl_arena_reset
 zyl_arena_reset:
-    # frame 16
-    push rbx
-    mov rbx, rdi
-.L402_0:
-    cmp rbx, 0
-    jne .L402_1
-.L402_6:
-    mov rax, 0
-    pop rbx
-    ret
-.L402_1:
-    lea rax, [rip+zyl_rtg_threads_started]
-    mov rsi, rax
-    mov rax, qword ptr [rsi+0]
-    cmp rax, 0
-    jne .L402_2
-    jmp .L402_3
-.L402_2:
-    lea rdi, [rbx+32]
-    call zyl_rt_mutex_lock
-.L402_3:
-    mov rdi, qword ptr [rbx+0]
-    call zy_local_x2Fmain_0__alloc__rt_x2Dfree_x2Dblocks
-    mov rsi, 0
-    mov qword ptr [rbx+0], rsi
-    mov rsi, 0
-    mov qword ptr [rbx+16], rsi
-    mov rsi, 0
-    mov qword ptr [rbx+24], rsi
-    lea rax, [rip+zyl_rtg_threads_started]
-    mov rsi, rax
-    mov rax, qword ptr [rsi+0]
-    cmp rax, 0
-    jne .L402_4
-    jmp .L402_5
-.L402_4:
-    lea rdi, [rbx+32]
-    call zyl_rt_mutex_unlock
-.L402_5:
-    mov rax, 0
-    pop rbx
-    ret
-.globl zyl_arena_destroy
-zyl_arena_destroy:
     # frame 16
     push rbx
     mov rbx, rdi
@@ -13810,6 +13860,10 @@ zyl_arena_destroy:
     call zy_local_x2Fmain_0__alloc__rt_x2Dfree_x2Dblocks
     mov rsi, 0
     mov qword ptr [rbx+0], rsi
+    mov rsi, 0
+    mov qword ptr [rbx+16], rsi
+    mov rsi, 0
+    mov qword ptr [rbx+24], rsi
     lea rax, [rip+zyl_rtg_threads_started]
     mov rsi, rax
     mov rax, qword ptr [rsi+0]
@@ -13823,18 +13877,16 @@ zyl_arena_destroy:
     mov rax, 0
     pop rbx
     ret
-.globl zyl_arena_used
-zyl_arena_used:
+.globl zyl_arena_destroy
+zyl_arena_destroy:
     # frame 16
     push rbx
-    push r12
     mov rbx, rdi
 .L404_0:
     cmp rbx, 0
     jne .L404_1
 .L404_6:
     mov rax, 0
-    pop r12
     pop rbx
     ret
 .L404_1:
@@ -13848,7 +13900,10 @@ zyl_arena_used:
     lea rdi, [rbx+32]
     call zyl_rt_mutex_lock
 .L404_3:
-    mov r12, qword ptr [rbx+24]
+    mov rdi, qword ptr [rbx+0]
+    call zy_local_x2Fmain_0__alloc__rt_x2Dfree_x2Dblocks
+    mov rsi, 0
+    mov qword ptr [rbx+0], rsi
     lea rax, [rip+zyl_rtg_threads_started]
     mov rsi, rax
     mov rax, qword ptr [rsi+0]
@@ -13859,12 +13914,11 @@ zyl_arena_used:
     lea rdi, [rbx+32]
     call zyl_rt_mutex_unlock
 .L404_5:
-    mov rax, r12
-    pop r12
+    mov rax, 0
     pop rbx
     ret
-.globl zyl_arena_capacity
-zyl_arena_capacity:
+.globl zyl_arena_used
+zyl_arena_used:
     # frame 16
     push rbx
     push r12
@@ -13888,7 +13942,7 @@ zyl_arena_capacity:
     lea rdi, [rbx+32]
     call zyl_rt_mutex_lock
 .L405_3:
-    mov r12, qword ptr [rbx+16]
+    mov r12, qword ptr [rbx+24]
     lea rax, [rip+zyl_rtg_threads_started]
     mov rsi, rax
     mov rax, qword ptr [rsi+0]
@@ -13903,57 +13957,97 @@ zyl_arena_capacity:
     pop r12
     pop rbx
     ret
+.globl zyl_arena_capacity
+zyl_arena_capacity:
+    # frame 16
+    push rbx
+    push r12
+    mov rbx, rdi
+.L406_0:
+    cmp rbx, 0
+    jne .L406_1
+.L406_6:
+    mov rax, 0
+    pop r12
+    pop rbx
+    ret
+.L406_1:
+    lea rax, [rip+zyl_rtg_threads_started]
+    mov rsi, rax
+    mov rax, qword ptr [rsi+0]
+    cmp rax, 0
+    jne .L406_2
+    jmp .L406_3
+.L406_2:
+    lea rdi, [rbx+32]
+    call zyl_rt_mutex_lock
+.L406_3:
+    mov r12, qword ptr [rbx+16]
+    lea rax, [rip+zyl_rtg_threads_started]
+    mov rsi, rax
+    mov rax, qword ptr [rsi+0]
+    cmp rax, 0
+    jne .L406_4
+    jmp .L406_5
+.L406_4:
+    lea rdi, [rbx+32]
+    call zyl_rt_mutex_unlock
+.L406_5:
+    mov rax, r12
+    pop r12
+    pop rbx
+    ret
 zy_local_x2Fmain_0__alloc__rt_x2Din_x2Dblocks:
     # frame 0
-.L406_0:
+.L407_0:
     cmp rdi, 0
-    jne .L406_1
-.L406_3:
+    jne .L407_1
+.L407_3:
     mov rax, 0
     ret
 .p2align 4
-.L406_1:
+.L407_1:
     mov rax, qword ptr [rdi+0]
     cmp rsi, rax
-    jl .L406_2
+    jl .L407_2
     lea r8, [rsi+8]
     mov r9, qword ptr [rdi+0]
     mov r10, qword ptr [rdi+16]
     add r9, r10
     cmp r8, r9
-    jg .L406_2
+    jg .L407_2
     mov rax, 1
     ret
-.L406_2:
+.L407_2:
     mov rdi, qword ptr [rdi+24]
     cmp rdi, 0
-    jne .L406_1
-    jmp .L406_3
+    jne .L407_1
+    jmp .L407_3
 zy_local_x2Fmain_0__alloc__rt_x2Daddr_x2Din_x2Darena:
     # frame 16
     push rbx
     push r12
     mov rbx, rdi
     mov r12, rsi
-.L407_0:
+.L408_0:
     cmp rbx, 0
-    jne .L407_1
-.L407_6:
+    jne .L408_1
+.L408_6:
     mov rax, 0
     pop r12
     pop rbx
     ret
-.L407_1:
+.L408_1:
     lea rax, [rip+zyl_rtg_threads_started]
     mov rsi, rax
     mov rax, qword ptr [rsi+0]
     cmp rax, 0
-    jne .L407_2
-    jmp .L407_3
-.L407_2:
+    jne .L408_2
+    jmp .L408_3
+.L408_2:
     lea rdi, [rbx+32]
     call zyl_rt_mutex_lock
-.L407_3:
+.L408_3:
     mov rdi, qword ptr [rbx+0]
     mov rsi, r12
     call zy_local_x2Fmain_0__alloc__rt_x2Din_x2Dblocks
@@ -13962,33 +14056,33 @@ zy_local_x2Fmain_0__alloc__rt_x2Daddr_x2Din_x2Darena:
     mov rsi, rax
     mov rax, qword ptr [rsi+0]
     cmp rax, 0
-    jne .L407_4
-    jmp .L407_5
-.L407_4:
+    jne .L408_4
+    jmp .L408_5
+.L408_4:
     lea rdi, [rbx+32]
     call zyl_rt_mutex_unlock
-.L407_5:
+.L408_5:
     mov rax, r12
     pop r12
     pop rbx
     ret
 zy_local_x2Fmain_0__alloc__rt_x2Darenas:
     # frame 0
-.L408_0:
+.L409_0:
     lea rax, [rip+zyl_rtg_arenas]
     mov rsi, rax
     mov rax, rsi
     ret
 zy_local_x2Fmain_0__alloc__rt_x2Dheap:
     # frame 0
-.L409_0:
+.L410_0:
     lea rax, [rip+zyl_rtg_arenas]
     mov rsi, rax
     mov rax, qword ptr [rsi+0]
     ret
 zy_local_x2Fmain_0__alloc__rt_x2Dpin:
     # frame 0
-.L410_0:
+.L411_0:
     lea rax, [rip+zyl_rtg_arenas]
     mov rsi, rax
     mov rax, qword ptr [rsi+8]
@@ -13997,29 +14091,29 @@ zy_local_x2Fmain_0__alloc__rt_x2Dpin:
 zyl_arenas_init:
     # frame 16
     push rbx
-.L411_0:
+.L412_0:
     lea rax, [rip+zyl_rtg_arenas]
     mov rbx, rax
     mov rax, qword ptr [rbx+0]
     cmp rax, 0
-    jne .L411_1
+    jne .L412_1
     mov rdi, 1048576
     call zyl_arena_create
     mov rsi, rax
     mov qword ptr [rbx+0], rsi
-    jmp .L411_2
-.L411_1:
-.L411_2:
+    jmp .L412_2
+.L412_1:
+.L412_2:
     mov rax, qword ptr [rbx+8]
     cmp rax, 0
-    jne .L411_3
+    jne .L412_3
     mov rdi, 262144
     call zyl_arena_create
     mov rsi, rax
     mov qword ptr [rbx+8], rsi
-    jmp .L411_4
-.L411_3:
-.L411_4:
+    jmp .L412_4
+.L412_3:
+.L412_4:
     mov rax, 0
     pop rbx
     ret
@@ -14027,29 +14121,29 @@ zyl_arenas_init:
 zyl_arenas_destroy:
     # frame 16
     push rbx
-.L412_0:
+.L413_0:
     lea rax, [rip+zyl_rtg_arenas]
     mov rbx, rax
     mov rax, qword ptr [rbx+8]
     cmp rax, 0
-    jne .L412_1
-    jmp .L412_2
-.L412_1:
+    jne .L413_1
+    jmp .L413_2
+.L413_1:
     mov rdi, qword ptr [rbx+8]
     call zyl_arena_destroy
     mov rsi, 0
     mov qword ptr [rbx+8], rsi
-.L412_2:
+.L413_2:
     mov rax, qword ptr [rbx+0]
     cmp rax, 0
-    jne .L412_3
-    jmp .L412_4
-.L412_3:
+    jne .L413_3
+    jmp .L413_4
+.L413_3:
     mov rdi, qword ptr [rbx+0]
     call zyl_arena_destroy
     mov rsi, 0
     mov qword ptr [rbx+0], rsi
-.L412_4:
+.L413_4:
     mov rax, 0
     pop rbx
     ret
@@ -14061,11 +14155,11 @@ zy_local_x2Fmain_0__alloc__rt_x2Dheap_x2Dfail:
     push r12
     and rsp, -16
     mov rbx, rdi
-.L413_0:
+.L414_0:
     mov rdi, rsi
     call zyl_int_text
     mov rdi, rax
-    lea rax, [rip+.L414]
+    lea rax, [rip+.L415]
     mov rsi, rax
     call zyl_cstr_concat
     mov rsi, rax
@@ -14092,31 +14186,31 @@ zyl_heap_alloc:
     push rbx
     push r12
     mov rbx, rdi
-.L415_0:
+.L416_0:
     lea rax, [rip+zyl_rtg_arenas]
     mov rsi, rax
     mov rdi, qword ptr [rsi+0]
     cmp rdi, 0
-    je .L415_2
+    je .L416_2
     cmp rbx, 0
-    jg .L415_1
-.L415_2:
+    jg .L416_1
+.L416_2:
     mov rax, 0
     pop r12
     pop rbx
     ret
-.L415_1:
+.L416_1:
     mov rax, 281474976710656
     cmp rbx, rax
-    jle .L415_3
-    lea rax, [rip+.L416]
+    jle .L416_3
+    lea rax, [rip+.L417]
     mov rsi, rax
     mov rdi, rsi
     mov rsi, rbx
     pop r12
     pop rbx
     jmp zy_local_x2Fmain_0__alloc__rt_x2Dheap_x2Dfail
-.L415_3:
+.L416_3:
     lea rsi, [rbx+7]
     mov rcx, rsi
     mov rax, rcx
@@ -14134,14 +14228,14 @@ zyl_heap_alloc:
     mov r9, rax
     mov rax, qword ptr [r9+0]
     cmp rax, 0
-    jne .L415_4
+    jne .L416_4
     cmp r8, 0
-    jle .L415_4
+    jle .L416_4
     mov r9, qword ptr [r8+8]
     mov r10, qword ptr [r8+16]
     sub r9, r10
     cmp rsi, r9
-    jg .L415_4
+    jg .L416_4
     mov r9, qword ptr [r8+0]
     mov r10, qword ptr [r8+16]
     add r9, r10
@@ -14156,20 +14250,20 @@ zyl_heap_alloc:
     pop r12
     pop rbx
     ret
-.L415_4:
+.L416_4:
     lea rsi, [r12*8]
     add rsi, 8
     call zy_local_x2Fmain_0__alloc__rt_x2Darena_x2Dbump
     mov rsi, rax
     cmp rsi, 0
-    jne .L415_5
-    lea rax, [rip+.L417]
+    jne .L416_5
+    lea rax, [rip+.L418]
     mov rdi, rax
     mov rsi, rbx
     pop r12
     pop rbx
     jmp zy_local_x2Fmain_0__alloc__rt_x2Dheap_x2Dfail
-.L415_5:
+.L416_5:
     mov qword ptr [rsi+0], r12
     lea rax, [rsi+8]
     pop r12
@@ -14178,34 +14272,34 @@ zyl_heap_alloc:
 .globl zyl_heap_swap
 zyl_heap_swap:
     # frame 0
-.L418_0:
+.L419_0:
     lea rax, [rip+zyl_rtg_arenas]
     mov rsi, rax
     mov r8, qword ptr [rsi+0]
     cmp rdi, 0
-    je .L418_1
+    je .L419_1
     mov qword ptr [rsi+0], rdi
-.L418_1:
+.L419_1:
     mov rax, r8
     ret
 .globl zyl_session_arena
 zyl_session_arena:
     # frame 16
     push rbx
-.L419_0:
+.L420_0:
     lea rax, [rip+zyl_rtg_arenas]
     mov rbx, rax
     add rbx, 16
     mov rax, qword ptr [rbx+0]
     cmp rax, 0
-    jne .L419_1
+    jne .L420_1
     mov rdi, 1048576
     call zyl_arena_create
     mov rsi, rax
     mov qword ptr [rbx+0], rsi
-    jmp .L419_2
-.L419_1:
-.L419_2:
+    jmp .L420_2
+.L420_1:
+.L420_2:
     mov rax, qword ptr [rbx+0]
     pop rbx
     ret
@@ -14214,30 +14308,30 @@ zyl_heap_block_p:
     # frame 16
     push rbx
     mov rbx, rdi
-.L420_0:
+.L421_0:
     cmp rbx, 4096
-    jl .L420_2
-.L420_4:
+    jl .L421_2
+.L421_4:
     mov rax, rbx
     and rax, 7
     cmp rax, 0
-    je .L420_1
-.L420_2:
+    je .L421_1
+.L421_2:
     mov rax, 0
     pop rbx
     ret
-.L420_1:
+.L421_1:
     lea rax, [rip+zyl_rtg_arenas]
     mov rsi, rax
     mov rdi, qword ptr [rsi+0]
     mov rsi, rbx
     call zy_local_x2Fmain_0__alloc__rt_x2Daddr_x2Din_x2Darena
     cmp rax, 0
-    je .L420_3
+    je .L421_3
     mov rax, 1
     pop rbx
     ret
-.L420_3:
+.L421_3:
     call zyl_session_arena
     mov rdi, rax
     mov rsi, rbx
@@ -14246,19 +14340,19 @@ zyl_heap_block_p:
 .globl zyl_pin_owns
 zyl_pin_owns:
     # frame 0
-.L421_0:
+.L422_0:
     cmp rdi, 0
-    je .L421_2
-.L421_3:
+    je .L422_2
+.L422_3:
     lea rax, [rip+zyl_rtg_arenas]
     mov rsi, rax
     mov rax, qword ptr [rsi+8]
     cmp rax, 0
-    jne .L421_1
-.L421_2:
+    jne .L422_1
+.L422_2:
     mov rax, 0
     ret
-.L421_1:
+.L422_1:
     lea rax, [rip+zyl_rtg_arenas]
     mov rsi, rax
     mov rsi, qword ptr [rsi+8]
@@ -14271,16 +14365,16 @@ zyl_pin_word:
     # frame 16
     push rbx
     mov rbx, rdi
-.L422_0:
+.L423_0:
     lea rax, [rip+zyl_rtg_arenas]
     mov rsi, rax
     mov rax, qword ptr [rsi+8]
     cmp rax, 0
-    jne .L422_1
+    jne .L423_1
     mov rax, 0
     pop rbx
     ret
-.L422_1:
+.L423_1:
     lea rax, [rip+zyl_rtg_arenas]
     mov rsi, rax
     mov rdi, qword ptr [rsi+8]
@@ -14288,9 +14382,9 @@ zyl_pin_word:
     call zy_local_x2Fmain_0__alloc__rt_x2Darena_x2Dbump
     mov rsi, rax
     cmp rsi, 0
-    je .L422_2
+    je .L423_2
     mov qword ptr [rsi+0], rbx
-.L422_2:
+.L423_2:
     mov rax, rsi
     pop rbx
     ret
@@ -14300,18 +14394,18 @@ zyl_mlock:
     push rbp
     mov rbp, rsp
     and rsp, -16
-.L423_0:
+.L424_0:
     cmp rdi, 0
-    je .L423_2
-.L423_4:
+    je .L424_2
+.L424_4:
     cmp rsi, 0
-    jg .L423_1
-.L423_2:
+    jg .L424_1
+.L424_2:
     mov rax, 0
     mov rsp, rbp
     pop rbp
     ret
-.L423_1:
+.L424_1:
     mov r8, rdi
     and r8, -4096
     sub rdi, r8
@@ -14320,12 +14414,12 @@ zyl_mlock:
     mov rdi, r8
     call zyl_rt_sys_149
     cmp rax, 0
-    jne .L423_3
+    jne .L424_3
     mov rax, 1
     mov rsp, rbp
     pop rbp
     ret
-.L423_3:
+.L424_3:
     mov rax, 0
     mov rsp, rbp
     pop rbp
@@ -14336,20 +14430,20 @@ zyl_pin_alloc:
     push rbx
     push r12
     mov rbx, rdi
-.L424_0:
+.L425_0:
     lea rax, [rip+zyl_rtg_arenas]
     mov rsi, rax
     mov rax, qword ptr [rsi+8]
     cmp rax, 0
-    je .L424_2
+    je .L425_2
     cmp rbx, 0
-    jg .L424_1
-.L424_2:
+    jg .L425_1
+.L425_2:
     mov rax, 0
     pop r12
     pop rbx
     ret
-.L424_1:
+.L425_1:
     lea rax, [rip+zyl_rtg_arenas]
     mov rsi, rax
     mov rdi, qword ptr [rsi+8]
@@ -14357,39 +14451,39 @@ zyl_pin_alloc:
     call zy_local_x2Fmain_0__alloc__rt_x2Darena_x2Dbump
     mov r12, rax
     cmp r12, 0
-    je .L424_3
+    je .L425_3
     mov rdi, r12
     mov rsi, rbx
     call zyl_mlock
-.L424_3:
+.L425_3:
     mov rax, r12
     pop r12
     pop rbx
     ret
 zy_local_x2Fmain_0__alloc__rt_x2Dclass_x2Dsize:
     # frame 0
-.L425_0:
+.L426_0:
     cmp rdi, 0
-    jne .L425_1
-.L425_4:
+    jne .L426_1
+.L426_4:
     mov rax, 1024
     ret
-.L425_1:
+.L426_1:
     cmp rdi, 1
-    jne .L425_2
+    jne .L426_2
     mov rax, 4096
     ret
-.L425_2:
+.L426_2:
     cmp rdi, 2
-    jne .L425_3
+    jne .L426_3
     mov rax, 16384
     ret
-.L425_3:
+.L426_3:
     mov rax, 65536
     ret
 zy_local_x2Fmain_0__alloc__rt_x2Drpool:
     # frame 0
-.L426_0:
+.L427_0:
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_rpool@tpoff]
     mov rsi, rax
@@ -14397,7 +14491,7 @@ zy_local_x2Fmain_0__alloc__rt_x2Drpool:
     ret
 zy_local_x2Fmain_0__alloc__rt_x2Dlive:
     # frame 0
-.L427_0:
+.L428_0:
     lea rax, [rip+zyl_rtg_region_live]
     mov rsi, rax
     mov rax, rsi
@@ -14406,10 +14500,10 @@ zy_local_x2Fmain_0__alloc__rt_x2Dpoison:
     # frame 16
     push rbx
     mov rbx, rdi
-.L428_0:
+.L429_0:
     call zyl_region_poison_level
     cmp rax, 0
-    jle .L428_1
+    jle .L429_1
     mov rsi, qword ptr [rbx+8]
     lea rdi, [rbx+24]
     sub rsi, 24
@@ -14417,7 +14511,7 @@ zy_local_x2Fmain_0__alloc__rt_x2Dpoison:
     mov rax, 0
     pop rbx
     ret
-.L428_1:
+.L429_1:
     mov rax, 0
     pop rbx
     ret
@@ -14429,18 +14523,18 @@ zy_local_x2Fmain_0__alloc__rt_x2Drmap:
     and rsp, -16
     sub rsp, 16
     mov rbx, rdi
-.L429_0:
+.L430_0:
     mov rdi, rbx
     call zy_local_x2Fmain_0__heap__rt_x2Dcharge
     cmp rax, 0
-    je .L429_1
-    jmp .L429_2
-.L429_1:
-    lea rax, [rip+.L430]
+    je .L430_1
+    jmp .L430_2
+.L430_1:
+    lea rax, [rip+.L431]
     mov rsi, rax
     mov rdi, rbx
     call zyl_arena_oom
-.L429_2:
+.L430_2:
     mov rdi, 0
     mov rsi, 3
     mov r8, 34
@@ -14454,12 +14548,12 @@ zy_local_x2Fmain_0__alloc__rt_x2Drmap:
     call zyl_rt_sys_9
     mov rsi, rax
     cmp rsi, 0
-    jge .L429_3
+    jge .L430_3
     cmp rsi, -4096
-    jle .L429_3
+    jle .L430_3
     mov rdi, rbx
     call zy_local_x2Fmain_0__heap__rt_x2Drefund
-    lea rax, [rip+.L431]
+    lea rax, [rip+.L432]
     mov rdi, rax
     mov rsi, rdi
     mov rdi, rbx
@@ -14467,7 +14561,7 @@ zy_local_x2Fmain_0__alloc__rt_x2Drmap:
     mov rsp, rbp
     pop rbp
     jmp zyl_arena_oom
-.L429_3:
+.L430_3:
     mov rax, rsi
     mov rbx, qword ptr [rbp-8]
     mov rsp, rbp
@@ -14477,7 +14571,7 @@ zy_local_x2Fmain_0__alloc__rt_x2Drblock_x2Dinit:
     # frame 0
     mov r8, rdx
     mov r9, rcx
-.L432_0:
+.L433_0:
     mov r10, 0
     mov qword ptr [rdi+0], r10
     mov qword ptr [rdi+8], rsi
@@ -14497,17 +14591,17 @@ zy_local_x2Fmain_0__alloc__rt_x2Dcarve:
     mov r12, rsi
     mov r13, rdx
     mov r14, rcx
-.L433_0:
+.L434_0:
     lea rax, [r14+r13]
     cmp rax, 1048576
-    jle .L433_1
+    jle .L434_1
     mov rax, 0
     pop r14
     pop r13
     pop r12
     pop rbx
     ret
-.L433_1:
+.L434_1:
     lea rdi, [r12+r14]
     mov rsi, 0
     mov rdx, rsi
@@ -14524,41 +14618,41 @@ zy_local_x2Fmain_0__alloc__rt_x2Dcarve:
     mov qword ptr [rsi+0], r8
     mov qword ptr [rdi+0], rsi
     add r14, r13
-    jmp .L433_0
+    jmp .L434_0
 zy_local_x2Fmain_0__alloc__rt_x2Dpick_x2Dclass:
     # frame 0
-.L434_0:
+.L435_0:
     cmp rsi, 4
-    jge .L434_1
-.L434_5:
+    jge .L435_1
+.L435_5:
     lea r8, [rdi+24]
     mov r9, 1024
     cmp rsi, 0
-    je .L434_2
+    je .L435_2
     mov r10, 4096
     cmp rsi, 1
-    je .L434_3
+    je .L435_3
     mov r11, 16384
     cmp rsi, 2
-    je .L434_4
+    je .L435_4
     mov r11, 65536
-.L434_4:
+.L435_4:
     mov r10, r11
-.L434_3:
+.L435_3:
     mov r9, r10
-.L434_2:
+.L435_2:
     cmp r8, r9
-    jle .L434_1
+    jle .L435_1
     add rsi, 1
     cmp rsi, 4
-    jge .L434_1
-    jmp .L434_5
-.L434_1:
+    jge .L435_1
+    jmp .L435_5
+.L435_1:
     mov rax, rsi
     ret
 zy_local_x2Fmain_0__alloc__rt_x2Dregion_5Funpooled_x2Dp:
     # frame 0
-.L435_0:
+.L436_0:
     call zyl_region_poison_level
     mov rsi, rax
     mov rax, rsi
@@ -14574,18 +14668,18 @@ zy_local_x2Fmain_0__alloc__rt_x2Drblock_x2Dget:
     push r12
     push r13
     mov rbx, rdi
-.L436_0:
+.L437_0:
     mov rdi, rsi
     cmp rsi, 4
-    jl .L436_1
+    jl .L437_1
     mov rdi, 3
-.L436_1:
+.L437_1:
     mov rsi, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__alloc__rt_x2Dpick_x2Dclass
     mov r12, rax
     cmp r12, 4
-    jl .L436_2
+    jl .L437_2
     lea rsi, [rbx+24]
     add rsi, 4095
     mov r13, rsi
@@ -14602,10 +14696,10 @@ zy_local_x2Fmain_0__alloc__rt_x2Drblock_x2Dget:
     pop r12
     pop rbx
     jmp zy_local_x2Fmain_0__alloc__rt_x2Drblock_x2Dinit
-.L436_2:
+.L437_2:
     call zyl_region_poison_level
     cmp rax, 2
-    jne .L436_3
+    jne .L437_3
     lea rsi, [rbx+24]
     add rsi, 4095
     mov rbx, rsi
@@ -14622,7 +14716,7 @@ zy_local_x2Fmain_0__alloc__rt_x2Drblock_x2Dget:
     pop r12
     pop rbx
     jmp zy_local_x2Fmain_0__alloc__rt_x2Drblock_x2Dinit
-.L436_3:
+.L437_3:
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_rpool@tpoff]
     mov rbx, rax
@@ -14630,7 +14724,7 @@ zy_local_x2Fmain_0__alloc__rt_x2Drblock_x2Dget:
     add rbx, rsi
     mov rax, qword ptr [rbx+0]
     cmp rax, 0
-    jne .L436_4
+    jne .L437_4
     mov rdi, 1048576
     call zy_local_x2Fmain_0__alloc__rt_x2Drmap
     mov r13, rax
@@ -14643,9 +14737,9 @@ zy_local_x2Fmain_0__alloc__rt_x2Drblock_x2Dget:
     mov rcx, rdi
     mov rdi, r12
     call zy_local_x2Fmain_0__alloc__rt_x2Dcarve
-    jmp .L436_5
-.L436_4:
-.L436_5:
+    jmp .L437_5
+.L437_4:
+.L437_5:
     mov rsi, qword ptr [rbx+0]
     mov rdi, qword ptr [rsi+0]
     mov qword ptr [rbx+0], rdi
@@ -14658,24 +14752,24 @@ zy_local_x2Fmain_0__alloc__rt_x2Drblock_x2Dget:
     ret
 zy_local_x2Fmain_0__alloc__rt_x2Dcount_x2Dblocks:
     # frame 0
-.L437_0:
+.L438_0:
     cmp rdi, 0
-    je .L437_2
-.L437_3:
+    je .L438_2
+.L438_3:
     cmp rsi, 4
-    jl .L437_1
-.L437_2:
+    jl .L438_1
+.L438_2:
     mov rax, rsi
     ret
-.L437_1:
+.L438_1:
     mov rdi, qword ptr [rdi+0]
     add rsi, 1
     cmp rdi, 0
-    je .L437_2
-    jmp .L437_3
+    je .L438_2
+    jmp .L438_3
 zy_local_x2Fmain_0__alloc__rt_x2Dpush_x2Dblock:
     # frame 0
-.L438_0:
+.L439_0:
     mov r8, qword ptr [rdi+24]
     and r8, -2
     mov qword ptr [rsi+0], r8
@@ -14706,32 +14800,32 @@ zy_local_x2Fmain_0__alloc__rt_x2Dexhausted:
     push r13
     and rsp, -16
     sub rsp, 16
-.L439_0:
+.L440_0:
     mov rsi, qword ptr [rdi+0]
-    lea rax, [rip+.L440]
+    lea rax, [rip+.L441]
     mov rbx, rax
     cmp rsi, 2
-    jne .L439_1
-    lea rax, [rip+.L441]
-    mov r12, rax
-    jmp .L439_2
-.L439_1:
+    jne .L440_1
     lea rax, [rip+.L442]
     mov r12, rax
-.L439_2:
+    jmp .L440_2
+.L440_1:
     lea rax, [rip+.L443]
+    mov r12, rax
+.L440_2:
+    lea rax, [rip+.L444]
     mov r13, rax
     cmp rsi, 2
-    jne .L439_3
+    jne .L440_3
     mov rsi, qword ptr [rdi+8]
-    jmp .L439_4
-.L439_3:
+    jmp .L440_4
+.L440_3:
     mov rsi, qword ptr [rdi+24]
-.L439_4:
+.L440_4:
     mov rdi, rsi
     call zyl_int_text
     mov rdi, rax
-    lea rax, [rip+.L444]
+    lea rax, [rip+.L445]
     mov rsi, rax
     call zyl_cstr_concat
     mov rsi, rax
@@ -14760,7 +14854,7 @@ zy_local_x2Fmain_0__alloc__rt_x2Dpolicy_x2Dalloc:
     mov rbx, rdi
     mov r12, rsi
     mov r13, rdx
-.L445_0:
+.L446_0:
     lea rdi, [rbx+32]
     mov rsi, qword ptr [rdi+16]
     lea r8, [r12+7]
@@ -14781,10 +14875,10 @@ zy_local_x2Fmain_0__alloc__rt_x2Dpolicy_x2Dalloc:
     and r10, r11
     lea r11, [r10+r8]
     cmp r9, 0
-    jle .L445_1
+    jle .L446_1
     mov rax, qword ptr [rbx+16]
     cmp r11, rax
-    jg .L445_1
+    jg .L446_1
     mov r14, qword ptr [rdi+32]
     mov rax, r11
     mov rcx, r9
@@ -14793,16 +14887,16 @@ zy_local_x2Fmain_0__alloc__rt_x2Dpolicy_x2Dalloc:
     add r14, r9
     mov rax, qword ptr [rdi+24]
     cmp rax, 0
-    jle .L445_2
+    jle .L446_2
     mov rax, qword ptr [rdi+24]
     cmp r14, rax
-    jle .L445_2
+    jle .L446_2
     pop r14
     pop r13
     pop r12
     pop rbx
     jmp zy_local_x2Fmain_0__alloc__rt_x2Dexhausted
-.L445_2:
+.L446_2:
     mov qword ptr [rdi+32], r14
     mov qword ptr [rbx+8], r11
     lea r9, [r10-8]
@@ -14820,44 +14914,44 @@ zy_local_x2Fmain_0__alloc__rt_x2Dpolicy_x2Dalloc:
     pop r12
     pop rbx
     ret
-.L445_1:
+.L446_1:
     cmp r13, 1
-    jge .L445_4
+    jge .L446_4
     mov rax, qword ptr [rdi+0]
     cmp rax, 2
-    jne .L445_3
+    jne .L446_3
     mov r9, qword ptr [rbx+24]
     and r9, -2
     cmp r9, 0
-    jle .L445_3
-.L445_4:
+    jle .L446_3
+.L446_4:
     pop r14
     pop r13
     pop r12
     pop rbx
     jmp zy_local_x2Fmain_0__alloc__rt_x2Dexhausted
-.L445_3:
+.L446_3:
     add r8, 8
     add r8, rsi
     add r8, 24
     mov rax, qword ptr [rdi+0]
     cmp rax, 2
-    jne .L445_5
+    jne .L446_5
     mov r9, qword ptr [rdi+8]
     add r9, 8
     add rsi, r9
     add rsi, 24
-    jmp .L445_6
-.L445_5:
+    jmp .L446_6
+.L446_5:
     mov rax, qword ptr [rdi+8]
     cmp rax, r8
-    jge .L445_7
-    jmp .L445_8
-.L445_7:
+    jge .L446_7
+    jmp .L446_8
+.L446_7:
     mov r8, qword ptr [rdi+8]
-.L445_8:
+.L446_8:
     mov rsi, r8
-.L445_6:
+.L446_6:
     add rsi, 4095
     mov r14, rsi
     and r14, -4096
@@ -14874,37 +14968,37 @@ zy_local_x2Fmain_0__alloc__rt_x2Dpolicy_x2Dalloc:
     mov rdi, rbx
     call zy_local_x2Fmain_0__alloc__rt_x2Dpush_x2Dblock
     add r13, 1
-    jmp .L445_0
+    jmp .L446_0
 .globl zyl_ralloc
 zyl_ralloc:
     # frame 0
-.L446_0:
+.L447_0:
     cmp rsi, 0
-    jne .L446_1
-.L446_5:
+    jne .L447_1
+.L447_5:
     jmp zyl_heap_alloc
-.L446_1:
+.L447_1:
     cmp rdi, 0
-    jle .L446_3
+    jle .L447_3
     cmp rdi, 65536
-    jle .L446_2
-.L446_3:
+    jle .L447_2
+.L447_3:
     jmp zy_local_x2Fmain_0__alloc__rt_x2Dralloc_x2Din
-.L446_2:
+.L447_2:
     mov r8, qword ptr [rsi+8]
     lea r9, [rdi+7]
     and r9, -8
     add r9, 8
     cmp r8, 0
-    jle .L446_4
+    jle .L447_4
     mov r10, qword ptr [rsi+24]
     and r10, 1
     cmp r10, 1
-    je .L446_4
+    je .L447_4
     lea r10, [r8+r9]
     mov rax, qword ptr [rsi+16]
     cmp r10, rax
-    jg .L446_4
+    jg .L447_4
     add r9, r8
     mov qword ptr [rsi+8], r9
     lea r9, [rdi+7]
@@ -14912,7 +15006,7 @@ zyl_ralloc:
     mov qword ptr [r8+0], r9
     lea rax, [r8+8]
     ret
-.L446_4:
+.L447_4:
     jmp zy_local_x2Fmain_0__alloc__rt_x2Dralloc_x2Din
 zy_local_x2Fmain_0__alloc__rt_x2Dralloc_x2Din:
     # frame 32
@@ -14921,20 +15015,20 @@ zy_local_x2Fmain_0__alloc__rt_x2Dralloc_x2Din:
     push r13
     mov rbx, rdi
     mov r12, rsi
-.L447_0:
+.L448_0:
     cmp rbx, 0
-    jg .L447_1
-.L447_7:
+    jg .L448_1
+.L448_7:
     mov rax, 0
     pop r13
     pop r12
     pop rbx
     ret
-.L447_1:
+.L448_1:
     mov rsi, qword ptr [r12+24]
     and rsi, 1
     cmp rsi, 1
-    jne .L447_2
+    jne .L448_2
     mov rsi, 0
     mov rdi, r12
     mov rdx, rsi
@@ -14943,18 +15037,18 @@ zy_local_x2Fmain_0__alloc__rt_x2Dralloc_x2Din:
     pop r12
     pop rbx
     jmp zy_local_x2Fmain_0__alloc__rt_x2Dpolicy_x2Dalloc
-.L447_2:
+.L448_2:
     mov rax, 281474976710656
     cmp rbx, rax
-    jle .L447_3
-    lea rax, [rip+.L448]
+    jle .L448_3
+    lea rax, [rip+.L449]
     mov rdi, rax
     mov rsi, rbx
     pop r13
     pop r12
     pop rbx
     jmp zy_local_x2Fmain_0__alloc__rt_x2Dheap_x2Dfail
-.L447_3:
+.L448_3:
     lea rsi, [rbx+7]
     mov rcx, rsi
     mov rax, rcx
@@ -14967,13 +15061,13 @@ zy_local_x2Fmain_0__alloc__rt_x2Dralloc_x2Din:
     lea r13, [rsi+8]
     mov rax, qword ptr [r12+8]
     cmp rax, 0
-    je .L447_6
+    je .L448_6
     mov rsi, qword ptr [r12+16]
     mov rdi, qword ptr [r12+8]
     sub rsi, rdi
     cmp rsi, r13
-    jge .L447_4
-.L447_6:
+    jge .L448_4
+.L448_6:
     mov rdi, qword ptr [r12+24]
     and rdi, -2
     mov rsi, 0
@@ -14984,9 +15078,9 @@ zy_local_x2Fmain_0__alloc__rt_x2Dralloc_x2Din:
     mov rsi, rax
     mov rdi, r12
     call zy_local_x2Fmain_0__alloc__rt_x2Dpush_x2Dblock
-    jmp .L447_5
-.L447_4:
-.L447_5:
+    jmp .L448_5
+.L448_4:
+.L448_5:
     mov rsi, qword ptr [r12+8]
     lea rdi, [rsi+r13]
     mov qword ptr [r12+8], rdi
@@ -15011,7 +15105,7 @@ zy_local_x2Fmain_0__alloc__rt_x2Drelease_x2Dblock:
     push rbx
     and rsp, -16
     sub rsp, 16
-.L449_0:
+.L450_0:
     lea rax, [rip+zyl_rtg_region_live]
     mov rsi, rax
     mov r8, 0
@@ -15023,7 +15117,7 @@ zy_local_x2Fmain_0__alloc__rt_x2Drelease_x2Dblock:
     lock xadd qword ptr [rdx], rax
     mov eax, dword ptr [rdi+16]
     cmp rax, 1
-    jne .L449_1
+    jne .L450_1
     mov rbx, qword ptr [rdi+8]
     mov rsi, rbx
     call zyl_rt_sys_11
@@ -15032,7 +15126,7 @@ zy_local_x2Fmain_0__alloc__rt_x2Drelease_x2Dblock:
     mov rsp, rbp
     pop rbp
     jmp zy_local_x2Fmain_0__heap__rt_x2Drefund
-.L449_1:
+.L450_1:
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_rpool@tpoff]
     mov rsi, rax
@@ -15051,29 +15145,29 @@ zy_local_x2Fmain_0__alloc__rt_x2Drelease_x2Dchain:
     push rbx
     push r12
     mov rbx, rsi
-.L450_0:
+.L451_0:
     cmp rdi, 0
-    je .L450_2
-.L450_3:
+    je .L451_2
+.L451_3:
     cmp rdi, rbx
-    jne .L450_1
-.L450_2:
+    jne .L451_1
+.L451_2:
     mov rax, 0
     pop r12
     pop rbx
     ret
-.L450_1:
+.L451_1:
     mov r12, qword ptr [rdi+0]
     call zy_local_x2Fmain_0__alloc__rt_x2Drelease_x2Dblock
     mov rdi, r12
     cmp rdi, 0
-    je .L450_2
-    jmp .L450_3
+    je .L451_2
+    jmp .L451_3
 zy_local_x2Fmain_0__alloc__rt_x2Dregion_x2Dfree_x2Dblocks:
     # frame 16
     push rbx
     mov rbx, rdi
-.L451_0:
+.L452_0:
     mov rdi, qword ptr [rbx+24]
     and rdi, -2
     mov rsi, 0
@@ -15092,7 +15186,7 @@ zy_local_x2Fmain_0__alloc__rt_x2Dregion_x2Dfree_x2Dblocks:
 .globl zyl_region_enter
 zyl_region_enter:
     # frame 0
-.L452_0:
+.L453_0:
     mov rax, QWORD PTR fs:zyl_region_top@tpoff
     mov rsi, rax
     mov qword ptr [rdi+0], rsi
@@ -15112,7 +15206,7 @@ zyl_region_scope_enter:
     mov r9, rcx
     mov r10, r8
     mov r8, rdx
-.L453_0:
+.L454_0:
     mov rax, QWORD PTR fs:zyl_region_top@tpoff
     mov r11, rax
     mov qword ptr [rdi+0], r11
@@ -15126,9 +15220,9 @@ zyl_region_scope_enter:
     mov qword ptr [rdi+40], r8
     mov rsi, 8
     cmp r9, 8
-    jl .L453_1
+    jl .L454_1
     mov rsi, r9
-.L453_1:
+.L454_1:
     mov qword ptr [rdi+48], rsi
     mov qword ptr [rdi+56], r10
     mov rsi, 0
@@ -15140,28 +15234,28 @@ zyl_region_scope_enter:
 .globl zyl_region_free
 zyl_region_free:
     # frame 0
-.L454_0:
+.L455_0:
     mov rsi, qword ptr [rdi+24]
     and rsi, -2
     cmp rsi, 0
-    jle .L454_1
+    jle .L455_1
     call zy_local_x2Fmain_0__alloc__rt_x2Dregion_x2Dfree_x2Dblocks
-    jmp .L454_2
-.L454_1:
-.L454_2:
+    jmp .L455_2
+.L455_1:
+.L455_2:
     mov rax, 0
     ret
 zy_local_x2Fmain_0__alloc__rt_x2Dlast_x2Dblock:
     # frame 0
-.L455_0:
+.L456_0:
     mov rax, qword ptr [rdi+0]
     cmp rax, 0
-    jne .L455_1
+    jne .L456_1
     mov rax, rdi
     ret
-.L455_1:
+.L456_1:
     mov rdi, qword ptr [rdi+0]
-    jmp .L455_0
+    jmp .L456_0
 .globl zyl_region_recycle
 zyl_region_recycle:
     # frame 32
@@ -15169,23 +15263,23 @@ zyl_region_recycle:
     push r12
     push r13
     mov rbx, rdi
-.L456_0:
+.L457_0:
     mov r12, qword ptr [rbx+24]
     and r12, -2
     cmp r12, 0
-    jne .L456_1
+    jne .L457_1
     mov rax, 0
     pop r13
     pop r12
     pop rbx
     ret
-.L456_1:
+.L457_1:
     mov rax, qword ptr [r12+0]
     cmp rax, 0
-    jne .L456_2
+    jne .L457_2
     mov eax, dword ptr [r12+16]
     cmp rax, 0
-    jne .L456_2
+    jne .L457_2
     lea rsi, [r12+24]
     mov qword ptr [rbx+8], rsi
     mov rax, 0
@@ -15193,13 +15287,13 @@ zyl_region_recycle:
     pop r12
     pop rbx
     ret
-.L456_2:
+.L457_2:
     mov rdi, r12
     call zy_local_x2Fmain_0__alloc__rt_x2Dlast_x2Dblock
     mov r13, rax
     mov eax, dword ptr [r13+16]
     cmp rax, 1
-    jne .L456_3
+    jne .L457_3
     mov rdi, rbx
     call zy_local_x2Fmain_0__alloc__rt_x2Dregion_x2Dfree_x2Dblocks
     mov rax, 0
@@ -15207,7 +15301,7 @@ zyl_region_recycle:
     pop r12
     pop rbx
     ret
-.L456_3:
+.L457_3:
     mov rdi, r12
     mov rsi, r13
     call zy_local_x2Fmain_0__alloc__rt_x2Drelease_x2Dchain
@@ -15230,29 +15324,29 @@ zyl_region_exit:
     # frame 16
     push rbx
     mov rbx, rdi
-.L457_0:
+.L458_0:
     mov rsi, qword ptr [rbx+24]
     and rsi, -2
     cmp rsi, 0
-    jle .L457_1
+    jle .L458_1
     mov rdi, rbx
     call zy_local_x2Fmain_0__alloc__rt_x2Dregion_x2Dfree_x2Dblocks
-    jmp .L457_2
-.L457_1:
-.L457_2:
+    jmp .L458_2
+.L458_1:
+.L458_2:
     mov rsi, qword ptr [rbx+0]
     mov rax, rsi
     mov QWORD PTR fs:zyl_region_top@tpoff, rax
     mov rax, QWORD PTR fs:zyl_cur_region@tpoff
     mov rsi, rax
     cmp rsi, rbx
-    jne .L457_3
+    jne .L458_3
     mov rsi, 0
     mov rax, rsi
     mov QWORD PTR fs:zyl_cur_region@tpoff, rax
-    jmp .L457_4
-.L457_3:
-.L457_4:
+    jmp .L458_4
+.L458_3:
+.L458_4:
     mov rax, 0
     pop rbx
     ret
@@ -15262,14 +15356,14 @@ zyl_region_unwind:
     push rbx
     push r12
     mov rbx, rdi
-.L458_0:
+.L459_0:
     mov rax, QWORD PTR fs:zyl_region_top@tpoff
     mov r12, rax
     cmp r12, 0
-    je .L458_2
+    je .L459_2
     cmp r12, rbx
-    jne .L458_1
-.L458_2:
+    jne .L459_1
+.L459_2:
     mov rsi, 0
     mov rax, rsi
     mov QWORD PTR fs:zyl_cur_region@tpoff, rax
@@ -15277,24 +15371,24 @@ zyl_region_unwind:
     pop r12
     pop rbx
     ret
-.L458_1:
+.L459_1:
     mov rsi, qword ptr [r12+24]
     and rsi, -2
     cmp rsi, 0
-    jle .L458_3
+    jle .L459_3
     mov rdi, r12
     call zy_local_x2Fmain_0__alloc__rt_x2Dregion_x2Dfree_x2Dblocks
-    jmp .L458_4
-.L458_3:
-.L458_4:
+    jmp .L459_4
+.L459_3:
+.L459_4:
     mov rsi, qword ptr [r12+0]
     mov rax, rsi
     mov QWORD PTR fs:zyl_region_top@tpoff, rax
-    jmp .L458_0
+    jmp .L459_0
 .globl zyl_region_mark
 zyl_region_mark:
     # frame 0
-.L459_0:
+.L460_0:
     mov rax, QWORD PTR fs:zyl_region_top@tpoff
     mov rsi, rax
     mov rax, rsi
@@ -15302,14 +15396,14 @@ zyl_region_mark:
 .globl zyl_region_live_bytes
 zyl_region_live_bytes:
     # frame 0
-.L460_0:
+.L461_0:
     lea rax, [rip+zyl_rtg_region_live]
     mov rsi, rax
     mov rax, qword ptr [rsi+0]
     ret
 zy_local_x2Fmain_0__alloc__rt_x2Dregion_x2Dtls:
     # frame 0
-.L461_0:
+.L462_0:
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_cur_region@tpoff]
     mov rsi, rax
@@ -15322,7 +15416,7 @@ zy_local_x2Fmain_0__alloc__rt_x2Dregion_x2Dtls:
 .globl zyl_ffi_pin
 zyl_ffi_pin:
     # frame 0
-.L462_0:
+.L463_0:
     jmp zyl_pin_word
 .globl zyl_ffi_unpin
 zyl_ffi_unpin:
@@ -15333,29 +15427,29 @@ zyl_ffi_unpin:
     push r12
     and rsp, -16
     mov rbx, rdi
-.L463_0:
+.L464_0:
     cmp rbx, 0
-    jne .L463_1
-.L463_3:
+    jne .L464_1
+.L464_3:
     mov rax, 0
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
     mov rsp, rbp
     pop rbp
     ret
-.L463_1:
+.L464_1:
     mov rdi, rbx
     call zyl_pin_owns
     cmp rax, 0
-    je .L463_2
+    je .L464_2
     mov rax, qword ptr [rbx+0]
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
     mov rsp, rbp
     pop rbp
     ret
-.L463_2:
-    lea rax, [rip+.L464]
+.L464_2:
+    lea rax, [rip+.L465]
     mov rdi, rax
     mov rbx, 2
     mov r12, rdi
@@ -15376,7 +15470,7 @@ zy_local_x2Fmain_0__tables__tb_x2Dzalloc:
     push rbp
     mov rbp, rsp
     and rsp, -16
-.L465_0:
+.L466_0:
     call zyl_arena_alloc_zeroed
     mov rsp, rbp
     pop rbp
@@ -15394,10 +15488,10 @@ zy_local_x2Fmain_0__tables__tb_x2Doob:
     sub rsp, 16
     mov rbx, rdi
     mov r12, rdx
-.L466_0:
-    lea rax, [rip+.L467]
-    mov qword ptr [rbp-48], rax
+.L467_0:
     lea rax, [rip+.L468]
+    mov qword ptr [rbp-48], rax
+    lea rax, [rip+.L469]
     mov r14, rax
     mov rdi, 0
     mov rax, rsi
@@ -15405,7 +15499,7 @@ zy_local_x2Fmain_0__tables__tb_x2Doob:
     mov rdi, rax
     call zy_local_x2Fmain_0__text__rt_x2Dint_x2Dtext
     mov r15, rax
-    lea rax, [rip+.L469]
+    lea rax, [rip+.L470]
     mov r13, rax
     mov rsi, 0
     mov rdi, r12
@@ -15437,7 +15531,7 @@ zy_local_x2Fmain_0__tables__tb_x2Doob:
     ret
 zy_local_x2Fmain_0__tables__tb_x2Dwords_x2Dmagic:
     # frame 0
-.L470_0:
+.L471_0:
     mov rax, 6510318674217419859
     ret
 zy_local_x2Fmain_0__tables__tb_x2Dnot_x2Dwords:
@@ -15447,10 +15541,10 @@ zy_local_x2Fmain_0__tables__tb_x2Dnot_x2Dwords:
     push rbx
     and rsp, -16
     sub rsp, 16
-.L471_0:
-    lea rax, [rip+.L472]
-    mov rbx, rax
+.L472_0:
     lea rax, [rip+.L473]
+    mov rbx, rax
+    lea rax, [rip+.L474]
     mov rsi, rax
     call zyl_cstr_concat
     mov rsi, rax
@@ -15470,28 +15564,28 @@ zy_local_x2Fmain_0__tables__tb_x2Dwords_x2Dof:
     push r12
     and rsp, -16
     mov rbx, rdi
-.L474_0:
+.L475_0:
     cmp rbx, 4096
-    jl .L474_1
-.L474_2:
+    jl .L475_1
+.L475_2:
     mov rax, rbx
     and rax, 7
     cmp rax, 0
-    jne .L474_1
+    jne .L475_1
     mov rdi, qword ptr [rbx+0]
     mov rax, 6510318674217419859
     cmp rdi, rax
-    jne .L474_1
+    jne .L475_1
     mov rax, rbx
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
     mov rsp, rbp
     pop rbp
     ret
-.L474_1:
-    lea rax, [rip+.L475]
-    mov r12, rax
+.L475_1:
     lea rax, [rip+.L476]
+    mov r12, rax
+    lea rax, [rip+.L477]
     mov rdi, rax
     mov rax, rsi
     mov rsi, rdi
@@ -15519,18 +15613,18 @@ zy_local_x2Fmain_0__tables__tb_x2Dwords_x2Dhdr:
     sub rsp, 16
     mov rbx, rsi
     mov r12, rdx
-.L477_0:
+.L478_0:
     mov rsi, 24
     call zyl_arena_alloc_zeroed
     mov r13, rax
     cmp r13, 0
-    jne .L477_1
-    lea rax, [rip+.L478]
+    jne .L478_1
+    lea rax, [rip+.L479]
     mov rdi, rax
     call zyl_panic
-    jmp .L477_2
-.L477_1:
-.L477_2:
+    jmp .L478_2
+.L478_1:
+.L478_2:
     mov rsi, 6510318674217419859
     mov qword ptr [r13+0], rsi
     mov qword ptr [r13+8], rbx
@@ -15553,12 +15647,12 @@ zyl_words_new:
     and rsp, -16
     sub rsp, 16
     mov rbx, rdi
-.L479_0:
+.L480_0:
     mov rdi, 0
     cmp rsi, 0
-    jl .L479_1
+    jl .L480_1
     mov rdi, rsi
-.L479_1:
+.L480_1:
     mov r12, rdi
     mov rsi, 24
     mov rdi, rbx
@@ -15566,24 +15660,24 @@ zyl_words_new:
     mov r13, rax
     mov rsi, r12
     cmp r12, 0
-    jg .L479_2
+    jg .L480_2
     mov rsi, 1
-.L479_2:
+.L480_2:
     shl rsi, 3
     mov rdi, rbx
     call zyl_arena_alloc_zeroed
     mov rbx, rax
     cmp r13, 0
-    je .L479_5
+    je .L480_5
     cmp rbx, 0
-    jne .L479_3
-.L479_5:
-    lea rax, [rip+.L480]
+    jne .L480_3
+.L480_5:
+    lea rax, [rip+.L481]
     mov rdi, rax
     call zyl_panic
-    jmp .L479_4
-.L479_3:
-.L479_4:
+    jmp .L480_4
+.L480_3:
+.L480_4:
     mov rsi, 6510318674217419859
     mov qword ptr [r13+0], rsi
     mov qword ptr [r13+8], r12
@@ -15603,18 +15697,18 @@ zy_local_x2Fmain_0__tables__tb_x2Drzalloc:
     push r12
     and rsp, -16
     mov rbx, rdi
-.L481_0:
+.L482_0:
     mov rax, QWORD PTR fs:zyl_cur_region@tpoff
     mov rsi, rax
     mov rdi, rbx
     call zyl_ralloc
     mov r12, rax
     cmp r12, 0
-    je .L481_1
+    je .L482_1
     mov rdi, r12
     mov rsi, rbx
     call zy_local_x2Fmain_0__alloc__rt_x2Dfill0
-.L481_1:
+.L482_1:
     mov rax, r12
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -15631,35 +15725,35 @@ zyl_words_alloc:
     push r13
     and rsp, -16
     sub rsp, 16
-.L482_0:
+.L483_0:
     mov rsi, 0
     cmp rdi, 0
-    jl .L482_1
+    jl .L483_1
     mov rsi, rdi
-.L482_1:
+.L483_1:
     mov rbx, rsi
     mov rdi, 24
     call zy_local_x2Fmain_0__tables__tb_x2Drzalloc
     mov r12, rax
     mov rsi, rbx
     cmp rbx, 0
-    jg .L482_2
+    jg .L483_2
     mov rsi, 1
-.L482_2:
+.L483_2:
     lea rdi, [rsi*8]
     call zy_local_x2Fmain_0__tables__tb_x2Drzalloc
     mov r13, rax
     cmp r12, 0
-    je .L482_5
+    je .L483_5
     cmp r13, 0
-    jne .L482_3
-.L482_5:
-    lea rax, [rip+.L483]
+    jne .L483_3
+.L483_5:
+    lea rax, [rip+.L484]
     mov rdi, rax
     call zyl_panic
-    jmp .L482_4
-.L482_3:
-.L482_4:
+    jmp .L483_4
+.L483_3:
+.L483_4:
     mov rsi, 6510318674217419859
     mov qword ptr [r12+0], rsi
     mov qword ptr [r12+8], rbx
@@ -15674,7 +15768,7 @@ zyl_words_alloc:
 .globl zyl_words_alloc_r
 zyl_words_alloc_r:
     # frame 0
-.L484_0:
+.L485_0:
     jmp zyl_words_alloc
 .globl zyl_words_len
 zyl_words_len:
@@ -15684,29 +15778,29 @@ zyl_words_len:
     push rbx
     and rsp, -16
     sub rsp, 16
-.L485_0:
+.L486_0:
     cmp rdi, 4096
-    jl .L485_1
-.L485_2:
+    jl .L486_1
+.L486_2:
     mov rax, rdi
     and rax, 7
     cmp rax, 0
-    jne .L485_1
+    jne .L486_1
     mov rsi, qword ptr [rdi+0]
     mov rax, 6510318674217419859
     cmp rsi, rax
-    jne .L485_1
+    jne .L486_1
     mov rax, qword ptr [rdi+8]
     mov rbx, qword ptr [rbp-8]
     mov rsp, rbp
     pop rbp
     ret
-.L485_1:
-    lea rax, [rip+.L486]
-    mov rdi, rax
+.L486_1:
     lea rax, [rip+.L487]
-    mov rbx, rax
+    mov rdi, rax
     lea rax, [rip+.L488]
+    mov rbx, rax
+    lea rax, [rip+.L489]
     mov rsi, rax
     call zyl_cstr_concat
     mov rsi, rax
@@ -15725,18 +15819,18 @@ zy_local_x2Fmain_0__tables__tb_x2Dwords_x2Dfail:
     and rsp, -16
     sub rsp, 16
     mov r8, rdx
-.L489_0:
+.L490_0:
     cmp rdi, 4096
-    jl .L489_1
-.L489_2:
+    jl .L490_1
+.L490_2:
     mov rax, rdi
     and rax, 7
     cmp rax, 0
-    jne .L489_1
+    jne .L490_1
     mov r9, qword ptr [rdi+0]
     mov rax, 6510318674217419859
     cmp r9, rax
-    jne .L489_1
+    jne .L490_1
     mov rdi, qword ptr [rdi+8]
     mov rdx, rdi
     mov rdi, r8
@@ -15744,10 +15838,10 @@ zy_local_x2Fmain_0__tables__tb_x2Dwords_x2Dfail:
     mov rsp, rbp
     pop rbp
     jmp zy_local_x2Fmain_0__tables__tb_x2Doob
-.L489_1:
-    lea rax, [rip+.L490]
-    mov rbx, rax
+.L490_1:
     lea rax, [rip+.L491]
+    mov rbx, rax
+    lea rax, [rip+.L492]
     mov rsi, rax
     mov rdi, r8
     call zyl_cstr_concat
@@ -15763,30 +15857,30 @@ zy_local_x2Fmain_0__tables__tb_x2Dwords_x2Dfail:
 .globl zyl_words_get
 zyl_words_get:
     # frame 0
-.L492_0:
+.L493_0:
     cmp rdi, 4096
-    jl .L492_1
-.L492_2:
+    jl .L493_1
+.L493_2:
     mov rax, rdi
     and rax, 7
     cmp rax, 0
-    jne .L492_1
+    jne .L493_1
     mov r8, qword ptr [rdi+0]
     mov rax, 6510318674217419859
     cmp r8, rax
-    jne .L492_1
+    jne .L493_1
     cmp rsi, 0
-    jl .L492_1
+    jl .L493_1
     mov rax, qword ptr [rdi+8]
     cmp rsi, rax
-    jge .L492_1
+    jge .L493_1
     mov r8, qword ptr [rdi+16]
     lea r9, [rsi*8]
     add r8, r9
     mov rax, qword ptr [r8+0]
     ret
-.L492_1:
-    lea rax, [rip+.L493]
+.L493_1:
+    lea rax, [rip+.L494]
     mov r8, rax
     mov rdx, r8
     jmp zy_local_x2Fmain_0__tables__tb_x2Dwords_x2Dfail
@@ -15794,31 +15888,31 @@ zyl_words_get:
 zyl_words_set:
     # frame 0
     mov r8, rdx
-.L494_0:
+.L495_0:
     cmp rdi, 4096
-    jl .L494_1
-.L494_2:
+    jl .L495_1
+.L495_2:
     mov rax, rdi
     and rax, 7
     cmp rax, 0
-    jne .L494_1
+    jne .L495_1
     mov r9, qword ptr [rdi+0]
     mov rax, 6510318674217419859
     cmp r9, rax
-    jne .L494_1
+    jne .L495_1
     cmp rsi, 0
-    jl .L494_1
+    jl .L495_1
     mov rax, qword ptr [rdi+8]
     cmp rsi, rax
-    jge .L494_1
+    jge .L495_1
     mov r9, qword ptr [rdi+16]
     lea r10, [rsi*8]
     add r9, r10
     mov qword ptr [r9+0], r8
     mov rax, r8
     ret
-.L494_1:
-    lea rax, [rip+.L495]
+.L495_1:
+    lea rax, [rip+.L496]
     mov r8, rax
     mov rdx, r8
     jmp zy_local_x2Fmain_0__tables__tb_x2Dwords_x2Dfail
@@ -15833,18 +15927,18 @@ zy_local_x2Fmain_0__tables__tb_x2Dwords_x2Dhdr_x2Dr:
     sub rsp, 16
     mov rbx, rdi
     mov r12, rsi
-.L496_0:
+.L497_0:
     mov rdi, 24
     call zy_local_x2Fmain_0__tables__tb_x2Drzalloc
     mov r13, rax
     cmp r13, 0
-    jne .L496_1
-    lea rax, [rip+.L497]
+    jne .L497_1
+    lea rax, [rip+.L498]
     mov rdi, rax
     call zyl_panic
-    jmp .L496_2
-.L496_1:
-.L496_2:
+    jmp .L497_2
+.L497_1:
+.L497_2:
     mov rsi, 6510318674217419859
     mov qword ptr [r13+0], rsi
     mov qword ptr [r13+8], rbx
@@ -15866,8 +15960,8 @@ zyl_words_view:
     mov rbx, rdi
     mov r12, rdx
     mov r13, rcx
-.L498_0:
-    lea rax, [rip+.L499]
+.L499_0:
+    lea rax, [rip+.L500]
     mov rdi, rax
     mov rax, rsi
     mov rsi, rdi
@@ -15876,26 +15970,26 @@ zyl_words_view:
     mov r14, rax
     mov rsi, qword ptr [r14+8]
     cmp r12, 0
-    jl .L498_3
+    jl .L499_3
     cmp r13, 0
-    jl .L498_3
+    jl .L499_3
     cmp r12, rsi
-    jg .L498_4
+    jg .L499_4
     mov rax, rsi
     sub rax, r12
     cmp r13, rax
-    jle .L498_1
-.L498_4:
-.L498_3:
-    lea rax, [rip+.L500]
+    jle .L499_1
+.L499_4:
+.L499_3:
+    lea rax, [rip+.L501]
     mov rdi, rax
     lea r8, [r12+r13]
     mov rdx, rsi
     mov rsi, r8
     call zy_local_x2Fmain_0__tables__tb_x2Doob
-    jmp .L498_2
-.L498_1:
-.L498_2:
+    jmp .L499_2
+.L499_1:
+.L499_2:
     mov rsi, qword ptr [r14+16]
     lea rdi, [r12*8]
     add rsi, rdi
@@ -15915,33 +16009,33 @@ zyl_words_view_r:
     push r13
     mov rbx, rsi
     mov r12, rdx
-.L501_0:
-    lea rax, [rip+.L502]
+.L502_0:
+    lea rax, [rip+.L503]
     mov rsi, rax
     call zy_local_x2Fmain_0__tables__tb_x2Dwords_x2Dof
     mov r13, rax
     mov rsi, qword ptr [r13+8]
     cmp rbx, 0
-    jl .L501_3
+    jl .L502_3
     cmp r12, 0
-    jl .L501_3
+    jl .L502_3
     cmp rbx, rsi
-    jg .L501_4
+    jg .L502_4
     mov rax, rsi
     sub rax, rbx
     cmp r12, rax
-    jle .L501_1
-.L501_4:
-.L501_3:
-    lea rax, [rip+.L503]
+    jle .L502_1
+.L502_4:
+.L502_3:
+    lea rax, [rip+.L504]
     mov rdi, rax
     lea r8, [rbx+r12]
     mov rdx, rsi
     mov rsi, r8
     call zy_local_x2Fmain_0__tables__tb_x2Doob
-    jmp .L501_2
-.L501_1:
-.L501_2:
+    jmp .L502_2
+.L502_1:
+.L502_2:
     mov rsi, qword ptr [r13+16]
     lea rdi, [rbx*8]
     add rsi, rdi
@@ -15952,7 +16046,7 @@ zyl_words_view_r:
     jmp zy_local_x2Fmain_0__tables__tb_x2Dwords_x2Dhdr_x2Dr
 zy_local_x2Fmain_0__tables__tb_x2Darray_x2Dmagic:
     # frame 0
-.L504_0:
+.L505_0:
     mov rax, 6510318579778470233
     ret
 zy_local_x2Fmain_0__tables__tb_x2Dnot_x2Darray:
@@ -15962,10 +16056,10 @@ zy_local_x2Fmain_0__tables__tb_x2Dnot_x2Darray:
     push rbx
     and rsp, -16
     sub rsp, 16
-.L505_0:
-    lea rax, [rip+.L506]
-    mov rbx, rax
+.L506_0:
     lea rax, [rip+.L507]
+    mov rbx, rax
+    lea rax, [rip+.L508]
     mov rsi, rax
     call zyl_cstr_concat
     mov rsi, rax
@@ -15985,28 +16079,28 @@ zy_local_x2Fmain_0__tables__tb_x2Darray_x2Dof:
     push r12
     and rsp, -16
     mov rbx, rdi
-.L508_0:
+.L509_0:
     cmp rbx, 4096
-    jl .L508_1
-.L508_2:
+    jl .L509_1
+.L509_2:
     mov rax, rbx
     and rax, 7
     cmp rax, 0
-    jne .L508_1
+    jne .L509_1
     mov rdi, qword ptr [rbx+0]
     mov rax, 6510318579778470233
     cmp rdi, rax
-    jne .L508_1
+    jne .L509_1
     mov rax, rbx
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
     mov rsp, rbp
     pop rbp
     ret
-.L508_1:
-    lea rax, [rip+.L509]
-    mov r12, rax
+.L509_1:
     lea rax, [rip+.L510]
+    mov r12, rax
+    lea rax, [rip+.L511]
     mov rdi, rax
     mov rax, rsi
     mov rsi, rdi
@@ -16034,12 +16128,12 @@ zyl_array_new:
     and rsp, -16
     sub rsp, 16
     mov rbx, rdi
-.L511_0:
+.L512_0:
     mov rdi, 0
     cmp rsi, 0
-    jl .L511_1
+    jl .L512_1
     mov rdi, rsi
-.L511_1:
+.L512_1:
     mov r12, rdi
     mov rsi, 32
     mov rdi, rbx
@@ -16047,24 +16141,24 @@ zyl_array_new:
     mov r13, rax
     mov rsi, r12
     cmp r12, 0
-    jg .L511_2
+    jg .L512_2
     mov rsi, 1
-.L511_2:
+.L512_2:
     shl rsi, 3
     mov rdi, rbx
     call zyl_arena_alloc
     mov rbx, rax
     cmp r13, 0
-    je .L511_5
+    je .L512_5
     cmp rbx, 0
-    jne .L511_3
-.L511_5:
-    lea rax, [rip+.L512]
+    jne .L512_3
+.L512_5:
+    lea rax, [rip+.L513]
     mov rdi, rax
     call zyl_panic
-    jmp .L511_4
-.L511_3:
-.L511_4:
+    jmp .L512_4
+.L512_3:
+.L512_4:
     mov rsi, 6510318579778470233
     mov qword ptr [r13+0], rsi
     mov qword ptr [r13+8], r12
@@ -16086,29 +16180,29 @@ zyl_array_cap:
     push rbx
     and rsp, -16
     sub rsp, 16
-.L513_0:
+.L514_0:
     cmp rdi, 4096
-    jl .L513_1
-.L513_2:
+    jl .L514_1
+.L514_2:
     mov rax, rdi
     and rax, 7
     cmp rax, 0
-    jne .L513_1
+    jne .L514_1
     mov rsi, qword ptr [rdi+0]
     mov rax, 6510318579778470233
     cmp rsi, rax
-    jne .L513_1
+    jne .L514_1
     mov rax, qword ptr [rdi+8]
     mov rbx, qword ptr [rbp-8]
     mov rsp, rbp
     pop rbp
     ret
-.L513_1:
-    lea rax, [rip+.L514]
-    mov rdi, rax
+.L514_1:
     lea rax, [rip+.L515]
-    mov rbx, rax
+    mov rdi, rax
     lea rax, [rip+.L516]
+    mov rbx, rax
+    lea rax, [rip+.L517]
     mov rsi, rax
     call zyl_cstr_concat
     mov rsi, rax
@@ -16127,29 +16221,29 @@ zyl_array_filled:
     push rbx
     and rsp, -16
     sub rsp, 16
-.L517_0:
+.L518_0:
     cmp rdi, 4096
-    jl .L517_1
-.L517_2:
+    jl .L518_1
+.L518_2:
     mov rax, rdi
     and rax, 7
     cmp rax, 0
-    jne .L517_1
+    jne .L518_1
     mov rsi, qword ptr [rdi+0]
     mov rax, 6510318579778470233
     cmp rsi, rax
-    jne .L517_1
+    jne .L518_1
     mov rax, qword ptr [rdi+16]
     mov rbx, qword ptr [rbp-8]
     mov rsp, rbp
     pop rbp
     ret
-.L517_1:
-    lea rax, [rip+.L518]
-    mov rdi, rax
+.L518_1:
     lea rax, [rip+.L519]
-    mov rbx, rax
+    mov rdi, rax
     lea rax, [rip+.L520]
+    mov rbx, rax
+    lea rax, [rip+.L521]
     mov rsi, rax
     call zyl_cstr_concat
     mov rsi, rax
@@ -16170,37 +16264,37 @@ zyl_vec_alloc:
     push r13
     and rsp, -16
     sub rsp, 16
-.L521_0:
+.L522_0:
     mov rsi, 0
     cmp rdi, 0
-    jl .L521_1
+    jl .L522_1
     mov rsi, rdi
-.L521_1:
+.L522_1:
     mov rbx, rsi
     mov rdi, 32
     call zy_local_x2Fmain_0__tables__tb_x2Drzalloc
     mov r12, rax
     mov rsi, rbx
     cmp rbx, 0
-    jg .L521_2
+    jg .L522_2
     mov rsi, 1
-.L521_2:
+.L522_2:
     lea rdi, [rsi*8]
     mov rax, QWORD PTR fs:zyl_cur_region@tpoff
     mov rsi, rax
     call zyl_ralloc
     mov r13, rax
     cmp r12, 0
-    je .L521_5
+    je .L522_5
     cmp r13, 0
-    jne .L521_3
-.L521_5:
-    lea rax, [rip+.L522]
+    jne .L522_3
+.L522_5:
+    lea rax, [rip+.L523]
     mov rdi, rax
     call zyl_panic
-    jmp .L521_4
-.L521_3:
-.L521_4:
+    jmp .L522_4
+.L522_3:
+.L522_4:
     mov rsi, 6510318579778470233
     mov qword ptr [r12+0], rsi
     mov qword ptr [r12+8], rbx
@@ -16217,7 +16311,7 @@ zyl_vec_alloc:
 .globl zyl_vec_alloc_r
 zyl_vec_alloc_r:
     # frame 0
-.L523_0:
+.L524_0:
     jmp zyl_vec_alloc
 .globl zyl_array_new_r
 zyl_array_new_r:
@@ -16229,37 +16323,37 @@ zyl_array_new_r:
     push r13
     and rsp, -16
     sub rsp, 16
-.L524_0:
+.L525_0:
     mov rsi, 0
     cmp rdi, 0
-    jl .L524_1
+    jl .L525_1
     mov rsi, rdi
-.L524_1:
+.L525_1:
     mov rbx, rsi
     mov rdi, 32
     call zy_local_x2Fmain_0__tables__tb_x2Drzalloc
     mov r12, rax
     mov rsi, rbx
     cmp rbx, 0
-    jg .L524_2
+    jg .L525_2
     mov rsi, 1
-.L524_2:
+.L525_2:
     lea rdi, [rsi*8]
     mov rax, QWORD PTR fs:zyl_cur_region@tpoff
     mov rsi, rax
     call zyl_ralloc
     mov r13, rax
     cmp r12, 0
-    je .L524_5
+    je .L525_5
     cmp r13, 0
-    jne .L524_3
-.L524_5:
-    lea rax, [rip+.L525]
+    jne .L525_3
+.L525_5:
+    lea rax, [rip+.L526]
     mov rdi, rax
     call zyl_panic
-    jmp .L524_4
-.L524_3:
-.L524_4:
+    jmp .L525_4
+.L525_3:
+.L525_4:
     mov rsi, 6510318579778470233
     mov qword ptr [r12+0], rsi
     mov qword ptr [r12+8], rbx
@@ -16280,19 +16374,19 @@ zy_local_x2Fmain_0__tables__tb_x2Darray_x2Dget_x2Dfail:
     push rbx
     and rsp, -16
     sub rsp, 16
-.L526_0:
+.L527_0:
     cmp rdi, 4096
-    jl .L526_1
-.L526_2:
+    jl .L527_1
+.L527_2:
     mov rax, rdi
     and rax, 7
     cmp rax, 0
-    jne .L526_1
+    jne .L527_1
     mov r8, qword ptr [rdi+0]
     mov rax, 6510318579778470233
     cmp r8, rax
-    jne .L526_1
-    lea rax, [rip+.L527]
+    jne .L527_1
+    lea rax, [rip+.L528]
     mov r8, rax
     mov rdi, qword ptr [rdi+16]
     mov rdx, rdi
@@ -16301,12 +16395,12 @@ zy_local_x2Fmain_0__tables__tb_x2Darray_x2Dget_x2Dfail:
     mov rsp, rbp
     pop rbp
     jmp zy_local_x2Fmain_0__tables__tb_x2Doob
-.L526_1:
-    lea rax, [rip+.L528]
-    mov rdi, rax
+.L527_1:
     lea rax, [rip+.L529]
-    mov rbx, rax
+    mov rdi, rax
     lea rax, [rip+.L530]
+    mov rbx, rax
+    lea rax, [rip+.L531]
     mov rsi, rax
     call zyl_cstr_concat
     mov rsi, rax
@@ -16321,29 +16415,29 @@ zy_local_x2Fmain_0__tables__tb_x2Darray_x2Dget_x2Dfail:
 .globl zyl_array_get
 zyl_array_get:
     # frame 0
-.L531_0:
+.L532_0:
     cmp rdi, 4096
-    jl .L531_1
-.L531_2:
+    jl .L532_1
+.L532_2:
     mov rax, rdi
     and rax, 7
     cmp rax, 0
-    jne .L531_1
+    jne .L532_1
     mov r8, qword ptr [rdi+0]
     mov rax, 6510318579778470233
     cmp r8, rax
-    jne .L531_1
+    jne .L532_1
     cmp rsi, 0
-    jl .L531_1
+    jl .L532_1
     mov rax, qword ptr [rdi+16]
     cmp rsi, rax
-    jge .L531_1
+    jge .L532_1
     mov r8, qword ptr [rdi+24]
     lea r9, [rsi*8]
     add r8, r9
     mov rax, qword ptr [r8+0]
     ret
-.L531_1:
+.L532_1:
     jmp zy_local_x2Fmain_0__tables__tb_x2Darray_x2Dget_x2Dfail
 .globl zyl_array_copy
 zyl_array_copy:
@@ -16353,45 +16447,45 @@ zyl_array_copy:
     push r13
     mov rbx, rsi
     mov r12, rdx
-.L532_0:
-    lea rax, [rip+.L533]
+.L533_0:
+    lea rax, [rip+.L534]
     mov rsi, rax
     call zy_local_x2Fmain_0__tables__tb_x2Darray_x2Dof
     mov r13, rax
-    lea rax, [rip+.L534]
+    lea rax, [rip+.L535]
     mov rsi, rax
     mov rdi, rbx
     call zy_local_x2Fmain_0__tables__tb_x2Darray_x2Dof
     mov rbx, rax
     mov rsi, qword ptr [r13+16]
     cmp r12, 0
-    jl .L532_3
+    jl .L533_3
     cmp r12, rsi
-    jle .L532_1
-.L532_3:
-    lea rax, [rip+.L535]
-    mov rdi, rax
-    mov rdx, rsi
-    mov rsi, r12
-    call zy_local_x2Fmain_0__tables__tb_x2Doob
-    jmp .L532_2
-.L532_1:
-.L532_2:
-    mov rsi, qword ptr [rbx+8]
-    mov rax, qword ptr [rbx+16]
-    cmp rax, 0
-    jne .L532_6
-    cmp r12, rsi
-    jle .L532_4
-.L532_6:
+    jle .L533_1
+.L533_3:
     lea rax, [rip+.L536]
     mov rdi, rax
     mov rdx, rsi
     mov rsi, r12
     call zy_local_x2Fmain_0__tables__tb_x2Doob
-    jmp .L532_5
-.L532_4:
-.L532_5:
+    jmp .L533_2
+.L533_1:
+.L533_2:
+    mov rsi, qword ptr [rbx+8]
+    mov rax, qword ptr [rbx+16]
+    cmp rax, 0
+    jne .L533_6
+    cmp r12, rsi
+    jle .L533_4
+.L533_6:
+    lea rax, [rip+.L537]
+    mov rdi, rax
+    mov rdx, rsi
+    mov rsi, r12
+    call zy_local_x2Fmain_0__tables__tb_x2Doob
+    jmp .L533_5
+.L533_4:
+.L533_5:
     mov rdi, qword ptr [rbx+24]
     mov rsi, qword ptr [r13+24]
     lea r8, [r12*8]
@@ -16412,39 +16506,39 @@ zyl_array_set:
     push r14
     mov rbx, rsi
     mov r12, rdx
-.L537_0:
-    lea rax, [rip+.L538]
+.L538_0:
+    lea rax, [rip+.L539]
     mov rsi, rax
     call zy_local_x2Fmain_0__tables__tb_x2Darray_x2Dof
     mov r13, rax
     mov r14, qword ptr [r13+16]
     cmp rbx, 0
-    jl .L537_3
+    jl .L538_3
     cmp rbx, r14
-    jg .L537_3
+    jg .L538_3
     mov rax, qword ptr [r13+8]
     cmp rbx, rax
-    jl .L537_1
-.L537_3:
-    lea rax, [rip+.L539]
+    jl .L538_1
+.L538_3:
+    lea rax, [rip+.L540]
     mov rdi, rax
     mov rsi, rbx
     mov rdx, r14
     call zy_local_x2Fmain_0__tables__tb_x2Doob
-    jmp .L537_2
-.L537_1:
-.L537_2:
+    jmp .L538_2
+.L538_1:
+.L538_2:
     mov rsi, qword ptr [r13+24]
     lea rdi, [rbx*8]
     add rsi, rdi
     mov qword ptr [rsi+0], r12
     cmp rbx, r14
-    jne .L537_4
+    jne .L538_4
     lea rsi, [r14+1]
     mov qword ptr [r13+16], rsi
-    jmp .L537_5
-.L537_4:
-.L537_5:
+    jmp .L538_5
+.L538_4:
+.L538_5:
     mov rax, 0
     pop r14
     pop r13
@@ -16454,7 +16548,7 @@ zyl_array_set:
 .globl zyl_attrh_new
 zyl_attrh_new:
     # frame 0
-.L540_0:
+.L541_0:
     mov rdi, 1
     mov rsi, 24
     jmp zyl_rt_calloc
@@ -16462,22 +16556,22 @@ zy_local_x2Fmain_0__tables__tb_x2Dprobe:
     # frame 0
     mov r8, rdx
     mov r9, rcx
-.L541_0:
+.L542_0:
     mov r10, r8
     shl r10, 4
     add r10, rdi
     mov r11, qword ptr [r10+0]
     cmp r11, 0
-    je .L541_2
+    je .L542_2
     cmp r11, r9
-    jne .L541_1
-.L541_2:
+    jne .L542_1
+.L542_2:
     mov rax, r10
     ret
-.L541_1:
+.L542_1:
     add r8, 1
     and r8, rsi
-    jmp .L541_0
+    jmp .L542_0
 zy_local_x2Fmain_0__tables__tb_x2Drehash:
     # frame 64
     push rbp
@@ -16493,10 +16587,10 @@ zy_local_x2Fmain_0__tables__tb_x2Drehash:
     mov r13, rdx
     mov r14, rcx
     mov r15, r8
-.L542_0:
+.L543_0:
     cmp qword ptr [rbp-56], r13
-    jl .L542_1
-.L542_3:
+    jl .L543_1
+.L543_3:
     mov rax, 0
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -16507,13 +16601,13 @@ zy_local_x2Fmain_0__tables__tb_x2Drehash:
     pop rbp
     ret
 .p2align 4
-.L542_1:
+.L543_1:
     imul rsi, qword ptr [rbp-56], 16
     mov rbx, qword ptr [rbp-48]
     add rbx, rsi
     mov r12, qword ptr [rbx+0]
     cmp r12, 0
-    je .L542_2
+    je .L543_2
     mov rsi, r12
     shr rsi, 30
     mov rdi, 17179869183
@@ -16543,13 +16637,13 @@ zy_local_x2Fmain_0__tables__tb_x2Drehash:
     mov qword ptr [rsi+0], r12
     mov rdi, qword ptr [rbx+8]
     mov qword ptr [rsi+8], rdi
-.L542_2:
+.L543_2:
     mov rax, qword ptr [rbp-56]
     add rax, 1
     mov qword ptr [rbp-56], rax
     cmp qword ptr [rbp-56], r13
-    jl .L542_1
-    jmp .L542_3
+    jl .L543_1
+    jmp .L543_3
 zy_local_x2Fmain_0__tables__tb_x2Dgrow:
     # frame 32
     push rbp
@@ -16560,28 +16654,28 @@ zy_local_x2Fmain_0__tables__tb_x2Dgrow:
     push r14
     and rsp, -16
     mov rbx, rdi
-.L543_0:
+.L544_0:
     mov r12, qword ptr [rbx+8]
     lea rsi, [r12*8]
     cmp r12, 0
-    jg .L543_1
+    jg .L544_1
     mov rsi, 4096
-.L543_1:
+.L544_1:
     mov r13, rsi
     mov rsi, 16
     mov rdi, r13
     call zyl_rt_calloc
     mov r14, rax
     cmp r14, 0
-    jne .L543_2
+    jne .L544_2
     mov rdi, r13
     shl rdi, 4
-    lea rax, [rip+.L544]
+    lea rax, [rip+.L545]
     mov rsi, rax
     call zyl_arena_oom
-    jmp .L543_3
-.L543_2:
-.L543_3:
+    jmp .L544_3
+.L544_2:
+.L544_3:
     mov rdi, qword ptr [rbx+0]
     mov rsi, 0
     lea r8, [r13-1]
@@ -16609,30 +16703,30 @@ zy_local_x2Fmain_0__tables__tb_x2Dattr_x2Dset:
     mov rbx, rdi
     mov r12, rsi
     mov r13, rdx
-.L545_0:
+.L546_0:
     cmp rbx, 0
-    je .L545_2
-.L545_7:
+    je .L546_2
+.L546_7:
     cmp r12, 0
-    jne .L545_1
-.L545_2:
+    jne .L546_1
+.L546_2:
     mov rax, 0
     pop r13
     pop r12
     pop rbx
     ret
-.L545_1:
+.L546_1:
     mov rsi, qword ptr [rbx+16]
     imul rsi, rsi, 10
     mov rdi, qword ptr [rbx+8]
     imul rdi, rdi, 7
     cmp rsi, rdi
-    jl .L545_3
+    jl .L546_3
     mov rdi, rbx
     call zy_local_x2Fmain_0__tables__tb_x2Dgrow
-    jmp .L545_4
-.L545_3:
-.L545_4:
+    jmp .L546_4
+.L546_3:
+.L546_4:
     mov rsi, qword ptr [rbx+8]
     sub rsi, 1
     mov rdi, qword ptr [rbx+0]
@@ -16662,14 +16756,14 @@ zy_local_x2Fmain_0__tables__tb_x2Dattr_x2Dset:
     mov rsi, rax
     mov rax, qword ptr [rsi+0]
     cmp rax, 0
-    jne .L545_5
+    jne .L546_5
     mov qword ptr [rsi+0], r12
     mov rdi, qword ptr [rbx+16]
     add rdi, 1
     mov qword ptr [rbx+16], rdi
-    jmp .L545_6
-.L545_5:
-.L545_6:
+    jmp .L546_6
+.L546_5:
+.L546_6:
     mov qword ptr [rsi+8], r13
     mov rax, 0
     pop r13
@@ -16680,7 +16774,7 @@ zy_local_x2Fmain_0__tables__tb_x2Dattr_x2Dset:
 zyl_attrh_set:
     # frame 0
     mov r8, rdx
-.L546_0:
+.L547_0:
     mov rdx, r8
     jmp zy_local_x2Fmain_0__tables__tb_x2Dattr_x2Dset
 zy_local_x2Fmain_0__tables__tb_x2Dget_x2Dloop:
@@ -16689,45 +16783,45 @@ zy_local_x2Fmain_0__tables__tb_x2Dget_x2Dloop:
     mov r9, rcx
     mov r10, r8
     mov r8, rdx
-.L547_0:
+.L548_0:
     mov r11, r8
     shl r11, 4
     add r11, rdi
     mov rbx, qword ptr [r11+0]
     cmp rbx, r9
-    jne .L547_1
+    jne .L548_1
     mov rax, qword ptr [r11+8]
     pop rbx
     ret
-.L547_1:
+.L548_1:
     cmp rbx, 0
-    jne .L547_2
+    jne .L548_2
     mov rax, r10
     pop rbx
     ret
-.L547_2:
+.L548_2:
     add r8, 1
     and r8, rsi
-    jmp .L547_0
+    jmp .L548_0
 .globl zyl_attrh_get_or
 zyl_attrh_get_or:
     # frame 16
     push rbx
     mov r8, rdx
-.L548_0:
+.L549_0:
     cmp rdi, 0
-    je .L548_2
-.L548_3:
+    je .L549_2
+.L549_3:
     cmp rsi, 0
-    je .L548_2
+    je .L549_2
     mov rax, qword ptr [rdi+8]
     cmp rax, 0
-    jne .L548_1
-.L548_2:
+    jne .L549_1
+.L549_2:
     mov rax, r8
     pop rbx
     ret
-.L548_1:
+.L549_1:
     mov r9, qword ptr [rdi+8]
     sub r9, 1
     mov rdi, qword ptr [rdi+0]
@@ -16760,19 +16854,19 @@ zyl_attrh_get_or:
 zyl_attrh_has:
     # frame 16
     push rbx
-.L549_0:
+.L550_0:
     cmp rdi, 0
-    je .L549_4
-.L549_7:
+    je .L550_4
+.L550_7:
     cmp rsi, 0
-    je .L549_4
+    je .L550_4
     mov rax, qword ptr [rdi+8]
     cmp rax, 0
-    jne .L549_2
-.L549_4:
+    jne .L550_2
+.L550_4:
     mov r8, 0
-    jmp .L549_3
-.L549_2:
+    jmp .L550_3
+.L550_2:
     mov r9, qword ptr [rdi+8]
     sub r9, 1
     mov rdi, qword ptr [rdi+0]
@@ -16803,20 +16897,20 @@ zyl_attrh_has:
     mov rsi, rax
     mov rax, qword ptr [rsi+0]
     cmp rax, 0
-    jne .L549_5
+    jne .L550_5
     mov rdi, 0
-    jmp .L549_6
-.L549_5:
+    jmp .L550_6
+.L550_5:
     mov rdi, rsi
-.L549_6:
+.L550_6:
     mov r8, rdi
-.L549_3:
+.L550_3:
     cmp r8, 0
-    jne .L549_1
+    jne .L550_1
     mov rax, 0
     pop rbx
     ret
-.L549_1:
+.L550_1:
     mov rax, 1
     pop rbx
     ret
@@ -16829,19 +16923,19 @@ zyl_attrh_copy:
     mov rbx, rdi
     mov r12, rsi
     mov rsi, rdx
-.L550_0:
+.L551_0:
     cmp rbx, 0
-    je .L550_3
-.L550_7:
+    je .L551_3
+.L551_7:
     cmp rsi, 0
-    je .L550_3
+    je .L551_3
     mov rax, qword ptr [rbx+8]
     cmp rax, 0
-    jne .L550_1
-.L550_3:
+    jne .L551_1
+.L551_3:
     mov rdi, 0
-    jmp .L550_2
-.L550_1:
+    jmp .L551_2
+.L551_1:
     mov r8, qword ptr [rbx+8]
     sub r8, 1
     mov r9, qword ptr [rbx+0]
@@ -16873,22 +16967,22 @@ zyl_attrh_copy:
     mov rsi, rax
     mov rax, qword ptr [rsi+0]
     cmp rax, 0
-    jne .L550_4
+    jne .L551_4
     mov r8, 0
-    jmp .L550_5
-.L550_4:
+    jmp .L551_5
+.L551_4:
     mov r8, rsi
-.L550_5:
+.L551_5:
     mov rdi, r8
-.L550_2:
+.L551_2:
     cmp rdi, 0
-    jne .L550_6
+    jne .L551_6
     mov rax, 0
     pop r13
     pop r12
     pop rbx
     ret
-.L550_6:
+.L551_6:
     mov rsi, qword ptr [rdi+8]
     mov rdi, rbx
     mov rdx, rsi
@@ -16900,17 +16994,17 @@ zyl_attrh_copy:
 .globl zyl_attrh_clear
 zyl_attrh_clear:
     # frame 0
-.L551_0:
+.L552_0:
     cmp rdi, 0
-    je .L551_2
-.L551_3:
+    je .L552_2
+.L552_3:
     mov rax, qword ptr [rdi+8]
     cmp rax, 0
-    jne .L551_1
-.L551_2:
+    jne .L552_1
+.L552_2:
     mov rax, 0
     ret
-.L551_1:
+.L552_1:
     mov rsi, qword ptr [rdi+0]
     mov r8, 0
     mov r9, qword ptr [rdi+8]
@@ -16938,20 +17032,20 @@ zyl_ref_new:
     push r12
     and rsp, -16
     mov rbx, rdi
-.L552_0:
+.L553_0:
     mov rdi, 8
     mov rsi, 1
     call zy_local_x2Fmain_0__heap__hp_x2Dalloc
     mov r12, rax
     cmp r12, 0
-    jne .L552_1
+    jne .L553_1
     mov rdi, 8
-    lea rax, [rip+.L553]
+    lea rax, [rip+.L554]
     mov rsi, rax
     call zyl_arena_oom
-    jmp .L552_2
-.L552_1:
-.L552_2:
+    jmp .L553_2
+.L553_1:
+.L553_2:
     mov qword ptr [r12+0], rbx
     mov rax, r12
     mov rbx, qword ptr [rbp-8]
@@ -16962,20 +17056,20 @@ zyl_ref_new:
 .globl zyl_ref_get
 zyl_ref_get:
     # frame 0
-.L554_0:
+.L555_0:
     mov rax, qword ptr [rdi+0]
     ret
 .globl zyl_ref_set
 zyl_ref_set:
     # frame 0
-.L555_0:
+.L556_0:
     mov qword ptr [rdi+0], rsi
     mov rax, 0
     ret
 .globl zyl_uf_id
 zyl_uf_id:
     # frame 0
-.L556_0:
+.L557_0:
     mov rax, rdi
     ret
 .globl zyl_getenv_str
@@ -16984,32 +17078,32 @@ zyl_getenv_str:
     push rbp
     mov rbp, rsp
     and rsp, -16
-.L557_0:
+.L558_0:
     cmp rdi, 0
-    jne .L557_1
-.L557_4:
+    jne .L558_1
+.L558_4:
     mov rsi, 0
-    jmp .L557_2
-.L557_1:
+    jmp .L558_2
+.L558_1:
     call zyl_rt_getenv
     mov rsi, rax
-.L557_2:
+.L558_2:
     cmp rsi, 0
-    jne .L557_3
-    lea rax, [rip+.L558]
+    jne .L558_3
+    lea rax, [rip+.L559]
     mov rdi, rax
     mov rax, rdi
     mov rsp, rbp
     pop rbp
     ret
-.L557_3:
+.L558_3:
     mov rax, rsi
     mov rsp, rbp
     pop rbp
     ret
 zy_local_x2Fmain_0__tables__tb_x2Dsbuf_x2Dmagic:
     # frame 0
-.L559_0:
+.L560_0:
     mov rax, 6510318656819643953
     ret
 .globl zyl_strbuf_new
@@ -17020,24 +17114,24 @@ zyl_strbuf_new:
     push rbx
     and rsp, -16
     sub rsp, 16
-.L560_0:
+.L561_0:
     mov r8, rsi
     cmp rsi, 0
-    jg .L560_1
+    jg .L561_1
     mov r8, 1
-.L560_1:
+.L561_1:
     mov rbx, r8
     lea rsi, [rbx+24]
     call zyl_arena_alloc_zeroed
     mov rsi, rax
     cmp rsi, 0
-    jne .L560_2
+    jne .L561_2
     mov rax, 0
     mov rbx, qword ptr [rbp-8]
     mov rsp, rbp
     pop rbp
     ret
-.L560_2:
+.L561_2:
     mov rdi, 6510318656819643953
     mov qword ptr [rsi+0], rdi
     mov rdi, 0
@@ -17051,37 +17145,37 @@ zyl_strbuf_new:
 .globl zyl_strbuf_str
 zyl_strbuf_str:
     # frame 0
-.L561_0:
+.L562_0:
     cmp rdi, 0
-    jne .L561_1
-.L561_2:
-    lea rax, [rip+.L562]
+    jne .L562_1
+.L562_2:
+    lea rax, [rip+.L563]
     mov rsi, rax
     mov rdi, rsi
     jmp zyl_panic
-.L561_1:
+.L562_1:
     mov rax, rdi
     ret
 .globl zyl_strbuf_new_r
 zyl_strbuf_new_r:
     # frame 16
     push rbx
-.L563_0:
+.L564_0:
     mov rsi, rdi
     cmp rdi, 0
-    jg .L563_1
+    jg .L564_1
     mov rsi, 1
-.L563_1:
+.L564_1:
     mov rbx, rsi
     lea rdi, [rbx+24]
     call zy_local_x2Fmain_0__tables__tb_x2Drzalloc
     mov rsi, rax
     cmp rsi, 0
-    jne .L563_2
+    jne .L564_2
     mov rax, 0
     pop rbx
     ret
-.L563_2:
+.L564_2:
     mov rdi, 6510318656819643953
     mov qword ptr [rsi+0], rdi
     mov rdi, 0
@@ -17099,8 +17193,8 @@ zy_local_x2Fmain_0__tables__tb_x2Duhex:
     and rsp, -16
     mov rbx, rdi
     mov r12, rsi
-.L564_0:
-    lea rax, [rip+.L565]
+.L565_0:
+    lea rax, [rip+.L566]
     mov rdi, rax
     mov rsi, rbx
     and rsi, 15
@@ -17113,7 +17207,7 @@ zy_local_x2Fmain_0__tables__tb_x2Duhex:
     mov r8, 1152921504606846975
     and rsi, r8
     cmp rsi, 0
-    jne .L564_1
+    jne .L565_1
     mov rsi, r12
     call zyl_cstr_concat
     mov rbx, qword ptr [rbp-8]
@@ -17121,12 +17215,12 @@ zy_local_x2Fmain_0__tables__tb_x2Duhex:
     mov rsp, rbp
     pop rbp
     ret
-.L564_1:
+.L565_1:
     mov rbx, rsi
     mov rsi, r12
     call zyl_cstr_concat
     mov r12, rax
-    jmp .L564_0
+    jmp .L565_0
 zy_local_x2Fmain_0__tables__tb_x2Dbad:
     # frame 16
     push rbp
@@ -17134,17 +17228,17 @@ zy_local_x2Fmain_0__tables__tb_x2Dbad:
     push rbx
     push r12
     and rsp, -16
-.L566_0:
+.L567_0:
     cmp rdi, 4096
-    jge .L566_1
-.L566_2:
-    lea rax, [rip+.L567]
-    mov rbx, rax
+    jge .L567_1
+.L567_2:
     lea rax, [rip+.L568]
+    mov rbx, rax
+    lea rax, [rip+.L569]
     mov rsi, rax
     call zy_local_x2Fmain_0__tables__tb_x2Duhex
     mov rdi, rax
-    lea rax, [rip+.L569]
+    lea rax, [rip+.L570]
     mov rsi, rax
     call zyl_cstr_concat
     mov rsi, rax
@@ -17165,7 +17259,7 @@ zy_local_x2Fmain_0__tables__tb_x2Dbad:
     mov rsp, rbp
     pop rbp
     ret
-.L566_1:
+.L567_1:
     mov rax, 0
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -17186,7 +17280,7 @@ zy_local_x2Fmain_0__tables__tb_x2Dsbuf_x2Dappend:
     mov rbx, rdi
     mov r12, rsi
     mov r13, rdx
-.L570_0:
+.L571_0:
     mov rdi, r12
     call zy_local_x2Fmain_0__base__rt_x2Dstrlen
     mov r14, rax
@@ -17195,31 +17289,31 @@ zy_local_x2Fmain_0__tables__tb_x2Dsbuf_x2Dappend:
     lea rsi, [rbx-8]
     mov rsi, qword ptr [rsi+0]
     cmp r13, 0
-    jle .L570_1
+    jle .L571_1
     cmp r13, rsi
-    jge .L570_1
+    jge .L571_1
     mov rdi, r13
-    jmp .L570_2
-.L570_1:
+    jmp .L571_2
+.L571_1:
     mov rdi, rsi
-.L570_2:
+.L571_2:
     lea rsi, [r15+r14]
     add rsi, 1
     cmp rsi, rdi
-    jle .L570_3
+    jle .L571_3
     cmp r13, 0
-    jle .L570_5
-    lea rax, [rip+.L571]
-    mov rdi, rax
-    jmp .L570_6
-.L570_5:
+    jle .L571_5
     lea rax, [rip+.L572]
     mov rdi, rax
-.L570_6:
+    jmp .L571_6
+.L571_5:
+    lea rax, [rip+.L573]
+    mov rdi, rax
+.L571_6:
     call zyl_panic
-    jmp .L570_4
-.L570_3:
-.L570_4:
+    jmp .L571_4
+.L571_3:
+.L571_4:
     lea rdi, [rbx+r15]
     mov rsi, r12
     mov rdx, r14
@@ -17251,35 +17345,35 @@ zy_local_x2Fmain_0__tables__tb_x2Dappend:
     mov rbx, rdi
     mov r12, rsi
     mov rsi, rdx
-.L573_0:
+.L574_0:
     cmp rbx, 0
-    je .L573_2
-.L573_7:
+    je .L574_2
+.L574_7:
     cmp r12, 0
-    jne .L573_1
-.L573_2:
+    jne .L574_1
+.L574_2:
     mov rax, rbx
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
     mov rsp, rbp
     pop rbp
     ret
-.L573_1:
+.L574_1:
     cmp rbx, 4096
-    jl .L573_3
+    jl .L574_3
     cmp r12, 4096
-    jl .L573_3
+    jl .L574_3
     cmp rbx, 4120
-    jl .L573_4
+    jl .L574_4
     mov rax, rbx
     and rax, 7
     cmp rax, 0
-    jne .L573_4
+    jne .L574_4
     lea rdi, [rbx-24]
     mov rdi, qword ptr [rdi+0]
     mov rax, 6510318656819643953
     cmp rdi, rax
-    jne .L573_4
+    jne .L574_4
     mov rdi, rbx
     mov rdx, rsi
     mov rsi, r12
@@ -17288,7 +17382,7 @@ zy_local_x2Fmain_0__tables__tb_x2Dappend:
     mov rsp, rbp
     pop rbp
     jmp zy_local_x2Fmain_0__tables__tb_x2Dsbuf_x2Dappend
-.L573_4:
+.L574_4:
     mov rdi, rbx
     mov rdx, rsi
     mov rsi, r12
@@ -17298,16 +17392,16 @@ zy_local_x2Fmain_0__tables__tb_x2Dappend:
     mov rsp, rbp
     pop rbp
     ret
-.L573_3:
+.L574_3:
     mov rdi, rbx
     call zy_local_x2Fmain_0__tables__tb_x2Dbad
     cmp rax, 0
-    je .L573_5
-    jmp .L573_6
-.L573_5:
+    je .L574_5
+    jmp .L574_6
+.L574_5:
     mov rdi, r12
     call zy_local_x2Fmain_0__tables__tb_x2Dbad
-.L573_6:
+.L574_6:
     mov rax, rbx
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -17317,7 +17411,7 @@ zy_local_x2Fmain_0__tables__tb_x2Dappend:
 .globl zyl_str_append
 zyl_str_append:
     # frame 0
-.L574_0:
+.L575_0:
     mov r8, 0
     mov rdx, r8
     jmp zy_local_x2Fmain_0__tables__tb_x2Dappend
@@ -17325,104 +17419,32 @@ zyl_str_append:
 zyl_str_append_capped:
     # frame 0
     mov r8, rdx
-.L575_0:
+.L576_0:
     mov rdx, r8
     jmp zy_local_x2Fmain_0__tables__tb_x2Dappend
 zy_local_x2Fmain_0__bytes__bb_x2Dmagic_x2Dbuf:
     # frame 0
-.L576_0:
+.L577_0:
     mov rax, 6510318584122966017
     ret
 zy_local_x2Fmain_0__bytes__bb_x2Dmagic_x2Dslice:
     # frame 0
-.L577_0:
+.L578_0:
     mov rax, 6510318584122966018
     ret
 zy_local_x2Fmain_0__bytes__bb_x2Dmax_x2Dcap:
     # frame 0
-.L578_0:
+.L579_0:
     mov rax, 1099511627776
     ret
 .globl zyl_load_byte
 zyl_load_byte:
     # frame 0
     mov rdi, rdx
-.L579_0:
-    cmp rdi, 4096
-    jl .L579_3
-.L579_15:
-    mov rax, rdi
-    and rax, 7
-    cmp rax, 0
-    je .L579_1
-.L579_3:
-    mov r8, 0
-    jmp .L579_2
-.L579_1:
-    mov r9, qword ptr [rdi+0]
-    mov rax, 6510318584122966017
-    cmp r9, rax
-    jne .L579_4
-    mov r10, qword ptr [rdi+24]
-    jmp .L579_5
-.L579_4:
-    mov rax, 6510318584122966018
-    cmp r9, rax
-    jne .L579_6
-    mov r9, qword ptr [rdi+16]
-    jmp .L579_7
-.L579_6:
-    mov r9, -1
-.L579_7:
-    mov r10, r9
-.L579_5:
-    cmp r10, 0
-    jl .L579_8
-    cmp rsi, 0
-    jl .L579_12
-    cmp r10, 0
-    jl .L579_13
-    mov rax, 1
-    cmp rax, r10
-    jle .L579_10
-.L579_13:
-.L579_12:
-    mov r9, 0
-    jmp .L579_11
-.L579_10:
-    sub r10, 1
-    mov rax, rsi
-    mov rcx, r10
-    cmp rax, rcx
-    setle al
-    movzx rax, al
-    mov r9, rax
-.L579_11:
-    cmp r9, 0
-    je .L579_8
-    mov rdi, qword ptr [rdi+8]
-    add rdi, rsi
-    jmp .L579_9
-.L579_8:
-    mov rdi, 0
-.L579_9:
-    mov r8, rdi
-.L579_2:
-    cmp r8, 0
-    jne .L579_14
-    mov rax, 0
-    ret
-.L579_14:
-    movzx eax, byte ptr [r8+0]
-    ret
-.globl zyl_load_byte_signed
-zyl_load_byte_signed:
-    # frame 0
-    mov rdi, rdx
 .L580_0:
     cmp rdi, 4096
     jl .L580_3
-.L580_16:
+.L580_15:
     mov rax, rdi
     and rax, 7
     cmp rax, 0
@@ -17485,71 +17507,64 @@ zyl_load_byte_signed:
     mov rax, 0
     ret
 .L580_14:
-    movzx esi, byte ptr [r8+0]
-    cmp rsi, 127
-    jle .L580_15
-    lea rax, [rsi-256]
+    movzx eax, byte ptr [r8+0]
     ret
-.L580_15:
-    mov rax, rsi
-    ret
-.globl zyl_store_byte
-zyl_store_byte:
+.globl zyl_load_byte_signed
+zyl_load_byte_signed:
     # frame 0
     mov rdi, rdx
-    mov r8, rcx
 .L581_0:
     cmp rdi, 4096
     jl .L581_3
-.L581_15:
+.L581_16:
     mov rax, rdi
     and rax, 7
     cmp rax, 0
     je .L581_1
 .L581_3:
-    mov r9, 0
+    mov r8, 0
     jmp .L581_2
 .L581_1:
-    mov r10, qword ptr [rdi+0]
+    mov r9, qword ptr [rdi+0]
     mov rax, 6510318584122966017
-    cmp r10, rax
+    cmp r9, rax
     jne .L581_4
-    mov r11, qword ptr [rdi+24]
+    mov r10, qword ptr [rdi+24]
     jmp .L581_5
 .L581_4:
     mov rax, 6510318584122966018
-    cmp r10, rax
+    cmp r9, rax
     jne .L581_6
-    mov r10, qword ptr [rdi+16]
+    mov r9, qword ptr [rdi+16]
     jmp .L581_7
 .L581_6:
-    mov r10, -1
+    mov r9, -1
 .L581_7:
-    mov r11, r10
+    mov r10, r9
 .L581_5:
-    cmp r11, 0
+    cmp r10, 0
     jl .L581_8
     cmp rsi, 0
     jl .L581_12
-    cmp r11, 0
+    cmp r10, 0
     jl .L581_13
     mov rax, 1
-    cmp rax, r11
+    cmp rax, r10
     jle .L581_10
 .L581_13:
 .L581_12:
-    mov r10, 0
+    mov r9, 0
     jmp .L581_11
 .L581_10:
-    sub r11, 1
+    sub r10, 1
     mov rax, rsi
-    mov rcx, r11
+    mov rcx, r10
     cmp rax, rcx
     setle al
     movzx rax, al
-    mov r10, rax
+    mov r9, rax
 .L581_11:
-    cmp r10, 0
+    cmp r9, 0
     je .L581_8
     mov rdi, qword ptr [rdi+8]
     add rdi, rsi
@@ -17557,18 +17572,23 @@ zyl_store_byte:
 .L581_8:
     mov rdi, 0
 .L581_9:
-    mov r9, rdi
+    mov r8, rdi
 .L581_2:
-    cmp r9, 0
+    cmp r8, 0
     jne .L581_14
     mov rax, 0
     ret
 .L581_14:
-    mov byte ptr [r9+0], r8b
-    mov rax, 1
+    movzx esi, byte ptr [r8+0]
+    cmp rsi, 127
+    jle .L581_15
+    lea rax, [rsi-256]
     ret
-.globl zyl_store_byte_signed
-zyl_store_byte_signed:
+.L581_15:
+    mov rax, rsi
+    ret
+.globl zyl_store_byte
+zyl_store_byte:
     # frame 0
     mov rdi, rdx
     mov r8, rcx
@@ -17641,67 +17661,141 @@ zyl_store_byte_signed:
     mov byte ptr [r9+0], r8b
     mov rax, 1
     ret
+.globl zyl_store_byte_signed
+zyl_store_byte_signed:
+    # frame 0
+    mov rdi, rdx
+    mov r8, rcx
+.L583_0:
+    cmp rdi, 4096
+    jl .L583_3
+.L583_15:
+    mov rax, rdi
+    and rax, 7
+    cmp rax, 0
+    je .L583_1
+.L583_3:
+    mov r9, 0
+    jmp .L583_2
+.L583_1:
+    mov r10, qword ptr [rdi+0]
+    mov rax, 6510318584122966017
+    cmp r10, rax
+    jne .L583_4
+    mov r11, qword ptr [rdi+24]
+    jmp .L583_5
+.L583_4:
+    mov rax, 6510318584122966018
+    cmp r10, rax
+    jne .L583_6
+    mov r10, qword ptr [rdi+16]
+    jmp .L583_7
+.L583_6:
+    mov r10, -1
+.L583_7:
+    mov r11, r10
+.L583_5:
+    cmp r11, 0
+    jl .L583_8
+    cmp rsi, 0
+    jl .L583_12
+    cmp r11, 0
+    jl .L583_13
+    mov rax, 1
+    cmp rax, r11
+    jle .L583_10
+.L583_13:
+.L583_12:
+    mov r10, 0
+    jmp .L583_11
+.L583_10:
+    sub r11, 1
+    mov rax, rsi
+    mov rcx, r11
+    cmp rax, rcx
+    setle al
+    movzx rax, al
+    mov r10, rax
+.L583_11:
+    cmp r10, 0
+    je .L583_8
+    mov rdi, qword ptr [rdi+8]
+    add rdi, rsi
+    jmp .L583_9
+.L583_8:
+    mov rdi, 0
+.L583_9:
+    mov r9, rdi
+.L583_2:
+    cmp r9, 0
+    jne .L583_14
+    mov rax, 0
+    ret
+.L583_14:
+    mov byte ptr [r9+0], r8b
+    mov rax, 1
+    ret
 .globl zyl_load_n
 zyl_load_n:
     # frame 16
     push rbx
     mov r8, rdx
     mov r9, rcx
-.L583_0:
+.L584_0:
     cmp rdi, 2
-    je .L583_1
-.L583_24:
+    je .L584_1
+.L584_24:
     cmp rdi, 4
-    je .L583_1
+    je .L584_1
     cmp rdi, 8
-    je .L583_1
+    je .L584_1
     mov rax, 0
     pop rbx
     ret
-.L583_1:
+.L584_1:
     cmp r9, 4096
-    jl .L583_4
+    jl .L584_4
     mov rax, r9
     and rax, 7
     cmp rax, 0
-    je .L583_2
-.L583_4:
+    je .L584_2
+.L584_4:
     mov r10, 0
-    jmp .L583_3
-.L583_2:
+    jmp .L584_3
+.L584_2:
     mov r11, qword ptr [r9+0]
     mov rax, 6510318584122966017
     cmp r11, rax
-    jne .L583_5
+    jne .L584_5
     mov rbx, qword ptr [r9+24]
-    jmp .L583_6
-.L583_5:
+    jmp .L584_6
+.L584_5:
     mov rax, 6510318584122966018
     cmp r11, rax
-    jne .L583_7
+    jne .L584_7
     mov r11, qword ptr [r9+16]
-    jmp .L583_8
-.L583_7:
+    jmp .L584_8
+.L584_7:
     mov r11, -1
-.L583_8:
+.L584_8:
     mov rbx, r11
-.L583_6:
+.L584_6:
     cmp rbx, 0
-    jl .L583_9
+    jl .L584_9
     cmp r8, 0
-    jl .L583_13
+    jl .L584_13
     cmp rdi, 0
-    jl .L583_14
+    jl .L584_14
     cmp rbx, 0
-    jl .L583_15
+    jl .L584_15
     cmp rdi, rbx
-    jle .L583_11
-.L583_15:
-.L583_14:
-.L583_13:
+    jle .L584_11
+.L584_15:
+.L584_14:
+.L584_13:
     mov r11, 0
-    jmp .L583_12
-.L583_11:
+    jmp .L584_12
+.L584_11:
     sub rbx, rdi
     mov rax, r8
     mov rcx, rbx
@@ -17709,43 +17803,43 @@ zyl_load_n:
     setle al
     movzx rax, al
     mov r11, rax
-.L583_12:
+.L584_12:
     cmp r11, 0
-    je .L583_9
+    je .L584_9
     mov r9, qword ptr [r9+8]
     add r9, r8
-    jmp .L583_10
-.L583_9:
+    jmp .L584_10
+.L584_9:
     mov r9, 0
-.L583_10:
+.L584_10:
     mov r10, r9
-.L583_3:
+.L584_3:
     cmp r10, 0
-    jne .L583_16
+    jne .L584_16
     mov rax, 0
     pop rbx
     ret
-.L583_16:
+.L584_16:
     cmp rdi, 2
-    jne .L583_17
+    jne .L584_17
     movzx r8d, word ptr [r10+0]
-    jmp .L583_18
-.L583_17:
+    jmp .L584_18
+.L584_17:
     cmp rdi, 4
-    jne .L583_19
+    jne .L584_19
     mov r9d, dword ptr [r10+0]
-    jmp .L583_20
-.L583_19:
+    jmp .L584_20
+.L584_19:
     mov r9, qword ptr [r10+0]
-.L583_20:
+.L584_20:
     mov r8, r9
-.L583_18:
+.L584_18:
     cmp rsi, 0
-    jne .L583_21
+    jne .L584_21
     mov rax, r8
     pop rbx
     ret
-.L583_21:
+.L584_21:
     mov rsi, r8
     shr rsi, 8
     mov r9, 71777214294589695
@@ -17769,13 +17863,13 @@ zyl_load_n:
     shl rsi, 32
     or rsi, r8
     cmp rdi, 8
-    jne .L583_22
+    jne .L584_22
     mov rax, rsi
     pop rbx
     ret
-.L583_22:
+.L584_22:
     cmp rdi, 4
-    jne .L583_23
+    jne .L584_23
     mov rdi, rsi
     shr rdi, 32
     mov r8, 4294967295
@@ -17783,7 +17877,7 @@ zyl_load_n:
     mov rax, rdi
     pop rbx
     ret
-.L583_23:
+.L584_23:
     shr rsi, 48
     and rsi, 65535
     mov rax, rsi
@@ -17796,25 +17890,25 @@ zyl_load_n_signed:
     mov rbx, rdi
     mov rdi, rdx
     mov r8, rcx
-.L584_0:
+.L585_0:
     mov rdx, rdi
     mov rdi, rbx
     mov rcx, r8
     call zyl_load_n
     mov rsi, rax
     cmp rbx, 8
-    jge .L584_2
+    jge .L585_2
     cmp rbx, 2
-    je .L584_1
+    je .L585_1
     cmp rbx, 4
-    je .L584_1
+    je .L585_1
     cmp rbx, 8
-    je .L584_1
-.L584_2:
+    je .L585_1
+.L585_2:
     mov rax, rsi
     pop rbx
     ret
-.L584_1:
+.L585_1:
     mov rdi, 1
     lea r8, [rbx*8]
     sub r8, 1
@@ -17839,62 +17933,62 @@ zyl_store_n:
     mov r9, rcx
     mov r10, r8
     mov r8, rdx
-.L585_0:
+.L586_0:
     cmp rdi, 2
-    je .L585_1
-.L585_25:
+    je .L586_1
+.L586_25:
     cmp rdi, 4
-    je .L585_1
+    je .L586_1
     cmp rdi, 8
-    je .L585_1
+    je .L586_1
     mov rax, 0
     pop r12
     pop rbx
     ret
-.L585_1:
+.L586_1:
     cmp r9, 4096
-    jl .L585_4
+    jl .L586_4
     mov rax, r9
     and rax, 7
     cmp rax, 0
-    je .L585_2
-.L585_4:
+    je .L586_2
+.L586_4:
     mov r11, 0
-    jmp .L585_3
-.L585_2:
+    jmp .L586_3
+.L586_2:
     mov rbx, qword ptr [r9+0]
     mov rax, 6510318584122966017
     cmp rbx, rax
-    jne .L585_5
+    jne .L586_5
     mov r12, qword ptr [r9+24]
-    jmp .L585_6
-.L585_5:
+    jmp .L586_6
+.L586_5:
     mov rax, 6510318584122966018
     cmp rbx, rax
-    jne .L585_7
+    jne .L586_7
     mov rbx, qword ptr [r9+16]
-    jmp .L585_8
-.L585_7:
+    jmp .L586_8
+.L586_7:
     mov rbx, -1
-.L585_8:
+.L586_8:
     mov r12, rbx
-.L585_6:
+.L586_6:
     cmp r12, 0
-    jl .L585_9
+    jl .L586_9
     cmp r8, 0
-    jl .L585_13
+    jl .L586_13
     cmp rdi, 0
-    jl .L585_14
+    jl .L586_14
     cmp r12, 0
-    jl .L585_15
+    jl .L586_15
     cmp rdi, r12
-    jle .L585_11
-.L585_15:
-.L585_14:
-.L585_13:
+    jle .L586_11
+.L586_15:
+.L586_14:
+.L586_13:
     mov rbx, 0
-    jmp .L585_12
-.L585_11:
+    jmp .L586_12
+.L586_11:
     sub r12, rdi
     mov rax, r8
     mov rcx, r12
@@ -17902,27 +17996,27 @@ zyl_store_n:
     setle al
     movzx rax, al
     mov rbx, rax
-.L585_12:
+.L586_12:
     cmp rbx, 0
-    je .L585_9
+    je .L586_9
     mov r9, qword ptr [r9+8]
     add r9, r8
-    jmp .L585_10
-.L585_9:
+    jmp .L586_10
+.L586_9:
     mov r9, 0
-.L585_10:
+.L586_10:
     mov r11, r9
-.L585_3:
+.L586_3:
     cmp r11, 0
-    jne .L585_16
+    jne .L586_16
     mov rax, 0
     pop r12
     pop rbx
     ret
-.L585_16:
+.L586_16:
     mov r8, r10
     cmp rsi, 0
-    je .L585_17
+    je .L586_17
     mov rsi, r10
     shr rsi, 8
     mov r9, 71777214294589695
@@ -17947,36 +18041,36 @@ zyl_store_n:
     or rsi, r9
     mov r9, rsi
     cmp rdi, 8
-    je .L585_18
+    je .L586_18
     cmp rdi, 4
-    jne .L585_19
+    jne .L586_19
     mov r10, rsi
     shr r10, 32
     mov rbx, 4294967295
     and r10, rbx
-    jmp .L585_20
-.L585_19:
+    jmp .L586_20
+.L586_19:
     mov r10, rsi
     shr r10, 48
     and r10, 65535
-.L585_20:
+.L586_20:
     mov r9, r10
-.L585_18:
+.L586_18:
     mov r8, r9
-.L585_17:
+.L586_17:
     cmp rdi, 2
-    jne .L585_21
+    jne .L586_21
     mov word ptr [r11+0], r8w
-    jmp .L585_22
-.L585_21:
+    jmp .L586_22
+.L586_21:
     cmp rdi, 4
-    jne .L585_23
+    jne .L586_23
     mov dword ptr [r11+0], r8d
-    jmp .L585_24
-.L585_23:
+    jmp .L586_24
+.L586_23:
     mov qword ptr [r11+0], r8
-.L585_24:
-.L585_22:
+.L586_24:
+.L586_22:
     mov rax, 1
     pop r12
     pop rbx
@@ -17987,18 +18081,18 @@ zy_local_x2Fmain_0__bytes__bb_x2Dnew_x2Dslice:
     push r12
     mov rbx, rdi
     mov r12, rsi
-.L586_0:
+.L587_0:
     mov rdi, 24
     mov rsi, 1
     call zy_local_x2Fmain_0__heap__hp_x2Dalloc
     mov rsi, rax
     cmp rsi, 0
-    jne .L586_1
+    jne .L587_1
     mov rax, 0
     pop r12
     pop rbx
     ret
-.L586_1:
+.L587_1:
     mov rdi, 6510318584122966018
     mov qword ptr [rsi+0], rdi
     mov qword ptr [rsi+8], rbx
@@ -18009,69 +18103,6 @@ zy_local_x2Fmain_0__bytes__bb_x2Dnew_x2Dslice:
     ret
 .globl zyl_byte_slice
 zyl_byte_slice:
-    # frame 0
-    mov r8, rdx
-.L587_0:
-    cmp rdi, 4096
-    jl .L587_3
-.L587_13:
-    mov rax, rdi
-    and rax, 7
-    cmp rax, 0
-    je .L587_1
-.L587_3:
-    mov r9, 0
-    jmp .L587_2
-.L587_1:
-    mov r10, qword ptr [rdi+0]
-    mov rax, 6510318584122966017
-    cmp r10, rax
-    jne .L587_4
-    jmp .L587_5
-.L587_4:
-    mov rdi, 0
-.L587_5:
-    mov r9, rdi
-.L587_2:
-    cmp r9, 0
-    je .L587_7
-    cmp rsi, 0
-    jl .L587_10
-    cmp r8, 0
-    jl .L587_11
-    mov rax, qword ptr [r9+24]
-    cmp rax, 0
-    jl .L587_12
-    mov rax, qword ptr [r9+24]
-    cmp r8, rax
-    jle .L587_8
-.L587_12:
-.L587_11:
-.L587_10:
-    mov rdi, 0
-    jmp .L587_9
-.L587_8:
-    mov r10, qword ptr [r9+24]
-    sub r10, r8
-    mov rax, rsi
-    mov rcx, r10
-    cmp rax, rcx
-    setle al
-    movzx rax, al
-    mov rdi, rax
-.L587_9:
-    cmp rdi, 0
-    jne .L587_6
-.L587_7:
-    mov rax, 0
-    ret
-.L587_6:
-    mov rdi, qword ptr [r9+8]
-    add rdi, rsi
-    mov rsi, r8
-    jmp zy_local_x2Fmain_0__bytes__bb_x2Dnew_x2Dslice
-.globl zyl_byte_slice_sub
-zyl_byte_slice_sub:
     # frame 0
     mov r8, rdx
 .L588_0:
@@ -18087,7 +18118,7 @@ zyl_byte_slice_sub:
     jmp .L588_2
 .L588_1:
     mov r10, qword ptr [rdi+0]
-    mov rax, 6510318584122966018
+    mov rax, 6510318584122966017
     cmp r10, rax
     jne .L588_4
     jmp .L588_5
@@ -18102,10 +18133,10 @@ zyl_byte_slice_sub:
     jl .L588_10
     cmp r8, 0
     jl .L588_11
-    mov rax, qword ptr [r9+16]
+    mov rax, qword ptr [r9+24]
     cmp rax, 0
     jl .L588_12
-    mov rax, qword ptr [r9+16]
+    mov rax, qword ptr [r9+24]
     cmp r8, rax
     jle .L588_8
 .L588_12:
@@ -18114,7 +18145,7 @@ zyl_byte_slice_sub:
     mov rdi, 0
     jmp .L588_9
 .L588_8:
-    mov r10, qword ptr [r9+16]
+    mov r10, qword ptr [r9+24]
     sub r10, r8
     mov rax, rsi
     mov rcx, r10
@@ -18133,10 +18164,73 @@ zyl_byte_slice_sub:
     add rdi, rsi
     mov rsi, r8
     jmp zy_local_x2Fmain_0__bytes__bb_x2Dnew_x2Dslice
-zy_local_x2Fmain_0__bytes__bb_x2Dinit:
+.globl zyl_byte_slice_sub
+zyl_byte_slice_sub:
     # frame 0
     mov r8, rdx
 .L589_0:
+    cmp rdi, 4096
+    jl .L589_3
+.L589_13:
+    mov rax, rdi
+    and rax, 7
+    cmp rax, 0
+    je .L589_1
+.L589_3:
+    mov r9, 0
+    jmp .L589_2
+.L589_1:
+    mov r10, qword ptr [rdi+0]
+    mov rax, 6510318584122966018
+    cmp r10, rax
+    jne .L589_4
+    jmp .L589_5
+.L589_4:
+    mov rdi, 0
+.L589_5:
+    mov r9, rdi
+.L589_2:
+    cmp r9, 0
+    je .L589_7
+    cmp rsi, 0
+    jl .L589_10
+    cmp r8, 0
+    jl .L589_11
+    mov rax, qword ptr [r9+16]
+    cmp rax, 0
+    jl .L589_12
+    mov rax, qword ptr [r9+16]
+    cmp r8, rax
+    jle .L589_8
+.L589_12:
+.L589_11:
+.L589_10:
+    mov rdi, 0
+    jmp .L589_9
+.L589_8:
+    mov r10, qword ptr [r9+16]
+    sub r10, r8
+    mov rax, rsi
+    mov rcx, r10
+    cmp rax, rcx
+    setle al
+    movzx rax, al
+    mov rdi, rax
+.L589_9:
+    cmp rdi, 0
+    jne .L589_6
+.L589_7:
+    mov rax, 0
+    ret
+.L589_6:
+    mov rdi, qword ptr [r9+8]
+    add rdi, rsi
+    mov rsi, r8
+    jmp zy_local_x2Fmain_0__bytes__bb_x2Dnew_x2Dslice
+zy_local_x2Fmain_0__bytes__bb_x2Dinit:
+    # frame 0
+    mov r8, rdx
+.L590_0:
     mov r9, 6510318584122966017
     mov qword ptr [rdi+0], r9
     mov qword ptr [rdi+8], rsi
@@ -18147,10 +18241,10 @@ zy_local_x2Fmain_0__bytes__bb_x2Dinit:
     ret
 zy_local_x2Fmain_0__bytes__bb_x2Dcap_x2Dok:
     # frame 0
-.L590_0:
+.L591_0:
     cmp rdi, 0
-    jl .L590_1
-.L590_2:
+    jl .L591_1
+.L591_2:
     mov rsi, 1099511627776
     mov rax, rdi
     mov rcx, rsi
@@ -18158,7 +18252,7 @@ zy_local_x2Fmain_0__bytes__bb_x2Dcap_x2Dok:
     setle al
     movzx rax, al
     ret
-.L590_1:
+.L591_1:
     mov rax, 0
     ret
 .globl zyl_bytebuf_new
@@ -18168,41 +18262,41 @@ zyl_bytebuf_new:
     push r12
     push r13
     mov rbx, rsi
-.L591_0:
+.L592_0:
     mov rdi, rbx
     call zy_local_x2Fmain_0__bytes__bb_x2Dcap_x2Dok
     cmp rax, 0
-    jne .L591_1
+    jne .L592_1
     mov rax, 0
     pop r13
     pop r12
     pop rbx
     ret
-.L591_1:
+.L592_1:
     mov rdi, 32
     mov rsi, 1
     call zy_local_x2Fmain_0__heap__hp_x2Dalloc
     mov r12, rax
     cmp r12, 0
-    jne .L591_2
+    jne .L592_2
     mov rax, 0
     pop r13
     pop r12
     pop rbx
     ret
-.L591_2:
+.L592_2:
     mov rsi, rbx
     cmp rbx, 0
-    jg .L591_3
+    jg .L592_3
     mov rsi, 1
-.L591_3:
+.L592_3:
     mov r13, rsi
     mov rsi, 1
     mov rdi, r13
     call zy_local_x2Fmain_0__heap__hp_x2Dalloc
     mov rsi, rax
     cmp rsi, 0
-    jne .L591_4
+    jne .L592_4
     mov rdi, r12
     call zyl_rt_free
     mov rax, 0
@@ -18210,7 +18304,7 @@ zyl_bytebuf_new:
     pop r12
     pop rbx
     ret
-.L591_4:
+.L592_4:
     mov rdi, 0
     mov rdx, rsi
     mov rcx, rdi
@@ -18239,11 +18333,11 @@ zyl_bytebuf_new_r:
     push r14
     and rsp, -16
     mov rbx, rsi
-.L592_0:
+.L593_0:
     mov rdi, rbx
     call zy_local_x2Fmain_0__bytes__bb_x2Dcap_x2Dok
     cmp rax, 0
-    jne .L592_1
+    jne .L593_1
     mov rax, 0
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -18252,7 +18346,7 @@ zyl_bytebuf_new_r:
     mov rsp, rbp
     pop rbp
     ret
-.L592_1:
+.L593_1:
     mov rax, QWORD PTR fs:zyl_cur_region@tpoff
     mov r12, rax
     mov rdi, 32
@@ -18260,7 +18354,7 @@ zyl_bytebuf_new_r:
     call zyl_ralloc
     mov r13, rax
     cmp r13, 0
-    jne .L592_2
+    jne .L593_2
     mov rax, 0
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -18269,19 +18363,19 @@ zyl_bytebuf_new_r:
     mov rsp, rbp
     pop rbp
     ret
-.L592_2:
+.L593_2:
     mov rsi, rbx
     cmp rbx, 0
-    jg .L592_3
+    jg .L593_3
     mov rsi, 1
-.L592_3:
+.L593_3:
     mov r14, rsi
     mov rdi, r14
     mov rsi, r12
     call zyl_ralloc
     mov rsi, rax
     cmp rsi, 0
-    jne .L592_4
+    jne .L593_4
     mov rax, 0
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -18290,7 +18384,7 @@ zyl_bytebuf_new_r:
     mov rsp, rbp
     pop rbp
     ret
-.L592_4:
+.L593_4:
     mov rdi, 0
     mov rdx, rsi
     mov rcx, rdi
@@ -18317,78 +18411,78 @@ zyl_bytebuf_append:
     push rbx
     push r12
     push r13
-.L593_0:
+.L594_0:
     cmp rdi, 4096
-    jl .L593_3
-.L593_19:
+    jl .L594_3
+.L594_19:
     mov rax, rdi
     and rax, 7
     cmp rax, 0
-    je .L593_1
-.L593_3:
+    je .L594_1
+.L594_3:
     mov r8, 0
-    jmp .L593_2
-.L593_1:
+    jmp .L594_2
+.L594_1:
     mov r9, qword ptr [rdi+0]
     mov rax, 6510318584122966017
     cmp r9, rax
-    jne .L593_4
-    jmp .L593_5
-.L593_4:
+    jne .L594_4
+    jmp .L594_5
+.L594_4:
     mov rdi, 0
-.L593_5:
+.L594_5:
     mov r8, rdi
-.L593_2:
+.L594_2:
     mov rbx, r8
     cmp rsi, 4096
-    jl .L593_8
+    jl .L594_8
     mov rax, rsi
     and rax, 7
     cmp rax, 0
-    je .L593_6
-.L593_8:
+    je .L594_6
+.L594_8:
     mov rdi, 0
-    jmp .L593_7
-.L593_6:
+    jmp .L594_7
+.L594_6:
     mov r8, qword ptr [rsi+0]
     mov rax, 6510318584122966018
     cmp r8, rax
-    jne .L593_9
-    jmp .L593_10
-.L593_9:
+    jne .L594_9
+    jmp .L594_10
+.L594_9:
     mov rsi, 0
-.L593_10:
+.L594_10:
     mov rdi, rsi
-.L593_7:
+.L594_7:
     cmp rbx, 0
-    je .L593_12
+    je .L594_12
     cmp rdi, 0
-    jne .L593_11
-.L593_12:
+    jne .L594_11
+.L594_12:
     mov rax, 0
     pop r13
     pop r12
     pop rbx
     ret
-.L593_11:
+.L594_11:
     mov r12, qword ptr [rbx+16]
     mov r13, qword ptr [rdi+16]
     cmp r12, 0
-    jl .L593_16
+    jl .L594_16
     cmp r13, 0
-    jl .L593_17
+    jl .L594_17
     mov rax, qword ptr [rbx+24]
     cmp rax, 0
-    jl .L593_18
+    jl .L594_18
     mov rax, qword ptr [rbx+24]
     cmp r13, rax
-    jle .L593_14
-.L593_18:
-.L593_17:
-.L593_16:
+    jle .L594_14
+.L594_18:
+.L594_17:
+.L594_16:
     mov rsi, 0
-    jmp .L593_15
-.L593_14:
+    jmp .L594_15
+.L594_14:
     mov r8, qword ptr [rbx+24]
     sub r8, r13
     mov rax, r12
@@ -18397,15 +18491,15 @@ zyl_bytebuf_append:
     setle al
     movzx rax, al
     mov rsi, rax
-.L593_15:
+.L594_15:
     cmp rsi, 0
-    jne .L593_13
+    jne .L594_13
     mov rax, 0
     pop r13
     pop r12
     pop rbx
     ret
-.L593_13:
+.L594_13:
     mov rsi, qword ptr [rbx+8]
     add rsi, r12
     mov rdi, qword ptr [rdi+8]
@@ -18423,38 +18517,6 @@ zyl_bytebuf_append:
     ret
 .globl zyl_bytebuf_len
 zyl_bytebuf_len:
-    # frame 0
-.L594_0:
-    cmp rdi, 4096
-    jl .L594_3
-.L594_7:
-    mov rax, rdi
-    and rax, 7
-    cmp rax, 0
-    je .L594_1
-.L594_3:
-    mov rsi, 0
-    jmp .L594_2
-.L594_1:
-    mov r8, qword ptr [rdi+0]
-    mov rax, 6510318584122966017
-    cmp r8, rax
-    jne .L594_4
-    jmp .L594_5
-.L594_4:
-    mov rdi, 0
-.L594_5:
-    mov rsi, rdi
-.L594_2:
-    cmp rsi, 0
-    jne .L594_6
-    mov rax, 0
-    ret
-.L594_6:
-    mov rax, qword ptr [rsi+16]
-    ret
-.globl zyl_bytebuf_cap
-zyl_bytebuf_cap:
     # frame 0
 .L595_0:
     cmp rdi, 4096
@@ -18483,10 +18545,10 @@ zyl_bytebuf_cap:
     mov rax, 0
     ret
 .L595_6:
-    mov rax, qword ptr [rsi+24]
+    mov rax, qword ptr [rsi+16]
     ret
-.globl zyl_bytebuf_ptr
-zyl_bytebuf_ptr:
+.globl zyl_bytebuf_cap
+zyl_bytebuf_cap:
     # frame 0
 .L596_0:
     cmp rdi, 4096
@@ -18515,40 +18577,72 @@ zyl_bytebuf_ptr:
     mov rax, 0
     ret
 .L596_6:
+    mov rax, qword ptr [rsi+24]
+    ret
+.globl zyl_bytebuf_ptr
+zyl_bytebuf_ptr:
+    # frame 0
+.L597_0:
+    cmp rdi, 4096
+    jl .L597_3
+.L597_7:
+    mov rax, rdi
+    and rax, 7
+    cmp rax, 0
+    je .L597_1
+.L597_3:
+    mov rsi, 0
+    jmp .L597_2
+.L597_1:
+    mov r8, qword ptr [rdi+0]
+    mov rax, 6510318584122966017
+    cmp r8, rax
+    jne .L597_4
+    jmp .L597_5
+.L597_4:
+    mov rdi, 0
+.L597_5:
+    mov rsi, rdi
+.L597_2:
+    cmp rsi, 0
+    jne .L597_6
+    mov rax, 0
+    ret
+.L597_6:
     mov rax, qword ptr [rsi+8]
     ret
 .globl zyl_align_check
 zyl_align_check:
     # frame 0
-.L597_0:
+.L598_0:
     cmp rsi, 0
-    jg .L597_1
-.L597_3:
+    jg .L598_1
+.L598_3:
     mov rax, 0
     ret
-.L597_1:
+.L598_1:
     mov rax, rdi
     mov rcx, rsi
     cqo
     idiv rcx
     mov rax, rdx
     cmp rax, 0
-    jne .L597_2
+    jne .L598_2
     mov rax, 1
     ret
-.L597_2:
+.L598_2:
     mov rax, 0
     ret
 .globl zyl_atomic_load
 zyl_atomic_load:
     # frame 0
-.L598_0:
+.L599_0:
     mov rax, qword ptr [rdi+0]
     ret
 .globl zyl_atomic_store
 zyl_atomic_store:
     # frame 0
-.L599_0:
+.L600_0:
     mov rdx, rdi
     mov rcx, rsi
     mov rax, rcx
@@ -18558,7 +18652,7 @@ zyl_atomic_store:
 .globl zyl_atomic_fetch_add
 zyl_atomic_fetch_add:
     # frame 0
-.L600_0:
+.L601_0:
     mov rdx, rdi
     mov rcx, rsi
     mov rax, rcx
@@ -18567,7 +18661,7 @@ zyl_atomic_fetch_add:
 .globl zyl_atomic_add
 zyl_atomic_add:
     # frame 0
-.L601_0:
+.L602_0:
     mov rdx, rdi
     mov rcx, rsi
     mov rax, rcx
@@ -18579,7 +18673,7 @@ zyl_atomic_add:
 .globl zyl_atomic_sub
 zyl_atomic_sub:
     # frame 0
-.L602_0:
+.L603_0:
     mov r8, 0
     sub r8, rsi
     mov rdx, rdi
@@ -18594,7 +18688,7 @@ zyl_atomic_sub:
 zyl_atomic_cas:
     # frame 0
     mov r8, rdx
-.L603_0:
+.L604_0:
     mov rdx, rdi
     mov rcx, rsi
     mov r11, r8
@@ -18612,25 +18706,25 @@ zy_local_x2Fmain_0__bytes__bb_x2Datomic_x2Dpick:
     push rbx
     mov r8, rdx
     mov r9, rcx
-.L604_0:
+.L605_0:
     cmp r9, 0
-    je .L604_1
-.L604_6:
+    je .L605_1
+.L605_6:
     mov r10, rsi
     cmp rsi, r8
-    jg .L604_3
+    jg .L605_3
     mov r10, r8
-.L604_3:
-    jmp .L604_2
+.L605_3:
+    jmp .L605_2
 .p2align 4
-.L604_1:
+.L605_1:
     mov rbx, rsi
     cmp rsi, r8
-    jl .L604_4
+    jl .L605_4
     mov rbx, r8
-.L604_4:
+.L605_4:
     mov r10, rbx
-.L604_2:
+.L605_2:
     mov rdx, rdi
     mov rcx, rsi
     mov r11, r10
@@ -18638,19 +18732,19 @@ zy_local_x2Fmain_0__bytes__bb_x2Datomic_x2Dpick:
     lock cmpxchg qword ptr [rdx], r11
     mov rbx, rax
     cmp rbx, rsi
-    jne .L604_5
+    jne .L605_5
     mov rax, r10
     pop rbx
     ret
-.L604_5:
+.L605_5:
     mov rsi, rbx
     cmp r9, 0
-    je .L604_1
-    jmp .L604_6
+    je .L605_1
+    jmp .L605_6
 .globl zyl_atomic_max
 zyl_atomic_max:
     # frame 0
-.L605_0:
+.L606_0:
     mov r8, qword ptr [rdi+0]
     mov r9, 1
     mov rdx, rsi
@@ -18660,7 +18754,7 @@ zyl_atomic_max:
 .globl zyl_atomic_min
 zyl_atomic_min:
     # frame 0
-.L606_0:
+.L607_0:
     mov r8, qword ptr [rdi+0]
     mov r9, 0
     mov rdx, rsi
@@ -18670,85 +18764,6 @@ zyl_atomic_min:
 .globl zyl_bytebuf_atomic_load
 zyl_bytebuf_atomic_load:
     # frame 0
-.L607_0:
-    cmp rdi, 4096
-    jl .L607_3
-.L607_17:
-    mov rax, rdi
-    and rax, 7
-    cmp rax, 0
-    je .L607_1
-.L607_3:
-    mov r8, 0
-    jmp .L607_2
-.L607_1:
-    mov r9, qword ptr [rdi+0]
-    mov rax, 6510318584122966017
-    cmp r9, rax
-    jne .L607_4
-    jmp .L607_5
-.L607_4:
-    mov rdi, 0
-.L607_5:
-    mov r8, rdi
-.L607_2:
-    cmp r8, 0
-    je .L607_8
-    cmp rsi, 0
-    jl .L607_9
-    mov rax, rsi
-    and rax, 7
-    cmp rax, 0
-    je .L607_6
-.L607_9:
-.L607_8:
-    mov rdi, 0
-    jmp .L607_7
-.L607_6:
-    cmp rsi, 0
-    jl .L607_14
-    mov rax, qword ptr [r8+24]
-    cmp rax, 0
-    jl .L607_15
-    mov r9, 8
-    mov rax, qword ptr [r8+24]
-    cmp r9, rax
-    jle .L607_12
-.L607_15:
-.L607_14:
-    mov r9, 0
-    jmp .L607_13
-.L607_12:
-    mov r10, qword ptr [r8+24]
-    sub r10, 8
-    mov rax, rsi
-    mov rcx, r10
-    cmp rax, rcx
-    setle al
-    movzx rax, al
-    mov r9, rax
-.L607_13:
-    cmp r9, 0
-    je .L607_10
-    mov r8, qword ptr [r8+8]
-    add r8, rsi
-    jmp .L607_11
-.L607_10:
-    mov r8, 0
-.L607_11:
-    mov rdi, r8
-.L607_7:
-    cmp rdi, 0
-    jne .L607_16
-    mov rax, 0
-    ret
-.L607_16:
-    mov rax, qword ptr [rdi+0]
-    ret
-.globl zyl_bytebuf_atomic_store
-zyl_bytebuf_atomic_store:
-    # frame 0
-    mov r8, rdx
 .L608_0:
     cmp rdi, 4096
     jl .L608_3
@@ -18758,20 +18773,20 @@ zyl_bytebuf_atomic_store:
     cmp rax, 0
     je .L608_1
 .L608_3:
-    mov r9, 0
+    mov r8, 0
     jmp .L608_2
 .L608_1:
-    mov r10, qword ptr [rdi+0]
+    mov r9, qword ptr [rdi+0]
     mov rax, 6510318584122966017
-    cmp r10, rax
+    cmp r9, rax
     jne .L608_4
     jmp .L608_5
 .L608_4:
     mov rdi, 0
 .L608_5:
-    mov r9, rdi
+    mov r8, rdi
 .L608_2:
-    cmp r9, 0
+    cmp r8, 0
     je .L608_8
     cmp rsi, 0
     jl .L608_9
@@ -18786,50 +18801,46 @@ zyl_bytebuf_atomic_store:
 .L608_6:
     cmp rsi, 0
     jl .L608_14
-    mov rax, qword ptr [r9+24]
+    mov rax, qword ptr [r8+24]
     cmp rax, 0
     jl .L608_15
-    mov r10, 8
-    mov rax, qword ptr [r9+24]
-    cmp r10, rax
+    mov r9, 8
+    mov rax, qword ptr [r8+24]
+    cmp r9, rax
     jle .L608_12
 .L608_15:
 .L608_14:
-    mov r10, 0
+    mov r9, 0
     jmp .L608_13
 .L608_12:
-    mov r11, qword ptr [r9+24]
-    sub r11, 8
+    mov r10, qword ptr [r8+24]
+    sub r10, 8
     mov rax, rsi
-    mov rcx, r11
+    mov rcx, r10
     cmp rax, rcx
     setle al
     movzx rax, al
-    mov r10, rax
+    mov r9, rax
 .L608_13:
-    cmp r10, 0
+    cmp r9, 0
     je .L608_10
-    mov r9, qword ptr [r9+8]
-    add r9, rsi
+    mov r8, qword ptr [r8+8]
+    add r8, rsi
     jmp .L608_11
 .L608_10:
-    mov r9, 0
+    mov r8, 0
 .L608_11:
-    mov rdi, r9
+    mov rdi, r8
 .L608_7:
     cmp rdi, 0
     jne .L608_16
     mov rax, 0
     ret
 .L608_16:
-    mov rdx, rdi
-    mov rcx, r8
-    mov rax, rcx
-    xchg qword ptr [rdx], rax
-    mov rax, 1
+    mov rax, qword ptr [rdi+0]
     ret
-.globl zyl_bytebuf_atomic_add
-zyl_bytebuf_atomic_add:
+.globl zyl_bytebuf_atomic_store
+zyl_bytebuf_atomic_store:
     # frame 0
     mov r8, rdx
 .L609_0:
@@ -18908,13 +18919,11 @@ zyl_bytebuf_atomic_add:
     mov rdx, rdi
     mov rcx, r8
     mov rax, rcx
-    lock xadd qword ptr [rdx], rax
-    mov rsi, rax
-    add rsi, r8
-    mov rax, rsi
+    xchg qword ptr [rdx], rax
+    mov rax, 1
     ret
-.globl zyl_bytebuf_atomic_sub
-zyl_bytebuf_atomic_sub:
+.globl zyl_bytebuf_atomic_add
+zyl_bytebuf_atomic_add:
     # frame 0
     mov r8, rdx
 .L610_0:
@@ -18990,18 +18999,16 @@ zyl_bytebuf_atomic_sub:
     mov rax, 0
     ret
 .L610_16:
-    mov rsi, 0
-    sub rsi, r8
     mov rdx, rdi
-    mov rcx, rsi
+    mov rcx, r8
     mov rax, rcx
     lock xadd qword ptr [rdx], rax
     mov rsi, rax
-    sub rsi, r8
+    add rsi, r8
     mov rax, rsi
     ret
-.globl zyl_bytebuf_atomic_fetch_add
-zyl_bytebuf_atomic_fetch_add:
+.globl zyl_bytebuf_atomic_sub
+zyl_bytebuf_atomic_sub:
     # frame 0
     mov r8, rdx
 .L611_0:
@@ -19077,13 +19084,18 @@ zyl_bytebuf_atomic_fetch_add:
     mov rax, 0
     ret
 .L611_16:
+    mov rsi, 0
+    sub rsi, r8
     mov rdx, rdi
-    mov rcx, r8
+    mov rcx, rsi
     mov rax, rcx
     lock xadd qword ptr [rdx], rax
+    mov rsi, rax
+    sub rsi, r8
+    mov rax, rsi
     ret
-.globl zyl_bytebuf_atomic_max
-zyl_bytebuf_atomic_max:
+.globl zyl_bytebuf_atomic_fetch_add
+zyl_bytebuf_atomic_fetch_add:
     # frame 0
     mov r8, rdx
 .L612_0:
@@ -19159,10 +19171,13 @@ zyl_bytebuf_atomic_max:
     mov rax, 0
     ret
 .L612_16:
-    mov rsi, r8
-    jmp zyl_atomic_max
-.globl zyl_bytebuf_atomic_min
-zyl_bytebuf_atomic_min:
+    mov rdx, rdi
+    mov rcx, r8
+    mov rax, rcx
+    lock xadd qword ptr [rdx], rax
+    ret
+.globl zyl_bytebuf_atomic_max
+zyl_bytebuf_atomic_max:
     # frame 0
     mov r8, rdx
 .L613_0:
@@ -19239,37 +19254,34 @@ zyl_bytebuf_atomic_min:
     ret
 .L613_16:
     mov rsi, r8
-    jmp zyl_atomic_min
-.globl zyl_bytebuf_atomic_cas
-zyl_bytebuf_atomic_cas:
-    # frame 16
-    push rbx
-    push r12
+    jmp zyl_atomic_max
+.globl zyl_bytebuf_atomic_min
+zyl_bytebuf_atomic_min:
+    # frame 0
     mov r8, rdx
-    mov r9, rcx
 .L614_0:
     cmp rdi, 4096
     jl .L614_3
-.L614_18:
+.L614_17:
     mov rax, rdi
     and rax, 7
     cmp rax, 0
     je .L614_1
 .L614_3:
-    mov r10, 0
+    mov r9, 0
     jmp .L614_2
 .L614_1:
-    mov rbx, qword ptr [rdi+0]
+    mov r10, qword ptr [rdi+0]
     mov rax, 6510318584122966017
-    cmp rbx, rax
+    cmp r10, rax
     jne .L614_4
     jmp .L614_5
 .L614_4:
     mov rdi, 0
 .L614_5:
-    mov r10, rdi
+    mov r9, rdi
 .L614_2:
-    cmp r10, 0
+    cmp r9, 0
     je .L614_8
     cmp rsi, 0
     jl .L614_9
@@ -19284,18 +19296,100 @@ zyl_bytebuf_atomic_cas:
 .L614_6:
     cmp rsi, 0
     jl .L614_14
-    mov rax, qword ptr [r10+24]
+    mov rax, qword ptr [r9+24]
     cmp rax, 0
     jl .L614_15
-    mov rbx, 8
-    mov rax, qword ptr [r10+24]
-    cmp rbx, rax
+    mov r10, 8
+    mov rax, qword ptr [r9+24]
+    cmp r10, rax
     jle .L614_12
 .L614_15:
 .L614_14:
-    mov rbx, 0
+    mov r10, 0
     jmp .L614_13
 .L614_12:
+    mov r11, qword ptr [r9+24]
+    sub r11, 8
+    mov rax, rsi
+    mov rcx, r11
+    cmp rax, rcx
+    setle al
+    movzx rax, al
+    mov r10, rax
+.L614_13:
+    cmp r10, 0
+    je .L614_10
+    mov r9, qword ptr [r9+8]
+    add r9, rsi
+    jmp .L614_11
+.L614_10:
+    mov r9, 0
+.L614_11:
+    mov rdi, r9
+.L614_7:
+    cmp rdi, 0
+    jne .L614_16
+    mov rax, 0
+    ret
+.L614_16:
+    mov rsi, r8
+    jmp zyl_atomic_min
+.globl zyl_bytebuf_atomic_cas
+zyl_bytebuf_atomic_cas:
+    # frame 16
+    push rbx
+    push r12
+    mov r8, rdx
+    mov r9, rcx
+.L615_0:
+    cmp rdi, 4096
+    jl .L615_3
+.L615_18:
+    mov rax, rdi
+    and rax, 7
+    cmp rax, 0
+    je .L615_1
+.L615_3:
+    mov r10, 0
+    jmp .L615_2
+.L615_1:
+    mov rbx, qword ptr [rdi+0]
+    mov rax, 6510318584122966017
+    cmp rbx, rax
+    jne .L615_4
+    jmp .L615_5
+.L615_4:
+    mov rdi, 0
+.L615_5:
+    mov r10, rdi
+.L615_2:
+    cmp r10, 0
+    je .L615_8
+    cmp rsi, 0
+    jl .L615_9
+    mov rax, rsi
+    and rax, 7
+    cmp rax, 0
+    je .L615_6
+.L615_9:
+.L615_8:
+    mov rdi, 0
+    jmp .L615_7
+.L615_6:
+    cmp rsi, 0
+    jl .L615_14
+    mov rax, qword ptr [r10+24]
+    cmp rax, 0
+    jl .L615_15
+    mov rbx, 8
+    mov rax, qword ptr [r10+24]
+    cmp rbx, rax
+    jle .L615_12
+.L615_15:
+.L615_14:
+    mov rbx, 0
+    jmp .L615_13
+.L615_12:
     mov r12, qword ptr [r10+24]
     sub r12, 8
     mov rax, rsi
@@ -19304,96 +19398,41 @@ zyl_bytebuf_atomic_cas:
     setle al
     movzx rax, al
     mov rbx, rax
-.L614_13:
+.L615_13:
     cmp rbx, 0
-    je .L614_10
+    je .L615_10
     mov r10, qword ptr [r10+8]
     add r10, rsi
-    jmp .L614_11
-.L614_10:
+    jmp .L615_11
+.L615_10:
     mov r10, 0
-.L614_11:
+.L615_11:
     mov rdi, r10
-.L614_7:
+.L615_7:
     cmp rdi, 0
-    jne .L614_16
+    jne .L615_16
     mov rax, 0
     pop r12
     pop rbx
     ret
-.L614_16:
+.L615_16:
     mov rdx, rdi
     mov rcx, r8
     mov r11, r9
     mov rax, rcx
     lock cmpxchg qword ptr [rdx], r11
     cmp rax, r8
-    jne .L614_17
+    jne .L615_17
     mov rax, 1
     pop r12
     pop rbx
     ret
-.L614_17:
+.L615_17:
     mov rax, 0
     pop r12
     pop rbx
     ret
 zy_local_x2Fmain_0__bytes__bb_x2Dread_x2Dall:
-    # frame 32
-    push rbp
-    mov rbp, rsp
-    push rbx
-    push r12
-    push r13
-    push r14
-    and rsp, -16
-    mov rbx, rdi
-    mov r12, rsi
-    mov r13, rdx
-    mov r14, rcx
-.L615_0:
-    cmp r14, r13
-    jl .L615_1
-.L615_4:
-    mov rax, r14
-    mov rbx, qword ptr [rbp-8]
-    mov r12, qword ptr [rbp-16]
-    mov r13, qword ptr [rbp-24]
-    mov r14, qword ptr [rbp-32]
-    mov rsp, rbp
-    pop rbp
-    ret
-.p2align 4
-.L615_1:
-    lea rsi, [r12+r14]
-    mov rdi, r13
-    sub rdi, r14
-    mov rdx, rdi
-    mov rdi, rbx
-    call zyl_rt_sys_0
-    mov rsi, rax
-    cmp rsi, 0
-    jle .L615_2
-    add r14, rsi
-    cmp r14, r13
-    jl .L615_1
-    jmp .L615_4
-.L615_2:
-    cmp rsi, -4
-    jne .L615_3
-    cmp r14, r13
-    jl .L615_1
-    jmp .L615_4
-.L615_3:
-    mov rax, r14
-    mov rbx, qword ptr [rbp-8]
-    mov r12, qword ptr [rbp-16]
-    mov r13, qword ptr [rbp-24]
-    mov r14, qword ptr [rbp-32]
-    mov rsp, rbp
-    pop rbp
-    ret
-zy_local_x2Fmain_0__bytes__bb_x2Dwrite_x2Dall:
     # frame 32
     push rbp
     mov rbp, rsp
@@ -19425,7 +19464,7 @@ zy_local_x2Fmain_0__bytes__bb_x2Dwrite_x2Dall:
     sub rdi, r14
     mov rdx, rdi
     mov rdi, rbx
-    call zyl_rt_sys_1
+    call zyl_rt_sys_0
     mov rsi, rax
     cmp rsi, 0
     jle .L616_2
@@ -19448,6 +19487,61 @@ zy_local_x2Fmain_0__bytes__bb_x2Dwrite_x2Dall:
     mov rsp, rbp
     pop rbp
     ret
+zy_local_x2Fmain_0__bytes__bb_x2Dwrite_x2Dall:
+    # frame 32
+    push rbp
+    mov rbp, rsp
+    push rbx
+    push r12
+    push r13
+    push r14
+    and rsp, -16
+    mov rbx, rdi
+    mov r12, rsi
+    mov r13, rdx
+    mov r14, rcx
+.L617_0:
+    cmp r14, r13
+    jl .L617_1
+.L617_4:
+    mov rax, r14
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov rsp, rbp
+    pop rbp
+    ret
+.p2align 4
+.L617_1:
+    lea rsi, [r12+r14]
+    mov rdi, r13
+    sub rdi, r14
+    mov rdx, rdi
+    mov rdi, rbx
+    call zyl_rt_sys_1
+    mov rsi, rax
+    cmp rsi, 0
+    jle .L617_2
+    add r14, rsi
+    cmp r14, r13
+    jl .L617_1
+    jmp .L617_4
+.L617_2:
+    cmp rsi, -4
+    jne .L617_3
+    cmp r14, r13
+    jl .L617_1
+    jmp .L617_4
+.L617_3:
+    mov rax, r14
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov r14, qword ptr [rbp-32]
+    mov rsp, rbp
+    pop rbp
+    ret
 .globl zyl_bytebuf_read_file
 zyl_bytebuf_read_file:
     # frame 32
@@ -19458,9 +19552,9 @@ zyl_bytebuf_read_file:
     push r13
     push r14
     and rsp, -16
-.L617_0:
+.L618_0:
     cmp rdi, 4096
-    jge .L617_1
+    jge .L618_1
     mov rax, 0
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -19469,14 +19563,14 @@ zyl_bytebuf_read_file:
     mov rsp, rbp
     pop rbp
     ret
-.L617_1:
+.L618_1:
     mov rsi, 0
     mov r8, 0
     mov rdx, r8
     call zyl_rt_sys_2
     mov rbx, rax
     cmp rbx, 0
-    jge .L617_2
+    jge .L618_2
     mov rax, 0
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -19485,7 +19579,7 @@ zyl_bytebuf_read_file:
     mov rsp, rbp
     pop rbp
     ret
-.L617_2:
+.L618_2:
     mov rsi, 0
     mov rdi, 2
     mov rdx, rdi
@@ -19493,27 +19587,27 @@ zyl_bytebuf_read_file:
     call zyl_rt_sys_8
     mov r12, rax
     cmp r12, 0
-    jl .L617_5
+    jl .L618_5
     mov rsi, 0
     mov rdi, 0
     mov rdx, rdi
     mov rdi, rbx
     call zyl_rt_sys_8
     cmp rax, 0
-    jge .L617_3
-.L617_5:
+    jge .L618_3
+.L618_5:
     mov rsi, 0
-    jmp .L617_4
-.L617_3:
+    jmp .L618_4
+.L618_3:
     mov rdi, 0
     mov rsi, r12
     call zyl_bytebuf_new
     mov rsi, rax
-.L617_4:
+.L618_4:
     mov r13, rsi
     mov rsi, -1
     cmp r13, 0
-    je .L617_6
+    je .L618_6
     mov rdi, qword ptr [r13+8]
     mov r8, 0
     mov rsi, rdi
@@ -19522,12 +19616,12 @@ zyl_bytebuf_read_file:
     mov rcx, r8
     call zy_local_x2Fmain_0__bytes__bb_x2Dread_x2Dall
     mov rsi, rax
-.L617_6:
+.L618_6:
     mov r14, rsi
     mov rdi, rbx
     call zyl_rt_sys_3
     cmp r14, r12
-    jne .L617_7
+    jne .L618_7
     mov qword ptr [r13+16], r12
     mov rax, r13
     mov rbx, qword ptr [rbp-8]
@@ -19537,7 +19631,7 @@ zyl_bytebuf_read_file:
     mov rsp, rbp
     pop rbp
     ret
-.L617_7:
+.L618_7:
     mov rax, 0
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -19557,46 +19651,46 @@ zyl_bytebuf_write_exec:
     and rsp, -16
     sub rsp, 16
     mov rbx, rdx
-.L618_0:
+.L619_0:
     mov r12, rdi
     cmp rsi, 4096
-    jl .L618_3
+    jl .L619_3
     mov rax, rsi
     and rax, 7
     cmp rax, 0
-    je .L618_1
-.L618_3:
+    je .L619_1
+.L619_3:
     mov rdi, 0
-    jmp .L618_2
-.L618_1:
+    jmp .L619_2
+.L619_1:
     mov r8, qword ptr [rsi+0]
     mov rax, 6510318584122966017
     cmp r8, rax
-    jne .L618_4
-    jmp .L618_5
-.L618_4:
+    jne .L619_4
+    jmp .L619_5
+.L619_4:
     mov rsi, 0
-.L618_5:
+.L619_5:
     mov rdi, rsi
-.L618_2:
+.L619_2:
     mov r13, rdi
     cmp r12, 4096
-    jl .L618_7
+    jl .L619_7
     cmp r13, 0
-    je .L618_8
+    je .L619_8
     cmp rbx, 0
-    jl .L618_11
+    jl .L619_11
     mov rax, qword ptr [r13+24]
     cmp rax, 0
-    jl .L618_12
+    jl .L619_12
     mov rax, qword ptr [r13+24]
     cmp rbx, rax
-    jle .L618_9
-.L618_12:
-.L618_11:
+    jle .L619_9
+.L619_12:
+.L619_11:
     mov rsi, 0
-    jmp .L618_10
-.L618_9:
+    jmp .L619_10
+.L619_9:
     mov rdi, 0
     mov r8, qword ptr [r13+24]
     sub r8, rbx
@@ -19606,11 +19700,11 @@ zyl_bytebuf_write_exec:
     setle al
     movzx rax, al
     mov rsi, rax
-.L618_10:
+.L619_10:
     cmp rsi, 0
-    jne .L618_6
-.L618_8:
-.L618_7:
+    jne .L619_6
+.L619_8:
+.L619_7:
     mov rax, -1
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -19618,7 +19712,7 @@ zyl_bytebuf_write_exec:
     mov rsp, rbp
     pop rbp
     ret
-.L618_6:
+.L619_6:
     mov rdi, r12
     call zyl_rt_sys_87
     mov rsi, 577
@@ -19628,7 +19722,7 @@ zyl_bytebuf_write_exec:
     call zyl_rt_sys_2
     mov r12, rax
     cmp r12, 0
-    jge .L618_13
+    jge .L619_13
     mov rax, -1
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -19636,7 +19730,7 @@ zyl_bytebuf_write_exec:
     mov rsp, rbp
     pop rbp
     ret
-.L618_13:
+.L619_13:
     mov rsi, qword ptr [r13+8]
     mov rdi, 0
     mov rdx, rbx
@@ -19648,9 +19742,9 @@ zyl_bytebuf_write_exec:
     call zyl_rt_sys_3
     mov rsi, rax
     cmp r13, rbx
-    jne .L618_14
+    jne .L619_14
     cmp rsi, 0
-    jne .L618_14
+    jne .L619_14
     mov rax, 0
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -19658,7 +19752,7 @@ zyl_bytebuf_write_exec:
     mov rsp, rbp
     pop rbp
     ret
-.L618_14:
+.L619_14:
     mov rax, -1
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -19761,7 +19855,7 @@ zyl_f_div:
 .globl zyl_f_of_int
 zyl_f_of_int:
     # frame 0
-.L619_0:
+.L620_0:
     mov rdx, rdi
     cvtsi2sd xmm0, rdx
     movq rax, xmm0
@@ -19769,7 +19863,7 @@ zyl_f_of_int:
 .globl zyl_f_to_int
 zyl_f_to_int:
     # frame 0
-.L620_0:
+.L621_0:
     mov rdx, rdi
     movq xmm0, rdx
     cvttsd2si rax, xmm0
@@ -19790,7 +19884,7 @@ zyl_f_rem:
     mov [rbp-32], rax
     mov rax, [rbp-32]
     push rax
-    movsd xmm0, [rip+.L623]
+    movsd xmm0, [rip+.L624]
     movq rax, xmm0
     movq xmm1, rax
     pop rax
@@ -19801,11 +19895,11 @@ zyl_f_rem:
     and al, cl
     movzx rax, al
     test rax, rax
-    je .L621
-    movsd xmm0, [rip+.L624]
+    je .L622
+    movsd xmm0, [rip+.L625]
     movq rax, xmm0
-    jmp .L622
-.L621:
+    jmp .L623
+.L622:
     mov rax, [rbp-24]
     push rax
     mov rax, [rbp-32]
@@ -19817,7 +19911,7 @@ zyl_f_rem:
     mov [rbp-40], rax
     mov rax, [rbp-40]
     push rax
-    movsd xmm0, [rip+.L629]
+    movsd xmm0, [rip+.L630]
     movq rax, xmm0
     movq xmm1, rax
     pop rax
@@ -19826,10 +19920,10 @@ zyl_f_rem:
     seta al
     movzx rax, al
     test rax, rax
-    je .L627
+    je .L628
     mov rax, [rbp-40]
     push rax
-    movsd xmm0, [rip+.L630]
+    movsd xmm0, [rip+.L631]
     movq rax, xmm0
     movq xmm1, rax
     pop rax
@@ -19837,12 +19931,12 @@ zyl_f_rem:
     ucomisd xmm1, xmm0
     seta al
     movzx rax, al
-    jmp .L628
-.L627:
-    mov rax, 0
+    jmp .L629
 .L628:
+    mov rax, 0
+.L629:
     test rax, rax
-    je .L625
+    je .L626
     mov rax, [rbp-40]
     mov rdx, rax
     movq xmm0, rdx
@@ -19850,10 +19944,10 @@ zyl_f_rem:
     mov rdx, rax
     cvtsi2sd xmm0, rdx
     movq rax, xmm0
-    jmp .L626
-.L625:
-    mov rax, [rbp-40]
+    jmp .L627
 .L626:
+    mov rax, [rbp-40]
+.L627:
     mov [rbp-48], rax
     mov rax, [rbp-24]
     push rax
@@ -19870,7 +19964,7 @@ zyl_f_rem:
     movq xmm0, rax
     subsd xmm0, xmm1
     movq rax, xmm0
-.L622:
+.L623:
     mov rbx, [rbp-152]
     mov r12, [rbp-144]
     mov rsp, rbp
@@ -19900,10 +19994,10 @@ zyl_f_cmp:
     seta al
     movzx rax, al
     test rax, rax
-    je .L631
+    je .L632
     mov rax, -1
-    jmp .L632
-.L631:
+    jmp .L633
+.L632:
     mov rax, [rbp-24]
     push rax
     mov rax, [rbp-32]
@@ -19914,10 +20008,10 @@ zyl_f_cmp:
     seta al
     movzx rax, al
     test rax, rax
-    je .L633
+    je .L634
     mov rax, 1
-    jmp .L634
-.L633:
+    jmp .L635
+.L634:
     mov rax, [rbp-24]
     push rax
     mov rax, [rbp-32]
@@ -19930,14 +20024,14 @@ zyl_f_cmp:
     and al, cl
     movzx rax, al
     test rax, rax
-    je .L635
+    je .L636
     mov rax, 0
-    jmp .L636
-.L635:
-    mov rax, 2
+    jmp .L637
 .L636:
-.L634:
-.L632:
+    mov rax, 2
+.L637:
+.L635:
+.L633:
     mov rbx, [rbp-136]
     mov r12, [rbp-128]
     mov rsp, rbp
@@ -19951,7 +20045,7 @@ zyl_now_ms:
     push rbx
     and rsp, -16
     sub rsp, 16
-.L637_0:
+.L638_0:
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_timespec@tpoff]
     mov rbx, rax
@@ -19959,13 +20053,13 @@ zyl_now_ms:
     mov rsi, rbx
     call zyl_rt_sys_228
     cmp rax, 0
-    je .L637_1
+    je .L638_1
     mov rax, 0
     mov rbx, qword ptr [rbp-8]
     mov rsp, rbp
     pop rbp
     ret
-.L637_1:
+.L638_1:
     mov rsi, qword ptr [rbx+0]
     imul rsi, rsi, 1000
     mov rdi, qword ptr [rbx+8]
@@ -19985,7 +20079,7 @@ zyl_now_ms:
     ret
 zy_local_x2Fmain_0__fmt__fm_x2Dmulhi:
     # frame 0
-.L638_0:
+.L639_0:
     mov r8, 4294967295
     and r8, rdi
     shr rdi, 32
@@ -20017,7 +20111,7 @@ zy_local_x2Fmain_0__fmt__fm_x2Dmulhi:
     ret
 zy_local_x2Fmain_0__fmt__fm_x2Dclz:
     # frame 0
-.L639_0:
+.L640_0:
     mov rsi, 0
     mov r8, 32
     mov rdx, r8
@@ -20025,14 +20119,14 @@ zy_local_x2Fmain_0__fmt__fm_x2Dclz:
 zy_local_x2Fmain_0__fmt__fm_x2Dclz_x2Dgo:
     # frame 0
     mov r8, rdx
-.L640_0:
+.L641_0:
     cmp r8, 0
-    jne .L640_1
-.L640_3:
+    jne .L641_1
+.L641_3:
     mov rax, rsi
     ret
 .p2align 4
-.L640_1:
+.L641_1:
     mov r9, 64
     sub r9, r8
     mov rax, rdi
@@ -20055,7 +20149,7 @@ zy_local_x2Fmain_0__fmt__fm_x2Dclz_x2Dgo:
     sub r10, 1
     and r9, r10
     cmp r9, 0
-    jne .L640_2
+    jne .L641_2
     mov rax, rdi
     mov rcx, r8
     mov rdx, rcx
@@ -20073,9 +20167,9 @@ zy_local_x2Fmain_0__fmt__fm_x2Dclz_x2Dgo:
     sar rax, 1
     mov r8, rax
     cmp r8, 0
-    jne .L640_1
-    jmp .L640_3
-.L640_2:
+    jne .L641_1
+    jmp .L641_3
+.L641_2:
     mov rcx, r8
     mov rax, rcx
     sar rax, 63
@@ -20084,36 +20178,36 @@ zy_local_x2Fmain_0__fmt__fm_x2Dclz_x2Dgo:
     sar rax, 1
     mov r8, rax
     cmp r8, 0
-    jne .L640_1
-    jmp .L640_3
+    jne .L641_1
+    jmp .L641_3
 zy_local_x2Fmain_0__fmt__fm_x2Disdig:
     # frame 0
-.L641_0:
+.L642_0:
     cmp rdi, 48
-    jl .L641_1
-.L641_2:
+    jl .L642_1
+.L642_2:
     mov rax, rdi
     cmp rax, 57
     setle al
     movzx rax, al
     ret
-.L641_1:
+.L642_1:
     mov rax, 0
     ret
 zy_local_x2Fmain_0__fmt__fm_x2Dtab:
     # frame 16
     push rbx
-.L642_0:
+.L643_0:
     lea rax, [rip+zyl_rtg_fmt_tab]
     mov rbx, rax
     mov rax, qword ptr [rbx+10600]
     cmp rax, 1
-    jne .L642_1
+    jne .L643_1
     mov rax, rbx
     pop rbx
     ret
-.L642_1:
-    lea rax, [rip+.L643]
+.L643_1:
+    lea rax, [rip+.L644]
     mov rsi, rax
     mov rdi, 0
     mov rdx, rdi
@@ -20121,7 +20215,7 @@ zy_local_x2Fmain_0__fmt__fm_x2Dtab:
     call zy_local_x2Fmain_0__fmt__fm_x2Dtab_x2Dfill
     lea rdi, [rbx+10416]
     mov rsi, 0
-    movsd xmm0, [rip+.L644]
+    movsd xmm0, [rip+.L645]
     movq rax, xmm0
     mov r8, rax
     mov rdx, r8
@@ -20140,17 +20234,17 @@ zy_local_x2Fmain_0__fmt__fm_x2Dhex16:
     push r13
     mov rbx, rdi
     mov r12, rdx
-.L645_0:
+.L646_0:
     cmp rsi, 16
-    jne .L645_1
-.L645_2:
+    jne .L646_1
+.L646_2:
     mov rax, r12
     pop r13
     pop r12
     pop rbx
     ret
 .p2align 4
-.L645_1:
+.L646_1:
     lea r13, [rsi+1]
     shl r12, 4
     lea rdi, [rbx+rsi]
@@ -20160,8 +20254,8 @@ zy_local_x2Fmain_0__fmt__fm_x2Dhex16:
     add r12, rdi
     mov rsi, r13
     cmp rsi, 16
-    jne .L645_1
-    jmp .L645_2
+    jne .L646_1
+    jmp .L646_2
 zy_local_x2Fmain_0__fmt__fm_x2Dtab_x2Dfill:
     # frame 32
     push rbx
@@ -20171,10 +20265,10 @@ zy_local_x2Fmain_0__fmt__fm_x2Dtab_x2Dfill:
     mov rbx, rdi
     mov r12, rsi
     mov r13, rdx
-.L646_0:
+.L647_0:
     cmp r13, 1302
-    jne .L646_1
-.L646_3:
+    jne .L647_1
+.L647_3:
     mov rax, 0
     pop r14
     pop r13
@@ -20182,7 +20276,7 @@ zy_local_x2Fmain_0__fmt__fm_x2Dtab_x2Dfill:
     pop rbx
     ret
 .p2align 4
-.L646_1:
+.L647_1:
     lea rsi, [r13*8]
     lea r14, [rbx+rsi]
     mov rsi, r13
@@ -20192,16 +20286,16 @@ zy_local_x2Fmain_0__fmt__fm_x2Dtab_x2Dfill:
     mov r8, 0
     mov r9, r8
     cmp rsi, 16
-    je .L646_2
+    je .L647_2
     mov rdx, r8
     call zy_local_x2Fmain_0__fmt__fm_x2Dhex16
     mov r9, rax
-.L646_2:
+.L647_2:
     mov qword ptr [r14+0], r9
     add r13, 1
     cmp r13, 1302
-    jne .L646_1
-    jmp .L646_3
+    jne .L647_1
+    jmp .L647_3
 zy_local_x2Fmain_0__fmt__fm_x2Dp10_x2Dfill:
     # frame 136
     push rbp
@@ -20215,10 +20309,10 @@ zy_local_x2Fmain_0__fmt__fm_x2Dp10_x2Dfill:
     mov rax, [rbp-16]
     mov rcx, 23
     cmp rax, rcx
-    jne .L647
+    jne .L648
     mov rax, 0
-    jmp .L648
-.L647:
+    jmp .L649
+.L648:
     mov rax, [rbp-16]
     mov rcx, 8
     imul rax, rcx
@@ -20242,7 +20336,7 @@ zy_local_x2Fmain_0__fmt__fm_x2Dp10_x2Dfill:
     mov [rsp], rax
     mov rax, [rbp-24]
     push rax
-    movsd xmm0, [rip+.L649]
+    movsd xmm0, [rip+.L650]
     movq rax, xmm0
     movq xmm1, rax
     pop rax
@@ -20259,7 +20353,7 @@ zy_local_x2Fmain_0__fmt__fm_x2Dp10_x2Dfill:
     mov rsp, rbp
     pop rbp
     jmp zy_local_x2Fmain_0__fmt__fm_x2Dp10_x2Dfill
-.L648:
+.L649:
     mov rbx, [rbp-136]
     mov r12, [rbp-128]
     mov rsp, rbp
@@ -20267,69 +20361,69 @@ zy_local_x2Fmain_0__fmt__fm_x2Dp10_x2Dfill:
     ret
 zy_local_x2Fmain_0__fmt__fm_x2Dp5_x2Dhex:
     # frame 0
-.L650_0:
-    lea rax, [rip+.L651]
+.L651_0:
+    lea rax, [rip+.L652]
     mov rsi, rax
     mov rax, rsi
     ret
 zy_local_x2Fmain_0__fmt__fm_x2Dspace:
     # frame 0
-.L652_0:
+.L653_0:
     cmp rdi, 32
-    jne .L652_1
-.L652_3:
+    jne .L653_1
+.L653_3:
     mov rax, 1
     ret
-.L652_1:
+.L653_1:
     cmp rdi, 9
-    jl .L652_2
+    jl .L653_2
     mov rax, rdi
     cmp rax, 13
     setle al
     movzx rax, al
     ret
-.L652_2:
+.L653_2:
     mov rax, 0
     ret
 zy_local_x2Fmain_0__fmt__fm_x2Dskip_x2Dws:
     # frame 0
-.L653_0:
+.L654_0:
     movzx esi, byte ptr [rdi+0]
     mov r8, 1
     cmp rsi, 32
-    je .L653_2
+    je .L654_2
     mov rax, rsi
     cmp rax, 13
     setle al
     movzx rax, al
     mov r9, rax
     cmp rsi, 9
-    jge .L653_3
+    jge .L654_3
     mov r9, 0
-.L653_3:
+.L654_3:
     mov r8, r9
-.L653_2:
+.L654_2:
     cmp r8, 0
-    je .L653_1
+    je .L654_1
     add rdi, 1
-    jmp .L653_0
-.L653_1:
+    jmp .L654_0
+.L654_1:
     mov rax, rdi
     ret
 .globl zyl_f_parse
 zyl_f_parse:
     # frame 0
-.L654_0:
+.L655_0:
     cmp rdi, 0
-    jne .L654_1
+    jne .L655_1
     mov rax, 0
     ret
-.L654_1:
+.L655_1:
     call zy_local_x2Fmain_0__fmt__fm_x2Dskip_x2Dws
     mov rsi, rax
     movzx edi, byte ptr [rsi+0]
     cmp rdi, 45
-    jne .L654_2
+    jne .L655_2
     lea r8, [rsi+1]
     mov rdi, r8
     call zy_local_x2Fmain_0__fmt__fm_x2Dbody
@@ -20338,12 +20432,12 @@ zyl_f_parse:
     mov rdi, r8
     mov rsi, r9
     jmp zy_local_x2Fmain_0__fmt__fm_x2Dsigned
-.L654_2:
+.L655_2:
     lea r8, [rsi+1]
     cmp rdi, 43
-    je .L654_3
+    je .L655_3
     mov r8, rsi
-.L654_3:
+.L655_3:
     mov rdi, r8
     call zy_local_x2Fmain_0__fmt__fm_x2Dbody
     mov rdi, rax
@@ -20351,13 +20445,13 @@ zyl_f_parse:
     jmp zy_local_x2Fmain_0__fmt__fm_x2Dsigned
 zy_local_x2Fmain_0__fmt__fm_x2Dsigned:
     # frame 0
-.L655_0:
+.L656_0:
     cmp rdi, -1
-    jne .L655_1
-.L655_2:
+    jne .L656_1
+.L656_2:
     mov rax, 0
     ret
-.L655_1:
+.L656_1:
     mov rax, rdi
     or rax, rsi
     ret
@@ -20378,7 +20472,7 @@ zy_local_x2Fmain_0__fmt__fm_x2Dbody:
     mov rax, [rbp-16]
     mov rcx, 105
     cmp rax, rcx
-    jne .L656
+    jne .L657
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -20388,12 +20482,12 @@ zy_local_x2Fmain_0__fmt__fm_x2Dbody:
     mov rsp, rbp
     pop rbp
     jmp zy_local_x2Fmain_0__fmt__fm_x2Dinf_x2Dword
-    jmp .L657
-.L656:
+    jmp .L658
+.L657:
     mov rax, [rbp-16]
     mov rcx, 110
     cmp rax, rcx
-    jne .L658
+    jne .L659
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -20403,14 +20497,14 @@ zy_local_x2Fmain_0__fmt__fm_x2Dbody:
     mov rsp, rbp
     pop rbp
     jmp zy_local_x2Fmain_0__fmt__fm_x2Dnan_x2Dword
-    jmp .L659
-.L658:
+    jmp .L660
+.L659:
     mov rax, [rbp-8]
     mov rdx, rax
     movzx eax, byte ptr [rdx]
     mov rcx, 48
     cmp rax, rcx
-    jne .L662
+    jne .L663
     mov rax, [rbp-8]
     mov rcx, 1
     add rax, rcx
@@ -20422,12 +20516,12 @@ zy_local_x2Fmain_0__fmt__fm_x2Dbody:
     cmp rax, rcx
     sete al
     movzx rax, al
-    jmp .L663
-.L662:
-    mov rax, 0
+    jmp .L664
 .L663:
+    mov rax, 0
+.L664:
     test rax, rax
-    je .L660
+    je .L661
     sub rsp, 8
     sub rsp, 40
     mov rax, [rbp-8]
@@ -20444,14 +20538,14 @@ call zy_local_x2Fmain_0__fmt__fh_x2Dint
     mov rax, [rbp-24]
     mov rcx, -1
     cmp rax, rcx
-    jne .L664
+    jne .L665
     mov rax, 0
-    jmp .L665
-.L664:
-    mov rax, [rbp-24]
+    jmp .L666
 .L665:
-    jmp .L661
-.L660:
+    mov rax, [rbp-24]
+.L666:
+    jmp .L662
+.L661:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -20483,9 +20577,9 @@ call zy_local_x2Fmain_0__fmt__fh_x2Dint
     mov rdi, [rsp+56]
 call zy_local_x2Fmain_0__fmt__fd_x2Dscan
     add rsp, 64
-.L661:
-.L659:
-.L657:
+.L662:
+.L660:
+.L658:
     mov rbx, [rbp-120]
     mov r12, [rbp-112]
     mov rsp, rbp
@@ -20493,35 +20587,35 @@ call zy_local_x2Fmain_0__fmt__fd_x2Dscan
     ret
 zy_local_x2Fmain_0__fmt__fm_x2Dinf_x2Dword:
     # frame 0
-.L666_0:
+.L667_0:
     movzx esi, byte ptr [rdi+1]
     or rsi, 32
     cmp rsi, 110
-    jne .L666_1
+    jne .L667_1
     movzx esi, byte ptr [rdi+2]
     or rsi, 32
     cmp rsi, 102
-    jne .L666_1
+    jne .L667_1
     mov rax, 9218868437227405312
     ret
-.L666_1:
+.L667_1:
     mov rax, -1
     ret
 zy_local_x2Fmain_0__fmt__fm_x2Dnan_x2Dword:
     # frame 16
     push rbx
-.L667_0:
+.L668_0:
     movzx esi, byte ptr [rdi+1]
     or rsi, 32
     cmp rsi, 97
-    jne .L667_1
+    jne .L668_1
     movzx esi, byte ptr [rdi+2]
     or rsi, 32
     cmp rsi, 110
-    jne .L667_1
+    jne .L668_1
     movzx eax, byte ptr [rdi+3]
     cmp rax, 40
-    jne .L667_2
+    jne .L668_2
     lea rbx, [rdi+4]
     add rdi, 4
     call zy_local_x2Fmain_0__fmt__fm_x2Dseq_x2Dend
@@ -20529,11 +20623,11 @@ zy_local_x2Fmain_0__fmt__fm_x2Dnan_x2Dword:
     mov rdi, rbx
     pop rbx
     jmp zy_local_x2Fmain_0__fmt__fm_x2Dnan_x2Dseq
-.L667_2:
+.L668_2:
     mov rax, 9221120237041090560
     pop rbx
     ret
-.L667_1:
+.L668_1:
     mov rax, -1
     pop rbx
     ret
@@ -20541,27 +20635,27 @@ zy_local_x2Fmain_0__fmt__fm_x2Dalnum:
     # frame 16
     push rbx
     mov rbx, rdi
-.L668_0:
+.L669_0:
     mov rdi, rbx
     call zy_local_x2Fmain_0__fmt__fm_x2Disdig
     cmp rax, 0
-    je .L668_1
+    je .L669_1
     mov rax, 1
     pop rbx
     ret
-.L668_1:
+.L669_1:
     mov rax, rbx
     or rax, 32
     cmp rax, 97
-    jl .L668_2
+    jl .L669_2
     mov rax, rbx
     or rax, 32
     cmp rax, 122
-    jg .L668_2
+    jg .L669_2
     mov rax, 1
     pop rbx
     ret
-.L668_2:
+.L669_2:
     mov rax, rbx
     cmp rax, 95
     sete al
@@ -20572,14 +20666,14 @@ zy_local_x2Fmain_0__fmt__fm_x2Dseq_x2Dend:
     # frame 16
     push rbx
     mov rbx, rdi
-.L669_0:
+.L670_0:
     movzx edi, byte ptr [rbx+0]
     call zy_local_x2Fmain_0__fmt__fm_x2Dalnum
     cmp rax, 0
-    je .L669_1
+    je .L670_1
     add rbx, 1
-    jmp .L669_0
-.L669_1:
+    jmp .L670_0
+.L670_1:
     mov rax, rbx
     pop rbx
     ret
@@ -20589,19 +20683,19 @@ zy_local_x2Fmain_0__fmt__fm_x2Dnan_x2Dseq:
     push r12
     mov rbx, rdi
     mov r12, rsi
-.L670_0:
+.L671_0:
     movzx eax, byte ptr [r12+0]
     cmp rax, 41
-    je .L670_1
+    je .L671_1
     mov rax, 9221120237041090560
     pop r12
     pop rbx
     ret
-.L670_1:
+.L671_1:
     mov rdi, rbx
     call zy_local_x2Fmain_0__fmt__fm_x2Dull_x2Dend
     cmp rax, r12
-    jne .L670_2
+    jne .L671_2
     mov r12, 9221120237041090560
     mov rdi, rbx
     call zy_local_x2Fmain_0__fmt__fm_x2Dull
@@ -20613,7 +20707,7 @@ zy_local_x2Fmain_0__fmt__fm_x2Dnan_x2Dseq:
     pop r12
     pop rbx
     ret
-.L670_2:
+.L671_2:
     mov rax, 9221120237041090560
     pop r12
     pop rbx
@@ -20622,11 +20716,11 @@ zy_local_x2Fmain_0__fmt__fm_x2Dhexval_x2Dok:
     # frame 16
     push rbx
     mov rbx, rsi
-.L671_0:
+.L672_0:
     call zy_local_x2Fmain_0__text__rt_x2Dhexval
     mov rsi, rax
     cmp rsi, 0
-    jl .L671_1
+    jl .L672_1
     mov rax, rsi
     mov rcx, rbx
     cmp rax, rcx
@@ -20634,31 +20728,31 @@ zy_local_x2Fmain_0__fmt__fm_x2Dhexval_x2Dok:
     movzx rax, al
     pop rbx
     ret
-.L671_1:
+.L672_1:
     mov rax, 0
     pop rbx
     ret
 zy_local_x2Fmain_0__fmt__fm_x2Dull_x2Dbase:
     # frame 0
-.L672_0:
+.L673_0:
     movzx eax, byte ptr [rdi+0]
     cmp rax, 48
-    jne .L672_1
+    jne .L673_1
     movzx esi, byte ptr [rdi+1]
     or rsi, 32
     cmp rsi, 120
-    jne .L672_2
+    jne .L673_2
     movzx edi, byte ptr [rdi+2]
     mov rsi, 16
     call zy_local_x2Fmain_0__fmt__fm_x2Dhexval_x2Dok
     cmp rax, 0
-    je .L672_2
+    je .L673_2
     mov rax, 16
     ret
-.L672_2:
+.L673_2:
     mov rax, 8
     ret
-.L672_1:
+.L673_1:
     mov rax, 10
     ret
 zy_local_x2Fmain_0__fmt__fm_x2Dull_x2Dend:
@@ -20667,28 +20761,28 @@ zy_local_x2Fmain_0__fmt__fm_x2Dull_x2Dend:
     push r12
     push r13
     mov rbx, rdi
-.L673_0:
+.L674_0:
     mov rdi, rbx
     call zy_local_x2Fmain_0__fmt__fm_x2Dull_x2Dbase
     mov r12, rax
     lea rsi, [rbx+2]
     cmp r12, 16
-    je .L673_1
+    je .L674_1
     mov rsi, rbx
-.L673_1:
+.L674_1:
     mov r13, rsi
     movzx edi, byte ptr [r13+0]
     mov rsi, r12
     call zy_local_x2Fmain_0__fmt__fm_x2Dhexval_x2Dok
     cmp rax, 0
-    je .L673_2
+    je .L674_2
     mov rdi, r13
     mov rsi, r12
     pop r13
     pop r12
     pop rbx
     jmp zy_local_x2Fmain_0__fmt__fm_x2Ddigits_x2Dend
-.L673_2:
+.L674_2:
     mov rax, rbx
     pop r13
     pop r12
@@ -20700,15 +20794,15 @@ zy_local_x2Fmain_0__fmt__fm_x2Ddigits_x2Dend:
     push r12
     mov rbx, rdi
     mov r12, rsi
-.L674_0:
+.L675_0:
     movzx edi, byte ptr [rbx+0]
     mov rsi, r12
     call zy_local_x2Fmain_0__fmt__fm_x2Dhexval_x2Dok
     cmp rax, 0
-    je .L674_1
+    je .L675_1
     add rbx, 1
-    jmp .L674_0
-.L674_1:
+    jmp .L675_0
+.L675_1:
     mov rax, rbx
     pop r12
     pop rbx
@@ -20717,15 +20811,15 @@ zy_local_x2Fmain_0__fmt__fm_x2Dull:
     # frame 16
     push rbx
     mov rbx, rdi
-.L675_0:
+.L676_0:
     mov rdi, rbx
     call zy_local_x2Fmain_0__fmt__fm_x2Dull_x2Dbase
     mov rsi, rax
     lea rdi, [rbx+2]
     cmp rsi, 16
-    je .L675_1
+    je .L676_1
     mov rdi, rbx
-.L675_1:
+.L676_1:
     mov r8, 0
     mov r9, 0
     mov rdx, r8
@@ -20746,16 +20840,16 @@ zy_local_x2Fmain_0__fmt__fm_x2Dull_x2Dgo:
     mov r12, rsi
     mov r13, rdx
     mov r14, rcx
-.L676_0:
+.L677_0:
     mov rdx, qword ptr [rbp-48]
     movzx r15d, byte ptr [rdx+0]
     mov rdi, r15
     mov rsi, r12
     call zy_local_x2Fmain_0__fmt__fm_x2Dhexval_x2Dok
     cmp rax, 0
-    jne .L676_1
+    jne .L677_1
     cmp r14, 0
-    je .L676_2
+    je .L677_2
     mov rax, -1
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -20765,7 +20859,7 @@ zy_local_x2Fmain_0__fmt__fm_x2Dull_x2Dgo:
     mov rsp, rbp
     pop rbp
     ret
-.L676_2:
+.L677_2:
     mov rax, r13
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -20775,15 +20869,15 @@ zy_local_x2Fmain_0__fmt__fm_x2Dull_x2Dgo:
     mov rsp, rbp
     pop rbp
     ret
-.L676_1:
+.L677_1:
     cmp r14, 0
-    je .L676_3
+    je .L677_3
     mov rax, qword ptr [rbp-48]
     add rax, 1
     mov qword ptr [rbp-48], rax
     mov r14, 1
-    jmp .L676_0
-.L676_3:
+    jmp .L677_0
+.L677_3:
     mov rbx, r13
     imul rbx, r12
     mov rdi, r15
@@ -20794,31 +20888,31 @@ zy_local_x2Fmain_0__fmt__fm_x2Dull_x2Dgo:
     mov rsi, r12
     call zy_local_x2Fmain_0__fmt__fm_x2Dmulhi
     cmp rax, 0
-    jne .L676_5
+    jne .L677_5
     mov rsi, -9223372036854775808
     xor rsi, r15
     mov rdi, -9223372036854775808
     mov rax, rbx
     xor rax, rdi
     cmp rsi, rax
-    jge .L676_4
-.L676_5:
+    jge .L677_4
+.L677_5:
     mov rax, qword ptr [rbp-48]
     add rax, 1
     mov qword ptr [rbp-48], rax
     mov r14, 1
-    jmp .L676_0
-.L676_4:
+    jmp .L677_0
+.L677_4:
     mov rax, qword ptr [rbp-48]
     add rax, 1
     mov qword ptr [rbp-48], rax
     mov r13, r15
     mov r14, 0
-    jmp .L676_0
+    jmp .L677_0
 zy_local_x2Fmain_0__fmt__fm_x2Dexp:
     # frame 16
     push rbx
-.L677_0:
+.L678_0:
     movzx esi, byte ptr [rdi+0]
     mov rax, rsi
     cmp rax, 45
@@ -20826,15 +20920,15 @@ zy_local_x2Fmain_0__fmt__fm_x2Dexp:
     movzx rax, al
     mov rbx, rax
     cmp rsi, 45
-    je .L677_3
+    je .L678_3
     cmp rsi, 43
-    jne .L677_1
-.L677_3:
+    jne .L678_1
+.L678_3:
     lea rsi, [rdi+1]
-    jmp .L677_2
-.L677_1:
+    jmp .L678_2
+.L678_1:
     mov rsi, rdi
-.L677_2:
+.L678_2:
     mov rdi, 0
     mov rax, rsi
     mov rsi, rdi
@@ -20842,51 +20936,51 @@ zy_local_x2Fmain_0__fmt__fm_x2Dexp:
     call zy_local_x2Fmain_0__fmt__fm_x2Dexp_x2Dgo
     mov rsi, rax
     cmp rbx, 0
-    je .L677_4
+    je .L678_4
     mov rdi, 0
     sub rdi, rsi
     mov rax, rdi
     pop rbx
     ret
-.L677_4:
+.L678_4:
     mov rax, rsi
     pop rbx
     ret
 zy_local_x2Fmain_0__fmt__fm_x2Dexp_x2Dgo:
     # frame 0
-.L678_0:
+.L679_0:
     movzx r8d, byte ptr [rdi+0]
     cmp r8, 48
-    jl .L678_1
+    jl .L679_1
     cmp r8, 57
-    jg .L678_1
+    jg .L679_1
     lea r9, [rdi+1]
     mov rax, 1000000000000000
     cmp rsi, rax
-    jge .L678_2
+    jge .L679_2
     imul r10, rsi, 10
     sub r8, 48
     add r10, r8
-    jmp .L678_3
-.L678_2:
+    jmp .L679_3
+.L679_2:
     mov r10, rsi
-.L678_3:
+.L679_3:
     mov rsi, r10
     mov rdi, r9
-    jmp .L678_0
-.L678_1:
+    jmp .L679_0
+.L679_1:
     mov rax, rsi
     ret
 zy_local_x2Fmain_0__fmt__fm_x2Dexp_x2Dat:
     # frame 0
-.L679_0:
+.L680_0:
     movzx r8d, byte ptr [rdi+0]
     or r8, 32
     cmp r8, rsi
-    jne .L679_1
+    jne .L680_1
     add rdi, 1
     jmp zy_local_x2Fmain_0__fmt__fm_x2Dexp
-.L679_1:
+.L680_1:
     mov rax, 0
     ret
 zy_local_x2Fmain_0__fmt__fh_x2Dint:
@@ -20904,17 +20998,17 @@ zy_local_x2Fmain_0__fmt__fh_x2Dint:
     mov r13, rdx
     mov r14, rcx
     mov r15, r8
-.L680_0:
+.L681_0:
     movzx r12d, byte ptr [rbx+0]
     mov rdi, r12
     call zy_local_x2Fmain_0__text__rt_x2Dhexval
     mov rsi, rax
     cmp rsi, 0
-    jl .L680_1
+    jl .L681_1
     mov rax, qword ptr [rbp-48]
     shr rax, 56
     cmp rax, 0
-    jne .L680_2
+    jne .L681_2
     add rbx, 1
     mov rax, qword ptr [rbp-48]
     imul rax, 16
@@ -20924,29 +21018,29 @@ zy_local_x2Fmain_0__fmt__fh_x2Dint:
     add rax, rcx
     mov qword ptr [rbp-48], rax
     mov r15, 1
-    jmp .L680_0
-.L680_2:
+    jmp .L681_0
+.L681_2:
     lea rdi, [rbx+1]
     lea r8, [r13+4]
     cmp r14, 0
-    je .L680_3
+    je .L681_3
     mov r9, 1
-    jmp .L680_4
-.L680_3:
+    jmp .L681_4
+.L681_3:
     mov rax, rsi
     cmp rax, 0
     setg al
     movzx rax, al
     mov r9, rax
-.L680_4:
+.L681_4:
     mov r14, r9
     mov r15, 1
     mov rbx, rdi
     mov r13, r8
-    jmp .L680_0
-.L680_1:
+    jmp .L681_0
+.L681_1:
     cmp r12, 46
-    jne .L680_5
+    jne .L681_5
     lea rdi, [rbx+1]
     mov rsi, qword ptr [rbp-48]
     mov rdx, r13
@@ -20960,9 +21054,9 @@ zy_local_x2Fmain_0__fmt__fh_x2Dint:
     mov rsp, rbp
     pop rbp
     jmp zy_local_x2Fmain_0__fmt__fh_x2Dfrac
-.L680_5:
+.L681_5:
     cmp r15, 0
-    je .L680_6
+    je .L681_6
     mov rsi, 112
     mov rdi, rbx
     call zy_local_x2Fmain_0__fmt__fm_x2Dexp_x2Dat
@@ -20978,7 +21072,7 @@ zy_local_x2Fmain_0__fmt__fh_x2Dint:
     mov rsp, rbp
     pop rbp
     jmp zy_local_x2Fmain_0__fmt__fh_x2Dround
-.L680_6:
+.L681_6:
     mov rax, -1
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -21000,42 +21094,42 @@ zy_local_x2Fmain_0__fmt__fh_x2Dfrac:
     mov r13, rdx
     mov r14, rcx
     mov r15, r8
-.L681_0:
+.L682_0:
     movzx edi, byte ptr [rbx+0]
     call zy_local_x2Fmain_0__text__rt_x2Dhexval
     mov rsi, rax
     cmp rsi, 0
-    jl .L681_1
+    jl .L682_1
     mov rax, r12
     shr rax, 56
     cmp rax, 0
-    jne .L681_2
+    jne .L682_2
     add rbx, 1
     shl r12, 4
     add r12, rsi
     sub r13, 4
     mov r15, 1
-    jmp .L681_0
-.L681_2:
+    jmp .L682_0
+.L682_2:
     lea rdi, [rbx+1]
     cmp r14, 0
-    je .L681_3
+    je .L682_3
     mov r8, 1
-    jmp .L681_4
-.L681_3:
+    jmp .L682_4
+.L682_3:
     mov rax, rsi
     cmp rax, 0
     setg al
     movzx rax, al
     mov r8, rax
-.L681_4:
+.L682_4:
     mov r14, r8
     mov r15, 1
     mov rbx, rdi
-    jmp .L681_0
-.L681_1:
+    jmp .L682_0
+.L682_1:
     cmp r15, 0
-    je .L681_5
+    je .L682_5
     mov rsi, 112
     mov rdi, rbx
     call zy_local_x2Fmain_0__fmt__fm_x2Dexp_x2Dat
@@ -21049,7 +21143,7 @@ zy_local_x2Fmain_0__fmt__fh_x2Dfrac:
     pop r12
     pop rbx
     jmp zy_local_x2Fmain_0__fmt__fh_x2Dround
-.L681_5:
+.L682_5:
     mov rax, -1
     pop r15
     pop r14
@@ -21066,17 +21160,17 @@ zy_local_x2Fmain_0__fmt__fh_x2Dround:
     mov rbx, rdi
     mov r12, rsi
     mov r13, rdx
-.L682_0:
+.L683_0:
     cmp rbx, 0
-    jne .L682_1
-.L682_8:
+    jne .L683_1
+.L683_8:
     mov rax, 0
     pop r14
     pop r13
     pop r12
     pop rbx
     ret
-.L682_1:
+.L683_1:
     mov r14, 63
     mov rsi, 0
     mov rdi, 32
@@ -21087,22 +21181,22 @@ zy_local_x2Fmain_0__fmt__fh_x2Dround:
     sub r14, rsi
     add r14, r12
     cmp r14, 1023
-    jle .L682_2
+    jle .L683_2
     mov rax, 9218868437227405312
     pop r14
     pop r13
     pop r12
     pop rbx
     ret
-.L682_2:
+.L683_2:
     mov rsi, -1074
     cmp r14, -1022
-    jl .L682_3
+    jl .L683_3
     lea rsi, [r14-52]
-.L682_3:
+.L683_3:
     sub rsi, r12
     cmp rsi, 0
-    jg .L682_4
+    jg .L683_4
     mov rdi, 0
     sub rdi, rsi
     mov rax, rbx
@@ -21113,30 +21207,30 @@ zy_local_x2Fmain_0__fmt__fh_x2Dround:
     sbb rdx, rdx
     and rax, rdx
     mov rdi, rax
-    jmp .L682_5
-.L682_4:
+    jmp .L683_5
+.L683_4:
     mov rdi, rbx
     mov rdx, r13
     call zy_local_x2Fmain_0__fmt__fh_x2Dshift_x2Dround
     mov rdi, rax
-.L682_5:
+.L683_5:
     mov rsi, rdi
     cmp r14, -1022
-    jl .L682_6
+    jl .L683_6
     lea r8, [r14+1022]
     shl r8, 52
     lea rsi, [rdi+r8]
-.L682_6:
+.L683_6:
     mov rax, 9218868437227405312
     cmp rsi, rax
-    jl .L682_7
+    jl .L683_7
     mov rax, 9218868437227405312
     pop r14
     pop r13
     pop r12
     pop rbx
     ret
-.L682_7:
+.L683_7:
     mov rax, rsi
     pop r14
     pop r13
@@ -21146,13 +21240,13 @@ zy_local_x2Fmain_0__fmt__fh_x2Dround:
 zy_local_x2Fmain_0__fmt__fh_x2Dshift_x2Dround:
     # frame 0
     mov r8, rdx
-.L683_0:
+.L684_0:
     cmp rsi, 62
-    jle .L683_1
-.L683_5:
+    jle .L684_1
+.L684_5:
     mov rax, 0
     ret
-.L683_1:
+.L684_1:
     mov rax, rdi
     mov rcx, rsi
     mov rdx, rcx
@@ -21183,20 +21277,20 @@ zy_local_x2Fmain_0__fmt__fh_x2Dshift_x2Dround:
     and rax, rdx
     mov rsi, rax
     cmp rdi, rsi
-    jg .L683_3
+    jg .L684_3
     cmp rdi, rsi
-    jne .L683_2
+    jne .L684_2
     cmp r8, 0
-    jne .L683_4
+    jne .L684_4
     mov rax, r9
     and rax, 1
     cmp rax, 1
-    jne .L683_2
-.L683_4:
-.L683_3:
+    jne .L684_2
+.L684_4:
+.L684_3:
     lea rax, [r9+1]
     ret
-.L683_2:
+.L684_2:
     mov rax, r9
     ret
 zy_local_x2Fmain_0__fmt__fd_x2Dscan:
@@ -21221,44 +21315,44 @@ zy_local_x2Fmain_0__fmt__fd_x2Dscan:
     mov rax, [rbp-64]
     mov rcx, 48
     cmp rax, rcx
-    jl .L686
+    jl .L687
     mov rax, [rbp-64]
     mov rcx, 57
     cmp rax, rcx
     setle al
     movzx rax, al
-    jmp .L687
-.L686:
-    mov rax, 0
+    jmp .L688
 .L687:
+    mov rax, 0
+.L688:
     test rax, rax
-    je .L684
+    je .L685
     mov rax, [rbp-56]
     test rax, rax
-    je .L688
+    je .L689
     mov rax, [rbp-40]
     mov rcx, 1
     add rax, rcx
-    jmp .L689
-.L688:
-    mov rax, [rbp-40]
+    jmp .L690
 .L689:
+    mov rax, [rbp-40]
+.L690:
     mov [rbp-72], rax
     mov rax, [rbp-32]
     mov rcx, 0
     cmp rax, rcx
-    jne .L692
+    jne .L693
     mov rax, [rbp-64]
     mov rcx, 48
     cmp rax, rcx
     sete al
     movzx rax, al
-    jmp .L693
-.L692:
-    mov rax, 0
+    jmp .L694
 .L693:
+    mov rax, 0
+.L694:
     test rax, rax
-    je .L690
+    je .L691
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -21295,12 +21389,12 @@ zy_local_x2Fmain_0__fmt__fd_x2Dscan:
     mov rsp, rbp
     pop rbp
     jmp zy_local_x2Fmain_0__fmt__fd_x2Dscan
-    jmp .L691
-.L690:
+    jmp .L692
+.L691:
     mov rax, [rbp-32]
     mov rcx, 19
     cmp rax, rcx
-    jge .L694
+    jge .L695
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -21348,8 +21442,8 @@ zy_local_x2Fmain_0__fmt__fd_x2Dscan:
     mov rsp, rbp
     pop rbp
     jmp zy_local_x2Fmain_0__fmt__fd_x2Dscan
-    jmp .L695
-.L694:
+    jmp .L696
+.L695:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -21388,28 +21482,28 @@ zy_local_x2Fmain_0__fmt__fd_x2Dscan:
     mov rsp, rbp
     pop rbp
     jmp zy_local_x2Fmain_0__fmt__fd_x2Dscan
-.L695:
-.L691:
-    jmp .L685
-.L684:
+.L696:
+.L692:
+    jmp .L686
+.L685:
     mov rax, [rbp-64]
     mov rcx, 46
     cmp rax, rcx
-    jne .L698
+    jne .L699
     mov rax, [rbp-56]
     test rax, rax
-    je .L700
+    je .L701
     mov rax, 0
-    jmp .L701
-.L700:
-    mov rax, 1
+    jmp .L702
 .L701:
-    jmp .L699
-.L698:
-    mov rax, 0
+    mov rax, 1
+.L702:
+    jmp .L700
 .L699:
+    mov rax, 0
+.L700:
     test rax, rax
-    je .L696
+    je .L697
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -21446,21 +21540,21 @@ zy_local_x2Fmain_0__fmt__fd_x2Dscan:
     mov rsp, rbp
     pop rbp
     jmp zy_local_x2Fmain_0__fmt__fd_x2Dscan
-    jmp .L697
-.L696:
+    jmp .L698
+.L697:
     mov rax, [rbp-48]
     test rax, rax
-    je .L704
+    je .L705
     mov rax, 0
-    jmp .L705
-.L704:
-    mov rax, 1
+    jmp .L706
 .L705:
+    mov rax, 1
+.L706:
     test rax, rax
-    je .L702
+    je .L703
     mov rax, -1
-    jmp .L703
-.L702:
+    jmp .L704
+.L703:
     sub rsp, 16
     mov rdi, [rbp-16]
     mov rsi, 101
@@ -21470,14 +21564,14 @@ call zy_local_x2Fmain_0__fmt__fm_x2Dexp_x2Dat
     mov rax, [rbp-32]
     mov rcx, 0
     cmp rax, rcx
-    jne .L706
+    jne .L707
     mov rax, 0
-    jmp .L707
-.L706:
+    jmp .L708
+.L707:
     mov rax, [rbp-32]
     mov rcx, 19
     cmp rax, rcx
-    jg .L708
+    jg .L709
     mov rax, [rbp-24]
     sub rsp, 8
     mov [rsp], rax
@@ -21493,8 +21587,8 @@ call zy_local_x2Fmain_0__fmt__fm_x2Dexp_x2Dat
     mov rsp, rbp
     pop rbp
     jmp zy_local_x2Fmain_0__fmt__fd_x2Dexact
-    jmp .L709
-.L708:
+    jmp .L710
+.L709:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -21525,11 +21619,11 @@ call zy_local_x2Fmain_0__fmt__fm_x2Dexp_x2Dat
     mov rsp, rbp
     pop rbp
     jmp zy_local_x2Fmain_0__fmt__fd_x2Dinexact
-.L709:
-.L707:
-.L703:
-.L697:
-.L685:
+.L710:
+.L708:
+.L704:
+.L698:
+.L686:
     mov rbx, [rbp-184]
     mov r12, [rbp-176]
     mov rsp, rbp
@@ -21547,37 +21641,37 @@ zy_local_x2Fmain_0__fmt__fd_x2Dexact:
     mov rax, [rbp-16]
     mov rcx, -22
     cmp rax, rcx
-    jl .L714
+    jl .L715
     mov rax, [rbp-16]
     mov rcx, 22
     cmp rax, rcx
     setle al
     movzx rax, al
-    jmp .L715
-.L714:
-    mov rax, 0
+    jmp .L716
 .L715:
+    mov rax, 0
+.L716:
     test rax, rax
-    je .L712
+    je .L713
     mov rax, [rbp-8]
     mov rcx, 0
     cmp rax, rcx
-    jl .L716
+    jl .L717
     mov rax, [rbp-8]
     mov rcx, 9007199254740992
     cmp rax, rcx
     setle al
     movzx rax, al
-    jmp .L717
-.L716:
-    mov rax, 0
+    jmp .L718
 .L717:
-    jmp .L713
-.L712:
     mov rax, 0
+.L718:
+    jmp .L714
 .L713:
+    mov rax, 0
+.L714:
     test rax, rax
-    je .L710
+    je .L711
 call zy_local_x2Fmain_0__fmt__fm_x2Dtab
     add rsp, 0
     mov [rbp-24], rax
@@ -21589,7 +21683,7 @@ call zy_local_x2Fmain_0__fmt__fm_x2Dtab
     mov rax, [rbp-16]
     mov rcx, 0
     cmp rax, rcx
-    jl .L718
+    jl .L719
     mov rax, [rbp-32]
     push rax
     mov rax, [rbp-16]
@@ -21608,8 +21702,8 @@ call zy_local_x2Fmain_0__fmt__fm_x2Dtab
     movq xmm0, rax
     mulsd xmm0, xmm1
     movq rax, xmm0
-    jmp .L719
-.L718:
+    jmp .L720
+.L719:
     mov rax, [rbp-32]
     push rax
     mov rax, 0
@@ -21630,9 +21724,9 @@ call zy_local_x2Fmain_0__fmt__fm_x2Dtab
     movq xmm0, rax
     divsd xmm0, xmm1
     movq rax, xmm0
-.L719:
-    jmp .L711
-.L710:
+.L720:
+    jmp .L712
+.L711:
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
@@ -21646,7 +21740,7 @@ call zy_local_x2Fmain_0__fmt__fm_x2Dtab
     mov rsp, rbp
     pop rbp
     jmp zy_local_x2Fmain_0__fmt__fm_x2Del
-.L711:
+.L712:
     mov rbx, [rbp-136]
     mov r12, [rbp-128]
     mov rsp, rbp
@@ -21663,7 +21757,7 @@ zy_local_x2Fmain_0__fmt__fd_x2Dinexact:
     mov r12, rsi
     mov r13, rdx
     mov r14, rcx
-.L720_0:
+.L721_0:
     mov rdi, r14
     mov rsi, r13
     call zy_local_x2Fmain_0__fmt__fm_x2Del
@@ -21672,7 +21766,7 @@ zy_local_x2Fmain_0__fmt__fd_x2Dinexact:
     mov rdi, r14
     call zy_local_x2Fmain_0__fmt__fm_x2Del
     cmp r15, rax
-    jne .L720_1
+    jne .L721_1
     mov rax, r15
     pop r15
     pop r14
@@ -21680,7 +21774,7 @@ zy_local_x2Fmain_0__fmt__fd_x2Dinexact:
     pop r12
     pop rbx
     ret
-.L720_1:
+.L721_1:
     mov rdi, rbx
     mov rsi, r12
     pop r15
@@ -21701,10 +21795,10 @@ zy_local_x2Fmain_0__fmt__fm_x2Del:
     sub rsp, 8
     mov rbx, rdi
     mov r12, rsi
-.L721_0:
+.L722_0:
     cmp rbx, -342
-    jge .L721_1
-.L721_6:
+    jge .L722_1
+.L722_6:
     mov rax, 0
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -21714,9 +21808,9 @@ zy_local_x2Fmain_0__fmt__fm_x2Del:
     mov rsp, rbp
     pop rbp
     ret
-.L721_1:
+.L722_1:
     cmp rbx, 308
-    jle .L721_2
+    jle .L722_2
     mov rax, 9218868437227405312
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -21726,7 +21820,7 @@ zy_local_x2Fmain_0__fmt__fm_x2Del:
     mov rsp, rbp
     pop rbp
     ret
-.L721_2:
+.L722_2:
     mov rsi, 0
     mov rdi, 32
     mov rdx, rdi
@@ -21756,7 +21850,7 @@ zy_local_x2Fmain_0__fmt__fm_x2Del:
     mov rax, qword ptr [rbp-48]
     and rax, 511
     cmp rax, 511
-    jne .L721_3
+    jne .L722_3
     mov rsi, qword ptr [r14+8]
     mov rdi, r12
     call zy_local_x2Fmain_0__fmt__fm_x2Dmulhi
@@ -21768,13 +21862,13 @@ zy_local_x2Fmain_0__fmt__fm_x2Del:
     mov rax, r15
     xor rax, r8
     cmp rdi, rax
-    jge .L721_4
+    jge .L722_4
     mov rdi, qword ptr [rbp-48]
     add rdi, 1
-    jmp .L721_5
-.L721_4:
+    jmp .L722_5
+.L722_4:
     mov rdi, qword ptr [rbp-48]
-.L721_5:
+.L722_5:
     mov rdx, rsi
     mov rsi, r13
     mov rcx, rdi
@@ -21787,7 +21881,7 @@ zy_local_x2Fmain_0__fmt__fm_x2Del:
     mov rsp, rbp
     pop rbp
     jmp zy_local_x2Fmain_0__fmt__fm_x2Del_x2Dround
-.L721_3:
+.L722_3:
     mov rdi, rbx
     mov rsi, r13
     mov rdx, r15
@@ -21806,7 +21900,7 @@ zy_local_x2Fmain_0__fmt__fm_x2Del_x2Dround:
     push r12
     mov r8, rdx
     mov r9, rcx
-.L722_0:
+.L723_0:
     mov r10, r9
     shr r10, 63
     lea r11, [r10+9]
@@ -21828,17 +21922,17 @@ zy_local_x2Fmain_0__fmt__fm_x2Del_x2Dround:
     mov rsi, rax
     add rsi, 1023
     cmp rsi, 0
-    jg .L722_1
+    jg .L723_1
     mov r10, 0
     sub r10, rsi
     lea rax, [r10+1]
     cmp rax, 64
-    jl .L722_2
+    jl .L723_2
     mov rax, 0
     pop r12
     pop rbx
     ret
-.L722_2:
+.L723_2:
     mov r10, 0
     sub r10, rsi
     add r10, 1
@@ -21858,21 +21952,21 @@ zy_local_x2Fmain_0__fmt__fm_x2Del_x2Dround:
     pop r12
     pop rbx
     ret
-.L722_1:
+.L723_1:
     mov r10, -9223372036854775808
     xor r8, r10
     mov r10, -9223372036854775808
     xor r10, 2
     cmp r8, r10
-    jge .L722_3
+    jge .L723_3
     cmp rdi, -4
-    jl .L722_3
+    jl .L723_3
     cmp rdi, 23
-    jg .L722_3
+    jg .L723_3
     mov rax, rbx
     and rax, 3
     cmp rax, 1
-    jne .L722_3
+    jne .L723_3
     mov rax, rbx
     mov rcx, r11
     mov rdx, rcx
@@ -21881,13 +21975,13 @@ zy_local_x2Fmain_0__fmt__fm_x2Del_x2Dround:
     sbb rdx, rdx
     and rax, rdx
     cmp rax, r9
-    jne .L722_3
+    jne .L723_3
     mov rdi, rbx
     and rdi, -2
-    jmp .L722_4
-.L722_3:
+    jmp .L723_4
+.L723_3:
     mov rdi, rbx
-.L722_4:
+.L723_4:
     mov r8, rdi
     and r8, 1
     add rdi, r8
@@ -21895,24 +21989,24 @@ zy_local_x2Fmain_0__fmt__fm_x2Del_x2Dround:
     lea r8, [rsi+1]
     mov rax, 9007199254740992
     cmp rdi, rax
-    jge .L722_5
+    jge .L723_5
     mov r8, rsi
-.L722_5:
+.L723_5:
     mov rsi, 0
     mov rax, 9007199254740992
     cmp rdi, rax
-    jge .L722_6
+    jge .L723_6
     mov r9, 4503599627370495
     mov rsi, rdi
     and rsi, r9
-.L722_6:
+.L723_6:
     cmp r8, 2047
-    jl .L722_7
+    jl .L723_7
     mov rax, 9218868437227405312
     pop r12
     pop rbx
     ret
-.L722_7:
+.L723_7:
     mov rdi, r8
     shl rdi, 52
     mov rax, rsi
@@ -21922,7 +22016,7 @@ zy_local_x2Fmain_0__fmt__fm_x2Del_x2Dround:
     ret
 zy_local_x2Fmain_0__fmt__sd_x2Dbuf:
     # frame 0
-.L723_0:
+.L724_0:
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_fmt_dec@tpoff]
     mov rsi, rax
@@ -21933,7 +22027,7 @@ zy_local_x2Fmain_0__fmt__sd_x2Dparse:
     push rbx
     push r12
     mov rbx, rsi
-.L724_0:
+.L725_0:
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_fmt_dec@tpoff]
     mov r12, rax
@@ -21961,89 +22055,89 @@ zy_local_x2Fmain_0__fmt__sd_x2Dread:
     # frame 16
     push rbx
     mov r8, rdx
-.L725_0:
+.L726_0:
     movzx r9d, byte ptr [rsi+0]
     cmp r9, 48
-    jl .L725_1
+    jl .L726_1
     cmp r9, 57
-    jg .L725_1
+    jg .L726_1
     mov r10, qword ptr [rdi+0]
     cmp r10, 0
-    jne .L725_2
+    jne .L726_2
     cmp r9, 48
-    jne .L725_2
+    jne .L726_2
     cmp r8, 0
-    je .L725_3
+    je .L726_3
     mov r11, qword ptr [rdi+8]
     sub r11, 1
     mov qword ptr [rdi+8], r11
-    jmp .L725_4
-.L725_3:
-.L725_4:
+    jmp .L726_4
+.L726_3:
+.L726_4:
     add rsi, 1
-    jmp .L725_0
-.L725_2:
+    jmp .L726_0
+.L726_2:
     cmp r10, 800
-    jge .L725_5
+    jge .L726_5
     lea r11, [rdi+32]
     add r11, r10
     lea rbx, [r9-48]
     mov byte ptr [r11+0], bl
     add r10, 1
     mov qword ptr [rdi+0], r10
-    jmp .L725_6
-.L725_5:
+    jmp .L726_6
+.L726_5:
     cmp r9, 48
-    je .L725_7
+    je .L726_7
     mov r10, 1
     mov qword ptr [rdi+16], r10
-.L725_7:
-.L725_6:
+.L726_7:
+.L726_6:
     cmp r8, 0
-    je .L725_8
-    jmp .L725_9
-.L725_8:
+    je .L726_8
+    jmp .L726_9
+.L726_8:
     mov r10, qword ptr [rdi+8]
     add r10, 1
     mov qword ptr [rdi+8], r10
-.L725_9:
+.L726_9:
     add rsi, 1
-    jmp .L725_0
-.L725_1:
+    jmp .L726_0
+.L726_1:
     cmp r9, 46
-    jne .L725_10
+    jne .L726_10
     cmp r8, 0
-    jne .L725_10
+    jne .L726_10
     add rsi, 1
     mov r8, 1
-    jmp .L725_0
-.L725_10:
+    jmp .L726_0
+.L726_10:
     mov rax, 0
     pop rbx
     ret
 zy_local_x2Fmain_0__fmt__sd_x2Dtrim:
     # frame 0
-.L726_0:
+.L727_0:
     mov rsi, qword ptr [rdi+0]
     cmp rsi, 0
-    jle .L726_1
+    jle .L727_1
     lea r8, [rdi+32]
     lea r9, [rsi-1]
     add r8, r9
     movzx eax, byte ptr [r8+0]
     cmp rax, 0
-    jne .L726_1
+    jne .L727_1
     lea r8, [rsi-1]
     mov qword ptr [rdi+0], r8
-    jmp .L726_0
-.L726_1:
+    jmp .L727_0
+.L727_1:
     cmp rsi, 0
-    jne .L726_2
+    jne .L727_2
     mov rsi, 0
     mov qword ptr [rdi+8], rsi
     mov rax, rsi
     ret
-.L726_2:
+.L727_2:
     mov rax, 0
     ret
 zy_local_x2Fmain_0__fmt__sd_x2Dshift:
@@ -22052,33 +22146,33 @@ zy_local_x2Fmain_0__fmt__sd_x2Dshift:
     push r12
     mov rbx, rdi
     mov r12, rsi
-.L727_0:
+.L728_0:
     mov rax, qword ptr [rbx+0]
     cmp rax, 0
-    jne .L727_1
+    jne .L728_1
     mov rax, 0
     pop r12
     pop rbx
     ret
-.L727_1:
+.L728_1:
     cmp r12, 25
-    jle .L727_2
+    jle .L728_2
     mov rsi, 25
     mov rdi, rbx
     call zy_local_x2Fmain_0__fmt__sd_x2Dlshift
     sub r12, 25
-    jmp .L727_0
-.L727_2:
+    jmp .L728_0
+.L728_2:
     cmp r12, 0
-    jle .L727_3
+    jle .L728_3
     mov rdi, rbx
     mov rsi, r12
     pop r12
     pop rbx
     jmp zy_local_x2Fmain_0__fmt__sd_x2Dlshift
-.L727_3:
+.L728_3:
     cmp r12, -59
-    jge .L727_4
+    jge .L728_4
     mov rsi, 59
     mov rdi, 0
     mov r8, 0
@@ -22087,10 +22181,10 @@ zy_local_x2Fmain_0__fmt__sd_x2Dshift:
     mov rcx, r8
     call zy_local_x2Fmain_0__fmt__sd_x2Drs_x2Dread
     add r12, 59
-    jmp .L727_0
-.L727_4:
+    jmp .L728_0
+.L728_4:
     cmp r12, 0
-    jge .L727_5
+    jge .L728_5
     mov rsi, 0
     sub rsi, r12
     mov rdi, 0
@@ -22101,62 +22195,20 @@ zy_local_x2Fmain_0__fmt__sd_x2Dshift:
     pop r12
     pop rbx
     jmp zy_local_x2Fmain_0__fmt__sd_x2Drs_x2Dread
-.L727_5:
+.L728_5:
     mov rax, 0
     pop r12
     pop rbx
     ret
 zy_local_x2Fmain_0__fmt__sd_x2Drshift:
     # frame 0
-.L728_0:
+.L729_0:
     mov r8, 0
     mov r9, 0
     mov rdx, r8
     mov rcx, r9
     jmp zy_local_x2Fmain_0__fmt__sd_x2Drs_x2Dread
 zy_local_x2Fmain_0__fmt__sd_x2Drs_x2Dread:
-    # frame 0
-    mov r8, rdx
-    mov r9, rcx
-.L729_0:
-    mov rax, r9
-    mov rcx, rsi
-    mov rdx, rcx
-    shr rax, cl
-    cmp rdx, 64
-    sbb rdx, rdx
-    and rax, rdx
-    cmp rax, 0
-    jne .L729_1
-    mov rax, qword ptr [rdi+0]
-    cmp r8, rax
-    jl .L729_2
-    cmp r9, 0
-    jne .L729_3
-    mov r10, 0
-    mov qword ptr [rdi+0], r10
-    mov r10, 0
-    mov qword ptr [rdi+8], r10
-    mov rax, r10
-    ret
-.L729_3:
-    mov rdx, r8
-    mov rcx, r9
-    jmp zy_local_x2Fmain_0__fmt__sd_x2Drs_x2Dpad
-.L729_2:
-    lea r10, [r8+1]
-    imul r9, r9, 10
-    lea r11, [rdi+32]
-    add r11, r8
-    movzx r11d, byte ptr [r11+0]
-    add r9, r11
-    mov r8, r10
-    jmp .L729_0
-.L729_1:
-    mov rdx, r8
-    mov rcx, r9
-    jmp zy_local_x2Fmain_0__fmt__sd_x2Drs_x2Dstart
-zy_local_x2Fmain_0__fmt__sd_x2Drs_x2Dpad:
     # frame 0
     mov r8, rdx
     mov r9, rcx
@@ -22170,10 +22222,52 @@ zy_local_x2Fmain_0__fmt__sd_x2Drs_x2Dpad:
     and rax, rdx
     cmp rax, 0
     jne .L730_1
-    add r8, 1
+    mov rax, qword ptr [rdi+0]
+    cmp r8, rax
+    jl .L730_2
+    cmp r9, 0
+    jne .L730_3
+    mov r10, 0
+    mov qword ptr [rdi+0], r10
+    mov r10, 0
+    mov qword ptr [rdi+8], r10
+    mov rax, r10
+    ret
+.L730_3:
+    mov rdx, r8
+    mov rcx, r9
+    jmp zy_local_x2Fmain_0__fmt__sd_x2Drs_x2Dpad
+.L730_2:
+    lea r10, [r8+1]
     imul r9, r9, 10
+    lea r11, [rdi+32]
+    add r11, r8
+    movzx r11d, byte ptr [r11+0]
+    add r9, r11
+    mov r8, r10
     jmp .L730_0
 .L730_1:
+    mov rdx, r8
+    mov rcx, r9
+    jmp zy_local_x2Fmain_0__fmt__sd_x2Drs_x2Dstart
+zy_local_x2Fmain_0__fmt__sd_x2Drs_x2Dpad:
+    # frame 0
+    mov r8, rdx
+    mov r9, rcx
+.L731_0:
+    mov rax, r9
+    mov rcx, rsi
+    mov rdx, rcx
+    shr rax, cl
+    cmp rdx, 64
+    sbb rdx, rdx
+    and rax, rdx
+    cmp rax, 0
+    jne .L731_1
+    add r8, 1
+    imul r9, r9, 10
+    jmp .L731_0
+.L731_1:
     mov rdx, r8
     mov rcx, r9
     jmp zy_local_x2Fmain_0__fmt__sd_x2Drs_x2Dstart
@@ -22181,7 +22275,7 @@ zy_local_x2Fmain_0__fmt__sd_x2Drs_x2Dstart:
     # frame 0
     mov r8, rdx
     mov r9, rcx
-.L731_0:
+.L732_0:
     mov r10, qword ptr [rdi+8]
     lea r11, [r8-1]
     sub r10, r11
@@ -22210,10 +22304,10 @@ zy_local_x2Fmain_0__fmt__sd_x2Drs_x2Dwrite:
     mov r8, rdx
     mov r11, r9
     mov r9, rcx
-.L732_0:
+.L733_0:
     mov rax, qword ptr [rdi+0]
     cmp r9, rax
-    jge .L732_1
+    jge .L733_1
     lea rbx, [rdi+32]
     add rbx, r10
     mov rax, r11
@@ -22235,8 +22329,8 @@ zy_local_x2Fmain_0__fmt__sd_x2Drs_x2Dwrite:
     movzx r13d, byte ptr [r13+0]
     lea r11, [r12+r13]
     mov r9, rbx
-    jmp .L732_0
-.L732_1:
+    jmp .L733_0
+.L733_1:
     mov rdx, r8
     mov rcx, r10
     mov r8, r11
@@ -22250,10 +22344,10 @@ zy_local_x2Fmain_0__fmt__sd_x2Drs_x2Dtail:
     mov r9, rcx
     mov r10, r8
     mov r8, rdx
-.L733_0:
+.L734_0:
     cmp r10, 0
-    jle .L733_1
-.L733_5:
+    jle .L734_1
+.L734_5:
     mov rax, r10
     mov rcx, rsi
     mov rdx, rcx
@@ -22263,7 +22357,7 @@ zy_local_x2Fmain_0__fmt__sd_x2Drs_x2Dtail:
     and rax, rdx
     mov r11, rax
     cmp r9, 800
-    jge .L733_2
+    jge .L734_2
     lea rbx, [rdi+32]
     add rbx, r9
     mov byte ptr [rbx+0], r11b
@@ -22271,35 +22365,35 @@ zy_local_x2Fmain_0__fmt__sd_x2Drs_x2Dtail:
     and r10, r8
     imul r10, r10, 10
     cmp r10, 0
-    jle .L733_1
-    jmp .L733_5
-.L733_2:
+    jle .L734_1
+    jmp .L734_5
+.L734_2:
     cmp r11, 0
-    jle .L733_3
+    jle .L734_3
     mov r11, 1
     mov qword ptr [rdi+16], r11
-    jmp .L733_4
-.L733_3:
-.L733_4:
+    jmp .L734_4
+.L734_3:
+.L734_4:
     and r10, r8
     imul r10, r10, 10
     cmp r10, 0
-    jle .L733_1
-    jmp .L733_5
-.L733_1:
+    jle .L734_1
+    jmp .L734_5
+.L734_1:
     mov qword ptr [rdi+0], r9
     pop rbx
     jmp zy_local_x2Fmain_0__fmt__sd_x2Dtrim
 zy_local_x2Fmain_0__fmt__fm_x2Dndig:
     # frame 0
-.L734_0:
+.L735_0:
     cmp rdi, 10
-    jge .L734_1
-.L734_2:
+    jge .L735_1
+.L735_2:
     mov rax, rsi
     ret
 .p2align 4
-.L734_1:
+.L735_1:
     mov rcx, rdi
     movabs rax, 7378697629483820647
     imul rcx
@@ -22311,54 +22405,54 @@ zy_local_x2Fmain_0__fmt__fm_x2Dndig:
     mov rdi, rax
     add rsi, 1
     cmp rdi, 10
-    jge .L734_1
-    jmp .L734_2
+    jge .L735_1
+    jmp .L735_2
 zy_local_x2Fmain_0__fmt__fm_x2Dpow5:
     # frame 0
-.L735_0:
+.L736_0:
     cmp rdi, 0
-    jne .L735_1
-.L735_2:
+    jne .L736_1
+.L736_2:
     mov rax, rsi
     ret
 .p2align 4
-.L735_1:
+.L736_1:
     sub rdi, 1
     imul rsi, rsi, 5
     cmp rdi, 0
-    jne .L735_1
-    jmp .L735_2
+    jne .L736_1
+    jmp .L736_2
 zy_local_x2Fmain_0__fmt__sd_x2Dprefix:
     # frame 16
     push rbx
     mov r8, rdx
     mov r9, rcx
-.L736_0:
+.L737_0:
     cmp rsi, r8
-    jne .L736_1
-.L736_4:
+    jne .L737_1
+.L737_4:
     mov rax, r9
     pop rbx
     ret
 .p2align 4
-.L736_1:
+.L737_1:
     lea r10, [rsi+1]
     imul r11, r9, 10
     mov rax, qword ptr [rdi+0]
     cmp rsi, rax
-    jge .L736_2
+    jge .L737_2
     lea rbx, [rdi+32]
     add rbx, rsi
     movzx ebx, byte ptr [rbx+0]
-    jmp .L736_3
-.L736_2:
+    jmp .L737_3
+.L737_2:
     mov rbx, 0
-.L736_3:
+.L737_3:
     lea r9, [r11+rbx]
     mov rsi, r10
     cmp rsi, r8
-    jne .L736_1
-    jmp .L736_4
+    jne .L737_1
+    jmp .L737_4
 zy_local_x2Fmain_0__fmt__sd_x2Ddelta:
     # frame 32
     push rbx
@@ -22367,7 +22461,7 @@ zy_local_x2Fmain_0__fmt__sd_x2Ddelta:
     push r14
     mov rbx, rdi
     mov r12, rsi
-.L737_0:
+.L738_0:
     mov rsi, 1
     mov rdi, r12
     call zy_local_x2Fmain_0__fmt__fm_x2Dpow5
@@ -22395,14 +22489,14 @@ zy_local_x2Fmain_0__fmt__sd_x2Ddelta:
     mov rdi, rbx
     call zy_local_x2Fmain_0__fmt__sd_x2Dprefix
     cmp rax, r13
-    jge .L737_1
+    jge .L738_1
     lea rax, [r12-1]
     pop r14
     pop r13
     pop r12
     pop rbx
     ret
-.L737_1:
+.L738_1:
     mov rax, r12
     pop r14
     pop r13
@@ -22417,7 +22511,7 @@ zy_local_x2Fmain_0__fmt__sd_x2Dlshift:
     push r14
     mov rbx, rdi
     mov r12, rsi
-.L738_0:
+.L739_0:
     mov rdi, rbx
     mov rsi, r12
     call zy_local_x2Fmain_0__fmt__sd_x2Ddelta
@@ -22434,9 +22528,9 @@ zy_local_x2Fmain_0__fmt__sd_x2Dlshift:
     lea rsi, [r14+r13]
     mov rdi, 800
     cmp rsi, 800
-    jge .L738_1
+    jge .L739_1
     mov rdi, rsi
-.L738_1:
+.L739_1:
     mov qword ptr [rbx+0], rdi
     mov rsi, qword ptr [rbx+8]
     add rsi, r13
@@ -22450,22 +22544,22 @@ zy_local_x2Fmain_0__fmt__sd_x2Dlshift:
 zy_local_x2Fmain_0__fmt__sd_x2Dls_x2Dput:
     # frame 0
     mov r8, rdx
-.L739_0:
+.L740_0:
     cmp rsi, 800
-    jge .L739_1
-.L739_3:
+    jge .L740_1
+.L740_3:
     lea r9, [rdi+32]
     add r9, rsi
     mov byte ptr [r9+0], r8b
     mov rsi, r8
     mov rax, rsi
     ret
-.L739_1:
+.L740_1:
     cmp r8, 0
-    jne .L739_2
+    jne .L740_2
     mov rax, 0
     ret
-.L739_2:
+.L740_2:
     mov rsi, 1
     mov qword ptr [rdi+16], rsi
     mov rax, rsi
@@ -22478,10 +22572,10 @@ zy_local_x2Fmain_0__fmt__sd_x2Dls_x2Dgo:
     mov r9, rcx
     mov r10, r8
     mov r8, rdx
-.L740_0:
+.L741_0:
     cmp r8, 0
-    jl .L740_1
-.L740_9:
+    jl .L741_1
+.L741_9:
     lea r11, [rdi+32]
     add r11, r8
     movzx r11d, byte ptr [r11+0]
@@ -22507,28 +22601,28 @@ zy_local_x2Fmain_0__fmt__sd_x2Dls_x2Dgo:
     imul r13, rbx, 10
     sub r11, r13
     cmp r12, 800
-    jge .L740_2
+    jge .L741_2
     lea r13, [rdi+32]
     add r13, r12
     mov byte ptr [r13+0], r11b
-    jmp .L740_3
-.L740_2:
+    jmp .L741_3
+.L741_2:
     cmp r11, 0
-    je .L740_4
+    je .L741_4
     mov r11, 1
     mov qword ptr [rdi+16], r11
-.L740_4:
-.L740_3:
+.L741_4:
+.L741_3:
     sub r8, 1
     sub r9, 1
     mov r10, rbx
     cmp r8, 0
-    jl .L740_1
-    jmp .L740_9
+    jl .L741_1
+    jmp .L741_9
 .p2align 4
-.L740_1:
+.L741_1:
     cmp r10, 0
-    jle .L740_5
+    jle .L741_5
     mov rcx, r10
     movabs rax, 7378697629483820647
     imul rcx
@@ -22545,25 +22639,25 @@ zy_local_x2Fmain_0__fmt__sd_x2Dls_x2Dgo:
     sub rax, rcx
     mov r12, rax
     cmp rbx, 800
-    jge .L740_6
+    jge .L741_6
     lea r13, [rdi+32]
     add r13, rbx
     mov byte ptr [r13+0], r12b
-    jmp .L740_7
-.L740_6:
+    jmp .L741_7
+.L741_6:
     cmp r12, 0
-    je .L740_8
+    je .L741_8
     mov rbx, 1
     mov qword ptr [rdi+16], rbx
-.L740_8:
-.L740_7:
+.L741_8:
+.L741_7:
     mov r8, -1
     sub r9, 1
     mov r10, r11
     cmp r8, 0
-    jl .L740_1
-    jmp .L740_9
-.L740_5:
+    jl .L741_1
+    jmp .L741_9
+.L741_5:
     mov rax, 0
     pop r13
     pop r12
@@ -22571,59 +22665,59 @@ zy_local_x2Fmain_0__fmt__sd_x2Dls_x2Dgo:
     ret
 zy_local_x2Fmain_0__fmt__sd_x2Dpowtab:
     # frame 0
-.L741_0:
+.L742_0:
     cmp rdi, 0
-    jne .L741_1
-.L741_9:
+    jne .L742_1
+.L742_9:
     mov rax, 1
     ret
-.L741_1:
+.L742_1:
     cmp rdi, 1
-    jne .L741_2
+    jne .L742_2
     mov rax, 3
     ret
-.L741_2:
+.L742_2:
     cmp rdi, 2
-    jne .L741_3
+    jne .L742_3
     mov rax, 6
     ret
-.L741_3:
+.L742_3:
     cmp rdi, 3
-    jne .L741_4
+    jne .L742_4
     mov rax, 9
     ret
-.L741_4:
+.L742_4:
     cmp rdi, 4
-    jne .L741_5
+    jne .L742_5
     mov rax, 13
     ret
-.L741_5:
+.L742_5:
     cmp rdi, 5
-    jne .L741_6
+    jne .L742_6
     mov rax, 16
     ret
-.L741_6:
+.L742_6:
     cmp rdi, 6
-    jne .L741_7
+    jne .L742_7
     mov rax, 19
     ret
-.L741_7:
+.L742_7:
     cmp rdi, 7
-    jne .L741_8
+    jne .L742_8
     mov rax, 23
     ret
-.L741_8:
+.L742_8:
     mov rax, 26
     ret
 zy_local_x2Fmain_0__fmt__sd_x2Dstep:
     # frame 0
-.L742_0:
+.L743_0:
     cmp rdi, 9
-    jl .L742_1
-.L742_2:
+    jl .L743_1
+.L743_2:
     mov rax, 27
     ret
-.L742_1:
+.L743_1:
     jmp zy_local_x2Fmain_0__fmt__sd_x2Dpowtab
 zy_local_x2Fmain_0__fmt__sd_x2Dscale_x2Ddown:
     # frame 32
@@ -22632,10 +22726,10 @@ zy_local_x2Fmain_0__fmt__sd_x2Dscale_x2Ddown:
     push r13
     mov rbx, rdi
     mov r12, rsi
-.L743_0:
+.L744_0:
     mov rax, qword ptr [rbx+8]
     cmp rax, 0
-    jle .L743_1
+    jle .L744_1
     mov rdi, qword ptr [rbx+8]
     call zy_local_x2Fmain_0__fmt__sd_x2Dstep
     mov r13, rax
@@ -22644,8 +22738,8 @@ zy_local_x2Fmain_0__fmt__sd_x2Dscale_x2Ddown:
     mov rdi, rbx
     call zy_local_x2Fmain_0__fmt__sd_x2Dshift
     add r12, r13
-    jmp .L743_0
-.L743_1:
+    jmp .L744_0
+.L744_1:
     mov rax, r12
     pop r13
     pop r12
@@ -22658,18 +22752,18 @@ zy_local_x2Fmain_0__fmt__sd_x2Dscale_x2Dup:
     push r13
     mov rbx, rdi
     mov r12, rsi
-.L744_0:
+.L745_0:
     mov rax, qword ptr [rbx+8]
     cmp rax, 0
-    jl .L744_2
+    jl .L745_2
     mov rax, qword ptr [rbx+8]
     cmp rax, 0
-    jne .L744_1
+    jne .L745_1
     lea rsi, [rbx+32]
     movzx eax, byte ptr [rsi+0]
     cmp rax, 5
-    jge .L744_1
-.L744_2:
+    jge .L745_1
+.L745_2:
     mov rdi, 0
     mov rsi, qword ptr [rbx+8]
     sub rdi, rsi
@@ -22679,8 +22773,8 @@ zy_local_x2Fmain_0__fmt__sd_x2Dscale_x2Dup:
     mov rsi, r13
     call zy_local_x2Fmain_0__fmt__sd_x2Dshift
     sub r12, r13
-    jmp .L744_0
-.L744_1:
+    jmp .L745_0
+.L745_1:
     mov rax, r12
     pop r13
     pop r12
@@ -22692,34 +22786,34 @@ zy_local_x2Fmain_0__fmt__sd_x2Dbits:
     push r12
     push r13
     mov rbx, rdi
-.L745_0:
+.L746_0:
     mov rax, qword ptr [rbx+0]
     cmp rax, 0
-    jne .L745_1
+    jne .L746_1
     mov rax, 0
     pop r13
     pop r12
     pop rbx
     ret
-.L745_1:
+.L746_1:
     mov rax, qword ptr [rbx+8]
     cmp rax, 310
-    jle .L745_2
+    jle .L746_2
     mov rax, 9218868437227405312
     pop r13
     pop r12
     pop rbx
     ret
-.L745_2:
+.L746_2:
     mov rax, qword ptr [rbx+8]
     cmp rax, -330
-    jge .L745_3
+    jge .L746_3
     mov rax, 0
     pop r13
     pop r12
     pop rbx
     ret
-.L745_3:
+.L746_3:
     mov rsi, 0
     mov rdi, rbx
     call zy_local_x2Fmain_0__fmt__sd_x2Dscale_x2Ddown
@@ -22729,7 +22823,7 @@ zy_local_x2Fmain_0__fmt__sd_x2Dbits:
     mov r12, rax
     sub r12, 1
     cmp r12, -1022
-    jge .L745_4
+    jge .L746_4
     mov r13, -1022
     sub r13, r12
     mov rsi, 0
@@ -22737,20 +22831,20 @@ zy_local_x2Fmain_0__fmt__sd_x2Dbits:
     mov rdi, rbx
     call zy_local_x2Fmain_0__fmt__sd_x2Dshift
     lea rsi, [r12+r13]
-    jmp .L745_5
-.L745_4:
+    jmp .L746_5
+.L746_4:
     mov rsi, r12
-.L745_5:
+.L746_5:
     mov r12, rsi
     lea rax, [r12+1023]
     cmp rax, 2047
-    jl .L745_6
+    jl .L746_6
     mov rax, 9218868437227405312
     pop r13
     pop r12
     pop rbx
     ret
-.L745_6:
+.L746_6:
     mov rsi, 53
     mov rdi, rbx
     call zy_local_x2Fmain_0__fmt__sd_x2Dshift
@@ -22760,34 +22854,34 @@ zy_local_x2Fmain_0__fmt__sd_x2Dbits:
     lea rdi, [r12+1]
     mov rax, 9007199254740992
     cmp rsi, rax
-    je .L745_7
+    je .L746_7
     mov rdi, r12
-.L745_7:
+.L746_7:
     mov r8, 4503599627370496
     mov rax, 9007199254740992
     cmp rsi, rax
-    je .L745_8
+    je .L746_8
     mov r8, rsi
-.L745_8:
+.L746_8:
     lea rax, [rdi+1023]
     cmp rax, 2047
-    jl .L745_9
+    jl .L746_9
     mov rax, 9218868437227405312
     pop r13
     pop r12
     pop rbx
     ret
-.L745_9:
+.L746_9:
     mov rsi, 4503599627370496
     mov rax, r8
     and rax, rsi
     cmp rax, 0
-    jne .L745_10
+    jne .L746_10
     mov rsi, -1023
-    jmp .L745_11
-.L745_10:
+    jmp .L746_11
+.L746_10:
     mov rsi, rdi
-.L745_11:
+.L746_11:
     mov rdi, 4503599627370495
     and rdi, r8
     add rsi, 1023
@@ -22804,39 +22898,39 @@ zy_local_x2Fmain_0__fmt__sd_x2Dint:
     push rbx
     mov r8, rdx
     mov r9, rcx
-.L746_0:
+.L747_0:
     cmp rsi, r8
-    jl .L746_1
-.L746_4:
+    jl .L747_1
+.L747_4:
     mov rax, r9
     pop rbx
     ret
 .p2align 4
-.L746_1:
+.L747_1:
     lea r10, [rsi+1]
     imul r11, r9, 10
     mov rax, qword ptr [rdi+0]
     cmp rsi, rax
-    jge .L746_2
+    jge .L747_2
     lea rbx, [rdi+32]
     add rbx, rsi
     movzx ebx, byte ptr [rbx+0]
-    jmp .L746_3
-.L746_2:
+    jmp .L747_3
+.L747_2:
     mov rbx, 0
-.L746_3:
+.L747_3:
     lea r9, [r11+rbx]
     mov rsi, r10
     cmp rsi, r8
-    jl .L746_1
-    jmp .L746_4
+    jl .L747_1
+    jmp .L747_4
 zy_local_x2Fmain_0__fmt__sd_x2Drounded:
     # frame 32
     push rbx
     push r12
     push r13
     mov rbx, rdi
-.L747_0:
+.L748_0:
     mov r12, qword ptr [rbx+8]
     mov rsi, 0
     mov rdi, 0
@@ -22849,13 +22943,13 @@ zy_local_x2Fmain_0__fmt__sd_x2Drounded:
     mov rsi, r12
     call zy_local_x2Fmain_0__fmt__sd_x2Dround_x2Dup
     cmp rax, 0
-    je .L747_1
+    je .L748_1
     lea rax, [r13+1]
     pop r13
     pop r12
     pop rbx
     ret
-.L747_1:
+.L748_1:
     mov rax, r13
     pop r13
     pop r12
@@ -22863,34 +22957,34 @@ zy_local_x2Fmain_0__fmt__sd_x2Drounded:
     ret
 zy_local_x2Fmain_0__fmt__sd_x2Dround_x2Dup:
     # frame 0
-.L748_0:
+.L749_0:
     cmp rsi, 0
-    jl .L748_2
-.L748_6:
+    jl .L749_2
+.L749_6:
     mov rax, qword ptr [rdi+0]
     cmp rsi, rax
-    jl .L748_1
-.L748_2:
+    jl .L749_1
+.L749_2:
     mov rax, 0
     ret
-.L748_1:
+.L749_1:
     lea r8, [rdi+32]
     add r8, rsi
     movzx eax, byte ptr [r8+0]
     cmp rax, 5
-    jne .L748_3
+    jne .L749_3
     lea r8, [rsi+1]
     mov rax, qword ptr [rdi+0]
     cmp r8, rax
-    jne .L748_3
+    jne .L749_3
     mov rax, qword ptr [rdi+16]
     cmp rax, 1
-    jne .L748_4
+    jne .L749_4
     mov rax, 1
     ret
-.L748_4:
+.L749_4:
     cmp rsi, 0
-    jle .L748_5
+    jle .L749_5
     lea r8, [rdi+32]
     lea r9, [rsi-1]
     add r8, r9
@@ -22901,10 +22995,10 @@ zy_local_x2Fmain_0__fmt__sd_x2Dround_x2Dup:
     sete al
     movzx rax, al
     ret
-.L748_5:
+.L749_5:
     mov rax, 0
     ret
-.L748_3:
+.L749_3:
     add rdi, 32
     add rdi, rsi
     movzx esi, byte ptr [rdi+0]
@@ -22918,19 +23012,19 @@ zy_local_x2Fmain_0__fmt__sd_x2Dround_x2Dup:
 .globl zyl_f_text
 zyl_f_text:
     # frame 0
-.L749_0:
+.L750_0:
     mov rsi, 0
     jmp zy_local_x2Fmain_0__fmt__fm_x2Dtext
 .globl zyl_f_text_r
 zyl_f_text_r:
     # frame 0
-.L750_0:
+.L751_0:
     mov rax, QWORD PTR fs:zyl_cur_region@tpoff
     mov rsi, rax
     jmp zy_local_x2Fmain_0__fmt__fm_x2Dtext
 zy_local_x2Fmain_0__fmt__fm_x2Dtext:
     # frame 0
-.L751_0:
+.L752_0:
     mov rax, rdi
     cmp rax, 0
     setl al
@@ -22943,67 +23037,67 @@ zy_local_x2Fmain_0__fmt__fm_x2Dtext:
     mov r10, 4503599627370495
     and rdi, r10
     cmp r9, 2047
-    jne .L751_1
+    jne .L752_1
     cmp rdi, 0
-    jne .L751_2
+    jne .L752_2
     cmp r8, 0
-    je .L751_3
-    lea rax, [rip+.L752]
-    mov r10, rax
-    mov r11, 4
-    mov rdi, r10
-    mov rdx, rsi
-    mov rsi, r11
-    jmp zy_local_x2Fmain_0__base__rt_x2Dstr_x2Dof
-.L751_3:
+    je .L752_3
     lea rax, [rip+.L753]
     mov r10, rax
+    mov r11, 4
+    mov rdi, r10
+    mov rdx, rsi
+    mov rsi, r11
+    jmp zy_local_x2Fmain_0__base__rt_x2Dstr_x2Dof
+.L752_3:
+    lea rax, [rip+.L754]
+    mov r10, rax
     mov r11, 3
     mov rdi, r10
     mov rdx, rsi
     mov rsi, r11
     jmp zy_local_x2Fmain_0__base__rt_x2Dstr_x2Dof
-.L751_2:
+.L752_2:
     cmp r8, 0
-    je .L751_4
-    lea rax, [rip+.L754]
+    je .L752_4
+    lea rax, [rip+.L755]
     mov r10, rax
     mov r11, 4
     mov rdi, r10
     mov rdx, rsi
     mov rsi, r11
     jmp zy_local_x2Fmain_0__base__rt_x2Dstr_x2Dof
-.L751_4:
-    lea rax, [rip+.L755]
+.L752_4:
+    lea rax, [rip+.L756]
     mov r10, rax
     mov r11, 3
     mov rdi, r10
     mov rdx, rsi
     mov rsi, r11
     jmp zy_local_x2Fmain_0__base__rt_x2Dstr_x2Dof
-.L751_1:
+.L752_1:
     mov r10, rdi
     cmp r9, 0
-    je .L751_5
+    je .L752_5
     mov r11, 4503599627370496
     mov r10, rdi
     or r10, r11
-.L751_5:
+.L752_5:
     mov rdi, -1074
     cmp r9, 0
-    je .L751_6
+    je .L752_6
     lea rdi, [r9-1075]
-.L751_6:
+.L752_6:
     cmp rdi, 10
-    jle .L751_7
+    jle .L752_7
     mov rdx, rdi
     mov rdi, r8
     mov rcx, rsi
     mov rsi, r10
     jmp zy_local_x2Fmain_0__fmt__fm_x2Dtext_x2Dbig
-.L751_7:
+.L752_7:
     cmp rdi, 0
-    jl .L751_8
+    jl .L752_8
     mov rax, r10
     mov rcx, rdi
     mov rdx, rcx
@@ -23018,7 +23112,7 @@ zy_local_x2Fmain_0__fmt__fm_x2Dtext:
     mov rcx, rsi
     mov rsi, r9
     jmp zy_local_x2Fmain_0__fmt__fm_x2Dtext_x2Dsmall
-.L751_8:
+.L752_8:
     mov r9, 0
     sub r9, rdi
     mov rdi, r8
@@ -23039,10 +23133,10 @@ zy_local_x2Fmain_0__fmt__fm_x2Dtext_x2Dfrac:
     mov qword ptr [rbp-48], rdi
     mov r12, rdx
     mov qword ptr [rbp-56], rcx
-.L756_0:
+.L757_0:
     cmp r12, 76
-    jl .L756_1
-.L756_8:
+    jl .L757_1
+.L757_8:
     mov rdi, 0
     mov r8, 0
     mov rsi, rdi
@@ -23057,7 +23151,7 @@ zy_local_x2Fmain_0__fmt__fm_x2Dtext_x2Dfrac:
     mov rsp, rbp
     pop rbp
     jmp zy_local_x2Fmain_0__fmt__fm_x2Dtext_x2Dsmall
-.L756_1:
+.L757_1:
     mov rax, rsi
     mov rcx, r12
     mov rdx, rcx
@@ -23067,12 +23161,12 @@ zy_local_x2Fmain_0__fmt__fm_x2Dtext_x2Dfrac:
     and rax, rdx
     mov rdi, rax
     cmp r12, 64
-    jl .L756_2
+    jl .L757_2
     mov rdi, 0
-.L756_2:
+.L757_2:
     mov r14, rdi
     cmp r12, 64
-    jge .L756_3
+    jge .L757_3
     mov rdi, 1
     mov rax, rdi
     mov rcx, r12
@@ -23084,10 +23178,10 @@ zy_local_x2Fmain_0__fmt__fm_x2Dtext_x2Dfrac:
     mov rdi, rax
     sub rdi, 1
     and rdi, rsi
-    jmp .L756_4
-.L756_3:
+    jmp .L757_4
+.L757_3:
     mov rdi, rsi
-.L756_4:
+.L757_4:
     imul r15, rdi, 1000000
     mov rsi, 1000000
     call zy_local_x2Fmain_0__fmt__fm_x2Dmulhi
@@ -23110,14 +23204,14 @@ zy_local_x2Fmain_0__fmt__fm_x2Dtext_x2Dfrac:
     mov rsi, r15
     call zy_local_x2Fmain_0__fmt__fm_x2Dfrac_x2Dup
     cmp rax, 0
-    je .L756_5
+    je .L757_5
     lea rsi, [r13+1]
-    jmp .L756_6
-.L756_5:
+    jmp .L757_6
+.L757_5:
     mov rsi, r13
-.L756_6:
+.L757_6:
     cmp rsi, 1000000
-    jne .L756_7
+    jne .L757_7
     lea rdi, [r14+1]
     mov r8, 0
     mov rsi, rdi
@@ -23132,7 +23226,7 @@ zy_local_x2Fmain_0__fmt__fm_x2Dtext_x2Dfrac:
     mov rsp, rbp
     pop rbp
     jmp zy_local_x2Fmain_0__fmt__fm_x2Dtext_x2Dsmall
-.L756_7:
+.L757_7:
     mov rdi, qword ptr [rbp-48]
     mov rdx, rsi
     mov rsi, r14
@@ -23148,10 +23242,10 @@ zy_local_x2Fmain_0__fmt__fm_x2Dtext_x2Dfrac:
 zy_local_x2Fmain_0__fmt__fm_x2Dfrac_x2Dq:
     # frame 0
     mov r8, rdx
-.L757_0:
+.L758_0:
     cmp rdi, 64
-    jge .L757_1
-.L757_2:
+    jge .L758_1
+.L758_2:
     mov rax, rsi
     mov rcx, rdi
     mov rdx, rcx
@@ -23173,7 +23267,7 @@ zy_local_x2Fmain_0__fmt__fm_x2Dfrac_x2Dq:
     or rsi, r9
     mov rax, rsi
     ret
-.L757_1:
+.L758_1:
     lea rsi, [rdi-64]
     mov rax, r8
     mov rcx, rsi
@@ -23188,10 +23282,10 @@ zy_local_x2Fmain_0__fmt__fm_x2Dfrac_x2Dup:
     push rbx
     mov r8, rdx
     mov r9, rcx
-.L758_0:
+.L759_0:
     cmp rdi, 64
-    jge .L758_1
-.L758_10:
+    jge .L759_1
+.L759_10:
     mov r10, 1
     mov rax, r10
     mov rcx, rdi
@@ -23214,21 +23308,21 @@ zy_local_x2Fmain_0__fmt__fm_x2Dfrac_x2Dup:
     and rax, rdx
     mov r11, rax
     cmp r10, r11
-    jle .L758_2
+    jle .L759_2
     mov rax, 1
     pop rbx
     ret
-.L758_2:
+.L759_2:
     cmp r10, r11
-    jne .L758_3
+    jne .L759_3
     mov rax, r9
     pop rbx
     ret
-.L758_3:
+.L759_3:
     mov rax, 0
     pop rbx
     ret
-.L758_1:
+.L759_1:
     sub rdi, 64
     mov r10, 1
     mov rax, r10
@@ -23243,7 +23337,7 @@ zy_local_x2Fmain_0__fmt__fm_x2Dfrac_x2Dup:
     and r8, r10
     mov r10, 0
     cmp rdi, 0
-    je .L758_4
+    je .L759_4
     mov r11, 1
     lea rbx, [rdi-1]
     mov rax, r11
@@ -23254,41 +23348,41 @@ zy_local_x2Fmain_0__fmt__fm_x2Dfrac_x2Dup:
     sbb rdx, rdx
     and rax, rdx
     mov r10, rax
-.L758_4:
+.L759_4:
     mov r11, -9223372036854775808
     cmp rdi, 0
-    je .L758_5
+    je .L759_5
     mov r11, 0
-.L758_5:
+.L759_5:
     cmp r8, r10
-    jle .L758_6
+    jle .L759_6
     mov rax, 1
     pop rbx
     ret
-.L758_6:
+.L759_6:
     cmp r8, r10
-    jne .L758_7
+    jne .L759_7
     mov rdi, -9223372036854775808
     xor rdi, r11
     mov r8, -9223372036854775808
     mov rax, rsi
     xor rax, r8
     cmp rdi, rax
-    jge .L758_8
+    jge .L759_8
     mov rax, 1
     pop rbx
     ret
-.L758_8:
+.L759_8:
     cmp rsi, r11
-    jne .L758_9
+    jne .L759_9
     mov rax, r9
     pop rbx
     ret
-.L758_9:
+.L759_9:
     mov rax, 0
     pop rbx
     ret
-.L758_7:
+.L759_7:
     mov rax, 0
     pop rbx
     ret
@@ -23307,15 +23401,15 @@ zy_local_x2Fmain_0__fmt__fm_x2Dtext_x2Dsmall:
     mov r12, rsi
     mov qword ptr [rbp-48], rdx
     mov r14, rcx
-.L759_0:
+.L760_0:
     cmp rbx, 0
-    je .L759_1
-.L759_5:
+    je .L760_1
+.L760_5:
     mov rsi, 1
-    jmp .L759_2
-.L759_1:
+    jmp .L760_2
+.L760_1:
     mov rsi, 0
-.L759_2:
+.L760_2:
     mov r15, rsi
     mov rdi, 0
     sub rdi, r12
@@ -23334,13 +23428,13 @@ zy_local_x2Fmain_0__fmt__fm_x2Dtext_x2Dsmall:
     call zyl_ralloc
     mov r14, rax
     cmp rbx, 0
-    je .L759_3
+    je .L760_3
     mov rsi, 45
     mov rcx, rsi
     mov byte ptr [r14+0], cl
-    jmp .L759_4
-.L759_3:
-.L759_4:
+    jmp .L760_4
+.L760_3:
+.L760_4:
     mov rsi, 0
     sub rsi, r12
     lea rdi, [r15+r13]
@@ -23381,21 +23475,21 @@ zy_local_x2Fmain_0__fmt__fm_x2Dtext_x2Dsmall:
     ret
 zy_local_x2Fmain_0__fmt__fm_x2Dzeros:
     # frame 0
-.L760_0:
+.L761_0:
     cmp rsi, 0
-    jne .L760_1
-.L760_2:
+    jne .L761_1
+.L761_2:
     mov rax, 0
     ret
 .p2align 4
-.L760_1:
+.L761_1:
     mov r8, 48
     mov byte ptr [rdi+0], r8b
     add rdi, 1
     sub rsi, 1
     cmp rsi, 0
-    jne .L760_1
-    jmp .L760_2
+    jne .L761_1
+    jmp .L761_2
 zy_local_x2Fmain_0__fmt__fm_x2Dtext_x2Dbig:
     # frame 32
     push rbx
@@ -23404,7 +23498,7 @@ zy_local_x2Fmain_0__fmt__fm_x2Dtext_x2Dbig:
     mov rbx, rdi
     mov rdi, rdx
     mov r12, rcx
-.L761_0:
+.L762_0:
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_fmt_big@tpoff]
     mov r13, rax
@@ -23450,22 +23544,22 @@ zy_local_x2Fmain_0__fmt__fm_x2Dbig_x2Dshift:
     push r13
     mov rbx, rdi
     mov r12, rdx
-.L762_0:
+.L763_0:
     cmp r12, 0
-    jne .L762_1
-.L762_3:
+    jne .L763_1
+.L763_3:
     mov rax, rsi
     pop r13
     pop r12
     pop rbx
     ret
 .p2align 4
-.L762_1:
+.L763_1:
     mov rdi, 32
     cmp r12, 32
-    jg .L762_2
+    jg .L763_2
     mov rdi, r12
-.L762_2:
+.L763_2:
     mov r13, rdi
     mov rdi, 0
     mov r8, 0
@@ -23477,8 +23571,8 @@ zy_local_x2Fmain_0__fmt__fm_x2Dbig_x2Dshift:
     mov rsi, rax
     sub r12, r13
     cmp r12, 0
-    jne .L762_1
-    jmp .L762_3
+    jne .L763_1
+    jmp .L763_3
 zy_local_x2Fmain_0__fmt__fm_x2Dbig_x2Dmul:
     # frame 32
     push rbx
@@ -23487,10 +23581,10 @@ zy_local_x2Fmain_0__fmt__fm_x2Dbig_x2Dmul:
     mov r9, rcx
     mov r10, r8
     mov r8, rdx
-.L763_0:
+.L764_0:
     cmp rsi, r8
-    jge .L763_1
-.L763_3:
+    jge .L764_1
+.L764_3:
     lea r11, [rsi*8]
     add r11, rdi
     mov r11, qword ptr [r11+0]
@@ -23520,12 +23614,12 @@ zy_local_x2Fmain_0__fmt__fm_x2Dbig_x2Dmul:
     add rsi, 1
     mov r10, rbx
     cmp rsi, r8
-    jge .L763_1
-    jmp .L763_3
+    jge .L764_1
+    jmp .L764_3
 .p2align 4
-.L763_1:
+.L764_1:
     cmp r10, 0
-    jle .L763_2
+    jle .L764_2
     mov rcx, r10
     movabs rax, 1237940039285380275
     imul rcx
@@ -23547,9 +23641,9 @@ zy_local_x2Fmain_0__fmt__fm_x2Dbig_x2Dmul:
     add r8, 1
     mov r10, r11
     cmp rsi, r8
-    jge .L763_1
-    jmp .L763_3
-.L763_2:
+    jge .L764_1
+    jmp .L764_3
+.L764_2:
     mov rax, r8
     pop r13
     pop r12
@@ -23570,15 +23664,15 @@ zy_local_x2Fmain_0__fmt__fm_x2Dbig_x2Dout:
     mov qword ptr [rbp-56], rsi
     mov r13, rdx
     mov r14, rcx
-.L764_0:
+.L765_0:
     cmp rbx, 0
-    je .L764_1
-.L764_5:
+    je .L765_1
+.L765_5:
     mov rsi, 1
-    jmp .L764_2
-.L764_1:
+    jmp .L765_2
+.L765_1:
     mov rsi, 0
-.L764_2:
+.L765_2:
     mov qword ptr [rbp-48], rsi
     lea rsi, [r13-1]
     shl rsi, 3
@@ -23607,13 +23701,13 @@ zy_local_x2Fmain_0__fmt__fm_x2Dbig_x2Dout:
     call zyl_ralloc
     mov r14, rax
     cmp rbx, 0
-    je .L764_3
+    je .L765_3
     mov rsi, 45
     mov rcx, rsi
     mov byte ptr [r14+0], cl
-    jmp .L764_4
-.L764_3:
-.L764_4:
+    jmp .L765_4
+.L765_3:
+.L765_4:
     mov rdi, r14
     add rdi, qword ptr [rbp-48]
     mov rsi, qword ptr [rbp-64]
@@ -23671,10 +23765,10 @@ zy_local_x2Fmain_0__fmt__fm_x2Dbig_x2Dlimbs:
     mov r12, rsi
     mov r13, rdx
     mov r14, rcx
-.L765_0:
+.L766_0:
     cmp r13, 0
-    jge .L765_1
-.L765_2:
+    jge .L766_1
+.L766_2:
     mov rax, 0
     pop r14
     pop r13
@@ -23682,7 +23776,7 @@ zy_local_x2Fmain_0__fmt__fm_x2Dbig_x2Dlimbs:
     pop rbx
     ret
 .p2align 4
-.L765_1:
+.L766_1:
     mov rsi, 0
     lea rdi, [r13*8]
     add rdi, r12
@@ -23694,18 +23788,18 @@ zy_local_x2Fmain_0__fmt__fm_x2Dbig_x2Dlimbs:
     sub r13, 1
     add r14, 9
     cmp r13, 0
-    jge .L765_1
-    jmp .L765_2
+    jge .L766_1
+    jmp .L766_2
 zy_local_x2Fmain_0__out__ou_x2Dst:
     # frame 0
-.L766_0:
+.L767_0:
     lea rax, [rip+zyl_rtg_out_state]
     mov rsi, rax
     mov rax, rsi
     ret
 zy_local_x2Fmain_0__out__ou_x2Dbuf:
     # frame 0
-.L767_0:
+.L768_0:
     lea rax, [rip+zyl_rtg_out_buf]
     mov rsi, rax
     mov rax, rsi
@@ -23718,25 +23812,25 @@ zy_local_x2Fmain_0__out__ou_x2Dlock:
     and rsp, -16
     sub rsp, 16
     mov rbx, rdi
-.L768_0:
+.L769_0:
     mov rsi, 1
     mov rdx, rbx
     mov rcx, rsi
     mov rax, rcx
     xchg qword ptr [rdx], rax
     cmp rax, 0
-    jne .L768_1
+    jne .L769_1
     mov rax, 0
     mov rbx, qword ptr [rbp-8]
     mov rsp, rbp
     pop rbp
     ret
-.L768_1:
+.L769_1:
     call zyl_rt_sys_24
-    jmp .L768_0
+    jmp .L769_0
 zy_local_x2Fmain_0__out__ou_x2Dunlock:
     # frame 0
-.L769_0:
+.L770_0:
     mov rsi, 0
     mov rdx, rdi
     mov rcx, rsi
@@ -23752,17 +23846,17 @@ zy_local_x2Fmain_0__out__ou_x2Dinit:
     push r12
     and rsp, -16
     mov rbx, rdi
-.L770_0:
+.L771_0:
     mov rax, qword ptr [rbx+16]
     cmp rax, 0
-    jle .L770_1
+    jle .L771_1
     mov rax, 0
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
     mov rsp, rbp
     pop rbp
     ret
-.L770_1:
+.L771_1:
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_out_stat@tpoff]
     mov r12, rax
@@ -23770,20 +23864,20 @@ zy_local_x2Fmain_0__out__ou_x2Dinit:
     mov rsi, r12
     call zyl_rt_sys_5
     cmp rax, 0
-    jne .L770_2
+    jne .L771_2
     mov rsi, qword ptr [r12+56]
-    jmp .L770_3
-.L770_2:
+    jmp .L771_3
+.L771_2:
     mov rsi, 0
-.L770_3:
+.L771_3:
     cmp rsi, 0
-    jle .L770_4
+    jle .L771_4
     cmp rsi, 8192
-    jge .L770_4
-    jmp .L770_5
-.L770_4:
+    jge .L771_4
+    jmp .L771_5
+.L771_4:
     mov rsi, 8192
-.L770_5:
+.L771_5:
     mov qword ptr [rbx+24], rsi
     mov rdi, 1
     mov rsi, 21505
@@ -23793,12 +23887,12 @@ zy_local_x2Fmain_0__out__ou_x2Dinit:
     mov rdx, r8
     call zyl_rt_sys_16
     cmp rax, 0
-    jne .L770_6
+    jne .L771_6
     mov rsi, 2
-    jmp .L770_7
-.L770_6:
+    jmp .L771_7
+.L771_6:
     mov rsi, 1
-.L770_7:
+.L771_7:
     mov qword ptr [rbx+16], rsi
     mov rax, rsi
     mov rbx, qword ptr [rbp-8]
@@ -23818,10 +23912,10 @@ zy_local_x2Fmain_0__out__ou_x2Dsys_x2Dall:
     mov rbx, rdi
     mov r12, rsi
     mov r13, rdx
-.L771_0:
+.L772_0:
     cmp r13, 0
-    jg .L771_1
-.L771_4:
+    jg .L772_1
+.L772_4:
     mov rax, 1
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -23830,26 +23924,26 @@ zy_local_x2Fmain_0__out__ou_x2Dsys_x2Dall:
     pop rbp
     ret
 .p2align 4
-.L771_1:
+.L772_1:
     mov rdi, rbx
     mov rsi, r12
     mov rdx, r13
     call zyl_rt_sys_1
     mov rsi, rax
     cmp rsi, 0
-    jle .L771_2
+    jle .L772_2
     add r12, rsi
     sub r13, rsi
     cmp r13, 0
-    jg .L771_1
-    jmp .L771_4
-.L771_2:
+    jg .L772_1
+    jmp .L772_4
+.L772_2:
     cmp rsi, -4
-    jne .L771_3
+    jne .L772_3
     cmp r13, 0
-    jg .L771_1
-    jmp .L771_4
-.L771_3:
+    jg .L772_1
+    jmp .L772_4
+.L772_3:
     mov rax, 0
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -23859,13 +23953,13 @@ zy_local_x2Fmain_0__out__ou_x2Dsys_x2Dall:
     ret
 zy_local_x2Fmain_0__out__ou_x2Dflush_x2Dlocked:
     # frame 0
-.L772_0:
+.L773_0:
     mov rsi, qword ptr [rdi+8]
     cmp rsi, 0
-    jne .L772_1
+    jne .L773_1
     mov rax, 1
     ret
-.L772_1:
+.L773_1:
     mov r8, 0
     mov qword ptr [rdi+8], r8
     mov rdi, 1
@@ -23887,10 +23981,10 @@ zy_local_x2Fmain_0__out__ou_x2Dappend:
     mov qword ptr [rbp-48], rdi
     mov r12, rsi
     mov r13, rdx
-.L773_0:
+.L774_0:
     cmp r13, 0
-    jg .L773_1
-.L773_5:
+    jg .L774_1
+.L774_5:
     mov rax, 1
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -23901,7 +23995,7 @@ zy_local_x2Fmain_0__out__ou_x2Dappend:
     pop rbp
     ret
 .p2align 4
-.L773_1:
+.L774_1:
     mov rdx, qword ptr [rbp-48]
     mov r14, qword ptr [rdx+8]
     mov rdx, qword ptr [rbp-48]
@@ -23909,9 +24003,9 @@ zy_local_x2Fmain_0__out__ou_x2Dappend:
     sub r15, r14
     mov rsi, r13
     cmp r13, r15
-    jl .L773_2
+    jl .L774_2
     mov rsi, r15
-.L773_2:
+.L774_2:
     mov rbx, rsi
     lea rax, [rip+zyl_rtg_out_buf]
     mov rdi, rax
@@ -23923,17 +24017,17 @@ zy_local_x2Fmain_0__out__ou_x2Dappend:
     mov rdx, qword ptr [rbp-48]
     mov qword ptr [rdx+8], rsi
     cmp rbx, r15
-    jne .L773_3
+    jne .L774_3
     mov rdi, qword ptr [rbp-48]
     call zy_local_x2Fmain_0__out__ou_x2Dflush_x2Dlocked
     cmp rax, 0
-    je .L773_4
+    je .L774_4
     add r12, rbx
     sub r13, rbx
     cmp r13, 0
-    jg .L773_1
-    jmp .L773_5
-.L773_4:
+    jg .L774_1
+    jmp .L774_5
+.L774_4:
     mov rax, 0
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -23943,7 +24037,7 @@ zy_local_x2Fmain_0__out__ou_x2Dappend:
     mov rsp, rbp
     pop rbp
     ret
-.L773_3:
+.L774_3:
     mov rax, 1
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -23966,7 +24060,7 @@ zy_local_x2Fmain_0__out__ou_x2Dput_x2Dfull:
     mov qword ptr [rbp-48], rdi
     mov r12, rsi
     mov r13, rdx
-.L774_0:
+.L775_0:
     mov rdx, qword ptr [rbp-48]
     mov r14, qword ptr [rdx+8]
     mov rdx, qword ptr [rbp-48]
@@ -23974,7 +24068,7 @@ zy_local_x2Fmain_0__out__ou_x2Dput_x2Dfull:
     mov rax, r15
     sub rax, r14
     cmp r13, rax
-    jg .L774_1
+    jg .L775_1
     lea rax, [rip+zyl_rtg_out_buf]
     mov rdi, rax
     add rdi, r14
@@ -23993,7 +24087,7 @@ zy_local_x2Fmain_0__out__ou_x2Dput_x2Dfull:
     mov rsp, rbp
     pop rbp
     ret
-.L774_1:
+.L775_1:
     mov rbx, r15
     sub rbx, r14
     lea rax, [rip+zyl_rtg_out_buf]
@@ -24007,7 +24101,7 @@ zy_local_x2Fmain_0__out__ou_x2Dput_x2Dfull:
     mov rdi, qword ptr [rbp-48]
     call zy_local_x2Fmain_0__out__ou_x2Dflush_x2Dlocked
     cmp rax, 0
-    jne .L774_2
+    jne .L775_2
     mov rax, 0
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -24017,30 +24111,30 @@ zy_local_x2Fmain_0__out__ou_x2Dput_x2Dfull:
     mov rsp, rbp
     pop rbp
     ret
-.L774_2:
+.L775_2:
     sub r13, rbx
     cmp r15, 128
-    jl .L774_3
+    jl .L775_3
     mov rax, r13
     mov rcx, r15
     cqo
     idiv rcx
     mov rax, rdx
     mov rsi, rax
-    jmp .L774_4
-.L774_3:
+    jmp .L775_4
+.L775_3:
     mov rsi, 0
-.L774_4:
+.L775_4:
     mov r14, r13
     sub r14, rsi
     cmp r14, 0
-    jle .L774_5
+    jle .L775_5
     mov rdi, 1
     lea rsi, [r12+rbx]
     mov rdx, r14
     call zy_local_x2Fmain_0__out__ou_x2Dsys_x2Dall
     cmp rax, 0
-    jne .L774_5
+    jne .L775_5
     mov rax, 0
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -24050,7 +24144,7 @@ zy_local_x2Fmain_0__out__ou_x2Dput_x2Dfull:
     mov rsp, rbp
     pop rbp
     ret
-.L774_5:
+.L775_5:
     lea rsi, [rbx+r14]
     add rsi, r12
     mov rdi, r13
@@ -24067,25 +24161,25 @@ zy_local_x2Fmain_0__out__ou_x2Dput_x2Dfull:
     jmp zy_local_x2Fmain_0__out__ou_x2Dappend
 zy_local_x2Fmain_0__out__ou_x2Dlast_x2Dnl:
     # frame 0
-.L775_0:
+.L776_0:
     cmp rsi, 0
-    jge .L775_1
-.L775_3:
+    jge .L776_1
+.L776_3:
     mov rax, -1
     ret
 .p2align 4
-.L775_1:
+.L776_1:
     lea r8, [rdi+rsi]
     movzx eax, byte ptr [r8+0]
     cmp rax, 10
-    jne .L775_2
+    jne .L776_2
     mov rax, rsi
     ret
-.L775_2:
+.L776_2:
     sub rsi, 1
     cmp rsi, 0
-    jge .L775_1
-    jmp .L775_3
+    jge .L776_1
+    jmp .L776_3
 zy_local_x2Fmain_0__out__ou_x2Dput_x2Dline:
     # frame 32
     push rbx
@@ -24095,13 +24189,13 @@ zy_local_x2Fmain_0__out__ou_x2Dput_x2Dline:
     mov rbx, rdi
     mov r12, rsi
     mov r13, rdx
-.L776_0:
+.L777_0:
     lea rsi, [r13-1]
     mov rdi, r12
     call zy_local_x2Fmain_0__out__ou_x2Dlast_x2Dnl
     mov r14, rax
     cmp r14, 0
-    jge .L776_1
+    jge .L777_1
     mov rdi, rbx
     mov rsi, r12
     mov rdx, r13
@@ -24110,18 +24204,18 @@ zy_local_x2Fmain_0__out__ou_x2Dput_x2Dline:
     pop r12
     pop rbx
     jmp zy_local_x2Fmain_0__out__ou_x2Dappend
-.L776_1:
+.L777_1:
     lea rsi, [r14+1]
     mov rdi, rbx
     mov rdx, rsi
     mov rsi, r12
     call zy_local_x2Fmain_0__out__ou_x2Dappend
     cmp rax, 0
-    je .L776_2
+    je .L777_2
     mov rdi, rbx
     call zy_local_x2Fmain_0__out__ou_x2Dflush_x2Dlocked
     cmp rax, 0
-    je .L776_2
+    je .L777_2
     lea rsi, [r14+1]
     add rsi, r12
     lea rdi, [r14+1]
@@ -24136,7 +24230,7 @@ zy_local_x2Fmain_0__out__ou_x2Dput_x2Dline:
     pop r12
     pop rbx
     jmp zy_local_x2Fmain_0__out__ou_x2Dappend
-.L776_2:
+.L777_2:
     mov rax, 0
     pop r14
     pop r13
@@ -24145,7 +24239,7 @@ zy_local_x2Fmain_0__out__ou_x2Dput_x2Dline:
     ret
 zy_local_x2Fmain_0__out__ou_x2Downer_x2Dcell:
     # frame 0
-.L777_0:
+.L778_0:
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_owner_id@tpoff]
     mov rsi, rax
@@ -24154,22 +24248,22 @@ zy_local_x2Fmain_0__out__ou_x2Downer_x2Dcell:
 .globl zyl_owner_self
 zyl_owner_self:
     # frame 0
-.L778_0:
+.L779_0:
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_owner_id@tpoff]
     mov rsi, rax
     mov rsi, qword ptr [rsi+0]
     cmp rsi, 0
-    jne .L778_1
+    jne .L779_1
     mov rax, 1
     ret
-.L778_1:
+.L779_1:
     mov rax, rsi
     ret
 .globl zyl_owner_set
 zyl_owner_set:
     # frame 0
-.L779_0:
+.L780_0:
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_owner_id@tpoff]
     mov rsi, rax
@@ -24178,7 +24272,7 @@ zyl_owner_set:
     ret
 zy_local_x2Fmain_0__out__ou_x2Dabuf:
     # frame 0
-.L780_0:
+.L781_0:
     lea rax, [rip+zyl_rtg_actor_out]
     mov rsi, rax
     imul rdi, rdi, 24
@@ -24187,7 +24281,7 @@ zy_local_x2Fmain_0__out__ou_x2Dabuf:
     ret
 zy_local_x2Fmain_0__out__ou_x2Debuf:
     # frame 0
-.L781_0:
+.L782_0:
     lea rax, [rip+zyl_rtg_actor_err]
     mov rsi, rax
     imul rdi, rdi, 24
@@ -24204,25 +24298,25 @@ zy_local_x2Fmain_0__out__ou_x2Dabuf_x2Dput:
     mov rbx, rdi
     mov r12, rsi
     mov r13, rdx
-.L782_0:
+.L783_0:
     mov r14, qword ptr [rbx+8]
     mov rsi, qword ptr [rbx+16]
     lea rax, [r14+r13]
     cmp rax, rsi
-    jg .L782_1
+    jg .L783_1
     mov rdi, 1
-    jmp .L782_2
-.L782_1:
+    jmp .L783_2
+.L783_1:
     lea r8, [rsi*2]
     lea rax, [r14+r13]
     cmp r8, rax
-    jge .L782_3
+    jge .L783_3
     lea r8, [r13+256]
     add r8, r14
-    jmp .L782_4
-.L782_3:
+    jmp .L783_4
+.L783_3:
     lea r8, [rsi*2]
-.L782_4:
+.L783_4:
     mov r15, r8
     mov rsi, qword ptr [rbx+0]
     mov rdi, rsi
@@ -24231,16 +24325,16 @@ zy_local_x2Fmain_0__out__ou_x2Dabuf_x2Dput:
     mov rsi, rax
     mov r8, 0
     cmp rsi, 0
-    je .L782_5
+    je .L783_5
     mov qword ptr [rbx+0], rsi
     mov qword ptr [rbx+16], r15
     mov r8, 1
-.L782_5:
+.L783_5:
     mov rdi, r8
-.L782_2:
+.L783_2:
     mov rax, rdi
     cmp rax, 0
-    je .L782_6
+    je .L783_6
     mov rdi, qword ptr [rbx+0]
     add rdi, r14
     mov rsi, r12
@@ -24255,7 +24349,7 @@ zy_local_x2Fmain_0__out__ou_x2Dabuf_x2Dput:
     pop r12
     pop rbx
     ret
-.L782_6:
+.L783_6:
     mov rax, 0
     pop r15
     pop r14
@@ -24268,17 +24362,17 @@ zyl_out_actor_emit:
     # frame 16
     push rbx
     mov rbx, rdi
-.L783_0:
+.L784_0:
     cmp rbx, 2
-    jl .L783_2
-.L783_3:
+    jl .L784_2
+.L784_3:
     cmp rbx, 1025
-    jle .L783_1
-.L783_2:
+    jle .L784_1
+.L784_2:
     mov rax, 0
     pop rbx
     ret
-.L783_1:
+.L784_1:
     mov rdi, rbx
     call zy_local_x2Fmain_0__out__ou_x2Dabuf
     mov rdi, rax
@@ -24293,7 +24387,7 @@ zyl_out_actor_emit:
 zy_local_x2Fmain_0__out__ou_x2Demit:
     # frame 16
     push rbx
-.L784_0:
+.L785_0:
     mov rbx, qword ptr [rdi+0]
     mov r8, qword ptr [rdi+8]
     mov r9, 0
@@ -24303,22 +24397,22 @@ zy_local_x2Fmain_0__out__ou_x2Demit:
     mov r9, 0
     mov qword ptr [rdi+16], r9
     cmp rbx, 0
-    jne .L784_1
+    jne .L785_1
     mov rax, 0
     pop rbx
     ret
-.L784_1:
+.L785_1:
     cmp rsi, 0
-    je .L784_2
+    je .L785_2
     mov rdi, rbx
     mov rsi, r8
     call zyl_err_write
-    jmp .L784_3
-.L784_2:
+    jmp .L785_3
+.L785_2:
     mov rdi, rbx
     mov rsi, r8
     call zyl_out_write
-.L784_3:
+.L785_3:
     mov rdi, rbx
     call zyl_rt_free
     mov rax, 0
@@ -24332,11 +24426,11 @@ zy_local_x2Fmain_0__out__ou_x2Dput:
     mov rbx, rdi
     mov r12, rsi
     mov r13, rdx
-.L785_0:
+.L786_0:
     call zyl_owner_self
     mov rdi, rax
     cmp rdi, 2
-    jl .L785_1
+    jl .L786_1
     call zy_local_x2Fmain_0__out__ou_x2Dabuf
     mov rdi, rax
     mov rsi, r12
@@ -24345,10 +24439,10 @@ zy_local_x2Fmain_0__out__ou_x2Dput:
     pop r12
     pop rbx
     jmp zy_local_x2Fmain_0__out__ou_x2Dabuf_x2Dput
-.L785_1:
+.L786_1:
     mov rax, qword ptr [rbx+16]
     cmp rax, 2
-    jne .L785_2
+    jne .L786_2
     mov rdi, rbx
     mov rsi, r12
     mov rdx, r13
@@ -24356,7 +24450,7 @@ zy_local_x2Fmain_0__out__ou_x2Dput:
     pop r12
     pop rbx
     jmp zy_local_x2Fmain_0__out__ou_x2Dput_x2Dline
-.L785_2:
+.L786_2:
     mov rdi, rbx
     mov rsi, r12
     mov rdx, r13
@@ -24370,7 +24464,7 @@ zy_local_x2Fmain_0__out__ou_x2Dputs:
     push r12
     mov rbx, rdi
     mov r12, rsi
-.L786_0:
+.L787_0:
     mov rdi, r12
     call zy_local_x2Fmain_0__base__rt_x2Dstrlen
     mov rsi, rax
@@ -24388,7 +24482,7 @@ zyl_out_write:
     push r13
     mov rbx, rdi
     mov r12, rsi
-.L787_0:
+.L788_0:
     lea rax, [rip+zyl_rtg_out_state]
     mov r13, rax
     mov rdi, r13
@@ -24414,14 +24508,14 @@ zyl_out_puts:
     # frame 16
     push rbx
     mov rbx, rdi
-.L788_0:
+.L789_0:
     cmp rbx, 0
-    jne .L788_1
-.L788_2:
+    jne .L789_1
+.L789_2:
     mov rax, 0
     pop rbx
     ret
-.L788_1:
+.L789_1:
     mov rdi, rbx
     call zy_local_x2Fmain_0__base__rt_x2Dstrlen
     mov rsi, rax
@@ -24432,16 +24526,16 @@ zyl_out_puts:
 zyl_out_flush:
     # frame 16
     push rbx
-.L789_0:
+.L790_0:
     lea rax, [rip+zyl_rtg_out_state]
     mov rbx, rax
     mov rax, qword ptr [rbx+8]
     cmp rax, 0
-    jne .L789_1
+    jne .L790_1
     mov rax, 0
     pop rbx
     ret
-.L789_1:
+.L790_1:
     mov rdi, rbx
     call zy_local_x2Fmain_0__out__ou_x2Dlock
     mov rdi, rbx
@@ -24461,11 +24555,11 @@ zyl_err_write:
     push r12
     mov rbx, rdi
     mov r12, rsi
-.L790_0:
+.L791_0:
     call zyl_owner_self
     mov rdi, rax
     cmp rdi, 2
-    jl .L790_1
+    jl .L791_1
     call zy_local_x2Fmain_0__out__ou_x2Debuf
     mov rdi, rax
     mov rsi, rbx
@@ -24475,7 +24569,7 @@ zyl_err_write:
     pop r12
     pop rbx
     ret
-.L790_1:
+.L791_1:
     mov rdi, 2
     mov rsi, rbx
     mov rdx, r12
@@ -24489,14 +24583,14 @@ zyl_err_puts:
     # frame 16
     push rbx
     mov rbx, rdi
-.L791_0:
+.L792_0:
     cmp rbx, 0
-    jne .L791_1
-.L791_2:
+    jne .L792_1
+.L792_2:
     mov rax, 0
     pop rbx
     ret
-.L791_1:
+.L792_1:
     mov rdi, rbx
     call zy_local_x2Fmain_0__base__rt_x2Dstrlen
     mov rsi, rax
@@ -24505,7 +24599,7 @@ zyl_err_puts:
     jmp zyl_err_write
 zy_local_x2Fmain_0__out__ou_x2Ddigits:
     # frame 0
-.L792_0:
+.L793_0:
     lea r8, [rsi-1]
     mov r9, 10
     mov rdx, rdi
@@ -24525,35 +24619,35 @@ zy_local_x2Fmain_0__out__ou_x2Ddigits:
     div rcx
     mov r9, rax
     cmp r9, 0
-    jne .L792_1
+    jne .L793_1
     mov rax, r8
     ret
-.L792_1:
+.L793_1:
     mov rdi, r9
     mov rsi, r8
-    jmp .L792_0
+    jmp .L793_0
 zy_local_x2Fmain_0__out__ou_x2Dint:
     # frame 16
     push rbx
     mov rbx, rdi
-.L793_0:
+.L794_0:
     mov rdi, 0
     sub rdi, rbx
     cmp rbx, 0
-    jl .L793_1
+    jl .L794_1
     mov rdi, rbx
-.L793_1:
+.L794_1:
     call zy_local_x2Fmain_0__out__ou_x2Ddigits
     mov rsi, rax
     cmp rbx, 0
-    jge .L793_2
+    jge .L794_2
     lea rdi, [rsi-1]
     mov r8, 45
     mov byte ptr [rdi+0], r8b
     lea rax, [rsi-1]
     pop rbx
     ret
-.L793_2:
+.L794_2:
     mov rax, rsi
     pop rbx
     ret
@@ -24561,7 +24655,7 @@ zy_local_x2Fmain_0__out__ou_x2Dint:
 zyl_out_int:
     # frame 16
     push rbx
-.L794_0:
+.L795_0:
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_out_int@tpoff]
     mov rbx, rax
@@ -24577,7 +24671,7 @@ zyl_out_int:
 zyl_print_int:
     # frame 16
     push rbx
-.L795_0:
+.L796_0:
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_out_int@tpoff]
     mov rbx, rax
@@ -24600,7 +24694,7 @@ zyl_print_str:
     push rbx
     push r12
     push r13
-.L796_0:
+.L797_0:
     mov rbx, rdi
     lea rax, [rip+zyl_rtg_out_state]
     mov r12, rax
@@ -24609,8 +24703,8 @@ zyl_print_str:
     mov rdi, r12
     call zy_local_x2Fmain_0__out__ou_x2Dinit
     cmp rbx, 0
-    jne .L796_1
-    lea rax, [rip+.L797]
+    jne .L797_1
+    lea rax, [rip+.L798]
     mov r13, rax
     mov rdi, r13
     call zy_local_x2Fmain_0__base__rt_x2Dstrlen
@@ -24619,8 +24713,8 @@ zyl_print_str:
     mov rdx, rsi
     mov rsi, r13
     call zy_local_x2Fmain_0__out__ou_x2Dput
-    jmp .L796_2
-.L796_1:
+    jmp .L797_2
+.L797_1:
     mov rdi, rbx
     call zy_local_x2Fmain_0__base__rt_x2Dstrlen
     mov rsi, rax
@@ -24628,8 +24722,8 @@ zyl_print_str:
     mov rdx, rsi
     mov rsi, rbx
     call zy_local_x2Fmain_0__out__ou_x2Dput
-.L796_2:
-    lea rax, [rip+.L798]
+.L797_2:
+    lea rax, [rip+.L799]
     mov rsi, rax
     mov rdi, 1
     mov rdx, rdi
@@ -24652,7 +24746,7 @@ zyl_print_float:
     push r12
     push r13
     mov rbx, rdi
-.L799_0:
+.L800_0:
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_out_frame@tpoff]
     mov r12, rax
@@ -24687,27 +24781,27 @@ zyl_print_float:
     ret
 zy_local_x2Fmain_0__os__os_x2Dret:
     # frame 0
-.L800_0:
+.L801_0:
     cmp rdi, 0
-    jge .L800_1
-.L800_2:
+    jge .L801_1
+.L801_2:
     mov rax, -1
     ret
-.L800_1:
+.L801_1:
     mov rax, rdi
     ret
 zy_local_x2Fmain_0__os__os_x2Dbad:
     # frame 0
-.L801_0:
+.L802_0:
     cmp rdi, 0
-    jle .L801_1
-.L801_2:
+    jle .L802_1
+.L802_2:
     cmp rdi, 4096
-    jge .L801_1
+    jge .L802_1
     call zy_local_x2Fmain_0__base__rt_x2Dbad_x2Dstr
     mov rax, 1
     ret
-.L801_1:
+.L802_1:
     mov rax, 0
     ret
 .globl zyl_file_open_c
@@ -24716,33 +24810,33 @@ zyl_file_open_c:
     push rbp
     mov rbp, rsp
     and rsp, -16
-.L802_0:
+.L803_0:
     mov r8, 0
     cmp rsi, 4096
-    jl .L802_1
+    jl .L803_1
     movzx r8d, byte ptr [rsi+0]
-.L802_1:
+.L803_1:
     mov rsi, 0
     cmp r8, 114
-    je .L802_2
+    je .L803_2
     mov r9, 1089
     cmp r8, 97
-    je .L802_3
+    je .L803_3
     mov r9, 577
-.L802_3:
+.L803_3:
     mov rsi, r9
-.L802_2:
+.L803_2:
     mov r8, 420
     mov rdx, r8
     call zyl_rt_sys_2
     mov rsi, rax
     cmp rsi, 0
-    jge .L802_4
+    jge .L803_4
     mov rax, -1
     mov rsp, rbp
     pop rbp
     ret
-.L802_4:
+.L803_4:
     mov rax, rsi
     mov rsp, rbp
     pop rbp
@@ -24758,17 +24852,17 @@ zy_local_x2Fmain_0__os__os_x2Dread:
     sub rsp, 16
     mov rbx, rdi
     mov rdi, rdx
-.L803_0:
+.L804_0:
     mov r8, 0
     cmp rsi, 0
-    jl .L803_1
+    jl .L804_1
     mov r9, 67108864
     cmp rsi, 67108864
-    jg .L803_2
+    jg .L804_2
     mov r9, rsi
-.L803_2:
+.L804_2:
     mov r8, r9
-.L803_1:
+.L804_1:
     mov r12, r8
     lea rsi, [r12+1]
     mov rax, rsi
@@ -24777,7 +24871,7 @@ zy_local_x2Fmain_0__os__os_x2Dread:
     call zyl_ralloc
     mov r13, rax
     cmp r13, 0
-    jne .L803_3
+    jne .L804_3
     mov rax, 0
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -24785,7 +24879,7 @@ zy_local_x2Fmain_0__os__os_x2Dread:
     mov rsp, rbp
     pop rbp
     ret
-.L803_3:
+.L804_3:
     mov rdi, rbx
     mov rsi, r13
     mov rdx, r12
@@ -24793,9 +24887,9 @@ zy_local_x2Fmain_0__os__os_x2Dread:
     mov rsi, rax
     mov rdi, 0
     cmp rsi, 0
-    jl .L803_4
+    jl .L804_4
     mov rdi, rsi
-.L803_4:
+.L804_4:
     lea rsi, [r13+rdi]
     mov rdi, 0
     mov rcx, rdi
@@ -24814,14 +24908,14 @@ zyl_file_read_c:
     push r12
     mov rbx, rdi
     mov r12, rsi
-.L804_0:
+.L805_0:
     cmp rbx, 0
-    jne .L804_1
-.L804_3:
+    jne .L805_1
+.L805_3:
     call zyl_out_flush
-    jmp .L804_2
-.L804_1:
-.L804_2:
+    jmp .L805_2
+.L805_1:
+.L805_2:
     mov rsi, 0
     mov rdi, rbx
     mov rdx, rsi
@@ -24836,14 +24930,14 @@ zyl_file_read_c_r:
     push r12
     mov rbx, rdi
     mov r12, rsi
-.L805_0:
+.L806_0:
     cmp rbx, 0
-    jne .L805_1
-.L805_3:
+    jne .L806_1
+.L806_3:
     call zyl_out_flush
-    jmp .L805_2
-.L805_1:
-.L805_2:
+    jmp .L806_2
+.L806_1:
+.L806_2:
     mov rax, QWORD PTR fs:zyl_cur_region@tpoff
     mov rsi, rax
     mov rdi, rbx
@@ -24863,10 +24957,10 @@ zyl_file_write_c:
     and rsp, -16
     sub rsp, 16
     mov rbx, rdi
-.L806_0:
+.L807_0:
     mov r12, rsi
     cmp r12, 0
-    jne .L806_1
+    jne .L807_1
     mov rax, -1
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -24874,13 +24968,13 @@ zyl_file_write_c:
     mov rsp, rbp
     pop rbp
     ret
-.L806_1:
-    lea rax, [rip+.L807]
+.L807_1:
+    lea rax, [rip+.L808]
     mov rsi, rax
     mov rdi, r12
     call zy_local_x2Fmain_0__os__os_x2Dbad
     cmp rax, 0
-    je .L806_2
+    je .L807_2
     mov rax, -1
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -24888,12 +24982,12 @@ zyl_file_write_c:
     mov rsp, rbp
     pop rbp
     ret
-.L806_2:
+.L807_2:
     mov rdi, r12
     call zy_local_x2Fmain_0__base__rt_x2Dstrlen
     mov r13, rax
     cmp rbx, 1
-    jne .L806_3
+    jne .L807_3
     mov rdi, r12
     mov rsi, r13
     call zyl_out_write
@@ -24904,12 +24998,12 @@ zyl_file_write_c:
     mov rsp, rbp
     pop rbp
     ret
-.L806_3:
+.L807_3:
     cmp rbx, 2
-    jne .L806_4
+    jne .L807_4
     call zyl_owner_self
     cmp rax, 2
-    jl .L806_4
+    jl .L807_4
     mov rdi, r12
     mov rsi, r13
     call zyl_err_write
@@ -24920,14 +25014,14 @@ zyl_file_write_c:
     mov rsp, rbp
     pop rbp
     ret
-.L806_4:
+.L807_4:
     mov rdi, rbx
     mov rsi, r12
     mov rdx, r13
     call zyl_rt_sys_1
     mov rsi, rax
     cmp rsi, 0
-    jge .L806_5
+    jge .L807_5
     mov rax, -1
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -24935,7 +25029,7 @@ zyl_file_write_c:
     mov rsp, rbp
     pop rbp
     ret
-.L806_5:
+.L807_5:
     mov rax, rsi
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -24949,16 +25043,16 @@ zyl_file_close_c:
     push rbp
     mov rbp, rsp
     and rsp, -16
-.L808_0:
+.L809_0:
     call zyl_rt_sys_3
     mov rsi, rax
     cmp rsi, 0
-    jge .L808_1
+    jge .L809_1
     mov rax, -1
     mov rsp, rbp
     pop rbp
     ret
-.L808_1:
+.L809_1:
     mov rax, rsi
     mov rsp, rbp
     pop rbp
@@ -24969,16 +25063,16 @@ zyl_path_exists:
     push rbp
     mov rbp, rsp
     and rsp, -16
-.L809_0:
+.L810_0:
     mov rsi, 0
     call zyl_rt_sys_21
     cmp rax, 0
-    jne .L809_1
+    jne .L810_1
     mov rax, 1
     mov rsp, rbp
     pop rbp
     ret
-.L809_1:
+.L810_1:
     mov rax, 0
     mov rsp, rbp
     pop rbp
@@ -24989,16 +25083,16 @@ zyl_chdir:
     push rbp
     mov rbp, rsp
     and rsp, -16
-.L810_0:
+.L811_0:
     call zyl_rt_sys_80
     mov rsi, rax
     cmp rsi, 0
-    jge .L810_1
+    jge .L811_1
     mov rax, -1
     mov rsp, rbp
     pop rbp
     ret
-.L810_1:
+.L811_1:
     mov rax, rsi
     mov rsp, rbp
     pop rbp
@@ -25013,7 +25107,7 @@ zyl_getcwd:
     push r13
     and rsp, -16
     sub rsp, 16
-.L811_0:
+.L812_0:
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_os_cwd@tpoff]
     mov rbx, rax
@@ -25021,11 +25115,11 @@ zyl_getcwd:
     mov rdi, rbx
     call zyl_rt_sys_79
     cmp rax, 0
-    jle .L811_2
+    jle .L812_2
     movzx eax, byte ptr [rbx+0]
     cmp rax, 47
-    je .L811_1
-.L811_2:
+    je .L812_1
+.L812_2:
     mov rax, 0
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -25033,7 +25127,7 @@ zyl_getcwd:
     mov rsp, rbp
     pop rbp
     ret
-.L811_1:
+.L812_1:
     mov rdi, rbx
     call zy_local_x2Fmain_0__base__rt_x2Dstrlen
     mov r12, rax
@@ -25041,7 +25135,7 @@ zyl_getcwd:
     call zyl_heap_alloc
     mov r13, rax
     cmp r13, 0
-    jne .L811_3
+    jne .L812_3
     mov rax, 0
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -25049,7 +25143,7 @@ zyl_getcwd:
     mov rsp, rbp
     pop rbp
     ret
-.L811_3:
+.L812_3:
     lea rsi, [r12+1]
     mov rdi, r13
     mov rdx, rsi
@@ -25068,43 +25162,43 @@ zyl_mkdir_p:
     push rbx
     push r12
     push r13
-.L812_0:
+.L813_0:
     mov rbx, rdi
     cmp rbx, 0
-    je .L812_2
-    lea rax, [rip+.L813]
+    je .L813_2
+    lea rax, [rip+.L814]
     mov rsi, rax
     mov rdi, rbx
     call zy_local_x2Fmain_0__os__os_x2Dbad
     cmp rax, 0
-    je .L812_1
-.L812_2:
+    je .L813_1
+.L813_2:
     mov rax, -1
     pop r13
     pop r12
     pop rbx
     ret
-.L812_1:
+.L813_1:
     movzx eax, byte ptr [rbx+0]
     cmp rax, 0
-    jne .L812_3
+    jne .L813_3
     mov rax, -1
     pop r13
     pop r12
     pop rbx
     ret
-.L812_3:
+.L813_3:
     mov rdi, rbx
     call zy_local_x2Fmain_0__base__rt_x2Dstrlen
     mov r12, rax
     cmp r12, 4096
-    jl .L812_4
+    jl .L813_4
     mov rax, -1
     pop r13
     pop r12
     pop rbx
     ret
-.L812_4:
+.L813_4:
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_os_mkdir@tpoff]
     mov r13, rax
@@ -25119,23 +25213,23 @@ zyl_mkdir_p:
     mov rsi, r12
     call zy_local_x2Fmain_0__os__os_x2Dmkdir_x2Dparents
     cmp rax, 0
-    je .L812_5
+    je .L813_5
     mov rdi, r13
     call zy_local_x2Fmain_0__os__os_x2Dmkdir_x2Done
     cmp rax, 0
-    je .L812_6
+    je .L813_6
     mov rax, 0
     pop r13
     pop r12
     pop rbx
     ret
-.L812_6:
+.L813_6:
     mov rax, -1
     pop r13
     pop r12
     pop rbx
     ret
-.L812_5:
+.L813_5:
     mov rax, -1
     pop r13
     pop r12
@@ -25146,17 +25240,17 @@ zy_local_x2Fmain_0__os__os_x2Dmkdir_x2Done:
     push rbp
     mov rbp, rsp
     and rsp, -16
-.L814_0:
+.L815_0:
     mov rsi, 493
     call zyl_rt_sys_83
     mov rsi, rax
     cmp rsi, 0
-    jne .L814_1
+    jne .L815_1
     mov rax, 1
     mov rsp, rbp
     pop rbp
     ret
-.L814_1:
+.L815_1:
     mov rax, rsi
     cmp rax, -17
     sete al
@@ -25176,10 +25270,10 @@ zy_local_x2Fmain_0__os__os_x2Dmkdir_x2Dparents:
     mov rbx, rdi
     mov r12, rsi
     mov r13, rdx
-.L815_0:
+.L816_0:
     cmp r13, r12
-    jl .L815_1
-.L815_5:
+    jl .L816_1
+.L816_5:
     mov rax, 1
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -25188,11 +25282,11 @@ zy_local_x2Fmain_0__os__os_x2Dmkdir_x2Dparents:
     pop rbp
     ret
 .p2align 4
-.L815_1:
+.L816_1:
     lea rsi, [rbx+r13]
     movzx eax, byte ptr [rsi+0]
     cmp rax, 47
-    jne .L815_2
+    jne .L816_2
     lea rsi, [rbx+r13]
     mov rdi, 0
     mov rcx, rdi
@@ -25203,23 +25297,23 @@ zy_local_x2Fmain_0__os__os_x2Dmkdir_x2Dparents:
     mov rsi, rax
     mov rdi, 1
     cmp rsi, 0
-    je .L815_3
+    je .L816_3
     mov rax, rsi
     cmp rax, -17
     sete al
     movzx rax, al
     mov rdi, rax
-.L815_3:
+.L816_3:
     lea rsi, [rbx+r13]
     mov r8, 47
     mov byte ptr [rsi+0], r8b
     cmp rdi, 0
-    je .L815_4
+    je .L816_4
     add r13, 1
     cmp r13, r12
-    jl .L815_1
-    jmp .L815_5
-.L815_4:
+    jl .L816_1
+    jmp .L816_5
+.L816_4:
     mov rax, 0
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -25227,15 +25321,15 @@ zy_local_x2Fmain_0__os__os_x2Dmkdir_x2Dparents:
     mov rsp, rbp
     pop rbp
     ret
-.L815_2:
+.L816_2:
     add r13, 1
     cmp r13, r12
-    jl .L815_1
-    jmp .L815_5
+    jl .L816_1
+    jmp .L816_5
 .globl zyl_save_args
 zyl_save_args:
     # frame 0
-.L816_0:
+.L817_0:
     lea rax, [rip+zyl_rtg_os_args]
     mov r8, rax
     mov r9, 4294967295
@@ -25246,23 +25340,23 @@ zyl_save_args:
     sub rax, rcx
     mov r9, rax
     cmp rdi, 2147483647
-    jg .L816_1
+    jg .L817_1
     mov r9, rdi
-.L816_1:
+.L817_1:
     mov qword ptr [r8+0], r9
     mov qword ptr [r8+8], rsi
     mov rdi, 0
     cmp rsi, 0
-    je .L816_2
+    je .L817_2
     lea r8, [r9+1]
     shl r8, 3
     lea rdi, [rsi+r8]
-.L816_2:
+.L817_2:
     jmp zyl_rt_set_env
 .globl zyl_argc
 zyl_argc:
     # frame 0
-.L817_0:
+.L818_0:
     lea rax, [rip+zyl_rtg_os_args]
     mov rsi, rax
     mov rax, qword ptr [rsi+0]
@@ -25270,18 +25364,18 @@ zyl_argc:
 .globl zyl_arg_str
 zyl_arg_str:
     # frame 0
-.L818_0:
+.L819_0:
     lea rax, [rip+zyl_rtg_os_args]
     mov rsi, rax
     cmp rdi, 0
-    jl .L818_2
+    jl .L819_2
     mov rax, qword ptr [rsi+0]
     cmp rdi, rax
-    jl .L818_1
-.L818_2:
+    jl .L819_1
+.L819_2:
     mov rax, 0
     ret
-.L818_1:
+.L819_1:
     mov rsi, qword ptr [rsi+8]
     shl rdi, 3
     add rsi, rdi
@@ -25301,7 +25395,7 @@ zy_local_x2Fmain_0__os__os_x2Dcat3:
     mov r12, rsi
     mov qword ptr [rbp-48], rdx
     mov r14, rcx
-.L819_0:
+.L820_0:
     mov rdi, rbx
     call zy_local_x2Fmain_0__base__rt_x2Dstrlen
     mov r15, rax
@@ -25316,19 +25410,19 @@ zy_local_x2Fmain_0__os__os_x2Dcat3:
     add rsi, r15
     lea rax, [r14-1]
     cmp rsi, rax
-    jle .L819_1
+    jle .L820_1
     lea rdi, [r14-1]
-    jmp .L819_2
-.L819_1:
+    jmp .L820_2
+.L820_1:
     mov rdi, rsi
-.L819_2:
+.L820_2:
     mov r14, rdi
     lea rdi, [r14+1]
     mov rsi, 1
     call zy_local_x2Fmain_0__heap__hp_x2Dalloc
     mov qword ptr [rbp-64], rax
     cmp qword ptr [rbp-64], 0
-    jne .L819_3
+    jne .L820_3
     mov rax, 0
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -25338,7 +25432,7 @@ zy_local_x2Fmain_0__os__os_x2Dcat3:
     mov rsp, rbp
     pop rbp
     ret
-.L819_3:
+.L820_3:
     mov rsi, 0
     mov rdi, qword ptr [rbp-64]
     mov rdx, rbx
@@ -25376,40 +25470,40 @@ zy_local_x2Fmain_0__os__os_x2Dput:
     mov r9, rcx
     mov r10, r8
     mov r8, rdx
-.L820_0:
+.L821_0:
     cmp rsi, r10
-    jl .L820_1
-.L820_4:
+    jl .L821_1
+.L821_4:
     mov rax, 0
     ret
-.L820_1:
+.L821_1:
     add rdi, rsi
     lea rax, [rsi+r9]
     cmp rax, r10
-    jle .L820_2
+    jle .L821_2
     mov rax, r10
     mov rcx, rsi
     sub rax, rcx
     mov rsi, rax
-    jmp .L820_3
-.L820_2:
+    jmp .L821_3
+.L821_2:
     mov rsi, r9
-.L820_3:
+.L821_3:
     mov rdx, rsi
     mov rsi, r8
     jmp zy_local_x2Fmain_0__base__rt_x2Dcopy
 zy_local_x2Fmain_0__os__os_x2Dsep:
     # frame 0
-.L821_0:
+.L822_0:
     movzx eax, byte ptr [rdi+0]
     cmp rax, 0
-    jne .L821_1
-    lea rax, [rip+.L822]
+    jne .L822_1
+    lea rax, [rip+.L823]
     mov rsi, rax
     mov rax, rsi
     ret
-.L821_1:
-    lea rax, [rip+.L823]
+.L822_1:
+    lea rax, [rip+.L824]
     mov rsi, rax
     mov rax, rsi
     ret
@@ -25422,28 +25516,28 @@ zy_local_x2Fmain_0__os__os_x2Dhas_x2Dsuffix:
     mov rbx, rdi
     mov r12, rsi
     mov rdi, rdx
-.L824_0:
+.L825_0:
     call zy_local_x2Fmain_0__os__os_x2Dskip_x2Dsp
     mov r13, rax
     movzx eax, byte ptr [r13+0]
     cmp rax, 0
-    jne .L824_1
+    jne .L825_1
     mov rax, 0
     pop r14
     pop r13
     pop r12
     pop rbx
     ret
-.L824_1:
+.L825_1:
     mov rdi, r13
     call zy_local_x2Fmain_0__os__os_x2Dword_x2Dend
     mov r14, rax
     mov rsi, r14
     sub rsi, r13
     cmp rsi, 0
-    jle .L824_2
+    jle .L825_2
     cmp r12, rsi
-    jle .L824_2
+    jle .L825_2
     mov r8, r12
     sub r8, rsi
     add r8, rbx
@@ -25452,41 +25546,41 @@ zy_local_x2Fmain_0__os__os_x2Dhas_x2Dsuffix:
     mov rsi, r13
     call zy_local_x2Fmain_0__base__rt_x2Dmem_x2Deq
     cmp rax, 0
-    je .L824_2
+    je .L825_2
     mov rax, 1
     pop r14
     pop r13
     pop r12
     pop rbx
     ret
-.L824_2:
+.L825_2:
     mov rdi, r14
-    jmp .L824_0
+    jmp .L825_0
 zy_local_x2Fmain_0__os__os_x2Dskip_x2Dsp:
     # frame 0
-.L825_0:
+.L826_0:
     movzx eax, byte ptr [rdi+0]
     cmp rax, 32
-    jne .L825_1
+    jne .L826_1
     add rdi, 1
-    jmp .L825_0
-.L825_1:
+    jmp .L826_0
+.L826_1:
     mov rax, rdi
     ret
 zy_local_x2Fmain_0__os__os_x2Dword_x2Dend:
     # frame 0
-.L826_0:
+.L827_0:
     movzx esi, byte ptr [rdi+0]
     cmp rsi, 0
-    je .L826_2
+    je .L827_2
     cmp rsi, 32
-    jne .L826_1
-.L826_2:
+    jne .L827_1
+.L827_2:
     mov rax, rdi
     ret
-.L826_1:
+.L827_1:
     add rdi, 1
-    jmp .L826_0
+    jmp .L827_0
 zy_local_x2Fmain_0__os__os_x2Dpush:
     # frame 32
     push rbx
@@ -25494,16 +25588,16 @@ zy_local_x2Fmain_0__os__os_x2Dpush:
     push r13
     mov rbx, rdi
     mov r12, rsi
-.L827_0:
+.L828_0:
     mov rsi, qword ptr [rbx+8]
     mov rdi, qword ptr [rbx+16]
     cmp rsi, rdi
-    jne .L827_1
+    jne .L828_1
     mov r8, 64
     cmp rdi, 0
-    je .L827_2
+    je .L828_2
     lea r8, [rdi*2]
-.L827_2:
+.L828_2:
     mov r13, r8
     mov rdi, qword ptr [rbx+0]
     lea r8, [r13*8]
@@ -25511,17 +25605,17 @@ zy_local_x2Fmain_0__os__os_x2Dpush:
     call zyl_rt_realloc
     mov rdi, rax
     cmp rdi, 0
-    jne .L827_3
+    jne .L828_3
     mov rdi, r12
     pop r13
     pop r12
     pop rbx
     jmp zyl_rt_free
-.L827_3:
+.L828_3:
     mov qword ptr [rbx+0], rdi
     mov qword ptr [rbx+16], r13
-    jmp .L827_0
-.L827_1:
+    jmp .L828_0
+.L828_1:
     mov rdi, qword ptr [rbx+0]
     lea r8, [rsi*8]
     add rdi, r8
@@ -25548,7 +25642,7 @@ zy_local_x2Fmain_0__os__os_x2Dwalk:
     mov r12, rsi
     mov r13, rdx
     mov r14, rcx
-.L828_0:
+.L829_0:
     mov rdi, r12
     call zy_local_x2Fmain_0__os__os_x2Dsep
     mov rsi, rax
@@ -25559,7 +25653,7 @@ zy_local_x2Fmain_0__os__os_x2Dwalk:
     call zy_local_x2Fmain_0__os__os_x2Dcat3
     mov r15, rax
     cmp r15, 0
-    jne .L828_1
+    jne .L829_1
     mov rax, 0
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -25569,7 +25663,7 @@ zy_local_x2Fmain_0__os__os_x2Dwalk:
     mov rsp, rbp
     pop rbp
     ret
-.L828_1:
+.L829_1:
     mov rsi, 591872
     mov rdi, 0
     mov rdx, rdi
@@ -25579,7 +25673,7 @@ zy_local_x2Fmain_0__os__os_x2Dwalk:
     mov rdi, r15
     call zyl_rt_free
     cmp qword ptr [rbp-48], 0
-    jge .L828_2
+    jge .L829_2
     mov rax, 0
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -25589,13 +25683,13 @@ zy_local_x2Fmain_0__os__os_x2Dwalk:
     mov rsp, rbp
     pop rbp
     ret
-.L828_2:
+.L829_2:
     mov rdi, 32768
     mov rsi, 1
     call zy_local_x2Fmain_0__heap__hp_x2Dalloc
     mov r15, rax
     cmp r15, 0
-    je .L828_3
+    je .L829_3
     mov rdi, rbx
     mov rsi, r12
     mov rdx, r13
@@ -25603,7 +25697,7 @@ zy_local_x2Fmain_0__os__os_x2Dwalk:
     mov r8, qword ptr [rbp-48]
     mov r9, r15
     call zy_local_x2Fmain_0__os__os_x2Dwalk_x2Dfill
-.L828_3:
+.L829_3:
     mov rdi, r15
     call zyl_rt_free
     mov rdi, qword ptr [rbp-48]
@@ -25643,19 +25737,19 @@ call zyl_rt_sys_217
     mov rax, [rbp-56]
     mov rcx, 0
     cmp rax, rcx
-    jg .L829
+    jg .L830
     mov rax, 0
-    jmp .L830
-.L829:
+    jmp .L831
+.L830:
     mov rax, 0
     mov [rbp-72], rax
     mov rax, [rbp-72]
     mov rcx, [rbp-56]
     cmp rax, rcx
-    jl .L831
+    jl .L832
     mov rax, 0
-    jmp .L832
-.L831:
+    jmp .L833
+.L832:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -25687,7 +25781,7 @@ call zyl_rt_sys_217
     mov rdi, [rsp+56]
 call zy_local_x2Fmain_0__os__os_x2Dwalk_x2Dents
     add rsp, 64
-.L832:
+.L833:
     mov [rbp-64], rax
     mov rax, [rbp-8]
     sub rsp, 8
@@ -25718,7 +25812,7 @@ call zy_local_x2Fmain_0__os__os_x2Dwalk_x2Dents
     mov rsp, rbp
     pop rbp
     jmp zy_local_x2Fmain_0__os__os_x2Dwalk_x2Dfill
-.L830:
+.L831:
     mov rbx, [rbp-168]
     mov r12, [rbp-160]
     mov rsp, rbp
@@ -25742,10 +25836,10 @@ zy_local_x2Fmain_0__os__os_x2Dwalk_x2Dents:
     mov rax, [rbp-48]
     mov rcx, [rbp-56]
     cmp rax, rcx
-    jl .L833
+    jl .L834
     mov rax, 0
-    jmp .L834
-.L833:
+    jmp .L835
+.L834:
     mov rax, [rbp-40]
     mov rcx, [rbp-48]
     add rax, rcx
@@ -25759,10 +25853,10 @@ zy_local_x2Fmain_0__os__os_x2Dwalk_x2Dents:
     movzx eax, byte ptr [rdx]
     mov rcx, 46
     cmp rax, rcx
-    jne .L835
+    jne .L836
     mov rax, 0
-    jmp .L836
-.L835:
+    jmp .L837
+.L836:
     sub rsp, 8
     sub rsp, 40
     mov rdi, [rbp-8]
@@ -25772,7 +25866,7 @@ zy_local_x2Fmain_0__os__os_x2Dwalk_x2Dents:
     mov r8, [rbp-72]
 call zy_local_x2Fmain_0__os__os_x2Dwalk_x2Done
     add rsp, 48
-.L836:
+.L837:
     mov [rbp-80], rax
     mov rax, [rbp-8]
     sub rsp, 8
@@ -25815,7 +25909,7 @@ call zy_local_x2Fmain_0__os__os_x2Dwalk_x2Done
     mov rsp, rbp
     pop rbp
     jmp zy_local_x2Fmain_0__os__os_x2Dwalk_x2Dents
-.L834:
+.L835:
     mov rbx, [rbp-184]
     mov r12, [rbp-176]
     mov rsp, rbp
@@ -25837,7 +25931,7 @@ zy_local_x2Fmain_0__os__os_x2Dwalk_x2Done:
     mov r13, rdx
     mov qword ptr [rbp-56], rcx
     mov r15, r8
-.L837_0:
+.L838_0:
     mov rdi, r12
     call zy_local_x2Fmain_0__os__os_x2Dsep
     mov rsi, rax
@@ -25848,7 +25942,7 @@ zy_local_x2Fmain_0__os__os_x2Dwalk_x2Done:
     call zy_local_x2Fmain_0__os__os_x2Dcat3
     mov qword ptr [rbp-48], rax
     cmp qword ptr [rbp-48], 0
-    jne .L837_1
+    jne .L838_1
     mov rax, 0
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -25858,8 +25952,8 @@ zy_local_x2Fmain_0__os__os_x2Dwalk_x2Done:
     mov rsp, rbp
     pop rbp
     ret
-.L837_1:
-    lea rax, [rip+.L838]
+.L838_1:
+    lea rax, [rip+.L839]
     mov rsi, rax
     mov rdi, 8200
     mov rdx, qword ptr [rbp-48]
@@ -25868,7 +25962,7 @@ zy_local_x2Fmain_0__os__os_x2Dwalk_x2Done:
     call zy_local_x2Fmain_0__os__os_x2Dcat3
     mov r15, rax
     cmp r15, 0
-    jne .L837_2
+    jne .L838_2
     mov rdi, qword ptr [rbp-48]
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -25878,7 +25972,7 @@ zy_local_x2Fmain_0__os__os_x2Dwalk_x2Done:
     mov rsp, rbp
     pop rbp
     jmp zyl_rt_free
-.L837_2:
+.L838_2:
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_os_stat@tpoff]
     mov r12, rax
@@ -25889,7 +25983,7 @@ zy_local_x2Fmain_0__os__os_x2Dwalk_x2Done:
     mov rdi, r15
     call zyl_rt_free
     cmp r14, 0
-    je .L837_3
+    je .L838_3
     mov rdi, qword ptr [rbp-48]
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -25899,11 +25993,11 @@ zy_local_x2Fmain_0__os__os_x2Dwalk_x2Done:
     mov rsp, rbp
     pop rbp
     jmp zyl_rt_free
-.L837_3:
+.L838_3:
     mov esi, dword ptr [r12+24]
     and rsi, 61440
     cmp rsi, 16384
-    jne .L837_4
+    jne .L838_4
     mov rdi, rbx
     mov rsi, qword ptr [rbp-48]
     mov rdx, r13
@@ -25918,7 +26012,7 @@ zy_local_x2Fmain_0__os__os_x2Dwalk_x2Done:
     mov rsp, rbp
     pop rbp
     jmp zyl_rt_free
-.L837_4:
+.L838_4:
     mov rdi, qword ptr [rbp-48]
     call zy_local_x2Fmain_0__base__rt_x2Dstrlen
     mov rsi, rax
@@ -25926,7 +26020,7 @@ zy_local_x2Fmain_0__os__os_x2Dwalk_x2Done:
     mov rdx, r13
     call zy_local_x2Fmain_0__os__os_x2Dhas_x2Dsuffix
     cmp rax, 0
-    je .L837_5
+    je .L838_5
     mov rdi, qword ptr [rbp-56]
     mov rsi, qword ptr [rbp-48]
     mov rbx, qword ptr [rbp-8]
@@ -25937,7 +26031,7 @@ zy_local_x2Fmain_0__os__os_x2Dwalk_x2Done:
     mov rsp, rbp
     pop rbp
     jmp zy_local_x2Fmain_0__os__os_x2Dpush
-.L837_5:
+.L838_5:
     mov rdi, qword ptr [rbp-48]
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -25963,10 +26057,10 @@ zy_local_x2Fmain_0__os__os_x2Dsort:
     sub rax, rcx
     mov rcx, 2
     cmp rax, rcx
-    jge .L839
+    jge .L840
     mov rax, 0
-    jmp .L840
-.L839:
+    jmp .L841
+.L840:
     mov rax, [rbp-32]
     mov rcx, [rbp-24]
     sub rax, rcx
@@ -26056,7 +26150,7 @@ call zy_local_x2Fmain_0__os__os_x2Dmerge
     mov rsp, rbp
     pop rbp
     jmp zy_local_x2Fmain_0__base__rt_x2Dcopy
-.L840:
+.L841:
     mov rbx, [rbp-168]
     mov r12, [rbp-160]
     mov rsp, rbp
@@ -26080,32 +26174,32 @@ zy_local_x2Fmain_0__os__os_x2Dmerge:
     mov rax, [rbp-24]
     mov rcx, [rbp-32]
     cmp rax, rcx
-    jl .L843
+    jl .L844
     mov rax, [rbp-40]
     mov rcx, [rbp-48]
     cmp rax, rcx
     setge al
     movzx rax, al
-    jmp .L844
-.L843:
-    mov rax, 0
+    jmp .L845
 .L844:
-    test rax, rax
-    je .L841
     mov rax, 0
-    jmp .L842
-.L841:
+.L845:
+    test rax, rax
+    je .L842
+    mov rax, 0
+    jmp .L843
+.L842:
     mov rax, [rbp-40]
     mov rcx, [rbp-48]
     cmp rax, rcx
-    jl .L847
+    jl .L848
     mov rax, 1
-    jmp .L848
-.L847:
+    jmp .L849
+.L848:
     mov rax, [rbp-24]
     mov rcx, [rbp-32]
     cmp rax, rcx
-    jge .L849
+    jge .L850
     mov rax, [rbp-24]
     mov rcx, 8
     imul rax, rcx
@@ -26134,13 +26228,13 @@ call zy_local_x2Fmain_0__base__rt_x2Dstrcmp
     cmp rax, rcx
     setle al
     movzx rax, al
-    jmp .L850
-.L849:
-    mov rax, 0
+    jmp .L851
 .L850:
-.L848:
+    mov rax, 0
+.L851:
+.L849:
     test rax, rax
-    je .L845
+    je .L846
     mov rax, [rbp-56]
     mov rcx, 8
     imul rax, rcx
@@ -26199,8 +26293,8 @@ call zy_local_x2Fmain_0__base__rt_x2Dstrcmp
     mov rsp, rbp
     pop rbp
     jmp zy_local_x2Fmain_0__os__os_x2Dmerge
-    jmp .L846
-.L845:
+    jmp .L847
+.L846:
     mov rax, [rbp-56]
     mov rcx, 8
     imul rax, rcx
@@ -26259,8 +26353,8 @@ call zy_local_x2Fmain_0__base__rt_x2Dstrcmp
     mov rsp, rbp
     pop rbp
     jmp zy_local_x2Fmain_0__os__os_x2Dmerge
-.L846:
-.L842:
+.L847:
+.L843:
     mov rbx, [rbp-168]
     mov r12, [rbp-160]
     mov rsp, rbp
@@ -26275,10 +26369,10 @@ zy_local_x2Fmain_0__os__os_x2Dtotal:
     mov rbx, rdi
     mov r12, rdx
     mov r13, rcx
-.L851_0:
+.L852_0:
     cmp rsi, r12
-    jl .L851_1
-.L851_2:
+    jl .L852_1
+.L852_2:
     mov rax, r13
     pop r14
     pop r13
@@ -26286,7 +26380,7 @@ zy_local_x2Fmain_0__os__os_x2Dtotal:
     pop rbx
     ret
 .p2align 4
-.L851_1:
+.L852_1:
     lea r14, [rsi+1]
     lea rdi, [rsi*8]
     add rdi, rbx
@@ -26297,8 +26391,8 @@ zy_local_x2Fmain_0__os__os_x2Dtotal:
     add r13, rdi
     mov rsi, r14
     cmp rsi, r12
-    jl .L851_1
-    jmp .L851_2
+    jl .L852_1
+    jmp .L852_2
 zy_local_x2Fmain_0__os__os_x2Demit:
     # frame 64
     push rbp
@@ -26314,10 +26408,10 @@ zy_local_x2Fmain_0__os__os_x2Demit:
     mov r13, rdx
     mov r14, rcx
     mov qword ptr [rbp-48], r8
-.L852_0:
+.L853_0:
     cmp r12, r13
-    jl .L852_1
-.L852_2:
+    jl .L853_1
+.L853_2:
     mov rax, qword ptr [rbp-48]
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -26328,7 +26422,7 @@ zy_local_x2Fmain_0__os__os_x2Demit:
     pop rbp
     ret
 .p2align 4
-.L852_1:
+.L853_1:
     lea rsi, [r12*8]
     add rsi, qword ptr [rbp-56]
     mov r15, qword ptr [rsi+0]
@@ -26355,8 +26449,8 @@ zy_local_x2Fmain_0__os__os_x2Demit:
     add rax, rcx
     mov qword ptr [rbp-48], rax
     cmp r12, r13
-    jl .L852_1
-    jmp .L852_2
+    jl .L853_1
+    jmp .L853_2
 zy_local_x2Fmain_0__os__os_x2Dfree_x2Dall:
     # frame 32
     push rbx
@@ -26365,25 +26459,25 @@ zy_local_x2Fmain_0__os__os_x2Dfree_x2Dall:
     mov rbx, rdi
     mov r12, rsi
     mov r13, rdx
-.L853_0:
+.L854_0:
     cmp r12, r13
-    jl .L853_1
-.L853_2:
+    jl .L854_1
+.L854_2:
     mov rax, 0
     pop r13
     pop r12
     pop rbx
     ret
 .p2align 4
-.L853_1:
+.L854_1:
     lea rsi, [r12*8]
     add rsi, rbx
     mov rdi, qword ptr [rsi+0]
     call zyl_rt_free
     add r12, 1
     cmp r12, r13
-    jl .L853_1
-    jmp .L853_2
+    jl .L854_1
+    jmp .L854_2
 zy_local_x2Fmain_0__os__os_x2Djoin:
     # frame 32
     push rbp
@@ -26394,21 +26488,21 @@ zy_local_x2Fmain_0__os__os_x2Djoin:
     push r14
     and rsp, -16
     mov rbx, rdi
-.L854_0:
+.L855_0:
     mov r12, qword ptr [rbx+0]
     mov r13, qword ptr [rbx+8]
     mov rsi, 0
     cmp r13, 2
-    jl .L854_1
+    jl .L855_1
     lea rdi, [r13*8]
     mov r8, 1
     mov rsi, r8
     call zy_local_x2Fmain_0__heap__hp_x2Dalloc
     mov rsi, rax
-.L854_1:
+.L855_1:
     mov r14, rsi
     cmp r14, 0
-    je .L854_2
+    je .L855_2
     mov rsi, 0
     mov rdi, r12
     mov rdx, rsi
@@ -26417,7 +26511,7 @@ zy_local_x2Fmain_0__os__os_x2Djoin:
     call zy_local_x2Fmain_0__os__os_x2Dsort
     mov rdi, r14
     call zyl_rt_free
-.L854_2:
+.L855_2:
     mov rsi, 0
     mov rdi, 1
     mov rdx, r13
@@ -26428,7 +26522,7 @@ zy_local_x2Fmain_0__os__os_x2Djoin:
     call zyl_heap_alloc
     mov r14, rax
     cmp r14, 0
-    jne .L854_3
+    jne .L855_3
     mov rsi, 0
     mov rdi, r12
     mov rdx, r13
@@ -26445,7 +26539,7 @@ zy_local_x2Fmain_0__os__os_x2Djoin:
     mov rsp, rbp
     pop rbp
     ret
-.L854_3:
+.L855_3:
     mov rsi, 0
     mov r8, 0
     mov rdi, r12
@@ -26476,19 +26570,19 @@ zy_local_x2Fmain_0__os__os_x2Dlist:
     push r13
     mov rbx, rdi
     mov r12, rsi
-.L855_0:
+.L856_0:
     mov rdi, 24
     mov rsi, 1
     call zy_local_x2Fmain_0__heap__hp_x2Dalloc
     mov r13, rax
     cmp r13, 0
-    jne .L855_1
+    jne .L856_1
     mov rax, 0
     pop r13
     pop r12
     pop rbx
     ret
-.L855_1:
+.L856_1:
     mov rsi, 0
     mov qword ptr [r13+0], rsi
     mov rsi, 0
@@ -26496,19 +26590,19 @@ zy_local_x2Fmain_0__os__os_x2Dlist:
     mov rsi, 0
     mov qword ptr [r13+16], rsi
     cmp rbx, 0
-    je .L855_4
+    je .L856_4
     cmp r12, 0
-    jne .L855_2
-.L855_4:
-    jmp .L855_3
-.L855_2:
-    lea rax, [rip+.L856]
+    jne .L856_2
+.L856_4:
+    jmp .L856_3
+.L856_2:
+    lea rax, [rip+.L857]
     mov rsi, rax
     mov rdi, rbx
     mov rdx, r12
     mov rcx, r13
     call zy_local_x2Fmain_0__os__os_x2Dwalk
-.L855_3:
+.L856_3:
     mov rdi, r13
     pop r13
     pop r12
@@ -26518,20 +26612,20 @@ zy_local_x2Fmain_0__os__os_x2Dlist:
 zyl_list_zyl_files:
     # frame 16
     push rbx
-.L857_0:
+.L858_0:
     mov rbx, rdi
-    lea rax, [rip+.L858]
+    lea rax, [rip+.L859]
     mov rsi, rax
     mov rdi, rbx
     call zy_local_x2Fmain_0__os__os_x2Dbad
     cmp rax, 0
-    je .L857_1
+    je .L858_1
     mov rdi, 0
     mov rsi, 0
     pop rbx
     jmp zy_local_x2Fmain_0__os__os_x2Dlist
-.L857_1:
-    lea rax, [rip+.L859]
+.L858_1:
+    lea rax, [rip+.L860]
     mov rsi, rax
     mov rdi, rbx
     pop rbx
@@ -26541,28 +26635,28 @@ zyl_list_files:
     # frame 16
     push rbx
     push r12
-.L860_0:
+.L861_0:
     mov rbx, rdi
     mov r12, rsi
-    lea rax, [rip+.L861]
+    lea rax, [rip+.L862]
     mov rsi, rax
     mov rdi, rbx
     call zy_local_x2Fmain_0__os__os_x2Dbad
     cmp rax, 0
-    jne .L860_2
-    lea rax, [rip+.L862]
+    jne .L861_2
+    lea rax, [rip+.L863]
     mov rsi, rax
     mov rdi, r12
     call zy_local_x2Fmain_0__os__os_x2Dbad
     cmp rax, 0
-    je .L860_1
-.L860_2:
+    je .L861_1
+.L861_2:
     mov rdi, 0
     mov rsi, 0
     pop r12
     pop rbx
     jmp zy_local_x2Fmain_0__os__os_x2Dlist
-.L860_1:
+.L861_1:
     mov rdi, rbx
     mov rsi, r12
     pop r12
@@ -26570,14 +26664,14 @@ zyl_list_files:
     jmp zy_local_x2Fmain_0__os__os_x2Dlist
 zy_local_x2Fmain_0__os__os_x2Dterm_x2Dstate:
     # frame 0
-.L863_0:
+.L864_0:
     lea rax, [rip+zyl_rtg_os_term_state]
     mov rsi, rax
     mov rax, rsi
     ret
 zy_local_x2Fmain_0__os__os_x2Dterm_x2Dsaved:
     # frame 0
-.L864_0:
+.L865_0:
     lea rax, [rip+zyl_rtg_os_term_saved]
     mov rsi, rax
     mov rax, rsi
@@ -26588,7 +26682,7 @@ zyl_term_is_tty:
     push rbp
     mov rbp, rsp
     and rsp, -16
-.L865_0:
+.L866_0:
     mov rsi, 21505
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_os_tios@tpoff]
@@ -26596,12 +26690,12 @@ zyl_term_is_tty:
     mov rdx, r8
     call zyl_rt_sys_16
     cmp rax, 0
-    jne .L865_1
+    jne .L866_1
     mov rax, 1
     mov rsp, rbp
     pop rbp
     ret
-.L865_1:
+.L866_1:
     mov rax, 0
     mov rsp, rbp
     pop rbp
@@ -26611,7 +26705,7 @@ zy_local_x2Fmain_0__os__os_x2Dtcset:
     push rbp
     mov rbp, rsp
     and rsp, -16
-.L866_0:
+.L867_0:
     mov rsi, 0
     mov r8, 21508
     mov rdx, rdi
@@ -26629,15 +26723,15 @@ zyl_term_restore_atexit:
     push rbx
     and rsp, -16
     sub rsp, 16
-.L867_0:
+.L868_0:
     lea rax, [rip+zyl_rtg_os_term_state]
     mov rbx, rax
     mov rax, qword ptr [rbx+8]
     cmp rax, 1
-    jne .L867_1
+    jne .L868_1
     mov rax, qword ptr [rbx+0]
     cmp rax, 1
-    jne .L867_1
+    jne .L868_1
     lea rax, [rip+zyl_rtg_os_term_saved]
     mov rsi, rax
     mov rdi, 0
@@ -26648,7 +26742,7 @@ zyl_term_restore_atexit:
     mov rsi, 0
     mov qword ptr [rbx+8], rsi
     mov rdi, 1
-    lea rax, [rip+.L868]
+    lea rax, [rip+.L869]
     mov rsi, rax
     mov r8, 12
     mov rdx, r8
@@ -26658,7 +26752,7 @@ zyl_term_restore_atexit:
     mov rsp, rbp
     pop rbp
     ret
-.L867_1:
+.L868_1:
     mov rax, 0
     mov rbx, qword ptr [rbp-8]
     mov rsp, rbp
@@ -26672,36 +26766,36 @@ zyl_term_raw_on:
     push rbx
     push r12
     and rsp, -16
-.L869_0:
+.L870_0:
     mov rdi, 0
     call zyl_term_is_tty
     cmp rax, 0
-    jne .L869_1
+    jne .L870_1
     mov rax, -1
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
     mov rsp, rbp
     pop rbp
     ret
-.L869_1:
+.L870_1:
     lea rax, [rip+zyl_rtg_os_term_state]
     mov rbx, rax
     mov rax, qword ptr [rbx+8]
     cmp rax, 1
-    jne .L869_2
+    jne .L870_2
     mov rax, 0
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
     mov rsp, rbp
     pop rbp
     ret
-.L869_2:
+.L870_2:
     mov rax, qword ptr [rbx+0]
     cmp rax, 1
-    jne .L869_3
+    jne .L870_3
     mov rsi, 1
-    jmp .L869_4
-.L869_3:
+    jmp .L870_4
+.L870_3:
     mov rdi, 0
     mov r8, 21505
     lea rax, [rip+zyl_rtg_os_term_saved]
@@ -26710,27 +26804,27 @@ zyl_term_raw_on:
     mov rdx, r9
     call zyl_rt_sys_16
     cmp rax, 0
-    jne .L869_5
+    jne .L870_5
     mov rdi, 1
     mov qword ptr [rbx+0], rdi
     call zyl_term_atexit
     mov rdi, 1
-    jmp .L869_6
-.L869_5:
+    jmp .L870_6
+.L870_5:
     mov rdi, 0
-.L869_6:
+.L870_6:
     mov rsi, rdi
-.L869_4:
+.L870_4:
     mov rax, rsi
     cmp rax, 0
-    jne .L869_7
+    jne .L870_7
     mov rax, -1
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
     mov rsp, rbp
     pop rbp
     ret
-.L869_7:
+.L870_7:
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_os_tios@tpoff]
     mov r12, rax
@@ -26761,14 +26855,14 @@ zyl_term_raw_on:
     mov rdx, r12
     call zyl_rt_sys_16
     cmp rax, 0
-    je .L869_8
+    je .L870_8
     mov rax, -1
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
     mov rsp, rbp
     pop rbp
     ret
-.L869_8:
+.L870_8:
     mov rsi, 1
     mov qword ptr [rbx+8], rsi
     mov rax, 0
@@ -26785,22 +26879,22 @@ zyl_term_raw_off:
     push rbx
     and rsp, -16
     sub rsp, 16
-.L870_0:
+.L871_0:
     lea rax, [rip+zyl_rtg_os_term_state]
     mov rbx, rax
     mov rax, qword ptr [rbx+8]
     cmp rax, 1
-    jne .L870_2
+    jne .L871_2
     mov rax, qword ptr [rbx+0]
     cmp rax, 1
-    je .L870_1
-.L870_2:
+    je .L871_1
+.L871_2:
     mov rax, 0
     mov rbx, qword ptr [rbp-8]
     mov rsp, rbp
     pop rbp
     ret
-.L870_1:
+.L871_1:
     lea rax, [rip+zyl_rtg_os_term_saved]
     mov rsi, rax
     mov rdi, 0
@@ -26809,13 +26903,13 @@ zyl_term_raw_off:
     mov rsi, r8
     call zyl_rt_sys_16
     cmp rax, 0
-    je .L870_3
+    je .L871_3
     mov rax, -1
     mov rbx, qword ptr [rbp-8]
     mov rsp, rbp
     pop rbp
     ret
-.L870_3:
+.L871_3:
     mov rsi, 0
     mov qword ptr [rbx+8], rsi
     mov rax, 0
@@ -26831,7 +26925,7 @@ zyl_term_read_byte:
     push rbx
     and rsp, -16
     sub rsp, 16
-.L871_0:
+.L872_0:
     call zyl_out_flush
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_os_byte@tpoff]
@@ -26843,21 +26937,21 @@ zyl_term_read_byte:
     call zyl_rt_sys_0
     mov rsi, rax
     cmp rsi, 1
-    jne .L871_1
+    jne .L872_1
     movzx eax, byte ptr [rbx+0]
     mov rbx, qword ptr [rbp-8]
     mov rsp, rbp
     pop rbp
     ret
-.L871_1:
+.L872_1:
     cmp rsi, -4
-    jne .L871_2
+    jne .L872_2
     mov rax, -2
     mov rbx, qword ptr [rbp-8]
     mov rsp, rbp
     pop rbp
     ret
-.L871_2:
+.L872_2:
     mov rax, -1
     mov rbx, qword ptr [rbp-8]
     mov rsp, rbp
@@ -26869,7 +26963,7 @@ zyl_term_read_byte_timeout:
     push rbp
     mov rbp, rsp
     and rsp, -16
-.L872_0:
+.L873_0:
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_os_pollfd@tpoff]
     mov rsi, rax
@@ -26882,26 +26976,26 @@ zyl_term_read_byte_timeout:
     call zyl_rt_sys_7
     mov rsi, rax
     cmp rsi, 0
-    jne .L872_1
+    jne .L873_1
     mov rax, -3
     mov rsp, rbp
     pop rbp
     ret
-.L872_1:
+.L873_1:
     cmp rsi, 0
-    jge .L872_2
+    jge .L873_2
     cmp rsi, -4
-    jne .L872_3
+    jne .L873_3
     mov rax, -2
     mov rsp, rbp
     pop rbp
     ret
-.L872_3:
+.L873_3:
     mov rax, -1
     mov rsp, rbp
     pop rbp
     ret
-.L872_2:
+.L873_2:
     mov rsp, rbp
     pop rbp
     jmp zyl_term_read_byte
@@ -26916,7 +27010,7 @@ zy_local_x2Fmain_0__os__os_x2Dwinsz:
     sub rsp, 16
     mov rbx, rdi
     mov r12, rsi
-.L873_0:
+.L874_0:
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_os_winsz@tpoff]
     mov r13, rax
@@ -26925,11 +27019,11 @@ zy_local_x2Fmain_0__os__os_x2Dwinsz:
     mov rdx, r13
     call zyl_rt_sys_16
     cmp rax, 0
-    jne .L873_1
+    jne .L874_1
     lea rsi, [r13+rbx]
     movzx esi, word ptr [rsi+0]
     cmp rsi, 0
-    jle .L873_2
+    jle .L874_2
     mov rax, rsi
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -26937,7 +27031,7 @@ zy_local_x2Fmain_0__os__os_x2Dwinsz:
     mov rsp, rbp
     pop rbp
     ret
-.L873_2:
+.L874_2:
     mov rax, r12
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -26945,7 +27039,7 @@ zy_local_x2Fmain_0__os__os_x2Dwinsz:
     mov rsp, rbp
     pop rbp
     ret
-.L873_1:
+.L874_1:
     mov rax, r12
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -26956,14 +27050,14 @@ zy_local_x2Fmain_0__os__os_x2Dwinsz:
 .globl zyl_term_width
 zyl_term_width:
     # frame 0
-.L874_0:
+.L875_0:
     mov rdi, 2
     mov rsi, 80
     jmp zy_local_x2Fmain_0__os__os_x2Dwinsz
 .globl zyl_term_height
 zyl_term_height:
     # frame 0
-.L875_0:
+.L876_0:
     mov rdi, 0
     mov rsi, 24
     jmp zy_local_x2Fmain_0__os__os_x2Dwinsz
@@ -26975,28 +27069,28 @@ zyl_term_write:
     push rbx
     and rsp, -16
     sub rsp, 16
-.L876_0:
+.L877_0:
     mov rbx, rdi
     cmp rbx, 0
-    jne .L876_1
+    jne .L877_1
     mov rax, 0
     mov rbx, qword ptr [rbp-8]
     mov rsp, rbp
     pop rbp
     ret
-.L876_1:
-    lea rax, [rip+.L877]
+.L877_1:
+    lea rax, [rip+.L878]
     mov rsi, rax
     mov rdi, rbx
     call zy_local_x2Fmain_0__os__os_x2Dbad
     cmp rax, 0
-    je .L876_2
+    je .L877_2
     mov rax, 0
     mov rbx, qword ptr [rbp-8]
     mov rsp, rbp
     pop rbp
     ret
-.L876_2:
+.L877_2:
     call zyl_term_flush
     mov rdi, rbx
     call zy_local_x2Fmain_0__base__rt_x2Dstrlen
@@ -27020,10 +27114,10 @@ zy_local_x2Fmain_0__os__os_x2Dwrite_x2Dall:
     mov rbx, rdi
     mov r12, rsi
     mov r13, rdx
-.L878_0:
+.L879_0:
     cmp r13, r12
-    jl .L878_1
-.L878_4:
+    jl .L879_1
+.L879_4:
     mov rax, r13
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -27032,7 +27126,7 @@ zy_local_x2Fmain_0__os__os_x2Dwrite_x2Dall:
     pop rbp
     ret
 .p2align 4
-.L878_1:
+.L879_1:
     mov rdi, 1
     lea rsi, [rbx+r13]
     mov r8, r12
@@ -27041,18 +27135,18 @@ zy_local_x2Fmain_0__os__os_x2Dwrite_x2Dall:
     call zyl_rt_sys_1
     mov rsi, rax
     cmp rsi, 0
-    jle .L878_2
+    jle .L879_2
     add r13, rsi
     cmp r13, r12
-    jl .L878_1
-    jmp .L878_4
-.L878_2:
+    jl .L879_1
+    jmp .L879_4
+.L879_2:
     cmp rsi, -4
-    jne .L878_3
+    jne .L879_3
     cmp r13, r12
-    jl .L878_1
-    jmp .L878_4
-.L878_3:
+    jl .L879_1
+    jmp .L879_4
+.L879_3:
     mov rax, r13
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -27062,7 +27156,7 @@ zy_local_x2Fmain_0__os__os_x2Dwrite_x2Dall:
     ret
 zy_local_x2Fmain_0__uf__rt_x2Duf:
     # frame 0
-.L879_0:
+.L880_0:
     lea rax, [rip+zyl_rtg_uf]
     mov rsi, rax
     mov rax, rsi
@@ -27070,7 +27164,7 @@ zy_local_x2Fmain_0__uf__rt_x2Duf:
 .globl zyl_uf_reset
 zyl_uf_reset:
     # frame 0
-.L880_0:
+.L881_0:
     lea rax, [rip+zyl_rtg_uf]
     mov rsi, rax
     mov rdi, 0
@@ -27087,16 +27181,16 @@ zy_local_x2Fmain_0__uf__rt_x2Duf_x2Dgrow:
     push r14
     and rsp, -16
     mov rbx, rdi
-.L881_0:
+.L882_0:
     mov rax, qword ptr [rbx+24]
     cmp rax, 0
-    jne .L881_1
+    jne .L882_1
     mov rsi, 4096
-    jmp .L881_2
-.L881_1:
+    jmp .L882_2
+.L882_1:
     mov rsi, qword ptr [rbx+24]
     shl rsi, 1
-.L881_2:
+.L882_2:
     mov r12, rsi
     mov rdi, qword ptr [rbx+0]
     lea rsi, [r12*8]
@@ -27107,18 +27201,18 @@ zy_local_x2Fmain_0__uf__rt_x2Duf_x2Dgrow:
     call zyl_rt_realloc
     mov r14, rax
     cmp r13, 0
-    je .L881_5
+    je .L882_5
     cmp r14, 0
-    jne .L881_3
-.L881_5:
+    jne .L882_3
+.L882_5:
     mov rdi, r12
     shl rdi, 4
-    lea rax, [rip+.L882]
+    lea rax, [rip+.L883]
     mov rsi, rax
     call zyl_arena_oom
-    jmp .L881_4
-.L881_3:
-.L881_4:
+    jmp .L882_4
+.L882_3:
+.L882_4:
     mov qword ptr [rbx+0], r13
     mov qword ptr [rbx+8], r14
     mov qword ptr [rbx+24], r12
@@ -27137,18 +27231,18 @@ zyl_uf_new:
     push rbx
     push r12
     mov rbx, rdi
-.L883_0:
+.L884_0:
     lea rax, [rip+zyl_rtg_uf]
     mov r12, rax
     mov rsi, qword ptr [r12+16]
     mov rax, qword ptr [r12+24]
     cmp rsi, rax
-    jne .L883_1
+    jne .L884_1
     mov rdi, r12
     call zy_local_x2Fmain_0__uf__rt_x2Duf_x2Dgrow
-    jmp .L883_2
-.L883_1:
-.L883_2:
+    jmp .L884_2
+.L884_1:
+.L884_2:
     mov rsi, qword ptr [r12+16]
     mov rdi, qword ptr [r12+0]
     lea r8, [rsi*8]
@@ -27166,34 +27260,34 @@ zyl_uf_new:
     ret
 zy_local_x2Fmain_0__uf__rt_x2Duf_x2Droot:
     # frame 0
-.L884_0:
+.L885_0:
     lea r8, [rsi*8]
     add r8, rdi
     mov r8, qword ptr [r8+0]
     cmp r8, rsi
-    jne .L884_1
+    jne .L885_1
     mov rax, rsi
     ret
-.L884_1:
+.L885_1:
     mov rsi, r8
-    jmp .L884_0
+    jmp .L885_0
 zy_local_x2Fmain_0__uf__rt_x2Duf_x2Dcompress:
     # frame 0
     mov r8, rdx
-.L885_0:
+.L886_0:
     lea r9, [rsi*8]
     add r9, rdi
     mov r9, qword ptr [r9+0]
     cmp r9, r8
-    jne .L885_1
+    jne .L886_1
     mov rax, 0
     ret
-.L885_1:
+.L886_1:
     lea r10, [rsi*8]
     add r10, rdi
     mov qword ptr [r10+0], r8
     mov rsi, r9
-    jmp .L885_0
+    jmp .L886_0
 .globl zyl_uf_find
 zyl_uf_find:
     # frame 32
@@ -27201,21 +27295,21 @@ zyl_uf_find:
     push r12
     push r13
     mov rbx, rdi
-.L886_0:
+.L887_0:
     lea rax, [rip+zyl_rtg_uf]
     mov rsi, rax
     cmp rbx, 0
-    jl .L886_2
+    jl .L887_2
     mov rax, qword ptr [rsi+16]
     cmp rbx, rax
-    jl .L886_1
-.L886_2:
+    jl .L887_1
+.L887_2:
     mov rax, rbx
     pop r13
     pop r12
     pop rbx
     ret
-.L886_1:
+.L887_1:
     mov r12, qword ptr [rsi+0]
     mov rdi, r12
     mov rsi, rbx
@@ -27232,10 +27326,10 @@ zyl_uf_find:
     ret
 zy_local_x2Fmain_0__uf__rt_x2Duf_x2Dok:
     # frame 0
-.L887_0:
+.L888_0:
     cmp rdi, 0
-    jl .L887_1
-.L887_2:
+    jl .L888_1
+.L888_2:
     lea rax, [rip+zyl_rtg_uf]
     mov rsi, rax
     mov rsi, qword ptr [rsi+16]
@@ -27245,7 +27339,7 @@ zy_local_x2Fmain_0__uf__rt_x2Duf_x2Dok:
     setl al
     movzx rax, al
     ret
-.L887_1:
+.L888_1:
     mov rax, 0
     ret
 .globl zyl_uf_union
@@ -27254,7 +27348,7 @@ zyl_uf_union:
     push rbx
     push r12
     mov rbx, rsi
-.L888_0:
+.L889_0:
     call zyl_uf_find
     mov r12, rax
     mov rdi, rbx
@@ -27263,34 +27357,34 @@ zyl_uf_union:
     mov rdi, r12
     call zy_local_x2Fmain_0__uf__rt_x2Duf_x2Dok
     cmp rax, 0
-    je .L888_2
+    je .L889_2
     mov rdi, rbx
     call zy_local_x2Fmain_0__uf__rt_x2Duf_x2Dok
     cmp rax, 0
-    jne .L888_1
-.L888_2:
+    jne .L889_1
+.L889_2:
     mov rax, r12
     pop r12
     pop rbx
     ret
-.L888_1:
+.L889_1:
     cmp r12, rbx
-    jne .L888_3
+    jne .L889_3
     mov rax, r12
     pop r12
     pop rbx
     ret
-.L888_3:
+.L889_3:
     mov rsi, r12
     cmp r12, rbx
-    jl .L888_4
+    jl .L889_4
     mov rsi, rbx
-.L888_4:
+.L889_4:
     mov rdi, rbx
     cmp r12, rbx
-    jl .L888_5
+    jl .L889_5
     mov rdi, r12
-.L888_5:
+.L889_5:
     lea rax, [rip+zyl_rtg_uf]
     mov r8, rax
     mov r8, qword ptr [r8+8]
@@ -27301,16 +27395,16 @@ zyl_uf_union:
     add r10, r8
     mov rax, qword ptr [r10+0]
     cmp r9, rax
-    jle .L888_6
+    jle .L889_6
     lea r9, [rsi*8]
     add r9, r8
     lea r10, [rdi*8]
     add r8, r10
     mov r8, qword ptr [r8+0]
     mov qword ptr [r9+0], r8
-    jmp .L888_7
-.L888_6:
-.L888_7:
+    jmp .L889_7
+.L889_6:
+.L889_7:
     lea rax, [rip+zyl_rtg_uf]
     mov r8, rax
     mov r8, qword ptr [r8+0]
@@ -27327,18 +27421,18 @@ zyl_uf_raise:
     push rbx
     push r12
     mov rbx, rsi
-.L889_0:
+.L890_0:
     call zyl_uf_find
     mov r12, rax
     mov rdi, r12
     call zy_local_x2Fmain_0__uf__rt_x2Duf_x2Dok
     cmp rax, 0
-    jne .L889_1
+    jne .L890_1
     mov rax, 0
     pop r12
     pop rbx
     ret
-.L889_1:
+.L890_1:
     lea rax, [rip+zyl_rtg_uf]
     mov rsi, rax
     mov rsi, qword ptr [rsi+8]
@@ -27346,11 +27440,11 @@ zyl_uf_raise:
     add rsi, rdi
     mov rax, qword ptr [rsi+0]
     cmp rbx, rax
-    jle .L889_2
+    jle .L890_2
     mov qword ptr [rsi+0], rbx
-    jmp .L889_3
-.L889_2:
-.L889_3:
+    jmp .L890_3
+.L890_2:
+.L890_3:
     mov rax, 0
     pop r12
     pop rbx
@@ -27359,17 +27453,17 @@ zyl_uf_raise:
 zyl_uf_level:
     # frame 16
     push rbx
-.L890_0:
+.L891_0:
     call zyl_uf_find
     mov rbx, rax
     mov rdi, rbx
     call zy_local_x2Fmain_0__uf__rt_x2Duf_x2Dok
     cmp rax, 0
-    jne .L890_1
+    jne .L891_1
     mov rax, 2
     pop rbx
     ret
-.L890_1:
+.L891_1:
     lea rax, [rip+zyl_rtg_uf]
     mov rsi, rax
     mov rsi, qword ptr [rsi+8]
@@ -27385,7 +27479,7 @@ zy_local_x2Fmain_0__misc__rt_x2Dnote:
     push rbx
     push r12
     and rsp, -16
-.L891_0:
+.L892_0:
     mov rbx, 2
     mov r12, rdi
     call zy_local_x2Fmain_0__base__rt_x2Dstrlen
@@ -27403,31 +27497,8 @@ zy_local_x2Fmain_0__misc__rt_x2Dnote:
 .globl zyl_mem_alloc
 zyl_mem_alloc:
     # frame 0
-.L892_0:
-    mov rax, QWORD PTR [rip+malloc@GOTPCREL]
-    mov rsi, rax
-    lea rax, [rip+zyl_rtg_freestanding]
-    mov r8, rax
-    mov rax, qword ptr [r8+0]
-    cmp rax, 0
-    jne .L892_1
-    cmp rsi, 0
-    jle .L892_1
-    mov rax, rsi
-    mov rsi, rdi
-    mov rdi, rax
-    jmp zyl_rt_call1
-.L892_1:
-    mov rsi, 1
-    jmp zy_local_x2Fmain_0__heap__hp_x2Dalloc
-.globl zyl_mem_free
-zyl_mem_free:
-    # frame 0
-    push rbp
-    mov rbp, rsp
-    and rsp, -16
 .L893_0:
-    mov rax, QWORD PTR [rip+free@GOTPCREL]
+    mov rax, QWORD PTR [rip+malloc@GOTPCREL]
     mov rsi, rax
     lea rax, [rip+zyl_rtg_freestanding]
     mov r8, rax
@@ -27439,11 +27510,34 @@ zyl_mem_free:
     mov rax, rsi
     mov rsi, rdi
     mov rdi, rax
-    call zyl_rt_call1
-    jmp .L893_2
+    jmp zyl_rt_call1
 .L893_1:
+    mov rsi, 1
+    jmp zy_local_x2Fmain_0__heap__hp_x2Dalloc
+.globl zyl_mem_free
+zyl_mem_free:
+    # frame 0
+    push rbp
+    mov rbp, rsp
+    and rsp, -16
+.L894_0:
+    mov rax, QWORD PTR [rip+free@GOTPCREL]
+    mov rsi, rax
+    lea rax, [rip+zyl_rtg_freestanding]
+    mov r8, rax
+    mov rax, qword ptr [r8+0]
+    cmp rax, 0
+    jne .L894_1
+    cmp rsi, 0
+    jle .L894_1
+    mov rax, rsi
+    mov rsi, rdi
+    mov rdi, rax
+    call zyl_rt_call1
+    jmp .L894_2
+.L894_1:
     call zyl_rt_free
-.L893_2:
+.L894_2:
     mov rax, 0
     mov rsp, rbp
     pop rbp
@@ -27451,15 +27545,15 @@ zyl_mem_free:
 .globl zyl_mem_read
 zyl_mem_read:
     # frame 0
-.L894_0:
+.L895_0:
     cmp rdi, 0
-    jne .L894_1
-.L894_2:
-    lea rax, [rip+.L895]
+    jne .L895_1
+.L895_2:
+    lea rax, [rip+.L896]
     mov rsi, rax
     mov rdi, rsi
     jmp zy_local_x2Fmain_0__misc__rt_x2Dnote
-.L894_1:
+.L895_1:
     mov rax, qword ptr [rdi+0]
     ret
 .globl zyl_mem_write
@@ -27467,18 +27561,18 @@ zyl_mem_write:
     # frame 16
     push rbx
     mov rbx, rsi
-.L896_0:
+.L897_0:
     cmp rdi, 0
-    jne .L896_1
-.L896_2:
-    lea rax, [rip+.L897]
+    jne .L897_1
+.L897_2:
+    lea rax, [rip+.L898]
     mov rsi, rax
     mov rdi, rsi
     call zy_local_x2Fmain_0__misc__rt_x2Dnote
     mov rax, rbx
     pop rbx
     ret
-.L896_1:
+.L897_1:
     mov qword ptr [rdi+0], rbx
     mov rax, rbx
     pop rbx
@@ -27487,25 +27581,25 @@ zyl_mem_write:
 zyl_cstr_byte_set:
     # frame 0
     mov r8, rdx
-.L898_0:
+.L899_0:
     cmp rdi, 0
-    je .L898_2
-.L898_4:
+    je .L899_2
+.L899_4:
     cmp rsi, 0
-    jge .L898_1
-.L898_2:
+    jge .L899_1
+.L899_2:
     mov rax, 0
     ret
-.L898_1:
+.L899_1:
     cmp rdi, 4096
-    jge .L898_3
-    lea rax, [rip+.L899]
+    jge .L899_3
+    lea rax, [rip+.L900]
     mov r9, rax
     mov rsi, r9
     call zy_local_x2Fmain_0__base__rt_x2Dbad_x2Dstr
     mov rax, 0
     ret
-.L898_3:
+.L899_3:
     add rsi, rdi
     mov rdi, r8
     and rdi, 255
@@ -27516,7 +27610,7 @@ zyl_cstr_byte_set:
 .globl zyl_getenv
 zyl_getenv:
     # frame 0
-.L900_0:
+.L901_0:
     jmp zyl_rt_getenv
 .globl zyl_regions_enabled
 zyl_regions_enabled:
@@ -27524,24 +27618,24 @@ zyl_regions_enabled:
     push rbp
     mov rbp, rsp
     and rsp, -16
-.L901_0:
-    lea rax, [rip+.L902]
+.L902_0:
+    lea rax, [rip+.L903]
     mov rdi, rax
     call zyl_rt_getenv
     mov rsi, rax
     cmp rsi, 0
-    jle .L901_1
+    jle .L902_1
     movzx eax, byte ptr [rsi+0]
     cmp rax, 48
-    jne .L901_1
+    jne .L902_1
     movzx eax, byte ptr [rsi+1]
     cmp rax, 0
-    jne .L901_1
+    jne .L902_1
     mov rax, 0
     mov rsp, rbp
     pop rbp
     ret
-.L901_1:
+.L902_1:
     mov rax, 1
     mov rsp, rbp
     pop rbp
@@ -27549,7 +27643,7 @@ zyl_regions_enabled:
 .globl zyl_region_poison_enabled
 zyl_region_poison_enabled:
     # frame 0
-.L903_0:
+.L904_0:
     call zyl_region_poison_level
     mov rsi, rax
     mov rax, rsi
@@ -27565,47 +27659,47 @@ zyl_region_poison_level:
     push rbp
     mov rbp, rsp
     and rsp, -16
-.L904_0:
-    lea rax, [rip+.L905]
+.L905_0:
+    lea rax, [rip+.L906]
     mov rdi, rax
     call zyl_rt_getenv
     mov rsi, rax
     cmp rsi, 0
-    jne .L904_1
+    jne .L905_1
     mov rax, 0
     mov rsp, rbp
     pop rbp
     ret
-.L904_1:
+.L905_1:
     movzx eax, byte ptr [rsi+0]
     cmp rax, 49
-    jne .L904_2
+    jne .L905_2
     movzx eax, byte ptr [rsi+1]
     cmp rax, 0
-    jne .L904_2
+    jne .L905_2
     mov rax, 1
     mov rsp, rbp
     pop rbp
     ret
-.L904_2:
+.L905_2:
     movzx eax, byte ptr [rsi+0]
     cmp rax, 50
-    jne .L904_3
+    jne .L905_3
     movzx eax, byte ptr [rsi+1]
     cmp rax, 0
-    jne .L904_3
+    jne .L905_3
     mov rax, 2
     mov rsp, rbp
     pop rbp
     ret
-.L904_3:
+.L905_3:
     mov rax, 0
     mov rsp, rbp
     pop rbp
     ret
 zy_local_x2Fmain_0__misc__rt_x2Dlshr64:
     # frame 0
-.L906_0:
+.L907_0:
     mov rax, rdi
     mov rcx, rsi
     mov rdx, rcx
@@ -27633,7 +27727,7 @@ zy_local_x2Fmain_0__misc__rt_x2Dzsa_x2Dindex:
     # frame 16
     push rbx
     mov rbx, rdi
-.L907_0:
+.L908_0:
     mov rsi, 33
     mov rdi, rbx
     call zy_local_x2Fmain_0__misc__rt_x2Dlshr64
@@ -27671,7 +27765,7 @@ zyl_str_append_scan:
     mov qword ptr [rbp-48], rdi
     mov r12, rsi
     mov r13, rdx
-.L908_0:
+.L909_0:
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_zsa@tpoff]
     mov r14, rax
@@ -27682,32 +27776,32 @@ zyl_str_append_scan:
     add rsi, r14
     mov rax, qword ptr [rsi+0]
     cmp rax, qword ptr [rbp-48]
-    jne .L908_1
+    jne .L909_1
     lea rsi, [r14+512]
     lea rdi, [r15*8]
     add rsi, rdi
     mov rsi, qword ptr [rsi+0]
-    jmp .L908_2
-.L908_1:
+    jmp .L909_2
+.L909_1:
     mov rdi, qword ptr [rbp-48]
     call zy_local_x2Fmain_0__base__rt_x2Dstrlen
     mov rdi, rax
     mov rsi, qword ptr [rbp-48]
     add rsi, rdi
-.L908_2:
+.L909_2:
     mov rbx, rsi
     mov rdi, r12
     call zy_local_x2Fmain_0__base__rt_x2Dstrlen
     mov qword ptr [rbp-56], rax
     cmp r13, 0
-    jle .L908_3
+    jle .L909_3
     mov rsi, rbx
     sub rsi, qword ptr [rbp-48]
     add rsi, qword ptr [rbp-56]
     lea rax, [rsi+1]
     cmp rax, r13
-    jle .L908_3
-    lea rax, [rip+.L909]
+    jle .L909_3
+    lea rax, [rip+.L910]
     mov rdi, rax
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -27717,7 +27811,7 @@ zyl_str_append_scan:
     mov rsp, rbp
     pop rbp
     jmp zyl_panic
-.L908_3:
+.L909_3:
     mov rdi, rbx
     mov rsi, r12
     mov rdx, qword ptr [rbp-56]
@@ -27751,40 +27845,23 @@ zyl_zeroize:
     # frame 16
     push rbx
     mov rbx, rsi
-.L910_0:
+.L911_0:
     cmp rdi, 0
-    je .L910_2
-.L910_3:
+    je .L911_2
+.L911_3:
     cmp rbx, 0
-    jg .L910_1
-.L910_2:
+    jg .L911_1
+.L911_2:
     mov rax, 0
     pop rbx
     ret
-.L910_1:
+.L911_1:
     mov rsi, rbx
     call zy_local_x2Fmain_0__crypto__cr_x2Dzero_x2Dbytes
     mov rax, rbx
     pop rbx
     ret
 zy_local_x2Fmain_0__crypto__cr_x2Dzero_x2Dbytes:
-    # frame 0
-.L911_0:
-    cmp rsi, 0
-    jg .L911_1
-.L911_2:
-    mov rax, 0
-    ret
-.p2align 4
-.L911_1:
-    mov r8, 0
-    mov byte ptr [rdi+0], r8b
-    add rdi, 1
-    sub rsi, 1
-    cmp rsi, 0
-    jg .L911_1
-    jmp .L911_2
-zy_local_x2Fmain_0__crypto__cr_x2Dwipe:
     # frame 0
 .L912_0:
     cmp rsi, 0
@@ -27795,34 +27872,30 @@ zy_local_x2Fmain_0__crypto__cr_x2Dwipe:
 .p2align 4
 .L912_1:
     mov r8, 0
-    mov qword ptr [rdi+0], r8
-    add rdi, 8
-    sub rsi, 8
+    mov byte ptr [rdi+0], r8b
+    add rdi, 1
+    sub rsi, 1
     cmp rsi, 0
     jg .L912_1
     jmp .L912_2
-zy_local_x2Fmain_0__crypto__cr_x2Dpack:
+zy_local_x2Fmain_0__crypto__cr_x2Dwipe:
     # frame 0
-    mov r8, rdx
-    mov r9, rcx
 .L913_0:
-    cmp r9, r8
-    jl .L913_1
+    cmp rsi, 0
+    jg .L913_1
 .L913_2:
     mov rax, 0
     ret
 .p2align 4
 .L913_1:
-    lea r10, [rdi+r9]
-    lea r11, [r9*8]
-    add r11, rsi
-    mov r11, qword ptr [r11+0]
-    mov byte ptr [r10+0], r11b
-    add r9, 1
-    cmp r9, r8
-    jl .L913_1
+    mov r8, 0
+    mov qword ptr [rdi+0], r8
+    add rdi, 8
+    sub rsi, 8
+    cmp rsi, 0
+    jg .L913_1
     jmp .L913_2
-zy_local_x2Fmain_0__crypto__cr_x2Dunpack:
+zy_local_x2Fmain_0__crypto__cr_x2Dpack:
     # frame 0
     mov r8, rdx
     mov r9, rcx
@@ -27834,6 +27907,27 @@ zy_local_x2Fmain_0__crypto__cr_x2Dunpack:
     ret
 .p2align 4
 .L914_1:
+    lea r10, [rdi+r9]
+    lea r11, [r9*8]
+    add r11, rsi
+    mov r11, qword ptr [r11+0]
+    mov byte ptr [r10+0], r11b
+    add r9, 1
+    cmp r9, r8
+    jl .L914_1
+    jmp .L914_2
+zy_local_x2Fmain_0__crypto__cr_x2Dunpack:
+    # frame 0
+    mov r8, rdx
+    mov r9, rcx
+.L915_0:
+    cmp r9, r8
+    jl .L915_1
+.L915_2:
+    mov rax, 0
+    ret
+.p2align 4
+.L915_1:
     lea r10, [r9*8]
     add r10, rdi
     lea r11, [rsi+r9]
@@ -27841,12 +27935,12 @@ zy_local_x2Fmain_0__crypto__cr_x2Dunpack:
     mov qword ptr [r10+0], r11
     add r9, 1
     cmp r9, r8
-    jl .L914_1
-    jmp .L914_2
+    jl .L915_1
+    jmp .L915_2
 zy_local_x2Fmain_0__crypto__cr_x2Dwords_x2Ddata:
     # frame 0
-.L915_0:
-    lea rax, [rip+.L916]
+.L916_0:
+    lea rax, [rip+.L917]
     mov rsi, rax
     call zy_local_x2Fmain_0__tables__tb_x2Dwords_x2Dof
     mov rsi, rax
@@ -27854,23 +27948,23 @@ zy_local_x2Fmain_0__crypto__cr_x2Dwords_x2Ddata:
     ret
 zy_local_x2Fmain_0__crypto__cr_x2Dneed_x2Dblock:
     # frame 0
-.L917_0:
+.L918_0:
     call zyl_words_len
     mov rsi, rax
     cmp rsi, 16
-    jge .L917_1
-    lea rax, [rip+.L918]
+    jge .L918_1
+    lea rax, [rip+.L919]
     mov rdi, rax
     mov r8, 15
     mov rdx, rsi
     mov rsi, r8
     jmp zy_local_x2Fmain_0__tables__tb_x2Doob
-.L917_1:
+.L918_1:
     mov rax, 0
     ret
 zy_local_x2Fmain_0__crypto__cr_x2Daes_x2Dscratch:
     # frame 0
-.L919_0:
+.L920_0:
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_aes@tpoff]
     mov rsi, rax
@@ -27880,10 +27974,10 @@ zy_local_x2Fmain_0__crypto__cr_x2Daes_x2Drounds:
     # frame 0
     mov r8, rdx
     mov r9, rcx
-.L920_0:
+.L921_0:
     cmp r8, r9
-    jge .L920_1
-.L920_2:
+    jge .L921_1
+.L921_2:
     mov r10, r8
     shl r10, 4
     add r10, rsi
@@ -27900,9 +27994,9 @@ zy_local_x2Fmain_0__crypto__cr_x2Daes_x2Drounds:
     mov rax, rdx
     add r8, 1
     cmp r8, r9
-    jge .L920_1
-    jmp .L920_2
-.L920_1:
+    jge .L921_1
+    jmp .L921_2
+.L921_1:
     mov r8, r9
     shl r8, 4
     add rsi, r8
@@ -27933,12 +28027,12 @@ zyl_aes_encrypt_block:
     mov qword ptr [rbp-48], rsi
     mov r13, rdx
     mov r14, rcx
-.L921_0:
+.L922_0:
     call zyl_cpuid_features
     mov rsi, rax
     and rsi, 1
     cmp rsi, 0
-    jg .L921_1
+    jg .L922_1
     mov rax, 0
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -27948,11 +28042,11 @@ zyl_aes_encrypt_block:
     mov rsp, rbp
     pop rbp
     ret
-.L921_1:
+.L922_1:
     cmp qword ptr [rbp-48], 16
-    je .L921_2
+    je .L922_2
     cmp qword ptr [rbp-48], 32
-    je .L921_2
+    je .L922_2
     mov rax, 0
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -27962,12 +28056,12 @@ zyl_aes_encrypt_block:
     mov rsp, rbp
     pop rbp
     ret
-.L921_2:
+.L922_2:
     mov rdi, rbx
     call zyl_words_len
     cmp rax, qword ptr [rbp-48]
-    jge .L921_3
-    lea rax, [rip+.L922]
+    jge .L922_3
+    lea rax, [rip+.L923]
     mov r15, rax
     mov r12, qword ptr [rbp-48]
     sub r12, 1
@@ -27978,10 +28072,10 @@ zyl_aes_encrypt_block:
     mov rdx, rsi
     mov rsi, r12
     call zy_local_x2Fmain_0__tables__tb_x2Doob
-    jmp .L921_4
-.L921_3:
-.L921_4:
-    lea rax, [rip+.L923]
+    jmp .L922_4
+.L922_3:
+.L922_4:
+    lea rax, [rip+.L924]
     mov rsi, rax
     mov rdi, rbx
     call zy_local_x2Fmain_0__tables__tb_x2Dwords_x2Dof
@@ -27989,7 +28083,7 @@ zyl_aes_encrypt_block:
     mov rbx, qword ptr [rsi+16]
     mov rdi, r13
     call zy_local_x2Fmain_0__crypto__cr_x2Dneed_x2Dblock
-    lea rax, [rip+.L924]
+    lea rax, [rip+.L925]
     mov rsi, rax
     mov rdi, r13
     call zy_local_x2Fmain_0__tables__tb_x2Dwords_x2Dof
@@ -27997,7 +28091,7 @@ zyl_aes_encrypt_block:
     mov r12, qword ptr [rsi+16]
     mov rdi, r14
     call zy_local_x2Fmain_0__crypto__cr_x2Dneed_x2Dblock
-    lea rax, [rip+.L925]
+    lea rax, [rip+.L926]
     mov rsi, rax
     mov rdi, r14
     call zy_local_x2Fmain_0__tables__tb_x2Dwords_x2Dof
@@ -28025,11 +28119,11 @@ zyl_aes_encrypt_block:
     call zy_local_x2Fmain_0__crypto__cr_x2Dpack
     mov rsi, 10
     cmp qword ptr [rbp-48], 16
-    je .L921_5
+    je .L922_5
     mov rsi, 14
-.L921_5:
+.L922_5:
     cmp qword ptr [rbp-48], 16
-    jne .L921_6
+    jne .L922_6
     mov rdx, qword ptr [rbp-56]
     mov rcx, r15
     movdqu xmm1, [rcx]
@@ -28169,8 +28263,8 @@ zyl_aes_encrypt_block:
     pxor xmm2, xmm2
     pxor xmm3, xmm3
     mov rax, rdx
-    jmp .L921_7
-.L921_6:
+    jmp .L922_7
+.L922_6:
     mov rdx, qword ptr [rbp-56]
     mov rcx, r15
     movdqu xmm0, [rcx]
@@ -28351,7 +28445,7 @@ zyl_aes_encrypt_block:
     pxor xmm2, xmm2
     pxor xmm3, xmm3
     mov rax, rdx
-.L921_7:
+.L922_7:
     mov rdx, r14
     mov rcx, qword ptr [rbp-56]
     movdqu xmm0, [rdx]
@@ -28400,10 +28494,10 @@ zy_local_x2Fmain_0__crypto__cr_x2Dgetrandom:
     mov rbx, rdi
     mov r12, rsi
     mov r13, rdx
-.L926_0:
+.L927_0:
     cmp r13, r12
-    jl .L926_1
-.L926_4:
+    jl .L927_1
+.L927_4:
     mov rax, r13
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -28412,7 +28506,7 @@ zy_local_x2Fmain_0__crypto__cr_x2Dgetrandom:
     pop rbp
     ret
 .p2align 4
-.L926_1:
+.L927_1:
     lea rdi, [rbx+r13]
     mov rsi, r12
     sub rsi, r13
@@ -28421,13 +28515,13 @@ zy_local_x2Fmain_0__crypto__cr_x2Dgetrandom:
     call zyl_rt_sys_318
     mov rsi, rax
     cmp rsi, 0
-    jge .L926_2
+    jge .L927_2
     cmp rsi, -4
-    jne .L926_3
+    jne .L927_3
     cmp r13, r12
-    jl .L926_1
-    jmp .L926_4
-.L926_3:
+    jl .L927_1
+    jmp .L927_4
+.L927_3:
     mov rax, r13
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -28435,11 +28529,11 @@ zy_local_x2Fmain_0__crypto__cr_x2Dgetrandom:
     mov rsp, rbp
     pop rbp
     ret
-.L926_2:
+.L927_2:
     add r13, rsi
     cmp r13, r12
-    jl .L926_1
-    jmp .L926_4
+    jl .L927_1
+    jmp .L927_4
 zy_local_x2Fmain_0__crypto__cr_x2Dread_x2Dall:
     # frame 32
     push rbp
@@ -28453,10 +28547,10 @@ zy_local_x2Fmain_0__crypto__cr_x2Dread_x2Dall:
     mov r12, rsi
     mov r13, rdx
     mov r14, rcx
-.L927_0:
+.L928_0:
     cmp r14, r13
-    jl .L927_1
-.L927_4:
+    jl .L928_1
+.L928_4:
     mov rax, r14
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -28466,7 +28560,7 @@ zy_local_x2Fmain_0__crypto__cr_x2Dread_x2Dall:
     pop rbp
     ret
 .p2align 4
-.L927_1:
+.L928_1:
     lea rsi, [r12+r14]
     mov rdi, r13
     sub rdi, r14
@@ -28475,18 +28569,18 @@ zy_local_x2Fmain_0__crypto__cr_x2Dread_x2Dall:
     call zyl_rt_sys_0
     mov rsi, rax
     cmp rsi, 0
-    jle .L927_2
+    jle .L928_2
     add r14, rsi
     cmp r14, r13
-    jl .L927_1
-    jmp .L927_4
-.L927_2:
+    jl .L928_1
+    jmp .L928_4
+.L928_2:
     cmp rsi, -4
-    jne .L927_3
+    jne .L928_3
     cmp r14, r13
-    jl .L927_1
-    jmp .L927_4
-.L927_3:
+    jl .L928_1
+    jmp .L928_4
+.L928_3:
     mov rax, r14
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -28507,8 +28601,8 @@ zy_local_x2Fmain_0__crypto__cr_x2Durandom:
     mov rbx, rdi
     mov r12, rsi
     mov r13, rdx
-.L928_0:
-    lea rax, [rip+.L929]
+.L929_0:
+    lea rax, [rip+.L930]
     mov rdi, rax
     mov rsi, 524288
     mov r8, 0
@@ -28516,7 +28610,7 @@ zy_local_x2Fmain_0__crypto__cr_x2Durandom:
     call zyl_rt_sys_2
     mov r14, rax
     cmp r14, 0
-    jge .L928_1
+    jge .L929_1
     mov rax, -1
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -28525,7 +28619,7 @@ zy_local_x2Fmain_0__crypto__cr_x2Durandom:
     mov rsp, rbp
     pop rbp
     ret
-.L928_1:
+.L929_1:
     mov rdi, r14
     mov rsi, rbx
     mov rdx, r12
@@ -28535,7 +28629,7 @@ zy_local_x2Fmain_0__crypto__cr_x2Durandom:
     mov rdi, r14
     call zyl_rt_sys_3
     cmp rbx, r12
-    jne .L928_2
+    jne .L929_2
     mov rax, rbx
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -28544,7 +28638,7 @@ zy_local_x2Fmain_0__crypto__cr_x2Durandom:
     mov rsp, rbp
     pop rbp
     ret
-.L928_2:
+.L929_2:
     mov rax, -1
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -28560,18 +28654,18 @@ zyl_random_fill:
     push r12
     mov rbx, rdi
     mov r12, rsi
-.L930_0:
+.L931_0:
     cmp rbx, 0
-    je .L930_2
-.L930_4:
+    je .L931_2
+.L931_4:
     cmp r12, 0
-    jg .L930_1
-.L930_2:
+    jg .L931_1
+.L931_2:
     mov rax, -1
     pop r12
     pop rbx
     ret
-.L930_1:
+.L931_1:
     mov rsi, 0
     mov rdi, rbx
     mov rdx, rsi
@@ -28579,12 +28673,12 @@ zyl_random_fill:
     call zy_local_x2Fmain_0__crypto__cr_x2Dgetrandom
     mov rsi, rax
     cmp rsi, r12
-    jne .L930_3
+    jne .L931_3
     mov rax, rsi
     pop r12
     pop rbx
     ret
-.L930_3:
+.L931_3:
     mov rdi, rbx
     mov rdx, rsi
     mov rsi, r12
@@ -28602,10 +28696,10 @@ zy_local_x2Fmain_0__crypto__cr_x2Drand_x2Dchunks:
     mov r12, rsi
     mov r13, rdx
     mov r14, rcx
-.L931_0:
+.L932_0:
     cmp r13, r12
-    jl .L931_1
-.L931_6:
+    jl .L932_1
+.L932_6:
     mov rax, r13
     pop r15
     pop r14
@@ -28614,23 +28708,23 @@ zy_local_x2Fmain_0__crypto__cr_x2Drand_x2Dchunks:
     pop rbx
     ret
 .p2align 4
-.L931_1:
+.L932_1:
     mov rax, r12
     sub rax, r13
     cmp rax, 256
-    jle .L931_2
+    jle .L932_2
     mov rsi, 256
-    jmp .L931_3
-.L931_2:
+    jmp .L932_3
+.L932_2:
     mov rsi, r12
     sub rsi, r13
-.L931_3:
+.L932_3:
     mov r15, rsi
     mov rdi, r14
     mov rsi, r15
     call zyl_random_fill
     cmp rax, r15
-    je .L931_4
+    je .L932_4
     mov rax, -1
     pop r15
     pop r14
@@ -28638,21 +28732,21 @@ zy_local_x2Fmain_0__crypto__cr_x2Drand_x2Dchunks:
     pop r12
     pop rbx
     ret
-.L931_4:
+.L932_4:
     lea rsi, [r13*8]
     lea rdi, [rbx+rsi]
     mov rsi, 0
     cmp rsi, r15
-    jge .L931_5
+    jge .L932_5
     mov rdx, r15
     mov rcx, rsi
     mov rsi, r14
     call zy_local_x2Fmain_0__crypto__cr_x2Dunpack
-.L931_5:
+.L932_5:
     add r13, r15
     cmp r13, r12
-    jl .L931_1
-    jmp .L931_6
+    jl .L932_1
+    jmp .L932_6
 .globl zyl_random_words
 zyl_random_words:
     # frame 48
@@ -28663,13 +28757,13 @@ zyl_random_words:
     push r15
     mov rbx, rdi
     mov r12, rsi
-.L932_0:
+.L933_0:
     cmp rbx, 0
-    je .L932_2
-.L932_5:
+    je .L933_2
+.L933_5:
     cmp r12, 0
-    jg .L932_1
-.L932_2:
+    jg .L933_1
+.L933_2:
     mov rax, -1
     pop r15
     pop r14
@@ -28677,8 +28771,8 @@ zyl_random_words:
     pop r12
     pop rbx
     ret
-.L932_1:
-    lea rax, [rip+.L933]
+.L933_1:
+    lea rax, [rip+.L934]
     mov rsi, rax
     mov rdi, rbx
     call zy_local_x2Fmain_0__tables__tb_x2Dwords_x2Dof
@@ -28687,8 +28781,8 @@ zyl_random_words:
     mov rdi, rbx
     call zyl_words_len
     cmp r12, rax
-    jle .L932_3
-    lea rax, [rip+.L934]
+    jle .L933_3
+    lea rax, [rip+.L935]
     mov r14, rax
     lea r15, [r12-1]
     mov rdi, rbx
@@ -28698,9 +28792,9 @@ zyl_random_words:
     mov rdx, rsi
     mov rsi, r15
     call zy_local_x2Fmain_0__tables__tb_x2Doob
-    jmp .L932_4
-.L932_3:
-.L932_4:
+    jmp .L933_4
+.L933_3:
+.L933_4:
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_rand@tpoff]
     mov rbx, rax
@@ -28728,17 +28822,17 @@ zy_local_x2Fmain_0__call__rt_x2Dguard:
     push rbx
     push r12
     and rsp, -16
-.L935_0:
+.L936_0:
     cmp rdi, 4096
-    jge .L935_1
-.L935_2:
-    lea rax, [rip+.L936]
-    mov rbx, rax
+    jge .L936_1
+.L936_2:
     lea rax, [rip+.L937]
+    mov rbx, rax
+    lea rax, [rip+.L938]
     mov rsi, rax
     call zy_local_x2Fmain_0__base__rt_x2Dhex
     mov rdi, rax
-    lea rax, [rip+.L938]
+    lea rax, [rip+.L939]
     mov rsi, rax
     call zyl_cstr_concat
     mov rsi, rax
@@ -28760,7 +28854,7 @@ zy_local_x2Fmain_0__call__rt_x2Dguard:
     mov rsp, rbp
     pop rbp
     ret
-.L935_1:
+.L936_1:
     mov rax, 0
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -28769,7 +28863,7 @@ zy_local_x2Fmain_0__call__rt_x2Dguard:
     ret
 zy_local_x2Fmain_0__call__rt_x2Dcode_x2Dp:
     # frame 0
-.L939_0:
+.L940_0:
     mov rsi, 4294967296
     mov rax, rdi
     mov rcx, rsi
@@ -28782,16 +28876,16 @@ zyl_call0:
     # frame 16
     push rbx
     mov rbx, rdi
-.L940_0:
+.L941_0:
     mov rdi, rbx
     call zy_local_x2Fmain_0__call__rt_x2Dguard
     mov rax, 4294967296
     cmp rbx, rax
-    jge .L940_1
+    jge .L941_1
     mov rdi, rbx
     pop rbx
     jmp zyl_rt_call0
-.L940_1:
+.L941_1:
     mov rdi, qword ptr [rbx+0]
     mov rsi, rbx
     pop rbx
@@ -28803,18 +28897,18 @@ zyl_call1:
     push r12
     mov rbx, rdi
     mov r12, rsi
-.L941_0:
+.L942_0:
     mov rdi, rbx
     call zy_local_x2Fmain_0__call__rt_x2Dguard
     mov rax, 4294967296
     cmp rbx, rax
-    jge .L941_1
+    jge .L942_1
     mov rdi, rbx
     mov rsi, r12
     pop r12
     pop rbx
     jmp zyl_rt_call1
-.L941_1:
+.L942_1:
     mov rdi, qword ptr [rbx+0]
     mov rsi, rbx
     mov rdx, r12
@@ -28830,12 +28924,12 @@ zyl_call2:
     mov rbx, rdi
     mov r12, rsi
     mov r13, rdx
-.L942_0:
+.L943_0:
     mov rdi, rbx
     call zy_local_x2Fmain_0__call__rt_x2Dguard
     mov rax, 4294967296
     cmp rbx, rax
-    jge .L942_1
+    jge .L943_1
     mov rdi, rbx
     mov rsi, r12
     mov rdx, r13
@@ -28843,7 +28937,7 @@ zyl_call2:
     pop r12
     pop rbx
     jmp zyl_rt_call2
-.L942_1:
+.L943_1:
     mov rdi, qword ptr [rbx+0]
     mov rsi, rbx
     mov rdx, r12
@@ -28863,12 +28957,12 @@ zyl_call3:
     mov r12, rsi
     mov r13, rdx
     mov r14, rcx
-.L943_0:
+.L944_0:
     mov rdi, rbx
     call zy_local_x2Fmain_0__call__rt_x2Dguard
     mov rax, 4294967296
     cmp rbx, rax
-    jge .L943_1
+    jge .L944_1
     mov rdi, rbx
     mov rsi, r12
     mov rdx, r13
@@ -28878,7 +28972,7 @@ zyl_call3:
     pop r12
     pop rbx
     jmp zyl_rt_call3
-.L943_1:
+.L944_1:
     mov rdi, qword ptr [rbx+0]
     mov rsi, rbx
     mov rdx, r12
@@ -28902,12 +28996,12 @@ zyl_call4:
     mov r13, rdx
     mov r14, rcx
     mov r15, r8
-.L944_0:
+.L945_0:
     mov rdi, rbx
     call zy_local_x2Fmain_0__call__rt_x2Dguard
     mov rax, 4294967296
     cmp rbx, rax
-    jge .L944_1
+    jge .L945_1
     mov rdi, rbx
     mov rsi, r12
     mov rdx, r13
@@ -28919,7 +29013,7 @@ zyl_call4:
     pop r12
     pop rbx
     jmp zyl_rt_call4
-.L944_1:
+.L945_1:
     mov rdi, qword ptr [rbx+0]
     mov rsi, rbx
     mov rdx, r12
@@ -28955,7 +29049,7 @@ call zy_local_x2Fmain_0__call__rt_x2Dguard
     mov rax, [rbp-8]
     mov rcx, 4294967296
     cmp rax, rcx
-    jge .L945
+    jge .L946
     sub rsp, 48
     mov rdi, [rbp-8]
     mov rsi, [rbp-16]
@@ -28968,8 +29062,8 @@ call zy_local_x2Fmain_0__call__rt_x2Dguard
 call zyl_rt_call5
     mov rsp, r12
     add rsp, 48
-    jmp .L946
-.L945:
+    jmp .L947
+.L946:
     mov rax, [rbp-8]
     mov rdx, rax
     mov rax, qword ptr [rdx]
@@ -29009,7 +29103,7 @@ call zyl_rt_call5
 call zyl_rt_call6
     mov rsp, r12
     add rsp, 64
-.L946:
+.L947:
     mov rbx, [rbp-152]
     mov r12, [rbp-144]
     mov rsp, rbp
@@ -29040,7 +29134,7 @@ call zy_local_x2Fmain_0__call__rt_x2Dguard
     mov rax, [rbp-8]
     mov rcx, 4294967296
     cmp rax, rcx
-    jge .L947
+    jge .L948
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -29078,8 +29172,8 @@ call zy_local_x2Fmain_0__call__rt_x2Dguard
 call zyl_rt_call6
     mov rsp, r12
     add rsp, 64
-    jmp .L948
-.L947:
+    jmp .L949
+.L948:
     mov rax, [rbp-8]
     mov rdx, rax
     mov rax, qword ptr [rdx]
@@ -29126,7 +29220,7 @@ call zyl_rt_call6
 call zyl_rt_call7
     mov rsp, r12
     add rsp, 80
-.L948:
+.L949:
     mov rbx, [rbp-168]
     mov r12, [rbp-160]
     mov rsp, rbp
@@ -29134,12 +29228,12 @@ call zyl_rt_call7
     ret
 zy_local_x2Fmain_0__call__rt_x2Dmin64:
     # frame 0
-.L949_0:
+.L950_0:
     mov rax, -9223372036854775808
     ret
 zy_local_x2Fmain_0__call__rt_x2Dult:
     # frame 0
-.L950_0:
+.L951_0:
     mov r8, -9223372036854775808
     xor rdi, r8
     mov r8, -9223372036854775808
@@ -29191,34 +29285,34 @@ zy_local_x2Fmain_0__call__rt_x2Dmagic_x2Dloop:
     mov rcx, rax
     pop rax
     cmp rax, rcx
-    jge .L951
+    jge .L952
     mov rax, 0
-    jmp .L952
-.L951:
-    mov rax, 1
+    jmp .L953
 .L952:
+    mov rax, 1
+.L953:
     mov [rbp-104], rax
     mov rax, [rbp-104]
     test rax, rax
-    je .L953
+    je .L954
     mov rax, [rbp-88]
     mov rcx, 1
     add rax, rcx
-    jmp .L954
-.L953:
-    mov rax, [rbp-88]
+    jmp .L955
 .L954:
+    mov rax, [rbp-88]
+.L955:
     mov [rbp-112], rax
     mov rax, [rbp-104]
     test rax, rax
-    je .L955
+    je .L956
     mov rax, [rbp-96]
     mov rcx, [rbp-24]
     sub rax, rcx
-    jmp .L956
-.L955:
-    mov rax, [rbp-96]
+    jmp .L957
 .L956:
+    mov rax, [rbp-96]
+.L957:
     mov [rbp-120], rax
     mov rax, [rbp-56]
     mov rcx, 2
@@ -29238,34 +29332,34 @@ zy_local_x2Fmain_0__call__rt_x2Dmagic_x2Dloop:
     mov rcx, rax
     pop rax
     cmp rax, rcx
-    jge .L957
+    jge .L958
     mov rax, 0
-    jmp .L958
-.L957:
-    mov rax, 1
+    jmp .L959
 .L958:
+    mov rax, 1
+.L959:
     mov [rbp-144], rax
     mov rax, [rbp-144]
     test rax, rax
-    je .L959
+    je .L960
     mov rax, [rbp-128]
     mov rcx, 1
     add rax, rcx
-    jmp .L960
-.L959:
-    mov rax, [rbp-128]
+    jmp .L961
 .L960:
+    mov rax, [rbp-128]
+.L961:
     mov [rbp-152], rax
     mov rax, [rbp-144]
     test rax, rax
-    je .L961
+    je .L962
     mov rax, [rbp-136]
     mov rcx, [rbp-16]
     sub rax, rcx
-    jmp .L962
-.L961:
-    mov rax, [rbp-136]
+    jmp .L963
 .L962:
+    mov rax, [rbp-136]
+.L963:
     mov [rbp-160], rax
     mov rax, [rbp-16]
     mov rcx, [rbp-160]
@@ -29281,26 +29375,26 @@ zy_local_x2Fmain_0__call__rt_x2Dmagic_x2Dloop:
     mov rcx, rax
     pop rax
     cmp rax, rcx
-    jge .L965
+    jge .L966
     mov rax, 1
-    jmp .L966
-.L965:
+    jmp .L967
+.L966:
     mov rax, [rbp-112]
     mov rcx, [rbp-168]
     cmp rax, rcx
-    jne .L967
+    jne .L968
     mov rax, [rbp-120]
     mov rcx, 0
     cmp rax, rcx
     sete al
     movzx rax, al
-    jmp .L968
-.L967:
-    mov rax, 0
+    jmp .L969
 .L968:
-.L966:
+    mov rax, 0
+.L969:
+.L967:
     test rax, rax
-    je .L963
+    je .L964
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -29345,34 +29439,34 @@ zy_local_x2Fmain_0__call__rt_x2Dmagic_x2Dloop:
     mov rsp, rbp
     pop rbp
     jmp zy_local_x2Fmain_0__call__rt_x2Dmagic_x2Dloop
-    jmp .L964
-.L963:
+    jmp .L965
+.L964:
     mov rax, [rbp-72]
     test rax, rax
-    je .L969
+    je .L970
     mov rax, [rbp-80]
     mov rcx, 64
     sub rax, rcx
-    jmp .L970
-.L969:
+    jmp .L971
+.L970:
     mov rax, [rbp-8]
     mov rcx, 0
     cmp rax, rcx
-    jge .L971
+    jge .L972
     mov rax, [rbp-152]
     mov rcx, 1
     add rax, rcx
     mov rcx, rax
     mov rax, 0
     sub rax, rcx
-    jmp .L972
-.L971:
+    jmp .L973
+.L972:
     mov rax, [rbp-152]
     mov rcx, 1
     add rax, rcx
-.L972:
-.L970:
-.L964:
+.L973:
+.L971:
+.L965:
     mov rbx, [rbp-264]
     mov r12, [rbp-256]
     mov rsp, rbp
@@ -29390,34 +29484,34 @@ zy_local_x2Fmain_0__call__rt_x2Dmagic:
     mov rax, [rbp-8]
     mov rcx, 1
     cmp rax, rcx
-    jg .L975
+    jg .L976
     mov rax, [rbp-8]
     mov rcx, -1
     cmp rax, rcx
     setge al
     movzx rax, al
-    jmp .L976
-.L975:
-    mov rax, 0
+    jmp .L977
 .L976:
-    test rax, rax
-    je .L973
     mov rax, 0
-    jmp .L974
-.L973:
+.L977:
+    test rax, rax
+    je .L974
+    mov rax, 0
+    jmp .L975
+.L974:
     mov rax, -9223372036854775808
     mov [rbp-24], rax
     mov rax, [rbp-8]
     mov rcx, 0
     cmp rax, rcx
-    jge .L977
+    jge .L978
     mov rax, 0
     mov rcx, [rbp-8]
     sub rax, rcx
-    jmp .L978
-.L977:
-    mov rax, [rbp-8]
+    jmp .L979
 .L978:
+    mov rax, [rbp-8]
+.L979:
     mov [rbp-32], rax
     mov rax, [rbp-8]
     mov rcx, 63
@@ -29518,7 +29612,7 @@ zy_local_x2Fmain_0__call__rt_x2Dmagic:
     mov rdi, [rsp+88]
 call zy_local_x2Fmain_0__call__rt_x2Dmagic_x2Dloop
     add rsp, 96
-.L974:
+.L975:
     mov rbx, [rbp-168]
     mov r12, [rbp-160]
     mov rsp, rbp
@@ -29527,18 +29621,18 @@ call zy_local_x2Fmain_0__call__rt_x2Dmagic_x2Dloop
 .globl zyl_div_magic
 zyl_div_magic:
     # frame 0
-.L979_0:
+.L980_0:
     mov rsi, 0
     jmp zy_local_x2Fmain_0__call__rt_x2Dmagic
 .globl zyl_div_shift
 zyl_div_shift:
     # frame 0
-.L980_0:
+.L981_0:
     mov rsi, 1
     jmp zy_local_x2Fmain_0__call__rt_x2Dmagic
 zy_local_x2Fmain_0__ffitab__ft_x2Dslots:
     # frame 0
-.L981_0:
+.L982_0:
     lea rax, [rip+zyl_rtg_ffitab_slots]
     mov rsi, rax
     mov rax, rsi
@@ -29552,28 +29646,28 @@ zy_local_x2Fmain_0__ffitab__ft_x2Dprobe:
     mov rbx, rdi
     mov r12, rsi
     mov r13, rdx
-.L982_0:
+.L983_0:
     mov rsi, r13
     shl rsi, 4
     lea r14, [rbx+rsi]
     mov rdi, qword ptr [r14+0]
     cmp rdi, 0
-    je .L982_2
+    je .L983_2
     mov rsi, r12
     call zy_local_x2Fmain_0__base__rt_x2Dstrcmp
     cmp rax, 0
-    jne .L982_1
-.L982_2:
+    jne .L983_1
+.L983_2:
     mov rax, r14
     pop r14
     pop r13
     pop r12
     pop rbx
     ret
-.L982_1:
+.L983_1:
     add r13, 1
     and r13, 1023
-    jmp .L982_0
+    jmp .L983_0
 zy_local_x2Fmain_0__ffitab__ft_x2Dput:
     # frame 32
     push rbx
@@ -29581,7 +29675,7 @@ zy_local_x2Fmain_0__ffitab__ft_x2Dput:
     push r13
     mov rbx, rdi
     mov r12, rdx
-.L983_0:
+.L984_0:
     mov r13, rsi
     mov rdi, r13
     call zy_local_x2Fmain_0__base__rt_x2Dstrlen
@@ -29601,7 +29695,7 @@ zy_local_x2Fmain_0__ffitab__ft_x2Dput:
     mov rsi, rax
     mov rax, qword ptr [rsi+0]
     cmp rax, 0
-    jne .L983_1
+    jne .L984_1
     mov qword ptr [rsi+8], r12
     mov qword ptr [rsi+0], r13
     mov rsi, r13
@@ -29610,7 +29704,7 @@ zy_local_x2Fmain_0__ffitab__ft_x2Dput:
     pop r12
     pop rbx
     ret
-.L983_1:
+.L984_1:
     mov rax, 0
     pop r13
     pop r12
@@ -29623,12 +29717,12 @@ zy_local_x2Fmain_0__ffitab__ft_x2Dtable:
     push rbx
     and rsp, -16
     sub rsp, 16
-.L984_0:
+.L985_0:
     lea rax, [rip+zyl_rtg_ffitab_state]
     mov rbx, rax
     mov rsi, qword ptr [rbx+0]
     cmp rsi, 2
-    jne .L984_1
+    jne .L985_1
     lea rax, [rip+zyl_rtg_ffitab_slots]
     mov rdi, rax
     mov rax, rdi
@@ -29636,9 +29730,9 @@ zy_local_x2Fmain_0__ffitab__ft_x2Dtable:
     mov rsp, rbp
     pop rbp
     ret
-.L984_1:
+.L985_1:
     cmp rsi, 0
-    jne .L984_2
+    jne .L985_2
     mov rsi, 0
     mov rdi, 1
     mov rdx, rbx
@@ -29647,7 +29741,7 @@ zy_local_x2Fmain_0__ffitab__ft_x2Dtable:
     mov rax, rcx
     lock cmpxchg qword ptr [rdx], r11
     cmp rax, 0
-    jne .L984_2
+    jne .L985_2
     lea rax, [rip+zyl_rtg_ffitab_slots]
     mov rdi, rax
     call zy_local_x2Fmain_0__ffitab__ft_x2Dfill
@@ -29665,15 +29759,15 @@ zy_local_x2Fmain_0__ffitab__ft_x2Dtable:
     mov rsp, rbp
     pop rbp
     ret
-.L984_2:
+.L985_2:
     call zyl_rt_sys_24
-    jmp .L984_0
+    jmp .L985_0
 zy_local_x2Fmain_0__ffitab__ft_x2Dfind:
     # frame 16
     push rbx
     push r12
     mov rbx, rdi
-.L985_0:
+.L986_0:
     call zy_local_x2Fmain_0__ffitab__ft_x2Dtable
     mov r12, rax
     mov rdi, rbx
@@ -29694,12 +29788,12 @@ zy_local_x2Fmain_0__ffitab__ft_x2Dfind:
     mov rsi, rax
     mov rax, qword ptr [rsi+0]
     cmp rax, 0
-    jne .L985_1
+    jne .L986_1
     mov rax, 0
     pop r12
     pop rbx
     ret
-.L985_1:
+.L986_1:
     mov rax, rsi
     pop r12
     pop rbx
@@ -29707,12 +29801,12 @@ zy_local_x2Fmain_0__ffitab__ft_x2Dfind:
 .globl zyl_runtime_export_p
 zyl_runtime_export_p:
     # frame 0
-.L986_0:
+.L987_0:
     cmp rdi, 0
-    jne .L986_1
+    jne .L987_1
     mov rax, 0
     ret
-.L986_1:
+.L987_1:
     call zy_local_x2Fmain_0__ffitab__ft_x2Dfind
     mov rsi, rax
     mov rax, rsi
@@ -29726,30 +29820,30 @@ zyl_runtime_export_p:
 zyl_ffi_lookup:
     # frame 16
     push rbx
-.L987_0:
+.L988_0:
     mov rbx, rdi
     cmp rbx, 0
-    jne .L987_1
+    jne .L988_1
     mov rax, 0
     pop rbx
     ret
-.L987_1:
+.L988_1:
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dfind
     mov rsi, rax
     cmp rsi, 0
-    jle .L987_2
+    jle .L988_2
     mov rax, qword ptr [rsi+8]
     pop rbx
     ret
-.L987_2:
+.L988_2:
     mov rdi, rbx
     pop rbx
     jmp zy_local_x2Fmain_0__ffitab__ft_x2Ddlsym
 .globl zyl_ffi_addr
 zyl_ffi_addr:
     # frame 0
-.L988_0:
+.L989_0:
     jmp zyl_ffi_lookup
 zy_local_x2Fmain_0__ffitab__ft_x2Dnote:
     # frame 16
@@ -29758,7 +29852,7 @@ zy_local_x2Fmain_0__ffitab__ft_x2Dnote:
     push rbx
     push r12
     and rsp, -16
-.L989_0:
+.L990_0:
     mov rbx, 2
     mov r12, rdi
     call zy_local_x2Fmain_0__base__rt_x2Dstrlen
@@ -29782,8 +29876,8 @@ zy_local_x2Fmain_0__ffitab__ft_x2Dhex:
     and rsp, -16
     mov rbx, rdi
     mov r12, rsi
-.L990_0:
-    lea rax, [rip+.L991]
+.L991_0:
+    lea rax, [rip+.L992]
     mov rdi, rax
     mov rsi, rbx
     and rsi, 15
@@ -29794,7 +29888,7 @@ zy_local_x2Fmain_0__ffitab__ft_x2Dhex:
     mov rsi, rbx
     shr rsi, 4
     cmp rsi, 0
-    jne .L990_1
+    jne .L991_1
     mov rsi, r12
     call zyl_cstr_concat
     mov rbx, qword ptr [rbp-8]
@@ -29802,12 +29896,12 @@ zy_local_x2Fmain_0__ffitab__ft_x2Dhex:
     mov rsp, rbp
     pop rbp
     ret
-.L990_1:
+.L991_1:
     mov rbx, rsi
     mov rsi, r12
     call zyl_cstr_concat
     mov r12, rax
-    jmp .L990_0
+    jmp .L991_0
 .globl zyl_call_argv
 zyl_call_argv:
     # frame 168
@@ -29822,19 +29916,19 @@ zyl_call_argv:
     mov rax, [rbp-8]
     mov rcx, 4096
     cmp rax, rcx
-    jge .L992
-    lea rax, [rip+.L994]
+    jge .L993
+    lea rax, [rip+.L995]
     sub rsp, 8
     mov [rsp], rax
     sub rsp, 16
-    lea rax, [rip+.L995]
+    lea rax, [rip+.L996]
     mov rsi, rax
     mov rdi, [rbp-8]
 call zy_local_x2Fmain_0__ffitab__ft_x2Dhex
     add rsp, 16
     sub rsp, 8
     mov [rsp], rax
-    lea rax, [rip+.L996]
+    lea rax, [rip+.L997]
     sub rsp, 8
     mov [rsp], rax
     mov rsi, [rsp+0]
@@ -29861,23 +29955,23 @@ call zyl_cstr_concat
     mov rsp, rbp
     pop rbp
     jmp zy_local_x2Fmain_0__ffitab__ft_x2Dnote
-    jmp .L993
-.L992:
+    jmp .L994
+.L993:
     mov rax, [rbp-16]
     mov rcx, 0
     cmp rax, rcx
-    jge .L999
+    jge .L1000
     mov rax, 1
-    jmp .L1000
-.L999:
+    jmp .L1001
+.L1000:
     mov rax, [rbp-16]
     mov rcx, 6
     cmp rax, rcx
     setg al
     movzx rax, al
-.L1000:
+.L1001:
     test rax, rax
-    je .L997
+    je .L998
     mov rax, [rbp-16]
     sub rsp, 8
     mov [rsp], rax
@@ -29887,12 +29981,12 @@ call zyl_cstr_concat
     mov rsp, rbp
     pop rbp
     jmp zy_local_x2Fmain_0__ffitab__ft_x2Dargc_x2Dbad
-    jmp .L998
-.L997:
+    jmp .L999
+.L998:
     mov rax, [rbp-16]
     mov rcx, 0
     cmp rax, rcx
-    jne .L1001
+    jne .L1002
     sub rsp, 8
     sub rsp, 8
     mov rdi, [rbp-8]
@@ -29901,8 +29995,8 @@ call zyl_cstr_concat
 call zyl_rt_call0
     mov rsp, r12
     add rsp, 16
-    jmp .L1002
-.L1001:
+    jmp .L1003
+.L1002:
     mov rax, [rbp-24]
     mov rdx, rax
     mov rax, qword ptr [rdx]
@@ -29910,7 +30004,7 @@ call zyl_rt_call0
     mov rax, [rbp-16]
     mov rcx, 1
     cmp rax, rcx
-    jne .L1003
+    jne .L1004
     sub rsp, 16
     mov rdi, [rbp-8]
     mov rsi, [rbp-32]
@@ -29919,8 +30013,8 @@ call zyl_rt_call0
 call zyl_rt_call1
     mov rsp, r12
     add rsp, 16
-    jmp .L1004
-.L1003:
+    jmp .L1005
+.L1004:
     mov rax, [rbp-24]
     mov rcx, 8
     add rax, rcx
@@ -29930,7 +30024,7 @@ call zyl_rt_call1
     mov rax, [rbp-16]
     mov rcx, 2
     cmp rax, rcx
-    jne .L1005
+    jne .L1006
     sub rsp, 8
     sub rsp, 24
     mov rdi, [rbp-8]
@@ -29941,8 +30035,8 @@ call zyl_rt_call1
 call zyl_rt_call2
     mov rsp, r12
     add rsp, 32
-    jmp .L1006
-.L1005:
+    jmp .L1007
+.L1006:
     mov rax, [rbp-24]
     mov rcx, 16
     add rax, rcx
@@ -29952,7 +30046,7 @@ call zyl_rt_call2
     mov rax, [rbp-16]
     mov rcx, 3
     cmp rax, rcx
-    jne .L1007
+    jne .L1008
     sub rsp, 32
     mov rdi, [rbp-8]
     mov rsi, [rbp-32]
@@ -29963,8 +30057,8 @@ call zyl_rt_call2
 call zyl_rt_call3
     mov rsp, r12
     add rsp, 32
-    jmp .L1008
-.L1007:
+    jmp .L1009
+.L1008:
     mov rax, [rbp-24]
     mov rcx, 24
     add rax, rcx
@@ -29974,7 +30068,7 @@ call zyl_rt_call3
     mov rax, [rbp-16]
     mov rcx, 4
     cmp rax, rcx
-    jne .L1009
+    jne .L1010
     sub rsp, 8
     sub rsp, 40
     mov rdi, [rbp-8]
@@ -29987,8 +30081,8 @@ call zyl_rt_call3
 call zyl_rt_call4
     mov rsp, r12
     add rsp, 48
-    jmp .L1010
-.L1009:
+    jmp .L1011
+.L1010:
     mov rax, [rbp-24]
     mov rcx, 32
     add rax, rcx
@@ -29998,7 +30092,7 @@ call zyl_rt_call4
     mov rax, [rbp-16]
     mov rcx, 5
     cmp rax, rcx
-    jne .L1011
+    jne .L1012
     sub rsp, 48
     mov rdi, [rbp-8]
     mov rsi, [rbp-32]
@@ -30011,8 +30105,8 @@ call zyl_rt_call4
 call zyl_rt_call5
     mov rsp, r12
     add rsp, 48
-    jmp .L1012
-.L1011:
+    jmp .L1013
+.L1012:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -30054,14 +30148,14 @@ call zyl_rt_call5
 call zyl_rt_call6
     mov rsp, r12
     add rsp, 64
-.L1012:
-.L1010:
-.L1008:
-.L1006:
-.L1004:
-.L1002:
-.L998:
-.L993:
+.L1013:
+.L1011:
+.L1009:
+.L1007:
+.L1005:
+.L1003:
+.L999:
+.L994:
     mov rbx, [rbp-168]
     mov r12, [rbp-160]
     mov rsp, rbp
@@ -30074,12 +30168,12 @@ zy_local_x2Fmain_0__ffitab__ft_x2Dargc_x2Dbad:
     push rbx
     and rsp, -16
     sub rsp, 16
-.L1013_0:
-    lea rax, [rip+.L1014]
+.L1014_0:
+    lea rax, [rip+.L1015]
     mov rbx, rax
     call zyl_int_text
     mov rdi, rax
-    lea rax, [rip+.L1015]
+    lea rax, [rip+.L1016]
     mov rsi, rax
     call zyl_cstr_concat
     mov rsi, rax
@@ -30094,120 +30188,120 @@ zy_local_x2Fmain_0__ffitab__ft_x2Dfill_x2D0:
     # frame 16
     push rbx
     mov rbx, rdi
-.L1016_0:
-    lea rax, [rip+.L1017]
+.L1017_0:
+    lea rax, [rip+.L1018]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_ffi_pin@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1018]
+    lea rax, [rip+.L1019]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_ffi_unpin@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1019]
+    lea rax, [rip+.L1020]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_actor_init@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1020]
+    lea rax, [rip+.L1021]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_actor_is_alive@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1021]
+    lea rax, [rip+.L1022]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_actor_spawn@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1022]
+    lea rax, [rip+.L1023]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_chan_new@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1023]
+    lea rax, [rip+.L1024]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_chan_recv@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1024]
+    lea rax, [rip+.L1025]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_chan_rx@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1025]
+    lea rax, [rip+.L1026]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_chan_send@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1026]
+    lea rax, [rip+.L1027]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_chan_tx@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1027]
+    lea rax, [rip+.L1028]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_actor_wait@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1028]
+    lea rax, [rip+.L1029]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_actor_wait_all@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1029]
+    lea rax, [rip+.L1030]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_aes_encrypt_block@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1030]
+    lea rax, [rip+.L1031]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_aesni_available@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1031]
+    lea rax, [rip+.L1032]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_align_check@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1032]
+    lea rax, [rip+.L1033]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_arena_alloc@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1033]
+    lea rax, [rip+.L1034]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_arena_alloc_zeroed@GOTPCREL]
     mov rdi, rax
@@ -30221,113 +30315,113 @@ zy_local_x2Fmain_0__ffitab__ft_x2Dfill_x2D1:
     # frame 16
     push rbx
     mov rbx, rdi
-.L1034_0:
-    lea rax, [rip+.L1035]
+.L1035_0:
+    lea rax, [rip+.L1036]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_arena_capacity@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1036]
+    lea rax, [rip+.L1037]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_arena_create@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1037]
+    lea rax, [rip+.L1038]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_arena_destroy@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1038]
+    lea rax, [rip+.L1039]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_arena_reset@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1039]
+    lea rax, [rip+.L1040]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_arena_used@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1040]
+    lea rax, [rip+.L1041]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_arg_str@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1041]
+    lea rax, [rip+.L1042]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_argc@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1042]
+    lea rax, [rip+.L1043]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_atomic_add@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1043]
+    lea rax, [rip+.L1044]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_atomic_cas@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1044]
+    lea rax, [rip+.L1045]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_atomic_fetch_add@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1045]
+    lea rax, [rip+.L1046]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_atomic_load@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1046]
+    lea rax, [rip+.L1047]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_atomic_max@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1047]
+    lea rax, [rip+.L1048]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_atomic_min@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1048]
+    lea rax, [rip+.L1049]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_atomic_store@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1049]
+    lea rax, [rip+.L1050]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_atomic_sub@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1050]
+    lea rax, [rip+.L1051]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_blake3_file_hex@GOTPCREL]
     mov rdi, rax
@@ -30341,113 +30435,113 @@ zy_local_x2Fmain_0__ffitab__ft_x2Dfill_x2D2:
     # frame 16
     push rbx
     mov rbx, rdi
-.L1051_0:
-    lea rax, [rip+.L1052]
+.L1052_0:
+    lea rax, [rip+.L1053]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_blake3_hex@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1053]
+    lea rax, [rip+.L1054]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_byte_slice@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1054]
+    lea rax, [rip+.L1055]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_byte_slice_sub@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1055]
+    lea rax, [rip+.L1056]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_bytebuf_append@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1056]
+    lea rax, [rip+.L1057]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_bytebuf_atomic_add@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1057]
+    lea rax, [rip+.L1058]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_bytebuf_atomic_cas@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1058]
+    lea rax, [rip+.L1059]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_bytebuf_atomic_fetch_add@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1059]
+    lea rax, [rip+.L1060]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_bytebuf_atomic_load@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1060]
+    lea rax, [rip+.L1061]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_bytebuf_atomic_max@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1061]
+    lea rax, [rip+.L1062]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_bytebuf_atomic_min@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1062]
+    lea rax, [rip+.L1063]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_bytebuf_atomic_store@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1063]
+    lea rax, [rip+.L1064]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_bytebuf_atomic_sub@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1064]
+    lea rax, [rip+.L1065]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_bytebuf_cap@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1065]
+    lea rax, [rip+.L1066]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_bytebuf_len@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1066]
+    lea rax, [rip+.L1067]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_bytebuf_new@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1067]
+    lea rax, [rip+.L1068]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_bytebuf_ptr@GOTPCREL]
     mov rdi, rax
@@ -30461,113 +30555,113 @@ zy_local_x2Fmain_0__ffitab__ft_x2Dfill_x2D3:
     # frame 16
     push rbx
     mov rbx, rdi
-.L1068_0:
-    lea rax, [rip+.L1069]
+.L1069_0:
+    lea rax, [rip+.L1070]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_call0@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1070]
+    lea rax, [rip+.L1071]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_call1@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1071]
+    lea rax, [rip+.L1072]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_call2@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1072]
+    lea rax, [rip+.L1073]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_call3@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1073]
+    lea rax, [rip+.L1074]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_call4@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1074]
+    lea rax, [rip+.L1075]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_call5@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1075]
+    lea rax, [rip+.L1076]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_call6@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1076]
+    lea rax, [rip+.L1077]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_call_argv@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1077]
+    lea rax, [rip+.L1078]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_call_on_big_stack@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1078]
+    lea rax, [rip+.L1079]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_cc_compile@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1079]
+    lea rax, [rip+.L1080]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_cc_compile_log@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1080]
+    lea rax, [rip+.L1081]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_chdir@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1081]
+    lea rax, [rip+.L1082]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_cpuid_features@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1082]
+    lea rax, [rip+.L1083]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_cstr_byte_at@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1083]
+    lea rax, [rip+.L1084]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_cstr_byte_set@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1084]
+    lea rax, [rip+.L1085]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_cstr_concat@GOTPCREL]
     mov rdi, rax
@@ -30581,113 +30675,113 @@ zy_local_x2Fmain_0__ffitab__ft_x2Dfill_x2D4:
     # frame 16
     push rbx
     mov rbx, rdi
-.L1085_0:
-    lea rax, [rip+.L1086]
+.L1086_0:
+    lea rax, [rip+.L1087]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_cstr_count_newlines@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1087]
+    lea rax, [rip+.L1088]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_cstr_decode@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1088]
+    lea rax, [rip+.L1089]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_cstr_cmp@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1089]
+    lea rax, [rip+.L1090]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_cstr_eq@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1090]
+    lea rax, [rip+.L1091]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_cstr_from_byte@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1091]
+    lea rax, [rip+.L1092]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_cstr_from_int@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1092]
+    lea rax, [rip+.L1093]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_cstr_key_matches@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1093]
+    lea rax, [rip+.L1094]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_div_magic@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1094]
+    lea rax, [rip+.L1095]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_div_shift@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1095]
+    lea rax, [rip+.L1096]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_array_copy@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1096]
+    lea rax, [rip+.L1097]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_view_ok@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1097]
+    lea rax, [rip+.L1098]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_view_byte@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1098]
+    lea rax, [rip+.L1099]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_view_cmp@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1099]
+    lea rax, [rip+.L1100]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_view_find@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1100]
+    lea rax, [rip+.L1101]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_view_copy@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1101]
+    lea rax, [rip+.L1102]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_cstr_last_newline@GOTPCREL]
     mov rdi, rax
@@ -30701,113 +30795,113 @@ zy_local_x2Fmain_0__ffitab__ft_x2Dfill_x2D5:
     # frame 16
     push rbx
     mov rbx, rdi
-.L1102_0:
-    lea rax, [rip+.L1103]
+.L1103_0:
+    lea rax, [rip+.L1104]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_cstr_len@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1104]
+    lea rax, [rip+.L1105]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_cstr_of_word@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1105]
+    lea rax, [rip+.L1106]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_float_bits@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1106]
+    lea rax, [rip+.L1107]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_float_of_bits@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1107]
+    lea rax, [rip+.L1108]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_word_load@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1108]
+    lea rax, [rip+.L1109]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_word_store@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1109]
+    lea rax, [rip+.L1110]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_ptr_add@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1110]
+    lea rax, [rip+.L1111]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_ptr_cstr@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1111]
+    lea rax, [rip+.L1112]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_ffi_addr@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1112]
+    lea rax, [rip+.L1113]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_cstr_sanitize@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1113]
+    lea rax, [rip+.L1114]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_cstr_sub@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1114]
+    lea rax, [rip+.L1115]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_cstr_substr@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1115]
+    lea rax, [rip+.L1116]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_cstr_to_int@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1116]
+    lea rax, [rip+.L1117]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_cstr_to_int_base@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1117]
+    lea rax, [rip+.L1118]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_diag_json@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1118]
+    lea rax, [rip+.L1119]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_diag_json_set@GOTPCREL]
     mov rdi, rax
@@ -30821,113 +30915,113 @@ zy_local_x2Fmain_0__ffitab__ft_x2Dfill_x2D6:
     # frame 16
     push rbx
     mov rbx, rdi
-.L1119_0:
-    lea rax, [rip+.L1120]
+.L1120_0:
+    lea rax, [rip+.L1121]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_dirname_cstr@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1121]
+    lea rax, [rip+.L1122]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_attr_clear@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1122]
+    lea rax, [rip+.L1123]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_attr_copy@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1123]
+    lea rax, [rip+.L1124]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_attr_get@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1124]
+    lea rax, [rip+.L1125]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_attr_set@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1125]
+    lea rax, [rip+.L1126]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_ensure_arenas@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1126]
+    lea rax, [rip+.L1127]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_exec_cmd@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1127]
+    lea rax, [rip+.L1128]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_f_add@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1128]
+    lea rax, [rip+.L1129]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_f_cmp@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1129]
+    lea rax, [rip+.L1130]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_f_div@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1130]
+    lea rax, [rip+.L1131]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_f_error@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1131]
+    lea rax, [rip+.L1132]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_f_mul@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1132]
+    lea rax, [rip+.L1133]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_f_of_int@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1133]
+    lea rax, [rip+.L1134]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_f_parse@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1134]
+    lea rax, [rip+.L1135]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_f_rem@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1135]
+    lea rax, [rip+.L1136]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_f_sub@GOTPCREL]
     mov rdi, rax
@@ -30941,113 +31035,113 @@ zy_local_x2Fmain_0__ffitab__ft_x2Dfill_x2D7:
     # frame 16
     push rbx
     mov rbx, rdi
-.L1136_0:
-    lea rax, [rip+.L1137]
+.L1137_0:
+    lea rax, [rip+.L1138]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_f_text@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1138]
+    lea rax, [rip+.L1139]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_f_to_int@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1139]
+    lea rax, [rip+.L1140]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_ffi_lookup@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1140]
+    lea rax, [rip+.L1141]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_ffi_timed@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1141]
+    lea rax, [rip+.L1142]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_ffi_timed_argv@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1142]
+    lea rax, [rip+.L1143]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_file_close_c@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1143]
+    lea rax, [rip+.L1144]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_exit@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1144]
+    lea rax, [rip+.L1145]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_read_line@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1145]
+    lea rax, [rip+.L1146]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_file_open_c@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1146]
+    lea rax, [rip+.L1147]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_file_read_c@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1147]
+    lea rax, [rip+.L1148]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_file_write_c@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1148]
+    lea rax, [rip+.L1149]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_fnmap_get@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1149]
+    lea rax, [rip+.L1150]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_fnmap_put@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1150]
+    lea rax, [rip+.L1151]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_fnmap_reset@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1151]
+    lea rax, [rip+.L1152]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_fresh_id@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1152]
+    lea rax, [rip+.L1153]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_getcwd@GOTPCREL]
     mov rdi, rax
@@ -31061,113 +31155,113 @@ zy_local_x2Fmain_0__ffitab__ft_x2Dfill_x2D8:
     # frame 16
     push rbx
     mov rbx, rdi
-.L1153_0:
-    lea rax, [rip+.L1154]
+.L1154_0:
+    lea rax, [rip+.L1155]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_getenv@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1155]
+    lea rax, [rip+.L1156]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_contract_warn@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1156]
+    lea rax, [rip+.L1157]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_err_is@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1157]
+    lea rax, [rip+.L1158]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_list_zyl_files@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1158]
+    lea rax, [rip+.L1159]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_list_files@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1159]
+    lea rax, [rip+.L1160]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_load_n@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1160]
+    lea rax, [rip+.L1161]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_load_n_signed@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1161]
+    lea rax, [rip+.L1162]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_store_n@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1162]
+    lea rax, [rip+.L1163]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_global_get@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1163]
+    lea rax, [rip+.L1164]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_global_put@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1164]
+    lea rax, [rip+.L1165]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_global_ready@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1165]
+    lea rax, [rip+.L1166]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_global_clear@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1166]
+    lea rax, [rip+.L1167]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_iglobal_get@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1167]
+    lea rax, [rip+.L1168]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_iglobal_put@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1168]
+    lea rax, [rip+.L1169]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_iglobal_ready@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1169]
+    lea rax, [rip+.L1170]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_iglobal_clear@GOTPCREL]
     mov rdi, rax
@@ -31181,134 +31275,134 @@ zy_local_x2Fmain_0__ffitab__ft_x2Dfill_x2D9:
     # frame 16
     push rbx
     mov rbx, rdi
-.L1170_0:
-    lea rax, [rip+.L1171]
+.L1171_0:
+    lea rax, [rip+.L1172]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_repl_global_get@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1172]
+    lea rax, [rip+.L1173]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_repl_global_set@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1173]
+    lea rax, [rip+.L1174]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_uf_id@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1174]
+    lea rax, [rip+.L1175]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_uf_reset@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1175]
+    lea rax, [rip+.L1176]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_uf_new@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1176]
+    lea rax, [rip+.L1177]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_uf_find@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1177]
+    lea rax, [rip+.L1178]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_uf_union@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1178]
+    lea rax, [rip+.L1179]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_uf_raise@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1179]
+    lea rax, [rip+.L1180]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_uf_level@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1180]
+    lea rax, [rip+.L1181]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_regions_enabled@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1181]
+    lea rax, [rip+.L1182]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_words_new@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1182]
+    lea rax, [rip+.L1183]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_words_alloc@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1183]
+    lea rax, [rip+.L1184]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_words_alloc_r@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1184]
+    lea rax, [rip+.L1185]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_words_len@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1185]
+    lea rax, [rip+.L1186]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_words_get@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1186]
+    lea rax, [rip+.L1187]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_words_set@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1187]
+    lea rax, [rip+.L1188]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_words_view@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1188]
+    lea rax, [rip+.L1189]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_words_view_r@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1189]
+    lea rax, [rip+.L1190]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_smap_has@GOTPCREL]
     mov rdi, rax
@@ -31322,127 +31416,127 @@ zy_local_x2Fmain_0__ffitab__ft_x2Dfill_x2D10:
     # frame 16
     push rbx
     mov rbx, rdi
-.L1190_0:
-    lea rax, [rip+.L1191]
+.L1191_0:
+    lea rax, [rip+.L1192]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_smap_get_or@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1192]
+    lea rax, [rip+.L1193]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_array_new@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1193]
+    lea rax, [rip+.L1194]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_vec_alloc@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1194]
+    lea rax, [rip+.L1195]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_vec_alloc_r@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1195]
+    lea rax, [rip+.L1196]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_array_cap@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1196]
+    lea rax, [rip+.L1197]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_array_filled@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1197]
+    lea rax, [rip+.L1198]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_array_get@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1198]
+    lea rax, [rip+.L1199]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_array_set@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1199]
+    lea rax, [rip+.L1200]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_attrh_new@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1200]
+    lea rax, [rip+.L1201]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_attrh_set@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1201]
+    lea rax, [rip+.L1202]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_attrh_get_or@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1202]
+    lea rax, [rip+.L1203]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_attrh_has@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1203]
+    lea rax, [rip+.L1204]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_attrh_copy@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1204]
+    lea rax, [rip+.L1205]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_attrh_clear@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1205]
+    lea rax, [rip+.L1206]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_ref_new@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1206]
+    lea rax, [rip+.L1207]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_ref_get@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1207]
+    lea rax, [rip+.L1208]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_ref_set@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1208]
+    lea rax, [rip+.L1209]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_getenv_str@GOTPCREL]
     mov rdi, rax
@@ -31456,120 +31550,120 @@ zy_local_x2Fmain_0__ffitab__ft_x2Dfill_x2D11:
     # frame 16
     push rbx
     mov rbx, rdi
-.L1209_0:
-    lea rax, [rip+.L1210]
+.L1210_0:
+    lea rax, [rip+.L1211]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_strbuf_new@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1211]
+    lea rax, [rip+.L1212]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_strbuf_new_r@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1212]
+    lea rax, [rip+.L1213]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_strbuf_str@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1213]
+    lea rax, [rip+.L1214]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_cstr_escapes_ok@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1214]
+    lea rax, [rip+.L1215]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_heap_alloc@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1215]
+    lea rax, [rip+.L1216]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_ralloc@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1216]
+    lea rax, [rip+.L1217]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_region_enter@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1217]
+    lea rax, [rip+.L1218]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_region_exit@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1218]
+    lea rax, [rip+.L1219]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_region_free@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1219]
+    lea rax, [rip+.L1220]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_region_scope_enter@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1220]
+    lea rax, [rip+.L1221]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_region_live_bytes@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1221]
+    lea rax, [rip+.L1222]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_heap_block_p@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1222]
+    lea rax, [rip+.L1223]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_heap_swap@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1223]
+    lea rax, [rip+.L1224]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_int_text@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1224]
+    lea rax, [rip+.L1225]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_itest_add@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1225]
+    lea rax, [rip+.L1226]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_itest_count@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1226]
+    lea rax, [rip+.L1227]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_itest_fn@GOTPCREL]
     mov rdi, rax
@@ -31583,120 +31677,120 @@ zy_local_x2Fmain_0__ffitab__ft_x2Dfill_x2D12:
     # frame 16
     push rbx
     mov rbx, rdi
-.L1227_0:
-    lea rax, [rip+.L1228]
+.L1228_0:
+    lea rax, [rip+.L1229]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_itest_name@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1229]
+    lea rax, [rip+.L1230]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_itest_outcome@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1230]
+    lea rax, [rip+.L1231]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_itest_fail@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1231]
+    lea rax, [rip+.L1232]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_itest_reset@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1232]
+    lea rax, [rip+.L1233]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_itest_start@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1233]
+    lea rax, [rip+.L1234]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_itest_summary@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1234]
+    lea rax, [rip+.L1235]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_json_quote@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1235]
+    lea rax, [rip+.L1236]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_load_byte@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1236]
+    lea rax, [rip+.L1237]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_load_byte_signed@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1237]
+    lea rax, [rip+.L1238]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_mangle_key@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1238]
+    lea rax, [rip+.L1239]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_mem_alloc@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1239]
+    lea rax, [rip+.L1240]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_mem_free@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1240]
+    lea rax, [rip+.L1241]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_mem_read@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1241]
+    lea rax, [rip+.L1242]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_mem_write@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1242]
+    lea rax, [rip+.L1243]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_mkdir_p@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1243]
+    lea rax, [rip+.L1244]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_mlock@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1244]
+    lea rax, [rip+.L1245]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_panic@GOTPCREL]
     mov rdi, rax
@@ -31710,113 +31804,113 @@ zy_local_x2Fmain_0__ffitab__ft_x2Dfill_x2D13:
     # frame 16
     push rbx
     mov rbx, rdi
-.L1245_0:
-    lea rax, [rip+.L1246]
+.L1246_0:
+    lea rax, [rip+.L1247]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_path_exists@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1247]
+    lea rax, [rip+.L1248]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_pin_alloc@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1248]
+    lea rax, [rip+.L1249]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_print_float@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1249]
+    lea rax, [rip+.L1250]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_print_int@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1250]
+    lea rax, [rip+.L1251]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_print_str@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1251]
+    lea rax, [rip+.L1252]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_random_fill@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1252]
+    lea rax, [rip+.L1253]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_random_words@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1253]
+    lea rax, [rip+.L1254]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_run_bin@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1254]
+    lea rax, [rip+.L1255]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_session_arena@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1255]
+    lea rax, [rip+.L1256]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_smap_clear@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1256]
+    lea rax, [rip+.L1257]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_smap_get@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1257]
+    lea rax, [rip+.L1258]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_smap_global@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1258]
+    lea rax, [rip+.L1259]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_smap_new@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1259]
+    lea rax, [rip+.L1260]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_smap_put@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1260]
+    lea rax, [rip+.L1261]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_source_path@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1261]
+    lea rax, [rip+.L1262]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_source_register@GOTPCREL]
     mov rdi, rax
@@ -31830,113 +31924,113 @@ zy_local_x2Fmain_0__ffitab__ft_x2Dfill_x2D14:
     # frame 16
     push rbx
     mov rbx, rdi
-.L1262_0:
-    lea rax, [rip+.L1263]
+.L1263_0:
+    lea rax, [rip+.L1264]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_span_col@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1264]
+    lea rax, [rip+.L1265]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_span_copy@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1265]
+    lea rax, [rip+.L1266]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_span_file@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1266]
+    lea rax, [rip+.L1267]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_span_line@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1267]
+    lea rax, [rip+.L1268]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_span_line_text@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1268]
+    lea rax, [rip+.L1269]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_span_off@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1269]
+    lea rax, [rip+.L1270]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_span_snippet@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1270]
+    lea rax, [rip+.L1271]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_span_snippet_col@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1271]
+    lea rax, [rip+.L1272]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_span_offset_at@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1272]
+    lea rax, [rip+.L1273]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_span_set@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1273]
+    lea rax, [rip+.L1274]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_store_byte@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1274]
+    lea rax, [rip+.L1275]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_store_byte_signed@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1275]
+    lea rax, [rip+.L1276]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_str_append@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1276]
+    lea rax, [rip+.L1277]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_str_append_capped@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1277]
+    lea rax, [rip+.L1278]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_sym_escape@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1278]
+    lea rax, [rip+.L1279]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_system_cmd@GOTPCREL]
     mov rdi, rax
@@ -31950,113 +32044,113 @@ zy_local_x2Fmain_0__ffitab__ft_x2Dfill_x2D15:
     # frame 16
     push rbx
     mov rbx, rdi
-.L1279_0:
-    lea rax, [rip+.L1280]
+.L1280_0:
+    lea rax, [rip+.L1281]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_term_flush@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1281]
+    lea rax, [rip+.L1282]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_term_height@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1282]
+    lea rax, [rip+.L1283]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_term_is_tty@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1283]
+    lea rax, [rip+.L1284]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_term_raw_off@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1284]
+    lea rax, [rip+.L1285]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_term_raw_on@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1285]
+    lea rax, [rip+.L1286]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_term_read_byte@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1286]
+    lea rax, [rip+.L1287]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_term_read_byte_timeout@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1287]
+    lea rax, [rip+.L1288]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_term_width@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1288]
+    lea rax, [rip+.L1289]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_term_write@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1289]
+    lea rax, [rip+.L1290]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_try_frame_msg@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1290]
+    lea rax, [rip+.L1291]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_try_last_msg@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1291]
+    lea rax, [rip+.L1292]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_try_pop@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1292]
+    lea rax, [rip+.L1293]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_try_push@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1293]
+    lea rax, [rip+.L1294]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_variant_cmp@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1294]
+    lea rax, [rip+.L1295]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_variant_eq@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1295]
+    lea rax, [rip+.L1296]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_variant_field@GOTPCREL]
     mov rdi, rax
@@ -32070,92 +32164,92 @@ zy_local_x2Fmain_0__ffitab__ft_x2Dfill_x2D16:
     # frame 16
     push rbx
     mov rbx, rdi
-.L1296_0:
-    lea rax, [rip+.L1297]
+.L1297_0:
+    lea rax, [rip+.L1298]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_warn_capture@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1298]
+    lea rax, [rip+.L1299]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_warn_emit@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1299]
+    lea rax, [rip+.L1300]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_warn_take@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1300]
+    lea rax, [rip+.L1301]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_word_of_cstr@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1301]
+    lea rax, [rip+.L1302]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_wvec_get@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1302]
+    lea rax, [rip+.L1303]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_wvec_global@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1303]
+    lea rax, [rip+.L1304]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_wvec_len@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1304]
+    lea rax, [rip+.L1305]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_wvec_new@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1305]
+    lea rax, [rip+.L1306]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_wvec_pop@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1306]
+    lea rax, [rip+.L1307]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_wvec_push@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1307]
+    lea rax, [rip+.L1308]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_wvec_set@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1308]
+    lea rax, [rip+.L1309]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_wvec_truncate@GOTPCREL]
     mov rdi, rax
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dput
-    lea rax, [rip+.L1309]
+    lea rax, [rip+.L1310]
     mov rsi, rax
     mov rax, QWORD PTR [rip+zyl_zeroize@GOTPCREL]
     mov rdi, rax
@@ -32169,7 +32263,7 @@ zy_local_x2Fmain_0__ffitab__ft_x2Dfill:
     # frame 16
     push rbx
     mov rbx, rdi
-.L1310_0:
+.L1311_0:
     mov rdi, rbx
     call zy_local_x2Fmain_0__ffitab__ft_x2Dfill_x2D0
     mov rdi, rbx
@@ -32212,16 +32306,16 @@ zy_local_x2Fmain_0__ffitab__ft_x2Ddlsym:
     push rbp
     mov rbp, rsp
     and rsp, -16
-.L1311_0:
+.L1312_0:
     mov rax, QWORD PTR [rip+dlsym@GOTPCREL]
     mov rsi, rax
     cmp rsi, 0
-    jne .L1311_1
+    jne .L1312_1
     mov rax, 0
     mov rsp, rbp
     pop rbp
     ret
-.L1311_1:
+.L1312_1:
     mov r8, 0
     mov rdx, rdi
     mov rdi, rsi
@@ -32232,16 +32326,16 @@ zy_local_x2Fmain_0__ffitab__ft_x2Ddlsym:
     ret
 zy_local_x2Fmain_0__proc__pr_x2Dint:
     # frame 0
-.L1312_0:
+.L1313_0:
     mov rsi, 4294967295
     and rsi, rdi
     cmp rsi, 2147483647
-    jle .L1312_1
+    jle .L1313_1
     mov rdi, 4294967296
     mov rax, rsi
     sub rax, rdi
     ret
-.L1312_1:
+.L1313_1:
     mov rax, rsi
     ret
 zy_local_x2Fmain_0__proc__pr_x2Denviron:
@@ -32249,14 +32343,14 @@ zy_local_x2Fmain_0__proc__pr_x2Denviron:
     push rbp
     mov rbp, rsp
     and rsp, -16
-.L1313_0:
+.L1314_0:
     call zyl_rt_envp
     mov rsp, rbp
     pop rbp
     ret
 zy_local_x2Fmain_0__proc__pr_x2Dscratch:
     # frame 0
-.L1314_0:
+.L1315_0:
     call zyl_out_flush
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_proc_scratch@tpoff]
@@ -32265,22 +32359,22 @@ zy_local_x2Fmain_0__proc__pr_x2Dscratch:
     ret
 zy_local_x2Fmain_0__proc__pr_x2Dpid:
     # frame 0
-.L1315_0:
+.L1316_0:
     mov rax, rdi
     ret
 zy_local_x2Fmain_0__proc__pr_x2Dstatus:
     # frame 0
-.L1316_0:
+.L1317_0:
     lea rax, [rdi+8]
     ret
 zy_local_x2Fmain_0__proc__pr_x2Dargv:
     # frame 0
-.L1317_0:
+.L1318_0:
     lea rax, [rdi+16]
     ret
 zy_local_x2Fmain_0__proc__pr_x2Dout:
     # frame 0
-.L1318_0:
+.L1319_0:
     lea rax, [rdi+80]
     ret
 zy_local_x2Fmain_0__proc__pr_x2Dwait:
@@ -32291,17 +32385,17 @@ zy_local_x2Fmain_0__proc__pr_x2Dwait:
     and rsp, -16
     sub rsp, 16
     mov rbx, rdi
-.L1319_0:
+.L1320_0:
     mov rdi, rsi
     call zy_local_x2Fmain_0__proc__pr_x2Dint
     cmp rax, 0
-    je .L1319_1
+    je .L1320_1
     mov rax, -1
     mov rbx, qword ptr [rbp-8]
     mov rsp, rbp
     pop rbp
     ret
-.L1319_1:
+.L1320_1:
     mov edi, dword ptr [rbx+0]
     call zy_local_x2Fmain_0__proc__pr_x2Dint
     mov rdi, rax
@@ -32314,18 +32408,18 @@ zy_local_x2Fmain_0__proc__pr_x2Dwait:
     mov rdi, rax
     call zy_local_x2Fmain_0__proc__pr_x2Dint
     cmp rax, 0
-    jge .L1319_2
+    jge .L1320_2
     mov rax, -1
     mov rbx, qword ptr [rbp-8]
     mov rsp, rbp
     pop rbp
     ret
-.L1319_2:
+.L1320_2:
     mov esi, dword ptr [rbx+8]
     mov rax, rsi
     and rax, 127
     cmp rax, 0
-    jne .L1319_3
+    jne .L1320_3
     shr rsi, 8
     and rsi, 255
     mov rax, rsi
@@ -32333,7 +32427,7 @@ zy_local_x2Fmain_0__proc__pr_x2Dwait:
     mov rsp, rbp
     pop rbp
     ret
-.L1319_3:
+.L1320_3:
     mov rax, -1
     mov rbx, qword ptr [rbp-8]
     mov rsp, rbp
@@ -32341,17 +32435,17 @@ zy_local_x2Fmain_0__proc__pr_x2Dwait:
     ret
 zy_local_x2Fmain_0__proc__pr_x2Dmap_x2Dsize:
     # frame 0
-.L1320_0:
+.L1321_0:
     mov rax, 65536
     ret
 zy_local_x2Fmain_0__proc__pr_x2Dbuf:
     # frame 0
-.L1321_0:
+.L1322_0:
     lea rax, [rdi+64]
     ret
 zy_local_x2Fmain_0__proc__pr_x2Dbuf_x2Dmax:
     # frame 0
-.L1322_0:
+.L1323_0:
     mov rax, 4400
     ret
 zy_local_x2Fmain_0__proc__pr_x2Dspawn:
@@ -32370,7 +32464,7 @@ zy_local_x2Fmain_0__proc__pr_x2Dspawn:
     mov r13, rdx
     mov r14, rcx
     mov r15, r8
-.L1323_0:
+.L1324_0:
     mov rdi, 0
     mov rsi, 65536
     mov r8, 3
@@ -32384,9 +32478,9 @@ zy_local_x2Fmain_0__proc__pr_x2Dspawn:
     call zyl_rt_sys_9
     mov qword ptr [rbp-48], rax
     cmp qword ptr [rbp-48], 0
-    jge .L1323_1
+    jge .L1324_1
     cmp qword ptr [rbp-48], -4096
-    jle .L1323_1
+    jle .L1324_1
     mov rsi, 0
     sub rsi, qword ptr [rbp-48]
     mov rax, rsi
@@ -32398,7 +32492,7 @@ zy_local_x2Fmain_0__proc__pr_x2Dspawn:
     mov rsp, rbp
     pop rbp
     ret
-.L1323_1:
+.L1324_1:
     mov rdx, qword ptr [rbp-48]
     mov qword ptr [rdx+0], r12
     mov rdx, qword ptr [rbp-48]
@@ -32410,24 +32504,24 @@ zy_local_x2Fmain_0__proc__pr_x2Dspawn:
     mov rdx, qword ptr [rbp-48]
     mov qword ptr [rdx+24], r14
     cmp r15, 0
-    je .L1323_2
+    je .L1324_2
     mov rsi, 1
-    jmp .L1323_3
-.L1323_2:
+    jmp .L1324_3
+.L1324_2:
     mov rsi, 0
-.L1323_3:
+.L1324_3:
     mov rdx, qword ptr [rbp-48]
     mov qword ptr [rdx+32], rsi
     cmp r15, 0
-    je .L1323_4
-    lea rax, [rip+.L1324]
+    je .L1324_4
+    lea rax, [rip+.L1325]
     mov rdi, rax
     call zyl_rt_getenv
     mov rsi, rax
-    jmp .L1323_5
-.L1323_4:
+    jmp .L1324_5
+.L1324_4:
     mov rsi, 0
-.L1323_5:
+.L1324_5:
     mov rdx, qword ptr [rbp-48]
     mov qword ptr [rdx+48], rsi
     mov rsi, qword ptr [rbp-48]
@@ -32465,18 +32559,18 @@ zy_local_x2Fmain_0__proc__pr_x2Dspawn_x2Ddone:
     mov rbx, rdi
     mov r12, rsi
     mov r13, rdx
-.L1325_0:
+.L1326_0:
     mov rsi, 0
     sub rsi, r13
     cmp r13, 0
-    jl .L1325_1
+    jl .L1326_1
     mov rsi, qword ptr [r12+40]
-.L1325_1:
+.L1326_1:
     mov r14, rsi
     cmp r13, 0
-    jle .L1325_2
+    jle .L1326_2
     cmp r14, 0
-    je .L1325_2
+    je .L1326_2
     mov rsi, 0
     mov rdi, 0
     mov r8, 0
@@ -32484,17 +32578,17 @@ zy_local_x2Fmain_0__proc__pr_x2Dspawn_x2Ddone:
     mov rdi, r13
     mov rcx, r8
     call zyl_rt_sys_61
-    jmp .L1325_3
-.L1325_2:
-.L1325_3:
+    jmp .L1326_3
+.L1326_2:
+.L1326_3:
     cmp r13, 0
-    jle .L1325_4
+    jle .L1326_4
     cmp r14, 0
-    jne .L1325_4
+    jne .L1326_4
     mov dword ptr [rbx+0], r13d
-    jmp .L1325_5
-.L1325_4:
-.L1325_5:
+    jmp .L1326_5
+.L1326_4:
+.L1326_5:
     mov rsi, 65536
     mov rdi, r12
     call zyl_rt_sys_11
@@ -32514,21 +32608,21 @@ zyl_rt_spawn_child:
     push rbx
     and rsp, -16
     sub rsp, 16
-.L1326_0:
+.L1327_0:
     mov rbx, qword ptr [rsi+16]
     mov rdi, qword ptr [rbx+24]
     mov rsi, 0
     cmp rdi, 0
-    je .L1326_1
+    je .L1327_1
     call zy_local_x2Fmain_0__proc__pr_x2Dredirect
     mov rsi, rax
-.L1326_1:
+.L1327_1:
     mov rdi, rsi
     cmp rsi, 0
-    jl .L1326_2
+    jl .L1327_2
     mov rax, qword ptr [rbx+32]
     cmp rax, 0
-    jne .L1326_3
+    jne .L1327_3
     mov rsi, qword ptr [rbx+0]
     mov r8, qword ptr [rbx+8]
     mov r9, qword ptr [rbx+16]
@@ -32537,16 +32631,16 @@ zyl_rt_spawn_child:
     mov rdx, r9
     call zyl_rt_sys_59
     mov rsi, rax
-    jmp .L1326_4
-.L1326_3:
+    jmp .L1327_4
+.L1327_3:
     mov r8, qword ptr [rbx+0]
     mov rdi, rbx
     mov rsi, r8
     call zy_local_x2Fmain_0__proc__pr_x2Dexecvp
     mov rsi, rax
-.L1326_4:
+.L1327_4:
     mov rdi, rsi
-.L1326_2:
+.L1327_2:
     mov rsi, rdi
     mov rdi, rbx
     mov rbx, qword ptr [rbp-8]
@@ -32562,13 +32656,13 @@ zy_local_x2Fmain_0__proc__pr_x2Ddie:
     and rsp, -16
     mov rbx, rdi
     mov r12, rsi
-.L1327_0:
+.L1328_0:
     mov rsi, 0
     sub rsi, r12
     mov qword ptr [rbx+40], rsi
     mov rdi, 127
     call zyl_rt_sys_60
-    jmp .L1327_0
+    jmp .L1328_0
 zy_local_x2Fmain_0__proc__pr_x2Dredirect:
     # frame 16
     push rbp
@@ -32576,7 +32670,7 @@ zy_local_x2Fmain_0__proc__pr_x2Dredirect:
     push rbx
     push r12
     and rsp, -16
-.L1328_0:
+.L1329_0:
     mov rsi, -100
     mov r8, 577
     mov r9, 420
@@ -32588,46 +32682,46 @@ zy_local_x2Fmain_0__proc__pr_x2Dredirect:
     call zyl_rt_sys_257
     mov rbx, rax
     cmp rbx, 0
-    jge .L1328_1
+    jge .L1329_1
     mov rax, rbx
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
     mov rsp, rbp
     pop rbp
     ret
-.L1328_1:
+.L1329_1:
     mov r12, 0
     cmp rbx, 1
-    je .L1328_2
+    je .L1329_2
     mov rsi, 1
     mov rdi, rbx
     call zyl_rt_sys_33
     mov r12, rax
     mov rdi, rbx
     call zyl_rt_sys_3
-.L1328_2:
+.L1329_2:
     cmp r12, 0
-    jge .L1328_3
+    jge .L1329_3
     mov rax, r12
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
     mov rsp, rbp
     pop rbp
     ret
-.L1328_3:
+.L1329_3:
     mov rdi, 1
     mov rsi, 2
     call zyl_rt_sys_33
     mov rsi, rax
     cmp rsi, 0
-    jge .L1328_4
+    jge .L1329_4
     mov rax, rsi
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
     mov rsp, rbp
     pop rbp
     ret
-.L1328_4:
+.L1329_4:
     mov rax, 0
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -32636,53 +32730,53 @@ zy_local_x2Fmain_0__proc__pr_x2Dredirect:
     ret
 zy_local_x2Fmain_0__proc__pr_x2Dhas_x2Dslash:
     # frame 0
-.L1329_0:
+.L1330_0:
     movzx esi, byte ptr [rdi+0]
     cmp rsi, 0
-    jne .L1329_1
+    jne .L1330_1
     mov rax, 0
     ret
-.L1329_1:
+.L1330_1:
     cmp rsi, 47
-    jne .L1329_2
+    jne .L1330_2
     mov rax, 1
     ret
-.L1329_2:
+.L1330_2:
     add rdi, 1
-    jmp .L1329_0
+    jmp .L1330_0
 zy_local_x2Fmain_0__proc__pr_x2Dstrnlen:
     # frame 0
     mov r8, rdx
-.L1330_0:
+.L1331_0:
     cmp r8, rsi
-    jge .L1330_2
-.L1330_3:
+    jge .L1331_2
+.L1331_3:
     lea r9, [rdi+r8]
     movzx eax, byte ptr [r9+0]
     cmp rax, 0
-    jne .L1330_1
-.L1330_2:
-    mov rax, r8
-    ret
-.L1330_1:
-    add r8, 1
-    cmp r8, rsi
-    jge .L1330_2
-    jmp .L1330_3
-zy_local_x2Fmain_0__proc__pr_x2Dchrnul:
-    # frame 0
-.L1331_0:
-    movzx r8d, byte ptr [rdi+0]
-    cmp r8, 0
-    je .L1331_2
-    cmp r8, rsi
     jne .L1331_1
 .L1331_2:
-    mov rax, rdi
+    mov rax, r8
     ret
 .L1331_1:
+    add r8, 1
+    cmp r8, rsi
+    jge .L1331_2
+    jmp .L1331_3
+zy_local_x2Fmain_0__proc__pr_x2Dchrnul:
+    # frame 0
+.L1332_0:
+    movzx r8d, byte ptr [rdi+0]
+    cmp r8, 0
+    je .L1332_2
+    cmp r8, rsi
+    jne .L1332_1
+.L1332_2:
+    mov rax, rdi
+    ret
+.L1332_1:
     add rdi, 1
-    jmp .L1331_0
+    jmp .L1332_0
 zy_local_x2Fmain_0__proc__pr_x2Dexecvp:
     # frame 32
     push rbp
@@ -32694,10 +32788,10 @@ zy_local_x2Fmain_0__proc__pr_x2Dexecvp:
     sub rsp, 16
     mov rbx, rdi
     mov r12, rsi
-.L1332_0:
+.L1333_0:
     movzx eax, byte ptr [r12+0]
     cmp rax, 0
-    jne .L1332_1
+    jne .L1333_1
     mov rax, -2
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -32705,11 +32799,11 @@ zy_local_x2Fmain_0__proc__pr_x2Dexecvp:
     mov rsp, rbp
     pop rbp
     ret
-.L1332_1:
+.L1333_1:
     mov rdi, r12
     call zy_local_x2Fmain_0__proc__pr_x2Dhas_x2Dslash
     cmp rax, 0
-    je .L1332_2
+    je .L1333_2
     mov rsi, qword ptr [rbx+8]
     mov rdi, qword ptr [rbx+16]
     mov rdx, rdi
@@ -32721,16 +32815,16 @@ zy_local_x2Fmain_0__proc__pr_x2Dexecvp:
     mov rsp, rbp
     pop rbp
     ret
-.L1332_2:
+.L1333_2:
     mov rsi, qword ptr [rbx+48]
     cmp rsi, 0
-    jne .L1332_3
-    lea rax, [rip+.L1333]
+    jne .L1333_3
+    lea rax, [rip+.L1334]
     mov rdi, rax
-    jmp .L1332_4
-.L1332_3:
+    jmp .L1333_4
+.L1333_3:
     mov rdi, rsi
-.L1332_4:
+.L1333_4:
     mov r13, rdi
     mov rsi, 255
     mov rdi, 0
@@ -32740,7 +32834,7 @@ zy_local_x2Fmain_0__proc__pr_x2Dexecvp:
     mov rsi, rax
     add rsi, 1
     cmp rsi, 255
-    jle .L1332_5
+    jle .L1333_5
     mov rax, -36
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -32748,7 +32842,7 @@ zy_local_x2Fmain_0__proc__pr_x2Dexecvp:
     mov rsp, rbp
     pop rbp
     ret
-.L1332_5:
+.L1333_5:
     mov r8, 0
     mov rdi, rbx
     mov rdx, rsi
@@ -32762,33 +32856,33 @@ zy_local_x2Fmain_0__proc__pr_x2Dexecvp:
     jmp zy_local_x2Fmain_0__proc__pr_x2Dpath_x2Dloop
 zy_local_x2Fmain_0__proc__pr_x2Dpath_x2Dnext_x2Dp:
     # frame 0
-.L1334_0:
+.L1335_0:
     cmp rdi, 13
-    jne .L1334_1
-.L1334_6:
+    jne .L1335_1
+.L1335_6:
     mov rax, 1
     ret
-.L1334_1:
+.L1335_1:
     cmp rdi, 2
-    jne .L1334_2
+    jne .L1335_2
     mov rax, 1
     ret
-.L1334_2:
+.L1335_2:
     cmp rdi, 116
-    jne .L1334_3
+    jne .L1335_3
     mov rax, 1
     ret
-.L1334_3:
+.L1335_3:
     cmp rdi, 20
-    jne .L1334_4
+    jne .L1335_4
     mov rax, 1
     ret
-.L1334_4:
+.L1335_4:
     cmp rdi, 19
-    jne .L1334_5
+    jne .L1335_5
     mov rax, 1
     ret
-.L1334_5:
+.L1335_5:
     mov rax, rdi
     cmp rax, 110
     sete al
@@ -32809,7 +32903,7 @@ zy_local_x2Fmain_0__proc__pr_x2Dpath_x2Dloop:
     mov r13, rdx
     mov r14, rcx
     mov r15, r8
-.L1335_0:
+.L1336_0:
     mov rsi, 58
     mov rdi, r14
     call zy_local_x2Fmain_0__proc__pr_x2Dchrnul
@@ -32819,10 +32913,10 @@ zy_local_x2Fmain_0__proc__pr_x2Dpath_x2Dloop:
     lea rdi, [r13+1]
     lea rax, [rsi+rdi]
     cmp rax, 4400
-    jle .L1335_1
+    jle .L1336_1
     mov rdi, -36
-    jmp .L1335_2
-.L1335_1:
+    jmp .L1336_2
+.L1336_1:
     mov rdi, qword ptr [rbp-48]
     mov rdx, rsi
     mov rsi, r14
@@ -32830,13 +32924,13 @@ zy_local_x2Fmain_0__proc__pr_x2Dpath_x2Dloop:
     mov r8, r13
     call zy_local_x2Fmain_0__proc__pr_x2Dexec_x2Dat
     mov rdi, rax
-.L1335_2:
+.L1336_2:
     mov r12, rdi
     mov rdi, 0
     sub rdi, r12
     call zy_local_x2Fmain_0__proc__pr_x2Dpath_x2Dnext_x2Dp
     cmp rax, 0
-    jne .L1335_3
+    jne .L1336_3
     mov rax, r12
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -32846,23 +32940,23 @@ zy_local_x2Fmain_0__proc__pr_x2Dpath_x2Dloop:
     mov rsp, rbp
     pop rbp
     ret
-.L1335_3:
+.L1336_3:
     cmp r15, 0
-    je .L1335_4
+    je .L1336_4
     mov rsi, 1
-    jmp .L1335_5
-.L1335_4:
+    jmp .L1336_5
+.L1336_4:
     mov rax, r12
     cmp rax, -13
     sete al
     movzx rax, al
     mov rsi, rax
-.L1335_5:
+.L1336_5:
     movzx eax, byte ptr [rbx+0]
     cmp rax, 0
-    jne .L1335_6
+    jne .L1336_6
     cmp rsi, 0
-    je .L1335_7
+    je .L1336_7
     mov rax, -13
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -32872,7 +32966,7 @@ zy_local_x2Fmain_0__proc__pr_x2Dpath_x2Dloop:
     mov rsp, rbp
     pop rbp
     ret
-.L1335_7:
+.L1336_7:
     mov rax, r12
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -32882,10 +32976,10 @@ zy_local_x2Fmain_0__proc__pr_x2Dpath_x2Dloop:
     mov rsp, rbp
     pop rbp
     ret
-.L1335_6:
+.L1336_6:
     lea r14, [rbx+1]
     mov r15, rsi
-    jmp .L1335_0
+    jmp .L1336_0
 zy_local_x2Fmain_0__proc__pr_x2Dexec_x2Dat:
     # frame 48
     push rbp
@@ -32901,7 +32995,7 @@ zy_local_x2Fmain_0__proc__pr_x2Dexec_x2Dat:
     mov r12, rdx
     mov r13, rcx
     mov r14, r8
-.L1336_0:
+.L1337_0:
     lea r15, [rbx+64]
     mov rdi, r15
     mov rdx, r12
@@ -32912,9 +33006,9 @@ zy_local_x2Fmain_0__proc__pr_x2Dexec_x2Dat:
     mov byte ptr [rsi+0], cl
     mov rsi, 1
     cmp r12, 0
-    jg .L1336_1
+    jg .L1337_1
     mov rsi, 0
-.L1336_1:
+.L1337_1:
     add rsi, r12
     lea rdi, [r15+rsi]
     mov rsi, r13
@@ -32938,30 +33032,30 @@ zyl_system_cmd:
     # frame 16
     push rbx
     push r12
-.L1337_0:
+.L1338_0:
     mov rbx, rdi
     cmp rbx, 0
-    jne .L1337_1
+    jne .L1338_1
     mov rax, -1
     pop r12
     pop rbx
     ret
-.L1337_1:
+.L1338_1:
     call zyl_out_flush
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_proc_scratch@tpoff]
     mov r12, rax
     lea rsi, [r12+16]
-    lea rax, [rip+.L1338]
+    lea rax, [rip+.L1339]
     mov rdi, rax
     mov qword ptr [rsi+0], rdi
-    lea rax, [rip+.L1339]
+    lea rax, [rip+.L1340]
     mov rdi, rax
     mov qword ptr [rsi+8], rdi
     mov qword ptr [rsi+16], rbx
     mov rdi, 0
     mov qword ptr [rsi+24], rdi
-    lea rax, [rip+.L1340]
+    lea rax, [rip+.L1341]
     mov rdi, rax
     mov r8, 0
     mov r9, 0
@@ -32986,7 +33080,7 @@ zy_local_x2Fmain_0__proc__pr_x2Dcat2:
     mov rbx, rdi
     mov r12, rsi
     mov r13, rdx
-.L1341_0:
+.L1342_0:
     mov rdi, rbx
     call zy_local_x2Fmain_0__base__rt_x2Dstrlen
     mov r14, rax
@@ -32996,19 +33090,19 @@ zy_local_x2Fmain_0__proc__pr_x2Dcat2:
     add rsi, r14
     lea rax, [r13-1]
     cmp rsi, rax
-    jle .L1341_1
+    jle .L1342_1
     lea rdi, [r13-1]
-    jmp .L1341_2
-.L1341_1:
+    jmp .L1342_2
+.L1342_1:
     mov rdi, rsi
-.L1341_2:
+.L1342_2:
     mov r13, rdi
     lea rdi, [r13+1]
     mov rsi, 1
     call zy_local_x2Fmain_0__heap__hp_x2Dalloc
     mov r15, rax
     cmp r15, 0
-    jne .L1341_3
+    jne .L1342_3
     mov rax, 0
     pop r15
     pop r14
@@ -33016,12 +33110,12 @@ zy_local_x2Fmain_0__proc__pr_x2Dcat2:
     pop r12
     pop rbx
     ret
-.L1341_3:
+.L1342_3:
     mov rsi, r13
     cmp r14, r13
-    jg .L1341_4
+    jg .L1342_4
     mov rsi, r14
-.L1341_4:
+.L1342_4:
     mov r14, rsi
     mov rdi, r15
     mov rsi, rbx
@@ -33056,10 +33150,10 @@ zy_local_x2Fmain_0__proc__pr_x2Dwrite_x2Dall:
     mov rbx, rdi
     mov r12, rsi
     mov r13, rdx
-.L1342_0:
+.L1343_0:
     cmp r13, 0
-    jg .L1342_1
-.L1342_4:
+    jg .L1343_1
+.L1343_4:
     mov rax, 0
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -33068,26 +33162,26 @@ zy_local_x2Fmain_0__proc__pr_x2Dwrite_x2Dall:
     pop rbp
     ret
 .p2align 4
-.L1342_1:
+.L1343_1:
     mov rdi, rbx
     mov rsi, r12
     mov rdx, r13
     call zyl_rt_sys_1
     mov rsi, rax
     cmp rsi, 0
-    jle .L1342_2
+    jle .L1343_2
     add r12, rsi
     sub r13, rsi
     cmp r13, 0
-    jg .L1342_1
-    jmp .L1342_4
-.L1342_2:
+    jg .L1343_1
+    jmp .L1343_4
+.L1343_2:
     cmp rsi, -4
-    jne .L1342_3
+    jne .L1343_3
     cmp r13, 0
-    jg .L1342_1
-    jmp .L1342_4
-.L1342_3:
+    jg .L1343_1
+    jmp .L1343_4
+.L1343_3:
     mov rax, 0
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -33101,7 +33195,7 @@ zy_local_x2Fmain_0__proc__pr_x2Dwrite_x2Dstr:
     push r12
     mov rbx, rdi
     mov r12, rsi
-.L1343_0:
+.L1344_0:
     mov rdi, r12
     call zy_local_x2Fmain_0__base__rt_x2Dstrlen
     mov rsi, rax
@@ -33116,27 +33210,27 @@ zy_local_x2Fmain_0__proc__pr_x2Dmkstemp:
     push rbx
     push r12
     mov rbx, rdi
-.L1344_0:
+.L1345_0:
     mov rdi, rbx
     call zy_local_x2Fmain_0__base__rt_x2Dstrlen
     mov r12, rax
     cmp r12, 6
-    jl .L1344_2
+    jl .L1345_2
     lea rsi, [r12-6]
     lea rdi, [rbx+rsi]
-    lea rax, [rip+.L1345]
+    lea rax, [rip+.L1346]
     mov rsi, rax
     mov r8, 6
     mov rdx, r8
     call zy_local_x2Fmain_0__base__rt_x2Dmem_x2Deq
     cmp rax, 0
-    jne .L1344_1
-.L1344_2:
+    jne .L1345_1
+.L1345_2:
     mov rax, -1
     pop r12
     pop rbx
     ret
-.L1344_1:
+.L1345_1:
     lea rsi, [r12-6]
     lea rdi, [rbx+rsi]
     mov rsi, 238328
@@ -33157,10 +33251,10 @@ zy_local_x2Fmain_0__proc__pr_x2Dmkstemp_x2Dtry:
     mov rbx, rdi
     mov r12, rsi
     mov r13, rdx
-.L1346_0:
+.L1347_0:
     cmp r13, 0
-    jne .L1346_1
-.L1346_6:
+    jne .L1347_1
+.L1347_6:
     mov rax, -1
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -33170,7 +33264,7 @@ zy_local_x2Fmain_0__proc__pr_x2Dmkstemp_x2Dtry:
     pop rbp
     ret
 .p2align 4
-.L1346_1:
+.L1347_1:
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_proc_rand@tpoff]
     mov r14, rax
@@ -33178,7 +33272,7 @@ zy_local_x2Fmain_0__proc__pr_x2Dmkstemp_x2Dtry:
     mov rdi, r14
     call zyl_random_fill
     cmp rax, 8
-    je .L1346_2
+    je .L1347_2
     mov rax, -1
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -33187,15 +33281,15 @@ zy_local_x2Fmain_0__proc__pr_x2Dmkstemp_x2Dtry:
     mov rsp, rbp
     pop rbp
     ret
-.L1346_2:
+.L1347_2:
     mov rsi, qword ptr [r14+0]
     mov rdi, 0
     cmp rdi, 6
-    jge .L1346_3
+    jge .L1347_3
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__proc__pr_x2Dfill_x2Dx
-.L1346_3:
+.L1347_3:
     mov rdi, -100
     mov rsi, 194
     mov r8, 384
@@ -33205,7 +33299,7 @@ zy_local_x2Fmain_0__proc__pr_x2Dmkstemp_x2Dtry:
     call zyl_rt_sys_257
     mov rsi, rax
     cmp rsi, 0
-    jl .L1346_4
+    jl .L1347_4
     mov rax, rsi
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -33214,14 +33308,14 @@ zy_local_x2Fmain_0__proc__pr_x2Dmkstemp_x2Dtry:
     mov rsp, rbp
     pop rbp
     ret
-.L1346_4:
+.L1347_4:
     cmp rsi, -17
-    jne .L1346_5
+    jne .L1347_5
     sub r13, 1
     cmp r13, 0
-    jne .L1346_1
-    jmp .L1346_6
-.L1346_5:
+    jne .L1347_1
+    jmp .L1347_6
+.L1347_5:
     mov rax, -1
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -33233,16 +33327,16 @@ zy_local_x2Fmain_0__proc__pr_x2Dmkstemp_x2Dtry:
 zy_local_x2Fmain_0__proc__pr_x2Dfill_x2Dx:
     # frame 0
     mov r8, rdx
-.L1347_0:
+.L1348_0:
     cmp r8, 6
-    jl .L1347_1
-.L1347_2:
+    jl .L1348_1
+.L1348_2:
     mov rax, 0
     ret
 .p2align 4
-.L1347_1:
+.L1348_1:
     lea r9, [rdi+r8]
-    lea rax, [rip+.L1348]
+    lea rax, [rip+.L1349]
     mov r10, rax
     mov r11, 62
     mov rdx, rsi
@@ -33264,8 +33358,8 @@ zy_local_x2Fmain_0__proc__pr_x2Dfill_x2Dx:
     mov rsi, rax
     add r8, 1
     cmp r8, 6
-    jl .L1347_1
-    jmp .L1347_2
+    jl .L1348_1
+    jmp .L1348_2
 .globl zyl_exec_cmd
 zyl_exec_cmd:
     # frame 32
@@ -33276,28 +33370,28 @@ zyl_exec_cmd:
     push r13
     push r14
     and rsp, -16
-.L1349_0:
+.L1350_0:
     mov rbx, rdi
-    lea rax, [rip+.L1350]
+    lea rax, [rip+.L1351]
     mov rdi, rax
     call zyl_rt_getenv
     mov rsi, rax
     cmp rsi, 0
-    jne .L1349_1
-    lea rax, [rip+.L1351]
-    mov rdi, rax
-    jmp .L1349_2
-.L1349_1:
-    mov rdi, rsi
-.L1349_2:
+    jne .L1350_1
     lea rax, [rip+.L1352]
+    mov rdi, rax
+    jmp .L1350_2
+.L1350_1:
+    mov rdi, rsi
+.L1350_2:
+    lea rax, [rip+.L1353]
     mov rsi, rax
     mov r8, 512
     mov rdx, r8
     call zy_local_x2Fmain_0__proc__pr_x2Dcat2
     mov r12, rax
     cmp r12, 0
-    jne .L1349_3
+    jne .L1350_3
     mov rax, -1
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -33306,12 +33400,12 @@ zyl_exec_cmd:
     mov rsp, rbp
     pop rbp
     ret
-.L1349_3:
+.L1350_3:
     mov rdi, r12
     call zy_local_x2Fmain_0__proc__pr_x2Dmkstemp
     mov r13, rax
     cmp r13, 0
-    jge .L1349_4
+    jge .L1350_4
     mov rdi, r12
     call zyl_rt_free
     mov rax, -1
@@ -33322,8 +33416,8 @@ zyl_exec_cmd:
     mov rsp, rbp
     pop rbp
     ret
-.L1349_4:
-    lea rax, [rip+.L1353]
+.L1350_4:
+    lea rax, [rip+.L1354]
     mov r14, rax
     mov rdi, r14
     call zy_local_x2Fmain_0__base__rt_x2Dstrlen
@@ -33333,13 +33427,13 @@ zyl_exec_cmd:
     mov rsi, r14
     call zy_local_x2Fmain_0__proc__pr_x2Dwrite_x2Dall
     cmp rbx, 0
-    jne .L1349_5
-    lea rax, [rip+.L1354]
+    jne .L1350_5
+    lea rax, [rip+.L1355]
     mov rsi, rax
-    jmp .L1349_6
-.L1349_5:
+    jmp .L1350_6
+.L1350_5:
     mov rsi, rbx
-.L1349_6:
+.L1350_6:
     mov rbx, rsi
     mov rdi, rbx
     call zy_local_x2Fmain_0__base__rt_x2Dstrlen
@@ -33348,7 +33442,7 @@ zyl_exec_cmd:
     mov rdx, rsi
     mov rsi, rbx
     call zy_local_x2Fmain_0__proc__pr_x2Dwrite_x2Dall
-    lea rax, [rip+.L1355]
+    lea rax, [rip+.L1356]
     mov rbx, rax
     mov rdi, rbx
     call zy_local_x2Fmain_0__base__rt_x2Dstrlen
@@ -33367,13 +33461,13 @@ zyl_exec_cmd:
     lea rax, [rax+zyl_rtt_proc_scratch@tpoff]
     mov rbx, rax
     add rbx, 16
-    lea rax, [rip+.L1356]
+    lea rax, [rip+.L1357]
     mov rsi, rax
     mov qword ptr [rbx+0], rsi
     mov qword ptr [rbx+8], r12
     mov rsi, 0
     mov qword ptr [rbx+16], rsi
-    lea rax, [rip+.L1357]
+    lea rax, [rip+.L1358]
     mov r13, rax
     call zyl_rt_envp
     mov rsi, rax
@@ -33401,21 +33495,21 @@ zy_local_x2Fmain_0__proc__pr_x2Dmtime:
     push r12
     and rsp, -16
     mov rbx, rsi
-.L1358_0:
+.L1359_0:
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_proc_stat@tpoff]
     mov r12, rax
     mov rsi, r12
     call zyl_rt_sys_4
     cmp rax, 0
-    je .L1358_1
+    je .L1359_1
     mov rax, 0
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
     mov rsp, rbp
     pop rbp
     ret
-.L1358_1:
+.L1359_1:
     mov rsi, qword ptr [r12+88]
     mov qword ptr [rbx+0], rsi
     mov rsi, qword ptr [r12+96]
@@ -33429,21 +33523,21 @@ zy_local_x2Fmain_0__proc__pr_x2Dmtime:
 zy_local_x2Fmain_0__proc__pr_x2Dcc_x2Dargv:
     # frame 0
     mov r8, rdx
-.L1359_0:
-    lea rax, [rip+.L1360]
+.L1360_0:
+    lea rax, [rip+.L1361]
     mov r9, rax
     mov qword ptr [rdi+0], r9
-    lea rax, [rip+.L1361]
+    lea rax, [rip+.L1362]
     mov r9, rax
     mov qword ptr [rdi+8], r9
     mov qword ptr [rdi+16], rsi
-    lea rax, [rip+.L1362]
+    lea rax, [rip+.L1363]
     mov rsi, rax
     mov qword ptr [rdi+24], rsi
     mov rsi, 4
     lea r9, [rsi*8]
     add r9, rdi
-    lea rax, [rip+.L1363]
+    lea rax, [rip+.L1364]
     mov r10, rax
     mov qword ptr [r9+0], r10
     lea r9, [rsi+1]
@@ -33453,7 +33547,7 @@ zy_local_x2Fmain_0__proc__pr_x2Dcc_x2Dargv:
     lea r8, [rsi+2]
     shl r8, 3
     add r8, rdi
-    lea rax, [rip+.L1364]
+    lea rax, [rip+.L1365]
     mov r9, rax
     mov qword ptr [r8+0], r9
     add rsi, 3
@@ -33471,31 +33565,31 @@ zy_local_x2Fmain_0__proc__pr_x2Dout_x2Dpath:
     push r13
     mov rbx, rdi
     mov r12, rsi
-.L1365_0:
+.L1366_0:
     mov rdi, rbx
     call zy_local_x2Fmain_0__base__rt_x2Dstrlen
     mov r13, rax
     cmp r13, 2
-    jl .L1365_1
+    jl .L1366_1
     lea rsi, [r13-2]
     add rsi, rbx
     movzx eax, byte ptr [rsi+0]
     cmp rax, 46
-    jne .L1365_1
+    jne .L1366_1
     lea rsi, [r13-1]
     add rsi, rbx
     movzx eax, byte ptr [rsi+0]
     cmp rax, 115
-    jne .L1365_1
+    jne .L1366_1
     lea rax, [r13-2]
     cmp rax, 512
-    jl .L1365_2
+    jl .L1366_2
     mov rax, 0
     pop r13
     pop r12
     pop rbx
     ret
-.L1365_2:
+.L1366_2:
     lea rsi, [r13-2]
     mov rdi, r12
     mov rdx, rsi
@@ -33511,22 +33605,22 @@ zy_local_x2Fmain_0__proc__pr_x2Dout_x2Dpath:
     pop r12
     pop rbx
     ret
-.L1365_1:
+.L1366_1:
     lea rax, [r13+4]
     cmp rax, 512
-    jl .L1365_3
+    jl .L1366_3
     mov rax, 0
     pop r13
     pop r12
     pop rbx
     ret
-.L1365_3:
+.L1366_3:
     mov rdi, r12
     mov rsi, rbx
     mov rdx, r13
     call zy_local_x2Fmain_0__base__rt_x2Dcopy
     lea rdi, [r12+r13]
-    lea rax, [rip+.L1366]
+    lea rax, [rip+.L1367]
     mov rsi, rax
     mov r8, 5
     mov rdx, r8
@@ -33541,15 +33635,15 @@ zyl_cc_compile:
     # frame 16
     push rbx
     push r12
-.L1367_0:
+.L1368_0:
     mov rbx, rdi
     cmp rbx, 0
-    jne .L1367_1
+    jne .L1368_1
     mov rax, -1
     pop r12
     pop rbx
     ret
-.L1367_1:
+.L1368_1:
     call zyl_out_flush
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_proc_scratch@tpoff]
@@ -33558,18 +33652,18 @@ zyl_cc_compile:
     mov rdi, rbx
     call zy_local_x2Fmain_0__proc__pr_x2Dout_x2Dpath
     cmp rax, 0
-    jne .L1367_2
+    jne .L1368_2
     mov rax, -1
     pop r12
     pop rbx
     ret
-.L1367_2:
+.L1368_2:
     lea rdi, [r12+16]
     lea rsi, [r12+80]
     mov rdx, rsi
     mov rsi, rbx
     call zy_local_x2Fmain_0__proc__pr_x2Dcc_x2Dargv
-    lea rax, [rip+.L1368]
+    lea rax, [rip+.L1369]
     mov rsi, rax
     lea rdi, [r12+16]
     mov r8, 0
@@ -33590,20 +33684,20 @@ zyl_cc_compile_log:
     push rbx
     push r12
     push r13
-.L1369_0:
+.L1370_0:
     mov rbx, rdi
     mov r12, rsi
     cmp rbx, 0
-    je .L1369_2
+    je .L1370_2
     cmp r12, 0
-    jne .L1369_1
-.L1369_2:
+    jne .L1370_1
+.L1370_2:
     mov rax, -1
     pop r13
     pop r12
     pop rbx
     ret
-.L1369_1:
+.L1370_1:
     call zyl_out_flush
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_proc_scratch@tpoff]
@@ -33612,19 +33706,19 @@ zyl_cc_compile_log:
     mov rdi, rbx
     call zy_local_x2Fmain_0__proc__pr_x2Dout_x2Dpath
     cmp rax, 0
-    jne .L1369_3
+    jne .L1370_3
     mov rax, -1
     pop r13
     pop r12
     pop rbx
     ret
-.L1369_3:
+.L1370_3:
     lea rdi, [r13+16]
     lea rsi, [r13+80]
     mov rdx, rsi
     mov rsi, rbx
     call zy_local_x2Fmain_0__proc__pr_x2Dcc_x2Dargv
-    lea rax, [rip+.L1370]
+    lea rax, [rip+.L1371]
     mov rsi, rax
     lea rdi, [r13+16]
     mov r8, 1
@@ -33643,15 +33737,15 @@ zyl_run_bin:
     # frame 16
     push rbx
     push r12
-.L1371_0:
+.L1372_0:
     mov rbx, rdi
     cmp rbx, 0
-    jne .L1371_1
+    jne .L1372_1
     mov rax, -1
     pop r12
     pop rbx
     ret
-.L1371_1:
+.L1372_1:
     call zyl_out_flush
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_proc_scratch@tpoff]
@@ -33674,7 +33768,7 @@ zyl_run_bin:
     jmp zy_local_x2Fmain_0__proc__pr_x2Dwait
 zy_local_x2Fmain_0__start__sr_x2Dult:
     # frame 0
-.L1372_0:
+.L1373_0:
     mov r8, -9223372036854775808
     xor rdi, r8
     mov r8, -9223372036854775808
@@ -33692,7 +33786,7 @@ zy_local_x2Fmain_0__start__sr_x2Draise_x2Dstack_x2Dlimit:
     push rbx
     and rsp, -16
     sub rsp, 16
-.L1373_0:
+.L1374_0:
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_start_rlimit@tpoff]
     mov rbx, rax
@@ -33700,12 +33794,12 @@ zy_local_x2Fmain_0__start__sr_x2Draise_x2Dstack_x2Dlimit:
     mov rsi, rbx
     call zyl_rt_sys_97
     cmp rax, 0
-    jne .L1373_1
+    jne .L1374_1
     mov rdi, qword ptr [rbx+0]
     mov rsi, qword ptr [rbx+8]
     call zy_local_x2Fmain_0__start__sr_x2Dult
     cmp rax, 0
-    je .L1373_1
+    je .L1374_1
     mov rsi, qword ptr [rbx+8]
     mov qword ptr [rbx+0], rsi
     mov rdi, 3
@@ -33716,7 +33810,7 @@ zy_local_x2Fmain_0__start__sr_x2Draise_x2Dstack_x2Dlimit:
     mov rsp, rbp
     pop rbp
     ret
-.L1373_1:
+.L1374_1:
     mov rax, 0
     mov rbx, qword ptr [rbp-8]
     mov rsp, rbp
@@ -33729,7 +33823,7 @@ zy_local_x2Fmain_0__start__sr_x2Dguard_x2Dinit:
     push rbx
     and rsp, -16
     sub rsp, 16
-.L1374_0:
+.L1375_0:
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_start_guard@tpoff]
     mov rbx, rax
@@ -33740,16 +33834,16 @@ zy_local_x2Fmain_0__start__sr_x2Dguard_x2Dinit:
     call zyl_rt_sys_318
     mov rsi, rax
     cmp rsi, -4
-    jne .L1374_1
-    jmp .L1374_0
-.L1374_1:
+    jne .L1375_1
+    jmp .L1375_0
+.L1375_1:
     cmp rsi, 8
-    jne .L1374_2
+    jne .L1375_2
     mov rdi, qword ptr [rbx+0]
-    jmp .L1374_3
-.L1374_2:
+    jmp .L1375_3
+.L1375_2:
     mov rdi, 0
-.L1374_3:
+.L1375_3:
     call zyl_rt_guard_set
     mov rbx, qword ptr [rbp-8]
     mov rsp, rbp
@@ -33761,12 +33855,12 @@ zyl_ensure_arenas:
     push rbp
     mov rbp, rsp
     and rsp, -16
-.L1375_0:
+.L1376_0:
     lea rax, [rip+zyl_rtg_start_once]
     mov rsi, rax
     mov rax, qword ptr [rsi+0]
     cmp rax, 0
-    jne .L1375_1
+    jne .L1376_1
     mov rdi, 1
     mov qword ptr [rsi+0], rdi
     call zy_local_x2Fmain_0__start__sr_x2Dguard_x2Dinit
@@ -33775,9 +33869,9 @@ zyl_ensure_arenas:
     mov rax, QWORD PTR [rip+zyl_runtime_cleanup@GOTPCREL]
     mov rdi, rax
     call zyl_rt_atexit
-    jmp .L1375_2
-.L1375_1:
-.L1375_2:
+    jmp .L1376_2
+.L1376_1:
+.L1376_2:
     mov rax, QWORD PTR [rip+zyl_actor_init@GOTPCREL]
     mov rdi, rax
     call zyl_rt_call0
@@ -33792,20 +33886,20 @@ zyl_runtime_cleanup:
     push rbp
     mov rbp, rsp
     and rsp, -16
-.L1376_0:
+.L1377_0:
     call zyl_out_flush
     call zyl_ffi_abandoned
     mov rsi, rax
     mov rdi, 4294967295
     and rsi, rdi
     cmp rsi, 0
-    jne .L1376_1
+    jne .L1377_1
     call zyl_arenas_destroy
     mov rax, 0
     mov rsp, rbp
     pop rbp
     ret
-.L1376_1:
+.L1377_1:
     mov rax, 0
     mov rsp, rbp
     pop rbp
@@ -33813,7 +33907,7 @@ zyl_runtime_cleanup:
 .globl zyl_term_flush
 zyl_term_flush:
     # frame 0
-.L1377_0:
+.L1378_0:
     jmp zyl_out_flush
 .globl zyl_term_atexit
 zyl_term_atexit:
@@ -33821,7 +33915,7 @@ zyl_term_atexit:
     push rbp
     mov rbp, rsp
     and rsp, -16
-.L1378_0:
+.L1379_0:
     mov rax, QWORD PTR [rip+zyl_term_restore_atexit@GOTPCREL]
     mov rdi, rax
     call zyl_rt_atexit
@@ -33834,16 +33928,16 @@ zy_local_x2Fmain_0__start__sr_x2Dlibc_x2Datexit:
     push rbp
     mov rbp, rsp
     and rsp, -16
-.L1379_0:
+.L1380_0:
     mov rax, QWORD PTR [rip+__cxa_atexit@GOTPCREL]
     mov rdi, rax
     lea rax, [rip+zyl_rtg_freestanding]
     mov rsi, rax
     mov rax, qword ptr [rsi+0]
     cmp rax, 0
-    jne .L1379_1
+    jne .L1380_1
     cmp rdi, 0
-    jle .L1379_1
+    jle .L1380_1
     mov rax, QWORD PTR [rip+zyl_rt_run_atexit@GOTPCREL]
     mov rsi, rax
     mov r8, 0
@@ -33854,40 +33948,40 @@ zy_local_x2Fmain_0__start__sr_x2Dlibc_x2Datexit:
     mov rsp, rbp
     pop rbp
     ret
-.L1379_1:
+.L1380_1:
     mov rax, 0
     mov rsp, rbp
     pop rbp
     ret
 zy_local_x2Fmain_0__chan__ch_x2Dg:
     # frame 0
-.L1380_0:
+.L1381_0:
     lea rax, [rip+zyl_rtg_chan_sched]
     mov rsi, rax
     mov rax, rsi
     ret
 zy_local_x2Fmain_0__chan__ch_x2Dlock:
     # frame 0
-.L1381_0:
+.L1382_0:
     lea rax, [rip+zyl_rtg_chan_sched]
     mov rdi, rax
     jmp zyl_rt_mutex_lock
 zy_local_x2Fmain_0__chan__ch_x2Dunlock:
     # frame 0
-.L1382_0:
+.L1383_0:
     lea rax, [rip+zyl_rtg_chan_sched]
     mov rdi, rax
     jmp zyl_rt_mutex_unlock
 zy_local_x2Fmain_0__chan__ch_x2Dwake:
     # frame 0
-.L1383_0:
+.L1384_0:
     lea rax, [rip+zyl_rtg_chan_sched]
     mov rdi, rax
     add rdi, 8
     jmp zyl_rt_cond_broadcast
 zy_local_x2Fmain_0__chan__ch_x2Dmode:
     # frame 0
-.L1384_0:
+.L1385_0:
     lea rax, [rip+zyl_rtg_chan_sched]
     mov rsi, rax
     mov rax, qword ptr [rsi+24]
@@ -33898,12 +33992,12 @@ zyl_chan_init:
     push rbx
     push r12
     push r13
-.L1385_0:
-    lea rax, [rip+.L1386]
+.L1386_0:
+    lea rax, [rip+.L1387]
     mov rdi, rax
     call zyl_rt_getenv
     mov rbx, rax
-    lea rax, [rip+.L1387]
+    lea rax, [rip+.L1388]
     mov rdi, rax
     call zyl_rt_getenv
     mov r12, rax
@@ -33922,23 +34016,23 @@ zyl_chan_init:
     lea rax, [rip+zyl_rtg_chan_sched]
     mov r13, rax
     cmp rbx, 0
-    jle .L1385_1
-    lea rax, [rip+.L1388]
+    jle .L1386_1
+    lea rax, [rip+.L1389]
     mov rsi, rax
     mov rdi, rbx
     call zy_local_x2Fmain_0__base__rt_x2Dstrcmp
     cmp rax, 0
-    jne .L1385_1
+    jne .L1386_1
     mov rsi, 2
-    jmp .L1385_2
-.L1385_1:
+    jmp .L1386_2
+.L1386_1:
     mov rdi, 3
     cmp r12, 0
-    jg .L1385_3
+    jg .L1386_3
     mov rdi, 1
-.L1385_3:
+.L1386_3:
     mov rsi, rdi
-.L1385_2:
+.L1386_2:
     mov qword ptr [r13+24], rsi
     mov rax, rsi
     pop r13
@@ -33947,32 +34041,32 @@ zyl_chan_init:
     ret
 zy_local_x2Fmain_0__chan__ch_x2Ddigits:
     # frame 0
-.L1389_0:
+.L1390_0:
     cmp rdi, 0
-    jne .L1389_1
-.L1389_3:
+    jne .L1390_1
+.L1390_3:
     mov rax, 0
     ret
 .p2align 4
-.L1389_1:
+.L1390_1:
     movzx r8d, byte ptr [rdi+0]
     cmp r8, 48
-    jl .L1389_2
+    jl .L1390_2
     cmp r8, 57
-    jg .L1389_2
+    jg .L1390_2
     add rdi, 1
     imul rsi, rsi, 10
     sub r8, 48
     add rsi, r8
     cmp rdi, 0
-    jne .L1389_1
-    jmp .L1389_3
-.L1389_2:
+    jne .L1390_1
+    jmp .L1390_3
+.L1390_2:
     mov rax, rsi
     ret
 zy_local_x2Fmain_0__chan__ch_x2Ddet_x2Dp:
     # frame 0
-.L1390_0:
+.L1391_0:
     lea rax, [rip+zyl_rtg_chan_sched]
     mov rsi, rax
     mov rsi, qword ptr [rsi+24]
@@ -33988,17 +34082,17 @@ zy_local_x2Fmain_0__chan__ch_x2Dchaos:
     push rbp
     mov rbp, rsp
     and rsp, -16
-.L1391_0:
+.L1392_0:
     lea rax, [rip+zyl_rtg_chan_sched]
     mov rsi, rax
     mov rax, qword ptr [rsi+24]
     cmp rax, 3
-    je .L1391_1
+    je .L1392_1
     mov rax, 0
     mov rsp, rbp
     pop rbp
     ret
-.L1391_1:
+.L1392_1:
     lea rax, [rip+zyl_rtg_chan_sched]
     mov rsi, rax
     add rsi, 48
@@ -34018,19 +34112,19 @@ zy_local_x2Fmain_0__chan__ch_x2Dchaos:
     mov rsi, rax
     and rsi, 7
     cmp rsi, 4
-    jge .L1391_2
+    jge .L1392_2
     mov rax, 0
     mov rsp, rbp
     pop rbp
     ret
-.L1391_2:
+.L1392_2:
     cmp rsi, 6
-    jge .L1391_3
+    jge .L1392_3
     call zyl_rt_sys_24
     mov rsp, rbp
     pop rbp
     ret
-.L1391_3:
+.L1392_3:
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_chan_ts@tpoff]
     mov rdi, rax
@@ -34038,9 +34132,9 @@ zy_local_x2Fmain_0__chan__ch_x2Dchaos:
     mov qword ptr [rdi+0], r8
     mov r8, 20000
     cmp rsi, 6
-    je .L1391_4
+    je .L1392_4
     mov r8, 200000
-.L1391_4:
+.L1392_4:
     mov qword ptr [rdi+8], r8
     mov rsi, 0
     call zyl_rt_sys_35
@@ -34049,7 +34143,7 @@ zy_local_x2Fmain_0__chan__ch_x2Dchaos:
     ret
 zy_local_x2Fmain_0__chan__ch_x2Dmix:
     # frame 0
-.L1392_0:
+.L1393_0:
     mov rsi, 30
     mov rax, rdi
     mov rcx, rsi
@@ -34088,7 +34182,7 @@ zy_local_x2Fmain_0__chan__ch_x2Dmix:
     ret
 zy_local_x2Fmain_0__chan__ch_x2Dshr:
     # frame 0
-.L1393_0:
+.L1394_0:
     mov rax, rdi
     mov rcx, rsi
     mov rdx, rcx
@@ -34099,7 +34193,7 @@ zy_local_x2Fmain_0__chan__ch_x2Dshr:
     ret
 zy_local_x2Fmain_0__chan__ch_x2Drec:
     # frame 0
-.L1394_0:
+.L1395_0:
     lea rax, [rip+zyl_rtg_chan_owners]
     mov rsi, rax
     shl rdi, 5
@@ -34108,10 +34202,10 @@ zy_local_x2Fmain_0__chan__ch_x2Drec:
     ret
 zy_local_x2Fmain_0__chan__ch_x2Dready_x2Dp:
     # frame 0
-.L1395_0:
+.L1396_0:
     cmp rdi, 1
-    jne .L1395_1
-.L1395_5:
+    jne .L1396_1
+.L1396_5:
     mov r8, qword ptr [rsi+24]
     mov r9, qword ptr [rsi+8]
     mov rax, r8
@@ -34120,15 +34214,15 @@ zy_local_x2Fmain_0__chan__ch_x2Dready_x2Dp:
     setl al
     movzx rax, al
     ret
-.L1395_1:
+.L1396_1:
     cmp rdi, 2
-    jne .L1395_2
+    jne .L1396_2
     mov rax, qword ptr [rsi+24]
     cmp rax, 0
-    jle .L1395_3
+    jle .L1396_3
     mov rax, 1
     ret
-.L1395_3:
+.L1396_3:
     mov r8, qword ptr [rsi+32]
     mov rax, r8
     cmp rax, 1
@@ -34137,9 +34231,9 @@ zy_local_x2Fmain_0__chan__ch_x2Dready_x2Dp:
     mov r8, rax
     mov rax, r8
     ret
-.L1395_2:
+.L1396_2:
     cmp rdi, 3
-    jne .L1395_4
+    jne .L1396_4
     mov rdi, rsi
     call zy_local_x2Fmain_0__chan__ch_x2Drec
     mov rsi, rax
@@ -34151,18 +34245,18 @@ zy_local_x2Fmain_0__chan__ch_x2Dready_x2Dp:
     mov rsi, rax
     mov rax, rsi
     ret
-.L1395_4:
+.L1396_4:
     mov rax, 1
     ret
 zy_local_x2Fmain_0__chan__ch_x2Dlive_x2Dp:
     # frame 0
-.L1396_0:
+.L1397_0:
     cmp rdi, 1
-    jne .L1396_1
-.L1396_2:
+    jne .L1397_1
+.L1397_2:
     mov rax, 1
     ret
-.L1396_1:
+.L1397_1:
     call zy_local_x2Fmain_0__chan__ch_x2Drec
     mov rsi, rax
     mov rsi, qword ptr [rsi+0]
@@ -34180,17 +34274,17 @@ zy_local_x2Fmain_0__chan__ch_x2Dprogress_x2Dp:
     push r13
     mov rbx, rdi
     mov r12, rsi
-.L1397_0:
+.L1398_0:
     cmp rbx, r12
-    jle .L1397_1
-.L1397_3:
+    jle .L1398_1
+.L1398_3:
     mov rax, 0
     pop r13
     pop r12
     pop rbx
     ret
 .p2align 4
-.L1397_1:
+.L1398_1:
     lea rax, [rip+zyl_rtg_chan_owners]
     mov r13, rax
     mov rsi, rbx
@@ -34199,22 +34293,22 @@ zy_local_x2Fmain_0__chan__ch_x2Dprogress_x2Dp:
     mov rdi, rbx
     call zy_local_x2Fmain_0__chan__ch_x2Dlive_x2Dp
     cmp rax, 0
-    je .L1397_2
+    je .L1398_2
     mov rdi, qword ptr [r13+8]
     mov rsi, qword ptr [r13+16]
     call zy_local_x2Fmain_0__chan__ch_x2Dready_x2Dp
     cmp rax, 0
-    je .L1397_2
+    je .L1398_2
     mov rax, 1
     pop r13
     pop r12
     pop rbx
     ret
-.L1397_2:
+.L1398_2:
     add rbx, 1
     cmp rbx, r12
-    jle .L1397_1
-    jmp .L1397_3
+    jle .L1398_1
+    jmp .L1398_3
 zy_local_x2Fmain_0__chan__ch_x2Dwait:
     # frame 32
     push rbx
@@ -34223,16 +34317,16 @@ zy_local_x2Fmain_0__chan__ch_x2Dwait:
     push r14
     mov rbx, rdi
     mov r12, rsi
-.L1398_0:
+.L1399_0:
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_owner_id@tpoff]
     mov rsi, rax
     mov rsi, qword ptr [rsi+0]
     mov rdi, 1
     cmp rsi, 0
-    je .L1398_1
+    je .L1399_1
     mov rdi, rsi
-.L1398_1:
+.L1399_1:
     mov r13, rdi
     lea rax, [rip+zyl_rtg_chan_owners]
     mov r14, rax
@@ -34243,18 +34337,18 @@ zy_local_x2Fmain_0__chan__ch_x2Dwait:
     mov rsi, r12
     call zy_local_x2Fmain_0__chan__ch_x2Dready_x2Dp
     cmp rax, 0
-    je .L1398_2
+    je .L1399_2
     lea rax, [rip+zyl_rtg_chan_sched]
     mov rsi, rax
     mov rax, qword ptr [rsi+24]
     cmp rax, 2
-    jne .L1398_3
+    jne .L1399_3
     lea rax, [rip+zyl_rtg_chan_sched]
     mov rsi, rax
     mov rax, qword ptr [rsi+32]
     cmp rax, r13
-    jne .L1398_2
-.L1398_3:
+    jne .L1399_2
+.L1399_3:
     mov rsi, 0
     mov qword ptr [r14+8], rsi
     mov rax, rsi
@@ -34263,7 +34357,7 @@ zy_local_x2Fmain_0__chan__ch_x2Dwait:
     pop r12
     pop rbx
     ret
-.L1398_2:
+.L1399_2:
     mov qword ptr [r14+8], rbx
     mov qword ptr [r14+16], r12
     call zy_local_x2Fmain_0__chan__ch_x2Dcheck
@@ -34271,44 +34365,44 @@ zy_local_x2Fmain_0__chan__ch_x2Dwait:
     mov rsi, rax
     mov rax, qword ptr [rsi+24]
     cmp rax, 2
-    jne .L1398_4
+    jne .L1399_4
     lea rax, [rip+zyl_rtg_chan_sched]
     mov rsi, rax
     mov rax, qword ptr [rsi+32]
     cmp rax, r13
-    jne .L1398_4
+    jne .L1399_4
     mov rdi, r13
     call zy_local_x2Fmain_0__chan__ch_x2Dpass
-    jmp .L1398_5
-.L1398_4:
-.L1398_5:
+    jmp .L1399_5
+.L1399_4:
+.L1399_5:
     lea rax, [rip+zyl_rtg_chan_sched]
     mov rdi, rax
     add rdi, 8
     lea rax, [rip+zyl_rtg_chan_sched]
     mov rsi, rax
     call zyl_rt_cond_wait
-    jmp .L1398_0
+    jmp .L1399_0
 zy_local_x2Fmain_0__chan__ch_x2Dcheck:
     # frame 0
-.L1399_0:
+.L1400_0:
     mov rdi, 1
     lea rax, [rip+zyl_rtg_chan_sched]
     mov rsi, rax
     mov rsi, qword ptr [rsi+16]
     call zy_local_x2Fmain_0__chan__ch_x2Dprogress_x2Dp
     cmp rax, 0
-    je .L1399_1
+    je .L1400_1
     mov rax, 0
     ret
-.L1399_1:
+.L1400_1:
     jmp zy_local_x2Fmain_0__chan__ch_x2Ddeadlock
 zy_local_x2Fmain_0__chan__ch_x2Dpass:
     # frame 16
     push rbx
     push r12
     mov rbx, rdi
-.L1400_0:
+.L1401_0:
     lea rax, [rip+zyl_rtg_chan_sched]
     mov rsi, rax
     mov r12, qword ptr [rsi+16]
@@ -34321,11 +34415,11 @@ zy_local_x2Fmain_0__chan__ch_x2Dpass:
     call zy_local_x2Fmain_0__chan__ch_x2Dnext_x2Dready
     mov rsi, rax
     cmp rsi, 0
-    je .L1400_1
+    je .L1401_1
     lea rax, [rip+zyl_rtg_chan_sched]
     mov rdi, rax
     mov qword ptr [rdi+32], rsi
-.L1400_1:
+.L1401_1:
     lea rax, [rip+zyl_rtg_chan_sched]
     mov rdi, rax
     add rdi, 8
@@ -34334,13 +34428,13 @@ zy_local_x2Fmain_0__chan__ch_x2Dpass:
     jmp zyl_rt_cond_broadcast
 zy_local_x2Fmain_0__chan__ch_x2Dsucc:
     # frame 0
-.L1401_0:
+.L1402_0:
     cmp rdi, rsi
-    jl .L1401_1
-.L1401_2:
+    jl .L1402_1
+.L1402_2:
     mov rax, 1
     ret
-.L1401_1:
+.L1402_1:
     lea rax, [rdi+1]
     ret
 zy_local_x2Fmain_0__chan__ch_x2Dnext_x2Dready:
@@ -34352,10 +34446,10 @@ zy_local_x2Fmain_0__chan__ch_x2Dnext_x2Dready:
     mov rbx, rdi
     mov r12, rsi
     mov r13, rdx
-.L1402_0:
+.L1403_0:
     cmp rbx, r12
-    jne .L1402_1
-.L1402_4:
+    jne .L1403_1
+.L1403_4:
     mov rax, 0
     pop r14
     pop r13
@@ -34363,7 +34457,7 @@ zy_local_x2Fmain_0__chan__ch_x2Dnext_x2Dready:
     pop rbx
     ret
 .p2align 4
-.L1402_1:
+.L1403_1:
     lea rax, [rip+zyl_rtg_chan_owners]
     mov r14, rax
     mov rsi, rbx
@@ -34372,31 +34466,31 @@ zy_local_x2Fmain_0__chan__ch_x2Dnext_x2Dready:
     mov rdi, rbx
     call zy_local_x2Fmain_0__chan__ch_x2Dlive_x2Dp
     cmp rax, 0
-    je .L1402_2
+    je .L1403_2
     mov rdi, qword ptr [r14+8]
     mov rsi, qword ptr [r14+16]
     call zy_local_x2Fmain_0__chan__ch_x2Dready_x2Dp
     cmp rax, 0
-    je .L1402_2
+    je .L1403_2
     mov rax, rbx
     pop r14
     pop r13
     pop r12
     pop rbx
     ret
-.L1402_2:
+.L1403_2:
     mov rsi, 1
     cmp rbx, r13
-    jge .L1402_3
+    jge .L1403_3
     lea rsi, [rbx+1]
-.L1402_3:
+.L1403_3:
     mov rbx, rsi
     cmp rbx, r12
-    jne .L1402_1
-    jmp .L1402_4
+    jne .L1403_1
+    jmp .L1403_4
 zy_local_x2Fmain_0__chan__ch_x2Ddeadlock:
     # frame 0
-.L1403_0:
+.L1404_0:
     mov rsi, 1
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_owner_id@tpoff]
@@ -34408,7 +34502,7 @@ zy_local_x2Fmain_0__chan__ch_x2Ddeadlock:
     mov rsi, qword ptr [rsi+16]
     call zy_local_x2Fmain_0__chan__ch_x2Demit_x2Dall
     call zyl_out_flush
-    lea rax, [rip+.L1404]
+    lea rax, [rip+.L1405]
     mov rdi, rax
     call zyl_err_puts
     mov rdi, 1
@@ -34419,22 +34513,22 @@ zy_local_x2Fmain_0__chan__ch_x2Demit_x2Dall:
     push r12
     mov rbx, rdi
     mov r12, rsi
-.L1405_0:
+.L1406_0:
     cmp rbx, r12
-    jle .L1405_1
-.L1405_2:
+    jle .L1406_1
+.L1406_2:
     mov rax, 0
     pop r12
     pop rbx
     ret
 .p2align 4
-.L1405_1:
+.L1406_1:
     mov rdi, rbx
     call zyl_out_actor_emit
     add rbx, 1
     cmp rbx, r12
-    jle .L1405_1
-    jmp .L1405_2
+    jle .L1406_1
+    jmp .L1406_2
 .globl zyl_chan_exit
 zyl_chan_exit:
     # frame 16
@@ -34444,7 +34538,7 @@ zyl_chan_exit:
     and rsp, -16
     sub rsp, 16
     mov rbx, rdi
-.L1406_0:
+.L1407_0:
     call zyl_out_flush
     mov rax, QWORD PTR [rip+fflush@GOTPCREL]
     mov rdi, rax
@@ -34452,14 +34546,14 @@ zyl_chan_exit:
     mov rsi, rax
     mov rax, qword ptr [rsi+0]
     cmp rax, 0
-    jne .L1406_1
+    jne .L1407_1
     cmp rdi, 0
-    jle .L1406_1
+    jle .L1407_1
     mov rsi, 0
     call zyl_rt_call1
-    jmp .L1406_2
-.L1406_1:
-.L1406_2:
+    jmp .L1407_2
+.L1407_1:
+.L1407_2:
     mov rdi, rbx
     mov rbx, qword ptr [rbp-8]
     mov rsp, rbp
@@ -34467,17 +34561,17 @@ zyl_chan_exit:
     jmp zyl_rt_sys_231
 zy_local_x2Fmain_0__chan__ch_x2Dmagic:
     # frame 0
-.L1407_0:
+.L1408_0:
     mov rax, 1514357326
     ret
 zy_local_x2Fmain_0__chan__tx_x2Dmagic:
     # frame 0
-.L1408_0:
+.L1409_0:
     mov rax, 1514363992
     ret
 zy_local_x2Fmain_0__chan__rx_x2Dmagic:
     # frame 0
-.L1409_0:
+.L1410_0:
     mov rax, 1514360920
     ret
 zy_local_x2Fmain_0__chan__ch_x2Dpanic:
@@ -34485,7 +34579,7 @@ zy_local_x2Fmain_0__chan__ch_x2Dpanic:
     push rbp
     mov rbp, rsp
     and rsp, -16
-.L1410_0:
+.L1411_0:
     call zyl_panic
     mov rsp, rbp
     pop rbp
@@ -34498,7 +34592,7 @@ zy_local_x2Fmain_0__chan__ch_x2Dendpoint:
     mov rbx, rdi
     mov r12, rsi
     mov r13, rdx
-.L1411_0:
+.L1412_0:
     mov rdi, 24
     call zyl_heap_alloc
     mov rsi, rax
@@ -34518,32 +34612,13 @@ zyl_chan_new:
     push r13
     push r14
     mov rbx, rdi
-.L1412_0:
+.L1413_0:
     cmp rbx, 1
-    jl .L1412_2
-.L1412_5:
+    jl .L1413_2
+.L1413_5:
     cmp rbx, 16777216
-    jle .L1412_1
-.L1412_2:
-    lea rax, [rip+.L1413]
-    mov rdi, rax
-    pop r14
-    pop r13
-    pop r12
-    pop rbx
-    jmp zyl_panic
-.L1412_1:
-    mov rdi, 64
-    call zyl_heap_alloc
-    mov r12, rax
-    lea rdi, [rbx*8]
-    call zyl_heap_alloc
-    mov r13, rax
-    cmp r12, 0
-    je .L1412_4
-    cmp r13, 0
-    jne .L1412_3
-.L1412_4:
+    jle .L1413_1
+.L1413_2:
     lea rax, [rip+.L1414]
     mov rdi, rax
     pop r14
@@ -34551,7 +34626,26 @@ zyl_chan_new:
     pop r12
     pop rbx
     jmp zyl_panic
-.L1412_3:
+.L1413_1:
+    mov rdi, 64
+    call zyl_heap_alloc
+    mov r12, rax
+    lea rdi, [rbx*8]
+    call zyl_heap_alloc
+    mov r13, rax
+    cmp r12, 0
+    je .L1413_4
+    cmp r13, 0
+    jne .L1413_3
+.L1413_4:
+    lea rax, [rip+.L1415]
+    mov rdi, rax
+    pop r14
+    pop r13
+    pop r12
+    pop rbx
+    jmp zyl_panic
+.L1413_3:
     call zyl_owner_self
     mov r14, rax
     mov rsi, 1514357326
@@ -34587,13 +34681,13 @@ zyl_chan_new:
 .globl zyl_chan_tx
 zyl_chan_tx:
     # frame 0
-.L1415_0:
+.L1416_0:
     mov rax, qword ptr [rdi+40]
     ret
 .globl zyl_chan_rx
 zyl_chan_rx:
     # frame 0
-.L1416_0:
+.L1417_0:
     mov rax, qword ptr [rdi+48]
     ret
 zy_local_x2Fmain_0__chan__ch_x2Dendpoint_x2Dp:
@@ -34602,57 +34696,57 @@ zy_local_x2Fmain_0__chan__ch_x2Dendpoint_x2Dp:
     push r12
     push r13
     mov rbx, rdi
-.L1417_0:
+.L1418_0:
     mov rdi, rbx
     call zyl_heap_block_p
     cmp rax, 0
-    je .L1417_2
+    je .L1418_2
     lea rdi, [rbx+16]
     call zyl_heap_block_p
     cmp rax, 0
-    jne .L1417_1
-.L1417_2:
+    jne .L1418_1
+.L1418_2:
     mov rax, 0
     pop r13
     pop r12
     pop rbx
     ret
-.L1417_1:
+.L1418_1:
     mov r12, qword ptr [rbx+0]
     cmp r12, 1514363992
-    je .L1417_3
+    je .L1418_3
     cmp r12, 1514360920
-    je .L1417_3
+    je .L1418_3
     mov rax, 0
     pop r13
     pop r12
     pop rbx
     ret
-.L1417_3:
+.L1418_3:
     mov r13, qword ptr [rbx+8]
     mov rdi, r13
     call zyl_heap_block_p
     cmp rax, 0
-    je .L1417_5
+    je .L1418_5
     lea rdi, [r13+56]
     call zyl_heap_block_p
     cmp rax, 0
-    jne .L1417_4
-.L1417_5:
+    jne .L1418_4
+.L1418_5:
     mov rax, 0
     pop r13
     pop r12
     pop rbx
     ret
-.L1417_4:
+.L1418_4:
     mov rax, qword ptr [r13+0]
     cmp rax, 1514357326
-    jne .L1417_6
+    jne .L1418_6
     mov rsi, 40
     cmp r12, 1514363992
-    je .L1417_7
+    je .L1418_7
     mov rsi, 48
-.L1417_7:
+.L1418_7:
     add rsi, r13
     mov rsi, qword ptr [rsi+0]
     mov rax, rsi
@@ -34664,7 +34758,7 @@ zy_local_x2Fmain_0__chan__ch_x2Dendpoint_x2Dp:
     pop r12
     pop rbx
     ret
-.L1417_6:
+.L1418_6:
     mov rax, 0
     pop r13
     pop r12
@@ -34677,18 +34771,18 @@ zy_local_x2Fmain_0__chan__ch_x2Down_x2Dcheck:
     push rbx
     and rsp, -16
     sub rsp, 16
-.L1418_0:
+.L1419_0:
     mov rbx, qword ptr [rdi+16]
     call zyl_owner_self
     cmp rbx, rax
-    jne .L1418_1
+    jne .L1419_1
     mov rax, 0
     mov rbx, qword ptr [rbp-8]
     mov rsp, rbp
     pop rbp
     ret
-.L1418_1:
-    lea rax, [rip+.L1419]
+.L1419_1:
+    lea rax, [rip+.L1420]
     mov rdi, rax
     call zyl_panic
     mov rbx, qword ptr [rbp-8]
@@ -34703,7 +34797,7 @@ zyl_chan_send:
     push r13
     mov rbx, rdi
     mov r12, rsi
-.L1420_0:
+.L1421_0:
     call zy_local_x2Fmain_0__chan__ch_x2Dchaos
     mov rdi, rbx
     call zy_local_x2Fmain_0__chan__ch_x2Down_x2Dcheck
@@ -34711,12 +34805,12 @@ zyl_chan_send:
     call zy_local_x2Fmain_0__chan__ch_x2Dendpoint_x2Dp
     mov r13, rax
     cmp r13, 0
-    je .L1420_1
+    je .L1421_1
     mov rdi, r12
     call zy_local_x2Fmain_0__chan__ch_x2Down_x2Dcheck
-    jmp .L1420_2
-.L1420_1:
-.L1420_2:
+    jmp .L1421_2
+.L1421_1:
+.L1421_2:
     mov rbx, qword ptr [rbx+8]
     lea rax, [rip+zyl_rtg_chan_sched]
     mov rdi, rax
@@ -34725,12 +34819,12 @@ zyl_chan_send:
     mov rsi, rbx
     call zy_local_x2Fmain_0__chan__ch_x2Dwait
     cmp r13, 0
-    je .L1420_3
+    je .L1421_3
     mov rsi, 0
     mov qword ptr [r12+16], rsi
-    jmp .L1420_4
-.L1420_3:
-.L1420_4:
+    jmp .L1421_4
+.L1421_3:
+.L1421_4:
     mov rsi, qword ptr [rbx+16]
     mov rdi, qword ptr [rbx+24]
     add rsi, rdi
@@ -34766,7 +34860,7 @@ zyl_chan_recv:
     push rbx
     push r12
     mov rbx, rdi
-.L1421_0:
+.L1422_0:
     call zy_local_x2Fmain_0__chan__ch_x2Dchaos
     mov rdi, rbx
     call zy_local_x2Fmain_0__chan__ch_x2Down_x2Dcheck
@@ -34779,16 +34873,16 @@ zyl_chan_recv:
     call zy_local_x2Fmain_0__chan__ch_x2Dwait
     mov rax, qword ptr [rbx+24]
     cmp rax, 0
-    jne .L1421_1
+    jne .L1422_1
     lea rax, [rip+zyl_rtg_chan_sched]
     mov rdi, rax
     call zyl_rt_mutex_unlock
-    lea rax, [rip+.L1422]
+    lea rax, [rip+.L1423]
     mov rdi, rax
     pop r12
     pop rbx
     jmp zyl_panic
-.L1421_1:
+.L1422_1:
     mov rsi, qword ptr [rbx+16]
     mov rdi, qword ptr [rbx+56]
     lea r8, [rsi*8]
@@ -34809,16 +34903,16 @@ zyl_chan_recv:
     mov rdi, r12
     call zy_local_x2Fmain_0__chan__ch_x2Dendpoint_x2Dp
     cmp rax, 0
-    je .L1421_2
+    je .L1422_2
     mov rax, qword ptr [r12+16]
     cmp rax, 0
-    jne .L1421_2
+    jne .L1422_2
     call zyl_owner_self
     mov rsi, rax
     mov qword ptr [r12+16], rsi
-    jmp .L1421_3
-.L1421_2:
-.L1421_3:
+    jmp .L1422_3
+.L1422_2:
+.L1422_3:
     lea rax, [rip+zyl_rtg_chan_sched]
     mov rdi, rax
     add rdi, 8
@@ -34832,7 +34926,7 @@ zyl_chan_recv:
     ret
 zy_local_x2Fmain_0__chan__ch_x2Dreg:
     # frame 0
-.L1423_0:
+.L1424_0:
     lea rax, [rip+zyl_rtg_chan_reg]
     mov rsi, rax
     mov rax, rsi
@@ -34845,7 +34939,7 @@ zyl_chan_register:
     push r13
     push r14
     mov rbx, rdi
-.L1424_0:
+.L1425_0:
     lea rax, [rip+zyl_rtg_chan_reg]
     mov r12, rax
     lea rax, [rip+zyl_rtg_chan_sched]
@@ -34854,15 +34948,15 @@ zyl_chan_register:
     mov r13, qword ptr [r12+8]
     mov rax, qword ptr [r12+16]
     cmp r13, rax
-    jge .L1424_1
+    jge .L1425_1
     mov rsi, 1
-    jmp .L1424_2
-.L1424_1:
+    jmp .L1425_2
+.L1425_1:
     mov rdi, 64
     cmp r13, 0
-    je .L1424_3
+    je .L1425_3
     lea rdi, [r13*2]
-.L1424_3:
+.L1425_3:
     mov r14, rdi
     mov rdi, qword ptr [r12+0]
     lea r8, [r14*8]
@@ -34871,16 +34965,16 @@ zyl_chan_register:
     mov rdi, rax
     mov r8, 0
     cmp rdi, 0
-    je .L1424_4
+    je .L1425_4
     mov qword ptr [r12+0], rdi
     mov qword ptr [r12+16], r14
     mov r8, 1
-.L1424_4:
+.L1425_4:
     mov rsi, r8
-.L1424_2:
+.L1425_2:
     mov rax, rsi
     cmp rax, 0
-    je .L1424_5
+    je .L1425_5
     mov rsi, qword ptr [r12+0]
     lea rdi, [r13*8]
     add rsi, rdi
@@ -34894,11 +34988,11 @@ zyl_chan_register:
     pop r12
     pop rbx
     jmp zyl_rt_mutex_unlock
-.L1424_5:
+.L1425_5:
     lea rax, [rip+zyl_rtg_chan_sched]
     mov rdi, rax
     call zyl_rt_mutex_unlock
-    lea rax, [rip+.L1425]
+    lea rax, [rip+.L1426]
     mov rdi, rax
     pop r14
     pop r13
@@ -34907,15 +35001,15 @@ zyl_chan_register:
     jmp zyl_panic
 zy_local_x2Fmain_0__chan__ch_x2Dclose_x2Downed:
     # frame 0
-.L1426_0:
+.L1427_0:
     lea rax, [rip+zyl_rtg_chan_reg]
     mov r8, rax
     mov rax, qword ptr [r8+8]
     cmp rsi, rax
-    jl .L1426_1
+    jl .L1427_1
     mov rax, 0
     ret
-.L1426_1:
+.L1427_1:
     mov r8, qword ptr [r8+0]
     lea r9, [rsi*8]
     add r8, r9
@@ -34923,14 +35017,14 @@ zy_local_x2Fmain_0__chan__ch_x2Dclose_x2Downed:
     mov r9, qword ptr [r8+40]
     mov rax, qword ptr [r9+16]
     cmp rax, rdi
-    jne .L1426_2
+    jne .L1427_2
     mov r9, 1
     mov qword ptr [r8+32], r9
-    jmp .L1426_3
-.L1426_2:
-.L1426_3:
+    jmp .L1427_3
+.L1427_2:
+.L1427_3:
     add rsi, 1
-    jmp .L1426_0
+    jmp .L1427_0
 .globl zyl_chan_actor_spawn
 zyl_chan_actor_spawn:
     # frame 32
@@ -34940,7 +35034,7 @@ zyl_chan_actor_spawn:
     push r14
     mov rbx, rdi
     mov r12, rsi
-.L1427_0:
+.L1428_0:
     lea rax, [rip+zyl_rtg_chan_sched]
     mov rdi, rax
     call zyl_rt_mutex_lock
@@ -34963,15 +35057,15 @@ zyl_chan_actor_spawn:
     mov rsi, rax
     mov rax, qword ptr [rsi+16]
     cmp rbx, rax
-    jle .L1427_1
+    jle .L1428_1
     lea rax, [rip+zyl_rtg_chan_sched]
     mov rsi, rax
     mov qword ptr [rsi+16], rbx
-    jmp .L1427_2
-.L1427_1:
-.L1427_2:
+    jmp .L1428_2
+.L1428_1:
+.L1428_2:
     cmp r12, 0
-    je .L1427_3
+    je .L1428_3
     mov r13, 0
     lea rsi, [r12-8]
     mov r14, qword ptr [rsi+0]
@@ -34983,13 +35077,13 @@ zyl_chan_actor_spawn:
     mov rsi, r13
     mov r8, rbx
     call zy_local_x2Fmain_0__chan__ch_x2Dmove_x2Dwords
-.L1427_3:
+.L1428_3:
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_chan_moves@tpoff]
     mov rsi, rax
     mov r12, qword ptr [rsi+0]
     cmp r12, 0
-    je .L1427_4
+    je .L1428_4
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_chan_moves@tpoff]
     mov rsi, rax
@@ -35006,7 +35100,7 @@ zyl_chan_actor_spawn:
     mov rsi, r13
     mov r8, rbx
     call zy_local_x2Fmain_0__chan__ch_x2Dmove_x2Dwords
-.L1427_4:
+.L1428_4:
     lea rax, [rip+zyl_rtg_chan_sched]
     mov rdi, rax
     pop r14
@@ -35016,7 +35110,7 @@ zyl_chan_actor_spawn:
     jmp zyl_rt_mutex_unlock
 zy_local_x2Fmain_0__chan__ch_x2Dmoves:
     # frame 0
-.L1428_0:
+.L1429_0:
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_chan_moves@tpoff]
     mov rsi, rax
@@ -35025,7 +35119,7 @@ zy_local_x2Fmain_0__chan__ch_x2Dmoves:
 .globl zyl_chan_spawn_moves
 zyl_chan_spawn_moves:
     # frame 0
-.L1429_0:
+.L1430_0:
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_chan_moves@tpoff]
     mov rsi, rax
@@ -35047,10 +35141,10 @@ zy_local_x2Fmain_0__chan__ch_x2Dmove_x2Dwords:
     mov r13, rdx
     mov r14, rcx
     mov r15, r8
-.L1430_0:
+.L1431_0:
     cmp r12, r13
-    jl .L1430_1
-.L1430_4:
+    jl .L1431_1
+.L1431_4:
     mov rax, 0
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -35061,29 +35155,29 @@ zy_local_x2Fmain_0__chan__ch_x2Dmove_x2Dwords:
     pop rbp
     ret
 .p2align 4
-.L1430_1:
+.L1431_1:
     lea rsi, [r12*8]
     add rsi, qword ptr [rbp-48]
     mov rbx, qword ptr [rsi+0]
     mov rdi, rbx
     call zy_local_x2Fmain_0__chan__ch_x2Dendpoint_x2Dp
     cmp rax, 0
-    je .L1430_2
+    je .L1431_2
     mov rax, qword ptr [rbx+16]
     cmp rax, r14
-    jne .L1430_2
+    jne .L1431_2
     mov qword ptr [rbx+16], r15
-    jmp .L1430_3
-.L1430_2:
-.L1430_3:
+    jmp .L1431_3
+.L1431_2:
+.L1431_3:
     add r12, 1
     cmp r12, r13
-    jl .L1430_1
-    jmp .L1430_4
+    jl .L1431_1
+    jmp .L1431_4
 .globl zyl_chan_actor_enter
 zyl_chan_actor_enter:
     # frame 0
-.L1431_0:
+.L1432_0:
     call zy_local_x2Fmain_0__chan__ch_x2Dchaos
     lea rax, [rip+zyl_rtg_chan_sched]
     mov rdi, rax
@@ -35101,7 +35195,7 @@ zyl_chan_actor_done:
     push r12
     mov rbx, rdi
     mov r12, rsi
-.L1432_0:
+.L1433_0:
     lea rax, [rip+zyl_rtg_chan_sched]
     mov rdi, rax
     call zyl_rt_mutex_lock
@@ -35122,16 +35216,16 @@ zyl_chan_actor_done:
     mov rsi, rax
     mov rax, qword ptr [rsi+24]
     cmp rax, 2
-    jne .L1432_1
+    jne .L1433_1
     mov rdi, rbx
     call zy_local_x2Fmain_0__chan__ch_x2Dpass
-    jmp .L1432_2
-.L1432_1:
+    jmp .L1433_2
+.L1433_1:
     lea rax, [rip+zyl_rtg_chan_sched]
     mov rdi, rax
     add rdi, 8
     call zyl_rt_cond_broadcast
-.L1432_2:
+.L1433_2:
     lea rax, [rip+zyl_rtg_chan_sched]
     mov rdi, rax
     pop r12
@@ -35142,7 +35236,7 @@ zyl_chan_actor_join:
     # frame 16
     push rbx
     mov rbx, rdi
-.L1433_0:
+.L1434_0:
     lea rax, [rip+zyl_rtg_chan_sched]
     mov rdi, rax
     call zyl_rt_mutex_lock
@@ -35162,7 +35256,7 @@ zyl_chan_actor_join:
 .globl zyl_chan_main_done
 zyl_chan_main_done:
     # frame 0
-.L1434_0:
+.L1435_0:
     lea rax, [rip+zyl_rtg_chan_sched]
     mov rdi, rax
     call zyl_rt_mutex_lock
@@ -35178,19 +35272,19 @@ zyl_chan_main_done:
     jmp zyl_rt_mutex_unlock
 zy_local_x2Fmain_0__actor__ac_x2Dmax:
     # frame 0
-.L1435_0:
+.L1436_0:
     mov rax, 1024
     ret
 zy_local_x2Fmain_0__actor__ac_x2Dsys:
     # frame 0
-.L1436_0:
+.L1437_0:
     lea rax, [rip+zyl_rtg_actor_sys]
     mov rsi, rax
     mov rax, rsi
     ret
 zy_local_x2Fmain_0__actor__ac_x2Dslot:
     # frame 0
-.L1437_0:
+.L1438_0:
     lea rax, [rip+zyl_rtg_actor_slots]
     mov rsi, rax
     shl rdi, 5
@@ -35199,20 +35293,20 @@ zy_local_x2Fmain_0__actor__ac_x2Dslot:
     ret
 zy_local_x2Fmain_0__actor__ac_x2Dinited:
     # frame 0
-.L1438_0:
+.L1439_0:
     lea rax, [rip+zyl_rtg_actor_sys]
     mov rsi, rax
     mov rax, qword ptr [rsi+8]
     cmp rax, 0
-    jne .L1438_1
+    jne .L1439_1
     mov rax, 0
     ret
-.L1438_1:
+.L1439_1:
     mov rax, 1
     ret
 zy_local_x2Fmain_0__actor__ac_x2Dnext:
     # frame 0
-.L1439_0:
+.L1440_0:
     lea rax, [rip+zyl_rtg_actor_sys]
     mov rsi, rax
     mov rax, qword ptr [rsi+0]
@@ -35225,16 +35319,16 @@ zyl_actor_init:
     push rbx
     and rsp, -16
     sub rsp, 16
-.L1440_0:
+.L1441_0:
     call zy_local_x2Fmain_0__actor__ac_x2Dinited
     cmp rax, 0
-    je .L1440_1
+    je .L1441_1
     mov rax, 0
     mov rbx, qword ptr [rbp-8]
     mov rsp, rbp
     pop rbp
     ret
-.L1440_1:
+.L1441_1:
     lea rax, [rip+zyl_rtg_actor_sys]
     mov rbx, rax
     mov rsi, 0
@@ -35253,7 +35347,7 @@ zyl_actor_init:
 .globl zyl_actor_abandon
 zyl_actor_abandon:
     # frame 0
-.L1441_0:
+.L1442_0:
     lea rax, [rip+zyl_rtg_actor_sys]
     mov rsi, rax
     mov rdi, 1
@@ -35262,13 +35356,13 @@ zyl_actor_abandon:
     ret
 zy_local_x2Fmain_0__actor__ac_x2Dptr_x2Dp:
     # frame 0
-.L1442_0:
+.L1443_0:
     cmp rdi, 0
-    jge .L1442_1
-.L1442_2:
+    jge .L1443_1
+.L1443_2:
     mov rax, 1
     ret
-.L1442_1:
+.L1443_1:
     mov rax, rdi
     cmp rax, 4096
     setge al
@@ -35281,15 +35375,15 @@ zyl_actor_spawn:
     push r12
     mov rbx, rdi
     mov r12, rsi
-.L1443_0:
+.L1444_0:
     call zyl_actor_init
     mov rdi, rbx
     call zy_local_x2Fmain_0__actor__ac_x2Dptr_x2Dp
     cmp rax, 0
-    je .L1443_1
+    je .L1444_1
     mov rax, qword ptr [rbx+0]
     cmp rax, 2051230803
-    jne .L1443_1
+    jne .L1444_1
     mov rdi, qword ptr [rbx+8]
     mov rsi, qword ptr [rbx+16]
     mov r8, qword ptr [rbx+16]
@@ -35297,7 +35391,7 @@ zyl_actor_spawn:
     pop r12
     pop rbx
     jmp zy_local_x2Fmain_0__actor__ac_x2Dspawn
-.L1443_1:
+.L1444_1:
     mov rsi, 0
     mov rdi, rbx
     mov rdx, rsi
@@ -35308,7 +35402,7 @@ zyl_actor_spawn:
 .globl zyl_actor_id
 zyl_actor_id:
     # frame 0
-.L1444_0:
+.L1445_0:
     mov rax, rdi
     ret
 zy_local_x2Fmain_0__actor__ac_x2Dspawn:
@@ -35325,7 +35419,7 @@ zy_local_x2Fmain_0__actor__ac_x2Dspawn:
     mov rbx, rdi
     mov r12, rsi
     mov r13, rdx
-.L1445_0:
+.L1446_0:
     lea rax, [rip+zyl_rtg_actor_sys]
     mov rsi, rax
     mov rdi, 1
@@ -35335,8 +35429,8 @@ zy_local_x2Fmain_0__actor__ac_x2Dspawn:
     lock xadd qword ptr [rdx], rax
     mov r14, rax
     cmp r14, 1024
-    jl .L1445_1
-    lea rax, [rip+.L1446]
+    jl .L1446_1
+    lea rax, [rip+.L1447]
     mov rdi, rax
     call zyl_panic
     mov rbx, qword ptr [rbp-8]
@@ -35347,7 +35441,7 @@ zy_local_x2Fmain_0__actor__ac_x2Dspawn:
     mov rsp, rbp
     pop rbp
     ret
-.L1445_1:
+.L1446_1:
     mov rdi, r14
     call zy_local_x2Fmain_0__actor__ac_x2Dslot
     mov r15, rax
@@ -35372,12 +35466,12 @@ zy_local_x2Fmain_0__actor__ac_x2Dspawn:
     call zyl_rt_thread_create
     mov rsi, rax
     cmp rsi, 0
-    jne .L1445_2
+    jne .L1446_2
     lea rdi, [r14+2]
     mov r8, 0
     mov rsi, r8
     call zyl_chan_actor_done
-    lea rax, [rip+.L1447]
+    lea rax, [rip+.L1448]
     mov rdi, rax
     call zyl_panic
     mov rbx, qword ptr [rbp-8]
@@ -35388,7 +35482,7 @@ zy_local_x2Fmain_0__actor__ac_x2Dspawn:
     mov rsp, rbp
     pop rbp
     ret
-.L1445_2:
+.L1446_2:
     mov qword ptr [r15+16], rsi
     mov rax, r14
     mov rbx, qword ptr [rbp-8]
@@ -35402,7 +35496,7 @@ zy_local_x2Fmain_0__actor__ac_x2Dspawn:
 .globl zyl_actor_body
 zyl_actor_body:
     # frame 0
-.L1448_0:
+.L1449_0:
     call zyl_owner_self
     mov rdi, rax
     sub rdi, 2
@@ -35421,7 +35515,7 @@ zyl_actor_thread_entry:
     push r13
     and rsp, -16
     sub rsp, 16
-.L1449_0:
+.L1450_0:
     mov rsi, 4294967295
     mov rbx, rdi
     and rbx, rsi
@@ -35439,7 +35533,7 @@ zyl_actor_thread_entry:
     mov rdi, r12
     call zyl_rt_try_call
     cmp rax, 0
-    jne .L1449_1
+    jne .L1450_1
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_try_top@tpoff]
     mov rsi, rax
@@ -35454,29 +35548,29 @@ zyl_actor_thread_entry:
     mov rsp, rbp
     pop rbp
     jmp zyl_chan_actor_done
-.L1449_1:
+.L1450_1:
     mov rsi, qword ptr [r12+72]
     cmp rsi, 0
-    jne .L1449_2
-    lea rax, [rip+.L1450]
+    jne .L1450_2
+    lea rax, [rip+.L1451]
     mov rdi, rax
-    jmp .L1449_3
-.L1449_2:
+    jmp .L1450_3
+.L1450_2:
     mov rdi, rsi
-.L1449_3:
+.L1450_3:
     call zy_local_x2Fmain_0__heap__rt_x2Dstrdup
     mov r13, rax
     mov rdi, r12
     call zyl_rt_free
     lea rdi, [rbx+2]
     cmp r13, 0
-    jne .L1449_4
-    lea rax, [rip+.L1451]
+    jne .L1450_4
+    lea rax, [rip+.L1452]
     mov rsi, rax
-    jmp .L1449_5
-.L1449_4:
+    jmp .L1450_5
+.L1450_4:
     mov rsi, r13
-.L1449_5:
+.L1450_5:
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
     mov r13, qword ptr [rbp-24]
@@ -35487,24 +35581,24 @@ zy_local_x2Fmain_0__actor__ac_x2Dvalid:
     # frame 16
     push rbx
     mov rbx, rdi
-.L1452_0:
+.L1453_0:
     call zy_local_x2Fmain_0__actor__ac_x2Dinited
     cmp rax, 0
-    je .L1452_1
+    je .L1453_1
     cmp rbx, 0
-    jl .L1452_2
+    jl .L1453_2
     lea rax, [rip+zyl_rtg_actor_sys]
     mov rsi, rax
     mov rax, qword ptr [rsi+0]
     cmp rax, 1024
-    jle .L1452_3
+    jle .L1453_3
     mov rsi, 1024
-    jmp .L1452_4
-.L1452_3:
+    jmp .L1453_4
+.L1453_3:
     lea rax, [rip+zyl_rtg_actor_sys]
     mov rdi, rax
     mov rsi, qword ptr [rdi+0]
-.L1452_4:
+.L1453_4:
     mov rax, rbx
     mov rcx, rsi
     cmp rax, rcx
@@ -35512,11 +35606,11 @@ zy_local_x2Fmain_0__actor__ac_x2Dvalid:
     movzx rax, al
     pop rbx
     ret
-.L1452_2:
+.L1453_2:
     mov rax, 0
     pop rbx
     ret
-.L1452_1:
+.L1453_1:
     mov rax, 0
     pop rbx
     ret
@@ -35527,29 +35621,29 @@ zyl_actor_wait:
     push r12
     push r13
     mov rbx, rdi
-.L1453_0:
+.L1454_0:
     mov rdi, rbx
     call zy_local_x2Fmain_0__actor__ac_x2Dvalid
     cmp rax, 0
-    jne .L1453_1
+    jne .L1454_1
     mov rax, 0
     pop r13
     pop r12
     pop rbx
     ret
-.L1453_1:
+.L1454_1:
     mov rdi, rbx
     call zy_local_x2Fmain_0__actor__ac_x2Dslot
     mov r12, rax
     mov rax, qword ptr [r12+24]
     cmp rax, 0
-    je .L1453_2
+    je .L1454_2
     mov rax, 0
     pop r13
     pop r12
     pop rbx
     ret
-.L1453_2:
+.L1454_2:
     lea rdi, [rbx+2]
     call zyl_chan_actor_join
     mov r13, rax
@@ -35560,13 +35654,13 @@ zyl_actor_wait:
     lea rdi, [rbx+2]
     call zyl_out_actor_emit
     cmp r13, 0
-    jne .L1453_3
+    jne .L1454_3
     mov rax, 0
     pop r13
     pop r12
     pop rbx
     ret
-.L1453_3:
+.L1454_3:
     mov rdi, r13
     pop r13
     pop r12
@@ -35577,25 +35671,25 @@ zyl_actor_is_alive:
     # frame 16
     push rbx
     mov rbx, rdi
-.L1454_0:
+.L1455_0:
     mov rdi, rbx
     call zy_local_x2Fmain_0__actor__ac_x2Dvalid
     cmp rax, 0
-    jne .L1454_1
+    jne .L1455_1
     mov rax, 0
     pop rbx
     ret
-.L1454_1:
+.L1455_1:
     mov rdi, rbx
     call zy_local_x2Fmain_0__actor__ac_x2Dslot
     mov rsi, rax
     mov rax, qword ptr [rsi+24]
     cmp rax, 0
-    jne .L1454_2
+    jne .L1455_2
     mov rax, 1
     pop rbx
     ret
-.L1454_2:
+.L1455_2:
     mov rax, 0
     pop rbx
     ret
@@ -35609,10 +35703,10 @@ zy_local_x2Fmain_0__actor__ac_x2Djoin_x2Drest:
     mov rbx, rdi
     mov r12, rsi
     mov r13, rdx
-.L1455_0:
+.L1456_0:
     cmp rbx, r12
-    jl .L1455_1
-.L1455_4:
+    jl .L1456_1
+.L1456_4:
     mov rax, r13
     pop r15
     pop r14
@@ -35621,7 +35715,7 @@ zy_local_x2Fmain_0__actor__ac_x2Djoin_x2Drest:
     pop rbx
     ret
 .p2align 4
-.L1455_1:
+.L1456_1:
     lea rax, [rip+zyl_rtg_actor_slots]
     mov r14, rax
     mov rsi, rbx
@@ -35629,12 +35723,12 @@ zy_local_x2Fmain_0__actor__ac_x2Djoin_x2Drest:
     add r14, rsi
     mov rax, qword ptr [r14+24]
     cmp rax, 0
-    je .L1455_2
+    je .L1456_2
     add rbx, 1
     cmp rbx, r12
-    jl .L1455_1
-    jmp .L1455_4
-.L1455_2:
+    jl .L1456_1
+    jmp .L1456_4
+.L1456_2:
     lea rdi, [rbx+2]
     call zyl_chan_actor_join
     mov r15, rax
@@ -35646,96 +35740,96 @@ zy_local_x2Fmain_0__actor__ac_x2Djoin_x2Drest:
     call zyl_out_actor_emit
     lea rsi, [rbx+1]
     cmp r13, 0
-    je .L1455_3
+    je .L1456_3
     mov r15, r13
-.L1455_3:
+.L1456_3:
     mov r13, r15
     mov rbx, rsi
     cmp rbx, r12
-    jl .L1455_1
-    jmp .L1455_4
+    jl .L1456_1
+    jmp .L1456_4
 .globl zyl_actor_join_unjoined
 zyl_actor_join_unjoined:
     # frame 0
-.L1456_0:
+.L1457_0:
     call zy_local_x2Fmain_0__actor__ac_x2Dinited
     cmp rax, 0
-    jne .L1456_1
+    jne .L1457_1
     mov rax, 0
     ret
-.L1456_1:
+.L1457_1:
     mov rdi, 0
     lea rax, [rip+zyl_rtg_actor_sys]
     mov rsi, rax
     mov rax, qword ptr [rsi+0]
     cmp rax, 1024
-    jle .L1456_2
+    jle .L1457_2
     mov rsi, 1024
-    jmp .L1456_3
-.L1456_2:
+    jmp .L1457_3
+.L1457_2:
     lea rax, [rip+zyl_rtg_actor_sys]
     mov r8, rax
     mov rsi, qword ptr [r8+0]
-.L1456_3:
+.L1457_3:
     mov r8, 0
     mov rdx, r8
     call zy_local_x2Fmain_0__actor__ac_x2Djoin_x2Drest
     mov rdi, rax
     cmp rdi, 0
-    jne .L1456_4
+    jne .L1457_4
     mov rax, 0
     ret
-.L1456_4:
+.L1457_4:
     jmp zyl_panic
 .globl zyl_actor_wait_all
 zyl_actor_wait_all:
     # frame 16
     push rbx
-.L1457_0:
+.L1458_0:
     call zy_local_x2Fmain_0__actor__ac_x2Dinited
     cmp rax, 0
-    je .L1457_2
+    je .L1458_2
     lea rax, [rip+zyl_rtg_actor_sys]
     mov rsi, rax
     mov rax, qword ptr [rsi+16]
     cmp rax, 0
-    je .L1457_1
-.L1457_2:
+    je .L1458_1
+.L1458_2:
     mov rax, 0
     pop rbx
     ret
-.L1457_1:
+.L1458_1:
     call zyl_chan_main_done
     lea rax, [rip+zyl_rtg_actor_sys]
     mov rsi, rax
     mov rax, qword ptr [rsi+0]
     cmp rax, 1024
-    jle .L1457_3
+    jle .L1458_3
     mov rsi, 1024
-    jmp .L1457_4
-.L1457_3:
+    jmp .L1458_4
+.L1458_3:
     lea rax, [rip+zyl_rtg_actor_sys]
     mov rdi, rax
     mov rsi, qword ptr [rdi+0]
-.L1457_4:
+.L1458_4:
     mov rdi, 0
     mov r8, 0
     mov rdx, r8
     call zy_local_x2Fmain_0__actor__ac_x2Djoin_x2Drest
     mov rbx, rax
     cmp rbx, 0
-    jne .L1457_5
+    jne .L1458_5
     mov rax, 0
     pop rbx
     ret
-.L1457_5:
+.L1458_5:
     call zyl_out_flush
-    lea rax, [rip+.L1458]
+    lea rax, [rip+.L1459]
     mov rdi, rax
     call zyl_err_puts
     mov rdi, rbx
     call zyl_err_puts
-    lea rax, [rip+.L1459]
+    lea rax, [rip+.L1460]
     mov rdi, rax
     call zyl_err_puts
     mov rdi, 1
@@ -35743,23 +35837,23 @@ zyl_actor_wait_all:
     jmp zyl_chan_exit
 zy_local_x2Fmain_0__actor__bs_x2Dsize:
     # frame 0
-.L1460_0:
+.L1461_0:
     cmp rdi, 0
-    jne .L1460_1
-.L1460_4:
+    jne .L1461_1
+.L1461_4:
     mov rax, 68719476736
     ret
-.L1460_1:
+.L1461_1:
     cmp rdi, 1
-    jne .L1460_2
+    jne .L1461_2
     mov rax, 17179869184
     ret
-.L1460_2:
+.L1461_2:
     cmp rdi, 2
-    jne .L1460_3
+    jne .L1461_3
     mov rax, 4294967296
     ret
-.L1460_3:
+.L1461_3:
     mov rax, 1073741824
     ret
 .globl zyl_bigstack_tramp
@@ -35771,7 +35865,7 @@ zyl_bigstack_tramp:
     and rsp, -16
     sub rsp, 16
     mov rbx, rdi
-.L1461_0:
+.L1462_0:
     mov rdi, qword ptr [rbx+0]
     call zyl_rt_call0
     mov rsi, rax
@@ -35786,17 +35880,17 @@ zyl_call_on_big_stack:
     # frame 16
     push rbx
     mov rbx, rdi
-.L1462_0:
+.L1463_0:
     mov rdi, 24
     mov rsi, 1
     call zy_local_x2Fmain_0__heap__hp_x2Dalloc
     mov rsi, rax
     cmp rsi, 0
-    jne .L1462_1
+    jne .L1463_1
     mov rdi, rbx
     pop rbx
     jmp zyl_rt_call0
-.L1462_1:
+.L1463_1:
     mov qword ptr [rsi+0], rbx
     mov rdi, 0
     mov rdx, rdi
@@ -35808,7 +35902,7 @@ zy_local_x2Fmain_0__actor__bs_x2Dunmap:
     push rbp
     mov rbp, rsp
     and rsp, -16
-.L1463_0:
+.L1464_0:
     call zyl_rt_sys_11
     mov rsp, rbp
     pop rbp
@@ -35827,10 +35921,10 @@ zy_local_x2Fmain_0__actor__bs_x2Dtry:
     mov rbx, rdi
     mov r12, rsi
     mov r13, rdx
-.L1464_0:
+.L1465_0:
     cmp r13, 4
-    jl .L1464_1
-.L1464_7:
+    jl .L1465_1
+.L1465_7:
     mov rdi, r12
     call zyl_rt_free
     mov rdi, rbx
@@ -35844,22 +35938,22 @@ zy_local_x2Fmain_0__actor__bs_x2Dtry:
     pop rbp
     ret
 .p2align 4
-.L1464_1:
+.L1465_1:
     mov rsi, 68719476736
     cmp r13, 0
-    je .L1464_2
+    je .L1465_2
     mov rdi, 17179869184
     cmp r13, 1
-    je .L1464_3
+    je .L1465_3
     mov r8, 4294967296
     cmp r13, 2
-    je .L1464_4
+    je .L1465_4
     mov r8, 1073741824
-.L1464_4:
+.L1465_4:
     mov rdi, r8
-.L1464_3:
+.L1465_3:
     mov rsi, rdi
-.L1464_2:
+.L1465_2:
     mov r14, rsi
     mov rdi, 0
     mov rsi, 3
@@ -35874,14 +35968,14 @@ zy_local_x2Fmain_0__actor__bs_x2Dtry:
     call zyl_rt_sys_9
     mov r15, rax
     cmp r15, 0
-    jge .L1464_5
+    jge .L1465_5
     cmp r15, -4096
-    jle .L1464_5
+    jle .L1465_5
     add r13, 1
     cmp r13, 4
-    jl .L1464_1
-    jmp .L1464_7
-.L1464_5:
+    jl .L1465_1
+    jmp .L1465_7
+.L1465_5:
     mov rsi, 4096
     mov rdi, 0
     mov rdx, rdi
@@ -35897,15 +35991,15 @@ zy_local_x2Fmain_0__actor__bs_x2Dtry:
     call zyl_rt_thread_create
     mov rdi, rax
     cmp rdi, 0
-    jne .L1464_6
+    jne .L1465_6
     mov rdi, r15
     mov rsi, r14
     call zyl_rt_sys_11
     add r13, 1
     cmp r13, 4
-    jl .L1464_1
-    jmp .L1464_7
-.L1464_6:
+    jl .L1465_1
+    jmp .L1465_7
+.L1465_6:
     call zyl_rt_thread_join
     mov rdi, r15
     mov rsi, r14
@@ -35924,7 +36018,7 @@ zy_local_x2Fmain_0__actor__bs_x2Dtry:
     ret
 zy_local_x2Fmain_0__ffitimed__ff_x2Dworker_x2Dcell:
     # frame 0
-.L1465_0:
+.L1466_0:
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_ffi_worker@tpoff]
     mov rsi, rax
@@ -35932,7 +36026,7 @@ zy_local_x2Fmain_0__ffitimed__ff_x2Dworker_x2Dcell:
     ret
 zy_local_x2Fmain_0__ffitimed__ff_x2Don_x2Dworker_x2Dcell:
     # frame 0
-.L1466_0:
+.L1467_0:
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_ffi_on_worker@tpoff]
     mov rsi, rax
@@ -35940,7 +36034,7 @@ zy_local_x2Fmain_0__ffitimed__ff_x2Don_x2Dworker_x2Dcell:
     ret
 zy_local_x2Fmain_0__ffitimed__ff_x2Dany_x2Dabandoned:
     # frame 0
-.L1467_0:
+.L1468_0:
     lea rax, [rip+zyl_rtg_ffi_any_abandoned]
     mov rsi, rax
     mov rax, rsi
@@ -35948,7 +36042,7 @@ zy_local_x2Fmain_0__ffitimed__ff_x2Dany_x2Dabandoned:
 .globl zyl_ffi_abandoned
 zyl_ffi_abandoned:
     # frame 0
-.L1468_0:
+.L1469_0:
     lea rax, [rip+zyl_rtg_ffi_any_abandoned]
     mov rsi, rax
     mov rax, qword ptr [rsi+0]
@@ -35956,7 +36050,7 @@ zyl_ffi_abandoned:
 .globl zyl_ffi_on_worker
 zyl_ffi_on_worker:
     # frame 0
-.L1469_0:
+.L1470_0:
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_ffi_on_worker@tpoff]
     mov rsi, rax
@@ -35964,17 +36058,17 @@ zyl_ffi_on_worker:
     ret
 zy_local_x2Fmain_0__ffitimed__ff_x2Dlock:
     # frame 0
-.L1470_0:
+.L1471_0:
     mov rdi, qword ptr [rdi+0]
     jmp zyl_rt_mutex_lock
 zy_local_x2Fmain_0__ffitimed__ff_x2Dunlock:
     # frame 0
-.L1471_0:
+.L1472_0:
     mov rdi, qword ptr [rdi+0]
     jmp zyl_rt_mutex_unlock
 zy_local_x2Fmain_0__ffitimed__ff_x2Dcond:
     # frame 0
-.L1472_0:
+.L1473_0:
     mov rax, qword ptr [rdi+8]
     ret
 zy_local_x2Fmain_0__ffitimed__ff_x2Dinvoke:
@@ -35990,7 +36084,7 @@ zy_local_x2Fmain_0__ffitimed__ff_x2Dinvoke:
     mov rax, [rbp-16]
     mov rcx, 0
     cmp rax, rcx
-    jne .L1473
+    jne .L1474
     sub rsp, 8
     sub rsp, 8
     mov rdi, [rbp-8]
@@ -35999,12 +36093,12 @@ zy_local_x2Fmain_0__ffitimed__ff_x2Dinvoke:
 call zyl_rt_call0
     mov rsp, r12
     add rsp, 16
-    jmp .L1474
-.L1473:
+    jmp .L1475
+.L1474:
     mov rax, [rbp-16]
     mov rcx, 1
     cmp rax, rcx
-    jne .L1475
+    jne .L1476
     sub rsp, 16
     mov rax, [rbp-24]
     mov rdx, rax
@@ -36016,12 +36110,12 @@ call zyl_rt_call0
 call zyl_rt_call1
     mov rsp, r12
     add rsp, 16
-    jmp .L1476
-.L1475:
+    jmp .L1477
+.L1476:
     mov rax, [rbp-16]
     mov rcx, 2
     cmp rax, rcx
-    jne .L1477
+    jne .L1478
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -36046,12 +36140,12 @@ call zyl_rt_call1
 call zyl_rt_call2
     mov rsp, r12
     add rsp, 32
-    jmp .L1478
-.L1477:
+    jmp .L1479
+.L1478:
     mov rax, [rbp-16]
     mov rcx, 3
     cmp rax, rcx
-    jne .L1479
+    jne .L1480
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -36083,12 +36177,12 @@ call zyl_rt_call2
 call zyl_rt_call3
     mov rsp, r12
     add rsp, 32
-    jmp .L1480
-.L1479:
+    jmp .L1481
+.L1480:
     mov rax, [rbp-16]
     mov rcx, 4
     cmp rax, rcx
-    jne .L1481
+    jne .L1482
     sub rsp, 8
     mov rax, [rbp-8]
     sub rsp, 8
@@ -36129,12 +36223,12 @@ call zyl_rt_call3
 call zyl_rt_call4
     mov rsp, r12
     add rsp, 48
-    jmp .L1482
-.L1481:
+    jmp .L1483
+.L1482:
     mov rax, [rbp-16]
     mov rcx, 5
     cmp rax, rcx
-    jne .L1483
+    jne .L1484
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -36182,12 +36276,12 @@ call zyl_rt_call4
 call zyl_rt_call5
     mov rsp, r12
     add rsp, 48
-    jmp .L1484
-.L1483:
+    jmp .L1485
+.L1484:
     mov rax, [rbp-16]
     mov rcx, 6
     cmp rax, rcx
-    jne .L1485
+    jne .L1486
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -36247,12 +36341,12 @@ call zyl_rt_call5
 call zyl_rt_call6
     mov rsp, r12
     add rsp, 64
-    jmp .L1486
-.L1485:
+    jmp .L1487
+.L1486:
     mov rax, [rbp-16]
     mov rcx, 7
     cmp rax, rcx
-    jne .L1487
+    jne .L1488
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -36323,8 +36417,8 @@ call zyl_rt_call6
 call zyl_rt_call7
     mov rsp, r12
     add rsp, 80
-    jmp .L1488
-.L1487:
+    jmp .L1489
+.L1488:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -36342,14 +36436,14 @@ call zyl_rt_call7
     mov rsp, rbp
     pop rbp
     jmp zyl_ffi_invoke_wide
-.L1488:
-.L1486:
-.L1484:
-.L1482:
-.L1480:
-.L1478:
-.L1476:
-.L1474:
+.L1489:
+.L1487:
+.L1485:
+.L1483:
+.L1481:
+.L1479:
+.L1477:
+.L1475:
     mov rbx, [rbp-120]
     mov r12, [rbp-112]
     mov rsp, rbp
@@ -36360,7 +36454,7 @@ zyl_ffi_worker_main:
     # frame 16
     push rbx
     mov rbx, rdi
-.L1489_0:
+.L1490_0:
     mov rsi, qword ptr [rbx+32]
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_owner_id@tpoff]
@@ -36386,15 +36480,15 @@ zy_local_x2Fmain_0__ffitimed__ff_x2Dserve:
     push r14
     and rsp, -16
     mov rbx, rdi
-.L1490_0:
+.L1491_0:
     mov rax, qword ptr [rbx+16]
     cmp rax, 1
-    je .L1490_1
+    je .L1491_1
     mov rdi, qword ptr [rbx+8]
     mov rsi, qword ptr [rbx+0]
     call zyl_rt_cond_wait
-    jmp .L1490_0
-.L1490_1:
+    jmp .L1491_0
+.L1491_1:
     mov r12, qword ptr [rbx+40]
     mov r13, qword ptr [rbx+48]
     mov rax, QWORD PTR fs:0
@@ -36412,9 +36506,9 @@ zy_local_x2Fmain_0__ffitimed__ff_x2Dserve:
     mov rax, rcx
     lock xadd qword ptr [rdx], rax
     cmp rax, 1
-    jne .L1490_2
-    jmp .L1490_3
-.L1490_2:
+    jne .L1491_2
+    jmp .L1491_3
+.L1491_2:
     mov rsi, 0
     mov rdx, rdi
     mov rcx, rsi
@@ -36425,7 +36519,7 @@ zy_local_x2Fmain_0__ffitimed__ff_x2Dserve:
     mov rdx, rsi
     mov rsi, r8
     call zyl_rt_sys_202
-.L1490_3:
+.L1491_3:
     mov rdi, r12
     mov rsi, r13
     mov rdx, r14
@@ -36438,7 +36532,7 @@ zy_local_x2Fmain_0__ffitimed__ff_x2Dserve:
     mov qword ptr [rbx+16], rsi
     mov rax, qword ptr [rbx+24]
     cmp rax, 0
-    je .L1490_4
+    je .L1491_4
     mov rdi, rbx
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -36447,7 +36541,7 @@ zy_local_x2Fmain_0__ffitimed__ff_x2Dserve:
     mov rsp, rbp
     pop rbp
     jmp zy_local_x2Fmain_0__ffitimed__ff_x2Dfinish
-.L1490_4:
+.L1491_4:
     mov rdi, qword ptr [rbx+8]
     mov rsi, 1
     mov rdx, rdi
@@ -36459,14 +36553,14 @@ zy_local_x2Fmain_0__ffitimed__ff_x2Dserve:
     mov rdx, rsi
     mov rsi, r8
     call zyl_rt_sys_202
-    jmp .L1490_0
+    jmp .L1491_0
 zy_local_x2Fmain_0__ffitimed__ff_x2Dfinish:
     # frame 32
     push rbx
     push r12
     push r13
     mov rbx, rdi
-.L1491_0:
+.L1492_0:
     mov r12, qword ptr [rbx+0]
     mov r13, qword ptr [rbx+8]
     mov rdi, r12
@@ -36487,8 +36581,8 @@ zy_local_x2Fmain_0__ffitimed__ff_x2Doom:
     push rbp
     mov rbp, rsp
     and rsp, -16
-.L1492_0:
-    lea rax, [rip+.L1493]
+.L1493_0:
+    lea rax, [rip+.L1494]
     mov rdi, rax
     call zyl_panic
     mov rsp, rbp
@@ -36496,15 +36590,15 @@ zy_local_x2Fmain_0__ffitimed__ff_x2Doom:
     ret
 zy_local_x2Fmain_0__ffitimed__ff_x2Dworker_x2Dget:
     # frame 0
-.L1494_0:
+.L1495_0:
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_ffi_worker@tpoff]
     mov rdi, rax
     mov rsi, qword ptr [rdi+0]
     cmp rsi, 0
-    jne .L1494_1
+    jne .L1495_1
     jmp zy_local_x2Fmain_0__ffitimed__ff_x2Dworker_x2Dnew
-.L1494_1:
+.L1495_1:
     mov rax, rsi
     ret
 zy_local_x2Fmain_0__ffitimed__ff_x2Dworker_x2Dnew:
@@ -36519,14 +36613,14 @@ zy_local_x2Fmain_0__ffitimed__ff_x2Dworker_x2Dnew:
     and rsp, -16
     sub rsp, 16
     mov rbx, rdi
-.L1495_0:
+.L1496_0:
     mov rdi, 1
     mov rsi, 192
     call zyl_rt_calloc
     mov r12, rax
     cmp r12, 0
-    jne .L1495_1
-    lea rax, [rip+.L1496]
+    jne .L1496_1
+    lea rax, [rip+.L1497]
     mov rdi, rax
     call zyl_panic
     mov rbx, qword ptr [rbp-8]
@@ -36537,7 +36631,7 @@ zy_local_x2Fmain_0__ffitimed__ff_x2Dworker_x2Dnew:
     mov rsp, rbp
     pop rbp
     ret
-.L1495_1:
+.L1496_1:
     mov rdi, 40
     mov rsi, 1
     call zy_local_x2Fmain_0__heap__hp_x2Dalloc
@@ -36555,16 +36649,16 @@ zy_local_x2Fmain_0__ffitimed__ff_x2Dworker_x2Dnew:
     call zy_local_x2Fmain_0__heap__hp_x2Dalloc
     mov qword ptr [rbp-48], rax
     cmp r13, 0
-    je .L1495_3
+    je .L1496_3
     cmp r14, 0
-    je .L1495_3
+    je .L1496_3
     cmp r15, 0
-    je .L1495_4
+    je .L1496_4
     cmp qword ptr [rbp-48], 0
-    jne .L1495_2
-.L1495_4:
-.L1495_3:
-    lea rax, [rip+.L1497]
+    jne .L1496_2
+.L1496_4:
+.L1496_3:
+    lea rax, [rip+.L1498]
     mov rdi, rax
     call zyl_panic
     mov rbx, qword ptr [rbp-8]
@@ -36575,7 +36669,7 @@ zy_local_x2Fmain_0__ffitimed__ff_x2Dworker_x2Dnew:
     mov rsp, rbp
     pop rbp
     ret
-.L1495_2:
+.L1496_2:
     mov rsi, 0
     mov qword ptr [r13+0], rsi
     mov rsi, 0
@@ -36610,7 +36704,7 @@ zy_local_x2Fmain_0__ffitimed__ff_x2Dstart:
     mov rbx, rdi
     mov r12, rsi
     mov r13, rdx
-.L1498_0:
+.L1499_0:
     lea rax, [rip+zyl_rtg_threads_started]
     mov rsi, rax
     mov rdi, 1
@@ -36627,8 +36721,8 @@ zy_local_x2Fmain_0__ffitimed__ff_x2Dstart:
     mov rdi, r13
     call zyl_rt_free
     cmp r14, 0
-    jne .L1498_1
-    lea rax, [rip+.L1499]
+    jne .L1499_1
+    lea rax, [rip+.L1500]
     mov rdi, rax
     call zyl_panic
     mov rbx, qword ptr [rbp-8]
@@ -36638,7 +36732,7 @@ zy_local_x2Fmain_0__ffitimed__ff_x2Dstart:
     mov rsp, rbp
     pop rbp
     ret
-.L1498_1:
+.L1499_1:
     mov rdi, r14
     call zyl_rt_thread_detach
     mov rax, QWORD PTR fs:0
@@ -36662,7 +36756,7 @@ zy_local_x2Fmain_0__ffitimed__ff_x2Ddeadline:
     push r12
     and rsp, -16
     mov rbx, rdi
-.L1500_0:
+.L1501_0:
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_ffi_ts@tpoff]
     mov r12, rax
@@ -36695,7 +36789,7 @@ zy_local_x2Fmain_0__ffitimed__ff_x2Ddeadline:
     imul r8, r8, 1000000
     add rdi, r8
     cmp rdi, 1000000000
-    jl .L1500_1
+    jl .L1501_1
     lea r8, [rsi+1]
     mov qword ptr [r12+0], r8
     lea r8, [rdi-1000000000]
@@ -36706,7 +36800,7 @@ zy_local_x2Fmain_0__ffitimed__ff_x2Ddeadline:
     mov rsp, rbp
     pop rbp
     ret
-.L1500_1:
+.L1501_1:
     mov qword ptr [r12+0], rsi
     mov qword ptr [r12+8], rdi
     mov rax, r12
@@ -36719,14 +36813,14 @@ zy_local_x2Fmain_0__ffitimed__ff_x2Dcopy_x2Dargs:
     # frame 0
     mov r8, rdx
     mov r9, rcx
-.L1501_0:
+.L1502_0:
     cmp r9, r8
-    jl .L1501_1
-.L1501_2:
+    jl .L1502_1
+.L1502_2:
     mov rax, 0
     ret
 .p2align 4
-.L1501_1:
+.L1502_1:
     lea r10, [r9*8]
     add r10, rdi
     lea r11, [r9*8]
@@ -36735,8 +36829,8 @@ zy_local_x2Fmain_0__ffitimed__ff_x2Dcopy_x2Dargs:
     mov qword ptr [r10+0], r11
     add r9, 1
     cmp r9, r8
-    jl .L1501_1
-    jmp .L1501_2
+    jl .L1502_1
+    jmp .L1502_2
 zy_local_x2Fmain_0__ffitimed__ff_x2Dcore:
     # frame 48
     push rbx
@@ -36749,7 +36843,7 @@ zy_local_x2Fmain_0__ffitimed__ff_x2Dcore:
     mov r13, rdx
     mov r14, rcx
     mov r15, r8
-.L1502_0:
+.L1503_0:
     call zyl_out_flush
     mov rdi, rbx
     mov rsi, r12
@@ -36771,17 +36865,17 @@ zy_local_x2Fmain_0__ffitimed__ff_x2Dlibc_x2Dflush:
     push rbp
     mov rbp, rsp
     and rsp, -16
-.L1503_0:
+.L1504_0:
     mov rax, QWORD PTR [rip+fflush@GOTPCREL]
     mov rdi, rax
     cmp rdi, 0
-    jle .L1503_1
+    jle .L1504_1
     mov rsi, 0
     call zyl_rt_call1
     mov rsp, rbp
     pop rbp
     ret
-.L1503_1:
+.L1504_1:
     mov rax, 0
     mov rsp, rbp
     pop rbp
@@ -36801,20 +36895,20 @@ zy_local_x2Fmain_0__ffitimed__ff_x2Dcore_x2Dgo:
     mov rdi, rdx
     mov r12, rcx
     mov r13, r8
-.L1504_0:
+.L1505_0:
     cmp rsi, 0
-    jne .L1504_1
-.L1504_7:
-    lea rax, [rip+.L1505]
+    jne .L1505_1
+.L1505_7:
+    lea rax, [rip+.L1506]
     mov r8, rax
-    jmp .L1504_2
-.L1504_1:
+    jmp .L1505_2
+.L1505_1:
     mov r8, rsi
-.L1504_2:
+.L1505_2:
     mov r14, r8
     cmp rbx, 4096
-    jge .L1504_3
-    lea rax, [rip+.L1506]
+    jge .L1505_3
+    lea rax, [rip+.L1507]
     mov rsi, rax
     mov rdi, rsi
     mov rsi, r14
@@ -36830,13 +36924,13 @@ zy_local_x2Fmain_0__ffitimed__ff_x2Dcore_x2Dgo:
     mov rsp, rbp
     pop rbp
     ret
-.L1504_3:
+.L1505_3:
     cmp r12, 0
-    jl .L1504_5
+    jl .L1505_5
     cmp r12, 16
-    jle .L1504_4
-.L1504_5:
-    lea rax, [rip+.L1507]
+    jle .L1505_4
+.L1505_5:
+    lea rax, [rip+.L1508]
     mov rsi, rax
     mov rdi, rsi
     call zyl_panic
@@ -36848,12 +36942,12 @@ zy_local_x2Fmain_0__ffitimed__ff_x2Dcore_x2Dgo:
     mov rsp, rbp
     pop rbp
     ret
-.L1504_4:
+.L1505_4:
     mov rsi, 1
     cmp rdi, 1
-    jl .L1504_6
+    jl .L1505_6
     mov rsi, rdi
-.L1504_6:
+.L1505_6:
     mov r15, rsi
     call zy_local_x2Fmain_0__ffitimed__ff_x2Dworker_x2Dget
     mov qword ptr [rbp-48], rax
@@ -36921,11 +37015,11 @@ zy_local_x2Fmain_0__ffitimed__ff_x2Dawait:
     mov r12, rsi
     mov r13, rdx
     mov r14, rcx
-.L1508_0:
+.L1509_0:
     mov rdx, qword ptr [rbp-48]
     mov rax, qword ptr [rdx+16]
     cmp rax, 2
-    jne .L1508_1
+    jne .L1509_1
     mov rdx, qword ptr [rbp-48]
     mov r15, qword ptr [rdx+184]
     mov rsi, 0
@@ -36939,9 +37033,9 @@ zy_local_x2Fmain_0__ffitimed__ff_x2Dawait:
     mov rax, rcx
     lock xadd qword ptr [rdx], rax
     cmp rax, 1
-    jne .L1508_2
-    jmp .L1508_3
-.L1508_2:
+    jne .L1509_2
+    jmp .L1509_3
+.L1509_2:
     mov rsi, 0
     mov rdx, rdi
     mov rcx, rsi
@@ -36952,7 +37046,7 @@ zy_local_x2Fmain_0__ffitimed__ff_x2Dawait:
     mov rdx, rsi
     mov rsi, r8
     call zyl_rt_sys_202
-.L1508_3:
+.L1509_3:
     mov rax, r15
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -36962,7 +37056,7 @@ zy_local_x2Fmain_0__ffitimed__ff_x2Dawait:
     mov rsp, rbp
     pop rbp
     ret
-.L1508_1:
+.L1509_1:
     mov rdx, qword ptr [rbp-48]
     mov rdi, qword ptr [rdx+8]
     mov rdx, qword ptr [rbp-48]
@@ -36973,11 +37067,11 @@ zy_local_x2Fmain_0__ffitimed__ff_x2Dawait:
     mov rdi, 4294967295
     and rsi, rdi
     cmp rsi, 110
-    jne .L1508_4
+    jne .L1509_4
     mov rdx, qword ptr [rbp-48]
     mov rax, qword ptr [rdx+16]
     cmp rax, 2
-    je .L1508_4
+    je .L1509_4
     mov rsi, 1
     mov rdx, qword ptr [rbp-48]
     mov qword ptr [rdx+24], rsi
@@ -36989,9 +37083,9 @@ zy_local_x2Fmain_0__ffitimed__ff_x2Dawait:
     mov rax, rcx
     lock xadd qword ptr [rdx], rax
     cmp rax, 1
-    jne .L1508_5
-    jmp .L1508_6
-.L1508_5:
+    jne .L1509_5
+    jmp .L1509_6
+.L1509_5:
     mov rsi, 0
     mov rdx, rdi
     mov rcx, rsi
@@ -37002,7 +37096,7 @@ zy_local_x2Fmain_0__ffitimed__ff_x2Dawait:
     mov rdx, rsi
     mov rsi, r8
     call zyl_rt_sys_202
-.L1508_6:
+.L1509_6:
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_ffi_worker@tpoff]
     mov rsi, rax
@@ -37015,14 +37109,14 @@ zy_local_x2Fmain_0__ffitimed__ff_x2Dawait:
     mov rcx, rdi
     mov rax, rcx
     xchg qword ptr [rdx], rax
-    lea rax, [rip+.L1509]
-    mov r15, rax
     lea rax, [rip+.L1510]
+    mov r15, rax
+    lea rax, [rip+.L1511]
     mov rbx, rax
     mov rdi, r14
     call zyl_int_text
     mov rdi, rax
-    lea rax, [rip+.L1511]
+    lea rax, [rip+.L1512]
     mov rsi, rax
     call zyl_cstr_concat
     mov rsi, rax
@@ -37044,8 +37138,8 @@ zy_local_x2Fmain_0__ffitimed__ff_x2Dawait:
     mov rsp, rbp
     pop rbp
     ret
-.L1508_4:
-    jmp .L1508_0
+.L1509_4:
+    jmp .L1509_0
 zy_local_x2Fmain_0__ffitimed__ff_x2Din_x2Dargs:
     # frame 360
     push rbp
@@ -37405,15 +37499,15 @@ zyl_ffi_timed_argv:
     mov r12, rsi
     mov r13, rdx
     mov r14, rcx
-.L1512_0:
+.L1513_0:
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_ffi_in@tpoff]
     mov r15, rax
     mov rsi, 16
     cmp r14, 16
-    jg .L1512_1
+    jg .L1513_1
     mov rsi, r14
-.L1512_1:
+.L1513_1:
     mov rdi, 0
     mov rdx, rsi
     mov rsi, r8
@@ -37445,7 +37539,7 @@ zyl_ffi_invoke_wide:
     mov rax, [rbp-16]
     mov rcx, 8
     cmp rax, rcx
-    jne .L1513
+    jne .L1514
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -37529,12 +37623,12 @@ zyl_ffi_invoke_wide:
 call zyl_rt_call8
     mov rsp, r12
     add rsp, 96
-    jmp .L1514
-.L1513:
+    jmp .L1515
+.L1514:
     mov rax, [rbp-16]
     mov rcx, 9
     cmp rax, rcx
-    jne .L1515
+    jne .L1516
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -37629,12 +37723,12 @@ call zyl_rt_call8
 call zyl_rt_call9
     mov rsp, r12
     add rsp, 112
-    jmp .L1516
-.L1515:
+    jmp .L1517
+.L1516:
     mov rax, [rbp-16]
     mov rcx, 10
     cmp rax, rcx
-    jne .L1517
+    jne .L1518
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -37740,12 +37834,12 @@ call zyl_rt_call9
 call zyl_rt_call10
     mov rsp, r12
     add rsp, 128
-    jmp .L1518
-.L1517:
+    jmp .L1519
+.L1518:
     mov rax, [rbp-16]
     mov rcx, 11
     cmp rax, rcx
-    jne .L1519
+    jne .L1520
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -37862,12 +37956,12 @@ call zyl_rt_call10
 call zyl_rt_call11
     mov rsp, r12
     add rsp, 144
-    jmp .L1520
-.L1519:
+    jmp .L1521
+.L1520:
     mov rax, [rbp-16]
     mov rcx, 12
     cmp rax, rcx
-    jne .L1521
+    jne .L1522
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -37995,12 +38089,12 @@ call zyl_rt_call11
 call zyl_rt_call12
     mov rsp, r12
     add rsp, 160
-    jmp .L1522
-.L1521:
+    jmp .L1523
+.L1522:
     mov rax, [rbp-16]
     mov rcx, 13
     cmp rax, rcx
-    jne .L1523
+    jne .L1524
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -38139,12 +38233,12 @@ call zyl_rt_call12
 call zyl_rt_call13
     mov rsp, r12
     add rsp, 176
-    jmp .L1524
-.L1523:
+    jmp .L1525
+.L1524:
     mov rax, [rbp-16]
     mov rcx, 14
     cmp rax, rcx
-    jne .L1525
+    jne .L1526
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -38294,12 +38388,12 @@ call zyl_rt_call13
 call zyl_rt_call14
     mov rsp, r12
     add rsp, 192
-    jmp .L1526
-.L1525:
+    jmp .L1527
+.L1526:
     mov rax, [rbp-16]
     mov rcx, 15
     cmp rax, rcx
-    jne .L1527
+    jne .L1528
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -38460,8 +38554,8 @@ call zyl_rt_call14
 call zyl_rt_call15
     mov rsp, r12
     add rsp, 208
-    jmp .L1528
-.L1527:
+    jmp .L1529
+.L1528:
     mov rax, [rbp-8]
     sub rsp, 8
     mov [rsp], rax
@@ -38633,14 +38727,14 @@ call zyl_rt_call15
 call zyl_rt_call16
     mov rsp, r12
     add rsp, 224
-.L1528:
-.L1526:
-.L1524:
-.L1522:
-.L1520:
-.L1518:
-.L1516:
-.L1514:
+.L1529:
+.L1527:
+.L1525:
+.L1523:
+.L1521:
+.L1519:
+.L1517:
+.L1515:
     mov rbx, [rbp-120]
     mov r12, [rbp-112]
     mov rsp, rbp
@@ -38648,20 +38742,20 @@ call zyl_rt_call16
     ret
 zy_local_x2Fmain_0__panic__pn_x2Derr:
     # frame 0
-.L1529_0:
+.L1530_0:
     jmp zyl_err_puts
 zy_local_x2Fmain_0__panic__pn_x2Dout:
     # frame 0
-.L1530_0:
+.L1531_0:
     jmp zyl_out_puts
 zy_local_x2Fmain_0__panic__pn_x2Ds:
     # frame 0
-.L1531_0:
+.L1532_0:
     mov rax, rdi
     ret
 zy_local_x2Fmain_0__panic__pn_x2Dtop:
     # frame 0
-.L1532_0:
+.L1533_0:
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_try_top@tpoff]
     mov rsi, rax
@@ -38675,20 +38769,20 @@ zyl_try_push:
     push rbx
     and rsp, -16
     sub rsp, 16
-.L1533_0:
+.L1534_0:
     mov rdi, 88
     mov rsi, 1
     call zy_local_x2Fmain_0__heap__hp_x2Dalloc
     mov rbx, rax
     cmp rbx, 0
-    jne .L1533_1
+    jne .L1534_1
     mov rdi, 88
-    lea rax, [rip+.L1534]
+    lea rax, [rip+.L1535]
     mov rsi, rax
     call zyl_arena_oom
-    jmp .L1533_2
-.L1533_1:
-.L1533_2:
+    jmp .L1534_2
+.L1534_1:
+.L1534_2:
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_try_top@tpoff]
     mov rsi, rax
@@ -38708,16 +38802,16 @@ zyl_try_push:
 .globl zyl_try_pop
 zyl_try_pop:
     # frame 0
-.L1535_0:
+.L1536_0:
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_try_top@tpoff]
     mov rsi, rax
     mov rdi, qword ptr [rsi+0]
     cmp rdi, 0
-    jne .L1535_1
+    jne .L1536_1
     mov rax, 0
     ret
-.L1535_1:
+.L1536_1:
     mov r8, qword ptr [rdi+64]
     mov qword ptr [rsi+0], r8
     call zyl_rt_free
@@ -38726,30 +38820,30 @@ zyl_try_pop:
 .globl zyl_try_last_msg
 zyl_try_last_msg:
     # frame 0
-.L1536_0:
+.L1537_0:
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_try_top@tpoff]
     mov rsi, rax
     mov rsi, qword ptr [rsi+0]
     cmp rsi, 0
-    jne .L1536_1
+    jne .L1537_1
     mov rax, 0
     ret
-.L1536_1:
+.L1537_1:
     mov rax, qword ptr [rsi+72]
     ret
 .globl zyl_try_frame_msg
 zyl_try_frame_msg:
     # frame 16
     push rbx
-.L1537_0:
+.L1538_0:
     cmp rdi, 0
-    jne .L1537_1
-.L1537_2:
+    jne .L1538_1
+.L1538_2:
     mov rax, 0
     pop rbx
     ret
-.L1537_1:
+.L1538_1:
     mov rbx, qword ptr [rdi+72]
     call zyl_rt_free
     mov rax, rbx
@@ -38757,21 +38851,21 @@ zyl_try_frame_msg:
     ret
 zy_local_x2Fmain_0__panic__pn_x2Dtstate:
     # frame 0
-.L1538_0:
+.L1539_0:
     lea rax, [rip+zyl_rtg_test_state]
     mov rsi, rax
     mov rax, rsi
     ret
 zy_local_x2Fmain_0__panic__pn_x2Dtests:
     # frame 0
-.L1539_0:
+.L1540_0:
     lea rax, [rip+zyl_rtg_tests]
     mov rsi, rax
     mov rax, rsi
     ret
 zy_local_x2Fmain_0__panic__pn_x2Dtbuf:
     # frame 0
-.L1540_0:
+.L1541_0:
     lea rax, [rip+zyl_rtg_test_state]
     mov rsi, rax
     add rsi, 24
@@ -38779,7 +38873,7 @@ zy_local_x2Fmain_0__panic__pn_x2Dtbuf:
     ret
 zy_local_x2Fmain_0__panic__pn_x2Dtmsg:
     # frame 0
-.L1541_0:
+.L1542_0:
     lea rax, [rip+zyl_rtg_test_msg]
     mov rsi, rax
     mov rax, rsi
@@ -38791,13 +38885,13 @@ zy_local_x2Fmain_0__panic__pn_x2Dfail_x2Dline:
     push rbx
     push r12
     and rsp, -16
-.L1542_0:
+.L1543_0:
     lea rax, [rip+zyl_rtg_test_msg]
     mov rsi, rax
     mov rbx, qword ptr [rsi+0]
     cmp rbx, 0
-    jne .L1542_1
-    lea rax, [rip+.L1543]
+    jne .L1543_1
+    lea rax, [rip+.L1544]
     mov rsi, rax
     mov rax, rsi
     mov rbx, qword ptr [rbp-8]
@@ -38805,12 +38899,12 @@ zy_local_x2Fmain_0__panic__pn_x2Dfail_x2Dline:
     mov rsp, rbp
     pop rbp
     ret
-.L1542_1:
+.L1543_1:
     lea rax, [rip+zyl_rtg_test_msg]
     mov rsi, rax
     mov rdi, 0
     mov qword ptr [rsi+0], rdi
-    lea rax, [rip+.L1544]
+    lea rax, [rip+.L1545]
     mov r12, rax
     mov rsi, 0
     mov rdi, rbx
@@ -38821,7 +38915,7 @@ zy_local_x2Fmain_0__panic__pn_x2Dfail_x2Dline:
     mov rdi, rbx
     call zy_local_x2Fmain_0__base__rt_x2Dstr_x2Dof
     mov rdi, rax
-    lea rax, [rip+.L1545]
+    lea rax, [rip+.L1546]
     mov rsi, rax
     call zyl_cstr_concat
     mov rsi, rax
@@ -38838,19 +38932,19 @@ zy_local_x2Fmain_0__panic__pn_x2Dfail_x2Dline:
     ret
 zy_local_x2Fmain_0__panic__pn_x2Dline_x2Dlen:
     # frame 0
-.L1546_0:
+.L1547_0:
     lea r8, [rdi+rsi]
     movzx r8d, byte ptr [r8+0]
     cmp r8, 0
-    je .L1546_2
+    je .L1547_2
     cmp r8, 10
-    jne .L1546_1
-.L1546_2:
+    jne .L1547_1
+.L1547_2:
     mov rax, rsi
     ret
-.L1546_1:
+.L1547_1:
     add rsi, 1
-    jmp .L1546_0
+    jmp .L1547_0
 .globl zyl_register_test
 zyl_register_test:
     # frame 48
@@ -38863,13 +38957,13 @@ zyl_register_test:
     push r15
     sub rsp, 8
     mov rbx, rsi
-.L1547_0:
+.L1548_0:
     lea rax, [rip+zyl_rtg_test_state]
     mov qword ptr [rbp-48], rax
     mov rdx, qword ptr [rbp-48]
     mov r13, qword ptr [rdx+0]
     cmp r13, 256
-    jl .L1547_1
+    jl .L1548_1
     mov rax, 0
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -38879,7 +38973,7 @@ zyl_register_test:
     mov rsp, rbp
     pop rbp
     ret
-.L1547_1:
+.L1548_1:
     lea rax, [rip+zyl_rtg_tests]
     mov r14, rax
     imul rsi, r13, 136
@@ -38890,9 +38984,9 @@ zyl_register_test:
     mov rsi, rax
     mov rdi, 127
     cmp rsi, 127
-    jg .L1547_2
+    jg .L1548_2
     mov rdi, rsi
-.L1547_2:
+.L1548_2:
     mov r12, rdi
     mov rdi, r14
     mov rsi, r15
@@ -38917,13 +39011,13 @@ zyl_register_test:
     ret
 zy_local_x2Fmain_0__panic__pn_x2Dint_x2Dtext:
     # frame 0
-.L1548_0:
+.L1549_0:
     mov rsi, 0
     jmp zy_local_x2Fmain_0__text__rt_x2Dint_x2Dtext
 .globl zyl_run_tests
 zyl_run_tests:
     # frame 0
-.L1549_0:
+.L1550_0:
     mov rdi, 0
     mov rsi, 0
     mov r8, 0
@@ -38934,7 +39028,7 @@ zyl_run_tests:
 .globl zyl_run_tests_matching
 zyl_run_tests_matching:
     # frame 0
-.L1550_0:
+.L1551_0:
     mov rsi, 0
     mov r8, 0
     mov r9, 0
@@ -38949,52 +39043,52 @@ zy_local_x2Fmain_0__panic__pn_x2Dcontains:
     push r12
     mov rbx, rdi
     mov r12, rsi
-.L1551_0:
+.L1552_0:
     movzx eax, byte ptr [r12+0]
     cmp rax, 0
-    jne .L1551_1
+    jne .L1552_1
     mov rax, 1
     pop r12
     pop rbx
     ret
-.L1551_1:
+.L1552_1:
     movzx eax, byte ptr [rbx+0]
     cmp rax, 0
-    jne .L1551_2
+    jne .L1552_2
     mov rax, 0
     pop r12
     pop rbx
     ret
-.L1551_2:
+.L1552_2:
     mov rdi, rbx
     mov rsi, r12
     call zy_local_x2Fmain_0__panic__pn_x2Dprefix
     cmp rax, 0
-    je .L1551_3
+    je .L1552_3
     mov rax, 1
     pop r12
     pop rbx
     ret
-.L1551_3:
+.L1552_3:
     add rbx, 1
-    jmp .L1551_0
+    jmp .L1552_0
 zy_local_x2Fmain_0__panic__pn_x2Dprefix:
     # frame 0
-.L1552_0:
+.L1553_0:
     movzx eax, byte ptr [rsi+0]
     cmp rax, 0
-    jne .L1552_1
+    jne .L1553_1
     mov rax, 1
     ret
-.L1552_1:
+.L1553_1:
     movzx r8d, byte ptr [rdi+0]
     movzx eax, byte ptr [rsi+0]
     cmp r8, rax
-    jne .L1552_2
+    jne .L1553_2
     add rdi, 1
     add rsi, 1
-    jmp .L1552_0
-.L1552_2:
+    jmp .L1553_0
+.L1553_2:
     mov rax, 0
     ret
 zy_local_x2Fmain_0__panic__pn_x2Drun_x2Dtests:
@@ -39012,33 +39106,33 @@ zy_local_x2Fmain_0__panic__pn_x2Drun_x2Dtests:
     mov qword ptr [rbp-56], rsi
     mov qword ptr [rbp-64], rdx
     mov qword ptr [rbp-72], rcx
-.L1553_0:
+.L1554_0:
     lea rax, [rip+zyl_rtg_test_state]
     mov qword ptr [rbp-80], rax
     mov rdx, qword ptr [rbp-80]
     mov rax, qword ptr [rdx+0]
     cmp qword ptr [rbp-48], rax
-    jl .L1553_1
-    lea rax, [rip+.L1554]
+    jl .L1554_1
+    lea rax, [rip+.L1555]
     mov rbx, rax
     mov rsi, 0
     mov rdi, qword ptr [rbp-56]
     call zy_local_x2Fmain_0__text__rt_x2Dint_x2Dtext
     mov r12, rax
-    lea rax, [rip+.L1555]
+    lea rax, [rip+.L1556]
     mov r13, rax
     mov rsi, 0
     mov rdi, qword ptr [rbp-64]
     call zy_local_x2Fmain_0__text__rt_x2Dint_x2Dtext
     mov r14, rax
-    lea rax, [rip+.L1556]
+    lea rax, [rip+.L1557]
     mov r15, rax
     mov rdi, qword ptr [rbp-56]
     add rdi, qword ptr [rbp-64]
     mov rsi, 0
     call zy_local_x2Fmain_0__text__rt_x2Dint_x2Dtext
     mov rdi, rax
-    lea rax, [rip+.L1557]
+    lea rax, [rip+.L1558]
     mov rsi, rax
     call zyl_cstr_concat
     mov rsi, rax
@@ -39059,7 +39153,7 @@ zy_local_x2Fmain_0__panic__pn_x2Drun_x2Dtests:
     mov rdi, rax
     call zyl_out_puts
     cmp qword ptr [rbp-64], 0
-    jle .L1553_2
+    jle .L1554_2
     mov rax, 1
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -39069,7 +39163,7 @@ zy_local_x2Fmain_0__panic__pn_x2Drun_x2Dtests:
     mov rsp, rbp
     pop rbp
     ret
-.L1553_2:
+.L1554_2:
     mov rax, 0
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -39079,26 +39173,26 @@ zy_local_x2Fmain_0__panic__pn_x2Drun_x2Dtests:
     mov rsp, rbp
     pop rbp
     ret
-.L1553_1:
+.L1554_1:
     lea rax, [rip+zyl_rtg_tests]
     mov rbx, rax
     imul rsi, qword ptr [rbp-48], 136
     add rbx, rsi
     cmp qword ptr [rbp-72], 0
-    je .L1553_3
+    je .L1554_3
     mov rdi, rbx
     mov rsi, qword ptr [rbp-72]
     call zy_local_x2Fmain_0__panic__pn_x2Dcontains
     cmp rax, 0
-    jne .L1553_3
+    jne .L1554_3
     mov rax, qword ptr [rbp-48]
     add rax, 1
     mov qword ptr [rbp-48], rax
-    jmp .L1553_0
-.L1553_3:
-    lea rax, [rip+.L1558]
-    mov r12, rax
+    jmp .L1554_0
+.L1554_3:
     lea rax, [rip+.L1559]
+    mov r12, rax
+    lea rax, [rip+.L1560]
     mov rsi, rax
     mov rdi, rbx
     call zyl_cstr_concat
@@ -39121,7 +39215,7 @@ zy_local_x2Fmain_0__panic__pn_x2Drun_x2Dtests:
     mov rsi, qword ptr [rbx+128]
     call zyl_rt_try_call
     cmp rax, 0
-    jne .L1553_4
+    jne .L1554_4
     mov rsi, 0
     mov rdx, qword ptr [rbp-80]
     mov qword ptr [rdx+8], rsi
@@ -39132,8 +39226,8 @@ zy_local_x2Fmain_0__panic__pn_x2Drun_x2Dtests:
     mov rdi, 4294967295
     and rsi, rdi
     cmp rsi, 0
-    jne .L1553_5
-    lea rax, [rip+.L1560]
+    jne .L1554_5
+    lea rax, [rip+.L1561]
     mov rdi, rax
     call zyl_out_puts
     mov rax, qword ptr [rbp-48]
@@ -39142,8 +39236,8 @@ zy_local_x2Fmain_0__panic__pn_x2Drun_x2Dtests:
     mov rax, qword ptr [rbp-56]
     add rax, 1
     mov qword ptr [rbp-56], rax
-    jmp .L1553_0
-.L1553_5:
+    jmp .L1554_0
+.L1554_5:
     call zy_local_x2Fmain_0__panic__pn_x2Dfail_x2Dline
     mov rdi, rax
     call zyl_out_puts
@@ -39153,8 +39247,8 @@ zy_local_x2Fmain_0__panic__pn_x2Drun_x2Dtests:
     mov rax, qword ptr [rbp-64]
     add rax, 1
     mov qword ptr [rbp-64], rax
-    jmp .L1553_0
-.L1553_4:
+    jmp .L1554_0
+.L1554_4:
     call zy_local_x2Fmain_0__panic__pn_x2Dfail_x2Dline
     mov rdi, rax
     call zyl_out_puts
@@ -39164,31 +39258,31 @@ zy_local_x2Fmain_0__panic__pn_x2Drun_x2Dtests:
     mov rax, qword ptr [rbp-64]
     add rax, 1
     mov qword ptr [rbp-64], rax
-    jmp .L1553_0
+    jmp .L1554_0
 .globl zyl_panic
 zyl_panic:
     # frame 16
     push rbx
-.L1561_0:
+.L1562_0:
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_try_top@tpoff]
     mov rsi, rax
     mov rbx, qword ptr [rsi+0]
     cmp rbx, 0
-    jne .L1561_1
+    jne .L1562_1
     pop rbx
     jmp zy_local_x2Fmain_0__panic__pn_x2Dpanic_x2Dtest
-.L1561_1:
+.L1562_1:
     mov r8, qword ptr [rbx+64]
     mov qword ptr [rsi+0], r8
     cmp rdi, 0
-    jne .L1561_2
-    lea rax, [rip+.L1562]
+    jne .L1562_2
+    lea rax, [rip+.L1563]
     mov rsi, rax
-    jmp .L1561_3
-.L1561_2:
+    jmp .L1562_3
+.L1562_2:
     mov rsi, rdi
-.L1561_3:
+.L1562_3:
     mov qword ptr [rbx+72], rsi
     mov rdi, qword ptr [rbx+80]
     call zyl_region_unwind
@@ -39206,29 +39300,29 @@ zy_local_x2Fmain_0__panic__pn_x2Dpanic_x2Dtest:
     and rsp, -16
     sub rsp, 16
     mov rbx, rdi
-.L1563_0:
+.L1564_0:
     lea rax, [rip+zyl_rtg_test_state]
     mov r12, rax
     mov rax, qword ptr [r12+8]
     cmp rax, 0
-    je .L1563_1
+    je .L1564_1
     call zyl_ffi_on_worker
     mov rsi, rax
     mov rdi, 4294967295
     and rsi, rdi
     cmp rsi, 0
-    jne .L1563_1
+    jne .L1564_1
     mov rsi, 0
     mov qword ptr [r12+8], rsi
     lea rax, [rip+zyl_rtg_test_msg]
     mov r13, rax
     mov rsi, 0
     cmp rbx, 0
-    je .L1563_2
+    je .L1564_2
     mov rdi, rbx
     call zy_local_x2Fmain_0__heap__rt_x2Dstrdup
     mov rsi, rax
-.L1563_2:
+.L1564_2:
     mov qword ptr [r13+0], rsi
     mov rdi, qword ptr [r12+16]
     call zyl_region_unwind
@@ -39243,24 +39337,24 @@ zy_local_x2Fmain_0__panic__pn_x2Dpanic_x2Dtest:
     mov rsp, rbp
     pop rbp
     ret
-.L1563_1:
+.L1564_1:
     call zyl_actor_abandon
     cmp rbx, 0
-    jne .L1563_3
-    lea rax, [rip+.L1564]
+    jne .L1564_3
+    lea rax, [rip+.L1565]
     mov rsi, rax
-    jmp .L1563_4
-.L1563_3:
+    jmp .L1564_4
+.L1564_3:
     mov rsi, rbx
-.L1563_4:
+.L1564_4:
     lea rax, [rip+zyl_rtg_diag_json]
     mov rdi, rax
     mov rax, qword ptr [rdi+0]
     cmp rax, 0
-    jne .L1563_5
-    lea rax, [rip+.L1565]
-    mov rbx, rax
+    jne .L1564_5
     lea rax, [rip+.L1566]
+    mov rbx, rax
+    lea rax, [rip+.L1567]
     mov rdi, rax
     mov rax, rsi
     mov rsi, rdi
@@ -39272,11 +39366,11 @@ zy_local_x2Fmain_0__panic__pn_x2Dpanic_x2Dtest:
     call zyl_cstr_concat
     mov rdi, rax
     call zyl_err_puts
-    jmp .L1563_6
-.L1563_5:
+    jmp .L1564_6
+.L1564_5:
     mov rdi, rsi
     call zy_local_x2Fmain_0__panic__pn_x2Dpanic_x2Djson
-.L1563_6:
+.L1564_6:
     mov rdi, 1
     call zyl_rt_exit
     mov rbx, qword ptr [rbp-8]
@@ -39295,11 +39389,11 @@ zy_local_x2Fmain_0__panic__pn_x2Dpanic_x2Djson:
     and rsp, -16
     sub rsp, 16
     mov rbx, rdi
-.L1567_0:
+.L1568_0:
     movzx eax, byte ptr [rbx+0]
     cmp rax, 123
-    jne .L1567_1
-    lea rax, [rip+.L1568]
+    jne .L1568_1
+    lea rax, [rip+.L1569]
     mov rsi, rax
     mov rdi, rbx
     call zyl_cstr_concat
@@ -39310,14 +39404,14 @@ zy_local_x2Fmain_0__panic__pn_x2Dpanic_x2Djson:
     mov rsp, rbp
     pop rbp
     jmp zyl_err_puts
-.L1567_1:
+.L1568_1:
     mov rdi, rbx
     call zy_local_x2Fmain_0__panic__pn_x2Dcode_x2Dlen
     mov r12, rax
     cmp r12, 0
-    jle .L1567_2
+    jle .L1568_2
     cmp r12, 128
-    jge .L1567_2
+    jge .L1568_2
     mov rsi, 0
     mov rdi, rbx
     mov rdx, rsi
@@ -39335,28 +39429,28 @@ zy_local_x2Fmain_0__panic__pn_x2Dpanic_x2Djson:
     mov rsp, rbp
     pop rbp
     jmp zy_local_x2Fmain_0__panic__pn_x2Djson_x2Ddiag
-.L1567_2:
-    lea rax, [rip+.L1569]
+.L1568_2:
+    lea rax, [rip+.L1570]
     mov rsi, rax
     mov rdi, 6
     mov rdx, rdi
     mov rdi, rbx
     call zy_local_x2Fmain_0__panic__pn_x2Dprefix_x2Dp
     cmp rax, 0
-    je .L1567_3
+    je .L1568_3
     lea rdi, [rbx+6]
     call zy_local_x2Fmain_0__panic__pn_x2Dfind_x2Dclose
     mov r12, rax
     cmp r12, 0
-    jle .L1567_4
+    jle .L1568_4
     movzx eax, byte ptr [r12+1]
     cmp rax, 58
-    jne .L1567_4
+    jne .L1568_4
     mov rsi, r12
     sub rsi, rbx
     sub rsi, 6
     cmp rsi, 128
-    jge .L1567_4
+    jge .L1568_4
     lea rdi, [rbx+6]
     mov rsi, r12
     sub rsi, rbx
@@ -39375,8 +39469,8 @@ zy_local_x2Fmain_0__panic__pn_x2Dpanic_x2Djson:
     mov rsp, rbp
     pop rbp
     jmp zy_local_x2Fmain_0__panic__pn_x2Djson_x2Ddiag
-.L1567_4:
-    lea rax, [rip+.L1570]
+.L1568_4:
+    lea rax, [rip+.L1571]
     mov rdi, rax
     mov rsi, rbx
     mov rbx, qword ptr [rbp-8]
@@ -39385,8 +39479,8 @@ zy_local_x2Fmain_0__panic__pn_x2Dpanic_x2Djson:
     mov rsp, rbp
     pop rbp
     jmp zy_local_x2Fmain_0__panic__pn_x2Djson_x2Ddiag
-.L1567_3:
-    lea rax, [rip+.L1571]
+.L1568_3:
+    lea rax, [rip+.L1572]
     mov rdi, rax
     mov rsi, rbx
     mov rbx, qword ptr [rbp-8]
@@ -39405,17 +39499,17 @@ zy_local_x2Fmain_0__panic__pn_x2Djson_x2Ddiag:
     push r14
     and rsp, -16
     mov rbx, rsi
-.L1572_0:
-    lea rax, [rip+.L1573]
+.L1573_0:
+    lea rax, [rip+.L1574]
     mov r12, rax
     call zyl_json_quote
     mov r13, rax
-    lea rax, [rip+.L1574]
+    lea rax, [rip+.L1575]
     mov r14, rax
     mov rdi, rbx
     call zyl_json_quote
     mov rdi, rax
-    lea rax, [rip+.L1575]
+    lea rax, [rip+.L1576]
     mov rsi, rax
     call zyl_cstr_concat
     mov rsi, rax
@@ -39439,16 +39533,16 @@ zy_local_x2Fmain_0__panic__pn_x2Dcode_x2Dlen:
     # frame 16
     push rbx
     mov rbx, rdi
-.L1576_0:
+.L1577_0:
     movzx esi, byte ptr [rbx+0]
     cmp rsi, 69
-    je .L1576_2
+    je .L1577_2
     cmp rsi, 87
-    jne .L1576_1
-.L1576_2:
+    jne .L1577_1
+.L1577_2:
     movzx eax, byte ptr [rbx+1]
     cmp rax, 95
-    jne .L1576_1
+    jne .L1577_1
     mov rsi, 2
     mov rdi, rbx
     call zy_local_x2Fmain_0__panic__pn_x2Dcode_x2Dscan
@@ -39456,57 +39550,57 @@ zy_local_x2Fmain_0__panic__pn_x2Dcode_x2Dlen:
     lea rdi, [rbx+rsi]
     movzx eax, byte ptr [rdi+0]
     cmp rax, 58
-    jne .L1576_3
+    jne .L1577_3
     mov rax, rsi
     pop rbx
     ret
-.L1576_3:
+.L1577_3:
     mov rax, 0
     pop rbx
     ret
-.L1576_1:
+.L1577_1:
     mov rax, 0
     pop rbx
     ret
 zy_local_x2Fmain_0__panic__pn_x2Dcode_x2Dscan:
     # frame 0
-.L1577_0:
+.L1578_0:
     lea r8, [rdi+rsi]
     movzx r8d, byte ptr [r8+0]
     cmp r8, 65
-    jl .L1577_3
+    jl .L1578_3
     cmp r8, 90
-    jle .L1577_2
-.L1577_3:
+    jle .L1578_2
+.L1578_3:
     cmp r8, 48
-    jl .L1577_5
+    jl .L1578_5
     cmp r8, 57
-    jle .L1577_4
-.L1577_5:
+    jle .L1578_4
+.L1578_5:
     cmp r8, 95
-    jne .L1577_1
-.L1577_4:
-.L1577_2:
+    jne .L1578_1
+.L1578_4:
+.L1578_2:
     add rsi, 1
-    jmp .L1577_0
-.L1577_1:
+    jmp .L1578_0
+.L1578_1:
     mov rax, rsi
     ret
 zy_local_x2Fmain_0__panic__pn_x2Dskip_x2Dsp:
     # frame 0
-.L1578_0:
+.L1579_0:
     movzx eax, byte ptr [rdi+0]
     cmp rax, 32
-    jne .L1578_1
+    jne .L1579_1
     add rdi, 1
-    jmp .L1578_0
-.L1578_1:
+    jmp .L1579_0
+.L1579_1:
     mov rax, rdi
     ret
 zy_local_x2Fmain_0__panic__pn_x2Derror_x2Dbracket_x2Dp:
     # frame 0
-.L1579_0:
-    lea rax, [rip+.L1580]
+.L1580_0:
+    lea rax, [rip+.L1581]
     mov rsi, rax
     mov r8, 6
     mov rdx, r8
@@ -39514,48 +39608,48 @@ zy_local_x2Fmain_0__panic__pn_x2Derror_x2Dbracket_x2Dp:
 zy_local_x2Fmain_0__panic__pn_x2Dprefix_x2Dp:
     # frame 0
     mov r8, rdx
-.L1581_0:
+.L1582_0:
     cmp r8, 0
-    jne .L1581_1
-.L1581_4:
+    jne .L1582_1
+.L1582_4:
     mov rax, 1
     ret
 .p2align 4
-.L1581_1:
+.L1582_1:
     movzx r9d, byte ptr [rdi+0]
     movzx eax, byte ptr [rsi+0]
     cmp r9, rax
-    je .L1581_2
+    je .L1582_2
     mov rax, 0
     ret
-.L1581_2:
+.L1582_2:
     cmp r9, 0
-    jne .L1581_3
+    jne .L1582_3
     mov rax, 1
     ret
-.L1581_3:
+.L1582_3:
     add rdi, 1
     add rsi, 1
     sub r8, 1
     cmp r8, 0
-    jne .L1581_1
-    jmp .L1581_4
+    jne .L1582_1
+    jmp .L1582_4
 zy_local_x2Fmain_0__panic__pn_x2Dfind_x2Dclose:
     # frame 0
-.L1582_0:
+.L1583_0:
     movzx esi, byte ptr [rdi+0]
     cmp rsi, 93
-    jne .L1582_1
+    jne .L1583_1
     mov rax, rdi
     ret
-.L1582_1:
+.L1583_1:
     cmp rsi, 0
-    jne .L1582_2
+    jne .L1583_2
     mov rax, 0
     ret
-.L1582_2:
+.L1583_2:
     add rdi, 1
-    jmp .L1582_0
+    jmp .L1583_0
 .globl zyl_f_error
 zyl_f_error:
     # frame 16
@@ -39564,18 +39658,18 @@ zyl_f_error:
     push rbx
     and rsp, -16
     sub rsp, 16
-.L1583_0:
+.L1584_0:
     cmp rdi, 0
-    jne .L1583_1
-    lea rax, [rip+.L1584]
+    jne .L1584_1
+    lea rax, [rip+.L1585]
     mov rsi, rax
     mov rdi, rsi
     call zyl_err_puts
-    jmp .L1583_2
-.L1583_1:
-    lea rax, [rip+.L1585]
-    mov rbx, rax
+    jmp .L1584_2
+.L1584_1:
     lea rax, [rip+.L1586]
+    mov rbx, rax
+    lea rax, [rip+.L1587]
     mov rsi, rax
     call zyl_cstr_concat
     mov rsi, rax
@@ -39583,7 +39677,7 @@ zyl_f_error:
     call zyl_cstr_concat
     mov rdi, rax
     call zyl_err_puts
-.L1583_2:
+.L1584_2:
     mov rdi, 1
     mov rbx, qword ptr [rbp-8]
     mov rsp, rbp
@@ -39591,7 +39685,7 @@ zyl_f_error:
     jmp zyl_rt_exit
 zy_local_x2Fmain_0__panic__pn_x2Ddiag:
     # frame 0
-.L1587_0:
+.L1588_0:
     lea rax, [rip+zyl_rtg_diag_json]
     mov rsi, rax
     mov rax, rsi
@@ -39599,7 +39693,7 @@ zy_local_x2Fmain_0__panic__pn_x2Ddiag:
 .globl zyl_diag_json
 zyl_diag_json:
     # frame 0
-.L1588_0:
+.L1589_0:
     lea rax, [rip+zyl_rtg_diag_json]
     mov rsi, rax
     mov rax, qword ptr [rsi+0]
@@ -39607,20 +39701,20 @@ zyl_diag_json:
 .globl zyl_diag_json_set
 zyl_diag_json_set:
     # frame 0
-.L1589_0:
+.L1590_0:
     lea rax, [rip+zyl_rtg_diag_json]
     mov rsi, rax
     mov r8, 0
     cmp rdi, 0
-    je .L1589_1
+    je .L1590_1
     mov r8, 1
-.L1589_1:
+.L1590_1:
     mov qword ptr [rsi+0], r8
     mov rax, 0
     ret
 zy_local_x2Fmain_0__panic__pn_x2Dwarn:
     # frame 0
-.L1590_0:
+.L1591_0:
     lea rax, [rip+zyl_rtg_warn]
     mov rsi, rax
     mov rax, rsi
@@ -39628,14 +39722,14 @@ zy_local_x2Fmain_0__panic__pn_x2Dwarn:
 .globl zyl_warn_capture
 zyl_warn_capture:
     # frame 0
-.L1591_0:
+.L1592_0:
     lea rax, [rip+zyl_rtg_warn]
     mov rsi, rax
     mov r8, 0
     cmp rdi, 0
-    je .L1591_1
+    je .L1592_1
     mov r8, 1
-.L1591_1:
+.L1592_1:
     mov qword ptr [rsi+24], r8
     mov rdi, 0
     mov qword ptr [rsi+8], rdi
@@ -39653,16 +39747,16 @@ zyl_warn_emit:
     push r15
     and rsp, -16
     sub rsp, 16
-.L1592_0:
+.L1593_0:
     cmp rdi, 0
-    jne .L1592_1
-.L1592_5:
-    lea rax, [rip+.L1593]
+    jne .L1593_1
+.L1593_5:
+    lea rax, [rip+.L1594]
     mov rsi, rax
-    jmp .L1592_2
-.L1592_1:
+    jmp .L1593_2
+.L1593_1:
     mov rsi, rdi
-.L1592_2:
+.L1593_2:
     mov rbx, rsi
     mov rdi, rbx
     call zy_local_x2Fmain_0__base__rt_x2Dstrlen
@@ -39671,13 +39765,13 @@ zyl_warn_emit:
     mov r13, rax
     mov rax, qword ptr [r13+24]
     cmp rax, 0
-    jne .L1592_3
+    jne .L1593_3
     mov rdi, 2
     mov rsi, rbx
     mov rdx, r12
     call zyl_rt_sys_1
     mov rdi, 2
-    lea rax, [rip+.L1594]
+    lea rax, [rip+.L1595]
     mov rsi, rax
     mov r8, 1
     mov rdx, r8
@@ -39691,14 +39785,14 @@ zyl_warn_emit:
     mov rsp, rbp
     pop rbp
     ret
-.L1592_3:
+.L1593_3:
     mov r14, qword ptr [r13+8]
     lea rsi, [r14+r12]
     add rsi, 2
     mov rdi, r13
     call zy_local_x2Fmain_0__panic__pn_x2Dwarn_x2Dfit
     cmp rax, 0
-    je .L1592_4
+    je .L1593_4
     mov r15, qword ptr [r13+0]
     lea rdi, [r15+r14]
     mov rsi, rbx
@@ -39727,7 +39821,7 @@ zyl_warn_emit:
     mov rsp, rbp
     pop rbp
     ret
-.L1592_4:
+.L1593_4:
     mov rax, 0
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -39742,20 +39836,20 @@ zy_local_x2Fmain_0__panic__pn_x2Dwarn_x2Dfit:
     push rbx
     push r12
     mov rbx, rdi
-.L1595_0:
+.L1596_0:
     mov rdi, qword ptr [rbx+16]
     cmp rsi, rdi
-    jg .L1595_1
+    jg .L1596_1
     mov rax, 1
     pop r12
     pop rbx
     ret
-.L1595_1:
+.L1596_1:
     mov r8, 1024
     cmp rdi, 0
-    je .L1595_2
+    je .L1596_2
     mov r8, rdi
-.L1595_2:
+.L1596_2:
     mov rdi, r8
     call zy_local_x2Fmain_0__panic__pn_x2Ddouble
     mov r12, rax
@@ -39764,12 +39858,12 @@ zy_local_x2Fmain_0__panic__pn_x2Dwarn_x2Dfit:
     call zyl_rt_realloc
     mov rsi, rax
     cmp rsi, 0
-    jne .L1595_3
+    jne .L1596_3
     mov rax, 0
     pop r12
     pop rbx
     ret
-.L1595_3:
+.L1596_3:
     mov qword ptr [rbx+0], rsi
     mov qword ptr [rbx+16], r12
     mov rax, 1
@@ -39778,15 +39872,15 @@ zy_local_x2Fmain_0__panic__pn_x2Dwarn_x2Dfit:
     ret
 zy_local_x2Fmain_0__panic__pn_x2Ddouble:
     # frame 0
-.L1596_0:
+.L1597_0:
     cmp rsi, rdi
-    jle .L1596_1
-.L1596_2:
+    jle .L1597_1
+.L1597_2:
     shl rdi, 1
     cmp rsi, rdi
-    jle .L1596_1
-    jmp .L1596_2
-.L1596_1:
+    jle .L1597_1
+    jmp .L1597_2
+.L1597_1:
     mov rax, rdi
     ret
 .globl zyl_warn_take
@@ -39795,7 +39889,7 @@ zyl_warn_take:
     push rbx
     push r12
     push r13
-.L1597_0:
+.L1598_0:
     lea rax, [rip+zyl_rtg_warn]
     mov rbx, rax
     mov r12, qword ptr [rbx+8]
@@ -39804,24 +39898,24 @@ zyl_warn_take:
     call zy_local_x2Fmain_0__heap__hp_x2Dalloc
     mov r13, rax
     cmp r13, 0
-    jne .L1597_1
-    lea rax, [rip+.L1598]
+    jne .L1598_1
+    lea rax, [rip+.L1599]
     mov rsi, rax
     mov rax, rsi
     pop r13
     pop r12
     pop rbx
     ret
-.L1597_1:
+.L1598_1:
     cmp r12, 0
-    jle .L1597_2
+    jle .L1598_2
     mov rsi, qword ptr [rbx+0]
     mov rdi, r13
     mov rdx, r12
     call zy_local_x2Fmain_0__base__rt_x2Dcopy
-    jmp .L1597_3
-.L1597_2:
-.L1597_3:
+    jmp .L1598_3
+.L1598_2:
+.L1598_3:
     lea rsi, [r13+r12]
     mov rdi, 0
     mov rcx, rdi
@@ -39839,16 +39933,16 @@ zyl_json_quote:
     push rbx
     push r12
     push r13
-.L1599_0:
+.L1600_0:
     cmp rdi, 0
-    jne .L1599_1
-.L1599_4:
-    lea rax, [rip+.L1600]
+    jne .L1600_1
+.L1600_4:
+    lea rax, [rip+.L1601]
     mov rsi, rax
-    jmp .L1599_2
-.L1599_1:
+    jmp .L1600_2
+.L1600_1:
     mov rsi, rdi
-.L1599_2:
+.L1600_2:
     mov rbx, rsi
     mov rdi, rbx
     call zy_local_x2Fmain_0__base__rt_x2Dstrlen
@@ -39859,15 +39953,15 @@ zyl_json_quote:
     call zy_local_x2Fmain_0__heap__hp_x2Dalloc
     mov r13, rax
     cmp r13, 0
-    jne .L1599_3
-    lea rax, [rip+.L1601]
+    jne .L1600_3
+    lea rax, [rip+.L1602]
     mov rsi, rax
     mov rax, rsi
     pop r13
     pop r12
     pop rbx
     ret
-.L1599_3:
+.L1600_3:
     mov rsi, 34
     mov rcx, rsi
     mov byte ptr [r13+0], cl
@@ -39907,10 +40001,10 @@ zy_local_x2Fmain_0__panic__pn_x2Dquote_x2Dloop:
     mov rsi, rdx
     mov r13, rcx
     mov qword ptr [rbp-48], r8
-.L1602_0:
+.L1603_0:
     cmp rsi, r12
-    jl .L1602_1
-.L1602_13:
+    jl .L1603_1
+.L1603_13:
     mov rax, qword ptr [rbp-48]
     mov rbx, qword ptr [rbp-8]
     mov r12, qword ptr [rbp-16]
@@ -39921,16 +40015,16 @@ zy_local_x2Fmain_0__panic__pn_x2Dquote_x2Dloop:
     pop rbp
     ret
 .p2align 4
-.L1602_1:
+.L1603_1:
     mov rdi, qword ptr [rbp-56]
     add rdi, rsi
     movzx edi, byte ptr [rdi+0]
     lea r14, [rsi+1]
     cmp rdi, 34
-    je .L1602_4
+    je .L1603_4
     cmp rdi, 92
-    jne .L1602_2
-.L1602_4:
+    jne .L1603_2
+.L1603_4:
     mov r9, r13
     add r9, qword ptr [rbp-48]
     mov r10, 92
@@ -39942,10 +40036,10 @@ zy_local_x2Fmain_0__panic__pn_x2Dquote_x2Dloop:
     mov byte ptr [r9+0], cl
     mov r9, qword ptr [rbp-48]
     add r9, 2
-    jmp .L1602_3
-.L1602_2:
+    jmp .L1603_3
+.L1603_2:
     cmp rdi, 10
-    jne .L1602_5
+    jne .L1603_5
     mov r10, 110
     mov r11, r13
     add r11, qword ptr [rbp-48]
@@ -39957,10 +40051,10 @@ zy_local_x2Fmain_0__panic__pn_x2Dquote_x2Dloop:
     mov byte ptr [r11+0], r10b
     mov r10, qword ptr [rbp-48]
     add r10, 2
-    jmp .L1602_6
-.L1602_5:
+    jmp .L1603_6
+.L1603_5:
     cmp rdi, 9
-    jne .L1602_7
+    jne .L1603_7
     mov r11, 116
     mov r15, r13
     add r15, qword ptr [rbp-48]
@@ -39972,10 +40066,10 @@ zy_local_x2Fmain_0__panic__pn_x2Dquote_x2Dloop:
     mov byte ptr [r8+0], r11b
     mov r8, qword ptr [rbp-48]
     add r8, 2
-    jmp .L1602_8
-.L1602_7:
+    jmp .L1603_8
+.L1603_7:
     cmp rdi, 13
-    jne .L1602_9
+    jne .L1603_9
     mov r11, 114
     mov r15, r13
     add r15, qword ptr [rbp-48]
@@ -39987,41 +40081,41 @@ zy_local_x2Fmain_0__panic__pn_x2Dquote_x2Dloop:
     mov byte ptr [rbx+0], r11b
     mov r11, qword ptr [rbp-48]
     add r11, 2
-    jmp .L1602_10
-.L1602_9:
+    jmp .L1603_10
+.L1603_9:
     cmp rdi, 32
-    jge .L1602_11
+    jge .L1603_11
     mov rsi, qword ptr [rbp-48]
     mov rdx, rdi
     mov rdi, r13
     call zy_local_x2Fmain_0__panic__pn_x2Desc_x2Du
     mov rbx, rax
-    jmp .L1602_12
-.L1602_11:
+    jmp .L1603_12
+.L1603_11:
     mov r15, r13
     add r15, qword ptr [rbp-48]
     mov rcx, rdi
     mov byte ptr [r15+0], cl
     mov rbx, qword ptr [rbp-48]
     add rbx, 1
-.L1602_12:
+.L1603_12:
     mov r11, rbx
-.L1602_10:
+.L1603_10:
     mov r8, r11
-.L1602_8:
+.L1603_8:
     mov r10, r8
-.L1602_6:
+.L1603_6:
     mov r9, r10
-.L1602_3:
+.L1603_3:
     mov qword ptr [rbp-48], r9
     mov rsi, r14
     cmp rsi, r12
-    jl .L1602_1
-    jmp .L1602_13
+    jl .L1603_1
+    jmp .L1603_13
 zy_local_x2Fmain_0__panic__pn_x2Desc:
     # frame 0
     mov r8, rdx
-.L1603_0:
+.L1604_0:
     lea r9, [rdi+rsi]
     mov r10, 92
     mov byte ptr [r9+0], r10b
@@ -40039,9 +40133,9 @@ zy_local_x2Fmain_0__panic__pn_x2Desc_x2Du:
     mov rbx, rdi
     mov r12, rsi
     mov r13, rdx
-.L1604_0:
+.L1605_0:
     lea rdi, [rbx+r12]
-    lea rax, [rip+.L1605]
+    lea rax, [rip+.L1606]
     mov rsi, rax
     mov r8, 4
     mov rdx, r8
@@ -40070,47 +40164,47 @@ zy_local_x2Fmain_0__panic__pn_x2Desc_x2Du:
     ret
 zy_local_x2Fmain_0__panic__pn_x2Dhexd:
     # frame 0
-.L1606_0:
+.L1607_0:
     cmp rdi, 10
-    jge .L1606_1
-.L1606_2:
+    jge .L1607_1
+.L1607_2:
     lea rax, [rdi+48]
     ret
-.L1606_1:
+.L1607_1:
     lea rax, [rdi+87]
     ret
 zy_local_x2Fmain_0__io__io_x2Dput:
     # frame 0
-.L1607_0:
+.L1608_0:
     jmp zyl_out_puts
 zy_local_x2Fmain_0__io__io_x2Dputs_x2Dor_x2Dnull:
     # frame 0
-.L1608_0:
+.L1609_0:
     cmp rdi, 0
-    jne .L1608_1
-.L1608_2:
-    lea rax, [rip+.L1609]
+    jne .L1609_1
+.L1609_2:
+    lea rax, [rip+.L1610]
     mov rsi, rax
     mov rdi, rsi
     jmp zyl_out_puts
-.L1608_1:
+.L1609_1:
     jmp zyl_out_puts
 zy_local_x2Fmain_0__io__io_x2Dput_x2Dint:
     # frame 0
-.L1610_0:
+.L1611_0:
     jmp zyl_out_int
 .globl zyl_itest_start
 zyl_itest_start:
     # frame 16
     push rbx
     mov rbx, rdi
-.L1611_0:
-    lea rax, [rip+.L1612]
+.L1612_0:
+    lea rax, [rip+.L1613]
     mov rdi, rax
     call zyl_out_puts
     mov rdi, rbx
     call zy_local_x2Fmain_0__io__io_x2Dputs_x2Dor_x2Dnull
-    lea rax, [rip+.L1613]
+    lea rax, [rip+.L1614]
     mov rdi, rax
     call zyl_out_puts
     pop rbx
@@ -40118,32 +40212,32 @@ zyl_itest_start:
 .globl zyl_itest_outcome
 zyl_itest_outcome:
     # frame 0
-.L1614_0:
+.L1615_0:
     cmp rdi, 0
-    jne .L1614_1
-.L1614_3:
-    lea rax, [rip+.L1615]
-    mov rsi, rax
-    jmp .L1614_2
-.L1614_1:
+    jne .L1615_1
+.L1615_3:
     lea rax, [rip+.L1616]
     mov rsi, rax
-.L1614_2:
+    jmp .L1615_2
+.L1615_1:
+    lea rax, [rip+.L1617]
+    mov rsi, rax
+.L1615_2:
     mov rdi, rsi
     jmp zyl_out_puts
 .globl zyl_itest_fail
 zyl_itest_fail:
     # frame 16
     push rbx
-.L1617_0:
+.L1618_0:
     mov rbx, rdi
-    lea rax, [rip+.L1618]
+    lea rax, [rip+.L1619]
     mov rdi, rax
     call zyl_out_puts
     mov rsi, 0
     mov rdi, rbx
     call zy_local_x2Fmain_0__io__io_x2Dline
-    lea rax, [rip+.L1619]
+    lea rax, [rip+.L1620]
     mov rdi, rax
     pop rbx
     jmp zyl_out_puts
@@ -40153,24 +40247,24 @@ zy_local_x2Fmain_0__io__io_x2Dline:
     push r12
     mov rbx, rdi
     mov r12, rsi
-.L1620_0:
+.L1621_0:
     lea rsi, [rbx+r12]
     movzx esi, byte ptr [rsi+0]
     cmp rsi, 0
-    je .L1620_2
+    je .L1621_2
     cmp rsi, 10
-    jne .L1620_1
-.L1620_2:
+    jne .L1621_1
+.L1621_2:
     mov rax, 0
     pop r12
     pop rbx
     ret
-.L1620_1:
+.L1621_1:
     lea rdi, [rbx+r12]
     mov rsi, 1
     call zyl_out_write
     add r12, 1
-    jmp .L1620_0
+    jmp .L1621_0
 .globl zyl_itest_summary
 zyl_itest_summary:
     # frame 16
@@ -40178,32 +40272,32 @@ zyl_itest_summary:
     push r12
     mov rbx, rdi
     mov r12, rsi
-.L1621_0:
-    lea rax, [rip+.L1622]
+.L1622_0:
+    lea rax, [rip+.L1623]
     mov rdi, rax
     call zyl_out_puts
     mov rdi, rbx
     call zyl_out_int
-    lea rax, [rip+.L1623]
+    lea rax, [rip+.L1624]
     mov rdi, rax
     call zyl_out_puts
     mov rdi, r12
     call zyl_out_int
-    lea rax, [rip+.L1624]
+    lea rax, [rip+.L1625]
     mov rdi, rax
     call zyl_out_puts
     lea rdi, [rbx+r12]
     call zyl_out_int
-    lea rax, [rip+.L1625]
+    lea rax, [rip+.L1626]
     mov rdi, rax
     call zyl_out_puts
     cmp r12, 0
-    jle .L1621_1
+    jle .L1622_1
     mov rax, 1
     pop r12
     pop rbx
     ret
-.L1621_1:
+.L1622_1:
     mov rax, 0
     pop r12
     pop rbx
@@ -40213,7 +40307,7 @@ zyl_exit:
     # frame 16
     push rbx
     mov rbx, rdi
-.L1626_0:
+.L1627_0:
     call zyl_out_flush
     mov rdi, rbx
     pop rbx
@@ -40224,22 +40318,22 @@ zyl_read_line:
     push rbx
     push r12
     push r13
-.L1627_0:
+.L1628_0:
     call zyl_out_flush
     mov rdi, 128
     mov rsi, 1
     call zy_local_x2Fmain_0__heap__hp_x2Dalloc
     mov rdi, rax
     cmp rdi, 0
-    jne .L1627_1
-    lea rax, [rip+.L1628]
+    jne .L1628_1
+    lea rax, [rip+.L1629]
     mov rsi, rax
     mov rax, rsi
     pop r13
     pop r12
     pop rbx
     ret
-.L1627_1:
+.L1628_1:
     mov rsi, 128
     mov r8, 0
     mov rdx, r8
@@ -40248,23 +40342,23 @@ zyl_read_line:
     mov rbx, qword ptr [rsi+0]
     mov rsi, qword ptr [rsi+8]
     cmp rsi, 0
-    jle .L1627_2
+    jle .L1628_2
     lea rdi, [rsi-1]
     add rdi, rbx
     movzx eax, byte ptr [rdi+0]
     cmp rax, 13
-    jne .L1627_2
+    jne .L1628_2
     lea rdi, [rsi-1]
-    jmp .L1627_3
-.L1627_2:
+    jmp .L1628_3
+.L1628_2:
     mov rdi, rsi
-.L1627_3:
+.L1628_3:
     mov r12, rdi
     lea rdi, [r12+1]
     call zyl_heap_alloc
     mov r13, rax
     cmp r13, 0
-    je .L1627_4
+    je .L1628_4
     mov rdi, r13
     mov rsi, rbx
     mov rdx, r12
@@ -40273,19 +40367,19 @@ zyl_read_line:
     mov rdi, 0
     mov rcx, rdi
     mov byte ptr [rsi+0], cl
-.L1627_4:
+.L1628_4:
     mov rdi, rbx
     call zyl_rt_free
     cmp r13, 0
-    jne .L1627_5
-    lea rax, [rip+.L1629]
+    jne .L1628_5
+    lea rax, [rip+.L1630]
     mov rsi, rax
     mov rax, rsi
     pop r13
     pop r12
     pop rbx
     ret
-.L1627_5:
+.L1628_5:
     mov rax, r13
     pop r13
     pop r12
@@ -40303,7 +40397,7 @@ zy_local_x2Fmain_0__io__io_x2Dread_x2Dloop:
     mov rbx, rdi
     mov r12, rsi
     mov r13, rdx
-.L1630_0:
+.L1631_0:
     mov rax, QWORD PTR fs:0
     lea rax, [rax+zyl_rtt_io_rl@tpoff]
     mov r14, rax
@@ -40313,19 +40407,19 @@ zy_local_x2Fmain_0__io__io_x2Dread_x2Dloop:
     mov rdx, r8
     call zyl_rt_sys_0
     cmp rax, 1
-    jne .L1630_1
+    jne .L1631_1
     movzx eax, byte ptr [r14+16]
     cmp rax, 10
-    je .L1630_1
+    je .L1631_1
     lea rax, [r13+1]
     cmp rax, r12
-    jl .L1630_2
+    jl .L1631_2
     lea rsi, [r12*2]
     mov rdi, rbx
     call zyl_rt_realloc
     mov rsi, rax
     cmp rsi, 0
-    jne .L1630_3
+    jne .L1631_3
     mov qword ptr [r14+0], rbx
     mov qword ptr [r14+8], r13
     mov rax, r14
@@ -40336,22 +40430,22 @@ zy_local_x2Fmain_0__io__io_x2Dread_x2Dloop:
     mov rsp, rbp
     pop rbp
     ret
-.L1630_3:
+.L1631_3:
     lea rdi, [rsi+r13]
     movzx r8d, byte ptr [r14+16]
     mov byte ptr [rdi+0], r8b
     mov rbx, rsi
     shl r12, 1
     add r13, 1
-    jmp .L1630_0
-.L1630_2:
+    jmp .L1631_0
+.L1631_2:
     lea rsi, [rbx+r13]
     movzx edi, byte ptr [r14+16]
     mov rcx, rdi
     mov byte ptr [rsi+0], cl
     add r13, 1
-    jmp .L1630_0
-.L1630_1:
+    jmp .L1631_0
+.L1631_1:
     mov qword ptr [r14+0], rbx
     mov qword ptr [r14+8], r13
     mov rax, r14
@@ -40365,14 +40459,14 @@ zy_local_x2Fmain_0__io__io_x2Dread_x2Dloop:
 zy_local_x2Fmain_0__io__io_x2Dread_x2Ddone:
     # frame 0
     mov r8, rdx
-.L1631_0:
+.L1632_0:
     mov qword ptr [rdi+0], rsi
     mov qword ptr [rdi+8], r8
     mov rax, rdi
     ret
 zy_local_x2Fmain_0__io__io_x2Dcells:
     # frame 0
-.L1632_0:
+.L1633_0:
     lea rax, [rip+zyl_rtg_cells]
     mov rsi, rax
     mov rax, rsi
@@ -40380,43 +40474,43 @@ zy_local_x2Fmain_0__io__io_x2Dcells:
 .globl zyl_cell_get
 zyl_cell_get:
     # frame 0
-.L1633_0:
+.L1634_0:
     cmp rdi, 0
-    jl .L1633_1
-.L1633_2:
+    jl .L1634_1
+.L1634_2:
     cmp rdi, 16
-    jge .L1633_1
+    jge .L1634_1
     lea rax, [rip+zyl_rtg_cells]
     mov rsi, rax
     shl rdi, 3
     add rsi, rdi
     mov rax, qword ptr [rsi+0]
     ret
-.L1633_1:
+.L1634_1:
     mov rax, 0
     ret
 .globl zyl_cell_set
 zyl_cell_set:
     # frame 0
-.L1634_0:
+.L1635_0:
     cmp rdi, 0
-    jl .L1634_1
-.L1634_3:
+    jl .L1635_1
+.L1635_3:
     cmp rdi, 16
-    jge .L1634_1
+    jge .L1635_1
     lea rax, [rip+zyl_rtg_cells]
     mov r8, rax
     shl rdi, 3
     add r8, rdi
     mov qword ptr [r8+0], rsi
-    jmp .L1634_2
-.L1634_1:
-.L1634_2:
+    jmp .L1635_2
+.L1635_1:
+.L1635_2:
     mov rax, 0
     ret
 zy_local_x2Fmain_0__env__ev_x2Denvp_x2Dcell:
     # frame 0
-.L1635_0:
+.L1636_0:
     lea rax, [rip+zyl_rtg_rt_envp]
     mov rsi, rax
     mov rax, rsi
@@ -40424,7 +40518,7 @@ zy_local_x2Fmain_0__env__ev_x2Denvp_x2Dcell:
 .globl zyl_rt_set_env
 zyl_rt_set_env:
     # frame 0
-.L1636_0:
+.L1637_0:
     lea rax, [rip+zyl_rtg_rt_envp]
     mov rsi, rax
     mov qword ptr [rsi+0], rdi
@@ -40433,7 +40527,7 @@ zyl_rt_set_env:
 .globl zyl_rt_envp
 zyl_rt_envp:
     # frame 0
-.L1637_0:
+.L1638_0:
     lea rax, [rip+zyl_rtg_rt_envp]
     mov rsi, rax
     mov rax, qword ptr [rsi+0]
@@ -40441,25 +40535,25 @@ zyl_rt_envp:
 .globl zyl_rt_getenv
 zyl_rt_getenv:
     # frame 0
-.L1638_0:
+.L1639_0:
     cmp rdi, 0
-    je .L1638_2
-.L1638_4:
+    je .L1639_2
+.L1639_4:
     movzx eax, byte ptr [rdi+0]
     cmp rax, 0
-    jne .L1638_1
-.L1638_2:
+    jne .L1639_1
+.L1639_2:
     mov rax, 0
     ret
-.L1638_1:
+.L1639_1:
     lea rax, [rip+zyl_rtg_rt_envp]
     mov rsi, rax
     mov rsi, qword ptr [rsi+0]
     cmp rsi, 0
-    jne .L1638_3
+    jne .L1639_3
     mov rax, 0
     ret
-.L1638_3:
+.L1639_3:
     mov rax, rsi
     mov rsi, rdi
     mov rdi, rax
@@ -40470,59 +40564,59 @@ zy_local_x2Fmain_0__env__ev_x2Dscan:
     push r12
     mov rbx, rdi
     mov r12, rsi
-.L1639_0:
+.L1640_0:
     mov rdi, qword ptr [rbx+0]
     cmp rdi, 0
-    jne .L1639_1
+    jne .L1640_1
     mov rax, 0
     pop r12
     pop rbx
     ret
-.L1639_1:
+.L1640_1:
     mov rsi, r12
     call zy_local_x2Fmain_0__env__ev_x2Dmatch
     mov rsi, rax
     cmp rsi, 0
-    jne .L1639_2
+    jne .L1640_2
     add rbx, 8
-    jmp .L1639_0
-.L1639_2:
+    jmp .L1640_0
+.L1640_2:
     mov rax, rsi
     pop r12
     pop rbx
     ret
 zy_local_x2Fmain_0__env__ev_x2Dmatch:
     # frame 0
-.L1640_0:
+.L1641_0:
     movzx r8d, byte ptr [rsi+0]
     cmp r8, 0
-    jne .L1640_1
+    jne .L1641_1
     movzx eax, byte ptr [rdi+0]
     cmp rax, 61
-    jne .L1640_2
+    jne .L1641_2
     lea rax, [rdi+1]
     ret
-.L1640_2:
+.L1641_2:
     mov rax, 0
     ret
-.L1640_1:
+.L1641_1:
     movzx eax, byte ptr [rdi+0]
     cmp rax, r8
-    jne .L1640_3
+    jne .L1641_3
     add rdi, 1
     add rsi, 1
-    jmp .L1640_0
-.L1640_3:
+    jmp .L1641_0
+.L1641_3:
     mov rax, 0
     ret
 zy_local_x2Fmain_0__env__ev_x2Dmax:
     # frame 0
-.L1641_0:
+.L1642_0:
     mov rax, 32
     ret
 zy_local_x2Fmain_0__env__ev_x2Dreg:
     # frame 0
-.L1642_0:
+.L1643_0:
     lea rax, [rip+zyl_rtg_rt_exit_reg]
     mov rsi, rax
     mov rax, rsi
@@ -40535,25 +40629,25 @@ zy_local_x2Fmain_0__env__ev_x2Dlock:
     and rsp, -16
     sub rsp, 16
     mov rbx, rdi
-.L1643_0:
+.L1644_0:
     mov rsi, 1
     mov rdx, rbx
     mov rcx, rsi
     mov rax, rcx
     xchg qword ptr [rdx], rax
     cmp rax, 0
-    jne .L1643_1
+    jne .L1644_1
     mov rax, 0
     mov rbx, qword ptr [rbp-8]
     mov rsp, rbp
     pop rbp
     ret
-.L1643_1:
+.L1644_1:
     call zyl_rt_sys_24
-    jmp .L1643_0
+    jmp .L1644_0
 zy_local_x2Fmain_0__env__ev_x2Dunlock:
     # frame 0
-.L1644_0:
+.L1645_0:
     mov rsi, 0
     mov rdx, rdi
     mov rcx, rsi
@@ -40566,14 +40660,14 @@ zyl_rt_atexit:
     push rbx
     push r12
     mov rbx, rdi
-.L1645_0:
+.L1646_0:
     lea rax, [rip+zyl_rtg_rt_exit_reg]
     mov r12, rax
     mov rdi, r12
     call zy_local_x2Fmain_0__env__ev_x2Dlock
     mov rsi, qword ptr [r12+8]
     cmp rsi, 32
-    jl .L1645_1
+    jl .L1646_1
     mov rdi, 0
     mov rdx, r12
     mov rcx, rdi
@@ -40583,7 +40677,7 @@ zyl_rt_atexit:
     pop r12
     pop rbx
     ret
-.L1645_1:
+.L1646_1:
     lea rdi, [rsi+2]
     shl rdi, 3
     add rdi, r12
@@ -40602,14 +40696,14 @@ zyl_rt_atexit:
 zy_local_x2Fmain_0__env__ev_x2Dpop:
     # frame 16
     push rbx
-.L1646_0:
+.L1647_0:
     lea rax, [rip+zyl_rtg_rt_exit_reg]
     mov rbx, rax
     mov rdi, rbx
     call zy_local_x2Fmain_0__env__ev_x2Dlock
     mov rsi, qword ptr [rbx+8]
     cmp rsi, 0
-    jne .L1646_1
+    jne .L1647_1
     mov rdi, 0
     mov rdx, rbx
     mov rcx, rdi
@@ -40618,7 +40712,7 @@ zy_local_x2Fmain_0__env__ev_x2Dpop:
     mov rax, 0
     pop rbx
     ret
-.L1646_1:
+.L1647_1:
     lea rdi, [rsi+1]
     shl rdi, 3
     add rdi, rbx
@@ -40639,18 +40733,18 @@ zyl_rt_run_atexit:
     push rbp
     mov rbp, rsp
     and rsp, -16
-.L1647_0:
+.L1648_0:
     call zy_local_x2Fmain_0__env__ev_x2Dpop
     mov rdi, rax
     cmp rdi, 0
-    jne .L1647_1
+    jne .L1648_1
     mov rax, 0
     mov rsp, rbp
     pop rbp
     ret
-.L1647_1:
+.L1648_1:
     call zyl_rt_call0
-    jmp .L1647_0
+    jmp .L1648_0
 .globl zyl_rt_exit
 zyl_rt_exit:
     # frame 16
@@ -40660,7 +40754,7 @@ zyl_rt_exit:
     and rsp, -16
     sub rsp, 16
     mov rbx, rdi
-.L1648_0:
+.L1649_0:
     call zyl_rt_run_atexit
     call zyl_term_flush
     mov rax, QWORD PTR [rip+exit@GOTPCREL]
@@ -40669,15 +40763,15 @@ zyl_rt_exit:
     mov rsi, rax
     mov rax, qword ptr [rsi+0]
     cmp rax, 0
-    jne .L1648_1
+    jne .L1649_1
     cmp rdi, 0
-    jle .L1648_1
+    jle .L1649_1
     mov rsi, rbx
     mov rbx, qword ptr [rbp-8]
     mov rsp, rbp
     pop rbp
     jmp zyl_rt_call1
-.L1648_1:
+.L1649_1:
     mov rdi, rbx
     mov rbx, qword ptr [rbp-8]
     mov rsp, rbp
@@ -40691,20 +40785,20 @@ zy_local_x2Fmain_0__env__ev_x2Dexit_x2Dgroup:
     and rsp, -16
     sub rsp, 16
     mov rbx, rdi
-.L1649_0:
+.L1650_0:
     mov rdi, rbx
     call zyl_rt_sys_231
     mov rdi, rbx
     call zyl_rt_sys_60
-    jmp .L1649_0
+    jmp .L1650_0
 zy_local_x2Fmain_0__crc__rt_x2Dsse42:
     # frame 0
-.L1650_0:
+.L1651_0:
     lea rax, [rip+zyl_rtg_cpu_sse42]
     mov rsi, rax
     mov rdi, qword ptr [rsi+0]
     cmp rdi, 0
-    jne .L1650_1
+    jne .L1651_1
     mov r8, 1
     mov r9, 0
     mov rdx, r8
@@ -40717,19 +40811,19 @@ zy_local_x2Fmain_0__crc__rt_x2Dsse42:
     mov r8, rax
     and r8, 1048576
     cmp r8, 0
-    jle .L1650_2
+    jle .L1651_2
     mov r8, 2
-    jmp .L1650_3
-.L1650_2:
+    jmp .L1651_3
+.L1651_2:
     mov r8, 1
-.L1650_3:
+.L1651_3:
     mov qword ptr [rsi+0], r8
     mov rax, r8
     cmp rax, 2
     sete al
     movzx rax, al
     ret
-.L1650_1:
+.L1651_1:
     mov rax, rdi
     cmp rax, 2
     sete al
@@ -40739,19 +40833,19 @@ zy_local_x2Fmain_0__crc__crc_x2Dtab:
     # frame 16
     push rbx
     push r12
-.L1651_0:
+.L1652_0:
     lea rax, [rip+zyl_rtg_crc32c_tab]
     mov rbx, rax
     lea rax, [rip+zyl_rtg_crc32c_tab_ok]
     mov r12, rax
     mov rax, qword ptr [r12+0]
     cmp rax, 1
-    jne .L1651_1
+    jne .L1652_1
     mov rax, rbx
     pop r12
     pop rbx
     ret
-.L1651_1:
+.L1652_1:
     mov rsi, 0
     mov rdi, rbx
     call zy_local_x2Fmain_0__crc__crc_x2Dfill
@@ -40768,64 +40862,64 @@ zy_local_x2Fmain_0__crc__crc_x2Dfill:
     push r13
     mov rbx, rdi
     mov r12, rsi
-.L1652_0:
+.L1653_0:
     cmp r12, 255
-    jle .L1652_1
-.L1652_3:
+    jle .L1653_1
+.L1653_3:
     mov rax, 0
     pop r13
     pop r12
     pop rbx
     ret
 .p2align 4
-.L1652_1:
+.L1653_1:
     lea rsi, [r12*8]
     lea r13, [rbx+rsi]
     mov rsi, 8
     mov rdi, r12
     cmp rsi, 0
-    je .L1652_2
+    je .L1653_2
     mov rdi, r12
     call zy_local_x2Fmain_0__crc__crc_x2Dbits
     mov rdi, rax
-.L1652_2:
+.L1653_2:
     mov qword ptr [r13+0], rdi
     add r12, 1
     cmp r12, 255
-    jle .L1652_1
-    jmp .L1652_3
+    jle .L1653_1
+    jmp .L1653_3
 zy_local_x2Fmain_0__crc__crc_x2Dbits:
     # frame 0
-.L1653_0:
+.L1654_0:
     cmp rsi, 0
-    jne .L1653_1
-.L1653_4:
+    jne .L1654_1
+.L1654_4:
     mov rax, rdi
     ret
 .p2align 4
-.L1653_1:
+.L1654_1:
     mov rax, rdi
     and rax, 1
     cmp rax, 1
-    jne .L1653_2
+    jne .L1654_2
     mov r8, rdi
     shr r8, 1
     mov r9, 2197175160
     xor r8, r9
-    jmp .L1653_3
-.L1653_2:
+    jmp .L1654_3
+.L1654_2:
     mov r8, rdi
     shr r8, 1
-.L1653_3:
+.L1654_3:
     mov rdi, r8
     sub rsi, 1
     cmp rsi, 0
-    jne .L1653_1
-    jmp .L1653_4
+    jne .L1654_1
+    jmp .L1654_4
 zy_local_x2Fmain_0__crc__crc_x2Dbyte:
     # frame 0
     mov r8, rdx
-.L1654_0:
+.L1655_0:
     xor r8, rsi
     and r8, 255
     shl r8, 3
@@ -40839,14 +40933,14 @@ zy_local_x2Fmain_0__crc__crc_x2Dsoft_x2Dbytes:
     # frame 0
     mov r8, rdx
     mov r9, rcx
-.L1655_0:
+.L1656_0:
     cmp r9, 0
-    jne .L1655_1
-.L1655_2:
+    jne .L1656_1
+.L1656_2:
     mov rax, rsi
     ret
 .p2align 4
-.L1655_1:
+.L1656_1:
     mov r10, r8
     and r10, 255
     xor r10, rsi
@@ -40861,8 +40955,8 @@ zy_local_x2Fmain_0__crc__crc_x2Dsoft_x2Dbytes:
     shr r8, 8
     sub r9, 1
     cmp r9, 0
-    jne .L1655_1
-    jmp .L1655_2
+    jne .L1656_1
+    jmp .L1656_2
 .globl zyl_crc32c_soft
 zyl_crc32c_soft:
     # frame 16
@@ -40870,7 +40964,7 @@ zyl_crc32c_soft:
     push r12
     mov rbx, rdi
     mov r12, rsi
-.L1656_0:
+.L1657_0:
     call zy_local_x2Fmain_0__crc__crc_x2Dtab
     mov rdi, rax
     mov rsi, 4294967295
@@ -40888,10 +40982,10 @@ zyl_crc32c_u64:
     push r12
     mov rbx, rdi
     mov r12, rsi
-.L1657_0:
+.L1658_0:
     call zy_local_x2Fmain_0__crc__rt_x2Dsse42
     cmp rax, 0
-    je .L1657_1
+    je .L1658_1
     mov rdx, rbx
     mov rcx, r12
     mov eax, edx
@@ -40899,7 +40993,7 @@ zyl_crc32c_u64:
     pop r12
     pop rbx
     ret
-.L1657_1:
+.L1658_1:
     mov rdi, rbx
     mov rsi, r12
     pop r12
@@ -40912,10 +41006,10 @@ zyl_crc32c_u8:
     push r12
     mov rbx, rdi
     mov r12, rsi
-.L1658_0:
+.L1659_0:
     call zy_local_x2Fmain_0__crc__rt_x2Dsse42
     cmp rax, 0
-    je .L1658_1
+    je .L1659_1
     mov rdx, rbx
     mov rcx, r12
     mov eax, edx
@@ -40923,7 +41017,7 @@ zyl_crc32c_u8:
     pop r12
     pop rbx
     ret
-.L1658_1:
+.L1659_1:
     call zy_local_x2Fmain_0__crc__crc_x2Dtab
     mov rdi, rax
     mov rsi, 4294967295
@@ -40942,30 +41036,30 @@ zy_local_x2Fmain_0__variant__rt_x2Dwords_x2Dcmp_x7EInt_x2CInt_x2CInt_x2CInt_x2CI
     mov r8, rdx
     mov r11, r9
     mov r9, rcx
-.L1659_0:
+.L1660_0:
     cmp r8, r9
-    jl .L1659_1
-.L1659_6:
+    jl .L1660_1
+.L1660_6:
     cmp r10, r11
-    jge .L1659_2
+    jge .L1660_2
     mov rax, -1
     pop r12
     pop rbx
     ret
-.L1659_2:
+.L1660_2:
     cmp r10, r11
-    jle .L1659_3
+    jle .L1660_3
     mov rax, 1
     pop r12
     pop rbx
     ret
-.L1659_3:
+.L1660_3:
     mov rax, 0
     pop r12
     pop rbx
     ret
 .p2align 4
-.L1659_1:
+.L1660_1:
     lea rbx, [r8*8]
     add rbx, rdi
     mov rbx, qword ptr [rbx+0]
@@ -40973,23 +41067,23 @@ zy_local_x2Fmain_0__variant__rt_x2Dwords_x2Dcmp_x7EInt_x2CInt_x2CInt_x2CInt_x2CI
     add r12, rsi
     mov r12, qword ptr [r12+0]
     cmp rbx, r12
-    jge .L1659_4
+    jge .L1660_4
     mov rax, -1
     pop r12
     pop rbx
     ret
-.L1659_4:
+.L1660_4:
     cmp rbx, r12
-    jle .L1659_5
+    jle .L1660_5
     mov rax, 1
     pop r12
     pop rbx
     ret
-.L1659_5:
+.L1660_5:
     add r8, 1
     cmp r8, r9
-    jl .L1659_1
-    jmp .L1659_6
+    jl .L1660_1
+    jmp .L1660_6
 .section .rodata
 .L12:
     .string "0123456789abcdef"
@@ -41091,1011 +41185,1011 @@ zy_local_x2Fmain_0__variant__rt_x2Dwords_x2Dcmp_x7EInt_x2CInt_x2CInt_x2CInt_x2CI
     .string "0123456789abcdef"
 .L345:
     .string "0123456789abcdef"
-.L352:
+.L353:
     .string "0123456789ABCDEF"
-.L354:
+.L355:
     .string ""
-.L356:
-    .string ""
-.L358:
+.L357:
     .string ""
 .L359:
+    .string ""
+.L360:
     .string "0123456789ABCDEF"
-.L374:
+.L375:
     .string "0"
-.L377:
+.L378:
     .string "0"
-.L383:
-    .string "PANIC: error[E_OUT_OF_MEMORY]: "
 .L384:
-    .string "\n  = requested "
+    .string "PANIC: error[E_OUT_OF_MEMORY]: "
 .L385:
-    .string " bytes; "
+    .string "\n  = requested "
 .L386:
-    .string " bytes already allocated; budget "
+    .string " bytes; "
 .L387:
+    .string " bytes already allocated; budget "
+.L388:
     .string " bytes\n  = help: set ZYL_MAX_MEMORY to a byte count to raise the budget, or ZYL_MAX_MEMORY=0 to remove it\n"
-.L392:
-    .string "memory budget exhausted"
 .L393:
-    .string "out of memory allocating an arena block header"
-.L394:
-    .string "out of memory allocating an arena block"
-.L414:
-    .string "\n"
-.L416:
-    .string "zyl_heap_alloc: size too large size="
-.L417:
-    .string "zyl_heap_alloc: FAILED size="
-.L430:
     .string "memory budget exhausted"
+.L394:
+    .string "out of memory allocating an arena block header"
+.L395:
+    .string "out of memory allocating an arena block"
+.L415:
+    .string "\n"
+.L417:
+    .string "zyl_heap_alloc: size too large size="
+.L418:
+    .string "zyl_heap_alloc: FAILED size="
 .L431:
+    .string "memory budget exhausted"
+.L432:
     .string "mmap failed for a region block"
-.L440:
-    .string "E_REGION_EXHAUSTED: "
 .L441:
-    .string "fixed"
+    .string "E_REGION_EXHAUSTED: "
 .L442:
-    .string "arena"
+    .string "fixed"
 .L443:
-    .string " region of "
+    .string "arena"
 .L444:
+    .string " region of "
+.L445:
     .string " bytes is full"
-.L448:
+.L449:
     .string "zyl_ralloc: size too large size="
-.L464:
+.L465:
     .string "zyl: ffi-unpin: pointer not from ffi-pin/Pin arena\n"
-.L467:
-    .string "E_INDEX_OUT_OF_BOUNDS: "
 .L468:
-    .string ": index "
+    .string "E_INDEX_OUT_OF_BOUNDS: "
 .L469:
+    .string ": index "
+.L470:
     .string " outside a word array of length "
-.L472:
-    .string "E_INDEX_OUT_OF_BOUNDS: "
 .L473:
-    .string ": not a word array"
-.L475:
     .string "E_INDEX_OUT_OF_BOUNDS: "
+.L474:
+    .string ": not a word array"
 .L476:
+    .string "E_INDEX_OUT_OF_BOUNDS: "
+.L477:
     .string ": not a word array"
-.L478:
+.L479:
     .string "E_OUT_OF_MEMORY: word array view"
-.L480:
+.L481:
     .string "E_OUT_OF_MEMORY: word array"
-.L483:
+.L484:
     .string "E_OUT_OF_MEMORY: word array"
-.L486:
-    .string "w-len"
 .L487:
-    .string "E_INDEX_OUT_OF_BOUNDS: "
+    .string "w-len"
 .L488:
-    .string ": not a word array"
-.L490:
     .string "E_INDEX_OUT_OF_BOUNDS: "
-.L491:
+.L489:
     .string ": not a word array"
-.L493:
+.L491:
+    .string "E_INDEX_OUT_OF_BOUNDS: "
+.L492:
+    .string ": not a word array"
+.L494:
     .string "w-get"
-.L495:
+.L496:
     .string "w-set"
-.L497:
+.L498:
     .string "E_OUT_OF_MEMORY: word array view"
-.L499:
-    .string "w-view"
 .L500:
     .string "w-view"
-.L502:
+.L501:
     .string "w-view"
 .L503:
     .string "w-view"
-.L506:
-    .string "E_INDEX_OUT_OF_BOUNDS: "
+.L504:
+    .string "w-view"
 .L507:
-    .string ": not an array"
-.L509:
     .string "E_INDEX_OUT_OF_BOUNDS: "
+.L508:
+    .string ": not an array"
 .L510:
+    .string "E_INDEX_OUT_OF_BOUNDS: "
+.L511:
     .string ": not an array"
-.L512:
+.L513:
     .string "E_OUT_OF_MEMORY: array"
-.L514:
-    .string "array-cap"
 .L515:
-    .string "E_INDEX_OUT_OF_BOUNDS: "
+    .string "array-cap"
 .L516:
-    .string ": not an array"
-.L518:
-    .string "array-filled"
-.L519:
     .string "E_INDEX_OUT_OF_BOUNDS: "
-.L520:
+.L517:
     .string ": not an array"
-.L522:
+.L519:
+    .string "array-filled"
+.L520:
+    .string "E_INDEX_OUT_OF_BOUNDS: "
+.L521:
+    .string ": not an array"
+.L523:
     .string "E_OUT_OF_MEMORY: array"
-.L525:
+.L526:
     .string "E_OUT_OF_MEMORY: array"
-.L527:
-    .string "array-get"
 .L528:
     .string "array-get"
 .L529:
-    .string "E_INDEX_OUT_OF_BOUNDS: "
+    .string "array-get"
 .L530:
+    .string "E_INDEX_OUT_OF_BOUNDS: "
+.L531:
     .string ": not an array"
-.L533:
-    .string "array-copy"
 .L534:
     .string "array-copy"
 .L535:
     .string "array-copy"
 .L536:
     .string "array-copy"
-.L538:
-    .string "array-set"
+.L537:
+    .string "array-copy"
 .L539:
     .string "array-set"
-.L544:
+.L540:
+    .string "array-set"
+.L545:
     .string "attribute table"
-.L553:
+.L554:
     .string "ref cell"
-.L558:
+.L559:
     .string ""
-.L562:
+.L563:
     .string "E_USE_AFTER_FREE: string buffer used after it was destroyed"
-.L565:
+.L566:
     .string "0123456789abcdef"
-.L567:
-    .string "zyl: str-append: invalid string pointer 0x"
 .L568:
-    .string ""
+    .string "zyl: str-append: invalid string pointer 0x"
 .L569:
+    .string ""
+.L570:
     .string "\n"
-.L571:
-    .string "codegen buffer limit exceeded"
 .L572:
+    .string "codegen buffer limit exceeded"
+.L573:
     .string "E_INDEX_OUT_OF_BOUNDS: string buffer full"
-.L623:
-    .quad 0
 .L624:
     .quad 0
-.L629:
-    .quad -4332466134535158144
+.L625:
+    .quad 0
 .L630:
+    .quad -4332466134535158144
+.L631:
     .quad 4890905902319617664
-.L643:
-    .string "eef453d6923bd65a113faa2906a13b3f9558b4661b6565f84ac7ca59a424c507baaee17fa23ebf765d79bcf00d2df649e95a99df8ace6f53f4d82c2c107973dc91d8a02bb6c1059479071b9b8a4be869b64ec836a47146f99748e2826cdee284e3e27a444d8d98b7fd1b1b2308169b258e6d8c6ab0787f72fe30f0f5e50e20f7b208ef855c969f4fbdbd2d335e51a935de8b2b66b3bc4723ad2c788035e613828b16fb203055ac764c3bcb5021afcc31addcb9e83c6b1793df4abe242a1bbf3dd953e8624b85dd78d71d6dad34a2af0d87d4713d6f33aa6b8672648c40e5ad68a9c98d8ccb009506680efdaf511f18c2d43bf0effdc0ba480212bd1b2566def284a57695fe98746d014bb630f7604b57a5ced43b7e3e9188419ea3bd35385e2dcf42894a5dce35ea52064cac828675b9818995ce7aa0e1b27343efebd1940993a1ebfb4219491a1f1014ebe6c5f90bf8ca66fa129f9b60a6d41a26e077774ef6fd00b897478238d08920b098955522b49e20735e8cb1638255b46e5f5d5535b0c5a890362fddbc62eb2189f734aa831df712b443bbd52b7ba5e9ec7501d523e49a6bb0aa55653b2d47b233c92125366ec1069cd4eabe89f8999ec0bb696e840af148440a256e2c76c00670ea43ca250d96cd2a865764dbca380406926a5e5728bc807527ed3e12bcc605083704f5ecf2eba09271e88d976bf7864a44c633682e93445b8731587ea37ab3ee6afbe0211db8157268fdae9e4c5960ea05bad82964e61acf033d1a45df6fb92487298e33bd8fd0c16206306baba5d3b6d479f8e056b3c4f1ba87bc86968f48a4899877186ce0b62e2929aba83c331acdabfe94de878c71dcd9ba0b49259ff0c08b7f1d0b14af8e5410288e1b6f07ecf0ae5ee44dd9db71e91432b1a24ac9e82cd9f69d6150892731ac9faf056ebe311c083a225cd2ab70fe17c79ac6ca6dbd630a48aaf406d64d3d9db981787d092cbbccdad5b10885f0468293f0eb4e25bbf56008c58ea5a76c582338ed2621af2af2b80af6f24ed1476e2c07286faa1af5af660db4aee182cca4db847945ca50d98d9fc890ed4da37fce126597973ce50ff107bab528a0cc5fc196fefd7d0c1e53ed49a96272c8ff77b1fcbebcdc4f25e8e89c13bb0f7a9faacf3df73609b177b191618c54e9acc795830d75038c1dd59df5b9ef6a2417f97ae3d0d2446f254b0573286b44ad1d9becce62836ac5774ee367f9430aec32c2e801fb244576d5229c41f793cda73ff3a20279ed56d48a6b43527578c1110f9845418c345644d6830a13896b78aaa9be5691ef416bd60c23cc986bc656d553edec366b11c6cb8f2cbfbe86b7ec8aa894b3a202eb1c3f397bf7d71432f3d6a9b9e08a83a5e34f07daf5ccd93fb0cc53e858ad248f5c22c9d1b3400f8f9cff6891376c36d99995be23100809b9c21fa1b58547448ffffb2dabd40a0c2832a78ae2e69915b3fff9f916c90c8f323f516c8dd01fad907ffc3bae3da7d97f6792e3b1442798f49ffb4a99cd11cfdf41779cdd95317f31c7fa1d40405643d711d5838a7d3eef7f1cfc52482835ea666b2572ad1c8eab5ee43b66da3243650005eecfd863b256369d4a4090bed43e40076a82873e4f75e2224e685a7744a6e804a291a90de3535aaae202711515d0a205cb36d3515c2831559a830d5a5b44ca873e038412d9991ed58091e858790afe9486c2a5178fff668ae0b6626e974dbe39a872ce5d73ff402d98e3fb0a3d212dc8128f80fa687f881c7f8e7ce66634bc9d0b99a139029f6a239f721c1fffc1ebc44e80c987434744ac874ea327ffb266b56220fbe9141915d7a9224bf1ff9f0062baa89d71ac8fada6c9b56f773fc3603db4a9c4ce17b399107c22cb550fb4384d21d3f6019da07f549b2b7e2a53a146606a4899c102844f94e0fb2eda7444cbfc426dc0314325637a1939fa911155fefb5308f03d93eebc589f88793555ab7eba27ca96267c7535b763b54bc1558b2f3458debbb01b9283253ca29eb1aaedfb016f16ea9c227723ee8bcb465e15a979c1cadc92a1958a7675175f0bfacd89ec191ec9b749faed14125d36cef980ec671f667be51c79a85916f48482b7e12780e7401a8f31cc0937ae58d2d1b2ecb8b0908810b2fe3f0b8599ef07861fa7e6dcb4aa15dfbdcece67006ac967a791e093e1d49a8bd6a141006042bde0c8bb2c5c6d24e0aecc49914078536d58fae9f773886e18da7f5bf590966848af39a475506a899e888f99797a5e012d6d8406c952429603aab37fd7d8f58178c8e5087ba6d33b83d5605fcdcf32e1d6fb1e4a9a90880a64855c3be0a17fcd265cf2eea09a55067fa6b34ad8c9dfc06ff42faa48c0ea481ed0601d8efc57b08bf13b94daf124da26823c12795db6ce5776c53d08d6b70858a2cb1717b52481ed54768c4b0c64ca6ecb7ddcdda26da268a9942f5dcf7dfd09fe5d54150b090b02d3f93b35435d7c4c9efa548d26e5a6e1c47bc5014a1a6dafc6b8e9b0709f109a359ab6419ca1091bf867241c8cc6d4c0c30163d203c94b629b407691d7fc44f879e0de63425dcf1dc21094364dfb5636985915fc12f542e4f294b943e17a2bc43e6f5b7b17b2939d979cf3ca6cec5b5aa705992ceecf9c42bd8430bd0827723150c6ff782a838353ece53cec4a314ebda4f8bf5635246428940f4613ae5ed136871b7795e136be99b913179899f6858428e2557b59846e3fe757dd7ec07426e5331aeada2fe589cf9096ea6f3848984f3ff0d2c85def7621b4bca50b065abe630fed077a756b53a9e1ebce4dc7f16dfbd3e8495912c628948d3360f09cf6e4bd64712dd7abbbd95cb080392cc4349decbd8d794d96aacfb3dca04777f541c567ecf0d7a0fc5583a089e42caaf9491b60f41686c49db57244ac5d37d5b79b6239311c2875c522ced5d77485cb25823ac77d633293366b828b86a8d39ef77164bcae5dff9c02033197a8530886b54dbdebd9f57f830283fdfcd267caa862a12d66d072df63c324fd7b8380dea93da4bc604247cb9e59f71e6da46116538d0deb7852d9be85f074e608cd795be87051665667902e276c921f8b806bd9714632dff600ba1cd8a3db53b6a086cfcd97bf97f380e8a40eccd228a4c8a883c0fdaf7df06122cd128006b2cdfad2a4b13d1b5d6c796b805720085f819cc3a6eec6311a63cbe3303674053bb0c3f490aa77bd60fcbedbfc4411068a9cf4f1b4d515acb93bee92fb5515482d44991711052d8bf3c5751bdd152d4d1c4abf5cd54678eef0b6d262d45a78a0635def340a98172aace486fb897116c87c349580869f0e7aac0ed45d35e6ae3d4da0bae0a846d21957128974836059cca109e998d258869facd72bd1a438703fc94b91ff83775423cc067b6306a34627ddcfb67f6455292cbf081a3bc84c17b1d542e41f3d6a7377eeca20caba5f1d9e4a938e938662882af53e547eb47b7282ee9cb23867fb2a35b28de99e619a4f23aa43dec681f9f4c31f316405fa00e2ec94d48b3c113c38f9f37ede83bc408dd3dd04ae0b158b4738705e9624ab50b148d445d98ddaee19068c763badd624dd9b095787f8a8d4cfa417c9e54ca5d70a80e5d6a9f6d30a038d1dbc5e9fcf4ccd211f4cd47487cc8470652b7647c3200069671f84c8d4dfd2c63f3b29ecd9f40041e073a5fb0a17c777cf09f468107100525890cf79cc9db955c2cc7182148d4066eeb481ac1fe293d599bfc6f14cd848405530a21727db38cb002fb8ada00e5a506a7cca9cf1d206fdc03ba6d90811f0e4851cfd442e4688bd304a908f4a166d1da6639e4a9cec15763e2e9a598e4e043287fec5dd44271ad3cdba40eff1e1853f29fdf7549530e188c128d12bee59e68ef47c9a94dd3e8cf578b982bb74f8301958cec13a148e3032d6e7e36a52363c1faf01f18899b1bc3f8ca1dc44e6c3cb279ac196f5600f15a7b7e529ab103a5ef8c0b9bcb2b812db11a5de7415d448f6b6f0e7ebdf661791d60f56111b495b3464ad21936b9fcebb25c995cab10dd900beec34b84687c269ef3bfb3d5d514f40eea742e65829b3046b0afa0cb4a5a3112a51128ff71a0fe2c2e6dc47f0e785eaba72abb3f4e093db73a09359ed216765690f56e0f218b8d25088b8306869c13ec3532c8c974f73837255731e414218c73a13fbafbd2350644eeacfe5d1929ef90898fadbac6c247d62a583df45f746b74abf39894bc396ce5da7726b8bba8c328eb783ab9eb47c81f5114f066ea92f3f326564d686619ba27255a2c80a537b0efefebd8613fd0145877585bd06742ce95f5f36a798fc4196e952e72c48113823b73704d17f3b51fca3a7a0f75a15862ca504c582ef85133de648c49a984d73dbe722fba3ab66580d5fdaf5c13e60d0d2e0ebbacc963fee10b7d1b3318df905079926a8ffbbcfe994e5c61ffdf17746497f70529fd561f1fd0f9bd3feb6ea8bedefa633c7caba6e7c5382c8fe64a52ee96b8fc0f9bd690a1b68637b3dfdce7aa3c673b09c1661a651213e2d06bea10ca65c084ec31bfa0fe5698db8486e494fcff30a62f3e2f893dec3f1265a89dba3c3efccfa986ddb5c6b3a76b7f89629465a75e01cbe89523386091465f6bbb397f1135823ee2ba6c0678b597f746aa07ded582e2c94db483840b717efa8c2a44eb4571cdcba121a4650e4ddeb92f34d62616ce413e896a0d7e51e156677b020baf9c81d17915e2486ef32cd600ace1474dc1d122eb5b5ada8aaff80b80d819992132456bae3231912d5bf60e610e1fff697ed6c698df5efabc5979c8fca8d3ffa1ef463c1b1736b96b6fd83b3bd308ff8a6b17cb2ddd0467c64bce4a0ac7cb3f6d05ddbde8aa22c0dbef60ee46bcdf07a423aa96bad4ab7112eb3929d86c16c98d2c953c6d89d64d57a607744e871c7bf077ba8b787625f056c7c4a8b11471cd764ad4972a93af6c6c79b5d2dd598e40d3dd89bcfd389b478798234794aff1d108d4ec2c3843610cb4bf160cbcedf722a585139baa54394fe1eedb8fec2974eb4ee658828ce947a3da6a9273e733d226229feea32811ccc668829b8870806357d5a3f525fa163ff802a3426a8ca07c2dcb0cf26f7c9bcff6034c13052fc89b393dd02f0b5fc2c3f3841f17c67bbac2078d443ace29d9ba7832936edc0d54b944b84aa4c0dc5029163f384a9310a9e795e65d4df11f64335bcf065d37d4d4617b5ff4a16d599ea0196163fa42e504bced1bf8e4e45c06481fb9bcf8d39e45ec2862f71e1d6f07da27a82c370885d767327bb4e5a4c964e858c91ba26553a6a07f8d510f86fbbe226efb628afea890489f70a55368beadab0aba3b2dbe52b45ac74ccea842e92c8ae6b464fc96f3b0b8bc90012929db77ada0617e3bbcb09ce6ebb40173744e55990879ddcaabdcc420a6a101d05158f57fa54c2a9eab69fa946824a12232db32df8e9f354656447939822dc96abf9dff9772470297ebd59787e2b93bc56f78bfbea76c619ef3657eb4edb3c55b65aaefae51477a06b03ede622920b6b23f1dab99e59958885c4e95fab368e45eced88b402f7fd75539b11dbcb0218ebb414aae103b5fcd2a881d652bdc29f26a119d59944a37c0752a24be76d3346f0495f857fcae62d8493a56f70a4400c562ddba6dfbd9fb8e5b88ecb4ccd500f6bb952d097ad07a71f26b27e2000a41346a7a7825ecc24c873782f8ed400668c0c28c8a2f67f2dfa90563b728900802f0f32facbb41ef979346bca4f2b40a03ad2ffb9fea126b7d78186bce2f610c84987bfa89f24b832e6b0f4360dd9ca7d2df4d7c9c6ede63fa05d314391503d1c79720dbbf8a95fcf88747d9475a44c6397ce912a9b69dbe1b548ce7cc986afbe3ee11abac24452da229b021bfbe85badce996168f2d56790ab41c2a2fae27299423fb9c397c560ba6b0919a5dccd879fc967d41abdb6b8e905cb600f5400e987bbc1c920ed246723473e3813290123e9aab23b689436c0760c86e30bf9a0b6720aaf6521b94470938fa89bcef808e40e8d5b3e69e7958cb87392c2c2b60b1d1230b20e0490bd77f3483bb9b9b1c6f22b5e6f48c2b4ecd5f01a4aa8281e38aeb6360b1af3e2280b6c20dd523225c6da63c38de1b08d590723948a535f579c487e5a38ad0eb0af48ec79ace8372d835a9df0c6d851dcdb1b2798182244f8e431456cf88e658a08f0f8bf0f156b1b8e9ecb641b58ffac8b2d36eed2dac5e272467e3d222f3fd7adf884aa8791775b0ed81dcc6abb0f86ccbb52ea94baea98e947129fc2b4e9a87fea27a539e9a53f2398d747b36224d29fe4b18e88640e8eec7f0d19a03aad83a3eeeef9153e891953cf68300424aca48ceaaab75a8e2b5fa8c3423c052dd7cdb02555653131b63792f412cb06794d808e17555f3ebf11e2bbd88bbee40bd0a0b19d2ab70e6ed65b6aceaeae9d0ec4c8de047564d20a8bf245825a5a445275fb158592be068d2eeed6e2f0f0d567129ced737bb6c4183d55464dd69685606bc428d05aa4751e4caa97e14c3c26b886f53304714d9265dfd53dd99f4b3066a8993fe2c6d07b7fabe546a8038efe4029bf8fdb78849a5f96de98520472bdd033ef73d256a5c0f77c963e66858f6d444095a8637627989aaddde7001379a44aa8bb127c53b17ec1595560c018580d5d52e9d71b689dde71afaab8f01e6e10b4a69226712162ab070dcab3961304ca70e8b6b00d69bb55c8d13d607b97c5fd0d22e45c10c42a2b3b058cb89a7db77c506a8eb98a7a9a5b04e377f3608e92adb242b267ed1940f1c61c55f038b237591ed3df01e85f912e37a36b6c46dec52f66888b61313bbabce2c62323ac4b3b3da015ae397d8aa96c1b77abec975e0a0d081ad9c7dced53c7225596e7bd358c904a21881cea14545c75757e50d64177da2e54aa242499697392d2dde50bd1d5d0b9e9d4ad2dbfc3d07787955e4ec64b44e86484ec3c97da624ab4bd5af13bef0b113ea6274bbdd0fadd61ecb1ad8aeacdd58ecfb11ead453994ba67de18eda5814af281ceb32c4b43fcf480eacf948770ced7a2425ff75e14fc31a1258379a94d028dcad2f7f5359a3b3e096ee45813a04330fd87b5f28300ca0d8bca9d6e188853fc9e74d1b791e07e48775ea264cf55347ec612062576589dda95364afe032a819ef79687aed3eec5513a83ddbd83f522059abe14cd44753b52c4926a9672793543c16d9a0095928a2775b7053c0f178294f1c90080baf72cb15324c68b12dd6339971da05074da7beed3f6fc16ebca5e04bce5086492111aea88f4bb1ca6bcf585ec1e4a7db69561a52b31e9e3d06c32e69392ee8e921d5d073aff322e62439fd0b877aa3236a4b44909befeb9fad487c3e69594bec44de15b4c2ebe687989a9b4901d7cf73ab0acd90f9d37014bf60a11b424dc35095cd80f538484c19ef38c95e12e13424bb40e132865a5f206b06fba8cbccc096f5088cbf93f87b7442e45d4afebff0bcb24aafef78f69a51539d749dbe6fecebdedd5beb573440e5a884d1c89705f4136b4a59731680a88f8953031abcc77118461cefcfdc20d2b36ba7c3ed6bf94d5e57a42bc3d32907604691b4d8637bd05af6c69b5a63f9a49c2c1b110a7c5ac471b4784230fcf80dc33721d54d1b71758e219652bd3c36113404ea4a983126e978d4fdf3b645a1cac083126eaa3d70a3d70a3d70a3d70a3d70a3d70a4cccccccccccccccccccccccccccccccd80000000000000000000000000000000a0000000000000000000000000000000c8000000000000000000000000000000fa0000000000000000000000000000009c400000000000000000000000000000c3500000000000000000000000000000f424000000000000000000000000000098968000000000000000000000000000bebc2000000000000000000000000000ee6b28000000000000000000000000009502f900000000000000000000000000ba43b740000000000000000000000000e8d4a5100000000000000000000000009184e72a000000000000000000000000b5e620f4800000000000000000000000e35fa931a000000000000000000000008e1bc9bf040000000000000000000000b1a2bc2ec50000000000000000000000de0b6b3a7640000000000000000000008ac7230489e800000000000000000000ad78ebc5ac6200000000000000000000d8d726b7177a80000000000000000000878678326eac90000000000000000000a968163f0a57b4000000000000000000d3c21bcecceda100000000000000000084595161401484a00000000000000000a56fa5b99019a5c80000000000000000cecb8f27f4200f3a0000000000000000813f3978f89409844000000000000000a18f07d736b90be55000000000000000c9f2c9cd04674edea400000000000000fc6f7c40458122964d000000000000009dc5ada82b70b59df020000000000000c5371912364ce3056c28000000000000f684df56c3e01bc6c7320000000000009a130b963a6c115c3c7f400000000000c097ce7bc90715b34b9f100000000000f0bdc21abb48db201e86d4000000000096769950b50d88f41314448000000000bc143fa4e250eb3117d955a000000000eb194f8e1ae525fd5dcfab080000000092efd1b8d0cf37be5aa1cae500000000b7abc627050305adf14a3d9e40000000e596b7b0c643c7196d9ccd05d00000008f7e32ce7bea5c6fe4820023a2000000b35dbf821ae4f38bdda2802c8a800000e0352f62a19e306ed50b2037ad2000008c213d9da502de454526f422cc340000af298d050e4395d69670b12b7f410000daf3f04651d47b4c3c0cdd765f11400088d8762bf324cd0fa5880a69fb6ac800ab0e93b6efee00538eea0d047a457a00d5d238a4abe9806872a4904598d6d88085a36366eb71f04147a6da2b7f864750a70c3c40a64e6c51999090b65f67d924d0cf4b50cfe20765fff4b4e3f741cf6d82818f1281ed449fbff8f10e7a8921a4a321f2d7226895c7aff72d52192b6a0dcbea6f8ceb02bb399bf4f8a69f764490fee50b7025c36a0802f236d04753d5b49f4f2726179a224501d762422c946590c722f0ef9d80aad6424d3ad2b7b97ef5f8ebad2b84e0d58bd2e0898765a7deb29b934c3b330c857763cc55f49f88eb2fc2781f49ffcfa6d53cbf6b71c76b25fbf316271c7fc3908a8bef464e3945ef7a97edd871cfda3a5697758bf0e3cbb5acbde94e8e43d0c8ec3d52eeed1cbea317ed63a231d4c4fb274ca7aaa863ee4bdd945e455f24fb1cf88fe8caa93e74ef6ab975d6b6ee39e436b3e2fd538e122b44e7d34c64a9c85d4460dbbca87196b61690e40fbeea1d3a4abc8955e946fe31cdb51d13aea4a488dd6babab6398bdbe41e264589a4dcdab14c696963c7eed2dd18d7eb76070a08aecfc1e1de5cf543ca2b0de65388cc8ada83b25a55f43294bcbdd15fe86affad91249ef0eb713f39ebe8a2dbf142dfcc7ab6e3569326c784337acb92ed9397bf99649c2c37f07965404d7e77a8f87daf7fbdc33745ec97be90686f0ac99b4e8dafd69a028bb3ded71a3a8acd7c0222311bcc40832ea0d68ce0cd2d80db02aabd62bf50a3fa490c3019083c7088e1aab65db792667c6da79e0faa4b8cab1a1563f52577001b891185938cde6fd5e09abcf26ed4c0226b55e6f8680b05e5ac60b6178544f8158315b05b4a0dc75f1778e39d6696361ae3db1c721c913936dd571c84c03bc3a19cd1e38e9fb5878494ace3a5f04ab48a04065c7239d174b2dcec0e47b62eb0d64283f9c76c45d1df942711d9a3ba5d0bd324f8394f5746577930d6500ca8f44ec7ee364799968bf6abbe85f207e998b13cf4e1ecbbfc2ef456ae276e89e3fedd8c321a67eefb3ab16c59b14a2c5cfe94ef3ea101e95d04aee3b80ece5bba1f1d158724a12bb445da9ca61281f2a8a6e45ae8edc97ea1575143cf97226f52d09d71a3293bd924d692ca61be758593c2626705f9c56b6e0c377cfa2e12e6f8b2fb00c77836ce498f455c38b997a0b6dfb9c0f9564478edf98b59a373fec4724bd4189bd5eacb2977ee300c50fe758edec91ec2cb657df3d5e9bc0f653e12f2967b66737e3ed8b865b215899f46cbd79e0d20082ee74ae67f1e9aec07187ecd8590680a3aa11da01ee641a708de9e80e6f4820cc9495884134fe908658b23109058d147fdcddaa51823e34a7eedebd4b46f0599fd415d4e5e2cdc1d1ea966c9e18ac7007c91a850fadc09923329e03e2cf6bc604ddb0a6539930bf6bff4584db8346b786151ccfe87f7cef46ff16e612641865679a6381f14fae158c5f6e4fcb7e8f3f60c07ea26da3999aef7749e3be5e330f38f09dcb090c8001ab551c5cadf5bfd3072cc5fdcb4fa002162a6373d9732fc7c8f7f69e9f11c4014dda7e2867e7fddcdd9afac646d63501a1511db281e1fd541501b8f7d88bc24209a5651f225a7ca91a42269ae757596946075f3375788de9b06958c1a12d2fc39789370052d6b1641c83aef209787bb47d6b84c0678c5dbd23a49a9745eb4d50ce6332f840b7ba963646e0bd176620a501fbffb650e5a93bc3d898ec5d3fa8ce427affa3e51f138ab4cebe93ba47c980e98cdfc66f336c36b10137b8a8d9bbe123f017b80b0047445d4184e6d3102ad96cec1da60dc059157491e59043ea1ac7e4139287c89837ad68db2fb454e4a179dd187729babe4598c311fbe16a1dc9d8545e94f4296dd6fef3d67a8ce2529e2734bb1d1899e4a65f58660cb01ae745b101e9e45ec05dcff72e7f8fdc21a1171d42645d76707543f4fa1f73899504ae72497eba6a06494a791c53a8abfa45da0edbde690487db9d17636892d6f8d7509292d60345a9d2845d3c42b6865b86925b9bc5c20b8a2392ba45a9b2a7f26836f282b7328e6cac7768d7141ed1ef0244af2364ff3207d795430cd9268335616aed761f1f7f44e6bd49e807b8a402b9c5a8d3a6e75f16206c9c6209a6cd036837130890a136dba887c37a8c0f802221226be55a64c2494954da2c9789a02aa96b06deb0fdf2db9baa10b7bd6cc83553c5c8965d3d6f92829494e5acc7fa42a8b73abbf48ccb772339ba1f17f99c69a97284b578d7ff2a760414536efbc38413cf25e2d70dfef5138519684abaf46518c2ef5b8cd17eb258665fc25d6998bf2f79d5993802ef2f773ffbd97a61beeefb584aff8603aafb550ffacfd8faeeaaba2e5dbf678495ba2a53f983cf38952ab45cfa97a0b2dd945a747bf26183ba756174393d88df94f971119aeef9e4e912b9d1478ceb177a37cd5601aab85d91abb422ccb812eeac62e055c10ab33ab616a12b7fe617aa577b986b314d6009e39c49765fdf9d94ed5a7e85fda0b80b8e41ade9fbebc27d14588f13be847307b1d219647ae6b31c596eb2d8ae258fc8de469fbd99a05fe36fca5f8ed9aef3bb8aec23d680043bee25de7bb9480d5854ada72ccc20054ae9af561aa79a10ae6ad910f7ff28069da41b2ba1518094da0487aa9aff7904228690fb44d2f05d0842a99541bf57452b28353a1607ac744a53d3fa922f2d1675f242889b8997915ce8847c9b5d7c2e09b769956135febada11a59bc234db398c2543fab9837e699095cf02b2c21207ef2e94f967e45e03f4bb8161afb94b44f57d1d1be0eebac278f5a1ba1ba79e1632dc6462d92a69731732ca28a291859bbf937d7b8f7503cfdcfefcb2cb35e702af785cda735244c3d43e9defbf01b061adab3a0888136afa64a7c56baec21c7a1916088aaa1845b8fdd0f6c69a72a3989f5b8aad549e57273d459a3c2087a63f639936ac54e2f678864bc0cb28a98fcf3c7f84576a1bb416a7ddf0fdf2d3f3c30b9f656d44a2a11c51d5969eb7c47859e7439f644ae5a4b1b325bc4665b596706114873d5d9f0dde1feeeb57ff22fc0c7959a90cb506d155a7ea9316ff75dd87cbd809a7f12442d588f2b7dcbf5354e9bece0c11ed6d538aeb2fe5d3ef282a242e818f1668c8a86da5fa8fa475791a569d10f96e017d694487bcb38d92d760ec445537c981dcc395a9ace070f78d3927556a85bbe253f47b14178c469ab843b8956293956d7478ccec8eaf58416654a6babb387ac8d1970027b2db2e51bfe9d0696a06997b05fcc0319e88fcf317f22241e2441fece3bdf81f03ab3c2fddeeaad25ad527e81cad7626c3d60b3bd56a5586f18a71e223d8d3b07485c7056562757456f6872d5667844e49a738c6bebb12d16cb428f8ac016561dbd106f86e69d785c7e13336d701beba5282a45b450226b39cecc0024661173473a34d721642b0608427f002d7f95d0190cc20ce9bd35c78a531ec038df7b441f4ff290242c83396ce7e67047175a152719f79a169bd203e410f0062c6e984d386c75809c42c684dd152c07b78a3e60868f92e0c3537826145a7709a56ccdf8a829bbcc7a142b17ccb88a66076400bb691c2abf989935ddbfe6acff893d00ea435f356f7ebf83552fe0583f6b8c4124d4398165af37b2153dec3727a337a8b704abe1bf1b059e9a8d6744f18c0592e4c5ceda2ee1c7064130c1162def06f79df739485d4d1c63e8be78addcb5645ac2ba8b9a74a0637ce2ee16d953e2bd7173692e8111c87c5c1ba99c8fa8db6ccdd0437910ab1d4db9914a01d9c9892400a22a2b54d5e4a127f59c82503beb6d00cab4be2a0b5dc971f303a2e44ae64840fd61d8da471a9de737e245ceaecfed289e5d2b10d8e1456105dad7425a83e872c5f47dd50f1996b947518d12f124e28f777198a5296ffe33cc92f82bd6b70d99aaa6face73cbfdc0bfb7b636cc64d1001550bd8210befd30efa5a3c47f7e05401aa4e8714a775e3e95c7865acfaec34810a71a8d9d1535ce3b3967f1839a741a14d0dd31045a8341ca07c1ede48111209a05083ea2b892091e44d934aed0aab460432a4e4b66b68b65d60f81da84d5617853fce1de40642e3f4b936251260ab9d668e80d2ae83e9ce78f3c1d72b7c6b426019a1075a24e4421730b24cf65b8612f81fc94930ae1d529cfcdee033f26797b627fb9b7cd9a4a7443c169840ef017da3b19d412e0806e88aa58e1f289560ee864ec491798a08a2ad4ef1a6f2bab92a27e2f5b5d7ec8acb58a2ae10af696774b1db9991a6f3d6bf1765acca6da1e0a8ef29bff610b0cc6edd3f17fd090a58d32af3eff394dcff8a948eddfc4b4cef07f5b095f83d0a1fb69cd94abdaf101564f98ebb764c4ca7a4440f9d6d1ad41abe37f1ea53df5fd18d551384c86189216dc5ed92746b9be2f8552c32fd3cf5b4e49bb4b7118682dbb66a773fbc8c33221dc2a1e4d5e82392a405150fabaf3feaa5334a8f05b1163ba6832d29cb4d87f2a7400eb2c71d5bca9023f8743e20e9ef511012df78e4b2bd342cf6914da9246b2554168bab8eefb6409c1a1ad089b6c2f7548eae9672aba3d0c320a184ac2473b529b1da3c0f568cc4f3e8c9e5d72d90a2741e8865899617fb18717e2fa67c7a658892aa7eebfb9df9de8dddbb901b98feeab7d51ea6fa85785631552a74227f3ea5658533285c936b35ded53a88958f87275fa67ff273b84603568a892abaf368f137d01fef10a657842c2d2b7569b0432d858213f56a67f6b29b9c3b29620e29fc73a298f2c501f45f428349f3ba91b47b8fcb3f2f7642717713241c70a936219a73fe0efb53d30dd4d7ed238cd383aa01109ec95d1463e8a506f4363804324a40aac67bb4597ce2ce48b143c6053edcd0d5f81aa16fdc1b81dadd94b7868e94050a9b10a4e5e9913128ca7cf2b4191c8326c1d4ce1f63f57d72fd1c2f611f63a3f0f24a01a73cf2dccfbc633b39673c8cec976e41088617ca01d5be0503e085d813bd49d14aa79dbc824b2d8644d8a74e18ec9c459d51852ba2ddf8e7d60ed1219e93e1ab8252f33b45cabb90e5c942b503b8da1662e7b00a173d6a751f3b936243e7109bfba19c0c9d0cc512670a783ad4906a617d450187e227fb2b80668b24c5b484f9dc9641e9dab1f9f660802dedf6e1a63853bbd264515e7873f8a03969738d07e33455637eb2db0b487b6423e1e8b049dc016abc5e5f91ce1a9a3d2cda62dc5c5301c56b75f77641a140cc7810fb89b9b3e11b6329baa9e904c87fcb0a9dac2820d9623bf429546345fa9fbdcd44d732290fbacaf133a97c177947ad4095867f59a9d4bed6c049ed8eabcccc485da81f301449ee8c705c68f256bfff5a74d226fc195c6a2f8c73832eec6fff311183585d8fd9c25db7c831fd53c5ff7eaba42e74f3d032f525ba3e7ca8b77f5e55cd3a1230c43fb26f28ce1bd2e55f35eb80444b5e7aa7cf857980d163cf5b81b3a0555e361951c366d7e105bcc332621fc86ab5c39fa634408dd9472bf3fefaa7fa856334878fc150b14f98f6f0feb9519c935e00d4b9d8d26ed1bf9a569f33d3c3b8358109e84f070a862f80ec4700c8f4a642e14c6262c8cd27bb612758c0fa98e7e9cccfbd7dbd8038d51cb897789cbf21e44003acdd2ce0470a63e6bd56c3eeea5d50049814781858ccfce06cac7495527a5202df0ccb0f37801e0c43ebc8baa718e68396cffdd30560258f54e6bae950df20247c83fd47c6b82ef32a206991d28b7416cdd27e4cdc331d57fa5441b6472e511c81471de0133fe4adf8e952e3d8f9e563a198e558180fddd97723a68e679c2f5e44ff8f570f09eaa7ea7648"
 .L644:
-    .quad 4607182418800017408
-.L649:
-    .quad 4621819117588971520
-.L651:
     .string "eef453d6923bd65a113faa2906a13b3f9558b4661b6565f84ac7ca59a424c507baaee17fa23ebf765d79bcf00d2df649e95a99df8ace6f53f4d82c2c107973dc91d8a02bb6c1059479071b9b8a4be869b64ec836a47146f99748e2826cdee284e3e27a444d8d98b7fd1b1b2308169b258e6d8c6ab0787f72fe30f0f5e50e20f7b208ef855c969f4fbdbd2d335e51a935de8b2b66b3bc4723ad2c788035e613828b16fb203055ac764c3bcb5021afcc31addcb9e83c6b1793df4abe242a1bbf3dd953e8624b85dd78d71d6dad34a2af0d87d4713d6f33aa6b8672648c40e5ad68a9c98d8ccb009506680efdaf511f18c2d43bf0effdc0ba480212bd1b2566def284a57695fe98746d014bb630f7604b57a5ced43b7e3e9188419ea3bd35385e2dcf42894a5dce35ea52064cac828675b9818995ce7aa0e1b27343efebd1940993a1ebfb4219491a1f1014ebe6c5f90bf8ca66fa129f9b60a6d41a26e077774ef6fd00b897478238d08920b098955522b49e20735e8cb1638255b46e5f5d5535b0c5a890362fddbc62eb2189f734aa831df712b443bbd52b7ba5e9ec7501d523e49a6bb0aa55653b2d47b233c92125366ec1069cd4eabe89f8999ec0bb696e840af148440a256e2c76c00670ea43ca250d96cd2a865764dbca380406926a5e5728bc807527ed3e12bcc605083704f5ecf2eba09271e88d976bf7864a44c633682e93445b8731587ea37ab3ee6afbe0211db8157268fdae9e4c5960ea05bad82964e61acf033d1a45df6fb92487298e33bd8fd0c16206306baba5d3b6d479f8e056b3c4f1ba87bc86968f48a4899877186ce0b62e2929aba83c331acdabfe94de878c71dcd9ba0b49259ff0c08b7f1d0b14af8e5410288e1b6f07ecf0ae5ee44dd9db71e91432b1a24ac9e82cd9f69d6150892731ac9faf056ebe311c083a225cd2ab70fe17c79ac6ca6dbd630a48aaf406d64d3d9db981787d092cbbccdad5b10885f0468293f0eb4e25bbf56008c58ea5a76c582338ed2621af2af2b80af6f24ed1476e2c07286faa1af5af660db4aee182cca4db847945ca50d98d9fc890ed4da37fce126597973ce50ff107bab528a0cc5fc196fefd7d0c1e53ed49a96272c8ff77b1fcbebcdc4f25e8e89c13bb0f7a9faacf3df73609b177b191618c54e9acc795830d75038c1dd59df5b9ef6a2417f97ae3d0d2446f254b0573286b44ad1d9becce62836ac5774ee367f9430aec32c2e801fb244576d5229c41f793cda73ff3a20279ed56d48a6b43527578c1110f9845418c345644d6830a13896b78aaa9be5691ef416bd60c23cc986bc656d553edec366b11c6cb8f2cbfbe86b7ec8aa894b3a202eb1c3f397bf7d71432f3d6a9b9e08a83a5e34f07daf5ccd93fb0cc53e858ad248f5c22c9d1b3400f8f9cff6891376c36d99995be23100809b9c21fa1b58547448ffffb2dabd40a0c2832a78ae2e69915b3fff9f916c90c8f323f516c8dd01fad907ffc3bae3da7d97f6792e3b1442798f49ffb4a99cd11cfdf41779cdd95317f31c7fa1d40405643d711d5838a7d3eef7f1cfc52482835ea666b2572ad1c8eab5ee43b66da3243650005eecfd863b256369d4a4090bed43e40076a82873e4f75e2224e685a7744a6e804a291a90de3535aaae202711515d0a205cb36d3515c2831559a830d5a5b44ca873e038412d9991ed58091e858790afe9486c2a5178fff668ae0b6626e974dbe39a872ce5d73ff402d98e3fb0a3d212dc8128f80fa687f881c7f8e7ce66634bc9d0b99a139029f6a239f721c1fffc1ebc44e80c987434744ac874ea327ffb266b56220fbe9141915d7a9224bf1ff9f0062baa89d71ac8fada6c9b56f773fc3603db4a9c4ce17b399107c22cb550fb4384d21d3f6019da07f549b2b7e2a53a146606a4899c102844f94e0fb2eda7444cbfc426dc0314325637a1939fa911155fefb5308f03d93eebc589f88793555ab7eba27ca96267c7535b763b54bc1558b2f3458debbb01b9283253ca29eb1aaedfb016f16ea9c227723ee8bcb465e15a979c1cadc92a1958a7675175f0bfacd89ec191ec9b749faed14125d36cef980ec671f667be51c79a85916f48482b7e12780e7401a8f31cc0937ae58d2d1b2ecb8b0908810b2fe3f0b8599ef07861fa7e6dcb4aa15dfbdcece67006ac967a791e093e1d49a8bd6a141006042bde0c8bb2c5c6d24e0aecc49914078536d58fae9f773886e18da7f5bf590966848af39a475506a899e888f99797a5e012d6d8406c952429603aab37fd7d8f58178c8e5087ba6d33b83d5605fcdcf32e1d6fb1e4a9a90880a64855c3be0a17fcd265cf2eea09a55067fa6b34ad8c9dfc06ff42faa48c0ea481ed0601d8efc57b08bf13b94daf124da26823c12795db6ce5776c53d08d6b70858a2cb1717b52481ed54768c4b0c64ca6ecb7ddcdda26da268a9942f5dcf7dfd09fe5d54150b090b02d3f93b35435d7c4c9efa548d26e5a6e1c47bc5014a1a6dafc6b8e9b0709f109a359ab6419ca1091bf867241c8cc6d4c0c30163d203c94b629b407691d7fc44f879e0de63425dcf1dc21094364dfb5636985915fc12f542e4f294b943e17a2bc43e6f5b7b17b2939d979cf3ca6cec5b5aa705992ceecf9c42bd8430bd0827723150c6ff782a838353ece53cec4a314ebda4f8bf5635246428940f4613ae5ed136871b7795e136be99b913179899f6858428e2557b59846e3fe757dd7ec07426e5331aeada2fe589cf9096ea6f3848984f3ff0d2c85def7621b4bca50b065abe630fed077a756b53a9e1ebce4dc7f16dfbd3e8495912c628948d3360f09cf6e4bd64712dd7abbbd95cb080392cc4349decbd8d794d96aacfb3dca04777f541c567ecf0d7a0fc5583a089e42caaf9491b60f41686c49db57244ac5d37d5b79b6239311c2875c522ced5d77485cb25823ac77d633293366b828b86a8d39ef77164bcae5dff9c02033197a8530886b54dbdebd9f57f830283fdfcd267caa862a12d66d072df63c324fd7b8380dea93da4bc604247cb9e59f71e6da46116538d0deb7852d9be85f074e608cd795be87051665667902e276c921f8b806bd9714632dff600ba1cd8a3db53b6a086cfcd97bf97f380e8a40eccd228a4c8a883c0fdaf7df06122cd128006b2cdfad2a4b13d1b5d6c796b805720085f819cc3a6eec6311a63cbe3303674053bb0c3f490aa77bd60fcbedbfc4411068a9cf4f1b4d515acb93bee92fb5515482d44991711052d8bf3c5751bdd152d4d1c4abf5cd54678eef0b6d262d45a78a0635def340a98172aace486fb897116c87c349580869f0e7aac0ed45d35e6ae3d4da0bae0a846d21957128974836059cca109e998d258869facd72bd1a438703fc94b91ff83775423cc067b6306a34627ddcfb67f6455292cbf081a3bc84c17b1d542e41f3d6a7377eeca20caba5f1d9e4a938e938662882af53e547eb47b7282ee9cb23867fb2a35b28de99e619a4f23aa43dec681f9f4c31f316405fa00e2ec94d48b3c113c38f9f37ede83bc408dd3dd04ae0b158b4738705e9624ab50b148d445d98ddaee19068c763badd624dd9b095787f8a8d4cfa417c9e54ca5d70a80e5d6a9f6d30a038d1dbc5e9fcf4ccd211f4cd47487cc8470652b7647c3200069671f84c8d4dfd2c63f3b29ecd9f40041e073a5fb0a17c777cf09f468107100525890cf79cc9db955c2cc7182148d4066eeb481ac1fe293d599bfc6f14cd848405530a21727db38cb002fb8ada00e5a506a7cca9cf1d206fdc03ba6d90811f0e4851cfd442e4688bd304a908f4a166d1da6639e4a9cec15763e2e9a598e4e043287fec5dd44271ad3cdba40eff1e1853f29fdf7549530e188c128d12bee59e68ef47c9a94dd3e8cf578b982bb74f8301958cec13a148e3032d6e7e36a52363c1faf01f18899b1bc3f8ca1dc44e6c3cb279ac196f5600f15a7b7e529ab103a5ef8c0b9bcb2b812db11a5de7415d448f6b6f0e7ebdf661791d60f56111b495b3464ad21936b9fcebb25c995cab10dd900beec34b84687c269ef3bfb3d5d514f40eea742e65829b3046b0afa0cb4a5a3112a51128ff71a0fe2c2e6dc47f0e785eaba72abb3f4e093db73a09359ed216765690f56e0f218b8d25088b8306869c13ec3532c8c974f73837255731e414218c73a13fbafbd2350644eeacfe5d1929ef90898fadbac6c247d62a583df45f746b74abf39894bc396ce5da7726b8bba8c328eb783ab9eb47c81f5114f066ea92f3f326564d686619ba27255a2c80a537b0efefebd8613fd0145877585bd06742ce95f5f36a798fc4196e952e72c48113823b73704d17f3b51fca3a7a0f75a15862ca504c582ef85133de648c49a984d73dbe722fba3ab66580d5fdaf5c13e60d0d2e0ebbacc963fee10b7d1b3318df905079926a8ffbbcfe994e5c61ffdf17746497f70529fd561f1fd0f9bd3feb6ea8bedefa633c7caba6e7c5382c8fe64a52ee96b8fc0f9bd690a1b68637b3dfdce7aa3c673b09c1661a651213e2d06bea10ca65c084ec31bfa0fe5698db8486e494fcff30a62f3e2f893dec3f1265a89dba3c3efccfa986ddb5c6b3a76b7f89629465a75e01cbe89523386091465f6bbb397f1135823ee2ba6c0678b597f746aa07ded582e2c94db483840b717efa8c2a44eb4571cdcba121a4650e4ddeb92f34d62616ce413e896a0d7e51e156677b020baf9c81d17915e2486ef32cd600ace1474dc1d122eb5b5ada8aaff80b80d819992132456bae3231912d5bf60e610e1fff697ed6c698df5efabc5979c8fca8d3ffa1ef463c1b1736b96b6fd83b3bd308ff8a6b17cb2ddd0467c64bce4a0ac7cb3f6d05ddbde8aa22c0dbef60ee46bcdf07a423aa96bad4ab7112eb3929d86c16c98d2c953c6d89d64d57a607744e871c7bf077ba8b787625f056c7c4a8b11471cd764ad4972a93af6c6c79b5d2dd598e40d3dd89bcfd389b478798234794aff1d108d4ec2c3843610cb4bf160cbcedf722a585139baa54394fe1eedb8fec2974eb4ee658828ce947a3da6a9273e733d226229feea32811ccc668829b8870806357d5a3f525fa163ff802a3426a8ca07c2dcb0cf26f7c9bcff6034c13052fc89b393dd02f0b5fc2c3f3841f17c67bbac2078d443ace29d9ba7832936edc0d54b944b84aa4c0dc5029163f384a9310a9e795e65d4df11f64335bcf065d37d4d4617b5ff4a16d599ea0196163fa42e504bced1bf8e4e45c06481fb9bcf8d39e45ec2862f71e1d6f07da27a82c370885d767327bb4e5a4c964e858c91ba26553a6a07f8d510f86fbbe226efb628afea890489f70a55368beadab0aba3b2dbe52b45ac74ccea842e92c8ae6b464fc96f3b0b8bc90012929db77ada0617e3bbcb09ce6ebb40173744e55990879ddcaabdcc420a6a101d05158f57fa54c2a9eab69fa946824a12232db32df8e9f354656447939822dc96abf9dff9772470297ebd59787e2b93bc56f78bfbea76c619ef3657eb4edb3c55b65aaefae51477a06b03ede622920b6b23f1dab99e59958885c4e95fab368e45eced88b402f7fd75539b11dbcb0218ebb414aae103b5fcd2a881d652bdc29f26a119d59944a37c0752a24be76d3346f0495f857fcae62d8493a56f70a4400c562ddba6dfbd9fb8e5b88ecb4ccd500f6bb952d097ad07a71f26b27e2000a41346a7a7825ecc24c873782f8ed400668c0c28c8a2f67f2dfa90563b728900802f0f32facbb41ef979346bca4f2b40a03ad2ffb9fea126b7d78186bce2f610c84987bfa89f24b832e6b0f4360dd9ca7d2df4d7c9c6ede63fa05d314391503d1c79720dbbf8a95fcf88747d9475a44c6397ce912a9b69dbe1b548ce7cc986afbe3ee11abac24452da229b021bfbe85badce996168f2d56790ab41c2a2fae27299423fb9c397c560ba6b0919a5dccd879fc967d41abdb6b8e905cb600f5400e987bbc1c920ed246723473e3813290123e9aab23b689436c0760c86e30bf9a0b6720aaf6521b94470938fa89bcef808e40e8d5b3e69e7958cb87392c2c2b60b1d1230b20e0490bd77f3483bb9b9b1c6f22b5e6f48c2b4ecd5f01a4aa8281e38aeb6360b1af3e2280b6c20dd523225c6da63c38de1b08d590723948a535f579c487e5a38ad0eb0af48ec79ace8372d835a9df0c6d851dcdb1b2798182244f8e431456cf88e658a08f0f8bf0f156b1b8e9ecb641b58ffac8b2d36eed2dac5e272467e3d222f3fd7adf884aa8791775b0ed81dcc6abb0f86ccbb52ea94baea98e947129fc2b4e9a87fea27a539e9a53f2398d747b36224d29fe4b18e88640e8eec7f0d19a03aad83a3eeeef9153e891953cf68300424aca48ceaaab75a8e2b5fa8c3423c052dd7cdb02555653131b63792f412cb06794d808e17555f3ebf11e2bbd88bbee40bd0a0b19d2ab70e6ed65b6aceaeae9d0ec4c8de047564d20a8bf245825a5a445275fb158592be068d2eeed6e2f0f0d567129ced737bb6c4183d55464dd69685606bc428d05aa4751e4caa97e14c3c26b886f53304714d9265dfd53dd99f4b3066a8993fe2c6d07b7fabe546a8038efe4029bf8fdb78849a5f96de98520472bdd033ef73d256a5c0f77c963e66858f6d444095a8637627989aaddde7001379a44aa8bb127c53b17ec1595560c018580d5d52e9d71b689dde71afaab8f01e6e10b4a69226712162ab070dcab3961304ca70e8b6b00d69bb55c8d13d607b97c5fd0d22e45c10c42a2b3b058cb89a7db77c506a8eb98a7a9a5b04e377f3608e92adb242b267ed1940f1c61c55f038b237591ed3df01e85f912e37a36b6c46dec52f66888b61313bbabce2c62323ac4b3b3da015ae397d8aa96c1b77abec975e0a0d081ad9c7dced53c7225596e7bd358c904a21881cea14545c75757e50d64177da2e54aa242499697392d2dde50bd1d5d0b9e9d4ad2dbfc3d07787955e4ec64b44e86484ec3c97da624ab4bd5af13bef0b113ea6274bbdd0fadd61ecb1ad8aeacdd58ecfb11ead453994ba67de18eda5814af281ceb32c4b43fcf480eacf948770ced7a2425ff75e14fc31a1258379a94d028dcad2f7f5359a3b3e096ee45813a04330fd87b5f28300ca0d8bca9d6e188853fc9e74d1b791e07e48775ea264cf55347ec612062576589dda95364afe032a819ef79687aed3eec5513a83ddbd83f522059abe14cd44753b52c4926a9672793543c16d9a0095928a2775b7053c0f178294f1c90080baf72cb15324c68b12dd6339971da05074da7beed3f6fc16ebca5e04bce5086492111aea88f4bb1ca6bcf585ec1e4a7db69561a52b31e9e3d06c32e69392ee8e921d5d073aff322e62439fd0b877aa3236a4b44909befeb9fad487c3e69594bec44de15b4c2ebe687989a9b4901d7cf73ab0acd90f9d37014bf60a11b424dc35095cd80f538484c19ef38c95e12e13424bb40e132865a5f206b06fba8cbccc096f5088cbf93f87b7442e45d4afebff0bcb24aafef78f69a51539d749dbe6fecebdedd5beb573440e5a884d1c89705f4136b4a59731680a88f8953031abcc77118461cefcfdc20d2b36ba7c3ed6bf94d5e57a42bc3d32907604691b4d8637bd05af6c69b5a63f9a49c2c1b110a7c5ac471b4784230fcf80dc33721d54d1b71758e219652bd3c36113404ea4a983126e978d4fdf3b645a1cac083126eaa3d70a3d70a3d70a3d70a3d70a3d70a4cccccccccccccccccccccccccccccccd80000000000000000000000000000000a0000000000000000000000000000000c8000000000000000000000000000000fa0000000000000000000000000000009c400000000000000000000000000000c3500000000000000000000000000000f424000000000000000000000000000098968000000000000000000000000000bebc2000000000000000000000000000ee6b28000000000000000000000000009502f900000000000000000000000000ba43b740000000000000000000000000e8d4a5100000000000000000000000009184e72a000000000000000000000000b5e620f4800000000000000000000000e35fa931a000000000000000000000008e1bc9bf040000000000000000000000b1a2bc2ec50000000000000000000000de0b6b3a7640000000000000000000008ac7230489e800000000000000000000ad78ebc5ac6200000000000000000000d8d726b7177a80000000000000000000878678326eac90000000000000000000a968163f0a57b4000000000000000000d3c21bcecceda100000000000000000084595161401484a00000000000000000a56fa5b99019a5c80000000000000000cecb8f27f4200f3a0000000000000000813f3978f89409844000000000000000a18f07d736b90be55000000000000000c9f2c9cd04674edea400000000000000fc6f7c40458122964d000000000000009dc5ada82b70b59df020000000000000c5371912364ce3056c28000000000000f684df56c3e01bc6c7320000000000009a130b963a6c115c3c7f400000000000c097ce7bc90715b34b9f100000000000f0bdc21abb48db201e86d4000000000096769950b50d88f41314448000000000bc143fa4e250eb3117d955a000000000eb194f8e1ae525fd5dcfab080000000092efd1b8d0cf37be5aa1cae500000000b7abc627050305adf14a3d9e40000000e596b7b0c643c7196d9ccd05d00000008f7e32ce7bea5c6fe4820023a2000000b35dbf821ae4f38bdda2802c8a800000e0352f62a19e306ed50b2037ad2000008c213d9da502de454526f422cc340000af298d050e4395d69670b12b7f410000daf3f04651d47b4c3c0cdd765f11400088d8762bf324cd0fa5880a69fb6ac800ab0e93b6efee00538eea0d047a457a00d5d238a4abe9806872a4904598d6d88085a36366eb71f04147a6da2b7f864750a70c3c40a64e6c51999090b65f67d924d0cf4b50cfe20765fff4b4e3f741cf6d82818f1281ed449fbff8f10e7a8921a4a321f2d7226895c7aff72d52192b6a0dcbea6f8ceb02bb399bf4f8a69f764490fee50b7025c36a0802f236d04753d5b49f4f2726179a224501d762422c946590c722f0ef9d80aad6424d3ad2b7b97ef5f8ebad2b84e0d58bd2e0898765a7deb29b934c3b330c857763cc55f49f88eb2fc2781f49ffcfa6d53cbf6b71c76b25fbf316271c7fc3908a8bef464e3945ef7a97edd871cfda3a5697758bf0e3cbb5acbde94e8e43d0c8ec3d52eeed1cbea317ed63a231d4c4fb274ca7aaa863ee4bdd945e455f24fb1cf88fe8caa93e74ef6ab975d6b6ee39e436b3e2fd538e122b44e7d34c64a9c85d4460dbbca87196b61690e40fbeea1d3a4abc8955e946fe31cdb51d13aea4a488dd6babab6398bdbe41e264589a4dcdab14c696963c7eed2dd18d7eb76070a08aecfc1e1de5cf543ca2b0de65388cc8ada83b25a55f43294bcbdd15fe86affad91249ef0eb713f39ebe8a2dbf142dfcc7ab6e3569326c784337acb92ed9397bf99649c2c37f07965404d7e77a8f87daf7fbdc33745ec97be90686f0ac99b4e8dafd69a028bb3ded71a3a8acd7c0222311bcc40832ea0d68ce0cd2d80db02aabd62bf50a3fa490c3019083c7088e1aab65db792667c6da79e0faa4b8cab1a1563f52577001b891185938cde6fd5e09abcf26ed4c0226b55e6f8680b05e5ac60b6178544f8158315b05b4a0dc75f1778e39d6696361ae3db1c721c913936dd571c84c03bc3a19cd1e38e9fb5878494ace3a5f04ab48a04065c7239d174b2dcec0e47b62eb0d64283f9c76c45d1df942711d9a3ba5d0bd324f8394f5746577930d6500ca8f44ec7ee364799968bf6abbe85f207e998b13cf4e1ecbbfc2ef456ae276e89e3fedd8c321a67eefb3ab16c59b14a2c5cfe94ef3ea101e95d04aee3b80ece5bba1f1d158724a12bb445da9ca61281f2a8a6e45ae8edc97ea1575143cf97226f52d09d71a3293bd924d692ca61be758593c2626705f9c56b6e0c377cfa2e12e6f8b2fb00c77836ce498f455c38b997a0b6dfb9c0f9564478edf98b59a373fec4724bd4189bd5eacb2977ee300c50fe758edec91ec2cb657df3d5e9bc0f653e12f2967b66737e3ed8b865b215899f46cbd79e0d20082ee74ae67f1e9aec07187ecd8590680a3aa11da01ee641a708de9e80e6f4820cc9495884134fe908658b23109058d147fdcddaa51823e34a7eedebd4b46f0599fd415d4e5e2cdc1d1ea966c9e18ac7007c91a850fadc09923329e03e2cf6bc604ddb0a6539930bf6bff4584db8346b786151ccfe87f7cef46ff16e612641865679a6381f14fae158c5f6e4fcb7e8f3f60c07ea26da3999aef7749e3be5e330f38f09dcb090c8001ab551c5cadf5bfd3072cc5fdcb4fa002162a6373d9732fc7c8f7f69e9f11c4014dda7e2867e7fddcdd9afac646d63501a1511db281e1fd541501b8f7d88bc24209a5651f225a7ca91a42269ae757596946075f3375788de9b06958c1a12d2fc39789370052d6b1641c83aef209787bb47d6b84c0678c5dbd23a49a9745eb4d50ce6332f840b7ba963646e0bd176620a501fbffb650e5a93bc3d898ec5d3fa8ce427affa3e51f138ab4cebe93ba47c980e98cdfc66f336c36b10137b8a8d9bbe123f017b80b0047445d4184e6d3102ad96cec1da60dc059157491e59043ea1ac7e4139287c89837ad68db2fb454e4a179dd187729babe4598c311fbe16a1dc9d8545e94f4296dd6fef3d67a8ce2529e2734bb1d1899e4a65f58660cb01ae745b101e9e45ec05dcff72e7f8fdc21a1171d42645d76707543f4fa1f73899504ae72497eba6a06494a791c53a8abfa45da0edbde690487db9d17636892d6f8d7509292d60345a9d2845d3c42b6865b86925b9bc5c20b8a2392ba45a9b2a7f26836f282b7328e6cac7768d7141ed1ef0244af2364ff3207d795430cd9268335616aed761f1f7f44e6bd49e807b8a402b9c5a8d3a6e75f16206c9c6209a6cd036837130890a136dba887c37a8c0f802221226be55a64c2494954da2c9789a02aa96b06deb0fdf2db9baa10b7bd6cc83553c5c8965d3d6f92829494e5acc7fa42a8b73abbf48ccb772339ba1f17f99c69a97284b578d7ff2a760414536efbc38413cf25e2d70dfef5138519684abaf46518c2ef5b8cd17eb258665fc25d6998bf2f79d5993802ef2f773ffbd97a61beeefb584aff8603aafb550ffacfd8faeeaaba2e5dbf678495ba2a53f983cf38952ab45cfa97a0b2dd945a747bf26183ba756174393d88df94f971119aeef9e4e912b9d1478ceb177a37cd5601aab85d91abb422ccb812eeac62e055c10ab33ab616a12b7fe617aa577b986b314d6009e39c49765fdf9d94ed5a7e85fda0b80b8e41ade9fbebc27d14588f13be847307b1d219647ae6b31c596eb2d8ae258fc8de469fbd99a05fe36fca5f8ed9aef3bb8aec23d680043bee25de7bb9480d5854ada72ccc20054ae9af561aa79a10ae6ad910f7ff28069da41b2ba1518094da0487aa9aff7904228690fb44d2f05d0842a99541bf57452b28353a1607ac744a53d3fa922f2d1675f242889b8997915ce8847c9b5d7c2e09b769956135febada11a59bc234db398c2543fab9837e699095cf02b2c21207ef2e94f967e45e03f4bb8161afb94b44f57d1d1be0eebac278f5a1ba1ba79e1632dc6462d92a69731732ca28a291859bbf937d7b8f7503cfdcfefcb2cb35e702af785cda735244c3d43e9defbf01b061adab3a0888136afa64a7c56baec21c7a1916088aaa1845b8fdd0f6c69a72a3989f5b8aad549e57273d459a3c2087a63f639936ac54e2f678864bc0cb28a98fcf3c7f84576a1bb416a7ddf0fdf2d3f3c30b9f656d44a2a11c51d5969eb7c47859e7439f644ae5a4b1b325bc4665b596706114873d5d9f0dde1feeeb57ff22fc0c7959a90cb506d155a7ea9316ff75dd87cbd809a7f12442d588f2b7dcbf5354e9bece0c11ed6d538aeb2fe5d3ef282a242e818f1668c8a86da5fa8fa475791a569d10f96e017d694487bcb38d92d760ec445537c981dcc395a9ace070f78d3927556a85bbe253f47b14178c469ab843b8956293956d7478ccec8eaf58416654a6babb387ac8d1970027b2db2e51bfe9d0696a06997b05fcc0319e88fcf317f22241e2441fece3bdf81f03ab3c2fddeeaad25ad527e81cad7626c3d60b3bd56a5586f18a71e223d8d3b07485c7056562757456f6872d5667844e49a738c6bebb12d16cb428f8ac016561dbd106f86e69d785c7e13336d701beba5282a45b450226b39cecc0024661173473a34d721642b0608427f002d7f95d0190cc20ce9bd35c78a531ec038df7b441f4ff290242c83396ce7e67047175a152719f79a169bd203e410f0062c6e984d386c75809c42c684dd152c07b78a3e60868f92e0c3537826145a7709a56ccdf8a829bbcc7a142b17ccb88a66076400bb691c2abf989935ddbfe6acff893d00ea435f356f7ebf83552fe0583f6b8c4124d4398165af37b2153dec3727a337a8b704abe1bf1b059e9a8d6744f18c0592e4c5ceda2ee1c7064130c1162def06f79df739485d4d1c63e8be78addcb5645ac2ba8b9a74a0637ce2ee16d953e2bd7173692e8111c87c5c1ba99c8fa8db6ccdd0437910ab1d4db9914a01d9c9892400a22a2b54d5e4a127f59c82503beb6d00cab4be2a0b5dc971f303a2e44ae64840fd61d8da471a9de737e245ceaecfed289e5d2b10d8e1456105dad7425a83e872c5f47dd50f1996b947518d12f124e28f777198a5296ffe33cc92f82bd6b70d99aaa6face73cbfdc0bfb7b636cc64d1001550bd8210befd30efa5a3c47f7e05401aa4e8714a775e3e95c7865acfaec34810a71a8d9d1535ce3b3967f1839a741a14d0dd31045a8341ca07c1ede48111209a05083ea2b892091e44d934aed0aab460432a4e4b66b68b65d60f81da84d5617853fce1de40642e3f4b936251260ab9d668e80d2ae83e9ce78f3c1d72b7c6b426019a1075a24e4421730b24cf65b8612f81fc94930ae1d529cfcdee033f26797b627fb9b7cd9a4a7443c169840ef017da3b19d412e0806e88aa58e1f289560ee864ec491798a08a2ad4ef1a6f2bab92a27e2f5b5d7ec8acb58a2ae10af696774b1db9991a6f3d6bf1765acca6da1e0a8ef29bff610b0cc6edd3f17fd090a58d32af3eff394dcff8a948eddfc4b4cef07f5b095f83d0a1fb69cd94abdaf101564f98ebb764c4ca7a4440f9d6d1ad41abe37f1ea53df5fd18d551384c86189216dc5ed92746b9be2f8552c32fd3cf5b4e49bb4b7118682dbb66a773fbc8c33221dc2a1e4d5e82392a405150fabaf3feaa5334a8f05b1163ba6832d29cb4d87f2a7400eb2c71d5bca9023f8743e20e9ef511012df78e4b2bd342cf6914da9246b2554168bab8eefb6409c1a1ad089b6c2f7548eae9672aba3d0c320a184ac2473b529b1da3c0f568cc4f3e8c9e5d72d90a2741e8865899617fb18717e2fa67c7a658892aa7eebfb9df9de8dddbb901b98feeab7d51ea6fa85785631552a74227f3ea5658533285c936b35ded53a88958f87275fa67ff273b84603568a892abaf368f137d01fef10a657842c2d2b7569b0432d858213f56a67f6b29b9c3b29620e29fc73a298f2c501f45f428349f3ba91b47b8fcb3f2f7642717713241c70a936219a73fe0efb53d30dd4d7ed238cd383aa01109ec95d1463e8a506f4363804324a40aac67bb4597ce2ce48b143c6053edcd0d5f81aa16fdc1b81dadd94b7868e94050a9b10a4e5e9913128ca7cf2b4191c8326c1d4ce1f63f57d72fd1c2f611f63a3f0f24a01a73cf2dccfbc633b39673c8cec976e41088617ca01d5be0503e085d813bd49d14aa79dbc824b2d8644d8a74e18ec9c459d51852ba2ddf8e7d60ed1219e93e1ab8252f33b45cabb90e5c942b503b8da1662e7b00a173d6a751f3b936243e7109bfba19c0c9d0cc512670a783ad4906a617d450187e227fb2b80668b24c5b484f9dc9641e9dab1f9f660802dedf6e1a63853bbd264515e7873f8a03969738d07e33455637eb2db0b487b6423e1e8b049dc016abc5e5f91ce1a9a3d2cda62dc5c5301c56b75f77641a140cc7810fb89b9b3e11b6329baa9e904c87fcb0a9dac2820d9623bf429546345fa9fbdcd44d732290fbacaf133a97c177947ad4095867f59a9d4bed6c049ed8eabcccc485da81f301449ee8c705c68f256bfff5a74d226fc195c6a2f8c73832eec6fff311183585d8fd9c25db7c831fd53c5ff7eaba42e74f3d032f525ba3e7ca8b77f5e55cd3a1230c43fb26f28ce1bd2e55f35eb80444b5e7aa7cf857980d163cf5b81b3a0555e361951c366d7e105bcc332621fc86ab5c39fa634408dd9472bf3fefaa7fa856334878fc150b14f98f6f0feb9519c935e00d4b9d8d26ed1bf9a569f33d3c3b8358109e84f070a862f80ec4700c8f4a642e14c6262c8cd27bb612758c0fa98e7e9cccfbd7dbd8038d51cb897789cbf21e44003acdd2ce0470a63e6bd56c3eeea5d50049814781858ccfce06cac7495527a5202df0ccb0f37801e0c43ebc8baa718e68396cffdd30560258f54e6bae950df20247c83fd47c6b82ef32a206991d28b7416cdd27e4cdc331d57fa5441b6472e511c81471de0133fe4adf8e952e3d8f9e563a198e558180fddd97723a68e679c2f5e44ff8f570f09eaa7ea7648"
-.L752:
-    .string "-inf"
+.L645:
+    .quad 4607182418800017408
+.L650:
+    .quad 4621819117588971520
+.L652:
+    .string "eef453d6923bd65a113faa2906a13b3f9558b4661b6565f84ac7ca59a424c507baaee17fa23ebf765d79bcf00d2df649e95a99df8ace6f53f4d82c2c107973dc91d8a02bb6c1059479071b9b8a4be869b64ec836a47146f99748e2826cdee284e3e27a444d8d98b7fd1b1b2308169b258e6d8c6ab0787f72fe30f0f5e50e20f7b208ef855c969f4fbdbd2d335e51a935de8b2b66b3bc4723ad2c788035e613828b16fb203055ac764c3bcb5021afcc31addcb9e83c6b1793df4abe242a1bbf3dd953e8624b85dd78d71d6dad34a2af0d87d4713d6f33aa6b8672648c40e5ad68a9c98d8ccb009506680efdaf511f18c2d43bf0effdc0ba480212bd1b2566def284a57695fe98746d014bb630f7604b57a5ced43b7e3e9188419ea3bd35385e2dcf42894a5dce35ea52064cac828675b9818995ce7aa0e1b27343efebd1940993a1ebfb4219491a1f1014ebe6c5f90bf8ca66fa129f9b60a6d41a26e077774ef6fd00b897478238d08920b098955522b49e20735e8cb1638255b46e5f5d5535b0c5a890362fddbc62eb2189f734aa831df712b443bbd52b7ba5e9ec7501d523e49a6bb0aa55653b2d47b233c92125366ec1069cd4eabe89f8999ec0bb696e840af148440a256e2c76c00670ea43ca250d96cd2a865764dbca380406926a5e5728bc807527ed3e12bcc605083704f5ecf2eba09271e88d976bf7864a44c633682e93445b8731587ea37ab3ee6afbe0211db8157268fdae9e4c5960ea05bad82964e61acf033d1a45df6fb92487298e33bd8fd0c16206306baba5d3b6d479f8e056b3c4f1ba87bc86968f48a4899877186ce0b62e2929aba83c331acdabfe94de878c71dcd9ba0b49259ff0c08b7f1d0b14af8e5410288e1b6f07ecf0ae5ee44dd9db71e91432b1a24ac9e82cd9f69d6150892731ac9faf056ebe311c083a225cd2ab70fe17c79ac6ca6dbd630a48aaf406d64d3d9db981787d092cbbccdad5b10885f0468293f0eb4e25bbf56008c58ea5a76c582338ed2621af2af2b80af6f24ed1476e2c07286faa1af5af660db4aee182cca4db847945ca50d98d9fc890ed4da37fce126597973ce50ff107bab528a0cc5fc196fefd7d0c1e53ed49a96272c8ff77b1fcbebcdc4f25e8e89c13bb0f7a9faacf3df73609b177b191618c54e9acc795830d75038c1dd59df5b9ef6a2417f97ae3d0d2446f254b0573286b44ad1d9becce62836ac5774ee367f9430aec32c2e801fb244576d5229c41f793cda73ff3a20279ed56d48a6b43527578c1110f9845418c345644d6830a13896b78aaa9be5691ef416bd60c23cc986bc656d553edec366b11c6cb8f2cbfbe86b7ec8aa894b3a202eb1c3f397bf7d71432f3d6a9b9e08a83a5e34f07daf5ccd93fb0cc53e858ad248f5c22c9d1b3400f8f9cff6891376c36d99995be23100809b9c21fa1b58547448ffffb2dabd40a0c2832a78ae2e69915b3fff9f916c90c8f323f516c8dd01fad907ffc3bae3da7d97f6792e3b1442798f49ffb4a99cd11cfdf41779cdd95317f31c7fa1d40405643d711d5838a7d3eef7f1cfc52482835ea666b2572ad1c8eab5ee43b66da3243650005eecfd863b256369d4a4090bed43e40076a82873e4f75e2224e685a7744a6e804a291a90de3535aaae202711515d0a205cb36d3515c2831559a830d5a5b44ca873e038412d9991ed58091e858790afe9486c2a5178fff668ae0b6626e974dbe39a872ce5d73ff402d98e3fb0a3d212dc8128f80fa687f881c7f8e7ce66634bc9d0b99a139029f6a239f721c1fffc1ebc44e80c987434744ac874ea327ffb266b56220fbe9141915d7a9224bf1ff9f0062baa89d71ac8fada6c9b56f773fc3603db4a9c4ce17b399107c22cb550fb4384d21d3f6019da07f549b2b7e2a53a146606a4899c102844f94e0fb2eda7444cbfc426dc0314325637a1939fa911155fefb5308f03d93eebc589f88793555ab7eba27ca96267c7535b763b54bc1558b2f3458debbb01b9283253ca29eb1aaedfb016f16ea9c227723ee8bcb465e15a979c1cadc92a1958a7675175f0bfacd89ec191ec9b749faed14125d36cef980ec671f667be51c79a85916f48482b7e12780e7401a8f31cc0937ae58d2d1b2ecb8b0908810b2fe3f0b8599ef07861fa7e6dcb4aa15dfbdcece67006ac967a791e093e1d49a8bd6a141006042bde0c8bb2c5c6d24e0aecc49914078536d58fae9f773886e18da7f5bf590966848af39a475506a899e888f99797a5e012d6d8406c952429603aab37fd7d8f58178c8e5087ba6d33b83d5605fcdcf32e1d6fb1e4a9a90880a64855c3be0a17fcd265cf2eea09a55067fa6b34ad8c9dfc06ff42faa48c0ea481ed0601d8efc57b08bf13b94daf124da26823c12795db6ce5776c53d08d6b70858a2cb1717b52481ed54768c4b0c64ca6ecb7ddcdda26da268a9942f5dcf7dfd09fe5d54150b090b02d3f93b35435d7c4c9efa548d26e5a6e1c47bc5014a1a6dafc6b8e9b0709f109a359ab6419ca1091bf867241c8cc6d4c0c30163d203c94b629b407691d7fc44f879e0de63425dcf1dc21094364dfb5636985915fc12f542e4f294b943e17a2bc43e6f5b7b17b2939d979cf3ca6cec5b5aa705992ceecf9c42bd8430bd0827723150c6ff782a838353ece53cec4a314ebda4f8bf5635246428940f4613ae5ed136871b7795e136be99b913179899f6858428e2557b59846e3fe757dd7ec07426e5331aeada2fe589cf9096ea6f3848984f3ff0d2c85def7621b4bca50b065abe630fed077a756b53a9e1ebce4dc7f16dfbd3e8495912c628948d3360f09cf6e4bd64712dd7abbbd95cb080392cc4349decbd8d794d96aacfb3dca04777f541c567ecf0d7a0fc5583a089e42caaf9491b60f41686c49db57244ac5d37d5b79b6239311c2875c522ced5d77485cb25823ac77d633293366b828b86a8d39ef77164bcae5dff9c02033197a8530886b54dbdebd9f57f830283fdfcd267caa862a12d66d072df63c324fd7b8380dea93da4bc604247cb9e59f71e6da46116538d0deb7852d9be85f074e608cd795be87051665667902e276c921f8b806bd9714632dff600ba1cd8a3db53b6a086cfcd97bf97f380e8a40eccd228a4c8a883c0fdaf7df06122cd128006b2cdfad2a4b13d1b5d6c796b805720085f819cc3a6eec6311a63cbe3303674053bb0c3f490aa77bd60fcbedbfc4411068a9cf4f1b4d515acb93bee92fb5515482d44991711052d8bf3c5751bdd152d4d1c4abf5cd54678eef0b6d262d45a78a0635def340a98172aace486fb897116c87c349580869f0e7aac0ed45d35e6ae3d4da0bae0a846d21957128974836059cca109e998d258869facd72bd1a438703fc94b91ff83775423cc067b6306a34627ddcfb67f6455292cbf081a3bc84c17b1d542e41f3d6a7377eeca20caba5f1d9e4a938e938662882af53e547eb47b7282ee9cb23867fb2a35b28de99e619a4f23aa43dec681f9f4c31f316405fa00e2ec94d48b3c113c38f9f37ede83bc408dd3dd04ae0b158b4738705e9624ab50b148d445d98ddaee19068c763badd624dd9b095787f8a8d4cfa417c9e54ca5d70a80e5d6a9f6d30a038d1dbc5e9fcf4ccd211f4cd47487cc8470652b7647c3200069671f84c8d4dfd2c63f3b29ecd9f40041e073a5fb0a17c777cf09f468107100525890cf79cc9db955c2cc7182148d4066eeb481ac1fe293d599bfc6f14cd848405530a21727db38cb002fb8ada00e5a506a7cca9cf1d206fdc03ba6d90811f0e4851cfd442e4688bd304a908f4a166d1da6639e4a9cec15763e2e9a598e4e043287fec5dd44271ad3cdba40eff1e1853f29fdf7549530e188c128d12bee59e68ef47c9a94dd3e8cf578b982bb74f8301958cec13a148e3032d6e7e36a52363c1faf01f18899b1bc3f8ca1dc44e6c3cb279ac196f5600f15a7b7e529ab103a5ef8c0b9bcb2b812db11a5de7415d448f6b6f0e7ebdf661791d60f56111b495b3464ad21936b9fcebb25c995cab10dd900beec34b84687c269ef3bfb3d5d514f40eea742e65829b3046b0afa0cb4a5a3112a51128ff71a0fe2c2e6dc47f0e785eaba72abb3f4e093db73a09359ed216765690f56e0f218b8d25088b8306869c13ec3532c8c974f73837255731e414218c73a13fbafbd2350644eeacfe5d1929ef90898fadbac6c247d62a583df45f746b74abf39894bc396ce5da7726b8bba8c328eb783ab9eb47c81f5114f066ea92f3f326564d686619ba27255a2c80a537b0efefebd8613fd0145877585bd06742ce95f5f36a798fc4196e952e72c48113823b73704d17f3b51fca3a7a0f75a15862ca504c582ef85133de648c49a984d73dbe722fba3ab66580d5fdaf5c13e60d0d2e0ebbacc963fee10b7d1b3318df905079926a8ffbbcfe994e5c61ffdf17746497f70529fd561f1fd0f9bd3feb6ea8bedefa633c7caba6e7c5382c8fe64a52ee96b8fc0f9bd690a1b68637b3dfdce7aa3c673b09c1661a651213e2d06bea10ca65c084ec31bfa0fe5698db8486e494fcff30a62f3e2f893dec3f1265a89dba3c3efccfa986ddb5c6b3a76b7f89629465a75e01cbe89523386091465f6bbb397f1135823ee2ba6c0678b597f746aa07ded582e2c94db483840b717efa8c2a44eb4571cdcba121a4650e4ddeb92f34d62616ce413e896a0d7e51e156677b020baf9c81d17915e2486ef32cd600ace1474dc1d122eb5b5ada8aaff80b80d819992132456bae3231912d5bf60e610e1fff697ed6c698df5efabc5979c8fca8d3ffa1ef463c1b1736b96b6fd83b3bd308ff8a6b17cb2ddd0467c64bce4a0ac7cb3f6d05ddbde8aa22c0dbef60ee46bcdf07a423aa96bad4ab7112eb3929d86c16c98d2c953c6d89d64d57a607744e871c7bf077ba8b787625f056c7c4a8b11471cd764ad4972a93af6c6c79b5d2dd598e40d3dd89bcfd389b478798234794aff1d108d4ec2c3843610cb4bf160cbcedf722a585139baa54394fe1eedb8fec2974eb4ee658828ce947a3da6a9273e733d226229feea32811ccc668829b8870806357d5a3f525fa163ff802a3426a8ca07c2dcb0cf26f7c9bcff6034c13052fc89b393dd02f0b5fc2c3f3841f17c67bbac2078d443ace29d9ba7832936edc0d54b944b84aa4c0dc5029163f384a9310a9e795e65d4df11f64335bcf065d37d4d4617b5ff4a16d599ea0196163fa42e504bced1bf8e4e45c06481fb9bcf8d39e45ec2862f71e1d6f07da27a82c370885d767327bb4e5a4c964e858c91ba26553a6a07f8d510f86fbbe226efb628afea890489f70a55368beadab0aba3b2dbe52b45ac74ccea842e92c8ae6b464fc96f3b0b8bc90012929db77ada0617e3bbcb09ce6ebb40173744e55990879ddcaabdcc420a6a101d05158f57fa54c2a9eab69fa946824a12232db32df8e9f354656447939822dc96abf9dff9772470297ebd59787e2b93bc56f78bfbea76c619ef3657eb4edb3c55b65aaefae51477a06b03ede622920b6b23f1dab99e59958885c4e95fab368e45eced88b402f7fd75539b11dbcb0218ebb414aae103b5fcd2a881d652bdc29f26a119d59944a37c0752a24be76d3346f0495f857fcae62d8493a56f70a4400c562ddba6dfbd9fb8e5b88ecb4ccd500f6bb952d097ad07a71f26b27e2000a41346a7a7825ecc24c873782f8ed400668c0c28c8a2f67f2dfa90563b728900802f0f32facbb41ef979346bca4f2b40a03ad2ffb9fea126b7d78186bce2f610c84987bfa89f24b832e6b0f4360dd9ca7d2df4d7c9c6ede63fa05d314391503d1c79720dbbf8a95fcf88747d9475a44c6397ce912a9b69dbe1b548ce7cc986afbe3ee11abac24452da229b021bfbe85badce996168f2d56790ab41c2a2fae27299423fb9c397c560ba6b0919a5dccd879fc967d41abdb6b8e905cb600f5400e987bbc1c920ed246723473e3813290123e9aab23b689436c0760c86e30bf9a0b6720aaf6521b94470938fa89bcef808e40e8d5b3e69e7958cb87392c2c2b60b1d1230b20e0490bd77f3483bb9b9b1c6f22b5e6f48c2b4ecd5f01a4aa8281e38aeb6360b1af3e2280b6c20dd523225c6da63c38de1b08d590723948a535f579c487e5a38ad0eb0af48ec79ace8372d835a9df0c6d851dcdb1b2798182244f8e431456cf88e658a08f0f8bf0f156b1b8e9ecb641b58ffac8b2d36eed2dac5e272467e3d222f3fd7adf884aa8791775b0ed81dcc6abb0f86ccbb52ea94baea98e947129fc2b4e9a87fea27a539e9a53f2398d747b36224d29fe4b18e88640e8eec7f0d19a03aad83a3eeeef9153e891953cf68300424aca48ceaaab75a8e2b5fa8c3423c052dd7cdb02555653131b63792f412cb06794d808e17555f3ebf11e2bbd88bbee40bd0a0b19d2ab70e6ed65b6aceaeae9d0ec4c8de047564d20a8bf245825a5a445275fb158592be068d2eeed6e2f0f0d567129ced737bb6c4183d55464dd69685606bc428d05aa4751e4caa97e14c3c26b886f53304714d9265dfd53dd99f4b3066a8993fe2c6d07b7fabe546a8038efe4029bf8fdb78849a5f96de98520472bdd033ef73d256a5c0f77c963e66858f6d444095a8637627989aaddde7001379a44aa8bb127c53b17ec1595560c018580d5d52e9d71b689dde71afaab8f01e6e10b4a69226712162ab070dcab3961304ca70e8b6b00d69bb55c8d13d607b97c5fd0d22e45c10c42a2b3b058cb89a7db77c506a8eb98a7a9a5b04e377f3608e92adb242b267ed1940f1c61c55f038b237591ed3df01e85f912e37a36b6c46dec52f66888b61313bbabce2c62323ac4b3b3da015ae397d8aa96c1b77abec975e0a0d081ad9c7dced53c7225596e7bd358c904a21881cea14545c75757e50d64177da2e54aa242499697392d2dde50bd1d5d0b9e9d4ad2dbfc3d07787955e4ec64b44e86484ec3c97da624ab4bd5af13bef0b113ea6274bbdd0fadd61ecb1ad8aeacdd58ecfb11ead453994ba67de18eda5814af281ceb32c4b43fcf480eacf948770ced7a2425ff75e14fc31a1258379a94d028dcad2f7f5359a3b3e096ee45813a04330fd87b5f28300ca0d8bca9d6e188853fc9e74d1b791e07e48775ea264cf55347ec612062576589dda95364afe032a819ef79687aed3eec5513a83ddbd83f522059abe14cd44753b52c4926a9672793543c16d9a0095928a2775b7053c0f178294f1c90080baf72cb15324c68b12dd6339971da05074da7beed3f6fc16ebca5e04bce5086492111aea88f4bb1ca6bcf585ec1e4a7db69561a52b31e9e3d06c32e69392ee8e921d5d073aff322e62439fd0b877aa3236a4b44909befeb9fad487c3e69594bec44de15b4c2ebe687989a9b4901d7cf73ab0acd90f9d37014bf60a11b424dc35095cd80f538484c19ef38c95e12e13424bb40e132865a5f206b06fba8cbccc096f5088cbf93f87b7442e45d4afebff0bcb24aafef78f69a51539d749dbe6fecebdedd5beb573440e5a884d1c89705f4136b4a59731680a88f8953031abcc77118461cefcfdc20d2b36ba7c3ed6bf94d5e57a42bc3d32907604691b4d8637bd05af6c69b5a63f9a49c2c1b110a7c5ac471b4784230fcf80dc33721d54d1b71758e219652bd3c36113404ea4a983126e978d4fdf3b645a1cac083126eaa3d70a3d70a3d70a3d70a3d70a3d70a4cccccccccccccccccccccccccccccccd80000000000000000000000000000000a0000000000000000000000000000000c8000000000000000000000000000000fa0000000000000000000000000000009c400000000000000000000000000000c3500000000000000000000000000000f424000000000000000000000000000098968000000000000000000000000000bebc2000000000000000000000000000ee6b28000000000000000000000000009502f900000000000000000000000000ba43b740000000000000000000000000e8d4a5100000000000000000000000009184e72a000000000000000000000000b5e620f4800000000000000000000000e35fa931a000000000000000000000008e1bc9bf040000000000000000000000b1a2bc2ec50000000000000000000000de0b6b3a7640000000000000000000008ac7230489e800000000000000000000ad78ebc5ac6200000000000000000000d8d726b7177a80000000000000000000878678326eac90000000000000000000a968163f0a57b4000000000000000000d3c21bcecceda100000000000000000084595161401484a00000000000000000a56fa5b99019a5c80000000000000000cecb8f27f4200f3a0000000000000000813f3978f89409844000000000000000a18f07d736b90be55000000000000000c9f2c9cd04674edea400000000000000fc6f7c40458122964d000000000000009dc5ada82b70b59df020000000000000c5371912364ce3056c28000000000000f684df56c3e01bc6c7320000000000009a130b963a6c115c3c7f400000000000c097ce7bc90715b34b9f100000000000f0bdc21abb48db201e86d4000000000096769950b50d88f41314448000000000bc143fa4e250eb3117d955a000000000eb194f8e1ae525fd5dcfab080000000092efd1b8d0cf37be5aa1cae500000000b7abc627050305adf14a3d9e40000000e596b7b0c643c7196d9ccd05d00000008f7e32ce7bea5c6fe4820023a2000000b35dbf821ae4f38bdda2802c8a800000e0352f62a19e306ed50b2037ad2000008c213d9da502de454526f422cc340000af298d050e4395d69670b12b7f410000daf3f04651d47b4c3c0cdd765f11400088d8762bf324cd0fa5880a69fb6ac800ab0e93b6efee00538eea0d047a457a00d5d238a4abe9806872a4904598d6d88085a36366eb71f04147a6da2b7f864750a70c3c40a64e6c51999090b65f67d924d0cf4b50cfe20765fff4b4e3f741cf6d82818f1281ed449fbff8f10e7a8921a4a321f2d7226895c7aff72d52192b6a0dcbea6f8ceb02bb399bf4f8a69f764490fee50b7025c36a0802f236d04753d5b49f4f2726179a224501d762422c946590c722f0ef9d80aad6424d3ad2b7b97ef5f8ebad2b84e0d58bd2e0898765a7deb29b934c3b330c857763cc55f49f88eb2fc2781f49ffcfa6d53cbf6b71c76b25fbf316271c7fc3908a8bef464e3945ef7a97edd871cfda3a5697758bf0e3cbb5acbde94e8e43d0c8ec3d52eeed1cbea317ed63a231d4c4fb274ca7aaa863ee4bdd945e455f24fb1cf88fe8caa93e74ef6ab975d6b6ee39e436b3e2fd538e122b44e7d34c64a9c85d4460dbbca87196b61690e40fbeea1d3a4abc8955e946fe31cdb51d13aea4a488dd6babab6398bdbe41e264589a4dcdab14c696963c7eed2dd18d7eb76070a08aecfc1e1de5cf543ca2b0de65388cc8ada83b25a55f43294bcbdd15fe86affad91249ef0eb713f39ebe8a2dbf142dfcc7ab6e3569326c784337acb92ed9397bf99649c2c37f07965404d7e77a8f87daf7fbdc33745ec97be90686f0ac99b4e8dafd69a028bb3ded71a3a8acd7c0222311bcc40832ea0d68ce0cd2d80db02aabd62bf50a3fa490c3019083c7088e1aab65db792667c6da79e0faa4b8cab1a1563f52577001b891185938cde6fd5e09abcf26ed4c0226b55e6f8680b05e5ac60b6178544f8158315b05b4a0dc75f1778e39d6696361ae3db1c721c913936dd571c84c03bc3a19cd1e38e9fb5878494ace3a5f04ab48a04065c7239d174b2dcec0e47b62eb0d64283f9c76c45d1df942711d9a3ba5d0bd324f8394f5746577930d6500ca8f44ec7ee364799968bf6abbe85f207e998b13cf4e1ecbbfc2ef456ae276e89e3fedd8c321a67eefb3ab16c59b14a2c5cfe94ef3ea101e95d04aee3b80ece5bba1f1d158724a12bb445da9ca61281f2a8a6e45ae8edc97ea1575143cf97226f52d09d71a3293bd924d692ca61be758593c2626705f9c56b6e0c377cfa2e12e6f8b2fb00c77836ce498f455c38b997a0b6dfb9c0f9564478edf98b59a373fec4724bd4189bd5eacb2977ee300c50fe758edec91ec2cb657df3d5e9bc0f653e12f2967b66737e3ed8b865b215899f46cbd79e0d20082ee74ae67f1e9aec07187ecd8590680a3aa11da01ee641a708de9e80e6f4820cc9495884134fe908658b23109058d147fdcddaa51823e34a7eedebd4b46f0599fd415d4e5e2cdc1d1ea966c9e18ac7007c91a850fadc09923329e03e2cf6bc604ddb0a6539930bf6bff4584db8346b786151ccfe87f7cef46ff16e612641865679a6381f14fae158c5f6e4fcb7e8f3f60c07ea26da3999aef7749e3be5e330f38f09dcb090c8001ab551c5cadf5bfd3072cc5fdcb4fa002162a6373d9732fc7c8f7f69e9f11c4014dda7e2867e7fddcdd9afac646d63501a1511db281e1fd541501b8f7d88bc24209a5651f225a7ca91a42269ae757596946075f3375788de9b06958c1a12d2fc39789370052d6b1641c83aef209787bb47d6b84c0678c5dbd23a49a9745eb4d50ce6332f840b7ba963646e0bd176620a501fbffb650e5a93bc3d898ec5d3fa8ce427affa3e51f138ab4cebe93ba47c980e98cdfc66f336c36b10137b8a8d9bbe123f017b80b0047445d4184e6d3102ad96cec1da60dc059157491e59043ea1ac7e4139287c89837ad68db2fb454e4a179dd187729babe4598c311fbe16a1dc9d8545e94f4296dd6fef3d67a8ce2529e2734bb1d1899e4a65f58660cb01ae745b101e9e45ec05dcff72e7f8fdc21a1171d42645d76707543f4fa1f73899504ae72497eba6a06494a791c53a8abfa45da0edbde690487db9d17636892d6f8d7509292d60345a9d2845d3c42b6865b86925b9bc5c20b8a2392ba45a9b2a7f26836f282b7328e6cac7768d7141ed1ef0244af2364ff3207d795430cd9268335616aed761f1f7f44e6bd49e807b8a402b9c5a8d3a6e75f16206c9c6209a6cd036837130890a136dba887c37a8c0f802221226be55a64c2494954da2c9789a02aa96b06deb0fdf2db9baa10b7bd6cc83553c5c8965d3d6f92829494e5acc7fa42a8b73abbf48ccb772339ba1f17f99c69a97284b578d7ff2a760414536efbc38413cf25e2d70dfef5138519684abaf46518c2ef5b8cd17eb258665fc25d6998bf2f79d5993802ef2f773ffbd97a61beeefb584aff8603aafb550ffacfd8faeeaaba2e5dbf678495ba2a53f983cf38952ab45cfa97a0b2dd945a747bf26183ba756174393d88df94f971119aeef9e4e912b9d1478ceb177a37cd5601aab85d91abb422ccb812eeac62e055c10ab33ab616a12b7fe617aa577b986b314d6009e39c49765fdf9d94ed5a7e85fda0b80b8e41ade9fbebc27d14588f13be847307b1d219647ae6b31c596eb2d8ae258fc8de469fbd99a05fe36fca5f8ed9aef3bb8aec23d680043bee25de7bb9480d5854ada72ccc20054ae9af561aa79a10ae6ad910f7ff28069da41b2ba1518094da0487aa9aff7904228690fb44d2f05d0842a99541bf57452b28353a1607ac744a53d3fa922f2d1675f242889b8997915ce8847c9b5d7c2e09b769956135febada11a59bc234db398c2543fab9837e699095cf02b2c21207ef2e94f967e45e03f4bb8161afb94b44f57d1d1be0eebac278f5a1ba1ba79e1632dc6462d92a69731732ca28a291859bbf937d7b8f7503cfdcfefcb2cb35e702af785cda735244c3d43e9defbf01b061adab3a0888136afa64a7c56baec21c7a1916088aaa1845b8fdd0f6c69a72a3989f5b8aad549e57273d459a3c2087a63f639936ac54e2f678864bc0cb28a98fcf3c7f84576a1bb416a7ddf0fdf2d3f3c30b9f656d44a2a11c51d5969eb7c47859e7439f644ae5a4b1b325bc4665b596706114873d5d9f0dde1feeeb57ff22fc0c7959a90cb506d155a7ea9316ff75dd87cbd809a7f12442d588f2b7dcbf5354e9bece0c11ed6d538aeb2fe5d3ef282a242e818f1668c8a86da5fa8fa475791a569d10f96e017d694487bcb38d92d760ec445537c981dcc395a9ace070f78d3927556a85bbe253f47b14178c469ab843b8956293956d7478ccec8eaf58416654a6babb387ac8d1970027b2db2e51bfe9d0696a06997b05fcc0319e88fcf317f22241e2441fece3bdf81f03ab3c2fddeeaad25ad527e81cad7626c3d60b3bd56a5586f18a71e223d8d3b07485c7056562757456f6872d5667844e49a738c6bebb12d16cb428f8ac016561dbd106f86e69d785c7e13336d701beba5282a45b450226b39cecc0024661173473a34d721642b0608427f002d7f95d0190cc20ce9bd35c78a531ec038df7b441f4ff290242c83396ce7e67047175a152719f79a169bd203e410f0062c6e984d386c75809c42c684dd152c07b78a3e60868f92e0c3537826145a7709a56ccdf8a829bbcc7a142b17ccb88a66076400bb691c2abf989935ddbfe6acff893d00ea435f356f7ebf83552fe0583f6b8c4124d4398165af37b2153dec3727a337a8b704abe1bf1b059e9a8d6744f18c0592e4c5ceda2ee1c7064130c1162def06f79df739485d4d1c63e8be78addcb5645ac2ba8b9a74a0637ce2ee16d953e2bd7173692e8111c87c5c1ba99c8fa8db6ccdd0437910ab1d4db9914a01d9c9892400a22a2b54d5e4a127f59c82503beb6d00cab4be2a0b5dc971f303a2e44ae64840fd61d8da471a9de737e245ceaecfed289e5d2b10d8e1456105dad7425a83e872c5f47dd50f1996b947518d12f124e28f777198a5296ffe33cc92f82bd6b70d99aaa6face73cbfdc0bfb7b636cc64d1001550bd8210befd30efa5a3c47f7e05401aa4e8714a775e3e95c7865acfaec34810a71a8d9d1535ce3b3967f1839a741a14d0dd31045a8341ca07c1ede48111209a05083ea2b892091e44d934aed0aab460432a4e4b66b68b65d60f81da84d5617853fce1de40642e3f4b936251260ab9d668e80d2ae83e9ce78f3c1d72b7c6b426019a1075a24e4421730b24cf65b8612f81fc94930ae1d529cfcdee033f26797b627fb9b7cd9a4a7443c169840ef017da3b19d412e0806e88aa58e1f289560ee864ec491798a08a2ad4ef1a6f2bab92a27e2f5b5d7ec8acb58a2ae10af696774b1db9991a6f3d6bf1765acca6da1e0a8ef29bff610b0cc6edd3f17fd090a58d32af3eff394dcff8a948eddfc4b4cef07f5b095f83d0a1fb69cd94abdaf101564f98ebb764c4ca7a4440f9d6d1ad41abe37f1ea53df5fd18d551384c86189216dc5ed92746b9be2f8552c32fd3cf5b4e49bb4b7118682dbb66a773fbc8c33221dc2a1e4d5e82392a405150fabaf3feaa5334a8f05b1163ba6832d29cb4d87f2a7400eb2c71d5bca9023f8743e20e9ef511012df78e4b2bd342cf6914da9246b2554168bab8eefb6409c1a1ad089b6c2f7548eae9672aba3d0c320a184ac2473b529b1da3c0f568cc4f3e8c9e5d72d90a2741e8865899617fb18717e2fa67c7a658892aa7eebfb9df9de8dddbb901b98feeab7d51ea6fa85785631552a74227f3ea5658533285c936b35ded53a88958f87275fa67ff273b84603568a892abaf368f137d01fef10a657842c2d2b7569b0432d858213f56a67f6b29b9c3b29620e29fc73a298f2c501f45f428349f3ba91b47b8fcb3f2f7642717713241c70a936219a73fe0efb53d30dd4d7ed238cd383aa01109ec95d1463e8a506f4363804324a40aac67bb4597ce2ce48b143c6053edcd0d5f81aa16fdc1b81dadd94b7868e94050a9b10a4e5e9913128ca7cf2b4191c8326c1d4ce1f63f57d72fd1c2f611f63a3f0f24a01a73cf2dccfbc633b39673c8cec976e41088617ca01d5be0503e085d813bd49d14aa79dbc824b2d8644d8a74e18ec9c459d51852ba2ddf8e7d60ed1219e93e1ab8252f33b45cabb90e5c942b503b8da1662e7b00a173d6a751f3b936243e7109bfba19c0c9d0cc512670a783ad4906a617d450187e227fb2b80668b24c5b484f9dc9641e9dab1f9f660802dedf6e1a63853bbd264515e7873f8a03969738d07e33455637eb2db0b487b6423e1e8b049dc016abc5e5f91ce1a9a3d2cda62dc5c5301c56b75f77641a140cc7810fb89b9b3e11b6329baa9e904c87fcb0a9dac2820d9623bf429546345fa9fbdcd44d732290fbacaf133a97c177947ad4095867f59a9d4bed6c049ed8eabcccc485da81f301449ee8c705c68f256bfff5a74d226fc195c6a2f8c73832eec6fff311183585d8fd9c25db7c831fd53c5ff7eaba42e74f3d032f525ba3e7ca8b77f5e55cd3a1230c43fb26f28ce1bd2e55f35eb80444b5e7aa7cf857980d163cf5b81b3a0555e361951c366d7e105bcc332621fc86ab5c39fa634408dd9472bf3fefaa7fa856334878fc150b14f98f6f0feb9519c935e00d4b9d8d26ed1bf9a569f33d3c3b8358109e84f070a862f80ec4700c8f4a642e14c6262c8cd27bb612758c0fa98e7e9cccfbd7dbd8038d51cb897789cbf21e44003acdd2ce0470a63e6bd56c3eeea5d50049814781858ccfce06cac7495527a5202df0ccb0f37801e0c43ebc8baa718e68396cffdd30560258f54e6bae950df20247c83fd47c6b82ef32a206991d28b7416cdd27e4cdc331d57fa5441b6472e511c81471de0133fe4adf8e952e3d8f9e563a198e558180fddd97723a68e679c2f5e44ff8f570f09eaa7ea7648"
 .L753:
-    .string "inf"
+    .string "-inf"
 .L754:
-    .string "-nan"
+    .string "inf"
 .L755:
+    .string "-nan"
+.L756:
     .string "nan"
-.L797:
-    .string "(null)"
 .L798:
+    .string "(null)"
+.L799:
     .string "\n"
-.L807:
+.L808:
     .string "file-write"
-.L813:
+.L814:
     .string "mkdir-p"
-.L822:
-    .string ""
 .L823:
-    .string "/"
-.L838:
-    .string "/"
-.L856:
     .string ""
-.L858:
-    .string "list-zyl-files"
+.L824:
+    .string "/"
+.L839:
+    .string "/"
+.L857:
+    .string ""
 .L859:
+    .string "list-zyl-files"
+.L860:
     .string ".zyl"
-.L861:
-    .string "list-files"
 .L862:
     .string "list-files"
-.L868:
+.L863:
+    .string "list-files"
+.L869:
     .string "[?2004l[0m"
-.L877:
+.L878:
     .string "term-write"
-.L882:
+.L883:
     .string "union-find table"
-.L895:
+.L896:
     .string "zyl: mem-read: null pointer\n"
-.L897:
+.L898:
     .string "zyl: mem-write: null pointer\n"
-.L899:
+.L900:
     .string "cstr-byte-set"
-.L902:
+.L903:
     .string "ZYL_REGIONS"
-.L905:
+.L906:
     .string "ZYL_REGION_POISON"
-.L909:
+.L910:
     .string "codegen buffer limit exceeded"
-.L916:
+.L917:
     .string "words"
-.L918:
+.L919:
     .string "aes block"
-.L922:
-    .string "aes key"
 .L923:
-    .string "words"
+    .string "aes key"
 .L924:
     .string "words"
 .L925:
     .string "words"
-.L929:
-    .string "/dev/urandom"
-.L933:
+.L926:
     .string "words"
+.L930:
+    .string "/dev/urandom"
 .L934:
+    .string "words"
+.L935:
     .string "random-words"
-.L936:
-    .string "zyl: invalid callee address 0x"
 .L937:
-    .string ""
+    .string "zyl: invalid callee address 0x"
 .L938:
-    .string "\n"
-.L991:
-    .string "0123456789abcdef"
-.L994:
-    .string "zyl: ffi call to invalid address 0x"
-.L995:
     .string ""
+.L939:
+    .string "\n"
+.L992:
+    .string "0123456789abcdef"
+.L995:
+    .string "zyl: ffi call to invalid address 0x"
 .L996:
+    .string ""
+.L997:
     .string "\n"
-.L1014:
-    .string "zyl: ffi call with "
 .L1015:
+    .string "zyl: ffi call with "
+.L1016:
     .string " arguments (max 6)\n"
-.L1017:
-    .string "zyl_ffi_pin"
 .L1018:
-    .string "zyl_ffi_unpin"
+    .string "zyl_ffi_pin"
 .L1019:
-    .string "zyl_actor_init"
+    .string "zyl_ffi_unpin"
 .L1020:
-    .string "zyl_actor_is_alive"
+    .string "zyl_actor_init"
 .L1021:
-    .string "zyl_actor_spawn"
+    .string "zyl_actor_is_alive"
 .L1022:
-    .string "zyl_chan_new"
+    .string "zyl_actor_spawn"
 .L1023:
-    .string "zyl_chan_recv"
+    .string "zyl_chan_new"
 .L1024:
-    .string "zyl_chan_rx"
+    .string "zyl_chan_recv"
 .L1025:
-    .string "zyl_chan_send"
+    .string "zyl_chan_rx"
 .L1026:
-    .string "zyl_chan_tx"
+    .string "zyl_chan_send"
 .L1027:
-    .string "zyl_actor_wait"
+    .string "zyl_chan_tx"
 .L1028:
-    .string "zyl_actor_wait_all"
+    .string "zyl_actor_wait"
 .L1029:
-    .string "zyl_aes_encrypt_block"
+    .string "zyl_actor_wait_all"
 .L1030:
-    .string "zyl_aesni_available"
+    .string "zyl_aes_encrypt_block"
 .L1031:
-    .string "zyl_align_check"
+    .string "zyl_aesni_available"
 .L1032:
-    .string "zyl_arena_alloc"
+    .string "zyl_align_check"
 .L1033:
+    .string "zyl_arena_alloc"
+.L1034:
     .string "zyl_arena_alloc_zeroed"
-.L1035:
-    .string "zyl_arena_capacity"
 .L1036:
-    .string "zyl_arena_create"
+    .string "zyl_arena_capacity"
 .L1037:
-    .string "zyl_arena_destroy"
+    .string "zyl_arena_create"
 .L1038:
-    .string "zyl_arena_reset"
+    .string "zyl_arena_destroy"
 .L1039:
-    .string "zyl_arena_used"
+    .string "zyl_arena_reset"
 .L1040:
-    .string "zyl_arg_str"
+    .string "zyl_arena_used"
 .L1041:
-    .string "zyl_argc"
+    .string "zyl_arg_str"
 .L1042:
-    .string "zyl_atomic_add"
+    .string "zyl_argc"
 .L1043:
-    .string "zyl_atomic_cas"
+    .string "zyl_atomic_add"
 .L1044:
-    .string "zyl_atomic_fetch_add"
+    .string "zyl_atomic_cas"
 .L1045:
-    .string "zyl_atomic_load"
+    .string "zyl_atomic_fetch_add"
 .L1046:
-    .string "zyl_atomic_max"
+    .string "zyl_atomic_load"
 .L1047:
-    .string "zyl_atomic_min"
+    .string "zyl_atomic_max"
 .L1048:
-    .string "zyl_atomic_store"
+    .string "zyl_atomic_min"
 .L1049:
-    .string "zyl_atomic_sub"
+    .string "zyl_atomic_store"
 .L1050:
+    .string "zyl_atomic_sub"
+.L1051:
     .string "zyl_blake3_file_hex"
-.L1052:
-    .string "zyl_blake3_hex"
 .L1053:
-    .string "zyl_byte_slice"
+    .string "zyl_blake3_hex"
 .L1054:
-    .string "zyl_byte_slice_sub"
+    .string "zyl_byte_slice"
 .L1055:
-    .string "zyl_bytebuf_append"
+    .string "zyl_byte_slice_sub"
 .L1056:
-    .string "zyl_bytebuf_atomic_add"
+    .string "zyl_bytebuf_append"
 .L1057:
-    .string "zyl_bytebuf_atomic_cas"
+    .string "zyl_bytebuf_atomic_add"
 .L1058:
-    .string "zyl_bytebuf_atomic_fetch_add"
+    .string "zyl_bytebuf_atomic_cas"
 .L1059:
-    .string "zyl_bytebuf_atomic_load"
+    .string "zyl_bytebuf_atomic_fetch_add"
 .L1060:
-    .string "zyl_bytebuf_atomic_max"
+    .string "zyl_bytebuf_atomic_load"
 .L1061:
-    .string "zyl_bytebuf_atomic_min"
+    .string "zyl_bytebuf_atomic_max"
 .L1062:
-    .string "zyl_bytebuf_atomic_store"
+    .string "zyl_bytebuf_atomic_min"
 .L1063:
-    .string "zyl_bytebuf_atomic_sub"
+    .string "zyl_bytebuf_atomic_store"
 .L1064:
-    .string "zyl_bytebuf_cap"
+    .string "zyl_bytebuf_atomic_sub"
 .L1065:
-    .string "zyl_bytebuf_len"
+    .string "zyl_bytebuf_cap"
 .L1066:
-    .string "zyl_bytebuf_new"
+    .string "zyl_bytebuf_len"
 .L1067:
+    .string "zyl_bytebuf_new"
+.L1068:
     .string "zyl_bytebuf_ptr"
-.L1069:
-    .string "zyl_call0"
 .L1070:
-    .string "zyl_call1"
+    .string "zyl_call0"
 .L1071:
-    .string "zyl_call2"
+    .string "zyl_call1"
 .L1072:
-    .string "zyl_call3"
+    .string "zyl_call2"
 .L1073:
-    .string "zyl_call4"
+    .string "zyl_call3"
 .L1074:
-    .string "zyl_call5"
+    .string "zyl_call4"
 .L1075:
-    .string "zyl_call6"
+    .string "zyl_call5"
 .L1076:
-    .string "zyl_call_argv"
+    .string "zyl_call6"
 .L1077:
-    .string "zyl_call_on_big_stack"
+    .string "zyl_call_argv"
 .L1078:
-    .string "zyl_cc_compile"
+    .string "zyl_call_on_big_stack"
 .L1079:
-    .string "zyl_cc_compile_log"
+    .string "zyl_cc_compile"
 .L1080:
-    .string "zyl_chdir"
+    .string "zyl_cc_compile_log"
 .L1081:
-    .string "zyl_cpuid_features"
+    .string "zyl_chdir"
 .L1082:
-    .string "zyl_cstr_byte_at"
+    .string "zyl_cpuid_features"
 .L1083:
-    .string "zyl_cstr_byte_set"
+    .string "zyl_cstr_byte_at"
 .L1084:
+    .string "zyl_cstr_byte_set"
+.L1085:
     .string "zyl_cstr_concat"
-.L1086:
-    .string "zyl_cstr_count_newlines"
 .L1087:
-    .string "zyl_cstr_decode"
+    .string "zyl_cstr_count_newlines"
 .L1088:
-    .string "zyl_cstr_cmp"
+    .string "zyl_cstr_decode"
 .L1089:
-    .string "zyl_cstr_eq"
+    .string "zyl_cstr_cmp"
 .L1090:
-    .string "zyl_cstr_from_byte"
+    .string "zyl_cstr_eq"
 .L1091:
-    .string "zyl_cstr_from_int"
+    .string "zyl_cstr_from_byte"
 .L1092:
-    .string "zyl_cstr_key_matches"
+    .string "zyl_cstr_from_int"
 .L1093:
-    .string "zyl_div_magic"
+    .string "zyl_cstr_key_matches"
 .L1094:
-    .string "zyl_div_shift"
+    .string "zyl_div_magic"
 .L1095:
-    .string "zyl_array_copy"
+    .string "zyl_div_shift"
 .L1096:
-    .string "zyl_view_ok"
+    .string "zyl_array_copy"
 .L1097:
-    .string "zyl_view_byte"
+    .string "zyl_view_ok"
 .L1098:
-    .string "zyl_view_cmp"
+    .string "zyl_view_byte"
 .L1099:
-    .string "zyl_view_find"
+    .string "zyl_view_cmp"
 .L1100:
-    .string "zyl_view_copy"
+    .string "zyl_view_find"
 .L1101:
+    .string "zyl_view_copy"
+.L1102:
     .string "zyl_cstr_last_newline"
-.L1103:
-    .string "zyl_cstr_len"
 .L1104:
-    .string "zyl_cstr_of_word"
+    .string "zyl_cstr_len"
 .L1105:
-    .string "zyl_float_bits"
+    .string "zyl_cstr_of_word"
 .L1106:
-    .string "zyl_float_of_bits"
+    .string "zyl_float_bits"
 .L1107:
-    .string "zyl_word_load"
+    .string "zyl_float_of_bits"
 .L1108:
-    .string "zyl_word_store"
+    .string "zyl_word_load"
 .L1109:
-    .string "zyl_ptr_add"
+    .string "zyl_word_store"
 .L1110:
-    .string "zyl_ptr_cstr"
+    .string "zyl_ptr_add"
 .L1111:
-    .string "zyl_ffi_addr"
+    .string "zyl_ptr_cstr"
 .L1112:
-    .string "zyl_cstr_sanitize"
+    .string "zyl_ffi_addr"
 .L1113:
-    .string "zyl_cstr_sub"
+    .string "zyl_cstr_sanitize"
 .L1114:
-    .string "zyl_cstr_substr"
+    .string "zyl_cstr_sub"
 .L1115:
-    .string "zyl_cstr_to_int"
+    .string "zyl_cstr_substr"
 .L1116:
-    .string "zyl_cstr_to_int_base"
+    .string "zyl_cstr_to_int"
 .L1117:
-    .string "zyl_diag_json"
+    .string "zyl_cstr_to_int_base"
 .L1118:
+    .string "zyl_diag_json"
+.L1119:
     .string "zyl_diag_json_set"
-.L1120:
-    .string "zyl_dirname_cstr"
 .L1121:
-    .string "zyl_attr_clear"
+    .string "zyl_dirname_cstr"
 .L1122:
-    .string "zyl_attr_copy"
+    .string "zyl_attr_clear"
 .L1123:
-    .string "zyl_attr_get"
+    .string "zyl_attr_copy"
 .L1124:
-    .string "zyl_attr_set"
+    .string "zyl_attr_get"
 .L1125:
-    .string "zyl_ensure_arenas"
+    .string "zyl_attr_set"
 .L1126:
-    .string "zyl_exec_cmd"
+    .string "zyl_ensure_arenas"
 .L1127:
-    .string "zyl_f_add"
+    .string "zyl_exec_cmd"
 .L1128:
-    .string "zyl_f_cmp"
+    .string "zyl_f_add"
 .L1129:
-    .string "zyl_f_div"
+    .string "zyl_f_cmp"
 .L1130:
-    .string "zyl_f_error"
+    .string "zyl_f_div"
 .L1131:
-    .string "zyl_f_mul"
+    .string "zyl_f_error"
 .L1132:
-    .string "zyl_f_of_int"
+    .string "zyl_f_mul"
 .L1133:
-    .string "zyl_f_parse"
+    .string "zyl_f_of_int"
 .L1134:
-    .string "zyl_f_rem"
+    .string "zyl_f_parse"
 .L1135:
+    .string "zyl_f_rem"
+.L1136:
     .string "zyl_f_sub"
-.L1137:
-    .string "zyl_f_text"
 .L1138:
-    .string "zyl_f_to_int"
+    .string "zyl_f_text"
 .L1139:
-    .string "zyl_ffi_lookup"
+    .string "zyl_f_to_int"
 .L1140:
-    .string "zyl_ffi_timed"
+    .string "zyl_ffi_lookup"
 .L1141:
-    .string "zyl_ffi_timed_argv"
+    .string "zyl_ffi_timed"
 .L1142:
-    .string "zyl_file_close_c"
+    .string "zyl_ffi_timed_argv"
 .L1143:
-    .string "zyl_exit"
+    .string "zyl_file_close_c"
 .L1144:
-    .string "zyl_read_line"
+    .string "zyl_exit"
 .L1145:
-    .string "zyl_file_open_c"
+    .string "zyl_read_line"
 .L1146:
-    .string "zyl_file_read_c"
+    .string "zyl_file_open_c"
 .L1147:
-    .string "zyl_file_write_c"
+    .string "zyl_file_read_c"
 .L1148:
-    .string "zyl_fnmap_get"
+    .string "zyl_file_write_c"
 .L1149:
-    .string "zyl_fnmap_put"
+    .string "zyl_fnmap_get"
 .L1150:
-    .string "zyl_fnmap_reset"
+    .string "zyl_fnmap_put"
 .L1151:
-    .string "zyl_fresh_id"
+    .string "zyl_fnmap_reset"
 .L1152:
+    .string "zyl_fresh_id"
+.L1153:
     .string "zyl_getcwd"
-.L1154:
-    .string "zyl_getenv"
 .L1155:
-    .string "zyl_contract_warn"
+    .string "zyl_getenv"
 .L1156:
-    .string "zyl_err_is"
+    .string "zyl_contract_warn"
 .L1157:
-    .string "zyl_list_zyl_files"
+    .string "zyl_err_is"
 .L1158:
-    .string "zyl_list_files"
+    .string "zyl_list_zyl_files"
 .L1159:
-    .string "zyl_load_n"
+    .string "zyl_list_files"
 .L1160:
-    .string "zyl_load_n_signed"
+    .string "zyl_load_n"
 .L1161:
-    .string "zyl_store_n"
+    .string "zyl_load_n_signed"
 .L1162:
-    .string "zyl_global_get"
+    .string "zyl_store_n"
 .L1163:
-    .string "zyl_global_put"
+    .string "zyl_global_get"
 .L1164:
-    .string "zyl_global_ready"
+    .string "zyl_global_put"
 .L1165:
-    .string "zyl_global_clear"
+    .string "zyl_global_ready"
 .L1166:
-    .string "zyl_iglobal_get"
+    .string "zyl_global_clear"
 .L1167:
-    .string "zyl_iglobal_put"
+    .string "zyl_iglobal_get"
 .L1168:
-    .string "zyl_iglobal_ready"
+    .string "zyl_iglobal_put"
 .L1169:
+    .string "zyl_iglobal_ready"
+.L1170:
     .string "zyl_iglobal_clear"
-.L1171:
-    .string "zyl_repl_global_get"
 .L1172:
-    .string "zyl_repl_global_set"
+    .string "zyl_repl_global_get"
 .L1173:
-    .string "zyl_uf_id"
+    .string "zyl_repl_global_set"
 .L1174:
-    .string "zyl_uf_reset"
+    .string "zyl_uf_id"
 .L1175:
-    .string "zyl_uf_new"
+    .string "zyl_uf_reset"
 .L1176:
-    .string "zyl_uf_find"
+    .string "zyl_uf_new"
 .L1177:
-    .string "zyl_uf_union"
+    .string "zyl_uf_find"
 .L1178:
-    .string "zyl_uf_raise"
+    .string "zyl_uf_union"
 .L1179:
-    .string "zyl_uf_level"
+    .string "zyl_uf_raise"
 .L1180:
-    .string "zyl_regions_enabled"
+    .string "zyl_uf_level"
 .L1181:
-    .string "zyl_words_new"
+    .string "zyl_regions_enabled"
 .L1182:
-    .string "zyl_words_alloc"
+    .string "zyl_words_new"
 .L1183:
-    .string "zyl_words_alloc_r"
+    .string "zyl_words_alloc"
 .L1184:
-    .string "zyl_words_len"
+    .string "zyl_words_alloc_r"
 .L1185:
-    .string "zyl_words_get"
+    .string "zyl_words_len"
 .L1186:
-    .string "zyl_words_set"
+    .string "zyl_words_get"
 .L1187:
-    .string "zyl_words_view"
+    .string "zyl_words_set"
 .L1188:
-    .string "zyl_words_view_r"
+    .string "zyl_words_view"
 .L1189:
+    .string "zyl_words_view_r"
+.L1190:
     .string "zyl_smap_has"
-.L1191:
-    .string "zyl_smap_get_or"
 .L1192:
-    .string "zyl_array_new"
+    .string "zyl_smap_get_or"
 .L1193:
-    .string "zyl_vec_alloc"
+    .string "zyl_array_new"
 .L1194:
-    .string "zyl_vec_alloc_r"
+    .string "zyl_vec_alloc"
 .L1195:
-    .string "zyl_array_cap"
+    .string "zyl_vec_alloc_r"
 .L1196:
-    .string "zyl_array_filled"
+    .string "zyl_array_cap"
 .L1197:
-    .string "zyl_array_get"
+    .string "zyl_array_filled"
 .L1198:
-    .string "zyl_array_set"
+    .string "zyl_array_get"
 .L1199:
-    .string "zyl_attrh_new"
+    .string "zyl_array_set"
 .L1200:
-    .string "zyl_attrh_set"
+    .string "zyl_attrh_new"
 .L1201:
-    .string "zyl_attrh_get_or"
+    .string "zyl_attrh_set"
 .L1202:
-    .string "zyl_attrh_has"
+    .string "zyl_attrh_get_or"
 .L1203:
-    .string "zyl_attrh_copy"
+    .string "zyl_attrh_has"
 .L1204:
-    .string "zyl_attrh_clear"
+    .string "zyl_attrh_copy"
 .L1205:
-    .string "zyl_ref_new"
+    .string "zyl_attrh_clear"
 .L1206:
-    .string "zyl_ref_get"
+    .string "zyl_ref_new"
 .L1207:
-    .string "zyl_ref_set"
+    .string "zyl_ref_get"
 .L1208:
+    .string "zyl_ref_set"
+.L1209:
     .string "zyl_getenv_str"
-.L1210:
-    .string "zyl_strbuf_new"
 .L1211:
-    .string "zyl_strbuf_new_r"
+    .string "zyl_strbuf_new"
 .L1212:
-    .string "zyl_strbuf_str"
+    .string "zyl_strbuf_new_r"
 .L1213:
-    .string "zyl_cstr_escapes_ok"
+    .string "zyl_strbuf_str"
 .L1214:
-    .string "zyl_heap_alloc"
+    .string "zyl_cstr_escapes_ok"
 .L1215:
-    .string "zyl_ralloc"
+    .string "zyl_heap_alloc"
 .L1216:
-    .string "zyl_region_enter"
+    .string "zyl_ralloc"
 .L1217:
-    .string "zyl_region_exit"
+    .string "zyl_region_enter"
 .L1218:
-    .string "zyl_region_free"
+    .string "zyl_region_exit"
 .L1219:
-    .string "zyl_region_scope_enter"
+    .string "zyl_region_free"
 .L1220:
-    .string "zyl_region_live_bytes"
+    .string "zyl_region_scope_enter"
 .L1221:
-    .string "zyl_heap_block_p"
+    .string "zyl_region_live_bytes"
 .L1222:
-    .string "zyl_heap_swap"
+    .string "zyl_heap_block_p"
 .L1223:
-    .string "zyl_int_text"
+    .string "zyl_heap_swap"
 .L1224:
-    .string "zyl_itest_add"
+    .string "zyl_int_text"
 .L1225:
-    .string "zyl_itest_count"
+    .string "zyl_itest_add"
 .L1226:
+    .string "zyl_itest_count"
+.L1227:
     .string "zyl_itest_fn"
-.L1228:
-    .string "zyl_itest_name"
 .L1229:
-    .string "zyl_itest_outcome"
+    .string "zyl_itest_name"
 .L1230:
-    .string "zyl_itest_fail"
+    .string "zyl_itest_outcome"
 .L1231:
-    .string "zyl_itest_reset"
+    .string "zyl_itest_fail"
 .L1232:
-    .string "zyl_itest_start"
+    .string "zyl_itest_reset"
 .L1233:
-    .string "zyl_itest_summary"
+    .string "zyl_itest_start"
 .L1234:
-    .string "zyl_json_quote"
+    .string "zyl_itest_summary"
 .L1235:
-    .string "zyl_load_byte"
+    .string "zyl_json_quote"
 .L1236:
-    .string "zyl_load_byte_signed"
+    .string "zyl_load_byte"
 .L1237:
-    .string "zyl_mangle_key"
+    .string "zyl_load_byte_signed"
 .L1238:
-    .string "zyl_mem_alloc"
+    .string "zyl_mangle_key"
 .L1239:
-    .string "zyl_mem_free"
+    .string "zyl_mem_alloc"
 .L1240:
-    .string "zyl_mem_read"
+    .string "zyl_mem_free"
 .L1241:
-    .string "zyl_mem_write"
+    .string "zyl_mem_read"
 .L1242:
-    .string "zyl_mkdir_p"
+    .string "zyl_mem_write"
 .L1243:
-    .string "zyl_mlock"
+    .string "zyl_mkdir_p"
 .L1244:
+    .string "zyl_mlock"
+.L1245:
     .string "zyl_panic"
-.L1246:
-    .string "zyl_path_exists"
 .L1247:
-    .string "zyl_pin_alloc"
+    .string "zyl_path_exists"
 .L1248:
-    .string "zyl_print_float"
+    .string "zyl_pin_alloc"
 .L1249:
-    .string "zyl_print_int"
+    .string "zyl_print_float"
 .L1250:
-    .string "zyl_print_str"
+    .string "zyl_print_int"
 .L1251:
-    .string "zyl_random_fill"
+    .string "zyl_print_str"
 .L1252:
-    .string "zyl_random_words"
+    .string "zyl_random_fill"
 .L1253:
-    .string "zyl_run_bin"
+    .string "zyl_random_words"
 .L1254:
-    .string "zyl_session_arena"
+    .string "zyl_run_bin"
 .L1255:
-    .string "zyl_smap_clear"
+    .string "zyl_session_arena"
 .L1256:
-    .string "zyl_smap_get"
+    .string "zyl_smap_clear"
 .L1257:
-    .string "zyl_smap_global"
+    .string "zyl_smap_get"
 .L1258:
-    .string "zyl_smap_new"
+    .string "zyl_smap_global"
 .L1259:
-    .string "zyl_smap_put"
+    .string "zyl_smap_new"
 .L1260:
-    .string "zyl_source_path"
+    .string "zyl_smap_put"
 .L1261:
+    .string "zyl_source_path"
+.L1262:
     .string "zyl_source_register"
-.L1263:
-    .string "zyl_span_col"
 .L1264:
-    .string "zyl_span_copy"
+    .string "zyl_span_col"
 .L1265:
-    .string "zyl_span_file"
+    .string "zyl_span_copy"
 .L1266:
-    .string "zyl_span_line"
+    .string "zyl_span_file"
 .L1267:
-    .string "zyl_span_line_text"
+    .string "zyl_span_line"
 .L1268:
-    .string "zyl_span_off"
+    .string "zyl_span_line_text"
 .L1269:
-    .string "zyl_span_snippet"
+    .string "zyl_span_off"
 .L1270:
-    .string "zyl_span_snippet_col"
+    .string "zyl_span_snippet"
 .L1271:
-    .string "zyl_span_offset_at"
+    .string "zyl_span_snippet_col"
 .L1272:
-    .string "zyl_span_set"
+    .string "zyl_span_offset_at"
 .L1273:
-    .string "zyl_store_byte"
+    .string "zyl_span_set"
 .L1274:
-    .string "zyl_store_byte_signed"
+    .string "zyl_store_byte"
 .L1275:
-    .string "zyl_str_append"
+    .string "zyl_store_byte_signed"
 .L1276:
-    .string "zyl_str_append_capped"
+    .string "zyl_str_append"
 .L1277:
-    .string "zyl_sym_escape"
+    .string "zyl_str_append_capped"
 .L1278:
+    .string "zyl_sym_escape"
+.L1279:
     .string "zyl_system_cmd"
-.L1280:
-    .string "zyl_term_flush"
 .L1281:
-    .string "zyl_term_height"
+    .string "zyl_term_flush"
 .L1282:
-    .string "zyl_term_is_tty"
+    .string "zyl_term_height"
 .L1283:
-    .string "zyl_term_raw_off"
+    .string "zyl_term_is_tty"
 .L1284:
-    .string "zyl_term_raw_on"
+    .string "zyl_term_raw_off"
 .L1285:
-    .string "zyl_term_read_byte"
+    .string "zyl_term_raw_on"
 .L1286:
-    .string "zyl_term_read_byte_timeout"
+    .string "zyl_term_read_byte"
 .L1287:
-    .string "zyl_term_width"
+    .string "zyl_term_read_byte_timeout"
 .L1288:
-    .string "zyl_term_write"
+    .string "zyl_term_width"
 .L1289:
-    .string "zyl_try_frame_msg"
+    .string "zyl_term_write"
 .L1290:
-    .string "zyl_try_last_msg"
+    .string "zyl_try_frame_msg"
 .L1291:
-    .string "zyl_try_pop"
+    .string "zyl_try_last_msg"
 .L1292:
-    .string "zyl_try_push"
+    .string "zyl_try_pop"
 .L1293:
-    .string "zyl_variant_cmp"
+    .string "zyl_try_push"
 .L1294:
-    .string "zyl_variant_eq"
+    .string "zyl_variant_cmp"
 .L1295:
+    .string "zyl_variant_eq"
+.L1296:
     .string "zyl_variant_field"
-.L1297:
-    .string "zyl_warn_capture"
 .L1298:
-    .string "zyl_warn_emit"
+    .string "zyl_warn_capture"
 .L1299:
-    .string "zyl_warn_take"
+    .string "zyl_warn_emit"
 .L1300:
-    .string "zyl_word_of_cstr"
+    .string "zyl_warn_take"
 .L1301:
-    .string "zyl_wvec_get"
+    .string "zyl_word_of_cstr"
 .L1302:
-    .string "zyl_wvec_global"
+    .string "zyl_wvec_get"
 .L1303:
-    .string "zyl_wvec_len"
+    .string "zyl_wvec_global"
 .L1304:
-    .string "zyl_wvec_new"
+    .string "zyl_wvec_len"
 .L1305:
-    .string "zyl_wvec_pop"
+    .string "zyl_wvec_new"
 .L1306:
-    .string "zyl_wvec_push"
+    .string "zyl_wvec_pop"
 .L1307:
-    .string "zyl_wvec_set"
+    .string "zyl_wvec_push"
 .L1308:
-    .string "zyl_wvec_truncate"
+    .string "zyl_wvec_set"
 .L1309:
+    .string "zyl_wvec_truncate"
+.L1310:
     .string "zyl_zeroize"
-.L1324:
+.L1325:
     .string "PATH"
-.L1333:
+.L1334:
     .string "/bin:/usr/bin"
-.L1338:
-    .string "sh"
 .L1339:
-    .string "-c"
-.L1340:
-    .string "/bin/sh"
-.L1345:
-    .string "XXXXXX"
-.L1348:
-    .string "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-.L1350:
-    .string "TMPDIR"
-.L1351:
-    .string "/tmp"
-.L1352:
-    .string "/zyl_link_XXXXXX"
-.L1353:
-    .string "#!/bin/sh\n"
-.L1354:
-    .string "(null)"
-.L1355:
-    .string "\n"
-.L1356:
     .string "sh"
-.L1357:
+.L1340:
+    .string "-c"
+.L1341:
     .string "/bin/sh"
-.L1360:
-    .string "cc"
+.L1346:
+    .string "XXXXXX"
+.L1349:
+    .string "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+.L1351:
+    .string "TMPDIR"
+.L1352:
+    .string "/tmp"
+.L1353:
+    .string "/zyl_link_XXXXXX"
+.L1354:
+    .string "#!/bin/sh\n"
+.L1355:
+    .string "(null)"
+.L1356:
+    .string "\n"
+.L1357:
+    .string "sh"
+.L1358:
+    .string "/bin/sh"
 .L1361:
-    .string "-no-pie"
+    .string "cc"
 .L1362:
-    .string "rt.o"
+    .string "-no-pie"
 .L1363:
-    .string "-o"
+    .string "rt.o"
 .L1364:
+    .string "-o"
+.L1365:
     .string "-lpthread"
-.L1366:
+.L1367:
     .string ".bin"
-.L1368:
+.L1369:
     .string "cc"
-.L1370:
+.L1371:
     .string "cc"
-.L1386:
-    .string "ZYL_SCHED"
 .L1387:
-    .string "ZYL_SCHED_CHAOS"
+    .string "ZYL_SCHED"
 .L1388:
+    .string "ZYL_SCHED_CHAOS"
+.L1389:
     .string "deterministic"
-.L1404:
+.L1405:
     .string "PANIC: E_DEADLOCK: every live actor is blocked on a channel or a join\n"
-.L1413:
-    .string "E_CHANNEL_CAPACITY: a channel buffer holds 1 to 16777216 values"
 .L1414:
+    .string "E_CHANNEL_CAPACITY: a channel buffer holds 1 to 16777216 values"
+.L1415:
     .string "E_OUT_OF_MEMORY: no memory for a channel"
-.L1419:
+.L1420:
     .string "E_CHANNEL_NOT_OWNER: this actor does not own the channel endpoint"
-.L1422:
+.L1423:
     .string "E_CHANNEL_CLOSED: the channel's sender finished and every value was received"
-.L1425:
+.L1426:
     .string "E_OUT_OF_MEMORY: no memory for a channel"
-.L1446:
-    .string "E_ACTOR_LIMIT: at most 1024 actors per program"
 .L1447:
+    .string "E_ACTOR_LIMIT: at most 1024 actors per program"
+.L1448:
     .string "E_OUT_OF_MEMORY: no thread for an actor"
-.L1450:
-    .string "error"
 .L1451:
     .string "error"
-.L1458:
-    .string "PANIC: "
+.L1452:
+    .string "error"
 .L1459:
+    .string "PANIC: "
+.L1460:
     .string "\n"
-.L1493:
-    .string "E_OUT_OF_MEMORY: no memory for an FFI worker"
-.L1496:
+.L1494:
     .string "E_OUT_OF_MEMORY: no memory for an FFI worker"
 .L1497:
     .string "E_OUT_OF_MEMORY: no memory for an FFI worker"
-.L1499:
+.L1498:
+    .string "E_OUT_OF_MEMORY: no memory for an FFI worker"
+.L1500:
     .string "E_FFI_TIMEOUT: could not start the FFI worker thread"
-.L1505:
-    .string "?"
 .L1506:
-    .string "E_FFI_SYMBOL_NOT_FOUND: no such FFI symbol: "
+    .string "?"
 .L1507:
+    .string "E_FFI_SYMBOL_NOT_FOUND: no such FFI symbol: "
+.L1508:
     .string "E_ARITY_MISMATCH: ffi-call passes more than 16 arguments"
-.L1509:
-    .string "E_FFI_TIMEOUT: ffi call `"
 .L1510:
-    .string "` exceeded its timeout of "
+    .string "E_FFI_TIMEOUT: ffi call `"
 .L1511:
+    .string "` exceeded its timeout of "
+.L1512:
     .string " ms"
-.L1534:
+.L1535:
     .string "out of memory allocating a try frame"
-.L1543:
-    .string "FAIL\n"
 .L1544:
-    .string "FAIL: "
+    .string "FAIL\n"
 .L1545:
+    .string "FAIL: "
+.L1546:
     .string "\n"
-.L1554:
-    .string "\ntest result: "
 .L1555:
-    .string " passed, "
+    .string "\ntest result: "
 .L1556:
-    .string " failed, "
+    .string " passed, "
 .L1557:
-    .string " total\n"
+    .string " failed, "
 .L1558:
-    .string "test: "
+    .string " total\n"
 .L1559:
-    .string " ... "
+    .string "test: "
 .L1560:
+    .string " ... "
+.L1561:
     .string "ok\n"
-.L1562:
+.L1563:
     .string "error"
-.L1564:
-    .string "assertion failed"
 .L1565:
-    .string "PANIC: "
+    .string "assertion failed"
 .L1566:
-    .string "\n"
-.L1568:
+    .string "PANIC: "
+.L1567:
     .string "\n"
 .L1569:
-    .string "error["
+    .string "\n"
 .L1570:
-    .string ""
+    .string "error["
 .L1571:
     .string ""
-.L1573:
-    .string "{\"severity\":\"error\",\"code\":"
+.L1572:
+    .string ""
 .L1574:
-    .string ",\"message\":"
+    .string "{\"severity\":\"error\",\"code\":"
 .L1575:
+    .string ",\"message\":"
+.L1576:
     .string ",\"file\":\"\",\"line\":0,\"column\":0,\"labels\":[],\"help\":\"\"}\n"
-.L1580:
+.L1581:
     .string "error["
-.L1584:
-    .string "error\n"
 .L1585:
-    .string "error: "
+    .string "error\n"
 .L1586:
+    .string "error: "
+.L1587:
     .string "\n"
-.L1593:
-    .string ""
 .L1594:
-    .string "\n"
-.L1598:
     .string ""
-.L1600:
+.L1595:
+    .string "\n"
+.L1599:
     .string ""
 .L1601:
-    .string "\"\""
-.L1605:
-    .string "\\u00"
-.L1609:
-    .string "(null)"
-.L1612:
-    .string "test: "
-.L1613:
-    .string " ... "
-.L1615:
-    .string "FAIL\n"
-.L1616:
-    .string "ok\n"
-.L1618:
-    .string "FAIL: "
-.L1619:
-    .string "\n"
-.L1622:
-    .string "\ntest result: "
-.L1623:
-    .string " passed, "
-.L1624:
-    .string " failed, "
-.L1625:
-    .string " total\n"
-.L1628:
     .string ""
+.L1602:
+    .string "\"\""
+.L1606:
+    .string "\\u00"
+.L1610:
+    .string "(null)"
+.L1613:
+    .string "test: "
+.L1614:
+    .string " ... "
+.L1616:
+    .string "FAIL\n"
+.L1617:
+    .string "ok\n"
+.L1619:
+    .string "FAIL: "
+.L1620:
+    .string "\n"
+.L1623:
+    .string "\ntest result: "
+.L1624:
+    .string " passed, "
+.L1625:
+    .string " failed, "
+.L1626:
+    .string " total\n"
 .L1629:
+    .string ""
+.L1630:
     .string ""
 .bss
 .p2align 6

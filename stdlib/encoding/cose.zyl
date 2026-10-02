@@ -1,0 +1,332 @@
+; === COSE_Sign1 (RFC 9052), Ed25519 ===
+; Module: encoding/cose
+;
+; A four-element array, CBOR-encoded:
+;
+;   [ protected : bstr, unprotected : map, payload : bstr, signature : bstr ]
+;
+; The signature is over the CBOR encoding of
+;
+;   Sig_structure = [ "Signature1", protected, external_aad : h'', payload ]
+;
+; with no detached content, so the payload is inside the Sig_structure rather
+; than beside it. Everything here is one algorithm -- Ed25519, COSE `alg` -8 --
+; because the point of this module is to be small enough to read rather than to
+; cover COSE, and the Ed25519 already in this tree has a caller (the package
+; index), so there is nothing to choose between.
+;
+; The protected header is the literal six bytes `a2 01 27 03 18 3c`, which is
+; {1: -8, 3: 60}: Ed25519, content type application/cbor. SIX bytes, not
+; twelve: twelve is the width of the byte string wrapping it once the Sig_structure
+; encodes it, and conflating the two is how the whole structure ends up two
+; thirds of a byte string of zeros. It is written out byte by byte rather than
+; assembled, because a signature covers these bytes exactly and a reader should
+; be able to check them against RFC 9052 by eye. `kid` goes in the unprotected
+; map (label 4) so a reader can tell which key signed without decoding the
+; protected headers.
+;
+; A ByteBuf here is paired with its used length rather than using the buffer's
+; own length field, because nothing in the CBOR encoder appends -- it writes at
+; explicit offsets and returns the new one, so the length is a return value and
+; has to be carried. Wrapping the pair in a record is what keeps a length from
+; being recomputed by a second function that can disagree with the first.
+
+(use encoding/cbor)
+(use math/words)
+(use math/crypto/asymmetric/ed25519)
+
+; COSE `alg` -8 is Ed25519. Named because -8 appears bare in the header bytes
+; below and a reader deserves to know what it stands for.
+(def cose-alg-ed25519 8)
+
+(def cose-protected-len 6)
+
+; A buffer and how much of it is used.
+(deftype CB (CB ByteBuf Int))
+
+; The size of a COSE_Sign1 carrying a payload of `plen` bytes: four heads, the
+; twelve protected bytes, the kid map (head + 1 + head + 32) and the 64-byte
+; signature.
+(defn cose-cap (plen) (+ plen 128))
+
+; ---------------------------------------------------------------------------
+; Bytes
+; ---------------------------------------------------------------------------
+
+; The protected header, written out literally.
+;
+;   a2        map(2)
+;   01 27     1: -8   (Ed25519)         -- nint, argument 8-1 = 7 = 0x27
+;   03 18 3c  3: 60   (application/cbor)
+;
+; Six bytes. The bstr wrapping it in the COSE_Sign1 is 58 06.
+(defn cose-protected ()
+  (let b (cbor-buf cose-protected-len)
+    (let _ (store-u8 :le b 0 162)
+      (let _ (store-u8 :le b 1 1)
+        (let _ (store-u8 :le b 2 39)
+          (let _ (store-u8 :le b 3 3)
+            (let _ (store-u8 :le b 4 24)
+              (begin (store-u8 :le b 5 60) (CB b cose-protected-len)))))))))
+
+; Copy `n` bytes from `src` at `soff` into `cb` at its end.
+;
+; Byte-wise because a record is binary: a count of 256 encodes a zero byte and
+; a Zyl String stops at a zero, so a record can never be carried in a String
+; at all. This is the same reason the CBOR encoder is a writer into a buffer
+; rather than a string builder.
+(defn cb-put (cb (src ByteBuf) soff (n Int))
+  (let b (match cb (CB buf used buf))
+    (let used (match cb (CB _ u u))
+      (begin
+        (for (i 0) (< i n)
+          (begin
+            (store-u8 :le b (+ used i) (load-u8 :le src (+ soff i)))
+            (set! i (+ i 1))))
+        (CB b (+ used n))))))
+
+; `n` words (one byte each) appended.
+(defn cb-put-words (cb w (n Int))
+  (let b (match cb (CB buf used buf))
+    (let used (match cb (CB _ u u))
+      (begin
+        (for (i 0) (< i n)
+          (begin
+            (store-u8 :le b (+ used i) (w-get w i))
+            (set! i (+ i 1))))
+        (CB b (+ used n))))))
+
+; The bytes of a buffer as Words, which is what the Ed25519 code takes.
+(defn cose-words-of ((b ByteBuf) off (n Int))
+  (let w (w-alloc n)
+    (begin
+      (for (i 0) (< i n)
+        (begin
+          (w-set w i (load-u8 :le b (+ off i)))
+          (set! i (+ i 1))))
+      w)))
+
+; ---------------------------------------------------------------------------
+; Sig_structure
+; ---------------------------------------------------------------------------
+
+; [ "Signature1", protected, h'', payload ]
+;
+; "Signature1" is a context string, not a label the encoder may shorten: it is
+; the string RFC 9052 section 4.4 specifies, and a signature over any other one
+; verifies against nothing.
+(defn cose-sig-structure ((protected ByteBuf) protoff (payload ByteBuf) payloadoff plen)
+  (let b (cbor-buf (+ 64 plen))
+    (let o (cbor-h0 b 0 4 4)
+      (let o (cbor-text b o "Signature1")
+        (let o (cbor-head b o 2 cose-protected-len)
+          (let o (cose-raw b o protected protoff cose-protected-len)
+            (let o (cbor-h0 b o 2 0)
+              (let o (cbor-head b o 2 plen)
+                (CB b (cose-raw b o payload payloadoff plen))))))))))
+
+; Copy at an explicit offset, for the two writers above that build in place.
+(defn cose-raw ((dst ByteBuf) doff (src ByteBuf) soff (n Int))
+  (begin
+    (for (i 0) (< i n)
+      (begin
+        (store-u8 :le dst (+ doff i) (load-u8 :le src (+ soff i)))
+        (set! i (+ i 1))))
+    (+ doff n)))
+
+; ---------------------------------------------------------------------------
+; Signing
+; ---------------------------------------------------------------------------
+
+(deftype CoseOut (CoseOut ByteBuf Int))
+
+; A COSE_Sign1 over `payload`, signed with the Ed25519 seed `seedhex` (64 hex
+; characters). The result is a buffer plus its length; the caller carries both.
+(defn cose-sign (seedhex payload plen)
+  (let seed (w-from-hex seedhex)
+    (let prot (cose-protected)
+      (let ss (cose-sig-structure (match prot (CB pb pu pb)) 0 payload 0 plen)
+        (let ssb (match ss (CB buf used buf))
+          (let ssn (match ss (CB _ u u))
+            (let msg (cose-words-of ssb 0 ssn)
+              (let sig (ed25519-sign seed msg ssn)
+                (let kid (ed25519-public-key seed)
+                  (cose-emit (match prot (CB pb pu pb)) sig kid payload plen))))))))))
+
+; ---------------------------------------------------------------------------
+; Emitting
+; ---------------------------------------------------------------------------
+
+; [ protected, {4: kid}, payload, signature ]
+(defn cose-emit ((protected ByteBuf) sig kid payload plen)
+  (let b (cbor-buf (cose-cap plen))
+    (let o (cbor-h0 b 0 4 4)
+      (let o (cbor-head b o 2 cose-protected-len)
+        (let o (cose-raw b o protected 0 cose-protected-len)
+          (let o (cbor-h0 b o 5 1)
+            (let o (cbor-h0 b o 0 4)
+              (let o (cbor-head b o 2 32)
+                (let o (cose-raw-words b o kid 32)
+                  (let o (cbor-head b o 2 plen)
+                    (let o (cose-raw b o payload 0 plen)
+                      (let o (cbor-head b o 2 64)
+                        (CoseOut b (cose-raw-words b o sig 64))))))))))))))
+
+; `n` words into the buffer at an explicit offset.
+(defn cose-raw-words ((dst ByteBuf) doff w (n Int))
+  (begin
+    (for (i 0) (< i n)
+      (begin
+        (store-u8 :le dst (+ doff i) (w-get w i))
+        (set! i (+ i 1))))
+    (+ doff n)))
+
+; ---------------------------------------------------------------------------
+; Reading back
+; ---------------------------------------------------------------------------
+;
+; Not a general CBOR reader. A COSE_Sign1 as emitted above has a fixed shape
+; apart from the payload, so the fields are at known offsets and are CHECKED
+; against the bytes they must be:
+;
+;   0        84                 array(4)
+;   1        46                 bstr(6)   the protected header
+;   2..7     a2 01 27 03 18 3c  the protected header's own bytes
+;   8        a1                 map(1)
+;   9        04                 key 4, kid
+;   10..11   58 20              bstr(32)
+;   12..43                      the kid: the 32-byte public key
+;   44..     <payload bstr head, then the payload>
+;   ...       58 40              bstr(64)
+;   ...                          the signature
+;
+; The protected header is six bytes and its head is ONE byte, 46: six is under
+; 24 so it rides in the head itself. Only the 32-byte kid needs the long form,
+; which is why 58 20 appears and 46 does not -- reading both as long-form
+; shifts every offset after them by one, and a blob checked at the wrong offset
+; is rejected for a reason that has nothing to do with the signature.
+;
+; Verifying those bytes rather than parsing past them is the point. `zyl verify`
+; reads a trailer off a binary somebody else produced; a parser that walked
+; forward trusting the heads would be interpreting the input rather than
+; checking it, and every offset it followed would be an offset the input chose.
+; Here an unexpected byte fails, and the payload's own head is checked to
+; account for exactly the remaining bytes, so a blob cannot be longer or
+; shorter than its own contents say.
+
+(def cose-kid-off 12)
+(def cose-tail-off 44)
+
+; A failure, so the checks below read as one expression rather than as a
+; staircase of early returns. Bool, because that is what cose-verify returns:
+; ed25519-verify answers a yes/no question and this module does not translate
+; it into an integer for a caller to remember to translate back.
+(defn cose-fail () false)
+
+; Byte `v` at `off`.
+(defn cose-at ((b ByteBuf) off (v Int)) (= (load-u8 :le b off) v))
+
+; The first `n` bytes of `b` equal the first `n` of `xs`.
+(defn cose-bytes-eq ((b ByteBuf) off xs)
+  (match xs
+    (Nil true)
+    (Cons h rest
+      (if (cose-at b off h)
+        (cose-bytes-eq b (+ off 1) rest)
+        false))))
+
+; The 12 bytes that open every COSE_Sign1 this module emits, heads included.
+;
+; Twelve, not thirteen: `46` carries the major type AND the length 6 in one
+; byte, so there is no separate argument byte to list. Listing one anyway -- as
+; this did once -- makes every check after it compare against an off-by-one
+; image and fail for a reason that has nothing to do with the signature.
+(def cose-fixed
+  (Cons 132 (Cons 70
+    (Cons 162 (Cons 1 (Cons 39 (Cons 3
+    (Cons 24 (Cons 60 (Cons 161 (Cons 4
+    (Cons 88 (Cons 32 Nil)))))))))))))
+
+; The payload length the head at `off` declares, and the head's width.
+(deftype PLen (PLen Int Int))
+
+(defn cose-read-plen ((b ByteBuf) off len)
+  (let ib (load-u8 :le b off)
+    (let arg (bit-and ib 31)
+      (if (< arg 24)
+        (PLen arg 1)
+        (if (= arg 24)
+          (if (>= (+ off 1) len) (PLen (- 1) 0) (PLen (load-u8 :le b (+ off 1)) 2))
+          (if (= arg 25)
+            (if (>= (+ off 2) len)
+              (PLen (- 1) 0)
+              (PLen (+ (* 256 (load-u8 :le b (+ off 1))) (load-u8 :le b (+ off 2))) 3))
+            (PLen (- 1) 0)))))))
+
+; 1 when the COSE_Sign1 in `b` is signed by the key `pubhex`.
+;
+; The kid must equal the key being used, and not merely the signature verify:
+; a blob whose kid names a different key than the one that signed it is a blob
+; a reader would look up the wrong key for, so it is rejected even though the
+; signature itself is sound. That is the difference between checking an
+; attestation and checking that it is internally consistent.
+(defn cose-verify ((b ByteBuf) clen pubhex)
+  (if
+
+    (< clen 117)
+
+    (let kid (w-from-hex pubhex)
+
+      (if
+
+        (cose-bytes-eq b 0 cose-fixed)
+
+        (if
+
+          (cose-kid-eq b kid 0)
+
+          (let hd (cose-read-plen b cose-tail-off clen)
+
+            (let plen (match hd (PLen alen _ alen))
+
+              (let ahn (match hd (PLen _ ahn ahn))
+
+                (if
+
+                  (>= plen 0)
+
+                  (let poff (+ cose-tail-off ahn)
+
+                    (let soff (+ poff plen)
+
+                      (if
+
+                        (= clen (+ soff 66))
+
+                        (if
+
+                          (= (+ (* 256 (load-u8 :le b soff)) (load-u8 :le b (+ soff 1))) 22592)
+
+                          (let ss (cose-sig-structure b 2 b poff plen)
+
+                            (let ssn (match ss (CB b2 un un))
+
+                              (let msg (cose-words-of (match ss (CB sb u sb)) 0 ssn)
+
+                                (ed25519-verify kid msg ssn
+
+                                  (cose-words-of b (+ soff 2) 64)))))
+                          (cose-fail))
+                        (cose-fail))))
+                  (cose-fail)))))
+          (cose-fail))
+        (cose-fail)))
+    (cose-fail)))
+
+; The 32 kid bytes equal the 32 words of `kid`.
+(defn cose-kid-eq ((b ByteBuf) kid (i Int))
+  (if (>= i 32)
+    true
+    (if (= (load-u8 :le b (+ cose-kid-off i)) (w-get kid i))
+      (cose-kid-eq b kid (+ i 1))
+      false)))

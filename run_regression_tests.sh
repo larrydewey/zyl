@@ -337,6 +337,18 @@ if [ "$MODE" = "full" ] || [ "$MODE" = "quick" ]; then
     if [ -z "$FILTER" ] || echo "ffi_arity_test" | grep -qi -- "$FILTER"; then
         run_test "ffi_arity_test" "${TESTS_DIR}/ffi_arity_test.zyl"
     fi
+    # COSE_Sign1. The Zyl test pins the bytes; the script asks cbor2 and
+    # `cryptography` whether those bytes are RIGHT, which a self-consistent test
+    # cannot say.
+    if [ -z "$FILTER" ] || echo "cose" | grep -qi -- "$FILTER"; then
+        run_test "cose_test" "${TESTS_DIR}/cose_test.zyl"
+        if bash "${TESTS_DIR}/scripts/cose.sh" >"$RUN_TMP/cose_cross.log" 2>&1; then
+            PASS=$((PASS+1)); printf "  \033[0;32m\xe2\x9c\x93\033[0m cose_cross\n"
+        else
+            FAIL=$((FAIL+1)); printf "  \033[0;31m\xe2\x9c\x97\033[0m cose_cross\n"
+        fi
+        TOTAL=$((TOTAL+1))
+    fi
     # `zyl fmt`: indentation recovered exactly, --check never writing.
     if [ -z "$FILTER" ] || echo "fmt_test" | grep -qi -- "$FILTER"; then
         if bash "$TESTS_DIR/fmt_test.sh" >"$RUN_TMP/fmt_test.log" 2>&1; then

@@ -1,0 +1,206 @@
+(use core/list)
+(use encoding/cbor)
+(use encoding/cose)
+(use math/words)
+(use math/crypto/asymmetric/ed25519)
+
+; COSE_Sign1. The bytes are cross-checked against an independent implementation
+; (cbor2 + cryptography, in tests/scripts/cose.sh) because a self-consistent
+; test proves only that this code agrees with itself -- and a signature over
+; bytes is exactly the thing that is either right or subtly wrong.
+
+; RFC 8032 test vector 1.
+(def cose-seed "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60")
+(def cose-pub "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a")
+
+; ---------------------------------------------------------------------------
+; Small helpers
+; ---------------------------------------------------------------------------
+
+; A buffer of `n` bytes taken from `xs`, padded with zeros.
+(defn buf-of (xs (n Int))
+  (let b (cbor-buf (if (> n 0) n 1))
+    (begin
+      (for (i 0) (< i n)
+        (begin
+          (store-u8 :le b i (nth-of xs i))
+          (set! i (+ i 1))))
+      b)))
+
+; A buffer's bytes as a list, so a failure prints numbers rather than a blob.
+(defn bytes-of ((b ByteBuf) (n Int) (i Int))
+  (if (>= i n)
+    Nil
+    (Cons (load-u8 :le b i) (bytes-of b n (+ i 1)))))
+
+; The Sig_structure for a payload, as bytes.
+(defn sig-structure (payload plen)
+  (let prot (cose-protected)
+    (let ss (cose-sig-structure (match prot (CB pb pu pb)) 0 payload 0 plen)
+      (bytes-of (match ss (CB b u b)) (match ss (CB _ u u)) 0))))
+
+; The Sig_structure as hex.
+(defn sig-hex (payload plen)
+  (let prot (cose-protected)
+    (let ss (cose-sig-structure (match prot (CB pb pu pb)) 0 payload 0 plen)
+      (let ssb (match ss (CB sbuf sused sbuf))
+        (bytes-hex ssb (match ss (CB _ u u)) 0 "")))))
+
+(defn bytes-hex ((b ByteBuf) (n Int) (i Int) (acc String))
+  (if (>= i n)
+    acc
+    (bytes-hex b n (+ i 1) (str-concat acc (byte-hex (load-u8 :le b i))))))
+
+(def hexdigits "0123456789abcdef")
+
+(defn byte-hex (v)
+  (str-concat (str-substring hexdigits (/ v 16) 1) (str-substring hexdigits (bit-and v 15) 1)))
+
+(defn list-of-200 () (list-of-200-acc 0))
+
+(defn list-of-200-acc (i)
+  (if (>= i 200) Nil (Cons 1 (list-of-200-acc (+ i 1)))))
+
+; A signed COSE_Sign1 as (buffer length).
+; A match arm's value is bound, not applied: the head of a call has to be an
+; identifier, so `((match out ...) ...)` would be read as a call on whatever the
+; arm produced. And a Cons list is homogeneous, so the buffer and its length
+; cannot be returned as a pair of one -- the length is computed instead.
+;
+; 44 fixed bytes, then the payload's one-byte head (every payload here is under
+; 24 bytes), then the payload, then the 66 bytes of the signature head and the
+; signature.
+(defn signed (seed payload plen)
+  (let out (cose-sign seed payload plen)
+    (match out (CoseOut b used b))))
+
+(defn signed-len (plen) (+ 111 plen))
+
+(defn length-of (xs) (list-length xs))
+
+; The byte at index `i`, or -1.
+(defn nth-of (xs (i Int))
+  (match xs
+    (Nil (- 1))
+    (Cons h rest (if (= i 0) h (nth-of rest (- i 1))))))
+
+; The `n` bytes at `i` as a String, to compare against a literal.
+(defn text-of (xs (i Int) (n Int))
+  (match xs
+    (Nil "")
+    (Cons h rest
+      (if (= i 0)
+        (if (> n 1)
+          (str-concat (ffi-call "zyl_cstr_from_byte" h 1000) (text-of rest 0 (- n 1)))
+          (ffi-call "zyl_cstr_from_byte" h 1000))
+        (text-of rest (- i 1) n)))))
+
+; ---------------------------------------------------------------------------
+; The protected header
+; ---------------------------------------------------------------------------
+
+(test "the-protected-header-is-the-twelve-bytes-rfc-9052-specifies"
+  (let p (cose-protected)
+    (let b (match p (CB buf used buf))
+      (begin
+        (assert-equal (match p (CB _ n n)) 6)
+        (assert-equal (bytes-of b 6 0)
+          (Cons 162 (Cons 1 (Cons 39 (Cons 3 (Cons 24 (Cons 60 Nil)))))))))))
+
+; ---------------------------------------------------------------------------
+; Sig_structure
+; ---------------------------------------------------------------------------
+
+; RFC 9052 section 4.4:
+;   Sig_structure = ["Signature1", protected, external_aad : h'', payload]
+;
+; The whole thing is asserted as one hex string rather than as scattered byte
+; offsets. An offset assertion says WHICH byte moved, which is useful; a hex
+; assertion says what it should be, which is what a failure needs. Both were
+; wrong here once, and the hex form is the one that cannot be written from
+; memory: these literals come from `cbor2.dumps(["Signature1", prot, b"", p])`
+; in tests/scripts/cose.sh, and that script re-derives them on every run.
+;
+; Note the protected header is SIX bytes, wrapped in a TWO-byte head (58 06).
+; Reading it as a one-byte head shifts everything after it by one.
+(test "the-sig-structure-is-context-string-protected-empty-aad-payload"
+  (assert-equal (sig-hex (buf-of (Cons 65 Nil) 1) 1)
+    "846a5369676e61747572653146a2012703183c404141"))
+
+; The degenerate case, where every head is one byte.
+(test "an-empty-payload-still-has-the-four-element-sig-structure"
+  (assert-equal (sig-hex (buf-of Nil 0) 0)
+    "846a5369676e61747572653146a2012703183c4040"))
+
+; A payload long enough to need the two-byte head. 200 > 23, so the byte string
+; opens 58 c8 rather than a single byte -- the same boundary the CBOR head
+; encoder has its own test for, reached here through a payload.
+(test "a-payload-over-23-bytes-widens-its-head"
+  (let h (sig-hex (buf-of (list-of-200) 200) 200)
+    (begin
+      (assert-equal (str-length h) 444)
+      (assert-equal (str-substring h 40 4) "58c8"))))
+
+; ---------------------------------------------------------------------------
+; Signing and verifying
+; ---------------------------------------------------------------------------
+
+(test "a-signature-verifies-and-tampering-with-the-payload-does-not"
+  (let blob (signed cose-seed (buf-of (Cons 1 (Cons 2 (Cons 3 (Cons 4 Nil)))) 4) 4)
+    (let clen (signed-len 4)
+        (begin
+          (assert-true (cose-verify blob clen cose-pub))
+          (store-u8 :le blob (+ cose-tail-off 1) 99)
+          (assert-true (not (cose-verify blob clen cose-pub)))))))
+
+; The kid is the public key, so a reader learns which key signed without
+; decoding the protected headers -- and a blob naming a different key is
+; rejected even though a signature cannot tell the two apart. That is the
+; difference between checking an attestation and checking it is consistent.
+(test "the-kid-is-the-public-key-and-a-mismatched-kid-is-rejected"
+  (let blob (signed cose-seed (buf-of Nil 0) 0)
+    (let clen (signed-len 0)
+        (begin
+          (assert-true (cose-verify blob clen cose-pub))
+          (store-u8 :le blob cose-kid-off 0)
+          (assert-true (not (cose-verify blob clen cose-pub)))))))
+
+(test "a-signature-by-another-key-does-not-verify"
+  (let blob (signed cose-seed (buf-of Nil 0) 0)
+    (assert-true
+      (not (cose-verify blob (signed-len 0)
+        "0000000000000000000000000000000000000000000000000000000000000001")))))
+
+; A blob is rejected for its shape before any cryptography runs. These are the
+; cases a forward-parsing reader would follow an input-chosen offset into.
+(test "a-malformed-blob-is-rejected-not-interpreted"
+  (let blob (signed cose-seed (buf-of Nil 0) 0)
+    (let clen (signed-len 0)
+        (begin
+          ; not an array(4)
+          (store-u8 :le blob 0 131)
+          (assert-true (not (cose-verify blob clen cose-pub)))
+          ; a protected header that is not ours. The header's own bytes are at
+          ; 2..7 -- the bstr head 46 occupies offset 1 alone.
+          (store-u8 :le blob 0 132)
+          (store-u8 :le blob 2 161)
+          (assert-true (not (cose-verify blob clen cose-pub)))
+          ; restored, then truncated and starved
+          (store-u8 :le blob 2 162)
+          (assert-true (cose-verify blob clen cose-pub))
+          (assert-true (not (cose-verify blob (- clen 1) cose-pub)))
+          (assert-true (not (cose-verify blob 10 cose-pub)))))))
+
+; Determinism is not a nicety: a signature is over bytes, so a record that
+; encoded differently on a second build would not attest to anything checkable.
+(test "signing-is-deterministic"
+  (let a (signed cose-seed (buf-of (Cons 9 Nil) 3) 3)
+    (let b (signed cose-seed (buf-of (Cons 9 Nil) 3) 3)
+      (assert-equal (bytes-of a (signed-len 3) 0) (bytes-of b (signed-len 3) 0)))))
+
+; The seed derives the key the other tests sign with, so a mismatch fails here
+; rather than as an unexplained signature failure later.
+(test "the-seed-derives-the-expected-public-key"
+  (assert-equal (w-hex-bytes (ed25519-public-key (w-from-hex cose-seed)) 32) cose-pub))
+
+(run-tests)
