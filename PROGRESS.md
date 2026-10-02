@@ -287,10 +287,26 @@ compile with `build/boot/zyl-self` on 2026-09-28.
   definitions, and `zyl-lsp` publishes all three errors.
 - Diagnostics: `error[CODE]`, `--> file:line:col`, the source line, a
   caret and a `= help:` line for every diagnostic that has a source
-  node; "did you mean" on unbound names; labelled secondary spans on
-  `E_MUT_CONFLICT`, `E_CAPABILITY_LEAK`, `E_PKG_CAPABILITY_VIOLATION`
-  and `E_REGION_ESCAPE`; `--error-format=json`. The self-build prints no
-  warnings.
+  node; labelled secondary spans on `E_MUT_CONFLICT`, `E_CAPABILITY_LEAK`,
+  `E_PKG_CAPABILITY_VIOLATION` and `E_REGION_ESCAPE`; `--error-format=json`.
+  The voice is held to `docs/diagnostics.md` (2026-10-02): an unbound name
+  is reported once, with up to three close names (locals first), Zyl's
+  spelling of another Lisp's name, or the `(use ...)` line that imports
+  it, and nothing depending on it is reported; a type mismatch names the
+  parameter, operator, condition or `main`'s result at the offending
+  expression; a failed compile ends with `N errors; fix the first one
+  first` (nothing after one error, nothing in JSON mode) and a located
+  error prints without `PANIC:`; a standard-library warning is hidden
+  while compiling a program (`ZYL_WARN_ALL=1` shows it); stdout is flushed
+  before a panic or a test failure line. `tests/scripts/diagnostics-voice.sh`
+  pins the probe program's output. `zyl explain CODE` gives a wrong
+  program and its fix for the 30 most used codes
+  (`tests/scripts/explain-examples.sh` compiles every pair); `zyl explain`
+  lists every code by phase. The catalog is exactly the raised codes:
+  31 dead codes were removed from it and from spec §28, and
+  `verify/error-codes.sh` (`scripts/error-codes`) fails on drift either
+  way. The self-build prints unused-parameter and shadowing warnings in
+  the compiler's own modules.
 - Partial operations are spelled (`docs/soundness.md`): a stdlib function
   that can panic ends in `!` (`vec-get!`, `vec-set!`, `vec-last!`,
   `slice-vec!`/`-sub!`/`-get!`, `view-slice!`/`-sub!`, the SIMD lane
