@@ -1574,7 +1574,16 @@
         (let bi (ta-builtin-sig st n)
           (if (ta-no-type-p bi)
             (ta-call-named st ctx env e n args)
-            (ta-apply-type st bi (ta-list st ctx env args)))))))))
+            (ta-apply-builtin st n bi args (ta-list st ctx env args)))))))))
+
+; A built-in's call, checked argument by argument like a defn's.
+(defn ta-apply-builtin (st n bi args ts)
+  (match (ta-resolve st bi)
+    (TaF ps r
+      (if (= (list-length ps) (list-length ts))
+        (ta-seq (ta-unify-args st (err-name n) Nil ps args ts 1) r)
+        (ta-apply-type st bi ts)))
+    (_ (ta-apply-type st bi ts))))
 
 ; Arithmetic or comparison on a type variable needs the instance type.
 ; An equality between two values is also noted: on an ADT it becomes a
@@ -1711,7 +1720,7 @@
   (match (ta-resolve st tf)
     (TaF ps r0
       (if (= (list-length ps) (list-length ts))
-        (let _ (ta-unify-args st fi (ta-fn-params st fi) ps args ts 1)
+        (let _ (ta-unify-args st (err-name (ta-fn-name st fi)) (ta-fn-params st fi) ps args ts 1)
           (match ct (TaF _ r (ta-unify st r0 r)) (_ 0)))
         (ta-unify st tf ct)))
     (_ (ta-unify st tf ct))))
@@ -1721,7 +1730,7 @@
     (EDefn _ params _ params)
     (_ Nil)))
 
-(defn ta-unify-args (st fi pnames ps args ts k)
+(defn ta-unify-args (st fname pnames ps args ts k)
   (match ps
     (Nil 0)
     (Cons p prest
@@ -1732,9 +1741,9 @@
             (Nil 0)
             (Cons t trest
               (let _ (if (ta-clash st p t)
-                       (ta-arg-mismatch st fi (ta-param-at pnames k) k a p t)
+                       (ta-arg-mismatch st fname (ta-param-at pnames k) k a p t)
                        (ta-unify-at st a t p))
-                (ta-unify-args st fi pnames prest arest trest (+ k 1))))))))))
+                (ta-unify-args st fname pnames prest arest trest (+ k 1))))))))))
 
 ; Unify with the report, if any, placed at `node`.
 (defn ta-unify-at (st node a b)
@@ -1751,16 +1760,15 @@
 
 ; "`twice` takes `Int` as its 1st argument (`n`), but this is `String`",
 ; at the argument, with the parameter labelled where it is declared.
-(defn ta-arg-mismatch (st fi p k a want got)
-  (let fname (err-name (ta-fn-name st fi))
-    (let pname (match p (None "") (Some pp (P.name pp)))
-      (let m1 (str-concat "`" (str-concat fname (str-concat "` takes `" (str-concat (ta-pretty st want) (str-concat "` as its " (ta-ordinal k))))))
-        (let m2 (if (= (str-length pname) 0) "" (str-concat " (`" (str-concat pname "`)")))
-          (let msg (str-concat m1 (str-concat " argument" (str-concat m2 (str-concat ", but this is `" (str-concat (ta-pretty st got) "`")))))
-            (let labels (match p
-                          (None Nil)
-                          (Some pp (Cons (err-label-at pp (str-concat "`" (str-concat pname "` is declared here"))) Nil)))
-              (ta-seq (ta-type-error "E_TYPE_MISMATCH" msg a labels "") 0))))))))
+(defn ta-arg-mismatch (st fname p k a want got)
+  (let pname (match p (None "") (Some pp (P.name pp)))
+    (let m1 (str-concat "`" (str-concat fname (str-concat "` takes `" (str-concat (ta-pretty st want) (str-concat "` as its " (ta-ordinal k))))))
+      (let m2 (if (= (str-length pname) 0) "" (str-concat " (`" (str-concat pname "`)")))
+        (let msg (str-concat m1 (str-concat " argument" (str-concat m2 (str-concat ", but this is `" (str-concat (ta-pretty st got) "`")))))
+          (let labels (match p
+                        (None Nil)
+                        (Some pp (Cons (err-label-at pp (str-concat "`" (str-concat pname "` is declared here"))) Nil)))
+            (ta-seq (ta-type-error "E_TYPE_MISMATCH" msg a labels "") 0)))))))
 
 (defn ta-ordinal (k)
   (if (= k 1) "1st" (if (= k 2) "2nd" (if (= k 3) "3rd" (str-concat (ffi-call "zyl_int_text" k 1000) "th")))))
