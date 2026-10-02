@@ -788,11 +788,18 @@
           (if (str-eq d ".zero") (ax-emit-zero (ax-parse-imm rest))
           (if (str-eq d ".skip") (ax-emit-zero (ax-parse-imm rest))
           (if (str-eq d ".quad") (ax-le (ax-parse-imm rest) 8)
-          (if (str-eq d ".long") (ax-le (ax-parse-imm rest) 4)
+          (if (str-eq d ".long") (ax-long rest)
           (if (str-eq d ".byte") (ax-b (bit-and (ax-parse-imm rest) 255))
           (if (or (str-eq d ".string") (str-eq d ".asciz")) (ax-emit-string rest)
           (if (str-eq d ".ascii") (ax-emit-ascii rest)
             unit)))))))))))))))))) ; .globl/.weak/.file/.intel_syntax/.type/.size ignored
+
+; `.long sym - .` is a pc-relative word (the function-name table's entries); otherwise an immediate.
+(defn ax-long (rest)
+  (let n (ax-len rest)
+    (if (and (> n 3) (str-eq (ax-sub rest (- n 3) 3) "- ."))
+      (ax-reloc32 1 (ax-trim (ax-sub rest 0 (- n 3))) 0)
+      (ax-le (ax-parse-imm rest) 4))))
 
 (defn ax-emit-ascii (body) (let n (ax-len body) (ax-string-loop-noz body 1 (- n 1))))
 (defn ax-string-loop-noz (s i end)
