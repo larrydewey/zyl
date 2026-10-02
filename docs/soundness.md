@@ -53,7 +53,7 @@ enumeration is the argument.
 |---|---|
 | allocate a region-owned value | `Vec`, `IntMap`, `Set`, `Slice`, `bytebuf`, string ops |
 | read/write a field | `struct-get`; fields are immutable, `set!` on one is `E_MUT_CONFLICT` |
-| index a collection | `vec-get` and friends; bounds-checked, out of range is an error |
+| index a collection | `vec-get!` and friends; bounds-checked, out of range is an error |
 | load/store a byte | `load-u8`/`store-u8` and the wider forms; bounds-checked against the buffer |
 | atomic RMW | `atomic-*`; operand is a `ByteBuf` region slot |
 | write a file | `file-write`; a descriptor, released exactly once |
@@ -208,7 +208,7 @@ those are compiled in an internal mode.
 
 ### L6 — Indexed access is bounds-checked · *Enforced*
 
-`vec-set` returns the vector unchanged rather than writing when the index
+`vec-set!` returns the vector unchanged rather than writing when the index
 is out of range, and reads report rather than fault. Collections are typed:
 an array's slots are filled in order so a collection only ever reads
 elements it wrote, and there is no word-level cast anywhere

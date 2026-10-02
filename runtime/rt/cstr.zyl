@@ -92,6 +92,8 @@
 (defn zyl_cstr_concat (a b) (rt-concat a b 0))
 (defn zyl_cstr_concat_r (a b) (rt-concat a b (rt-cur-region)))
 
+; Total by definition (spec §25): start clamps into [0, n], len into [0, n - start];
+; the result is the overlap of the asked range with the string, never an error.
 (defn rt-substr (s start len rp)
   (let w (rt-w s)
     (if (and (> w 0) (< w 4096)) (rt-bad-null w "cstr-substr")

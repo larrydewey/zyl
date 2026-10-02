@@ -504,7 +504,7 @@ the current library.
   (let v (vec-push (vec-push (vec-create-default 10) 42) 7)
     (begin
       (print (vec-len v))           ; 2
-      (print (vec-get v 0))))       ; 42
+      (print (vec-get! v 0))))       ; 42
   (let m (intmap-put (intmap-new 10) 1 100)
     (print (intmap-get m 1 0)))        ; 100
   0)

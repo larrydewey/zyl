@@ -31,8 +31,8 @@
   (let v (fill (vec-new-cap 2) 0 1000)
     (begin
       (assert-equal (vec-len v) 1000)
-      (assert-equal (vec-get v 999) 999)
-      (assert-equal (vec-get v 0) 0))))
+      (assert-equal (vec-get! v 999) 999)
+      (assert-equal (vec-get! v 0) 0))))
 
 (test "a struct update"
   (let p (make-RPt 1 2)
@@ -46,7 +46,7 @@
     (let w (vec-push v (vec-len v))
       (begin
         (assert-equal (vec-len v) 1)
-        (assert-equal (vec-get w 1) 1)))))
+        (assert-equal (vec-get! w 1) 1)))))
 
 (test "a reuse inside a loop body sees each iteration's value"
   (let-mut acc (vec-new-cap 1)
@@ -55,6 +55,6 @@
         (while (< i 100)
           (begin (set! acc (vec-push acc i)) (set! i (+ i 1))))
         (assert-equal (vec-len acc) 100)
-        (assert-equal (vec-get acc 50) 50)))))
+        (assert-equal (vec-get! acc 50) 50)))))
 
 (run-tests)

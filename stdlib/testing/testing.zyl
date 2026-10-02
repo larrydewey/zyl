@@ -18,7 +18,7 @@
 (defn assert-false-value (value)
   (assert-false value))
 
-; Fails unless calling `thunk` raises an error.
+; Fails unless calling `thunk` raises an error; the failure is a panic, hence the `!`.
 ; Returns: Unit
-(defn assert-fail-call (thunk)
+(defn assert-fail-call! (thunk)
   (assert-fail (thunk)))

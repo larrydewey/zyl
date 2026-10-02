@@ -2,8 +2,8 @@
 
 Every diagnostic code the self-hosted compiler, the REPL interpreter and the
 runtime know about. The catalog lives in `stdlib/compiler/error_codes.zyl`
-(`error-codes`, one `(EC name phase severity message)` per code: 131
-entries, 130 distinct codes, `E_OUT_OF_MEMORY` appearing twice); spec §28
+(`error-codes`, one `(EC name phase severity message)` per code: 133
+entries, 132 distinct codes, `E_OUT_OF_MEMORY` appearing twice); spec §28
 lists the normative subset. The catalog was originally transcribed from the
 Rust bootstrap's `ZylError` enum (since removed; git history at `b8bc283`) and has
 since gained the self-hosted-only and package-system (§31) codes.
@@ -220,7 +220,7 @@ parts with `let` or move the sum into a helper function.
 | `E_LIST_NTH_OOB` | runtime: list-nth index out of bounds at S | catalog only |
 | `E_NULL_POINTER` | runtime: null pointer dereference | catalog only |
 | `E_REGION_EXHAUSTED` (§28) | runtime: a with-region region ran out of its fixed size or limit | `runtime/rt/alloc.zyl` (`E_REGION_EXHAUSTED: <kind> region of N bytes is full`; catchable with `try`; deterministic for a given request sequence) |
-| `E_INDEX_OUT_OF_BOUNDS` (§28) | runtime: index outside a word array | `runtime/rt/tables.zyl` (a vector index or pop, a word array or Array index, a full string buffer), `collections/vec.zyl`, `collections/slice.zyl`, `text/view.zyl` (an index or range outside the value) |
+| `E_INDEX_OUT_OF_BOUNDS` (§28) | runtime: index outside a word array | `runtime/rt/tables.zyl` (a vector index or pop, a word array or Array index, a full string buffer), and the standard library's `!` functions in `collections/vec.zyl`, `collections/slice.zyl`, `text/view.zyl`, `simd/simd.zyl` (an index, range or lane outside the value; the message names the index and the bound and points at the `?` sibling) |
 | `E_INTERP_TAG` | runtime: the checking interpreter found an operand of the wrong tag at S (a type-checker bug) | `stdlib/repl/interp.zyl`: under `ZYL_INTERP_CHECK=1`, an operator whose operand tags break its rule, or a condition that is not 0 or 1 |
 | `E_OUT_OF_MEMORY` | runtime: memory budget exhausted - raise or remove it with ZYL_MAX_MEMORY | `runtime/rt/alloc.zyl` (`PANIC: error[E_OUT_OF_MEMORY]: ...`); a second catalog entry reads "runtime: out of memory" |
 | `E_USER_ERROR` (§28) | runtime: user error - M at S | catalog only |
@@ -342,6 +342,8 @@ All raised by the package modules named; all are §28 codes except
 | `E_NON_EXHAUSTIVE_MATCH` | error | `exhaustiveness_check.zyl` (located) | a `match` over a `deftype` does not cover some variant and has no `_` arm |
 | `E_UNREACHABLE_MATCH_ARM` | error | `exhaustiveness_check.zyl` (located) | an arm after a catch-all, or a repeated constructor arm |
 | `E_DUPLICATE_PARAMETER` | error | `unused_check.zyl` | two parameters of one `defn`/`fn`/`lambda` share a name |
+| `E_PANIC_UNMARKED` | error | `unused_check.zyl` (located, at the defn) | a `defn` in a program-facing standard-library module (not `compiler/`, `lsp/`, `repl/`) whose body calls `panic` or `zyl_panic` directly and whose name has no trailing `!`; `main` and the definition of `panic` are exempt; direct calls only (docs/soundness.md L8) |
+| `W_PANIC_UNMARKED` | warning | `unused_check.zyl` (located, at the defn) | the same condition in a program: help `rename it \`name!\` so callers can see it may stop the program, or return an Option` |
 | `E_ASM_UNSUPPORTED` | error | `asm_x86.zyl` | the Zyl assembler met an instruction or operand form it does not encode (a codegen or runtime change emitted one; `ZYL_EXTERNAL_LD=1` links with `cc` instead) |
 | `E_LINK_UNDEFINED`, `E_LINK_UNDEFINED_GOT` | error | `elf_link.zyl` | a strong symbol (or a GOT entry's symbol) is defined neither by the program nor by `rt.zo` |
 | `W_UNUSED_FUNCTION` | warning | `unused_check.zyl` | catalogued, not raised: the check cannot yet tell the program's functions from the standard library's |

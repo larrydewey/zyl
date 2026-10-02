@@ -20,6 +20,10 @@
 ;   - E_DUPLICATE_PARAMETER: two parameters of the same `defn`/`fn`/
 ;     `lambda` sharing a name -- purely syntactic, zero legitimate use,
 ;     kept as a hard error rather than a warning.
+;   - E_PANIC_UNMARKED / W_PANIC_UNMARKED: a `defn` whose body calls
+;     `panic` or the runtime's `zyl_panic` directly and whose name has no
+;     trailing `!` (the error in a program-facing standard-library
+;     module, the warning in a program; see UNMARKED PANIC below).
 ;
 ; Exemption: `_` (the codegen-recognized wildcard -- see cg-bind-one,
 ; which skips slot allocation for it entirely) and any `_`-prefixed name
@@ -55,6 +59,7 @@
 (use compiler/ast)
 (use compiler/expr_inner)
 (use compiler/error_report)
+(use compiler/rt_mode)
 
 ; uc-check-unused-functions is NOT wired in here, even though it's fully
 ; implemented below: core/core (compose, is-even, print-string, ...) is
@@ -216,7 +221,7 @@
     (EAssertTrue e2 _ (uc-refs e2))
     (EAssertFalse e2 _ (uc-refs e2))
     (ETestCompile e2 _ (uc-refs e2))
-    (EApply fname args (Cons fname (uc-refs-list args)))
+    (EApply fname args (Cons fname (list-append (uc-ffi-panic-mark fname args) (uc-refs-list args))))
     (EMacroDef _ args body (list-append (uc-refs-list args) (uc-refs body)))
     (EUnknown _ args (uc-refs-list args))
     (ELoadByte _ off buf (list-append (uc-refs off) (uc-refs buf)))
@@ -239,6 +244,101 @@
     (EAtomicMax buf off val (list-append (uc-refs buf) (list-append (uc-refs off) (uc-refs val))))
     (EAtomicMin buf off val (list-append (uc-refs buf) (list-append (uc-refs off) (uc-refs val))))
     (_ Nil)))
+
+; `(ffi-call "zyl_panic" ...)` leaves a marker no identifier can spell, so
+; the UNMARKED PANIC check reads it from the same refs as everything else.
+(defn uc-ffi-panic-mark (fname args)
+  (if (str-eq fname "ffi-call")
+    (match args
+      (Cons sym _ (if (str-eq (uc-str-lit sym) "zyl_panic") (Cons "ffi-call zyl_panic" Nil) Nil))
+      (Nil Nil))
+    Nil))
+
+(defn uc-str-lit (e)
+  (match (Expr.inner e)
+    (EAtom a (match a (AStr s s) (_ "")))
+    (_ "")))
+
+; ===========================================================================
+; UNMARKED PANIC -- a plain-named definition that calls panic directly
+; ===========================================================================
+;
+; Doctrine (docs/soundness.md, "Partial operations are spelled"): a
+; function that can stop the program ends in `!`. A `defn` whose body
+; names `panic` or the runtime's `zyl_panic`, and whose name has no
+; trailing `!`, is E_PANIC_UNMARKED in a program-facing standard-library
+; module and W_PANIC_UNMARKED in a program. Direct calls only: a function
+; that panics through a callee is not inferred. Exempt: `main`, the
+; definition of `panic` itself, test bodies (not `defn`s), and the
+; compiler's own code -- the compiler/, lsp/ and repl/ modules, the
+; runtime module and anything built with --internal-module.
+
+(defn uc-check-panic-mark (name refs site)
+  (if (uc-panic-exempt name)
+    unit
+    (if (uc-panics-directly refs)
+      (if (uc-std-key-p name)
+        (if (uc-program-facing-p name) (uc-fail-panic-unmarked name site) unit)
+        (if (or (rt-mode-p) (internal-mode-p)) unit (uc-warn-panic-unmarked name site)))
+      unit)))
+
+(defn uc-panic-exempt (name)
+  (let sym (err-name name)
+    (or (str-eq sym "main") (or (str-eq sym "panic") (uc-ends-with sym "!")))))
+
+(defn uc-panics-directly (refs)
+  (match refs
+    (Nil false)
+    (Cons h t
+      (if (or (str-eq h "ffi-call zyl_panic") (str-eq (err-name h) "panic")) true (uc-panics-directly t)))))
+
+; Standard-library definitions carry the package key `zyl/std@N::`.
+(defn uc-std-key-p (name) (uc-starts-with name "zyl/std@"))
+
+; Program-facing: every stdlib module but the compiler's own.
+(defn uc-program-facing-p (name)
+  (let m (uc-key-module name)
+    (not (or (uc-starts-with m "compiler/") (or (uc-starts-with m "lsp/") (uc-starts-with m "repl/"))))))
+
+; The module half of `pkg@N::module::symbol`.
+(defn uc-key-module (name)
+  (let start (uc-find-colons name 0)
+    (if (< start 0)
+      ""
+      (let end (uc-find-colons name (+ start 2))
+        (if (< end 0) "" (str-substring name (+ start 2) (- end (+ start 2))))))))
+
+(defn uc-find-colons (s i)
+  (if (>= (+ i 1) (str-length s))
+    -1
+    (if (str-eq (str-substring s i 2) "::") i (uc-find-colons s (+ i 1)))))
+
+(defn uc-starts-with (s p)
+  (let n (str-length p)
+    (if (< (str-length s) n) false (str-eq (str-substring s 0 n) p))))
+
+(defn uc-ends-with (s p)
+  (let n (str-length s)
+    (let m (str-length p)
+      (if (< n m) false (str-eq (str-substring s (- n m) m) p)))))
+
+(defn uc-panic-unmarked-msg (sym)
+  (str-concat "`" (str-concat sym (str-concat "` can stop the program but is not spelled `" (str-concat sym "!`")))))
+
+(defn uc-panic-unmarked-help (sym)
+  (str-concat "rename it `" (str-concat sym "!` so callers can see it may stop the program, or return an Option")))
+
+(defn uc-fail-panic-unmarked (name site)
+  (let sym (err-name name)
+    (ffi-call "zyl_panic"
+      (err-at "E_PANIC_UNMARKED" (uc-panic-unmarked-msg sym)
+              (ffi-call "zyl_span_file" site 1000) (ffi-call "zyl_span_off" site 1000)
+              (uc-panic-unmarked-help sym))
+      1000)))
+
+(defn uc-warn-panic-unmarked (name site)
+  (let sym (err-name name)
+    (err-warn-at "W_PANIC_UNMARKED" (uc-panic-unmarked-msg sym) site (uc-panic-unmarked-help sym))))
 
 ; ===========================================================================
 ; PARAMETERS: duplicate + unused
@@ -316,18 +416,20 @@
     (Cons e rest
       (begin
         (match (Expr.inner e)
-          (EDefn name params body (uc-check-fn name params body))
+          (EDefn name params body (uc-check-fn name params body e))
           (ETestDecl _ body _ _ (uc-check-fn-body body))
           (_ 0))
         (uc-check-top rest)))))
 
-(defn uc-check-fn (name params body)
+; `site` is the defn node, where E_PANIC_UNMARKED / W_PANIC_UNMARKED point.
+(defn uc-check-fn (name params body site)
   (let pnames (uc-param-names params)
     (begin
       (uc-check-dup-params name params Nil)
       (let refs (uc-refs body)
         (begin
           (uc-check-unused-params refs params)
+          (uc-check-panic-mark name refs site)
           (uc-walk-scope body refs pnames))))))
 
 (defn uc-check-fn-body (body)
@@ -469,5 +571,5 @@
     (EAtomicFetchAdd buf off val (begin (uc-walk-scope buf refs scope) (uc-walk-scope off refs scope) (uc-walk-scope val refs scope)))
     (EAtomicMax buf off val (begin (uc-walk-scope buf refs scope) (uc-walk-scope off refs scope) (uc-walk-scope val refs scope)))
     (EAtomicMin buf off val (begin (uc-walk-scope buf refs scope) (uc-walk-scope off refs scope) (uc-walk-scope val refs scope)))
-    (EDefn name params body (uc-check-fn name params body))
+    (EDefn name params body (uc-check-fn name params body e))
     (_ 0)))

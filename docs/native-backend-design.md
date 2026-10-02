@@ -140,7 +140,7 @@ sends every function through the stack machine.
   - ICNF (`optimization.zyl`): one-level unrolling of small tree
     recursion (`ZYL_UNROLL`), and early exits at loop call sites;
   - runtime: short strings as whole words, 64-byte AVX2 copies, one
-    match per `vec-push`/`vec-get`, unzeroed array data.
+    match per `vec-push`/`vec-get!`, unzeroed array data.
 
 There is no separate MIR optimization pass: the "optimize" step of the
 pipeline above is the ICNF passes before lowering and the instruction

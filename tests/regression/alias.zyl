@@ -27,9 +27,9 @@
 (test "alias-in-vec"
   (let v (vec-push (vec-push (vec-push (vec-new-cap 10) 1) 2) 3)
     (assert-equal (vec-len v) 3)
-    (assert-equal (vec-get v 0) 1)
-    (assert-equal (vec-get v 1) 2)
-    (assert-equal (vec-get v 2) 3)))
+    (assert-equal (vec-get! v 0) 1)
+    (assert-equal (vec-get! v 1) 2)
+    (assert-equal (vec-get! v 2) 3)))
 
 (test "alias-in-map"
   (let m (intmap-new 10)

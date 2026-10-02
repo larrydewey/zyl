@@ -354,7 +354,7 @@ made it:
   (let v (vec-push (vec-push (vec-create-default 10) 1) 2)
     (begin
       (print (vec-len v))                ; => 2
-      (print (vec-get v 0))))            ; => 1
+      (print (vec-get! v 0))))            ; => 1
   (let m (intmap-put (intmap-new 10) 1 42)
     (begin
       (print (intmap-get m 1 0))            ; => 42

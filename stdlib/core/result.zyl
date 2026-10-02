@@ -58,7 +58,7 @@
     (Ok _ res)
     (Err _ other)))
 
-(defn result-expect (res msg)
+(defn result-expect! (res msg)
   (match res
     (Ok v v)
     (Err _ (panic msg))))

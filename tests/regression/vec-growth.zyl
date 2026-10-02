@@ -2,8 +2,8 @@
 (use collections/vec)
 
 (defn fill (v (i Int) (n Int)) (if (>= i n) v (fill (vec-push v (* i 3)) (+ i 1) n)))
-(defn total (v (i Int) (n Int) (acc Int)) (if (>= i n) acc (total v (+ i 1) n (+ acc (vec-get v i)))))
-(defn ok-all (v (i Int) (n Int)) (if (>= i n) true (if (= (vec-get v i) (* i 3)) (ok-all v (+ i 1) n) false)))
+(defn total (v (i Int) (n Int) (acc Int)) (if (>= i n) acc (total v (+ i 1) n (+ acc (vec-get! v i)))))
+(defn ok-all (v (i Int) (n Int)) (if (>= i n) true (if (= (vec-get! v i) (* i 3)) (ok-all v (+ i 1) n) false)))
 
 (test "vec-growth"
   (let v (fill (vec-new-cap 1) 0 5000)

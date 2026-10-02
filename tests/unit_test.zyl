@@ -428,10 +428,10 @@
 (test "vec-cap"
       (assert-equal (vec-cap (vec-new-cap 10)) 10))
 
-(test "vec-set"
-      (assert-equal (vec-get (vec-set (vec-new-cap 10) 0 42) 0) 42))
+(test "vec-set!"
+      (assert-equal (vec-get! (vec-set! (vec-new-cap 10) 0 42) 0) 42))
 
-(test "vec-get oob"
+(test "vec-get! oob"
       (assert-equal (vec-get-or (vec-new-cap 10) 99 -1) -1))
 
 (test "vec-push"
@@ -445,11 +445,11 @@
 
 (test "vec-pop keeps values"
       ; Note: reads through a popped Vec hit the doubly-nested-let struct
-      ; binding limitation, so verify length here and contents via vec-last.
+      ; binding limitation, so verify length here and contents via vec-last!.
       (let v (vec-push (vec-push (vec-new-cap 10) 42) 43)
         (begin
           (assert-equal (vec-len (vec-pop v)) 1)
-          (assert-equal (vec-last v) 43))))
+          (assert-equal (vec-last! v) 43))))
 
 (test "vec-pop empty"
       (assert-equal (vec-len (vec-pop (vec-new-cap 10))) 0))

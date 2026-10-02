@@ -21,7 +21,7 @@
 (trait TsDesc (desc (self) String))
 (impl TsDesc Int (defn desc (self) "int"))
 (impl TsDesc String (defn desc (self) (str-concat "str:" self)))
-(impl TsDesc Vec (defn desc (self) (str-concat "vec of " (TsDesc.desc (vec-get self 0)))))
+(impl TsDesc Vec (defn desc (self) (str-concat "vec of " (TsDesc.desc (vec-get! self 0)))))
 
 (defn ts-twice (x) (str-concat (TsDesc.desc x) (TsDesc.desc x)))
 

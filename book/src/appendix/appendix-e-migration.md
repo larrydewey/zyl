@@ -140,7 +140,7 @@ default). `(error "msg")` returns `(Err "msg")` rather than raising, so
 the counterpart of
 `std::panic::catch_unwind`, not of `?`. The `unwrap` form takes an `Option` only
 and panics on `None` with `unwrap on None`; for a `Result`, use
-`result-expect`, which panics with your message, or `result-unwrap`
+`result-expect!`, which panics with your message, or `result-unwrap`
 with a default (Appendix C.7).
 
 ### Pattern Matching → Match (Similar)
@@ -286,7 +286,7 @@ free(arr);
 ```lisp
 ;; Zyl: arena-backed collections
 (let v (vec-push (vec-create-default n) 7)   ; a private arena
-  (vec-get v 0))
+  (vec-get! v 0))
 ```
 
 Ordinary code never calls `malloc` or `free`: values are placed by the

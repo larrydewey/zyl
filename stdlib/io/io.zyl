@@ -124,7 +124,7 @@
 ; A destroyed StringBuffer's storage is gone, so every read through it
 ; would be a use-after-free. Callers check first; a live one is released
 ; by string-buffer-destroy, which is what with-resource calls (spec G2).
-(defn sb-require-live ((sb StringBuffer))
+(defn sb-require-live! ((sb StringBuffer))
   (if (> (ffi-call "zyl_ref_get" (struct-get sb "released") 1000) 0)
     (ffi-call "zyl_panic" "E_USE_AFTER_FREE: string buffer used after it was destroyed" 1000)
     unit))
@@ -144,7 +144,7 @@
         (let clen (alloc-strlen chunk)
           (let need (+ (+ len clen) 1)
             (begin
-              (sb-require-live self)
+              (sb-require-live! self)
               (if (> need cap)
                 (let new-cap (if (> (* cap 2) need) (* cap 2) need)
                   (let bigger (buf-new (struct-get self "arena") new-cap)
@@ -162,14 +162,14 @@
 ; Returns: String
 (defn string-buffer-str ((sb StringBuffer))
   (begin
-    (sb-require-live sb)
+    (sb-require-live! sb)
     (buf-str (sb-ref-get (struct-get sb "buf")))))
 
 ; Current content length of a StringBuffer.
 ; Returns: Int
 (defn string-buffer-len ((sb StringBuffer))
   (begin
-    (sb-require-live sb)
+    (sb-require-live! sb)
     (sb-ref-get (struct-get sb "len"))))
 
 ; Reclaim a StringBuffer's arena. A StringBuffer outlives the frame that

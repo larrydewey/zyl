@@ -402,7 +402,8 @@ falls short of §4–§6 and §17.
 - A foreign symbol is typed by its `extern` declaration (see
   `spec/09-ffi-contracts.md`); an undeclared one is `E_CANNOT_INFER`.
 - A few standard-library functions have fixed signatures in the pass
-  (`ta-builtin-sig`): `str-concat`, `str-length`, `str-substring`,
+  (`ta-builtin-sig`): `str-concat`, `str-length`, `str-substring` (total:
+  it clamps its range to the string, §25),
   `str-equal`/`str-eq` (Bool), `print-string` and `print-float` (Unit),
   the channel forms (`chan`, `chan-tx`, `chan-rx`, `chan-recv`), the contract helpers,
   the `def` getters' cell operations (whose names contain spaces, so no

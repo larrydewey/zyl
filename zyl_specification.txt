@@ -1141,6 +1141,36 @@ Core modules:
 
 All obey region + capability rules.
 
+Partial operations are spelled. A standard-library function that
+can stop the program is spelled with a trailing `!`; its total sibling
+is spelled with `?` and returns an `Option` (or a `Result` where a
+message matters); there is no plain name. A plain-named library
+function may not call `panic`; the compiler rejects one with
+`E_PANIC_UNMARKED` (direct calls only: `main`, the definition of
+`panic`, test bodies and the compiler's own modules are exempt), and
+reports the same condition in a program as `W_PANIC_UNMARKED`. The
+explicit forms `panic`, `assert`, the `assert-*` test forms and `unwrap`
+keep their names. The pairs are `vec-get!`/`vec-get?`,
+`vec-set!`/`vec-set?` (an index equal to the length appends; any other
+index outside the Vec is `E_INDEX_OUT_OF_BOUNDS` or `None`),
+`vec-last!`/`vec-last?`, `slice-vec!`/`slice-vec?`,
+`slice-sub!`/`slice-sub?`, `slice-get!`/`slice-get?`,
+`view-slice!`/`view-slice?`, `view-sub!`/`view-sub?`, the SIMD lane
+accessors `i64x2-get!`/`i64x2-get?`, `i64x2-set!`/`i64x2-set?` and
+their `i32x4` and `u8x16` forms, and `option-expect!` and
+`result-expect!` (which have no `?` sibling: the Option or Result is
+it). `vec-get-or`, `slice-get-or`, `list-nth`, `map-get`, `assoc-get`
+and `intmap-get` are total as written. A `!` function's message names
+the input and the bound and points at the `?` sibling.
+
+String slicing is total. `(str-substring s start len)` returns the
+overlap of the requested byte range with `s`: `start` is clamped into
+`0..(str-length s)` and `len` into `0..(str-length s) - start`, so a
+negative or oversized argument yields a shorter or empty string and
+never an error. `view-take` and `view-drop` clamp the same way;
+`view-slice!`/`view-slice?` and `view-sub!`/`view-sub?` are the checked
+forms.
+
 The standard library is implicit: it needs no manifest entry, and its
 version is the compiler's version, recorded in the lock (§31.6). Each
 stdlib module declares the capability it provides, which is how §31.9
@@ -1245,6 +1275,9 @@ Errors:
     E_RESERVED_KEYWORD          — reserved keyword used as identifier (Compile Error)
     E_CANNOT_INFER              — a type the program does not determine (Compile Error)
     E_INFINITE_TYPE             — a type would contain itself (Compile Error)
+    E_PANIC_UNMARKED            — a standard-library function that calls panic directly is not
+                                  spelled with a trailing ! (Compile Error; §25)
+    W_PANIC_UNMARKED            — the same condition in a program (Warning)
 
 Package system errors (§31). All are Compile Errors. The phase numbers
 below are the phase categories of the error catalog

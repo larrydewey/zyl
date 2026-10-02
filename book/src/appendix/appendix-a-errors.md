@@ -146,6 +146,7 @@ Macro expansion also reports `E_ARITY_MISMATCH` (wrong argument count, or too fe
 | `E_DUPLICATE_DEFINITION` | A name defined more than once at top level |
 | `E_DUPLICATE_VARIANT` | A variant name repeated within one `deftype`, or a program type that reuses a prelude constructor name (`Some`, `None`, `Ok`, `Err`, `Cons`, `Nil`) — the standard library's unqualified uses of those names would otherwise resolve to it |
 | `E_DUPLICATE_PARAMETER` | A parameter name repeated in one signature (`_` and `_`-prefixed names may repeat). *Raised by `unused_check.zyl`; not in the catalog.* |
+| `E_PANIC_UNMARKED` | A standard-library `defn` (outside the compiler's own modules) that calls `panic` or `zyl_panic` directly without a trailing `!` in its name. The same condition in a program is the warning `W_PANIC_UNMARKED` (§A.16); `main`, the definition of `panic` and test bodies are exempt. Direct calls only |
 | `E_TYPE_MISMATCH` | Two types that must be equal are not: an `Int` condition where `Bool` is required, `Int` and `Float` mixed in arithmetic, a `String` passed where a field or parameter wants an `Int`, an `Int` given to `actor-wait` where an `Actor` is required, a value received from a channel used at a different type than was sent, a `Float` in an `extern` signature, a `file-open` mode that is not a literal, a list literal with elements of two types, a non-`Int` byte offset, a slice where a `ByteBuf` is required, an `Int` given to `file-write` as its data. Raised by `type_annotate.zyl` for every unification failure, with both types in the message |
 | `E_INFINITE_TYPE` | A type that would have to contain itself, found by the occurs check, such as a function applied to itself, `(x x)` |
 | `E_RETURN_TYPE_MISMATCH` | A body that does not match its declared return type. *Catalogued only.* |
@@ -212,7 +213,7 @@ an inferred placement is always one the value cannot escape (Chapter
 | `E_BYTEBUF_CAP_EXCEEDED` | An append past a buffer's fixed capacity. *Catalogued only: the append returns 0 and leaves the buffer unchanged.* |
 | `E_BYTEBUF_OVERLAP` | An append from a slice overlapping its own buffer. *Catalogued only.* |
 | `E_BYTEBUF_INVALID` | A buffer handle whose magic tag does not match. *Catalogued only.* |
-| `E_INDEX_OUT_OF_BOUNDS` | An index outside a vector or word array |
+| `E_INDEX_OUT_OF_BOUNDS` | An index or range outside a Vec, slice, string view, SIMD vector or word array. From a standard-library `!` function (`vec-get!`, `slice-sub!`, `view-slice!`, `u8x16-get!`, ...) the message names the index and the bound and points at the `?` sibling that returns `None` instead |
 | `E_CHANNEL_NOT_OWNER` | `chan-send` or `chan-recv` on an endpoint the running actor does not own (Chapter 9, §9.4) |
 | `E_CHANNEL_CLOSED` | `chan-recv` on a channel whose sender has finished and whose buffer is empty. Catchable with `try` |
 | `E_CHANNEL_CAPACITY` | `(chan n)` with `n` outside 1..16777216 |
@@ -335,13 +336,15 @@ Warnings are written to stderr and never stop a build:
 | `W_UNUSED_PARAMETER` | A parameter never read |
 | `W_UNUSED_VARIABLE` | A binding never read |
 | `W_SHADOWED_BINDING` | A binding that hides an outer one of the same name |
+| `W_PANIC_UNMARKED` | A `defn` whose body calls `panic` directly and whose name has no trailing `!` (§6.9). Help: rename it `name!`, or return an `Option` |
 | `E_ZEROIZE_MISSING` | See §A.12 — a warning despite the `E_` prefix |
 | `W_TYPE_STRICT` | A type error reported as a warning because `ZYL_STRICT_TYPES=report` is set (§A.1) |
 
 Name a binding `_`, or give it a `_` prefix (`_count`), to exempt it
 from the unused, shadowing and duplicate-parameter checks. The four
 unused and shadowing codes come from `unused_check.zyl` and are not in
-the catalog; `W_TYPE_STRICT` comes from `type_annotate.zyl` and is. The
+the catalog; `W_PANIC_UNMARKED` (also `unused_check.zyl`) and
+`W_TYPE_STRICT` (`type_annotate.zyl`) are. The
 language server publishes them as Warning diagnostics (Chapter 35).
 
 ## A.17 Catalog Versus Implementation

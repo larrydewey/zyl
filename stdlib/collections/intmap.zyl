@@ -138,5 +138,5 @@
 ; An empty IntMap with no storage. The old storage belongs to the region
 ; it was allocated in and is reclaimed with it.
 ; Returns: IntMap
-(defn intmap-free ((m IntMap))
+(defn intmap-free ((_m IntMap))
   (make-IntMap (w-alloc 0) (w-alloc 0) 0 0))

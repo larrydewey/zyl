@@ -543,7 +543,7 @@ The standard library is package `zyl/std` at the compiler's major. It is implici
 | `core/option` | `Option`, `option-unwrap`, `option-is-some`, `option-map`, `option-unwrap-or` |
 | `core/result` | `Result`, `result-unwrap`, `result-is-ok`, `result-map`, `result-and-then` |
 | `core/map` | `Map`, `map-new`, `map-insert`, `intmap-get`, `intmap-has`, `intmap-remove` |
-| `collections/vec` | `vec-create`, `vec-push`, `vec-get`, `vec-set`, `vec-len`, `vec-pop` |
+| `collections/vec` | `vec-create`, `vec-push`, `vec-get!`, `vec-set!`, `vec-len`, `vec-pop` |
 | `collections/intmap` | `intmap-new-with`, `intmap-put`, `intmap-get`, `intmap-has`, `intmap-remove`, `intmap-len` |
 | `collections/set` | `set-create`, `set-add`, `set-contains`, `set-remove`, `set-len` |
 | `collections/collections` | `Assoc`, `assoc-put`, `assoc-get`, `list-map`, `list-filter`, `list-fold` |

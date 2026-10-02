@@ -278,12 +278,12 @@ raise.
 | `core/result` | `Result`, `Ok`, `Err`, `result-is-ok`, `result-unwrap`, `result-map`, `result-and-then` |
 | `core/list` | `List`, `Cons`, `Nil`, `car`, `cdr`, `list-length`, `list-append`, `list-reverse` |
 | `core/map` | `map-new`, `map-insert`, `map-get`, `map-has`, `map-remove`, `map-entries` |
-| `collections/vec` | `vec-create`, `vec-push`, `vec-pop`, `vec-get`, `vec-set`, `vec-len`, `vec-cap`, `vec-last` |
+| `collections/vec` | `vec-create`, `vec-push`, `vec-pop`, `vec-get!`, `vec-set!`, `vec-len`, `vec-cap`, `vec-last!` |
 | `collections/intmap` | `intmap-new-with`, `intmap-put`, `intmap-get`, `intmap-len`, `intmap-has`, `intmap-remove` |
 | `collections/set` | `set-create`, `set-add`, `set-remove`, `set-len`, `set-contains` |
 | `collections/collections` | `assoc-*`, `list-map`, `list-filter`, `list-fold`, `list-nth`, `list-range` |
-| `collections/slice` | `Slice`, `slice-vec`, `slice-of-vec`, `slice-sub`, `slice-get`, `slice-len`, `slice-fold`, `slice-to-vec` |
-| `text/view` | `StrView`, `view-of`, `view-slice`, `view-sub`, `view-split`, `view-trim`, `view-parse-int`, `view-to-string`; `Cursor`, `cursor-of`, `cursor-take-while`, `cursor-expect` |
+| `collections/slice` | `Slice`, `slice-vec!`, `slice-of-vec`, `slice-sub!`, `slice-get!`, `slice-len`, `slice-fold`, `slice-to-vec` |
+| `text/view` | `StrView`, `view-of`, `view-slice!`, `view-sub!`, `view-split`, `view-trim`, `view-parse-int`, `view-to-string`; `Cursor`, `cursor-of`, `cursor-take-while`, `cursor-expect` |
 | `actor/actor` | `actor-spawn`, `actor-wait`, `actor-is-alive` |
 | `atomic/atomic` | `atomic-load`, `atomic-store`, `atomic-add`, `atomic-cas`, `atomic-fetch-add` |
 | `ffi/ffi` | `ffi-pin-value`, `ffi-unpin-value`, `ffi-safe-call`, `ffi-pin-call-unpin` |
