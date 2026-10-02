@@ -1,0 +1,68 @@
+(use core/list)
+(use compiler/error_codes)
+(use compiler/explain { ec-find => find-code })
+(use compiler/explain { ec-prefix => codes-under })
+(use compiler/explain { ec-message => code-message })
+(use compiler/explain { ec-phase-name => phase-name })
+(use compiler/explain { ec-name => code-name })
+(use compiler/explain { find-all => find-all-in })
+
+; `zyl explain`, on the parts that are pure functions of their input.
+
+; car returns an Option, so the head is matched out rather than taken.
+(defn message-of (name)
+  (match (find-code name (error-codes))
+    (Some c (code-message c))
+    (None "")))
+
+(defn first-code-name (xs)
+  (match xs (Nil "") (Cons h _ (code-name h))))
+
+(defn first-index (xs)
+  (match xs (Nil (- 1)) (Cons h _ h)))
+
+(defn hits-in (hay needle) (list-length (find-all-in hay needle)))
+
+(test "a-known-code-is-found-with-its-message"
+  (assert-equal (message-of "E_ARITY_MISMATCH")
+    "type: function arity mismatch for F at S: expected E arguments, found G"))
+
+(test "an-unknown-code-has-no-message"
+  (assert-equal (message-of "E_NOPE_NOT_A_CODE") ""))
+
+(test "an-unknown-code-lists-the-ones-under-it"
+  (let near (codes-under "E_ARITY" (error-codes) Nil)
+    (begin
+      (assert-true (> (list-length near) 0))
+      (assert-equal (first-code-name near) "E_ARITY_MISMATCH"))))
+
+(test "phases-have-readable-names"
+  (begin
+    (assert-equal (phase-name 4) "type")
+    (assert-equal (phase-name 6) "region")
+    (assert-equal (phase-name 16) "ffi")
+    (assert-equal (phase-name 999) "compile")))
+
+; The site scan had four separate bugs that all looked like a working search:
+; a needle compared against the rest of the file, a length that started at
+; zero, a search window one step long, and a limit that was the window rather
+; than the file. Every one reported zero sites and read as correct.
+(test "search-finds-every-occurrence"
+  (let hits (find-all-in "(ffi-fail \"E_X\" 1)\n(x \"E_X\")\n(none)" "\"E_X\"")
+    (begin
+      (assert-equal (list-length hits) 2)
+      (assert-equal (first-index hits) 10))))
+
+(test "search-finds-nothing-when-absent"
+  (assert-equal (hits-in "(a \"E_Y\")" "\"E_X\"") 0))
+
+; The needle carries its own quotes, so a code never matches a longer name that
+; starts with it, and a mention in a comment or doc string is not counted as a
+; place the code is raised.
+(test "a-quoted-needle-does-not-match-a-longer-name"
+  (assert-equal (hits-in "(a \"E_XY\")" "\"E_X\"") 0))
+
+(test "search-does-not-match-past-the-end"
+  (assert-equal (hits-in "\"E_X\"" "\"E_XY\"") 0))
+
+(run-tests)

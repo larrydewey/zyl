@@ -185,7 +185,7 @@ minute.
 The CLI (`selfhost/driver.zyl`, `drv-usage`): `zyl <file.zyl> [-o out]
 [--emit-asm]`, `new`, `add`, `fetch`, `build [--locked]`, `test`,
 `update`, `vendor`, `audit`, `publish`, `key`, `repl`, `eval <file.zyl>`,
-`doc [file|dir] [-o out.md]`, `check [file|dir ...]`, `balance [file|dir ...]`.
+`doc [file|dir] [-o out.md]`, `check [file|dir ...]`, `explain [CODE]`, `balance [file|dir ...]`.
 
 `zyl check` is the fast edit loop: parse, module resolution, macro expansion,
 the eight checks, derive expansion, impl lifting, closure inlining and type

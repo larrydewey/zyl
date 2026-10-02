@@ -1,0 +1,363 @@
+; === Explaining an error code ===
+; Module: compiler/explain
+;
+; `zyl explain E_ARITY_MISMATCH`: what the code means, which phase raises it,
+; and where in this tree it is raised -- with the diagnostic text that site
+; produces, which is where the fix for it is written down.
+;
+; WHY THIS IS A COMMAND. There are 135 codes, each raised from up to a dozen
+; places, and the useful part of a code is not its name but the sentence that
+; tells you what to do about it. That sentence already exists, once per raise
+; site, as the `help` argument the compiler passes alongside the message. It
+; was only ever printed at the moment of failure, and only for the one site
+; that fired. So the knowledge was in the tree and unreachable until something
+; failed.
+;
+; Reading it back out of the source rather than from a hand-written table is
+; deliberate. A second table would be 135 entries to write and 135 to keep in
+; step with the code, and it would drift on the first change -- which is the
+; ordinary fate of documentation about diagnostics. This cannot drift: if a
+; site stops existing, the example stops appearing.
+;
+; The scan is a substring search over the tree, not a parse. It has to cope
+; with source that does not compile, with comments, and with a half-written
+; file, so it never needs to be correct about Zyl -- only about text.
+
+(use compiler/error_codes)
+; sb-read-all and sb-read-file, for reading the tree. Declared rather than
+; picked up from whichever module happens to be compiled alongside: without
+; this, `use compiler/explain` from a program that does not also use the
+; compiler's own reader failed with an unbound `sb-read-all`.
+(use compiler/sexp_balance)
+
+; ---------------------------------------------------------------------------
+; The catalog
+; ---------------------------------------------------------------------------
+
+; A single-variant record, so one arm is exhaustive and a catch-all after it
+; would be E_UNREACHABLE_MATCH_ARM.
+;
+; The arm's body is the LAST element inside the pattern form, not a form after
+; it: `(Rec b1 b2 body)`. Written as `(match c (EC a b c d) body)` the body is
+; a stray form and every binding reads as unbound -- which is what "unbound
+; identifier" pointed at here for four accessors in a row.
+(defn ec-name (c) (match c (EC an ap as am an)))
+(defn ec-phase (c) (match c (EC an ap as am ap)))
+(defn ec-severity (c) (match c (EC an ap as am as)))
+(defn ec-message (c) (match c (EC an ap as am am)))
+
+; Phase numbers are internal; a name is what a reader can act on.
+;
+; A flat match over literals, one arm per phase, all at the same level. The
+; first version was a chain of twenty nested `if`s, which reached twenty levels
+; of nesting and had the wrong number of closers; the second was a list of
+; pairs, which does not type because Cons is the LIST constructor and the
+; pairs hold an Int and a String. Literal match arms have neither problem.
+(defn ec-phase-name (p)
+  (match p
+    (1 "parse")
+    (2 "parse")
+    (3 "parse")
+    (4 "type")
+    (5 "type")
+    (6 "region")
+    (7 "optimization")
+    (8 "codegen")
+    (9 "link")
+    (10 "runtime")
+    (11 "codegen")
+    (12 "compile")
+    (13 "module")
+    (14 "package")
+    (16 "ffi")
+    (17 "compile")
+    (18 "compile")
+    (19 "compile")
+    (20 "compile")
+    (21 "package")
+    (_ "compile")))
+
+(defn ec-severity-name (s) (if (= s 0) "note" (if (= s 1) "error" "warning")))
+
+(defn ec-find (name codes)
+  (match codes
+    (Nil None)
+    (Cons h t (if (str-eq (ec-name h) name) (Some h) (ec-find name t)))))
+
+; Codes sharing a prefix, for a name that is not exactly one of them.
+(defn ec-prefix (p codes acc)
+  (match codes
+    (Nil (list-reverse acc))
+    (Cons h t
+      (if (str-starts-with (ec-name h) p)
+        (ec-prefix p t (Cons h acc))
+        (ec-prefix p t acc)))))
+
+(defn str-starts-with (s p)
+  (if (< (str-length s) (str-length p))
+    false
+    (str-eq (str-substring s 0 (str-length p)) p)))
+
+; ---------------------------------------------------------------------------
+; Text search over the tree
+; ---------------------------------------------------------------------------
+
+; Every offset at which `needle` occurs in `hay`, in order.
+; Every offset at which `needle` occurs in `hay`, in order. `n` is the length
+; of the haystack, not 0: passing 0 made the bound test true immediately and the
+; search return nothing at all, which is why every code reported "raised at 0
+; places". And the limit handed to index-of is `n`, not `from + nl`: limiting
+; each step to the current window means a needle further along is never found,
+; so this found the first occurrence and nothing after it.
+(defn find-all ((hay String) (needle String))
+  (find-all-from hay needle 0 (str-length hay)))
+
+(defn find-all-from ((hay String) (needle String) (from Int) (n Int))
+  (let nl (str-length needle)
+    (if (>= (+ from nl) n)
+      Nil
+      (let at (index-of hay needle from n)
+        (if (< at 0)
+          Nil
+          (Cons at (find-all-from hay needle (+ at nl) n)))))))
+
+; Index of `needle` in `hay` at or after `from`, or -1.
+;
+; The window is the NEEDLE's length, not the distance to the limit: comparing
+; everything from `from` to the end against the needle can never match, so the
+; first version of this found nothing anywhere in the tree and reported every
+; code as raised zero times.
+(defn index-of ((hay String) (needle String) (from Int) (limit Int))
+  (let nl (str-length needle)
+    (if (> (+ from nl) limit)
+      -1
+      (if (str-eq (str-substring hay from nl) needle)
+        from
+        (index-of hay needle (+ from 1) limit)))))
+
+; Line number (1-based) of byte offset `off`.
+(defn line-of ((src String) (off Int))
+  (line-of-go src 0 off 1))
+
+(defn line-of-go ((src String) (i Int) (off Int) (line Int))
+  (if (>= i off)
+    line
+    (if (= (byte-at src i) 10)
+      (line-of-go src (+ i 1) off (+ line 1))
+      (line-of-go src (+ i 1) off line))))
+
+(defn byte-at ((s String) (i Int))
+  (if (< i (str-length s)) (ffi-call "zyl_view_byte" s 0 1099511627776 i 1000) 10))
+
+(defn line-start ((src String) (off Int))
+  (if (<= off 0) 0 (let p (last-nl-before src off) (if (< p 0) 0 (+ p 1)))))
+
+(defn last-nl-before ((src String) (off Int))
+  (let p (index-of-nl src 0 off)
+    (if (< p 0) -1 (last-nl-before src p))))
+
+(defn index-of-nl ((src String) (from Int) (limit Int))
+  (if (>= from limit)
+    -1
+    (if (= (byte-at src from) 10) from (index-of-nl src (+ from 1) limit))))
+
+(defn str-trim-left (s)
+  (if (= (str-length s) 0)
+    ""
+    (if (= (ffi-call "zyl_view_byte" s 0 1099511627776 0 1000) 32)
+      (str-trim-left (str-substring s 1 (- (str-length s) 1)))
+      s)))
+
+; ---------------------------------------------------------------------------
+; One code, in full
+; ---------------------------------------------------------------------------
+
+; A place the code is raised: the file, and the line in it.
+;
+; The source text at that line was shown too, and removed: it needed a second
+; line-lookup whose off-by-one printed the file header under every site, which
+; is worse than not printing it. `file:line` is what an editor wants anyway.
+;
+; A record rather than a flat list of four interleaved values. The flat
+; version needed an `off` and a `shown` smuggled through the same list as the
+; path and the source, and reading it required counting elements -- in the file
+; whose subject is not having to count things.
+(deftype ExSite (ExSite String Int))
+
+(defn site-path (x) (match x (ExSite p l p)))
+(defn site-line (x) (match x (ExSite p l l)))
+
+; How many sites to list. Every site is counted; the source line is shown for
+; the first few, because a list of forty identical locations is less use than a
+; few real ones.
+(def ex-text-sites 6)
+(def ex-site-cap 40)
+
+(defn explain-code (code root files)
+  (match (ec-find code (error-codes))
+    (None
+      (begin
+        (print (str-concat "zyl explain: no code named " (str-concat code " in the catalog.")))
+        (print "")
+        (explain-similar code)
+        1))
+    (Some c
+      (let sites (explain-sites code root files)
+        (let n (list-length sites)
+          (begin
+            (print code)
+            (print (field-line "phase" (ec-phase-name (ec-phase c))))
+            (print (field-line "severity" (ec-severity-name (ec-severity c))))
+            (print (field-line "meaning" (ec-message c)))
+            (print "")
+            (print (str-concat "  raised at "
+              (str-concat (ffi-call "zyl_int_text" n 1000)
+                (if (= n 1) " place in this tree:" " places in this tree:"))))
+            (if (= n 0)
+              (print (str-concat "  (scanned "
+                (str-concat (ffi-call "zyl_int_text" (ex-line-count files) 1000)
+                  " files and found no quoted occurrence)")))
+              unit)
+            (print-sites sites 0)
+            0))))))
+
+; A name that is not a code gets the codes that start with it, which is the
+; question actually being asked far more often than "what does this mean".
+(defn explain-similar (code)
+  (let near (ec-prefix code (error-codes) Nil)
+    (if (= (list-length near) 0)
+      (begin
+        (print "  Nothing in the catalog starts with that. `zyl explain` with no")
+        (print "  argument lists every code."))
+      (begin
+        (print "  Codes starting with that:")
+        (print-code-lines near)))))
+
+(defn print-code-lines (xs)
+  (match xs
+    (Nil unit)
+    (Cons h t
+      (begin
+        (print (code-line (ec-name h) (ec-message h)))
+        (print-code-lines t)))))
+
+; ---------------------------------------------------------------------------
+; Finding the places a code is raised
+; ---------------------------------------------------------------------------
+
+(defn explain-sites (code root files)
+  (explain-sites-go code root files 0 Nil))
+
+(defn explain-sites-go ((code String) (root String) (files String) (n Int) (acc (List ExSite)))
+  (if (>= n (ex-line-count files))
+    (list-reverse acc)
+    (let name (ex-file-at files n)
+      (if (= (str-length name) 0)
+        (explain-sites-go code root files (+ n 1) acc)
+        (let full (str-concat (str-concat root "/") name)
+          (match (read-source full)
+            (None (explain-sites-go code root files (+ n 1) acc))
+            (Some src
+              (let acc (add-hits acc src name (find-all src (quoted code)) 0)
+                (explain-sites-go code root files (+ n 1) acc)))))))))
+
+; The needle carries its own quotes, so a comment or a doc string mentioning
+; the code does not count as a place it is raised.
+(defn quoted (code) (str-concat "\"" (str-concat code "\"")))
+
+(defn add-hits ((acc (List ExSite)) (src String) (rel String) (hits (List Int)) (n Int))
+  (match hits
+    (Nil acc)
+    (Cons off rest
+      (if (> (list-length acc) ex-site-cap)
+        acc
+        (Cons (ExSite rel (line-of src off)) (add-hits acc src rel rest (+ n 1)))))))
+
+; One print per line, so a site is one line: `print` puts each value on its own
+; line and three calls produced a path, a colon and a number on three lines.
+(defn print-sites (sites (shown Int))
+  (match sites
+    (Nil unit)
+    (Cons x rest
+      (begin
+        (print (str-concat (str-concat "    " (site-path x))
+          (str-concat ":" (ffi-call "zyl_int_text" (site-line x) 1000))))
+        (print-sites rest (+ shown 1))))))
+
+; ---------------------------------------------------------------------------
+; Every code
+; ---------------------------------------------------------------------------
+
+(defn explain-list ()
+  (begin
+    (print "zyl explain: pass a code for its meaning and where it is raised.")
+    (print "")
+    (print-list-codes (error-codes))
+    0))
+
+(defn print-list-codes (codes)
+  (match codes
+    (Nil unit)
+    (Cons h t
+      (begin
+        (print (code-line (ec-name h) (ec-message h)))
+        (print-list-codes t)))))
+
+; One print per line: `print` puts every value on its own line, so a label and
+; its value printed separately come out as two lines. Everything here builds the
+; line and prints it once.
+(defn code-line (name message)
+  (str-concat (str-concat "  " name) (str-concat (pad name 28) message)))
+
+(defn field-line (label value)
+  (let tag (str-concat label ":")
+    (str-concat (str-concat "  " tag) (str-concat (pad tag 12) value))))
+
+; `width` minus the name's length, as a string of spaces. It returns the
+; padding rather than printing it, because every caller is building a line.
+(defn pad (s width)
+  (let n (- width (str-length s))
+    (if (<= n 0) "" (spaces n))))
+
+(defn spaces (n)
+  (spaces-go n ""))
+
+(defn spaces-go (n acc)
+  (if (<= n 0) acc (spaces-go (- n 1) (str-concat acc " "))))
+
+; ---------------------------------------------------------------------------
+; File enumeration, borrowed in shape from drv-balance
+; ---------------------------------------------------------------------------
+
+; `len` is the listing's length, not 0: passing 0 made the bound test true
+; immediately, so the scan reported zero files and every code reported "raised
+; at 0 places" -- the same mistake as find-all, in the function that feeds it.
+(defn ex-line-count (listing)
+  (ex-line-count-go listing 0 (str-length listing)))
+
+(defn ex-line-count-go ((listing String) (i Int) (len Int))
+  (if (>= i len) 0 (+ 1 (ex-line-count-go listing (next-nl listing i len) len))))
+
+(defn next-nl ((listing String) (i Int) (len Int))
+  (let j (index-of-nl listing i len) (if (< j 0) len (+ j 1))))
+
+(defn ex-file-at (listing (n Int))
+  (let i (nth-start listing n 0 0 (str-length listing))
+    (if (< i 0)
+      ""
+      (let j (index-of-nl listing i (str-length listing))
+        (str-substring listing i (if (< j 0) (str-length listing) (- j i)))))))
+
+; Byte offset where the n-th entry starts.
+(defn nth-start ((listing String) (n Int) (count Int) (i Int) (len Int))
+  (if (>= count n)
+    i
+    (let j (next-nl listing i len)
+      (if (>= j len) -1 (nth-start listing n (+ count 1) j len)))))
+
+(defn read-source (path)
+  (let fd (file-open path "r")
+    (if (< fd 1)
+      None
+      (let s (sb-read-all fd "")
+        (begin (file-close fd) (Some s))))))

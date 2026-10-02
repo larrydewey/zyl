@@ -39,6 +39,7 @@
 (use compiler/optimization)
 (use compiler/codegen)
 (use compiler/pipeline)
+(use compiler/explain)
 (use compiler/icnf_print)
 (use compiler/doc)
 (use repl/repl)
@@ -602,6 +603,7 @@
     (print "zyl eval <file.zyl>                    run a program without building one")
     (print "zyl doc [file.zyl | dir] [-o out.md]   Markdown from doc comments")
     (print "zyl check [file.zyl | dir ...]          type-check without building; the fast edit loop")
+    (print "zyl explain [CODE]                     what a diagnostic means and where it is raised")
     (print "zyl balance [file.zyl | dir ...]       check brackets, strings and top-level structure")
     0))
 
@@ -641,9 +643,11 @@
     (el-rt-cache "rt.s" "start.s" "rt.zo")
   (if (str-eq cmd "check")
     (drv-check arena cwd)
+  (if (str-eq cmd "explain")
+    (drv-explain cwd)
   (if (str-eq cmd "balance")
     (drv-balance cwd)
-    (drv-usage))))))))))))))))))
+    (drv-usage)))))))))))))))))))
 
 ; `zyl doc <file.zyl | dir> [-o out.md]`: Markdown from doc comments
 ; (compiler/doc.zyl); only `pub` items when a zyl.pkg sits beside them.
@@ -782,6 +786,28 @@
             (if (> (drv-check-file arena src f) 0)
               (drv-check-each arena rest (+ bad 1))
               (drv-check-each arena rest bad))))))))
+
+; `zyl explain [CODE]`: what a diagnostic means and where it is raised.
+;
+; There are 135 codes and each is raised from up to a dozen places, so the
+; useful part of a code is the sentence that says what to do about it. That
+; sentence already exists, once per raise site, as the `help` argument passed
+; alongside the message -- and it was only ever printed at the moment of
+; failure, for the one site that fired.
+;
+; With no argument it lists every code, so the catalog is discoverable without
+; reading the source. With one it prints the phase, the severity, the
+; catalog's own meaning, and the raise sites found by scanning the tree, with
+; the source line at each.
+;
+; The scan reads the tree as text rather than parsing it, so it works on source
+; that does not compile and on a half-written file -- which is when you most
+; want to look a code up.
+(defn drv-explain (cwd)
+  (let code (drv-arg 2)
+    (if (= (str-length code) 0)
+      (explain-list)
+      (explain-code code cwd (ffi-call "zyl_list_zyl_files" cwd 1000)))))
 
 ; `zyl balance [path ...]`: the strict delimiter check (compiler/sexp_balance)
 ; on every file named, or every .zyl file under a directory (default: the
