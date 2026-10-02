@@ -782363,7 +782363,7 @@ main:
 .L6240:
     .string "zyl_bytebuf_blake3_hex"
 .L6241:
-    .string "Int ByteBuf Int Int -> String"
+    .string "Arena ByteBuf Int Int -> String"
 .L6249:
     .string ""
 .L6250:

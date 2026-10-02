@@ -12120,6 +12120,18 @@ zy_local_x2Fmain_0__blake3__b3_x2Dhex_x2Dout:
     mov rdi, rbx
     call zyl_arena_alloc_zeroed
     mov rbx, rax
+    cmp rbx, 0
+    jne .L347_1
+    mov rdi, r12
+    call zyl_rt_free
+    mov rax, 0
+    mov rbx, qword ptr [rbp-8]
+    mov r12, qword ptr [rbp-16]
+    mov r13, qword ptr [rbp-24]
+    mov rsp, rbp
+    pop rbp
+    ret
+.L347_1:
     lea rsi, [r12+2144]
     mov rdi, 0
     mov rdx, rdi

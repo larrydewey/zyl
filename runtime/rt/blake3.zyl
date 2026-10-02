@@ -231,12 +231,25 @@
 (defn b3-clamp (ob) (if (<= ob 0) 32 (if (> ob 64) 64 ob)))
 
 ; Lowercase hex of the finished hasher, in the arena; frees h.
+;
+; A FAILED ALLOCATION RETURNS AN EMPTY STRING rather than carrying on. The hex
+; goes into the arena's buffer at `d`, so on a null `d` this writes to address 0
+; and takes the process with it -- and it takes it with a backtrace full of data
+; addresses and no diagnostic, because the fault is inside a hash helper called
+; through a function pointer. That is exactly how a bad `arena` argument
+; presents, and an empty string is an answer every caller already handles:
+; zyl_blake3_hex's own contract is that 0 means it could not be read.
+;
+; A caller with a real arena never takes this path; it exists so that a caller
+; without one gets an answer rather than a core dump.
 (defn b3-hex-out (arena h ob)
   (let _ (b3-finalize h ob)
     (let d (rt-w (ffi-call "zyl_arena_alloc_zeroed" arena (+ (* ob 2) 1) 1))
-      (let _ (rt-hex-bytes d (b3-dig h) 0 ob)
-        (let _ (rt-st8 (+ d (* ob 2)) 0)
-          (let _ (zyl_rt_free h) (ffi-call "%str" d 1)))))))
+      (if (= d 0)
+        (let _ (zyl_rt_free h) (ffi-call "%str" 0 1))
+        (let _ (rt-hex-bytes d (b3-dig h) 0 ob)
+          (let _ (rt-st8 (+ d (* ob 2)) 0)
+            (let _ (zyl_rt_free h) (ffi-call "%str" d 1))))))))
 
 ; BLAKE3 over a ByteBuf's first `len` bytes, as lowercase hex. len < 0 means
 ; the whole buffer.
