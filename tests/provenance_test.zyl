@@ -24,10 +24,11 @@
 (def h4 "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f")
 (def h5 "606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f")
 (def h6 "7f7e7d7c7b7a797877767574737271706f6e6d6c6b6a69686766656463626160")
+(def h7 "808f8e8d8c8b8a898877868584838281807f7e7d7c7b7a797877767574737271")
 
 ; A record with the four hashes varied, so a record that accidentally reuses one
 ; field's value for another is visible.
-(defn sample () (prov-record h1 h2 h3 h4 h5 h6))
+(defn sample () (prov-record h1 h2 h3 h4 h5 h6 h7))
 
 (test "the-record-writes-its-nine-keys-in-canonical-order"
   (assert-true (prov-sorted-p (sample))))
@@ -60,9 +61,12 @@
         (let o (cbor-map-text-text a o "writes" "y")
           (assert-true (cbor-keys-sorted-p a 1 2 32)))))))
 
-(test "the-record-opens-with-a-map-of-nine"
+; TEN keys, so the head is 0xaa -- 0xa0 + 10. Written as the map(10) it is
+; rather than as 170, because a bare 170 does not say what is being asserted and
+; the last version of this said "nine" and meant 169.
+(test "the-record-opens-with-a-map-of-ten"
   (let r (sample)
-    (assert-equal (load-u8 :le (match r (ProvOut b n b)) 0) 169)))
+    (assert-equal (load-u8 :le (match r (ProvOut b n b)) 0) (+ 160 10))))
 
 (test "a-record-for-the-same-inputs-is-byte-identical"
   (let a (sample)

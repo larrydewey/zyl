@@ -37,9 +37,10 @@ cat > "$BIN/rec.zyl" <<'EOF'
 (def h4 "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f")
 (def h5 "606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f")
 (def h6 "7f7e7d7c7b7a797877767574737271706f6e6d6c6b6a69686766656463626160")
+(def h7 "808f8e8d8c8b8a898877868584838281807f7e7d7c7b7a797877767574737271")
 
 (defn main ()
-  (let r (prov-record h1 h2 h3 h4 h5 h6)
+  (let r (prov-record h1 h2 h3 h4 h5 h6 h7)
     (let b (match r (ProvOut buf n buf))
       (begin
         (print (buf-hex b (match r (ProvOut _ n2 n2)) 0 ""))
@@ -87,7 +88,7 @@ check("our key order is cbor2's canonical order", ours == want,
 check("the record re-encodes byte-identically", cbor2.dumps(rec) == raw)
 
 # 4. The four 31.12 inputs are present as 32 raw bytes, not hex text.
-for k in ("compiler-hash", "graph-hash", "icnf-hash", "asm-hash",
+for k in ("compiler-hash", "graph-hash", "objects-hash", "icnf-hash", "asm-hash",
           "binary-hash", "final-hash"):
     v = rec.get(k)
     check("%s is 32 raw bytes" % k, isinstance(v, bytes) and len(v) == 32,
@@ -99,10 +100,11 @@ h = {n: bytes(range(0, 32)) for n in ()}
 expect = {
     "compiler-hash": binascii.unhexlify("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"),
     "graph-hash": binascii.unhexlify("1f1e1d1c1b1a191817161514131211100f0e0d0c0b0a09080706050403020100"),
-    "icnf-hash": binascii.unhexlify("202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f"),
-    "asm-hash": binascii.unhexlify("404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f"),
-    "final-hash": binascii.unhexlify("606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f"),
-    "binary-hash": binascii.unhexlify("7f7e7d7c7b7a797877767574737271706f6e6d6c6b6a69686766656463626160"),
+    "objects-hash": binascii.unhexlify("202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f"),
+    "icnf-hash": binascii.unhexlify("404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f"),
+    "asm-hash": binascii.unhexlify("606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f"),
+    "final-hash": binascii.unhexlify("7f7e7d7c7b7a797877767574737271706f6e6d6c6b6a69686766656463626160"),
+    "binary-hash": binascii.unhexlify("808f8e8d8c8b8a898877868584838281807f7e7d7c7b7a797877767574737271"),
 }
 for k, v in expect.items():
     check("%s holds the value it was given" % k, rec.get(k) == v)

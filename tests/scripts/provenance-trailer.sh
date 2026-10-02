@@ -39,6 +39,8 @@ cat > "$BIN/t.zyl" <<'EOF'
 (def h3 "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f")
 (def h4 "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f")
 (def h5 "606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f")
+(def h6 "7f7e7d7c7b7a797877767574737271706f6e6d6c6b6a69686766656463626160")
+(def h7 "808f8e8d8c8b8a898877868584838281807f7e7d7c7b7a797877767574737271")
 (def path "/tmp/zyl-prov-xcheck.bin")
 (def imglen 8192)
 
@@ -52,12 +54,12 @@ cat > "$BIN/t.zyl" <<'EOF'
 (defn main ()
   (begin
     (make-image imglen)
-    (prov-attach path h1 h2 h3 h4 h5 (prov-hash-file path imglen) seed)
+    (prov-attach path h1 h2 h3 h4 h5 h6 (prov-hash-file path imglen) seed)
     (print imglen)
     0))
 EOF
 
-"$ZYL" "$BIN/t.zyl" -o "$BIN/t.bin" >/dev/null 2>&1
+"$ZYL" "$BIN/t.zyl" -o "$BIN/t.bin"
 IMGLEN=$("$BIN/t.bin")
 [ -n "$IMGLEN" ] || { echo "not ok -- the Zyl side produced no trailer"; exit 1; }
 

@@ -162,15 +162,24 @@
 ;   final-hash    10   0x6a   "final-hash" < "graph-hash", both ten
 ;   graph-hash    10   0x6a
 ;   binary-hash   11   0x6b
+;   objects-hash  12   0x6c
 ;   compiler-hash 13   0x6d
 ;
-; Nine keys. `binary-hash` is BLAKE3 over the image up to the trailer's own
+; Ten keys. `binary-hash` is BLAKE3 over the image up to the trailer's own
 ; magic, so the caller passes it in: the record cannot hash the image it is
 ; about to be appended to.
-(defn prov-record ((compiler-hex String) (graph-hex String) (icnf-hex String) (asm-hex String) (final-hex String) (binary-hex String))
+;
+; `objects-hash` IS THE NATIVE-OBJECT HASH of SS31.12, and it is here because
+; the record could not otherwise be CHECKED at all. §31.12's final hash is over
+; FOUR inputs -- compiler, lock graph, native objects, ICNF -- and three of
+; them were here, so a reader could recompute nothing: it had a final hash it
+; could not check, and no way to discover that it could not. The fourth input is
+; a short string, and a record that omits one of the four things its final hash
+; is defined over is a record whose final hash is decoration.
+(defn prov-record ((compiler-hex String) (graph-hex String) (objects-hex String) (icnf-hex String) (asm-hex String) (final-hex String) (binary-hex String))
   (let b (cbor-buf 1024)
 
-    (let o (cbor-map-head b 0 9)
+    (let o (cbor-map-head b 0 10)
 
       (let o (cbor-map-text-text b o "kind" "provenance")
 
@@ -184,19 +193,20 @@
               (let o (cbor-map-text-bytes b o "final-hash" (prov-bytes final-hex) 32)
                 (let o (cbor-map-text-bytes b o "graph-hash" (prov-bytes graph-hex) 32)
                   (let o (cbor-map-text-bytes b o "binary-hash" (prov-bytes binary-hex) 32)
-                    (let o (cbor-map-text-bytes b o "compiler-hash" (prov-bytes compiler-hex) 32)
-                      (ProvOut b o)))))))))))))
+                    (let o (cbor-map-text-bytes b o "objects-hash" (prov-bytes objects-hex) 32)
+                      (let o (cbor-map-text-bytes b o "compiler-hash" (prov-bytes compiler-hex) 32)
+                        (ProvOut b o))))))))))))))
 
 
 
-; True when the record's nine keys are in canonical order.
+; True when the record's ten keys are in canonical order.
 ;
 ; This checks the ORDER ABOVE, not the encoder. The encoder writes in whatever
 ; order it is handed, so if someone reorders these fields for readability the
 ; signature still verifies and the record is no longer canonical -- which is
 ; exactly the drift this is here to catch.
 (defn prov-sorted-p (r)
-  (cbor-keys-sorted-p (match r (ProvOut b n b)) 1 9 (match r (ProvOut _ n n))))
+  (cbor-keys-sorted-p (match r (ProvOut b n b)) 1 10 (match r (ProvOut _ n n))))
 
 ; ---------------------------------------------------------------------------
 ; The trailer
@@ -444,16 +454,16 @@
 ; write the append: there is no window in which the file is the image plus a
 ; partial trailer.
 ;
-; The six hashes are the record's inputs in the order prov-record takes them.
+; The seven hashes are the record's inputs in the order prov-record takes them.
 ; `image-hex` is BLAKE3 of the image alone and is passed in rather than read
 ; here, because the driver is the one that measured it and two readers of a
 ; file being rewritten would be a race with themselves.
-(defn prov-attach (path compiler-hex graph-hex icnf-hex asm-hex final-hex
-                   image-hex seedhex)
+(defn prov-attach (path compiler-hex graph-hex objects-hex icnf-hex asm-hex
+                   final-hex image-hex seedhex)
   (let img (prov-read-file path)
     (if (= (bytebuf-len img) 0)
       (prov-attach-failed path "cannot read the image")
-      (let rec (prov-record compiler-hex graph-hex icnf-hex asm-hex final-hex image-hex)
+      (let rec (prov-record compiler-hex graph-hex objects-hex icnf-hex asm-hex final-hex image-hex)
         (let rb (match rec (ProvOut b n b))
           (let rn (match rec (ProvOut _ n n))
             (let cose (cose-sign seedhex rb rn)

@@ -606,6 +606,7 @@
           (prov-attach out
             (match bi (BH ch gh nh ih2 fh ch))
             (match bi (BH ch gh nh ih2 fh gh))
+            (match bi (BH ch gh nh ih2 fh nh))
             (match bi (BH ch gh nh ih2 fh ih2))
             (str-concat "blake3:" (ffi-call "zyl_blake3_hex" arena buf -1 32 1000))
             (match bi (BH ch gh nh ih2 fh fh))
