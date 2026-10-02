@@ -337,6 +337,17 @@ if [ "$MODE" = "full" ] || [ "$MODE" = "quick" ]; then
     if [ -z "$FILTER" ] || echo "ffi_arity_test" | grep -qi -- "$FILTER"; then
         run_test "ffi_arity_test" "${TESTS_DIR}/ffi_arity_test.zyl"
     fi
+    # The provenance record. The Zyl test asks whether our key order is
+    # self-consistent; the script asks cbor2 whether it is the canonical one.
+    if [ -z "$FILTER" ] || echo "provenance" | grep -qi -- "$FILTER"; then
+        run_test "provenance_test" "${TESTS_DIR}/provenance_test.zyl"
+        if bash "${TESTS_DIR}/scripts/provenance.sh" >"$RUN_TMP/prov_cross.log" 2>&1; then
+            PASS=$((PASS+1)); printf "  \033[0;32m\xe2\x9c\x93\033[0m provenance_cross\n"
+        else
+            FAIL=$((FAIL+1)); printf "  \033[0;31m\xe2\x9c\x97\033[0m provenance_cross\n"
+        fi
+        TOTAL=$((TOTAL+1))
+    fi
     # COSE_Sign1. The Zyl test pins the bytes; the script asks cbor2 and
     # `cryptography` whether those bytes are RIGHT, which a self-consistent test
     # cannot say.

@@ -1,0 +1,95 @@
+(use core/list)
+(use encoding/cbor)
+(use compiler/provenance)
+
+; The record's BYTES are pinned in tests/scripts/provenance.sh, against cbor2.
+; What is checked here is the part cbor2 cannot be asked about: that the key
+; order this module emits is the order RFC 8949 section 4.2.1 calls canonical,
+; because a record that is merely self-consistent attests to nothing.
+
+(defn buf-hex ((b ByteBuf) (n Int) (i Int) (acc String))
+  (if (>= i n)
+    acc
+    (buf-hex b n (+ i 1) (str-concat acc (byte-hex (load-u8 :le b i))))))
+
+(def hexdigits "0123456789abcdef")
+
+(defn byte-hex (v)
+  (str-concat (str-substring hexdigits (/ v 16) 1) (str-substring hexdigits (bit-and v 15) 1)))
+
+; 32 distinct bytes, so a hash in the record is not accidentally all zeros.
+(def h1 "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
+(def h2 "1f1e1d1c1b1a191817161514131211100f0e0d0c0b0a09080706050403020100")
+(def h3 "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f")
+(def h4 "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f")
+(def h5 "606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f")
+(def h6 "7f7e7d7c7b7a797877767574737271706f6e6d6c6b6a69686766656463626160")
+
+; A record with the four hashes varied, so a record that accidentally reuses one
+; field's value for another is visible.
+(defn sample () (prov-record h1 h2 h3 h4 h5 h6))
+
+(test "the-record-writes-its-nine-keys-in-canonical-order"
+  (assert-true (prov-sorted-p (sample))))
+
+; The canonical order is by ENCODED bytes, so length first: every 4-byte key
+; precedes every 6-byte one whatever they spell. This is the assertion that fails
+; if someone reorders the fields for readability, and it is here because the
+; result would still be a perfectly valid CBOR map that verifies against itself.
+(test "canonical-order-is-by-encoded-bytes-not-by-spelling"
+  (let a (cbor-buf 32)
+    (let o (cbor-map-head a 0 2)
+      (let o (cbor-map-text-text a o "kind" "x")
+        (let o (cbor-map-text-text a o "format" "y")
+          (assert-true (cbor-keys-sorted-p a 1 2 32)))))))
+
+; The same two keys the other way round: "format" (6) before "kind" (4). A valid
+; CBOR map, and not canonical.
+(test "a-valid-but-unordered-pair-is-rejected"
+  (let a (cbor-buf 32)
+    (let o (cbor-map-head a 0 2)
+      (let o (cbor-map-text-text a o "format" "y")
+        (let o (cbor-map-text-text a o "kind" "x")
+          (assert-true (not (cbor-keys-sorted-p a 1 2 32))))))))
+
+; Equal lengths fall through to the bytes: "checks" precedes "writes".
+(test "equal-length-keys-are-ordered-by-their-bytes"
+  (let a (cbor-buf 32)
+    (let o (cbor-map-head a 0 2)
+      (let o (cbor-map-text-text a o "checks" "x")
+        (let o (cbor-map-text-text a o "writes" "y")
+          (assert-true (cbor-keys-sorted-p a 1 2 32)))))))
+
+(test "the-record-opens-with-a-map-of-nine"
+  (let r (sample)
+    (assert-equal (load-u8 :le (match r (ProvOut b n b)) 0) 169)))
+
+(test "a-record-for-the-same-inputs-is-byte-identical"
+  (let a (sample)
+    (let b (sample)
+      (assert-equal
+        (buf-hex (match a (ProvOut b n b)) (match a (ProvOut _ n n)) 0 "")
+        (buf-hex (match b (ProvOut b n b)) (match b (ProvOut _ n n)) 0 "")))))
+
+; The evidence is inside the record, so it is inside the signature. A record that
+; omitted it would still verify and would attest to nothing about the code.
+(test "the-record-carries-the-evidence"
+  (let r (sample)
+    (let h (buf-hex (match r (ProvOut b n b)) (match r (ProvOut _ n n)) 0 "")
+      (begin
+        (assert-true (str-contains h "65766964656e6365"))   ; "evidence"
+        (assert-true (str-contains h "636865636b73"))       ; "checks"
+        (assert-true (str-contains h "756e7665726966696564")) ; "unverified"))))
+))))
+(defn str-contains (s sub) (str-contains-go s sub 0)
+)
+(defn str-contains-go (s sub (i Int))
+  (if (> (+ i (prov-length-of sub)) (prov-length-of s))
+    false
+    (if (= (str-substring s i (prov-length-of sub)) sub)
+      true
+      (str-contains-go s sub (+ i 1)))))
+
+(defn prov-length-of (s) (ffi-call "zyl_cstr_len" s 1000))
+
+(run-tests)

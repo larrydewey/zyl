@@ -164,3 +164,197 @@
 ; 64-byte payload. Deliberately an over-estimate -- a buffer that is too big
 ; costs a few bytes, one that is too small truncates a signature.
 (defn cbor-budget (items bytes-each) (+ 16 (* items (+ 12 bytes-each))))
+
+; ---------------------------------------------------------------------------
+; Maps
+; ---------------------------------------------------------------------------
+;
+; A canonical map has its keys sorted by ENCODED bytes (RFC 8949 4.2.1), not by
+; the text they spell and not by length alone. For text keys under 24 bytes
+; that means comparing the head byte first, so every 4-byte key precedes every
+; 6-byte one regardless of what they say -- "kind" sorts before "format", and a
+; 12-byte key sorts last of all. It looks wrong and it is right, which is
+; exactly the kind of thing an encoder should check rather than an author
+; remember.
+
+; One entry: a text key and a byte-string value. Values are BYTES because the
+; things a provenance record carries are 32-byte hashes, and a hash is not text;
+; hex-encoding one into the record would double its size and make a byte string
+; indistinguishable from a string that happens to look like one.
+(defn cbor-map-text-bytes ((b ByteBuf) (off Int) (k String) (v ByteBuf) (vlen Int))
+  (let o (cbor-text b off k)
+    (let o (cbor-head b o 2 vlen)
+      (cbor-copy-bytes b o v 0 vlen))))
+
+; One entry: a text key and a text value.
+(defn cbor-map-text-text ((b ByteBuf) (off Int) (k String) (v String))
+  (let o (cbor-text b off k)
+    (cbor-text b o v)))
+
+; One entry: a text key and an unsigned integer.
+(defn cbor-map-text-uint ((b ByteBuf) (off Int) (k String) (n Int))
+  (let o (cbor-text b off k)
+    (cbor-uint b o n)))
+
+; One entry: a text key and an array of text strings.
+(defn cbor-map-text-strings ((b ByteBuf) (off Int) (k String) (items List) (n Int))
+  (let o (cbor-text b off k)
+    (let o (cbor-array-head b o n)
+      (cbor-text-strings b o items))))
+
+(defn cbor-text-strings ((b ByteBuf) (off Int) items)
+  (match items
+    (Nil off)
+    (Cons h rest (cbor-text-strings b (cbor-text b off h) rest))))
+
+; Copy `n` raw bytes. cbor-copy takes a String, which stops at a zero byte, and
+; a 32-byte hash contains them often enough to matter.
+(defn cbor-copy-bytes ((dst ByteBuf) (off Int) (src ByteBuf) (soff Int) (n Int))
+  (begin
+    (for (i 0) (< i n)
+      (begin
+        (store-u8 :le dst (+ off i) (load-u8 :le src (+ soff i)))
+        (set! i (+ i 1))))
+    (+ off n)))
+
+; ---------------------------------------------------------------------------
+; Checking the result
+; ---------------------------------------------------------------------------
+
+; One decoded key: its byte length, and the offset of its first character.
+; Two fields, and deliberately not three: a match arm binds its leading names and
+; RETURNS its last one, so a redundant middle field is a field nothing can
+; reach. `(match k (CKey len start len))` reads the length and `(match k (CKey
+; len start start))` reads the start, which is easy to get backwards.
+(deftype CKey (CKey Int Int))
+
+; The next key at `off`, assuming it is a definite-length text string.
+(defn cbor-read-key ((b ByteBuf) (off Int))
+  (let ib (load-u8 :le b off)
+    (let arg (bit-and ib 31)
+      (if (not (= (bit-and (shr ib 5) 7) 3))
+        (CKey (- 1) (- 1))
+        (let klen (cbor-arg-at b off arg 1000000)
+          (if (< klen 0)
+            (CKey (- 1) (- 1))
+            (CKey klen (+ off 1 (cbor-arg-width arg)))))))))
+
+; True when the map at `off` has its `n` keys in canonical order, and `off` is
+; where the map's body starts.
+;
+; The encoder writes in whatever order the caller supplies, so this is the only
+; thing standing between a convenient call site and an uncanonical record whose
+; signature verifies against itself and against nothing else.
+(defn cbor-keys-sorted-p ((b ByteBuf) (off Int) (n Int) (len Int))
+  (if (<= n 1)
+    true
+    (let a (cbor-read-key b off)
+      (if (< (match a (CKey v u v)) 0)
+        false
+        (let klen (match a (CKey v u v))
+          (let kend (+ (match a (CKey v u u)) klen)
+            (let after (cbor-skip-value b kend len 16)
+              (if (< after 0)
+                false
+                (let bkey (cbor-read-key b after)
+                  (if (cbor-key-gt b a bkey klen)
+                    false
+                    (cbor-keys-sorted-p b after (- n 1) len)))))))))))
+
+; True when key `a` sorts AFTER key `b`: longer first, then bytewise.
+;
+; Longer comes later because the length rides in the head byte for a short text
+; string, so comparing lengths is comparing those head bytes. cbor-keys-sorted-p
+; rejects when this holds, which is why the direction matters: an inverted pair
+; of these two comparisons accepts every record that is wrong and rejects every
+; one that is right.
+(defn cbor-key-gt (buf a b klen)
+  (let blen (match b (CKey v u v))
+    (if (< blen 0)
+      false
+      (if (> klen blen)
+        true
+        (if (< klen blen)
+          false
+          (cbor-bytes-gt buf (match a (CKey v u u)) buf (match b (CKey v u u)) klen 0))))))
+
+; The offset just past the value at `off`, or -1 if it runs past the buffer.
+;
+; Arrays and maps are SKIPPED BY COUNTING, not by refusing. Refusing them looked
+; correct until the provenance record put a nested `evidence` map in the middle
+; of its nine keys: the walk hit major 5, returned -1, and reported the record as
+; unsorted when it was perfectly canonical. A checker that cannot step over the
+; values it will meet is not a checker.
+;
+; `depth` bounds the recursion. A hostile blob can nest maps arbitrarily deep,
+; and this walks attacker-chosen structure, so the bound is a real limit rather
+; than a formality: past it the answer is -1, i.e. not understood, not accepted.
+(defn cbor-skip-value ((b ByteBuf) (off Int) (len Int) (depth Int))
+  (if (<= depth 0)
+
+    (- 1)
+    (let ib (load-u8 :le b off)
+
+      (let major (bit-and (shr ib 5) 7)
+
+        (let arg (bit-and ib 31)
+
+          (let w (cbor-arg-width arg)
+
+            (let arg (cbor-arg-at b off arg len)
+
+              (if (< (+ off 1 w) len)
+
+                (let base (+ off 1 w)
+
+                  (if (= major 5)
+
+                    (cbor-skip-items b base len (- depth 1) (* 2 arg))
+                    (if (= major 4)
+
+                      (cbor-skip-items b base len (- depth 1) arg)
+                      (if (or (= major 2) (= major 3))
+
+                        (if (<= (+ base arg) len) (+ base arg) (- 1))
+
+                        (if (<= base len) base (- 1))))))
+                (- 1)))))))))
+
+; Step over `n` consecutive values.
+(defn cbor-skip-items ((b ByteBuf) (off Int) (len Int) (depth Int) (n Int))
+  (if (<= n 0)
+    off
+    (let next (cbor-skip-value b off len depth)
+      (if (< next 0) (- 1) (cbor-skip-items b next len depth (- n 1))))))
+
+; The argument a head ACTUALLY denotes.
+;
+; The low five bits of the head byte are the argument only when they are under
+; 24. From 24 up they are an ESCAPE CODE -- 24 means "the argument is the next
+; byte", 25 "the next two", and so on -- and the real value lives in the bytes
+; after. Reading `arg` straight out of the head byte and using it as a length
+; turns 0x58 0x20 into "a byte string of 24 bytes" when it is 32, which is how a
+; canonical record nine keys long was reported as unsorted: the walk stepped 8
+; bytes short of the next key and every comparison after that was noise.
+(defn cbor-arg-at ((b ByteBuf) (off Int) (arg Int) (len Int))
+  (if (< arg 24)
+    arg
+    (if (= arg 24)
+      (if (< (+ off 1) len) (load-u8 :le b (+ off 1)) (- 1))
+      (if (= arg 25)
+        (if (< (+ off 2) len)
+          (+ (* 256 (load-u8 :le b (+ off 1))) (load-u8 :le b (+ off 2)))
+          (- 1))
+        (- 1)))))
+
+; Width of a head argument: 0 when it rides in the head byte, else 1, 2, 4 or 8.
+(defn cbor-arg-width (arg)
+  (if (< arg 24) 0 (if (= arg 24) 1 (if (= arg 25) 2 (if (= arg 26) 4 (if (= arg 27) 8 (- 1)))))))
+
+; True when the `n` bytes at `a` sort after the `n` bytes at `b`.
+(defn cbor-bytes-gt ((a ByteBuf) aoff (b ByteBuf) boff (n Int) (i Int))
+  (if (>= i n)
+    false
+    (let x (load-u8 :le a (+ aoff i))
+      (let y (load-u8 :le b (+ boff i))
+        (if (> x y) true (if (< x y) false (cbor-bytes-gt a aoff b boff n (+ i 1))))))))

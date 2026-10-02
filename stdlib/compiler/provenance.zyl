@@ -1,0 +1,277 @@
+; === The provenance record ===
+; Module: compiler/provenance
+;
+; The CBOR map that a COSE_Sign1 signs. Its fields are the four inputs of
+; spec 31.12, the assembly hash, the hash of the image the trailer is attached
+; to, and the evidence the verifier gathered while that image was written.
+;
+; TWO THINGS THIS RECORD DELIBERATELY DOES NOT DO.
+;
+; It does not fold the evidence into `final-hash`. That hash is 31.12's, over
+; the compiler, the graph, the native objects and the ICNF, in that order, and
+; it is the project's determinism contract. Widening it to cover the evidence
+; would change what that contract means rather than describe something new.
+;
+; It does not record a time, a host, or a path. The first non-negotiable here
+; is that the same source and inputs produce identical output, and an
+; attestation has to survive that test or it is decoration. If a build time is
+; wanted it is a caller-supplied parameter, like SOURCE_DATE_EPOCH, hashed into
+; its own field so that omitting it still reproduces.
+;
+; KEY ORDER IS CANONICAL, NOT READABLE. RFC 8949 4.2.1 sorts map keys by their
+; ENCODED bytes, so a 4-byte key precedes a 6-byte one whatever they spell:
+; "kind" comes before "format", and the 12-byte "compiler-hash" comes last of
+; all. That reads badly and is required -- two encodings of one record would
+; verify differently. `prov-sorted-p` checks it rather than trusting a comment.
+;
+(use encoding/cbor)
+(use math/words)
+(use compiler/verify)
+
+; Bumped only when the record's shape changes. A verifier that does not
+; recognise this refuses the trailer rather than guessing at it.
+(def prov-format 1)
+
+
+; A buffer and how much of it is used.
+;
+; The same pairing the CBOR writer uses: nothing here appends, so the used
+; length is a value that has to be carried rather than read back.
+(deftype ProvOut (ProvOut ByteBuf Int))
+
+
+; The byte at `i`, or -1.
+(defn prov-byte-at ((s String) (i Int)) (ffi-call "zyl_cstr_byte_at" s i 1000))
+
+(defn prov-length (s) (ffi-call "zyl_cstr_len" s 1000))
+
+(defn prov-sub (s start (n Int)) (ffi-call "zyl_cstr_substr" s start n 1000))
+
+(defn prov-index-of (s c (i Int))
+  (if (>= i (prov-length s))
+    (- 1)
+    (if (= (prov-byte-at s i) c) i (prov-index-of s c (+ i 1)))))
+
+
+; Hashes arrive from the build as bare hex or with a `blake3:` prefix, and a
+; record carries them as 32 raw bytes: a hash is not text, and hex-encoding
+; one into the record would double its size and make a byte string
+; indistinguishable from a string that happens to look like one.
+(defn prov-strip (h)
+  (let i (prov-index-of h 58 0)
+    (if (< i 0) h (prov-sub h (+ i 1) (- (prov-length h) (+ i 1))))))
+
+(defn prov-bytes (hex)
+  (let p (cbor-buf 32)
+    (let w (w-from-hex (prov-strip hex))
+      (begin
+        (for (i 0) (< i 32)
+          (begin
+            (store-u8 :le p i (w-get w i))
+            (set! i (+ i 1))))
+        p))))
+
+
+; The evidence is a nested map of its own, and its keys are canonical too:
+; reads(5) checks(6) writes(6) dynamic(7) functions(9) unverified(10).
+; Shortest first, and where two are the same length the bytes decide: checks
+; before writes, since "c" < "w".
+;
+; `checks` carries the verifier's own report lines, one per check, with the
+; unimplemented ones NAMED AS ABSENT. A record saying "V4 ok" for a check that
+; does not exist is worse than no record, so the wording is the compiler's.
+; The "evidence" key and its map. The key is written HERE rather than by the
+; caller because getting it wrong is silent: prov-evidence writes a map, and a
+; map where a key belongs is still a well-formed map -- the record simply has
+; eight entries and no evidence, and its signature verifies over that.
+(defn prov-evidence-entry ((b ByteBuf) (off Int))
+  (prov-evidence b (cbor-text b off "evidence")))
+
+(defn prov-evidence ((b ByteBuf) (off Int))
+  (let o (cbor-map-head b off 6)
+
+    (let o (cbor-map-text-uint b o "reads" (verify-reads))
+
+      (let o (prov-checks b o)
+
+        (let o (cbor-map-text-uint b o "writes" (verify-writes))
+
+          (let o (cbor-map-text-uint b o "dynamic" (verify-dynamic))
+
+            (let o (cbor-map-text-uint b o "functions" (verify-functions))
+
+              (let o (cbor-map-text-uint b o "unverified" (verify-unverified-writes))
+
+                o))))))))
+
+
+
+; "checks" before "writes": both are six bytes, and "c" < "w".
+(defn prov-checks ((b ByteBuf) (off Int))
+  (let lines (prov-split (verify-report))
+    (cbor-map-text-strings b off "checks" lines (list-length lines))))
+
+; verify-report returns four newline-separated lines, each one TERMINATED by its
+; newline. Splitting naively on "\n" therefore yields five pieces, the last of
+; them empty -- a record claiming five checks when the verifier ran four, which
+; is the kind of small lie a record should not be able to tell.
+(defn prov-split (s)
+  (if (= (prov-length s) 0)
+    Nil
+    (let cut (prov-newline s 0)
+      (if (< cut 0)
+        (Cons s Nil)
+        (Cons (prov-take s cut) (prov-split (prov-tail s cut)))))))
+
+(defn prov-newline (s (i Int))
+  (if (>= i (prov-length s))
+    (- 1)
+    (if (= (prov-byte-at s i) 10) i (prov-newline s (+ i 1)))))
+
+(defn prov-take (s (n Int)) (prov-sub s 0 (if (< n 0) 0 n)))
+
+(defn prov-tail (s (n Int)) (prov-sub s (+ n 1) (- (prov-length s) (+ n 1))))
+
+
+
+; Keys in canonical order, by encoded bytes:
+;
+;   kind           4   0x64
+;   format         6   0x66
+;   asm-hash       8   0x68   "asm-hash" < "evidence", both eight
+;   evidence       8   0x68
+;   icnf-hash      9   0x69
+;   final-hash    10   0x6a   "final-hash" < "graph-hash", both ten
+;   graph-hash    10   0x6a
+;   binary-hash   11   0x6b
+;   compiler-hash 13   0x6d
+;
+; Nine keys. `binary-hash` is BLAKE3 over the image up to the trailer's own
+; magic, so the caller passes it in: the record cannot hash the image it is
+; about to be appended to.
+(defn prov-record (compiler-hex graph-hex icnf-hex asm-hex final-hex binary-hex)
+  (let b (cbor-buf 1024)
+
+    (let o (cbor-map-head b 0 9)
+
+      (let o (cbor-map-text-text b o "kind" "provenance")
+
+        (let o (cbor-map-text-uint b o "format" prov-format)
+
+          (let o (cbor-map-text-bytes b o "asm-hash" (prov-bytes asm-hex) 32)
+
+            (let o (prov-evidence-entry b o)
+
+              (let o (cbor-map-text-bytes b o "icnf-hash" (prov-bytes icnf-hex) 32)
+              (let o (cbor-map-text-bytes b o "final-hash" (prov-bytes final-hex) 32)
+                (let o (cbor-map-text-bytes b o "graph-hash" (prov-bytes graph-hex) 32)
+                  (let o (cbor-map-text-bytes b o "binary-hash" (prov-bytes binary-hex) 32)
+                    (let o (cbor-map-text-bytes b o "compiler-hash" (prov-bytes compiler-hex) 32)
+                      (ProvOut b o)))))))))))))
+
+
+
+; True when the record's nine keys are in canonical order.
+;
+; This checks the ORDER ABOVE, not the encoder. The encoder writes in whatever
+; order it is handed, so if someone reorders these fields for readability the
+; signature still verifies and the record is no longer canonical -- which is
+; exactly the drift this is here to catch.
+(defn prov-sorted-p (r)
+  (cbor-keys-sorted-p (match r (ProvOut b n b)) 1 9 (match r (ProvOut _ n n))))
+
+; ---------------------------------------------------------------------------
+; The trailer
+; ---------------------------------------------------------------------------
+;
+; Appended to the output file, after the last byte of the ELF image:
+;
+;   T-16   8   magic "ZYLPROV\0"
+;   T-12   4   u32 LE format version
+;   T-8    8   u64 LE length of the COSE blob
+;   T      n   the COSE_Sign1
+;
+; THE HASHING RULE. `binary-hash` is BLAKE3 over bytes [0, T-16) -- the whole
+; image, excluding the magic onward. Excluding the trailer is what makes the
+; record self-describing: a reader locates the trailer by its magic, hashes
+; everything before it, and gets the value the signature commits to. It also
+; means appending must be the LAST thing that happens to the file, which is why
+; this is a separate step the driver takes after linking rather than something
+; the linker does.
+(def prov-magic "ZYLPROV")
+(def prov-magic-len 8)
+(def prov-header-len 20)
+
+; The 20 bytes that precede the COSE blob.
+(defn prov-header (cose-len)
+  (let b (cbor-buf prov-header-len)
+    (begin
+      (prov-write-magic b 0)
+      (prov-store32 b 8 prov-format)
+      (prov-store64 b 12 cose-len)
+      b)))
+
+(defn prov-write-magic ((b ByteBuf) (off Int))
+  (begin
+    (for (i 0) (< i 7)
+      (begin
+        (store-u8 :le b (+ off i) (prov-byte-at prov-magic i))
+        (set! i (+ i 1))))
+    (store-u8 :le b (+ off 7) 0)))
+
+; u32 and u64 little-endian, written a byte at a time. There is no store-u32
+; BE/LE pair that takes a ByteBuf at an arbitrary offset without also asserting
+; an alignment this buffer has no reason to have.
+(defn prov-store32 ((b ByteBuf) (off Int) (v Int))
+  (begin
+    (store-u8 :le b off (bit-and v 255))
+    (store-u8 :le b (+ off 1) (bit-and (shr v 8) 255))
+    (store-u8 :le b (+ off 2) (bit-and (shr v 16) 255))
+    (store-u8 :le b (+ off 3) (bit-and (shr v 24) 255))))
+
+(defn prov-store64 ((b ByteBuf) (off Int) (v Int))
+  (begin
+    (store-u8 :le b off (bit-and v 255))
+    (store-u8 :le b (+ off 1) (bit-and (shr v 8) 255))
+    (store-u8 :le b (+ off 2) (bit-and (shr v 16) 255))
+    (store-u8 :le b (+ off 3) (bit-and (shr v 24) 255))
+    (store-u8 :le b (+ off 4) (bit-and (shr v 32) 255))
+    (store-u8 :le b (+ off 5) (bit-and (shr v 40) 255))
+    (store-u8 :le b (+ off 6) (bit-and (shr v 48) 255))
+    (store-u8 :le b (+ off 7) (bit-and (shr v 56) 255))))
+
+; True when the magic is at `off`.
+;
+; Nothing else about a trailer is believed before this. The offsets that follow
+; are relative to a magic nobody has confirmed, so a reader that skips this check
+; will happily interpret whatever bytes it finds there.
+(defn prov-magic-at ((b ByteBuf) (off Int))
+  (prov-magic-scan b off 0))
+
+(defn prov-magic-scan ((b ByteBuf) (off Int) (i Int))
+  (if (>= i 7)
+    (= (load-u8 :le b (+ off 7)) 0)
+    (if (= (load-u8 :le b (+ off i)) (prov-byte-at prov-magic i))
+      (prov-magic-scan b off (+ i 1))
+      false)))
+
+; Little-endian loads, by repeated shift-and-add rather than a hypothetical
+; bit-shift-left: there is no such operator here, and `* 256` reads as what it
+; is. A trailer is at most a few kilobytes, so eight of these is not a cost worth
+; optimising.
+(defn prov-load32 ((b ByteBuf) (off Int))
+  (+ (bit-and (load-u8 :le b off) 255)
+    (* 256 (+ (bit-and (load-u8 :le b (+ off 1)) 255)
+      (* 256 (+ (bit-and (load-u8 :le b (+ off 2)) 255)
+        (* 256 (bit-and (load-u8 :le b (+ off 3)) 255)))))))
+)
+(defn prov-load64 ((b ByteBuf) (off Int))
+  (+ (bit-and (load-u8 :le b off) 255)
+    (* 256 (+ (bit-and (load-u8 :le b (+ off 1)) 255)
+      (* 256 (+ (bit-and (load-u8 :le b (+ off 2)) 255)
+        (* 256 (+ (bit-and (load-u8 :le b (+ off 3)) 255)
+          (* 256 (+ (bit-and (load-u8 :le b (+ off 4)) 255)
+            (* 256 (+ (bit-and (load-u8 :le b (+ off 5)) 255)
+              (* 256 (+ (bit-and (load-u8 :le b (+ off 6)) 255)
+                (* 256 (bit-and (load-u8 :le b (+ off 7)) 255)))))))))))))
+)))
