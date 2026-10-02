@@ -146,7 +146,7 @@
 ; Innermost first, 32 names at most, only functions in the table (the runtime's own frames are not); nothing without a table.
 (defn pn-backtrace ()
   (let tab (ffi-call "%fn-weak" "zyl_syms" 1)
-    (if (= tab 0) 0 (pn-bt-walk (ffi-call "zyl_rt_frame_addr" 1) tab 0 0))))
+    (if (or (= tab 0) (not (= (rt-ld64 (pn-bt-off)) 0))) 0 (pn-bt-walk (ffi-call "zyl_rt_frame_addr" 1) tab 0 0))))
 
 ; One frame: [fp] the caller's fp, [fp+8] the return address. Stops at 0, a frame not above this one, or an unmapped page.
 (defn pn-bt-walk (fp tab shown depth)
@@ -231,6 +231,10 @@
 (defn pn-diag () (ffi-call "%global" "diag_json" 8 1))
 (defn zyl_diag_json () (rt-ld64 (pn-diag)))
 (defn zyl_diag_json_set (on) (let _ (rt-st64 (pn-diag) (if (= on 0) 0 1)) 0))
+
+; Backtrace off: set by `zyl eval`/`zyl repl`, whose frames are the interpreter's, not the program's.
+(defn pn-bt-off () (ffi-call "%global" "bt_off" 8 1))
+(defn zyl_backtrace_set (on) (let _ (rt-st64 (pn-bt-off) (if (= on 0) 1 0)) 0))
 
 ; --- warning sink: stderr, or a {buf, len, cap, capture} buffer drained by zyl_warn_take ---
 
