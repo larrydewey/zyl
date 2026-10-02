@@ -152,7 +152,7 @@ diagnostic rather than rejecting a valid program.
 
 | Order | File | Reports |
 |---|---|---|
-| 1 | `capability_check.zyl` | A package using `io`, `ffi`, `actor`, `secret`, `native` or `unsafe` without declaring it (§31.9). The implicit stdlib and a lone file with no `zyl.pkg` are not policed |
+| 1 | `capability_check.zyl` | A program using `io`, `ffi`, `actor`, `secret`, `native` or `unsafe` without declaring it (§31.9): a package in `zyl.pkg`, a lone file with its own top-level `(capabilities ...)` form, a REPL session by typing it; absent means none. Only the implicit stdlib and the runtime module are not policed, and an `ffi-call` of a `zyl_*` runtime entry needs no grant |
 | 2 | `duplicate_check.zyl` | `E_DUPLICATE_DEFINITION`: two top-level `defn`s or `deftype`s with one name. `E_DUPLICATE_VARIANT`: a program type (outside the standard library) declaring a prelude constructor name (`Some`, `None`, `Ok`, `Err`, `Cons`, `Nil`) |
 | 3 | `arity_check.zyl` | `E_ARITY_MISMATCH`: a direct call to a known, unshadowed top-level function with the wrong argument count. `E_MALFORMED_FORM`: a special form whose shape its parser rejected (an `EUnknown` node, which used to lower to the constant 0). The `ffi-call` shape checks (`E_FFI_SYMBOL_REQUIRED`, `E_FFI_TIMEOUT_REQUIRED`, more than 16 arguments) and `E_FFI_RESTRICTED`: an `ffi-call` naming a raw runtime entry (`ffi-raw-p`, `ffi_sigs.zyl`) outside the standard library |
 | 4 | `mutability_check.zyl` | `E_MUT_CONFLICT`: `set!` on a name that is not a `let-mut` binding in scope |

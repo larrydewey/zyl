@@ -1,5 +1,7 @@
 ; Integration Test: trait dispatch with OutputStream
 
+(capabilities io)
+
 (use io/io)
 
 (test "trait-dispatch-stdout"

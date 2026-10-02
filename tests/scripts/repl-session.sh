@@ -42,6 +42,7 @@ done
 out3="$(printf '%s\n' \
   '(def n 3)' \
   ':type (+ n 1)' \
+  '(capabilities actor)' \
   '(use actor/actor)' \
   '(def c (chan 2))' \
   '(def tx (chan-tx c))' \

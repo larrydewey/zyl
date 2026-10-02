@@ -44,6 +44,7 @@ CASES = {
     # classes differ in WHERE the arrays differ -- first word vs not at
     # all -- which is exactly what an early-exit compare leaks.
     "ct-eq-words": """
+(capabilities secret)
 (use math/secret/secret)
 (use math/words)
 (use allocator/allocator)

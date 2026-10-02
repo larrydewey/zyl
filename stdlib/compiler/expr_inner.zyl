@@ -11,6 +11,7 @@
 ; directly (e.g. integration/selfhost-codegen.zyl) had an undefined
 ; `f_Pair` reference at link time.
 (use compiler/node_tables)
+(use compiler/ast)
 (use compiler/type_system)
 (use compiler/error_report)
 ;

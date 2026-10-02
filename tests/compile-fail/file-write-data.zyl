@@ -1,4 +1,7 @@
 ; expect-error: E_TYPE_MISMATCH
 ; file-write writes a String; an Int used to be passed to strlen as an
 ; address.
+
+(capabilities io)
+
 (defn main () (begin (file-write 1 12345) 0))

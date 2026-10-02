@@ -93,9 +93,12 @@
 (defn cc-ffi-symbol-capability (sym)
   (if (cc-runtime-symbol-p sym) "" "ffi"))
 
-; `zyl_*` is a runtime entry, the language's own, not a foreign call.
+; `zyl_*` is a runtime entry and `%` a locked primitive: the language's
+; own, not a foreign call (the latter is E_FFI_RESTRICTED outside the runtime).
 (defn cc-runtime-symbol-p (s)
-  (if (< (pk-len s) 4) false (str-eq (pk-sub s 0 4) "zyl_")))
+  (if (< (pk-len s) 1) false
+  (if (= (pk-byte-at s 0) 37) true
+  (if (< (pk-len s) 4) false (str-eq (pk-sub s 0 4) "zyl_")))))
 
 (defn cc-ffi-arg-symbol (args)
   (match args
@@ -187,7 +190,23 @@
   (match (Expr.inner e)
     (EDefn name _ body (cc-check-owned name body grants denied))
     (EDef name value (cc-check-owned name value grants denied))
+    (ETestDecl _ body _ _ (cc-check-owned "main" body grants denied))
+    (ETestCompile body _ (cc-check-owned "main" body grants denied))
+    (EImplBlock tr ty bodies (cc-check-impl tr ty bodies grants denied))
     (_ unit)))
+
+; An impl's owner is its trait's or its type's package (the orphan rule); each user grant bounds it.
+(defn cc-check-impl (tr ty bodies grants denied)
+  (match bodies
+    (Nil unit)
+    (Cons b rest
+      (match b
+        (IB d
+          (match d
+            (DN _ _ body
+              (let _ (cc-check-owned tr body grants denied)
+                (let _ (if (str-eq (ck-package-of tr) (ck-package-of ty)) unit (cc-check-owned ty body grants denied))
+                  (cc-check-impl tr ty rest grants denied))))))))))
 
 (defn cc-check-owned (name body grants denied)
   (if (str-eq name "main")
@@ -293,55 +312,128 @@
 
 ; Structural recursion over the expression forms that carry sub-terms.
 ; Anything not listed here holds no expression to walk into.
+; Every variant is named, no catch-all: a new form must say how it is walked, so none slips past.
 (defn cc-walk-children (e g denied)
   (match (Expr.inner e)
-    (ECall f args
-      (let _ (cc-walk f g denied) (cc-walk-list args g denied)))
-    (EApply _ args (cc-walk-list args g denied))
-    (EDefn _ _ body (cc-walk body g denied))
+    (EAtom _ unit)
+    (ECall f args (let _ (cc-walk f g denied) (cc-walk-list args g denied)))
     (EDef _ v (cc-walk v g denied))
-    (ELet _ v b
-      (let _ (cc-walk v g denied) (cc-walk b g denied)))
-    (ELetMut _ v b
-      (let _ (cc-walk v g denied) (cc-walk b g denied)))
-    (EIf c t f
-      (let _ (cc-walk c g denied)
-        (let _ (cc-walk t g denied) (cc-walk f g denied))))
-    (ETryCatch b _ h
-      (let _ (cc-walk b g denied) (cc-walk h g denied)))
-    (EMatch s arms
-      (let _ (cc-walk s g denied) (cc-walk-arms arms g denied)))
-    (EBegin xs (cc-walk-list xs g denied))
-    (EPrint xs (cc-walk-list xs g denied))
-    (EWhile c b
-      (let _ (cc-walk c g denied) (cc-walk b g denied)))
-    (EFor _ c b
-      (let _ (cc-walk c g denied) (cc-walk b g denied)))
-    (ELambda _ _ b (cc-walk b g denied))
-    (EFn _ _ b (cc-walk b g denied))
+    (EDefn _ ps body (let _ (cc-walk-params ps g denied) (cc-walk body g denied)))
+    (ELet _ v b (cc-walk-2 v b g denied))
+    (ELetMut _ v b (cc-walk-2 v b g denied))
+    (EIf c t f (let _ (cc-walk c g denied) (cc-walk-2 t f g denied)))
+    (ETryCatch b _ h (cc-walk-2 b h g denied))
+    (EMatch s arms (let _ (cc-walk s g denied) (cc-walk-arms arms g denied)))
     (ESpawn b (cc-walk b g denied))
-    (ESend a b
-      (let _ (cc-walk a g denied) (cc-walk b g denied)))
+    (ESend a b (cc-walk-2 a b g denied))
+    (ESendClosure a b _ (cc-walk-2 a b g denied))
     (EFfiCall _ args _ (cc-walk-list args g denied))
     (EFfiPin b (cc-walk b g denied))
     (EFfiUnpin b (cc-walk b g denied))
-    (EFileOpen a b
-      (let _ (cc-walk a g denied) (cc-walk b g denied)))
-    (EFileRead a b
-      (let _ (cc-walk a g denied) (cc-walk b g denied)))
-    (EFileWrite a b
-      (let _ (cc-walk a g denied) (cc-walk b g denied)))
-    (EFileClose b (cc-walk b g denied))
-    (EClose b (cc-walk b g denied))
+    (EAssert b m (let _ (cc-walk b g denied) (cc-walk-opt m g denied)))
+    (EError _ unit)
     (EUnwrap b (cc-walk b g denied))
+    (EWhile c b (cc-walk-2 c b g denied))
+    (EFor bs c b (let _ (cc-walk-binds bs g denied) (cc-walk-2 c b g denied)))
+    (ECond cs (cc-walk-binds2 cs g denied))
+    (EBegin xs (cc-walk-list xs g denied))
+    (ELambda _ ps b (let _ (cc-walk-params ps g denied) (cc-walk b g denied)))
+    (EFn _ ps b (let _ (cc-walk-params ps g denied) (cc-walk b g denied)))
+    (EStructGet b _ (cc-walk b g denied))
     (EMakeStruct _ args (cc-walk-list args g denied))
     (ETuple elems (cc-walk-list elems g denied))
     (ETupleGet tg _ (cc-walk tg g denied))
     (EMakeVariant _ _ args (cc-walk-list args g denied))
     (ESetBang _ v (cc-walk v g denied))
-    (EStructGet b _ (cc-walk b g denied))
-    (EAssert b _ (cc-walk b g denied))
-    (_ unit)))
+    (EModuleDecl _ unit)
+    (EUseModule _ _ _ unit)
+    (EExport _ unit)
+    (EPrint xs (cc-walk-list xs g denied))
+    (EReadLine unit)
+    (EExit b (cc-walk b g denied))
+    (EClose b (cc-walk b g denied))
+    (EFileOpen a b (cc-walk-2 a b g denied))
+    (EFileRead a b (cc-walk-2 a b g denied))
+    (EFileWrite a b (cc-walk-2 a b g denied))
+    (EFileClose b (cc-walk b g denied))
+    (EBufAppend a b (cc-walk-2 a b g denied))
+    (EDeftype _ _ _ _ unit)
+    (ETraitDecl _ _ _ unit)
+    (EImplBlock _ _ bodies (cc-walk-impl bodies g denied))
+    (EStructDef _ _ unit)
+    (EStructDefPlus _ _ unit)
+    (EAliasDecl _ b (cc-walk b g denied))
+    (EDerive _ _ unit)
+    (ETestDecl _ b _ _ (cc-walk b g denied))
+    (EAssertEqual a b (cc-walk-2 a b g denied))
+    (EAssertTrue b _ (cc-walk b g denied))
+    (EAssertFalse b _ (cc-walk b g denied))
+    (ERunTests _ unit)
+    (ETestCompile b _ (cc-walk b g denied))
+    (EApply _ args (cc-walk-list args g denied))
+    (EMacroDef _ _ _ unit)
+    (EUnknown _ args (cc-walk-list args g denied))
+    (EByteLit _ unit)
+    (ELoadByte _ a b (cc-walk-2 a b g denied))
+    (ELoadByteSigned _ a b (cc-walk-2 a b g denied))
+    (EStoreByte _ a b c (cc-walk-3 a b c g denied))
+    (EStoreByteSigned _ a b c (cc-walk-3 a b c g denied))
+    (EByteSlice a b c (cc-walk-3 a b c g denied))
+    (EByteSliceSub a b c (cc-walk-3 a b c g denied))
+    (EByteBuf _ _ unit)
+    (EByteBufAppend a b (cc-walk-2 a b g denied))
+    (EByteBufLen b (cc-walk b g denied))
+    (EByteBufCap b (cc-walk b g denied))
+    (EByteBufPtr b (cc-walk b g denied))
+    (EAlignCheck b _ (cc-walk b g denied))
+    (EAtomicLoad a b (cc-walk-2 a b g denied))
+    (EAtomicStore a b c (cc-walk-3 a b c g denied))
+    (EAtomicAdd a b c (cc-walk-3 a b c g denied))
+    (EAtomicSub a b c (cc-walk-3 a b c g denied))
+    (EAtomicCAS a b c d (let _ (cc-walk a g denied) (cc-walk-3 b c d g denied)))
+    (EAtomicFetchAdd a b c (cc-walk-3 a b c g denied))
+    (EAtomicMax a b c (cc-walk-3 a b c g denied))
+    (EAtomicMin a b c (cc-walk-3 a b c g denied))))
+
+(defn cc-walk-2 (a b g denied)
+  (let _ (cc-walk a g denied) (cc-walk b g denied)))
+
+(defn cc-walk-3 (a b c g denied)
+  (let _ (cc-walk a g denied) (cc-walk-2 b c g denied)))
+
+(defn cc-walk-opt (o g denied)
+  (match o (None unit) (Some x (cc-walk x g denied))))
+
+; A parameter's type annotation is an expression too.
+(defn cc-walk-params (ps g denied)
+  (match ps
+    (Nil unit)
+    (Cons p rest
+      (match p
+        (P _ t (let _ (cc-walk-opt t g denied) (cc-walk-params rest g denied)))))))
+
+(defn cc-walk-binds (bs g denied)
+  (match bs
+    (Nil unit)
+    (Cons pr rest
+      (match pr
+        (Pair _ o (let _ (cc-walk-opt o g denied) (cc-walk-binds rest g denied)))))))
+
+(defn cc-walk-binds2 (cs g denied)
+  (match cs
+    (Nil unit)
+    (Cons pr rest
+      (match pr
+        (Pair c b (let _ (cc-walk-2 c b g denied) (cc-walk-binds2 rest g denied)))))))
+
+(defn cc-walk-impl (bodies g denied)
+  (match bodies
+    (Nil unit)
+    (Cons b rest
+      (match b
+        (IB d
+          (match d
+            (DN _ _ body (let _ (cc-walk body g denied) (cc-walk-impl rest g denied)))))))))
 
 (defn cc-walk-arms (arms g denied)
   (match arms

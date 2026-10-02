@@ -340,7 +340,7 @@ ZYL_INDEX=~/my-index zyl fetch                                   # in a consumer
 
 ## 25.11 Capabilities
 
-A package declares the capabilities it may use. An absent `(capabilities ...)` field means none (§31.9):
+A program declares the capabilities it may use. An absent `(capabilities ...)` declaration means none (§31.9). A package writes it in `zyl.pkg`; a lone file compiled directly writes the same form among its own top-level forms; a REPL session types it at the prompt:
 
 ```lisp
 (capabilities io ffi)   ; may do file IO and call C; may not spawn actors
@@ -361,8 +361,11 @@ A package declares the capabilities it may use. An absent `(capabilities ...)` f
 Enforcement (`capability_check.zyl`) runs after module resolution and before type inference, over the qualified program. The package half of each definition's canonical key says who owns it, so no side table of ownership is needed. A violation names both sides of the boundary:
 
 ```
-PANIC: error[E_PKG_CAPABILITY_VIOLATION]: package acme/hello uses ffi in reach without declaring it in zyl.pkg
+PANIC: error[E_PKG_CAPABILITY_VIOLATION]: `strlen` needs the ffi capability, and package acme/hello declares none
+   = help: Write `(capabilities ffi)` in zyl.pkg.
 ```
+
+The form is honoured only where the declaration lives: in a file of a manifested package, or in a module a lone file uses, it is `E_MALFORMED_FORM`. An `ffi-call` of a `zyl_*` runtime entry is the language's own and needs no `ffi` grant.
 
 A declared set is a **ceiling on the declaring package**, not a grant along an edge. If `acme/greet` declares `ffi` and exports a function that calls C, a caller without `ffi` may still call that function. `zyl audit` lists what every package in the graph may do, together with the closure recorded in the lock:
 
@@ -380,14 +383,15 @@ A root package may forbid capabilities graph-wide:
 ```
 
 ```
-PANIC: error[E_PKG_CAPABILITY_VIOLATION]: c-len uses ffi, which the root package forbids with deny-capabilities
+PANIC: error[E_PKG_CAPABILITY_VIOLATION]: `c-len` needs the ffi capability, which the root package forbids with deny-capabilities
 ```
 
 `zyl update` reports growth in the capability closure ("capability closure grew to: ffi"). Under `zyl build --locked`, growth is `E_PKG_CAPABILITY_GROWTH`.
 
 ### Limits of the current implementation
 
-- **Manifest-bearing packages only.** The standard library holds every capability and is never checked. A lone file compiled without a `zyl.pkg` has declared nothing, so nothing is enforced against it. `deny-capabilities` likewise applies only to manifest-bearing packages.
+- **Providers are not checked.** The standard library holds every capability and is never checked, nor is the runtime module. `deny-capabilities` comes only from a root `zyl.pkg`.
+- **Impl methods** are checked against the grant of the trait's package and, when it differs, the type's package; an impl whose trait and type belong to two different user packages must satisfy both.
 - **`unsafe` is not enforced**, because `:unsafe` imports are not acted on (§25.2).
 
 ## 25.12 Features

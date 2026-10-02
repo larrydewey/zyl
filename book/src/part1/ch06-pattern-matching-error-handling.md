@@ -110,11 +110,11 @@ unused-variable warning.
 catch-all could never run, and is a compile-time error
 (`E_UNREACHABLE_MATCH_ARM`).
 
-Be careful with spelling. The compiler treats any arm head that is not a
-known constructor as a catch-all, and such an arm binds nothing. A
-misspelled constructor in the *last* arm therefore silently matches
-everything the earlier arms did not; a misspelled one anywhere else is
-caught as `E_UNREACHABLE_MATCH_ARM`.
+A catch-all is written in lowercase. An arm head that starts with a
+capital letter must be a constructor some type declares; a misspelled one
+such as `(Nnoe 0)` is `E_UNKNOWN_CONSTRUCTOR`, and the message suggests the
+nearest constructor (`None`). A lowercase arm head that is not a
+constructor is a catch-all.
 
 ### One Level at a Time
 

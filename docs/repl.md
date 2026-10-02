@@ -109,6 +109,14 @@ the session has no manifest entry for is reported as
 new session starts with `core/core`, `core/list`, `core/option`,
 `core/result` and `allocator/allocator`.
 
+### Capabilities
+
+A session declares nothing until you type a `(capabilities ...)` form
+(§31.9), kept like a definition: `(spawn ...)` before `(capabilities
+actor)` is `E_PKG_CAPABILITY_VIOLATION`, and the message gives the line to
+type. Several forms union. `zyl eval` runs a file, so it reads the file's
+own form.
+
 ## Editing
 
 The line editor is written in Zyl over four terminal primitives in the

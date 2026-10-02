@@ -1,0 +1,5 @@
+; expect-error: E_PKG_CAPABILITY_VIOLATION
+; An impl method is policed like a defn: spawn needs (capabilities actor).
+(trait Poke (poke (self) Int))
+(impl Poke Int (defn poke (self) (begin (spawn (fn () 1)) self)))
+(defn main () (begin (print (Poke.poke 3)) 0))

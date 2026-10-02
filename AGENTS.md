@@ -111,8 +111,10 @@ carries as `zyl_build_hash`).
   A foreign call runs on a per-thread worker through the runtime's
   `zyl_ffi_timed`; overrunning raises `E_FFI_TIMEOUT` and the call is
   abandoned, not killed. `zyl_*` runtime symbols are called directly.
-  `ffi-call`/`ffi-pin` need the `ffi` capability in a package, and a
-  `Secret` argument must be passed through `ffi-pin`
+  A foreign `ffi-call`/`ffi-pin` needs the `ffi` capability, declared in
+  `zyl.pkg` by a package and by a top-level `(capabilities ffi)` form in
+  a lone file (absent means none; a `zyl_*` runtime entry needs no
+  grant), and a `Secret` argument must be passed through `ffi-pin`
   (`E_FFI_PIN_REQUIRED`)
 
 ### Struct Immutability
@@ -123,7 +125,7 @@ carries as `zyl_build_hash`).
 ### Match Exhaustiveness
 - Exhaustiveness is a compile-time error if not satisfied (`E_NON_EXHAUSTIVE_MATCH`); an arm after a catch-all is `E_UNREACHABLE_MATCH_ARM`
 - `_` is the discard in patterns, parameters and bindings; `_`-prefixed names are exempt from unused-binding warnings. Do not introduce `d1`-style dummy names
-- An arm head that is not a known constructor is a catch-all binding, so a misspelled constructor in the LAST arm silently matches everything
+- An arm head spelled like a constructor (first letter A-Z) that no type declares is `E_UNKNOWN_CONSTRUCTOR`, with the nearest constructor suggested; a lowercase arm head that is not a constructor is a catch-all binding
 
 ### Contracts
 - Contracts never alter core semantics (type inference, ownership, regions, concurrency)
@@ -259,5 +261,9 @@ compile-fail tests `unclosed-opener`, `unexpected-close`, `mismatched-bracket` a
   capability_check,module_resolver}.zyl`; `docs/package-management-design.md`
   holds the rationale and `PROGRESS.md` records the deviations and gaps
 - The standard library is IMPLICIT (§25): package `zyl/std`, no manifest,
-  fully visible, never capability-enforced. Do not give it a `zyl.pkg`
+  fully visible, never capability-enforced. Do not give it a `zyl.pkg`.
+  Every other program is policed: a lone file is `local/main`@0 and
+  declares its capabilities with a top-level `(capabilities ...)` form,
+  absent meaning none, so a test or tool that spawns, opens files, calls
+  foreign code or uses `math/secret` carries that line
 - All error codes from spec §28 must be defined and used consistently

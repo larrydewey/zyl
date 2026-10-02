@@ -217,7 +217,9 @@ REPL's ICNF interpreter; a compiled program traps with SIGFPE.
 
 Raised but not in the catalog: `E_NON_EXHAUSTIVE_MATCH` and
 `E_UNREACHABLE_MATCH_ARM` (from `exhaustiveness_check.zyl`) and
-`E_DUPLICATE_PARAMETER` (from `unused_check.zyl`).
+`E_DUPLICATE_PARAMETER` (from `unused_check.zyl`). `E_UNKNOWN_CONSTRUCTOR`
+(the same pass: a capitalized arm head that no type declares) is in the
+catalog and §28.
 `E_NON_EXHAUSTIVE_MATCH` is a second spelling of §28's
 `E_MATCH_NONEXHAUSTIVE`; the two are raised by different passes.
 

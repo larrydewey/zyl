@@ -1,5 +1,7 @@
 ; BLAKE3 and label mangling in the Zyl runtime (runtime/rt/blake3.zyl, mangle.zyl); expected values from the old C.
 
+(capabilities io)
+
 (defn alpha-rep (s k) (if (= k 0) s (alpha-rep (str-concat s "abcdefghijklmnopqrstuvwxyz") (- k 1))))
 
 (defn alpha (n) (str-substring (alpha-rep "" 700) 0 n))

@@ -36,6 +36,7 @@
 
 
 (use compiler/node_tables)
+(use compiler/icnf)
 (use compiler/error_report)
 (use compiler/rt_mode)
 

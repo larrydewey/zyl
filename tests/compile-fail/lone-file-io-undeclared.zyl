@@ -1,0 +1,6 @@
+; expect-error: E_PKG_CAPABILITY_VIOLATION
+; A lone file declares nothing, so file-open needs (capabilities io).
+
+(defn main ()
+  (let fd (file-open "/tmp/zyl_lone_io.txt" "w")
+    (file-close fd)))

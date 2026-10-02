@@ -2,6 +2,8 @@
 ; Build:  zyl log-processor.zyl -o log-processor
 ; Run:    ./log-processor      (from this directory, so "sample.log" resolves)
 
+(capabilities io)
+
 (use logstats)
 
 (defn report (st)

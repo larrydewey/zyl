@@ -84,7 +84,9 @@ implicit standard library is never capability-checked.
 in a resolved graph, recorded in the lock. Growth under `--locked` is
 `E_PKG_CAPABILITY_GROWTH`.
 
-**Capability declaration**: The `(capabilities ...)` field of `zyl.pkg`.
+**Capability declaration**: The `(capabilities ...)` field of `zyl.pkg`,
+or the same form at the top of a lone file or typed into a REPL session;
+absent means none.
 A declared set is a ceiling on the declaring package; it is not
 re-granted to its dependencies.
 

@@ -11,7 +11,7 @@ fail() { echo "FAIL: $*"; exit 1; }
 json() { "$ZYL" "$1" -o "$SCRATCH/out" --error-format=json 2>&1 || true; }
 
 # A Stack bytebuf passed on to a function that keeps it.
-printf '(defn keep (b) (chan-send (chan-tx (chan 1)) b))\n(defn leak ()\n  (let b (bytebuf Stack 16)\n    (let _ (keep b) 0)))\n(defn main () (begin (leak) 0))\n' > "$SCRATCH/esc.zyl"
+printf '(defn keep (b) (chan-send (chan-tx (chan 1)) b))\n(defn leak ()\n  (let b (bytebuf Stack 16)\n    (let _ (keep b) 0)))\n(defn main () (begin (leak) 0))\n(capabilities actor)\n' > "$SCRATCH/esc.zyl"
 out="$(json "$SCRATCH/esc.zyl")"
 printf '%s\n' "$out" | grep -q '"code":"E_REGION_ESCAPE".*"line":3,"column":10,"labels":\[{"message":"escapes here[^"]*","file":"[^"]*esc.zyl","line":4,' \
   || fail "region escape label: $out"
@@ -29,7 +29,7 @@ printf '%s\n' "$out" | grep -q '"code":"E_REGION_ESCAPE".*"line":3,"column":58,"
   || fail "with-region label: $out"
 
 # E_ZEROIZE_MISSING is a located warning.
-printf '(use math/secret/secret)\n(defn tag ((k Secret)) (declassify k))\n(defn main () (begin (print (tag 3)) 0))\n' > "$SCRATCH/zero.zyl"
+printf '(use math/secret/secret)\n(defn tag ((k Secret)) (declassify k))\n(defn main () (begin (print (tag 3)) 0))\n(capabilities secret)\n' > "$SCRATCH/zero.zyl"
 out="$(json "$SCRATCH/zero.zyl")"
 printf '%s\n' "$out" | grep -q '"severity":"warning","code":"E_ZEROIZE_MISSING".*"file":"[^"]*zero.zyl","line":2,"column":1' \
   || fail "zeroize warning: $out"

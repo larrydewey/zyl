@@ -440,13 +440,20 @@ Two ways to link your own C:
 
 ## 22.11 Capabilities
 
-In a package with a `zyl.pkg`, `ffi-call`, `ffi-pin`, `ffi-unpin`, and any call into `stdlib/ffi`, require the `ffi` capability (§31.9). Shipping C sources requires `native` as well:
+In a package with a `zyl.pkg`, a foreign `ffi-call`, `ffi-pin`, `ffi-unpin`, and any call into `stdlib/ffi`, require the `ffi` capability (§31.9). Shipping C sources requires `native` as well:
 
 ```
 PANIC: error[E_PKG_CAPABILITY_VIOLATION]: package me/mathy uses ffi in my-abs without declaring it in zyl.pkg
 ```
 
-A root package can forbid FFI for its whole graph with `(deny-capabilities ffi native)`. A lone file compiled without a manifest is not checked. The current pass also skips the bodies of `main` and of top-level `test` forms, so an `ffi-call` placed directly in `main` is not caught; see Chapter 25, §25.11.
+A lone file declares the grant itself with a top-level `(capabilities ffi)`; without it the file may not call foreign code:
+
+```
+PANIC: error[E_PKG_CAPABILITY_VIOLATION]: `system` needs the ffi capability, and this file declares none
+   = help: Write `(capabilities ffi)` at the top of the file.
+```
+
+An `ffi-call` of a `zyl_*` runtime entry is the language's own and needs no grant. A root package can forbid FFI for its whole graph with `(deny-capabilities ffi native)`; see Chapter 25, §25.11.
 
 ## 22.12 Safety: What Holds Today
 

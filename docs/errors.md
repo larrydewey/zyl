@@ -271,7 +271,7 @@ Neither carries the catalog code. A false `(assert c msg)` panics with
 | `E_SECRET_ESCAPE` | secret: Secret value escapes through M at S | `secret_check.zyl` (located) |
 | `E_SECRET_DEBUG` | secret: Secret value reaches a debug/print sink at S | `secret_check.zyl` (located; also a `Show` impl whose text is derived from a Secret) |
 | `E_ZEROIZE_MISSING` (severity 2, warning) | secret: function F takes a Secret parameter but never zeroizes it | `secret_check.zyl` |
-| `E_PKG_CAPABILITY_VIOLATION` (§28) | capability: package N uses M without declaring the C capability | `capability_check.zyl` (located), `cli.zyl` |
+| `E_PKG_CAPABILITY_VIOLATION` (§28) | capability: M needs the C capability, and the package, file or session using it declares none | `capability_check.zyl` (located, with the `(capabilities ...)` line to write as the fix), `cli.zyl` |
 | `E_PKG_CAPABILITY_GROWTH` (§28) | capability: capability closure grew under --locked: C | `capability_check.zyl`, `mvs.zyl` |
 
 `E_ZEROIZE_MISSING` fires when a function consumes a `Secret` parameter into
@@ -341,6 +341,7 @@ All raised by the package modules named; all are §28 codes except
 |------|----------|-----------|---------|
 | `E_NON_EXHAUSTIVE_MATCH` | error | `exhaustiveness_check.zyl` (located) | a `match` over a `deftype` does not cover some variant and has no `_` arm |
 | `E_UNREACHABLE_MATCH_ARM` | error | `exhaustiveness_check.zyl` (located) | an arm after a catch-all, or a repeated constructor arm |
+| `E_UNKNOWN_CONSTRUCTOR` (§28) | error | `exhaustiveness_check.zyl` (located at the arm) | an arm head spelled like a constructor (A-Z first) that no type declares; suggests the nearest constructor within edit distance 2 |
 | `E_DUPLICATE_PARAMETER` | error | `unused_check.zyl` | two parameters of one `defn`/`fn`/`lambda` share a name |
 | `E_ASM_UNSUPPORTED` | error | `asm_x86.zyl` | the Zyl assembler met an instruction or operand form it does not encode (a codegen or runtime change emitted one; `ZYL_EXTERNAL_LD=1` links with `cc` instead) |
 | `E_LINK_UNDEFINED`, `E_LINK_UNDEFINED_GOT` | error | `elf_link.zyl` | a strong symbol (or a GOT entry's symbol) is defined neither by the program nor by `rt.zo` |

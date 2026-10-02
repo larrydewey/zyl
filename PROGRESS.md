@@ -172,7 +172,10 @@ compile with `build/boot/zyl-self` on 2026-09-28.
   features, native dependencies, workspaces, the build cache, and `zyl
   new/add/fetch/build/test/update/vendor/audit/publish/key`.
 - The standard library is the implicit package `zyl/std` and has no
-  manifest; a lone file compiles as `local/main`@0.
+  manifest; a lone file compiles as `local/main`@0 and declares its
+  capabilities with a top-level `(capabilities ...)` form (absent means
+  none, enforced as a manifest's; a REPL session types the form). An
+  `ffi-call` of a `zyl_*` runtime entry needs no `ffi` grant.
 
 ### Tools
 
@@ -295,9 +298,9 @@ The full list, with examples, is `rules/boot-lifted-constraints.md` in
 the zyl-skill repository (`~/git/larry/zyl-skill`).
 
 1. Exhaustiveness is checked per ADT (`E_NON_EXHAUSTIVE_MATCH`). A
-   catch-all arm must come last (`E_UNREACHABLE_MATCH_ARM`). An arm head
-   that names no constructor is a catch-all binding, so a misspelled
-   constructor in the last arm matches everything.
+   catch-all arm must come last (`E_UNREACHABLE_MATCH_ARM`). A lowercase
+   arm head that names no constructor is a catch-all binding; a
+   capitalized one that no type declares is `E_UNKNOWN_CONSTRUCTOR`.
 2. `_` is the discard and may repeat; `_`-prefixed names are exempt
    from the unused, shadowing and duplicate-parameter checks.
 3. Prefer flat `begin` sequences and recursion over deep nesting.

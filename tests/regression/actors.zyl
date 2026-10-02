@@ -1,6 +1,8 @@
 ; Actor Regression Tests: spawn and join (channels are tests/regression/channels.zyl)
 ; Spec §15, §513-524
 
+(capabilities actor)
+
 (use core/core)
 (use actor/actor)
 

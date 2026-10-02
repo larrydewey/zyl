@@ -20,10 +20,17 @@ Deliberate deviations (recorded in `PROGRESS.md`):
   compiler's major (the compiler reports version `5.0.0`), no manifest,
   fully visible, never capability-enforced, and not a workspace member.
   Importing any stdlib module exposes the whole loaded stdlib surface.
-- **A lone file is package `local/main` at major 0.** It has declared no
-  capabilities, so no capability ceiling is enforced against it;
-  `deny-capabilities` and the capability pass apply only to packages with
-  a `zyl.pkg`.
+- **A lone file is package `local/main` at major 0.** It declares its
+  capabilities with a top-level `(capabilities io ffi actor secret native
+  unsafe)` form in the compiled file, the manifest line's grammar; absent
+  means none, and the pass enforces it exactly as a manifest's. A REPL
+  session declares them by entering the form. The form is honoured only
+  where the declaration lives: in a file of a manifested package, or in a
+  module a lone file uses, it is `E_MALFORMED_FORM` with the fix naming
+  `zyl.pkg` or the compiled file. `deny-capabilities` still comes from a
+  root `zyl.pkg` only. An `ffi-call` of a `zyl_*` runtime entry is the
+  language's own, not foreign, and needs no `ffi` grant (`E_FFI_RESTRICTED`
+  guards the raw entries).
 - **Module layout:** module path `M` of package `P` is the file
   `<root of P>/M.zyl`; a package's root module, which `(use acme/json)`
   names, is the module spelled by the name's last segment.

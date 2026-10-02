@@ -1298,11 +1298,7 @@
 (defn mr-enforced-of (p kind)
   (if (str-eq (mrp-name p) (mr-stdlib-name)) 0
   (if (rt-mode-p) 0
-  (if (> (mrp-manifested p) 0) 1 (mr-lone-enforced kind)))))
-
-; Step one of the two-step change (docs/self-hosting.md): the seed must
-; first learn the form; the next seed enforces it, returning `kind`.
-(defn mr-lone-enforced (kind) (if (> kind 0) 0 0))
+  (if (> (mrp-manifested p) 0) 1 kind))))
 
 (defn mr-root-kind (srcpath) (if (str-eq srcpath "<repl>") 3 2))
 
