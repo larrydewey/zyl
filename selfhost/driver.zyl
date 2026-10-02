@@ -49,6 +49,7 @@
 (use compiler/error_codes)
 (use compiler/error_report)
 (use compiler/elf_link)
+(use compiler/provenance)
 
 (def __zyl_boot_bundle 1)
 
@@ -346,6 +347,43 @@
     false
     (if (str-eq (drv-arg i) flag) true (drv-has-flag (+ i 1) flag))))
 
+; `--sign-with path` anywhere in the arguments, or "" when absent.
+;
+; A path and not a seed, so the key is never on a command line where it lands in
+; a shell history and in `ps`. The file holds 64 hex characters and nothing
+; else, the same file `zyl key` writes.
+(defn drv-flag-value (i flag)
+  (if (>= i (ffi-call "zyl_argc" 1000))
+    ""
+    (if (str-eq (drv-arg i) flag) (drv-arg (+ i 1)) (drv-flag-value (+ i 1) flag))))
+
+; The Ed25519 seed in a key file, or "" when the file is not there.
+;
+; Trimmed, because a file written by `zyl key` and one edited by hand differ by
+; a newline and a seed with one is 64 characters that do not decode. An empty
+; result means the caller asked for a key that is not present, which is an
+; error rather than an unsigned build: someone who asked to sign and silently
+; got an unsigned binary has been given the opposite of what they asked for.
+(defn drv-read-seed-file (path)
+  (let fd (file-open path "r")
+    (if (< fd 1)
+      ""
+      (let s (file-read fd 4096)
+        (let _ (file-close fd)
+          (drv-trim s))))))
+
+(defn drv-trim (s)
+  (let n (str-length s)
+    (if (or (= n 0) (not (= (str-substring s (- n 1) 1) "\n")))
+      s
+      (str-substring s 0 (- n 1)))))
+
+; Fail the build rather than produce an unsigned binary.
+(defn drv-sign-requires-key (path)
+  (ffi-call "zyl_panic"
+    (str-concat "E_PROV_ATTACH: --sign-with " (str-concat path
+      ": no key file, and a build that cannot sign must not pass for one that did")) 1000))
+
 ; The package root for a subcommand: the nearest directory at or above
 ; the working directory that carries a zyl.pkg. A tool that guessed
 ; differently from the compiler would resolve a different graph than the
@@ -428,7 +466,18 @@
 ;; package, of each package in the graph and of the stdlib; compilation is
 ;; deterministic (spec 27), so equal keys mean equal binaries.
 ;; ZYL_NO_BUILD_CACHE=1 skips it.
+;;
+;; A SIGNED BUILD DOES NOT USE THE CACHE, in either direction. The cache is
+;; keyed on the sources, and the trailer is not a function of the sources -- it
+;; carries a signature, so the same package built with two keys gives two
+;; different binaries and neither is the other's cache entry. Keying the cache
+;; on the key would fix the read and leave the write wrong, because an unsigned
+;; build would then populate an entry a signed one cannot use. So: no read, no
+;; write, and the cache is not consulted at all when a key was supplied. Signing
+;; is rare enough that this costs nothing that matters.
 (defn drv-compile-file (arena src out dir nodes)
+  (if (> (str-length (drv-get-seed)) 0)
+    (drv-compile-uncached arena src out dir)
   (if (> (str-length (ffi-call "zyl_getenv_str" "ZYL_NO_BUILD_CACHE" 1000)) 0)
     (drv-compile-uncached arena src out dir)
     (let cdir (str-concat (store-home) (str-concat "/cache/" (drv-cache-key arena dir nodes)))
@@ -441,7 +490,7 @@
                 (store-mkdir cdir)
                 (drv-cache-copy out (str-concat cdir "/bin") (str-concat out ".buildinfo") (str-concat cdir "/buildinfo")))
               0)
-            rc))))))
+            rc)))))))
 
 (defn drv-cache-copy (bin-from bin-to info-from info-to)
   (if (= (store-run (str-concat "cp -p '" (str-concat bin-from (str-concat "' '" (str-concat bin-to
@@ -494,7 +543,75 @@
                     (let _ (cli-write-file asmpath (str-concat buf (drv-hash-section (bh-final bi))))
                       (let rc (cli-link-child asmpath out (cli-native-args m objs))
                         (let _ (drv-write-buildinfo arena dir out bi buf)
-                          rc))))))))))))))
+                          (let _ (drv-attach-provenance arena out bi buf)
+                            rc)))))))))))))))
+
+; ---------------------------------------------------------------------------
+; Attaching provenance
+; ---------------------------------------------------------------------------
+;
+; A REF, not a parameter. The seed would otherwise be threaded through five
+; functions and every one of them would grow a parameter it does not otherwise
+; care about, in a compiler whose output is a committed seed: every such change
+; is a reseed, and a reseed for a signature that is off by default is a poor
+; trade. A ref is read at exactly one place, and the build path for an unsigned
+; build is unchanged -- which is the property that matters here, since an
+; unsigned build has to stay byte-identical or the fixed point and every
+; determinism test in the tree change with it.
+; The initial value is "" and not 0 because zyl_ref_new is polymorphic and the
+; literal fixes what it holds: a ref that started as an Int would make every
+; later String assignment a type error, which is the compiler's own inference
+; working correctly and a bad place to argue with it.
+(def drv-seed (ffi-call "zyl_ref_new" "" 1000))
+
+(defn drv-set-seed (s) (ffi-call "zyl_ref_set" drv-seed s 1000) unit)
+
+(defn drv-get-seed () (ffi-call "zyl_ref_get" drv-seed 1000))
+
+; Read `--sign-with` into the ref, or leave it empty.
+;
+; Empty is the normal case and the only one that is not an error: `zyl build`
+; without the flag is an unsigned build, which is what it has always been. The
+; error is the other direction -- a key file named but not readable produces a
+; build failure rather than an unsigned binary, because a caller who asked for
+; a signature and did not get one has been handed something that looks the same
+; and means something weaker.
+(defn drv-sign-from-args ()
+  (let path (drv-flag-value 2 "--sign-with")
+    (if (= (str-length path) 0)
+      unit
+      (let s (drv-read-seed-file path)
+        (if (= (str-length s) 0)
+          (drv-sign-requires-key path)
+          (drv-set-seed s))))))
+
+; Attach a signed trailer to the binary at `out`, when a key was supplied.
+;
+; Nothing happens without a key, and that is not a default to be sorry about: a
+; build is unsigned unless someone asked for it to be signed, and the trailer's
+; presence is what says which happened. There is no "unsigned trailer", because
+; a record nobody vouched for is a claim (design doc, "why the evidence is the
+; valuable half").
+;
+; The image's hash is taken here, over the file as linked and BEFORE the trailer
+; exists, which is the whole hashing rule. The four SS31.12 inputs and the asm
+; hash come from `bi` and `buf`, the same values `zyl.buildinfo` records, so the
+; two files cannot disagree about what was built.
+(defn drv-attach-provenance (arena out bi buf)
+  (let seed (drv-get-seed)
+    (if (= (str-length seed) 0)
+      unit
+      (let ih (prov-hash-file out (- 1))
+        (begin
+          (prov-attach out
+            (match bi (BH ch gh nh ih2 fh ch))
+            (match bi (BH ch gh nh ih2 fh gh))
+            (match bi (BH ch gh nh ih2 fh ih2))
+            (str-concat "blake3:" (ffi-call "zyl_blake3_hex" arena buf -1 32 1000))
+            (match bi (BH ch gh nh ih2 fh fh))
+            ih
+            seed)
+          (print (str-concat "zyl: signed " (str-concat out " (trailer attached)"))))))))
 
 ; zyl.buildinfo (SS31.12): the compiler's own hash, the graph hash from the
 ; lock, the native object hashes and the ICNF hash, in that order, so a
@@ -593,7 +710,8 @@
     (print "zyl new <name>                         create a package")
     (print "zyl add <name> [version]               add a dependency")
     (print "zyl fetch                              resolve, verify and populate the store")
-    (print "zyl build [--locked]                   compile this package")
+    (print "zyl build [--locked] [--sign-with key]  compile this package")
+    (print "  --sign-with <key>                      append a signed provenance trailer")
     (print "zyl test                               compile and run this package")
     (print "zyl update                             re-resolve and rewrite zyl.lock")
     (print "zyl vendor                             copy the graph into ./vendor")
@@ -627,7 +745,8 @@
   (if (str-eq cmd "key")
     (cli-key arena)
   (if (str-eq cmd "build")
-    (drv-build arena (drv-package-dir cwd 16) (drv-has-flag 2 "--locked"))
+    (let _ (drv-sign-from-args)
+      (drv-build arena (drv-package-dir cwd 16) (drv-has-flag 2 "--locked")))
   (if (str-eq cmd "test")
     (drv-test arena (drv-package-dir cwd 16))
   ; The REPL compiles code, so it runs from the bundle directory the

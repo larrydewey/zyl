@@ -62,15 +62,32 @@
   (let i (prov-index-of h 58 0)
     (if (< i 0) h (prov-sub h (+ i 1) (- (prov-length h) (+ i 1))))))
 
+; The 32 bytes a hash stands for.
+;
+; PADDED, NOT REJECTED, and the padding is why this is not a one-liner. A build
+; with no lock has no graph hash, and §31.12 records that as the empty string --
+; so w-from-hex would give a zero-length Words and the copy below would read
+; index 0 of nothing. It crashed with E_INDEX_OUT_OF_BOUNDS, which is at least an
+; honest failure, but a crash is the wrong answer to "this build has no graph".
+;
+; A SHORT hex string is zero-padded to 32 bytes. The alternative -- refusing to
+; make a record -- would mean the provenance feature was unavailable for exactly
+; the builds a reader is most likely to want to check, a single file with no
+; package around it. And an all-zero hash is not a claim that the hash was
+; zeroes: a hash is a fixed width, and zero-padding a shorter one is what every
+; fixed-width field in this record already does. Callers that need to tell an
+; absent hash from a real one read the buildinfo beside it, which records the
+; empty string.
 (defn prov-bytes ((hex String))
   (let p (cbor-buf 32)
     (let w (w-from-hex (prov-strip hex))
-      (begin
-        (for (i 0) (< i 32)
-          (begin
-            (store-u8 :le p i (w-get w i))
-            (set! i (+ i 1))))
-        p))))
+      (let have (w-len w)
+        (begin
+          (for (i 0) (< i 32)
+            (begin
+              (store-u8 :le p i (if (< i have) (w-get w i) 0))
+              (set! i (+ i 1))))
+          p)))))
 
 
 ; The evidence is a nested map of its own, and its keys are canonical too:

@@ -372,6 +372,17 @@ if [ "$MODE" = "full" ] || [ "$MODE" = "quick" ]; then
         fi
         TOTAL=$((TOTAL+1))
     fi
+    # `zyl build --sign-with`: the signed build is the unsigned one plus a
+    # trailer, and the unsigned one is unchanged. The cache must not serve one
+    # for the other, since the trailer is not a function of the sources.
+    if [ -z "$FILTER" ] || echo "prov_sign" | grep -qi -- "$FILTER"; then
+        if bash "${TESTS_DIR}/scripts/prov-sign.sh" >"$RUN_TMP/prov_sign.log" 2>&1; then
+            PASS=$((PASS+1)); printf "  \033[0;32m\xe2\x9c\x93\033[0m prov_sign\n"
+        else
+            FAIL=$((FAIL+1)); printf "  \033[0;31m\xe2\x9c\x97\033[0m prov_sign\n"
+        fi
+        TOTAL=$((TOTAL+1))
+    fi
     # `zyl fmt`: indentation recovered exactly, --check never writing.
     if [ -z "$FILTER" ] || echo "fmt_test" | grep -qi -- "$FILTER"; then
         if bash "$TESTS_DIR/fmt_test.sh" >"$RUN_TMP/fmt_test.log" 2>&1; then
