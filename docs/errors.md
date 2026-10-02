@@ -269,6 +269,7 @@ Neither carries the catalog code. A false `(assert c msg)` panics with
 | `E_MUT_CONFLICT` (§28) | aliasing: mutable reference conflict at S | `mutability_check.zyl` (located: `set!` on a non-`let-mut` binding, or on a `let-mut` captured by a closure), `expr_inner.zyl` (a `set!` target that is not a plain name, such as a field) |
 | `E_CT_VIOLATION` | constant-time: secret-dependent M at S - branches, memory indices and divisions must not depend on a Secret value | `secret_check.zyl` (located) |
 | `E_SECRET_ESCAPE` | secret: Secret value escapes through M at S | `secret_check.zyl` (located) |
+| `E_SECRET_UNANNOTATED` | secret: a Secret argument reaches parameter P of F, which is not marked Secret | `secret_check.zyl` (located at the argument; the fix names the parameter to annotate) |
 | `E_SECRET_DEBUG` | secret: Secret value reaches a debug/print sink at S | `secret_check.zyl` (located; also a `Show` impl whose text is derived from a Secret) |
 | `E_ZEROIZE_MISSING` (severity 2, warning) | secret: function F takes a Secret parameter but never zeroizes it | `secret_check.zyl` |
 | `E_PKG_CAPABILITY_VIOLATION` (§28) | capability: M needs the C capability, and the package, file or session using it declares none | `capability_check.zyl` (located, with the `(capabilities ...)` line to write as the fix), `cli.zyl` |

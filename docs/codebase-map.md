@@ -111,7 +111,7 @@ in `docs/compiler-pipeline.md`.
 | `mutability_check.zyl` | `E_MUT_CONFLICT`: `set!` only on a `let-mut` binding in scope |
 | `exhaustiveness_check.zyl` | `E_NON_EXHAUSTIVE_MATCH` and `E_UNREACHABLE_MATCH_ARM` for ADT matches |
 | `unused_check.zyl` | Unused function/parameter/variable and shadowing warnings; `E_DUPLICATE_PARAMETER` |
-| `secret_check.zyl` | The `Secret` capability's constant-time obligations (`E_CT_VIOLATION`, `E_SECRET_DEBUG`, `E_SECRET_ESCAPE`, `E_FFI_PIN_REQUIRED`) |
+| `secret_check.zyl` | The `Secret` capability's constant-time obligations (`E_CT_VIOLATION`, `E_SECRET_DEBUG`, `E_SECRET_ESCAPE`, `E_SECRET_UNANNOTATED`, `E_FFI_PIN_REQUIRED`) |
 
 **Middle and back end**
 

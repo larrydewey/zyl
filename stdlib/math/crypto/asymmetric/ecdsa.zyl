@@ -223,7 +223,7 @@
 ; dst = src where `mask` is all ones, unchanged where it is zero; every
 ; limb is read and written either way.
 ; Returns: Int
-(defn ec-pt-cond-copy ((c EcCurve) (dst EcPt) (src EcPt) (mask Int))
+(defn ec-pt-cond-copy ((c EcCurve) (dst EcPt) (src EcPt) (mask (Secret Int)))
   (begin
     (bn-cond-copy (ec-pt-x dst) (ec-pt-x src) (ec-limbs c) mask)
     (bn-cond-copy (ec-pt-y dst) (ec-pt-y src) (ec-limbs c) mask)

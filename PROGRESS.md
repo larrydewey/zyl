@@ -227,8 +227,12 @@ Language and compiler:
   inside `try`/`catch` or `while`, or in frame-wiping (Secret)
   functions. The interpreter runs tail calls in constant stack unless
   the result is a String or Float.
-- `Secret`: heap erasure is explicit (`zeroize`, `wipe`); taint crosses
-  a call only where the callee's parameters are annotated.
+- `Secret`: heap erasure is explicit (`zeroize`, `wipe`). Taint fails
+  closed across a call to a top-level `defn` (`E_SECRET_UNANNOTATED`),
+  but not across a call through a function value or a trait method, and
+  the crypto entry points take plain `Words`, so nothing seeds taint
+  there. The annotated bignum/curve mask helpers wipe their frames and
+  so run on the stack machine, not the MIR backend.
 - Diagnostics with no source node stay unlocated: `--locked` capability
   growth, `E_CODEGEN_BUFFER_FULL`, and the lock/store/index/CLI/MVS
   errors about files.

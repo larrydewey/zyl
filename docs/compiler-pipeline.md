@@ -158,7 +158,7 @@ diagnostic rather than rejecting a valid program.
 | 4 | `mutability_check.zyl` | `E_MUT_CONFLICT`: `set!` on a name that is not a `let-mut` binding in scope |
 | 5 | `exhaustiveness_check.zyl` | `E_NON_EXHAUSTIVE_MATCH`, `E_UNREACHABLE_MATCH_ARM` for ADT matches; skipped for a match whose constructor names are ambiguous across deftypes |
 | 6 | `unused_check.zyl` | `W_UNUSED_PARAMETER`, `W_UNUSED_VARIABLE`, `W_SHADOWED_BINDING` (warnings); `E_DUPLICATE_PARAMETER` (error). `_` and `_`-prefixed names are exempt |
-| 7 | `secret_check.zyl` | Taint from `Secret` parameters: `E_CT_VIOLATION` (branch, index, divide), `E_SECRET_DEBUG` (`print`), `E_SECRET_ESCAPE` (`spawn`, `send`, `file-write`), `E_FFI_PIN_REQUIRED`. `declassify`, `ct-eq-bool` and `ct-eq-words-bool` remove taint |
+| 7 | `secret_check.zyl` | Taint from `Secret` parameters: `E_CT_VIOLATION` (branch, index, divide), `E_SECRET_DEBUG` (`print`), `E_SECRET_ESCAPE` (`spawn`, `send`, `file-write`), `E_SECRET_UNANNOTATED` (a tainted argument to a `defn` parameter not annotated `Secret`), `E_FFI_PIN_REQUIRED`. `declassify`, `ct-eq-bool` and `ct-eq-words-bool` remove taint |
 
 Literal-pattern matches never reach the exhaustiveness check: the
 parser requires a trailing `_` arm for them and lowers them to an `if`

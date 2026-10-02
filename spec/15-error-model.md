@@ -154,6 +154,7 @@ code plus implementation codes such as `E_ARITY_MISMATCH`,
 `E_UNBOUND_VARIABLE`, `E_DUPLICATE_DEFINITION`, `E_MALFORMED_PARAMETER`,
 `E_OUT_OF_MEMORY`, the `E_UNBALANCED_*` balance errors, the byte-buffer
 codes and the Secret codes (`E_CT_VIOLATION`, `E_SECRET_ESCAPE`,
+`E_SECRET_UNANNOTATED`,
 `E_SECRET_DEBUG`, `E_ZEROIZE_MISSING`, `E_FFI_PIN_REQUIRED`), and also
 `W_TYPE_STRICT` and the interpreter's `E_INTERP_TAG`. One entry is
 duplicated (`E_OUT_OF_MEMORY`) and two are near duplicates

@@ -174,7 +174,7 @@
 ; dst = src where `mask` is all ones, unchanged where it is zero; every
 ; limb is read and written either way.
 ; Returns: Int
-(defn ed-pt-cond-copy ((dst EdPt) (src EdPt) (mask Int))
+(defn ed-pt-cond-copy ((dst EdPt) (src EdPt) (mask (Secret Int)))
   (begin
     (bn-cond-copy (ed-pt-x dst) (ed-pt-x src) 11 mask)
     (bn-cond-copy (ed-pt-y dst) (ed-pt-y src) 11 mask)

@@ -248,6 +248,7 @@ an inferred placement is always one the value cannot escape (Chapter
 | `E_INVALID_CAPABILITY` | A closure written inline as an `ffi-call` argument |
 | `E_CT_VIOLATION` | A `Secret` steered a branch, indexed memory, or went through a divider |
 | `E_SECRET_ESCAPE` | A `Secret` reached `spawn`, `chan-send` or `file-write` |
+| `E_SECRET_UNANNOTATED` | A `Secret` was passed to a function parameter not annotated `Secret` |
 | `E_SECRET_DEBUG` | A `Secret` reached `print` |
 | `E_ZEROIZE_MISSING` | *(warning, severity 2)* A function takes a `Secret` parameter and never zeroizes it |
 | `E_PKG_CAPABILITY_VIOLATION` | A package, lone file or REPL session uses a construct, or a stdlib module, without declaring the capability it needs (§31.9) |

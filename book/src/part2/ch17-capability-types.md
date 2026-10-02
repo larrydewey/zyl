@@ -278,8 +278,10 @@ The rules across calls:
 - **Secret-returning functions.** A function whose body is tainted under
   its own `Secret` parameters is secret-returning. Its result is tainted
   at every call site, even when the arguments are public literals.
-- **Unannotated helpers.** Taint enters a callee only through annotated
-  parameters, so a helper without annotations launders a secret.
+- **Unannotated helpers.** A secret passed to a function whose parameter
+  is not annotated `Secret` is `E_SECRET_UNANNOTATED`, so a helper cannot
+  launder a secret: annotate the parameter or `declassify` first. A call
+  through a function value or a trait method is not checked across.
 
 To the type checker, `(Secret Int)` is an `Int`: the annotation gives the
 parameter its inner type, so a key passes through generic helpers. The

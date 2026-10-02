@@ -59,6 +59,7 @@
           (Cons (EC "E_INTERP_TAG" 10 1 "runtime: the checking interpreter found an operand of the wrong tag at S (a type-checker bug)")
           (Cons (EC "E_CT_VIOLATION" 13 1 "constant-time: secret-dependent M at S - branches, memory indices and divisions must not depend on a Secret value")
           (Cons (EC "E_SECRET_ESCAPE" 13 1 "secret: Secret value escapes through M at S")
+          (Cons (EC "E_SECRET_UNANNOTATED" 13 1 "secret: a Secret argument reaches parameter P of F, which is not marked Secret")
           (Cons (EC "E_SECRET_DEBUG" 13 1 "secret: Secret value reaches a debug/print sink at S")
           (Cons (EC "E_ZEROIZE_MISSING" 13 2 "secret: function F takes a Secret parameter but never zeroizes it")
           (Cons (EC "E_FFI_PIN_REQUIRED" 16 1 "ffi: Secret argument to F must be handed over through ffi-pin (Pin region) at S")
@@ -174,7 +175,7 @@
                                                           (Cons (EC "E_PKG_CAPABILITY_VIOLATION" 13 1 "capability: M needs the C capability, and the package, file or session using it declares none; write (capabilities C) in zyl.pkg, at the top of the file, or at the prompt")
                                                            (Cons (EC "E_PKG_CAPABILITY_GROWTH" 13 1 "capability: capability closure grew under --locked: C")
                                                                (Cons (EC "W_RECOVER_SHADOW" 14 2 "recover: arm M shadows later arm N - move specific error codes before catch-all (String/_)")
-                                                           Nil)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+                                                           Nil))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 ; ---------------------------------------------------------------------------
 ; ACCESSORS
 ; ---------------------------------------------------------------------------
