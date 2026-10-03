@@ -11,6 +11,13 @@ relies on it (55c9355), and the native backend (`docs/native-backend-design.md`)
 emits the same region frames, with inline bump allocation (0929426) and
 frame-region recycling in self tail calls (93ab380).
 
+Released region blocks are refilled with `0xDE` under
+`ZYL_REGION_POISON=1`, and the whole mechanism — with its limits — is
+`docs/memory-poisoning-design.md`. That is the dynamic half of the
+invariant this document argues for statically. Page protection
+(`mprotect`) was tried and withdrawn; there is no `mprotect` call
+anywhere in the runtime.
+
 ## Arenas are not a program's to hold
 
 A program cannot obtain an `Arena` at all. This was the first thing
@@ -23,10 +30,11 @@ notices the second use.
   region the allocating call runs in (`zyl_vec_alloc`, `zyl_words_alloc`
   and their `_r` twins in `runtime/rt/tables.zyl`), so a collection that
   does not outlive its frame is reclaimed on return and one that does is
-  placed in the caller's region or on the heap. The `Arena` field is gone
-  from all three.
+  placed in the caller's region or on the heap. No collection has an
+  `Arena` field; a `Slice` holds the array it windows, so the storage
+  lives as long as the slice.
 - `stdlib/math` takes no arena parameter anywhere. `blake3-iv`,
-  `mont-add`, `sha256-init` and the rest are pure functions whose scratch
+  `mont-mul`, `sha256-init` and the rest are pure functions whose scratch
   dies with the frame.
 - The arena entries are in `ffi-raw-p`, and the `allocator/allocator`
   wrappers (`arena-create`, `arena-destroy`, `arena-reset`, `arena-alloc`,
@@ -229,8 +237,11 @@ The same analysis checks explicit region choices:
   allocates in its own arenas, so `with-region` byte limits are enforced
   only in compiled code (`tests/regression/with-region-limits.zyl` is
   excluded from the interpreter differential run).
-- User arenas (`allocator/allocator`, `vec-create` with an arena) are
-  explicit and unaffected.
+- User arenas (`stdlib/allocator`, `alloc-malloc`, `arena-*`, `buf-new`)
+  are internal and unaffected: they are what the compiler and runtime
+  themselves allocate through, and a program is refused by name with
+  `E_FFI_RESTRICTED`. A program allocates a buffer with
+  `(bytebuf Heap N)` and takes its address with `bytebuf-ptr`.
 - Foreign calls: arguments are `H`, so an abandoned timed-out call can
   never be left holding a released region.
 

@@ -82,9 +82,9 @@ The compiler finds the variables a closure uses but does not bind itself (its **
 
 | Capture Kind | Capability | Region |
 |--------------|------------|--------|
-| Read-only | `TCap` | Stack if the closure does not escape, Heap if it does |
-| Mutated (`set!`) | `TMut` | Heap |
-| Sent to an actor | must be Send-capable (`TCap`/`TAtomic`) | Heap |
+| Read-only | a `let` binding — immutable, any number of readers | Stack if the closure does not escape, Heap if it does |
+| Mutated (`set!`) | a `let-mut` binding — the only assignable binding; `set!` rebinds it | Heap |
+| Sent to an actor | must be Send-capable: immutable (`let`) or atomic bindings | Heap |
 
 In the current compiler, captures are **by value**: when the closure is created, the current value of each captured variable is copied into an environment block, allocated like any other value (a returned closure goes in its caller's region; Chapter 5, §5.5). Changing the original binding afterward does not affect the closure.
 
@@ -115,8 +115,11 @@ In the current compiler, captures are **by value**: when the closure is created,
 ```
 
 ```
-PANIC: error[E_MUT_CONFLICT]: set! target `count` is a let-mut of an enclosing scope, captured by value by this closure
+error[E_MUT_CONFLICT]: set! target `count` is a let-mut of an enclosing scope, captured by value by this closure
   --> bump.zyl:3:22
+   |
+ 3 |     (let bump (fn () (set! count (+ count 1)))
+   |                      ^
    = help: closures capture by value (spec 7); return the new value from the closure and set! it at the binding's own scope
 ```
 
@@ -148,10 +151,10 @@ Captured variables, closure parameters and the results of calls through function
 The standard `List` type (`Cons`/`Nil`, from `core/list`) is available in every program. These definitions work with any function value, capturing or not:
 
 ```lisp
-(defn map (f xs)
+(defn map-list (f xs)
   (match xs
     (Nil Nil)
-    (Cons x rest (Cons (f x) (map f rest)))))
+    (Cons x rest (Cons (f x) (map-list f rest)))))
 
 (defn filter (pred xs)
   (match xs
@@ -168,7 +171,7 @@ The standard `List` type (`Cons`/`Nil`, from `core/list`) is available in every 
 
 (defn main ()
   (let xs (Cons 1 (Cons 2 (Cons 3 (Cons 4 Nil))))
-  (let ys (map (fn (x) (* x 10)) xs)
+  (let ys (map-list (fn (x) (* x 10)) xs)
   (let evens (filter (fn (x) (== (% x 2) 0)) xs)
     (begin
       (print (fold (fn (a x) (+ a x)) 0 ys))      ; 100
@@ -177,24 +180,31 @@ The standard `List` type (`Cons`/`Nil`, from `core/list`) is available in every 
   0)
 ```
 
-Match arms are written `(Pattern body)`, so an empty-list arm is `(Nil Nil)`, not `Nil Nil`. Generic functions need no type-parameter list: `map`, `filter`, and `fold` are inferred as polymorphic (Chapter 7).
+Match arms are written `(Pattern body)`, so an empty-list arm is `(Nil Nil)`, not `Nil Nil`. Generic functions need no type-parameter list: `map-list`, `filter`, and `fold` are inferred as polymorphic (Chapter 7). The first is not called `map` because `(map k v ...)` is the `Map` literal (Chapter 4), and a literal form cannot be replaced by a `defn`. `(% x 2)` is fine: a nonzero literal divisor can never be zero.
 
 ### Composition, Partial Application, and Flip
 
 The textbook versions of these combinators return a new closure that calls the captured functions:
 
 ```lisp
+; core/core already defines `compose`, so this block as written is
+; E_DUPLICATE_DEFINITION; it is here to show the shape of each combinator.
 (defn compose (f g)
   (fn (x) (f (g x))))      ; the lambda calls captured f and g
 
-(defn partial (f x)
+(defn partial (f x)        ; `partial` is not taken, so this one compiles
   (fn (y) (f x y)))        ; the lambda calls captured f
 ```
 
-`core/core` ships exactly this `compose`, and a user program can define `partial` the same way:
+`core/core` ships exactly this `compose`, and beside it `flip` (`(flip f a
+b)` calls `(f b a)`), `identity`, `const` and `apply`; it is loaded into
+every program, so a program that defines any of those names itself is
+`E_DUPLICATE_DEFINITION` and should pick another. `partial` is not among
+them, so the program below defines it and takes the other two from
+`core/core`:
 
 ```lisp
-(defn partial2 (f x)
+(defn partial (f x)
   (fn (y) (f x y)))
 
 (defn main ()
@@ -203,18 +213,18 @@ The textbook versions of these combinators return a new closure that calls the c
   (let sub (fn (a b) (- a b))
     (begin
       (print ((compose mul2 add1) 5))       ; 12 = (5+1)*2
-      (print ((partial2 sub 10) 3))         ; 7  = 10 - 3
+      (print ((partial sub 10) 3))          ; 7  = 10 - 3
       (print (flip sub 3 10))))))           ; 7  = 10 - 3
   0)
 ```
 
-`flip` comes from `core/core`, which is loaded into every program: `(flip f a b)` calls `(f b a)`. `core/core` also provides `identity`, `const`, and `apply`. Because those names are already defined, a program that defines its own `compose` or `flip` fails with `E_DUPLICATE_DEFINITION`; pick another name.
-
 ## 8.6 Closures and Actors
 
-Closures passed to `spawn` must be **Send-capable** (Spec §7.4): they may capture only `TCap`/`TAtomic` values. The compiler enforces the `TMut` half of that rule today:
+Closures passed to `spawn` must be **Send-capable** (Spec §7.4): they may capture only immutable (`let`) or atomic bindings. The compiler enforces the `let-mut` half of that rule today:
 
 ```lisp
+(capabilities actor)
+
 (use actor/actor)
 
 (defn main ()
@@ -224,7 +234,14 @@ Closures passed to `spawn` must be **Send-capable** (Spec §7.4): they may captu
 ```
 
 ```
-PANIC: error[E_CAPABILITY_LEAK]: spawned closure captures let-mut (TMut) variable `count` from the enclosing scope
+error[E_CAPABILITY_LEAK]: spawned closure captures let-mut (TMut) variable `count` from the enclosing scope
+  --> count.zyl:7:12
+   |
+ 7 |     (let a (spawn (fn () (set! count (+ count 1))))
+   |            ^
+ 6 |   (let-mut count 0
+   |   - declared `let-mut` here
+   = help: only Send-capable (non-mut) captures may cross into another actor
 ```
 
 The error is located at the `spawn`, with a second label at the `let-mut` (Appendix A, §A.1). Immutable captures are fine: the actor gets its own copies, as any closure does. Chapter 9 covers actors in detail.
@@ -242,10 +259,10 @@ The type checker gives every closure a function type, built from the parameter a
 
 ## 8.8 Recursive Closures
 
-A lambda cannot refer to itself. A named `let` exists — `(let (loop init)
-body)` binds `loop` for `body` — but not for `init`, so it cannot build a
-self-reference either. Write recursive helpers as top-level `defn`
-functions:
+A lambda cannot refer to itself. A `let` binds its name for its body
+only, not for its own value expression, so a lambda bound with
+`(let loop (fn ...) body)` cannot call `loop` either. Write recursive
+helpers as top-level `defn` functions:
 
 ```lisp
 (defn fact (n)
@@ -253,12 +270,12 @@ functions:
 ```
 
 This follows from how closures capture rather than being an oversight. Zyl
-closures capture **by value** — the example in §8.7 would print `1`,
-because `f` is handed the value of `x` when it is built, before the
-`set!`. So a self-reference cannot be wired up by binding the name before
-the initializer is evaluated: the closure would capture an uninitialized
-slot, which compiles cleanly and then reads whatever is there. Two designs
-would fix it and both are language-wide:
+closures capture **by value**: a closure built from `x` before a `set!` of
+`x` keeps the old value (§8.10, Pitfall 1), because it is handed the value
+of `x` when it is built. So a self-reference cannot be wired up by binding
+the name before the initializer is evaluated — the closure would capture an
+uninitialized slot, which compiles cleanly and then reads whatever is
+there. Two designs would fix it, and both are language-wide:
 
 - capture enclosing locals **by reference**, so every closure gets an
   environment — slower, and a change to every closure in the language; or
@@ -280,7 +297,7 @@ Captures are copied when the closure is created. A closure built inside a loop s
 
 ### Pitfall 2: Mutating a Captured Variable
 
-Spec §10 allows exactly one `TMut` reference, and a closure's capture is a copy, so a closure that `set!`s a captured variable is rejected with `E_MUT_CONFLICT` (§8.3). Restructure the code so the closure returns a new value and the caller rebinds it:
+Spec §10 allows exactly one mutable reference, and a closure's capture is a copy, so a closure that `set!`s a captured variable is rejected with `E_MUT_CONFLICT` (§8.3). Restructure the code so the closure returns a new value and the caller rebinds it:
 
 ```lisp
 (defn main ()
@@ -323,10 +340,10 @@ The specification's region-inference phase (Phase 4) assigns captures as follows
 2. **Mutability analysis**: for each free variable, check whether it is `set!`.
 3. **Escape analysis**: does the closure outlive the scope that defines it?
 4. **Assign capability and region**:
-   - read-only, non-escaping: `TCap`, Stack
-   - read-only, escaping: `TCap`, Heap
-   - mutated: `TMut`, Heap
-   - crossing an actor boundary: must be Send-capable
+   - read-only, non-escaping: a `let` binding — immutable, any number of readers — in Stack
+   - read-only, escaping: the same, in Heap
+   - mutated: a `let-mut` binding — the only assignable binding — in Heap
+   - crossing an actor boundary: must be Send-capable (immutable (`let`) or atomic bindings)
 
 ### Call Sites
 

@@ -32,6 +32,13 @@ word: Int, Bool, String, Ptr, the runtime's opaque handle types, and
 call passes every argument in an integer register), nor is Float
 returned. R may be Unit.
 
+`Ptr` is a spelling of `Int`, kept to document that the word is an
+address: the runtime has no pointer representation to be distinct from,
+so `Ptr` resolves to `Int` (`ta-conv-name-1`, `ta-sig-word`) and the
+runtime's own `zyl_cstr_of_word` is the identity function. What is
+enforced is where an address may come from — `bytebuf-ptr`, `ffi-pin`,
+or a foreign call — not a distinct type.
+
 A trailing `:timeout N`, N a positive integer literal in milliseconds,
 is the default timeout for calls to that symbol: an `ffi-call` with exactly
 as many arguments as the extern has parameters takes N as its timeout, and a
@@ -171,11 +178,20 @@ Not normative.
   is accepted (it crosses as its pointer). A declaration is trusted: the
   compiler cannot see the C side.
 - **Raw entries.** `ffi-raw-p` lists the runtime entries that read raw
-  memory or reinterpret a machine word (`zyl_cstr_of_word`,
-  `zyl_word_of_cstr`, `zyl_word_load`, `zyl_word_store`, `zyl_ptr_add`,
-  `zyl_ptr_cstr`, `zyl_mem_read`, `zyl_mem_write`, `zyl_ffi_addr`,
-  `zyl_call_argv`, `zyl_ffi_timed_argv`, the interpreter's `zyl_val_*`
-  and `zyl_itest_*` entries and `zyl_repl_global_set`). They have
+  memory or reinterpret a machine word: `zyl_mem_alloc`, `zyl_mem_read`,
+  `zyl_mem_write`, the seven arena entries (`zyl_arena_create`,
+  `zyl_arena_alloc`, `zyl_arena_alloc_zeroed`, `zyl_arena_capacity`,
+  `zyl_arena_destroy`, `zyl_arena_reset`, `zyl_arena_used`), the word and
+  pointer reinterpreters (`zyl_cstr_of_word`, `zyl_word_of_cstr`,
+  `zyl_word_load`, `zyl_word_store`, `zyl_ptr_add`, `zyl_ptr_cstr`,
+  `zyl_ffi_addr`), the foreign-call bridges (`zyl_call_argv`,
+  `zyl_ffi_timed_argv`), the interpreter's `zyl_val_*` and `zyl_itest_*`
+  entries and `zyl_heap_alloc`, the view and bytebuf primitives
+  (`zyl_view_byte`, `zyl_view_cmp`, `zyl_view_find`, `zyl_view_copy`,
+  `zyl_bytebuf_new`,
+  `zyl_bytebuf_read_file`, `zyl_bytebuf_write_exec`), the actor and
+  channel internals (`zyl_actor_id`, `zyl_actor_join_unjoined`,
+  `zyl_chan_spawn_moves`) and `zyl_repl_global_set`. They have
   signatures, but an `ffi-call` naming one from a definition outside the
   standard library (whose keys start `zyl/std@`) is `E_FFI_RESTRICTED`
   (`ffi-check-raw`, run by the arity pass).
@@ -209,11 +225,11 @@ Not normative.
   (`E_FFI_PIN_REQUIRED`, from `secret_check.zyl`); any other value is
   passed directly. A closure (`fn`/`lambda`) written as an `ffi-call`
   argument is `E_INVALID_CAPABILITY` (`mutability_check.zyl`).
-- `ffi-pin` lowers to the runtime's `ffi_pin`, which copies the value's
+- `ffi-pin` lowers to the runtime's `zyl_ffi_pin`, which copies the value's
   8-byte word into a Pin-arena slot and returns the slot's address,
   typed `(Pin a)` for a value of type `a` (§4.9); `Pin` is an opaque
   handle type, so an `extern` can take one for an out-parameter.
-  `ffi-unpin` is `(Pin a) -> a`: the runtime's `ffi_unpin` checks that
+  `ffi-unpin` is `(Pin a) -> a`: the runtime's `zyl_ffi_unpin` checks that
   the pointer came from the Pin arena and returns the slot's current
   word (possibly updated by C). Pinning a function is
   `E_FFI_TYPE_NOT_PINNABLE`; no other FFI_Pinnable check is made.

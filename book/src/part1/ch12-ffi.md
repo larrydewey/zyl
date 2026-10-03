@@ -21,6 +21,8 @@ Any C function linked into the program can be called: the C library (`libc` is a
 ```
 
 ```lisp
+(capabilities ffi)
+
 (extern "puts" (String) Int)
 (extern "abs" (Int) Int)
 (extern "strlen" (String) Int)
@@ -49,6 +51,10 @@ The type checker cannot see into C, so the `extern` declaration is where a forei
 
 ```
 error[E_CANNOT_INFER]: no type for ffi-call to `strlen`, which has no (extern ...) declaration
+  --> lengths.zyl:5:12
+   |
+ 5 |     (print (ffi-call "strlen" "hello" 1000))
+   |            ^
 ```
 
 The declaration is a top-level form, and it describes the C function; it does not define anything. The types it may use are the ones that fit in one machine word:
@@ -68,6 +74,8 @@ The declaration is a top-level form, and it describes the C function; it does no
 When every call to a function wants the same budget, write it once on the declaration:
 
 ```lisp
+(capabilities ffi)
+
 (extern "abs" (Int) Int :timeout 1000)
 
 (defn main ()
@@ -81,6 +89,10 @@ The count of arguments decides which: a call passing exactly as many arguments a
 
 ```
 error[E_FFI_TIMEOUT_REQUIRED]: the call to `abs` has no timeout: its last argument is not a positive integer literal
+  --> magnitude.zyl:3:21
+   |
+ 3 | (defn magnitude (n) (ffi-call "abs" n))
+   |                     ^
    = help: add the timeout here: (ffi-call "abs" args 1000), or once on the extern: (extern "abs" (...) R :timeout 1000)
 ```
 
@@ -110,6 +122,8 @@ The symbol must likewise be a string literal (`E_FFI_SYMBOL_REQUIRED`). One ambi
 The **Pin region** is a non-moving arena owned by the runtime. `ffi-pin` copies one 64-bit word into a fresh slot there and returns the slot. When the value has type `a`, the slot has type `(Pin a)`: a pinned `Int` is a `(Pin Int)`, not an `Int`, so it cannot be used as the number by mistake. Passed to C, the slot is its address, so the `extern` parameter that receives it is declared `(Pin Int)` and C sees an `int64_t *`. The address never moves, so C can read or write through it for as long as it needs. `ffi-unpin` takes the `(Pin a)` and returns the `a` now in the slot: the value pinned, or whatever C wrote there. It checks that the pointer really came from `ffi-pin`; for any other address it prints `zyl: ffi-unpin: pointer not from ffi-pin/Pin arena`. It does not free the slot: pinned slots are released in bulk, with the Pin arena, when the program exits.
 
 ```lisp
+(capabilities ffi)
+
 (defn main ()
   (let pinned (ffi-pin 42)
     (begin
@@ -119,7 +133,7 @@ The **Pin region** is a non-moving arena owned by the runtime. `ffi-pin` copies 
 
 Only data can be pinned: `(ffi-pin (fn (x) x))` is `E_FFI_TYPE_NOT_PINNABLE`.
 
-An **out-parameter**, a word C writes for you to read, is a pinned slot: pin a starting value, pass the `(Pin Int)` to a parameter declared `(Pin Int)`, and read the result back with `ffi-unpin` (see `print-divmod` in §12.4). A buffer longer than one word does not fit in a slot; allocate it with `arena-alloc-zeroed` or `alloc-malloc`, which return a `Ptr` (see `print-reversed`).
+An **out-parameter**, a word C writes for you to read, is a pinned slot: pin a starting value, pass the `(Pin Int)` to a parameter declared `(Pin Int)`, and read the result back with `ffi-unpin` (see `print-divmod` in §12.4). A buffer longer than one word does not fit in a slot; allocate a `(bytebuf Heap N)` and pass `bytebuf-ptr` of it (see `print-reversed`).
 
 Values of the `Secret` capability type (Chapter 33) are the exception to "no pinning needed": a `Secret` passed straight to `ffi-call` is rejected at compile time with `E_FFI_PIN_REQUIRED`, and must be handed over through `ffi-pin`. C then receives the address of the pinned copy, so the parameter is declared `(Pin Int)` for a secret `Int`.
 
@@ -152,14 +166,14 @@ There is no Zyl-specific C header to include. Use the fixed-width types from `<s
 #include <string.h>
 
 /* Every argument arrives as a 64-bit word; every result goes back in one. */
-int64_t zyl_factorial(int64_t n) {
+int64_t demo_factorial(int64_t n) {
     if (n <= 1) return 1;
-    return n * zyl_factorial(n - 1);
+    return n * demo_factorial(n - 1);
 }
 
 /* Reverse `input` into `output`, which holds at least `cap` bytes.
    Returns the number of bytes written, excluding the terminator. */
-int64_t zyl_reverse_string(const char* input, char* output, int64_t cap) {
+int64_t demo_reverse_string(const char* input, char* output, int64_t cap) {
     int64_t len = (int64_t)strlen(input);
     if (len >= cap) len = cap - 1;
     for (int64_t i = 0; i < len; i++) {
@@ -170,13 +184,13 @@ int64_t zyl_reverse_string(const char* input, char* output, int64_t cap) {
 }
 
 /* Quotient as the result, remainder through an out-parameter. */
-int64_t zyl_divmod(int64_t a, int64_t b, int64_t* rem) {
+int64_t demo_divmod(int64_t a, int64_t b, int64_t* rem) {
     *rem = a % b;
     return a / b;
 }
 ```
 
-`ffi-call` uses the symbol name exactly as written. A symbol declared with an `extern` is always foreign code and runs on the timeout worker (§12.7), whatever its prefix; only the runtime's own `zyl_*` entries, which take no `extern`, are called directly.
+`ffi-call` uses the symbol name exactly as written. Do not start your own C functions' names with `zyl_`: that prefix belongs to the runtime. A symbol declared with an `extern` is always foreign code and runs on the timeout worker (§12.7), whatever its prefix; only the runtime's own `zyl_*` entries, which take no `extern`, are called directly.
 
 ## 12.4 Complete FFI Example
 
@@ -187,46 +201,50 @@ The three functions from §12.3.
 ### Zyl Code (`ffi-demo.zyl`)
 
 ```lisp
+(capabilities ffi)
+
 (use allocator/allocator)
 
-(extern "zyl_factorial" (Int) Int)
-(extern "zyl_reverse_string" (String Ptr Int) Int)
-(extern "zyl_divmod" (Int Int (Pin Int)) Int)   ; C writes the remainder into the slot
+(extern "demo_factorial" (Int) Int)
+(extern "demo_reverse_string" (String Ptr Int) Int)
+(extern "demo_divmod" (Int Int (Pin Int)) Int)   ; C writes the remainder into the slot
 
 (defn factorial (n)
-  (ffi-call "zyl_factorial" n 1000))
+  (ffi-call "demo_factorial" n 1000))
 
-; C writes the reversed text into a buffer Zyl allocated.
-(defn print-reversed (arena (s String))
-  (let buf (arena-alloc-zeroed arena 256)
-    (begin
-      (ffi-call "zyl_reverse_string" s buf 256 1000)
-      (print (alloc-cstr buf)))))
+; C writes the reversed text into a buffer Zyl allocated. The buffer is a
+; (bytebuf Heap 256), so the region system accounts for it, and
+; bytebuf-ptr is its address -- the only way a program gets one.
+(defn print-reversed ((s String))
+  (let buf (bytebuf Heap 256)
+    (let p (bytebuf-ptr buf)
+      (begin
+        (ffi-call "demo_reverse_string" s p 256 1000)
+        (print (alloc-cstr p))))))
 
 ; C writes the remainder into a pinned slot; ffi-unpin reads it back.
 (defn print-divmod (a b)
   (let slot (ffi-pin 0)
-    (let q (ffi-call "zyl_divmod" a b slot 1000)
+    (let q (ffi-call "demo_divmod" a b slot 1000)
       (begin
         (print "quotient:" q)
         (print "remainder:" (ffi-unpin slot))))))
 
 (defn main ()
-  (let arena (arena-create 4096)
-    (begin
-      (print "factorial of 5:" (factorial 5))
-      (print-reversed arena "hello")
-      (print-divmod 17 5)
-      (arena-destroy arena)
-      0)))
+  (begin
+    (print "factorial of 5:" (factorial 5))
+    (print-reversed "hello")
+    (print-divmod 17 5)
+    0))
 ```
 
 Four details:
 
 - Each C function is declared once with `extern`, and each call is checked against the declaration.
-- The remainder comes back through a pinned slot: `zyl_divmod` takes a `(Pin Int)`, and `ffi-unpin` reads what C wrote into it.
-- The output buffer comes from an arena (`allocator/allocator`), so it is released with the arena rather than one allocation at a time.
-- A C buffer is a `Ptr` to Zyl (`arena-alloc-zeroed` returns one). `alloc-cstr` gives the NUL-terminated bytes at a `Ptr` the type `String`, so `print` prints them as text. It does not copy: the `String` is only valid as long as the buffer is.
+- The remainder comes back through a pinned slot: `demo_divmod` takes a `(Pin Int)`, and `ffi-unpin` reads what C wrote into it.
+- The output buffer is a `(bytebuf Heap N)`, so the region that owns it reclaims it when the frame returns; there is nothing to release by hand. A program cannot create an arena and cannot call `alloc-malloc`: the arena entries and the raw allocator are `E_FFI_RESTRICTED`, which is why the buffer is a `bytebuf`.
+- A C buffer is a `Ptr` to Zyl, and `bytebuf-ptr` gives one. `alloc-cstr` gives the NUL-terminated bytes at a `Ptr` the type `String`, so `print` prints them as text. It does not copy: the `String` is only valid as long as the buffer is.
+- The file starts with `(capabilities ffi)`: calling foreign code is a capability, and a program has none it did not declare.
 
 ### Building a Single File
 
@@ -257,7 +275,7 @@ A package can ship its C sources and let `zyl build` compile and link them (Spec
 ```text
 ffidemo/
 ├── zyl.pkg
-├── ffidemo.zyl      # the Zyl code above
+├── ffidemo.zyl      # the Zyl code above, without its (capabilities ffi) line
 └── c/
     └── mylib.c
 ```
@@ -275,12 +293,17 @@ zyl build
 ./ffidemo
 ```
 
+In a package the capabilities are declared once, in `zyl.pkg`, so the
+`(capabilities ffi)` line comes out of `ffidemo.zyl`: kept in a file of a
+manifested package it is `E_MALFORMED_FORM` (`` `capabilities` is
+declared in zyl.pkg, not in a file of package book/ffidemo ``).
+
 `zyl build` compiles the module named by the package name's last segment (`ffidemo.zyl`), compiles `c/mylib.c` into `build/native/`, links everything into `./ffidemo`, and records what went into the binary in `ffidemo.buildinfo`.
 
 Both capabilities are required, and both are checked:
 
 - `native` to ship C sources: without it, `E_PKG_CAPABILITY_VIOLATION: capability: package book/ffidemo ships native sources without declaring the native capability`
-- `ffi` to call into them: without it, `error[E_PKG_CAPABILITY_VIOLATION]: package book/ffidemo uses ffi in factorial without declaring it in zyl.pkg`, located at the `ffi-call` with a label at the definition
+- `ffi` to call into them: without it, ``error[E_PKG_CAPABILITY_VIOLATION]: `demo_factorial` needs the ffi capability, and package book/ffidemo declares only native``, located at the `ffi-call`, with `= help: add (capabilities native ffi) to zyl.pkg`
 
 `cflags` are limited to an allowlist (`-O*`, `-D*`, `-std=*`, and a fixed set of `-f` flags). Anything else, such as `-lfoo`, is `E_PKG_NATIVE_FLAG_DENIED`; libraries go in `(link-libs "m")` and include paths in `(include-dirs "c/include")`.
 
@@ -289,8 +312,8 @@ Both capabilities are required, and both are checked:
 ### Zyl to C
 
 - **Strings** are passed as pointers to Zyl-owned bytes (a literal in the program's read-only data, or a heap string). C may read them for the duration of the call, but must not modify, free, or keep them.
-- **Buffers C writes into** should come from `arena-alloc-zeroed` (freed with the arena) or `alloc-malloc` / `alloc-free` in `allocator/allocator`.
-- **Single words C writes through a pointer** are an 8-byte allocation from the same two places, read back with `alloc-read-int`.
+- **Buffers C writes into** come from `(bytebuf Heap N)`, with `bytebuf-ptr` for the address. `alloc-malloc` and `alloc-free` are `E_FFI_RESTRICTED`.
+- **Single words C writes through a pointer** are a pinned slot (`ffi-pin`, read back with `ffi-unpin`), or an 8-byte `(bytebuf Heap 8)` read back with `(load-i64 :le buf 0)`.
 
 ### C to Zyl
 
@@ -326,6 +349,8 @@ E_FFI_TIMEOUT: ffi call `usleep` exceeded its timeout of 50 ms
 It is an ordinary error, catchable with `try`/`catch` and matchable by code with `recover`:
 
 ```lisp
+(capabilities ffi)
+
 (extern "usleep" (Int) Int)
 
 (defn slow-call () (ffi-call "usleep" 300000 50))   ; 300 ms against a 50 ms budget
@@ -356,11 +381,11 @@ Beyond that, C code runs with full access to the process. The specification's br
 
 ### File I/O Without FFI
 
-Reading and writing files does not need FFI at all: `file-open`, `file-read`, `file-write` and `file-close` are built in (Chapter 13 uses them). The mode given to `file-open` must be a string literal, `"r"`, `"w"` or `"a"`, optionally followed by `+` or `b` (`"r+"`, `"wb"`); anything else, including a mode held in a variable, is `E_TYPE_MISMATCH`. In a package they need the `io` capability rather than `ffi`.
+Reading and writing files does not need FFI at all: `file-open`, `file-read`, `file-write` and `file-close` are built in (Chapter 13 uses them). The mode given to `file-open` must be a string literal, `"r"`, `"w"` or `"a"`, optionally followed by `+` or `b` (`"r+"`, `"wb"`); anything else, including a mode held in a variable, is `E_TYPE_MISMATCH`. They need the `io` capability rather than `ffi`: `(capabilities io)` at the top of a lone file, or in a package's `zyl.pkg`.
 
 ### Out-Parameters
 
-When a C function returns more than one value, return the main result and write the rest through pointers to words Zyl pinned, as `zyl_divmod` does in §12.4: one `(ffi-pin 0)` per value, each passed as a `(Pin Int)` and read back with `ffi-unpin`.
+When a C function returns more than one value, return the main result and write the rest through pointers to words Zyl pinned, as `demo_divmod` does in §12.4: one `(ffi-pin 0)` per value, each passed as a `(Pin Int)` and read back with `ffi-unpin`.
 
 ### Wrapping libc
 
@@ -394,7 +419,8 @@ To link your own objects into a single-file program, use `--emit-asm` and run th
 | Passing a `Float` to a `double` parameter | Use an `int64_t` wrapper in C (§12.2) |
 | Printing a C string pointer | Declare it `Ptr` and read it with `(alloc-cstr ptr)` |
 | A timeout too tight for slow C code | The call raises `E_FFI_TIMEOUT` and the C function is abandoned (§12.7); budget generously |
-| Memory leaks | Free `malloc`ed results from C; prefer arenas for buffers |
+| Memory leaks | Free `malloc`ed results from C; buffers should be a `(bytebuf R N)`, which a region accounts for |
+| `E_PKG_CAPABILITY_VIOLATION` on the first `ffi-call` | Add `(capabilities ffi)` at the top of the file |
 | Calling your own C from a package without `ffi` | Declare `(capabilities ffi native)` |
 
 ---

@@ -3,10 +3,11 @@
 `zyl-lsp` is the Zyl language server. Its source is `stdlib/lsp/` (plus
 `stdlib/lsp/services/`), the entry point is `selfhost/lsp_main.zyl`, and
 `./boot.sh` builds it as `build/boot/zyl-lsp`; `./install.sh` installs it
-as `~/.zyl/bin/zyl-lsp`. It speaks JSON-RPC over stdio.
-`tests/lsp/lsp_protocol_test.py` drives the real binary and checks the
-responses (126 checks, one of them that the server answers while stdin stays open; `./run_regression_tests.sh --filter lsp`, in
-quick and full mode).
+as `$ZYL_HOME/bin/zyl-lsp` (default `~/.zyl/bin/zyl-lsp`). It speaks
+JSON-RPC over stdio. `tests/lsp/lsp_protocol_test.py` drives the real
+binary and checks the responses (136 checks, one of them that the server
+answers while stdin stays open; `./run_regression_tests.sh --filter lsp`,
+in quick and full mode).
 
 ## Requests
 
@@ -43,21 +44,23 @@ Navigation, hover and completion are name-based over the document text
 
 `document_manager.zyl` parses the document, resolves modules with the
 document's path (so it finds the package the file belongs to, spec v5.0
-§31.3), expands macros, runs `uc-check-program` with its warnings
+§31.3), expands macros, drops `test-compile` forms (a compile decides
+those, not the editor), runs `uc-check-program` with its warnings
 captured, then runs `dc-check-program`, `ac-check-program`,
 `mc-check-program`, `ec-check-program` and `sc-check-program` — the order
 `compile-run-checks` in `stdlib/compiler/pipeline.zyl` uses — inside
 `try`/`catch`, so a checker's `zyl_panic` becomes a Diagnostic instead of
 killing the server. When they pass, the type checker runs (derive
-expansion, impl lifting, closure inlining, `ta-annotate`) with its
-reports captured, and every one located in the document is published.
-Each diagnostic carries its `E_*` code in the LSP `code` field and is
-placed at the message's `--> line:col`, or, for an unlocated message, at
-the message's backticked name in the document text.
+expansion, impl lifting, closure inlining, `ta-annotate`, then
+`nc-check-program`) with its reports captured, and every one located in the
+document is published. Each diagnostic carries its `E_*` code in the LSP
+`code` field and is placed at the message's `--> line:col`, or, for an
+unlocated message, at the message's backticked name in the document text.
 
-One of the pipeline's checks is not run: `cc-check-program` (package
+Two of the pipeline's checks are not run: `cc-check-program` (package
 capability enforcement, §31.9, which needs the resolver's grant/deny
-sets). Nothing after type checking runs.
+sets) and `lin-check-program` (`linearity.zyl`, which raises
+`E_MOVE_VALUE`). Nothing after type checking runs.
 
 The symbol table is built BEFORE the checks run and kept whatever they
 say, so a document that fails exhaustiveness still offers hover,
@@ -85,7 +88,8 @@ identifier.
   non-ASCII character on the same line is off.
 - Each check before the type checker stops at its first problem, as a
   command-line build does. Type errors are all reported at once.
-- The package capability check (spec §31.9) is not run.
+- The package capability check (spec §31.9) and `linearity.zyl` are not
+  run, so a `set!` on a released binding is not reported in the editor.
 - Navigation is per document; workspace symbol search covers open
   documents only.
 - Opening a 150 KB document takes about 470 MB: the front end and the

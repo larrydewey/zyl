@@ -96,9 +96,10 @@ The self-hosted pipeline (`compile-to-asm` in
 3. module resolution and name qualification (`module_resolver.zyl`,
    `qualify.zyl`), which also converts the tree to `ExprInner`
 4. macro expansion (`macro_expand.zyl`)
-5. static checks: capabilities, duplicate definitions (including
-   prelude constructor names), arity and malformed forms, mutability,
-   match exhaustiveness, unused bindings, Secret taint
+5. static checks, the eight of them: capabilities, duplicate definitions
+   (including prelude constructor names), arity and malformed forms,
+   mutability, aliasing linearity, match exhaustiveness, unused bindings,
+   Secret taint
 6. derive expansion (`derive.zyl`) and impl lifting (`lift_impls.zyl`,
    each impl method becomes `Trait.method_Type`)
 7. closure inlining (`closure_inline.zyl`, now an identity pass)
@@ -106,15 +107,19 @@ The self-hosted pipeline (`compile-to-asm` in
    trait resolution, per-type specialization of trait-generic functions,
    generated structural `T.==`; every type error is reported, then the
    compile fails (§4.8)
-9. ICNF lowering (`icnf.zyl`)
-10. optimization (`optimization.zyl`): inlining of small functions and
+9. numeric check (`numeric_check.zyl`: `E_PARTIAL_OPERATION` for a `/` or
+   `%` whose divisor is not a nonzero literal)
+10. ICNF lowering (`icnf.zyl`)
+11. optimization (`optimization.zyl`): inlining of small functions and
     copy propagation (`opt-inline-fns`), then constant folding and
     dead-branch elimination (`opt-optimize-fns`)
-11. region inference (`ri-transform-fns`, then the escape analysis
+12. region inference (`ri-transform-fns`, then the escape analysis
     `rg-regions`)
-12. in-place reuse of unique, dead values (`reuse.zyl`)
-13. code generation (`codegen.zyl`; most functions through MIR and
-    linear-scan register allocation, `mir.zyl`), then linking with `cc`
+13. in-place reuse of unique, dead values (`reuse.zyl`)
+14. code generation (`codegen.zyl`; most functions through MIR and
+    linear-scan register allocation, `mir.zyl`), then linking: the Zyl
+    assembler and static ELF linker for a freestanding program, `cc` for
+    one that calls foreign code or carries native objects
 
 This differs from §22: module resolution precedes macro expansion, type
 checking and trait resolution run after derive expansion and impl
@@ -132,15 +137,15 @@ Core modules:
 
 | Module | Contents |
 |--------|----------|
-| core | identity, compose, arithmetic, bool, type-predicates, I/O |
-| collections | Vec, Map (deterministic iteration), Slice (zero-copy window on a Vec) |
-| text | StrView (zero-copy substring), Cursor (parsing position) |
+| core | identity, compose, arithmetic, comparison, type predicates, printing, and the `core/list`, `core/map`, `core/option`, `core/result`, `core/resource`, `core/property` modules |
+| collections | Vec, Set, IntMap, Slice (zero-copy window on a Vec), Assoc (deterministic iteration) |
+| text | StrView (zero-copy substring), Cursor (parsing position), format |
 | simd | I64x2, I32x4, U8x16 lane vectors (lane-wise add, sub, and, or, xor, eq, min, max, horizontal sum, get/set) |
-| option | Option (Some, None), is-some, unwrap, map |
-| result | Result (Ok, Err), is-ok, unwrap, map |
+| option | Option (Some, None), `option-is-some`, `option-unwrap`, `option-map`, `option-expect!` |
+| result | Result (Ok, Err), `result-is-ok`, `result-unwrap`, `result-map`, `result-expect!` |
 | io | file-open, file-read, file-write, file-close |
-| atomic | load, store, add |
-| actor | spawn, chan, chan-send, chan-recv |
+| atomic | `atomic-load`, `atomic-store`, `atomic-add`, and the rest of the atomic operations |
+| actor | spawn, chan, chan-send, chan-recv, actor-wait |
 | ffi | ffi-call, ffi-pin, ffi-unpin |
 | testing | test-suite, test, assert-*, test-property, run-tests |
 
@@ -182,11 +187,14 @@ stdlib module declares the capability it provides, which is how §31.9
 enforces capability grants at import time.
 
 In the repository the standard library lives in `stdlib/` (`actor`,
-`allocator`, `atomic`, `collections`, `compiler`, `core`, `ffi`, `io`,
-`lsp`, `math`, `mlib`, `repl`, `testing`, `text`), as package `zyl/std`. Option
-and Result are `stdlib/core/option.zyl` and `stdlib/core/result.zyl`. The
-capability each module needs is decided by `capability_check.zyl` from its
-module path, not declared by the module (see `16-package-system.md`).
+`allocator`, `atomic`, `collections`, `compiler`, `core`, `encoding`,
+`ffi`, `io`, `lsp`, `math`, `mlib`, `repl`, `simd`, `testing`, `text`),
+as package `zyl/std`. Option
+and Result are `stdlib/core/option.zyl` and `stdlib/core/result.zyl`.
+
+The declaration §25 describes is not what the compiler reads: a module's
+capability is decided by `capability_check.zyl` from its module path,
+not declared by the module (see `16-package-system.md`).
 
 ---
 

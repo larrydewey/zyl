@@ -112,7 +112,7 @@ iterated, so no output depends on the addresses themselves.
 | Bug | Symptom | Fix |
 |-----|---------|-----|
 | `ic-binop` with 3+ args lowered to 0 | Stage 2 size computations wrong | `ic-binop-fold` (left-associative fold) |
-| `icnf-arm-size` with multiple calls | Match arms with 2+ calls computed 0 | One-call-per-arm rule + `icnf-add2`; `E_MATCH_ARM_COMPLEX` guard |
+| `icnf-count-arm-slots` with multiple calls | Match arms with 2+ calls computed 0 | One-call-per-arm rule + `icnf-add2`; `E_MATCH_ARM_COMPLEX` guard |
 | `ic-fresh-id` returned a heap pointer | The same binary gave different output on two runs | A deterministic id (now `zyl_fresh_id`) |
 | String equality compared pointers | Fixed point broke as allocation order shifted between stages | `zyl_cstr_eq` for String-kind operands |
 | Wildcard arm compared tag -1 | A catch-all arm never matched and returned 0 | Wildcard arms skip the tag check |
@@ -253,7 +253,7 @@ What was tracked here as future work is done:
 
 1. ✅ All Zyl passes verified through the fixed point, and through the
    full regression suite (43/43 via the self-hosted compiler at the
-   time of eviction; 352 tests now)
+   time of eviction; 495 tests now)
 2. ✅ `src/` archived to `archive/rust-bootstrap-2026/` (self-contained,
    with its own `Cargo.toml`), later removed from the tree (git history
    at `b8bc283`)

@@ -58,8 +58,13 @@ zyl <file.zyl> [-o out] [--emit-asm]   compile one file
 zyl new <name>                         create a package
 zyl add <name> [version]               add a dependency
 zyl fetch                              resolve, verify and populate the store
-zyl build [--locked]                   compile this package
+zyl build [--locked] [--sign-with key]  compile this package
+  --sign-with <key>                      append a signed provenance trailer
 zyl test                               compile and run this package
+zyl verify <binary> [--key k] [--package p] [--anchored]  check a signed trailer
+  --key <hex|file>                       an Ed25519 public key supplied out of band (ATTESTED)
+  --package <name>                       the key pinned for that package (VERIFIED)
+  --anchored                             fail unless a pinned key was used
 zyl update                             re-resolve and rewrite zyl.lock
 zyl vendor                             copy the graph into ./vendor
 zyl audit                              report capabilities per package
@@ -68,6 +73,10 @@ zyl key                                show or create the publisher key
 zyl repl                               start an interactive session
 zyl eval <file.zyl>                    run a program without building one
 zyl doc [file.zyl | dir] [-o out.md]   Markdown from doc comments
+zyl check [file.zyl | dir ...]          type-check without building; the fast edit loop
+zyl fmt [file.zyl ...] [--check]      reindent to paren depth (--check: report only)
+zyl explain [CODE]                     what a diagnostic means and where it is raised
+zyl balance [file.zyl | dir ...]       check brackets, strings and top-level structure
 ```
 
 A first argument ending in `.zyl`, or starting with `-`, means "compile
@@ -111,6 +120,32 @@ does links with `cc -no-pie`, `rt.o` and `-lpthread` (Chapter 29,
 `zyl eval file.zyl` runs a program through the REPL's interpreter
 instead: no assembly, no linker, a few milliseconds for a small
 program. Actors and channels run as in a compiled program.
+
+`zyl check [file.zyl | dir ...]` is the fast edit loop: it runs the
+same front end a build does — parse, module resolution, macro expansion,
+every check, derive expansion, impl lifting and type inference — and
+stops there, with no code generation and no link. A clean check means
+the program builds. A file under `tests/compile-fail/` is skipped, and
+the skip is reported. A standard-library module cannot be checked on its
+own: it is a module, not a program, so `zyl check` declines and points
+at `zyl build`.
+
+`zyl explain CODE` says what a diagnostic means, which phase raises it,
+and — for the thirty most common codes — shows a wrong program and its
+fix; `zyl explain` alone lists every code by phase. The examples are
+compiled by the test suite, so they stay true.
+
+`zyl fmt [file.zyl ...]` reindents source to its paren depth and is a
+no-op on formatted code; `--check` reports the files it would change and
+exits 1 without writing. It never adds or removes a delimiter, so it
+cannot repair a broken form: run `zyl balance` for that.
+
+`zyl verify <binary>` reads the signed provenance trailer that
+`zyl build --sign-with <key>` appends and reports what it can re-derive
+(the image hash, every hash in the `.buildinfo`) apart from what it can
+only attest. `--key` checks against a key you supply, `--package` against
+the key pinned for a package, and `--anchored` fails anything weaker than
+a pinned key.
 
 `zyl balance [file.zyl | dir ...]` checks delimiters, strings and the
 top-level layout (spec §1.6) without compiling: every `.zyl` file under
@@ -272,7 +307,7 @@ What it contributes:
 - two languages: `zyl` for `.zyl` files and `zyl-pkg` for `zyl.pkg`
   manifests, each with its own TextMate grammar, so a manifest is never
   compiled as a program
-- seventeen snippets
+- nineteen snippets
 - tasks: a `zyl` compile task per open `.zyl` file, and `build`, `test`
   and `fetch` for every `zyl.pkg` in the workspace
 - commands: **Zyl: Run Current File** (`Ctrl+Shift+Enter`), which
@@ -427,7 +462,7 @@ what the assertions describe.
 
 ```bash
 ./run_regression_tests.sh --filter lsp          # the protocol test
-./run_regression_tests.sh --full --filter interpreter  # REPL interpreter vs compiled output
+./run_regression_tests.sh --full --no-boot --filter interpreter  # REPL interpreter vs compiled output
 ```
 
 The protocol test runs in both quick and full mode.

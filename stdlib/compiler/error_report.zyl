@@ -171,6 +171,30 @@
 (defn err-at (code msg fid off help)
   (err-at-labels code msg fid off Nil help))
 
+; A diagnostic with no source to point at: a package or CLI failure, which
+; is about a manifest, a store or a command line rather than a line in a
+; file. It renders as `error[CODE]: msg` and nothing else -- no snippet,
+; because there is none -- so the driver's report path recognises it as a
+; finished diagnostic instead of printing `PANIC:` in front of it and
+; walking its own backtrace out of a message that has no frames in it.
+(defn err-nowhere (code msg)
+  (err-stop (err-diag "error" code msg err-no-file -1 Nil "")))
+
+; A FileId with nothing behind it, so an unlocated diagnostic still has
+; one to carry; the offset is -1, which err-text reads as "there is no
+; line here" and prints no snippet for. Registering the empty source once
+; is cheaper than teaching the renderer a second shape.
+(def err-no-file (ffi-call "zyl_source_register" "" "" 1000))
+
+; Print it and leave, the way zyl_panic leaves -- and polymorphic in what
+; it "returns", so err-nowhere drops into a position of any type exactly
+; where a zyl_panic used to. What it does NOT do is prepend `PANIC:` and
+; walk a backtrace: there are no frames here to name but the compiler's
+; own, and they say nothing about the manifest that was wrong.
+(defn err-stop (text)
+  (let _ (ffi-call "zyl_warn_emit" text 1000)
+    (ffi-call "zyl_exit" 1 1000)))
+
 (defn err-at-labels (code msg fid off labels help)
   (err-diag "error" code msg fid off labels help))
 

@@ -36,17 +36,18 @@ which the `zyl` CLI, `zyl eval` and the REPL all call. Abridged:
     (dc-check-program exprs)      ; duplicate definitions
     (ac-check-program exprs)      ; arity
     (mc-check-program exprs)      ; mutability / aliasing
+    (lin-check-program exprs)     ; a resource is released once
     (ec-check-program exprs)      ; exhaustiveness
     (uc-check-program exprs)      ; unused bindings (warnings)
     (sc-check-program exprs)      ; Secret
     0))
 
-(defn lower-exprs (arena exprs0)
-  (let exprs (dv-expand-program exprs0)                           ; derive
-    (lower-after-mono arena (lift-impls exprs))))                 ; lift impl bodies
+(defn lower-exprs (exprs0)
+  (let exprs (dv-expand-program exprs0)    ; derive
+    (lift-impls exprs)))                   ; lift impl bodies
 
 ;; lower-after-mono: closure inlining -> type checking (ta-annotate)
-;;                   -> ICNF -> inlining -> optimization
+;;                   -> numeric check -> ICNF -> inlining -> optimization
 ;;                   -> region inference -> in-place reuse
 ;; compile-to-fns  = compile-to-exprs + lower-exprs   (stops at ICNF)
 ;; compile-to-asm  = compile-to-fns + codegen (MIR or the stack machine)
@@ -105,7 +106,7 @@ when `expr_inner.zyl` converts `Ast` to `Expr`.
   (ESpawn Expr)
   (ESend Expr Expr)                     ; chan-send
   (ETryCatch Expr String Expr)
-  ...                                   ; 83 variants in all, including
+  ...                                   ; 79 variants in all, including
   (ELoadByte Endian Expr Expr)          ; the byte and atomic primitives
   (EAtomicCAS Expr Expr Expr Expr))
 
@@ -282,10 +283,23 @@ the lowering rules. The entry points are:
 
 ## 30.7 Testing Compiler Passes
 
-The compiler's modules are ordinary library modules, so a test can
-`use` them and drive a pass directly. Here is a complete, compiling
-read-only pass — it counts the binary operations in a lowered program,
-before and after optimization:
+The compiler's modules are ordinary library modules, so a program can
+`use` them and drive a pass directly. One thing sets such a program
+apart: the compiler keeps its parse tree in a raw arena, which outlives
+any one call, and a raw arena is exactly what an ordinary program may
+not create (`arena-create` is `E_FFI_RESTRICTED`, spec G2). The driver
+therefore compiles a short list of entry files in the compiler's
+**internal mode**, which lifts that restriction: the compiler, the
+language server and the REPL, and the repository's compiler tests
+(`cli-internal-entries` in `selfhost/driver.zyl` lists them, matched by
+path suffix such as `regression/compiler.zyl`). A pass you write is
+tested the same way: add its test file to that list, rebuild with
+`./boot.sh`, and the file compiles in internal mode.
+
+Here is a complete read-only pass — it counts the binary operations in a
+lowered program, before and after optimization. Compiled as an ordinary
+file it stops at `arena-create` with `E_FFI_RESTRICTED`; as an internal
+entry it prints the two counts:
 
 ```lisp
 (use allocator/allocator)
@@ -314,6 +328,8 @@ before and after optimization:
     (Nil 0)
     (Cons h t (+ (count-binops h) (count-binops-list t)))))
 
+;; An internal entry. Compiled as an ordinary program this stops at
+;; `arena-create` with E_FFI_RESTRICTED, which is what internal mode lifts.
 (defn main ()
   (let arena (arena-create 1048576)
     (let prog (zyl-parse arena "(defn main () (begin (print (+ (* 2 3) 4)) (print (if (< 1 2) 10 20)) 0))")
@@ -341,6 +357,8 @@ the repository uses:
 (use compiler/lexer)
 (use compiler/parser)
 
+;; Also an internal entry: as an ordinary program `arena-create` below is
+;; E_FFI_RESTRICTED, so this file compiles only with --internal-module.
 (test "parse-nested-ast"
   (let arena (arena-create 0)
     (let prog (zyl-parse arena "(defn f (x) (* x x))")
@@ -463,8 +481,10 @@ small wrapper ADT (`CGR`, `CGE`, `CGP`) and the caller destructures it.
   first thing to suspect when compile time grows with nesting depth.
 - **Allocate from the arena.** Compiler memory comes from one arena per
   compile (1 GiB reserved by the driver) and is never freed during the
-  compile; the native backend's per-function tables are the exception,
-  in an arena reset before each function (`mir-reset`). A self-compile
+  compile; the native backend's per-function tables are the exception —
+  liveness, intervals and the allocation come from region-allocated word
+  arrays (`w-alloc`) and a region `Array`, so they cost nothing to
+  release. A self-compile
   allocates somewhat over 2 GB in all, which is why `./boot.sh` caps a
   stage at 4 GB. An allocation failure reports `E_OUT_OF_MEMORY`, and a memory
   budget (`ZYL_MAX_MEMORY`, else 80% of available memory) stops a

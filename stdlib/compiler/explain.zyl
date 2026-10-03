@@ -197,7 +197,14 @@
           (print "")
           (match (exn-find code (explain-notes))
             (Some x (print-note x))
-            (None (print (str-concat "  " (ec-message c)))))
+            (None (begin
+                    (print (str-concat "  " (ec-message c)))
+                    (if (= (ec-severity c) 2)
+                      (begin
+                        (print "")
+                        (print (str-concat "  a warning: the build goes on. To fix it, "
+                          (str-concat (ex-fix-text code) "."))))
+                      unit))))
           (print-site-block sites)
           0)))))
 
@@ -310,8 +317,57 @@
 (defn explain-list ()
   (begin
     (print "zyl explain CODE: what a code means, with a wrong program and its fix.")
+    (print "zyl explain warnings: the codes that do not stop the build.")
     (print-phases (error-codes) 0)
     0))
+
+; ---------------------------------------------------------------------------
+; The warnings
+; ---------------------------------------------------------------------------
+
+; `zyl explain warnings`: the codes whose severity is 2. They report
+; something worth fixing and do not stop the build, which is the one
+; question a reader has when a code they have never seen turns out to be
+; spelled `warning[...]` -- and the one that is cheapest to answer badly,
+; because a code with no explanation reads as a failure.
+(defn explain-warnings ()
+  (begin
+    (print "Warnings: reported, and the build goes on. Each line says what to do.")
+    (print-warnings (error-codes) 0)
+    (print "")
+    (print "They are also listed in docs/errors.md; `zyl explain CODE` explains one.")
+    0))
+
+(defn print-warnings (codes n)
+  (match codes
+    (Nil unit)
+    (Cons h t
+      (begin
+        (if (= (ec-severity h) 2)
+          (let _ (print (warn-line h))
+            (print-warnings t (+ n 1)))
+          (print-warnings t n))))))
+
+(defn warn-line (c)
+  (str-concat "  " (str-concat (ec-name c) (str-concat "  " (str-concat (ex-fix-text (ec-name c))
+    (str-concat " -- " (ex-short-meaning c)))))))
+
+; What to do about it. A note's corrected program is the fix where there
+; is one; otherwise the advice is written out here, because a warning that
+; names no action is the one a reader cannot act on.
+(defn ex-fix-text (code)
+  (match (exn-find code (explain-notes))
+    (Some x (exn-fix x))
+    (None (ex-warn-fix code))))
+
+(defn ex-warn-fix (code)
+  (if (str-eq code "W_UNUSED_PARAMETER") "remove it, or prefix it with `_` to mark it deliberately unused"
+  (if (str-eq code "W_UNUSED_VARIABLE") "remove it, or prefix it with `_` to mark it deliberately unused"
+  (if (str-eq code "W_SHADOWED_BINDING") "rename one of the two bindings"
+  (if (str-eq code "W_RECOVER_SHADOW") "move the arm before the one that catches every error"
+  (if (str-eq code "W_PANIC_UNMARKED") "rename it `name!` so callers can see it may stop the program, or return an Option"
+  (if (str-eq code "E_ZEROIZE_MISSING") "call `zeroize`/`zeroize-bytes` on it, or let the function pass it on unchanged"
+      "see docs/errors.md")))))))
 
 ; One heading per phase, in catalog order (the catalog is sorted by phase).
 (defn print-phases (codes last)
@@ -411,6 +467,9 @@
 (defn exn-meaning (x) (match x (ExN _ m _ _ m)))
 (defn exn-wrong (x) (match x (ExN _ _ w _ w)))
 (defn exn-right (x) (match x (ExN _ _ _ r r)))
+; What to do about it, when the note says. A warning that names no action
+; is the one a reader cannot act on.
+(defn exn-fix (x) (match x (ExN _ _ _ f f)))
 
 (defn explain-notes ()
   (Cons (ExN "E_TYPE_MISMATCH" "A value has a different type from the one this place needs."

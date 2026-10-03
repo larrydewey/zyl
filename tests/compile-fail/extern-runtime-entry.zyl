@@ -1,0 +1,9 @@
+; expect-error: E_FFI_RESTRICTED
+; expect-at: extern-runtime-entry.zyl:7:1
+; A runtime entry's type comes from the compiler's signature table. The
+; extern is what is wrong, so the diagnostic points at the extern -- not
+; at every ffi-call to the symbol, which located the reader's mistake in
+; stdlib/core/show.zyl, a line they never wrote.
+(extern "zyl_int_text" (Int) Int)
+
+(defn main () 0)

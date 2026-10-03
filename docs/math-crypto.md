@@ -2,12 +2,15 @@
 
 Every algorithm under `stdlib/math/` is pure Zyl, with two exceptions
 that call into the runtime (`runtime/rt/crypto.zyl`): AES (hardware AES-NI only,
-`zyl_aesni_available` / `zyl_aes_encrypt_block`) and system entropy
+`zyl_aes_encrypt_block`; the probe `zyl_aesni_available` is in
+`runtime/rt/cpu.zyl`) and system entropy
 (`zyl_random_words`, which uses `getrandom(2)`). Beyond those, the
 library calls the runtime only for plumbing: `math/words` keeps its
-arrays as bounds-checked `Words` handles (`zyl_words_new`, `_get`,
-`_set`, `_len`, `_view`) and reads string bytes through `zyl_cstr_len` /
-`zyl_cstr_byte_at`, and `zeroize` erases memory through `zyl_zeroize`.
+arrays as bounds-checked `Words` handles (`zyl_words_alloc`, `_get`,
+`_set`, `_len`, `_view_r`) and reads string bytes through `zyl_cstr_len` /
+`zyl_cstr_byte_at`, and `zeroize-bytes` erases through `zyl_zeroize`
+(`zeroize` writes its zeros with `w-set`, a call into the runtime's
+bounds-checked `zyl_words_set`, which no compiler can delete as dead).
 
 `(use math/math)` imports the whole tree; importing only the modules a
 program uses keeps its compile time and binary smaller.
@@ -36,7 +39,7 @@ mebibytes cannot afford an 8x expansion.
 | Module | Provides |
 |---|---|
 | `math/bits` | 32/64-bit word ops, rotations, unsigned compare, byte packing |
-| `math/words` | fixed-size arena-backed Int arrays, hex and string conversion |
+| `math/words` | fixed-size region-backed Int arrays, hex and string conversion |
 | `math/secret/secret` | `ct-eq`/`ct-ne`/`ct-select`/`ct-mask`, `zeroize` |
 | `math/bignum/bignum` | fixed-width naturals: add, sub, mul, shifts, byte conversion |
 | `math/bignum/montgomery` | Montgomery multiplication, constant-time `mont-exp` |
@@ -136,7 +139,7 @@ python3 verify/crypto.py                                    # vs hashlib + pyca
   as S-expressions. They are excluded from the suite's
   interpreter-agreement section, which would take minutes of interpreted
   arithmetic.
-- `tests/compile-fail/secret-*.zyl` (10 files) are programs the Secret
+- `tests/compile-fail/secret-*.zyl` (13 files) are programs the Secret
   checker must reject; `tests/regression/secret-capability.zyl` is the
   accepting side.
 - `tests/integration/math-protocol.zyl` runs a miniature authenticated
@@ -152,10 +155,19 @@ python3 verify/crypto.py                                    # vs hashlib + pyca
 
 ## Not implemented
 
-- Automatic zeroization of heap memory. A function whose frame holds a
-  secret has the frame zeroed on return, but heap erasure is still
-  explicit `zeroize` (or `wipe`), with an `E_ZEROIZE_MISSING` warning
-  when a function consumes a `Secret` into a public result without it.
+- Automatic erasure of anything a developer had to place. A `Secret`
+  parameter, a secret-returning function and any function binding a
+  secret-derived `let` already wipe their whole frame on return
+  (`rep stosq`, result kept in a register, no tail calls). What is *not*
+  automatic is a secret in a region block: a released block is NOT wiped
+  (`rt-release-block` returns it to its size-class pool), so a secret
+  left in a frame outlives the frame in memory, and erasure there is
+  still an explicit `zeroize` (or `wipe`) with an `E_ZEROIZE_MISSING`
+  warning when a function consumes a `Secret` into a public result
+  without it. `docs/secret-erasure-design.md` is the plan to stop making
+  the developer do that: fill a released block with zero instead of
+  `0xDE`, zero the register copies the frame wipe cannot reach, then
+  insert erasure where escape analysis proves a value dies.
   Redaction exists only inside records: a derived `Show` or `Debug`
   prints a `Secret` field, or a value of a type implementing the
   `Secret` trait, as `<secret>` (book chapter 33.6), but `print` of a

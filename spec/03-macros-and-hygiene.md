@@ -108,8 +108,14 @@ gaps are recorded here, not papered over.
   expressions the expander rewrites (`me-rewrite-list-acc`), `,@name`
   is replaced by those arguments (`me-splice-of`); `me-kids` then
   rejects a changed count unless the node takes any number of children
-  (`me-variadic`: calls, `begin`, `print`, constructors, `ffi-call`,
-  `setup`, `teardown`). The parameter as a value becomes the `Cons`
+  (`me-variadic`: a call, `begin`, `print`, `ffi-call`, and a form the
+  post-processor did not recognise). A splice that would change how many
+  fields a constructor is given is `E_MALFORMED_FORM` with its own
+  message (`me-check-ctor-splice`), which is what §19.1's "a constructor
+  included" means in practice: `make-Name`, `make-variant` and an ADT
+  constructor all refuse it. `setup` and `teardown`, which §19.1 also
+  lists, are desugared into ordinary forms as the file is read, so a macro
+  that produced either would be `E_MALFORMED_FORM`. The parameter as a value becomes the `Cons`
   chain of its arguments (`me-list-expr`), built from `core/list`'s own
   `Cons` and `Nil`, which `me-find-prelude-list` reads from the
   program's resolved `deftype`. In a template, `(unquote x)` is replaced

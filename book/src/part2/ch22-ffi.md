@@ -38,6 +38,8 @@ ffi-call ::= "(" "ffi-call" String Expression* Timeout ")"
 - `timeout-ms`: the last argument, the timeout in milliseconds, which must be a positive integer literal.
 
 ```lisp
+(capabilities ffi)
+
 (extern "abs" (Int) Int)
 (extern "strlen" (String) Int)
 (extern "puts" (String) Int)
@@ -53,7 +55,7 @@ ffi-call ::= "(" "ffi-call" String Expression* Timeout ")"
 **The last argument is always the timeout, and it is checked.** `ffi-check-call` (`arity_check.zyl`, also run by ICNF lowering) rejects a call whose symbol is not a string literal with `E_FFI_SYMBOL_REQUIRED`, and a call whose last argument is not a positive integer literal with `E_FFI_TIMEOUT_REQUIRED`. The literal requirement is what keeps a forgotten timeout from silently consuming the real last argument:
 
 ```
-PANIC: error[E_FFI_TIMEOUT_REQUIRED]: the call to `abs` has no timeout: its last argument is not a positive integer literal
+error[E_FFI_TIMEOUT_REQUIRED]: the call to `abs` has no timeout: its last argument is not a positive integer literal
   --> magnitude.zyl:1:21
    |
  1 | (defn magnitude (n) (ffi-call "abs" n))
@@ -89,7 +91,7 @@ error[E_CANNOT_INFER]: no type for ffi-call to `abs`, which has no (extern ...) 
 
 The types must be concrete and must fit in one machine word:
 
-- `Int`, `Bool`, `String`, `Unit` (for a `void` result), declared ADTs and structs (passed as a pointer), and the runtime's handle types: `Ptr` (an opaque address, as `alloc-malloc` returns, that Zyl code can only pass back to C or to the `alloc-` functions), `Arena`, `Fd` and the rest listed in `stdlib/compiler/ffi_sigs.zyl`.
+- `Int`, `Bool`, `String`, `Unit` (for a `void` result), declared ADTs and structs (passed as a pointer), and the runtime's handle types: `Ptr` (an address, as `bytebuf-ptr` returns, that Zyl code can only pass back to C), `Fd` and the rest listed in `stdlib/compiler/ffi_sigs.zyl`. `Ptr` is a spelling for `Int` in a signature: an address is a machine word, and the runtime's own entry for it is the identity function. What is enforced is where an address may come from -- `bytebuf-ptr`, `ffi-pin`, or a foreign call -- never from memory no region accounts for, since `alloc-malloc` and the arena wrappers are `E_FFI_RESTRICTED`.
 - `(Fn (A ...) R)` is a C function pointer: a top-level Zyl function passed as a callback (§22.9), whose parameters take the types `A ...`.
 - No `Float`: the timed bridge passes every argument in an integer register (§22.5).
 - No type variables: `(extern "abs" (a) b)` would let any value become any other, so it is `E_TYPE_MISMATCH`. There is no unsafe cast form in Zyl, and `extern` is not one.
@@ -155,7 +157,7 @@ int64_t ml_divmod(int64_t a, int64_t b, int64_t *rem) { *rem = a % b; return a /
     (print (+ (* q 10) (ffi-unpin rem)))))    ; 32
 ```
 
-It frees nothing, so the same slot can be read more than once. A pointer that did not come from the Pin arena prints `zyl: ffi-unpin: pointer not from ffi-pin/Pin arena` to stderr, and the result is 0. A buffer of more than one word does not fit in a slot; allocate it with `alloc-malloc` or `arena-alloc-zeroed`, a `Ptr` (§22.8).
+It frees nothing, so the same slot can be read more than once. A pointer that did not come from the Pin arena prints `zyl: ffi-unpin: pointer not from ffi-pin/Pin arena` to stderr, and the result is 0. A buffer of more than one word does not fit in a slot; allocate a `(bytebuf Heap N)` and pass `bytebuf-ptr` of it, a `Ptr` (§22.8). `alloc-malloc` and `arena-alloc-zeroed` are `E_FFI_RESTRICTED`: a program cannot allocate memory that no region accounts for.
 
 ### The Pin arena
 
@@ -183,7 +185,7 @@ What the compiler checks (the type pass, `type_annotate.zyl`, and `mutability_ch
 
 ```
 error[E_FFI_TYPE_NOT_PINNABLE]: a function cannot be pinned: FFI_Pinnable types are Int, Float, Bool, String and data built from them
-PANIC: E_INVALID_CAPABILITY: ffi-call argument is a closure, which is not FFI_Pinnable (Int/Float/Bool/String/composed only) -- pin its result data explicitly instead of passing the closure itself
+error[E_INVALID_CAPABILITY]: ffi-call argument is a closure, which is not FFI_Pinnable (Int/Float/Bool/String/composed only) -- pin its result data explicitly instead of passing the closure itself
 ```
 
 Passing raw `Int` and `String` values directly, as in §22.2, is the idiom the standard library and the compiler itself use throughout. Rule R4 is not enforced.
@@ -197,9 +199,9 @@ Every argument travels as one 64-bit word in an integer register, and the result
 | `Int` | the integer | `int64_t` / `long long` |
 | `Bool` | 1 or 0, as a 64-bit word | `int64_t` |
 | `String` | pointer to NUL-terminated UTF-8 bytes | `const char *` |
-| a buffer from `alloc-malloc` | the raw pointer, a `Ptr` | `char *` / `void *` |
+| a `(bytebuf Heap N)` | `bytebuf-ptr` of it, a `Ptr` | `char *` / `void *` |
 | struct / ADT value | pointer to a heap record `[tag][field0][field1]...` | `const int64_t *` (layout is internal) |
-| `Vec` | pointer to a heap record `[tag][data][len][cap][arena]` | internal layout; avoid |
+| `Vec` | pointer to a record `[tag][storage][len]`, the storage a runtime array | internal layout; avoid |
 | `(ffi-pin v)`, a `(Pin a)` | pointer to an 8-byte slot holding `v`'s word | `int64_t *` |
 | `Float` | the IEEE-754 bits **in an integer register** | see below |
 
@@ -275,6 +277,10 @@ int64_t ml_deref(const int64_t *slot) { return *slot * 2; }
 
 ### Zyl code (`mathlib.zyl`)
 
+The `ffi` and `native` grants come from the package's `zyl.pkg` above, not
+from a line in this file: in a manifested package the grant belongs to the
+manifest, and writing `(capabilities ...)` in a module of one is an error.
+
 ```lisp
 (use allocator/allocator)
 
@@ -288,12 +294,13 @@ int64_t ml_deref(const int64_t *slot) { return *slot * 2; }
 
 (defn count-char (s c) (ffi-call "ml_count_char" s c 1000))
 
-(defn reverse-string (s)
-  (let buf (alloc-malloc 256)
-    (let _ (ffi-call "ml_reverse" s buf 256 1000)
-      (let out (str-concat "" (alloc-cstr buf))
-        (let _ (alloc-free buf)
-          out)))))
+(defn reverse-string ((s String))
+  (let buf (bytebuf Heap 256)
+    (let p (bytebuf-ptr buf)
+      (let _ (ffi-call "ml_reverse" s p 256 1000)
+        ; Copy out while the buffer is alive; there is no free to call,
+        ; because a region owns this storage.
+        (str-concat "" (alloc-cstr p))))))
 
 (defn main ()
   (begin
@@ -317,7 +324,7 @@ reversed: olleh
 HOME=/home/larry
 ```
 
-`alloc-malloc` returns a `Ptr`, so `ml_reverse` is declared to take one for `dst`. `(alloc-cstr buf)` reads the buffer as a `String` without copying it, and `(str-concat "" ...)` copies it into a fresh Zyl string before the buffer is freed.
+`bytebuf-ptr` returns a `Ptr`, so `ml_reverse` is declared to take one for `dst`. `(alloc-cstr p)` reads the buffer as a `String` without copying it, and `(str-concat "" ...)` copies it into a fresh Zyl string while the buffer is still alive. Nothing is freed by hand: the buffer is a `(bytebuf Heap 256)`, so the region that owns it reclaims it when the frame returns.
 
 ## 22.7 Timeout Enforcement
 
@@ -338,13 +345,18 @@ E_FFI_TIMEOUT: ffi call `usleep` exceeded its timeout of 50 ms
 This is an ordinary panic: `try`/`catch` catches it, and `recover` (or `zyl_err_is`) matches it by code.
 
 ```lisp
+(capabilities ffi)
+
 (extern "usleep" (Int) Int)
 (extern "abs" (Int) Int)
 
 (defn slow-call () (ffi-call "usleep" 300000 50))   ; 300 ms against 50 ms
 
-(print (try (slow-call) (catch e 0)))               ; 0
-(print (ffi-call "abs" -9 1000))                    ; 9: the next call works normally
+(defn main ()
+  (begin
+    (print (try (slow-call) (catch e 0)))            ; 0
+    (print (ffi-call "abs" -9 1000))                 ; 9: the next call works normally
+    0))
 ```
 
 **The C function is abandoned, not killed.** Stopping a running C function safely is impossible in general (it may hold a lock or be halfway through a write), so its worker is left to finish on its own and then frees itself; the caller gets a fresh worker for its next call. Nothing the abandoned call was handed is reclaimed: Pin slots are never freed individually, and once any call has been abandoned, the arena teardown at process exit is skipped. A C function that never returns therefore leaks one thread, but no longer hangs the caller.
@@ -366,22 +378,24 @@ Strings are passed by pointer to their bytes. C may read them but must not keep 
 Allocate a buffer, pass the pointer, copy the result out, and free the buffer. This is the pattern `reverse-string` uses above:
 
 ```lisp
+(capabilities ffi)
 (use allocator/allocator)
 
 (extern "c_fill_buffer" (Ptr Int) Int)
 
-(let buf (alloc-malloc 1024)
-  (let _ (ffi-call "c_fill_buffer" buf 1024 1000)
-    (let data (str-concat "" (alloc-cstr buf))   ; copy out as a Zyl string
-      (let _ (alloc-free buf)
-        data))))
+(let buf (bytebuf Heap 1024)
+  (let p (bytebuf-ptr buf)
+    (let _ (ffi-call "c_fill_buffer" p 1024 1000)
+      (str-concat "" (alloc-cstr p)))))   ; copy out as a Zyl string
 ```
 
-`alloc-malloc` and `alloc-free` wrap `malloc` and `free`, and take and return `Ptr`. They come from `allocator/allocator`, which must be `use`d, as does `alloc-cstr`.
+The buffer is a `(bytebuf Heap N)` and `bytebuf-ptr` gives its address, so no allocation call appears here at all -- which is the point: `alloc-malloc` and `alloc-free` are `E_FFI_RESTRICTED`, because their results are words no type follows. `alloc-cstr` (which reads bytes at an address) does come from `allocator/allocator`, which must be `use`d.
 
 ### C allocates, Zyl frees
 
 ```lisp
+(capabilities ffi)
+
 (extern "strdup" (String) String)
 (extern "free" (String) Unit)
 
@@ -407,6 +421,8 @@ A top-level function named as an `ffi-call` argument is passed as its code addre
 When C needs to deliver events without calling back, have Zyl poll a C function that returns an integer code:
 
 ```lisp
+(capabilities ffi)
+
 (extern "c_poll_event" () Int)
 
 (defn poll-loop (n)
@@ -420,13 +436,24 @@ When C needs to deliver events without calling back, have Zyl poll a C function 
 
 ## 22.10 Linking
 
-A single-file compile always links with the same command:
+A program that calls foreign code links over libc's C runtime, so the
+link reaches libc, libpthread and the runtime's own `zyl_*` symbols:
 
 ```bash
 cc -no-pie prog.s rt.o -o prog -lpthread
 ```
 
-`rt.o` is the Zyl runtime (`runtime/rt/`), which `./boot.sh` assembles from the committed seed `build/boot/rt.s` and `install.sh` copies. The link reaches libc, libpthread and the runtime's own `zyl_*` symbols. Besides `-o <file>` and `--emit-asm`, the command line accepts only `--contracts=P` and `--error-format=json`: there is no way to add object files, libraries or `-lm`, and any other word after the source file is taken as the output path. A symbol that is not found is an ordinary linker error, `undefined reference to 'name'`.
+`rt.o` is the Zyl runtime (`runtime/rt/`), which `./boot.sh` assembles
+from the committed seed `build/boot/rt.s` and `install.sh` copies. A
+program with no foreign `ffi-call` and no native objects takes the other
+path: the compiler assembles and links it itself, against the cached
+`rt.zo`, with no `cc`, `as` or `ld` and no libc at all (Chapter 26).
+
+Besides `-o <file>` and `--emit-asm`, the command line accepts only
+`--contracts=P` and `--error-format=json`: there is no way to add object
+files, libraries or `-lm`, and any other word after the source file is
+taken as the output path. A symbol that is not found is an ordinary
+linker error, `undefined reference to 'name'`.
 
 Two ways to link your own C:
 
@@ -442,16 +469,27 @@ Two ways to link your own C:
 
 ## 22.11 Capabilities
 
-In a package with a `zyl.pkg`, a foreign `ffi-call`, `ffi-pin`, `ffi-unpin`, and any call into `stdlib/ffi`, require the `ffi` capability (§31.9). Shipping C sources requires `native` as well:
+A foreign `ffi-call`, `ffi-pin`, `ffi-unpin`, and any call into `stdlib/ffi`, require the `ffi` capability (§31.9). Shipping C sources requires `native` as well. In a package the grant is a line of `zyl.pkg`:
 
 ```
-PANIC: error[E_PKG_CAPABILITY_VIOLATION]: package me/mathy uses ffi in my-abs without declaring it in zyl.pkg
+error[E_PKG_CAPABILITY_VIOLATION]: `ml_factorial` needs the ffi capability, and package demo/mathlib declares only native
+  --> mathlib.zyl:9:21
+   |
+ 9 | (defn factorial (n) (ffi-call "ml_factorial" n 1000))
+   |                     ^
+   = note: a program names what it may do, so a reader sees it at the top
+   = help: add `(capabilities native ffi)` to zyl.pkg
 ```
 
 A lone file declares the grant itself with a top-level `(capabilities ffi)`; without it the file may not call foreign code:
 
 ```
-PANIC: error[E_PKG_CAPABILITY_VIOLATION]: `system` needs the ffi capability, and this file declares none
+error[E_PKG_CAPABILITY_VIOLATION]: `system` needs the ffi capability, and this file declares none
+  --> run.zyl:3:5
+   |
+ 3 |     (ffi-call "system" "ls" 1000)
+   |     ^
+   = note: a program names what it may do, so a reader sees it at the top
    = help: add `(capabilities ffi)` at the top of the file
 ```
 
@@ -467,7 +505,7 @@ An `ffi-call` of a `zyl_*` runtime entry is the language's own and needs no gran
 | Calls are bounded by a timeout | holds for foreign symbols: an overrunning call raises `E_FFI_TIMEOUT` and is abandoned (§22.7) |
 | C cannot corrupt Zyl memory (G5) | **not enforced**: C runs unrestricted in the process |
 | Symbol names cannot inject assembly | holds: names are sanitised |
-| FFI use is declared per package | holds for `defn`/`def` bodies in manifest-bearing packages (§22.11) |
+| FFI use is declared | holds for packages (in `zyl.pkg`) and lone files (a top-level `(capabilities ffi)`) (§22.11); a lone file that declares nothing has no `ffi` |
 | Correct argument types | checked against the `extern` declaration (§22.2); the declaration itself is trusted, not compared with the C prototype |
 | Floats | rejected in `extern` types |
 
@@ -482,7 +520,7 @@ An `ffi-call` of a `zyl_*` runtime entry is the language's own and needs no gran
 | `E_FFI_TYPE_NOT_PINNABLE` | a function passed to `ffi-pin` |
 | `E_INVALID_CAPABILITY` | an inline closure passed to `ffi-call` |
 | `E_FFI_PIN_REQUIRED` | a `Secret` passed to `ffi-call` without `ffi-pin` |
-| `E_PKG_CAPABILITY_VIOLATION` | FFI used in a package that does not declare `ffi`, or denied by the root |
+| `E_PKG_CAPABILITY_VIOLATION` | FFI used in a file or package that does not declare `ffi`, or denied by the root |
 | `E_FFI_SYMBOL_NOT_FOUND` | interpreter only (`zyl eval`, the REPL): symbol not found by `dlsym` |
 | `E_FFI_SYMBOL_REQUIRED` | the symbol is not a string literal |
 | `E_FFI_TIMEOUT_REQUIRED` | the last argument is missing or not a positive integer literal |

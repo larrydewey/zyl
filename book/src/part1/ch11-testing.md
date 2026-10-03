@@ -7,6 +7,7 @@ Testing is a **core language built-in** in Zyl (Spec §20.5). The test forms are
 A test is a top-level form that pairs a name with a body:
 
 ```lisp
+; `factorial` is defined in §11.4; this is the shape of a test.
 (test "factorial-of-five"
   (assert-equal (factorial 5) 120))
 ```
@@ -102,7 +103,7 @@ test: multiplication ... FAIL: assert-equal failed
 test result: 1 passed, 1 failed, 2 total
 ```
 
-A failure is a runtime panic inside the test body (a failed `assert-equal`, `assert-true` or `assert-false`, or an `error` call) that the harness catches and attributes to that test. **Check the summary line, not the exit status:** a test program currently exits with status 0 even when tests fail. Zyl's own `run_regression_tests.sh` looks for `FAIL` in the output for that reason.
+A failure is a runtime panic inside the test body (a failed `assert-equal`, `assert-true` or `assert-false`, a `panic`, or any `!` operation that refuses its input) that the harness catches and attributes to that test. `(error "msg")` is not a failure: it returns `(Err "msg")` like any value. The program exits with status 1 when any test failed and 0 when all passed, so a test binary can gate a build script directly.
 
 The harness holds at most 256 tests per program, and test names are truncated to 127 characters.
 
@@ -126,7 +127,7 @@ Inside a package (a directory with a `zyl.pkg`, Spec §31), `zyl test` resolves 
 
 (test "vector-push"
   (assert-equal
-    (vec-len (vec-push (vec-create-default 4) 42))
+    (vec-len (vec-push (vec-new) 42))
     1))
 
 (run-tests)
@@ -162,6 +163,8 @@ The tests register as `parser/empty` and `parser/numbers/one`, in source order. 
 (test-property "addition commutes" gen-int (fn (a b) (= (+ a b) (+ b a))))
 ```
 
+The samples include the Int limits, so an arithmetic property like this one needs `(numeric wrapping)` at the top of the file, or the addition overflows on a sample and the test fails.
+
 **Compile-time tests.** `(test-compile expr)` checks that `expr` compiles, and `(test-compile expr (:expect-error true))` that it does not. The compiler decides it while compiling your file, by running the checks and the type checker on the program with `expr` as the body of a function, and registers a test named `test-compile line N` that passes when the outcome is the expected one. A failing one says why: `test: test-compile line 12 ... FAIL: did not compile: error[E_TYPE_MISMATCH]: the operands of `+` must have one type: ...`.
 
 ```lisp
@@ -176,6 +179,8 @@ The tests register as `parser/empty` and `parser/numbers/one`, in source order. 
 A test can check an actor's lifecycle after an explicit `actor-wait`:
 
 ```lisp
+(capabilities actor)
+
 (use actor/actor)
 
 (defn work () (+ 1 2 3))
@@ -192,6 +197,8 @@ A test can check an actor's lifecycle after an explicit `actor-wait`:
 A test can also talk to an actor over channels: the test gives the actor the ends it needs, keeps the others, and waits for the reply with `chan-recv` (Chapter 9, §9.5):
 
 ```lisp
+(capabilities actor)
+
 (use actor/actor)
 
 (defn doubler (rx tx)
@@ -226,7 +233,7 @@ For the logic itself, keep it in ordinary functions (like `work` above) and test
 3. **Test edge cases**: zero, negatives, empty collections, extreme values.
 4. **Keep tests independent**: tests run in sequence in one process, so do not rely on state left by an earlier test.
 5. **Extract pure logic** and test it directly rather than through actors.
-6. **Read the summary line**: the exit status does not reflect failures yet (§11.3).
+6. **Gate on the exit status**: it is 1 when any test failed (§11.3); the summary line says which.
 
 ## 11.8 Zyl's Own Regression Suite
 
@@ -235,7 +242,7 @@ Zyl's test suite is written with this framework:
 ```bash
 ./run_regression_tests.sh --quick   # Smoke tests plus the unit test
 ./run_regression_tests.sh --full    # All tests
-./run_regression_tests.sh --filter structs  # Only tests whose name contains "structs"
+./run_regression_tests.sh --full --no-boot --filter structs  # Only tests whose name contains "structs"
 ```
 
 The tests live under `tests/` (`tests/regression/` for the `test`-based files). The harness itself is part of the compiler (the lowering of `test` and `run-tests`) and the runtime (`runtime/rt/panic.zyl`). `stdlib/testing/testing.zyl` holds only thin helper wrappers around the built-in forms.
@@ -247,7 +254,7 @@ The tests live under `tests/` (`tests/regression/` for the `test`-based files). 
 ### Test Execution Model
 
 1. **Registration**: the compiler lowers each top-level `test` into a named test function plus a `zyl_register_test(name, fn)` call, made from the generated `main` before anything else runs.
-2. **Execution**: `(run-tests)` lowers to a `zyl_run_tests()` call, which runs the tests sequentially in registration order and prints `ok` or `FAIL` for each, then the summary. It returns 1 if any test failed, but that value does not currently become the process exit status.
+2. **Execution**: `(run-tests)` lowers to a `zyl_run_tests()` call, which runs the tests sequentially in registration order and prints `ok` or `FAIL` for each, then the summary. It returns 1 if any test failed, and that becomes the process exit status.
 3. **Panic containment**: each test runs under a try frame. `zyl_panic`, which every failed assertion calls, unwinds back to the harness, so a failure marks that test as failed instead of ending the process. Outside a test, the same failure prints `PANIC: assert-equal failed` and exits with status 1.
 4. **Deterministic**: there is no parallelism, and output order is fixed by the source.
 

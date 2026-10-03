@@ -129,14 +129,14 @@ Both arm shapes mean the same thing: `(Some x body)` and
     (Some x (Ok x))
     (None (Err "empty"))))
 
-(defn len (xs)
+(defn length-of (xs)
   (match xs
-    (Cons _ t (+ 1 (len t)))
+    (Cons _ t (+ 1 (length-of t)))
     (Nil 0)))
 
 (defn main ()
   (begin
-    (print (len (Cons 1 (Cons 2 (Cons 3 Nil)))))   ; 3
+    (print (length-of (Cons 1 (Cons 2 (Cons 3 Nil)))))   ; 3
     (print (match (to-result (Some 7))
              (Ok v v)
              (Err _ 0)))                          ; 7
@@ -217,9 +217,10 @@ Guard   ::= "(" "when" Expression ")"
 Limits:
 
 - **No mixing.** One `match` cannot combine literal arms and constructor
-  arms. The two lower through different mechanisms: a literal match
-  becomes an `if` chain, while a constructor match tests tags.
-- **Guards on `_`.** A guard on the trailing `_` arm is ignored.
+  arms (`E_MATCH_MIXED_PATTERNS`). The two lower through different
+  mechanisms: a literal match becomes an `if` chain, while a constructor
+  match tests tags.
+- **Guards on `_`.** A guard on the trailing `_` arm makes it no longer the closing catch-all, so the match is `E_MATCH_NONEXHAUSTIVE`.
 - **Guards on constructor arms** are not supported. The `(when ...)` is
   read as a field pattern and rejected as `E_NESTED_PATTERN`.
 - **Guards after ranges.** A guard following a `range` alternative
@@ -247,7 +248,7 @@ error[E_NON_EXHAUSTIVE_MATCH]: match over `Color` does not cover variant `Blue`
    |
  2 | (defn f (c) (match c (Red 1) (Green 2)))
    |             ^
-   = help: add an arm for that variant, or a `_` catch-all
+   = help: add an arm for that variant, or a final `_` arm
 ```
 
 - **Spelling.** The specification spells the code `E_MATCH_NONEXHAUSTIVE`
@@ -310,6 +311,8 @@ syntactic rule from Chapter 17: a `chan-send` whose value mentions a
 `let-mut` variable, or a `Secret`, is rejected.
 
 ```lisp
+(capabilities actor)
+
 (use actor/actor)
 
 (defn main ()

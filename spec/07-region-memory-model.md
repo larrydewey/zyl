@@ -24,7 +24,8 @@ If returned, captured by escaping closure, or sent to actor → Heap.
 spawn and chan-send require a Send-capable type.
 
 ### R4. FFI Rule
-ffi-call requires Pin region AND FFI_Pinnable type.
+ffi-call requires Pin region AND FFI_Pinnable type, and a timeout,
+at the call or as its extern's `:timeout` default (§16).
 
 ### R5. Closure Capture Promotion
 Escaping closure captures promoted to Heap.
@@ -82,10 +83,16 @@ The compiler guarantees that deep recursion never causes stack overflow
 ### Invariant
 
 For any memory location:
-- Either exactly one `TMut` reference
-- OR any number of `TCap` references
+- Either exactly one assigning owner (a `let-mut` binding)
+- OR any number of immutable readers (a `let` binding)
 
-Violation: `E_MUT_CONFLICT` (compile-time error)
+Zyl has no in-place field mutation, so a location cannot be shared between
+an owner and a reader in the first place.
+
+Violations: `E_MUT_CONFLICT`, `E_MOVE_VALUE`, `E_CAPABILITY_LEAK`
+(compile-time). The compiler's own messages still use the older `TCap`/`TMut`
+wording, because those strings are part of the tool's output history; the
+rule they enforce is the binding form above.
 
 ### Struct Mutability
 
@@ -176,10 +183,18 @@ Not normative. The design and its rationale are in
   frame, chained through the thread-local `zyl_region_top`. Its blocks
   come from per-thread pools of size-class blocks (1, 4, 16 and 64 KiB; a
   region's first block is the smallest and each further block the next
-  class up) carved from `mmap`ed chunks above 4 GiB; a larger request gets its own mapping. Region allocations
+  class up) carved from per-thread 1 MiB `mmap`ed chunks; a larger
+  request gets its own mapping. Region allocations
   (`zyl_ralloc`) keep the hidden size header, so structural equality works
   the same, and `zyl_region_live_bytes` reports the bytes held by live
   regions.
+- Releasing a region returns its blocks to the pool. It does **not**
+  wipe them: there is no wipe-on-release. With `ZYL_REGION_POISON=1` a
+  released *pooled* block is instead filled with `0xDE`, purely so that a
+  stale read produces recognizable garbage instead of the next
+  allocation's leftovers — a detector, not a security measure, and off by
+  default. Page protection (`mprotect`) was tried and withdrawn;
+  `docs/memory-poisoning-design.md` is the write-up.
 - Try frames and the test runner record the chain top; `zyl_panic`
   releases every region above it before its `longjmp`.
 - Heap values (H sites) still come from `zyl_heap_alloc`, a bump allocator
@@ -197,6 +212,23 @@ Not normative. The design and its rationale are in
   (`zyl_pin_alloc`, which also `mlock`s it on a best-effort basis);
   `ffi-unpin` checks that its argument points into that arena.
 
+### What a program may allocate
+
+A program cannot create an arena or take a raw allocation: `alloc-malloc`,
+`alloc-free`, the `arena-*` wrappers and `buf-new` all reach a raw runtime
+entry and are `E_FFI_RESTRICTED` outside the standard library
+(`ffi_sigs.zyl`, `arity_check.zyl`). `str-intern` is not restricted
+itself, but its first parameter is an `Arena` and no program can produce a
+value of that type, so it is unreachable in practice.
+
+What a program does instead is allocate in a region it names:
+`(bytebuf R N)` for the buffer, `bytebuf-ptr` for its address. `Ptr` in a
+signature is a spelling for `Int` — there is no pointer type — and what is
+enforced is where an address may come from: `bytebuf-ptr`, `ffi-pin`, or a
+foreign call. The collections (`vec-new`, `intmap-*`, `set-create`,
+`slice-*`) and the `math/*` entry points take no arena and place their
+results through region inference.
+
 ### Stack safety (§14)
 
 A call in tail position is compiled as a jump where its stack arguments
@@ -209,6 +241,8 @@ bounded by that reservation rather than unbounded.
 ### Mutability (§10)
 
 The aliasing checks that exist are described in
-`spec/06-capability-types.md`. Direct field mutation,
+`spec/06-capability-types.md`. Zyl has no in-place mutation: every `let`
+binding is immutable, `set!` on a `let-mut` binding rebinds it, and
+`set!` on anything else is `E_MUT_CONFLICT`. Direct field mutation,
 `(set! (struct-get p "x") 5)`, is rejected by the parser with
 `E_MUT_CONFLICT`.

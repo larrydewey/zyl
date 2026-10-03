@@ -137,12 +137,19 @@ guarantees.
 ## Implementation: Values
 
 - **Int / Bool:** 64-bit integers in `rax`; `true` is 1, `false` is 0.
-  Arithmetic is plain `add`/`sub`/`imul`, so overflow wraps. `/` and `%`
-  by a constant avoid `idiv`: a power of two is a biased shift, 1 a move,
-  and any other constant except 0 and -1 a multiply by the runtime's
-  magic number (`zyl_div_magic`, `zyl_div_shift`), with `idiv`'s
-  results. Otherwise they are `cqo; idiv` with no zero test, so integer
-  division by zero raises SIGFPE.
+  On `+ - *` the instruction is plain `add`/`sub`/`imul` and what follows
+  depends on the package's `(numeric P)` policy (§20): `checked` — the
+  default — emits `jo zyl_rt_trap_ovf_N`, so an overflow is
+  `E_OVERFLOW`; `wrapping+ wrapping- wrapping*` emit the bare instruction
+  and wrap; `saturating+ saturating- saturating*` prepare the clamp in
+  `rdx` and substitute it. `/` and `%` test the divisor first
+  (`test rcx, rcx; jz zyl_rt_trap_div0_N` → `E_DIVISION_BY_ZERO`) and
+  settle `INT_MIN / -1` before reaching `cqo; idiv`. By a constant
+  divisor they avoid `idiv` altogether: a power of two is a biased shift,
+  1 a move, and any other constant except 0 and -1 a multiply by the
+  runtime's magic number (`zyl_div_magic`, `zyl_div_shift`); the native
+  path may also prove the dividend non-negative and skip the sign
+  correction.
 - **Float:** loaded from `.rodata` with `movsd xmm0, [rip+label]` and moved
   to `rax` with `movq`; arithmetic uses `xmm0`/`xmm1`, comparison uses
   `comisd`.
@@ -173,8 +180,10 @@ guarantees.
 - **`print`:** a call of the runtime's `zyl_print_int`, `zyl_print_float`
   or `zyl_print_str`, chosen by the value's kind, one value per line,
   through the runtime's buffered stdout.
-- **`try`/`catch`:** the frame is saved inline (`cg-inline-setjmp`, rbp,
-  rsp and rip pointer-mangled) with `zyl_try_push`/`zyl_try_pop`.
+- **`try`/`catch`:** the frame comes from `zyl_try_push` and the setjmp
+  buffer at its head is filled inline (`cg-inline-setjmp`: the
+  callee-saved registers plus pointer-mangled `rbp`, `rsp` and `rip`),
+  with `zyl_try_pop` on the way out.
 
 ---
 

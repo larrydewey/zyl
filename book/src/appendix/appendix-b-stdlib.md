@@ -28,18 +28,14 @@ Operators and special forms (`+ - * / %`, `= == != < > <= >=`,
 ;(identity x) (const a _b) (flip f a b) (compose f g) (apply f x)
 ;(abs x) (max a b) (min a b) (clamp x lo hi) (signum x) (square x) (cube x)
 ;(xor a b) (nand a b) (nor a b) (implies a b)
-;(when pred body) (unless pred body)
 ;(is-bool x) (is-zero x) (is-even n) (is-odd n)
 ;(print-int (n Int)) (print-float (f Float)) (print-string (s String)) (print-bool (b Bool))
 ;(option-to-result opt err) (option-from-result res default)
 ;(result-to-option res) (result-from-option opt err)
 ```
 
-`when` and `unless` are ordinary functions, not special forms: both
-arguments are evaluated before the call, so the body runs even when the
-test fails. Both are `Bool Unit -> Unit`: `(when ok (print "x"))`
-type-checks, but prints `x` whatever `ok` is. Use `(if test stmt)` to
-evaluate `stmt` only when `test` holds. The predicates (`is-zero`, `is-even`, `xor`, `implies`, …)
+`when` and `unless` are core forms, not functions (Appendix C): the
+body runs only when the test says so. The predicates (`is-zero`, `is-even`, `xor`, `implies`, …)
 return `Bool`.
 
 ### `core/show` — The Derivable Traits
@@ -130,7 +126,7 @@ as `{k: v, ...}` (newest entry first). Iteration order is deterministic, which i
 compiler use this map internally without breaking reproducible builds.
 `map-get` returns an `Option`.
 This `Map` is the generic one, and the only one called `Map`. The
-arena-backed structure that also used to be called `Map` is now `IntMap`, in
+Int-to-Int structure that also used to be called `Map` is now `IntMap`, in
 `collections/intmap` — it is a separate Int-to-Int table, not a variant of
 this. While both carried the name `Map`, a program importing both compiled
 without complaint and the three shared function names (`map-get`,
@@ -139,24 +135,21 @@ this module's generic versions out of reach.
 
 ## B.2 Collections
 
-`collections/vec`, `collections/intmap` and `collections/set` are
-arena-backed. `Vec` is generic, `(Vec T)`; `collections/intmap` and
-`collections/set` hold `Int` keys and values. Each holds a pointer, a
-length, a capacity and the owning arena; an operation that changes the
-contents returns an updated value. The new struct can
-share its storage with the old one, so treat the old value as used up.
-The first argument of `vec-create`, `intmap-new-with` and `set-create` is an
-`Arena`, from `(arena-create block-size)`; `0` is an `Int`, not an
-arena, and does not type-check. The `-default` constructors take only a
-capacity and make a private arena on the spot:
-`(vec-create-default 10)`.
+`Vec` is generic, `(Vec T)`; `collections/intmap` and
+`collections/set` hold `Int` keys and values. No constructor takes an
+allocator: storage comes from the region of the call that allocates it,
+so a collection that stays inside its frame is reclaimed when the frame
+returns, and one that is returned lands in the caller's region (Chapter
+4). An operation that changes the contents returns an updated value. The
+new value can share its storage with the old one, so treat the old value
+as used up. A capacity argument is a hint, not a limit.
 
 ### `collections/vec` — Vectors
 
 ```lisp
 (use collections/vec)
-(deftype Vec (VecC (Array T) Int Arena))  ; storage, length, arena
-;(vec-create (arena Arena) (cap Int)) (vec-create-default (cap Int))
+(deftype Vec (VecC (Array T) Int))       ; storage, length
+;(vec-new) (vec-new-cap (cap Int))      ; also the literal (vec e ...)
 ;(vec-len v) (vec-cap v)
 ;(vec-get! v (i Int))                   ; a T; E_INDEX_OUT_OF_BOUNDS outside the Vec
 ;(vec-get? v (i Int))                   ; an (Option T); None outside the Vec
@@ -165,7 +158,7 @@ capacity and make a private arena on the spot:
 ;(vec-set? v (i Int) value)             ; (Some vec), or None outside the Vec
 ;(vec-push v value)                     ; reallocates when full
 ;(vec-pop v) (vec-last! v) (vec-last? v) ; vec-last! of an empty Vec is E_INDEX_OUT_OF_BOUNDS, vec-last? None
-;(vec-free v)                           ; an empty Vec; storage returns at arena-reset
+;(vec-free v)                           ; an empty Vec; releases nothing
 ```
 
 A Vec prints as `[a, b, ...]` (`Show`).
@@ -177,18 +170,18 @@ this on the standard library (`E_PANIC_UNMARKED`).
 
 There is no `vec-slice`, `vec-append` or `vec-clear`.
 
-### `collections/intmap` — Arena-Backed Int Maps
+### `collections/intmap` — Int-to-Int Maps
 
 ```lisp
 (use collections/intmap)
-(defstruct IntMap (kptr Words) (vptr Words) (len Int) (cap Int) (arena Arena))
-;(intmap-new-with (arena Arena) (cap Int)) (intmap-new (cap Int))
+(defstruct IntMap (kptr Words) (vptr Words) (len Int) (cap Int))
+;(intmap-new (cap Int))
 ;(intmap-len (m IntMap)) (intmap-cap (m IntMap))
 ;(intmap-put (m IntMap) (k Int) (v Int))
 ;(intmap-get (m IntMap) (k Int) (default Int))
 ;(intmap-has (m IntMap) (k Int)) (intmap-remove (m IntMap) (k Int))
 ;(intmap-find (m IntMap) (k Int) (i Int) (len Int))  ; index of k, searching from i
-;(intmap-free (m IntMap))              ; an empty IntMap; storage returns at arena-reset
+;(intmap-free (m IntMap))              ; an empty IntMap; releases nothing
 ```
 
 Keys and values are machine words, so this is an `Int` to `Int` table, not a
@@ -201,8 +194,8 @@ generic `Map<K, V>`, or the association lists in `collections/collections`.
 
 ```lisp
 (use collections/set)
-(defstruct Set (ptr Words) (len Int) (cap Int) (arena Arena))
-;(set-create (arena Arena) (cap Int)) (set-create-default (cap Int))
+(defstruct Set (ptr Words) (len Int) (cap Int))
+;(set-create (cap Int))
 ;(set-len (s Set)) (set-cap (s Set))
 ;(set-contains (s Set) (k Int)) (set-add (s Set) (k Int)) (set-remove (s Set) (k Int))
 ;(set-find (s Set) (k Int) (i Int))
@@ -235,7 +228,7 @@ Note the argument order: the collection comes last (`(list-nth n xs)`,
 ;(slice-sub! s (off Int) (len Int)) (slice-sub? s (off Int) (len Int))
 ;(slice-take s (n Int)) (slice-drop s (n Int))
 ;(slice-len s) (slice-get! s (i Int)) (slice-get? s (i Int)) (slice-get-or s (i Int) default)
-;(slice-fold s f init) (slice-to-vec s (arena Arena))
+;(slice-fold s f init) (slice-to-vec s)
 ```
 
 Making a slice copies nothing; `slice-to-vec` copies. A range or index
@@ -316,8 +309,8 @@ reports whether it has been joined, not whether its thread is running,
 so neither depends on timing. When `main` returns, the program joins
 every actor not yet joined, in spawn order (Chapter 9). Actors
 communicate only through channels. Using this module, or `spawn`,
-`chan`, `chan-send` or `chan-recv`, from a package requires the `actor`
-capability (§31.9).
+`chan`, `chan-send` or `chan-recv`, requires the `actor` capability
+(§31.9): `(capabilities actor)` in a lone file, or in `zyl.pkg`.
 
 ### `atomic/atomic` — Atomic Operations on Addresses
 
@@ -346,30 +339,42 @@ For atomics on a byte buffer, use the `bytebuf-atomic-*` forms
 ;(ffi-safe-call result) (ffi-pin-call-unpin result)
 ```
 
-Using this module from a package requires the `ffi` capability.
+Using this module requires the `ffi` capability.
 
 ## B.5 Low-Level
 
-### `allocator/allocator` — Memory, Arenas and Strings
+### `allocator/allocator` — Raw Memory and Strings
 
 ```lisp
 (use allocator/allocator)
+;(alloc-cstr ptr) (alloc-read-int addr) (alloc-write-int addr value)
+;(alloc-int value) (alloc-incr addr) (alloc-decr addr) (alloc-strlen ptr)
+;(str-len ptr) (str-length s) (str-concat a b) (str-substring s start len)
+;(str-eq p1 p2) (buf-append dst src)
+;(panic msg)
+;; compiler-and-runtime-only, E_FFI_RESTRICTED in a program. alloc-malloc
+;; is here too: its result is a word no type follows, so a program that
+;; could name it could hold an address with no lifetime. A program wants
+;; (bytebuf Heap N) and bytebuf-ptr.
 ;(alloc-malloc size) (alloc-free ptr)
-;(alloc-read-int addr) (alloc-write-int addr value) (alloc-int value)
-;(alloc-incr addr) (alloc-decr addr) (alloc-strlen ptr)
 ;(arena-create block-size) (arena-alloc arena size) (arena-alloc-zeroed arena size)
 ;(arena-reset arena) (arena-destroy arena) (arena-used arena) (arena-capacity arena)
-;(str-len ptr) (str-length s) (str-concat a b) (str-substring s start len)
-;(str-eq p1 p2) (str-intern arena s) (buf-append dst src)
-;(panic msg)
+;(buf-new arena size) (str-intern arena s)
 ```
 
-`str-eq` compares contents and returns a `Bool`, so it is a condition
-by itself: `(if (str-eq a b) ...)`. `alloc-read-int` and
-`alloc-write-int` read and write `Int`s only. `buf-append` appends at
-the end of the NUL-terminated string already in `dst`. `error` panics
-with `msg`: it unwinds to the nearest `try`, or prints `PANIC: msg` and
-exits with status 1.
+A program cannot obtain an `Arena` (spec G2): the arena entries hand out
+and reclaim raw addresses, and only the standard library and the
+compiler's own entry points (the compiler, the language server, the REPL)
+may call them. `alloc-malloc` and `alloc-free` are restricted for the
+same reason without a handle: the result is a bare `Int` that no type
+follows, and nothing ties it to the free that must follow. Buffers C
+writes into are `(bytebuf Heap N)`, with `bytebuf-ptr` for the address
+(Chapter 12). `str-eq` compares contents and returns a
+`Bool`, so it is a condition by itself: `(if (str-eq a b) ...)`.
+`alloc-read-int` and `alloc-write-int` read and write `Int`s only.
+`buf-append` appends at the end of the NUL-terminated string already in
+`dst`. `panic` unwinds to the nearest `try`, or prints `PANIC: msg` and a
+backtrace and exits with status 1.
 
 ## B.6 I/O
 
@@ -390,7 +395,7 @@ adds named helpers, buffered output and an output trait:
 ;(io-safe-read handle count) (io-safe-write handle data) (io-safe-close handle)
 (defstruct Stdout (fd Int))                    ; (make-stdout)
 (defstruct StringBuffer (buf (Ref StrBuf)) (len (Ref Int)) (cap (Ref Int))
-  (arena Arena) (fd Int))                      ; (make-string-buffer)
+  (arena Arena) (fd Int) (released (Ref Int))) ; (make-string-buffer)
 ;(string-buffer-str sb) (string-buffer-len sb) (string-buffer-destroy sb)
 (trait OutputStream
   (write (self) (chunk String) Int)
@@ -398,8 +403,12 @@ adds named helpers, buffered output and an output trait:
 ```
 
 Call a trait method by its qualified name: `(OutputStream.write out "text")`.
-There is no `file-seek`, `file-tell` or `file-size`. Using this module
-from a package requires the `io` capability.
+`StringBuffer` is the one user-facing type that keeps an arena, and it is
+a resource: release it with `with-resource` (or `string-buffer-destroy`);
+a read after release is `E_USE_AFTER_FREE`, a use of the binding after
+release is `E_MOVE_VALUE` at compile time, and a second release is a
+no-op. There is no `file-seek`, `file-tell` or `file-size`. Using this
+module requires the `io` capability.
 
 ## B.7 Testing
 
@@ -429,13 +438,14 @@ derivation, big-number arithmetic and random number generation. Only
 AES (hardware AES-NI), system entropy and the volatile zeroing behind
 `zeroize` call into C. `(use math/math)` loads the whole tree.
 
-Byte strings are passed as an address and a length, and most functions
-take the arena to allocate their result in as the first argument.
+Byte strings are passed as a `Words` array and a length. No function
+takes an allocator: results and scratch space are allocated in the
+region of the computing call.
 
 | Module | Main entry points |
 |---|---|
 | `math/bits` | `add32`, `sub32`, `mul32`, `shl32`, `shr32`, `rotl32`, `rotr32`, `not32`, `rotl64`, `rotr64`, `not64`, `u64-lt`/`gt`/`le`/`ge`, `byte-of`, `be-pack32`, `le-pack32`, masks |
-| `math/words` | `(w-alloc arena n)`, `w-get`, `w-set`, `w-fill`, `w-copy`, `w-from-string`, `w-from-hex`, `w-hex-bytes`, `w-hex-words` |
+| `math/words` | `(w-alloc n)`, `w-get`, `w-set`, `w-fill`, `w-copy`, `w-from-string`, `w-from-hex`, `w-hex-bytes`, `w-hex-words` |
 | `math/secret/secret` | `ct-mask`, `ct-is-zero`, `ct-is-nonzero`, `ct-select`, `ct-eq`, `ct-ne`, `ct-eq-words`, `ct-ne-words`, `ct-eq-bool`, `ct-eq-words-bool`, `declassify`, `(zeroize base n)`, `zeroize-bytes` |
 | `math/bignum/bignum` | fixed-width naturals: `bn-alloc`, `bn-add`, `bn-sub`, `bn-mul`, `bn-sqr`, `bn-eq`, `bn-lt`, `bn-from-bytes-be`/`le`, `bn-to-bytes-be`/`le`, `bn-bit-length` |
 | `math/bignum/montgomery` | `mont-mul`, `mont-to`, `mont-from`, constant-time `mont-exp` |
@@ -444,11 +454,11 @@ take the arena to allocate their result in as the first argument.
 | `math/rand/rand` | `rand-u64-from-bytes`, `rand-below` |
 | `math/rand/crypto` | `getrandom(2)` entropy: `sysrng-fill`, `sysrng-bytes`, `sysrng-next-u64`, `sysrng-key32` |
 | `math/rand/deterministic` | seeded ChaCha20 generator: `chacharng-new`, `chacharng-from-int`, `chacharng-bytes`, `chacharng-fill`, `chacharng-next-u64`, `chacharng-below` |
-| `math/hash/sha2` | SHA-256: `(sha256-bytes arena msg len)`, `sha256-hex-of-string` |
+| `math/hash/sha2` | SHA-256: `(sha256-bytes msg len)`, `sha256-hex-of-string` |
 | `math/hash/sha512` | SHA-512: `sha512-bytes`, `sha512-hex-of-string` |
 | `math/hash/sha3` | `sha3-256-bytes`, `sha3-512-bytes`, `shake128-bytes`, `shake256-bytes`, hex helpers |
 | `math/hash/blake2b` | `blake2b` (keyed, variable output), `blake2b-512`, `blake2b-hex-of-string` |
-| `math/hash/blake3` | `(blake3-hash arena msg len outlen)`, `blake3-hex-of-string` |
+| `math/hash/blake3` | `(blake3-hash msg len outlen)`, `blake3-hex-of-string` |
 | `math/hash/hmac` | `hmac-sha256`, `hmac-sha256-verify` |
 | `math/crypto/symmetric/chacha20` | `chacha20-block`, `chacha20-xor` |
 | `math/crypto/symmetric/poly1305` | `poly1305-mac`, `poly1305-verify` |
@@ -462,8 +472,9 @@ take the arena to allocate their result in as the first argument.
 | `math/crypto/kdf/pbkdf2` | `pbkdf2-sha256` |
 | `math/crypto/kdf/argon2` | `argon2id-hash` |
 
-The `secret` capability (§31.9) guards `math/secret`: a package must
-declare it to use that module or the `Secret` type. Chapter 34 covers
+The `secret` capability (§31.9) guards `math/secret`: a program must
+declare `(capabilities secret)` (or a package the same line in
+`zyl.pkg`) to use that module. Chapter 34 covers
 the representation conventions, the deliberate omissions and how the
 library was verified.
 
@@ -507,7 +518,7 @@ Chapter 35 covers what the server provides and what it cannot.
 
 ## B.11 Compiler (stdlib/compiler/)
 
-The 46 modules of the self-hosted compiler. `selfhost/driver.zyl`
+The 52 modules of the self-hosted compiler. `selfhost/driver.zyl`
 reaches them through ordinary `(use compiler/...)` imports, and the
 compiler is built from that entry file like any program.
 
@@ -546,8 +557,14 @@ compiler is built from that entry file like any program.
 | `error_codes.zyl` | The error-code catalog |
 | `error_report.zyl` | Error formatting and source snippets |
 | `duplicate_check.zyl` | Duplicate definitions |
-| `arity_check.zyl` | Call arity |
-| `mutability_check.zyl` | Mutability and capability rules |
+| `arity_check.zyl` | Call arity, malformed forms, restricted FFI entries |
+| `mutability_check.zyl` | Mutability and capability rules, one writer per byte buffer |
+| `linearity.zyl` | A resource is released once (`E_MOVE_VALUE`) |
+| `numeric_check.zyl` | The `(numeric ...)` policy and `E_PARTIAL_OPERATION` |
+| `int_arith.zyl` | Int arithmetic under the checked, wrapping and saturating policies, for the folder and the REPL |
+| `verify.zyl` | The frame-write verifier every emitted program passes through |
+| `provenance.zyl` | The signed build-provenance record (`zyl build --sign-with`) |
+| `explain.zyl` | `zyl explain` |
 | `exhaustiveness_check.zyl` | Match exhaustiveness |
 | `secret_check.zyl` | The `Secret` capability's constant-time obligations |
 | `unused_check.zyl` | Unused and shadowed bindings (warnings) |
@@ -566,9 +583,11 @@ All stdlib source is in `stdlib/`:
 
 ```
 stdlib/
-├── core/          core.zyl, option.zyl, result.zyl, list.zyl, map.zyl, show.zyl
-├── collections/   collections.zyl, vec.zyl, map.zyl, set.zyl, slice.zyl
-├── text/          view.zyl
+├── core/          core.zyl, option.zyl, result.zyl, list.zyl, map.zyl, show.zyl,
+│                  property.zyl, resource.zyl
+├── collections/   collections.zyl, vec.zyl, intmap.zyl, set.zyl, slice.zyl
+├── text/          view.zyl, format.zyl (zyl fmt)
+├── encoding/      cbor.zyl, cose.zyl (the provenance record)
 ├── simd/          simd.zyl
 ├── actor/         actor.zyl
 ├── atomic/        atomic.zyl
@@ -582,7 +601,7 @@ stdlib/
 ├── repl/          *.zyl
 ├── lsp/           *.zyl, services/*.zyl
 ├── mlib/          deep.zyl (a code-generation stress fixture)
-└── compiler/      *.zyl (41 files)
+└── compiler/      *.zyl (52 files)
 ```
 
 The compiler resolves stdlib modules against its own bundle directory —

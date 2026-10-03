@@ -87,15 +87,28 @@ function.
 
 | Code | Op | Code | Op |
 |------|----|------|----|
-| 0 | `+` | 9 | `=` / `==` |
-| 1 | `-` | 10 | `!=` |
-| 2 | `*` | 11 | `bit-and` |
-| 3 | `/` | 12 | `bit-or` |
-| 4 | `%` | 13 | `bit-xor` |
+| 0 | `+` (checked on `Int`) | 9 | `=` / `==` |
+| 1 | `-` (checked on `Int`) | 10 | `!=` |
+| 2 | `*` (checked on `Int`) | 11 | `bit-and` |
+| 3 | `/`, `div!` | 12 | `bit-or` |
+| 4 | `%`, `rem!` | 13 | `bit-xor` |
 | 5 | `<` | 14 | `shl` |
 | 6 | `>` | 15 | `shr` (logical) |
 | 7 | `<=` | 16 | `ashr` |
-| 8 | `>=` | | |
+| 8 | `>=` | 18, 19, 20 | wrapping `+ - *` |
+| | | 21, 22, 23 | saturating `+ - *` |
+
+On `Int`, 0–2 are the **checked** operators: an overflow is
+`E_OVERFLOW`. The package's `(numeric ...)` policy picks which family
+`ic-binop` emits for a source `+ - *`: 0–2 under `checked`, 18–20 under
+`wrapping`, 21–23 under `saturating`; `wrapping+`, `saturating*` and the
+rest name their family under any policy. On `Float` the operands decide
+and 0–4 stay IEEE. 3 and 4 carry a zero-divisor trap
+(`E_DIVISION_BY_ZERO`) and the `INT_MIN / -1` trap (`E_OVERFLOW`);
+`div?` and `rem?` never reach ICNF as such: `desugar.zyl` rewrites
+`(div? a b)` on the parse tree to
+`(let x a (let y b (if (= y 0) None (Some (div! x y)))))`, so each operand
+is evaluated once, in order.
 
 `bit-not` has no two-operand form: `(bit-not x)` lowers to
 `(IBinop 13 x (IConst -1))`. N-ary arithmetic folds left-associatively,
@@ -233,8 +246,10 @@ derive expansion        (dv-expand-program)
   → impl lifting          (lift-impls)
   → closure inlining      (ci-expand-program; now an identity step)
   → type checking         (ta-annotate: strict HM, trait resolution, instances)
+  → numeric check         (nc-check-program: the (numeric ...) policy, §20)
   → ICNF lowering         (ic-program)
-  → inlining              (opt-inline-fns: two rounds, then copy propagation)
+  → inlining              (opt-inline-fns: two inline rounds, self-unrolling,
+                                      early exits, copy propagation)
   → optimization          (opt-optimize-fns: folding, dead branches)
   → region inference      (ri-transform-fns, then rg-regions)
   → in-place reuse        (ru-reuse)
@@ -298,7 +313,7 @@ A function is a candidate when it is not `main`, does not call itself,
 takes only word-kind parameters, contains no `try`, region scope,
 lambda, closure call or `print`, and is at most 6 ICNF nodes
 (`ZYL_INLINE_LIMIT`). A *leaf*, which calls nothing but the runtime,
-may be three times that size, but is inlined only into a function that
+may be four times that size, but is inlined only into a function that
 calls itself (a loop). A call is left alone inside a `try` body (a
 caught panic releases the regions of the calls it unwinds), when its
 name is a local at the site, or when the body names a global that a

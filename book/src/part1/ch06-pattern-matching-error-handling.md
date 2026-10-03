@@ -4,7 +4,7 @@ Pattern matching is Zyl's primary control flow for structured data.
 Combined with ADTs and the `Result`/`Option` types, it replaces null
 checks and most `if` chains. This chapter covers `match` in depth, then
 the two ways a Zyl program deals with failure: `Result` values, and
-`error` with `try`.
+`panic` with `try`.
 
 ## 6.1 The `match` Expression
 
@@ -185,18 +185,20 @@ own arm or by a trailing `_`:
 ```
 
 ```
-PANIC: error[E_NON_EXHAUSTIVE_MATCH]: match over `TrafficLight` does not cover variant `Yellow`
+error[E_NON_EXHAUSTIVE_MATCH]: match over `TrafficLight` does not cover variant `Yellow`
   --> /home/you/lights.zyl:4:3
    |
  4 |   (match light
    |   ^
-   = help: add an arm for that variant, or a `_` catch-all
+   = help: add an arm for that variant, or a final `_` arm
 ```
 
 The error names the first variant that is missing. The compiler prints
 the full path of the source file. Either of these is accepted:
 
 ```lisp
+(deftype TrafficLight (Red) (Yellow) (Green))
+
 (defn action (light)
   (match light
     (Red "stop")
@@ -264,16 +266,19 @@ constructor patterns.
 - **A literal match must end with `_`.** Without it:
 
   ```
-  PANIC: E_MATCH_NONEXHAUSTIVE: a literal-pattern match must end with a `_` arm
+  error[E_MATCH_NONEXHAUSTIVE]: a literal-pattern match must end with a `_` arm
+    --> codes.zyl:2:3
+     |
+   2 |   (match n
+     |   ^
   ```
 
 - **Literal patterns bind nothing.** The `_` arm refers to the value
   through the scrutinee's own name (`code`, `s`).
 - **Don't mix** literal arms and constructor arms in one `match`. They
-  are compiled by different mechanisms, and a mixed `match` has no
-  diagnostic of its own: with constructors that carry fields it fails
-  with confusing `E_TYPE_MISMATCH` and `E_UNBOUND_VARIABLE` errors, and
-  with nullary constructors it can compile and choose the wrong arm.
+  are compiled by different mechanisms, and a mixed `match` is
+  `E_MATCH_MIXED_PATTERNS` (`literal patterns and constructor patterns
+  cannot be mixed in the same match`), located at the scrutinee.
 
 ## 6.5 Guards
 
@@ -300,8 +305,8 @@ otherwise matching continues with the next arm.
 Guards currently work only in this position. Elsewhere:
 
 - **After a `range`** a guard fails to compile, with
-  ``E_ARITY_MISMATCH: `when` called with 1 argument(s), but it takes 2``
-  (it is mistaken for a call to the core library's `when` function).
+  ``E_ARITY_MISMATCH: `when` takes 2 arguments, but this call gives it 1``
+  (it is mistaken for the core `when` form).
 - **On a constructor arm** such as `(Some x (when (> x 0)) x)`, the
   guard is read as a nested pattern in a field position:
   `E_NESTED_PATTERN`.
@@ -355,25 +360,35 @@ field type, String. Both arms print, so both are `Unit`.
 
 ### Result Chaining
 
-Nested `match` handles a sequence of steps that can each fail:
+Nested `match` handles a sequence of steps that can each fail, and
+`result-and-then` from the core library flattens it. Here is that same
+program with the second step added, both ways:
 
 ```lisp
+(defn parse-digit ((c String))
+  (cond
+    ((= c "0") (Ok 0))
+    ((= c "1") (Ok 1))
+    ((= c "2") (Ok 2))
+    (else (Err "not a digit"))))
+
 (defn check-small (n)
   (if (< n 2) (Ok n) (Err "too big")))
 
+(defn show (r)
+  (match r
+    (Ok v (print v))
+    (Err msg (print msg))))
+
+;; nested match: one arm per step, spelled out
 (defn nested ((s String))
   (match (parse-digit s)
     (Ok n (match (check-small n)
             (Ok m (Ok (* m 10)))
             (Err e (Err e))))
     (Err e (Err e))))
-```
 
-`result-and-then` from the core library flattens this. It takes the
-`Result` first and a function second, and calls the function only on an
-`Ok`:
-
-```lisp
+;; result-and-then is that flattening: Result first, function second
 (defn times-ten (n) (Ok (* n 10)))
 
 (defn chained ((s String))
@@ -381,15 +396,16 @@ Nested `match` handles a sequence of steps that can each fail:
 
 (defn main ()
   (begin
+    (show (nested "1"))     ; 10
     (show (chained "1"))    ; 10
     (show (chained "2"))    ; too big
     (show (chained "x"))    ; not a digit
     0))
 ```
 
-The functions passed here are named, top-level functions; a `fn`,
-capturing or not, works the same: `(option-map (Some 3) (fn (x) (+ x k)))`
-is `Some(13)`.
+`result-and-then` calls its function only on an `Ok`. The functions
+passed here are named, top-level functions; a `fn`, capturing or not,
+works the same: `(option-map (Some 3) (fn (x) (+ x k)))` is `Some(13)`.
 
 The other core helpers: `result-map`, `result-or`, `result-unwrap`
 (value or a default), `result-expect!` (the value, or a panic with your message),
@@ -441,10 +457,10 @@ or in any function it calls:
 ```
 
 ```lisp
-(defn percent-of (n)
+(defn percent-of! (n)
   (if (== n 0)
     (panic "division by zero")
-    (/ 100 n)))
+    (div! 100 n)))
 
 (defn report ((msg String))
   (begin
@@ -453,21 +469,26 @@ or in any function it calls:
 
 (defn main ()
   (begin
-    (print (try (percent-of 4) (catch e (report e))))   ; 25
-    (print (try (percent-of 0) (catch e (report e))))   ; caught: division by zero, then -1
+    (print (try (percent-of! 4) (catch e (report e))))   ; 25
+    (print (try (percent-of! 0) (catch e (report e))))   ; caught: division by zero, then -1
     (print "still running")
     0))
 ```
 
 What `try` is and is not:
 
-- **It catches `error`, not `Err`.** `try` is not sugar for matching on a
+- **It catches a panic, not `Err`.** `try` is not sugar for matching on a
   `Result`: an `(Err ...)` value is an ordinary value and passes straight
   through `try` unchanged. Use `match` or `result-and-then` for Results,
   and `result-expect!` to turn an `Err` into a panic on purpose.
 - The handler may be several forms, run in order, with `err-var` bound
   to the message String. Its last form is the value of the `try`, so it
   must have the same type as `expr`: here both are Int.
+- It catches every panic: a `panic` call, a `!` function refusing its
+  input, `div!` by zero, an `E_OVERFLOW`. The message of a built-in
+  failure is its whole diagnostic, starting `error[CODE]: ...`.
+- `percent-of!` ends in `!` because it calls `panic`; without the `!`
+  the compiler warns (`W_PANIC_UNMARKED`, §6.9).
 
 ## 6.9 `assert` and `unwrap`
 
@@ -482,7 +503,7 @@ extracts an `Ok`/`Some` value or aborts. Both work today:
   Use `result-expect!` for a `Result`.
 
 Both unwind to the nearest `try`, and inside a `test` they fail that
-test. When the message matters, use an explicit check with `error`
+test. When the message matters, use an explicit check with `panic`
 instead of `assert`, and `result-expect!`/`option-expect!` (or
 `result-unwrap`/`option-unwrap` with a default) instead of `unwrap`:
 
@@ -546,8 +567,9 @@ In tests, `assert-true`, `assert-false` and `assert-equal` do work
 | Default on failure | `result-unwrap` / `option-unwrap` with a default |
 | Unrecoverable condition | `panic`, from a function whose name ends in `!` |
 | A lookup that may miss | the `?` spelling (`vec-get?`, `map-get`), matched like any `Option` |
-| Recovering from an `error` | `try` / `catch` |
-| Internal invariant | an `if` that calls `error` (not `assert`) |
+| Recovering from a panic | `try` / `catch` |
+| Internal invariant | an `if` that calls `panic`, in a `!` function (or `assert`) |
+| Division by a value that may be zero | `div?` and match the `Option`, or `div!` if zero is a bug |
 | Several kinds of error | `Result` whose `Err` holds your own ADT |
 
 ---
@@ -584,12 +606,14 @@ next.
 | `E_MATCH_NONEXHAUSTIVE` (literal matches) | while the `match` is parsed, in `stdlib/compiler/expr_inner.zyl` |
 | `E_MATCH_ARM_COMPLEX` (an arm body the code generator is known to miscompile) | ICNF lowering, in `stdlib/compiler/icnf.zyl` |
 
-### `error` and `try`
+### `panic` and `try`
 
-`error` unwinds to the innermost active `try` at run time; with none
-active, it prints `PANIC:` and exits with status 1. Because the output
-of `print` is buffered and the panic message goes straight to standard
-error, the `PANIC:` line can appear before output printed earlier.
+`panic` unwinds to the innermost active `try` at run time; with none
+active, it prints `PANIC:` and the message to standard error, then a
+backtrace of the functions that were running (innermost first), and
+exits with status 1. Standard output is flushed first, so everything the
+program printed appears before the `PANIC:` line. `error` does not
+unwind at all: it is a function that returns `(Err message)`.
 
 ---
 

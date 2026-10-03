@@ -14,6 +14,8 @@
 (use compiler/ast)
 (use compiler/type_system)
 (use compiler/error_report)
+(use compiler/ffi_sigs)
+(use compiler/rt_mode)
 ;
 ; Structure:
 ;   1. ExprInner ADT mirrors Rust ExprInner (lines 53-115 ast.rs)
@@ -2011,6 +2013,32 @@
     (Some (ffi-call "zyl_smap_get_or" extern-table sym (ExternSig Nil (Expr (EAtom ANil))) 1000))
     None))
 
+; An extern may not retype the runtime's own entries: their types come
+; from the compiler's signature table (compiler/ffi_sigs), and a program
+; that redeclares one is asserting a type the table already fixed.
+;
+; This is reported here, at the extern that is wrong, and not at every
+; ffi-call to the symbol: the compiler compiles the standard library in
+; this same process, so a table keyed by symbol alone made the library's
+; own `zyl_int_text` calls report the reader's extern -- located in
+; stdlib/core/show.zyl, naming a line the reader never wrote. The
+; The runtime module is exempt, and it has to be: the compiler binary
+; itself has every runtime entry exported, so the check below would read
+; the runtime's own `(extern "zyl_rt_exit" ...)` declarations as a program
+; retyping them. --runtime-module is the same exemption ffi-check-raw
+; takes for the same reason.
+(defn extern-runtime-entry (sym)
+  (if (rt-mode-p) false
+    (if (ffi-call "zyl_runtime_export_p" sym 1000) true (> (str-length (ffi-sig sym)) 0))))
+
+; ei-fail does not return; the None is the shape parse-extern answers
+; with, so the two agree without an unreachable branch.
+(defn extern-on-runtime-fail (sym)
+  (ei-fail "E_FFI_RESTRICTED"
+    (str-concat "`" (str-concat sym
+      "` is a runtime entry; its type comes from the compiler's signature table, not from an extern")))
+  None)
+
 (defn parse-extern (args)
   (match args
     (Cons s rest
@@ -2020,13 +2048,15 @@
             (Cons ps rest2
               (match rest2
                 (Cons ret rest3
-                  (if (extern-tail-ok sym ps rest3)
-                    (match ps
-                      (AList tys
-                        (let _ (ffi-call "zyl_smap_put" extern-table sym (ExternSig (convert-ast-list tys) (convert-ast ret)) 1000)
-                          (Some (Expr (EAtom ANil)))))
-                      (_ None))
-                    None))
+                  (if (extern-runtime-entry sym)
+                    (extern-on-runtime-fail sym)
+                    (if (extern-tail-ok sym ps rest3)
+                      (match ps
+                        (AList tys
+                          (let _ (ffi-call "zyl_smap_put" extern-table sym (ExternSig (convert-ast-list tys) (convert-ast ret)) 1000)
+                            (Some (Expr (EAtom ANil)))))
+                        (_ None))
+                      None)))
                 (Nil None)))
             (Nil None)))
         (_ None)))

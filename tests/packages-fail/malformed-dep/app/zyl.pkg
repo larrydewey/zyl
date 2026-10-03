@@ -1,0 +1,7 @@
+; E_MANIFEST_INVALID: the `dep` head is missing. Selecting the dep-shaped
+; entries and dropping the rest built the package with no dependency at
+; all, and the mistake surfaced later, in the middle of the program, for
+; a reason that had nothing to do with the manifest.
+(package (numeric checked)
+  (name "app/malformed-dep") (version "0.1.0") (zyl "5.0") (edition "2026")
+  (deps ("acme/lib" "1.0.0" (path "../lib"))))

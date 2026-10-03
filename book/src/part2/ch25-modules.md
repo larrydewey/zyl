@@ -135,8 +135,14 @@ There is no `ZYL_PATH` search path and no `zyl.toml`.
 ```
 
 ```
-PANIC: E_MODULE_CYCLE: module: module graph is not a DAG at acme/cyc|a
+error[E_MODULE_CYCLE]: module: cyc -> a -> b -> a forms a cycle; a module may not reach itself
+  --> cyc/b.zyl:1:1
+   |
+ 1 | (use a)
+   | ^
 ```
+
+The error is located at the `use` that closes the cycle.
 
 A missing module in a manifest-bearing dependency is `E_PKG_UNKNOWN_MODULE`. In a lone file it is `E_MODULE_NOT_FOUND`. A missing module of the *current* package is currently reported as `E_PKG_UNDECLARED_DEP`, because a single-segment path that matches no file falls through to the dependency lookup.
 
@@ -153,7 +159,7 @@ zyl/std@5::collections/vec::vec-push
 local/main@0::hello::main-helper
 ```
 
-Two packages may define the same name, and so may two modules in one package. The tests in `tests/packages/two-parses/` import a `parse` from both `acme/json` and `beta/xml` into one program. The canonical key is also the sort key for monomorphization's alphabetical naming (§17).
+Two packages may define the same name, and so may two modules in one package. The tests in `tests/packages/two-parses/` import a `parse` from both `acme/json` and `beta/xml` into one program. The canonical key also makes an instance name distinct over any graph (§6.4, §17).
 
 Mangling is injective. Letters and digits are kept, `_` becomes `_5F`, and every other byte becomes `_x` followed by two uppercase hex digits:
 
@@ -193,7 +199,11 @@ A package is a directory with a `zyl.pkg` manifest. The manifest is an S-express
 - **Requirements are bare minimum versions.** A range operator is `E_PKG_BAD_REQUIREMENT`:
 
   ```
-  PANIC: E_PKG_BAD_REQUIREMENT: package: requirement ^0.1.0 on acme/greet uses a range operator - MVS takes bare minimum versions
+  error[E_PKG_BAD_REQUIREMENT]: package: requirement ^0.1.0 on acme/greet uses a range operator - MVS takes bare minimum versions
+    --> app/zyl.pkg:3:27
+     |
+   3 |   (deps (dep "acme/greet" "^0.1.0")))
+     |                           ^
   ```
 
 - `dev-deps` are resolved by `zyl test` and never enter a dependent's graph.
@@ -361,19 +371,23 @@ A program declares the capabilities it may use. An absent `(capabilities ...)` d
 Enforcement (`capability_check.zyl`) runs after module resolution and before type inference, over the qualified program. The package half of each definition's canonical key says who owns it, so no side table of ownership is needed. A violation names both sides of the boundary:
 
 ```
-PANIC: error[E_PKG_CAPABILITY_VIOLATION]: `strlen` needs the ffi capability, and package acme/hello declares none
+error[E_PKG_CAPABILITY_VIOLATION]: `strlen` needs the ffi capability, and package acme/hello declares none
+  --> hello.zyl:3:5
+   |
+ 3 |     (ffi-call "strlen" s 1000)
+   |     ^
+   = note: a program names what it may do, so a reader sees it at the top
    = help: add `(capabilities ffi)` to zyl.pkg
 ```
 
 The form is honoured only where the declaration lives: in a file of a manifested package, or in a module a lone file uses, it is `E_MALFORMED_FORM`. An `ffi-call` of a `zyl_*` runtime entry is the language's own and needs no `ffi` grant.
 
-A declared set is a **ceiling on the declaring package**, not a grant along an edge. If `acme/greet` declares `ffi` and exports a function that calls C, a caller without `ffi` may still call that function. `zyl audit` lists what every package in the graph may do, together with the closure recorded in the lock:
+A declared set is a **ceiling on the declaring package**, not a grant along an edge. If `acme/greet` declares `ffi` and exports a function that calls C, a caller without `ffi` may still call that function. `zyl audit` lists what every package in the graph may do, together with the closure the lock records — which is empty until `zyl fetch` has written one:
 
 ```
 $ zyl audit
-acme/hello (root):
-acme/greet: ffi
-closure: ffi
+acme/fast (root): ffi native
+closure:
 ```
 
 A root package may forbid capabilities graph-wide:
@@ -383,7 +397,7 @@ A root package may forbid capabilities graph-wide:
 ```
 
 ```
-PANIC: error[E_PKG_CAPABILITY_VIOLATION]: `c-len` needs the ffi capability, which the root package forbids with deny-capabilities
+error[E_PKG_CAPABILITY_VIOLATION]: `c-len` needs the ffi capability, which the root package forbids with deny-capabilities
 ```
 
 `zyl update` reports growth in the capability closure ("capability closure grew to: ffi"). Under `zyl build --locked`, growth is `E_PKG_CAPABILITY_GROWTH`.
@@ -440,7 +454,7 @@ long long fast_triple(long long n) { return n * TRIPLE; }
 ```
 
 ```lisp
-; fast.zyl
+; fast.zyl — the ffi and native grants come from the manifest above
 (extern "fast_triple" (Int) Int)
 
 (defn triple (n) (ffi-call "fast_triple" n 1000))
@@ -546,22 +560,22 @@ The standard library is package `zyl/std` at the compiler's major. It is implici
 | `core/list` | `List`, `car`, `cdr`, `list-length`, `list-append`, `list-reverse` |
 | `core/option` | `Option`, `option-unwrap`, `option-is-some`, `option-map`, `option-unwrap-or` |
 | `core/result` | `Result`, `result-unwrap`, `result-is-ok`, `result-map`, `result-and-then` |
-| `core/map` | `Map`, `map-new`, `map-insert`, `intmap-get`, `intmap-has`, `intmap-remove` |
-| `collections/vec` | `vec-create`, `vec-push`, `vec-get!`, `vec-set!`, `vec-len`, `vec-pop` |
-| `collections/intmap` | `intmap-new-with`, `intmap-put`, `intmap-get`, `intmap-has`, `intmap-remove`, `intmap-len` |
+| `core/map` | `Map`, `map-new`, `map-insert`, `map-get`, `map-has`, `map-remove`, `map-get-or` |
+| `collections/vec` | `vec-new`, `vec-new-cap`, `vec-push`, `vec-get!`, `vec-get?`, `vec-set!`, `vec-len`, `vec-pop` |
+| `collections/intmap` | `intmap-new`, `intmap-put`, `intmap-get`, `intmap-has`, `intmap-remove`, `intmap-len` |
 | `collections/set` | `set-create`, `set-add`, `set-contains`, `set-remove`, `set-len` |
 | `collections/collections` | `Assoc`, `assoc-put`, `assoc-get`, `list-map`, `list-filter`, `list-fold` |
-| `allocator/allocator` | `alloc-malloc`, `alloc-free`, `arena-create`, `arena-alloc`, `buf-append`, `alloc-strlen` |
+| `allocator/allocator` | `alloc-cstr`, `alloc-read-int`, `alloc-strlen`, `buf-append` and the string helpers; the raw-memory entries (`alloc-malloc`, `alloc-free`, `arena-create`, `arena-alloc`, `buf-new`, …) are for the compiler, the LSP and the REPL, and are `E_FFI_RESTRICTED` in a program — allocate `(bytebuf Heap N)` and take its address with `bytebuf-ptr` |
 | `atomic/atomic` | `atomic-load`, `atomic-store`, `atomic-add`, `atomic-cas` |
 | `actor/actor` | `actor-spawn`, `actor-wait`, `actor-is-alive` |
 | `ffi/ffi` | `ffi-pin-value`, `ffi-unpin-value`, `ffi-safe-call` |
 | `io/io` | `io-file-open-read`, `io-file-read`, `io-file-write`, `io-read-line`, `io-print` |
-| `testing/testing` | the `test`/`run-tests` harness, `assert-equal-values`, `property-int` |
+| `testing/testing` | helpers around the built-in `test`/`run-tests` harness: `assert-equal-values`, `assert-true-value`, `assert-fail-call!` |
 | `math/...` | `bits`, `words`, `bignum/`, `hash/` (SHA-2, SHA-3, BLAKE2b, BLAKE3), `crypto/`, `rand/`, `secret/` |
 
 ## 25.18 Errors
 
-Resolver and package errors abort compilation with exit status 1. Most print `PANIC: CODE: area: message`; those tied to a place in the source (`E_PKG_CAPABILITY_VIOLATION`, `E_PKG_FEATURE_NESTED`) print `PANIC: error[CODE]: message` followed by the location. All of these are spec §28 codes except `E_MODULE_NOT_FOUND`, which the resolver uses for a missing file outside a package, `E_PKG_FEATURE_NESTED` and `E_PKG_VERSION_EXISTS`.
+Resolver and package errors abort compilation with exit status 1. Those tied to a place in a source file or a manifest (`E_MODULE_CYCLE`, `E_PKG_UNDECLARED_DEP`, `E_PKG_BAD_REQUIREMENT`, `E_PKG_CAPABILITY_VIOLATION`, `E_PKG_FEATURE_NESTED` and others) print `error[CODE]: message` followed by the location; the few with no place, such as `E_PKG_NOT_IN_STORE`, still print `PANIC: CODE: area: message`. All of these are spec §28 codes except `E_MODULE_NOT_FOUND`, which the resolver uses for a missing file outside a package, `E_PKG_FEATURE_NESTED` and `E_PKG_VERSION_EXISTS`.
 
 | Error | Cause |
 |-------|-------|

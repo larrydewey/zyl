@@ -6,8 +6,7 @@ default since commit d6f4ec2. The guarantee, not a best effort:
 representation.** No Int used as a pointer, no Float through the integer
 unit, no String compared by address, no call with the wrong arity. This
 holds for user code, the standard library, the REPL, the language server
-and the compiler itself, with one documented exception (see "Known
-hole" below).
+and the compiler itself, with no known hole (see "Known hole" below).
 
 Since commit f4213bc the language server also runs derive expansion, impl
 lifting and the type checker on each document and publishes every type
@@ -97,8 +96,10 @@ empty inferer were used.
 - **Runtime functions.** `compiler/ffi_sigs.zyl` gives every `zyl_*`
   symbol the compiler calls a type scheme over Int, Float, Bool, String,
   Unit and opaque handle types: `Arena`, `Ptr`, `Words`, `StrBuf`, `UF`,
-  `Actor`, `Fd`, `FileId`, `FnPtr`, `(SMap v)`, `(WVec v)`, `(Attr k v)`,
-  `(Array a)`, `(Ref a)`. The global handle-by-index calls became typed
+  `Actor`, `Fd`, `FileId`, `FnPtr` (`ta-builtin-type`), and the
+  parameterised `SMap`, `WVec`, `Attr`, `Array`, `Ref` and `Pin`
+  (`ta-handle-param-type`) — written `(SMap v)`, `(Array a)` and so on.
+  The global handle-by-index calls became typed
   top-level `def`s (`compiler/node_tables.zyl`). Lookups that returned 0
   for "absent" take a default of the value type.
 - **Raw entries.** The entries that read raw memory or reinterpret a

@@ -19,5 +19,20 @@ for c in $codes; do
   got=$(cd "$work" && "$Z" right.zyl -o r 2>&1 && ./r 2>&1 >/dev/null) || { echo "FAIL $c: corrected program failed:"; printf '%s\n' "$got" | head -5; fail=1; }
   rm -f "$work/r"
 done
-[ $fail -eq 0 ] && echo "explain examples: $n codes, every wrong program raises its code, every fix runs"
+# `zyl explain warnings`: every severity-2 code is listed, each with what
+# to do, and the count matches the catalog. A warning a reader cannot act
+# on is the one that reads as a failure.
+w=$("$Z" explain warnings)
+for c in $("$Z" explain | awk '/warning\)/ {print $1}' | tr -d '`'); do
+  printf '%s\n' "$w" | grep -q "^  $c  " || { echo "FAIL warnings: $c not listed"; fail=1; }
+done
+listed=$(printf '%s\n' "$w" | grep -c '^  [EW]_')
+catalog=$(grep -oE '" [0-9]+ 2 "' "$ROOT/stdlib/compiler/error_codes.zyl" | wc -l)
+[ "$listed" -eq "$catalog" ] || { echo "FAIL warnings: $listed listed, $catalog in the catalog"; fail=1; }
+printf '%s\n' "$w" | grep -q "the build goes on" || { echo "FAIL warnings: does not say the build goes on"; fail=1; }
+one=$("$Z" explain W_UNUSED_PARAMETER)
+printf '%s\n' "$one" | grep -q "(definitions and bindings, warning)" || { echo "FAIL explain: severity not named"; fail=1; }
+printf '%s\n' "$one" | grep -q "the build goes on" || { echo "FAIL explain: no 'the build goes on' for a warning"; fail=1; }
+
+[ $fail -eq 0 ] && echo "explain examples: $n codes, every wrong program raises its code, every fix runs; $listed warnings listed with fixes"
 exit $fail

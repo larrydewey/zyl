@@ -524,11 +524,12 @@ All violations are `E_PKG_CAPABILITY_VIOLATION`. *As implemented, see
 A lone file compiled directly has no manifest and is still policed: it
 declares with the same `(capabilities ...)` form among its own top-level
 forms, absent meaning none, and a REPL session declares by typing the
-form. The diagnostic is written at the construct — "`system` needs the
-ffi capability, and this file declares none" — with the exact line to
-write as the fix. Only the implicit standard library and the runtime
-module, the providers, are not policed; an `ffi-call` of a `zyl_*`
-runtime entry is the language's own and needs no `ffi` grant.
+form. The diagnostic is written at the construct, naming it — `` `strlen`
+needs the ffi capability, and this file declares none ``, or `` `chan`
+needs the actor capability `` — with the exact line to write as the fix.
+Only the implicit standard library and the runtime module, the providers,
+are not policed; an `ffi-call` of a `zyl_*` runtime entry is the
+language's own and needs no `ffi` grant.
 
 The pass walks every expression form by name, with no default arm, so a
 form added later must state how it is walked. It covers `defn` and `def`
@@ -731,12 +732,13 @@ Consequences worth stating explicitly:
 Per spec §28, every code must be defined and used consistently. These are
 added to `stdlib/compiler/error_codes.zyl`. Phase 9 is the existing
 `module` phase; a new phase **19 = package** covers manifest, lock,
-index, fetch and signature errors. *Done: all 36 are in the catalog and
+index, fetch and signature errors. *Done: all 39 are in the catalog and
 in spec §28, the phase legend has the entry, and every one has at least
-one raising site (`docs/errors.md` lists them). Two phase-19 codes were
-added since: `E_PKG_VERSION_EXISTS` (publishing a version the index
-already holds; published versions are immutable) and
-`E_PKG_FEATURE_NESTED` (a `feature-gate` that is not at top level).*
+one raising site (`docs/errors.md` lists them). Three codes were added
+after the table below was first written: `E_PKG_VERSION_EXISTS`
+(publishing a version the index already holds; published versions are
+immutable), `E_PKG_FEATURE_NESTED` (a `feature-gate` that is not at top
+level) and `E_MODULE_NOT_FOUND` (a module path that cannot be opened).*
 
 | Code | Phase | Meaning |
 |------|-------|---------|
@@ -765,6 +767,7 @@ already holds; published versions are immutable) and
 | `E_PKG_NATIVE_BUILD_FAILED` | 19 | `cc` failed on a native source |
 | `E_PKG_CYCLE` | 9 | dependency graph is not a DAG |
 | `E_MODULE_CYCLE` | 9 | module graph within a package is not a DAG |
+| `E_MODULE_NOT_FOUND` | 9 | a module path cannot be opened |
 | `E_PKG_VERSION_CONFLICT` | 9 | requirement cannot be satisfied within a major |
 | `E_PKG_PRIVATE_SYMBOL` | 9 | imported symbol is not `pub` |
 | `E_PKG_UNKNOWN_SYMBOL` | 9 | imported symbol does not exist |

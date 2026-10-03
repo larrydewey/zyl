@@ -40,7 +40,7 @@ For a package build, "same program" means the same resolved graph: same `zyl.pkg
 | Source | Zyl's position | Implementation |
 |--------|----------------|----------------|
 | Map iteration order | deterministic iteration (§21.5) | `stdlib/core/map.zyl` is an association list, iterated in a fixed order (most recently inserted first); no hashing, no seed |
-| Monomorphization naming | alphabetical canonical names (§17) | an instance is named `f~T1,T2` from the canonical text of its argument types, in argument order (§6.4); the name is a function of the types alone |
+| Monomorphization naming | canonical name from the argument types (§17) | an instance is named `f~T1,T2` from the canonical text of its argument types, in argument order (§6.4); the name is a function of the types alone |
 | Symbol order | total order over canonical keys (§31.2) | qualification tables are sorted by name |
 | Thread scheduling | "not observable" (§27) | each actor is its own OS thread, but actors communicate only over Kahn channels (one writer, one reader, blocking reads, no emptiness test), and an actor's `print` output is buffered and emitted when it is joined, or at exit in spawn order (Chapter 21, §21.6). An actor's `file-write` and foreign calls bypass the buffer |
 | Heap addresses | not observable | vary per run (ASLR applies to arena memory); code addresses are fixed by `-no-pie` |
@@ -57,7 +57,7 @@ The compiler's internal tables are ordered by construction, so the same source y
 - **Most tables are lists**, built and traversed in source order.
 - **Symbol tables** built during qualification (`qualify.zyl`) are sorted by name.
 - **`stdlib/core/map.zyl`** is the ordered `Map` offered to programs: an association list whose iteration order is a function of the insertion sequence alone.
-- **`stdlib/collections/intmap.zyl` and `set.zyl`** store keys and values in arena-backed arrays, searched linearly in insertion order.
+- **`stdlib/collections/intmap.zyl` and `set.zyl`** store keys and values in region-allocated arrays, searched linearly in insertion order.
 
 No part of the compiler iterates a hash table in hash order. The hash tables that do exist (the compiler's variant-table index, top-level arities and codegen's function kinds; the runtime's FNV-1a function map for the interpreter and its source-span table) are only probed by key, never iterated.
 
@@ -70,7 +70,7 @@ No part of the compiler iterates a hash table in hash order. The hash tables tha
  2. Macro Expansion             (innermost-first, hygiene)
  3. Type Inference + Trait Resolution  (derive, struct, alias validation)
  4. Region Inference + Capture Analysis
- 5. Monomorphization            (alphabetical determinism)
+ 5. Monomorphization            (deterministic naming, §17)
  6. ICNF Generation             (SSA IR)
  7. Optimization                (safe only)
  8. Code Generation
@@ -91,19 +91,25 @@ Rule: no phase may depend on a later phase.
                          ExprInner (convert-ast, which also lowers contracts)
  4. Macro expansion      me-expand-program
  5. Static checks        capability (§31.9), duplicate definitions, arity (with malformed
-                         forms and restricted FFI entries), mutability, match
+                         forms and restricted FFI entries), reserved keywords,
+                         mutability and aliasing, release linearity, match
                          exhaustiveness, unused bindings, Secret handling
  6. Derive expansion     dv-expand-program
  7. Impl lifting         lift-impls: impl bodies become Trait.method_Type functions
  8. Closure inlining     ci-expand-program (an identity pass today)
  9. Type checking        ta-annotate: HM, static trait resolution, per-type instances
-10. ICNF lowering        ic-program
+ 9a. Numeric check       numeric_check: the package's (numeric ...) policy; a / or %
+                         whose divisor is not a nonzero literal is E_PARTIAL_OPERATION
+10. ICNF lowering        ic-program; a checked Int + - * becomes IBinop, which codegen
+                         emits as add/sub/imul plus `jo zyl_rt_trap_ovf_N` (E_OVERFLOW)
 11. Inlining             opt-inline-fns: small non-recursive functions, copy propagation
 12. Optimization         opt-optimize-fns: constant folding, dead-branch elimination
 13. Region inference     ri-transform-fns (stack variants), then rg-regions
 14. Reuse                ru-reuse: in-place update of a unique, dead value's block
 15. Code generation      cg-program-file → x86_64 assembly text (MIR + linear scan,
                          or the stack machine; §26.5)
+15a. Verification        verify.zyl: every [rbp-M] write within the stated frame
+                         bound and 8-aligned; a violation aborts the compile
 16. Linking              asm_x86 + elf_link against rt.zo (static, no libc);
                          a program calling foreign C: cc -no-pie out.s rt.o -lpthread
 ```
@@ -138,11 +144,11 @@ Covered in Chapter 25. It is the only pass that reads files other than the sourc
 
 ### Static checks
 
-Each check is a separate pass over the expanded program. Each one either stops compilation with a `PANIC: E_...` diagnostic or, for unused bindings and shadowing, prints a `W_...` warning.
+Each check is a separate pass over the expanded program. Each one either stops compilation with a located `error[E_...]` diagnostic or, for unused bindings, shadowing and a plain-named function that panics, prints a `W_...` warning.
 
 ### Type inference and monomorphization
 
-- The whole program is typed with Hindley–Milner inference (spec §4.8–§4.10); top-level functions are generalized per strongly connected component of the call graph. Capability types (`TCap`/`TMut`) are not part of this pass: `mutability_check.zyl` enforces them from `let` and `let-mut` before it.
+- The whole program is typed with Hindley–Milner inference (spec §4.8–§4.10); top-level functions are generalized per strongly connected component of the call graph. Zyl has no in-place mutation: every `let` binding is immutable, `set!` on a `let-mut` binding rebinds it, and `set!` on anything else is `E_MUT_CONFLICT`. `mutability_check.zyl` enforces that from `let` and `let-mut` before the type pass runs.
 - A generic function that calls a trait method, prints, or applies an operator at a type variable is specialized per concrete argument types, at every call and every use as a value, into an instance named `f~T1,T2`; the generic original is dropped. The name is the canonical text of the argument types in argument order, so it depends on nothing but the types.
 - Type annotation (`type_annotate.zyl`) is the one authority on types, and it is strict. Every unification failure, occurs-check failure and unknown type is an error (`E_TYPE_MISMATCH`, `E_CANNOT_INFER`, `E_UNBOUND_VARIABLE`). The pass reports all of a program's type errors, each at its source position, and then the compile stops, ending with `N errors; fix the first one first` when there is more than one. `(+ 1 "a")` is rejected. `ZYL_STRICT_TYPES=report` turns the errors into `W_TYPE_STRICT` warnings, for counting them; there is no mode that runs an ill-typed program.
 
@@ -155,7 +161,7 @@ ICNF (`icnf.zyl`) is the compiler's intermediate representation. Spec §18 defin
 `optimization.zyl` performs these safe transformations:
 
 - **Inlining** (`opt-inline-fns`, before region inference): a call of a small (6 ICNF nodes, `ZYL_INLINE_LIMIT`), non-recursive function with Int-kind parameters and no `try`, region scope, lambda, closure call or `print` is replaced by its body, the arguments bound by nested `let`s in call order and every binder renamed. Leaf functions of up to 18 nodes are inlined into self-recursive functions (loops) only. A call inside a `try` body is left alone. A `(let n x ...)` that binds a variable to another variable is then copy-propagated. `ZYL_INLINE=0` turns inlining off.
-- **Integer constant folding**: `(+ (* 2 3) 4)` compiles to `mov rax, 10`. Floats are not folded, and neither is division by zero.
+- **Integer constant folding**: `(+ (* 2 3) 4)` compiles to `mov rax, 10`. The folder decides overflow before it folds (`int_arith.zyl`), so a literal computation that does not fit stays an operation and traps under the checked policy. Floats are not folded, and neither is division by zero. A checked or saturating operation is never reassociated: the accumulator transformation, speculative `if` arms and `lea` for an add apply to wrapping arithmetic only.
 - **Dead-branch elimination**: an `if` with a constant condition keeps one branch, and a `while` whose condition is constant false disappears.
 
 After region inference, `reuse.zyl` marks an update of an immutable value (`vec-push`, a struct with one field changed, a list rebuilt cell by cell) whose old value is provably unique and dead, so the new record is written into the old one's block instead of a fresh allocation; functions that own such a parameter get an owning clone `f~own`. The decision is an attribute that only the native backend acts on, so it cannot change a result. `ZYL_REUSE=0` turns it off.
@@ -336,7 +342,7 @@ Other tools:
 | Issue | Where to look |
 |-------|---------------|
 | Unbalanced brackets | the balance check reports line, column and a fix-it hint |
-| Resolver, capability or check failure | the `PANIC: E_... :` message names the pass and the definition |
+| Resolver, capability or check failure | the `error[E_...]` diagnostic points at the source; `zyl explain E_...` says what it means |
 | Which stage fails or hangs | `ZYL_DEBUG_STAGES=1 zyl prog.zyl` appends each stage name to `/tmp/dbg` as it starts |
 | Wrong code | read `prog.s`; labels are mangled canonical keys (`zy_local_x2Fmain_0__prog__fact`) |
 | Compiled vs intended semantics | `zyl eval prog.zyl` runs the program through the ICNF interpreter; compare its output with the binary's |

@@ -86,13 +86,18 @@ in a resolved graph, recorded in the lock. Growth under `--locked` is
 
 **Capability declaration**: The `(capabilities ...)` field of `zyl.pkg`,
 or the same form at the top of a lone file or typed into a REPL session;
-absent means none.
+absent means none, so a file that opens files, spawns actors, calls C or
+uses `math/secret` says so in its first lines.
 A declared set is a ceiling on the declaring package; it is not
 re-granted to its dependencies.
 
 **Capability type**: A type annotation describing access permissions
 (§4.3). The specification names `TCap`, `TMut`, `TAtomic`, `TBox` and
-`TPin`; the compiler also treats `Secret` as a capability (Chapter 33).
+`TPin`; none of them is a type the checker knows. What is enforced is
+syntactic: a `let` binding is immutable with any number of readers, a
+`let-mut` binding is the only assignable one and `set!` rebinds it, and
+`set!` on anything else is `E_MUT_CONFLICT`. The compiler also treats
+`Secret` as a capability (Chapter 33).
 
 **Capture**: A closure's reference to a variable of an enclosing scope.
 
@@ -217,8 +222,8 @@ never converted implicitly.
 
 ## G
 
-**GC (garbage collection)**: Not used — memory is region- and
-arena-based.
+**GC (garbage collection)**: Not used — memory is region-based: each
+call's short-lived values are reclaimed when it returns.
 
 **Generic**: Parameterised by type (`(T)`, `(U)`), and monomorphised at
 call sites (§6).
@@ -311,6 +316,10 @@ diagnostics and command-line diagnostics are the same diagnostics
 
 **Lifetime**: How long a value's region lasts.
 
+**Linearity (release)**: A value that owns a resource — a file
+descriptor, a `StringBuffer`, a type with a `Drop` impl — is consumed by
+its release; any later use is `E_MOVE_VALUE`.
+
 **List literal**: `(list a b c)`, `[a b c]` or quoted data `'(a b c)`:
 the `Cons` chain of the elements in source order, all of one type.
 
@@ -383,11 +392,23 @@ of a dead value's block (*Reuse*). Nothing reorders effects.
 **Orphan rule**: A package may implement a trait for a type only if it
 defines the trait or the type (§24.6); otherwise `E_PKG_ORPHAN_IMPL`.
 
-**Overflow**: §20.1 makes checked integer overflow the default. Compiled
-code does not check it today: `Int` arithmetic wraps, and `E_OVERFLOW`
-is never raised.
+**Overflow**: An `Int` `+`, `-` or `*` whose result does not fit. Under
+the default `(numeric checked)` policy it stops the program with
+`E_OVERFLOW`; `(numeric wrapping)` wraps modulo 2^64 and
+`(numeric saturating)` clamps (§20.1). `wrapping*` and `saturating+` and
+their siblings choose for one operation.
+
+**Partial operation**: An operation that can fail on some inputs. Zyl
+spells it: a library function that can stop the program ends in `!`
+(`vec-get!`), its total sibling ends in `?` and returns an `Option`
+(`vec-get?`), and an `Int` `/` or `%` needs a nonzero literal divisor or
+the spelled forms `div!`/`div?` (`E_PARTIAL_OPERATION`).
 
 ## P
+
+**Numeric policy**: What `Int` `+ - *` do on overflow, declared once per
+package with `(numeric checked)` (the default), `(numeric wrapping)` or
+`(numeric saturating)` (§20).
 
 **Package**: The unit of distribution and versioning (§31): a directory
 with a `zyl.pkg`, named by a scoped path such as `acme/json` (or
@@ -474,7 +495,8 @@ resolved meaning — keyword, function, type, variant — rather than by
 regular expression.
 
 **Send**: The property a value needs to cross an actor boundary, by a
-spawn capture or `chan-send` — `TCap` or `TAtomic`, never `TMut`.
+spawn capture or `chan-send` — immutable (`let`) or atomic bindings. A
+`let-mut` binding of the enclosing scope is `E_CAPABILITY_LEAK`.
 
 **Signature (package)**: The publisher's Ed25519 signature over a
 package archive's BLAKE3 hash. Verification is mandatory and has no

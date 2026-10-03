@@ -23,7 +23,7 @@
 # -- see the note on mprotect at the bottom of runtime/rt/alloc.zyl.
 #
 # What this is not. It is not a use-after-free detector in general. It is a
-# check that the 125 programs in the gate do not depend on reading released
+# check that the 131 programs in the gate do not depend on reading released
 # region memory, which is the property that matters and the one nothing
 # else examines.
 #
@@ -72,7 +72,7 @@ RED=$'\033[31m'; GREEN=$'\033[32m'; NC=$'\033[0m'
 #     is the class of bug the gate exists to catch, and it would be a
 #     genuine finding;
 #   - it means a green run is weaker evidence than a validated detector
-#     would be. What is verified is that these 125 programs do not depend on
+#     would be. What is verified is that these 131 programs do not depend on
 #     reading released region memory for their output. It is not verified
 #     that the fill reaches every release path.
 #

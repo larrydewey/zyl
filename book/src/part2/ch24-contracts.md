@@ -48,7 +48,7 @@ A condition that must hold on entry. Write it as a leading form of a `defn` body
 ```lisp
 (defn safe-div (a b)
   (requires (> b 0))
-  (/ a b))
+  (div! a b))
 
 (defn main ()
   (begin
@@ -62,9 +62,15 @@ Output:
 ```
 5
 PANIC: E_CONTRACT_VIOLATION: precondition of safe-div failed: (> b 0)
+  in safe-div
+  in main
 ```
 
-The message names the function and repeats the clause as written. A `requires` outside a `defn` body (inside a nested `let`, say) is checked the same way, without the function name.
+The message names the function and repeats the clause as written. The
+body still says `div!`, not `/`: a contract is an overlay and never
+changes what the compiler accepts, so the `requires` does not make a
+plain `/` by `b` legal (`E_PARTIAL_OPERATION`), and with contracts off
+`div!` is what stops a zero divisor. A `requires` outside a `defn` body (inside a nested `let`, say) is checked the same way, without the function name.
 
 The condition is ordinary code, evaluated every time the function runs: keep it pure and cheap. It is a `Bool`, like every condition in Zyl; write `(> n 0)`, not `n`.
 
@@ -112,6 +118,8 @@ Specified (§23.4): fallback values for errors of the named types.
 
 Implemented: `(recover BODY arm...)` runs `BODY`; if it raises, the arms are tried in order. An arm naming an error code, `((E_CONTRACT_VIOLATION) fallback)`, matches an error whose message starts with that code; an arm naming a type (`(String)`, `(Error)`) or `_` matches any error. With no matching arm the error propagates.
 
+Continuing `safe-div` from §24.2:
+
 ```lisp
 (defn div-or-code (a b)
   (recover (safe-div a b)
@@ -158,7 +166,7 @@ Implemented:
 (contracts off)
 (defn unchecked-div (a b)
   (requires (> b 0))     ; removed
-  (/ a b))
+  (div! a b))            ; still stops on a zero b
 ```
 
 The override is lexical: `(contracts off (f x))` does not switch off the clauses inside `f`.

@@ -116,17 +116,22 @@ For each call site of a generic function:
    parameter with no evidence at any call site is `E_CANNOT_INFER`,
    unless a trait bound selects a finite set.
 2. Verify the concrete types have the impls the body calls (`E_TRAIT_NOT_FOUND`).
-3. Generate a specialization named `functionName_Type1_Type2_...`, with
-   the types sorted alphabetically, so `f<Int, String>` and
-   `f<String, Int>` share one name, and distinct type maps get distinct
+3. Generate a specialization named `functionName~Type1,Type2,...`, the
+   call's argument types in argument order with compound types written
+   in full (§6.4, §17). So `f<Int, String>` and `f<String, Int>` are
+   different instances, and distinct type maps always produce distinct
    names.
 4. Cache the specialization for other sites with the same types.
 
+Only a function that applies a trait method, `print`, an operator or an
+equality at a type parameter is specialized; any other generic function
+is compiled once.
+
 ```
-(min 3 5)       → min_Int
-(min "a" "b")   → min_String
-(pair 1 "hi")   → pair_Int_String
-(pair 1.0 2.0)  → pair_Float
+(min 3 5)       → min~Int,Int
+(min "a" "b")   → min~String,String
+(pair 1 "hi")   → pair~Int,String
+(pair 1.0 2.0)  → pair~Float,Float
 ```
 
 ### Implementation
@@ -153,7 +158,7 @@ connected component of the call graph:
 - **Naming.** An instance is named by the function's key, `~`, and its
   argument types in order, fully spelled: `smaller~String,String`,
   `show~(Vec String)` style keys. Distinct type tuples always get distinct
-  names; the spec's sorted `f_Int_String` form is not used.
+  names.
 - **Impl methods.** `lift_impls.zyl`, which runs before type checking,
   lifts an impl method body to a top-level function named
   `Trait.method_Type` (Chapter 20). An impl for a
@@ -162,9 +167,11 @@ connected component of the call graph:
   element type.
 
 The name the linker sees is then mangled from the canonical symbol key
-(§31.2), for example
-`zy_local_x2Fmain_0__prog__Area_x2Earea_5F...Point` for `Area.area_Point`
-in a program `prog.zyl`. The exact spelling is an implementation detail.
+(§31.2): `smaller~String,String` in a program `prog.zyl` becomes
+`zy_local_x2Fmain_0__prog__smaller_x7EString_x2CString`, and a lifted
+`Area.area_Point` becomes
+`zy_local_x2Fmain_0__prog__Area_x2Earea_5Flocal_x2Fmain_x400_x3A_x3Aprog_x3A_x3APoint`.
+The exact spelling is an implementation detail.
 
 ## 19.4 Per-Call-Site Inference
 
@@ -256,7 +263,7 @@ function per `(Trait, Type)` pair.
 |---------|------|---------------------|-------------|
 | Syntax | `fn foo<T: Trait>(x: T)` | `(defn foo ((T : Trait) x) ...)` | unannotated `(defn foo (x) ...)` |
 | Specialization | monomorphized | monomorphized | shared body; per-type instances where the body depends on the type |
-| Naming | mangled | `fn_Type1_Type2...`, sorted | `key~T1,T2`, then mangled (§31.2) |
+| Naming | mangled | `fn~T1,T2`, argument order (§6.4) | the same, then mangled (§31.2) |
 | Type checking | enforced | HM + trait resolution | HM + static trait resolution; every type error rejected |
 | Bounds | enforced | enforced | not expressible |
 | Higher-kinded types | no (GATs cover some uses) | no | no |

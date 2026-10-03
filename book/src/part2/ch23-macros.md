@@ -197,7 +197,20 @@ The implementation:
 (defmacro triple (x) (+ x (+ x x)))
 ```
 
-A macro may share its name with a function it imports: module resolution gives the macro that function's key, and the macro then takes over every call to it (Chapter 10 shows a macro `unless` over `core/core`'s function).
+A macro may share its name with a function it imports. Module resolution
+gives the macro that function's key, and the macro then takes over every
+call to it:
+
+```lisp
+(use core/core { abs })
+
+(defmacro abs (x) 99)
+
+(print (abs -5))      ; 99: the macro, not core's abs
+```
+
+A macro named `when`, `unless` or `let*` is the exception (§23.6): the
+core form of that name wins, so the macro is never called.
 
 ### Termination
 

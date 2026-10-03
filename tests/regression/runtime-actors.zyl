@@ -39,7 +39,7 @@
 (defn fmt (buf n) (let _ n (alloc-cstr buf)))
 
 (test "ffi-arg-counts"
-  (let buf (alloc-malloc 128)
+  (let buf (bytebuf-ptr (bytebuf Heap 128))
     (begin
       (assert-equal (> (ffi-call "getpid" 1000) 0) true)
       (assert-equal (ffi-call "labs" -7 1000) 7)

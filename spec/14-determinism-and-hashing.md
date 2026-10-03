@@ -203,7 +203,8 @@ Not normative.
   are tried in a fixed order, so a function always gets the same
   assignment.
 - There is no SHA-256 in the compiler or runtime; BLAKE3 is implemented in
-  the runtime (`zyl_blake3_raw`, `zyl_blake3_hex`, `zyl_blake3_file_hex`).
+  the runtime (`zyl_blake3_hex`, `zyl_blake3_file_hex`,
+  `zyl_bytebuf_blake3_hex`).
   SHA-2 exists only as library code in `stdlib/math/hash/`.
 - **Numeric model (§20):** implemented as written. `(numeric P)` is read by
   the module resolver (`mr-numeric-root`, keyed per package in
@@ -220,7 +221,8 @@ Not normative.
   `lea` (which sets no flags) is used only for wrapping adds. The REPL
   interpreter uses the same decision procedure (`int_arith.zyl`) and so
   does the constant folder. `div?`/`rem?` are rewritten on the parse tree
-  into `let`/`if`/`Some`/`None` around `div!`/`rem!` (`expr_inner.zyl`).
+  into `let`/`if`/`Some`/`None` around `div!`/`rem!` (`desugar.zyl`, as
+  the file is read).
   Floats are IEEE-754 binary64 in SSE registers.
 - **Actors** are scheduled by the operating system
   (`spec/08-actors-and-concurrency.md`), so a program whose output depends

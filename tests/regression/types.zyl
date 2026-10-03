@@ -81,32 +81,36 @@
 (test "assoc-remove"
   (assert-false (assoc-has 1 (assoc-remove 1 (assoc-put 1 "val" (assoc-empty))))))
 
-; Atomic operations
+; Atomic operations. The buffer is region-tracked and the address comes
+; from bytebuf-ptr, so these cover atomic/atomic.zyl without a program
+; holding memory nothing tracks (alloc-malloc is E_FFI_RESTRICTED).
+(defn _atomic-slot () (bytebuf-ptr (bytebuf Heap 8)))
+
 (test "atomic-load"
-  (let p (alloc-malloc 8)
+  (let p (_atomic-slot)
     (begin
       (atomic-store p 42)
       (assert-equal (atomic-load p) 42)
       0)))
 (test "atomic-store"
-  (let p (alloc-malloc 8)
+  (let p (_atomic-slot)
     (begin
       (assert-equal (atomic-store p 42) 42)
       0)))
 (test "atomic-add"
-  (let p (alloc-malloc 8)
+  (let p (_atomic-slot)
     (begin
       (atomic-store p 0)
       (assert-equal (atomic-add p 10) 10)
       0)))
 (test "atomic-sub"
-  (let p (alloc-malloc 8)
+  (let p (_atomic-slot)
     (begin
       (atomic-store p 100)
       (assert-equal (atomic-sub p 25) 75)
       0)))
 (test "atomic-cas"
-  (let p (alloc-malloc 8)
+  (let p (_atomic-slot)
     (begin
       (atomic-store p 0)
       (assert-true (atomic-cas p 0 99))

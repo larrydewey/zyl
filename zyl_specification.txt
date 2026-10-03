@@ -234,12 +234,23 @@ ResultValue:
     Struct   — named collection of fields (immutable by default)
     Alias    — transparent wrapper (zero-cost)
 
-4.3 Capability Types:
-    TCap<T>     immutable shared access
-    TMut<T>     exclusive mutable ownership
-    TAtomic<T>  atomic shared mutation
-    TBox<T>     heap-managed allocation
-    TPin<T>     FFI-pinned memory (non-moving arena)
+4.3 Binding Forms and Capabilities:
+    Zyl has no in-place mutation. A `let` binding is immutable and shared;
+    a `let-mut` binding is the only assignable binding, and `set!` rebinds
+    it. That is the whole aliasing story: for any binding, either it is
+    immutable (any number of readers) or it is assignable (one owner).
+    Struct fields are immutable by default; mutation rebinds the struct.
+
+    There are no TCap/TMut/TAtomic type constructors, and no capability
+    polarity in the type system. Enforcement is on bindings:
+      - `set!` on anything but a `let-mut` binding is E_MUT_CONFLICT
+      - a use after a move is E_MOVE_VALUE
+      - a mutable capture crossing an actor boundary is E_CAPABILITY_LEAK
+
+    Two type-level capabilities remain, both with obligations the compiler
+    enforces rather than aliases it counts:
+      (Secret T)   — carries obligations; E_SECRET_DEBUG, E_ZEROIZE_MISSING
+      (Pin a)      — FFI-pinned memory (non-moving arena)
 
 4.4 Function Types:
     TFun([T*], TReturn)
@@ -342,7 +353,9 @@ ResultValue:
                     time; a trait-generic function is specialized per
                     type at every call and every use as a value; a call
                     whose receiver type stays unknown is E_CANNOT_INFER.
-    exit, error     do not return: any type
+    panic, exit    do not return: any type
+    error           returns (Result a String); it does NOT raise. The
+                    raising form is `panic`, whose name carries a `!`.
     main            () -> Int
     spawn           the entry is () -> a
     Actors          spawn : (() -> a) -> Actor;  chan : Int -> (Chan a);
@@ -541,13 +554,16 @@ ResultValue:
     NO implicit sugar. ((x) body) is REJECTED.
 
 7.2 Capture Inference:
-    Read-only -> TCap. Mutated -> TMut. Escaping -> Heap.
+    Immutable (`let`) -> shared. Mutable (`let-mut`) -> owned by the
+    capturing closure, and crossing an actor boundary with one is
+    E_CAPABILITY_LEAK. Escaping -> Heap.
 
 7.3 Closure Value:
     (Closure Environment Expr CaptureMap)
 
 7.4 Closure and Concurrency:
-    Spawned closures must only capture Send-capable variables (TCap/TAtomic).
+    Spawned closures must only capture Send-capable variables: immutable
+    (`let`) bindings and atomics.
 
 7.5 Closure and Effects:
     Effect set is union of body effects.
@@ -610,10 +626,13 @@ Errors:
 
 Invariant:
     For any memory location:
-        either exactly one TMut reference
-        OR any number of TCap references
+        either exactly one assigning owner (a `let-mut` binding)
+        OR any number of immutable readers (a `let` binding)
 
-Violation: E_MUT_CONFLICT (compile-time error)
+There is no in-place field mutation, so a location cannot be shared between
+an owner and a reader in the first place.
+
+Violations: E_MUT_CONFLICT, E_MOVE_VALUE, E_CAPABILITY_LEAK (compile-time)
 
 Struct Mutability:
     Fields defined in `defstruct` are immutable by default.
@@ -1236,7 +1255,7 @@ enforces capability grants at import time.
 
 Compiler MUST:
     - preserve evaluation order (strict left-to-right)
-    - enforce aliasing invariants (TMut vs TCap)
+    - enforce aliasing invariants (set! only on a let-mut binding; no in-place mutation)
     - enforce region rules (no escape violations)
     - enforce FFI safety (Pin region only)
     - enforce deterministic ICNF and monomorphization
@@ -1310,7 +1329,7 @@ Errors:
     E_REGION_EXHAUSTED          — with-region region exceeded its size or limit
     E_MACRO_NON_TERMINATION     — macro expansion loop
     E_MATCH_NONEXHAUSTIVE       — missing match case (Compile Error)
-    E_CAPABILITY_LEAK           — TMut leaked
+    E_CAPABILITY_LEAK           — mutable binding leaked across a boundary
     E_TRAIT_NOT_FOUND           — missing impl
     E_DUPLICATE_IMPL            — conflicting impls
     E_MACRO_ILLEGAL_ACCESS      — macro accessed runtime value

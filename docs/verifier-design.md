@@ -3,7 +3,7 @@
 ## The problem with where we are
 
 Everything in `docs/soundness.md` rests on one unexamined assumption: **the
-compiler and the runtime are correct.** The 433 tests, the memcheck gate, the
+compiler and the runtime are correct.** The 496 tests, the memcheck gate, the
 poison gates and the exhaustive model all check the output of components
 nobody has verified. Add a sixth gate and the assumption is unchanged. The
 trust base is the compiler, the runtime, and a human reading both, and no
@@ -316,9 +316,10 @@ operands in 15 MB, and its cost is paid by every compile from here on. So the
 scanning primitives come first and get benchmarked before any dataflow is
 written.
 
-`stdlib/compiler/verify.zyl` is **untracked and used by nothing** — a prior
-attempt's V1 and V2, never committed, never in the pipeline. Its scanner is
-not reusable: `vy-find` allocates a one-character `str-substring` per byte
+`stdlib/compiler/verify.zyl` was, at this point in the log, **untracked and
+used by nothing** — a prior attempt's V1 and V2, never committed, never in the
+pipeline. (Both facts have since changed: the file is tracked, and it is the
+verifier `codegen-fns` runs today.) Its scanner is not reusable: `vy-find` allocates a one-character `str-substring` per byte
 scanned and re-measures `str-length` at each step, `vy-atoi` recurses through
 `str-substring` per digit, and `vy-trim`/`vy-word`/`vy-before-comma`/
 `vy-after-comma` each allocate per line. On this corpus that is minutes. Its
@@ -406,7 +407,7 @@ The side-table plan it replaces, for the record:
 1. `CGState` (`codegen.zyl:65`) is a 6-field record: arena, buffer,
    next-label, next-slot, rodata, fn-names. Add a seventh, `frames`, a list
    of `(name . fsz)`.
-2. At `codegen.zyl:1792`, where `fsz` is computed, push `(name, fsz)` onto
+2. At `codegen.zyl:1841`, where `fsz` is computed, push `(name, fsz)` onto
    it.
 3. `verify-asm` takes the assembly **and** that table. It reads each
    function name from the label in the text -- cheap, labels are at column 0
@@ -521,25 +522,25 @@ linear. Benchmark with `ZYL_HOME=$PWD/build/boot`, and check
 A full verification of the compiler's own output:
 
 ```
-stage2.s  16,072,608 bytes   5,204 functions
-          24,774 frame-slot writes   86,509 reads   118,515 dynamic   0 unverified
-rt.s         862,052 bytes   1,103 functions
-             482 frame-slot writes    2,488 reads     4,935 dynamic   0 unverified
+stage2.s  18,354,305 bytes   5,784 functions
+          27,878 frame-slot writes   94,799 reads   126,702 dynamic   0 unverified
+rt.s          988,668 bytes   1,148 functions
+                595 frame-slot writes    2,644 reads     4,333 dynamic   0 unverified
 ```
 
-The write and read counts match the independent Python reference (24,661 /
-86,114) to within the new module's own delta, and `fns=1,103` is exactly the
-function count of `rt.s` — every runtime function is annotated, so nothing is
-checked against a bound nobody stated. V1 covers 24,774 of 140,000 memory
-accesses; the other 118,515 are dynamic and counted, not checked, which is
-what the evidence says.
+The write and read counts match the independent Python reference exactly —
+both implementations print the same line, which is what
+`verify/frame_oracle.sh` diffs — and `fns=1,148` covers every function
+label in `rt.s`, so nothing is checked against a bound nobody stated. V1
+covers the 27,878 writes; the other 126,702 are dynamic and counted, not
+checked, which is what the evidence says.
 
 ## The planted-violation test, and the five bugs it exists for
 
 A verifier run only on the compiler's own output cannot be told apart from one
 that does nothing: both report zero violations on correct code. `tests/verify_test.zyl`
 plants faults in hand-written assembly and requires them to be caught, and it
-is the reason four real defects in the verifier were found rather than shipped:
+is the reason five real defects in the verifier were found rather than shipped:
 
 - **`vy-num` read digits backwards.** `(+ (* 10 (rest)) digit)` makes `24`
   come out as `42` and `# frame 16` as `61`. Every write then looked out of
@@ -571,8 +572,8 @@ path to an assembly goes through it. That reasoning was wrong.
 the build record, so it calls `codegen-fns` directly:
 
 ```
-selfhost/driver.zyl:490    (let buf (codegen-fns arena fns src)   ; zyl build, zyl test
-stdlib/compiler/pipeline.zyl:250  (codegen-fns ...)                 ; compile-to-asm
+selfhost/driver.zyl:552          (let buf (codegen-fns arena fns src)   ; zyl build, zyl test
+stdlib/compiler/pipeline.zyl:291 (codegen-fns ...)                      ; compile-to-asm
 ```
 
 `zyl build` and `zyl test` therefore emitted binaries with no verification
@@ -611,8 +612,8 @@ committed seeds — including the operand counts, because a scan that stops
 early reports fewer operands and still reports zero violations:
 
 ```
-stage2.s bytes=16070335 lines=787090 functions=5207 writes=24766 reads=86503 dynamic=118506 unverified=0 violations=0
-rt.s        bytes=862052  lines=42907  functions=1103 writes=482   reads=2488  dynamic=4935   unverified=0 violations=0
+stage2.s bytes=18354305 lines=879677 functions=5784 writes=27878 reads=94799 dynamic=126702 unverified=0 violations=0
+rt.s        bytes=988668  lines=49328  functions=1148 writes=595   reads=2644  dynamic=4333   unverified=0 violations=0
 ```
 
 It runs on every `--quick` and `--full`, and the oracle has its own selftest:
@@ -647,29 +648,6 @@ on both counts. The gate exists so that the next such question is answered by
 running something rather than by reasoning.
 
 ## What it still will not give
-
-
-Honesty about the residue, because a document that claims more than it has is
-worse than no document:
-
-- **The verifier is itself unverified** until someone proves it in a proof
-  assistant. It is small enough that this is plausible — a few thousand lines
-  of dataflow — but until then it is a much smaller thing to trust than a
-  compiler, not a trusted thing.
-- **Concurrency.** Actors and channels are a separate obligation: the
-  single-writer/single-reader rule is a property of the scheduler, not of a
-  memory operand.
-- **FFI.** A foreign call can do anything. The invariant holds for Zyl's own
-  code; the boundary needs its own argument, and `ffi-call`'s Pin and timeout
-  requirements are what stands there today.
-- **Bugs that are not memory bugs.** Integer overflow, a wrong bounds check
-  that is too strict, a miscompiled `+`. This makes programs wrong, not
-  unsafe. Determinism catches the class of these that changes output.
-
-That list is shorter than the one we would have if we kept adding gates, and
-every item on it is a specific piece of work rather than an open question.
-
-
 
 Honesty about the residue, because a document that claims more than it has is
 worse than no document:

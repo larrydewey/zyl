@@ -29,12 +29,12 @@ leftover of an older build); from a checkout, use
 ## How an entry is evaluated
 
 Every entry goes through the real compiler. Parsing, module resolution,
-macro expansion, the capability, duplicate, arity, mutability,
+macro expansion, the capability, duplicate, arity, mutability, linearity,
 exhaustiveness, unused and secret checks, derive expansion, impl lifting,
-closure lifting, type checking (with static trait resolution and
-per-type specialization), ICNF lowering, inlining and optimization,
-region inference and in-place reuse all run exactly as they do for a
-compile with `zyl` — the shared implementation is
+closure inlining, type checking (with static trait resolution and
+per-type specialization), the numeric check, ICNF lowering, inlining and
+optimization, region inference and in-place reuse all run exactly as they
+do for a compile with `zyl` — the shared implementation is
 `stdlib/compiler/pipeline.zyl`, and the REPL calls `compile-to-fns`,
 which is `compile-to-asm` minus code generation. (The interpreter
 ignores the regions and the reuse decisions; see below.)
@@ -179,7 +179,7 @@ the file stays one entry per line.
 | `:time EXPR` | `:tm` | evaluate it and say how long it took |
 | `:load PATH` | `:l` | read a file's modules and definitions into the session |
 | `:save PATH` | `:s` | write the session's definitions (not its modules or bindings) to a file |
-| `:reset` | `:r` | forget everything, here and on disk, and start over |
+| `:reset` | `:r` | forget every definition and binding, rewrite `.zyl-session` so the next session starts clean, and start over (history is separate and untouched) |
 | `:clear` | `:cls` | clear the screen |
 
 An unknown command is answered with `unknown command :NAME — :help lists
@@ -195,9 +195,10 @@ The same commands work when input is piped, so a script can end with
 `:defs` or start with `:load`.
 
 `:type` reports the type `compiler/type_annotate.zyl` infers for the
-expression, generalized: after `(use collections/vec)`, `:type (vec-push (vec-create-default 1) "a")`
-is `(Vec String)`, `:type (fn (x) x)` is `(a -> a)`. A type the pass
-could not pin down prints as `a` (unconstrained) or `?` (conflicting).
+expression, generalized: after `(use collections/vec)`, `:type (vec-push
+(vec-new-cap 1) "a")` is `(Vec String)`, `:type (fn (x) x)` is `(a -> a)`.
+A type the pass could not pin down prints as `a` (unconstrained) or `?`
+(conflicting).
 
 ## What carries over between sessions
 

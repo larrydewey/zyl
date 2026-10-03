@@ -52,14 +52,26 @@ ill-typed program. Section 15.7 lists the errors.
   `E_TYPE_MISMATCH`. An actor entry passed to `spawn` must take no
   arguments.
 
-> **Implementation gaps (§20).**
->
-> - **Overflow.** §20.1 makes overflow checked by default. Generated code
->   wraps silently: `(+ 9223372036854775807 1)` is
->   `-9223372036854775808`.
-> - **Division by zero.** §20.3 requires `E_DIVISION_BY_ZERO` for
->   `Int`. Generated code executes `idiv` and the process dies with
->   `SIGFPE`.
+**The numeric model (§20)** decides what the `Int` operators do at
+their edges; it is not part of the type checker, but it runs right after
+it (`numeric_check.zyl`):
+
+- **Overflow is checked by default.** An `Int` `+`, `-` or `*` whose
+  result does not fit stops the program with `E_OVERFLOW`:
+  `(+ 9223372036854775807 x)` with `x` = 1 does not wrap. A package
+  opts out once with `(numeric wrapping)` (modulo 2^64) or
+  `(numeric saturating)` (clamped); `wrapping+ - *` and
+  `saturating+ - *` choose per operation under any policy.
+- **Division is total or spelled.** `/` and `%` on `Int` need a
+  nonzero integer literal divisor; any other divisor is
+  `E_PARTIAL_OPERATION` at compile time. `div!`/`rem!` stop with
+  `E_DIVISION_BY_ZERO` on a zero divisor and `div?`/`rem?` return an
+  `(Option Int)`. `INT_MIN / -1` is `E_OVERFLOW`. No division can reach
+  the processor's divide fault.
+- **Floats** follow IEEE-754 and never trap: overflow is `inf`, and
+  `(/ 1.0 0.0)` is `inf`.
+
+Chapter 3, §3.12 is the tutorial.
 
 ### Byte-level types (implementation extension)
 
@@ -111,13 +123,13 @@ it:
 
 | Spec type | In the implementation |
 |-----------|-----------------------|
-| `Vec<T>` | `(Vec T)`, a generic ADT in `collections/vec`: `(deftype Vec (VecC (Array T) Int Arena))` (a typed, bounds-checked runtime array, the length, the arena). Use `vec-create` (which takes an `Arena`) or `vec-create-default`, then `vec-push`, `vec-get!`, `vec-len`; `vec-get!` returns `T`. |
-| `Map<K,V>` | `(Map String V)`, a generic ADT in `core/map` (an association list; keys compared with `str-eq`), with `map-new`, `map-insert`, `map-get` (an `Option`), `map-has`, `map-remove`. `collections/intmap` is a separate Int-to-Int hash map (`IntMap`, `intmap-new`). |
-| `Set<T>` | `collections/set` (not in §4.2). |
+| `Vec<T>` | `(Vec T)`, a generic ADT in `collections/vec`: `(deftype Vec (VecC (Array T) Int))` (a typed, bounds-checked runtime array and the length). Use `vec-new`, `vec-new-cap` or the literal `(vec e ...)`, then `vec-push`, `vec-get!`, `vec-len`; `vec-get!` returns `T`. Storage comes from the region of the allocating call. |
+| `Map<K,V>` | `(Map K V)`, a generic ADT in `core/map` (an association list; keys compared with `str-eq`, so keys are Strings), with `map-new`, the literal `(map k v ...)`, `map-insert`, `map-get` (an `Option`), `map-has`, `map-remove`, `map-get-or`. `collections/intmap` is a separate Int-to-Int map (`IntMap`, `intmap-new`). |
+| `Set<T>` | `collections/set` (not in §4.2), also a struct over region-allocated arrays. |
 | `Result<T,E>` | `(deftype Result (Ok T) (Err E))` in `core/result`. |
 | `Option<T>` | `(deftype Option (Some T) None)` in `core/option` (named in §25). |
 | `List<T>` | `(deftype List (Cons T (List T)) Nil)` in `core/list`. |
-| Tuple | `(tuple e...)` and `(tuple-get t i)`. The element types are part of the type, so `(tuple 1 2)` and `(tuple "a" "b")` are different types; 4.5. |
+| Tuple | `(tuple e...)` and `(tuple-get t i)` (§21.5). The element types are part of the type, so `(tuple 1 2)` and `(tuple "a" "b")` are different types. |
 | Struct | `defstruct`; see 15.5. |
 | Alias | `(alias Name Type)`: a transparent second name for `Type`; see 15.5. |
 
@@ -133,7 +145,7 @@ so `Some`, `Ok` and `Cons` need no `use`.
 (use collections/vec)
 
 (defn main ()
-  (let v (vec-push (vec-push (vec-create-default 4) 10) 20)
+  (let v (vec-push (vec-push (vec-new) 10) 20)
     (begin
       (print (vec-len v))      ; 2
       (print (vec-get! v 1))    ; 20
@@ -143,25 +155,25 @@ so `Some`, `Ok` and `Cons` need no `use`.
 
 ## 15.3 Capability Types
 
-§4.3 defines five capability wrappers:
+§4.3 names five capability wrappers. The first two are the ones a
+program meets; none of the five is a type it can write:
 
-| Capability | Meaning (spec) |
-|------------|----------------|
-| `TCap<T>` | immutable shared access |
-| `TMut<T>` | exclusive mutable ownership |
-| `TAtomic<T>` | atomic shared mutation |
-| `TBox<T>` | heap-managed allocation |
+| Capability | What it is |
+|------------|------------|
+| `TCap<T>` | a `let` binding — immutable, any number of readers |
+| `TMut<T>` | a `let-mut` binding — the only assignable binding; `set!` rebinds it |
+| `TAtomic<T>` | atomic shared mutation (operations on addresses and byte buffers, not a type) |
+| `TBox<T>` | heap-managed allocation (no source construct produces it) |
 | `TPin<T>` | FFI-pinned memory (non-moving arena) |
 
-These are not types you can write, and the checker has no capability
-types either: it types a `let-mut` variable or a `for` loop variable as
-the plain type of its value. An `ffi-pin` result is the one exception:
-it has the handle type `(Pin a)`, which `ffi-unpin` turns back into
-the `a`. The capability rules
-are enforced by separate passes that run before type inference:
-`mutability_check.zyl` (the `TMut`/`TCap` aliasing invariant and actor
-transfer) and `secret_check.zyl` (the `Secret` annotation, the one
-capability you do write). Chapter 17 covers them.
+The checker has no capability types: it types a `let-mut` variable or a
+`for` loop variable as the plain type of its value. An `ffi-pin` result
+is the one exception — it has the handle type `(Pin a)`, which
+`ffi-unpin` turns back into the `a`. The capability rules are enforced
+by separate passes that run before type inference: `mutability_check.zyl`
+(the aliasing invariant and actor transfer) and `secret_check.zyl` (the
+`Secret` annotation, the one capability you do write). Chapter 17
+covers them.
 
 ## 15.4 Function Types
 
@@ -204,8 +216,12 @@ left to right before the call.
 (defstruct User (id Int) (name String))   ; with field types
 ```
 
-- `defstruct` generates the constructor `make-Point`. Fields are read
-  with `(struct-get p "x")`, where the field name is a string.
+- `defstruct` generates the constructor `make-Point` and one typed
+  accessor per field, `(Point.x p)`, defined as
+  `(defn Point.x ((p Point)) (struct-get p "x"))`. Fields can also be
+  read with `(struct-get p "x")`, where the field name is a string, or
+  with dot syntax, `p.x`. A program `defn` named `Point.x` is
+  `E_DUPLICATE_DEFINITION`.
 - Fields are immutable (§10). See Chapter 17.
 - A struct is represented as a one-variant ADT whose variant name is the
   struct name, so `(Point 1 2)` also constructs one.
@@ -260,8 +276,8 @@ program just before ICNF lowering.
   well. After more than one error the compile ends with
   "N errors; fix the first one first".
 - **The results are used**, not only computed. Every expression's type
-  reaches code generation, which picks `print`'s format (`%lld`, `%f`,
-  `%s`), String comparison and Float arithmetic from it. Trait calls are
+  reaches code generation, which picks how `print` formats a value,
+  String comparison and Float arithmetic from it. Trait calls are
   resolved from it statically (Chapter 20), and a function whose body
   depends on a type parameter is instantiated per concrete type (15.8).
 - `ZYL_DEBUG_TYPES=1` prints every function's inferred type while
@@ -270,11 +286,13 @@ program just before ICNF lowering.
   warnings and lets the compile finish. It exists for counting what is
   left while porting code, not for running the result.
 
+Two errors in one compile, because the pass keeps going:
+
 ```lisp
 (defn main ()
   (begin
-    (print (+ 1 "a"))       ; error[E_TYPE_MISMATCH]: the operands of `+` must have one type
-    (print (+ 1.5 2))       ; error[E_TYPE_MISMATCH]: the operands of `+` must have one type
+    (print (+ 1 "a"))       ; error[E_TYPE_MISMATCH]: the operands of `+` must have
+    (print (+ 1.5 2))       ;   one type: the first is `Int`, this one is `String`
     0))
 ```
 
@@ -311,21 +329,31 @@ struct or ADT name (applied to arguments for a generic one:
 
 Annotations are optional (§0 P7): inference usually finds the same
 type without them. An argument that clashes with a parameter's
-annotation, or a constructor argument (`(Circle 1.5)`, `make-Point`)
-that clashes with the declared field type, gets a diagnostic whose label
-points at the declaration:
+annotation gets a diagnostic that names the parameter and labels the
+declaration:
 
 ```lisp
 (defn add ((a Int) (b Int)) (+ a b))
 
 (defn main ()
   (begin
-    (print (add 1.5 2.0))   ; error[E_TYPE_MISMATCH]: mismatched types:
-    0))                     ;   expected `Int`, found `Float`
+    (print (add 1.5 2.0))   ; error[E_TYPE_MISMATCH]: `add` takes `Int` as its
+    0))                     ;   1st argument (`a`), but this is `Float`
 ```
 
-A help line gives the declared type. There is no return-type annotation
-and no annotation on `let`.
+A constructor argument that clashes with a declared field type is
+reported at the call, naming the field:
+
+```
+error[E_TYPE_MISMATCH]: mismatched types: expected `Int`, found `Float`
+  --> main.zyl:2:24
+   |
+ 2 |     (print (make-Point 1.5 2))
+   |                        ^
+   = help: field 1 of `Point` is declared `Int`
+```
+
+There is no return-type annotation and no annotation on `let`.
 
 ## 15.7 Type Errors
 

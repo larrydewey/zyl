@@ -97,12 +97,12 @@
           "Two-armed conditional. Both arms are required and must agree in type.")
   (Cons (ZB "cond" "special-form" "(cond (test body) ... )"
           "Multi-way conditional, tested top to bottom.")
-  (Cons (ZB "when" "special-form" "(when cond body)"
-          "One-armed conditional; the absent arm yields unit. A core/core function, not a special form, so `body` is evaluated before the test. Written `(when cond)` before a match arm's body, it is a guard.")
+  (Cons (ZB "when" "special-form" "(when cond body ...)"
+          "Lazy one-armed conditional; the absent arm yields unit. A special form, so `body` is evaluated only when `cond` holds. Written `(when cond)` before a match arm's body, it is a guard.")
   (Cons (ZB "while" "special-form" "(while cond body)"
           "Loop while `cond` holds.")
-  (Cons (ZB "for" "special-form" "(for (i start) limit body)"
-          "Counted loop. `(for (i 16) n body)` starts at 16 -- a bare `(for (i) ...)` starts at 0.")
+  (Cons (ZB "for" "special-form" "(for (i start) condition body)"
+          "Loop while `condition` holds, rebinding `i` each turn: `(for (i 0) (< i n) body)`. The binding may be bare -- `(for (i) (< i n) body)` starts at 0.")
   (Cons (ZB "match" "special-form" "(match subject (Variant binding ... body) ...)"
           "Destructure an ADT. Non-exhaustive matches are a compile-time error; a `_` arm matches anything.")
   (Cons (ZB "begin" "special-form" "(begin expr ...)"
@@ -233,8 +233,11 @@
   (Cons (ZB "str-len" "builtin" "(str-len s)" "Length of a string in bytes; a spelling of `str-length`.")
   (Cons (ZB "str-substring" "builtin" "(str-substring s start len)" "Byte-indexed substring.")
   (Cons (ZB "str-eq" "builtin" "(str-eq a b)" "Compare string contents; a Bool. `=` does the same on strings.")
-  (Cons (ZB "str-intern" "builtin" "(str-intern arena s)" "Intern a string in an arena so `=` on it is meaningful.")
-  Nil)))))))
+  (Cons (ZB "unless" "special-form" "(unless cond body ...)"
+          "The negation of `when`: evaluate `body` only when `cond` does not hold.")
+  (Cons (ZB "numeric" "declaration" "(numeric checked)"
+          "Top-level: the policy for Int `+ - *`. One of `checked` (default; overflow raises E_OVERFLOW), `wrapping`, or `saturating`.")
+  Nil))))))))
 
 (defn builtins-io ()
   (Cons (ZB "print" "special-form" "(print expr ...)"
@@ -366,8 +369,9 @@
   (Cons (ZB "ByteSlice" "type" "ByteSlice" "A byte slice handle, from `byteslice`.")
   (Cons (ZB "Secret" "capability" "(Secret T)"
           "Secret capability. A secret may not steer control flow, index memory, divide, print, spawn, send or be written to a file, and reaches FFI only through `ffi-pin`. Leave it with `declassify`, `ct-eq-bool` or `ct-eq-words-bool`.")
-  (Cons (ZB "TCap" "capability" "TCap" "Capability of a shared immutable value; any number of references may coexist. Inferred, not written.")
-  (Cons (ZB "TMut" "capability" "TMut" "Capability of exclusive mutable ownership (a let-mut). Inferred, not written.")
+  (Cons (ZB "let-mut" "special-form" "(let-mut name value)"
+          "The only assignable binding: `set!` rebinds it, and every other binding is immutable and shared. There is no TCap/TMut type -- `set!` on a plain `let` is E_MUT_CONFLICT.")
+  (Cons (ZB "Secret" "capability" "(Secret T)" "Marks a value the compiler holds to obligations: E_SECRET_DEBUG, and E_ZEROIZE_MISSING unless the value is zeroized or passed on as a Secret.")
   (Cons (ZB "declassify" "builtin" "(declassify value)"
           "Deliberately drop the Secret capability. The one explicit escape hatch; every use is a decision worth a comment.")
   Nil))))))))))))))))))

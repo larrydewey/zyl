@@ -121,7 +121,7 @@ compile with `build/boot/zyl-self` on 2026-09-28.
   a compiler check, *measured* by a dynamic run, or *argued* from those.
   The weakest link is named there: escape analysis under-approximation
   (L2), which now has a dynamic gate of its own (`verify/poison.sh`,
-  `--filter poison`: released region blocks refilled with `0xDE`, 125/125
+  `--filter poison`: released region blocks refilled with `0xDE`, 131/131
   unchanged) with its limits stated — it catches only a stale read that
   reaches output, and it has no positive control, because the violation it
   looks for is what the static checks already prevent. The stronger gate
@@ -543,9 +543,216 @@ REPL and language server:
    each `call`, its offset and the ICNF node's span) looked up like
    `zyl_syms`; about 110k entries for the compiler. Not started.
 
+9. **Secret erasure**: wipe a region block when it is released, so a
+   secret is gone with the frame that held it; then have `codegen.zyl`
+   zero the secret locations it alone knows about -- parameter slots,
+   spill slots, temporaries, callee-saved registers -- on the return
+   path; then insert erasure where escape analysis proves an escaping
+   value dies. Layer 1 is sound because a released frame region holds no
+   live value (results go to the caller's region), and needs no language
+   change. Not started; the plan is in `docs/secret-erasure-design.md`.
+   **Decided 2026-10-02: all three layers**, not a partial job — layer 1
+   alone leaves heap and Global secrets unerased and would make the
+   book's frame-wipe claim true only where it is least needed. The cost is
+   known and is the point: layer 2 needs a Secret lattice threaded
+   through monomorphization, ICNF lowering and codegen, because
+   `secret_check.zyl` works on the AST and nothing downstream knows which
+   MIR locations hold a Secret. Layers 2 and 3 each cost a reseed. Build
+   layer 1 first and re-measure, then layer 2, then layer 3.
+
+10. **Discussion: TCap and TMut.** Not a bug list -- an argument that has
+   not been had. The aliasing rule is enforced syntactically, not by the
+   type system: `mutability_check.zyl` reads `let` as TCap and `let-mut`
+   as TMut and rejects `set!` on anything else (`E_MUT_CONFLICT`),
+   `linearity.zyl` handles moves (`E_MOVE_VALUE`), and the unifier has
+   no capability polarity (`docs/architecture-decisions.md` A7). So the
+   question to settle is what the *types* should say: whether TCap/TMut
+   become real annotations the checker carries (and what that costs the
+   unifier), or whether the syntactic enforcement is the design and
+   should be documented as such rather than described in the vocabulary
+   of capabilities. Until that is answered, the book and the spec
+   describe an invariant the implementation reaches by other means.
+   **Decided 2026-10-02: retire the terms.** `TCap`/`TMut` leave the
+   spec, the book and the docs; the invariant is stated as what it is --
+   Zyl has no in-place mutation, so every `let` binding is immutable and
+   rebinding is the only update -- which is stronger than an aliasing
+   invariant and is true. `AGENTS.md` already says so informally. The
+   reason not to make them real annotations: structs forbid field
+   mutation, so TMut could never flow through a field, and the caps would
+   exist only in the positions `let`/`let-mut` already cover, at the cost
+   of capability polarity in the unifier and in `T.==`. What survives:
+   `E_CAPABILITY_LEAK` in `mutability_check.zyl`, and the one real
+   capability, `Secret`, whose obligations the compiler enforces. Also
+   update the spec, where "capability" means two different things (§25
+   operational, §10 fictional).
+11. **Document memory poisoning properly.** Done 2026-10-02:
+   `docs/memory-poisoning-design.md`. It covers what release actually does
+   (big blocks are `munmap`ped and fault on their own, so only pooled
+   blocks need help), the three paths that reach `rt-poison` (frame
+   release, `with-region`, and `zyl_region_recycle` for self tail calls --
+   one path, so a new release path cannot forget), why the fill starts
+   past the 24-byte block header the free list still needs, the
+   `ZYL_REGION_POISON` levels and why only the exact strings `1` and `2`
+   enable anything, why page protection was built and withdrawn (18 of 125
+   faulting, all ambiguous), what `poison-selfhost` adds, and both limits
+   -- including that the adversarial attempt to manufacture a positive
+   control produced nothing, because the escape path promotes an allocation
+   to a longer-lived region rather than leaving it dangling. It also
+   records the cost in a normal build: the fill is skipped, the
+   environment scan that reads the level is not.
+   Two falsehoods fixed on the way. A comment in `runtime/rt/misc.zyl`
+   described the withdrawn `mprotect` version as the mechanism and named
+   `verify/memcheck.sh` as the thing that enables it; no `mprotect` call
+   exists anywhere in the tree and memcheck sets no such variable. And the
+   program counts said 125 where the gate actually runs 131. Cross-linked
+   from `docs/soundness.md` L2, `docs/regions-design.md`,
+   `docs/secret-erasure-design.md` and `AGENTS.md`.
+12. **Language server leak.** A `zyl-lsp-bin` left running by an editor
+   reached 37 GB RSS in 65 minutes and had to be SIGKILLed -- it ignores
+   SIGTERM, which is a second and smaller bug, since a language server
+   should exit on it. The likely source is the long-lived Arena the LSP
+   takes on purpose ("the parse tree and the REPL scratch outlive any
+   single frame", `AGENTS.md`): if per-request work lands in that arena,
+   nothing ever releases it. Not started; the LSP needs its own
+   allocation accounting before the cause is knowable.
+   **Decided 2026-10-02: diagnose before changing.** The 1 GiB arena at
+   `selfhost/lsp_main.zyl:13` is a plausible suspect but cannot account
+   for 37 GB, and fixing the wrong thing here would look like progress.
+   So: per-request allocation accounting first, then act on what it says.
+   In the same pass, check `document_manager.zyl`, which keeps a parsed
+   analysis per document in a map with no eviction on close -- a more
+   likely cause of unbounded growth in an editor session. SIGTERM
+   handling is separate and trivial.
+
+13. **A buffer is a valid argument to a foreign call.** The FFI
+   abstraction layer this project needs already exists and is enforced --
+   `ffi-raw-p`, the `E_FFI_RESTRICTED` raw-memory set, and "an extern may
+   not retype a runtime entry" mean programs get a typed stdlib function
+   and the raw entry behind it is unreachable. What is missing is that the
+   layer leaks in one place: `(bytebuf-ptr b)` is written by hand at every
+   call site, and once a program holds that address, `alloc-offset` and the
+   `alloc-read-int` family let it walk off the end of the buffer. The
+   typed surface over a buffer is already complete -- `load-u8`..`store-i64`
+   and all six `bytebuf-atomic-*` take `(buf, offset)` -- so user code
+   never needs a pointer to *manipulate* bytes. It appears in exactly two
+   situations: being handed to C, and being received from C in a callback.
+   The first is not fundamental. Let an extern parameter be declared as a
+   buffer, `(extern "qsort" ((ByteBuf) Int Int (Fn (Ptr Ptr) Int)) Unit)`,
+   and have lowering insert `bytebuf-ptr`; the address then exists only in
+   generated code. No new type, no cast, no runtime feature, no new syntax
+   (`ByteBuf` already names a type in that position); ~100 lines in the
+   type pass and lowering plus tests, and one reseed. The reverse direction
+   stays `Int`, because a pointer C hands you is a word. A `Stack` buffer
+   passed to C is still `E_REGION_ESCAPE` if C could retain it.
+   Deliberately *not* a generic `(c-call "sym" :buf :varargs :fn ...)`
+   marshaller: it re-implements the type system as a positional
+   mini-language whose surface is widest exactly where C is hardest
+   (varargs, callbacks, struct-by-value), which fails at runtime in the one
+   place this language claims static safety. Typed wrappers fail at
+   compile time. Recorded 2026-10-02; do it after item 9's layer 1.
+14. **`Ptr` is a spelling, not a type.** Done 2026-10-02, and it came out
+   of item 13's prerequisites: with `alloc-malloc` restricted, the
+   diagnostic names `bytebuf-ptr` as the replacement, but `bytebuf-ptr`
+   was typed `Int` and could not be passed to a `Ptr` parameter, so the
+   advice was false. `Ptr` now resolves to `Int` in `ta-conv-name-1` (type
+   annotations) and `ta-sig-word` (extern declarations and the runtime
+   signature table). The reasoning is recorded at `ta-builtin-type`: the
+   runtime has no pointer representation -- `zyl_cstr_of_word` is
+   literally `(defn zyl_cstr_of_word (w) w)` -- an address is a word, and
+   making `Ptr` nominal would need a Ptr-to-Int coercion for the
+   arithmetic every real use needs (`elf_link.zyl`), and a cast is the
+   surface this language deliberately does not have. What is enforced is
+   where an address may *come from*: `bytebuf-ptr`, `ffi-pin`, or a
+   foreign call, never memory nothing tracks. Open question, not decided:
+   `alloc-offset`, `alloc-incr`/`decr` and `alloc-read-int`/`write-int`
+   still let a program do unchecked arithmetic on an address it legitimately
+   obtained. Whether that is the same hole `alloc-malloc` was is the next
+   question on this thread.
+15. **Published documentation accuracy, beyond arenas.** Fixed 2026-10-02
+   for the arena/malloc surface: `website/src/content/docs/{learn/ffi,
+   learn/data-structures, learn/ownership-regions-capabilities,
+   systems/cryptography, reference/ffi, reference/region-memory,
+   appendix/stdlib, appendix/spec-ref, reference/modules}.md` and the
+   book's `ch12-ffi`, `ch22-ffi`, `appendix-b/e/f`. Every code sample
+   touched was extracted and run through `zyl check`; several could not
+   compile before (`arena-create` is `E_FFI_RESTRICTED`, and
+   `sha256-hex-of-string` has taken only a `String` since the arena was
+   dropped from `math/`). The wider finding is not fixed: those pages also
+   documented collection APIs that no longer exist under those names
+   (`vec-create`, `vec-create-default`, `map-*`; the current ones are
+   `vec-new`/`vec-new-cap`, `intmap-*`, `set-create`), and
+   `reference/ffi.md` and `learn/ffi.md` still contain fragments that are
+   not standalone programs. A periodic check that every `zyl` fenced block
+   in `website/` and `book/` compiles would keep this from rotting again;
+   not started.
+
+16. **Documentation sweep** (done 2026-10-02). Thirteen agents reviewed
+   all 126 tracked markdown files -- `book/src/**`, `docs/**`, `spec/**`,
+   `README.md`, `zyl_specification.txt` -- in disjoint sets, against a
+   shared protocol, after I had extracted every fenced Zyl block (981) and
+   checked it: 296 failed, of which 114 looked like real programs. All 114
+   are now either fixed or explicitly marked as deliberate demonstrations
+   of a diagnostic. The structural findings were worth more than the
+   individual fixes:
+   - **The website is generated.** `website/src/content/docs/{learn,
+     reference,internals,systems,tooling,appendix}/` is gitignored and
+     written by `website/scripts/import_book.py` from `book/src/**`, which
+     also rewrites inter-chapter links and turns `lisp` fences into `zyl`.
+     Editing a generated page is wasted work; `book/src` is the source of
+     truth, and only `index.mdx` and `404.md` are tracked. Run the importer
+     after changing a chapter.
+   - **`error` does not abort.** `stdlib/core/result.zyl` defines
+     `(defn error (msg) (Err msg))`; `panic` is the form that raises and
+     unwinds to the nearest `try`/`catch`. Several chapters had it
+     backwards.
+   - **`defun` is not recognised** (it is reserved): top-level
+     `(defun f ...)` reads as a call and `f` is unbound. Note how this is
+     easy to get wrong -- nesting it inside a `begin` fails for a different
+     reason (form placement), which looks like it works.
+   - The **frame wipe is real**: `secret_check.zyl`'s `sc-mark-wipe` feeds
+     `codegen.zyl`'s `cg-wipes-frame`, which emits `rep stosq` over the
+     frame and suppresses the tail call. That is a different mechanism from
+     region release, which does not wipe. `docs/secret-erasure-design.md`
+     had claimed no frame wipe existed; it was wrong and is fixed.
+   - Counts in the docs were stale in several places (the regression suite
+     was documented as 377 tests and is 495; the error-code catalog as
+     130-133 and is 124; test counts in the README and in
+     `docs/verifier-design.md`), as were several stdlib API names
+     (`vec-create`, `vec-create-default`, `map-*` for the Int map).
+   - **`zyl check` is weaker than a build**: it accepts `(/ 7)` (a build
+     reports `E_ARITY_MISMATCH`) and a file with no `main`, and it stops
+     before region inference, so an `E_REGION_ESCAPE` claim needs a real
+     build to confirm.
+   - A `TCap`/`TMut` retirement (item 10) was carried through
+     `zyl_specification.txt` §4.3/§7.2/§7.4/§10/§26/§28, `AGENTS.md`,
+     `spec/06`, `spec/07` and the chapters. The terms survive only where a
+     document quotes the compiler's own diagnostic strings, which still say
+     "TMut"; those strings are output history and were left alone.
+   - Three wrong strings in `stdlib/lsp/builtins.zyl` (editor
+     completions) were fixed: `for` was documented as
+     `(for (i start) limit body)`, `when` as an eager core function (it is
+     a lazy special form), and `TCap`/`TMut` were offered as capability
+     types. `unless` and `numeric` were missing. One reseed.
+   Still open, all verified and reported: `zyl_specification.txt` §4.9
+   still lists `error` among the non-returning forms;
+   `stdlib/math/secret/secret.zyl` still describes `zyl_zeroize` as a C
+   helper (it is Zyl now, `runtime/rt/crypto.zyl`), as does
+   `book/src/part4/ch33-secrets.md`; `cli-manifest-str` drops
+   `deny-capabilities`, `features`, `overrides`, `native` and `exclude`
+   when `zyl add` re-serialises a manifest; `error_codes.zyl` and
+   `mutability_check.zyl` still use the retired names in their messages;
+   `tests/_t2.s` is a tracked generated assembly file nothing runs.
+   Not done: a CI-style check that every fenced block in `book/` and the
+   generated site compiles. The one-off sweep found 296 failures, so this
+   rots again without one.
+
 Decisions already taken (do not reopen): inline assembly is rejected in
 favour of the deterministic intrinsics (`bit-popcount` and friends, spec
-§21.13, and `stdlib/simd`); `ffi-call` stays the escape hatch.
+§21.13, and `stdlib/simd`); `ffi-call` stays the escape hatch. That
+rule is on the *language surface* -- a program gets no `unsafe` and no
+asm -- and not on the compiler, which is the assembly: compiler-emitted
+erasure is ordinary. Who writes the zeros is decided by who knows where
+the bytes are, not by trust in the emitter.
 
 ## Constraints for Compiler Source Written in Zyl
 
@@ -583,7 +790,9 @@ the zyl-skill repository (`~/git/larry/zyl-skill`).
   `docs/concurrency-determinism-design.md`
 - Packages: `docs/package-management-design.md`
 - REPL: `docs/repl.md`; language server: `docs/lsp.md`; cryptography:
-  `docs/math-crypto.md`
+  `docs/math-crypto.md`; secret erasure (planned):
+  `docs/secret-erasure-design.md`; region lifetime and the poison gate:
+  `docs/soundness.md` L2, `docs/regions-design.md`, `verify/poison.sh`
 
 ## Milestone History
 

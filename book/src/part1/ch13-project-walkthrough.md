@@ -132,6 +132,8 @@ The workhorse splits a string on a one-character separator and returns a list of
 A line is `<timestamp> <level> <service> <message...>`. A line with fewer than four tokens is not a log line:
 
 ```lisp
+; logstats.zyl, continued from §13.4: this and the next three blocks are
+; consecutive excerpts of one file, not programs you can compile alone.
 (defn parse-line (line)
   (let toks (tokenize line " ")
     (if (< (list-length toks) 4)
@@ -194,6 +196,9 @@ Counting takes the running `Stats` and returns a new one:
 `scan` cuts the file's contents on newlines and folds each non-empty line into the `Stats`, threading the struct through the recursion:
 
 ```lisp
+; logstats.zyl, continued. `process-file` needs the io capability, but
+; it is not declared here: the line belongs to the program being
+; compiled, which has it (§13.2, §13.8).
 (defn scan (st s n i start)
   (if (>= i n)
     (finish-line st s start i)
@@ -230,6 +235,8 @@ Counting takes the running `Stats` and returns a new one:
 `log-processor.zyl` is short:
 
 ```lisp
+(capabilities io)
+
 (use logstats)
 
 (defn report (st)
@@ -270,6 +277,8 @@ Each label and its value are on separate lines because `print` writes every argu
 `log-processor-tests.zyl` uses the same library. `test`, `assert-equal`, and `run-tests` are built-in forms, so no import is needed for the harness:
 
 ```lisp
+(capabilities io)
+
 (use logstats)
 
 ; Helpers keep each test body to a single comparison.
@@ -340,11 +349,11 @@ Notes on the harness (Chapter 11 has the details):
 - `str-eq` is a `Bool`, so the string checks use `assert-true`; `assert-equal` is for two values of the same type, such as two counts.
 - The file has no `main`; the compiler generates one. A file with both tests and its own `main` is rejected with `E_TOPLEVEL_STMTS_WITH_EXPLICIT_MAIN`.
 - Tests can also be grouped in a `test-suite` with `setup`/`teardown` fixtures, and `test-property` checks a property over generated inputs (Chapter 11, §11.5). `(run-tests (:filter "text"))` runs only the tests whose names contain `text`.
-- Read the summary line: the program's exit status is 0 even when a test fails.
+- The program exits with status 1 when a test fails, so `./log-processor-tests && echo ok` works as a check.
 
 ## 13.10 A Concurrent Variation?
 
-The natural concurrent design gives each file to a worker actor, which parses it and sends its `Stats` back to the collector. With channels (Chapter 9) that design works: `main` gives each worker a channel for its result, the spawned closure captures the file name and that channel's `Tx`, and `main` calls `chan-recv` on each worker's channel in turn. Because each worker has its own channel and `main` reads them in a fixed order, the report comes out the same on every run. For a single sample file it adds nothing over calling `report` directly, so the sequential version is the one shown here.
+The natural concurrent design gives each file to a worker actor, which parses it and sends its `Stats` back to the collector. With channels (Chapter 9) that design works: `main` gives each worker a channel for its result, the spawned closure captures the file name and that channel's `Tx`, and `main` calls `chan-recv` on each worker's channel in turn. The file then declares `(capabilities io actor)`. Because each worker has its own channel and `main` reads them in a fixed order, the report comes out the same on every run. For a single sample file it adds nothing over calling `report` directly, so the sequential version is the one shown here.
 
 ## 13.11 Key Zyl Features Demonstrated
 

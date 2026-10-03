@@ -560,8 +560,25 @@
 
 (defn pk-parse-deps (forms head)
   (match (pk-find-form forms head)
-    (Some f (pk-dep-list (pk-find-forms (pk-ast-args f) "dep")))
+    (Some f (pk-dep-list (pk-check-dep-forms head (pk-ast-args f))))
     (None Nil)))
+
+; Every entry of a `(deps ...)`, `(dev-deps ...)` or `(overrides ...)`
+; block must be a `dep`. Selecting the dep-shaped ones and dropping the
+; rest loses a dependency without a word: a manifest that wrote
+; `(deps ("acme/json" "1.0.0"))` -- the `dep` head missing -- then builds
+; with no such dependency and fails later, in the middle of the program,
+; for a reason that has nothing to do with the manifest.
+(defn pk-check-dep-forms (owner forms)
+  (match forms
+    (Nil Nil)
+    (Cons h t
+      (if (str-eq (pk-ast-head h) "dep")
+        (Cons h (pk-check-dep-forms owner t))
+        (pk-fail-at h "E_MANIFEST_INVALID"
+          (str-concat "package: this "
+            (str-concat owner
+              " entry is not a dep; write (dep \"name\" \"version\"), or (dep \"name\" \"version\" (path \"..\")) for a local one")))))))
 
 (defn pk-dep-list (forms)
   (match forms

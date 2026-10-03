@@ -47,9 +47,12 @@ CASES = {
 (capabilities secret)
 (use math/secret/secret)
 (use math/words)
-(use allocator/allocator)
 
-(defn run ((a Int) (x Int) (y Int) (iters Int))
+; The primitive takes (Secret Words): a program cannot name Words where a
+; Secret Words is wanted, so the harness's own parameters carry the
+; annotation. That is also what the case is measuring -- the real
+; primitive, reached the only way a program may reach it.
+(defn run ((x (Secret Words)) (y (Secret Words)) (iters Int))
   (let acc 0
     (begin
       (for (i 0) (< i iters)
@@ -59,30 +62,28 @@ CASES = {
       0)))
 
 (defn main ()
-  (let a (arena-create 0)
-    (let cls (ffi-call "zyl_cstr_to_int" (ffi-call "zyl_arg_str" 1 1000) 1000)
-      (let iters (ffi-call "zyl_cstr_to_int" (ffi-call "zyl_arg_str" 2 1000) 1000)
-        (let x (w-fill (w-alloc a 32) 32 7)
-          (let y (w-fill (w-alloc a 32) 32 7)
-            (begin
-              (if (= cls 1) (w-set y 0 9) 0)
-              (run a x y iters)
-              0)))))))
+  (let cls (ffi-call "zyl_cstr_to_int" (ffi-call "zyl_arg_str" 1 1000) 1000)
+    (let iters (ffi-call "zyl_cstr_to_int" (ffi-call "zyl_arg_str" 2 1000) 1000)
+      (let x (w-fill (w-alloc 32) 32 7)
+        (let y (w-fill (w-alloc 32) 32 7)
+          (begin
+            (if (= cls 1) (w-set y 0 9) 0)
+            (run x y iters)
+            0))))))
 """,
     # The positive control: the same comparison written the wrong way,
     # returning as soon as two words differ.
     "leaky-compare": """
 (use math/words)
-(use allocator/allocator)
 
-(defn leaky-eq ((x Int) (y Int) (n Int) (i Int))
+(defn leaky-eq ((x Words) (y Words) (n Int) (i Int))
   (if (>= i n)
     1
     (if (= (w-get x i) (w-get y i))
       (leaky-eq x y n (+ i 1))
       0)))
 
-(defn run ((x Int) (y Int) (iters Int))
+(defn run ((x Words) (y Words) (iters Int))
   (begin
     (for (i 0) (< i iters)
       (begin
@@ -91,42 +92,39 @@ CASES = {
     0))
 
 (defn main ()
-  (let a (arena-create 0)
-    (let cls (ffi-call "zyl_cstr_to_int" (ffi-call "zyl_arg_str" 1 1000) 1000)
-      (let iters (ffi-call "zyl_cstr_to_int" (ffi-call "zyl_arg_str" 2 1000) 1000)
-        (let x (w-fill (w-alloc a 32) 32 7)
-          (let y (w-fill (w-alloc a 32) 32 7)
-            (begin
-              (if (= cls 1) (w-set y 0 9) 0)
-              (run x y iters)
-              0)))))))
+  (let cls (ffi-call "zyl_cstr_to_int" (ffi-call "zyl_arg_str" 1 1000) 1000)
+    (let iters (ffi-call "zyl_cstr_to_int" (ffi-call "zyl_arg_str" 2 1000) 1000)
+      (let x (w-fill (w-alloc 32) 32 7)
+        (let y (w-fill (w-alloc 32) 32 7)
+          (begin
+            (if (= cls 1) (w-set y 0 9) 0)
+            (run x y iters)
+            0))))))
 """,
     # A whole AEAD tag verification, which is where a leaky compare
     # would actually be exploitable.
     "poly1305-verify": """
 (use math/crypto/symmetric/poly1305)
 (use math/words)
-(use allocator/allocator)
 
-(defn run ((a Int) (key Int) (msg Int) (tag Int) (iters Int))
+(defn run ((key Words) (msg Words) (tag Words) (iters Int))
   (begin
     (for (i 0) (< i iters)
       (begin
-        (poly1305-verify a key msg 34 tag)
+        (poly1305-verify key msg 34 tag)
         (set! i (+ i 1))))
     0))
 
 (defn main ()
-  (let a (arena-create 0)
-    (let cls (ffi-call "zyl_cstr_to_int" (ffi-call "zyl_arg_str" 1 1000) 1000)
-      (let iters (ffi-call "zyl_cstr_to_int" (ffi-call "zyl_arg_str" 2 1000) 1000)
-        (let key (w-from-hex a "85d6be7857556d337f4452fe42d506a80103808afb0db2fd4abff6af4149f51b")
-          (let msg (w-from-string a "Cryptographic Forum Research Group")
-            (let tag (w-from-hex a "a8061dc1305136c6c22b8baf0c0127a9")
-              (begin
-                (if (= cls 1) (w-set tag 0 0) 0)
-                (run a key msg tag iters)
-                0))))))))
+  (let cls (ffi-call "zyl_cstr_to_int" (ffi-call "zyl_arg_str" 1 1000) 1000)
+    (let iters (ffi-call "zyl_cstr_to_int" (ffi-call "zyl_arg_str" 2 1000) 1000)
+      (let key (w-from-hex "85d6be7857556d337f4452fe42d506a80103808afb0db2fd4abff6af4149f51b")
+        (let msg (w-from-string "Cryptographic Forum Research Group")
+          (let tag (w-from-hex "a8061dc1305136c6c22b8baf0c0127a9")
+            (begin
+              (if (= cls 1) (w-set tag 0 0) 0)
+              (run key msg tag iters)
+              0)))))))
 """,
 }
 

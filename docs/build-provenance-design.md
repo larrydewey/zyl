@@ -95,8 +95,10 @@ work and nothing in the record or the report pretends it has been done.
 ## The chain
 
 1. **Verify.** `compiler/verify.zyl` runs inside `codegen-fns`, so every path
-   to an assembly passes through it (`verify/frame_oracle.sh` enforces that
-   there is exactly one). V1 bounds and V2 a dynamic-operand census today; V3
+   to an assembly passes through it (`verify/frame_oracle.sh` enforces the
+   structural half: `cg-buffer`, the one place generated text is extracted,
+   has exactly one reader, and the function containing it calls
+   `verify-asm`). V1 bounds and V2 a dynamic-operand census today; V3
    (provenance and bounds for dynamic accesses) and V4 (region liveness) are
    not implemented and are reported as absent rather than as passed.
 2. **Record.** A CBOR map: the four inputs of spec §31.12, the resolved graph

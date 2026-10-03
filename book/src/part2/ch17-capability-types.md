@@ -1,41 +1,60 @@
 # Chapter 17: Capability Types and Aliasing
 
-This chapter is the reference for Zyl's capability types (`TCap`, `TMut`,
-`TAtomic`, `TBox`, `TPin` and `Secret`) and the aliasing invariant they
-protect. The normative text is `zyl_specification.txt` §4.3 (capability
-types), §7.2 and §7.4 (closure capture), §10 (mutability and aliasing),
-§15 (actors) and §16 (FFI). The implementation is
-`stdlib/compiler/mutability_check.zyl` (aliasing and actor transfer) and
-`stdlib/compiler/secret_check.zyl` (the Secret capability); FFI argument
-types come from `extern` declarations, checked by the type pass
-(`type_annotate.zyl`).
+This chapter is the reference for Zyl's capability rules and the
+aliasing invariant they protect. The normative text is
+`zyl_specification.txt` §4.3 (capability types), §7.2 and §7.4 (closure
+capture), §10 (mutability and aliasing), §15 (actors) and §16 (FFI).
+The implementation is
+`stdlib/compiler/mutability_check.zyl` (`set!`, closure capture and actor
+transfer), `stdlib/compiler/linearity.zyl` (moves, and the mutable-location
+rule) and `stdlib/compiler/secret_check.zyl` (the `Secret` capability);
+FFI argument types come from `extern` declarations, checked by the type
+pass (`type_annotate.zyl`).
 
-Capabilities are never written in source, except `Secret`. The
-specification infers them (§0 P7). The compiler has no capability types:
-the type checker (Chapter 15) sees a `let-mut` variable or a pinned
-value as the plain type of its value. It enforces the parts of the
+Capabilities are never written in source, except `Secret`. Zyl has no
+in-place mutation, so every `let` binding is immutable and rebinding is
+the only update; what a binding may be used for is decided by its
+binding form. The type checker (Chapter 15) sees a `let-mut` variable or a
+pinned value as the plain type of its value: `TaTy` is `TaV | TaC | TaF`,
+with no capability dimension. The compiler enforces the parts of the
 invariant that can be decided from the syntax, in passes of their own,
 and this chapter says which parts those are.
 
 ## 17.1 The Aliasing Invariant
 
-§10:
+§10 states it as an aliasing invariant — one exclusive-mutable reference
+to a memory location, or any number of shared-immutable ones — with
+`E_MUT_CONFLICT` as the violation. Zyl keeps the guarantee and drops the
+aliasing, because Zyl has no in-place mutation: a struct field can never
+change, and a "mutated" struct is a new value bound to the same name.
+There is therefore no in-place write for a reader to observe, which is a
+stronger property than exclusivity and needs no type to state.
 
-> For any memory location: either exactly one TMut reference OR any
-> number of TCap references.
+What is enforced is the binding form:
 
-A violation is the compile-time error `E_MUT_CONFLICT`.
+> Zyl has no in-place mutation: every `let` binding is immutable, `set!`
+> on a `let-mut` binding rebinds it, and `set!` on anything else is
+> `E_MUT_CONFLICT`.
 
 The implementation decides this from bindings, not from memory
-locations. A `let` binding is `TCap`; a `let-mut` binding is `TMut`; and
-`set!` is the only way to mutate. The check is `mutability_check.zyl`, a
-pass over the program before lowering that tracks which names are
-in-scope `let-mut` bindings:
+locations. A `let` binding is immutable; a `let-mut` binding is the only
+assignable one; and `set!` is the only way to change anything. The check
+is `mutability_check.zyl`, a pass over the program before lowering that
+tracks which names are in-scope `let-mut` bindings:
 
 - `set!` on a name that is not an in-scope `let-mut` binding is
   `E_MUT_CONFLICT`.
+- `set!` on a `let-mut` of an *enclosing* scope, from inside a closure, is
+  `E_MUT_CONFLICT`: the closure captured it by value.
 - `set!` on anything other than a plain name, such as a struct field, is
   rejected by the parser with `E_MUT_CONFLICT`.
+- A byte buffer is a mutable location, and there the rule is checked on
+  the location itself, by `linearity.zyl`: a name becomes the buffer's
+  writer by writing through it (`store-u8`, the other stores, the
+  atomics, `bytebuf-append`), and a second name writing to the same
+  buffer is `E_MUT_CONFLICT`. Any number of names may read it. A
+  `byteslice` belongs to its base buffer's location, and alias classes
+  are kept per allocation, not per name.
 
 ```lisp
 (defn main ()
@@ -63,11 +82,13 @@ name to a `let-mut` value creates an independent copy, not an alias:
 
 §4.3 defines five capability types. None of them exists as a type in the
 compiler; each is met, where it is met at all, by a rule on the syntax.
+`TCap` and `TMut` are retired as type names: what they stood for is the
+binding form, and a `Secret` (17.8) is still a real capability.
 
 | Spec | Meaning (spec) | What the compiler does |
 |------|----------------|------------------------|
-| `TCap<T>` | shared, immutable | the default for every binding |
-| `TMut<T>` | exclusive, mutable | `let-mut`, checked by name (17.1) |
+| `TCap<T>` | shared, immutable | a `let` binding — immutable, any number of readers |
+| `TMut<T>` | exclusive, mutable | a `let-mut` binding — the only assignable binding; `set!` rebinds it (17.1) |
 | `TAtomic<T>` | atomic shared mutation | not produced by any source construct |
 | `TBox<T>` | heap-managed allocation | not produced by any source construct |
 | `TPin<T>` | FFI-pinned, non-moving | `ffi-pin` copies the value into the pin arena; the result has type `(Pin a)` |
@@ -86,10 +107,11 @@ Notes on the kinds that have no source form:
 
 ## 17.3 Capability Operations
 
-The specification's model:
+The specification's model, with the first two columns named for what
+they now mean:
 
-| Operation | TCap | TMut | TAtomic | TBox | TPin |
-|-----------|------|------|---------|------|------|
+| Operation | `let` binding | `let-mut` binding | TAtomic | TBox | TPin |
+|-----------|---------------|-------------------|---------|------|------|
 | Read | yes | yes | yes | yes | yes |
 | `set!` rebind | no | yes | no | no | no |
 | Atomic ops | no | no | yes | no | no |
@@ -102,8 +124,8 @@ variables (17.6), and the FFI row's FFI_Pinnable check (17.7).
 ## 17.4 Coercion Rules
 
 The canonical specification states no coercion rules. `spec/06` derives
-two from the invariant: a `TMut` may be downgraded to `TCap`, and a `TCap`
-may never be upgraded to `TMut`.
+two from the invariant: a mutable binding may be read through an
+immutable one, and an immutable binding may never be made mutable.
 
 The implementation has no capability types to coerce between, so neither
 rule has a dedicated check. In practice, reading a `let-mut` variable is
@@ -111,11 +133,11 @@ always allowed, and nothing can turn a `let` binding into a mutable one.
 
 There is no syntax for annotating a parameter with a capability. To write
 a function that takes a value read-only, leave the parameter as it is:
-parameters are `TCap`, and `set!` on a parameter is `E_MUT_CONFLICT`.
+a parameter is immutable, and `set!` on a parameter is `E_MUT_CONFLICT`.
 
 ## 17.5 Struct Fields
 
-Struct fields are immutable (§10). The capability applies to the binding,
+Struct fields are immutable (§10). Mutability belongs to the binding,
 so the only way to change a struct is to rebind the whole value:
 
 ```lisp
@@ -138,8 +160,9 @@ capability tracking, and no partial mutability to reason about.
 
 ## 17.6 Closure Capture
 
-§7.2: a read-only capture is `TCap`, a mutated capture is `TMut`, and an
-escaping capture is promoted to the heap.
+§7.2 models a read-only capture as shared, a mutated capture as
+exclusive, and promotes an escaping capture to the heap. The compiler's
+mechanism is simpler: capture is by value.
 
 In the implementation a closure copies the values it captures into an
 environment block when it is created; region inference places the block
@@ -187,6 +210,8 @@ shape: if the closure passed to `spawn`, or the value passed to
 `E_CAPABILITY_LEAK`.
 
 ```lisp
+(capabilities actor)
+
 (use actor/actor)
 
 (defn main ()
@@ -249,7 +274,7 @@ arithmetic, constructors and byte loads, and rejects the following:
 | an argument to `print` | `E_SECRET_DEBUG` |
 | part of a `spawn`, a `chan-send` or a `file-write` | `E_SECRET_ESCAPE` |
 | a raw `ffi-call` argument (not through `ffi-pin`) | `E_FFI_PIN_REQUIRED` |
-| consumed into a public result without a call to `zeroize` | `E_ZEROIZE_MISSING` (a warning) |
+| a `Secret` parameter consumed into a public result without a call to `zeroize` | `E_ZEROIZE_MISSING` (a warning; every `Secret` parameter counts, a `(Secret Int)` scalar included, but not one in a secret-returning function) |
 
 ```lisp
 (defn leak ((k Secret))
@@ -262,6 +287,8 @@ reduce a comparison to its public verdict. `ct-eq` itself returns an
 `Int` (1 or 0), not a `Bool`, so a condition compares it with `=`:
 
 ```lisp
+(capabilities secret)
+
 (use math/secret/secret)
 
 (defn check ((k (Secret Int)))
@@ -269,9 +296,25 @@ reduce a comparison to its public verdict. `ct-eq` itself returns an
 
 (defn main ()
   (begin
-    (print (check 5))          ; 1, with an E_ZEROIZE_MISSING warning
+    (print (check 5))          ; 1
     0))
 ```
+
+`check` also earns the `E_ZEROIZE_MISSING` warning: it takes a `Secret`
+parameter, returns a public value and never calls `zeroize` — and a
+scalar counts like any other Secret.
+
+Erasure is otherwise the program's job, with one automatic exception.
+`zeroize` (and the `Secret` trait's `wipe`) is the explicit answer for a
+value the program owns. What the compiler does itself is the **frame
+wipe**: a function that takes a secret parameter or binds a
+secret-derived value has its whole frame zeroed on return —
+`rep stosq` over the frame, with the result parked in a register across
+it — and makes no tail calls, so no copy of a secret word outlives the
+call in its own frame. That is not the same thing as wiping a *released
+region block*, which is **not** done: such a block goes back to the
+allocator with its contents, which is why the warning above exists.
+`docs/secret-erasure-design.md` has the rest of the picture.
 
 The rules across calls:
 
@@ -290,16 +333,18 @@ taint is tracked by name in `secret_check.zyl`, not by the unifier.
 Two different capabilities share the name here:
 
 - A `Secret` **annotation** works in any program.
-- **Calling into** `stdlib/math/secret` from a package with a `zyl.pkg`
-  requires that package to declare the `secret` package capability
-  (§31.9, Chapter 25).
+- **Calling into** `stdlib/math/secret` requires the `secret`
+  capability (§31.9, Chapter 25): `(capabilities secret)` at the top of
+  a lone file, as in the example above, or the same line in a package's
+  `zyl.pkg`.
 
 ## 17.9 Capability Inference
 
 What the specification infers, and how each rule is met today:
 
-1. **Read-only use** gives `TCap`. This is the default for every binding.
-2. **`set!`** requires `TMut`. Met by name, through `let-mut` (17.1).
+1. **Read-only use** is the default: every `let` binding is immutable,
+   and with no in-place mutation nothing can change it under a reader.
+2. **`set!`** is allowed only on a `let-mut` binding. Met by name (17.1).
 3. **Atomic use** gives `TAtomic`. No atomic type exists (17.2).
 4. **Escape and capture** promote to the heap. Captures are always
    copied into an environment block, which region inference places in
@@ -315,7 +360,8 @@ What the specification infers, and how each rule is met today:
 
 | Code | Raised for |
 |------|------------|
-| `E_MUT_CONFLICT` | `set!` on a binding that is not `let-mut`, or on a struct field |
+| `E_MUT_CONFLICT` | `set!` on a binding that is not `let-mut`, or on a struct field (`mutability_check.zyl`); a byte buffer written through two names (`linearity.zyl`) |
+| `E_MOVE_VALUE` | a resource (file descriptor, `StringBuffer`, a type with a `Drop` impl) used after its release (`linearity.zyl`; Chapter 5, §5.3) |
 | `E_CAPABILITY_LEAK` | a `let-mut` variable referenced by a `spawn` closure or a `chan-send` value |
 | `E_INVALID_CAPABILITY` | a `fn` written directly as an `ffi-call` argument |
 | `E_CT_VIOLATION`, `E_SECRET_DEBUG`, `E_SECRET_ESCAPE`, `E_FFI_PIN_REQUIRED` | Secret misuse (17.8) |
@@ -324,17 +370,18 @@ What the specification infers, and how each rule is met today:
 
 `E_MUT_CONFLICT` and `E_CAPABILITY_LEAK` use the located
 `error[CODE] --> file:line:col` form, with a second label at the `let`
-or `let-mut` binding involved (Appendix A, §A.1). The Secret errors are
-located too, without a second label. `E_INVALID_CAPABILITY`, the
-`E_MUT_CONFLICT` for a `set!` on a field, and the `E_ZEROIZE_MISSING`
-warning still print as bare lines naming the code.
+or `let-mut` binding involved (Appendix A, §A.1). Their messages name the
+specification's `TCap`/`TMut` types; the rule they enforce is the binding
+form. The Secret errors are located too, without a second label, and so
+are `E_INVALID_CAPABILITY`, the `E_MUT_CONFLICT` for a `set!` on a field,
+and the `E_ZEROIZE_MISSING` warning.
 
 ## 17.11 Comparison with Rust
 
 | Rust | Zyl (specification) | Zyl (today) |
 |------|---------------------|-------------|
-| `&T` | `TCap<T>`, inferred | every binding by default |
-| `&mut T` | `TMut<T>`, inferred | `let-mut` + `set!`, checked by name |
+| `&T` | `TCap<T>`, inferred | every `let` binding, by default |
+| `&mut T` | `TMut<T>`, inferred | a `let-mut` binding + `set!`, checked by name |
 | `Box<T>` | `TBox<T>` | no source form; ADT fields are pointers to their blocks |
 | `Pin<&mut T>` | `TPin<T>` via `ffi-pin` | `ffi-pin` copies into the pin arena |
 | `Arc<Mutex<T>>` | `TAtomic<T>` | atomic operations on addresses and byte buffers |

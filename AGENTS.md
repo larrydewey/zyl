@@ -104,10 +104,18 @@ a signed provenance trailer, and `zyl verify <binary>` reads it back
 - Global and Circular are names only (Global = top-level `def` values,
   which are heap); the interpreter ignores regions
 
-### Capability Types
-- TCap: shared immutable access (any number of references)
-- TMut: exclusive mutable ownership (exactly one reference)
-- TMut/TCap aliasing invariant enforced at compile time
+### Mutability and Aliasing
+- Zyl has no in-place mutation: a `let` binding is immutable and `set!`
+  rebinds a `let-mut` binding, so every other binding is immutable and
+  shared. This is the whole aliasing story, and it is stronger than a
+  "one writer or many readers" invariant would be
+- `set!` on anything but a `let-mut` binding is `E_MUT_CONFLICT`
+  (`mutability_check.zyl`, a syntactic pass); moves are `E_MOVE_VALUE`
+  (`linearity.zyl`); a mutable capture crossing an actor boundary is
+  `E_CAPABILITY_LEAK`
+- The unifier has no capability polarity — there is no `TCap`/`TMut` type
+  and never was. `Secret` is the real capability type: it carries
+  obligations the compiler enforces (`E_SECRET_DEBUG`, `E_ZEROIZE_MISSING`)
 
 ### FFI Safety
 - FFI calls require Pin region + timeout parameter
@@ -146,7 +154,7 @@ a signed provenance trailer, and `zyl verify <binary>` reads it back
 - **Innermost-first macro expansion** with gensym hygiene
 - **ICNF as custom SSA IR** (not LLVM) for region annotation flow (today ICNF is a tree IR, not yet SSA; region annotations live in a side table keyed by node and are printed as ` @r`, so the ICNF hash covers them)
 - **Region-based memory** (not GC) for deterministic reclamation
-- **Capability types** (TCap/TMut) for compile-time aliasing control
+- **No in-place mutation** — immutability plus rebinding, checked on bindings rather than carried by the type system, so aliasing needs no type-level capability (see `docs/architecture-decisions.md` A7)
 - **Structs immutable by default** (rebinding only)
 - **Safe-only optimizations** (constant folding, DCE, small-function inlining, copy propagation, in-place reuse — no reordering)
 - **The runtime is Zyl** (`runtime/rt/`), with no C and no libc under freestanding programs; the `%` primitives exist only in the runtime's own compile, and programs get no `unsafe`
@@ -275,10 +283,12 @@ otherwise an argued assumption):
 ```
 
 It refills released region blocks with `0xDE` and requires unchanged
-behaviour. Read `verify/poison.sh` before trusting a green run: it has no
-positive control, because the violation it looks for is what the static
-checks already prevent, and it only catches a stale read that reaches
-output.
+behaviour. The mechanism — what release does, why only pooled blocks need
+help, why page protection was built and withdrawn, and what the gate can
+and cannot see — is `docs/memory-poisoning-design.md`. Read it, or
+`verify/poison.sh`, before trusting a green run: the gate has no positive
+control, because the violation it looks for is what the static checks
+already prevent, and it only catches a stale read that reaches output.
 
 The stronger gate rebuilds the whole compiler with regions poisoned and
 requires byte-identical seeds — the largest Zyl program, self-hosted:

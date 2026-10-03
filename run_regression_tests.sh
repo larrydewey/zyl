@@ -90,6 +90,24 @@ NC='\033[0m'
 # --dry-run: count and list a selected test instead of running it. Every
 # suite goes through this, so a dry run selects exactly what a real run
 # with the same mode and --filter would.
+# Does --filter select this test? It is matched against the name the test
+# is PRINTED under, so `--filter sched/concurrency` and `--filter
+# concurrency` both find it. Matching a hand-written string instead --
+# "sched concurrency" where the name is "sched/concurrency" -- is how a
+# filter silently selects nothing while looking like it works.
+matches() {
+    [ -z "$FILTER" ] || echo "$1" | grep -qi -- "$FILTER"
+}
+
+# The expensive opt-in gates (poison, memcheck, determinism, timing) run
+# ONLY when asked for by name, never as part of a plain full run: they are
+# minutes each, and a suite that quietly grew from a minute to two and a
+# half is a suite nobody runs. matches() alone would run them every time,
+# because an empty filter matches everything.
+gate_selected() {
+    [ -n "$FILTER" ] && matches "$1"
+}
+
 dry_listed() {
     if [ "$DRY_RUN" -eq 1 ]; then
         TOTAL=$((TOTAL + 1))
@@ -323,23 +341,23 @@ echo ""
 
 # Run unit test (comprehensive harness)
 if [ "$MODE" = "full" ] || [ "$MODE" = "quick" ]; then
-    if [ -z "$FILTER" ] || echo "unit_test" | grep -qi -- "$FILTER"; then
+    if matches "unit_test"; then
         run_test "unit_test" "${TESTS_DIR}/unit_test.zyl"
     fi
     # The CBOR encoder, against hand-computed canonical encodings. A COSE
     # signature is over these bytes, so an encoder that is merely valid is not
     # good enough -- it has to be the one encoding.
-    if [ -z "$FILTER" ] || echo "cbor_test" | grep -qi -- "$FILTER"; then
+    if matches "cbor_test"; then
         run_test "cbor_test" "${TESTS_DIR}/cbor_test.zyl"
     fi
     # ffi-call arity, and the counting rules behind it. A check that rejects
     # correct code is worse than none, and this one was wrong three times.
-    if [ -z "$FILTER" ] || echo "ffi_arity_test" | grep -qi -- "$FILTER"; then
+    if matches "ffi_arity_test"; then
         run_test "ffi_arity_test" "${TESTS_DIR}/ffi_arity_test.zyl"
     fi
     # The provenance record. The Zyl test asks whether our key order is
     # self-consistent; the script asks cbor2 whether it is the canonical one.
-    if [ -z "$FILTER" ] || echo "provenance" | grep -qi -- "$FILTER"; then
+    if matches "provenance_test" || matches "provenance_cross"; then
         run_test "provenance_test" "${TESTS_DIR}/provenance_test.zyl"
         if bash "${TESTS_DIR}/scripts/provenance.sh" >"$RUN_TMP/prov_cross.log" 2>&1; then
             PASS=$((PASS+1)); printf "  \033[0;32m\xe2\x9c\x93\033[0m provenance_cross\n"
@@ -351,7 +369,7 @@ if [ "$MODE" = "full" ] || [ "$MODE" = "quick" ]; then
     # COSE_Sign1. The Zyl test pins the bytes; the script asks cbor2 and
     # `cryptography` whether those bytes are RIGHT, which a self-consistent test
     # cannot say.
-    if [ -z "$FILTER" ] || echo "cose" | grep -qi -- "$FILTER"; then
+    if matches "cose_test" || matches "cose_cross"; then
         run_test "cose_test" "${TESTS_DIR}/cose_test.zyl"
         if bash "${TESTS_DIR}/scripts/cose.sh" >"$RUN_TMP/cose_cross.log" 2>&1; then
             PASS=$((PASS+1)); printf "  \033[0;32m\xe2\x9c\x93\033[0m cose_cross\n"
@@ -363,7 +381,7 @@ if [ "$MODE" = "full" ] || [ "$MODE" = "quick" ]; then
     # The trailer: attach, find, read back. The Zyl test round-trips it inside
     # this compiler; the script locates it by MAGIC with no help from Zyl and
     # asks cbor2 and `cryptography` whether it is a format another tool reads.
-    if [ -z "$FILTER" ] || echo "provenance_trailer" | grep -qi -- "$FILTER"; then
+    if matches "provenance_trailer_test" || matches "provenance_trailer_cross"; then
         run_test "provenance_trailer_test" "${TESTS_DIR}/provenance_trailer_test.zyl"
         if bash "${TESTS_DIR}/scripts/provenance-trailer.sh" >"$RUN_TMP/prov_trailer_cross.log" 2>&1; then
             PASS=$((PASS+1)); printf "  \033[0;32m\xe2\x9c\x93\033[0m provenance_trailer_cross\n"
@@ -375,7 +393,7 @@ if [ "$MODE" = "full" ] || [ "$MODE" = "quick" ]; then
     # `zyl build --sign-with`: the signed build is the unsigned one plus a
     # trailer, and the unsigned one is unchanged. The cache must not serve one
     # for the other, since the trailer is not a function of the sources.
-    if [ -z "$FILTER" ] || echo "prov_sign" | grep -qi -- "$FILTER"; then
+    if matches "prov_sign"; then
         if bash "${TESTS_DIR}/scripts/prov-sign.sh" >"$RUN_TMP/prov_sign.log" 2>&1; then
             PASS=$((PASS+1)); printf "  \033[0;32m\xe2\x9c\x93\033[0m prov_sign\n"
         else
@@ -386,7 +404,7 @@ if [ "$MODE" = "full" ] || [ "$MODE" = "quick" ]; then
     # `zyl verify`: the three trust modes, EVIDENCE and ATTESTATION reported
     # apart, and every way a trailer stops being true -- a changed image, a
     # truncated blob, a stale buildinfo, a key that signed nothing.
-    if [ -z "$FILTER" ] || echo "prov_verify" | grep -qi -- "$FILTER"; then
+    if matches "prov_verify"; then
         if bash "${TESTS_DIR}/scripts/prov-verify.sh" >"$RUN_TMP/prov_verify.log" 2>&1; then
             PASS=$((PASS+1)); printf "  \033[0;32m\xe2\x9c\x93\033[0m prov_verify\n"
         else
@@ -395,7 +413,7 @@ if [ "$MODE" = "full" ] || [ "$MODE" = "quick" ]; then
         TOTAL=$((TOTAL+1))
     fi
     # `zyl fmt`: indentation recovered exactly, --check never writing.
-    if [ -z "$FILTER" ] || echo "fmt_test" | grep -qi -- "$FILTER"; then
+    if matches "fmt_test"; then
         if bash "$TESTS_DIR/fmt_test.sh" >"$RUN_TMP/fmt_test.log" 2>&1; then
             PASS=$((PASS+1)); printf "  \033[0;32m\xe2\x9c\x93\033[0m fmt_test\n"
         else
@@ -405,19 +423,19 @@ if [ "$MODE" = "full" ] || [ "$MODE" = "quick" ]; then
     fi
     # `zyl explain`, on the parts that are pure functions of their input. Its
     # site scan had four bugs that each read as a working search.
-    if [ -z "$FILTER" ] || echo "explain_test" | grep -qi -- "$FILTER"; then
+    if matches "explain_test"; then
         run_test "explain_test" "${TESTS_DIR}/explain_test.zyl"
     fi
     # E_PANIC_UNMARKED is the standard library's own rule, unreachable from a
     # program, so it is driven on hand-built definitions carrying the key.
-    if [ -z "$FILTER" ] || echo "panic_unmarked_test" | grep -qi -- "$FILTER"; then
+    if matches "panic_unmarked_test"; then
         run_test "panic_unmarked_test" "${TESTS_DIR}/panic_unmarked_test.zyl"
     fi
     # The binary-safety verifier, on hand-written assembly. It runs in quick
     # mode because a check that only ever sees the compiler's own output
     # cannot be told apart from one that does nothing: these cases are the
     # only thing here that plants a fault and requires it to be caught.
-    if [ -z "$FILTER" ] || echo "verify_test" | grep -qi -- "$FILTER"; then
+    if matches "verify_test"; then
         run_test "verify_test" "${TESTS_DIR}/verify_test.zyl"
     fi
 fi
@@ -427,7 +445,7 @@ if [ "$MODE" = "quick" ]; then
     for f in "${TESTS_DIR}"/smoke/*.zyl; do
         [ -f "$f" ] || continue
         local_name=$(basename "$f" .zyl)
-        if [ -z "$FILTER" ] || echo "$local_name" | grep -qi -- "$FILTER"; then
+        if matches "smoke/${local_name}"; then
             run_test "smoke/${local_name}" "$f"
         fi
     done
@@ -438,7 +456,7 @@ if [ "$MODE" = "full" ]; then
     for f in "${TESTS_DIR}"/regression/*.zyl; do
         [ -f "$f" ] || continue
         local_name=$(basename "$f" .zyl)
-        if [ -z "$FILTER" ] || echo "$local_name" | grep -qi -- "$FILTER"; then
+        if matches "regression/${local_name}"; then
             run_test "regression/${local_name}" "$f"
         fi
     done
@@ -449,7 +467,7 @@ if [ "$MODE" = "full" ]; then
     for f in "${TESTS_DIR}"/stress/*.zyl; do
         [ -f "$f" ] || continue
         local_name=$(basename "$f" .zyl)
-        if [ -z "$FILTER" ] || echo "$local_name" | grep -qi -- "$FILTER"; then
+        if matches "stress/${local_name}"; then
             run_test "stress/${local_name}" "$f"
         fi
     done
@@ -460,36 +478,48 @@ if [ "$MODE" = "full" ]; then
     for f in "${TESTS_DIR}"/integration/*.zyl; do
         [ -f "$f" ] || continue
         local_name=$(basename "$f" .zyl)
-        if [ -z "$FILTER" ] || echo "$local_name" | grep -qi -- "$FILTER"; then
+        if matches "integration/${local_name}"; then
             run_test "integration/${local_name}" "$f"
         fi
     done
 fi
 
-# Actor programs agree across schedules (see run_sched_test).
+# Actor programs agree across schedules (see run_sched_test). The heading
+# is printed only when something under it was selected: a filtered run that
+# prints a suite's heading and then lists nothing under it reads as "this
+# ran, and passed", which is the opposite of what a filter means.
 if [ "$MODE" = "full" ]; then
-    echo ""
-    echo "=== Actor output is the same under every schedule ==="
+    sched_list=""
     for local_name in $SCHED_TESTS; do
-        f="${TESTS_DIR}/regression/${local_name}.zyl"
-        if [ -z "$FILTER" ] || echo "sched ${local_name}" | grep -qi -- "$FILTER"; then
-            run_sched_test "sched/${local_name}" "$f"
-        fi
+        matches "sched/${local_name}" && sched_list="${sched_list} ${local_name}"
     done
+    if [ -n "$sched_list" ]; then
+        echo ""
+        echo "=== Actor output is the same under every schedule ==="
+        for local_name in $sched_list; do
+            run_sched_test "sched/${local_name}" "${TESTS_DIR}/regression/${local_name}.zyl"
+        done
+    fi
 fi
 
-# Interpreter/codegen agreement (see run_diff_test).
+# Interpreter/codegen agreement (see run_diff_test). Same rule about the
+# heading as the schedule suite above.
 if [ "$MODE" = "full" ]; then
-    echo ""
-    echo "=== Interpreter agrees with codegen ==="
+    diff_list=""
     for f in "${TESTS_DIR}"/regression/*.zyl "${TESTS_DIR}"/smoke/*.zyl; do
         [ -f "$f" ] || continue
         local_name=$(basename "$f" .zyl)
         diff_skipped "$local_name" && continue
-        if [ -z "$FILTER" ] || echo "interpreter ${local_name}" | grep -qi -- "$FILTER"; then
-            run_diff_test "interpreter/${local_name}" "$f"
-        fi
+        matches "interpreter/${local_name}" && diff_list="${diff_list} ${f}"
     done
+    if [ -n "$diff_list" ]; then
+        echo ""
+        echo "=== Interpreter agrees with codegen ==="
+        for f in $diff_list; do
+            local_name=$(basename "$f" .zyl)
+            run_diff_test "interpreter/${local_name}" "$f"
+        done
+    fi
 fi
 
 # Multi-package builds (spec v5.0 §31). Each case is a DIRECTORY holding
@@ -500,7 +530,7 @@ if [ "$MODE" = "full" ]; then
     for d in "${TESTS_DIR}"/packages/*/; do
         [ -d "$d" ] || continue
         local_name=$(basename "$d")
-        if [ -z "$FILTER" ] || echo "packages ${local_name}" | grep -qi -- "$FILTER"; then
+        if matches "packages/${local_name}"; then
             run_test "packages/${local_name}" "${d}app/main.zyl"
         fi
     done
@@ -512,7 +542,7 @@ if [ "$MODE" = "full" ]; then
     for d in "${TESTS_DIR}"/packages-fail/*/; do
         [ -d "$d" ] || continue
         local_name=$(basename "$d")
-        if [ -z "$FILTER" ] || echo "packages ${local_name}" | grep -qi -- "$FILTER"; then
+        if matches "packages-fail/${local_name}"; then
             run_fail_test "packages-fail/${local_name}" "${d}app/main.zyl"
         fi
     done
@@ -525,7 +555,7 @@ if [ "$MODE" = "full" ]; then
     for d in "${TESTS_DIR}"/packages-build/*/; do
         [ -d "$d" ] || continue
         local_name=$(basename "$d")
-        if [ -z "$FILTER" ] || echo "packages ${local_name}" | grep -qi -- "$FILTER"; then
+        if matches "packages/${local_name}"; then
             dry_listed "packages-build/${local_name}" && continue
             TOTAL=$((TOTAL + 1))
             if (cd "${d}app" && "${ZYL_BIN}" build) > $RUN_TMP/zyl_pkgbuild.log 2>&1 \
@@ -552,7 +582,7 @@ if [ "$MODE" = "full" ]; then
     for f in "${TESTS_DIR}"/compile-fail/*.zyl; do
         [ -f "$f" ] || continue
         local_name=$(basename "$f" .zyl)
-        if [ -z "$FILTER" ] || echo "compile-fail ${local_name}" | grep -qi -- "$FILTER"; then
+        if matches "compile-fail/${local_name}"; then
             run_fail_test "compile-fail/${local_name}" "$f"
         fi
     done
@@ -564,7 +594,7 @@ if [ "$MODE" = "full" ]; then
     for f in "${TESTS_DIR}"/scripts/*.sh; do
         [ -f "$f" ] || continue
         local_name=$(basename "$f" .sh)
-        if [ -z "$FILTER" ] || echo "scripts ${local_name}" | grep -qi -- "$FILTER"; then
+        if matches "scripts/${local_name}"; then
             dry_listed "scripts/${local_name}" && continue
             TOTAL=$((TOTAL + 1))
             if TMPDIR="$RUN_TMP" bash "$f" > "$RUN_TMP/zyl_script.log" 2>&1; then
@@ -584,7 +614,7 @@ fi
 # means an editor sees what the assertions describe. Cheap (a handful of
 # short-lived server processes), so it runs in both quick and full mode.
 if [ "$MODE" = "full" ] || [ "$MODE" = "quick" ]; then
-    if [ -z "$FILTER" ] || echo "lsp" | grep -qi -- "$FILTER"; then
+    if matches "lsp/protocol"; then
         if dry_listed "lsp/protocol"; then
             :
         elif [ -x "${SCRIPT_DIR}/build/boot/zyl-lsp" ]; then
@@ -612,7 +642,7 @@ fi
 # it lives here rather than in a developer's shell history. The script
 # fails if its own positive control (a deliberately leaky comparison)
 # goes undetected, so a green result means the measurement worked.
-if [ -n "$FILTER" ] && echo "timing-leakage" | grep -qi -- "$FILTER" \
+if gate_selected "timing-leakage" \
    && ! dry_listed "timing-leakage"; then
     TOTAL=$((TOTAL + 1))
     if python3 "${SCRIPT_DIR}/verify/timing.py" --quick > $RUN_TMP/zyl_timing.log 2>&1; then
@@ -635,7 +665,7 @@ fi
 # on every run rather than on request; the oracle has its own selftest with
 # planted violations, and the seed verdicts must match field for field,
 # including operand counts.
-if [ -z "$FILTER" ] || echo "frame-oracle" | grep -qi -- "$FILTER"; then
+if matches "frame-oracle"; then
     if ! dry_listed "frame-oracle"; then
         TOTAL=$((TOTAL + 1))
         if "${SCRIPT_DIR}/verify/frame_oracle.sh" > "$RUN_TMP/zyl_frame_oracle.log" 2>&1; then
@@ -662,7 +692,7 @@ fi
 #
 # Valgrind rather than ASan, deliberately: the runtime does not call malloc,
 # so ASan's heap interception would never see a region. See verify/memcheck.sh.
-if [ -n "$FILTER" ] && echo "memcheck" | grep -qi -- "$FILTER" \
+if gate_selected "memcheck" \
    && ! dry_listed "memcheck"; then
     TOTAL=$((TOTAL + 1))
     if "${SCRIPT_DIR}/verify/memcheck.sh" --self-test > $RUN_TMP/zyl_memcheck.log 2>&1 \
@@ -687,7 +717,7 @@ fi
 # cannot have one: the violation it looks for is what the static checks
 # exist to prevent, so no test program expressing it compiles. verify/
 # poison.sh says so in full rather than papering over it.
-if [ -n "$FILTER" ] && echo "poison" | grep -qi -- "$FILTER" \
+if gate_selected "poison" \
    && ! dry_listed "poison"; then
     TOTAL=$((TOTAL + 1))
     if "${SCRIPT_DIR}/verify/poison.sh" > $RUN_TMP/zyl_poison.log 2>&1; then
@@ -709,7 +739,7 @@ fi
 # seeds to come out byte-identical. If the compiler read dead frame memory
 # anywhere, the fill would corrupt a value and codegen output would differ
 # from the committed seed.
-if [ -n "$FILTER" ] && echo "poison-selfhost" | grep -qi -- "$FILTER" \
+if gate_selected "poison-selfhost" \
    && ! dry_listed "poison-selfhost"; then
     TOTAL=$((TOTAL + 1))
     if "${SCRIPT_DIR}/verify/poison-selfhost.sh" > $RUN_TMP/zyl_poison_selfhost.log 2>&1; then
@@ -732,7 +762,7 @@ fi
 # exhaustively and requires the transition relation to be a function, so an
 # allocation cannot land in two different blocks. That check's own detection
 # path is exercised too, against a deliberately double-freeing allocator.
-if [ -n "$FILTER" ] && echo "determinism" | grep -qi -- "$FILTER" \
+if gate_selected "determinism" \
    && ! dry_listed "determinism"; then
     TOTAL=$((TOTAL + 1))
     if "${SCRIPT_DIR}/verify/determinism.sh" > $RUN_TMP/zyl_determinism.log 2>&1; then

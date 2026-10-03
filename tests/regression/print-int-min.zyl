@@ -1,0 +1,18 @@
+; Printing the ends of the Int range. INT64_MIN is its own negation, so
+; the print path could not negate it under checked arithmetic and used to
+; stop the program with E_OVERFLOW (runtime/rt/out.zyl's ou-mag): the one
+; value a program cannot print is the one a program is most likely to
+; have computed.
+
+(use core/core)
+
+(defn int-min () (- -9223372036854775807 1))
+(defn int-max () 9223372036854775807)
+
+(test "print-int-min" (assert-equal (Show.show (int-min)) "-9223372036854775808"))
+(test "print-int-max" (assert-equal (Show.show (int-max)) "9223372036854775807"))
+(test "print-minus-one" (assert-equal (Show.show (- 0 1)) "-1"))
+(test "print-zero" (assert-equal (Show.show 0) "0"))
+(test "print-min-plus-one" (assert-equal (Show.show (+ (int-min) 1)) "-9223372036854775807"))
+
+(run-tests)

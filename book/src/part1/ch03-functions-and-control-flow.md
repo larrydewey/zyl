@@ -4,7 +4,7 @@ Functions are the core building blocks of Zyl programs. This chapter covers func
 
 ## 3.1 Function Definition
 
-### Named Functions (`defn` / `defun`)
+### Named Functions (`defn`)
 
 ```lisp
 (defn name (param1 param2 ...) body)
@@ -63,13 +63,13 @@ The **last expression's value is returned** — no explicit `return` keyword exi
 Either way, a `let` among the forms is in scope only inside itself, not
 in the forms that follow it (Chapter 2, §2.5).
 
-### `defun` — Synonym for `defn`
+### `defun` Is Not a Synonym
 
-```lisp
-(defun square (x) (* x x))    ; Same as defn
-```
-
-Both are accepted. `defn` is what the standard library uses.
+The specification lists `defun` as a synonym for `defn`, but the
+compiler does not recognize it: `(defun square (x) (* x x))` is read as
+an ordinary call, so `square` is never defined and a call to it is
+`E_UNBOUND_VARIABLE`. Write `defn`. (`defun` is still a reserved word, so
+it cannot name a binding either.)
 
 ## 3.2 Recursion
 
@@ -326,9 +326,9 @@ Zyl has two mechanisms, and they are for different things:
 
 ```lisp
 (defn divide (a b)
-  (if (== b 0)
-    (Err "division by zero")
-    (Ok (/ a b))))
+  (match (div? a b)
+    (Some q (Ok q))
+    (None (Err "division by zero"))))
 
 (defn show-division (a b)
   (match (divide a b)
@@ -344,6 +344,12 @@ Zyl has two mechanisms, and they are for different things:
 Both arms print, so both are `Unit`, and so is the `match`. An arm that
 printed while another returned a number would not type-check.
 
+`divide` cannot be written as `(if (== b 0) (Err ...) (Ok (/ a b)))`:
+`/` with a divisor that is not a nonzero literal is `E_PARTIAL_OPERATION`,
+and the compiler does not look at the guard. `div?` returns
+`(Some quotient)` or `None`, which is the check and the division in one
+(§3.12).
+
 The core library has helpers for the common cases:
 `(result-unwrap r default)` and `(option-unwrap o default)` return the
 value or a default, and `(result-expect! r "msg")` /
@@ -351,21 +357,21 @@ value or a default, and `(result-expect! r "msg")` /
 message. The trailing `!` is how Zyl spells a function that can stop the
 program: name your own that way too (Chapter 6, §6.9).
 
-### `error`, `try` and `catch`
+### `error`, `panic`, `try` and `catch`
 
 ```lisp
 (try expr (catch err-var handler))
 ```
 
 1. Evaluate `expr`. If it finishes normally, its value is the value of the `try`.
-2. If `error` is called while `expr` runs (directly or in any function it calls), control passes to the handler instead, with `err-var` bound to the message string.
+2. If the program panics while `expr` runs (directly or in any function it calls: a `panic`, a `div!` by zero, a `vec-get!` out of range, an overflow), control passes to the handler instead, with `err-var` bound to the message string.
 3. The handler's value is the value of the `try`.
 
 ```lisp
 (defn percent-of-100! (n)
-  (if (== n 0)
-    (panic "division by zero")
-    (/ 100 n)))
+  (if (< n 0)
+    (panic "a percentage of a negative count")
+    (div! 100 n)))
 
 (defn report ((msg String))
   (begin
@@ -378,7 +384,7 @@ program: name your own that way too (Chapter 6, §6.9).
 
 (defn main ()
   (print (safe-percent 4))      ; 25
-  (print (safe-percent 0))      ; caught: division by zero, then -1
+  (print (safe-percent 0))      ; caught: error[E_DIVISION_BY_ZERO]: ..., then -1
   (print "still running")
   0)
 ```
@@ -386,8 +392,12 @@ program: name your own that way too (Chapter 6, §6.9).
 Things to know about the current implementation:
 
 - `try` does **not** unwrap a `Result`. An `(Err ...)` value is an
-  ordinary value and passes straight through; only `error` (and the
-  failed `assert-` forms of Chapter 11) transfer control to `catch`.
+  ordinary value and passes straight through, and so does the
+  `(Err msg)` that `error` returns; only a panic transfers control to
+  `catch`.
+- The caught message of a built-in failure is its whole diagnostic:
+  ``error[E_DIVISION_BY_ZERO]: division by zero in `div!` ``, then its
+  `= help:` line.
 - The handler may be several forms, run in order; the last one's value
   is the value of the `try`. It must have the same type as `expr`.
 - The message is a String, and prints as one.
@@ -400,7 +410,7 @@ string literal (`assert failed` otherwise). `unwrap` takes an `Option`:
 of `None` it panics with `unwrap on None`, and applied to a `Result` it
 is `E_TYPE_MISMATCH`. Where the message matters, or for a `Result`, use
 `result-expect!` / `option-expect!` instead of `unwrap`, and an explicit
-check with `error` instead of `assert`:
+check with `panic` instead of `assert`:
 
 ```lisp
 (defn checked-sqrt-floor! (x)
@@ -535,12 +545,82 @@ prints `Some(1)`. `print-string`, `print-float` and `print-int` (core
 library) are the same with a fixed argument type; like `print`, they
 return `Unit`.
 
-Reading input: `read-line` is recognized by the parser but not yet
-implemented by the code generator (it returns a null string, which
-prints as `(null)`). File I/O is in
+Reading input: `(read-line)` returns the next line of standard input
+as a String, without its newline. It needs the `io` capability, so a
+file that reads input starts with `(capabilities io)`. File I/O is in
 `stdlib/io` (Chapter 12).
 
-## 3.12 Control Flow Cheat Sheet
+## 3.12 Numbers: Overflow and Division
+
+Zyl's rule for arithmetic is that a program may only stop where its
+source said it could. `Int` is a 64-bit signed integer, and three things
+follow from the rule.
+
+**`+`, `-` and `*` are checked.** A result that does not fit stops the
+program with `E_OVERFLOW` — it does not wrap to a plausible wrong
+number. A literal computation is folded at compile time, and one that
+overflows stays an operation, so it stops the program too:
+
+```lisp
+(defn grow ((n Int)) (* n 4611686018427387904))
+
+(defn main ()
+  (print (grow 1))    ; 4611686018427387904
+  (print (grow 3))    ; stops: error[E_OVERFLOW]: integer overflow in `*`
+  0)
+```
+
+A file that wants other arithmetic declares it once, among its
+top-level forms (a package writes the same line in `zyl.pkg`) —
+exactly one of these three lines:
+
+```lisp
+(numeric wrapping)      ; + - * wrap modulo 2^64
+(numeric saturating)    ; + - * clamp to the largest or smallest Int
+(numeric checked)       ; the default, spelled out
+```
+
+The policy covers the whole package. For one operation, whatever the
+policy, use `wrapping+`, `wrapping-`, `wrapping*`, `saturating+`,
+`saturating-` or `saturating*` — a hash function's mixing step is the
+usual case. Unary minus is `(- 0 x)` under the policy, so `(- x)` of the
+smallest `Int` is an overflow. Shifts and the `bit-` operations never
+trap.
+
+**`/` and `%` need a divisor that cannot be zero.** A nonzero integer
+literal is one: `(/ n 2)` and `(% n 10)` compile. Any other divisor is a
+compile error, located at the divisor:
+
+```text
+error[E_PARTIAL_OPERATION]: `/` has a divisor that may be zero
+  --> avg.zyl:1:34
+   |
+ 1 | (defn avg ((a Int) (n Int)) (/ a n))
+   |                                  ^
+   = help: write `(div! a b)` to stop the program on a zero divisor, `(div? a b)` to get None, or divide by a nonzero literal
+```
+
+No guard is recognised, so an `if` around the division does not help.
+Choose the behaviour instead:
+
+| Form | Zero divisor | Otherwise |
+|------|--------------|-----------|
+| `(div! a b)`, `(rem! a b)` | Stops with `E_DIVISION_BY_ZERO` (catchable by `try`) | The quotient / remainder |
+| `(div? a b)`, `(rem? a b)` | `None` | `(Some quotient)` / `(Some remainder)` |
+
+Quotients truncate toward zero, and a remainder takes the sign of the
+dividend: `(rem! -7 2)` is -1. The smallest `Int` divided by -1 has no
+`Int` answer and is `E_OVERFLOW` under every policy.
+
+**Floats are outside the policy.** IEEE-754 arithmetic does not trap:
+overflow is `inf`, and `(/ 1.0 0.0)` is `inf`.
+
+The `!` in `div!` is the same `!` as in `vec-get!` and
+`option-expect!`: every library operation that can stop the program
+says so in its name, and its total sibling ends in `?` and returns an
+`Option` (Chapter 6, §6.9).
+
+## 3.13 Control Flow Cheat Sheet
 
 | Construct | Purpose | Returns |
 |-----------|---------|---------|
@@ -552,6 +632,7 @@ prints as `(null)`). File I/O is in
 | `(error msg)` | Report a failure as a value | `(Err msg)` |
 | `(panic msg)` | Abort, or jump to the nearest `catch` | Does not return |
 | `(try e (catch v h))` | Intercept a `panic` | Value of `e`, or of `h` after a `panic` |
+| `(div! a b)` / `(div? a b)` | Int division by a value that may be zero | The quotient / an `Option` |
 
 ---
 

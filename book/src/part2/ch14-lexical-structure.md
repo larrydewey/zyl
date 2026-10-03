@@ -71,9 +71,17 @@ Decimal ::= Digit+
 - Int64 signed (§20.1).
 - No suffixes.
 
-> **Implementation gap.** A literal outside the Int64 range is not
-> rejected. The conversion routine returns 0 and the lexer uses that
-> value, so `99999999999999999999` compiles as `0`.
+- A literal outside the Int64 range is `E_INTEGER_OVERFLOW`, in every
+  base, naming the value and the bounds:
+
+```
+error[E_INTEGER_OVERFLOW]: integer literal 99999999999999999999 does not fit an Int (64-bit signed); the largest is 9223372036854775807 and the smallest -9223372036854775808
+  --> main.zyl:1:29
+   |
+ 1 | (defn main () (begin (print 99999999999999999999) 0))
+   |                             ^
+   = help: write a value in range, or build it with shifts or arithmetic
+```
 
 ### Floats
 
@@ -86,10 +94,9 @@ Exponent ::= ("e" | "E") ("+" | "-")? Digit+
 - A float must start with a digit: `1.5`, `1.`, `1e3` and `2E-2` are
   floats, but `.5` is not a token at all.
 - No `inf` or `nan` literal.
-
-A numeric token that contains a second `.`, such as `1.2.3`, is not
-rejected by the lexer. It reaches the assembler as a malformed constant,
-and the build fails there.
+- A numeric literal may hold only one `.`. `1.2.3` is a token of its
+  own, reported as `E_INVALID_CHAR` rather than silently read as
+  `1.2`.
 
 ### Strings
 
@@ -108,7 +115,7 @@ Escape     ::= "\\n" | "\\t" | "\\r" | "\\0" | "\\\"" | "\\\\" | "\\e" | "\\x" H
   digits, is `E_INVALID_ESCAPE`, located at the literal:
 
 ```
-PANIC: error[E_INVALID_ESCAPE]: invalid escape sequence in string literal
+error[E_INVALID_ESCAPE]: invalid escape sequence in string literal
   --> main.zyl:1:29
    |
  1 | (defn main () (begin (print "a\qb") 0))
@@ -166,7 +173,7 @@ is a list literal of its quoted elements, so `'(1 2 3)` is `[1 2 3]` and
 name inside quoted data has no value to stand for:
 
 ```
-PANIC: error[E_MALFORMED_FORM]: a quoted list holds constant data; `x` is a name
+error[E_MALFORMED_FORM]: a quoted list holds constant data; `x` is a name
   --> main.zyl:1:33
    |
  1 | (defn main () (begin (print '(1 x)) 0))
@@ -193,7 +200,7 @@ type (Chapter 2). The rest follows quote, so a name outside an unquote
 is an error:
 
 ```
-PANIC: error[E_MALFORMED_FORM]: malformed quasiquote: `x` is a name; write ,name for its value
+error[E_MALFORMED_FORM]: malformed quasiquote: `x` is a name; write ,name for its value
   --> main.zyl:1:30
    |
  1 | (defn main () (begin (print `(1 x)) 0))
@@ -215,7 +222,8 @@ group means: `{ a b }` is the symbol list of an import (§24.2). A
 `[ ]` group reads as a list literal: `[a b c]` is `(list a b c)`, the
 `Cons` chain of its elements (Chapter 4). The one exception is a
 derive, where `(derive T [Eq Ord])` and `(:derive [Eq Ord])` name
-traits. There are no vector or map literals.
+traits. There is no bracket syntax for a `Vec` or a `Map`; their
+literals are the forms `(vec e ...)` and `(map k v ...)` (Chapter 4).
 
 Before the reader runs, `stdlib/compiler/sexp_balance.zyl` checks that
 every opener has a closer of the same kind. It reports
@@ -256,7 +264,7 @@ and non-ASCII bytes outside strings and comments are reported as
 `E_INVALID_CHAR` at their position.
 
 ```
-PANIC: error[E_INVALID_CHAR]: unexpected character `#`
+error[E_INVALID_CHAR]: unexpected character `#`
   --> main.zyl:2:17
    |
  2 |   (begin (print #x) 0))
@@ -341,23 +349,31 @@ ImportSpec ::= "{" ( Identifier | Identifier "=>" Identifier )* "}"
 `E_RESERVED_KEYWORD`, to bind one of them in a definition form:
 
 ```
-def, defn, defun, let, let-mut, if, try, catch, spawn, chan-send,
-ffi-call, ffi-pin, ffi-unpin, assert, trait, impl, fn, lambda,
-while, for, cond, begin, pub, use, export, requires, ensures,
-invariant, recover, checkpoint, contracts, defmacro, alias,
-defstruct, defstruct+, with-resource, derive, unwrap, error,
-Ok, Err, match, struct-get, make-, test-suite, test,
-assert-equal, assert-fail, assert-true, assert-false,
-test-property, setup, teardown, run-tests, test-compile
+def, defn, defun, let, let-mut, let*, if, try, catch, spawn,
+chan-send, ffi-call, ffi-pin, ffi-unpin, assert, trait, impl, fn,
+lambda, while, for, cond, begin, pub, use, export, requires,
+ensures, invariant, recover, checkpoint, contracts, numeric,
+defmacro, alias, defstruct, defstruct+, with-resource, derive,
+unwrap, error, panic, Ok, Err, match, struct-get, tuple, tuple-get,
+test-suite, test, assert-equal, assert-fail, assert-true,
+assert-false, test-property, setup, teardown, run-tests,
+test-compile
 ```
 
 The rule covers every name a definition introduces: functions, macros,
 parameters, `let`, `let-mut` and `def` bindings, types, variants, struct
 fields, traits, aliases and modules. `make-S` is reserved for the
-generated constructor of a struct `S`. The standard library and the
+generated constructor of a struct `S` in the same file (a `make-` name
+for which no struct exists is allowed). The standard library and the
 runtime, which implement some of these forms under their own names, are
 exempt. A reserved name would be unreachable anyway: a call of it is the
 keyword's form, not your definition.
+
+The compiler enforces every name in that list except `numeric`: because
+`(numeric wrapping)` is only read as a package or file directive, a
+definition may still bind the name.
+
+This program does not compile:
 
 ```lisp
 (defn main ()

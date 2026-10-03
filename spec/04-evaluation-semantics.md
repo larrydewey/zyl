@@ -50,7 +50,9 @@ No implicit sugar: `((x) body)` is rejected.
 
 ### 7.2 Capture Inference
 
-Read-only capture → `TCap`. Mutated capture → `TMut`. Escaping closure → Heap.
+A capture of a `let` binding is immutable, and any number of readers may
+share it. A capture of a `let-mut` binding is the only assignable
+binding; `set!` rebinds it. An escaping closure → Heap.
 
 ### 7.3 Closure Value
 
@@ -60,7 +62,8 @@ Read-only capture → `TCap`. Mutated capture → `TMut`. Escaping closure → H
 
 ### 7.4 Closure and Concurrency
 
-Spawned closures must only capture Send-capable variables (`TCap`/`TAtomic`).
+Spawned closures must only capture Send-capable variables: immutable
+(`let`) or atomic bindings.
 
 ### 7.5 Closure and Effects
 
@@ -112,6 +115,11 @@ Function application: evaluate function then arguments sequentially.
 - Isolation: Fresh environment per test.
 - Parallel: Default parallel execution (deterministic ordering enforced).
 
+Both last two are the canonical behaviour; the Implementation Notes under
+§20.5 record that the implementation runs tests sequentially in
+registration order, each being its own function, and that `(:parallel b)`
+is accepted and ignored.
+
 ---
 
 ## 12. Control Flow
@@ -152,7 +160,8 @@ Missing cases produce compile error `E_MATCH_NONEXHAUSTIVE`.
 (assert Expr String)
 ```
 
-If condition is false → panic with the assertion's message (`assertion failed` when it has none).
+If condition is false → panic with the assertion's message (`assert failed`
+when it has none).
 
 ### 12.5 WHILE
 
@@ -168,17 +177,20 @@ Strict left-to-right. No termination detection (Halting Problem).
 (for (init-bindings) condition body)
 ```
 
-**init-bindings:** list of `(name [value])` pairs, written as S-expressions:
-- `(name)` — use existing variable (while-like)
-- `(name value)` — new binding with initial value
-- `(name1 value1 name2 value2 ...)` — multiple variables
+**init-bindings:** a list of `(name)` or `(name value)` bindings, written
+as S-expressions:
+- `(name)` — a fresh binding starting at 0
+- `(name value)` — a new binding with initial value
+- `(i 0)`, or `((i 0) (j 1))` — one binding unwrapped, or a real binding
+  list; the two are told apart by whether the first element is an
+  identifier
 - `()` — empty, pure while loop
 
 **Examples:**
 ```lisp
-(for () (counter < 5) (begin (print counter) (set! counter (+ counter 1))))
+(for () (< counter 5) (begin (print counter) (set! counter (+ counter 1))))
 (for (i 0) (< i 5) (begin (print i) (set! i (+ i 1))))
-(for (i 0 j 10) (< i 5) (begin (print i j) (set! i (+ i 1)) (set! j (+ j 1))))
+(for ((i 0) (j 10)) (< i 5) (begin (print i j) (set! i (+ i 1)) (set! j (+ j 1))))
 ```
 
 **Semantics:**
@@ -188,7 +200,9 @@ Strict left-to-right. No termination detection (Halting Problem).
 4. Goto step 2.
 
 **Note:** The body is a `begin`-block where the user is responsible for
-updating loop variables via `set!`.
+updating loop variables via `set!`. There is no
+`(name1 value1 name2 value2 ...)` form: in the unwrapped shape only the
+first name and its last value are read, and the rest is dropped.
 
 ### 12.7 COND
 
@@ -335,9 +349,11 @@ and G11.
 
 ### Assertions
 
-`assert`, `assert-equal`, `assert-true` and `assert-false` abort through
-`zyl_panic` with a fixed message (`assert-equal failed` and so on) and no
-error code.
+`assert-equal`, `assert-true` and `assert-false` abort through
+`zyl_panic` with a fixed message (`assert-equal failed`,
+`assert-true failed`, `assert-false failed`) and no error code; `assert`
+aborts with the message the source gave, or `assert failed` when it gave
+none.
 `assert-equal` unifies its two sides. On ADT or struct values the type
 pass renames it to the type's generated `T.==`, the same content
 comparison as `==`; a Float type selects an epsilon comparison

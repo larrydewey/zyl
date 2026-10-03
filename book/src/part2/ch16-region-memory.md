@@ -39,7 +39,8 @@ R7. Global Region: Immutable constants only. Eager initialization. No mutation a
 R8. Pin Region: Non-moving arena. Values physically copied here for FFI. Never compacted.
 ```
 
-§7.4 adds that a Send-capable capture is `TCap` or `TAtomic`.
+§7.4 adds that a Send-capable capture is an immutable (`let`) or atomic
+binding.
 
 How each rule is met today:
 
@@ -89,15 +90,17 @@ pointer.
     (Circle r (* 3 (* r r)))
     (Square n (* n n))))
 
-;; Stack: `s` is only ever the subject of a match.
+;; Frame: `s` is only ever the subject of a match, so the variant is
+;; placed directly in local-area's own stack frame.
 (defn local-area ()
   (let s (Square 4)
     (match s
       (Circle r r)
       (Square n (* n n)))))
 
-;; Result region: `area` does not keep `s`, but the call is a tail call,
-;; so `s` goes in the region the caller of `passed-area` chose.
+;; Result region: the call to `area` is in tail position, so local-area's
+;; frame is gone by the time `area` runs and `s` goes in the region the
+;; caller of local-area chose.
 (defn passed-area ()
   (let s (Square 4)
     (area s)))
@@ -123,6 +126,8 @@ A value handed to C is copied into the Pin region by `ffi-pin` (Chapter
 22):
 
 ```lisp
+(capabilities ffi)
+
 (defn main ()
   (let p (ffi-pin 42)             ; a (Pin Int)
     (begin
@@ -327,6 +332,17 @@ them. The self-hosting fixed point (Chapter 31)
 checks this on the compiler's own source on every `./boot.sh`. Memory
 layout is not observable behavior (§27).
 
+That no value outlives its region is enforced statically where the
+language can express a violation (`E_REGION_ESCAPE`) and otherwise argued
+from the analysis; `docs/soundness.md` states it as lemma L2. It also has
+a dynamic gate: `./run_regression_tests.sh --full --no-boot --filter
+poison` refills every released region block with `0xDE` and requires the
+regression programs to behave exactly as before, and `--filter
+poison-selfhost` rebuilds the whole compiler that way and requires
+byte-identical seeds. `verify/model.py` enumerates the region
+allocator's reachable states exhaustively and checks that no block is
+both owned and free and that block counts balance.
+
 ## 16.10 Practical Guidance
 
 1. **Let the compiler decide.** Region inference needs no annotations,
@@ -339,9 +355,13 @@ layout is not observable behavior (§27).
    data built outside it; the compiler rejects a result that points into
    the region.
 4. **Expect data that escapes to the heap to stay.** Heap values are not
-   reclaimed before exit. Long-lived collections that churn should use an
-   explicit arena from `allocator/allocator` (`arena-create`,
-   `arena-alloc`), as the compiler itself does.
+   reclaimed before exit. Keep churning data inside the call that uses
+   it, or bound it with `with-region`. A program cannot create a raw
+   arena: the `allocator/allocator` arena entries are for the compiler,
+   the language server and the REPL, and calling one from a program is
+   `E_FFI_RESTRICTED` (spec G2). Collections (`Vec`, `IntMap`, `Set`,
+   `Slice`) take no allocator; their storage follows the same region
+   rules as any other value.
 5. **Pin only what C must reach through a pointer.** A pinned slot is
    not freed before exit, even after `ffi-unpin` reads it, and only
    `Secret` values are forced through `ffi-pin` today.

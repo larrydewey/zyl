@@ -24,11 +24,11 @@ the conversions at the edges:
 ```lisp
 (use math/words)
 
-(w-alloc arena n)              ; n zeroed slots
+(w-alloc n)                    ; n zeroed slots
 (w-get base i)                 ; read slot i
 (w-set base i v)               ; write slot i
-(w-from-hex arena "0a0b...")   ; hex string  -> word array
-(w-from-string arena "abc")    ; text        -> word array
+(w-from-hex "0a0b...")         ; hex string  -> word array
+(w-from-string "abc")          ; text        -> word array
 (w-hex-bytes base n)           ; word array  -> hex string
 ```
 
@@ -46,7 +46,7 @@ mebibytes cannot afford an eightfold expansion.
 | Module | Provides |
 |---|---|
 | `math/bits` | 32/64-bit word operations, rotations, unsigned compare, byte packing |
-| `math/words` | fixed-size arena-backed `Int` arrays, hex and string conversion |
+| `math/words` | fixed-size `Int` arrays (`Words`), allocated in the calling frame's region; hex and string conversion |
 | `math/secret/secret` | `ct-eq`/`ct-ne`/`ct-select`/`ct-mask`, `declassify`, `zeroize` |
 | `math/bignum/bignum` | fixed-width naturals: add, sub, mul, shifts, byte conversion |
 | `math/bignum/montgomery` | Montgomery multiplication, constant-time `mont-exp` |
@@ -78,13 +78,10 @@ mebibytes cannot afford an eightfold expansion.
 The shortest thing in the library:
 
 ```lisp
-(use allocator/allocator)
-(use core/core)
 (use math/hash/sha2)
 
 (defn main ()
-  (let a (arena-create 0)
-    (print (sha256-hex-of-string a "abc")))
+  (print (sha256-hex-of-string "abc"))
   0)
 ```
 
@@ -95,9 +92,11 @@ ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad
 Every hash module follows the same shape. `sha256-words` takes a word
 array and a length and returns the digest as a word array;
 `sha256-bytes` returns it as bytes; `sha256-hex-of-string` is the
-convenience wrapper above. The arena is the first argument everywhere —
-the library allocates scratch space, and you decide when that space
-goes away.
+convenience wrapper above. No entry point takes an allocator: a hash's
+message schedule, a cipher's state and a bignum's limbs are allocated in
+the region of the call that computes them and reclaimed with its frame,
+so a key's scratch copies do not outlive the computation. (A program
+cannot obtain an arena at all; Chapter 16.)
 
 ## 34.4 Authenticated Encryption
 
@@ -108,11 +107,11 @@ dictates otherwise:
 (use math/crypto/symmetric/chacha20poly)
 
 ;; Returns ciphertext || tag, so the sealed buffer is ctlen + 16 bytes.
-(aead-encrypt arena key nonce aad aadlen pt ptlen)
+(aead-encrypt key nonce aad aadlen pt ptlen)
 
 ;; Returns (Some plaintext) on success, None when the tag does not
 ;; verify. There is no "decrypt without checking" entry point.
-(aead-decrypt arena key nonce aad aadlen sealed ctlen)
+(aead-decrypt key nonce aad aadlen sealed ctlen)
 ```
 
 The tag check goes through `ct-eq-words-bool`, which compares the full
@@ -131,9 +130,9 @@ functions return `None`. That is deliberate, and §34.6 explains why.
 (use math/crypto/asymmetric/x25519)
 (use math/crypto/kdf/hkdf)
 
-(let apub   (x25519-public arena alice-private)
-  (let shared (x25519 arena alice-private bob-public)
-    (hkdf arena shared 32 salt saltlen info infolen 32)))
+(let apub   (x25519-public alice-private)
+  (let shared (x25519 alice-private bob-public)
+    (hkdf shared 32 salt saltlen info infolen 32)))
 ```
 
 `tests/integration/math-protocol.zyl` runs exactly this, end to end: two
@@ -244,8 +243,8 @@ bugs rather than algorithm bugs.
 
 - Byte strings are one byte per word; big numbers are 24-bit limbs,
   least significant first.
-- Every entry point takes an arena first, and you decide when the
-  scratch space goes away.
+- No entry point takes an allocator: scratch space lives in the
+  computing call's region and is reclaimed with its frame.
 - The omissions — PKCS#1 v1.5, software AES, RSA key generation,
   randomised ECDSA nonces — are decisions, not gaps.
 - Verification is layered: published vectors, randomised cross-checks

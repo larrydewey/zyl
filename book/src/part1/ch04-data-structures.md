@@ -103,7 +103,7 @@ error[E_DUPLICATE_DEFINITION]: function `Point.x` is already defined by `(defstr
 ```lisp
 ;; THIS IS A COMPILE ERROR:
 (set! (struct-get p "x") 10)
-;; PANIC: E_MUT_CONFLICT: set! target must be a plain variable name bound
+;; error[E_MUT_CONFLICT]: set! target must be a plain variable name bound
 ;; via let-mut -- direct field/expression mutation is forbidden, rebind
 ;; the whole variable instead
 ```
@@ -339,8 +339,8 @@ Growable arrays with O(1) indexing, generic in their element type:
 
 | Function | Result |
 |----------|--------|
-| `(vec-create arena cap)` | Empty Vec with room for `cap` elements, in `arena` (see *Arenas* below) |
-| `(vec-create-default cap)` | The same, in a new private arena |
+| `(vec-new)` | An empty Vec; storage is allocated on the first push |
+| `(vec-new-cap cap)` | An empty Vec with room for `cap` elements (a hint: it still grows past it) |
 | `(vec-push v x)` | The Vec with `x` appended (grows as needed) |
 | `(vec-pop v)` | The Vec without its last element (an empty Vec is returned unchanged) |
 | `(vec-get! v i)` | Element `i`; an `i` outside the Vec stops the program with `E_INDEX_OUT_OF_BOUNDS` |
@@ -368,7 +368,7 @@ Use `let-mut` to track the current version:
 (use collections/vec)
 
 (defn main ()
-  (let-mut v (vec-create-default 10)
+  (let-mut v (vec-new)
     (begin
       (set! v (vec-push v 42))
       (set! v (vec-push v 99))
@@ -398,7 +398,7 @@ compared with `str-eq`, values may be any type, and lookup returns an
 (defn main ()
   (let m (map-insert (map-insert (map-new) "a" (Some 1)) "b" None)
     (begin
-      (match (intmap-get m "a")
+      (match (map-get m "a")
         (Some v (print v))             ; Some(1)
         (None (print "missing")))
       (print m)))                      ; {b: None, a: Some(1)}
@@ -446,9 +446,9 @@ silently resolved to this Int-only one.
       (print (intmap-len m))            ; 2
       (print (intmap-get m 1 0))        ; 111
       (print (intmap-get m 3 -1))       ; -1 (the default: key missing)
-      (print (intmap-has m 2))          ; true
+      (print (intmap-has m 2))          ; 1 (true)
       (set! m (intmap-remove m 2))
-      (print (intmap-has m 2))))        ; false
+      (print (intmap-has m 2))))        ; 0 (false)
   0)
 ```
 
@@ -466,7 +466,7 @@ so, as with a Vec, the old version sees the change too.
 (use collections/set)
 
 (defn main ()
-  (let-mut s (set-create-default 10)
+  (let-mut s (set-create 10)
     (begin
       (set! s (set-add s 42))
       (set! s (set-add s 42))        ; duplicate ignored
@@ -533,29 +533,29 @@ more elements; the `?` spelling of each returns `None` instead.
 | `(slice-get! s i)` / `(slice-get? s i)` / `(slice-get-or s i default)` | Element `i`; outside the slice, `E_INDEX_OUT_OF_BOUNDS` / `None` / `default` |
 | `(slice-len s)` | The number of elements |
 | `(slice-fold s f init)` | `f` applied to an accumulator and each element in order |
-| `(slice-to-vec s arena)` | A new Vec in `arena` holding the elements (a copy) |
+| `(slice-to-vec s)` | A new Vec holding the elements (a copy) |
 
 ```lisp
 (use collections/vec)
 (use collections/slice)
 
 (defn main ()
-  (let v (vec-push (vec-push (vec-push (vec-create-default 4) 10) 20) 30)
+  (let v (vec 10 20 30)
     (let s (slice-vec! v 1 2)                        ; elements 1 and 2, no copy
       (begin
         (print (slice-len s))                       ; 2
         (print (slice-get! s 0))                     ; 20
         (print (slice-fold s (fn (a x) (+ a x)) 0)) ; 50
         (print (Show.show (slice-take s 1)))        ; [20]
-        (print (vec-len (slice-to-vec s (arena-create 0))))  ; 2 (a copy)
+        (print (vec-len (slice-to-vec s)))          ; 2 (a copy)
         0))))
 ```
 
 A slice shares its storage with the Vec, like a Vec version does: an
 element later set through a Vec that still uses that storage is visible
 through the slice. The slice holds the storage, so region inference
-keeps it alive for as long as the slice; an arena reset or destroy
-still frees it (see *Arenas* below). `Show` is implemented for `Slice`.
+keeps it alive for as long as the slice. `Show` is implemented for
+`Slice`.
 
 ### String views (`StrView`, `Cursor`) — `text/view.zyl`
 
@@ -645,80 +645,54 @@ already checked, so a program outside the standard library may not call
 them (`E_FFI_RESTRICTED`); `zyl_view_ok`, the bounds check itself, is
 not restricted.
 
-### Arenas: where collections keep their elements
+### Where collections keep their elements
 
-`Vec`, `collections/intmap`, `collections/set`, `str-intern` and every entry
-point in `stdlib/math` take an **arena** argument. An arena is a region
-of memory you own: a bump allocator (`allocator/allocator`) that hands
-out 16-byte-aligned chunks from growable blocks and frees them only all
-at once. Its type is `Arena`, a handle distinct from `Int`: an Int
-cannot be passed where an arena is expected.
+A collection takes no allocator argument. `Vec`, `IntMap`, `Set` and
+`Slice` storage comes from the region of the call that allocates it,
+exactly like a struct or ADT value (Chapter 5): a collection that does
+not outlive the function that built it is reclaimed when that function
+returns, one that is returned is placed in the region its caller chose,
+and only one that escapes further goes to the process heap. There is no
+arena to create, share or forget to free, and nothing to call to release
+a collection (`vec-free` and `intmap-free` only return an empty
+collection; they release nothing).
 
-| Function | What it does |
-|----------|--------------|
-| `(arena-create block-size)` | A new arena; `block-size` is the bytes per block (below 16 means the 64 KiB default) |
-| `(arena-alloc a n)` / `(arena-alloc-zeroed a n)` | `n` bytes from `a` (zeroed for the second); 0 on failure |
-| `(arena-used a)` / `(arena-capacity a)` | Bytes handed out / bytes of blocks held |
-| `(arena-reset a)` | Frees every block at once; `a` stays usable |
-| `(arena-destroy a)` | Frees everything; `a` must not be used again |
-
-**The `arena` argument** of `vec-create`, `intmap-new-with` and `set-create`
-is an `Arena` from `arena-create`: the collection's storage, and every
-reallocation as it grows, comes from that arena. Several collections
-may share one arena, and freeing it (`arena-reset`/`arena-destroy`)
-frees them all together. Passing `0` is a type error (expected `Arena`,
-found `Int`).
-
-`vec-create-default`, `intmap-new` and `set-create-default`
-create a new private arena for the one collection. A private arena is
-never freed: that is fine for a few long-lived collections, but inside
-a loop it leaks one arena per call.
-
-A handle already destroyed is still an `Arena` to the type checker. The
-runtime does not check it, and the first allocation from it reads
-garbage or crashes.
-
-**The `cap` argument** is the initial capacity in elements. 0 is fine
-(the first push allocates room for 16); a negative value means 0; a
-larger value avoids reallocations. Growth doubles the capacity and
-copies into new storage from the same arena; the old storage stays
-allocated until the arena is reset.
+**The `cap` argument** of `vec-new-cap`, `intmap-new` and `set-create` is
+a capacity hint in elements, not a limit. 0 is fine (the first push
+allocates room for 16); a negative value means 0; a larger value avoids
+reallocations. Growth doubles the capacity and copies into new storage.
 
 ```lisp
 (use collections/vec)
 
-(defn last-square (n)
-  (let a (arena-create 0)               ; one arena for this computation
-    (let-mut v (vec-create a n)          ; room for n elements up front
-      (begin
-        (for (i 0) (< i n) (begin (set! v (vec-push v (* i i))) (set! i (+ i 1))))
-        (let last (vec-get! v (- n 1))    ; read what we need first
-          (begin
-            (arena-destroy a)            ; frees v's storage; v must not be used after this
-            last))))))
+(defn squares (n)
+  (let-mut v (vec-new-cap n)          ; room for n elements up front
+    (begin
+      (for (i 0) (< i n) (begin (set! v (vec-push v (* i i))) (set! i (+ i 1))))
+      v)))                            ; returned: placed in the caller's region
+
+(defn main ()
+  (print (vec-get! (squares 10) 9))   ; 81
+  0)
 ```
 
 Rules that follow from this design:
 
-- **A collection is only valid while its arena lives.** After
-  `arena-reset` or `arena-destroy`, every collection built in that arena
-  dangles. Return or keep a collection only if its arena outlives the use.
 - **An update may share storage with the old value.** `vec-set!` and a
   `vec-push` with spare capacity write into the same storage, so the
   previous value sees the change. Rebind to the result (`let-mut` +
-  `set!`) and treat the old value as used up.
+  `set!`) and treat the old value as used up. This is memory-safe — the
+  storage is bounds-checked and lives as long as any version that holds
+  it — but it is shared.
 - **Sending a collection on a channel shares it; it is not copied.**
-  Allocation from one arena is locked, so two actors may allocate from
-  it safely, but writing to one collection from two actors is a race.
-  Give each actor its own arena, or send immutable data.
-- **ADT and struct values do not use your arenas.** Region inference
-  places a constructor like `(Some 1)` or `(make-Point 1 2)` in the
-  call's own frame region, the region its caller chose for the result,
-  or the process heap (which lives until the program exits), as §5.5
-  describes. Only the functions that take an arena argument allocate
-  from one.
-- **`core/map` needs no arena.** It is a persistent association list on
-  the runtime heap.
+  Writing to one collection from two actors is a race. Send immutable
+  data, or give each actor its own collection.
+- **A program cannot obtain an `Arena`.** The raw allocator entries in
+  `allocator/allocator` (`arena-create`, `arena-alloc` and the rest)
+  exist for the compiler, the language server and the REPL, which hold
+  data longer than any one call. From a program, calling one is
+  `E_FFI_RESTRICTED`. For an explicit, bounded region of your own, use
+  `with-region` (Chapter 5, §5.5).
 
 ## 4.4 Option and Result — Standard ADTs
 
@@ -784,9 +758,10 @@ Reading past the end is a compile error naming the arity, not a panic:
 
 Two limits worth knowing. A tuple is a fixed shape with no named fields, so
 `struct-get` does not apply — use a `defstruct` when you want names. And a
-*generic* function cannot take a tuple, because there is no way to write that
-a type parameter is a tuple (see 15.5 on trait bounds): `tuple-get` on a type
-parameter is `E_CANNOT_INFER`. For a type you can name, use a struct or a
+*generic* function cannot take a tuple, because a type parameter's type is
+never named and so never known (Chapter 7, §7.5 on trait bounds, which
+cannot be written today): `tuple-get` on a type parameter is
+`E_CANNOT_INFER`. For a type you can name, use a struct or a
 single-variant ADT:
 
 ```lisp
@@ -804,7 +779,7 @@ the name that type happens to use:
 ```lisp
 (len "hello")                    ; 5   (also str-length)
 (len (list 1 2 3))               ; 3   (also list-length)
-(len (vec-create-default 4))     ; 0   (also vec-len)
+(len (vec-new))                  ; 0   (also vec-len)
 (len (map-new))                  ; 0   (also map-size)
 ```
 
@@ -892,7 +867,8 @@ recursive field simply holds a pointer to another block.
 | Fixed set of fields, all always present | `defstruct` |
 | One of several distinct shapes | `deftype` |
 | Variants carry different data | `deftype` |
-| Small Int-to-Int table | `Map` |
+| Small Int-to-Int table | `IntMap` |
+| String keys, any value type | `Map` |
 | Recursive structures | `deftype` (ADT) |
 
 **Rule of thumb:** If you find yourself writing `if (field? x) ... else ...`, you probably want an ADT.
@@ -933,8 +909,9 @@ values field by field, by content, with or without a derived `Eq`
 ## 4.10 Module Imports for Stdlib Types
 
 ```lisp
-(use collections/vec)           ; vec-create vec-push vec-get! ...
-(use collections/intmap)           ; intmap-new-with intmap-put intmap-get ...
+(use collections/vec)           ; vec-new vec-push vec-get! ...
+(use collections/intmap)        ; intmap-new intmap-put intmap-get ...
+(use core/map)                  ; map-new map-insert map-get ...
 (use collections/set)           ; set-create set-add set-contains ...
 (use collections/collections)   ; list-map list-filter assoc-put ...
 (use collections/slice)         ; slice-vec! slice-get! slice-fold ...
@@ -981,7 +958,7 @@ its field count, and a generic ADT needs no per-type layout.
 | A struct or ADT value that does not outlive its call | The call's own region, released when the call returns |
 | A struct or ADT value that is returned but goes no further | The region the caller chose for the result |
 | Every other struct or ADT value (stored, sent, captured) | The process heap |
-| `(vec-create a 10)`, `(intmap-new 10)` | The arena `a`, or a private one |
+| `(vec-new)`, `(intmap-new 10)`, `(set-create 10)` | Like any other value: the call's region, the caller's result region, or the heap |
 
 Region inference decides the placement; anything it cannot prove
 short-lived goes to the heap, which is always safe. The heap is

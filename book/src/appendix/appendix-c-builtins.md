@@ -10,9 +10,8 @@ The language server's hover and completion come from a table kept in
 step with these (`stdlib/lsp/builtins.zyl`), so anything listed here
 can be hovered in an editor for its signature and a one-line
 description. That table also lists a few names that are ordinary
-library functions rather than compiler forms — `when`, `str-eq`,
-`str-intern`, `buf-append`, `error`, `declassify` — and they are marked
-as such below.
+library functions rather than compiler forms — `str-eq`, `str-intern`,
+`buf-append`, `error`, `declassify` — and they are marked as such below.
 
 Every form here is typed by the type pass (`type_annotate.zyl`), and a
 program that does not type-check does not compile (Chapter 15). The
@@ -30,17 +29,23 @@ program using them is rejected (`E_CANNOT_INFER`); they are flagged
 
 | Operator | Form | Notes |
 |---|---|---|
-| `+` | `(+ a b ...)` | n-ary, folds left |
-| `-` | `(- a b ...)` | n-ary, folds left; `(- x)` negates |
-| `*` | `(* a b ...)` | n-ary, folds left |
-| `/` | `(/ a b)` | integer division truncates toward zero; rejected on a `Secret` operand |
-| `%` | `(% a b)` | sign follows the dividend; rejected on a `Secret` operand |
+| `+` | `(+ a b ...)` | n-ary, folds left; on `Int` checked: overflow is `E_OVERFLOW` |
+| `-` | `(- a b ...)` | n-ary, folds left; `(- x)` negates, as `(- 0 x)`; checked on `Int` |
+| `*` | `(* a b ...)` | n-ary, folds left; checked on `Int` |
+| `/` | `(/ a b)` | on `Int`, `b` must be a nonzero integer literal (`E_PARTIAL_OPERATION` otherwise); truncates toward zero; rejected on a `Secret` operand |
+| `%` | `(% a b)` | on `Int`, `b` must be a nonzero integer literal; sign follows the dividend; rejected on a `Secret` operand |
+| `div!`, `rem!` | `(div! a b)` | `Int` division / remainder by any divisor; a zero `b` is `E_DIVISION_BY_ZERO` at run time |
+| `div?`, `rem?` | `(div? a b)` | `(Option Int)`: `None` when `b` is 0, else `(Some q)`; each operand evaluated once, in order |
+| `wrapping+`, `wrapping-`, `wrapping*` | `(wrapping* a b)` | `Int` only; modulo 2^64 under any policy |
+| `saturating+`, `saturating-`, `saturating*` | `(saturating+ a b)` | `Int` only; clamped to the largest or smallest `Int` under any policy |
 
 ```lisp
 (+ 1 2 3)   ; 6
 (- 5)       ; -5
 (/ -7 2)    ; -3
 (% -7 2)    ; -1
+(div? 7 0)  ; None
+(rem! -7 2) ; -1
 (+ 1.5 2.0) ; 3.500000
 (+ 1 2.0)   ; error[E_TYPE_MISMATCH]: the operands of `+` must have one type
 ```
@@ -52,11 +57,18 @@ them implicitly; write the literal in the type you want, or convert an
 
 With one operand, `(+ x)` and `(* x)` are `x`; `(/ x)` and `(% x)` are
 `E_ARITY_MISMATCH` (`operator 3 needs two operands`). Integers are
-64-bit signed. Floats are IEEE-754 binary64, and float division by zero
-yields an infinity or a NaN. Integer division by zero is **not checked**
-in compiled code: the process dies with SIGFPE (exit status 136), which
-`try` does not catch. Only the REPL interpreter reports
-`E_DIVISION_BY_ZERO`.
+64-bit signed. Floats are IEEE-754 binary64, outside the numeric policy:
+float overflow is an infinity and float division by zero an infinity or
+a NaN.
+
+**The numeric policy** (spec §20) decides what `Int` `+ - *` do when the
+result does not fit. It is declared once per package, among a lone
+file's top-level forms or as a line of `zyl.pkg`: `(numeric checked)` —
+the default — stops with `E_OVERFLOW`; `(numeric wrapping)` wraps modulo
+2^64; `(numeric saturating)` clamps. A second, disagreeing declaration,
+an unknown policy name, or the form in a module file of a package is
+`E_MALFORMED_FORM`. `INT_MIN` divided by -1 is `E_OVERFLOW` under every
+policy, and no `Int` division can raise the processor's divide fault.
 
 ## C.2 Comparison
 
@@ -140,13 +152,12 @@ The operands and results are `Bool`. An `Int` is not a truth value:
 | `str-equal` | `(str-equal a b)` | compares contents, returns a `Bool`; inlined |
 | `str-eq` | `(str-eq a b)` | library function (`allocator/allocator`); same result as `str-equal` |
 | `str-len` | `(str-len s)` | library function; same result as `str-length` |
-| `str-intern` | `(str-intern arena s)` | library function; copies `s` into `arena` |
+| `str-intern` | `(str-intern arena s)` | library function; copies `s` into `arena`. Compiler-only: a program cannot create an arena |
 | `buf-append` | `(buf-append buf s)` | library function; appends at the end of the string in `buf` |
+| `len` | `(len x)` | length of a String, List, Vec, Map or IntMap. Resolved while type checking to that type's own length function, so `str-length`, `list-length`, `vec-len` and `map-size` all still work and `len` is the uniform spelling rather than a replacement. Anything else, an `Int` or a tuple included, is `E_TYPE_MISMATCH` naming the type. |
 
 The four inlined names are reserved by the module resolver: they are
 never qualified, so they always mean the builtin.
-
-| `len` | `(len x)` | length of a String, List, Vec, Map or IntMap. Resolved while type checking to that type's own length function, so `str-length`, `list-length`, `vec-len` and `map-size` all still work and `len` is the uniform spelling rather than a replacement. Anything else, an `Int` or a tuple included, is `E_TYPE_MISMATCH` naming the type.
 
 ## C.6 Binding and Mutation
 
@@ -156,6 +167,7 @@ never qualified, so they always mean the builtin.
 | `def` | `(def name value)` |
 | `let` | `(let name value body)` |
 | `let-mut` | `(let-mut name value body)` |
+| `let*` | `(let* ((name value) ...) body)` |
 | `set!` | `(set! name value)` |
 | `fn` | `(fn (param ...) body)` |
 | `lambda` | `(lambda (param ...) body)` |
@@ -164,7 +176,8 @@ never qualified, so they always mean the builtin.
 throughout the stdlib; the specification's spelling with the pair in
 parentheses, `(let (name value) body)`, is accepted too. A list of
 several bindings, `(let ((x 1) (y 2)) ...)`, is not supported and is
-`E_MALFORMED_FORM`; nest `let`s instead. `set!` has type `Unit`. `set!` rebinds a `let-mut` name and nothing else: field mutation,
+`E_MALFORMED_FORM`; nest `let`s, or write `let*`, which is sugar for
+exactly that nesting (each binding in scope for the next). `set!` has type `Unit`. `set!` rebinds a `let-mut` name and nothing else: field mutation,
 `(set! (struct-get p "x") 5)`, is rejected with `E_MUT_CONFLICT`.
 
 `fn` and `lambda` are the same form under two names: both take a
@@ -196,7 +209,8 @@ it a `_` prefix, to mark it unused; `_` may repeat.
 | `unwrap` | `(unwrap expr)` | `expr` is an `Option`; the value of `Some`, and `None` panics with `unwrap on None`. A `Result` is `E_TYPE_MISMATCH`: use `result-expect!` or `result-unwrap` |
 | `error` | `(error "message")` | library function (`core/result`); returns `(Err "message")` and does not raise |
 | `panic` | `(panic "message")` | library function (`allocator/allocator`); raises, unwinding to the nearest `try` or exiting 1 |
-| `when` | `(when cond body)` | library function (`core/core`); `body` is a `Unit` statement, evaluated even when `cond` is false — to skip it, use `(if cond stmt)` |
+| `when` | `(when cond body ...)` | core form; the body runs only when `cond` is true and is not evaluated otherwise. `Unit` |
+| `unless` | `(unless cond body ...)` | core form; the body runs only when `cond` is false. `Unit` |
 
 `for` does not step for you:
 
@@ -223,7 +237,7 @@ an `Err`, so `match` is the only way to handle one. Spec §12.2 describes
 instead.
 
 Where the failure message matters, use the test assertions (C.14) or an
-explicit `if` with `error` instead of `assert`, and `result-expect!`, or
+explicit `if` with `panic` (in a function whose name ends in `!`) instead of `assert`, and `result-expect!`, or
 `result-unwrap`/`option-unwrap` with a default (Appendix B.1), instead
 of `unwrap`.
 
@@ -331,12 +345,14 @@ is still evaluated, so `(int? (print 1))` is false and still prints. A
 | `feature-gate` | `(feature-gate feature definition)` | includes the definition only when `feature` is enabled (§31.10) |
 | `module` | `(module name)` | |
 | `export` | `(export name)` | deprecated by §24.3 in favour of `pub`; still reserved |
+| `capabilities` | `(capabilities io ffi ...)` | top-level form of a lone file (or a REPL entry): what the program may do — `io`, `ffi`, `actor`, `secret`. Absent means none; a use of a gated form without it is `E_PKG_CAPABILITY_VIOLATION`. A package writes it in `zyl.pkg` instead, and in a package's file it is `E_MALFORMED_FORM` |
+| `numeric` | `(numeric checked)`, `(numeric wrapping)`, `(numeric saturating)` | top-level form of a lone file, or a `zyl.pkg` line: the package's `Int` overflow policy (C.1); `checked` is the default |
 
 ## C.10 I/O
 
 | Form | Syntax | Notes |
 |---|---|---|
-| `print` | `(print expr ...)` | one line per argument; `Unit`; rejected on a `Secret` operand |
+| `print` | `(print expr ...)` | one line per argument; `Unit`; rejected on a `Secret` operand; needs no capability |
 | `file-open` | `(file-open path mode)` | `mode` is a string literal: `"r"`, `"w"` or `"a"`, optionally followed by `+` or `b`. Anything else, a variable included, is `E_TYPE_MISMATCH` |
 | `file-read` | `(file-read fd nbytes)` | two `Int`s; returns a `String` of up to `nbytes` bytes |
 | `file-write` | `(file-write fd text)` | `fd` an `Int`, `text` a `String`; returns an `Int`; rejected on a `Secret` operand |
@@ -345,7 +361,8 @@ is still evaluated, so `(int? (print 1))` is false and still prints. A
 | `exit` | `(exit code)` | `code` an `Int`; flushes output and ends the process with that status |
 | `close` | `(close fd)` | same as `file-close`: `fd` an `Int`; returns an `Int` |
 
-`print` chooses its format from the type of its argument, including
+`file-open`, `file-read`, `file-write`, `file-close` and `read-line`
+need the `io` capability. `print` chooses its format from the type of its argument, including
 when that argument is a parameter: `(defn greet ((s String)) (print s))`
 prints the string, not its address. `core/core`'s `print-int`,
 `print-float`, `print-string` and `print-bool` are thin wrappers over it
@@ -366,13 +383,17 @@ shows `3.500000`. A `Bool` prints as `1` or `0`.
 | `ffi-pin` | `(ffi-pin value)` | copies `value`, an `a`, into a Pin-region slot and returns the slot, a `(Pin a)`; C receives its address. A function is `E_FFI_TYPE_NOT_PINNABLE` |
 | `ffi-unpin` | `(ffi-unpin pinned)` | takes a `(Pin a)` and returns the `a` in the slot, which C may have written; frees nothing |
 
-Each channel endpoint has one owner: the actor that made the channel,
+`spawn` and the channel forms need the `actor` capability, and a
+foreign `ffi-call`, `ffi-pin` and `ffi-unpin` the `ffi` capability (a
+`zyl_*` runtime entry needs none). Each channel endpoint has one owner: the actor that made the channel,
 until a spawned closure captures the endpoint or it is sent on a
 channel. Any other use is `E_CHANNEL_NOT_OWNER`. There is no select and
 no emptiness test (Chapter 9). Joining an actor is `actor-wait`, from
 `actor/actor` (Appendix B).
 
 ```lisp
+(capabilities ffi)
+
 (extern "abs" (Int) Int)
 (defn main () (print (ffi-call "abs" -5 1000)) 0)   ; 5
 ```
@@ -393,7 +414,7 @@ assertion.
 | `bytebuf-append` | `(bytebuf-append buf slice)` | takes a **slice**, not a single byte; returns 0 and changes nothing when the slice does not fit |
 | `byteslice` | `(byteslice buf offset length)` | |
 | `byteslice-sub` | `(byteslice-sub slice offset length)` | |
-| `align-check` | `(align-check ptr alignment)` | returns a Bool |
+| `align-check` | `(align-check ptr alignment)` | returns an `Int`, 1 when `ptr` is a multiple of `alignment` and 0 otherwise; a condition needs `(= ... 1)` |
 | `load-u8`, `load-i8` | `(load-u8 :le buf offset)` | `:le` or `:be` |
 | `store-u8`, `store-i8` | `(store-u8 :le buf offset value)` | |
 | `bytebuf-atomic-load` | `(bytebuf-atomic-load buf offset)` | |
@@ -420,7 +441,7 @@ parameter used only there, is `E_CANNOT_INFER`: annotate it,
 | `invariant` | `(invariant condition)` | checked where written, like `requires` |
 | `contracts` | `(contracts P form)`, `(contracts P)` | compiles `form` (or the next top-level form) under profile P: strict, debug, warn, off, production |
 | `checkpoint` | `(checkpoint expr)` | `expr`; if it raises, outer `let-mut` variables it assigned are restored |
-| `recover` | `(recover body ((E_CODE) fallback) ((String) fallback) ...)` | `body`, or the first matching arm's `fallback` |
+| `recover` | `(recover body ((E_CODE) fallback) ((String) fallback) ...)` | `body`, or the first matching arm's `fallback`. An arm keyed by a code matches a raised message that begins with it; `(String)` matches any error |
 
 Contracts are an optional overlay and never alter type inference,
 ownership, regions or scheduling. `--contracts=P` sets the build's profile.
@@ -448,8 +469,8 @@ ownership, regions or scheduling. `--contracts=P` sets the build's profile.
 prints `test: adds ... ok`, `test: fails ... FAIL` and
 `test result: 1 passed, 1 failed, 2 total`. Top-level `test` or
 `run-tests` forms cannot share a file with an explicit
-`(defn main ...)` (`E_TOPLEVEL_STMTS_WITH_EXPLICIT_MAIN`). The binary
-exits with status 0 even when a test fails, so read the summary line.
+`(defn main ...)` (`E_TOPLEVEL_STMTS_WITH_EXPLICIT_MAIN`). `run-tests`
+returns 1 when any test failed, so that is the binary's exit status too.
 
 ## C.15 Types, Regions and Capabilities
 
@@ -459,10 +480,10 @@ expressions:
 | Category | Names |
 |---|---|
 | Primitive types | `Int`, `Float`, `Bool`, `String`, `Unit` (whose one value is `unit`) |
-| Handle types | `Actor`, `ByteBuf`, `ByteSlice`, `Arena`, `Ptr` |
+| Handle types | `Actor`, `ByteBuf`, `ByteSlice`, `Words`, `Arena`, `Ptr` |
 | Constructed types | `List`, `Option`, `Result`, `Vec`, `Map` |
 | Regions | `Stack`, `Heap`, `Global`, `Circular`, `Pin` |
-| Capabilities | `Secret`, `TCap`, `TMut` |
+| Capabilities | `Secret` |
 
 `with-region` is the one form that chooses a region for a computation:
 
@@ -500,15 +521,21 @@ zyl hello.zyl --emit-asm -o hello.s # write x86-64 assembly instead
 | `zyl audit` | Report capabilities per package |
 | `zyl publish` | Archive, hash and sign this package |
 | `zyl key` | Show or create the publisher key |
+| `zyl verify <binary>` | Check a signed provenance trailer |
 | `zyl repl` | Start an interactive session |
 | `zyl eval <file.zyl>` | Run a program without building one |
 | `zyl doc [file.zyl \| dir] [-o out.md]` | Markdown from doc comments |
+| `zyl check [file.zyl \| dir ...]` | Type-check without building; the fast edit loop |
+| `zyl fmt [file.zyl ...]` | Reindent to paren depth (`--check` reports only) |
+| `zyl explain [CODE]` | What a diagnostic means and where it is raised |
+| `zyl balance [file.zyl \| dir ...]` | Check brackets, strings and top-level structure |
 
 A single-file compile also takes `--error-format=json` (diagnostics as
 JSON lines, Appendix A.1) and `--contracts=P` (the contract profile:
 `strict`, the default, `debug`, `warn`, `off` or `production`, C.13).
 An unknown subcommand prints this list. Phase dumps beyond `--emit-asm`
-are not implemented.
+are not implemented. Chapter 35 documents the options each of these
+takes.
 
 ## C.17 The REPL
 

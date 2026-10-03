@@ -48,6 +48,7 @@
     (TkIdent _ _ false)
     (TkInt _ _ false)
     (TkIntOverflow _ _ false)
+    (TkNumMalformed _ _ false)
     (TkFloat _ _ false)
     (TkString _ _ false)
     (TkBool _ _ false)
@@ -83,6 +84,7 @@
     (TkIdent _ o o)
     (TkInt _ o o)
     (TkIntOverflow _ o o)
+    (TkNumMalformed _ o o)
     (TkFloat _ o o)
     (TkString _ o o)
     (TkBool _ o o)
@@ -136,6 +138,7 @@
         ; Unreachable: check-int-literals reports every one of these before
         ; parsing starts, so no token stream reaching the parser has one.
         (TkIntOverflow _ _ (read-form-atom arena t rest fid))
+        (TkNumMalformed _ _ (read-form-atom arena t rest fid))
         (TkFloat _ _ (read-form-atom arena t rest fid))
         (TkString _ _ (read-form-atom arena t rest fid))
         (TkBool _ _ (read-form-atom arena t rest fid))
@@ -149,6 +152,7 @@
   (match t
     (TkInt v o (AstOf (ast-at fid o (AstInt v)) rest))
     (TkIntOverflow _ o (AstOf (ast-at fid o (AList Nil)) rest))
+    (TkNumMalformed _ o (AstOf (ast-at fid o (AList Nil)) rest))
     (TkBool b o (AstOf (ast-at fid o (AstBool b)) rest))
     (TkFloat s o (AstOf (ast-at fid o (AstFloat s)) rest))
     (TkString s o (AstOf (ast-at fid o (AString s)) rest))
@@ -191,6 +195,7 @@
     (TkIdent _ _ false)
     (TkInt _ _ false)
     (TkIntOverflow _ _ false)
+    (TkNumMalformed _ _ false)
     (TkFloat _ _ false)
     (TkString _ _ false)
     (TkBool _ _ false)
@@ -225,6 +230,7 @@
     (TkIdent _ _ false)
     (TkInt _ _ false)
     (TkIntOverflow _ _ false)
+    (TkNumMalformed _ _ false)
     (TkFloat _ _ false)
     (TkString _ _ false)
     (TkBool _ _ false)
@@ -291,6 +297,7 @@
     (TkIdent _ _ false)
     (TkInt _ _ false)
     (TkIntOverflow _ _ false)
+    (TkNumMalformed _ _ false)
     (TkFloat _ _ false)
     (TkString _ _ false)
     (TkBool _ _ false)
@@ -373,10 +380,12 @@
           (check-lexed-to-end toks src fid)
           (ds-program (parse-program arena toks fid)))))))
 
-; A decimal integer literal too large for an Int. Reported from the token
-; stream, before parsing, because the lexer cannot: it has no file to name
-; in a diagnostic. Without this the literal became 0 and the program went on
-; to be wrong in whatever it computed.
+; A decimal integer literal too large for an Int, or a numeric literal
+; that is not a number. Both are reported from the token stream, before
+; parsing, because the lexer cannot: it has no file to name in a
+; diagnostic. Without the first the literal became 0; without the second
+; `1.2.3` became the Float 1.2. Either way the program went on to be
+; wrong in whatever it computed.
 (defn check-int-literals (toks fid)
   (match toks
     (Nil 0)
@@ -390,7 +399,7 @@
                   " does not fit an Int (64-bit signed); the largest is 9223372036854775807 and the smallest -9223372036854775808")
                 fid off "write a value in range, or build it with shifts or arithmetic")
               1000)))
-        (check-int-literals rest fid)))))
+        (check-num-tokens t fid (check-int-literals rest fid))))))
 
 (defn int-overflow-token-p (t)
   (match t
@@ -400,6 +409,30 @@
 (defn token-text (t)
   (match t
     (TkIntOverflow s _ s)
+    (_ "")))
+
+; A '.' belongs to a numeric literal exactly once, so a second one is a
+; character the literal cannot use. It used to be dropped instead, and
+; `1.2.3` printed as 1.200000.
+(defn check-num-tokens (t fid k)
+  (if (num-malformed-token-p t)
+    (let off (tok-offset t)
+      (ffi-call "zyl_panic"
+        (err-at "E_INVALID_CHAR"
+          (str-concat (str-concat "numeric literal " (num-malformed-text t))
+            " has a second `.`; a Float literal has one decimal point")
+          fid off "write 1.23, or two literals: 1.2 and 3")
+        1000))
+    k))
+
+(defn num-malformed-token-p (t)
+  (match t
+    (TkNumMalformed _ _ true)
+    (_ false)))
+
+(defn num-malformed-text (t)
+  (match t
+    (TkNumMalformed s _ s)
     (_ "")))
 
 ; The lexer stops at a byte it cannot tokenize; its final TkEof then sits

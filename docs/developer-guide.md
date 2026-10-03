@@ -8,7 +8,7 @@ language you'll reach for most often.
 
 Every example below is written in the same style as the project's own
 test suite (`tests/regression/*.zyl`), and every complete program in it
-compiles and prints what its comments say (checked 2026-09-25).
+compiles and prints what its comments say (checked 2026-10-02).
 
 ## Table of contents
 
@@ -298,7 +298,7 @@ declare your own for the common case:
 (defn safe-div (a b)
   (if (== b 0)
     (result-err "divide by zero")
-    (result-ok (/ a b))))
+    (result-ok (div! a b))))
 
 (defn main ()
   (print (result-unwrap (safe-div 10 2) 0))     ; => 5
@@ -306,6 +306,12 @@ declare your own for the common case:
   (print (option-unwrap-or (Some 3) 0))         ; => 3
   0)
 ```
+
+Note `div!`, not `/`. Division is only total when the divisor is a
+nonzero literal, so `/` with a variable divisor is `E_PARTIAL_OPERATION`
+— the `!` is the spelling that says *you* have already checked.
+(`div? a b` gives `(Option Int)` instead, and `rem!`/`rem?` are the
+modulo pair.)
 
 Useful combinators: `option-map`, `option-unwrap-or`, `option-and`,
 `option-or`, `result-map`, `result-and-then`, `result-unwrap-or`, and,
@@ -354,7 +360,7 @@ made it:
 (use collections/set)
 
 (defn main ()
-  (let v (vec-push (vec-push (vec-create-default 10) 1) 2)
+  (let v (vec-push (vec-push (vec-new-cap 10) 1) 2)
     (begin
       (print (vec-len v))                ; => 2
       (print (vec-get! v 0))))            ; => 1
@@ -362,20 +368,23 @@ made it:
     (begin
       (print (intmap-get m 1 0))            ; => 42
       (print (intmap-has m 1))))            ; => 1 (bools print as 1/0)
-  (let s (set-add (set-create-default 10) 42)
+  (let s (set-add (set-create 10) 42)
     (print (set-contains s 42)))         ; => 1
   0)
 ```
 
-`vec-create-default`, `intmap-new` and `set-create-default`
-take an initial capacity and give the collection a private arena of its
-own; `vec-create`, `intmap-new-with` and `set-create` take an `Arena` first,
-for a collection that should live in an arena you manage. `Vec` is
-generic over its element type; `Map` and `Set` hold Int keys (and Int
-values). `Vec` and `Map` double their capacity when they fill up. For
-simple linked lists, the built-in `Cons`/`Nil` list (section 6) plus
-`core/list`'s helpers (`list-length`, `list-append`, `list-reverse`,
-...) are usually simpler than reaching for `Vec`.
+`vec-new` makes an empty `Vec` — its storage appears on the first
+push — and `vec-new-cap`, `intmap-new` and `set-create` take an initial
+capacity as a hint, doubling when they fill up. No collection takes an
+`Arena`: a program allocates through the region system (below) and there
+is no other handle on it. `Vec` is generic over its element type, `Set`
+holds Int keys, and `IntMap` holds Int keys and Int values; the generic
+`Map<K, V>` in `core/map` is a different structure with its own
+`map-get`/`map-insert`. Updating one returns a new collection rather than
+changing one in place. For simple linked lists, the built-in
+`Cons`/`Nil` list (section 6) plus `core/list`'s helpers
+(`list-length`, `list-append`, `list-reverse`, ...) are usually simpler
+than reaching for `Vec`.
 
 Memory is managed by regions, not a garbage collector. The compiler
 works out where each value can go: a value that does not outlive its
@@ -521,7 +530,11 @@ empty, and there is no way to ask which channel is ready, so the output
 is the same under every schedule. `actor-wait` joins an actor and
 re-raises its panic.
 
+Spawning needs the capability, which a lone file declares at the top:
+
 ```zyl
+(capabilities actor)
+
 (use actor/actor)
 
 (defn main ()
@@ -551,6 +564,8 @@ foreign symbol needs an `extern` declaration giving its parameter and
 result types, which must be concrete and fit a machine word (no Float):
 
 ```zyl
+(capabilities ffi)
+
 (extern "strlen" (String) Int)
 
 (defn main ()

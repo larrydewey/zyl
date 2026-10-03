@@ -33,7 +33,7 @@ There is no select, no non-blocking receive and no emptiness test.
 ### Rules
 
 1. No shared mutable state between actors. Channel values and spawned
-   captures must be Send-capable (TCap or TAtomic, §7.4). A `let-mut`
+   captures must be immutable (`let`) or atomic bindings. A `let-mut`
    binding is rejected (`E_CAPABILITY_LEAK`), and so is a `Secret`
    (`E_SECRET_ESCAPE`).
 2. **One owner per endpoint.** The creator owns both ends. Ownership

@@ -210,12 +210,29 @@
 (def ta-cur-node (ffi-call "zyl_ref_new" (Expr (EAtom ANil)) 1000))
 ; Names already reported as unbound: each is reported once per program.
 (def ta-unbound-seen (ffi-call "zyl_smap_new" 1000))
+; Unbound names waiting to be reported, with the help each one earned at
+; its own use site, so the flush can group by cause (see ta-unbound).
+(def ta-unbound-pending (ffi-call "zyl_wvec_new" 1000))
+; The help strings already spoken for by a group, so the second name that
+; wants the same fix joins the first one's message instead of starting one.
+(def ta-unbound-grouped (ffi-call "zyl_smap_new" 1000))
 ; 1 while the head of a call is itself a list, `((x) ...)`.
 (def ta-list-head (ffi-call "zyl_ref_new" 0 1000))
 ; Constructor names in declaration order, for did-you-mean.
 (def ta-ctor-names (ffi-call "zyl_wvec_new" 1000))
 ; 1 while main's result is unified with Int, so a clash names main.
 (def ta-in-main (ffi-call "zyl_ref_new" 0 1000))
+
+; One remembered unbound name: the name as the reader wrote it, where it
+; was first used, and the help that use site earned.
+; the stdlib module that would define it, "" when none does (a typo, or a
+; name out of scope) -- the cause a group shares.
+(deftype TAUnb (TAUnb String Expr String String))
+(defn make-TAUnb (n node help module) (TAUnb n node help module))
+(defn TAUnb.name (e) (match e (TAUnb n _ _ _ n)))
+(defn TAUnb.node (e) (match e (TAUnb _ node _ _ node)))
+(defn TAUnb.help (e) (match e (TAUnb _ _ h _ h)))
+(defn TAUnb.module (e) (match e (TAUnb _ _ _ m m)))
 
 ; The checker is always strict; kept as a predicate for the call sites
 ; that once chose between the strict and the permissive rule.
@@ -242,13 +259,121 @@
 ; A name defined nowhere: E_UNBOUND_VARIABLE, reported once per program at
 ; its first use (docs/diagnostics.md, 6), and typed as an absorbing unknown
 ; so that nothing depending on it is reported as well.
+;
+; It is not reported here but remembered, with the help its use site
+; earned, and ta-flush-unbound reports it after the walk. The reason is
+; grouping: one missing `(use collections/vec)` makes every name that
+; module defines unbound, and `(vec 1 2)` expands to two of them, so three
+; separate messages carrying the same fix -- and the reader's third
+; question is "is this a different mistake?". The help needs the scope of
+; its own use site, so it is computed now and grouped later.
 (defn ta-unbound (st env n)
   (let _ (if (ta-shas ta-unbound-seen n)
            unit
            (let _ (ta-sput ta-unbound-seen n 1)
-             (ta-type-error "E_UNBOUND_VARIABLE" (str-concat "`" (str-concat (err-name n) "` is not defined"))
-                            (ffi-call "zyl_ref_get" ta-cur-node 1000) Nil (ta-unbound-help st env n))))
+             (ta-unbound-remember (err-name n) (ffi-call "zyl_ref_get" ta-cur-node 1000)
+                                  (ta-unbound-help st env n) (err-stdlib-module-of n))))
     (ta-poisoned-var st)))
+
+(defn ta-unbound-remember (name node help module)
+  (let _ (ffi-call "zyl_wvec_push" ta-unbound-pending (make-TAUnb name node help module) 1000)
+    unit))
+
+; One message per group: the first name of a group speaks, and every other
+; name that earned the same help is named in its message. A group of one
+; -- the common case, a genuine typo or a name out of scope -- reads
+; exactly as it always did.
+(defn ta-flush-unbound ()
+  (begin
+    (ffi-call "zyl_smap_clear" ta-unbound-grouped 1000)
+    (ta-flush-unbound-go 0 (ffi-call "zyl_wvec_len" ta-unbound-pending 1000))))
+
+(defn ta-flush-unbound-go (i n)
+  (if (>= i n)
+    0
+    (let e (ffi-call "zyl_wvec_get" ta-unbound-pending i 1000)
+      (let m (TAUnb.module e)
+        ; No module means no shared cause: the help is a typo suggestion
+        ; or a spelling synonym, and two names with two different ones
+        ; must not be merged into a single message that keeps only the
+        ; first. Each speaks for itself.
+        (let _ (if (= (str-length m) 0)
+                 (ta-unbound-report e Nil)
+                 (if (ta-shas ta-unbound-grouped m)
+                   unit
+                   (let _ (ta-sput ta-unbound-grouped m 1)
+                     (ta-unbound-report e (ta-unbound-group m)))))
+          (ta-flush-unbound-go (+ i 1) n))))))
+
+; The names sharing one help, in the order they were first used.
+(defn ta-unbound-group (m)
+  (ta-unbound-rev (ta-unbound-group-go m 0 (ffi-call "zyl_wvec_len" ta-unbound-pending 1000) Nil)))
+
+(defn ta-unbound-group-go (m i n acc)
+  (if (>= i n)
+    acc
+    (let e (ffi-call "zyl_wvec_get" ta-unbound-pending i 1000)
+      (ta-unbound-group-go m (+ i 1) n
+        (if (str-eq (TAUnb.module e) m) (Cons e acc) acc)))))
+
+(defn ta-unbound-rev (xs)
+  (match xs
+    (Nil Nil)
+    (Cons h t (ta-unbound-append (ta-unbound-rev t) h))))
+
+(defn ta-unbound-append (xs x)
+  (match xs
+    (Nil (Cons x Nil))
+    (Cons h t (Cons h (ta-unbound-append t x)))))
+
+(defn ta-unbound-report (e group)
+  (ta-type-error "E_UNBOUND_VARIABLE" (ta-unbound-msg e group)
+                 (TAUnb.node e) Nil (ta-unbound-help-line group (TAUnb.help e))))
+
+; The group shares its fix, so the help says so once: "these are defined
+; in `core/map`: add `(use core/map)`". A name no module defines has no
+; group to speak for it and keeps the help its own use site earned.
+(defn ta-unbound-help-line (group own)
+  (match group
+    (Nil own)
+    (Cons h t
+      (if (is-nil t)
+        own
+        (let m (TAUnb.module h)
+          (if (= (str-length m) 0)
+            own
+            (let q (str-concat "`" (str-concat m "`"))
+              (let names (ta-unbound-names group 0 (list-length group) "")
+                (let head (str-concat " are defined in " q)
+                  (let whole (str-concat names head)
+                    (let tail (str-concat ": add `(use " (str-concat q "`)"))
+                      (str-concat whole tail))))))))))))
+
+; "`a` is not defined" for one name, which is the usual case and reads
+; exactly as it always has; "`a`, `b` and `c` are not defined" for the
+; several that share one fix.
+(defn ta-unbound-msg (e group)
+  (match group
+    (Nil (ta-unbound-one (TAUnb.name e)))
+    (Cons h t
+      (if (is-nil t)
+        (ta-unbound-one (TAUnb.name h))
+        (str-concat (ta-unbound-names group 0 (list-length group) "") " are not defined")))))
+
+(defn ta-unbound-one (name)
+  (str-concat "`" (str-concat name "` is not defined")))
+
+(defn ta-unbound-names (group i n acc)
+  (if (>= i n)
+    acc
+    (let name (str-concat "`" (str-concat (TAUnb.name (ta-nth-at group i)) "`"))
+      (let sep (if (= (str-length acc) 0) "" (if (>= (+ i 1) n) " and " ", "))
+        (ta-unbound-names group (+ i 1) n (str-concat acc (str-concat sep name)))))))
+
+(defn ta-nth-at (xs i)
+  (match xs
+    (Nil (make-TAUnb "" (Expr (EAtom ANil)) "" ""))
+    (Cons h t (if (< i 1) h (ta-nth-at t (- i 1))))))
 
 ; The help for an unbound name, in order of likelihood: a close name in
 ; scope, the Zyl spelling of another Lisp's name, the stdlib module that
@@ -484,6 +609,22 @@
 
 ; Opaque runtime handle types (compiler/ffi_sigs): nullary ones here,
 ; parameterized ones in ta-handle-param-type.
+;
+; `Ptr` is the exception: ta-conv-name-1 resolves it to Int. It is a
+; *spelling* in an FFI signature, documenting that the word is an address,
+; not a distinct type. There is no pointer representation to be distinct
+; from: the runtime's own entry for it is the identity function
+; (`zyl_cstr_of_word (w) = w`, runtime/rt/interp.zyl), every address in
+; stdlib is documented as an Int (allocator/allocator.zyl), and there is no
+; pointer type in the specification. Making it nominal bought one thing --
+; rejecting a bare Int where a Ptr was declared -- at the price of needing a
+; Ptr-to-Int coercion for the arithmetic that every real use needs
+; (elf_link.zyl walks a buffer with `+`), and a cast is the surface this
+; language deliberately does not have. So the annotation documents intent
+; and the runtime keeps the invariant that matters: an address reaches C
+; only from a value that owns memory (bytebuf-ptr, ffi-pin) or from a
+; foreign call, never from memory nothing tracks (alloc-malloc is
+; E_FFI_RESTRICTED).
 (defn ta-builtin-type (n)
   (if (ta-streq n "Arena") true
   (if (ta-streq n "Ptr") true
@@ -591,7 +732,7 @@
 
 (defn ta-conv-name-1 (st n args scope)
   (if (ta-builtin-type n)
-    (TaR (TaC n Nil) scope)
+    (TaR (if (ta-streq n "Ptr") (ta-int) (TaC n Nil)) scope)
   ; (Fn (A B) R): a function from A B to R.
   (if (and (ta-streq n "Fn") (= (list-length args) 2))
     (match (ta-conv-args st (ta-type-list (ta-nth args 0 (Expr (EAtom ANil)))) scope Nil)
@@ -1419,6 +1560,16 @@
         (Cons _ _ (ta-len-shape st e))
         (Nil (ta-len-go st e (ta-short (ta-tc-name st x))))))))
 
+; The argument's type is not a concrete named type: it is an unbound
+; variable (any of String, List, Vec, Map may still land there), or it is
+; the absorbing unknown a failed unification or an unbound name left
+; behind. Neither is something `len` can have an opinion about, and the
+; pass's own rule is that nothing depending on an unknown is reported --
+; reporting it printed "a value of type  " with no type in it, beside the
+; error that actually explains why. So: a fresh variable, no diagnostic.
+(defn ta-len-unknown (st)
+  (ta-fresh st))
+
 ; A type name is module-qualified (zyl/std@5::core/map::Map), so comparing
 ; against a bare "Map" never matches. Keep only what follows the last "::".
 
@@ -1440,7 +1591,7 @@
     ; IntMap is not the spec's Map, but it is a map with a length, and
     ; rejecting it would be a surprise next to accepting Map.
     (if (ta-streq sym "IntMap") (ta-len-pick st e "intmap-len" "collections/intmap")
-      (ta-len-none st k))))))))
+      (if (= (str-length sym) 0) (ta-len-unknown st) (ta-len-none st k)))))))))
 
 ; The function to call for a length. A prelude function is registered under
 ; its bare name; a module function under its canonical key
@@ -1836,13 +1987,18 @@
       (let ats (ta-list st ctx env (ta-butlast rest))
         (let _ (ta-list st ctx env (ta-last-only rest))
         (match (Expr.inner sym)
-          (EAtom a (match a (AStr s (ta-ffi-typed st s ats)) (_ (ta-dk st "ffi-call symbol"))))
+          (EAtom a (match a (AStr s (ta-ffi-typed st s ats sym)) (_ (ta-dk st "ffi-call symbol"))))
           (_ (ta-dk st "ffi-call symbol"))))))))
 
 ; A runtime entry is typed by its table signature (compiler/ffi_sigs), and
 ; one with none is E_CANNOT_INFER; a foreign symbol is typed by its
 ; (extern ...) declaration, and one with none is E_CANNOT_INFER.
-(defn ta-ffi-typed (st s ats)
+; `node` is the ffi-call whose symbol this is: the diagnostic belongs to
+; the call the reader wrote, not to whatever expression the type pass
+; happened to be standing on (ta-cur-node is a global, and the compiler
+; compiles the standard library in this same process, so it still names
+; a stdlib module when a program is being checked).
+(defn ta-ffi-typed (st s ats node)
   (let spec (if (ta-strict-p) (ffi-sig s) "")
     ; A runtime entry is exported by the runtime or has a table signature.
     (if (or (ta-runtime-export s) (> (str-length spec) 0))
@@ -1854,11 +2010,11 @@
       (ta-ffi-extern st s ats))))
 
 ; An extern may not retype the runtime's own entries.
+; A runtime entry the program also declared with (extern ...): the
+; extern is refused at its own declaration (expr_inner.zyl's
+; extern-runtime-entry-p), so here the call is simply typed by the table.
 (defn ta-extern-on-runtime (st s ats spec)
-  (let _ (ta-type-error "E_FFI_RESTRICTED"
-           (str-concat "`" (str-concat s "` is a runtime entry; its type comes from the compiler's signature table, not from an extern"))
-           (ffi-call "zyl_ref_get" ta-cur-node 1000) Nil "remove the extern declaration")
-    (if (= (str-length spec) 0) (ta-fresh st) (ta-ffi-sig st s ats spec))))
+  (if (= (str-length spec) 0) (ta-fresh st) (ta-ffi-sig st s ats spec)))
 
 ; A symbol typed by its table signature: the arguments unify with its
 ; parameters and the result is its result.
@@ -1980,7 +2136,12 @@
         (match found
           (Some t (TaSP t k vars))
           (None (let v (ta-fresh st) (TaSP v k (Cons (Pair w v) vars))))))
-      (TaSP (TaC w Nil) k vars))))
+      ; `Ptr` resolves to Int here as well as in ta-conv-name-1: this parser
+      ; reads extern declarations and the runtime signature table, and a
+      ; `Ptr` that meant one thing in a type annotation and another in a
+      ; signature would be a worse trap than no distinction at all. See the
+      ; note on ta-builtin-type for why it is a spelling.
+      (TaSP (if (ta-streq w "Ptr") (ta-int) (TaC w Nil)) k vars))))
 
 (defn ta-sig-var-find (vars w)
   (match vars
@@ -2668,6 +2829,7 @@
     (ffi-call "zyl_ref_set" ta-list-head 0 1000)
     (ffi-call "zyl_ref_set" ta-in-main 0 1000)
     (ffi-call "zyl_smap_clear" ta-unbound-seen 1000)
+    (ffi-call "zyl_wvec_truncate" ta-unbound-pending 0 1000)
     (ffi-call "zyl_wvec_truncate" ta-ctor-names 0 1000)
     (ffi-call "zyl_wvec_truncate" ta-num-note-store 0 1000)
     (node-tables-clear)
@@ -2693,6 +2855,7 @@
         (ta-resolve-specials st (Cons -1 Nil) 0)
         (ta-check-num st 0 (ffi-call "zyl_wvec_len" (ta-num-notes) 1000))
         (ta-check-main st)
+        (ta-flush-unbound)
         (ta-fail-if-errors)
         (ffi-call "zyl_smap_clear" ta-generic-names 1000)
         (ta-record-generic st 0 (ta-wlen (ta-fnstate st)))

@@ -21,7 +21,7 @@ Appendices A–C record the differences.
 | 7 | Closures (Explicit Syntax Only) | `fn`/`lambda`, capture inference, concurrency, effects | Ch. 8 |
 | 8 | Algebraic Data Types (ADTs) | Declaration, construction, pattern matching and exhaustiveness (§8.3) | Ch. 18 |
 | 9 | Region System (Core Memory Model) | Stack, Heap, Global, Circular, Pin; rules R1–R8 (§9.1) | Ch. 16 |
-| 10 | Mutability and Aliasing | The TMut/TCap invariant, struct immutability, alias transparency | Ch. 5, 17 |
+| 10 | Mutability and Aliasing | The `let`/`let-mut` invariant, struct immutability, alias transparency | Ch. 5, 17 |
 | 11 | Evaluation Semantics (Big-Step) | Strict left-to-right; function and closure application; test execution | Ch. 26 |
 | 12 | Control Flow | if, try/catch, match, assert, while, for, cond, begin, with-resource, error (§12.1–§12.10) | Ch. 3, 6 |
 | 13 | Memory Operations | Stack, Heap, Circular, Pin, Global | Ch. 16 |
@@ -31,7 +31,7 @@ Appendices A–C record the differences.
 | 17 | Monomorphization | Alphabetical canonical specialization names | Ch. 19 |
 | 18 | ICNF (Intermediate Canonical Normal Form) | SSA IR with region annotations | Ch. 28 |
 | 19 | Macro System (Full Formalization) | `defmacro`, gensym hygiene, innermost-first expansion, constraints, registration | Ch. 10, 23 |
-| 20 | Numeric Model | Int64 (checked, wrapping, saturating), IEEE-754 Float64, division by zero, bit-level determinism | Ch. 2, 32 |
+| 20 | Numeric Model | Int64 under a declared policy (checked by default, wrapping, saturating), total or spelled division (`div!`, `div?`), IEEE-754 Float64, bit-level determinism | Ch. 3, 15, 32 |
 | 20.5 | Testing Framework (Core Language Built-in) | Registration, assertions, fixtures, property-based tests, runner, compile-time tests | Ch. 11 |
 | 20.6 | Package Management | Summary; normative text in §31 | Ch. 25 |
 | 21 | Built-in Operations (Semantics) | Arithmetic, comparison, boolean, type predicates, collections, mutation, I/O, error signaling, sequencing, Iterator trait, struct and alias accessors (§21.1–§21.12) | App. C |
@@ -41,7 +41,7 @@ Appendices A–C record the differences.
 | 25 | Standard Library (Abstract) | Core modules; the stdlib is implicit, versioned with the compiler | App. B |
 | 26 | Implementation Contract | What the compiler MUST, MAY and MUST NOT do | Ch. 26 |
 | 27 | Determinism Contract | Observable versus non-observable behavior; package builds | Ch. 26 |
-| 28 | Error Model | 30 core codes plus 36 package codes, all compile errors except the runtime ones | App. A |
+| 28 | Error Model | 33 core codes plus 36 package codes, all compile errors except the runtime ones | App. A |
 | 29 | Formal Guarantees | G1–G13 | F.3 |
 | 30 | Version Roadmap | v4.0, v4.1, v4.2, v5.0 (current), FUTURE | — |
 | 31 | Package System | Identity, symbol keys and mangling, manifest, compilation model, MVS, lock, content store, index and trust, capabilities, features and native dependencies, workspaces and editions, determinism (§31.1–§31.12) | Ch. 25 |
@@ -128,7 +128,8 @@ lists `defun`, `(let (Name Expr) Body)`, `(assert Expr String)`,
 compiler accepts the parenthesised `let`; lowers `assert`, which panics
 with its message, and `unwrap`, which takes an `Option` and panics with
 `unwrap on None`; parses `export` without lowering it; treats `error`
-as a library function that panics; and does not recognise `defun`
+as a library function that returns `(Err message)` and `panic` as one
+that raises; and does not recognise `defun`
 (Appendix C). A form whose arguments do not fit
 its shape is `E_MALFORMED_FORM`; `test` and `defmacro` take exactly one
 body form.
@@ -173,7 +174,7 @@ strict: every failure is a compile error, and there is no cast form.
 | 8 | Inference over annotation; an accepted program never uses a value at the wrong type | P7, §4.6 |
 | 9 | Contracts never alter core semantics | P8, §23, G8 |
 | 10 | Testing is built in | P9, §20.5 |
-| 11 | TCap/TMut aliasing invariant | §10 |
+| 11 | Aliasing invariant: every `let` binding is immutable and any number of readers may share it; only a `let-mut` binding is assignable, and `set!` rebinds it | §10 |
 | 12 | Struct fields immutable (rebind only) | §10, G9 |
 | 13 | Match exhaustiveness mandatory | §8.3 |
 | 14 | FFI requires Pin + timeout; external code cannot corrupt Zyl memory | §16, G5 |
@@ -185,6 +186,7 @@ strict: every failure is a compile error, and there is no cast form.
 | 20 | `with-resource` cleans up before an error propagates | §12.9, G11 |
 | 21 | A package cannot exercise a capability it does not declare | §31.9, G12 |
 | 22 | A locked build is reproducible from pinned hashes and keys | §31.8, §31.12, G13 |
+| 23 | A runtime failure happens only where the source asked for one: overflow under `checked`, a `!` operation, `panic` | §20 |
 
 ## F.4 Phase Dependencies (Must Not Violate)
 
@@ -235,6 +237,7 @@ runtime event.
 | `E_INVALID_ESCAPE` | Invalid escape sequence in a string literal |
 | `E_INDEX_OUT_OF_BOUNDS` | Index outside a word array (runtime) |
 | `E_NESTED_PATTERN` | Nested pattern in a constructor arm |
+| `E_UNKNOWN_CONSTRUCTOR` | A match arm head spelled like a constructor that no type declares |
 | `E_REGION_EXHAUSTED` | A `with-region` region exceeded its size or limit (runtime) |
 | `E_MACRO_NON_TERMINATION` | Macro expansion loop |
 | `E_MATCH_NONEXHAUSTIVE` | Missing match case |
@@ -243,16 +246,24 @@ runtime event.
 | `E_DUPLICATE_IMPL` | Conflicting impls |
 | `E_MACRO_ILLEGAL_ACCESS` | Macro accessed a runtime value |
 | `E_CONTRACT_VIOLATION` | Contract failed |
-| `E_OVERFLOW` | Integer overflow |
-| `E_DIVISION_BY_ZERO` | Division by zero |
+| `E_OVERFLOW` | Integer overflow (checked by default, §20.1) |
+| `E_DIVISION_BY_ZERO` | `div!`/`rem!` by zero |
+| `E_PARTIAL_OPERATION` | `/` or `%` whose divisor is not a nonzero literal (§20.3) |
+| `E_CHANNEL_NOT_OWNER` | A channel endpoint used by an actor that does not own it (runtime) |
+| `E_CHANNEL_CLOSED` | `chan-recv` on a closed, drained channel (runtime) |
+| `E_CHANNEL_CAPACITY` | `(chan n)` outside 1..16777216 (runtime) |
+| `E_DEADLOCK` | Every live actor blocked on a channel or a join (runtime) |
+| `E_ACTOR_LIMIT` | More than 1024 actors spawned (runtime) |
 | `E_TRAIT_NOT_DERIVABLE` | Cannot derive trait |
 | `E_RESERVED_KEYWORD` | Reserved keyword used as an identifier |
 | `E_CANNOT_INFER` | No type for an expression: a generic parameter with no call-site evidence, or an `ffi-call` to an undeclared foreign symbol |
 | `E_INFINITE_TYPE` | A type would have to contain itself (occurs check) |
+| `E_PANIC_UNMARKED` | A standard-library function that calls `panic` directly is not spelled with a trailing `!` (§25) |
 
 `E_TYPE_MISMATCH` and `E_UNBOUND_VARIABLE`, the two errors the type
 pass reports most, are not in §28's core list; Appendix A.5 describes
-them.
+them. `W_PANIC_UNMARKED`, the warning form of the last row, is in
+Appendix A.16.
 
 The 36 package codes are grouped by phase: manifest, lock and registry
 (25 codes, `E_MANIFEST_*` and most `E_PKG_*`); module and package
@@ -261,20 +272,20 @@ resolution (`E_PKG_CYCLE`, `E_MODULE_CYCLE`, `E_PKG_VERSION_CONFLICT`,
 `E_PKG_UNDECLARED_DEP`, `E_PKG_RESERVED_MODULE`); traits
 (`E_PKG_ORPHAN_IMPL`); and capabilities (`E_PKG_CAPABILITY_VIOLATION`,
 `E_PKG_CAPABILITY_GROWTH`). Appendix A lists every one, together with
-the codes the compiler adds beyond §28 and the §28 codes it does not yet
-raise.
+the codes the compiler adds beyond §28; §28 itself now lists only codes
+something raises.
 
 ## F.6 Standard Library Quick Index
 
 | Module | Key exports |
 |--------|-------------|
-| `core/core` | `identity`, `compose`, `abs`, `min`, `max`, `clamp`, `when`, `unless`, `is-even`, `print-int`, `print-string` |
+| `core/core` | `identity`, `compose`, `abs`, `min`, `max`, `clamp`, `is-even`, `print-int`, `print-string` |
 | `core/option` | `Option`, `Some`, `None`, `option-is-some`, `option-unwrap`, `option-map`, `option-flatmap` |
 | `core/result` | `Result`, `Ok`, `Err`, `result-is-ok`, `result-unwrap`, `result-map`, `result-and-then` |
 | `core/list` | `List`, `Cons`, `Nil`, `car`, `cdr`, `list-length`, `list-append`, `list-reverse` |
 | `core/map` | `map-new`, `map-insert`, `map-get`, `map-has`, `map-remove`, `map-entries` |
-| `collections/vec` | `vec-create`, `vec-push`, `vec-pop`, `vec-get!`, `vec-set!`, `vec-len`, `vec-cap`, `vec-last!` |
-| `collections/intmap` | `intmap-new-with`, `intmap-put`, `intmap-get`, `intmap-len`, `intmap-has`, `intmap-remove` |
+| `collections/vec` | `vec-new`, `vec-new-cap`, `vec-push`, `vec-pop`, `vec-get!`, `vec-set!`, `vec-len`, `vec-cap`, `vec-last!` |
+| `collections/intmap` | `intmap-new`, `intmap-put`, `intmap-get`, `intmap-len`, `intmap-has`, `intmap-remove` |
 | `collections/set` | `set-create`, `set-add`, `set-remove`, `set-len`, `set-contains` |
 | `collections/collections` | `assoc-*`, `list-map`, `list-filter`, `list-fold`, `list-nth`, `list-range` |
 | `collections/slice` | `Slice`, `slice-vec!`, `slice-of-vec`, `slice-sub!`, `slice-get!`, `slice-len`, `slice-fold`, `slice-to-vec` |
@@ -283,8 +294,8 @@ raise.
 | `atomic/atomic` | `atomic-load`, `atomic-store`, `atomic-add`, `atomic-cas`, `atomic-fetch-add` |
 | `ffi/ffi` | `ffi-pin-value`, `ffi-unpin-value`, `ffi-safe-call`, `ffi-pin-call-unpin` |
 | `io/io` | `io-file-open-read`, `io-file-write`, `io-read-line`, `make-string-buffer`, `OutputStream` |
-| `allocator/allocator` | `arena-create`, `arena-alloc`, `alloc-malloc`, `str-eq`, `str-intern`, `buf-append`, `error` |
-| `testing/testing` | `test-run`, `assert-equal-values`, `property-int` |
+| `allocator/allocator` | `alloc-cstr`, `alloc-read-int`, `alloc-write-int`, `str-eq`, `buf-append`, `panic` (the arena entries and `alloc-malloc`/`alloc-free` are compiler-and-runtime-only) |
+| `testing/testing` | `assert-equal-values`, `assert-true-value`, `assert-false-value`, `assert-fail-call!` |
 | `math/...` | hashes, AEADs, curves, RSA, KDFs, bignums, RNGs, `math/secret/secret` |
 
 Special forms such as `spawn`, `chan-send`, `ffi-call`, `file-open`,

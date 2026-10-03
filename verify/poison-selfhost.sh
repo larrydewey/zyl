@@ -5,7 +5,7 @@
 #
 # Why this is the strongest single check in the repository. Region inference
 # guarantees that no value outlives its region (docs/soundness.md L2), and
-# that premise is otherwise an argument. verify/poison.sh checks 125 small
+# that premise is otherwise an argument. verify/poison.sh checks 131 small
 # programs; this runs the compiler -- the largest Zyl program in existence,
 # self-hosting, ~100k lines -- through every stage of its own bootstrap, so
 # the allocator, the escape analysis and the code generator are all exercised

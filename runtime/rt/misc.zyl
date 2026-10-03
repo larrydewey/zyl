@@ -31,7 +31,7 @@
 (defn zyl_regions_enabled ()
   (let e (ffi-call "zyl_rt_getenv" (rt-w "ZYL_REGIONS") 1) (not (and (> e 0) (and (= (rt-ld8 e) 48) (= (rt-ld8 (+ e 1)) 0))))))
 
-; Page poisoning, off unless ZYL_REGION_POISON=1.
+; Page poisoning, off unless ZYL_REGION_POISON=1 (or 2).
 ;
 ; A region block goes back to its class pool on release and is handed out
 ; again on the next allocation of that size, so a stale pointer into a
@@ -41,18 +41,36 @@
 ; thought to test -- and it is exactly the property region inference is
 ; supposed to guarantee (docs/soundness.md L2).
 ;
-; With this on, a released block's pages are mprotect(PROT_NONE) and are
-; restored on reuse. A block is therefore unmapped-accessible exactly while
-; it is free, and any access through a stale pointer becomes a SIGSEGV at
-; the faulting instruction instead of a plausible wrong answer.
+; With this on, a released block is filled with 0xDE (rt-poison,
+; runtime/rt/alloc.zyl) before it returns to the pool, so a stale read
+; gets recognizable garbage instead of a plausible wrong answer.
 ;
-; Off by default: it costs two syscalls per block lifetime, and the
-; project's determinism and performance requirements outrank a debug aid.
-; verify/memcheck.sh and the poison gate turn it on.
+; This comment used to describe mprotect(PROT_NONE) here, restored on
+; reuse. That was tried and withdrawn: mprotect works in whole pages and
+; rounds the length up, so protecting a pooled block whose class size is
+; not a page multiple denies three still-live neighbours. No mprotect
+; call exists in the runtime; the withdrawn attempt is recorded at the
+; bottom of runtime/rt/alloc.zyl so nobody retries it blind, and
+; docs/memory-poisoning-design.md is the write-up of the whole mechanism.
+;
+; Off by default: it costs a memset per released block, and the project's
+; determinism and performance requirements outrank a debug aid. The
+; poison gates (verify/poison.sh, verify/poison-selfhost.sh) turn it on.
+;
+; The level is read from the environment on every call -- zyl_rt_getenv
+; scans `environ` and does not cache -- so the guard costs a short scan per
+; block release and per block acquisition in a normal build. Only the fill
+; is skipped; the scan is not. If that ever shows up in a benchmark,
+; caching the level at startup is the fix, and it is a reseed.
 (defn zyl_region_poison_enabled ()
   (> (zyl_region_poison_level) 0))
 
-; 0 = off, 1 = poison freed pages, 2 = also disable the block pool.
+; 0 = off, 1 = fill released blocks with 0xDE, 2 = also disable the block
+; pool (every block its own mmap, so release is a real munmap).
+;
+; Only the exact strings "1" and "2" enable anything: "true", "yes" and
+; "3" all read as 0. A gate that silently measures nothing is worse than
+; no gate, so the accepted spellings are deliberately narrow.
 (defn zyl_region_poison_level ()
   (let e (ffi-call "zyl_rt_getenv" (rt-w "ZYL_REGION_POISON") 1)
     (if (= e 0)

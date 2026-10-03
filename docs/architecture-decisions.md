@@ -169,28 +169,68 @@ overhead, non-deterministic collection), manual memory management
 
 ---
 
-## A7: Capability Types for Aliasing Control
+## A7: No In-Place Mutation; Capabilities Checked on Bindings
 
-**Decision:** Types use capability modifiers (TCap for shared
-immutable, TMut for exclusive mutable) to control aliasing.
+**Decision:** Zyl has no in-place mutation. Struct fields are immutable
+and a "mutated" struct is a new value bound to the same name, so every
+`let` binding is immutable and rebinding is the only update. `set!` is
+accepted only on a `let-mut` binding (or a `for` loop variable) and
+rebinds it; anywhere else it is `E_MUT_CONFLICT`. The capability rules
+are decided from the binding form and enforced syntactically, before
+lowering. No type carries a capability. `Secret` is the one exception,
+because it has obligations the compiler enforces.
 
-**Rationale:** Capability types enforce the invariant that any memory
-location has either exactly one TMut reference OR any number of TCap
-references. This prevents data races at compile time and enables safe
-concurrency without locks.
+**Rationale:** What the decision delivers is stronger than the
+exclusivity invariant the specification asks for: with no in-place
+mutation a reader cannot observe a value change underneath it, because
+there is no write to observe. So a shared immutable binding does not
+need a type to say so — the absence of field mutation says it once for
+every type, and the binding form says which name may be rebound. That is
+also why the checks need no type information to be sound, which is what
+lets them run as a cheap syntactic pass and lets them undershoot
+deliberately: where the pass cannot decide, the program is let through
+rather than rejected.
 
-**Spec reference:** `spec/06-capability-types.md`
-**Implementation:** no type represents a capability (the type checker,
-`type_annotate.zyl`, has none, and the unused capability ADT once in
-`type_system.zyl` was removed). Enforcement is syntactic:
-`mutability_check.zyl` treats a `let` binding as TCap and a `let-mut`
-binding as TMut and rejects `set!` on anything else (`E_MUT_CONFLICT`),
-and `secret_check.zyl` enforces the `Secret` capability's obligations.
-The unifier itself has no capability polarity.
-**Alternative considered:** Rust-style borrow checker — rejected
-because Zyl's region system already handles lifetime tracking;
-capabilities add only the aliasing dimension needed for
-shared-state-free concurrency.
+The one thing the binding form cannot say is who may cross an actor
+boundary. That is checked too — a `let-mut` variable or a `Secret` in a
+`spawn` closure or a `chan-send` value is `E_CAPABILITY_LEAK` — and a
+resource that outlives its release is `E_MOVE_VALUE`, because a file
+descriptor is a copyable `Int` and a stale one silently aliases whatever
+the OS opened next.
+
+**Spec reference:** `spec/06-capability-types.md`,
+`zyl_specification.txt` §10. The specification's `TCap`/`TMut` type
+names are retired: the model above is what the compiler does, and these
+are the documents that used to argue the other way.
+
+**Implementation:** `stdlib/compiler/mutability_check.zyl` is a
+syntactic walk over the pre-lowering `Expr` tree tracking which names
+are in-scope `let-mut` bindings; it rejects a `set!` of anything else,
+a `set!` of a captured outer `let-mut` from inside a closure (the
+closure holds a by-value copy, so the assignment could only ever change
+the copy), and a `spawn` or `chan-send` mentioning one. It also rejects
+a closure written inline as an `ffi-call` argument
+(`E_INVALID_CAPABILITY`). `stdlib/compiler/linearity.zyl` handles moves
+and, on mutable locations, the writer rule: a `bytebuf` is one location,
+a name becomes its writer by writing through it, and alias classes are
+keyed per allocation, so a second name writing to one is
+`E_MUT_CONFLICT`. `stdlib/compiler/secret_check.zyl` enforces the
+`Secret` capability's obligations and marks a function that takes or
+binds a secret; `codegen.zyl`'s `cg-wipes-frame` zeroes that function's
+frame on return. The unifier has no capability polarity at all —
+`type_annotate.zyl`'s `TaTy` is `TaV | TaC | TaF`.
+
+**Alternatives considered:**
+- Rust-style borrow checker — rejected: Zyl's region system already
+  handles lifetime tracking, and with no in-place mutation there is
+  nothing left for a borrow to be wrong about except a mutable location,
+  which is one location check in `linearity.zyl`.
+- Making `TCap`/`TMut` real annotations the unifier carries — rejected
+  (2026-10-02, `PROGRESS.md` item 10). Structs forbid field mutation, so
+  an exclusive-mutable capability could never flow through a field, and
+  the capabilities would exist only in the positions `let`/`let-mut`
+  already cover; the price would be capability polarity in the unifier
+  and in generated `T.==`.
 
 ---
 

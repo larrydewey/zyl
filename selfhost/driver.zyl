@@ -125,13 +125,22 @@
   (Cons "regression/runtime-blake3.zyl"
   (Cons "regression/runtime-crypto.zyl"
   (Cons "regression/runtime-tables.zyl"
+  ; runtime-heap.zyl and runtime-bytes.zyl test the runtime's own allocator
+  ; and byte primitives (runtime/rt/heap.zyl, bytes.zyl): size classes, big
+  ; mappings, reuse, memmove overlap, and the atomic entries -- so they must
+  ; name alloc-malloc and the raw address helpers, which a program may not.
+  ; They are runtime-internals tests in the same sense as the runtime-*
+  ; entries above, and they are in the gate because they must keep passing.
+  (Cons "regression/runtime-heap.zyl"
+  (Cons "regression/runtime-bytes.zyl"
+  (Cons "regression/runtime-text.zyl"
   (Cons "regression/package-system.zyl"
   (Cons "regression/collections.zyl"
   (Cons "integration/parser-verify.zyl"
   (Cons "integration/pv_min.zyl"
   (Cons "integration/selfhost-codegen.zyl"
   (Cons "integration/math-protocol.zyl"
-  (Cons "unit_test.zyl" Nil))))))))))))))))
+  (Cons "unit_test.zyl" Nil)))))))))))))))))))
 
 
 (defn cli-ends-with-zyl (s)
@@ -1038,7 +1047,9 @@
   (let code (drv-arg 2)
     (if (= (str-length code) 0)
       (explain-list)
-      (explain-code code cwd (ffi-call "zyl_list_zyl_files" cwd 1000)))))
+    (if (str-eq code "warnings")
+      (explain-warnings)
+      (explain-code code cwd (ffi-call "zyl_list_zyl_files" cwd 1000))))))
 
 ; `zyl balance [path ...]`: the strict delimiter check (compiler/sexp_balance)
 ; on every file named, or every .zyl file under a directory (default: the

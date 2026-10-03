@@ -2,19 +2,18 @@
 
 Every diagnostic code the self-hosted compiler, the REPL interpreter and the
 runtime know about. The catalog lives in `stdlib/compiler/error_codes.zyl`
-(`error-codes`, one `(EC name phase severity message)` per code: 133
-entries, 132 distinct codes, `E_OUT_OF_MEMORY` appearing twice); spec §28
-lists the normative subset. The catalog was originally transcribed from the
-Rust bootstrap's `ZylError` enum (since removed; git history at `b8bc283`) and has
-since gained the self-hosted-only and package-system (§31) codes.
+(`error-codes`, one `(EC name phase severity message)` per code: **124**
+codes); spec §28 lists the normative subset. The catalog was originally
+transcribed from the Rust bootstrap's `ZylError` enum (since removed; git
+history at `b8bc283`) and has since gained the self-hosted-only and
+package-system (§31) codes.
 
 The catalog is data, not a dispatcher: each checker writes its own code
 name into the message it raises, and nothing looks the code up at raise
-time. As a result the catalog contains codes that no current module emits,
-and a few modules emit codes the catalog does not contain. Both are listed
-below; the "Raised by" column was produced by searching the active sources
-(`stdlib/`, `selfhost/driver.zyl`, `runtime/rt/`), not by
-running every path.
+time. `verify/error-codes.sh` keeps it and the raise sites in exact
+agreement — every catalogued code is raised somewhere in the active
+sources, and every code raised is catalogued — so the tables below need no
+"defined but never raised" column.
 
 ## How a diagnostic looks
 
@@ -55,20 +54,24 @@ message are shortened from their canonical symbol key
 (`local/main@0::mod::f`) to the part after the last `::` (`err-name`).
 The checks that currently produce located diagnostics are the balance check
 (`E_UNBALANCED_*`, `E_UNTERMINATED_STRING`), the reader in `parser.zyl`
-(`E_INVALID_CHAR`, `E_INVALID_ESCAPE`), `duplicate_check.zyl`
+(`E_INVALID_CHAR`, `E_INVALID_ESCAPE`), `reserved_check.zyl`
+(`E_RESERVED_KEYWORD`, run during module resolution), `duplicate_check.zyl`
 (`E_DUPLICATE_DEFINITION`, `E_DUPLICATE_VARIANT`), `arity_check.zyl`
 (`E_ARITY_MISMATCH`, `E_MALFORMED_FORM`, `E_FFI_RESTRICTED`,
 `E_FFI_TIMEOUT_REQUIRED`, `E_FFI_SYMBOL_REQUIRED`),
 `exhaustiveness_check.zyl` (`E_NON_EXHAUSTIVE_MATCH`,
-`E_UNREACHABLE_MATCH_ARM`), `expr_inner.zyl` (`E_MALFORMED_PARAMETER`,
-`E_NESTED_PATTERN`, `E_REGION_SPEC`, and `E_MALFORMED_FORM` for quoted
+`E_UNREACHABLE_MATCH_ARM`, `E_UNKNOWN_CONSTRUCTOR`), `expr_inner.zyl`
+(`E_MALFORMED_PARAMETER`, `E_NESTED_PATTERN`, `E_REGION_SPEC`,
+`E_MATCH_MIXED_PATTERNS`, and `E_MALFORMED_FORM` for quoted
 data and quasiquote), `macro_expand.zyl`, `derive.zyl`,
 `mutability_check.zyl` (`E_MUT_CONFLICT`, `E_CAPABILITY_LEAK`),
-`capability_check.zyl` (`E_PKG_CAPABILITY_VIOLATION`), `secret_check.zyl`
+`linearity.zyl` (`E_MOVE_VALUE`), `capability_check.zyl`
+(`E_PKG_CAPABILITY_VIOLATION`), `secret_check.zyl`
 (every code, when the offending node has a span), `module_resolver.zyl`
 (`E_IMPL_FORBIDDEN`, `E_PKG_FEATURE_NESTED`), `region_inference.zyl`
-(`E_REGION_ESCAPE`), the type pass `type_annotate.zyl` (every type error)
-and `codegen.zyl` (`E_UNBOUND_VARIABLE`, now only a backstop behind the
+(`E_REGION_ESCAPE`), the type pass `type_annotate.zyl` (every type error),
+`verify.zyl` (`E_VERIFY_FAILED`, which then aborts the build) and
+`codegen.zyl` (`E_UNBOUND_VARIABLE`, now only a backstop behind the
 type pass).
 
 **Plain diagnostics** are every other check: `zyl_panic` with a string of
@@ -90,16 +93,43 @@ to stderr, located like errors (`warning[CODE]: message`, the
 `-->` line, the source line, a caret and a help line) when the node has
 a span, and do not change the exit status.
 
+## Warnings
+
+Some codes are warnings: they report something worth fixing and **the
+build goes on**. `zyl explain warnings` lists them, and `zyl explain CODE`
+says so for one. A code you have never seen, spelled `warning[...]`, is
+almost always one of these six.
+
+| Code | What it means | What to do |
+|------|---------------|------------|
+| `W_UNUSED_PARAMETER` | a parameter is never used | remove it, or prefix it with `_` to mark it deliberately unused |
+| `W_UNUSED_VARIABLE` | a `let`/`let-mut`/`for` binding is never used | remove it, or prefix it with `_` |
+| `W_SHADOWED_BINDING` | a binding shadows an outer binding of the same name | rename one of the two |
+| `W_RECOVER_SHADOW` | a `recover` arm that catches every error comes before arm N, so N never runs | move N first |
+| `W_PANIC_UNMARKED` | a `defn` can stop the program but its name has no trailing `!` | rename it `name!` so callers can see it, or return an `Option` |
+| `E_ZEROIZE_MISSING` | a function consumes a `Secret` parameter into a public result and never calls `zeroize` | call `(zeroize p)` before returning, or hand the value to a function that takes it as a `Secret` and leave the erasure to its caller |
+
+`E_ZEROIZE_MISSING` is the only one with a security consequence, and it
+is a warning because erasure can legitimately live one frame up: the
+value may be passed to a caller that erases it. It fires for every
+`Secret` parameter, a scalar `(Secret Int)` included — a released frame
+region is returned to the allocator, not wiped, so an unerased scalar is
+one allocation away from being read back. `docs/secret-erasure-design.md`
+is the plan to stop requiring the call at all.
+
+Warnings in a standard-library module are not shown while compiling a
+program; `ZYL_WARN_ALL=1` shows them, and the compiler's own build always
+sees its own.
+
 ## Catalog
 
 Phase numbers are the ones `error_codes.zyl` assigns: 1 lexer, 2 parser,
 3 macro, 4 type, 5 mono, 6 region, 7 ICNF, 8 codegen, 9 module/package
-resolution, 10 runtime, 11 test, 12 trait, 13 capability, 14 contract,
-15 numeric, 16 FFI, 17 match, 19 package (the catalog header also
-reserves 18 for miscellaneous and user codes; no entry uses it). Severity is 1 (error) unless noted.
-"Catalog only" means no active module raises the code today; only `E_OVERFLOW`,
-which another change is adding, is left. `verify/error-codes.sh` keeps it that
-way. §28 marks the codes spec §28 lists by name.
+resolution, 10 runtime, 12 trait, 13 capability, 14 contract, 15 numeric,
+16 FFI, 17 match, 18 definitions and bindings, 19 package. Phase 11
+(tests) is reserved and carries no code. Severity is 1 (error) unless
+noted. §28 marks the codes spec §28 lists by name.
+`verify/error-codes.sh` is what keeps every row below honest.
 
 ### Lexer (phase 1)
 
@@ -147,7 +177,7 @@ over bracket type, and its `sb-hint` supplies the `= help:` text.
 | `E_UNKNOWN_TYPE` | type: unknown type T at S | `type_annotate.zyl` (a lowercase field type in `deftype`), located |
 | `E_CANNOT_INFER` (§28, phase 5) | type: the program does not determine a type at S (an unresolved trait receiver, an ambiguous field, an undeclared foreign symbol) | `type_annotate.zyl` (located): a type the program does not determine, such as an `ffi-call` to a foreign symbol with no `extern` or to a runtime symbol missing from `ffi_sigs.zyl`, a trait call whose receiver type stays unknown, a `struct-get` whose record type is still unknown when several structs have the field, a byte load or store whose handle is still unknown after its function group (`ta-bytes-ambiguous`), or a function that would need more than 256 specialized instances; `icnf.zyl` (backstop for an unresolved trait call) |
 | `W_TYPE_STRICT` (phase 5, severity 1 in the catalog, printed as a warning) | type: a type error reported as a warning under ZYL_STRICT_TYPES=report at S | `type_annotate.zyl`: each type error, under `ZYL_STRICT_TYPES=report` |
-| `E_INFINITE_TYPE` (§28) | type: a type would have to contain itself at S (occurs check) | `type_annotate.zyl` (located) |
+| `E_INFINITE_TYPE` (§28) | type: a value whose type would have to contain itself at S | `type_annotate.zyl` (located) |
 
 The type pass is strict (spec §4.8-§4.10): `(+ 1 "a")` and `(+ 1 1.5)`
 are `E_TYPE_MISMATCH`. Its messages are its own, not the catalog text:
@@ -163,7 +193,7 @@ an `if` condition, `main`'s result at its last expression), and otherwise
 | `E_REGION_ESCAPE` (§28) | region: value escapes region constraint at S | `region_inference.zyl` (located): a `(bytebuf Stack N)` that is returned, stored, sent or passed to code that may keep it, or a value allocated inside `with-region` that outlives it |
 | `E_REGION_SPEC` (§28) | region: malformed with-region specification at S | `expr_inner.zyl` (`parse-with-region`, located): unknown kind or option, block not a multiple of 4096 or above 64 MiB, alignment not a power of two from 8 to 4096 |
 | `E_MATCH_ARM_COMPLEX` | match: arm combines a constant with multiple calls - bind to lets first | `icnf.zyl`, located |
-| `E_TOPLEVEL_STMTS_WITH_EXPLICIT_MAIN` | icnf: top-level statements combined with explicit main | `icnf.zyl` (top-level `test`/`run-tests` forms next to an explicit `(defn main ...)`) |
+| `E_TOPLEVEL_STMTS_WITH_EXPLICIT_MAIN` | program: top-level statements alongside an explicit main | `icnf.zyl` (top-level `test`/`run-tests` forms next to an explicit `(defn main ...)`) |
 
 `E_MATCH_ARM_COMPLEX` rejects a match arm that combines a constant with two
 or more calls in one binary operation, or that nests binop chains; bind the
@@ -175,6 +205,7 @@ parts with `let` or move the sum into a helper function.
 |------|-----------------|-----------|
 | `E_CODEGEN_BUFFER_FULL` | codegen: output buffer full at S | `pipeline.zyl` (generated assembly exceeded the codegen text buffer) |
 | `E_CODEGEN_BUFFER_LIMIT` | codegen: buffer limit reached: M | `runtime/rt/tables.zyl`, `runtime/rt/misc.zyl` (a bounded append past its cap: `E_CODEGEN_BUFFER_LIMIT: codegen buffer limit exceeded`) |
+| `E_VERIFY_FAILED` | codegen: the emitted code failed memory-safety verification: M | `verify.zyl` (`verify-asm`, located): a write through a frame slot `[rbp-N]` outside the frame the function reserved. The build aborts here, so no binary is produced |
 
 ### Modules and package resolution (phase 9)
 
@@ -203,6 +234,7 @@ parts with `let` or move the sum into a helper function.
 | `E_CHANNEL_CAPACITY` (§28) | runtime: a channel buffer holds 1 to 16777216 values | `runtime/rt/chan.zyl`: `(chan n)` with n out of range |
 | `E_DEADLOCK` (§28) | runtime: every live actor is blocked on a channel or a join | `runtime/rt/chan.zyl`: after every actor's output, status 1 (not catchable) |
 | `E_ACTOR_LIMIT` (§28) | runtime: at most 1024 actors per program | `runtime/rt/actor.zyl`: the 1025th spawn |
+| `E_USE_AFTER_FREE` | runtime: a string buffer used after it was destroyed | `stdlib/io/io.zyl` (`sb-require-live!`, via `zyl_panic`): a read or write through a `StringBuffer` after `string-buffer-destroy` |
 
 What a compiled program prints at runtime today: `(panic "boom")` prints
 `PANIC: boom`, then one `  in <function>` line per frame, innermost
@@ -231,14 +263,15 @@ Neither carries the catalog code. A false `(assert c msg)` panics with
 
 | Code | Catalog message | Raised by |
 |------|-----------------|-----------|
-| `E_CAPABILITY_LEAK` (§28) | capability: TMut leaked across boundary at S | `mutability_check.zyl` (located: a spawned closure that captures a `let-mut` variable, or a message that references one) |
-| `E_INVALID_CAPABILITY` | type: invalid capability usage for F - M at S | `mutability_check.zyl` (a closure passed to `ffi-call`) |
+| `E_CAPABILITY_LEAK` (§28) | capability: TMut leaked across boundary at S — the catalog's `TMut` means a `let-mut` binding, the only assignable binding; `set!` rebinds it | `mutability_check.zyl` (located: a spawned closure that captures a `let-mut` variable, or a message that references one) |
+| `E_MOVE_VALUE` | ownership: X was already moved or released at S | `linearity.zyl` (located): a resource used after its release — a descriptor after `file-close`, a value after `Drop.drop` or `string-buffer-destroy`, across every alias of the resource |
+| `E_INVALID_CAPABILITY` | type: invalid capability usage for F - M at S | `mutability_check.zyl` (located: a closure passed to `ffi-call`, which is not FFI_Pinnable) |
 | `E_MUT_CONFLICT` (§28) | aliasing: mutable reference conflict at S | `mutability_check.zyl` (located: `set!` on a non-`let-mut` binding, or on a `let-mut` captured by a closure), `expr_inner.zyl` (a `set!` target that is not a plain name, such as a field) |
 | `E_CT_VIOLATION` | constant-time: secret-dependent M at S - branches, memory indices and divisions must not depend on a Secret value | `secret_check.zyl` (located) |
 | `E_SECRET_ESCAPE` | secret: Secret value escapes through M at S | `secret_check.zyl` (located) |
 | `E_SECRET_UNANNOTATED` | secret: a Secret argument reaches parameter P of F, which is not marked Secret | `secret_check.zyl` (located at the argument; the fix names the parameter to annotate) |
 | `E_SECRET_DEBUG` | secret: Secret value reaches a debug/print sink at S | `secret_check.zyl` (located; also a `Show` impl whose text is derived from a Secret) |
-| `E_ZEROIZE_MISSING` (severity 2, warning) | secret: function F takes a Secret parameter but never zeroizes it | `secret_check.zyl` |
+| `E_ZEROIZE_MISSING` (severity 2, warning; see [Warnings](#warnings)) | secret: function F takes a Secret parameter but never zeroizes it | `secret_check.zyl` |
 | `E_PKG_CAPABILITY_VIOLATION` (§28) | capability: M needs the C capability, and the package, file or session using it declares none | `capability_check.zyl` (located, with the `(capabilities ...)` line to write as the fix), `cli.zyl` |
 | `E_PKG_CAPABILITY_GROWTH` (§28) | capability: capability closure grew under --locked: C | `capability_check.zyl`, `mvs.zyl` |
 
@@ -264,6 +297,7 @@ themselves.
 | `E_FFI_SYMBOL_REQUIRED` (§28) | ffi: ffi-call must name its C symbol with a string literal at S | `arity_check.zyl` (`ffi-check-call`, located) |
 | `E_NESTED_PATTERN` (§28) | match: nested pattern in a constructor arm at S | `expr_inner.zyl` (located): a constructor arm whose field position holds anything but a plain name, including a constructor used as a binder, `(Some Nil ...)` or `(Node v Leaf v)` for the program's own `Leaf` (`qualify.zyl` qualifies a capitalized binder that names a known symbol) |
 | `E_MATCH_NONEXHAUSTIVE` (§28) | match: non-exhaustive pattern match at S - missing cases: M | `icnf.zyl` (unknown variant in an arm; residual non-exhaustive match), `expr_inner.zyl` (literal-pattern match without a final `_`), REPL interpreter |
+| `E_MATCH_MIXED_PATTERNS` | match: literal patterns and constructor patterns cannot be mixed in the same match at S | `expr_inner.zyl` (located, at the scrutinee) |
 
 The main compile-time exhaustiveness check (`exhaustiveness_check.zyl`)
 reports a missing variant as `E_NON_EXHAUSTIVE_MATCH`, not the spec's
@@ -303,6 +337,7 @@ All raised by the package modules named; all are §28 codes except
 | `E_PKG_FEATURE_UNKNOWN` | package: feature F is not declared by N | `module_resolver.zyl`, `mvs.zyl` |
 | `E_PKG_FEATURE_COLLISION` | package: gated definition D collides with a base definition | `module_resolver.zyl` |
 | `E_PKG_FEATURE_NESTED` | package: feature-gate is valid at top level only | `module_resolver.zyl` (located: a `feature-gate` inside another form) |
+| `E_PROV_ATTACH` | build: the provenance trailer could not be attached: M | `provenance.zyl`, `selfhost/driver.zyl` (`zyl build --sign-with` on a key the build cannot read, or an image it cannot hash) |
 
 ## Codes outside the original catalog
 
@@ -313,14 +348,14 @@ These are now catalogued too (`error_codes.zyl`), so `zyl explain` knows them.
 | `E_NON_EXHAUSTIVE_MATCH` | error | `exhaustiveness_check.zyl` (located) | a `match` over a `deftype` does not cover some variant and has no `_` arm |
 | `E_UNREACHABLE_MATCH_ARM` | error | `exhaustiveness_check.zyl` (located) | an arm after one that matches every value, or a repeated constructor arm |
 | `E_UNKNOWN_CONSTRUCTOR` (§28) | error | `exhaustiveness_check.zyl` (located at the arm) | an arm head spelled like a constructor (A-Z first) that no type declares; suggests the nearest constructor within edit distance 2 |
-| `E_DUPLICATE_PARAMETER` | error | `unused_check.zyl` | two parameters of one `defn`/`fn`/`lambda` share a name |
+| `E_DUPLICATE_PARAMETER` | error | `unused_check.zyl` (located, at the second parameter) | two parameters of one `defn`/`fn`/`lambda` share a name |
 | `E_PANIC_UNMARKED` | error | `unused_check.zyl` (located, at the defn) | a `defn` in a program-facing standard-library module (not `compiler/`, `lsp/`, `repl/`) whose body calls `panic` or `zyl_panic` directly and whose name has no trailing `!`; `main` and the definition of `panic` are exempt; direct calls only (docs/soundness.md L8) |
-| `W_PANIC_UNMARKED` | warning | `unused_check.zyl` (located, at the defn) | the same condition in a program: help `rename it \`name!\` so callers can see it may stop the program, or return an Option` |
+| `W_PANIC_UNMARKED` (warning) | `unused_check.zyl` (located, at the defn) | the same condition in a program: help `rename it \`name!\` so callers can see it may stop the program, or return an Option` |
 | `E_ASM_UNSUPPORTED` | error | `asm_x86.zyl` | the Zyl assembler met an instruction or operand form it does not encode (a codegen or runtime change emitted one; `ZYL_EXTERNAL_LD=1` links with `cc` instead) |
 | `E_LINK_UNDEFINED`, `E_LINK_UNDEFINED_GOT` | error | `elf_link.zyl` | a strong symbol (or a GOT entry's symbol) is defined neither by the program nor by `rt.zo` |
-| `W_UNUSED_PARAMETER` | warning | `unused_check.zyl` | a parameter is never used (`_` and `_`-prefixed names are exempt) |
-| `W_UNUSED_VARIABLE` | warning | `unused_check.zyl` | a `let`/`let-mut`/`for` binding is never used |
-| `W_SHADOWED_BINDING` | warning | `unused_check.zyl` | a binding shadows an outer binding of the same name |
+| `W_UNUSED_PARAMETER` (warning) | `unused_check.zyl` | a parameter is never used (`_` and `_`-prefixed names are exempt) |
+| `W_UNUSED_VARIABLE` (warning) | `unused_check.zyl` | a `let`/`let-mut`/`for` binding is never used |
+| `W_SHADOWED_BINDING` (warning) | `unused_check.zyl` | a binding shadows an outer binding of the same name |
 | `E_UNDEFINED_FUNCTION` | error | `stdlib/repl/interp.zyl` | a call names no function (the compiled path reports `E_UNBOUND_VARIABLE` from the type pass) |
 | `E_NOT_CALLABLE` | error | `stdlib/repl/interp.zyl` | a call's head is not a function or closure |
 | `E_FFI_SYMBOL_NOT_FOUND` | error | `stdlib/repl/interp.zyl`, `runtime/rt/ffitimed.zyl` | an `ffi-call` names a symbol the REPL process does not export |

@@ -1,0 +1,10 @@
+; expect-error: E_FFI_RESTRICTED
+; expect-at: arena-in-test-body.zyl:10:22
+; The arena entries hand out raw addresses. Only a `defn` name was checked
+; against them, because the check reads the name of the definition being
+; walked -- a global the compiler still held from the last standard
+; library module it compiled -- so a test body, which set nothing, was
+; checked as if it were the standard library's own.
+(use core/core)
+
+(test "arena" (let a (arena-create 16) (arena-alloc a 8)))

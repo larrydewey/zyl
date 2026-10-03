@@ -565,11 +565,41 @@
         (mr-discover-new arena disc stack pkg module)))))
 
 ; A cycle inside one package is E_MODULE_CYCLE; a cycle that leaves and
-; re-enters a package is E_PKG_CYCLE (§24.5).
+; re-enters a package is E_PKG_CYCLE (§24.5). The message names the cycle
+; as the reader wrote it -- module paths and the way round -- not as the
+; resolver's `pkg|module` ids and the word "DAG", which is the shape of
+; the graph, not what the reader did.
 (defn mr-cycle-error (id stack)
   (if (mr-same-pkg-cycle id stack)
-    (mr-fail "E_MODULE_CYCLE" (str-concat "module: module graph is not a DAG at " id))
-    (mr-fail "E_PKG_CYCLE" (str-concat "package: dependency graph is not a DAG at " id))))
+    (mr-fail "E_MODULE_CYCLE"
+      (str-concat "module: " (str-concat (mr-cycle-text id stack)
+        " forms a cycle; a module may not reach itself")))
+    (mr-fail "E_PKG_CYCLE"
+      (str-concat "package: " (str-concat (mr-cycle-text id stack)
+        " forms a dependency cycle; a package may not depend on itself")))))
+
+; "cyc -> cyc/a -> cyc/b -> cyc/a": the stack is innermost first, so it
+; is reversed to read the way the reader wrote the imports, and closed by
+; naming the module that closes the loop once more.
+(defn mr-cycle-text (id stack)
+  (str-concat (mr-cycle-chain (mr-reverse stack Nil)) (str-concat " -> " (mr-id-module id))))
+
+(defn mr-cycle-chain (xs)
+  (match xs
+    (Nil "")
+    (Cons h t
+      (if (is-nil t) (mr-id-module h)
+        (str-concat (mr-id-module h) (str-concat " -> " (mr-cycle-chain t)))))))
+
+(defn mr-reverse (xs acc)
+  (match xs
+    (Nil acc)
+    (Cons h t (mr-reverse t (Cons h acc)))))
+
+; The module half of a `pkg|module` id.
+(defn mr-id-module (id)
+  (let i (pk-index-of id 124 0)
+    (if (< i 0) id (pk-sub id (+ i 1) (- (pk-len id) (+ i 1))))))
 
 (defn mr-same-pkg-cycle (id stack)
   (let p (mr-id-pkg id)
@@ -1278,12 +1308,24 @@
 ; package can collide with (a published name is scoped and registered).
 ; Its capabilities are what its own top-level `(capabilities ...)` forms
 ; declare, absent meaning none, enforced exactly as a manifest's (§31.9).
-(defn mr-root-pkg (arena srcdir main-forms)
+(defn mr-root-pkg (arena srcdir0 main-forms)
+  (let srcdir (mr-trim-slash srcdir0)
   (if (mr-file-exists (str-concat srcdir "/zyl.pkg"))
     (let pkg (mr-manifest-pkg arena srcdir)
       (let _ (mr-no-stray-caps pkg main-forms)
         pkg))
-    (MRP "local/main" 0 srcdir 0 (pk-lone-capabilities main-forms) Nil)))
+    (MRP "local/main" 0 srcdir 0 (pk-lone-capabilities main-forms) Nil))))
+
+; zyl_dirname_cstr ends a directory with a separator, and every path
+; built from a package root adds one of its own -- so a root kept as it
+; was returned puts "//" in every module path, and it is the module paths
+; that diagnostics print. One trailing separator, not two.
+(defn mr-trim-slash (s)
+  (if (> (pk-len s) 1)
+    (if (= (pk-byte-at s (- (pk-len s) 1)) 47)
+      (pk-sub s 0 (- (pk-len s) 1))
+      s)
+    s))
 
 ; A `(capabilities ...)` form counts only where the declaration lives: in
 ; zyl.pkg for a package, in the compiled file itself for a lone file.

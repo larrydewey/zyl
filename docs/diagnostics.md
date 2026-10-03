@@ -11,7 +11,7 @@ change to that test.
 
 1. **The head line is under 80 characters** and says what is wrong in
    plain words, naming the user's own identifier and, where known, the
-   value or type. `` `twice` takes an Int as its 1st argument (`n`), but this is a String ``
+   value or type. `` `twice` takes `Int` as its 1st argument (`n`), but this is `String` ``
    beats `cannot unify Int with String`.
 2. **One sentence of why**, and only when the reason is security or is
    not obvious from the head line.
@@ -52,11 +52,11 @@ change to that test.
   (let r (classify (Some 4))
     (print (string-append "r=" (int->string r)))
     (print (string-append "t=" (int->string (twice "x"))))))
-(numeric checked)
 ```
 
-Measured against the standard, this program has exactly four things wrong
-with it and two things worth a word:
+The probe is the exact program `tests/scripts/diagnostics-voice.sh` compiles,
+and it is *meant* to fail — that is what it is a probe of. It reports four
+errors and two warnings, and nothing else:
 
 - `string-append` and `int->string` are not functions; the compiler says
   so once each and names the functions that do the job (`str-concat`,
@@ -80,29 +80,30 @@ reported twice.
   as an unknown that absorbs every constraint, so nothing downstream is
   reported (rule 6). The help is a *did you mean* over every name in scope:
   local bindings, the program's own definitions, every imported
-  definition, constructors, operators and the built-in forms. Candidates
-  are within edit distance 2 (1 for a name under three letters, none for
-  a one-letter name), or differ only by a hyphen or by case; at most three
-  are offered, ordered by distance, then local bindings before other
-  names, then alphabetically (`err-suggest-list`, `error_report.zyl`).
-  Special forms (`if`, `let`, `cond`, ...) are not offered: they are not
-  values. A name another Lisp uses for a
-  built-in (`string-append`, `number->string`, `string-length`, ...) is
-  answered with Zyl's name through a fixed synonym table. A name that exists in a
-  standard-library module the program has not imported is reported with
-  the `(use ...)` line that adds it, found by scanning the installed
-  `stdlib/` once, on demand, and only when an unbound name is reported.
-  The note that `((params) body)` is not a lambda appears only when the
-  call's head is itself a list, which is the one case it is about.
+  definition, constructors, operators and the built-in functions.
+Candidates are within edit distance 2 (1 for a name under three letters,
+   none for a one-letter name), or differ only by a hyphen or by case; at
+   most three are offered, ordered by distance, then local bindings before
+   other names, then alphabetically (`err-suggest-list`, `error_report.zyl`).
+   Special forms (`if`, `let`, `cond`, ...) are not offered: they are not
+   values, so a name that is one is a program using a keyword, not a typo.
+   A name another Lisp uses for a built-in (`string-append`,
+   `number->string`, `string-length`, ...) is answered with Zyl's name
+   through a fixed synonym table. A name that exists in a standard-library
+   module the program has not imported is reported with the `(use ...)`
+   line that adds it, found by scanning the installed `stdlib/` once, on
+   demand, and only when an unbound name is reported. The note that
+   `((params) body)` is not a lambda appears only when the call's head is
+   itself a list, which is the one case it is about.
 - **Type mismatches** (`E_TYPE_MISMATCH`). Each site that knows *why* a
-  type is expected says so: the operator (`` the operands of `+` must have one type ``),
-  the parameter (`` `twice` takes an Int as its 1st argument (`n`) ``),
-  a built-in's argument (`` `str-concat` takes `String` as its 1st argument ``),
-  the condition (`` `if` needs a Bool condition ``), the return of `main`
-  (`` main must return the exit status, an Int ``, at its last expression,
-  with the fix `` end its body with 0 ``). Where no reason is known the
+  type is expected says so: the operator (`` the operands of `+` must have one type: the first is `Int`, this one is `String` ``),
+  the parameter (`` `twice` takes `Int` as its 1st argument (`n`), but this is `String` ``),
+  a built-in's argument (`` `str-concat` takes `String` as its 2nd argument, but this is `Int` ``),
+  the condition (`` `if` needs a Bool condition, but this is `Int` ``), the return of `main`
+  (`` main must return the exit status, an Int, but this is `Unit` ``, at its last expression,
+  with the fix `` end its body with `0` ``). Where no reason is known the
   message still names both types without compiler vocabulary:
-  `` these must be the same type: `Int` here, `String` there ``.
+  `` type mismatch: `Int` and `String` must be the same type ``.
 - **The closing line** (`ta-fail-if-errors`, caught in `selfhost/driver.zyl`
   `drv-report-failure`). The type pass stops the compile by raising; the
   driver turns that into the count line of rule 8 instead of a `PANIC:`.
@@ -114,7 +115,7 @@ reported twice.
   deadlock report and the test runner's failure line flush stdout before
   writing to stderr; `zyl_rt_exit` flushes too.
 - **`zyl explain`** (`stdlib/compiler/explain.zyl`). With a code: its
-  phase and severity; for the 30 codes most used in `tests/compile-fail`
+  phase and severity; for the 33 codes most used in `tests/compile-fail`
   and the book, what it means in a sentence, a minimal wrong program and
   the corrected program; and, run inside the compiler's tree, where it is
   raised (copies under `build/` and `.claude/`, tests, and the catalog
@@ -122,8 +123,9 @@ reported twice.
   grouped by phase. `tests/scripts/explain-examples.sh` compiles every
   pair: the wrong program must raise its code, the corrected one must
   build and exit 0.
-- **The catalog is exact.** `verify/error-codes.sh` (run in the `scripts`
-  category of `run_regression_tests.sh` as `scripts/error-codes`) fails
+- **The catalog is exact.** `verify/error-codes.sh`, run through
+  `tests/scripts/error-codes.sh` in the `scripts` category of
+  `run_regression_tests.sh` as `scripts/error-codes`, fails
   when a code is defined in `error_codes.zyl` but raised nowhere, or
   raised but not defined. A raise is the code at the start of a string
   literal, after `PANIC: `, or inside `[...]`, outside comment lines.

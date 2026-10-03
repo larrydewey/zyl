@@ -1,0 +1,11 @@
+; expect-error: E_PKG_CAPABILITY_VIOLATION
+; expect-at: zyl-prefix-foreign.zyl:10:3
+; A `zyl_` prefix decides nothing: a symbol the runtime's signature table
+; does not declare is foreign code, and reaching it needs the ffi
+; capability however it is named. capability_check.zyl used to allow any
+; `zyl_*` name, so a program's own native code was callable for free.
+(extern "zyl_my_helper" (Int) Int)
+
+(defn main ()
+  (ffi-call "zyl_my_helper" 1 1000)
+  0)

@@ -28,20 +28,21 @@ not a fallback for anything (§27.9).
 
 ### The Zyl Compiler (`stdlib/compiler/`)
 
-Forty-one modules. The phase order is the one
+Fifty-two modules, about 35,000 lines. The phase order is the one
 `stdlib/compiler/pipeline.zyl` runs (see Chapter 30 for the exact
 sequence); the table groups them by what they do.
 
 | Group | Modules |
 |-------|---------|
-| Front end | `lexer.zyl`, `parser.zyl`, `ast.zyl` (Token/Ast/Env/VTable ADTs), `expr_inner.zyl` (the `Expr`/`ExprInner` tree and the Ast-to-ExprInner converter), `sexp_balance.zyl` (delimiter balance with line/column) |
+| Front end | `lexer.zyl`, `parser.zyl`, `desugar.zyl` (parse-tree rewrites: `with-resource`, `assert-fail`, `test-suite`, `test-property`), `ast.zyl` (Token/Ast/Env/VTable ADTs), `expr_inner.zyl` (the `Expr`/`ExprInner` tree and the Ast-to-ExprInner converter), `sexp_balance.zyl` (delimiter balance with line/column) |
 | Modules and packages (spec §31) | `module_resolver.zyl`, `qualify.zyl` (canonical symbol keys), `package.zyl`, `store.zyl`, `workspace.zyl`, `lock.zyl`, `index.zyl`, `mvs.zyl`, `cli.zyl`, `capability_check.zyl`, `resolver.zyl` (now only a small helper) |
 | Macro expansion | `macro_expand.zyl` |
-| Checks | `duplicate_check.zyl`, `arity_check.zyl`, `mutability_check.zyl`, `exhaustiveness_check.zyl`, `unused_check.zyl`, `secret_check.zyl` |
+| Checks | `duplicate_check.zyl`, `arity_check.zyl` (also malformed forms and restricted FFI entries), `reserved_check.zyl`, `mutability_check.zyl`, `linearity.zyl` (a resource is released once), `exhaustiveness_check.zyl`, `unused_check.zyl`, `secret_check.zyl`, `numeric_check.zyl` (the `(numeric ...)` policy and `E_PARTIAL_OPERATION`, after type checking), `int_arith.zyl` (Int arithmetic under the three policies, shared by the folder and the REPL) |
 | Types | `type_annotate.zyl` (the strict HM checker: inference, trait resolution, per-type instances; every type error is reported), `ffi_sigs.zyl` (the type of every runtime function), `type_system.zyl` (shared data types), `node_tables.zyl` (typed per-node side tables) |
 | Middle | `derive.zyl`, `lift_impls.zyl`, `closure_inline.zyl` (an identity step since closures became values) |
-| ICNF and after | `icnf.zyl` (lowering), `icnf_print.zyl` (canonical text, hashed by package builds), `optimization.zyl` (inlining, copy propagation, constant folding, dead branches), `region_inference.zyl` (escape analysis on ICNF), `reuse.zyl` (in-place reuse of unique, dead values), `codegen.zyl` (x86_64: the native path and the stack machine), `mir.zyl` (the native path's machine IR, liveness and linear-scan register allocation) |
-| Driver support | `pipeline.zyl` (the phase sequence shared by the CLI and the REPL), `error_codes.zyl`, `error_report.zyl`, `doc.zyl` (`zyl doc`) |
+| ICNF and after | `icnf.zyl` (lowering), `icnf_print.zyl` (canonical text, hashed by package builds), `optimization.zyl` (inlining, copy propagation, constant folding, dead branches), `region_inference.zyl` (escape analysis on ICNF), `reuse.zyl` (in-place reuse of unique, dead values), `codegen.zyl` (x86_64: the native path and the stack machine), `mir.zyl` (the native path's machine IR, liveness and linear-scan register allocation), `verify.zyl` (the frame-write verifier every emitted program passes through) |
+| Assembling and linking | `asm_x86.zyl` (the x86-64 assembler), `elf_link.zyl` (the static ELF linker for freestanding programs), `provenance.zyl` (the signed build record of `zyl build --sign-with`) |
+| Driver support | `pipeline.zyl` (the phase sequence shared by the CLI and the REPL), `error_codes.zyl`, `error_report.zyl`, `explain.zyl` (`zyl explain`), `doc.zyl` (`zyl doc`), `rt_mode.zyl` (the runtime-module and internal modes) |
 
 ### Self-Host Driver (`selfhost/`)
 
@@ -212,6 +213,10 @@ form, which is the one to inspect.
 | Built through module resolution | 2026-09-24 | `assemble.py` and the one-line bundle retired; per-stage memory ceiling |
 | Strict type checking the default | 2026-09-25 | The compiler, the REPL and the LSP type-check clean; every type error is reported |
 | Native backend | 2026-09-25 | MIR and linear-scan register allocation for about 95% of the compiler's own functions; inlining and in-place reuse |
+| Own assembler and linker; runtime in Zyl | 2026-09-28 | Freestanding programs link with no `cc`, `as` or libc |
+| No arenas in programs | 2026-10-01 | Collections allocate from regions; a program cannot obtain an `Arena` (G2); release linearity (`E_MOVE_VALUE`) |
+| Verification gates | 2026-10-01 | The frame verifier becomes a phase; memcheck, region-poison and determinism gates; signed build provenance |
+| Default deny, spelled failure | 2026-10-02 | A lone file declares `(capabilities ...)`; partial operations end in `!`/`?`; Int arithmetic checked by default, division total or spelled |
 
 ## 27.8 Debugging the Bootstrap
 
@@ -248,7 +253,7 @@ is complete (`docs/self-hosting.md` describes the build as it is now):
 
 1. ✅ Every compiler phase ported to Zyl (`stdlib/compiler/*.zyl`)
 2. ✅ Full regression suite passes through the self-hosted compiler
-   (43/43 at eviction; the suite has since grown to 352 tests)
+   (43/43 at eviction; the suite has since grown to 495 tests)
 3. ✅ `./boot.sh` builds and verifies with nothing but `cc`
 4. ✅ Reseeding no longer needs Rust either (`--bootstrap-from-self`, §27.3)
 5. ✅ `src/` archived to `archive/rust-bootstrap-2026/`, `Cargo.toml`/

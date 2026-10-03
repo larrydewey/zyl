@@ -98,25 +98,34 @@ function:
 ;; 0xFF51AFD7ED558CCD, written as the signed Int it is
 (defn mix (x)
   (let a (bit-xor x (shr x 33))
-    (let b (* a -49064778989728563)
+    (let b (wrapping* a -49064778989728563)
       (bit-xor b (shr b 29)))))
 
 (defn main ()
   (print (rotl64 1 8))      ; 256
+  (print (mix 12345))
   0)
 ```
+
+The multiply is `wrapping*`, not `*`. Int arithmetic is checked by
+default, and a hash's mixing multiply overflows on purpose: written as
+`*`, `(mix 12345)` would stop the program with `E_OVERFLOW`. `wrapping+`,
+`wrapping-` and `wrapping*` say, at the operation, that wrap-around
+modulo 2^64 is the intent; a file of nothing but such code can instead
+declare `(numeric wrapping)` once at the top (Chapter 3, §3.12). The
+bitwise operators and the shifts never trap.
 
 Note `shr`, not `ashr`, in both places: these are bit patterns, not
 magnitudes.
 
 Note also how the multiplier is written. `Int` is a signed 64-bit
 integer, so a constant at or above 2^63 has to be written as its value
-minus 2^64 — the bit pattern is identical, and `+`, `*`, `bit-xor` and
-the shifts do not care about the sign. `stdlib/math/hash/sha512.zyl`
-writes all of its round constants this way. Do not write the unsigned
-spelling: an integer literal too large for `Int`, decimal
-(`18397679294719823053`) or hexadecimal (`0xFF51AFD7ED558CCD`),
-currently compiles *silently to 0* rather than being rejected. And note that `rotl64` is correct only for `n` in 1..63 —
+minus 2^64 — the bit pattern is identical, and `wrapping+`,
+`wrapping*`, `bit-xor` and the shifts do not care about the sign.
+`stdlib/math/hash/sha512.zyl` writes all of its round constants this
+way. The unsigned spelling does not compile: an integer literal too
+large for `Int`, decimal (`18397679294719823053`) or hexadecimal
+(`0xFF51AFD7ED558CCD`), is `E_INTEGER_OVERFLOW`. And note that `rotl64` is correct only for `n` in 1..63 —
 at `n` of 0 the second shift is by 64, which is defined here to be
 zero, so the rotation degrades to `(bit-or x 0)`, which happens to be
 right. That is the kind of edge the defined-shift rule quietly removes.
@@ -294,6 +303,7 @@ at different stages:
 | The atomic family | Working, on 8-aligned offsets |
 | `align-check` | Working, as a 1/0 test |
 | Stack escape (`E_REGION_ESCAPE`) | Enforced |
+| One writer per buffer (`E_MUT_CONFLICT` when two names write to one buffer or its slices) | Enforced (Chapter 17, §17.1) |
 | Other region rules (Pin-only `bytebuf-ptr`, immutable Global buffers, Pin-only CAS) | **Not enforced** |
 
 Two further caveats:
@@ -327,6 +337,7 @@ Two further caveats:
   the frame region and may not escape it (`E_REGION_ESCAPE`); the other
   region rules are not enforced yet.
 - Write constants at or above 2^63 as negative `Int`s; an oversized
-  literal currently becomes 0.
+  literal is `E_INTEGER_OVERFLOW`. Mix them with `wrapping*` and
+  `wrapping+`, since `+ - *` are checked by default.
 - Loads and stores come in 8, 16, 32 and 64 bits, signed and unsigned,
   with an explicit byte order; buffers are typed `ByteBuf`/`ByteSlice`.

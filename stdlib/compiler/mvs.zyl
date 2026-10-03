@@ -27,6 +27,7 @@
 ; dependencies that were invisible a moment ago.
 
 (use compiler/index)
+(use compiler/error_report)
 (use compiler/lock)
 (use compiler/package)
 (use compiler/store)
@@ -318,7 +319,7 @@
 
 (defn mvs-run (arena ctx nodes reqs budget)
   (if (< budget 1)
-    (ffi-call "zyl_panic" "E_PKG_CYCLE: package: dependency graph is not a DAG" 1000)
+    (err-nowhere "E_PKG_CYCLE" "package: dependency graph is not a DAG")
     (match reqs
       (Nil nodes)
       (Cons r rest

@@ -278,12 +278,21 @@
                         (ffi-call "zyl_int_text" got 1000))))))))
                 "match the call to the declared signature" site))))))))
 
-; The arena wrappers in allocator/allocator. They hand out and reclaim raw
-; addresses, and a handle is copyable, so a program that could name one
-; could destroy memory another part of it still holds -- spec G2 forbids
-; that. Only the standard library and the compiler's own entry points
-; (--internal-module) may call these; every caller left in the tree is one
-; of those, so a user program simply cannot obtain an Arena.
+; The raw-memory entries of allocator/allocator: the arena wrappers and the
+; heap allocator. Both hand out a bare address that no type tracks.
+;
+; The arena wrappers additionally take a handle that is copyable, so a
+; program that could name one could destroy memory another part of it still
+; holds -- spec G2 forbids that. alloc-malloc has no handle at all: its
+; result is an untyped Int, and nothing in the type system ties it to the
+; free that must follow, so a program could hold an address with no
+; lifetime and read it after the region that backed it was reclaimed.
+; Restricting it costs a program nothing, because a program that wants a
+; buffer already has `(bytebuf R N)`, which is region-tracked, and
+; `bytebuf-ptr` for the address. Only the standard library and the
+; compiler's own entry points (--internal-module) may call these; every
+; caller left in the tree is one of those, so a user program cannot obtain
+; untracked raw memory by either route.
 (defn ac-arena-wrapper-p (key)
   (or (ac-key-is key "arena-create")
   (or (ac-key-is key "arena-destroy")
@@ -292,7 +301,9 @@
   (or (ac-key-is key "arena-alloc-zeroed")
   (or (ac-key-is key "arena-used")
   (or (ac-key-is key "arena-capacity")
-      (ac-key-is key "buf-new")))))))))
+  (or (ac-key-is key "buf-new")
+  (or (ac-key-is key "alloc-malloc")
+      (ac-key-is key "alloc-free")))))))))))
 
 ; Whether a canonical key ends in `::name` (or is exactly it).
 (defn ac-key-is (key name)
@@ -303,13 +314,24 @@
         false)))))
 
 (defn ac-arena-msg (name)
-  (str-concat "`" (str-concat name "` is a raw-memory entry: it is for the compiler, not for programs")))
+  (str-concat "`" (str-concat (err-name name) "` is a raw-memory entry: it is for the compiler, not for programs")))
+
+; alloc-malloc's replacement is concrete enough to name, and a program that
+; hits this diagnostic is almost certainly allocating a buffer for
+; something; the arena wrappers get the general advice instead.
+(defn ac-malloc-p (name)
+  (or (ac-key-is name "alloc-malloc") (ac-key-is name "alloc-free")))
+
+(defn ac-arena-help (name)
+  (if (ac-malloc-p name)
+    "allocate (bytebuf Heap N) instead and take its address with bytebuf-ptr: that buffer is region-tracked, and this one is a bare word no type follows"
+    "use the typed standard-library collection it backs, which allocates in a region"))
 
 (defn ac-check-arena-wrapper (name site)
   (if (ac-arena-wrapper-p name)
     (if (ac-may-raw)
       unit
-      (ffi-fail "E_FFI_RESTRICTED" (ac-arena-msg name) "use the typed standard-library collection it backs, which allocates in a region" site))))
+      (ffi-fail "E_FFI_RESTRICTED" (ac-arena-msg name) (ac-arena-help name) site))))
 
 ; Run from the arity pass only, where ac-cur-fn names the definition.
 (defn ffi-check-raw (args site)
@@ -341,8 +363,15 @@
   (or (ac-in-stdlib) (internal-mode-p)))
 
 (defn ac-check-program (exprs)
-  (let arities (ac-collect exprs)
-    (ac-check-top exprs arities)))
+  ; The compiler compiles the standard library in this same process, and
+  ; ac-cur-fn is a global: left holding the last stdlib definition it
+  ; compiled, it says every later name is the standard library's, which
+  ; is the one answer that grants raw-memory entries. Start from no
+  ; owner, so nothing is the standard library's until a definition here
+  ; says so.
+  (let _ (ffi-call "zyl_ref_set" ac-cur-fn "" 1000)
+    (let arities (ac-collect exprs)
+      (ac-check-top exprs arities))))
 
 ; The top-level definition being checked, for E_FFI_RESTRICTED.
 (def ac-cur-fn (ffi-call "zyl_ref_new" "" 1000))
@@ -356,7 +385,7 @@
           (EDefn name params body
             (let _ (ffi-call "zyl_ref_set" ac-cur-fn name 1000)
               (ac-expr body arities (ac-wrap-unknown (ac-param-names params)))))
-          (ETestDecl _ body _ _ (ac-expr body arities Nil))
+          (ETestDecl _ body _ _ (let _ (ffi-call "zyl_ref_set" ac-cur-fn "" 1000) (ac-expr body arities Nil)))
           (EUnknown _ _ (ac-expr e arities Nil))
           (_ 0))
         (ac-check-top rest arities)))))

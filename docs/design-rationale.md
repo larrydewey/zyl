@@ -50,14 +50,14 @@ This document explains why key architectural choices were made in the Zyl compil
 **Rationale:**
 - Deterministic memory reclamation (no collection pauses)
 - No runtime GC overhead (critical for systems programming)
-- Region types are part of the type system (TMut/TCap work with regions)
+- Region types are part of the type system (a binding's region and its mutability are independent)
 - FFI safety via Pin region (non-moving arena)
 - Circular region handles reference cycles without GC
 
 **Rejected alternatives:**
 - Garbage collection: non-deterministic collection timing, runtime overhead
 - Manual memory management (C-style): error-prone, no compile-time safety
-- Ownership without regions (Rust-style): Zyl already uses regions for lifetime tracking; capabilities add the aliasing dimension
+- Ownership without regions (Rust-style): Zyl already uses regions for lifetime tracking, and the binding-form checks add the aliasing dimension
 
 **Tradeoff:** Region inference is more complex than GC, and escape analysis requires careful design. However, the tradeoff is justified by deterministic reclamation and no runtime overhead.
 
@@ -67,25 +67,55 @@ This document explains why key architectural choices were made in the Zyl compil
 
 ---
 
-## D4: Why Capability Types (TCap/TMut)?
+## D4: Why Capability Checks Without Capability Types?
 
-**Decision:** Types carry capability annotations that govern aliasing.
+**Decision:** Zyl has no in-place mutation — struct fields are immutable
+and a "mutated" struct is a new value bound to the same name — so every
+`let` binding is immutable and rebinding is the only update. The
+capability rules are therefore read off the binding form and enforced
+syntactically, before lowering; no type carries a capability.
 
 **Rationale:**
-- TCap (shared, immutable) allows multiple references
-- TMut (exclusive, mutable) allows only one reference
-- Alias invariant enforced at compile time: any location has either one TMut OR any number of TCap
-- Enables safe actor concurrency without locks (no shared mutable state)
+- A shared immutable binding needs no type to say so: there is no
+  in-place write for a reader to observe, for any type
+- `set!` on a `let-mut` binding rebinds it; `set!` on anything else is `E_MUT_CONFLICT`
+- Enforcement needs no type information, so it is a cheap syntactic pass
+  that can undershoot deliberately (let a program through rather than
+  reject valid code)
+- An actor boundary is still closed: a `let-mut` variable or a `Secret`
+  crossing into `spawn` or `chan-send` is `E_CAPABILITY_LEAK`, and a
+  resource used after its release is `E_MOVE_VALUE`
+- `Secret` stays a real capability, because it is the one thing with
+  obligations the compiler can enforce (`E_SECRET_DEBUG`,
+  `E_ZEROIZE_MISSING`) rather than describe
 
 **Rejected alternatives:**
-- Rust borrow checker: more complex because it tracks lifetimes explicitly; Zyl uses regions for lifetime tracking
+- Rust borrow checker: more complex because it tracks lifetimes explicitly; Zyl uses regions for lifetime tracking, and with no in-place mutation the only thing left to alias is a mutable location, which is one check per allocation
+- `TCap`/`TMut` as real annotations carried by the unifier (retired
+  2026-10-02, `PROGRESS.md` item 10): structs forbid field mutation, so
+  an exclusive-mutable capability could never flow through a field, and
+  the capabilities would cover exactly the positions `let`/`let-mut`
+  already do — at the cost of capability polarity in unification and in
+  generated `T.==`
 - Software transactional memory: runtime overhead, non-deterministic retry behavior
 
-**Tradeoff:** Capability types add syntax and inference complexity. However, they provide a simpler model than full ownership tracking because they only govern aliasing, not ownership.
+**Tradeoff:** A syntax rule catches less than a type rule. A value that
+reaches a mutable location through a path the pass does not walk — an
+interprocedural return of a handle, a closure passed through a function
+value — is not rejected, where a capability type would reject it at the
+boundary. That is the accepted direction of error for a systems
+language: a missed diagnostic is recoverable, a false positive is a bug
+in the user's program.
 
-**Current implementation:** enforcement is syntactic. `mutability_check.zyl` treats `let` as TCap and `let-mut` as TMut and rejects `set!` on anything else; `secret_check.zyl` enforces the `Secret` capability.
+**Current implementation:** `mutability_check.zyl` tracks in-scope
+`let-mut` bindings and rejects `set!` on anything else, a `set!` of a
+captured outer `let-mut`, and a `spawn`/`chan-send` mentioning one;
+`linearity.zyl` rejects a resource used after its release and a second
+name writing to one `bytebuf`; `secret_check.zyl` enforces the `Secret`
+capability. The unifier has no capability polarity.
 
-**Spec reference:** `spec/06-capability-types.md`
+**Spec reference:** `spec/06-capability-types.md`,
+`zyl_specification.txt` §10
 
 ---
 
@@ -130,7 +160,7 @@ This document explains why key architectural choices were made in the Zyl compil
 **Rationale:**
 - Simpler memory model: struct instances are allocated on Heap and never modified
 - Eliminates aliasing issues (if you have a reference to a field, the struct is not being mutated)
-- Consistent with capability types (TCap for shared access)
+- Consistent with the capability rules (a `let` binding is immutable, so sharing one is always safe)
 - Direct field mutation (`set! (struct-get p "x") 5`) is forbidden
 
 **Tradeoff:** Less convenient for performance-critical code that needs in-place mutation. However, the safety benefits outweigh the convenience cost. For in-place mutation, use `let-mut` to rebind the entire struct.
@@ -251,7 +281,7 @@ a separate, explicitly-named form, `(panic msg)`.
 **Rationale:**
 - Errors are values, not control flow jumps
 - Callers must explicitly handle errors (no implicit unwinding)
-- Consistent with capability types (error handling is part of the type)
+- Consistent with the rest of the type system (error handling is part of the type)
 - Deterministic: no stack unwinding, no non-local control flow
 - Simpler region reasoning: no need to track which regions are cleaned up by unwinding
 

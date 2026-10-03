@@ -45,6 +45,8 @@ public. Every function in `math/secret/secret` is secret-returning, so
 this is rejected with `E_SECRET_DEBUG`:
 
 ```lisp
+(capabilities secret)
+
 (use math/secret/secret)
 
 (defn main ()
@@ -126,13 +128,15 @@ everywhere:
 
 ```lisp
 (defn ct-is-zero ((x Secret))
-  (- 1 (bit-and (shr (bit-or x (- 0 x)) 63) 1)))
+  (- 1 (bit-and (shr (bit-or x (wrapping- 0 x)) 63) 1)))
 ```
 
-`(bit-or x (- 0 x))` has its top bit set for every non-zero `x` —
+`(bit-or x (wrapping- 0 x))` has its top bit set for every non-zero `x` —
 including the most negative integer, whose negation is itself — so the
 logical shift by 63 isolates "non-zero", and the subtraction inverts
-it. No comparison, no branch, no table.
+it. The negation is spelled `wrapping-` because `(- 0 x)` is a checked
+operation and would raise `E_OVERFLOW` on exactly the value the trick
+has to survive. No comparison, no branch, no table.
 
 Comparing byte strings is the one case where an ordinary
 implementation is actively dangerous. `=` on two arrays compares
@@ -187,9 +191,11 @@ can read out of a core dump. `zeroize` overwrites it:
 (zeroize-bytes base n)   ; n bytes at a raw address
 ```
 
-Both write through a volatile pointer in the runtime, so the C compiler
-that builds the runtime cannot delete the stores as dead — the classic
-way a `memset` before a `free` silently disappears at `-O2`.
+Both are Zyl in the runtime (`zyl_zeroize` in `runtime/rt/crypto.zyl`),
+writing the bytes one at a time, so the compiler that assembles the runtime
+cannot coalesce the stores into a dead `memset` — the classic way an
+erase-before-free silently disappears. There is no C under the runtime and
+no `volatile`; the property comes from how the stores are written.
 
 **Stack slots are erased automatically.** A function with a `Secret`
 parameter (or one of a Secret type), a secret-returning function, and
@@ -206,7 +212,12 @@ The compiler also notices when you may have forgotten: a function that takes a `
 mentions `zeroize` or `zeroize-bytes` gets a warning on stderr:
 
 ```
-E_ZEROIZE_MISSING: warning: `local/main@0::app::check` consumes a Secret parameter into a public result but never calls zeroize/zeroize-bytes on it
+warning[E_ZEROIZE_MISSING]: `check` consumes a Secret parameter into a public result but never calls zeroize/zeroize-bytes on it
+  --> verify-key.zyl:5:1
+   |
+ 5 | (defn check ((k Secret))
+   | ^
+   = help: call `(zeroize p)` on it before returning; a released frame region goes back to the allocator without being wiped, so an unerased secret is one allocation away from being read back. Or hand it to a function that takes it as a Secret, which keeps the erasure its caller's to do
 ```
 
 It is a warning, despite the `E_` prefix: the compile continues. A

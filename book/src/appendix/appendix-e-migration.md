@@ -20,6 +20,13 @@ than Rust's:
   literal in the type you mean. The one explicit conversion is the
   runtime's `Int -> Float`, `(ffi-call "zyl_f_of_int" n 1000)`; there
   is no general `as`.
+- `+ - *` on `Int` are checked by default, like Rust's debug builds but
+  in every build: an overflow stops the program with `E_OVERFLOW`.
+  `wrapping_mul` is `wrapping*`, `saturating_add` is `saturating+`, and a
+  file can choose wrap-around for all its arithmetic with
+  `(numeric wrapping)`. `a / b` with a variable `b` does not compile:
+  write `(div! a b)` (Rust's panicking `/`) or `(div? a b)` (Rust's
+  `checked_div`).
 - There is no `unsafe` block and no `transmute`. No form changes a
   value's type; the only trusted code is the compiler and its runtime.
 - A statement form (`print`, `set!`, `while`, an `if` without `else`)
@@ -30,16 +37,16 @@ than Rust's:
 
 | Rust | Zyl |
 |------|-----|
-| `&T` (shared ref) | `TCap` — shared, read-only; what an ordinary `let` gives you |
-| `&mut T` (exclusive ref) | `TMut` — exclusive, mutable; a `let-mut` binding |
+| `&T` (shared ref) | A `let` binding — immutable, any number of readers |
+| `&mut T` (exclusive ref) | A `let-mut` binding — the only assignable binding; `set!` rebinds it |
 | `Box<T>` | No box to write: a value that escapes goes on the heap. Spec §4.3 names `TBox<T>` |
 | `Pin<&mut T>` | `ffi-pin` copies a value into the non-moving Pin region. Spec §4.3 names `TPin<T>` |
-| `Arc<T>` | Share immutable data (`TCap`), or keep the state inside an actor. Spec §4.3 names `TAtomic<T>` |
+| `Arc<T>` | Share immutable data (a `let` binding), or keep the state inside an actor. Spec §4.3 names `TAtomic<T>` |
 | `Mutex<T>` | An actor that owns the state; `bytebuf-atomic-*` for counters in a Pin buffer |
-| Ownership/borrow checker | `mutability_check` (the `TMut`/`TCap` rules) plus region inference |
+| Ownership/borrow checker | `mutability_check` plus region inference: Zyl has no in-place mutation: every `let` binding is immutable, `set!` on a `let-mut` binding rebinds it, and `set!` on anything else is `E_MUT_CONFLICT` |
 
 **Key difference**: you do not annotate capabilities. `let` versus
-`let-mut` decides `TCap` versus `TMut`, and the checker rejects
+`let-mut` is the whole distinction, and the checker rejects
 `set!` on anything that is not a `let-mut` name (`E_MUT_CONFLICT`) and a
 `let-mut` variable captured by a spawned closure (`E_CAPABILITY_LEAK`).
 
@@ -98,13 +105,13 @@ fn min<T: Ord>(a: T, b: T) -> T { ... }
 ```
 
 ```lisp
-;; Zyl
-(defn identity (x) x)
+;; Zyl (id, not identity: the prelude already defines that one)
+(defn id (x) x)
 (defn smaller (a b) (if (< a b) a b))
 ```
 
 **Differences**:
-- Type parameters are inferred, never written: `identity` is generic
+- Type parameters are inferred, never written: `id` is generic
   because nothing constrains `x`. `smaller` works on any type `<`
   accepts (`Int`, `Float`, `String`); an ADT is ordered with
   `Ord.compare` instead.
@@ -191,6 +198,8 @@ h.join().unwrap();
 ```
 
 ```lisp
+(capabilities actor)
+
 ;; Zyl: actors and channels
 (use actor/actor)
 
@@ -274,7 +283,7 @@ beyond what it declares (§31.9). Rust has no equivalent.
 
 ## E.2 From C/C++
 
-### Memory Management → Regions and Arenas
+### Memory Management → Regions
 
 ```c
 // C: manual
@@ -284,15 +293,36 @@ free(arr);
 ```
 
 ```lisp
-;; Zyl: arena-backed collections
-(let v (vec-push (vec-create-default n) 7)   ; a private arena
+;; Zyl: the Vec lives in this call's region and is reclaimed on return
+(let v (vec-push (vec-new-cap n) 7)
   (vec-get! v 0))
 ```
 
-Ordinary code never calls `malloc` or `free`: values are placed by the
-compiler, and collections take their storage from an arena, released
-with `arena-reset` or `arena-destroy` (`vec-free` only empties the value; the storage belongs to the arena). `allocator/allocator` exposes
-`alloc-malloc` and `alloc-free` for the rare code that needs them.
+Ordinary code never calls `malloc` or `free`: values, collections
+included, are placed by the compiler in the call's own region, the
+caller's result region or the heap, and a region is released when its
+call returns. A program cannot create an arena, and cannot call
+`alloc-malloc` or `alloc-free` either: all three are
+`E_FFI_RESTRICTED`. A buffer handed to C is a `(bytebuf Heap N)`, with
+`bytebuf-ptr` for the address.
+
+### Integer Overflow and Division → Checked or Spelled
+
+```c
+int64_t x = a * b;   // UB on signed overflow
+int64_t q = a / b;   // UB on b == 0
+```
+
+```lisp
+(* a b)       ; E_OVERFLOW at run time if it does not fit
+(div! a b)    ; E_DIVISION_BY_ZERO at run time if b is 0
+(div? a b)    ; None if b is 0
+(/ a b)       ; compile error unless b is a nonzero literal
+```
+
+Nothing is undefined. A file that wants C's wrap-around (for a hash, a
+PRNG) declares `(numeric wrapping)` once, or writes `wrapping*` at the
+operation.
 
 ### Pointers → Capabilities + FFI
 
@@ -310,11 +340,11 @@ void process(int64_t* value);
     (ffi-unpin slot)))
 ```
 
-A pin holds one word. An array goes in a buffer from
-`allocator/allocator` (`alloc-malloc`, a `Ptr`).
+A pin holds one word. An array goes in a `(bytebuf Heap N)`, whose
+address `bytebuf-ptr` gives as a `Ptr`.
 
 **No raw pointers in ordinary Zyl** — addresses appear only through
-`ffi-pin`, `bytebuf-ptr` and the allocator functions, and an opaque C
+`ffi-pin`, `bytebuf-ptr` and a foreign call, and an opaque C
 address is a `Ptr` that Zyl can only hand back to C. The `extern` is
 the prototype a C header would give: an `ffi-call` to a foreign
 function without one does not compile (`E_CANNOT_INFER`). Its types are
@@ -406,6 +436,10 @@ pthread_mutex_unlock(&lock);
 
 ```lisp
 ;; Zyl: no shared state; each actor owns its data
+(capabilities actor)
+
+(use actor/actor)
+
 (let worker (spawn (fn () (let-mut count 0 (begin (set! count (+ count 1)) count))))
   (actor-wait worker))
 ```
@@ -454,7 +488,7 @@ identical binary (§27, §31.12). Builds never touch the network.
 
 | Concept | Rust | C/C++ | Zyl |
 |---------|------|-------|-----|
-| Memory safety | Borrow checker | Manual | Regions + `TCap`/`TMut` checks |
+| Memory safety | Borrow checker | Manual | Regions + `let`/`let-mut` binding checks |
 | Mutability | `mut` | Default | `let-mut` + `set!` |
 | Null | `Option` | `NULL` | `Option` (`None`) |
 | Errors | `Result` | Codes/errno | `Result` |
@@ -465,6 +499,9 @@ identical binary (§27, §31.12). Builds never touch the network.
 | Determinism | Configurable | No | Mandatory |
 | Truth values | `bool` | Any scalar | `Bool` only |
 | Numeric conversion | `as` | Implicit | Explicit only (`zyl_f_of_int`); `Int` and `Float` never mix |
+| Integer overflow | Panic (debug) / wrap (release) | UB | `E_OVERFLOW` always, unless `(numeric wrapping)` or `wrapping+` |
+| Division by zero | Panic | UB | Compile error for `/`; `div!` stops, `div?` returns `None` |
+| Effects | Unrestricted | Unrestricted | Declared: `(capabilities io ffi actor secret)` |
 | Unsafe casts | `transmute` | Casts | None |
 | FFI | `extern "C"` | Native | `extern` + `ffi-call` + pinning + timeout |
 | Packages | Cargo, crates.io | — | `zyl.pkg`, MVS, signed git index |

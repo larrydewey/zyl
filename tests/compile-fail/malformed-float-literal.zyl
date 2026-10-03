@@ -1,0 +1,9 @@
+; expect-error: E_INVALID_CHAR
+; expect-at: malformed-float-literal.zyl:8:12
+; `1.2.3` is not a number. It read as the Float 1.2, so `print` said
+; 1.200000 as if the source had said so: a plausible wrong number, which
+; is the one kind of bug a compiler must not have.
+(defn main ()
+  (begin
+    (print 1.2.3)
+    0))

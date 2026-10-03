@@ -74,11 +74,11 @@ A directory with a `zyl.pkg` is a package, and `zyl` builds it as one
 (spec v5.0 §31):
 
 ```bash
-build/boot/zyl-self new acme/json   # a manifest and a root module
+build/boot/zyl-self new acme/json   # ./json/{zyl.pkg,json.zyl}
 cd json
-build/boot/zyl-self build           # compile this package
-build/boot/zyl-self test            # compile it and run its tests
-build/boot/zyl-self audit           # what the graph is allowed to do
+../build/boot/zyl-self build         # compile this package
+../build/boot/zyl-self test          # compile it and run its tests
+../build/boot/zyl-self audit         # what the graph is allowed to do
 ```
 
 ```lisp
@@ -232,10 +232,10 @@ the book for per-editor setup.
 compiler written in Zyl (`stdlib/compiler/*.zyl`, `selfhost/`) compiles
 itself end-to-end with a strict byte-identical fixed point, verified by
 `./boot.sh`, and passes the full regression suite (`./run_regression_tests.sh
---full`) — 352/352 as of this writing, covering regression, interpreter
+--full`) — 496/496 as of this writing, covering regression, interpreter
 (differential REPL-vs-codegen), actor schedules, compile-fail,
 integration, stress, package, script and language-server protocol
-tests. A self-compile takes about two seconds. The runtime is Zyl too
+tests. A self-compile takes about four seconds. The runtime is Zyl too
 (`runtime/rt/`); there is no C in the build.
 
 The original Rust bootstrap compiler has been removed from the tree
@@ -247,11 +247,13 @@ against its own new output until two consecutive rounds match; see
 The Zyl-written compiler runs, in order (`stdlib/compiler/pipeline.zyl`):
 delimiter-balance check → parsing → module resolution (canonical
 symbol keys, spec §31) → macro expansion → capability, duplicate,
-arity, mutability, exhaustiveness, unused-binding and `Secret` checks →
-derive expansion → impl lifting → type checking (`type_annotate.zyl`:
-sound Hindley-Milner, static trait resolution, per-type specialization)
-→ ICNF generation → optimization (inlining of small functions, copy
-propagation, constant folding, dead-branch elimination) → region
+arity, mutability, linearity, exhaustiveness, unused-binding and
+`Secret` checks → derive expansion → impl lifting → closure inlining →
+type checking (`type_annotate.zyl`: sound Hindley-Milner, static trait
+resolution, per-type specialization) → numeric check (`numeric_check.zyl`:
+checked `+ - *` unless the package opts out) → ICNF generation →
+optimization (inlining of small functions, copy propagation, constant
+folding, dead-branch elimination) → region
 inference (escape analysis) → in-place reuse (`reuse.zyl`) → x86_64
 code generation (the native backend, MIR with linear-scan register
 allocation in `mir.zyl`, with a stack-machine path for the functions it
@@ -262,7 +264,11 @@ does not take) → linking (the Zyl assembler and static ELF linker, or
 
 - **S-expression syntax** — homoiconic Lisp with S-expressions targeting x86_64 native code
 - **Region-based memory** — Stack, Heap, Global, Circular and Pin regions; escape analysis over ICNF places each allocation in the call's own frame region (released on return), the caller's result region, or the heap, and `with-region` opens an explicit `arena` or `fixed` region; an escaping Stack value is `E_REGION_ESCAPE`
-- **Capability types** — TCap (shared immutable) and TMut (exclusive mutable) with compile-time aliasing enforcement: only a `let-mut` binding may be `set!`, and direct field mutation is rejected
+- **Capability types** — no in-place mutation: every `let` binding is
+  immutable and may be shared, a `let-mut` binding is the only assignable
+  one and `set!` rebinds it, and `set!` on anything else is
+  `E_MUT_CONFLICT`; direct field mutation is rejected, and a `let-mut`
+  crossing into an actor is `E_CAPABILITY_LEAK`
 - **Sound Hindley-Milner type checking** — every type error is reported, then the compile fails; conditions are Bool, arithmetic is Int or Float with no conversion, there is no cast form; traits resolve statically with per-type specialization; `derive` accepts `Show`, `Debug`, `Eq`, `Ord`, `Hash` and `Clone`
 - **Deterministic compilation** — same source + same inputs → identical binaries; the compiler reproduces itself byte for byte
 - **ICNF IR** — custom intermediate representation between the AST and codegen (spec §18 describes it as SSA with region annotations; the implementation is a tree IR, not SSA, whose region annotations live in a side table and are printed, so the ICNF hash covers them)
@@ -296,9 +302,9 @@ does not take) → linking (the Zyl assembler and static ELF linker, or
 | 1. Parsing | ✅ | Balance check, lexer + parser → AST (no-dispatch) |
 | 2. Module Resolution | ✅ | `use` graph, canonical symbol keys, visibility (spec §31) |
 | 3. Macro Expansion | ✅ | Gensym hygiene, innermost-first |
-| 4. Post-Processing + Checks | ✅ | AST → ExprInner; capability, duplicate, arity, mutability, exhaustiveness, unused, `Secret` |
+| 4. Post-Processing + Checks | ✅ | AST → ExprInner; capability, duplicate, arity, mutability, linearity, exhaustiveness, unused, `Secret` |
 | 5. Derive + Impl Lifting | ✅ | `derive` expanded to impls; impl bodies lifted to `Trait.method_Type` functions |
-| 6. Type Checking | ✅ | Sound HM (`type_annotate.zyl`), static trait resolution, per-type specialization |
+| 6. Type Checking | ✅ | Sound HM (`type_annotate.zyl`), static trait resolution, per-type specialization; then the numeric check (checked `+ - *`, `E_PARTIAL_OPERATION` on an unknown divisor, `numeric_check.zyl`) |
 | 7. ICNF Generation | ✅ | Tree IR; region annotations in a side table |
 | 8. Optimization | ✅ | Inlining of small functions, copy propagation, constant folding, dead-branch elimination |
 | 9. Region Inference | ✅ | Escape analysis over ICNF: frame, result or heap region per allocation; then in-place reuse |
@@ -330,7 +336,7 @@ runtime/rt/                   # Zyl runtime linked into every compiled binary
 ├── rt.zyl                    # Entry module (built with --runtime-module)
 └── *.zyl                     # heap, alloc, thread, chan, actor, panic, out, os, ... (rt.s seed)
 
-stdlib/compiler/              # The compiler, written in Zyl (46 modules)
+stdlib/compiler/              # The compiler, written in Zyl (52 modules)
 ├── pipeline.zyl              # Phase order shared by the CLI and the REPL
 ├── lexer.zyl, parser.zyl, desugar.zyl, sexp_balance.zyl, ast.zyl, expr_inner.zyl,
 │   node_tables.zyl
@@ -352,7 +358,7 @@ stdlib/compiler/              # The compiler, written in Zyl (46 modules)
 
 stdlib/                       # The implicit standard library (package zyl/std)
 ├── core/                     # core, list, option, result, map, show, resource, property (auto-loaded)
-├── collections/              # vec, map, set, slice
+├── collections/              # vec, intmap, set, slice
 ├── text/                     # view: StrView, Cursor
 ├── simd/                     # Portable lane vectors
 ├── allocator/, atomic/, actor/, io/, ffi/, testing/, mlib/
@@ -394,7 +400,9 @@ tests/
   (those calling foreign C); no Rust, no Cargo. Other programs need no
   toolchain at all
 - Linux x86_64 (the only target; other platforms are untested)
-- `python3` only for the LSP protocol tests
+- `python3` for the cross-checks `./run_regression_tests.sh` runs (the
+  assembly verifier's Python oracle, the region-allocator model, the
+  timing harness) and for the LSP protocol tests
 - Node.js/npm only for building the VS Code extension and the website
 
 ## Examples

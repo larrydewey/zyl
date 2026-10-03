@@ -146,10 +146,10 @@ recorded here rather than silently corrected in the grammar above.
 ### Forms the post-processor recognises
 
 `list`, `quote`, `quasiquote`, `def`, `defn`, `deftype`, `defstruct`, `defstruct+`, `trait`, `impl`,
-`derive`, `extern`, `let`, `let-mut`, `if`, `while`, `for`, `cond`, `and`,
+`derive`, `extern`, `let`, `let-mut`, `if`, `when`, `unless`, `while`, `for`, `cond`, `and`,
 `or`, `not`, `match`, `try` (with a nested `catch`), `begin`, `fn`,
 `lambda`, `set!`, `print`, `assert`, `assert-equal`, `assert-true`,
-`assert-false`, `assert-fail`, `spawn`, `send`, `ffi-pin`, `ffi-unpin`,
+`assert-false`, `assert-fail`, `spawn`, `chan-send`, `ffi-pin`, `ffi-unpin`,
 `exit`, `close`, `read-line`, `file-open`, `file-read`, `file-write`,
 `file-close`, `struct-get`, `make-struct`, `make-variant`, `unwrap`,
 `with-resource`, `with-region`, `module`, `use`, `pub`, `export`,
@@ -159,8 +159,9 @@ recorded here rather than silently corrected in the grammar above.
 `checkpoint` and `recover`, plus the byte primitives
 (`byte-form-dispatch`). `ffi-call` is not a dedicated node; it stays an
 application of the reserved name and is recognised during ICNF lowering.
-`div?` and `rem?` (§20.3) are rewritten here into `let`/`if`/`Some`/`None`
-around `div!`/`rem!`, so the type checker and the interpreter see only
+`div?` and `rem?` (§20.3) are rewritten in `desugar.zyl`, as the reader
+reads each file, into `let`/`if`/`Some`/`None` around `div!`/`rem!`, so
+the type checker and the interpreter see only
 ordinary forms. A top-level `(numeric checked|wrapping|saturating)`
 (§20.1) is read by the module resolver, which checks its shape and
 records the package's policy, and converts to nothing here; one that is
@@ -223,8 +224,10 @@ requires becomes an `EUnknown` node, which the arity pass reports as
   generated single-variant ADT — one per element type list, so the element
   types are part of the type and `(tuple 1 2)` and `(tuple "a" "b")` cannot
   be mixed. `(tuple-get t i)` reads element `i` from 0; an index past the
-  end is `E_INDEX_OUT_OF_BOUNDS` naming the arity, and a receiver that is
-  not a tuple is `E_TYPE_MISMATCH`. The generated type name is an
+  end is `E_INDEX_OUT_OF_BOUNDS` naming the arity, and a receiver the
+  checker knows to be a `defstruct` is `E_TYPE_MISMATCH` listing its
+  fields. A builtin receiver (`Int`, `String`) is not caught: the read
+  compiles and yields a word. The generated type name is an
   implementation detail. A type parameter cannot be shown to be a tuple, so
   `tuple-get` on one is `E_CANNOT_INFER`; there are no trait bounds to
   write (§6.1).
@@ -334,18 +337,13 @@ requires becomes an `EUnknown` node, which the arity pass reports as
 - **`let` accepts two shapes:** `(let x v body...)` and
   `(let (x v) body...)`. A `let` without a body is `E_MALFORMED_FORM`.
   `let-mut` is the same.
-- **`let*`** is sugar for nested `let`, rewritten on the parse tree
-  (`compiler/desugar.zyl`): `(let* ((a x) (b y)) body...)` becomes
-  `(let a x (let b y body...))`, so each binding is in scope for the ones
-  after it. It is not in the grammar above (§2 has no `let*`); it is a
-  convenience the implementation adds. A binding that is not exactly
-  `(name value)`, an empty binding list, or a missing body is
-  `E_MALFORMED_FORM` — the shapes are reported rather than dropped, since
-  dropping one would silently bind nothing.
 - **`if` may omit the else branch.** `(if c t)` is Unit, and `t` must be
   Unit.
 - **`for`** accepts the single-binding shorthand `(for (i 0) cond body...)`
-  and a list of bindings `(for ((i 0) (j 1)) cond body...)`.
+  and a list of bindings `(for ((i 0) (j 1)) cond body...)`, told apart by
+  whether the first element is an identifier. An empty binding list
+  `(for () cond body...)` is a plain `while`; a binding written `(name)`
+  with no initial value starts at 0.
 - **`cond`** is lowered to nested `if`. A clause whose test is the literal
   `true` or `else` ends the cond: clauses after it are never reached and
   are dropped, and the cond has that clause's body type. A cond with no

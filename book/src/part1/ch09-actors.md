@@ -36,6 +36,8 @@ The language forms are `spawn`, `chan`, `chan-tx`, `chan-rx`, `chan-send` and `c
 `spawn` starts a new actor running `body` on its own thread and returns immediately with a value of type `Actor`. An `Actor` can be joined with `actor-wait` and queried with `actor-is-alive`, and nothing else: it is not an `Int`, and it is not a destination for messages.
 
 ```lisp
+(capabilities actor)
+
 (use actor/actor)
 
 (defn crunch (n)
@@ -84,6 +86,8 @@ Two rules for the function passed to `spawn`:
 - Channels are typed. A channel carries values of one type, and the type checker infers it from how the endpoints are used. Receiving an `Int` where a `String` is needed is a compile-time error:
 
 ```lisp
+(capabilities actor)
+
 (use actor/actor)
 
 (defn main ()
@@ -98,10 +102,10 @@ Two rules for the function passed to `spawn`:
 
 ```
 error[E_TYPE_MISMATCH]: `str-concat` takes `String` as its 2nd argument, but this is `Int`
-  --> main.zyl:9:37
-   |
- 9 |           (print (str-concat "got " (chan-recv rx)))
-   |                                     ^
+  --> main.zyl:11:37
+    |
+ 11 |           (print (str-concat "got " (chan-recv rx)))
+    |                                     ^
 ```
 
 To carry several kinds of message on one channel, make them variants of one ADT (§9.5).
@@ -116,6 +120,8 @@ Each endpoint, `Tx` or `Rx`, belongs to exactly one actor at a time. The actor t
 Using an endpoint the running actor does not own is `E_CHANNEL_NOT_OWNER`. Here `main` gives `rx` to the actor, then tries to read from it itself:
 
 ```lisp
+(capabilities actor)
+
 (use actor/actor)
 
 (defn main ()
@@ -133,6 +139,7 @@ Using an endpoint the running actor does not own is `E_CHANNEL_NOT_OWNER`. Here 
 ```
 1
 PANIC: E_CHANNEL_NOT_OWNER: this actor does not own the channel endpoint
+  in main
 ```
 
 Because ownership changes only at those two program points, this error is raised the same way on every run.
@@ -140,6 +147,8 @@ Because ownership changes only at those two program points, this error is raised
 An endpoint sent on a channel lets an actor be wired up after it starts. The reader below owns only `h-rx` at first. `main` then hands it the receiving end of `data`:
 
 ```lisp
+(capabilities actor)
+
 (use actor/actor)
 
 (defn main ()
@@ -168,6 +177,8 @@ Output:
 A stateful actor is a recursive loop over `chan-recv`, with its state passed as the loop's parameters. Requests are ADT values on one channel, and answers come back on a second channel. The program below is `book/examples/actor-counter/counter.zyl`:
 
 ```lisp
+(capabilities actor)
+
 (use actor/actor)
 
 (deftype CounterMsg (Add Int) (Get) (Stop))
@@ -216,18 +227,20 @@ The specification's Send rules:
 | Type | Send? | Notes |
 |------|-------|-------|
 | `Int`, `Float`, `Bool`, `String` | Yes | Immutable primitives |
-| `TCap<T>` | Yes | Shared immutable |
-| `TAtomic<T>` | Yes | Thread-safe mutation |
+| an immutable (`let`) binding | Yes | Shared immutable |
+| an atomic binding | Yes | Thread-safe mutation |
 | ADTs and structs with Send fields | Yes | Checked recursively |
 | Channel endpoints | Yes | Ownership moves to the receiver (§9.4) |
-| `TMut<T>` | No | Exclusive; cannot be shared |
+| a `let-mut` binding | No | The only assignable binding; `set!` rebinds it |
 | `TBox<T>` | No | Owned; would violate exclusivity |
 | `TPin<T>` | No | FFI-pinned; not for actors |
-| Closures capturing `TMut` | No | Would leak mutable state |
+| Closures capturing a `let-mut` | No | Would leak mutable state |
 
-The compiler currently enforces the `TMut` rows, for both a value sent on a channel and a spawned closure's captures:
+The compiler currently enforces the `let-mut` rows, for both a value sent on a channel and a spawned closure's captures:
 
 ```lisp
+(capabilities actor)
+
 (use actor/actor)
 
 (defn main ()
@@ -240,14 +253,14 @@ The compiler currently enforces the `TMut` rows, for both a value sent on a chan
 ```
 
 ```
-PANIC: error[E_CAPABILITY_LEAK]: value sent on a channel references let-mut (TMut) variable `x` from the enclosing scope
-  --> main.zyl:8:11
-   |
- 8 |           (chan-send tx x)
-   |           ^
- 4 |   (let-mut x 10
-   |   - declared `let-mut` here
-   = help: channel values must be Send-capable; send a copy bound with plain `let`
+error[E_CAPABILITY_LEAK]: value sent on a channel references let-mut (TMut) variable `x` from the enclosing scope
+  --> main.zyl:10:11
+    |
+ 10 |           (chan-send tx x)
+    |           ^
+  6 |   (let-mut x 10
+    |   - declared `let-mut` here
+    = help: channel values must be Send-capable; send a copy bound with plain `let`
 ```
 
 A `Secret` value sent on a channel or captured by a spawn is rejected separately, with `E_SECRET_ESCAPE` (Chapter 33).
@@ -272,6 +285,8 @@ The `actor/actor` module provides:
 `main`'s own output goes straight to stdout. `print` and `file-write` to fd 1 and 2 are all buffered this way. Only a foreign C call that writes through libc bypasses the buffer. A program need not join its actors, since exit joins every one of them:
 
 ```lisp
+(capabilities actor)
+
 (defn main ()
   (let a (spawn (fn () (print "hi from actor")))
     (print "main exits"))
@@ -290,6 +305,8 @@ hi from actor
 **Panics.** An uncaught panic in an actor ends only that actor. `actor-wait` re-raises it in the joiner, where `try` can catch it:
 
 ```lisp
+(capabilities actor)
+
 (use actor/actor)
 
 (defn main ()
@@ -315,6 +332,8 @@ If an actor that panicked is never joined, the program reports the first such pa
 **Closing.** When the actor that owns a channel's `Tx` finishes, the channel closes. For `main`, that is when the program ends. Values already in the buffer can still be received. A `chan-recv` on a closed channel with nothing left in it is `E_CHANNEL_CLOSED`:
 
 ```lisp
+(capabilities actor)
+
 (use actor/actor)
 
 (defn main ()
@@ -333,11 +352,14 @@ If an actor that panicked is never joined, the program reports the first such pa
 1
 2
 PANIC: E_CHANNEL_CLOSED: the channel's sender finished and every value was received
+  in main
 ```
 
 The third `chan-recv` fails at the same point in the reader's sequence on every run. The error can be caught, so a reader can treat a closed channel as the end of its input:
 
 ```lisp
+(capabilities actor)
+
 (use actor/actor)
 
 (defn produce (tx i n)
@@ -371,6 +393,8 @@ Output:
 **Deadlock.** When every live actor, `main` included, is blocked on a channel or a join, no actor can make progress. The runtime detects this, prints the output the actors have buffered so far (in spawn order), then reports `E_DEADLOCK` and exits with status 1:
 
 ```lisp
+(capabilities actor)
+
 (use actor/actor)
 
 (defn main ()
@@ -397,9 +421,7 @@ The runtime runs every actor on its own operating-system thread, and the kernel 
 - actor `print` output is buffered and emitted at fixed points (joins and exit), not when the thread happens to print;
 - ownership errors, closing and deadlock happen at fixed points of the program.
 
-The fan-out program in §9.10, run 100 times, gave byte-identical output every time.
-
-Two run-time schedules make this checkable. `ZYL_SCHED=deterministic` runs one actor at a time, handing control on in a fixed order at each blocking point. `ZYL_SCHED_CHAOS=<seed>` adds seeded yields and sleeps at channel operations. The same binary must print the same bytes under both and under the default schedule, and the test suite checks that.
+Two run-time schedules make this checkable. `ZYL_SCHED=deterministic` runs one actor at a time, handing control on in a fixed order at each blocking point. `ZYL_SCHED_CHAOS=<seed>` adds seeded yields and sleeps at channel operations. The same binary must print the same bytes under both and under the default schedule, and `tests/scripts/actor-schedules.sh` checks exactly that.
 
 ## 9.10 Common Patterns
 
@@ -408,6 +430,8 @@ Two run-time schedules make this checkable. `ZYL_SCHED=deterministic` runs one a
 Spawn several independent workers, then join them in the order their output should appear:
 
 ```lisp
+(capabilities actor)
+
 (use actor/actor)
 
 (defn sum-to (n acc)
@@ -439,6 +463,8 @@ all workers finished
 Each stage reads from one channel and writes to the next. Here a producer sends 1 to 10, a middle stage squares each value, and `main` adds up the results:
 
 ```lisp
+(capabilities actor)
+
 (use actor/actor)
 
 (defn produce (tx i n)
@@ -496,6 +522,8 @@ There is no supervision or restart mechanism. A joiner learns of an actor's fail
 Keep the logic in plain functions and test it directly. For the actors themselves, test what the runtime guarantees. This is the style of `tests/regression/actors.zyl` and `tests/regression/channels.zyl`:
 
 ```lisp
+(capabilities actor)
+
 (use actor/actor)
 
 (test "spawned-actor-is-alive"
@@ -525,15 +553,21 @@ test result: 3 passed, 0 failed, 3 total
 
 The first test passes on every run: `actor-is-alive` is `true` until the join, however quickly the actor finishes.
 
-### Actors in Packages
+### The `actor` Capability
 
-Inside a package (a directory with a `zyl.pkg`, Spec §31.9), `spawn`, `chan`, `chan-send`, `chan-recv` and any use of the `actor/` modules require the `actor` capability. Declare it in the manifest with `(capabilities actor)`; without it, compilation stops with `E_PKG_CAPABILITY_VIOLATION`:
+`spawn`, `chan`, `chan-send`, `chan-recv` and any use of the `actor/` modules require the `actor` capability, which is why every program in this chapter starts with `(capabilities actor)`. A lone file declares it with that top-level form; a package writes the same line in its `zyl.pkg` (Spec §31.9). Without it, compilation stops with `E_PKG_CAPABILITY_VIOLATION`, at the first use:
 
 ```
-PANIC: error[E_PKG_CAPABILITY_VIOLATION]: package book/actdemo uses actor in go without declaring it in zyl.pkg
+error[E_PKG_CAPABILITY_VIOLATION]: `spawn` needs the actor capability, and this file declares none
+  --> go.zyl:4:10
+   |
+ 4 |   (let a (spawn (fn () (print "hi")))
+   |          ^
+   = note: a program names what it may do, so a reader sees it at the top
+   = help: add `(capabilities actor)` at the top of the file
 ```
 
-A single file compiled directly is not capability-checked.
+An absent declaration means no capabilities at all, so a reader learns from the first lines of a file whether it can start threads, touch files or call C.
 
 ---
 

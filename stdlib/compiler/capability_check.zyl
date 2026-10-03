@@ -30,13 +30,15 @@
 ; Only the providers are not policed: the implicit standard library (§25)
 ; has no manifest — it is what provides these capabilities, and policing
 ; the provider would ban the allocator — and the runtime module is
-; compiled the same way. An `ffi-call` of a `zyl_*` runtime entry is the
-; language's own, called directly with no worker and no timeout, so it is
-; not foreign and needs no `ffi` grant; the raw entries a program may not
-; reach are E_FFI_RESTRICTED (arity_check.zyl).
+; compiled the same way. An `ffi-call` of a runtime entry the signature
+; table declares is the language's own, called directly with no worker
+; and no timeout, so it is not foreign and needs no `ffi` grant; the raw
+; entries a program may not reach are E_FFI_RESTRICTED
+; (arity_check.zyl).
 
 (use compiler/ast)
 (use compiler/expr_inner)
+(use compiler/ffi_sigs)
 (use compiler/package)
 (use compiler/qualify)
 (use compiler/error_report)
@@ -93,12 +95,17 @@
 (defn cc-ffi-symbol-capability (sym)
   (if (cc-runtime-symbol-p sym) "" "ffi"))
 
-; `zyl_*` is a runtime entry and `%` a locked primitive: the language's
-; own, not a foreign call (the latter is E_FFI_RESTRICTED outside the runtime).
+; `%` is a locked primitive and `zyl_*` is a runtime entry only when the
+; signature table declares it (ffi_sigs.zyl). The prefix alone decides
+; nothing: a program, or a package's native object, may export anything,
+; `zyl_my_helper` included, and such a call is foreign code reaching the
+; program without an `ffi` grant -- exactly what this pass exists to
+; refuse. A name the table does not declare is not the language's own.
 (defn cc-runtime-symbol-p (s)
   (if (< (pk-len s) 1) false
   (if (= (pk-byte-at s 0) 37) true
-  (if (< (pk-len s) 4) false (str-eq (pk-sub s 0 4) "zyl_")))))
+  (if (< (pk-len s) 4) false
+    (if (= (pk-sub s 0 4) "zyl_") (> (str-length (ffi-sig s)) 0) false)))))
 
 (defn cc-ffi-arg-symbol (args)
   (match args
@@ -458,9 +465,9 @@
 
 (defn cc-check-growth (before after)
   (if (> (list-length after) (list-length before))
-    (ffi-call "zyl_panic"
-      (str-concat "E_PKG_CAPABILITY_GROWTH: capability: capability closure grew under --locked: "
-        (cc-caps-text after)) 1000)
+    (err-nowhere "E_PKG_CAPABILITY_GROWTH"
+      (str-concat "capability: capability closure grew under --locked: "
+        (cc-caps-text after)))
     1))
 
 (defn cc-caps-text (caps)

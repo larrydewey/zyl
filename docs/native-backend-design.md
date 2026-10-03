@@ -5,7 +5,7 @@ benchmark matrix below: Zyl gets a real optimizing native backend of its
 own (no C or LLVM backend), and Vec updates in place when the compiler
 proves the old value unique. Stages 1 and 2 and in-place reuse have
 landed, with parts of stages 3–5; "Where it stands" below records exactly
-what (as of 2026-09-28).
+what (as of 2026-09-30).
 
 ## Starting point
 
@@ -253,4 +253,4 @@ after stage 2, and then applied to the other persistent collections.
 `bench/` holds each benchmark in Zyl, C, C++, Rust and Go, and
 `bench/matrix.py` runs them (best of 3, peak RSS, output compared across
 languages). The table under "Where it stands" is its output on
-2026-09-28; `bench/build.sh` builds the binaries first.
+2026-09-30; `bench/build.sh` builds the binaries first.

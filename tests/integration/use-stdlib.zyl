@@ -7,8 +7,14 @@
 (test "multi-module-vec"
   (assert-equal (vec-len (vec-new-cap 5)) 0))
 
+; allocator/allocator is implicitly visible, so a program imports
+; nothing to reach it. What is worth proving here is that a typed
+; collection works across module boundaries -- and that its storage
+; lives in a region rather than in memory nothing tracks.
 (test "multi-module-alloc"
-  (let p (alloc-malloc 64)
-    (begin (alloc-free p) (assert-true true))))
+  (let b (bytebuf Heap 64)
+    (begin
+      (store-u8 :le b 0 65)
+      (assert-equal (load-u8 :le b 0) 65))))
 
 (run-tests)

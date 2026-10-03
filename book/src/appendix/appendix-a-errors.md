@@ -3,14 +3,16 @@
 Every code the compiler, runtime and REPL can report. The catalog of
 record is `stdlib/compiler/error_codes.zyl`: one entry per code, giving
 its name, the phase that owns it, a severity (1 error, 2 warning) and a
-default message. This appendix mirrors that catalog, grouped by phase,
-and cross-checks it against spec §28 and against the code that
+default message. This appendix mirrors that catalog, grouped by the
+phase that owns each code (with a few filed under the check that raises
+them), and cross-checks it against spec §28 and against the code that
 actually raises each error.
 
-Not every catalogued code is raised by today's compiler, and a few codes
-are raised without being catalogued. Both cases are marked in the
-tables below and collected in §A.17, so you can tell a code you will see
-from one that exists only on paper.
+The catalog holds exactly the codes something raises, and a script test
+(`verify/error-codes.sh`) fails on drift in either direction, so every
+code below is one you can actually see (§A.17). `zyl explain CODE` prints
+the entry for one code, with a wrong program and its fix for the most
+common ones.
 
 A diagnostic's code also reaches your editor: the language server puts
 it in the LSP `code` field, so you can filter or group on it without
@@ -21,12 +23,12 @@ matching message text (Chapter 35).
 A check that knows where the problem is prints a located diagnostic:
 
 ```text
-error[E_MALFORMED_PARAMETER]: `(struct-get ...)` is not a parameter
-  --> tests/regression/structs.zyl:16:20
+error[E_MALFORMED_PARAMETER]: `(foo ...)` is not a parameter - write a name, or (name Type)
+  --> prog.zyl:1:12
    |
-16 | (defn _s-get-x (p (struct-get p "x"))
-   |                   ^
-   = help: a missing `)` earlier on the line puts the body in the list
+ 1 | (defn f (p (foo p "x")) p)
+   |            ^
+   = help: a missing `)` earlier on the line puts the body inside the parameter list
 ```
 
 A diagnostic can point at a second place with a labelled span. The
@@ -56,14 +58,17 @@ column, with `...` where it is cut.
 Warnings use the same shape with `warning[CODE]`, and never stop a
 build.
 
-A check without a source position panics with the code at the front of
-the message, for example `PANIC: E_INVALID_CAPABILITY: ...`. Every check
-but one aborts on its first problem, so those report one error at a
+A check without a source position — a few package and command-line
+errors — panics with the code at the front of the message, for example
+`PANIC: E_PKG_NOT_IN_STORE: ...`. Every check but one aborts on its first
+problem, so those report one error at a
 time. The exception is the type pass: it reports every type error in
 the program (`E_TYPE_MISMATCH`, `E_INFINITE_TYPE`, `E_CANNOT_INFER`,
 `E_UNBOUND_VARIABLE`, `E_UNKNOWN_TYPE`, `E_TRAIT_NOT_FOUND`,
-`E_FFI_TYPE_NOT_PINNABLE`, and `E_FFI_RESTRICTED` for an `extern` of a
-runtime entry), then stops.
+`E_FFI_TYPE_NOT_PINNABLE`, `E_MALFORMED_PARAMETER` and
+`E_INDEX_OUT_OF_BOUNDS`), then stops. An `extern` for a `zyl_*`
+runtime entry is not one of them: that is `E_FFI_RESTRICTED`, raised
+while the form is parsed (§A.14).
 After more than one error the last line is a count, with no code:
 
 ```text
@@ -85,7 +90,7 @@ no setting makes the compiler accept an ill-typed program for real.
 included, as one JSON object per line on stderr instead:
 
 ```json
-{"severity":"error","code":"E_UNBOUND_VARIABLE","message":"`cont` is not defined","file":"prog.zyl","line":1,"column":45,"labels":[],"help":"did you mean `count`, `const` or `Cons`?"}
+{"severity":"error","code":"E_UNBOUND_VARIABLE","message":"`cont` is not defined","file":"prog.zyl","line":4,"column":10,"labels":[],"help":"did you mean `const`, `count` or `Cons`?"}
 ```
 
 `labels` holds `{"message", "file", "line", "column"}` for each
@@ -142,7 +147,7 @@ Macro expansion also reports `E_ARITY_MISMATCH` (wrong argument count, or too fe
 | `E_ARITY_MISMATCH` | A call with the wrong number of arguments, a malformed byte, load, store or atomic form, or `/`, `%` or a bitwise operator given one operand (`operator 3 needs two operands`) |
 | `E_DUPLICATE_DEFINITION` | A name defined more than once at top level |
 | `E_DUPLICATE_VARIANT` | A variant name repeated within one `deftype`, or a program type that reuses a prelude constructor name (`Some`, `None`, `Ok`, `Err`, `Cons`, `Nil`) — the standard library's unqualified uses of those names would otherwise resolve to it |
-| `E_DUPLICATE_PARAMETER` | A parameter name repeated in one signature (`_` and `_`-prefixed names may repeat). *Raised by `unused_check.zyl`; not in the catalog.* |
+| `E_DUPLICATE_PARAMETER` | A parameter name repeated in one signature (`_` and `_`-prefixed names may repeat). Raised by `unused_check.zyl` |
 | `E_PANIC_UNMARKED` | A standard-library `defn` (outside the compiler's own modules) that calls `panic` or `zyl_panic` directly without a trailing `!` in its name. The same condition in a program is the warning `W_PANIC_UNMARKED` (§A.16); `main`, the definition of `panic` and test bodies are exempt. Direct calls only |
 | `E_TYPE_MISMATCH` | Two types that must be equal are not: an `Int` condition where `Bool` is required, `Int` and `Float` mixed in arithmetic, a `String` passed where a field or parameter wants an `Int`, an `Int` given to `actor-wait` where an `Actor` is required, a value received from a channel used at a different type than was sent, a `Float` in an `extern` signature, a `file-open` mode that is not a literal, a list literal with elements of two types, a non-`Int` byte offset, a slice where a `ByteBuf` is required, an `Int` given to `file-write` as its data. Raised by `type_annotate.zyl` for every unification failure, with both types in the message |
 | `E_INFINITE_TYPE` | A type that would have to contain itself, found by the occurs check, such as a function applied to itself, `(x x)` |
@@ -171,6 +176,10 @@ an inferred placement is always one the value cannot escape (Chapter
 | `E_MATCH_ARM_COMPLEX` | An arm body combining a constant with several calls — bind the calls to `let`s first |
 | `E_CODEGEN_BUFFER_FULL` | The generated assembly exceeded the code-generation buffer |
 | `E_CODEGEN_BUFFER_LIMIT` | A bounded buffer append went past its limit. |
+| `E_VERIFY_FAILED` | The emitted assembly failed the frame-write verifier (`verify.zyl`): a write through `[rbp-M]` outside the stated frame or misaligned. A compiler bug; the compile aborts before any assembly is returned |
+| `E_ASM_UNSUPPORTED` | The compiler's own assembler (`asm_x86.zyl`) met an instruction it does not encode. A compiler bug |
+| `E_LINK_UNDEFINED`, `E_LINK_UNDEFINED_GOT` | The compiler's static linker (`elf_link.zyl`) found no definition for a symbol, directly or through the GOT |
+| `E_INTERNAL` | An internal invariant of the compiler failed — a compiler bug; please report it |
 
 ## A.8 Modules and Packages (phase 9)
 
@@ -198,12 +207,16 @@ an inferred placement is always one the value cannot escape (Chapter
 | `E_CHANNEL_CAPACITY` | `(chan n)` with `n` outside 1..16777216 |
 | `E_DEADLOCK` | Every live actor, `main` included, is blocked on a channel or a join. Ends the process after emitting the actors' buffered output |
 | `E_ACTOR_LIMIT` | A 1025th `spawn`: at most 1024 actors per program |
+| `E_USE_AFTER_FREE` | A `StringBuffer` used after `with-resource` (or an explicit destroy) released it |
+| `E_NO_MAIN`, `E_UNDEFINED_FUNCTION`, `E_NOT_CALLABLE` | The REPL interpreter (`zyl eval`, `zyl repl`): a program with no `main`, a call to a function the program does not define, a call of a value that is not a function |
+| `E_FFI_SYMBOL_NOT_FOUND` | The interpreter found no foreign symbol of that name through `dlsym` |
 | `E_INTERP_TAG` | The REPL interpreter's checking mode (`ZYL_INTERP_CHECK=1`) found an operand of the wrong tag, or a condition that is not 0 or 1. Such a program type-checked, so this is a type-checker bug; the interpreter regression tests run in this mode |
 
 ## A.10 Testing (phase 11)
 
-| Code | Cause |
-|---|---|
+The test harness raises no code of its own: a failing test prints
+`FAIL:` and the failure's message, and the program exits with status 1
+when any test failed (Chapter 11).
 
 ## A.11 Traits (phase 12)
 
@@ -219,8 +232,9 @@ an inferred placement is always one the value cannot escape (Chapter
 
 | Code | Cause |
 |---|---|
-| `E_MUT_CONFLICT` | `set!` on a name that is not a `let-mut` binding in scope, on a `let-mut` of an enclosing scope from inside a closure (captures are by value), or on anything other than a plain name — direct field mutation included |
-| `E_CAPABILITY_LEAK` | A spawned closure or a value sent with `chan-send` refers to a `let-mut` (`TMut`) variable of the enclosing scope |
+| `E_MUT_CONFLICT` | `set!` on a name that is not a `let-mut` binding in scope, on a `let-mut` of an enclosing scope from inside a closure (captures are by value), or on anything other than a plain name — direct field mutation included; also a byte buffer (or a slice of it) written through two names |
+| `E_MOVE_VALUE` | A resource used after its release: a file descriptor after `file-close`, a `StringBuffer` after its destroy, a value of a type with a `Drop` impl after `Drop.drop`. Follows copies of the resource. Raised by `linearity.zyl` |
+| `E_CAPABILITY_LEAK` | A spawned closure or a value sent with `chan-send` refers to a `let-mut` variable of the enclosing scope |
 | `E_INVALID_CAPABILITY` | A closure written inline as an `ffi-call` argument |
 | `E_CT_VIOLATION` | A `Secret` steered a branch, indexed memory, or went through a divider |
 | `E_SECRET_ESCAPE` | A `Secret` reached `spawn`, `chan-send` or `file-write` |
@@ -237,13 +251,15 @@ Chapter 25 package capabilities.
 
 | Code | Cause |
 |---|---|
-| `E_MATCH_NONEXHAUSTIVE` | A `match` missing a variant, an unknown variant in an arm, or a literal-pattern match with no trailing `_` arm. Raised during parsing and lowering. |
-| `E_NON_EXHAUSTIVE_MATCH` | A `match` that does not cover every variant of its ADT. *Raised by `exhaustiveness_check.zyl`; not in the catalog.* |
-| `E_UNREACHABLE_MATCH_ARM` | An arm that no value can reach: a catch-all that is not last, or a repeated constructor. *Not in the catalog.* |
+| `E_MATCH_NONEXHAUSTIVE` | A literal-pattern match with no trailing `_` arm. Raised during parsing and lowering. |
+| `E_NON_EXHAUSTIVE_MATCH` | A `match` that does not cover every variant of its ADT. Raised by `exhaustiveness_check.zyl` |
+| `E_UNREACHABLE_MATCH_ARM` | An arm that no value can reach: a catch-all that is not last, or a repeated constructor |
+| `E_MATCH_MIXED_PATTERNS` | Literal arms and constructor arms in one `match` |
 | `E_UNKNOWN_CONSTRUCTOR` | A capitalized `match` arm head that no type declares; the message suggests the nearest constructor. A binder is lowercase. |
 | `E_NESTED_PATTERN` | A constructor arm whose field is itself a pattern, such as `(Some (Pair a b) ...)`. Bind the field to a name and match it inside the arm body. |
-| `E_DIVISION_BY_ZERO` | Integer division or remainder by zero. *Raised only by the REPL's ICNF interpreter. Compiled code does not check: the process dies with SIGFPE (exit status 136), which `try` cannot catch.* |
-| `E_OVERFLOW` | Checked integer overflow. *Catalogued only.* |
+| `E_PARTIAL_OPERATION` | Compile time: an `Int` `/` or `%` whose divisor is not a nonzero integer literal. Write `div!`/`rem!` (stop on zero), `div?`/`rem?` (`None` on zero), or divide by a literal. Located at the divisor |
+| `E_DIVISION_BY_ZERO` | Run time: `div!` or `rem!` met a zero divisor. Catchable with `try`; in compiled code and the interpreter alike |
+| `E_OVERFLOW` | Run time: an `Int` `+`, `-` or `*` overflowed under the default `(numeric checked)` policy, a unary minus of the smallest `Int`, or `INT_MIN` divided by -1 (under every policy). Catchable with `try`; the help line names `(numeric wrapping)` and `(numeric saturating)` |
 | `E_CONTRACT_VIOLATION` | A `requires`, `ensures` or `invariant` clause failed at run time; the message names the clause and its function. Catchable with `try`. |
 
 Exhaustiveness is a compile-time error, not a warning. `_` is the
@@ -302,6 +318,7 @@ catalog additions.
 | `E_PKG_FEATURE_COLLISION` | A gated definition collides with a base definition |
 | `E_PKG_FEATURE_NESTED` | A `feature-gate` below top level |
 | `E_PKG_VERSION_EXISTS` | `zyl publish` of a version already in the index |
+| `E_PROV_ATTACH` | `zyl build --sign-with` could not attach the signed provenance trailer to the binary |
 
 ## A.16 Warnings
 
@@ -313,6 +330,7 @@ Warnings are written to stderr and never stop a build:
 | `W_UNUSED_VARIABLE` | A binding never read |
 | `W_SHADOWED_BINDING` | A binding that hides an outer one of the same name |
 | `W_PANIC_UNMARKED` | A `defn` whose body calls `panic` directly and whose name has no trailing `!` (§6.9). Help: rename it `name!`, or return an `Option` |
+| `W_RECOVER_SHADOW` | A `recover` arm that catches every error comes before another arm, which can then never run — move the specific arm first (Chapter 24) |
 | `E_ZEROIZE_MISSING` | See §A.12 — a warning despite the `E_` prefix |
 | `W_TYPE_STRICT` | A type error reported as a warning because `ZYL_STRICT_TYPES=report` is set (§A.1) |
 
@@ -329,10 +347,8 @@ language server publishes them as Warning diagnostics (Chapter 35).
 The catalog (`stdlib/compiler/error_codes.zyl`) holds exactly the codes
 something raises. `verify/error-codes.sh`, run with the repository's
 script tests, fails when a catalogued code is raised nowhere or a raised
-code is missing from the catalog. One exception is allowed while it is
-being implemented: `E_OVERFLOW` is catalogued and not yet raised.
-`E_DIVISION_BY_ZERO` is raised only by the REPL interpreter; a compiled
-program traps instead.
+code is missing from the catalog. Thirty-one codes that nothing raised
+were removed from the catalog and from spec §28 on 2026-10-02.
 
 A failed `assert` and a `(panic msg)` carry no code: they print `PANIC:`
 and the message, `assertion failed` for an `assert` without one.
@@ -347,7 +363,6 @@ two spellings of one idea, raised by different checks.
 |---|---|
 | 0 | Success |
 | 1 | Compile error, or a runtime panic (`zyl_panic` calls `exit(1)`) |
-| 136 | Floating-point exception (SIGFPE) — integer division or remainder by zero in compiled code |
 | 139 | Segfault (SIGSEGV) — a compiler bug; please report it |
 | 134 | Abort (SIGABRT) — an internal error |
 

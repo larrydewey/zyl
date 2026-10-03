@@ -150,6 +150,10 @@ Not normative.
 - An inline `(:derive [Trait ...])` after the fields is accepted by both
   `defstruct` and `defstruct+` and means the same as the standalone
   `(derive Name Trait...)` form (see `spec/05-types-and-inference.md`).
+- A generic ADT (§8.4) is **not** monomorphized: every instance has one
+  representation, so a constructor and a `match` on it are compiled once.
+  Only functions are specialized per type
+  (`spec/05-types-and-inference.md`, §6.5).
 - `make-Name` lowers to a variant construction. `(make-struct Name args...)`
   is parsed, but the type checker has no rule for it
   (`E_CANNOT_INFER`, "no type for form"), so only `make-Name` compiles.
@@ -199,7 +203,9 @@ panics with `unwrap on None`; the library functions `result-unwrap` and
 - **Range patterns:** `((range lo hi) body)`, inclusive at both ends.
 - **Guards:** `(pattern (when cond) body)`, on literal matches only. The
   guard cannot refer to anything bound by the pattern (literal patterns
-  bind nothing), and a guard on the final `_` arm is ignored.
+  bind nothing), and a guard on the final `_` arm is not ignored: a
+  guarded arm is not a catch-all, so the match is
+  `E_MATCH_NONEXHAUSTIVE`.
 - **Exhaustiveness (§8.3):** `exhaustiveness_check.zyl` rejects a
   constructor match that misses a variant with `E_NON_EXHAUSTIVE_MATCH`,
   a catch-all that is not last, or a duplicated arm, with

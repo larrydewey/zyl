@@ -65,7 +65,11 @@ its own parentheses and optionally with trait bounds:
 | `((T : Ord) a b)` | `E_MALFORMED_PARAMETER`: a parameter's type is written `(name Type)`, without a colon. Writing `(a Ord)` instead is also `E_MALFORMED_PARAMETER`, because `Ord` is a trait, not a type. |
 
 ```
-PANIC: error[E_MALFORMED_PARAMETER]: `(T ...)` is not a parameter - write a name, or (name Type)
+error[E_MALFORMED_PARAMETER]: `(T ...)` is not a parameter - write a name, or (name Type)
+  --> identity.zyl:1:17
+   |
+ 1 | (defn identity ((T) x) x)
+   |                 ^
 ```
 
 The specification's rules for type parameters — scoped to one function,
@@ -266,9 +270,12 @@ compiled once per concrete receiver type (§7.6):
 The prelude module `core/show` declares the derivable traits `Show`,
 `Debug`, `Eq`, `Ord`, `Hash` and `Clone`, with impls for `Int`, `Float`,
 `Bool` and `String`, plus the `Secret` trait (Chapter 33). `io/io`
-declares `OutputStream`, with impls for `Stdout` and `StringBuffer`:
+declares `OutputStream`, with impls for `Stdout` and `StringBuffer`.
+Using `io/io` needs the `io` capability:
 
 ```lisp
+(capabilities io)
+
 (use io/io)
 
 (defn main ()
@@ -299,7 +306,11 @@ C3. No conflicting impls.
   the trait nor `Int` is yours.
 
   ```
-  PANIC: E_PKG_ORPHAN_IMPL: trait: impl of Describe for Int where neither the trait nor the type is local to local/main
+  error[E_PKG_ORPHAN_IMPL]: trait: impl of Describe for Int where neither the trait nor the type is local to local/main
+    --> describe.zyl:1:1
+     |
+   1 | (impl Describe Int (defn describe (self) "int"))
+   | ^
   ```
 
 - **C3** cannot arise except as a C1 duplicate: an `impl` names a single

@@ -463,16 +463,49 @@ with an immediate right operand when it fits in 32 bits:
     sub rsi, 1
 ```
 
-Shifts, comparisons and division keep fixed sequences through `rax`
-and `rcx`, shared with the stack machine:
+Under the default `(numeric checked)` policy every `add`, `sub` and
+`imul` is followed by a `jo` to a runtime trap stub, which raises
+`E_OVERFLOW`; the branch is never taken on the normal path. A checked
+`(+ a b)`:
 
 ```asm
-    add rax, rcx
-    sub rax, rcx
-    imul rax, rcx
+    mov rax, rdi
+    add rax, rsi
+    jo zyl_rt_trap_ovf_0
+```
+
+Under `(numeric wrapping)`, and for the explicit `wrapping+ - *`
+operators, the `jo` is omitted and the flag-less forms become available:
+`lea` for an add, `shl` for a multiply by a power of two. A saturating
+operation computes the clamp on overflow instead of trapping. None of the
+checked or saturating forms may be reordered or reassociated.
+
+Shifts, comparisons and division keep fixed sequences through `rax`
+and `rcx`, shared with the stack machine. Division by a variable is
+reached only through `div!`, `rem!`, `div?` and `rem?` (a plain `/`
+needs a literal divisor), and it is guarded so that `idiv` can never
+fault — a zero divisor goes to the `E_DIVISION_BY_ZERO` stub, and a -1
+divisor is a `neg` that traps on `INT_MIN`. `(div! a b)`:
+
+```asm
+    mov rax, rdi
+    mov rcx, rsi
+    test rcx, rcx
+    jz zyl_rt_trap_div0_3
+    cmp rcx, -1
+    jne .L266
+    neg rax
+    jo zyl_rt_trap_ovf_3
+    jmp .L267
+.L266:
     cqo
     idiv rcx              ; quotient in rax; remainder via mov rax, rdx
+.L267:
 ```
+
+`div?` and `rem?` are rewritten before lowering into a test of the
+divisor around `div!`/`rem!` (Chapter 28), so they reach code generation
+as an `if` and the same guarded sequence.
 
 ### Division by a constant
 
@@ -497,8 +530,9 @@ the most negative and most positive integers. `(% n 10)`:
     sub rax, rdx          ; rax = n % 10
 ```
 
-A variable divisor, or the constants 0 and -1, keep `idiv`. Division by
-zero is not checked; `idiv` raises `SIGFPE`.
+A literal divisor of 0 is a compile error (`E_PARTIAL_OPERATION`), and
+-1 is the guarded `neg`; only a variable divisor reaches `idiv`, always
+behind the guard above, so no Zyl division raises `SIGFPE`.
 
 ### Comparison
 
@@ -906,7 +940,8 @@ is reserved with `mmap` — 64 GiB, falling back to 16, 4 and 1 GiB —
 with a guard page at the bottom, and returns its result as the
 process's exit code. `main` returns an `Int`, usually a final `0`;
 a `main` that ends in `print`, a `Unit`, is `E_TYPE_MISMATCH`. A program built from top-level `test`
-forms exits 0 even when a test fails; read the summary line.
+forms runs `zyl_run_tests`, whose result is the exit status: 1 when any
+test failed, so the summary line and the status agree.
 
 ## 29.10 FFI Call Sequence
 

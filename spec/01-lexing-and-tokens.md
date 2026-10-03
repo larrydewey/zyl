@@ -41,10 +41,10 @@ such as `#`, `@` or `$`, is `E_INVALID_CHAR`.
 The following identifiers are reserved keywords and cannot be used as user identifiers:
 
 ```
-def, defn, defun, let, let-mut, if, try, catch, spawn, send,
+def, defn, defun, let, let*, let-mut, if, try, catch, spawn, chan-send,
 ffi-call, ffi-pin, ffi-unpin, assert, trait, impl, fn, lambda,
 while, for, cond, begin, pub, use, export, requires, ensures, invariant,
-recover, checkpoint, contracts, defmacro, alias, defstruct, defstruct+,
+recover, checkpoint, contracts, numeric, defmacro, alias, defstruct, defstruct+,
 with-resource, derive, unwrap, error, Ok, Err, match, struct-get,
 make-, test-suite, test, assert-equal, assert-fail, assert-true,
 assert-false, test-property, setup, teardown, run-tests, test-compile
@@ -82,16 +82,26 @@ divergence.
 
 `TkIdent`, `TkInt`, `TkFloat`, `TkString`, `TkBool`, `TkSymbol`,
 `TkKeyword`, `TkLParen`, `TkRParen`, `TkLBrace`, `TkRBrace`, `TkLBracket`,
-`TkRBracket`, `TkColon`, `TkQuote`, `TkQuasi`, `TkUnquote`, `TkSplice`
-and `TkEof`. Every token carries its byte offset
-in the source, which is how diagnostics report `file:line:col`.
+`TkRBracket`, `TkColon`, `TkQuote`, `TkQuasi`, `TkUnquote`, `TkSplice`,
+`TkIntOverflow`, `TkNumMalformed` and `TkEof`. Every token carries its
+byte offset
+in the source, which is how diagnostics report `file:line:col`. The last
+two are literals the lexer could not read as numbers: they carry the text
+and the offset, are reported before parsing starts, and nothing consumes
+them.
 
 ### Literals
 
 - **Integers:** decimal, plus `0x`, `0o` and `0b` radix prefixes (either
   case). A `-` immediately followed by a digit begins a negative literal.
+  One outside the 64-bit signed range is `E_INTEGER_OVERFLOW`.
 - **Floats:** a digit run containing `.` or an `e`/`E` exponent (radix
-  literals excepted).
+  literals excepted). A literal with two `.` is a `TkNumMalformed` token,
+  not a Float: `E_INVALID_CHAR`, located at the start of the literal and
+  quoting it through the offending dot (`numeric literal 1.2. has a
+  second `.`; a Float literal has one decimal point`). Read as a Float it
+  used to yield `1.2`, and `print` said `1.200000` as if the source had
+  said so.
 - **Strings:** `"..."` with the escapes `\n \t \r \0 \" \\ \e` and `\xNN`.
 - **Booleans:** exactly `true` and `false`.
 - **Bytes:** there is no byte literal syntax. A byte is written with the
@@ -156,3 +166,6 @@ form introduces (a function, macro, parameter, `let`/`let-mut`/`def`
 binding, type, variant, struct field, trait, alias or module) is a
 located `E_RESERVED_KEYWORD`. So is `make-S` for a struct `S` declared in
 the same file. `Ok` and `Err` as variant names stay `E_DUPLICATE_VARIANT`.
+The compiler's list is §1.3 plus three names the canonical text does not
+list — `panic`, `tuple` and `tuple-get` — all three forms a program
+could otherwise define a function of.

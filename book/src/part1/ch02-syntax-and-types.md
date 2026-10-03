@@ -49,7 +49,7 @@ that does not fit in a literal, use arithmetic or the bit operators:
 
 ```lisp
 (bit-not 0)             ; -1, the way to write a negative bit pattern
-(bit-or 9223372036854775807 1)   ; wraps, as bit operations do
+(shl 1 63)              ; the minimum Int: shifts never trap
 ```
 
 ### Floats (`Float`)
@@ -100,21 +100,6 @@ per type it is called with, so it works for each:
   (print (half 5.0))     ; 2.500000
   0)
 ```
-
-An out-of-range literal is **not** an error: it is the IEEE value.
-
-```lisp
-1e400                  ; inf   (overflow)
-1e-400                 ; 0.0   (underflow)
-1.7976931348623157e308 ; the largest Float, exactly
-(/ 1.0 0.0)            ; inf
-```
-
-This is the opposite of an out-of-range `Int`, which is
-`E_INTEGER_OVERFLOW`. There, the alternative was a silent `0` or a silent
-wrap — plausible-looking wrong numbers. `inf` announces itself: it prints as
-`inf`, propagates through arithmetic, and compares false against anything
-finite, so a diagnostic would add noise without adding safety.
 
 ### Booleans (`Bool`)
 
@@ -203,7 +188,7 @@ A list is zero or more expressions enclosed in parentheses:
 
 ```lisp
 (+ 1 2 3)                   ; function call
-(defn square (x) (* x x))   ; function definition
+(defn twice (x) (* x x))    ; function definition
 (let x 10 x)                ; local binding
 ```
 
@@ -342,10 +327,11 @@ nested — and each one can refer to the ones outside it:
     (+ x y)))               ; 25
 ```
 
-There is no parallel or multi-binding form: `(let (x 10 y 20) ...)`
-binds `x` and stops, and the reference to `y` is then an
-`E_UNBOUND_VARIABLE` error at compile time rather than a silent
-surprise.
+`(let (x 10 y 20) ...)` is not a multi-binding form: it binds `x` and
+stops, and the reference to `y` is then an `E_UNBOUND_VARIABLE` error at
+compile time rather than a silent surprise. For several bindings in a
+row, `let*` is sugar for exactly this nesting:
+`(let* ((x 10) (y (+ x 5))) (+ x y))` (Chapter 3).
 
 ## 2.6 Function Calls and Core Operations
 
@@ -366,6 +352,37 @@ error.
 
 **One-argument forms**: `-` negates, so `(- 5)` is -5; `(+ x)` and
 `(* x)` are just `x`. `(/ x)` and `(% x)` are `E_ARITY_MISMATCH`.
+
+**Int arithmetic is checked.** An `Int` `+`, `-` or `*` whose result does
+not fit in 64 bits stops the program with `E_OVERFLOW`; it never wraps
+silently:
+
+```text
+PANIC: error[E_OVERFLOW]: integer overflow in `*`
+  = help: write `(numeric wrapping)` at the top of the file if wrap-around is intended, or `(numeric saturating)` to clamp
+```
+
+A file that wants another behaviour says so once, at top level:
+`(numeric wrapping)` makes `+ - *` wrap modulo 2^64 and
+`(numeric saturating)` clamps them to the largest or smallest `Int`. For a
+single operation under any policy there are `wrapping+`, `wrapping-`,
+`wrapping*`, `saturating+`, `saturating-` and `saturating*`.
+
+**Division must say what happens at zero.** `/` and `%` on `Int` compile
+only when the divisor is a nonzero literal, as in `(/ n 2)`. Any other
+divisor is the compile error `E_PARTIAL_OPERATION`, and you choose:
+
+```lisp
+(div! a b)    ; the quotient; a zero b stops the program (E_DIVISION_BY_ZERO)
+(rem! a b)    ; the remainder, likewise
+(div? a b)    ; (Some quotient), or None when b is 0
+(rem? a b)    ; (Some remainder), or None when b is 0
+```
+
+Quotients truncate toward zero and a remainder takes the dividend's
+sign. `(div! INT_MIN -1)`, the one quotient that does not fit, is
+`E_OVERFLOW`. Float division is unaffected: `(/ 1.0 0.0)` is `inf`.
+Chapter 3, §3.12 has the whole numeric model.
 
 ### Comparison
 
@@ -417,9 +434,12 @@ only as many arguments as they need.
 
 ### Predicates
 
-There are no runtime type predicates such as `int?` — types are known
-at compile time. The core library does provide a few numeric
-predicates: `is-zero`, `is-even` and `is-odd`.
+`int?`, `float?`, `bool?`, `string?` and `struct?` ask about an
+operand's **static type**, and are decided while type checking — a value
+is an untyped word at runtime, so there is nothing to ask then.
+`(int? 3)` is true, and so is `(bool? false)`: it is a question about the
+type, not the value. The core library also provides the numeric
+predicates `is-zero`, `is-even` and `is-odd`.
 
 ## 2.7 Core Data Structures
 
@@ -492,26 +512,35 @@ anywhere else they are `E_MALFORMED_FORM`.
 
 ### Vectors and Maps
 
-`Vec` and `Map` are library types, imported with `use`. A `Vec` holds
-elements of any one type; a `Map` has `Int` keys and `Int` values in
-the current library.
+`Vec`, `Map` and `IntMap` are library types, imported with `use`. A
+`Vec` holds elements of any one type; a `Map` (`core/map`) maps `String`
+keys to values of one type; an `IntMap` (`collections/intmap`) maps
+`Int` keys to `Int` values.
 
 ```lisp
 (use collections/vec)
 (use collections/intmap)
+(use core/map)
 
 (defn main ()
-  (let v (vec-push (vec-push (vec-create-default 10) 42) 7)
+  (let v (vec-push (vec-push (vec-new) 42) 7)
     (begin
       (print (vec-len v))           ; 2
-      (print (vec-get! v 0))))       ; 42
+      (print (vec-get! v 0))))      ; 42
+  (let w (vec 1 2 3)                ; a Vec literal
+    (print (len w)))                ; 3
   (let m (intmap-put (intmap-new 10) 1 100)
-    (print (intmap-get m 1 0)))        ; 100
+    (print (intmap-get m 1 0)))     ; 100
+  (let g (map "a" 1 "b" 2)          ; a Map literal: key, value, ...
+    (print (map-get g "b")))        ; Some(2)
   0)
 ```
 
-There is no literal syntax for either (`[...]` is a `List`). Tuples have
-their own constructor and reader, `(tuple 1 "two")` with `tuple-get`; see
+`(vec a b c)` and `(map k v ...)` are literals for the two library types,
+so they need the module's `use` like any other call into it; `[...]` is
+a `List`. A collection needs no allocator argument: its storage comes
+from the region of the call that builds it (Chapter 5). Tuples have their
+own constructor and reader, `(tuple 1 "two")` with `tuple-get`; see
 Chapter 4, §4.5. A struct is the choice when you want *named* fields.
 
 ## 2.8 The `begin` Form — Sequencing
@@ -543,8 +572,10 @@ A special form written in a shape its parser does not accept — a
 
 They are reserved (spec §1.3.1): `(let begin 5 begin)`, a parameter
 named `test` or a function named `setup` is `E_RESERVED_KEYWORD`,
-located at the name. Some other names (such as `when`) are core library
-functions; shadowing those is allowed but hard to read.
+located at the name. `when`, `unless` and `let*` are core forms as well.
+A local binding may shadow a core library function such as `max`, which
+is allowed but hard to read; a `defn` of the same name is
+`E_DUPLICATE_DEFINITION`.
 
 ## 2.10 Style Conventions
 
@@ -587,14 +618,16 @@ true / false    ; Bool
 (lambda (params) body)          ; The same form, other name
 
 ;; Data structures
-(vec-create-default cap)        ; Vec (use collections/vec)
-(intmap-new cap)        ; Map (use collections/intmap)
+(vec-new) (vec 1 2 3)           ; Vec (use collections/vec)
+(map "k" v)                     ; Map, String keys (use core/map)
+(intmap-new cap)                ; IntMap, Int keys (use collections/intmap)
 (Ok val) / (Err err)            ; Result
 (Some val) / None               ; Option
 (Cons head tail) / Nil          ; List
 
 ;; Operations
-(+ - * / %)                     ; Arithmetic: all Int or all Float
+(+ - * / %)                     ; Arithmetic: all Int or all Float; Int + - * checked
+(div! a b) (div? a b)           ; Int division by a non-literal (also rem! rem?)
 (== != < > <= >=)               ; Comparison, result Bool
 (and or not)                    ; Boolean
 (set! var value)                ; Rebinding (let-mut only)
@@ -621,8 +654,9 @@ Every value is one 64-bit machine word.
 | `Bool` | 1 or 0 |
 | `String` | Pointer to NUL-terminated UTF-8 bytes |
 | Struct / ADT value | Pointer to a block: a hidden header, the variant tag, then one 8-byte word per field |
-| `Vec` | A one-variant ADT: its storage (a bounds-checked runtime `Array`, which holds the capacity), length and arena |
-| `Map` | A struct: parallel key and value arrays, length, capacity, arena |
+| `Vec` | A one-variant ADT: its storage (a bounds-checked runtime `Array`, which holds the capacity) and length |
+| `Map` | An association list of entries, in insertion order |
+| `IntMap` | A struct: parallel key and value arrays, length and capacity |
 
 Because a field is always one word, a struct or variant block's layout
 is fully determined by its field count. A struct is a single-variant
@@ -643,7 +677,7 @@ ADT whose variant name is the struct's name.
 | Struct or ADT value that provably never escapes | The function's stack frame, or the call's own region, released when it returns |
 | Struct or ADT value returned to a caller | The region the caller chose for the result |
 | Any other struct or ADT value | The process heap, where it lives until the program exits |
-| `Vec` / `Map` buffers | An arena, passed to `vec-create` / `intmap-new-with`; the `-default` constructors create a private one |
+| `Vec` / `IntMap` / `Set` storage | The region of the call that allocates it, like any other value: reclaimed with that frame if it does not escape |
 
 Details in [Chapter 5](ch05-ownership-regions-capabilities.md).
 

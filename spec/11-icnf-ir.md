@@ -56,7 +56,11 @@ A program is a list of `IFn` nodes. The `Icnf` ADT in `icnf.zyl`:
 
 Binary opcodes: 0 add, 1 sub, 2 mul, 3 div, 4 rem, 5 lt, 6 gt, 7 le, 8 ge,
 9 eq, 10 ne, 11 bit-and, 12 bit-or, 13 bit-xor, 14 shl, 15 shr (logical),
-16 ashr.
+16 ashr, 17 bit-not, 18-20 wrapping add/sub/mul, 21-23 saturating
+add/sub/mul. `bit-not` is named as 17 by `ic-op-of` but lowers to
+`x XOR -1`, so 13 is what reaches the emitter; 0-2 are the checked
+operators, and the package's `(numeric P)` policy picks which family
+`ic-binop` emits (spec §20).
 
 ### Differences from §18
 

@@ -113,6 +113,8 @@ Besides the prelude traits (20.11), the standard library has
 `OutputStream` in `io/io`, with impls for `Stdout` and `StringBuffer`:
 
 ```lisp
+(capabilities io)
+
 (use io/io)
 
 (defn main ()
@@ -252,10 +254,11 @@ alternatives apply:
 
 §5.6 and §5.7:
 
+Three spellings of the same request, shown one at a time:
+
 ```lisp
 (defstruct+ Point (x) (y) (:derive [Eq Ord]))   ; inline: only Eq, Ord
 (defstruct+ Point (x) (y))                      ; inline derive omitted → auto-derives all 6 traits
-
 (derive Point Show)                             ; standalone; or (derive Point [Show Eq])
 ```
 

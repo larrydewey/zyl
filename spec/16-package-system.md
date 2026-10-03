@@ -34,6 +34,7 @@ Deliberate deviations (recorded in `PROGRESS.md`):
 - **Module layout:** module path `M` of package `P` is the file
   `<root of P>/M.zyl`; a package's root module, which `(use acme/json)`
   names, is the module spelled by the name's last segment.
+
 Known gaps:
 
 - The default index URL (`https://github.com/zyl-lang/index`) is a
@@ -137,6 +138,7 @@ S-expression, read by the language's own lexer and parser. No TOML.
   (zyl "5.0") (edition "2026")
   (description "...") (license "...") (repository "...")
   (capabilities io)
+  (numeric checked)
   (deps
     (dep "core/bytes" "2.1.0")
     (dep "acme/utf8"  "1.0.0" (features utf16))
@@ -144,14 +146,19 @@ S-expression, read by the language's own lexer and parser. No TOML.
     (dep "acme/git"   "1.0.0" (git "https://..." (rev "a1b2c3d"))))
   (dev-deps (dep "acme/quickcheck" "2.0.0"))
   (features (feature utf16 (deps (dep "acme/utf16" "1.0.0"))) (feature simd))
-  (native (sources "c/fastpath.c") (cflags "-O2") (link-libs "m")))
+  (overrides (override "acme/json" "1.9.2"))
+  (deny-capabilities ffi)
+  (native (sources "c/fastpath.c") (cflags "-O2") (link-libs "m"))
+  (exclude "*.tmp"))
 ```
 
 | Rule | Detail |
 |------|--------|
 | Required fields | `name`, `version`, `zyl`, `edition` |
+| Also read | `description`, `license`, `repository`, `capabilities`, `deny-capabilities`, `numeric`, `deps`, `dev-deps`, `features`, `overrides`, `native`, `exclude` |
+| `numeric` | One of `checked`, `wrapping`, `saturating`; absent means checked (§20) |
 | Requirements | Bare versions only; a range operator is `E_PKG_BAD_REQUIREMENT` |
-| Canonical order | As shown, with `deps` sorted by name |
+| Canonical order | The order `zyl new` and `zyl add` write: `name`, `version`, `zyl`, `edition`, the optional doc fields, `capabilities`, `numeric`, then `deps` sorted by name, then `dev-deps`. The other fields are read but not re-serialised, so keep them above `deps` yourself |
 | `dev-deps` | Never enter a dependent's graph |
 
 Range operators are rejected because under MVS a requirement *is* a minimum
@@ -267,8 +274,11 @@ never its consumers.
 | `capability-closure` | Union of every capability granted in the graph |
 | `graph-hash` | BLAKE3 over the canonical serialisation of the above |
 
-`zyl fetch` is the sole command permitted to access the network; `zyl build`
-reads the store and fails with `E_PKG_NOT_IN_STORE` rather than fetching.
+`zyl fetch` and `zyl update` are the only commands that resolve against
+the index and download archives (`cli-ctx-online`), and `zyl add` reads
+the index when it is given no version. `zyl build` and `zyl test` get an
+offline context — the store and the lock — and fail with
+`E_PKG_NOT_IN_STORE` rather than fetching.
 
 The canonical archive (`.tar.zst`) makes content hashes agree across
 producers:

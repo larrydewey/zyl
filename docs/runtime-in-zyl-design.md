@@ -1,8 +1,9 @@
 # The Runtime in Zyl: Design
 
 Status: done (2026-09-28). The runtime is Zyl, `runtime/rt/*.zyl`; the
-C runtime (`runtime/actor_runtime.c`, 5.5k lines, about 400 entry
-points) is deleted. Programs without foreign calls are static
+C runtime (`runtime/actor_runtime.c`, 5.5k lines) is deleted, and the
+runtime it left behind exports 385 entries (the top-level `zyl_*`
+definitions). Programs without foreign calls are static
 executables with no libc, assembled and linked by the compiler itself;
 foreign-calling programs link hosted over libc. No unsafe construct was
 added to the language. This document records the design.
@@ -17,15 +18,17 @@ added to the language. This document records the design.
 - The model is the one Resid used to retire its C runtime (Resid
   PROGRESS.md §0zg–§0zl). Raw primitives are compiler-only builtins
   that a runtime-module compile lowers directly.
-- The end state has no C at all. No C source is left in the repo, and
-  no libc sits under Zyl programs. The runtime talks to Linux through
-  `%syscall`, starts at its own `_start`, allocates with `mmap`, starts
-  threads with `clone` and blocks on `futex`. It also sets up
-  thread-local storage itself and does its own number formatting and
-  parsing. Binaries are static. Only a program that `ffi-call`s a
-  foreign C library links the system's libc and dynamic loader, because
-  that library needs them. (During the port, the remaining C and libc
-  were used as a bridge.)
+- The end state has no C in it. No C source is left in the runtime or the
+  compiler (the tree's remaining `.c` files are the `bench/` microbenchmarks
+  a Zyl run is compared against, and one native-dependency fixture under
+  `tests/packages-build/`), and no libc sits under Zyl programs. The
+  runtime talks to Linux through `%syscall`, starts at its own `_start`,
+  allocates with `mmap`, starts threads with `clone` and blocks on
+  `futex`. It also sets up thread-local storage itself and does its own
+  number formatting and parsing. Binaries are static. Only a program that
+  `ffi-call`s a foreign C library links the system's libc and dynamic
+  loader, because that library needs them. (During the port, the
+  remaining C and libc were used as a bridge.)
 
 ## The lock
 
@@ -122,7 +125,10 @@ AES-GCM) need vector code to match glibc and the C versions.
 - A top-level `defn` named `zyl_*` is emitted under that exact label with
   `.globl`, using the ordinary Zyl/SysV ABI.
   Everything else keeps its mangled local label.
-- Integer `+ - *` wrap, as they already do in generated code.
+- Integer `+ - *` are checked, like every package's by default —
+  `runtime/rt/rt.zyl` says `(numeric checked)` explicitly — so an overflow
+  traps with `E_OVERFLOW` rather than wrapping. The seed is full of
+  `jo zyl_rt_trap_ovf` sites.
 
 ## Build
 
@@ -199,16 +205,18 @@ runtime prints the call chain to stderr, innermost first, one function
 per line, 32 lines at most, names only:
 
 ```
-PANIC: E_INDEX_OUT_OF_BOUNDS: vec-get index outside the Vec
-  in parse-line
-  in parse-line
+PANIC: E_INDEX_OUT_OF_BOUNDS: vec-get! index 9 is outside a Vec of 0 elements
+  = help: use `(vec-get? v i)` and match its Option, or check the index against `vec-len` first
+  in vec-get!
   in parse-line
   in parse-file
   in main
 ```
 
-(`vec-get` is not listed there: it is small enough to be inlined into
-`parse-line`, so it has no frame of its own.)
+The `= help:` line is part of the panic's own text, so it comes before the
+frames; `vec-get!` is listed because it is a call, not an inlined body. A
+function that was inlined into its caller, or that tail-called its way
+out of its frame, does not appear at all.
 
 It is printed only on the path that ends the process (`pn-panic-text`):
 a panic caught by `try`/`catch` or by the test harness prints nothing,
@@ -265,16 +273,16 @@ freestanding link carry the same table. The table depends only on the
 functions and their order, so two compiles of one source stay
 byte-identical (the determinism gate checks this); its label is
 indented so that `verify.zyl`'s census does not count it as a function.
-It costs 8 bytes plus the name per function: in `zyl-self` it is 5478
-functions, 116,111 bytes (44 KB of pairs, 72 KB of names), 3.1% of the
-3.7 MB binary.
+It is 8 bytes plus the name per function: in `zyl-self` it is 5783
+functions, 123,040 bytes (45 KB of pairs, 75 KB of names), 3.1% of the
+3.8 MB binary.
 
 **Cost of the frames.** Giving every calling push-only function a frame
 pointer costs `push rbp; mov rbp, rsp; pop rbp` per call. Measured on
-`bench/` (best of 6): fib +3%, trees +2%, vec +2%, loop and list within
-noise. The first version framed those functions fully (`sub rsp` and
-reloads from slots), which cost fib 11% and loop 14%; the light frame is
-what made it affordable.
+`bench/` (best of 3, which is what `bench/matrix.py` reports): fib +3%,
+trees +2%, vec +2%, loop and list within noise. The first version framed
+those functions fully (`sub rsp` and reloads from slots), which cost fib
+11% and loop 14%; the light frame is what made it affordable.
 
 **Source lines** are not printed. The frame table planned for
 provenance (`PROGRESS.md`, open work) would not give them either: lines

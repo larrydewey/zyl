@@ -47,9 +47,12 @@ scheduling.
 - **Deadlock.** When every live actor is blocked, the runtime raises
   `E_DEADLOCK`. In a Kahn network the set of blocked processes does not
   depend on scheduling, so the error is deterministic too.
-- **Values.** Only TCap (immutable, shareable) values cross a channel (the
-  spec's Send-capable rule). A TAtomic may be passed only for commutative
-  writes (add/or/and), and may be read only after joining every writer.
+- **Values.** Only immutable (`let`) or atomic bindings cross a channel
+  (the spec's Send-capable rule). `mutability_check.zyl` enforces it
+  syntactically: a closure passed to `spawn`, or a value passed to
+  `chan-send`, that references a `let-mut` binding of the enclosing scope
+  is `E_CAPABILITY_LEAK`. There is no atomic type in the language, so a
+  copy bound with plain `let` is what crosses.
 - **Panics.** An actor's uncaught panic ends only that actor.
   `actor-wait` re-raises it, and at exit the first unjoined one in spawn
   order is reported with status 1. After an uncaught panic on main, the

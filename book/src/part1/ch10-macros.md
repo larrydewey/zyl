@@ -67,32 +67,33 @@ If you need the argument evaluated once, bind it with `let` inside the template 
 
 ### Macros vs Functions: Laziness
 
-Splicing is what makes a macro useful: the macro decides whether an argument is evaluated at all. `core/core` defines `when` and `unless` as ordinary **functions**, so both of their arguments are always evaluated:
+Splicing is what makes a macro useful: the macro decides whether an argument is evaluated at all. A function cannot: its arguments are evaluated before it is called, so a function version of `unless` runs its body whatever the condition says:
 
 ```lisp
-(defn main ()
-  (begin
-    (unless true (print "core unless is a function"))
-    (print "end")
-    0))
-```
-
-```
-core unless is a function
-end
-```
-
-(The body of the `core/core` functions is a statement: they are typed `Bool Unit -> Unit`.)
-
-A macro version skips the body when the condition says so. An `if` without an else branch is a statement, of type `Unit`, and so is the `print` it guards:
-
-```lisp
-(defmacro unless (c body)
+(defn unless-fn ((c Bool) body)
   (if (not c) body))
 
 (defn main ()
   (begin
-    (unless true (print "should not print"))
+    (unless-fn true (print "a function evaluates its arguments"))
+    (print "end")
+    0))
+```
+
+```
+a function evaluates its arguments
+end
+```
+
+A macro version skips the body when the condition says so. An `if` without an else branch is a statement, of type `Unit`, and so is the `print` it guards:
+
+```lisp
+(defmacro unless-m (c body)
+  (if (not c) body))
+
+(defn main ()
+  (begin
+    (unless-m true (print "should not print"))
     (print "end")
     0))
 ```
@@ -101,7 +102,7 @@ A macro version skips the body when the condition says so. An `if` without an el
 end
 ```
 
-A macro takes precedence over a function of the same name: once `unless` is defined as a macro, every call to `unless` in the program is expanded, including calls that would otherwise reach the `core/core` function.
+The language's own `when` and `unless` are core forms that short-circuit in exactly this way, so `(unless true (print "x"))` prints nothing. Because they are core forms, a `defmacro` named `when`, `unless` or `let*` is never called: the core form of that name wins (§10.8). Give your macro its own name.
 
 ### Wrapping an Expression
 
@@ -163,8 +164,18 @@ A splice changes how many expressions a form holds, so it is allowed only where 
 
 ```lisp
 (defmacro bad (c &rest body) (if c ,@body 0))
-;; (bad true 1 2) → error[E_MALFORMED_FORM]: `,@` splices only where any
-;;                  number of expressions may appear
+
+(defn main ()
+  (print (bad true 1 2)))
+```
+
+```
+error[E_MALFORMED_FORM]: `,@` splices only where any number of expressions may appear
+  --> macros.zyl:1:30
+   |
+ 1 | (defmacro bad (c &rest body) (if c ,@body 0))
+   |                              ^
+   = help: splice into a call's arguments, a begin or a print
 ```
 
 Used without `,@`, as in `count-args`, a rest parameter is the list of its arguments: `(count-args 5 6 7)` is `(list-length (list 5 6 7))`, so the arguments must have one type. That also lets a quasiquote in the template (Chapter 2) splice them, as `framed` does. To build a list in a template, use a quasiquote rather than `[...]`: a list literal is a chain of two-argument `Cons` calls, and splicing into one does not make a longer list.
@@ -198,8 +209,15 @@ It works the other way round too: a template cannot see the caller's local varia
 
 (defn main ()
   (let v 3 (print (getv))))
-;; error[E_UNBOUND_VARIABLE]: macro `getv` refers to `v`, which is not bound
-;; where the macro is defined; ...
+```
+
+```
+error[E_UNBOUND_VARIABLE]: macro `getv` refers to `v`, which is not bound where the macro is defined; the local variable of that name at this call site cannot be captured (macros are hygienic)
+  --> macros.zyl:1:19
+   |
+ 1 | (defmacro getv () v)
+   |                   ^
+   = help: pass the value to the macro as an argument
 ```
 
 Pass such values in as arguments. When a parameter is used where the template needs a name, such as a `let` binder or a `set!` target, the caller's identifier is used, so a macro can bind or assign a variable the caller names:
@@ -290,8 +308,15 @@ Because a template is never evaluated, a recursive macro can never stop, even wh
 (defmacro forever (x) (forever x))
 
 (defn main () (print (forever 1)))
-;; error[E_MACRO_NON_TERMINATION]: macro `forever` expands to a call of
-;; itself, so its expansion never ends
+```
+
+```
+error[E_MACRO_NON_TERMINATION]: macro `forever` expands to a call of itself, so its expansion never ends
+  --> macros.zyl:1:23
+   |
+ 1 | (defmacro forever (x) (forever x))
+   |                       ^
+   = help: a macro's template is not evaluated at expansion time; write the recursion as a function
 ```
 
 A macro call must pass exactly one argument per parameter, or at least one per parameter before `&rest` (`E_ARITY_MISMATCH`), and a macro name may be defined only once (`E_DUPLICATE_DEFINITION`, also raised for a function with the same name as a macro in the same file).
@@ -306,8 +331,9 @@ Several forms that other Lisps define as macros are built into the compiler inst
 | `or` | Short-circuit: stops at the first true operand |
 | `cond` | `(cond (test value) ... (else value))`, a chain of `if`s; a clause may hold several forms, run in order |
 | `begin` | Sequencing; the value is the last expression |
+| `when`, `unless` | `(when c body ...)` runs the body only if `c` holds, `unless` only if it does not; the body is not evaluated otherwise. `Unit` |
 
-`let*` is a core form — sugar for nested `let`, where each binding is in scope for the next. You cannot define your own: the core form of that name wins.
+`let*` is a core form — sugar for nested `let`, where each binding is in scope for the next. You cannot define your own `when`, `unless` or `let*`: the core form of that name wins.
 
 ```lisp
 (defn say ((s String) r) (begin (print s) r))

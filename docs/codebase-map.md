@@ -19,8 +19,8 @@ boot.sh                  Build + verify the self-hosting fixed point
                          (stage1 -> stage2 -> stage3), then build zyl-lsp;
                          --bootstrap-from-self reseeds without Rust
 install.sh               Install compiler, REPL and language server into
-                         ~/.zyl (or $ZYL_HOME); --with-vscode also installs
-                         the VS Code extension
+                         $ZYL_HOME (default ~/.zyl); --with-vscode also
+                         installs the VS Code extension
 uninstall.sh             Remove what install.sh installed
 run_regression_tests.sh  The test runner (--quick, --full, --filter, ...)
 
@@ -34,16 +34,19 @@ selfhost/
                          driver.zyl directly, and its (use ...) tree is
                          resolved from stdlib/ like any program's.
 
-stdlib/compiler/         The compiler itself (46 files, ~29,800 lines)
+stdlib/compiler/         The compiler itself (52 files, ~35,800 lines)
 stdlib/repl/             The REPL and its ICNF interpreter (8 files, ~4,200 lines)
-stdlib/lsp/              The language server (20 files, ~5,600 lines)
+stdlib/lsp/              The language server (20 files, ~5,700 lines, 9 of
+                         them services/)
 stdlib/math/             Cryptography and number libraries (28 files, ~7,700 lines)
 stdlib/core/             core (facade), list, option, result, map, show
                          (the derivable traits and their primitive impls),
                          resource (Drop), property (test-property samples)
-stdlib/collections/      collections (Assoc + list utilities), vec, map, set,
+stdlib/collections/      collections (Assoc<K, V>, an association list, plus
+                         higher-order List<T> utilities), vec, intmap, set,
                          slice (zero-copy Vec slices)
-stdlib/text/             view: StrView (zero-copy substrings) and Cursor
+stdlib/text/             view (StrView, a zero-copy substring, and Cursor);
+                         format (`zyl fmt`)
 stdlib/simd/             I64x2, I32x4, U8x16 lane vectors (portable SWAR)
 stdlib/allocator/        Raw memory arenas
 stdlib/actor/            actor-spawn, actor-wait, actor-is-alive (channels
@@ -55,13 +58,16 @@ stdlib/testing/          The test harness (`test`, `run-tests`, asserts)
 stdlib/mlib/             deep.zyl: a small deep-call fixture module
 
 runtime/rt/              The Zyl runtime every compiled binary links against
-                         (rt.zyl + 34 modules, ~5,600 lines; seed build/boot/rt.s)
+                         (rt.zyl + 35 modules, ~6,000 lines; seed build/boot/rt.s)
 tools/repl.zyl           Standalone REPL entry point (a thin `main`)
 editors/vscode/          VS Code extension (0.5.0)
 book/                    The book (src/ Markdown with SUMMARY.md, examples/)
 tests/                   smoke, regression, compile-fail, integration,
                          stress, packages, packages-fail, packages-build,
-                         scripts, lsp, manual, debug; plus unit_test.zyl
+                         scripts, lsp, manual, debug; plus the top-level
+                         unit_test.zyl and the cbor/ffi-arity/provenance/
+                         cose/explain/panic-unmarked/verify tests and
+                         fmt_test.sh that run in --quick
 website/                 The website and book (Astro Starlight; scripts/import_book.py
                          imports book/src; examples/ are the landing page's programs)
 bench/                   The benchmark matrix against C, C++, Rust and Go
@@ -95,16 +101,16 @@ in `docs/compiler-pipeline.md`.
 | `desugar.zyl` | Parse-tree rewrites of `with-resource`, `assert-fail`, `test-suite` (with fixtures) and `test-property` into ordinary forms |
 | `ast.zyl` | `Token`, `Ast`, and the immutable `Env`/`VTable` chains |
 | `expr_inner.zyl` | `Ast` to `ExprInner`: recognizes every special form (`convert-ast`, `dispatch-special`); records declared field types and `extern` signatures (`extern-table`) for the type pass; lowers contracts |
-| `module_resolver.zyl` | Resolves the `use` graph into one compilation unit (discovery, then qualification) |
+| `module_resolver.zyl` | Resolves the `use` graph into one compilation unit (discovery, then qualification); calls `reserved_check.zyl` on the raw forms of every module outside the standard library and the runtime |
 | `qualify.zyl` | Rewrites identifiers to canonical keys `<pkg>@<major>::<module>::<symbol>` (§31.2) |
 | `resolver.zyl` | Two list helpers (`shd`/`stl`) that codegen uses; the old resolver is gone |
 | `macro_expand.zyl` | Collects top-level `defmacro`/`macro` forms and expands their call sites |
+| `reserved_check.zyl` | `E_RESERVED_KEYWORD` (spec §1.3.1) on a module's raw forms, run during module resolution rather than with the checks below |
 
 **Checks** (run in this order, after macro expansion)
 
 | File | Responsibility |
 |---|---|
-| `reserved_check.zyl` | `E_RESERVED_KEYWORD` (spec §1.3.1) on the raw forms of every module outside the standard library and the runtime |
 | `capability_check.zyl` | Package capability enforcement (§31.9) |
 | `duplicate_check.zyl` | `E_DUPLICATE_DEFINITION` for repeated top-level `defn`/`deftype`; `E_DUPLICATE_VARIANT` for a program type that reuses a prelude constructor name |
 | `arity_check.zyl` | `E_ARITY_MISMATCH` for direct calls to known top-level functions; `E_MALFORMED_FORM` for a special form its parser rejected; the `ffi-call` shape checks and `E_FFI_RESTRICTED` for a raw runtime entry named outside the standard library |
@@ -123,19 +129,24 @@ in `docs/compiler-pipeline.md`.
 | `lift_impls.zyl` | Lifts impl bodies to top-level `Trait.method_Type` functions |
 | `closure_inline.zyl` | Retired closure-inlining pass, now an identity step (closures are real values) |
 | `type_annotate.zyl` | The type checker (spec §4.8–§4.10): HM inference with SCC generalization, every type error reported then fatal, static trait resolution, per-type instances of trait-generic functions (generic originals dropped), generated structural `T.==`, codegen kinds and scalar marks |
+| `numeric_check.zyl` | The numeric policy (spec §20.1, §20.3): `E_PARTIAL_OPERATION` for an Int `/` or `%` whose divisor is not a nonzero literal, after type inference and before lowering |
+| `int_arith.zyl` | Int arithmetic under the checked/wrapping/saturating policies, for the compiler's own constant folding and the interpreter |
 | `ffi_sigs.zyl` | The type of every runtime function reached through `ffi-call` (`ffi-sig`), and the raw entries only the standard library may call (`ffi-raw-p`) |
 | `node_tables.zyl` | Per-node side tables: types, renamed calls, Show functions, ICNF kinds, regions, scalar marks, ADT marks, reuse marks; also the contract-profile and secret-mark tables |
 | `icnf.zyl` | Lowers `ExprInner` to the tree-shaped `Icnf` IR |
-| `icnf_print.zyl` | Canonical ICNF text for the package build's ICNF hash |
+| `icnf_print.zyl` | Canonical ICNF text (`icnf-text`) for the package build's ICNF hash |
 | `optimization.zyl` | Inlining of small functions and copy propagation (`opt-inline-fns`), then integer constant folding and dead-branch elimination (`opt-optimize-fns`) on `Icnf` |
 | `region_inference.zyl` | The stack-variant rewrite (`ri-transform-fns`) and whole-program escape analysis that places every allocation and call site in the frame region, the result region or the heap (`rg-regions`); `E_REGION_ESCAPE` |
 | `reuse.zyl` | In-place reuse: marks a construction that may take the block of a unique, dead value (`ru-reuse`), with owning clones `f~own` |
 | `codegen.zyl` | `Icnf` to x86_64 GAS Intel-syntax assembly: chooses per function between the native path (lowering to MIR, `ml-expr`; emission, `mb-emit-one`) and the stack-machine emitter |
 | `mir.zyl` | The native backend's machine IR (`deftype MI`), liveness, and linear-scan register allocation (`mir-allocate`) |
+| `verify.zyl` | The binary-safety verifier (`verify-asm`): runs on the emitted assembly between code generation and linking, and a violation aborts the build |
 | `asm_x86.zyl` | x86-64 assembler for every form the compiler emits; byte-identical to GNU as per instruction |
 | `elf_link.zyl` | Static ELF linker (PT_TLS, non-exec stack, synthesized GOT) and the `rt.zo` runtime cache |
 | `rt_mode.zyl` | `--runtime-module`: the locked `%` primitives, exported `zyl_*` labels, and the bit intrinsics' lowering |
-| `pipeline.zyl` | The one implementation of the phase order (`compile-to-fns`, `compile-to-asm`) |
+| `pipeline.zyl` | The one implementation of the phase order (`compile-to-fns`, `compile-to-asm`, `compile-check`) |
+| `explain.zyl` | `zyl explain`: a code's phase, severity, meaning, a wrong program and its fix, and where it is raised |
+| `provenance.zyl` | The CBOR provenance record a COSE_Sign1 signs, and reading it back for `zyl verify` |
 | `doc.zyl` | `zyl doc`: Markdown from source comments |
 
 **Diagnostics**
@@ -159,14 +170,16 @@ in `docs/compiler-pipeline.md`.
 
 `pipeline.zyl` is the one implementation of the phase order:
 `compile-to-fns` runs everything from the balance check through region
-inference and in-place reuse, and `compile-to-asm` is that plus code
-generation. The CLI
+inference and in-place reuse, `compile-to-asm` is that plus code
+generation, and `compile-check` stops at the end of type inference so
+`zyl check` and a build run the same body. The CLI
 (`selfhost/driver.zyl`), `zyl eval` and the REPL all call it, which is
 what keeps a compile and a REPL entry running the same compiler.
 
 Contracts have no pass of their own: `expr_inner.zyl` rewrites
 `requires`, `ensures`, `invariant` and `recover` into checks and
-`try`/`catch` while converting the parse tree (`contract-defn-body`).
+`try`/`catch` while converting the parse tree (`contract-defn-body`),
+before any check has run.
 
 ### REPL, file by file
 
@@ -234,7 +247,7 @@ has the design. By module:
 | `thread`, `start`, `sys`, `env`, `proc`, `os` | `clone` threads with TLS and futex locks, start-up and shutdown, syscalls, environment and the exit registry, child processes, files, directories and the terminal |
 | `out`, `io`, `panic`, `source` | Buffered stdout and per-actor output; exit, `read-line` and the interpreter's test transcript; try frames (pointer-mangled) and panics in text and JSON; registered sources and diagnostic snippets |
 | `chan`, `actor`, `ffitimed`, `call`, `ffitab` | Kahn channels and the schedulers, actors, the timed FFI worker and foreign calls, closure calls and division magic numbers, the interpreter's symbol table |
-| `float`, `fmt` | Float arithmetic entries and exact float text and parsing |
+| `float`, `fmt`, `numeric` | Float arithmetic entries and exact float text and parsing; the integer arithmetic entries for wrapping/saturating `+ - *`, the overflow tests and the traps checked code jumps to |
 | `tables`, `ctab`, `variant`, `uf`, `interp` | Word arrays, maps and vectors the compiler uses, variant equality and fields, union-find, the interpreter's value headers and interned names |
 | `bytes`, `crc`, `crypto`, `blake3`, `mangle` | ByteBuf/ByteSlice and atomics, CRC-32C, AES-NI and entropy, BLAKE3, canonical-key mangling |
 
@@ -256,6 +269,7 @@ into the compiler.
 | `tests/manual/` | Interactive checks (`read-line`) |
 | `tests/debug/` | A minimized reproduction kept for reference |
 | `tests/unit_test.zyl` | The unit test the runner compiles and runs |
+| `tests/{cbor,cose,explain,ffi_arity,panic_unmarked,provenance,provenance_trailer,verify}_test.zyl`, `tests/fmt_test.sh` | The other top-level tests `--quick` runs; see `docs/regression-tests.md` |
 
 ---
 

@@ -26,18 +26,6 @@ warning[W_SHADOWED_BINDING]: `n` shadows an outer binding of the same name
  2 | (defn twice (n) (let n (+ n 1) (let n (* n 2) n)))
    |                                ^
    = help: rename one of the two bindings
-error[E_UNBOUND_VARIABLE]: `int->string` is not defined
-  --> probe.zyl:5:32
-   |
- 5 |     (print (string-append "r=" (int->string r)))
-   |                                ^
-   = help: Zyl spells it `Show.show`
-error[E_UNBOUND_VARIABLE]: `string-append` is not defined
-  --> probe.zyl:5:12
-   |
- 5 |     (print (string-append "r=" (int->string r)))
-   |            ^
-   = help: Zyl spells it `str-concat`
 error[E_TYPE_MISMATCH]: `twice` takes `Int` as its 1st argument (`n`), but this is `String`
   --> probe.zyl:6:52
    |
@@ -51,6 +39,18 @@ error[E_TYPE_MISMATCH]: main must return the exit status, an Int, but this is `U
  6 |     (print (string-append "t=" (int->string (twice "x"))))))
    |     ^
    = help: end its body with `0`
+error[E_UNBOUND_VARIABLE]: `int->string` is not defined
+  --> probe.zyl:5:32
+   |
+ 5 |     (print (string-append "r=" (int->string r)))
+   |                                ^
+   = help: Zyl spells it `Show.show`
+error[E_UNBOUND_VARIABLE]: `string-append` is not defined
+  --> probe.zyl:5:12
+   |
+ 5 |     (print (string-append "r=" (int->string r)))
+   |            ^
+   = help: Zyl spells it `str-concat`
 4 errors; fix the first one first
 W
 got=$(cd "$work" && "$ZYL" probe.zyl -o p 2>&1); status=$?

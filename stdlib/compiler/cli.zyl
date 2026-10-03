@@ -20,6 +20,7 @@
 ; edit happened to fall.
 
 (use compiler/index)
+(use compiler/error_report)
 (use compiler/lock)
 (use compiler/mvs)
 (use compiler/package)
@@ -185,14 +186,14 @@
     (let entry (idx-read arena root name)
       (match (idx-latest entry)
         (Some iv (iv-version iv))
-        (None (ffi-call "zyl_panic"
-                (str-concat "E_PKG_VERSION_NOT_FOUND: package: no publishable version of " name) 1000))))))
+        (None (err-nowhere "E_PKG_VERSION_NOT_FOUND"
+                (str-concat "package: no publishable version of " name)))))))
 
 (defn cli-check-not-present (m name)
   (match (pk-find-dep (mf-deps m) name)
-    (Some d (ffi-call "zyl_panic"
-              (str-concat "E_PKG_DUPLICATE_DEP: package: " (str-concat name
-                " is already a dependency")) 1000))
+    (Some d (err-nowhere "E_PKG_DUPLICATE_DEP"
+              (str-concat "package: " (str-concat name
+                " is already a dependency"))))
     (None 1)))
 
 (defn cli-with-dep (m dep)
@@ -405,8 +406,8 @@
 (defn cli-check-native-path (p)
   (if (cli-native-path-ok p)
     p
-    (ffi-call "zyl_panic"
-      (str-concat "E_PKG_NATIVE_PATH_ESCAPE: package: native source path escapes the package root: " p) 1000)))
+    (err-nowhere "E_PKG_NATIVE_PATH_ESCAPE"
+      (str-concat "package: native source path escapes the package root: " p))))
 
 (defn cli-flag-allowed (f)
   (if (cli-prefix f "-O") true
@@ -429,8 +430,8 @@
     (Cons f t
       (if (cli-flag-allowed f)
         (cli-check-flags t)
-        (ffi-call "zyl_panic"
-          (str-concat "E_PKG_NATIVE_FLAG_DENIED: package: cflag outside the allowlist: " f) 1000)))))
+        (err-nowhere "E_PKG_NATIVE_FLAG_DENIED"
+          (str-concat "package: cflag outside the allowlist: " f))))))
 
 ; The argument vector is built in one fixed order — flags, include
 ; directories, source, output — and the flags are sorted, so two machines
@@ -444,8 +445,8 @@
             (let rc (store-run cmd)
               (if (= rc 0)
                 obj
-                (ffi-call "zyl_panic"
-                  (str-concat "E_PKG_NATIVE_BUILD_FAILED: package: cc failed on " src) 1000)))))))))
+                (err-nowhere "E_PKG_NATIVE_BUILD_FAILED"
+                  (str-concat "package: cc failed on " src))))))))))
 
 (defn cli-cc-command (dir n src obj)
   (str-concat "cc -c "
@@ -492,9 +493,9 @@
 (defn cli-check-native-capability (m)
   (if (pk-has-capability (mf-capabilities m) "native")
     1
-    (ffi-call "zyl_panic"
-      (str-concat "E_PKG_CAPABILITY_VIOLATION: capability: package " (str-concat (mf-name m)
-        " ships native sources without declaring the native capability")) 1000)))
+    (err-nowhere "E_PKG_CAPABILITY_VIOLATION"
+      (str-concat "capability: package " (str-concat (mf-name m)
+        " ships native sources without declaring the native capability")))))
 
 (defn cli-quoted-paths (paths)
   (match paths
@@ -538,12 +539,12 @@
         (let out (file-open (cli-key-path) "w")
           (let _ (file-write out (w-hex-bytes seed 32))
             (file-close out)))
-        (ffi-call "zyl_panic" "E_PKG_UNSIGNED: package: no kernel entropy for a publisher key" 1000)))))
+        (err-nowhere "E_PKG_UNSIGNED" "package: no kernel entropy for a publisher key")))))
 
 (defn cli-read-seed (_arena)
   (let fd (file-open (cli-key-path) "r")
     (if (< fd 1)
-      (ffi-call "zyl_panic" "E_PKG_UNSIGNED: package: no publisher key - run zyl key" 1000)
+      (err-nowhere "E_PKG_UNSIGNED" "package: no publisher key - run zyl key")
       (let s (file-read fd 4096)
         (let _ (file-close fd)
           (idx-trim s))))))

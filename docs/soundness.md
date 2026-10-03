@@ -75,6 +75,10 @@ its frame, before a tail jump, when a caught panic unwinds it, or at exit.
 
 ### L2 — No value outlives the region that holds it · *Enforced + Argued*
 
+The mechanism that makes the dynamic half possible is written down in
+`docs/memory-poisoning-design.md`; this section is the claim, that
+document is the machinery and its limits.
+
 The static half is `E_REGION_ESCAPE`: a `(bytebuf Stack N)` or a
 `with-region` value that would outlive its region is rejected, located at
 the point of escape, and 165 compile-fail tests pin it.
@@ -89,9 +93,9 @@ This is still the weakest link in this document, and it is now *measured*
 rather than only argued — but read the caveat, because it is a real limit on
 what the measurement shows.
 
-`verify/poison.sh` runs all 125 regression and smoke programs with released
+`verify/poison.sh` runs all 131 regression and smoke programs with released
 region blocks overwritten with 0xDE — the same fill the runtime already
-applies to arena blocks — and requires unchanged behaviour. All 125 are
+applies to arena blocks — and requires unchanged behaviour. All 131 are
 unchanged. The failure mode this targets is the quietest one available: a
 region block returns to a size-class pool on release and is handed to the
 next allocation of that class, so a stale pointer does not fault, it reads
@@ -141,7 +145,7 @@ report of a dangling pointer. So the failure mode this document worries
 about is largely designed out rather than merely unobserved.
 
 What this leaves: escape analysis under-approximation is no longer a bare
-assertion, it is checked on 125 programs and on the compiler's own full
+assertion, it is checked on 131 programs and on the compiler's own full
 bootstrap, and an attempt to break it the obvious way did not succeed. It is
 still not a proof. The cases that remain open are a stale read that never
 reaches any output and is overwritten before anyone inspects it, and
@@ -171,17 +175,23 @@ behaviour. The static half is what stops a program from asking.
 
 ### L4 — One mutable location, one writer · *Enforced*
 
-spec 06's aliasing invariant ("either exactly one `TMut` reference or any
-number of `TCap` references") needs a `TMut` to hold. Zyl has no reference
-or borrow type: `TaTy` is `TaV | TaC | TaF`, with no capability dimension,
-so a plain binding cannot be a `TMut` reference to alias with. What the
-language has is mutable locations — a `bytebuf`, written through by
-`store-u8`, the atomic forms and `bytebuf-append`.
+The specification's aliasing invariant ("either exactly one
+exclusive-mutable reference or any number of shared-immutable ones")
+needs an exclusive-mutable reference to hold. Zyl has no reference or
+borrow type: `TaTy` is `TaV | TaC | TaF`, with no capability dimension,
+so a plain binding cannot be a reference of that kind to alias with.
+What the language has instead is mutable locations — a `bytebuf`,
+written through by `store-u8`, the atomic forms and `bytebuf-append` —
+and Zyl has no in-place mutation, so a `let` binding is immutable and
+`set!` rebinds the whole value.
 
-A name becomes `TMut` by being *written*, so the rule is: within one
-location, at most one name may be written. A writer plus any number of
-readers is one `TMut` and many `TCap`, which the invariant permits, so
-naming a location twice is not itself an error.
+A name becomes a location's writer by being *written*, so the rule is:
+within one location, at most one name may be written. A writer plus any
+number of readers is what the invariant permits, so naming a location
+twice is not itself an error. `linearity.zyl` keeps the alias classes,
+keyed per allocation rather than per name, and reports the second writer
+as `E_MUT_CONFLICT`; `mutability_check.zyl` is the pass that decides
+which binding may be `set!` at all, which is a different question.
 
 Both halves of this were wrong before they were right, in ways worth
 recording because the failure mode was silence:
@@ -189,7 +199,7 @@ recording because the failure mode was silence:
 - Keying alias classes by *name* rather than per allocation let two
   sibling buffers that shared a name inherit each other's writer.
 - Treating a `byteslice` as a new location rather than a window onto its
-  base's let `(let v (byteslice b 8 4))` written through both `v` and `b`
+  base made `(let v (byteslice b 8 4))` written through both `v` and `b`
   look like two locations.
 
 ### L5 — A program cannot name a raw memory operation · *Enforced*
@@ -443,11 +453,22 @@ binaries for inspection.
 
 ## 7. What is explicitly not claimed
 
-- `TCap<T>` and `TMut<T>` are not written as types. Rules 3 and 4
-  (downgrade allowed, upgrade forbidden) hold *structurally* — with no
-  conversion in the language there is none to forbid — not by unification.
-- `TAtomic`, `TBox`, and rule 5's Send-capability are unrepresented; Send
-  is tracked syntactically.
+- No capability type exists. The specification's `TCap`/`TMut` type
+  names are retired (`PROGRESS.md` item 10): the rule they state is
+  delivered a different way, and more strongly, by the absence of
+  in-place mutation. Its two derived rules — a mutable binding may be
+  read through an immutable one, an immutable binding may never be made
+  mutable — hold *structurally*: with no conversion in the language there
+  is none to forbid.
+- `TAtomic` and `TBox` are unrepresented, and rule 5's Send-capability
+  has no type-level predicate; Send is tracked syntactically
+  (`E_CAPABILITY_LEAK`).
+- A `Secret` is a real capability, not a descriptive one: its
+  obligations are enforced (`E_SECRET_DEBUG`, `E_ZEROIZE_MISSING`), and
+  a function that takes or binds a secret has its frame zeroed on return
+  by code generation. What is *not* enforced is erasure of a released
+  region block, which goes back to the allocator intact — that layer is
+  planned in `docs/secret-erasure-design.md`.
 - Aliasing through raw allocation is covered for `bytebuf` and the atomic
   forms. Aliasing through a returned handle is not tracked
   interprocedurally: `(let y (f b))` where `f` returns its parameter is

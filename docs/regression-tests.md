@@ -13,34 +13,33 @@ build it with `./boot.sh` first.
 ## Quick Start
 
 ```bash
-./run_regression_tests.sh --quick            # unit test + smoke tests + LSP protocol test (the default)
+./run_regression_tests.sh --quick            # the default mode
 ./run_regression_tests.sh --full             # every section below, then ./boot.sh
 ./run_regression_tests.sh --full --no-boot   # every section, without the fixed-point check
 ./run_regression_tests.sh --dry-run          # list the selected tests without running them
 ```
 
-A `--full --no-boot` run is 377 tests and takes well under a minute on a
-current machine (22 s as of 2026-09-28). `--full` adds one more entry,
-`boot/fixed-point`, which runs `./boot.sh` and takes as long as a
-bootstrap does.
+`--full --no-boot` is **495 tests** (78 s on this machine as of
+2026-10-02); `--quick` is **22**, and `--full` adds `boot/fixed-point`,
+which runs `./boot.sh` and takes as long as a bootstrap does.
 
 ### Options
 
 | Flag | Description |
 |------|-------------|
-| `--quick` | Run `tests/unit_test.zyl`, `tests/smoke/*.zyl` and the LSP protocol test (default) |
-| `--full` | Run the unit test, regression, stress, integration, interpreter-agreement, schedule-agreement, package, compile-fail, script and LSP sections, then the fixed-point check |
-| `--dry-run` | List the tests the same mode and `--filter` would run, without running them |
-| `--filter N` | Run only tests whose name contains N, case-insensitively (see below) |
+| `--quick` | The default: the top-level `tests/*.zyl` tests, `tests/fmt_test.sh`, the five smoke tests, the LSP protocol test and the frame oracle |
+| `--full` | Everything above plus regression, stress, integration, interpreter-agreement, schedule-agreement, packages, packages-fail, packages-build, compile-fail and script sections, then the fixed-point check |
+| `--dry-run` | List the tests the same mode and `--filter` would run, without running them, and print their count |
+| `--filter N` | Run only tests whose printed name contains N, case-insensitively (see below) |
 | `--boot` | Run the fixed-point check (`./boot.sh`) in any mode |
 | `--no-boot` | Skip the fixed-point check that `--full` otherwise runs at the end |
 | `--verbose` | Print compiler output for a failed compile, the test output for a failed assertion, and the diff for an interpreter disagreement |
 | `--timeout N` | Per-test run timeout in seconds for compiled binaries (default: 10; the interpreted side of the agreement section has its own 60 s budget) |
 
 **`--filter` works within the mode, not across it.** The default mode is
-`--quick`, which only runs the unit test, the smoke tests and the LSP
-test, so `--filter structs` on its own selects nothing. Combine it with
-`--full`, and add `--no-boot` unless you also want a bootstrap:
+`--quick`, which runs none of the regression sections, so `--filter
+structs` on its own selects nothing. Combine it with `--full`, and add
+`--no-boot` unless you also want a bootstrap:
 
 ```bash
 ./run_regression_tests.sh --full --no-boot --filter structs
@@ -48,11 +47,20 @@ test, so `--filter structs` on its own selects nothing. Combine it with
 ./run_regression_tests.sh --filter lsp                          # works in --quick too
 ```
 
-The name matched is the file's basename for single-file tests;
-`interpreter NAME` for the agreement section (so `--filter interpreter`
-selects that whole section, and `--filter structs` also selects
-`interpreter/structs`); `packages NAME` for the three package
-sections; and `scripts NAME` for the script section.
+The filter is a case-insensitive substring of the name the test is
+*printed* under, which is why the prefix matters: a single-file test
+prints as `regression/NAME`, `smoke/NAME`, `stress/NAME`,
+`integration/NAME`, `compile-fail/NAME`, `sched/NAME` or
+`scripts/NAME`; the agreement section prints as `interpreter/NAME`, the
+package sections as `packages/NAME`, `packages-fail/NAME` and
+`packages-build/NAME`; and the top-level ones print as their own name
+(`unit_test`, `cbor_test`, `lsp/protocol`, `frame-oracle`). So
+`--filter compile-fail` does select the whole compile-fail section, and
+`--filter struct` reaches `interpreter/structs` and
+`compile-fail/struct-field-ambiguous` as well as `regression/structs`.
+The five opt-in gates print under their own names — `timing-leakage`,
+`memcheck`, `poison`, `poison-selfhost`, `determinism` — and
+`boot/fixed-point` is the last one.
 
 `--dry-run` goes through the same selection as a real run, so it lists
 exactly the tests the same mode and `--filter` would run (every section,
@@ -85,43 +93,57 @@ prints their count.
 Each run works in a scratch directory of its own
 (`mktemp -d ${TMPDIR:-/tmp}/zyl_tests.XXXXXX`, removed on exit), so two
 checkouts can run the suite at once: compiled test binaries are
-`zyl_test_N.bin` and `zyl_diff_N.bin` there, and the package-build, script,
-LSP, timing and boot logs are `zyl_*.log` there. A failed fixed-point
-check copies its log to `build/boot/boot_check.log`. The runner sets
-`ZYL_HOME` to `build/boot`, so the suite always compiles against this
-checkout's standard library, not an installed one.
+`zyl_test_N.bin`, `zyl_diff_N.bin` and `zyl_sched_N.bin` there, and the
+package-build, script, LSP, timing and boot logs are `zyl_*.log` there.
+A failed fixed-point check copies its log to
+`build/boot/boot_check.log`. The runner exports `ZYL_HOME` as
+`build/boot`, so the suite always compiles against this checkout's
+standard library, not an installed one.
 
-### Sections and counts (`--full --no-boot`, 2026-09-28)
+### Sections and counts (`--full --no-boot` and `--quick`, 2026-10-02)
 
-| Section | Source | Tests |
-|---------|--------|-------|
-| unit test | `tests/unit_test.zyl` | 1 |
-| regression | `tests/regression/*.zyl` | 106 |
-| stress | `tests/stress/*.zyl` | 4 |
-| integration | `tests/integration/*.zyl` | 7 |
-| interpreter agreement | regression + smoke, minus `DIFF_SKIP` | 87 |
-| schedule agreement | the four actor regression files | 4 |
-| packages | `tests/packages/*/app/main.zyl` | 2 |
-| packages-fail | `tests/packages-fail/*/app/main.zyl` | 9 |
-| packages-build | `tests/packages-build/*/app` via `zyl build` | 1 |
-| compile-fail | `tests/compile-fail/*.zyl` | 138 |
-| scripts | `tests/scripts/*.sh` | 18 |
-| LSP protocol | `tests/lsp/lsp_protocol_test.py` | 1 |
-| **total** | | **377** |
+The authoritative count is what `--dry-run` prints.
 
-`--quick` is 7 tests: the unit test, the five smoke tests and the LSP
-protocol test.
+| Section | Source | Printed as | Tests |
+|---------|--------|------------|-------|
+| top-level tests | `tests/*.zyl`, `tests/fmt_test.sh`, plus the provenance/cose cross-checks | own name | 15 |
+| regression | `tests/regression/*.zyl` | `regression/NAME` | 126 |
+| stress | `tests/stress/*.zyl` | `stress/NAME` | 4 |
+| integration | `tests/integration/*.zyl` | `integration/NAME` | 7 |
+| schedule agreement | the four actor regression files | `sched/NAME` | 4 |
+| interpreter agreement | regression + smoke, minus `DIFF_SKIP` | `interpreter/NAME` | 107 |
+| packages | `tests/packages/*/app/main.zyl` | `packages/NAME` | 3 |
+| packages-fail | `tests/packages-fail/*/app/main.zyl` | `packages-fail/NAME` | 10 |
+| packages-build | `tests/packages-build/*/app` via `zyl build` | `packages-build/NAME` | 1 |
+| compile-fail | `tests/compile-fail/*.zyl` | `compile-fail/NAME` | 189 |
+| scripts | `tests/scripts/*.sh` | `scripts/NAME` | 27 |
+| LSP protocol | `tests/lsp/lsp_protocol_test.py` | `lsp/protocol` | 1 |
+| frame oracle | `verify/frame_oracle.sh` | `frame-oracle` | 1 |
+| **total** | | | **495** |
 
-The smoke tests run directly only in `--quick`; in `--full` they are
-exercised through the interpreter-agreement section.
+The fifteen top-level tests are `unit_test`, `cbor_test`,
+`ffi_arity_test`, `provenance_test`, `provenance_cross`, `cose_test`,
+`cose_cross`, `provenance_trailer_test`, `provenance_trailer_cross`,
+`prov_sign`, `prov_verify`, `fmt_test`, `explain_test`,
+`panic_unmarked_test` and `verify_test`. `--quick` is those fifteen, the
+five smoke tests, `lsp/protocol` and `frame-oracle`: **22** in all. The
+smoke tests run directly only in `--quick`; in `--full` they are
+exercised through the interpreter-agreement section, which is why they
+are not counted there.
+
+The three `*_cross` entries ask the Python `cbor2` and `cryptography`
+modules whether the bytes Zyl produced are the canonical ones — a
+question a self-consistent Zyl test cannot ask — and each exits 0 with a
+"skipping" notice when its module is not installed.
 
 ## Interpreter agreement
 
-`--full` runs one more section: every regression and smoke test is run
-**twice**, once as a compiled binary and once through the ICNF
-interpreter (`zyl eval`, the REPL's evaluator), and the two outputs are
-diffed. Two back ends for one language is exactly the kind of thing that
-drifts silently, so the suite compares them rather than assuming.
+`--full` adds a section `--quick` does not have: every regression and
+smoke test is run **twice**, once as a compiled binary and once through
+the ICNF interpreter (`zyl eval`, the REPL's evaluator), and the two
+outputs are diffed. Two back ends for one language is exactly the kind of
+thing that drifts silently, so the suite compares them rather than
+assuming.
 
 ```bash
 ./run_regression_tests.sh --full --no-boot --filter interpreter            # just this section
@@ -153,13 +175,19 @@ prints a value's address (`derive`), one that prints the bytes at a
 pinned address (`ffi-advanced`), one that assumes a fresh `alloc-malloc`
 block reads back as zeroes (`collections`), `package-system` (its
 signature tests are Ed25519), `c-abi` (it hands a function to `qsort` as
-a C callback, which needs a native function pointer), `tail-calls`
+a C callback, which needs a native function pointer),
+`balance-agreement` (it lexes 160 mutated compiler sources: a fraction of
+a second compiled, about 20 s interpreted), `tail-calls`
 (10^8-deep loops, far too slow interpreted), `with-region-limits` (the
 interpreter accounts no region bytes), and every `math-*` file, which is
 minutes of interpreted arithmetic for what the compiled run already
 covers in seconds. Actor programs are compared too: the interpreter
 runs `spawn` and channels. (`DIFF_SKIP` also names `selfhost-codegen`, an integration
 test the section never reaches.)
+
+126 regression files plus 5 smoke files, minus the eight `DIFF_SKIP`
+names that are regression files and the 16 `math-*` files, leaves the
+107 agreement runs above.
 
 `docs/repl.md` lists the places the two back ends differ on purpose.
 
@@ -182,7 +210,7 @@ panic.
 ```
 tests/
 ├── unit_test.zyl              # Harness + stdlib tests (runs in --quick and --full)
-├── regression/                # 106 domain-specific regression files (--full)
+├── regression/                # 126 domain-specific regression files (--full)
 │   ├── arithmetic.zyl         # +, -, *, /, multi-operand, float chains
 │   ├── bitwise.zyl            # bit-and/or/xor/not, shifts, n-ary folding
 │   ├── eval-order.zyl         # strict left-to-right evaluation
@@ -210,7 +238,8 @@ tests/
 │   ├── list-literals.zyl      # (list ...), [...], quoted constant data
 │   ├── quasiquote.zyl         # `d, ,e and ,@e
 │   ├── macros.zyl             # defmacro, gensym, nested macros, unless/when
-│   ├── types.zyl              # HM inference, traits, generics, TCap/TMut
+│   ├── types.zyl              # HM inference, traits, generics, `let`
+│   │                          #   and `let-mut` bindings
 │   ├── generics.zyl           # generic ADTs, per-site instantiation
 │   ├── generics-multi-type.zyl
 │   ├── generic-collections.zyl # Vec, Map and generic ADTs over element types
@@ -220,7 +249,7 @@ tests/
 │   ├── show-trait.zyl         # the prelude Show trait and print
 │   ├── derive.zyl             # derived traits for structs
 │   ├── derive-traits.zyl      # Show, Debug, Eq, Ord, Hash, Clone
-│   ├── capabilities.zyl       # TCap/TMut
+│   ├── capabilities.zyl       # `let` sharing and the E_MUT_CONFLICT rules
 │   ├── regions.zyl            # region annotations, escape analysis
 │   ├── region-reclaim.zyl     # per-call regions reclaim short-lived values
 │   ├── stack-bytebuf.zyl      # a Stack bytebuf in the frame region
@@ -285,21 +314,23 @@ tests/
 │   ├── parser-verify.zyl      # reader/parser structure checks
 │   ├── pv_min.zyl             # minimal reader smoke test
 │   └── selfhost-codegen.zyl   # compiler/icnf + codegen end to end
-├── compile-fail/              # 138 programs that MUST be rejected; 96 carry
-│   │                          #   a `; expect-error: CODE` line
+├── compile-fail/              # 189 programs that MUST be rejected; 147 carry
+│   │                          #   a `; expect-error: CODE` line, and 37 of
+│   │                          #   those also pin a location with
+│   │                          #   `; expect-at: FILE:LINE:COL`
 │   ├── unclosed-opener.zyl    # balance errors
 │   ├── unexpected-close.zyl
 │   ├── mismatched-bracket.zyl
 │   ├── misplaced-paren.zyl    # a missing ) balanced by an extra one
-│   ├── type-*.zyl             # 10 type errors (mismatch, infinite type,
+│   ├── type-*.zyl             # 11 type errors (mismatch, infinite type,
 │   │                          #   Bool conditions, Int/Float mixing, ...)
-│   ├── match-*.zyl            # 5 match errors (non-exhaustive, duplicate
+│   ├── match-*.zyl            # 6 match errors (non-exhaustive, duplicate
 │   │                          #   arm, nested pattern, constructor as binder)
 │   ├── macro-*.zyl            # 11 macro errors (arity, capture, duplicate,
 │   │                          #   function clash, recursion, nested
 │   │                          #   definition, non-termination, splicing)
-│   ├── secret-*.zyl           # 10 Secret capability violations
-│   ├── ffi-*.zyl              # 8 FFI errors (timeout, symbol, extern,
+│   ├── secret-*.zyl           # 13 Secret capability violations
+│   ├── ffi-*.zyl              # 10 FFI errors (timeout, symbol, extern,
 │   │                          #   restricted entries, unpin)
 │   ├── trait-*.zyl, derive-*.zyl, duplicate-*.zyl, impl-not-*.zyl,
 │   │                          #   dot-*.zyl: traits, derive and impl-not
@@ -308,24 +339,31 @@ tests/
 │   └── ...                    # parameters, quoting, forms, let/def rules
 ├── packages/                  # multi-package builds that must succeed
 │   ├── features/              #   (each case: app/ plus path dependencies)
+│   ├── struct-accessors/
 │   └── two-parses/
 ├── packages-fail/             # multi-package builds that must be rejected
 │   ├── bad-requirement/  capability/  capability-main/  feature-nested/
-│   └── feature-unknown/  orphan-impl/  private-symbol/  undeclared-dep/
-│       unknown-edition/
+│   ├── feature-unknown/  malformed-dep/  orphan-impl/  private-symbol/
+│   └── undeclared-dep/  unknown-edition/
 ├── packages-build/            # built with `zyl build` (native block, lock,
 │   └── native/                #   <out>.buildinfo, embedded build hash)
-├── scripts/                   # shell checks of the repository's scripts,
-│   ├── actor-schedules.sh     #   against scratch directories: failing
-│   │                          #   actor programs under every schedule
+├── scripts/                   # 27 shell checks of the repository's own
+│   │                          # scripts, each against scratch directories
+│   ├── actor-schedules.sh     # failing actor programs under every schedule
 │   ├── asm-oracle.sh          # the Zyl assembler against GNU as
 │   │                          #   (asm_oracle.py generates the sweep)
 │   ├── self-link.sh           # freestanding self-link and rt.zo
 │   ├── balance-cli.sh         # zyl balance: files, directories, JSON, status
 │   ├── deterministic-link.sh, stdout-buffer.sh, ffi-stdio-order.sh
 │   ├── json-diagnostics.sh, located-diagnostics.sh
+│   ├── diagnostics-voice.sh   # the wording of docs/diagnostics.md's probe
+│   ├── error-codes.sh         # the catalog against the raise sites
+│   ├── explain-examples.sh    # every `zyl explain` wrong/fix pair
+│   ├── panic-backtrace.sh, panic-unmarked.sh
 │   ├── runtime-module-lock.sh # --runtime-module is refused elsewhere
 │   ├── build-cache.sh, package-index.sh
+│   ├── provenance.sh, provenance-trailer.sh, prov-sign.sh, prov-verify.sh,
+│   │                          #   cose.sh: the record against cbor2
 │   ├── repl-session.sh, uninstall.sh
 │   ├── site-examples.sh       # website/examples compile and print their .out/.err
 │   └── vscode-problem-matcher.sh, zyl-doc.sh
@@ -365,13 +403,35 @@ skipped with a notice if `build/boot/zyl-lsp` has not been built.
 
 ---
 
-## Constant-Time (Timing Leakage) Harness
+## The Opt-in Gates
 
-Opt in with `--filter timing` (in either mode). It is deliberately not
-part of a plain `--full` run: it spawns thousands of short processes and
-takes longer than every other test combined, and its result is a
-statistic rather than a pass or fail of the code itself. The runner
-calls `python3 verify/timing.py --quick`.
+Five checks are **not** part of a plain `--full` run: `timing-leakage`,
+`memcheck`, `poison`, `poison-selfhost` and `determinism`. Each is minutes
+on its own, so the runner selects one only when `--filter` is given *and*
+matches its name — an empty filter must never pull them in.
+
+```bash
+./run_regression_tests.sh --full --no-boot --filter memcheck
+./run_regression_tests.sh --full --no-boot --filter poison        # also poison-selfhost
+./run_regression_tests.sh --full --no-boot --filter poison-selfhost
+./run_regression_tests.sh --full --no-boot --filter determinism
+./run_regression_tests.sh --full --no-boot --filter timing
+```
+
+`--filter poison` is a substring match, so it selects both the
+region-lifetime gate and the self-hosting one; `--filter
+poison-selfhost` selects only the second. The gate that *is* part of a
+plain run is `frame-oracle`, the independent cross-check of the
+assembly verifier's verdicts: it costs about a second, and a verifier
+that is quietly wrong reports success, so it needs a second opinion every
+run rather than on request.
+
+### Constant-Time (Timing Leakage) Harness
+
+`timing-leakage` spawns thousands of short processes and takes longer
+than every other test combined, and its result is a statistic rather than
+a pass or fail of the code itself. The runner calls
+`python3 verify/timing.py --quick`.
 
 ```bash
 ./run_regression_tests.sh --filter timing
@@ -380,6 +440,19 @@ calls `python3 verify/timing.py --quick`.
 The harness carries a deliberately leaky comparison as a **positive
 control** and fails if it cannot detect it, so a green result means the
 measurement worked.
+
+### Memory safety, region lifetime and determinism
+
+The other four gates are the dynamic half of `docs/soundness.md`, and
+each has a design note saying what it can and cannot see:
+`docs/memory-poisoning-design.md` for `poison` and `poison-selfhost`,
+`verify/memcheck.sh` for `memcheck`, and `verify/model.py` for the
+`determinism` gate's second half. `poison` is the only dynamic check of
+the premise that no value outlives its region, and it has no positive
+control: the violation it looks for is what the static checks already
+prevent. `poison-selfhost` is the strongest single check for that
+premise — it rebuilds the whole compiler with released region blocks
+refilled with `0xDE` and requires byte-identical seeds.
 
 ---
 
@@ -394,8 +467,11 @@ measurement worked.
 ```
 
 `struct` (rather than `structs`) also picks up `stress/large-struct`,
-the agreement runs of `structs` and `struct-basic`, and the compile-fail
-cases `prelude-constructor` and `struct-field-ambiguous`.
+`regression/struct-accessors` and `packages/struct-accessors`, the
+agreement runs of `structs`, `struct-basic` and `struct-accessors`, and
+five compile-fail cases: `misspelled-constructor-last-arm`,
+`misspelled-constructor-no-suggestion`, `prelude-constructor`,
+`reserved-make-constructor` and `struct-field-ambiguous`.
 
 ### Spec Coverage (spec §8/§10)
 
@@ -424,12 +500,12 @@ pipeline; the compiler reports it before parsing with
 
 ```bash
 ./run_regression_tests.sh --full --no-boot --filter balanced-parens
-./run_regression_tests.sh --full --no-boot --filter unclosed
+./run_regression_tests.sh --full --no-boot --filter balance
 ```
 
-The compile-fail section is filtered by file basename (a filter of
-`compile-fail` matches nothing), so the balance cases are selected by
-`unclosed`, `unexpected-close` and `mismatched-bracket`.
+The compile-fail cases print as `compile-fail/NAME`, so they are selected
+by `unclosed`, `unexpected-close`, `mismatched-bracket` and
+`misplaced-paren` — or by the whole-section filter `compile-fail`.
 
 ### What is tested (`tests/stress/balanced-parens.zyl`):
 
@@ -454,7 +530,8 @@ The rejecting side is `tests/compile-fail/unclosed-opener.zyl`,
    - Multi-package case → a directory with an `app/` package under
      `tests/packages/`, `tests/packages-fail/` or `tests/packages-build/`
 
-2. Use the assertion harness pattern:
+2. Use the assertion harness pattern (with your own expression and
+   expected value):
    ```lisp
    (test "test name"
      (assert-equal (expression) expected-value))
@@ -484,7 +561,7 @@ the suite; its header gives the command and the expected output.
 
 - [ ] Golden output comparison (tracked as future work)
 - [ ] Parallel test execution
-- [ ] Every compile-fail test asserting its expected error code (96 of
-      the 138 carry `; expect-error: CODE`, and 7 of the 9 packages-fail
+- [ ] Every compile-fail test asserting its expected error code (147 of
+      the 189 carry `; expect-error: CODE`, and 7 of the 10 packages-fail
       cases)
 - [ ] CI integration

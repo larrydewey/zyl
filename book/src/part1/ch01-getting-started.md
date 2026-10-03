@@ -7,10 +7,11 @@ Welcome to *The Zyl Programming Language*! This chapter will guide you through i
 Zyl is a **deterministic Lisp systems language** designed for building reliable, high-performance software. Let's break down what that means:
 
 - **Lisp**: Zyl uses S-expressions (parenthesized lists) for syntax — the same foundation as Lisp, Scheme, and Clojure. Code and data share the same structure.
-- **Systems language**: Zyl compiles to native x86_64 machine code through its own backend and the system C compiler's linker. It gives you FFI (foreign function interface) access to C, raw byte buffers and atomics.
+- **Systems language**: Zyl compiles to native x86_64 machine code through its own backend, assembler and linker: a program that calls no C is a static executable with no libc. It gives you FFI (foreign function interface) access to C, raw byte buffers and atomics.
 - **Deterministic**: Same source code + same inputs → identical binaries and identical outputs, every time. No randomness in compilation, no unordered hash maps, no timing-dependent behavior.
+- **No silent failure**: `Int` arithmetic is checked by default, so an overflow stops the program with `E_OVERFLOW` instead of wrapping; a division whose divisor might be zero must say what happens (`div!` or `div?`); a program declares the capabilities it uses (`(capabilities io)` to open files; `actor`, `ffi` and `secret` likewise), and without the declaration it has none of them.
 - **Region-based memory**: Instead of a garbage collector or manual `malloc`/`free`, Zyl's design assigns every value to a **region** (Stack, Heap, Global, Circular, or Pin). The current compiler infers Stack and Heap placement, reclaims short-lived values when their call returns, and implements Pin; Chapter 5 says exactly which part.
-- **Capability types**: Two key capabilities control aliasing: `TCap` (shared, immutable access — any number of references) and `TMut` (exclusive, mutable ownership — exactly one reference). Only a `let-mut` binding is `TMut`, and the compiler rejects a `set!` on anything else.
+- **Capability types**: Zyl has no in-place mutation: every `let` binding is immutable, `set!` on a `let-mut` binding rebinds it, and `set!` on anything else is `E_MUT_CONFLICT`. A struct field is never assignable.
 - **Actor concurrency**: Actors with isolated state that communicate over typed channels, each with one writer and one reader, so output does not depend on scheduling. No shared mutable state between actors.
 - **Self-hosting**: The Zyl compiler is written in Zyl and compiles itself, verified by a byte-identical fixed point. The original Rust bootstrap is archived and no longer part of the build, test, or use path at all — building Zyl needs nothing but a C compiler.
 
@@ -228,20 +229,27 @@ runs:
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
 │ Checks                                                          │
-│   Capabilities, duplicate definitions, arity, mutability and    │
-│   aliasing, match exhaustiveness, unused names, Secret taint    │
+│   Capabilities, duplicate definitions, arity, malformed forms,  │
+│   mutability and aliasing, release linearity, match             │
+│   exhaustiveness, unused names, Secret taint                    │
 └─────────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│ Derive expansion, impl lifting, closure lifting                 │
+│ Derive expansion and impl lifting                               │
 │   `derive` impls generated; impl bodies become                  │
-│   `Trait.method_Type` functions; closures become top-level code │
+│   `Trait.method_Type` functions                                 │
 └─────────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
 │ Type checking                                                   │
 │   Hindley-Milner inference; every type error reported; static   │
 │   trait resolution and per-type specialization (`f~T1,T2`)      │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│ Numeric check                                                   │
+│   The package's `(numeric ...)` policy; a `/` or `%` whose      │
+│   divisor is not a nonzero literal is E_PARTIAL_OPERATION       │
 └─────────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
@@ -261,9 +269,10 @@ runs:
 │ Code generation and linking                                     │
 │   x86_64 assembly (System V AMD64 ABI): machine IR with         │
 │   linear-scan register allocation where a function fits it,     │
-│   the stack-machine generator otherwise; then Zyl's own         │
-│   assembler and static linker with the runtime (rt.zo): a       │
-│   static binary with no libc (cc + libc if it calls foreign C)  │
+│   the stack-machine generator otherwise; the emitted frames are │
+│   verified; then Zyl's own assembler and static linker with the │
+│   runtime (rt.zo): a static binary with no libc (cc + libc if   │
+│   it calls foreign C)                                           │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -278,6 +287,7 @@ ICNF, writes it to a `.buildinfo` file and embeds it in the binary
 - Errors are caught early, and most carry a location: `error[CODE]`,
   `--> file:line:col`, the source line, a caret and a `= help:` hint
 - Determinism is guaranteed by construction (ordered structures, no randomness)
+- `zyl check file.zyl` runs everything up to type checking and stops: the fast way to find errors without building
 - You can inspect the generated assembly: `zyl file.zyl --emit-asm -o file.s`
 
 ## 1.5 Running the Test Suite
@@ -295,13 +305,14 @@ Zyl includes a regression test suite:
 ./run_regression_tests.sh --full --no-boot
 
 # Only the tests whose name contains a word
-./run_regression_tests.sh --filter structs
-./run_regression_tests.sh --filter types
+./run_regression_tests.sh --full --no-boot --filter structs
+./run_regression_tests.sh --full --no-boot --filter types
 ```
 
-`--filter` is a case-insensitive substring match on the test name, so
-`--filter structs` runs `tests/regression/structs.zyl` (and its
-interpreter twin). The tests use Zyl's built-in testing framework
+`--filter` is a case-insensitive substring match on the test name, and
+it applies within the selected mode: `--full --no-boot --filter structs`
+runs `tests/regression/structs.zyl` (and its interpreter twin), while
+`--filter structs` alone stays in quick mode and selects nothing. The tests use Zyl's built-in testing framework
 (covered in Chapter 11).
 
 ## 1.6 Getting Help
@@ -309,6 +320,7 @@ interpreter twin). The tests use Zyl's built-in testing framework
 | Resource | Purpose |
 |----------|---------|
 | `zyl help` | Every subcommand, one line each (any unrecognized subcommand prints the same list) |
+| `zyl explain CODE` | What a diagnostic means, with a wrong program and its fix; `zyl explain` alone lists every code |
 | `:help` in the REPL | REPL commands and editing keys |
 | `:doc NAME` in the REPL | Documentation for a built-in or special form |
 | `zyl_specification.txt` | Canonical language spec (v5.0) |
@@ -321,8 +333,8 @@ interpreter twin). The tests use Zyl's built-in testing framework
 ### From Rust
 | Rust Concept | Zyl Equivalent |
 |--------------|----------------|
-| `&T` (shared reference) | `TCap` — every plain `let` binding |
-| `&mut T` (exclusive reference) | `TMut` — only a `let-mut` binding |
+| `&T` (shared reference) | an immutable `let` binding — any number of readers |
+| `&mut T` (exclusive reference) | a `let-mut` binding — the only assignable binding; `set!` rebinds it |
 | Ownership/borrow checker | Capability checks + region inference (compile time) |
 | `match` exhaustiveness | Same — compile error if non-exhaustive |
 | Traits | Similar declaration and `impl` syntax; calls are written `(Trait.method receiver ...)` |
@@ -336,7 +348,8 @@ matter in a few places this book points out as they come up.
 - No manual `malloc`/`free` in ordinary code — values live in regions managed by the runtime
 - Mutation is explicit: only `let-mut` bindings can be reassigned, and struct fields never can
 - No header files — modules are imported with `(use collections/vec)`
-- Deterministic builds — same source always produces identical assembly (the linked binary can differ by a few bytes of linker metadata)
+- Deterministic builds — same source always produces a byte-identical binary
+- Integer overflow is not undefined and does not wrap silently: it stops the program with `E_OVERFLOW` unless the file says `(numeric wrapping)`
 
 ### From Lisp (Scheme, Common Lisp, Clojure)
 | Lisp Feature | Zyl Status |
@@ -354,7 +367,7 @@ matter in a few places this book points out as they come up.
 - **Compiled** — `zyl` produces a native executable
 - **Static types** — inferred, not declared (mostly), and checked strictly: an `if` needs a `Bool`, not a number, and `(+ 1 "a")` does not compile
 - **No `null`** — use `Option` ( `(Some value)` / `None` )
-- **Errors are values** — use `Result` ( `(Ok value)` / `(Err error)` ); `error` aborts, and `try` / `catch` can intercept that (Chapter 3)
+- **Errors are values** — use `Result` ( `(Ok value)` / `(Err error)` ); `error` returns an `Err`, and `panic` aborts, which `try` / `catch` can intercept (Chapter 3)
 - **Immutable by default** — mutation requires explicit `let-mut` + `set!`
 
 ## 1.8 What's Next?

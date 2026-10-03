@@ -1,13 +1,19 @@
 ; === Zyl Standard Library — Allocator ===
 ; Module: allocator/allocator
-; Provides: Raw memory arena backed by C runtime helpers.
-;           All addresses are Ints (64-bit pointers).
+; Provides: string helpers over an address, and -- for the standard
+;           library and the compiler only -- the arena and raw-allocation
+;           entries. All addresses are Ints (64-bit pointers).
 ;
-; NOTE: No garbage collection or refcounting. Callers are responsible for
-;       freeing memory via `alloc-free`. Deterministic by design (region §).
+; NOTE: No garbage collection or refcounting. Deterministic by design
+;       (spec §9 regions).
+;
+; A program sees the string helpers, which need no memory of their own,
+; and nothing below them: alloc-malloc, alloc-free and the arena wrappers
+; are E_FFI_RESTRICTED. See the arena section for why, and for what a
+; program uses instead.
 
 ; ===========================================================================
-; RAW ALLOCATION
+; RAW ALLOCATION -- INTERNAL (E_FFI_RESTRICTED)
 ; ===========================================================================
 
 ; Allocate `size` bytes on the heap. Returns address as Int, or 0 on failure.
@@ -76,24 +82,36 @@
   (alloc-write-int addr (- (alloc-read-int addr) 1)))
 
 ; ===========================================================================
-; REGION-BASED ARENA ALLOCATOR
+; ARENA ALLOCATOR -- INTERNAL, NOT PART OF THE PROGRAM SURFACE
 ; ===========================================================================
 ;
-; Arenas give deterministic, zero-fragmentation bulk reclamation:
-;   - bump allocation from growable 16-byte-aligned blocks
-;   - `arena-reset` frees every block at once (handle stays valid)
-;   - `arena-destroy` frees everything including the handle
-; No per-object free. Arenas are single-threaded by design (one per
-; actor/scope, matching actor isolation). All addresses are Ints.
+; Everything from here to the string helpers is reachable by the standard
+; library and by the compiler's own entry points (--internal-module), and
+; by nothing else: a program naming one of these gets E_FFI_RESTRICTED
+; (arity_check.zyl, ac-arena-wrapper-p). That includes alloc-malloc and
+; alloc-free at the top of this file, for the same reason.
 ;
-; Usage:
-;   (let a (arena-create 0)         ; default 64 KiB blocks
-;     (begin
-;       (let p (arena-alloc-zeroed a 1024)
-;         (begin
-;           ... use p ...
-;           (arena-reset a)))       ; reclaim, reuse `a`
-;       (arena-destroy a)))         ; release everything
+; Why an arena is not offered to a program. An arena handle is one
+; copyable word, and arena-destroy frees every block it holds -- including
+; blocks another live value still points into -- with nothing to detect
+; it. That is the memory model's rule G2, and a program that could name
+; an arena would be one `arena-destroy` away from a use-after-free it
+; cannot see. alloc-malloc fails the same test without a handle: its
+; result is a bare Int that no type follows and nothing ties to the free
+; that must follow.
+;
+; What a program uses instead:
+;   - a typed collection (Vec, IntMap, Set), whose storage lives in the
+;     region the calling frame runs in and is reclaimed when it returns
+;     (stdlib/collections);
+;   - a (bytebuf R N) for raw bytes, with bytebuf-ptr for the address
+;     when it must cross the C boundary;
+;   - ffi-pin for one word that C holds a pointer to.
+;
+; So this section exists for the compiler and the runtime, which keep
+; long-lived arenas for things that must outlive any single frame -- the
+; parse tree and AST in a compilation, the REPL's session, the LSP's
+; documents, an actor's private scratch. All addresses are Ints.
 
 ; Create a new arena. `block-size` is the default block size in bytes;
 ; values < 16 select the default (64 KiB). Returns a handle (Int), or 0
@@ -177,7 +195,9 @@
 (defn buf-str (b)
   (ffi-call "zyl_strbuf_str" b 1000))
 
-; A copy of `s` in `arena`.
+; A copy of `s` in `arena`. Internal like the rest of this section: the
+; arena argument makes it uncallable from a program, which is why it is
+; not offered in the language server's completions either.
 ; Returns: String
 (defn str-intern (arena s)
   (let n (alloc-strlen s)

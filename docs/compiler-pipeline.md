@@ -13,13 +13,25 @@ and the REPL. No phase depends on output from a later phase.
 **Navigation:** `spec/11-icnf-ir.md`, `spec/13-code-generation.md`
 **File-level map:** `docs/codebase-map.md`
 
-`pipeline.zyl` exposes three entry points:
+`pipeline.zyl` names the phase order in four places, and they agree:
+`compile-to-exprs`, `lower-exprs`, `annotate-exprs` and `lower-icnf`.
+The three entry points that start from source text are:
 
 | Function | Runs | Used by |
 |---|---|---|
-| `compile-to-exprs` | Balance check through the checks; returns checked `ExprInner` | `compile-to-fns` |
-| `compile-to-fns` | Everything through region inference and in-place reuse; returns `(List Icnf)` | `zyl eval`, the REPL, `zyl build` (for the ICNF hash) |
-| `compile-to-asm` | `compile-to-fns` plus code generation; returns assembly text | the CLI, `zyl build`, `zyl test` |
+| `compile-to-exprs` | Balance check through the checks; returns checked `ExprInner` | `compile-to-fns`; the REPL's per-form path |
+| `compile-to-fns` | Everything through region inference and in-place reuse; returns `(List Icnf)` | `zyl eval`, the REPL, and `zyl build`/`zyl test` (for the ICNF hash) |
+| `compile-to-asm` | `compile-to-fns` plus code generation; returns assembly text | the CLI |
+
+`compile-check` is the fourth boundary: it runs `compile-front-end` —
+`compile-to-exprs`, `lower-exprs`, `annotate-exprs` — and stops. That is
+`zyl check`, and `driver.zyl` calls the same body a build does rather than
+a second copy that could drift. It is not the whole of a build: everything
+diagnosable is behind that boundary, but the checks that run after it
+(lowering, optimization, region inference, code generation) can still fail
+on their own input. `(print (/ 7))` is the small case — `check` accepts it,
+a build reports `E_ARITY_MISMATCH: / needs two operands`, because that
+operand count is checked while lowering to ICNF.
 
 Errors are raised with `zyl_panic` and a located `error[CODE]` message.
 The REPL catches them with `try`; the CLI lets them end the process.
@@ -42,8 +54,17 @@ in a different shape, and this document describes what the code does:
 - **Region inference** runs on the lowered IR after inlining and
   optimization, not on the AST before type inference, and an in-place
   reuse pass follows it.
-- **Contract injection** happens during parsing (`convert-ast`), and
+- **Contract injection** happens in `convert-ast` (Phase 14), so a
+  contract is ordinary code by the time any check runs, and
   **hash finalization** happens only for package builds, as a `<out>.buildinfo` file.
+- **Binary-safety verification** runs on the emitted assembly between code
+  generation and linking, which is a phase of compilation and not a check
+  that runs afterwards (Phase 12b).
+
+Every one of these is visible in `pipeline.zyl`: `compile-to-exprs` holds
+phases 1–5, `lower-exprs` phases 6–7, `annotate-exprs` phases 7b–8 and the
+numeric check, `lower-icnf` phases 9–11b, and `codegen-fns` phase 12 and
+the verifier.
 
 ---
 
@@ -156,11 +177,16 @@ diagnostic rather than rejecting a valid program.
 | 2 | `duplicate_check.zyl` | `E_DUPLICATE_DEFINITION`: two top-level `defn`s or `deftype`s with one name. `E_DUPLICATE_VARIANT`: a program type (outside the standard library) declaring a prelude constructor name (`Some`, `None`, `Ok`, `Err`, `Cons`, `Nil`) |
 | 3 | `arity_check.zyl` | `E_ARITY_MISMATCH`: a direct call to a known, unshadowed top-level function with the wrong argument count. `E_MALFORMED_FORM`: a special form whose shape its parser rejected (an `EUnknown` node, which used to lower to the constant 0). The `ffi-call` shape checks (`E_FFI_SYMBOL_REQUIRED`, `E_FFI_TIMEOUT_REQUIRED`, more than 16 arguments) and `E_FFI_RESTRICTED`: an `ffi-call` naming a raw runtime entry (`ffi-raw-p`, `ffi_sigs.zyl`) outside the standard library |
 | 4 | `mutability_check.zyl` | `E_MUT_CONFLICT`: `set!` on a name that is not a `let-mut` binding in scope |
-| 5 | `linearity.zyl` | `E_MOVE_VALUE`: a resource used after its release. Affine, per alias class: `file-close`, `Drop.drop` and `string-buffer-destroy` consume their resource argument, every name bound to the same resource dies with it, and a release inside an exception handler is conditional so it does not. Resource constructors are the dedicated `EFileOpen`/`EFileClose` forms plus any type the program gives a `Drop` impl (discovered from its own `impl` forms) Also `E_MUT_CONFLICT` for the spec 06 aliasing invariant: within one mutable location (a `bytebuf`) at most one name may be written, since a name becomes `TMut` by being written. Alias classes are per allocation, and a `byteslice` joins its base's class |
+| 5 | `linearity.zyl` | `E_MOVE_VALUE`: a resource used after its release. Affine, per alias class: `file-close`, `Drop.drop` and `string-buffer-destroy` consume their resource argument, every name bound to the same resource dies with it, and a release inside an exception handler is conditional so it does not. Resource constructors are the dedicated `EFileOpen`/`EFileClose` forms plus any type the program gives a `Drop` impl (discovered from its own `impl` forms) Also `E_MUT_CONFLICT` for the spec 06 aliasing invariant: within one mutable location (a `bytebuf`) at most one name may be written — Zyl has no in-place mutation, every `let` binding is immutable, `set!` on a `let-mut` binding rebinds it, and `set!` on anything else is `E_MUT_CONFLICT`. Alias classes are per allocation, and a `byteslice` joins its base's class |
 | 6 | `exhaustiveness_check.zyl` | `E_NON_EXHAUSTIVE_MATCH`, `E_UNREACHABLE_MATCH_ARM` for ADT matches; skipped for a match whose constructor names are ambiguous across deftypes. `E_UNKNOWN_CONSTRUCTOR`: a capitalized arm head that no type declares |
 | 7 | `unused_check.zyl` | `W_UNUSED_PARAMETER`, `W_UNUSED_VARIABLE`, `W_SHADOWED_BINDING` (warnings); `E_DUPLICATE_PARAMETER` (error). `_` and `_`-prefixed names are exempt. `E_PANIC_UNMARKED` / `W_PANIC_UNMARKED`: a `defn` that calls `panic` or `zyl_panic` directly without a trailing `!` -- the error in a program-facing stdlib module, the warning in a program; `main`, `panic` itself, test bodies and the compiler's own modules are exempt |
-| after type inference | `numeric_check.zyl` | `E_PARTIAL_OPERATION`: an Int `/` or `%` whose divisor is not a nonzero literal (§20.3). Needs the inferred types to tell Int from Float, so it runs after `ta-annotate` and before ICNF lowering, in `annotate-exprs`; `zyl check` runs it |
 | 8 | `secret_check.zyl` | Taint from `Secret` parameters: `E_CT_VIOLATION` (branch, index, divide), `E_SECRET_DEBUG` (`print`), `E_SECRET_ESCAPE` (`spawn`, `send`, `file-write`), `E_SECRET_UNANNOTATED` (a tainted argument to a `defn` parameter not annotated `Secret`), `E_FFI_PIN_REQUIRED`. `declassify`, `ct-eq-bool` and `ct-eq-words-bool` remove taint |
+
+One check runs *after* type inference rather than with them:
+`numeric_check.zyl` (`nc-check-program`) reports `E_PARTIAL_OPERATION` for
+an Int `/` or `%` whose divisor is not a nonzero literal (§20.3). It needs
+the inferred types to tell Int from Float, so `annotate-exprs` calls it
+between `ta-annotate` and `lower-icnf`. `zyl check` runs it too.
 
 Literal-pattern matches never reach the exhaustiveness check: the
 parser requires a trailing `_` arm for them and lowers them to an `if`
@@ -475,6 +501,24 @@ There are two emitters with one ABI, chosen per function by
   `E_UNBOUND_VARIABLE` remains as a backstop. Output larger than the
   codegen buffer is `E_CODEGEN_BUFFER_FULL`.
 
+## Phase 12b: Binary safety verification
+
+**Implementation:** `verify.zyl` (`verify-asm`), called from
+`codegen-fns` in `pipeline.zyl`
+
+This is a phase of compilation, not a check that runs afterwards. It
+walks the emitted assembly between code generation and linking, and a
+violation aborts the build: no binary is produced, so no linker can be
+handed anything to link. It exists because every other safety check in
+the compiler is the compiler checking itself, and a compiler bug is the
+case none of them cover — the obligation has to move onto the artifact,
+where a wrong binary is rejected rather than run.
+
+The invariant it enforces is that every write through a frame slot
+`[rbp-N]` lies inside the frame that function reserved. The pass costs
+about three FFI calls per assembly line and no per-character work in
+Zyl, and `tests/verify_test.zyl` plus the `frame-oracle` gate cover it.
+
 ## Phase 13: Linking
 
 **Implementation:** `cli-link-command` in `selfhost/driver.zyl`;
@@ -501,12 +545,13 @@ Both run from the bundle directory, where the runtime sits. With
 `--emit-asm`, the assembly is written to the output path and nothing is
 linked.
 
-## Phase 14: Contract injection (during parsing)
+## Phase 14: Contract injection (during phase 3, not a chain step)
 
 **Spec reference:** `zyl_specification.txt` §23
 
 Contract forms are rewritten where every form is recognized,
-`convert-ast` in `expr_inner.zyl`, so later phases see ordinary code:
+`convert-ast` in `expr_inner.zyl` — phase 3, before any check has run —
+so later phases see ordinary code:
 
 - `(requires C)` and `(invariant C)` become `(assert-true C "E_CONTRACT_VIOLATION: ...")`;
   inside a `defn` body the message names the function.
@@ -545,26 +590,33 @@ compile writes no buildinfo.
 ```
 Source (.zyl)
   -> [1]  Balance check                 sexp_balance
-  -> [2]  Lex, read                     lexer, parser        -> (List Ast)
+  -> [2]  Lex, read, desugar            lexer, parser, desugar -> (List Ast)
   -> [3]  Resolve modules, qualify      module_resolver, qualify
           convert-ast                   expr_inner           -> ExprInner
   -> [4]  Macro expansion               macro_expand
+  -> [4b] test-compile decisions        pipeline
   -> [5]  Checks: capability, duplicate, arity, mutability,
-          exhaustiveness, unused, secret
+          linearity, exhaustiveness, unused, secret
   -> [6]  Derive expansion              derive
-  -> [7]  Impl lifting, closure inlining  lift_impls, closure_inline
+  -> [7]  Impl lifting                  lift_impls
+  -> [7b] Closure inlining (identity)   closure_inline
   -> [8]  Type checking, trait resolution,
           specialization                type_annotate, ffi_sigs
+  -> [8b] Numeric check                 numeric_check
   -> [9]  ICNF lowering                 icnf                 -> (List Icnf)
   -> [10] Inlining, copy propagation,
           folding, dead branches        optimization
   -> [11] Region inference              region_inference
   -> [11b] In-place reuse marks         reuse
-          (compile-to-fns stops here; zyl eval and the REPL interpret this)
+          (compile-to-fns stops here; zyl eval and the REPL interpret this,
+           and zyl check stops earlier, at the end of [8b])
   -> [12] Code generation               codegen, mir         -> assembly
+  -> [12b] Binary safety verification   verify
   -> [13] Linking                       asm_x86, elf_link + rt.zo
                                         (cc + rt.o if hosted) -> binary
   -> [15] zyl.buildinfo                 package builds only
+[14] Contract injection is not a step in this chain: `convert-ast` rewrites
+     the contract forms as it recognizes them, inside phase 3.
 ```
 
 ---
@@ -576,18 +628,22 @@ Each step consumes only the output of the steps above it:
 | Step | Consumes | Must not depend on |
 |---|---|---|
 | Balance check | source text | everything after it |
-| Parsing | source text | module resolution onward |
+| Parsing, parse-tree rewrites | source text | module resolution onward |
 | Module resolution | raw `Ast` | macro expansion onward |
-| Macro expansion | qualified `ExprInner` | the checks onward |
+| Macro expansion | qualified `ExprInner` | test-compile onward |
+| test-compile decisions | macro-expanded `ExprInner` | the checks onward |
 | Checks | expanded `ExprInner` | derive expansion onward |
 | Derive expansion | checked `ExprInner` | impl lifting onward |
-| Impl lifting, closure inlining | `ExprInner` with derived impls | type checking onward |
-| Type checking | lifted `ExprInner` | ICNF onward |
-| ICNF lowering | lowered `ExprInner` | optimization onward |
+| Impl lifting | `ExprInner` with derived impls | closure inlining onward |
+| Closure inlining | lifted `ExprInner` | type checking onward |
+| Type checking | closed-over `ExprInner` | numeric check onward |
+| Numeric check | type-annotated `ExprInner` | ICNF onward |
+| ICNF lowering | checked `ExprInner` | optimization onward |
 | Optimization | ICNF | region inference onward |
 | Region inference | optimized ICNF | reuse |
 | In-place reuse | region-annotated ICNF | codegen |
-| Code generation | region-annotated ICNF with reuse marks | linking |
+| Code generation | region-annotated ICNF with reuse marks | the verifier |
+| Binary safety verification | assembly text | linking |
 
 **Rule:** no phase may depend on a later phase. Determinism is required
 at every step.

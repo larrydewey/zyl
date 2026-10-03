@@ -1,0 +1,2 @@
+(use acme/lib)
+(defn main () (begin (print (lib.value)) 0))

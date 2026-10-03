@@ -33,6 +33,8 @@ spawn ::= "(" "spawn" Expression ")"
 - Endpoints that the closure captures directly move to the new actor before its thread starts (§21.3).
 
 ```lisp
+(capabilities actor)
+
 (use actor/actor)
 
 (defn spin (n) (if (= n 0) 0 (spin (- n 1))))
@@ -61,6 +63,8 @@ The order is fixed: `main` prints straight to stdout, and the actor's line is em
 An actor's state lives in its own entry function. A `let-mut` local inside that function is private to the actor:
 
 ```lisp
+(capabilities actor)
+
 (use actor/actor)
 
 (defn counter-actor ()
@@ -129,9 +133,11 @@ When every live actor, `main` included, is blocked on a channel or a join, the r
 
 ## 21.4 Send-Capability Checks
 
-Spec §9.1 R3 and §7.4 require every value that crosses into another actor to be Send-capable. The implemented check is syntactic (`mutability_check.zyl`). It rejects a value sent on a channel, or a spawned expression, that names a `let-mut` variable of the enclosing scope:
+Spec §9.1 R3 and §7.4 require every value that crosses into another actor to be Send-capable. The implemented check is syntactic (`mutability_check.zyl`). It rejects a value sent on a channel, or a spawned expression, that names a `let-mut` variable of the enclosing scope. The next two programs do not compile:
 
 ```lisp
+(capabilities actor)
+
 (use actor/actor)
 
 (defn main ()
@@ -144,29 +150,31 @@ Spec §9.1 R3 and §7.4 require every value that crosses into another actor to b
 ```
 
 ```
-PANIC: error[E_CAPABILITY_LEAK]: value sent on a channel references let-mut (TMut) variable `x` from the enclosing scope
-  --> main.zyl:8:11
-   |
- 8 |           (chan-send tx x)
-   |           ^
- 4 |   (let-mut x 10
-   |   - declared `let-mut` here
-   = help: channel values must be Send-capable; send a copy bound with plain `let`
+error[E_CAPABILITY_LEAK]: value sent on a channel references let-mut (TMut) variable `x` from the enclosing scope
+  --> main.zyl:10:11
+    |
+ 10 |           (chan-send tx x)
+    |           ^
+  6 |   (let-mut x 10
+    |   - declared `let-mut` here
+    = help: channel values must be Send-capable; send a copy bound with plain `let`
 ```
 
 ```lisp
+(capabilities actor)
+
 (defn main ()
   (let-mut count 0
     (spawn (fn () (set! count (+ count 1))))))
 ```
 
 ```
-PANIC: error[E_CAPABILITY_LEAK]: spawned closure captures let-mut (TMut) variable `count` from the enclosing scope
-  --> main.zyl:3:5
+error[E_CAPABILITY_LEAK]: spawned closure captures let-mut (TMut) variable `count` from the enclosing scope
+  --> main.zyl:5:5
    |
- 3 |     (spawn (fn () (set! count (+ count 1))))))
+ 5 |     (spawn (fn () (set! count (+ count 1))))))
    |     ^
- 2 |   (let-mut count 0
+ 4 |   (let-mut count 0
    |   - declared `let-mut` here
    = help: only Send-capable (non-mut) captures may cross into another actor
 ```
@@ -234,13 +242,19 @@ There is no way to stop an actor from outside. Stopping an actor partway through
 
 ## 21.10 Capabilities
 
-In a package with a `zyl.pkg`, `spawn`, `chan`, `chan-send` and `chan-recv`, and any call into `stdlib/actor`, require the `actor` capability (§31.9):
+`spawn`, `chan`, `chan-send` and `chan-recv`, and any call into `stdlib/actor`, require the `actor` capability (§31.9). A package declares it in `zyl.pkg`; a lone file declares it with a top-level `(capabilities actor)`, and without one has no capabilities at all:
 
 ```
-PANIC: error[E_PKG_CAPABILITY_VIOLATION]: package demo/nocap uses actor in helper without declaring it in zyl.pkg
+error[E_PKG_CAPABILITY_VIOLATION]: `spawn` needs the actor capability, and this file declares none
+  --> go.zyl:4:10
+   |
+ 4 |   (let a (spawn (fn () (print "hi")))
+   |          ^
+   = note: a program names what it may do, so a reader sees it at the top
+   = help: add `(capabilities actor)` at the top of the file
 ```
 
-A lone file compiled without a manifest is not checked. The root package's `main` and its top-level `test` forms are checked like any definition.
+The root package's `main` and its top-level `test` forms are checked like any definition.
 
 ## 21.11 Runtime Implementation
 
@@ -263,7 +277,7 @@ A lone file compiled without a manifest is not checked. The root package's `main
 | `E_CHANNEL_CAPACITY` | `(chan n)` with `n` outside 1..16777216 |
 | `E_DEADLOCK` | every live actor blocked on a channel or a join |
 | `E_ACTOR_LIMIT` | more than 1024 actors spawned |
-| `E_PKG_CAPABILITY_VIOLATION` | an actor or channel operation in a package without the `actor` capability |
+| `E_PKG_CAPABILITY_VIOLATION` | an actor or channel operation in a file or package that does not declare the `actor` capability |
 
 ## 21.13 Comparison with Other Models
 

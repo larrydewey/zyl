@@ -7,11 +7,12 @@ The most incredible developer experience for a systems Lisp. Every error is acti
 ## Current State (as of 2026-09-28)
 
 ### What Works
-- **Catalog**: `stdlib/compiler/error_codes.zyl` holds 130 distinct codes
+- **Catalog**: `stdlib/compiler/error_codes.zyl` holds 124 distinct codes
   (phase, severity, default message), covering spec §28 and the §31
-  package codes; `docs/errors.md` lists every one, which module raises
-  it, and which are catalog-only. The catalog is data: checkers write the
-  code into their own message, and nothing looks it up at raise time.
+  package codes; `docs/errors.md` lists every one and which module raises
+  it. The catalog is data: checkers write the code into their own message,
+  and nothing looks it up at raise time. `verify/error-codes.sh` keeps it
+  and the raise sites in exact agreement.
 - **Located diagnostics**: `err-at` in `stdlib/compiler/error_report.zyl`
   renders `error[CODE]: message`, a `--> path:line:col` line, the source
   line, a caret under the node's column and a `= help:` fix-it line.
@@ -46,6 +47,12 @@ The most incredible developer experience for a systems Lisp. Every error is acti
   `textDocument/publishDiagnostics`, and `services/code_action.zyl`
   offers a quick fix when a diagnostic carries `fixIt` data (today only
   balance diagnostics do, with the `sb-hint` text).
+- **Suggestions**: `err-suggest-list` in `error_report.zyl` offers up to
+  three in-scope names for an unbound one, ranked by edit distance, then
+  by whether the candidate is a local, then alphabetically; a name another
+  Lisp uses for a built-in is answered through a fixed synonym table, and
+  `E_UNKNOWN_CONSTRUCTOR` suggests the nearest constructor. `docs/diagnostics.md`
+  is the standard these are held to.
 - **REPL**: diagnostics print as the compiler formats them, and an error
   leaves the session standing (`docs/repl.md`).
 - Compile-fail tests (`tests/compile-fail/`, `tests/packages-fail/`)
@@ -57,15 +64,19 @@ The most incredible developer experience for a systems Lisp. Every error is acti
    and a fix-it hint (see Phase 1 below).
 2. **Coverage of located diagnostics**: most checks are located now.
    The rest raise a plain `PANIC: CODE: message` through `zyl_panic`,
-   with no location: `E_INVALID_CAPABILITY`, `E_PKG_CAPABILITY_GROWTH`,
-   `E_DUPLICATE_PARAMETER`, the byte-primitive shape errors and a few
-   other `expr_inner.zyl` errors, the `icnf.zyl` backstops, the package
-   manifest, lock and index errors, and every run-time panic.
+   with no location: `E_PKG_CAPABILITY_GROWTH`, some of the
+   byte-primitive shape errors and a few other `expr_inner.zyl` errors,
+   the `icnf.zyl` backstops, the package manifest, lock and index errors,
+   and every run-time panic.
 3. ~~**No source snippets**~~ PARTLY FIXED: located diagnostics show the
    offending line with a caret. There is no multi-line context and no
    underline spanning a whole expression.
-4. **No "did you mean?"**: typos in variant names, field names and
-   function names get no suggestion.
+4. **Suggestions are names, not edits**: an unbound name, a name another
+   Lisp uses, and an unknown constructor all get a suggestion, and a
+   `struct-get` of an unknown field is helped by listing the struct's real
+   fields. What is missing is a suggestion for a *typo'd field name*
+   (`struct-get p "xx"` lists the fields but does not say "did you mean
+   `x`"), and for an arity or type mistake beyond the message itself.
 5. **Fix-it hints** are fixed per check (`= help:` text), not computed
    suggested edits.
 6. **No color output**: compiler diagnostics are monochrome (the REPL
@@ -78,8 +89,7 @@ The most incredible developer experience for a systems Lisp. Every error is acti
 9. ~~**Many catalog codes are never raised**~~ FIXED (2026-10-02): the
    31 codes nothing raised were removed from the catalog and spec §28, the
    raised-but-uncatalogued ones were added, and `verify/error-codes.sh`
-   (scripts category) fails on either kind of drift. `E_DIVISION_BY_ZERO`
-   in compiled code is still a SIGFPE, not the code.
+   (scripts category) fails on either kind of drift.
 10. **Name drift**: `exhaustiveness_check.zyl` raises
     `E_NON_EXHAUSTIVE_MATCH` for a missing variant, while spec §28 names
     that `E_MATCH_NONEXHAUSTIVE`, which the literal-match check and ICNF
@@ -110,21 +120,26 @@ the phase plan marks them done; the actual types are listed under
 - Fast: single pass, O(n) time, O(d) space (d = max depth)
 
 **Integration Points**:
-- Parser: called during tokenization phase
-- REPL: live balance checking as user types
-- CLI: `--check-balance` flag for CI/pre-commit
-- LSP: real-time balance diagnostics
+- Compiler: `compile-check-balance` in `pipeline.zyl`, before the parser
+- REPL: reports an unbalanced entry and continues on a new line
+- CLI: `zyl balance [file.zyl | dir ...]` for CI and pre-commit
+- LSP: `diagnostic-from-balance` in `compiler_bridge.zyl`
+
+**Target, beyond what is done**: multi-line context (3 lines before and
+after, with a `>>` pointer), and pointing at the first unbalanced
+delimiter rather than at the line where the nesting first contradicts the
+indentation.
 
 ### 2. Rich Error Reporting
 
 #### 2.1 Colorized Output
 ```
-error[E0308]: type mismatch at tests/example.zyl:12:15
+error[E_TYPE_MISMATCH]: the operands of `+` must have one type at example.zyl:12:15
   |
 12 |     (let x (cons 1 "hello"))
   |               ^^^^^^^^^^^^ expected Int, found String
-  = note: expected type `Int`, found type `String`
-  = help: did you mean `(cons 1 2)`?
+  = help: compare them, or convert one
+  = help: compare them, or convert one
 ```
 
 #### 2.2 Source Snippets with Pointers
@@ -138,11 +153,14 @@ error[E0308]: type mismatch at tests/example.zyl:12:15
 ```
 
 #### 2.3 "Did You Mean?" Suggestions
+Done for unbound names (`pritn` → did you mean `print`?), for a name
+another Lisp uses for a built-in (`string-append` → Zyl spells it
+`str-concat`), and for an unknown constructor arm (`Tri` → did you mean
+`Err`?). Target, still missing:
+
 | Error Type | Suggestion Example |
 |------------|-------------------|
-| Unknown variant | `Triangle` → did you mean `Tri`? |
-| Unknown field | `.x` → did you mean `.y`? |
-| Unknown function | `pritn` → did you mean `print`? |
+| Unknown field | `struct-get p "xx"` → did you mean `x`? (today it lists the fields) |
 | Arity mismatch | `foo 1` → did you mean `foo 1 2`? |
 | Type mismatch | `String` → did you mean `Int`? |
 
@@ -160,9 +178,8 @@ error[E0308]: type mismatch at tests/example.zyl:12:15
 
 ### 3. Error Code Catalog (Complete)
 
-**Current**: 130 codes in `stdlib/compiler/error_codes.zyl`, listed with
-their raising module in `docs/errors.md`, plus the warnings and
-REPL-interpreter codes the catalog does not contain  
+**Current**: 124 codes in `stdlib/compiler/error_codes.zyl`, listed with
+their raising module in `docs/errors.md`, every one raised somewhere.
 **Target**: All codes with:
 - Full description
 - Common causes
@@ -181,22 +198,23 @@ REPL-interpreter codes the catalog does not contain
 
 ### 5. Multiple Error Display
 ```
-error[E0308]: type mismatch at foo.zyl:5:10
-  = note: expected Int, found String
+error[E_TYPE_MISMATCH]: `main` must return the exit status, an Int, but this is `Unit`
+  --> foo.zyl:5:10
+  = help: end its body with `0`
 
-error[E0425]: unbound variable at foo.zyl:12:5
-  = note: variable `x` not found in scope
+error[E_UNBOUND_VARIABLE]: `x` is not defined
+  --> foo.zyl:12:5
   = help: did you mean `y`?
 
-error[E0382]: use of moved value at foo.zyl:20:8
-  = note: `x` moved here at line 15
-  = help: use `x` before moving, or `clone` if Copy
+error[E_MOVE_VALUE]: the binding `x` was released by an earlier call, so it cannot be used again
+  --> foo.zyl:20:8
+  = help: a resource is released exactly once; if you need it again, open a second handle rather than reusing a released one
 ```
 
 ### 6. LSP Structured Errors
 ```json
 {
-  "code": "E0308",
+  "code": "E_TYPE_MISMATCH",
   "message": "type mismatch",
   "severity": "error",
   "range": { "start": { "line": 11, "character": 9 }, "end": { "line": 11, "character": 25 } },
@@ -205,8 +223,8 @@ error[E0382]: use of moved value at foo.zyl:20:8
     { "location": { "uri": "foo.zyl", "range": ... }, "message": "expected Int" }
   ],
   "data": {
-    "suggestions": ["(cast x Int)", "change x to Int"],
-    "fixIt": { "replace": { "start": ..., "end": ... }, "text": "(cast x Int)" }
+    "suggestions": ["change x to Int"],
+    "fixIt": { "replace": { "start": ..., "end": ... }, "text": "0" }
   }
 }
 ```
@@ -259,7 +277,7 @@ String; there is no `ErrorInfo` record. The design target was:
   (EFix description replacement?))
 
 (deftype ErrorInfo
-  (EI code                ; Symbol (E0308, E0382, etc.)
+  (EI code                ; Symbol (E_TYPE_MISMATCH, E_MOVE_VALUE, etc.)
    EI message             ; String
    EI severity            ; Error|Warning|Note
    EI location            ; ErrorLocation

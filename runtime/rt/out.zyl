@@ -133,9 +133,18 @@
     (let _ (rt-st8 p (+ 48 (ffi-call "%urem" m 10 1)))
       (let q (ffi-call "%udiv" m 10 1) (if (= q 0) p (ou-digits q p))))))
 
+; Magnitude of n, as the unsigned value %udiv/%urem divide. Every negative
+; n negates to its magnitude except INT64_MIN, which is its own negation
+; and so needs no negation at all -- its bit pattern is already 2^63
+; unsigned. Branching on that one value keeps `(- 0 n)` out of the
+; overflow it would otherwise be for it.
+(defn ou-min () (- -9223372036854775807 1))
+(defn ou-mag (n)
+  (if (< n 0) (if (= n (ou-min)) (ou-min) (- 0 n)) n))
+
 ; "%lld" of n ending before e; the start address.
 (defn ou-int (n e)
-  (let p (ou-digits (if (< n 0) (- 0 n) n) e) (if (< n 0) (let _ (rt-st8 (- p 1) 45) (- p 1)) p)))
+  (let p (ou-digits (ou-mag n) e) (if (< n 0) (let _ (rt-st8 (- p 1) 45) (- p 1)) p)))
 
 (defn zyl_out_int (n)
   (let e (+ (ffi-call "%tls" "out_int" 32 1) 31) (let q (ou-int n e) (zyl_out_write q (- e q)))))

@@ -26,8 +26,12 @@ Alias      — transparent wrapper (zero-cost)
 
 ### 4.3 Capability Types
 
-`TCap<T>`, `TMut<T>`, `TAtomic<T>`, `TBox<T>`, `TPin<T>` — see
-`spec/06-capability-types.md`.
+A `let` binding is immutable, any number of readers. A `let-mut` binding
+is the only assignable binding; `set!` rebinds it. `Pin<T>` — FFI-pinned
+memory — is the one wrapper with a type, an opaque handle. Zyl has no
+in-place mutation: every `let` binding is immutable, `set!` on a
+`let-mut` binding rebinds it, and `set!` on anything else is
+`E_MUT_CONFLICT`. See `spec/06-capability-types.md`.
 
 ### 4.4 Function Types
 
@@ -102,7 +106,8 @@ top-level `def` values are monomorphic (the value restriction). A type variable 
 | Assertions | `assert-true`, `assert-false`, `assert`: a Bool -> Unit; `assert-equal l r`: l and r of one type -> Unit |
 | `print` | Any value -> Unit |
 | Traits | A method's `Self` is its receiver's type: `(trait Ord (compare (self (other Self)) Int))`. In `(Tr.m r a..)`, r's type selects the impl at compile time; a trait-generic function is specialized per type at every call and every use as a value; a call whose receiver type stays unknown is `E_CANNOT_INFER` |
-| `exit`, `error` | Do not return: any type |
+| `exit`, `panic` | Do not return: any type |
+| `error` | `(error msg)` : `(Result a String)` — the `Err` it constructs. It returns; the form that raises is `panic` (§3, §12.10) |
 | `main` | () -> Int |
 | `spawn` | The entry is () -> a |
 | Actors | `spawn` : (() -> a) -> Actor; `chan` : Int -> (Chan a); `chan-tx`/`chan-rx` : (Chan a) -> (Tx a)/(Rx a); `chan-send` : (Tx a) a -> Unit; `chan-recv` : (Rx a) -> a |
@@ -319,12 +324,19 @@ falls short of §4–§6 and §17.
   the opaque runtime handles `Arena`, `Ptr`, `Words`, `StrBuf`, `UF`,
   `Actor`, `Fd`, `FileId`, `FnPtr`, and the parameterized handles
   `(SMap v)`, `(WVec v)`, `(Attr k v)`, `(Array a)`, `(Ref a)` and
-  `(Pin a)`.
+  `(Pin a)`. Two of those are not really distinct types. `Ptr` resolves
+  to `Int` in `ta-conv-name-1` and `ta-sig-word`: it is a spelling in an
+  FFI signature that documents the word is an address, kept because the
+  runtime has no pointer representation to be distinct from (its own
+  entry is the identity function, `runtime/rt/interp.zyl`). `Arena` is
+  reachable only from the standard library and `--internal-module` code
+  (`E_FFI_RESTRICTED`), so it is listed here as an internal constructor
+  rather than offered to a program -- see `docs/regions-design.md`.
   `(Fn (A ...) R)` is a function type. `(Secret T)` is typed as `T` (the
   secret mark is `secret_check.zyl`'s). There is no `Byte` type: byte
   literals and byte loads are `Int`. The capability wrappers of §4.3 are
-  not types; `TCap`/`TMut` are enforced syntactically
-  (`spec/06-capability-types.md`).
+  not types; aliasing is enforced syntactically, over `let` and `let-mut`
+  bindings (`spec/06-capability-types.md`).
 - Top-level functions are visited in Tarjan order and generalized per
   strongly connected component; `let`, `let-mut`, lambda and `for`
   bindings are monomorphic. `main` must be `() -> Int` (`ta-check-main`).
@@ -373,6 +385,17 @@ falls short of §4–§6 and §17.
   load or store takes either; a handle still a type variable waits for its
   function group, like a `struct-get`, and is `E_CANNOT_INFER` if nothing
   settles it (`ta-bytes-ambiguous`).
+- **What a program allocates.** A program allocates a byte buffer with
+  `(bytebuf R N)` and takes its address with `bytebuf-ptr`, an Int. The
+  raw-memory entries a program may not name are
+  `E_FFI_RESTRICTED` (`ac-arena-wrapper-p`): `alloc-malloc`,
+  `alloc-free`, `arena-create`, `arena-destroy`, `arena-reset`,
+  `arena-alloc`, `arena-alloc-zeroed`, `arena-used`, `arena-capacity` and
+  `buf-new`, each of which hands out or reclaims a bare address no type
+  follows. Only the standard library and `--internal-module` code may
+  call them. The typed collections take no arena and allocate in a region
+  instead — `vec-new`, `vec-new-cap`, `intmap-new`, `set-create`,
+  `slice-*` — and no `math/*` entry point takes one.
 - A list literal is typed as the `Cons` chain it becomes, so its type is
   `(List τ)` and mixed elements are `E_TYPE_MISMATCH`, reported once:
   a unification failure inside a type (an element of two lists) is not
@@ -414,8 +437,10 @@ falls short of §4–§6 and §17.
 - Statement forms (`print`, `set!`, `while`, `for`, the assertions,
   `chan-send`, `test`) are Unit; `ffi-pin` is `a -> (Pin a)` and
   `ffi-unpin` `(Pin a) -> a` (`Pin` is a handle type, so an `extern` can
-  take one for an out-parameter); `exit` takes an Int and, like
-  `error`, has any type.
+  take one for an out-parameter); `exit` takes an Int, `panic` a String
+  (from `zyl_panic`'s own signature), and both have any type. `error`
+  returns instead: it is a library function of type
+  `String -> (Result a String)`.
 
 ### Generics
 
@@ -437,7 +462,8 @@ falls short of §4–§6 and §17.
   recursion) is `E_CANNOT_INFER`.
 - A type variable in a use's type that no signature of the enclosing
   component mentions is defaulted to Int when the component closes
-  (`ta-default-locals`), e.g. the error type of `(Ok "yes")`. A trait
+  (`ta-default-locals`); one that a member's own signature does mention
+  is kept, and the call settles it. A trait
   call's receiver is never defaulted: an unknown receiver is
   `E_CANNOT_INFER`.
 - Type parameters are not declared: an uppercase name in a field or

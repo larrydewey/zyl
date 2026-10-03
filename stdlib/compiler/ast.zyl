@@ -36,6 +36,12 @@
   ; parse would otherwise go on with 0. Nothing consumes it — the parser
   ; reports it from the token stream before parsing (E_INTEGER_OVERFLOW).
   (TkIntOverflow String Int)
+  ; A numeric literal whose text is not a number at all -- `1.2.3`, two
+  ; decimal points. Like TkIntOverflow it carries the text, because the
+  ; value is the bug: reading it as a float gave 1.2 for `1.2.3` and the
+  ; program went on to be wrong in whatever it computed. The parser
+  ; reports it from the token stream (E_INVALID_CHAR) before parsing.
+  (TkNumMalformed String Int)
   (TkFloat String Int)
   (TkString String Int)
   (TkBool Bool Int)

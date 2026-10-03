@@ -97,17 +97,35 @@
       (scan-ident-end src len (+ i 1))
       i)))
 
-; Digits/'.' run for a numeric literal body.
+; Digits and at most one '.' run for a numeric literal body. A second
+; '.' stops the body rather than joining it, so `1.2.3` comes back as the
+; text `1.2` with a '.' waiting at the end -- lex-num-e turns that into a
+; malformed-literal token instead of a float that quietly dropped its
+; last component.
 ; Returns: Int (end, exclusive)
 (defn scan-num-body (src len i)
+  (scan-num-body-go src len i 0))
+
+(defn scan-num-body-go (src len i dot)
   (if (>= i len)
     i
     (let c (byte-at-n src len i)
       (if (chr-digit-p c)
-        (scan-num-body src len (+ i 1))
-        (if (= c 46)
-          (scan-num-body src len (+ i 1))
+        (scan-num-body-go src len (+ i 1) dot)
+        (if (and (= c 46) (= dot 0))
+          (scan-num-body-go src len (+ i 1) 1)
           i)))))
+
+; The body already holds a '.' and the byte that ended it is another '.'.
+(defn num-second-dot-p (src len i e)
+  (if (>= e len)
+    false
+    (if (= (byte-at-n src len e) 46) (num-dot-in-p src len i e) false)))
+
+(defn num-dot-in-p (src len i e)
+  (if (>= i e)
+    false
+    (if (= (byte-at-n src len i) 46) true (num-dot-in-p src len (+ i 1) e))))
 
 ; Digit run of an exponent tail.
 ; Returns: Int (end, exclusive)
@@ -352,13 +370,19 @@
 ; a value. zyl_cstr_to_int_base answers 0 for a literal it cannot hold, so
 ; reading one as a TkInt made 9223372036854775808 silently the number zero;
 ; the parser reports these as E_INTEGER_OVERFLOW before parsing starts.
+;
+; `1.2.3` is the same kind of mistake: reading it as a Float gave 1.2, and
+; `print` said 1.200000 as if the source had said so. It becomes a token of
+; its own, text and offset, reported as E_INVALID_CHAR before parsing.
 (defn lex-num-e (arena src len i acc e)
   (let text (lex-sub src len i (- e i))
+    (if (num-second-dot-p src len i e)
+      (lex-loop arena src len (+ e 1) (Cons (TkNumMalformed (str-concat text ".") i) acc))
     (if (text-float-marker-p text)
       (lex-loop arena src len e (Cons (TkFloat text i) acc))
       (if (not (int-lit-fits-p text))
         (lex-loop arena src len e (Cons (TkIntOverflow text i) acc))
-        (lex-loop arena src len e (Cons (TkInt (ffi-call "zyl_cstr_to_int_base" text 1000) i) acc))))))
+        (lex-loop arena src len e (Cons (TkInt (ffi-call "zyl_cstr_to_int_base" text 1000) i) acc)))))))
 
 ; Whether an integer literal fits an Int (64-bit, signed). Both the decimal
 ; and the radix-prefixed forms are checked: zyl_cstr_to_int_base answers 0

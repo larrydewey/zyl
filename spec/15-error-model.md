@@ -31,7 +31,7 @@ this document's reading of each code's meaning.
 | `E_NESTED_PATTERN` | Nested pattern in a constructor arm | §4.9, §8 |
 | `E_PANIC_UNMARKED` | A standard-library `defn` that calls `panic` directly is not spelled with a trailing `!` | §25 |
 | `E_MATCH_NONEXHAUSTIVE` | Missing match case | §8.3 |
-| `E_MUT_CONFLICT` | Aliasing violation (TMut/TCap) | §10 |
+| `E_MUT_CONFLICT` | `set!` on a binding that is not a `let-mut`, or two names writing one mutable location | §10 |
 | `E_TRAIT_NOT_FOUND` | Missing impl for trait bound | §5.4 |
 | `E_DUPLICATE_IMPL` | Conflicting impls | §5.3 |
 | `E_TRAIT_NOT_DERIVABLE` | Cannot derive trait | §5.6 |
@@ -44,7 +44,7 @@ this document's reading of each code's meaning.
 | `E_FFI_RESTRICTED` | `ffi-call` names a raw runtime entry outside the standard library, or an `extern` declares a runtime entry | §16 |
 | `E_REGION_ESCAPE` | Region rule violation | §9 |
 | `E_REGION_SPEC` | Malformed `with-region` specification | §9.2 |
-| `E_CAPABILITY_LEAK` | TMut leaked | §10 |
+| `E_CAPABILITY_LEAK` | A `let-mut` binding crosses an actor boundary | §10 |
 
 §4.10 defines two further type errors that §28 does not repeat:
 `E_TYPE_MISMATCH` (two types that must be equal are not) and
@@ -68,8 +68,9 @@ reported before the compile fails (§4.8).
 | `E_REGION_EXHAUSTED` | A `with-region` region ran out of its fixed size or limit (catchable) | §9.2 |
 
 A failed `assert` and a `(panic msg)` carry no code: they print `PANIC:`
-and their message (`assertion failed` for an assert without one), after
-flushing whatever the program already printed.
+and their message (`assert failed` for an assert without one, or the
+assertion's own text when it has one), after flushing whatever the
+program already printed.
 
 Runtime errors abort execution or revert state (if checkpoint active).
 
@@ -79,7 +80,7 @@ Runtime errors abort execution or revert state (if checkpoint active).
 
 ### Compile-Time Errors
 
-Abort compilation immediately. Report error code, location, and message.
+Abort compilation. Report error code, location, and message.
 
 ### Runtime Errors
 
@@ -149,14 +150,14 @@ Not normative.
 (1 error, 2 warning, 3 note) and a message template. It contains every §28
 code plus implementation codes such as `E_ARITY_MISMATCH`,
 `E_UNBOUND_VARIABLE`, `E_DUPLICATE_DEFINITION`, `E_MALFORMED_PARAMETER`,
-`E_OUT_OF_MEMORY`, the `E_UNBALANCED_*` balance errors, the byte-buffer
-codes and the Secret codes (`E_CT_VIOLATION`, `E_SECRET_ESCAPE`,
-`E_SECRET_UNANNOTATED`,
-`E_SECRET_DEBUG`, `E_ZEROIZE_MISSING`, `E_FFI_PIN_REQUIRED`), and also
-`W_TYPE_STRICT` and the interpreter's `E_INTERP_TAG`. The catalog is
-exact: `verify/error-codes.sh` fails when a catalogued code is raised
-nowhere or a raised code is not catalogued (the codes other branches are
-still adding are exempt while they land).
+`E_OUT_OF_MEMORY`, `E_UNKNOWN_TYPE`, the `E_UNBALANCED_*` balance errors,
+the byte-buffer codes and the Secret codes (`E_CT_VIOLATION`,
+`E_SECRET_ESCAPE`, `E_SECRET_UNANNOTATED`, `E_SECRET_DEBUG`,
+`E_ZEROIZE_MISSING`, `E_FFI_PIN_REQUIRED`), and also `W_TYPE_STRICT` and
+the interpreter's `E_INTERP_TAG`. The catalog is exact:
+`verify/error-codes.sh` fails when a catalogued code is raised nowhere or
+a raised code is not catalogued, and it currently reports `error codes:
+124 defined, every one raised, none raised undefined`.
 
 A compile error aborts through the runtime's `zyl_panic`, which prints
 `PANIC: ` and the message to stderr and exits with status 1. Where the
@@ -164,33 +165,33 @@ failing node has a source position, `error_report.zyl` renders the message
 as:
 
 ```
-error[E_UNBOUND_VARIABLE]: unbound identifier `nosuchvar`
+error[E_UNBOUND_VARIABLE]: `nosuchvar` is not defined
   --> hello.zyl:3:16
    |
- 3 |     (print-int nosuchvar)
+ 3 |     (print-int nosuchvar))
    |                ^
-   = help: check the spelling, or bind it with `let` before this point
+   = help: define it with `(defn nosuchvar (...) ...)`, or bind it with `let`
 ```
 
 The mutability, capability, unused-binding and Secret checks, the arity
-pass and the type pass report located errors in this form. A few errors
-still print a bare `CODE: message` line without a location:
-`E_INVALID_CAPABILITY` (`mutability_check.zyl`),
-`E_PKG_CAPABILITY_GROWTH` (`capability_check.zyl`),
-`E_DUPLICATE_PARAMETER` (`unused_check.zyl`), and in `expr_inner.zyl`
-the byte-primitive shape errors, the `set!`-target `E_MUT_CONFLICT` and
-the literal-match `E_MATCH_NONEXHAUSTIVE`, as well as the backstops in
-`icnf.zyl`. `docs/errors.md` marks which codes are located.
+pass and the type pass report located errors in this form — including
+`E_INVALID_CAPABILITY` (`mutability_check.zyl`), `E_DUPLICATE_PARAMETER`
+(`unused_check.zyl`), the `set!`-target `E_MUT_CONFLICT` and the
+literal-match `E_MATCH_NONEXHAUSTIVE` in `expr_inner.zyl`, and the
+backstops in `icnf.zyl`. The package system instead reports through
+`zyl_panic` with a message that already starts with the code, so those
+lines carry no location, and `E_PKG_CAPABILITY_GROWTH`
+(`capability_check.zyl`) is about a graph rather than a line.
+`docs/errors.md` marks which codes are located.
 
 Warnings are `W_UNUSED_PARAMETER`, `W_UNUSED_VARIABLE`,
-`W_SHADOWED_BINDING` and `W_PANIC_UNMARKED` (a program's `defn` that
+`W_SHADOWED_BINDING`, `W_PANIC_UNMARKED` (a program's `defn` that
 calls `panic` directly without a trailing `!`; the same condition in a
 program-facing standard-library module is the error `E_PANIC_UNMARKED`,
-both from `unused_check.zyl`; `W_UNUSED_FUNCTION` is
-catalogued but not raised), printed to stderr
-with a location in the same form (`warning[CODE]: ...`), plus
-`E_ZEROIZE_MISSING` at severity 2. Names that are `_` or start with `_`
-are exempt.
+both from `unused_check.zyl`) and `W_RECOVER_SHADOW` (`expr_inner.zyl`),
+printed to stderr with a location in the same form (`warning[CODE]: ...`),
+plus `E_ZEROIZE_MISSING` at severity 2. Names that are `_` or start with
+`_` are exempt.
 
 ### Which §28 codes are raised
 
@@ -290,10 +291,12 @@ Besides `E_ARITY_MISMATCH` it raises:
 A compiled program reports runtime failures through `zyl_panic`, which
 unwinds to the innermost `try`, or to the test runner, or else prints
 `PANIC: message` and exits with status 1. Most messages are plain text:
-`(error "boom")` prints `PANIC: boom`, a failed assertion prints
+`(panic "boom")` prints `PANIC: boom`, a failed assertion prints
 `PANIC: assert-equal failed`. Those that start with a code are the
 runtime's own (`E_INDEX_OUT_OF_BOUNDS`, `E_REGION_EXHAUSTED`,
 `E_FFI_TIMEOUT`, `error[E_OUT_OF_MEMORY]`) and contract failures
 (`E_CONTRACT_VIOLATION: ...`); `recover` matches arms on that prefix.
-`(checkpoint e)` restores the outer `let-mut` variables `e` assigned
-before an error propagates (see `spec/09-ffi-contracts.md`).
+`(error msg)` is not among them: it returns an `Err` and the program
+carries on (§21.8). `(checkpoint e)` restores the outer `let-mut`
+variables `e` assigned before an error propagates (see
+`spec/09-ffi-contracts.md`).
