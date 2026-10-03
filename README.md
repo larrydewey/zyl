@@ -263,7 +263,7 @@ does not take) → linking (the Zyl assembler and static ELF linker, or
 ## Features
 
 - **S-expression syntax** — homoiconic Lisp with S-expressions targeting x86_64 native code
-- **Region-based memory** — Stack, Heap, Global, Circular and Pin regions; escape analysis over ICNF places each allocation in the call's own frame region (released on return), the caller's result region, or the heap, and `with-region` opens an explicit `arena` or `fixed` region; an escaping Stack value is `E_REGION_ESCAPE`
+- **Region-based memory** — Stack, Heap, Global, Circular and Pin regions; escape analysis over ICNF places each allocation in the call's own frame region (released on return), the caller's result region, or the heap, and `with-region` opens an explicit region of a declared size, released when its body ends; an escaping Stack value is `E_REGION_ESCAPE`
 - **Capability types** — no in-place mutation: every `let` binding is
   immutable and may be shared, a `let-mut` binding is the only assignable
   one and `set!` rebinds it, and `set!` on anything else is

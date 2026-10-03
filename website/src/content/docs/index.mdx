@@ -28,8 +28,8 @@ import helloSrc from '../../../examples/hello.zyl?raw';
 import helloOut from '../../../examples/hello.out?raw';
 import shapesSrc from '../../../examples/shapes.zyl?raw';
 import shapesOut from '../../../examples/shapes.out?raw';
-import arenaSrc from '../../../examples/arena.zyl?raw';
-import arenaOut from '../../../examples/arena.out?raw';
+import regionsSrc from '../../../examples/regions.zyl?raw';
+import regionsOut from '../../../examples/regions.out?raw';
 import counterSrc from '../../../examples/counter.zyl?raw';
 import counterOut from '../../../examples/counter.out?raw';
 import contractsSrc from '../../../examples/contracts.zyl?raw';
@@ -50,9 +50,9 @@ export const run = (name, out, err = '') => ('$ zyl ' + name + '.zyl -o ' + name
 		<Code code={shapesSrc} lang="zyl" title="shapes.zyl" />
 		<Code code={run('shapes', shapesOut)} lang="text" title="Output" />
 	</TabItem>
-	<TabItem label="arena.zyl">
-		<Code code={arenaSrc} lang="zyl" title="arena.zyl" />
-		<Code code={run('arena', arenaOut)} lang="text" title="Output" />
+	<TabItem label="regions.zyl">
+		<Code code={regionsSrc} lang="zyl" title="regions.zyl" />
+		<Code code={run('regions', regionsOut)} lang="text" title="Output" />
 	</TabItem>
 	<TabItem label="counter.zyl">
 		<Code code={counterSrc} lang="zyl" title="counter.zyl" />

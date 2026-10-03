@@ -8,11 +8,11 @@
     (End 0)
     (Link h t (+ h (total t)))))
 
-;; The list lives in the arena; only the Int leaves it.
-(defn arena-total (n)
-  (with-region (arena :block 65536 :limit 1048576)
+;; The list lives in the region; only the Int leaves it.
+(defn region-total (n)
+  (with-region (fixed :size 65536)
     (total (build n (End)))))
 
 (defn main ()
-  (print (arena-total 1000))
+  (print (region-total 1000))
   0)
