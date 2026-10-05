@@ -1540,8 +1540,11 @@
 ; positive literal timeout. A symbol of this runtime (`zyl_` prefix, no
 ; extern: the type pass refuses an extern for a runtime entry) is called
 ; directly, timeout unused. Any other symbol is foreign code: the call goes through
-; zyl_ffi_timed(address, name, timeout-ms, argc, args...), which runs it
-; on a worker thread and raises E_FFI_TIMEOUT when it overruns.
+; zyl_ffi_timed(address, name, timeout-ms, request, args...), which runs it
+; on a worker thread and raises E_FFI_TIMEOUT when it overruns. `request`
+; is the argument count in its low byte and the signature's class mask
+; above it (ic-ffi-request); the runtime unpacks it, and the interpreter
+; forwards the same word, so both reach the worker with the same class.
 (defn ic-ffi (arena args vt)
   (match args
     (Cons sym tail
@@ -1559,9 +1562,40 @@
                 (Cons (ISymAddr name)
                   (Cons (IStr name)
                     (Cons (IConst (ffi-literal-int (ffi-last-expr tail)))
-                      (Cons (IConst (list-length real))
-                        (ic-expr-list arena real vt))))))))))))))
+                      (Cons (IConst (ic-ffi-request name (list-length real)))
+                          (ic-expr-list arena real vt))))))))))))))
     (Nil (let _ (ffi-check-call args (Expr (EAtom (ANil)))) (IFfi "?" Nil)))))
+
+; The word both bridges take in place of a bare argument count: argc in
+; the low byte, the class mask above (ffitimed.zyl, ff-argc-of/ff-class-of).
+(defn ic-ffi-request (name argc) (+ argc (* 256 (ic-ffi-class-mask name))))
+
+; The class of a foreign signature, as the runtime's mixed call wants it:
+; bit i set when argument i is a Float, which travels in an xmm register,
+; and bit 16 when the result is one, which comes back from xmm0. Read off
+; the extern, which is the same declaration the type pass checked the call
+; against, so the mask cannot disagree with the argument types.
+;
+; Only a Float spelled as itself is a set bit: a type built out of one is
+; refused by the type pass (ta-extern-ok), so an extern that got this far
+; has no other SSE argument, and a missing extern (which the type pass
+; reported separately) has no signature to classify at all.
+(defn ic-ffi-class-mask (name)
+  (match (extern-sig-of name)
+    (None 0)
+    (Some sig
+      (match sig
+        (ExternSig pes re (bit-or (ic-ffi-class-args pes 0) (if (ic-ffi-float-expr re) 65536 0)))))))
+
+(defn ic-ffi-class-args (pes i)
+  (match pes
+    (Nil 0)
+    (Cons p rest (bit-or (if (ic-ffi-float-expr p) (shl 1 i) 0) (ic-ffi-class-args rest (+ i 1))))))
+
+(defn ic-ffi-float-expr (e)
+  (match (Expr.inner e)
+    (EAtom a (match a (AIdent n (str-eq n "Float")) (_ false)))
+    (_ false)))
 
 ; (%syscallK n args...) with a literal n: a call of the zyl_rt_sys_<n> stub the runtime module emits.
 (defn ic-syscall (arena args)

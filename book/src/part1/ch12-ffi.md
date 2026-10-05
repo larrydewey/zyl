@@ -98,7 +98,7 @@ error[E_FFI_TIMEOUT_REQUIRED]: the call to `abs` has no timeout: its last argume
 
 The runtime's `zyl_*` functions take no `extern`, so a call to one always ends with its own timeout.
 
-The types must be concrete: a type variable, such as `(extern "abs" (a) b)`, would let one call pretend C returned any type at all, so it is `E_TYPE_MISMATCH`. `Float` is refused too (§12.2). There is no cast form in Zyl, so the `extern` is the only place a C value's type is decided: get it right, because the compiler takes it on trust.
+The types must be concrete: a type variable, such as `(extern "abs" (a) b)`, would let one call pretend C returned any type at all, so it is `E_TYPE_MISMATCH`. A `Float` crosses on its own but not inside a type (§12.2). There is no cast form in Zyl, so the `extern` is the only place a C value's type is decided: get it right, because the compiler takes it on trust.
 
 The Zyl runtime's own `zyl_*` functions need no declaration: the compiler types each one from its signature table, `stdlib/compiler/ffi_sigs.zyl`, so `(ffi-call "zyl_int_text" 42 1000)` needs no `extern` and has type `String`. An `extern` is only for foreign code. Calling a runtime entry declared with one, such as `(extern "zyl_int_text" (Int) Int)`, is `E_FFI_RESTRICTED`: the program may not retype the runtime. A few runtime functions that read raw memory or reinterpret a machine word as another type (an arbitrary `Int` as a pointer or a `String`, say) are reserved for the standard library; calling one from a program is `E_FFI_RESTRICTED`.
 
@@ -146,14 +146,14 @@ The specification allows only these types across the FFI boundary (Spec §16):
 | `Int` | `int64_t` | 64-bit signed |
 | `Bool` | `int64_t` (0 or 1) | |
 | `String` | `const char*` | NUL-terminated bytes |
-| `Float` | see below | IEEE-754 binary64 |
+| `Float` | `double` | IEEE-754 binary64, in an SSE register |
 | `Vec<T>` (T pinnable) | pointer | No C header describes the layout |
 | Struct / ADT with pinnable fields | pointer to its heap block | |
 
-The code generator passes every argument as a 64-bit word in the integer argument registers (`rdi`, `rsi`, `rdx`, `rcx`, `r8`, `r9`) and reads the result from `rax`. Two consequences:
+Every argument is one 64-bit word, and where it goes is the System V ABI's decision: an integer or pointer in `rdi`, `rsi`, `rdx`, `rcx`, `r8`, `r9` and then the stack, a `double` in `xmm0`..`xmm7` and then the stack; a result in `rax`, or in `xmm0` for a `double`. The compiler reads the `extern` to work out which class each argument is, emits that with the call, and the runtime puts each word where it belongs before the call (§12.10). Two consequences:
 
-- **Floats do not reach C `double` parameters.** A `Float` would travel as its raw bit pattern in an integer register, where a C function declared `double f(double)` does not look for it. That is why an `extern` may not mention `Float`: `(extern "fabs" (Float) Float)` is rejected at the first call. Write a small C wrapper that takes and returns `int64_t` and converts with `memcpy`, declare it with `Int`, and convert on the Zyl side with the runtime's `zyl_float_bits` (`Float -> Int`) and `zyl_float_of_bits` (`Int -> Float`).
-- **Write C signatures with `int64_t` (or `long long`) and pointers only**, and return `int64_t`, a pointer or `void`.
+- **A C `double` is a Zyl `Float`.** The 64 bits are moved across unchanged, so an infinity, a negative zero and a NaN survive the trip exactly; `(extern "snprintf" (Ptr Int String Float) Int)` and `(extern "strtod" (String) Float)` are ordinary declarations. What does *not* cross is a `Float` inside another type — `(extern "f" ((Pin Float)) Float)` and a `(Fn (Float) R)` callback parameter are `E_TYPE_MISMATCH`, because an aggregate's eightbyte class is not computed. Pass a struct with a `Float` field as a pointer, or convert at the C side.
+- **Write C signatures with `int64_t` (or `long long`) and pointers**, and return `int64_t`, a pointer, `double` or `void`.
 
 The `extern` declaration is what enforces the table: `(ffi-call "abs" (Some 1) 1000)` against `(extern "abs" (Int) Int)` is `E_TYPE_MISMATCH`. Structs, ADTs and `Vec`s cannot be named in an `extern` at all today; pass their fields one by one.
 
@@ -416,7 +416,8 @@ To link your own objects into a single-file program, use `--emit-asm` and run th
 |---------|----------|
 | Forgetting the timeout | Compile error `E_FFI_TIMEOUT_REQUIRED`; end every call with a positive literal such as `1000` |
 | Calling a C function with no `extern` | Compile error `E_CANNOT_INFER`; declare `(extern "sym" (T ...) R)` first |
-| Passing a `Float` to a `double` parameter | Use an `int64_t` wrapper in C (§12.2) |
+| A `Float` in an `extern` refused as "not inside a type" | Only a bare `Float` crosses; pass the containing value as a pointer, or convert in C (§12.2) |
+| Calling `fabs`/`sqrt` and getting an undefined reference at link | The driver links libc but not `-lm`; write a `static inline double` wrapper in your own C, or call a libc function such as `strtod` (§12.2) |
 | Printing a C string pointer | Declare it `Ptr` and read it with `(alloc-cstr ptr)` |
 | A timeout too tight for slow C code | The call raises `E_FFI_TIMEOUT` and the C function is abandoned (§12.7); budget generously |
 | Memory leaks | Free `malloc`ed results from C; buffers should be a `(bytebuf R N)`, which a region accounts for |
@@ -434,10 +435,12 @@ The arity pass (`stdlib/compiler/arity_check.zyl`) checks each `ffi-call` first:
 `(ffi-call "sym" a b timeout)` then reaches ICNF lowering (`ic-ffi` in `stdlib/compiler/icnf.zyl`) as an application of `ffi-call`; lowering runs `ffi-check-call` again. A `zyl_*` runtime symbol becomes `IFfi "sym" (a b)`, a direct call. Any other symbol becomes a call of the runtime's timed bridge:
 
 ```
-IFfi "zyl_ffi_timed" (ISymAddr "sym", IStr "sym", IConst timeout, IConst 2, a, b)
+IFfi "zyl_ffi_timed" (ISymAddr "sym", IStr "sym", IConst timeout, IConst request, a, b)
 ```
 
-`ISymAddr` is the address of the C symbol, emitted as `mov rax, QWORD PTR [rip+sym@GOTPCREL]`. Code generation evaluates the arguments left to right, loads them into the System V integer argument registers (the rest on the stack), and emits the call with the stack 16-byte aligned. The result is read from `rax`.
+`request` is the argument count (2 here) in its low byte, with the signature's ABI class mask above it: bit 8+i set when argument i is a `Float`, bit 24 when the result is one. A signature with no `Float` masks to zero, and the word is then exactly the argument count it has always been.
+
+`ISymAddr` is the address of the C symbol, emitted as `mov rax, QWORD PTR [rip+sym@GOTPCREL]`. Code generation evaluates the arguments left to right and hands them over as words; the worker thread running the call loads them into the registers the ABI names for them (the rest on the stack) and emits the call with the stack 16-byte aligned. The result is read from `rax`, or from `xmm0` when the `extern` says the result is a `Float`.
 
 ### Pin Region Implementation
 
@@ -445,7 +448,7 @@ The runtime keeps one Pin arena (`runtime/rt/alloc.zyl`), created alongside the 
 
 ### Timeout Implementation
 
-`zyl_ffi_timed` in `runtime/rt/ffitimed.zyl` looks up the calling thread's worker (creating it on first use), hands it the function address and arguments, and waits on the runtime's futex condition variable (`zyl_rt_cond_timedwait`, `runtime/rt/thread.zyl`) against a monotonic deadline. On expiry it marks the worker abandoned, forgets it, records that some call has been abandoned (which disables the exit-time arena teardown), and raises `E_FFI_TIMEOUT`. The interpreter calls the same code through `zyl_ffi_timed_argv`, which takes the arguments as an array.
+`zyl_ffi_timed` in `runtime/rt/ffitimed.zyl` looks up the calling thread's worker (creating it on first use), hands it the function address, the request word and the arguments, and waits on the runtime's futex condition variable (`zyl_rt_cond_timedwait`, `runtime/rt/thread.zyl`) against a monotonic deadline. On expiry it marks the worker abandoned, forgets it, records that some call has been abandoned (which disables the exit-time arena teardown), and raises `E_FFI_TIMEOUT`. The interpreter calls the same code through `zyl_ffi_timed_argv`, which takes the arguments as an array.
 
 ---
 

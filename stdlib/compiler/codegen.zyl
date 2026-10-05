@@ -2543,8 +2543,13 @@
   (if (rt-mode-p)
     (let st2 (cg-rt-bss-list (cg-emit-line st ".bss") (rt-globals) "zyl_rtg_")
       (let st3 (cg-rt-tls-exports (cg-rt-bss-list (cg-emit-line st2 ".section .tbss,\"awT\",@nobits") (rt-globals) "zyl_rtt_") (rt-tls-exports))
-        (cg-rt-weaks (cg-emit-lines (cg-emit-lines (cg-emit-lines (cg-rt-call-stubs (cg-rt-syscall-stubs (cg-emit-line st3 ".text") (rt-syscalls)) 0) (cg-rt-jmp-stubs)) (cg-rt-clone-stub)) (cg-rt-trap-stubs)) (rt-weaks))))
+        (cg-rt-weaks (cg-emit-lines (cg-emit-lines (cg-emit-lines (cg-rt-callmix-lines (cg-rt-call-stubs (cg-rt-syscall-stubs (cg-emit-line st3 ".text") (rt-syscalls)) 0)) (cg-rt-jmp-stubs)) (cg-rt-clone-stub)) (cg-rt-trap-stubs)) (rt-weaks))))
     st))
+
+; The stub is emitted in the runtime module only: it is the one place that
+; makes a mixed integer/float foreign call, and a program that calls no
+; foreign code links without it.
+(defn cg-rt-callmix-lines (st) (cg-emit-lines st (cg-rt-callmix-stub)))
 
 (defn cg-rt-bss-list (st gs prefix)
   (match gs
@@ -2598,11 +2603,87 @@
   (if (> k 16) st
     (cg-rt-call-stubs (cg-emit-lines st (cg-rt-call-stub k)) (+ k 1))))
 
+;; zyl_rt_callmix(f, iregs, fregs, out, retf, nvec): the timed FFI worker's
+;; call for a signature with a Float in it, where zyl_rt_call<K> (which can
+;; only shift integer registers down a slot) cannot go. Which argument
+;; belongs in which register is the ABI's classification, and that is data,
+;; not assembly: the runtime decides it in ff-place and hands over three
+;; arrays -- the words for rdi..r9, for xmm0..7, and for the outgoing
+;; stack, in the order the callee reads them. This loads them, calls, and
+;; brings xmm0 back into rax when the result is a double.
+;;
+;; `out` is copied a fixed 16 words: the words past the ones the signature
+;; uses are zeros the runtime wrote, so nothing of an earlier call is left
+;; in a slot the ABI leaves undefined.
+;;
+;; 256 bytes of frame, which keeps the copy well clear of the caller's
+;; 128-byte red zone ([rsp-128, rsp) is the caller's, and 742 leaf
+;; functions use it), and `and rsp, -16` is what puts the outgoing words
+;; where the callee reads them: at [rsp+8] of its own frame, once the call
+;; has pushed the return address. rbx, r12, r13, r14 and r15 are pushed
+;; because the stub is an ordinary function: rbx holds the frame to come
+;; back to, r12 the array being read, r15 f across the call, and r13/r14
+;; retf and nvec, which are read out of r8/r9 before the register loads
+;; overwrite those two argument registers.
+(defn cg-rt-callmix-stub ()
+  (list-append (Cons ".globl zyl_rt_callmix"
+    (Cons "zyl_rt_callmix:"
+    (Cons "    push rbx" (Cons "    push r12" (Cons "    push r13"
+    (Cons "    push r14" (Cons "    push r15"
+    ; f, and the two words the loads below would otherwise take with
+    ; them: the loads write rdi..r9 and rax, so retf and nvec are read
+    ; out first, into registers the callee has to give back.
+    (Cons "    mov r15, rdi" (Cons "    mov r13, r8" (Cons "    mov r14, r9"
+    (Cons "    mov rbx, rsp"
+    (Cons "    sub rsp, 256" (Cons "    and rsp, -16"
+    (Cons "    mov r12, rcx" Nil))))))))))))))
+    (list-append (cg-callmix-out 0 16)
+      (list-append (Cons "    mov r12, rdx" Nil)
+        (list-append (cg-callmix-xmm 0 8)
+          (list-append (Cons "    mov r12, rsi" Nil)
+            (list-append (cg-callmix-int 0 6)
+              (Cons "    mov eax, r14d"
+              (Cons "    call r15" (Cons "    test r13, r13"
+              (Cons "    jz .Lzyl_rt_callmix_word" (Cons "    movq rax, xmm0"
+              (Cons ".Lzyl_rt_callmix_word:" (Cons "    mov rsp, rbx"
+              (Cons "    pop r15" (Cons "    pop r14" (Cons "    pop r13"
+              (Cons "    pop r12" (Cons "    pop rbx"
+              (Cons "    ret" Nil))))))))))))))))))))
+
 (defn cg-rt-call-stub (k)
   (Cons (str-concat "zyl_rt_call" (str-concat (ffi-call "zyl_int_text" k 1000) ":"))
     (Cons "    mov rax, rdi"
       (list-append (cg-rt-shift-regs k 0)
         (Cons "    jmp rax" Nil)))))
+
+; [base + off], as "[base]" when the offset is zero.
+(defn cg-callmix-mem (base off)
+  (if (= off 0)
+    (str-concat "[" (str-concat base "]"))
+    (str-concat "[" (str-concat (str-concat base "+") (str-concat (ffi-call "zyl_int_text" off 1000) "]")))))
+
+; out[i] -> the outgoing stack, a fixed 16 words.
+(defn cg-callmix-out (i n)
+  (if (>= i n) Nil
+    (list-append (Cons (str-concat "    mov rax, " (cg-callmix-mem "r12" (* 8 i)))
+      (Cons (str-concat "    mov " (str-concat (cg-callmix-mem "rsp" (* 8 i)) ", rax")) Nil))
+      (cg-callmix-out (+ i 1) n))))
+
+; fregs[i] -> xmm_i, by way of rax: the assembler already knows both halves
+; of this pair from code generation's own float arithmetic, and a
+; memory-operand movq into an xmm would be a form nothing else emits.
+(defn cg-callmix-xmm (i n)
+  (if (>= i n) Nil
+    (list-append (Cons (str-concat "    mov rax, " (cg-callmix-mem "r12" (* 8 i)))
+      (Cons (str-concat "    movq xmm" (str-concat (ffi-call "zyl_int_text" i 1000) ", rax")) Nil))
+      (cg-callmix-xmm (+ i 1) n))))
+
+; iregs[i] -> the i'th integer argument register.
+(defn cg-callmix-int (i n)
+  (if (>= i n) Nil
+    (list-append (Cons (str-concat "    mov rax, " (cg-callmix-mem "r12" (* 8 i)))
+      (Cons (str-concat "    mov " (str-concat (cg-reg-of i) ", rax")) Nil))
+      (cg-callmix-int (+ i 1) n))))
 
 (defn cg-rt-shift-regs (k i)
   (if (>= i k) Nil

@@ -244,8 +244,10 @@ final `ExprInner` program. Each node's type goes to the node table
   `send` needs an `Actor`; `file-open`'s mode is a literal fopen mode.
 - **FFI.** An `ffi-call` to a `zyl_*` runtime symbol is typed by its
   signature in `ffi_sigs.zyl`; one to a foreign symbol by its `(extern
-  "sym" (T ...) R)` declaration, whose types must be concrete and not
-  Float. An undeclared foreign symbol, or a runtime symbol with no
+  "sym" (T ...) R)` declaration, whose types must be concrete and either
+  a bare `Float` or free of one -- a `Float` inside a type is
+  `E_TYPE_MISMATCH`, its aggregate eightbyte class uncomputed. An
+  undeclared foreign symbol, or a runtime symbol with no
   signature (except eleven string-producing ones), is `E_CANNOT_INFER`;
   an `extern` for a symbol the runtime exports is `E_FFI_RESTRICTED`.
   `ffi-pin` gives a `(Pin a)`, `ffi-unpin` takes it back to `a`, and
@@ -308,9 +310,12 @@ IRegion
   literal timeout). A `zyl_*` runtime symbol becomes a direct `IFfi`
   with the timeout dropped; any other symbol becomes `IFfi
   "zyl_ffi_timed"` whose leading arguments are `ISymAddr sym` (the C
-  symbol's address, through the GOT), the name, the timeout and the
-  argument count, so the runtime can run the call on a worker thread
-  and raise `E_FFI_TIMEOUT` when it overruns.
+  symbol's address, through the GOT), the name, the timeout and a
+  request word -- the argument count in its low byte, the signature's
+  ABI class mask above it, read off the same `extern` (`ic-ffi-class-mask`)
+  -- so the runtime can run the call on a worker thread, place a `Float`
+  argument in an `xmm` register and a `Float` result in `rax`, and raise
+  `E_FFI_TIMEOUT` when it overruns.
 - A lambda whose body is closed is hoisted to a top-level function. A
   capturing lambda becomes a `[tag, code, env]` value. Every call
   through a local is an indirect call that tells the two apart by the

@@ -1,8 +1,14 @@
 ; expect-error: E_TYPE_MISMATCH
-; A Float cannot cross the C boundary: the timed FFI worker passes
-; machine words.
+; A Float of its own crosses the C boundary (spec §16); a type built out
+; of one does not. An aggregate is classified eightbyte by eightbyte, and
+; this compiler does not compute that, so a Float inside a type -- here a
+; pinned slot's pointee, there a C callback's parameter -- is refused.
 
 (capabilities ffi)
 
-(extern "fabs" (Float) Float)
-(defn main () (begin (print (ffi-call "fabs" -1.5 1000)) 0))
+(extern "ml_scale" ((Pin Float)) Float)
+
+(defn main ()
+  (begin
+    (print (ffi-call "ml_scale" (ffi-pin 2.5) 1000))
+    0))

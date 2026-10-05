@@ -128,6 +128,14 @@ a signed provenance trailer, and `zyl verify <binary>` reads it back
   A foreign call runs on a per-thread worker through the runtime's
   `zyl_ffi_timed`; overrunning raises `E_FFI_TIMEOUT` and the call is
   abandoned, not killed. `zyl_*` runtime symbols are called directly.
+  A `Float` in an `extern` crosses as C's `double`: the compiler emits
+  the signature's ABI class mask in the request word the bridge takes
+  (`ic-ffi-class-mask`), the worker places each argument word in the
+  integer register, the `xmm` register or the stack slot the ABI names
+  (`ff-place`, `zyl_rt_callmix`), sets `al`, and reads a `Float` result
+  out of `xmm0`. The bits are the value, so nothing is rounded. A `Float`
+  *inside* a type is `E_TYPE_MISMATCH` — the eightbyte class of an
+  aggregate is not computed — as is a `Float` callback parameter.
   A foreign `ffi-call`/`ffi-pin` needs the `ffi` capability, declared in
   `zyl.pkg` by a package and by a top-level `(capabilities ffi)` form in
   a lone file (absent means none; a `zyl_*` runtime entry needs no

@@ -27,10 +27,13 @@ Declares the C signature of a foreign symbol; every `ffi-call` to it is
 type-checked against it (§4.9), and an `ffi-call` to a foreign symbol
 with no `extern` is a Compile Error (`E_CANNOT_INFER`). The types are
 concrete (no type variables: that would be a cast) and fit a machine
-word: Int, Bool, String, Ptr, the runtime's opaque handle types, and
-`(Fn (A1 ... An) R)` for a C callback. Float is not allowed (the timed
-call passes every argument in an integer register), nor is Float
-returned. R may be Unit.
+word: Int, Bool, String, Ptr, Float, the runtime's opaque handle types,
+and `(Fn (A1 ... An) R)` for a C callback. A Float crosses in an SSE
+register (`xmm0`..`xmm7`, then the stack) and a Float result comes back
+from `xmm0`, the bits being the IEEE-754 binary64 value unchanged; a
+Float *inside* another type does not cross (`E_TYPE_MISMATCH`), because
+the eightbyte class of a Float-bearing aggregate is not computed. R may
+be Unit.
 
 `Ptr` is a spelling of `Int`, kept to document that the word is an
 address: the runtime has no pointer representation to be distinct from,
@@ -171,10 +174,11 @@ Not normative.
 - **`extern`** (`parse-extern`, `expr_inner.zyl`) records the signature
   by symbol in `extern-table`, emptied per compile; the form itself is
   Unit and emits no code. A malformed one is `E_MALFORMED_FORM`. When a
-  call is typed, every parameter and the result must be concrete and
-  contain no Float (`ta-extern-ok`); a type variable or Float is
-  `E_TYPE_MISMATCH` ("cannot cross the C boundary"). The check does not
-  otherwise restrict which types appear, so a declared struct or ADT type
+  call is typed, every parameter and the result must be concrete and be a
+  bare Float or contain none (`ta-extern-ok`); a type variable, or a Float
+  inside a type, is `E_TYPE_MISMATCH` ("a Float crosses on its own but not
+  inside a type"). The check does not otherwise restrict which types
+  appear, so a declared struct or ADT type
   is accepted (it crosses as its pointer). A declaration is trusted: the
   compiler cannot see the C side.
 - **Raw entries.** `ffi-raw-p` lists the runtime entries that read raw
@@ -202,7 +206,19 @@ Not normative.
 - A foreign symbol is called through the runtime's `zyl_ffi_timed`
   bridge: the call runs on a worker thread owned by the calling thread
   (kept between calls, so thread-local C state such as `errno` stays
-  consistent), and the caller waits on a monotonic clock. When the
+  consistent), and the caller waits on a monotonic clock. The word the
+  bridge takes in place of a bare argument count carries the signature's
+  ABI class with it (bit 8+i set when argument i is a Float, bit 24 when
+  the result is); a signature with no Float in it is 0 and takes the
+  integer-only path, byte for byte what it took before. A class mask
+  makes the worker place each argument word in the integer register, the
+  SSE register or the outgoing stack slot the ABI names for it
+  (`ff-place`), and hand the arrays to `zyl_rt_callmix`, which loads the
+  registers, sets `al` to the number of vector registers used (so a
+  variadic callee can spill them) and brings `xmm0` back into `rax` when
+  the result is a Float. The mask is computed by the compiler from the
+  same `extern` the type pass checked the call against, so it cannot
+  disagree with the argument types. When the
   timeout expires first the caller raises `E_FFI_TIMEOUT` (catchable
   with `try`, matchable with `recover`). The C function cannot be
   stopped safely, so it is abandoned: its worker finishes and frees

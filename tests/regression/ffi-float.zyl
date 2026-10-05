@@ -1,0 +1,51 @@
+; FFI with Float in the signature (spec §16): a Float crosses in an SSE
+; register and its 64 bits are the double C reads, so nothing but the
+; placement is Zyl's business. libc provides every shape needed here --
+; strtod and atof return a double, snprintf takes one -- so this needs no
+; C of its own.
+
+(capabilities ffi)
+
+(use allocator/allocator)
+
+(extern "strtod" (String) Float)
+(extern "atof" (String) Float)
+(extern "snprintf" (Ptr Int String Float Int Float) Int)
+(extern "abs" (Int) Int)
+
+; The result comes back from xmm0 rather than rax.
+(test "ffi-float-result"
+  (assert-equal (ffi-call "strtod" "2.5" 1000) 2.5))
+
+(test "ffi-float-result-signed"
+  (assert-equal (ffi-call "atof" "-0.125" 1000) -0.125))
+
+(test "ffi-float-arithmetically-usable"
+  (assert-equal (* 2.0 (ffi-call "atof" "1.5" 1000)) 3.0))
+
+; The bits are the value: nothing on the way special-cases an infinity,
+; a NaN or a negative zero, so what C computed is what Zyl sees.
+(test "ffi-float-specials"
+  (let inf (ffi-call "strtod" "inf" 1000)
+    (let nan (ffi-call "strtod" "nan" 1000)
+      (begin
+        (assert-true (> inf 1e300))
+        (assert-true (not (= nan nan)))
+        (assert-true (< (/ 1.0 (ffi-call "strtod" "-0.0" 1000)) 0.0))))))
+
+; A Float argument goes in an xmm register, the Ints beside it in integer
+; ones, and the count of vector registers is what a variadic callee reads
+; out of al: printf("%.1f") is the case that needs all three at once.
+(test "ffi-float-in-varargs"
+  (let buf (bytebuf Heap 128)
+    (let p (bytebuf-ptr buf)
+      (begin
+        (ffi-call "snprintf" p 128 "%.1f|%d|%.1f" 1.5 42 2.25 1000)
+        (assert-equal (str-concat "" (alloc-cstr p)) "1.5|42|2.2")))))
+
+; A signature of only Ints still takes the integer path, byte for byte
+; what it took before a Float could cross at all.
+(test "ffi-int-unchanged"
+  (assert-equal (ffi-call "abs" -9 1000) 9))
+
+(run-tests)

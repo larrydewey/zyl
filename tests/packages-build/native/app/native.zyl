@@ -5,8 +5,21 @@
 (use testing/testing)
 
 (extern "zyl_native_double" (Int) Int)
+(extern "zyl_native_fsum" (Float Float) Float)
+(extern "zyl_native_fmix" (Int Float Int Float Int Float Int Float Int Float) Float)
+(extern "zyl_native_ftrunc" (Float) Int)
 
 (test "native object is linked and callable"
   (assert-equal (ffi-call "zyl_native_double" 21 1000) 42))
+
+; A Float crosses in an SSE register, in and out (spec §16).
+(test "native float in and out"
+  (assert-equal (ffi-call "zyl_native_fsum" 1.5 2.25 1000) 3.75))
+
+(test "native mixed argument classes"
+  (assert-equal (ffi-call "zyl_native_fmix" 1 2.0 3 4.0 5 6.0 7 8.0 9 10.0 1000) 55.0))
+
+(test "native float argument, integer result"
+  (assert-equal (ffi-call "zyl_native_ftrunc" 7.75 1000) 7))
 
 (run-tests)

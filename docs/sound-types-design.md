@@ -3,8 +3,9 @@
 Status: implemented (2026-09-24 to 2026-09-25). Strict checking is the
 default since commit d6f4ec2. The guarantee, not a best effort:
 **a program the compiler accepts never uses a value at the wrong
-representation.** No Int used as a pointer, no Float through the integer
-unit, no String compared by address, no call with the wrong arity. This
+representation.** No Int used as a pointer, no Float in a word where the
+ABI wants an SSE register, no String compared by address, no call with the
+wrong arity. This
 holds for user code, the standard library, the REPL, the language server
 and the compiler itself, with no known hole (see "Known hole" below).
 
@@ -111,8 +112,12 @@ empty inferer were used.
 - **Foreign functions.** `(extern "strlen" (String) Int)` declares a C
   signature; an `ffi-call` to an undeclared foreign symbol is an error.
   Extern types are concrete (no type variables) and word-sized: Int,
-  Bool, String, `Ptr`, handles, and `(Fn (A ...) R)` for a callback. Float
-  is rejected because the timed FFI worker passes machine words.
+  Bool, String, `Ptr`, Float, handles, and `(Fn (A ...) R)` for a
+  callback. A `Float` crosses as its own 64 bits, moved into the `xmm`
+  register the ABI names for it by the timed worker, so the argument
+  types still agree with the registers the callee reads. A `Float`
+  *inside* a type is rejected: the eightbyte class of an aggregate is not
+  computed here, so nothing would check the claim.
 - **Byte operations.** `ta-walk-int` typed each operand but required
   nothing of it, so a String offset was accepted and its address used as
   the offset. Each offset, length and stored value is now required to be

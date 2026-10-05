@@ -946,21 +946,28 @@ test failed, so the summary line and the status agree.
 ## 29.10 FFI Call Sequence
 
 An `ffi-call` is an ordinary C call: arguments passed as in §29.3, the
-aligned `call`, the result in `rax`. Before lowering, `ffi-check-call`
+aligned `call`, and the result in `rax` — or in `xmm0` when the `extern`
+declares a `Float` result. Before lowering, `ffi-check-call`
 (`arity_check.zyl`) requires the symbol of `(ffi-call "sym" arg...
 timeout)` to be a string literal (`E_FFI_SYMBOL_REQUIRED`) and the last
 argument to be a positive integer literal (`E_FFI_TIMEOUT_REQUIRED`),
 so a forgotten timeout can no longer swallow a real argument. The type
 pass has already given the call a type: a `zyl_` symbol from the
 signature table in `ffi_sigs.zyl`, any other from its
-`(extern "sym" (T ...) R)` declaration, whose types all fit in one
-integer register (which is why `Float` is refused there for now). A
+`(extern "sym" (T ...) R)` declaration, whose types each fit in one
+machine word — a `Float` in an SSE register, anything else in an integer
+one, and a `Float` inside a type refused (`E_TYPE_MISMATCH`), since an
+aggregate's eightbyte class is not computed. A
 symbol of the runtime (`zyl_` prefix and no `extern`) is called
 directly and its timeout is dropped. Any other symbol is called through the runtime's
 `zyl_ffi_timed`, which receives the symbol's address, its name, the
-timeout, the argument count and then the arguments; it runs the call on
+timeout, a request word and then the arguments; it runs the call on
 a worker thread and raises `E_FFI_TIMEOUT` when the timeout expires
-first. The address is an `ISymAddr` node, emitted as
+first. The request word is the argument count in its low byte with the
+signature's class mask above it (bit 8+i for a `Float` argument, bit 24
+for a `Float` result), which is what tells the worker which registers to
+load; it is 0 for an integer-only signature, whose call is the one this
+compiler emitted before a `Float` could cross at all. The address is an `ISymAddr` node, emitted as
 `mov rax, QWORD PTR [rip+sym@GOTPCREL]`. `ffi-pin`/`ffi-unpin` are
 calls to `ffi_pin`/`ffi_unpin` in the runtime.
 

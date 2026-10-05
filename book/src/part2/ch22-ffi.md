@@ -15,7 +15,7 @@ The specification's model (§16, R4, R8) is:
 What the compiler does today:
 
 - Every foreign function is declared with `extern`, which gives its C signature; the type pass checks each `ffi-call` against it (§22.2). The runtime's own `zyl_*` functions are typed by the compiler's signature table, and an `extern` for one is `E_FFI_RESTRICTED`.
-- `ffi-call` compiles to a System V call of the named C symbol, passing every argument as a 64-bit word in the integer registers. A foreign symbol is called on a worker thread through the runtime's timed bridge; the runtime's own `zyl_*` symbols are called directly.
+- `ffi-call` compiles to a System V call of the named C symbol. A word crosses as a 64-bit integer register; a `Float` crosses as a 64-bit SSE register (`xmm0`..`xmm7`, then the stack), and a `Float` result comes back from `xmm0`. A foreign symbol is called on a worker thread through the runtime's timed bridge; the runtime's own `zyl_*` symbols are called directly.
 - `ffi-pin` copies one word into a slot in the Pin arena and returns the slot, a `(Pin a)`; `ffi-unpin` takes the slot and returns the `a` in it.
 - The timeout argument must be a positive integer literal, and it is **enforced**: a foreign call that overruns it raises `E_FFI_TIMEOUT` (§22.7).
 - Pinnability is checked for `ffi-pin` operands and for closures written inline as `ffi-call` arguments, not in general (§22.4).
@@ -91,9 +91,10 @@ error[E_CANNOT_INFER]: no type for ffi-call to `abs`, which has no (extern ...) 
 
 The types must be concrete and must fit in one machine word:
 
-- `Int`, `Bool`, `String`, `Unit` (for a `void` result), declared ADTs and structs (passed as a pointer), and the runtime's handle types: `Ptr` (an address, as `bytebuf-ptr` returns, that Zyl code can only pass back to C), `Fd` and the rest listed in `stdlib/compiler/ffi_sigs.zyl`. `Ptr` is a spelling for `Int` in a signature: an address is a machine word, and the runtime's own entry for it is the identity function. What is enforced is where an address may come from -- `bytebuf-ptr`, `ffi-pin`, or a foreign call -- never from memory no region accounts for, since `alloc-malloc` and the arena wrappers are `E_FFI_RESTRICTED`.
-- `(Fn (A ...) R)` is a C function pointer: a top-level Zyl function passed as a callback (§22.9), whose parameters take the types `A ...`.
-- No `Float`: the timed bridge passes every argument in an integer register (§22.5).
+- `Int`, `Bool`, `String`, `Float`, `Unit` (for a `void` result), declared ADTs and structs (passed as a pointer), and the runtime's handle types: `Ptr` (an address, as `bytebuf-ptr` returns, that Zyl code can only pass back to C), `Fd` and the rest listed in `stdlib/compiler/ffi_sigs.zyl`. `Ptr` is a spelling for `Int` in a signature: an address is a machine word, and the runtime's own entry for it is the identity function. What is enforced is where an address may come from -- `bytebuf-ptr`, `ffi-pin`, or a foreign call -- never from memory no region accounts for, since `alloc-malloc` and the arena wrappers are `E_FFI_RESTRICTED`.
+- `Float` is a `double` (§22.5). It may be a parameter, the result, or both.
+- `(Fn (A ...) R)` is a C function pointer: a top-level Zyl function passed as a callback (§22.9), whose parameters take the types `A ...` — but not `Float`, since a callback Zyl hands to C is entered with the integer registers set up and the SSE ones not (§22.4).
+- No `Float` *inside* a type: `(Pin Float)` or a struct with a `Float` field is `E_TYPE_MISMATCH`, because an aggregate is classified eightbyte by eightbyte and the compiler does not compute that class. A `Float` crosses on its own or not at all.
 - No type variables: `(extern "abs" (a) b)` would let any value become any other, so it is `E_TYPE_MISMATCH`. There is no unsafe cast form in Zyl, and `extern` is not one.
 
 These checks run when a call to the symbol is typed, so an `extern` that no call uses is not checked. A program has one `extern` per symbol; a later one for the same symbol replaces the earlier.
@@ -182,6 +183,8 @@ What the compiler checks (the type pass, `type_annotate.zyl`, and `mutability_ch
 | a `let-mut` variable pinned or passed | **no** | none |
 | an unpinned `Int` or `String` passed straight to `ffi-call` (R4) | **no** | none |
 | a value whose type is still a type variable | **no** | none |
+| a `Float` in an `extern` | **no**: allowed, in an SSE register (§22.5) | none |
+| a `Float` inside an `extern`'s type, or as a `(Fn (Float) R)` callback parameter | yes | `E_TYPE_MISMATCH` |
 
 ```
 error[E_FFI_TYPE_NOT_PINNABLE]: a function cannot be pinned: FFI_Pinnable types are Int, Float, Bool, String and data built from them
@@ -192,7 +195,7 @@ Passing raw `Int` and `String` values directly, as in §22.2, is the idiom the s
 
 ## 22.5 How Values Look to C
 
-Every argument travels as one 64-bit word in an integer register, and the result is read back from `rax`. There is no `zyl_ffi.h` header and there are no `ZylVec`/`ZylString` typedefs: declare the C side yourself with 64-bit integer and pointer types.
+Every argument travels as one 64-bit word, and the result is read back as one. Where the word goes is the System V ABI's decision: an integer or a pointer in `rdi`, `rsi`, `rdx`, `rcx`, `r8`, `r9` and then the stack; a `double` in `xmm0`..`xmm7` and then the stack; a result in `rax` or in `xmm0`. There is no `zyl_ffi.h` header and there are no `ZylVec`/`ZylString` typedefs: declare the C side yourself with 64-bit integer and pointer types.
 
 | Zyl value | What C receives | Declare as |
 |-----------|-----------------|------------|
@@ -203,19 +206,41 @@ Every argument travels as one 64-bit word in an integer register, and the result
 | struct / ADT value | pointer to a heap record `[tag][field0][field1]...` | `const int64_t *` (layout is internal) |
 | `Vec` | pointer to a record `[tag][storage][len]`, the storage a runtime array | internal layout; avoid |
 | `(ffi-pin v)`, a `(Pin a)` | pointer to an 8-byte slot holding `v`'s word | `int64_t *` |
-| `Float` | the IEEE-754 bits **in an integer register** | see below |
+| `Float` | the IEEE-754 binary64 value, in an SSE register | `double` |
 
-**Floats do not cross the FFI.** The compiler never loads `xmm` registers for arguments and never reads `xmm0` for a result, so an `extern` that mentions `Float` is rejected at the first call:
+**Floats cross, and the bits are the value.** A Zyl `Float` is its 64-bit pattern held in a general-purpose register (`movq rax, xmm0` after an arithmetic operation), so no floating-point arithmetic happens on the way out: the runtime moves the same 64 bits into the `xmm` register the ABI names for that argument, and reads a `double` result out of `xmm0`. Nothing is rounded, converted or re-encoded, which is why `inf`, `-0.0` and NaN survive a round trip unchanged.
+
+```lisp
+(capabilities ffi)
+(use allocator/allocator)
+
+(extern "strtod" (String) Float)
+(extern "snprintf" (Ptr Int String Float) Int)
+
+(print (ffi-call "strtod" "2.5" 1000))      ; 2.500000, read from xmm0
+
+(let buf (bytebuf Heap 64)
+  (let p (bytebuf-ptr buf)
+    (begin
+      (ffi-call "snprintf" p 64 "%.3f" -1.5 1000)
+      (print (str-concat "" (alloc-cstr p))))))   ; -1.500, written from xmm0
+```
+
+Both are libc, so neither needs `-lm` (`fabs` and `sqrt` do, and the driver does not link it; see §22.10).
+
+Which argument goes in which register is data, not assembly: the compiler reads the `extern` and emits the signature's class mask with the call, and the runtime's `ff-place` (`runtime/rt/ffitimed.zyl`) puts each word where the ABI wants it before `zyl_rt_callmix` (§22.7) loads the registers and calls. A signature with no `Float` in it has a mask of zero and takes the integer-only path, unchanged.
+
+What does not work is a `Float` *inside* a type — `(extern "f" ((Pin Float)) Float)` and a `(Fn (Float) R)` callback parameter are both `E_TYPE_MISMATCH`:
 
 ```
-error[E_TYPE_MISMATCH]: the extern declaration of `fabs` uses the type Float, which cannot cross the C boundary
+error[E_TYPE_MISMATCH]: the extern declaration of `f` uses the type (Pin Float), and a Float crosses on its own but not inside a type
 ```
 
-For floating-point work, keep it in Zyl, or pass integers (for example, fixed-point values).
+An aggregate is classified eightbyte by eightbyte, and the compiler does not compute that class. Pass a struct with a `Float` field as a pointer (§22.8), or convert to an integer word at the C side.
 
 The layouts of structs, ADTs and `Vec` are implementation details of the current code generator, not part of any specification. Do not write C that depends on them.
 
-**Results.** The result is the raw `rax` word, typed by the `extern`. A function returning `char *` that points at a NUL-terminated string can be declared to return `String`:
+**Results.** The result is the raw `rax` word, or `xmm0` for a `Float`, typed by the `extern`. A function returning `char *` that points at a NUL-terminated string can be declared to return `String`:
 
 ```lisp
 (extern "getenv" (String) String)
@@ -227,9 +252,9 @@ A function that returns a buffer or a pointer that is not a string returns `Ptr`
 
 ### Calling convention
 
-- **System V AMD64**: the first six arguments go in `rdi`, `rsi`, `rdx`, `rcx`, `r8` and `r9`, and the rest go on the stack. Compiled code handles more than six arguments; an 8-argument C function works.
+- **System V AMD64**: the first six *integer-class* arguments go in `rdi`, `rsi`, `rdx`, `rcx`, `r8` and `r9`, the first eight *SSE-class* ones in `xmm0`..`xmm7`, and the rest on the stack in argument order. Compiled code handles more than six arguments of either class: a 9-argument C function works, and so does one taking 12 doubles.
 - The stack is 16-byte aligned at the call.
-- `al` is not set for variadic functions. Calling `printf` with integer arguments happens to work; with floats it does not.
+- `al`, the count of vector registers used, is set when the signature has a `Float` in it, which is what a variadic callee reads to decide whether to spill the SSE registers — so `printf("%.1f", x)` works. An integer-only call does not set it: calling `printf` with integer arguments works because `al` is harmless there, not because it was set.
 - **The interpreter (`zyl eval`, the REPL)** looks symbols up with `dlsym` and makes the call through the same timed bridge as compiled code (`zyl_ffi_timed_argv`), so timeouts are enforced there too. A symbol it cannot find is `E_FFI_SYMBOL_NOT_FOUND`.
 
 ## 22.6 Complete FFI Example
@@ -251,6 +276,9 @@ int64_t ml_count_char(const char *s, int64_t c) {
     for (; *s; s++) if (*s == (char)c) k++;
     return k;
 }
+
+/* A double in, a double out: the SSE half of the sequence (§22.5). */
+double ml_hypot2(double a, double b) { return a * a + b * b; }
 
 /* Reverse `src` into the caller's buffer `dst` of `cap` bytes. */
 int64_t ml_reverse(const char *src, char *dst, int64_t cap) {
@@ -286,6 +314,7 @@ manifest, and writing `(capabilities ...)` in a module of one is an error.
 
 (extern "ml_factorial" (Int) Int)
 (extern "ml_count_char" (String Int) Int)
+(extern "ml_hypot2" (Float Float) Float)
 (extern "ml_reverse" (String Ptr Int) Int)
 (extern "ml_deref" ((Pin Int)) Int)
 (extern "getenv" (String) String)
@@ -293,6 +322,8 @@ manifest, and writing `(capabilities ...)` in a module of one is an error.
 (defn factorial (n) (ffi-call "ml_factorial" n 1000))
 
 (defn count-char (s c) (ffi-call "ml_count_char" s c 1000))
+
+(defn hypot-squared (a b) (ffi-call "ml_hypot2" a b 1000))
 
 (defn reverse-string ((s String))
   (let buf (bytebuf Heap 256)
@@ -306,6 +337,7 @@ manifest, and writing `(capabilities ...)` in a module of one is an error.
   (begin
     (print (factorial 10))
     (print (count-char "mississippi" 115))
+    (print (hypot-squared 3.0 4.0))
     (print (str-concat "reversed: " (reverse-string "hello")))
     (print (ffi-call "ml_deref" (ffi-pin 21) 1000))
     (print (str-concat "HOME=" (ffi-call "getenv" "HOME" 1000)))
@@ -319,6 +351,7 @@ $ zyl new demo/mathlib     # then add c/mathlib.c and edit the two files above
 $ cd mathlib && zyl build && ./mathlib
 3628800
 4
+25.0
 reversed: olleh
 42
 HOME=/home/larry
@@ -333,8 +366,10 @@ Spec §16 and §28 describe a timeout on every foreign call, with `E_FFI_TIMEOUT
 The implementation enforces it. ICNF lowering (`ic-ffi`) turns a call of a foreign symbol into a call of the runtime's bridge:
 
 ```
-IFfi "zyl_ffi_timed" (ISymAddr sym, IStr sym, IConst timeout-ms, IConst argc, arg...)
+IFfi "zyl_ffi_timed" (ISymAddr sym, IStr sym, IConst timeout-ms, IConst request, arg...)
 ```
+
+`request` is the argument count in its low byte and the signature's ABI class mask above it: bit 8+i set when argument i is a `Float`, bit 24 when the result is one. One word rather than two, because it is what the compiler emits and what the interpreter forwards unchanged, so the two cannot disagree about a signature. A signature with no `Float` in it masks to zero, and `request` is then exactly the argument count it always was.
 
 `zyl_ffi_timed` (`runtime/rt/ffitimed.zyl`) runs the C function on a worker thread that belongs to the calling thread. The worker is created on first use and kept, so thread-local C state such as `errno` stays consistent between calls. The caller waits on `CLOCK_MONOTONIC`; if the function has not returned by the deadline, the caller raises:
 
@@ -499,7 +534,8 @@ An `ffi-call` of a `zyl_*` runtime entry is the language's own and needs no gran
 
 | Property | Status |
 |----------|--------|
-| Only pinnable types cross the boundary | partial: `extern` types every argument, and inline closures and pinned functions are rejected (§22.4) |
+| Only pinnable types cross the boundary | partial: `extern` types every argument, and inline closures, pinned functions and a `Float` inside a type are rejected (§22.4) |
+| A `Float` crosses as the ABI says | holds: an SSE register for the argument, `xmm0` for the result, and the bits are the IEEE-754 value (§22.5) |
 | Pinned memory does not move | holds: nothing in Zyl moves memory |
 | Pinned memory stays alive during the call | holds: pins are never freed before exit |
 | Calls are bounded by a timeout | holds for foreign symbols: an overrunning call raises `E_FFI_TIMEOUT` and is abandoned (§22.7) |
@@ -507,14 +543,14 @@ An `ffi-call` of a `zyl_*` runtime entry is the language's own and needs no gran
 | Symbol names cannot inject assembly | holds: names are sanitised |
 | FFI use is declared | holds for packages (in `zyl.pkg`) and lone files (a top-level `(capabilities ffi)`) (§22.11); a lone file that declares nothing has no `ffi` |
 | Correct argument types | checked against the `extern` declaration (§22.2); the declaration itself is trusted, not compared with the C prototype |
-| Floats | rejected in `extern` types |
+| Floats | a bare `Float` crosses in an SSE register (§22.5); inside a type it is `E_TYPE_MISMATCH` |
 
 ## 22.13 Errors
 
 | Error | When |
 |-------|------|
 | `E_CANNOT_INFER` | `ffi-call` to a foreign symbol with no `extern`, or to a `zyl_` symbol with no signature |
-| `E_TYPE_MISMATCH` | an argument or result that does not match the `extern`; a `Float` or type variable in an `extern` |
+| `E_TYPE_MISMATCH` | an argument or result that does not match the `extern`; a type variable, or a `Float` inside a type, in an `extern` |
 | `E_FFI_RESTRICTED` | a raw runtime entry reserved to the standard library, or an `extern` for a runtime entry |
 | `E_MALFORMED_FORM` | an `extern` that is not `(extern "sym" (T ...) R)` |
 | `E_FFI_TYPE_NOT_PINNABLE` | a function passed to `ffi-pin` |
@@ -534,8 +570,8 @@ An `ffi-call` of a `zyl_*` runtime entry is the language's own and needs no gran
 
 1. **Declare every foreign function with `extern`** next to one Zyl wrapper for it, so the word-level interface lives in one place.
 2. **Write a realistic timeout** as the last argument, as a literal. A missing one is a compile error; a too-tight one abandons the C call with `E_FFI_TIMEOUT`.
-3. **Pass integers and strings directly.** Use `ffi-pin` only when C expects a pointer to a value, and declare that parameter `(Pin a)`.
-4. **Keep floating point on the Zyl side**; `extern` rejects `Float`.
+3. **Pass integers, strings and floats directly.** Use `ffi-pin` only when C expects a pointer to a value, and declare that parameter `(Pin a)`.
+4. **Declare C's `double` as `Float`.** It crosses in an SSE register with its bits intact (§22.5). A `Float` *inside* a type — a pinned slot's pointee, a callback parameter, a struct field — does not cross; pass a pointer, or convert at the C side.
 5. **Copy C-owned data into Zyl strings** with `str-concat` before freeing it.
 6. **Declare `ffi` and `native` in `zyl.pkg`**, and check `zyl audit` to see which dependencies use them.
 7. **Test the C side with sanitizers** (ASan, UBSan). Nothing on the Zyl side can protect you from a C bug.

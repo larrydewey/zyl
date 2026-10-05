@@ -10,7 +10,22 @@
 (defmacro ff-ld (a) (ffi-call "%load64" a 1))
 (defmacro ff-st (a v) (ffi-call "%store64" a v 1))
 
-; worker: lock 0, cond 8, state 16 (0 idle, 1 pending, 2 done), abandoned 24, self_id 32, fn 40, argc 48, argv 56 (16 words), result 184
+; The stub code generation emits for a call with a Float in it, and the
+; only caller: a fixed six parameters, so an extern names it rather than a
+; %callK primitive, whose arity is what varies.
+(extern "zyl_rt_callmix" (Int Int Int Int Int Int) Int)
+
+; The request word both bridges take in place of a bare count: argc in the
+; low byte, the class mask above it. Bit i of the mask is set when
+; argument i is a Float, which the ABI puts in an xmm register rather than
+; an integer one, and bit 16 when the result is one, which comes back in
+; xmm0 rather than rax. One word rather than two because the word is what
+; the compiler emits and the interpreter forwards, and a signature both
+; had to agree on is a signature one of them could have got wrong.
+(defn ff-argc-of (req) (bit-and req 255))
+(defn ff-class-of (req) (/ req 256))
+
+; worker: lock 0, cond 8, state 16 (0 idle, 1 pending, 2 done), abandoned 24, self_id 32, fn 40, argc 48, argv 56 (16 words), result 184, class mask 192
 
 (defn ff-worker-cell () (ffi-call "%tls" "ffi_worker" 8 1))
 (defn ff-on-worker-cell () (ffi-call "%tls" "ffi_on_worker" 8 1))
@@ -35,6 +50,52 @@
   (if (= argc 7) (ffi-call "%call7" f (ff-ld a) (ff-ld (+ a 8)) (ff-ld (+ a 16)) (ff-ld (+ a 24)) (ff-ld (+ a 32)) (ff-ld (+ a 40)) (ff-ld (+ a 48)) 1)
     (zyl_ffi_invoke_wide f argc a))))))))))
 
+(defn ff-arg-cell () (ffi-call "%tls" "ffi_args" 128 1))
+
+; A call whose signature puts an argument, or the result, in an SSE
+; register. The mask says which, and it decides only where each word goes:
+; a Float is its own 64-bit pattern and no floating-point arithmetic
+; happens on the way through, so the words travel exactly as they always
+; have.
+;
+; ff-place fills three arrays: the six integer registers' words, the eight
+; SSE registers' words, and the outgoing stack arguments in the order the
+; callee reads them. zyl_rt_callmix loads the registers, calls, and brings
+; xmm0 back to rax when bit 16 is set.
+(defn ff-invoke-mix (f argc a mask)
+  (let iregs (ffi-call "%tls" "ffi_iregs" 48 1)
+    (let fregs (ffi-call "%tls" "ffi_fregs" 64 1)
+      (let out (ffi-call "%tls" "ffi_out" 128 1)
+        ; Zeroed rather than left from an earlier call: the stub loads every
+        ; slot it has, and an argument register the signature does not use is
+        ; undefined rather than stale, so no word of an earlier call may show
+        ; up in this one.
+        (let _ (ff-zero iregs 6)
+          (let _ (ff-zero fregs 8)
+            (let _ (ff-zero out 16)
+              ; ni + 16*nf + 256*ns; nf is the number of vector registers
+              ; used, which a variadic callee reads out of al.
+              (let v (ff-place a 0 argc mask 0 0 0 iregs fregs out)
+                (ffi-call "zyl_rt_callmix" f iregs fregs out (if (= (bit-and mask 65536) 0) 0 1)
+                          (/ (% v 256) 16) 1)))))))))
+
+(defn ff-zero (p n) (if (= n 0) 0 (let _ (ff-st p 0) (ff-zero (+ p 8) (- n 1)))))
+
+; Each argument word to the register, or the stack slot, the ABI names for
+; it: rdi..r9 and xmm0..7 first, then the stack in argument order, which
+; is the order ff-place visits them in.
+(defn ff-place (a i argc mask ni nf ns iregs fregs out)
+  (if (>= i argc)
+    (+ ni (* 16 nf) (* 256 ns))
+    (let w (ff-ld (+ a (* 8 i)))
+      (if (= (bit-and mask (shl 1 i)) 0)
+        (if (< ni 6)
+          (let _ (ff-st (+ iregs (* 8 ni)) w) (ff-place a (+ i 1) argc mask (+ ni 1) nf ns iregs fregs out))
+          (let _ (ff-st (+ out (* 8 ns)) w) (ff-place a (+ i 1) argc mask ni nf (+ ns 1) iregs fregs out)))
+        (if (< nf 8)
+          (let _ (ff-st (+ fregs (* 8 nf)) w) (ff-place a (+ i 1) argc mask ni (+ nf 1) ns iregs fregs out))
+          (let _ (ff-st (+ out (* 8 ns)) w) (ff-place a (+ i 1) argc mask ni nf (+ ns 1) iregs fregs out)))))))
+
 (defn zyl_ffi_worker_main (w)
   (let _ (zyl_owner_set (ff-ld (+ w 32)))
     (let _ (ff-st (ff-on-worker-cell) 1)
@@ -46,16 +107,17 @@
     (let _ (zyl_rt_cond_wait (ff-cond w) (ff-ld w)) (ff-serve w))
     (let f (ff-ld (+ w 40))
       (let argc (ff-ld (+ w 48))
-        (let a (ffi-call "%tls" "ffi_args" 128 1)
+        (let mask (ff-ld (+ w 192))
+        (let a (ff-arg-cell)
           (let _ (rt-copy a (+ w 56) 128)
             (let _ (ff-unlock w)
-              (let r (ff-invoke f argc a)
+              (let r (if (= mask 0) (ff-invoke f argc a) (ff-invoke-mix f argc a mask))
                 (let _ (ff-lock w)
                   (let _ (ff-st (+ w 184) r)
                     (let _ (ff-st (+ w 16) 2)
                       (if (not (= (ff-ld (+ w 24)) 0))
                         (ff-finish w)
-                        (let _ (zyl_rt_cond_broadcast (ff-cond w)) (ff-serve w))))))))))))))
+                        (let _ (zyl_rt_cond_broadcast (ff-cond w)) (ff-serve w)))))))))))))))
 
 (defn ff-finish (w)
   (let m (ff-ld w)
@@ -75,7 +137,7 @@
 
 ; futex mutex and cond words (malloc'd and checked); the worker is a detached runtime thread.
 (defn ff-worker-new (cell)
-  (let w (zyl_rt_calloc 1 192)
+  (let w (zyl_rt_calloc 1 200)
     (if (= w 0) (ff-oom)
       (let m (zyl_rt_malloc 40)
         (let c (zyl_rt_malloc 48)
@@ -114,28 +176,31 @@
   (if (>= i argc) 0 (let _ (ff-st (+ dst (* i 8)) (ff-ld (+ src (* i 8)))) (ff-copy-args dst src argc (+ i 1)))))
 
 ; src holds the argc (at most 16) argument words; both stdio buffers are flushed around the call, so output stays in order.
-(defn ff-core (f name ms0 argc src)
-  (let _ (zyl_out_flush) (let r (ff-core-go f name ms0 argc src) (let _ (ff-libc-flush) r))))
+(defn ff-core (f name ms0 req src)
+  (let _ (zyl_out_flush) (let r (ff-core-go f name ms0 req src) (let _ (ff-libc-flush) r))))
 
 (defn ff-libc-flush () (let f (ffi-call "%fn-weak" "fflush" 1) (if (> f 0) (ffi-call "%call1" f 0 1) 0)))
 
-(defn ff-core-go (f name ms0 argc src)
-  (let sym (if (= name 0) "?" (ffi-call "%str" name 1))
-    (if (< f 4096)
-      (ffi-call "zyl_panic" (str-concat "E_FFI_SYMBOL_NOT_FOUND: no such FFI symbol: " sym) 1)
-      (if (or (< argc 0) (> argc 16))
-        (ffi-call "zyl_panic" "E_ARITY_MISMATCH: ffi-call passes more than 16 arguments" 1)
-        (let ms (if (< ms0 1) 1 ms0)
-          (let w (ff-worker-get)
-            (let ts (ff-deadline ms)
-              (let _ (ff-lock w)
-                (let _ (ff-st (+ w 40) f)
-                  (let _ (ff-st (+ w 48) argc)
-                    (let _ (ffi-call "%fill" (+ w 56) 0 128 1)
-                      (let _ (ff-copy-args (+ w 56) src argc 0)
-                        (let _ (ff-st (+ w 16) 1)
-                          (let _ (zyl_rt_cond_broadcast (ff-cond w))
-                            (ff-await w ts sym ms)))))))))))))))
+(defn ff-core-go (f name ms0 req src)
+  (let argc (ff-argc-of req)
+    (let mask (ff-class-of req)
+      (let sym (if (= name 0) "?" (ffi-call "%str" name 1))
+        (if (< f 4096)
+          (ffi-call "zyl_panic" (str-concat "E_FFI_SYMBOL_NOT_FOUND: no such FFI symbol: " sym) 1)
+          (if (or (< argc 0) (> argc 16))
+            (ffi-call "zyl_panic" "E_ARITY_MISMATCH: ffi-call passes more than 16 arguments" 1)
+            (let ms (if (< ms0 1) 1 ms0)
+              (let w (ff-worker-get)
+                (let ts (ff-deadline ms)
+                  (let _ (ff-lock w)
+                    (let _ (ff-st (+ w 40) f)
+                      (let _ (ff-st (+ w 48) argc)
+                        (let _ (ff-st (+ w 192) mask)
+                          (let _ (ffi-call "%fill" (+ w 56) 0 128 1)
+                            (let _ (ff-copy-args (+ w 56) src argc 0)
+                              (let _ (ff-st (+ w 16) 1)
+                                (let _ (zyl_rt_cond_broadcast (ff-cond w))
+                                  (ff-await w ts sym ms))))))))))))))))))
 
 ; Locked: waits for the result until the deadline; a timeout abandons the worker.
 (defn ff-await (w ts sym ms)
@@ -160,14 +225,17 @@
       b))))))))))))))))))
 
 ; Called with 4 + argc words (C varargs at the call site); only the first argc argument slots are read.
-(defn zyl_ffi_timed (f name ms argc a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15)
-  (ff-core f name ms argc (ff-in-args a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15)))
+(defn zyl_ffi_timed (f name ms req a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15)
+  (ff-core f name ms req (ff-in-args a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11 a12 a13 a14 a15)))
 
-; The interpreter's entry: the argument words in an array.
-(defn zyl_ffi_timed_argv (f name ms argc argv)
-  (let b (ffi-call "%tls" "ffi_in" 128 1)
-    (let _ (ff-copy-args b argv (if (> argc 16) 16 argc) 0)
-      (ff-core f name ms argc b))))
+; The interpreter's entry: the argument words in an array. `req` is the
+; word compiled code passes, forwarded whole, so the two agree on the
+; class mask without either recomputing it.
+(defn zyl_ffi_timed_argv (f name ms req argv)
+  (let argc (ff-argc-of req)
+    (let b (ffi-call "%tls" "ffi_in" 128 1)
+      (let _ (ff-copy-args b argv (if (> argc 16) 16 argc) 0)
+        (ff-core f name ms req b)))))
 
 ; A foreign call with 8..16 words from argv (argc above 16 calls with 16, as the C did).
 (defmacro fw (a i) (ffi-call "%load64" (+ a (* i 8)) 1))

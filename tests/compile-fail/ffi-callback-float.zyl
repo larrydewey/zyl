@@ -1,0 +1,16 @@
+; expect-error: E_TYPE_MISMATCH
+; A C callback Zyl hands to C is called by C, and generated code sets up
+; only the integer half of the argument sequence, so a callback
+; parameter declared Float is refused even though a plain Float argument
+; is not.
+
+(capabilities ffi)
+
+(extern "qsort" (Ptr Int Int (Fn (Float Ptr) Int)) Unit)
+
+(defn cmp (a b) 0)
+
+(defn main ()
+  (begin
+    (print (ffi-call "qsort" 0 64 8 cmp 1000))
+    0))

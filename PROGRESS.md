@@ -260,6 +260,26 @@ compile with `build/boot/zyl-self` on 2026-09-28.
   `ffi-call` passing exactly the extern's parameter count takes it, one
   passing one more keeps its own (`ffi-default-timeout`, `expr_inner.zyl`).
   With neither, `E_FFI_TIMEOUT_REQUIRED` names both fixes.
+- **A `Float` crosses the FFI boundary** (spec §16). An `extern` may
+  declare `Float` for a parameter or the result: it is C's `double`, and
+  the 64 bits move across unchanged, so an infinity, a negative zero and
+  a NaN survive the trip. Nothing about the value is reinterpreted — the
+  compiler emits the signature's ABI class mask in the request word the
+  timed bridge takes (`ic-ffi-class-mask`), the worker places each
+  argument word in the integer register, the `xmm` register or the stack
+  slot the System V ABI names for it (`ff-place`, `zyl_rt_callmix` in
+  `runtime/rt/ffitimed.zyl`), sets `al` so a variadic callee can spill
+  the SSE registers, and reads a `Float` result out of `xmm0`. A
+  signature with no `Float` masks to zero and takes the integer-only
+  path, byte for byte what it took before, and the interpreter forwards
+  the same word (`zyl_ffi_timed_argv`), so compiled and interpreted code
+  cannot disagree. A `Float` *inside* a type is `E_TYPE_MISMATCH`: an
+  aggregate is classified eightbyte by eightbyte and the compiler does
+  not compute that class, which also rules out a `Float` callback
+  parameter. Tests: `tests/regression/ffi-float.zyl` (compiled *and*
+  interpreted), `tests/packages-build/native/app` (`double` in, `double`
+  out, mixed classes past the registers), `tests/compile-fail/
+  ffi-extern-float.zyl` and `ffi-callback-float.zyl`.
 - Linking: a program with no foreign `ffi-call` and no native objects is
   a static executable with no libc, assembled and linked by the
   compiler itself (`asm_x86.zyl`, `elf_link.zyl`) against the cached

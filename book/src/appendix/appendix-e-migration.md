@@ -348,8 +348,11 @@ address `bytebuf-ptr` gives as a `Ptr`.
 address is a `Ptr` that Zyl can only hand back to C. The `extern` is
 the prototype a C header would give: an `ffi-call` to a foreign
 function without one does not compile (`E_CANNOT_INFER`). Its types are
-`Int`, `Bool`, `String`, `Ptr`, the byte handle types, `(Pin a)` for
-a pinned slot, `Unit` as a result, and `(Fn (A ...) R)` for a callback; `Float` cannot cross yet.
+`Int`, `Bool`, `String`, `Ptr`, `Float`, the byte handle types, `(Pin a)`
+for a pinned slot, `Unit` as a result, and `(Fn (A ...) R)` for a
+callback. A `Float` is C's `double`, crossing in an SSE register with its
+bits unchanged; a `Float` *inside* a type — a pinned slot's pointee, a
+callback parameter — cannot cross, so pass a pointer or convert in C.
 The trailing timeout is a required integer literal in milliseconds; a
 call that overruns it raises `E_FFI_TIMEOUT`.
 

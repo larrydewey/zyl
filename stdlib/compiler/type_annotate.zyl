@@ -2037,9 +2037,10 @@
   (and (>= (str-length s) 4) (ta-streq (str-substring s 0 4) "zyl_")))
 
 ; A foreign symbol is typed by its (extern ...) declaration. Its types
-; must be concrete and representable in an integer register: no type
-; variable (that would be a cast) and no Float (the timed FFI worker
-; passes every argument as a machine word).
+; must be concrete and one machine word wide: no type variable (that would
+; be a cast), and nothing built out of a Float -- a bare Float crosses in an
+; SSE register, but the eightbyte class of an aggregate containing one is
+; not the same thing and is not decided here.
 (defn ta-ffi-extern (st s ats)
   (match (extern-sig-of s)
     (None (ta-dk st (str-concat "ffi-call to `" (str-concat s "`, which has no (extern ...) declaration"))))
@@ -2059,19 +2060,59 @@
   (match ts
     (Nil unit)
     (Cons t rest
-      (let _ (if (ta-extern-ok st t) unit (ta-strict (str-concat "the extern declaration of `" (str-concat s (str-concat "` uses the type " (str-concat (ta-show st t) ", which cannot cross the C boundary"))))))
+      (let _ (if (ta-extern-ok st t) unit (ta-strict (ta-extern-why st s t)))
         (ta-extern-check st s rest)))))
 
+; Why this type cannot cross. The two reasons want different words: a bare
+; Float does cross now, so "cannot cross the C boundary" alone would
+; contradict the Float in the type the reader is looking at.
+(defn ta-extern-why (st s t)
+  (str-concat "the extern declaration of `"
+    (str-concat s
+      (str-concat "` uses the type "
+        (str-concat (ta-show st t)
+          (if (ta-extern-has-var st t)
+            ", which is a type variable: any value would become any other"
+            ", and a Float crosses on its own but not inside a type"))))))
+
+(defn ta-extern-has-var (st t)
+  (match (ta-resolve st t)
+    (TaV _ true)
+    (TaC _ args (ta-extern-any-var st args))
+    (TaF ps r (or (ta-extern-any-var st ps) (ta-extern-has-var st r)))))
+
+(defn ta-extern-any-var (st ts)
+  (match ts
+    (Nil false)
+    (Cons t rest (or (ta-extern-has-var st t) (ta-extern-any-var st rest)))))
+
+; A Float of its own crosses: its 64 bits are the IEEE-754 double C reads,
+; and the runtime's mixed call puts them in an xmm register. A Float
+; anywhere inside a type does not -- an aggregate is classified eightbyte
+; by eightbyte, which this pass does not compute -- so it is refused, as
+; is a type variable, which would let any value become any other.
 (defn ta-extern-ok (st t)
   (match (ta-resolve st t)
     (TaV _ false)
-    (TaC n args (and (not (ta-streq n "Float")) (ta-extern-all st args)))
-    (TaF ps r (and (ta-extern-all st ps) (ta-extern-ok st r)))))
+    (TaC n args (if (ta-streq n "Float") (ta-float-bare-p args) (ta-extern-plain st args)))
+    (TaF ps r (and (ta-extern-plain st ps) (ta-extern-ok st r)))))
 
-(defn ta-extern-all (st ts)
+; (Float) is the type; a Float applied to arguments is a constructor this
+; pass does not know, and is treated as the nested case.
+(defn ta-float-bare-p (args) (= (list-length args) 0))
+
+; A type that may cross only as one machine word: no Float inside it
+; anywhere, and no type variable at any depth.
+(defn ta-extern-plain (st ts)
   (match ts
     (Nil true)
-    (Cons t rest (and (ta-extern-ok st t) (ta-extern-all st rest)))))
+    (Cons t rest (and (ta-extern-word st t) (ta-extern-plain st rest)))))
+
+(defn ta-extern-word (st t)
+  (match (ta-resolve st t)
+    (TaV _ false)
+    (TaC n args (and (not (ta-streq n "Float")) (ta-extern-plain st args)))
+    (TaF ps r (and (ta-extern-plain st ps) (ta-extern-word st r)))))
 
 (defn ta-unify-pairs (st xs ys)
   (match xs

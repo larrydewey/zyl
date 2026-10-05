@@ -379,7 +379,7 @@ shows `3.500000`. A `Bool` prints as `1` or `0`.
 | `chan-rx` | `(chan-rx c)` | the receiving end, an `(Rx a)` |
 | `chan-send` | `(chan-send tx v)` | appends `v`, an `a`, blocking while the buffer is full; `Unit`; rejected on a `let-mut` (`E_CAPABILITY_LEAK`) or `Secret` operand |
 | `chan-recv` | `(chan-recv rx)` | removes and returns the oldest value, an `a`, blocking while the buffer is empty; `E_CHANNEL_CLOSED` once the channel is closed and drained |
-| `ffi-call` | `(ffi-call "symbol" arg ... timeout)` | the symbol is a string literal and the trailing timeout a positive integer literal in milliseconds (`E_FFI_SYMBOL_REQUIRED`, `E_FFI_TIMEOUT_REQUIRED`); a foreign call that overruns it raises `E_FFI_TIMEOUT`. A foreign symbol needs an `extern` declaration; a `zyl_*` runtime symbol is typed by the compiler's signature table |
+| `ffi-call` | `(ffi-call "symbol" arg ... timeout)` | the symbol is a string literal and the trailing timeout a positive integer literal in milliseconds (`E_FFI_SYMBOL_REQUIRED`, `E_FFI_TIMEOUT_REQUIRED`); a foreign call that overruns it raises `E_FFI_TIMEOUT`. A foreign symbol needs an `extern` declaration, whose `Float` is C's `double` (in an SSE register; inside another type it is `E_TYPE_MISMATCH`); a `zyl_*` runtime symbol is typed by the compiler's signature table |
 | `ffi-pin` | `(ffi-pin value)` | copies `value`, an `a`, into a Pin-region slot and returns the slot, a `(Pin a)`; C receives its address. A function is `E_FFI_TYPE_NOT_PINNABLE` |
 | `ffi-unpin` | `(ffi-unpin pinned)` | takes a `(Pin a)` and returns the `a` in the slot, which C may have written; frees nothing |
 

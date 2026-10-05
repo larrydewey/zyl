@@ -833,10 +833,14 @@ Signatures:
     type-checked against it (§4.9), and an ffi-call to a foreign symbol
     with no extern is a Compile Error (E_CANNOT_INFER). The types are
     concrete (no type variables: that would be a cast) and fit a machine
-    word: Int, Bool, String, Ptr, the runtime's opaque handle types, and
-    (Fn (A1 ... An) R) for a C callback. Float is not allowed (the timed
-    call passes every argument in an integer register), nor is Float
-    returned. R may be Unit. Runtime symbols (zyl_*) are typed by the
+    word: Int, Bool, String, Ptr, Float, the runtime's opaque handle
+    types, and (Fn (A1 ... An) R) for a C callback. A Float crosses in an
+    SSE register (xmm0..xmm7, then the stack), and a Float result comes
+    back from xmm0; the bits are the IEEE-754 binary64 value, unchanged.
+    A Float *inside* another type does not cross (E_TYPE_MISMATCH): an
+    aggregate is classified eightbyte by eightbyte, and the eightbyte
+    class of a Float-bearing struct is not computed here. R may be Unit.
+    Runtime symbols (zyl_*) are typed by the
     compiler's signature table instead, and an extern for one is
     E_FFI_RESTRICTED; those that read raw memory or reinterpret a machine
     word may only be named by the standard library (E_FFI_RESTRICTED).
