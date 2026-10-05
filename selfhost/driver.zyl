@@ -209,13 +209,20 @@
     (str-concat "cc -nostdlib -static -no-pie " (str-concat asmpath (str-concat " start.o rt.o -o " outpath)))
     (cli-link-hosted asmpath outpath extra)))
 
-; Links rt.o over libc's crt.
+; Links rt.o over libc's crt, with libc and libm both on the line:
+; an ffi-call exists to reach C library code, and the two libraries such
+; code reaches for are libc and libm. Asking a lone file for `-lm` was not
+; possible before (`(link-libs ...)` is a package's native block, and there
+; is no other way to pass a library on the command line), so `(extern "fabs"
+; (Float) Float)` was a link error and the documented workaround was a C
+; wrapper taking int64_t. `-lm` costs nothing where libm is merged into
+; libc, and the runtime's own symbols are already in rt.o.
 (defn cli-link-hosted (asmpath outpath extra)
   (str-concat "cc "
     (str-concat "-no-pie "
       (str-concat asmpath
         (str-concat " rt.o -o "
-          (str-concat outpath (str-concat " -lpthread" extra)))))))
+          (str-concat outpath (str-concat " -lpthread -lm" extra)))))))
 
 ; Where to find `rt.o` and `stdlib/` at runtime. Prefers a
 ; real, packaged install (checked via a ZYL_HOME override, else

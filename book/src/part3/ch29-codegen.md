@@ -25,7 +25,7 @@ meets the runtime. The design and its staging are recorded in
   executable against `rt.zo`, the Zyl runtime (`runtime/rt/`) assembled
   once from the committed seed `build/boot/rt.s` and `start.s`; no `cc`
   runs and there is no libc. A program that calls foreign C links hosted:
-  `cc -no-pie <prog>.s rt.o -o <prog> -lpthread`, run from the
+  `cc -no-pie <prog>.s rt.o -o <prog> -lpthread -lm`, run from the
   compiler's bundle directory. `ZYL_EXTERNAL_LD=1` links every program
   with `cc`.
 

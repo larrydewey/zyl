@@ -226,7 +226,7 @@ Every argument travels as one 64-bit word, and the result is read back as one. W
       (print (str-concat "" (alloc-cstr p))))))   ; -1.500, written from xmm0
 ```
 
-Both are libc, so neither needs `-lm` (`fabs` and `sqrt` do, and the driver does not link it; see §22.10).
+libm is on the link line too, so `(extern "fabs" (Float) Float)` and `(extern "sqrt" (Float) Float)` are ordinary declarations as well (§22.10).
 
 Which argument goes in which register is data, not assembly: the compiler reads the `extern` and emits the signature's class mask with the call, and the runtime's `ff-place` (`runtime/rt/ffitimed.zyl`) puts each word where the ABI wants it before `zyl_rt_callmix` (§22.7) loads the registers and calls. A signature with no `Float` in it has a mask of zero and takes the integer-only path, unchanged.
 
@@ -472,11 +472,20 @@ When C needs to deliver events without calling back, have Zyl poll a C function 
 ## 22.10 Linking
 
 A program that calls foreign code links over libc's C runtime, so the
-link reaches libc, libpthread and the runtime's own `zyl_*` symbols:
+link reaches libc, libm, libpthread and the runtime's own `zyl_*`
+symbols:
 
 ```bash
-cc -no-pie prog.s rt.o -o prog -lpthread
+cc -no-pie prog.s rt.o -o prog -lpthread -lm
 ```
+
+`-lm` is there because a C library function is the common case: with it,
+`(extern "fabs" (Float) Float)` and `(extern "sqrt" (Float) Float)` are
+ordinary declarations, and `printf("%.1f", x)` works (§22.5). A lone file
+has no way to ask for a library — `(link-libs ...)` belongs to a
+package's `native` block — so before it was on the line, `fabs` was an
+`undefined reference` and the documented workaround was a C wrapper
+taking `int64_t`.
 
 `rt.o` is the Zyl runtime (`runtime/rt/`), which `./boot.sh` assembles
 from the committed seed `build/boot/rt.s` and `install.sh` copies. A
@@ -486,9 +495,10 @@ path: the compiler assembles and links it itself, against the cached
 
 Besides `-o <file>` and `--emit-asm`, the command line accepts only
 `--contracts=P` and `--error-format=json`: there is no way to add object
-files, libraries or `-lm`, and any other word after the source file is
-taken as the output path. A symbol that is not found is an ordinary
-linker error, `undefined reference to 'name'`.
+files or further libraries, and any other word after the source file is
+taken as the output path. libc, libm and libpthread are always there. A
+symbol in none of them is an ordinary linker error, `undefined reference
+to 'name'`.
 
 Two ways to link your own C:
 
@@ -497,7 +507,7 @@ Two ways to link your own C:
 
    ```bash
    zyl prog.zyl --emit-asm -o prog.s
-   cc -no-pie prog.s ~/.zyl/rt.o mylib.c -o prog -lpthread -lm
+   cc -no-pie prog.s ~/.zyl/rt.o mylib.c -o prog -lpthread -lm -lyourlib
    ```
 
    The runtime is `rt.o`, found in the install (`~/.zyl`) or next to the compiler (`build/boot/`). The `-no-pie` flag is required.

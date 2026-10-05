@@ -252,7 +252,7 @@ Plain `zyl file.zyl` links only the runtime (and libc, once the program calls fo
 
 ```bash
 zyl ffi-demo.zyl -o ffi-demo.s --emit-asm
-cc -no-pie ffi-demo.s mylib.c ~/.zyl/rt.o -o ffi-demo -lpthread
+cc -no-pie ffi-demo.s mylib.c ~/.zyl/rt.o -o ffi-demo -lpthread -lm
 ./ffi-demo
 ```
 
@@ -400,8 +400,14 @@ program in this chapter, links **hosted** over libc, because the C
 library needs it:
 
 ```bash
-cc -no-pie program.s rt.o -o program -lpthread
+cc -no-pie program.s rt.o -o program -lpthread -lm
 ```
+
+`-lpthread` and `-lm` are on the line unconditionally: libc and libm are
+the two libraries C library code reaches for, and a lone file has no way
+to ask for a library of its own (`(link-libs ...)` belongs to a package's
+`native` block). So `(extern "fabs" (Float) Float)` and `(extern "sqrt"
+(Float) Float)` link as they are declared.
 
 `rt.o` is the Zyl runtime (`runtime/rt/`: actors, the heap and Pin
 arenas, strings, the test harness), assembled by `./boot.sh` from the
@@ -417,7 +423,7 @@ To link your own objects into a single-file program, use `--emit-asm` and run th
 | Forgetting the timeout | Compile error `E_FFI_TIMEOUT_REQUIRED`; end every call with a positive literal such as `1000` |
 | Calling a C function with no `extern` | Compile error `E_CANNOT_INFER`; declare `(extern "sym" (T ...) R)` first |
 | A `Float` in an `extern` refused as "not inside a type" | Only a bare `Float` crosses; pass the containing value as a pointer, or convert in C (§12.2) |
-| Calling `fabs`/`sqrt` and getting an undefined reference at link | The driver links libc but not `-lm`; write a `static inline double` wrapper in your own C, or call a libc function such as `strtod` (§12.2) |
+| A symbol in neither libc nor libm failing to link | Add the library with `(link-libs "m")`-style native declarations, or link by hand (§12.9); libc, libm and libpthread are already on the line |
 | Printing a C string pointer | Declare it `Ptr` and read it with `(alloc-cstr ptr)` |
 | A timeout too tight for slow C code | The call raises `E_FFI_TIMEOUT` and the C function is abandoned (§12.7); budget generously |
 | Memory leaks | Free `malloc`ed results from C; buffers should be a `(bytebuf R N)`, which a region accounts for |

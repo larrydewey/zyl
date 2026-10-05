@@ -543,7 +543,7 @@ A program that calls foreign C, or a package build with native objects
 and libraries (§31.10), links **hosted** over libc's crt:
 
 ```
-cc -no-pie <out>.s rt.o -o <out> -lpthread
+cc -no-pie <out>.s rt.o -o <out> -lpthread -lm
 ```
 
 Both run from the bundle directory, where the runtime sits. With

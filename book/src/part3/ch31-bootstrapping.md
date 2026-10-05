@@ -57,7 +57,7 @@ rm -rf "$OUT/stdlib"; cp -R stdlib "$OUT/stdlib"
 rm -rf "$OUT/runtime"; mkdir -p "$OUT/runtime"; cp -R runtime/rt "$OUT/runtime/rt"
 cc -c "$OUT/rt.s" -o "$OUT/rt.o"
 
-link_cc() { cc -no-pie "$1" "$OUT/rt.o" -o "$2" -lpthread; }
+link_cc() { cc -no-pie "$1" "$OUT/rt.o" -o "$2" -lpthread -lm; }
 
 # Stage 1: cc links the committed seed
 link_cc "$OUT/stage2.s" "$OUT/stage1.bin"

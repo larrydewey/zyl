@@ -12,6 +12,8 @@
 (extern "atof" (String) Float)
 (extern "snprintf" (Ptr Int String Float Int Float) Int)
 (extern "abs" (Int) Int)
+(extern "fabs" (Float) Float)
+(extern "sqrt" (Float) Float)
 
 ; The result comes back from xmm0 rather than rax.
 (test "ffi-float-result"
@@ -42,6 +44,13 @@
       (begin
         (ffi-call "snprintf" p 128 "%.1f|%d|%.1f" 1.5 42 2.25 1000)
         (assert-equal (str-concat "" (alloc-cstr p)) "1.5|42|2.2")))))
+
+; libm is on the link line, so a C math function is an ordinary extern --
+; the int64_t wrapper that used to be the documented answer is not needed.
+(test "ffi-libm-in-and-out"
+  (begin
+    (assert-equal (ffi-call "fabs" -1.5 1000) 1.5)
+    (assert-equal (ffi-call "sqrt" 2.25 1000) 1.5)))
 
 ; A signature of only Ints still takes the integer path, byte for byte
 ; what it took before a Float could cross at all.

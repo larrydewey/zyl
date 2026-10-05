@@ -90,8 +90,10 @@ Default flow — verifies the fixed point, no Rust anywhere:
 ```
 
 Each link of a compiler stage is `cc -no-pie <asm> build/boot/rt.o -o
-<bin> -lpthread`: the compiler itself links hosted, because the REPL
-interpreter's FFI uses `dlsym`.
+<bin> -lpthread -lm`: the compiler itself links hosted, because the REPL
+interpreter's FFI uses `dlsym`, and libm is on that line for the same
+reason it is on a program's -- an interpreted program calling `sqrt` looks
+the symbol up in this process.
 The script exports `ZYL_HOME=build/boot` so the build resolves the
 standard library from this checkout rather than from an installed
 `~/.zyl`; the copy in step 0 is what makes each stage compile this

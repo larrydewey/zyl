@@ -111,7 +111,7 @@ Rule: no phase may depend on a later phase.
 15a. Verification        verify.zyl: every [rbp-M] write within the stated frame
                          bound and 8-aligned; a violation aborts the compile
 16. Linking              asm_x86 + elf_link against rt.zo (static, no libc);
-                         a program calling foreign C: cc -no-pie out.s rt.o -lpthread
+                         a program calling foreign C: cc -no-pie out.s rt.o -lpthread -lm
 ```
 
 `zyl build` adds native-object compilation before the link and writes `<name>.buildinfo` after it (§26.5, Phase 11).
@@ -189,7 +189,7 @@ by their BLAKE3. Both are byte-deterministic. A program that calls
 foreign C links hosted:
 
 ```bash
-cc -no-pie out.s rt.o -o out -lpthread
+cc -no-pie out.s rt.o -o out -lpthread -lm
 ```
 
 `zyl build` appends the objects and libraries from the package's `native` block, which makes the link hosted.

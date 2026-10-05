@@ -346,7 +346,11 @@ compile-fail tests `unclosed-opener`, `unexpected-close`, `mismatched-bracket` a
   keyed by the BLAKE3 of `rt.s` + `start.s`). There is no libc: the runtime's `_start`
   sets up TLS, and threads are `clone` + futex. `ZYL_EXTERNAL_LD=1` uses cc with
   `start.o` + `rt.o` instead. A program that calls foreign C links hosted
-  over libc's crt (weak pthreads). The compiler binaries themselves are hosted (the REPL
+  over libc's crt (weak pthreads), with `-lm` on the line unconditionally
+  (`cli-link-hosted`, `selfhost/driver.zyl`): a C library function such as `fabs` is
+  the common case, and a lone file cannot ask for a library of its own. The compiler
+  binaries link it too (`boot.sh`, `link_cc`), because the interpreter resolves a foreign
+  symbol with `dlsym(RTLD_DEFAULT, ...)` against its own process. The compiler binaries themselves are hosted (the REPL
   interpreter's FFI uses `dlsym`).
 
 - Entry point: `selfhost/driver.zyl`, compiled like any program (its `(use ...)` tree resolved from `stdlib/`, names qualified per module) to `build/boot/stage2.bin`/`zyl-self`. `boot.sh` caps each stage at 4 GB of allocation (`ZYL_STAGE_MEMORY`). The phase order shared by the CLI and the REPL is `stdlib/compiler/pipeline.zyl`.

@@ -864967,7 +864967,7 @@ main:
 .L21963:
     .string " rt.o -o "
 .L21964:
-    .string " -lpthread"
+    .string " -lpthread -lm"
 .L21966:
     .string "ZYL_HOME"
 .L21967:

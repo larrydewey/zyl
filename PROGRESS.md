@@ -285,7 +285,11 @@ compile with `build/boot/zyl-self` on 2026-09-28.
   compiler itself (`asm_x86.zyl`, `elf_link.zyl`) against the cached
   runtime `rt.zo` (keyed by the BLAKE3 of `rt.s` + `start.s`, rebuilt
   when stale). A hello-world links in about 26 ms. A program that calls
-  foreign C links hosted over libc's crt with `cc`; `ZYL_EXTERNAL_LD=1`
+  foreign C links hosted over libc's crt with `cc`, always with `-lpthread -lm`
+  (`cli-link-hosted`), so `(extern "fabs" (Float) Float)` links as declared; a lone file
+  has no way to pass a library of its own, and libm is what C library code reaches for.
+  `boot.sh` links the compiler with `-lm` for the same reason one stage deeper: the
+  interpreter's `dlsym(RTLD_DEFAULT, ...)` searches its own process. `ZYL_EXTERNAL_LD=1`
   uses `cc` for everything.
 - Macros (spec §19): gensym hygiene, innermost-first, `&rest` spliced
   with `,@name`, `E_MACRO_NON_TERMINATION`, `E_MACRO_ILLEGAL_ACCESS`.

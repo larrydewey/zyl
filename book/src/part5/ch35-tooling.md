@@ -114,7 +114,7 @@ against the *installed* standard library; set
 `ZYL_HOME=$PWD/build/boot` to use the checkout's (this is what
 `./boot.sh` does). A program that calls no foreign C is assembled and
 linked by the compiler itself against `rt.zo`, with no `cc`; one that
-does links with `cc -no-pie`, `rt.o` and `-lpthread` (Chapter 29,
+does links with `cc -no-pie`, `rt.o`, `-lpthread` and `-lm` (Chapter 29,
 §29.1).
 
 `zyl eval file.zyl` runs a program through the REPL's interpreter

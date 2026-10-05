@@ -83,8 +83,13 @@ use_rt() { # use_rt <rt.s>: assemble it as the rt.o every link uses
     cc -c "$1" -o "${RT_O}.tmp" && mv -f "${RT_O}.tmp" "$RT_O"
 }
 
+# -lm for the compiler itself, not only for what it links: the interpreter
+# resolves a foreign symbol with dlsym(RTLD_DEFAULT, ...), which searches the
+# running process, so a libm symbol an interpreted program calls is only
+# findable if libm is in this link. A compiled program gets it from
+# cli-link-hosted (selfhost/driver.zyl).
 link_cc() { # link_cc <asm> <out-bin>
-    cc -no-pie "$1" "$RT_O" -o "$2" -lpthread
+    cc -no-pie "$1" "$RT_O" -o "$2" -lpthread -lm
 }
 
 # A seed rt.s from before the C runtime was deleted still needs that commit's C beside it.
@@ -102,8 +107,8 @@ seed_c_runtime() {
 
 link_seed() { # link_seed <asm> <out-bin>: the seed rt.s alone, else with its commit's C runtime
     cc -c "${OUT}/rt.s" -o "${OUT}/seed_rt.o"
-    cc -no-pie "$1" "${OUT}/seed_rt.o" -o "$2" -lpthread 2>/dev/null ||
-        { [ -f "$SEED_C_O" ] && cc -no-pie "$1" "${OUT}/seed_rt.o" "$SEED_C_O" -o "$2" -lpthread; }
+    cc -no-pie "$1" "${OUT}/seed_rt.o" -o "$2" -lpthread -lm 2>/dev/null ||
+        { [ -f "$SEED_C_O" ] && cc -no-pie "$1" "${OUT}/seed_rt.o" "$SEED_C_O" -o "$2" -lpthread -lm; }
 }
 
 gen_rt() { # gen_rt <compiler> <out.s>; every zyl_* defn must be exported (an uncalled Num-generic one is not emitted)
