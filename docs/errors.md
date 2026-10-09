@@ -359,7 +359,7 @@ These are now catalogued too (`error_codes.zyl`), so `zyl explain` knows them.
 | `E_UNDEFINED_FUNCTION` | error | `stdlib/repl/interp.zyl` | a call names no function (the compiled path reports `E_UNBOUND_VARIABLE` from the type pass) |
 | `E_NOT_CALLABLE` | error | `stdlib/repl/interp.zyl` | a call's head is not a function or closure |
 | `E_FFI_SYMBOL_NOT_FOUND` | error | `stdlib/repl/interp.zyl`, `runtime/rt/ffitimed.zyl` | an `ffi-call` names a symbol the REPL process does not export |
-| `E_NO_MAIN` | error | `stdlib/repl/interp.zyl` | the interpreted program defines no `main` (`zyl eval`) |
+| `E_NO_MAIN` | error | `stdlib/compiler/pipeline.zyl`, `stdlib/repl/interp.zyl` | a lone file defines no `main` (build and `zyl check`), or the interpreted program defines none (`zyl eval`) |
 | `E_INTERNAL` | error | `stdlib/repl/eval.zyl` | a REPL entry's wrapper function did not survive lowering (an internal fault) |
 
 The REPL's interpreter errors are reported to the prompt and do not end the

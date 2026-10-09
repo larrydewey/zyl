@@ -874,13 +874,12 @@
           (begin (print md) 0)
           (begin (cli-write-file (cli-resolve-path cwd out) md) 0))))))
 
-; `zyl check [file.zyl | dir ...]`: parse, expand and type-check, then stop.
+; `zyl check [file.zyl | dir ...]`: every phase of a build up to code generation.
 ;
-; No code generation, no linking, no binary. Everything a program author can
-; fix has been reported by the time this returns, because the front end ends at
-; type inference and the phases after it either succeed or are compiler bugs.
-; `compile-front-end` is the shared body of this and a build, so a clean check
-; means the program builds; there is no second front end to keep honest.
+; No code generation, no linking, no binary: those report nothing a program
+; author can fix. `compile-to-fns` is the shared body of this and a build, so a
+; clean check means the program builds; there is no second pipeline to keep
+; honest.
 ;
 ; The reason this is a command rather than a flag on `zyl build` is the edit
 ; loop. A full build takes long enough that the natural rhythm becomes: make

@@ -762,10 +762,14 @@ REPL and language server:
      130-133 and is 124; test counts in the README and in
      `docs/verifier-design.md`), as were several stdlib API names
      (`vec-create`, `vec-create-default`, `map-*` for the Int map).
-   - **`zyl check` is weaker than a build**: it accepts `(/ 7)` (a build
-     reports `E_ARITY_MISMATCH`) and a file with no `main`, and it stops
-     before region inference, so an `E_REGION_ESCAPE` claim needs a real
-     build to confirm.
+   - **`zyl check` was weaker than a build**: it accepted `(/ 7)` (a build
+     reports `E_ARITY_MISMATCH`) and a file with no `main`, and it stopped
+     before region inference, missing `E_REGION_ESCAPE`. Fixed 2026-10-09:
+     it runs everything but code generation and linking, a lone file
+     without `main` is a located `E_NO_MAIN` (in a build too, where it was
+     a `PANIC: E_LINK_UNDEFINED: _ZYL_main`), and every compile-fail and
+     packages-fail test now also runs `zyl check` and requires the same
+     code.
    - A `TCap`/`TMut` retirement (item 10) was carried through
      `zyl_specification.txt` §4.3/§7.2/§7.4/§10/§26/§28, `AGENTS.md`,
      `spec/06`, `spec/07` and the chapters. The terms survive only where a

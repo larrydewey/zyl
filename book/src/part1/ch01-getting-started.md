@@ -287,7 +287,7 @@ ICNF, writes it to a `.buildinfo` file and embeds it in the binary
 - Errors are caught early, and most carry a location: `error[CODE]`,
   `--> file:line:col`, the source line, a caret and a `= help:` hint
 - Determinism is guaranteed by construction (ordered structures, no randomness)
-- `zyl check file.zyl` runs everything up to type checking and stops: the fast way to find errors without building
+- `zyl check file.zyl` runs every phase of a build except code generation and linking: the fast way to find errors without building, and a clean check means the program builds
 - You can inspect the generated assembly: `zyl file.zyl --emit-asm -o file.s`
 
 ## 1.5 Running the Test Suite

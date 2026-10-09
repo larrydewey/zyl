@@ -46,6 +46,7 @@
 (use compiler/sexp_balance)
 (use compiler/error_codes)
 (use compiler/error_report)
+(use compiler/rt_mode)
 
 ; Stage tracing, off unless ZYL_DEBUG_STAGES is set. This used to append to
 ; /tmp/dbg unconditionally: a fixed path in a shared directory (on a
@@ -218,16 +219,10 @@
 
 ; THE FRONT END. Closure inlining and type inference, and nothing else.
 ;
-; Every diagnostic a program author can act on has been reported by the time
-; this returns, and nothing expensive has run: ICNF lowering, optimization,
-; region inference and in-place reuse are all after it. That is the whole
-; reason `zyl check` stops here -- it is not a subset chosen for speed, it is
-; the point where the compiler stops having anything to say.
-;
-; Split out of lower-after-mono so that a check and a compile run the *same*
-; front end rather than two copies of it that can drift. A checker that
-; quietly skipped a phase the compiler runs would report a clean program that
-; does not build, which is worse than no checker.
+; Split out of lower-after-mono so the language server can stop here. `zyl
+; check` does not: lowering still reports `E_ARITY_MISMATCH` for `(/ 7)` and
+; `E_MATCH_NONEXHAUSTIVE`, and region inference reports `E_REGION_ESCAPE`,
+; so a check that stopped at types passed programs the build rejects.
 (defn annotate-exprs (arena exprs)
   (begin
     (dbg-log "closure-inline\n")
@@ -238,9 +233,8 @@
         (nc-check-program ann)
         ann))))
 
-; Everything after type inference. None of these phases reports a diagnostic a
-; program author can act on: they either succeed or they are compiler bugs,
-; which is the other reason the check boundary is drawn above them.
+; Everything after type inference up to code generation. Lowering and region
+; inference still report diagnostics, which is why `zyl check` runs them.
 (defn lower-icnf (arena ann-exprs)
   (begin
     (dbg-log "lower\n")
@@ -262,9 +256,10 @@
 (defn compile-front-end (arena srcbuf srcpath)
   (annotate-exprs arena (lower-exprs (compile-to-exprs arena srcbuf srcpath))))
 
-; Type-check a source file and stop. Returns Unit; a program that does not
-; check raises the diagnostics and fails the compile, exactly as a full build
-; would, so there is no separate error path to keep honest.
+; Every phase a build runs except code generation and linking, which report
+; nothing a program author can fix. A program that does not check raises the
+; diagnostics and fails exactly as a build would, so a clean check means the
+; program builds.
 ;
 ; The edit loop this exists for: read a diagnostic, fix it, read the next. At
 ; the cost of a full build that loop is dominated by waiting, and the waiting
@@ -272,8 +267,19 @@
 ; instead of fixing one at a time.
 (defn compile-check (arena srcbuf srcpath)
   (begin
-    (compile-front-end arena srcbuf srcpath)
+    (require-main (compile-to-fns arena srcbuf srcpath) srcbuf srcpath)
     0))
+
+; A lone file is a program, so it needs a `main` (top-level tests make one);
+; a file beside a zyl.pkg may be a module, and the runtime module has none.
+(defn require-main (fns srcbuf srcpath)
+  (if (or (rt-mode-p) (or (ic-has-main fns) (mr-file-exists (str-concat (mr-trim-slash (mr-dirname srcpath)) "/zyl.pkg"))))
+    fns
+    (ffi-call "zyl_panic"
+      (err-at "E_NO_MAIN" "this program has no `main`, so there is nothing to run"
+              (ffi-call "zyl_source_register" srcpath srcbuf 1000) 0
+              "add `(defn main () 0)`; a file that is only a module belongs in a package")
+      1000)))
 
 ; Source text to lowered functions: everything except code generation.
 ; Returns: List(Icnf)
@@ -288,7 +294,7 @@
 ; sink.
 ; Returns: String (assembly)
 (defn compile-to-asm (arena srcbuf srcpath)
-  (codegen-fns arena (compile-to-fns arena srcbuf srcpath) srcpath))
+  (codegen-fns arena (require-main (compile-to-fns arena srcbuf srcpath) srcbuf srcpath) srcpath))
 
 ; The one place assembly text is produced, and therefore the one place the
 ; verifier has to run. It was in `compile-to-asm` first, on the reasoning that

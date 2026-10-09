@@ -214,11 +214,13 @@ The CLI (`selfhost/driver.zyl`, `drv-usage`): `zyl <file.zyl> [-o out]
 `update`, `vendor`, `audit`, `publish`, `key`, `verify <binary>`, `repl`, `eval <file.zyl>`,
 `doc [file|dir] [-o out.md]`, `check [file|dir ...]`, `explain [CODE]`, `fmt [file.zyl ...] [--check]`, `balance [file|dir ...]`.
 
-`zyl check` is the fast edit loop: parse, module resolution, macro expansion,
-the eight checks, derive expansion, impl lifting, closure inlining and type
-inference, then stop — no code generation, no linking. It runs the same front
-end a build does (`compile-front-end` is the shared body), so a clean check
-means the program builds. A file under `tests/compile-fail/` is skipped and the
+`zyl check` is the fast edit loop: every phase of a build up to code
+generation — the front end, type inference, the numeric check, ICNF lowering,
+optimization, region inference and reuse — then stop: no code generation, no
+linking. It runs the same pipeline a build does (`compile-to-fns` is the shared
+body) and requires `main` of a lone file (`E_NO_MAIN`), so a clean check means
+the program builds; the compile-fail suite asserts that every program the build
+rejects, `zyl check` rejects with the same code. A file under `tests/compile-fail/` is skipped and the
 skip is reported. A **standard-library module cannot be checked**: it is a
 module rather than a program, and compiling it as the entry makes it both at
 once, so `zyl check` declines and points at `zyl build`.

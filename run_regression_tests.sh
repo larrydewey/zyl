@@ -215,6 +215,30 @@ run_fail_test() {
         return
     fi
 
+    # `zyl check` must reject it too, with the same code: a clean check
+    # means the program builds. It skips tests/compile-fail, so a file there
+    # is checked as a copy under the same name; a package is checked in place.
+    local cfile="$file"
+    case "$file" in
+        */compile-fail/*)
+            cfile="$RUN_TMP/check_${TOTAL}/$(basename "$file")"
+            mkdir -p "$(dirname "$cfile")" && cp "$file" "$cfile" ;;
+    esac
+    local coutput
+    if coutput=$("${ZYL_BIN}" check "$cfile" 2>&1); then
+        echo -e "  ${RED}✗${NC} ${name}: the build fails but zyl check passed it"
+        FAIL=$((FAIL + 1))
+        return
+    fi
+    if [ -n "$expected" ] && ! echo "$coutput" | grep -q -- "$expected"; then
+        echo -e "  ${RED}✗${NC} ${name}: zyl check did not report ${expected}"
+        if [ "$VERBOSE" -eq 1 ]; then
+            echo "    $coutput"
+        fi
+        FAIL=$((FAIL + 1))
+        return
+    fi
+
     echo -e "  ${GREEN}✓${NC} ${name}"
     PASS=$((PASS + 1))
 }

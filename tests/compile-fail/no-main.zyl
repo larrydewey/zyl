@@ -1,0 +1,4 @@
+; A lone file is a program, and a program needs a main.
+; expect-error: E_NO_MAIN
+; expect-at: no-main.zyl:1:1
+(defn helper (x) (+ x 1))

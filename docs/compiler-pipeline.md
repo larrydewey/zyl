@@ -614,7 +614,7 @@ Source (.zyl)
   -> [11] Region inference              region_inference
   -> [11b] In-place reuse marks         reuse
           (compile-to-fns stops here; zyl eval and the REPL interpret this,
-           and zyl check stops earlier, at the end of [8b])
+           and zyl check stops here too, after requiring a main)
   -> [12] Code generation               codegen, mir         -> assembly
   -> [12b] Binary safety verification   verify
   -> [13] Linking                       asm_x86, elf_link + rt.zo
