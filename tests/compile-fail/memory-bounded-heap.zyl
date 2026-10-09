@@ -1,0 +1,8 @@
+; Under (memory bounded) a value that goes to the process heap is refused.
+; expect-error: E_REGION_ESCAPE
+; expect-at: memory-bounded-heap.zyl:6:22
+(memory bounded)
+(use core/core)
+(defn twice (f x) (f (f x)))
+(defn grow (xs) (twice (fn (ys) (Cons 1 ys)) xs))
+(defn main () (begin (print (list-length (grow (Cons 2 Nil)))) 0))

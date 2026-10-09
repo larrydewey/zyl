@@ -1,0 +1,19 @@
+; (memory bounded) compiles a program whose every allocation has a region.
+(memory bounded)
+(use core/core)
+(use testing/testing)
+
+(defstruct Pt (x Int) (y Int))
+
+(def origin (Pt 0 0))
+
+(defn sum-to (n acc) (if (= n 0) acc (sum-to (- n 1) (+ acc n))))
+
+(defn build (n) (if (= n 0) Nil (Cons (Pt n n) (build (- n 1)))))
+
+(defn total (ps) (match ps (Nil 0) (Cons p rest (+ (Pt.x p) (total rest)))))
+
+(test "frame-local lists are fine" (assert-equal (total (build 10)) 55))
+(test "a def is global, not an escape" (assert-equal (Pt.y origin) 0))
+(test "scalars" (assert-equal (sum-to 100 0) 5050))
+(run-tests)

@@ -59,6 +59,26 @@ Non-moving arena. Values physically copied here for FFI. Never compacted.
 
 ---
 
+## 9.3 Memory Profile
+
+Once per program — a top-level form of a lone file, or a line of `zyl.pkg`:
+
+```lisp
+(memory unbounded)   ; the default
+(memory reported)
+(memory bounded)
+```
+
+A value the region analysis cannot place in a frame, result or `with-region`
+region goes to the process heap and lives until exit; in a loop that is
+unbounded growth. `unbounded` allows it silently; `reported` warns
+(`W_HEAP_ESCAPE`) at each such allocation in the program's own source,
+labelled with where it escaped; `bounded` refuses it (`E_REGION_ESCAPE`). A
+top-level `def`'s value is global (R7) and is not an escape; allocations
+inside the standard library are not reported. A module file may not state a
+profile, and a manifested package states it only in `zyl.pkg`
+(`E_MALFORMED_FORM`).
+
 ## 13. Memory Operations
 
 | Operation | Description |

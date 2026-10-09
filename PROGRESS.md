@@ -543,6 +543,19 @@ REPL and language server:
 
 ## Open Work (prioritized)
 
+0. **Memory profile** (done 2026-10-09, spec §9.3). `(memory reported)`
+   warns `W_HEAP_ESCAPE` at each allocation in the program's own source
+   that region inference sends to the process heap (where it lives until
+   exit), labelled with where it escaped; `(memory bounded)` makes each an
+   `E_REGION_ESCAPE`. Default `unbounded`. It is opt-in because the
+   default would be noisy: across the 132 regression and smoke programs,
+   27 have a heap escape under `bounded`, mostly values passed to a
+   function value (the analysis gives an unknown callee's arguments H), a
+   runtime ref cell, or a caught error. Top-level `def` values are exempt
+   (the `zyl_global_put` escape is recognised), and so are sites inside
+   the standard library. Next: the unbounded-recursion check and a
+   per-function worst-case figure under `bounded`.
+
 1. **Native backend**: Float arithmetic in `xmm` registers, `print`,
    closures and indirect calls, `try` and `with-region` on MIR, then
    remove the stack machine's expression code; MIR-level optimization

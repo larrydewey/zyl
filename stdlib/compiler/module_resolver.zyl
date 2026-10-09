@@ -634,12 +634,13 @@
   (let forms (mr-parse-file arena (mr-module-file pkg module))
     (let _ (mr-no-stray-caps pkg forms)
     (let _ (mr-numeric-in-module forms pkg)
+    (let _ (mr-memory-in-module forms pkg)
     (let uses (mr-collect-uses forms)
       (let defs (mr-collect-defs arena pkg module forms)
         (let id (mr-unit-id (mrp-name pkg) module)
           (let disc2 (mr-discover-deps arena (mr-with-pkgs disc arena pkg)
                                        (Cons id stack) pkg uses)
-            (mr-add-unit disc2 (MRUN (mrp-name pkg) module forms uses defs) id)))))))))
+            (mr-add-unit disc2 (MRUN (mrp-name pkg) module forms uses defs) id))))))))))
 
 (defn mr-add-unit (disc munit id)
   (match disc
@@ -826,6 +827,54 @@
             (mr-numeric-fail f (str-concat "`" (str-concat (ast-text f) "` is not a numeric policy")) (mr-numeric-help))))
         (_ (mr-numeric-fail f (str-concat "`" (str-concat (ast-text f) "` is not a numeric policy")) (mr-numeric-help)))))
     (Nil (mr-numeric-fail f "`(numeric)` names no policy" (mr-numeric-help)))))
+
+;; MEMORY PROFILE (§9.3): whether a heap escape is allowed, reported or
+;; refused. One per program: the root's zyl.pkg line or the lone file's form.
+(defn mr-memory-root (arena pkg main-forms)
+  (let declared (mr-memory-declared main-forms)
+    (let profile (if (= (mrp-manifested pkg) 1)
+                   (if (> (str-length declared) 0)
+                     (mr-numeric-fail (mr-head-form main-forms "memory")
+                       (str-concat "`(memory " (str-concat declared ")` belongs in zyl.pkg, which already decides the profile of the package"))
+                       (str-concat "remove this line, and write `(memory " (str-concat declared ")` in zyl.pkg instead")))
+                     (mf-memory (pk-read-manifest arena (str-concat (mrp-root pkg) "/zyl.pkg"))))
+                   declared)
+      (ffi-call "zyl_ref_set" memory-profile profile 1000))))
+
+(defn mr-memory-in-module (forms pkg)
+  (let declared (mr-memory-declared forms)
+    (if (= (str-length declared) 0) 0
+      (mr-numeric-fail (mr-head-form forms "memory")
+        (str-concat "`(memory " (str-concat declared (str-concat ")` in a module: the profile belongs to the whole package " (mrp-name pkg))))
+        (str-concat "move `(memory " (str-concat declared (if (= (mrp-manifested pkg) 1) ")` to zyl.pkg" ")` to the file that is compiled")))))))
+
+(defn mr-memory-declared (forms)
+  (match forms
+    (Nil "")
+    (Cons f rest
+      (if (str-eq (mr-ast-head f) "memory")
+        (let p (mr-memory-profile-of f)
+          (let other (mr-memory-declared rest)
+            (if (or (= (str-length other) 0) (str-eq other p)) p
+              (mr-numeric-fail f
+                (str-concat "`(memory " (str-concat p (str-concat ")` disagrees with a later `(memory " (str-concat other ")`"))))
+                "keep one of the two lines"))))
+        (mr-memory-declared rest)))))
+
+(defn mr-head-form (forms head)
+  (match forms
+    (Nil (AstInt 0))
+    (Cons f rest (if (str-eq (mr-ast-head f) head) f (mr-head-form rest head)))))
+
+(defn mr-memory-profile-of (f)
+  (match (mr-ast-args f)
+    (Cons a t
+      (match a
+        (AstIdent p
+          (if (and (is-nil t) (pk-memory-policy-p p)) p
+            (mr-numeric-fail f (str-concat "`" (str-concat (ast-text f) "` is not a memory profile")) (pk-memory-help))))
+        (_ (mr-numeric-fail f (str-concat "`" (str-concat (ast-text f) "` is not a memory profile")) (pk-memory-help)))))
+    (Nil (mr-numeric-fail f "`(memory)` names no profile" (pk-memory-help)))))
 
 (defn mr-numeric-help () "write `(numeric checked)` to stop on overflow, `(numeric wrapping)` to wrap around, or `(numeric saturating)` to clamp")
 
@@ -1399,12 +1448,13 @@
 (defn mr-resolve-program (arena main-forms srcpath)
   (let pkg (mr-root-pkg arena (mr-dirname srcpath) main-forms)
     (let _ (mr-numeric-root arena pkg main-forms srcpath)
+    (let _ (mr-memory-root arena pkg main-forms)
     (let module (mr-basename-module srcpath)
       (let uses (mr-collect-uses main-forms)
         (let defs (mr-collect-defs arena pkg module main-forms)
           (let root (MRUN (mrp-name pkg) module main-forms
                           (mr-root-uses main-forms uses) defs)
-            (mr-resolve-root arena pkg root (mr-root-uses main-forms uses)))))))))
+            (mr-resolve-root arena pkg root (mr-root-uses main-forms uses))))))))))
 
 (defn mr-root-uses (main-forms uses)
   (if (rt-mode-p)
@@ -1452,12 +1502,13 @@
 (defn mr-resolve-program-full (arena main-forms srcpath)
   (let pkg (mr-root-pkg arena (mr-dirname srcpath) main-forms)
     (let _ (mr-numeric-root arena pkg main-forms srcpath)
+    (let _ (mr-memory-root arena pkg main-forms)
     (let module (mr-basename-module srcpath)
       (let uses (mr-collect-uses main-forms)
         (let defs (mr-collect-defs arena pkg module main-forms)
           (let root (MRUN (mrp-name pkg) module main-forms
                           (mr-root-uses main-forms uses) defs)
-            (mr-resolve-full arena pkg root (mr-root-uses main-forms uses) (mr-root-kind srcpath)))))))))
+            (mr-resolve-full arena pkg root (mr-root-uses main-forms uses) (mr-root-kind srcpath))))))))))
 
 (defn mr-resolve-full (arena pkg root uses kind)
   (let _ (ffi-call "zyl_wvec_truncate" mr-use-store 0 1000)

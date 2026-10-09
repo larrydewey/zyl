@@ -101,6 +101,11 @@ a signed provenance trailer, and `zyl verify <binary>` reads it back
   `E_REGION_EXHAUSTED`)
 - No value may escape its assigned region: a Stack bytebuf or a
   `with-region` value that would outlive its region is `E_REGION_ESCAPE`
+- The memory profile (spec §9.3), `(memory unbounded|reported|bounded)`
+  once per program (lone-file form or `zyl.pkg` line): `reported` warns
+  `W_HEAP_ESCAPE` at each allocation that goes to the process heap,
+  `bounded` refuses it with `E_REGION_ESCAPE`; top-level `def` values and
+  standard-library sites are exempt
 - Global and Circular are names only (Global = top-level `def` values,
   which are heap); the interpreter ignores regions
 

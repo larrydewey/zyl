@@ -31,6 +31,9 @@
 ;; Numeric policies by package name ("" the root): "checked", "wrapping" or "saturating".
 (def numeric-policies (ffi-call "zyl_smap_new" 1000))
 
+;; The root package's memory profile (§9.3): "", "unbounded", "reported" or "bounded".
+(def memory-profile (ffi-call "zyl_ref_new" "" 1000))
+
 ;; Counter for the names `div?`/`rem?` bind their operands to (expr_inner.zyl).
 (def numeric-fresh (ffi-call "zyl_ref_new" 0 1000))
 

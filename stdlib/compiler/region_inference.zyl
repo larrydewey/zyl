@@ -250,6 +250,8 @@
 (def rg-scope-node-store (ffi-call "zyl_wvec_new" 1000))
 (def rg-stack-site-store (ffi-call "zyl_wvec_new" 1000))
 (def rg-esc-store (ffi-call "zyl_wvec_new" 1000))
+; Class ids of this function already warned about (W_HEAP_ESCAPE).
+(def rg-warned-store (ffi-call "zyl_wvec_new" 1000))
 
 (defn rg-summaries () rg-summary-table)
 
@@ -539,9 +541,13 @@
                 (let _ (rg-raise-at rec e (rg-last cs) 2 "escapes here: stored into a buffer") (rg-new 0))
                 (if (= k 5)
                   (let _ (rg-raise-at rec e (rg-rest cs) 2 "escapes here: stored into a buffer") (rg-new 0))
+                (if (str-eq name "zyl_global_put")
+                  (let _ (rg-raise-at rec e cs 2 (rg-global-text)) (rg-new 0))
                   (let _ (rg-raise-at rec e cs 2 "escapes here: passed to a runtime call that may keep it")
                     (let c (rg-new 2)
-                      (let _ (rg-esc rec e c 2 "escapes here: joined with this call's heap result") c))))))))))))
+                      (let _ (rg-esc rec e c 2 "escapes here: joined with this call's heap result") c)))))))))))))
+
+(defn rg-global-text () "escapes here: stored as the value of a top-level def")
 
 (defn rg-fields (fs c env rec)
   (match fs
@@ -650,6 +656,7 @@
         (let _ (ffi-call "zyl_wvec_truncate" (rg-scope-nodes) 0 1000)
         (let _ (ffi-call "zyl_wvec_truncate" (rg-scope-stack) 0 1000)
         (let _ (ffi-call "zyl_wvec_truncate" rg-esc-store 0 1000)
+        (let _ (ffi-call "zyl_wvec_truncate" rg-warned-store 0 1000)
         (match (rg-param-env params Nil Nil)
           (RgPE env cs
             (let ret (rg-new 1)
@@ -671,7 +678,7 @@
                         (if (= packed old)
                           false
                           (let _ (ffi-call "zyl_smap_put" (rg-summaries) name (+ packed 1) 1000)
-                            true)))))))))))))))))))
+                            true))))))))))))))))))))
     (_ false)))
 
 ; Per-parameter maximum of two summaries, and the OR of bit 62.
@@ -744,9 +751,60 @@
               (let _ (if (> rec 0) (icnf-region-set node (+ 4 scope)) unit)
                 (rg-mark-sites (+ i 1) n flags rec))
               (let _ (if (and (> rec 0) (>= scope 0)) (rg-scope-escape (rg-located node scope) lvl c scope) 0)
+                (let _ (if (and (> rec 0) (and (= lvl 2) (rg-heap-checked-p))) (rg-heap-escape node c) 0)
                 (let _ (if (> rec 0) (icnf-region-set node (+ lvl 1)) unit)
                   (rg-mark-sites (+ i 1) n
-                    (bit-or flags (if (= lvl 0) 1 (if (= lvl 1) 2 0))) rec)))))))))
+                    (bit-or flags (if (= lvl 0) 1 (if (= lvl 1) 2 0))) rec))))))))))
+
+; The memory profile (§9.3): `reported` warns about a heap escape
+; (W_HEAP_ESCAPE), `bounded` refuses it (E_REGION_ESCAPE).
+
+(defn rg-heap-checked-p ()
+  (let p (ffi-call "zyl_ref_get" memory-profile 1000)
+    (or (str-eq p "reported") (str-eq p "bounded"))))
+
+; Whether c's class reached the heap as a top-level def's value, which is
+; allocated once and is not a leak.
+(defn rg-global-p (c i n)
+  (if (>= i n) false
+    (match (ffi-call "zyl_wvec_get" rg-esc-store i 1000)
+      (RgEsc _ ec _ text
+        (if (and (str-eq text (rg-global-text))
+                 (= (ffi-call "zyl_uf_id" (ffi-call "zyl_uf_find" ec 1000) 1000)
+                    (ffi-call "zyl_uf_id" (ffi-call "zyl_uf_find" c 1000) 1000)))
+          true
+          (rg-global-p c (+ i 1) n))))))
+
+; An allocation the analysis could not give a region, so it stays in the
+; process heap until exit. Once per class per function, at the first site in
+; the program's own source, labelled with where the class escaped.
+(defn rg-heap-escape (node c)
+  (let id (ffi-call "zyl_uf_id" (ffi-call "zyl_uf_find" c 1000) 1000)
+    (let fid (ffi-call "zyl_span_file" node 1000)
+      (let off (ffi-call "zyl_span_off" node 1000)
+        (if (or (< off 0) (or (err-warn-hidden-p fid) (or (rg-warned-p id 0 (ffi-call "zyl_wvec_len" rg-warned-store 1000))
+                                                         (rg-global-p c 0 (ffi-call "zyl_wvec_len" rg-esc-store 1000)))))
+          0
+          (let _ (ffi-call "zyl_wvec_push" rg-warned-store id 1000)
+            (if (str-eq (ffi-call "zyl_ref_get" memory-profile 1000) "bounded")
+              (ffi-call "zyl_panic"
+                (err-at-labels "E_REGION_ESCAPE"
+                  "this value goes to the process heap, which is never freed, and `(memory bounded)` refuses that"
+                  fid off (rg-esc-labels c 2 node) (rg-heap-help))
+                1000)
+              (let _ (ffi-call "zyl_warn_emit"
+                       (err-diag "warning" "W_HEAP_ESCAPE"
+                                 "this value goes to the process heap, which is never freed: it lives until the program exits"
+                                 fid off (rg-esc-labels c 2 node) (rg-heap-help))
+                       1000)
+                0))))))))
+
+(defn rg-heap-help ()
+  "keep it inside the call or return it, or build it inside `with-region`")
+
+(defn rg-warned-p (id i n)
+  (if (>= i n) false
+    (if (= (ffi-call "zyl_wvec_get" rg-warned-store i 1000) id) true (rg-warned-p id (+ i 1) n))))
 
 (defn rg-in-scope (c lvl scope)
   (if (> lvl 0)

@@ -190,7 +190,8 @@ an `if` condition, `main`'s result at its last expression), and otherwise
 
 | Code | Catalog message | Raised by |
 |------|-----------------|-----------|
-| `E_REGION_ESCAPE` (§28) | region: value escapes region constraint at S | `region_inference.zyl` (located): a `(bytebuf Stack N)` that is returned, stored, sent or passed to code that may keep it, or a value allocated inside `with-region` that outlives it |
+| `E_REGION_ESCAPE` (§28) | region: value escapes region constraint at S | `region_inference.zyl` (located): a `(bytebuf Stack N)` that is returned, stored, sent or passed to code that may keep it, or a value allocated inside `with-region` that outlives it, or under `(memory bounded)` any allocation that goes to the process heap |
+| `W_HEAP_ESCAPE` | region: a value goes to the process heap and lives until exit at S | `region_inference.zyl` (located), under `(memory reported)` only (spec §9.3) |
 | `E_REGION_SPEC` (§28) | region: malformed with-region specification at S | `expr_inner.zyl` (`parse-with-region`, located): unknown kind or option, block not a multiple of 4096 or above 64 MiB, alignment not a power of two from 8 to 4096 |
 | `E_MATCH_ARM_COMPLEX` | match: arm combines a constant with multiple calls - bind to lets first | `icnf.zyl`, located |
 | `E_TOPLEVEL_STMTS_WITH_EXPLICIT_MAIN` | program: top-level statements alongside an explicit main | `icnf.zyl` (top-level `test`/`run-tests` forms next to an explicit `(defn main ...)`) |

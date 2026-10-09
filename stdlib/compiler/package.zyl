@@ -310,12 +310,14 @@
 (defn pdoc-license (d) (match d (PDoc dot1 x dot2 x)))
 (defn pdoc-repository (d) (match d (PDoc dot1 dot2 x x)))
 
-(deftype PkgCaps (PCaps (List String) (List String) String))
+(deftype PkgCaps (PCaps (List String) (List String) String String))
 
-(defn pcaps-granted (c) (match c (PCaps g _ _ g)))
-(defn pcaps-denied (c) (match c (PCaps _ d _ d)))
+(defn pcaps-granted (c) (match c (PCaps g _ _ _ g)))
+(defn pcaps-denied (c) (match c (PCaps _ d _ _ d)))
 ; The (numeric P) line: "checked", "wrapping", "saturating", or "" when the manifest has none.
-(defn pcaps-numeric (c) (match c (PCaps _ _ n n)))
+(defn pcaps-numeric (c) (match c (PCaps _ _ n _ n)))
+; The (memory P) line: "unbounded", "reported", "bounded", or "" when the manifest has none.
+(defn pcaps-memory (c) (match c (PCaps _ _ _ m m)))
 
 (deftype PkgDeps (PDeps (List PkgDep) (List PkgDep) (List PkgFeature) (List PkgOverride)))
 
@@ -352,6 +354,7 @@
 (defn mf-capabilities (m) (pcaps-granted (mf-caps m)))
 (defn mf-denied (m) (pcaps-denied (mf-caps m)))
 (defn mf-numeric (m) (pcaps-numeric (mf-caps m)))
+(defn mf-memory (m) (pcaps-memory (mf-caps m)))
 
 ; The major under which this package's symbols are keyed (§31.2). A name
 ; carrying /vN pins it; otherwise it is the version's own major.
@@ -702,10 +705,31 @@
                     (pk-field-str forms "repository"))
               (PCaps (pk-ident-list forms "capabilities")
                      (pk-ident-list forms "deny-capabilities")
-                     (pk-numeric-of forms path site))
+                     (pk-numeric-of forms path site)
+                     (pk-memory-of forms))
               (PDeps deps (pk-parse-deps forms "dev-deps")
                      (pk-parse-features forms) (pk-parse-overrides forms))
               (PBuild (pk-parse-native forms) (pk-str-list forms "exclude"))) site))))))
+
+; A memory profile name: heap escapes are allowed, reported as warnings, or refused.
+(defn pk-memory-policy-p (p)
+  (or (str-eq p "unbounded") (or (str-eq p "reported") (str-eq p "bounded"))))
+
+(defn pk-memory-help () "write `(memory unbounded)`, `(memory reported)` or `(memory bounded)`")
+
+; The manifest's (memory P), or "" when absent.
+(defn pk-memory-of (forms)
+  (match (pk-find-form forms "memory")
+    (None "")
+    (Some f
+      (match (pk-ast-strs (pk-ast-args f))
+        (Cons p t (if (and (is-nil t) (pk-memory-policy-p p)) p (pk-memory-bad f)))
+        (Nil (pk-memory-bad f))))))
+
+(defn pk-memory-bad (f)
+  (ffi-call "zyl_panic"
+    (err-at "E_MALFORMED_FORM" "`memory` takes one profile name"
+            (ffi-call "zyl_span_file" f 1000) (ffi-call "zyl_span_off" f 1000) (pk-memory-help)) 1000))
 
 ; ===========================================================================
 ; EDITIONS AND COMPILER VERSION (§31.11)

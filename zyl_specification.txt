@@ -620,6 +620,19 @@ Errors:
     Value of the region reaching body's result or any longer-lived location → E_REGION_ESCAPE (compile-time).
     (bytebuf Stack N) returned, stored, sent, or passed where it may be retained → E_REGION_ESCAPE (compile-time).
 
+9.3 MEMORY PROFILE
+Syntax (once per program: a top-level form of a lone file, or a line of zyl.pkg):
+    (memory unbounded) | (memory reported) | (memory bounded)
+A value the region analysis cannot give a frame, result or with-region region
+goes to the process heap and lives until exit; in a loop that is unbounded growth.
+    unbounded (default): allowed, silently.
+    reported: each such allocation in the program's own source → W_HEAP_ESCAPE (warning),
+              located at the allocation and labelled with where it escaped.
+    bounded:  each such allocation → E_REGION_ESCAPE (compile-time).
+A top-level def's value is global (R7) and is not an escape. Allocations inside the
+standard library are not reported. A module file may not state a profile; a manifested
+package states it in zyl.pkg only (E_MALFORMED_FORM).
+
 ================================================================================
 10. MUTABILITY AND ALIASING
 ================================================================================

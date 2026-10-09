@@ -752,7 +752,7 @@
 ; (numeric P) at the top level: the module resolver read and checked it.
 (defn numeric-directive-p (f)
   (match f
-    (AList xs (str-eq (ast-head f) "numeric"))
+    (AList xs (or (str-eq (ast-head f) "numeric") (str-eq (ast-head f) "memory")))
     (_ false)))
 
 (defn contract-directive-mode (f)

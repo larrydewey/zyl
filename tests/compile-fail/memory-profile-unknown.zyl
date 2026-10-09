@@ -1,0 +1,4 @@
+; A memory profile is one of three names.
+; expect-error: E_MALFORMED_FORM
+(memory sometimes)
+(defn main () 0)

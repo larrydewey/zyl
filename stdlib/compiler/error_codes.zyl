@@ -66,6 +66,7 @@
   (Cons (EC "W_TYPE_STRICT" 5 1 "type: a type error reported as a warning under ZYL_STRICT_TYPES=report at S")
   (Cons (EC "E_REGION_SPEC" 6 1 "region: malformed with-region specification at S")
   (Cons (EC "E_REGION_ESCAPE" 6 1 "region: value escapes region constraint at S")
+  (Cons (EC "W_HEAP_ESCAPE" 6 2 "region: a value goes to the process heap and lives until exit at S")
   (Cons (EC "E_MATCH_ARM_COMPLEX" 7 1 "match: arm combines a constant with multiple calls - bind to lets first")
   (Cons (EC "E_TOPLEVEL_STMTS_WITH_EXPLICIT_MAIN" 7 1 "program: top-level statements alongside an explicit main")
   (Cons (EC "E_CODEGEN_BUFFER_FULL" 8 1 "codegen: output buffer full at S")
@@ -165,7 +166,7 @@
   (Cons (EC "E_PKG_FEATURE_NESTED" 19 1 "package: feature-gate is valid at top level only")
   (Cons (EC "E_PKG_FEATURE_COLLISION" 19 1 "package: gated definition D collides with a base definition")
   (Cons (EC "E_PROV_ATTACH" 19 1 "build: the provenance trailer could not be attached: M")
-  Nil)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+  Nil))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 ; ---------------------------------------------------------------------------
 ; ACCESSORS
 ; ---------------------------------------------------------------------------
