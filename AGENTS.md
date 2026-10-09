@@ -102,10 +102,12 @@ a signed provenance trailer, and `zyl verify <binary>` reads it back
 - No value may escape its assigned region: a Stack bytebuf or a
   `with-region` value that would outlive its region is `E_REGION_ESCAPE`
 - Memory is bounded at run time: the heap is charged to `ZYL_MAX_MEMORY`
-  (default 80% of available memory; exhausting it is `E_OUT_OF_MEMORY`, whose
-  report does not allocate), and main's stack is a quarter of the budget,
-  charged to it, with a guard page whose fault is `E_STACK_OVERFLOW`
-  (`zyl_segv_handler`, spec §14)
+  (default 80% of total memory or the cgroup limit, never of what is free, so
+  load cannot change whether a program runs; exhausting it is
+  `E_OUT_OF_MEMORY`, whose report does not allocate; arena blocks grow from
+  64 KiB so a large block size is charged only as used), and main's stack is
+  a quarter of the budget, charged to it; overflowing it, or an actor's
+  8 MiB stack, is `E_STACK_OVERFLOW` (`zyl_segv_handler`, spec §14)
 - The memory profile (spec §9.3), `(memory unbounded|reported|bounded)`
   once per program (lone-file form or `zyl.pkg` line): `reported` warns
   `W_HEAP_ESCAPE` at each allocation that goes to the process heap,

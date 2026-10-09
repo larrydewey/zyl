@@ -112,11 +112,12 @@
   (make-Stdout 1))
 
 ; Growable, arena-backed byte buffer: the text buffer, its length and its
-; capacity in mutable cells (runtime Ref), and the arena that owns the
-; storage (reclaimed by string-buffer-destroy). Content is appended in place
+; capacity in mutable cells (runtime Ref) inside the arena that owns the
+; storage, so string-buffer-destroy reclaims all of it; whether it was
+; destroyed is the arena handle's own flag, which outlives the arena. Content is appended in place
 ; with buf-append; when len + chunk + 1 exceeds the capacity, a larger
 ; buffer is taken from the arena and the content copied into it.
-(defstruct StringBuffer (buf (Ref StrBuf)) (len (Ref Int)) (cap (Ref Int)) (arena Arena) (fd Int) (released (Ref Int)))
+(defstruct StringBuffer (buf (Ref StrBuf)) (len (Ref Int)) (cap (Ref Int)) (arena Arena) (fd Int))
 
 (defn sb-ref-get (r) (ffi-call "zyl_ref_get" r 1000))
 (defn sb-ref-set (r v) (ffi-call "zyl_ref_set" r v 1000))
@@ -125,7 +126,7 @@
 ; would be a use-after-free. Callers check first; a live one is released
 ; by string-buffer-destroy, which is what with-resource calls (spec G2).
 (defn sb-require-live! ((sb StringBuffer))
-  (if (> (ffi-call "zyl_ref_get" (struct-get sb "released") 1000) 0)
+  (if (not (ffi-call "zyl_arena_live" (struct-get sb "arena") 1000))
     (ffi-call "zyl_panic" "E_USE_AFTER_FREE: string buffer used after it was destroyed" 1000)
     unit))
 
@@ -139,12 +140,12 @@
 
 (impl OutputStream StringBuffer
   (defn write (self chunk)
+    (let _ (sb-require-live! self)
     (let len (sb-ref-get (struct-get self "len"))
       (let cap (sb-ref-get (struct-get self "cap"))
         (let clen (alloc-strlen chunk)
           (let need (+ (+ len clen) 1)
             (begin
-              (sb-require-live! self)
               (if (> need cap)
                 (let new-cap (if (> (* cap 2) need) (* cap 2) need)
                   (let bigger (buf-new (struct-get self "arena") new-cap)
@@ -155,7 +156,7 @@
                 unit)
               (buf-append (sb-ref-get (struct-get self "buf")) chunk)
               (sb-ref-set (struct-get self "len") (+ len clen))
-              (+ len clen)))))))
+              (+ len clen))))))))
   (defn flush (self) (begin (file-write (struct-get self "fd") (string-buffer-str self)) 0)))
 
 ; Content of a StringBuffer.
@@ -177,9 +178,7 @@
 ; released through with-resource rather than by a frame region.
 ; Returns: Unit
 (defn string-buffer-destroy ((sb StringBuffer))
-  (begin
-    (sb-ref-set (struct-get sb "released") 1)
-    (arena-destroy (struct-get sb "arena"))))
+  (arena-destroy (struct-get sb "arena")))
 
 (impl Drop StringBuffer (defn drop (self) (string-buffer-destroy self)))
 
@@ -188,9 +187,8 @@
 ; The arena is reclaimed via `string-buffer-destroy`.
 ; Returns: StringBuffer
 (defn make-string-buffer ()
-  (let a (arena-create 0)
-    (make-StringBuffer (ffi-call "zyl_ref_new" (buf-new a 64) 1000)
-                       (ffi-call "zyl_ref_new" 0 1000)
-                       (ffi-call "zyl_ref_new" 64 1000)
-                       a 1
-                       (ffi-call "zyl_ref_new" 0 1000))))
+  (let a (ffi-call "zyl_arena_create_scoped" 0 1000)
+    (make-StringBuffer (ffi-call "zyl_ref_new_in" a (buf-new a 64) 1000)
+                       (ffi-call "zyl_ref_new_in" a 0 1000)
+                       (ffi-call "zyl_ref_new_in" a 64 1000)
+                       a 1)))

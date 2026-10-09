@@ -154,16 +154,30 @@
     (None dm)))
 
 (defn dm-on-close (dm uri)
-  (match dm (DM states dead (DM (map-remove states uri) (dm-retire states uri dead)))))
+  (let _ (ffi-call "zyl_source_forget" (dm-source-path (lsp-uri-path uri)) 1000)
+    (match dm (DM states dead (DM (map-remove states uri) (dm-retire states uri dead))))))
 
 ; The analysis runs with the process heap switched to a fresh arena, which
 ; the resulting DocState then owns; the document is copied in first, since
 ; its text was decoded into the request's scratch heap.
 (defn dm-analyze (_arena doc0)
-  (let da (arena-create 1048576)
+  (let da (dm-take-arena)
     (let saved (ffi-call "zyl_heap_swap" da 1000)
       (let st (dm-analyze-in da (dm-copy-doc doc0))
         (begin (ffi-call "zyl_heap_swap" saved 1000) st)))))
+
+; Arenas of retired analyses, emptied and kept for the next one: a destroyed
+; arena keeps its handle for good, so creating one per analysis grew.
+(def dm-arena-pool (ffi-call "zyl_wvec_new" 1000))
+
+(defn dm-take-arena ()
+  (if (> (ffi-call "zyl_wvec_len" dm-arena-pool 1000) 0)
+    (ffi-call "zyl_wvec_pop" dm-arena-pool 1000)
+    (arena-create 1048576)))
+
+; Empty a retired analysis's arena and keep it for reuse.
+(defn dm-retire-arena (a)
+  (let _ (arena-reset a) (ffi-call "zyl_wvec_push" dm-arena-pool a 1000)))
 
 (defn dm-copy-doc (d)
   (Doc (str-concat "" (Document.text d)) (Document.version d) (str-concat "" (Document.uri d)) (str-concat "" (Document.languageId d))))

@@ -15,35 +15,22 @@
 
 (defn rt-strtoull (p) (let q (rt-skip-ws p) (rt-parse-u (if (= (rt-ld8 q) 43) (+ q 1) q) 0)))
 
-; The value in kB of the /proc/meminfo line starting with key, or -1.
-(defn rt-meminfo-field (buf n key)
-  (let i (rt-meminfo-find buf n key (rt-strlen (rt-w key)) 0)
-    (if (< i 0) -1 (rt-strtoull (+ buf i)))))
-
-(defn rt-meminfo-find (buf n key kl i)
-  (if (> (+ i kl) n) -1
-    (if (and (or (= i 0) (= (rt-ld8 (+ buf (- i 1))) 10)) (rt-mem-eq (+ buf i) (rt-w key) kl))
-      (+ i kl)
-      (rt-meminfo-find buf n key kl (+ i 1)))))
-
 (defn rt-read-all (fd buf cap n)
   (if (>= n cap) n
     (let r (ffi-call "%syscall3" 0 fd (+ buf n) (- cap n) 1)
       (if (> r 0) (rt-read-all fd buf cap (+ n r)) n))))
 
-; MemAvailable, else MemTotal, in bytes; 0 when /proc/meminfo cannot be read (buffer uncharged: the budget is not set yet).
-(defn rt-meminfo-available ()
-  (let fd (ffi-call "%syscall3" 2 (rt-w "/proc/meminfo") 524288 0 1)
+; The cgroup v2 memory limit (memory.max) in bytes, or 0 when there is none
+; ("max") or it cannot be read. Read into TLS: the budget is not set yet.
+(defn rt-cgroup-max ()
+  (let fd (ffi-call "%syscall3" 2 (rt-w "/sys/fs/cgroup/memory.max") 524288 0 1)
     (if (< fd 0) 0
-      (let buf (rt-raw-malloc 16384)
-        (if (= buf 0) (let _ (ffi-call "%syscall1" 3 fd 1) 0)
-          (let n (rt-read-all fd buf 16383 0)
-            (let _ (ffi-call "%syscall1" 3 fd 1)
-              (let _ (rt-st8 (+ buf n) 0)
-                (let avail (rt-meminfo-field buf n "MemAvailable:")
-                  (let total (rt-meminfo-field buf n "MemTotal:")
-                    (let _ (zyl_rt_free buf)
-                      (if (> avail 0) (* avail 1024) (if (> total 0) (* total 1024) 0)))))))))))))
+      (let buf (ffi-call "%tls" "cgroup_buf" 64 1)
+        (let n (rt-read-all fd buf 63 0)
+          (let _ (ffi-call "%syscall1" 3 fd 1)
+            (let _ (rt-st8 (+ buf n) 0)
+              (let c (rt-ld8 buf)
+                (if (and (>= c 48) (<= c 57)) (rt-strtoull buf) 0)))))))))
 
 ; sysinfo: totalram * mem_unit (what sysconf's phys pages times page size gives).
 (defn rt-sysinfo-total ()
@@ -51,13 +38,17 @@
     (if (not (= (ffi-call "%syscall1" 99 si 1) 0)) 0
       (* (hp-ld (+ si 32)) (ffi-call "%load32" (+ si 104) 1)))))
 
-; ZYL_MAX_MEMORY bytes when set (0: no budget); else 80% of available memory; else unlimited.
+; ZYL_MAX_MEMORY bytes when set (0: no budget); else 80% of the machine's
+; memory, or of the cgroup's limit when that is smaller; else unlimited. Total,
+; not available: what other processes happen to hold must not decide whether
+; a program runs (determinism), so the budget is a property of the machine.
 (defn rt-budget-value ()
   (let env (rt-w (ffi-call "zyl_getenv_str" "ZYL_MAX_MEMORY" 1))
     (if (and (> env 0) (> (rt-ld8 env) 0)) (rt-strtoull env)
-      (let a (rt-meminfo-available)
-        (let avail (if (> a 0) a (rt-sysinfo-total))
-          (if (> avail 0) (* (/ avail 5) 4) 0))))))
+      (let t (rt-sysinfo-total)
+        (let cg (rt-cgroup-max)
+          (let m (if (and (> cg 0) (or (= t 0) (< cg t))) cg t)
+            (if (> m 0) (* (/ m 5) 4) 0)))))))
 
 ; pthread_once: 0 unset, 1 running, 2 done.
 (defn rt-budget-once ()

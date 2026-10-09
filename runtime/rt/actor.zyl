@@ -65,6 +65,7 @@
   (let a (ac-slot (- (zyl_owner_self) 2)) (ffi-call "%call1" (ac-ld a) (ac-ld (+ a 8)) 1)))
 
 (defn zyl_actor_thread_entry (arg)
+  (let _ (bs-altstack 8388608)
   (let id (bit-and arg 4294967295)
     (let _ (zyl_owner_set (+ id 2))
     (let _ (zyl_chan_actor_enter)
@@ -75,7 +76,7 @@
               (let _ (zyl_rt_free f) (zyl_chan_actor_done (+ id 2) 0)))
             (let m (ac-ld (+ f 72))
               (let c (rt-strdup (if (= m 0) (rt-w "error") m))
-                (let _ (zyl_rt_free f) (zyl_chan_actor_done (+ id 2) (if (= c 0) (rt-w "error") c))))))))))))
+                (let _ (zyl_rt_free f) (zyl_chan_actor_done (+ id 2) (if (= c 0) (rt-w "error") c)))))))))))))
 
 ; A known actor id, or -1.
 (defn ac-valid (id) (and (ac-inited) (and (>= id 0) (< id (if (> (ac-next) (ac-max)) (ac-max) (ac-next))))))
@@ -129,7 +130,9 @@
   (if (= i 0) 68719476736 (if (= i 1) 17179869184 (if (= i 2) 4294967296 1073741824))))
 
 ; ctx: {fn, result}
-(defn zyl_bigstack_tramp (ctx) (let _ (bs-guard-install) (let _ (ac-st (+ ctx 8) (ffi-call "%call0" (ac-ld ctx) 1)) 0)))
+(defn zyl_bigstack_tramp (ctx)
+  (let _ (ac-st (ffi-call "%tls" "is_main" 8 1) 1)
+  (let _ (bs-guard-install (ac-ld (+ (bs-info) 8))) (let _ (ac-st (+ ctx 8) (ffi-call "%call0" (ac-ld ctx) 1)) 0))))
 
 ; Under a memory budget the stack is part of it: a quarter, at least 64 MiB, charged up front.
 (defn bs-cap (sz)
@@ -142,19 +145,26 @@
 ; {guard page, stack size} of main's stack.
 (defn bs-info () (ffi-call "%global" "bigstack_info" 16 1))
 
-; SIGSEGV on an alternate stack, once, from main's thread; SA_SIGINFO|ONSTACK|RESTORER|NODEFER|RESETHAND.
-(defn bs-guard-install ()
-  (let ss (ffi-call "%global" "segv_altstack_t" 24 1)
-    (let _ (ac-st ss (ffi-call "%global" "segv_altstack" 65536 1))
-      (let _ (ac-st (+ ss 8) 0)
-        (let _ (ac-st (+ ss 16) 65536)
-          (let _ (ffi-call "%syscall2" 131 ss 0 1)
-            (let sa (ffi-call "%global" "segv_sigaction" 32 1)
-              (let _ (ac-st sa (ffi-call "%fn" "zyl_segv_handler" 1))
-                (let _ (ac-st (+ sa 8) (+ 4 (+ 134217728 (+ 67108864 (+ 1073741824 2147483648)))))
-                  (let _ (ac-st (+ sa 16) (ffi-call "%fn" "zyl_segv_restorer" 1))
-                    (let _ (ac-st (+ sa 24) 0)
-                      (ffi-call "%syscall4" 13 11 sa 0 8 1))))))))))))
+; This thread's alternate signal stack (in its TLS, so every thread has one)
+; and its stack size, for the report.
+(defn bs-altstack (size)
+  (let ss (ffi-call "%tls" "segv_altstack_t" 24 1)
+    (let _ (ac-st (ffi-call "%tls" "stack_size" 8 1) size)
+      (let _ (ac-st ss (ffi-call "%tls" "segv_altstack" 32768 1))
+        (let _ (ac-st (+ ss 8) 0)
+          (let _ (ac-st (+ ss 16) 32768)
+            (ffi-call "%syscall2" 131 ss 0 1)))))))
+
+; SIGSEGV on an alternate stack, from main's thread before any actor exists;
+; SA_SIGINFO|ONSTACK|RESTORER|NODEFER|RESETHAND.
+(defn bs-guard-install (size)
+  (let _ (bs-altstack size)
+    (let sa (ffi-call "%global" "segv_sigaction" 32 1)
+      (let _ (ac-st sa (ffi-call "%fn" "zyl_segv_handler" 1))
+        (let _ (ac-st (+ sa 8) (+ 4 (+ 134217728 (+ 67108864 (+ 1073741824 2147483648)))))
+          (let _ (ac-st (+ sa 16) (ffi-call "%fn" "zyl_segv_restorer" 1))
+            (let _ (ac-st (+ sa 24) 0)
+              (ffi-call "%syscall4" 13 11 sa 0 8 1))))))))
 
 ; Never reached: the handler does not return. The kernel requires a restorer.
 (defn zyl_segv_restorer () (ffi-call "%syscall1" 231 1 1))
@@ -173,8 +183,10 @@
 (defn bs-overflow ()
   (let _ (zyl_out_flush)
     (let _ (rt-oom-say "PANIC: error[E_STACK_OVERFLOW]: the stack is full: recursion went deeper than the ")
-      (let _ (rt-oom-num (ac-ld (+ (bs-info) 8)))
-        (let _ (rt-oom-say "-byte stack\n  = help: make the recursive call a tail call (carry the result in an accumulator), or raise ZYL_MAX_MEMORY; the stack is a quarter of it\n")
+      (let _ (rt-oom-num (ac-ld (ffi-call "%tls" "stack_size" 8 1)))
+        (let _ (rt-oom-say (if (= (ac-ld (ffi-call "%tls" "is_main" 8 1)) 1)
+                             "-byte stack\n  = help: make the recursive call a tail call (carry the result in an accumulator), or raise ZYL_MAX_MEMORY; the stack is a quarter of it\n"
+                             "-byte stack of an actor\n  = help: make the recursive call a tail call (carry the result in an accumulator); an actor's stack is fixed, so deep work belongs in main\n"))
           (ffi-call "%syscall1" 231 1 1))))))
 
 (defn zyl_call_on_big_stack (f)

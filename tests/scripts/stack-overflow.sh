@@ -29,4 +29,18 @@ set -e
 echo "$out" | grep -q '^start$' || fail "output before the overflow was lost: $out"
 echo "$out" | grep -q 'error\[E_STACK_OVERFLOW\]' || fail "no E_STACK_OVERFLOW: $out"
 echo "$out" | grep -q '67108864-byte stack' || fail "the stack is not a quarter of the budget: $out"
+# An actor's stack is fixed at 8 MiB; its overflow is reported the same way.
+cat > "$SCRATCH/actor.zyl" <<'ZYL'
+(capabilities actor)
+(use core/core)
+(use actor/actor)
+(defn down (n) (if (= n 0) 0 (let r (down (- n 1)) (if (> r -1) (+ r 1) r))))
+(defn main () (begin (print "start") (let a (spawn (fn () (print (down 100000000)))) (begin (actor-wait a) 0))))
+ZYL
+"$ZYL" "$SCRATCH/actor.zyl" -o "$SCRATCH/actor" > "$SCRATCH/build.log" 2>&1 || fail "build: $(cat "$SCRATCH/build.log")"
+set +e
+out=$("$SCRATCH/actor" 2>&1); rc=$?
+set -e
+[ "$rc" -eq 1 ] || fail "actor overflow exited $rc: $out"
+echo "$out" | grep -q '8388608-byte stack of an actor' || fail "actor overflow: $out"
 echo "stack-overflow: ok"

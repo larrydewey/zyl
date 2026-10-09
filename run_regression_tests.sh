@@ -657,6 +657,24 @@ if [ "$MODE" = "full" ] || [ "$MODE" = "quick" ]; then
     fi
 fi
 
+# The language server's memory across a long session (edits, hovers,
+# open/close): it must not grow per message. A few seconds; full mode only.
+if [ "$MODE" = "full" ] && matches "lsp/memory"; then
+    if dry_listed "lsp/memory"; then
+        :
+    elif [ -x "${SCRIPT_DIR}/build/boot/zyl-lsp" ]; then
+        TOTAL=$((TOTAL + 1))
+        if python3 "${SCRIPT_DIR}/tests/lsp/lsp_memory_test.py" > $RUN_TMP/zyl_lsp_mem.log 2>&1; then
+            PASS=$((PASS + 1))
+            echo -e "  ${GREEN}✓${NC} lsp/memory"
+        else
+            FAIL=$((FAIL + 1))
+            echo -e "  ${RED}✗${NC} lsp/memory"
+            sed 's/^/      /' $RUN_TMP/zyl_lsp_mem.log
+        fi
+    fi
+fi
+
 # Constant-time (timing leakage) harness — OPT IN with `--filter timing`.
 #
 # Deliberately not part of a plain `--full` run: it spawns thousands of

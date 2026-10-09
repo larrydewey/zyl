@@ -770,13 +770,15 @@ Test execution:
 Tail calls are jumps (with the exceptions §18 lists), so a loop written as
 tail recursion runs in constant stack. Other recursion uses stack in
 proportion to its depth. main runs on a large lazily-mapped stack with a guard
-page; under a memory budget (ZYL_MAX_MEMORY, by default 80% of available
-memory) that stack is a quarter of the budget, at least 64 MiB, and is
+page; under a memory budget (ZYL_MAX_MEMORY, by default 80% of the machine's
+total memory or of its cgroup limit, whichever is smaller -- never of what is
+free at the moment, so whether a program runs does not depend on other
+processes) that stack is a quarter of the budget, at least 64 MiB, and is
 charged to it, so stack and heap together stay within the budget. Recursion
 that reaches the guard stops the program with E_STACK_OVERFLOW (runtime, not
 catchable), after flushing output -- never a bare SIGSEGV, and never the
-kernel's out-of-memory killer. Actor threads have 8 MiB stacks and no such
-report yet.
+kernel's out-of-memory killer. An actor's stack is a fixed 8 MiB, and its
+overflow is reported the same way.
 
 ================================================================================
 15. CONCURRENCY MODEL (ACTORS)

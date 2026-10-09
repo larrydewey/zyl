@@ -6,12 +6,18 @@
 (defmacro rt-ld64 (a) (ffi-call "%load64" a 1))
 (defmacro rt-st64 (a v) (ffi-call "%store64" a v 1))
 
-; Up to 256 files of {path, text, len}, then the count at +6144.
-(defn rt-srcs () (ffi-call "%global" "src_files" 6152 1))
-(defn rt-src-count () (rt-ld64 (+ (rt-srcs) 6144)))
+; Up to 1024 files of {path, text, len}, then the count at +24576. A
+; forgotten file's slot has path 0 and is reused by the next new path.
+(defn rt-srcs () (ffi-call "%global" "src_files" 24584 1))
+(defn rt-src-max () 1024)
+(defn rt-src-count () (rt-ld64 (+ (rt-srcs) 24576)))
 (defn rt-src (fid) (+ (rt-srcs) (* fid 24)))
 
-(defn rt-src-find (p i n) (if (>= i n) -1 (if (= (rt-strcmp (rt-ld64 (rt-src i)) p) 0) i (rt-src-find p (+ i 1) n))))
+(defn rt-src-find (p i n)
+  (if (>= i n) -1
+    (if (and (> (rt-ld64 (rt-src i)) 0) (= (rt-strcmp (rt-ld64 (rt-src i)) p) 0)) i (rt-src-find p (+ i 1) n))))
+
+(defn rt-src-free-slot (i n) (if (>= i n) -1 (if (= (rt-ld64 (rt-src i)) 0) i (rt-src-free-slot (+ i 1) n))))
 
 (defn rt-src-set-text (f t)
   (let c (rt-strdup (ffi-call "%str" t 1))
@@ -27,14 +33,27 @@
             (let f (rt-src i)
               (let old (if (= (rt-ld64 (+ f 8)) 0) (rt-w "") (rt-ld64 (+ f 8)))
                 (let _ (if (= (rt-strcmp old t) 0) 0 (let _ (zyl_rt_free (rt-ld64 (+ f 8))) (rt-src-set-text f t))) i)))
-            (if (>= n 256) -1
-              (let f (rt-src n)
-                (let _ (rt-st64 (+ (rt-srcs) 6144) (+ n 1))
-                  (let _ (rt-st64 f (rt-strdup (ffi-call "%str" p 1)))
-                    (let _ (rt-src-set-text f t) n)))))))))))
+            (let free (rt-src-free-slot 0 n)
+              (if (and (< free 0) (>= n (rt-src-max))) -1
+                (let k (if (>= free 0) free n)
+                  (let f (rt-src k)
+                    (let _ (if (>= free 0) 0 (rt-st64 (+ (rt-srcs) 24576) (+ n 1)))
+                      (let _ (rt-st64 f (rt-strdup (ffi-call "%str" p 1)))
+                        (let _ (rt-src-set-text f t) k)))))))))))))
+
+; Drop a file (an editor closed it): its path and text are freed and the slot
+; reused. Spans of trees parsed from it must be gone too, as a closed
+; document's analysis is.
+(defn zyl_source_forget (path)
+  (let i (rt-src-find (rt-w path) 0 (rt-src-count))
+    (if (< i 0) 0
+      (let f (rt-src i)
+        (let _ (zyl_rt_free (rt-ld64 f))
+          (let _ (zyl_rt_free (rt-ld64 (+ f 8)))
+            (let _ (rt-st64 f 0) (let _ (rt-st64 (+ f 8) 0) (let _ (rt-st64 (+ f 16) 0) 0)))))))))
 
 ; The file's record when fid is registered, else 0.
-(defn rt-src-ok (fid) (if (or (< fid 0) (>= fid (rt-src-count))) 0 (rt-src fid)))
+(defn rt-src-ok (fid) (if (or (< fid 0) (>= fid (rt-src-count))) 0 (if (= (rt-ld64 (rt-src fid)) 0) 0 (rt-src fid))))
 
 (defn zyl_source_path (fid) (let f (rt-src-ok fid) (if (= f 0) "<input>" (ffi-call "%str" (rt-ld64 f) 1))))
 

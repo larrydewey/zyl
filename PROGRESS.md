@@ -564,10 +564,14 @@ REPL and language server:
    SIGSEGV handler on an alternate stack (`zyl_segv_handler`,
    `runtime/rt/actor.zyl`) turns a fault beside the stack pointer or in the
    guard page into `PANIC: error[E_STACK_OVERFLOW]`, after flushing
-   stdout; any other fault is re-raised with the default action. Gaps: actor
-   threads (8 MiB stacks) have no alternate stack, so their overflow is still
-   a SIGSEGV; and the budget is read from *available* memory at start, so
-   the same program can pass or fail with the machine's load.
+   stdout; any other fault is re-raised with the default action. Every
+   thread has its alternate stack in TLS, so an actor's overflow is reported
+   too (its help says an actor's stack is fixed). The default budget is 80%
+   of *total* memory, or of the cgroup v2 `memory.max` when smaller: it was
+   80% of *available* memory, so another process's usage decided whether a
+   compile passed (one did: a 47 GB process cut the budget to 186 MB). Arena
+   blocks now grow geometrically from 64 KiB up to the block size, so a
+   1 GiB arena is charged for what it uses, not 1 GiB at creation.
 
 0b. **Brackets repaired from indentation** (done 2026-10-09). `zyl fmt
    --infer-parens` and an LSP quick fix (`stdlib/text/parens.zyl`). A
@@ -580,9 +584,8 @@ REPL and language server:
    bodies indented from their line rather than their opener; the minimal
    edit restores about 98% (1173 of 1200), and the misses are readings the
    indentation cannot decide. The balance diagnostics' own quick fixes were
-   never edits: `lsp-action-any` serialises only an action's title, so
-   they did nothing when applied; the new action builds its JSON directly.
-   That serialiser is still title-only.
+   never edits: `lsp-action-any` serialised only an action's title, so
+   they did nothing when applied. It now sends the kind and the edit.
 
 1. **Native backend**: Float arithmetic in `xmm` registers, `print`,
    closures and indirect calls, `try` and `with-region` on MIR, then
@@ -696,9 +699,19 @@ REPL and language server:
    - The NUL-byte check read every module file into a malloc'd buffer to
      learn its length, on every analysis; it now asks `zyl_file_size`
      (`stat`, a new runtime entry).
-   After: about 1 kB per edit and 0.5 kB per hover, which is the 4 ref
-   cells and 72-byte handle a `StringBuffer` keeps (`make-string-buffer`;
-   nothing frees a ref cell). SIGTERM is honoured in every run; the
+   After: about 1 kB per edit and 0.5 kB per hover, from arena handles a
+   destroyed arena keeps on purpose. Then (2026-10-09) a `StringBuffer`'s
+   ref cells moved into its own arena (`zyl_ref_new_in`), its handle into the
+   region of the value holding it (`zyl_arena_create_scoped`, placed by
+   region inference like the `_r` collection entries), and "released" became
+   the handle's own flag (`zyl_arena_live`); the server pools its
+   per-document arenas, resetting rather than destroying them; and a closed
+   document's source text is forgotten (`zyl_source_forget`). The source
+   table was a fixed 256 slots that never freed, so the 257th distinct file an
+   editor opened got no source id and unlocated diagnostics; it is 1024
+   slots, reused when freed. `tests/lsp/lsp_memory_test.py` (in `--full`)
+   holds it: edits 0.06 kB, hovers 0.00 kB, open/close settling to 0.06 kB
+   per message. SIGTERM is honoured in every run; the
    original report of it being ignored did not reproduce.
    Found on the way: out of memory *reporting* allocated (`zyl_arena_oom`
    formatted its numbers on the heap it had just exhausted), so a compile

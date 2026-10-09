@@ -84,7 +84,7 @@
 (defn lsp-destroy-all (arenas)
   (match arenas
     (Nil 0)
-    (Cons a rest (let _ (arena-destroy a) (lsp-destroy-all rest)))))
+    (Cons a rest (let _ (dm-retire-arena a) (lsp-destroy-all rest)))))
 
 ; ===========================================================================
 ; PARAM ACCESSORS — LSPAny (a decoded JSON object) -> the handful of
@@ -754,7 +754,7 @@
   (let uri (lsp-text-document-uri paramsOpt)
     (begin
       (lsp-respond id (Some (LSPArray (list-append (lsp-paren-fix-actions uri (dm-get-text dm uri))
-                                                   (lsp-action-list-any (code-actions-for (dm-get-diagnostics dm uri)))))) None)
+                                                   (lsp-action-list-any uri (code-actions-for (dm-get-diagnostics dm uri)))))) None)
       (Step dm ws 1))))
 
 ; A document that does not balance gets one real edit: the whole text, with
@@ -780,15 +780,37 @@
   (if (>= i n) acc
     (lsp-line-count text (+ i 1) n (if (= (ffi-call "zyl_view_byte" text 0 n i 1000) 10) (+ acc 1) acc))))
 
-(defn lsp-action-list-any (actions)
+(defn lsp-action-list-any (uri actions)
   (match actions
     (Nil Nil)
-    (Cons a rest (Cons (lsp-action-any a) (lsp-action-list-any rest)))))
+    (Cons a rest (Cons (lsp-action-any uri a) (lsp-action-list-any uri rest)))))
 
-(defn lsp-action-any (a)
+; The title, the kind, and the edit: a CodeAction without its edit does
+; nothing when the editor applies it.
+(defn lsp-action-any (uri a)
   (match a
-    (CA title kind diag _ _ edit _ _ _
-      (LSPObject (map-insert (map-new) "title" (LSPString title))))))
+    (CA title kind _ _ _ edit _ _ _
+      (let o1 (map-insert (map-new) "title" (LSPString title))
+        (let o2 (match kind (Some k (match k (CAK s (map-insert o1 "kind" (LSPString s))))) (None o1))
+          (LSPObject (match edit (Some e (map-insert o2 "edit" (lsp-action-edit-any uri e))) (None o2))))))))
+
+; A WorkspaceEdit: its `changes` map as it is, or its text edits, all
+; against this document, as one.
+(defn lsp-action-edit-any (uri e)
+  (match e
+    (WE changes entries _
+      (if (option-is-some changes) (lsp-workspace-edit-any e)
+      (LSPObject (map-insert (map-new) "changes"
+        (LSPObject (map-insert (map-new) uri
+          (LSPArray (lsp-edit-entries (match entries (Some xs xs) (None Nil))))))))))))
+
+(defn lsp-edit-entries (xs)
+  (match xs
+    (Nil Nil)
+    (Cons x rest
+      (match x
+        (WEE te (Cons (lsp-edit-any te) (lsp-edit-entries rest)))
+        (_ (lsp-edit-entries rest))))))
 
 (defn lsp-req-folding-range (arena dm ws id paramsOpt)
   (let uri (lsp-text-document-uri paramsOpt)

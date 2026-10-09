@@ -339,6 +339,7 @@
   (if (str-eq s "zyl_words_set") 0
   (if (str-eq s "zyl_vec_alloc") 1
   (if (str-eq s "zyl_vec_alloc_r") 1
+  (if (str-eq s "zyl_arena_create_scoped") 1
   (if (str-eq s "zyl_words_alloc") 1
   (if (str-eq s "zyl_words_alloc_r") 1
   (if (str-eq s "zyl_cstr_concat") 1
@@ -374,7 +375,7 @@
   (if (str-eq s "zyl_diag_json") 0
   (if (str-eq s "zyl_load_byte") 0
   (if (str-eq s "zyl_load_n") 0
-  (rg-ffi-kind-bytes s)))))))))))))))))))))))))))))))))))))))))))))))
+  (rg-ffi-kind-bytes s))))))))))))))))))))))))))))))))))))))))))))))))
 
 ; Byte buffers: 0 as above; 2 as above (a slice points into its buffer);
 ; 4 (stores: width, endian, offset, buffer, value): only the stored value

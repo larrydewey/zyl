@@ -50,8 +50,11 @@
 
 (defn rt-align16 (n) (bit-and (+ n 15) -16))
 
+; Blocks grow geometrically, from 64 KiB to the arena's block size, so a
+; large block size reserves (and charges the budget) only what is used.
 (defn rt-new-block (a cap0)
-  (let cap (if (< cap0 (rt-ld64 (+ a 8))) (rt-ld64 (+ a 8)) cap0)
+  (let grow (rt-min (rt-ld64 (+ a 8)) (rt-max 65536 (rt-ld64 (+ a 16))))
+  (let cap (rt-max cap0 grow)
     (let _ (if (rt-charge cap) 0 (rt-oom cap "memory budget exhausted"))
       (let b (rt-raw-malloc 32)
         (if (= b 0) (let _ (rt-refund cap) (rt-oom 32 "out of memory allocating an arena block header"))
@@ -62,12 +65,25 @@
                   (let _ (rt-st64 (+ b 16) 0)
                     (let _ (rt-st64 (+ b 24) (rt-ld64 a))
                       (let _ (rt-st64 a b)
-                        (let _ (rt-st64 (+ a 16) (+ (rt-ld64 (+ a 16)) cap)) b)))))))))))))
+                        (let _ (rt-st64 (+ a 16) (+ (rt-ld64 (+ a 16)) cap)) b))))))))))))))
+
+(defn rt-min (a b) (if (< a b) a b))
+(defn rt-max (a b) (if (> a b) a b))
 
 (defn zyl_arena_create (block-size)
   (let bs (if (< block-size 16) 65536 block-size)
     (let a (rt-raw-malloc 72)
-      (if (= a 0) 0 (let _ (rt-fill0 a 72) (let _ (rt-st64 (+ a 8) bs) (let _ (rt-new-block a bs) a)))))))
+      (if (= a 0) 0 (let _ (rt-fill0 a 72) (let _ (rt-st64 (+ a 8) bs) (let _ (rt-new-block a 16) a)))))))
+
+; zyl_arena_create_scoped: the handle in the region region inference chose
+; for the value holding it (the _r entry), so it goes away with that value,
+; which cannot outlive the region; unannotated, a kept handle as usual.
+(defn zyl_arena_create_scoped (block-size) (zyl_arena_create block-size))
+
+(defn zyl_arena_create_scoped_r (block-size)
+  (let bs (if (< block-size 16) 65536 block-size)
+    (let a (rt-alloc 72 (ffi-call "%tls-get" "zyl_cur_region" 1))
+      (if (= a 0) 0 (let _ (rt-fill0 a 72) (let _ (rt-st64 (+ a 8) bs) (let _ (rt-new-block a 16) a)))))))
 
 ; A 16-aligned bump allocation, or 0 for a bad arena or size (over 2^48).
 (defn rt-arena-bump (arena size)
@@ -116,7 +132,14 @@
 ; only the compiler, the LSP and the REPL create arenas at all.
 (defn zyl_arena_destroy (arena)
   (if (= arena 0) 0
-    (let _ (rt-lock arena) (let _ (rt-free-blocks (rt-ld64 arena)) (let _ (rt-st64 arena 0) (let _ (rt-unlock arena) 0))))))
+    (let _ (rt-lock arena) (let _ (rt-free-blocks (rt-ld64 arena)) (let _ (rt-st64 arena 0) (let _ (rt-st64 (+ arena 64) 1) (let _ (rt-unlock arena) 0)))))))
+
+; Whether arena has not been destroyed (the kept handle carries the flag at +64).
+(defn zyl_arena_live (arena) (and (> arena 0) (= (rt-ld64 (+ arena 64)) 0)))
+
+; A ref cell inside arena, reclaimed with it; 0 when the arena cannot grow.
+(defn zyl_ref_new_in (arena v)
+  (let p (rt-arena-bump arena 8) (if (= p 0) 0 (let _ (rt-st64 p v) p))))
 
 (defn zyl_arena_used (arena)
   (if (= arena 0) 0 (let _ (rt-lock arena) (let v (rt-ld64 (+ arena 24)) (let _ (rt-unlock arena) v)))))
