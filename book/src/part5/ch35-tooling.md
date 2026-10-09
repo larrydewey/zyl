@@ -75,9 +75,9 @@ zyl eval <file.zyl>                    run a program without building one
 zyl doc [file.zyl | dir] [-o out.md]   Markdown from doc comments
 zyl check [file.zyl | dir ...]          every check a build makes, without building
 zyl fmt [file.zyl ...] [--check]      reindent to paren depth (--check: report only)
-zyl fmt --infer-parens [file.zyl ...]  close the forms that do not balance, from their indentation
 zyl explain [CODE]                     what a diagnostic means and where it is raised
 zyl balance [file.zyl | dir ...]       check brackets, strings and top-level structure
+zyl balance --fix [--check] [file ...] close the forms that do not balance, from their indentation
 ```
 
 A first argument ending in `.zyl`, or starting with `-`, means "compile
@@ -141,10 +141,10 @@ compiled by the test suite, so they stay true.
 
 `zyl fmt [file.zyl ...]` reindents source to its paren depth and is a
 no-op on formatted code; `--check` reports the files it would change and
-exits 1 without writing. It never adds or removes a delimiter, so it
-cannot repair a broken form: run `zyl balance` to see where it is broken.
+exits 1 without writing. It never adds or removes a delimiter; brackets
+are `zyl balance`'s.
 
-`zyl fmt --infer-parens [file.zyl ...]` repairs the brackets instead. A
+`zyl balance --fix [file.zyl ...]` repairs the brackets. A
 file splits into top-level forms at its column-1 openers; a form that
 balances is kept byte for byte, and one that does not gets the single
 edit — closers inserted at the end of one line, or removed from one — that
@@ -155,7 +155,12 @@ an unterminated string, or a stray closer in the middle of a line, is
 reported and left alone. `--check` lists what it would change. Given one
 deleted or added closer in real source, it restores the original about 98
 times in 100; the misses are readings the indentation cannot decide, so
-look at the diff. The language server offers the same edit as a quick fix.
+look at the diff. The language server offers the same edit as a quick
+fix, and a balance error from `zyl balance`, `zyl check` or a build ends
+with the suggestion when the fix can balance the file. `zyl check`, `zyl
+balance`, the fix, `zyl fmt` and the language server all read strings and
+comments through one implementation of the lexer's rules, so they cannot
+disagree about what is code.
 
 `zyl verify <binary>` reads the signed provenance trailer that
 `zyl build --sign-with <key>` appends and reports what it can re-derive

@@ -61,7 +61,7 @@ that builds your program, so the editor and `zyl` never disagree):
 | Folding / selection | Per top-level form; selection expands from the identifier to the enclosing form |
 | Call hierarchy | Incoming and outgoing calls within the document |
 | Inlay hints | Parameter names at call sites |
-| Code actions | For a document whose brackets do not balance, one quick fix: the forms that do not balance closed from their indentation (the edit `zyl fmt --infer-parens` makes) |
+| Code actions | For a document whose brackets do not balance, one quick fix: the forms that do not balance closed from their indentation (the edit `zyl balance --fix` makes) |
 | Formatting | Re-indent by parenthesis depth, for the whole document or a range |
 
 **From the extension itself:** a TextMate grammar covering every special

@@ -31,7 +31,7 @@ in quick and full mode).
 | `semanticTokens/full` and `/range` | Ten standard token types, three modifiers |
 | `foldingRange` | Per multi-line top-level form |
 | `selectionRange` | Identifier, then enclosing form |
-| `codeAction` | For a document that does not balance, one edit: the whole text with its unbalanced forms closed from their indentation (`text/parens`, as `zyl fmt --infer-parens`) |
+| `codeAction` | For a document that does not balance, one edit: the whole text with its unbalanced forms closed from their indentation (`text/parens`, as `zyl balance --fix`) |
 | `formatting` / `rangeFormatting` | Re-indent by paren depth |
 | `prepareCallHierarchy`, `incomingCalls`, `outgoingCalls` | Per-document |
 | `inlayHint` | Parameter names at call sites |

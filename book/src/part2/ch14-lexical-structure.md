@@ -245,7 +245,7 @@ error[E_UNBALANCED_UNCLOSED]: this form is still open where a new top-level form
    = help: insert ')' to close this form before line 3
 ```
 
-Run the check on its own with `zyl balance file.zyl` (or a directory). To have the brackets repaired from the indentation, run `zyl fmt --infer-parens file.zyl`: it rewrites only the forms that do not balance, and only when the result balances.
+Run the check on its own with `zyl balance file.zyl` (or a directory). To have the brackets repaired from the indentation, run `zyl balance --fix file.zyl`: it rewrites only the forms that do not balance, and only when the result balances.
 
 ## 14.3 Comments and Unrecognized Characters
 

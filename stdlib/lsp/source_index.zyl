@@ -149,54 +149,38 @@
 (defn TopForm.end-col (f) (match f (TF _ _ _ c _ e (if (< e 0) c e))))
 
 (defn si-top-level-forms (text)
-  (list-reverse (si-scan text 0 (str-length text) 0 0 0 0 Nil)))
+  (list-reverse (si-scan text 0 (str-length text) 0 0 0 Nil)))
 
-; depth: paren/bracket/brace nesting depth. in-string: same context flag
-; as sexp_balance's CheckState, tracked the same way so string and
-; comment contents never get misread as code.
-(defn si-scan (text i len line col depth in-string acc)
+; depth: paren/bracket/brace nesting depth. Strings and comments are skipped
+; by sexp_balance's lexical rules (sb-string-end, sb-line-end), the ones the
+; compiler's balance check uses, so their contents never read as code; a
+; newline inside a string still advances the line.
+(defn si-scan (text i len line col depth acc)
   (if (>= i len)
     acc
-    (let ch (str-substring text i 1)
-      (if (> in-string 0)
-        (if (sb-is-backslash (sb-str-code ch))
-          (si-scan text (+ i 2) len line (+ col 2) depth in-string acc)
-          (if (sb-is-quote (sb-str-code ch))
-            (si-scan text (+ i 1) len line (+ col 1) depth 0 acc)
-            (si-scan-advance text i len line col depth in-string acc ch)))
-        (if (sb-is-quote (sb-str-code ch))
-          (si-scan text (+ i 1) len line (+ col 1) depth 1 acc)
-          (if (sb-is-semicolon (sb-str-code ch))
-            (si-scan-skip-comment text i len line depth acc)
-            (if (or (sb-is-paren-open (sb-str-code ch)) (or (sb-is-bracket-open (sb-str-code ch)) (sb-is-brace-open (sb-str-code ch))))
-              (si-scan-open text i len line col depth acc ch)
-              (if (or (sb-is-paren-close (sb-str-code ch)) (or (sb-is-bracket-close (sb-str-code ch)) (sb-is-brace-close (sb-str-code ch))))
-                (si-scan-close text i len line col depth acc)
-                (si-scan-advance text i len line col depth in-string acc ch)))))))))
-
-(defn si-scan-advance (text i len line col depth in-string acc ch)
-  (if (sb-is-newline (sb-str-code ch))
-    (si-scan text (+ i 1) len (+ line 1) 0 depth in-string acc)
-    (si-scan text (+ i 1) len line (+ col 1) depth in-string acc)))
-
-; A comment inside a form must not reset the depth -- the previous
-; version of this function passed a hard-coded 0 back in, which silently
-; treated every form containing a comment line as if it had closed.
-(defn si-scan-skip-comment (text i len line depth acc)
-  (if (>= i len)
-    acc
-    (if (sb-is-newline (sb-str-code (str-substring text i 1)))
-      (si-scan text (+ i 1) len (+ line 1) 0 depth 0 acc)
-      (si-scan-skip-comment text (+ i 1) len line depth acc))))
+    (let c (sb-byte text len i)
+      (if (= c 34)
+        (let e (sb-string-end text len (+ i 1))
+          (let j (if (< e 0) len e)
+            (si-scan text j len (sb-line-after text len i j line) (sb-col-after text len i j col) depth acc)))
+        (if (= c 59)
+          (si-scan text (sb-line-end text len i) len line col depth acc)
+          (if (sb-opener-p c)
+            (si-scan-open text i len line col depth acc)
+            (if (sb-closer-p c)
+              (si-scan-close text i len line col depth acc)
+              (if (= c 10)
+                (si-scan text (+ i 1) len (+ line 1) 0 depth acc)
+                (si-scan text (+ i 1) len line (+ col 1) depth acc)))))))))
 
 ; Opening a bracket AT depth 0 is the start of a candidate top-level
 ; form; try to read a "(keyword name" header right after it.
-(defn si-scan-open (text i len line col depth acc _ch)
+(defn si-scan-open (text i len line col depth acc)
   (if (= depth 0)
     (match (si-try-header text (+ i 1) len line col)
-      (Some form (si-scan text (+ i 1) len line (+ col 1) (+ depth 1) 0 (Cons form acc)))
-      (None (si-scan text (+ i 1) len line (+ col 1) (+ depth 1) 0 acc)))
-    (si-scan text (+ i 1) len line (+ col 1) (+ depth 1) 0 acc)))
+      (Some form (si-scan text (+ i 1) len line (+ col 1) (+ depth 1) (Cons form acc)))
+      (None (si-scan text (+ i 1) len line (+ col 1) (+ depth 1) acc)))
+    (si-scan text (+ i 1) len line (+ col 1) (+ depth 1) acc)))
 
 ; Returning to depth 0 closes the most recently opened form -- but only
 ; if that form is still open, since an unrecognized top-level form
@@ -204,8 +188,8 @@
 (defn si-scan-close (text i len line col depth acc)
   (let newdepth (- depth 1)
     (if (= newdepth 0)
-      (si-scan text (+ i 1) len line (+ col 1) newdepth 0 (si-close-head acc line (+ col 1)))
-      (si-scan text (+ i 1) len line (+ col 1) newdepth 0 acc))))
+      (si-scan text (+ i 1) len line (+ col 1) newdepth (si-close-head acc line (+ col 1)))
+      (si-scan text (+ i 1) len line (+ col 1) newdepth acc))))
 
 (defn si-close-head (acc endline endcol)
   (match acc
@@ -290,43 +274,30 @@
 (defn si-word-occurrences (text word)
   (if (= (str-length word) 0)
     Nil
-    (list-reverse (si-occ-scan text 0 (str-length text) 0 0 0 word Nil))))
+    (list-reverse (si-occ-scan text 0 (str-length text) 0 0 word Nil))))
 
-(defn si-occ-scan (text i len line col in-string word acc)
+; Whole-word occurrences outside strings and comments (skipped as si-scan does).
+(defn si-occ-scan (text i len line col word acc)
   (if (>= i len)
     acc
-    (let ch (str-substring text i 1)
-      (if (> in-string 0)
-        (if (sb-is-backslash (sb-str-code ch))
-          (si-occ-scan text (+ i 2) len line (+ col 2) in-string word acc)
-          (if (sb-is-quote (sb-str-code ch))
-            (si-occ-scan text (+ i 1) len line (+ col 1) 0 word acc)
-            (si-occ-advance text i len line col in-string word acc ch)))
-        (if (sb-is-quote (sb-str-code ch))
-          (si-occ-scan text (+ i 1) len line (+ col 1) 1 word acc)
-          (if (sb-is-semicolon (sb-str-code ch))
-            (si-occ-skip-comment text i len line word acc)
-            (if (si-is-ident-char ch)
-              (si-occ-word text i len line col word acc)
-              (si-occ-advance text i len line col in-string word acc ch))))))))
-
-(defn si-occ-advance (text i len line col in-string word acc ch)
-  (if (sb-is-newline (sb-str-code ch))
-    (si-occ-scan text (+ i 1) len (+ line 1) 0 in-string word acc)
-    (si-occ-scan text (+ i 1) len line (+ col 1) in-string word acc)))
-
-(defn si-occ-skip-comment (text i len line word acc)
-  (if (>= i len)
-    acc
-    (if (sb-is-newline (sb-str-code (str-substring text i 1)))
-      (si-occ-scan text (+ i 1) len (+ line 1) 0 0 word acc)
-      (si-occ-skip-comment text (+ i 1) len line word acc))))
+    (let c (sb-byte text len i)
+      (if (= c 34)
+        (let e (sb-string-end text len (+ i 1))
+          (let j (if (< e 0) len e)
+            (si-occ-scan text j len (sb-line-after text len i j line) (sb-col-after text len i j col) word acc)))
+        (if (= c 59)
+          (si-occ-scan text (sb-line-end text len i) len line col word acc)
+          (if (si-is-ident-char (str-substring text i 1))
+            (si-occ-word text i len line col word acc)
+            (if (= c 10)
+              (si-occ-scan text (+ i 1) len (+ line 1) 0 word acc)
+              (si-occ-scan text (+ i 1) len line (+ col 1) word acc))))))))
 
 (defn si-occ-word (text i len line col word acc)
   (let end (si-word-scan-fwd text i len)
     (let found (str-substring text i (- end i))
       (let acc2 (if (str-eq found word) (Cons (Pair2 line col) acc) acc)
-        (si-occ-scan text end len line (+ col (- end i)) 0 word acc2)))))
+        (si-occ-scan text end len line (+ col (- end i)) word acc2)))))
 
 (defn si-find-word (text word)
   (match (si-word-occurrences text word)

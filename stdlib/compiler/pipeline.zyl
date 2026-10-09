@@ -164,7 +164,7 @@
       ; Register the path first so report-unbalanced can name the file and
       ; print the offending line. zyl_source_register dedupes by path, so
       ; this is the same id zyl-parse-file goes on to use.
-      (report-unbalanced balance (ffi-call "zyl_source_register" srcpath srcbuf 1000))
+      (report-unbalanced balance (ffi-call "zyl_source_register" srcpath srcbuf 1000) srcbuf)
       0))))
 
 ; §31.9: capability enforcement runs after module resolution and before

@@ -129,22 +129,86 @@
             (sb-scan src len (+ i 1) line ls false rest (if (sb-empty rest) 0 anom) strict)
             (MismatchedPair (sb-text want) (sb-text c) line col ol oc)))))))
 
-; Inside a string opened at sl:sc.
+; Inside a string opened at sl:sc; i is just past its quote.
 (defn sb-string ((src String) (len Int) (i Int) (line Int) (ls Int) stack (anom Int) (strict Bool) (sl Int) (sc Int))
-  (if (>= i len) (UnbalancedOpenString sl sc)
-    (let c (sb-byte src len i)
-      (if (= c 92)
-        (if (>= (+ i 1) len) (UnbalancedOpenString sl sc)
-          (if (= (sb-byte src len (+ i 1)) 10)
-            (sb-string src len (+ i 2) (+ line 1) (+ i 2) stack anom strict sl sc)
-            (sb-string src len (+ i 2) line ls stack anom strict sl sc)))
-        (if (= c 34) (sb-scan src len (+ i 1) line ls false stack anom strict)
-          (if (= c 10) (sb-string src len (+ i 1) (+ line 1) (+ i 1) stack anom strict sl sc)
-            (sb-string src len (+ i 1) line ls stack anom strict sl sc)))))))
+  (let e (sb-string-end src len i)
+    (if (< e 0) (UnbalancedOpenString sl sc)
+      (let nl (sb-nl-last src len i e)
+        (sb-scan src len e (+ line (sb-nl-count src len i e 0)) (if (< nl 0) ls (+ nl 1)) false stack anom strict)))))
 
-; Index of the newline ending the line at i, or len.
+; ===========================================================================
+; THE LEXICAL RULES -- the one implementation every scanner uses
+; ===========================================================================
+;
+; The balancer above, `zyl balance --fix` (text/parens), `zyl fmt`
+; (text/format) and the language server's scanners all skip strings and
+; comments through these, so none of them can disagree with another about
+; what is code. regression/balance-agreement holds them to the lexer.
+
+; Just past the `"` that ends the string whose contents start at i, or -1
+; when the text ends first. A backslash takes the next byte, a newline
+; included.
+(defn sb-string-end ((src String) (len Int) (i Int))
+  (if (>= i len) -1
+    (let c (sb-byte src len i)
+      (if (= c 92) (sb-string-end src len (+ i 2))
+        (if (= c 34) (+ i 1) (sb-string-end src len (+ i 1)))))))
+
+; Index of the newline ending the line at i (a `;` comment's end), or len.
 (defn sb-line-end ((src String) (len Int) (i Int))
   (if (>= i len) len (if (= (sb-byte src len i) 10) i (sb-line-end src len (+ i 1)))))
+
+; Newlines in [i, j), and the index of the last one (-1: none).
+(defn sb-nl-count ((src String) (len Int) (i Int) (j Int) (acc Int))
+  (if (>= i j) acc (sb-nl-count src len (+ i 1) j (if (= (sb-byte src len i) 10) (+ acc 1) acc))))
+
+(defn sb-nl-last ((src String) (len Int) (i Int) (j Int))
+  (if (<= j i) -1 (if (= (sb-byte src len (- j 1)) 10) (- j 1) (sb-nl-last src len i (- j 1)))))
+
+(defn sb-ws-p ((c Int)) (or (= c 32) (or (= c 9) (= c 13))))
+
+; One line of text, read with those rules, given whether it starts inside a
+; string: its brackets outside strings and comments, each as
+; offset * 256 + byte, in order; where its comment starts (or its length);
+; whether it ends inside a string; and its first non-blank byte (its length
+; when blank, -1 when it starts inside a string).
+(deftype SbLine (SbL (List Int) Int Bool Int))
+
+(defn SbLine.brackets (l) (match l (SbL b _ _ _ b)))
+(defn SbLine.comment (l) (match l (SbL _ c _ _ c)))
+(defn SbLine.instr (l) (match l (SbL _ _ s _ s)))
+(defn SbLine.first (l) (match l (SbL _ _ _ f f)))
+
+(defn sb-line-info ((l String) (instr Bool))
+  (let len (str-length l)
+    (if instr
+      (let e (sb-string-end l len 0)
+        (if (< e 0) (SbL Nil len true -1) (sb-line-from l len e Nil -1)))
+      (sb-line-from l len 0 Nil (sb-first-code l len 0)))))
+
+(defn sb-first-code ((l String) (len Int) (i Int))
+  (if (and (< i len) (sb-ws-p (sb-byte l len i))) (sb-first-code l len (+ i 1)) i))
+
+(defn sb-line-from ((l String) (len Int) (i Int) acc (first Int))
+  (if (>= i len) (SbL (list-reverse acc) len false first)
+    (let c (sb-byte l len i)
+      (if (= c 59) (SbL (list-reverse acc) i false first)
+        (if (= c 34)
+          (let e (sb-string-end l len (+ i 1))
+            (if (< e 0) (SbL (list-reverse acc) len true first) (sb-line-from l len e acc first)))
+          (if (or (sb-opener-p c) (sb-closer-p c))
+            (sb-line-from l len (+ i 1) (Cons (+ (* i 256) c) acc) first)
+            (sb-line-from l len (+ i 1) acc first)))))))
+
+; The position just past a skipped string or comment that started at
+; line:col and covers [i, j): newlines in it advance the line and reset the
+; column.
+(defn sb-line-after ((src String) (len Int) (i Int) (j Int) (line Int))
+  (+ line (sb-nl-count src len i j 0)))
+
+(defn sb-col-after ((src String) (len Int) (i Int) (j Int) (col Int))
+  (let nl (sb-nl-last src len i j)
+    (if (< nl 0) (+ col (- j i)) (- j (+ nl 1)))))
 
 (defn sb-empty (stack) (match stack (Nil true) (Cons _ _ false)))
 

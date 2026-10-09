@@ -74,33 +74,21 @@
           (ih-skip-ws-comments text (ih-advance st ch) len)
           st)))))
 
+; Comments and strings are skipped by sexp_balance's lexical rules, the
+; balance check's own.
 (defn ih-skip-comment (text st len)
-  (if (>= (IHSt.i st) len)
-    st
-    (let ch (str-substring text (IHSt.i st) 1)
-      (if (sb-is-newline (sb-str-code ch))
-        (ih-skip-ws-comments text (ih-advance st ch) len)
-        (ih-skip-comment text (ih-advance st ch) len)))))
+  (match st
+    (IHS i l c hs
+      (let j (sb-line-end text len i)
+        (ih-skip-ws-comments text (IHS j l (+ c (- j i)) hs) len)))))
 
+; st is at the opening quote.
 (defn ih-read-string (text st len)
-  (let st1 (ih-advance st (str-substring text (IHSt.i st) 1))
-    (ih-read-string-body text st1 len)))
-
-(defn ih-read-string-body (text st len)
-  (if (>= (IHSt.i st) len)
-    st
-    (let ch (str-substring text (IHSt.i st) 1)
-      (if (sb-is-backslash (sb-str-code ch))
-        (ih-read-string-body text (ih-advance-escaped text st len) len)
-        (if (sb-is-quote (sb-str-code ch))
-          (ih-advance st ch)
-          (ih-read-string-body text (ih-advance st ch) len))))))
-
-(defn ih-advance-escaped (text st len)
-  (let st1 (ih-advance st (str-substring text (IHSt.i st) 1))
-    (if (< (IHSt.i st1) len)
-      (ih-advance st1 (str-substring text (IHSt.i st1) 1))
-      st1)))
+  (match st
+    (IHS i l c hs
+      (let e (sb-string-end text len (+ i 1))
+        (let j (if (< e 0) len e)
+          (IHS j (sb-line-after text len i j l) (sb-col-after text len i j c) hs))))))
 
 (defn ih-read-atom (text st len)
   (if (>= (IHSt.i st) len)

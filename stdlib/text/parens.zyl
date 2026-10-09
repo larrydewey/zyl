@@ -1,7 +1,7 @@
 ; === Inferring closing brackets from indentation ===
 ; Module: text/parens
 ;
-; `zyl fmt --infer-parens` and the language server's quick fix. Spec 1.6 puts
+; `zyl balance --fix` and the language server's quick fix. Spec 1.6 puts
 ; every top-level form in column 1 and no nested opener there, so a file splits
 ; into top-level chunks without parsing it. A chunk that balances is kept byte
 ; for byte. A chunk that does not has its line-end closers recomputed from its
@@ -48,11 +48,12 @@
       (pi-split text (+ i 1) (+ i 1) len (Cons (str-substring text start (- i start)) acc))
       (pi-split text (+ i 1) start len acc))))
 
-(defn pi-byte (s len i) (ffi-call "zyl_view_byte" s 0 len i 1000))
-
-(defn pi-opener-p (c) (or (= c 40) (or (= c 91) (= c 123))))
-(defn pi-closer-p (c) (or (= c 41) (or (= c 93) (= c 125))))
-(defn pi-ws-p (c) (or (= c 32) (or (= c 9) (= c 13))))
+; Bytes, classes and the lexical rules are sexp_balance's (sb-*): this file
+; reads lines through sb-line-info and never scans a string or comment itself.
+(defn pi-byte (s len i) (sb-byte s len i))
+(defn pi-opener-p (c) (sb-opener-p c))
+(defn pi-closer-p (c) (sb-closer-p c))
+(defn pi-ws-p (c) (sb-ws-p c))
 
 ; Line numbers that start a chunk: an opener in column 1 outside a string.
 (defn pi-chunk-starts (lines instr n acc)
@@ -63,16 +64,7 @@
         (pi-chunk-starts rest (pi-instr-after l instr) (+ n 1) (if starts (Cons n acc) acc))))))
 
 ; Whether a string is still open at the end of line l.
-(defn pi-instr-after (l instr) (pi-instr-scan l (str-length l) 0 instr))
-
-(defn pi-instr-scan (l len i instr)
-  (if (>= i len) instr
-    (let c (pi-byte l len i)
-      (if instr
-        (if (= c 92) (pi-instr-scan l len (+ i 2) true)
-          (pi-instr-scan l len (+ i 1) (not (= c 34))))
-        (if (= c 59) false
-          (pi-instr-scan l len (+ i 1) (= c 34)))))))
+(defn pi-instr-after (l instr) (SbLine.instr (sb-line-info l instr)))
 
 ; A chunk: its first line number, its lines, and whether it balances.
 (deftype PiChunk (PiC Int (List String) Bool))
@@ -158,20 +150,11 @@
   (match lines
     (Nil acc)
     (Cons l rest
-      (match (pi-count l (str-length l) 0 instr 0)
-        (PiN n instr2 (pi-deficit rest instr2 (+ acc n)))))))
+      (let info (sb-line-info l instr)
+        (pi-deficit rest (SbLine.instr info) (+ acc (pi-net (SbLine.brackets info) 0)))))))
 
-(deftype PiNet (PiN Int Bool))
-
-(defn pi-count (l len i instr n)
-  (if (>= i len) (PiN n instr)
-    (let c (pi-byte l len i)
-      (if instr
-        (if (= c 92) (pi-count l len (+ i 2) true n) (pi-count l len (+ i 1) (not (= c 34)) n))
-        (if (= c 59) (PiN n false)
-          (if (pi-opener-p c) (pi-count l len (+ i 1) false (+ n 1))
-            (if (pi-closer-p c) (pi-count l len (+ i 1) false (- n 1))
-              (pi-count l len (+ i 1) (= c 34) n))))))))
+(defn pi-net (bs n)
+  (match bs (Nil n) (Cons b rest (pi-net rest (if (pi-opener-p (% b 256)) (+ n 1) (- n 1))))))
 
 ; Insert d closers at the end of line k, for each k; bestls/score the best so far.
 (defn pi-try-insert (lines ref flat d k n score bestls)
@@ -230,16 +213,8 @@
     (if (<= end 0) false
       (and (pi-closer-p (pi-byte l len (- end 1))) (pi-closers-before l len (- end 1) (- e 1))))))
 
-; Where a line's code ends: before its comment and trailing spaces (strings
-; on the line are skipped; a line that ends inside one is never offered).
-(defn pi-code-end (l len) (pi-rtrim l (pi-comment-at l len 0 false)))
-
-(defn pi-comment-at (l len i instr)
-  (if (>= i len) len
-    (let c (pi-byte l len i)
-      (if instr
-        (if (= c 92) (pi-comment-at l len (+ i 2) true) (pi-comment-at l len (+ i 1) (not (= c 34))))
-        (if (= c 59) i (pi-comment-at l len (+ i 1) (= c 34)))))))
+; Where a line's code ends: before its comment and trailing spaces.
+(defn pi-code-end (l _len) (pi-rtrim l (SbLine.comment (sb-line-info l false))))
 
 ; How far a candidate is from what the indentation says. First, its lines
 ; that contradict their nesting: a line inside a bracket starts right of
@@ -318,15 +293,23 @@
 ; The stack and string state after a line, every closer applied.
 (deftype PiReal (PiR (List PiFrame) Bool))
 
-(defn pi-real (l len i instr stack)
-  (if (>= i len) (PiR stack instr)
-    (let c (pi-byte l len i)
-      (if instr
-        (if (= c 92) (pi-real l len (+ i 2) true stack) (pi-real l len (+ i 1) (not (= c 34)) stack))
-        (if (= c 59) (PiR stack false)
-          (if (pi-opener-p c) (pi-real l len (+ i 1) false (Cons (PiF (pi-close-of c) (+ i 1) (pi-head l len (+ i 1)) (+ (pi-first-code l len 0) 1)) stack))
-            (if (pi-closer-p c) (pi-real l len (+ i 1) false (match stack (Nil Nil) (Cons _ r r)))
-              (pi-real l len (+ i 1) (= c 34) stack))))))))
+(defn pi-real (l len _i instr stack)
+  (let info (sb-line-info l instr)
+    (PiR (pi-apply l len (SbLine.brackets info) -1 stack) (SbLine.instr info))))
+
+; The brackets before offset limit (all of them when limit < 0) applied to
+; stack: an opener pushes its frame, a closer pops.
+(defn pi-apply (l len bs limit stack)
+  (match bs
+    (Nil stack)
+    (Cons b rest
+      (let off (/ b 256)
+        (if (and (>= limit 0) (>= off limit)) stack
+          (let c (% b 256)
+            (pi-apply l len rest limit
+              (if (pi-opener-p c)
+                (Cons (PiF (pi-close-of c) (+ off 1) (pi-head l len (+ off 1)) (+ (pi-first-code l len 0) 1)) stack)
+                (match stack (Nil Nil) (Cons _ r r))))))))))
 
 ; The word right after an opener: a form's head.
 (defn pi-head (l len i) (str-substring l i (- (pi-word-end l len i) i)))
@@ -422,38 +405,28 @@
     (Nil Nil)
     (Cons pl rest (match pl (PiL code tail _ (Cons (str-concat code tail) (pi-out rest)))))))
 
-; Scan line l from i: openers push, closers pop. The trail -- the closers after
-; the last other token, outside a string -- is cut and its pops undone.
-(defn pi-scan (l i instr stack)
-  (pi-scan-at l (str-length l) i instr stack stack -1))
+; Line l: openers push, closers pop. The trail -- the closers after the
+; last other token, outside a string -- is cut and not applied.
+(defn pi-scan (l _i instr stack)
+  (let len (str-length l)
+    (let info (sb-line-info l instr)
+      (if (SbLine.instr info)
+        (PiS (PiL l "" false) (pi-apply l len (SbLine.brackets info) -1 stack) true)
+        (let k (SbLine.comment info)
+          (let ce (pi-rtrim l k)
+            (let t (pi-trail-start l len ce)
+              (let cut (pi-has-closer-from (SbLine.brackets info) t)
+                (let code (pi-rtrim l (if cut t ce))
+                  (PiS (PiL (str-substring l 0 code) (pi-tail l len code k cut) (> code 0))
+                       (pi-apply l len (SbLine.brackets info) (if cut t -1) stack)
+                       false))))))))))
 
-; snap is the stack before the trail began at tstart (-1: no trail yet).
-(defn pi-scan-at (l len i instr stack snap tstart)
-  (if (>= i len)
-    (pi-finish l len len instr stack snap tstart)
-    (let c (pi-byte l len i)
-      (if instr
-        (if (= c 92) (pi-scan-at l len (+ i 2) true stack snap -1)
-          (pi-scan-at l len (+ i 1) (not (= c 34)) stack snap -1))
-        (if (= c 59) (pi-finish l len i false stack snap tstart)
-          (if (pi-ws-p c) (pi-scan-at l len (+ i 1) false stack snap tstart)
-            (if (pi-closer-p c)
-              (let t0 (if (< tstart 0) i tstart)
-                (let s0 (if (< tstart 0) stack snap)
-                  (pi-scan-at l len (+ i 1) false (match stack (Nil Nil) (Cons _ rest rest)) s0 t0)))
-              (if (pi-opener-p c)
-                (pi-scan-at l len (+ i 1) false (Cons (PiF (pi-close-of c) (+ i 1) (pi-head l len (+ i 1)) (+ (pi-first-code l len 0) 1)) stack) stack -1)
-                (pi-scan-at l len (+ i 1) (= c 34) stack stack -1)))))))))
+; Back from i over closers and blanks: where a trail would start.
+(defn pi-trail-start (l len i)
+  (if (and (> i 0) (let c (pi-byte l len (- i 1)) (or (pi-closer-p c) (pi-ws-p c)))) (pi-trail-start l len (- i 1)) i))
 
-; The line ends (or its comment starts) at k.
-(defn pi-finish (l len k instr stack snap tstart)
-  (if instr
-    (PiS (PiL l "" false) stack true)
-    (let cut (if (< tstart 0) k tstart)
-      (let code (pi-rtrim l cut)
-        (PiS (PiL (str-substring l 0 code) (pi-tail l len code k (>= tstart 0)) (> code 0))
-             (if (< tstart 0) stack snap)
-             false)))))
+(defn pi-has-closer-from (bs t)
+  (match bs (Nil false) (Cons b rest (if (and (>= (/ b 256) t) (pi-closer-p (% b 256))) true (pi-has-closer-from rest t)))))
 
 ; The text kept after the code: what followed it, or, when a trail was cut,
 ; one space and the comment.

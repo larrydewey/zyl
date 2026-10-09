@@ -588,8 +588,16 @@ REPL and language server:
    parameters, FP² checking, Perceus, reachability types -- are planned in
    `docs/memory-reclamation-roadmap.md`.
 
-0b. **Brackets repaired from indentation** (done 2026-10-09). `zyl fmt
-   --infer-parens` and an LSP quick fix (`stdlib/text/parens.zyl`). A
+0b. **Brackets repaired from indentation** (done 2026-10-09). `zyl balance
+   --fix` and an LSP quick fix (`stdlib/text/parens.zyl`); it was first
+   `zyl fmt --infer-parens` and moved beside the diagnosis it repairs, and
+   a balance error now ends with the suggestion when the fix can balance the
+   file. The same day the lexical rules (strings, escapes, comments) that
+   nine scanners each implemented -- the balancer, five in the fixer, `zyl
+   fmt`'s and three in the language server -- became one set in
+   `sexp_balance.zyl` (`sb-string-end`, `sb-line-end`, `sb-line-info`);
+   folding them in fixed a language-server bug, where an escaped newline in
+   a string advanced the column but not the line. A
    balanced top-level chunk is never touched; an unbalanced one gets the
    single edit that balances it and best agrees with its indentation, with
    Parinfer's indent mode as the fallback and as the reference the edit is

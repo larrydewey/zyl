@@ -22,6 +22,7 @@
 (use compiler/error_codes)
 (use compiler/error_report)
 (use compiler/desugar)
+(use text/parens)
 
 ; Result wrapper: parsed Ast + remaining tokens.
 (deftype AstTok (AstOf Ast (List Token)))
@@ -337,7 +338,7 @@
   (let result (sb-check-string src)
     (if (sb-result-balanced result)
       0
-      (report-unbalanced result fid))))
+      (report-unbalanced result fid src))))
 
 ; A failed balance check as a located fatal diagnostic; a mismatched pair
 ; also labels the opener it failed to close.
@@ -351,17 +352,23 @@
   (err-at "E_INVALID_CHAR" "a NUL byte here ends the text; the rest of the file would be ignored"
           (ffi-call "zyl_source_register" path src 1000) k "remove the NUL byte"))
 
-(defn report-unbalanced (result fid)
-  (ffi-call "zyl_panic" (balance-diagnostic result fid) 1000))
+(defn report-unbalanced (result fid src)
+  (ffi-call "zyl_panic" (balance-diagnostic result fid src) 1000))
 
 ; The rendered diagnostic (text or JSON) of a failed balance check in file fid.
-(defn balance-diagnostic (result fid)
+; When the repair can balance the file from its indentation, the help says so.
+(defn balance-help (result src)
+  (match (infer-parens src)
+    (Some _ (str-concat (sb-hint result) ", or run `zyl balance --fix`, which closes it from the indentation"))
+    (None (sb-hint result))))
+
+(defn balance-diagnostic (result fid src)
   (let off (ffi-call "zyl_span_offset_at" fid (sb-line result) (sb-col result) 1000)
     (let labels (match result
                   (MismatchedPair _ _ _ _ ol oc
                     (Cons (err-label fid (ffi-call "zyl_span_offset_at" fid ol oc 1000) "opened here") Nil))
                   (_ Nil))
-      (err-at-labels (sb-code result) (sb-message result) fid off labels (sb-hint result)))))
+      (err-at-labels (sb-code result) (sb-message result) fid off labels (balance-help result src)))))
 
 ; Convenience: lex + parse in one step from a source buffer pointer.
 ; Returns: List(Ast)

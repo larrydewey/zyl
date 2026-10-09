@@ -527,7 +527,7 @@ zyl hello.zyl --emit-asm -o hello.s # write x86-64 assembly instead
 | `zyl doc [file.zyl \| dir] [-o out.md]` | Markdown from doc comments |
 | `zyl check [file.zyl \| dir ...]` | Every check a build makes, without generating code; a clean check means the program builds |
 | `zyl fmt [file.zyl ...]` | Reindent to paren depth (`--check` reports only) |
-| `zyl fmt --infer-parens [file.zyl ...]` | Close the forms that do not balance, from their indentation (`--check` reports only) |
+| `zyl balance --fix [--check] [file.zyl ...]` | Close the forms that do not balance, from their indentation (`--check` reports only) |
 | `zyl explain [CODE]` | What a diagnostic means and where it is raised |
 | `zyl balance [file.zyl \| dir ...]` | Check brackets, strings and top-level structure |
 
