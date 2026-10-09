@@ -49,9 +49,12 @@ notices the second use.
 - `StringBuffer` is the one user-facing type that keeps an `Arena`, and it
   is a resource rather than scratch. It is released through
   `with-resource` (§12.9), a read after release is `E_USE_AFTER_FREE`, and
-  `zyl_arena_destroy` does not free its 72-byte handle -- a released
-  handle stays readable, so a second release is a no-op rather than a
-  fault on memory the allocator has given back.
+  a second release is a no-op. Arena values are generational: the handle's
+  address with a generation in bits 48..62. Destroying bumps the
+  generation and reuses the handle, so every copy of the old value is
+  stale -- detected, never dereferenced -- and a destroyed arena costs
+  nothing. A handle that reaches the maximum generation (32767) is retired
+  rather than reused, so a stale value never matches again.
 
 ## Starting point (before this work)
 

@@ -37,7 +37,35 @@
   (let _ (ffi-call "%store8" (+ buf i) (+ 48 (% n 10)) 1)
     (if (or (< n 10) (= i 0)) i (rt-oom-digits buf (- i 1) (/ n 10)))))
 
-; --- arenas: {head, block_size, total_capacity, total_used, futex lock word}; a block is {mem, cap, used, next} ---
+; --- arenas: {head, block_size, total_capacity, total_used, futex lock word, free-list next, poolable, generation}; a block is {mem, cap, used, next} ---
+;
+; An Arena value is the handle's address with its generation in bits 48..62.
+; Destroying an arena frees its blocks, bumps the generation and puts the
+; handle on a free list for the next create, so a destroyed arena costs
+; nothing; a stale value no longer matches its handle's generation, which
+; makes a second destroy a no-op and a use E_USE_AFTER_FREE (spec G2). A
+; handle whose generation reaches the maximum is retired, not reused, so a
+; stale value can never match again. Inside the runtime handles are plain
+; addresses (rt-heap, rt-pin); only values given to a program are encoded.
+
+(defn rt-gen-max () 32767)
+(defn rt-ah-addr (v) (bit-and v 281474976710655))
+(defn rt-ah-gen (v) (shr v 48))
+
+; The encoded value of handle h, at its current generation.
+(defn rt-ah-encode (h) (if (= h 0) 0 (bit-or h (shl (rt-ld64 (+ h 56)) 48))))
+
+; The handle a value names, or 0 when it is 0 or stale.
+(defn rt-ah (v)
+  (let h (rt-ah-addr v)
+    (if (or (= h 0) (not (= (rt-ld64 (+ h 56)) (rt-ah-gen v)))) 0 h)))
+
+; The handle, or E_USE_AFTER_FREE for a destroyed arena.
+(defn rt-ah-live! (v)
+  (let h (rt-ah v)
+    (if (and (= h 0) (> v 0)) (ffi-call "zyl_panic" "E_USE_AFTER_FREE: arena used after it was destroyed" 1) h)))
+
+(defn rt-ah-free-list () (ffi-call "%global" "arena_free" 16 1))
 
 (defn rt-threads () (ffi-call "%global" "threads_started" 8 1))
 
@@ -70,10 +98,35 @@
 (defn rt-min (a b) (if (< a b) a b))
 (defn rt-max (a b) (if (> a b) a b))
 
-(defn zyl_arena_create (block-size)
+(defn zyl_arena_create (block-size) (rt-ah-encode (rt-arena-new block-size)))
+
+; A handle from the free list, else a fresh one; fields cleared, generation kept.
+(defn rt-arena-new (block-size)
   (let bs (if (< block-size 16) 65536 block-size)
-    (let a (rt-raw-malloc 72)
-      (if (= a 0) 0 (let _ (rt-fill0 a 72) (let _ (rt-st64 (+ a 8) bs) (let _ (rt-new-block a 16) a)))))))
+    (let a (rt-ah-pop)
+      (if (= a 0) 0
+        (let gen (rt-ld64 (+ a 56))
+          (let _ (rt-fill0 a 72)
+            (let _ (rt-st64 (+ a 56) gen)
+              (let _ (rt-st64 (+ a 48) 1)
+                (let _ (rt-st64 (+ a 8) bs) (let _ (rt-new-block a 16) a))))))))))
+
+(defn rt-ah-pop ()
+  (let fl (rt-ah-free-list)
+    (let _ (rt-lock-word (+ fl 8))
+      (let h (rt-ld64 fl)
+        (let _ (if (= h 0) 0 (rt-st64 fl (rt-ld64 (+ h 40))))
+          (let _ (rt-unlock-word (+ fl 8))
+            (if (> h 0) h (let a (rt-raw-malloc 72) (if (= a 0) 0 (let _ (rt-fill0 a 72) a))))))))))
+
+(defn rt-ah-push (h)
+  (let fl (rt-ah-free-list)
+    (let _ (rt-lock-word (+ fl 8))
+      (let _ (rt-st64 (+ h 40) (rt-ld64 fl))
+        (let _ (rt-st64 fl h) (rt-unlock-word (+ fl 8)))))))
+
+(defn rt-lock-word (w) (if (= (rt-ld64 (rt-threads)) 0) 0 (zyl_rt_mutex_lock w)))
+(defn rt-unlock-word (w) (if (= (rt-ld64 (rt-threads)) 0) 0 (zyl_rt_mutex_unlock w)))
 
 ; zyl_arena_create_scoped: the handle in the region region inference chose
 ; for the value holding it (the _r entry), so it goes away with that value,
@@ -83,7 +136,7 @@
 (defn zyl_arena_create_scoped_r (block-size)
   (let bs (if (< block-size 16) 65536 block-size)
     (let a (rt-alloc 72 (ffi-call "%tls-get" "zyl_cur_region" 1))
-      (if (= a 0) 0 (let _ (rt-fill0 a 72) (let _ (rt-st64 (+ a 8) bs) (let _ (rt-new-block a 16) a)))))))
+      (if (= a 0) 0 (let _ (rt-fill0 a 72) (let _ (rt-st64 (+ a 8) bs) (let _ (rt-new-block a 16) (rt-ah-encode a))))))))
 
 ; A 16-aligned bump allocation, or 0 for a bad arena or size (over 2^48).
 (defn rt-arena-bump (arena size)
@@ -97,11 +150,11 @@
                 (let _ (rt-st64 (+ arena 24) (+ (rt-ld64 (+ arena 24)) need))
                   (let _ (rt-unlock arena) p))))))))))
 
-(defn zyl_arena_alloc (arena size) (rt-arena-bump arena size))
+(defn zyl_arena_alloc (arena size) (rt-arena-bump (rt-ah-live! arena) size))
 
 ; Zeroed after the lock: the range is already exclusively ours.
 (defn zyl_arena_alloc_zeroed (arena size)
-  (let p (rt-arena-bump arena size) (if (= p 0) 0 (let _ (rt-fill0 p size) p))))
+  (let p (rt-arena-bump (rt-ah-live! arena) size) (if (= p 0) 0 (let _ (rt-fill0 p size) p))))
 
 ; rep stosb zeroing and 0xDE poisoning.
 (defn rt-fill0 (p n) (if (> n 0) (ffi-call "%fill" p 0 n 1) 0))
@@ -116,36 +169,39 @@
         (let _ (rt-refund (rt-ld64 (+ b 8)))
           (let _ (zyl_rt_free (rt-ld64 b)) (let _ (zyl_rt_free b) (rt-free-blocks next))))))))
 
-(defn zyl_arena_reset (arena)
-  (if (= arena 0) 0
+(defn zyl_arena_reset (v)
+  (let arena (rt-ah v) (if (= arena 0) 0
     (let _ (rt-lock arena)
       (let _ (rt-free-blocks (rt-ld64 arena))
-        (let _ (rt-st64 arena 0) (let _ (rt-st64 (+ arena 16) 0) (let _ (rt-st64 (+ arena 24) 0) (let _ (rt-unlock arena) 0))))))))
+        (let _ (rt-st64 arena 0) (let _ (rt-st64 (+ arena 16) 0) (let _ (rt-st64 (+ arena 24) 0) (let _ (rt-unlock arena) 0)))))))))
 
-; Free every block and stop using the arena. The 72-byte handle itself is
-; NOT freed, and that is deliberate: a freed handle cannot be examined
-; without reading memory the allocator has released, so a second destroy
-; could not tell a stale handle from a live one. Keeping the header means
-; the block list can be emptied and re-read safely, which makes a repeat
-; destroy a no-op and a later allocation a fresh one (spec G2, no double
-; free). The cost is 72 bytes per destroyed arena, held to process exit;
-; only the compiler, the LSP and the REPL create arenas at all.
-(defn zyl_arena_destroy (arena)
-  (if (= arena 0) 0
-    (let _ (rt-lock arena) (let _ (rt-free-blocks (rt-ld64 arena)) (let _ (rt-st64 arena 0) (let _ (rt-st64 (+ arena 64) 1) (let _ (rt-unlock arena) 0)))))))
+; Free every block; the handle's generation moves on, so this value and every
+; copy of it are stale, and the handle is reused (or retired at the maximum
+; generation). A region-placed handle (zyl_arena_create_scoped_r) goes with
+; its region instead. A stale or 0 value is a no-op.
+(defn zyl_arena_destroy (v)
+  (let arena (rt-ah v)
+    (if (= arena 0) 0
+      (let _ (rt-lock arena)
+        (let _ (rt-free-blocks (rt-ld64 arena))
+          (let _ (rt-st64 arena 0)
+            (let gen (+ (rt-ld64 (+ arena 56)) 1)
+              (let _ (rt-st64 (+ arena 56) gen)
+                (let _ (rt-unlock arena)
+                  (if (and (= (rt-ld64 (+ arena 48)) 1) (< gen (rt-gen-max))) (rt-ah-push arena) 0))))))))))
 
-; Whether arena has not been destroyed (the kept handle carries the flag at +64).
-(defn zyl_arena_live (arena) (and (> arena 0) (= (rt-ld64 (+ arena 64)) 0)))
+; Whether a value still names a live arena.
+(defn zyl_arena_live (v) (> (rt-ah v) 0))
 
 ; A ref cell inside arena, reclaimed with it; 0 when the arena cannot grow.
-(defn zyl_ref_new_in (arena v)
-  (let p (rt-arena-bump arena 8) (if (= p 0) 0 (let _ (rt-st64 p v) p))))
+(defn zyl_ref_new_in (v x)
+  (let p (rt-arena-bump (rt-ah-live! v) 8) (if (= p 0) 0 (let _ (rt-st64 p x) p))))
 
-(defn zyl_arena_used (arena)
-  (if (= arena 0) 0 (let _ (rt-lock arena) (let v (rt-ld64 (+ arena 24)) (let _ (rt-unlock arena) v)))))
+(defn zyl_arena_used (v)
+  (let arena (rt-ah v) (if (= arena 0) 0 (let _ (rt-lock arena) (let n (rt-ld64 (+ arena 24)) (let _ (rt-unlock arena) n))))))
 
-(defn zyl_arena_capacity (arena)
-  (if (= arena 0) 0 (let _ (rt-lock arena) (let v (rt-ld64 (+ arena 16)) (let _ (rt-unlock arena) v)))))
+(defn zyl_arena_capacity (v)
+  (let arena (rt-ah v) (if (= arena 0) 0 (let _ (rt-lock arena) (let n (rt-ld64 (+ arena 16)) (let _ (rt-unlock arena) n))))))
 
 ; Whether ptr..ptr+8 lies within the used bytes of some block of arena.
 (defn rt-in-blocks (b p)
@@ -163,13 +219,13 @@
 
 (defn zyl_arenas_init ()
   (let g (rt-arenas)
-    (let _ (if (= (rt-ld64 g) 0) (rt-st64 g (zyl_arena_create 1048576)) 0)
-      (let _ (if (= (rt-ld64 (+ g 8)) 0) (rt-st64 (+ g 8) (zyl_arena_create 262144)) 0) 0))))
+    (let _ (if (= (rt-ld64 g) 0) (rt-st64 g (rt-arena-new 1048576)) 0)
+      (let _ (if (= (rt-ld64 (+ g 8)) 0) (rt-st64 (+ g 8) (rt-arena-new 262144)) 0) 0))))
 
 (defn zyl_arenas_destroy ()
   (let g (rt-arenas)
-    (let _ (if (= (rt-ld64 (+ g 8)) 0) 0 (let _ (zyl_arena_destroy (rt-ld64 (+ g 8))) (rt-st64 (+ g 8) 0)))
-      (let _ (if (= (rt-ld64 g) 0) 0 (let _ (zyl_arena_destroy (rt-ld64 g)) (rt-st64 g 0))) 0))))
+    (let _ (if (= (rt-ld64 (+ g 8)) 0) 0 (let _ (zyl_arena_destroy (rt-ah-encode (rt-ld64 (+ g 8)))) (rt-st64 (+ g 8) 0)))
+      (let _ (if (= (rt-ld64 g) 0) 0 (let _ (zyl_arena_destroy (rt-ah-encode (rt-ld64 g))) (rt-st64 g 0))) 0))))
 
 (defn rt-heap-fail (msg n) (let _ (rt-oom-say msg) (let _ (rt-oom-num n) (let _ (rt-oom-say "\n") 0))))
 
@@ -190,15 +246,20 @@
                   (if (= base 0) (rt-heap-fail "zyl_heap_alloc: FAILED size=" size)
                     (let _ (rt-st64 base q) (+ base 8))))))))))))
 
-(defn zyl_heap_swap (arena)
-  (let g (rt-arenas) (let old (rt-ld64 g) (let _ (if (= arena 0) 0 (rt-st64 g arena)) old))))
+; The heap becomes arena's (a 0 value keeps it); the previous heap is returned.
+(defn zyl_heap_swap (v)
+  (let g (rt-arenas)
+    (let old (rt-ld64 g)
+      (let _ (if (= v 0) 0 (rt-st64 g (rt-ah-live! v))) (rt-ah-encode old)))))
 
-(defn zyl_session_arena ()
-  (let g (+ (rt-arenas) 16) (let _ (if (= (rt-ld64 g) 0) (rt-st64 g (zyl_arena_create 1048576)) 0) (rt-ld64 g))))
+(defn rt-session-arena ()
+  (let g (+ (rt-arenas) 16) (let _ (if (= (rt-ld64 g) 0) (rt-st64 g (rt-arena-new 1048576)) 0) (rt-ld64 g))))
+
+(defn zyl_session_arena () (rt-ah-encode (rt-session-arena)))
 
 (defn zyl_heap_block_p (w)
   (if (or (< w 4096) (not (= (bit-and w 7) 0))) false
-    (if (rt-addr-in-arena (rt-heap) w) true (rt-addr-in-arena (zyl_session_arena) w))))
+    (if (rt-addr-in-arena (rt-heap) w) true (rt-addr-in-arena (rt-session-arena) w))))
 
 ; Whether ptr came from ffi-pin (lies in a live pin block).
 (defn zyl_pin_owns (ptr) (if (or (= ptr 0) (= (rt-pin) 0)) false (rt-addr-in-arena (rt-pin) ptr)))

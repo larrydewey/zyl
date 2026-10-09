@@ -115,4 +115,35 @@
       (assert-equal (vec-len (vec-push (vec-push (vec-new-cap -1) 1) 2)) 2)
       0)))
 
+; Generational arena handles: a destroyed arena's handle is reused under a
+; new generation, so the old value is stale -- a second destroy is a no-op
+; and it is not live -- and the new value is.
+(test "arena-generations"
+  (let a (arena-create 4096)
+    (begin
+      (arena-alloc a 64)
+      (arena-destroy a)
+      (assert-false (ffi-call "zyl_arena_live" a 1000))
+      (arena-destroy a)
+      (let b (arena-create 4096)
+        (begin
+          (assert-true (ffi-call "zyl_arena_live" b 1000))
+          (assert-false (= a b))
+          (arena-destroy a)
+          (assert-true (ffi-call "zyl_arena_live" b 1000))
+          (assert-equal (arena-used b) 0)
+          (arena-alloc b 32)
+          (assert-equal (arena-used b) 32)
+          (arena-destroy b)
+          0)))))
+
+; Allocating through a destroyed arena stops the program; it never reaches
+; memory the arena gave back.
+(test "arena-use-after-destroy"
+  (let a (arena-create 4096)
+    (begin
+      (arena-destroy a)
+      (assert-equal (try (begin (arena-alloc a 8) 0) (catch e (if (ffi-call "zyl_err_is" e "E_USE_AFTER_FREE" 1000) 1 2))) 1)
+      0)))
+
 (run-tests)

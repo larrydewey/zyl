@@ -163,10 +163,15 @@ handler is conditional so it does not consume. Types are discovered from
 the program's own `impl Drop` forms, so a user resource is covered without
 compiler support.
 
-*Runtime.* `zyl_arena_destroy` is idempotent — it keeps its 72-byte handle
-rather than freeing it, because a released handle cannot otherwise be told
-apart from a live one — and a released `StringBuffer` raises
-`E_USE_AFTER_FREE`.
+*Runtime.* `zyl_arena_destroy` is idempotent: an Arena value is its
+handle's address plus the handle's generation (bits 48..62), a destroy
+bumps the generation and returns the handle for reuse, and a value whose
+generation no longer matches is stale — a second destroy is a no-op, an
+allocation through it is `E_USE_AFTER_FREE`, and a released `StringBuffer`
+raises `E_USE_AFTER_FREE`. A handle at the maximum generation is retired,
+not reused, so a stale value is never mistaken for a live one; before this
+the runtime kept every destroyed handle until exit to get the same
+guarantee.
 
 The runtime half is not redundant. It is the floor: a release reached
 through a path the pass cannot see — a builtin, or a value that crossed a

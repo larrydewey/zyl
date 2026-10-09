@@ -4,6 +4,9 @@
 Sends edits, hovers and open/close pairs to build/boot/zyl-lsp and reads its
 resident set from /proc. A server that keeps something per message grows
 linearly; this fails when the growth after warm-up passes a small bound.
+Growth is measured on the floor -- the least resident set over the last
+quarter of samples against the first -- because arenas are reset by
+unmapping and remapping blocks, so any one reading swings by megabytes.
 """
 
 import json
@@ -23,7 +26,7 @@ SAMPLE = """(use core/core)
 (defn main ()
   (begin (print (area (Circle %d))) 0))
 """
-WARM, N = 50, 400
+WARM, N = 300, 1200
 LIMIT_KB_PER_OP = 0.5
 
 
@@ -85,10 +88,13 @@ def main():
     for kind in ("change", "hover", "openclose"):
         for i in range(WARM):
             step(kind, i)
-        base = rss()
+        samples = []
         for i in range(WARM, WARM + N):
             step(kind, i)
-        per = (rss() - base) / N
+            if i % 10 == 0:
+                samples.append(rss())
+        q = len(samples) // 4
+        per = (min(samples[-q:]) - min(samples[:q])) / (N * 3 / 4)
         print(f"  {kind:>9}: {per:+.2f} kB per message")
         if per > LIMIT_KB_PER_OP:
             failures.append(f"{kind} grows {per:.2f} kB per message (limit {LIMIT_KB_PER_OP})")

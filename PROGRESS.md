@@ -90,8 +90,10 @@ compile with `build/boot/zyl-self` on 2026-09-28.
   is the one user-facing type that keeps an `Arena`, and it is a
   resource rather than scratch: it is released through `with-resource`
   (G11), a read after release is `E_USE_AFTER_FREE`, and a second
-  release is a no-op (`zyl_arena_destroy` keeps its 72-byte handle so a
-  stale one is never dereferenced).
+  release is a no-op: an Arena value carries its handle's generation, a
+  destroy bumps it and reuses the handle, and a stale value is detected
+  without being dereferenced (generational handles, 2026-10-09; they
+  replaced keeping every destroyed 72-byte handle until exit).
 - **Release is checked statically** (`linearity.zyl`, `E_MOVE_VALUE`). The
   rule is affine: a value that owns a resource is consumed by the release,
   and any use after it is an error. This closes a hole that was neither
@@ -572,6 +574,19 @@ REPL and language server:
    compile passed (one did: a 47 GB process cut the budget to 186 MB). Arena
    blocks now grow geometrically from 64 KiB up to the block size, so a
    1 GiB arena is charged for what it uses, not 1 GiB at creation.
+
+0c. **Generational arena handles** (done 2026-10-09). An `Arena` value is
+   its handle's address with a 15-bit generation in bits 48..62; a destroy
+   frees the blocks, bumps the generation and puts the handle on a free
+   list, so a destroyed arena no longer costs 72 bytes until exit. A stale
+   value is detected without being dereferenced: a second destroy is a
+   no-op, `zyl_arena_live` is false, and an allocation through it is
+   `E_USE_AFTER_FREE` (it used to allocate a fresh block). A handle at
+   generation 32767 is retired, not reused. Region-placed handles
+   (`zyl_arena_create_scoped_r`) are never pooled. The next steps for
+   reclaiming memory -- defunctionalising known function values, borrowed
+   parameters, FP² checking, Perceus, reachability types -- are planned in
+   `docs/memory-reclamation-roadmap.md`.
 
 0b. **Brackets repaired from indentation** (done 2026-10-09). `zyl fmt
    --infer-parens` and an LSP quick fix (`stdlib/text/parens.zyl`). A
