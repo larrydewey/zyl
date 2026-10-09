@@ -754,7 +754,7 @@
     (print "zyl repl                               start an interactive session")
     (print "zyl eval <file.zyl>                    run a program without building one")
     (print "zyl doc [file.zyl | dir] [-o out.md]   Markdown from doc comments")
-    (print "zyl check [file.zyl | dir ...]          type-check without building; the fast edit loop")
+    (print "zyl check [file.zyl | dir ...]          every check a build makes, without building")
     (print "zyl fmt [file.zyl ...] [--check]      reindent to paren depth (--check: report only)")
     (print "zyl fmt --infer-parens [file.zyl ...]  close the forms that do not balance, from their indentation")
     (print "zyl explain [CODE]                     what a diagnostic means and where it is raised")

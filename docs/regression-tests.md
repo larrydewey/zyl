@@ -84,7 +84,10 @@ prints their count.
   runner does not check which code was reported.
   A `; expect-at: FILE:LINE:COL` line also pins the location: the
   `-->` line under that code's `error[CODE]` header must end in it
-  (FILE is the basename, e.g. `main.zyl` or `zyl.pkg`).
+  (FILE is the basename, e.g. `main.zyl` or `zyl.pkg`). The runner then
+  runs `zyl check` on the same program (a copy under the same name, for a
+  file in `tests/compile-fail/`, which `check` skips) and requires it to
+  fail with the same code: a clean check must mean the program builds.
 - **Package builds** (`tests/packages-build/`): `zyl build` in the
   case's `app/` directory must succeed, the resulting binary must run
   without printing `FAIL`, the `.buildinfo` file must record a
@@ -100,26 +103,27 @@ A failed fixed-point check copies its log to
 `build/boot`, so the suite always compiles against this checkout's
 standard library, not an installed one.
 
-### Sections and counts (`--full --no-boot` and `--quick`, 2026-10-02)
+### Sections and counts (`--full --no-boot` and `--quick`, 2026-10-09)
 
 The authoritative count is what `--dry-run` prints.
 
 | Section | Source | Printed as | Tests |
 |---------|--------|------------|-------|
 | top-level tests | `tests/*.zyl`, `tests/fmt_test.sh`, plus the provenance/cose cross-checks | own name | 15 |
-| regression | `tests/regression/*.zyl` | `regression/NAME` | 126 |
+| regression | `tests/regression/*.zyl` | `regression/NAME` | 128 |
 | stress | `tests/stress/*.zyl` | `stress/NAME` | 4 |
 | integration | `tests/integration/*.zyl` | `integration/NAME` | 7 |
 | schedule agreement | the four actor regression files | `sched/NAME` | 4 |
-| interpreter agreement | regression + smoke, minus `DIFF_SKIP` | `interpreter/NAME` | 107 |
+| interpreter agreement | regression + smoke, minus `DIFF_SKIP` | `interpreter/NAME` | 109 |
 | packages | `tests/packages/*/app/main.zyl` | `packages/NAME` | 3 |
 | packages-fail | `tests/packages-fail/*/app/main.zyl` | `packages-fail/NAME` | 10 |
 | packages-build | `tests/packages-build/*/app` via `zyl build` | `packages-build/NAME` | 1 |
-| compile-fail | `tests/compile-fail/*.zyl` | `compile-fail/NAME` | 189 |
-| scripts | `tests/scripts/*.sh` | `scripts/NAME` | 27 |
+| compile-fail | `tests/compile-fail/*.zyl` | `compile-fail/NAME` | 194 |
+| scripts | `tests/scripts/*.sh` | `scripts/NAME` | 29 |
 | LSP protocol | `tests/lsp/lsp_protocol_test.py` | `lsp/protocol` | 1 |
+| LSP memory (`--full` only) | `tests/lsp/lsp_memory_test.py` | `lsp/memory` | 1 |
 | frame oracle | `verify/frame_oracle.sh` | `frame-oracle` | 1 |
-| **total** | | | **495** |
+| **total** | | | **507** |
 
 The fifteen top-level tests are `unit_test`, `cbor_test`,
 `ffi_arity_test`, `provenance_test`, `provenance_cross`, `cose_test`,
@@ -400,6 +404,13 @@ reported together on their own lines, an unused-binding warning), a
 
 It runs in both `--quick` and `--full` mode, counts as one test, and is
 skipped with a notice if `build/boot/zyl-lsp` has not been built.
+
+`tests/lsp/lsp_memory_test.py` (`lsp/memory`, `--full` only, about 20 s)
+sends 1500 edits, hovers and open/close pairs and requires the server's
+resident set not to grow per message (0.5 kB at most). It measures the
+floor -- the least reading over the last quarter of samples against the
+first -- because arenas are reset by unmapping and remapping blocks, so a
+single reading swings by megabytes.
 
 ---
 

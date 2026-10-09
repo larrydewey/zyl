@@ -23,15 +23,16 @@ The three entry points that start from source text are:
 | `compile-to-fns` | Everything through region inference and in-place reuse; returns `(List Icnf)` | `zyl eval`, the REPL, and `zyl build`/`zyl test` (for the ICNF hash) |
 | `compile-to-asm` | `compile-to-fns` plus code generation; returns assembly text | the CLI |
 
-`compile-check` is the fourth boundary: it runs `compile-front-end` —
-`compile-to-exprs`, `lower-exprs`, `annotate-exprs` — and stops. That is
-`zyl check`, and `driver.zyl` calls the same body a build does rather than
-a second copy that could drift. It is not the whole of a build: everything
-diagnosable is behind that boundary, but the checks that run after it
-(lowering, optimization, region inference, code generation) can still fail
-on their own input. `(print (/ 7))` is the small case — `check` accepts it,
-a build reports `E_ARITY_MISMATCH: / needs two operands`, because that
-operand count is checked while lowering to ICNF.
+`compile-check` is the fourth boundary: `compile-to-fns` and then
+`require-main` (a lone file without `main` is `E_NO_MAIN`), with no code
+generation. That is `zyl check`, and `driver.zyl` calls the same body a
+build does rather than a second copy that could drift. It used to stop at
+type inference, and so accepted programs a build rejects: `(print (/ 7))`
+is `E_ARITY_MISMATCH` only in lowering, and a returned Stack bytebuf is
+`E_REGION_ESCAPE` only in region inference. The compile-fail suite now
+runs `zyl check` on every program a build must reject and requires the
+same code. The language server stops earlier, at `compile-front-end`
+(type inference), because it re-analyses on every edit.
 
 Errors are raised with `zyl_panic` and a located `error[CODE]` message.
 The REPL catches them with `try`; the CLI lets them end the process.

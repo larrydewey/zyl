@@ -157,7 +157,7 @@ the byte-buffer codes and the Secret codes (`E_CT_VIOLATION`,
 the interpreter's `E_INTERP_TAG`. The catalog is exact:
 `verify/error-codes.sh` fails when a catalogued code is raised nowhere or
 a raised code is not catalogued, and it currently reports `error codes:
-124 defined, every one raised, none raised undefined`.
+126 defined, every one raised, none raised undefined`.
 
 A compile error aborts through the runtime's `zyl_panic`, which prints
 `PANIC: ` and the message to stderr and exits with status 1. Where the
@@ -205,9 +205,13 @@ pass, below), `E_FFI_SYMBOL_REQUIRED` and `E_FFI_TIMEOUT_REQUIRED`
 match without a final `_` arm, and ICNF lowering's backstops),
 `E_DUPLICATE_IMPL` and `E_TRAIT_NOT_DERIVABLE` (`derive.zyl`), `E_TRAIT_NOT_FOUND`,
 `E_CANNOT_INFER` and `E_INFINITE_TYPE` (`type_annotate.zyl`),
-`E_REGION_ESCAPE` (a `(bytebuf Stack N)` that escapes its frame, or a
-value that outlives its `with-region`), `E_REGION_SPEC`, and every
-package-system code. Raised at run time: `E_FFI_TIMEOUT`,
+`E_REGION_ESCAPE` (a `(bytebuf Stack N)` that escapes its frame, a
+value that outlives its `with-region`, or under `(memory bounded)` an
+allocation that goes to the heap), `W_HEAP_ESCAPE` (the same under
+`(memory reported)`), `E_NO_MAIN` (a lone file without `main`),
+`E_REGION_SPEC`, and every package-system code. Raised at run time:
+`E_STACK_OVERFLOW` (the guard page of main's or an actor's stack),
+`E_FFI_TIMEOUT`,
 `E_INDEX_OUT_OF_BOUNDS` (vectors and word arrays), `E_REGION_EXHAUSTED`
 and `E_CONTRACT_VIOLATION` (the prefix of a failed contract check's
 message).

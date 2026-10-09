@@ -61,7 +61,7 @@ that builds your program, so the editor and `zyl` never disagree):
 | Folding / selection | Per top-level form; selection expands from the identifier to the enclosing form |
 | Call hierarchy | Incoming and outgoing calls within the document |
 | Inlay hints | Parameter names at call sites |
-| Code actions | A quick fix for each unbalanced-delimiter diagnostic, inserting the compiler's own fix-it text |
+| Code actions | For a document whose brackets do not balance, one quick fix: the forms that do not balance closed from their indentation (the edit `zyl fmt --infer-parens` makes) |
 | Formatting | Re-indent by parenthesis depth, for the whole document or a range |
 
 **From the extension itself:** a TextMate grammar covering every special
@@ -101,6 +101,11 @@ compiler can currently report:
   together, and type errors only once those earlier checks pass.
 - **No capability check.** The package capability check (spec §31.9)
   is not run in the editor.
+- **Nothing after type checking.** The editor re-analyses on every edit,
+  so it stops where type inference ends: lowering and region inference
+  do not run, and their diagnostics (`E_REGION_ESCAPE`, `W_HEAP_ESCAPE`,
+  a one-operand `/`, a missing `main`) appear from `zyl check` or a
+  build, not as you type.
 - **Completion does not offer local variables.** The compiler's AST
   carries no position-aware scopes (diagnostics are located through a
   separate table of byte offsets, which gives a position but not a

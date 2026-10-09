@@ -73,8 +73,9 @@ zyl key                                show or create the publisher key
 zyl repl                               start an interactive session
 zyl eval <file.zyl>                    run a program without building one
 zyl doc [file.zyl | dir] [-o out.md]   Markdown from doc comments
-zyl check [file.zyl | dir ...]          type-check without building; the fast edit loop
+zyl check [file.zyl | dir ...]          every check a build makes, without building
 zyl fmt [file.zyl ...] [--check]      reindent to paren depth (--check: report only)
+zyl fmt --infer-parens [file.zyl ...]  close the forms that do not balance, from their indentation
 zyl explain [CODE]                     what a diagnostic means and where it is raised
 zyl balance [file.zyl | dir ...]       check brackets, strings and top-level structure
 ```
@@ -121,11 +122,14 @@ does links with `cc -no-pie`, `rt.o`, `-lpthread` and `-lm` (Chapter 29,
 instead: no assembly, no linker, a few milliseconds for a small
 program. Actors and channels run as in a compiled program.
 
-`zyl check [file.zyl | dir ...]` is the fast edit loop: it runs the
-same front end a build does — parse, module resolution, macro expansion,
-every check, derive expansion, impl lifting and type inference — and
-stops there, with no code generation and no link. A clean check means
-the program builds. A file under `tests/compile-fail/` is skipped, and
+`zyl check [file.zyl | dir ...]` is the fast edit loop: it runs every
+phase a build does — parse, module resolution, macro expansion, every
+check, type inference, the numeric check, lowering, optimization and
+region inference — and stops before code generation and linking, which
+report nothing a program author can fix. A lone file must define `main`
+(`E_NO_MAIN`). A clean check means the program builds, and the test suite
+holds it to that: every program the compile-fail tests expect a build to
+reject, `zyl check` must reject with the same code. A file under `tests/compile-fail/` is skipped, and
 the skip is reported. A standard-library module cannot be checked on its
 own: it is a module, not a program, so `zyl check` declines and points
 at `zyl build`.
@@ -138,7 +142,20 @@ compiled by the test suite, so they stay true.
 `zyl fmt [file.zyl ...]` reindents source to its paren depth and is a
 no-op on formatted code; `--check` reports the files it would change and
 exits 1 without writing. It never adds or removes a delimiter, so it
-cannot repair a broken form: run `zyl balance` for that.
+cannot repair a broken form: run `zyl balance` to see where it is broken.
+
+`zyl fmt --infer-parens [file.zyl ...]` repairs the brackets instead. A
+file splits into top-level forms at its column-1 openers; a form that
+balances is kept byte for byte, and one that does not gets the single
+edit — closers inserted at the end of one line, or removed from one — that
+balances it and agrees best with its indentation. It learns the file's own
+flat chains (`(if` under an open `(if`, `(Cons` under `(Cons`) so they are
+not read as siblings. The file is written only when the result balances;
+an unterminated string, or a stray closer in the middle of a line, is
+reported and left alone. `--check` lists what it would change. Given one
+deleted or added closer in real source, it restores the original about 98
+times in 100; the misses are readings the indentation cannot decide, so
+look at the diff. The language server offers the same edit as a quick fix.
 
 `zyl verify <binary>` reads the signed provenance trailer that
 `zyl build --sign-with <key>` appends and reports what it can re-derive

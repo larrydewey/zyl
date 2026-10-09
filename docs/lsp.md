@@ -92,8 +92,25 @@ identifier.
   run, so a `set!` on a released binding is not reported in the editor.
 - Navigation is per document; workspace symbol search covers open
   documents only.
-- Opening a 150 KB document takes about 470 MB: the front end and the
-  type checker allocate on the process heap, which is never freed.
+- Analysis stops at type inference, as `compile-front-end` does: the
+  diagnostics of lowering and region inference (`E_REGION_ESCAPE`,
+  `W_HEAP_ESCAPE`, `E_ARITY_MISMATCH` for a one-operand `/`, `E_NO_MAIN`)
+  come from `zyl check` or a build, not the editor.
+- Analysing a large document is still memory-hungry while it runs (the
+  front end and the type checker are the compiler's), but nothing of it
+  is kept: see Memory, below.
+
+## Memory
+
+A long session stays flat (`tests/lsp/lsp_memory_test.py`). Each message
+is read and answered with the process heap switched to a scratch arena;
+what survives it -- the document map and the workspace roots -- is
+copied into one of two alternating state arenas, and the scratch arena is
+reset. Each analysis runs in an arena of its own, taken from a pool, which
+its `DocState` owns; replacing or closing the document returns the arena
+to the pool, emptied. Closing a document also drops its source text
+(`zyl_source_forget`). Before this, every analysis of an eight-line file
+kept 4.5 MB, and a server left open in an editor reached 37 GB.
 
 ## Editors
 

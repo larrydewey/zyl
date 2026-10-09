@@ -220,7 +220,7 @@
       "patterns": [
         {
           "name": "keyword.control.zyl",
-          "match": "(?<![^\\s()\\[\\]{}\";])(defn|def|let|let-mut|set!|fn|lambda|if|cond|when|while|for|match|begin|try|catch|unwrap|error|assert|range|with-resource|deftype|defstruct\\+|defstruct|struct-get|make-struct|make-variant|trait|impl-not|impl|derive|defmacro|macro|alias|use|module|export|pub|feature-gate|print|read-line|exit|close|file-open|file-read|file-write|file-close|buf-append|spawn|chan-send|with-region|extern|quote|ffi-call|ffi-pin|ffi-unpin|requires|ensures|contracts|recover|checkpoint|invariant|test-suite|test-property|test-compile|test|assert-equal|assert-true|assert-false|assert-fail|setup|teardown|run-tests|let*|tuple|tuple-get|quasiquote|list|vec|map)(?![^\\s()\\[\\]{}\";])"
+          "match": "(?<![^\\s()\\[\\]{}\";])(defn|def|let|let-mut|set!|fn|lambda|if|cond|when|while|for|match|begin|try|catch|unwrap|error|assert|range|with-resource|deftype|defstruct\\+|defstruct|struct-get|make-struct|make-variant|trait|impl-not|impl|derive|defmacro|macro|alias|use|module|export|pub|feature-gate|print|read-line|exit|close|file-open|file-read|file-write|file-close|buf-append|spawn|chan-send|with-region|numeric|memory|capabilities|extern|quote|ffi-call|ffi-pin|ffi-unpin|requires|ensures|contracts|recover|checkpoint|invariant|test-suite|test-property|test-compile|test|assert-equal|assert-true|assert-false|assert-fail|setup|teardown|run-tests|let*|tuple|tuple-get|quasiquote|list|vec|map)(?![^\\s()\\[\\]{}\";])"
         }
       ]
     },
@@ -260,7 +260,7 @@
       "patterns": [
         {
           "name": "storage.modifier.capability.zyl",
-          "match": "\\b(Secret|TCap|TMut|TAtomic|TBox|TPin|TFun)\\b"
+          "match": "\\b(Secret)\\b"
         }
       ]
     },

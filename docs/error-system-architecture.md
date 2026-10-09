@@ -178,7 +178,7 @@ another Lisp uses for a built-in (`string-append` → Zyl spells it
 
 ### 3. Error Code Catalog (Complete)
 
-**Current**: 124 codes in `stdlib/compiler/error_codes.zyl`, listed with
+**Current**: 126 codes in `stdlib/compiler/error_codes.zyl`, listed with
 their raising module in `docs/errors.md`, every one raised somewhere.
 **Target**: All codes with:
 - Full description

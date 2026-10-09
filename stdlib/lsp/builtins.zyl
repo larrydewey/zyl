@@ -237,7 +237,11 @@
           "The negation of `when`: evaluate `body` only when `cond` does not hold.")
   (Cons (ZB "numeric" "declaration" "(numeric checked)"
           "Top-level: the policy for Int `+ - *`. One of `checked` (default; overflow raises E_OVERFLOW), `wrapping`, or `saturating`.")
-  Nil))))))))
+  (Cons (ZB "memory" "declaration" "(memory reported)"
+          "Top-level: what to do about a value that goes to the process heap (never freed). `unbounded` (default) allows it, `reported` warns W_HEAP_ESCAPE at each such allocation, `bounded` refuses it with E_REGION_ESCAPE.")
+  (Cons (ZB "capabilities" "declaration" "(capabilities io actor)"
+          "Top-level: what a lone file may do -- `io`, `actor`, `ffi`, `secret`, `native`. Absent means none; a package declares them in zyl.pkg instead.")
+  Nil))))))))))
 
 (defn builtins-io ()
   (Cons (ZB "print" "special-form" "(print expr ...)"

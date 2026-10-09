@@ -163,10 +163,11 @@ Macro expansion also reports `E_ARITY_MISMATCH` (wrong argument count, or too fe
 
 Region inference classifies every allocation as belonging to the
 current call's frame region, the caller's result region, or the heap,
-and reclaims the regions on return. `E_REGION_ESCAPE` is reported only
-for explicit region choices — a Stack bytebuf and `with-region` — since
-an inferred placement is always one the value cannot escape (Chapter
-16).
+and reclaims the regions on return. `E_REGION_ESCAPE` is reported for
+explicit region choices — a Stack bytebuf and `with-region` — since an
+inferred placement is always one the value cannot escape, and, under
+`(memory bounded)`, for every allocation that goes to the heap (Chapter
+16, the memory profile).
 
 ## A.7 ICNF Lowering and Code Generation (phases 7 and 8)
 
@@ -199,7 +200,8 @@ an inferred placement is always one the value cannot escape (Chapter
 
 | Code | Cause |
 |---|---|
-| `E_OUT_OF_MEMORY` | The memory budget is exhausted. Raise or remove it with `ZYL_MAX_MEMORY` (a byte count; `0` disables it). *Listed twice in the catalog, with two messages.* |
+| `E_OUT_OF_MEMORY` | The memory budget is exhausted. Raise or remove it with `ZYL_MAX_MEMORY` (a byte count; `0` disables it; by default 80% of total memory or the cgroup limit). The report itself allocates nothing, so it is printed even when the heap is gone |
+| `E_STACK_OVERFLOW` | Recursion reached the end of the stack: main's (a quarter of the memory budget) or an actor's (8 MiB). Reported from the guard-page fault after flushing output; not catchable. Make the recursive call a tail call |
 | `E_REGION_EXHAUSTED` | A `with-region` scope ran out: a `fixed` region's `:size` or an `arena`'s `:limit` was exceeded. Catchable with `try`, and deterministic: it depends only on the sequence of allocation requests. Enforced in compiled code only; the REPL interpreter ignores region limits. |
 | `E_INDEX_OUT_OF_BOUNDS` | An index or range outside a Vec, slice, string view, SIMD vector or word array. From a standard-library `!` function (`vec-get!`, `slice-sub!`, `view-slice!`, `u8x16-get!`, ...) the message names the index and the bound and points at the `?` sibling that returns `None` instead |
 | `E_CHANNEL_NOT_OWNER` | `chan-send` or `chan-recv` on an endpoint the running actor does not own (Chapter 9, §9.4) |
@@ -207,8 +209,9 @@ an inferred placement is always one the value cannot escape (Chapter
 | `E_CHANNEL_CAPACITY` | `(chan n)` with `n` outside 1..16777216 |
 | `E_DEADLOCK` | Every live actor, `main` included, is blocked on a channel or a join. Ends the process after emitting the actors' buffered output |
 | `E_ACTOR_LIMIT` | A 1025th `spawn`: at most 1024 actors per program |
-| `E_USE_AFTER_FREE` | A `StringBuffer` used after `with-resource` (or an explicit destroy) released it |
-| `E_NO_MAIN`, `E_UNDEFINED_FUNCTION`, `E_NOT_CALLABLE` | The REPL interpreter (`zyl eval`, `zyl repl`): a program with no `main`, a call to a function the program does not define, a call of a value that is not a function |
+| `E_USE_AFTER_FREE` | A `StringBuffer` used after `with-resource` (or an explicit destroy) released it, or an allocation through a destroyed arena (its handle's generation has moved on) |
+| `E_NO_MAIN` | A lone file (no `zyl.pkg` beside it) defines no `main` and has no top-level tests to make one: located at the file's first line, from a build and from `zyl check`. The REPL interpreter raises it for an evaluated program with no `main` |
+| `E_UNDEFINED_FUNCTION`, `E_NOT_CALLABLE` | The REPL interpreter (`zyl eval`, `zyl repl`): a call to a function the program does not define, a call of a value that is not a function |
 | `E_FFI_SYMBOL_NOT_FOUND` | The interpreter found no foreign symbol of that name through `dlsym` |
 | `E_INTERP_TAG` | The REPL interpreter's checking mode (`ZYL_INTERP_CHECK=1`) found an operand of the wrong tag, or a condition that is not 0 or 1. Such a program type-checked, so this is a type-checker bug; the interpreter regression tests run in this mode |
 
@@ -333,6 +336,7 @@ Warnings are written to stderr and never stop a build:
 | `W_RECOVER_SHADOW` | A `recover` arm that catches every error comes before another arm, which can then never run — move the specific arm first (Chapter 24) |
 | `E_ZEROIZE_MISSING` | See §A.12 — a warning despite the `E_` prefix |
 | `W_TYPE_STRICT` | A type error reported as a warning because `ZYL_STRICT_TYPES=report` is set (§A.1) |
+| `W_HEAP_ESCAPE` | Under `(memory reported)`: an allocation that goes to the process heap and lives until exit, labelled with where it escaped (Chapter 16) |
 
 Name a binding `_`, or give it a `_` prefix (`_count`), to exempt it
 from the unused, shadowing and duplicate-parameter checks. The three

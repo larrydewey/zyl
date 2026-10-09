@@ -285,16 +285,61 @@ as before, so the program's meaning cannot change.
 Allocation failure, or exceeding the memory budget, is reported as
 `E_OUT_OF_MEMORY` instead of crashing on a null pointer. The budget is
 `ZYL_MAX_MEMORY` when that variable is set (0 disables it), and otherwise
-80% of available memory.
+80% of the machine's total memory, or of its cgroup limit when that is
+smaller. It is not computed from the memory that happens to be free, so
+what other processes hold cannot decide whether a program runs. Arena
+blocks grow from 64 KiB, so an arena with a large block size is charged
+for what it uses, not for its block size.
+
+### The memory profile (§9.3)
+
+A value the analysis cannot place in a frame, result or `with-region`
+region goes to the process heap, which is never freed: in a loop that is
+growth without bound. One top-level form decides what the compiler does
+about it — in a lone file, or as a line of `zyl.pkg`:
+
+```lisp
+(memory unbounded)   ; the default: allowed, silently
+(memory reported)    ; W_HEAP_ESCAPE at each such allocation
+(memory bounded)     ; E_REGION_ESCAPE at each such allocation
+```
+
+The report is located at the allocation and labelled with where the value
+escaped:
+
+```
+warning[W_HEAP_ESCAPE]: this value goes to the process heap, which is never freed: it lives until the program exits
+  --> heap.zyl:3:22
+   |
+ 3 | (defn twice (f x) (f (f x)))
+   |                      ^
+ 3 | (defn twice (f x) (f (f x)))
+   |                   - escapes here: passed to a function value that may keep it
+   = help: keep it inside the call or return it, or build it inside `with-region`
+```
+
+A top-level `def`'s value is global by design and is not reported, and
+neither is an allocation inside the standard library. The most common
+cause is the one above: the analysis knows nothing about a function value
+it cannot see through, so it assumes the callee keeps its arguments.
+`docs/memory-reclamation-roadmap.md` plans the work that narrows this.
 
 ### Stack safety (§14)
 
-§14 guarantees that deep recursion never overflows the stack. The code
-generator turns tail calls into jumps (§3 has the exceptions); for every
-other call, the generated `main` runs on a thread with a very large stack: a 64 GB reservation
-(falling back to 16, 4 or 1 GB) mapped without committing memory, with a
-guard page. Recursion depth is therefore bounded by that reservation
-rather than unbounded.
+The code generator turns tail calls into jumps (§3 has the exceptions), so
+a loop written as tail recursion runs in constant stack. Other recursion
+uses stack in proportion to its depth. The generated `main` runs on a
+thread with a large stack mapped without committing memory, with a guard
+page: under a memory budget it is a quarter of the budget (at least
+64 MiB) and is charged to it, so stack and heap together stay within the
+budget. Without a budget it is a 64 GB reservation (falling back to 16, 4
+or 1 GB). An actor's stack is 8 MiB. Recursion that reaches the guard
+stops the program, after its output is flushed:
+
+```
+PANIC: error[E_STACK_OVERFLOW]: the stack is full: recursion went deeper than the 67108864-byte stack
+  = help: make the recursive call a tail call (carry the result in an accumulator), or raise ZYL_MAX_MEMORY; the stack is a quarter of it
+```
 
 ## 16.7 Region Errors
 
@@ -307,6 +352,8 @@ rather than unbounded.
 | `E_INVALID_CAPABILITY` | Raised for a `fn` written directly as an `ffi-call` argument (R4). |
 | `E_FFI_PIN_REQUIRED` | Raised for a `Secret` passed to `ffi-call` without `ffi-pin` (Chapter 17). |
 | `E_OUT_OF_MEMORY` | Raised at runtime when an allocation fails or the budget is exhausted. |
+| `E_STACK_OVERFLOW` | Raised at runtime when recursion reaches the end of the stack (main's, a quarter of the budget, or an actor's 8 MiB); not catchable. |
+| `W_HEAP_ESCAPE` | Under `(memory reported)`, an allocation that goes to the process heap; under `(memory bounded)` the same is `E_REGION_ESCAPE`. |
 | (none) | `bytebuf-ptr` outside Pin and mutating a Global buffer are not checked and have no code. A returned Stack bytebuf is reported as `E_REGION_ESCAPE`. |
 
 ## 16.8 Interaction with Capabilities
