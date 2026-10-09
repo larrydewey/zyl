@@ -259,7 +259,17 @@ the unit test.
 Full test infrastructure documented in `docs/regression-tests.md`.
 
 **`zyl fmt`** reindents to paren depth and is a no-op on already-formatted
-source; `--check` reports and exits 1 without writing. `tools/fmt-hook.sh` is
+source; `--check` reports and exits 1 without writing. **`zyl fmt
+--infer-parens`** repairs brackets instead (`stdlib/text/parens.zyl`): a file
+splits into top-level chunks at column-1 openers, a balanced chunk is kept
+byte for byte, and an unbalanced one gets the single edit (closers inserted at
+one line end, or removed from one) that balances it and best agrees with its
+indentation, learning the file's flat chains (`(if` under an open `(if`) so
+they are not read as siblings; failing that, Parinfer's indent mode. It writes
+only a result that balances, and the language server offers the same edit as
+a quick fix. `tests/scripts/infer-parens.sh` holds a mutation property: one
+closer deleted from or added to a real file is restored (about 98%; the rest
+are readings the indentation cannot decide). `tools/fmt-hook.sh` is
 the git pre-commit form (`ln -sf "$PWD/tools/fmt-hook.sh"
 .git/hooks/pre-commit`) and is deliberately NOT installed: the tree is not
 uniformly formatted by this tool — it disagrees with hand-written styles like

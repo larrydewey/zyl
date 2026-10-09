@@ -30,6 +30,7 @@
 (use lsp/services/inlay_hints)
 (use lsp/services/signature_help)
 (use lsp/repl_integration)
+(use text/parens)
 
 ; What a message leaves behind: the documents, the workspace, and whether
 ; to keep reading.
@@ -752,8 +753,32 @@
 (defn lsp-req-code-action (arena dm ws id paramsOpt)
   (let uri (lsp-text-document-uri paramsOpt)
     (begin
-      (lsp-respond id (Some (LSPArray (lsp-action-list-any (code-actions-for (dm-get-diagnostics dm uri))))) None)
+      (lsp-respond id (Some (LSPArray (list-append (lsp-paren-fix-actions uri (dm-get-text dm uri))
+                                                   (lsp-action-list-any (code-actions-for (dm-get-diagnostics dm uri)))))) None)
       (Step dm ws 1))))
+
+; A document that does not balance gets one real edit: the whole text, with
+; the forms that do not balance closed from their indentation (text/parens).
+(defn lsp-paren-fix-actions (uri textOpt)
+  (match textOpt
+    (Some text
+      (match (infer-parens text)
+        (Some fix
+          (let edit (LSPObject (map-insert (map-insert (map-new) "range"
+                                 (lsp-range-to-any (Rng (Pos 0 0) (Pos (+ (lsp-line-count text 0 (str-length text) 0) 1) 0))))
+                                 "newText" (LSPString (paren-fix-text fix))))
+            (let changes (LSPObject (map-insert (map-new) uri (LSPArray (Cons edit Nil))))
+              (Cons (LSPObject (map-insert (map-insert (map-insert (map-new)
+                       "title" (LSPString "Close the unbalanced forms from their indentation"))
+                       "kind" (LSPString "quickfix"))
+                       "edit" (LSPObject (map-insert (map-new) "changes" changes))))
+                    Nil))))
+        (None Nil)))
+    (None Nil)))
+
+(defn lsp-line-count (text i n acc)
+  (if (>= i n) acc
+    (lsp-line-count text (+ i 1) n (if (= (ffi-call "zyl_view_byte" text 0 n i 1000) 10) (+ acc 1) acc))))
 
 (defn lsp-action-list-any (actions)
   (match actions

@@ -43,6 +43,7 @@
 (use compiler/pipeline)
 (use compiler/explain)
 (use text/format)
+(use text/parens)
 (use compiler/icnf_print)
 (use compiler/doc)
 (use repl/repl)
@@ -755,6 +756,7 @@
     (print "zyl doc [file.zyl | dir] [-o out.md]   Markdown from doc comments")
     (print "zyl check [file.zyl | dir ...]          type-check without building; the fast edit loop")
     (print "zyl fmt [file.zyl ...] [--check]      reindent to paren depth (--check: report only)")
+    (print "zyl fmt --infer-parens [file.zyl ...]  close the forms that do not balance, from their indentation")
     (print "zyl explain [CODE]                     what a diagnostic means and where it is raised")
     (print "zyl balance [file.zyl | dir ...]       check brackets, strings and top-level structure")
     0))
@@ -1004,13 +1006,43 @@
     (let paths (drv-balance-args 2 n cwd)
       (let files (drv-balance-files (match paths (Nil (Cons cwd Nil)) (_ paths)))
         (let check (drv-has-flag 2 "--check")
+          (if (drv-has-flag 2 "--infer-parens") (drv-infer-each files check 0)
           (let bad (drv-fmt-each files check 0)
             (let total (list-length files)
               (let msg (if (= bad 0)
                           " already formatted"
                           (if check " would be reformatted" " reformatted"))
                 (print (str-concat "fmt: " (str-concat (ffi-call "zyl_int_text" total 1000) msg)))
-                (if check bad 0)))))))))
+                (if check bad 0))))))))))
+
+; `zyl fmt --infer-parens`: each form that does not balance gets its closers
+; from its indentation (text/parens); a balanced file is left alone, and one
+; the indentation cannot balance is reported, not written. Exit 1 when a file
+; is still unbalanced (or, with --check, would change).
+(defn drv-infer-each (files check (bad Int))
+  (match files
+    (Nil (begin (print (if (= bad 0) "fmt: every file balances" (str-concat "fmt: " (str-concat (ffi-call "zyl_int_text" bad 1000) " file(s) still need a fix")))) (if (= bad 0) 0 1)))
+    (Cons f rest
+      (match (sb-read-file f)
+        (None (begin (ffi-call "zyl_warn_emit" (str-concat "error: cannot read " f) 1000) (drv-infer-each rest check (+ bad 1))))
+        (Some src
+          (if (sb-result-balanced (sb-check-string src))
+            (drv-infer-each rest check bad)
+            (match (infer-parens src)
+              (Some fix
+                (begin
+                  (print (str-concat (if check "  would close forms in " "  closed forms in ") (str-concat f (str-concat " at line " (drv-int-list (paren-fix-lines fix))))))
+                  (let _ (if check 0 (cli-write-file f (paren-fix-text fix)))
+                    (drv-infer-each rest check (if check (+ bad 1) bad)))))
+              (None
+                (begin
+                  (print (str-concat "  " (str-concat f ": the indentation does not say how to balance it; see `zyl balance`")))
+                  (drv-infer-each rest check (+ bad 1)))))))))))
+
+(defn drv-int-list (xs)
+  (match xs
+    (Nil "")
+    (Cons x rest (str-concat (ffi-call "zyl_int_text" x 1000) (match rest (Nil "") (Cons _ _ (str-concat ", " (drv-int-list rest))))))))
 
 (defn drv-fmt-each (files check (bad Int))
   (match files

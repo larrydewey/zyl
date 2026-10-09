@@ -556,6 +556,21 @@ REPL and language server:
    the standard library. Next: the unbounded-recursion check and a
    per-function worst-case figure under `bounded`.
 
+0b. **Brackets repaired from indentation** (done 2026-10-09). `zyl fmt
+   --infer-parens` and an LSP quick fix (`stdlib/text/parens.zyl`). A
+   balanced top-level chunk is never touched; an unbalanced one gets the
+   single edit that balances it and best agrees with its indentation, with
+   Parinfer's indent mode as the fallback and as the reference the edit is
+   scored against. Measured by mutating real files (one closer deleted or
+   added at a line end): indent mode alone restored 92%, because it throws
+   away the author's closers and misreads flat `(Cons`/`(if` chains and
+   bodies indented from their line rather than their opener; the minimal
+   edit restores about 98% (1173 of 1200), and the misses are readings the
+   indentation cannot decide. The balance diagnostics' own quick fixes were
+   never edits: `lsp-action-any` serialises only an action's title, so
+   they did nothing when applied; the new action builds its JSON directly.
+   That serialiser is still title-only.
+
 1. **Native backend**: Float arithmetic in `xmm` registers, `print`,
    closures and indirect calls, `try` and `with-region` on MIR, then
    remove the stack machine's expression code; MIR-level optimization

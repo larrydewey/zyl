@@ -508,6 +508,28 @@ def test_accessors():
           f"accessors are offered with the document's functions, got {len(general)} items")
 
 
+def test_paren_fix():
+    broken = "(defn f (x)\n  (let a 1\n    (+ a x)\n\n(defn main ()\n  (begin (print (f 2)) 0))\n"
+    fixed = "(defn f (x)\n  (let a 1\n    (+ a x)))\n\n(defn main ()\n  (begin (print (f 2)) 0))\n"
+    responses, _, _ = session(
+        request(2, "textDocument/codeAction",
+                range={"start": at(0, 0), "end": at(0, 0)}, context={"diagnostics": []}),
+        text=broken)
+    actions = responses.get(2) or []
+    edits = [a for a in actions if a.get("kind") == "quickfix" and "edit" in a]
+    check("paren fix offered", len(edits) == 1, repr(actions))
+    if edits:
+        change = edits[0]["edit"]["changes"].get(URI, [])
+        check("paren fix closes the form from its indentation",
+              len(change) == 1 and change[0]["newText"] == fixed, repr(change))
+    responses, _, _ = session(
+        request(2, "textDocument/codeAction",
+                range={"start": at(0, 0), "end": at(0, 0)}, context={"diagnostics": []}))
+    actions = responses.get(2) or []
+    check("no paren fix for a balanced document",
+          not any("edit" in a for a in actions), repr(actions))
+
+
 TESTS = [
     ("capabilities", test_capabilities),
     ("hover", test_hover),
@@ -522,6 +544,7 @@ TESTS = [
     ("large document", test_large_document),
     ("utf-8", test_utf8),
     ("interactive", test_interactive),
+    ("paren fix", test_paren_fix),
 ]
 
 
