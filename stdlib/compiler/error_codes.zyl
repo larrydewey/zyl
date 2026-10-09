@@ -88,6 +88,7 @@
   (Cons (EC "E_INDEX_OUT_OF_BOUNDS" 10 1 "runtime: index outside a word array")
   (Cons (EC "E_REGION_EXHAUSTED" 10 1 "runtime: a with-region region ran out of its fixed size or limit")
   (Cons (EC "E_OUT_OF_MEMORY" 10 1 "runtime: memory budget exhausted - raise or remove it with ZYL_MAX_MEMORY")
+  (Cons (EC "E_STACK_OVERFLOW" 10 1 "runtime: recursion reached the end of the stack, a quarter of the memory budget")
   (Cons (EC "E_CHANNEL_NOT_OWNER" 10 1 "runtime: this actor does not own the channel endpoint")
   (Cons (EC "E_CHANNEL_CLOSED" 10 1 "runtime: the channel's sender finished and every value was received")
   (Cons (EC "E_CHANNEL_CAPACITY" 10 1 "runtime: a channel buffer holds 1 to 16777216 values")
@@ -166,7 +167,7 @@
   (Cons (EC "E_PKG_FEATURE_NESTED" 19 1 "package: feature-gate is valid at top level only")
   (Cons (EC "E_PKG_FEATURE_COLLISION" 19 1 "package: gated definition D collides with a base definition")
   (Cons (EC "E_PROV_ATTACH" 19 1 "build: the provenance trailer could not be attached: M")
-  Nil))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+  Nil)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 ; ---------------------------------------------------------------------------
 ; ACCESSORS
 ; ---------------------------------------------------------------------------

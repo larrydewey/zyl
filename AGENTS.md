@@ -101,6 +101,11 @@ a signed provenance trailer, and `zyl verify <binary>` reads it back
   `E_REGION_EXHAUSTED`)
 - No value may escape its assigned region: a Stack bytebuf or a
   `with-region` value that would outlive its region is `E_REGION_ESCAPE`
+- Memory is bounded at run time: the heap is charged to `ZYL_MAX_MEMORY`
+  (default 80% of available memory; exhausting it is `E_OUT_OF_MEMORY`, whose
+  report does not allocate), and main's stack is a quarter of the budget,
+  charged to it, with a guard page whose fault is `E_STACK_OVERFLOW`
+  (`zyl_segv_handler`, spec §14)
 - The memory profile (spec §9.3), `(memory unbounded|reported|bounded)`
   once per program (lone-file form or `zyl.pkg` line): `reported` warns
   `W_HEAP_ESCAPE` at each allocation that goes to the process heap,

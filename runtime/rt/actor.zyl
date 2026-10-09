@@ -129,7 +129,53 @@
   (if (= i 0) 68719476736 (if (= i 1) 17179869184 (if (= i 2) 4294967296 1073741824))))
 
 ; ctx: {fn, result}
-(defn zyl_bigstack_tramp (ctx) (let _ (ac-st (+ ctx 8) (ffi-call "%call0" (ac-ld ctx) 1)) 0))
+(defn zyl_bigstack_tramp (ctx) (let _ (bs-guard-install) (let _ (ac-st (+ ctx 8) (ffi-call "%call0" (ac-ld ctx) 1)) 0)))
+
+; Under a memory budget the stack is part of it: a quarter, at least 64 MiB, charged up front.
+(defn bs-cap (sz)
+  (let b (rt-budget-limit)
+    (if (= b 0) sz
+      (let q (/ b 4) (let c (if (< q 67108864) 67108864 q) (if (< c sz) c sz))))))
+
+; --- stack overflow: a fault at the stack's end is E_STACK_OVERFLOW, not a bare SIGSEGV ---
+
+; {guard page, stack size} of main's stack.
+(defn bs-info () (ffi-call "%global" "bigstack_info" 16 1))
+
+; SIGSEGV on an alternate stack, once, from main's thread; SA_SIGINFO|ONSTACK|RESTORER|NODEFER|RESETHAND.
+(defn bs-guard-install ()
+  (let ss (ffi-call "%global" "segv_altstack_t" 24 1)
+    (let _ (ac-st ss (ffi-call "%global" "segv_altstack" 65536 1))
+      (let _ (ac-st (+ ss 8) 0)
+        (let _ (ac-st (+ ss 16) 65536)
+          (let _ (ffi-call "%syscall2" 131 ss 0 1)
+            (let sa (ffi-call "%global" "segv_sigaction" 32 1)
+              (let _ (ac-st sa (ffi-call "%fn" "zyl_segv_handler" 1))
+                (let _ (ac-st (+ sa 8) (+ 4 (+ 134217728 (+ 67108864 (+ 1073741824 2147483648)))))
+                  (let _ (ac-st (+ sa 16) (ffi-call "%fn" "zyl_segv_restorer" 1))
+                    (let _ (ac-st (+ sa 24) 0)
+                      (ffi-call "%syscall4" 13 11 sa 0 8 1))))))))))))
+
+; Never reached: the handler does not return. The kernel requires a restorer.
+(defn zyl_segv_restorer () (ffi-call "%syscall1" 231 1 1))
+
+; A fault beside the stack pointer, or in main's guard page, is the stack running
+; out; anything else is re-raised (the handler is already reset to the default).
+(defn zyl_segv_handler (_sig info uc)
+  (let addr (ac-ld (+ info 16))
+    (let sp (ac-ld (+ uc 160))
+      (let g (ac-ld (bs-info))
+        (if (or (< (if (> addr sp) (- addr sp) (- sp addr)) 65536)
+                (and (> g 0) (and (>= addr g) (< addr (+ g 4096)))))
+          (bs-overflow)
+          (ffi-call "%syscall2" 62 (ffi-call "%syscall0" 39 1) 11 1))))))
+
+(defn bs-overflow ()
+  (let _ (zyl_out_flush)
+    (let _ (rt-oom-say "PANIC: error[E_STACK_OVERFLOW]: the stack is full: recursion went deeper than the ")
+      (let _ (rt-oom-num (ac-ld (+ (bs-info) 8)))
+        (let _ (rt-oom-say "-byte stack\n  = help: make the recursive call a tail call (carry the result in an accumulator), or raise ZYL_MAX_MEMORY; the stack is a quarter of it\n")
+          (ffi-call "%syscall1" 231 1 1))))))
 
 (defn zyl_call_on_big_stack (f)
   (let ctx (zyl_rt_malloc 24)
@@ -140,13 +186,16 @@
 (defn bs-try (f ctx i)
   (if (>= i 4)
     (let _ (zyl_rt_free ctx) (ffi-call "%call0" f 1))
-    (let sz (bs-size i)
-      (let p (ffi-call "%syscall6" 9 0 sz 3 16418 -1 0 1)
-        (if (and (< p 0) (> p -4096)) (bs-try f ctx (+ i 1))
+    (let sz (bs-cap (bs-size i))
+      (let p (if (rt-charge sz) (ffi-call "%syscall6" 9 0 sz 3 16418 -1 0 1) -12)
+        (if (and (< p 0) (> p -4096)) (let _ (if (= p -12) 0 (rt-refund sz)) (bs-try f ctx (+ i 1)))
           (let _ (ffi-call "%syscall3" 10 p 4096 0 1)
+            (let _ (ac-st (bs-info) p)
+            (let _ (ac-st (+ (bs-info) 8) sz)
             (let _ (ac-st (+ ctx 8) 0)
               (let h (zyl_rt_thread_create (ffi-call "%fn" "zyl_bigstack_tramp" 1) ctx p sz)
-                (if (= h 0) (let _ (bs-unmap p sz) (bs-try f ctx (+ i 1)))
+                (if (= h 0) (let _ (bs-unmap p sz) (let _ (rt-refund sz) (bs-try f ctx (+ i 1))))
                   (let _ (zyl_rt_thread_join h)
                     (let _ (bs-unmap p sz)
-                      (let r (ac-ld (+ ctx 8)) (let _ (zyl_rt_free ctx) r)))))))))))))
+                      (let _ (rt-refund sz)
+                        (let r (ac-ld (+ ctx 8)) (let _ (zyl_rt_free ctx) r))))))))))))))))

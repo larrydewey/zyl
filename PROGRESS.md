@@ -556,6 +556,19 @@ REPL and language server:
    the standard library. Next: the unbounded-recursion check and a
    per-function worst-case figure under `bounded`.
 
+0a. **Stack overflow is a report, inside the budget** (done 2026-10-09,
+   spec §14). main's stack was a 64 GiB lazy mapping outside the memory
+   budget: 3e9-deep non-tail recursion ran to 24 GB, and overflow would
+   have been a bare SIGSEGV after the machine ran out. Now, under a budget,
+   the stack is a quarter of it (at least 64 MiB) and charged to it, and a
+   SIGSEGV handler on an alternate stack (`zyl_segv_handler`,
+   `runtime/rt/actor.zyl`) turns a fault beside the stack pointer or in the
+   guard page into `PANIC: error[E_STACK_OVERFLOW]`, after flushing
+   stdout; any other fault is re-raised with the default action. Gaps: actor
+   threads (8 MiB stacks) have no alternate stack, so their overflow is still
+   a SIGSEGV; and the budget is read from *available* memory at start, so
+   the same program can pass or fail with the machine's load.
+
 0b. **Brackets repaired from indentation** (done 2026-10-09). `zyl fmt
    --infer-parens` and an LSP quick fix (`stdlib/text/parens.zyl`). A
    balanced top-level chunk is never touched; an unbalanced one gets the

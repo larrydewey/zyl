@@ -767,8 +767,16 @@ Test execution:
 14. STACK SAFETY GUARANTEE
 ================================================================================
 
-The compiler guarantees that deep recursion never causes stack overflow
-(via tail-call optimization or heap-allocated stack frames).
+Tail calls are jumps (with the exceptions §18 lists), so a loop written as
+tail recursion runs in constant stack. Other recursion uses stack in
+proportion to its depth. main runs on a large lazily-mapped stack with a guard
+page; under a memory budget (ZYL_MAX_MEMORY, by default 80% of available
+memory) that stack is a quarter of the budget, at least 64 MiB, and is
+charged to it, so stack and heap together stay within the budget. Recursion
+that reaches the guard stops the program with E_STACK_OVERFLOW (runtime, not
+catchable), after flushing output -- never a bare SIGSEGV, and never the
+kernel's out-of-memory killer. Actor threads have 8 MiB stacks and no such
+report yet.
 
 ================================================================================
 15. CONCURRENCY MODEL (ACTORS)

@@ -78,6 +78,9 @@
           (let _ (ffi-call "%fetch-add" (+ b 16) (- 0 n) 1) false)
           true)))))
 
+; The budget in bytes, 0 when there is none.
+(defn rt-budget-limit () (let _ (rt-budget-once) (hp-ld (+ (rt-budget) 8))))
+
 (defn rt-refund (n) (ffi-call "%fetch-add" (+ (rt-budget) 16) (- 0 n) 1))
 
 ; --- allocator: a 16-byte header {block size, tag} precedes each 16-aligned payload ---
