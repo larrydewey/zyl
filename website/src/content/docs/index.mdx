@@ -93,6 +93,16 @@ export const run = (name, out, err = '') => ('$ zyl ' + name + '.zyl -o ' + name
 		Every foreign call names its symbol and carries a timeout. A `Secret`
 		type and a constant-time cryptography library guard key material.
 	</Card>
+	<Card title="No silent failure" icon="approve-check">
+		Integer overflow stops the program instead of wrapping, a division
+		must say what happens at zero, and every operation that can stop the
+		program ends in `!`. Nothing is undefined.
+	</Card>
+	<Card title="Default deny" icon="seti:lock">
+		A file declares what it may do, `(capabilities io actor)`, and has
+		nothing it did not declare: no file access, threads or C calls
+		behind a reader's back.
+	</Card>
 </CardGrid>
 
 ## Mistakes stop at compile time
@@ -112,7 +122,7 @@ error[E_NON_EXHAUSTIVE_MATCH]: match over `Shape` does not cover variant `Rect`
    |
  4 |   (match s
    |   ^
-   = help: add an arm for that variant, or a `_` catch-all
+   = help: add an arm for that variant, or a final `_` arm
 ```
 
 ## The compiler reproduces itself, byte for byte
