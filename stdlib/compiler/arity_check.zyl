@@ -45,10 +45,14 @@
 ; Top-level function arities by name, stored plus one (0 = unknown). A
 ; later definition of a name replaces an earlier one, as the list this
 ; replaced did by being searched newest first.
+; One table per process, emptied for each program, so a long-lived host does not grow.
+(def ac-arities (ffi-call "zyl_smap_new" 1000))
+
 (defn ac-collect (exprs)
-  (let m (ffi-call "zyl_smap_new" 1000)
-    (let _ (ac-collect-into exprs m)
-      m)))
+  (let m ac-arities
+    (let _ (ffi-call "zyl_smap_clear" m 1000)
+      (let _ (ac-collect-into exprs m)
+        m))))
 
 (defn ac-collect-into (exprs m)
   (match exprs

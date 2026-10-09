@@ -332,6 +332,7 @@
 
 (defn ft-fill-13 (t)
   (let _ (ft-put t "zyl_path_exists" (ffi-call "%fn" "zyl_path_exists" 1))
+  (let _ (ft-put t "zyl_file_size" (ffi-call "%fn" "zyl_file_size" 1))
     (let _ (ft-put t "zyl_pin_alloc" (ffi-call "%fn" "zyl_pin_alloc" 1))
     (let _ (ft-put t "zyl_print_float" (ffi-call "%fn" "zyl_print_float" 1))
     (let _ (ft-put t "zyl_print_int" (ffi-call "%fn" "zyl_print_int" 1))
@@ -347,7 +348,7 @@
     (let _ (ft-put t "zyl_smap_put" (ffi-call "%fn" "zyl_smap_put" 1))
     (let _ (ft-put t "zyl_source_path" (ffi-call "%fn" "zyl_source_path" 1))
     (let _ (ft-put t "zyl_source_register" (ffi-call "%fn" "zyl_source_register" 1))
-    0)))))))))))))))))
+    0))))))))))))))))))
 
 (defn ft-fill-14 (t)
   (let _ (ft-put t "zyl_span_col" (ffi-call "%fn" "zyl_span_col" 1))

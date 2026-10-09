@@ -631,23 +631,42 @@ REPL and language server:
    program counts said 125 where the gate actually runs 131. Cross-linked
    from `docs/soundness.md` L2, `docs/regions-design.md`,
    `docs/secret-erasure-design.md` and `AGENTS.md`.
-12. **Language server leak.** A `zyl-lsp-bin` left running by an editor
-   reached 37 GB RSS in 65 minutes and had to be SIGKILLed -- it ignores
-   SIGTERM, which is a second and smaller bug, since a language server
-   should exit on it. The likely source is the long-lived Arena the LSP
-   takes on purpose ("the parse tree and the REPL scratch outlive any
-   single frame", `AGENTS.md`): if per-request work lands in that arena,
-   nothing ever releases it. Not started; the LSP needs its own
-   allocation accounting before the cause is knowable.
-   **Decided 2026-10-02: diagnose before changing.** The 1 GiB arena at
-   `selfhost/lsp_main.zyl:13` is a plausible suspect but cannot account
-   for 37 GB, and fixing the wrong thing here would look like progress.
-   So: per-request allocation accounting first, then act on what it says.
-   In the same pass, check `document_manager.zyl`, which keeps a parsed
-   analysis per document in a map with no eviction on close -- a more
-   likely cause of unbounded growth in an editor session. SIGTERM
-   handling is separate and trivial.
-
+12. **Language server leak.** Fixed 2026-10-08. A `zyl-lsp-bin` left
+   running by an editor reached 37 GB RSS in 65 minutes. Measured with a
+   driver that sends N edits and reads RSS (callgrind call counts located
+   the allocators): every analysis of an 8-line file cost **4.5 MB that was
+   never released**, 5 MB per `didOpen`, and 9 kB per hover. The causes, in
+   order of size:
+   - The whole front end ran on the process heap, and the parse arena was
+     one 1 GiB arena for the life of the server. Now each message is read
+     and answered with the heap switched to a scratch arena (the REPL's
+     `zyl_heap_swap` pattern); the document map and workspace roots are
+     copied into the spare of two state arenas, and the scratch and the old
+     state arena are reset. Each analysis runs in an arena of its own,
+     which its `DocState` owns; replacing or closing a document retires it
+     (`dm-dead`) and the loop destroys it once the message is answered.
+     The handlers return an `LspStep` instead of calling the loop, so the
+     server no longer recurses through a 7-argument call that was not a
+     jump.
+   - The type checker made about 25 malloc'd tables per run (`ta-st-new`)
+     and the arity check one more (`ac-collect`); both are now
+     process-wide tables emptied per run, as the checker's other tables
+     already were.
+   - The NUL-byte check read every module file into a malloc'd buffer to
+     learn its length, on every analysis; it now asks `zyl_file_size`
+     (`stat`, a new runtime entry).
+   After: about 1 kB per edit and 0.5 kB per hover, which is the 4 ref
+   cells and 72-byte handle a `StringBuffer` keeps (`make-string-buffer`;
+   nothing frees a ref cell). SIGTERM is honoured in every run; the
+   original report of it being ignored did not reproduce.
+   Found on the way: out of memory *reporting* allocated (`zyl_arena_oom`
+   formatted its numbers on the heap it had just exhausted), so a compile
+   that hit the budget recursed until it segfaulted instead of printing
+   `E_OUT_OF_MEMORY`. The report is now written in pieces from a static
+   buffer. Still open: the budget is 80% of *available* memory, read at
+   start, so the same compile can pass or fail with the machine's load,
+   and arena blocks are charged when reserved, so a 1 GiB arena costs
+   1 GiB of budget before anything is written.
 13. **A buffer is a valid argument to a foreign call.** The FFI
    abstraction layer this project needs already exists and is enforced --
    `ffi-raw-p`, the `E_FFI_RESTRICTED` raw-memory set, and "an extern may

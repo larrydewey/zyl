@@ -61,22 +61,30 @@
 (use compiler/numeric_check)
 (use lsp/compiler_bridge)
 
+; An analysis owns the arena it was built in: its parse tree, symbol
+; table and diagnostics, and a copy of its document. Replacing or closing
+; the document retires that arena, and the server destroys it once the
+; request is answered, so a long session holds one analysis per open
+; document and nothing else.
 (deftype DocState
-  (DS Document Int SymTable (List Diagnostic)))
-  ; document, version analyzed at, symbol table, diagnostics
+  (DS Document Int SymTable (List Diagnostic) Arena))
+  ; document, version analyzed at, symbol table, diagnostics, owning arena
 
-(defn DocState.doc (s) (match s (DS d _ _ _ d)))
-(defn DocState.version (s) (match s (DS _ v _ _ v)))
-(defn DocState.symtable (s) (match s (DS _ _ t _ t)))
-(defn DocState.diagnostics (s) (match s (DS _ _ _ g g)))
+(defn DocState.doc (s) (match s (DS d _ _ _ _ d)))
+(defn DocState.version (s) (match s (DS _ v _ _ _ v)))
+(defn DocState.symtable (s) (match s (DS _ _ t _ _ t)))
+(defn DocState.diagnostics (s) (match s (DS _ _ _ g _ g)))
+(defn DocState.arena (s) (match s (DS _ _ _ _ a a)))
 
+; The open documents, and the arenas of analyses replaced or closed since
+; the server last destroyed them.
 (deftype DocManager
-  (DM (Map String DocState)))
+  (DM (Map String DocState) (List Arena)))
 
-(defn dm-new () (DM (map-new)))
+(defn dm-new () (DM (map-new) Nil))
 
 (defn dm-get (dm uri)
-  (match dm (DM states (map-get states uri))))
+  (match dm (DM states _ (map-get states uri))))
 
 (defn dm-get-text (dm uri)
   (match (dm-get dm uri)
@@ -94,7 +102,7 @@
     (None Nil)))
 
 (defn dm-open-uris (dm)
-  (match dm (DM states (dm-uri-list (map-entries states)))))
+  (match dm (DM states _ (dm-uri-list (map-entries states)))))
 
 (defn dm-uri-list (entries)
   (match entries
@@ -102,7 +110,25 @@
     (Cons e rest (Cons (ME.key e) (dm-uri-list rest)))))
 
 (defn dm-put (dm uri st)
-  (match dm (DM states (DM (map-insert states uri st)))))
+  (match dm (DM states dead (DM (map-insert states uri st) (dm-retire states uri dead)))))
+
+(defn dm-retire (states uri dead)
+  (match (map-get states uri)
+    (Some old (Cons (DocState.arena old) dead))
+    (None dead)))
+
+; The arenas to destroy, and the manager without them.
+(defn dm-dead (dm) (match dm (DM _ dead dead)))
+
+; The manager rebuilt in the current heap: the map and its keys are copied,
+; each DocState stays in its own arena.
+(defn dm-copy (dm)
+  (match dm (DM states _ (DM (dm-copy-entries (map-entries states) (map-new)) Nil))))
+
+(defn dm-copy-entries (entries acc)
+  (match entries
+    (Nil acc)
+    (Cons e rest (dm-copy-entries rest (map-insert acc (str-concat "" (ME.key e)) (ME.value e))))))
 
 (defn dm-on-open (arena dm uri text version languageId)
   (let doc (Doc text version uri languageId)
@@ -128,13 +154,25 @@
     (None dm)))
 
 (defn dm-on-close (dm uri)
-  (match dm (DM states (DM (map-remove states uri)))))
+  (match dm (DM states dead (DM (map-remove states uri) (dm-retire states uri dead)))))
 
-(defn dm-analyze (arena doc)
+; The analysis runs with the process heap switched to a fresh arena, which
+; the resulting DocState then owns; the document is copied in first, since
+; its text was decoded into the request's scratch heap.
+(defn dm-analyze (_arena doc0)
+  (let da (arena-create 1048576)
+    (let saved (ffi-call "zyl_heap_swap" da 1000)
+      (let st (dm-analyze-in da (dm-copy-doc doc0))
+        (begin (ffi-call "zyl_heap_swap" saved 1000) st)))))
+
+(defn dm-copy-doc (d)
+  (Doc (str-concat "" (Document.text d)) (Document.version d) (str-concat "" (Document.uri d)) (str-concat "" (Document.languageId d))))
+
+(defn dm-analyze-in (arena doc)
   (let text (Document.text doc)
     (let balance (sb-check-string text)
       (if (not (sb-result-balanced balance))
-        (DS doc (Document.version doc) (st-new) (dm-balance-diags balance))
+        (DS doc (Document.version doc) (st-new) (dm-balance-diags balance) arena)
         (dm-analyze-parsed arena doc text)))))
 
 (defn dm-balance-diags (balance)
@@ -145,7 +183,7 @@
 (defn dm-analyze-parsed (arena doc text)
   (let front (try (Ok (dm-frontend arena (lsp-uri-path (Document.uri doc)) text)) (catch e (Err e)))
     (match front
-      (Err msg (DS doc (Document.version doc) (st-new) (Cons (diagnostic-from-panic msg text) Nil)))
+      (Err msg (DS doc (Document.version doc) (st-new) (Cons (diagnostic-from-panic msg text) Nil) arena))
       (Ok exprs (dm-check-and-index arena doc text exprs)))))
 
 ; Parse, resolve modules, expand macros. Anything that fails here left
@@ -181,8 +219,8 @@
       (let outcome (try (Ok (dm-run-checks exprs)) (catch e (Err e)))
         (match outcome
           (Ok _ (DS doc (Document.version doc) tbl
-                  (list-append (dm-type-diagnostics arena exprs text (dm-source-path (lsp-uri-path (Document.uri doc)))) warns)))
-          (Err msg (DS doc (Document.version doc) tbl (Cons (diagnostic-from-panic msg text) warns))))))))
+                  (list-append (dm-type-diagnostics arena exprs text (dm-source-path (lsp-uri-path (Document.uri doc)))) warns) arena))
+          (Err msg (DS doc (Document.version doc) tbl (Cons (diagnostic-from-panic msg text) warns) arena)))))))
 
 ; unused_check's warnings, captured instead of printed, as Warning diagnostics.
 (defn dm-unused-warnings (exprs text)

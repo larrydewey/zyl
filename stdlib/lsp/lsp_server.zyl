@@ -31,18 +31,59 @@
 (use lsp/services/signature_help)
 (use lsp/repl_integration)
 
-(defn lsp-run-server (arena)
-  (lsp-loop arena (dm-new) (ws-new) 1))
+; What a message leaves behind: the documents, the workspace, and whether
+; to keep reading.
+(deftype LspStep
+  (Step DocManager Workspace Int))
 
-(defn lsp-loop (arena dm ws running)
+; Memory stays flat for the life of the session. A message is read,
+; decoded and answered with the process heap switched to a scratch arena;
+; what survives it (the document map and the workspace roots) is then
+; copied into the spare of two state arenas, and the scratch arena, the
+; other state arena and the arenas of every analysis the message replaced
+; are emptied or destroyed. An analysis lives in an arena of its own
+; (dm-analyze). The three loop arenas are reset, never re-created.
+(defn lsp-run-server ()
+  (lsp-loop (dm-new) (ws-new) (LA (arena-create 1048576) (arena-create 65536) (arena-create 65536)) 1))
+
+; The scratch arena, the state arena in use, and the spare.
+(deftype LoopArenas
+  (LA Arena Arena Arena))
+
+(defn lsp-loop (dm ws las running)
   (if (= running 0)
     0
-    (match (jr-read-message)
-      (None 0)
-      (Some raw
-        (match (jr-decode-message raw)
-          (Right notif (lsp-handle-notification arena dm ws notif))
-          (Left req (lsp-handle-request arena dm ws req running)))))))
+    (match las
+      (LA scratch _ _
+        (let saved (ffi-call "zyl_heap_swap" scratch 1000)
+          (match (jr-read-message)
+            (None (begin (ffi-call "zyl_heap_swap" saved 1000) 0))
+            (Some raw
+              (let step (match (jr-decode-message raw)
+                          (Right notif (lsp-handle-notification scratch dm ws notif))
+                          (Left req (lsp-handle-request scratch dm ws req running)))
+                (lsp-settle step saved las)))))))))
+
+; Copy the surviving state out of the scratch arena, then free what died.
+(defn lsp-settle (step saved las)
+  (match las
+    (LA scratch state spare
+      (match step
+        (Step dm2 ws2 running2
+          (let _ (arena-reset spare)
+            (let _ (ffi-call "zyl_heap_swap" spare 1000)
+              (let dm3 (dm-copy dm2)
+                (let ws3 (ws-copy ws2)
+                  (let _ (ffi-call "zyl_heap_swap" saved 1000)
+                    (let _ (lsp-destroy-all (dm-dead dm2))
+                      (let _ (arena-reset scratch)
+                        (let _ (arena-reset state)
+                          (lsp-loop dm3 ws3 (LA scratch spare state) running2))))))))))))))
+
+(defn lsp-destroy-all (arenas)
+  (match arenas
+    (Nil 0)
+    (Cons a rest (let _ (arena-destroy a) (lsp-destroy-all rest)))))
 
 ; ===========================================================================
 ; PARAM ACCESSORS — LSPAny (a decoded JSON object) -> the handful of
@@ -99,10 +140,10 @@
             (if (str-eq method "textDocument/didSave")
               (lsp-on-did-save arena dm ws paramsOpt)
             (if (str-eq method "initialized")
-              (lsp-loop arena dm ws 1)
+              (Step dm ws 1)
               (if (str-eq method "exit")
-                (lsp-loop arena dm ws 0)
-                (lsp-loop arena dm ws 1))))))))))
+                (Step dm ws 0)
+                (Step dm ws 1))))))))))
 
 (defn lsp-on-did-open (arena dm ws paramsOpt)
   (match (lsp-some-obj (lsp-obj-get paramsOpt "textDocument"))
@@ -114,8 +155,8 @@
               (let dm2 (dm-on-open arena dm uri text version langId)
                 (begin
                   (lsp-publish-diagnostics dm2 uri)
-                  (lsp-loop arena dm2 ws 1))))))))
-    (_ (lsp-loop arena dm ws 1))))
+                  (Step dm2 ws 1))))))))
+    (_ (Step dm ws 1))))
 
 (defn lsp-any-str (o)
   (match (lsp-some-str o) (Some s s) (_ "")))
@@ -135,12 +176,12 @@
               (match (lsp-some-obj (map-get ch "range"))
                 (Some rangeObj
                   (let dm2 (dm-on-change arena dm uri (Cons (lsp-text-edit-of ch rangeObj) Nil) version)
-                    (begin (lsp-publish-diagnostics dm2 uri) (lsp-loop arena dm2 ws 1))))
+                    (begin (lsp-publish-diagnostics dm2 uri) (Step dm2 ws 1))))
                 (None
                   (let dm2 (dm-on-full-change arena dm uri (lsp-any-str (map-get ch "text")) version)
-                    (begin (lsp-publish-diagnostics dm2 uri) (lsp-loop arena dm2 ws 1))))))
-            (_ (lsp-loop arena dm ws 1))))
-        (_ (lsp-loop arena dm ws 1))))))
+                    (begin (lsp-publish-diagnostics dm2 uri) (Step dm2 ws 1))))))
+            (_ (Step dm ws 1))))
+        (_ (Step dm ws 1))))))
 
 (defn lsp-doc-version (paramsOpt)
   (match (lsp-some-obj (lsp-obj-get paramsOpt "textDocument"))
@@ -168,17 +209,17 @@
     (match (lsp-some-str (lsp-obj-get paramsOpt "text"))
       (Some text
         (let dm2 (dm-on-full-change arena dm uri text (lsp-doc-version paramsOpt))
-          (begin (lsp-publish-diagnostics dm2 uri) (lsp-loop arena dm2 ws 1))))
+          (begin (lsp-publish-diagnostics dm2 uri) (Step dm2 ws 1))))
       (_
         (match (dm-get-text dm uri)
           (Some text
             (let dm2 (dm-on-full-change arena dm uri text (lsp-doc-version paramsOpt))
-              (begin (lsp-publish-diagnostics dm2 uri) (lsp-loop arena dm2 ws 1))))
-          (None (lsp-loop arena dm ws 1)))))))
+              (begin (lsp-publish-diagnostics dm2 uri) (Step dm2 ws 1))))
+          (None (Step dm ws 1)))))))
 
 (defn lsp-on-did-close (arena dm ws paramsOpt)
   (let uri (lsp-text-document-uri paramsOpt)
-    (lsp-loop arena (dm-on-close dm uri) ws 1)))
+    (Step (dm-on-close dm uri) ws 1)))
 
 (defn lsp-publish-diagnostics (dm uri)
   (let diags (dm-get-diagnostics dm uri)
@@ -234,9 +275,9 @@
       (if (str-eq method "initialize")
         (lsp-req-initialize arena dm ws id paramsOpt)
         (if (str-eq method "shutdown")
-          (begin (lsp-respond id (Some LSPNull) None) (lsp-loop arena dm ws running))
+          (begin (lsp-respond id (Some LSPNull) None) (Step dm ws running))
           (if (str-eq method "exit")
-            (lsp-loop arena dm ws 0)
+            (Step dm ws 0)
             (if (str-eq method "textDocument/hover")
               (lsp-req-hover arena dm ws id paramsOpt)
               (if (str-eq method "textDocument/definition")
@@ -298,7 +339,7 @@
                 (lsp-req-formatting arena dm ws id paramsOpt)
                 (begin
                   (lsp-respond id None (Some (RErr -32601 (str-concat "method not found: " method) None)))
-                  (lsp-loop arena dm ws running))))))))))
+                  (Step dm ws running))))))))))
 
 (defn lsp-req-references (arena dm ws id paramsOpt)
   (let uri (lsp-text-document-uri paramsOpt)
@@ -309,7 +350,7 @@
             (lsp-respond id (Some (LSPArray (lsp-loc-list-any
               (references-at text uri (Pos.line-of pos) (Pos.col-of pos) (lsp-include-declaration paramsOpt))))) None))
           (None (lsp-respond id (Some (LSPArray Nil)) None)))
-        (lsp-loop arena dm ws 1)))))
+        (Step dm ws 1)))))
 
 ; context.includeDeclaration, defaulting to true when the client omits
 ; the context entirely -- which is what the protocol says a server
@@ -335,7 +376,7 @@
           (Some text
             (lsp-respond id (Some (LSPArray (lsp-highlight-list-any (document-highlights-at text (Pos.line-of pos) (Pos.col-of pos))))) None))
           (None (lsp-respond id (Some (LSPArray Nil)) None)))
-        (lsp-loop arena dm ws 1)))))
+        (Step dm ws 1)))))
 
 ; DocumentHighlightKind 1 is Text -- this server does not distinguish
 ; a read from a write, and saying "Text" is the honest answer rather
@@ -360,7 +401,7 @@
                   (None (lsp-respond id (Some LSPNull) None))))
               (None (lsp-respond id (Some LSPNull) None))))
           (None (lsp-respond id (Some LSPNull) None)))
-        (lsp-loop arena dm ws 1)))))
+        (Step dm ws 1)))))
 
 (defn lsp-sighelp-any (sh)
   (match sh
@@ -411,7 +452,7 @@
                   (None (lsp-respond id (Some LSPNull) None))))
               (None (lsp-respond id (Some LSPNull) None))))
           (None (lsp-respond id (Some LSPNull) None)))
-        (lsp-loop arena dm ws 1)))))
+        (Step dm ws 1)))))
 
 (defn lsp-req-implementation (arena dm ws id paramsOpt)
   (let uri (lsp-text-document-uri paramsOpt)
@@ -421,7 +462,7 @@
           (Some text
             (lsp-respond id (Some (LSPArray (lsp-loc-list-any (implementations-at text uri (Pos.line-of pos) (Pos.col-of pos))))) None))
           (None (lsp-respond id (Some (LSPArray Nil)) None)))
-        (lsp-loop arena dm ws 1)))))
+        (Step dm ws 1)))))
 
 (defn lsp-req-semantic-tokens-range (arena dm ws id paramsOpt)
   (let uri (lsp-text-document-uri paramsOpt)
@@ -437,7 +478,7 @@
                 None))
             (None (lsp-respond id (Some LSPNull) None))))
         (None (lsp-respond id (Some LSPNull) None)))
-      (lsp-loop arena dm ws 1))))
+      (Step dm ws 1))))
 
 (defn lsp-range-start-line (paramsOpt)
   (match (lsp-some-obj (lsp-obj-get paramsOpt "range"))
@@ -461,7 +502,7 @@
       (_ ws))
     (begin
       (lsp-respond id (Some (lsp-initialize-result-any)) None)
-      (lsp-loop arena dm ws2 1))))
+      (Step dm ws2 1))))
 
 (defn lsp-folder-uris (folders)
   (match folders
@@ -570,7 +611,7 @@
                   (None (lsp-respond id (Some LSPNull) None))))
               (None (lsp-respond id (Some LSPNull) None))))
           (None (lsp-respond id (Some LSPNull) None)))
-        (lsp-loop arena dm ws 1)))))
+        (Step dm ws 1)))))
 
 (defn Pos.line-of (p) (match p (Pos l _ l)))
 (defn Pos.col-of (p) (match p (Pos _ c c)))
@@ -609,7 +650,7 @@
                   (None (lsp-respond id (Some LSPNull) None))))
               (None (lsp-respond id (Some LSPNull) None))))
           (None (lsp-respond id (Some LSPNull) None)))
-        (lsp-loop arena dm ws 1)))))
+        (Step dm ws 1)))))
 
 (defn lsp-location-any (loc)
   (match loc
@@ -628,7 +669,7 @@
                   (completion-items-at text tbl (Pos.line-of pos) (Pos.col-of pos))))) None))
               (None (lsp-respond id (Some (LSPArray Nil)) None))))
           (None (lsp-respond id (Some (LSPArray Nil)) None)))
-        (lsp-loop arena dm ws 1)))))
+        (Step dm ws 1)))))
 
 (defn lsp-completion-list-any (items)
   (match items
@@ -671,7 +712,7 @@
       (match (dm-get-text dm uri)
         (Some text (lsp-respond id (Some (LSPArray (lsp-dsym-list-any (document-symbols-for text)))) None))
         (None (lsp-respond id (Some (LSPArray Nil)) None)))
-      (lsp-loop arena dm ws 1))))
+      (Step dm ws 1))))
 
 (defn lsp-dsym-list-any (syms)
   (match syms
@@ -703,7 +744,7 @@
             (Some tbl (lsp-respond id (Some (LSPObject (map-insert (map-new) "data" (LSPArray (lsp-int-list-any (semantic-tokens-for text tbl)))))) None))
             (None (lsp-respond id (Some LSPNull) None))))
         (None (lsp-respond id (Some LSPNull) None)))
-      (lsp-loop arena dm ws 1))))
+      (Step dm ws 1))))
 
 (defn lsp-int-list-any (xs)
   (match xs (Nil Nil) (Cons h t (Cons (LSPInt h) (lsp-int-list-any t)))))
@@ -712,7 +753,7 @@
   (let uri (lsp-text-document-uri paramsOpt)
     (begin
       (lsp-respond id (Some (LSPArray (lsp-action-list-any (code-actions-for (dm-get-diagnostics dm uri))))) None)
-      (lsp-loop arena dm ws 1))))
+      (Step dm ws 1))))
 
 (defn lsp-action-list-any (actions)
   (match actions
@@ -730,7 +771,7 @@
       (match (dm-get-text dm uri)
         (Some text (lsp-respond id (Some (LSPArray (lsp-fold-list-any (folding-ranges-for text)))) None))
         (None (lsp-respond id (Some (LSPArray Nil)) None)))
-      (lsp-loop arena dm ws 1))))
+      (Step dm ws 1))))
 
 (defn lsp-fold-list-any (frs)
   (match frs
@@ -751,7 +792,7 @@
             (Some positions (lsp-respond id (Some (LSPArray (lsp-selrange-list-any text positions))) None))
             (_ (lsp-respond id (Some (LSPArray Nil)) None))))
         (None (lsp-respond id (Some (LSPArray Nil)) None)))
-      (lsp-loop arena dm ws 1))))
+      (Step dm ws 1))))
 
 (defn lsp-selrange-list-any (text positions)
   (match positions
@@ -774,7 +815,7 @@
           (let formatted (format-document text)
             (lsp-respond id (Some (LSPArray (Cons (LSPObject (map-insert (map-insert (map-new) "range" (lsp-range-to-any (lsp-whole-doc-range text))) "newText" (LSPString formatted))) Nil))) None)))
         (None (lsp-respond id (Some (LSPArray Nil)) None)))
-      (lsp-loop arena dm ws 1))))
+      (Step dm ws 1))))
 
 (defn lsp-whole-doc-range (text)
   (Rng (Pos 0 0) (Pos (lsp-count-lines text) 0)))
@@ -799,7 +840,7 @@
               (Some rng (lsp-respond id (Some (lsp-range-to-any rng)) None))
               (None (lsp-respond id (Some LSPNull) None))))
           (None (lsp-respond id (Some LSPNull) None)))
-        (lsp-loop arena dm ws 1)))))
+        (Step dm ws 1)))))
 
 (defn lsp-req-rename (arena dm ws id paramsOpt)
   (let uri (lsp-text-document-uri paramsOpt)
@@ -812,7 +853,7 @@
                 (Some we (lsp-respond id (Some (lsp-workspace-edit-any we)) None))
                 (None (lsp-respond id (Some LSPNull) None))))
             (None (lsp-respond id (Some LSPNull) None)))
-          (lsp-loop arena dm ws 1))))))
+          (Step dm ws 1))))))
 
 (defn lsp-workspace-edit-any (we)
   (match we
@@ -837,7 +878,7 @@
   (let query (lsp-get-str paramsOpt "query" "")
     (begin
       (lsp-respond id (Some (LSPArray (lsp-syminfo-list-any (ws-symbols-for-query dm query)))) None)
-      (lsp-loop arena dm ws 1))))
+      (Step dm ws 1))))
 
 ; workspace/executeCommand -> "zyl.evalDocument": compile+run the given
 ; document's CURRENT (possibly unsaved) buffer text and return its
@@ -858,10 +899,10 @@
                 (EvalOk out (lsp-respond id (Some (lsp-eval-result-any true out)) None))
                 (EvalFail out (lsp-respond id (Some (lsp-eval-result-any false out)) None))))
             (None (lsp-respond id (Some LSPNull) None)))
-          (lsp-loop arena dm ws 1)))
+          (Step dm ws 1)))
       (begin
         (lsp-respond id None (Some (RErr -32601 (str-concat "unknown command: " cmd) None)))
-        (lsp-loop arena dm ws 1)))))
+        (Step dm ws 1)))))
 
 ; `arguments` is a bare JSON array; this server's only command takes
 ; exactly one argument, the target document's URI as a plain string
@@ -898,7 +939,7 @@
                     (lsp-respond id (Some LSPNull) None))))
               (None (lsp-respond id (Some LSPNull) None))))
           (None (lsp-respond id (Some LSPNull) None)))
-        (lsp-loop arena dm ws 1)))))
+        (Step dm ws 1)))))
 
 (defn lsp-chitem-full-list-any (items)
   (match items
@@ -950,8 +991,8 @@
                   (Some tbl (lsp-respond id (Some (LSPArray (lsp-incoming-list-any (call-hierarchy-incoming arena text tbl uri name)))) None))
                   (None (lsp-respond id (Some LSPNull) None))))
               (None (lsp-respond id (Some LSPNull) None)))
-            (lsp-loop arena dm ws 1)))))
-    (None (begin (lsp-respond id (Some LSPNull) None) (lsp-loop arena dm ws 1)))))
+            (Step dm ws 1)))))
+    (None (begin (lsp-respond id (Some LSPNull) None) (Step dm ws 1)))))
 
 (defn lsp-incoming-list-any (calls)
   (match calls
@@ -975,8 +1016,8 @@
                   (Some tbl (lsp-respond id (Some (LSPArray (lsp-outgoing-list-any (call-hierarchy-outgoing arena text tbl uri name)))) None))
                   (None (lsp-respond id (Some LSPNull) None))))
               (None (lsp-respond id (Some LSPNull) None)))
-            (lsp-loop arena dm ws 1)))))
-    (None (begin (lsp-respond id (Some LSPNull) None) (lsp-loop arena dm ws 1)))))
+            (Step dm ws 1)))))
+    (None (begin (lsp-respond id (Some LSPNull) None) (Step dm ws 1)))))
 
 (defn lsp-outgoing-list-any (calls)
   (match calls
@@ -1005,7 +1046,7 @@
             (Some tbl (lsp-respond id (Some (LSPArray (lsp-ihint-list-any (inlay-hints-for text tbl)))) None))
             (None (lsp-respond id (Some LSPNull) None))))
         (None (lsp-respond id (Some LSPNull) None)))
-      (lsp-loop arena dm ws 1))))
+      (Step dm ws 1))))
 
 (defn lsp-ihint-list-any (hints)
   (match hints

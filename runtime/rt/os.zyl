@@ -49,6 +49,11 @@
 
 (defn zyl_path_exists (path) (if (= (ffi-call "%syscall2" 21 (rt-w path) 0 1) 0) 1 0))
 
+; The byte size of the file at path (stat's st_size), or -1; nothing is read.
+(defn zyl_file_size (path)
+  (let st (ffi-call "%tls" "os_stat" 144 1)
+    (if (= (ffi-call "%syscall2" 4 (rt-w path) st 1) 0) (ffi-call "%load64" (+ st 48) 1) -1)))
+
 (defn zyl_chdir (path) (os-ret (ffi-call "%syscall1" 80 (rt-w path) 1)))
 
 ; glibc's rule kept: an unreachable cwd (no leading '/') is a failure.

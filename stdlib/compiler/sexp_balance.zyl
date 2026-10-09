@@ -65,9 +65,9 @@
 
 ; Where a NUL byte ends `text`, read from `path`, before the file does; -1 when
 ; none does. The lexer stops at the first NUL, so the rest would be ignored.
+; The file's size is enough: nothing is read, so nothing is kept.
 (defn sb-nul-offset ((path String) (text String))
-  (let b (ffi-call "zyl_bytebuf_read_file" path 1000)
-    (if (> (bytebuf-len b) (str-length text)) (str-length text) -1)))
+  (if (> (ffi-call "zyl_file_size" path 1000) (str-length text)) (str-length text) -1))
 
 (defn sb-read-all ((fd Int) (acc String))
   (let chunk (file-read fd 1048576)

@@ -34,6 +34,14 @@
 
 (defn ws-roots (ws) (match ws (WS roots roots)))
 
+; The workspace rebuilt in the current heap.
+(defn ws-copy (ws) (match ws (WS roots (WS (ws-copy-roots roots)))))
+
+(defn ws-copy-roots (roots)
+  (match roots
+    (Nil Nil)
+    (Cons r rest (Cons (str-concat "" r) (ws-copy-roots rest)))))
+
 ; Every open document's workspace symbols, filtered by `query`. Real
 ; results for everything the editor has open; a file never opened in
 ; this session isn't indexed (see header comment).

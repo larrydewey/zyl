@@ -11,14 +11,31 @@
 
 (defn rt-oom (requested why) (zyl_arena_oom requested why))
 
-; Out of memory cannot unwind (handlers allocate): report and exit(1).
+; Out of memory cannot unwind (handlers allocate), and the report must not allocate either: it is written in pieces.
 (defn zyl_arena_oom (requested why)
   (let b (rt-budget)
-    (let msg (str-concat "PANIC: error[E_OUT_OF_MEMORY]: " (str-concat why (str-concat "\n  = requested " (str-concat (rt-utext requested)
-               (str-concat " bytes; " (str-concat (rt-utext (rt-ld64 (+ b 16))) (str-concat " bytes already allocated; budget "
-               (str-concat (rt-utext (rt-ld64 (+ b 8))) " bytes\n  = help: set ZYL_MAX_MEMORY to a byte count to raise the budget, or ZYL_MAX_MEMORY=0 to remove it\n"))))))))
-      (let _ (rt-write-fd 2 (rt-w msg) (rt-strlen (rt-w msg)))
-        (ffi-call "%syscall1" 231 1 1)))))
+    (let _ (rt-oom-say "PANIC: error[E_OUT_OF_MEMORY]: ")
+      (let _ (rt-oom-say why)
+        (let _ (rt-oom-say "\n  = requested ")
+          (let _ (rt-oom-num requested)
+            (let _ (rt-oom-say " bytes; ")
+              (let _ (rt-oom-num (rt-ld64 (+ b 16)))
+                (let _ (rt-oom-say " bytes already allocated; budget ")
+                  (let _ (rt-oom-num (rt-ld64 (+ b 8)))
+                    (let _ (rt-oom-say " bytes\n  = help: set ZYL_MAX_MEMORY to a byte count to raise the budget, or ZYL_MAX_MEMORY=0 to remove it\n")
+                      (ffi-call "%syscall1" 231 1 1))))))))))))
+
+(defn rt-oom-say (s) (rt-write-fd 2 (rt-w s) (rt-strlen (rt-w s))))
+
+; n in decimal, built right to left in a static buffer.
+(defn rt-oom-num (n)
+  (let buf (ffi-call "%global" "oom_digits" 32 1)
+    (let at (rt-oom-digits buf 31 (if (< n 0) 0 n))
+      (rt-write-fd 2 (+ buf at) (- 32 at)))))
+
+(defn rt-oom-digits (buf i n)
+  (let _ (ffi-call "%store8" (+ buf i) (+ 48 (% n 10)) 1)
+    (if (or (< n 10) (= i 0)) i (rt-oom-digits buf (- i 1) (/ n 10)))))
 
 ; --- arenas: {head, block_size, total_capacity, total_used, futex lock word}; a block is {mem, cap, used, next} ---
 
@@ -131,7 +148,7 @@
     (let _ (if (= (rt-ld64 (+ g 8)) 0) 0 (let _ (zyl_arena_destroy (rt-ld64 (+ g 8))) (rt-st64 (+ g 8) 0)))
       (let _ (if (= (rt-ld64 g) 0) 0 (let _ (zyl_arena_destroy (rt-ld64 g)) (rt-st64 g 0))) 0))))
 
-(defn rt-heap-fail (msg n) (let m (str-concat msg (str-concat (rt-utext n) "\n")) (let _ (rt-write-fd 2 (rt-w m) (rt-strlen (rt-w m))) 0)))
+(defn rt-heap-fail (msg n) (let _ (rt-oom-say msg) (let _ (rt-oom-num n) (let _ (rt-oom-say "\n") 0))))
 
 ; A hidden qword count before the payload (zyl_variant_eq reads it); single-threaded bumps skip the lock call chain.
 (defn zyl_heap_alloc (size)
