@@ -1,0 +1,7 @@
+; expect-error: E_TYPE_MISMATCH
+; A user struct holding a Float is an aggregate too: C's hypot read it as
+; two doubles that never arrived and returned 0.0.
+(capabilities ffi)
+(defstruct FsPoint (x Float) (y Float))
+(extern "hypot" (FsPoint) Float :timeout 100)
+(defn main () (begin (print (ffi-call "hypot" (FsPoint 3.0 4.0))) 0))

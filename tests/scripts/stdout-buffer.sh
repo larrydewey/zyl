@@ -26,6 +26,7 @@ want=$(printf '%s\n' 0 -1 9223372036854775807 -9223372036854775807 '' 'a b' \
 
 # A child's output follows what the parent printed before spawning it; exit flushes.
 cat > "$SCRATCH/order.zyl" <<'EOF'
+(capabilities io)
 (defn main ()
   (let _ (print "a")
     (let _ (ffi-call "zyl_system_cmd" "echo b" 5000)

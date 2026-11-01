@@ -1,5 +1,6 @@
 ; Collections Regression Tests — Vec, Map, Set, StringBuffer, allocator
 
+(capabilities ffi)
 (use allocator/allocator)
 (use collections/collections)
 (use collections/vec)

@@ -1,5 +1,5 @@
 ; expect-error: E_FFI_RESTRICTED
-; expect-at: raw-malloc-restricted.zyl:13:10
+; expect-at: raw-malloc-restricted.zyl:14:10
 ; alloc-malloc hands back a bare Int that no type follows and nothing ties
 ; to the free that must follow, so a program could hold an address with no
 ; lifetime and read it after the region behind it was reclaimed. The arena
@@ -7,6 +7,7 @@
 ; destroy memory another part of the program still holds). A program that
 ; wants a buffer has (bytebuf R N), whose storage is region-tracked, and
 ; bytebuf-ptr for the address.
+(capabilities ffi)
 (use allocator/allocator)
 
 (defn main ()

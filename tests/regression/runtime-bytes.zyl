@@ -1,4 +1,5 @@
 ; Edge cases of the runtime's ByteBuf/ByteSlice and atomic entries (runtime/rt/bytes.zyl).
+(capabilities ffi)
 (use atomic/atomic)
 (use allocator/allocator)
 

@@ -9,7 +9,7 @@
 ;   2. Legacy fixed-path protocol (`argc < 2`): reads
 ;      /tmp/zyl_boot_in.zyl, writes /tmp/zyl_boot_out.s; a dependency-free smoke path.
 
-(capabilities io)
+(capabilities io ffi actor)
 
 (use compiler/node_tables)
 (use compiler/rt_mode)
@@ -105,43 +105,36 @@
     path
     (str-concat cwd (str-concat "/" path))))
 
-; The last `k` characters of `s`, as a string.
-(defn cli-tail-of (s k) (str-substring s (- (str-len s) k) (str-len s)))
-
-(defn cli-in-list (x xs)
-  (match xs
-    (Nil false)
-    (Cons h t (if (= x h) true (cli-in-list x t)))))
-
 ; The compiler, the LSP, the REPL and the compiler's own tests are the only
 ; entries that hold a long-lived Arena: the parse tree and the REPL scratch
 ; outlive any single frame, so they cannot use a call's frame region.
-; A user program is not in this list, so it cannot obtain an Arena.
+; Each is a path under the checkout this compiler binary was built in
+; (cli-trusted-root); a user program is not, so it cannot obtain an Arena.
 (def cli-internal-entries
   (Cons "selfhost/driver.zyl"
   (Cons "selfhost/lsp_main.zyl"
   (Cons "tools/repl.zyl"
-  (Cons "regression/compiler.zyl"
-  (Cons "regression/balance-agreement.zyl"
-  (Cons "regression/runtime-blake3.zyl"
-  (Cons "regression/runtime-crypto.zyl"
-  (Cons "regression/runtime-tables.zyl"
+  (Cons "tests/regression/compiler.zyl"
+  (Cons "tests/regression/balance-agreement.zyl"
+  (Cons "tests/regression/runtime-blake3.zyl"
+  (Cons "tests/regression/runtime-crypto.zyl"
+  (Cons "tests/regression/runtime-tables.zyl"
   ; runtime-heap.zyl and runtime-bytes.zyl test the runtime's own allocator
   ; and byte primitives (runtime/rt/heap.zyl, bytes.zyl): size classes, big
   ; mappings, reuse, memmove overlap, and the atomic entries -- so they must
   ; name alloc-malloc and the raw address helpers, which a program may not.
   ; They are runtime-internals tests in the same sense as the runtime-*
   ; entries above, and they are in the gate because they must keep passing.
-  (Cons "regression/runtime-heap.zyl"
-  (Cons "regression/runtime-bytes.zyl"
-  (Cons "regression/runtime-text.zyl"
-  (Cons "regression/package-system.zyl"
-  (Cons "regression/collections.zyl"
-  (Cons "integration/parser-verify.zyl"
-  (Cons "integration/pv_min.zyl"
-  (Cons "integration/selfhost-codegen.zyl"
-  (Cons "integration/math-protocol.zyl"
-  (Cons "unit_test.zyl" Nil)))))))))))))))))))
+  (Cons "tests/regression/runtime-heap.zyl"
+  (Cons "tests/regression/runtime-bytes.zyl"
+  (Cons "tests/regression/runtime-text.zyl"
+  (Cons "tests/regression/package-system.zyl"
+  (Cons "tests/regression/collections.zyl"
+  (Cons "tests/integration/parser-verify.zyl"
+  (Cons "tests/integration/pv_min.zyl"
+  (Cons "tests/integration/selfhost-codegen.zyl"
+  (Cons "tests/integration/math-protocol.zyl"
+  (Cons "tests/unit_test.zyl" Nil)))))))))))))))))))
 
 
 (defn cli-ends-with-zyl (s)
@@ -289,18 +282,36 @@
 
 ;; Internal mode is keyed on the entry source, not a flag, so a seed that
 ; predates it still compiles the driver: the driver is what sets it.
-; Whether some suffix of `src` is a listed internal entry. Probing every
-; length avoids any path arithmetic: str-substring on a length is exact,
-; and the longest listed name is 32 characters.
+; The entry must be exactly <root>/<listed path>, where root is the checkout
+; holding the running binary's build/boot; a name alone grants nothing.
 (defn cli-internal-entry-p (src)
-  (cli-suffix-in src 32))
+  (let root (cli-trusted-root (ffi-call "zyl_arg_str" 0 1000))
+    (if (= (str-len root) 0) false (cli-rooted-in src root cli-internal-entries))))
 
-(defn cli-suffix-in (src k)
-  (if (< k 1)
-    false
-    (if (cli-in-list (cli-tail-of src k) cli-internal-entries)
-      true
-      (cli-suffix-in src (- k 1)))))
+(defn cli-rooted-in (src root xs)
+  (match xs
+    (Nil false)
+    (Cons h t (if (str-eq src (str-concat root (str-concat "/" h))) true (cli-rooted-in src root t)))))
+
+; The checkout of an absolute argv0 in <root>/build/boot/, else "" (no internal entries).
+(defn cli-trusted-root (argv0)
+  (if (not (cli-is-absolute argv0)) ""
+    (if (cli-has-dot-segment argv0 0) ""
+      (let dir (ffi-call "zyl_dirname_cstr" argv0 1000)
+        (let suffix "/build/boot/"
+          (let n (str-len dir) (let k (str-len suffix)
+            (if (and (> n k) (str-eq (str-substring dir (- n k) k) suffix))
+              (str-substring dir 0 (- n k))
+              ""))))))))
+
+; Whether a path has a `.` or `..` segment, which would make the prefix test lexical only.
+(defn cli-has-dot-segment (p i)
+  (let n (str-len p)
+    (if (>= i n) false
+      (if (and (= (ffi-call "zyl_cstr_byte_at" p i 1000) 47) (and (< (+ i 1) n) (= (ffi-call "zyl_cstr_byte_at" p (+ i 1) 1000) 46)))
+        (let c (if (< (+ i 2) n) (ffi-call "zyl_cstr_byte_at" p (+ i 2) 1000) 47)
+          (if (or (= c 47) (= c 46)) true (cli-has-dot-segment p (+ i 1))))
+        (cli-has-dot-segment p (+ i 1))))))
 
 (defn cli-internal-mode (src)
   (if (cli-internal-entry-p src)
@@ -891,7 +902,7 @@
 ;
 ; The mode setup below is not a convenience. `cli-run` does exactly this before
 ; every compile, and a check that skipped it disagreed with the build on any
-; path in `cli-internal-entries` -- which is listed by suffix and includes
+; path in `cli-internal-entries` -- which lists checkout paths and includes
 ; several tests that legitimately need raw memory, such as
 ; regression/balance-agreement.zyl, which fuzzes the lexer through a real
 ; arena. `zyl check` reported E_FFI_RESTRICTED for a program the build

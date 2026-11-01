@@ -10,6 +10,7 @@
 ; feature — are compile-time errors, so they live in tests/packages-fail/
 ; where the runner checks that compilation actually fails.
 
+(capabilities io)
 (use compiler/package)
 (use compiler/qualify)
 ; Both of these define `st-make`. They are two modules of one package

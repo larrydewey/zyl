@@ -1,3 +1,4 @@
+(capabilities ffi)
 (use allocator/allocator)
 ; Types Regression Tests — HM inference, traits, generics, TCap/TMut
 (use core/core)

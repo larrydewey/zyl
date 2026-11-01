@@ -65,7 +65,29 @@
   (or (str-eq s "zyl_actor_id")
   (or (str-eq s "zyl_actor_join_unjoined")
   (or (str-eq s "zyl_chan_spawn_moves")
-      (str-eq s "zyl_repl_global_set"))))))))))))))))))))))))))))))))))))))))
+  (or (str-eq s "zyl_repl_global_set")
+      (ffi-raw-addr-p s)))))))))))))))))))))))))))))))))))))))))
+
+; Entries that take an address, free memory, fill a buffer by length, or hand out an Arena.
+(defn ffi-raw-addr-p (s)
+  (or (ffi-atomic-entry-p s)
+  (or (str-eq s "zyl_mem_free")
+  (or (str-eq s "zyl_random_fill")
+  (or (str-eq s "zyl_zeroize")
+  (or (str-eq s "zyl_session_arena")
+  (or (str-eq s "zyl_heap_swap")
+  (or (str-eq s "zyl_heap_block_p")
+      (str-eq s "zyl_ffi_lookup")))))))))
+
+(defn ffi-atomic-entry-p (s)
+  (or (str-eq s "zyl_atomic_add")
+  (or (str-eq s "zyl_atomic_cas")
+  (or (str-eq s "zyl_atomic_fetch_add")
+  (or (str-eq s "zyl_atomic_load")
+  (or (str-eq s "zyl_atomic_max")
+  (or (str-eq s "zyl_atomic_min")
+  (or (str-eq s "zyl_atomic_store")
+      (str-eq s "zyl_atomic_sub")))))))))
 
 ; Built once, before the compiler's main runs.
 (def ffi-sig-tab (ffi-sig-table))

@@ -1,0 +1,5 @@
+; expect-error: E_FFI_RESTRICTED
+; The constructor passed as a value builds the same unchecked view.
+(use text/view)
+(defn mk (f) (f "ab" 100000000 1))
+(defn main () (let v (mk StrViewC) (begin (print (view-byte-at v 0)) 0)))

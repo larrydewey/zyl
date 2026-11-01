@@ -1,0 +1,4 @@
+; expect-error: E_PKG_CAPABILITY_VIOLATION
+; repl/history writes a file: calling it is the act its body performs.
+(use repl/history)
+(defn main () (begin (hist-append "x") 0))

@@ -1,0 +1,4 @@
+; expect-error: E_FFI_RESTRICTED
+; The view entries trust a StrView's range; only text/view's checked functions build one.
+(use text/view)
+(defn main () (let v (StrViewC "ab" -2000 4000) (begin (print (view-byte-at v 0)) 0)))

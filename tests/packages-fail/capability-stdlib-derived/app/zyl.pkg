@@ -1,0 +1,6 @@
+; The dependency declares no capabilities and runs a shell through a
+; standard-library function: the call needs what the function's body does.
+(package (numeric checked)
+  (name "app/stdlib-derived") (version "0.1.0") (zyl "5.0") (edition "2026")
+  (capabilities)
+  (deps (dep "acme/pure" "1.0.0" (path "../lib"))))

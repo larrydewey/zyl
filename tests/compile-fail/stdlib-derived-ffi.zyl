@@ -1,0 +1,4 @@
+; expect-error: E_PKG_CAPABILITY_VIOLATION
+; alloc-read-int reads any address it is given: that is what C can do, so it needs ffi.
+(use allocator/allocator)
+(defn main () (let b (bytebuf Heap 16) (begin (print (alloc-read-int (+ (bytebuf-ptr b) 4096))) 0)))

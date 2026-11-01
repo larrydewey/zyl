@@ -417,7 +417,26 @@ compile with `build/boot/zyl-self` on 2026-09-28.
   manifest; a lone file compiles as `local/main`@0 and declares its
   capabilities with a top-level `(capabilities ...)` form (absent means
   none, enforced as a manifest's; a REPL session types the form). An
-  `ffi-call` of a `zyl_*` runtime entry needs no `ffi` grant.
+  `ffi-call` of a `zyl_*` runtime entry needs no `ffi` grant, but one that
+  reaches the world (process, file system, environment, clock, terminal,
+  OS entropy) needs `io`, and the address entries need `ffi`
+  (`cc-entry-capability`). A call into the standard library needs every
+  capability its body reaches, a fixpoint over the stdlib call graph
+  (`cc-std-needs`): `compiler/store`, `repl/history`, `math/rand/crypto`
+  need `io`; `atomic/atomic` and the allocator's address readers need
+  `ffi`. Secret is not derived (a type obligation, not authority);
+  stdlib `impl` bodies are not yet part of the derivation.
+- Red-team fixes (2026-10-31): `E_FFI_RESTRICTED` now covers `impl` method
+  bodies (they were unchecked), restricted wrappers named as values,
+  `alloc-int`, the `StrViewC` constructor (forged off/len read process
+  memory), and the address/arena entries `zyl_atomic_*`, `zyl_mem_free`,
+  `zyl_random_fill`, `zyl_zeroize`, `zyl_session_arena`, `zyl_heap_swap`,
+  `zyl_heap_block_p`, `zyl_ffi_lookup`. Internal mode is granted to the
+  listed paths under the checkout holding the running `build/boot/`
+  (`cli-trusted-root`), no longer by path suffix; `install.sh` builds the
+  REPL and LSP with the checkout's copy of the compiler for that reason.
+  A user struct or deftype holding a Float, at any depth, in an `extern`
+  signature is `E_TYPE_MISMATCH`.
 
 ### Tools
 
@@ -467,6 +486,13 @@ compile with `build/boot/zyl-self` on 2026-09-28.
 
 Language and compiler:
 
+- `bytebuf-ptr` returns the buffer's address as a plain `Int` (`Ptr` is a
+  spelling of `Int`), so a program can print an ASLR-dependent value
+  (spec §27 says memory layout is not observable). Making `Ptr` opaque or
+  gating `bytebuf-ptr` behind `ffi` is an open language decision.
+- `zyl_ref_*` is a shared mutable cell any program may create; two actors
+  sharing one race (needs `actor`). Whether refs stay a program surface is
+  an open language decision.
 - `make-struct` is not typed (`E_CANNOT_INFER`); call the constructor.
 - Match guards work only on literal arms: after a `range` a guard is
   `E_ARITY_MISMATCH`, on a constructor arm `E_NESTED_PATTERN`, and a

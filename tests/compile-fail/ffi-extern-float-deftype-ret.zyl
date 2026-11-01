@@ -1,0 +1,7 @@
+; expect-error: E_TYPE_MISMATCH
+; A deftype whose field nests a Float, as an extern result: reading it crashed.
+(capabilities ffi)
+(deftype FtInner (FtInnerC Float))
+(deftype FtOuter (FtOuterC Int FtInner))
+(extern "fabs" (Float) FtOuter :timeout 100)
+(defn main () (match (ffi-call "fabs" -2.5) (FtOuterC n _ (begin (print n) 0))))

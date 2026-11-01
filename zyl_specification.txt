@@ -1703,7 +1703,12 @@ E_PKG_CAPABILITY_VIOLATION, reported at the construct and naming the line
 that grants it. Only the providers are not policed: the implicit standard
 library (§25) and the runtime module. An `ffi-call` of a `zyl_*` runtime
 entry is the language's own, not a foreign call, and needs no `ffi`
-grant; the raw entries a program may not reach are E_FFI_RESTRICTED.
+grant; the raw entries a program may not reach are E_FFI_RESTRICTED. A
+runtime entry that reaches the world (a process, the file system, the
+environment, the clock, the terminal, OS entropy) needs `io`, and a call
+into a stdlib function needs every capability its body reaches, derived
+over the stdlib call graph: the module a function sits in does not hide
+what it does.
 
 A declared set is a ceiling on the declaring package. It is not re-granted
 per edge. The effective transitive closure is computed and written to the

@@ -31,6 +31,7 @@ trap 'rm -rf "$BIN"' EXIT
 # The image is real bytes rather than a buffer of zeros so that a trailer
 # written into the wrong place cannot pass by landing on zeroes.
 cat > "$BIN/t.zyl" <<'EOF'
+(capabilities io)
 (use compiler/provenance)
 
 (def seed "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60")

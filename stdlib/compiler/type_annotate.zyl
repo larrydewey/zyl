@@ -2124,8 +2124,35 @@
 (defn ta-extern-ok (st t)
   (match (ta-resolve st t)
     (TaV _ false)
-    (TaC n args (if (ta-streq n "Float") (ta-float-bare-p args) (ta-extern-plain st args)))
+    (TaC n args (if (ta-streq n "Float") (ta-float-bare-p args) (and (ta-extern-plain st args) (not (ta-float-held st n Nil)))))
     (TaF ps r (and (ta-extern-plain st ps) (ta-extern-ok st r)))))
+
+; Whether some constructor of the type named `n` has a Float in a field, at any depth; `seen` stops recursive types.
+(defn ta-float-held (st n seen)
+  (if (ta-str-in n seen) false
+    (ta-ctors-float st n (Cons n seen) 0 (ffi-call "zyl_wvec_len" ta-ctor-names 1000))))
+
+(defn ta-ctors-float (st n seen i len)
+  (if (>= i len) false
+    (match (ta-sget-or (ta-variants st) (ffi-call "zyl_wvec_get" ta-ctor-names i 1000) (ta-no-vd))
+      (TaVd tn _ t _ _ _
+        (if (and (ta-streq tn n) (ta-fields-float st t seen)) true (ta-ctors-float st n seen (+ i 1) len))))))
+
+(defn ta-fields-float (st t seen)
+  (match t
+    (TaF ps _ (ta-tys-float st ps seen))
+    (_ false)))
+
+(defn ta-tys-float (st ts seen)
+  (match ts
+    (Nil false)
+    (Cons t rest (or (ta-ty-float st t seen) (ta-tys-float st rest seen)))))
+
+(defn ta-ty-float (st t seen)
+  (match (ta-resolve st t)
+    (TaV _ false)
+    (TaC m args (if (ta-streq m "Float") true (or (ta-tys-float st args seen) (ta-float-held st m seen))))
+    (TaF ps r (or (ta-tys-float st ps seen) (ta-ty-float st r seen)))))
 
 ; (Float) is the type; a Float applied to arguments is a constructor this
 ; pass does not know, and is treated as the nested case.
@@ -2141,7 +2168,7 @@
 (defn ta-extern-word (st t)
   (match (ta-resolve st t)
     (TaV _ false)
-    (TaC n args (and (not (ta-streq n "Float")) (ta-extern-plain st args)))
+    (TaC n args (and (not (ta-streq n "Float")) (and (ta-extern-plain st args) (not (ta-float-held st n Nil)))))
     (TaF ps r (and (ta-extern-plain st ps) (ta-extern-word st r)))))
 
 (defn ta-unify-pairs (st xs ys)

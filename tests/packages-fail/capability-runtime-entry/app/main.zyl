@@ -1,0 +1,3 @@
+; expect-error: E_PKG_CAPABILITY_VIOLATION
+(use acme/pure { add1 })
+(defn main () (add1 1))

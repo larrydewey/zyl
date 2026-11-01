@@ -1,5 +1,6 @@
 ; Edge cases of the runtime's word arrays, typed arrays, attribute tables, refs and StrBuf (runtime/rt/tables.zyl).
 
+(capabilities io)
 (defn arena () (ffi-call "zyl_arena_create" 0 1000))
 
 (test "words"

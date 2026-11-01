@@ -72,17 +72,21 @@ cp "$SCRIPT_DIR/build/boot/rt.s" "$SCRIPT_DIR/build/boot/start.s" "$TARGET/"
 [ -f "$SCRIPT_DIR/build/boot/rt.zo" ] && cp "$SCRIPT_DIR/build/boot/rt.zo" "$TARGET/"
 cp "$SCRIPT_DIR/build/boot/stage2.bin" "$TARGET/bin/stage2.bin"
 
-# Both tools below are compiled BY the compiler just installed, against
+# Both tools below are compiled by the compiler just installed (the
+# checkout's byte-identical copy of it, see below), against
 # the stdlib just copied -- so they are built from exactly the sources
 # this install ships, not from whatever build/boot happened to hold.
 # ZYL_HOME is set explicitly for the same reason boot.sh sets it: an
 # older populated ~/.zyl would otherwise win the bundledir search and
 # silently compile these against stale stdlib sources.
+# The checkout's own copy of the same binary runs these: the REPL and the
+# LSP are internal entries, honoured only under the checkout a compiler
+# runs from (cli-trusted-root in selfhost/driver.zyl).
 echo "Building the REPL..."
-ZYL_HOME="$TARGET" "$TARGET/bin/stage2.bin" "$SCRIPT_DIR/tools/repl.zyl" -o "$TARGET/bin/zyl-repl-bin"
+ZYL_HOME="$TARGET" "$SCRIPT_DIR/build/boot/stage2.bin" "$SCRIPT_DIR/tools/repl.zyl" -o "$TARGET/bin/zyl-repl-bin"
 
 echo "Building the language server..."
-ZYL_HOME="$TARGET" "$TARGET/bin/stage2.bin" "$SCRIPT_DIR/selfhost/lsp_main.zyl" -o "$TARGET/bin/zyl-lsp-bin"
+ZYL_HOME="$TARGET" "$SCRIPT_DIR/build/boot/stage2.bin" "$SCRIPT_DIR/selfhost/lsp_main.zyl" -o "$TARGET/bin/zyl-lsp-bin"
 
 cat > "$TARGET/bin/zyl" <<WRAPPER
 #!/usr/bin/env bash

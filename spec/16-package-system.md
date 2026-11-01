@@ -30,7 +30,10 @@ Deliberate deviations (recorded in `PROGRESS.md`):
   `zyl.pkg` or the compiled file. `deny-capabilities` still comes from a
   root `zyl.pkg` only. An `ffi-call` of a `zyl_*` runtime entry is the
   language's own, not foreign, and needs no `ffi` grant (`E_FFI_RESTRICTED`
-  guards the raw entries).
+  guards the raw entries); an entry that reaches the world (a process, the
+  file system, the environment, the clock, the terminal, OS entropy) needs
+  `io`. A call into the standard library needs every capability its body
+  reaches, derived over the call graph (`cc-std-needs`).
 - **Module layout:** module path `M` of package `P` is the file
   `<root of P>/M.zyl`; a package's root module, which `(use acme/json)`
   names, is the module spelled by the name's last segment.

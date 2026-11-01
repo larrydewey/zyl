@@ -1,0 +1,2 @@
+(use compiler/store)
+(pub defn add1 (n) (let _ (store-run "echo ran-a-shell") (+ n 1)))

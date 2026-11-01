@@ -298,6 +298,9 @@
 ; caller left in the tree is one of those, so a user program cannot obtain
 ; untracked raw memory by either route.
 (defn ac-arena-wrapper-p (key)
+  (if (ac-foreign-key-p key) false (ac-std-wrapper-p key)))
+
+(defn ac-std-wrapper-p (key)
   (or (ac-key-is key "arena-create")
   (or (ac-key-is key "arena-destroy")
   (or (ac-key-is key "arena-reset")
@@ -307,7 +310,15 @@
   (or (ac-key-is key "arena-capacity")
   (or (ac-key-is key "buf-new")
   (or (ac-key-is key "alloc-malloc")
-      (ac-key-is key "alloc-free")))))))))))
+  (or (ac-key-is key "alloc-free")
+  (or (ac-key-is key "alloc-int")
+      (ac-stdlib-ctor-p key)))))))))))))
+
+; alloc-int is alloc-malloc plus a store. StrViewC is trusted by the
+; view entries, which never re-check off/len against the base string:
+; a view is built only by view.zyl's checked functions.
+(defn ac-stdlib-ctor-p (key)
+  (ac-key-is key "StrViewC"))
 
 ; Whether a canonical key ends in `::name` (or is exactly it).
 (defn ac-key-is (key name)
@@ -324,18 +335,25 @@
 ; hits this diagnostic is almost certainly allocating a buffer for
 ; something; the arena wrappers get the general advice instead.
 (defn ac-malloc-p (name)
-  (or (ac-key-is name "alloc-malloc") (ac-key-is name "alloc-free")))
+  (or (ac-key-is name "alloc-malloc") (or (ac-key-is name "alloc-free") (ac-key-is name "alloc-int"))))
 
 (defn ac-arena-help (name)
   (if (ac-malloc-p name)
     "allocate (bytebuf Heap N) instead and take its address with bytebuf-ptr: that buffer is region-tracked, and this one is a bare word no type follows"
-    "use the typed standard-library collection it backs, which allocates in a region"))
+  (if (ac-stdlib-ctor-p name)
+    "make the view with view-of, view-slice! or view-slice?, which check the range against the string"
+    "use the typed standard-library collection it backs, which allocates in a region")))
+
+(defn ac-arena-msg-for (name)
+  (if (ac-stdlib-ctor-p name)
+    (str-concat "`" (str-concat (err-name name) "` builds a view the runtime trusts without checking its range: only text/view may construct one"))
+    (ac-arena-msg name)))
 
 (defn ac-check-arena-wrapper (name site)
   (if (ac-arena-wrapper-p name)
     (if (ac-may-raw)
       unit
-      (ffi-fail "E_FFI_RESTRICTED" (ac-arena-msg name) (ac-arena-help name) site))))
+      (ffi-fail "E_FFI_RESTRICTED" (ac-arena-msg-for name) (ac-arena-help name) site))))
 
 ; Run from the arity pass only, where ac-cur-fn names the definition.
 (defn ffi-check-raw (args site)
@@ -390,9 +408,42 @@
             (let _ (ffi-call "zyl_ref_set" ac-cur-fn name 1000)
               (ac-expr body arities (ac-wrap-unknown (ac-param-names params)))))
           (ETestDecl _ body _ _ (let _ (ffi-call "zyl_ref_set" ac-cur-fn "" 1000) (ac-expr body arities Nil)))
-          (EUnknown _ _ (ac-expr e arities Nil))
+          (EDef name val (let _ (ffi-call "zyl_ref_set" ac-cur-fn name 1000) (ac-expr val arities Nil)))
+          (EImplBlock tr ty bodies
+            (let _ (ffi-call "zyl_ref_set" ac-cur-fn (ac-impl-owner tr ty) 1000) (ac-impl-bodies bodies arities)))
+          (EUnknown _ _ (let _ (ffi-call "zyl_ref_set" ac-cur-fn "" 1000) (ac-expr e arities Nil)))
           (_ 0))
         (ac-check-top rest arities)))))
+
+; An impl is the standard library's only when its trait and its type both are.
+(defn ac-impl-owner (tr ty)
+  (if (and (ac-std-key-p tr) (ac-std-key-p ty)) "zyl/std@impl" ""))
+
+(defn ac-std-key-p (n)
+  (and (>= (str-length n) 8) (str-eq (str-substring n 0 8) "zyl/std@")))
+
+; A name another package defines: qualified, and not the standard library's.
+(defn ac-foreign-key-p (n)
+  (if (ac-std-key-p n) false (ac-has-colons n 0)))
+
+(defn ac-has-colons (n i)
+  (if (>= (+ i 1) (str-length n))
+    false
+    (if (and (= (ffi-call "zyl_cstr_byte_at" n i 1000) 58) (= (ffi-call "zyl_cstr_byte_at" n (+ i 1) 1000) 58))
+      true
+      (ac-has-colons n (+ i 1)))))
+
+(defn ac-impl-bodies (bodies arities)
+  (match bodies
+    (Nil 0)
+    (Cons b rest
+      (match b
+        (IB d
+          (match d
+            (DN _ params body
+              (begin
+                (ac-expr body arities (ac-wrap-unknown (ac-param-names params)))
+                (ac-impl-bodies rest arities)))))))))
 
 (defn ac-param-names (params)
   (match params
@@ -456,7 +507,8 @@
     (EMakeStruct _ fields (ac-list fields arities shadowed))
     (ETuple elems (ac-list elems arities shadowed))
     (ETupleGet tg _ (ac-expr tg arities shadowed))
-    (EMakeVariant _ _ args (ac-list args arities shadowed))
+    (EMakeVariant _ ctor args (let _ (ac-check-arena-wrapper ctor e) (ac-list args arities shadowed)))
+    (EAtom a (ac-atom-ref a shadowed e))
     (EPrint exprs (ac-list exprs arities shadowed))
     (EExit c (ac-expr c arities shadowed))
     (EClose e2 (ac-expr e2 arities shadowed))
@@ -486,6 +538,12 @@
       (ffi-fail "E_MALFORMED_FORM"
                 (str-concat "malformed `" (str-concat name "` form: its arguments do not have the shape the form requires"))
                 "see the form's syntax in the specification" e))
+    (_ 0)))
+
+; A restricted entry named as a value is the same reach as a call to it.
+(defn ac-atom-ref (a shadowed site)
+  (match a
+    (AIdent n (if (= (ac-lookup-local n shadowed) -2) (let _ (ac-check-arena-wrapper n site) 0) 0))
     (_ 0)))
 
 (defn ac-unquote-name (n) (or (str-eq n "unquote") (str-eq n "unquote-splicing")))

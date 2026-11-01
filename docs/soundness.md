@@ -210,16 +210,27 @@ recording because the failure mode was silence:
 ### L5 — A program cannot name a raw memory operation · *Enforced*
 
 `E_FFI_RESTRICTED` refuses an `ffi-call` naming a raw runtime entry
-(`ffi_sigs.zyl`'s `ffi-raw-p` — 37 entries covering `zyl_mem_alloc`,
-`zyl_arena_*`, `zyl_word_*`, `zyl_heap_alloc`, `zyl_val_*` and the rest).
-The allocator wrappers are refused by name at the call site, so all three
-routes are closed: the raw `ffi-call`, the wrapper, and reading an `Arena`
-field, which is nominal and will not unify with `Int`.
+(`ffi_sigs.zyl`'s `ffi-raw-p`: `zyl_mem_alloc`, `zyl_arena_*`,
+`zyl_word_*`, `zyl_heap_alloc`, `zyl_val_*`, every entry that takes a
+caller's address -- `zyl_atomic_*`, `zyl_mem_free`, `zyl_random_fill`,
+`zyl_zeroize` -- and `zyl_session_arena`/`zyl_heap_swap`). The allocator
+wrappers that allocate (`alloc-malloc`, `alloc-free`, `alloc-int`, the
+arena wrappers) are refused by name at the call site and as a value, and
+`StrViewC`, whose range the view entries trust, may be constructed only by
+`text/view`. The check covers `impl` method bodies as well as `defn`s.
+The wrappers that read or write a caller's address (`alloc-read-int`,
+`alloc-write-int`, `alloc-offset`, `alloc-cstr`, `atomic/atomic`) need the
+`ffi` capability: an address is what C code hands back, and with `ffi` a
+program may already call C (`capability_check.zyl` derives what each
+standard-library function reaches). Reading an `Arena` field is nominal
+and will not unify with `Int`.
 
 A program also cannot obtain an arena. The collections allocate from
 regions and take no arena parameter; what still holds one is the compiler,
 the LSP and the REPL, whose parse trees and scratch outlive any frame, and
-those are compiled in an internal mode.
+those are compiled in an internal mode, granted only to the listed paths
+under the checkout whose `build/boot/` holds the running compiler
+(`cli-trusted-root`, `selfhost/driver.zyl`), never by a file name alone.
 
 ### L6 — Indexed access is bounds-checked · *Enforced*
 

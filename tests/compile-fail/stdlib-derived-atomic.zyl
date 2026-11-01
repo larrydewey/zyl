@@ -1,0 +1,4 @@
+; expect-error: E_PKG_CAPABILITY_VIOLATION
+; atomic/atomic takes a computed Int address; without ffi a program uses bytebuf-atomic-* instead.
+(use atomic/atomic)
+(defn main () (let b (bytebuf Heap 8) (begin (atomic-store (+ (bytebuf-ptr b) 64) 65) 0)))

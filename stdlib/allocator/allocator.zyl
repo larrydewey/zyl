@@ -7,10 +7,11 @@
 ; NOTE: No garbage collection or refcounting. Deterministic by design
 ;       (spec §9 regions).
 ;
-; A program sees the string helpers, which need no memory of their own,
-; and nothing below them: alloc-malloc, alloc-free and the arena wrappers
-; are E_FFI_RESTRICTED. See the arena section for why, and for what a
-; program uses instead.
+; A program sees the string helpers, which need no memory of their own.
+; alloc-malloc, alloc-free, alloc-int and the arena wrappers are
+; E_FFI_RESTRICTED; the address readers and writers (alloc-read-int,
+; alloc-write-int, alloc-offset, alloc-cstr, alloc-incr, alloc-decr) need
+; the ffi capability. See the arena section for what a program uses instead.
 
 ; ===========================================================================
 ; RAW ALLOCATION -- INTERNAL (E_FFI_RESTRICTED)

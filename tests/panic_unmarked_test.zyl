@@ -2,6 +2,7 @@
 ; the standard library's own definitions -- so the check is driven here on
 ; hand-built definitions whose names carry the stdlib key.
 
+(capabilities io)
 (use core/core)
 (use core/list)
 (use text/view)

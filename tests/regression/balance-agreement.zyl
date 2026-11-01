@@ -3,6 +3,7 @@
 ; retyped), sexp_balance finds the same first fault as a bracket walk over
 ; the lexer's own tokens. Too slow to interpret (DIFF_SKIP).
 
+(capabilities io)
 (use allocator/allocator)
 (use compiler/ast)
 (use compiler/lexer)

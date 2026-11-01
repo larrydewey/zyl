@@ -1,0 +1,4 @@
+; expect-error: E_PKG_CAPABILITY_VIOLATION
+; A runtime entry that runs a process is IO: (capabilities) is pure computation (spec §31.9).
+(capabilities)
+(defn main () (begin (ffi-call "zyl_system_cmd" "echo shell" 1000) 0))

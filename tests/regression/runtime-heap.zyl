@@ -1,4 +1,5 @@
 ; The runtime's own allocator (runtime/rt/heap.zyl): size classes, big mappings, reuse, memmove overlap.
+(capabilities ffi)
 (use allocator/allocator)
 
 (defn rh-size (i)

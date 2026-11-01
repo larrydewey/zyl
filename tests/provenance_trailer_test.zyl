@@ -1,3 +1,4 @@
+(capabilities io)
 (use core/list)
 (use encoding/cbor)
 (use encoding/cose)

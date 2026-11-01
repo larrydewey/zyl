@@ -1,5 +1,6 @@
 ; AES-NI block encryption, system entropy and zeroization (runtime/rt/crypto.zyl).
 
+(capabilities io)
 (use math/words)
 
 (defn arena () (ffi-call "zyl_arena_create" 0 1000))

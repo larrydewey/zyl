@@ -1,5 +1,6 @@
 ; The environment (runtime/rt/env.zyl): envp from zyl_save_args, the Zyl getenv, envp reaching children; proc.zyl's spawn.
 
+(capabilities io)
 (test "getenv"
   (begin
     (assert-equal (> (str-length (ffi-call "zyl_getenv_str" "PATH" 1000)) 0) true)

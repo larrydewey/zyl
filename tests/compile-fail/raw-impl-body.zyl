@@ -1,0 +1,8 @@
+; expect-error: E_FFI_RESTRICTED
+; expect-at: raw-impl-body.zyl:7:58
+; An impl method is checked like a defn: a raw entry in one is no less raw.
+(capabilities ffi)
+(deftype Probe (ProbeC Int))
+(trait Peek (peek (self) Int))
+(impl Peek Probe (defn peek (self) (match self (ProbeC a (ffi-call "zyl_word_load" a 1000)))))
+(defn main () (let p (ProbeC 4198400) (begin (print (p.peek)) 0)))

@@ -1,0 +1,3 @@
+; expect-error: E_FFI_RESTRICTED
+; A program cannot obtain an arena (docs/soundness.md), so zyl_session_arena is the standard library's.
+(defn main () (let a (ffi-call "zyl_session_arena" 1000) (begin (ffi-call "zyl_heap_swap" a 1000) 0)))

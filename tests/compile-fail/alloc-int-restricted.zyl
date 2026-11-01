@@ -1,0 +1,5 @@
+; expect-error: E_FFI_RESTRICTED
+; alloc-int is alloc-malloc and a store: untracked memory, even with the ffi grant.
+(capabilities ffi)
+(use allocator/allocator)
+(defn main () (begin (print (alloc-int 7)) 0))

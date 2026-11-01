@@ -1,0 +1,4 @@
+; expect-error: E_PKG_CAPABILITY_VIOLATION
+; OS entropy is input from outside the program, so math/rand/crypto needs io.
+(use math/rand/crypto)
+(defn main () (begin (print (sysrng-next-u64)) 0))

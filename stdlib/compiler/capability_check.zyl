@@ -93,7 +93,50 @@
     (cc-name-capability n)))
 
 (defn cc-ffi-symbol-capability (sym)
-  (if (cc-runtime-symbol-p sym) "" "ffi"))
+  (if (cc-runtime-symbol-p sym) (cc-entry-capability sym) "ffi"))
+
+; A runtime entry is the language's own, but one that reaches the world is the act its capability names: §31.9 `(capabilities)` is pure computation.
+(defn cc-entry-capability (s)
+  (if (cc-io-entry-p s) "io"
+  (if (cc-addr-entry-p s) "ffi" "")))
+
+; Processes, files, directories, the environment, the clock, the terminal and OS entropy.
+(defn cc-io-entry-p (s)
+  (or (str-eq s "zyl_system_cmd")
+  (or (str-eq s "zyl_exec_cmd")
+  (or (str-eq s "zyl_run_bin")
+  (or (str-eq s "zyl_mkdir_p")
+  (or (str-eq s "zyl_chdir")
+  (or (str-eq s "zyl_getcwd")
+  (or (str-eq s "zyl_list_files")
+  (or (str-eq s "zyl_list_zyl_files")
+  (or (str-eq s "zyl_file_size")
+  (or (str-eq s "zyl_path_exists")
+  (or (str-eq s "zyl_blake3_file_hex")
+  (or (str-eq s "zyl_bytebuf_read_file")
+  (or (str-eq s "zyl_bytebuf_write_exec")
+  (or (str-eq s "zyl_getenv")
+  (or (str-eq s "zyl_getenv_str")
+  (or (str-eq s "zyl_read_line")
+  (or (str-eq s "zyl_now_ms")
+  (or (str-eq s "zyl_random_words")
+  (or (str-eq s "zyl_random_fill")
+      (cc-term-entry-p s)))))))))))))))))))))
+
+(defn cc-term-entry-p (s)
+  (and (> (pk-len s) 9) (str-eq (pk-sub s 0 9) "zyl_term_")))
+
+; Entries that read or write an address the caller supplies: what C could do, so `ffi`.
+(defn cc-addr-entry-p (s)
+  (or (ffi-atomic-entry-p s)
+  (or (str-eq s "zyl_mem_read")
+  (or (str-eq s "zyl_mem_write")
+  (or (str-eq s "zyl_ptr_add")
+  (or (str-eq s "zyl_ptr_cstr")
+  (or (str-eq s "zyl_mem_alloc")
+  (or (str-eq s "zyl_mem_free")
+  (or (str-eq s "zyl_word_load")
+      (str-eq s "zyl_word_store"))))))))))
 
 ; `%` is a locked primitive and `zyl_*` is a runtime entry only when the
 ; signature table declares it (ffi_sigs.zyl). The prefix alone decides
@@ -184,7 +227,130 @@
 ; ===========================================================================
 
 (defn cc-check-program (prog grants denied)
-  (cc-check-forms prog grants denied))
+  (let _ (cc-std-reset prog)
+    (cc-check-forms prog grants denied)))
+
+; ===========================================================================
+; WHAT A STANDARD-LIBRARY FUNCTION REACHES
+; ===========================================================================
+; The standard library is not policed, but a call into it is the act its
+; body performs: (store-run ...) runs a shell as surely as zyl_system_cmd
+; does. So each stdlib definition's capabilities are the union of its own
+; constructs and of every stdlib definition it names, to a fixpoint over
+; the call graph, and a policed call needs them all. Bits: io 1, ffi 2,
+; actor 4. Secret is a type obligation, not authority, and is not derived.
+
+(def cc-std-prog (ffi-call "zyl_ref_new" Nil 1000))
+(def cc-std-ready (ffi-call "zyl_ref_new" false 1000))
+(def cc-std-index (ffi-call "zyl_smap_new" 1000))
+(def cc-std-mask (ffi-call "zyl_wvec_new" 1000))
+(def cc-std-edges (ffi-call "zyl_wvec_new" 1000))
+
+; One compile per program: the tables are built on the first policed call into the library.
+(defn cc-std-reset (prog)
+  (let _ (ffi-call "zyl_ref_set" cc-std-prog prog 1000)
+    (ffi-call "zyl_ref_set" cc-std-ready false 1000)))
+
+(defn cc-std-key-p (n)
+  (and (> (pk-len n) 8) (str-eq (pk-sub n 0 8) "zyl/std@")))
+
+; The capability bits a call to, or a reference to, a stdlib definition carries.
+(defn cc-std-needs (e)
+  (match (Expr.inner e)
+    (EApply n _ (cc-std-name-mask n))
+    (EAtom a (match a (AIdent n (cc-std-name-mask n)) (_ 0)))
+    (_ 0)))
+
+(defn cc-std-name-mask (n)
+  (if (not (cc-std-key-p n)) 0
+    (let _ (cc-std-ensure)
+      (if (ffi-call "zyl_smap_has" cc-std-index n 1000)
+        (ffi-call "zyl_wvec_get" cc-std-mask (ffi-call "zyl_smap_get" cc-std-index n 1000) 1000)
+        0))))
+
+(defn cc-std-ensure ()
+  (if (ffi-call "zyl_ref_get" cc-std-ready 1000) unit
+    (let _ (ffi-call "zyl_smap_clear" cc-std-index 1000)
+      (let _ (ffi-call "zyl_wvec_truncate" cc-std-mask 0 1000)
+        (let _ (ffi-call "zyl_wvec_truncate" cc-std-edges 0 1000)
+          (let forms (ffi-call "zyl_ref_get" cc-std-prog 1000)
+            (let _ (cc-std-number forms)
+              (let _ (cc-std-scan forms)
+                (let _ (cc-std-fix)
+                  (ffi-call "zyl_ref_set" cc-std-ready true 1000))))))))))
+
+(defn cc-std-def-name (e)
+  (match (Expr.inner e)
+    (EDefn name _ _ (if (cc-std-key-p name) name ""))
+    (EDef name _ (if (cc-std-key-p name) name ""))
+    (_ "")))
+
+; Give every stdlib definition an index, in program order.
+(defn cc-std-number (forms)
+  (match forms
+    (Nil unit)
+    (Cons e rest
+      (let n (cc-std-def-name e)
+        (let _ (if (or (= (pk-len n) 0) (ffi-call "zyl_smap_has" cc-std-index n 1000)) unit
+                 (let i (ffi-call "zyl_wvec_len" cc-std-mask 1000)
+                   (let _ (ffi-call "zyl_smap_put" cc-std-index n i 1000)
+                     (let _ (ffi-call "zyl_wvec_push" cc-std-mask 0 1000)
+                       (let _ (ffi-call "zyl_wvec_push" cc-std-edges Nil 1000) unit)))))
+          (cc-std-number rest))))))
+
+; Each definition's own bits and the stdlib names it mentions.
+(defn cc-std-scan (forms)
+  (match forms
+    (Nil unit)
+    (Cons e rest
+      (let n (cc-std-def-name e)
+        (let _ (if (= (pk-len n) 0) unit
+                 (let i (ffi-call "zyl_smap_get" cc-std-index n 1000)
+                   (match (cc-std-body-scan (Cons e Nil) 0 Nil)
+                     (Pair m es
+                       (let _ (ffi-call "zyl_wvec_set" cc-std-mask i (bit-or m (ffi-call "zyl_wvec_get" cc-std-mask i 1000)) 1000)
+                         (ffi-call "zyl_wvec_set" cc-std-edges i (list-append es (ffi-call "zyl_wvec_get" cc-std-edges i 1000)) 1000))))))
+          (cc-std-scan rest))))))
+
+(defn cc-std-body-scan (todo m es)
+  (match todo
+    (Nil (Pair m es))
+    (Cons e rest
+      (let m2 (bit-or m (cc-cap-bit (cc-expr-capability e)))
+        (let es2 (cc-std-edge e es)
+          (cc-std-body-scan (list-append (cc-children e) rest) m2 es2))))))
+
+(defn cc-std-edge (e es)
+  (match (Expr.inner e)
+    (EApply n _ (cc-std-edge-name n es))
+    (EAtom a (match a (AIdent n (cc-std-edge-name n es)) (_ es)))
+    (_ es)))
+
+(defn cc-std-edge-name (n es)
+  (if (and (cc-std-key-p n) (ffi-call "zyl_smap_has" cc-std-index n 1000))
+    (Cons (ffi-call "zyl_smap_get" cc-std-index n 1000) es)
+    es))
+
+(defn cc-cap-bit (c)
+  (if (str-eq c "io") 1 (if (str-eq c "ffi") 2 (if (str-eq c "actor") 4 0))))
+
+; Propagate along the call graph until no mask changes.
+(defn cc-std-fix ()
+  (if (cc-std-pass 0 (ffi-call "zyl_wvec_len" cc-std-mask 1000) false) (cc-std-fix) unit))
+
+(defn cc-std-pass (i n changed)
+  (if (>= i n) changed
+    (let old (ffi-call "zyl_wvec_get" cc-std-mask i 1000)
+      (let new (cc-std-join (ffi-call "zyl_wvec_get" cc-std-edges i 1000) old)
+        (if (= new old)
+          (cc-std-pass (+ i 1) n changed)
+          (let _ (ffi-call "zyl_wvec_set" cc-std-mask i new 1000)
+            (cc-std-pass (+ i 1) n true)))))))
+
+(defn cc-std-join (es m)
+  (match es
+    (Nil m)
+    (Cons j rest (cc-std-join rest (bit-or m (ffi-call "zyl_wvec_get" cc-std-mask j 1000))))))
 
 (defn cc-check-forms (forms grants denied)
   (match forms
@@ -238,7 +404,17 @@
 (defn cc-walk (e g denied)
   (let need (cc-expr-capability e)
     (let _ (cc-require need g denied e)
-      (cc-walk-children e g denied))))
+      (let _ (cc-require-mask (cc-std-needs e) g denied e)
+        (cc-walk-children e g denied)))))
+
+; Each capability a standard-library callee reaches, in the fixed order io, ffi, actor.
+(defn cc-require-mask (m g denied site)
+  (if (= m 0) unit
+    (let _ (if (cc-bit m 1) (cc-require "io" g denied site) unit)
+      (let _ (if (cc-bit m 2) (cc-require "ffi" g denied site) unit)
+        (if (cc-bit m 4) (cc-require "actor" g denied site) unit)))))
+
+(defn cc-bit (m b) (= (bit-and m b) b))
 
 (defn cc-require (need g denied site)
   (if (= (str-length need) 0)
@@ -320,134 +496,117 @@
 ; Structural recursion over the expression forms that carry sub-terms.
 ; Anything not listed here holds no expression to walk into.
 ; Every variant is named, no catch-all: a new form must say how it is walked, so none slips past.
-(defn cc-walk-children (e g denied)
+(defn cc-children (e)
   (match (Expr.inner e)
-    (EAtom _ unit)
-    (ECall f args (let _ (cc-walk f g denied) (cc-walk-list args g denied)))
-    (EDef _ v (cc-walk v g denied))
-    (EDefn _ ps body (let _ (cc-walk-params ps g denied) (cc-walk body g denied)))
-    (ELet _ v b (cc-walk-2 v b g denied))
-    (ELetMut _ v b (cc-walk-2 v b g denied))
-    (EIf c t f (let _ (cc-walk c g denied) (cc-walk-2 t f g denied)))
-    (ETryCatch b _ h (cc-walk-2 b h g denied))
-    (EMatch s arms (let _ (cc-walk s g denied) (cc-walk-arms arms g denied)))
-    (ESpawn b (cc-walk b g denied))
-    (ESend a b (cc-walk-2 a b g denied))
-    (ESendClosure a b _ (cc-walk-2 a b g denied))
-    (EFfiCall _ args _ (cc-walk-list args g denied))
-    (EFfiPin b (cc-walk b g denied))
-    (EFfiUnpin b (cc-walk b g denied))
-    (EAssert b m (let _ (cc-walk b g denied) (cc-walk-opt m g denied)))
-    (EError _ unit)
-    (EUnwrap b (cc-walk b g denied))
-    (EWhile c b (cc-walk-2 c b g denied))
-    (EFor bs c b (let _ (cc-walk-binds bs g denied) (cc-walk-2 c b g denied)))
-    (ECond cs (cc-walk-binds2 cs g denied))
-    (EBegin xs (cc-walk-list xs g denied))
-    (ELambda _ ps b (let _ (cc-walk-params ps g denied) (cc-walk b g denied)))
-    (EFn _ ps b (let _ (cc-walk-params ps g denied) (cc-walk b g denied)))
-    (EStructGet b _ (cc-walk b g denied))
-    (EMakeStruct _ args (cc-walk-list args g denied))
-    (ETuple elems (cc-walk-list elems g denied))
-    (ETupleGet tg _ (cc-walk tg g denied))
-    (EMakeVariant _ _ args (cc-walk-list args g denied))
-    (ESetBang _ v (cc-walk v g denied))
-    (EModuleDecl _ unit)
-    (EUseModule _ _ _ unit)
-    (EExport _ unit)
-    (EPrint xs (cc-walk-list xs g denied))
-    (EReadLine unit)
-    (EExit b (cc-walk b g denied))
-    (EClose b (cc-walk b g denied))
-    (EFileOpen a b (cc-walk-2 a b g denied))
-    (EFileRead a b (cc-walk-2 a b g denied))
-    (EFileWrite a b (cc-walk-2 a b g denied))
-    (EFileClose b (cc-walk b g denied))
-    (EBufAppend a b (cc-walk-2 a b g denied))
-    (EDeftype _ _ _ _ unit)
-    (ETraitDecl _ _ _ unit)
-    (EImplBlock _ _ bodies (cc-walk-impl bodies g denied))
-    (EStructDef _ _ unit)
-    (EStructDefPlus _ _ unit)
-    (EAliasDecl _ b (cc-walk b g denied))
-    (EDerive _ _ unit)
-    (ETestDecl _ b _ _ (cc-walk b g denied))
-    (EAssertEqual a b (cc-walk-2 a b g denied))
-    (EAssertTrue b _ (cc-walk b g denied))
-    (EAssertFalse b _ (cc-walk b g denied))
-    (ERunTests _ unit)
-    (ETestCompile b _ (cc-walk b g denied))
-    (EApply _ args (cc-walk-list args g denied))
-    (EMacroDef _ _ _ unit)
-    (EUnknown _ args (cc-walk-list args g denied))
-    (EByteLit _ unit)
-    (ELoadByte _ a b (cc-walk-2 a b g denied))
-    (ELoadByteSigned _ a b (cc-walk-2 a b g denied))
-    (EStoreByte _ a b c (cc-walk-3 a b c g denied))
-    (EStoreByteSigned _ a b c (cc-walk-3 a b c g denied))
-    (EByteSlice a b c (cc-walk-3 a b c g denied))
-    (EByteSliceSub a b c (cc-walk-3 a b c g denied))
-    (EByteBuf _ _ unit)
-    (EByteBufAppend a b (cc-walk-2 a b g denied))
-    (EByteBufLen b (cc-walk b g denied))
-    (EByteBufCap b (cc-walk b g denied))
-    (EByteBufPtr b (cc-walk b g denied))
-    (EAlignCheck b _ (cc-walk b g denied))
-    (EAtomicLoad a b (cc-walk-2 a b g denied))
-    (EAtomicStore a b c (cc-walk-3 a b c g denied))
-    (EAtomicAdd a b c (cc-walk-3 a b c g denied))
-    (EAtomicSub a b c (cc-walk-3 a b c g denied))
-    (EAtomicCAS a b c d (let _ (cc-walk a g denied) (cc-walk-3 b c d g denied)))
-    (EAtomicFetchAdd a b c (cc-walk-3 a b c g denied))
-    (EAtomicMax a b c (cc-walk-3 a b c g denied))
-    (EAtomicMin a b c (cc-walk-3 a b c g denied))))
+    (EAtom _ Nil)
+    (ECall f args (Cons f args))
+    (EDef _ v (Cons v Nil))
+    (EDefn _ ps body (list-append (cc-param-exprs ps) (Cons body Nil)))
+    (ELet _ v b (Cons v (Cons b Nil)))
+    (ELetMut _ v b (Cons v (Cons b Nil)))
+    (EIf c t f (Cons c (Cons t (Cons f Nil))))
+    (ETryCatch b _ h (Cons b (Cons h Nil)))
+    (EMatch s arms (Cons s (cc-arm-bodies arms)))
+    (ESpawn b (Cons b Nil))
+    (ESend a b (Cons a (Cons b Nil)))
+    (ESendClosure a b _ (Cons a (Cons b Nil)))
+    (EFfiCall _ args _ args)
+    (EFfiPin b (Cons b Nil))
+    (EFfiUnpin b (Cons b Nil))
+    (EAssert b m (Cons b (cc-opt-list m)))
+    (EError _ Nil)
+    (EUnwrap b (Cons b Nil))
+    (EWhile c b (Cons c (Cons b Nil)))
+    (EFor bs c b (list-append (cc-bind-exprs bs) (Cons c (Cons b Nil))))
+    (ECond cs (cc-bind2-exprs cs))
+    (EBegin xs xs)
+    (ELambda _ ps b (list-append (cc-param-exprs ps) (Cons b Nil)))
+    (EFn _ ps b (list-append (cc-param-exprs ps) (Cons b Nil)))
+    (EStructGet b _ (Cons b Nil))
+    (EMakeStruct _ args args)
+    (ETuple elems elems)
+    (ETupleGet tg _ (Cons tg Nil))
+    (EMakeVariant _ _ args args)
+    (ESetBang _ v (Cons v Nil))
+    (EModuleDecl _ Nil)
+    (EUseModule _ _ _ Nil)
+    (EExport _ Nil)
+    (EPrint xs xs)
+    (EReadLine Nil)
+    (EExit b (Cons b Nil))
+    (EClose b (Cons b Nil))
+    (EFileOpen a b (Cons a (Cons b Nil)))
+    (EFileRead a b (Cons a (Cons b Nil)))
+    (EFileWrite a b (Cons a (Cons b Nil)))
+    (EFileClose b (Cons b Nil))
+    (EBufAppend a b (Cons a (Cons b Nil)))
+    (EDeftype _ _ _ _ Nil)
+    (ETraitDecl _ _ _ Nil)
+    (EImplBlock _ _ bodies (cc-impl-exprs bodies))
+    (EStructDef _ _ Nil)
+    (EStructDefPlus _ _ Nil)
+    (EAliasDecl _ b (Cons b Nil))
+    (EDerive _ _ Nil)
+    (ETestDecl _ b _ _ (Cons b Nil))
+    (EAssertEqual a b (Cons a (Cons b Nil)))
+    (EAssertTrue b _ (Cons b Nil))
+    (EAssertFalse b _ (Cons b Nil))
+    (ERunTests _ Nil)
+    (ETestCompile b _ (Cons b Nil))
+    (EApply _ args args)
+    (EMacroDef _ _ _ Nil)
+    (EUnknown _ args args)
+    (EByteLit _ Nil)
+    (ELoadByte _ a b (Cons a (Cons b Nil)))
+    (ELoadByteSigned _ a b (Cons a (Cons b Nil)))
+    (EStoreByte _ a b c (Cons a (Cons b (Cons c Nil))))
+    (EStoreByteSigned _ a b c (Cons a (Cons b (Cons c Nil))))
+    (EByteSlice a b c (Cons a (Cons b (Cons c Nil))))
+    (EByteSliceSub a b c (Cons a (Cons b (Cons c Nil))))
+    (EByteBuf _ _ Nil)
+    (EByteBufAppend a b (Cons a (Cons b Nil)))
+    (EByteBufLen b (Cons b Nil))
+    (EByteBufCap b (Cons b Nil))
+    (EByteBufPtr b (Cons b Nil))
+    (EAlignCheck b _ (Cons b Nil))
+    (EAtomicLoad a b (Cons a (Cons b Nil)))
+    (EAtomicStore a b c (Cons a (Cons b (Cons c Nil))))
+    (EAtomicAdd a b c (Cons a (Cons b (Cons c Nil))))
+    (EAtomicSub a b c (Cons a (Cons b (Cons c Nil))))
+    (EAtomicCAS a b c d (Cons a (Cons b (Cons c (Cons d Nil)))))
+    (EAtomicFetchAdd a b c (Cons a (Cons b (Cons c Nil))))
+    (EAtomicMax a b c (Cons a (Cons b (Cons c Nil))))
+    (EAtomicMin a b c (Cons a (Cons b (Cons c Nil))))))
 
-(defn cc-walk-2 (a b g denied)
-  (let _ (cc-walk a g denied) (cc-walk b g denied)))
+(defn cc-walk-children (e g denied)
+  (cc-walk-list (cc-children e) g denied))
 
-(defn cc-walk-3 (a b c g denied)
-  (let _ (cc-walk a g denied) (cc-walk-2 b c g denied)))
+(defn cc-opt-list (o) (match o (None Nil) (Some x (Cons x Nil))))
 
-(defn cc-walk-opt (o g denied)
-  (match o (None unit) (Some x (cc-walk x g denied))))
-
-; A parameter's type annotation is an expression too.
-(defn cc-walk-params (ps g denied)
+(defn cc-param-exprs (ps)
   (match ps
-    (Nil unit)
-    (Cons p rest
-      (match p
-        (P _ t (let _ (cc-walk-opt t g denied) (cc-walk-params rest g denied)))))))
+    (Nil Nil)
+    (Cons p rest (match p (P _ t (list-append (cc-opt-list t) (cc-param-exprs rest)))))))
 
-(defn cc-walk-binds (bs g denied)
+(defn cc-bind-exprs (bs)
   (match bs
-    (Nil unit)
-    (Cons pr rest
-      (match pr
-        (Pair _ o (let _ (cc-walk-opt o g denied) (cc-walk-binds rest g denied)))))))
+    (Nil Nil)
+    (Cons pr rest (match pr (Pair _ o (list-append (cc-opt-list o) (cc-bind-exprs rest)))))))
 
-(defn cc-walk-binds2 (cs g denied)
+(defn cc-bind2-exprs (cs)
   (match cs
-    (Nil unit)
-    (Cons pr rest
-      (match pr
-        (Pair c b (let _ (cc-walk-2 c b g denied) (cc-walk-binds2 rest g denied)))))))
+    (Nil Nil)
+    (Cons pr rest (match pr (Pair c b (Cons c (Cons b (cc-bind2-exprs rest))))))))
 
-(defn cc-walk-impl (bodies g denied)
+(defn cc-impl-exprs (bodies)
   (match bodies
-    (Nil unit)
-    (Cons b rest
-      (match b
-        (IB d
-          (match d
-            (DN _ _ body (let _ (cc-walk body g denied) (cc-walk-impl rest g denied)))))))))
+    (Nil Nil)
+    (Cons b rest (match b (IB d (match d (DN _ _ body (Cons body (cc-impl-exprs rest)))))))))
 
-(defn cc-walk-arms (arms g denied)
+(defn cc-arm-bodies (arms)
   (match arms
-    (Nil unit)
-    (Cons a rest
-      (let _ (cc-walk (MA.body a) g denied)
-        (cc-walk-arms rest g denied)))))
+    (Nil Nil)
+    (Cons a rest (Cons (MA.body a) (cc-arm-bodies rest)))))
 
 ; ===========================================================================
 ; CLOSURE REPORTING (§31.9)

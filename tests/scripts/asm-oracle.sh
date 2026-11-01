@@ -9,6 +9,7 @@ SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/zyl_asm_oracle.XXXXXX")"
 trap 'rm -rf "$SCRATCH"' EXIT
 python3 "$ROOT/tests/scripts/asm_oracle.py" gen "$SCRATCH/sweep.s"
 cat > "$SCRATCH/dump.zyl" <<'ZEOF'
+(capabilities io)
 (use compiler/asm_x86)
 (defn arg (i) (ffi-call "zyl_arg_str" i 1000))
 (defn main () (let _ (ax-dump-list (arg 1) (str-concat (arg 2) "/my.text") (str-concat (arg 2) "/my.rel") (str-concat (arg 2) "/my.lst")) 0))

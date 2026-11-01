@@ -2,6 +2,8 @@
 ; Module: selfhost/lsp_main
 ; Entry point for zyl-lsp binary. Starts JSON-RPC stdio server.
 
+(capabilities io ffi actor)
+
 (use lsp/lsp_server)
 
 ; ===========================================================================
