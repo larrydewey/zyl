@@ -18,11 +18,39 @@
 
 ; --- files ---
 
+; A file handle is its fd in bits 0..31 and the fd's generation in bits 32..62 (spec G2).
+; Open and close each bump the generation, so a closed handle never matches again, even once the kernel reuses its number.
+(defn os-fd-max () 32768)
+(defn os-gens () (ffi-call "%global" "file_gens" 262144 1))
+(defn os-gen-at (fd) (ffi-call "%load64" (+ (os-gens) (* fd 8)) 1))
+(defn os-gen-bump (fd) (ffi-call "%store64" (+ (os-gens) (* fd 8)) (+ (os-gen-at fd) 1) 1))
+(defn os-tracked (fd) (and (>= fd 0) (< fd (os-fd-max))))
+
+(defn os-fd-encode (fd)
+  (if (os-tracked fd) (let _ (os-gen-bump fd) (bit-or fd (shl (os-gen-at fd) 32))) fd))
+
+; The fd a handle names; -1 when stale. A bare number is live only if no file-open ever returned it.
+(defn os-fd (h)
+  (if (< h 0) h
+    (let fd (bit-and h 4294967295)
+      (let g (shr h 32)
+        (if (os-tracked fd)
+          (if (= g (os-gen-at fd)) fd -1)
+          (if (= g 0) fd -1))))))
+
+; A stale handle may name another file now: using it is E_USE_AFTER_FREE.
+(defn os-fd-live (h)
+  (let fd (os-fd h)
+    (if (and (< fd 0) (>= h 0))
+      (ffi-call "zyl_panic" "E_USE_AFTER_FREE: file handle used after it was closed; its number may already name another file" 1)
+      fd)))
+
 (defn zyl_file_open_c (path mode)
   (let m (rt-w mode)
     (let c (if (< m 4096) 0 (rt-ld8 m))
       (let flags (if (= c 114) 0 (if (= c 97) 1089 577))
-        (os-ret (ffi-call "%syscall3" 2 (rt-w path) flags 420 1))))))
+        (let r (ffi-call "%syscall3" 2 (rt-w path) flags 420 1)
+          (if (< r 0) -1 (os-fd-encode r)))))))
 
 ; Each read gets its own buffer (64 MiB ceiling); a failed read is empty.
 (defn os-read (fd count rp)
@@ -33,10 +61,13 @@
           (let _ (rt-st8 (+ p (if (< n 0) 0 n)) 0) (ffi-call "%str" p 1)))))))
 
 ; Reading stdin flushes stdout first, so a reply is out before its process blocks for the next request.
-(defn zyl_file_read_c (fd count) (let _ (if (= fd 0) (zyl_out_flush) 0) (os-read fd count 0)))
-(defn zyl_file_read_c_r (fd count) (let _ (if (= fd 0) (zyl_out_flush) 0) (os-read fd count (rt-cur-region))))
+(defn zyl_file_read_c (h count) (let fd (os-fd-live h) (let _ (if (= fd 0) (zyl_out_flush) 0) (os-read fd count 0))))
+(defn zyl_file_read_c_r (h count) (let fd (os-fd-live h) (let _ (if (= fd 0) (zyl_out_flush) 0) (os-read fd count (rt-cur-region)))))
 
-(defn zyl_file_write_c (fd buf)
+(defn zyl_file_write_c (h buf)
+  (let fd (os-fd-live h) (os-write fd buf)))
+
+(defn os-write (fd buf)
   (let w (rt-w buf)
     (if (= w 0) -1
       (if (os-bad w "file-write") -1
@@ -45,7 +76,11 @@
             (if (and (= fd 2) (>= (zyl_owner_self) 2)) (let _ (zyl_err_write w n) n)
               (os-ret (ffi-call "%syscall3" 1 fd w n 1)))))))))
 
-(defn zyl_file_close_c (fd) (os-ret (ffi-call "%syscall1" 3 fd 1)))
+; A second close of one handle is a no-op (-1), never a close of whatever file reused the number.
+(defn zyl_file_close_c (h)
+  (let fd (os-fd h)
+    (if (< fd 0) -1
+      (let _ (if (os-tracked fd) (os-gen-bump fd) 0) (os-ret (ffi-call "%syscall1" 3 fd 1))))))
 
 (defn zyl_path_exists (path) (if (= (ffi-call "%syscall2" 21 (rt-w path) 0 1) 0) 1 0))
 
