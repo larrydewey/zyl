@@ -530,8 +530,8 @@
           "(defn f (x) x)\n(defn f (x) (+ x 1))\n(defn main () (f 0))"
           "(defn f (x) x)\n(defn g (x) (+ x 1))\n(defn main () (f (- (g 0) 1)))")
   (Cons (ExN "E_SECRET_ESCAPE" "A `Secret` value reaches output, a file or another observable place without `declassify`."
-          "(capabilities io)\n(use core/core)\n(defn leak ((key Secret)) (file-write 2 key))\n(defn main () (begin (leak 5) 0))"
-          "(capabilities io)\n(use core/core)\n(defn leak ((key Secret)) (file-write 2 \"<redacted>\"))\n(defn main () (begin (leak 5) 0))")
+          "(capabilities io secret)\n(use core/core)\n(defn leak ((key Secret)) (file-write 2 key))\n(defn main () (begin (leak 5) 0))"
+          "(capabilities io secret)\n(use core/core)\n(defn leak ((key Secret)) (file-write 2 \"<redacted>\"))\n(defn main () (begin (leak 5) 0))")
   (Cons (ExN "E_RESERVED_KEYWORD" "A keyword of the language is used as a name."
           "(defn f (test) test)\n(defn main () (f 0))"
           "(defn f (t) t)\n(defn main () (f 0))")
@@ -540,10 +540,10 @@
           "(use core/core)\n(defn main () (let t (tuple 1 2) (begin (print (tuple-get t 1)) 0)))")
   (Cons (ExN "E_CT_VIOLATION" "A branch, index or division depends on a `Secret`, which leaks it through timing."
           "(capabilities secret)\n(use core/core)\n(defn check ((key Secret) (guess Int)) (if (= key guess) 1 0))\n(defn main () (- (check 7 7) 1))"
-          "(capabilities secret)\n(use core/core)\n(use math/secret/secret)\n(defn check ((key Secret) (guess Int)) (ct-eq key guess))\n(defn main () (- (check 7 7) 1))")
+          "(capabilities secret)\n(use core/core)\n(use math/secret/secret)\n(defn check ((key Secret) (guess Int)) (declassify (ct-eq key guess)))\n(defn main () (- (check 7 7) 1))")
   (Cons (ExN "E_FFI_PIN_REQUIRED" "A `Secret` passed to foreign code must go through `ffi-pin`."
-          "(capabilities ffi)\n(use core/core)\n(extern \"abs\" (Int) Int)\n(defn raw ((key Secret)) (ffi-call \"abs\" key 1000))\n(defn main () (begin (raw 5) 0))"
-          "(capabilities ffi)\n(use core/core)\n(defn raw ((key Secret)) (let p (ffi-pin key) (ffi-unpin p)))\n(defn main () (begin (raw 5) 0))")
+          "(capabilities ffi secret)\n(use core/core)\n(extern \"abs\" (Int) Int)\n(defn raw ((key Secret)) (ffi-call \"abs\" key 1000))\n(defn main () (begin (raw 5) 0))"
+          "(capabilities ffi secret)\n(use core/core)\n(defn raw ((key Secret)) (let p (ffi-pin key) (ffi-unpin p)))\n(defn main () (begin (raw 5) 0))")
   (Cons (ExN "E_CONTRACT_VIOLATION" "A `requires`, `ensures` or `invariant` check was false when it ran."
           "(defn half (n) (begin (requires (>= n 0)) (/ n 2)))\n(defn main () (half -4))"
           "(defn half (n) (begin (requires (>= n 0)) (/ n 2)))\n(defn main () (half 0))")

@@ -165,7 +165,7 @@
 ; `io/file`'s helper are the same act (§31.9, "a `use` of a
 ; capability-bearing stdlib module").
 (defn cc-name-capability (n)
-  (let direct (cc-builtin-capability n)
+  (let direct (if (cc-secret-name-p n) "secret" (cc-builtin-capability n))
     (if (> (str-length direct) 0)
       direct
       (let m (cc-module-of n)
@@ -216,6 +216,30 @@
   (if (cc-prefix-p m "actor/") "actor"
   (if (cc-prefix-p m "ffi/") "ffi"
   (if (cc-prefix-p m "math/secret/") "secret" ""))))))
+
+; The Secret type, unqualified or by canonical key (§31.9 `secret`).
+(defn cc-secret-name-p (n)
+  (or (str-eq n "Secret")
+    (and (> (pk-len n) 8) (str-eq (pk-sub n (- (pk-len n) 8) 8) "::Secret"))))
+
+; The first `Secret` in a type expression, if any.
+(defn cc-secret-type (t)
+  (match (Expr.inner t)
+    (EAtom a (match a (AIdent n (if (cc-secret-name-p n) (Some t) None)) (_ None)))
+    (EApply n args (if (cc-secret-name-p n) (Some t) (cc-secret-types args)))
+    (ECall op args (match (cc-secret-type op) (Some x (Some x)) (None (cc-secret-types args))))
+    (_ None)))
+
+(defn cc-secret-types (ts)
+  (match ts
+    (Nil None)
+    (Cons h t (match (cc-secret-type h) (Some x (Some x)) (None (cc-secret-types t))))))
+
+; A Secret parameter needs the grant of the definition's owner.
+(defn cc-check-params (name ps grants denied)
+  (match (cc-secret-types (cc-param-exprs ps))
+    (Some t (cc-check-owned name t grants denied))
+    (None unit)))
 
 (defn cc-prefix-p (s p)
   (if (< (pk-len s) (pk-len p))
@@ -361,7 +385,7 @@
 
 (defn cc-check-form (e grants denied)
   (match (Expr.inner e)
-    (EDefn name _ body (cc-check-owned name body grants denied))
+    (EDefn name ps body (let _ (cc-check-params name ps grants denied) (cc-check-owned name body grants denied)))
     (EDef name value (cc-check-owned name value grants denied))
     (ETestDecl _ body _ _ (cc-check-owned "main" body grants denied))
     (ETestCompile body _ (cc-check-owned "main" body grants denied))
@@ -370,16 +394,21 @@
 
 ; An impl's owner is its trait's or its type's package (the orphan rule); each user grant bounds it.
 (defn cc-check-impl (tr ty bodies grants denied)
+  (let _ (if (cc-secret-name-p tr) (cc-check-owned ty (Expr (EAtom (AIdent tr))) grants denied) unit)
+    (cc-check-impl-bodies tr ty bodies grants denied)))
+
+(defn cc-check-impl-bodies (tr ty bodies grants denied)
   (match bodies
     (Nil unit)
     (Cons b rest
       (match b
         (IB d
           (match d
-            (DN _ _ body
+            (DN _ ps body
+              (let _ (cc-check-params ty ps grants denied)
               (let _ (cc-check-owned tr body grants denied)
                 (let _ (if (str-eq (ck-package-of tr) (ck-package-of ty)) unit (cc-check-owned ty body grants denied))
-                  (cc-check-impl tr ty rest grants denied))))))))))
+                  (cc-check-impl-bodies tr ty rest grants denied)))))))))))
 
 (defn cc-check-owned (name body grants denied)
   (if (str-eq name "main")

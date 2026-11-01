@@ -34,6 +34,12 @@ out="$(json "$SCRATCH/zero.zyl")"
 printf '%s\n' "$out" | grep -q '"severity":"warning","code":"E_ZEROIZE_MISSING".*"file":"[^"]*zero.zyl","line":2,"column":1' \
   || fail "zeroize warning: $out"
 
+# The word in a string literal is not a call: still warned.
+printf '(use math/secret/secret)\n(defn tag ((k Secret)) (let _s "zeroize" (declassify k)))\n(defn main () (begin (print (tag 3)) 0))\n(capabilities secret)\n(numeric checked)\n' > "$SCRATCH/zero2.zyl"
+out="$(json "$SCRATCH/zero2.zyl")"
+printf '%s\n' "$out" | grep -q '"severity":"warning","code":"E_ZEROIZE_MISSING".*"file":"[^"]*zero2.zyl","line":2,"column":1' \
+  || fail "zeroize warning despite a string literal: $out"
+
 # A duplicate parameter, located at the repeat.
 printf '(defn f (a b a) (+ a b))\n(defn main () (begin (print (f 1 2 3)) 0))\n(numeric checked)\n' > "$SCRATCH/dup.zyl"
 out="$(json "$SCRATCH/dup.zyl")"
