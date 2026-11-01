@@ -1,0 +1,3 @@
+; expect-error: E_MALFORMED_FORM
+; An empty arm used to match everything with the value 0.
+(defn main () (begin (print (match 1 ())) 0))

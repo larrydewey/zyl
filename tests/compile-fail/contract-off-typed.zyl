@@ -1,0 +1,5 @@
+; expect-error: E_TYPE_MISMATCH
+; Contracts never affect type inference: under off the condition is still typed, as under strict.
+(contracts off)
+(defn f (x) (begin (requires (> x 0)) x))
+(defn main () (begin (print (f "s")) 0))

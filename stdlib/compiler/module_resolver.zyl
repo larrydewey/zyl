@@ -1133,7 +1133,7 @@
 (defn mr-unwrap-pub (f)
   (match (mr-ast-args f)
     (Nil Nil)
-    (Cons _ _ (Cons (AList (mr-ast-args f)) Nil))))
+    (Cons _ _ (let w (AList (mr-ast-args f)) (let _ (ffi-call "zyl_span_copy" w f 1000) (Cons w Nil))))))
 
 (defn mr-qualify-units (arena disc all pkgs todo acc)
   (match todo

@@ -393,7 +393,57 @@
   ; says so.
   (let _ (ffi-call "zyl_ref_set" ac-cur-fn "" 1000)
     (let arities (ac-collect exprs)
-      (ac-check-top exprs arities))))
+      (let _ (ac-toplevel-exprs exprs (ac-has-main exprs))
+        (ac-check-top exprs arities)))))
+
+; A top-level expression never runs: only definitions and directives belong there.
+(defn ac-toplevel-exprs (exprs has-main)
+  (match exprs
+    (Nil unit)
+    (Cons e rest
+      (let _ (if (ac-top-expr-p e)
+               (if has-main
+                 (ffi-fail "E_TOPLEVEL_STMTS_WITH_EXPLICIT_MAIN" "this top-level expression never runs: the program starts at `main`"
+                   "move it into `main`, or bind its value with `def`" e)
+                 (ffi-fail "E_MALFORMED_FORM" "this top-level expression never runs: a program starts at `main`, and the top level holds definitions"
+                   "move it into a function, or bind its value with `def`" e))
+               unit)
+        (ac-toplevel-exprs rest has-main)))))
+
+(defn ac-has-main (exprs)
+  (match exprs
+    (Nil false)
+    (Cons e rest (match (Expr.inner e) (EDefn n _ _ (if (str-eq n "main") true (ac-has-main rest))) (_ (ac-has-main rest))))))
+
+; Expression forms; a directive (extern, ...) lowers to ANil, which is no expression.
+(defn ac-top-expr-p (e)
+  (match (Expr.inner e)
+    (EAtom a (match a (ANil false) (_ true)))
+    (ECall _ _ true)
+    (ELet _ _ _ true)
+    (ELetMut _ _ _ true)
+    (EIf _ _ _ true)
+    (ETryCatch _ _ _ true)
+    (EMatch _ _ true)
+    (ESpawn _ true)
+    (ESend _ _ true)
+    (EFfiCall _ _ _ true)
+    (EWhile _ _ true)
+    (EFor _ _ _ true)
+    (ECond _ true)
+    (EBegin _ true)
+    (EFn _ _ _ true)
+    (ELambda _ _ _ true)
+    (ESetBang _ _ true)
+    (EPrint _ true)
+    (EExit _ true)
+    (EAssertEqual _ _ true)
+    (EAssertTrue _ _ true)
+    (EAssertFalse _ _ true)
+    (EMakeStruct _ _ true)
+    (EMakeVariant _ _ _ true)
+    (ETuple _ true)
+    (_ false)))
 
 ; The top-level definition being checked, for E_FFI_RESTRICTED.
 (def ac-cur-fn (ffi-call "zyl_ref_new" "" 1000))

@@ -2391,20 +2391,30 @@
     (Cons arm rest
       (match arm
         (MA v pats body
-          (let env2 (ta-arm-env st env ts v pats)
+          (let env2 (ta-arm-env st env ts v pats (match pats (Cons p0 _ p0) (Nil body)))
             (let bt (ta-expr st ctx env2 body)
               (let _ (ta-unify st r bt)
                 (ta-arms st ctx env ts rest r)))))))))
 
-(defn ta-arm-env (st env ts v pats)
+(defn ta-arm-env (st env ts v pats site)
   (match (ta-vd-find st v)
     (None env)
     (Some vd
       (match (ta-ctor-inst st vd)
         (TaF fts rt
           (let _ (ta-unify st ts rt)
-            (ta-bind-pats st env pats fts)))
+            (let _ (ta-pat-arity v (list-length fts) (list-length pats) site)
+              (ta-bind-pats st env pats fts))))
         (_ env)))))
+
+; A constructor pattern names each field once, or none to test the tag alone.
+(defn ta-pat-arity (v nf np site)
+  (if (or (= nf np) (= np 0))
+    unit
+    (let fs (str-concat (int-to-str nf) (if (= nf 1) " field" " fields"))
+      (ta-type-error "E_ARITY_MISMATCH"
+        (str-concat "`" (str-concat (err-name v) (str-concat "` has " (str-concat fs (str-concat ", but this pattern names " (int-to-str np))))))
+        site Nil "write one name per field, `_` for a field you do not use, or none to test the constructor alone"))))
 
 (defn ta-bind-pats (st env pats fts)
   (match pats
@@ -2420,8 +2430,8 @@
       (match a
         (AIdent n (if (ta-streq n "_") env (ta-seq (ta-rec p ft) (Cons (Pair n ft) env))))
         (_ env)))
-    (ECall op sub (ta-arm-env st env ft (ta-ident-of op) sub))
-    (EApply n sub (ta-arm-env st env ft n sub))
+    (ECall op sub (ta-arm-env st env ft (ta-ident-of op) sub p))
+    (EApply n sub (ta-arm-env st env ft n sub p))
     (_ env)))
 
 (defn ta-ident-of (e)

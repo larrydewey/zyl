@@ -290,13 +290,17 @@
     (let line (str-concat "warning: " (str-concat m "\n"))
       (let _ (rt-write-fd 2 (rt-w line) (rt-strlen (rt-w line))) 0))))
 
-; A recover arm naming a code matches a message starting with it, then ':' or the end.
+; A recover arm naming a code matches "CODE" then ':' or the end, or a runtime report "error[CODE]".
 (defn zyl_err_is (msg code)
   (let m (rt-w msg)
     (let c (rt-w code)
       (if (or (= m 0) (= c 0)) false
         (let n (rt-strlen c)
-          (if (rt-prefix-eq m c n) (let t (rt-ld8 (+ m n)) (or (= t 58) (= t 0))) false))))))
+          (if (rt-prefix-eq m c n)
+            (let t (rt-ld8 (+ m n)) (or (= t 58) (= t 0)))
+            (if (rt-prefix-eq m (rt-w "error[") 6)
+              (if (rt-prefix-eq (+ m 6) c n) (= (rt-ld8 (+ m (+ 6 n))) 93) false)
+              false)))))))
 
 ; strncmp(m, c, n) == 0 where c has length n.
 (defn rt-prefix-eq (m c n) (if (= n 0) true (if (= (rt-ld8 m) (rt-ld8 c)) (rt-prefix-eq (+ m 1) (+ c 1) (- n 1)) false)))

@@ -263,14 +263,21 @@ The overlay is lowered while the parse tree is converted
 - A `defn`'s `(ensures c)` clauses run after the body with its value bound
   to `result`; `postcondition of f failed: c` on failure.
 - `(recover body ((Type) fallback) ...)` is `try`/`catch`; an arm naming an
-  error code (`E_...`) matches by message prefix, a type-named or `_` arm
-  matches anything, and an unmatched error propagates.
+  error code (`E_...`) matches a message that starts with the code (then `:`
+  or the end) or with a runtime report `error[E_...]`, a type-named or `_`
+  arm matches anything, and an unmatched error propagates. The caught error
+  is bound to a name no arm uses.
 - Profiles: strict/debug panic, warn prints and continues, off/production
-  compile the clauses out; the build's profile is `--contracts=P`, and
+  compile the clauses out (a stripped condition is still typed, so the
+  profile never changes a program's types, §23); the build's profile is `--contracts=P`, and
   `(contracts P form)` or a bare `(contracts P)` before a top-level form
   overrides it for that form.
 - `(checkpoint e)`: if `e` raises, the outer `let-mut` variables it
-  `set!`s are restored before the error propagates.
+  `set!`s are restored before the error propagates. A name `e` binds again
+  is resolved by scope, so a `set!` of the inner binding saves nothing and
+  one of the outer binding is still restored; the saved copies use names
+  nothing in `e` spells.
 
 A check is ordinary code: its condition is typed and evaluated like any
-other expression, so keep conditions pure (P8, G8).
+other expression, so keep conditions pure (P8, G8). A condition that
+`set!`s is `E_MUT_CONFLICT`; I/O in a condition is not yet rejected.

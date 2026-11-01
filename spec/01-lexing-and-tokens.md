@@ -41,7 +41,7 @@ such as `#`, `@` or `$`, is `E_INVALID_CHAR`.
 The following identifiers are reserved keywords and cannot be used as user identifiers:
 
 ```
-def, defn, defun, let, let*, let-mut, if, try, catch, spawn, chan-send,
+def, defn, defun, let, let*, let-mut, set!, if, try, catch, spawn, chan-send,
 ffi-call, ffi-pin, ffi-unpin, assert, trait, impl, fn, lambda,
 while, for, cond, begin, pub, use, export, requires, ensures, invariant,
 recover, checkpoint, contracts, numeric, defmacro, alias, defstruct, defstruct+,

@@ -169,7 +169,7 @@ over bracket type, and its `sb-hint` supplies the `= help:` text.
 
 | Code | Catalog message | Raised by |
 |------|-----------------|-----------|
-| `E_ARITY_MISMATCH` | type: function arity mismatch for F at S: expected E arguments, found G | `arity_check.zyl` (located; also an `ffi-call` with more than 16 arguments), `icnf.zyl` (also arithmetic with no operand, or one operand other than `(- x)`, `(+ x)`, `(* x)`), `expr_inner.zyl` (special forms), `macro_expand.zyl` (a macro call's argument count, or too few before `&rest`), REPL interpreter |
+| `E_ARITY_MISMATCH` | type: function arity mismatch for F at S: expected E arguments, found G | `arity_check.zyl` (located; also an `ffi-call` with more than 16 arguments), `icnf.zyl` (also arithmetic with no operand, or one operand other than `(- x)`, `(+ x)`, `(* x)`), `expr_inner.zyl` (special forms), `macro_expand.zyl` (a macro call's argument count, or too few before `&rest`), `type_annotate.zyl` (a constructor pattern naming neither every field nor none), REPL interpreter |
 | `E_DUPLICATE_DEFINITION` | type: duplicate definition of N at S. previously defined at P | `duplicate_check.zyl` (located at the second definition; when one of the two is a struct's generated accessor `T.f`, at the program's own and naming the `defstruct`) |
 | `E_DUPLICATE_VARIANT` | type: duplicate variant V in deftype at S | `duplicate_check.zyl` (located: a program type declaring a prelude constructor name, `Some`, `None`, `Ok`, `Err`, `Cons` or `Nil`, which the standard library's unqualified uses would resolve to; only the standard library may declare them), `icnf.zyl` (a variant name defined twice in one `deftype`) |
 | `E_TYPE_MISMATCH` | type: type mismatch at S - expected E, found F | `type_annotate.zyl` (located): every unification failure, labelled with a declared parameter or field type where there is one; also a non-literal `file-open` mode, a field a known struct lacks, list-literal elements of different types, a non-Int byte offset, length or stored value, the wrong kind of byte handle (`bytebuf-len` of a slice), and a non-String `file-write` operand |
@@ -194,7 +194,7 @@ an `if` condition, `main`'s result at its last expression), and otherwise
 | `W_HEAP_ESCAPE` | region: a value goes to the process heap and lives until exit at S | `region_inference.zyl` (located), under `(memory reported)` only (spec §9.3) |
 | `E_REGION_SPEC` (§28) | region: malformed with-region specification at S | `expr_inner.zyl` (`parse-with-region`, located): unknown kind or option, block not a multiple of 4096 or above 64 MiB, alignment not a power of two from 8 to 4096 |
 | `E_MATCH_ARM_COMPLEX` | match: arm combines a constant with multiple calls - bind to lets first | `icnf.zyl`, located |
-| `E_TOPLEVEL_STMTS_WITH_EXPLICIT_MAIN` | program: top-level statements alongside an explicit main | `icnf.zyl` (top-level `test`/`run-tests` forms next to an explicit `(defn main ...)`) |
+| `E_TOPLEVEL_STMTS_WITH_EXPLICIT_MAIN` | program: top-level statements alongside an explicit main | `icnf.zyl` (top-level `test`/`run-tests` forms next to an explicit `(defn main ...)`); `arity_check.zyl` (any top-level expression next to one; without one the same expression is `E_MALFORMED_FORM`, since it never runs) |
 
 `E_MATCH_ARM_COMPLEX` rejects a match arm that combines a constant with two
 or more calls in one binary operation, or that nests binop chains; bind the
@@ -268,7 +268,7 @@ Neither carries the catalog code. A false `(assert c msg)` panics with
 | `E_CAPABILITY_LEAK` (§28) | capability: TMut leaked across boundary at S — the catalog's `TMut` means a `let-mut` binding, the only assignable binding; `set!` rebinds it | `mutability_check.zyl` (located: a spawned closure that captures a `let-mut` variable, or a message that references one) |
 | `E_MOVE_VALUE` | ownership: X was already moved or released at S | `linearity.zyl` (located): a resource used after its release — a descriptor after `file-close`, a value after `Drop.drop` or `string-buffer-destroy`, across every alias of the resource |
 | `E_INVALID_CAPABILITY` | type: invalid capability usage for F - M at S | `mutability_check.zyl` (located: a closure passed to `ffi-call`, which is not FFI_Pinnable) |
-| `E_MUT_CONFLICT` (§28) | aliasing: mutable reference conflict at S | `mutability_check.zyl` (located: `set!` on a non-`let-mut` binding, or on a `let-mut` captured by a closure), `expr_inner.zyl` (a `set!` target that is not a plain name, such as a field) |
+| `E_MUT_CONFLICT` (§28) | aliasing: mutable reference conflict at S | `mutability_check.zyl` (located: `set!` on a non-`let-mut` binding, or on a `let-mut` captured by a closure), `expr_inner.zyl` (a `set!` target that is not a plain name, such as a field; a `set!` inside a contract condition) |
 | `E_CT_VIOLATION` | constant-time: secret-dependent M at S - branches, memory indices and divisions must not depend on a Secret value | `secret_check.zyl` (located) |
 | `E_SECRET_ESCAPE` | secret: Secret value escapes through M at S | `secret_check.zyl` (located) |
 | `E_SECRET_UNANNOTATED` | secret: a Secret argument reaches parameter P of F, which is not marked Secret | `secret_check.zyl` (located at the argument; the fix names the parameter to annotate) |

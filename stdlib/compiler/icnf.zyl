@@ -46,9 +46,7 @@
   (IVariant String Int (List Icnf))    ; variant name, tag, field values
   (IMatch Icnf (List IArm))
   ; Top-level function def: name, params, body, param kinds.
-  ; The kind list is appended AFTER the body rather than beside the
-  ; param names so that every existing three-binder `(IFn name params
-  ; body ...)` pattern keeps binding the same three fields. Kinds are
+  ; The kind list comes after the body; a pattern names all four fields. Kinds are
   ; codegen's representation tags (0 int/pointer, 1 String, 2 Float);
   ; without them a String or Float parameter was indistinguishable from
   ; an Int at emission time, which printed strings as pointers, compared
@@ -354,7 +352,7 @@
     (Nil false)
     (Cons f rest
       (match f
-        (IFn name _ _ (if (str-eq name nm) true (ic-has-fn rest nm)))
+        (IFn name _ _ _ (if (str-eq name nm) true (ic-has-fn rest nm)))
         (_ (ic-has-fn rest nm))))))
 
 ; Top-level defs are initialized, in source order, before main's body.
@@ -382,7 +380,7 @@
     (Nil false)
     (Cons f rest
       (match f
-        (IFn name _ _ (if (str-eq name "main") true (ic-has-main rest)))
+        (IFn name _ _ _ (if (str-eq name "main") true (ic-has-main rest)))
         (_ (ic-has-main rest))))))
 
 ; Walk top-level exprs; EDeftype forms extend the variant table.
@@ -996,7 +994,7 @@
     (IVariant _ _ fs (ic-lambda-free-list fs bound vt acc))
     (IStackVariant _ _ fs (ic-lambda-free-list fs bound vt acc))
     (IMatch s arms (ic-lambda-free-arms arms bound vt (ic-lambda-free s bound vt acc)))
-    (IFn _ _ _ acc)
+    (IFn _ _ _ _ acc)
     (ITryCatch tb cv cb (ic-lambda-free cb (Cons cv bound) vt (ic-lambda-free tb bound vt acc)))
     (IRegion _ _ _ _ b (ic-lambda-free b bound vt acc))))
 

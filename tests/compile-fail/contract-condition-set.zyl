@@ -1,0 +1,8 @@
+; expect-error: E_MUT_CONFLICT
+; A condition that set!s would make the output depend on the contract profile.
+(defn main ()
+  (let-mut x 1
+    (begin
+      (requires (begin (set! x 99) true))
+      (print x)
+      0)))

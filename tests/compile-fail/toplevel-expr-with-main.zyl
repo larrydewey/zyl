@@ -1,0 +1,5 @@
+; expect-error: E_TOPLEVEL_STMTS_WITH_EXPLICIT_MAIN
+; A top-level expression beside main never runs; it used to be dropped silently, unbound names and all.
+(print "top-level side effect")
+(undefined-function-zz 1 2 3)
+(defn main () (begin (print "main") 0))

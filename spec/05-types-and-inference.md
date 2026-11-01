@@ -99,7 +99,7 @@ top-level `def` values are monomorphic (the value restriction). A type variable 
 | Bits | `bit-and bit-or bit-xor shl shr ashr bit-not`: Int |
 | Intrinsics | `bit-popcount bit-clz bit-ctz bit-bswap` and their `32` forms: Int -> Int; `bit-rotl bit-rotr bit-rotl32 bit-rotr32 mul-hi mul-hi-u crc32c crc32c-u8`: Int Int -> Int (§21.13) |
 | Constructor | For `(deftype T (C F1..Fn) ...)`: C : ∀ā. (F1..Fn) -> (T ā), ā the type parameters. An untyped struct field is an implicit type parameter of its struct |
-| `match` | Scrutinee : T ā; an arm `(C x1..xn body)` binds xi at C's i-th field type; every body : τ ⊢ match : τ. Patterns are flat (`E_NESTED_PATTERN`); exhaustiveness is §12 |
+| `match` | Scrutinee : T ā; an arm `(C x1..xn body)` binds xi at C's i-th field type, n C's field count, or `(C body)` tests the tag alone (any other count is `E_ARITY_MISMATCH`); every body : τ ⊢ match : τ. Patterns are flat (`E_NESTED_PATTERN`); exhaustiveness is §12 |
 | `struct-get` | p : S ā, f a field of S ⊢ `(struct-get p "f")` : its type. When p's type is not otherwise determined, the one struct with a field f is taken; if several have it, `E_CANNOT_INFER` |
 | Accessor | For `(defstruct S ... (f ...))`: `S.f` : ∀ā. (S ā) -> τ, τ the type of f (an untyped field is one of ā); it is a generated `defn` typed like any other |
 | `try` | b : τ, x : String ⊢ h : τ ⊢ `(try b (catch x h))` : τ |

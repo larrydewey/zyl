@@ -265,7 +265,7 @@
 
 (defn kind-of-base (st env e)
   (match e
-    (IConst 0)
+    (IConst _ 0)
     (IStr _ 1)
     (ISymAddr _ 0)
     (IFlt _ 2)
@@ -308,7 +308,7 @@
     (IVariant _ _ _ 3)
     (IStackVariant _ _ _ 3)
     (IMatch _ _ 0)
-    (IFn _ 0)
+    (IFn _ _ _ _ 0)
     (ICallClosure _ _ 0)
     (ITryCatch _ _ _ 0)
     (IRegion _ _ _ _ body (kind-of st env body))))
@@ -368,7 +368,7 @@
     (IStackVariant _ tag fields (cg-stack-variant st env tag fields))
     (IMatch scr arms (cg-match st env scr arms 0))
     ; A bare function node is never emitted as a value expression; keep st.
-    (IFn _ _ _ st)
+    (IFn _ _ _ _ st)
     (ITryCatch tbody cvar cbody (cg-trycatch st env tbody cvar cbody))
     (IRegion k b a l body (cg-region-scope st env e k b a l body))))
 
@@ -1728,7 +1728,7 @@
     (IVariant _ _ fields (+ 1 (icnf-count-list fields)))
     (IStackVariant _ _ fields (+ 1 (icnf-count-list fields)))
     (IMatch scr arms (icnf-add3 2 (icnf-size scr) (icnf-count-arms arms)))
-    (IFn _ _ _ 1)
+    (IFn _ _ _ _ 1)
     (ICallClosure _ args (icnf-add2 2 (icnf-count-list args)))
     (ITryCatch tbody _ cbody (icnf-add3 4 (icnf-size tbody) (icnf-size cbody)))
     (IRegion _ _ _ _ body (+ 2 (icnf-size body)))))
@@ -1767,7 +1767,7 @@
     ; alone).
     (IStackVariant _ _ fields (icnf-add2 (+ 1 (list-length fields)) (icnf-count-slots-list fields)))
     (IMatch scr arms (icnf-add2 (icnf-slot-count scr) (icnf-count-arm-slots arms)))
-    (IFn _ _ _ 0)
+    (IFn _ _ _ _ 0)
     (ICallClosure _ args (icnf-count-slots-list args))
     (ITryCatch tbody _ cbody (+ 1 (icnf-add2 (icnf-slot-count tbody) (icnf-slot-count cbody))))
     ; The region header (cg-region-scope): ten consecutive slots, and
@@ -1936,22 +1936,22 @@
 
 (defn ifn-tag-p (f)
   (match f
-    (IFn a b c true)
+    (IFn _ _ _ _ true)
     (_ false)))
 
 (defn ifn-tag-name (f)
   (match f
-    (IFn a b c a)
+    (IFn a _ _ _ a)
     (_ "a-name")))
 
 (defn ifn-tag-params (f)
   (match f
-    (IFn a b c b)
+    (IFn _ b _ _ b)
     (_ (no-strs))))
 
 (defn ifn-tag-body (f)
   (match f
-    (IFn a b c c)
+    (IFn _ _ c _ c)
     (_ (IConst 0))))
 
 ; Declared representation kind per parameter (see icnf.zyl's IFn).
@@ -2129,7 +2129,7 @@
 (defn cg-syms-entries-of (st fns)
   (if (is-nil fns) Nil
     (match (fh-if fns)
-      (IFn nm _ _ (Cons (SymEnt (cg-sym-mangled (cg-arena-of st) nm) (cg-display-name nm)) (cg-syms-entries-of st (tl2 fns))))
+      (IFn nm _ _ _ (Cons (SymEnt (cg-sym-mangled (cg-arena-of st) nm) (cg-display-name nm)) (cg-syms-entries-of st (tl2 fns))))
       (_ (cg-syms-entries-of st (tl2 fns))))))
 
 (defn cg-syms-pairs (st es off)
@@ -2248,7 +2248,7 @@
 
 (defn cg-functions-step (st f rest)
   (match f
-    (IFn nm params body
+    (IFn nm _ _ _
       (cg-functions-go st nm f rest))
     (_ (cg-functions st rest))))
 

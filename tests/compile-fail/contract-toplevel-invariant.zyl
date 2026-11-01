@@ -1,0 +1,4 @@
+; expect-error: E_TOPLEVEL_STMTS_WITH_EXPLICIT_MAIN
+; A top-level invariant never runs; it used to be accepted and dropped.
+(invariant (>= 0 1))
+(defn main () 0)

@@ -1,0 +1,5 @@
+; expect-error: E_MALFORMED_FORM
+; Tests make main; a top-level expression beside them used to be dropped silently.
+(print "never runs")
+(test "t" (assert-equal 1 1))
+(run-tests)

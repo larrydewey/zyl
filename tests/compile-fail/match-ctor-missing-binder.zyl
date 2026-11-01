@@ -1,0 +1,5 @@
+; expect-error: E_ARITY_MISMATCH
+; (P a 1) on a two-field P binds one field and returns 1; it used to be accepted.
+(deftype T (P Int Int) (Q))
+(defn f (t) (match t (P a 1) (Q 0)))
+(defn main () (begin (print (f (P 5 6))) 0))

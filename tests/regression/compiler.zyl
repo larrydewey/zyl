@@ -49,20 +49,20 @@
     (TkQuasi (= 16 want))
     (TkUnquote (= 17 want))
     (TkSplice (= 18 want))
-    (TkInt _ (= 2 want))
+    (TkInt _ _ (= 2 want))
     ; The overflow token carries no value: the parser reports it before
     ; parsing, so a classified stream never holds one. Given 19 so the
     ; numbering below is unchanged. The malformed-literal token is
     ; reported the same way (it is `1.2.3`, not a number), so it also
     ; never reaches a classified stream; given 20.
-    (TkIntOverflow _ (= 19 want))
-    (TkNumMalformed _ (= 20 want))
-    (TkFloat _ (= 3 want))
-    (TkString _ (= 4 want))
-    (TkBool _ (= 5 want))
-    (TkIdent _ (= 1 want))
-    (TkSymbol _ (= 6 want))
-    (TkKeyword _ (= 7 want))))
+    (TkIntOverflow _ _ (= 19 want))
+    (TkNumMalformed _ _ (= 20 want))
+    (TkFloat _ _ (= 3 want))
+    (TkString _ _ (= 4 want))
+    (TkBool _ _ (= 5 want))
+    (TkIdent _ _ (= 1 want))
+    (TkSymbol _ _ (= 6 want))
+    (TkKeyword _ _ (= 7 want))))
 
 ; Payload of an AstInt node; -1 otherwise.
 (defn atom-int (a)

@@ -1,0 +1,4 @@
+; expect-error: E_RESERVED_KEYWORD
+; set! is a special form; a macro of that name could never be reached safely.
+(defmacro set! (a b) b)
+(defn main () (begin (print (set! 1 2)) 0))

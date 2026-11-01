@@ -1,0 +1,4 @@
+; expect-error: E_MALFORMED_FORM
+; def takes one value; the extra one used to be dropped.
+(def x 1 2)
+(defn main () (begin (print x) 0))

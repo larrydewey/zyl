@@ -306,8 +306,21 @@ compile with `build/boot/zyl-self` on 2026-09-28.
   `with-resource` and `assert-fail` rewrites run on the parse tree
   (`compiler/desugar.zyl`). A failing test prints `FAIL: <message>`.
 - Contracts (spec §23): `requires`/`ensures`/`invariant` checks,
-  `recover` arms by error code, `checkpoint` rollback of `let-mut`
-  state, profiles (`--contracts=P`, `(contracts P)`).
+  `recover` arms by error code (a runtime report `error[E_...]` matches
+  too), `checkpoint` rollback of `let-mut` state (targets found by scope,
+  so a re-bound name inside the body does not hide the outer one; saved
+  copies and the caught error use names the body never spells), profiles
+  (`--contracts=P`, `(contracts P)`). A stripped condition is still typed,
+  so the profile cannot change a program's types; a condition that
+  `set!`s is `E_MUT_CONFLICT`.
+- Form shapes: `try` needs `(catch NAME handler)`, `checkpoint` one
+  expression, `recover` a body and two-element arms, `def` one value, a
+  match arm a body; otherwise `E_MALFORMED_FORM`. A top-level expression
+  never runs and is rejected (`E_TOPLEVEL_STMTS_WITH_EXPLICIT_MAIN` beside
+  `main`, `E_MALFORMED_FORM` otherwise). A constructor pattern names every
+  field or none (`E_ARITY_MISMATCH`); the check found binders missing in
+  linearity's walk of the atomic byte-buffer forms (now walked in full).
+  `set!` is a reserved keyword (§1.3).
 - Delimiters (spec §1.6, `sexp_balance.zyl`): every file is checked
   before it is read, with the lexer's own rules (an agreement test
   mutates real sources and compares with the lexer's tokens), bracket
@@ -509,6 +522,13 @@ compile with `build/boot/zyl-self` on 2026-09-28.
 ## Open Limitations (each confirmed open on 2026-09-28)
 
 Language and compiler:
+
+- A local binding named like a builtin or a special form (`+`,
+  `str-length`, `print`) is silently ignored: the builtin runs. A top-level
+  `defn` does shadow a builtin (it is qualified). Honouring the local
+  binding or rejecting it is a language decision still to make.
+- Contract conditions may still do I/O or call effectful functions; only
+  `set!` is rejected. A full purity check needs an effect analysis.
 
 - Deep nesting: the unused-binding collector was quadratic (a list copy per
   level) and is now an accumulator, so 40000 nested `(+ 1 ..)` compile in

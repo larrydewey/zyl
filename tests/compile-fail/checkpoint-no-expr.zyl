@@ -1,0 +1,3 @@
+; expect-error: E_MALFORMED_FORM
+; checkpoint takes exactly one expression; a bare (checkpoint) used to type as Unit.
+(defn main () (begin (checkpoint) 0))

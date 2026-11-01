@@ -1,0 +1,5 @@
+; expect-error: E_ARITY_MISMATCH
+; A constructor pattern names each field once; the extra binders used to be dropped.
+(deftype T (P Int) (Q))
+(defn f (t) (match t (P a b c (+ a 1)) (Q 0)))
+(defn main () (begin (print (f (P 5))) 0))

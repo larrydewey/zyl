@@ -1,0 +1,3 @@
+; expect-error: E_MALFORMED_FORM
+; The handler clause must be (catch e handler); any other head used to work as catch.
+(defn main () (begin (print (try (panic "x") (rescue e "handled"))) 0))

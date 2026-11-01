@@ -1,0 +1,3 @@
+; expect-error: E_MALFORMED_FORM
+; The catch binder must be a name; a literal used to be accepted.
+(defn main () (begin (print (try (panic "x") (catch 1 2))) 0))

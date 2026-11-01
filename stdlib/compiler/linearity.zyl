@@ -514,14 +514,14 @@
     (ELoadByteSigned endian base off (begin (lin-walk base env) (lin-walk off env)))
     (EStoreByte endian base off v (begin (lin-walk base env) (lin-walk off env) (lin-walk v env) (lin-note-write (lin-ident-of base) e)))
     (EStoreByteSigned endian base off v (begin (lin-walk base env) (lin-walk off env) (lin-walk v env) (lin-note-write (lin-ident-of base) e)))
-    (EAtomicLoad p (lin-walk p env))
-    (EAtomicStore p v (begin (lin-walk p env) (lin-walk v env) (lin-note-write (lin-ident-of p) e)))
+    (EAtomicLoad p o (lin-walk2 p o env))
+    (EAtomicStore p o v (begin (lin-walk3 p o v env) (lin-note-write (lin-ident-of p) e)))
     (EAtomicAdd p a b (begin (lin-walk3 p a b env) (lin-note-write (lin-ident-of p) e)))
     (EAtomicSub p a b (begin (lin-walk3 p a b env) (lin-note-write (lin-ident-of p) e)))
-    (EAtomicCAS p expected desired (begin (lin-walk3 p expected desired env) (lin-note-write (lin-ident-of p) e)))
-    (EAtomicFetchAdd p a (begin (lin-walk2 p a env) (lin-note-write (lin-ident-of p) e)))
-    (EAtomicMax p a (begin (lin-walk2 p a env) (lin-note-write (lin-ident-of p) e)))
-    (EAtomicMin p a (begin (lin-walk2 p a env) (lin-note-write (lin-ident-of p) e)))
+    (EAtomicCAS p o expected desired (begin (lin-walk3 p o expected env) (lin-walk desired env) (lin-note-write (lin-ident-of p) e)))
+    (EAtomicFetchAdd p a b (begin (lin-walk3 p a b env) (lin-note-write (lin-ident-of p) e)))
+    (EAtomicMax p a b (begin (lin-walk3 p a b env) (lin-note-write (lin-ident-of p) e)))
+    (EAtomicMin p a b (begin (lin-walk3 p a b env) (lin-note-write (lin-ident-of p) e)))
     ; --- no sub-expressions, but listed rather than caught by a wildcard:
     ; the match is exhaustive by design, so a variant added to ExprInner
     ; later has to be dealt with here instead of quietly un-walked ---
@@ -547,7 +547,7 @@
 
 (defn lin-walk-atom (a e env)
   (match a
-    (AIdent name tag
+    (AIdent name
       (if (if (lin-local-p name env) (lin-consumed-p name) false)
         (lin-report e name)
         unit))
@@ -656,7 +656,7 @@
     (EMakeStruct name args (lin-marked-p lin-drop-types name))
     (EMakeVariant tyname variant args (lin-marked-p lin-drop-types tyname))
     (EAtom a (match a
-      (AIdent name tag (lin-local-p name env))
+      (AIdent name (lin-local-p name env))
       (_ false)))
     (_ (lin-ctor-p (lin-callee-of e)))))
 
@@ -740,7 +740,7 @@
 
 (defn lin-walk-arm (arm src env)
   (match arm
-    (MA variant patterns body tag
+    (MA variant patterns body
       (let names (lin-arm-binders variant patterns)
         (let r (if (str-eq src "") "" (lin-find-root src))
           (begin

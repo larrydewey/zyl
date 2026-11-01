@@ -78,7 +78,7 @@
       (if (ri-is-load-of scr name)
         (ri-name-safe-in-arms arms name)
         (if (ri-name-safe-in scr name) (ri-name-safe-in-arms arms name) false)))
-    (IFn _ _ body (not (ri-name-referenced body name)))
+    (IFn _ _ body _ (not (ri-name-referenced body name)))
     (ITryCatch tbody _ cbody
       (if (ri-name-safe-in tbody name) (ri-name-safe-in cbody name) false))
     (IRegion _ _ _ _ body (ri-name-safe-in body name))))
@@ -125,7 +125,7 @@
     (IStackVariant _ _ fields (ri-name-referenced-list fields name))
     (IMatch scr arms
       (if (ri-name-referenced scr name) true (ri-name-referenced-arms arms name)))
-    (IFn _ _ body (ri-name-referenced body name))
+    (IFn _ _ body _ (ri-name-referenced body name))
     (ITryCatch tbody _ cbody
       (if (ri-name-referenced tbody name) true (ri-name-referenced cbody name)))
     (IRegion _ _ _ _ body (ri-name-referenced body name))))
