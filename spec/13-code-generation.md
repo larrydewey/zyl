@@ -350,6 +350,9 @@ Not normative. Probed with `build/boot/zyl-self`.
   stores lower to `zyl_load_byte`/`zyl_store_byte` (one byte, inline on
   both emitters) or `zyl_load_n`/`zyl_store_n` (wider), the rest to
   `zyl_bytebuf_*` runtime calls. A load or store evaluates the buffer
-  before the offset. `stdlib/atomic/atomic.zyl` wraps the runtime's
+  before the offset. Each also has a `!` form (`load-u8!`), which traps
+  with `E_INDEX_OUT_OF_BOUNDS` outside its buffer, and a `?` form
+  (`load-u8?`, an `Option`); the plain form must be proven in range
+  (§20.3a). The mode rides in the endian code (bit 2 trap, bit 4 probe). `stdlib/atomic/atomic.zyl` wraps the runtime's
   sequentially consistent atomics on raw addresses. The canonical text
   types these operations (§4.9) but does not define them.

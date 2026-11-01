@@ -30,8 +30,8 @@
       (let t (file-read fd 60000000) (let _ (file-close fd) t)))))
 
 ; ---- byte writers into a ByteBuf ----
-(defn el-w8 ((b ByteBuf) (off Int) (v Int)) (store-u8 :le b off (bit-and v 255)))
-(defn el-ld8 ((b ByteBuf) (off Int)) (load-u8 :le b off))
+(defn el-w8 ((b ByteBuf) (off Int) (v Int)) (store-u8! :le b off (bit-and v 255)))
+(defn el-ld8 ((b ByteBuf) (off Int)) (load-u8! :le b off))
 (defn el-wle (b off v n) (if (= n 0) off (let _ (el-w8 b off v) (el-wle b (+ off 1) (ashr v 8) (- n 1)))))
 (defn el-copy (dst doff src n i) (if (>= i n) unit (let _ (el-w8 dst (+ doff i) (el-ld8 src i)) (el-copy dst doff src n (+ i 1)))))
 

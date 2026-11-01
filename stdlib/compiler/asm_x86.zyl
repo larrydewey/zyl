@@ -45,8 +45,8 @@
 (defn ax-secbuf-n (i) (ffi-call "zyl_wvec_get" (ax-getw ax-secbuf) i 1000))
 (defn ax-cur-n (i) (ffi-call "zyl_words_get" (ffi-call "zyl_ref_get" ax-cur 1000) i 1000))
 (defn ax-cur-set (i v) (let _ (ffi-call "zyl_words_set" (ffi-call "zyl_ref_get" ax-cur 1000) i v 1000) unit))
-(defn ax-store8 ((b ByteBuf) (off Int) (v Int)) (store-u8 :le b off v))
-(defn ax-load8 ((b ByteBuf) (off Int)) (load-u8 :le b off))
+(defn ax-store8 ((b ByteBuf) (off Int) (v Int)) (store-u8! :le b off v))
+(defn ax-load8 ((b ByteBuf) (off Int)) (load-u8! :le b off))
 
 ; append one byte to the current section
 (defn ax-b (v)

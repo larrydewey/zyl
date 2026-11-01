@@ -75,11 +75,14 @@
     (EAtom a (match a (AInt n (not (= n 0))) (_ false)))
     (_ false)))
 
-(defn nc-walk (e pol)
-  (let _ (nc-check-op e pol)
-    (nc-children e pol)))
+(defn nc-walk (e pol) (nc-walk-in e pol Nil))
 
-(defn nc-check-op (e _pol)
+; env: (Pair name capacity) for each enclosing `let` of a `(bytebuf R N)`, innermost first.
+(defn nc-walk-in (e pol env)
+  (let _ (nc-check-op e pol env)
+    (nc-children e pol env)))
+
+(defn nc-check-op (e _pol env)
   (match (Expr.inner e)
     (EApply n args
       (if (and (nc-div-p n) (and (nc-int-p e) (nc-partial-enforced)))
@@ -87,6 +90,10 @@
           (Cons _ divisors (nc-check-divisors n divisors))
           (Nil unit))
         unit))
+    (ELoadByte en b o (nc-check-byte e "load-u" en b o env))
+    (ELoadByteSigned en b o (nc-check-byte e "load-i" en b o env))
+    (EStoreByte en b o _ (nc-check-byte e "store-u" en b o env))
+    (EStoreByteSigned en b o _ (nc-check-byte e "store-i" en b o env))
     (_ unit)))
 
 ; Every operand after the first divides; each must be a nonzero literal.
@@ -97,6 +104,43 @@
       (if (nc-nonzero-literal d)
         (nc-check-divisors n t)
         (nc-fail-partial d n)))))
+
+; Spec 20.3a: a plain byte access needs a let-bound (bytebuf R N), a literal k and k + width <= N; `!`/query modes need no proof.
+(defn nc-bytes-enforced () true)
+
+(defn nc-check-byte (e what en b o env)
+  (let code (endian-to-int en)
+    (if (or (not (nc-bytes-enforced)) (> (bit-and code 6) 0)) unit
+      (if (nc-byte-proven b o (endian-width en) env) unit
+        (nc-fail-byte e what (endian-width en))))))
+
+(defn nc-byte-proven (b o w env)
+  (match (Expr.inner b)
+    (EAtom a
+      (match a
+        (AIdent n
+          (match (Expr.inner o)
+            (EAtom k (match k (AInt off (and (>= off 0) (<= (+ off w) (nc-cap-of n env)))) (_ false)))
+            (_ false)))
+        (_ false)))
+    (_ false)))
+
+; The literal capacity bound to `n`, or -1.
+(defn nc-cap-of (n env)
+  (match env
+    (Nil -1)
+    (Cons p t (match p (Pair m c (if (str-eq m n) c (nc-cap-of n t)))))))
+
+(defn nc-unbind (n env)
+  (match env
+    (Nil Nil)
+    (Cons p t (match p (Pair m _ (if (str-eq m n) (nc-unbind n t) (Cons p (nc-unbind n t))))))))
+
+; What `(let n v ...)` makes of env: n names a known capacity, or nothing any more.
+(defn nc-let-env (n v env)
+  (match (Expr.inner v)
+    (EByteBuf _ cap (Cons (Pair n cap) (nc-unbind n env)))
+    (_ (nc-unbind n env))))
 
 ; ===========================================================================
 ; DIAGNOSTICS
@@ -109,6 +153,13 @@
       (str-concat " a b)` to stop the program on a zero divisor, `(" (str-concat (if (str-eq n "/") "div?" "rem?")
         " a b)` to get None, or divide by a nonzero literal"))))))
 
+(defn nc-fail-byte (e what w)
+  (let name (str-concat what (ffi-call "zyl_int_text" (* w 8) 1000))
+    (nc-fail e "E_PARTIAL_OPERATION"
+      (str-concat "`" (str-concat name "` may fall outside its buffer, and a plain byte access must be proven in range"))
+      (str-concat "write `" (str-concat name (str-concat "!` to stop the program when it is outside (E_INDEX_OUT_OF_BOUNDS), `" (str-concat name
+        "?` to get None, or use a literal offset into a buffer a `let` bound to `(bytebuf R N)`, where the compiler can see it fits")))))))
+
 (defn nc-fail (site code msg help)
   (ffi-call "zyl_panic"
     (err-at code msg (ffi-call "zyl_span_file" site 1000) (ffi-call "zyl_span_off" site 1000) help)
@@ -118,83 +169,44 @@
 ; STRUCTURAL RECURSION
 ; ===========================================================================
 
-(defn nc-list (xs pol)
+(defn nc-list (xs pol env)
   (match xs
     (Nil unit)
-    (Cons h t (let _ (nc-walk h pol) (nc-list t pol)))))
+    (Cons h t (let _ (nc-walk-in h pol env) (nc-list t pol env)))))
 
-(defn nc-two (a b pol) (let _ (nc-walk a pol) (nc-walk b pol)))
+(defn nc-two (a b pol env) (let _ (nc-walk-in a pol env) (nc-walk-in b pol env)))
 
-(defn nc-three (a b c pol) (let _ (nc-two a b pol) (nc-walk c pol)))
+(defn nc-three (a b c pol env) (let _ (nc-two a b pol env) (nc-walk-in c pol env)))
 
-(defn nc-opt (o pol) (match o (Some x (nc-walk x pol)) (None unit)))
+(defn nc-opt (o pol env) (match o (Some x (nc-walk-in x pol env)) (None unit)))
 
-(defn nc-arms (arms pol)
-  (match arms
-    (Nil unit)
-    (Cons a rest (let _ (nc-walk (MA.body a) pol) (nc-arms rest pol)))))
-
-(defn nc-children (e pol)
+; A form that binds names (a match arm, a lambda, for, catch) drops what env knows: it may shadow.
+(defn nc-children (e pol env)
   (match (Expr.inner e)
-    (ECall f args (let _ (nc-walk f pol) (nc-list args pol)))
-    (EApply _ args (nc-list args pol))
-    (EDefn _ _ body (nc-walk body pol))
-    (EDef _ v (nc-walk v pol))
-    (ELet _ v b (nc-two v b pol))
-    (ELetMut _ v b (nc-two v b pol))
-    (EIf c t f (nc-three c t f pol))
-    (ETryCatch b _ h (nc-two b h pol))
-    (EMatch s arms (let _ (nc-walk s pol) (nc-arms arms pol)))
-    (EBegin xs (nc-list xs pol))
-    (EPrint xs (nc-list xs pol))
-    (EWhile c b (nc-two c b pol))
-    (EFor _ c b (nc-two c b pol))
-    (ELambda _ _ b (nc-walk b pol))
-    (EFn _ _ b (nc-walk b pol))
-    (ESpawn b (nc-walk b pol))
-    (ESend a b (nc-two a b pol))
-    (ESendClosure a b _ (nc-two a b pol))
-    (EFfiCall _ args _ (nc-list args pol))
-    (EFfiPin b (nc-walk b pol))
-    (EFfiUnpin b (nc-walk b pol))
-    (EAssert b m (let _ (nc-walk b pol) (nc-opt m pol)))
-    (EUnwrap b (nc-walk b pol))
-    (EExit b (nc-walk b pol))
-    (EClose b (nc-walk b pol))
-    (EFileOpen a b (nc-two a b pol))
-    (EFileRead a b (nc-two a b pol))
-    (EFileWrite a b (nc-two a b pol))
-    (EFileClose b (nc-walk b pol))
-    (EBufAppend a b (nc-two a b pol))
-    (EStructGet b _ (nc-walk b pol))
-    (EMakeStruct _ args (nc-list args pol))
-    (ETuple xs (nc-list xs pol))
-    (ETupleGet t _ (nc-walk t pol))
-    (EMakeVariant _ _ args (nc-list args pol))
-    (ESetBang _ v (nc-walk v pol))
-    (ETestDecl _ body _ _ (nc-walk body pol))
-    (EAssertEqual a b (nc-two a b pol))
-    (EAssertTrue a _ (nc-walk a pol))
-    (EAssertFalse a _ (nc-walk a pol))
-    (ETestCompile x _ (nc-walk x pol))
-    (EUnknown _ xs (nc-list xs pol))
-    (ELoadByte _ a b (nc-two a b pol))
-    (ELoadByteSigned _ a b (nc-two a b pol))
-    (EStoreByte _ a b c (nc-three a b c pol))
-    (EStoreByteSigned _ a b c (nc-three a b c pol))
-    (EByteSlice a b c (nc-three a b c pol))
-    (EByteSliceSub a b c (nc-three a b c pol))
-    (EByteBufAppend a b (nc-two a b pol))
-    (EByteBufLen b (nc-walk b pol))
-    (EByteBufCap b (nc-walk b pol))
-    (EByteBufPtr b (nc-walk b pol))
-    (EAlignCheck b _ (nc-walk b pol))
-    (EAtomicLoad a b (nc-two a b pol))
-    (EAtomicStore a b c (nc-three a b c pol))
-    (EAtomicAdd a b c (nc-three a b c pol))
-    (EAtomicSub a b c (nc-three a b c pol))
-    (EAtomicCAS a b c d (let _ (nc-three a b c pol) (nc-walk d pol)))
-    (EAtomicFetchAdd a b c (nc-three a b c pol))
-    (EAtomicMax a b c (nc-three a b c pol))
-    (EAtomicMin a b c (nc-three a b c pol))
-    (_ unit)))
+    (ECall f args (let _ (nc-walk-in f pol env) (nc-list args pol env)))
+    (EApply _ args (nc-list args pol env))
+    (ELet n v b (let _ (nc-walk-in v pol env) (nc-walk-in b pol (nc-let-env n v env))))
+    (ELetMut n v b (let _ (nc-walk-in v pol env) (nc-walk-in b pol (nc-unbind n env))))
+    (EIf c t f (nc-three c t f pol env))
+    (EBegin xs (nc-list xs pol env))
+    (EPrint xs (nc-list xs pol env))
+    (EWhile c b (nc-two c b pol env))
+    (ESpawn b (nc-walk-in b pol env))
+    (ESend a b (nc-two a b pol env))
+    (EFfiCall _ args _ (nc-list args pol env))
+    (EFfiPin b (nc-walk-in b pol env))
+    (EFfiUnpin b (nc-walk-in b pol env))
+    (EAssert b m (let _ (nc-walk-in b pol env) (nc-opt m pol env)))
+    (EUnwrap b (nc-walk-in b pol env))
+    (EExit b (nc-walk-in b pol env))
+    (EStructGet b _ (nc-walk-in b pol env))
+    (EMakeStruct _ args (nc-list args pol env))
+    (ETuple xs (nc-list xs pol env))
+    (EMakeVariant _ _ args (nc-list args pol env))
+    (ESetBang n v (nc-walk-in v pol (nc-unbind n env)))
+    (EAssertEqual a b (nc-two a b pol env))
+    (ELoadByte _ a b (nc-two a b pol env))
+    (ELoadByteSigned _ a b (nc-two a b pol env))
+    (EStoreByte _ a b c (nc-three a b c pol env))
+    (EStoreByteSigned _ a b c (nc-three a b c pol env))
+    (_ (nc-list (expr-children e) pol Nil))))

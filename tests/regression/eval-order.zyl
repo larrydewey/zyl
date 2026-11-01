@@ -55,8 +55,8 @@
 (test "byte operations take the buffer first"
   (let b (bytebuf Heap 8)
     (begin
-      (assert-equal (order-of (fn () (store-u8 :le (begin (t "b" 0) b) (t "o" 1) (t "v" 7)))) "bov")
-      (assert-equal (order-of (fn () (load-u8 :le (begin (t "b" 0) b) (t "o" 1)))) "bo")
-      (assert-equal (load-u8 :le b 1) 7))))
+      (assert-equal (order-of (fn () (store-u8! :le (begin (t "b" 0) b) (t "o" 1) (t "v" 7)))) "bov")
+      (assert-equal (order-of (fn () (load-u8! :le (begin (t "b" 0) b) (t "o" 1)))) "bo")
+      (assert-equal (load-u8! :le b 1) 7))))
 
 (run-tests)

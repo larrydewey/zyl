@@ -62,12 +62,12 @@
 ; Six bytes. The bstr wrapping it in the COSE_Sign1 is 58 06.
 (defn cose-protected ()
   (let b (cbor-buf cose-protected-len)
-    (let _ (store-u8 :le b 0 162)
-      (let _ (store-u8 :le b 1 1)
-        (let _ (store-u8 :le b 2 39)
-          (let _ (store-u8 :le b 3 3)
-            (let _ (store-u8 :le b 4 24)
-              (begin (store-u8 :le b 5 60) (CB b cose-protected-len)))))))))
+    (let _ (store-u8! :le b 0 162)
+      (let _ (store-u8! :le b 1 1)
+        (let _ (store-u8! :le b 2 39)
+          (let _ (store-u8! :le b 3 3)
+            (let _ (store-u8! :le b 4 24)
+              (begin (store-u8! :le b 5 60) (CB b cose-protected-len)))))))))
 
 ; Copy `n` bytes from `src` at `soff` into `cb` at its end.
 ;
@@ -81,7 +81,7 @@
       (begin
         (for (i 0) (< i n)
           (begin
-            (store-u8 :le b (+ used i) (load-u8 :le src (+ soff i)))
+            (store-u8! :le b (+ used i) (load-u8! :le src (+ soff i)))
             (set! i (+ i 1))))
         (CB b (+ used n))))))
 
@@ -92,7 +92,7 @@
       (begin
         (for (i 0) (< i n)
           (begin
-            (store-u8 :le b (+ used i) (w-get w i))
+            (store-u8! :le b (+ used i) (w-get w i))
             (set! i (+ i 1))))
         (CB b (+ used n))))))
 
@@ -102,7 +102,7 @@
     (begin
       (for (i 0) (< i n)
         (begin
-          (w-set w i (load-u8 :le b (+ off i)))
+          (w-set w i (load-u8! :le b (+ off i)))
           (set! i (+ i 1))))
       w)))
 
@@ -130,7 +130,7 @@
   (begin
     (for (i 0) (< i n)
       (begin
-        (store-u8 :le dst (+ doff i) (load-u8 :le src (+ soff i)))
+        (store-u8! :le dst (+ doff i) (load-u8! :le src (+ soff i)))
         (set! i (+ i 1))))
     (+ doff n)))
 
@@ -177,7 +177,7 @@
   (begin
     (for (i 0) (< i n)
       (begin
-        (store-u8 :le dst (+ doff i) (w-get w i))
+        (store-u8! :le dst (+ doff i) (w-get w i))
         (set! i (+ i 1))))
     (+ doff n)))
 
@@ -224,7 +224,7 @@
 (defn cose-fail () false)
 
 ; Byte `v` at `off`.
-(defn cose-at ((b ByteBuf) off (v Int)) (= (load-u8 :le b off) v))
+(defn cose-at ((b ByteBuf) off (v Int)) (= (load-u8! :le b off) v))
 
 ; The `xs` bytes at `off` in `b`, in order.
 (defn cose-bytes-eq ((b ByteBuf) off xs)
@@ -259,16 +259,16 @@
 (deftype PLen (PLen Int Int))
 
 (defn cose-read-plen ((b ByteBuf) off len)
-  (let ib (load-u8 :le b off)
+  (let ib (load-u8! :le b off)
     (let arg (bit-and ib 31)
       (if (< arg 24)
         (PLen arg 1)
         (if (= arg 24)
-          (if (>= (+ off 1) len) (PLen (- 1) 0) (PLen (load-u8 :le b (+ off 1)) 2))
+          (if (>= (+ off 1) len) (PLen (- 1) 0) (PLen (load-u8! :le b (+ off 1)) 2))
           (if (= arg 25)
             (if (>= (+ off 2) len)
               (PLen (- 1) 0)
-              (PLen (+ (* 256 (load-u8 :le b (+ off 1))) (load-u8 :le b (+ off 2))) 3))
+              (PLen (+ (* 256 (load-u8! :le b (+ off 1))) (load-u8! :le b (+ off 2))) 3))
             (if (= arg 26)
               (if (>= (+ off 4) len)
                 (PLen (- 1) 0)
@@ -279,9 +279,9 @@
 ; is why this is four shifts rather than the shift-and-add of the trailer's own
 ; little-endian fields.
 (defn cose-rd32 ((b ByteBuf) off)
-  (+ (* 16777216 (load-u8 :le b off))
-    (+ (* 65536 (load-u8 :le b (+ off 1)))
-      (+ (* 256 (load-u8 :le b (+ off 2))) (load-u8 :le b (+ off 3))))))
+  (+ (* 16777216 (load-u8! :le b off))
+    (+ (* 65536 (load-u8! :le b (+ off 1)))
+      (+ (* 256 (load-u8! :le b (+ off 2))) (load-u8! :le b (+ off 3))))))
 
 ; The shortest blob this module can emit: the 44 fixed bytes, a one-byte
 ; payload head, no payload, and the signature with its two-byte head.
@@ -350,7 +350,7 @@
 
                         (if
 
-                          (= (+ (* 256 (load-u8 :le b soff)) (load-u8 :le b (+ soff 1))) 22592)
+                          (= (+ (* 256 (load-u8! :le b soff)) (load-u8! :le b (+ soff 1))) 22592)
 
                           (let ss (cose-sig-structure b (+ base 2) b poff plen)
 
@@ -372,7 +372,7 @@
 (defn cose-kid-eq ((b ByteBuf) at kid (i Int))
   (if (>= i 32)
     true
-    (if (= (load-u8 :le b (+ at i)) (w-get kid i))
+    (if (= (load-u8! :le b (+ at i)) (w-get kid i))
       (cose-kid-eq b at kid (+ i 1))
       false)))
 

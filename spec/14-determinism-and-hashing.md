@@ -142,6 +142,27 @@ sign, as the hardware's `idiv` does.
 
 Float `/` by zero is ±Infinity or NaN, as the standard says.
 
+### 20.3a Byte access
+
+A byte load or store (`load-u8` .. `store-i64`) whose bytes may fall
+outside its buffer is partial in the same way, and used to read `0` or
+drop the store silently. The plain form is accepted only where it is
+proven in range: the handle is a name an enclosing `let` bound to
+`(bytebuf R N)`, the offset is an integer literal `k >= 0`, and
+`k + width <= N`. Any other plain access is `E_PARTIAL_OPERATION`, and no
+guard is recognised. The author says what an out-of-range access means:
+
+| form | outside the buffer | result |
+|---|---|---|
+| `(load-u8 :le b 3)` with `b` a let-bound `(bytebuf R 4)` | impossible, proven | Int |
+| `(load-u8! :le b i)`, `(store-u8! :le b i v)` | the program stops with `E_INDEX_OUT_OF_BOUNDS` | Int (a store gives 1) |
+| `(load-u8? :le b i)` | `None` | `(Option Int)` |
+| `(store-u8? :le b i v)` | `None`, nothing written | `(Option Int)`, `(Some 1)` |
+
+The same holds for every width and signedness. The `?` forms evaluate
+their operands once, left to right. The bound is a ByteBuf's capacity or
+a ByteSlice's length, and a negative offset is outside.
+
 ---
 
 ## Implementation Requirements
@@ -222,7 +243,11 @@ Not normative.
   interpreter uses the same decision procedure (`int_arith.zyl`) and so
   does the constant folder. `div?`/`rem?` are rewritten on the parse tree
   into `let`/`if`/`Some`/`None` around `div!`/`rem!` (`desugar.zyl`, as
-  the file is read).
+  the file is read). The byte forms (§20.3a) carry their mode in the
+  endian code the runtime receives (bit 1 big-endian, 2 trap for `!`, 4
+  probe for `?`); an inline `!` access jumps to the stub
+  `zyl_rt_trap_oob_1` (`zyl_bytes_oob_panic`), and `load-X?`/`store-X?`
+  are rewritten in `desugar.zyl` around a probe the runtime answers.
   Floats are IEEE-754 binary64 in SSE registers.
 - **Actors** are scheduled by the operating system
   (`spec/08-actors-and-concurrency.md`), so a program whose output depends

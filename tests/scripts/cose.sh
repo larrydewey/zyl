@@ -35,7 +35,7 @@ cat > "$BIN/dump.zyl" <<'EOF'
 (defn bytes-hex ((b ByteBuf) (n Int) (i Int) (acc String))
   (if (>= i n)
     acc
-    (bytes-hex b n (+ i 1) (str-concat acc (byte-hex (load-u8 :le b i))))))
+    (bytes-hex b n (+ i 1) (str-concat acc (byte-hex (load-u8! :le b i))))))
 
 (defn sig-hex (payload plen)
   (let prot (cose-protected)
@@ -50,7 +50,7 @@ cat > "$BIN/dump.zyl" <<'EOF'
 
 (defn payload-of (a b)
   (let p (cbor-buf 2)
-    (begin (store-u8 :le p 0 a) (store-u8 :le p 1 b) p)))
+    (begin (store-u8! :le p 0 a) (store-u8! :le p 1 b) p)))
 
 (def seed1 "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60")
 

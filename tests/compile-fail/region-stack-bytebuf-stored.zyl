@@ -8,4 +8,4 @@
 
 (defn main ()
   (let a (array-new 4)
-    (begin (stash a) (print (load-u8 :le (array-get a 0) 0)) 0)))
+    (begin (stash a) (print (load-u8! :le (array-get a 0) 0)) 0)))

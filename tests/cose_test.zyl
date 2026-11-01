@@ -23,7 +23,7 @@
     (begin
       (for (i 0) (< i n)
         (begin
-          (store-u8 :le b i (nth-of xs i))
+          (store-u8! :le b i (nth-of xs i))
           (set! i (+ i 1))))
       b)))
 
@@ -31,7 +31,7 @@
 (defn bytes-of ((b ByteBuf) (n Int) (i Int))
   (if (>= i n)
     Nil
-    (Cons (load-u8 :le b i) (bytes-of b n (+ i 1)))))
+    (Cons (load-u8! :le b i) (bytes-of b n (+ i 1)))))
 
 ; The Sig_structure for a payload, as bytes.
 (defn sig-structure (payload plen)
@@ -49,7 +49,7 @@
 (defn bytes-hex ((b ByteBuf) (n Int) (i Int) (acc String))
   (if (>= i n)
     acc
-    (bytes-hex b n (+ i 1) (str-concat acc (byte-hex (load-u8 :le b i))))))
+    (bytes-hex b n (+ i 1) (str-concat acc (byte-hex (load-u8! :le b i))))))
 
 (def hexdigits "0123456789abcdef")
 
@@ -150,7 +150,7 @@
     (let clen (signed-len 4)
         (begin
           (assert-true (cose-verify blob clen cose-pub))
-          (store-u8 :le blob (+ cose-tail-off 1) 99)
+          (store-u8! :le blob (+ cose-tail-off 1) 99)
           (assert-true (not (cose-verify blob clen cose-pub)))))))
 
 ; The kid is the public key, so a reader learns which key signed without
@@ -162,7 +162,7 @@
     (let clen (signed-len 0)
         (begin
           (assert-true (cose-verify blob clen cose-pub))
-          (store-u8 :le blob cose-kid-off 0)
+          (store-u8! :le blob cose-kid-off 0)
           (assert-true (not (cose-verify blob clen cose-pub)))))))
 
 (test "a-signature-by-another-key-does-not-verify"
@@ -178,15 +178,15 @@
     (let clen (signed-len 0)
         (begin
           ; not an array(4)
-          (store-u8 :le blob 0 131)
+          (store-u8! :le blob 0 131)
           (assert-true (not (cose-verify blob clen cose-pub)))
           ; a protected header that is not ours. The header's own bytes are at
           ; 2..7 -- the bstr head 46 occupies offset 1 alone.
-          (store-u8 :le blob 0 132)
-          (store-u8 :le blob 2 161)
+          (store-u8! :le blob 0 132)
+          (store-u8! :le blob 2 161)
           (assert-true (not (cose-verify blob clen cose-pub)))
           ; restored, then truncated and starved
-          (store-u8 :le blob 2 162)
+          (store-u8! :le blob 2 162)
           (assert-true (cose-verify blob clen cose-pub))
           (assert-true (not (cose-verify blob (- clen 1) cose-pub)))
           (assert-true (not (cose-verify blob 10 cose-pub)))))))

@@ -108,7 +108,8 @@ The self-hosted pipeline (`compile-to-asm` in
    generated structural `T.==`; every type error is reported, then the
    compile fails (§4.8)
 9. numeric check (`numeric_check.zyl`: `E_PARTIAL_OPERATION` for a `/` or
-   `%` whose divisor is not a nonzero literal)
+   `%` whose divisor is not a nonzero literal, or a plain byte load/store
+   not proven in range)
 10. ICNF lowering (`icnf.zyl`)
 11. optimization (`optimization.zyl`): inlining of small functions and
     copy propagation (`opt-inline-fns`), then constant folding and

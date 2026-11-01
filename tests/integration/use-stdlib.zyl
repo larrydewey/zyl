@@ -14,7 +14,7 @@
 (test "multi-module-alloc"
   (let b (bytebuf Heap 64)
     (begin
-      (store-u8 :le b 0 65)
-      (assert-equal (load-u8 :le b 0) 65))))
+      (store-u8! :le b 0 65)
+      (assert-equal (load-u8! :le b 0) 65))))
 
 (run-tests)

@@ -1,0 +1,3 @@
+; expect-error: E_PARTIAL_OPERATION
+; A literal offset proves nothing when the bytes it names run past the buffer's capacity.
+(defn main () (let b (bytebuf Stack 4) (begin (store-u32 :le b 1 7) 0)))

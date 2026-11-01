@@ -29,7 +29,7 @@ cat > "$BIN/rec.zyl" <<'EOF'
 (defn buf-hex ((b ByteBuf) (n Int) (i Int) (acc String))
   (if (>= i n)
     acc
-    (buf-hex b n (+ i 1) (str-concat acc (byte-hex (load-u8 :le b i))))))
+    (buf-hex b n (+ i 1) (str-concat acc (byte-hex (load-u8! :le b i))))))
 
 (def h1 "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
 (def h2 "1f1e1d1c1b1a191817161514131211100f0e0d0c0b0a09080706050403020100")

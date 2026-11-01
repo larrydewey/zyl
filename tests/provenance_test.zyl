@@ -10,7 +10,7 @@
 (defn buf-hex ((b ByteBuf) (n Int) (i Int) (acc String))
   (if (>= i n)
     acc
-    (buf-hex b n (+ i 1) (str-concat acc (byte-hex (load-u8 :le b i))))))
+    (buf-hex b n (+ i 1) (str-concat acc (byte-hex (load-u8! :le b i))))))
 
 (def hexdigits "0123456789abcdef")
 
@@ -72,7 +72,7 @@
 ; the last version of this said "nine" and meant 169.
 (test "the-record-opens-with-a-map-of-ten"
   (let r (sample)
-    (assert-equal (load-u8 :le (match r (ProvOut b n b)) 0) (+ 160 10))))
+    (assert-equal (load-u8! :le (match r (ProvOut b n b)) 0) (+ 160 10))))
 
 (test "a-record-for-the-same-inputs-is-byte-identical"
   (let a (sample)

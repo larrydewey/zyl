@@ -45,7 +45,7 @@
 (defn t-hex ((b ByteBuf) (n Int) (i Int) (acc String))
   (if (>= i n)
     acc
-    (t-hex b n (+ i 1) (str-concat acc (byte-hex (load-u8 :le b i))))))
+    (t-hex b n (+ i 1) (str-concat acc (byte-hex (load-u8! :le b i))))))
 
 ; Read a whole file as a ByteBuf.
 (defn t-read (path) (prov-read-file path))
@@ -62,7 +62,7 @@
   (let b (cbor-buf n)
     (begin
       (for (i 0) (< i n)
-        (begin (store-u8 :le b i (bit-and (+ (* i 7) 3) 251)) (set! i (+ i 1))))
+        (begin (store-u8! :le b i (bit-and (+ (* i 7) 3) 251)) (set! i (+ i 1))))
       (prov-write-file path b n))))
 
 ; BLAKE3 over the first n bytes of a file, as bare hex.
@@ -129,7 +129,7 @@
   (let t (t-blank-trailer)
     (let b (match t (ProvOut b n b))
       (begin
-        (assert-equal (load-u8 :le b 7) 0)
+        (assert-equal (load-u8! :le b 7) 0)
         (assert-true (not (prov-magic-at b 1)))
         (assert-true (not (prov-magic-at b 2)))))))
 
@@ -195,7 +195,7 @@
   (begin (t-signed 4096)
     (let b (t-read t-path)
       (begin
-        (store-u8 :le b 100 (bit-xor (load-u8 :le b 100) 255))
+        (store-u8! :le b 100 (bit-xor (load-u8! :le b 100) 255))
         (assert-true (not (cose-verify b (bytebuf-len b) t-pub)))))))
 
 ; Two builds of the same inputs produce the same trailer, byte for byte.
@@ -238,13 +238,13 @@
     (let b (t-read t-path)
       (let w prov-scan-window
         (begin
-          (store-u8 :le b w 90)
-          (store-u8 :le b (+ w 1) 89)
-          (store-u8 :le b (+ w 2) 76)
-          (store-u8 :le b (+ w 3) 80)
-          (store-u8 :le b (+ w 4) 82)
-          (store-u8 :le b (+ w 5) 79)
-          (store-u8 :le b (+ w 6) 86)
+          (store-u8! :le b w 90)
+          (store-u8! :le b (+ w 1) 89)
+          (store-u8! :le b (+ w 2) 76)
+          (store-u8! :le b (+ w 3) 80)
+          (store-u8! :le b (+ w 4) 82)
+          (store-u8! :le b (+ w 5) 79)
+          (store-u8! :le b (+ w 6) 86)
           (begin
             (assert-equal (prov-find b (bytebuf-len b)) (- 1))
             (assert-equal prov-scan-window 1024)))))))

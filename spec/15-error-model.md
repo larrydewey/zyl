@@ -221,8 +221,11 @@ runtime's `zyl_overflow_panic` and `zyl_div_zero_panic`, reached from
 the trap stubs the code generator emits) and by the REPL interpreter,
 with the same message. One compile-time code belongs to the numeric
 model (§20): `E_PARTIAL_OPERATION`, a `/` or `%` whose divisor is not a
-nonzero literal (`numeric_check.zyl`, after type inference, located at
-the divisor).
+nonzero literal, located at the divisor, or a plain byte load or store
+not proven in range (§20.3a), located at the access
+(`numeric_check.zyl`, after type inference). A `load-X!`/`store-X!`
+outside its buffer is `E_INDEX_OUT_OF_BOUNDS` at run time
+(`zyl_bytes_oob_panic`).
 
 `E_UNKNOWN_CONSTRUCTOR` (`exhaustiveness_check.zyl`: a capitalized arm
 head that no type declares) is in the catalog and §28.

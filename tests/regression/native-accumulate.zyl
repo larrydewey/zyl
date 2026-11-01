@@ -15,9 +15,9 @@
 (defn big ((n Int)) (if (= n 0) 0 (+ 4611686018427387904 (big (- n 1)))))
 (defn swp ((a Int) (b Int) (n Int)) (if (= n 0) (- a b) (swp b a (- n 1))))
 (defn marks ((b ByteBuf) (j Int) (s Int) (n Int))
-  (if (>= j n) 0 (begin (store-u8 :le b j 7) (marks b (+ j s) s n))))
+  (if (>= j n) 0 (begin (store-u8! :le b j 7) (marks b (+ j s) s n))))
 (defn bsum ((b ByteBuf) (i Int) (n Int) (acc Int))
-  (if (>= i n) acc (bsum b (+ i 1) n (+ acc (load-u8 :le b i)))))
+  (if (>= i n) acc (bsum b (+ i 1) n (+ acc (load-u8! :le b i)))))
 
 ; tree recursion with a Float result and an ADT result (self unrolling)
 (defn ff ((n Int)) (if (< n 2) 1.0 (+ (ff (- n 1)) (ff (- n 2)))))
@@ -44,12 +44,12 @@
 
 ; guarded loops: the unchecked copy runs only when j >= 0, n <= the bound and 0 <= s < 2^31
 (defn fillk ((b ByteBuf) (j Int) (s Int) (n Int) (c Int))
-  (if (>= j n) c (begin (store-u8 :le b j 1) (fillk b (+ j s) s n (+ c 1)))))
+  (if (>= j n) c (begin (store-u8! :le b j 1) (fillk b (+ j s) s n (+ c 1)))))
 (defn cnt1 ((b ByteBuf) (i Int) (n Int) (c Int))
-  (if (< i n) (cnt1 b (+ i 1) n (+ c (load-u8 :le b i))) c))
+  (if (< i n) (cnt1 b (+ i 1) n (+ c (load-u8! :le b i))) c))
 ; a let shadowing the view parameter reads the other buffer
 (defn shadow ((b ByteBuf) (o ByteBuf) (i Int) (n Int) (acc Int))
-  (if (>= i n) acc (shadow b o (+ i 1) n (+ acc (+ (load-u8 :le b i) (let b o (load-u8 :le b i)))))))
+  (if (>= i n) acc (shadow b o (+ i 1) n (+ acc (+ (load-u8! :le b i) (let b o (load-u8! :le b i)))))))
 
 (test "guarded-loops"
   (let b (bytebuf Heap 32)
@@ -57,13 +57,15 @@
       (begin
         (assert-equal (fillk b 0 3 32 0) 11)
         (assert-equal (cnt1 b 0 32 0) 11)
-        (assert-equal (fillk b 30 1 40 0) 10)
-        (assert-equal (cnt1 b 0 40 0) 12)
-        (assert-equal (fillk b -5 2 4 0) 5)
+        (assert-fail (fillk b 30 1 40 0))
+        (assert-equal (cnt1 b 0 32 0) 12)
+        (assert-fail (cnt1 b 0 40 0))
+        (assert-fail (fillk b -5 2 4 0))
+        (assert-equal (fillk b 1 2 4 0) 2)
         (assert-equal (cnt1 b 0 32 0) 13)
         (assert-equal (fillk b 1 4611686018427387904 32 0) 1)
-        (assert-equal (cnt1 b -3 3 0) 2)
-        (assert-equal (store-u8 :le o 5 9) 1)
+        (assert-fail (cnt1 b -3 3 0))
+        (assert-equal (store-u8! :le o 5 9) 1)
         (assert-equal (shadow b o 0 8 0) 13)))))
 
 (test "view-bytes"
@@ -71,7 +73,8 @@
     (begin
       (assert-equal (marks b 1 3 64) 0)
       (assert-equal (bsum b 0 64 0) 147)
-      (assert-equal (bsum b 60 70 0) 7))))
+      (assert-equal (bsum b 60 64 0) 7)
+      (assert-fail (bsum b 60 70 0)))))
 
 (run-tests)
 ; wraps on purpose: (fact 21) pins the wrapped product

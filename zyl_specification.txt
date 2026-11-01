@@ -408,6 +408,9 @@ ResultValue:
                     ByteSlice; a handle whose type is still unknown when
                     its function group is typed is E_CANNOT_INFER
                     (annotate it, ((b ByteBuf))).
+                    A load-X! or store-X! has the plain form's type; a
+                    load-X? is (Option Int) and a store-X? (Option Int),
+                    (Some 1) when it stored (§20.3a).
     file-open       path : String, mode a literal fopen mode -> Int
     file-read       (file-read fd n): fd, n : Int -> String
     file-write      (file-write fd s): fd : Int, s : String -> Int
@@ -999,6 +1002,20 @@ Definition:
     remainder takes the dividend's sign.
     Float / by zero is ±Infinity or NaN.
 
+20.3a Byte access:
+    A load or store (load-u8 .. store-i64) whose bytes may fall outside
+    its buffer is partial in the same way. The plain form is total only
+    where it is proven in range: the handle is a name an enclosing `let`
+    bound to (bytebuf R N), the offset is an integer literal k >= 0, and
+    k + width <= N. Any other plain access is E_PARTIAL_OPERATION, and
+    no guard is recognised. The author chooses:
+        (load-u8! :le b i) (store-u8! :le b i v) ; outside: E_INDEX_OUT_OF_BOUNDS
+        (load-u8? :le b i)   ; outside: None, else (Some v)
+        (store-u8? :le b i v); outside: None and nothing written, else (Some 1)
+    and the same for every width and signedness. The ? forms evaluate
+    their operands once, left to right. The bound is a ByteBuf's
+    capacity or a ByteSlice's length; a negative offset is outside.
+
 20.4 Determinism:
     Bit-level reproducibility guaranteed.
 
@@ -1355,7 +1372,7 @@ Errors:
     E_REGION_ESCAPE             — region rule violation
     E_REGION_SPEC               — malformed with-region specification
     E_INVALID_ESCAPE            — invalid escape sequence in a string literal
-    E_INDEX_OUT_OF_BOUNDS       — index outside a word array
+    E_INDEX_OUT_OF_BOUNDS       — index outside a word array, or a load-X!/store-X! outside its buffer
     E_NESTED_PATTERN            — nested pattern in a constructor arm
     E_UNKNOWN_CONSTRUCTOR       — a match arm head spelled like a constructor (A-Z first)
                                   that no type declares; a binder is lowercase
@@ -1369,7 +1386,7 @@ Errors:
     E_CONTRACT_VIOLATION        — contract failed
     E_OVERFLOW                  — Int + - * under (numeric checked) whose result does not fit; INT_MIN / -1
     E_DIVISION_BY_ZERO          — div! or rem! with a zero divisor
-    E_PARTIAL_OPERATION         — / or % whose divisor is not a nonzero literal (Compile Error)
+    E_PARTIAL_OPERATION         — / or % whose divisor is not a nonzero literal, or a plain byte load/store not proven in range (Compile Error)
     E_CHANNEL_NOT_OWNER         — channel endpoint used by an actor that does not own it
     E_CHANNEL_CLOSED            — chan-recv on a closed, drained channel
     E_CHANNEL_CAPACITY          — (chan n) outside 1..16777216

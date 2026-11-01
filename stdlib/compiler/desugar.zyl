@@ -100,7 +100,8 @@
   (if (str-eq h "let*") true
   (if (str-eq h "div?") true
   (if (str-eq h "rem?") true
-  (if (str-eq h "vec") true (str-eq h "map"))))))))
+  (if (ds-byte-opt-p h) true
+  (if (str-eq h "vec") true (str-eq h "map")))))))))
 
 (defn ds-needs-list (xs) (match xs (Nil false) (Cons h t (if (ds-needs h) true (ds-needs-list t)))))
 
@@ -113,9 +114,10 @@
             (if (str-eq h "assert-fail") (ds-assert-fail a xs)
               (if (str-eq h "let*") (ds-let* a xs)
               (if (or (str-eq h "div?") (str-eq h "rem?")) (ds-div-opt a xs)
+              (if (ds-byte-opt-p h) (ds-byte-opt a xs)
               (if (str-eq h "vec") (ds-vec a xs)
                 (if (str-eq h "map") (ds-map a xs)
-                  (if (ds-needs-list xs) (ds-list (ds-forms xs) a) a))))))))))
+                  (if (ds-needs-list xs) (ds-list (ds-forms xs) a) a)))))))))))
     (_ a)))
 
 ; (div? a b) => (let x a (let y b (if (= y 0) None (Some (div! x y))))), spec
@@ -135,6 +137,54 @@
                     (ds-list (Cons (ds-id "let" a) (Cons (ds-id x a) (Cons (ds-form (ds-nth xs 1)) (Cons inner Nil)))) a)))))))))
     (ds-fail-help a (str-concat "`" (str-concat (ds-head a) "` takes a dividend and a divisor"))
                   (str-concat "write `(" (str-concat (ds-head a) " a b)`, which is None when b is 0")))))
+
+; `load-u8?` .. `store-i64?`: the access name before the `?`, or "".
+(defn ds-byte-opt-base (h)
+  (let n (str-length h)
+    (if (and (> n 1) (str-eq (str-substring h (- n 1) 1) "?"))
+      (let b (str-substring h 0 (- n 1))
+        (if (ds-byte-name-p b) b ""))
+      "")))
+
+(defn ds-byte-opt-p (h) (> (str-length (ds-byte-opt-base h)) 0))
+
+(defn ds-byte-name-p (b)
+  (let k (if (and (> (str-length b) 5) (str-eq (str-substring b 0 5) "load-")) 5
+           (if (and (> (str-length b) 6) (str-eq (str-substring b 0 6) "store-")) 6 0))
+    (if (= k 0) false
+      (let t (str-substring b k (- (str-length b) k))
+        (or (str-eq t "u8") (or (str-eq t "i8") (or (str-eq t "u16") (or (str-eq t "i16")
+          (or (str-eq t "u32") (or (str-eq t "i32") (or (str-eq t "u64") (str-eq t "i64"))))))))))))
+
+; Spec 20.3a, as div?: operands once, in order; a load probes (unspellable " query" head) then reads with `!`, a store is one query access.
+(defn ds-byte-opt (a xs)
+  (let base (ds-byte-opt-base (ds-head a))
+    (let store (str-eq (str-substring base 0 1) "s")
+      (if (= (ds-count xs) (if store 5 4))
+        (if store (ds-byte-store-opt a xs base) (ds-byte-load-opt a xs base))
+        (ds-fail-help a (str-concat "`" (str-concat (ds-head a) (if store "` takes an endian, a buffer, an offset and a value" "` takes an endian, a buffer and an offset")))
+          (str-concat "write `(" (str-concat (ds-head a) (if store " :le buf off val)`, which is None when the bytes are outside buf" " :le buf off)`, which is None when the bytes are outside buf"))))))))
+
+(defn ds-byte-load-opt (a xs base)
+  (let x (ds-fresh "_bq")
+    (let y (ds-fresh "_bq")
+      (let sel (ds-nth xs 1)
+        (let probe (ds-list (Cons (ds-id (str-concat base " query") a) (Cons sel (Cons (ds-id x a) (Cons (ds-id y a) Nil)))) a)
+          (let test (ds-list (Cons (ds-id "=" a) (Cons probe (Cons (AstInt 1) Nil))) a)
+            (let get (ds-list (Cons (ds-id (str-concat base "!") a) (Cons sel (Cons (ds-id x a) (Cons (ds-id y a) Nil)))) a)
+              (let some (ds-list (Cons (ds-id "Some" a) (Cons get Nil)) a)
+                (let pick (ds-list (Cons (ds-id "if" a) (Cons test (Cons some (Cons (ds-id "None" a) Nil)))) a)
+                  (let inner (ds-list (Cons (ds-id "let" a) (Cons (ds-id y a) (Cons (ds-form (ds-nth xs 3)) (Cons pick Nil)))) a)
+                    (ds-list (Cons (ds-id "let" a) (Cons (ds-id x a) (Cons (ds-form (ds-nth xs 2)) (Cons inner Nil)))) a)))))))))))
+
+(defn ds-byte-store-opt (a xs base)
+  (let s (ds-fresh "_bq")
+    (let put (ds-list (Cons (ds-id (str-concat base " query") a)
+                (Cons (ds-nth xs 1) (Cons (ds-form (ds-nth xs 2)) (Cons (ds-form (ds-nth xs 3)) (Cons (ds-form (ds-nth xs 4)) Nil))))) a)
+      (let test (ds-list (Cons (ds-id "=" a) (Cons (ds-id s a) (Cons (AstInt 1) Nil))) a)
+        (let some (ds-list (Cons (ds-id "Some" a) (Cons (AstInt 1) Nil)) a)
+          (let pick (ds-list (Cons (ds-id "if" a) (Cons test (Cons some (Cons (ds-id "None" a) Nil)))) a)
+            (ds-list (Cons (ds-id "let" a) (Cons (ds-id s a) (Cons put (Cons pick Nil)))) a)))))))
 
 (defn ds-fresh (prefix)
   (let n (ffi-call "zyl_ref_get" numeric-fresh 1000)

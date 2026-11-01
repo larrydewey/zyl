@@ -45,7 +45,7 @@
 ; One byte holding major<<5 | argument, for argument < 24.
 (defn cbor-h0 ((b ByteBuf) (off Int) major arg)
   (begin
-    (store-u8 :le b off (+ (* major 32) arg))
+    (store-u8! :le b off (+ (* major 32) arg))
     (+ off 1)))
 
 ; The argument, shortest form. Returns the new offset.
@@ -59,25 +59,25 @@
     (cbor-h0 b off major arg)
     (if (< arg 256)
       (begin
-        (store-u8 :le b off (+ (* major 32) 24))
-        (store-u8 :le b (+ off 1) arg)
+        (store-u8! :le b off (+ (* major 32) 24))
+        (store-u8! :le b (+ off 1) arg)
         (+ off 2))
       (if (< arg 65536)
         (begin
-          (store-u8 :le b off (+ (* major 32) 25))
-          (store-u8 :le b (+ off 1) (bit-and (shr arg 8) 255))
-          (store-u8 :le b (+ off 2) (bit-and arg 255))
+          (store-u8! :le b off (+ (* major 32) 25))
+          (store-u8! :le b (+ off 1) (bit-and (shr arg 8) 255))
+          (store-u8! :le b (+ off 2) (bit-and arg 255))
           (+ off 3))
         (if (< arg 4294967296)
           (begin
-            (store-u8 :le b off (+ (* major 32) 26))
-            (store-u8 :le b (+ off 1) (bit-and (shr arg 24) 255))
-            (store-u8 :le b (+ off 2) (bit-and (shr arg 16) 255))
-            (store-u8 :le b (+ off 3) (bit-and (shr arg 8) 255))
-            (store-u8 :le b (+ off 4) (bit-and arg 255))
+            (store-u8! :le b off (+ (* major 32) 26))
+            (store-u8! :le b (+ off 1) (bit-and (shr arg 24) 255))
+            (store-u8! :le b (+ off 2) (bit-and (shr arg 16) 255))
+            (store-u8! :le b (+ off 3) (bit-and (shr arg 8) 255))
+            (store-u8! :le b (+ off 4) (bit-and arg 255))
             (+ off 5))
           (begin
-            (store-u8 :le b off (+ (* major 32) 27))
+            (store-u8! :le b off (+ (* major 32) 27))
             (cbor-u64 b (+ off 1) arg)
             (+ off 9)))))))
 
@@ -85,14 +85,14 @@
 ; unlike the `store-u8 :le` used to write them.
 (defn cbor-u64 ((b ByteBuf) (off Int) v)
   (begin
-    (store-u8 :le b off (bit-and (shr v 56) 255))
-    (store-u8 :le b (+ off 1) (bit-and (shr v 48) 255))
-    (store-u8 :le b (+ off 2) (bit-and (shr v 40) 255))
-    (store-u8 :le b (+ off 3) (bit-and (shr v 32) 255))
-    (store-u8 :le b (+ off 4) (bit-and (shr v 24) 255))
-    (store-u8 :le b (+ off 5) (bit-and (shr v 16) 255))
-    (store-u8 :le b (+ off 6) (bit-and (shr v 8) 255))
-    (store-u8 :le b (+ off 7) (bit-and v 255))
+    (store-u8! :le b off (bit-and (shr v 56) 255))
+    (store-u8! :le b (+ off 1) (bit-and (shr v 48) 255))
+    (store-u8! :le b (+ off 2) (bit-and (shr v 40) 255))
+    (store-u8! :le b (+ off 3) (bit-and (shr v 32) 255))
+    (store-u8! :le b (+ off 4) (bit-and (shr v 24) 255))
+    (store-u8! :le b (+ off 5) (bit-and (shr v 16) 255))
+    (store-u8! :le b (+ off 6) (bit-and (shr v 8) 255))
+    (store-u8! :le b (+ off 7) (bit-and v 255))
     (+ off 8)))
 
 ; ---------------------------------------------------------------------------
@@ -118,7 +118,7 @@
     (begin
       (while (< (ffi-call "zyl_ref_get" i 1000) len)
         (begin
-          (store-u8 :le b (+ off (ffi-call "zyl_ref_get" i 1000))
+          (store-u8! :le b (+ off (ffi-call "zyl_ref_get" i 1000))
             (ffi-call "zyl_view_byte" s 0 1099511627776 (ffi-call "zyl_ref_get" i 1000) 1000))
           (ffi-call "zyl_ref_set" i (+ (ffi-call "zyl_ref_get" i 1000) 1) 1000)))
       (+ off len))))
@@ -213,7 +213,7 @@
   (begin
     (for (i 0) (< i n)
       (begin
-        (store-u8 :le dst (+ off i) (load-u8 :le src (+ soff i)))
+        (store-u8! :le dst (+ off i) (load-u8! :le src (+ soff i)))
         (set! i (+ i 1))))
     (+ off n)))
 
@@ -238,7 +238,7 @@
 
 ; The next key at `off`, assuming it is a definite-length text string.
 (defn cbor-read-key ((b ByteBuf) (off Int))
-  (let ib (load-u8 :le b off)
+  (let ib (load-u8! :le b off)
     (let arg (bit-and ib 31)
       (if (not (= (bit-and (shr ib 5) 7) 3))
         (CKey (- 1) (- 1))
@@ -261,7 +261,7 @@
 (defn cbor-keys-sorted-p ((b ByteBuf) (off Int) (n Int) (len Int))
   (if (<= n 1)
     true
-    (let ib (load-u8 :le b off)
+    (let ib (load-u8! :le b off)
       (if (not (= (bit-and (shr ib 5) 7) 5))
         false
         (let w (cbor-arg-width (bit-and ib 31))
@@ -318,7 +318,7 @@
   (if (<= depth 0)
 
     (- 1)
-    (let ib (load-u8 :le b off)
+    (let ib (load-u8! :le b off)
 
       (let major (bit-and (shr ib 5) 7)
 
@@ -370,16 +370,16 @@
   (if (< arg 24)
     arg
     (if (= arg 24)
-      (if (< (+ off 1) len) (load-u8 :le b (+ off 1)) (- 1))
+      (if (< (+ off 1) len) (load-u8! :le b (+ off 1)) (- 1))
       (if (= arg 25)
         (if (< (+ off 2) len)
-          (+ (* 256 (load-u8 :le b (+ off 1))) (load-u8 :le b (+ off 2)))
+          (+ (* 256 (load-u8! :le b (+ off 1))) (load-u8! :le b (+ off 2)))
           (- 1))
         (if (= arg 26)
           (if (< (+ off 4) len)
-            (+ (* 16777216 (load-u8 :le b (+ off 1)))
-              (+ (* 65536 (load-u8 :le b (+ off 2)))
-                (+ (* 256 (load-u8 :le b (+ off 3))) (load-u8 :le b (+ off 4)))))
+            (+ (* 16777216 (load-u8! :le b (+ off 1)))
+              (+ (* 65536 (load-u8! :le b (+ off 2)))
+                (+ (* 256 (load-u8! :le b (+ off 3))) (load-u8! :le b (+ off 4)))))
             (- 1))
           (- 1))))))
 
@@ -391,8 +391,8 @@
 (defn cbor-bytes-gt ((a ByteBuf) aoff (b ByteBuf) boff (n Int) (i Int))
   (if (>= i n)
     false
-    (let x (load-u8 :le a (+ aoff i))
-      (let y (load-u8 :le b (+ boff i))
+    (let x (load-u8! :le a (+ aoff i))
+      (let y (load-u8! :le b (+ boff i))
         (if (> x y) true (if (< x y) false (cbor-bytes-gt a aoff b boff n (+ i 1))))))))
 
 ; ---------------------------------------------------------------------------
@@ -448,7 +448,7 @@
 ; wrong shape; accepting it would leave a reader and a writer disagreeing
 ; about what a count is. Returns (CU -1 -1) for anything else.
 (defn cbor-uint-at ((b ByteBuf) (off Int) (len Int))
-  (let ib (load-u8 :le b off)
+  (let ib (load-u8! :le b off)
     (if (not (= (bit-and (shr ib 5) 7) 0))
       (CU (- 1) (- 1))
       (let arg (cbor-arg-at b off (bit-and ib 31) len)
@@ -465,7 +465,7 @@
 ; about, because hex-decoding it would be a second interpretation applied to
 ; somebody else's bytes.
 (defn cbor-bytes-at ((b ByteBuf) (off Int) (len Int))
-  (let ib (load-u8 :le b off)
+  (let ib (load-u8! :le b off)
     (if (not (= (bit-and (shr ib 5) 7) 2))
       (CS (- 1) (- 1) (- 1))
       (let arg (cbor-arg-at b off (bit-and ib 31) len)
@@ -481,7 +481,7 @@
 ; byte strings and read through cbor-bytes-at, never through here. A byte
 ; string in this position is refused for the mirror of the reason above.
 (defn cbor-text-at ((b ByteBuf) (off Int) (len Int))
-  (let ib (load-u8 :le b off)
+  (let ib (load-u8! :le b off)
     (if (not (= (bit-and (shr ib 5) 7) 3))
       (CT "" (- 1))
       (let arg (cbor-arg-at b off (bit-and ib 31) len)
@@ -505,7 +505,7 @@
   (if (>= i n)
     acc
     (cbor-slice-str b off n (+ i 1)
-      (str-concat acc (ffi-call "zyl_cstr_from_byte" (load-u8 :le b (+ off i)) 1000)))))
+      (str-concat acc (ffi-call "zyl_cstr_from_byte" (load-u8! :le b (+ off i)) 1000)))))
 
 ; The bytes of `key`, one Int per byte, so a key comparison goes through the
 ; same byte equality every other comparison in this module uses.
@@ -524,13 +524,13 @@
 (defn cbor-bytes-eq ((b ByteBuf) (off Int) xs (i Int))
   (match xs
     (Nil true)
-    (Cons h rest (if (= (load-u8 :le b (+ off i)) h)
+    (Cons h rest (if (= (load-u8! :le b (+ off i)) h)
                    (cbor-bytes-eq b off rest (+ i 1))
                    false))))
 
 ; The payload offset and length of the text head at `off`, or (CK -1 -1).
 (defn cbor-key-span ((b ByteBuf) (off Int) (len Int))
-  (let ib (load-u8 :le b off)
+  (let ib (load-u8! :le b off)
     (if (not (= (bit-and (shr ib 5) 7) 3))
       (CK (- 1) (- 1))
       (let arg (cbor-arg-at b off (bit-and ib 31) len)
@@ -557,7 +557,7 @@
 (defn cbor-map-find ((b ByteBuf) (off Int) (len Int) (depth Int) (key String))
   (if (<= depth 0)
     (- 1)
-    (let ib (load-u8 :le b off)
+    (let ib (load-u8! :le b off)
       (if (not (= (bit-and (shr ib 5) 7) 5))
         (- 1)
         (let pairs (cbor-arg-at b off (bit-and ib 31) len)
@@ -601,7 +601,7 @@
 ; first item, or (CU -1 -1). Major 4 only. Items are read from there with
 ; cbor-text-at and the like, each one starting where the last one ended.
 (defn cbor-array-at ((b ByteBuf) (off Int) (len Int))
-  (let ib (load-u8 :le b off)
+  (let ib (load-u8! :le b off)
     (if (not (= (bit-and (shr ib 5) 7) 4))
       (CU (- 1) (- 1))
       (let arg (cbor-arg-at b off (bit-and ib 31) len)

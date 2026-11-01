@@ -2578,7 +2578,8 @@
 
 ;; The arithmetic traps compiled code jumps to (cg-arith-mnem): zyl_rt_trap_ovf_<op> for
 ;; an overflow in operator op (0 + 1 - 2 * 3 div! 4 rem!), zyl_rt_trap_div0_<op> for a zero
-;; divisor. Each aligns the stack and calls the runtime's panic with the operator's code.
+;; divisor, zyl_rt_trap_oob_1 for a `!` byte access outside its buffer (the offset in rsi).
+;; Each aligns the stack and calls the runtime's panic with the operator's code.
 (defn cg-rt-trap-stubs ()
   (list-append (cg-rt-trap-stub "ovf" 0 "zyl_overflow_panic")
   (list-append (cg-rt-trap-stub "ovf" 1 "zyl_overflow_panic")
@@ -2586,7 +2587,8 @@
   (list-append (cg-rt-trap-stub "ovf" 3 "zyl_overflow_panic")
   (list-append (cg-rt-trap-stub "ovf" 4 "zyl_overflow_panic")
   (list-append (cg-rt-trap-stub "div0" 3 "zyl_div_zero_panic")
-               (cg-rt-trap-stub "div0" 4 "zyl_div_zero_panic"))))))))
+  (list-append (cg-rt-trap-stub "div0" 4 "zyl_div_zero_panic")
+               (cg-rt-trap-stub "oob" 1 "zyl_bytes_oob_panic")))))))))
 
 (defn cg-rt-trap-stub (kind op entry)
   (let name (str-concat "zyl_rt_trap_" (str-concat kind (str-concat "_" (ffi-call "zyl_int_text" op 1000))))
@@ -2847,11 +2849,20 @@
 ; runtime gives: 0 for a load, 0 (nothing written) for a store. The
 ; arguments are evaluated in the call's order (offset, buffer, value).
 (defn cg-inline-byte-p (sym args)
+  (if (not (cg-byte-code-inline (cg-byte-code args))) false
   (if (or (str-eq sym "zyl_load_byte") (str-eq sym "zyl_load_byte_signed"))
     (= (list-length args) 3)
     (if (or (str-eq sym "zyl_store_byte") (str-eq sym "zyl_store_byte_signed"))
       (= (list-length args) 4)
-      false)))
+      false))))
+
+; The endian code (bit 1 big, 2 trap, 4 query) of a byte access, or -1 when not a constant.
+(defn cg-byte-code (args) (match args (Cons h _ (match h (IConst c c) (_ -1))) (Nil -1)))
+
+; Plain and `!` accesses are inline; a query (the `?` forms' probe) calls the runtime.
+(defn cg-byte-code-inline (c) (and (>= c 0) (<= c 3)))
+
+(defn cg-byte-trap-p (args) (= (bit-and (cg-byte-code args) 2) 2))
 
 (defn cg-inline-byte (st env sym args)
   (let store (or (str-eq sym "zyl_store_byte") (str-eq sym "zyl_store_byte_signed"))
@@ -2863,7 +2874,7 @@
               (CGP st3 lslice lfail
                 (match (cg-label-pair st3)
                   (CGP st4 lhit ldone
-                    (cg-inline-byte-body st4 store signed lslice lfail lhit ldone)))))))
+                    (cg-inline-byte-body st4 store signed (cg-byte-trap-p args) lslice lfail lhit ldone)))))))
         (Nil st)))))
 
 ; Leaves the offset in rsi, the handle in rdx and a stored value in r8.
@@ -2887,7 +2898,7 @@
 
 (defn cg-jmp-to (st op lbl) (cg-nl (cg-emit (cg-emit st op) lbl)))
 
-(defn cg-inline-byte-body (st store signed lslice lfail lhit ldone)
+(defn cg-inline-byte-body (st store signed trap lslice lfail lhit ldone)
   (let s1 (cg-emit-line st "    cmp rdx, 4096")
     (let s2 (cg-jmp-to s1 "    jb " lfail)
       (let s3 (cg-emit-line s2 "    test rdx, 7")
@@ -2912,7 +2923,7 @@
                                         (let s20 (if store (cg-emit-line s19 "    mov eax, 1") s19)
                                           (let s21 (cg-jmp-to s20 "    jmp " ldone)
                                             (let s22 (cg-emit-label s21 lfail)
-                                              (let s23 (cg-emit-line s22 "    xor eax, eax")
+                                              (let s23 (cg-emit-line s22 (if trap "    jmp zyl_rt_trap_oob_1" "    xor eax, eax"))
                                                 (cg-emit-label s23 ldone)))))))))))))))))))))))))
 
 ; ===========================================================================
@@ -3270,7 +3281,7 @@
       (let ro (ml-operand st env venv ms off (if (> kind 1) (match (ml-nth-icnf args 3) (Some v (icnf-has-set v)) (None false)) false))
         (let rv (if (> kind 1) (match (ml-nth-icnf args 3) (Some v (match v (IConst k (MR (mr-ms ro) (- -2 (bit-and k 255)))) (_ (ml-expr st env venv (mr-ms ro) v)))) (None (MR (mr-ms ro) -1))) (MR (mr-ms ro) -1))
           (let rd (ms-vreg (mr-ms rv))
-            (MR (ms-emit (mr-ms rd) (MByteFast (if (ml-bce-proven venv p off) (+ kind 4) kind) (mr-v rd) (mr-v ro)
+            (MR (ms-emit (mr-ms rd) (MByteFast (if (ml-bce-proven venv p off) (+ kind 4) (if (cg-byte-trap-p args) (+ kind 8) kind)) (mr-v rd) (mr-v ro)
                                      (ml-var (ffi-call "zyl_ref_get" ml-view-data 1000) p)
                                      (ml-var (ffi-call "zyl_ref_get" ml-view-bound 1000) p)
                                      (if (> kind 1) (mr-v rv) -1)))
@@ -3279,9 +3290,9 @@
 (defn ml-byte-slow (st env venv ms sym args)
   (match (ml-args st env venv ms (match args (Cons _ t t) (Nil Nil)) Nil)
     (MRL m2 vs
-      (let kind (if (str-eq sym "zyl_load_byte") 0 (if (str-eq sym "zyl_load_byte_signed") 1 (if (str-eq sym "zyl_store_byte") 2 3)))
+      (let kind (+ (if (cg-byte-trap-p args) 8 0) (if (str-eq sym "zyl_load_byte") 0 (if (str-eq sym "zyl_load_byte_signed") 1 (if (str-eq sym "zyl_store_byte") 2 3))))
         (let rd (ms-vreg m2)
-          (MR (ms-emit (mr-ms rd) (MByte kind (mr-v rd) (ml-nth vs 0) (ml-nth vs 1) (if (> kind 1) (ml-nth vs 2) -1)))
+          (MR (ms-emit (mr-ms rd) (MByte kind (mr-v rd) (ml-nth vs 0) (ml-nth vs 1) (if (> (bit-and kind 3) 1) (ml-nth vs 2) -1)))
               (mr-v rd)))))))
 
 (defn ml-array-p (sym args)
@@ -4486,13 +4497,15 @@
 ; A store value below -1 is the immediate -v-2.
 (defn mb-byte-fast (st fr kind0 d o dt bd v i)
   (let kind (bit-and kind0 3)
+  (let proven (= (bit-and kind0 4) 4)
+  (let trap (>= kind0 8)
   (let lf (str-concat (mf-base fr) (str-concat "_q" (ffi-call "zyl_int_text" i 1000)))
     (let ld (str-concat lf "d")
       (let om (mb-in-mem fr o)
         (let ot (if om "rax" (mb-loc-text fr o))
           (let st1 (if om (cg-emit-line st (str-concat "    mov rax, " (mb-loc-text fr o))) st)
             ; kind0 >= 4: the offset is proven in bounds (ml-bce-plan), no check
-            (let st2 (if (>= kind0 4) st1
+            (let st2 (if proven st1
                        (cg-emit-lines st1 (Cons (str-concat "    cmp " (str-concat ot (str-concat ", " (mb-loc-text fr bd))))
                                           (Cons (str-concat "    jae " lf) Nil))))
               (let dm (mb-in-mem fr dt)
@@ -4506,25 +4519,27 @@
                                      (cg-emit-lines st3 (Cons (str-concat "    mov rcx, " (mb-loc-text fr v)) (Cons (str-concat "    mov " (str-concat addr ", cl")) Nil)))
                                      (cg-emit-line st3 (str-concat "    mov " (str-concat addr (str-concat ", " (mb-reg8 (mb-loc-text fr v))))))))
                           (if (mb-live fr d)
-                            (mb-set (cg-emit-lines st4 (Cons "    mov eax, 1" (mb-bf-fail (>= kind0 4) lf ld "eax")))
+                            (mb-set (cg-emit-lines st4 (Cons "    mov eax, 1" (mb-bf-fail proven trap ot lf ld "eax")))
                                     fr d "rax")
-                            (if (>= kind0 4) st4 (cg-emit-line st4 (str-concat lf ":")))))
+                            (if proven st4 (if trap (cg-emit-lines st4 (mb-bf-fail proven trap ot lf ld "eax")) (cg-emit-line st4 (str-concat lf ":"))))))
                         (if (and (mb-live fr d) (not (mb-in-mem fr d)))
                           (let dr (mb-loc-text fr d)
                             (cg-emit-lines st3
                               (Cons (if (= kind 1) (str-concat "    movsx " (str-concat dr (str-concat ", " addr)))
                                       (str-concat "    movzx " (str-concat (mb-reg32 dr) (str-concat ", " addr))))
-                              (mb-bf-fail (>= kind0 4) lf ld (mb-reg32 dr)))))
+                              (mb-bf-fail proven trap ot lf ld (mb-reg32 dr)))))
                           (mb-set (cg-emit-lines st3
                                     (Cons (if (= kind 1) (str-concat "    movsx rax, " addr) (str-concat "    movzx eax, " addr))
-                                    (mb-bf-fail (>= kind0 4) lf ld "eax")))
-                                  fr d "rax")))))))))))))))
+                                    (mb-bf-fail proven trap ot lf ld "eax")))
+                                  fr d "rax")))))))))))))))))
 
 ; The out-of-bounds result 0 in r32 and the join; nothing when the access is proven.
-(defn mb-bf-fail (proven lf ld r32)
+(defn mb-bf-fail (proven trap ot lf ld r32)
   (if proven Nil
     (Cons (str-concat "    jmp " ld) (Cons (str-concat lf ":")
-    (Cons (str-concat "    xor " (str-concat r32 (str-concat ", " r32))) (Cons (str-concat ld ":") Nil))))))
+    (if trap
+      (Cons (str-concat "    mov rsi, " ot) (Cons "    jmp zyl_rt_trap_oob_1" (Cons (str-concat ld ":") Nil)))
+      (Cons (str-concat "    xor " (str-concat r32 (str-concat ", " r32))) (Cons (str-concat ld ":") Nil)))))))
 
 ; A shift by a constant: the count is not data, so the immediate form is as constant-time; out of
 ; [0, 63] a logical shift gives 0 and an arithmetic one shifts by 63, as the register sequences do.
@@ -4606,7 +4621,8 @@
 ; cg-inline-byte's sequence on scratch registers only: the offset in
 ; rax, the handle in rdx, the magic in r11, rcx for the bound check and
 ; the stored value.
-(defn mb-byte (st fr kind d o b v i)
+(defn mb-byte (st fr kind0 d o b v i)
+  (let kind (bit-and kind0 3)
   (let lb (str-concat (mf-base fr) (str-concat "_b" (ffi-call "zyl_int_text" i 1000)))
     (let lslice (str-concat lb "s")
       (let lhit (str-concat lb "h")
@@ -4642,9 +4658,15 @@
                            (cg-emit-line st2 (if (= kind 1) "    movsx rax, byte ptr [rdx+rax]" "    movzx eax, byte ptr [rdx+rax]")))
                   (let st4 (cg-emit-lines st3 (Cons (str-concat "    jmp " ldone)
                                               (Cons (str-concat lfail ":")
-                                              (Cons "    xor eax, eax"
+                                              (mb-byte-miss (>= kind0 8) "rax"
                                               (Cons (str-concat ldone ":") Nil)))))
-                    (mb-set st4 fr d "rax")))))))))))
+                    (mb-set st4 fr d "rax"))))))))))))
+
+; An access outside the buffer: a `!` form traps (offset in rsi), any other gives 0.
+(defn mb-byte-miss (trap ot rest)
+  (if trap
+    (Cons (str-concat "    mov rsi, " ot) (Cons "    jmp zyl_rt_trap_oob_1" rest))
+    (Cons "    xor eax, eax" rest)))
 
 ; zyl_array_get/set/cap (rt/tables.zyl, ZylArray {magic, cap, filled,
 ; data}) inline. Anything the runtime would reject (a bad handle, an

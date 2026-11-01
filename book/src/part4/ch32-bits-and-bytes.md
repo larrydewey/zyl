@@ -153,7 +153,8 @@ reading a byte you have not written is well defined and gives 0.
 (bytebuf-ptr buf)      ; raw address of the data
 ```
 
-`bytebuf-ptr` is the FFI hatch: it gives a stable address good for
+`bytebuf-ptr` is the FFI hatch, and needs the `ffi` capability (the address
+differs from run to run): it gives a stable address good for
 exactly `bytebuf-cap` bytes. By design it belongs to the Pin region,
 because an address into a region that may move is not an address at
 all.
@@ -191,20 +192,23 @@ makes no difference, and it is required anyway so that the wider widths
 — when they arrive — read the same way.
 
 Every access is bounds-checked against the buffer's capacity (or a
-slice's length). An out-of-range offset is not undefined behaviour and
-not a crash: a load returns 0 and a store does nothing and returns 0 (a
-successful store returns 1). That is the same fail-closed posture the
-rest of the runtime takes, and it means a bug in offset arithmetic
-corrupts nothing.
+slice's length), and an out-of-range access is a partial operation, like a
+division (spec §20.3a). The plain form compiles only where the compiler can
+see it fits: a literal offset into a buffer an enclosing `let` bound to
+`(bytebuf R N)`. Anywhere else, say what out of range means:
+`load-u8!`/`store-u8!` stop the program with `E_INDEX_OUT_OF_BOUNDS`, and
+`load-u8?`/`store-u8?` give `None` (and write nothing). A plain access the
+compiler cannot prove is `E_PARTIAL_OPERATION`. A successful store returns 1.
 
 ```lisp
 (let buf (bytebuf Heap 64)
   (begin
-    (store-u8 :le buf 0 200)
+    (store-u8 :le buf 0 200)  ; proven: literal 0 < 64
     (load-u8 :le buf 0)       ; 200
     (load-i8 :le buf 0)       ; -56
-    (load-u8 :le buf 64)      ; 0 -- out of range
-    (store-u8 :le buf 100 1)  ; 0 -- ignored
+    (load-u8? :le buf 64)     ; None -- out of range
+    (store-u8? :le buf 100 1) ; None -- nothing written
+    (load-u8! :le buf 64)     ; stops: E_INDEX_OUT_OF_BOUNDS
     0))
 ```
 
@@ -221,12 +225,11 @@ least significant byte first, `:be` the most significant.
     (store-u32 :le b 0 305419896)   ; bytes 78 56 34 12
     (load-u32 :be b 0)              ; 2018915346 (0x78563412)
     (load-i16 :le b 0)              ; 22136
-    (load-u32 :le b 6)))            ; 0 -- bytes 6..9 do not all fit
+    (load-u32? :le b 6)))           ; None -- bytes 6..9 do not all fit
 ```
 
 The bounds check covers the whole width: an access that would run past
-the end reads 0 or stores nothing (returning 0), exactly like an
-out-of-range byte. Signed loads sign-extend from the loaded width;
+the end is out of range, exactly like an out-of-range byte. Signed loads sign-extend from the loaded width;
 `load-u64` returns the 64-bit pattern as an `Int`.
 
 ## 32.7 Slices

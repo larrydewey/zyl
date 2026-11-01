@@ -68,6 +68,14 @@ compile with `build/boot/zyl-self` on 2026-09-28.
   interpreter decide overflow before operating (`int_arith.zyl`); the
   accumulator transformation, speculative `if` arms and `lea` are limited
   to wrapping arithmetic. The compiler and runtime run under checked.
+- Byte loads and stores are partial operations (spec §20.3a, 2026-10-31):
+  a plain `load-u8` .. `store-i64` must be proven in range (a literal
+  offset into a `let`-bound `(bytebuf R N)` that fits), else
+  `E_PARTIAL_OPERATION`; `load-u8!` .. `store-i64!` trap with
+  `E_INDEX_OUT_OF_BOUNDS` (inline, `zyl_rt_trap_oob_1`), `load-u8?` ..
+  `store-i64?` give `(Option Int)` (desugar.zyl, around a runtime probe).
+  The mode rides in the endian code (bit 2 trap, bit 4 probe). The
+  compiler, `encoding/cbor`, `encoding/cose` and the tests moved to `!`.
 - Regions are real (`docs/regions-design.md`): each call that allocates
   short-lived values gets a frame region, results go into the region the
   caller chose, and only values that escape untracked go to the process
@@ -550,10 +558,9 @@ Language and compiler:
   sharing one race (needs `actor`). Whether refs stay a program surface is
   an open language decision.
 - `make-struct` is not typed (`E_CANNOT_INFER`); call the constructor.
-- `load-u8`/`store-u8` and the wider forms outside a buffer read 0 and
-  drop the store silently (soundness.md calls them bounds-checked). A
-  panic would be implicit under the `!`/`?` doctrine, so the spelling
-  (`load-u8!`, `load-u8?`, or a returned status) is an open decision.
+- `bytebuf-atomic-*` outside the buffer or off an 8-byte boundary still
+  return 0 (the store is dropped); the `!`/`?` spelling the byte loads and
+  stores got (2026-10-31) has not reached them.
 - Vec and IntMap are persistent (a push writes in place only into a
   slot no version has written, claimed by CAS; `vec-set!`, `intmap-put`,
   `intmap-remove` copy) and `array-set!` writes each slot once, in order

@@ -160,7 +160,9 @@ recorded here rather than silently corrected in the grammar above.
 (`byte-form-dispatch`). `ffi-call` is not a dedicated node; it stays an
 application of the reserved name and is recognised during ICNF lowering.
 `div?` and `rem?` (§20.3) are rewritten in `desugar.zyl`, as the reader
-reads each file, into `let`/`if`/`Some`/`None` around `div!`/`rem!`, so
+reads each file, into `let`/`if`/`Some`/`None` around `div!`/`rem!`, and
+`load-u8?` .. `store-i64?` (§20.3a) likewise around a runtime probe and
+the `!` form (`load-u8!` .. `store-i64!` are byte primitives), so
 the type checker and the interpreter see only
 ordinary forms. A top-level `(numeric checked|wrapping|saturating)`
 (§20.1) is read by the module resolver, which checks its shape and

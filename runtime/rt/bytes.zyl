@@ -34,17 +34,31 @@
       (let b (if (= m (bb-magic-buf)) (bb-cap h) (if (= m (bb-magic-slice)) (bb-len h) -1))
         (if (and (>= b 0) (bb-ok off size b)) (+ (bb-data h) off) 0)))))
 
-(defn zyl_load_byte (_endian off buf)
-  (let a (bb-at buf off 1) (if (= a 0) 0 (rt-ld8 a))))
+; Endian code bits: 1 big-endian, 2 trap out of range (the `!` forms), 4 query (the `?` forms' probe).
+(defmacro bb-trap-p (code) (= (bit-and code 2) 2))
+(defmacro bb-query-p (code) (= (bit-and code 4) 4))
 
-(defn zyl_load_byte_signed (_endian off buf)
-  (let a (bb-at buf off 1) (if (= a 0) 0 (let v (rt-ld8 a) (if (> v 127) (- v 256) v)))))
+; An access outside its buffer under a `!` form; also the inline paths' trap stub's target.
+(defn zyl_bytes_oob_panic ((width Int) (off Int))
+  (let at (str-concat (ffi-call "zyl_int_text" off 1) (str-concat ", " (str-concat (ffi-call "zyl_int_text" width 1) (if (= width 1) " byte," " bytes,"))))
+    (ffi-call "zyl_panic"
+      (str-concat "E_INDEX_OUT_OF_BOUNDS: the access at offset " (str-concat at
+        " is outside the buffer\n  = help: use the `?` form (load-u8?, store-u32?, ...) to get None instead, or check the offset against bytebuf-cap first")) 1)))
 
-(defn zyl_store_byte (_endian off buf val)
-  (let a (bb-at buf off 1) (if (= a 0) 0 (let _ (rt-st8 a val) 1))))
+; What an out-of-range access gives: the `!` trap, else 0 (a query's "no"; a plain form is proven in range).
+(defn bb-miss (code width off) (if (bb-trap-p code) (zyl_bytes_oob_panic width off) 0))
 
-(defn zyl_store_byte_signed (_endian off buf val)
-  (let a (bb-at buf off 1) (if (= a 0) 0 (let _ (rt-st8 a val) 1))))
+(defn zyl_load_byte (code off buf)
+  (let a (bb-at buf off 1) (if (= a 0) (bb-miss code 1 off) (if (bb-query-p code) 1 (rt-ld8 a)))))
+
+(defn zyl_load_byte_signed (code off buf)
+  (let a (bb-at buf off 1) (if (= a 0) (bb-miss code 1 off) (if (bb-query-p code) 1 (let v (rt-ld8 a) (if (> v 127) (- v 256) v))))))
+
+(defn zyl_store_byte (code off buf val)
+  (let a (bb-at buf off 1) (if (= a 0) (bb-miss code 1 off) (let _ (rt-st8 a val) 1))))
+
+(defn zyl_store_byte_signed (code off buf val)
+  (let a (bb-at buf off 1) (if (= a 0) (bb-miss code 1 off) (let _ (rt-st8 a val) 1))))
 
 ; 2-, 4- and 8-byte accesses; endian 0 little, anything else big.
 (defmacro bb-width-ok (w) (or (= w 2) (or (= w 4) (= w 8))))
@@ -62,11 +76,13 @@
 (defn zyl_load_n (width endian off buf)
   (if (not (bb-width-ok width)) 0
     (let a (bb-at buf off width)
-      (if (= a 0) 0 (let r (bb-load-le width a) (if (= endian 0) r (bb-swap r width)))))))
+      (if (= a 0) (bb-miss endian width off)
+        (if (bb-query-p endian) 1
+          (let r (bb-load-le width a) (if (= (bit-and endian 1) 0) r (bb-swap r width))))))))
 
 (defn zyl_load_n_signed (width endian off buf)
   (let r (zyl_load_n width endian off buf)
-    (if (or (>= width 8) (not (bb-width-ok width))) r
+    (if (or (bb-query-p endian) (or (>= width 8) (not (bb-width-ok width)))) r
       (let sign (shl 1 (- (* width 8) 1)) (rt-wsub (bit-xor r sign) sign)))))
 
 (defmacro bb-store-le (w a v)
@@ -75,8 +91,8 @@
 (defn zyl_store_n (width endian off buf val)
   (if (not (bb-width-ok width)) 0
     (let a (bb-at buf off width)
-      (if (= a 0) 0
-        (let v (if (= endian 0) val (bb-swap val width)) (let _ (bb-store-le width a v) 1))))))
+      (if (= a 0) (bb-miss endian width off)
+        (let v (if (= (bit-and endian 1) 0) val (bb-swap val width)) (let _ (bb-store-le width a v) 1))))))
 
 ; A new slice header over len bytes at data, or 0.
 (defn bb-new-slice (data len)

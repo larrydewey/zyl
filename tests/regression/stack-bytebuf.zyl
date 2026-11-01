@@ -5,9 +5,9 @@
 
 (defn checksum (n)
   (let b (bytebuf Stack 64)
-    (let _ (store-u8 :le b 0 n)
-      (let _ (store-u8 :le b 1 (+ n 1))
-        (+ (load-u8 :le b 0) (+ (load-u8 :le b 1) (bytebuf-cap b)))))))
+    (let _ (store-u8! :le b 0 n)
+      (let _ (store-u8! :le b 1 (+ n 1))
+        (+ (load-u8! :le b 0) (+ (load-u8! :le b 1) (bytebuf-cap b)))))))
 
 (defn many (i acc) (if (= i 0) acc (many (- i 1) (+ acc (checksum 3)))))
 

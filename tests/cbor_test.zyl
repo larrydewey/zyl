@@ -16,7 +16,7 @@
 (defn bytes-upto ((b ByteBuf) (e Int) (i Int))
   (if (>= i e)
     Nil
-    (Cons (load-u8 :le b i) (bytes-upto b e (+ i 1)))))
+    (Cons (load-u8! :le b i) (bytes-upto b e (+ i 1)))))
 
 (defn head (major arg)
   (let b (cbor-buf 16)
@@ -72,11 +72,11 @@
   (begin    (let b (buf 4)
       (begin
         (assert-equal (cbor-bool b 0 1) 1)
-        (assert-equal (load-u8 :le b 0) 245)
+        (assert-equal (load-u8! :le b 0) 245)
         (assert-equal (cbor-bool b 1 0) 2)
-        (assert-equal (load-u8 :le b 1) 244)
+        (assert-equal (load-u8! :le b 1) 244)
         (assert-equal (cbor-null b 2) 3)
-        (assert-equal (load-u8 :le b 2) 246)))
+        (assert-equal (load-u8! :le b 2) 246)))
   ))
 
 (test "cbor-text-length-is-bytes-not-characters"
@@ -85,10 +85,10 @@
       (let e (cbor-text b 0 "abc")
         (begin
           (assert-equal e 4)
-          (assert-equal (load-u8 :le b 0) 99)
-          (assert-equal (load-u8 :le b 1) 97)
-          (assert-equal (load-u8 :le b 2) 98)
-          (assert-equal (load-u8 :le b 3) 99))))
+          (assert-equal (load-u8! :le b 0) 99)
+          (assert-equal (load-u8! :le b 1) 97)
+          (assert-equal (load-u8! :le b 2) 98)
+          (assert-equal (load-u8! :le b 3) 99))))
   ))
 
 ; a2 61 6e 01 61 7a 20 -- {"n": 1, "z": -1}, in that order because the caller
@@ -104,13 +104,13 @@
               (let o4 (cbor-uint b o3 (- 1))
                 (begin
                   (assert-equal o4 7)
-                  (assert-equal (load-u8 :le b 0) 162)
-                  (assert-equal (load-u8 :le b 1) 97)
-                  (assert-equal (load-u8 :le b 2) 110)
-                  (assert-equal (load-u8 :le b 3) 1)
-                  (assert-equal (load-u8 :le b 4) 97)
-                  (assert-equal (load-u8 :le b 5) 122)
-                  (assert-equal (load-u8 :le b 6) 32))))))))))
+                  (assert-equal (load-u8! :le b 0) 162)
+                  (assert-equal (load-u8! :le b 1) 97)
+                  (assert-equal (load-u8! :le b 2) 110)
+                  (assert-equal (load-u8! :le b 3) 1)
+                  (assert-equal (load-u8! :le b 4) 97)
+                  (assert-equal (load-u8! :le b 5) 122)
+                  (assert-equal (load-u8! :le b 6) 32))))))))))
 
 ; The sizing function and the writer are the same logic stated twice, and the
 ; failure mode is a record truncated after it was signed.

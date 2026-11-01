@@ -34,11 +34,11 @@
     (assert-equal (rh-distinct 24) true)
     (assert-equal (rh-distinct 100000) true)))
 
-(defn rh-pattern ((b ByteBuf) i n) (if (>= i n) 0 (let _ (store-u8 :le b i (+ i 1)) (rh-pattern b (+ i 1) n))))
+(defn rh-pattern ((b ByteBuf) i n) (if (>= i n) 0 (let _ (store-u8! :le b i (+ i 1)) (rh-pattern b (+ i 1) n))))
 
 ; Bytes at..at+n-1 of b equal from+1 .. from+n.
 (defn rh-shifted ((b ByteBuf) at from n)
-  (if (= n 0) true (if (= (load-u8 :le b at) (+ from 1)) (rh-shifted b (+ at 1) (+ from 1) (- n 1)) false)))
+  (if (= n 0) true (if (= (load-u8! :le b at) (+ from 1)) (rh-shifted b (+ at 1) (+ from 1) (- n 1)) false)))
 
 (test "append-overlap-backward"
   (let b (bytebuf Heap 64)

@@ -1,0 +1,4 @@
+; expect-error: E_PARTIAL_OPERATION
+; A plain load at an offset the compiler cannot see fits used to read 0 silently; say load-u8! or load-u8?.
+(defn peek ((b ByteBuf) (i Int)) (load-u8 :le b i))
+(defn main () (let b (bytebuf Heap 4) (begin (print (peek b 9)) 0)))

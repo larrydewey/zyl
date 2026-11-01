@@ -85,7 +85,7 @@
         (begin
           (for (i 0) (< i 32)
             (begin
-              (store-u8 :le p i (if (< i have) (w-get w i) 0))
+              (store-u8! :le p i (if (< i have) (w-get w i) 0))
               (set! i (+ i 1))))
           p)))))
 
@@ -243,30 +243,30 @@
   (begin
     (for (i 0) (< i 7)
       (begin
-        (store-u8 :le b (+ off i) (prov-byte-at prov-magic i))
+        (store-u8! :le b (+ off i) (prov-byte-at prov-magic i))
         (set! i (+ i 1))))
-    (store-u8 :le b (+ off 7) 0)))
+    (store-u8! :le b (+ off 7) 0)))
 
 ; u32 and u64 little-endian, written a byte at a time. There is no store-u32
 ; BE/LE pair that takes a ByteBuf at an arbitrary offset without also asserting
 ; an alignment this buffer has no reason to have.
 (defn prov-store32 ((b ByteBuf) (off Int) (v Int))
   (begin
-    (store-u8 :le b off (bit-and v 255))
-    (store-u8 :le b (+ off 1) (bit-and (shr v 8) 255))
-    (store-u8 :le b (+ off 2) (bit-and (shr v 16) 255))
-    (store-u8 :le b (+ off 3) (bit-and (shr v 24) 255))))
+    (store-u8! :le b off (bit-and v 255))
+    (store-u8! :le b (+ off 1) (bit-and (shr v 8) 255))
+    (store-u8! :le b (+ off 2) (bit-and (shr v 16) 255))
+    (store-u8! :le b (+ off 3) (bit-and (shr v 24) 255))))
 
 (defn prov-store64 ((b ByteBuf) (off Int) (v Int))
   (begin
-    (store-u8 :le b off (bit-and v 255))
-    (store-u8 :le b (+ off 1) (bit-and (shr v 8) 255))
-    (store-u8 :le b (+ off 2) (bit-and (shr v 16) 255))
-    (store-u8 :le b (+ off 3) (bit-and (shr v 24) 255))
-    (store-u8 :le b (+ off 4) (bit-and (shr v 32) 255))
-    (store-u8 :le b (+ off 5) (bit-and (shr v 40) 255))
-    (store-u8 :le b (+ off 6) (bit-and (shr v 48) 255))
-    (store-u8 :le b (+ off 7) (bit-and (shr v 56) 255))))
+    (store-u8! :le b off (bit-and v 255))
+    (store-u8! :le b (+ off 1) (bit-and (shr v 8) 255))
+    (store-u8! :le b (+ off 2) (bit-and (shr v 16) 255))
+    (store-u8! :le b (+ off 3) (bit-and (shr v 24) 255))
+    (store-u8! :le b (+ off 4) (bit-and (shr v 32) 255))
+    (store-u8! :le b (+ off 5) (bit-and (shr v 40) 255))
+    (store-u8! :le b (+ off 6) (bit-and (shr v 48) 255))
+    (store-u8! :le b (+ off 7) (bit-and (shr v 56) 255))))
 
 ; True when the magic is at `off`.
 ;
@@ -278,8 +278,8 @@
 
 (defn prov-magic-scan ((b ByteBuf) (off Int) (i Int))
   (if (>= i 7)
-    (= (load-u8 :le b (+ off 7)) 0)
-    (if (= (load-u8 :le b (+ off i)) (prov-byte-at prov-magic i))
+    (= (load-u8! :le b (+ off 7)) 0)
+    (if (= (load-u8! :le b (+ off i)) (prov-byte-at prov-magic i))
       (prov-magic-scan b off (+ i 1))
       false)))
 
@@ -288,20 +288,20 @@
 ; is. A trailer is at most a few kilobytes, so eight of these is not a cost worth
 ; optimising.
 (defn prov-load32 ((b ByteBuf) (off Int))
-  (+ (bit-and (load-u8 :le b off) 255)
-    (* 256 (+ (bit-and (load-u8 :le b (+ off 1)) 255)
-      (* 256 (+ (bit-and (load-u8 :le b (+ off 2)) 255)
-        (* 256 (bit-and (load-u8 :le b (+ off 3)) 255)))))))
+  (+ (bit-and (load-u8! :le b off) 255)
+    (* 256 (+ (bit-and (load-u8! :le b (+ off 1)) 255)
+      (* 256 (+ (bit-and (load-u8! :le b (+ off 2)) 255)
+        (* 256 (bit-and (load-u8! :le b (+ off 3)) 255)))))))
 )
 (defn prov-load64 ((b ByteBuf) (off Int))
-  (+ (bit-and (load-u8 :le b off) 255)
-    (* 256 (+ (bit-and (load-u8 :le b (+ off 1)) 255)
-      (* 256 (+ (bit-and (load-u8 :le b (+ off 2)) 255)
-        (* 256 (+ (bit-and (load-u8 :le b (+ off 3)) 255)
-          (* 256 (+ (bit-and (load-u8 :le b (+ off 4)) 255)
-            (* 256 (+ (bit-and (load-u8 :le b (+ off 5)) 255)
-              (* 256 (+ (bit-and (load-u8 :le b (+ off 6)) 255)
-                (* 256 (bit-and (load-u8 :le b (+ off 7)) 255)))))))))))))
+  (+ (bit-and (load-u8! :le b off) 255)
+    (* 256 (+ (bit-and (load-u8! :le b (+ off 1)) 255)
+      (* 256 (+ (bit-and (load-u8! :le b (+ off 2)) 255)
+        (* 256 (+ (bit-and (load-u8! :le b (+ off 3)) 255)
+          (* 256 (+ (bit-and (load-u8! :le b (+ off 4)) 255)
+            (* 256 (+ (bit-and (load-u8! :le b (+ off 5)) 255)
+              (* 256 (+ (bit-and (load-u8! :le b (+ off 6)) 255)
+                (* 256 (bit-and (load-u8! :le b (+ off 7)) 255)))))))))))))
 )))
 
 ; ---------------------------------------------------------------------------
@@ -351,7 +351,7 @@
   (begin
     (for (i 0) (< i n)
       (begin
-        (store-u8 :le dst (+ doff i) (load-u8 :le src (+ soff i)))
+        (store-u8! :le dst (+ doff i) (load-u8! :le src (+ soff i)))
         (set! i (+ i 1))))
     (+ doff n)))
 
@@ -431,8 +431,8 @@
     acc
     (prov-hex b (+ off 1) n
       (str-concat acc
-        (str-concat (str-substring prov-digits (/ (load-u8 :le b off) 16) 1)
-          (str-substring prov-digits (bit-and (load-u8 :le b off) 15) 1))))))
+        (str-concat (str-substring prov-digits (/ (load-u8! :le b off) 16) 1)
+          (str-substring prov-digits (bit-and (load-u8! :le b off) 15) 1))))))
 
 
 ; ---------------------------------------------------------------------------

@@ -54,7 +54,7 @@ enumeration is the argument.
 | allocate a region-owned value | `Vec`, `IntMap`, `Set`, `Slice`, `bytebuf`, string ops |
 | read/write a field | `struct-get`; fields are immutable, `set!` on one is `E_MUT_CONFLICT` |
 | index a collection | `vec-get!` and friends; bounds-checked, out of range is an error |
-| load/store a byte | `load-u8`/`store-u8` and the wider forms; bounds-checked against the buffer |
+| load/store a byte | `load-u8!`/`store-u8!` (trap) or `load-u8?`/`store-u8?` (None) and the wider forms; a plain form only where proven in range |
 | atomic RMW | `atomic-*`; operand is a `ByteBuf` region slot |
 | write a file | `file-write`; a descriptor, released exactly once |
 | call foreign code | `ffi-call`; symbol must be a literal, timeout required, raw runtime entries refused |
@@ -253,7 +253,11 @@ program with `E_INDEX_OUT_OF_BOUNDS` (caught by `try`) instead of touching
 memory; the `?` siblings return `None` instead. `vec-set!` at an index equal
 to the length appends, as `vec-push` does. Before this, `vec-set` returned
 the vector unchanged on a bad index, which was memory-safe but lost the
-write silently. Collections are typed:
+write silently. Byte loads and stores follow the same rule: `load-u8!`
+.. `store-i64!` stop with `E_INDEX_OUT_OF_BOUNDS` outside the buffer (inline,
+through the runtime's `zyl_rt_trap_oob_1` stub), `load-u8?` .. `store-i64?`
+give `None`, and a plain form is accepted only where the compiler proves it
+in range (L8). They used to read 0 and drop the store silently. Collections are typed:
 an array's slots are filled in order so a collection only ever reads
 elements it wrote, and there is no word-level cast anywhere
 (`docs/sound-types-design.md`).
@@ -313,6 +317,13 @@ so plain-named library functions built on `+ - *` -- `abs` (of `INT_MIN`),
 should be renamed `abs!` etc., given `?` siblings, or made to follow the
 caller's policy is an open decision; until then an overflow stop, like
 running out of memory, is outside the `!` rule.
+A byte load or store is held to the same rule at compile time
+(`numeric_check.zyl`, spec §20.3a): the plain form must be proven in range
+(a literal offset into a `let`-bound `(bytebuf R N)` that fits), otherwise
+`E_PARTIAL_OPERATION`, and the author writes `load-u8!` or `load-u8?`. The
+proof forgets a name under any binder that may shadow it, so it fails closed.
+The atomic forms (`bytebuf-atomic-*`) still return 0 outside the buffer or
+off an 8-byte boundary, which the `!` rule does not yet cover.
 String slicing (`str-substring`, `view-take`, `view-drop`) is total by
 definition: it clamps to the overlap of the asked range with the string
 (spec §25), so it is neither `!` nor `?`.

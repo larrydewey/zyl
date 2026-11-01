@@ -49,7 +49,7 @@ cat > "$BIN/t.zyl" <<'EOF'
   (let b (cbor-buf n)
     (begin
       (for (i 0) (< i n)
-        (begin (store-u8 :le b i (bit-and (+ (* i 37) 11) 253)) (set! i (+ i 1))))
+        (begin (store-u8! :le b i (bit-and (+ (* i 37) 11) 253)) (set! i (+ i 1))))
       (prov-write-file path b n))))
 
 (defn main ()

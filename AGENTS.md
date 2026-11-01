@@ -51,7 +51,9 @@ generated structural `T.==`) → numeric check (`numeric_check.zyl`, spec
 §20: Int `+ - *` is checked unless the package opts out with
 `(numeric wrapping)` or `(numeric saturating)`; `E_PARTIAL_OPERATION` for a `/`
 or `%` whose divisor is not a nonzero literal; `div!`/`rem!` trap on zero,
-`div?`/`rem?` give `(Option Int)`) → ICNF lowering (the policy picks the
+`div?`/`rem?` give `(Option Int)`; likewise a plain byte `load-*`/`store-*`
+not proven in range, with `load-u8!` trapping `E_INDEX_OUT_OF_BOUNDS` and
+`load-u8?` giving `None`) → ICNF lowering (the policy picks the
 operator family; checked `+ - *` trap with `E_OVERFLOW`) →
 optimization (small-function inlining and copy propagation, then
 constant folding and dead-branch elimination) → region inference (the stack-variant rewrite, then
