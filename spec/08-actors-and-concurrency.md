@@ -58,6 +58,12 @@ There is no select, no non-blocking receive and no emptiness test.
    unjoined actor panic in spawn order is reported and the status is 1.
    After an uncaught panic on main, actors are abandoned and their output
    is dropped.
+7. **Exit and stack overflow.** `(exit c)` in an actor ends only that
+   actor; when it is joined (by `actor-wait`, or at exit in spawn order)
+   its output is emitted and the joiner exits with status `c`. An actor's
+   stack overflow likewise stops the program with `E_STACK_OVERFLOW`
+   (status 1, not catchable) when the actor is joined, after its output,
+   so both land at the same point under every schedule.
 7. At most 1024 actors per program (`E_ACTOR_LIMIT`).
 
 ### Region rules

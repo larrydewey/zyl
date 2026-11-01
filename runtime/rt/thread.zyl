@@ -12,18 +12,25 @@
 (defn rt-futex-wait (a v ts) (ffi-call "%syscall4" 202 a 128 v ts 1))
 (defn rt-futex-wake (a n) (ffi-call "%syscall3" 202 a 129 n 1))
 
+; Runtime locks this thread holds: a stack overflow with none held may end just its actor.
+(defn th-depth () (ffi-call "%tls" "lock_depth" 8 1))
+(defn th-depth-add (d) (let p (th-depth) (let _ (th-st p (+ (th-ld p) d)) 0)))
+(defn zyl_rt_locks_held () (th-ld (th-depth)))
+
 ; A mutex word: 0 free, 1 held, 2 held with waiters (Drepper's second mutex).
-(defn zyl_rt_mutex_lock (m) (if (= (ffi-call "%cas" m 0 1 1) 0) 0 (rt-mutex-contend m)))
+(defn zyl_rt_mutex_lock (m)
+  (let _ (if (= (ffi-call "%cas" m 0 1 1) 0) 0 (rt-mutex-contend m)) (th-depth-add 1)))
 
 (defn rt-mutex-contend (m) (if (= (ffi-call "%xchg" m 2 1) 0) 0 (let _ (rt-futex-wait m 2 0) (rt-mutex-contend m))))
 
 (defn zyl_rt_mutex_unlock (m)
-  (if (= (ffi-call "%fetch-add" m -1 1) 1) 0 (let _ (ffi-call "%xchg" m 0 1) (let _ (rt-futex-wake m 1) 0))))
+  (let _ (th-depth-add -1)
+    (if (= (ffi-call "%fetch-add" m -1 1) 1) 0 (let _ (ffi-call "%xchg" m 0 1) (let _ (rt-futex-wake m 1) 0)))))
 
 ; A condition word is a sequence number; a waiter sleeps while it is unchanged.
 (defn zyl_rt_cond_wait (c m)
   (let seq (bit-and (th-ld c) 4294967295)
-    (let _ (zyl_rt_mutex_unlock m) (let _ (rt-futex-wait c seq 0) (rt-mutex-contend m)))))
+    (let _ (zyl_rt_mutex_unlock m) (let _ (rt-futex-wait c seq 0) (let _ (rt-mutex-contend m) (th-depth-add 1))))))
 
 (defn zyl_rt_cond_signal (c) (let _ (ffi-call "%fetch-add" c 1 1) (let _ (rt-futex-wake c 1) 0)))
 
@@ -45,7 +52,7 @@
                       (let _ (th-st (+ rel 8) rns)
                         (let _ (zyl_rt_mutex_unlock m)
                           (let r (rt-futex-wait c seq rel)
-                            (let _ (rt-mutex-contend m) (if (= r -110) 110 0))))))))))))))))
+                            (let _ (rt-mutex-contend m) (let _ (th-depth-add 1) (if (= r -110) 110 0)))))))))))))))))
 
 ; --- the static TLS template (x86-64 variant II): {image, filesz, memsz, align} ---
 

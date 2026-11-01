@@ -778,7 +778,9 @@ charged to it, so stack and heap together stay within the budget. Recursion
 that reaches the guard stops the program with E_STACK_OVERFLOW (runtime, not
 catchable), after flushing output -- never a bare SIGSEGV, and never the
 kernel's out-of-memory killer. An actor's stack is a fixed 8 MiB, and its
-overflow is reported the same way.
+overflow is reported the same way, when the actor is joined (actor-wait,
+or at exit in spawn order) and after its output, so the stop lands at the
+same point under every schedule (§15).
 
 ================================================================================
 15. CONCURRENCY MODEL (ACTORS)
@@ -819,6 +821,8 @@ Rules:
     an actor's uncaught panic ends only that actor; actor-wait re-raises
         it, and at exit the first unjoined one (spawn order) is reported
         and the exit status is 1
+    (exit c) in an actor ends only that actor; its joiner then exits
+        with status c
     after an uncaught panic on main, actors are abandoned and their
         buffered output is dropped
     at most 1024 actors per program (E_ACTOR_LIMIT)

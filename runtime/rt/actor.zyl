@@ -78,6 +78,29 @@
               (let c (rt-strdup (if (= m 0) (rt-w "error") m))
                 (let _ (zyl_rt_free f) (zyl_chan_actor_done (+ id 2) (if (= c 0) (rt-w "error") c)))))))))))))
 
+; --- stops carried to the joiner: {overflowed, exit code + 1} per actor, so they land at a join, the same point under every schedule ---
+
+(defn ac-stop (id) (+ (ffi-call "%global" "actor_stops" 16384 1) (* id 16)))
+(defn ac-overflowed (id) (= (ac-ld (ac-stop id)) 1))
+(defn ac-exit-pending () (ffi-call "%global" "actor_exit_pending" 8 1))
+
+; (exit c) in an actor ends only the actor; the joiner then exits with c (spec 15: output never depends on scheduling).
+(defn zyl_actor_exit_self (code)
+  (let o (zyl_owner_self)
+    (if (< o 2) 0
+      (let _ (ac-st (+ (ac-stop (- o 2)) 8) (+ (bit-and code 255) 1))
+        (let _ (zyl_chan_actor_done o 0)
+          (let _ (zyl_rt_thread_exit) 0))))))
+
+; After the actor's output is out: an overflow stops the program, an exit exits with its code.
+(defn ac-carry-stop (id)
+  (if (ac-overflowed id) (bs-actor-overflow)
+    (let c (ac-ld (+ (ac-stop id) 8))
+      (if (= c 0) 0 (let _ (ac-st (+ (ac-stop id) 8) 0) (ffi-call "zyl_exit" (- c 1) 1))))))
+
+; An overflowed actor's thread is parked for good: joining it would never return.
+(defn ac-thread-join (id a) (if (ac-overflowed id) 0 (zyl_rt_thread_join (ac-ld (+ a 16)))))
+
 ; A known actor id, or -1.
 (defn ac-valid (id) (and (ac-inited) (and (>= id 0) (< id (if (> (ac-next) (ac-max)) (ac-max) (ac-next))))))
 
@@ -87,10 +110,11 @@
     (let a (ac-slot id)
       (if (not (= (ac-ld (+ a 24)) 0)) 0
         (let m (zyl_chan_actor_join (+ id 2))
-          (let _ (zyl_rt_thread_join (ac-ld (+ a 16)))
+          (let _ (ac-thread-join id a)
             (let _ (ac-st (+ a 24) 1)
               (let _ (zyl_out_actor_emit (+ id 2))
-                (if (= m 0) 0 (ffi-call "zyl_panic" (ffi-call "%str" m 1) 1))))))))))
+                (let _ (ac-carry-stop id)
+                  (if (= m 0) 0 (ffi-call "zyl_panic" (ffi-call "%str" m 1) 1)))))))))))
 
 ; Deterministic: true until this program joins the actor.
 (defn zyl_actor_is_alive (id) (if (not (ac-valid id)) 0 (if (= (ac-ld (+ (ac-slot id) 24)) 0) 1 0)))
@@ -102,16 +126,23 @@
     (let a (ac-slot i)
       (if (not (= (ac-ld (+ a 24)) 0)) (ac-join-rest (+ i 1) n first)
         (let m (zyl_chan_actor_join (+ i 2))
-          (let _ (zyl_rt_thread_join (ac-ld (+ a 16)))
+          (let _ (ac-thread-join i a)
             (let _ (ac-st (+ a 24) 1)
               (let _ (zyl_out_actor_emit (+ i 2))
-                (ac-join-rest (+ i 1) n (if (= first 0) m first))))))))))
+                (let _ (if (ac-overflowed i) (bs-actor-overflow) 0)
+                  (let pend (ac-exit-pending)
+                    (let c (ac-ld (+ (ac-stop i) 8))
+                      (let free (and (= first 0) (= (ac-ld pend) 0))
+                        (let _ (if (and free (> c 0)) (ac-st pend c) 0)
+                          (ac-join-rest (+ i 1) n (if (and free (= c 0)) m first)))))))))))))))
 
 ; The REPL's end of an entry: join every unjoined actor in spawn order, then re-raise the first panic.
 (defn zyl_actor_join_unjoined ()
   (if (not (ac-inited)) 0
     (let m (ac-join-rest 0 (if (> (ac-next) (ac-max)) (ac-max) (ac-next)) 0)
-      (if (= m 0) 0 (ffi-call "zyl_panic" (ffi-call "%str" m 1) 1)))))
+      (let c (ac-ld (ac-exit-pending))
+        (if (> c 0) (let _ (ac-st (ac-exit-pending) 0) (ffi-call "zyl_exit" (- c 1) 1))
+          (if (= m 0) 0 (ffi-call "zyl_panic" (ffi-call "%str" m 1) 1)))))))
 
 ; The first unjoined panic (spawn order) is reported after every actor's output, and the exit code becomes 1.
 (defn zyl_actor_wait_all ()
@@ -119,7 +150,7 @@
     (let _ (zyl_chan_main_done)
       (let n (if (> (ac-next) (ac-max)) (ac-max) (ac-next))
         (let m (ac-join-rest 0 n 0)
-          (if (= m 0) 0
+          (if (= m 0) (let c (ac-ld (ac-exit-pending)) (if (= c 0) 0 (zyl_chan_exit (- c 1))))
             (let _ (zyl_out_flush)
               (let _ (zyl_err_puts (rt-w "PANIC: "))
                 (let _ (zyl_err_puts m) (let _ (zyl_err_puts (rt-w "\n")) (zyl_chan_exit 1)))))))))))
@@ -156,12 +187,12 @@
             (ffi-call "%syscall2" 131 ss 0 1)))))))
 
 ; SIGSEGV on an alternate stack, from main's thread before any actor exists;
-; SA_SIGINFO|ONSTACK|RESTORER|NODEFER|RESETHAND.
+; SA_SIGINFO|ONSTACK|RESTORER|NODEFER: it stays installed, so every actor's overflow is caught.
 (defn bs-guard-install (size)
   (let _ (bs-altstack size)
     (let sa (ffi-call "%global" "segv_sigaction" 32 1)
       (let _ (ac-st sa (ffi-call "%fn" "zyl_segv_handler" 1))
-        (let _ (ac-st (+ sa 8) (+ 4 (+ 134217728 (+ 67108864 (+ 1073741824 2147483648)))))
+        (let _ (ac-st (+ sa 8) (+ 4 (+ 134217728 (+ 67108864 1073741824))))
           (let _ (ac-st (+ sa 16) (ffi-call "%fn" "zyl_segv_restorer" 1))
             (let _ (ac-st (+ sa 24) 0)
               (ffi-call "%syscall4" 13 11 sa 0 8 1))))))))
@@ -178,9 +209,30 @@
         (if (or (< (if (> addr sp) (- addr sp) (- sp addr)) 65536)
                 (and (> g 0) (and (>= addr g) (< addr (+ g 4096)))))
           (bs-overflow)
-          (ffi-call "%syscall2" 62 (ffi-call "%syscall0" 39 1) 11 1))))))
+          (bs-reraise))))))
 
+; Any other fault: back to the default action, then raised again.
+(defn bs-reraise ()
+  (let _ (ffi-call "%syscall4" 13 11 (ffi-call "%global" "segv_dfl" 32 1) 0 8 1)
+    (ffi-call "%syscall2" 62 (ffi-call "%syscall0" 39 1) 11 1)))
+
+; An actor holding no runtime lock ends alone and parks; its joiner stops the program.
 (defn bs-overflow ()
+  (if (and (>= (zyl_owner_self) 2) (and (not (= (ac-ld (ffi-call "%tls" "is_main" 8 1)) 1)) (= (zyl_rt_locks_held) 0)))
+    (let o (zyl_owner_self)
+      (let _ (ac-st (ac-stop (- o 2)) 1)
+        (let _ (zyl_chan_actor_done o 0) (bs-park))))
+    (bs-overflow-now)))
+
+(defn bs-park () (let _ (rt-futex-wait (ffi-call "%tls" "park" 8 1) 0 0) (bs-park)))
+
+; Joined: the actor's output is out; the overflow stops the program, uncatchable (spec 14).
+(defn bs-actor-overflow ()
+  (let _ (zyl_out_flush)
+    (let _ (rt-oom-say "PANIC: error[E_STACK_OVERFLOW]: the stack is full: recursion went deeper than the 8388608-byte stack of an actor\n  = help: make the recursive call a tail call (carry the result in an accumulator); an actor's stack is fixed, so deep work belongs in main\n")
+      (ffi-call "%syscall1" 231 1 1))))
+
+(defn bs-overflow-now ()
   (let _ (zyl_out_flush)
     (let _ (rt-oom-say "PANIC: error[E_STACK_OVERFLOW]: the stack is full: recursion went deeper than the ")
       (let _ (rt-oom-num (ac-ld (ffi-call "%tls" "stack_size" 8 1)))

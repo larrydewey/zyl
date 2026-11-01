@@ -4,6 +4,8 @@
 (use alloc)
 (use out)
 
+(extern "zyl_actor_exit_self" (Int) Int)
+
 (extern "zyl_rt_exit" (Int) Int)
 
 (defmacro rt-ld64 (a) (ffi-call "%load64" a 1))
@@ -41,9 +43,10 @@
             (let _ (io-put-int (+ passed failed))
               (let _ (io-put " total\n") (if (> failed 0) 1 0)))))))))
 
-; (exit code): flush, then end the process.
+; (exit code): flush, then end the process; in an actor it ends the actor and its joiner exits (actor.zyl).
 (defn zyl_exit (code)
-  (let _ (zyl_out_flush) (ffi-call "zyl_rt_exit" code 1)))
+  (let _ (ffi-call "zyl_actor_exit_self" code 1)
+    (let _ (zyl_out_flush) (ffi-call "zyl_rt_exit" code 1))))
 
 ; (read-line): one line from stdin without its newline (or a trailing CR); "" at end of input.
 (defn zyl_read_line ()
