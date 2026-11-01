@@ -168,11 +168,11 @@
 
 ; GHASH over a whole byte array, absorbing 16 bytes at a time.
 ; Returns: Int
-(defn ghash-bytes ((y Words) (h Words) (buf Words) (len Int))
+(defn ghash-bytes ((y Words) (h Words) (buf Words) (size Int))
   (begin
-    (for (off 0) (< off len)
+    (for (off 0) (< off size)
       (begin
-        (ghash-absorb y h buf off (if (< (- len off) 16) (- len off) 16))
+        (ghash-absorb y h buf off (if (< (- size off) 16) (- size off) 16))
         (set! off (+ off 16))))
     0))
 
@@ -211,19 +211,19 @@
 ; the tag computable from the ciphertext -- a total break, and an easy
 ; one to write by accident.
 ; Returns: Bool
-(defn gcm-ctr-xor ((key Words) (keylen Int) (j0 Words) (start Int) (src Words) (dst Words) (len Int))
-  (gcm-ctr-loop key keylen j0 start src dst len 0))
+(defn gcm-ctr-xor ((key Words) (keylen Int) (j0 Words) (start Int) (src Words) (dst Words) (size Int))
+  (gcm-ctr-loop key keylen j0 start src dst size 0))
 
 ; Returns: Bool (false when a block cannot be encrypted)
-(defn gcm-ctr-loop ((key Words) (keylen Int) (j0 Words) (start Int) (src Words) (dst Words) (len Int) (off Int))
-  (if (>= off len)
+(defn gcm-ctr-loop ((key Words) (keylen Int) (j0 Words) (start Int) (src Words) (dst Words) (size Int) (off Int))
+  (if (>= off size)
     true
     (match (aes-encrypt-block key keylen (gcm-counter j0 (+ start (/ off 16))))
       (None false)
       (Some ks
         (begin
-          (gcm-xor-block src dst ks off (if (< (- len off) 16) (- len off) 16))
-          (gcm-ctr-loop key keylen j0 start src dst len (+ off 16)))))))
+          (gcm-xor-block src dst ks off (if (< (- size off) 16) (- size off) 16))
+          (gcm-ctr-loop key keylen j0 start src dst size (+ off 16)))))))
 
 ; Returns: Int
 (defn gcm-xor-block ((src Words) (dst Words) (ks Words) (off Int) (n Int))

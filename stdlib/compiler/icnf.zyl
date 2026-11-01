@@ -716,7 +716,7 @@
     ; any let-mut local. Previously unhandled entirely (EFor wasn't in
     ; this match at all), silently lowering the whole loop to IConst 0 —
     ; every `for` in the corpus ran zero iterations.
-    (EFor bindings cond body (ic-for arena bindings cond body vt))
+    (EFor bindings condition body (ic-for arena bindings condition body vt))
     (EFfiPin e (IFfi "zyl_ffi_pin" (Cons (ic-expr arena e vt) Nil)))
     (EFfiUnpin e (IFfi "zyl_ffi_unpin" (Cons (ic-expr arena e vt) Nil)))
     ; (spawn f): the runtime takes a plain entry or a closure triple (its env's endpoints move to the actor).
@@ -768,8 +768,8 @@
     (ELoadByteSigned endian buf offset (ic-byte-access arena "zyl_load_byte_signed" "zyl_load_n_signed" endian (ic-expr arena buf vt) (ic-expr arena offset vt) None))
     (EStoreByte endian buf offset val (ic-byte-access arena "zyl_store_byte" "zyl_store_n" endian (ic-expr arena buf vt) (ic-expr arena offset vt) (Some (ic-expr arena val vt))))
     (EStoreByteSigned endian buf offset val (ic-byte-access arena "zyl_store_byte_signed" "zyl_store_n" endian (ic-expr arena buf vt) (ic-expr arena offset vt) (Some (ic-expr arena val vt))))
-    (EByteSlice buf start len (IFfi "zyl_byte_slice" (Cons (ic-expr arena buf vt) (Cons (ic-expr arena start vt) (Cons (ic-expr arena len vt) Nil)))))
-    (EByteSliceSub buf start len (IFfi "zyl_byte_slice_sub" (Cons (ic-expr arena buf vt) (Cons (ic-expr arena start vt) (Cons (ic-expr arena len vt) Nil)))))
+    (EByteSlice buf start size (IFfi "zyl_byte_slice" (Cons (ic-expr arena buf vt) (Cons (ic-expr arena start vt) (Cons (ic-expr arena size vt) Nil)))))
+    (EByteSliceSub buf start size (IFfi "zyl_byte_slice_sub" (Cons (ic-expr arena buf vt) (Cons (ic-expr arena start vt) (Cons (ic-expr arena size vt) Nil)))))
     ; region is a bare `Region` ADT value (not an Expr -- see ExprInner's
     ; (EByteBuf Region Int)), and cap is a bare compile-time Int literal
     ; (parse-bytebuf only accepts an AstInt for it) -- both go through
@@ -1124,15 +1124,15 @@
 ; pick the right arm, exactly like any other ADT match. No struct having
 ; the field at all falls back to the (IConst 0) every unsupported shape
 ; in this file already uses.
-(defn ic-for (arena bindings cond body vt)
+(defn ic-for (arena bindings condition body vt)
   (match bindings
-    (Nil (IWhile (ic-expr arena cond vt) (ic-expr arena body vt)))
+    (Nil (IWhile (ic-expr arena condition vt) (ic-expr arena body vt)))
     (Cons b rest
       (match b
         (Pair name initOpt
           (ILet (str-intern arena name)
                 (ic-for-init arena initOpt vt)
-                (ic-for arena rest cond body vt)))))))
+                (ic-for arena rest condition body vt)))))))
 
 (defn ic-for-init (arena initOpt vt)
   (match initOpt

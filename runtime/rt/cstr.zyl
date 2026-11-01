@@ -94,16 +94,16 @@
 
 ; Total by definition (spec §25): start clamps into [0, n], len into [0, n - start];
 ; the result is the overlap of the asked range with the string, never an error.
-(defn rt-substr (s start len rp)
+(defn rt-substr (s start size rp)
   (let w (rt-w s)
     (if (and (> w 0) (< w 4096)) (rt-bad-null w "cstr-substr")
       (let n (if (= w 0) 0 (rt-strlen w))
         (let st (if (< start 0) 0 (if (> start n) n start))
-          (let ln (if (< len 0) 0 (if (> len (- n st)) (- n st) len))
+          (let ln (if (< size 0) 0 (if (> size (- n st)) (- n st) size))
             (rt-str-of (+ w st) ln rp)))))))
 
-(defn zyl_cstr_substr (s start len) (rt-substr s start len 0))
-(defn zyl_cstr_substr_r (s start len) (rt-substr s start len (rt-cur-region)))
+(defn zyl_cstr_substr (s start size) (rt-substr s start size 0))
+(defn zyl_cstr_substr_r (s start size) (rt-substr s start size (rt-cur-region)))
 
 (defn rt-from-byte (b rp)
   (let p (rt-alloc 2 rp)
@@ -115,14 +115,14 @@
 
 ; --- string views ---
 
-(defn zyl_view_ok (s off len)
-  (if (or (< off 0) (< len 0)) false
+(defn zyl_view_ok (s off size)
+  (if (or (< off 0) (< size 0)) false
     (let w (rt-w s)
       (if (and (> w 0) (< w 4096)) (rt-bad-str w "view")
-        (let n (if (= w 0) 0 (rt-strlen w)) (and (<= off n) (<= len (- n off))))))))
+        (let n (if (= w 0) 0 (rt-strlen w)) (and (<= off n) (<= size (- n off))))))))
 
-(defn zyl_view_byte (s off len i)
-  (if (or (= (rt-w s) 0) (or (< i 0) (>= i len))) -1 (rt-ld8 (+ (rt-w s) (+ off i)))))
+(defn zyl_view_byte (s off size i)
+  (if (or (= (rt-w s) 0) (or (< i 0) (>= i size))) -1 (rt-ld8 (+ (rt-w s) (+ off i)))))
 
 ; A null view base reads as the empty string.
 (defn rt-view-base (s off) (if (= (rt-w s) 0) (ffi-call "%global" "empty" 64 1) (+ (rt-w s) off)))
@@ -132,17 +132,17 @@
     (let c (if (> n 0) (rt-mem-cmp (rt-view-base a aoff) (rt-view-base b boff) n) 0)
       (if (not (= c 0)) c (if (< alen blen) -1 (if (> alen blen) 1 0))))))
 
-(defn zyl_view_find (s off len from byte)
-  (if (or (= (rt-w s) 0) (or (< from 0) (>= from len))) -1
-    (rt-find-byte (+ (rt-w s) off) len (bit-and byte 255) from)))
+(defn zyl_view_find (s off size from octet)
+  (if (or (= (rt-w s) 0) (or (< from 0) (>= from size))) -1
+    (rt-find-byte (+ (rt-w s) off) size (bit-and octet 255) from)))
 
-(defn rt-view-copy (s off len rp)
-  (let p (rt-alloc (+ len 1) rp)
-    (let _ (if (and (> (rt-w s) 0) (> len 0)) (rt-copy p (+ (rt-w s) off) len) 0)
-      (let _ (rt-st8 (+ p len) 0) (ffi-call "%str" p 1)))))
+(defn rt-view-copy (s off size rp)
+  (let p (rt-alloc (+ size 1) rp)
+    (let _ (if (and (> (rt-w s) 0) (> size 0)) (rt-copy p (+ (rt-w s) off) size) 0)
+      (let _ (rt-st8 (+ p size) 0) (ffi-call "%str" p 1)))))
 
-(defn zyl_view_copy (s off len) (rt-view-copy s off len 0))
-(defn zyl_view_copy_r (s off len) (rt-view-copy s off len (rt-cur-region)))
+(defn zyl_view_copy (s off size) (rt-view-copy s off size 0))
+(defn zyl_view_copy_r (s off size) (rt-view-copy s off size (rt-cur-region)))
 
 ; --- paths ---
 
@@ -153,7 +153,7 @@
   (let w (rt-w path)
     (if (= w 0) (ffi-call "%str" 0 1)
       (let sl (rt-last-slash w 0 -1)
-        (let len (if (< sl 0) (if (= (rt-ld8 w) 0) 0 1) (+ sl 1))
-          (let p (rt-w (ffi-call "zyl_heap_alloc" (+ len 1) 1))
+        (let size (if (< sl 0) (if (= (rt-ld8 w) 0) 0 1) (+ sl 1))
+          (let p (rt-w (ffi-call "zyl_heap_alloc" (+ size 1) 1))
             (if (= p 0) (ffi-call "%str" 0 1)
-              (let _ (rt-copy p w len) (let _ (rt-st8 (+ p len) 0) (ffi-call "%str" p 1))))))))))
+              (let _ (rt-copy p w size) (let _ (rt-st8 (+ p size) 0) (ffi-call "%str" p 1))))))))))

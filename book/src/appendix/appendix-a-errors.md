@@ -119,6 +119,7 @@ with its code split off the front of the message.
 | `E_MALFORMED_FORM` | A special form whose arguments do not have the shape it requires, such as `(if c)` with no branches, or `(quote a b)`; also a name inside quoted data, `'(1 x)`, since there is no symbol type, and the same in quasiquoted data outside an unquote, `` `(1 x) ``; a quasiquote inside a quasiquote; a `,` or `,@` outside a quasiquote and a macro template; and in a template, a `,@` where a form takes a fixed number of expressions, or of anything but the `&rest` parameter. Such a form used to compile to the constant 0, which let some tests pass without testing anything. Raised by `arity_check.zyl`. |
 | `E_UNEXPECTED_TOKEN_IN_EXPR` | A token that cannot appear in expression position |
 | `E_RESERVED_KEYWORD` | A reserved keyword (spec §1.3) as the name a definition introduces, or `make-S` for a struct `S`; located at the name |
+| `E_SHADOWS_BUILTIN` | A local binding (`let`, parameter, `match`/`catch` binder, `for` variable) named like a built-in operation or special form, which every call of that name reaches instead (spec §1.3.2); located at the binder, with a rename suggested |
 
 The balance check (`sexp_balance.zyl`) runs before parsing and is what
 an editor shows while you are still typing. Its diagnostics carry a

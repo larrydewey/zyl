@@ -152,8 +152,8 @@
     (Nil false)
     (Cons h t (if (str-eq s h) true (mr-str-in-list s t)))))
 
-(defn mr-unit-id (pkg module)
-  (str-concat pkg (str-concat "|" module)))
+(defn mr-unit-id (pkg mod)
+  (str-concat pkg (str-concat "|" mod)))
 
 ; reverse(xs) ++ acc: every accumulator here is built in reverse and
 ; reversed once at the end, because appending to the end of the growing
@@ -314,37 +314,37 @@
   (if (str-eq n "str-substring") true
   (if (str-eq n "str-equal") true false))))))
 
-(defn mr-collect-defs (arena pkg module forms)
+(defn mr-collect-defs (arena pkg mod forms)
   (match forms
     (Nil Nil)
     (Cons f rest
-      (list-append (mr-form-defs arena pkg module f 0)
-                   (mr-collect-defs arena pkg module rest)))))
+      (list-append (mr-form-defs arena pkg mod f 0)
+                   (mr-collect-defs arena pkg mod rest)))))
 
-(defn mr-form-defs (arena pkg module f pub)
+(defn mr-form-defs (arena pkg mod f public)
   (let head (mr-ast-head f)
     (if (str-eq head "pub")
-      (mr-pub-defs arena pkg module (mr-ast-args f))
+      (mr-pub-defs arena pkg mod (mr-ast-args f))
       (if (str-eq head "feature-gate")
-        (mr-gated-defs arena pkg module (mr-ast-args f))
+        (mr-gated-defs arena pkg mod (mr-ast-args f))
         (if (mr-def-head-p head)
-          (mr-named-defs arena pkg module f head pub)
+          (mr-named-defs arena pkg mod f head public)
           Nil)))))
 
 ; `(feature-gate utf16 (pub defn parse-utf16 (b) ...))` — valid at top
 ; level only (§31.10). The gated form is a definition in its own right,
 ; which is what makes features additive by construction: a feature can
 ; add a definition but can never alter one.
-(defn mr-gated-defs (arena pkg module args)
+(defn mr-gated-defs (arena pkg mod args)
   (match args
     (Nil Nil)
     (Cons featureast rest
-      (mr-tag-feature (mr-gated-inner arena pkg module rest) (mr-ident-of featureast)))))
+      (mr-tag-feature (mr-gated-inner arena pkg mod rest) (mr-ident-of featureast)))))
 
-(defn mr-gated-inner (arena pkg module rest)
+(defn mr-gated-inner (arena pkg mod rest)
   (match rest
     (Nil Nil)
-    (Cons f _ (mr-form-defs arena pkg module f 0))))
+    (Cons f _ (mr-form-defs arena pkg mod f 0))))
 
 (defn mr-tag-feature (defs feature)
   (match defs
@@ -356,10 +356,10 @@
 ; `pub` prefixes a definition INLINE — `(pub defn f ...)`, not
 ; `(pub (defn f ...))` — so the wrapper's arguments ARE the definition's
 ; own form, one list level up.
-(defn mr-pub-defs (arena pkg module args)
+(defn mr-pub-defs (arena pkg mod args)
   (match args
     (Nil Nil)
-    (Cons _ _ (mr-form-defs arena pkg module (AList args) 1))))
+    (Cons _ _ (mr-form-defs arena pkg mod (AList args) 1))))
 
 (defn mr-def-head-p (h)
   (if (str-eq h "defn") true
@@ -372,7 +372,7 @@
   (if (str-eq h "defmacro") true
   (if (str-eq h "alias") true false))))))))))
 
-(defn mr-named-defs (arena pkg module f head pub)
+(defn mr-named-defs (arena pkg mod f head public)
   (let args (mr-ast-args f)
     (match args
       (Nil Nil)
@@ -383,41 +383,41 @@
             (if (mr-reserved-name n)
               Nil
               (list-append
-                (Cons (mr-spanned (MRDF n (ck-key arena (mrp-name pkg) (mrp-major pkg) module n) pub "") nameast) Nil)
-                (mr-variant-defs arena pkg module head n rest pub)))))))))
+                (Cons (mr-spanned (MRDF n (ck-key arena (mrp-name pkg) (mrp-major pkg) mod n) public "") nameast) Nil)
+                (mr-variant-defs arena pkg mod head n rest public)))))))))
 
 ; A deftype's variants are definitions in their own right: they become
 ; constructors, so they need keys of their own or two packages could not
 ; each define a `Node`.
-(defn mr-variant-defs (arena pkg module head n rest pub)
+(defn mr-variant-defs (arena pkg mod head n rest public)
   (if (str-eq head "deftype")
-    (mr-variant-list arena pkg module rest pub)
+    (mr-variant-list arena pkg mod rest public)
     (if (or (str-eq head "defstruct") (str-eq head "defstruct+"))
-      (mr-accessor-list arena pkg module n rest pub)
+      (mr-accessor-list arena pkg mod n rest public)
       Nil)))
 
 ; A struct's generated field accessors `T.f` (expr_inner.zyl,
 ; struct-accessor-forms) are definitions too, visible as the struct is.
-(defn mr-accessor-list (arena pkg module tn fields pub)
+(defn mr-accessor-list (arena pkg mod tn fields public)
   (match fields
     (Nil Nil)
     (Cons h t
       (let n (mr-variant-name h)
         (if (or (= (str-length n) 0) (= (pk-byte-at n 0) 58))
-          (mr-accessor-list arena pkg module tn t pub)
+          (mr-accessor-list arena pkg mod tn t public)
           (let an (str-concat tn (str-concat "." n))
-            (Cons (mr-spanned (MRDF an (ck-key arena (mrp-name pkg) (mrp-major pkg) module an) pub "") h)
-                  (mr-accessor-list arena pkg module tn t pub))))))))
+            (Cons (mr-spanned (MRDF an (ck-key arena (mrp-name pkg) (mrp-major pkg) mod an) public "") h)
+                  (mr-accessor-list arena pkg mod tn t public))))))))
 
-(defn mr-variant-list (arena pkg module xs pub)
+(defn mr-variant-list (arena pkg mod xs public)
   (match xs
     (Nil Nil)
     (Cons h t
       (let n (mr-variant-name h)
         (if (= (str-length n) 0)
-          (mr-variant-list arena pkg module t pub)
-          (Cons (mr-spanned (MRDF n (ck-key arena (mrp-name pkg) (mrp-major pkg) module n) pub "") h)
-                (mr-variant-list arena pkg module t pub)))))))
+          (mr-variant-list arena pkg mod t public)
+          (Cons (mr-spanned (MRDF n (ck-key arena (mrp-name pkg) (mrp-major pkg) mod n) public "") h)
+                (mr-variant-list arena pkg mod t public)))))))
 
 (defn mr-variant-name (v)
   (match v
@@ -485,8 +485,8 @@
 ; the module spelled by the package name's last segment, which is the
 ; layout the standard library itself already uses (core/core, math/math).
 
-(defn mr-module-file (pkg module)
-  (str-concat (mrp-root pkg) (str-concat "/" (str-concat module ".zyl"))))
+(defn mr-module-file (pkg mod)
+  (str-concat (mrp-root pkg) (str-concat "/" (str-concat mod ".zyl"))))
 
 (defn mr-root-module (pkg)
   (pk-last-segment (mrp-name pkg)))
@@ -516,13 +516,13 @@
     (mr-dep-pkg disc pkg (mru-pkg u))
     (mr-implicit-pkg disc pkg (mru-module u)))))
 
-(defn mr-implicit-pkg (disc pkg module)
-  (if (mr-file-exists (mr-module-file pkg module))
+(defn mr-implicit-pkg (disc pkg mod)
+  (if (mr-file-exists (mr-module-file pkg mod))
     pkg
     (let std (mr-stdlib-pkg)
-      (if (mr-file-exists (mr-module-file std module))
+      (if (mr-file-exists (mr-module-file std mod))
         std
-        (mr-dep-pkg disc pkg module)))))
+        (mr-dep-pkg disc pkg mod)))))
 
 ; A `use` naming a package that the manifest does not declare is
 ; E_PKG_UNDECLARED_DEP (§24.2): the dependency graph is what the manifest
@@ -542,27 +542,27 @@
         (mru-module u)
         (mr-target-module-name target (mru-module u))))))
 
-(defn mr-target-module-name (target module)
-  (if (mr-file-exists (mr-module-file target module))
-    module
+(defn mr-target-module-name (target mod)
+  (if (mr-file-exists (mr-module-file target mod))
+    mod
     (mr-root-module target)))
 
 ; `unsafe` can never be a module name: the lexer discards whitespace, so
 ; `(use pkg :unsafe)` and `(use pkg:unsafe)` are the same token stream and
 ; the marker has to win (§24.2).
-(defn mr-check-module-name (module pkgname)
-  (if (str-eq module "unsafe")
+(defn mr-check-module-name (mod pkgname)
+  (if (str-eq mod "unsafe")
     (mr-fail "E_PKG_RESERVED_MODULE"
       (str-concat "module: unsafe is a reserved module name, used in " pkgname))
     1))
 
-(defn mr-discover (arena disc stack pkg module)
-  (let id (mr-unit-id (mrp-name pkg) module)
+(defn mr-discover (arena disc stack pkg mod)
+  (let id (mr-unit-id (mrp-name pkg) mod)
     (if (mr-str-in-list id (mrd-seen disc))
       disc
       (if (mr-str-in-list id stack)
         (mr-cycle-error id stack)
-        (mr-discover-new arena disc stack pkg module)))))
+        (mr-discover-new arena disc stack pkg mod)))))
 
 ; A cycle inside one package is E_MODULE_CYCLE; a cycle that leaves and
 ; re-enters a package is E_PKG_CYCLE (§24.5). The message names the cycle
@@ -614,33 +614,33 @@
     (Nil true)
     (Cons h t (if (str-eq (mr-id-pkg h) p) (mr-all-same-pkg p t) false))))
 
-(defn mr-discover-new (arena disc stack pkg module)
-  (let _ (mr-check-module-name module (mrp-name pkg))
-    (let path (mr-module-file pkg module)
+(defn mr-discover-new (arena disc stack pkg mod)
+  (let _ (mr-check-module-name mod (mrp-name pkg))
+    (let path (mr-module-file pkg mod)
       (if (not (mr-file-exists path))
-        (mr-missing-module pkg module path)
-        (mr-discover-forms arena disc stack pkg module)))))
+        (mr-missing-module pkg mod path)
+        (mr-discover-forms arena disc stack pkg mod)))))
 
-(defn mr-missing-module (pkg module path)
+(defn mr-missing-module (pkg mod path)
   (if (> (mrp-manifested pkg) 0)
     (mr-fail "E_PKG_UNKNOWN_MODULE"
-      (str-concat "module: module " (str-concat module
+      (str-concat "module: module " (str-concat mod
         (str-concat " does not exist in package " (mrp-name pkg)))))
     (mr-fail "E_MODULE_NOT_FOUND"
-      (str-concat "module: module " (str-concat module
+      (str-concat "module: module " (str-concat mod
         (str-concat " not found at " path))))))
 
-(defn mr-discover-forms (arena disc stack pkg module)
-  (let forms (mr-parse-file arena (mr-module-file pkg module))
+(defn mr-discover-forms (arena disc stack pkg mod)
+  (let forms (mr-parse-file arena (mr-module-file pkg mod))
     (let _ (mr-no-stray-caps pkg forms)
     (let _ (mr-numeric-in-module forms pkg)
     (let _ (mr-memory-in-module forms pkg)
     (let uses (mr-collect-uses forms)
-      (let defs (mr-collect-defs arena pkg module forms)
-        (let id (mr-unit-id (mrp-name pkg) module)
+      (let defs (mr-collect-defs arena pkg mod forms)
+        (let id (mr-unit-id (mrp-name pkg) mod)
           (let disc2 (mr-discover-deps arena (mr-with-pkgs disc arena pkg)
                                        (Cons id stack) pkg uses)
-            (mr-add-unit disc2 (MRUN (mrp-name pkg) module forms uses defs) id))))))))))
+            (mr-add-unit disc2 (MRUN (mrp-name pkg) mod forms uses defs) id))))))))))
 
 (defn mr-add-unit (disc munit id)
   (match disc
@@ -968,18 +968,18 @@
 
 ; A `use` naming a module of ANOTHER package finds nothing here, which is
 ; correct: those names arrive through the import table instead.
-(defn mr-used-one (units pkgname feats module)
-  (match (mr-find-unit units pkgname module)
+(defn mr-used-one (units pkgname feats mod)
+  (match (mr-find-unit units pkgname mod)
     (Some munit (mr-defs-pairs (mr-active-defs feats (mru2-defs munit))))
     (None Nil)))
 
-(defn mr-find-unit (units pkgname module)
+(defn mr-find-unit (units pkgname mod)
   (match units
     (Nil None)
     (Cons h t
       (if (str-eq (mru2-pkg h) pkgname)
-        (if (str-eq (mru2-module h) module) (Some h) (mr-find-unit t pkgname module))
-        (mr-find-unit t pkgname module)))))
+        (if (str-eq (mru2-module h) mod) (Some h) (mr-find-unit t pkgname mod))
+        (mr-find-unit t pkgname mod)))))
 
 ; Import pairs for one unit: everything its `use` forms bring in from
 ; OTHER packages. Same-package imports need nothing here, since the
@@ -1020,8 +1020,8 @@
     (Cons _ _ (mr-import-from disc units pkg target u))))
 
 (defn mr-import-from (disc units pkg target u)
-  (let module (mr-target-module disc pkg u)
-    (match (mr-find-unit units (mrp-name target) module)
+  (let mod (mr-target-module disc pkg u)
+    (match (mr-find-unit units (mrp-name target) mod)
       (Some munit (mr-filter-import target munit u))
       (None Nil))))
 
@@ -1266,7 +1266,7 @@
     (Nil 0)
     (Cons t rest (begin (mr-forbid-one negs f t ty) (mr-forbid-derive negs f ty rest)))))
 
-(defn mr-forbid-one (negs f trait ty)
+(defn mr-forbid-one (negs f tr ty)
   (match negs
     (Nil 0)
     (Cons n rest
@@ -1274,16 +1274,16 @@
         (Pair decl pr
           (match pr
             (Pair nt target
-              (if (and (str-eq nt trait) (or (str-eq target ty) (> (mr-neg-get (mr-pair-key "i|" target ty)) 0)))
-                (mr-forbidden-fail f trait ty target)
-                (mr-forbid-one rest f trait ty)))))))))
+              (if (and (str-eq nt tr) (or (str-eq target ty) (> (mr-neg-get (mr-pair-key "i|" target ty)) 0)))
+                (mr-forbidden-fail f tr ty target)
+                (mr-forbid-one rest f tr ty)))))))))
 
-(defn mr-forbidden-fail (f trait ty target)
-  (let msg (str-concat "`" (str-concat trait (str-concat "` cannot be implemented for `" (str-concat ty "`"))))
+(defn mr-forbidden-fail (f tr ty target)
+  (let msg (str-concat "`" (str-concat tr (str-concat "` cannot be implemented for `" (str-concat ty "`"))))
     (let why (if (str-eq target ty)
-               (str-concat "forbidden by (impl-not " (str-concat trait (str-concat " " (str-concat target ")"))))
+               (str-concat "forbidden by (impl-not " (str-concat tr (str-concat " " (str-concat target ")"))))
                (str-concat "`" (str-concat ty (str-concat "` implements `" (str-concat target
-                 (str-concat "`, and (impl-not " (str-concat trait (str-concat " " (str-concat target ") forbids that")))))))))
+                 (str-concat "`, and (impl-not " (str-concat tr (str-concat " " (str-concat target ") forbids that")))))))))
       (ffi-call "zyl_panic"
         (err-at "E_IMPL_FORBIDDEN" msg (ffi-call "zyl_span_file" f 1000) (ffi-call "zyl_span_off" f 1000) why) 1000))))
 
@@ -1328,13 +1328,13 @@
         (Nil 1)))
     (Nil 1)))
 
-(defn mr-orphan-verdict (trait type pkgname f)
-  (if (mr-local-name trait pkgname)
+(defn mr-orphan-verdict (tr type pkgname f)
+  (if (mr-local-name tr pkgname)
     1
     (if (mr-local-name type pkgname)
       1
       (mr-fail-at f "E_PKG_ORPHAN_IMPL"
-        (str-concat "trait: impl of " (str-concat (ck-symbol-of trait)
+        (str-concat "trait: impl of " (str-concat (ck-symbol-of tr)
           (str-concat " for " (str-concat (ck-symbol-of type)
             (str-concat " where neither the trait nor the type is local to " pkgname)))))))))
 
@@ -1449,10 +1449,10 @@
   (let pkg (mr-root-pkg arena (mr-dirname srcpath) main-forms)
     (let _ (mr-numeric-root arena pkg main-forms srcpath)
     (let _ (mr-memory-root arena pkg main-forms)
-    (let module (mr-basename-module srcpath)
+    (let mod (mr-basename-module srcpath)
       (let uses (mr-collect-uses main-forms)
-        (let defs (mr-collect-defs arena pkg module main-forms)
-          (let root (MRUN (mrp-name pkg) module main-forms
+        (let defs (mr-collect-defs arena pkg mod main-forms)
+          (let root (MRUN (mrp-name pkg) mod main-forms
                           (mr-root-uses main-forms uses) defs)
             (mr-resolve-root arena pkg root (mr-root-uses main-forms uses))))))))))
 
@@ -1503,10 +1503,10 @@
   (let pkg (mr-root-pkg arena (mr-dirname srcpath) main-forms)
     (let _ (mr-numeric-root arena pkg main-forms srcpath)
     (let _ (mr-memory-root arena pkg main-forms)
-    (let module (mr-basename-module srcpath)
+    (let mod (mr-basename-module srcpath)
       (let uses (mr-collect-uses main-forms)
-        (let defs (mr-collect-defs arena pkg module main-forms)
-          (let root (MRUN (mrp-name pkg) module main-forms
+        (let defs (mr-collect-defs arena pkg mod main-forms)
+          (let root (MRUN (mrp-name pkg) mod main-forms
                           (mr-root-uses main-forms uses) defs)
             (mr-resolve-full arena pkg root (mr-root-uses main-forms uses) (mr-root-kind srcpath))))))))))
 

@@ -40,7 +40,7 @@ compile with `build/boot/zyl-self` on 2026-09-28.
 - Phase order (`stdlib/compiler/pipeline.zyl`): balance check, parse
   (with the `desugar.zyl` rewrites), test-compile resolution after macro expansion,
   module resolution and qualification, macro expansion, the checks
-  (capability, duplicate definition, arity, malformed forms, restricted
+  (built-in shadowing, capability, duplicate definition, arity, malformed forms, restricted
   FFI entries, mutability/aliasing, release linearity, exhaustiveness,
   unused, secret),
   derive expansion, impl lifting, closure inlining (an identity step),
@@ -53,6 +53,17 @@ compile with `build/boot/zyl-self` on 2026-09-28.
   entries are typed by `ffi_sigs.zyl` and foreign functions by
   `(extern ...)`, and there is no cast form. The `receive` hole is gone
   with the mailboxes.
+- **A local named like a built-in is an error (spec §1.3.2, 2026-11-01).**
+  A call whose head is a built-in or special form always means it, so a
+  `let`/`let-mut` binding, a `defn`/`fn`/`lambda`/impl parameter, a
+  `match`/`catch` binder or a `for` variable of that name was silently
+  dead; it is now `E_SHADOWS_BUILTIN` (`shadow_check.zyl`), located with a
+  rename, in every module including the standard library and the runtime
+  (about 400 locals renamed, mostly `len`). The reserved set (`bs-names`)
+  was measured, not guessed: every name the compiler spells was probed as
+  a called local, and `tests/scripts/builtin-shadow.sh` re-probes it. The
+  desugarer no longer reads a binder list headed by `map`/`vec` as a
+  literal. A top-level `defn` may still take such a name (it is qualified).
 - **The numeric model is implemented (spec §20, `docs/soundness.md` L8).**
   Int arithmetic is checked by default. A package opts out once with
   `(numeric wrapping)` or `(numeric saturating)` (a top-level form of a
@@ -543,10 +554,6 @@ compile with `build/boot/zyl-self` on 2026-09-28.
 
 Language and compiler:
 
-- A local binding named like a builtin or a special form (`+`,
-  `str-length`, `print`) is silently ignored: the builtin runs. A top-level
-  `defn` does shadow a builtin (it is qualified). Honouring the local
-  binding or rejecting it is a language decision still to make.
 - Contract conditions may still do I/O or call effectful functions; only
   `set!` is rejected. A full purity check needs an effect analysis.
 

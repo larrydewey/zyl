@@ -118,18 +118,18 @@
     (if (and (< p 0) (> p -4096)) 0 (let _ (ffi-call "%syscall3" 10 p 4096 0 1) p))))
 
 ; Starts fn(arg) on a new thread; stack 0 means a fresh 8 MiB one (guard page below). Returns the handle, or 0.
-(defn zyl_rt_thread_create (fn arg stack size)
+(defn zyl_rt_thread_create (entry arg stack size)
   (let h (rt-mmap 4096)
     (if (and (< h 0) (> h -4096)) 0
-      (if (zyl_rt_hosted_p) (rt-thread-pthread h fn arg stack size) (rt-thread-clone h fn arg stack size)))))
+      (if (zyl_rt_hosted_p) (rt-thread-pthread h entry arg stack size) (rt-thread-clone h entry arg stack size)))))
 
-(defn rt-thread-clone (h fn arg stack0 size0)
+(defn rt-thread-clone (h entry arg stack0 size0)
   (let size (if (= stack0 0) 8388608 size0)
     (let stack (if (= stack0 0) (rt-stack-new size) stack0)
       (let tp (rt-tls-new)
         (if (or (= stack 0) (= tp 0)) (let _ (rt-thread-free h) 0)
           (let top (bit-and (+ stack size) -16)
-            (let _ (th-st (- top 16) fn)
+            (let _ (th-st (- top 16) entry)
               (let _ (th-st (- top 8) arg)
                 (let _ (th-st (+ h 8) stack)
                   (let _ (th-st (+ h 16) size)
@@ -138,11 +138,11 @@
                         (let r (ffi-call "zyl_rt_clone" (rt-clone-flags) (- top 16) h h tp 1)
                           (if (< r 0) (let _ (rt-tls-free tp) (let _ (rt-thread-free h) 0)) h))))))))))))))
 
-(defn rt-thread-pthread (h fn arg stack size)
+(defn rt-thread-pthread (h entry arg stack size)
   (let at (+ h 64)
     (let _ (ffi-call "%call1" (ffi-call "%fn-weak" "pthread_attr_init" 1) at 1)
       (let _ (if (= stack 0) 0 (ffi-call "%call3" (ffi-call "%fn-weak" "pthread_attr_setstack" 1) at stack size 1))
-        (let r (bit-and (ffi-call "%call4" (ffi-call "%fn-weak" "pthread_create" 1) (+ h 32) at fn arg 1) 4294967295)
+        (let r (bit-and (ffi-call "%call4" (ffi-call "%fn-weak" "pthread_create" 1) (+ h 32) at entry arg 1) 4294967295)
           (let _ (ffi-call "%call1" (ffi-call "%fn-weak" "pthread_attr_destroy" 1) at 1)
             (if (= r 0) h (let _ (rt-thread-free h) 0))))))))
 

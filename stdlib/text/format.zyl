@@ -40,12 +40,12 @@
 (defn fmt-raw-lines (text)
   (fmt-raw-lines-loop text 0 0 (str-length text) Nil))
 
-(defn fmt-raw-lines-loop (text i start len acc)
-  (if (>= i len)
+(defn fmt-raw-lines-loop (text i start size acc)
+  (if (>= i size)
     (list-reverse (Cons (str-substring text start (- i start)) acc))
     (if (= (sb-str-code (str-substring text i 1)) 10)
-      (fmt-raw-lines-loop text (+ i 1) (+ i 1) len (Cons (str-substring text start (- i start)) acc))
-      (fmt-raw-lines-loop text (+ i 1) start len acc))))
+      (fmt-raw-lines-loop text (+ i 1) (+ i 1) size (Cons (str-substring text start (- i start)) acc))
+      (fmt-raw-lines-loop text (+ i 1) start size acc))))
 
 ; Depth at the START of each line (before that line's own opens count).
 ; Strings and comments are skipped by sexp_balance's lexical rules
@@ -94,11 +94,11 @@
 (defn fmt-trim-left (s)
   (fmt-trim-left-loop s 0 (str-length s)))
 
-(defn fmt-trim-left-loop (s i len)
-  (if (>= i len)
+(defn fmt-trim-left-loop (s i size)
+  (if (>= i size)
     ""
     (let c (sb-str-code (str-substring s i 1))
-      (if (or (= c 32) (= c 9)) (fmt-trim-left-loop s (+ i 1) len) (str-substring s i (- len i))))))
+      (if (or (= c 32) (= c 9)) (fmt-trim-left-loop s (+ i 1) size) (str-substring s i (- size i))))))
 
 (defn fmt-spaces (n)
   (if (<= n 0) "" (str-concat " " (fmt-spaces (- n 1)))))

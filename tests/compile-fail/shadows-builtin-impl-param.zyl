@@ -1,0 +1,8 @@
+; expect-error: E_SHADOWS_BUILTIN
+; expect-at: shadows-builtin-impl-param.zyl:7:21
+; An impl method parameter named like a built-in.
+(trait Scale (scale self k))
+(defstruct Box (n Int))
+(impl Scale Box
+  (defn scale (self byte) (* self.n byte)))
+(defn main () (Scale.scale (make-Box 3) 2))

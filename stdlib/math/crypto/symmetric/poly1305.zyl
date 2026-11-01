@@ -241,19 +241,19 @@
 ; partial block gets an explicit 0x01 byte instead, in a zero-padded
 ; scratch block.
 ; Returns: Words
-(defn poly1305-mac ((key Words) (msg Words) (len Int))
+(defn poly1305-mac ((key Words) (msg Words) (size Int))
   (let rp (poly1305-r key)
     (let sp (poly1305-s rp)
       (let h (w-alloc 5)
         (begin
-          (poly1305-full-blocks h rp sp msg len)
-          (poly1305-last-block h rp sp msg len)
+          (poly1305-full-blocks h rp sp msg size)
+          (poly1305-last-block h rp sp msg size)
           (poly1305-finish h key))))))
 
 ; Returns: Int
-(defn poly1305-full-blocks ((h Words) (rp Words) (sp Words) (msg Words) (len Int))
+(defn poly1305-full-blocks ((h Words) (rp Words) (sp Words) (msg Words) (size Int))
   (begin
-    (for (off 0) (<= (+ off 16) len)
+    (for (off 0) (<= (+ off 16) size)
       (begin
         (poly1305-add-block h msg off 16777216)
         (poly1305-mul h rp sp)
@@ -263,12 +263,12 @@
 ; The trailing bytes, if any: copied into a zeroed 16-byte block with a
 ; 0x01 terminator, so the padding is unambiguous.
 ; Returns: Int
-(defn poly1305-last-block ((h Words) (rp Words) (sp Words) (msg Words) (len Int))
-  (let rem (% len 16)
+(defn poly1305-last-block ((h Words) (rp Words) (sp Words) (msg Words) (size Int))
+  (let rem (% size 16)
     (if (= rem 0)
       0
       (let blk (w-alloc 16)
-        (let base (- len rem)
+        (let base (- size rem)
           (begin
             (for (i 0) (< i rem)
               (begin (w-set blk i (w-get msg (+ base i))) (set! i (+ i 1))))
@@ -279,6 +279,6 @@
 
 ; Constant-time tag verification: 16 bytes compared with no early exit.
 ; Returns: Bool
-(defn poly1305-verify ((key Words) (msg Words) (len Int) (tag Words))
-  (let computed (poly1305-mac key msg len)
+(defn poly1305-verify ((key Words) (msg Words) (size Int) (tag Words))
+  (let computed (poly1305-mac key msg size)
     (ct-eq-words-bool computed tag 16)))

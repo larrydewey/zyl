@@ -28,9 +28,9 @@
   (let carry (bn-add out a b n)
     (let scratch (bn-alloc n)
       (let borrow (bn-sub scratch out m n)
-        (let cond (bit-or (ct-is-nonzero carry) (- 1 borrow))
+        (let condition (bit-or (ct-is-nonzero carry) (- 1 borrow))
           (begin
-            (bn-cond-copy out scratch n (ct-mask cond))
+            (bn-cond-copy out scratch n (ct-mask condition))
             out))))))
 
 ; out = (a - b) mod m, for a, b < m. When the subtraction borrows, the

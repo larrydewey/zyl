@@ -284,11 +284,11 @@
         (mc-expr t mutscope lets)
         (mc-expr eb mutscope lets)))
     (EWhile c body (begin (mc-expr c mutscope lets) (mc-expr body mutscope lets)))
-    (EFor bindings cond body
+    (EFor bindings condition body
       (let names (mc-for-names bindings)
         (begin
           (mc-for-inits bindings mutscope lets)
-          (mc-expr cond (mc-append names mutscope) lets)
+          (mc-expr condition (mc-append names mutscope) lets)
           (mc-expr body (mc-append names mutscope) lets))))
     (ECond clauses (mc-cond-clauses clauses mutscope lets))
     (EBegin exprs (mc-list exprs mutscope lets))

@@ -8,8 +8,8 @@
 ; --- zeroization ---
 
 ; Byte-at-a-time zero stores; each is a primitive call, so none is dropped.
-(defn zyl_zeroize (addr len)
-  (if (or (= addr 0) (<= len 0)) 0 (let _ (cr-zero-bytes addr len) len)))
+(defn zyl_zeroize (addr size)
+  (if (or (= addr 0) (<= size 0)) 0 (let _ (cr-zero-bytes addr size) size)))
 
 (defn cr-zero-bytes (p n) (if (<= n 0) 0 (let _ (rt-st8 p 0) (cr-zero-bytes (+ p 1) (- n 1)))))
 
@@ -68,31 +68,31 @@
 ; --- system entropy ---
 
 ; getrandom(2) until len bytes or an error other than EINTR; the byte count reached.
-(defn cr-getrandom (p len done)
-  (if (>= done len) done
-    (let r (ffi-call "%syscall3" 318 (+ p done) (- len done) 0 1)
+(defn cr-getrandom (p size done)
+  (if (>= done size) done
+    (let r (ffi-call "%syscall3" 318 (+ p done) (- size done) 0 1)
       (if (< r 0)
-        (if (= r -4) (cr-getrandom p len done) done)
-        (cr-getrandom p len (+ done r))))))
+        (if (= r -4) (cr-getrandom p size done) done)
+        (cr-getrandom p size (+ done r))))))
 
-(defn cr-read-all (fd p len done)
-  (if (>= done len) done
-    (let r (ffi-call "%syscall3" 0 fd (+ p done) (- len done) 1)
-      (if (> r 0) (cr-read-all fd p len (+ done r)) (if (= r -4) (cr-read-all fd p len done) done)))))
+(defn cr-read-all (fd p size done)
+  (if (>= done size) done
+    (let r (ffi-call "%syscall3" 0 fd (+ p done) (- size done) 1)
+      (if (> r 0) (cr-read-all fd p size (+ done r)) (if (= r -4) (cr-read-all fd p size done) done)))))
 
 ; The /dev/urandom fallback for kernels without getrandom (O_RDONLY|O_CLOEXEC).
-(defn cr-urandom (p len done)
+(defn cr-urandom (p size done)
   (let fd (ffi-call "%syscall3" 2 (rt-w "/dev/urandom") 524288 0 1)
     (if (< fd 0) -1
-      (let got (cr-read-all fd p len done)
+      (let got (cr-read-all fd p size done)
         (let _ (ffi-call "%syscall1" 3 fd 1)
-          (if (= got len) got -1))))))
+          (if (= got size) got -1))))))
 
 ; Fills len raw bytes at addr; len, or -1 when entropy could not be obtained.
-(defn zyl_random_fill (addr len)
-  (if (or (= addr 0) (<= len 0)) -1
-    (let done (cr-getrandom addr len 0)
-      (if (= done len) done (cr-urandom addr len done)))))
+(defn zyl_random_fill (addr size)
+  (if (or (= addr 0) (<= size 0)) -1
+    (let done (cr-getrandom addr size 0)
+      (if (= done size) done (cr-urandom addr size done)))))
 
 (defn cr-rand-chunks (out n done buf)
   (if (>= done n) done
@@ -105,8 +105,8 @@
 (defn zyl_random_words (base n)
   (if (or (= base 0) (<= n 0)) -1
     (let out (cr-words-data base)
-      (let len (zyl_words_len base)
-        (let _ (if (> n len) (tb-oob "random-words" (- n 1) (zyl_words_len base)) 0)
+      (let size (zyl_words_len base)
+        (let _ (if (> n size) (tb-oob "random-words" (- n 1) (zyl_words_len base)) 0)
           (let buf (ffi-call "%tls" "rand" 256 1)
             (let r (cr-rand-chunks out n 0 buf)
               (let _ (cr-wipe buf 256) r))))))))

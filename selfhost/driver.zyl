@@ -574,16 +574,16 @@
 
 ; BLAKE3 over `path:hash` for each source file under `root`, sorted.
 (defn drv-tree-hash (arena root)
-  (let list (ffi-call "zyl_list_files" root ".zyl .c .h .pkg" 1000)
-    (ffi-call "zyl_blake3_hex" arena (drv-tree-lines arena root list 0) -1 32 1000)))
+  (let files (ffi-call "zyl_list_files" root ".zyl .c .h .pkg" 1000)
+    (ffi-call "zyl_blake3_hex" arena (drv-tree-lines arena root files 0) -1 32 1000)))
 
-(defn drv-tree-lines (arena root list i)
-  (let j (doc-line-end list i)
+(defn drv-tree-lines (arena root files i)
+  (let j (doc-line-end files i)
     (if (>= i j)
       ""
-      (let rel (str-substring list i (- j i))
+      (let rel (str-substring files i (- j i))
         (str-concat rel (str-concat ":" (str-concat (ffi-call "zyl_blake3_file_hex" arena (str-concat root (str-concat "/" rel)) 32 1000)
-          (str-concat "\n" (drv-tree-lines arena root list (+ j 1))))))))))
+          (str-concat "\n" (drv-tree-lines arena root files (+ j 1))))))))))
 
 (defn drv-compile-uncached (arena src out dir)
   (let fd (file-open src "r")
@@ -977,8 +977,8 @@
 (defn drv-stdlib-tail ((path String) (i Int) (n Int))
   (if (>= i n)
     ""
-    (let len (if (and (> n 4) (= (str-substring path (- n 4) 4) ".zyl")) (- n 4) n)
-      (if (>= i len) "" (str-substring path i (- len i))))))
+    (let size (if (and (> n 4) (= (str-substring path (- n 4) 4) ".zyl")) (- n 4) n)
+      (if (>= i size) "" (str-substring path i (- size i))))))
 
 (defn drv-slash-at ((path String) (i Int) (n Int))
   (if (>= i n)
@@ -1171,10 +1171,10 @@
         (if (cli-ends-with-zyl p) (Cons p Nil) (drv-balance-dir p (ffi-call "zyl_list_zyl_files" p 1000) 0))
         (drv-balance-files rest)))))
 
-(defn drv-balance-dir (dir list (i Int))
-  (let j (doc-line-end list i)
+(defn drv-balance-dir (dir files (i Int))
+  (let j (doc-line-end files i)
     (if (>= i j) Nil
-      (Cons (str-concat dir (str-concat "/" (str-substring list i (- j i)))) (drv-balance-dir dir list (+ j 1))))))
+      (Cons (str-concat dir (str-concat "/" (str-substring files i (- j i)))) (drv-balance-dir dir files (+ j 1))))))
 
 ; How many files fail, each reported as it is checked.
 (defn drv-balance-each (files (bad Int))

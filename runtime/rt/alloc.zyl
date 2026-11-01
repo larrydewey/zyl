@@ -270,10 +270,10 @@
   (if (= (rt-pin) 0) 0 (let s (rt-arena-bump (rt-pin) 8) (let _ (if (= s 0) 0 (rt-st64 s value)) s))))
 
 ; Best-effort mlock of the pages under [addr, addr+len); 1 on success.
-(defn zyl_mlock (addr len)
-  (if (or (= addr 0) (<= len 0)) 0
+(defn zyl_mlock (addr size)
+  (if (or (= addr 0) (<= size 0)) 0
     (let start (bit-and addr -4096)
-      (if (= (ffi-call "%syscall2" 149 start (+ (- addr start) len) 1) 0) 1 0))))
+      (if (= (ffi-call "%syscall2" 149 start (+ (- addr start) size) 1) 0) 1 0))))
 
 (defn zyl_pin_alloc (size)
   (if (or (= (rt-pin) 0) (<= size 0)) 0

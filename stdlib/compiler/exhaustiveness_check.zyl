@@ -323,10 +323,10 @@
     (EDef _ val (ec-expr val dtypes vowners))
     (EIf c t eb (begin (ec-expr c dtypes vowners) (ec-expr t dtypes vowners) (ec-expr eb dtypes vowners)))
     (EWhile c body (begin (ec-expr c dtypes vowners) (ec-expr body dtypes vowners)))
-    (EFor bindings cond body
+    (EFor bindings condition body
       (begin
         (ec-for-inits bindings dtypes vowners)
-        (ec-expr cond dtypes vowners)
+        (ec-expr condition dtypes vowners)
         (ec-expr body dtypes vowners)))
     (ECond clauses (ec-cond-clauses clauses dtypes vowners))
     (EBegin exprs (ec-list exprs dtypes vowners))
@@ -366,8 +366,8 @@
     (ELoadByteSigned _ off buf (begin (ec-expr off dtypes vowners) (ec-expr buf dtypes vowners)))
     (EStoreByte _ off buf val (begin (ec-expr off dtypes vowners) (ec-expr buf dtypes vowners) (ec-expr val dtypes vowners)))
     (EStoreByteSigned _ off buf val (begin (ec-expr off dtypes vowners) (ec-expr buf dtypes vowners) (ec-expr val dtypes vowners)))
-    (EByteSlice buf start len (begin (ec-expr buf dtypes vowners) (ec-expr start dtypes vowners) (ec-expr len dtypes vowners)))
-    (EByteSliceSub buf start len (begin (ec-expr buf dtypes vowners) (ec-expr start dtypes vowners) (ec-expr len dtypes vowners)))
+    (EByteSlice buf start size (begin (ec-expr buf dtypes vowners) (ec-expr start dtypes vowners) (ec-expr size dtypes vowners)))
+    (EByteSliceSub buf start size (begin (ec-expr buf dtypes vowners) (ec-expr start dtypes vowners) (ec-expr size dtypes vowners)))
     (EByteBufAppend buf val (begin (ec-expr buf dtypes vowners) (ec-expr val dtypes vowners)))
     (EByteBufLen buf (ec-expr buf dtypes vowners))
     (EByteBufCap buf (ec-expr buf dtypes vowners))

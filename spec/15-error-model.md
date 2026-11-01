@@ -26,6 +26,7 @@ this document's reading of each code's meaning.
 | Error Code | Condition | Specification Reference |
 |------------|-----------|----------------------|
 | `E_RESERVED_KEYWORD` | Reserved keyword used as identifier | §1.3.1 |
+| `E_SHADOWS_BUILTIN` | Local binding named like a built-in operation or special form | §1.3.2 |
 | `E_INVALID_ESCAPE` | Invalid escape sequence in a string literal | §1 |
 | `E_MALFORMED_FORM` | A special form's arguments do not have its required shape | §2 |
 | `E_NESTED_PATTERN` | Nested pattern in a constructor arm | §4.9, §8 |

@@ -1,0 +1,5 @@
+; expect-error: E_SHADOWS_BUILTIN
+; expect-at: shadows-builtin-param.zyl:4:17
+; A parameter named like an operator: (+ a b) inside would ignore it.
+(defn apply-op (+ a b) (+ a b))
+(defn main () (apply-op (fn (x y) (* x y)) 3 4))

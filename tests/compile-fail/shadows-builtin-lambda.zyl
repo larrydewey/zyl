@@ -1,0 +1,6 @@
+; expect-error: E_SHADOWS_BUILTIN
+; expect-at: shadows-builtin-lambda.zyl:5:15
+; A lambda parameter named like a built-in.
+(defn main ()
+  (let f (fn (list) list)
+    (f 0)))

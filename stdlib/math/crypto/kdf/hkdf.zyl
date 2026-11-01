@@ -50,21 +50,21 @@
 ; OKM = first `len` bytes of T(1) || T(2) || ..., where
 ; T(i) = HMAC(PRK, T(i-1) || info || i).
 ; Returns: Words
-(defn hkdf-expand ((prk Words) (info Words) (infolen Int) (len Int))
-  (if (> len 8160)
+(defn hkdf-expand ((prk Words) (info Words) (infolen Int) (size Int))
+  (if (> size 8160)
     (w-alloc 0)
-    (let out (w-alloc (+ len 32))
+    (let out (w-alloc (+ size 32))
       (let prev (w-alloc 32)
         (begin
-          (hkdf-expand-loop prk info infolen len out prev)
+          (hkdf-expand-loop prk info infolen size out prev)
           out)))))
 
 ; Each round hashes the previous block (empty for the first), the info
 ; label, and a one-byte counter, then appends the result.
 ; Returns: Int
-(defn hkdf-expand-loop ((prk Words) (info Words) (infolen Int) (len Int) (out Words) (prev Words))
+(defn hkdf-expand-loop ((prk Words) (info Words) (infolen Int) (size Int) (out Words) (prev Words))
   (begin
-    (for (i 0) (< (* i 32) len)
+    (for (i 0) (< (* i 32) size)
       (begin
         (hkdf-expand-step prk info infolen out prev i)
         (set! i (+ i 1))))
@@ -102,6 +102,6 @@
 
 ; extract followed by expand, the usual entry point.
 ; Returns: Words
-(defn hkdf ((ikm Words) (ikmlen Int) (salt Words) (saltlen Int) (info Words) (infolen Int) (len Int))
+(defn hkdf ((ikm Words) (ikmlen Int) (salt Words) (saltlen Int) (info Words) (infolen Int) (size Int))
   (let prk (hkdf-extract salt saltlen ikm ikmlen)
-    (hkdf-expand prk info infolen len)))
+    (hkdf-expand prk info infolen size)))

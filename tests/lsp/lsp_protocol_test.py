@@ -315,6 +315,8 @@ DIAGNOSTIC_CASES = [
      "(defn g () (+ 1 \"a\"))\n(defn main () 0)\n"),
     ("reserved", "E_RESERVED_KEYWORD",
      "(defn setup () 1)\n(defn main () 0)\n"),
+    ("shadows-builtin", "E_SHADOWS_BUILTIN",
+     "(defn main ()\n  (let print 5 print))\n"),
     ("alias", "E_TYPE_MISMATCH",
      "(alias Meters Int)\n(defn run ((d Meters)) d)\n(defn main () (begin (run \"x\") 0))\n"),
     ("alias-unknown", "E_UNKNOWN_TYPE",

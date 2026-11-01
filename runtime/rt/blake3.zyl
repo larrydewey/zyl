@@ -185,22 +185,22 @@
               (b3-update h (+ p take) (- n take)))))))))
 
 ; Folds the stack innermost first; each fold becomes the output node.
-(defn b3-fold (h k ctr blen flags len)
-  (if (= k 0) (b3-emit h 0 blen (bit-or flags 8) 0 len)
+(defn b3-fold (h k ctr blen flags size)
+  (if (= k 0) (b3-emit h 0 blen (bit-or flags 8) 0 size)
     (let fb (b3-fblk h)
       (let _ (b3-compress (b3-fcv h) fb ctr blen flags (b3-out h))
         (let _ (rt-copy fb (+ h (* (- k 1) 32)) 32)
           (let _ (rt-copy (+ fb 32) (b3-out h) 32)
             (let _ (rt-copy (b3-fcv h) (b3-iv h) 32)
-              (b3-fold h (- k 1) 0 64 4 len))))))))
+              (b3-fold h (- k 1) 0 64 4 size))))))))
 
 ; Root output blocks, counter obc, until len digest bytes are written.
-(defn b3-emit (h obc blen flags off len)
-  (if (>= off len) h
+(defn b3-emit (h obc blen flags off size)
+  (if (>= off size) h
     (let _ (b3-compress (b3-fcv h) (b3-fblk h) obc blen flags (b3-out h))
-      (let take (if (> (- len off) 64) 64 (- len off))
+      (let take (if (> (- size off) 64) 64 (- size off))
         (let _ (rt-copy (+ (b3-dig h) off) (b3-out h) take)
-          (b3-emit h (+ obc 1) blen flags (+ off take) len))))))
+          (b3-emit h (+ obc 1) blen flags (+ off take) size))))))
 
 ; Writes out_len (1..64) digest bytes at b3-dig.
 (defn b3-finalize (h out-len)
@@ -212,12 +212,12 @@
 (defn b3-new () (let h (zyl_rt_malloc (b3-size)) (if (= h 0) 0 (b3-init h))))
 
 ; BLAKE3 of n bytes at p into len bytes at dst; false when out of memory.
-(defn rt-blake3-raw (p n dst len)
+(defn rt-blake3-raw (p n dst size)
   (let h (b3-new)
     (if (= h 0) false
       (let _ (b3-update h p n)
-        (let _ (b3-finalize h len)
-          (let _ (rt-copy dst (b3-dig h) len) (let _ (zyl_rt_free h) true)))))))
+        (let _ (b3-finalize h size)
+          (let _ (rt-copy dst (b3-dig h) size) (let _ (zyl_rt_free h) true)))))))
 
 (defn b3-hexdigits () "0123456789abcdef")
 
@@ -263,21 +263,21 @@
 ; is the same operation on the same handle rather than a new way to reach
 ; memory. The prefix is the point: hashing the whole buffer would be a hash of
 ; the record as well as of what the record describes.
-(defn zyl_bytebuf_blake3_hex (arena buf len outbytes)
+(defn zyl_bytebuf_blake3_hex (arena buf size outbytes)
   (let h (bb-buf buf)
     (if (= h 0) (ffi-call "%str" 0 1)
       (let cap (bb-cap h)
-        (let n (if (< len 0) (bb-len h) len)
+        (let n (if (< size 0) (bb-len h) size)
           (if (or (< n 0) (> n cap)) (ffi-call "%str" 0 1)
             (let b (b3-new)
               (if (= b 0) (ffi-call "%str" 0 1)
                 (let _ (b3-update b (bb-data h) n) (b3-hex-out arena b (b3-clamp outbytes)))))))))))
 
 ; BLAKE3 over src[0..len) as outbytes bytes of lowercase hex; len < 0 means strlen.
-(defn zyl_blake3_hex (arena src len outbytes)
+(defn zyl_blake3_hex (arena src size outbytes)
   (let s (rt-w src)
     (if (= s 0) (ffi-call "%str" 0 1)
-      (let n (if (< len 0) (rt-strlen s) len)
+      (let n (if (< size 0) (rt-strlen s) size)
         (let h (b3-new)
           (if (= h 0) (ffi-call "%str" 0 1)
             (let _ (b3-update h s n) (b3-hex-out arena h (b3-clamp outbytes)))))))))

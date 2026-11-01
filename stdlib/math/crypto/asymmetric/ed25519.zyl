@@ -584,22 +584,22 @@
 (defn ed25519-sign ((seed Words) (msg Words) (msglen Int))
   (let ctx (ed-ctx)
     (let h (ed-expand seed)
-      (let pub (ed25519-public-key seed)
-        (ed-sign-with ctx h pub msg msglen)))))
+      (let public (ed25519-public-key seed)
+        (ed-sign-with ctx h public msg msglen)))))
 
 ; Returns: Words
-(defn ed-sign-with ((ctx EdCtx) (h Words) (pub Words) (msg Words) (msglen Int))
+(defn ed-sign-with ((ctx EdCtx) (h Words) (public Words) (msg Words) (msglen Int))
   (let prefix (ed-slice h 32 32)
     (let rin (ed-concat prefix 32 msg msglen)
       (let r (ed-reduce64 ctx (sha512-bytes rin (+ 32 msglen)))
         (let rpt (ed-pt-new)
           (begin
             (ed-scalar-mul ctx rpt (ed-ctx-base ctx) (ed-scalar-bytes r))
-            (ed-sign-finish ctx h pub msg msglen r (ed-encode ctx rpt))))))))
+            (ed-sign-finish ctx h public msg msglen r (ed-encode ctx rpt))))))))
 
 ; Returns: Words
-(defn ed-sign-finish ((ctx EdCtx) (h Words) (pub Words) (msg Words) (msglen Int) (r Words) (renc Words))
-  (let kin (ed-concat3 renc 32 pub 32 msg msglen)
+(defn ed-sign-finish ((ctx EdCtx) (h Words) (public Words) (msg Words) (msglen Int) (r Words) (renc Words))
+  (let kin (ed-concat3 renc 32 public 32 msg msglen)
     (let k (ed-reduce64 ctx (sha512-bytes kin (+ 64 msglen)))
       (let a (bn-alloc 11)
         (begin
@@ -629,14 +629,14 @@
 ; that still verifies. Protocols that treat a signature as a unique
 ; identifier break on exactly that.
 ; Returns: Bool
-(defn ed25519-verify ((pub Words) (msg Words) (msglen Int) (sig Words))
+(defn ed25519-verify ((public Words) (msg Words) (msglen Int) (sig Words))
   (let ctx (ed-ctx)
-    (match (ed-decode ctx pub)
+    (match (ed-decode ctx public)
       (None false)
-      (Some apt (ed-verify-with ctx apt pub msg msglen sig)))))
+      (Some apt (ed-verify-with ctx apt public msg msglen sig)))))
 
 ; Returns: Bool
-(defn ed-verify-with ((ctx EdCtx) (apt EdPt) (pub Words) (msg Words) (msglen Int) (sig Words))
+(defn ed-verify-with ((ctx EdCtx) (apt EdPt) (public Words) (msg Words) (msglen Int) (sig Words))
   (let renc (ed-slice sig 0 32)
     (let senc (ed-slice sig 32 32)
       (let s (bn-alloc 11)
@@ -644,7 +644,7 @@
           (bn-from-bytes-le s 11 senc 32)
           (if (= (ed-scalar-in-range s (ed-ctx-order ctx)) 0)
             false
-            (ed-verify-equation ctx apt pub msg msglen renc senc)))))))
+            (ed-verify-equation ctx apt public msg msglen renc senc)))))))
 
 ; 1 when s < L.
 ; Returns: Int
@@ -654,8 +654,8 @@
 
 ; Check [S]B = R + [k]A.
 ; Returns: Bool
-(defn ed-verify-equation ((ctx EdCtx) (apt EdPt) (pub Words) (msg Words) (msglen Int) (renc Words) (senc Words))
-  (let kin (ed-concat3 renc 32 pub 32 msg msglen)
+(defn ed-verify-equation ((ctx EdCtx) (apt EdPt) (public Words) (msg Words) (msglen Int) (renc Words) (senc Words))
+  (let kin (ed-concat3 renc 32 public 32 msg msglen)
     (let k (ed-reduce64 ctx (sha512-bytes kin (+ 64 msglen)))
       (let lhs (ed-pt-new)
         (let ka (ed-pt-new)

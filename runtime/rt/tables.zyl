@@ -17,8 +17,8 @@
 ; A header at h: at or above the first page, 8-aligned, with this magic (h must be a variable).
 (defmacro tb-is (h magic) (and (>= h 4096) (and (= (bit-and h 7) 0) (= (tb-ld h) magic))))
 
-(defn tb-oob (who i len)
-  (ffi-call "zyl_panic" (str-concat "E_INDEX_OUT_OF_BOUNDS: " (str-concat who (str-concat ": index " (str-concat (rt-int-text i 0) (str-concat " outside a word array of length " (rt-int-text len 0)))))) 1))
+(defn tb-oob (who i size)
+  (ffi-call "zyl_panic" (str-concat "E_INDEX_OUT_OF_BOUNDS: " (str-concat who (str-concat ": index " (str-concat (rt-int-text i 0) (str-concat " outside a word array of length " (rt-int-text size 0)))))) 1))
 
 ; --- word arrays: {magic "ZYLWORDS", len, data} ---
 
@@ -79,20 +79,20 @@
     (let _ (if (= w 0) (ffi-call "zyl_panic" "E_OUT_OF_MEMORY: word array view" 1) 0)
       (let _ (tb-st w (tb-words-magic)) (let _ (tb-st (+ w 8) n) (let _ (tb-st (+ w 16) d) w))))))
 
-(defn zyl_words_view (arena h off len)
+(defn zyl_words_view (arena h off size)
   (let w (tb-words-of h "w-view")
     (let n (tb-ld (+ w 8))
-      (let _ (if (or (or (< off 0) (< len 0)) (or (> off n) (> len (- n off)))) (tb-oob "w-view" (+ off len) n) 0)
-        (tb-words-hdr arena len (+ (tb-ld (+ w 16)) (* off 8)))))))
+      (let _ (if (or (or (< off 0) (< size 0)) (or (> off n) (> size (- n off)))) (tb-oob "w-view" (+ off size) n) 0)
+        (tb-words-hdr arena size (+ (tb-ld (+ w 16)) (* off 8)))))))
 
 ; The region form of zyl_words_view: the header comes from zyl_cur_region.
 ; codegen.zyl appends _r to a runtime name at a site above level 0, so
 ; this twin takes no arena.
-(defn zyl_words_view_r (h off len)
+(defn zyl_words_view_r (h off size)
   (let w (tb-words-of h "w-view")
     (let n (tb-ld (+ w 8))
-      (let _ (if (or (or (< off 0) (< len 0)) (or (> off n) (> len (- n off)))) (tb-oob "w-view" (+ off len) n) 0)
-        (tb-words-hdr-r len (+ (tb-ld (+ w 16)) (* off 8)))))))
+      (let _ (if (or (or (< off 0) (< size 0)) (or (> off n) (> size (- n off)))) (tb-oob "w-view" (+ off size) n) 0)
+        (tb-words-hdr-r size (+ (tb-ld (+ w 16)) (* off 8)))))))
 
 ; --- typed arrays: {magic "ZYLARRAY", cap, filled, data}; codegen inlines this layout ---
 
@@ -299,14 +299,14 @@
 ; cap > 0 also bounds the append, and names the codegen limit when hit.
 (defn tb-sbuf-append (dst src cap)
   (let n (rt-strlen src)
-    (let len (tb-ld (- dst 16))
+    (let size (tb-ld (- dst 16))
       (let hc (tb-ld (- dst 8))
         (let limit (if (and (> cap 0) (< cap hc)) cap hc)
-          (let _ (if (> (+ (+ len n) 1) limit)
+          (let _ (if (> (+ (+ size n) 1) limit)
                    (ffi-call "zyl_panic" (if (> cap 0) "E_CODEGEN_BUFFER_LIMIT: codegen buffer limit exceeded" "E_INDEX_OUT_OF_BOUNDS: string buffer full") 1) 0)
-            (let _ (rt-copy (+ dst len) src n)
-              (let _ (rt-st8 (+ dst (+ len n)) 0)
-                (let _ (tb-st (- dst 16) (+ len n)) dst)))))))))
+            (let _ (rt-copy (+ dst size) src n)
+              (let _ (rt-st8 (+ dst (+ size n)) 0)
+                (let _ (tb-st (- dst 16) (+ size n)) dst)))))))))
 
 ; A string without a StrBuf header takes the C scan with its per-thread end cache.
 (defn tb-append (dst src cap)

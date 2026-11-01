@@ -59,6 +59,18 @@ defstruct, defstruct+, module, use, export). Attempting to do so is a compile-ti
 error: `E_RESERVED_KEYWORD`. This prevents users from accidentally shadowing core
 language constructs and breaking the compiler's dispatch mechanism.
 
+## 1.3.2 Built-in Names as Local Bindings
+
+A call whose head names a built-in operation or special form (`print`, `list`,
+`len`, `str-length`, `+`, `load-u8!`, `chan`, `when`, ...) is that operation
+whatever is in scope, so a local of the same name could never be called. A
+local binder named like one — a `let` or `let-mut` binding, a `defn`, `fn`,
+`lambda` or impl method parameter, a `match` or `catch` binder, a `for`
+variable — is a compile-time error: `E_SHADOWS_BUILTIN`, located at the binder,
+with a rename suggested. So is `make-S` for a struct `S` of the program. The
+rule applies to every module, the standard library and the runtime included. A
+top-level `defn` may take such a name: it is qualified, and its calls reach it.
+
 ## 1.4 Comments
 
 ```
@@ -169,3 +181,13 @@ the same file. `Ok` and `Err` as variant names stay `E_DUPLICATE_VARIANT`.
 The compiler's list is §1.3 plus three names the canonical text does not
 list — `panic`, `tuple` and `tuple-get` — all three forms a program
 could otherwise define a function of.
+
+### Built-in names as local bindings (§1.3.2)
+
+Enforced by `stdlib/compiler/shadow_check.zyl`, the first of the checks after
+macro expansion, on every module: the reserved set (`bs-names`) is exactly the
+heads `convert-ast`, the desugarer, the checks, the type pass and lowering
+dispatch on by name, and `tests/scripts/builtin-shadow.sh` probes every other
+name the compiler spells to confirm a local of that name is what a call
+reaches. A binder list (parameters, a `let` or `for` binding) is never read as
+a form, so `(defn f (map) ...)` is this error rather than a `map` literal.

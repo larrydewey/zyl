@@ -72,9 +72,9 @@
   (let carry (bn-shl1 t n)
     (let scratch (bn-alloc n)
       (let borrow (bn-sub scratch t m n)
-        (let cond (bit-or (ct-is-nonzero carry) (- 1 borrow))
+        (let condition (bit-or (ct-is-nonzero carry) (- 1 borrow))
           (begin
-            (bn-cond-copy t scratch n (ct-mask cond))
+            (bn-cond-copy t scratch n (ct-mask condition))
             0))))))
 
 ; ===========================================================================
@@ -162,10 +162,10 @@
 (defn mont-mul-final ((out Words) (t Words) (m Words) (n Int))
   (let scratch (bn-alloc n)
     (let borrow (bn-sub scratch t m n)
-      (let cond (bit-or (ct-is-nonzero (w-get t n)) (- 1 borrow))
+      (let condition (bit-or (ct-is-nonzero (w-get t n)) (- 1 borrow))
         (begin
           (bn-copy out t n)
-          (bn-cond-copy out scratch n (ct-mask cond))
+          (bn-cond-copy out scratch n (ct-mask condition))
           0)))))
 
 ; ===========================================================================
@@ -243,8 +243,8 @@
 ; Exchange a and b when `cond` is 1, leave them when it is 0. Both
 ; arrays are read and written either way.
 ; Returns: Int
-(defn mont-cswap ((a Words) (b Words) (n Int) (cond Int))
-  (let mask (ct-mask cond)
+(defn mont-cswap ((a Words) (b Words) (n Int) (condition Int))
+  (let mask (ct-mask condition)
     (begin
       (for (i 0) (< i n)
         (begin

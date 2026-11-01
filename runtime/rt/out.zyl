@@ -37,21 +37,21 @@
 ; Copies n bytes in, flushing each time the buffer fills.
 (defn ou-append (s p n)
   (if (<= n 0) true
-    (let len (ou-ld64 (+ s 8))
-      (let room (- (ou-ld64 (+ s 24)) len)
+    (let size (ou-ld64 (+ s 8))
+      (let room (- (ou-ld64 (+ s 24)) size)
         (let k (if (< n room) n room)
-          (let _ (rt-copy (+ (ou-buf) len) p k)
-            (let _ (ou-st64 (+ s 8) (+ len k))
+          (let _ (rt-copy (+ (ou-buf) size) p k)
+            (let _ (ou-st64 (+ s 8) (+ size k))
               (if (= k room) (if (ou-flush-locked s) (ou-append s (+ p k) (- n k)) false) true))))))))
 
 ; glibc's _IO_new_file_xsputn: fill, flush, write whole blocks direct, buffer the tail.
 (defn ou-put-full (s p n)
-  (let len (ou-ld64 (+ s 8))
+  (let length (ou-ld64 (+ s 8))
     (let size (ou-ld64 (+ s 24))
-      (if (<= n (- size len))
-        (let _ (rt-copy (+ (ou-buf) len) p n) (let _ (ou-st64 (+ s 8) (+ len n)) true))
-        (let k (- size len)
-          (let _ (rt-copy (+ (ou-buf) len) p k)
+      (if (<= n (- size length))
+        (let _ (rt-copy (+ (ou-buf) length) p n) (let _ (ou-st64 (+ s 8) (+ length n)) true))
+        (let k (- size length)
+          (let _ (rt-copy (+ (ou-buf) length) p k)
             (let _ (ou-st64 (+ s 8) size)
               (if (not (ou-flush-locked s)) false
                 (let rest (- n k)
@@ -81,13 +81,13 @@
 
 ; Only the owning thread appends; its joiner reads after the join.
 (defn ou-abuf-put (b p n)
-  (let len (ou-ld64 (+ b 8))
+  (let size (ou-ld64 (+ b 8))
     (let cap (ou-ld64 (+ b 16))
-      (let ok (if (<= (+ len n) cap) true
-                (let nc (if (< (* cap 2) (+ len n)) (+ len (+ n 256)) (* cap 2))
+      (let ok (if (<= (+ size n) cap) true
+                (let nc (if (< (* cap 2) (+ size n)) (+ size (+ n 256)) (* cap 2))
                   (let q (zyl_rt_realloc (ou-ld64 b) nc)
                     (if (= q 0) false (let _ (ou-st64 b q) (let _ (ou-st64 (+ b 16) nc) true))))))
-        (if ok (let _ (rt-copy (+ (ou-ld64 b) len) p n) (let _ (ou-st64 (+ b 8) (+ len n)) true)) false)))))
+        (if ok (let _ (rt-copy (+ (ou-ld64 b) size) p n) (let _ (ou-st64 (+ b 8) (+ size n)) true)) false)))))
 
 ; Writes owner o's stdout then stderr buffers through the caller's own output (a nested join lands in the joiner's buffers).
 (defn zyl_out_actor_emit (o)

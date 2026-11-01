@@ -156,9 +156,9 @@
 (defn bridge-last-colon (s i)
   (if (< i 0) -1 (if (= (ffi-call "zyl_cstr_byte_at" s i 1000) 58) i (bridge-last-colon s (- i 1)))))
 
-(defn bridge-range-at (lc len)
+(defn bridge-range-at (lc size)
   (match lc
-    (Pair l c (Rng (Pos (- l 1) (- c 1)) (Pos (- l 1) (+ (- c 1) len))))))
+    (Pair l c (Rng (Pos (- l 1) (- c 1)) (Pos (- l 1) (+ (- c 1) size))))))
 
 ; The headline without `PANIC: error[CODE]: `, plus the `= help:` line.
 (defn bridge-short-message (msg)
@@ -226,10 +226,10 @@
     (let open (bridge-index-of msg "`" 0 n)
       (if (< open 0)
         ""
-        (let close (bridge-index-of msg "`" (+ open 1) n)
-          (if (< close 0)
+        (let close-at (bridge-index-of msg "`" (+ open 1) n)
+          (if (< close-at 0)
             ""
-            (str-substring msg (+ open 1) (- close (+ open 1)))))))))
+            (str-substring msg (+ open 1) (- close-at (+ open 1)))))))))
 
 (defn bridge-index-of (s needle i n)
   (if (>= i n)

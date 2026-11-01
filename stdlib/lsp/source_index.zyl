@@ -42,14 +42,14 @@
 (defn si-offset-of-pos (text line col)
   (si-offset-of-pos-loop text 0 0 0 line col (str-length text)))
 
-(defn si-offset-of-pos-loop (text i curline curcol targetline targetcol len)
-  (if (or (>= i len) (and (= curline targetline) (= curcol targetcol)))
+(defn si-offset-of-pos-loop (text i curline curcol targetline targetcol size)
+  (if (or (>= i size) (and (= curline targetline) (= curcol targetcol)))
     i
     (if (= curline targetline)
-      (if (>= curcol targetcol) i (si-offset-of-pos-loop text (+ i 1) curline (+ curcol 1) targetline targetcol len))
+      (if (>= curcol targetcol) i (si-offset-of-pos-loop text (+ i 1) curline (+ curcol 1) targetline targetcol size))
       (if (= (sb-str-code (str-substring text i 1)) 10)
-        (si-offset-of-pos-loop text (+ i 1) (+ curline 1) 0 targetline targetcol len)
-        (si-offset-of-pos-loop text (+ i 1) curline (+ curcol 1) targetline targetcol len)))))
+        (si-offset-of-pos-loop text (+ i 1) (+ curline 1) 0 targetline targetcol size)
+        (si-offset-of-pos-loop text (+ i 1) curline (+ curcol 1) targetline targetcol size)))))
 
 (defn si-pos-of-offset (text offset)
   (si-pos-of-offset-loop text 0 0 0 (min offset (str-length text))))
@@ -80,12 +80,12 @@
     (si-word-at-offset text offset)))
 
 (defn si-word-at-offset (text offset)
-  (let len (str-length text)
-    (let clamped (if (>= offset len) (- len 1) offset)
+  (let size (str-length text)
+    (let clamped (if (>= offset size) (- size 1) offset)
       (if (< clamped 0)
         ""
         (let start (si-word-scan-back text clamped)
-          (let end (si-word-scan-fwd text clamped len)
+          (let end (si-word-scan-fwd text clamped size)
             (if (> end start) (si-dot-segment (str-substring text start (- end start)) (- clamped start)) "")))))))
 
 ; Dot syntax (`p.x.y`, `(p.m)`, `.m`): the segment under the cursor. A
@@ -116,11 +116,11 @@
       (si-word-scan-back text (- i 1))
       i)))
 
-(defn si-word-scan-fwd (text i len)
-  (if (>= i len)
+(defn si-word-scan-fwd (text i size)
+  (if (>= i size)
     i
     (if (si-is-ident-char (str-substring text i 1))
-      (si-word-scan-fwd text (+ i 1) len)
+      (si-word-scan-fwd text (+ i 1) size)
       i)))
 
 ; The word ending at `offset`, scanning BACKWARDS only. Completion needs
@@ -155,41 +155,41 @@
 ; by sexp_balance's lexical rules (sb-string-end, sb-line-end), the ones the
 ; compiler's balance check uses, so their contents never read as code; a
 ; newline inside a string still advances the line.
-(defn si-scan (text i len line col depth acc)
-  (if (>= i len)
+(defn si-scan (text i size line col depth acc)
+  (if (>= i size)
     acc
-    (let c (sb-byte text len i)
+    (let c (sb-byte text size i)
       (if (= c 34)
-        (let e (sb-string-end text len (+ i 1))
-          (let j (if (< e 0) len e)
-            (si-scan text j len (sb-line-after text len i j line) (sb-col-after text len i j col) depth acc)))
+        (let e (sb-string-end text size (+ i 1))
+          (let j (if (< e 0) size e)
+            (si-scan text j size (sb-line-after text size i j line) (sb-col-after text size i j col) depth acc)))
         (if (= c 59)
-          (si-scan text (sb-line-end text len i) len line col depth acc)
+          (si-scan text (sb-line-end text size i) size line col depth acc)
           (if (sb-opener-p c)
-            (si-scan-open text i len line col depth acc)
+            (si-scan-open text i size line col depth acc)
             (if (sb-closer-p c)
-              (si-scan-close text i len line col depth acc)
+              (si-scan-close text i size line col depth acc)
               (if (= c 10)
-                (si-scan text (+ i 1) len (+ line 1) 0 depth acc)
-                (si-scan text (+ i 1) len line (+ col 1) depth acc)))))))))
+                (si-scan text (+ i 1) size (+ line 1) 0 depth acc)
+                (si-scan text (+ i 1) size line (+ col 1) depth acc)))))))))
 
 ; Opening a bracket AT depth 0 is the start of a candidate top-level
 ; form; try to read a "(keyword name" header right after it.
-(defn si-scan-open (text i len line col depth acc)
+(defn si-scan-open (text i size line col depth acc)
   (if (= depth 0)
-    (match (si-try-header text (+ i 1) len line col)
-      (Some form (si-scan text (+ i 1) len line (+ col 1) (+ depth 1) (Cons form acc)))
-      (None (si-scan text (+ i 1) len line (+ col 1) (+ depth 1) acc)))
-    (si-scan text (+ i 1) len line (+ col 1) (+ depth 1) acc)))
+    (match (si-try-header text (+ i 1) size line col)
+      (Some form (si-scan text (+ i 1) size line (+ col 1) (+ depth 1) (Cons form acc)))
+      (None (si-scan text (+ i 1) size line (+ col 1) (+ depth 1) acc)))
+    (si-scan text (+ i 1) size line (+ col 1) (+ depth 1) acc)))
 
 ; Returning to depth 0 closes the most recently opened form -- but only
 ; if that form is still open, since an unrecognized top-level form
 ; (a bare call, say) pushes nothing onto `acc`.
-(defn si-scan-close (text i len line col depth acc)
+(defn si-scan-close (text i size line col depth acc)
   (let newdepth (- depth 1)
     (if (= newdepth 0)
-      (si-scan text (+ i 1) len line (+ col 1) newdepth (si-close-head acc line (+ col 1)))
-      (si-scan text (+ i 1) len line (+ col 1) newdepth acc))))
+      (si-scan text (+ i 1) size line (+ col 1) newdepth (si-close-head acc line (+ col 1)))
+      (si-scan text (+ i 1) size line (+ col 1) newdepth acc))))
 
 (defn si-close-head (acc endline endcol)
   (match acc
@@ -201,33 +201,33 @@
             (Cons (TF kind name l c endline endcol) rest)
             acc))))))
 
-(defn si-try-header (text pos len line col)
-  (let p1 (si-skip-ws text pos len)
-    (let kwend (si-word-scan-fwd text p1 len)
+(defn si-try-header (text pos size line col)
+  (let p1 (si-skip-ws text pos size)
+    (let kwend (si-word-scan-fwd text p1 size)
       (let kw (str-substring text p1 (- kwend p1))
         (if (si-is-def-keyword kw)
-          (let p2 (si-skip-ws text kwend len)
-            (let nameend (si-word-scan-fwd text p2 len)
+          (let p2 (si-skip-ws text kwend size)
+            (let nameend (si-word-scan-fwd text p2 size)
               (let name (str-substring text p2 (- nameend p2))
                 (if (> (str-length name) 0)
                   (Some (TF kw name line col (- 0 1) (- 0 1)))
                   None))))
           (if (str-eq kw "pub")
-            (si-try-header text kwend len line col)
+            (si-try-header text kwend size line col)
             (if (str-eq kw "feature-gate")
-              (si-try-gated-header text kwend len line col)
+              (si-try-gated-header text kwend size line col)
               None)))))))
 
 ; `(pub defn f ...)` and `(feature-gate simd (pub defn f ...))` wrap a
 ; definition rather than being one (§31.2, §31.10); the outline shows
 ; the definition inside, placed at the wrapper's own bracket so that
 ; its extent is the whole top-level form.
-(defn si-try-gated-header (text pos len line col)
-  (let p1 (si-skip-ws text pos len)
-    (let p2 (si-skip-ws text (si-word-scan-fwd text p1 len) len)
-      (if (< p2 len)
+(defn si-try-gated-header (text pos size line col)
+  (let p1 (si-skip-ws text pos size)
+    (let p2 (si-skip-ws text (si-word-scan-fwd text p1 size) size)
+      (if (< p2 size)
         (if (str-eq (str-substring text p2 1) "(")
-          (si-try-header text (+ p2 1) len line col)
+          (si-try-header text (+ p2 1) size line col)
           None)
         None))))
 
@@ -247,11 +247,11 @@
                   (if (str-eq kw "def") true
                     (if (str-eq kw "alias") true false)))))))))))
 
-(defn si-skip-ws (text i len)
-  (if (>= i len)
+(defn si-skip-ws (text i size)
+  (if (>= i size)
     i
     (let c (sb-str-code (str-substring text i 1))
-      (if (or (= c 32) (or (= c 9) (or (= c 10) (= c 13)))) (si-skip-ws text (+ i 1) len) i))))
+      (if (or (= c 32) (or (= c 9) (or (= c 10) (= c 13)))) (si-skip-ws text (+ i 1) size) i))))
 
 ; The innermost top-level form containing `line`, if any.
 (defn si-form-at-line (text line)
@@ -277,27 +277,27 @@
     (list-reverse (si-occ-scan text 0 (str-length text) 0 0 word Nil))))
 
 ; Whole-word occurrences outside strings and comments (skipped as si-scan does).
-(defn si-occ-scan (text i len line col word acc)
-  (if (>= i len)
+(defn si-occ-scan (text i size line col word acc)
+  (if (>= i size)
     acc
-    (let c (sb-byte text len i)
+    (let c (sb-byte text size i)
       (if (= c 34)
-        (let e (sb-string-end text len (+ i 1))
-          (let j (if (< e 0) len e)
-            (si-occ-scan text j len (sb-line-after text len i j line) (sb-col-after text len i j col) word acc)))
+        (let e (sb-string-end text size (+ i 1))
+          (let j (if (< e 0) size e)
+            (si-occ-scan text j size (sb-line-after text size i j line) (sb-col-after text size i j col) word acc)))
         (if (= c 59)
-          (si-occ-scan text (sb-line-end text len i) len line col word acc)
+          (si-occ-scan text (sb-line-end text size i) size line col word acc)
           (if (si-is-ident-char (str-substring text i 1))
-            (si-occ-word text i len line col word acc)
+            (si-occ-word text i size line col word acc)
             (if (= c 10)
-              (si-occ-scan text (+ i 1) len (+ line 1) 0 word acc)
-              (si-occ-scan text (+ i 1) len line (+ col 1) word acc))))))))
+              (si-occ-scan text (+ i 1) size (+ line 1) 0 word acc)
+              (si-occ-scan text (+ i 1) size line (+ col 1) word acc))))))))
 
-(defn si-occ-word (text i len line col word acc)
-  (let end (si-word-scan-fwd text i len)
+(defn si-occ-word (text i size line col word acc)
+  (let end (si-word-scan-fwd text i size)
     (let found (str-substring text i (- end i))
       (let acc2 (if (str-eq found word) (Cons (Pair2 line col) acc) acc)
-        (si-occ-scan text end len line (+ col (- end i)) word acc2)))))
+        (si-occ-scan text end size line (+ col (- end i)) word acc2)))))
 
 (defn si-find-word (text word)
   (match (si-word-occurrences text word)
@@ -323,38 +323,38 @@
   (let target (si-offset-of-pos text line col)
     (si-ctx-scan text 0 target (str-length text) 0 Nil)))
 
-(defn si-ctx-scan (text i target len in-string stack)
+(defn si-ctx-scan (text i target size in-string stack)
   (if (>= i target)
     (si-ctx-top stack)
     (let ch (str-substring text i 1)
       (if (> in-string 0)
         (if (sb-is-backslash (sb-str-code ch))
-          (si-ctx-scan text (+ i 2) target len 1 stack)
+          (si-ctx-scan text (+ i 2) target size 1 stack)
           (if (sb-is-quote (sb-str-code ch))
-            (si-ctx-scan text (+ i 1) target len 0 (si-ctx-count stack))
-            (si-ctx-scan text (+ i 1) target len 1 stack)))
+            (si-ctx-scan text (+ i 1) target size 0 (si-ctx-count stack))
+            (si-ctx-scan text (+ i 1) target size 1 stack)))
         (if (sb-is-quote (sb-str-code ch))
-          (si-ctx-scan text (+ i 1) target len 1 stack)
+          (si-ctx-scan text (+ i 1) target size 1 stack)
           (if (sb-is-semicolon (sb-str-code ch))
-            (si-ctx-skip-comment text i target len stack)
+            (si-ctx-skip-comment text i target size stack)
             (if (or (sb-is-paren-open (sb-str-code ch)) (or (sb-is-bracket-open (sb-str-code ch)) (sb-is-brace-open (sb-str-code ch))))
-              (si-ctx-scan text (+ i 1) target len 0 (Cons (CC "" 0) stack))
+              (si-ctx-scan text (+ i 1) target size 0 (Cons (CC "" 0) stack))
               (if (or (sb-is-paren-close (sb-str-code ch)) (or (sb-is-bracket-close (sb-str-code ch)) (sb-is-brace-close (sb-str-code ch))))
-                (si-ctx-scan text (+ i 1) target len 0 (si-ctx-pop stack))
+                (si-ctx-scan text (+ i 1) target size 0 (si-ctx-pop stack))
                 (if (si-is-ident-char ch)
-                  (si-ctx-word text i target len stack)
-                  (si-ctx-scan text (+ i 1) target len 0 stack))))))))))
+                  (si-ctx-word text i target size stack)
+                  (si-ctx-scan text (+ i 1) target size 0 stack))))))))))
 
 ; A word the cursor is still inside is the one being TYPED, so it is
 ; not counted as a supplied argument -- `(f a b|` is editing argument 1,
 ; not standing after argument 2. If the head itself is what is being
 ; typed there is no call context yet at all.
-(defn si-ctx-word (text i target len stack)
-  (let end (si-word-scan-fwd text i len)
+(defn si-ctx-word (text i target size stack)
+  (let end (si-word-scan-fwd text i size)
     (let word (str-substring text i (- end i))
       (if (>= end target)
         (si-ctx-top stack)
-        (si-ctx-scan text end target len 0 (si-ctx-see-word stack word))))))
+        (si-ctx-scan text end target size 0 (si-ctx-see-word stack word))))))
 
 ; The first word inside a form names it; every later one is an argument
 ; already supplied, so the cursor sits at the next index along.
@@ -382,12 +382,12 @@
     (Nil Nil)
     (Cons _ rest (si-ctx-count rest))))
 
-(defn si-ctx-skip-comment (text i target len stack)
+(defn si-ctx-skip-comment (text i target size stack)
   (if (>= i target)
     (si-ctx-top stack)
     (if (sb-is-newline (sb-str-code (str-substring text i 1)))
-      (si-ctx-scan text (+ i 1) target len 0 stack)
-      (si-ctx-skip-comment text (+ i 1) target len stack))))
+      (si-ctx-scan text (+ i 1) target size 0 stack)
+      (si-ctx-skip-comment text (+ i 1) target size stack))))
 
 (defn si-ctx-top (stack)
   (match stack

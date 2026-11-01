@@ -37,11 +37,11 @@
 ; consumer downstream — duplicate checking, type checking, codegen's
 ; mangler — already works in strings, and because the key IS the sort key
 ; (§31.2): comparing keys bytewise gives the specified total order.
-(defn ck-key (arena pkg major module symbol)
+(defn ck-key (arena pkg major mod symbol)
   (str-concat pkg
     (str-concat "@"
       (str-concat (pk-int-str arena major)
-        (str-concat "::" (str-concat module (str-concat "::" symbol)))))))
+        (str-concat "::" (str-concat mod (str-concat "::" symbol)))))))
 
 ; §31.2's mangler, in the runtime so that exactly one implementation sits
 ; on the label path. NOT zyl_cstr_sanitize: that maps every byte outside

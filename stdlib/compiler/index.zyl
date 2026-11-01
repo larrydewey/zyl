@@ -274,10 +274,10 @@
       (idx-verify-sig arena name iv))))
 
 (defn idx-verify-sig (arena name iv)
-  (let pub (w-from-hex (idx-key-hex (iv-key iv)))
+  (let public (w-from-hex (idx-key-hex (iv-key iv)))
     (let sig (w-from-hex (store-strip-prefix (iv-sig iv)))
       (let msg (w-from-hex (store-strip-prefix (iv-hash iv)))
-        (if (ed25519-verify pub msg 32 sig)
+        (if (ed25519-verify public msg 32 sig)
           1
           (ffi-call "zyl_panic"
             (str-concat "E_PKG_SIGNATURE_INVALID: package: Ed25519 signature for "

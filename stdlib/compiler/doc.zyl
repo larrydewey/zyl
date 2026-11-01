@@ -42,15 +42,15 @@
       (doc-dir-files arena buf dir (ffi-call "zyl_list_zyl_files" dir 1000) 0 pub-only)
       (buf-str buf))))
 
-(defn doc-dir-files (arena buf dir list i pub-only)
-  (let j (doc-line-end list i)
+(defn doc-dir-files (arena buf dir files i pub-only)
+  (let j (doc-line-end files i)
     (if (>= i j)
       unit
-      (let rel (str-substring list i (- j i))
+      (let rel (str-substring files i (- j i))
         (begin
           (doc-out buf (doc-file arena (str-concat dir (str-concat "/" rel)) (str-substring rel 0 (- (str-length rel) 4)) pub-only))
           (doc-out buf "\n")
-          (doc-dir-files arena buf dir list (+ j 1) pub-only))))))
+          (doc-dir-files arena buf dir files (+ j 1) pub-only))))))
 
 (defn doc-line-end (s i)
   (if (>= i (str-length s)) i (if (= (ffi-call "zyl_cstr_byte_at" s i 1000) 10) i (doc-line-end s (+ i 1)))))
@@ -111,15 +111,15 @@
 
 (defn doc-item (buf src f pub-only)
   (let is-pub (str-eq (ast-head f) "pub")
-    (let def (if is-pub (doc-unwrap-pub f) f)
+    (let form (if is-pub (doc-unwrap-pub f) f)
       (if (and pub-only (not is-pub))
         unit
-        (if (doc-definition-p (ast-head def))
+        (if (doc-definition-p (ast-head form))
           (begin
             (doc-out buf "### `")
-            (doc-out buf (ast-text (ast-arg1 def)))
+            (doc-out buf (ast-text (ast-arg1 form)))
             (doc-out buf "`\n\n```lisp\n")
-            (doc-out buf (doc-signature def))
+            (doc-out buf (doc-signature form))
             (doc-out buf "\n```\n\n")
             (let d (doc-comment-above src (ffi-call "zyl_span_off" f 1000))
               (if (> (str-length d) 0) (begin (doc-out buf d) (doc-out buf "\n")) unit)))
@@ -135,14 +135,14 @@
     (or (str-eq h "defstruct") (or (str-eq h "trait") (str-eq h "defmacro")))))))
 
 ; A function shows its head and parameters; a type or trait shows in full.
-(defn doc-signature (def)
-  (if (or (str-eq (ast-head def) "defn") (str-eq (ast-head def) "defmacro"))
-    (match def
+(defn doc-signature (form)
+  (if (or (str-eq (ast-head form) "defn") (str-eq (ast-head form) "defmacro"))
+    (match form
       (AList xs (str-concat "(" (str-concat (ast-text-list (doc-take xs 3)) ")")))
       (_ ""))
-    (if (str-eq (ast-head def) "def")
-      (str-concat "(def " (str-concat (ast-text (ast-arg1 def)) " ...)"))
-      (ast-text def))))
+    (if (str-eq (ast-head form) "def")
+      (str-concat "(def " (str-concat (ast-text (ast-arg1 form)) " ...)"))
+      (ast-text form))))
 
 (defn doc-take (xs n)
   (if (<= n 0) Nil (match xs (Nil Nil) (Cons h t (Cons h (doc-take t (- n 1)))))))

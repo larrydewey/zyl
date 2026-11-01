@@ -87,8 +87,8 @@
         (ETraitDecl n _ _ (if (ffi-call "zyl_cstr_key_matches" n label 1000) n (dv-trait-key rest label)))
         (_ (dv-trait-key rest label))))))
 
-(defn dv-fixed-impl (trait method tname text)
-  (Expr (EImplBlock trait tname (Cons (IB (DN method (Cons (P "_self" None) Nil) (dv-str text))) Nil))))
+(defn dv-fixed-impl (tr method tname text)
+  (Expr (EImplBlock tr tname (Cons (IB (DN method (Cons (P "_self" None) Nil) (dv-str text))) Nil))))
 
 ; --- driver ------------------------------------------------------------------
 
@@ -244,7 +244,7 @@
 (defn dv-call (f args) (Expr (EApply f args)))
 (defn dv-call2 (f a b) (dv-call f (Cons a (Cons b Nil))))
 (defn dv-cat (a b) (dv-call2 "str-concat" a b))
-(defn dv-method (trait m) (str-concat trait (str-concat "." m)))
+(defn dv-method (tr m) (str-concat tr (str-concat "." m)))
 
 (defn dv-is-struct (sm)
   (match sm
@@ -262,16 +262,16 @@
 (defn dv-self-param () (Cons (P "self" None) Nil))
 (defn dv-self-other () (Cons (P "self" None) (Cons (P "other" None) Nil)))
 
-(defn dv-impl (trait tname method params body)
-  (Expr (EImplBlock trait tname (Cons (IB (DN method params body)) Nil))))
+(defn dv-impl (tr tname method params body)
+  (Expr (EImplBlock tr tname (Cons (IB (DN method params body)) Nil))))
 
 ; --- Show and Debug -------------------------------------------------------------
 
-(defn dv-text-impl (trait method label tname dt)
+(defn dv-text-impl (tr method label tname dt)
   (match (Expr.inner dt)
     (EDeftype _ variants _ sm
-      (dv-impl trait tname method (dv-self-param)
-        (Expr (EMatch (dv-id "self") (dv-text-arms (dv-method trait method) label variants (dv-is-struct sm))))))
+      (dv-impl tr tname method (dv-self-param)
+        (Expr (EMatch (dv-id "self") (dv-text-arms (dv-method tr method) label variants (dv-is-struct sm))))))
     (_ dt)))
 
 (defn dv-text-arms (call label variants isst)
@@ -331,18 +331,18 @@
 
 ; --- Eq, Ord, Hash, Clone ------------------------------------------------------
 
-(defn dv-value-impl (trait short tname dt)
+(defn dv-value-impl (tr short tname dt)
   (match (Expr.inner dt)
     (EDeftype _ variants _ _
       (if (str-eq short "Eq")
-        (dv-impl trait tname "eq" (dv-self-other) (dv-call2 "==" (dv-id "self") (dv-id "other")))
+        (dv-impl tr tname "eq" (dv-self-other) (dv-call2 "==" (dv-id "self") (dv-id "other")))
         (if (str-eq short "Clone")
-          (dv-impl trait tname "clone" (dv-self-param) (dv-id "self"))
+          (dv-impl tr tname "clone" (dv-self-param) (dv-id "self"))
           (if (str-eq short "Hash")
-            (dv-impl trait tname "hash" (dv-self-param)
-              (Expr (EMatch (dv-id "self") (dv-hash-arms (dv-method trait "hash") variants 0))))
-            (dv-impl trait tname "compare" (dv-self-other)
-              (Expr (EMatch (dv-id "self") (dv-ord-arms (dv-method trait "compare") variants variants 0))))))))
+            (dv-impl tr tname "hash" (dv-self-param)
+              (Expr (EMatch (dv-id "self") (dv-hash-arms (dv-method tr "hash") variants 0))))
+            (dv-impl tr tname "compare" (dv-self-other)
+              (Expr (EMatch (dv-id "self") (dv-ord-arms (dv-method tr "compare") variants variants 0))))))))
     (_ dt)))
 
 ; FNV-style: start from the variant's position, fold in each field's hash.

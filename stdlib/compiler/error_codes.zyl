@@ -49,6 +49,7 @@
   (Cons (EC "E_MALFORMED_FORM" 2 1 "parser: special form F has arguments of the wrong shape at S")
   (Cons (EC "E_MALFORMED_PARAMETER" 2 1 "parser: P is not a parameter at S - write a name, or (name Type)")
   (Cons (EC "E_RESERVED_KEYWORD" 2 1 "parser: reserved keyword K cannot be used as identifier at S")
+  (Cons (EC "E_SHADOWS_BUILTIN" 2 1 "parser: local binding N is named like a built-in, which every call of N reaches instead, at S")
   (Cons (EC "E_UNBALANCED_UNCLOSED" 2 1 "parser: unclosed opener - opened at S, never reached its matching closer")
   (Cons (EC "E_UNBALANCED_UNEXPECTED_CLOSE" 2 1 "parser: unexpected closing delimiter at S - no opener is open here")
   (Cons (EC "E_UNBALANCED_MISMATCHED_BRACKET" 2 1 "parser: closing delimiter at S does not match its opener")
@@ -167,7 +168,7 @@
   (Cons (EC "E_PKG_FEATURE_NESTED" 19 1 "package: feature-gate is valid at top level only")
   (Cons (EC "E_PKG_FEATURE_COLLISION" 19 1 "package: gated definition D collides with a base definition")
   (Cons (EC "E_PROV_ATTACH" 19 1 "build: the provenance trailer could not be attached: M")
-  Nil)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+  Nil))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 ; ---------------------------------------------------------------------------
 ; ACCESSORS
 ; ---------------------------------------------------------------------------

@@ -141,10 +141,10 @@
 (impl OutputStream StringBuffer
   (defn write (self chunk)
     (let _ (sb-require-live! self)
-    (let len (sb-ref-get (struct-get self "len"))
+    (let size (sb-ref-get (struct-get self "len"))
       (let cap (sb-ref-get (struct-get self "cap"))
         (let clen (alloc-strlen chunk)
-          (let need (+ (+ len clen) 1)
+          (let need (+ (+ size clen) 1)
             (begin
               (if (> need cap)
                 (let new-cap (if (> (* cap 2) need) (* cap 2) need)
@@ -155,8 +155,8 @@
                       (sb-ref-set (struct-get self "cap") new-cap))))
                 unit)
               (buf-append (sb-ref-get (struct-get self "buf")) chunk)
-              (sb-ref-set (struct-get self "len") (+ len clen))
-              (+ len clen))))))))
+              (sb-ref-set (struct-get self "len") (+ size clen))
+              (+ size clen))))))))
   (defn flush (self) (begin (sb-require-live! self) (file-write (struct-get self "fd") (buf-str (sb-ref-get (struct-get self "buf")))) 0)))
 
 ; Content of a StringBuffer, copied: the String outlives the buffer.

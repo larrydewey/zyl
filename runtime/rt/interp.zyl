@@ -13,11 +13,11 @@
 (defn rt-itests () (ffi-call "%global" "itests" 65544 1))
 (defn rt-itest-n () (rt-ld64 (+ (rt-itests) 65536)))
 
-(defn zyl_itest_add (name fn)
+(defn zyl_itest_add (name entry)
   (let n (rt-itest-n)
     (if (>= n 4096) -1
       (let e (+ (rt-itests) (* n 16))
-        (let _ (rt-st64 e name) (let _ (rt-st64 (+ e 8) fn) (let _ (rt-st64 (+ (rt-itests) 65536) (+ n 1)) n)))))))
+        (let _ (rt-st64 e name) (let _ (rt-st64 (+ e 8) entry) (let _ (rt-st64 (+ (rt-itests) 65536) (+ n 1)) n)))))))
 
 (defn zyl_itest_count () (rt-itest-n))
 (defn zyl_itest_name (i) (if (or (< i 0) (>= i (rt-itest-n))) 0 (rt-ld64 (+ (rt-itests) (* i 16)))))
@@ -104,10 +104,10 @@
           (if (= slot 0) 0
             (if (not (= (rt-ld64 slot) 0)) (rt-ld64 slot)
               (if (>= (rt-ld64 (+ t 32768)) 2048) 0
-                (let len (rt-strlen n)
-                  (let c (zyl_rt_malloc (+ len 1))
+                (let size (rt-strlen n)
+                  (let c (zyl_rt_malloc (+ size 1))
                     (if (= c 0) 0
-                      (let _ (rt-copy c n (+ len 1))
+                      (let _ (rt-copy c n (+ size 1))
                         (let _ (rt-st64 slot c) (let _ (rt-st64 (+ t 32768) (+ (rt-ld64 (+ t 32768)) 1)) c))))))))))))))
 
 (defn zyl_fresh_id ()

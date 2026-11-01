@@ -234,26 +234,26 @@
 ; Number of zero bytes between the 0x80 terminator and the 8-byte
 ; length field, so that the total is a multiple of 64.
 ; Returns: Int
-(defn sha256-pad-zeros ((len Int))
-  (let r (% (+ len 1) 64)
+(defn sha256-pad-zeros ((size Int))
+  (let r (% (+ size 1) 64)
     (if (<= r 56) (- 56 r) (- 120 r))))
 
 ; Total padded length in bytes.
 ; Returns: Int
-(defn sha256-padded-len ((len Int))
-  (+ (+ len 9) (sha256-pad-zeros len)))
+(defn sha256-padded-len ((size Int))
+  (+ (+ size 9) (sha256-pad-zeros size)))
 
 ; Build the padded message: the message, a 0x80 byte, zeros, then the
 ; original length in BITS as a 64-bit big-endian value. The zero run
 ; needs no explicit writing -- w-alloc hands back zeroed arena memory.
 ; Returns: Words
-(defn sha256-pad ((msg Words) (len Int))
-  (let total (sha256-padded-len len)
+(defn sha256-pad ((msg Words) (size Int))
+  (let total (sha256-padded-len size)
     (let p (w-alloc total)
       (begin
-        (w-copy p msg len)
-        (w-set p len 128)
-        (sha256-write-length p total (* len 8))
+        (w-copy p msg size)
+        (w-set p size 128)
+        (sha256-write-length p total (* size 8))
         p))))
 
 ; Returns: Words
@@ -272,11 +272,11 @@
 ; SHA-256 of the `len` message bytes held one-per-word at `msg`.
 ; Returns an 8-word array holding the digest as big-endian 32-bit words.
 ; Returns: Words
-(defn sha256-words ((msg Words) (len Int))
+(defn sha256-words ((msg Words) (size Int))
   (let kp (sha256-k-table)
     (let st (sha256-init)
-      (let padded (sha256-pad msg len)
-        (let total (sha256-padded-len len)
+      (let padded (sha256-pad msg size)
+        (let total (sha256-padded-len size)
           (begin
             (for (off 0) (< off total)
               (begin
@@ -286,8 +286,8 @@
 
 ; SHA-256 digest as a 32-entry byte array (one byte per word).
 ; Returns: Words
-(defn sha256-bytes ((msg Words) (len Int))
-  (let st (sha256-words msg len)
+(defn sha256-bytes ((msg Words) (size Int))
+  (let st (sha256-words msg size)
     (let out (w-alloc 32)
       (begin
         (for (i 0) (< i 8)
@@ -310,6 +310,6 @@
 ; Returns: String
 (defn sha256-hex-of-string ((s String))
   (let msg (w-from-string s)
-    (let len (w-string-len s)
-      (let st (sha256-words msg len)
+    (let size (w-string-len s)
+      (let st (sha256-words msg size)
         (w-hex-words st 8)))))

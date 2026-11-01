@@ -113,20 +113,20 @@
 ;
 ; Byte at a time, because there is no String-to-ByteSlice primitive and this
 ; runs once per build, not per value in a loop that matters.
-(defn cbor-copy ((b ByteBuf) (off Int) (s String) (len Int))
+(defn cbor-copy ((b ByteBuf) (off Int) (s String) (size Int))
   (let i (ffi-call "zyl_ref_new" 0 1000)
     (begin
-      (while (< (ffi-call "zyl_ref_get" i 1000) len)
+      (while (< (ffi-call "zyl_ref_get" i 1000) size)
         (begin
           (store-u8! :le b (+ off (ffi-call "zyl_ref_get" i 1000))
             (ffi-call "zyl_view_byte" s 0 1099511627776 (ffi-call "zyl_ref_get" i 1000) 1000))
           (ffi-call "zyl_ref_set" i (+ (ffi-call "zyl_ref_get" i 1000) 1) 1000)))
-      (+ off len))))
+      (+ off size))))
 
 ; Major 2, from a String treated as raw bytes. Hashes and signatures are the
 ; reason this exists: a 32-byte hash is not text and must not be hex.
-(defn cbor-bytes ((b ByteBuf) (off Int) (s String) (len Int))
-  (let o1 (cbor-head b off 2 len) (cbor-copy b o1 s len)))
+(defn cbor-bytes ((b ByteBuf) (off Int) (s String) (size Int))
+  (let o1 (cbor-head b off 2 size) (cbor-copy b o1 s size)))
 
 ; Major 3. The length is the byte length, which is what CBOR wants; a
 ; multi-byte character is one head byte-count and several payload bytes.
@@ -135,10 +135,10 @@
 ; obvious one-liner and it emits major 2, so every text key in a record comes
 ; out a byte string: a map that encodes, and decodes to nothing readable.
 (defn cbor-text ((b ByteBuf) (off Int) (s String))
-  (let len (str-length s)
-    (let o1 (cbor-head b off 3 len) (cbor-copy b o1 s len))))
+  (let size (str-length s)
+    (let o1 (cbor-head b off 3 size) (cbor-copy b o1 s size))))
 
-(defn cbor-text-head ((b ByteBuf) (off Int) len) (cbor-head b off 3 len))
+(defn cbor-text-head ((b ByteBuf) (off Int) size) (cbor-head b off 3 size))
 
 ; Major 4 and 5. The count is the number of items, not a byte length, which is
 ; the detail that makes these two different from a string head.
@@ -259,19 +259,19 @@
 ; the body's first key, and the reader took the head, so a caller that got one
 ; right got the other wrong and a caller that got them the same way got both
 ; wrong. Two functions reading the same map must agree about where it starts.
-(defn cbor-keys-sorted-p ((b ByteBuf) (off Int) (n Int) (len Int))
+(defn cbor-keys-sorted-p ((b ByteBuf) (off Int) (n Int) (size Int))
   (if (<= n 1)
     true
     (let ib (load-u8! :le b off)
       (if (not (= (bit-and (shr ib 5) 7) 5))
         false
         (let w (cbor-arg-width (bit-and ib 31))
-          (if (or (< w 0) (> (+ off 1 w) len))
+          (if (or (< w 0) (> (+ off 1 w) size))
             false
-            (cbor-keys-sorted-from b (+ off 1 w) n len)))))))
+            (cbor-keys-sorted-from b (+ off 1 w) n size)))))))
 
 ; The body of the sortedness walk: consecutive keys from the map's first pair.
-(defn cbor-keys-sorted-from ((b ByteBuf) (off Int) (n Int) (len Int))
+(defn cbor-keys-sorted-from ((b ByteBuf) (off Int) (n Int) (size Int))
   (if (<= n 1)
     true
     (let a (cbor-read-key b off)
@@ -279,13 +279,13 @@
         false
         (let klen (match a (CKey v u v))
           (let kend (+ (match a (CKey v u u)) klen)
-            (let after (cbor-skip-value b kend len cbor-max-nesting)
+            (let after (cbor-skip-value b kend size cbor-max-nesting)
               (if (< after 0)
                 false
                 (let bkey (cbor-read-key b after)
                   (if (cbor-key-gt b a bkey klen)
                     false
-                    (cbor-keys-sorted-from b after (- n 1) len)))))))))))
+                    (cbor-keys-sorted-from b after (- n 1) size)))))))))))
 
 ; True when key `a` sorts AFTER key `b`: longer first, then bytewise.
 ;
@@ -315,7 +315,7 @@
 ; `depth` bounds the recursion. A hostile blob can nest maps arbitrarily deep,
 ; and this walks attacker-chosen structure, so the bound is a real limit rather
 ; than a formality: past it the answer is -1, i.e. not understood, not accepted.
-(defn cbor-skip-value ((b ByteBuf) (off Int) (len Int) (depth Int))
+(defn cbor-skip-value ((b ByteBuf) (off Int) (size Int) (depth Int))
   (if (<= depth 0)
 
     (- 1)
@@ -327,31 +327,31 @@
 
           (let w (cbor-arg-width arg)
 
-            (let arg (cbor-arg-at b off arg len)
+            (let arg (cbor-arg-at b off arg size)
 
-              (if (<= (+ off 1 w) len)
+              (if (<= (+ off 1 w) size)
 
                 (let base (+ off 1 w)
 
                   (if (= major 5)
 
-                    (cbor-skip-items b base len (- depth 1) (* 2 arg))
+                    (cbor-skip-items b base size (- depth 1) (* 2 arg))
                     (if (= major 4)
 
-                      (cbor-skip-items b base len (- depth 1) arg)
+                      (cbor-skip-items b base size (- depth 1) arg)
                       (if (or (= major 2) (= major 3))
 
-                        (if (<= (+ base arg) len) (+ base arg) (- 1))
+                        (if (<= (+ base arg) size) (+ base arg) (- 1))
 
-                        (if (<= base len) base (- 1))))))
+                        (if (<= base size) base (- 1))))))
                 (- 1)))))))))
 
 ; Step over `n` consecutive values.
-(defn cbor-skip-items ((b ByteBuf) (off Int) (len Int) (depth Int) (n Int))
+(defn cbor-skip-items ((b ByteBuf) (off Int) (size Int) (depth Int) (n Int))
   (if (<= n 0)
     off
-    (let next (cbor-skip-value b off len depth)
-      (if (< next 0) (- 1) (cbor-skip-items b next len depth (- n 1))))))
+    (let next (cbor-skip-value b off size depth)
+      (if (< next 0) (- 1) (cbor-skip-items b next size depth (- n 1))))))
 
 ; The argument a head ACTUALLY denotes.
 ;
@@ -367,17 +367,17 @@
 ; turns 0x58 0x20 into "a byte string of 24 bytes" when it is 32, which is how a
 ; canonical record nine keys long was reported as unsorted: the walk stepped 8
 ; bytes short of the next key and every comparison after that was noise.
-(defn cbor-arg-at ((b ByteBuf) (off Int) (arg Int) (len Int))
+(defn cbor-arg-at ((b ByteBuf) (off Int) (arg Int) (size Int))
   (if (< arg 24)
     arg
     (if (= arg 24)
-      (if (< (+ off 1) len) (load-u8! :le b (+ off 1)) (- 1))
+      (if (< (+ off 1) size) (load-u8! :le b (+ off 1)) (- 1))
       (if (= arg 25)
-        (if (< (+ off 2) len)
+        (if (< (+ off 2) size)
           (+ (* 256 (load-u8! :le b (+ off 1))) (load-u8! :le b (+ off 2)))
           (- 1))
         (if (= arg 26)
-          (if (< (+ off 4) len)
+          (if (< (+ off 4) size)
             (+ (* 16777216 (load-u8! :le b (+ off 1)))
               (+ (* 65536 (load-u8! :le b (+ off 2)))
                 (+ (* 256 (load-u8! :le b (+ off 3))) (load-u8! :le b (+ off 4)))))
@@ -448,13 +448,13 @@
 ; magnitude, so a negative one is not a number to be read but a claim of the
 ; wrong shape; accepting it would leave a reader and a writer disagreeing
 ; about what a count is. Returns (CU -1 -1) for anything else.
-(defn cbor-uint-at ((b ByteBuf) (off Int) (len Int))
+(defn cbor-uint-at ((b ByteBuf) (off Int) (size Int))
   (let ib (load-u8! :le b off)
     (if (not (= (bit-and (shr ib 5) 7) 0))
       (CU (- 1) (- 1))
-      (let arg (cbor-arg-at b off (bit-and ib 31) len)
+      (let arg (cbor-arg-at b off (bit-and ib 31) size)
         (let w (cbor-arg-width (bit-and ib 31))
-          (if (or (< arg 0) (< w 0) (> (+ off 1 w) len))
+          (if (or (< arg 0) (< w 0) (> (+ off 1 w) size))
             (CU (- 1) (- 1))
             (CU arg (+ off 1 w))))))))
 
@@ -465,13 +465,13 @@
 ; one as text would be a record this reader has to refuse rather than guess
 ; about, because hex-decoding it would be a second interpretation applied to
 ; somebody else's bytes.
-(defn cbor-bytes-at ((b ByteBuf) (off Int) (len Int))
+(defn cbor-bytes-at ((b ByteBuf) (off Int) (size Int))
   (let ib (load-u8! :le b off)
     (if (not (= (bit-and (shr ib 5) 7) 2))
       (CS (- 1) (- 1) (- 1))
-      (let arg (cbor-arg-at b off (bit-and ib 31) len)
+      (let arg (cbor-arg-at b off (bit-and ib 31) size)
         (let w (cbor-arg-width (bit-and ib 31))
-          (if (or (< arg 0) (< w 0) (> (+ off 1 w arg) len))
+          (if (or (< arg 0) (< w 0) (> (+ off 1 w arg) size))
             (CS (- 1) (- 1) (- 1))
             (CS (+ off 1 w) arg (+ off 1 w arg))))))))
 
@@ -481,13 +481,13 @@
 ; ends at a NUL, so text holding one reads back short: that is why hashes are
 ; byte strings and read through cbor-bytes-at, never through here. A byte
 ; string in this position is refused for the mirror of the reason above.
-(defn cbor-text-at ((b ByteBuf) (off Int) (len Int))
+(defn cbor-text-at ((b ByteBuf) (off Int) (size Int))
   (let ib (load-u8! :le b off)
     (if (not (= (bit-and (shr ib 5) 7) 3))
       (CT "" (- 1))
-      (let arg (cbor-arg-at b off (bit-and ib 31) len)
+      (let arg (cbor-arg-at b off (bit-and ib 31) size)
         (let w (cbor-arg-width (bit-and ib 31))
-          (if (or (< arg 0) (< w 0) (> (+ off 1 w arg) len))
+          (if (or (< arg 0) (< w 0) (> (+ off 1 w arg) size))
             (CT "" (- 1))
             (cbor-text-finish b (+ off 1 w) arg)))))))
 
@@ -530,13 +530,13 @@
                    false))))
 
 ; The payload offset and length of the text head at `off`, or (CK -1 -1).
-(defn cbor-key-span ((b ByteBuf) (off Int) (len Int))
+(defn cbor-key-span ((b ByteBuf) (off Int) (size Int))
   (let ib (load-u8! :le b off)
     (if (not (= (bit-and (shr ib 5) 7) 3))
       (CK (- 1) (- 1))
-      (let arg (cbor-arg-at b off (bit-and ib 31) len)
+      (let arg (cbor-arg-at b off (bit-and ib 31) size)
         (let w (cbor-arg-width (bit-and ib 31))
-          (if (or (< arg 0) (< w 0) (> (+ off 1 w arg) len))
+          (if (or (< arg 0) (< w 0) (> (+ off 1 w arg) size))
             (CK (- 1) (- 1))
             (CK (+ off 1 w) arg)))))))
 
@@ -555,27 +555,27 @@
 ;
 ; A key appearing twice returns the FIRST, which is what RFC 8949 5.6 requires
 ; and the one a canonical map cannot produce anyway.
-(defn cbor-map-find ((b ByteBuf) (off Int) (len Int) (depth Int) (key String))
+(defn cbor-map-find ((b ByteBuf) (off Int) (size Int) (depth Int) (key String))
   (if (<= depth 0)
     (- 1)
     (let ib (load-u8! :le b off)
       (if (not (= (bit-and (shr ib 5) 7) 5))
         (- 1)
-        (let pairs (cbor-arg-at b off (bit-and ib 31) len)
+        (let pairs (cbor-arg-at b off (bit-and ib 31) size)
           (let w (cbor-arg-width (bit-and ib 31))
-            (if (or (< pairs 0) (< w 0) (> (+ off 1 w) len))
+            (if (or (< pairs 0) (< w 0) (> (+ off 1 w) size))
               (- 1)
-              (cbor-map-scan b (+ off 1 w) len depth pairs key))))))))
+              (cbor-map-scan b (+ off 1 w) size depth pairs key))))))))
 
 ; One key/value pair at a time, from the map's body.
 ;
 ; Separate from cbor-map-find so the head is consumed exactly once. The first
 ; version recursed into itself with the body offset, so every step after the
 ; first re-read a head that was not there.
-(defn cbor-map-scan ((b ByteBuf) (off Int) (len Int) (depth Int) (pairs Int) (key String))
+(defn cbor-map-scan ((b ByteBuf) (off Int) (size Int) (depth Int) (pairs Int) (key String))
   (if (or (<= depth 0) (<= pairs 0))
     (- 1)
-    (let ks (cbor-key-span b off len)
+    (let ks (cbor-key-span b off size)
       (let klen (match ks (CK _ n n))
         (if (< klen 0)
           (- 1)
@@ -583,10 +583,10 @@
             (let kend (+ kstart klen)
               (if (and (= klen (str-length key)) (cbor-bytes-eq b kstart (cbor-text-bytes key 0) 0))
                 kend
-                (let after (cbor-skip-value b kend len (- depth 1))
+                (let after (cbor-skip-value b kend size (- depth 1))
                   (if (< after 0)
                     (- 1)
-                    (cbor-map-scan b after len depth (- pairs 1) key)))))))))))
+                    (cbor-map-scan b after size depth (- pairs 1) key)))))))))))
 
 ; THE VALUE IS SKIPPED ON EVERY MISMATCH, and `depth` is spent on nesting only.
 ;
@@ -601,12 +601,12 @@
 ; The array whose head is at `off`: its item count and the offset of its
 ; first item, or (CU -1 -1). Major 4 only. Items are read from there with
 ; cbor-text-at and the like, each one starting where the last one ended.
-(defn cbor-array-at ((b ByteBuf) (off Int) (len Int))
+(defn cbor-array-at ((b ByteBuf) (off Int) (size Int))
   (let ib (load-u8! :le b off)
     (if (not (= (bit-and (shr ib 5) 7) 4))
       (CU (- 1) (- 1))
-      (let arg (cbor-arg-at b off (bit-and ib 31) len)
+      (let arg (cbor-arg-at b off (bit-and ib 31) size)
         (let w (cbor-arg-width (bit-and ib 31))
-          (if (or (< arg 0) (< w 0) (> (+ off 1 w) len))
+          (if (or (< arg 0) (< w 0) (> (+ off 1 w) size))
             (CU (- 1) (- 1))
             (CU arg (+ off 1 w))))))))

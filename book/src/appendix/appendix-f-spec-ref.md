@@ -12,7 +12,7 @@ Appendices A–C record the differences.
 | § | Title | Key points | Book |
 |---|---|---|---|
 | 0 | Core Design Principles | P1–P9: Determinism, Safety, Explicit Effects, Region-Based Memory, Strict Evaluation, Phase Isolation, Inference Over Annotation, Optional Layers Do Not Interfere, Testability | Ch. 1, 26 |
-| 1 | Lexical Structure | UTF-8; tokens; keywords (§1.3); reserved keywords as identifiers (§1.3.1); `;` comments | Ch. 14 |
+| 1 | Lexical Structure | UTF-8; tokens; keywords (§1.3); reserved keywords as identifiers (§1.3.1); built-in names as local bindings (§1.3.2); `;` comments | Ch. 14 |
 | 2 | Abstract Syntax (AST) | The expression grammar, from `def` to `test-compile` | Ch. 14, F.2 |
 | 3 | Value Model | Int64, UInt64, Float64, Bool, String, Tuple, Closure, ActorRef, Address, StructValue, ResultValue, Unit | Ch. 2 |
 | 4 | Type System | Primitives, composites (Vec, Map, Result, Struct, Alias), capability types (§4.3), function types, bounds, HM inference, type equality | Ch. 15, 17 |
@@ -256,6 +256,7 @@ runtime event.
 | `E_ACTOR_LIMIT` | More than 1024 actors spawned (runtime) |
 | `E_TRAIT_NOT_DERIVABLE` | Cannot derive trait |
 | `E_RESERVED_KEYWORD` | Reserved keyword used as an identifier |
+| `E_SHADOWS_BUILTIN` | Local binding named like a built-in |
 | `E_CANNOT_INFER` | No type for an expression: a generic parameter with no call-site evidence, or an `ffi-call` to an undeclared foreign symbol |
 | `E_INFINITE_TYPE` | A type would have to contain itself (occurs check) |
 | `E_PANIC_UNMARKED` | A standard-library function that calls `panic` directly is not spelled with a trailing `!` (§25) |

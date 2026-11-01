@@ -475,11 +475,11 @@
 
 ; K = HMAC_K(V || byte || seed); V = HMAC_K(V).
 ; Returns: Int
-(defn ec-6979-update ((kk Words) (v Words) (seed Words) (seedlen Int) (byte Int))
+(defn ec-6979-update ((kk Words) (v Words) (seed Words) (seedlen Int) (octet Int))
   (let buf (w-alloc (+ 33 seedlen))
     (begin
       (ec-copy-at buf 0 v 32)
-      (w-set buf 32 byte)
+      (w-set buf 32 octet)
       (ec-copy-at buf 33 seed seedlen)
       (w-copy kk (hmac-sha256 kk 32 buf (+ 33 seedlen)) 32)
       (w-copy v (hmac-sha256 kk 32 v 32) 32)
@@ -607,21 +607,21 @@
 
 ; Verify a raw (r || s) signature over a 32-byte SHA-256 digest.
 ; Returns: Bool
-(defn ecdsa-verify ((c EcCurve) (pub EcPt) (hash Words) (sig Words))
+(defn ecdsa-verify ((c EcCurve) (public EcPt) (hash Words) (sig Words))
   (let nb (ec-nbytes c)
     (let r (bn-alloc (ec-limbs c))
       (let s (bn-alloc (ec-limbs c))
         (begin
           (bn-from-bytes-be r (ec-limbs c) sig nb)
           (bn-from-bytes-be s (ec-limbs c) (w-view   sig nb nb) nb)
-          (ecdsa-verify-range c pub hash r s))))))
+          (ecdsa-verify-range c public hash r s))))))
 
 ; r and s must both lie in [1, n-1]; a zero or out-of-range value is
 ; rejected before any point arithmetic, since those are the degenerate
 ; signatures that verify against anything under a careless
 ; implementation.
 ; Returns: Bool
-(defn ecdsa-verify-range ((c EcCurve) (pub EcPt) (hash Words) (r Words) (s Words))
+(defn ecdsa-verify-range ((c EcCurve) (public EcPt) (hash Words) (r Words) (s Words))
   (let scratch (bn-alloc (ec-limbs c))
     (let rok (bit-and (- 1 (bn-is-zero r (ec-limbs c))) (bn-sub scratch r (ec-order c) (ec-limbs c)))
       (let sok (bit-and (- 1 (bn-is-zero s (ec-limbs c))) (bn-sub scratch s (ec-order c) (ec-limbs c)))
@@ -629,11 +629,11 @@
         ; public key) are all public, and the range verdict is part of
         ; the answer this function returns.
         (if (= (declassify (bit-and rok sok)) 1)
-          (ecdsa-verify-equation c pub hash r s)
+          (ecdsa-verify-equation c public hash r s)
           false)))))
 
 ; Returns: Bool
-(defn ecdsa-verify-equation ((c EcCurve) (pub EcPt) (hash Words) (r Words) (s Words))
+(defn ecdsa-verify-equation ((c EcCurve) (public EcPt) (hash Words) (r Words) (s Words))
   (let z (bn-alloc (ec-limbs c))
     (let sinv (bn-alloc (ec-limbs c))
       (let u1 (bn-alloc (ec-limbs c))
@@ -644,17 +644,17 @@
             (ecn-inv c sinv s)
             (ecn-mul c u1 z sinv)
             (ecn-mul c u2 r sinv)
-            (ecdsa-verify-points c pub r u1 u2)))))))
+            (ecdsa-verify-points c public r u1 u2)))))))
 
 ; Returns: Bool
-(defn ecdsa-verify-points ((c EcCurve) (pub EcPt) (r Words) (u1 Words) (u2 Words))
+(defn ecdsa-verify-points ((c EcCurve) (public EcPt) (r Words) (u1 Words) (u2 Words))
   (let p1 (ec-pt-new c)
     (let p2 (ec-pt-new c)
       (let sum (ec-pt-new c)
         (let got (bn-alloc (ec-limbs c))
           (begin
             (ec-scalar-mul c p1 (ec-g c) u1)
-            (ec-scalar-mul c p2 pub u2)
+            (ec-scalar-mul c p2 public u2)
             (ec-add c sum p1 p2)
             ; Verification runs entirely on public data (signature,
             ; message, public key); the point-at-infinity test is part of

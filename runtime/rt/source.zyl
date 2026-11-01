@@ -69,7 +69,7 @@
 
 (defn rt-line-start (t i) (if (and (> i 0) (not (= (rt-ld8 (+ t (- i 1))) 10))) (rt-line-start t (- i 1)) i))
 
-(defn rt-line-end (t i len) (if (and (< i len) (not (= (rt-ld8 (+ t i)) 10))) (rt-line-end t (+ i 1) len) i))
+(defn rt-line-end (t i size) (if (and (< i size) (not (= (rt-ld8 (+ t i)) 10))) (rt-line-end t (+ i 1) size) i))
 
 (defn zyl_span_col (fid off)
   (let f (rt-src-at fid off) (if (= f 0) 0 (+ (- off (rt-line-start (rt-ld64 (+ f 8)) off)) 1))))
@@ -114,10 +114,10 @@
     (RtSnip s _ pre _ (+ (+ (- off s) 1) (if pre 3 0)))
     (RtNoSnip 0)))
 
-(defn rt-skip-lines (t i l line len)
+(defn rt-skip-lines (t i l line size)
   (if (>= l line) i
-    (let nl (rt-find-byte t len 10 i)
-      (if (< nl 0) -1 (rt-skip-lines t (+ nl 1) (+ l 1) line len)))))
+    (let nl (rt-find-byte t size 10 i)
+      (if (< nl 0) -1 (rt-skip-lines t (+ nl 1) (+ l 1) line size)))))
 
 ; Inverse of line and column (sexp_balance's 1-based positions); -1 when unknown.
 (defn zyl_span_offset_at (fid line col)
@@ -125,6 +125,6 @@
     (if (or (= f 0) (or (< line 1) (< col 1))) -1
       (let t (rt-ld64 (+ f 8))
         (if (= t 0) -1
-          (let len (rt-ld64 (+ f 16))
-            (let i (rt-skip-lines t 0 1 line len)
-              (if (< i 0) -1 (let off (+ i (- col 1)) (if (<= off len) off len))))))))))
+          (let size (rt-ld64 (+ f 16))
+            (let i (rt-skip-lines t 0 1 line size)
+              (if (< i 0) -1 (let off (+ i (- col 1)) (if (<= off size) off size))))))))))

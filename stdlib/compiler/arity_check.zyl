@@ -515,11 +515,11 @@
     (EDef _ val (ac-expr val arities shadowed))
     (EIf c t eb (begin (ac-expr c arities shadowed) (ac-expr t arities shadowed) (ac-expr eb arities shadowed)))
     (EWhile c body (begin (ac-expr c arities shadowed) (ac-expr body arities shadowed)))
-    (EFor bindings cond body
+    (EFor bindings condition body
       (let names (ac-wrap-unknown (ac-for-names bindings))
         (begin
           (ac-for-inits bindings arities shadowed)
-          (ac-expr cond arities (list-append names shadowed))
+          (ac-expr condition arities (list-append names shadowed))
           (ac-expr body arities (list-append names shadowed)))))
     (ECond clauses (ac-cond-clauses clauses arities shadowed))
     (EBegin exprs (ac-list exprs arities shadowed))

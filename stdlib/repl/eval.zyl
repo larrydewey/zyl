@@ -106,8 +106,8 @@
            (Session.globals s) (Session.lifted s) (+ (Session.count s) 1)
            (Session.dir s) (Session.numeric s)))
 
-(defn session-with-use (s module)
-  (Session (list-append (Session.uses s) (Cons module Nil)) (Session.defs s)
+(defn session-with-use (s mod)
+  (Session (list-append (Session.uses s) (Cons mod Nil)) (Session.defs s)
            (Session.globals s) (Session.lifted s) (+ (Session.count s) 1)
            (Session.dir s) (Session.numeric s)))
 
@@ -492,19 +492,19 @@
 ; `(use module)` extends the session's module set, and is rejected if
 ; the module does not resolve or collides with one already in scope.
 (defn eval-add-use (sess text)
-  (let module (eval-second-word text)
-    (let probe (session-with-use sess module)
+  (let mod (eval-second-word text)
+    (let probe (session-with-use sess mod)
       (let arena (eval-entry-arena)
         (let scratch (arena-create 8388608)
           (let saved (eval-heap-swap scratch)
             (let res (eval-lower arena (eval-program-defs probe ""))
               (let copied (eval-copy-result res saved scratch arena)
-                (eval-use-result copied sess probe module)))))))))
+                (eval-use-result copied sess probe mod)))))))))
 
-(defn eval-use-result (res sess probe module)
+(defn eval-use-result (res sess probe mod)
   (match res
     (Err msg (EvalOutcome (EvalFailed msg) sess))
-    (Ok _ (EvalOutcome (EvalNote (str-concat "using " module)) probe))))
+    (Ok _ (EvalOutcome (EvalNote (str-concat "using " mod)) probe))))
 
 ; `(def name expr)` evaluates expr once, now, and binds the value for
 ; every later entry. Top-level `def` is not a compiled construct in this

@@ -1,0 +1,8 @@
+; expect-error: E_SHADOWS_BUILTIN
+; expect-at: shadows-builtin-match.zyl:7:11
+; A match binder named like a built-in.
+(defn total (xs)
+  (match xs
+    (Nil 0)
+    (Cons print rest (+ print (total rest)))))
+(defn main () (total [1 2]))

@@ -64,38 +64,38 @@
 ; LOW-LEVEL SKIPPERS
 ; ===========================================================================
 
-(defn ih-skip-ws-comments (text st len)
-  (if (>= (IHSt.i st) len)
+(defn ih-skip-ws-comments (text st size)
+  (if (>= (IHSt.i st) size)
     st
     (let ch (str-substring text (IHSt.i st) 1)
       (if (sb-is-semicolon (sb-str-code ch))
-        (ih-skip-comment text st len)
+        (ih-skip-comment text st size)
         (if (or (= (sb-str-code ch) 32) (or (= (sb-str-code ch) 9) (or (= (sb-str-code ch) 10) (= (sb-str-code ch) 13))))
-          (ih-skip-ws-comments text (ih-advance st ch) len)
+          (ih-skip-ws-comments text (ih-advance st ch) size)
           st)))))
 
 ; Comments and strings are skipped by sexp_balance's lexical rules, the
 ; balance check's own.
-(defn ih-skip-comment (text st len)
+(defn ih-skip-comment (text st size)
   (match st
     (IHS i l c hs
-      (let j (sb-line-end text len i)
-        (ih-skip-ws-comments text (IHS j l (+ c (- j i)) hs) len)))))
+      (let j (sb-line-end text size i)
+        (ih-skip-ws-comments text (IHS j l (+ c (- j i)) hs) size)))))
 
 ; st is at the opening quote.
-(defn ih-read-string (text st len)
+(defn ih-read-string (text st size)
   (match st
     (IHS i l c hs
-      (let e (sb-string-end text len (+ i 1))
-        (let j (if (< e 0) len e)
-          (IHS j (sb-line-after text len i j l) (sb-col-after text len i j c) hs))))))
+      (let e (sb-string-end text size (+ i 1))
+        (let j (if (< e 0) size e)
+          (IHS j (sb-line-after text size i j l) (sb-col-after text size i j c) hs))))))
 
-(defn ih-read-atom (text st len)
-  (if (>= (IHSt.i st) len)
+(defn ih-read-atom (text st size)
+  (if (>= (IHSt.i st) size)
     st
     (let ch (str-substring text (IHSt.i st) 1)
       (if (si-is-ident-char ch)
-        (ih-read-atom text (ih-advance st ch) len)
+        (ih-read-atom text (ih-advance st ch) size)
         st))))
 
 ; ===========================================================================
@@ -104,26 +104,26 @@
 ; accumulating any parameter hints found along the way.
 ; ===========================================================================
 
-(defn ih-read-form (text st len tbl)
-  (if (>= (IHSt.i st) len)
+(defn ih-read-form (text st size tbl)
+  (if (>= (IHSt.i st) size)
     st
     (let ch (str-substring text (IHSt.i st) 1)
       (if (or (sb-is-paren-open (sb-str-code ch)) (or (sb-is-bracket-open (sb-str-code ch)) (sb-is-brace-open (sb-str-code ch))))
-        (ih-read-bracketed text st len tbl ch)
+        (ih-read-bracketed text st size tbl ch)
         (if (sb-is-quote (sb-str-code ch))
-          (ih-read-string text st len)
-          (ih-read-atom text st len))))))
+          (ih-read-string text st size)
+          (ih-read-atom text st size))))))
 
 (defn ih-close-char (openCh)
   (if (sb-is-paren-open (sb-str-code openCh)) ")" (if (sb-is-bracket-open (sb-str-code openCh)) "]" "}")))
 
-(defn ih-read-bracketed (text st len tbl openCh)
+(defn ih-read-bracketed (text st size tbl openCh)
   (let st1 (ih-advance st openCh)
     (let closeCh (ih-close-char openCh)
-      (let st2 (ih-skip-ws-comments text st1 len)
+      (let st2 (ih-skip-ws-comments text st1 size)
         (if (str-eq openCh "(")
-          (ih-read-call-or-list text st2 len tbl closeCh)
-          (ih-read-children text st2 len tbl closeCh Nil))))))
+          (ih-read-call-or-list text st2 size tbl closeCh)
+          (ih-read-children text st2 size tbl closeCh Nil))))))
 
 ; Positioned right after "(" (and any leading ws/comments): if what
 ; follows is a bare identifier naming a known function in this
@@ -134,18 +134,18 @@
 ; nested call inside one of those children still gets found and
 ; hinted normally, since ih-read-children recurses through ih-read-form
 ; either way.
-(defn ih-read-call-or-list (text st len tbl closeCh)
-  (if (>= (IHSt.i st) len)
+(defn ih-read-call-or-list (text st size tbl closeCh)
+  (if (>= (IHSt.i st) size)
     st
     (let ch (str-substring text (IHSt.i st) 1)
       (if (str-eq ch closeCh)
         (ih-advance st ch)
         (if (si-is-ident-char ch)
           (let headStart (IHSt.i st)
-            (let stHead (ih-read-atom text st len)
+            (let stHead (ih-read-atom text st size)
               (let headWord (str-substring text headStart (- (IHSt.i stHead) headStart))
-                (ih-read-children text (ih-skip-ws-comments text stHead len) len tbl closeCh (ih-fn-param-names tbl headWord)))))
-          (ih-read-children text st len tbl closeCh Nil))))))
+                (ih-read-children text (ih-skip-ws-comments text stHead size) size tbl closeCh (ih-fn-param-names tbl headWord)))))
+          (ih-read-children text st size tbl closeCh Nil))))))
 
 (defn ih-fn-param-names (tbl name)
   (if (st-is-known-fn tbl name)
@@ -163,16 +163,16 @@
 ; list belongs to (Nil for a plain list / unknown callee / once past
 ; the last declared parameter -- no more hints emitted, but scanning
 ; and nested-call detection continue regardless).
-(defn ih-read-children (text st len tbl closeCh paramNames)
-  (if (>= (IHSt.i st) len)
+(defn ih-read-children (text st size tbl closeCh paramNames)
+  (if (>= (IHSt.i st) size)
     st
     (let ch (str-substring text (IHSt.i st) 1)
       (if (str-eq ch closeCh)
         (ih-advance st ch)
         (let stHinted (ih-maybe-hint st paramNames)
-          (let stArg (ih-read-form text stHinted len tbl)
-            (let stNext (ih-skip-ws-comments text stArg len)
-              (ih-read-children text stNext len tbl closeCh (ih-cdr-or-nil paramNames)))))))))
+          (let stArg (ih-read-form text stHinted size tbl)
+            (let stNext (ih-skip-ws-comments text stArg size)
+              (ih-read-children text stNext size tbl closeCh (ih-cdr-or-nil paramNames)))))))))
 
 (defn ih-cdr-or-nil (xs)
   (match xs (Nil Nil) (Cons _ t t)))
@@ -186,11 +186,11 @@
 ; DOCUMENT-LEVEL DRIVER
 ; ===========================================================================
 
-(defn ih-scan-top (text st len tbl)
-  (let st1 (ih-skip-ws-comments text st len)
-    (if (>= (IHSt.i st1) len)
+(defn ih-scan-top (text st size tbl)
+  (let st1 (ih-skip-ws-comments text st size)
+    (if (>= (IHSt.i st1) size)
       (list-reverse (IHSt.hints st1))
-      (ih-scan-top text (ih-read-form text st1 len tbl) len tbl))))
+      (ih-scan-top text (ih-read-form text st1 size tbl) size tbl))))
 
 ; ===========================================================================
 ; ENTRY POINT — real (List InlayHint), replacing code_action.zyl's old

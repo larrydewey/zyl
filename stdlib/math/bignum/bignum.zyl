@@ -173,11 +173,11 @@
 ; memory access pattern are identical either way. This is the primitive
 ; behind every "reduce once if the result overflowed" step.
 ; Returns: Int
-(defn bn-cond-sub ((a Words) (b Words) (n Int) (cond Int))
+(defn bn-cond-sub ((a Words) (b Words) (n Int) (condition Int))
   (let scratch (bn-alloc n)
     (begin
       (bn-sub scratch a b n)
-      (bn-cond-copy a scratch n (ct-mask cond))
+      (bn-cond-copy a scratch n (ct-mask condition))
       0)))
 
 ; ===========================================================================

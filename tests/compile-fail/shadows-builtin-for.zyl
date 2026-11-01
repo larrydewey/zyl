@@ -1,0 +1,7 @@
+; expect-error: E_SHADOWS_BUILTIN
+; expect-at: shadows-builtin-for.zyl:6:12
+; A for variable named like a built-in.
+(defn main ()
+  (let-mut s 0
+    (let _ (for (len 0) (< len 3) (set! s (+ s len)) (set! len (+ len 1)))
+      s)))

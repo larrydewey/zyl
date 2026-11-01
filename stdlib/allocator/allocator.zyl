@@ -222,5 +222,5 @@
 (defn str-length (s)
   (ffi-call "zyl_cstr_len" s 1000))
 
-(defn str-substring (s start len)
-  (ffi-call "zyl_cstr_substr" s start len 1000))
+(defn str-substring (s start size)
+  (ffi-call "zyl_cstr_substr" s start size 1000))

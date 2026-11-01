@@ -95,20 +95,20 @@
         (let v (if (= (bit-and endian 1) 0) val (bb-swap val width)) (let _ (bb-store-le width a v) 1))))))
 
 ; A new slice header over len bytes at data, or 0.
-(defn bb-new-slice (data len)
+(defn bb-new-slice (data size)
   (let s (zyl_rt_malloc 24)
     (if (= s 0) 0
       (let _ (ffi-call "%store64" s (bb-magic-slice) 1)
         (let _ (ffi-call "%store64" (+ s 8) data 1)
-          (let _ (ffi-call "%store64" (+ s 16) len 1) s))))))
+          (let _ (ffi-call "%store64" (+ s 16) size 1) s))))))
 
-(defn zyl_byte_slice (buf start len)
+(defn zyl_byte_slice (buf start size)
   (let h (bb-buf buf)
-    (if (or (= h 0) (not (bb-ok start len (bb-cap h)))) 0 (bb-new-slice (+ (bb-data h) start) len))))
+    (if (or (= h 0) (not (bb-ok start size (bb-cap h)))) 0 (bb-new-slice (+ (bb-data h) start) size))))
 
-(defn zyl_byte_slice_sub (slice start len)
+(defn zyl_byte_slice_sub (slice start size)
   (let p (bb-slice slice)
-    (if (or (= p 0) (not (bb-ok start len (bb-len p)))) 0 (bb-new-slice (+ (bb-data p) start) len))))
+    (if (or (= p 0) (not (bb-ok start size (bb-len p)))) 0 (bb-new-slice (+ (bb-data p) start) size))))
 
 (defn bb-init (h data cap)
   (let _ (ffi-call "%store64" h (bb-magic-buf) 1)

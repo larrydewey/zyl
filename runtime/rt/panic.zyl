@@ -69,17 +69,17 @@
 (defn pn-line-len (p i) (let b (rt-ld8 (+ p i)) (if (or (= b 0) (= b 10)) i (pn-line-len p (+ i 1)))))
 
 ; strncpy to 127 bytes plus a NUL; the 257th registration is dropped.
-(defn zyl_register_test (name fn)
+(defn zyl_register_test (name entry)
   (let st (pn-tstate)
     (let n (rt-ld64 st)
       (if (>= n 256) 0
         (let e (+ (pn-tests) (* n 136))
           (let s (rt-w name)
-            (let len (rt-strlen s)
-              (let k (if (> len 127) 127 len)
+            (let size (rt-strlen s)
+              (let k (if (> size 127) 127 size)
                 (let _ (rt-copy e s k)
                   (let _ (rt-st8 (+ e k) 0)
-                    (let _ (rt-st64 (+ e 128) fn)
+                    (let _ (rt-st64 (+ e 128) entry)
                       (let _ (rt-st64 st (+ n 1)) 0))))))))))))
 
 (defn pn-int-text (n) (zyl_int_text n))
@@ -254,13 +254,13 @@
       (let w (pn-warn)
         (if (= (rt-ld64 (+ w 24)) 0)
           (let _ (rt-write-fd 2 m n) (let _ (rt-write-fd 2 (rt-w "\n") 1) 0))
-          (let len (rt-ld64 (+ w 8))
-            (if (pn-warn-fit w (+ (+ len n) 2))
+          (let size (rt-ld64 (+ w 8))
+            (if (pn-warn-fit w (+ (+ size n) 2))
               (let b (rt-ld64 w)
-                (let _ (rt-copy (+ b len) m n)
-                  (let _ (rt-st8 (+ b (+ len n)) 10)
-                    (let _ (rt-st8 (+ b (+ len (+ n 1))) 0)
-                      (let _ (rt-st64 (+ w 8) (+ len (+ n 1))) 0)))))
+                (let _ (rt-copy (+ b size) m n)
+                  (let _ (rt-st8 (+ b (+ size n)) 10)
+                    (let _ (rt-st8 (+ b (+ size (+ n 1))) 0)
+                      (let _ (rt-st64 (+ w 8) (+ size (+ n 1))) 0)))))
               0)))))))
 
 ; Grows the buffer (doubling from 1024) to hold need bytes; false when realloc fails.
@@ -275,11 +275,11 @@
 
 (defn zyl_warn_take ()
   (let w (pn-warn)
-    (let len (rt-ld64 (+ w 8))
-      (let out (zyl_rt_malloc (+ len 1))
+    (let size (rt-ld64 (+ w 8))
+      (let out (zyl_rt_malloc (+ size 1))
         (if (= out 0) (rt-w "")
-          (let _ (if (> len 0) (rt-copy out (rt-ld64 w) len) 0)
-            (let _ (rt-st8 (+ out len) 0)
+          (let _ (if (> size 0) (rt-copy out (rt-ld64 w) size) 0)
+            (let _ (rt-st8 (+ out size) 0)
               (let _ (rt-st64 (+ w 8) 0) out))))))))
 
 ; s as a quoted JSON string literal (malloc'd).

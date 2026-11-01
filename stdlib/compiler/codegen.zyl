@@ -1207,12 +1207,12 @@
   (cg-has-at name 0 (ffi-call "zyl_cstr_len" name 1000)))
 
 ; Byte loops read through the known length; zyl_cstr_byte_at re-measures the string per call.
-(defn cg-has-at (name i len)
-  (if (>= i len)
+(defn cg-has-at (name i size)
+  (if (>= i size)
     false
-    (if (= (ffi-call "zyl_view_byte" name 0 len i 1000) 64)
+    (if (= (ffi-call "zyl_view_byte" name 0 size i 1000) 64)
       true
-      (cg-has-at name (+ i 1) len))))
+      (cg-has-at name (+ i 1) size))))
 
 (defn cg-cat2 (arena a b)
   (let buf (buf-new arena (+ (alloc-strlen a) (+ (alloc-strlen b) 1)))
@@ -1889,12 +1889,12 @@
   (> (ffi-call "zyl_smap_get" secret-marks (str-concat "w|" (cg-base-name name 0 (ffi-call "zyl_cstr_len" name 1000))) 1000) 0))
 
 ; A specialized instance `f~T` is wiped like `f`.
-(defn cg-base-name (n i len)
-  (if (>= i len)
+(defn cg-base-name (n i size)
+  (if (>= i size)
     n
-    (if (= (ffi-call "zyl_view_byte" n 0 len i 1000) 126)
+    (if (= (ffi-call "zyl_view_byte" n 0 size i 1000) 126)
       (str-substring n 0 i)
-      (cg-base-name n (+ i 1) len))))
+      (cg-base-name n (+ i 1) size))))
 
 (defn cg-body-exit (st env body fsz np wipe rflags)
   (if wipe
@@ -2076,23 +2076,23 @@
 ;; would need escaping inside a GAS string (a quote, a backslash, a
 ;; control character).
 (defn cg-file-name (path)
-  (let len (ffi-call "zyl_cstr_len" path 1000)
-    (let start (cg-after-last-slash path 0 0 len)
-      (if (>= start len)
+  (let size (ffi-call "zyl_cstr_len" path 1000)
+    (let start (cg-after-last-slash path 0 0 size)
+      (if (>= start size)
         "main.zyl"
-        (if (cg-file-name-bad path start len)
+        (if (cg-file-name-bad path start size)
           "main.zyl"
-          (str-substring path start (- len start)))))))
+          (str-substring path start (- size start)))))))
 
-(defn cg-after-last-slash (path i acc len)
-  (if (>= i len)
+(defn cg-after-last-slash (path i acc size)
+  (if (>= i size)
     acc
     (if (= (ffi-call "zyl_cstr_byte_at" path i 1000) 47)
-      (cg-after-last-slash path (+ i 1) (+ i 1) len)
-      (cg-after-last-slash path (+ i 1) acc len))))
+      (cg-after-last-slash path (+ i 1) (+ i 1) size)
+      (cg-after-last-slash path (+ i 1) acc size))))
 
-(defn cg-file-name-bad (path i len)
-  (if (>= i len)
+(defn cg-file-name-bad (path i size)
+  (if (>= i size)
     false
     (let c (ffi-call "zyl_cstr_byte_at" path i 1000)
       (if (< c 32)
@@ -2101,7 +2101,7 @@
           true
           (if (= c 92)
             true
-            (cg-file-name-bad path (+ i 1) len)))))))
+            (cg-file-name-bad path (+ i 1) size)))))))
 
 (defn cg-program-run (st fns)
   (let st1 (cg-header st)
@@ -2153,19 +2153,19 @@
 
 ; The source name: the symbol after the last `::` of a canonical key, cut at a specialization's `~`.
 (defn cg-display-name (nm)
-  (let len (cg-before-tilde nm 0 (ffi-call "zyl_cstr_len" nm 1000))
-    (let start (cg-after-last-colons nm 0 0 len)
-      (if (and (= start 0) (= len (ffi-call "zyl_cstr_len" nm 1000))) nm (str-substring nm start (- len start))))))
+  (let size (cg-before-tilde nm 0 (ffi-call "zyl_cstr_len" nm 1000))
+    (let start (cg-after-last-colons nm 0 0 size)
+      (if (and (= start 0) (= size (ffi-call "zyl_cstr_len" nm 1000))) nm (str-substring nm start (- size start))))))
 
-(defn cg-before-tilde (nm i len)
-  (if (>= i len) len (if (= (ffi-call "zyl_view_byte" nm 0 len i 1000) 126) i (cg-before-tilde nm (+ i 1) len))))
+(defn cg-before-tilde (nm i size)
+  (if (>= i size) size (if (= (ffi-call "zyl_view_byte" nm 0 size i 1000) 126) i (cg-before-tilde nm (+ i 1) size))))
 
-(defn cg-after-last-colons (nm i acc len)
-  (if (>= (+ i 1) len)
+(defn cg-after-last-colons (nm i acc size)
+  (if (>= (+ i 1) size)
     acc
-    (if (and (= (ffi-call "zyl_view_byte" nm 0 len i 1000) 58) (= (ffi-call "zyl_view_byte" nm 0 len (+ i 1) 1000) 58))
-      (cg-after-last-colons nm (+ i 2) (+ i 2) len)
-      (cg-after-last-colons nm (+ i 1) acc len))))
+    (if (and (= (ffi-call "zyl_view_byte" nm 0 size i 1000) 58) (= (ffi-call "zyl_view_byte" nm 0 size (+ i 1) 1000) 58))
+      (cg-after-last-colons nm (+ i 2) (+ i 2) size)
+      (cg-after-last-colons nm (+ i 1) acc size))))
 
 ; Reverse the collected rodata list so entries emit in creation order.
 (defn cg-reverse-rodata (xs)

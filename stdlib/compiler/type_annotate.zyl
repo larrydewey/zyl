@@ -258,7 +258,7 @@
 ; the stdlib module that would define it, "" when none does (a typo, or a
 ; name out of scope) -- the cause a group shares.
 (deftype TAUnb (TAUnb String Expr String String))
-(defn make-TAUnb (n node help module) (TAUnb n node help module))
+(defn make-TAUnb (n node help mod) (TAUnb n node help mod))
 (defn TAUnb.name (e) (match e (TAUnb n _ _ _ n)))
 (defn TAUnb.node (e) (match e (TAUnb _ node _ _ node)))
 (defn TAUnb.help (e) (match e (TAUnb _ _ h _ h)))
@@ -305,8 +305,8 @@
                                   (ta-unbound-help st env n) (err-stdlib-module-of n))))
     (ta-poisoned-var st)))
 
-(defn ta-unbound-remember (name node help module)
-  (let _ (ffi-call "zyl_wvec_push" ta-unbound-pending (make-TAUnb name node help module) 1000)
+(defn ta-unbound-remember (name node help mod)
+  (let _ (ffi-call "zyl_wvec_push" ta-unbound-pending (make-TAUnb name node help mod) 1000)
     unit))
 
 ; One message per group: the first name of a group speaks, and every other
@@ -892,12 +892,12 @@
         (match (Expr.inner e)
           (EDeftype name _ _ _ (ta-put2 (ta-types st) name (TaTd name Nil false 0)))
           (EDefn name _ _ (let _ (ta-add-fn st name e) unit))
-          (EImplBlock trait type bodies (ta-add-impls st trait type bodies))
+          (EImplBlock tr type bodies (ta-add-impls st tr type bodies))
           (_ unit))
         (ta-collect-a st rest)))))
 
 ; Impl methods by dotted `Trait.method`: (List (Pair type mangled)).
-(defn ta-add-impls (st trait type bodies)
+(defn ta-add-impls (st tr type bodies)
   (match bodies
     (Nil unit)
     (Cons ib rest
@@ -905,8 +905,8 @@
         (match ib
           (IB dn
             (match dn
-              (DN mname _ _ (ta-add-impl st (str-concat trait (str-concat "." mname)) type)))))
-        (ta-add-impls st trait type rest)))))
+              (DN mname _ _ (ta-add-impl st (str-concat tr (str-concat "." mname)) type)))))
+        (ta-add-impls st tr type rest)))))
 
 (defn ta-add-impl (st dotted type)
   (let old (ta-sget-or (ta-impls st) dotted Nil)
@@ -1309,7 +1309,7 @@
     (EStructGet se field (ta-struct-get st ctx env se field e))
     (ETuple elems (ta-tuple st ctx env e elems))
     (ETupleGet t i (ta-tuple-get st ctx env e t i))
-    (EFor bindings cond body (ta-for st ctx env bindings cond body))
+    (EFor bindings condition body (ta-for st ctx env bindings condition body))
     ; (ffi-pin v) copies v's word into a slot in the Pin region and gives
     ; the slot's address, a (Pin a); (ffi-unpin p) reads the value back.
     ; A function is not FFI_Pinnable (spec 16).
@@ -1460,16 +1460,16 @@
         (_ false)))
     (_ false)))
 
-(defn ta-for (st ctx env bindings cond body)
+(defn ta-for (st ctx env bindings condition body)
   (match bindings
-    (Nil (let _ (ta-cond-bool st ctx env cond "for")
+    (Nil (let _ (ta-cond-bool st ctx env condition "for")
            (let _ (ta-expr st ctx env body)
              (ta-stmt))))
     (Cons pr rest
       (match pr
         (Pair name initOpt
           (let t (match initOpt (Some x (ta-expr st ctx env x)) (None (ta-int)))
-            (ta-for st ctx (Cons (Pair name t) env) rest cond body)))))))
+            (ta-for st ctx (Cons (Pair name t) env) rest condition body)))))))
 
 ; --- calls --------------------------------------------------------------------
 
@@ -2132,11 +2132,11 @@
   (if (ta-str-in n seen) false
     (ta-ctors-float st n (Cons n seen) 0 (ffi-call "zyl_wvec_len" ta-ctor-names 1000))))
 
-(defn ta-ctors-float (st n seen i len)
-  (if (>= i len) false
+(defn ta-ctors-float (st n seen i size)
+  (if (>= i size) false
     (match (ta-sget-or (ta-variants st) (ffi-call "zyl_wvec_get" ta-ctor-names i 1000) (ta-no-vd))
       (TaVd tn _ t _ _ _
-        (if (and (ta-streq tn n) (ta-fields-float st t seen)) true (ta-ctors-float st n seen (+ i 1) len))))))
+        (if (and (ta-streq tn n) (ta-fields-float st t seen)) true (ta-ctors-float st n seen (+ i 1) size))))))
 
 (defn ta-fields-float (st t seen)
   (match t

@@ -80,7 +80,7 @@
 ; THE SCAN
 ; ===========================================================================
 
-(defn sb-byte ((src String) (len Int) (i Int)) (ffi-call "zyl_view_byte" src 0 len i 1000))
+(defn sb-byte ((src String) (size Int) (i Int)) (ffi-call "zyl_view_byte" src 0 size i 1000))
 
 (defn sb-opener-p ((c Int)) (or (= c 40) (or (= c 91) (= c 123))))
 (defn sb-closer-p ((c Int)) (or (= c 41) (or (= c 93) (= c 125))))
@@ -93,24 +93,24 @@
 ; i: byte index; line: its line; ls: index where that line starts; fresh:
 ; no token seen yet on this line; stack: open frames, innermost first;
 ; anom: the first indentation contradiction in the open top-level form.
-(defn sb-scan ((src String) (len Int) (i Int) (line Int) (ls Int) (fresh Bool) stack (anom Int) (strict Bool))
-  (if (>= i len) (sb-eof stack anom)
-    (let c (sb-byte src len i)
-      (if (= c 10) (sb-scan src len (+ i 1) (+ line 1) (+ i 1) true stack anom strict)
-        (if (or (= c 32) (or (= c 9) (= c 13))) (sb-scan src len (+ i 1) line ls fresh stack anom strict)
-          (if (= c 59) (sb-scan src len (sb-line-end src len i) line ls fresh stack anom strict)
-            (sb-token src len i line ls fresh stack anom strict c (+ (- i ls) 1))))))))
+(defn sb-scan ((src String) (size Int) (i Int) (line Int) (ls Int) (fresh Bool) stack (anom Int) (strict Bool))
+  (if (>= i size) (sb-eof stack anom)
+    (let c (sb-byte src size i)
+      (if (= c 10) (sb-scan src size (+ i 1) (+ line 1) (+ i 1) true stack anom strict)
+        (if (or (= c 32) (or (= c 9) (= c 13))) (sb-scan src size (+ i 1) line ls fresh stack anom strict)
+          (if (= c 59) (sb-scan src size (sb-line-end src size i) line ls fresh stack anom strict)
+            (sb-token src size i line ls fresh stack anom strict c (+ (- i ls) 1))))))))
 
 ; The first byte of a token at column col.
-(defn sb-token ((src String) (len Int) (i Int) (line Int) (ls Int) (fresh Bool) stack (anom Int) (strict Bool) (c Int) (col Int))
+(defn sb-token ((src String) (size Int) (i Int) (line Int) (ls Int) (fresh Bool) stack (anom Int) (strict Bool) (c Int) (col Int))
   (if (and strict (and fresh (and (= col 1) (and (sb-opener-p c) (not (sb-empty stack))))))
     (sb-outermost stack line anom)
     (let a (if (and fresh (= anom 0)) (sb-contradiction stack c col line) anom)
-      (if (= c 34) (sb-string src len (+ i 1) line ls stack a strict line col)
+      (if (= c 34) (sb-string src size (+ i 1) line ls stack a strict line col)
         (if (sb-opener-p c)
-          (sb-scan src len (+ i 1) line ls false (Cons (SBFrame (sb-closer-of c) line col) stack) a strict)
-          (if (sb-closer-p c) (sb-close src len i line ls stack a strict c col)
-            (sb-scan src len (+ i 1) line ls false stack a strict)))))))
+          (sb-scan src size (+ i 1) line ls false (Cons (SBFrame (sb-closer-of c) line col) stack) a strict)
+          (if (sb-closer-p c) (sb-close src size i line ls stack a strict c col)
+            (sb-scan src size (+ i 1) line ls false stack a strict)))))))
 
 ; `line` when its first token, at col and not a closer, sits at or left of
 ; the innermost open bracket; else 0.
@@ -119,22 +119,22 @@
     (Nil 0)
     (Cons f _ (match f (SBFrame _ _ oc (if (and (not (sb-closer-p c)) (<= col oc)) line 0))))))
 
-(defn sb-close ((src String) (len Int) (i Int) (line Int) (ls Int) stack (anom Int) (strict Bool) (c Int) (col Int))
+(defn sb-close ((src String) (size Int) (i Int) (line Int) (ls Int) stack (anom Int) (strict Bool) (c Int) (col Int))
   (match stack
     (Nil (UnbalancedClose (sb-text c) line col))
     (Cons f rest
       (match f
         (SBFrame want ol oc
           (if (= want c)
-            (sb-scan src len (+ i 1) line ls false rest (if (sb-empty rest) 0 anom) strict)
+            (sb-scan src size (+ i 1) line ls false rest (if (sb-empty rest) 0 anom) strict)
             (MismatchedPair (sb-text want) (sb-text c) line col ol oc)))))))
 
 ; Inside a string opened at sl:sc; i is just past its quote.
-(defn sb-string ((src String) (len Int) (i Int) (line Int) (ls Int) stack (anom Int) (strict Bool) (sl Int) (sc Int))
-  (let e (sb-string-end src len i)
+(defn sb-string ((src String) (size Int) (i Int) (line Int) (ls Int) stack (anom Int) (strict Bool) (sl Int) (sc Int))
+  (let e (sb-string-end src size i)
     (if (< e 0) (UnbalancedOpenString sl sc)
-      (let nl (sb-nl-last src len i e)
-        (sb-scan src len e (+ line (sb-nl-count src len i e 0)) (if (< nl 0) ls (+ nl 1)) false stack anom strict)))))
+      (let nl (sb-nl-last src size i e)
+        (sb-scan src size e (+ line (sb-nl-count src size i e 0)) (if (< nl 0) ls (+ nl 1)) false stack anom strict)))))
 
 ; ===========================================================================
 ; THE LEXICAL RULES -- the one implementation every scanner uses
@@ -148,22 +148,22 @@
 ; Just past the `"` that ends the string whose contents start at i, or -1
 ; when the text ends first. A backslash takes the next byte, a newline
 ; included.
-(defn sb-string-end ((src String) (len Int) (i Int))
-  (if (>= i len) -1
-    (let c (sb-byte src len i)
-      (if (= c 92) (sb-string-end src len (+ i 2))
-        (if (= c 34) (+ i 1) (sb-string-end src len (+ i 1)))))))
+(defn sb-string-end ((src String) (size Int) (i Int))
+  (if (>= i size) -1
+    (let c (sb-byte src size i)
+      (if (= c 92) (sb-string-end src size (+ i 2))
+        (if (= c 34) (+ i 1) (sb-string-end src size (+ i 1)))))))
 
 ; Index of the newline ending the line at i (a `;` comment's end), or len.
-(defn sb-line-end ((src String) (len Int) (i Int))
-  (if (>= i len) len (if (= (sb-byte src len i) 10) i (sb-line-end src len (+ i 1)))))
+(defn sb-line-end ((src String) (size Int) (i Int))
+  (if (>= i size) size (if (= (sb-byte src size i) 10) i (sb-line-end src size (+ i 1)))))
 
 ; Newlines in [i, j), and the index of the last one (-1: none).
-(defn sb-nl-count ((src String) (len Int) (i Int) (j Int) (acc Int))
-  (if (>= i j) acc (sb-nl-count src len (+ i 1) j (if (= (sb-byte src len i) 10) (+ acc 1) acc))))
+(defn sb-nl-count ((src String) (size Int) (i Int) (j Int) (acc Int))
+  (if (>= i j) acc (sb-nl-count src size (+ i 1) j (if (= (sb-byte src size i) 10) (+ acc 1) acc))))
 
-(defn sb-nl-last ((src String) (len Int) (i Int) (j Int))
-  (if (<= j i) -1 (if (= (sb-byte src len (- j 1)) 10) (- j 1) (sb-nl-last src len i (- j 1)))))
+(defn sb-nl-last ((src String) (size Int) (i Int) (j Int))
+  (if (<= j i) -1 (if (= (sb-byte src size (- j 1)) 10) (- j 1) (sb-nl-last src size i (- j 1)))))
 
 (defn sb-ws-p ((c Int)) (or (= c 32) (or (= c 9) (= c 13))))
 
@@ -180,34 +180,34 @@
 (defn SbLine.first (l) (match l (SbL _ _ _ f f)))
 
 (defn sb-line-info ((l String) (instr Bool))
-  (let len (str-length l)
+  (let size (str-length l)
     (if instr
-      (let e (sb-string-end l len 0)
-        (if (< e 0) (SbL Nil len true -1) (sb-line-from l len e Nil -1)))
-      (sb-line-from l len 0 Nil (sb-first-code l len 0)))))
+      (let e (sb-string-end l size 0)
+        (if (< e 0) (SbL Nil size true -1) (sb-line-from l size e Nil -1)))
+      (sb-line-from l size 0 Nil (sb-first-code l size 0)))))
 
-(defn sb-first-code ((l String) (len Int) (i Int))
-  (if (and (< i len) (sb-ws-p (sb-byte l len i))) (sb-first-code l len (+ i 1)) i))
+(defn sb-first-code ((l String) (size Int) (i Int))
+  (if (and (< i size) (sb-ws-p (sb-byte l size i))) (sb-first-code l size (+ i 1)) i))
 
-(defn sb-line-from ((l String) (len Int) (i Int) acc (first Int))
-  (if (>= i len) (SbL (list-reverse acc) len false first)
-    (let c (sb-byte l len i)
+(defn sb-line-from ((l String) (size Int) (i Int) acc (first Int))
+  (if (>= i size) (SbL (list-reverse acc) size false first)
+    (let c (sb-byte l size i)
       (if (= c 59) (SbL (list-reverse acc) i false first)
         (if (= c 34)
-          (let e (sb-string-end l len (+ i 1))
-            (if (< e 0) (SbL (list-reverse acc) len true first) (sb-line-from l len e acc first)))
+          (let e (sb-string-end l size (+ i 1))
+            (if (< e 0) (SbL (list-reverse acc) size true first) (sb-line-from l size e acc first)))
           (if (or (sb-opener-p c) (sb-closer-p c))
-            (sb-line-from l len (+ i 1) (Cons (+ (* i 256) c) acc) first)
-            (sb-line-from l len (+ i 1) acc first)))))))
+            (sb-line-from l size (+ i 1) (Cons (+ (* i 256) c) acc) first)
+            (sb-line-from l size (+ i 1) acc first)))))))
 
 ; The position just past a skipped string or comment that started at
 ; line:col and covers [i, j): newlines in it advance the line and reset the
 ; column.
-(defn sb-line-after ((src String) (len Int) (i Int) (j Int) (line Int))
-  (+ line (sb-nl-count src len i j 0)))
+(defn sb-line-after ((src String) (size Int) (i Int) (j Int) (line Int))
+  (+ line (sb-nl-count src size i j 0)))
 
-(defn sb-col-after ((src String) (len Int) (i Int) (j Int) (col Int))
-  (let nl (sb-nl-last src len i j)
+(defn sb-col-after ((src String) (size Int) (i Int) (j Int) (col Int))
+  (let nl (sb-nl-last src size i j)
     (if (< nl 0) (+ col (- j i)) (- j (+ nl 1)))))
 
 (defn sb-empty (stack) (match stack (Nil true) (Cons _ _ false)))

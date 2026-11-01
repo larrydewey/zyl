@@ -136,10 +136,10 @@
               (let _ (rt-copy p a ka)
                 (let _ (rt-copy (+ p ka) b (- n ka)) (let _ (rt-st8 (+ p n) 0) p))))))))))
 
-(defn pr-write-all (fd p len)
-  (if (<= len 0) 0
-    (let n (ffi-call "%syscall3" 1 fd p len 1)
-      (if (> n 0) (pr-write-all fd (+ p n) (- len n)) (if (= n -4) (pr-write-all fd p len) 0)))))
+(defn pr-write-all (fd p size)
+  (if (<= size 0) 0
+    (let n (ffi-call "%syscall3" 1 fd p size 1)
+      (if (> n 0) (pr-write-all fd (+ p n) (- size n)) (if (= n -4) (pr-write-all fd p size) 0)))))
 
 (defn pr-write-str (fd w) (pr-write-all fd w (rt-strlen w)))
 
@@ -201,11 +201,11 @@
 
 ; out = asm minus ".s", else asm ++ ".bin"; false when it would not fit 512 bytes.
 (defn pr-out-path (asm out)
-  (let len (rt-strlen asm)
-    (if (and (>= len 2) (and (= (rt-ld8 (+ asm (- len 2))) 46) (= (rt-ld8 (+ asm (- len 1))) 115)))
-      (if (>= (- len 2) 512) false (let _ (rt-copy out asm (- len 2)) (let _ (rt-st8 (+ out (- len 2)) 0) true)))
-      (if (>= (+ len 4) 512) false
-        (let _ (rt-copy out asm len) (let _ (rt-copy (+ out len) (rt-w ".bin") 5) true))))))
+  (let size (rt-strlen asm)
+    (if (and (>= size 2) (and (= (rt-ld8 (+ asm (- size 2))) 46) (= (rt-ld8 (+ asm (- size 1))) 115)))
+      (if (>= (- size 2) 512) false (let _ (rt-copy out asm (- size 2)) (let _ (rt-st8 (+ out (- size 2)) 0) true)))
+      (if (>= (+ size 4) 512) false
+        (let _ (rt-copy out asm size) (let _ (rt-copy (+ out size) (rt-w ".bin") 5) true))))))
 
 (defn zyl_cc_compile (path)
   (let asm (rt-w path)

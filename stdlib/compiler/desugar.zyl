@@ -117,8 +117,43 @@
               (if (ds-byte-opt-p h) (ds-byte-opt a xs)
               (if (str-eq h "vec") (ds-vec a xs)
                 (if (str-eq h "map") (ds-map a xs)
-                  (if (ds-needs-list xs) (ds-list (ds-forms xs) a) a)))))))))))
+                  (let i (ds-binder-at h xs)
+                    (if (and (>= i 0) (ds-needs-list xs)) (ds-list (ds-binder-items xs i (ds-param-list-p h xs)) a)
+                      (if (ds-needs-list xs) (ds-list (ds-forms xs) a) a)))))))))))))
     (_ a)))
+
+; Where a form keeps its binder list, or -1: a list there names locals and is never a form to rewrite.
+(defn ds-binder-at ((h String) xs)
+  (if (or (str-eq h "defn") (or (str-eq h "defun") (or (str-eq h "defmacro") (str-eq h "macro")))) 2
+    (if (or (str-eq h "fn") (or (str-eq h "lambda") (or (str-eq h "let") (or (str-eq h "let-mut") (str-eq h "for"))))) 1
+      (if (str-eq h "pub")
+        (let j (ds-binder-at (ds-head (AList (ds-rest xs 1))) (ds-rest xs 1)) (if (< j 0) -1 (+ j 1)))
+        -1))))
+
+; A parameter list holds one binder per element; a let or for holds one binding.
+(defn ds-param-list-p ((h String) xs)
+  (if (str-eq h "pub") (ds-param-list-p (ds-head (AList (ds-rest xs 1))) (ds-rest xs 1))
+    (not (or (str-eq h "let") (or (str-eq h "let-mut") (str-eq h "for"))))))
+
+(defn ds-binder-items (xs (i Int) (params Bool))
+  (match xs
+    (Nil Nil)
+    (Cons h t
+      (Cons (if (= i 0) (if params (ds-params h) (ds-binding h)) (ds-form h))
+            (ds-binder-items t (- i 1) params)))))
+
+(defn ds-params (b) (match b (AList ys (ds-list (ds-bindings ys) b)) (_ b)))
+
+; A binding keeps its leading name and rewrites the rest (an initializer, a type); a list of bindings, each.
+(defn ds-binding (b)
+  (match b
+    (AList ys
+      (match ys
+        (Cons h t (match h (AList _ (ds-list (ds-bindings ys) b)) (_ (ds-list (Cons h (ds-forms t)) b))))
+        (Nil b)))
+    (_ b)))
+
+(defn ds-bindings (ys) (match ys (Nil Nil) (Cons h t (Cons (ds-binding h) (ds-bindings t)))))
 
 ; (div? a b) => (let x a (let y b (if (= y 0) None (Some (div! x y))))), spec
 ; 20.3: a and b evaluated once, in order, and (Option Int) as the result;
@@ -130,9 +165,9 @@
       (let y (ds-fresh "_dq")
         (let op (if (str-eq (ds-head a) "div?") "div!" "rem!")
           (let whole (ds-list (Cons (ds-id op a) (Cons (ds-id x a) (Cons (ds-id y a) Nil))) a)
-            (let test (ds-list (Cons (ds-id "=" a) (Cons (ds-id y a) (Cons (AstInt 0) Nil))) a)
+            (let test-expr (ds-list (Cons (ds-id "=" a) (Cons (ds-id y a) (Cons (AstInt 0) Nil))) a)
               (let some (ds-list (Cons (ds-id "Some" a) (Cons whole Nil)) a)
-                (let pick (ds-list (Cons (ds-id "if" a) (Cons test (Cons (ds-id "None" a) (Cons some Nil)))) a)
+                (let pick (ds-list (Cons (ds-id "if" a) (Cons test-expr (Cons (ds-id "None" a) (Cons some Nil)))) a)
                   (let inner (ds-list (Cons (ds-id "let" a) (Cons (ds-id y a) (Cons (ds-form (ds-nth xs 2)) (Cons pick Nil)))) a)
                     (ds-list (Cons (ds-id "let" a) (Cons (ds-id x a) (Cons (ds-form (ds-nth xs 1)) (Cons inner Nil)))) a)))))))))
     (ds-fail-help a (str-concat "`" (str-concat (ds-head a) "` takes a dividend and a divisor"))
@@ -170,10 +205,10 @@
     (let y (ds-fresh "_bq")
       (let sel (ds-nth xs 1)
         (let probe (ds-list (Cons (ds-id (str-concat base " query") a) (Cons sel (Cons (ds-id x a) (Cons (ds-id y a) Nil)))) a)
-          (let test (ds-list (Cons (ds-id "=" a) (Cons probe (Cons (AstInt 1) Nil))) a)
+          (let test-expr (ds-list (Cons (ds-id "=" a) (Cons probe (Cons (AstInt 1) Nil))) a)
             (let get (ds-list (Cons (ds-id (str-concat base "!") a) (Cons sel (Cons (ds-id x a) (Cons (ds-id y a) Nil)))) a)
               (let some (ds-list (Cons (ds-id "Some" a) (Cons get Nil)) a)
-                (let pick (ds-list (Cons (ds-id "if" a) (Cons test (Cons some (Cons (ds-id "None" a) Nil)))) a)
+                (let pick (ds-list (Cons (ds-id "if" a) (Cons test-expr (Cons some (Cons (ds-id "None" a) Nil)))) a)
                   (let inner (ds-list (Cons (ds-id "let" a) (Cons (ds-id y a) (Cons (ds-form (ds-nth xs 3)) (Cons pick Nil)))) a)
                     (ds-list (Cons (ds-id "let" a) (Cons (ds-id x a) (Cons (ds-form (ds-nth xs 2)) (Cons inner Nil)))) a)))))))))))
 
@@ -181,9 +216,9 @@
   (let s (ds-fresh "_bq")
     (let put (ds-list (Cons (ds-id (str-concat base " query") a)
                 (Cons (ds-nth xs 1) (Cons (ds-form (ds-nth xs 2)) (Cons (ds-form (ds-nth xs 3)) (Cons (ds-form (ds-nth xs 4)) Nil))))) a)
-      (let test (ds-list (Cons (ds-id "=" a) (Cons (ds-id s a) (Cons (AstInt 1) Nil))) a)
+      (let test-expr (ds-list (Cons (ds-id "=" a) (Cons (ds-id s a) (Cons (AstInt 1) Nil))) a)
         (let some (ds-list (Cons (ds-id "Some" a) (Cons (AstInt 1) Nil)) a)
-          (let pick (ds-list (Cons (ds-id "if" a) (Cons test (Cons some (Cons (ds-id "None" a) Nil)))) a)
+          (let pick (ds-list (Cons (ds-id "if" a) (Cons test-expr (Cons some (Cons (ds-id "None" a) Nil)))) a)
             (ds-list (Cons (ds-id "let" a) (Cons (ds-id s a) (Cons put (Cons pick Nil)))) a)))))))
 
 (defn ds-fresh (prefix)

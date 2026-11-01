@@ -151,20 +151,20 @@
 ; starting at `counter`, returning a fresh byte array. Encryption and
 ; decryption are the same operation.
 ; Returns: Words
-(defn chacha20-xor ((key Words) (nonce Words) (counter Int) (msg Words) (len Int))
-  (let out (w-alloc len)
+(defn chacha20-xor ((key Words) (nonce Words) (counter Int) (msg Words) (size Int))
+  (let out (w-alloc size)
     (begin
-      (for (off 0) (< off len)
+      (for (off 0) (< off size)
         (begin
-          (chacha20-xor-block key nonce (+ counter (/ off 64)) msg out off len)
+          (chacha20-xor-block key nonce (+ counter (/ off 64)) msg out off size)
           (set! off (+ off 64))))
       out)))
 
 ; XOR one block's worth of bytes (or fewer, at the end of the message).
 ; Returns: Int
-(defn chacha20-xor-block ((key Words) (nonce Words) (counter Int) (msg Words) (out Words) (off Int) (len Int))
+(defn chacha20-xor-block ((key Words) (nonce Words) (counter Int) (msg Words) (out Words) (off Int) (size Int))
   (let ks (chacha20-block key nonce counter)
-    (let n (if (< (- len off) 64) (- len off) 64)
+    (let n (if (< (- size off) 64) (- size off) 64)
       (begin
         (for (i 0) (< i n)
           (begin

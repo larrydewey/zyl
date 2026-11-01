@@ -296,8 +296,8 @@
               (if (ax-starts-ci t2 0 "rip")
                 (ax-parse-rip seg size t2)
                 (if (= (ax-ch t2 0) 91)
-                  (let close (ax-indexof t2 93 0)
-                    (ax-mem-terms (OMem seg -1 -1 1 0 0 "" size) t2 1 close))
+                  (let close-at (ax-indexof t2 93 0)
+                    (ax-mem-terms (OMem seg -1 -1 1 0 0 "" size) t2 1 close-at))
                   (ax-parse-fsbare seg size t2))))))))))
 
 (defn ax-parse-rip (seg size t2)
@@ -863,7 +863,7 @@
 
 ; ----- iterate lines of a source -----
 ; O(1) byte access on the whole source (zyl_cstr_byte_at re-measures strlen).
-(defn ax-vch (s len i) (ffi-call "zyl_view_byte" s 0 len i 1000))
+(defn ax-vch (s size i) (ffi-call "zyl_view_byte" s 0 size i 1000))
 (defn ax-find-nl (s i n) (if (>= i n) n (if (= (ax-vch s n i) 10) i (ax-find-nl s (+ i 1) n))))
 
 (defn ax-each-line (src i n handler)

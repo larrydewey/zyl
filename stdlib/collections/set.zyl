@@ -43,22 +43,22 @@
 (defn set-add ((s Set) (k Int))
   (if (>= (set-find s k 0) 0)
     s
-    (let len (set-len s)
-      (if (>= len (set-cap s))
+    (let size (set-len s)
+      (if (>= size (set-cap s))
         (let new-cap (if (<= (set-cap s) 0) 16 (* (set-cap s) 2))
           (let new-ptr (w-alloc new-cap)
             (let old-ptr (struct-get s "ptr")
               (begin
-                (for (j 0) (< j len)
+                (for (j 0) (< j size)
                   (begin
                     (w-set new-ptr j (w-get old-ptr j))
                     (set! j (+ j 1))))
-                (w-set new-ptr len k)
-                (make-Set new-ptr (+ len 1) new-cap)))))
+                (w-set new-ptr size k)
+                (make-Set new-ptr (+ size 1) new-cap)))))
         (let new-ptr (struct-get s "ptr")
           (begin
-            (w-set new-ptr len k)
-            (make-Set new-ptr (+ len 1) (struct-get s "cap"))))))))
+            (w-set new-ptr size k)
+            (make-Set new-ptr (+ size 1) (struct-get s "cap"))))))))
 
 ; Remove k. Compacts the array so iteration order stays dense.
 ; Returns: Set
@@ -66,11 +66,11 @@
   (let idx (set-find s k 0)
     (if (< idx 0)
       s
-      (let len (set-len s)
+      (let size (set-len s)
         (let new-ptr (struct-get s "ptr")
           (begin
-            (for (j idx) (< j (- len 1))
+            (for (j idx) (< j (- size 1))
               (begin
                 (w-set new-ptr j (w-get new-ptr (+ j 1)))
                 (set! j (+ j 1))))
-            (make-Set new-ptr (- len 1) (struct-get s "cap"))))))))
+            (make-Set new-ptr (- size 1) (struct-get s "cap"))))))))

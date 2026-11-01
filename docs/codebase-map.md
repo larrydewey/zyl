@@ -98,7 +98,7 @@ in `docs/compiler-pipeline.md`.
 | `lexer.zyl` | Tokenizer; every token carries its source byte offset |
 | `sexp_balance.zyl` | Delimiter check (spec §1.6): the lexer's string and comment rules, bracket kinds, the column-1 layout rule, the indentation hint, NUL detection and the whole-file reader; `zyl balance` runs it on its own |
 | `parser.zyl` | Dispatch-free reader: tokens to nested `Ast` lists |
-| `desugar.zyl` | Parse-tree rewrites of `with-resource`, `assert-fail`, `test-suite` (with fixtures) and `test-property` into ordinary forms |
+| `desugar.zyl` | Parse-tree rewrites of `with-resource`, `assert-fail`, `test-suite` (with fixtures) and `test-property` into ordinary forms; a binder list (parameters, a `let` or `for` binding) is never rewritten |
 | `ast.zyl` | `Token`, `Ast`, and the immutable `Env`/`VTable` chains |
 | `expr_inner.zyl` | `Ast` to `ExprInner`: recognizes every special form (`convert-ast`, `dispatch-special`); records declared field types and `extern` signatures (`extern-table`) for the type pass; lowers contracts |
 | `module_resolver.zyl` | Resolves the `use` graph into one compilation unit (discovery, then qualification); calls `reserved_check.zyl` on the raw forms of every module outside the standard library and the runtime |
@@ -111,6 +111,7 @@ in `docs/compiler-pipeline.md`.
 
 | File | Responsibility |
 |---|---|
+| `shadow_check.zyl` | `E_SHADOWS_BUILTIN` (spec §1.3.2): a local binder named like a built-in, on every module, the standard library and runtime included |
 | `capability_check.zyl` | Package capability enforcement (§31.9) |
 | `duplicate_check.zyl` | `E_DUPLICATE_DEFINITION` for repeated top-level `defn`/`deftype`; `E_DUPLICATE_VARIANT` for a program type that reuses a prelude constructor name |
 | `arity_check.zyl` | `E_ARITY_MISMATCH` for direct calls to known top-level functions; `E_MALFORMED_FORM` for a special form its parser rejected; the `ffi-call` shape checks and `E_FFI_RESTRICTED` for a raw runtime entry named outside the standard library |

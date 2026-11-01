@@ -870,12 +870,12 @@
 (defn lsp-count-lines (text)
   (lsp-count-lines-loop text 0 0 (str-length text)))
 
-(defn lsp-count-lines-loop (text i n len)
-  (if (>= i len)
+(defn lsp-count-lines-loop (text i n size)
+  (if (>= i size)
     n
     (if (= (ffi-call "zyl_cstr_byte_at" text i 1000) 10)
-      (lsp-count-lines-loop text (+ i 1) (+ n 1) len)
-      (lsp-count-lines-loop text (+ i 1) n len))))
+      (lsp-count-lines-loop text (+ i 1) (+ n 1) size)
+      (lsp-count-lines-loop text (+ i 1) n size))))
 
 (defn lsp-req-prepare-rename (arena dm ws id paramsOpt)
   (let uri (lsp-text-document-uri paramsOpt)

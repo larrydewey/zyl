@@ -123,15 +123,15 @@
     (let _ (jr-write-string-loop sb s 0 0 (str-length s))
       (jr-put sb "\""))))
 
-(defn jr-write-string-loop (sb s start i len)
-  (if (>= i len)
+(defn jr-write-string-loop (sb s start i size)
+  (if (>= i size)
     (jr-flush-run sb s start i)
     (let esc (jr-escape-of (ffi-call "zyl_cstr_byte_at" s i 1000))
       (if (= (str-length esc) 0)
-        (jr-write-string-loop sb s start (+ i 1) len)
+        (jr-write-string-loop sb s start (+ i 1) size)
         (let _ (jr-flush-run sb s start i)
           (let _ (jr-put sb esc)
-            (jr-write-string-loop sb s (+ i 1) (+ i 1) len)))))))
+            (jr-write-string-loop sb s (+ i 1) (+ i 1) size)))))))
 
 (defn jr-flush-run (sb s start i)
   (if (> i start) (jr-put sb (str-substring s start (- i start))) 0))
@@ -296,8 +296,8 @@
         (_ (if (or (= ch 45) (and (>= ch 48) (<= ch 57))) (jr-parse-number s c) (JV JNull (+ c 1))))))))
 
 (defn jr-skip-whitespace (s pos)
-  (let len (str-length s)
-    (if (>= pos len)
+  (let size (str-length s)
+    (if (>= pos size)
       pos
       (let c (ffi-call "zyl_cstr_byte_at" s pos 1000)
         (if (or (= c 32) (or (= c 9) (or (= c 10) (= c 13)))) (jr-skip-whitespace s (+ pos 1)) pos)))))
@@ -305,11 +305,11 @@
 (defn jr-starts-with (s pos prefix)
   (jr-starts-with-loop s pos prefix 0 (str-length prefix)))
 
-(defn jr-starts-with-loop (s pos prefix i len)
-  (if (>= i len)
+(defn jr-starts-with-loop (s pos prefix i size)
+  (if (>= i size)
     true
     (if (= (ffi-call "zyl_cstr_byte_at" s (+ pos i) 1000) (ffi-call "zyl_cstr_byte_at" prefix i 1000))
-      (jr-starts-with-loop s pos prefix (+ i 1) len)
+      (jr-starts-with-loop s pos prefix (+ i 1) size)
       false)))
 
 ; A string's text, from just after its opening quote. The common case, no
@@ -318,24 +318,24 @@
 ; kept as they are, so UTF-8 in a document survives, and a \u escape
 ; becomes the code point's UTF-8 bytes (a surrogate pair is combined).
 (defn jr-parse-string (s pos)
-  (let len (str-length s)
-    (let end (jr-plain-end s pos len)
-      (if (and (< end len) (= (ffi-call "zyl_cstr_byte_at" s end 1000) 34))
+  (let size (str-length s)
+    (let end (jr-plain-end s pos size)
+      (if (and (< end size) (= (ffi-call "zyl_cstr_byte_at" s end 1000) 34))
         (JV (JStr (str-substring s pos (- end pos))) (+ end 1))
         (with-resource (sb (make-string-buffer))
-          (let after (jr-parse-string-loop sb s pos pos len)
+          (let after (jr-parse-string-loop sb s pos pos size)
             (JV (JStr (str-substring (string-buffer-str sb) 0 (string-buffer-len sb))) after)))))))
 
 ; The first quote or backslash at or after i (or len).
-(defn jr-plain-end (s i len)
-  (if (>= i len)
-    len
+(defn jr-plain-end (s i size)
+  (if (>= i size)
+    size
     (let c (ffi-call "zyl_cstr_byte_at" s i 1000)
-      (if (or (= c 34) (= c 92)) i (jr-plain-end s (+ i 1) len)))))
+      (if (or (= c 34) (= c 92)) i (jr-plain-end s (+ i 1) size)))))
 
 ; Returns the position after the closing quote.
-(defn jr-parse-string-loop (sb s start i len)
-  (if (>= i len)
+(defn jr-parse-string-loop (sb s start i size)
+  (if (>= i size)
     (let _ (jr-flush-run sb s start i) i)
     (let c (ffi-call "zyl_cstr_byte_at" s i 1000)
       (if (= c 34)
@@ -343,8 +343,8 @@
         (if (= c 92)
           (let _ (jr-flush-run sb s start i)
             (let next (jr-parse-escape sb s (+ i 1))
-              (jr-parse-string-loop sb s next next len)))
-          (jr-parse-string-loop sb s start (+ i 1) len))))))
+              (jr-parse-string-loop sb s next next size)))
+          (jr-parse-string-loop sb s start (+ i 1) size))))))
 
 ; Writes the escape at i (just after its backslash); returns the position after it.
 (defn jr-parse-escape (sb s i)
@@ -395,15 +395,15 @@
 (defn jr-hex-to-int (s)
   (jr-hex-to-int-loop s 0 0 (str-length s)))
 
-(defn jr-hex-to-int-loop (s i acc len)
-  (if (>= i len)
+(defn jr-hex-to-int-loop (s i acc size)
+  (if (>= i size)
     acc
     (let c (ffi-call "zyl_cstr_byte_at" s i 1000)
       (let val
         (if (and (>= c 48) (<= c 57)) (- c 48)
           (if (and (>= c 97) (<= c 102)) (- c 87)
             (if (and (>= c 65) (<= c 70)) (- c 55) 0)))
-        (jr-hex-to-int-loop s (+ i 1) (+ (* acc 16) val) len)))))
+        (jr-hex-to-int-loop s (+ i 1) (+ (* acc 16) val) size)))))
 
 (defn jr-parse-number (s pos)
   (let end (jr-number-end s pos (str-length s))
@@ -412,21 +412,21 @@
         (JV (JFloat num-str) end)
         (JV (JInt (ffi-call "zyl_cstr_to_int" num-str 1000)) end)))))
 
-(defn jr-number-end (s i len)
-  (if (>= i len)
+(defn jr-number-end (s i size)
+  (if (>= i size)
     i
     (let c (ffi-call "zyl_cstr_byte_at" s i 1000)
       (if (or (and (>= c 48) (<= c 57)) (or (= c 46) (or (= c 101) (or (= c 69) (or (= c 43) (= c 45))))))
-        (jr-number-end s (+ i 1) len)
+        (jr-number-end s (+ i 1) size)
         i))))
 
 (defn jr-has-char (s c)
   (jr-has-char-loop s c 0 (str-length s)))
 
-(defn jr-has-char-loop (s c i len)
-  (if (>= i len)
+(defn jr-has-char-loop (s c i size)
+  (if (>= i size)
     false
-    (if (= (ffi-call "zyl_cstr_byte_at" s i 1000) c) true (jr-has-char-loop s c (+ i 1) len))))
+    (if (= (ffi-call "zyl_cstr_byte_at" s i 1000) c) true (jr-has-char-loop s c (+ i 1) size))))
 
 (defn jr-parse-array (s pos)
   (jr-parse-array-loop s (jr-skip-whitespace s pos) Nil))
@@ -513,8 +513,8 @@
   (let s (file-read 0 1)
     (if (= (str-length s) 0) -1 (ffi-call "zyl_cstr_byte_at" s 0 1000))))
 
-(defn jr-read-body (len)
-  (jr-read-body-loop len "")
+(defn jr-read-body (size)
+  (jr-read-body-loop size "")
 
 )
 
@@ -538,19 +538,19 @@
 ; ===========================================================================
 
 (defn str-trim (s)
-  (let len (str-length s)
-    (let start (str-trim-start s 0 len)
-      (let end (str-trim-end s (- len 1))
+  (let size (str-length s)
+    (let start (str-trim-start s 0 size)
+      (let end (str-trim-end s (- size 1))
         (if (> end start) (str-substring s start (- end start)) "")))))
 
 (defn str-trim-byte-ws (b)
   (or (= b 32) (or (= b 9) (or (= b 10) (= b 13)))))
 
-(defn str-trim-start (s i len)
-  (if (>= i len)
+(defn str-trim-start (s i size)
+  (if (>= i size)
     i
     (if (str-trim-byte-ws (ffi-call "zyl_cstr_byte_at" s i 1000))
-      (str-trim-start s (+ i 1) len)
+      (str-trim-start s (+ i 1) size)
       i)))
 
 (defn str-trim-end (s i)

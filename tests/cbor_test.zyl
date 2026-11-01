@@ -189,9 +189,9 @@
 
 ; The three fields of a byte string, read out one at a time so a reader that
 ; returned them in the wrong order could not pass by being compared to itself.
-(defn rd-boff (b len) (match (cbor-bytes-at b 0 len) (CS p _ _ p)))
-(defn rd-blen (b len) (match (cbor-bytes-at b 0 len) (CS _ l _ l)))
-(defn rd-bnext (b len) (match (cbor-bytes-at b 0 len) (CS _ _ n n)))
+(defn rd-boff (b size) (match (cbor-bytes-at b 0 size) (CS p _ _ p)))
+(defn rd-blen (b size) (match (cbor-bytes-at b 0 size) (CS _ l _ l)))
+(defn rd-bnext (b size) (match (cbor-bytes-at b 0 size) (CS _ _ n n)))
 
 ; A well-formed map reads back as what went in.
 ;

@@ -160,10 +160,10 @@
   (if (or (< n 0) (> n (hp-limit))) 0
     (let c (hp-class-of (+ n 16))
       (if (>= c 12)
-        (let len (bit-and (+ n 4111) -4096)
-          (if (and charged (not (rt-charge len))) 0
-            (let b (hp-map len)
-              (if (= b 0) (let _ (if charged (rt-refund len) 0) 0) (hp-head b len (hp-tag charged (hp-big)))))))
+        (let size (bit-and (+ n 4111) -4096)
+          (if (and charged (not (rt-charge size))) 0
+            (let b (hp-map size)
+              (if (= b 0) (let _ (if charged (rt-refund size) 0) 0) (hp-head b size (hp-tag charged (hp-big)))))))
         (let sz (shl 32 c)
           (if (and charged (not (rt-charge sz))) 0
             (let b (hp-take c)

@@ -1,0 +1,5 @@
+; expect-error: E_SHADOWS_BUILTIN
+; expect-at: shadows-builtin-map-param.zyl:4:10
+; `map` alone as a parameter list must stay a parameter, not become a map literal.
+(defn f (map) map)
+(defn main () (f 0))

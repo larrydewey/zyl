@@ -131,7 +131,7 @@
 (defn lin-location-value-p (e)
   (match (Expr.inner e)
     (EByteBuf region size true)
-    (EByteSlice base off len true)
+    (EByteSlice base off length true)
     (_ false)))
 
 ; Each fresh allocation gets its OWN class root, not its name.
@@ -161,7 +161,7 @@
 ; correctly starts a class of its own.
 (defn lin-source-of (e)
   (match (Expr.inner e)
-    (EByteSlice base off len (lin-ident-of base))
+    (EByteSlice base off size (lin-ident-of base))
     (EIf c t f (lin-first-source (Cons t (Cons f Nil))))
     (EBegin es (lin-last-source es))
     (EMakeVariant tyname variant args (lin-first-source args))
@@ -349,8 +349,8 @@
     (Cons e rest
       (begin
         (match (Expr.inner e)
-          (EImplBlock trait self _
-            (if (lin-eq-tail trait "Drop") (lin-mark lin-drop-types self) unit))
+          (EImplBlock tr self _
+            (if (lin-eq-tail tr "Drop") (lin-mark lin-drop-types self) unit))
           (_ unit))
         (lin-collect-drops rest)))))
 
@@ -374,9 +374,9 @@
       (if (str-eq r name) name (lin-find-root r)))))
 
 ; Record that `alias` names the same resource as `src`.
-(defn lin-alias (alias src)
+(defn lin-alias (al src)
   (let r (lin-find-root src)
-    (ffi-call "zyl_smap_put" lin-root-store alias r 1000)))
+    (ffi-call "zyl_smap_put" lin-root-store al r 1000)))
 
 (defn lin-consume (name _node)
   (ffi-call "zyl_smap_put" lin-moved-store (lin-find-root name) 1 1000))
@@ -503,8 +503,8 @@
     (EFfiPin e2 (lin-walk e2 env))
     (EFfiUnpin e2 (lin-walk e2 env))
     ; --- bytes, buffers and atomics ---
-    (EByteSlice base off len (begin (lin-walk base env) (lin-walk off env) (lin-walk len env)))
-    (EByteSliceSub base off len (begin (lin-walk base env) (lin-walk off env) (lin-walk len env)))
+    (EByteSlice base off length (begin (lin-walk base env) (lin-walk off env) (lin-walk length env)))
+    (EByteSliceSub base off length (begin (lin-walk base env) (lin-walk off env) (lin-walk length env)))
     (EByteBufAppend buf x (begin (lin-walk buf env) (lin-walk x env) (lin-note-write (lin-ident-of buf) e)))
     (EByteBufLen e2 (lin-walk e2 env))
     (EByteBufCap e2 (lin-walk e2 env))
@@ -530,13 +530,13 @@
     (ERunTests name unit)
     (EModuleDecl name unit)
     (EExport name unit)
-    (EUseModule names alias flags unit)
+    (EUseModule names al flags unit)
     (EDerive name traits unit)
     (EByteLit v unit)
     (EByteBuf region size unit)
     (EDeftype name variants params parent unit)
     (ETraitDecl name methods parent unit)
-    (EImplBlock trait self bodies unit)
+    (EImplBlock tr self bodies unit)
     (EStructDef sd parent unit)
     (EStructDefPlus sd parent unit)))
 

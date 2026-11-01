@@ -32,6 +32,7 @@
 (use compiler/duplicate_check)
 (use compiler/exhaustiveness_check)
 (use compiler/unused_check)
+(use compiler/shadow_check)
 (use compiler/secret_check)
 (use compiler/lift_impls)
 (use compiler/icnf)
@@ -172,6 +173,8 @@
 ; macro introduces is checked like one written by hand.
 (defn compile-run-checks (exprs resolved)
   (begin
+    (dbg-log "shadow-check\n")
+    (bs-check-program exprs)
     (dbg-log "capability-check\n")
     (cc-check-program exprs (mrr-grants resolved) (mrr-denied resolved))
     (dbg-log "duplicate-check\n")

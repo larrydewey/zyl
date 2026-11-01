@@ -41,7 +41,7 @@ This is spec §22's order:
 
 The implementation's order is defined in `stdlib/compiler/pipeline.zyl`
 and differs from the list above: balance check → parse → module
-resolution → macro expansion → capability/duplicate/arity (also
+resolution → macro expansion → built-in shadowing (`E_SHADOWS_BUILTIN`)/capability/duplicate/arity (also
 `E_MALFORMED_FORM`, `E_FFI_RESTRICTED`)/mutability/exhaustiveness/
 unused/secret checks → derive expansion → impl lifting → closure
 inlining (`closure_inline.zyl`, now an identity step) → type checking (`type_annotate.zyl`: sound HM, spec §4.8–§4.10;

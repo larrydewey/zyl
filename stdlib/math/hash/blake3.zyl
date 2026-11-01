@@ -166,26 +166,26 @@
 ; Load 16 little-endian 32-bit words from a 64-byte block, zero-padding
 ; past the end of the message.
 ; Returns: Words
-(defn blake3-load-block ((msg Words) (off Int) (len Int))
+(defn blake3-load-block ((msg Words) (off Int) (size Int))
   (let m (w-alloc 16)
     (begin
       (for (i 0) (< i 16)
         (begin
-          (w-set m i (blake3-le32 msg (+ off (* i 4)) len))
+          (w-set m i (blake3-le32 msg (+ off (* i 4)) size))
           (set! i (+ i 1))))
       m)))
 
 ; Returns: Int
-(defn blake3-le32 ((msg Words) (off Int) (len Int))
-  (let b0 (blake3-byte msg off len)
-    (let b1 (blake3-byte msg (+ off 1) len)
-      (let b2 (blake3-byte msg (+ off 2) len)
-        (let b3 (blake3-byte msg (+ off 3) len)
+(defn blake3-le32 ((msg Words) (off Int) (size Int))
+  (let b0 (blake3-byte msg off size)
+    (let b1 (blake3-byte msg (+ off 1) size)
+      (let b2 (blake3-byte msg (+ off 2) size)
+        (let b3 (blake3-byte msg (+ off 3) size)
           (le-pack32 b0 b1 b2 b3))))))
 
 ; Returns: Int
-(defn blake3-byte ((msg Words) (i Int) (len Int))
-  (if (< i len) (bit-and (w-get msg i) 255) 0))
+(defn blake3-byte ((msg Words) (i Int) (size Int))
+  (if (< i size) (bit-and (w-get msg i) 255) 0))
 
 ; ===========================================================================
 ; CHUNKS
@@ -198,8 +198,8 @@
 
 ; The chaining value of chunk `index`, whose bytes start at `off`.
 ; Returns: Words
-(defn blake3-chunk-cv ((msg Words) (len Int) (off Int) (index Int))
-  (let out (blake3-chunk-output msg len off index 0)
+(defn blake3-chunk-cv ((msg Words) (size Int) (off Int) (index Int))
+  (let out (blake3-chunk-output msg size off index 0)
     (blake3-out-cv out)))
 
 ; An Output record: 8 words of input chaining value, 16 words of block,
@@ -225,16 +225,16 @@
 
 ; The Output for the final block of a chunk.
 ; Returns: Words
-(defn blake3-chunk-output ((msg Words) (len Int) (off Int) (index Int) (extraflags Int))
+(defn blake3-chunk-output ((msg Words) (size Int) (off Int) (index Int) (extraflags Int))
   (let cv (w-copy (w-alloc 8) (blake3-iv) 8)
-    (let chunklen (blake3-chunk-len len off)
+    (let chunklen (blake3-chunk-len size off)
       (let nblocks (blake3-block-count chunklen)
-        (blake3-chunk-loop msg len off index cv nblocks chunklen extraflags 0)))))
+        (blake3-chunk-loop msg size off index cv nblocks chunklen extraflags 0)))))
 
 ; Bytes remaining in this chunk: a full 1024 unless it is the last.
 ; Returns: Int
-(defn blake3-chunk-len ((len Int) (off Int))
-  (if (< (- len off) 1024) (- len off) 1024))
+(defn blake3-chunk-len ((size Int) (off Int))
+  (if (< (- size off) 1024) (- size off) 1024))
 
 ; Blocks in a chunk, at least one (an empty message is still one block).
 ; Returns: Int
@@ -242,15 +242,15 @@
   (if (<= chunklen 0) 1 (/ (+ chunklen 63) 64)))
 
 ; Returns: Words
-(defn blake3-chunk-loop ((msg Words) (len Int) (off Int) (index Int) (cv Words) (nblocks Int) (chunklen Int) (extraflags Int) (i Int))
+(defn blake3-chunk-loop ((msg Words) (size Int) (off Int) (index Int) (cv Words) (nblocks Int) (chunklen Int) (extraflags Int) (i Int))
   (let blockoff (+ off (* i 64))
     (let blocklen (blake3-block-len chunklen i nblocks)
       (let flags (blake3-chunk-flags i nblocks extraflags)
         (if (>= i (- nblocks 1))
-          (blake3-make-output cv (blake3-load-block msg blockoff len) index blocklen flags)
+          (blake3-make-output cv (blake3-load-block msg blockoff size) index blocklen flags)
           (begin
-            (blake3-advance cv (blake3-load-block msg blockoff len) index blocklen flags)
-            (blake3-chunk-loop msg len off index cv nblocks chunklen extraflags (+ i 1))))))))
+            (blake3-advance cv (blake3-load-block msg blockoff size) index blocklen flags)
+            (blake3-chunk-loop msg size off index cv nblocks chunklen extraflags (+ i 1))))))))
 
 ; Returns: Int
 (defn blake3-block-len ((chunklen Int) (i Int) (nblocks Int))
@@ -314,29 +314,29 @@
 ; folded into whatever remains on the stack, and only the outermost
 ; node gets the ROOT flag.
 ; Returns: Words
-(defn blake3-hash ((msg Words) (len Int) (outlen Int))
-  (let nchunks (blake3-chunk-count len)
+(defn blake3-hash ((msg Words) (size Int) (outlen Int))
+  (let nchunks (blake3-chunk-count size)
     (let stack (w-alloc 440)
-      (let depth (blake3-absorb-chunks msg len nchunks stack)
-        (let last (blake3-chunk-output msg len (* (- nchunks 1) 1024) (- nchunks 1) 0)
+      (let depth (blake3-absorb-chunks msg size nchunks stack)
+        (let last (blake3-chunk-output msg size (* (- nchunks 1) 1024) (- nchunks 1) 0)
           (blake3-finalize (blake3-fold stack depth last) outlen))))))
 
 ; Returns: Int
-(defn blake3-chunk-count ((len Int))
-  (if (<= len 1024) 1 (/ (+ len 1023) 1024)))
+(defn blake3-chunk-count ((size Int))
+  (if (<= size 1024) 1 (/ (+ size 1023) 1024)))
 
 ; Hash every chunk but the last, merging as the tree requires, and
 ; return the resulting stack depth.
 ; Returns: Int
-(defn blake3-absorb-chunks ((msg Words) (len Int) (nchunks Int) (stack Words))
-  (blake3-absorb-loop msg len nchunks stack 0 0))
+(defn blake3-absorb-chunks ((msg Words) (size Int) (nchunks Int) (stack Words))
+  (blake3-absorb-loop msg size nchunks stack 0 0))
 
 ; Returns: Int
-(defn blake3-absorb-loop ((msg Words) (len Int) (nchunks Int) (stack Words) (i Int) (depth Int))
+(defn blake3-absorb-loop ((msg Words) (size Int) (nchunks Int) (stack Words) (i Int) (depth Int))
   (if (>= i (- nchunks 1))
     depth
-    (let cv (blake3-chunk-cv msg len (* i 1024) i)
-      (blake3-absorb-loop msg len nchunks stack (+ i 1)
+    (let cv (blake3-chunk-cv msg size (* i 1024) i)
+      (blake3-absorb-loop msg size nchunks stack (+ i 1)
         (blake3-push stack depth cv (+ i 1))))))
 
 ; Push a chaining value, merging with the top of the stack once for

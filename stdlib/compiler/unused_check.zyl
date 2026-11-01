@@ -128,7 +128,7 @@
     (EAssert c _ (uc-ra c acc))
     (EUnwrap e2 (uc-ra e2 acc))
     (EWhile c body (uc-ra c (uc-ra body acc)))
-    (EFor bindings cond body (uc-ra-for-inits bindings (uc-ra cond (uc-ra body acc))))
+    (EFor bindings condition body (uc-ra-for-inits bindings (uc-ra condition (uc-ra body acc))))
     (ECond clauses (uc-ra-cond clauses acc))
     (EBegin exprs (uc-ra-list exprs acc))
     (ELambda _ _ body (uc-ra body acc))
@@ -159,8 +159,8 @@
     (ELoadByteSigned _ off buf (uc-ra off (uc-ra buf acc)))
     (EStoreByte _ off buf val (uc-ra off (uc-ra buf (uc-ra val acc))))
     (EStoreByteSigned _ off buf val (uc-ra off (uc-ra buf (uc-ra val acc))))
-    (EByteSlice buf start len (uc-ra buf (uc-ra start (uc-ra len acc))))
-    (EByteSliceSub buf start len (uc-ra buf (uc-ra start (uc-ra len acc))))
+    (EByteSlice buf start size (uc-ra buf (uc-ra start (uc-ra size acc))))
+    (EByteSliceSub buf start size (uc-ra buf (uc-ra start (uc-ra size acc))))
     (EByteBufAppend buf val (uc-ra buf (uc-ra val acc)))
     (EByteBufLen buf (uc-ra buf acc))
     (EByteBufCap buf (uc-ra buf acc))
@@ -242,12 +242,12 @@
 (defn uc-find-colons (s i) (uc-find-colons-n s i (str-length s)))
 
 ; Reads through the known length, so a long name is scanned once, not measured per byte.
-(defn uc-find-colons-n (s i len)
-  (if (>= (+ i 1) len)
+(defn uc-find-colons-n (s i size)
+  (if (>= (+ i 1) size)
     -1
-    (if (and (= (ffi-call "zyl_view_byte" s 0 len i 1000) 58) (= (ffi-call "zyl_view_byte" s 0 len (+ i 1) 1000) 58))
+    (if (and (= (ffi-call "zyl_view_byte" s 0 size i 1000) 58) (= (ffi-call "zyl_view_byte" s 0 size (+ i 1) 1000) 58))
       i
-      (uc-find-colons-n s (+ i 1) len))))
+      (uc-find-colons-n s (+ i 1) size))))
 
 (defn uc-starts-with (s p)
   (let n (str-length p)
@@ -447,9 +447,9 @@
     (EDef _ val (uc-walk-scope val refs scope))
     (EIf c t eb (begin (uc-walk-scope c refs scope) (uc-walk-scope t refs scope) (uc-walk-scope eb refs scope)))
     (EWhile c body (begin (uc-walk-scope c refs scope) (uc-walk-scope body refs scope)))
-    (EFor bindings cond body
+    (EFor bindings condition body
       (let newscope (uc-walk-for-bindings bindings refs scope e)
-        (begin (uc-walk-scope cond refs newscope) (uc-walk-scope body refs newscope))))
+        (begin (uc-walk-scope condition refs newscope) (uc-walk-scope body refs newscope))))
     (ECond clauses (uc-walk-cond-clauses clauses refs scope))
     (EBegin exprs (uc-walk-list exprs refs scope))
     (ELambda _ params body (uc-walk-lambda-like "<lambda>" params body refs scope e))
@@ -492,8 +492,8 @@
     (ELoadByteSigned _ off buf (begin (uc-walk-scope off refs scope) (uc-walk-scope buf refs scope)))
     (EStoreByte _ off buf val (begin (uc-walk-scope off refs scope) (uc-walk-scope buf refs scope) (uc-walk-scope val refs scope)))
     (EStoreByteSigned _ off buf val (begin (uc-walk-scope off refs scope) (uc-walk-scope buf refs scope) (uc-walk-scope val refs scope)))
-    (EByteSlice buf start len (begin (uc-walk-scope buf refs scope) (uc-walk-scope start refs scope) (uc-walk-scope len refs scope)))
-    (EByteSliceSub buf start len (begin (uc-walk-scope buf refs scope) (uc-walk-scope start refs scope) (uc-walk-scope len refs scope)))
+    (EByteSlice buf start size (begin (uc-walk-scope buf refs scope) (uc-walk-scope start refs scope) (uc-walk-scope size refs scope)))
+    (EByteSliceSub buf start size (begin (uc-walk-scope buf refs scope) (uc-walk-scope start refs scope) (uc-walk-scope size refs scope)))
     (EByteBufAppend buf val (begin (uc-walk-scope buf refs scope) (uc-walk-scope val refs scope)))
     (EByteBufLen buf (uc-walk-scope buf refs scope))
     (EByteBufCap buf (uc-walk-scope buf refs scope))

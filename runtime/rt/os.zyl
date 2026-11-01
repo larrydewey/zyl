@@ -139,21 +139,21 @@
   (let w (rt-w path)
     (if (or (= w 0) (os-bad w "mkdir-p")) -1
       (if (= (rt-ld8 w) 0) -1
-        (let len (rt-strlen w)
-          (if (>= len 4096) -1
+        (let size (rt-strlen w)
+          (if (>= size 4096) -1
             (let b (ffi-call "%tls" "os_mkdir" 4096 1)
-              (let _ (rt-copy b w (+ len 1))
-                (if (os-mkdir-parents b len 1) (if (os-mkdir-one b) 0 -1) -1)))))))))
+              (let _ (rt-copy b w (+ size 1))
+                (if (os-mkdir-parents b size 1) (if (os-mkdir-one b) 0 -1) -1)))))))))
 
 (defn os-mkdir-one (b) (let r (ffi-call "%syscall2" 83 b 493 1) (or (= r 0) (= r -17))))
 
-(defn os-mkdir-parents (b len i)
-  (if (>= i len) true
+(defn os-mkdir-parents (b size i)
+  (if (>= i size) true
     (if (= (rt-ld8 (+ b i)) 47)
       (let _ (rt-st8 (+ b i) 0)
         (let ok (os-mkdir-one b)
-          (let _ (rt-st8 (+ b i) 47) (if ok (os-mkdir-parents b len (+ i 1)) false))))
-      (os-mkdir-parents b len (+ i 1)))))
+          (let _ (rt-st8 (+ b i) 47) (if ok (os-mkdir-parents b size (+ i 1)) false))))
+      (os-mkdir-parents b size (+ i 1)))))
 
 ; --- argv ---
 
@@ -378,7 +378,7 @@
       (if (os-bad w "term-write") 0
         (let _ (ffi-call "zyl_term_flush" 1) (os-write-all w (rt-strlen w) 0))))))
 
-(defn os-write-all (p len off)
-  (if (>= off len) off
-    (let n (ffi-call "%syscall3" 1 1 (+ p off) (- len off) 1)
-      (if (> n 0) (os-write-all p len (+ off n)) (if (= n -4) (os-write-all p len off) off)))))
+(defn os-write-all (p size off)
+  (if (>= off size) off
+    (let n (ffi-call "%syscall3" 1 1 (+ p off) (- size off) 1)
+      (if (> n 0) (os-write-all p size (+ off n)) (if (= n -4) (os-write-all p size off) off)))))

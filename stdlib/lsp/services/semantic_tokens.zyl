@@ -112,55 +112,55 @@
 ; SCAN
 ; ===========================================================================
 
-(defn st-scan (text i len line col tbl acc)
-  (if (>= i len)
+(defn st-scan (text i size line col tbl acc)
+  (if (>= i size)
     (list-reverse acc)
     (let b (st-byte-at text i)
       (if (= b 34)
-        (st-scan-string text (+ i 1) len line (+ col 1) line col tbl acc)
+        (st-scan-string text (+ i 1) size line (+ col 1) line col tbl acc)
         (if (= b 59)
-          (st-scan-comment text (+ i 1) len line (+ col 1) line col tbl acc)
+          (st-scan-comment text (+ i 1) size line (+ col 1) line col tbl acc)
           (if (= b 10)
-            (st-scan text (+ i 1) len (+ line 1) 0 tbl acc)
+            (st-scan text (+ i 1) size (+ line 1) 0 tbl acc)
             (if (st-is-digit b)
-              (st-scan-number text i len line col tbl acc)
+              (st-scan-number text i size line col tbl acc)
               (if (st-is-word-char b)
-                (st-scan-word text i len line col tbl acc)
-                (st-scan text (+ i 1) len line (+ col 1) tbl acc)))))))))
+                (st-scan-word text i size line col tbl acc)
+                (st-scan text (+ i 1) size line (+ col 1) tbl acc)))))))))
 
 ; A string or comment token, skipped by sexp_balance's lexical rules (the
 ; balance check's), from just past its first byte at i.
-(defn st-scan-string (text i len line col startline startcol tbl acc)
-  (let e (sb-string-end text len i)
-    (let j (if (< e 0) len e)
-      (let endline (sb-line-after text len i j line)
-        (let endcol (sb-col-after text len i j col)
+(defn st-scan-string (text i size line col startline startcol tbl acc)
+  (let e (sb-string-end text size i)
+    (let j (if (< e 0) size e)
+      (let endline (sb-line-after text size i j line)
+        (let endcol (sb-col-after text size i j col)
           (let tok (RT startline startcol (- endcol startcol) (st-tt-string) 0)
-            (if (< e 0) (list-reverse (Cons tok acc)) (st-scan text j len endline endcol tbl (Cons tok acc)))))))))
+            (if (< e 0) (list-reverse (Cons tok acc)) (st-scan text j size endline endcol tbl (Cons tok acc)))))))))
 
-(defn st-scan-comment (text i len line col startline startcol tbl acc)
-  (let j (sb-line-end text len i)
+(defn st-scan-comment (text i size line col startline startcol tbl acc)
+  (let j (sb-line-end text size i)
     (let tok (RT startline startcol (+ (- col startcol) (- j i)) (st-tt-comment) 0)
-      (if (>= j len) (list-reverse (Cons tok acc)) (st-scan text j len line (+ col (- j i)) tbl (Cons tok acc))))))
+      (if (>= j size) (list-reverse (Cons tok acc)) (st-scan text j size line (+ col (- j i)) tbl (Cons tok acc))))))
 
-(defn st-scan-number (text i len line col tbl acc)
-  (let end (st-word-end text i len)
-    (st-scan text end len line (+ col (- end i)) tbl (Cons (RT line col (- end i) (st-tt-number) 0) acc))))
+(defn st-scan-number (text i size line col tbl acc)
+  (let end (st-word-end text i size)
+    (st-scan text end size line (+ col (- end i)) tbl (Cons (RT line col (- end i) (st-tt-number) 0) acc))))
 
-(defn st-scan-word (text i len line col tbl acc)
-  (let end (st-word-end text i len)
+(defn st-scan-word (text i size line col tbl acc)
+  (let end (st-word-end text i size)
     (let word (str-substring text i (- end i))
-      (st-scan text end len line (+ col (- end i)) tbl
+      (st-scan text end size line (+ col (- end i)) tbl
                (st-cons-opt (st-classify word tbl line col (- end i)) acc)))))
 
 (defn st-cons-opt (tok acc)
   (match tok (Some t (Cons t acc)) (None acc)))
 
-(defn st-word-end (text i len)
-  (if (>= i len)
+(defn st-word-end (text i size)
+  (if (>= i size)
     i
     (if (st-is-word-char (st-byte-at text i))
-      (st-word-end text (+ i 1) len)
+      (st-word-end text (+ i 1) size)
       i)))
 
 ; ===========================================================================

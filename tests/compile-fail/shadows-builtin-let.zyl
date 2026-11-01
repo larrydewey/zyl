@@ -1,0 +1,6 @@
+; expect-error: E_SHADOWS_BUILTIN
+; expect-at: shadows-builtin-let.zyl:5:3
+; A local named like a built-in: (str-length s) would still call the built-in.
+(defn main ()
+  (let str-length (fn (_s) 42)
+  (let _ (print (str-length "ab")) 0)))

@@ -121,12 +121,12 @@
 (defn str-split-lines (s)
   (str-split-lines-loop s 0 0 (str-length s) Nil))
 
-(defn str-split-lines-loop (s i start len acc)
-  (if (>= i len)
+(defn str-split-lines-loop (s i start size acc)
+  (if (>= i size)
     (list-reverse (Cons (str-substring s start (- i start)) acc))
     (if (= (ffi-call "zyl_cstr_byte_at" s i 1000) 10)
-      (str-split-lines-loop s (+ i 1) (+ i 1) len (Cons (str-substring s start (- i start)) acc))
-      (str-split-lines-loop s (+ i 1) start len acc))))
+      (str-split-lines-loop s (+ i 1) (+ i 1) size (Cons (str-substring s start (- i start)) acc))
+      (str-split-lines-loop s (+ i 1) start size acc))))
 
 (defn str-join-lines (lines)
   (match lines

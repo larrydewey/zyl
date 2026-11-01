@@ -53,6 +53,7 @@
 (use compiler/exhaustiveness_check)
 (use compiler/secret_check)
 (use compiler/unused_check)
+(use compiler/shadow_check)
 (use compiler/sexp_balance)
 (use compiler/derive)
 (use compiler/lift_impls)
@@ -268,8 +269,9 @@
 ; The checks compiler/pipeline.zyl's compile-run-checks runs, in the same
 ; order. See this file's header for the ones it leaves out and why.
 (defn dm-run-checks (exprs)
+  (let _ (bs-check-program exprs)
   (let _ (dc-check-program exprs)
     (let _ (ac-check-program exprs)
       (let _ (mc-check-program exprs)
         (let _ (ec-check-program exprs)
-          (sc-check-program exprs))))))
+          (sc-check-program exprs)))))))

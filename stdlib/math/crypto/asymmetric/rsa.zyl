@@ -84,9 +84,9 @@
 
 ; Build a private key from the CRT components, each as big-endian hex.
 ; Returns: RsaPrivate
-(defn rsa-private-key ((pub RsaPublic) (phex String) (qhex String) (dphex String) (dqhex String) (qinvhex String))
+(defn rsa-private-key ((public RsaPublic) (phex String) (qhex String) (dphex String) (dqhex String) (qinvhex String))
   (let limbs (bn-limbs-for-bytes (w-hex-len phex))
-    (RsaPrivate pub
+    (RsaPrivate public
                 (rsa-load phex limbs)
                 (rsa-load qhex limbs)
                 (rsa-load dphex limbs)
@@ -113,11 +113,11 @@
 ; through timing leaks nothing. Private-key exponentiations keep the
 ; full fixed width.
 ; Returns: Words
-(defn rsa-public-op ((out Words) (m Words) (pub RsaPublic))
-  (let limbs (rsa-pub-limbs pub)
-    (let bits (bn-bit-length (rsa-pub-e pub) limbs)
+(defn rsa-public-op ((out Words) (m Words) (public RsaPublic))
+  (let limbs (rsa-pub-limbs public)
+    (let bits (bn-bit-length (rsa-pub-e public) limbs)
       (begin
-        (mont-exp out m (rsa-pub-e pub) bits (rsa-pub-n pub) limbs)
+        (mont-exp out m (rsa-pub-e public) bits (rsa-pub-n public) limbs)
         out))))
 
 ; out = m^d mod n by the CRT: m1 = m^dp mod p, m2 = m^dq mod q, and
@@ -326,20 +326,20 @@
 ; Encrypt with RSA-OAEP. Returns the k-byte ciphertext, or None when
 ; the message is too long for the modulus.
 ; Returns: (Option Words)
-(defn rsa-oaep-encrypt ((pub RsaPublic) (msg Words) (msglen Int) (seed Words))
-  (let k (rsa-pub-bytes pub)
+(defn rsa-oaep-encrypt ((public RsaPublic) (msg Words) (msglen Int) (seed Words))
+  (let k (rsa-pub-bytes public)
     (match (rsa-oaep-encode msg msglen seed k)
       (None None)
-      (Some em (Some (rsa-apply-public pub em k))))))
+      (Some em (Some (rsa-apply-public public em k))))))
 
 ; Returns: Words
-(defn rsa-apply-public ((pub RsaPublic) (em Words) (k Int))
-  (let limbs (rsa-pub-limbs pub)
+(defn rsa-apply-public ((public RsaPublic) (em Words) (k Int))
+  (let limbs (rsa-pub-limbs public)
     (let m (bn-alloc limbs)
       (let c (bn-alloc limbs)
         (begin
           (bn-from-bytes-be m limbs em k)
-          (rsa-public-op c m pub)
+          (rsa-public-op c m public)
           (bn-to-bytes-be (w-alloc k) k c limbs))))))
 
 ; Decrypt with RSA-OAEP. Returns Some(plaintext bytes) with its length
@@ -352,15 +352,15 @@
 ; is sound.
 ; Returns: (Option Words)
 (defn rsa-oaep-decrypt ((priv RsaPrivate) (ct Words) (outlen Words))
-  (let pub (rsa-priv-pub priv)
-    (let k (rsa-pub-bytes pub)
+  (let public (rsa-priv-pub priv)
+    (let k (rsa-pub-bytes public)
       (let em (rsa-apply-private priv ct k)
         (rsa-oaep-decode em k outlen)))))
 
 ; Returns: Words
 (defn rsa-apply-private ((priv RsaPrivate) (ct Words) (k Int))
-  (let pub (rsa-priv-pub priv)
-    (let limbs (rsa-pub-limbs pub)
+  (let public (rsa-priv-pub priv)
+    (let limbs (rsa-pub-limbs public)
       (let c (bn-alloc limbs)
         (let m (bn-alloc (* 2 (rsa-priv-limbs priv)))
           (begin
@@ -479,24 +479,24 @@
 ; that would factor the modulus.
 ; Returns: (Option Words)
 (defn rsa-pss-sign ((priv RsaPrivate) (mhash Words) (salt Words))
-  (let pub (rsa-priv-pub priv)
-    (let k (rsa-pub-bytes pub)
+  (let public (rsa-priv-pub priv)
+    (let k (rsa-pub-bytes public)
       (match (rsa-pss-encode mhash salt (- (* 8 k) 1))
         (None None)
-        (Some em (rsa-pss-finish priv pub em k mhash))))))
+        (Some em (rsa-pss-finish priv public em k mhash))))))
 
 ; Returns: (Option Words)
-(defn rsa-pss-finish ((priv RsaPrivate) (pub RsaPublic) (em Words) (k Int) (mhash Words))
+(defn rsa-pss-finish ((priv RsaPrivate) (public RsaPublic) (em Words) (k Int) (mhash Words))
   (let sig (rsa-apply-private priv em k)
-    (if (rsa-pss-verify pub mhash sig)
+    (if (rsa-pss-verify public mhash sig)
       (Some sig)
       None)))
 
 ; Verify an RSA-PSS signature over a 32-byte SHA-256 digest.
 ; Returns: Bool
-(defn rsa-pss-verify ((pub RsaPublic) (mhash Words) (sig Words))
-  (let k (rsa-pub-bytes pub)
-    (let em (rsa-apply-public pub sig k)
+(defn rsa-pss-verify ((public RsaPublic) (mhash Words) (sig Words))
+  (let k (rsa-pub-bytes public)
+    (let em (rsa-apply-public public sig k)
       (rsa-pss-check em k mhash (- (* 8 k) 1)))))
 
 ; Returns: Bool

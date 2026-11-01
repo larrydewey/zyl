@@ -1,0 +1,155 @@
+; === Zyl Compiler — Local bindings named like a built-in (spec 1.3.2, E_SHADOWS_BUILTIN) ===
+; A call of a built-in's name always means the built-in, so a local of that name is dead; checked in every module after macro expansion.
+
+(use core/list)
+(use core/option)
+(use compiler/ast)
+(use compiler/expr_inner)
+(use compiler/error_report)
+
+; Every head the front end, checks, type pass or lowering dispatch on by name; tests/scripts/builtin-shadow.sh re-probes it.
+(defn bs-names ()
+  ["!=" "%" "*" "+" "-" "<" "<=" "=" "==" ">" ">="
+   "alias" "align-check" "alloc-free" "alloc-int" "alloc-malloc" "and"
+   "arena-alloc" "arena-alloc-zeroed" "arena-capacity" "arena-create" "arena-destroy" "arena-reset" "arena-used"
+   "ashr" "assert" "assert-equal" "assert-fail" "assert-false" "assert-true" "begin"
+   "bit-and" "bit-bswap" "bit-bswap32" "bit-clz" "bit-clz32" "bit-ctz" "bit-ctz32" "bit-not" "bit-or"
+   "bit-popcount" "bit-popcount32" "bit-rotl" "bit-rotl32" "bit-rotr" "bit-rotr32" "bit-xor"
+   "buf-new" "byte" "bytebuf" "bytebuf-append"
+   "bytebuf-atomic-add" "bytebuf-atomic-cas" "bytebuf-atomic-fetch-add" "bytebuf-atomic-load"
+   "bytebuf-atomic-max" "bytebuf-atomic-min" "bytebuf-atomic-store" "bytebuf-atomic-sub"
+   "bytebuf-cap" "bytebuf-len" "bytebuf-ptr" "byteslice" "byteslice-sub"
+   "chan" "chan-recv" "chan-rx" "chan-send" "chan-tx" "checkpoint" "close" "cond" "contracts"
+   "crc32c" "crc32c-u8" "def" "defmacro" "defn" "defstruct" "defstruct+" "deftype" "derive"
+   "div!" "div?" "ensures" "Err" "exit" "export" "extern" "feature-gate" "ffi-call" "ffi-pin" "ffi-unpin"
+   "file-close" "file-open" "file-read" "file-write" "fn" "for" "if" "impl" "invariant"
+   "lambda" "len" "let" "let*" "let-mut" "list"
+   "load-i16" "load-i16!" "load-i16?" "load-i32" "load-i32!" "load-i32?" "load-i64" "load-i64!" "load-i64?"
+   "load-i8" "load-i8!" "load-i8?" "load-u16" "load-u16!" "load-u16?" "load-u32" "load-u32!" "load-u32?"
+   "load-u64" "load-u64!" "load-u64?" "load-u8" "load-u8!" "load-u8?"
+   "macro" "make-struct" "make-variant" "map" "match" "module" "mul-hi" "mul-hi-u" "not" "numeric"
+   "Ok" "or" "print" "print-float" "print-string" "pub" "quasiquote" "quote" "read-line" "recover"
+   "rem!" "rem?" "requires" "run-tests" "saturating*" "saturating+" "saturating-" "Secret" "set!" "setup"
+   "shl" "shr" "spawn"
+   "store-i16" "store-i16!" "store-i16?" "store-i32" "store-i32!" "store-i32?" "store-i64" "store-i64!" "store-i64?"
+   "store-i8" "store-i8!" "store-i8?" "store-u16" "store-u16!" "store-u16?" "store-u32" "store-u32!" "store-u32?"
+   "store-u64" "store-u64!" "store-u64?" "store-u8" "store-u8!" "store-u8?"
+   "str-concat" "str-eq" "str-equal" "str-length" "str-substring" "struct-get" "StrViewC"
+   "teardown" "test" "test-compile" "test-property" "test-suite" "trait" "try" "tuple" "tuple-get"
+   "unless" "unquote" "unquote-splicing" "unwrap" "use" "vec" "when" "while" "with-region" "with-resource"
+   "wrapping*" "wrapping+" "wrapping-"
+   "zyl-contract-warn" "zyl-err-is" "zyl-method" "zyl-repl-global" "zyl-reraise"])
+
+(def bs-table (ffi-call "zyl_smap_new" 1000))
+
+; Struct short names of the program being checked; make-S calls S's constructor.
+(def bs-structs (ffi-call "zyl_smap_new" 1000))
+
+(defn bs-fill (xs)
+  (match xs
+    (Nil unit)
+    (Cons h t (let _ (ffi-call "zyl_smap_put" bs-table h 1 1000) (bs-fill t)))))
+
+(defn bs-check-program (exprs)
+  (let _ (if (ffi-call "zyl_smap_has" bs-table "+" 1000) unit (bs-fill (bs-names)))
+    (let _ (ffi-call "zyl_smap_clear" bs-structs 1000)
+      (let _ (bs-collect-structs exprs)
+        (bs-list exprs)))))
+
+(defn bs-collect-structs (xs)
+  (match xs
+    (Nil unit)
+    (Cons e t
+      (let _ (match (Expr.inner e)
+               (EStructDef sd _ (bs-put-struct sd))
+               (EStructDefPlus sd _ (bs-put-struct sd))
+               (_ unit))
+        (bs-collect-structs t)))))
+
+(defn bs-put-struct (sd)
+  (match sd (SD n _ (ffi-call "zyl_smap_put" bs-structs (err-name n) 1 1000))))
+
+; --- the check -------------------------------------------------------------
+
+(defn bs-builtin-p ((n String))
+  (if (ffi-call "zyl_smap_has" bs-table n 1000)
+    true
+    (if (and (> (str-length n) 5) (str-eq (str-substring n 0 5) "make-"))
+      (ffi-call "zyl_smap_has" bs-structs (str-substring n 5 (- (str-length n) 5)) 1000)
+      false)))
+
+(defn bs-name ((n String) (what String) site)
+  (if (bs-builtin-p n) (bs-fail n what site) unit))
+
+(defn bs-fail ((n String) (what String) site)
+  (ffi-call "zyl_panic"
+    (err-at "E_SHADOWS_BUILTIN"
+      (str-concat "`" (str-concat n (str-concat "` names a built-in, so this " (str-concat what (str-concat " can never be called: `(" (str-concat n " ...)` always means the built-in"))))))
+      (ffi-call "zyl_span_file" site 1000) (ffi-call "zyl_span_off" site 1000)
+      (str-concat "give the " (str-concat what (str-concat " a name of its own, such as `" (str-concat (bs-suggest n) "`")))))
+    1000))
+
+; A rename that keeps the reader's intent: `list` becomes `list-value`.
+(defn bs-suggest ((n String))
+  (let b (ffi-call "zyl_cstr_byte_at" n 0 1000)
+    (if (and (>= b 97) (<= b 122)) (str-concat n "-value") "value")))
+
+(defn bs-params (ps)
+  (match ps
+    (Nil unit)
+    (Cons p t (let _ (bs-name (P.name p) "parameter" p) (bs-params t)))))
+
+(defn bs-for (bs site)
+  (match bs
+    (Nil unit)
+    (Cons pr t (match pr (Pair n _ (let _ (bs-name n "loop variable" site) (bs-for t site)))))))
+
+(defn bs-arms (arms)
+  (match arms
+    (Nil unit)
+    (Cons a t (let _ (bs-patterns (MA.patterns a)) (bs-arms t)))))
+
+(defn bs-patterns (fs)
+  (match fs
+    (Nil unit)
+    (Cons f t
+      (let _ (match (Expr.inner f)
+               (EAtom atom (match atom (AIdent n (bs-name n "match binder" f)) (_ unit)))
+               (_ unit))
+        (bs-patterns t)))))
+
+(defn bs-impls (bodies)
+  (match bodies
+    (Nil unit)
+    (Cons b t (match b (IB d (match d (DN _ ps _ (let _ (bs-params ps) (bs-impls t)))))))))
+
+(defn bs-traits (ms)
+  (match ms
+    (Nil unit)
+    (Cons m t
+      (match m
+        (TM _ ps _ body
+          (let _ (bs-params ps)
+            (let _ (match body (Some b (bs-expr b)) (None unit))
+              (bs-traits t))))))))
+
+; The binders a node introduces, then its children.
+(defn bs-expr (e)
+  (let _ (match (Expr.inner e)
+           (EDefn _ ps _ (bs-params ps))
+           (ELet n _ _ (bs-name n "binding" e))
+           (ELetMut n _ _ (bs-name n "binding" e))
+           (ETryCatch _ n _ (bs-name n "catch binder" e))
+           (EFor bs _ _ (bs-for bs e))
+           (ELambda _ ps _ (bs-params ps))
+           (EFn _ ps _ (bs-params ps))
+           (EMatch _ arms (bs-arms arms))
+           (EImplBlock _ _ bodies (bs-impls bodies))
+           (ETraitDecl _ ms _ (bs-traits ms))
+           (_ unit))
+    (bs-list (expr-children e))))
+
+(defn bs-list (xs)
+  (match xs
+    (Nil unit)
+    (Cons h t (let _ (bs-expr h) (bs-list t)))))

@@ -371,7 +371,8 @@ keyword's form, not your definition.
 
 The compiler enforces every name in that list except `numeric`: because
 `(numeric wrapping)` is only read as a package or file directive, a
-definition may still bind the name.
+top-level definition may still take the name (a local may not; see
+below).
 
 This program does not compile:
 
@@ -382,6 +383,27 @@ This program does not compile:
       (print match)
       0)))
 ```
+
+### Built-in names as local bindings
+
+§1.3.2 goes further for locals. A call whose head names a built-in
+operation or special form — `print`, `list`, `len`, `str-length`, `+`,
+`load-u8!`, `chan`, `when` and the rest — is always that operation,
+whatever is in scope. A local of the same name could never be called,
+so binding one is `E_SHADOWS_BUILTIN`: a `let` or `let-mut` binding, a
+`defn`, `fn`, `lambda` or impl method parameter, a `match` or `catch`
+binder, or a `for` variable. The error points at the binder and
+suggests a rename:
+
+```lisp
+(defn main ()
+  (let print 5        ; error[E_SHADOWS_BUILTIN]: `print` names a built-in,
+    print))           ;   so this binding can never be called
+```
+
+Rename it (`print-value`, `size` for a `len`). A top-level `defn` may
+still take a built-in's name: it is qualified, and its calls reach it.
+The rule holds in the standard library and the runtime too.
 
 ## 14.7 Precedence and Associativity
 

@@ -29,45 +29,45 @@
 ; Option, and there is no plain name (docs/soundness.md).
 
 ; Stops the program: `who` was asked for off..off+len of `what` of n elements.
-(defn slice-range! ((who String) (alt String) (what String) (off Int) (len Int) (n Int))
+(defn slice-range! ((who String) (alt String) (what String) (off Int) (size Int) (n Int))
   (ffi-call "zyl_panic"
     (str-concat "E_INDEX_OUT_OF_BOUNDS: " (str-concat who (str-concat " range " (str-concat (ffi-call "zyl_int_text" off 1000)
-      (str-concat ".." (str-concat (ffi-call "zyl_int_text" (saturating+ off len) 1000) (str-concat " is outside a " (str-concat what
+      (str-concat ".." (str-concat (ffi-call "zyl_int_text" (saturating+ off size) 1000) (str-concat " is outside a " (str-concat what
         (str-concat " of " (str-concat (ffi-call "zyl_int_text" n 1000)
           (str-concat " elements\n  = help: use `" (str-concat alt "` and match its Option"))))))))))))
     1000))
 
-(defn slice-range-ok ((off Int) (len Int) (n Int))
-  (not (or (< off 0) (or (< len 0) (> len (- n off))))))
+(defn slice-range-ok ((off Int) (size Int) (n Int))
+  (not (or (< off 0) (or (< size 0) (> size (- n off))))))
 
 ; The `len` elements of `v` from `off`. A range outside the Vec stops the
 ; program (E_INDEX_OUT_OF_BOUNDS).
 ; Returns: Slice
-(defn slice-vec! (v (off Int) (len Int))
-  (if (slice-range-ok off len (vec-len v))
-    (SliceC (vec-store v) off len)
-    (slice-range! "slice-vec!" "(slice-vec? v off len)" "Vec" off len (vec-len v))))
+(defn slice-vec! (v (off Int) (size Int))
+  (if (slice-range-ok off size (vec-len v))
+    (SliceC (vec-store v) off size)
+    (slice-range! "slice-vec!" "(slice-vec? v off len)" "Vec" off size (vec-len v))))
 
 ; The `len` elements of `v` from `off`, or None when the range is outside the Vec.
 ; Returns: Option Slice
-(defn slice-vec? (v (off Int) (len Int))
-  (if (slice-range-ok off len (vec-len v))
-    (Some (SliceC (vec-store v) off len))
+(defn slice-vec? (v (off Int) (size Int))
+  (if (slice-range-ok off size (vec-len v))
+    (Some (SliceC (vec-store v) off size))
     None))
 
 ; The `len` elements of `s` from `off`. A range outside the slice stops the
 ; program (E_INDEX_OUT_OF_BOUNDS).
 ; Returns: Slice
-(defn slice-sub! (s (off Int) (len Int))
-  (if (slice-range-ok off len (slice-len s))
-    (SliceC (slice-store s) (+ (slice-off s) off) len)
-    (slice-range! "slice-sub!" "(slice-sub? s off len)" "slice" off len (slice-len s))))
+(defn slice-sub! (s (off Int) (size Int))
+  (if (slice-range-ok off size (slice-len s))
+    (SliceC (slice-store s) (+ (slice-off s) off) size)
+    (slice-range! "slice-sub!" "(slice-sub? s off len)" "slice" off size (slice-len s))))
 
 ; The `len` elements of `s` from `off`, or None when the range is outside the slice.
 ; Returns: Option Slice
-(defn slice-sub? (s (off Int) (len Int))
-  (if (slice-range-ok off len (slice-len s))
-    (Some (SliceC (slice-store s) (+ (slice-off s) off) len))
+(defn slice-sub? (s (off Int) (size Int))
+  (if (slice-range-ok off size (slice-len s))
+    (Some (SliceC (slice-store s) (+ (slice-off s) off) size))
     None))
 
 ; Element i of the slice. An index outside it stops the program

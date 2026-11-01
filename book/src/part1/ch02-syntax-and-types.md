@@ -573,6 +573,10 @@ A special form written in a shape its parser does not accept — a
 They are reserved (spec §1.3.1): `(let begin 5 begin)`, a parameter
 named `test` or a function named `setup` is `E_RESERVED_KEYWORD`,
 located at the name. `when`, `unless` and `let*` are core forms as well.
+A local binding named like a built-in operation or special form —
+`(let print 5 ...)`, a parameter named `len` or `list` — is
+`E_SHADOWS_BUILTIN` (spec §1.3.2): a call of that name always means the
+built-in, so the local could never be called.
 A local binding may shadow a core library function such as `max`, which
 is allowed but hard to read; a `defn` of the same name is
 `E_DUPLICATE_DEFINITION`.

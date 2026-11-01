@@ -314,25 +314,25 @@
 ; Load 16 little-endian 64-bit words from a 128-byte block of the
 ; message, zero-padding a short final block.
 ; Returns: Words
-(defn blake2b-load-block ((msg Words) (off Int) (len Int))
+(defn blake2b-load-block ((msg Words) (off Int) (size Int))
   (let m (w-alloc 16)
     (begin
       (for (i 0) (< i 16)
         (begin
-          (w-set m i (blake2b-le64 msg (+ off (* i 8)) len))
+          (w-set m i (blake2b-le64 msg (+ off (* i 8)) size))
           (set! i (+ i 1))))
       m)))
 
 ; Returns: Int
-(defn blake2b-le64 ((msg Words) (off Int) (len Int))
-  (blake2b-le64-loop msg off len 7 0))
+(defn blake2b-le64 ((msg Words) (off Int) (size Int))
+  (blake2b-le64-loop msg off size 7 0))
 
 ; Returns: Int
-(defn blake2b-le64-loop ((msg Words) (off Int) (len Int) (i Int) (acc Int))
+(defn blake2b-le64-loop ((msg Words) (off Int) (size Int) (i Int) (acc Int))
   (if (< i 0)
     acc
-    (let byte (if (< (+ off i) len) (w-get msg (+ off i)) 0)
-      (blake2b-le64-loop msg off len (- i 1) (bit-or (shl acc 8) (bit-and byte 255))))))
+    (let octet (if (< (+ off i) size) (w-get msg (+ off i)) 0)
+      (blake2b-le64-loop msg off size (- i 1) (bit-or (shl acc 8) (bit-and octet 255))))))
 
 ; Initial state: the IV with the parameter block XORed into the first
 ; word. The parameter block encodes digest length, key length, fanout
