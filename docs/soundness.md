@@ -159,7 +159,11 @@ Two independent mechanisms:
 its release. The rule is affine and per alias class: `file-close`,
 `Drop.drop` and `string-buffer-destroy` consume their argument, every name
 bound to the same resource dies with it, and a release inside an exception
-handler is conditional so it does not consume. Types are discovered from
+handler is conditional so it does not consume. A class reaches through a
+`let-mut` and its `set!`, a constructor wrapping (`(Some fd)`) and the
+match binders that unwrap it, an `if` or `begin` result, and a closure that
+captures the resource; a loop body is walked twice, so a release late in
+one iteration meets a use early in the next. Types are discovered from
 the program's own `impl Drop` forms, so a user resource is covered without
 compiler support.
 
@@ -171,7 +175,13 @@ allocation through it is `E_USE_AFTER_FREE`, and a released `StringBuffer`
 raises `E_USE_AFTER_FREE`. A handle at the maximum generation is retired,
 not reused, so a stale value is never mistaken for a live one; before this
 the runtime kept every destroyed handle until exit to get the same
-guarantee.
+guarantee. A file handle is its descriptor in bits 0..31 and the
+descriptor's generation in bits 32..62 (`runtime/rt/os.zyl`): open and
+close each bump it, so a read or write through a closed handle is
+`E_USE_AFTER_FREE` and a second close is a no-op returning -1, even after
+the kernel has handed the number to another file. A bare number is live
+only if `file-open` never returned it (stdin, stdout, stderr, an inherited
+descriptor); descriptors from 32768 up are not tracked.
 
 The runtime half is not redundant. It is the floor: a release reached
 through a path the pass cannot see — a builtin, or a value that crossed a

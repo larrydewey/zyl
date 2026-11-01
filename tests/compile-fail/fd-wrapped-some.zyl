@@ -1,0 +1,14 @@
+; Compile-fail: a handle wrapped in Some dies with its release.
+; expect-error: E_MOVE_VALUE
+(capabilities io)
+(use core/core)
+(defn main ()
+  (let fd (file-open "/tmp/zyl_rt_b2.txt" "w")
+    (let o (Some fd)
+      (begin
+        (file-close fd)
+        (let g (file-open "/tmp/zyl_rt_b2_victim.txt" "w")
+          (begin
+            (match o (Some c (file-write c "LEAKED")) (None 0))
+            (file-close g)
+            0))))))

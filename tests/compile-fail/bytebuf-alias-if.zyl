@@ -1,0 +1,10 @@
+; Compile-fail: a bytebuf chosen by an if is the same location (L4).
+; expect-error: E_MUT_CONFLICT
+(defn main ()
+  (let b (bytebuf Heap 16)
+    (let c (if true b b)
+      (begin
+        (store-u8 :le c 0 65)
+        (store-u8 :le b 0 66)
+        (print (load-u8 :le c 0))
+        0))))

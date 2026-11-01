@@ -52,6 +52,7 @@
 
 (use compiler/expr_inner)
 (use compiler/error_report)
+(use compiler/capability_check)
 
 ; name -> the node that consumed it, so a diagnostic can point at the
 ; later use and the pass can be re-run.
@@ -161,7 +162,46 @@
 (defn lin-source-of (e)
   (match (Expr.inner e)
     (EByteSlice base off len (lin-ident-of base))
+    (EIf c t f (lin-first-source (Cons t (Cons f Nil))))
+    (EBegin es (lin-last-source es))
+    (EMakeVariant tyname variant args (lin-first-source args))
+    (ETuple items (lin-first-source items))
+    (ECall op args (if (lin-ctor-head-p (lin-ident-of op)) (lin-first-source args) ""))
+    (EApply name args (if (lin-ctor-head-p name) (lin-first-source args) ""))
     (_ (lin-ident-of e))))
+
+; A wrapped or branched value keeps the class of the first operand that has one.
+(defn lin-first-source (es)
+  (match es
+    (Nil "")
+    (Cons h t (let s (lin-source-of h) (if (str-eq s "") (lin-first-source t) s)))))
+
+(defn lin-last-source (es)
+  (match es
+    (Nil "")
+    (Cons h t (if (is-nil t) (lin-source-of h) (lin-last-source t)))))
+
+; A constructor call (`Some`, a variant): its fields are the value itself.
+(defn lin-ctor-head-p (n)
+  (if (str-eq n "") false
+    (let i (lin-last-sep n (- (str-length n) 1))
+      (let c (ffi-call "zyl_cstr_byte_at" n (+ i 1) 1000)
+        (and (>= c 65) (<= c 90))))))
+
+(defn lin-last-sep (n i)
+  (if (< i 0) -1
+    (if (str-eq (str-substring n i 1) ":") i (lin-last-sep n (- i 1)))))
+
+; The first linear binding in `env` that `e` references: what a closure captures.
+(defn lin-first-ref (e env)
+  (match (Expr.inner e)
+    (EAtom a (match a (AIdent n (if (lin-local-p n env) n "")) (_ "")))
+    (_ (lin-first-ref-list (cc-children e) env))))
+
+(defn lin-first-ref-list (es env)
+  (match es
+    (Nil "")
+    (Cons h t (let s (lin-first-ref h env) (if (str-eq s "") (lin-first-ref-list t env) s)))))
 
 ; Alias classes. `with-resource` binds the resource to a fresh name and an
 ; ordinary `(let copy fd)` is how a resource gets passed around, so several
@@ -346,10 +386,19 @@
 
 ; A rebind produces a fresh resource, so the name is live again and any
 ; alias it had is dropped.
+; A fresh root: rebinding must not revive or reroot the class the name left.
 (defn lin-clear (name)
-  (begin
-    (ffi-call "zyl_smap_put" lin-moved-store (lin-find-root name) 0 1000)
-    (ffi-call "zyl_smap_put" lin-root-store name name 1000)))
+  (ffi-call "zyl_smap_put" lin-root-store name (lin-unique-root name) 1000))
+
+(defn lin-clear-all (names)
+  (match names
+    (Nil unit)
+    (Cons n t (begin (lin-clear n) (lin-clear-all t)))))
+
+(defn lin-param-names (ps)
+  (match ps
+    (Nil Nil)
+    (Cons p t (Cons (P.name p) (lin-param-names t)))))
 
 (defn lin-report (node name)
   (let fid (ffi-call "zyl_span_file" node 1000)
@@ -403,25 +452,26 @@
     (EAtom a (lin-walk-atom a e env))
     (EBegin es (lin-walk-seq es env))
     (ELet name val body (lin-walk-let name val body env))
-    (ELetMut name val body (begin (lin-walk val env) (lin-walk body env)))
+    (ELetMut name val body (lin-walk-let-mut name val body env))
     (EDef name val (lin-walk val env))
-    (EDefn name params body (lin-walk-fn body env))
-    (ELambda name params body (lin-walk-fn body env))
-    (EFn name params body (lin-walk-fn body env))
+    (EDefn name params body (lin-walk-fn params body env))
+    (ELambda name params body (lin-walk-fn params body env))
+    (EFn name params body (lin-walk-fn params body env))
     ; --- calls ---
     (ECall op args (lin-walk-call op args env))
-    (EApply name args (lin-walk-apply name args env))
+    (EApply name args (begin (lin-walk-atom (AIdent name) e env) (lin-walk-apply name args env)))
     (EMakeStruct name args (lin-walk-list args env))
     (EMakeVariant tyname variant args (lin-walk-list args env))
     (EMacroDef name args body (begin (lin-walk-list args env) (lin-walk body env)))
     (EUnknown name args (lin-walk-list args env))
     ; --- control ---
     (EIf c t f (begin (lin-walk c env) (lin-walk t env) (lin-walk f env)))
-    (EWhile c body (begin (lin-walk c env) (lin-walk body env)))
+    ; Twice: a release late in one iteration meets a use early in the next.
+    (EWhile c body (begin (lin-walk c env) (lin-walk body env) (lin-walk c env) (lin-walk body env)))
     (ETryCatch body name handler (lin-walk-try body handler env))
     (EMatch scrut arms (lin-walk-match scrut arms env))
     (ECond clauses (lin-walk-cond clauses env))
-    (EFor bindings init body (begin (lin-walk init env) (lin-walk body env)))
+    (EFor bindings init body (begin (lin-walk init env) (lin-walk body env) (lin-walk init env) (lin-walk body env)))
     (ESpawn e2 (lin-walk e2 env))
     (ESend ch msg (begin (lin-walk ch env) (lin-walk msg env)))
     (ESendClosure ch msg captures (begin (lin-walk ch env) (lin-walk msg env)))
@@ -446,7 +496,7 @@
     (EStructGet e2 field (lin-walk e2 env))
     (ETupleGet e2 index (lin-walk e2 env))
     (ETuple items (lin-walk-list items env))
-    (ESetBang name e2 (lin-walk e2 env))
+    (ESetBang name e2 (begin (lin-walk e2 env) (lin-walk-set name e2 env)))
     (EBufAppend e2 x (begin (lin-walk e2 env) (lin-walk x env)))
     ; --- ffi ---
     (EFfiCall sym args timeout (lin-walk-list args env))
@@ -515,7 +565,7 @@
 (defn lin-walk-let (name val body env)
   (let src (lin-source-of val)
     (begin
-      (lin-walk-let-rest name val body env src))))
+      (lin-walk-let-rest name val body env src false))))
 
 (defn lin-report-conflict (node other)
   (let fid (ffi-call "zyl_span_file" node 1000)
@@ -527,14 +577,43 @@
               "write through a single name, or read the bytes you need and copy them into a buffer of your own")
             1000))))))
 
-(defn lin-walk-let-rest (name val body env src)
+; A let-mut joins the class of what it is bound or later set! to.
+(defn lin-walk-let-mut (name val body env)
+  (let src (lin-source-of val)
+    (lin-walk-let-rest name val body env src (lin-sets-linear body name env))))
+
+; Does `e` set! `name` to a resource, or to an alias of one in `env`?
+(defn lin-sets-linear (e name env)
+  (match (Expr.inner e)
+    (ESetBang n v
+      (if (and (str-eq n name) (lin-val-linear-p v env)) true (lin-sets-linear v name env)))
+    (_ (lin-sets-linear-list (cc-children e) name env))))
+
+(defn lin-sets-linear-list (es name env)
+  (match es
+    (Nil false)
+    (Cons h t (if (lin-sets-linear h name env) true (lin-sets-linear-list t name env)))))
+
+(defn lin-val-linear-p (v env)
+  (let src (lin-source-of v)
+    (if (str-eq src "") (lin-val-is-resource v env) (lin-local-p src env))))
+
+; `(set! h v)`: `h` now names v's class, or a fresh one.
+(defn lin-walk-set (name v env)
+  (let src (lin-source-of v)
+    (if (str-eq src "") (lin-clear name) (lin-alias name src))))
+
+(defn lin-walk-let-rest (name val body env src0 set-linear)
   ; An alias of a live resource is itself one; anything else has to
   ; construct a fresh resource to be linear at all.
+  ; A closure joins the class of the first resource it captures.
+  (let src (if (str-eq src0 "") (lin-closure-source val env) src0)
   (let linear (if (str-eq src "") (lin-val-is-resource val env) (lin-local-p src env))
-    (let env2 (if linear (Cons name env) env)
+    (let env2 (if (or linear set-linear) (Cons name env) env)
+      (let r (if (str-eq src "") "" (lin-find-root src))
       (begin
         (lin-clear name)
-        (if (if linear (str-eq src "") false) unit (lin-alias name src))
+        (if (str-eq r "") unit (lin-set-root name r))
         ; A fresh allocation is a new location: give it a class of its own
         ; so it cannot inherit a writer recorded under the same name. A
         ; slice already joined its base's class above, via lin-source-of.
@@ -542,7 +621,13 @@
           (lin-set-root name (lin-unique-root name))
           unit)
         (lin-walk val env)
-        (lin-walk body env2)))))
+        (lin-walk body env2)))))))
+
+(defn lin-closure-source (val env)
+  (match (Expr.inner val)
+    (ELambda n ps body (lin-first-ref body env))
+    (EFn n ps body (lin-first-ref body env))
+    (_ "")))
 
 (defn lin-fresh-location-p (e)
   (match (Expr.inner e)
@@ -645,24 +730,55 @@
 (defn lin-walk-match (scrut arms env)
   (begin
     (lin-walk scrut env)
-    (lin-walk-arms arms env)))
+    (lin-walk-arms arms (lin-source-of scrut) env)))
 
-; Each arm body starts from the environment at the match, since an arm
-; binds its own pattern variables.
-(defn lin-walk-arms (arms env)
+; Each arm body starts from the environment at the match; its binders join the subject's class.
+(defn lin-walk-arms (arms src env)
   (match arms
     (Nil unit)
-    (Cons h t (begin (lin-walk-arm h env) (lin-walk-arms t env)))))
+    (Cons h t (begin (lin-walk-arm h src env) (lin-walk-arms t src env)))))
 
-(defn lin-walk-arm (arm env)
+(defn lin-walk-arm (arm src env)
   (match arm
-    (MA variant patterns body tag (lin-walk body env))))
+    (MA variant patterns body tag
+      (let names (lin-arm-binders variant patterns)
+        (let r (if (str-eq src "") "" (lin-find-root src))
+          (begin
+            (lin-clear-all names)
+            (if (str-eq r "") unit (lin-root-all names r))
+            (lin-walk body (if (lin-local-p src env) (lin-append names env) env))))))))
+
+(defn lin-root-all (names r)
+  (match names
+    (Nil unit)
+    (Cons n t (begin (lin-set-root n r) (lin-root-all t r)))))
+
+(defn lin-append (xs ys)
+  (match xs
+    (Nil ys)
+    (Cons h t (Cons h (lin-append t ys)))))
+
+; A lowercase head is a catch-all binder; pattern identifiers bind too.
+(defn lin-arm-binders (variant patterns)
+  (let inner (lin-pat-idents patterns)
+    (if (lin-ctor-head-p variant) inner (Cons variant inner))))
+
+(defn lin-pat-idents (ps)
+  (match ps
+    (Nil Nil)
+    (Cons p t
+      (let n (lin-ident-of p)
+        (if (or (str-eq n "") (lin-ctor-head-p n)) (lin-pat-idents t) (Cons n (lin-pat-idents t)))))))
 
 ; A closure body sees the bindings in scope where it is written. A release
 ; inside it still consumes for uses after the closure is built, but the
 ; closure's own later uses are checked against the same environment, which
 ; is what stops `(let f (fn ... (file-close fd) ...) ) (file-close fd)`.
-(defn lin-walk-fn (body env) (lin-walk body env))
+; Parameters are fresh names: they must not inherit a class an earlier body left under the same name.
+(defn lin-walk-fn (params body env)
+  (begin
+    (lin-clear-all (lin-param-names params))
+    (lin-walk body env)))
 
 ; --- entry point ---------------------------------------------------------
 
@@ -680,8 +796,8 @@
     (Cons e rest
       (begin
         (match (Expr.inner e)
-          (EDefn name params body (lin-walk-fn body Nil))
-          (ETestDecl name body flag opts (lin-walk-fn body Nil))
+          (EDefn name params body (lin-walk-fn params body Nil))
+          (ETestDecl name body flag opts (lin-walk-fn Nil body Nil))
           (_ unit))
         (lin-top rest)))))
 

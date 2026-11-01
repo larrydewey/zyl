@@ -1,0 +1,12 @@
+; Compile-fail: a let-mut set! to a handle is that handle's alias.
+; expect-error: E_MOVE_VALUE
+(capabilities io)
+(use core/core)
+(defn main ()
+  (let a (file-open "/tmp/zyl_rt_b9a.txt" "w")
+    (let-mut h (file-open "/tmp/zyl_rt_b9h.txt" "w")
+      (begin
+        (set! h a)
+        (file-close a)
+        (let g (file-open "/tmp/zyl_rt_b9_victim.txt" "w")
+          (begin (file-write h "LEAKED") 0))))))

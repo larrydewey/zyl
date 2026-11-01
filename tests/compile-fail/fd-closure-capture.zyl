@@ -1,0 +1,11 @@
+; Compile-fail: a closure that captures a handle dies with its release.
+; expect-error: E_MOVE_VALUE
+(capabilities io)
+(use core/core)
+(defn main ()
+  (let fd (file-open "/tmp/zyl_rt_b5.txt" "w")
+    (let w (fn () (file-write fd "LEAKED"))
+      (begin
+        (file-close fd)
+        (let g (file-open "/tmp/zyl_rt_b5_victim.txt" "w")
+          (begin (w) (file-close g) 0))))))

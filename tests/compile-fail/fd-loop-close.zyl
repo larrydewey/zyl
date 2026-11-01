@@ -1,0 +1,14 @@
+; Compile-fail: a release late in one loop iteration meets a use in the next.
+; expect-error: E_MOVE_VALUE
+(capabilities io)
+(use core/core)
+(defn main ()
+  (let fd (file-open "/tmp/zyl_lin_loop.txt" "w")
+    (let-mut i 0
+      (begin
+        (while (< i 2)
+          (begin
+            (file-write fd "data")
+            (file-close fd)
+            (set! i (+ i 1))))
+        0))))
