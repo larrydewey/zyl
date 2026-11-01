@@ -3,6 +3,8 @@
 (use thread)
 (use heap)
 
+(extern "zyl_out_flush" () Int)
+
 
 (defmacro rt-ld64 (a) (ffi-call "%load64" a 1))
 (defmacro rt-st64 (a v) (ffi-call "%store64" a v 1))
@@ -13,7 +15,7 @@
 
 ; Out of memory cannot unwind (handlers allocate), and the report must not allocate either: it is written in pieces.
 (defn zyl_arena_oom (requested why)
-  (let b (rt-budget)
+  (let b (let _ (ffi-call "zyl_out_flush" 1) (rt-budget))
     (let _ (rt-oom-say "PANIC: error[E_OUT_OF_MEMORY]: ")
       (let _ (rt-oom-say why)
         (let _ (rt-oom-say "\n  = requested ")

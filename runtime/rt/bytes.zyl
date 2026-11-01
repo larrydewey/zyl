@@ -2,6 +2,8 @@
 (use base)
 (use heap)
 
+(extern "zyl_arena_oom" (Int String) Int)
+
 ; libc bridge, removed in the libc-free phase.
 
 ; Header layouts: ByteBuf {magic, data, len, cap}; ByteSlice {magic, data, len}.
@@ -100,26 +102,31 @@
 
 (defn bb-cap-ok (cap) (and (>= cap 0) (<= cap (bb-max-cap))))
 
-; Heap buffer: zeroed malloc'd storage of cap bytes (1 for cap 0); region ignored.
-(defn zyl_bytebuf_new (_region cap)
-  (if (not (bb-cap-ok cap)) 0
-    (let h (zyl_rt_malloc 32)
-      (if (= h 0) 0
-        (let n (if (> cap 0) cap 1)
-          (let d (zyl_rt_malloc n)
-            (if (= d 0) (let _ (zyl_rt_free h) 0)
-              (let _ (ffi-call "%fill" d 0 n 1) (bb-init h d cap)))))))))
+; Out of memory (over the budget or past bb-max-cap) is E_OUT_OF_MEMORY, never a null handle.
+(defn bb-oom (cap) (ffi-call "zyl_arena_oom" cap "bytebuf" 1))
+
+; Heap buffer: zeroed malloc'd storage of cap bytes (1 for cap 0; a negative cap is 0); region ignored.
+(defn zyl_bytebuf_new (_region cap0)
+  (let cap (if (< cap0 0) 0 cap0)
+    (if (not (bb-cap-ok cap)) (bb-oom cap)
+      (let h (zyl_rt_malloc 32)
+        (if (= h 0) (bb-oom 32)
+          (let n (if (> cap 0) cap 1)
+            (let d (zyl_rt_malloc n)
+              (if (= d 0) (let _ (zyl_rt_free h) (bb-oom n))
+                (let _ (ffi-call "%fill" d 0 n 1) (bb-init h d cap))))))))))
 
 ; (bytebuf Stack N): header and bytes in the current result region.
-(defn zyl_bytebuf_new_r (_region cap)
-  (if (not (bb-cap-ok cap)) 0
-    (let rp (rt-cur-region)
-      (let h (rt-alloc 32 rp)
-        (if (= h 0) 0
-          (let n (if (> cap 0) cap 1)
-            (let d (rt-alloc n rp)
-              (if (= d 0) 0
-                (let _ (ffi-call "%fill" d 0 n 1) (bb-init h d cap))))))))))
+(defn zyl_bytebuf_new_r (_region cap0)
+  (let cap (if (< cap0 0) 0 cap0)
+    (if (not (bb-cap-ok cap)) (bb-oom cap)
+      (let rp (rt-cur-region)
+        (let h (rt-alloc 32 rp)
+          (if (= h 0) (bb-oom 32)
+            (let n (if (> cap 0) cap 1)
+              (let d (rt-alloc n rp)
+                (if (= d 0) (bb-oom n)
+                  (let _ (ffi-call "%fill" d 0 n 1) (bb-init h d cap)))))))))))
 
 ; Appends a whole slice (it may alias the buf) or fails closed past cap.
 (defn zyl_bytebuf_append (buf slice)
@@ -177,14 +184,24 @@
 (defn zyl_bytebuf_atomic_store (buf off v)
   (let p (bb-slot buf off) (if (= p 0) 0 (let _ (ffi-call "%xchg" p v 1) 1))))
 
+; CAS loop adding d to the slot: the checked + traps (E_OVERFLOW) before anything is stored; returns the old value.
+(defn bb-atomic-addc (a old d)
+  (let prev (ffi-call "%cas" a old (+ old d) 1)
+    (if (= prev old) old (bb-atomic-addc a prev d))))
+
 (defn zyl_bytebuf_atomic_add (buf off v)
-  (let p (bb-slot buf off) (if (= p 0) 0 (+ (ffi-call "%fetch-add" p v 1) v))))
+  (let p (bb-slot buf off) (if (= p 0) 0 (+ (bb-atomic-addc p (ffi-call "%load64" p 1) v) v))))
 
 (defn zyl_bytebuf_atomic_sub (buf off v)
-  (let p (bb-slot buf off) (if (= p 0) 0 (- (ffi-call "%fetch-add" p (- 0 v) 1) v))))
+  (let p (bb-slot buf off) (if (= p 0) 0 (- (bb-atomic-subc p (ffi-call "%load64" p 1) v) v))))
+
+; As bb-atomic-addc, subtracting d (no negation, so INT_MIN subtracts exactly).
+(defn bb-atomic-subc (a old d)
+  (let prev (ffi-call "%cas" a old (- old d) 1)
+    (if (= prev old) old (bb-atomic-subc a prev d))))
 
 (defn zyl_bytebuf_atomic_fetch_add (buf off v)
-  (let p (bb-slot buf off) (if (= p 0) 0 (ffi-call "%fetch-add" p v 1))))
+  (let p (bb-slot buf off) (if (= p 0) 0 (bb-atomic-addc p (ffi-call "%load64" p 1) v))))
 
 (defn zyl_bytebuf_atomic_max (buf off v)
   (let p (bb-slot buf off) (if (= p 0) 0 (zyl_atomic_max p v))))

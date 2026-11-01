@@ -157,14 +157,14 @@
               (buf-append (sb-ref-get (struct-get self "buf")) chunk)
               (sb-ref-set (struct-get self "len") (+ len clen))
               (+ len clen))))))))
-  (defn flush (self) (begin (file-write (struct-get self "fd") (string-buffer-str self)) 0)))
+  (defn flush (self) (begin (sb-require-live! self) (file-write (struct-get self "fd") (buf-str (sb-ref-get (struct-get self "buf")))) 0)))
 
-; Content of a StringBuffer.
+; Content of a StringBuffer, copied: the String outlives the buffer.
 ; Returns: String
 (defn string-buffer-str ((sb StringBuffer))
   (begin
     (sb-require-live! sb)
-    (buf-str (sb-ref-get (struct-get sb "buf")))))
+    (ffi-call "zyl_cstr_substr" (buf-str (sb-ref-get (struct-get sb "buf"))) 0 (sb-ref-get (struct-get sb "len")) 1000)))
 
 ; Current content length of a StringBuffer.
 ; Returns: Int

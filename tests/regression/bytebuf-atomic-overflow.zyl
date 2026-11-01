@@ -1,0 +1,30 @@
+; A checked atomic add or subtract traps with E_OVERFLOW before it stores anything (spec §20).
+(use core/core)
+
+(test "atomic-add at INT_MAX traps and leaves the slot"
+  (let a (bytebuf Heap 16)
+    (let _ (bytebuf-atomic-store a 0 9223372036854775807)
+      (let r (try (bytebuf-atomic-add a 0 1) (catch _ -1))
+        (assert-equal (+ r (- (bytebuf-atomic-load a 0) 9223372036854775807)) -1)))))
+
+(test "atomic-fetch-add below INT_MIN traps and leaves the slot"
+  (let a (bytebuf Heap 16)
+    (let _ (bytebuf-atomic-store a 0 (- -9223372036854775807 1))
+      (let r (try (bytebuf-atomic-fetch-add a 0 -1) (catch _ -2))
+        (assert-equal (if (= (bytebuf-atomic-load a 0) (- -9223372036854775807 1)) r 0) -2)))))
+
+(test "atomic-sub below INT_MIN traps and leaves the slot"
+  (let a (bytebuf Heap 16)
+    (let _ (bytebuf-atomic-store a 8 (- -9223372036854775807 1))
+      (let r (try (bytebuf-atomic-sub a 8 1) (catch _ -3))
+        (assert-equal (if (= (bytebuf-atomic-load a 8) (- -9223372036854775807 1)) r 0) -3)))))
+
+(test "in range, atomics still add and return"
+  (let a (bytebuf Heap 16)
+    (let _ (bytebuf-atomic-store a 0 40)
+      (let x (bytebuf-atomic-add a 0 2)
+        (let y (bytebuf-atomic-fetch-add a 0 1)
+          (let z (bytebuf-atomic-sub a 0 3)
+            (assert-equal (+ (* 10000 x) (+ (* 100 y) z)) 424240)))))))
+
+(run-tests)

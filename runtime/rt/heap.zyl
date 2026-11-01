@@ -38,13 +38,46 @@
     (if (not (= (ffi-call "%syscall1" 99 si 1) 0)) 0
       (* (hp-ld (+ si 32)) (ffi-call "%load32" (+ si 104) 1)))))
 
+; Digits, then an optional K, M, G or T (powers of 1024, either case) and an optional B or iB.
+(defn rt-mem-parse (p)
+  (let q (rt-mem-end p 0)
+    (if (or (= q 0) (> q 18)) -1
+      (let v (rt-parse-u p 0)
+        (let k (rt-mem-shift (rt-ld8 (+ p q)))
+          (if (< k 0) -1
+            (if (not (rt-mem-tail (+ p (+ q (if (> k 0) 1 0))))) -1
+              (if (> v (shr 4611686018427387904 k)) -1 (shl v k)))))))))
+
+(defn rt-mem-end (p i) (let c (rt-ld8 (+ p i)) (if (and (>= c 48) (<= c 57)) (rt-mem-end p (+ i 1)) i)))
+
+(defn rt-mem-shift (c)
+  (if (= c 0) 0 (if (or (= c 75) (= c 107)) 10 (if (or (= c 77) (= c 109)) 20
+    (if (or (= c 71) (= c 103)) 30 (if (or (= c 84) (= c 116)) 40 (if (or (= c 66) (= c 98)) 0 -1)))))))
+
+(defn rt-mem-tail (p)
+  (let c (rt-ld8 p)
+    (or (= c 0) (or (and (or (= c 66) (= c 98)) (= (rt-ld8 (+ p 1)) 0)) (and (= c 105) (and (rt-mem-b (rt-ld8 (+ p 1))) (= (rt-ld8 (+ p 2)) 0)))))))
+
+(defn rt-mem-b (c) (or (= c 66) (= c 98)))
+
+; A malformed ZYL_MAX_MEMORY stops the program before it runs rather than being misread.
+(defn rt-mem-value (env)
+  (let v (rt-mem-parse env)
+    (if (>= v 0) v
+      (let _ (rt-mem-say "error: ZYL_MAX_MEMORY=")
+        (let _ (rt-mem-say env)
+          (let _ (rt-mem-say " is not a size\n  = help: give a byte count (1073741824) or a number with K, M, G or T (1G); 0 removes the budget\n")
+            (ffi-call "%syscall1" 231 2 1)))))))
+
+(defn rt-mem-say (s) (let w (rt-w s) (ffi-call "%syscall3" 1 2 w (rt-strlen w) 1)))
+
 ; ZYL_MAX_MEMORY bytes when set (0: no budget); else 80% of the machine's
 ; memory, or of the cgroup's limit when that is smaller; else unlimited. Total,
 ; not available: what other processes happen to hold must not decide whether
 ; a program runs (determinism), so the budget is a property of the machine.
 (defn rt-budget-value ()
   (let env (rt-w (ffi-call "zyl_getenv_str" "ZYL_MAX_MEMORY" 1))
-    (if (and (> env 0) (> (rt-ld8 env) 0)) (rt-strtoull env)
+    (if (and (> env 0) (> (rt-ld8 env) 0)) (rt-mem-value env)
       (let t (rt-sysinfo-total)
         (let cg (rt-cgroup-max)
           (let m (if (and (> cg 0) (or (= t 0) (< cg t))) cg t)

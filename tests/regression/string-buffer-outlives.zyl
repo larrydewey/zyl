@@ -1,0 +1,22 @@
+; string-buffer-str copies: the String outlives the destroyed buffer (spec G2).
+(capabilities io)
+(use core/core)
+(use io/io)
+
+(test "a String taken from a StringBuffer outlives with-resource"
+  (let s (with-resource (sb (make-string-buffer))
+           (begin
+             (OutputStream.write sb "secret-hello")
+             (string-buffer-str sb)))
+    (assert-equal (str-concat s "!") "secret-hello!")))
+
+(test "a String taken earlier does not change with later writes"
+  (with-resource (sb (make-string-buffer))
+    (begin
+      (OutputStream.write sb "ab")
+      (let s (string-buffer-str sb)
+        (begin
+          (OutputStream.write sb "cd")
+          (assert-equal (str-concat s (string-buffer-str sb)) "ababcd"))))))
+
+(run-tests)
