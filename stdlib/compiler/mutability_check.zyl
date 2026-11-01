@@ -130,7 +130,80 @@
     (Nil 0)
     (Cons a rest
       (match a
-        (MA _ _ body (begin (mc-expr body mutscope lets) (mc-arms rest mutscope lets)))))))
+        (MA v pats body
+          (let names (mc-arm-binders v pats)
+            (begin
+              (mc-expr body (mc-drop-all names mutscope) (mc-drop-lets names lets))
+              (mc-arms rest mutscope lets))))))))
+
+; `name` removed from `scope`: an inner immutable binder shadows every outer one.
+(defn mc-drop (name scope)
+  (match scope
+    (Nil Nil)
+    (Cons h t (if (str-eq h name) (mc-drop name t) (Cons h (mc-drop name t))))))
+
+(defn mc-drop-all (names scope)
+  (match names
+    (Nil scope)
+    (Cons n rest (mc-drop-all rest (mc-drop n scope)))))
+
+(defn mc-drop-let (name lets)
+  (match lets
+    (Nil Nil)
+    (Cons pr rest
+      (match pr
+        (Pair n _ (if (str-eq n name) (mc-drop-let name rest) (Cons pr (mc-drop-let name rest))))))))
+
+(defn mc-drop-lets (names lets)
+  (match names
+    (Nil lets)
+    (Cons n rest (mc-drop-lets rest (mc-drop-let n lets)))))
+
+(defn mc-param-names (params)
+  (match params
+    (Nil Nil)
+    (Cons p rest (Cons (P.name p) (mc-param-names rest)))))
+
+(defn mc-upper-first (n)
+  (let c (ffi-call "zyl_cstr_byte_at" n 0 1000) (and (>= c 65) (<= c 90))))
+
+; Names a match arm binds: a lowercase head (catch-all) and every pattern identifier.
+(defn mc-arm-binders (v pats)
+  (let inner (mc-pat-idents pats)
+    (if (mc-upper-first v) inner (Cons v inner))))
+
+(defn mc-pat-idents (pats)
+  (match pats
+    (Nil Nil)
+    (Cons p rest (mc-append (mc-pat-ident p) (mc-pat-idents rest)))))
+
+(defn mc-pat-ident (p)
+  (match (Expr.inner p)
+    (EAtom a (match a (AIdent n (Cons n Nil)) (_ Nil)))
+    (ECall op args (mc-append (mc-pat-ident op) (mc-pat-idents args)))
+    (EApply n args (Cons n (mc-pat-idents args)))
+    (EMakeVariant _ _ args (mc-pat-idents args))
+    (ETuple elems (mc-pat-idents elems))
+    (_ Nil)))
+
+; The let-bound closure `e` names, if it is one: its captures cross with it.
+(defn mc-named-closure (e lets)
+  (match (Expr.inner e)
+    (EAtom a
+      (match a
+        (AIdent n
+          (match (mc-find-let n lets)
+            (Some node
+              (match (Expr.inner node)
+                (ELet _ val _
+                  (match (Expr.inner val)
+                    (ELambda _ _ _ val)
+                    (EFn _ _ _ val)
+                    (_ e)))
+                (_ e)))
+            (None e)))
+        (_ e)))
+    (_ e)))
 
 (defn mc-cond-clauses (clauses mutscope lets)
   (match clauses
@@ -199,7 +272,7 @@
     (ELet name val body
       (begin
         (mc-expr val mutscope lets)
-        (mc-expr body mutscope (Cons (Pair name e) lets))))
+        (mc-expr body (mc-drop name mutscope) (Cons (Pair name e) lets))))
     (ELetMut name val body
       (begin
         (mc-expr val mutscope lets)
@@ -219,10 +292,10 @@
           (mc-expr body (mc-append names mutscope) lets))))
     (ECond clauses (mc-cond-clauses clauses mutscope lets))
     (EBegin exprs (mc-list exprs mutscope lets))
-    (ELambda _ _ body (mc-expr body (Cons (mc-fn-fence) mutscope) lets))
-    (EFn _ _ body (mc-expr body (Cons (mc-fn-fence) mutscope) lets))
-    (ETryCatch tbody _ handler
-      (begin (mc-expr tbody mutscope lets) (mc-expr handler mutscope lets)))
+    (ELambda _ ps body (mc-lambda ps body mutscope lets))
+    (EFn _ ps body (mc-lambda ps body mutscope lets))
+    (ETryCatch tbody v handler
+      (begin (mc-expr tbody mutscope lets) (mc-expr handler (mc-drop v mutscope) (mc-drop-let v lets))))
     (EMatch subj arms (begin (mc-expr subj mutscope lets) (mc-arms arms mutscope lets)))
     (ECall op args (begin (mc-expr op mutscope lets) (mc-list args mutscope lets)))
     ; `(ffi-call "sym" a b timeout)` arrives here as EApply("ffi-call",
@@ -281,8 +354,8 @@
     ; that's a TMut value crossing an actor boundary.
     (ESpawn closure
       (begin
-        (if (mc-refs-any closure mutscope)
-          (mc-fail-leak e closure mutscope lets "spawned closure captures let-mut (TMut) variable `" "only Send-capable (non-mut) captures may cross into another actor")
+        (if (mc-refs-any (mc-named-closure closure lets) mutscope)
+          (mc-fail-leak e (mc-named-closure closure lets) mutscope lets "spawned closure captures let-mut (TMut) variable `" "only Send-capable (non-mut) captures may cross into another actor")
           0)
         (mc-expr closure mutscope lets)))
     (ESend actor msg
@@ -293,7 +366,12 @@
           0)
         (mc-expr msg mutscope lets)))
     (ESendClosure actor closure _
-      (begin (mc-expr actor mutscope lets) (mc-expr closure mutscope lets)))
+      (begin
+        (mc-expr actor mutscope lets)
+        (if (mc-refs-any (mc-named-closure closure lets) mutscope)
+          (mc-fail-leak e (mc-named-closure closure lets) mutscope lets "closure sent to an actor captures let-mut (TMut) variable `" "only Send-capable (non-mut) captures may cross into another actor")
+          0)
+        (mc-expr closure mutscope lets)))
     (ETestDecl _ body _ _ (mc-expr body mutscope lets))
     (EAssertEqual l r (begin (mc-expr l mutscope lets) (mc-expr r mutscope lets)))
     (EAssertTrue e2 _ (mc-expr e2 mutscope lets))
@@ -301,6 +379,11 @@
     (ETestCompile e2 _ (mc-expr e2 mutscope lets))
     (EDefn _ _ body (mc-expr body Nil Nil))
     (_ 0)))
+
+; Parameters shadow outer let-muts; the fence marks the closure boundary.
+(defn mc-lambda (ps body mutscope lets)
+  (let names (mc-param-names ps)
+    (mc-expr body (Cons (mc-fn-fence) (mc-drop-all names mutscope)) (mc-drop-lets names lets))))
 
 ; First name of `names` that `e` references, or "".
 (defn mc-first-ref (e names)

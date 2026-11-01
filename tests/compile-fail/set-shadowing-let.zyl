@@ -1,0 +1,7 @@
+; Compile-fail: an immutable `let` that shadows an outer let-mut cannot be set!.
+; expect-error: E_MUT_CONFLICT
+
+(defn main ()
+  (let-mut c 0
+    (let c 5
+      (begin (set! c 9) (print c) 0))))

@@ -1,0 +1,8 @@
+; Compile-fail: a match binder that shadows an outer let-mut is immutable.
+; expect-error: E_MUT_CONFLICT
+
+(defn main ()
+  (let-mut c 0
+    (match (Some 4)
+      (Some c (begin (set! c 7) (print c) 0))
+      (None c))))

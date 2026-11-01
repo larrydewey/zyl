@@ -1,0 +1,10 @@
+; Compile-fail: a let-bound closure that captures a let-mut crosses the actor boundary.
+; expect-error: E_CAPABILITY_LEAK
+(capabilities actor)
+(use actor/actor)
+
+(defn main ()
+  (let-mut x 1
+    (let f (fn () (print x))
+      (let a (spawn f)
+        (begin (set! x 3) (actor-wait a) 0)))))
