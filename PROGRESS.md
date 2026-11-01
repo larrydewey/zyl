@@ -544,6 +544,10 @@ Language and compiler:
   the crypto entry points take plain `Words`, so nothing seeds taint
   there. The annotated bignum/curve mask helpers wipe their frames and
   so run on the stack machine, not the MIR backend.
+- File handles carry a generation (bits 32..62): a closed handle is
+  `E_USE_AFTER_FREE` at run time, a second close a no-op. `linearity.zyl`
+  is intraprocedural; a handle released through a helper is caught only by
+  that runtime floor. Descriptors from 32768 up are untracked.
 - Diagnostics with no source node stay unlocated: `--locked` capability
   growth, `E_CODEGEN_BUFFER_FULL`, and the lock/store/index/CLI/MVS
   errors about files.
@@ -551,7 +555,16 @@ Language and compiler:
 Concurrency:
 
 - An endpoint nested inside a captured value does not move at spawn.
-- Send-capability is the syntactic let-mut rule, not a type.
+- Send-capability is the syntactic let-mut rule, not a type. A spawned
+  closure may capture a `bytebuf` and write it with plain stores from two
+  actors: a data race whose output depends on the schedule. Restricting a
+  shared buffer to the atomic forms (or forbidding the capture) is an open
+  language decision; the atomics themselves still let output depend on
+  interleaving.
+- An actor's `(exit c)` ends the actor and its joiner exits with `c`; an
+  actor's stack overflow stops the program when the actor is joined. If
+  the overflow hits while the actor holds a runtime lock, the old
+  immediate stop is kept (no hang), and that path is schedule-dependent.
 - Capability-mediated sharing (a shared region of TCap or atomic
   values, read-only pages between actors) is not built; the atomic
   byte-buffer operations exist.
