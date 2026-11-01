@@ -100,10 +100,11 @@ atomics a `ByteBuf`; `byteslice-sub` and `bytebuf-append`'s second
 operand a `ByteSlice`; a load or store either. When nothing in its
 function group decides whether a load's or store's handle is a buffer
 or a slice, the handle is `E_CANNOT_INFER`, and an annotation settles
-it:
+it. (A parameter is not a buffer a `let` bound, so the compiler cannot
+prove the offset fits, and the access is spelled `load-u8!`; Chapter 32.)
 
 ```lisp
-(defn first-byte ((b ByteBuf)) (load-u8 :le b 0))   ; without the annotation, E_CANNOT_INFER
+(defn first-byte ((b ByteBuf)) (load-u8! :le b 0))  ; without the annotation, E_CANNOT_INFER
 ```
 
 ```lisp

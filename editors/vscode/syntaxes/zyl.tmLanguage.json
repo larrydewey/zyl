@@ -236,7 +236,7 @@
       "patterns": [
         {
           "name": "support.function.byte.zyl",
-          "match": "(?<![^\\s()\\[\\]{}\";])(byteslice-sub|byteslice|bytebuf-append|bytebuf-len|bytebuf-cap|bytebuf-ptr|bytebuf|align-check|byte|load-u8|load-i8|load-u16|load-i16|load-u32|load-i32|load-u64|load-i64|store-u8|store-i8|store-u16|store-i16|store-u32|store-i32|store-u64|store-i64)(?![^\\s()\\[\\]{}\";])"
+          "match": "(?<![^\\s()\\[\\]{}\";])(byteslice-sub|byteslice|bytebuf-append|bytebuf-len|bytebuf-cap|bytebuf-ptr|bytebuf|align-check|byte|load-u8|load-i8|load-u16|load-i16|load-u32|load-i32|load-u64|load-i64|store-u8|store-i8|store-u16|store-i16|store-u32|store-i32|store-u64|store-i64)(?:(?<=[0-9])[!?])?(?![^\\s()\\[\\]{}\";])"
         }
       ]
     },

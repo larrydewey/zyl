@@ -171,6 +171,7 @@ checked yet:
 
 | Rule | Today |
 |---|---|
+| `bytebuf-ptr` needs the `ffi` capability | Checked, reported as `E_PKG_CAPABILITY_VIOLATION` |
 | `bytebuf-ptr` only in the Pin region | Not checked; works on any buffer |
 | A Stack buffer may not escape its scope | Checked, reported as `E_REGION_ESCAPE` |
 | A Global buffer may not be mutated | Not checked |
@@ -301,7 +302,7 @@ at different stages:
 | `bit-and`, `bit-or`, `bit-xor`, `bit-not`, `shl`, `shr`, `ashr` | Complete. Covered by `tests/regression/bitwise.zyl` and used throughout `stdlib/math` |
 | `bytebuf`, `bytebuf-cap`, `bytebuf-len`, `bytebuf-ptr` | Working; a `Stack` buffer lives in the frame region, every other region in the heap |
 | `byteslice`, `byteslice-sub`, `bytebuf-append` | Working |
-| `load-u8`, `load-i8`, `store-u8`, `store-i8` | Working |
+| `load-u8`, `load-i8`, `store-u8`, `store-i8` | Working; plain only where proven in range, else `!` (`E_INDEX_OUT_OF_BOUNDS`) or `?` (`None`) |
 | 16-, 32- and 64-bit loads and stores | Working, little- or big-endian |
 | The atomic family | Working, on 8-aligned offsets |
 | `align-check` | Working, as a 1/0 test |
@@ -311,11 +312,10 @@ at different stages:
 
 Two further caveats:
 
-- **Nothing in the standard library uses byte buffers yet.**
-  `stdlib/math` represents byte strings as one byte per 8-byte word
-  (`math/words`) rather than as packed buffers — see Chapter 34 for why
-  that tradeoff was made. The buffer family is there for programs that
-  need packed representations; it is not yet load-bearing.
+- **Little of the standard library uses byte buffers.**
+  `encoding/cbor` encodes into one, but `stdlib/math` represents byte
+  strings as one byte per 8-byte word (`math/words`) rather than as
+  packed buffers — see Chapter 34 for why that tradeoff was made.
 - **Buffers and slices have their own types**, `ByteBuf` and
   `ByteSlice`, usable as annotations: `(defn fill ((b ByteBuf)) ...)`.
   Every offset, length and stored value is an `Int`, and each operation

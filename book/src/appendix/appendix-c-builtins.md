@@ -410,14 +410,16 @@ assertion.
 | `byte` | `(byte n)` | literal, 0..255 |
 | `bytebuf` | `(bytebuf Region capacity)` | region and capacity are compile-time literals; a `Stack` buffer lives in the frame region, and letting it escape is `E_REGION_ESCAPE` |
 | `bytebuf-len` / `bytebuf-cap` | `(bytebuf-len buf)` | |
-| `bytebuf-ptr` | `(bytebuf-ptr buf)` | raw address of the first byte |
+| `bytebuf-ptr` | `(bytebuf-ptr buf)` | raw address of the first byte; needs the `ffi` capability, since an address differs between runs |
 | `bytebuf-append` | `(bytebuf-append buf slice)` | takes a **slice**, not a single byte; returns 0 and changes nothing when the slice does not fit |
 | `byteslice` | `(byteslice buf offset length)` | |
 | `byteslice-sub` | `(byteslice-sub slice offset length)` | |
 | `align-check` | `(align-check ptr alignment)` | returns an `Int`, 1 when `ptr` is a multiple of `alignment` and 0 otherwise; a condition needs `(= ... 1)` |
-| `load-u8`, `load-i8` | `(load-u8 :le buf offset)` | `:le` or `:be` |
-| `store-u8`, `store-i8` | `(store-u8 :le buf offset value)` | |
-| `bytebuf-atomic-load` | `(bytebuf-atomic-load buf offset)` | |
+| `load-u8`, `load-i8` | `(load-u8 :le buf offset)` | `:le` or `:be`; plain only where proven in range (a literal offset into a buffer a `let` bound to `(bytebuf R N)`), else `E_PARTIAL_OPERATION` |
+| `store-u8`, `store-i8` | `(store-u8 :le buf offset value)` | the same proof; returns 1 |
+| `load-u8!` .. `store-i64!` | `(load-u8! :le buf offset)` | out of range stops the program with `E_INDEX_OUT_OF_BOUNDS` |
+| `load-u8?` .. `store-i64?` | `(load-u8? :le buf offset)` | out of range gives `None` and writes nothing; in range `(Some v)` |
+| `bytebuf-atomic-load` | `(bytebuf-atomic-load buf offset)` | the offset must be 8-aligned and the word must fit, else it returns 0 and stores nothing |
 | `bytebuf-atomic-store` / `-add` / `-sub` / `-fetch-add` / `-max` / `-min` | `(bytebuf-atomic-add buf offset value)` | |
 | `bytebuf-atomic-cas` | `(bytebuf-atomic-cas buf offset expected desired)` | |
 

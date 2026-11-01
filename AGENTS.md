@@ -153,9 +153,19 @@ a signed provenance trailer, and `zyl verify <binary>` reads it back
   aggregate is not computed — as is a `Float` callback parameter.
   A foreign `ffi-call`/`ffi-pin` needs the `ffi` capability, declared in
   `zyl.pkg` by a package and by a top-level `(capabilities ffi)` form in
-  a lone file (absent means none; a `zyl_*` runtime entry needs no
-  grant), and a `Secret` argument must be passed through `ffi-pin`
-  (`E_FFI_PIN_REQUIRED`)
+  a lone file (absent means none). A `zyl_*` runtime entry needs what it
+  reaches (`cc-entry-capability`, `capability_check.zyl`): one that
+  touches the world (processes, files, directories, the environment, the
+  clock, the terminal, OS entropy) needs `io`, one that reads or writes
+  an address the caller supplies (`zyl_atomic_*`, `zyl_mem_*`,
+  `zyl_ptr_*`, `zyl_word_*`) needs `ffi`, and the rest need nothing;
+  `bytebuf-ptr` needs `ffi` too, since an address differs between runs.
+  A standard-library call needs every capability its body reaches, derived
+  over the stdlib call graph. The raw address and arena entries a program
+  could misuse are `E_FFI_RESTRICTED` outside the standard library.
+  A `Secret` argument must be passed through `ffi-pin`
+  (`E_FFI_PIN_REQUIRED`), and naming the `Secret` type needs the `secret`
+  capability
 
 ### Struct Immutability
 - Struct fields are immutable by default
