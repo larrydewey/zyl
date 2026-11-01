@@ -202,11 +202,11 @@ gives the macro that function's key, and the macro then takes over every
 call to it:
 
 ```lisp
-(use core/core { abs })
+(use core/core { max })
 
-(defmacro abs (x) 99)
+(defmacro max (a b) 99)
 
-(print (abs -5))      ; 99: the macro, not core's abs
+(print (max 1 2))     ; 99: the macro, not core's max
 ```
 
 A macro named `when`, `unless` or `let*` is the exception (§23.6): the

@@ -252,7 +252,7 @@
       "patterns": [
         {
           "name": "support.function.zyl",
-          "match": "(?<![^\\s()\\[\\]{}\";])(chan-recv|chan-tx|chan-rx|chan|actor-wait|str-concat|str-substring|str-length|str-len|str-eq|str-intern|declassify|ct-eq-bool|ct-eq-words-bool|ct-declassify|list-length|list-reverse|list-append|list-map|list-filter|list-nth|car|cdr|cadr|caddr|cddr|list-rest|is-nil|map-get|map-insert|map-remove|map-has|map-new|map-entries|vec-get|vec-set|vec-push|vec-pop|arena-create|arena-alloc|arena-reset|arena-destroy|min|max|abs|clamp|signum|square|cube|identity|compose|flip|apply|len|int?|float?|bool?|string?|struct?|alias?|vec-len|map-size|intmap-new|intmap-new-with|intmap-put|intmap-get|intmap-has|intmap-remove|intmap-len|intmap-cap|intmap-free)(?![^\\s()\\[\\]{}\";])"
+          "match": "(?<![^\\s()\\[\\]{}\";])(chan-recv|chan-tx|chan-rx|chan|actor-wait|str-concat|str-substring|str-length|str-len|str-eq|str-intern|declassify|ct-eq-bool|ct-eq-words-bool|ct-declassify|list-length|list-reverse|list-append|list-sum!|list-sum\\?|list-map|list-filter|list-nth|car|cdr|cadr|caddr|cddr|list-rest|is-nil|map-get|map-insert|map-remove|map-has|map-new|map-entries|vec-get|vec-set|vec-push|vec-pop|arena-create|arena-alloc|arena-reset|arena-destroy|min|max|abs!|abs\\?|clamp|signum|square!|square\\?|cube!|cube\\?|int-add\\?|int-sub\\?|int-mul\\?|identity|compose|flip|apply|len|int?|float?|bool?|string?|struct?|alias?|vec-len|map-size|intmap-new|intmap-new-with|intmap-put|intmap-get|intmap-has|intmap-remove|intmap-len|intmap-cap|intmap-free)(?![^\\s()\\[\\]{}\";])"
         }
       ]
     },

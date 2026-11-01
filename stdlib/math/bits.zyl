@@ -54,12 +54,12 @@
 ; Wrapping 32-bit addition.
 ; Returns: Int
 (defn add32 ((a Int) (b Int))
-  (u32 (+ a b)))
+  (u32 (wrapping+ a b)))
 
 ; Wrapping 32-bit subtraction.
 ; Returns: Int
 (defn sub32 ((a Int) (b Int))
-  (u32 (- a b)))
+  (u32 (wrapping- a b)))
 
 ; Wrapping 32-bit multiplication: the low 32 bits of the product, whose
 ; high bits fall off (a wrapping multiply, since the stdlib is checked code).
@@ -81,13 +81,13 @@
 ; Returns: Int
 (defn rotl32 ((x Int) (n Int))
   (let v (u32 x)
-    (bit-or (shl32 v n) (shr v (- 32 n)))))
+    (bit-or (shl32 v n) (shr v (wrapping- 32 n)))))
 
 ; 32-bit rotate right by n (0 <= n < 32).
 ; Returns: Int
 (defn rotr32 ((x Int) (n Int))
   (let v (u32 x)
-    (bit-or (shr v n) (shl32 v (- 32 n)))))
+    (bit-or (shr v n) (shl32 v (wrapping- 32 n)))))
 
 ; 32-bit one's complement.
 ; Returns: Int
@@ -101,12 +101,12 @@
 ; 64-bit rotate left by n (0 <= n < 64).
 ; Returns: Int
 (defn rotl64 ((x Int) (n Int))
-  (bit-or (shl x n) (shr x (- 64 n))))
+  (bit-or (shl x n) (shr x (wrapping- 64 n))))
 
 ; 64-bit rotate right by n (0 <= n < 64).
 ; Returns: Int
 (defn rotr64 ((x Int) (n Int))
-  (bit-or (shr x n) (shl x (- 64 n))))
+  (bit-or (shr x n) (shl x (wrapping- 64 n))))
 
 ; 64-bit one's complement.
 ; Returns: Int

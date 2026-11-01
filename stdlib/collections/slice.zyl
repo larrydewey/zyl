@@ -32,7 +32,7 @@
 (defn slice-range! ((who String) (alt String) (what String) (off Int) (len Int) (n Int))
   (ffi-call "zyl_panic"
     (str-concat "E_INDEX_OUT_OF_BOUNDS: " (str-concat who (str-concat " range " (str-concat (ffi-call "zyl_int_text" off 1000)
-      (str-concat ".." (str-concat (ffi-call "zyl_int_text" (+ off len) 1000) (str-concat " is outside a " (str-concat what
+      (str-concat ".." (str-concat (ffi-call "zyl_int_text" (saturating+ off len) 1000) (str-concat " is outside a " (str-concat what
         (str-concat " of " (str-concat (ffi-call "zyl_int_text" n 1000)
           (str-concat " elements\n  = help: use `" (str-concat alt "` and match its Option"))))))))))))
     1000))

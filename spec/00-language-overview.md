@@ -170,7 +170,16 @@ index outside the Vec is `E_INDEX_OUT_OF_BOUNDS` or `None`),
 accessors `i64x2-get!`/`i64x2-get?`, `i64x2-set!`/`i64x2-set?` and
 their `i32x4` and `u8x16` forms, and `option-expect!` and
 `result-expect!` (which have no `?` sibling: the Option or Result is
-it). `vec-get-or`, `slice-get-or`, `list-nth`, `map-get`, `assoc-get`
+it). Arithmetic that can leave Int is partial the same way: `abs!`,
+`square!`, `cube!` and `list-sum!` stop with `E_OVERFLOW` (the standard
+library is checked whatever the caller's policy), and `abs?`, `square?`,
+`cube?` and `list-sum?` are `None` exactly there; `int-add?`, `int-sub?`
+and `int-mul?` are the checked operations as `Option`. A plain-named
+function does not stop with `E_OVERFLOW` on a caller's Int:
+`view-parse-int` is `None` outside Int, the word helpers (`add32`,
+`rotl64`, ...) wrap, and buffer sizing (`cbor-budget`, `cose-cap`)
+saturates, so an impossible size is refused by the allocation.
+`vec-get-or`, `slice-get-or`, `list-nth`, `map-get`, `assoc-get`
 and `intmap-get` are total as written. A `!` function's message names
 the input and the bound and points at the `?` sibling.
 

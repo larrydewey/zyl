@@ -1,0 +1,6 @@
+; expect-error: E_UNBOUND_VARIABLE
+; list-sum can stop with E_OVERFLOW, so it is spelled list-sum! or list-sum?.
+
+(use core/core)
+
+(defn main () (begin (print (list-sum [1 2 3])) 0))

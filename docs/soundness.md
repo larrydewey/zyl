@@ -308,15 +308,24 @@ that panics through a callee is not flagged (its callee is, which is where
 the `!` must then appear). Built-in forms and runtime primitives are outside
 the rule: exhausting a `fixed` region, running out of memory, and an FFI
 timeout still stop a program without a `!` in sight. Integer arithmetic is
-only partly among them (L9): a division that can stop is `div!`/`rem!`, but
-Int `+ - *` is checked by default and stops with `E_OVERFLOW` unless the
-package opts out with `(numeric wrapping)` or `(numeric saturating)`. The
-standard library is always checked, whatever the calling program declared,
-so plain-named library functions built on `+ - *` -- `abs` (of `INT_MIN`),
-`square`, `cube`, `list-sum` -- stop on overflow without a `!`. Whether they
-should be renamed `abs!` etc., given `?` siblings, or made to follow the
-caller's policy is an open decision; until then an overflow stop, like
-running out of memory, is outside the `!` rule.
+partly among them (L9): a division that can stop is `div!`/`rem!`, but a
+program's own Int `+ - *` is checked by default and stops with `E_OVERFLOW`
+unless the package opts out with `(numeric wrapping)` or
+`(numeric saturating)`; that stop is the operator's, written in the
+program's own source. The standard library is always checked, whatever the
+calling program declared, so a library function that a caller's argument
+can push outside Int is spelled: `abs!`, `square!`, `cube!` and
+`list-sum!` stop with `E_OVERFLOW`, and `abs?`, `square?`, `cube?`,
+`list-sum?` (and `int-add?`, `int-sub?`, `int-mul?`) are `None` exactly
+there; the plain names are gone (`E_UNBOUND_VARIABLE`, with the two
+spellings suggested). The other plain-named helpers that compute with a
+caller's Int were made total: `view-parse-int` is `None` outside Int,
+`add32`/`sub32` and the rotations wrap, `cbor-uint` encodes `INT_MIN`,
+`cursor-advance` clamps without adding first, and `cbor-budget`/`cose-cap`
+saturate. This is a review of the library, not a check: the
+compiler does not flag a plain-named function whose `+` can overflow, so
+a new one is caught by review (`tests/regression/types.zyl`,
+`tests/compile-fail/overflow-unmarked-*.zyl` pin the current set).
 A byte load or store is held to the same rule at compile time
 (`numeric_check.zyl`, spec §20.3a): the plain form must be proven in range
 (a literal offset into a `let`-bound `(bytebuf R N)` that fits), otherwise

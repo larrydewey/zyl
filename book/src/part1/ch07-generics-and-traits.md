@@ -42,7 +42,7 @@ generates one instance of the function per concrete argument-type
 combination it is called with (§7.6), so `smaller` on Strings compares
 text and on Ints compares numbers.
 
-The core library already defines `identity`, `min`, `max`, `abs`,
+The core library already defines `identity`, `min`, `max`, `abs!`,
 `compose` and a few others. Defining a function with one of those names
 is `E_DUPLICATE_DEFINITION`, so pick another name (as `smaller` does
 here).
@@ -452,7 +452,7 @@ one, use an ADT wrapper (§7.3):
 (defn double (x) (* x 2))
 
 (defn main ()
-  (print (list-sum (my-map double (Cons 1 (Cons 2 (Cons 3 Nil))))))   ; 12
+  (print (list-sum! (my-map double (Cons 1 (Cons 2 (Cons 3 Nil))))))   ; 12
   0)
 ```
 

@@ -101,7 +101,7 @@
 
 ; Major 0.
 (defn cbor-uint ((b ByteBuf) (off Int) n)
-  (if (< n 0) (cbor-nint b off (- 0 n)) (cbor-head b off 0 n)))
+  (if (< n 0) (cbor-head b off 1 (- -1 n)) (cbor-head b off 0 n)))
 
 ; Major 1: the encoded argument is one less than the magnitude, so -1 is 0.
 (defn cbor-nint ((b ByteBuf) (off Int) n) (cbor-head b off 1 (- n 1)))
@@ -163,7 +163,8 @@
 ; An upper bound on the record, for sizing: every value as its head plus a
 ; 64-byte payload. Deliberately an over-estimate -- a buffer that is too big
 ; costs a few bytes, one that is too small truncates a signature.
-(defn cbor-budget (items bytes-each) (+ 16 (* items (+ 12 bytes-each))))
+; Saturates, so an absurd size is refused by the allocation, not E_OVERFLOW.
+(defn cbor-budget (items bytes-each) (saturating+ 16 (saturating* items (saturating+ 12 bytes-each))))
 
 ; ---------------------------------------------------------------------------
 ; Maps

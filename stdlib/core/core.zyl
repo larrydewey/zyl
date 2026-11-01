@@ -62,8 +62,31 @@
 ; ARITHMETIC HELPERS
 ; ===========================================================================
 
-(defn abs (x)
+; Checked Int arithmetic that cannot stop: None where + - * would be E_OVERFLOW.
+; Returns: (Option Int)
+(defn int-add? ((a Int) (b Int))
+  (let r (wrapping+ a b)
+    (if (< (bit-and (bit-xor a r) (bit-xor b r)) 0) None (Some r))))
+
+; Returns: (Option Int)
+(defn int-sub? ((a Int) (b Int))
+  (let r (wrapping- a b)
+    (if (< (bit-and (bit-xor a b) (bit-xor a r)) 0) None (Some r))))
+
+; Returns: (Option Int)
+(defn int-mul? ((a Int) (b Int))
+  (let lo (wrapping* a b)
+    (if (= (mul-hi a b) (ashr lo 63)) (Some lo) None)))
+
+; |x|; (abs! INT_MIN) stops the program with E_OVERFLOW.
+; Returns: Int
+(defn abs! ((x Int))
   (if (< x 0) (- 0 x) x))
+
+; |x|, or None for INT_MIN, whose magnitude is not an Int.
+; Returns: (Option Int)
+(defn abs? ((x Int))
+  (if (< x 0) (int-sub? 0 x) (Some x)))
 
 (defn max (a b)
   (if (> a b) a b))
@@ -77,9 +100,24 @@
 (defn signum (x)
   (if (== x 0) 0 (if (> x 0) 1 -1)))
 
-(defn square (x) (* x x))
+; x*x; a product outside Int stops the program with E_OVERFLOW.
+; Returns: Int
+(defn square! ((x Int)) (* x x))
 
-(defn cube (x) (* x x x))
+; x*x, or None where square! would stop.
+; Returns: (Option Int)
+(defn square? ((x Int)) (int-mul? x x))
+
+; x*x*x; a product outside Int stops the program with E_OVERFLOW.
+; Returns: Int
+(defn cube! ((x Int)) (* x x x))
+
+; x*x*x, or None where cube! would stop.
+; Returns: (Option Int)
+(defn cube? ((x Int))
+  (match (int-mul? x x)
+    (Some s (int-mul? s x))
+    (None None)))
 
 ; ===========================================================================
 ; BOOL HELPERS

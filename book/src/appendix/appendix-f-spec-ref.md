@@ -279,7 +279,7 @@ something raises.
 
 | Module | Key exports |
 |--------|-------------|
-| `core/core` | `identity`, `compose`, `abs`, `min`, `max`, `clamp`, `is-even`, `print-int`, `print-string` |
+| `core/core` | `identity`, `compose`, `abs!`/`abs?`, `min`, `max`, `clamp`, `is-even`, `print-int`, `print-string` |
 | `core/option` | `Option`, `Some`, `None`, `option-is-some`, `option-unwrap`, `option-map`, `option-flatmap` |
 | `core/result` | `Result`, `Ok`, `Err`, `result-is-ok`, `result-unwrap`, `result-map`, `result-and-then` |
 | `core/list` | `List`, `Cons`, `Nil`, `car`, `cdr`, `list-length`, `list-append`, `list-reverse` |

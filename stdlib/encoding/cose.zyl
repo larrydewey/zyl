@@ -47,7 +47,7 @@
 ; The size of a COSE_Sign1 carrying a payload of `plen` bytes: four heads, the
 ; twelve protected bytes, the kid map (head + 1 + head + 32) and the 64-byte
 ; signature.
-(defn cose-cap (plen) (+ plen 128))
+(defn cose-cap (plen) (saturating+ plen 128))
 
 ; ---------------------------------------------------------------------------
 ; Bytes

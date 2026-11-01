@@ -95,11 +95,25 @@
     (Nil acc)
     (Cons h t (list-reverse-acc t (Cons h acc)))))
 
-; Sum of list (Int only — monomorphized by use site)
-(defn list-sum (xs)
+; Sum of an Int list, left to right; a sum outside Int stops with E_OVERFLOW.
+; Returns: Int
+(defn list-sum! (xs) (list-sum-from! xs 0))
+
+(defn list-sum-from! (xs (acc Int))
   (match xs
-    (Nil 0)
-    (Cons h t (+ h (list-sum t)))))
+    (Nil acc)
+    (Cons h t (list-sum-from! t (+ acc h)))))
+
+; Sum of an Int list, or None where list-sum! would stop.
+; Returns: (Option Int)
+(defn list-sum? (xs) (list-sum-from? xs 0))
+
+(defn list-sum-from? (xs (acc Int))
+  (match xs
+    (Nil (Some acc))
+    (Cons h t
+      (let r (wrapping+ acc h)
+        (if (< (bit-and (bit-xor acc r) (bit-xor h r)) 0) None (list-sum-from? t r))))))
 
 (impl Show List (defn show (self) (str-concat "[" (str-concat (list-show-items self) "]"))))
 

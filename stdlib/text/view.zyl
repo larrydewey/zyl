@@ -42,7 +42,7 @@
 (defn view-range! ((who String) (alt String) (what String) (off Int) (len Int) (n Int))
   (ffi-call "zyl_panic"
     (str-concat "E_INDEX_OUT_OF_BOUNDS: " (str-concat who (str-concat " range " (str-concat (ffi-call "zyl_int_text" off 1000)
-      (str-concat ".." (str-concat (ffi-call "zyl_int_text" (+ off len) 1000) (str-concat " is outside a " (str-concat what
+      (str-concat ".." (str-concat (ffi-call "zyl_int_text" (saturating+ off len) 1000) (str-concat " is outside a " (str-concat what
         (str-concat " of " (str-concat (ffi-call "zyl_int_text" n 1000)
           (str-concat " bytes\n  = help: use `" (str-concat alt "` and match its Option"))))))))))))
     1000))
@@ -160,8 +160,8 @@
     v))
 
 ; A decimal integer with an optional leading `-`, filling the whole view;
-; None for anything else (including an empty view or a lone `-`).
-; Overflow wraps, as Int arithmetic does.
+; None for anything else (including an empty view or a lone `-`) and for
+; a value outside Int.
 ; Returns: (Option Int)
 (defn view-parse-int ((v StrView))
   (if (= (view-len v) 0)
@@ -172,11 +172,21 @@
 
 (defn view-parse-digits ((v StrView) (i Int) (acc Int) (sign Int))
   (if (>= i (view-len v))
-    (Some (* sign acc))
+    (Some acc)
     (let b (view-byte-at v i)
       (if (and (>= b 48) (<= b 57))
-        (view-parse-digits v (+ i 1) (+ (* acc 10) (- b 48)) sign)
+        (match (view-digit-step acc (* sign (- b 48)))
+          (Some n (view-parse-digits v (+ i 1) n sign))
+          (None None))
         None))))
+
+; acc*10 + d, or None outside Int; acc carries the sign, so INT_MIN parses.
+(defn view-digit-step ((acc Int) (d Int))
+  (let lo (wrapping* acc 10)
+    (if (= (mul-hi acc 10) (ashr lo 63))
+      (let r (wrapping+ lo d)
+        (if (< (bit-and (bit-xor lo r) (bit-xor d r)) 0) None (Some r)))
+      None)))
 
 (impl Show StrView (defn show (self) (view-to-string self)))
 (impl Debug StrView (defn debug (self) (str-concat "\"" (str-concat (view-to-string self) "\""))))
@@ -220,8 +230,8 @@
 ; The cursor `n` bytes on, stopping at the end.
 ; Returns: Cursor
 (defn cursor-advance ((c Cursor) (n Int))
-  (let p (+ (cursor-pos c) (if (< n 0) 0 n))
-    (CursorC (cursor-view c) (if (> p (view-len (cursor-view c))) (view-len (cursor-view c)) p))))
+  (let room (- (view-len (cursor-view c)) (cursor-pos c))
+    (CursorC (cursor-view c) (+ (cursor-pos c) (if (< n 0) 0 (if (> n room) room n))))))
 
 ; The bytes from the cursor for which `pred` holds, and the cursor after
 ; them.

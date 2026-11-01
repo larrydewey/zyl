@@ -68,6 +68,15 @@ compile with `build/boot/zyl-self` on 2026-09-28.
   interpreter decide overflow before operating (`int_arith.zyl`); the
   accumulator transformation, speculative `if` arms and `lea` are limited
   to wrapping arithmetic. The compiler and runtime run under checked.
+- Library arithmetic that can leave Int is spelled (2026-11-01): `abs!`,
+  `square!`, `cube!`, `list-sum!` stop with `E_OVERFLOW`; `abs?`,
+  `square?`, `cube?`, `list-sum?`, `int-add?`, `int-sub?`, `int-mul?`
+  give `(Option Int)`; the plain names are gone. `view-parse-int` is
+  `None` outside Int, `add32`/`sub32`/rotations and `ct-mask` wrap,
+  `cbor-uint` encodes `INT_MIN`, `cursor-advance` clamps first,
+  `cbor-budget`/`cose-cap` saturate (`docs/soundness.md` L8). Found by
+  review, not by a check: a new plain-named `+` that can overflow is
+  not flagged by the compiler.
 - Byte loads and stores are partial operations (spec §20.3a, 2026-10-31):
   a plain `load-u8` .. `store-i64` must be proven in range (a literal
   offset into a `let`-bound `(bytebuf R N)` that fits), else
@@ -549,10 +558,6 @@ Language and compiler:
   is still quadratic (200 KB: 4 s): `zyl_cstr_byte_at` measures the string
   per call, and many compiler byte loops use it; the hottest were moved to
   `zyl_view_byte` with a known length.
-- Plain-named stdlib arithmetic (`abs`, `square`, `cube`, `list-sum`)
-  stops with `E_OVERFLOW` without a `!`, even in a `(numeric wrapping)`
-  program (soundness.md L8): renaming or following the caller's policy is
-  an open decision.
 
 - `zyl_ref_*` is a shared mutable cell any program may create; two actors
   sharing one race (needs `actor`). Whether refs stay a program surface is

@@ -26,7 +26,9 @@ Operators and special forms (`+ - * / %`, `= == != < > <= >=`,
 ```lisp
 (use core/core)
 ;(identity x) (const a _b) (flip f a b) (compose f g) (apply f x)
-;(abs x) (max a b) (min a b) (clamp x lo hi) (signum x) (square x) (cube x)
+;(abs! x) (abs? x) (max a b) (min a b) (clamp x lo hi) (signum x)
+;(square! x) (square? x) (cube! x) (cube? x) (int-add? a b) (int-sub? a b) (int-mul? a b)
+;  ! stops with E_OVERFLOW outside Int; ? gives (Option Int), None exactly there
 ;(xor a b) (nand a b) (nor a b) (implies a b)
 ;(is-bool x) (is-zero x) (is-even n) (is-odd n)
 ;(print-int (n Int)) (print-float (f Float)) (print-string (s String)) (print-bool (b Bool))
@@ -101,7 +103,7 @@ use `option-expect!`. `option-is-some` and `option-is-none` return
 (deftype List (Cons T (List T)) Nil)
 ;(is-nil xs) (list-car xs) (list-cdr xs) (list-rest xs)
 ;(car xs) (cdr xs) (cadr xs) (caddr xs) (cddr xs)
-;(list-length xs) (list-append xs ys) (list-reverse xs) (list-sum xs)
+;(list-length xs) (list-append xs ys) (list-reverse xs) (list-sum! xs) (list-sum? xs)
 ```
 
 `car`/`cdr`/`cadr`/`caddr`/`cddr` are plain functions, not macros: each

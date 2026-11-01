@@ -488,12 +488,13 @@ fine as arguments.
 (defn main ()
   (let xs (Cons 1 (Cons 2 (Cons 3 (Cons 4 Nil))))
     (begin
-      (print (list-sum (my-map (fn (x) (* x 10)) xs)))       ; 100
+      (print (list-sum! (my-map (fn (x) (* x 10)) xs)))       ; 100
       (print (list-length (my-filter (fn (x) (> x 2)) xs)))))  ; 2
   0)
 ```
 
-`list-sum` and `list-length` come from the core list library. The
+`list-sum!` (which stops with `E_OVERFLOW` if the sum leaves Int; `list-sum?`
+gives an Option instead) and `list-length` come from the core list library. The
 module `collections/collections` also has ready-made `list-map`,
 `list-filter` and `list-fold`.
 

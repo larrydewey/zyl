@@ -260,6 +260,16 @@
             ; and a uint whose head runs past the length given is not read
             (assert-equal (cbor-uint-at b 0 2) (CU (- 1) (- 1)))))))))
 
+; INT_MIN is major 1 with argument INT_MAX: encoded, not E_OVERFLOW.
+(test "cbor-int-min-encodes"
+  (let b (cbor-buf 16)
+    (let e (cbor-uint b 0 (- -9223372036854775807 1))
+      (begin
+        (assert-equal e 9)
+        (assert-equal (load-u8! :le b 0) 59)
+        (assert-equal (load-u8! :le b 1) 127)
+        (assert-equal (load-u8! :le b 8) 255)))))
+
 ; A byte string yields payload offset, length and the offset past it, and a
 ; text string in that position is refused. The values that carry meaning in a
 ; record are 32-byte hashes: a hash spelled as text is a record this reader

@@ -11,6 +11,11 @@
   (assert-equal (add32 4294967295 1) 0))
 (test "add32-plain"
   (assert-equal (add32 100 23) 123))
+; Wrapping means no E_OVERFLOW on any Int operand.
+(test "add32-sub32-any-int"
+  (begin
+    (assert-equal (add32 9223372036854775807 1) 0)
+    (assert-equal (sub32 (- -9223372036854775807 1) 1) 4294967295)))
 (test "sub32-wraps"
   (assert-equal (sub32 0 1) 4294967295))
 (test "mul32-wraps"

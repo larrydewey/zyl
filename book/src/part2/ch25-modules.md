@@ -556,7 +556,7 @@ The standard library is package `zyl/std` at the compiler's major. It is implici
 
 | Module | Representative definitions |
 |--------|----------------------------|
-| `core/core` (implicit) | `identity`, `compose`, `abs`, `max`, `min`, `clamp`, option/result conversions |
+| `core/core` (implicit) | `identity`, `compose`, `abs!`/`abs?`, `max`, `min`, `clamp`, option/result conversions |
 | `core/list` | `List`, `car`, `cdr`, `list-length`, `list-append`, `list-reverse` |
 | `core/option` | `Option`, `option-unwrap`, `option-is-some`, `option-map`, `option-unwrap-or` |
 | `core/result` | `Result`, `result-unwrap`, `result-is-ok`, `result-map`, `result-and-then` |

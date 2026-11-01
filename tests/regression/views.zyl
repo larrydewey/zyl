@@ -44,6 +44,19 @@
     (assert-true (match (view-parse-int (view-of "-")) (Some _ false) (None true)))
     (assert-true (match (view-parse-int (view-of "12a")) (Some _ false) (None true)))))
 
+; A number outside Int is None, not E_OVERFLOW; both ends of Int parse.
+(test "parse-int at the edges of Int"
+  (begin
+    (assert-equal (view-parse-int (view-of "9223372036854775807")) (Some 9223372036854775807))
+    (assert-equal (view-parse-int (view-of "-9223372036854775808")) (Some (- -9223372036854775807 1)))
+    (assert-equal (view-parse-int (view-of "9223372036854775808")) None)
+    (assert-equal (view-parse-int (view-of "-9223372036854775809")) None)
+    (assert-equal (view-parse-int (view-of "99999999999999999999")) None)))
+
+(test "cursor-advance by a huge count stops at the end"
+  (let c (cursor-advance (cursor-of "abc") 1)
+    (assert-equal (cursor-pos (cursor-advance c 9223372036854775807)) 3)))
+
 (test "byte access is bounded by the view"
   (let v (view-slice! "abcdef" 2 2)
     (begin

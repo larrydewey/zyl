@@ -529,7 +529,10 @@ returns an `Option` (or a `Result` where a message matters), and there
 is no plain name. `vec-get!`/`vec-get?`, `vec-set!`/`vec-set?`,
 `vec-last!`/`vec-last?`, `slice-get!`/`slice-get?`,
 `view-slice!`/`view-slice?`, `i32x4-get!`/`i32x4-get?` and the rest of
-Chapter 4 follow it, as do `option-expect!` and `result-expect!`. The
+Chapter 4 follow it, as do `option-expect!` and `result-expect!`, and so
+does arithmetic a caller can push outside Int: `abs!`, `square!`, `cube!`
+and `list-sum!` stop with `E_OVERFLOW`, while `abs?`, `square?`, `cube?`
+and `list-sum?` return `None` exactly there. The
 explicit forms `panic`, `assert`, the `assert-*` test forms and `unwrap`
 keep their names: they already say what they do. The result is that
 `grep` for `!`, `unwrap`, `panic` and `assert` finds every line of a

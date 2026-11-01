@@ -81,7 +81,10 @@ is a property of the package: every module of the package compiles under
 it, and a `(numeric P)` form inside a module file, or in the root file of
 a manifested package, is `E_MALFORMED_FORM`, as is a name other than the
 three or two forms that disagree. The implicit standard library (§25) is
-checked. The REPL is checked until a `(numeric P)` entry changes it.
+checked, so a library function a caller's argument can push outside Int
+is spelled `name!` (stops with `E_OVERFLOW`) or `name?` (`None`):
+`abs!`/`abs?`, `square!`/`square?`, `cube!`/`cube?`,
+`list-sum!`/`list-sum?`, and `int-add?`, `int-sub?`, `int-mul?`. The REPL is checked until a `(numeric P)` entry changes it.
 
 A package that declares nothing is checked: overflow is never silent
 unless the source says `(numeric wrapping)` or `(numeric saturating)`.

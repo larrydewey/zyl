@@ -1,0 +1,6 @@
+; expect-error: E_UNBOUND_VARIABLE
+; abs can stop with E_OVERFLOW (of INT_MIN), so it is spelled abs! or abs?.
+
+(use core/core)
+
+(defn main () (begin (print (abs -3)) 0))
