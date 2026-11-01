@@ -91,10 +91,22 @@
 ; REAL CLI (argc >= 2): `zyl <src.zyl> [-o out] [--emit-asm]`
 ; ===========================================================================
 
+; Writes content to path: 0, or 1 once it has said the path could not be written.
 (defn cli-write-file (path content)
   (let out (file-open path "w")
-    (let _ (file-write out content)
-      (file-close out))))
+    (if (< out 0) (cli-write-failed path "")
+      (let n (file-write out content)
+        (let c (file-close out)
+          (if (and (= n (str-length content)) (= c 0)) 0 (cli-write-failed path "")))))))
+
+; Rewrites a source file through a temp file and rename: a failed write leaves the old text whole.
+(defn cli-replace-file (path content)
+  (if (= (ffi-call "zyl_file_replace" path content 1000) 0) 0
+    (cli-write-failed path "; the file is left as it was")))
+
+(defn cli-write-failed (path note)
+  (let _ (ffi-call "zyl_warn_emit" (str-concat "zyl: error: cannot write " (str-concat path (str-concat note "\n  = help: check that the directory exists and is writable and the disk has room"))) 1000)
+    1))
 
 (defn cli-is-absolute (path)
   (= (ffi-call "zyl_cstr_byte_at" path 0 1000) 47))
@@ -152,23 +164,31 @@
 
 (deftype CliOpts (CliOpts String Int)) ; out-path ("" = unset), emit-asm-flag
 
+; The source is the first bare argument, so flags may come before it; argc when there is none.
+(defn cli-src-index (i argc)
+  (if (>= i argc) argc
+    (let a (ffi-call "zyl_arg_str" i 1000)
+      (if (str-eq a "-o") (cli-src-index (+ i 2) argc)
+        (if (= (ffi-call "zyl_cstr_byte_at" a 0 1000) 45) (cli-src-index (+ i 1) argc) i)))))
+
 ; Scan argv[i..argc) for `-o <path>` / `--emit-asm` / a bare positional
-; (treated as the out path). Unrecognized bare tokens simply become the
-; out path too (last one wins) — kept deliberately simple.
-(defn cli-parse-opts (i argc acc)
+; (treated as the out path), skipping the source at index skip. Unrecognized
+; bare tokens simply become the out path too (last one wins).
+(defn cli-parse-opts (i argc skip acc)
   (if (>= i argc)
     acc
     (let a (ffi-call "zyl_arg_str" i 1000)
+      (if (= i skip) (cli-parse-opts (+ i 1) argc skip acc)
       (if (str-eq a "--emit-asm")
-        (match acc (CliOpts out _ (cli-parse-opts (+ i 1) argc (CliOpts out 1))))
+        (match acc (CliOpts out _ (cli-parse-opts (+ i 1) argc skip (CliOpts out 1))))
       (if (str-eq a "--runtime-module")
-        (match acc (CliOpts out _ (cli-parse-opts (+ i 1) argc (CliOpts out 2))))
+        (match acc (CliOpts out _ (cli-parse-opts (+ i 1) argc skip (CliOpts out 2))))
       (if (or (str-eq a "--error-format=json") (drv-contracts-flag-p a))
-        (cli-parse-opts (+ i 1) argc acc)
+        (cli-parse-opts (+ i 1) argc skip acc)
         (if (str-eq a "-o")
           (let nxt (ffi-call "zyl_arg_str" (+ i 1) 1000)
-            (match acc (CliOpts _ flag (cli-parse-opts (+ i 2) argc (CliOpts nxt flag)))))
-          (match acc (CliOpts _ flag (cli-parse-opts (+ i 1) argc (CliOpts a flag)))))))))))
+            (match acc (CliOpts _ flag (cli-parse-opts (+ i 2) argc skip (CliOpts nxt flag)))))
+          (match acc (CliOpts _ flag (cli-parse-opts (+ i 1) argc skip (CliOpts a flag))))))))))))
 
 ; Link `asmpath` into a binary at `outpath` via the system `cc`, expecting
 ; rt.o next to it (cwd is the bundle dir at this point).
@@ -253,10 +273,11 @@
   (let cwd (ffi-call "zyl_getcwd" 1000)
     (let argv0 (ffi-call "zyl_arg_str" 0 1000)
       (let bundledir (cli-resolve-bundledir (ffi-call "zyl_dirname_cstr" argv0 1000))
-        (let srcraw (ffi-call "zyl_arg_str" 1 1000)
-          (let src (cli-resolve-path cwd srcraw)
-            (let argc (ffi-call "zyl_argc" 1000)
-              (let opts (cli-parse-opts 2 argc (CliOpts "" 0))
+        (let argc (ffi-call "zyl_argc" 1000)
+          (let si (cli-src-index 1 argc)
+            (if (>= si argc) (begin (print "zyl: error: no source file given; name a .zyl file to compile, or run `zyl help`") 1)
+            (let src (cli-resolve-path cwd (ffi-call "zyl_arg_str" si 1000))
+              (let opts (cli-parse-opts 1 argc si (CliOpts "" 0))
                 (match opts
                   (CliOpts outraw emitflag
                     (let outbase
@@ -265,8 +286,9 @@
                         (cli-default-out src))
                       (let _ (if (= emitflag 2) (cli-runtime-module src bundledir) unit)
                       (let _ (cli-internal-mode src) unit)
+                      (let _ (cli-lone-resolve src) unit)
                       (let _ (ffi-call "zyl_chdir" bundledir 1000)
-                        (let fd (file-open src "r")
+                        (let fd (if (cli-dir-p src) -1 (file-open src "r"))
                           (if (> fd 0)
                             (let srcbuf (sb-read-all fd "")
                               (let _ (file-close fd)
@@ -274,11 +296,18 @@
                                   (if (> emitflag 0)
                                     (cli-write-file outbase buf)
                                     (let asmpath (str-concat outbase ".s")
-                                      (let _ (cli-write-file asmpath buf)
+                                      (if (> (cli-write-file asmpath buf) 0) 1
                                         (cli-link asmpath outbase)))))))
                             (begin
-                              (print "zyl: error: cannot open source file")
-                              1))))))))))))))))
+                              (print (str-concat "zyl: error: cannot open source file " (str-concat src (if (cli-dir-p src) ": it is a directory; name a .zyl file in it" ""))))
+                              1)))))))))))))))))
+
+; A file with no zyl.pkg beside it links libc and libm alone, so its foreign symbols are resolved as it compiles.
+(defn cli-lone-resolve (src)
+  (let _ (rt-resolve-foreign-set (not (drv-has-pkg (ffi-call "zyl_dirname_cstr" src 1000)))) unit))
+
+; A directory, which open would accept and read as nothing.
+(defn cli-dir-p (path) (ffi-call "zyl_path_exists" (str-concat path "/.") 1000))
 
 ;; Internal mode is keyed on the entry source, not a flag, so a seed that
 ; predates it still compiles the driver: the driver is what sets it.
@@ -570,7 +599,7 @@
                 (let bi (drv-build-hashes arena dir objs fns)
                   (let buf (codegen-fns arena fns src)
                   (let asmpath (str-concat out ".s")
-                    (let _ (cli-write-file asmpath (str-concat buf (drv-hash-section (bh-final bi))))
+                    (if (> (cli-write-file asmpath (str-concat buf (drv-hash-section (bh-final bi)))) 0) 1
                       (let rc (cli-link-child asmpath out (cli-native-args m objs))
                         (let _ (drv-write-buildinfo arena dir out bi buf)
                           (let _ (drv-attach-provenance arena out bi buf)
@@ -817,7 +846,10 @@
     (drv-explain cwd)
   (if (str-eq cmd "balance")
     (drv-balance cwd)
-    (drv-usage)))))))))))))))))))))
+  (if (str-eq cmd "help")
+    (drv-usage)
+    (let _ (ffi-call "zyl_warn_emit" (str-concat "zyl: error: `" (str-concat cmd "` is not a command or a .zyl file; the commands are:")) 1000)
+      (let _ (drv-usage) 2)))))))))))))))))))))))
 
 ; `zyl verify <binary> [--key k] [--package p] [--anchored]`.
 ;
@@ -885,7 +917,7 @@
       (let out (drv-doc-out 3)
         (if (= (str-length out) 0)
           (begin (print md) 0)
-          (begin (cli-write-file (cli-resolve-path cwd out) md) 0))))))
+          (cli-write-file (cli-resolve-path cwd out) md))))))
 
 ; `zyl check [file.zyl | dir ...]`: every phase of a build up to code generation.
 ;
@@ -911,10 +943,11 @@
 ; missing line. A check that runs a different sequence of steps than the build
 ; is not a check.
 (defn drv-check-file (arena src path)
+  (let _ (cli-lone-resolve path)
   (let _ (cli-internal-mode path)
     (begin
       (compile-check arena src path)
-      0)))
+      0))))
 
 ; A standard-library file is a MODULE, not a program, and compiling it as the
 ; entry makes it both at once: its definitions arrive as root definitions and
@@ -1017,13 +1050,19 @@
     (let paths (drv-balance-args 2 n cwd)
       (let files (drv-balance-files (match paths (Nil (Cons cwd Nil)) (_ paths)))
         (let check (drv-has-flag 2 "--check")
-          (let bad (drv-fmt-each files check 0)
-            (let total (list-length files)
+          (match (drv-fmt-each files check 0 0)
+            (FmtTally bad errs
               (let msg (if (= bad 0)
                           " already formatted"
                           (if check " would be reformatted" " reformatted"))
-                (print (str-concat "fmt: " (str-concat (ffi-call "zyl_int_text" total 1000) msg)))
-                (if check bad 0)))))))))
+                (begin
+                  (print (str-concat "fmt: " (str-concat (ffi-call "zyl_int_text" (if (= bad 0) (- (list-length files) errs) bad) 1000) msg)))
+                  (if (> errs 0)
+                    (begin (print (str-concat "fmt: " (str-concat (ffi-call "zyl_int_text" errs 1000) " file(s) could not be read or written"))) 1)
+                    (if check bad 0)))))))))))
+
+; Files changed (or that would be) and files that could not be read or written.
+(deftype FmtTally (FmtTally Int Int))
 
 ; `zyl balance --fix`: each form that does not balance gets its closers
 ; from its indentation (text/parens); a balanced file is left alone, and one
@@ -1040,10 +1079,12 @@
             (drv-infer-each rest check bad)
             (match (infer-parens src)
               (Some fix
-                (begin
-                  (print (str-concat (if check "  would close forms in " "  closed forms in ") (str-concat f (str-concat " at line " (drv-int-list (paren-fix-lines fix))))))
-                  (let _ (if check 0 (cli-write-file f (paren-fix-text fix)))
-                    (drv-infer-each rest check (if check (+ bad 1) bad)))))
+                (let w (if check 1 (cli-replace-file f (paren-fix-text fix)))
+                  (begin
+                    (if (or check (= w 0))
+                      (print (str-concat (if check "  would close forms in " "  closed forms in ") (str-concat f (str-concat " at line " (drv-int-list (paren-fix-lines fix))))))
+                      unit)
+                    (drv-infer-each rest check (+ bad w)))))
               (None
                 (begin
                   (print (str-concat "  " (str-concat f ": the indentation does not say how to balance it; see `zyl balance`")))
@@ -1054,26 +1095,24 @@
     (Nil "")
     (Cons x rest (str-concat (ffi-call "zyl_int_text" x 1000) (match rest (Nil "") (Cons _ _ (str-concat ", " (drv-int-list rest))))))))
 
-(defn drv-fmt-each (files check (bad Int))
+(defn drv-fmt-each (files check (bad Int) (errs Int))
   (match files
-    (Nil bad)
+    (Nil (FmtTally bad errs))
     (Cons f rest
       (match (sb-read-file f)
         (None
           (begin
             (ffi-call "zyl_warn_emit" (str-concat "error: cannot read " f) 1000)
-            (drv-fmt-each rest check (+ bad 1))))
+            (drv-fmt-each rest check bad (+ errs 1))))
         (Some src
           (let out (format-document src)
             (if (not (str-eq out src))
-              (begin
-                (if check
-                  (print (str-concat "  would reformat " f))
-                  ; cli-write-file hands back file-close's status, an Int, so it
-                  ; cannot be a branch opposite print's Unit.
-                  (let _ (cli-write-file f out) unit))
-                (drv-fmt-each rest check (+ bad 1)))
-              (drv-fmt-each rest check bad))))))))
+              (if check
+                (begin (print (str-concat "  would reformat " f)) (drv-fmt-each rest check (+ bad 1) errs))
+                (if (> (cli-replace-file f out) 0)
+                  (drv-fmt-each rest check bad (+ errs 1))
+                  (drv-fmt-each rest check (+ bad 1) errs)))
+              (drv-fmt-each rest check bad errs))))))))
 
 ; `zyl explain [CODE]`: what a diagnostic means and where it is raised.
 ;
@@ -1175,7 +1214,16 @@
         (boot-run-legacy arena)
         (begin
           (drv-scan-error-format 1 argc)
-          (try (drv-main-arg arena) (catch e (drv-report-failure e))))))))
+          (if (drv-contracts-bad 1 argc) 1
+            (try (drv-main-arg arena) (catch e (drv-report-failure e)))))))))
+
+; An unknown `--contracts=P` is refused, as the source form `(contracts P)` is.
+(defn drv-contracts-bad (i argc)
+  (if (>= i argc) false
+    (let a (ffi-call "zyl_arg_str" i 1000)
+      (if (and (drv-contracts-flag-p a) (not (contract-profile-p (str-substring a 12 (- (str-length a) 12)))))
+        (let _ (ffi-call "zyl_warn_emit" (str-concat "zyl: error: unknown contract profile in " (str-concat a "\n  = help: the profiles are strict, debug, warn, off and production")) 1000) true)
+        (drv-contracts-bad (+ i 1) argc)))))
 
 ; Type-pass count and located errors print plain (text mode); any other failure panics.
 (defn drv-report-failure (e)

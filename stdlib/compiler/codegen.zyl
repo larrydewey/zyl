@@ -1204,14 +1204,15 @@
 ; '@' (64) never appears in a source identifier -- the lexer does not
 ; accept it -- so it marks a name the resolver qualified.
 (defn cg-canonical-key-p (name)
-  (cg-has-at name 0))
+  (cg-has-at name 0 (ffi-call "zyl_cstr_len" name 1000)))
 
-(defn cg-has-at (name i)
-  (if (>= i (ffi-call "zyl_cstr_len" name 1000))
+; Byte loops read through the known length; zyl_cstr_byte_at re-measures the string per call.
+(defn cg-has-at (name i len)
+  (if (>= i len)
     false
-    (if (= (ffi-call "zyl_cstr_byte_at" name i 1000) 64)
+    (if (= (ffi-call "zyl_view_byte" name 0 len i 1000) 64)
       true
-      (cg-has-at name (+ i 1)))))
+      (cg-has-at name (+ i 1) len))))
 
 (defn cg-cat2 (arena a b)
   (let buf (buf-new arena (+ (alloc-strlen a) (+ (alloc-strlen b) 1)))
@@ -1885,15 +1886,15 @@
 ; A function secret_check.zyl marked (Secret params or secret lets) zeroes its
 ; whole frame on return and makes no tail calls, so no copy outlives the call.
 (defn cg-wipes-frame (name)
-  (> (ffi-call "zyl_smap_get" secret-marks (str-concat "w|" (cg-base-name name 0)) 1000) 0))
+  (> (ffi-call "zyl_smap_get" secret-marks (str-concat "w|" (cg-base-name name 0 (ffi-call "zyl_cstr_len" name 1000))) 1000) 0))
 
 ; A specialized instance `f~T` is wiped like `f`.
-(defn cg-base-name (n i)
-  (if (>= i (ffi-call "zyl_cstr_len" n 1000))
+(defn cg-base-name (n i len)
+  (if (>= i len)
     n
-    (if (= (ffi-call "zyl_cstr_byte_at" n i 1000) 126)
+    (if (= (ffi-call "zyl_view_byte" n 0 len i 1000) 126)
       (str-substring n 0 i)
-      (cg-base-name n (+ i 1)))))
+      (cg-base-name n (+ i 1) len))))
 
 (defn cg-body-exit (st env body fsz np wipe rflags)
   (if wipe
@@ -2157,12 +2158,12 @@
       (if (and (= start 0) (= len (ffi-call "zyl_cstr_len" nm 1000))) nm (str-substring nm start (- len start))))))
 
 (defn cg-before-tilde (nm i len)
-  (if (>= i len) len (if (= (ffi-call "zyl_cstr_byte_at" nm i 1000) 126) i (cg-before-tilde nm (+ i 1) len))))
+  (if (>= i len) len (if (= (ffi-call "zyl_view_byte" nm 0 len i 1000) 126) i (cg-before-tilde nm (+ i 1) len))))
 
 (defn cg-after-last-colons (nm i acc len)
   (if (>= (+ i 1) len)
     acc
-    (if (and (= (ffi-call "zyl_cstr_byte_at" nm i 1000) 58) (= (ffi-call "zyl_cstr_byte_at" nm (+ i 1) 1000) 58))
+    (if (and (= (ffi-call "zyl_view_byte" nm 0 len i 1000) 58) (= (ffi-call "zyl_view_byte" nm 0 len (+ i 1) 1000) 58))
       (cg-after-last-colons nm (+ i 2) (+ i 2) len)
       (cg-after-last-colons nm (+ i 1) acc len))))
 

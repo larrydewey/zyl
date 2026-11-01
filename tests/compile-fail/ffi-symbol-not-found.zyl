@@ -1,0 +1,5 @@
+; expect-error: E_FFI_SYMBOL_NOT_FOUND
+; A lone file links libc and libm only; zyl check must refuse what the link would.
+(capabilities ffi)
+(extern "no_such_symbol_zz" (Int) Int :timeout 1000)
+(defn main () (begin (print (Show.show (ffi-call "no_such_symbol_zz" 3))) 0))

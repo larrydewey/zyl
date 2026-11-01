@@ -85,7 +85,8 @@ while k < 70:
 PY
 for f in "$SCRATCH"/a*.zyl; do
     b=$("$ZYL" balance "$f" 2>&1 | grep -o 'error\[E_[A-Z_]*\]' | head -1 || true)
-    c=$("$ZYL" check "$f" 2>&1 | grep -o 'error\[E_UN[A-Z_]*\]' | head -1 || true)
+    # Only the codes balance can raise: a balanced stdlib copy checked as a lone file may fail for other reasons.
+    c=$("$ZYL" check "$f" 2>&1 | grep -o 'error\[E_\(UNBALANCED_[A-Z_]*\|UNTERMINATED_STRING\)\]' | head -1 || true)
     [ "$b" = "$c" ] || fail "agreement: balance says '$b', check says '$c' for $(head -c 0 "$f")$f"
     g="${f%.zyl}_fixed.zyl"; cp "$f" "$g"
     "$ZYL" balance --fix "$g" > /dev/null 2>&1 || true

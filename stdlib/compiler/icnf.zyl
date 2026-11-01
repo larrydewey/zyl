@@ -1558,13 +1558,22 @@
             (if (or (rt-mode-p) (or (rt-prim-p name) (and (ic-ffi-runtime-p name) (not (option-is-some (extern-sig-of name))))))
               (IFfi name (ic-expr-list arena real vt))
               (let _ (rt-foreign-mark)
+              (let _ (ic-ffi-resolve name sym)
               (IFfi "zyl_ffi_timed"
                 (Cons (ISymAddr name)
                   (Cons (IStr name)
                     (Cons (IConst (ffi-literal-int (ffi-last-expr tail)))
                       (Cons (IConst (ic-ffi-request name (list-length real)))
-                          (ic-expr-list arena real vt))))))))))))))
+                          (ic-expr-list arena real vt)))))))))))))))
     (Nil (let _ (ffi-check-call args (Expr (EAtom (ANil)))) (IFfi "?" Nil)))))
+
+; A lone file's foreign symbol must be in libc or libm, the libraries its link names; the compiler links both.
+(defn ic-ffi-resolve (name site)
+  (if (and (rt-resolve-foreign-p) (= (ffi-call "zyl_ffi_addr" name 1000) 0))
+    (ffi-fail "E_FFI_SYMBOL_NOT_FOUND"
+      (str-concat "no foreign symbol named `" (str-concat name "`: a lone file links against libc and libm, and neither defines it"))
+      "check the spelling; code from another C library needs a package whose zyl.pkg names that library" site)
+    unit))
 
 ; The word both bridges take in place of a bare argument count: argc in
 ; the low byte, the class mask above (ffitimed.zyl, ff-argc-of/ff-class-of).

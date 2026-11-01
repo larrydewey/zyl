@@ -904,7 +904,59 @@
     (let params (mt-params (cx-mt cx) fname)
       (let _ (me-check-arity e fname params args2)
         (let cx2 (MeCx (senv-from-lists params args2) (cx-mt cx) (Cons fname (cx-stack cx)) (cx-locals cx))
-          (me-rewrite (mt-body (cx-mt cx) fname) cx2 n))))))
+          (match (me-rewrite (mt-body (cx-mt cx) fname) cx2 n)
+            (MeR out n2 (let _ (me-check-size e fname out) (MeR out n2)))))))))
+
+; A template that uses a parameter twice doubles its argument, so a few nested calls make a tree too big to compile.
+(defn me-max-nodes () 4194304)
+
+(defn me-check-size (e fname out)
+  (if (> (me-size out (me-max-nodes)) 0) 0
+    (let msg (str-concat "expansion of macro " (str-concat (me-quote fname) " grows past 4194304 nodes, so its expansion would not finish in any useful time"))
+      (me-fail "E_MACRO_NON_TERMINATION" msg e "a template that names a parameter twice copies the argument; bind it once with `let` in the template"))))
+
+; budget less e's node count, stopping at 0: walking a shared argument twice counts it twice, as later passes will.
+(defn me-size (e (b Int))
+  (if (<= b 0) 0
+    (let b1 (- b 1)
+      (match (Expr.inner e)
+        (ECall op args (me-size-list args (me-size op b1)))
+        (EApply _ args (me-size-list args b1))
+        (EUnknown _ args (me-size-list args b1))
+        (EBegin xs (me-size-list xs b1))
+        (EPrint xs (me-size-list xs b1))
+        (ETuple xs (me-size-list xs b1))
+        (EMakeStruct _ xs (me-size-list xs b1))
+        (EMakeVariant _ _ xs (me-size-list xs b1))
+        (EFfiCall _ xs _ (me-size-list xs b1))
+        (EDef _ v (me-size v b1))
+        (EDefn _ _ body (me-size body b1))
+        (ELambda _ _ body (me-size body b1))
+        (EFn _ _ body (me-size body b1))
+        (ELet _ v body (me-size body (me-size v b1)))
+        (ELetMut _ v body (me-size body (me-size v b1)))
+        (ESetBang _ v (me-size v b1))
+        (EIf c t f (me-size f (me-size t (me-size c b1))))
+        (ETryCatch body _ h (me-size h (me-size body b1)))
+        (EWhile c body (me-size body (me-size c b1)))
+        (EMatch sc arms (me-size-arms arms (me-size sc b1)))
+        (ECond cls (me-size-clauses cls b1))
+        (_ b1)))))
+
+(defn me-size-list (xs (b Int))
+  (match xs
+    (Nil b)
+    (Cons x rest (if (<= b 0) 0 (me-size-list rest (me-size x b))))))
+
+(defn me-size-arms (arms (b Int))
+  (match arms
+    (Nil b)
+    (Cons a rest (if (<= b 0) 0 (me-size-arms rest (me-size (MA.body a) b))))))
+
+(defn me-size-clauses (cls (b Int))
+  (match cls
+    (Nil b)
+    (Cons c rest (if (<= b 0) 0 (match c (Pair k v (me-size-clauses rest (me-size v (me-size k b)))))))))
 
 (defn me-check-termination (e fname cx)
   (if (me-in-list fname (cx-stack cx))

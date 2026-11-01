@@ -1,0 +1,9 @@
+; expect-error: E_MACRO_NON_TERMINATION
+; Each level names its parameter twice, so d5 would be 2^32 copies of 1.
+(defmacro d0 (x) (+ x x))
+(defmacro d1 (x) (d0 (d0 x)))
+(defmacro d2 (x) (d1 (d1 x)))
+(defmacro d3 (x) (d2 (d2 x)))
+(defmacro d4 (x) (d3 (d3 x)))
+(defmacro d5 (x) (d4 (d4 x)))
+(defn main () (begin (print (Show.show (d5 1))) 0))

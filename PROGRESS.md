@@ -451,6 +451,23 @@ compile with `build/boot/zyl-self` on 2026-09-28.
   subcommands, `repl`, `eval <file.zyl>`, `doc [file|dir] [-o out.md]`,
   `balance [file|dir ...]`, `verify <binary>`.
   The installed `zyl` starts the REPL when given no arguments.
+- CLI write safety (2026-10-31): every output the CLI writes is checked
+  (`cli-write-file`): an unwritable or full `-o`, `--emit-asm` or `doc -o`
+  target is `zyl: error: cannot write <path>` with exit 1, never a link
+  panic or a silent 0. `zyl fmt` and `zyl balance --fix` rewrite a source
+  through the runtime's `zyl_file_replace` (temp file, fsync, rename,
+  mode kept), so a failed write leaves the file whole; an unreadable or
+  unwritable file makes `fmt` exit 1. `--contracts=P` with an unknown
+  profile is refused like `(contracts P)`; flags may precede the source;
+  a directory as the source says so; an unknown command exits 2. A lone
+  file's foreign symbol that neither libc nor libm defines is
+  `E_FFI_SYMBOL_NOT_FOUND` at compile time, so `zyl check` and the build
+  agree (`ic-ffi-resolve`; packages, whose native blocks add libraries,
+  are not resolved). A macro expansion past 4194304 nodes (a template that
+  doubles its argument, nested) is `E_MACRO_NON_TERMINATION`
+  (`me-check-size`). Tests: `tests/scripts/cli-write-safety.sh`,
+  compile-fail `ffi-symbol-not-found`, `macro-exponential-growth`.
+  Symlinked sources are replaced by a regular file on rewrite.
 - Build provenance (`docs/build-provenance-design.md`, verified
   2026-10-02): `zyl build --sign-with <key>` appends a trailer -- a
   COSE_Sign1 (Ed25519) over a canonical CBOR record of §31.12's four
@@ -492,6 +509,19 @@ compile with `build/boot/zyl-self` on 2026-09-28.
 ## Open Limitations (each confirmed open on 2026-09-28)
 
 Language and compiler:
+
+- Deep nesting: the unused-binding collector was quadratic (a list copy per
+  level) and is now an accumulator, so 40000 nested `(+ 1 ..)` compile in
+  under a second; but nested `(list (list ..))` and `(quote ((..)))` still
+  grow quadratically in the type pass (each level's type is as deep as the
+  nest) and end in an unlocated `E_OUT_OF_MEMORY`. A very long identifier
+  is still quadratic (200 KB: 4 s): `zyl_cstr_byte_at` measures the string
+  per call, and many compiler byte loops use it; the hottest were moved to
+  `zyl_view_byte` with a known length.
+- Plain-named stdlib arithmetic (`abs`, `square`, `cube`, `list-sum`)
+  stops with `E_OVERFLOW` without a `!`, even in a `(numeric wrapping)`
+  program (soundness.md L8): renaming or following the caller's policy is
+  an open decision.
 
 - `bytebuf-ptr` returns the buffer's address as a plain `Int` (`Ptr` is a
   spelling of `Int`), so a program can print an ASLR-dependent value

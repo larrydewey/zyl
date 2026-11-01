@@ -34,7 +34,7 @@
 (defn rt-after-colons (s i start n)
   (if (>= (+ i 1) n)
     (str-substring s start (- n start))
-    (if (and (= (ffi-call "zyl_cstr_byte_at" s i 1000) 58) (= (ffi-call "zyl_cstr_byte_at" s (+ i 1) 1000) 58))
+    (if (and (= (ffi-call "zyl_view_byte" s 0 n i 1000) 58) (= (ffi-call "zyl_view_byte" s 0 n (+ i 1) 1000) 58))
       (rt-after-colons s (+ i 2) (+ i 2) n)
       (rt-after-colons s (+ i 1) start n))))
 
@@ -108,6 +108,13 @@
 (defn rt-foreign-mark () (ffi-call "zyl_ref_set" rt-foreign-cell 1 1000))
 
 (defn rt-foreign-p () (= (ffi-call "zyl_ref_get" rt-foreign-cell 1000) 1))
+
+; Set for a lone file, which links libc and libm only: a foreign symbol neither has is refused at compile time.
+(def rt-resolve-cell (ffi-call "zyl_ref_new" 0 1000))
+
+(defn rt-resolve-foreign-set (on) (ffi-call "zyl_ref_set" rt-resolve-cell (if on 1 0) 1000))
+
+(defn rt-resolve-foreign-p () (= (ffi-call "zyl_ref_get" rt-resolve-cell 1000) 1))
 
 ; The locked primitive (or runtime entry) a bit intrinsic builtin lowers to, else "".
 (defn intrinsic-prim (n)
