@@ -1,0 +1,71 @@
+; Vec and IntMap updates return a new version and never change one the program still holds.
+(use core/core)
+(use collections/vec)
+(use collections/intmap)
+
+(test "vec-set! leaves the old version unchanged"
+  (let v1 (vec-push (vec-push (vec-new) 1) 2)
+    (let v2 (vec-set! v1 0 99)
+      (assert-equal (+ (* 1000 (vec-get! v1 0)) (vec-get! v2 0)) 1099))))
+
+(test "vec-set? leaves the old version unchanged"
+  (let v1 (vec-push (vec-push (vec-new) 1) 2)
+    (match (vec-set? v1 1 7)
+      (Some v2 (assert-equal (+ (* 1000 (vec-get! v1 1)) (vec-get! v2 1)) 2007))
+      (None (assert-equal 0 1)))))
+
+(test "two pushes onto one version do not clobber each other"
+  (let v1 (vec-push (vec-push (vec-new) 1) 2)
+    (let v2 (vec-push v1 3)
+      (let v3 (vec-push v1 4)
+        (assert-equal (+ (* 10 (vec-get! v2 2)) (vec-get! v3 2)) 34)))))
+
+(test "a push after a pop keeps the popped version's slot"
+  (let v1 (vec-push (vec-push (vec-new) 1) 2)
+    (let v2 (vec-push (vec-pop v1) 9)
+      (assert-equal (+ (* 10 (vec-get! v1 1)) (vec-get! v2 1)) 29))))
+
+(test "intmap-put on an existing key leaves the old map unchanged"
+  (let m1 (intmap-put (intmap-new 4) 1 10)
+    (let m2 (intmap-put m1 1 20)
+      (assert-equal (+ (* 100 (intmap-get m1 1 0)) (intmap-get m2 1 0)) 1020))))
+
+(test "intmap-put of a new key leaves the old map unchanged"
+  (let m1 (intmap-put (intmap-new 4) 1 10)
+    (let m2 (intmap-put m1 2 20)
+      (let m3 (intmap-put m1 3 30)
+        (assert-equal (+ (* 100 (intmap-get m2 2 0)) (+ (intmap-get m3 2 0) (intmap-len m1))) 2001)))))
+
+(test "intmap-remove leaves the old map unchanged"
+  (let m1 (intmap-put (intmap-put (intmap-new 4) 1 10) 2 20)
+    (let m2 (intmap-remove m1 1)
+      (assert-equal (+ (* 100 (intmap-get m1 1 0)) (+ (* 10 (intmap-len m2)) (intmap-get m2 1 0))) 1010))))
+
+(test "checkpoint rollback restores a Vec"
+  (let-mut v (vec-push (vec-push (vec-new) 1) 2)
+    (begin
+      (try
+        (checkpoint
+          (begin
+            (set! v (vec-set! v 0 99))
+            (panic "boom")
+            0))
+        (catch _ 0))
+      (assert-equal (vec-get! v 0) 1))))
+
+(test "array-set! never overwrites a slot"
+  (let a (array-new 4)
+    (let _ (array-set! a 0 5)
+      (assert-equal
+        (try (let _ (array-set! a 0 6) "") (catch e (str-substring e 0 14)))
+        "E_MUT_CONFLICT"))))
+
+; Pushes across many grows keep every element (the inline push's full path keeps live registers).
+(defn vp-fill (v (i Int) (n Int)) (if (>= i n) v (vp-fill (vec-push v i) (+ i 1) n)))
+(defn vp-total (v (i Int) (n Int) (acc Int)) (if (>= i n) acc (vp-total v (+ i 1) n (+ acc (vec-get! v i)))))
+
+(test "pushes across grows keep every element"
+  (let v (vp-fill (vec-new-cap 16) 0 100000)
+    (assert-equal (vp-total v 0 100000 0) 4999950000)))
+
+(run-tests)

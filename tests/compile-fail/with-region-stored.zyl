@@ -1,0 +1,14 @@
+; Compile-fail: a with-region value stored into the caller's array outlives the region.
+; expect-error: E_REGION_ESCAPE
+(use collections/vec)
+
+(deftype WL (WN) (WC Int WL))
+(defn build (n acc) (if (= n 0) acc (build (- n 1) (WC n acc))))
+
+(defn stash-region (a)
+  (with-region (arena :block 4096)
+    (begin (array-set! a 0 (build 10 (WN))) 0)))
+
+(defn main ()
+  (let w (array-new 4)
+    (begin (stash-region w) 0)))

@@ -1872,7 +1872,7 @@
   ; (the runtime signatures apply only in strict mode for now).
   (if (ta-key-is n "collections/vec::array-new") (ta-sig-parse st "Int -> (Array a)")
   (if (ta-key-is n "collections/vec::array-get") (ta-sig-parse st "(Array a) Int -> a")
-  (if (ta-key-is n "collections/vec::array-set") (ta-sig-parse st "(Array a) Int a -> Unit")
+  (if (ta-key-is n "collections/vec::array-set!") (ta-sig-parse st "(Array a) Int a -> Unit")
   (if (ta-key-is n "collections/vec::array-cap") (ta-sig-parse st "(Array a) -> Int")
   (ta-no-type))))))))))))))))))))))))))
 

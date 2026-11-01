@@ -227,8 +227,8 @@
 ; zyl_uf_*), field-insensitive: a variant, its fields and whatever is
 ; read out of it share one class. A function's summary is the level of
 ; each parameter's class: 0 the argument does not escape the call, 1 it
-; may reach the result, 2 it escapes. Summaries live in smap 7 as
-; packed+1 (2 bits per parameter, the first 31 parameters; any later
+; may reach the result, 2 it escapes, 3 as 1 and the callee stores into it. Summaries live in smap 7 as
+; packed+1 (2 bits per parameter, the first 30 parameters; any later
 ; parameter counts as escaping), and start at 0. Every function is
 ; re-analysed in program order until no summary changes; levels only
 ; ever rise, so this terminates, and the order makes it deterministic.
@@ -250,6 +250,9 @@
 (def rg-scope-node-store (ffi-call "zyl_wvec_new" 1000))
 (def rg-stack-site-store (ffi-call "zyl_wvec_new" 1000))
 (def rg-esc-store (ffi-call "zyl_wvec_new" 1000))
+; Containers stored into (RgEsc node class 0 ""), and call results that may be heap objects.
+(def rg-store-store (ffi-call "zyl_wvec_new" 1000))
+(def rg-heapres-store (ffi-call "zyl_wvec_new" 1000))
 ; Class ids of this function already warned about (W_HEAP_ESCAPE).
 (def rg-warned-store (ffi-call "zyl_wvec_new" 1000))
 
@@ -278,7 +281,7 @@
     (if (= v 0) -1 (- v 1))))
 
 (defn rg-param-level (summary i)
-  (if (> i 30) 2 (% (shr summary (* 2 i)) 4)))
+  (if (> i 29) 2 (% (shr summary (* 2 i)) 4)))
 
 ; Record a site: its node and its class. Every site recorded allocates,
 ; or calls something that may allocate, in the region chosen for it; a
@@ -326,14 +329,18 @@
 ; listed here are trusted; any other symbol keeps its arguments and
 ; result in the heap. 1: allocates a fresh result in zyl_cur_region and
 ; keeps no argument; 2: result is (part of) the first argument; 0: no
-; allocation and no argument kept. Must agree with the runtime:
+; allocation and no argument kept; 6: stores its third argument into its
+; first; 7: copies its first argument's elements into its second; 8: keeps
+; every argument, returns nothing (a panic). Must agree with the runtime:
 ; every level-1 function allocates only through zyl_result_alloc.
 (defn rg-ffi-kind (s)
   (if (str-eq s "zyl_array_cap") 0
   (if (str-eq s "zyl_array_filled") 0
-  (if (str-eq s "zyl_array_get") 0
-  (if (str-eq s "zyl_array_set") 0
-  (if (str-eq s "zyl_array_copy") 4
+  (if (str-eq s "zyl_array_get") 2
+  (if (str-eq s "zyl_array_set") 6
+  (if (str-eq s "zyl_array_push") 6
+  (if (str-eq s "zyl_panic") 8
+  (if (str-eq s "zyl_array_copy") 7
   (if (str-eq s "zyl_words_len") 0
   (if (str-eq s "zyl_words_get") 0
   (if (str-eq s "zyl_words_set") 0
@@ -375,7 +382,7 @@
   (if (str-eq s "zyl_diag_json") 0
   (if (str-eq s "zyl_load_byte") 0
   (if (str-eq s "zyl_load_n") 0
-  (rg-ffi-kind-bytes s))))))))))))))))))))))))))))))))))))))))))))))))
+  (rg-ffi-kind-bytes s))))))))))))))))))))))))))))))))))))))))))))))))))
 
 ; Byte buffers: 0 as above; 2 as above (a slice points into its buffer);
 ; 4 (stores: width, endian, offset, buffer, value): only the stored value
@@ -489,10 +496,11 @@
     (Nil 0)
     (Cons a rest
       (let lvl (rg-param-level summary i)
-        (let _ (if (= lvl 1) (let _ (rg-union a c) unit)
+        (let _ (if (= lvl 3) (let _ (rg-store e a a) unit) unit)
+        (let _ (if (or (= lvl 1) (= lvl 3)) (let _ (rg-union a c) unit)
                  (if (= lvl 2) (let _ (rg-esc rec e a 2 "escapes here: passed to a function that keeps it") (rg-raise a 2)) unit))
           (let _ (if (> tail 0) (let _ (rg-esc rec e a 1 "escapes here: passed to a tail call, after the frame is released") (rg-raise a 1)) unit)
-            (rg-apply-summary rest summary (+ i 1) c tail e rec)))))))
+            (rg-apply-summary rest summary (+ i 1) c tail e rec))))))))
 
 (defn rg-call (e name args env tail rec)
   (let cs (rg-list args env rec)
@@ -511,8 +519,9 @@
                 (let _ (rg-esc rec e c 2 "escapes here: joined with this call's heap result")
                 (let _ (rg-site rec e c) c))))
             (let c (rg-new 0)
+              (let _ (if (> (rg-res-heap s) 0) (ffi-call "zyl_wvec_push" rg-heapres-store c 1000) 0)
               (let _ (rg-apply-summary cs s 0 c tail e rec)
-                (let _ (if (> (rg-res-alloc s) 0) (rg-site rec e c) 0) c)))))))))
+                (let _ (if (> (rg-res-alloc s) 0) (rg-site rec e c) 0) c))))))))))
 
 (defn rg-first (cs)
   (match cs
@@ -540,15 +549,51 @@
               (rg-first cs)
               (if (= k 4)
                 (let _ (rg-raise-at rec e (rg-last cs) 2 "escapes here: stored into a buffer") (rg-new 0))
+              (if (= k 8)
+                (let _ (rg-raise-at rec e cs 2 "escapes here: carried by a panic to its catch") (rg-new 0))
+              (if (or (= k 6) (= k 7))
+                (rg-store e (if (= k 6) (rg-first cs) (rg-first (rg-rest cs))) (if (= k 6) (rg-first (rg-rest (rg-rest cs))) (rg-first cs)))
                 (if (= k 5)
                   (let _ (rg-raise-at rec e (rg-rest cs) 2 "escapes here: stored into a buffer") (rg-new 0))
                 (if (str-eq name "zyl_global_put")
                   (let _ (rg-raise-at rec e cs 2 (rg-global-text)) (rg-new 0))
                   (let _ (rg-raise-at rec e cs 2 "escapes here: passed to a runtime call that may keep it")
                     (let c (rg-new 2)
-                      (let _ (rg-esc rec e c 2 "escapes here: joined with this call's heap result") c)))))))))))))
+                      (let _ (rg-esc rec e c 2 "escapes here: joined with this call's heap result") c)))))))))))))))
 
 (defn rg-global-text () "escapes here: stored as the value of a top-level def")
+
+; A store makes the value live as long as the container; rg-fix-stores settles containers from outside the frame.
+(defn rg-store (e arr v)
+  (let _ (rg-union arr v)
+    (let _ (ffi-call "zyl_wvec_push" rg-store-store (RgEsc e arr 0 "") 1000) (rg-new 0))))
+
+(defn rg-same (a b)
+  (= (ffi-call "zyl_uf_id" (ffi-call "zyl_uf_find" a 1000) 1000)
+     (ffi-call "zyl_uf_id" (ffi-call "zyl_uf_find" b 1000) 1000)))
+
+(defn rg-any-same (c cs)
+  (match cs (Nil false) (Cons h t (if (rg-same c h) true (rg-any-same c t)))))
+
+(defn rg-wvec-same (c w i n)
+  (if (>= i n) false (if (rg-same c (ffi-call "zyl_wvec_get" w i 1000)) true (rg-wvec-same c w (+ i 1) n))))
+
+; A container a parameter reaches lives in the caller (at least R); one a heap call result reaches lives in the heap.
+(defn rg-fix-stores (params rec i n)
+  (if (>= i n)
+    0
+    (match (ffi-call "zyl_wvec_get" rg-store-store i 1000)
+      (RgEsc e c _ _
+        (let _ (if (rg-any-same c params)
+                 (let _ (rg-esc rec e c 1 "escapes here: stored into a container the caller holds") (let _ (rg-raise c 1) 0))
+                 0)
+          (let _ (if (rg-wvec-same c rg-heapres-store 0 (ffi-call "zyl_wvec_len" rg-heapres-store 1000))
+                   (let _ (rg-esc rec e c 2 "escapes here: stored into a container in the heap") (let _ (rg-raise c 2) 0))
+                   0)
+            (rg-fix-stores params rec (+ i 1) n)))))))
+
+; Bit 61 of a summary: the result may be (part of) a heap object.
+(defn rg-res-heap (summary) (bit-and (shr summary 61) 1))
 
 (defn rg-fields (fs c env rec)
   (match fs
@@ -644,8 +689,8 @@
     (Nil acc)
     (Cons c rest
       (let idx (- n (+ i 1))
-        (let lvl (if (> idx 30) 0 (rg-level c))
-          (rg-pack rest (+ i 1) n (bit-or acc (shl lvl (* 2 (if (> idx 30) 0 idx))))))))))
+        (let lvl (if (> idx 29) 0 (rg-pack-level c))
+          (rg-pack rest (+ i 1) n (bit-or acc (shl lvl (* 2 (if (> idx 29) 0 idx))))))))))
 
 ; Analyse one function; returns 1 when its summary rose.
 (defn rg-fn (f rec)
@@ -658,12 +703,16 @@
         (let _ (ffi-call "zyl_wvec_truncate" (rg-scope-stack) 0 1000)
         (let _ (ffi-call "zyl_wvec_truncate" rg-esc-store 0 1000)
         (let _ (ffi-call "zyl_wvec_truncate" rg-warned-store 0 1000)
+        (let _ (ffi-call "zyl_wvec_truncate" rg-store-store 0 1000)
+        (let _ (ffi-call "zyl_wvec_truncate" rg-heapres-store 0 1000)
         (match (rg-param-env params Nil Nil)
           (RgPE env cs
             (let ret (rg-new 1)
               (let bc (rg-expr body env 1 rec)
                 (let _ (rg-esc rec (rg-tail-node body) ret 1 "escapes here: returned from the function")
                 (let _ (rg-union bc ret)
+                (let _ (rg-fix-stores cs rec 0 (ffi-call "zyl_wvec_len" rg-store-store 1000))
+                (let hres (if (or (= (rg-level ret) 2) (rg-wvec-same ret rg-heapres-store 0 (ffi-call "zyl_wvec_len" rg-heapres-store 1000))) 1 0)
                   (let flags (rg-mark-sites 0 (ffi-call "zyl_wvec_len" (rg-sites) 1000) 0 rec)
                   (let old (rg-summary name)
                     ; Joined with the previous summary. The constraints are
@@ -674,21 +723,31 @@
                     ; argument lives in the heap, which outlives anything
                     ; the result could need.
                     (let packed (rg-join old (bit-or (rg-pack cs 0 (list-length params) 0)
-                                                     (shl (if (> (bit-and flags 2) 0) 1 0) 62)) 0)
+                                                     (bit-or (shl hres 61) (shl (if (> (bit-and flags 2) 0) 1 0) 62))) 0)
                       (let _ (if (> rec 0) (icnf-region-set f (+ flags 4)) unit)
                         (if (= packed old)
                           false
                           (let _ (ffi-call "zyl_smap_put" (rg-summaries) name (+ packed 1) 1000)
-                            true))))))))))))))))))))
+                            true))))))))))))))))))))))))
     (_ false)))
 
-; Per-parameter maximum of two summaries, and the OR of bit 62.
+; Level 3: R, and the callee stores into it (rg-store).
+(defn rg-pack-level (c)
+  (let l (rg-level c)
+    (if (and (= l 1) (rg-stored-p c 0 (ffi-call "zyl_wvec_len" rg-store-store 1000))) 3 l)))
+
+(defn rg-stored-p (c i n)
+  (if (>= i n) false
+    (match (ffi-call "zyl_wvec_get" rg-store-store i 1000)
+      (RgEsc _ sc _ _ (if (rg-same c sc) true (rg-stored-p c (+ i 1) n))))))
+
+; Per-parameter maximum of two summaries (H subsumes 3), and the OR of bits 61 and 62.
 (defn rg-join (a b i)
-  (if (> i 30)
-    (bit-or (bit-and a (shl 1 62)) (bit-and b (shl 1 62)))
+  (if (> i 29)
+    (bit-or (bit-and a (shl 3 61)) (bit-and b (shl 3 61)))
     (let la (% (shr a (* 2 i)) 4)
       (let lb (% (shr b (* 2 i)) 4)
-        (bit-or (shl (if (> la lb) la lb) (* 2 i)) (rg-join a b (+ i 1)))))))
+        (bit-or (shl (if (or (= la 2) (= lb 2)) 2 (if (> la lb) la lb)) (* 2 i)) (rg-join a b (+ i 1)))))))
 
 (defn rg-round (fns rec changed)
   (match fns
@@ -732,7 +791,7 @@
             (let fid (ffi-call "zyl_span_file" node 1000)
               (ffi-call "zyl_panic"
                 (err-at-labels "E_REGION_ESCAPE"
-                        (if (= lvl 1) "a Stack bytebuf is returned from the function that allocates it"
+                        (if (= lvl 1) "a Stack bytebuf outlives the function that allocates it (returned, or stored where the caller can reach it)"
                             "a Stack bytebuf escapes its frame (stored, sent or passed to code that may keep it)")
                         fid off (rg-esc-labels c (if (= lvl 1) 1 2) node)
                         "allocate it in the Heap region, or keep it and every slice of it inside this function")

@@ -5,8 +5,9 @@
 ; length this Vec sees. The array is typed and bounds-checked
 ; and its slots are filled in order, so a Vec only ever reads elements it
 ; wrote: there is no word-level cast anywhere (docs/sound-types-design.md).
-; Updates return a new Vec; versions made from the same Vec share storage
-; until one of them outgrows it.
+; Updates return a new Vec and never change one a program still holds:
+; versions share storage, a push writes in place only into a slot no
+; version has written (claimed atomically), and anything else copies.
 ;
 ; Storage comes from the region the allocating call runs in
 ; (runtime/rt/tables.zyl's zyl_vec_alloc): a Vec that does not outlive its
@@ -23,7 +24,19 @@
 (defn array-new ((cap Int)) (ffi-call "zyl_vec_alloc" cap 1000))
 (defn array-cap (a) (ffi-call "zyl_array_cap" a 1000))
 (defn array-get (a (i Int)) (ffi-call "zyl_array_get" a i 1000))
-(defn array-set (a (i Int) x) (ffi-call "zyl_array_set" a i x 1000))
+; Slots are written once, in order: index i must be the next unwritten slot.
+(defn array-set! (a (i Int) x)
+  (let f (ffi-call "zyl_array_filled" a 1000)
+    (if (= i f)
+      (ffi-call "zyl_array_set" a i x 1000)
+      (ffi-call "zyl_panic" (array-set-text i f) 1000))))
+
+(defn array-set-text ((i Int) (f Int))
+  (str-concat (if (< i f) "E_MUT_CONFLICT: array-set! index " "E_INDEX_OUT_OF_BOUNDS: array-set! index ")
+    (str-concat (ffi-call "zyl_int_text" i 1000)
+      (str-concat (if (< i f) " is already written, and an array is never changed in place" " skips ahead of the next unwritten slot")
+        (str-concat " (the next is " (str-concat (ffi-call "zyl_int_text" f 1000)
+          ")\n  = help: write slots in order with array-set!, or use a Vec, whose vec-set! returns a new version"))))))
 
 ; An empty Vec. Storage is allocated on first push, in whatever region
 ; this call runs in; a Vec that stays inside its frame is reclaimed when
@@ -93,7 +106,15 @@
         (vec-push v value)
         (if (or (< i 0) (> i n))
           (ffi-call "zyl_panic" (vec-oob-text "vec-set!" "(vec-set? v i x)" i n) 1000)
-          (let _ (array-set s i value) v))))))
+          (vec-replace s n i value))))))
+
+; A copy of the first n elements of s with element i replaced by value.
+(defn vec-replace (s (n Int) (i Int) value)
+  (let t (array-new (array-cap s))
+    (let _ (ffi-call "zyl_array_copy" s t i 1000)
+      (let _ (ffi-call "zyl_array_set" t i value 1000)
+        (let _ (vec-copy-into s t (+ i 1) n)
+          (VecC t n))))))
 
 ; The Vec with element i set to `value`, or None when i is outside the Vec;
 ; an i equal to the length appends.
@@ -105,29 +126,30 @@
         (Some (vec-push v value))
         (if (or (< i 0) (> i n))
           None
-          (let _ (array-set s i value) (Some v)))))))
+          (Some (vec-replace s n i value)))))))
 
-; Push a value, moving to storage twice the size when full.
+; Push a value, moving to storage twice the size when full, and copying
+; when another version already wrote the slot.
 ; Returns: Vec
 (defn vec-push (v value)
   (match v
     (VecC s n
-      (let c (array-cap s)
-        (if (< n c)
-          (let _ (array-set s n value) (VecC s (+ n 1)))
-          (vec-grow s n c value))))))
+      (if (= (ffi-call "zyl_array_push" s n value 1000) 1)
+        (VecC s (+ n 1))
+        (let c (array-cap s)
+          (vec-grow s n (if (< n c) (/ c 2) c) value))))))
 
 ; The full case, apart so the common one keeps no registers across calls.
 (defn vec-grow (s (n Int) (c Int) value)
   (let bigger (array-new (if (<= c 0) 16 (* c 2)))
     (let _ (ffi-call "zyl_array_copy" s bigger n 1000)
-      (let _ (array-set bigger n value)
+      (let _ (ffi-call "zyl_array_set" bigger n value 1000)
         (VecC bigger (+ n 1))))))
 
 (defn vec-copy-into (from to (i Int) (n Int))
   (if (>= i n)
     0
-    (let _ (array-set to i (array-get from i))
+    (let _ (ffi-call "zyl_array_set" to i (array-get from i) 1000)
       (vec-copy-into from to (+ i 1) n))))
 
 ; Pop the last value: returns the Vec with length reduced by one.

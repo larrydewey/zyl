@@ -278,6 +278,7 @@
     (let _ (ft-put t "zyl_array_filled" (ffi-call "%fn" "zyl_array_filled" 1))
     (let _ (ft-put t "zyl_array_get" (ffi-call "%fn" "zyl_array_get" 1))
     (let _ (ft-put t "zyl_array_set" (ffi-call "%fn" "zyl_array_set" 1))
+    (let _ (ft-put t "zyl_array_push" (ffi-call "%fn" "zyl_array_push" 1))
     (let _ (ft-put t "zyl_attrh_new" (ffi-call "%fn" "zyl_attrh_new" 1))
     (let _ (ft-put t "zyl_attrh_set" (ffi-call "%fn" "zyl_attrh_set" 1))
     (let _ (ft-put t "zyl_attrh_get_or" (ffi-call "%fn" "zyl_attrh_get_or" 1))
@@ -292,7 +293,7 @@
     (let _ (ft-put t "zyl_ref_get" (ffi-call "%fn" "zyl_ref_get" 1))
     (let _ (ft-put t "zyl_ref_set" (ffi-call "%fn" "zyl_ref_set" 1))
     (let _ (ft-put t "zyl_getenv_str" (ffi-call "%fn" "zyl_getenv_str" 1))
-    0)))))))))))))))))))))))
+    0))))))))))))))))))))))))
 
 (defn ft-fill-11 (t)
   (let _ (ft-put t "zyl_strbuf_new" (ffi-call "%fn" "zyl_strbuf_new" 1))

@@ -114,6 +114,8 @@ Per function, walk the body with an environment from names to classes:
 | `ICall f args`, `f` local (closure or function value) | arguments `H`; the result unifies with `f` |
 | call in tail position | each argument is at least `R` (the frame is gone when the callee runs) |
 | `IFfi` to a runtime function in `rg-ffi-kind` | per its table entry (fresh result / result aliases an argument / no allocation) |
+| `IFfi` store (`zyl_array_set`, `zyl_array_push`; `zyl_array_copy` copies one array into another) | the value unifies with the container; the container is recorded as stored into |
+| `IFfi` to `zyl_panic` | arguments `H` (a catch outlives the frame); the result is fresh |
 | `IFfi` to any other runtime function | arguments and result `H` |
 | foreign `ffi-call` | arguments `H` |
 | `ITryCatch` | the catch variable is `H`; branch results unify |
@@ -121,8 +123,15 @@ Per function, walk the body with an environment from names to classes:
 
 The **summary** of a function is the level of each parameter's class after
 the analysis, encoded as 0 (does not escape the call), 1 (may reach the
-result) or 2 (escapes), plus bit 62, set when the function may allocate
-into its result region. Summaries start at 0 and are recomputed over all
+result), 2 (escapes) or 3 (as 1, and the function stores into it), for the
+first 30 parameters, plus bit 62, set when the function may allocate
+into its result region, and bit 61, set when its result may be a heap
+object. A stored-into container is settled at the end of each function:
+one that a parameter reaches is raised to at least `R` and summarised as
+3, so the caller records the store on its own argument and the value
+lives wherever the container does; one that a bit-61 call result reaches
+is raised to `H`. A Stack bytebuf or `with-region` value stored into a
+container that outlives it is therefore `E_REGION_ESCAPE`. Summaries start at 0 and are recomputed over all
 functions, in program order, until none changes. The constraints are not
 monotone in the summary (a lower summary for one parameter can raise
 another), and recomputing summaries by plain replacement once made the

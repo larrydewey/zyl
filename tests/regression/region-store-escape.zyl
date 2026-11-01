@@ -1,0 +1,58 @@
+; A value stored into a container lives as long as the container (docs/soundness.md L2).
+; Each case read garbage from a recycled frame region before stores were tracked.
+(use collections/vec)
+
+(deftype WL (WN) (WC Int WL))
+(defn build (n acc) (if (= n 0) acc (build (- n 1) (WC n acc))))
+(defn wsum (l) (match l (WN 0) (WC h t (+ h (wsum t)))))
+(defn churn (n) (if (= n 0) 0 (+ (wsum (build 50 (WN))) (churn (- n 1)))))
+
+; Pushes a list built in this frame onto the caller's array.
+(defn stash (a (k Int))
+  (let l (build k (WN))
+    (let _ (array-set! a (ffi-call "zyl_array_filled" a 1000) l) 0)))
+
+; Two calls deep: the store happens in a callee of the callee.
+(defn stash2 (a (k Int)) (stash a k))
+
+(def store (array-new 4))
+(defn the-store () store)
+(defn stash-global (k) (let l (build k (WN)) (let _ (array-set! (the-store) 0 l) 0)))
+
+; Reuse must not rewrite a value that an array still holds.
+(deftype T (Node Int T) (Leaf))
+(defn hd (t) (match t (Node n _ n) (Leaf -1)))
+(defn keep-then-bump (a (k Int))
+  (let x (Node k (Leaf))
+    (let _ (array-set! a 0 x)
+      (match x (Node n r (Node (+ n 1000) r)) (Leaf (Leaf))))))
+
+(test "a value stored into a caller's array outlives the callee's frame"
+  (let a (array-new 4)
+    (let _ (stash a 10)
+      (let _ (churn 20)
+        (assert-equal (wsum (array-get a 0)) 55)))))
+
+(test "a store two calls deep outlives both frames"
+  (let a (array-new 4)
+    (let _ (stash2 a 10)
+      (let _ (churn 20)
+        (assert-equal (wsum (array-get a 0)) 55)))))
+
+(test "a value stored into a heap array returned by a call goes to the heap"
+  (let _ (stash-global 10)
+    (let _ (churn 20)
+      (assert-equal (wsum (array-get store 0)) 55))))
+
+(test "a pushed list outlives the frame that built it"
+  (let v (vec-push (vec-new) (WN))
+    (let w (vec-push v (build 10 (WN)))
+      (let _ (churn 20)
+        (assert-equal (wsum (vec-get! w 1)) 55)))))
+
+(test "in-place reuse leaves a stored value alone"
+  (let a (array-new 4)
+    (let y (keep-then-bump a 5)
+      (assert-equal (+ (* 10000 (hd (array-get a 0))) (hd y)) 51005))))
+
+(run-tests)

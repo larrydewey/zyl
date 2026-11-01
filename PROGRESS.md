@@ -376,8 +376,15 @@ compile with `build/boot/zyl-self` on 2026-09-28.
 - Try frames save their rbp, rsp and rip mangled with a per-process
   getrandom guard (XOR, then rotate left 17), so a heap write cannot aim
   the unwind without the guard. The guard is never observable.
-- An allocation failure is `E_OUT_OF_MEMORY`; the budget is
-  `ZYL_MAX_MEMORY`, else 80% of available memory.
+- An allocation failure is `E_OUT_OF_MEMORY`, and the report flushes
+  stdout first; the budget is `ZYL_MAX_MEMORY` (bytes, or a number with
+  K, M, G or T, powers of 1024; anything else stops the program before it
+  runs, exit 2), else 80% of total memory. A `bytebuf` over the budget or
+  past 1 TiB is `E_OUT_OF_MEMORY` too, never a null handle; a negative
+  size is 0.
+- `bytebuf-atomic-add`/`-sub`/`-fetch-add` are CAS loops whose checked
+  `+`/`-` traps (`E_OVERFLOW`) before anything is stored.
+- `string-buffer-str` copies, so the String outlives the buffer.
 - An uncaught panic prints a backtrace under its `PANIC:` line: the rbp
   chain, each return address named through the `zyl_syms` table codegen
   writes into every program, innermost first, 32 names at most, in both
@@ -494,6 +501,17 @@ Language and compiler:
   sharing one race (needs `actor`). Whether refs stay a program surface is
   an open language decision.
 - `make-struct` is not typed (`E_CANNOT_INFER`); call the constructor.
+- `load-u8`/`store-u8` and the wider forms outside a buffer read 0 and
+  drop the store silently (soundness.md calls them bounds-checked). A
+  panic would be implicit under the `!`/`?` doctrine, so the spelling
+  (`load-u8!`, `load-u8?`, or a returned status) is an open decision.
+- Vec and IntMap are persistent (a push writes in place only into a
+  slot no version has written, claimed by CAS; `vec-set!`, `intmap-put`,
+  `intmap-remove` copy) and `array-set!` writes each slot once, in order
+  (`E_MUT_CONFLICT` otherwise). `math/words` (`w-set`) is still a mutable
+  word array, and a program can still reach `zyl_array_set` and
+  `zyl_words_set` by `ffi-call`; whether those stay a program surface is
+  an open decision.
 - Match guards work only on literal arms: after a `range` a guard is
   `E_ARITY_MISMATCH`, on a constructor arm `E_NESTED_PATTERN`, and a
   guard naming a top-level `def` is `E_UNBOUND_VARIABLE` (book §6.5).

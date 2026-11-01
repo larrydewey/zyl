@@ -3286,12 +3286,13 @@
 (defn ml-array-p (sym args)
   (let n (list-length args)
     (or (and (str-eq sym "zyl_array_get") (= n 2))
-        (or (and (str-eq sym "zyl_array_set") (= n 3)) (and (str-eq sym "zyl_array_cap") (= n 1))))))
+        (or (and (str-eq sym "zyl_array_set") (= n 3))
+            (or (and (str-eq sym "zyl_array_push") (= n 3)) (and (str-eq sym "zyl_array_cap") (= n 1)))))))
 
 (defn ml-array (st env venv ms sym args)
   (match (ml-args st env venv ms args Nil)
     (MRL m2 vs
-      (let kind (if (str-eq sym "zyl_array_get") 0 (if (str-eq sym "zyl_array_set") 1 2))
+      (let kind (if (str-eq sym "zyl_array_get") 0 (if (str-eq sym "zyl_array_set") 1 (if (str-eq sym "zyl_array_push") 3 2)))
         (let rd (ms-vreg m2)
           (MR (ms-emit (mr-ms rd) (MArr kind (mr-v rd) (ml-nth vs 0) (ml-nth vs 1) (ml-nth vs 2))) (mr-v rd)))))))
 
@@ -4120,7 +4121,7 @@
             (MByte _ _ _ _ _ true)
             (MByteData _ _ true)
             (MByteBound _ _ true)
-            (MArr k _ _ _ _ (= k 1))
+            (MArr k _ _ _ _ (or (= k 1) (= k 3)))
             (MRaw k _ vs (or (>= (list-length vs) 3) (or (and (>= k 19) (<= k 22)) (or (= k 28) (= k 47)))))
             (MRegionCycle true)
             (_ false))
@@ -4695,13 +4696,40 @@
                          (Cons "    mov rsi, rax"
                          (Cons "    mov rdx, r11"
                          (Cons "    call zyl_array_set" Nil)))))))))))))))))))
+                     (if (= kind 3)
+                       (mb-array-push st2 fr v lslow ldone)
                        (cg-emit-lines st2
                          (Cons "    mov rax, [rdx+8]"
                          (Cons (str-concat "    jmp " ldone)
                          (Cons (str-concat lslow ":")
                          (Cons "    mov rdi, rdx"
-                         (Cons "    call zyl_array_cap" Nil))))))))
+                         (Cons "    call zyl_array_cap" Nil)))))))))
               (mb-set (cg-emit-line st3 (str-concat ldone ":")) fr d "rax"))))))))
+
+; zyl_array_push inline: claim slot n (rax) by lock cmpxchg on filled, then write it; 1 or 0 in rax.
+; Only a non-array reaches the call, which panics: a returning call here would clobber live registers.
+(defn mb-array-push (st fr v lslow ldone)
+  (let lfail (str-concat lslow "f")
+    (cg-emit-lines st
+      (Cons "    cmp rax, [rdx+8]"
+      (Cons (str-concat "    jae " lfail)
+      (Cons "    lea rcx, [rax+1]"
+      (Cons "    lock cmpxchg qword ptr [rdx+16], rcx"
+      (Cons (str-concat "    jne " lfail)
+      (Cons "    mov rcx, [rdx+24]"
+      (Cons (str-concat "    mov r11, " (mb-loc-text fr v))
+      (Cons "    mov [rcx+rax*8], r11"
+      (Cons "    mov eax, 1"
+      (Cons (str-concat "    jmp " ldone)
+      (Cons (str-concat lfail ":")
+      (Cons "    xor eax, eax"
+      (Cons (str-concat "    jmp " ldone)
+      (Cons (str-concat lslow ":")
+      (Cons (str-concat "    mov r11, " (mb-loc-text fr v))
+      (Cons "    mov rdi, rdx"
+      (Cons "    mov rsi, rax"
+      (Cons "    mov rdx, r11"
+      (Cons "    call zyl_array_push" Nil))))))))))))))))))))))
 
 ; A block of n bytes plus zyl_ralloc's size header. In a region (levels
 ; 1, 2) the bump pointer is advanced inline when the current block has

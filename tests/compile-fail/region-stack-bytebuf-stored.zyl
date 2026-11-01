@@ -1,0 +1,11 @@
+; Compile-fail: a Stack bytebuf stored into the caller's array outlives its frame.
+; expect-error: E_REGION_ESCAPE
+(use collections/vec)
+
+(defn stash (a)
+  (let b (bytebuf Stack 64)
+    (begin (store-u8 :le b 0 42) (array-set! a 0 b) 0)))
+
+(defn main ()
+  (let a (array-new 4)
+    (begin (stash a) (print (load-u8 :le (array-get a 0) 0)) 0)))

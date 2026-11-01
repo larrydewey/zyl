@@ -55,59 +55,49 @@
         (w-get (struct-get m "vptr") (- result 1))
         (intmap-get-loop m k default (+ i 1) len)))))
 
-; Put a key-value pair. If key exists, overwrites value in-place.
+; Put a key-value pair, replacing the value of an existing key. The map
+; passed in is unchanged: the result has storage of its own (lookups are
+; linear already, so the copy does not change the cost).
 ; Returns: IntMap
 (defn intmap-put ((m IntMap) (k Int) (v Int))
-  (let existing (intmap-find m k 0 (intmap-len m))
-    (if (> existing 0)
-      (let idx (- existing 1)
-        (begin
-          (w-set (struct-get m "vptr") idx v)
-          m))
-      (intmap-put-inner m k v))))
-
-(defn intmap-put-inner ((m IntMap) (k Int) (v Int))
   (let len (intmap-len m)
-    (let cap (intmap-cap m)
-      (if (>= len cap)
-        (let new-cap (if (<= cap 0) 16 (* cap 2))
-          (let new-kptr (w-alloc new-cap)
-            (let new-vptr (w-alloc new-cap)
-              (let old-kptr (struct-get m "kptr")
-                (let old-vptr (struct-get m "vptr")
-                  (begin
-                    (for (j 0) (< j len)
-                      (begin
-                        (w-set new-kptr j (w-get old-kptr j))
-                        (w-set new-vptr j (w-get old-vptr j))
-                        (set! j (+ j 1))))
-                    (w-set new-kptr len k)
-                    (w-set new-vptr len v)
-                    (make-IntMap new-kptr new-vptr (+ len 1) new-cap)))))))
-        (let new-kptr (struct-get m "kptr")
-          (begin
-            (w-set new-kptr len k)
-            (w-set (struct-get m "vptr") len v)
-            (make-IntMap new-kptr (struct-get m "vptr") (+ len 1) cap)))))))
+    (let existing (intmap-find m k 0 len)
+      (if (> existing 0)
+        (intmap-copy m len (intmap-cap m) (- existing 1) v -1)
+        (let cap (intmap-cap m)
+          (let out (intmap-copy m len (if (>= len cap) (if (<= cap 0) 16 (* cap 2)) cap) -1 0 -1)
+            (begin
+              (w-set (struct-get out "kptr") len k)
+              (w-set (struct-get out "vptr") len v)
+              (make-IntMap (struct-get out "kptr") (struct-get out "vptr") (+ len 1) (struct-get out "cap")))))))))
 
-; Remove a key. Compacts the arrays in place (like set-remove), so the
-; capacity stays the real size of the backing storage and later puts
-; reuse the freed slot.
+; Fresh storage of `cap` holding m's first len entries, value of slot `set` replaced by v, slot `skip` left out.
+(defn intmap-copy ((m IntMap) (len Int) (cap Int) (set Int) (v Int) (skip Int))
+  (let nk (w-alloc cap)
+    (let nv (w-alloc cap)
+      (let ok (struct-get m "kptr")
+        (let ov (struct-get m "vptr")
+          (let-mut o 0
+            (begin
+              (for (j 0) (< j len)
+                (begin
+                  (if (= j skip)
+                    unit
+                    (begin
+                      (w-set nk o (w-get ok j))
+                      (w-set nv o (if (= j set) v (w-get ov j)))
+                      (set! o (+ o 1))))
+                  (set! j (+ j 1))))
+              (make-IntMap nk nv o cap))))))))
+
+; Remove a key. The map passed in is unchanged; the result has storage of its own.
 ; Returns: IntMap
 (defn intmap-remove ((m IntMap) (k Int))
   (let len (intmap-len m)
     (let removed (intmap-find m k 0 len)
       (if (<= removed 0)
         m
-        (let kptr (struct-get m "kptr")
-          (let vptr (struct-get m "vptr")
-            (begin
-              (for (j (- removed 1)) (< j (- len 1))
-                (begin
-                  (w-set kptr j (w-get kptr (+ j 1)))
-                  (w-set vptr j (w-get vptr (+ j 1)))
-                  (set! j (+ j 1))))
-              (make-IntMap kptr vptr (- len 1) (intmap-cap m)))))))))
+        (intmap-copy m len (intmap-cap m) -1 0 (- removed 1))))))
 
 ; Internal: 1-based index of key k in [i, len), or 0 if absent.
 (defn intmap-find ((m IntMap) (k Int) (i Int) (len Int))

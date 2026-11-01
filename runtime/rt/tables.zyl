@@ -161,6 +161,15 @@
         (let _ (tb-st (+ (tb-ld (+ a 24)) (* i 8)) v)
           (let _ (if (= i f) (tb-st (+ a 16) (+ f 1)) 0) 0))))))
 
+; Writes v at slot n when n is the first unwritten slot below cap, claiming it atomically; 1 if written, else 0.
+(defn zyl_array_push (h n v)
+  (let a (tb-array-of h "array-push")
+    (if (and (>= n 0) (< n (tb-ld (+ a 8))))
+      (if (= (ffi-call "%cas" (+ a 16) n (+ n 1) 1) n)
+        (let _ (tb-st (+ (tb-ld (+ a 24)) (* n 8)) v) 1)
+        0)
+      0)))
+
 ; --- attribute tables: {slots, cap, len}, slots {key, val}, linear probing ---
 
 ; splitmix64 finalizer (logical shifts).
