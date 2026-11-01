@@ -232,7 +232,10 @@ The wrappers that read or write a caller's address (`alloc-read-int`,
 `alloc-write-int`, `alloc-offset`, `alloc-cstr`, `atomic/atomic`) need the
 `ffi` capability: an address is what C code hands back, and with `ffi` a
 program may already call C (`capability_check.zyl` derives what each
-standard-library function reaches). Reading an `Arena` field is nominal
+standard-library function reaches). `bytebuf-ptr`, the one form that
+produces an address from a buffer, needs `ffi` too: the address differs
+between runs, so a program without `ffi` cannot print one (spec §27).
+Reading an `Arena` field is nominal
 and will not unify with `Int`.
 
 A program also cannot obtain an arena. The collections allocate from

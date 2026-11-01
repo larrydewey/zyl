@@ -289,7 +289,7 @@
   (Cons (ZB "bytebuf-append" "special-form" "(bytebuf-append buf slice)" "Append a byte slice's contents, growing the length. Capacity is fixed: a slice that does not fit leaves the buffer unchanged.")
   (Cons (ZB "bytebuf-len" "special-form" "(bytebuf-len buf)" "Bytes currently in the buffer.")
   (Cons (ZB "bytebuf-cap" "special-form" "(bytebuf-cap buf)" "Allocated capacity of the buffer.")
-  (Cons (ZB "bytebuf-ptr" "special-form" "(bytebuf-ptr buf)" "Raw address of the buffer's first byte, for FFI.")
+  (Cons (ZB "bytebuf-ptr" "special-form" "(bytebuf-ptr buf)" "Raw address of the buffer's first byte, for FFI; needs the ffi capability.")
   (Cons (ZB "byteslice" "special-form" "(byteslice buf offset length)" "Borrow a sub-range of a buffer.")
   (Cons (ZB "byteslice-sub" "special-form" "(byteslice-sub slice offset length)" "Narrow an existing slice.")
   (Cons (ZB "align-check" "special-form" "(align-check ptr alignment)" "Assert a pointer's alignment before a wide access.")

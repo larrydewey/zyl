@@ -1,6 +1,6 @@
 ; expect-error: E_FFI_RESTRICTED
 ; zyl_random_fill writes n bytes at an address the caller names: a 16-byte buffer and n = 40 overflows it.
-(capabilities io)
+(capabilities io ffi)
 (defn main ()
   (let b (bytebuf Heap 16)
     (begin (ffi-call "zyl_random_fill" (bytebuf-ptr b) 40 1000) 0)))

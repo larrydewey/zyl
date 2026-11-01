@@ -1,0 +1,3 @@
+; expect-error: E_PKG_CAPABILITY_VIOLATION
+; bytebuf-ptr is a raw address, different on every run under ASLR: printing it breaks determinism, so it needs ffi.
+(defn main () (let b (bytebuf Heap 16) (begin (print (bytebuf-ptr b)) 0)))

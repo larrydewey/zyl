@@ -69,6 +69,7 @@
     (EFfiCall sym _ _ (cc-ffi-symbol-capability sym))
     (EFfiPin _ "ffi")
     (EFfiUnpin _ "ffi")
+    (EByteBufPtr _ "ffi")
     (ESpawn _ "actor")
     (ESend _ _ "actor")
     (ESendClosure _ _ _ "actor")
@@ -457,7 +458,13 @@
         unit
         (cc-fail site
           (str-concat "`" (str-concat (cc-site-name site) (str-concat "` needs the " (str-concat need (str-concat " capability, and " (cc-declares g))))))
-          (cc-fix g need))))))
+          (str-concat (cc-fix g need) (cc-fix-why site)))))))
+
+; Why a form with no foreign call still needs ffi, said where the fix is.
+(defn cc-fix-why (site)
+  (match (Expr.inner site)
+    (EByteBufPtr _ "; a raw address differs from run to run, so only code that hands it to C may take it -- read and write the buffer with load-*/store-* instead")
+    (_ "")))
 
 ; What the declaring side says today: "this file declares none" / "package P declares only io".
 (defn cc-declares (g)
@@ -492,6 +499,7 @@
     (EFfiCall sym _ _ sym)
     (EFfiPin _ "ffi-pin")
     (EFfiUnpin _ "ffi-unpin")
+    (EByteBufPtr _ "bytebuf-ptr")
     (ESpawn _ "spawn")
     (ESend _ _ "send")
     (ESendClosure _ _ _ "send")

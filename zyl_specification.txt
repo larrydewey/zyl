@@ -1695,7 +1695,7 @@ E_MALFORMED_FORM, with the fix pointing at zyl.pkg or at the compiled
 file.
 
     io      core/io and everything under stdlib/io
-    ffi     ffi-call, ffi-pin, Pin-region allocation
+    ffi     ffi-call, ffi-pin, bytebuf-ptr, Pin-region allocation
     actor   spawn, chan, chan-send, chan-recv
     secret  the Secret capability type and stdlib/math/secret
     native  shipping and compiling C sources (§31.10)
@@ -1714,7 +1714,9 @@ runtime entry that reaches the world (a process, the file system, the
 environment, the clock, the terminal, OS entropy) needs `io`, and a call
 into a stdlib function needs every capability its body reaches, derived
 over the stdlib call graph: the module a function sits in does not hide
-what it does.
+what it does. `bytebuf-ptr` needs `ffi`: a raw address differs between
+runs (ASLR), so printing one would break §27, and its only use is
+handing a buffer to foreign code.
 
 A declared set is a ceiling on the declaring package. It is not re-granted
 per edge. The effective transitive closure is computed and written to the

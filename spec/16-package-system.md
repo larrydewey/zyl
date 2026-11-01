@@ -325,7 +325,7 @@ existing lock.
 | Capability | Grants |
 |------------|--------|
 | `io` | `core/io`, `stdlib/io` |
-| `ffi` | `ffi-call`, `ffi-pin`, Pin-region allocation |
+| `ffi` | `ffi-call`, `ffi-pin`, `bytebuf-ptr`, Pin-region allocation |
 | `actor` | `spawn`, `chan`, `chan-send`, `chan-recv` |
 | `secret` | `Secret` capability type, `stdlib/math/secret` |
 | `native` | Shipping and compiling C sources |
@@ -345,7 +345,7 @@ This underwrites guarantee **G12**: a package cannot exercise a capability it
 does not declare.
 
 In the implementation, `capability_check.zyl` recognises the constructs
-directly (`ffi-call`, `ffi-pin`, `ffi-unpin`, `spawn`, `chan`, `chan-send`, `chan-recv`,
+directly (`ffi-call`, `ffi-pin`, `ffi-unpin`, `bytebuf-ptr` (an address differs between runs), `spawn`, `chan`, `chan-send`, `chan-recv`,
 `file-open`, `file-read`, `file-write`, `file-close`, `read-line`) and
 classifies a call into the standard library by its module path: `io/…`
 and `core/io` need `io`, `actor/…` needs `actor`, `ffi/…` needs `ffi`, and

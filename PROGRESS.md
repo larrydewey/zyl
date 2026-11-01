@@ -446,6 +446,9 @@ compile with `build/boot/zyl-self` on 2026-09-28.
   need `io`; `atomic/atomic` and the allocator's address readers need
   `ffi`. Secret is not derived (a type obligation, not authority);
   stdlib `impl` bodies are not yet part of the derivation.
+- `bytebuf-ptr` needs `ffi` (2026-10-31): the address differs between runs
+  (ASLR), so a program without `ffi` cannot print one (spec §27); the help
+  points at `load-*`/`store-*`. `tests/compile-fail/bytebuf-ptr-needs-ffi.zyl`.
 - Red-team fixes (2026-10-31): `E_FFI_RESTRICTED` now covers `impl` method
   bodies (they were unchecked), restricted wrappers named as values,
   `alloc-int`, the `StrViewC` constructor (forged off/len read process
@@ -543,10 +546,6 @@ Language and compiler:
   program (soundness.md L8): renaming or following the caller's policy is
   an open decision.
 
-- `bytebuf-ptr` returns the buffer's address as a plain `Int` (`Ptr` is a
-  spelling of `Int`), so a program can print an ASLR-dependent value
-  (spec §27 says memory layout is not observable). Making `Ptr` opaque or
-  gating `bytebuf-ptr` behind `ffi` is an open language decision.
 - `zyl_ref_*` is a shared mutable cell any program may create; two actors
   sharing one race (needs `actor`). Whether refs stay a program surface is
   an open language decision.
