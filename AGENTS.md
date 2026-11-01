@@ -43,7 +43,8 @@ The implementation's order is defined in `stdlib/compiler/pipeline.zyl`
 and differs from the list above: balance check → parse → module
 resolution → macro expansion → built-in shadowing (`E_SHADOWS_BUILTIN`)/capability/duplicate/arity (also
 `E_MALFORMED_FORM`, `E_FFI_RESTRICTED`)/mutability/exhaustiveness/
-unused/secret checks → derive expansion → impl lifting → closure
+unused/secret checks → contract-condition effects (`ef-check-program` in `capability_check.zyl`,
+`E_CONTRACT_EFFECT`) → derive expansion → impl lifting → closure
 inlining (`closure_inline.zyl`, now an identity step) → type checking (`type_annotate.zyl`: sound HM, spec §4.8–§4.10;
 every type error is reported, then the compile fails; static trait
 resolution, per-type specialization of calls and function values,
@@ -168,6 +169,7 @@ a signed provenance trailer, and `zyl verify <binary>` reads it back
 
 ### Contracts
 - Contracts never alter core semantics (type inference, ownership, regions, concurrency)
+- A condition may only compute: one that reaches I/O, foreign code, actors or channels, a state change or exit (transitively, whole program) or an unseen function value is `E_CONTRACT_EFFECT`; it may panic
 - Contracts are an optional overlay: runtime checks under a profile (strict/debug panic, warn reports, off/production strip — see above)
 
 ## Architecture Decisions (Do Not Reverse)

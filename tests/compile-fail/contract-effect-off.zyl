@@ -1,0 +1,5 @@
+; expect-error: E_CONTRACT_EFFECT
+; A stripped condition is checked too, so the profile cannot decide whether a program builds.
+(contracts off)
+(defn f (x) (begin (requires (begin (print x) true)) x))
+(defn main () (f 0))

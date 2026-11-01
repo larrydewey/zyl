@@ -1,0 +1,5 @@
+; expect-error: E_CONTRACT_EFFECT
+; A condition that prints through a helper would print or not by profile.
+(defn noisy (n) (begin (print n) true))
+(defn half (n) (begin (requires (noisy n)) (div! n 2)))
+(defn main () (half 0))

@@ -246,6 +246,7 @@ runtime event.
 | `E_DUPLICATE_IMPL` | Conflicting impls |
 | `E_MACRO_ILLEGAL_ACCESS` | Macro accessed a runtime value |
 | `E_CONTRACT_VIOLATION` | Contract failed |
+| `E_CONTRACT_EFFECT` | Contract condition reaches an effect or an unseen function value |
 | `E_OVERFLOW` | Integer overflow (checked by default, §20.1) |
 | `E_DIVISION_BY_ZERO` | `div!`/`rem!` by zero |
 | `E_PARTIAL_OPERATION` | `/` or `%` whose divisor is not a nonzero literal (§20.3) |

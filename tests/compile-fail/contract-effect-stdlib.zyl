@@ -1,0 +1,5 @@
+; expect-error: E_CONTRACT_EFFECT
+; The standard library is in the call graph: print-int does I/O.
+(use core/core)
+(defn f (n) (begin (ensures (begin (print-int result) true)) n))
+(defn main () (f 0))

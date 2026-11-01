@@ -1,0 +1,5 @@
+; expect-error: E_CONTRACT_EFFECT
+; Changing a ref in a condition changes state the program reads after it.
+(def counter (ffi-call "zyl_ref_new" 0 1000))
+(defn bump () (begin (ffi-call "zyl_ref_set" counter (+ (ffi-call "zyl_ref_get" counter 1000) 1) 1000) true))
+(defn main () (begin (requires (bump)) (ffi-call "zyl_ref_get" counter 1000)))

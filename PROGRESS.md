@@ -340,7 +340,18 @@ compile with `build/boot/zyl-self` on 2026-09-28.
   copies and the caught error use names the body never spells), profiles
   (`--contracts=P`, `(contracts P)`). A stripped condition is still typed,
   so the profile cannot change a program's types; a condition that
-  `set!`s is `E_MUT_CONFLICT`.
+  `set!`s is `E_MUT_CONFLICT`. A condition that does I/O, calls foreign
+  code, spawns or uses a channel, changes a ref, buffer, table or memory,
+  or exits, itself or through any function it calls, is
+  `E_CONTRACT_EFFECT` (spec §23.7, `ef-check-program` in `capability_check.zyl`): effects and called
+  parameters are derived over the whole-program call graph, standard
+  library included, to a fixpoint; a function value the pass cannot
+  resolve to a parameter, a named function or a `fn` in place is refused
+  (fail closed); a trait method stands for every impl; stripped conditions
+  are checked alike. A condition may panic, and the panic propagates under
+  every profile that runs it. Known over-approximation: a function that
+  builds a fresh collection by in-place pushes (`slice-to-vec`) counts as
+  changing state.
 - Form shapes: `try` needs `(catch NAME handler)`, `checkpoint` one
   expression, `recover` a body and two-element arms, `def` one value, a
   match arm a body; otherwise `E_MALFORMED_FORM`. A top-level expression
@@ -553,9 +564,6 @@ compile with `build/boot/zyl-self` on 2026-09-28.
 ## Open Limitations (each confirmed open on 2026-09-28)
 
 Language and compiler:
-
-- Contract conditions may still do I/O or call effectful functions; only
-  `set!` is rejected. A full purity check needs an effect analysis.
 
 - Deep nesting: the unused-binding collector was quadratic (a list copy per
   level) and is now an accumulator, so 40000 nested `(+ 1 ..)` compile in

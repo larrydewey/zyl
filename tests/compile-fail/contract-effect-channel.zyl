@@ -1,0 +1,7 @@
+; expect-error: E_CONTRACT_EFFECT
+; A condition may not talk to another actor.
+(capabilities actor)
+(defn main ()
+  (let c (chan 1)
+    (let tx (chan-tx c)
+      (begin (requires (begin (chan-send tx 1) true)) 0))))

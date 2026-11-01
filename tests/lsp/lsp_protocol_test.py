@@ -317,6 +317,9 @@ DIAGNOSTIC_CASES = [
      "(defn setup () 1)\n(defn main () 0)\n"),
     ("shadows-builtin", "E_SHADOWS_BUILTIN",
      "(defn main ()\n  (let print 5 print))\n"),
+    ("contract-effect", "E_CONTRACT_EFFECT",
+     "(defn noisy (n) (begin (print n) true))\n"
+     "(defn main () (begin (requires (noisy 1)) 0))\n"),
     ("alias", "E_TYPE_MISMATCH",
      "(alias Meters Int)\n(defn run ((d Meters)) d)\n(defn main () (begin (run \"x\") 0))\n"),
     ("alias-unknown", "E_UNKNOWN_TYPE",

@@ -1,0 +1,4 @@
+; expect-error: E_CONTRACT_EFFECT
+; A function value a condition calls is unseen here, so the check fails closed.
+(defn check (p x) (begin (requires (p x)) x))
+(defn main () (check (fn (v) (>= v 0)) 0))

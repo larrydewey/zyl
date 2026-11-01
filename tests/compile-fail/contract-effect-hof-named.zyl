@@ -1,0 +1,5 @@
+; expect-error: E_CONTRACT_EFFECT
+; A named function passed to a callee that calls it brings its effects along.
+(defn apply1 (f x) (f x))
+(defn shout (x) (begin (print x) true))
+(defn main () (begin (requires (apply1 shout 3)) 0))

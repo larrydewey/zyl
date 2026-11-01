@@ -42,6 +42,7 @@
 (use compiler/package)
 (use compiler/qualify)
 (use compiler/error_report)
+(use compiler/shadow_check)
 (use core/list)
 (use core/option)
 
@@ -565,3 +566,598 @@
       (match t
         (Nil h)
         (_ (str-concat h (str-concat " " (cc-caps-text t))))))))
+
+; ===========================================================================
+; CONTRACT CONDITIONS (spec §23.7, E_CONTRACT_EFFECT)
+; ===========================================================================
+; A condition runs or not by profile, so it may only compute; a panic is the contract's own outcome.
+; Effects and called parameters per definition, to a fixpoint like the capabilities above; an unseen function value fails closed.
+; Lowering wraps each condition as (let zyl#cond C zyl#cond), unspellable in source; no condition, no pass.
+
+; Effect bits: io 1, ffi 2, actor 4, state 8, unseen function value 16, exit 32.
+(deftype EfSite
+  (EfLeaf Int String Expr)
+  (EfCall Int (List EfArg) Expr)
+  (EfPcall Int Expr))
+
+; What an argument is, for a callee that calls the parameter it lands in.
+(deftype EfArg (EfaPar Int) (EfaFn Int) (EfaLam) (EfaOther))
+
+(def ef-index (ffi-call "zyl_smap_new" 1000))
+(def ef-ctors (ffi-call "zyl_smap_new" 1000))
+(def ef-methods (ffi-call "zyl_smap_new" 1000))
+(def ef-pure (ffi-call "zyl_smap_new" 1000))
+(def ef-names (ffi-call "zyl_wvec_new" 1000))
+(def ef-bodies (ffi-call "zyl_wvec_new" 1000))
+(def ef-params (ffi-call "zyl_wvec_new" 1000))
+(def ef-sites (ffi-call "zyl_wvec_new" 1000))
+(def ef-mask (ffi-call "zyl_wvec_new" 1000))
+(def ef-pc (ffi-call "zyl_wvec_new" 1000))
+(def ef-why (ffi-call "zyl_wvec_new" 1000))
+
+(def ef-marker "zyl#cond")
+
+; ===========================================================================
+; ENTRY
+; ===========================================================================
+
+(defn ef-check-program (prog)
+  (let conds (ef-find-forms prog Nil)
+    (if (nil? conds) unit
+      (let _ (ef-reset)
+        (let _ (ef-number prog)
+          (let _ (ef-scan-all 0 (ffi-call "zyl_wvec_len" ef-names 1000))
+            (let _ (ef-fix)
+              (ef-check-conds (list-reverse conds)))))))))
+
+(defn ef-reset ()
+  (let _ (if (ffi-call "zyl_smap_has" ef-pure "zyl_panic" 1000) unit (ef-fill-pure (ef-pure-entries)))
+  (let _ (if (ffi-call "zyl_smap_has" bs-table "+" 1000) unit (bs-fill (bs-names)))
+    (let _ (ffi-call "zyl_smap_clear" ef-index 1000)
+      (let _ (ffi-call "zyl_smap_clear" ef-ctors 1000)
+        (let _ (ffi-call "zyl_smap_clear" ef-methods 1000)
+          (let _ (ffi-call "zyl_wvec_truncate" ef-names 0 1000)
+            (let _ (ffi-call "zyl_wvec_truncate" ef-bodies 0 1000)
+              (let _ (ffi-call "zyl_wvec_truncate" ef-params 0 1000)
+                (let _ (ffi-call "zyl_wvec_truncate" ef-sites 0 1000)
+                  (let _ (ffi-call "zyl_wvec_truncate" ef-mask 0 1000)
+                    (let _ (ffi-call "zyl_wvec_truncate" ef-pc 0 1000)
+                      (ffi-call "zyl_wvec_truncate" ef-why 0 1000)))))))))))))
+
+(defn ef-fill-pure (xs)
+  (match xs
+    (Nil unit)
+    (Cons h t (let _ (ffi-call "zyl_smap_put" ef-pure h 1 1000) (ef-fill-pure t)))))
+
+; ===========================================================================
+; FINDING CONDITIONS
+; ===========================================================================
+
+(defn ef-marker-p ((n String))
+  (and (>= (str-length n) 8) (str-eq (str-substring n 0 8) ef-marker)))
+
+(defn ef-find-forms (xs acc)
+  (match xs
+    (Nil acc)
+    (Cons e t (ef-find-forms t (ef-find e acc)))))
+
+; Every marked condition in reverse source order; walks without allocating, since the language server runs it per edit.
+(defn ef-find (e acc)
+  (match (Expr.inner e)
+    (ELet n v b (if (ef-marker-p n) (Cons v acc) (ef-find b (ef-find v acc))))
+    (ELetMut _ v b (ef-find b (ef-find v acc)))
+    (EApply _ args (ef-find-forms args acc))
+    (ECall f args (ef-find-forms args (ef-find f acc)))
+    (EBegin xs (ef-find-forms xs acc))
+    (EIf c t f (ef-find f (ef-find t (ef-find c acc))))
+    (EMatch sc arms (ef-find-arms arms (ef-find sc acc)))
+    (ETryCatch b _ h (ef-find h (ef-find b acc)))
+    (EDefn _ _ b (ef-find b acc))
+    (EDef _ v (ef-find v acc))
+    (ELambda _ _ b (ef-find b acc))
+    (EFn _ _ b (ef-find b acc))
+    (ETestDecl _ b _ _ (ef-find b acc))
+    (EImplBlock _ _ bodies (ef-find-impls bodies acc))
+    (EAtom _ acc)
+    (EDeftype _ _ _ _ acc)
+    (EStructDef _ _ acc)
+    (EStructDefPlus _ _ acc)
+    (ETraitDecl _ _ _ acc)
+    (EMacroDef _ _ _ acc)
+    (EUseModule _ _ _ acc)
+    (EWhile c b (ef-find b (ef-find c acc)))
+    (ESetBang _ v (ef-find v acc))
+    (EStructGet b _ (ef-find b acc))
+    (EPrint xs (ef-find-forms xs acc))
+    (EFfiCall _ args _ (ef-find-forms args acc))
+    (EMakeStruct _ args (ef-find-forms args acc))
+    (EMakeVariant _ _ args (ef-find-forms args acc))
+    (EUnknown _ args (ef-find-forms args acc))
+    (ETuple xs (ef-find-forms xs acc))
+    (EAssertEqual a b (ef-find b (ef-find a acc)))
+    (EAssertTrue b _ (ef-find b acc))
+    (EAssertFalse b _ (ef-find b acc))
+    (EUnwrap b (ef-find b acc))
+    (ECond cs (ef-find-conds cs acc))
+    (EError _ acc)
+    (ERunTests _ acc)
+    (_ (ef-find-forms (expr-children e) acc))))
+
+(defn ef-find-conds (cs acc)
+  (match cs
+    (Nil acc)
+    (Cons pr t (match pr (Pair c b (ef-find-conds t (ef-find b (ef-find c acc))))))))
+
+(defn ef-find-arms (arms acc)
+  (match arms
+    (Nil acc)
+    (Cons a t (ef-find-arms t (ef-find (MA.body a) acc)))))
+
+(defn ef-find-impls (bodies acc)
+  (match bodies
+    (Nil acc)
+    (Cons b t (match b (IB d (match d (DN _ _ body (ef-find-impls t (ef-find body acc)))))))))
+
+; ===========================================================================
+; NUMBERING
+; ===========================================================================
+
+(defn ef-add (name ps body)
+  (let i (ffi-call "zyl_wvec_len" ef-names 1000)
+    (let _ (ffi-call "zyl_wvec_push" ef-names name 1000)
+      (let _ (ffi-call "zyl_wvec_push" ef-bodies body 1000)
+        (let _ (ffi-call "zyl_wvec_push" ef-params ps 1000)
+          (let _ (ffi-call "zyl_wvec_push" ef-sites Nil 1000)
+            (let _ (ffi-call "zyl_wvec_push" ef-mask 0 1000)
+              (let _ (ffi-call "zyl_wvec_push" ef-pc 0 1000)
+                (let _ (ffi-call "zyl_wvec_push" ef-why -1 1000)
+                  i)))))))))
+
+(defn ef-number (xs)
+  (match xs
+    (Nil unit)
+    (Cons e t (let _ (ef-number-form e) (ef-number t)))))
+
+(defn ef-number-form (e)
+  (match (Expr.inner e)
+    (EDefn n ps body (ef-number-def n (ef-param-names ps) body))
+    (EDef n v (ef-number-def n Nil v))
+    (EImplBlock tr _ bodies (ef-number-impl tr bodies))
+    (EDeftype _ vs _ _ (ef-number-ctors vs))
+    (EStructDef sd _ (ef-number-struct sd))
+    (EStructDefPlus sd _ (ef-number-struct sd))
+    (_ unit)))
+
+(defn ef-number-def (n ps body)
+  (if (ffi-call "zyl_smap_has" ef-index n 1000) unit
+    (ffi-call "zyl_smap_put" ef-index n (ef-add n ps body) 1000)))
+
+(defn ef-number-ctors (vs)
+  (match vs
+    (Nil unit)
+    (Cons v t (let _ (ffi-call "zyl_smap_put" ef-ctors (AV.name v) 1 1000) (ef-number-ctors t)))))
+
+(defn ef-number-struct (sd)
+  (match sd (SD n _ (ffi-call "zyl_smap_put" ef-ctors n 1 1000))))
+
+; A constructor, or `make-S` for a struct S (qualify.zyl keys the suffix).
+(defn ef-ctor-p ((n String))
+  (if (ffi-call "zyl_smap_has" ef-ctors n 1000) true
+    (and (ef-prefix-p n "make-") (ffi-call "zyl_smap_has" ef-ctors (str-substring n 5 (- (str-length n) 5)) 1000))))
+
+; Each impl method body is a definition; a method name stands for every body that defines it.
+(defn ef-number-impl (tr bodies)
+  (match bodies
+    (Nil unit)
+    (Cons b t
+      (match b
+        (IB d
+          (match d
+            (DN m ps body
+              (let ps2 (ef-param-names ps)
+                (let i (ef-add (str-concat (err-name tr) (str-concat "." m)) ps2 body)
+                  (let _ (ef-method-add m i (list-length ps2))
+                    (ef-number-impl tr t)))))))))))
+
+; The synthetic definition for method m forwards its parameters to each body.
+(defn ef-method-add (m i arity)
+  (let j (if (ffi-call "zyl_smap_has" ef-methods m 1000)
+           (ffi-call "zyl_smap_get" ef-methods m 1000)
+           (let k (ef-add m Nil (ffi-call "zyl_wvec_get" ef-bodies i 1000))
+             (let _ (ffi-call "zyl_smap_put" ef-methods m k 1000) k)))
+    (ffi-call "zyl_wvec_set" ef-sites j
+      (Cons (EfCall i (ef-forward 0 arity) (ffi-call "zyl_wvec_get" ef-bodies i 1000)) (ffi-call "zyl_wvec_get" ef-sites j 1000)) 1000)))
+
+(defn ef-forward (k n)
+  (if (>= k n) Nil (Cons (EfaPar k) (ef-forward (+ k 1) n))))
+
+(defn ef-param-names (ps)
+  (match ps
+    (Nil Nil)
+    (Cons p t (Cons (P.name p) (ef-param-names t)))))
+
+; ===========================================================================
+; SCANNING
+; ===========================================================================
+; A definition's sites, in source order: its own effects, its calls, and
+; the calls of its parameters. `ps` holds the enclosing parameters still in
+; scope ("" where a binder hid one).
+
+(defn ef-scan-all (i n)
+  (if (>= i n) unit
+    (let s (ffi-call "zyl_wvec_get" ef-sites i 1000)
+      (let own (ef-scan (ffi-call "zyl_wvec_get" ef-bodies i 1000) (ffi-call "zyl_wvec_get" ef-params i 1000) Nil)
+        (let _ (if (nil? s) (ffi-call "zyl_wvec_set" ef-sites i (list-reverse own) 1000) unit)
+          (ef-scan-all (+ i 1) n))))))
+
+(defn ef-scan-list (xs ps acc)
+  (match xs
+    (Nil acc)
+    (Cons e t (ef-scan-list t ps (ef-scan e ps acc)))))
+
+(defn ef-leaf (e bits what xs ps acc)
+  (ef-scan-list xs ps (Cons (EfLeaf bits what e) acc)))
+
+(defn ef-scan (e ps acc)
+  (match (Expr.inner e)
+    (EApply n args (ef-scan-apply e n args ps acc))
+    (ECall op args (ef-scan-call e op args ps acc))
+    (ELet n v b (ef-scan b (ef-drop ps n) (ef-scan v ps acc)))
+    (ELetMut n v b (ef-scan b (ef-drop ps n) (ef-scan v ps acc)))
+    (ETryCatch b n h (ef-scan h (ef-drop ps n) (ef-scan b ps acc)))
+    (EMatch s arms (ef-scan-arms arms ps (ef-scan s ps acc)))
+    (EFor bs c b (let ps2 (ef-drop-binds ps bs) (ef-scan-list (expr-children e) ps2 acc)))
+    (ELambda _ lps b (ef-scan b (ef-drop-names ps (ef-param-names lps)) acc))
+    (EFn _ lps b (ef-scan b (ef-drop-names ps (ef-param-names lps)) acc))
+    (EDefn _ lps b (ef-scan b (ef-drop-names ps (ef-param-names lps)) acc))
+    (EFfiCall sym args _ (ef-leaf e (ef-entry-bits sym) sym args ps acc))
+    (EPrint xs (ef-leaf e 1 "print" xs ps acc))
+    (EReadLine (Cons (EfLeaf 1 "read-line" e) acc))
+    (EExit b (ef-leaf e 32 "exit" (Cons b Nil) ps acc))
+    (EClose b (ef-leaf e 1 "close" (Cons b Nil) ps acc))
+    (EFileOpen a b (ef-leaf e 1 "file-open" (Cons a (Cons b Nil)) ps acc))
+    (EFileRead a b (ef-leaf e 1 "file-read" (Cons a (Cons b Nil)) ps acc))
+    (EFileWrite a b (ef-leaf e 1 "file-write" (Cons a (Cons b Nil)) ps acc))
+    (EFileClose b (ef-leaf e 1 "file-close" (Cons b Nil) ps acc))
+    (ERunTests _ (Cons (EfLeaf 1 "run-tests" e) acc))
+    (EBufAppend a b (ef-leaf e 8 "buf-append" (Cons a (Cons b Nil)) ps acc))
+    (ESpawn b (ef-leaf e 4 "spawn" (Cons b Nil) ps acc))
+    (ESend a b (ef-leaf e 4 "chan-send" (Cons a (Cons b Nil)) ps acc))
+    (ESendClosure a b _ (ef-leaf e 4 "chan-send" (Cons a (Cons b Nil)) ps acc))
+    (EFfiPin b (ef-leaf e 2 "ffi-pin" (Cons b Nil) ps acc))
+    (EFfiUnpin b (ef-leaf e 2 "ffi-unpin" (Cons b Nil) ps acc))
+    (EByteBufPtr b (ef-leaf e 2 "bytebuf-ptr" (Cons b Nil) ps acc))
+    (EStoreByte _ _ _ _ (ef-leaf e 8 "store-*" (expr-children e) ps acc))
+    (EStoreByteSigned _ _ _ _ (ef-leaf e 8 "store-*" (expr-children e) ps acc))
+    (EByteBufAppend _ _ (ef-leaf e 8 "bytebuf-append" (expr-children e) ps acc))
+    (EAtomicLoad _ _ (ef-leaf e 8 "bytebuf-atomic-load" (expr-children e) ps acc))
+    (EAtomicStore _ _ _ (ef-leaf e 8 "bytebuf-atomic-store" (expr-children e) ps acc))
+    (EAtomicAdd _ _ _ (ef-leaf e 8 "bytebuf-atomic-add" (expr-children e) ps acc))
+    (EAtomicSub _ _ _ (ef-leaf e 8 "bytebuf-atomic-sub" (expr-children e) ps acc))
+    (EAtomicCAS _ _ _ _ (ef-leaf e 8 "bytebuf-atomic-cas" (expr-children e) ps acc))
+    (EAtomicFetchAdd _ _ _ (ef-leaf e 8 "bytebuf-atomic-fetch-add" (expr-children e) ps acc))
+    (EAtomicMax _ _ _ (ef-leaf e 8 "bytebuf-atomic-max" (expr-children e) ps acc))
+    (EAtomicMin _ _ _ (ef-leaf e 8 "bytebuf-atomic-min" (expr-children e) ps acc))
+    (_ (ef-scan-list (expr-children e) ps acc))))
+
+(defn ef-scan-arms (arms ps acc)
+  (match arms
+    (Nil acc)
+    (Cons a t (ef-scan-arms t ps (ef-scan (MA.body a) (ef-drop-pats ps (MA.patterns a)) acc)))))
+
+(defn ef-drop-pats (ps pats)
+  (match pats
+    (Nil ps)
+    (Cons p t
+      (ef-drop-pats
+        (match (Expr.inner p)
+          (EAtom a (match a (AIdent n (ef-drop ps n)) (_ ps)))
+          (_ ps))
+        t))))
+
+(defn ef-drop-binds (ps bs)
+  (match bs
+    (Nil ps)
+    (Cons pr t (match pr (Pair n _ (ef-drop-binds (ef-drop ps n) t))))))
+
+(defn ef-drop-names (ps ns)
+  (match ns
+    (Nil ps)
+    (Cons n t (ef-drop-names (ef-drop ps n) t))))
+
+; A binder hides the parameter it names.
+(defn ef-drop (ps (n String))
+  (match ps
+    (Nil Nil)
+    (Cons h t (Cons (if (str-eq h n) "" h) (ef-drop t n)))))
+
+(defn ef-param-index (ps (n String) (i Int))
+  (match ps
+    (Nil -1)
+    (Cons h t (if (and (> (str-length h) 0) (str-eq h n)) i (ef-param-index t n (+ i 1))))))
+
+; ((expr) args): a lambda written in place is scanned where it stands; any other function value is unseen.
+(defn ef-scan-call (e op args ps acc)
+  (match (Expr.inner op)
+    (ELambda _ _ _ (ef-scan-list args ps (ef-scan op ps acc)))
+    (EFn _ _ _ (ef-scan-list args ps (ef-scan op ps acc)))
+    (_ (ef-scan-list args ps (ef-scan op ps (Cons (EfLeaf 16 "a computed function value" e) acc))))))
+
+(defn ef-scan-apply (e (n String) args ps acc)
+  (ef-scan-list args ps (ef-apply-site e n args ps acc)))
+
+(defn ef-apply-site (e (n String) args ps acc)
+  (if (str-eq n "ffi-call")
+    (let sym (cc-ffi-arg-symbol args) (Cons (EfLeaf (ef-entry-bits sym) sym e) acc))
+  (if (str-eq n "zyl-method")
+    (ef-method-site e (ef-str-arg args) (ef-rest args) ps acc)
+  (if (ffi-call "zyl_smap_has" ef-index n 1000)
+    (Cons (EfCall (ffi-call "zyl_smap_get" ef-index n 1000) (ef-args args ps) e) acc)
+  (if (ef-ctor-p n) acc
+  (if (bs-builtin-p n)
+    (let b (ef-builtin-bits n) (if (= b 0) acc (Cons (EfLeaf b n e) acc)))
+  (let p (ef-param-index ps n 0)
+    (if (>= p 0)
+      (if (< p 60) (Cons (EfPcall p e) acc) (Cons (EfLeaf 16 n e) acc))
+      (if (ef-dotted-p n)
+        (ef-method-site e (ef-method-short n) args ps acc)
+        (Cons (EfLeaf 16 n e) acc))))))))))
+
+; `Trait.m` that no definition names: the method m.
+(defn ef-dotted-p ((n String))
+  (>= (ef-dot (err-name n) 0) 0))
+
+(defn ef-method-short ((n String))
+  (let s (err-name n)
+    (let d (ef-dot s 0)
+      (str-substring s (+ d 1) (- (str-length s) (+ d 1))))))
+
+(defn ef-dot ((s String) (i Int))
+  (if (>= i (str-length s)) -1
+    (if (= (ffi-call "zyl_cstr_byte_at" s i 1000) 46) i (ef-dot s (+ i 1)))))
+
+; A method no impl defines is one derive generates, after this pass, from pure field operations.
+(defn ef-method-site (e (m String) args ps acc)
+  (if (ffi-call "zyl_smap_has" ef-methods m 1000)
+    (Cons (EfCall (ffi-call "zyl_smap_get" ef-methods m 1000) (ef-args args ps) e) acc)
+    acc))
+
+(defn ef-str-arg (args)
+  (match args
+    (Cons a _ (match (Expr.inner a) (EAtom at (cc-atom-str at)) (_ "")))
+    (Nil "")))
+
+(defn ef-rest (args)
+  (match args
+    (Cons _ t t)
+    (Nil Nil)))
+
+(defn ef-args (args ps)
+  (match args
+    (Nil Nil)
+    (Cons a t (Cons (ef-arg a ps) (ef-args t ps)))))
+
+(defn ef-arg (a ps)
+  (match (Expr.inner a)
+    (EAtom at
+      (match at
+        (AIdent n
+          (let p (ef-param-index ps n 0)
+            (if (and (>= p 0) (< p 60)) (EfaPar p)
+              (if (ffi-call "zyl_smap_has" ef-index n 1000)
+                (EfaFn (ffi-call "zyl_smap_get" ef-index n 1000))
+                EfaOther))))
+        (_ EfaOther)))
+    (ELambda _ _ _ EfaLam)
+    (EFn _ _ _ EfaLam)
+    (_ EfaOther)))
+
+; ===========================================================================
+; WHAT A CONSTRUCT DOES
+; ===========================================================================
+
+; Built-in operations that change what a program does; every other built-in computes.
+(defn ef-builtin-bits ((n String))
+  (if (or (str-eq n "print") (or (str-eq n "print-float") (str-eq n "print-string"))) 1
+  (if (or (str-eq n "read-line") (str-eq n "close")) 1
+  (if (or (str-eq n "file-open") (or (str-eq n "file-read") (or (str-eq n "file-write") (str-eq n "file-close")))) 1
+  (if (or (str-eq n "run-tests") (str-eq n "zyl-contract-warn")) 1
+  (if (str-eq n "exit") 32
+  (if (or (str-eq n "spawn") (or (str-eq n "chan-send") (str-eq n "chan-recv"))) 4
+  (if (or (str-eq n "ffi-pin") (or (str-eq n "ffi-unpin") (str-eq n "bytebuf-ptr"))) 2
+  (if (or (str-eq n "bytebuf-append") (or (str-eq n "alloc-free") (or (str-eq n "arena-destroy") (str-eq n "arena-reset")))) 8
+  (if (ef-prefix-p n "store-") 8
+  (if (ef-prefix-p n "bytebuf-atomic-") 8 0)))))))))))
+
+(defn ef-prefix-p ((s String) (p String))
+  (and (>= (str-length s) (str-length p)) (str-eq (str-substring s 0 (str-length p)) p)))
+
+; A runtime entry computes only when listed; a panic is the contract's own outcome.
+(defn ef-entry-bits ((sym String))
+  (if (ffi-call "zyl_smap_has" ef-pure sym 1000) 0
+  (if (cc-runtime-symbol-p sym)
+    (if (cc-io-entry-p sym) 1
+    (if (str-eq sym "zyl_exit") 32
+    (if (ef-prefix-p sym "zyl_actor_") 4
+    (if (cc-addr-entry-p sym) 2 8))))
+    2)))
+
+(defn ef-pure-entries ()
+  ["zyl_panic" "zyl_overflow_panic" "zyl_div_zero_panic" "zyl_bytes_oob_panic"
+   "zyl_ralloc" "zyl_aesni_available" "zyl_arena_alloc" "zyl_arena_alloc_zeroed" "zyl_arena_capacity"
+   "zyl_arena_create" "zyl_arena_used" "zyl_arena_live" "zyl_arena_create_scoped"
+   "zyl_vec_alloc" "zyl_vec_alloc_r" "zyl_words_alloc" "zyl_words_alloc_r" "zyl_argc" "zyl_arg_str"
+   "zyl_blake3_hex" "zyl_bytebuf_blake3_hex" "zyl_bytebuf_new"
+   "zyl_cstr_byte_at" "zyl_cstr_cmp" "zyl_cstr_concat" "zyl_cstr_decode" "zyl_cstr_eq" "zyl_cstr_from_byte"
+   "zyl_cstr_from_int" "zyl_cstr_key_matches" "zyl_cstr_len" "zyl_cstr_sanitize" "zyl_cstr_sub" "zyl_cstr_substr"
+   "zyl_cstr_to_int" "zyl_cstr_to_int_base" "zyl_cstr_escapes_ok" "zyl_dirname_cstr"
+   "zyl_div_magic" "zyl_div_shift" "zyl_view_ok" "zyl_view_byte" "zyl_view_cmp" "zyl_view_find" "zyl_view_copy"
+   "zyl_diag_json" "zyl_err_is" "zyl_intern_name" "zyl_json_quote" "zyl_mangle_key"
+   "zyl_f_add" "zyl_f_cmp" "zyl_f_div" "zyl_f_mul" "zyl_f_of_int" "zyl_f_parse" "zyl_f_rem" "zyl_f_sub" "zyl_f_text"
+   "zyl_float_bits" "zyl_float_of_bits"
+   "zyl_wrap_add" "zyl_wrap_sub" "zyl_wrap_mul" "zyl_sat_add" "zyl_sat_sub" "zyl_sat_mul"
+   "zyl_add_overflows" "zyl_sub_overflows" "zyl_mul_overflows" "zyl_overflow_text" "zyl_div_zero_text" "zyl_int_text"
+   "zyl_heap_alloc" "zyl_mem_alloc" "zyl_mem_read" "zyl_word_load" "zyl_ptr_add" "zyl_ptr_cstr"
+   "zyl_cstr_of_word" "zyl_word_of_cstr" "zyl_heap_block_p" "zyl_runtime_export_p"
+   "zyl_val_alloc" "zyl_val_kind" "zyl_val_name" "zyl_val_arity"
+   "zyl_region_live_bytes" "zyl_regions_enabled" "zyl_session_arena"
+   "zyl_smap_get" "zyl_smap_get_or" "zyl_smap_has" "zyl_smap_new"
+   "zyl_source_path" "zyl_span_col" "zyl_span_file" "zyl_span_line" "zyl_span_off" "zyl_span_offset_at"
+   "zyl_span_snippet" "zyl_span_snippet_col"
+   "zyl_strbuf_new" "zyl_strbuf_new_r" "zyl_strbuf_str"
+   "zyl_uf_find" "zyl_uf_level" "zyl_uf_new" "zyl_uf_id" "zyl_variant_cmp" "zyl_variant_eq"
+   "zyl_wvec_get" "zyl_wvec_len" "zyl_wvec_new"
+   "zyl_array_new" "zyl_array_cap" "zyl_array_filled" "zyl_array_get"
+   "zyl_attrh_new" "zyl_attrh_get_or" "zyl_attrh_has"
+   "zyl_ref_new" "zyl_ref_new_in" "zyl_ref_get"
+   "zyl_words_new" "zyl_words_len" "zyl_words_get" "zyl_words_view" "zyl_words_view_r"
+   "zyl_crc32c_u64" "zyl_crc32c_u8" "zyl_crc32c_soft" "zyl_itest_count" "zyl_itest_name" "zyl_itest_fn"])
+
+; ===========================================================================
+; FIXPOINT
+; ===========================================================================
+
+(defn ef-get-mask ((i Int)) (ffi-call "zyl_wvec_get" ef-mask i 1000))
+(defn ef-get-pc ((i Int)) (ffi-call "zyl_wvec_get" ef-pc i 1000))
+
+; What one site adds: (Pair effect-bits parameter-call-bits).
+(defn ef-site-bits (s)
+  (match s
+    (EfLeaf b _ _ (Pair b 0))
+    (EfPcall p _ (Pair 0 (shl 1 p)))
+    (EfCall j args _ (ef-arg-bits (ef-get-pc j) args 0 (Pair (ef-get-mask j) 0)))))
+
+; Each argument in a position the callee calls; a missing one is unseen.
+(defn ef-arg-bits ((pc Int) args (k Int) acc)
+  (if (or (>= k 60) (= (shr pc k) 0)) acc
+    (let need (= (bit-and (shr pc k) 1) 1)
+      (match args
+        (Nil (ef-arg-bits pc Nil (+ k 1) (if need (ef-join acc (Pair 16 0)) acc)))
+        (Cons a t (ef-arg-bits pc t (+ k 1) (if need (ef-join acc (ef-arg-effect a)) acc)))))))
+
+(defn ef-arg-effect (a)
+  (match a
+    (EfaPar p (Pair 0 (shl 1 p)))
+    (EfaFn j (Pair (bit-or (ef-get-mask j) (if (= (ef-get-pc j) 0) 0 16)) 0))
+    (EfaLam (Pair 0 0))
+    (EfaOther (Pair 16 0))))
+
+(defn ef-join (a b)
+  (match a
+    (Pair m p (match b (Pair m2 p2 (Pair (bit-or m m2) (bit-or p p2)))))))
+
+(defn ef-sites-bits (ss acc)
+  (match ss
+    (Nil acc)
+    (Cons s t (ef-sites-bits t (ef-join acc (ef-site-bits s))))))
+
+; Index of the first site with an effect, or -1.
+(defn ef-first-effect (ss (i Int))
+  (match ss
+    (Nil -1)
+    (Cons s t (match (ef-site-bits s) (Pair m _ (if (= m 0) (ef-first-effect t (+ i 1)) i))))))
+
+(defn ef-fix ()
+  (if (ef-pass 0 (ffi-call "zyl_wvec_len" ef-names 1000) false) (ef-fix) unit))
+
+; A definition's witness is fixed when its mask first turns nonzero, so the chain it starts is well founded.
+(defn ef-pass ((i Int) (n Int) (changed Bool))
+  (if (>= i n) changed
+    (let ss (ffi-call "zyl_wvec_get" ef-sites i 1000)
+      (match (ef-sites-bits ss (Pair 0 0))
+        (Pair m p
+          (let om (ef-get-mask i)
+            (let op (ef-get-pc i)
+              (let nm (bit-or om m)
+                (let np (bit-or op p)
+                  (if (and (= nm om) (= np op))
+                    (ef-pass (+ i 1) n changed)
+                    (let _ (if (and (= om 0) (not (= nm 0))) (ffi-call "zyl_wvec_set" ef-why i (ef-first-effect ss 0) 1000) unit)
+                      (let _ (ffi-call "zyl_wvec_set" ef-mask i nm 1000)
+                        (let _ (ffi-call "zyl_wvec_set" ef-pc i np 1000)
+                          (ef-pass (+ i 1) n true))))))))))))))
+
+; ===========================================================================
+; THE CHECK
+; ===========================================================================
+
+(defn ef-check-conds (cs)
+  (match cs
+    (Nil unit)
+    (Cons c t (let _ (ef-check-cond c) (ef-check-conds t)))))
+
+; A condition sees no parameters: a function value it calls is unseen.
+(defn ef-check-cond (c)
+  (let ss (list-reverse (ef-scan c Nil Nil))
+    (let k (ef-first-effect ss 0)
+      (if (< k 0) unit
+        (let s (ef-nth ss k)
+          (ef-fail (ef-site-node s) (ef-describe s 0)))))))
+
+(defn ef-nth (ss (k Int))
+  (match ss
+    (Cons h t (if (= k 0) h (ef-nth t (- k 1))))
+    (Nil (EfLeaf 16 "" (Expr (EAtom ANil))))))
+
+(defn ef-site-node (s)
+  (match s
+    (EfLeaf _ _ e e)
+    (EfCall _ _ e e)
+    (EfPcall _ e e)))
+
+(defn ef-name ((i Int)) (err-name (ffi-call "zyl_wvec_get" ef-names i 1000)))
+
+; (Pair chain-text effect-bits) for the effect a site brings.
+(defn ef-describe (s (depth Int))
+  (match s
+    (EfLeaf b w _ (Pair (if (ef-prefix-p w "a ") w (str-concat "`" (str-concat w "`"))) b))
+    (EfPcall _ _ (Pair "a parameter's function value" 16))
+    (EfCall j args _
+      (if (not (= (ef-get-mask j) 0))
+        (ef-via (str-concat "`" (str-concat (ef-name j) "`")) j depth)
+        (ef-describe-arg j (ef-get-pc j) args 0 depth)))))
+
+; Follow callee j's witness down to the construct.
+(defn ef-via ((head String) (j Int) (depth Int))
+  (let w (ffi-call "zyl_wvec_get" ef-why j 1000)
+    (if (or (< w 0) (>= depth 12))
+      (Pair head (ef-get-mask j))
+      (match (ef-describe (ef-nth (ffi-call "zyl_wvec_get" ef-sites j 1000) w) (+ depth 1))
+        (Pair txt b (Pair (str-concat head (str-concat ", which calls " txt)) b))))))
+
+(defn ef-describe-arg ((j Int) (pc Int) args (k Int) (depth Int))
+  (let need (and (< k 60) (= (bit-and (shr pc k) 1) 1))
+    (match args
+      (Nil (Pair (str-concat "`" (str-concat (ef-name j) "` with a function value it calls")) 16))
+      (Cons a t
+        (if (and need (not (= (match (ef-arg-effect a) (Pair m _ m)) 0)))
+          (match a
+            (EfaFn f (ef-via (str-concat "`" (str-concat (ef-name j) (str-concat "` with `" (str-concat (ef-name f) "`")))) f depth))
+            (_ (Pair (str-concat "`" (str-concat (ef-name j) "` with a function value it calls")) 16)))
+          (if (or (>= k 60) (= (shr pc k) 0))
+            (Pair (str-concat "`" (str-concat (ef-name j) "`")) 16)
+            (ef-describe-arg j pc t (+ k 1) depth)))))))
+
+(defn ef-kind ((b Int))
+  (if (= (bit-and b 1) 1) "does I/O"
+  (if (= (bit-and b 2) 2) "calls foreign code"
+  (if (= (bit-and b 4) 4) "talks to an actor or a channel"
+  (if (= (bit-and b 8) 8) "changes shared state (a ref, a buffer, a table or memory)"
+  (if (= (bit-and b 32) 32) "ends the program"
+    "the compiler cannot follow to the function it runs, so what it does is unknown"))))))
+
+(defn ef-fail (at d)
+  (match d
+    (Pair chain b
+      (ffi-call "zyl_panic"
+        (err-at "E_CONTRACT_EFFECT"
+          (str-concat "this contract condition calls " (str-concat chain (str-concat ", which " (str-concat (ef-kind b)
+            ": a condition must not change what the program does, because the contract profile decides whether it runs at all"))))
+          (ffi-call "zyl_span_file" at 1000) (ffi-call "zyl_span_off" at 1000)
+          (ef-help b))
+        1000))))
+
+(defn ef-help ((b Int))
+  (if (= b 16)
+    "pass the callee a named function or a `fn` written in place, or compute the value before the check and let the condition only compare it"
+    "do the effect before the check and let the condition only compare its result, e.g. `(let v (load) (begin (requires (> v 0)) ...))`"))

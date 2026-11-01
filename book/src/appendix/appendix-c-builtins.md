@@ -436,7 +436,7 @@ parameter used only there, is `E_CANNOT_INFER`: annotate it,
 
 | Form | Syntax | Today |
 |---|---|---|
-| `requires` | `(requires condition)` | raises `E_CONTRACT_VIOLATION` when `condition` is false |
+| `requires` | `(requires condition)` | raises `E_CONTRACT_VIOLATION` when `condition` is false; the condition may only compute (`E_CONTRACT_EFFECT`, §23.7) |
 | `ensures` | `(ensures condition)` | checked after the body; `result` is the return value |
 | `invariant` | `(invariant condition)` | checked where written, like `requires` |
 | `contracts` | `(contracts P form)`, `(contracts P)` | compiles `form` (or the next top-level form) under profile P: strict, debug, warn, off, production |

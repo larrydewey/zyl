@@ -112,7 +112,7 @@ in `docs/compiler-pipeline.md`.
 | File | Responsibility |
 |---|---|
 | `shadow_check.zyl` | `E_SHADOWS_BUILTIN` (spec §1.3.2): a local binder named like a built-in, on every module, the standard library and runtime included |
-| `capability_check.zyl` | Package capability enforcement (§31.9) |
+| `capability_check.zyl` | Package capability enforcement (§31.9); also contract condition purity (`ef-check-program`, `E_CONTRACT_EFFECT`, spec §23.7): effects and called parameters of every definition over the whole-program call graph to a fixpoint, and a condition that reaches I/O, foreign code, actors or channels, a state change, exit or an unseen function value is refused |
 | `duplicate_check.zyl` | `E_DUPLICATE_DEFINITION` for repeated top-level `defn`/`deftype`; `E_DUPLICATE_VARIANT` for a program type that reuses a prelude constructor name |
 | `arity_check.zyl` | `E_ARITY_MISMATCH` for direct calls to known top-level functions; `E_MALFORMED_FORM` for a special form its parser rejected; the `ffi-call` shape checks and `E_FFI_RESTRICTED` for a raw runtime entry named outside the standard library |
 | `mutability_check.zyl` | `E_MUT_CONFLICT`: `set!` only on a `let-mut` binding in scope |

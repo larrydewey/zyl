@@ -1,0 +1,5 @@
+; expect-error: E_CONTRACT_EFFECT
+; A trait method stands for every impl of it; this one prints.
+(defstruct Pt (x Int))
+(impl Show Pt (defn show (p) (begin (print "showing") (p.x.show))))
+(defn main () (let p (make-Pt 1) (begin (invariant (= (p.show) "1")) 0)))

@@ -2,7 +2,7 @@
 
 **Canonical authority:** `zyl_specification.txt` §16, §23 (also §9.1 R4/R8, §31.9 `ffi`, §31.10 native dependencies)
 **Related:** `spec/07-region-memory-model.md`, `spec/06-capability-types.md`, `spec/16-package-system.md`
-**Implementation:** `stdlib/compiler/type_annotate.zyl` (`ta-ffi-typed`, `ta-ffi-extern`), `stdlib/compiler/ffi_sigs.zyl` (runtime signature table, `ffi-raw-p`), `stdlib/compiler/expr_inner.zyl` (`parse-extern`), `stdlib/compiler/arity_check.zyl` (`ffi-check-call`, `ffi-check-raw`), `stdlib/compiler/icnf.zyl` (`ic-ffi`), `stdlib/compiler/codegen.zyl` (`cg-fire-ext`), `runtime/rt/alloc.zyl` (pin arena), `runtime/rt/ffitimed.zyl` (`zyl_ffi_timed`); contracts: `stdlib/compiler/expr_inner.zyl` (`contract-defn-body`)
+**Implementation:** `stdlib/compiler/type_annotate.zyl` (`ta-ffi-typed`, `ta-ffi-extern`), `stdlib/compiler/ffi_sigs.zyl` (runtime signature table, `ffi-raw-p`), `stdlib/compiler/expr_inner.zyl` (`parse-extern`), `stdlib/compiler/arity_check.zyl` (`ffi-check-call`, `ffi-check-raw`), `stdlib/compiler/icnf.zyl` (`ic-ffi`), `stdlib/compiler/codegen.zyl` (`cg-fire-ext`), `runtime/rt/alloc.zyl` (pin arena), `runtime/rt/ffitimed.zyl` (`zyl_ffi_timed`); contracts: `stdlib/compiler/expr_inner.zyl` (`contract-defn-body`), `stdlib/compiler/capability_check.zyl` (condition purity)
 
 ---
 
@@ -137,6 +137,24 @@ Contracts NEVER affect:
 - Ownership
 - Regions
 - Concurrency model
+
+### 23.7 Condition Purity
+
+A condition (`requires`, `ensures`, `invariant`) runs or not by profile, so
+it may only compute. A condition that does I/O, calls foreign code, spawns
+an actor or sends or receives on a channel, changes shared state (a ref, a
+buffer, a table, memory), or exits -- itself or through any function it
+calls, transitively over the whole program, the standard library included
+-- is `E_CONTRACT_EFFECT`, named with the call chain that reaches the
+effect. A call through a function value is followed when the value is a
+parameter (the caller's argument decides), a named function or a lambda
+written in place; any other is unseen and rejected (fail closed). A trait
+method stands for every impl of it. `set!` in a condition is
+`E_MUT_CONFLICT`. Stripped conditions are checked alike, so the profile
+never decides whether a program builds. A condition may panic (a partial
+operation spelled `!`, an `assert`): stopping is the contract's own
+outcome, and the panic propagates under every profile that runs the
+condition, `warn` included.
 
 ---
 
@@ -279,5 +297,14 @@ The overlay is lowered while the parse tree is converted
   nothing in `e` spells.
 
 A check is ordinary code: its condition is typed and evaluated like any
-other expression, so keep conditions pure (P8, G8). A condition that
-`set!`s is `E_MUT_CONFLICT`; I/O in a condition is not yet rejected.
+other expression, and it must be pure (P8, G8, §23.7). A condition that
+`set!`s is `E_MUT_CONFLICT`; one that reaches an effect is
+`E_CONTRACT_EFFECT` (`ef-check-program` in `capability_check.zyl`, after the other checks and before
+type inference). Lowering wraps each condition in `(let zyl#cond C zyl#cond)`,
+a binder no source can spell, which is how the pass finds it. Each
+definition's effects (io, ffi, actor, state, exit, unseen call) and the
+parameters it calls are derived over the call graph to a fixpoint;
+runtime entries count as pure only when listed (`ef-pure-entries`). The
+analysis is conservative: a function that builds a fresh collection
+through in-place pushes (`slice-to-vec`) counts as changing state, and a
+higher-order callee needs a named function or a `fn` in place.

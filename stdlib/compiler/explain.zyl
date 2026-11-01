@@ -547,6 +547,9 @@
   (Cons (ExN "E_FFI_PIN_REQUIRED" "A `Secret` passed to foreign code must go through `ffi-pin`."
           "(capabilities ffi secret)\n(use core/core)\n(extern \"abs\" (Int) Int)\n(defn raw ((key Secret)) (ffi-call \"abs\" key 1000))\n(defn main () (begin (raw 5) 0))"
           "(capabilities ffi secret)\n(use core/core)\n(defn raw ((key Secret)) (let p (ffi-pin key) (ffi-unpin p)))\n(defn main () (begin (raw 5) 0))")
+  (Cons (ExN "E_CONTRACT_EFFECT" "A `requires`, `ensures` or `invariant` condition does I/O, calls foreign code, uses an actor or channel, changes shared state or exits, itself or through a function it calls; the profile decides whether a condition runs, so it may only compute."
+          "(defn noisy (n) (begin (print n) true))\n(defn half (n) (begin (requires (noisy n)) (div! n 2)))\n(defn main () (half 0))"
+          "(defn half (n) (begin (print n) (requires (>= n 0)) (div! n 2)))\n(defn main () (half 0))")
   (Cons (ExN "E_CONTRACT_VIOLATION" "A `requires`, `ensures` or `invariant` check was false when it ran."
           "(defn half (n) (begin (requires (>= n 0)) (/ n 2)))\n(defn main () (half -4))"
           "(defn half (n) (begin (requires (>= n 0)) (/ n 2)))\n(defn main () (half 0))")
@@ -574,7 +577,7 @@
   (Cons (ExN "E_INTEGER_OVERFLOW" "An integer literal does not fit in a 64-bit Int."
           "(defn main () (begin (print 99999999999999999999) 0))"
           "(defn main () (begin (print 9223372036854775807) 0))")
-  Nil)))))))))))))))))))))))))))))))))))
+  Nil))))))))))))))))))))))))))))))))))))
 
 (defn exn-find (code xs)
   (match xs

@@ -191,6 +191,8 @@
     (uc-check-program exprs)
     (dbg-log "secret-check\n")
     (sc-check-program exprs)
+    (dbg-log "effect-check\n")
+    (ef-check-program exprs)
     0))
 
 ; ===========================================================================

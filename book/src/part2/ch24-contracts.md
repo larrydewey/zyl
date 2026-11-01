@@ -177,7 +177,8 @@ The override is lexical: `(contracts off (f x))` does not switch off the clauses
 
 A check is ordinary code in the function body, so two consequences hold:
 
-- **Conditions are type-checked and executed** like any other expression. A condition with side effects affects the program.
+- **Conditions are type-checked and executed** like any other expression, and they may only compute (§23.7). A condition that does I/O, calls foreign code, spawns or uses a channel, changes a ref, buffer, table or memory, or exits, itself or through any function it calls (the standard library included), is `E_CONTRACT_EFFECT`; the error names the call chain, e.g. ``this contract condition calls `noisy`, which calls `print`, which does I/O``. A call through a function value the compiler cannot follow (a parameter of the function the condition sits in, a closure from a data structure) is refused too; pass a named function or a `fn` written in place. A stripped condition is checked alike, so the profile never decides whether a program builds. `set!` in a condition is `E_MUT_CONFLICT`.
+- **A condition may stop.** A partial operation spelled `!` or an `assert` inside a condition panics like anywhere else: stopping is the contract's own outcome, and the panic propagates under every profile that runs the condition, `warn` included.
 - **A condition is a `Bool`.** A clause is lowered to `assert-true`, which takes a `Bool`, so `(requires n)` makes `n` a `Bool` and an `Int` argument is `E_TYPE_MISMATCH`.
 - **Conditions are subject to every static check**, including the capability and `Secret` checks: a condition that branches on a `Secret` is rejected.
 
@@ -198,12 +199,13 @@ Implemented: contract forms are rewritten where every form is recognized, `conve
 | Error | Status |
 |-------|--------|
 | `E_CONTRACT_VIOLATION` | raised at run time by a failed `requires`, `ensures` or `invariant`; the message names the clause kind, the function and the clause |
+| `E_CONTRACT_EFFECT` | a condition reaches I/O, foreign code, an actor or channel, a state change or exit, or calls a function value the compiler cannot follow; compile time, with the call chain |
 | `E_UNBOUND_VARIABLE` | what `result` in a `requires` (or outside a `defn`) produces |
 
 ## 24.11 Best Practices
 
 1. **State preconditions with `requires` and postconditions with `ensures`.** They are checked, name the failing clause, and can be stripped with `(contracts off)` where a hot path needs it.
-2. **Keep conditions pure and cheap**: they run on every call.
+2. **Keep conditions cheap**: they run on every call. They are pure by rule (`E_CONTRACT_EFFECT`); do any effect before the check and let the condition compare its result.
 3. **Return `Result` for recoverable failures**; use `recover` or `try`/`catch` only for panics.
 4. **Build releases with `--contracts=production`** only when the checks are measured to cost too much; `warn` is the middle ground.
 

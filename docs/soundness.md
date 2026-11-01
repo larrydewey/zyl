@@ -389,6 +389,28 @@ pointer plus a bounded offset cannot wrap. A policy is per package: a
 macro from one package expanded in another follows the expanding
 package's policy, since the operation ends up in its definition.
 
+### L10 — A contract condition writes nothing · *Enforced, conservatively*
+
+**Claim.** A `requires`, `ensures` or `invariant` condition, and every
+function it reaches, performs no store to shared memory (a ref, a buffer,
+a table, a `Vec`'s storage, raw memory), no I/O, no foreign call, no actor
+or channel operation and no exit, so the contract profile, which decides
+whether conditions run, cannot change what a program writes (spec §23.7,
+P8, G8).
+
+**Enforced.** `capability_check.zyl` (`ef-check-program`) derives each definition's effects and the
+parameters it calls over the whole-program call graph, the standard
+library included, to a fixpoint, and refuses a condition that reaches an
+effect with `E_CONTRACT_EFFECT`, naming the chain. Runtime entries are pure
+only when listed; a call through a function value it cannot resolve to a
+parameter, a named function or a lambda in place is refused. Stripped
+conditions are checked too.
+
+**What this is not.** A condition may still allocate (allocation is not
+observable) and may panic, which is the contract's own outcome. The
+analysis over-approximates: a function that builds a fresh collection by
+in-place pushes counts as changing state.
+
 ## 4. What the aliasing that exists is
 
 Two `Vec` handles derived from one another share storage — that is the

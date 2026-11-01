@@ -265,6 +265,7 @@ Chapter 25 package capabilities.
 | `E_DIVISION_BY_ZERO` | Run time: `div!` or `rem!` met a zero divisor. Catchable with `try`; in compiled code and the interpreter alike |
 | `E_OVERFLOW` | Run time: an `Int` `+`, `-` or `*` overflowed under the default `(numeric checked)` policy, a unary minus of the smallest `Int`, or `INT_MIN` divided by -1 (under every policy). Catchable with `try`; the help line names `(numeric wrapping)` and `(numeric saturating)` |
 | `E_CONTRACT_VIOLATION` | A `requires`, `ensures` or `invariant` clause failed at run time; the message names the clause and its function. Catchable with `try`. |
+| `E_CONTRACT_EFFECT` | A `requires`, `ensures` or `invariant` condition does I/O, calls foreign code, spawns or uses a channel, changes shared state (a ref, buffer, table or memory) or exits, itself or through a function it calls, or calls a function value the compiler cannot follow; the message names the call chain. A condition may only compute, because the profile decides whether it runs (spec §23.7). |
 
 Exhaustiveness is a compile-time error, not a warning. `_` is the
 catch-all pattern; it may repeat, and it must be the last arm.

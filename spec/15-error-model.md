@@ -64,6 +64,7 @@ reported before the compile fails (§4.8).
 | `E_FFI_TIMEOUT` | FFI call exceeded timeout | §16 |
 | `E_INDEX_OUT_OF_BOUNDS` | Index outside a word array, or outside a Vec, slice, string view or SIMD vector through a standard-library `!` function | §13, §25 |
 | `E_CONTRACT_VIOLATION` | Contract condition failed | §23 |
+| `E_CONTRACT_EFFECT` | Contract condition does I/O, foreign calls, actor or channel work, a state change or exit, or calls an unseen function value (Compile Error) | §23.7 |
 | `E_OVERFLOW` | Int `+ - *` under `(numeric checked)` whose result does not fit; `INT_MIN / -1` under any policy | §20.1, §20.3 |
 | `E_DIVISION_BY_ZERO` | `div!` or `rem!` with a zero divisor | §20.3 |
 | `E_REGION_EXHAUSTED` | A `with-region` region ran out of its fixed size or limit (catchable) | §9.2 |

@@ -364,9 +364,9 @@
 
 (defn builtins-contracts ()
   (Cons (ZB "requires" "special-form" "(requires condition)"
-          "Precondition, checked on entry: a false condition raises E_CONTRACT_VIOLATION.")
-  (Cons (ZB "ensures" "special-form" "(ensures condition)" "Postcondition, checked after the body; `result` is the return value.")
-  (Cons (ZB "invariant" "special-form" "(invariant condition)" "Checked where written, like `requires`.")
+          "Precondition, checked on entry: a false condition raises E_CONTRACT_VIOLATION. The condition may only compute; I/O, foreign calls, actors, state changes or exit in it, or in what it calls, are E_CONTRACT_EFFECT.")
+  (Cons (ZB "ensures" "special-form" "(ensures condition)" "Postcondition, checked after the body; `result` is the return value. Pure like `requires` (E_CONTRACT_EFFECT).")
+  (Cons (ZB "invariant" "special-form" "(invariant condition)" "Checked where written, like `requires`, and pure like it (E_CONTRACT_EFFECT).")
   (Cons (ZB "contracts" "special-form" "(contracts profile form)"
           "Compile `form` (or, bare, the next top-level form) under a contract profile: strict, debug, warn, off or production.")
   (Cons (ZB "recover" "special-form" "(recover body ((E_CODE) fallback) ((String) fallback) ...)"

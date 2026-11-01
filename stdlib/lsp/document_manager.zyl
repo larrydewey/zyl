@@ -22,6 +22,7 @@
 ;     of spec v5.0 §31.9. It needs the grants and denials that
 ;     mr-resolve-program-full returns; dm-frontend calls the plain
 ;     mr-resolve-program, which returns only the resolved forms.
+;     Its contract-condition effect check (ef-check-program) needs no grants and runs.
 ;   - everything after type checking (ICNF lowering onward).
 ;
 ; Because every check before the type checker panics on its FIRST
@@ -52,6 +53,7 @@
 (use compiler/arity_check)
 (use compiler/exhaustiveness_check)
 (use compiler/secret_check)
+(use compiler/capability_check)
 (use compiler/unused_check)
 (use compiler/shadow_check)
 (use compiler/sexp_balance)
@@ -274,4 +276,5 @@
     (let _ (ac-check-program exprs)
       (let _ (mc-check-program exprs)
         (let _ (ec-check-program exprs)
-          (sc-check-program exprs)))))))
+          (let _ (sc-check-program exprs)
+            (ef-check-program exprs))))))))

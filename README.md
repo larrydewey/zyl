@@ -293,7 +293,7 @@ does not take) → linking (the Zyl assembler and static ELF linker, or
 - **Testing framework** — `(test "name" ...)` with `assert-equal`, `assert-fail` and friends, `test-suite` with `setup`/`teardown`, `test-property` over deterministic generators, compile-time `test-compile`, and `zyl test` for packages
 - **REPL** — `zyl repl`, backed by an ICNF interpreter, with a line editor written in Zyl
 - **Language server** — `zyl-lsp`, written in Zyl, plus a VS Code extension
-- **Contracts** — `requires`/`ensures`/`invariant` are checked at run time (`E_CONTRACT_VIOLATION`), `ensures` sees the return value as `result`, `recover` supplies fallbacks by error code, `checkpoint` rolls back `let-mut` state, and the profile (`--contracts=strict|warn|off|...` or `(contracts P)`) decides whether a violation panics, warns or is compiled out
+- **Contracts** — `requires`/`ensures`/`invariant` are checked at run time (`E_CONTRACT_VIOLATION`), their conditions may only compute (an effect reached through any call is `E_CONTRACT_EFFECT`), `ensures` sees the return value as `result`, `recover` supplies fallbacks by error code, `checkpoint` rolls back `let-mut` state, and the profile (`--contracts=strict|warn|off|...` or `(contracts P)`) decides whether a violation panics, warns or is compiled out
 
 ## Compilation Pipeline
 

@@ -348,9 +348,10 @@
 ; (if C unit (zyl-contract-warn msg)) under warn, (if false (if C unit unit) unit)
 ; under off/production, so C is typed alike under every profile; every form is
 ; Unit, spanned at the clause.
-(defn contract-check (what clause c)
-  (let _ (contract-no-set clause c)
-  (let msg (str-concat "E_CONTRACT_VIOLATION: " (str-concat what (str-concat " failed: " (ast-text c))))
+(defn contract-check (what clause c0)
+  (let _ (contract-no-set clause c0)
+  (let c (contract-mark c0)
+  (let msg (str-concat "E_CONTRACT_VIOLATION: " (str-concat what (str-concat " failed: " (ast-text c0))))
     (let chk (if (contract-stripping-p (contract-profile))
                (AList (Cons (AstIdent "if") (Cons (AstBool false)
                  (Cons (AList (Cons (AstIdent "if") (Cons c (Cons (AstIdent "unit") (Cons (AstIdent "unit") Nil)))))
@@ -360,7 +361,13 @@
                  (Cons (AList (Cons (AstIdent "zyl-contract-warn") (Cons (AString msg) Nil))) Nil)))))
                (AList (Cons (AstIdent "assert-true") (Cons c (Cons (AString msg) Nil))))))
       (let _ (ffi-call "zyl_span_copy" chk clause 1000)
-        chk)))))
+        chk))))))
+
+; (let zyl#cond C zyl#cond): the binder capability_check.zyl finds a condition by; no source can spell it.
+(defn contract-mark (c)
+  (let m (AList (Cons (AstIdent "let") (Cons (AstIdent "zyl#cond") (Cons c (Cons (AstIdent "zyl#cond") Nil)))))
+    (let _ (ffi-call "zyl_span_copy" m c 1000)
+      m)))
 
 ; A condition that set!s would make the output depend on the profile.
 (defn contract-no-set (clause c)

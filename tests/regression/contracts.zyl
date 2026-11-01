@@ -4,6 +4,7 @@
 
 (use core/core)
 (use core/result)
+(use core/list)
 
 ; An invariant inside a body is a check; at the top level it would never run (E_MALFORMED_FORM).
 (defstruct _ct_Counter
@@ -292,5 +293,32 @@
     (assert-equal (_ct-rc-div 1 0) 0)
     (assert-equal (_ct-rc-add 9223372036854775807 1) 0)
     (assert-equal (try (recover (div! 1 0) ((E_OVERFLOW) 0)) (catch e -1)) -1)))
+
+;; Conditions may compute through helpers, lambdas, named functions, methods and the standard library (E_CONTRACT_EFFECT otherwise).
+(defn _ct-all (p xs) (match xs (Nil true) (Cons h t (and (p h) (_ct-all p t)))))
+(defn _ct-pos (x) (> x 0))
+(defstruct _ct_Pt (x Int))
+(impl Show _ct_Pt (defn show (p) (str-concat "pt" (p.x.show))))
+(defn _ct-pure-conds (xs)
+  (begin
+    (requires (_ct-all (fn (x) (> x 0)) xs))
+    (requires (_ct-all _ct-pos xs))
+    (requires (= (list-length xs) 3))
+    (requires (= ((make-_ct_Pt 1).show) "pt1"))
+    (ensures (= result 6))
+    (list-sum! xs)))
+
+(test "contract-pure-conditions"
+  (assert-equal (_ct-pure-conds [1 2 3]) 6))
+
+;; A condition that stops is the contract's own outcome: the panic propagates, under warn too.
+(defn _ct-stops (n) (begin (requires (> (div! 10 n) 0)) n))
+(contracts warn (defn _ct-stops-warn (n) (begin (requires (> (div! 10 n) 0)) n)))
+
+(test "contract-condition-panics"
+  (begin
+    (assert-equal (_ct-stops 2) 2)
+    (assert-equal (recover (_ct-stops 0) ((E_DIVISION_BY_ZERO) -1)) -1)
+    (assert-equal (recover (_ct-stops-warn 0) ((E_DIVISION_BY_ZERO) -1)) -1)))
 
 (run-tests)

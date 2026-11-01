@@ -47,7 +47,7 @@ document's path (so it finds the package the file belongs to, spec v5.0
 §31.3), expands macros, drops `test-compile` forms (a compile decides
 those, not the editor), runs `uc-check-program` with its warnings
 captured, then runs `dc-check-program`, `ac-check-program`,
-`mc-check-program`, `ec-check-program` and `sc-check-program` — the order
+`mc-check-program`, `ec-check-program`, `sc-check-program` and `ef-check-program` — the order
 `compile-run-checks` in `stdlib/compiler/pipeline.zyl` uses — inside
 `try`/`catch`, so a checker's `zyl_panic` becomes a Diagnostic instead of
 killing the server. When they pass, the type checker runs (derive

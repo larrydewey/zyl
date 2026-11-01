@@ -1217,6 +1217,23 @@ Profiles: strict | debug | warn | off | production
 Contracts NEVER affect:
     type inference, ownership, regions, or concurrency model.
 
+23.7 Condition Purity
+    A condition (requires, ensures, invariant) runs or not by profile, so
+    it may only compute. A condition that does I/O, calls foreign code,
+    spawns an actor or sends or receives on a channel, changes shared
+    state (a ref, a buffer, a table, memory), or exits -- itself or
+    through any function it calls, transitively over the whole program,
+    the standard library included -- is E_CONTRACT_EFFECT, named with the
+    call chain that reaches the effect. A call through a function value
+    is followed when the value is a parameter (the caller's argument
+    decides), a named function or a lambda written in place; any other is
+    unseen and rejected (fail closed). A trait method stands for every
+    impl of it. set! in a condition is E_MUT_CONFLICT. Stripped conditions
+    are checked alike, so the profile never decides whether a program
+    builds. A condition may panic (a partial operation spelled !, an
+    assert): stopping is the contract's own outcome, and the panic
+    propagates under every profile that runs the condition, warn included.
+
 ================================================================================
 24. MODULE SYSTEM
 ================================================================================
@@ -1411,6 +1428,9 @@ Errors:
     E_DUPLICATE_IMPL            — conflicting impls
     E_MACRO_ILLEGAL_ACCESS      — macro accessed runtime value
     E_CONTRACT_VIOLATION        — contract failed
+    E_CONTRACT_EFFECT           — a contract condition does I/O, foreign calls, actor or channel
+                                  work, a state change or exit, or calls an unseen function value
+                                  (Compile Error; §23.7)
     E_OVERFLOW                  — Int + - * under (numeric checked) whose result does not fit; INT_MIN / -1
     E_DIVISION_BY_ZERO          — div! or rem! with a zero divisor
     E_PARTIAL_OPERATION         — / or % whose divisor is not a nonzero literal, or a plain byte load/store not proven in range (Compile Error)
