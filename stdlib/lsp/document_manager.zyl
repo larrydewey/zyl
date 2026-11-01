@@ -62,6 +62,7 @@
 (use compiler/closure_inline)
 (use compiler/type_annotate)
 (use compiler/numeric_check)
+(use compiler/share_check)
 (use lsp/compiler_bridge)
 
 ; An analysis owns the arena it was built in: its parse tree, symbol
@@ -253,10 +254,10 @@
 ; zyl_warn_emit, captured here, and then panics; the panic only says how
 ; many there were, so it is dropped. A panic with nothing captured (a
 ; failure inside one of the earlier steps) is reported as itself.
-; Type inference and the numeric check (§20), as pipeline.zyl's annotate-exprs runs them.
+; Type inference, the numeric check (§20) and the share check (§7.4), as pipeline.zyl's annotate-exprs runs them.
 (defn dm-annotate (arena exprs)
   (let ann (ta-annotate (ci-expand-program arena (lift-impls (dv-expand-program exprs))))
-    (begin (nc-check-program ann) ann)))
+    (begin (nc-check-program ann) (sh-check-program ann) ann)))
 
 (defn dm-type-diagnostics (arena exprs text path)
   (let _ (ffi-call "zyl_warn_capture" true 1000)

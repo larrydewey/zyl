@@ -89,7 +89,9 @@
         (match args
           (Cons _ divisors (nc-check-divisors n divisors))
           (Nil unit))
-        unit))
+        (nc-check-abuf-call e n args env)))
+    (ECall f args (match (Expr.inner f) (EAtom a (match a (AIdent n (nc-check-abuf-call e n args env)) (_ unit))) (_ unit)))
+    (EAtom a (match a (AIdent n (if (nc-abuf-plain-p n) (nc-fail-abuf-value e n) unit)) (_ unit)))
     (ELoadByte en b o (nc-check-byte e "load-u" en b o env))
     (ELoadByteSigned en b o (nc-check-byte e "load-i" en b o env))
     (EStoreByte en b o _ (nc-check-byte e "store-u" en b o env))
@@ -125,6 +127,53 @@
         (_ false)))
     (_ false)))
 
+; --- AtomicBuf (atomic/atomic): a plain update or constructor must be proven in range ---
+
+; The stdlib's atomic/atomic::sym; the first probe allocates nothing, so a miss is cheap.
+(defn nc-abuf-key-p (n sym)
+  (and (ffi-call "zyl_cstr_key_matches" n sym 1000)
+    (and (ffi-call "zyl_cstr_key_matches" n (str-concat "atomic/atomic::" sym) 1000)
+      (and (> (str-length n) 8) (str-eq (str-substring n 0 8) "zyl/std@")))))
+
+(defn nc-abuf-update-p (n)
+  (or (nc-abuf-key-p n "atomicbuf-add") (or (nc-abuf-key-p n "atomicbuf-max") (or (nc-abuf-key-p n "atomicbuf-min")
+    (or (nc-abuf-key-p n "atomicbuf-and") (or (nc-abuf-key-p n "atomicbuf-or") (nc-abuf-key-p n "atomicbuf-xor")))))))
+
+(defn nc-abuf-plain-p (n) (or (nc-abuf-key-p n "atomicbuf-new") (nc-abuf-update-p n)))
+
+; A literal slot count a constructor proves, or -1.
+(defn nc-abuf-count (n args)
+  (if (or (nc-abuf-key-p n "atomicbuf-new") (nc-abuf-key-p n "atomicbuf-new!"))
+    (match args
+      (Cons a _ (match (Expr.inner a) (EAtom k (match k (AInt c (if (and (>= c 0) (<= c 16777216)) c -1)) (_ -1))) (_ -1)))
+      (Nil -1))
+    -1))
+
+(defn nc-check-abuf-call (e n args env)
+  (if (nc-abuf-key-p n "atomicbuf-new")
+    (if (>= (nc-abuf-count n args) 0) unit (nc-fail-abuf e "atomicbuf-new" "the slot count may be negative or too large"))
+    (if (nc-abuf-update-p n)
+      (if (nc-abuf-proven args env) unit (nc-fail-abuf e (err-name n) "the slot may fall outside the buffer"))
+      unit)))
+
+; A let-bound (atomicbuf-new N) and a literal slot below N.
+(defn nc-abuf-proven (args env)
+  (match args
+    (Cons b rest
+      (match rest
+        (Cons i _
+          (match (Expr.inner b)
+            (EAtom a
+              (match a
+                (AIdent bn
+                  (match (Expr.inner i)
+                    (EAtom k (match k (AInt slot (and (>= slot 0) (< slot (- -2 (nc-cap-of bn env))))) (_ false)))
+                    (_ false)))
+                (_ false)))
+            (_ false)))
+        (Nil false)))
+    (Nil false)))
+
 ; The literal capacity bound to `n`, or -1.
 (defn nc-cap-of (n env)
   (match env
@@ -137,10 +186,21 @@
     (Cons p t (match p (Pair m _ (if (str-eq m n) (nc-unbind n t) (Cons p (nc-unbind n t))))))))
 
 ; What `(let n v ...)` makes of env: n names a known capacity, or nothing any more.
+; An AtomicBuf's slot count N is kept as -(N+2), so no byte access can use it.
 (defn nc-let-env (n v env)
   (match (Expr.inner v)
     (EByteBuf _ cap (Cons (Pair n cap) (nc-unbind n env)))
+    (EApply f args
+      (let c (nc-abuf-count f args)
+        (if (>= c 0) (Cons (Pair n (- -2 c)) (nc-unbind n env)) (nc-unbind n env))))
     (_ (nc-unbind n env))))
+
+(defn nc-ident-p (e) (match (Expr.inner e) (EAtom a (match a (AIdent _ true) (_ false))) (_ false)))
+
+(defn nc-unbind-all (ps env)
+  (match ps
+    (Nil env)
+    (Cons p t (nc-unbind-all t (nc-unbind (P.name p) env)))))
 
 ; ===========================================================================
 ; DIAGNOSTICS
@@ -159,6 +219,18 @@
       (str-concat "`" (str-concat name "` may fall outside its buffer, and a plain byte access must be proven in range"))
       (str-concat "write `" (str-concat name (str-concat "!` to stop the program when it is outside (E_INDEX_OUT_OF_BOUNDS), `" (str-concat name
         "?` to get None, or use a literal offset into a buffer a `let` bound to `(bytebuf R N)`, where the compiler can see it fits")))))))
+
+(defn nc-fail-abuf (e name why)
+  (nc-fail e "E_PARTIAL_OPERATION"
+    (str-concat "plain `" (str-concat name (str-concat "` must be proven in range, and here " why)))
+    (str-concat "write `" (str-concat name (str-concat "!` to stop the program when it is outside (E_INDEX_OUT_OF_BOUNDS), `" (str-concat name
+      "?` to get None, or use a literal slot into a buffer a `let` bound to `(atomicbuf-new N)` with a literal N"))))))
+
+(defn nc-fail-abuf-value (e n)
+  (let name (err-name n)
+    (nc-fail e "E_PARTIAL_OPERATION"
+      (str-concat "plain `" (str-concat name "` is used as a value, where the compiler cannot prove its slot in range"))
+      (str-concat "pass `" (str-concat name (str-concat "!` or `" (str-concat name "?` instead")))))))
 
 (defn nc-fail (site code msg help)
   (ffi-call "zyl_panic"
@@ -183,7 +255,7 @@
 ; A form that binds names (a match arm, a lambda, for, catch) drops what env knows: it may shadow.
 (defn nc-children (e pol env)
   (match (Expr.inner e)
-    (ECall f args (let _ (nc-walk-in f pol env) (nc-list args pol env)))
+    (ECall f args (let _ (if (nc-ident-p f) unit (nc-walk-in f pol env)) (nc-list args pol env)))
     (EApply _ args (nc-list args pol env))
     (ELet n v b (let _ (nc-walk-in v pol env) (nc-walk-in b pol (nc-let-env n v env))))
     (ELetMut n v b (let _ (nc-walk-in v pol env) (nc-walk-in b pol (nc-unbind n env))))
@@ -209,4 +281,6 @@
     (ELoadByteSigned _ a b (nc-two a b pol env))
     (EStoreByte _ a b c (nc-three a b c pol env))
     (EStoreByteSigned _ a b c (nc-three a b c pol env))
+    (EFn _ ps b (nc-walk-in b pol (nc-unbind-all ps env)))
+    (ELambda _ ps b (nc-walk-in b pol (nc-unbind-all ps env)))
     (_ (nc-list (expr-children e) pol Nil))))

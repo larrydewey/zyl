@@ -16,8 +16,6 @@
    "bit-and" "bit-bswap" "bit-bswap32" "bit-clz" "bit-clz32" "bit-ctz" "bit-ctz32" "bit-not" "bit-or"
    "bit-popcount" "bit-popcount32" "bit-rotl" "bit-rotl32" "bit-rotr" "bit-rotr32" "bit-xor"
    "buf-new" "byte" "bytebuf" "bytebuf-append"
-   "bytebuf-atomic-add" "bytebuf-atomic-cas" "bytebuf-atomic-fetch-add" "bytebuf-atomic-load"
-   "bytebuf-atomic-max" "bytebuf-atomic-min" "bytebuf-atomic-store" "bytebuf-atomic-sub"
    "bytebuf-cap" "bytebuf-len" "bytebuf-ptr" "byteslice" "byteslice-sub"
    "chan" "chan-recv" "chan-rx" "chan-send" "chan-tx" "checkpoint" "close" "cond" "contracts"
    "crc32c" "crc32c-u8" "def" "defmacro" "defn" "defstruct" "defstruct+" "deftype" "derive"

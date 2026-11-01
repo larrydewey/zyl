@@ -1,0 +1,7 @@
+; Compile-fail: plain atomicbuf-new takes a literal count; a computed one is atomicbuf-new! or ?.
+; expect-error: E_PARTIAL_OPERATION
+(use atomic/atomic)
+
+(defn make (n) (atomicbuf-new n))
+
+(defn main () (begin (make 3) 0))

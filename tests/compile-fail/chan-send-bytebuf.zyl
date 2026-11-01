@@ -1,0 +1,11 @@
+; Compile-fail: a ByteBuf sent over a channel would be shared by two actors.
+; expect-error: E_CAPABILITY_LEAK
+(capabilities actor)
+(use actor/actor)
+
+(defn main ()
+  (let c (chan 1)
+    (let tx (chan-tx c)
+      (let rx (chan-rx c)
+        (let a (spawn (fn () (store-u8! :le (chan-recv rx) 0 1)))
+          (begin (chan-send tx (bytebuf Heap 8)) (actor-wait a) 0))))))

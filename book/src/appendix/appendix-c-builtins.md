@@ -373,11 +373,11 @@ shows `3.500000`. A `Bool` prints as `1` or `0`.
 
 | Form | Syntax | Notes |
 |---|---|---|
-| `spawn` | `(spawn (fn () body))` | returns an `Actor`; rejected on a `Secret` operand |
+| `spawn` | `(spawn (fn () body))` | returns an `Actor`; rejected on a `Secret` operand, and (`E_CAPABILITY_LEAK`) on a capture that is or holds a `let-mut`, `ByteBuf`, `Ref` or other handle written in place; an `AtomicBuf` crosses as a direct capture (C.12) |
 | `chan` | `(chan n)` | a `(Chan a)` buffering 1..n values; `n` outside 1..16777216 is `E_CHANNEL_CAPACITY` |
 | `chan-tx` | `(chan-tx c)` | the sending end, a `(Tx a)` |
 | `chan-rx` | `(chan-rx c)` | the receiving end, an `(Rx a)` |
-| `chan-send` | `(chan-send tx v)` | appends `v`, an `a`, blocking while the buffer is full; `Unit`; rejected on a `let-mut` (`E_CAPABILITY_LEAK`) or `Secret` operand |
+| `chan-send` | `(chan-send tx v)` | appends `v`, an `a`, blocking while the buffer is full; `Unit`; rejected on a `let-mut`, a value that is or holds a `ByteBuf`, `Ref`, `AtomicBuf` or other mutable handle (`E_CAPABILITY_LEAK`), or a `Secret` operand |
 | `chan-recv` | `(chan-recv rx)` | removes and returns the oldest value, an `a`, blocking while the buffer is empty; `E_CHANNEL_CLOSED` once the channel is closed and drained |
 | `ffi-call` | `(ffi-call "symbol" arg ... timeout)` | the symbol is a string literal and the trailing timeout a positive integer literal in milliseconds (`E_FFI_SYMBOL_REQUIRED`, `E_FFI_TIMEOUT_REQUIRED`); a foreign call that overruns it raises `E_FFI_TIMEOUT`. A foreign symbol needs an `extern` declaration, whose `Float` is C's `double` (in an SSE register; inside another type it is `E_TYPE_MISMATCH`); a `zyl_*` runtime symbol is typed by the compiler's signature table |
 | `ffi-pin` | `(ffi-pin value)` | copies `value`, an `a`, into a Pin-region slot and returns the slot, a `(Pin a)`; C receives its address. A function is `E_FFI_TYPE_NOT_PINNABLE` |
@@ -403,7 +403,7 @@ An `extern`'s types are concrete and fit a machine word: `Int`, `Bool`,
 are rejected (`E_TYPE_MISMATCH`). `(Fn (A ...) R)` types a C callback
 argument. There is no cast form: a value's type cannot be changed by
 assertion.
-## C.12 Bytes, Buffers and Atomics
+## C.12 Bytes, Buffers and Shared Slots
 
 | Form | Syntax | Notes |
 |---|---|---|
@@ -419,16 +419,24 @@ assertion.
 | `store-u8`, `store-i8` | `(store-u8 :le buf offset value)` | the same proof; returns 1 |
 | `load-u8!` .. `store-i64!` | `(load-u8! :le buf offset)` | out of range stops the program with `E_INDEX_OUT_OF_BOUNDS` |
 | `load-u8?` .. `store-i64?` | `(load-u8? :le buf offset)` | out of range gives `None` and writes nothing; in range `(Some v)` |
-| `bytebuf-atomic-load` | `(bytebuf-atomic-load buf offset)` | the offset must be 8-aligned and the word must fit, else it returns 0 and stores nothing |
-| `bytebuf-atomic-store` / `-add` / `-sub` / `-fetch-add` / `-max` / `-min` | `(bytebuf-atomic-add buf offset value)` | |
-| `bytebuf-atomic-cas` | `(bytebuf-atomic-cas buf offset expected desired)` | |
+
+A `ByteBuf` stays in one actor (capturing or sending one is
+`E_CAPABILITY_LEAK`). The buffer actors share is an `AtomicBuf`, from
+`atomic/atomic` (library functions, not forms; Appendix B, Chapter 32):
+
+| Function | Syntax | Notes |
+|---|---|---|
+| `atomicbuf-new` | `(atomicbuf-new n)` | `n` slots of 0; plain only for a literal `n` in 0..16777216, else `atomicbuf-new!` (`E_INDEX_OUT_OF_BOUNDS`) or `atomicbuf-new?` (`None`) |
+| `atomicbuf-add` / `-max` / `-min` / `-and` / `-or` / `-xor` | `(atomicbuf-add b slot v)` | `Unit`; the only operations while an actor holds it; plain only for a literal slot into a buffer a `let` bound to `(atomicbuf-new N)` (else `E_PARTIAL_OPERATION`); `!` stops outside with `E_INDEX_OUT_OF_BOUNDS`, `?` gives `None` |
+| `atomicbuf-freeze!` | `(atomicbuf-freeze! b)` | a move; the `AtomicView` once every actor that captured `b` has been joined by its spawner, else `E_ATOMIC_SHARED`; `atomicbuf-freeze?` gives `None`, `atomicbuf-held` asks |
+| `atomicview-get!` / `atomicview-get?` | `(atomicview-get! v slot)` | the slot's value (0 if untouched); outside `E_INDEX_OUT_OF_BOUNDS`, two update kinds `E_MUT_CONFLICT`, a sum outside `Int` `E_OVERFLOW`, or `None` for each |
 
 The wider widths — `load-u16`/`u32`/`u64`, `load-i16`/`i32`/`i64` and
 the matching `store-*` forms — take the same arguments as the 8-bit ones
 and honour the `:le`/`:be` selector. Buffers are typed `ByteBuf`, slices
 `ByteSlice`. Every offset, length and stored value is an `Int`.
-`byteslice`, `bytebuf-append`, `bytebuf-len`, `-cap`, `-ptr` and the
-atomics take a `ByteBuf`; `byteslice-sub` and `bytebuf-append`'s second
+`byteslice`, `bytebuf-append`, `bytebuf-len`, `-cap` and `-ptr` take a
+`ByteBuf`; `byteslice-sub` and `bytebuf-append`'s second
 operand a `ByteSlice`; a load or store takes either. A load or store
 whose handle's type nothing determines, such as an unannotated
 parameter used only there, is `E_CANNOT_INFER`: annotate it,

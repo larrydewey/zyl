@@ -32,7 +32,7 @@ this document's reading of each code's meaning.
 | `E_NESTED_PATTERN` | Nested pattern in a constructor arm | §4.9, §8 |
 | `E_PANIC_UNMARKED` | A standard-library `defn` that calls `panic` directly is not spelled with a trailing `!` | §25 |
 | `E_MATCH_NONEXHAUSTIVE` | Missing match case | §8.3 |
-| `E_MUT_CONFLICT` | `set!` on a binding that is not a `let-mut`, or two names writing one mutable location | §10 |
+| `E_MUT_CONFLICT` | `set!` on a binding that is not a `let-mut`, or two names writing one mutable location; at run time, an AtomicBuf slot read after two kinds of update | §7.4, §10 |
 | `E_TRAIT_NOT_FOUND` | Missing impl for trait bound | §5.4 |
 | `E_DUPLICATE_IMPL` | Conflicting impls | §5.3 |
 | `E_TRAIT_NOT_DERIVABLE` | Cannot derive trait | §5.6 |
@@ -45,7 +45,7 @@ this document's reading of each code's meaning.
 | `E_FFI_RESTRICTED` | `ffi-call` names a raw runtime entry outside the standard library, or an `extern` declares a runtime entry | §16 |
 | `E_REGION_ESCAPE` | Region rule violation | §9 |
 | `E_REGION_SPEC` | Malformed `with-region` specification | §9.2 |
-| `E_CAPABILITY_LEAK` | A `let-mut` binding crosses an actor boundary | §10 |
+| `E_CAPABILITY_LEAK` | Mutable state crosses an actor boundary: a `let-mut`, or a value that is or holds a `ByteBuf`, `Ref` or other in-place handle, captured by a spawned closure, sent on a channel or reached as a top-level def; an `AtomicBuf` other than as a direct capture; a crossing closure or generic value that cannot be checked | §7.4, §10, §15 |
 
 §4.10 defines two further type errors that §28 does not repeat:
 `E_TYPE_MISMATCH` (two types that must be equal are not) and
@@ -62,10 +62,12 @@ reported before the compile fails (§4.8).
 | Error Code | Condition | Specification Reference |
 |------------|-----------|----------------------|
 | `E_FFI_TIMEOUT` | FFI call exceeded timeout | §16 |
-| `E_INDEX_OUT_OF_BOUNDS` | Index outside a word array, or outside a Vec, slice, string view or SIMD vector through a standard-library `!` function | §13, §25 |
+| `E_INDEX_OUT_OF_BOUNDS` | Index outside a word array, or outside a Vec, slice, string view or SIMD vector through a standard-library `!` function; an AtomicBuf slot or slot count out of range under a `!` form | §13, §20.3a, §25 |
+| `E_MISALIGNED_ACCESS` | An address atomic (`atomic-load!` .. `atomic-cas!`) at an address that is not a multiple of 8 | §20.3a |
+| `E_ATOMIC_SHARED` | An AtomicBuf frozen while an actor holding it has not been joined by its spawner; at compile time when the holder's handle was discarded | §7.4, §15 |
 | `E_CONTRACT_VIOLATION` | Contract condition failed | §23 |
 | `E_CONTRACT_EFFECT` | Contract condition does I/O, foreign calls, actor or channel work, a state change or exit, or calls an unseen function value (Compile Error) | §23.7 |
-| `E_OVERFLOW` | Int `+ - *` under `(numeric checked)` whose result does not fit; `INT_MIN / -1` under any policy | §20.1, §20.3 |
+| `E_OVERFLOW` | Int `+ - *` under `(numeric checked)` whose result does not fit; `INT_MIN / -1` under any policy; an AtomicBuf sum outside Int, at its read | §7.4, §20.1, §20.3 |
 | `E_DIVISION_BY_ZERO` | `div!` or `rem!` with a zero divisor | §20.3 |
 | `E_REGION_EXHAUSTED` | A `with-region` region ran out of its fixed size or limit (catchable) | §9.2 |
 
@@ -203,7 +205,9 @@ pass, below), `E_FFI_SYMBOL_REQUIRED` and `E_FFI_TIMEOUT_REQUIRED`
 (`ffi-check-call`), `E_NESTED_PATTERN` (`expr_inner.zyl`),
 `E_MACRO_NON_TERMINATION` and `E_MACRO_ILLEGAL_ACCESS`
 (`macro_expand.zyl`), `E_MUT_CONFLICT` and `E_CAPABILITY_LEAK`
-(`mutability_check.zyl`), `E_MATCH_NONEXHAUSTIVE` (a literal-pattern
+(`mutability_check.zyl`; the typed half of `E_CAPABILITY_LEAK`, and
+`E_ATOMIC_SHARED` for a freeze that can never succeed, in
+`share_check.zyl`), `E_MATCH_NONEXHAUSTIVE` (a literal-pattern
 match without a final `_` arm, and ICNF lowering's backstops),
 `E_DUPLICATE_IMPL` and `E_TRAIT_NOT_DERIVABLE` (`derive.zyl`), `E_TRAIT_NOT_FOUND`,
 `E_CANNOT_INFER` and `E_INFINITE_TYPE` (`type_annotate.zyl`),
@@ -214,7 +218,9 @@ allocation that goes to the heap), `W_HEAP_ESCAPE` (the same under
 `E_REGION_SPEC`, and every package-system code. Raised at run time:
 `E_STACK_OVERFLOW` (the guard page of main's or an actor's stack),
 `E_FFI_TIMEOUT`,
-`E_INDEX_OUT_OF_BOUNDS` (vectors and word arrays), `E_REGION_EXHAUSTED`
+`E_INDEX_OUT_OF_BOUNDS` (vectors, word arrays and AtomicBuf slots),
+`E_MISALIGNED_ACCESS` and `E_ATOMIC_SHARED` (`runtime/rt/bytes.zyl`,
+`abuf.zyl`), `E_REGION_EXHAUSTED`
 and `E_CONTRACT_VIOLATION` (the prefix of a failed contract check's
 message).
 
@@ -224,7 +230,7 @@ the trap stubs the code generator emits) and by the REPL interpreter,
 with the same message. One compile-time code belongs to the numeric
 model (§20): `E_PARTIAL_OPERATION`, a `/` or `%` whose divisor is not a
 nonzero literal, located at the divisor, or a plain byte load or store
-not proven in range (§20.3a), located at the access
+or AtomicBuf operation not proven in range (§20.3a), located at the access
 (`numeric_check.zyl`, after type inference). A `load-X!`/`store-X!`
 outside its buffer is `E_INDEX_OUT_OF_BOUNDS` at run time
 (`zyl_bytes_oob_panic`).

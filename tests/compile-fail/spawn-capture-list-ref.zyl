@@ -1,0 +1,9 @@
+; Compile-fail: a list of Refs crosses inside a capture.
+; expect-error: E_CAPABILITY_LEAK
+(capabilities actor)
+(use actor/actor)
+
+(defn main ()
+  (let rs (list (ffi-call "zyl_ref_new" 0 1000))
+    (let a (spawn (fn () (print (len rs))))
+      (begin (actor-wait a) 0))))

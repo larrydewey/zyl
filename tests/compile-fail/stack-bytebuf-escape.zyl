@@ -1,11 +1,9 @@
-; Compile-fail: a slice of a Stack bytebuf sent over a channel would
-; outlive the frame that owns its bytes.
+; Compile-fail: a slice of a Stack bytebuf handed to a runtime call that
+; keeps it would outlive the frame that owns its bytes.
 ; expect-error: E_REGION_ESCAPE
 
-(capabilities actor)
-
-(defn leak (tx)
+(defn leak ()
   (let b (bytebuf Stack 16)
-    (chan-send tx (byteslice b 0 4))))
+    (ffi-call "zyl_ref_new" (byteslice b 0 4) 1000)))
 
-(defn main () (begin (leak (chan-tx (chan 1))) 0))
+(defn main () (begin (leak) 0))

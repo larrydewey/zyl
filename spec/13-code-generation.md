@@ -339,14 +339,13 @@ Not normative. Probed with `build/boot/zyl-self`.
   (`spec/04-evaluation-semantics.md`).
 - `(unwrap x)` takes an `Option` and panics on `None` rather than
   extracting an alias (§21.12); see `spec/04-evaluation-semantics.md`.
-- Byte and atomic primitives (`(byte N)`; the loads `load-u8`,
+- Byte primitives (`(byte N)`; the loads `load-u8`,
   `load-i8`, `load-u16` .. `load-u64` and `load-i16` .. `load-i64`, and
   the matching stores, each taking a `:le`/`:be` endianness selector as
   its first operand, as in `(load-u32 :le b off)` and
   `(store-u8 :le b off v)`; `byteslice`, `byteslice-sub`, `bytebuf`,
   `bytebuf-append`, `bytebuf-len`, `bytebuf-cap`, `bytebuf-ptr`,
-  `align-check`, and `bytebuf-atomic-load`, `-store`, `-add`, `-sub`,
-  `-fetch-add`, `-max`, `-min`, `-cas`) are special forms. Loads and
+  `align-check`) are special forms. Loads and
   stores lower to `zyl_load_byte`/`zyl_store_byte` (one byte, inline on
   both emitters) or `zyl_load_n`/`zyl_store_n` (wider), the rest to
   `zyl_bytebuf_*` runtime calls. A load or store evaluates the buffer
@@ -354,5 +353,7 @@ Not normative. Probed with `build/boot/zyl-self`.
   with `E_INDEX_OUT_OF_BOUNDS` outside its buffer, and a `?` form
   (`load-u8?`, an `Option`); the plain form must be proven in range
   (§20.3a). The mode rides in the endian code (bit 2 trap, bit 4 probe). `stdlib/atomic/atomic.zyl` wraps the runtime's
-  sequentially consistent atomics on raw addresses. The canonical text
+  sequentially consistent atomics on raw addresses (`E_MISALIGNED_ACCESS`
+  off an 8-byte boundary) and the AtomicBuf entries `zyl_abuf_*`
+  (`runtime/rt/abuf.zyl`), which only the standard library may name. The canonical text
   types these operations (§4.9) but does not define them.

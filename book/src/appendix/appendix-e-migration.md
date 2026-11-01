@@ -42,13 +42,14 @@ than Rust's:
 | `Box<T>` | No box to write: a value that escapes goes on the heap. Spec §4.3 names `TBox<T>` |
 | `Pin<&mut T>` | `ffi-pin` copies a value into the non-moving Pin region. Spec §4.3 names `TPin<T>` |
 | `Arc<T>` | Share immutable data (a `let` binding), or keep the state inside an actor. Spec §4.3 names `TAtomic<T>` |
-| `Mutex<T>` | An actor that owns the state; `bytebuf-atomic-*` for counters in a Pin buffer |
+| `Mutex<T>` | An actor that owns the state; an `AtomicBuf` (`atomic/atomic`) for counters many actors add to, read after joining them |
 | Ownership/borrow checker | `mutability_check` plus region inference: Zyl has no in-place mutation: every `let` binding is immutable, `set!` on a `let-mut` binding rebinds it, and `set!` on anything else is `E_MUT_CONFLICT` |
 
 **Key difference**: you do not annotate capabilities. `let` versus
 `let-mut` is the whole distinction, and the checker rejects
 `set!` on anything that is not a `let-mut` name (`E_MUT_CONFLICT`) and a
-`let-mut` variable captured by a spawned closure (`E_CAPABILITY_LEAK`).
+`let-mut` variable, buffer or `Ref` captured by a spawned closure
+(`E_CAPABILITY_LEAK`).
 
 ### Lifetimes → Regions
 
@@ -226,9 +227,10 @@ h.join().unwrap();
 - There is no `try_recv`, `select` or receive timeout. `chan-recv`
   blocks until a value arrives, or fails with `E_CHANNEL_CLOSED` once the
   writer has finished and the buffer is empty.
-- No shared memory between actors, and sent values must be
-  Send-capable: a `let-mut` variable may not cross
-  (`E_CAPABILITY_LEAK`).
+- No shared mutable memory between actors: a `let-mut`, `ByteBuf`,
+  `Ref` or other in-place handle may not cross, captured or sent
+  (`E_CAPABILITY_LEAK`). Counters many actors add to are an `AtomicBuf`,
+  read after the actors are joined.
 - `spawn` takes a zero-argument closure and returns an `Actor`, which
   can only be joined (`actor-wait`) or queried (`actor-is-alive`, true
   until joined). `actor-wait` re-raises the actor's panic, as

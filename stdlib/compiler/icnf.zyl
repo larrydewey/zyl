@@ -784,14 +784,6 @@
     ; align is likewise a bare Int literal (parse-align-check requires an
     ; AstInt), not an Expr.
     (EAlignCheck checked align (IFfi "zyl_align_check" (Cons (ic-expr arena checked vt) (Cons (IConst align) Nil))))
-    (EAtomicLoad buf offset (IFfi "zyl_bytebuf_atomic_load" (Cons (ic-expr arena buf vt) (Cons (ic-expr arena offset vt) Nil))))
-    (EAtomicStore buf offset val (IFfi "zyl_bytebuf_atomic_store" (Cons (ic-expr arena buf vt) (Cons (ic-expr arena offset vt) (Cons (ic-expr arena val vt) Nil)))))
-    (EAtomicAdd buf offset val (IFfi "zyl_bytebuf_atomic_add" (Cons (ic-expr arena buf vt) (Cons (ic-expr arena offset vt) (Cons (ic-expr arena val vt) Nil)))))
-    (EAtomicSub buf offset val (IFfi "zyl_bytebuf_atomic_sub" (Cons (ic-expr arena buf vt) (Cons (ic-expr arena offset vt) (Cons (ic-expr arena val vt) Nil)))))
-    (EAtomicCAS buf offset expected newval (IFfi "zyl_bytebuf_atomic_cas" (Cons (ic-expr arena buf vt) (Cons (ic-expr arena offset vt) (Cons (ic-expr arena expected vt) (Cons (ic-expr arena newval vt) Nil))))))
-    (EAtomicFetchAdd buf offset val (IFfi "zyl_bytebuf_atomic_fetch_add" (Cons (ic-expr arena buf vt) (Cons (ic-expr arena offset vt) (Cons (ic-expr arena val vt) Nil)))))
-    (EAtomicMax buf offset val (IFfi "zyl_bytebuf_atomic_max" (Cons (ic-expr arena buf vt) (Cons (ic-expr arena offset vt) (Cons (ic-expr arena val vt) Nil)))))
-    (EAtomicMin buf offset val (IFfi "zyl_bytebuf_atomic_min" (Cons (ic-expr arena buf vt) (Cons (ic-expr arena offset vt) (Cons (ic-expr arena val vt) Nil)))))
     (_ (IConst 0))))
 
 ; Fresh, guaranteed-unique numeric id for naming a lifted lambda: the

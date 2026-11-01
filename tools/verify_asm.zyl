@@ -33,7 +33,7 @@
 ; own line, so the line is built first and printed once.
 (defn show (path)
   (let fd (file-open path "r")
-    (let text (file-read fd 20000000)
+    (let text (file-read fd 67108864)
       (let _ (file-close fd)
         (let v (zyl-violations text)
           (let a (str-concat (str-concat path " bytes=") (n (str-length text)))

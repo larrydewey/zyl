@@ -1,93 +1,230 @@
 ; === Zyl Standard Library — Atomic Operations ===
 ; Module: atomic/atomic
-; Provides: Atomic load/store/add/sub/max/min/cas on 64-bit memory locations.
+; Provides: AtomicBuf, the one buffer actors may share, and seq-cst atomics on raw addresses.
 ;
-; Addresses are Ints from C or `bytebuf-ptr`, so every operation needs the
-; ffi capability; a program without it uses the checked bytebuf-atomic-*.
-; All operations use seq_cst ordering.
+; AtomicBuf (spec 7.4, 15): the one buffer a spawned closure may capture, updated only by commuting, result-free ops while held.
+; It is read through atomicbuf-freeze! / ?, a move that succeeds once every holder is joined by its spawner (else E_ATOMIC_SHARED).
+; A slot updated by two kinds of op reads as E_MUT_CONFLICT, a sum outside Int as E_OVERFLOW: both depend only on the updates.
+; Plain ops need a literal slot into a let-bound (atomicbuf-new N) (else E_PARTIAL_OPERATION); `!` traps, `?` gives None.
+; The address atomics take an Int from C or bytebuf-ptr, need ffi, and stop off an 8-byte boundary (E_MISALIGNED_ACCESS).
 
 ; ===========================================================================
-; ATOMIC LOAD
+; ATOMICBUF
 ; ===========================================================================
 
-; Load value from atomic location
+; The largest slot count a buffer may have.
 ; Returns: Int
-(defn atomic-load (addr)
-  (ffi-call "zyl_atomic_load" addr 1000))
+(defn atomicbuf-max-slots () 16777216)
 
-; ===========================================================================
-; ATOMIC STORE
-; ===========================================================================
+; A buffer of n zeroed slots; plain only for a literal n in 0..atomicbuf-max-slots.
+; Returns: AtomicBuf
+(defn atomicbuf-new ((n Int)) (ffi-call "zyl_abuf_new" n 1000))
 
-; Store value to atomic location
+; A buffer of n zeroed slots; n outside 0..atomicbuf-max-slots stops the program (E_INDEX_OUT_OF_BOUNDS).
+; Returns: AtomicBuf
+(defn atomicbuf-new! ((n Int)) (ffi-call "zyl_abuf_new" n 1000))
+
+; A buffer of n zeroed slots, or None when n is outside 0..atomicbuf-max-slots.
+; Returns: (Option AtomicBuf)
+(defn atomicbuf-new? ((n Int))
+  (if (and (>= n 0) (<= n (atomicbuf-max-slots))) (Some (ffi-call "zyl_abuf_new" n 1000)) None))
+
+; The number of slots.
+; Returns: Int
+(defn atomicbuf-slots ((b AtomicBuf)) (ffi-call "zyl_abuf_slots" b 1000))
+
+; Whether slot i exists.
+; Returns: Bool
+(defn atomicbuf-slot-ok ((b AtomicBuf) (i Int)) (and (>= i 0) (< i (atomicbuf-slots b))))
+
+; Adds v to slot i, a 128-bit sum so no update overflows; plain only where slot i is proven to exist.
 ; Returns: Unit
-(defn atomic-store (addr value)
-  (ffi-call "zyl_atomic_store" addr value 1000))
+(defn atomicbuf-add ((b AtomicBuf) (i Int) (v Int)) (ffi-call "zyl_abuf_update" b i v 1 1000))
+
+; As atomicbuf-add; a slot outside the buffer stops the program (E_INDEX_OUT_OF_BOUNDS).
+; Returns: Unit
+(defn atomicbuf-add! ((b AtomicBuf) (i Int) (v Int)) (ffi-call "zyl_abuf_update" b i v 1 1000))
+
+; As atomicbuf-add, or None when slot i is outside the buffer.
+; Returns: (Option Unit)
+(defn atomicbuf-add? ((b AtomicBuf) (i Int) (v Int))
+  (if (atomicbuf-slot-ok b i) (Some (ffi-call "zyl_abuf_update" b i v 1 1000)) None))
+
+; Keeps the larger of slot i and v; plain only where slot i is proven to exist.
+; Returns: Unit
+(defn atomicbuf-max ((b AtomicBuf) (i Int) (v Int)) (ffi-call "zyl_abuf_update" b i v 2 1000))
+
+; As atomicbuf-max; a slot outside the buffer stops the program (E_INDEX_OUT_OF_BOUNDS).
+; Returns: Unit
+(defn atomicbuf-max! ((b AtomicBuf) (i Int) (v Int)) (ffi-call "zyl_abuf_update" b i v 2 1000))
+
+; As atomicbuf-max, or None when slot i is outside the buffer.
+; Returns: (Option Unit)
+(defn atomicbuf-max? ((b AtomicBuf) (i Int) (v Int))
+  (if (atomicbuf-slot-ok b i) (Some (ffi-call "zyl_abuf_update" b i v 2 1000)) None))
+
+; Keeps the smaller of slot i and v; plain only where slot i is proven to exist.
+; Returns: Unit
+(defn atomicbuf-min ((b AtomicBuf) (i Int) (v Int)) (ffi-call "zyl_abuf_update" b i v 3 1000))
+
+; As atomicbuf-min; a slot outside the buffer stops the program (E_INDEX_OUT_OF_BOUNDS).
+; Returns: Unit
+(defn atomicbuf-min! ((b AtomicBuf) (i Int) (v Int)) (ffi-call "zyl_abuf_update" b i v 3 1000))
+
+; As atomicbuf-min, or None when slot i is outside the buffer.
+; Returns: (Option Unit)
+(defn atomicbuf-min? ((b AtomicBuf) (i Int) (v Int))
+  (if (atomicbuf-slot-ok b i) (Some (ffi-call "zyl_abuf_update" b i v 3 1000)) None))
+
+; Bitwise-ands v into slot i; plain only where slot i is proven to exist.
+; Returns: Unit
+(defn atomicbuf-and ((b AtomicBuf) (i Int) (v Int)) (ffi-call "zyl_abuf_update" b i v 4 1000))
+
+; As atomicbuf-and; a slot outside the buffer stops the program (E_INDEX_OUT_OF_BOUNDS).
+; Returns: Unit
+(defn atomicbuf-and! ((b AtomicBuf) (i Int) (v Int)) (ffi-call "zyl_abuf_update" b i v 4 1000))
+
+; As atomicbuf-and, or None when slot i is outside the buffer.
+; Returns: (Option Unit)
+(defn atomicbuf-and? ((b AtomicBuf) (i Int) (v Int))
+  (if (atomicbuf-slot-ok b i) (Some (ffi-call "zyl_abuf_update" b i v 4 1000)) None))
+
+; Bitwise-ors v into slot i; plain only where slot i is proven to exist.
+; Returns: Unit
+(defn atomicbuf-or ((b AtomicBuf) (i Int) (v Int)) (ffi-call "zyl_abuf_update" b i v 5 1000))
+
+; As atomicbuf-or; a slot outside the buffer stops the program (E_INDEX_OUT_OF_BOUNDS).
+; Returns: Unit
+(defn atomicbuf-or! ((b AtomicBuf) (i Int) (v Int)) (ffi-call "zyl_abuf_update" b i v 5 1000))
+
+; As atomicbuf-or, or None when slot i is outside the buffer.
+; Returns: (Option Unit)
+(defn atomicbuf-or? ((b AtomicBuf) (i Int) (v Int))
+  (if (atomicbuf-slot-ok b i) (Some (ffi-call "zyl_abuf_update" b i v 5 1000)) None))
+
+; Bitwise-xors v into slot i; plain only where slot i is proven to exist.
+; Returns: Unit
+(defn atomicbuf-xor ((b AtomicBuf) (i Int) (v Int)) (ffi-call "zyl_abuf_update" b i v 6 1000))
+
+; As atomicbuf-xor; a slot outside the buffer stops the program (E_INDEX_OUT_OF_BOUNDS).
+; Returns: Unit
+(defn atomicbuf-xor! ((b AtomicBuf) (i Int) (v Int)) (ffi-call "zyl_abuf_update" b i v 6 1000))
+
+; As atomicbuf-xor, or None when slot i is outside the buffer.
+; Returns: (Option Unit)
+(defn atomicbuf-xor? ((b AtomicBuf) (i Int) (v Int))
+  (if (atomicbuf-slot-ok b i) (Some (ffi-call "zyl_abuf_update" b i v 6 1000)) None))
+
+; Whether an actor still holds b (deterministic: the count changes only at its spawner's joins).
+; Returns: Bool
+(defn atomicbuf-held ((b AtomicBuf)) (ffi-call "zyl_abuf_held" b 1000))
+
+; The readable copy; consumes b (E_MOVE_VALUE on reuse); a holder its spawner has not joined stops the program (E_ATOMIC_SHARED).
+; Returns: AtomicView
+(defn atomicbuf-freeze! ((b AtomicBuf)) (ffi-call "zyl_abuf_freeze" b 1000))
+
+; As atomicbuf-freeze!, or None while an actor still holds b; consumes b either way (probe with atomicbuf-held).
+; Returns: (Option AtomicView)
+(defn atomicbuf-freeze? ((b AtomicBuf))
+  (if (ffi-call "zyl_abuf_held" b 1000) None (Some (ffi-call "zyl_abuf_freeze" b 1000))))
+
+; The number of slots of a frozen buffer.
+; Returns: Int
+(defn atomicview-slots ((v AtomicView)) (ffi-call "zyl_abuf_view_slots" v 1000))
+
+; Slot i's value (0 if untouched); stops on a bad slot (E_INDEX_OUT_OF_BOUNDS), mixed kinds (E_MUT_CONFLICT), a sum outside Int (E_OVERFLOW).
+; Returns: Int
+(defn atomicview-get! ((v AtomicView) (i Int)) (ffi-call "zyl_abuf_get" v i 1000))
+
+; Slot i's value, or None where atomicview-get! would stop the program.
+; Returns: (Option Int)
+(defn atomicview-get? ((v AtomicView) (i Int))
+  (if (ffi-call "zyl_abuf_get_ok" v i 1000) (Some (ffi-call "zyl_abuf_get" v i 1000)) None))
 
 ; ===========================================================================
-; ATOMIC ADD
+; ADDRESS ATOMICS (ffi)
 ; ===========================================================================
 
-; Atomically add value to atomic location, return the new value
-; Returns: Int (new value)
-(defn atomic-add (addr value)
-  (ffi-call "zyl_atomic_add" addr value 1000))
+; Whether addr is on an 8-byte boundary.
+; Returns: Bool
+(defn atomic-aligned ((addr Int)) (= (bit-and addr 7) 0))
 
-; ===========================================================================
-; ATOMIC SUB
-; ===========================================================================
+; Atomically the word at addr; off an 8-byte boundary it stops the program (E_MISALIGNED_ACCESS).
+; Returns: Int
+(defn atomic-load! (addr) (ffi-call "zyl_atomic_load" addr 1000))
 
-; Atomically subtract value from atomic location, return the new value
-; Returns: Int (new value)
-(defn atomic-sub (addr value)
-  (ffi-call "zyl_atomic_sub" addr value 1000))
+; As atomic-load!, or None off an 8-byte boundary.
+; Returns: (Option Int)
+(defn atomic-load? (addr) (if (atomic-aligned addr) (Some (atomic-load! addr)) None))
 
-; ===========================================================================
-; ATOMIC MAX
-; ===========================================================================
+; Atomically stores value at addr and returns it; off an 8-byte boundary it stops the program (E_MISALIGNED_ACCESS).
+; Returns: Int
+(defn atomic-store! (addr value) (ffi-call "zyl_atomic_store" addr value 1000))
 
-; Atomically set atomic location to max of current and value
-; Returns: Int (new value)
-(defn atomic-max (addr value)
-  (ffi-call "zyl_atomic_max" addr value 1000))
+; As atomic-store!, or None off an 8-byte boundary.
+; Returns: (Option Int)
+(defn atomic-store? (addr value) (if (atomic-aligned addr) (Some (atomic-store! addr value)) None))
 
-; ===========================================================================
-; ATOMIC MIN
-; ===========================================================================
+; Atomically adds value (wrapping, like the hardware) and returns the new value; off an 8-byte boundary it stops the program (E_MISALIGNED_ACCESS).
+; Returns: Int
+(defn atomic-add! (addr value) (ffi-call "zyl_atomic_add" addr value 1000))
 
-; Atomically set atomic location to min of current and value
-; Returns: Int (new value)
-(defn atomic-min (addr value)
-  (ffi-call "zyl_atomic_min" addr value 1000))
+; As atomic-add!, or None off an 8-byte boundary.
+; Returns: (Option Int)
+(defn atomic-add? (addr value) (if (atomic-aligned addr) (Some (atomic-add! addr value)) None))
 
-; ===========================================================================
-; ATOMIC CAS
-; ===========================================================================
+; Atomically subtracts value (wrapping) and returns the new value; off an 8-byte boundary it stops the program (E_MISALIGNED_ACCESS).
+; Returns: Int
+(defn atomic-sub! (addr value) (ffi-call "zyl_atomic_sub" addr value 1000))
 
-; Compare and swap. If *addr == expected, set *addr = new_value.
-; Returns: Bool (true if swap occurred)
-(defn atomic-cas (addr expected new_value)
-  (ffi-call "zyl_atomic_cas" addr expected new_value 1000))
+; As atomic-sub!, or None off an 8-byte boundary.
+; Returns: (Option Int)
+(defn atomic-sub? (addr value) (if (atomic-aligned addr) (Some (atomic-sub! addr value)) None))
 
-; ===========================================================================
-; ATOMIC FETCH ADD
-; ===========================================================================
+; Atomically stores the larger of the word and value and returns it; off an 8-byte boundary it stops the program (E_MISALIGNED_ACCESS).
+; Returns: Int
+(defn atomic-max! (addr value) (ffi-call "zyl_atomic_max" addr value 1000))
 
-; Atomically add value and return the OLD value
-; Returns: Int (old value)
-(defn atomic-fetch-add (addr value)
-  (ffi-call "zyl_atomic_fetch_add" addr value 1000))
+; As atomic-max!, or None off an 8-byte boundary.
+; Returns: (Option Int)
+(defn atomic-max? (addr value) (if (atomic-aligned addr) (Some (atomic-max! addr value)) None))
 
-; ===========================================================================
-; ATOMIC CONVENIENCE
-; ===========================================================================
+; Atomically stores the smaller of the word and value and returns it; off an 8-byte boundary it stops the program (E_MISALIGNED_ACCESS).
+; Returns: Int
+(defn atomic-min! (addr value) (ffi-call "zyl_atomic_min" addr value 1000))
 
-; Increment a counter at addr by 1
-; Returns: Int (new value)
-(defn atomic-incr (addr)
-  (atomic-add addr 1))
+; As atomic-min!, or None off an 8-byte boundary.
+; Returns: (Option Int)
+(defn atomic-min? (addr value) (if (atomic-aligned addr) (Some (atomic-min! addr value)) None))
 
-; Decrement a counter at addr by 1
-; Returns: Int (new value)
-(defn atomic-decr (addr)
-  (atomic-sub addr 1))
+; Atomically stores new-value if the word is expected and says whether it did; off an 8-byte boundary it stops the program (E_MISALIGNED_ACCESS).
+; Returns: Bool
+(defn atomic-cas! (addr expected new-value) (ffi-call "zyl_atomic_cas" addr expected new-value 1000))
+
+; As atomic-cas!, or None off an 8-byte boundary.
+; Returns: (Option Bool)
+(defn atomic-cas? (addr expected new-value) (if (atomic-aligned addr) (Some (atomic-cas! addr expected new-value)) None))
+
+; Atomically adds value (wrapping) and returns the OLD value; off an 8-byte boundary it stops the program (E_MISALIGNED_ACCESS).
+; Returns: Int
+(defn atomic-fetch-add! (addr value) (ffi-call "zyl_atomic_fetch_add" addr value 1000))
+
+; As atomic-fetch-add!, or None off an 8-byte boundary.
+; Returns: (Option Int)
+(defn atomic-fetch-add? (addr value) (if (atomic-aligned addr) (Some (atomic-fetch-add! addr value)) None))
+
+; Atomically adds 1 and returns the new value; off an 8-byte boundary it stops the program (E_MISALIGNED_ACCESS).
+; Returns: Int
+(defn atomic-incr! (addr) (atomic-add! addr 1))
+
+; As atomic-incr!, or None off an 8-byte boundary.
+; Returns: (Option Int)
+(defn atomic-incr? (addr) (if (atomic-aligned addr) (Some (atomic-incr! addr)) None))
+
+; Atomically subtracts 1 and returns the new value; off an 8-byte boundary it stops the program (E_MISALIGNED_ACCESS).
+; Returns: Int
+(defn atomic-decr! (addr) (atomic-sub! addr 1))
+
+; As atomic-decr!, or None off an 8-byte boundary.
+; Returns: (Option Int)
+(defn atomic-decr? (addr) (if (atomic-aligned addr) (Some (atomic-decr! addr)) None))

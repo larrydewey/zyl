@@ -35,7 +35,7 @@ Three corollaries the implementation goes further than this:
 
 - **Determinism.** The same binary produces the same output. There is no
   randomness, no clock, and no scheduling dependence in the observable
-  behaviour of a program (spec 14). This is stronger than what most
+  behaviour of a program (spec 14; actors share no mutable state, L11). This is stronger than what most
   memory-safe languages offer.
 - **Deterministic reclamation.** There is no collector and no cycle
   collector. A region is released by construction, at a point the compiler
@@ -55,10 +55,10 @@ enumeration is the argument.
 | read/write a field | `struct-get`; fields are immutable, `set!` on one is `E_MUT_CONFLICT` |
 | index a collection | `vec-get!` and friends; bounds-checked, out of range is an error |
 | load/store a byte | `load-u8!`/`store-u8!` (trap) or `load-u8?`/`store-u8?` (None) and the wider forms; a plain form only where proven in range |
-| atomic RMW | `atomic-*`; operand is a `ByteBuf` region slot |
+| shared slots | `AtomicBuf` (`atomic/atomic`): commuting updates while actors hold it, reads after a freeze (L11); the address `atomic-*!` forms need `ffi` |
 | write a file | `file-write`; a descriptor, released exactly once |
 | call foreign code | `ffi-call`; symbol must be a literal, timeout required, raw runtime entries refused |
-| spawn / send | actors; Kahn channels, single writer, single reader |
+| spawn / send | actors; Kahn channels, single writer, single reader; nothing mutable crosses (L11) |
 
 There is no pointer arithmetic a program can name, no way to reinterpret a
 word as a different type, and no `unsafe`.
@@ -196,7 +196,7 @@ needs an exclusive-mutable reference to hold. Zyl has no reference or
 borrow type: `TaTy` is `TaV | TaC | TaF`, with no capability dimension,
 so a plain binding cannot be a reference of that kind to alias with.
 What the language has instead is mutable locations — a `bytebuf`,
-written through by `store-u8`, the atomic forms and `bytebuf-append` —
+written through by `store-u8` and `bytebuf-append` —
 and Zyl has no in-place mutation, so a `let` binding is immutable and
 `set!` rebinds the whole value.
 
@@ -331,8 +331,11 @@ A byte load or store is held to the same rule at compile time
 (a literal offset into a `let`-bound `(bytebuf R N)` that fits), otherwise
 `E_PARTIAL_OPERATION`, and the author writes `load-u8!` or `load-u8?`. The
 proof forgets a name under any binder that may shadow it, so it fails closed.
-The atomic forms (`bytebuf-atomic-*`) still return 0 outside the buffer or
-off an 8-byte boundary, which the `!` rule does not yet cover.
+An `AtomicBuf` operation follows the same rule (a literal slot into a
+`let`-bound `(atomicbuf-new N)`, or `!`/`?`), its reads exist only as
+`atomicview-get!`/`?`, and the address atomics are `atomic-load!` ..
+`atomic-cas!` (`E_MISALIGNED_ACCESS` off an 8-byte boundary) or their `?`
+forms; the old `bytebuf-atomic-*` forms, which returned 0, are gone.
 String slicing (`str-substring`, `view-take`, `view-drop`) is total by
 definition: it clamps to the overlap of the asked range with the string
 (spec §25), so it is neither `!` nor `?`.
@@ -410,6 +413,64 @@ conditions are checked too.
 observable) and may panic, which is the contract's own outcome. The
 analysis over-approximates: a function that builds a fresh collection by
 in-place pushes counts as changing state.
+
+### L11 — Actors share no mutable state, so output is schedule-free · *Enforced + Argued*
+
+**Claim.** In a program without `ffi`, two actors never touch one mutable
+location, except through an `AtomicBuf`, and an `AtomicBuf`'s contents
+and every read of them are the same under every schedule (spec §7.4,
+§15, §27).
+
+**Enforced.** `share_check.zyl` runs after type inference. A spawned
+closure's captures (inline, `let`-bound, or through a parameter that a
+callee spawns, captures or sends, found by a fixpoint over parameter
+summaries), every value sent on a channel, and every top-level def an
+actor's code reaches through the call graph (the standard library
+included) are classified by type: a `let-mut` (mutability_check.zyl), a
+`ByteBuf`/`ByteSlice`, `Ref`, `WVec`, `SMap`, `Attr`, `Array`, `Words`,
+`StrBuf`, `UF`, `Arena` or `Pin`, as the value or anywhere inside its
+struct, variant, tuple, Option, list or argument types, is
+`E_CAPABILITY_LEAK`. A closure value is followed to its source; one
+whose captures cannot be seen (a call result, a field, an inner
+function's parameter) is refused, as is a generic value it cannot trace
+to a parameter. Persistent `Vec`, `IntMap` and `Slice` are checked by
+element: no version of them ever changes.
+
+**AtomicBuf.** It crosses only as a direct capture (anything else is
+`E_CAPABILITY_LEAK`), so the runtime sees every crossing: at spawn it
+scans the closure's environment words for AtomicBuf headers (as it does
+for channel endpoints) and adds the new actor to each one's holder
+count, recording the spawner; that spawner's `actor-wait` releases it.
+While held, the only operations are `atomicbuf-add`, `-max`, `-min`,
+`-and`, `-or` and `-xor`, which return nothing.
+
+**Argued (determinism).** (1) Each slot holds a 128-bit sum (add: `lock
+xadd` on the low word, the carry and sign added to the high word) or a
+64-bit max/min/and/or/xor encoded so every kind's identity is zero, and
+the set of kinds applied (an atomic or). Each kind is commutative and
+associative and the set union is order-free, so once every update has
+happened the slot is a function of the multiset of updates. (2) The
+holder count rises only at spawns and falls only at the spawner's joins,
+each in program order of the actor doing it. While any holder is
+unjoined the count is at least one (that holder counts itself until its
+own spawner joins it), so a freeze sees zero exactly when every holder
+has been joined, whatever else runs: the freeze's outcome is
+schedule-free, and a holder joined by another actor is never released,
+which fails closed deterministically. (3) A successful freeze copies the
+slots after every holder's join returned, so every update happened
+before the copy. Reads are of the copy: two kinds on one slot is
+`E_MUT_CONFLICT` and a sum outside Int `E_OVERFLOW`, each a function of
+the updates, not their order. Overflow of the 128-bit sum would need
+2^64 updates.
+
+**Not covered.** A Ref, ByteBuf or other handle reached only through an
+`Int` (an address from `bytebuf-ptr`, or a foreign call) is outside the
+type check; both need the `ffi` capability, the declared escape hatch.
+The toolchain's own modules (`compiler/`, `lsp/`, `repl/`) are not
+share-checked: the REPL's actor shares interpreter environment cells
+that only `set!` writes, and the interpreted program was itself checked.
+The analysis over-approximates: a generic value traced to "every
+parameter" checks every argument of every call.
 
 ## 4. What the aliasing that exists is
 
@@ -538,17 +599,15 @@ binaries for inspection.
   read through an immutable one, an immutable binding may never be made
   mutable — hold *structurally*: with no conversion in the language there
   is none to forbid.
-- `TAtomic` and `TBox` are unrepresented, and rule 5's Send-capability
-  has no type-level predicate; Send is tracked syntactically
-  (`E_CAPABILITY_LEAK`).
+- `TBox` is unrepresented; `TAtomic` is `AtomicBuf`, and rule 5 is a
+  check over types after inference (L11), not a type-level predicate.
 - A `Secret` is a real capability, not a descriptive one: its
   obligations are enforced (`E_SECRET_DEBUG`, `E_ZEROIZE_MISSING`), and
   a function that takes or binds a secret has its frame zeroed on return
   by code generation. What is *not* enforced is erasure of a released
   region block, which goes back to the allocator intact — that layer is
   planned in `docs/secret-erasure-design.md`.
-- Aliasing through raw allocation is covered for `bytebuf` and the atomic
-  forms. Aliasing through a returned handle is not tracked
+- Aliasing through raw allocation is covered for `bytebuf`. Aliasing through a returned handle is not tracked
   interprocedurally: `(let y (f b))` where `f` returns its parameter is
   not followed.
 - No proof assistant is involved. Section 3 is a set of arguments with

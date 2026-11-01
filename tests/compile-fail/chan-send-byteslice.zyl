@@ -1,0 +1,11 @@
+; Compile-fail: a slice of a bytebuf sent over a channel would share its
+; bytes with another actor (and a Stack one would outlive its frame).
+; expect-error: E_CAPABILITY_LEAK
+
+(capabilities actor)
+
+(defn leak (tx)
+  (let b (bytebuf Stack 16)
+    (chan-send tx (byteslice b 0 4))))
+
+(defn main () (begin (leak (chan-tx (chan 1))) 0))

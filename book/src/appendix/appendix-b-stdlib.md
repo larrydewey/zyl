@@ -314,19 +314,40 @@ communicate only through channels. Using this module, or `spawn`,
 `chan`, `chan-send` or `chan-recv`, requires the `actor` capability
 (§31.9): `(capabilities actor)` in a lone file, or in `zyl.pkg`.
 
-### `atomic/atomic` — Atomic Operations on Addresses
+### `atomic/atomic` — AtomicBuf, and Atomics on Addresses
 
 ```lisp
 (use atomic/atomic)
-;(atomic-load addr) (atomic-store addr value)
-;(atomic-add addr value) (atomic-sub addr value)
-;(atomic-max addr value) (atomic-min addr value)
-;(atomic-cas addr expected new_value) (atomic-fetch-add addr value)
-;(atomic-incr addr) (atomic-decr addr)
+;(atomicbuf-new n)  (atomicbuf-new! n)  (atomicbuf-new? n)       ; n slots of 0
+;(atomicbuf-add b i v)  -max  -min  -and  -or  -xor              ; Unit; also ! and ? forms
+;(atomicbuf-slots b) (atomicbuf-slot-ok b i) (atomicbuf-held b)
+;(atomicbuf-freeze! b) (atomicbuf-freeze? b)                     ; a move: AtomicView
+;(atomicview-get! v i) (atomicview-get? v i) (atomicview-slots v)
 ```
 
-For atomics on a byte buffer, use the `bytebuf-atomic-*` forms
-(Appendix C.12).
+`AtomicBuf` is the one buffer actors may share (spec §7.4): a spawned
+closure captures it directly, and while any actor holds it the only
+operations are the commuting, result-free updates above. It is read
+through `atomicbuf-freeze!`, a move that returns an `AtomicView` once
+every actor that captured it has been joined by the actor that spawned
+it, else `E_ATOMIC_SHARED`. A slot is a 128-bit sum (a read outside
+`Int` is `E_OVERFLOW`); two kinds of update on one slot read as
+`E_MUT_CONFLICT`. Plain updates need a literal slot into a `let`-bound
+`(atomicbuf-new N)`; `!` stops outside the buffer
+(`E_INDEX_OUT_OF_BOUNDS`), `?` gives `None`. Chapter 32 has an example.
+
+```lisp
+;(atomic-load! addr) (atomic-store! addr value)
+;(atomic-add! addr value) (atomic-sub! addr value)
+;(atomic-max! addr value) (atomic-min! addr value)
+;(atomic-cas! addr expected new-value) (atomic-fetch-add! addr value)
+;(atomic-incr! addr) (atomic-decr! addr) (atomic-aligned addr)
+```
+
+The address atomics take an `Int` address (from C or `bytebuf-ptr`), so
+they need the `ffi` capability. An address that is not a multiple of 8
+stops the program with `E_MISALIGNED_ACCESS`; each has a `?` form
+(`atomic-load?`, ...) that gives `None` instead.
 
 ## B.4 FFI
 

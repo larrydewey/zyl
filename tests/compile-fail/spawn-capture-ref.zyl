@@ -1,0 +1,9 @@
+; Compile-fail: a Ref is a cell for one actor; a spawned closure may not capture it.
+; expect-error: E_CAPABILITY_LEAK
+(capabilities actor)
+(use actor/actor)
+
+(defn main ()
+  (let r (ffi-call "zyl_ref_new" 0 1000)
+    (let a (spawn (fn () (ffi-call "zyl_ref_set" r 1 1000)))
+      (begin (actor-wait a) (ffi-call "zyl_ref_get" r 1000)))))

@@ -80,8 +80,9 @@ change underneath it, because there is no in-place write to see. A
 `set!` that breaks the rule is `E_MUT_CONFLICT`.
 
 The specification also defines `TAtomic<T>` (atomic shared mutation),
-`TBox<T>` (heap ownership) and `TPin<T>` (FFI-pinned). No source
-construct produces `TAtomic` or `TBox` today; `TPin` is the type of an
+`TBox<T>` (heap ownership) and `TPin<T>` (FFI-pinned). `TAtomic` is
+the `AtomicBuf` type of `atomic/atomic`, the one buffer actors share
+(§5.7); no source construct produces `TBox`; `TPin` is the type of an
 `ffi-pin` result, written `(Pin a)`.
 
 ### How Capabilities Are Decided
@@ -509,14 +510,18 @@ requires everything that crosses an actor boundary to be
 | Binding or value | Send? | Why |
 |------------------|-------|-----|
 | an immutable (`let`) binding | Yes | Nothing can change it, so sharing is safe |
-| an atomic value (`TAtomic<T>`) | Yes | Thread-safe by design |
+| an `AtomicBuf` (`TAtomic<T>`), captured directly | Yes | Only commuting updates while shared; read after every holder is joined |
 | a mutable (`let-mut`) binding | No | It can be rebound — cannot be shared across actors |
+| a `ByteBuf`, `Ref` or other handle written in place, or a value holding one | No | Two actors would race on it |
 | a `TBox<T>` | No | Owned — would violate exclusivity |
 | a `(Pin a)` | No | FFI-pinned — not for actor transfer |
 
-The compiler checks the case you can actually write: a `spawn` closure
-or a `chan-send` value that refers to a `let-mut` variable in scope is
-`E_CAPABILITY_LEAK`.
+The compiler checks every row: a `spawn` closure or a `chan-send` value
+that refers to a `let-mut` variable in scope, and (after type inference)
+a capture, sent value or actor-reached top-level `def` whose type is or
+holds a `ByteBuf`, `Ref` or other in-place handle, are
+`E_CAPABILITY_LEAK`. An `AtomicBuf` is read with `atomicbuf-freeze!`
+once the actors holding it are joined (Chapter 32, §32.8).
 
 ```lisp
 (capabilities actor)
@@ -687,7 +692,7 @@ the tutorial.
 | `E_MUT_CONFLICT` | `set!` on a `let` binding, a parameter or a struct field; a byte buffer written through two names | Use `let-mut`, or rebind the whole value; write through one name |
 | `E_MOVE_VALUE` | A resource (a file descriptor, a `StringBuffer`, a `Drop` type) used after its release | Open a second handle; release once |
 | `E_PKG_CAPABILITY_VIOLATION` | `spawn`, a channel, file IO, foreign code or `math/secret` in a file that did not declare the capability | Add `(capabilities actor)` (or `io`, `ffi`, `secret`) at the top of the file |
-| `E_CAPABILITY_LEAK` | A `let-mut` variable in a `spawn` closure or a `chan-send` value | Send a `let`-bound copy |
+| `E_CAPABILITY_LEAK` | A `let-mut` variable, or a `ByteBuf`, `Ref` or other mutable handle, in a `spawn` closure or a `chan-send` value | Send a `let`-bound copy of the value; accumulate across actors in an `AtomicBuf` |
 | `E_INVALID_CAPABILITY` | A closure written inline as an `ffi-call` argument | Pass a named top-level function, typed `(Fn ...)` in the `extern` |
 | `E_FFI_TYPE_NOT_PINNABLE` | A function given to `ffi-pin` | Pin data, not code |
 | `E_REGION_ESCAPE` | A value allocated inside `with-region`, or a `(bytebuf Stack N)`, outlives its region | Return data that does not point into the region |
@@ -756,7 +761,9 @@ in-scope `let-mut` bindings, rejects a `set!` of anything else
 (`E_MUT_CONFLICT`) and a `set!` of a captured outer `let-mut` from
 inside a closure (the closure holds a by-value copy, so the assignment
 could only ever change the copy), and rejects a `spawn` or `chan-send`
-that mentions one (`E_CAPABILITY_LEAK`). The field-mutation form
+that mentions one (`E_CAPABILITY_LEAK`); after type inference
+`share_check.zyl` does the same for buffers, `Ref`s and the other
+handles written in place. The field-mutation form
 `(set! (struct-get ...) ...)` is rejected earlier, by the parser.
 The same pass rejects a closure written inline as an `ffi-call` argument
 (`E_INVALID_CAPABILITY`); the type pass rejects a pinned function

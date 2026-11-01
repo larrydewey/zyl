@@ -1,0 +1,9 @@
+; Compile-fail: a spawned closure that captures a ByteBuf shares it with another actor.
+; expect-error: E_CAPABILITY_LEAK
+(capabilities actor)
+(use actor/actor)
+
+(defn main ()
+  (let b (bytebuf Heap 8)
+    (let a (spawn (fn () (store-u8! :le b 0 1)))
+      (begin (store-u8! :le b 0 2) (actor-wait a) 0))))

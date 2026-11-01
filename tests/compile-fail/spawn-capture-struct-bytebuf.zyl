@@ -1,0 +1,11 @@
+; Compile-fail: a struct holding a ByteBuf crosses inside a capture.
+; expect-error: E_CAPABILITY_LEAK
+(capabilities actor)
+(use actor/actor)
+
+(defstruct Frame (buf ByteBuf) (len Int))
+
+(defn main ()
+  (let f (make-Frame (bytebuf Heap 8) 8)
+    (let a (spawn (fn () (print f.len)))
+      (begin (actor-wait a) 0))))

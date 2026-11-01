@@ -1,0 +1,10 @@
+; Compile-fail: a spawned closure captures a ByteBuf parameter.
+; expect-error: E_CAPABILITY_LEAK
+(capabilities actor)
+(use actor/actor)
+
+(defn start ((buf ByteBuf)) (spawn (fn () (store-u8! :le buf 0 1))))
+
+(defn main ()
+  (let a (start (bytebuf Heap 8))
+    (begin (actor-wait a) 0)))

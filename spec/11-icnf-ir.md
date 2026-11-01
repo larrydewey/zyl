@@ -39,7 +39,7 @@ A program is a list of `IFn` nodes. The `Icnf` ADT in `icnf.zyl`:
 | `IBinop op a b` | Binary operator (opcodes below) |
 | `ICall name args` | Call a Zyl function |
 | `ICallClosure name args` | No longer produced by lowering; codegen treats it exactly as `ICall` (a call through a local is always the closure-aware indirect call) |
-| `IFfi symbol args` | Call a C symbol; also the target of `spawn`, `send`, `ffi-pin`, byte and atomic primitives |
+| `IFfi symbol args` | Call a C symbol; also the target of `spawn`, `send`, `ffi-pin` and byte primitives |
 | `IPrint e` | Print a value |
 | `IIf c t e` | Conditional with embedded branches |
 | `IWhile c body` | Loop with embedded body (`for` lowers to this) |

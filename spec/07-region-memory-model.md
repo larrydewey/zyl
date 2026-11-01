@@ -21,7 +21,7 @@ If variable does not escape → Stack.
 If returned, captured by escaping closure, or sent to actor → Heap.
 
 ### R3. Actor Transfer
-spawn and chan-send require a Send-capable type.
+spawn and chan-send take only values holding no in-place mutable handle (§7.4).
 
 ### R4. FFI Rule
 ffi-call requires Pin region AND FFI_Pinnable type, and a timeout,

@@ -1,0 +1,12 @@
+; Compile-fail: an AtomicBuf crosses only as a direct capture, never over a channel.
+; expect-error: E_CAPABILITY_LEAK
+(capabilities actor)
+(use actor/actor)
+(use atomic/atomic)
+
+(defn main ()
+  (let c (chan 1)
+    (let tx (chan-tx c)
+      (let rx (chan-rx c)
+        (let a (spawn (fn () (atomicbuf-add! (chan-recv rx) 0 1)))
+          (begin (chan-send tx (atomicbuf-new 1)) (actor-wait a) 0))))))

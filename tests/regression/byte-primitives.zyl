@@ -1,11 +1,13 @@
 ; Byte-Level Primitive Regression Tests — bytebuf allocation, byte
-; loads and stores, slices, atomics and alignment.
+; loads and stores, slices, AtomicBuf slots and alignment.
 ;
 ; These exist because the argument order between `(load-u8! :le buf off)`
 ; and the runtime's `zyl_load_byte(endian, offset, buf)` was silently
 ; swapped in ICNF lowering: every load returned 0 and every store did
 ; nothing, while both still compiled and ran. A round-trip assertion is
 ; the only thing that catches that class of bug, and there was none.
+
+(use atomic/atomic)
 
 (test "bytebuf-cap-is-the-declared-capacity"
   (assert-equal (bytebuf-cap (bytebuf Heap 16)) 16))
@@ -122,51 +124,45 @@
         (let t (byteslice-sub s 2 2)
           (assert-equal (load-u8! :le t 0) 91))))))
 
-; Atomics operate on the same memory, at real offsets.
-(test "atomic-store-then-load"
-  (let b (bytebuf Heap 16)
-    (let _ (bytebuf-atomic-store b 0 7)
-      (assert-equal (bytebuf-atomic-load b 0) 7))))
+; AtomicBuf slots (atomic/atomic): updates read back only through a frozen view.
+(test "atomicbuf-add-then-read"
+  (let b (atomicbuf-new 2)
+    (let _ (atomicbuf-add b 0 7)
+      (assert-equal (atomicview-get! (atomicbuf-freeze! b) 0) 7))))
 
-(test "atomic-offsets-are-independent"
-  (let b (bytebuf Heap 16)
-    (let _ (bytebuf-atomic-store b 0 7)
-      (assert-equal (bytebuf-atomic-load b 8) 0))))
+(test "atomicbuf-slots-are-independent"
+  (let b (atomicbuf-new 2)
+    (let _ (atomicbuf-add b 0 7)
+      (assert-equal (atomicview-get! (atomicbuf-freeze! b) 1) 0))))
 
-(test "atomic-add-accumulates"
-  (let b (bytebuf Heap 16)
-    (let _ (bytebuf-atomic-store b 0 10)
-      (let _ (bytebuf-atomic-add b 0 5)
-        (assert-equal (bytebuf-atomic-load b 0) 15)))))
+(test "atomicbuf-add-accumulates"
+  (let b (atomicbuf-new 1)
+    (let _ (atomicbuf-add b 0 10)
+      (let _ (atomicbuf-add b 0 5)
+        (assert-equal (atomicview-get! (atomicbuf-freeze! b) 0) 15)))))
 
-(test "atomic-fetch-add-returns-the-previous-value"
-  (let b (bytebuf Heap 16)
-    (let _ (bytebuf-atomic-store b 0 10)
-      (assert-equal (bytebuf-atomic-fetch-add b 0 5) 10))))
+(test "atomicbuf-max-keeps-the-larger"
+  (let b (atomicbuf-new 1)
+    (let _ (atomicbuf-max b 0 5)
+      (let _ (atomicbuf-max b 0 2)
+        (assert-equal (atomicview-get! (atomicbuf-freeze! b) 0) 5)))))
 
-(test "atomic-cas-swaps-on-a-match"
-  (let b (bytebuf Heap 16)
-    (let _ (bytebuf-atomic-store b 0 3)
-      (let _ (bytebuf-atomic-cas b 0 3 9)
-        (assert-equal (bytebuf-atomic-load b 0) 9)))))
+(test "atomicbuf-min-keeps-the-smaller"
+  (let b (atomicbuf-new 1)
+    (let _ (atomicbuf-min b 0 5)
+      (let _ (atomicbuf-min b 0 2)
+        (assert-equal (atomicview-get! (atomicbuf-freeze! b) 0) 2)))))
 
-(test "atomic-cas-leaves-a-mismatch-alone"
-  (let b (bytebuf Heap 16)
-    (let _ (bytebuf-atomic-store b 0 3)
-      (let _ (bytebuf-atomic-cas b 0 4 9)
-        (assert-equal (bytebuf-atomic-load b 0) 3)))))
-
-(test "atomic-max-keeps-the-larger"
-  (let b (bytebuf Heap 16)
-    (let _ (bytebuf-atomic-store b 0 5)
-      (let _ (bytebuf-atomic-max b 0 2)
-        (assert-equal (bytebuf-atomic-load b 0) 5)))))
-
-(test "atomic-min-keeps-the-smaller"
-  (let b (bytebuf Heap 16)
-    (let _ (bytebuf-atomic-store b 0 5)
-      (let _ (bytebuf-atomic-min b 0 2)
-        (assert-equal (bytebuf-atomic-load b 0) 2)))))
+(test "atomicbuf-bitwise-updates"
+  (let b (atomicbuf-new 3)
+    (let _ (atomicbuf-and b 0 12)
+      (let _ (atomicbuf-and b 0 10)
+        (let _ (atomicbuf-or b 1 12)
+          (let _ (atomicbuf-or b 1 3)
+            (let _ (atomicbuf-xor b 2 12)
+              (let _ (atomicbuf-xor b 2 10)
+                (let v (atomicbuf-freeze! b)
+                  (assert-equal (+ (* 10000 (atomicview-get! v 0)) (+ (* 100 (atomicview-get! v 1)) (atomicview-get! v 2))) 81506))))))))))
 
 ; Regions other than Heap allocate too.
 (test "a-global-buffer-allocates"

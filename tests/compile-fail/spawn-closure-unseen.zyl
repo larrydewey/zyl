@@ -1,0 +1,10 @@
+; Compile-fail: a closure returned by a call crosses, and its captures cannot be seen.
+; expect-error: E_CAPABILITY_LEAK
+(capabilities actor)
+(use actor/actor)
+
+(defn make-worker (n) (fn () (print n)))
+
+(defn main ()
+  (let a (spawn (make-worker 3))
+    (begin (actor-wait a) 0)))

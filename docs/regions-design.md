@@ -219,7 +219,7 @@ The same analysis checks explicit region choices:
 - A `(bytebuf Stack N)` is allocated in the frame region. One whose class
   reaches `R` or `H` (returned, stored, sent, or passed to code that may
   keep it) is `E_REGION_ESCAPE`, reported at the allocation. Byte loads,
-  stores, appends and atomics are classified, so using the buffer locally
+  stores and appends are classified, so using the buffer locally
   is fine.
 - The region extension registry adds `with-region`:
 

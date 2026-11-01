@@ -541,6 +541,15 @@
   (Cons (ExN "E_INDEX_OUT_OF_BOUNDS" "An index is outside the tuple, array or buffer it reads."
           "(use core/core)\n(defn main () (let t (tuple 1 2) (begin (print (tuple-get t 5)) 0)))"
           "(use core/core)\n(defn main () (let t (tuple 1 2) (begin (print (tuple-get t 1)) 0)))")
+  (Cons (ExN "E_CAPABILITY_LEAK" "Mutable state crosses to another actor: a captured let-mut, ByteBuf, Ref or other mutable handle, one sent over a channel, or a top-level def of one an actor reaches. Share numbers through an AtomicBuf instead."
+          "(capabilities actor)\n(use actor/actor)\n(defn main () (let b (bytebuf Heap 8) (let a (spawn (fn () (store-u8! :le b 0 1))) (begin (actor-wait a) 0))))"
+          "(capabilities actor)\n(use actor/actor)\n(use atomic/atomic)\n(defn main () (let b (atomicbuf-new 1) (let a (spawn (fn () (atomicbuf-add b 0 1))) (begin (actor-wait a) (- (atomicview-get! (atomicbuf-freeze! b) 0) 1)))))")
+  (Cons (ExN "E_ATOMIC_SHARED" "An AtomicBuf is frozen while an actor that captured it has not been joined by the actor that spawned it; reading then could see a partial total."
+          "(capabilities actor)\n(use actor/actor)\n(use atomic/atomic)\n(defn main () (let b (atomicbuf-new 1) (let a (spawn (fn () (atomicbuf-add b 0 1))) (let v (atomicbuf-freeze! b) (begin (actor-wait a) (atomicview-get! v 0))))))"
+          "(capabilities actor)\n(use actor/actor)\n(use atomic/atomic)\n(defn main () (let b (atomicbuf-new 1) (let a (spawn (fn () (atomicbuf-add b 0 1))) (begin (actor-wait a) (- (atomicview-get! (atomicbuf-freeze! b) 0) 1)))))")
+  (Cons (ExN "E_MISALIGNED_ACCESS" "An address atomic (atomic/atomic) at an address that is not a multiple of 8."
+          "(capabilities ffi)\n(use atomic/atomic)\n(defn main () (let b (bytebuf Heap 16) (begin (atomic-store! (+ (bytebuf-ptr b) 4) 1) 0)))"
+          "(capabilities ffi)\n(use atomic/atomic)\n(defn main () (let b (bytebuf Heap 16) (begin (atomic-store! (+ (bytebuf-ptr b) 8) 1) 0)))")
   (Cons (ExN "E_CT_VIOLATION" "A branch, index or division depends on a `Secret`, which leaks it through timing."
           "(capabilities secret)\n(use core/core)\n(defn check ((key Secret) (guess Int)) (if (= key guess) 1 0))\n(defn main () (- (check 7 7) 1))"
           "(capabilities secret)\n(use core/core)\n(use math/secret/secret)\n(defn check ((key Secret) (guess Int)) (declassify (ct-eq key guess)))\n(defn main () (- (check 7 7) 1))")
@@ -577,7 +586,7 @@
   (Cons (ExN "E_INTEGER_OVERFLOW" "An integer literal does not fit in a 64-bit Int."
           "(defn main () (begin (print 99999999999999999999) 0))"
           "(defn main () (begin (print 9223372036854775807) 0))")
-  Nil))))))))))))))))))))))))))))))))))))
+  Nil)))))))))))))))))))))))))))))))))))))))
 
 (defn exn-find (code xs)
   (match xs

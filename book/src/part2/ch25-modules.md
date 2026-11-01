@@ -566,7 +566,7 @@ The standard library is package `zyl/std` at the compiler's major. It is implici
 | `collections/set` | `set-create`, `set-add`, `set-contains`, `set-remove`, `set-len` |
 | `collections/collections` | `Assoc`, `assoc-put`, `assoc-get`, `list-map`, `list-filter`, `list-fold` |
 | `allocator/allocator` | `alloc-cstr`, `alloc-read-int`, `alloc-strlen`, `buf-append` and the string helpers; the raw-memory entries (`alloc-malloc`, `alloc-free`, `arena-create`, `arena-alloc`, `buf-new`, …) are for the compiler, the LSP and the REPL, and are `E_FFI_RESTRICTED` in a program — allocate `(bytebuf Heap N)` and take its address with `bytebuf-ptr` |
-| `atomic/atomic` | `atomic-load`, `atomic-store`, `atomic-add`, `atomic-cas` |
+| `atomic/atomic` | `AtomicBuf` (`atomicbuf-new`, `atomicbuf-add` .. `-xor`, `atomicbuf-freeze!`, `atomicview-get!`), and `atomic-load!`, `atomic-store!`, `atomic-add!`, `atomic-cas!` on addresses (ffi) |
 | `actor/actor` | `actor-spawn`, `actor-wait`, `actor-is-alive` |
 | `ffi/ffi` | `ffi-pin-value`, `ffi-unpin-value`, `ffi-safe-call` |
 | `io/io` | `io-file-open-read`, `io-file-read`, `io-file-write`, `io-read-line`, `io-print` |

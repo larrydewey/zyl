@@ -34,6 +34,8 @@
 ;     is what `with-resource` desugars to, compiler/desugar.zyl) releases
 ;     it. Every user `Drop` impl goes through `Drop.drop` too, so a type
 ;     that declares one gets this for free.
+;   - an AtomicBuf: `atomicbuf-new` binds one, `atomicbuf-freeze!` and
+;     `atomicbuf-freeze?` consume it (the readable AtomicView is the result).
 ;
 ; What is deliberately NOT linear, and why:
 ;
@@ -256,13 +258,13 @@
 ; Constructors whose result owns a resource. `file-open` is not here: it
 ; has its own AST form. Matched on the tail of a canonical key, so
 ; `zyl/std@N::io/io::make-string-buffer` matches as well.
-(def lin-ctors (Cons "make-string-buffer" Nil))
+(def lin-ctors (Cons "make-string-buffer" (Cons "atomicbuf-new" (Cons "atomicbuf-new!" Nil))))
 
 ; Calls that release a resource handed to them, consuming that argument.
 ; `Drop.drop` is the one every `Drop` impl is reached through, including
 ; the release with-resource generates.
 (def lin-consuming
-  (Cons "Drop.drop" (Cons "string-buffer-destroy" Nil)))
+  (Cons "Drop.drop" (Cons "string-buffer-destroy" (Cons "atomicbuf-freeze!" (Cons "atomicbuf-freeze?" Nil)))))
 
 (defn lin-in (x xs)
   (match xs
@@ -404,10 +406,10 @@
   (let fid (ffi-call "zyl_span_file" node 1000)
     (let off (ffi-call "zyl_span_off" node 1000)
       (let m1 (str-concat "the binding " name)
-        (let msg (str-concat m1 " was released by an earlier call, so it cannot be used again")
+        (let msg (str-concat m1 " was released or frozen by an earlier call, so it cannot be used again")
           (ffi-call "zyl_panic"
             (err-at "E_MOVE_VALUE" msg fid off
-              "a resource is released exactly once; if you need it again, open a second handle rather than reusing a released one")
+              "a resource is released exactly once; open a second handle rather than reusing a released one, and read a frozen AtomicBuf through the AtomicView its freeze returned")
             1000))))))
 
 ; --- environment ---------------------------------------------------------
@@ -514,14 +516,6 @@
     (ELoadByteSigned endian base off (begin (lin-walk base env) (lin-walk off env)))
     (EStoreByte endian base off v (begin (lin-walk base env) (lin-walk off env) (lin-walk v env) (lin-note-write (lin-ident-of base) e)))
     (EStoreByteSigned endian base off v (begin (lin-walk base env) (lin-walk off env) (lin-walk v env) (lin-note-write (lin-ident-of base) e)))
-    (EAtomicLoad p o (lin-walk2 p o env))
-    (EAtomicStore p o v (begin (lin-walk3 p o v env) (lin-note-write (lin-ident-of p) e)))
-    (EAtomicAdd p a b (begin (lin-walk3 p a b env) (lin-note-write (lin-ident-of p) e)))
-    (EAtomicSub p a b (begin (lin-walk3 p a b env) (lin-note-write (lin-ident-of p) e)))
-    (EAtomicCAS p o expected desired (begin (lin-walk3 p o expected env) (lin-walk desired env) (lin-note-write (lin-ident-of p) e)))
-    (EAtomicFetchAdd p a b (begin (lin-walk3 p a b env) (lin-note-write (lin-ident-of p) e)))
-    (EAtomicMax p a b (begin (lin-walk3 p a b env) (lin-note-write (lin-ident-of p) e)))
-    (EAtomicMin p a b (begin (lin-walk3 p a b env) (lin-note-write (lin-ident-of p) e)))
     ; --- no sub-expressions, but listed rather than caught by a wildcard:
     ; the match is exhaustive by design, so a variant added to ExprInner
     ; later has to be dealt with here instead of quietly un-walked ---

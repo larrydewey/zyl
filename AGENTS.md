@@ -54,7 +54,12 @@ generated structural `T.==`) → numeric check (`numeric_check.zyl`, spec
 or `%` whose divisor is not a nonzero literal; `div!`/`rem!` trap on zero,
 `div?`/`rem?` give `(Option Int)`; likewise a plain byte `load-*`/`store-*`
 not proven in range, with `load-u8!` trapping `E_INDEX_OUT_OF_BOUNDS` and
-`load-u8?` giving `None`) → ICNF lowering (the policy picks the
+`load-u8?` giving `None`, and the same for a plain AtomicBuf operation) →
+share check (`share_check.zyl`, spec §7.4: a spawned closure's captures,
+channel values, arguments to parameters that cross, and the top-level defs
+an actor reaches may not be or hold a `ByteBuf`, `Ref` or other in-place
+handle, `E_CAPABILITY_LEAK`; an `AtomicBuf` crosses only as a direct
+capture) → ICNF lowering (the policy picks the
 operator family; checked `+ - *` trap with `E_OVERFLOW`) →
 optimization (small-function inlining and copy propagation, then
 constant folding and dead-branch elimination) → region inference (the stack-variant rewrite, then
@@ -126,8 +131,21 @@ a signed provenance trailer, and `zyl verify <binary>` reads it back
   "one writer or many readers" invariant would be
 - `set!` on anything but a `let-mut` binding is `E_MUT_CONFLICT`
   (`mutability_check.zyl`, a syntactic pass); moves are `E_MOVE_VALUE`
-  (`linearity.zyl`); a mutable capture crossing an actor boundary is
-  `E_CAPABILITY_LEAK`
+  (`linearity.zyl`); mutable state crossing an actor boundary is
+  `E_CAPABILITY_LEAK`: a `let-mut` capture (`mutability_check.zyl`), or a
+  captured, sent or actor-reached value that is or holds a `ByteBuf`,
+  `ByteSlice`, `Ref`, `WVec`, `SMap`, `Attr`, `Array`, `Words`, `StrBuf`,
+  `UF`, `Arena` or `Pin` (`share_check.zyl`, by type after inference).
+  Within one actor they stay fully usable
+- The one buffer actors share is `AtomicBuf` (`atomic/atomic`, spec §7.4):
+  captured directly, it takes only `atomicbuf-add`/`-max`/`-min`/`-and`/
+  `-or`/`-xor` (commuting, result-free) while any actor holds it, and is
+  read through `atomicbuf-freeze!` (a move) once every holder has been
+  joined by its spawner (`E_ATOMIC_SHARED` otherwise); a slot is a 128-bit
+  sum, so a read outside Int is `E_OVERFLOW`, and two update kinds on one
+  slot read as `E_MUT_CONFLICT`. There is no `bytebuf-atomic-*`; the
+  address atomics `atomic-load!` .. `atomic-cas!` need `ffi` and trap
+  `E_MISALIGNED_ACCESS` off an 8-byte boundary
 - The unifier has no capability polarity — there is no `TCap`/`TMut` type
   and never was. `Secret` is the real capability type: it carries
   obligations the compiler enforces (`E_SECRET_DEBUG`, `E_ZEROIZE_MISSING`)
@@ -192,7 +210,7 @@ a signed provenance trailer, and `zyl verify <binary>` reads it back
 - **Structs immutable by default** (rebinding only)
 - **Safe-only optimizations** (constant folding, DCE, small-function inlining, copy propagation, in-place reuse — no reordering)
 - **The runtime is Zyl** (`runtime/rt/`), with no C and no libc under freestanding programs; the `%` primitives exist only in the runtime's own compile, and programs get no `unsafe`
-- **Kahn channels** (single writer, single reader, blocking receive, no select) are the only way actors communicate
+- **Kahn channels** (single writer, single reader, blocking receive, no select) are the only way actors communicate; the one shared buffer is an `AtomicBuf` of commuting updates, read after every holder is joined
 - **No inline assembly**: deterministic typed intrinsics (spec §21.13) and `stdlib/simd` instead; `ffi-call` is the escape hatch
 - **The compiler assembles and links** freestanding programs itself (`asm_x86.zyl`, `elf_link.zyl`)
 

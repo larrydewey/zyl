@@ -50,8 +50,8 @@ tracks which names are in-scope `let-mut` bindings:
   rejected by the parser with `E_MUT_CONFLICT`.
 - A byte buffer is a mutable location, and there the rule is checked on
   the location itself, by `linearity.zyl`: a name becomes the buffer's
-  writer by writing through it (`store-u8`, the other stores, the
-  atomics, `bytebuf-append`), and a second name writing to the same
+  writer by writing through it (`store-u8`, the other stores,
+  `bytebuf-append`), and a second name writing to the same
   buffer is `E_MUT_CONFLICT`. Any number of names may read it. A
   `byteslice` belongs to its base buffer's location, and alias classes
   are kept per allocation, not per name.
@@ -89,18 +89,17 @@ binding form, and a `Secret` (17.8) is still a real capability.
 |------|----------------|------------------------|
 | `TCap<T>` | shared, immutable | a `let` binding — immutable, any number of readers |
 | `TMut<T>` | exclusive, mutable | a `let-mut` binding — the only assignable binding; `set!` rebinds it (17.1) |
-| `TAtomic<T>` | atomic shared mutation | not produced by any source construct |
+| `TAtomic<T>` | atomic shared mutation | an `AtomicBuf` (`atomic/atomic`): the one buffer actors share, commuting updates only while shared, read after a freeze (17.7) |
 | `TBox<T>` | heap-managed allocation | not produced by any source construct |
 | `TPin<T>` | FFI-pinned, non-moving | `ffi-pin` copies the value into the pin arena; the result has type `(Pin a)` |
 | `Secret` (17.8) | key material | a `Secret` annotation, tracked by `secret_check.zyl` |
 
 Notes on the kinds that have no source form:
 
-- **Atomics** are operations, not a type. `atomic/atomic` provides
-  `atomic-load`, `atomic-store`, `atomic-add`, `atomic-cas` and friends
-  on raw addresses, and the byte primitives provide `bytebuf-atomic-load`
-  and friends on a `ByteBuf`. Neither produces a `TAtomic` value, and
-  there is no `atomic-new`.
+- **Atomics** on shared data are an `AtomicBuf`, made by
+  `(atomicbuf-new n)`; see 17.7. `atomic/atomic` also has
+  `atomic-load!`, `atomic-store!`, `atomic-add!`, `atomic-cas!` and
+  friends on raw addresses, which need the `ffi` capability.
 - **`TBox`** has no source form. Recursive ADT fields are already
   pointers to separately allocated blocks (Chapter 18), so nothing needs
   one.
@@ -203,11 +202,18 @@ from closures instead.
 
 ### Actor transfer (§7.4, §9.1 R3, §15)
 
-A spawned closure may capture only Send-capable values, and a value sent
-on a channel must be Send-capable. The compiler checks one concrete
-shape: if the closure passed to `spawn`, or the value passed to
-`chan-send`, refers to any `let-mut` variable in scope, it is
-`E_CAPABILITY_LEAK`.
+A spawned closure may capture only values no other actor can change, and
+the same holds for a value sent on a channel. Two checks enforce it. If
+the closure passed to `spawn`, or the value passed to `chan-send`,
+refers to any `let-mut` variable in scope, it is `E_CAPABILITY_LEAK`
+(`mutability_check.zyl`). After type inference, `share_check.zyl` checks
+every capture, every sent value, every argument to a parameter that a
+function spawns, captures or sends, and every top-level `def` an actor's
+code reaches through calls: one that is, or holds in a struct, variant,
+tuple, `Option`, list or closure, a `ByteBuf`/`ByteSlice`, a `Ref`, or
+another handle written in place (`WVec`, `SMap`, `Attr`, `Array`,
+`Words`, `StrBuf`, `UF`, `Arena`, `Pin`) is `E_CAPABILITY_LEAK`. All of
+them stay usable within one actor.
 
 ```lisp
 (capabilities actor)
@@ -224,8 +230,19 @@ shape: if the closure passed to `spawn`, or the value passed to
           0)))))
 ```
 
-There is no type-level Send predicate. A `Secret` reaching `spawn` or
+There is no Send type: the check reads the inferred types. A closure
+whose captures it cannot see (one returned by a call, or read from a
+field) is refused rather than trusted. A `Secret` reaching `spawn` or
 `chan-send` is rejected separately (17.8).
+
+The one buffer actors share is an `AtomicBuf`, captured directly by the
+spawned closure. While any actor holds it, it takes only
+`atomicbuf-add`, `-max`, `-min`, `-and`, `-or` and `-xor`, which commute
+and return nothing, so its final contents do not depend on the
+schedule. It is read through `atomicbuf-freeze!`, a move that returns a
+read-only `AtomicView` once every actor that captured the buffer has
+been joined by the actor that spawned it (`E_ATOMIC_SHARED` otherwise).
+Chapter 32, §32.8, has the details and an example.
 
 Channel endpoints are a separate kind of exclusivity, checked at run
 time: each `Tx` and `Rx` has one owning actor, and a use by any other
@@ -345,13 +362,14 @@ What the specification infers, and how each rule is met today:
 1. **Read-only use** is the default: every `let` binding is immutable,
    and with no in-place mutation nothing can change it under a reader.
 2. **`set!`** is allowed only on a `let-mut` binding. Met by name (17.1).
-3. **Atomic use** gives `TAtomic`. No atomic type exists (17.2).
+3. **Atomic use** gives `TAtomic`: an `AtomicBuf` (17.2, 17.7).
 4. **Escape and capture** promote to the heap. Captures are always
    copied into an environment block, which region inference places in
    the frame, the caller's result region or the heap, as far as the
    closure escapes (Chapter 16).
-5. **Actor send** requires Send. Met syntactically for `let-mut`
-   variables and `Secret`s (17.7, 17.8).
+5. **Actor send** requires Send. Met by `let-mut` and by type: nothing
+   that crosses may hold a mutable handle, and `Secret`s are refused
+   (17.7, 17.8).
 6. **FFI** requires FFI_Pinnable and Pin. Argument types are fixed by
    the `extern` declaration; the Pin region is required only for
    `Secret`s (17.7).
@@ -362,7 +380,8 @@ What the specification infers, and how each rule is met today:
 |------|------------|
 | `E_MUT_CONFLICT` | `set!` on a binding that is not `let-mut`, or on a struct field (`mutability_check.zyl`); a byte buffer written through two names (`linearity.zyl`) |
 | `E_MOVE_VALUE` | a resource (file descriptor, `StringBuffer`, a type with a `Drop` impl) used after its release (`linearity.zyl`; Chapter 5, §5.3) |
-| `E_CAPABILITY_LEAK` | a `let-mut` variable referenced by a `spawn` closure or a `chan-send` value |
+| `E_CAPABILITY_LEAK` | a `let-mut` variable referenced by a `spawn` closure or a `chan-send` value; a capture, sent value or actor-reached `def` that is or holds a `ByteBuf`, `Ref` or other mutable handle (17.7) |
+| `E_ATOMIC_SHARED` | an `AtomicBuf` frozen while an actor holding it is not yet joined by its spawner |
 | `E_INVALID_CAPABILITY` | a `fn` written directly as an `ffi-call` argument |
 | `E_CT_VIOLATION`, `E_SECRET_DEBUG`, `E_SECRET_ESCAPE`, `E_FFI_PIN_REQUIRED` | Secret misuse (17.8) |
 | `E_ZEROIZE_MISSING` | warning: a Secret consumed without `zeroize` |
@@ -384,7 +403,7 @@ and the `E_ZEROIZE_MISSING` warning.
 | `&mut T` | `TMut<T>`, inferred | a `let-mut` binding + `set!`, checked by name |
 | `Box<T>` | `TBox<T>` | no source form; ADT fields are pointers to their blocks |
 | `Pin<&mut T>` | `TPin<T>` via `ffi-pin` | `ffi-pin` copies into the pin arena |
-| `Arc<Mutex<T>>` | `TAtomic<T>` | atomic operations on addresses and byte buffers |
+| `Arc<Mutex<T>>` | `TAtomic<T>` | an actor owning the state, or an `AtomicBuf` of commuting counters read after the join |
 | borrow checker | region + capability inference | syntactic checks (17.1, 17.7) |
 | lifetime parameters | region variables, inferred | none written; region inference gives each value its call's region, its caller's result region or the heap, and heap values live until exit |
 

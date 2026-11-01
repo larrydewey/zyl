@@ -39,6 +39,7 @@
 (use compiler/closure_inline)
 (use compiler/type_annotate)
 (use compiler/numeric_check)
+(use compiler/share_check)
 (use compiler/derive)
 (use compiler/region_inference)
 (use compiler/optimization)
@@ -236,6 +237,9 @@
         ; §20.1/§20.3: needs the types, so it follows inference and precedes lowering.
         (dbg-log "numeric-check\n")
         (nc-check-program ann)
+        ; Spec 7.4/15: what crosses an actor boundary, by its type.
+        (dbg-log "share-check\n")
+        (sh-check-program ann)
         ann))))
 
 ; Everything after type inference up to code generation. Lowering and region

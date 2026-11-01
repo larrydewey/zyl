@@ -66,7 +66,8 @@
   (or (str-eq s "zyl_actor_join_unjoined")
   (or (str-eq s "zyl_chan_spawn_moves")
   (or (str-eq s "zyl_repl_global_set")
-      (ffi-raw-addr-p s)))))))))))))))))))))))))))))))))))))))))
+  (or (ffi-abuf-entry-p s)
+      (ffi-raw-addr-p s))))))))))))))))))))))))))))))))))))))))))
 
 ; Entries that take an address, free memory, fill a buffer by length, or hand out an Arena.
 (defn ffi-raw-addr-p (s)
@@ -78,6 +79,10 @@
   (or (str-eq s "zyl_heap_swap")
   (or (str-eq s "zyl_heap_block_p")
       (str-eq s "zyl_ffi_lookup")))))))))
+
+; AtomicBuf entries: the stdlib's atomic/atomic spells them (plain, `!`, `?`), so programs go through it.
+(defn ffi-abuf-entry-p (s)
+  (and (> (str-length s) 9) (str-eq (str-substring s 0 9) "zyl_abuf_")))
 
 (defn ffi-atomic-entry-p (s)
   (or (str-eq s "zyl_atomic_add")
@@ -209,6 +214,14 @@
   (Cons (FSig "zyl_words_alloc_r" "Int -> Words")
   (Cons (FSig "zyl_argc" "-> Int")
   (Cons (FSig "zyl_arg_str" "Int -> String")
+  (Cons (FSig "zyl_abuf_new" "Int -> AtomicBuf")
+  (Cons (FSig "zyl_abuf_slots" "AtomicBuf -> Int")
+  (Cons (FSig "zyl_abuf_view_slots" "AtomicView -> Int")
+  (Cons (FSig "zyl_abuf_update" "AtomicBuf Int Int Int -> Unit")
+  (Cons (FSig "zyl_abuf_held" "AtomicBuf -> Bool")
+  (Cons (FSig "zyl_abuf_freeze" "AtomicBuf -> AtomicView")
+  (Cons (FSig "zyl_abuf_get" "AtomicView Int -> Int")
+  (Cons (FSig "zyl_abuf_get_ok" "AtomicView Int -> Bool")
   (Cons (FSig "zyl_atomic_add" "Ptr Int -> Int")
   (Cons (FSig "zyl_atomic_cas" "Ptr Int Int -> Bool")
   (Cons (FSig "zyl_atomic_fetch_add" "Ptr Int -> Int")
@@ -422,5 +435,5 @@
   (Cons (FSig "zyl_bytebuf_read_file" "String -> ByteBuf")
   (Cons (FSig "zyl_bytebuf_write_exec" "String ByteBuf Int -> Int")
   (Cons (FSig "zyl_bytebuf_blake3_hex" "Arena ByteBuf Int Int -> String")
-  Nil))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+  Nil))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 )

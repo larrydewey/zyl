@@ -166,6 +166,17 @@ The same holds for every width and signedness. The `?` forms evaluate
 their operands once, left to right. The bound is a ByteBuf's capacity or
 a ByteSlice's length, and a negative offset is outside.
 
+An AtomicBuf (`atomic/atomic`, §7.4) is slot-indexed and follows the same
+rule: a plain `atomicbuf-add` .. `atomicbuf-xor` needs a let-bound
+`(atomicbuf-new N)` with literal `N` and a literal slot `0 <= k < N`, and
+a plain `atomicbuf-new` a literal count; the `!` forms stop with
+`E_INDEX_OUT_OF_BOUNDS`, the `?` forms give `None`. A frozen view is read
+only by `atomicview-get!` (out of range `E_INDEX_OUT_OF_BOUNDS`, two
+update kinds `E_MUT_CONFLICT`, a sum outside Int `E_OVERFLOW`) or
+`atomicview-get?` (`None` for each). The address atomics
+(`atomic-load!` .. `atomic-cas!`, ffi) stop with `E_MISALIGNED_ACCESS`
+off an 8-byte boundary; their `?` forms give `None`.
+
 ---
 
 ## Implementation Requirements
@@ -253,8 +264,14 @@ Not normative.
   are rewritten in `desugar.zyl` around a probe the runtime answers.
   Floats are IEEE-754 binary64 in SSE registers.
 - **Actors** are scheduled by the operating system
-  (`spec/08-actors-and-concurrency.md`), so a program whose output depends
-  on the interleaving of two actors is not deterministic.
+  (`spec/08-actors-and-concurrency.md`); output stays schedule-free
+  because actors share no mutable state (§7.4, checked by type in
+  `share_check.zyl`): channels are Kahn FIFOs with one owner per end, and
+  the one shared buffer, an AtomicBuf, takes only commuting updates while
+  held and is read after a freeze that succeeds only once every holder is
+  joined by its spawner, so its contents and the freeze's outcome are the
+  same under every schedule. `ffi`, which can write any address, and the
+  `io` world are outside this guarantee.
 - **Specialization names** (§17): an instance of a trait-generic function
   is named `f~T1,T2`, its argument types in argument order
   (`ta-canon-list` in `type_annotate.zyl`), compound types written in

@@ -1,0 +1,10 @@
+; Compile-fail: an actor spawned with its handle thrown away holds the buffer for good.
+; expect-error: E_ATOMIC_SHARED
+(capabilities actor)
+(use atomic/atomic)
+
+(defn main ()
+  (let b (atomicbuf-new 1)
+    (begin
+      (spawn (fn () (atomicbuf-add b 0 1)))
+      (atomicview-get! (atomicbuf-freeze! b) 0))))

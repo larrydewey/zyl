@@ -32,3 +32,6 @@ tests/packages-build/*/app/*.buildinfo
 tests/packages-build/native/app/native
 vendor/
 zyl.lock
+
+# Valgrind core dumps (verify/memcheck.sh runs its crashing control in its scratch dir)
+vgcore.*

@@ -495,8 +495,10 @@ resolved meaning — keyword, function, type, variant — rather than by
 regular expression.
 
 **Send**: The property a value needs to cross an actor boundary, by a
-spawn capture or `chan-send` — immutable (`let`) or atomic bindings. A
-`let-mut` binding of the enclosing scope is `E_CAPABILITY_LEAK`.
+spawn capture or `chan-send`: it holds nothing another actor could
+change. A `let-mut` binding of the enclosing scope, or a value that is or
+holds a `ByteBuf`, `Ref` or other handle written in place, is
+`E_CAPABILITY_LEAK`; an `AtomicBuf` crosses as a direct capture.
 
 **Signature (package)**: The publisher's Ed25519 signature over a
 package archive's BLAKE3 hash. Verification is mandatory and has no

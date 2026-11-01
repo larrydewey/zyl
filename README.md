@@ -267,8 +267,9 @@ does not take) → linking (the Zyl assembler and static ELF linker, or
 - **Capability types** — no in-place mutation: every `let` binding is
   immutable and may be shared, a `let-mut` binding is the only assignable
   one and `set!` rebinds it, and `set!` on anything else is
-  `E_MUT_CONFLICT`; direct field mutation is rejected, and a `let-mut`
-  crossing into an actor is `E_CAPABILITY_LEAK`
+  `E_MUT_CONFLICT`; direct field mutation is rejected, and a `let-mut`,
+  `ByteBuf`, `Ref` or other in-place handle crossing into an actor is
+  `E_CAPABILITY_LEAK`
 - **Sound Hindley-Milner type checking** — every type error is reported, then the compile fails; conditions are Bool, arithmetic is Int or Float with no conversion, there is no cast form; traits resolve statically with per-type specialization; `derive` accepts `Show`, `Debug`, `Eq`, `Ord`, `Hash` and `Clone`
 - **Deterministic compilation** — same source + same inputs → identical binaries; the compiler reproduces itself byte for byte
 - **ICNF IR** — custom intermediate representation between the AST and codegen (spec §18 describes it as SSA with region annotations; the implementation is a tree IR, not SSA, whose region annotations live in a side table and are printed, so the ICNF hash covers them)
@@ -285,7 +286,7 @@ does not take) → linking (the Zyl assembler and static ELF linker, or
 - **List literals and views** — `(list ...)`, `[...]` and quoted constant data `'(...)`; zero-copy views `text/view` (`StrView`, `Cursor`) and `collections/slice` (`Slice`)
 - **Try/catch** — `(try expr (catch e handler))`, backed by the runtime's panic frames (`runtime/rt/panic.zyl`); the saved frame pointers are mangled with a per-process guard, so a stray heap write cannot aim the unwind
 - **I/O** — `read-line`, file open/read/write/close
-- **Bitwise, byte and atomic operations** — `bit-and`/`bit-or`/`bit-xor`/`bit-not`, `shl`/`shr`/`ashr` (each one instruction, with defined out-of-range shift counts), byte and byte-buffer primitives with explicit endianness, and seq-cst atomics (`atomic/atomic`)
+- **Bitwise, byte and atomic operations** — `bit-and`/`bit-or`/`bit-xor`/`bit-not`, `shl`/`shr`/`ashr` (each one instruction, with defined out-of-range shift counts), byte and byte-buffer primitives with explicit endianness, and `AtomicBuf` (`atomic/atomic`), the one buffer actors share: commuting slot updates while they run, read after they are joined
 - **Deterministic intrinsics instead of inline assembly** — `bit-popcount`, `bit-clz`, `bit-ctz`, `bit-bswap`, `bit-rotl`, `bit-rotr`, `mul-hi`, `mul-hi-u`, `crc32c` and 32-bit forms, whose results never depend on the CPU; `simd/simd` lane vectors (`I64x2`, `I32x4`, `U8x16`) in portable SWAR
 - **The `Secret` capability** — a compile-time constant-time discipline: a secret may not steer a branch, index memory, divide, print, escape to an actor, or cross FFI unpinned
 - **Cryptography library** — `stdlib/math`, ~7,600 lines of pure Zyl: SHA-2/3, BLAKE2b/3, HMAC, ChaCha20-Poly1305, AES-GCM, X25519, Ed25519, ECDSA, RSA-PSS/OAEP, HKDF, PBKDF2, Argon2id, big-number arithmetic, system and seeded random numbers

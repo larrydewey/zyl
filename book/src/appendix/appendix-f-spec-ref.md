@@ -241,7 +241,7 @@ runtime event.
 | `E_REGION_EXHAUSTED` | A `with-region` region exceeded its size or limit (runtime) |
 | `E_MACRO_NON_TERMINATION` | Macro expansion loop |
 | `E_MATCH_NONEXHAUSTIVE` | Missing match case |
-| `E_CAPABILITY_LEAK` | TMut leaked |
+| `E_CAPABILITY_LEAK` | mutable state (let-mut, ByteBuf, Ref, ...) crosses an actor boundary |
 | `E_TRAIT_NOT_FOUND` | Missing impl |
 | `E_DUPLICATE_IMPL` | Conflicting impls |
 | `E_MACRO_ILLEGAL_ACCESS` | Macro accessed a runtime value |
@@ -255,6 +255,8 @@ runtime event.
 | `E_CHANNEL_CAPACITY` | `(chan n)` outside 1..16777216 (runtime) |
 | `E_DEADLOCK` | Every live actor blocked on a channel or a join (runtime) |
 | `E_ACTOR_LIMIT` | More than 1024 actors spawned (runtime) |
+| `E_ATOMIC_SHARED` | An AtomicBuf frozen while an actor holding it is not yet joined by its spawner |
+| `E_MISALIGNED_ACCESS` | An address atomic at an address not a multiple of 8 (runtime) |
 | `E_TRAIT_NOT_DERIVABLE` | Cannot derive trait |
 | `E_RESERVED_KEYWORD` | Reserved keyword used as an identifier |
 | `E_SHADOWS_BUILTIN` | Local binding named like a built-in |
@@ -293,7 +295,7 @@ something raises.
 | `collections/slice` | `Slice`, `slice-vec!`, `slice-of-vec`, `slice-sub!`, `slice-get!`, `slice-len`, `slice-fold`, `slice-to-vec` |
 | `text/view` | `StrView`, `view-of`, `view-slice!`, `view-sub!`, `view-split`, `view-trim`, `view-parse-int`, `view-to-string`; `Cursor`, `cursor-of`, `cursor-take-while`, `cursor-expect` |
 | `actor/actor` | `actor-spawn`, `actor-wait`, `actor-is-alive` |
-| `atomic/atomic` | `atomic-load`, `atomic-store`, `atomic-add`, `atomic-cas`, `atomic-fetch-add` |
+| `atomic/atomic` | `AtomicBuf` (`atomicbuf-new`, `atomicbuf-add` .. `-xor`, `atomicbuf-freeze!`, `atomicview-get!`); `atomic-load!` .. `atomic-fetch-add!` on addresses (ffi) |
 | `ffi/ffi` | `ffi-pin-value`, `ffi-unpin-value`, `ffi-safe-call`, `ffi-pin-call-unpin` |
 | `io/io` | `io-file-open-read`, `io-file-write`, `io-read-line`, `make-string-buffer`, `OutputStream` |
 | `allocator/allocator` | `alloc-cstr`, `alloc-read-int`, `alloc-write-int`, `str-eq`, `buf-append`, `panic` (the arena entries and `alloc-malloc`/`alloc-free` are compiler-and-runtime-only) |

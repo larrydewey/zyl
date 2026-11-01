@@ -95,6 +95,8 @@
   (Cons (EC "E_CHANNEL_CAPACITY" 10 1 "runtime: a channel buffer holds 1 to 16777216 values")
   (Cons (EC "E_DEADLOCK" 10 1 "runtime: every live actor is blocked on a channel or a join")
   (Cons (EC "E_ACTOR_LIMIT" 10 1 "runtime: at most 1024 actors per program")
+  (Cons (EC "E_ATOMIC_SHARED" 10 1 "runtime: an AtomicBuf frozen while an actor holding it is not yet joined by the actor that spawned it")
+  (Cons (EC "E_MISALIGNED_ACCESS" 10 1 "runtime: an atomic access at an address that is not on an 8-byte boundary")
   (Cons (EC "E_NOT_CALLABLE" 10 1 "runtime: a value that is not a function was called (interpreter)")
   (Cons (EC "E_UNDEFINED_FUNCTION" 10 1 "runtime: a call to a function the program does not define (interpreter)")
   (Cons (EC "E_USE_AFTER_FREE" 10 1 "runtime: a string buffer used after it was destroyed")
@@ -109,7 +111,7 @@
   (Cons (EC "E_SECRET_ESCAPE" 13 1 "secret: Secret value escapes through M at S")
   (Cons (EC "E_SECRET_DEBUG" 13 1 "secret: Secret value reaches a debug/print sink at S")
   (Cons (EC "E_ZEROIZE_MISSING" 13 2 "secret: function F takes a Secret parameter but never zeroizes it")
-  (Cons (EC "E_CAPABILITY_LEAK" 13 1 "capability: TMut leaked across boundary at S")
+  (Cons (EC "E_CAPABILITY_LEAK" 13 1 "capability: mutable state (a let-mut, ByteBuf, Ref or other mutable handle) crosses an actor boundary at S")
   (Cons (EC "E_INVALID_CAPABILITY" 13 1 "type: invalid capability usage for F - M at S")
   (Cons (EC "E_MOVE_VALUE" 13 1 "ownership: X was already moved or released at S")
   (Cons (EC "E_MUT_CONFLICT" 13 1 "aliasing: mutable reference conflict at S")
@@ -169,7 +171,7 @@
   (Cons (EC "E_PKG_FEATURE_NESTED" 19 1 "package: feature-gate is valid at top level only")
   (Cons (EC "E_PKG_FEATURE_COLLISION" 19 1 "package: gated definition D collides with a base definition")
   (Cons (EC "E_PROV_ATTACH" 19 1 "build: the provenance trailer could not be attached: M")
-  Nil)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+  Nil)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 ; ---------------------------------------------------------------------------
 ; ACCESSORS
 ; ---------------------------------------------------------------------------

@@ -162,9 +162,10 @@ all.
 **The Stack region is enforced; the others are recorded.** A
 `(bytebuf Stack N)` is allocated, zero-initialized, in the function's
 frame region and released when the function returns. Returning it,
-storing it in another value, sending it, or passing it to code that may
-keep it is `E_REGION_ESCAPE` at compile time. Byte loads, stores,
-appends and atomics are known not to keep the buffer, so local use is
+storing it in another value, or passing it to code that may keep it is
+`E_REGION_ESCAPE` at compile time (sending any buffer to another actor is
+already `E_CAPABILITY_LEAK`, §32.8). Byte loads, stores and appends are
+known not to keep the buffer, so local use is
 fine. Every other region gets the same stable, zero-initialized heap
 allocation, so nothing is unsound, but the remaining rules are not
 checked yet:
@@ -254,39 +255,84 @@ It fails closed — no partial write — if the append would exceed the
 destination's fixed capacity, and it uses `memmove` rather than
 `memcpy` because the slice may alias the destination's own storage.
 
-## 32.8 Atomics and Alignment
+## 32.8 Sharing a Buffer Between Actors, and Alignment
+
+A `ByteBuf` belongs to one actor. A spawned closure that captures one,
+or a buffer sent over a channel, would let two actors write the same
+bytes in an order the scheduler picks, so it is `E_CAPABILITY_LEAK` at
+compile time; the same holds for a `Ref` and the other handles written
+in place, and for one held inside a struct, an `Option`, a list or
+another closure (spec §7.4).
+
+The one buffer actors may share is an `AtomicBuf`, from `atomic/atomic`.
+It is a row of slots, not bytes, and it has no conversion from or to a
+`ByteBuf`. A spawned closure captures it directly; while any actor holds
+it, the only operations are updates that commute and return nothing:
 
 ```lisp
-(bytebuf-atomic-load  buf offset)
-(bytebuf-atomic-store buf offset value)
-(bytebuf-atomic-add   buf offset value)
-(bytebuf-atomic-sub   buf offset value)
-(bytebuf-atomic-cas   buf offset expected desired)
-(bytebuf-atomic-fetch-add buf offset value)
-(bytebuf-atomic-max   buf offset value)
-(bytebuf-atomic-min   buf offset value)
+(atomicbuf-new 4)          ; four slots of 0
+(atomicbuf-add b i v)      ; slot i += v, kept in 128 bits
+(atomicbuf-max b i v)      ; slot i = max(slot i, v)
+(atomicbuf-min b i v)
+(atomicbuf-and b i v)      ; bitwise
+(atomicbuf-or  b i v)
+(atomicbuf-xor b i v)
 ```
 
-These operate on real memory at real offsets, sequentially
-consistent, and are the building blocks for a shared counter or a
-lock-free structure. Each works on an 8-byte word: the offset must be a
-multiple of 8 and the word must fit inside the capacity, or the
-operation does nothing and returns 0 (an unaligned atomic is not
-lock-free on x86_64, so it is refused rather than allowed to tear).
+There is no load, store, compare-and-swap or fetch-and-add: any of
+those would let a value depend on which actor got there first. Since
+every update commutes, the buffer ends the same under every schedule.
 
-`bytebuf-atomic-add`, `-sub`, `-max` and `-min` return the *new* value;
-`bytebuf-atomic-fetch-add` returns the *old* one; `bytebuf-atomic-cas`
-returns 1 if it swapped and 0 if not; `bytebuf-atomic-store` returns 1.
+You read it after joining, through a freeze. `atomicbuf-freeze!` is a
+move (using the buffer again is `E_MOVE_VALUE`) that hands back a
+read-only `AtomicView`, and it succeeds only when every actor that
+captured the buffer has been joined by the actor that spawned it;
+otherwise it stops with `E_ATOMIC_SHARED`, never a partial total
+(`atomicbuf-freeze?` gives `None`, and `atomicbuf-held` asks first):
 
 ```lisp
-(bytebuf-atomic-store buf 8 41)      ; 1
-(bytebuf-atomic-add buf 8 1)         ; 42
-(bytebuf-atomic-cas buf 8 42 7)      ; 1, and the word is now 7
-(bytebuf-atomic-load buf 3)          ; 0 -- offset not 8-aligned
+(capabilities actor)
+(use actor/actor)
+(use atomic/atomic)
+
+(defn count-up ((b AtomicBuf) (n Int))
+  (if (= n 0) unit
+    (begin (atomicbuf-add! b 0 1) (atomicbuf-max! b 1 n) (count-up b (- n 1)))))
+
+(defn main ()
+  (let b (atomicbuf-new 2)
+    (let a1 (spawn (fn () (count-up b 1000)))
+      (let a2 (spawn (fn () (count-up b 2000)))
+        (begin
+          (actor-wait a1)
+          (actor-wait a2)
+          (let v (atomicbuf-freeze! b)
+            (begin
+              (print (atomicview-get! v 0))   ; 3000
+              (print (atomicview-get! v 1))   ; 2000
+              0)))))))
 ```
 
-A compare-and-swap outside the Pin region — on memory that may move
-underneath it, the ABA hazard — is not checked, and has no error code.
+Each operation is spelled like a byte access. The plain form compiles
+only where the compiler sees the slot fits: a literal slot into a
+buffer a `let` bound to `(atomicbuf-new N)` with a literal `N`
+(`(atomicbuf-add b 0 1)` inside `main` above would do). `count-up`
+gets the buffer as a parameter, where nothing is proven, so it writes
+`atomicbuf-add!`, which stops with `E_INDEX_OUT_OF_BOUNDS`
+outside the buffer, or `atomicbuf-add?`, which gives `None`. A view is
+read with `atomicview-get!` or `atomicview-get?`. A slot's sum is kept
+in 128 bits, so adds never overflow while actors run; a final sum
+outside `Int` is `E_OVERFLOW` at the read, and a slot updated with two
+different kinds of operation (an add and a max, say) is
+`E_MUT_CONFLICT` at the read, because its value would depend on their
+order. Both depend only on the updates made, not on the schedule.
+
+`atomic/atomic` also has sequentially consistent atomics on a raw
+address (`atomic-load!`, `atomic-store!`, `atomic-add!`, `atomic-cas!`
+and the rest), for memory shared with C. They take an `Int` address, so
+they need the `ffi` capability; an address that is not a multiple of 8
+stops with `E_MISALIGNED_ACCESS` (`atomic-load?` and the other `?`
+forms give `None`).
 
 `(align-check ptr alignment)` tests a pointer's alignment before a wide
 access. It *returns* 1 when `ptr` is a multiple of `alignment` and 0
@@ -304,11 +350,12 @@ at different stages:
 | `byteslice`, `byteslice-sub`, `bytebuf-append` | Working |
 | `load-u8`, `load-i8`, `store-u8`, `store-i8` | Working; plain only where proven in range, else `!` (`E_INDEX_OUT_OF_BOUNDS`) or `?` (`None`) |
 | 16-, 32- and 64-bit loads and stores | Working, little- or big-endian |
-| The atomic family | Working, on 8-aligned offsets |
+| `AtomicBuf` (shared between actors) | Working: commuting updates while held, read after a freeze (spec §7.4) |
+| Address atomics (`atomic-load!` ..) | Working, `ffi`; `E_MISALIGNED_ACCESS` off an 8-byte boundary |
 | `align-check` | Working, as a 1/0 test |
 | Stack escape (`E_REGION_ESCAPE`) | Enforced |
 | One writer per buffer (`E_MUT_CONFLICT` when two names write to one buffer or its slices) | Enforced (Chapter 17, §17.1) |
-| Other region rules (Pin-only `bytebuf-ptr`, immutable Global buffers, Pin-only CAS) | **Not enforced** |
+| Other region rules (Pin-only `bytebuf-ptr`, immutable Global buffers) | **Not enforced** |
 
 Two further caveats:
 
@@ -320,8 +367,8 @@ Two further caveats:
   `ByteSlice`, usable as annotations: `(defn fill ((b ByteBuf)) ...)`.
   Every offset, length and stored value is an `Int`, and each operation
   takes the handle its runtime entry accepts: `byteslice`,
-  `bytebuf-append`, `bytebuf-len`, `bytebuf-cap`, `bytebuf-ptr` and the
-  atomics a `ByteBuf`, `byteslice-sub` and `bytebuf-append`'s second
+  `bytebuf-append`, `bytebuf-len`, `bytebuf-cap` and `bytebuf-ptr` a
+  `ByteBuf`, `byteslice-sub` and `bytebuf-append`'s second
   operand a `ByteSlice`, a load or store either. Anything else, a slice
   passed to `bytebuf-len` included, is `E_TYPE_MISMATCH`. A load or
   store whose handle's type nothing in its function group determines is
@@ -344,3 +391,6 @@ Two further caveats:
   `wrapping+`, since `+ - *` are checked by default.
 - Loads and stores come in 8, 16, 32 and 64 bits, signed and unsigned,
   with an explicit byte order; buffers are typed `ByteBuf`/`ByteSlice`.
+- A buffer stays in one actor. To accumulate across actors, capture an
+  `AtomicBuf`: commuting updates while actors run, read through
+  `atomicbuf-freeze!` once they are joined.

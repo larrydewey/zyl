@@ -1,0 +1,146 @@
+; AtomicBuf: slots of order-independent updates shared across actors; AtomicView: its frozen copy, readable.
+(use base)
+(use alloc)
+
+; Header {magic, slots, holders, 0}; then per slot {lo, hi, kinds}, 24 bytes; one block, zeroed.
+; Every update kind keeps its identity at zero: max stores v^SIGN, min ~(v^SIGN), and ~v (or'd in).
+
+(defmacro ab-ld (a) (ffi-call "%load64" a 1))
+(defmacro ab-st (a v) (ffi-call "%store64" a v 1))
+
+(defn ab-magic-buf () 6510318584122966033)
+(defn ab-magic-view () 6510318584122966034)
+(defn ab-max-slots () 16777216)
+(defn ab-sign () (- -9223372036854775807 1))
+
+; The handle if a live block of this magic, else 0.
+(defn ab-of (h magic)
+  (if (not (zyl_heap_block_p h)) 0 (if (= (ab-ld h) magic) h 0)))
+
+(defn ab-slots-of (h) (ab-ld (+ h 8)))
+(defn ab-slot (h i) (+ (+ h 32) (* i 24)))
+(defn ab-in (h i) (and (>= i 0) (< i (ab-slots-of h))))
+
+(defn ab-oob ((i Int) (n Int))
+  (ffi-call "zyl_panic"
+    (str-concat "E_INDEX_OUT_OF_BOUNDS: slot " (str-concat (ffi-call "zyl_int_text" i 1)
+      (str-concat " is outside an atomic buffer of " (str-concat (ffi-call "zyl_int_text" n 1)
+        " slots\n  = help: use the `?` form (atomicbuf-add?, atomicview-get?, ...) to get None instead, or check the slot against atomicbuf-slots first"))))
+    1))
+
+(defn ab-bad-handle () (ffi-call "zyl_panic" "E_INDEX_OUT_OF_BOUNDS: not a live atomic buffer" 1))
+
+; A new buffer of n zeroed slots; n outside 0..2^24 stops the program.
+(defn zyl_abuf_new ((n Int))
+  (if (or (< n 0) (> n (ab-max-slots)))
+    (ffi-call "zyl_panic"
+      (str-concat "E_INDEX_OUT_OF_BOUNDS: an atomic buffer of " (str-concat (ffi-call "zyl_int_text" n 1)
+        " slots was asked for; the count must be 0 to 16777216\n  = help: use atomicbuf-new? to get None for a bad count"))
+      1)
+    (let size (+ 32 (* n 24))
+      (let h (zyl_heap_alloc size)
+        (if (= h 0) (ffi-call "zyl_panic" "E_OUT_OF_MEMORY: no memory for an atomic buffer" 1)
+          (let _ (ffi-call "%fill" h 0 size 1)
+            (let _ (ab-st (+ h 8) n) (let _ (ab-st h (ab-magic-buf)) h))))))))
+
+(defn zyl_abuf_slots (b) (let h (ab-of b (ab-magic-buf)) (if (= h 0) 0 (ab-slots-of h))))
+(defn zyl_abuf_view_slots (v) (let h (ab-of v (ab-magic-view)) (if (= h 0) 0 (ab-slots-of h))))
+
+; --- order-independent updates (seq-cst) ---
+
+; Sets bit in the word at a (an atomic or).
+(defn ab-or-word (a bits)
+  (let old (ab-ld a)
+    (if (= (bit-and old bits) bits) 0
+      (if (= (ffi-call "%cas" a old (bit-or old bits) 1) old) 0 (ab-or-word a bits)))))
+
+; CAS loop storing f(old, x) for op 2 max, 3 min (unsigned max of the encodings), 5 or, 6 xor.
+(defn ab-cas-op (a (op Int) x)
+  (let old (ab-ld a)
+    (let nw (if (= op 6) (bit-xor old x)
+              (if (= op 5) (bit-or old x)
+                (if (< (bit-xor old (ab-sign)) (bit-xor x (ab-sign))) x old)))
+      (if (= nw old) 0
+        (if (= (ffi-call "%cas" a old nw 1) old) 0 (ab-cas-op a op x))))))
+
+; lo by xadd, then its carry and v's sign extension into hi: hi:lo is the exact 128-bit sum once every add is done.
+(defn ab-add (s v)
+  (let old (ffi-call "%fetch-add" s v 1)
+    (let nlo (rt-wadd old v)
+      (let carry (if (< (bit-xor nlo (ab-sign)) (bit-xor old (ab-sign))) 1 0)
+        (let d (rt-wadd (if (< v 0) -1 0) carry)
+          (if (= d 0) 0 (let _ (ffi-call "%fetch-add" (+ s 8) d 1) 0)))))))
+
+; op: 1 add, 2 max, 3 min, 4 and, 5 or, 6 xor; out of range stops the program.
+(defn zyl_abuf_update (b (i Int) (v Int) (op Int))
+  (let h (ab-of b (ab-magic-buf))
+    (if (or (= h 0) (or (< op 1) (> op 6))) (ab-bad-handle)
+      (if (not (ab-in h i)) (ab-oob i (ab-slots-of h))
+        (let s (ab-slot h i)
+          (let _ (if (= op 1) (ab-add s v)
+                   (if (= op 2) (ab-cas-op s 2 (bit-xor v (ab-sign)))
+                     (if (= op 3) (ab-cas-op s 2 (bit-not (bit-xor v (ab-sign))))
+                       (if (= op 4) (ab-cas-op s 5 (bit-not v))
+                         (ab-cas-op s op v)))))
+            (let _ (ab-or-word (+ s 16) (shl 1 op)) 0)))))))
+
+; --- holders: actors whose spawned closure captured the buffer, until their spawner joins them ---
+
+(defn ab-p (w) (not (= (ab-of w (ab-magic-buf)) 0)))
+(defn ab-hold (b) (let _ (ffi-call "%fetch-add" (+ b 16) 1 1) 0))
+(defn ab-release (b) (let _ (ffi-call "%fetch-add" (+ b 16) -1 1) 0))
+(defn zyl_abuf_held (b) (let h (ab-of b (ab-magic-buf)) (if (= h 0) false (> (ab-ld (+ h 16)) 0))))
+
+; The frozen copy; a live holder stops the program (E_ATOMIC_SHARED), never a racy read.
+(defn zyl_abuf_freeze (b)
+  (let h (ab-of b (ab-magic-buf))
+    (if (= h 0) (ab-bad-handle)
+      (if (> (ab-ld (+ h 16)) 0)
+        (ffi-call "zyl_panic"
+          (str-concat "E_ATOMIC_SHARED: the atomic buffer is still held by " (str-concat (ffi-call "zyl_int_text" (ab-ld (+ h 16)) 1)
+            " actor(s) not yet joined by the actor that spawned them\n  = help: actor-wait every actor whose closure captured the buffer, in the actor that spawned it, before freezing; atomicbuf-freeze? gives None instead"))
+          1)
+        (let size (+ 32 (* (ab-slots-of h) 24))
+          (let v (zyl_heap_alloc size)
+            (if (= v 0) (ffi-call "zyl_panic" "E_OUT_OF_MEMORY: no memory for an atomic view" 1)
+              (let _ (ab-copy v h 8 size)
+                (let _ (ab-st v (ab-magic-view)) v)))))))))
+
+(defn ab-copy (d s (i Int) (n Int))
+  (if (>= i n) 0 (let _ (ab-st (+ d i) (ab-ld (+ s i))) (ab-copy d s (+ i 8) n))))
+
+; --- reading a frozen view ---
+
+; 0 the value fits, 1 mixed kinds, 2 a sum outside Int.
+(defn ab-state (s)
+  (let k (ab-ld (+ s 16))
+    (if (not (= (bit-and k (- k 1)) 0)) 1
+      (if (and (= k 2) (not (= (ab-ld (+ s 8)) (if (< (ab-ld s) 0) -1 0)))) 2 0))))
+
+(defn ab-value (s)
+  (let k (ab-ld (+ s 16)) (let lo (ab-ld s)
+    (if (= k 4) (bit-xor lo (ab-sign))
+      (if (= k 8) (bit-xor (bit-not lo) (ab-sign))
+        (if (= k 16) (bit-not lo) lo))))))
+
+(defn zyl_abuf_get_ok (v (i Int))
+  (let h (ab-of v (ab-magic-view))
+    (if (= h 0) false (if (not (ab-in h i)) false (= (ab-state (ab-slot h i)) 0)))))
+
+(defn zyl_abuf_get (v (i Int))
+  (let h (ab-of v (ab-magic-view))
+    (if (= h 0) (ab-bad-handle)
+      (if (not (ab-in h i)) (ab-oob i (ab-slots-of h))
+        (let s (ab-slot h i)
+          (let st (ab-state s)
+            (if (= st 1)
+              (ffi-call "zyl_panic"
+                (str-concat "E_MUT_CONFLICT: slot " (str-concat (ffi-call "zyl_int_text" i 1)
+                  " was updated with more than one kind of operation (add, min, max, and, or, xor), so its value would depend on their order\n  = help: give each kind of update its own slot"))
+                1)
+              (if (= st 2)
+                (ffi-call "zyl_panic"
+                  (str-concat "error[E_OVERFLOW]: the sum in atomic slot " (str-concat (ffi-call "zyl_int_text" i 1)
+                    " does not fit in an Int\n  = help: atomicview-get? gives None instead"))
+                  1)
+                (ab-value s)))))))))

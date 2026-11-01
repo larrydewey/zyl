@@ -830,14 +830,6 @@
     (EStoreByte _ _ _ _ (ef-leaf e 8 "store-*" (expr-children e) ps acc))
     (EStoreByteSigned _ _ _ _ (ef-leaf e 8 "store-*" (expr-children e) ps acc))
     (EByteBufAppend _ _ (ef-leaf e 8 "bytebuf-append" (expr-children e) ps acc))
-    (EAtomicLoad _ _ (ef-leaf e 8 "bytebuf-atomic-load" (expr-children e) ps acc))
-    (EAtomicStore _ _ _ (ef-leaf e 8 "bytebuf-atomic-store" (expr-children e) ps acc))
-    (EAtomicAdd _ _ _ (ef-leaf e 8 "bytebuf-atomic-add" (expr-children e) ps acc))
-    (EAtomicSub _ _ _ (ef-leaf e 8 "bytebuf-atomic-sub" (expr-children e) ps acc))
-    (EAtomicCAS _ _ _ _ (ef-leaf e 8 "bytebuf-atomic-cas" (expr-children e) ps acc))
-    (EAtomicFetchAdd _ _ _ (ef-leaf e 8 "bytebuf-atomic-fetch-add" (expr-children e) ps acc))
-    (EAtomicMax _ _ _ (ef-leaf e 8 "bytebuf-atomic-max" (expr-children e) ps acc))
-    (EAtomicMin _ _ _ (ef-leaf e 8 "bytebuf-atomic-min" (expr-children e) ps acc))
     (_ (ef-scan-list (expr-children e) ps acc))))
 
 (defn ef-scan-arms (arms ps acc)
@@ -966,8 +958,7 @@
   (if (or (str-eq n "spawn") (or (str-eq n "chan-send") (str-eq n "chan-recv"))) 4
   (if (or (str-eq n "ffi-pin") (or (str-eq n "ffi-unpin") (str-eq n "bytebuf-ptr"))) 2
   (if (or (str-eq n "bytebuf-append") (or (str-eq n "alloc-free") (or (str-eq n "arena-destroy") (str-eq n "arena-reset")))) 8
-  (if (ef-prefix-p n "store-") 8
-  (if (ef-prefix-p n "bytebuf-atomic-") 8 0)))))))))))
+  (if (ef-prefix-p n "store-") 8 0))))))))))
 
 (defn ef-prefix-p ((s String) (p String))
   (and (>= (str-length s) (str-length p)) (str-eq (str-substring s 0 (str-length p)) p)))
@@ -988,6 +979,7 @@
    "zyl_arena_create" "zyl_arena_used" "zyl_arena_live" "zyl_arena_create_scoped"
    "zyl_vec_alloc" "zyl_vec_alloc_r" "zyl_words_alloc" "zyl_words_alloc_r" "zyl_argc" "zyl_arg_str"
    "zyl_blake3_hex" "zyl_bytebuf_blake3_hex" "zyl_bytebuf_new"
+   "zyl_abuf_new" "zyl_abuf_slots" "zyl_abuf_view_slots" "zyl_abuf_held" "zyl_abuf_freeze" "zyl_abuf_get" "zyl_abuf_get_ok"
    "zyl_cstr_byte_at" "zyl_cstr_cmp" "zyl_cstr_concat" "zyl_cstr_decode" "zyl_cstr_eq" "zyl_cstr_from_byte"
    "zyl_cstr_from_int" "zyl_cstr_key_matches" "zyl_cstr_len" "zyl_cstr_sanitize" "zyl_cstr_sub" "zyl_cstr_substr"
    "zyl_cstr_to_int" "zyl_cstr_to_int_base" "zyl_cstr_escapes_ok" "zyl_dirname_cstr"

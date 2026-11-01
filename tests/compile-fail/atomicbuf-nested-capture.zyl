@@ -1,0 +1,10 @@
+; Compile-fail: an AtomicBuf inside an Option crosses unseen by the runtime holder count.
+; expect-error: E_CAPABILITY_LEAK
+(capabilities actor)
+(use actor/actor)
+(use atomic/atomic)
+
+(defn main ()
+  (let o (Some (atomicbuf-new 1))
+    (let a (spawn (fn () (match o (Some b (atomicbuf-add! b 0 1)) (None unit))))
+      (begin (actor-wait a) 0))))

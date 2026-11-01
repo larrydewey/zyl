@@ -95,8 +95,8 @@ The operands are typed exactly. Every offset, length and stored value
 is an `Int`: `(load-u8 :le b "abc")` is `E_TYPE_MISMATCH` (it used to
 compile and use the string's address as the offset). Each operation
 takes the handle its runtime entry accepts: `byteslice`,
-`bytebuf-append`, `bytebuf-len`, `bytebuf-cap`, `bytebuf-ptr` and the
-atomics a `ByteBuf`; `byteslice-sub` and `bytebuf-append`'s second
+`bytebuf-append`, `bytebuf-len`, `bytebuf-cap` and `bytebuf-ptr` a
+`ByteBuf`; `byteslice-sub` and `bytebuf-append`'s second
 operand a `ByteSlice`; a load or store either. When nothing in its
 function group decides whether a load's or store's handle is a buffer
 or a slice, the handle is `E_CANNOT_INFER`, and an annotation settles
@@ -163,7 +163,7 @@ program meets; none of the five is a type it can write:
 |------------|------------|
 | `TCap<T>` | a `let` binding — immutable, any number of readers |
 | `TMut<T>` | a `let-mut` binding — the only assignable binding; `set!` rebinds it |
-| `TAtomic<T>` | atomic shared mutation (operations on addresses and byte buffers, not a type) |
+| `TAtomic<T>` | atomic shared mutation: the `AtomicBuf` type (`atomic/atomic`), commuting slot updates shared between actors |
 | `TBox<T>` | heap-managed allocation (no source construct produces it) |
 | `TPin<T>` | FFI-pinned memory (non-moving arena) |
 

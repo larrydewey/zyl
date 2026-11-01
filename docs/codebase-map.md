@@ -53,7 +53,7 @@ stdlib/actor/            actor-spawn, actor-wait, actor-is-alive (channels
                          are builtins)
 stdlib/ffi/              FFI pinning helpers
 stdlib/io/               File I/O, stdin/stdout helpers, OutputStream trait
-stdlib/atomic/           Atomic load/store/add/sub/max/min/cas
+stdlib/atomic/           AtomicBuf (shared commuting slots, freeze), address atomics (ffi)
 stdlib/testing/          The test harness (`test`, `run-tests`, asserts)
 stdlib/mlib/             deep.zyl: a small deep-call fixture module
 
@@ -130,6 +130,7 @@ in `docs/compiler-pipeline.md`.
 | `lift_impls.zyl` | Lifts impl bodies to top-level `Trait.method_Type` functions |
 | `closure_inline.zyl` | Retired closure-inlining pass, now an identity step (closures are real values) |
 | `type_annotate.zyl` | The type checker (spec §4.8–§4.10): HM inference with SCC generalization, every type error reported then fatal, static trait resolution, per-type instances of trait-generic functions (generic originals dropped), generated structural `T.==`, codegen kinds and scalar marks |
+| `share_check.zyl` | Spec §7.4 after type inference: `E_CAPABILITY_LEAK` for a capture, channel value, crossing argument or actor-reached def that is or holds a ByteBuf, Ref or other in-place handle; AtomicBuf only as a direct capture; `E_ATOMIC_SHARED` for a freeze that can never succeed |
 | `numeric_check.zyl` | The numeric policy (spec §20.1, §20.3): `E_PARTIAL_OPERATION` for an Int `/` or `%` whose divisor is not a nonzero literal, after type inference and before lowering |
 | `int_arith.zyl` | Int arithmetic under the checked/wrapping/saturating policies, for the compiler's own constant folding and the interpreter |
 | `ffi_sigs.zyl` | The type of every runtime function reached through `ffi-call` (`ffi-sig`), and the raw entries only the standard library may call (`ffi-raw-p`) |
@@ -250,7 +251,7 @@ has the design. By module:
 | `chan`, `actor`, `ffitimed`, `call`, `ffitab` | Kahn channels and the schedulers, actors, the timed FFI worker and foreign calls, closure calls and division magic numbers, the interpreter's symbol table |
 | `float`, `fmt`, `numeric` | Float arithmetic entries and exact float text and parsing; the integer arithmetic entries for wrapping/saturating `+ - *`, the overflow tests and the traps checked code jumps to |
 | `tables`, `ctab`, `variant`, `uf`, `interp` | Word arrays, maps and vectors the compiler uses, variant equality and fields, union-find, the interpreter's value headers and interned names |
-| `bytes`, `crc`, `crypto`, `blake3`, `mangle` | ByteBuf/ByteSlice and atomics, CRC-32C, AES-NI and entropy, BLAKE3, canonical-key mangling |
+| `bytes`, `abuf`, `crc`, `crypto`, `blake3`, `mangle` | ByteBuf/ByteSlice and address atomics, AtomicBuf slots and holders, CRC-32C, AES-NI and entropy, BLAKE3, canonical-key mangling |
 
 Ed25519 signing and verification are Zyl code in `stdlib/math`, bundled
 into the compiler.

@@ -260,7 +260,10 @@ ResultValue:
     polarity in the type system. Enforcement is on bindings:
       - `set!` on anything but a `let-mut` binding is E_MUT_CONFLICT
       - a use after a move is E_MOVE_VALUE
-      - a mutable capture crossing an actor boundary is E_CAPABILITY_LEAK
+      - mutable state crossing an actor boundary is E_CAPABILITY_LEAK:
+        a let-mut, ByteBuf, Ref or other in-place handle, captured, held
+        in captured data, sent on a channel or reached as a top-level
+        def (§7.4)
 
     Two type-level capabilities remain, both with obligations the compiler
     enforces rather than aliases it counts:
@@ -417,8 +420,8 @@ ResultValue:
                     (byteslice b off len) : ByteSlice for b : ByteBuf
                     (byteslice-sub s off len) : ByteSlice for s : ByteSlice
                     (bytebuf-append b s): b : ByteBuf, s : ByteSlice -> Int
-                    bytebuf-len, bytebuf-cap, bytebuf-ptr and the atomic
-                    operations take a ByteBuf.  A load or store
+                    bytebuf-len, bytebuf-cap and bytebuf-ptr take a
+                    ByteBuf.  A load or store
                     (load-u8 .. store-i64) takes a ByteBuf or a
                     ByteSlice; a handle whose type is still unknown when
                     its function group is typed is E_CANNOT_INFER
@@ -426,6 +429,15 @@ ResultValue:
                     A load-X! or store-X! has the plain form's type; a
                     load-X? is (Option Int) and a store-X? (Option Int),
                     (Some 1) when it stored (§20.3a).
+                    AtomicBuf (atomic/atomic, §7.4, §15) is a slot-indexed
+                    buffer, not a byte buffer, and has no conversion from
+                    or to a ByteBuf:
+                    (atomicbuf-new n) : AtomicBuf, n slots of 0
+                    (atomicbuf-add b i v) : Unit, and -max -min -and -or
+                    -xor; their ! forms : Unit, ? forms : (Option Unit)
+                    (atomicbuf-freeze! b) : AtomicView, a move of b;
+                    atomicbuf-freeze? : (Option AtomicView), also a move
+                    (atomicview-get! v i) : Int; atomicview-get? : (Option Int)
     file-open       path : String, mode a literal fopen mode -> Int
     file-read       (file-read fd n): fd, n : Int -> String
     file-write      (file-write fd s): fd : Int, s : String -> Int
@@ -582,8 +594,53 @@ ResultValue:
     (Closure Environment Expr CaptureMap)
 
 7.4 Closure and Concurrency:
-    Spawned closures must only capture Send-capable variables: immutable
-    (`let`) bindings and atomics.
+    A spawned closure may capture only values no other actor can change.
+    Checked after type inference (stdlib/compiler/share_check.zyl), on
+    every path a value takes into another actor: the captures of a
+    spawned closure (written inline, bound by `let`, or reached through a
+    parameter the callee spawns or captures), a value sent on a channel,
+    and every top-level def the actor's code can reach through calls.
+    Each such value is E_CAPABILITY_LEAK when its type is, or holds in a
+    struct, variant, tuple, Option, list or closure:
+        a let-mut binding (§7.2)
+        a ByteBuf or ByteSlice
+        a Ref, or another handle written in place: WVec, SMap, Attr,
+            Array, Words, StrBuf, UF, Arena, Pin
+    Persistent values (Vec, IntMap, Slice: no version ever changes) are
+    checked by their elements. A closure whose captures the compiler
+    cannot see (the result of a call, a field) fails closed, as does a
+    generic value it cannot trace to a parameter. A Ref, ByteBuf and
+    the other handles stay fully usable within one actor.
+
+    AtomicBuf is the one buffer that crosses, and only as a direct
+    capture of the spawned closure (not inside other data, not over a
+    channel, not as a top-level def). While any actor holds it, the only
+    operations are updates that return nothing and commute: add, max,
+    min, and, or, xor on a slot. There is no load, store,
+    compare-and-swap or fetch-and-add. The runtime counts the actor as a
+    holder from its spawn until the actor that spawned it joins it
+    (actor-wait); a join by any other actor releases nothing. The buffer
+    is read only through atomicbuf-freeze! (or ?), a move (E_MOVE_VALUE
+    on reuse) that copies the slots into an AtomicView once no holder
+    remains; with a holder it is E_ATOMIC_SHARED (None for ?), never a
+    partial value. A freeze of a buffer whose holder was spawned with its
+    handle discarded can never succeed and is E_ATOMIC_SHARED at compile
+    time.
+
+    Determinism. Each slot is a 128-bit sum (add) or a 64-bit value
+    (max, min, and, or, xor) plus the set of update kinds applied to it.
+    Every kind is commutative and associative, the 128-bit add never
+    overflows (2^64 updates are needed to leave its range), and a set
+    union is order-free, so after every update has happened the slot is
+    a function of the multiset of updates, not of their order. The
+    holder count changes only at spawns and at joins by the spawner,
+    both in program order of the actor doing them, and while any holder
+    is unjoined the count stays at least one; so whether a freeze
+    succeeds is the same under every schedule, and when it does, every
+    holder's updates happened before its join returned. A read of the
+    view is then a function of the program's inputs: a slot updated by
+    two kinds is E_MUT_CONFLICT, a sum outside Int is E_OVERFLOW (§20),
+    each at the read and each depending only on the updates made.
 
 7.5 Closure and Effects:
     Effect set is union of body effects.
@@ -822,8 +879,15 @@ Operations:
     actor-wait (join) and actor-is-alive (true until joined)
 
 Rules:
-    no shared mutable state
-    channel values must be Send-capable
+    no shared mutable state, checked by type (§7.4): a spawned closure's
+        captures, channel values and the top-level defs an actor reaches
+        hold no let-mut, ByteBuf, Ref or other in-place handle
+        (E_CAPABILITY_LEAK)
+    the one shared buffer is an AtomicBuf captured directly; while held
+        it takes only commuting, result-free updates, and it is read
+        through atomicbuf-freeze! after every actor holding it has been
+        joined by its spawner (E_ATOMIC_SHARED otherwise), so its final
+        contents and every read of them are schedule-free (§7.4)
     one writer and one reader per channel: each endpoint has one owner.
         The creator owns both ends. Ownership moves only when a spawned
         closure captures the endpoint directly, or when the endpoint is
@@ -1033,6 +1097,20 @@ Definition:
     and the same for every width and signedness. The ? forms evaluate
     their operands once, left to right. The bound is a ByteBuf's
     capacity or a ByteSlice's length; a negative offset is outside.
+
+    An AtomicBuf (§7.4) is slot-indexed. A plain update (atomicbuf-add
+    .. atomicbuf-xor) is total only where the buffer is a name an
+    enclosing `let` bound to (atomicbuf-new N) with a literal N and the
+    slot is an integer literal 0 <= k < N; a plain atomicbuf-new takes a
+    literal 0..16777216; a plain one passed as a value cannot be proven.
+    Anything else is E_PARTIAL_OPERATION. The ! forms stop on a slot (or
+    count) outside the buffer with E_INDEX_OUT_OF_BOUNDS, the ? forms
+    give None. atomicview-get! / ? read a frozen view (there is no plain
+    read): outside it E_INDEX_OUT_OF_BOUNDS, two update kinds on the slot
+    E_MUT_CONFLICT, a sum outside Int E_OVERFLOW, or None for each.
+    The address atomics of atomic/atomic (atomic-load! .. atomic-cas!,
+    which need the ffi capability) stop on an address that is not a
+    multiple of 8 with E_MISALIGNED_ACCESS; their ? forms give None.
 
 20.4 Determinism:
     Bit-level reproducibility guaranteed.
@@ -1292,7 +1370,8 @@ Core modules:
     option: Option (Some, None), is-some, unwrap, map
     result: Result (Ok, Err), is-ok, unwrap, map
     io: file-open, file-read, file-write, file-close
-    atomic: load, store, add
+    atomic: AtomicBuf (atomicbuf-new, add/max/min/and/or/xor, freeze,
+            AtomicView reads), and seq-cst address atomics under ffi
     actor: spawn, chan, chan-send, chan-recv, actor-wait
     ffi: ffi-call, ffi-pin, ffi-unpin
     testing: test-suite, test, assert-*, test-property, run-tests
@@ -1406,7 +1485,8 @@ binaries. Network access is confined to `zyl fetch`; builds are offline.
 Error format: (code, location, message)
 
 Errors:
-    E_MUT_CONFLICT              — aliasing violation
+    E_MUT_CONFLICT              — aliasing violation; an array slot written twice or out of order;
+                                  an AtomicBuf slot read after two kinds of update
     E_FFI_TIMEOUT               — FFI call exceeded timeout
     E_FFI_TIMEOUT_REQUIRED      — ffi-call lacks a positive integer literal timeout, and its extern has no :timeout
     E_FFI_SYMBOL_REQUIRED       — ffi-call symbol is not a string literal
@@ -1416,14 +1496,20 @@ Errors:
     E_REGION_ESCAPE             — region rule violation
     E_REGION_SPEC               — malformed with-region specification
     E_INVALID_ESCAPE            — invalid escape sequence in a string literal
-    E_INDEX_OUT_OF_BOUNDS       — index outside a word array, or a load-X!/store-X! outside its buffer
+    E_INDEX_OUT_OF_BOUNDS       — index outside a word array, or a load-X!/store-X! outside its buffer,
+                                  or an AtomicBuf slot (or slot count) outside its range under a ! form
+    E_MISALIGNED_ACCESS         — an address atomic (atomic-load! ..) at an address not a multiple of 8
     E_NESTED_PATTERN            — nested pattern in a constructor arm
     E_UNKNOWN_CONSTRUCTOR       — a match arm head spelled like a constructor (A-Z first)
                                   that no type declares; a binder is lowercase
     E_REGION_EXHAUSTED          — with-region region exceeded its size or limit
     E_MACRO_NON_TERMINATION     — macro expansion loop
     E_MATCH_NONEXHAUSTIVE       — missing match case (Compile Error)
-    E_CAPABILITY_LEAK           — mutable binding leaked across a boundary
+    E_CAPABILITY_LEAK           — mutable state crosses an actor boundary: a let-mut, ByteBuf, Ref
+                                  or other in-place handle captured by a spawned closure, sent on a
+                                  channel, or reached as a top-level def; an AtomicBuf other than as
+                                  a direct capture; a crossing closure or generic value that cannot
+                                  be checked (Compile Error; §7.4)
     E_TRAIT_NOT_FOUND           — missing impl
     E_DUPLICATE_IMPL            — conflicting impls
     E_MACRO_ILLEGAL_ACCESS      — macro accessed runtime value
@@ -1431,14 +1517,18 @@ Errors:
     E_CONTRACT_EFFECT           — a contract condition does I/O, foreign calls, actor or channel
                                   work, a state change or exit, or calls an unseen function value
                                   (Compile Error; §23.7)
-    E_OVERFLOW                  — Int + - * under (numeric checked) whose result does not fit; INT_MIN / -1
+    E_OVERFLOW                  — Int + - * under (numeric checked) whose result does not fit; INT_MIN / -1;
+                                  an AtomicBuf sum outside Int at its read
     E_DIVISION_BY_ZERO          — div! or rem! with a zero divisor
-    E_PARTIAL_OPERATION         — / or % whose divisor is not a nonzero literal, or a plain byte load/store not proven in range (Compile Error)
+    E_PARTIAL_OPERATION         — / or % whose divisor is not a nonzero literal, or a plain byte load/store
+                                  or AtomicBuf operation not proven in range (Compile Error)
     E_CHANNEL_NOT_OWNER         — channel endpoint used by an actor that does not own it
     E_CHANNEL_CLOSED            — chan-recv on a closed, drained channel
     E_CHANNEL_CAPACITY          — (chan n) outside 1..16777216
     E_DEADLOCK                  — every live actor blocked on a channel or a join
     E_ACTOR_LIMIT               — more than 1024 actors spawned
+    E_ATOMIC_SHARED             — an AtomicBuf frozen while an actor holding it is not yet joined by
+                                  its spawner (at compile time when that actor can never be joined)
     E_TRAIT_NOT_DERIVABLE       — cannot derive trait
     E_RESERVED_KEYWORD          — reserved keyword used as identifier (Compile Error)
     E_SHADOWS_BUILTIN           — local binding named like a built-in (Compile Error; §1.3.2)

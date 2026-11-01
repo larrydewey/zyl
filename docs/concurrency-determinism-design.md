@@ -47,12 +47,20 @@ scheduling.
 - **Deadlock.** When every live actor is blocked, the runtime raises
   `E_DEADLOCK`. In a Kahn network the set of blocked processes does not
   depend on scheduling, so the error is deterministic too.
-- **Values.** Only immutable (`let`) or atomic bindings cross a channel
-  (the spec's Send-capable rule). `mutability_check.zyl` enforces it
-  syntactically: a closure passed to `spawn`, or a value passed to
-  `chan-send`, that references a `let-mut` binding of the enclosing scope
-  is `E_CAPABILITY_LEAK`. There is no atomic type in the language, so a
-  copy bound with plain `let` is what crosses.
+- **Values.** Nothing another actor could change crosses (spec §7.4).
+  `mutability_check.zyl` refuses a closure passed to `spawn`, or a value
+  passed to `chan-send`, that references a `let-mut` binding of the
+  enclosing scope; `share_check.zyl`, after type inference, refuses a
+  capture, a sent value, an argument to a parameter that crosses, or a
+  top-level def an actor reaches, whose type is or holds a `ByteBuf`,
+  `Ref` or other handle written in place (`E_CAPABILITY_LEAK`).
+- **Shared slots.** An `AtomicBuf` (`atomic/atomic`) is the exception:
+  captured directly, it takes only commuting, result-free updates (add,
+  max, min, and, or, xor on a slot) while any actor holds it, and it is
+  read through `atomicbuf-freeze!` once every holder has been joined by
+  its spawner (`E_ATOMIC_SHARED` otherwise). Its final contents are a
+  function of the multiset of updates and the freeze's outcome of the
+  join order in each actor, so neither depends on scheduling.
 - **Panics.** An actor's uncaught panic ends only that actor.
   `actor-wait` re-raises it, and at exit the first unjoined one in spawn
   order is reported with status 1. After an uncaught panic on main, the

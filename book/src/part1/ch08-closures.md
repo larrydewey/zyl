@@ -84,7 +84,7 @@ The compiler finds the variables a closure uses but does not bind itself (its **
 |--------------|------------|--------|
 | Read-only | a `let` binding — immutable, any number of readers | Stack if the closure does not escape, Heap if it does |
 | Mutated (`set!`) | a `let-mut` binding — the only assignable binding; `set!` rebinds it | Heap |
-| Sent to an actor | must be Send-capable: immutable (`let`) or atomic bindings | Heap |
+| Sent to an actor | must hold nothing another actor could change: no `let-mut`, `ByteBuf`, `Ref` or other in-place handle (an `AtomicBuf` crosses as a direct capture) | Heap |
 
 In the current compiler, captures are **by value**: when the closure is created, the current value of each captured variable is copied into an environment block, allocated like any other value (a returned closure goes in its caller's region; Chapter 5, §5.5). Changing the original binding afterward does not affect the closure.
 
@@ -220,7 +220,7 @@ them, so the program below defines it and takes the other two from
 
 ## 8.6 Closures and Actors
 
-Closures passed to `spawn` must be **Send-capable** (Spec §7.4): they may capture only immutable (`let`) or atomic bindings. The compiler enforces the `let-mut` half of that rule today:
+Closures passed to `spawn` must be **Send-capable** (Spec §7.4): they may capture only values no other actor can change. A `let-mut` capture is refused by name:
 
 ```lisp
 (capabilities actor)
@@ -244,7 +244,7 @@ error[E_CAPABILITY_LEAK]: spawned closure captures let-mut (TMut) variable `coun
    = help: only Send-capable (non-mut) captures may cross into another actor
 ```
 
-The error is located at the `spawn`, with a second label at the `let-mut` (Appendix A, §A.1). Immutable captures are fine: the actor gets its own copies, as any closure does. Chapter 9 covers actors in detail.
+The error is located at the `spawn`, with a second label at the `let-mut` (Appendix A, §A.1). After type inference the same code, `E_CAPABILITY_LEAK`, refuses a capture whose type is or holds a `ByteBuf`, a `Ref` or another handle written in place, including one inside a captured struct, list or closure; a closure whose own captures the compiler cannot see (one a call returned) is refused too. Immutable captures are fine: the actor gets its own copies, as any closure does. To accumulate across actors, capture an `AtomicBuf` (Chapter 32, §32.8). Chapter 9 covers actors in detail.
 
 ## 8.7 Closure Types
 
@@ -343,7 +343,7 @@ The specification's region-inference phase (Phase 4) assigns captures as follows
    - read-only, non-escaping: a `let` binding — immutable, any number of readers — in Stack
    - read-only, escaping: the same, in Heap
    - mutated: a `let-mut` binding — the only assignable binding — in Heap
-   - crossing an actor boundary: must be Send-capable (immutable (`let`) or atomic bindings)
+   - crossing an actor boundary: must hold no `let-mut`, `ByteBuf`, `Ref` or other in-place handle; an `AtomicBuf` crosses as a direct capture
 
 ### Call Sites
 

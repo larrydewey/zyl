@@ -62,8 +62,11 @@ binding; `set!` rebinds it. An escaping closure → Heap.
 
 ### 7.4 Closure and Concurrency
 
-Spawned closures must only capture Send-capable variables: immutable
-(`let`) or atomic bindings.
+A spawned closure may capture only values no other actor can change: no
+`let-mut`, and nothing that is or holds a `ByteBuf`, `Ref` or other
+in-place handle (`E_CAPABILITY_LEAK`); an `AtomicBuf` crosses as a direct
+capture, takes only commuting updates while shared, and is read after a
+freeze once every holder is joined (spec §7.4).
 
 ### 7.5 Closure and Effects
 

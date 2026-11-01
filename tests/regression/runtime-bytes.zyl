@@ -1,4 +1,4 @@
-; Edge cases of the runtime's ByteBuf/ByteSlice and atomic entries (runtime/rt/bytes.zyl).
+; Edge cases of the runtime's ByteBuf/ByteSlice, AtomicBuf and address-atomic entries (runtime/rt/bytes.zyl, abuf.zyl).
 (capabilities ffi)
 (use atomic/atomic)
 (use allocator/allocator)
@@ -87,37 +87,52 @@
       (assert-true (> (bytebuf-ptr b) 4096))
       (assert-equal (bytebuf-cap (bytebuf Stack 24)) 24))))
 
-(test "atomic-slot-checks"
-  (let b (bytebuf Heap 16)
-    (begin
-      (assert-equal (bytebuf-atomic-store b 8 -7) 1)
-      (assert-equal (bytebuf-atomic-load b 8) -7)
-      (assert-equal (bytebuf-atomic-store b 4 1) 0)
-      (assert-equal (bytebuf-atomic-store b 16 1) 0)
-      (assert-equal (bytebuf-atomic-store b -8 1) 0)
-      (assert-equal (bytebuf-atomic-load b 12) 0)
-      (assert-equal (bytebuf-atomic-add b 3 1) 0)
-      (assert-equal (bytebuf-atomic-sub b 8 3) -10)
-      (assert-equal (bytebuf-atomic-fetch-add b 8 4) -10)
-      (assert-equal (bytebuf-atomic-max b 8 -20) -6)
-      (assert-equal (bytebuf-atomic-min b 8 -20) -20)
-      (assert-equal (bytebuf-atomic-max b 16 1) 0)
-      (assert-equal (bytebuf-atomic-cas b 8 -20 5) 1)
-      (assert-equal (bytebuf-atomic-cas b 8 -20 6) 0)
-      (assert-equal (bytebuf-atomic-load b 8) 5)
-      (assert-equal (bytebuf-atomic-cas b 9 5 6) 0))))
+(test "atomicbuf-slot-checks"
+  (let b (atomicbuf-new 2)
+    (let n (atomicbuf-new! 0)
+      (begin
+        (assert-equal (atomicbuf-add? b 1 -7) (Some unit))
+        (assert-equal (atomicbuf-add? b 2 1) None)
+        (assert-equal (atomicbuf-add? b -1 1) None)
+        (assert-equal (atomicbuf-max? b 9 1) None)
+        (assert-equal (try (begin (atomicbuf-add! b 2 1) 0) (catch _ 1)) 1)
+        (assert-equal (try (begin (atomicbuf-xor! n 0 1) 0) (catch _ 1)) 1)
+        (assert-equal (atomicbuf-new? -1) None)
+        (assert-equal (atomicbuf-new? 16777217) None)
+        (assert-equal (try (begin (atomicbuf-new! -1) 0) (catch _ 1)) 1)
+        (assert-equal (atomicbuf-slots b) 2)
+        (let v (atomicbuf-freeze! b)
+          (begin
+            (assert-equal (atomicview-slots v) 2)
+            (assert-equal (atomicview-get? v 1) (Some -7))
+            (assert-equal (atomicview-get? v 0) (Some 0))
+            (assert-equal (atomicview-get? v 2) None)
+            (assert-equal (try (atomicview-get! v -1) (catch _ 1)) 1)))))))
 
 (test "raw-atomics"
   (let p (alloc-malloc 8)
     (begin
-      (assert-equal (atomic-store p 9223372036854775807) 9223372036854775807)
-      (assert-equal (atomic-add p 1) (- -9223372036854775807 1))
-      (assert-equal (atomic-sub p 1) 9223372036854775807)
-      (assert-equal (atomic-fetch-add p 3) 9223372036854775807)
-      (assert-equal (atomic-min p 4) (+ (- -9223372036854775807 1) 2))
-      (assert-equal (atomic-max p 4) 4)
-      (assert-false (atomic-cas p 5 1))
-      (assert-equal (atomic-load p) 4))))
+      (assert-equal (atomic-store! p 9223372036854775807) 9223372036854775807)
+      (assert-equal (atomic-add! p 1) (- -9223372036854775807 1))
+      (assert-equal (atomic-sub! p 1) 9223372036854775807)
+      (assert-equal (atomic-fetch-add! p 3) 9223372036854775807)
+      (assert-equal (atomic-min! p 4) (+ (- -9223372036854775807 1) 2))
+      (assert-equal (atomic-max! p 4) 4)
+      (assert-false (atomic-cas! p 5 1))
+      (assert-equal (atomic-incr! p) 5)
+      (assert-equal (atomic-decr! p) 4)
+      (assert-equal (atomic-load! p) 4))))
+
+(test "raw-atomics-misaligned"
+  (let b (bytebuf Heap 16)
+    (let p (+ (bytebuf-ptr b) 4)
+      (begin
+        (assert-equal (atomic-load? p) None)
+        (assert-equal (atomic-store? p 1) None)
+        (assert-equal (atomic-cas? p 0 1) None)
+        (assert-equal (atomic-load? (+ p 4)) (Some 0))
+        (assert-equal (try (begin (atomic-load! p) "no error") (catch e (str-substring e 0 19))) "E_MISALIGNED_ACCESS")
+        (assert-equal (try (atomic-add! p 1) (catch _ -1)) -1)))))
 
 (test "align-check"
   (begin

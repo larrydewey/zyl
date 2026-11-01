@@ -1,0 +1,5 @@
+; Compile-fail: the bytebuf-atomic-* forms are gone; shared counters are an AtomicBuf.
+; expect-error: E_UNBOUND_VARIABLE
+(defn main ()
+  (let b (bytebuf Heap 8)
+    (begin (bytebuf-atomic-add b 0 1) 0)))

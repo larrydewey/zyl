@@ -1,7 +1,8 @@
 (capabilities actor)
 
 (use actor/actor)
-; Concurrency Regression Tests: spawn, join, atomics across actors
+(use atomic/atomic)
+; Concurrency Regression Tests: spawn, join, AtomicBuf across actors
 
 ; Spawn basic
 (test "spawn-basic"
@@ -28,33 +29,77 @@
     (actor-wait actor)
     (assert-false (actor-is-alive actor))))
 
-; Workers hammer one slot; only the final value is checked.
-(defn rb-work ((b ByteBuf) n)
-  (if (= n 0) 0
-    (let _ (bytebuf-atomic-add b 0 1)
-      (let _ (bytebuf-atomic-fetch-add b 8 2)
-        (let _ (bytebuf-atomic-max b 16 n)
-          (rb-work b (- n 1)))))))
+; Workers update shared AtomicBuf slots in any interleaving; only the frozen totals are read.
+(defn rb-work ((b AtomicBuf) (n Int))
+  (if (= n 0) unit
+    (begin
+      (atomicbuf-add! b 0 1)
+      (atomicbuf-add! b 1 2)
+      (atomicbuf-max! b 2 n)
+      (atomicbuf-min! b 3 n)
+      (atomicbuf-or! b 4 (shl 1 (rem! n 60)))
+      (atomicbuf-and! b 5 (bit-not (shl 1 (rem! n 60))))
+      (atomicbuf-xor! b 6 n)
+      (atomicbuf-add! b 7 9223372036854775807)
+      (atomicbuf-add! b 7 -9223372036854775807)
+      (rb-work b (- n 1)))))
 
-(defn rb-cas-inc ((b ByteBuf))
-  (let v (bytebuf-atomic-load b 24)
-    (if (= (bytebuf-atomic-cas b 24 v (+ v 1)) 1) 0 (rb-cas-inc b))))
-
-(defn rb-cas-work ((b ByteBuf) n)
-  (if (= n 0) 0 (let _ (rb-cas-inc b) (rb-cas-work b (- n 1)))))
-
-(test "atomics-across-actors"
-  (let b (bytebuf Heap 32)
-    (let a1 (spawn (fn () (let _ (rb-work b 20000) (rb-cas-work b 5000))))
-      (let a2 (spawn (fn () (let _ (rb-work b 20000) (rb-cas-work b 5000))))
-        (let a3 (spawn (fn () (let _ (rb-work b 20000) (rb-cas-work b 5000))))
+(test "atomicbuf-across-actors"
+  (let b (atomicbuf-new 8)
+    (let a1 (spawn (fn () (rb-work b 20000)))
+      (let a2 (spawn (fn () (rb-work b 20000)))
+        (let a3 (spawn (fn () (rb-work b 20000)))
           (begin
+            (atomicbuf-add b 0 1)
             (actor-wait a1)
             (actor-wait a2)
             (actor-wait a3)
-            (assert-equal (bytebuf-atomic-load b 0) 60000)
-            (assert-equal (bytebuf-atomic-load b 8) 120000)
-            (assert-equal (bytebuf-atomic-load b 16) 20000)
-            (assert-equal (bytebuf-atomic-load b 24) 15000)))))))
+            (let v (atomicbuf-freeze! b)
+              (begin
+                (assert-equal (atomicview-get! v 0) 60001)
+                (assert-equal (atomicview-get! v 1) 120000)
+                (assert-equal (atomicview-get! v 2) 20000)
+                (assert-equal (atomicview-get! v 3) 1)
+                (assert-equal (atomicview-get! v 4) 1152921504606846975)
+                (assert-equal (atomicview-get! v 5) -1152921504606846976)
+                (assert-equal (atomicview-get! v 6) 20000)
+                (assert-equal (atomicview-get! v 7) 0)))))))))
+
+; A freeze while a holder is unjoined is E_ATOMIC_SHARED (or None), whatever the schedule.
+(test "atomicbuf-freeze-waits-for-the-join"
+  (let b (atomicbuf-new 1)
+    (let a (spawn (fn () (atomicbuf-add b 0 5)))
+      (begin
+        (assert-true (atomicbuf-held b))
+        (actor-wait a)
+        (assert-false (atomicbuf-held b))
+        (assert-equal (match (atomicbuf-freeze? b) (Some v (atomicview-get! v 0)) (None -1)) 5)))))
+
+(test "atomicbuf-freeze-with-a-live-holder"
+  (let b1 (atomicbuf-new 1)
+    (let b2 (atomicbuf-new 1)
+      (let a (spawn (fn () (begin (atomicbuf-add b1 0 1) (atomicbuf-add b2 0 1))))
+        (begin
+          (assert-equal (atomicbuf-freeze? b1) None)
+          (assert-equal (try (begin (atomicbuf-freeze! b2) "no error") (catch e (str-substring e 0 15))) "E_ATOMIC_SHARED")
+          (actor-wait a))))))
+
+; Only the spawner's join releases a holder; another actor's join leaves the buffer held.
+(test "atomicbuf-join-by-another-actor-releases-nothing"
+  (let b (atomicbuf-new 1)
+    (let h (spawn (fn () (atomicbuf-add b 0 1)))
+      (let j (spawn (fn () (actor-wait h)))
+        (begin
+          (actor-wait j)
+          (actor-wait h)
+          (assert-true (atomicbuf-held b)))))))
+
+; Holders spawned by holders count until their own spawner joins them.
+(test "atomicbuf-nested-holders"
+  (let b (atomicbuf-new 1)
+    (let outer (spawn (fn () (let inner (spawn (fn () (atomicbuf-add b 0 2))) (begin (atomicbuf-add b 0 1) (actor-wait inner)))))
+      (begin
+        (actor-wait outer)
+        (assert-equal (atomicview-get! (atomicbuf-freeze! b) 0) 3)))))
 
 (run-tests)

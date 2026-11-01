@@ -941,7 +941,7 @@
 
 (defn ax-dump-text (srcpath binout relout)
   (let fd (file-open srcpath "r")
-    (let text (file-read fd 20000000)
+    (let text (file-read fd 67108864)
       (let _ (file-close fd)
         (let _ (ax-reset (+ (str-length text) 16))
           (let _ (ax-scan-globls text)
@@ -975,7 +975,7 @@
             (let _ (ax-line line) (ax-list-l src (+ e 1) n acc))))))))
 (defn ax-dump-list (srcpath binout relout listout)
   (let fd (file-open srcpath "r")
-    (let text (file-read fd 20000000)
+    (let text (file-read fd 67108864)
       (let _ (file-close fd)
         (let _ (ax-reset (+ (str-length text) 16))
           (let _ (ax-scan-globls text)

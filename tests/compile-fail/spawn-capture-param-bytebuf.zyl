@@ -1,0 +1,11 @@
+; Compile-fail: a ByteBuf passed to a generic parameter that a spawned closure captures.
+; expect-error: E_CAPABILITY_LEAK
+(capabilities actor)
+(use actor/actor)
+
+(defn start (x) (spawn (fn () (let _y x 0))))
+
+(defn main ()
+  (let b (bytebuf Heap 8)
+    (let a (start b)
+      (begin (actor-wait a) 0))))

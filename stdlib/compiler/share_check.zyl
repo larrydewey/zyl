@@ -1,0 +1,724 @@
+; === Zyl Compiler — Share Check ===
+; Module: compiler/share_check
+;
+; Spec 7.4/15, after type inference: captures, channel values, crossing arguments and actor-reached defs are checked by type.
+; A ByteBuf, ByteSlice, Ref or other in-place handle, or one held in a struct, tuple, Option, list or closure, is E_CAPABILITY_LEAK.
+; An AtomicBuf crosses only as a direct capture: the runtime holds it until the spawner's join (runtime/rt/actor.zyl).
+; A closure whose captures cannot be seen (a call result, a field) fails closed; the let-mut rule is mutability_check.zyl's.
+
+(use compiler/node_tables)
+(use compiler/expr_inner)
+(use compiler/type_annotate)
+(use compiler/error_report)
+(use compiler/mutability_check)
+(use compiler/qualify)
+(use compiler/unused_check)
+(use core/list)
+(use core/option)
+
+; A binding in scope: name, kind (>= 0 the function's parameter index, -1 let, -2 other binder, -3 lambda parameter), let value.
+(deftype ShB (ShB String Int Expr))
+
+; Code to walk for top-level defs an actor reaches: the body, who reaches it, the boundary.
+(deftype ShRoot (ShRoot Expr String Expr))
+
+(def sh-fns (ffi-call "zyl_smap_new" 1000))
+(def sh-fn-params (ffi-call "zyl_smap_new" 1000))
+(def sh-defs (ffi-call "zyl_smap_new" 1000))
+(def sh-ctors (ffi-call "zyl_smap_new" 1000))
+(def sh-tymemo (ffi-call "zyl_smap_new" 1000))
+(def sh-cross (ffi-call "zyl_smap_new" 1000))
+(def sh-crossfn (ffi-call "zyl_smap_new" 1000))
+(def sh-held (ffi-call "zyl_smap_new" 1000))
+(def sh-seen (ffi-call "zyl_smap_new" 1000))
+(def sh-via (ffi-call "zyl_smap_new" 1000))
+(def sh-roots (ffi-call "zyl_wvec_new" 1000))
+(def sh-changed (ffi-call "zyl_ref_new" false 1000))
+(def sh-reporting (ffi-call "zyl_ref_new" false 1000))
+(def sh-arg-of (ffi-call "zyl_ref_new" "" 1000))
+
+(defn sh-nil-expr () (Expr (EAtom ANil)))
+
+; ===========================================================================
+; THE PASS
+; ===========================================================================
+
+(defn sh-check-program (exprs)
+  (begin
+    (sh-reset)
+    (sh-collect exprs)
+    (sh-fixpoint exprs 0)
+    (ffi-call "zyl_ref_set" sh-reporting true 1000)
+    (sh-forms exprs)
+    (sh-reach 0)
+    unit))
+
+(defn sh-reset ()
+  (begin
+    (ffi-call "zyl_smap_clear" sh-fns 1000)
+    (ffi-call "zyl_smap_clear" sh-fn-params 1000)
+    (ffi-call "zyl_smap_clear" sh-defs 1000)
+    (ffi-call "zyl_smap_clear" sh-ctors 1000)
+    (ffi-call "zyl_smap_clear" sh-tymemo 1000)
+    (ffi-call "zyl_smap_clear" sh-cross 1000)
+    (ffi-call "zyl_smap_clear" sh-crossfn 1000)
+    (ffi-call "zyl_smap_clear" sh-held 1000)
+    (ffi-call "zyl_smap_clear" sh-seen 1000)
+    (ffi-call "zyl_smap_clear" sh-via 1000)
+    (ffi-call "zyl_wvec_truncate" sh-roots 0 1000)
+    (ffi-call "zyl_ref_set" sh-reporting false 1000)
+    unit))
+
+(defn sh-collect (exprs)
+  (match exprs
+    (Nil unit)
+    (Cons e rest
+      (begin
+        (match (Expr.inner e)
+          (EDefn n ps _
+            (if (ffi-call "zyl_smap_has" def-names n 1000)
+              (ffi-call "zyl_smap_put" sh-defs n e 1000)
+              (begin (ffi-call "zyl_smap_put" sh-fns n e 1000) (ffi-call "zyl_smap_put" sh-fn-params n ps 1000))))
+          (EDeftype n vs _ _ (ffi-call "zyl_smap_put" sh-ctors (ck-symbol-of n) (sh-variant-names vs) 1000))
+          (_ unit))
+        (sh-collect rest)))))
+
+(defn sh-variant-names (vs)
+  (match vs
+    (Nil Nil)
+    (Cons v rest (Cons (AV.name v) (sh-variant-names rest)))))
+
+; Parameter summaries grow until nothing changes (each grows at most four times).
+(defn sh-fixpoint (exprs (n Int))
+  (begin
+    (ffi-call "zyl_ref_set" sh-changed false 1000)
+    (sh-forms exprs)
+    (if (and (ffi-call "zyl_ref_get" sh-changed 1000) (< n 64)) (sh-fixpoint exprs (+ n 1)) unit)))
+
+(defn sh-forms (exprs)
+  (match exprs
+    (Nil unit)
+    (Cons e rest (begin (sh-form e) (sh-forms rest)))))
+
+; Toolchain modules are exempt as from the panic rule: the REPL's actor shares env cells only set! writes, and the interpreted program was checked itself.
+(defn sh-toolchain-p (n) (and (uc-std-key-p n) (not (uc-program-facing-p n))))
+
+(defn sh-form (e)
+  (match (Expr.inner e)
+    (EDefn n ps body (if (sh-toolchain-p n) unit (sh-walk body n (sh-param-scope ps 0) false)))
+    (EDef _ v (sh-walk v "" Nil false))
+    (ETestDecl _ body _ _ (sh-walk body "" Nil false))
+    (_ unit)))
+
+(defn sh-param-scope (ps (i Int))
+  (match ps
+    (Nil Nil)
+    (Cons p rest (Cons (ShB (P.name p) i (sh-nil-expr)) (sh-param-scope rest (+ i 1))))))
+
+(defn sh-binds (names (kind Int) scope)
+  (match names
+    (Nil scope)
+    (Cons n rest (sh-binds rest kind (Cons (ShB n kind (sh-nil-expr)) scope)))))
+
+(defn sh-param-names (ps)
+  (match ps
+    (Nil Nil)
+    (Cons p rest (Cons (P.name p) (sh-param-names rest)))))
+
+(defn sh-for-names (bs)
+  (match bs
+    (Nil Nil)
+    (Cons b rest (match b (Pair n _ (Cons n (sh-for-names rest)))))))
+
+; The scope outside the innermost binding of n.
+(defn sh-after (n scope)
+  (match scope
+    (Nil Nil)
+    (Cons b rest (match b (ShB m _ _ (if (str-eq m n) rest (sh-after n rest)))))))
+
+(defn sh-lookup (n scope)
+  (match scope
+    (Nil None)
+    (Cons b rest (match b (ShB m _ _ (if (str-eq m n) (Some b) (sh-lookup n rest)))))))
+
+; ===========================================================================
+; WALK: find the boundaries
+; ===========================================================================
+
+(defn sh-walk (e fname scope (disc Bool))
+  (match (Expr.inner e)
+    (ESpawn c (begin (sh-value c 1 fname scope e disc) (sh-walk c fname scope false)))
+    (ESend a m (begin (sh-value m 3 fname scope e false) (sh-walk a fname scope false) (sh-walk m fname scope false)))
+    (ESendClosure a c _ (begin (sh-value c 3 fname scope e false) (sh-walk a fname scope false) (sh-walk c fname scope false)))
+    (ELet n v b
+      (begin
+        (sh-walk v fname scope (str-eq n "_"))
+        (sh-walk b fname (Cons (ShB n -1 v) scope) false)))
+    (ELetMut n v b (begin (sh-walk v fname scope false) (sh-walk b fname (Cons (ShB n -2 v) scope) false)))
+    (EBegin xs (sh-walk-seq xs fname scope))
+    (EFor bs c b
+      (let inner (sh-binds (sh-for-names bs) -2 scope)
+        (begin (sh-walk-list (expr-children e) fname inner) unit)))
+    (EMatch s arms (begin (sh-walk s fname scope false) (sh-walk-arms arms fname scope)))
+    (ETryCatch tb v h (begin (sh-walk tb fname scope false) (sh-walk h fname (Cons (ShB v -2 (sh-nil-expr)) scope) false)))
+    (EFn _ ps b (sh-walk b fname (sh-binds (sh-param-names ps) -3 scope) false))
+    (ELambda _ ps b (sh-walk b fname (sh-binds (sh-param-names ps) -3 scope) false))
+    (EApply n args (begin (sh-call e (sh-callee e n) args fname scope) (sh-walk-list args fname scope)))
+    (ECall op args
+      (match (sh-ident op)
+        (Some n (begin (sh-call e (sh-callee e n) args fname scope) (sh-walk-list args fname scope)))
+        (None
+          (begin
+            (if (> (str-length (ta-renamed e)) 0) (sh-call e (ta-renamed e) args fname scope) unit)
+            (sh-walk op fname scope false)
+            (sh-walk-list args fname scope)))))
+    (EAtom a (match a (AIdent n (sh-fn-value e (sh-callee e n) scope)) (_ unit)))
+    (_ (sh-walk-list (expr-children e) fname scope))))
+
+; Every form but the last is discarded: a spawn there leaves its actor unjoinable.
+(defn sh-walk-seq (xs fname scope)
+  (match xs
+    (Nil unit)
+    (Cons h t (begin (sh-walk h fname scope (not (is-nil t))) (sh-walk-seq t fname scope)))))
+
+(defn sh-walk-list (xs fname scope)
+  (match xs
+    (Nil unit)
+    (Cons h t (begin (sh-walk h fname scope false) (sh-walk-list t fname scope)))))
+
+(defn sh-walk-arms (arms fname scope)
+  (match arms
+    (Nil unit)
+    (Cons a rest
+      (match a
+        (MA v pats body
+          (begin
+            (sh-walk body fname (sh-binds (mc-arm-binders v pats) -2 scope) false)
+            (sh-walk-arms rest fname scope)))))))
+
+(defn sh-ident (e)
+  (match (Expr.inner e)
+    (EAtom a (match a (AIdent n (Some n)) (_ None)))
+    (_ None)))
+
+; The type pass may have renamed a call to an instance or an impl.
+(defn sh-callee (e n)
+  (let r (ta-renamed e) (if (> (str-length r) 0) r n)))
+
+; A call: each argument for a crossing parameter crosses too; a freeze checks its holders.
+(defn sh-call (site g args fname scope)
+  (begin
+    (sh-call-args site g args 0 fname scope)
+    (if (sh-freeze-p g) (sh-check-freeze site args fname scope) unit)))
+
+(defn sh-call-args (site g args (i Int) fname scope)
+  (match args
+    (Nil unit)
+    (Cons a rest
+      (let m (sh-cross-get g i)
+        (begin
+          (if (> m 0)
+            (let saved (ffi-call "zyl_ref_get" sh-arg-of 1000)
+              (begin
+                (ffi-call "zyl_ref_set" sh-arg-of g 1000)
+                (sh-value a m fname scope site false)
+                (ffi-call "zyl_ref_set" sh-arg-of saved 1000)
+                unit))
+            unit)
+          (sh-call-args site g rest (+ i 1) fname scope))))))
+
+; A function whose parameter crosses cannot be followed through a function value.
+(defn sh-fn-value (e n scope)
+  (match (sh-lookup n scope)
+    (Some _ unit)
+    (None
+      (if (and (ffi-call "zyl_smap_has" sh-crossfn n 1000) (sh-any-cross n 0 (list-length (sh-params-of n))))
+        (sh-fail e (str-concat "`" (str-concat (err-name n) "` hands an argument to another actor, so it cannot be passed as a value: its argument would cross unchecked"))
+          (str-concat "call `" (str-concat (err-name n) "` directly, where the compiler can check what crosses")) e)
+        unit))))
+
+(defn sh-params-of (n) (ffi-call "zyl_smap_get_or" sh-fn-params n Nil 1000))
+
+(defn sh-any-cross (n (i Int) (k Int))
+  (if (>= i k) false (if (> (sh-cross-get n i) 0) true (sh-any-cross n (+ i 1) k))))
+
+; ===========================================================================
+; VALUES THAT CROSS
+; ===========================================================================
+; Modes: 1 the spawned closure (captures in 2), 2 a direct capture (AtomicBuf allowed), 3 anything else, 4 a generic traced to every parameter.
+
+(defn sh-value (e (mode Int) fname scope site (disc Bool))
+  (if (= mode 1)
+    (sh-closure e 1 fname scope site disc)
+    (let code (sh-class-top (ta-attr e) mode)
+      (if (= (str-length code) 0) unit
+        (if (str-eq code "A")
+          (if (= mode 2) unit
+            (sh-fail e "an AtomicBuf crosses here other than as a direct capture of a spawned closure, so the runtime could not count this actor as holding it"
+              "capture the AtomicBuf itself in the closure you spawn: `(spawn (fn () (atomicbuf-add b 0 1)))`" site))
+          (if (str-eq code "F") (sh-closure e mode fname scope site false)
+            (if (str-eq code "V") (sh-var e mode fname scope site)
+              (sh-fail-bad e code mode site))))))))
+
+; Where a closure value comes from decides whether its captures can be checked.
+(defn sh-closure (e (mode Int) fname scope site (disc Bool))
+  (let capmode (if (= mode 1) 2 3)
+    (match (Expr.inner e)
+      (EFn _ ps b (sh-captures e ps b capmode fname scope site disc))
+      (ELambda _ ps b (sh-captures e ps b capmode fname scope site disc))
+      (EAtom a
+        (match a
+          (AIdent n (sh-closure-name e n mode fname scope site disc))
+          (_ unit)))
+      (_ (sh-fail-unseen e site)))))
+
+(defn sh-closure-name (e n (mode Int) fname scope site (disc Bool))
+  (match (sh-lookup n scope)
+    (Some b
+      (match b
+        (ShB _ k v
+          (if (>= k 0) (sh-mark fname k mode)
+            (if (= k -1)
+              (match (Expr.inner v)
+                (EFn _ _ _ (sh-closure v mode fname scope site disc))
+                (ELambda _ _ _ (sh-closure v mode fname scope site disc))
+                (EAtom _ (sh-closure v mode fname (sh-after n scope) site disc))
+                (_ (sh-fail-unseen e site)))
+              (sh-fail-unseen e site))))))
+    (None (sh-root-name (sh-callee e n) site))))
+
+; A captured closure's own captures are checked here; its body is walked for the defs it reaches.
+(defn sh-captures (_lam ps body (capmode Int) fname scope site (disc Bool))
+  (let caps (sh-free body (sh-param-names ps) scope Nil)
+    (begin
+      (sh-push-root body (if (= (str-length fname) 0) "a spawned closure" (str-concat "a closure in " (err-name fname))) site)
+      (sh-check-caps (list-reverse caps) capmode fname scope site disc))))
+
+(defn sh-check-caps (caps (capmode Int) fname scope site (disc Bool))
+  (match caps
+    (Nil unit)
+    (Cons c rest
+      (match c
+        (Pair n node
+          (begin
+            (sh-capture n node capmode fname scope site disc)
+            (sh-check-caps rest capmode fname scope site disc)))))))
+
+; A name seen only as a call head is a function.
+(defn sh-capture (n node (capmode Int) fname scope site (disc Bool))
+  (let code (if (ta-no-type-p (ta-attr node)) "F" (sh-class-top (ta-attr node) capmode))
+    (if (and (str-eq code "A") (and disc (= capmode 2)))
+      (sh-note-held fname n scope site)
+      (if (or (= (str-length code) 0) (or (str-eq code "A") (or (str-eq code "F") (str-eq code "V"))))
+        (if (str-eq code "F") (sh-closure node capmode fname scope site false) (sh-value node capmode fname scope site false))
+        (sh-fail node
+          (str-concat (if (= capmode 2) "a spawned closure captures `" "a closure that crosses to another actor captures `")
+            (str-concat n (str-concat "`, " (str-concat code ", so two actors could touch the same mutable state and the output would depend on the schedule"))))
+          (sh-help code) site)))))
+
+; A generic value: the parameter it came from crosses, or every parameter does.
+(defn sh-var (e (mode Int) fname scope site)
+  (match (sh-ident e)
+    (Some n
+      (match (sh-lookup n scope)
+        (Some b (match b (ShB _ k _ (if (>= k 0) (sh-mark fname k mode) (sh-var-all e fname scope site)))))
+        (None unit)))
+    (None (sh-var-all e fname scope site))))
+
+; Inside an inner function the source is unknown; with no parameters a generic value holds nothing concrete.
+(defn sh-var-all (e fname scope site)
+  (if (sh-in-lambda scope) (sh-fail-generic e site)
+    (sh-mark-all fname 0 (list-length (sh-params-of fname)))))
+
+(defn sh-in-lambda (scope)
+  (match scope
+    (Nil false)
+    (Cons b rest (match b (ShB _ k _ (if (= k -3) true (sh-in-lambda rest)))))))
+
+(defn sh-mark-all (fname (i Int) (k Int))
+  (if (>= i k) unit (begin (sh-mark fname i 4) (sh-mark-all fname (+ i 1) k))))
+
+; ===========================================================================
+; PARAMETER SUMMARIES
+; ===========================================================================
+
+(defn sh-key (fname (i Int)) (str-concat fname (str-concat "#" (ffi-call "zyl_int_text" i 1000))))
+
+; A function with no crossing parameter costs one probe and no key.
+(defn sh-cross-get (g (i Int))
+  (if (ffi-call "zyl_smap_has" sh-crossfn g 1000) (ffi-call "zyl_smap_get_or" sh-cross (sh-key g i) 0 1000) 0))
+
+(defn sh-mark (fname (i Int) (mode Int))
+  (if (= (str-length fname) 0) unit
+    (if (> mode (sh-cross-get fname i))
+      (begin
+        (ffi-call "zyl_smap_put" sh-cross (sh-key fname i) mode 1000)
+        (ffi-call "zyl_smap_put" sh-crossfn fname 1 1000)
+        (ffi-call "zyl_ref_set" sh-changed true 1000)
+        unit)
+      unit)))
+
+; ===========================================================================
+; FREE VARIABLES of a closure body that name enclosing locals
+; ===========================================================================
+
+(defn sh-free (e bound scope acc)
+  (match (Expr.inner e)
+    (EAtom a (match a (AIdent n (sh-free-ref n e bound scope acc)) (_ acc)))
+    (ESetBang n v (sh-free v bound scope (sh-free-ref n e bound scope acc)))
+    (EApply n args (sh-free-list args bound scope (sh-free-ref n (sh-head-node n e) bound scope acc)))
+    (ELet n v b (sh-free b (Cons n bound) scope (sh-free v bound scope acc)))
+    (ELetMut n v b (sh-free b (Cons n bound) scope (sh-free v bound scope acc)))
+    (EFor bs _ _ (sh-free-list (expr-children e) (list-append (sh-for-names bs) bound) scope acc))
+    (EMatch s arms (sh-free-arms arms bound scope (sh-free s bound scope acc)))
+    (ETryCatch tb v h (sh-free h (Cons v bound) scope (sh-free tb bound scope acc)))
+    (EFn _ ps b (sh-free b (list-append (sh-param-names ps) bound) scope acc))
+    (ELambda _ ps b (sh-free b (list-append (sh-param-names ps) bound) scope acc))
+    (_ (sh-free-list (expr-children e) bound scope acc))))
+
+(defn sh-free-list (xs bound scope acc)
+  (match xs
+    (Nil acc)
+    (Cons h t (sh-free-list t bound scope (sh-free h bound scope acc)))))
+
+(defn sh-free-arms (arms bound scope acc)
+  (match arms
+    (Nil acc)
+    (Cons a rest
+      (match a
+        (MA v pats body (sh-free-arms rest bound scope (sh-free body (list-append (mc-arm-binders v pats) bound) scope acc)))))))
+
+; A call head carries no type of its own, so an occurrence with a type replaces one without.
+(defn sh-free-ref (n e bound scope acc)
+  (if (sh-member n bound) acc
+    (match (sh-lookup n scope)
+      (Some _
+        (if (sh-has-name n acc)
+          (if (ta-no-type-p (ta-attr e)) acc (sh-retype n e acc))
+          (Cons (Pair n e) acc)))
+      (None acc))))
+
+; A called local as a node of its own: located at the call, with no type (so it reads as a function).
+(defn sh-head-node (n e)
+  (let h (Expr (EAtom (AIdent n))) (let _ (ffi-call "zyl_span_copy" h e 1000) h)))
+
+(defn sh-retype (n e acc)
+  (match acc
+    (Nil Nil)
+    (Cons p t
+      (match p
+        (Pair m old
+          (if (and (str-eq m n) (ta-no-type-p (ta-attr old))) (Cons (Pair m e) t) (Cons p (sh-retype n e t))))))))
+
+(defn sh-member (n xs)
+  (match xs
+    (Nil false)
+    (Cons h t (if (str-eq h n) true (sh-member n t)))))
+
+(defn sh-has-name (n acc)
+  (match acc
+    (Nil false)
+    (Cons p t (match p (Pair m _ (if (str-eq m n) true (sh-has-name n t)))))))
+
+; ===========================================================================
+; TYPES: what may cross
+; ===========================================================================
+; Verdicts: "" may cross, "A" AtomicBuf, "F" function (captures decide), "V" type variable, else the reason as a noun phrase.
+
+(defn sh-deep (t)
+  (match (ta-gresolve ta-var-store t)
+    (TaC n args (TaC n (sh-deep-list args)))
+    (TaF ps r (TaF (sh-deep-list ps) (sh-deep r)))
+    (TaV i (TaV i))))
+
+(defn sh-deep-list (ts)
+  (match ts
+    (Nil Nil)
+    (Cons h t (Cons (sh-deep h) (sh-deep-list t)))))
+
+(defn sh-class-top (t (mode Int))
+  (if (ta-no-type-p t) ""
+    (match (sh-deep t)
+      (TaV _ "V")
+      (TaF ps r (if (= mode 4) (sh-class-fn ps r) "F"))
+      (TaC n args
+        (let s (ck-symbol-of n)
+          (if (str-eq s "AtomicBuf") "A" (sh-holds (sh-bad-name s) (sh-class-con s args))))))))
+
+; Inside the value, not the value itself: say what it holds.
+(defn sh-holds (own c)
+  (if (or (> (str-length own) 0) (not (sh-reason-p c))) c (str-concat "which holds " c)))
+
+; Mode 4: a function value whose arguments or result could carry mutable state.
+(defn sh-class-fn (ps r)
+  (let a (sh-class-args (Cons r ps))
+    (if (or (= (str-length a) 0) (str-eq a "V")) "F" a)))
+
+(defn sh-class-in (t)
+  (match t
+    (TaV _ "V")
+    (TaF _ _ "a function value inside captured data, whose captures the compiler cannot see")
+    (TaC n args
+      (let s (ck-symbol-of n)
+        (if (str-eq s "AtomicBuf") "an AtomicBuf inside other data (an AtomicBuf crosses only as a direct capture)"
+          (sh-class-con s args))))))
+
+(defn sh-class-args (ts)
+  (match ts
+    (Nil "")
+    (Cons h t
+      (let c (sh-class-in h)
+        (if (sh-reason-p c) c
+          (let r (sh-class-args t)
+            (if (sh-reason-p r) r (if (or (str-eq c "V") (str-eq r "V")) "V" ""))))))))
+
+(defn sh-reason-p (c) (> (str-length c) 1))
+
+(defn sh-class-con (s args)
+  (let b (sh-bad-name s)
+    (if (> (str-length b) 0) b
+      (if (or (str-eq s "Tx") (or (str-eq s "Rx") (str-eq s "Actor"))) ""
+        (if (ffi-call "zyl_smap_has" sh-ctors s 1000)
+          (let f (sh-type-fields s)
+            (if (sh-reason-p f) f (sh-class-args args)))
+          (sh-class-args args))))))
+
+; Handles whose contents change in place: what two actors must never share.
+(defn sh-bad-name (s)
+  (if (str-eq s "ByteBuf") "a ByteBuf"
+  (if (str-eq s "ByteSlice") "a ByteSlice (a view of a ByteBuf)"
+  (if (str-eq s "Ref") "a Ref"
+  (if (str-eq s "WVec") "a WVec (a mutable vector)"
+  (if (str-eq s "SMap") "an SMap (a mutable table)"
+  (if (str-eq s "Attr") "an Attr table"
+  (if (str-eq s "Array") "an Array (written in place)"
+  (if (str-eq s "Words") "a Words array (written in place)"
+  (if (str-eq s "StrBuf") "a StrBuf (a string buffer)"
+  (if (str-eq s "UF") "a union-find table"
+  (if (str-eq s "Arena") "an Arena"
+  (if (str-eq s "Pin") "a Pin (memory foreign code writes)" "")))))))))))))
+
+; Persistent: an update makes a new version and no version changes, so only the elements matter.
+(defn sh-persistent-p (s) (or (str-eq s "Vec") (or (str-eq s "IntMap") (str-eq s "Slice"))))
+
+; A declared type, by its fields as written ("" none crosses badly); its arguments are checked at the use.
+(defn sh-type-fields (s)
+  (if (sh-persistent-p s) ""
+    (if (ffi-call "zyl_smap_has" sh-tymemo s 1000) (ffi-call "zyl_smap_get_or" sh-tymemo s "" 1000)
+      (begin
+        (ffi-call "zyl_smap_put" sh-tymemo s "" 1000)
+        (let v (sh-ctors-fields (ffi-call "zyl_smap_get_or" sh-ctors s Nil 1000))
+          (begin (ffi-call "zyl_smap_put" sh-tymemo s v 1000) v))))))
+
+(defn sh-ctors-fields (cs)
+  (match cs
+    (Nil "")
+    (Cons c rest
+      (let v (sh-texprs (field-types-of c))
+        (if (sh-reason-p v) v (sh-ctors-fields rest))))))
+
+(defn sh-texprs (ts)
+  (match ts
+    (Nil "")
+    (Cons h t (let v (sh-texpr h) (if (sh-reason-p v) v (sh-texprs t))))))
+
+(defn sh-texpr (te)
+  (match (Expr.inner te)
+    (EAtom a (match a (AIdent n (sh-tname n)) (_ "")))
+    (EApply h args (let v (sh-tname h) (if (sh-reason-p v) v (sh-texprs args))))
+    (ECall op args (let v (sh-texpr op) (if (sh-reason-p v) v (sh-texprs args))))
+    (_ "")))
+
+(defn sh-tname (n)
+  (let s (ck-symbol-of n)
+    (if (str-eq s "Fn") "a function value inside captured data, whose captures the compiler cannot see"
+      (if (str-eq s "AtomicBuf") "an AtomicBuf inside other data (an AtomicBuf crosses only as a direct capture)"
+        (let b (sh-bad-name s)
+          (if (> (str-length b) 0) b
+            (if (ffi-call "zyl_smap_has" sh-ctors s 1000) (sh-type-fields s) "")))))))
+
+; ===========================================================================
+; FREEZE: an actor whose handle was discarded never releases the buffer
+; ===========================================================================
+
+; Probes that allocate nothing come first: this runs at every call.
+(defn sh-freeze-p (g)
+  (and (or (ffi-call "zyl_cstr_key_matches" g "atomicbuf-freeze!" 1000) (ffi-call "zyl_cstr_key_matches" g "atomicbuf-freeze?" 1000))
+    (uc-std-key-p g)))
+
+(defn sh-bind-key (fname n scope)
+  (match (sh-lookup n scope)
+    (Some b
+      (match b
+        (ShB _ k v
+          (str-concat fname (str-concat "|" (str-concat n (str-concat "|" (ffi-call "zyl_int_text" (if (= k -1) (ffi-call "zyl_span_off" v 1000) k) 1000))))))))
+    (None "")))
+
+(defn sh-note-held (fname n scope site)
+  (let k (sh-bind-key fname n scope)
+    (if (= (str-length k) 0) unit (begin (ffi-call "zyl_smap_put" sh-held k site 1000) unit))))
+
+(defn sh-check-freeze (site args fname scope)
+  (if (not (ffi-call "zyl_ref_get" sh-reporting 1000)) unit
+    (match args
+      (Cons a _
+        (match (sh-ident a)
+          (Some n
+            (let k (sh-bind-key fname n scope)
+              (if (and (> (str-length k) 0) (ffi-call "zyl_smap_has" sh-held k 1000))
+                (sh-fail-at site "E_ATOMIC_SHARED"
+                  (str-concat "`" (str-concat n "` can never be frozen: an actor that captured it was spawned with its handle thrown away, so nothing can join it and it holds the buffer for good"))
+                  "bind the spawn's result, `(let a (spawn ...) ...)`, and `(actor-wait a)` before freezing"
+                  (ffi-call "zyl_smap_get_or" sh-held k site 1000) "the actor is spawned here and never joined")
+                unit)))
+          (None unit)))
+      (Nil unit))))
+
+; ===========================================================================
+; REACH: the top-level defs an actor's code can touch
+; ===========================================================================
+
+(defn sh-push-root (body who site)
+  (if (ffi-call "zyl_ref_get" sh-reporting 1000)
+    (begin (ffi-call "zyl_wvec_push" sh-roots (ShRoot body who site) 1000) unit)
+    unit))
+
+(defn sh-root-name (n site)
+  (if (ffi-call "zyl_smap_has" sh-fns n 1000)
+    (sh-reach-fn n "spawn" site)
+    (if (ffi-call "zyl_smap_has" sh-defs n 1000)
+      (sh-reach-def n (ffi-call "zyl_smap_get_or" sh-defs n (sh-nil-expr) 1000) site site "a spawned closure")
+      unit)))
+
+(defn sh-reach-fn (n who site)
+  (if (or (not (ffi-call "zyl_ref_get" sh-reporting 1000)) (ffi-call "zyl_smap_has" sh-seen n 1000)) unit
+    (begin
+      (ffi-call "zyl_smap_put" sh-seen n 1 1000)
+      (ffi-call "zyl_smap_put" sh-via n who 1000)
+      (match (Expr.inner (ffi-call "zyl_smap_get_or" sh-fns n (sh-nil-expr) 1000))
+        (EDefn _ _ body (begin (ffi-call "zyl_wvec_push" sh-roots (ShRoot body n site) 1000) unit))
+        (_ unit)))))
+
+(defn sh-reach (i)
+  (if (>= i (ffi-call "zyl_wvec_len" sh-roots 1000)) unit
+    (begin
+      (match (ffi-call "zyl_wvec_get" sh-roots i 1000)
+        (ShRoot body who site (sh-reach-walk body who site)))
+      (sh-reach (+ i 1)))))
+
+(defn sh-reach-walk (e who site) (sh-rw e Nil who site))
+
+; Like sh-free: a name bound inside the code is a local, never a top-level def.
+(defn sh-rw (e bound who site)
+  (match (Expr.inner e)
+    (EAtom a (match a (AIdent n (if (sh-member n bound) unit (sh-reach-ref e (sh-callee e n) who site))) (_ unit)))
+    (EApply n args (begin (sh-reach-ref e (sh-callee e n) who site) (sh-rw-list args bound who site)))
+    (ECall op args
+      (match (sh-ident op)
+        (Some n (begin (if (sh-member n bound) unit (sh-reach-ref e (sh-callee e n) who site)) (sh-rw-list args bound who site)))
+        (None
+          (begin
+            (if (> (str-length (ta-renamed e)) 0) (sh-reach-ref e (ta-renamed e) who site) unit)
+            (sh-rw-list (Cons op args) bound who site)))))
+    (ELet n v b (begin (sh-rw v bound who site) (sh-rw b (Cons n bound) who site)))
+    (ELetMut n v b (begin (sh-rw v bound who site) (sh-rw b (Cons n bound) who site)))
+    (EFor bs _ _ (sh-rw-list (expr-children e) (list-append (sh-for-names bs) bound) who site))
+    (EMatch sj arms (begin (sh-rw sj bound who site) (sh-rw-arms arms bound who site)))
+    (ETryCatch tb v h (begin (sh-rw tb bound who site) (sh-rw h (Cons v bound) who site)))
+    (EFn _ ps b (sh-rw b (list-append (sh-param-names ps) bound) who site))
+    (ELambda _ ps b (sh-rw b (list-append (sh-param-names ps) bound) who site))
+    (_ (sh-rw-list (expr-children e) bound who site))))
+
+(defn sh-rw-list (xs bound who site)
+  (match xs
+    (Nil unit)
+    (Cons h t (begin (sh-rw h bound who site) (sh-rw-list t bound who site)))))
+
+(defn sh-rw-arms (arms bound who site)
+  (match arms
+    (Nil unit)
+    (Cons a rest
+      (match a
+        (MA v pats body (begin (sh-rw body (list-append (mc-arm-binders v pats) bound) who site) (sh-rw-arms rest bound who site)))))))
+
+(defn sh-reach-ref (e n who site)
+  (if (ffi-call "zyl_smap_has" sh-defs n 1000) (sh-reach-def n (ffi-call "zyl_smap_get_or" sh-defs n (sh-nil-expr) 1000) e site who)
+    (if (ffi-call "zyl_smap_has" sh-fns n 1000) (sh-reach-fn n who site) unit)))
+
+; A def is a getter (expr_inner.zyl's def-getter): (if (ready k) (get k) (let _zyl_def v ...)).
+(defn sh-def-value (body)
+  (match (Expr.inner body)
+    (EIf _ _ f (match (Expr.inner f) (ELet _ v _ v) (_ body)))
+    (_ body)))
+
+(defn sh-reach-def (n d at site who)
+  (match (Expr.inner d)
+    (EDefn _ _ body
+      (let code (sh-class-top (ta-attr body) 3)
+        (if (or (= (str-length code) 0) (str-eq code "V")) unit
+          (if (str-eq code "F")
+            (match (Expr.inner (sh-def-value body))
+              (EFn _ _ b (sh-reach-walk b n site))
+              (ELambda _ _ b (sh-reach-walk b n site))
+              (EAtom a (match a (AIdent f (sh-reach-ref (sh-def-value body) f n site)) (_ unit)))
+              (_ (sh-fail-global at n "a closure whose captures the compiler cannot see" who site)))
+            (sh-fail-global at n (if (str-eq code "A") "an AtomicBuf" code) who site)))))
+    (_ unit)))
+
+(defn sh-chain (who (k Int))
+  (if (or (> k 16) (not (ffi-call "zyl_smap_has" sh-via who 1000))) (err-name who)
+    (str-concat (sh-chain (ffi-call "zyl_smap_get_or" sh-via who "" 1000) (+ k 1)) (str-concat " -> " (err-name who)))))
+
+(defn sh-fail-global (at n what who site)
+  (sh-fail-at at "E_CAPABILITY_LEAK"
+    (str-concat "an actor reaches the top-level `" (str-concat (err-name n) (str-concat "`, " (str-concat what
+      (str-concat ", through " (str-concat (sh-chain who 0) "; every actor sees the same top-level def, so the output would depend on the schedule"))))))
+    "keep mutable state local to one actor and pass values over a channel; to accumulate across actors, capture an AtomicBuf (atomic/atomic)"
+    site "the actor is started here"))
+
+; ===========================================================================
+; DIAGNOSTICS
+; ===========================================================================
+
+(defn sh-help (c0)
+  (let code (if (sh-starts c0 "which holds ") (str-substring c0 12 (- (str-length c0) 12)) c0)
+  (if (sh-starts code "a Ref")
+    "a Ref is a cell for one actor: send its value over a channel instead, or accumulate across actors in an AtomicBuf (atomic/atomic)"
+    (if (sh-starts code "an AtomicBuf")
+      "capture the AtomicBuf itself in the closure you spawn, not inside other data"
+      (if (sh-starts code "a function value")
+        "bind the closure with `let` where it is spawned, or pass plain data, so the compiler can see what it captures"
+        "share numbers across actors through an AtomicBuf (atomic/atomic): `(atomicbuf-new N)`, `atomicbuf-add` in each actor, `atomicbuf-freeze!` after `actor-wait`; or send values over a channel")))))
+
+(defn sh-starts (s p) (and (>= (str-length s) (str-length p)) (str-eq (str-substring s 0 (str-length p)) p)))
+
+(defn sh-fail-bad (e code (mode Int) site)
+  (sh-fail e
+    (str-concat (sh-arg-text (if (= mode 2) "a value a spawned closure captures" "a value that crosses to another actor"))
+      (str-concat (if (sh-starts code "which holds ") (str-concat " holds " (str-substring code 12 (- (str-length code) 12))) (str-concat " is " code))
+        ", so two actors could touch the same mutable state and the output would depend on the schedule"))
+    (sh-help code) site))
+
+; Through a parameter that crosses, name the function that hands it on.
+(defn sh-arg-text (plain)
+  (let g (ffi-call "zyl_ref_get" sh-arg-of 1000)
+    (if (= (str-length g) 0) plain
+      (str-concat "this argument, which crosses to another actor inside `" (str-concat (err-name g) "`,")))))
+
+(defn sh-fail-unseen (e site)
+  (sh-fail e "this closure crosses to another actor, but it comes from a call, a field or a parameter of an inner function, so the compiler cannot see what it captures"
+    "bind the closure with `let` (or write it inline) where it is spawned or sent, or pass the data it needs instead" site))
+
+(defn sh-fail-generic (e site)
+  (sh-fail e "this value crosses to another actor, but its type is generic here and cannot be traced to a parameter, so the compiler cannot check it"
+    "give the value a concrete type, or pass it in as a parameter of the function that spawns" site))
+
+(defn sh-fail (e msg help site)
+  (sh-fail-at e "E_CAPABILITY_LEAK" msg help site "the actor boundary is here"))
+
+(defn sh-fail-at (e code msg help site label)
+  (if (not (ffi-call "zyl_ref_get" sh-reporting 1000)) unit
+    (let labels (if (= (ffi-call "zyl_span_off" site 1000) (ffi-call "zyl_span_off" e 1000)) Nil (Cons (err-label-at site label) Nil))
+      (begin
+        (ffi-call "zyl_panic" (err-at-labels code msg (ffi-call "zyl_span_file" e 1000) (ffi-call "zyl_span_off" e 1000) labels help) 1000)
+        unit))))

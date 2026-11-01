@@ -1,0 +1,8 @@
+; Compile-fail: a freeze consumes the buffer; use the AtomicView it returned.
+; expect-error: E_MOVE_VALUE
+(use atomic/atomic)
+
+(defn main ()
+  (let b (atomicbuf-new 1)
+    (let v (atomicbuf-freeze! b)
+      (begin (atomicbuf-add b 0 1) (atomicview-get! v 0)))))

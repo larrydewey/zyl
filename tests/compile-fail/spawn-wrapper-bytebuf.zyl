@@ -1,0 +1,9 @@
+; Compile-fail: actor-spawn hands its closure to spawn, so the closure is checked at the call.
+; expect-error: E_CAPABILITY_LEAK
+(capabilities actor)
+(use actor/actor)
+
+(defn main ()
+  (let b (bytebuf Heap 8)
+    (let a (actor-spawn (fn () (store-u8! :le b 0 1)))
+      (begin (actor-wait a) 0))))

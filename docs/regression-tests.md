@@ -219,7 +219,7 @@ tests/
 │   ├── bitwise.zyl            # bit-and/or/xor/not, shifts, n-ary folding
 │   ├── eval-order.zyl         # strict left-to-right evaluation
 │   ├── byte-primitives.zyl    # bytebuf, load/store round-trips, slices,
-│   │                          #   atomics, alignment
+│   │                          #   AtomicBuf slots, alignment
 │   ├── views.zyl              # zero-copy string views and slices
 │   ├── control-flow.zyl       # if, while, for, cond, begin, nested
 │   ├── control-flow-ext.zyl   # nested loops, else-arms, multi init, breaks
@@ -266,7 +266,8 @@ tests/
 │   ├── unwrap-error.zyl       # Result/Option unwrapping, error propagation
 │   ├── actors.zyl             # spawn, join, output at join
 │   ├── channels.zyl           # Kahn channels: chan, chan-send, chan-recv
-│   ├── concurrency.zyl        # spawn, join, atomics across actors
+│   ├── concurrency.zyl        # spawn, join, AtomicBuf across actors
+│   ├── atomicbuf-read.zyl     # AtomicBuf 128-bit sums, read-time E_OVERFLOW / E_MUT_CONFLICT
 │   ├── ffi.zyl                # ffi-call, ffi-pin, ffi-unpin, timeout
 │   ├── ffi-advanced.zyl       # pinning, timeouts
 │   ├── ffi-timeout.zyl        # a foreign call that overruns raises E_FFI_TIMEOUT

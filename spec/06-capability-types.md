@@ -15,7 +15,7 @@ constructors; what each stood for is carried by the binding a name has:
 |--------------|-----|
 | `TCap<T>` — immutable shared access | a `let` binding — immutable, any number of readers |
 | `TMut<T>` — exclusive mutable ownership | a `let-mut` binding — the only assignable binding; `set!` rebinds it |
-| `TAtomic<T>` — atomic shared mutation | immutable (`let`) or atomic bindings: `stdlib/atomic/atomic.zyl` supplies functions over an address, not a type |
+| `TAtomic<T>` — atomic shared mutation | `AtomicBuf` (`stdlib/atomic/atomic.zyl`): the one buffer actors share, with commuting updates only while shared and reads after a freeze (§7.4) |
 | `TBox<T>` — heap-managed allocation | nothing to write: a value's region is decided by escape analysis (`spec/07-region-memory-model.md`), not by its type |
 | `TPin<T>` — FFI-pinned memory | `(Pin T)`, the one wrapper that is a type: an opaque handle |
 
@@ -28,7 +28,7 @@ a `let-mut` binding rebinds it, and `set!` on anything else is
 `E_MUT_CONFLICT`.
 
 The one mutable location the language has is a `bytebuf`, written through
-`store-u8`, `bytebuf-append` or an atomic primitive. A name becomes a
+`store-u8` or `bytebuf-append`. A name becomes a
 writer by being *written*, and the invariant is that within one location
 at most one name may be written: one writer plus any number of readers is
 allowed, two writers are not. Violation is the compile-time error
@@ -43,12 +43,15 @@ canonical text; they follow from the invariant.
 2. **Sharing:** Any number of `let` bindings may name one location; only a `let-mut` binding may be assigned.
 3. **No conversion:** A binding's capability is fixed by its `let` or `let-mut` form. There is no downgrade and no upgrade; a `let` binding cannot be made assignable.
 4. **A closure captures a value, not a location:** it reads what the binding held at capture time, and assigning an enclosing `let-mut` from inside it is `E_MUT_CONFLICT`.
-5. **Actor transfer:** Messages sent to actors must be immutable (`let`) or atomic bindings.
+5. **Actor transfer:** Nothing that crosses to another actor (a capture, a message, a reached top-level def) is or holds a `let-mut`, `ByteBuf`, `Ref` or other in-place handle; an `AtomicBuf` crosses as a direct capture (§7.4).
 
 ## Capability and Concurrency
 
-- Spawned closures and sent messages must be immutable (`let`) or atomic
-  bindings. A `let-mut` crossing an actor boundary is `E_CAPABILITY_LEAK`.
+- Spawned closures, sent messages and the top-level defs an actor reaches
+  may not be or hold a `let-mut`, `ByteBuf`/`ByteSlice`, `Ref`, `WVec`,
+  `SMap`, `Attr`, `Array`, `Words`, `StrBuf`, `UF`, `Arena` or `Pin`:
+  `E_CAPABILITY_LEAK` (`share_check.zyl`, after type inference). An
+  `AtomicBuf` crosses only as a direct capture of the spawned closure.
 - No shared mutable state between actors.
 - Deterministic FIFO per actor.
 
@@ -96,7 +99,8 @@ as the only assignable one, and enforces:
 - `set!` on a name that is not an in-scope `let-mut` binding is
   `E_MUT_CONFLICT`;
 - a `spawn` whose closure, or a `send` whose message, refers to an
-  in-scope `let-mut` binding is `E_CAPABILITY_LEAK`;
+  in-scope `let-mut` binding is `E_CAPABILITY_LEAK`; the typed half of
+  the rule (handles written in place) is `share_check.zyl`'s;
 - a closure passed as an `ffi-call` argument is `E_INVALID_CAPABILITY`;
 - a `set!` inside a closure on a `let-mut` of an enclosing scope is
   `E_MUT_CONFLICT` (`mc-fn-fence`): the closure captured a copy by value,
@@ -109,8 +113,8 @@ The invariant itself is enforced where the language can express it, by
 `linearity.zyl`. The invariant needs two things to mean anything -- a way
 to hold a writer, and a way to make two of them. There is no reference or
 borrow type, so a plain binding cannot be one; what the language does have
-is mutable locations, a `bytebuf`, written through by `store-u8`, the
-atomic forms and `bytebuf-append`. A name becomes a writer by being
+is mutable locations, a `bytebuf`, written through by `store-u8` and
+`bytebuf-append`. A name becomes a writer by being
 *written*, which is the distinction the rule turns on: within one location
 at most one name may be written. A writer plus any number of readers is
 one writer and many readers, which the invariant allows, so naming a
@@ -120,14 +124,14 @@ joins its base's class, so two names writing one buffer's memory is
 `E_MUT_CONFLICT` however the second name was derived.
 
 A closure may read a captured `let-mut` (it sees the value at capture
-time). Aliasing through the raw allocation and atomic primitives is covered
+time). Aliasing through the raw allocation primitives is covered
 by `linearity.zyl` as described above; the FFI primitives cannot alias,
 because a program may not name a raw runtime entry (`E_FFI_RESTRICTED`).
 Rules 3 and 4 above (no conversion, no outward write) have no dedicated
 check because there is nothing to check: with no capability dimension in
 `TaTy` a value is never converted, and a closure's captures are values.
-`TAtomic` and `TBox` are unrepresented, and rule 5's Send-capability is
-tracked syntactically as described above.
+`TBox` is unrepresented; `TAtomic` is the `AtomicBuf` type, and rule 5 is
+checked by type after inference (`share_check.zyl`, spec §7.4).
 
 `linearity.zyl` also owns moves (`E_MOVE_VALUE`): a file descriptor or a
 `StringBuffer` is consumed by the release that takes it over, and any use

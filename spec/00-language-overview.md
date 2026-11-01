@@ -145,7 +145,7 @@ Core modules:
 | option | Option (Some, None), `option-is-some`, `option-unwrap`, `option-map`, `option-expect!` |
 | result | Result (Ok, Err), `result-is-ok`, `result-unwrap`, `result-map`, `result-expect!` |
 | io | file-open, file-read, file-write, file-close |
-| atomic | `atomic-load`, `atomic-store`, `atomic-add`, and the rest of the atomic operations |
+| atomic | `AtomicBuf`, the buffer actors share (`atomicbuf-new`, `atomicbuf-add` .. `-xor`, `atomicbuf-freeze!`, `atomicview-get!`), and the address atomics `atomic-load!` .. `atomic-cas!` (ffi) |
 | actor | spawn, chan, chan-send, chan-recv, actor-wait |
 | ffi | ffi-call, ffi-pin, ffi-unpin |
 | testing | test-suite, test, assert-*, test-property, run-tests |

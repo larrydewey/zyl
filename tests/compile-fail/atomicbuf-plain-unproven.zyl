@@ -1,0 +1,9 @@
+; Compile-fail: a plain AtomicBuf update needs a slot the compiler can see is in range.
+; expect-error: E_PARTIAL_OPERATION
+(use atomic/atomic)
+
+(defn bump (b (i Int)) (atomicbuf-add b i 1))
+
+(defn main ()
+  (let b (atomicbuf-new 2)
+    (begin (bump b 1) 0)))

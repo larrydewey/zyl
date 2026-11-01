@@ -62,7 +62,8 @@ if ! cc -O0 -o "$CONTROL_BIN" "$SCRATCH/control.c" 2>/dev/null; then
     echo -e "${YELLOW}memcheck: no cc for the control; skipping the gate${NC}"
     exit 0
 fi
-control_out=$(valgrind --error-exitcode=99 "$CONTROL_BIN" 2>&1)
+# The control crashes, so valgrind writes a vgcore.PID into the cwd: run it in the scratch dir.
+control_out=$(cd "$SCRATCH" && valgrind --error-exitcode=99 "$CONTROL_BIN" 2>&1)
 if ! echo "$control_out" | grep -qE "Invalid write|Access not within mapped"; then
     echo -e "${RED}memcheck: FAILED ITS OWN CONTROL${NC}"
     echo "  a deliberately invalid write was not reported, so memcheck is not"
@@ -79,7 +80,7 @@ echo -e "  ${GREEN}✓${NC} memcheck control (an invalid write is detected)"
 # any real result is reported, by checking that memcheck's actual output
 # text is what the run-time test greps for.
 if [ "${1:-}" = "--self-test" ]; then
-    bad=$(valgrind --error-exitcode=99 "$CONTROL_BIN" 2>&1)
+    bad=$(cd "$SCRATCH" && valgrind --error-exitcode=99 "$CONTROL_BIN" 2>&1)
     if echo "$bad" | grep -qE "Invalid (read|write|free)|uninitialised|Mismatched|Conditional jump|Use of uninitialised|Syscall param"; then
         echo -e "  ${GREEN}✓${NC} memcheck self-test (a known-bad binary is flagged)"
         exit 0

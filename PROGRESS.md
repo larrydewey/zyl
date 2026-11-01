@@ -44,7 +44,7 @@ compile with `build/boot/zyl-self` on 2026-09-28.
   FFI entries, mutability/aliasing, release linearity, exhaustiveness,
   unused, secret),
   derive expansion, impl lifting, closure inlining (an identity step),
-  type checking, ICNF lowering, optimization, region inference, in-place
+  type checking, the numeric and share checks, ICNF lowering, optimization, region inference, in-place
   reuse, code generation, linking.
 - Types are sound (`docs/sound-types-design.md`, spec §4.8–§4.10): every
   type error is reported, then the compile fails. Unit is a type,
@@ -213,7 +213,7 @@ compile with `build/boot/zyl-self` on 2026-09-28.
   type -- `TaTy` is `TaV | TaC | TaF`, with no capability dimension -- so a
   plain binding cannot be a `TMut` reference to alias with. What the
   language *does* have is mutable locations: a `bytebuf`, written through
-  by `store-u8` and the atomic and `bytebuf-append` forms. Those are
+  by `store-u8` and the `bytebuf-append` form. Those are
   `TMut` by use, and aliasing them is reachable, so it is checked:
   **within one location, at most one name may be written.** A writer plus
   any number of readers is one `TMut` and many `TCap`, which the invariant
@@ -244,8 +244,9 @@ compile with `build/boot/zyl-self` on 2026-09-28.
   The remaining gap is the *type* rather than the check: `TCap<T>` and
   `TMut<T>` are still not written as types, so rules 3 and 4 (downgrade is
   allowed, upgrade is not) hold structurally -- there is no conversion to
-  forbid -- rather than by unification. Rule 5's Send-capability and the
-  `TAtomic`/`TBox` wrappers are likewise unrepresented.
+  forbid -- rather than by unification. `TBox` is likewise
+  unrepresented; `TAtomic` is `AtomicBuf`, and rule 5 (nothing mutable
+  crosses an actor) is the typed share check below.
   What does alias today is the collection sharing documented in
   `vec.zyl` ("versions made from the same Vec share storage until one of
   them outgrows it"). It is memory-safe by construction -- the shared
@@ -358,7 +359,7 @@ compile with `build/boot/zyl-self` on 2026-09-28.
   never runs and is rejected (`E_TOPLEVEL_STMTS_WITH_EXPLICIT_MAIN` beside
   `main`, `E_MALFORMED_FORM` otherwise). A constructor pattern names every
   field or none (`E_ARITY_MISMATCH`); the check found binders missing in
-  linearity's walk of the atomic byte-buffer forms (now walked in full).
+  linearity's walk of the old atomic byte-buffer forms (since removed).
   `set!` is a reserved keyword (§1.3).
 - Delimiters (spec §1.6, `sexp_balance.zyl`): every file is checked
   before it is read, with the lexer's own rules (an agreement test
@@ -434,8 +435,16 @@ compile with `build/boot/zyl-self` on 2026-09-28.
   runs, exit 2), else 80% of total memory. A `bytebuf` over the budget or
   past 1 TiB is `E_OUT_OF_MEMORY` too, never a null handle; a negative
   size is 0.
-- `bytebuf-atomic-add`/`-sub`/`-fetch-add` are CAS loops whose checked
-  `+`/`-` traps (`E_OVERFLOW`) before anything is stored.
+- AtomicBuf (`runtime/rt/abuf.zyl`): one heap block, a header
+  `{magic, slots, holders}` and per slot `{lo, hi, kinds}`; an add is a
+  `lock xadd` on `lo` with the carry and sign added to `hi` (an exact
+  128-bit sum once every add is done), max/min/and/or/xor are CAS loops on
+  an encoding whose identity is 0, and `kinds` is an atomic or. The
+  holder count rises at spawn (the closure's environment words are
+  scanned for AtomicBuf headers, like endpoints) and falls only at the
+  spawner's `actor-wait` (`actor.zyl`, `actor_abufs`). A freeze copies the
+  slots into an AtomicView. The address atomics (`zyl_atomic_*`) trap
+  `E_MISALIGNED_ACCESS` off an 8-byte boundary.
 - `string-buffer-str` copies, so the String outlives the buffer.
 - An uncaught panic prints a backtrace under its `PANIC:` line: the rbp
   chain, each return address named through the `zyl_syms` table codegen
@@ -463,6 +472,33 @@ compile with `build/boot/zyl-self` on 2026-09-28.
 - `ZYL_SCHED=deterministic` runs one actor at a time;
   `ZYL_SCHED_CHAOS=<seed>` perturbs every channel operation. The sched
   category requires identical output under both.
+- **No shared mutable state, by type (spec §7.4, 2026-11-01).**
+  `share_check.zyl` runs after type inference (and in the language
+  server): a spawned closure's captures (inline, `let`-bound, or through
+  a parameter a callee spawns, captures or sends: a fixpoint over
+  parameter summaries), every channel value, and every top-level def an
+  actor's code reaches through the call graph may not be or hold a
+  `ByteBuf`/`ByteSlice`, `Ref`, `WVec`, `SMap`, `Attr`, `Array`, `Words`,
+  `StrBuf`, `UF`, `Arena` or `Pin` (`E_CAPABILITY_LEAK`, located with the
+  boundary as a label; a reached def names the call chain). Persistent
+  `Vec`/`IntMap`/`Slice` are checked by element; a crossing closure from
+  a call or a field, or a generic value that cannot be traced, fails
+  closed. Refs and buffers stay fully usable within one actor; this
+  closes the shared-`bytebuf` race and the `zyl_ref_*` sharing item.
+- **AtomicBuf** (`atomic/atomic`) is the one buffer that crosses, as a
+  direct capture only. `(atomicbuf-new N)`; while held only
+  `atomicbuf-add`, `-max`, `-min`, `-and`, `-or`, `-xor` (result-free,
+  commuting; plain where a literal slot into a let-bound literal-size
+  buffer proves it, else `!` `E_INDEX_OUT_OF_BOUNDS` / `?` None);
+  `atomicbuf-freeze!`/`?` move it (`E_MOVE_VALUE` on reuse) into an
+  `AtomicView` once every holder is joined by its spawner, else
+  `E_ATOMIC_SHARED` / None (at compile time when the holder's handle was
+  discarded); `atomicbuf-held` asks; `atomicview-get!`/`?` read (two
+  update kinds `E_MUT_CONFLICT`, a sum outside Int `E_OVERFLOW`). The
+  determinism argument is spec §7.4 and `docs/soundness.md` L11. The
+  `bytebuf-atomic-*` forms are gone (an unbound name, with AtomicBuf as
+  the suggested spelling), and the address atomics are `atomic-load!` ..
+  `atomic-cas!` with `?` forms (`E_MISALIGNED_ACCESS`).
 
 ### Package system (spec §31)
 
@@ -574,13 +610,7 @@ Language and compiler:
   per call, and many compiler byte loops use it; the hottest were moved to
   `zyl_view_byte` with a known length.
 
-- `zyl_ref_*` is a shared mutable cell any program may create; two actors
-  sharing one race (needs `actor`). Whether refs stay a program surface is
-  an open language decision.
 - `make-struct` is not typed (`E_CANNOT_INFER`); call the constructor.
-- `bytebuf-atomic-*` outside the buffer or off an 8-byte boundary still
-  return 0 (the store is dropped); the `!`/`?` spelling the byte loads and
-  stores got (2026-10-31) has not reached them.
 - Vec and IntMap are persistent (a push writes in place only into a
   slot no version has written, claimed by CAS; `vec-set!`, `intmap-put`,
   `intmap-remove` copy) and `array-set!` writes each slot once, in order
@@ -604,8 +634,9 @@ Language and compiler:
   60% slower than the old wrapping build (0.114 s to 0.181 s); `loop` is
   +4%, `sieve` unchanged. A checked accumulator would need an overflow test
   that fails at the same operation the source order would.
-- `atomic-add`/`atomic-sub` wrap like the hardware's `xadd` whatever the
-  numeric policy; they are not covered by `(numeric checked)`.
+- `atomic-add!`/`atomic-sub!` (address atomics, ffi) wrap like the
+  hardware's `xadd` whatever the numeric policy; they are not covered by
+  `(numeric checked)`.
 - Native backend: Float arithmetic, `print`, closures, `try` and
   `with-region` scopes keep a function on the stack machine; no MIR
   optimization pass and no general bounds-check elimination; jumps are
@@ -631,19 +662,18 @@ Language and compiler:
 Concurrency:
 
 - An endpoint nested inside a captured value does not move at spawn.
-- Send-capability is the syntactic let-mut rule, not a type. A spawned
-  closure may capture a `bytebuf` and write it with plain stores from two
-  actors: a data race whose output depends on the schedule. Restricting a
-  shared buffer to the atomic forms (or forbidding the capture) is an open
-  language decision; the atomics themselves still let output depend on
-  interleaving.
+- A Ref, ByteBuf or other handle reached only through an Int (an address
+  from `bytebuf-ptr` or foreign code) is outside the share check; both
+  need `ffi`. The toolchain modules (`compiler/`, `lsp/`, `repl/`) are not
+  share-checked (the REPL's actor shares interpreter cells only `set!`
+  writes, and the interpreted program is checked itself).
 - An actor's `(exit c)` ends the actor and its joiner exits with `c`; an
   actor's stack overflow stops the program when the actor is joined. If
   the overflow hits while the actor holds a runtime lock, the old
   immediate stop is kept (no hang), and that path is schedule-dependent.
-- Capability-mediated sharing (a shared region of TCap or atomic
-  values, read-only pages between actors) is not built; the atomic
-  byte-buffer operations exist.
+- Read-only sharing of a large immutable value between actors is by
+  pointer already (it is immutable); a shared region of mutable values
+  beyond AtomicBuf's commuting slots is not built.
 
 Runtime and linking:
 
@@ -886,7 +916,7 @@ REPL and language server:
    call site, and once a program holds that address, `alloc-offset` and the
    `alloc-read-int` family let it walk off the end of the buffer. The
    typed surface over a buffer is already complete -- `load-u8`..`store-i64`
-   and all six `bytebuf-atomic-*` take `(buf, offset)` -- so user code
+   take `(buf, offset)` -- so user code
    never needs a pointer to *manipulate* bytes. It appears in exactly two
    situations: being handed to C, and being received from C in a callback.
    The first is not fundamental. Let an extern parameter be declared as a

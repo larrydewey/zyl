@@ -1,0 +1,14 @@
+; Compile-fail: an actor reaches a top-level def holding a Ref, which every actor shares.
+; expect-error: E_CAPABILITY_LEAK
+(capabilities actor)
+(use actor/actor)
+
+(def counter (ffi-call "zyl_ref_new" 0 1000))
+
+(defn bump () (ffi-call "zyl_ref_set" counter (+ (ffi-call "zyl_ref_get" counter 1000) 1) 1000))
+
+(defn worker () (bump))
+
+(defn main ()
+  (let a (spawn worker)
+    (begin (bump) (actor-wait a) 0)))

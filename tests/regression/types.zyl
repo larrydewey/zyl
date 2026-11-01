@@ -90,32 +90,32 @@
 (test "atomic-load"
   (let p (_atomic-slot)
     (begin
-      (atomic-store p 42)
-      (assert-equal (atomic-load p) 42)
+      (atomic-store! p 42)
+      (assert-equal (atomic-load! p) 42)
       0)))
 (test "atomic-store"
   (let p (_atomic-slot)
     (begin
-      (assert-equal (atomic-store p 42) 42)
+      (assert-equal (atomic-store! p 42) 42)
       0)))
 (test "atomic-add"
   (let p (_atomic-slot)
     (begin
-      (atomic-store p 0)
-      (assert-equal (atomic-add p 10) 10)
+      (atomic-store! p 0)
+      (assert-equal (atomic-add! p 10) 10)
       0)))
 (test "atomic-sub"
   (let p (_atomic-slot)
     (begin
-      (atomic-store p 100)
-      (assert-equal (atomic-sub p 25) 75)
+      (atomic-store! p 100)
+      (assert-equal (atomic-sub! p 25) 75)
       0)))
 (test "atomic-cas"
   (let p (_atomic-slot)
     (begin
-      (atomic-store p 0)
-      (assert-true (atomic-cas p 0 99))
-      (assert-equal (atomic-load p) 99)
+      (atomic-store! p 0)
+      (assert-true (atomic-cas! p 0 99))
+      (assert-equal (atomic-load! p) 99)
       0)))
 
 ; Boolean logic helpers

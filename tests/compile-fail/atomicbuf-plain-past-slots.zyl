@@ -1,0 +1,7 @@
+; Compile-fail: a literal slot past a let-bound buffer of literal size.
+; expect-error: E_PARTIAL_OPERATION
+(use atomic/atomic)
+
+(defn main ()
+  (let b (atomicbuf-new 2)
+    (begin (atomicbuf-max b 2 7) 0)))

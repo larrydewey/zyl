@@ -1,4 +1,4 @@
-; ByteBuf/ByteSlice entries (load/store, slices, append) and the seq-cst atomics.
+; ByteBuf/ByteSlice entries (load/store, slices, append) and the seq-cst address atomics.
 (use base)
 (use heap)
 
@@ -162,20 +162,28 @@
 (defn zyl_align_check (expr align)
   (if (<= align 0) 0 (if (= (rem! expr align) 0) 1 0)))
 
-; --- atomics on 64-bit words (seq-cst) ---
+; --- atomics on 64-bit words (seq-cst); an address off an 8-byte boundary stops the program ---
 
-(defn zyl_atomic_load (addr) (ffi-call "%load64" (rt-w addr) 1))
+(defn bb-misaligned (addr)
+  (ffi-call "zyl_panic"
+    (str-concat "E_MISALIGNED_ACCESS: the atomic access at address " (str-concat (ffi-call "zyl_int_text" addr 1)
+      " is not on an 8-byte boundary\n  = help: use the `?` form (atomic-load?, atomic-add?, ...) to get None instead, or align the address"))
+    1))
 
-(defn zyl_atomic_store (addr v) (let _ (ffi-call "%xchg" (rt-w addr) v 1) v))
+(defmacro bb-aligned (addr) (let ba-a addr (if (= (bit-and ba-a 7) 0) (rt-w ba-a) (bb-misaligned ba-a))))
 
-(defn zyl_atomic_fetch_add (addr v) (ffi-call "%fetch-add" (rt-w addr) v 1))
+(defn zyl_atomic_load (addr) (ffi-call "%load64" (bb-aligned addr) 1))
+
+(defn zyl_atomic_store (addr v) (let _ (ffi-call "%xchg" (bb-aligned addr) v 1) v))
+
+(defn zyl_atomic_fetch_add (addr v) (ffi-call "%fetch-add" (bb-aligned addr) v 1))
 
 ; The hardware's add wraps the stored word, so the returned new value wraps the same way.
-(defn zyl_atomic_add (addr v) (rt-wadd (ffi-call "%fetch-add" (rt-w addr) v 1) v))
+(defn zyl_atomic_add (addr v) (rt-wadd (ffi-call "%fetch-add" (bb-aligned addr) v 1) v))
 
-(defn zyl_atomic_sub (addr v) (rt-wsub (ffi-call "%fetch-add" (rt-w addr) (rt-wsub 0 v) 1) v))
+(defn zyl_atomic_sub (addr v) (rt-wsub (ffi-call "%fetch-add" (bb-aligned addr) (rt-wsub 0 v) 1) v))
 
-(defn zyl_atomic_cas (addr expected new) (= (ffi-call "%cas" (rt-w addr) expected new 1) expected))
+(defn zyl_atomic_cas (addr expected new) (= (ffi-call "%cas" (bb-aligned addr) expected new 1) expected))
 
 ; CAS loop storing max (or min) of the slot and v; returns the stored value.
 (defn bb-atomic-pick (a old v want-max)
@@ -183,50 +191,9 @@
     (let prev (ffi-call "%cas" a old c 1)
       (if (= prev old) c (bb-atomic-pick a prev v want-max)))))
 
-(defn zyl_atomic_max (addr v) (let a (rt-w addr) (bb-atomic-pick a (ffi-call "%load64" a 1) v true)))
+(defn zyl_atomic_max (addr v) (let a (bb-aligned addr) (bb-atomic-pick a (ffi-call "%load64" a 1) v true)))
 
-(defn zyl_atomic_min (addr v) (let a (rt-w addr) (bb-atomic-pick a (ffi-call "%load64" a 1) v false)))
-
-; --- atomics on a ByteBuf slot: 8-aligned offset, whole word within cap ---
-
-(defmacro bb-slot (buf off)
-  (let h (bb-buf buf)
-    (if (or (= h 0) (or (< off 0) (not (= (bit-and off 7) 0)))) 0
-      (if (bb-ok off 8 (bb-cap h)) (+ (bb-data h) off) 0))))
-
-(defn zyl_bytebuf_atomic_load (buf off)
-  (let p (bb-slot buf off) (if (= p 0) 0 (ffi-call "%load64" p 1))))
-
-(defn zyl_bytebuf_atomic_store (buf off v)
-  (let p (bb-slot buf off) (if (= p 0) 0 (let _ (ffi-call "%xchg" p v 1) 1))))
-
-; CAS loop adding d to the slot: the checked + traps (E_OVERFLOW) before anything is stored; returns the old value.
-(defn bb-atomic-addc (a old d)
-  (let prev (ffi-call "%cas" a old (+ old d) 1)
-    (if (= prev old) old (bb-atomic-addc a prev d))))
-
-(defn zyl_bytebuf_atomic_add (buf off v)
-  (let p (bb-slot buf off) (if (= p 0) 0 (+ (bb-atomic-addc p (ffi-call "%load64" p 1) v) v))))
-
-(defn zyl_bytebuf_atomic_sub (buf off v)
-  (let p (bb-slot buf off) (if (= p 0) 0 (- (bb-atomic-subc p (ffi-call "%load64" p 1) v) v))))
-
-; As bb-atomic-addc, subtracting d (no negation, so INT_MIN subtracts exactly).
-(defn bb-atomic-subc (a old d)
-  (let prev (ffi-call "%cas" a old (- old d) 1)
-    (if (= prev old) old (bb-atomic-subc a prev d))))
-
-(defn zyl_bytebuf_atomic_fetch_add (buf off v)
-  (let p (bb-slot buf off) (if (= p 0) 0 (bb-atomic-addc p (ffi-call "%load64" p 1) v))))
-
-(defn zyl_bytebuf_atomic_max (buf off v)
-  (let p (bb-slot buf off) (if (= p 0) 0 (zyl_atomic_max p v))))
-
-(defn zyl_bytebuf_atomic_min (buf off v)
-  (let p (bb-slot buf off) (if (= p 0) 0 (zyl_atomic_min p v))))
-
-(defn zyl_bytebuf_atomic_cas (buf off expected new)
-  (let p (bb-slot buf off) (if (= p 0) 0 (if (= (ffi-call "%cas" p expected new 1) expected) 1 0))))
+(defn zyl_atomic_min (addr v) (let a (bb-aligned addr) (bb-atomic-pick a (ffi-call "%load64" a 1) v false)))
 
 ; --- whole files as buffers (the assembler and linker; stdlib only) ---
 

@@ -1,4 +1,4 @@
 ; expect-error: E_FFI_RESTRICTED
-; An atomic entry takes any address; the checked forms are bytebuf-atomic-*.
+; An atomic entry takes any address; programs go through atomic/atomic (AtomicBuf, or the ffi address forms).
 (capabilities ffi)
 (defn main () (begin (print (ffi-call "zyl_atomic_load" 4096 1000)) 0))

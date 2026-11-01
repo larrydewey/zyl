@@ -102,15 +102,7 @@
   (EByteBufLen Expr)
   (EByteBufCap Expr)
   (EByteBufPtr Expr)
-  (EAlignCheck Expr Int)
-  (EAtomicLoad Expr Expr)
-  (EAtomicStore Expr Expr Expr)
-  (EAtomicAdd Expr Expr Expr)
-  (EAtomicSub Expr Expr Expr)
-  (EAtomicCAS Expr Expr Expr Expr)
-  (EAtomicFetchAdd Expr Expr Expr)
-  (EAtomicMax Expr Expr Expr)
-  (EAtomicMin Expr Expr Expr))
+  (EAlignCheck Expr Int))
 
 ; Endianness selector for the load/store/atomic byte ops. Parsed from the
 ; `:le` / `:be` keyword in first argument position
@@ -1028,15 +1020,7 @@
     (EByteBufLen b (Cons b Nil))
     (EByteBufCap b (Cons b Nil))
     (EByteBufPtr b (Cons b Nil))
-    (EAlignCheck b _ (Cons b Nil))
-    (EAtomicLoad a b (Cons a (Cons b Nil)))
-    (EAtomicStore a b c (Cons a (Cons b (Cons c Nil))))
-    (EAtomicAdd a b c (Cons a (Cons b (Cons c Nil))))
-    (EAtomicSub a b c (Cons a (Cons b (Cons c Nil))))
-    (EAtomicCAS a b c d (Cons a (Cons b (Cons c (Cons d Nil)))))
-    (EAtomicFetchAdd a b c (Cons a (Cons b (Cons c Nil))))
-    (EAtomicMax a b c (Cons a (Cons b (Cons c Nil))))
-    (EAtomicMin a b c (Cons a (Cons b (Cons c Nil))))))
+    (EAlignCheck b _ (Cons b Nil))))
 
 (defn ex-opt-list (o) (match o (None Nil) (Some x (Cons x Nil))))
 
@@ -1716,48 +1700,6 @@
       (_ (ei-fail "E_UNEXPECTED_TOKEN_IN_EXPR" "align-check alignment must be a power-of-two literal")))
     (ei-fail "E_ARITY_MISMATCH" "align-check requires ptr align")))
 
-(defn parse-atomic-load (args)
-  (if (ast-has-at-least args 2)
-    (Some
-      (Expr
-        (EAtomicLoad
-          (convert-ast (ast-nth args 0 (AstInt 0)))
-          (convert-ast (ast-nth args 1 (AstInt 0))))))
-    (ei-fail "E_ARITY_MISMATCH" "bytebuf-atomic-load requires buf off")))
-
-(defn parse-atomic-store (args)
-  (if (ast-has-at-least args 3)
-    (Some
-      (Expr
-        (EAtomicStore
-          (convert-ast (ast-nth args 0 (AstInt 0)))
-          (convert-ast (ast-nth args 1 (AstInt 0)))
-          (convert-ast (ast-nth args 2 (AstInt 0))))))
-    (ei-fail "E_ARITY_MISMATCH" "bytebuf-atomic-store requires buf off val")))
-
-(defn parse-atomic-op3 (args variant)
-  (if (ast-has-at-least args 3)
-    (let a (convert-ast (ast-nth args 0 (AstInt 0)))
-      (let b (convert-ast (ast-nth args 1 (AstInt 0)))
-        (let c (convert-ast (ast-nth args 2 (AstInt 0)))
-          (if (= variant 0) (Some (Expr (EAtomicAdd a b c)))
-          (if (= variant 1) (Some (Expr (EAtomicSub a b c)))
-          (if (= variant 2) (Some (Expr (EAtomicFetchAdd a b c)))
-          (if (= variant 3) (Some (Expr (EAtomicMax a b c)))
-          (Some (Expr (EAtomicMin a b c))))))))))
-    (ei-fail "E_ARITY_MISMATCH" "bytebuf-atomic-op requires buf off val")))
-
-(defn parse-atomic-cas (args)
-  (if (ast-has-at-least args 4)
-    (Some
-      (Expr
-        (EAtomicCAS
-          (convert-ast (ast-nth args 0 (AstInt 0)))
-          (convert-ast (ast-nth args 1 (AstInt 0)))
-          (convert-ast (ast-nth args 2 (AstInt 0)))
-          (convert-ast (ast-nth args 3 (AstInt 0))))))
-    (ei-fail "E_ARITY_MISMATCH" "bytebuf-atomic-cas requires buf off exp new")))
-
 ; Wide loads and stores: `load-u16`..`load-u64`, `load-i16`..`load-i64` and
 ; the matching `store-*`; width in bytes, 0 for any other name.
 (defn wide-byte-width (n)
@@ -1867,42 +1809,10 @@
     (match (parse-align-check rest)
       (Some expr expr)
       (None (Expr (EUnknown "align-check" (convert-ast-list rest)))))
-  (if (str-eq n "bytebuf-atomic-load")
-    (match (parse-atomic-load rest)
-      (Some expr expr)
-      (None (Expr (EUnknown "bytebuf-atomic-load" (convert-ast-list rest)))))
-  (if (str-eq n "bytebuf-atomic-store")
-    (match (parse-atomic-store rest)
-      (Some expr expr)
-      (None (Expr (EUnknown "bytebuf-atomic-store" (convert-ast-list rest)))))
-  (if (str-eq n "bytebuf-atomic-add")
-    (match (parse-atomic-op3 rest 0)
-      (Some expr expr)
-      (None (Expr (EUnknown "bytebuf-atomic-add" (convert-ast-list rest)))))
-  (if (str-eq n "bytebuf-atomic-sub")
-    (match (parse-atomic-op3 rest 1)
-      (Some expr expr)
-      (None (Expr (EUnknown "bytebuf-atomic-sub" (convert-ast-list rest)))))
-  (if (str-eq n "bytebuf-atomic-fetch-add")
-    (match (parse-atomic-op3 rest 2)
-      (Some expr expr)
-      (None (Expr (EUnknown "bytebuf-atomic-fetch-add" (convert-ast-list rest)))))
-  (if (str-eq n "bytebuf-atomic-max")
-    (match (parse-atomic-op3 rest 3)
-      (Some expr expr)
-      (None (Expr (EUnknown "bytebuf-atomic-max" (convert-ast-list rest)))))
-  (if (str-eq n "bytebuf-atomic-min")
-    (match (parse-atomic-op3 rest 4)
-      (Some expr expr)
-      (None (Expr (EUnknown "bytebuf-atomic-min" (convert-ast-list rest)))))
-  (if (str-eq n "bytebuf-atomic-cas")
-    (match (parse-atomic-cas rest)
-      (Some expr expr)
-      (None (Expr (EUnknown "bytebuf-atomic-cas" (convert-ast-list rest)))))
   (if (> (wide-byte-width n) 0)
     (parse-wide-byte n rest)
     (Expr (EApply n (convert-ast-list rest)))
-  )))))))))))))))))))))))
+  )))))))))))))))
 
 ; --- Special form parsers — extract typed structure from raw AList ----------
 

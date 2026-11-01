@@ -18,7 +18,7 @@ An actor is a sequential process with private state and its own thread of contro
 **Rules from Spec §15:**
 
 - No shared mutable state between actors.
-- Values sent on a channel must be **Send-capable**.
+- Nothing mutable crosses: a spawned closure's captures and the values sent on a channel hold no `let-mut`, `ByteBuf`, `Ref` or other handle written in place (an `AtomicBuf`, captured directly, is the one shared buffer).
 - Each channel has one writer and one reader: every endpoint has exactly one owner.
 - A reader cannot test whether a channel is empty. It can only wait for the next value.
 
@@ -67,7 +67,7 @@ The two actors run at the same time, but neither writes to stdout directly. An a
 
 Two rules for the function passed to `spawn`:
 
-1. **Capture only immutable values.** A spawned closure may read variables from the enclosing scope; like any closure it gets copies of them. A closure that captures a `let-mut` variable is rejected at compile time with `E_CAPABILITY_LEAK` (Chapter 8, §8.6).
+1. **Capture only values no other actor can change.** A spawned closure may read variables from the enclosing scope; like any closure it gets copies of them. A closure that captures a `let-mut` variable, or a `ByteBuf`, a `Ref` or another handle that is written in place (directly or inside a struct, list or closure), is rejected at compile time with `E_CAPABILITY_LEAK` (§9.6). The one exception is an `AtomicBuf` (§9.6).
 2. **Take no parameters.** The entry has type `() -> a`. Data reaches an actor through the values it captures and the channels it reads. Spawning a function that takes a parameter is `E_TYPE_MISMATCH`.
 
 ## 9.3 Channels
@@ -228,15 +228,17 @@ The specification's Send rules:
 |------|-------|-------|
 | `Int`, `Float`, `Bool`, `String` | Yes | Immutable primitives |
 | an immutable (`let`) binding | Yes | Shared immutable |
-| an atomic binding | Yes | Thread-safe mutation |
+| an `AtomicBuf`, captured directly | Yes | Commuting updates only while shared; read after a freeze (below) |
 | ADTs and structs with Send fields | Yes | Checked recursively |
 | Channel endpoints | Yes | Ownership moves to the receiver (§9.4) |
 | a `let-mut` binding | No | The only assignable binding; `set!` rebinds it |
+| a `ByteBuf`, `ByteSlice`, `Ref`, `WVec`, `SMap`, `Array`, `Words`, `StrBuf`, `Arena`, `Pin` | No | Written in place: two actors would race |
+| ADTs, structs, lists, `Option`s or closures holding one of those, or an `AtomicBuf` | No | Checked by type, field by field |
 | `TBox<T>` | No | Owned; would violate exclusivity |
 | `TPin<T>` | No | FFI-pinned; not for actors |
 | Closures capturing a `let-mut` | No | Would leak mutable state |
 
-The compiler currently enforces the `let-mut` rows, for both a value sent on a channel and a spawned closure's captures:
+The compiler enforces every row, for a value sent on a channel, a spawned closure's captures (written inline, bound with `let`, or passed to a function that spawns them), and every top-level `def` an actor's code reaches through calls. Persistent `Vec`, `IntMap` and `Slice` values may cross: no version of them ever changes, so they are checked by their elements. A `let-mut` sent on a channel:
 
 ```lisp
 (capabilities actor)
@@ -264,6 +266,27 @@ error[E_CAPABILITY_LEAK]: value sent on a channel references let-mut (TMut) vari
 ```
 
 A `Secret` value sent on a channel or captured by a spawn is rejected separately, with `E_SECRET_ESCAPE` (Chapter 33).
+
+To accumulate across actors, share an `AtomicBuf` (`atomic/atomic`). A spawned closure captures it directly; while any actor holds it, only `atomicbuf-add`, `-max`, `-min`, `-and`, `-or` and `-xor` exist, which commute and return nothing, so the total is the same under every schedule. `atomicbuf-freeze!` reads it, once every actor that captured it has been joined by the actor that spawned it (`E_ATOMIC_SHARED` otherwise):
+
+```lisp
+(capabilities actor)
+
+(use actor/actor)
+(use atomic/atomic)
+
+(defn main ()
+  (let hits (atomicbuf-new 1)
+    (let a (spawn (fn () (atomicbuf-add hits 0 3)))
+      (let b (spawn (fn () (atomicbuf-add hits 0 4)))
+        (begin
+          (actor-wait a)
+          (actor-wait b)
+          (print (atomicview-get! (atomicbuf-freeze! hits) 0))   ; 7
+          0)))))
+```
+
+Chapter 32, §32.8, covers `AtomicBuf` in full.
 
 ## 9.7 Joining, Output and Panics
 
@@ -589,7 +612,7 @@ An absent declaration means no capabilities at all, so a reader learns from the 
 
 ### Send Capability Check (Compile Time)
 
-The check lives in `stdlib/compiler/mutability_check.zyl`. It reports `E_CAPABILITY_LEAK` when a `chan-send` value, or the body of a spawned closure, refers to a `let-mut` variable of the enclosing scope. The rest of the Send table in §9.6 (rejecting `TBox`, `TPin`, and non-Send ADT fields) is specified but not yet checked, so a mutable collection reached through an immutable binding can still be shared.
+Two passes report `E_CAPABILITY_LEAK`. `stdlib/compiler/mutability_check.zyl` rejects a `chan-send` value, or the body of a spawned closure, that refers to a `let-mut` variable of the enclosing scope. `stdlib/compiler/share_check.zyl` runs after type inference and checks the rest of the §9.6 table by type: captures, sent values, arguments to parameters that cross, and the top-level defs an actor reaches. A crossing closure whose captures it cannot see (one returned by a call, or read from a field) is refused.
 
 ### The Interpreter
 

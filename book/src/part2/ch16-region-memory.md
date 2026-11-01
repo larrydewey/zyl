@@ -39,8 +39,8 @@ R7. Global Region: Immutable constants only. Eager initialization. No mutation a
 R8. Pin Region: Non-moving arena. Values physically copied here for FFI. Never compacted.
 ```
 
-§7.4 adds that a Send-capable capture is an immutable (`let`) or atomic
-binding.
+§7.4 adds that a Send-capable value holds nothing another actor could
+change; the one shared buffer is an `AtomicBuf`, captured directly.
 
 How each rule is met today:
 
@@ -48,7 +48,7 @@ How each rule is met today:
 |------|--------|
 | R1 | Met by region inference (16.3–16.4): a value that does not outlive its call goes in the call's frame region. |
 | R2, R5 | A value returned from a call goes in the region its caller chose for the result, and ends in the heap only if it escapes further. A closure and its captured values are allocated the same way. Anything the analysis cannot bound is heap-allocated. |
-| R3 | Checked syntactically: a `spawn` closure or a `chan-send` value that refers to an in-scope `let-mut` variable is `E_CAPABILITY_LEAK` (Chapter 17). |
+| R3 | Checked: a `spawn` closure or a `chan-send` value that refers to an in-scope `let-mut` variable, or whose type is or holds a `ByteBuf`, `Ref` or other in-place handle, is `E_CAPABILITY_LEAK` (Chapter 17). |
 | R4 | The FFI_Pinnable half is met by `extern` declarations, whose C types are concrete machine-word types that every argument must match (Chapter 22). The Pin-region half is not: plain values may be passed straight to `ffi-call`. Only a `Secret` must go through `ffi-pin` (`E_FFI_PIN_REQUIRED`). |
 | R6 | Not implemented. |
 | R7 | A top-level `def` is immutable and eagerly initialized; its value lives in the heap. |
@@ -348,7 +348,7 @@ PANIC: error[E_STACK_OVERFLOW]: the stack is full: recursion went deeper than th
 | `E_REGION_ESCAPE` | Raised at compile time, with a location, for a `(bytebuf Stack N)` that is returned, stored, sent or passed to code that may keep it, and for a value allocated inside `with-region` that outlives it. |
 | `E_REGION_SPEC` | Raised at compile time for a malformed `with-region` spec. |
 | `E_REGION_EXHAUSTED` | Raised at run time when a `with-region` scope runs out of space; catchable. |
-| `E_CAPABILITY_LEAK` | Raised for a `let-mut` variable reaching `spawn` or `chan-send` (R3; Chapter 17). |
+| `E_CAPABILITY_LEAK` | Raised for a `let-mut` variable, or a value holding a `ByteBuf`, `Ref` or other mutable handle, reaching `spawn` or `chan-send` (R3; Chapter 17). |
 | `E_INVALID_CAPABILITY` | Raised for a `fn` written directly as an `ffi-call` argument (R4). |
 | `E_FFI_PIN_REQUIRED` | Raised for a `Secret` passed to `ffi-call` without `ffi-pin` (Chapter 17). |
 | `E_OUT_OF_MEMORY` | Raised at runtime when an allocation fails or the budget is exhausted. |
@@ -364,7 +364,7 @@ The specification ties the two systems together through R3 and R4.
 |------------|----------------|-------|
 | `TCap<T>` | Stack, or Heap when it escapes | As 16.1. |
 | `TMut<T>` | must not cross an actor boundary | `let-mut` captures in `spawn` and `let-mut` values in `chan-send` are rejected. |
-| `TAtomic<T>` | Send-capable, shared | Atomics exist as operations on addresses and byte buffers, not as a type (Chapter 17). |
+| `TAtomic<T>` | Send-capable, shared | An `AtomicBuf` (`atomic/atomic`), a heap block, captured directly by spawned closures (Chapter 32, §32.8). |
 | `TBox<T>` | Heap | No source construct produces it. |
 | `TPin<T>` | Pin | `ffi-pin` copies the value into the pin arena; the result has type `(Pin a)`. |
 

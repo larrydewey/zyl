@@ -5,6 +5,7 @@
 (use alloc)
 (use out)
 (use chan)
+(use abuf)
 
 (extern "zyl_rt_atexit" (Int) Int)
 (extern "zyl_rt_try_call" (Int Int) Int)
@@ -53,12 +54,44 @@
         (let _ (ac-st a entry)
           (let _ (ac-st (+ a 8) state)
             (let _ (ac-st (+ a 24) 0)
+              (let _ (ac-hold-all id env)
               (let _ (zyl_chan_actor_spawn (+ id 2) env)
                 (let _ (zyl_threads_started_mark)
                   (let t (zyl_rt_thread_create (ffi-call "%fn" "zyl_actor_thread_entry" 1) id 0 0)
                     (if (= t 0)
                       (let _ (zyl_chan_actor_done (+ id 2) 0) (ffi-call "zyl_panic" "E_OUT_OF_MEMORY: no thread for an actor" 1))
-                      (let _ (ac-st (+ a 16) t) id))))))))))))
+                      (let _ (ac-st (+ a 16) t) id)))))))))))))
+
+; --- AtomicBuf holders per actor: {spawner, list of {buf, next}}; only the spawner's join releases them ---
+
+(defn ac-holds (id) (+ (ffi-call "%global" "actor_abufs" 16384 1) (* id 16)))
+
+; Every AtomicBuf among the captured words (the env, and the interpreter's moved block) gains this actor as a holder.
+(defn ac-hold-all (id env)
+  (let r (ac-holds id)
+    (let _ (ac-st r (zyl_owner_self))
+      (let _ (ac-st (+ r 8) 0)
+        (let _ (if (= env 0) 0 (ac-hold-words r env 0 (ac-ld (- env 8))))
+          (let m (ac-ld (ch-moves)) (if (= m 0) 0 (ac-hold-words r m 0 (ac-ld (- m 8))))))))))
+
+(defn ac-hold-words (r env (i Int) (n Int))
+  (if (>= i n) 0
+    (let w (ac-ld (+ env (* i 8)))
+      (let _ (if (ab-p w)
+               (let node (zyl_heap_alloc 16)
+                 (if (= node 0) (ffi-call "zyl_panic" "E_OUT_OF_MEMORY: no memory to record an atomic buffer's holder" 1)
+                   (let _ (ac-st node w) (let _ (ac-st (+ node 8) (ac-ld (+ r 8))) (let _ (ac-st (+ r 8) node) (ab-hold w))))))
+               0)
+        (ac-hold-words r env (+ i 1) n)))))
+
+; At a join by the spawner, the actor stops holding its buffers; a join by anyone else releases nothing.
+(defn ac-release-holds (id)
+  (let r (ac-holds id)
+    (if (not (= (ac-ld r) (zyl_owner_self))) 0
+      (let _ (ac-release-list (ac-ld (+ r 8))) (ac-st (+ r 8) 0)))))
+
+(defn ac-release-list (node)
+  (if (= node 0) 0 (let _ (ab-release (ac-ld node)) (ac-release-list (ac-ld (+ node 8))))))
 
 ; The body under a try frame: a panic ends only this actor, and its message waits for the joiner.
 (defn zyl_actor_body ()
@@ -112,9 +145,10 @@
         (let m (zyl_chan_actor_join (+ id 2))
           (let _ (ac-thread-join id a)
             (let _ (ac-st (+ a 24) 1)
+              (let _ (ac-release-holds id)
               (let _ (zyl_out_actor_emit (+ id 2))
                 (let _ (ac-carry-stop id)
-                  (if (= m 0) 0 (ffi-call "zyl_panic" (ffi-call "%str" m 1) 1)))))))))))
+                  (if (= m 0) 0 (ffi-call "zyl_panic" (ffi-call "%str" m 1) 1))))))))))))
 
 ; Deterministic: true until this program joins the actor.
 (defn zyl_actor_is_alive (id) (if (not (ac-valid id)) 0 (if (= (ac-ld (+ (ac-slot id) 24)) 0) 1 0)))
@@ -128,13 +162,14 @@
         (let m (zyl_chan_actor_join (+ i 2))
           (let _ (ac-thread-join i a)
             (let _ (ac-st (+ a 24) 1)
+              (let _ (ac-release-holds i)
               (let _ (zyl_out_actor_emit (+ i 2))
                 (let _ (if (ac-overflowed i) (bs-actor-overflow) 0)
                   (let pend (ac-exit-pending)
                     (let c (ac-ld (+ (ac-stop i) 8))
                       (let free (and (= first 0) (= (ac-ld pend) 0))
                         (let _ (if (and free (> c 0)) (ac-st pend c) 0)
-                          (ac-join-rest (+ i 1) n (if (and free (= c 0)) m first)))))))))))))))
+                          (ac-join-rest (+ i 1) n (if (and free (= c 0)) m first))))))))))))))))
 
 ; The REPL's end of an entry: join every unjoined actor in spawn order, then re-raise the first panic.
 (defn zyl_actor_join_unjoined ()

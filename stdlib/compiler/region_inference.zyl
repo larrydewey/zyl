@@ -386,8 +386,7 @@
 
 ; Byte buffers: 0 as above; 2 as above (a slice points into its buffer);
 ; 4 (stores: width, endian, offset, buffer, value): only the stored value
-; escapes (a stored word may be a pointer); 5 (atomics: buffer, offset,
-; values): everything but the buffer escapes.
+; escapes (a stored word may be a pointer).
 (defn rg-ffi-kind-bytes (s)
   (if (str-eq s "zyl_bytebuf_len") 0
   (if (str-eq s "zyl_bytebuf_cap") 0
@@ -395,21 +394,13 @@
   (if (str-eq s "zyl_align_check") 0
   (if (str-eq s "zyl_load_byte_signed") 0
   (if (str-eq s "zyl_load_n_signed") 0
-  (if (str-eq s "zyl_bytebuf_atomic_load") 0
   (if (str-eq s "zyl_byte_slice") 2
   (if (str-eq s "zyl_byte_slice_sub") 2
   (if (str-eq s "zyl_bytebuf_ptr") 2
   (if (str-eq s "zyl_store_byte") 4
   (if (str-eq s "zyl_store_byte_signed") 4
   (if (str-eq s "zyl_store_n") 4
-  (if (str-eq s "zyl_bytebuf_atomic_store") 5
-  (if (str-eq s "zyl_bytebuf_atomic_add") 5
-  (if (str-eq s "zyl_bytebuf_atomic_sub") 5
-  (if (str-eq s "zyl_bytebuf_atomic_cas") 5
-  (if (str-eq s "zyl_bytebuf_atomic_fetch_add") 5
-  (if (str-eq s "zyl_bytebuf_atomic_max") 5
-  (if (str-eq s "zyl_bytebuf_atomic_min") 5
-  3)))))))))))))))))))))
+  3)))))))))))))
 
 ; `(bytebuf Stack N)`: region code 0 as the first argument.
 (defn rg-stack-bytebuf-p (name args)
@@ -553,13 +544,11 @@
                 (let _ (rg-raise-at rec e cs 2 "escapes here: carried by a panic to its catch") (rg-new 0))
               (if (or (= k 6) (= k 7))
                 (rg-store e (if (= k 6) (rg-first cs) (rg-first (rg-rest cs))) (if (= k 6) (rg-first (rg-rest (rg-rest cs))) (rg-first cs)))
-                (if (= k 5)
-                  (let _ (rg-raise-at rec e (rg-rest cs) 2 "escapes here: stored into a buffer") (rg-new 0))
                 (if (str-eq name "zyl_global_put")
                   (let _ (rg-raise-at rec e cs 2 (rg-global-text)) (rg-new 0))
                   (let _ (rg-raise-at rec e cs 2 "escapes here: passed to a runtime call that may keep it")
                     (let c (rg-new 2)
-                      (let _ (rg-esc rec e c 2 "escapes here: joined with this call's heap result") c)))))))))))))))
+                      (let _ (rg-esc rec e c 2 "escapes here: joined with this call's heap result") c))))))))))))))
 
 (defn rg-global-text () "escapes here: stored as the value of a top-level def")
 

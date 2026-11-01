@@ -1,0 +1,74 @@
+; An AtomicBuf slot sums in 128 bits; a read outside Int is E_OVERFLOW, mixed update kinds E_MUT_CONFLICT (spec 7.4, 20).
+(use core/core)
+(use atomic/atomic)
+
+(test "a sum that passes INT_MAX and comes back reads exactly"
+  (let a (atomicbuf-new 1)
+    (begin
+      (atomicbuf-add a 0 9223372036854775807)
+      (atomicbuf-add a 0 9223372036854775807)
+      (atomicbuf-add a 0 -9223372036854775807)
+      (atomicbuf-add a 0 -9223372036854775807)
+      (atomicbuf-add a 0 -5)
+      (assert-equal (atomicview-get! (atomicbuf-freeze! a) 0) -5))))
+
+(test "a sum below INT_MIN and back"
+  (let a (atomicbuf-new 1)
+    (begin
+      (atomicbuf-add a 0 (- -9223372036854775807 1))
+      (atomicbuf-add a 0 -1)
+      (atomicbuf-add a 0 2)
+      (assert-equal (atomicview-get! (atomicbuf-freeze! a) 0) -9223372036854775807))))
+
+(test "a final sum outside Int traps at the read"
+  (let a (atomicbuf-new 2)
+    (begin
+      (atomicbuf-add a 0 9223372036854775807)
+      (atomicbuf-add a 0 1)
+      (atomicbuf-add a 1 (- -9223372036854775807 1))
+      (atomicbuf-add a 1 -1)
+      (let v (atomicbuf-freeze! a)
+        (begin
+          (assert-equal (atomicview-get? v 0) None)
+          (assert-equal (atomicview-get? v 1) None)
+          (assert-equal (try (begin (atomicview-get! v 0) "no error") (catch e (str-substring e 0 16))) "error[E_OVERFLOW"))))))
+
+(test "two kinds of update on one slot read as a conflict, whatever their order"
+  (let a (atomicbuf-new 2)
+    (begin
+      (atomicbuf-add a 0 1)
+      (atomicbuf-max a 0 5)
+      (atomicbuf-max a 1 5)
+      (atomicbuf-add a 1 1)
+      (let v (atomicbuf-freeze! a)
+        (begin
+          (assert-equal (atomicview-get? v 0) None)
+          (assert-equal (atomicview-get? v 1) None)
+          (assert-equal (try (begin (atomicview-get! v 0) "no error") (catch e (str-substring e 0 14))) "E_MUT_CONFLICT"))))))
+
+(test "max and min of negative values, identity untouched"
+  (let a (atomicbuf-new 3)
+    (begin
+      (atomicbuf-max a 0 -9)
+      (atomicbuf-max a 0 -4)
+      (atomicbuf-min a 1 9223372036854775807)
+      (atomicbuf-min a 1 -3)
+      (let v (atomicbuf-freeze! a)
+        (assert-equal (+ (* 100 (atomicview-get! v 0)) (+ (* 10 (atomicview-get! v 1)) (atomicview-get! v 2))) -430)))))
+
+(test "a buffer no actor captured is not held, and a ? freeze reads it"
+  (let a (atomicbuf-new 1)
+    (begin
+      (atomicbuf-add a 0 1)
+      (assert-false (atomicbuf-held a))
+      (assert-equal (match (atomicbuf-freeze? a) (Some w (atomicview-get! w 0)) (None -1)) 1))))
+
+; Reading a frozen view only computes, so a contract may (E_CONTRACT_EFFECT otherwise).
+(defn first-slot ((v AtomicView)) (requires (>= (atomicview-slots v) 1)) (atomicview-get! v 0))
+
+(test "a contract may read a frozen view"
+  (let a (atomicbuf-new 1)
+    (let _ (atomicbuf-add a 0 9)
+      (assert-equal (first-slot (atomicbuf-freeze! a)) 9))))
+
+(run-tests)

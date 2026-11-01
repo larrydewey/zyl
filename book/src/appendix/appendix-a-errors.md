@@ -210,6 +210,8 @@ inferred placement is always one the value cannot escape, and, under
 | `E_CHANNEL_CAPACITY` | `(chan n)` with `n` outside 1..16777216 |
 | `E_DEADLOCK` | Every live actor, `main` included, is blocked on a channel or a join. Ends the process after emitting the actors' buffered output |
 | `E_ACTOR_LIMIT` | A 1025th `spawn`: at most 1024 actors per program |
+| `E_ATOMIC_SHARED` | `atomicbuf-freeze!` on an `AtomicBuf` that an actor still holds: one whose closure captured it and that the actor which spawned it has not yet joined. Join every such actor first, in its spawner; `atomicbuf-freeze?` gives `None`. Raised at compile time when that actor was spawned with its handle thrown away, so nothing can ever join it |
+| `E_MISALIGNED_ACCESS` | An address atomic (`atomic-load!` .. `atomic-cas!`, `atomic/atomic`) at an address that is not a multiple of 8; the `?` form gives `None` |
 | `E_USE_AFTER_FREE` | A `StringBuffer` used after `with-resource` (or an explicit destroy) released it, or an allocation through a destroyed arena (its handle's generation has moved on) |
 | `E_NO_MAIN` | A lone file (no `zyl.pkg` beside it) defines no `main` and has no top-level tests to make one: located at the file's first line, from a build and from `zyl check`. The REPL interpreter raises it for an evaluated program with no `main` |
 | `E_UNDEFINED_FUNCTION`, `E_NOT_CALLABLE` | The REPL interpreter (`zyl eval`, `zyl repl`): a call to a function the program does not define, a call of a value that is not a function |
@@ -238,7 +240,7 @@ when any test failed (Chapter 11).
 |---|---|
 | `E_MUT_CONFLICT` | `set!` on a name that is not a `let-mut` binding in scope, on a `let-mut` of an enclosing scope from inside a closure (captures are by value), or on anything other than a plain name — direct field mutation included; also a byte buffer (or a slice of it) written through two names |
 | `E_MOVE_VALUE` | A resource used after its release: a file descriptor after `file-close`, a `StringBuffer` after its destroy, a value of a type with a `Drop` impl after `Drop.drop`. Follows copies of the resource. Raised by `linearity.zyl` |
-| `E_CAPABILITY_LEAK` | A spawned closure or a value sent with `chan-send` refers to a `let-mut` variable of the enclosing scope |
+| `E_CAPABILITY_LEAK` | Mutable state would reach another actor: a spawned closure or a `chan-send` value refers to a `let-mut` of the enclosing scope, or captures, sends or (through calls) reaches as a top-level `def` a value that is or holds a `ByteBuf`, `ByteSlice`, `Ref` or other handle written in place; an `AtomicBuf` other than as a direct capture; a crossing closure whose captures the compiler cannot see. To accumulate across actors, capture an `AtomicBuf` (Chapter 32) |
 | `E_INVALID_CAPABILITY` | A closure written inline as an `ffi-call` argument |
 | `E_CT_VIOLATION` | A `Secret` steered a branch, indexed memory, or went through a divider |
 | `E_SECRET_ESCAPE` | A `Secret` reached `spawn`, `chan-send` or `file-write` |

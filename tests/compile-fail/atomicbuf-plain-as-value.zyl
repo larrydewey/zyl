@@ -1,0 +1,9 @@
+; Compile-fail: a plain AtomicBuf update passed as a value escapes the range proof.
+; expect-error: E_PARTIAL_OPERATION
+(use atomic/atomic)
+
+(defn apply3 (f b) (f b 9 1))
+
+(defn main ()
+  (let b (atomicbuf-new 2)
+    (begin (apply3 atomicbuf-add b) 0)))

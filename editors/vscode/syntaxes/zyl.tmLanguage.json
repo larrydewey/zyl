@@ -244,7 +244,7 @@
       "patterns": [
         {
           "name": "support.function.atomic.zyl",
-          "match": "(?<![^\\s()\\[\\]{}\";])(bytebuf-atomic-fetch-add|bytebuf-atomic-load|bytebuf-atomic-store|bytebuf-atomic-add|bytebuf-atomic-sub|bytebuf-atomic-cas|bytebuf-atomic-max|bytebuf-atomic-min)(?![^\\s()\\[\\]{}\";])"
+          "match": "(?<![^\\s()\\[\\]{}\";])(atomicbuf-(?:new|add|max|min|and|or|xor)[!?]?|atomicbuf-freeze[!?]|atomicbuf-held|atomicbuf-slots|atomicbuf-slot-ok|atomicbuf-max-slots|atomicview-get[!?]|atomicview-slots|atomic-(?:fetch-add|load|store|add|sub|max|min|cas|incr|decr)[!?]|atomic-aligned)(?![^\\s()\\[\\]{}\";])"
         }
       ]
     },

@@ -123,7 +123,7 @@ empty inferer were used.
   the offset. Each offset, length and stored value is now required to be
   Int (`ta-expect`). Each handle is the kind its runtime entry accepts
   (`ta-buf-op`): `byteslice`, `bytebuf-append`, `bytebuf-len`, `-cap`,
-  `-ptr` and the atomics a ByteBuf, `byteslice-sub` and
+  `-ptr` a ByteBuf, `byteslice-sub` and
   `bytebuf-append`'s second operand a ByteSlice. A load or store takes
   either; before, it rejected only a primitive, so an unannotated handle
   accepted any value. A load/store handle still a type variable is queued

@@ -13,7 +13,7 @@ Spec §15 defines concurrency as a Kahn process network:
 - An **actor** is a sequential process with private state and its own thread of control.
 - Actors communicate only through **channels**. A channel is a FIFO buffer with exactly one writer and one reader.
 - A read blocks until a value arrives. No actor can test whether a channel is empty.
-- There is no shared mutable state, and values that cross a channel must be Send-capable.
+- There is no shared mutable state: nothing that crosses into another actor (a capture, a sent value, a top-level `def` it reaches) may hold a `let-mut`, `ByteBuf`, `Ref` or other handle written in place. The one shared buffer is an `AtomicBuf` of commuting updates, read after its actors are joined.
 
 Under these rules, each actor's output sequence is a function of its input sequences. The program's observable output therefore does not depend on scheduling (§27), even though the implementation runs every actor on its own operating-system thread.
 
@@ -133,7 +133,7 @@ When every live actor, `main` included, is blocked on a channel or a join, the r
 
 ## 21.4 Send-Capability Checks
 
-Spec §9.1 R3 and §7.4 require every value that crosses into another actor to be Send-capable. The implemented check is syntactic (`mutability_check.zyl`). It rejects a value sent on a channel, or a spawned expression, that names a `let-mut` variable of the enclosing scope. The next two programs do not compile:
+Spec §9.1 R3 and §7.4 require that nothing crossing into another actor can be changed by the actor it left. Two checks enforce it. `mutability_check.zyl` rejects a value sent on a channel, or a spawned expression, that names a `let-mut` variable of the enclosing scope. `share_check.zyl`, after type inference, rejects a capture, a sent value, an argument to a parameter that a function spawns or sends, or a top-level `def` an actor's code reaches, whose type is or holds a `ByteBuf`, `ByteSlice`, `Ref`, `WVec`, `SMap`, `Attr`, `Array`, `Words`, `StrBuf`, `UF`, `Arena` or `Pin` (§28 `E_CAPABILITY_LEAK`). The next two programs do not compile:
 
 ```lisp
 (capabilities actor)
@@ -179,10 +179,28 @@ error[E_CAPABILITY_LEAK]: spawned closure captures let-mut (TMut) variable `coun
    = help: only Send-capable (non-mut) captures may cross into another actor
 ```
 
-Limits of the check:
+Nor does a buffer captured by a spawned closure:
 
-- It is name-based. Copying the value into an immutable binding first (`(let y x (chan-send tx y))`) passes, which is sound for an `Int`.
-- There is no type-based Send check. The type checker has no Send trait or predicate, so a mutable collection reached through an immutable binding, a `(Pin a)`, or any other value the specification counts as non-Send is not rejected by its type.
+```lisp
+(capabilities actor)
+(use actor/actor)
+
+(defn main ()
+  (let b (bytebuf Heap 8)
+    (let a (spawn (fn () (store-u8! :le b 0 1)))
+      (begin (actor-wait a) 0))))
+```
+
+```
+error[E_CAPABILITY_LEAK]: a spawned closure captures `b`, a ByteBuf, so two actors could touch the same mutable state and the output would depend on the schedule
+```
+
+What the checks allow and refuse:
+
+- The `let-mut` check is name-based. Copying the value into an immutable binding first (`(let y x (chan-send tx y))`) passes, which is sound for an `Int`.
+- The typed check follows a closure to where it was made. A closure from a call or a field, whose captures cannot be seen, is refused; bind it with `let` where it is spawned, or pass the data instead. A generic value is traced to the parameter it came from and checked at each call.
+- Persistent `Vec`, `IntMap` and `Slice` values cross, checked by their elements: no version of them changes.
+- An `AtomicBuf` crosses as a direct capture of the spawned closure, takes only commuting updates while held, and is read with `atomicbuf-freeze!` once every actor holding it has been joined by its spawner (Chapter 32, §32.8).
 - A `Secret` value sent on a channel or captured by a spawn is rejected separately, with `E_SECRET_ESCAPE` (Chapter 33).
 
 Region rule R2 applies to every sent value: it escapes its frame, so region inference places it on the heap.
@@ -270,7 +288,8 @@ The root package's `main` and its top-level `test` forms are checked like any de
 | Error | Cause |
 |-------|-------|
 | `E_TYPE_MISMATCH` | a spawn entry that takes a parameter; a received value used at a different type than was sent; an `Int` where an `Actor` is needed |
-| `E_CAPABILITY_LEAK` | a sent value or spawned expression names a `let-mut` of the enclosing scope (§28: "TMut leaked") |
+| `E_CAPABILITY_LEAK` | a sent value or spawned expression names a `let-mut` of the enclosing scope; a capture, sent value or reached `def` is or holds a `ByteBuf`, `Ref` or other mutable handle |
+| `E_ATOMIC_SHARED` | an `AtomicBuf` frozen while an actor holding it is not yet joined by its spawner |
 | `E_SECRET_ESCAPE` | a `Secret` value crosses into another actor |
 | `E_CHANNEL_NOT_OWNER` | an endpoint used by an actor that does not own it |
 | `E_CHANNEL_CLOSED` | `chan-recv` on a closed, drained channel |
