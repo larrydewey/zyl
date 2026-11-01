@@ -234,7 +234,9 @@ The wrappers that read or write a caller's address (`alloc-read-int`,
 program may already call C (`capability_check.zyl` derives what each
 standard-library function reaches). `bytebuf-ptr`, the one form that
 produces an address from a buffer, needs `ffi` too: the address differs
-between runs, so a program without `ffi` cannot print one (spec §27).
+between runs, so a program without `ffi` cannot print one (spec §27); nor
+can `print` of a record, handle or function with no Show, which is
+`E_TRAIT_NOT_FOUND` (`ta-check-print`).
 Reading an `Arena` field is nominal
 and will not unify with `Int`.
 

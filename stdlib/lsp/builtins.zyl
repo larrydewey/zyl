@@ -244,7 +244,7 @@
 
 (defn builtins-io ()
   (Cons (ZB "print" "special-form" "(print expr ...)"
-          "Write values to stdout. Rejected on a `Secret` operand -- a debug sink is still a sink.")
+          "Write values to stdout, each through its type's Show (Int, Float, Bool, String and Unit as themselves). A value with no Show would print its address (E_TRAIT_NOT_FOUND); a `Secret` is rejected -- a debug sink is still a sink.")
   (Cons (ZB "read-line" "special-form" "(read-line)" "Read one line from stdin.")
   (Cons (ZB "exit" "special-form" "(exit code)" "Flush output and end the process with a status code.")
   (Cons (ZB "close" "special-form" "(close handle)" "Close a file descriptor; a spelling of `file-close`.")

@@ -254,8 +254,9 @@ thousand elements.
 Compiled code prints a struct or ADT this way only through `Show`:
 `(derive T Show)` (spec §5.6) generates an impl, and `print` of a value
 whose type has one calls it. `print` of a value with no `Show` impl, in a
-compiled program or through `zyl eval`, still prints an address; only the
-REPL's result line reads the hidden words.
+compiled program or through `zyl eval`, is `E_TRAIT_NOT_FOUND` (it would
+print an address, spec §27); only the REPL's result line reads the hidden
+words.
 
 ## `zyl eval`
 

@@ -1,0 +1,17 @@
+; A struct field may be named vec, map or list: a field spec is a name and a type, never a form.
+(defstruct Shelf (vec Int) (map Int) (list Int))
+(derive Shelf Show Eq)
+
+(pub defstruct Crate (vec String))
+
+(test "fields named like collection forms"
+  (let s (make-Shelf 1 2 3)
+    (assert-equal (+ (Shelf.vec s) (+ s.map (Shelf.list s))) 6)))
+
+(test "derived Show names them"
+  (assert-equal (Show.show (make-Shelf 1 2 3)) "Shelf { vec: 1, map: 2, list: 3 }"))
+
+(test "a pub struct's field"
+  (assert-equal (Crate.vec (make-Crate "x")) "x"))
+
+(run-tests)

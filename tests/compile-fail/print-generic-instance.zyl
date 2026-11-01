@@ -1,0 +1,5 @@
+; expect-error: E_TRAIT_NOT_FOUND
+; A generic print checked per instance: show-it at a record with no Show.
+(deftype Shape (Circle Int))
+(defn show-it (x) (print x))
+(defn main () (begin (show-it 3) (show-it (Circle 2)) 0))

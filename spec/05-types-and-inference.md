@@ -501,8 +501,12 @@ falls short of §4–§6 and §17.
   declaring `m`, no impl for r's type, a concrete receiver with no impl
   of the trait, or two candidate traits is `E_TRAIT_NOT_FOUND`.
 - `print` of a value whose type has a `Show` impl prints its
-  `Show.show`; any other non-primitive value prints as a word (an
-  address).
+  `Show.show`; `Int`, `Float`, `Bool`, `String`, `Unit`, `Actor` and
+  `Fd` print as themselves. Any other value (a record or container with
+  no `Show`, a buffer or other handle, a function) would print as its
+  address, which differs from run to run (§27), so it is
+  `E_TRAIT_NOT_FOUND` at the `print`, in every instance of a generic
+  function too.
 - Coherence: two written impls of one trait for one type are
   `E_DUPLICATE_IMPL` (`derive.zyl`); the package-boundary orphan rule
   (§24.6) is enforced by the module resolver (`E_PKG_ORPHAN_IMPL`).

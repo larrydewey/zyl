@@ -1472,6 +1472,10 @@ NOT observable:
 
 Guarantee: same program + same inputs → identical observable outputs and binaries.
 
+An address is memory layout, so no output may depend on one: `print` of a
+value whose type has no Show (a record, a buffer or other handle, a
+function) is E_TRAIT_NOT_FOUND, and `bytebuf-ptr` needs `ffi` (§31.9).
+
 For a package build, "same program" means the same resolved graph. Version
 selection (§31.5) is a pure function of the manifests in the graph, and hash
 finalization takes the graph hash as an input (§31.12), so two machines with
@@ -1510,7 +1514,7 @@ Errors:
                                   channel, or reached as a top-level def; an AtomicBuf other than as
                                   a direct capture; a crossing closure or generic value that cannot
                                   be checked (Compile Error; §7.4)
-    E_TRAIT_NOT_FOUND           — missing impl
+    E_TRAIT_NOT_FOUND           — missing impl; print of a value with no Show (it would print an address)
     E_DUPLICATE_IMPL            — conflicting impls
     E_MACRO_ILLEGAL_ACCESS      — macro accessed runtime value
     E_CONTRACT_VIOLATION        — contract failed

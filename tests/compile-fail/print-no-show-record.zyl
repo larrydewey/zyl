@@ -1,0 +1,4 @@
+; expect-error: E_TRAIT_NOT_FOUND
+; A record with no Show would print its address, which differs from run to run (spec 27).
+(defstruct P (x Int))
+(defn main () (begin (print (make-P 1)) 0))

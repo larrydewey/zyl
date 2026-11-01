@@ -1,0 +1,5 @@
+; expect-error: E_PARTIAL_OPERATION
+; A literal offset near INT_MAX is not proven in range; the proof must not overflow the compiler.
+(defn main ()
+  (let b (bytebuf Heap 4)
+    (begin (print (load-u64 :le b 9223372036854775807)) 0)))

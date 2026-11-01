@@ -883,6 +883,7 @@
     (let sym (cc-ffi-arg-symbol args) (Cons (EfLeaf (ef-entry-bits sym) sym e) acc))
   (if (str-eq n "zyl-method")
     (ef-method-site e (ef-str-arg args) (ef-rest args) ps acc)
+  (if (ef-def-cell-p n) acc
   (if (ffi-call "zyl_smap_has" ef-index n 1000)
     (Cons (EfCall (ffi-call "zyl_smap_get" ef-index n 1000) (ef-args args ps) e) acc)
   (if (ef-ctor-p n) acc
@@ -893,7 +894,11 @@
       (if (< p 60) (Cons (EfPcall p e) acc) (Cons (EfLeaf 16 n e) acc))
       (if (ef-dotted-p n)
         (ef-method-site e (ef-method-short n) args ps acc)
-        (Cons (EfLeaf 16 n e) acc))))))))))
+        (Cons (EfLeaf 16 n e) acc)))))))))))
+
+; A top-level def's getter cell (expr_inner.zyl def-getter): the put only caches the value, so reading a def computes.
+(defn ef-def-cell-p ((n String))
+  (or (str-eq n "zyl global ready") (or (str-eq n "zyl global get") (str-eq n "zyl global put"))))
 
 ; `Trait.m` that no definition names: the method m.
 (defn ef-dotted-p ((n String))

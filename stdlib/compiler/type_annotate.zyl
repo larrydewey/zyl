@@ -3451,7 +3451,31 @@
                 unit)
               unit))
           (_ unit))
-        unit))))
+        (if (= kind 2) (ta-check-print st node t) unit)))))
+
+; A printed value with no Show would print its address, which differs from run to run (spec 27): E_TRAIT_NOT_FOUND.
+(defn ta-check-print (st node t)
+  (match (ta-resolve st t)
+    (TaC n _ (if (ta-print-plain n) unit (ta-print-fail st node t (if (ta-declared-p n) (ta-short n) ""))))
+    (TaF _ _ (ta-print-fail st node t ""))
+    (TaV _ unit)))
+
+; A declared type's key is qualified; a builtin handle's name is bare.
+(defn ta-declared-p (n) (>= (ta-last-colons n 0 -1) 0))
+
+; The types print writes as their value without a Show impl.
+(defn ta-print-plain (n)
+  (or (ta-show-prim n) (or (ta-streq n "Unit") (or (ta-streq n "Actor") (or (ta-streq n "Fd") (ta-streq n "FileId"))))))
+
+; decl is the declared type's short name, "" for a builtin handle or a function.
+(defn ta-print-fail (st node t (decl String))
+  (let tn (ta-pretty st t)
+    (let _ (ta-method-fail node
+             (str-concat "`print` needs Show for `" (str-concat tn "`, and without it the value would print as its address, which differs from run to run"))
+             (if (= (str-length decl) 0)
+               "print what it holds instead: the values a buffer's load-* forms read, or what a function returns"
+               (str-concat "add `(derive " (str-concat decl (str-concat " Show)` or `(impl Show " (str-concat decl " ...)`, with Show for every type inside it"))))))
+      unit)))
 
 ; `Trait` of a dotted trait-method name `Trait.method`.
 (defn ta-trait-of (dotted)

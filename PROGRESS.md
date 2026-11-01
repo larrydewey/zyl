@@ -524,6 +524,24 @@ compile with `build/boot/zyl-self` on 2026-09-28.
 - `bytebuf-ptr` needs `ffi` (2026-10-31): the address differs between runs
   (ASLR), so a program without `ffi` cannot print one (spec §27); the help
   points at `load-*`/`store-*`. `tests/compile-fail/bytebuf-ptr-needs-ffi.zyl`.
+- Re-audit fixes (2026-11-01): `print` of a value with no Show (a record,
+  `ByteBuf`, `Ref`, closure, a list of buffers ...) printed its address,
+  the leak `bytebuf-ptr` was closed for; it is `E_TRAIT_NOT_FOUND`
+  (`ta-check-print`, every generic instance too). The share check keyed
+  types by short name, so a program's own `IntMap`, `Vec`, `Slice`,
+  `AtomicBuf`, `Tx`, `Rx` or `Actor` holding `Words` crossed to an actor;
+  it now keys by canonical key and exempts only the stdlib's types
+  (`sh-sym`, `sh-persistent-p`). A contract condition that read any
+  top-level `def` was `E_CONTRACT_EFFECT` (the getter's cell calls were
+  unseen); they compute now, and a def whose initializer has an effect
+  still fails closed. A plain load at a literal offset near INT_MAX
+  overflowed the compiler; the range proof no longer adds. A struct field
+  named `vec` or `map` was rewritten as a collection literal. Tests:
+  `print-*`, `spawn-capture-user-*`, `contract-effect-def-init`,
+  `bytes-plain-huge-offset` (compile-fail), `contract-reads-def`,
+  `struct-field-builtin-names` (regression). Open: the REPL's result line
+  still shows a buffer handle as a number (the interpreter's value has no
+  static type there).
 - Red-team fixes (2026-10-31): `E_FFI_RESTRICTED` now covers `impl` method
   bodies (they were unchecked), restricted wrappers named as values,
   `alloc-int`, the `StrViewC` constructor (forged off/len read process

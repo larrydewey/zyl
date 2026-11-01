@@ -1,0 +1,11 @@
+; Compile-fail: a program's own type named Tx is not a channel end.
+; expect-error: E_CAPABILITY_LEAK
+(capabilities actor io)
+(use actor/actor)
+
+(defstruct Tx (w Words))
+
+(defn main ()
+  (let m (make-Tx (ffi-call "zyl_words_alloc" 1 1000))
+    (let a (spawn (fn () (ffi-call "zyl_words_set" m.w 0 7 1000)))
+      (begin (actor-wait a) 0))))

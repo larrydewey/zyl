@@ -1,0 +1,3 @@
+; expect-error: E_TRAIT_NOT_FOUND
+; A ByteBuf prints as its address, the leak bytebuf-ptr needs ffi for.
+(defn main () (let b (bytebuf Heap 4) (begin (print b) 0)))

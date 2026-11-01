@@ -122,10 +122,14 @@
       (match a
         (AIdent n
           (match (Expr.inner o)
-            (EAtom k (match k (AInt off (and (>= off 0) (<= (+ off w) (nc-cap-of n env)))) (_ false)))
+            (EAtom k (match k (AInt off (nc-fits off w (nc-cap-of n env))) (_ false)))
             (_ false)))
         (_ false)))
     (_ false)))
+
+; off + w <= cap without forming off + w, which a huge literal offset would overflow.
+(defn nc-fits ((off Int) (w Int) (cap Int))
+  (and (>= off 0) (and (>= cap w) (<= off (- cap w)))))
 
 ; --- AtomicBuf (atomic/atomic): a plain update or constructor must be proven in range ---
 

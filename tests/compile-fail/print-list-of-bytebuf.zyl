@@ -1,0 +1,3 @@
+; expect-error: E_TRAIT_NOT_FOUND
+; List has Show only where its elements do; a list of buffers would print an address.
+(defn main () (let b (bytebuf Heap 4) (begin (print [b]) 0)))

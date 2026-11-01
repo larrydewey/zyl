@@ -1,0 +1,5 @@
+; expect-error: E_CONTRACT_EFFECT
+; A def whose initializer prints: a condition that reached it first would move the print.
+(def noisy (begin (print "init") 5))
+(defn f ((x Int)) (requires (< x noisy)) x)
+(defn main () (f 1))

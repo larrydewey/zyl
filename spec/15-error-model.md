@@ -33,7 +33,7 @@ this document's reading of each code's meaning.
 | `E_PANIC_UNMARKED` | A standard-library `defn` that calls `panic` directly is not spelled with a trailing `!` | §25 |
 | `E_MATCH_NONEXHAUSTIVE` | Missing match case | §8.3 |
 | `E_MUT_CONFLICT` | `set!` on a binding that is not a `let-mut`, or two names writing one mutable location; at run time, an AtomicBuf slot read after two kinds of update | §7.4, §10 |
-| `E_TRAIT_NOT_FOUND` | Missing impl for trait bound | §5.4 |
+| `E_TRAIT_NOT_FOUND` | Missing impl for trait bound; `print` of a value with no Show, which would print an address | §5.4, §27 |
 | `E_DUPLICATE_IMPL` | Conflicting impls | §5.3 |
 | `E_TRAIT_NOT_DERIVABLE` | Cannot derive trait | §5.6 |
 | `E_MACRO_NON_TERMINATION` | Macro expansion loop | §19 |

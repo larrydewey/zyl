@@ -79,7 +79,7 @@
             (if (ffi-call "zyl_smap_has" def-names n 1000)
               (ffi-call "zyl_smap_put" sh-defs n e 1000)
               (begin (ffi-call "zyl_smap_put" sh-fns n e 1000) (ffi-call "zyl_smap_put" sh-fn-params n ps 1000))))
-          (EDeftype n vs _ _ (ffi-call "zyl_smap_put" sh-ctors (ck-symbol-of n) (sh-variant-names vs) 1000))
+          (EDeftype n vs _ _ (ffi-call "zyl_smap_put" sh-ctors n (sh-variant-names vs) 1000))
           (_ unit))
         (sh-collect rest)))))
 
@@ -442,8 +442,8 @@
       (TaV _ "V")
       (TaF ps r (if (= mode 4) (sh-class-fn ps r) "F"))
       (TaC n args
-        (let s (ck-symbol-of n)
-          (if (str-eq s "AtomicBuf") "A" (sh-holds (sh-bad-name s) (sh-class-con s args))))))))
+        (let s (sh-sym n)
+          (if (str-eq s "AtomicBuf") "A" (sh-holds (sh-bad-name s) (sh-class-con n args))))))))
 
 ; Inside the value, not the value itself: say what it holds.
 (defn sh-holds (own c)
@@ -459,9 +459,9 @@
     (TaV _ "V")
     (TaF _ _ "a function value inside captured data, whose captures the compiler cannot see")
     (TaC n args
-      (let s (ck-symbol-of n)
+      (let s (sh-sym n)
         (if (str-eq s "AtomicBuf") "an AtomicBuf inside other data (an AtomicBuf crosses only as a direct capture)"
-          (sh-class-con s args))))))
+          (sh-class-con n args))))))
 
 (defn sh-class-args (ts)
   (match ts
@@ -474,14 +474,15 @@
 
 (defn sh-reason-p (c) (> (str-length c) 1))
 
-(defn sh-class-con (s args)
+(defn sh-class-con (n args)
+  (let s (sh-sym n)
   (let b (sh-bad-name s)
     (if (> (str-length b) 0) b
       (if (or (str-eq s "Tx") (or (str-eq s "Rx") (str-eq s "Actor"))) ""
-        (if (ffi-call "zyl_smap_has" sh-ctors s 1000)
-          (let f (sh-type-fields s)
+        (if (ffi-call "zyl_smap_has" sh-ctors n 1000)
+          (let f (sh-type-fields n)
             (if (sh-reason-p f) f (sh-class-args args)))
-          (sh-class-args args))))))
+          (sh-class-args args)))))))
 
 ; Handles whose contents change in place: what two actors must never share.
 (defn sh-bad-name (s)
@@ -499,16 +500,25 @@
   (if (str-eq s "Pin") "a Pin (memory foreign code writes)" "")))))))))))))
 
 ; Persistent: an update makes a new version and no version changes, so only the elements matter.
-(defn sh-persistent-p (s) (or (str-eq s "Vec") (or (str-eq s "IntMap") (str-eq s "Slice"))))
+(defn sh-persistent-p (n)
+  (and (uc-std-key-p n)
+    (let m (uc-key-module n)
+      (let s (ck-symbol-of n)
+        (or (and (str-eq m "collections/vec") (str-eq s "Vec"))
+          (or (and (str-eq m "collections/intmap") (str-eq s "IntMap")) (and (str-eq m "collections/slice") (str-eq s "Slice"))))))))
+
+; A builtin handle's bare name, a stdlib type's symbol, else the whole key: a program's own type never reads as a builtin.
+(defn sh-sym (n)
+  (if (uc-std-key-p n) (ck-symbol-of n) n))
 
 ; A declared type, by its fields as written ("" none crosses badly); its arguments are checked at the use.
-(defn sh-type-fields (s)
-  (if (sh-persistent-p s) ""
-    (if (ffi-call "zyl_smap_has" sh-tymemo s 1000) (ffi-call "zyl_smap_get_or" sh-tymemo s "" 1000)
+(defn sh-type-fields (n)
+  (if (sh-persistent-p n) ""
+    (if (ffi-call "zyl_smap_has" sh-tymemo n 1000) (ffi-call "zyl_smap_get_or" sh-tymemo n "" 1000)
       (begin
-        (ffi-call "zyl_smap_put" sh-tymemo s "" 1000)
-        (let v (sh-ctors-fields (ffi-call "zyl_smap_get_or" sh-ctors s Nil 1000))
-          (begin (ffi-call "zyl_smap_put" sh-tymemo s v 1000) v))))))
+        (ffi-call "zyl_smap_put" sh-tymemo n "" 1000)
+        (let v (sh-ctors-fields (ffi-call "zyl_smap_get_or" sh-ctors n Nil 1000))
+          (begin (ffi-call "zyl_smap_put" sh-tymemo n v 1000) v))))))
 
 (defn sh-ctors-fields (cs)
   (match cs
@@ -530,12 +540,12 @@
     (_ "")))
 
 (defn sh-tname (n)
-  (let s (ck-symbol-of n)
+  (let s (sh-sym n)
     (if (str-eq s "Fn") "a function value inside captured data, whose captures the compiler cannot see"
       (if (str-eq s "AtomicBuf") "an AtomicBuf inside other data (an AtomicBuf crosses only as a direct capture)"
         (let b (sh-bad-name s)
           (if (> (str-length b) 0) b
-            (if (ffi-call "zyl_smap_has" sh-ctors s 1000) (sh-type-fields s) "")))))))
+            (if (ffi-call "zyl_smap_has" sh-ctors n 1000) (sh-type-fields n) "")))))))
 
 ; ===========================================================================
 ; FREEZE: an actor whose handle was discarded never releases the buffer

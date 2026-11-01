@@ -1,0 +1,13 @@
+; A contract condition may read a top-level def: the getter's cell only caches the value (spec 23.7).
+(def limit 10)
+(def names ["a" "b"])
+
+(defn under ((x Int)) (requires (< x limit)) (ensures (= (list-length names) 2)) x)
+
+(test "a condition reads top-level defs"
+  (assert-equal (under 3) 3))
+
+(test "a failing condition on a def still stops"
+  (assert-equal (try (begin (under 11) "no error") (catch e (str-substring e 0 15))) "E_CONTRACT_VIOL"))
+
+(run-tests)

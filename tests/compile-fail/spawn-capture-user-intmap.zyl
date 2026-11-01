@@ -1,0 +1,11 @@
+; Compile-fail: a program's own type named like a stdlib persistent type is checked by its fields.
+; expect-error: E_CAPABILITY_LEAK
+(capabilities actor io)
+(use actor/actor)
+
+(defstruct IntMap (w Words))
+
+(defn main ()
+  (let m (make-IntMap (ffi-call "zyl_words_alloc" 1 1000))
+    (let a (spawn (fn () (ffi-call "zyl_words_set" m.w 0 7 1000)))
+      (begin (actor-wait a) 0))))

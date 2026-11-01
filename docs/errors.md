@@ -262,7 +262,7 @@ Neither carries the catalog code. A false `(assert c msg)` panics with
 | `E_DUPLICATE_IMPL` (§28) | trait: duplicate impl of T for U at S | `derive.zyl` (located: two written impls of one trait for one type) |
 | `E_IMPL_FORBIDDEN` | trait: impl of T for U is forbidden by an impl-not declaration | `module_resolver.zyl` (located): an impl of a trait for a type that an `(impl-not Trait Target)` declaration forbids, directly or because the type implements `Target`; `secret_check.zyl` (located): an impl of a protected trait whose result is derived from a value the declaration protects |
 | `E_TRAIT_NOT_DERIVABLE` (§28) | trait: cannot derive T for type U at S | `derive.zyl` (located: a trait outside Show, Debug, Eq, Ord, Hash, Clone, a field whose type lacks the trait, or Eq/Ord/Hash/Clone on a type with a Secret field) |
-| `E_TRAIT_NOT_FOUND` (§28) | trait: no implementation found for T at S | `type_annotate.zyl` (located): a trait call on a concrete receiver type with no impl, a dot method no trait declares or none implements for the receiver, or one declared by several traits |
+| `E_TRAIT_NOT_FOUND` (§28) | trait: no implementation found for T at S | `type_annotate.zyl` (located): a trait call on a concrete receiver type with no impl, a dot method no trait declares or none implements for the receiver, or one declared by several traits; `print` of a value with no Show (a record, handle or function would print its address, spec §27) |
 | `E_PKG_ORPHAN_IMPL` (§28) | trait: impl of T for U where neither the trait nor the type is local to N | `module_resolver.zyl` |
 
 ### Capabilities and secrets (phase 13)

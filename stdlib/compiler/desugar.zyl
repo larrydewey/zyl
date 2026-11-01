@@ -119,7 +119,9 @@
                 (if (str-eq h "map") (ds-map a xs)
                   (let i (ds-binder-at h xs)
                     (if (and (>= i 0) (ds-needs-list xs)) (ds-list (ds-binder-items xs i (ds-param-list-p h xs)) a)
-                      (if (ds-needs-list xs) (ds-list (ds-forms xs) a) a)))))))))))))
+                      (let fi (ds-fields-at h xs)
+                        (if (and (>= fi 0) (ds-needs-list xs)) (ds-list (ds-field-items xs fi) a)
+                          (if (ds-needs-list xs) (ds-list (ds-forms xs) a) a)))))))))))))))
     (_ a)))
 
 ; Where a form keeps its binder list, or -1: a list there names locals and is never a form to rewrite.
@@ -129,6 +131,19 @@
       (if (str-eq h "pub")
         (let j (ds-binder-at (ds-head (AList (ds-rest xs 1))) (ds-rest xs 1)) (if (< j 0) -1 (+ j 1)))
         -1))))
+
+; Where a struct's field specs start, or -1: `(vec Int)` there is a field named vec, never a form.
+(defn ds-fields-at ((h String) xs)
+  (if (or (str-eq h "defstruct") (str-eq h "defstruct+")) 2
+    (if (str-eq h "pub")
+      (let j (ds-fields-at (ds-head (AList (ds-rest xs 1))) (ds-rest xs 1)) (if (< j 0) -1 (+ j 1)))
+      -1)))
+
+; Each field spec from index i on keeps its name and rewrites its type.
+(defn ds-field-items (xs (i Int))
+  (match xs
+    (Nil Nil)
+    (Cons h t (Cons (if (<= i 0) (ds-binding h) (ds-form h)) (ds-field-items t (- i 1))))))
 
 ; A parameter list holds one binder per element; a let or for holds one binding.
 (defn ds-param-list-p ((h String) xs)

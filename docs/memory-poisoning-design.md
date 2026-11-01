@@ -139,9 +139,11 @@ now corrected, and it is the reason this file exists.
 programs in `tests/regression` and `tests/smoke`, runs each twice (plain,
 then with `ZYL_REGION_POISON=1`), and requires the exit status and the test
 summary line to be identical. It deliberately does *not* diff raw output:
-several of those programs print raw addresses, which differ between any two
-runs because of ASLR, and a gate that reports those as failures is a gate
-that gets ignored. All 131 are unchanged.
+when the gate was written several of those programs printed raw addresses,
+which differ between any two runs because of ASLR, and a gate that reports
+those as failures is a gate that gets ignored. (A program can no longer
+print an address without `ffi`: `print` needs Show, `bytebuf-ptr` needs
+`ffi`.) All 131 are unchanged.
 
 **`verify/poison-selfhost.sh`** — the strong one. It rebuilds the entire
 compiler, the largest Zyl program in existence and self-hosting, with

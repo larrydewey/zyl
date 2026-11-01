@@ -59,21 +59,21 @@
     (make-_dr_Name "John" "Doe")
     (
       begin
-      (print n)
+      (print (Debug.debug n))
       1
     )
   )
 )
 
-; A container whose payload has no Show prints raw, like the payload itself.
+; A container whose payload has no Show would print an address: E_TRAIT_NOT_FOUND (spec 27).
 (defstruct _dr_Bare (v Int))
 
-(test "print-container-of-non-show"
-  (begin
-    (print (Some (make-_dr_Bare 1)))
-    (print (Ok (make-_dr_Bare 2)))
-    (print (Cons (make-_dr_Bare 3) Nil))
-    (assert-equal (struct-get (make-_dr_Bare 4) "v") 4)))
+(test-compile (print (Some (make-_dr_Bare 1))) (:expect-error true))
+(test-compile (print (Ok (make-_dr_Bare 2))) (:expect-error true))
+(test-compile (print (Cons (make-_dr_Bare 3) Nil)) (:expect-error true))
+
+(test "a field of a struct with no Show still reads"
+  (assert-equal (struct-get (make-_dr_Bare 4) "v") 4))
 
 ; Multiple traits on one struct.
 (defstruct _dr_Multi (a) (b))

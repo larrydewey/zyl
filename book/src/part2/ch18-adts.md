@@ -343,7 +343,7 @@ whose type lacks the trait, is `E_TRAIT_NOT_DERIVABLE`. `Show` prints
 each variant as its name and its fields' `Show` text, `Circle(1.500000)`,
 and a struct as `Point { x: 1, y: 2 }`; `Debug` is the same with strings
 quoted: `P(1, a)` shows as `P(1, "a")`. Without a `Show` impl, `print` of an ADT value
-prints its address. Equality exists with or without a derive, and
+is `E_TRAIT_NOT_FOUND`: it would print an address, which differs from run to run. Equality exists with or without a derive, and
 ordering needs one:
 
 - `==` and `!=` on two ADT values compare by content: different
