@@ -111,6 +111,7 @@
   (or (str-eq s "zyl_list_files")
   (or (str-eq s "zyl_list_zyl_files")
   (or (str-eq s "zyl_file_size")
+  (or (str-eq s "zyl_file_replace")
   (or (str-eq s "zyl_path_exists")
   (or (str-eq s "zyl_blake3_file_hex")
   (or (str-eq s "zyl_bytebuf_read_file")
@@ -121,7 +122,7 @@
   (or (str-eq s "zyl_now_ms")
   (or (str-eq s "zyl_random_words")
   (or (str-eq s "zyl_random_fill")
-      (cc-term-entry-p s)))))))))))))))))))))
+      (cc-term-entry-p s))))))))))))))))))))))
 
 (defn cc-term-entry-p (s)
   (and (> (pk-len s) 9) (str-eq (pk-sub s 0 9) "zyl_term_")))

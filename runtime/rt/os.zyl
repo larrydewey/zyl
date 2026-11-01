@@ -82,6 +82,40 @@
     (if (< fd 0) -1
       (let _ (if (os-tracked fd) (os-gen-bump fd) 0) (os-ret (ffi-call "%syscall1" 3 fd 1))))))
 
+; Replaces path's contents through path.zyl-tmp and rename, so a failed write leaves the old file whole; 0, or -1.
+(defn zyl_file_replace (path content)
+  (let p (rt-w path)
+    (let c (rt-w content)
+      (if (or (< p 4096) (or (< c 4096) (> (rt-strlen p) 4000))) -1
+        (let tmp (os-cat3 p (rt-w ".zyl-tmp") (rt-w "") 4096)
+          (if (= tmp 0) -1
+            (let r (os-replace-via p tmp c)
+              (let _ (if (< r 0) (ffi-call "%syscall1" 87 tmp 1) 0)
+                (let _ (zyl_rt_free tmp) r)))))))))
+
+; The old file's permission bits carry over; a new file gets 0644 less the umask.
+(defn os-replace-via (p tmp c)
+  (let st (ffi-call "%tls" "os_stat" 144 1)
+    (let had (= (ffi-call "%syscall2" 4 p st 1) 0)
+      (let mode (if had (bit-and (ffi-call "%load64" (+ st 24) 1) 4095) 420)
+        (let _ (ffi-call "%syscall1" 87 tmp 1)
+          (let fd (ffi-call "%syscall3" 2 tmp 524481 420 1)
+            (if (< fd 0) -1
+              (let n (rt-strlen c)
+                (let w (os-write-fd-all fd c n 0)
+                  (let m (if had (ffi-call "%syscall2" 91 fd mode 1) 0)
+                    (let f (ffi-call "%syscall1" 74 fd 1)
+                      (let k (ffi-call "%syscall1" 3 fd 1)
+                        (if (and (= w n) (and (= m 0) (and (= f 0) (= k 0))))
+                          (os-ret (ffi-call "%syscall2" 82 tmp p 1))
+                          -1)))))))))))))
+
+; Bytes written of n, retrying a short write or EINTR; stops at the first error.
+(defn os-write-fd-all (fd p n off)
+  (if (>= off n) off
+    (let r (ffi-call "%syscall3" 1 fd (+ p off) (- n off) 1)
+      (if (> r 0) (os-write-fd-all fd p n (+ off r)) (if (= r -4) (os-write-fd-all fd p n off) off)))))
+
 (defn zyl_path_exists (path) (if (= (ffi-call "%syscall2" 21 (rt-w path) 0 1) 0) 1 0))
 
 ; The byte size of the file at path (stat's st_size), or -1; nothing is read.
